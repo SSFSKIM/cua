@@ -151,7 +151,7 @@ Re-exposed inside the denied home (most-specific wins):
 - on Linux, the pinned helper's version directory `sandbox/<upstreamTag>/` (read). The helper enters bubblewrap and re-executes itself from `current_exe()` inside the restricted filesystem (`U@ff6aec96:linux-sandbox/src/linux_run_main.rs:295-347,1539-1560`; confirmed again at the M3 commit), so the kernel's own launch needs it readable;
 - the launch's own run directory `run/<sessionId>` (the scoped write root) and its selected session temp (below), both writable.
 
-`buildLaunch` passes the list to both hosts as `CUA_SANDBOX_DENY_READ`, JSON `{"deny": [absolute paths], "reexpose": [absolute paths]}`. A non-disabled launch without a well-formed value is refused (`sandbox_state_invalid`). The kernel role applies it and the worker role ignores it; one rule governs refusal for both.
+`buildLaunch` passes the list to the own host as `CUA_SANDBOX_DENY_READ`, JSON `{"deny": [absolute paths], "reexpose": [absolute paths]}`, and to the vendor host's compat executable through the session's compat settings file (Design, "The compat executable"), because node_repl does not pass it to the kernel's launcher. A non-disabled launch without a well-formed value is refused (`sandbox_state_invalid`). The kernel role applies it and the worker role ignores it; one rule governs refusal for both.
 
 **A per-session TMPDIR.** `buildLaunch` selects one session temp directory per launch, records it in the launch (`sessionTmp`), creates it with mode 0700 and sets `TMPDIR` to it for both hosts. It no longer copies the caller's TMPDIR. The selected path is `run/<sessionId>/tmp`, unless M2's helper check moves the vendor host's to `$CUA_HOME/tmp/<sessionId>` (M2). Launch construction, the policy's re-exposure, the preflight's exception and cleanup all read the one recorded `sessionTmp`. Two reasons:
 
@@ -281,7 +281,15 @@ The children's launch key stays the policy-state key, the same for both roles: t
 
 ### The compat executable (macOS vendor host, until #117)
 
-CODEX_CLI_PATH names `bin/cua-codex-compat`, by its real path in cua's checkout. It is a POSIX sh script that execs `$CUA_COMPAT_NODE` on `src/sandbox/codex-compat.mjs`. `buildLaunch` sets `CUA_COMPAT_NODE` to the vendor runtime's pinned Node (24.21.0, which has `process.execve`) for vendor-host launches. node_repl's environment carries it, and so does the native helper's, which `open` passes through. The script refuses unless the value is an absolute path to an executable.
+CODEX_CLI_PATH names `bin/cua-codex-compat`, by its real path in cua's checkout. It is a POSIX sh script that execs a Node on `src/sandbox/codex-compat.mjs`: the vendor runtime's pinned Node (24.21.0, which has `process.execve`). The script refuses unless that path is absolute and executable.
+
+**How the compat receives its per-launch settings.** node_repl spawns the kernel's launcher with a filtered environment (CODEX_HOME, HOME, PATH, TMPDIR, LANG and node_repl's own settings; Surprises & Discoveries), so nothing `buildLaunch` adds to the environment reaches the kernel's `sandbox` call. The settings travel in a file instead:
+
+- **One computation.** `buildLaunch`, through `src/sandbox`, computes the session's settings once and writes them for vendor-host launches: `$CUA_HOME/state/compat/<sessionId>.json` (`{denyRead: {deny, reexpose}, sessionTmp, home}`) and `$CUA_HOME/state/compat/<sessionId>.node` (one line, the Node path, which the sh script must read before any JSON can be parsed). Both are written with mode 0600 in a 0700 directory and removed at session cleanup, on the same lifecycle as the recorded `sessionTmp`. The compat only reads them; it never derives a policy itself.
+- **Locating them.** The compat takes the session id from TMPDIR (the recorded `sessionTmp`: `<home>/run/<id>/tmp`, or `<home>/tmp/<id>` if M2's helper check moves it) and the state directory from CODEX_HOME (`dirname` is `<home>/state`). Both must name the same `<home>`, and the file's `home` and `sessionTmp` must equal them. A mismatch, a TMPDIR of any other shape, or a missing or malformed file exits 1 with a sentence.
+- **Both children read it.** The worker's launcher receives node_repl's full environment, but it reads its settings the same way as the kernel's, so both roles have one source.
+- **Tamper boundary.** The files lie under `$CUA_HOME/state`, inside the denied home and never re-exposed: the kernel can neither read nor write them. The worker cannot write them either: its write roots are its run directory and `sessionTmp` (scoped) or none (default), and the preflight refuses any write root overlapping the home other than those two. M2 checks the worker's write roots against `state/compat` explicitly. The compat itself runs unconfined, as the launcher.
+- **The helper's `app-server`** reads no session file. The native helper is shared across sessions and outlives the one that started it. It takes its Node from `CUA_COMPAT_NODE`, which `buildLaunch` sets for vendor-host launches and which reaches the helper's environment through `open`. The script uses `CUA_COMPAT_NODE` for `app-server` and the session's `.node` file for `sandbox`.
 
 The compat executable runs outside any sandbox, so its code must not be writable by cells. `bin/` and `src/sandbox/` join the trusted code paths that the scoped preflight protects, for both hosts.
 
@@ -290,7 +298,7 @@ Subcommands:
 - **`sandbox`.** It accepts exactly the recovered template: the three `-c` keys `shell_environment_policy.inherit="all"`, `default_permissions="node_repl"` and `permissions.node_repl={filesystem = {…}, network = {enabled = false}}`, then `--`, then the command. Anything else exits 1 with a sentence on stderr, including `--allow-unix-socket` (cua never sets `NODE_REPL_SANDBOX_ALLOWED_UNIX_SOCKETS`), another key, or a malformed table; node_repl on macOS refuses the cell on a launcher failure.
   - It parses the filesystem table into the same entries `policy.mjs` takes.
   - It takes the role from the script's basename. node_repl writes its scripts into a random temp directory, so no stable path exists: `kernel.js` is the kernel, `trusted-worker.js` the worker, and anything else gets the kernel's stricter profile.
-  - It reads `CUA_SANDBOX_DENY_READ`; missing or malformed exits 1.
+  - It reads the session's compat settings (above); a missing or malformed file, or a TMPDIR or CODEX_HOME that does not locate it, exits 1.
   - Then it `process.execve`s `/usr/bin/sandbox-exec` with the seatbelt argv and environment.
 - **`app-server --listen stdio://`.** Newline-delimited JSON-RPC 2.0 on stdin and stdout.
   - It answers `initialize`, `configRequirements/read` and `config/read` with the results the signed CLI returns under cua's CODEX_HOME, captured in M0. The captured results are audited (no credential, token or account field; paths rendered from the environment if the capture shows any) and kept in `src/sandbox/app-server-responses.json`.
@@ -340,7 +348,7 @@ Each item is behaviour someone can check. The commands are in Concrete Steps.
    - a missing helper;
    - a helper whose hash mismatches;
    - an unrenderable state;
-   - a missing or malformed `CUA_SANDBOX_DENY_READ`;
+   - a missing or malformed `CUA_SANDBOX_DENY_READ`, or on the vendor host a missing or malformed compat settings file, or a TMPDIR or CODEX_HOME that does not match it;
    - a deny target that cannot be created;
    - a compat wrapper whose Node is missing or relative;
    - a compat executable that exits before `execve`;
@@ -509,8 +517,10 @@ What exists at the end: macOS computer sessions run node_repl with CODEX_CLI_PAT
 
 **Touches:**
 - `bin/cua-codex-compat`, `src/sandbox/codex-compat.mjs`, `src/sandbox/app-server.mjs`, `src/sandbox/app-server-responses.json`;
-- `src/runtime/launch.mjs`: the vendor host's CODEX_CLI_PATH and CUA_COMPAT_NODE, the preflight, and `bin/` among the trusted paths. `src/sandbox/` is there since M1. `sandboxPolicy`/`sandboxArgs` stay for the Linux own host until M3;
+- `src/runtime/launch.mjs`: the vendor host's CODEX_CLI_PATH and CUA_COMPAT_NODE, the session's compat settings files and their cleanup, the preflight, and `bin/` among the trusted paths. `src/sandbox/` is there since M1. `sandboxPolicy`/`sandboxArgs` stay for the Linux own host until M3;
 - `runtime/releases/*-darwin-arm64.json`, `src/runtime/manifest.mjs`, `src/runtime/install.mjs`, `src/runtime/checks.mjs`, `src/runtime/doctor.mjs` (`sandbox.launcher`), the test fixtures that model the runtime tree (`test/fixtures/runtime-fixture.mjs` and the installed-home fixture).
+
+**First step:** a probe on the mini, before anything is built on route (a): the filtered kernel environment that reaches `$CODEX_CLI_PATH sandbox` carries TMPDIR and CODEX_HOME exactly as `buildLaunch` set them (the spike's shim pattern, logging the values, under a scratch HOME and the native-run rules in the Decision Log). If either is absent or rewritten, the session stops and reports before building.
 
 **Decisions here:**
 - The compat TOML subset: inline tables of string keys to a string or an inline table, as `sandboxArgs` renders and node_repl emits (`shim.log`), nothing else.
@@ -525,7 +535,7 @@ What exists at the end: macOS computer sessions run node_repl with CODEX_CLI_PAT
 
 **Proves:**
 - acceptance 1 (macOS), 2 to 5 on the vendor host (including the script directory), 6, 9 (compat cases and `no-unsandboxed-fallback` on the vendor host), 10 (macOS), 12 (vendor host computer on the mini);
-- unit tests pin: the exact template accepted, each deviation refused with exit 1; role by basename; missing deny list refused; the app-server's three answers, unknown method `-32601`, notifications ignored, EOF exit.
+- unit tests pin: the exact template accepted, each deviation refused with exit 1; role by basename; each settings refusal (missing file, malformed file, TMPDIR outside `run/<id>/tmp` or `tmp/<id>`, TMPDIR and CODEX_HOME naming different homes, a file whose `home` or `sessionTmp` differs); the sh script's Node refusals; the files written once per launch and removed with `sessionTmp`; the app-server's three answers, unknown method `-32601`, notifications ignored, EOF exit.
 
 ### M3 — Linux helper; cua's own host on Linux; confined computer default; vendor host retired
 
@@ -714,7 +724,9 @@ Environment names introduced:
 
 - `CUA_SANDBOX_DENY_READ`: JSON `{deny, reexpose}` of absolute paths, set by `buildLaunch` for both hosts.
 - `TMPDIR`: the launch's selected `sessionTmp` (0700): `run/<sessionId>/tmp`, or `$CUA_HOME/tmp/<sessionId>` for the vendor host if M2's helper check requires it. It is set by `buildLaunch` for both hosts and is never the caller's.
-- `CUA_COMPAT_NODE`: absolute path of the Node the compat executable runs on, set for vendor-host launches.
+- `CUA_COMPAT_NODE`: absolute path of the Node the compat executable's `app-server` runs on, set for vendor-host launches; it reaches the native helper. The `sandbox` subcommand takes its Node from the session's compat settings, since the kernel's launcher does not receive it.
+
+Files introduced: `$CUA_HOME/state/compat/<sessionId>.json` and `.node`, the vendor host's per-session compat settings (Design, "The compat executable").
 
 Pin file `runtime/sandbox/linux-sandbox.json`, as in the Design.
 
@@ -735,6 +747,15 @@ Dependencies on other work: #79 merged before M2. #117 retires the compat execut
 - Observation: the original's Linux seccomp denies `connect` on every socket family under a restricted network, and there is no selective Unix-socket grant on Linux.
   Evidence: R/B §2, §6 (`U@ff6aec96:linux-sandbox/src/landlock.rs:187-297`).
 
+- Observation: node_repl spawns the kernel's `$CODEX_CLI_PATH sandbox …` with a filtered environment: CODEX_HOME, HOME, PATH, PWD, SHLVL, TMPDIR, LANG, `__CF_USER_TEXT_ENCODING`, NODE_REPL_JS_BANNER, NODE_REPL_NODE_MODULE_DIRS, NODE_REPL_TRUSTED_RPC_ENABLED, NODE_REPL_UNTRUSTED_ENV_ALLOWLIST and CUA_REPL_ENABLED_SURFACES. Nothing else `buildLaunch` sets reaches it. The worker's launcher and the native helper's `app-server` receive the full environment.
+  Evidence: `docs/evidence/2026-10-17-own-sandbox/m0/experiment-a/exp-signed-vendor-scoped.json`, `slot.invocations[].envNames` (M0a, task 1).
+- Observation: M0's four oracles agree. The public build at ff6aec96 equals the signed CLI in all four configurations (vendor and own host, scoped and default), and the six native calls pass under both. The argv capture caught `sandbox-exec`'s argv on the first try for both inputs, byte-equal to the golden generator's output; the child environment differs only by the CLI's arg0 PATH entry and `__CF_USER_TEXT_ENCODING`, so eslogger is not needed. The helper sends only `initialize`, `configRequirements/read` and `config/read` and accepts their replay. The fingerprint is equal under the signed and public builds in both modes. All promoted.
+  Evidence: `docs/evidence/2026-10-17-own-sandbox/m0/` `experiment-a/`, `argv-capture/`, `app-server/`, `fingerprint/`.
+- Observation: on macOS the original expresses the home nesting (deny the cua home; read `runtimes/` and `node/`; write `run/<id>`) as intended, so the per-directory fallback is not needed there.
+  Evidence: `docs/evidence/2026-10-17-own-sandbox/m0/fingerprint/fp-golden-kernel-*.json`.
+- Observation: native calls on the mini fail under a scratch HOME ("Sky Computer Use native pipe startup failed"; three runs, 07:54 to 07:56Z), and the first run under the account's real HOME (07:57:05Z) succeeded but raised a UserNotificationCenter permission dialog that only the owner can answer, which also stops the mini's CI runner. Native runs on the mini are paused until the owner answers it and the route is set.
+  Evidence: task 1's report; the coordinator's record of the dialog at 07:57:14Z.
+
 ## Decision Log
 
 - Decision: verification for this spec and its branch. One independent spec review by `doperpowers:adversarial-reviewer` (the design is technical and security-sensitive), and in the same round a buildability review of the execution section by `doperpowers:adversarial-reviewer` (five milestones). Each milestone PR is reviewed at `doperpowers:reviewer-high` on its whole diff. A final whole-branch `doperpowers:reviewer-high` review covers the M4 PR with the acceptance evidence.
@@ -754,6 +775,14 @@ Dependencies on other work: #79 merged before M2. #117 retires the compat execut
 
 - Decision: execution pre-flight (2026-10-17, execution session). M0 runs as three tasks of the subagent-driven loop, one PR: M0a, the mini oracles (experiment A, the golden generator and its fixtures, the argv capture, the fingerprint probe under the signed CLI and the public build, the app-server capture and replay); M0b, the harness extensions (native-baseline `--surfaces browser` and `compare --same-host`, repl-parity's GCE device, device-parameterized native lane, host-aware preparation and the transition allowance, tz-probe), local code and tests; M0c, the GCE box provisioned, the Linux probes (XShm, app launch, nesting), and the baselines and controls, which consume M0b's harness. The x64 GCE instance is created only in M3, where its smoke runs. Every other milestone is one task. M0a and M0b share no files and run concurrently, M0b in a second worktree whose branch merges into `feat/115-own-sandbox` after its review. The mini's scratch clone comes from GitHub, not the Concrete Steps' `git clone --shared` of the resident checkout, whose object store a shared clone would borrow.
   Rationale: M0 alone spans two machines, a Rust build, C probes, four harness changes and a dozen live runs; one executor for all of it would not fit one context, and M0c consumes M0b, so the frontier review falls between them. M0a's verdicts come first because a design surprise there stops the work before anything else is built.
+  Date/Author: 2026-10-17, execution session.
+
+- Decision: the compat executable receives its per-launch settings through a per-session file (2026-10-17, M0a's finding, ruled by the dispatching session before M1). `buildLaunch` computes the vendor host's settings once and writes `$CUA_HOME/state/compat/<sessionId>.json` and `.node`; the compat locates them from TMPDIR (the session) and CODEX_HOME (the home), requires both to agree, and fails closed on any mismatch or a missing or malformed file; both roles read the file; the helper's `app-server` stays settings-free on `CUA_COMPAT_NODE`. Design, "The compat executable", the M2 entry, acceptance 9 and Interfaces are revised to match. M2 opens with a probe confirming that the filtered kernel environment carries TMPDIR and CODEX_HOME as `buildLaunch` set them.
+  Rejected: (b) adding the two names to `NODE_REPL_UNTRUSTED_ENV_ALLOWLIST` exposes them to cells, and the vendor launcher may overwrite that list; (c) a per-session CODEX_CLI_PATH wrapper with the values baked in breaks when the shared native helper outlives the session that started it, since the helper calls it from its own environment; (d) the compat deriving the deny list itself from CUA_HOME, HOME and TMPDIR computes the policy in two places, and XDG_CONFIG_HOME is not in the kernel's environment.
+  Rationale: node_repl filters the kernel launcher's environment (Surprises & Discoveries), so the design's environment route would refuse every vendor-host kernel launch. The file keeps one computation of the policy in `buildLaunch`, sits where neither child can write, and keys on values node_repl passes and no cell sets.
+  Date/Author: 2026-10-17, execution session (route ruled by the dispatching session).
+- Decision: native runs on the mini (2026-10-17, the dispatching session's standing rules after the 07:57Z dialog). No native run on the mini while a ci-kit macOS job is running or queued: check twice, about 45 s apart, that the runner is idle and nothing is queued. After each run, check the frontmost app (`lsappinfo`); on UserNotificationCenter, SecurityAgent or CoreServicesUIAgent, stop and report. No probe under the real HOME, or anything else that can reach a new TCC client identity or permission kind, unless the plan names it and the dispatching session has been told first. A harness-owned Chrome on the mini runs under the same idle rule and is closed afterwards. These bind M0's remaining mini items and M1 to M4.
+  Rationale: a new TCC prompt is an owner-only action, and a dialog on the mini blocks the CI runner other projects use.
   Date/Author: 2026-10-17, execution session.
 
 ## Outcomes & Retrospective

@@ -539,6 +539,20 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
+- Decision: T5's remote acceptance and model benchmark (f855784, 36e736f) have three session rulings.
+  - **Remote acceptance on the mini's harness-owned browser-only endpoint passes.** The endpoint is `repl-m5t5r1-mini-browser`.
+    - It attests `cua-repl-host 0.5.0` on the managed Node.
+    - Kill-client/count-one gave exactly 1 run, with no replay.
+    - The resident `mini` endpoint was checked separately and is vendor-routed.
+  - **Elicitation is not reachable live on this route.** The cua browser service requests no approvals, cells cannot reach `createElicitation`, and secrets are off. A live dialog would also land in the owner's own session. The proof is unit-level: `test/mcp-devices.test.mjs` and the services suite's elicitation accept/decline/cancel cases.
+  - **The browser benchmark (acceptance 8) is met.**
+    - Tool time is within max(10%, 500 ms) on all 23 tasks. The worst case is use-slider at +117 ms.
+    - The summarizer's outcome line reads `regression`, and stays visible beside this ruling. The own host went 2/3 on T2, drag-box and drag-items, against 3/3 for the vendor.
+    - Two of the three misses are identified controller mistakes: a NaN parse on T2, and drag-box never pressing Submit. drag-items is a single miss.
+    - The spec makes #130's scripted outcomes the outcome measure after the model runs. Task 4's scripted benchmark at the same product head is 12/12 on both hosts, with drag-box and drag-items 3/3 each.
+    - There is no fresh 3+3, because rerunning until it passes is not evidence. #113 M5 ruled the same way, and #130 carries the question of model-run outcome noise.
+  Rationale: Session rulings. A model controller's own mistakes are not a host difference. The deterministic outcome measure is equal on both hosts.
+  Date/Author: 2026-10-16, session rulings on M5 task 5's DONE_WITH_CONCERNS, recorded by the plan-executor.
 - Decision: Acceptance 8's native half is met on cua-bench (experiment `m5t6b-cua-bench-2026-10-16`, d8fefc2), with `compare`'s raw `verdict: FAIL` kept visible beside this ruling.
   - **What failed.** The only failing row is `method.typeText`, and it failed on outcome. In 6 of 6 samples on both hosts typeText threw and its gedit window exited. One vendor sample (run-1, when the box wrote its first gedit crash report) gave `os error 11`; the other five samples gave D-Bus `NoReply`.
   - **What passed.** All 19 latency operations and the other five method cases. In-cell medians match; for example, task.total is 17,617.1 against 17,616.9 ms.

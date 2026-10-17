@@ -539,6 +539,13 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
+- Decision (amends the 2026-10-15 #141 entries): the Linux pending-environment exception for the two browser scroll members carries into M5.
+  - The members are coordinate and DOM scroll, 14 cells. On Linux they stay pending and are never counted as covered.
+  - `test/repl-parity/pending-environment.json` moves from `through: M4` to `through: M5`. The citation is task 4's mini M5 evidence, where both hosts pass the scroll members on the same product tree (e24a1cd).
+  - Acceptance 3 is qualified on Linux for exactly these two members.
+  - Rejected: holding M5 until #141 is fixed. The stall is in VM Chrome's synthesized scroll gesture, under the cua browser service, outside #116, and it affects both hosts equally.
+  Rationale: The REPL-host path for these members is proven live at M5 on the mini. Withholding the release until a browser-service environment bug is fixed would add no evidence about the host.
+  Date/Author: 2026-10-16, session ruling on the evidence review's finding, recorded by the plan-executor.
 - Decision: T5's remote acceptance and model benchmark (f855784, 36e736f) have three session rulings.
   - **Remote acceptance on the mini's harness-owned browser-only endpoint passes.** The endpoint is `repl-m5t5r1-mini-browser`.
     - It attests `cua-repl-host 0.5.0` on the managed Node.

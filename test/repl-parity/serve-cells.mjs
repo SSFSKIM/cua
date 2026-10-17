@@ -31,8 +31,10 @@ export function attestFixtureLaunch(launch,{facts,home,host,nodeMode=process.env
   return launch;
 }
 
-export function noServicesLaunch(launch,{host='vendor',witness=false,brokenSandbox=false,fixtureServices}={}) {
+export function noServicesLaunch(launch,{host='vendor',witness=false,brokenSandbox=false,fixtureServices,fixtureTmpdir}={}) {
   const env={...launch.env};
+  // A boundary lane's marker directory (fixture-launch.mjs boundaryServeEnv) in place of the session temp.
+  if(fixtureTmpdir)env.TMPDIR=fixtureTmpdir;
   delete env[host==='vendor'?'NODE_REPL_TOOL_OVERRIDES':'CUA_REPL_TOOL_OVERRIDES'];
   // The broken launcher stands in for whichever sandbox launcher the launch names: cua's own (sandbox-exec, the macOS
   // own host since #115 M1) or the Codex CLI.
@@ -65,7 +67,7 @@ export function noServicesLaunch(launch,{host='vendor',witness=false,brokenSandb
   env.CUA_REPL_UNTRUSTED_ENV_ALLOWLIST='';
   return {...launch,env};
 }
-export async function serveCells({source,host='vendor',sandbox='scoped',witness=false,brokenSandbox=false,controlDir,services=false,input=process.stdin,output=process.stdout}={}) {
+export async function serveCells({source,host='vendor',sandbox='scoped',witness=false,brokenSandbox=false,controlDir,fixtureTmpdir,services=false,input=process.stdin,output=process.stdout}={}) {
   const facts=executionFacts({source});assertPreparedFacts(JSON.parse(process.env.CUA_PARITY_EXPECTED),facts);
   output=attestedOutput(output,facts);
   const scratch=prepareCapabilityHome({source});
@@ -74,12 +76,12 @@ export async function serveCells({source,host='vendor',sandbox='scoped',witness=
   try {
     fixtureServices=services?await createFixtureServices({nativeSecrets:process.env.CUA_PARITY_FIXTURE_CASE?.startsWith('secrets/native-live/'),longPathPipe:process.env.CUA_PARITY_FIXTURE_CASE==='cells/native-pipe/absolute-path',timeoutPipe:process.env.CUA_PARITY_FIXTURE_CASE==='cells/native-pipe/connect-timeout',errorPipe:process.env.CUA_PARITY_FIXTURE_CASE==='cells/native-pipe/data-close-error'}):null;
     connection=await openConnection({home:scratch.dir,env,sessionId:randomUUID(),input,output,
-      chrome:{profiles:[]},listBackends:async()=>[],prepareLaunch:l=>{attestFixtureLaunch(l,{host,facts,home:scratch.dir,output,legacyExpected:true});if(controlDir)writeFileSync(join(controlDir,'launch.json'),JSON.stringify({pid:process.pid,cwd:l.cwd,home:scratch.dir,nodePath:l.env.NODE_REPL_NODE_PATH??l.command}));return noServicesLaunch(l,{host,witness,brokenSandbox,fixtureServices});}});
+      chrome:{profiles:[]},listBackends:async()=>[],prepareLaunch:l=>{attestFixtureLaunch(l,{host,facts,home:scratch.dir,output,legacyExpected:true});if(controlDir)writeFileSync(join(controlDir,'launch.json'),JSON.stringify({pid:process.pid,cwd:l.cwd,home:scratch.dir,nodePath:l.env.NODE_REPL_NODE_PATH??l.command}));return noServicesLaunch(l,{host,witness,brokenSandbox,fixtureServices,fixtureTmpdir});}});
     const terminate=()=>connection.close('signal');process.once('SIGTERM',terminate);process.once('SIGINT',terminate);
     try {const result=await connection.closed;if(controlDir)writeFileSync(join(controlDir,'closed.json'),JSON.stringify(result));process.exitCode=result.code;}finally{process.off('SIGTERM',terminate);process.off('SIGINT',terminate);}
   } finally {try{await fixtureServices?.close();}finally{scratch.cleanup();}}
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href) {
   if(process.env.CUA_PARITY_REMOTE!=='1')throw new Error('Live cells fixture is remote-only; local parity uses doubles');
-  await serveCells({source:process.env.CUA_HOME,services:process.env.CUA_PARITY_FIXTURE_SERVICES==='1',host:process.env.CUA_REPL_HOST??'vendor',sandbox:process.env.CUA_PARITY_SANDBOX??'scoped',witness:process.env.CUA_PARITY_BANNER_WITNESS==='1',brokenSandbox:process.env.CUA_PARITY_BROKEN_SANDBOX||false,controlDir:process.env.CUA_PARITY_CONTROL_DIR});
+  await serveCells({source:process.env.CUA_HOME,services:process.env.CUA_PARITY_FIXTURE_SERVICES==='1',host:process.env.CUA_REPL_HOST??'vendor',sandbox:process.env.CUA_PARITY_SANDBOX??'scoped',witness:process.env.CUA_PARITY_BANNER_WITNESS==='1',brokenSandbox:process.env.CUA_PARITY_BROKEN_SANDBOX||false,controlDir:process.env.CUA_PARITY_CONTROL_DIR,fixtureTmpdir:process.env.CUA_PARITY_FIXTURE_TMPDIR});
 }

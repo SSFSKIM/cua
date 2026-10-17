@@ -494,6 +494,22 @@ test('the scoped preflight protects the own host\'s trusted roots, its own code 
   assertSandboxFits('scoped', {...launch, replHost: {host: 'vendor', reason: 'explicit'}, env: {...launch.env, TMPDIR: dirname(REPL_HOST_DIR), CUA_REPL_TRUSTED_CODE_PATHS: undefined}});
 });
 
+// #115 M1: the caller's TMPDIR is no longer a write root, so a conflicting write root now comes from the home itself: a
+// run directory that resolves into a trusted code path (repl-parity's confinement/trusted-write-root-overlap builds this).
+test('a home whose run directory resolves into the runtime\'s modules fails the scoped preflight on either host', t => {
+  const {home, dir, runtime} = fixtureRuntime(t);
+  const node = fakeNode(dir, 'n/node', '24.1.0');
+  mkdirSync(runtime.paths.moduleDir, {recursive: true});
+  symlinkSync(runtime.paths.moduleDir, join(home, 'run'));
+  for (const ambient of [AMBIENT, {...AMBIENT, CUA_REPL_HOST: 'cua', CUA_NODE: node}]) {
+    const launch = ambient === AMBIENT ? buildLaunch({runtime, home, sessionId: SESSION, ambient}) : buildLaunch({runtime, home, sessionId: SESSION, ambient, surfaces: BROWSER, services: {browser: BROWSER_SERVICE}});
+    const overlap = outcome(() => assertSandboxFits('scoped', launch));
+    assert.equal(overlap.code, 'sandbox_conflict', launch.replHost.host);
+    assert.match(overlap.message, /the trusted code path/);
+    assertSandboxFits('disabled', launch);
+  }
+});
+
 for (const [name, label, key] of [['node', 'the Node cua installed for its own REPL host', 'managedNodeRoot'], ['staging', 'cua install\'s staging directory', 'stagingRoot']]) {
   test(`the scoped preflight protects $CUA_HOME/${name} (${label}) on either host, by real path`, t => {
     const {home, dir, runtime} = fixtureRuntime(t);

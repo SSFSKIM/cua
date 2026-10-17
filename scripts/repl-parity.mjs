@@ -21,14 +21,20 @@ import {apiCommand,evidenceBackend} from './repl-parity/api-lanes.mjs';
 import {runBrowserApiScenario} from './repl-parity/browser-api.mjs';
 import {fixtureProcess} from './browser-parity/resources.mjs';
 import {compareParityRuns,validateAttestations} from './repl-parity/compare.mjs';
+import {DEVICES,isDeclaredDevice} from './repl-parity/devices.mjs';
 const json=p=>JSON.parse(readFileSync(p,'utf8'));
 const state=device=>join(root,'.doperpowers/sde/repl-parity',`${device}.json`);
 const save=(p,value)=>writeFileSync(p,JSON.stringify(value,null,2)+'\n');
-export async function main(argv=process.argv.slice(2)){
+// The CLI's arguments, validated: the action, its options and positionals. It reads no journal and starts nothing.
+export function parseSelection(argv){
  const {values:v,positionals:[action,a,b]}=parseArgs({args:argv,allowPositionals:true,options:{device:{type:'string',default:'local'},host:{type:'string',default:'vendor'},suite:{type:'string'},through:{type:'string'},out:{type:'string'},expected:{type:'string'},commit:{type:'string'},profile:{type:'string'},node:{type:'string'},home:{type:'string'},'pending-cell':{type:'string',multiple:true},'pending-reason':{type:'string'}}});
- if((v['pending-cell']?.length||v['pending-reason'])&&(action!=='run'||v.device!=='cua-linux'))throw new Error('Pending declarations require a live Linux run; diff reads recorded declarations');
+ if((v['pending-cell']?.length||v['pending-reason'])&&(action!=='run'||!isDeclaredDevice(v.device)||DEVICES[v.device].platform!=='linux'))throw new Error('Pending declarations require a live Linux run; diff reads recorded declarations');
  if(v.through&&!milestones.includes(v.through))throw new Error('Invalid through milestone');
- if(!['local','mini','cua-linux'].includes(v.device)||!['vendor','cua'].includes(v.host)||!['cells','services','api','docs-profiles','secrets','secrets-live','native','all'].includes(v.suite??'cells'))throw new Error('Invalid parity selection');
+ if(!(v.device==='local'||isDeclaredDevice(v.device))||!['vendor','cua'].includes(v.host)||!['cells','services','api','docs-profiles','secrets','secrets-live','native','all'].includes(v.suite??'cells'))throw new Error('Invalid parity selection');
+ return {action,v,a,b};
+}
+export async function main(argv=process.argv.slice(2)){
+ const {action,v,a,b}=parseSelection(argv);
  if(action==='prepare'||action==='cleanup-prepared'){
   const prepared=managePreparation(action,{...v,journal:state(v.device)});
   console.log(JSON.stringify(prepared,null,2));return;

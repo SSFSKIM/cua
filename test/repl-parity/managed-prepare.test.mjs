@@ -85,3 +85,20 @@ test('the device entry point refuses local invocation before installation or cle
  const result=spawnSync(process.execPath,[fileURLToPath(new URL('../../scripts/repl-parity/prepare-device.mjs',import.meta.url)),'prepare','--device','mini'],{encoding:'utf8',env:{PATH:process.env.PATH,HOME:'/nonexistent'}});
  assert.notEqual(result.status,0);assert.match(result.stderr,/prepared parity clone|remote-only/);
 });
+
+// After M3 retires the vendor host on Linux (replHostFor refuses CUA_REPL_HOST=vendor there), preparation on a Linux
+// device must still list its profiles: it asks for the own host, and only the M0 control runs select the vendor host.
+const retiredOnLinux=run=>(file,args,options)=>{
+ if(options.env.CUA_REPL_HOST==='vendor')throw new Error('repl_host_refused: CUA_REPL_HOST=vendor is refused on Linux, where cua\'s own host serves every session');
+ return run(file,args,options);
+};
+test('preparation on a Linux device lists profiles through the own host, so it survives the vendor host\'s retirement',()=>fixture(({source,commands,deps})=>{
+ const prepared=prepareDevice({device:'cua-gce',profile:'ssfs',home:source},{...deps,run:retiredOnLinux(deps.run)});
+ assert.equal(prepared.device,'cua-gce');assert.equal(prepared.profile,'ssfs');
+ const discovery=commands.find(c=>c.file);
+ assert.equal(discovery.env.CUA_REPL_HOST,'cua');assert.equal(discovery.env.CUA_SHIM_SURFACES,'browser');assert.equal(discovery.env.CUA_BROWSER_SERVICE,'cua');
+}));
+test('preparation on the mini keeps the vendor host for its listing',()=>fixture(({source,commands,deps})=>{
+ prepareDevice({device:'mini',profile:'ssfs',home:source},deps);
+ assert.equal(commands.find(c=>c.file).env.CUA_REPL_HOST,'vendor');
+}));

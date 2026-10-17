@@ -568,6 +568,7 @@ What exists at the end:
 
 **Proves:**
 - acceptance 1 (Linux), 2 to 5 on Linux, 7, 8 (Linux probe), 9 (helper cases), 10 (Linux), 12 (Linux);
+- on the GCE box, the real bwrap launch runs the four deny-target creation cases for real (Decision Log, "deny targets are created on Linux only, and bounded there"): a missing fixed target created 0700 inside HOME; a dangling tier target created leaf-only; a tier whose parent is missing refused with the classified sentence; a fixed target whose missing parent lies outside HOME refused. Each case asserts the kernel cannot list or read the target. Until M3, Linux creation is exercised only through the platform seam;
 - unit tests pin: the helper argv and profile JSON for each role and mode; hash mismatch refusal; the vendor host refused on Linux; the computer default.
 
 ### M4 — #138, CODEX_HOME, documentation, final acceptance and release

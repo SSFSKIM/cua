@@ -20,7 +20,7 @@ This is child 2 of the independence composite #114, after #113 (own browser serv
 - [x] (2026-10-17) Owner rulings: ChatGPT extension route removed first (#79); kernel denied the secret store, `~/.config/cua`, `$CUA_HOME/state` and other sessions' run directories; Linux helper as a release asset; Linux computer sessions default to a confined kernel; Linux vendor host retired (#135); the Linux worker contingency.
 - [x] (2026-10-17) Design converged with a doperpowers:critique debate (ten findings adopted) and approved by the owner.
 - [x] (2026-10-17) Living spec authored.
-- [ ] Independent spec review (technical, adversarial-reviewer) and execution-section buildability review.
+- [x] (2026-10-17) Independent spec review (adversarial-reviewer) and execution-section buildability review: three rounds each, findings folded (Decision Log), both approve at 63d47d7.
 - [ ] M0 — Oracles, probes and baselines.
 - [ ] M1 — Policy model, deny list, seatbelt port; cua's own host on macOS.
 - [ ] M2 — Compatibility executable for the macOS vendor host; CodexCLI.app leaves the macOS pin.

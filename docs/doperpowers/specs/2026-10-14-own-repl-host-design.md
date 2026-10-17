@@ -543,6 +543,11 @@ owned browser service/extension host. The new docs directory must be included in
   - The members are coordinate and DOM scroll, 14 cells. On Linux they stay pending and are never counted as covered.
   - `test/repl-parity/pending-environment.json` moves from `through: M4` to `through: M5`. The citation is task 4's mini M5 evidence, where both hosts pass the scroll members on the same product tree (e24a1cd).
   - Acceptance 3 is qualified on Linux for exactly these two members.
+  - **Linux M5 completeness** rests on three things together:
+    - The fabfb11 Linux recordings were diffed under the declaration they carry, `--through M4`. That selects the same 493 cases as `--through M5` on Linux. Vendor-1 and vendor-4 each show 0 differences against own over 490 cases and 1,394 cells, and 0 against each other.
+    - This ruling.
+    - The mini's M5 proof of the two scroll members.
+  - **Not re-recorded.** Re-recording would only change the policy label on an unchanged product tree, and would cost 2–3 hours of VM time on a Mac the owner asked to free. The comparator keeps refusing to relabel recorded runs. The `through: M5` declaration (8c23f3d) and its regressions govern future runs.
   - Rejected: holding M5 until #141 is fixed. The stall is in VM Chrome's synthesized scroll gesture, under the cua browser service, outside #116, and it affects both hosts equally.
   Rationale: The REPL-host path for these members is proven live at M5 on the mini. Withholding the release until a browser-service environment bug is fixed would add no evidence about the host.
   Date/Author: 2026-10-16, session ruling on the evidence review's finding, recorded by the plan-executor.

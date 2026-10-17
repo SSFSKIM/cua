@@ -7,7 +7,9 @@
 //
 // Before each item, the gate: two readings about 45 s apart, each with every observation present (a request that fails
 // or an answer that does not parse stops the sequence; nothing missing is ever read as idle):
-//   - the frontmost application on the mini is Terminal; anything else (a dialog above all) stops at once, no retry;
+//   - the frontmost application: a system prompt (UserNotificationCenter, SecurityAgent, CoreServicesUIAgent) stops at
+//     once, no retry; while the runner is busy any other app in front is the CI job's window (contention, wait); once
+//     the runner reads idle, Terminal must be in front on both readings, and anything else stops;
 //   - the mac lane's runner `ci-kit-mac-mini` (SSFSKIM/MAWS) is not busy, no Runner.Worker runs on the mini, no MAWS job
 //     waits for a macOS runner, and the mini's 1-minute load is under 2; any of these is contention, which waits a
 //     minute and looks again (at most `maxWaits` times, then stops).
@@ -90,9 +92,15 @@ export function observe({exec}) {
 }
 
 // stop (never retried), contention (wait and look again) or idle.
+// The frontmost application: a system prompt (UserNotificationCenter, SecurityAgent, CoreServicesUIAgent) stops at once,
+// whatever the runner does. While the runner is busy (its busy flag or a Runner.Worker), any other non-Terminal app is
+// the CI job's own window: contention, wait. Once the runner reads idle, Terminal must be in front; anything else stops.
+export const SYSTEM_PROMPTS = ['com.apple.UserNotificationCenter', 'com.apple.SecurityAgent', 'com.apple.coreservices.uiagent'];
 export function classify(o) {
-  if (o.front !== TERMINAL) return {state: 'stop', reason: `the frontmost application is ${o.front}, not Terminal`};
-  const contention = [o.busy && 'runner busy', o.workers > 0 && `${o.workers} Runner.Worker`, o.queued > 0 && `${o.queued} queued macOS job(s)`, !(o.load < 2) && `load ${o.load}`].filter(Boolean);
+  if (SYSTEM_PROMPTS.includes(o.front)) return {state: 'stop', reason: `the frontmost application is ${o.front}, a system prompt`};
+  const runnerBusy = o.busy || o.workers > 0;
+  if (o.front !== TERMINAL && !runnerBusy) return {state: 'stop', reason: `the frontmost application is ${o.front}, not Terminal, with the runner idle`};
+  const contention = [o.front !== TERMINAL && `${o.front} in front during the CI job`, o.busy && 'runner busy', o.workers > 0 && `${o.workers} Runner.Worker`, o.queued > 0 && `${o.queued} queued macOS job(s)`, !(o.load < 2) && `load ${o.load}`].filter(Boolean);
   return contention.length ? {state: 'contention', reason: contention.join(', ')} : {state: 'idle', reason: 'idle'};
 }
 

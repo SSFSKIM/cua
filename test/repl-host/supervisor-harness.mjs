@@ -88,7 +88,7 @@ export async function startHost(t, {node, env = {}, sandbox = 'double', launcher
   const denied = join(root, 'denied');
   const double = sandbox ? sandboxDouble(root, {refuse: sandbox === 'refusing', denyLifeline, exec: launcher === 'seatbelt'}) : null;
   const launcherEnv = !double ? {} : launcher === 'seatbelt'
-    ? {CUA_REPL_SANDBOX_EXEC: double, CUA_SANDBOX_DENY_READ: JSON.stringify({deny: [denied], reexpose: []})}
+    ? {CUA_REPL_SANDBOX_EXEC: double, CUA_SANDBOX_DENY_READ: JSON.stringify({deny: [denied], reexpose: [], metadataOnly: []})}
     : {CODEX_CLI_PATH: double, CODEX_HOME: codexHome};
   const base = {PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: root, TMPDIR: tmp, CUA_REPL_NODE_PATH: node, ...serviceEnv, ...launcherEnv};
   const childEnv = Object.fromEntries(Object.entries({...base, ...env}).filter(([, v]) => v !== undefined));

@@ -19,6 +19,6 @@ export function sandboxedLaunch({platform, state, role, command, env, cwd, readP
   const rendered = roleProfile({state, role, readPaths, denyRead: prepared, network});
   const launchCwd = rendered.cwd ?? cwd;
   if (platform !== 'darwin') fail('sandbox_unavailable', `cua renders its own sandbox on macOS only until #115 M3; ${platform} launches through the Codex CLI`);
-  const {file, args} = seatbeltCommand({profile: rendered.profile, cwd: launchCwd, command, tmpdir: env.TMPDIR, ...(fs ? {fs} : {})});
+  const {file, args} = seatbeltCommand({profile: rendered.profile, cwd: launchCwd, command, tmpdir: env.TMPDIR, metadataGrants: role === 'kernel' ? prepared?.metadataOnly ?? [] : [], ...(fs ? {fs} : {})});
   return {command: file, args, env: sandboxedEnv(env, {platform, network: rendered.profile.network}), cwd: launchCwd};
 }

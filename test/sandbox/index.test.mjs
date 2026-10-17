@@ -13,7 +13,7 @@ function scratch(t) {
   t.after(() => rmSync(root, {recursive: true, force: true}));
   const cwd = join(root, 'cua', 'run', 's');
   mkdirSync(join(cwd, 'tmp'), {recursive: true});
-  return {root, cwd, denyRead: {deny: [join(root, 'home', 'store'), join(root, 'cua')], reexpose: [cwd, join(cwd, 'tmp')]}};
+  return {root, cwd, denyRead: {deny: [join(root, 'home', 'store'), join(root, 'cua')], reexpose: [cwd, join(cwd, 'tmp')], metadataOnly: [join(root, 'cua'), join(root, 'cua', 'run')]}};
 }
 const COMMAND = ['/fixture/node', '--experimental-vm-modules', '/fixture/kernel.mjs'];
 

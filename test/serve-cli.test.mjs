@@ -11,7 +11,7 @@ import {createInterface} from 'node:readline';
 import {loadPins, selectPin} from '../src/runtime/manifest.mjs';
 import {PassThrough} from 'node:stream';
 import {once} from 'node:events';
-import {REPO, scratch} from './fixtures/runtime-fixture.mjs';
+import {REPO, scratch, scratchUserHome} from './fixtures/runtime-fixture.mjs';
 import {fakeInstalledHome, installedHomeSupported, NO_SCOPED_LAUNCH} from './fixtures/installed-home.mjs';
 import {serve} from '../src/mcp/server.mjs';
 import {SKY_SERVICE, BROWSER_SERVICE, SERVICE_SUPPORT_DIRS, SANDBOX_DIR} from '../src/runtime/launch.mjs';
@@ -150,7 +150,7 @@ test('cua serve runs the resolved runtime with an allowlisted environment in an 
 
 test('with CUA_SHIM_SURFACES=computer,browser, serve registers both wrappers, configures cua\'s browser service and answers profiles_list from the registry', {skip: !supported}, async t => {
   const home = fakeInstalledHome(t);
-  const userHome = join(home, 'user');
+  const userHome = scratchUserHome(t);
   const chromeDir = join(chromeDataUnder(userHome), 'Default');
   mkdirSync(chromeDir, {recursive: true});
   writeFileSync(join(home, 'profiles.json'), JSON.stringify({version: 1, profiles: {personal: {chromeProfileDirectory: 'Default', extensionInstanceId: 'inst-a', boundAt: '2026-10-03T00:00:00.000Z', route: 'cua'}, school: {chromeProfileDirectory: 'Profile 6'}}}));
@@ -180,7 +180,7 @@ test('with CUA_SHIM_SURFACES=computer,browser, serve registers both wrappers, co
 
 test('profiles_list and cua profiles list check a bound profile against the live backends, one tab-free listing launch per request', {skip: !supported || NO_SCOPED_LAUNCH}, async t => {
   const home = fakeInstalledHome(t);
-  const userHome = join(home, 'user');
+  const userHome = scratchUserHome(t);
   const extension = join(chromeDataUnder(userHome), 'Default', 'Extensions', CUA_EXTENSION_ID, '1.0_0');
   mkdirSync(extension, {recursive: true});
   writeFileSync(join(extension, 'manifest.json'), '{}');
@@ -239,7 +239,7 @@ test('profiles_list and cua profiles list check a bound profile against the live
 // unique one binds automatically and marks the backend that decided it.
 test('cua profiles bind shows each candidate\'s label, binds a unique name automatically and nothing ambiguous', {skip: !supported || NO_SCOPED_LAUNCH}, async t => {
   const home = fakeInstalledHome(t);
-  const userHome = join(home, 'user');
+  const userHome = scratchUserHome(t);
   const userData = chromeDataUnder(userHome);
   const extension = join(userData, 'Default', 'Extensions', CUA_EXTENSION_ID, '1.0_0');
   mkdirSync(extension, {recursive: true});
@@ -301,7 +301,7 @@ test('cua profiles bind shows each candidate\'s profile directory, binds by dire
   const home = fakeInstalledHome(t);
   const pin = selectPin(loadPins());
   symlinkSync(join(CLASSIC_LEVEL_MODULES, 'classic-level'), join(home, 'runtimes', pin.release, pin.layout.moduleDir, 'classic-level'));
-  const userHome = join(home, 'user');
+  const userHome = scratchUserHome(t);
   const userData = chromeDataUnder(userHome);
   for (const [dir, id] of [['Default', 'inst-a'], ['Profile 12', 'inst-b']]) {
     const extension = join(userData, dir, 'Extensions', CUA_EXTENSION_ID, '1.0_0');
@@ -351,7 +351,7 @@ const UNCONFIRMED_TEARDOWN = `--import=data:text/javascript,${encodeURIComponent
 
 test('cua profiles list still shows the profiles but fails when its listing runtime was not confirmed stopped; an empty listing does not fail', {skip: !supported || NO_SCOPED_LAUNCH}, async t => {
   const home = fakeInstalledHome(t);
-  const userHome = join(home, 'user');
+  const userHome = scratchUserHome(t);
   const extension = join(chromeDataUnder(userHome), 'Default', 'Extensions', CUA_EXTENSION_ID, '1.0_0');
   mkdirSync(extension, {recursive: true});
   writeFileSync(join(extension, 'manifest.json'), '{}');
@@ -421,7 +421,7 @@ test('under the scoped default a CUA_HOME below the caller\'s $TMPDIR serves: th
 
 test('cua profiles list and bind reject an invalid CUA_SHIM_SANDBOX classified, before any listing launch', {skip: !supported}, async t => {
   const home = fakeInstalledHome(t);
-  const userHome = join(home, 'user');
+  const userHome = scratchUserHome(t);
   const extension = join(chromeDataUnder(userHome), 'Default', 'Extensions', CUA_EXTENSION_ID, '1.0_0');
   mkdirSync(extension, {recursive: true});
   writeFileSync(join(extension, 'manifest.json'), '{}');

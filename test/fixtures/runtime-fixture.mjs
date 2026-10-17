@@ -19,6 +19,25 @@ export function scratch(prefix = 'cua-test-', parent = tmpdir()) {
   return {dir, cleanup: () => rmSync(dir, {recursive: true, force: true})};
 }
 
+// A user's HOME for a test that serves a CUA_HOME: its own scratch directory, beside the cua home and never inside it
+// (since #115 M1 a secret store or ~/.config/cua inside CUA_HOME is an overlapping layout, refused before launch).
+export function scratchUserHome(t) {
+  const user = scratch('cua-user-');
+  t.after(user.cleanup);
+  return user.dir;
+}
+
+// The same for helpers that hold a cua home but no test context: one scratch user home per cua home, removed when the
+// test process exits.
+const userHomes = new Map();
+export function userHomeBeside(home) {
+  if (!userHomes.has(home)) {
+    if (!userHomes.size) process.once('exit', () => { for (const dir of userHomes.values()) rmSync(dir, {recursive: true, force: true}); });
+    userHomes.set(home, scratch('cua-user-').dir);
+  }
+  return userHomes.get(home);
+}
+
 // A scratch directory short enough for unix socket paths below it (the macOS per-user temp directory is not), and
 // outside $TMPDIR, where the scoped sandbox requires a CUA_HOME to be: /tmp, or /var/tmp where $TMPDIR covers /tmp (a
 // Linux session may export TMPDIR=/tmp).

@@ -86,14 +86,16 @@ const within = (path, root) => {
 // before placing them (writable, it would let cells swap a verified file before it is placed or run), and the kernel's
 // deny list (`denied`, src/sandbox/policy.mjs: the secret store, ~/.config/cua, the cua home; writable, a cell could
 // plant what the worker reads or reach what the kernel may not read). The one exception is the launch's own run
-// directory and its session temp (`ownRoots`): they lie inside the denied home by design, re-exposed to that launch's
-// kernel only, so a write root equal to one of them may lie inside a deny target (and nothing else may).
-export const protectedPaths = ({trustedCodePaths, codexHome, managedNode, staging, denied = [], ownRoots = []}) => [
+// directory and its session temp (`ownRoots`): they lie inside the denied home by design (macOS: the home; Linux: its
+// run/), re-exposed to that launch's kernel only, so a write root equal to one of them may lie inside the deny target
+// that is one of `ownHolders` (the run directory's home and run/), and inside no other: not the secret store, its tiers
+// or ~/.config/cua, wherever the home is placed.
+export const protectedPaths = ({trustedCodePaths, codexHome, managedNode, staging, denied = [], ownRoots = [], ownHolders = []}) => [
   ...trustedCodePaths.filter(Boolean).map(path => ({label: 'the trusted code path', path})),
   ...(codexHome ? [{label: 'the runtime\'s configuration and approvals', path: codexHome}] : []),
   ...(managedNode ? [{label: 'the Node cua installed for its own REPL host', path: managedNode}] : []),
   ...(staging ? [{label: 'cua install\'s staging directory', path: staging}] : []),
-  ...denied.map(path => ({label: 'what JavaScript cells may not read', path, except: ownRoots.filter(Boolean)})),
+  ...denied.map(path => ({label: 'what JavaScript cells may not read', path, except: ownHolders.filter(Boolean).map(realish).includes(realish(path)) ? ownRoots.filter(Boolean) : []})),
 ];
 
 // Every overlap between the scoped profile's write roots and the protected paths ([{label, path, except?}] each), by
@@ -184,16 +186,37 @@ export function assertTrustedServicesContained(launch) {
   }
 }
 
-// Throws `sandbox_conflict` when `mode` is scoped and a write root of `launch` (src/runtime/launch.mjs) overlaps one of
+// Refuses (sandbox_conflict) a deny list whose targets overlap: one inside another (the home under the store, the store
+// or ~/.config/cua under the home...), or a re-exposed path that lies in more than one target or holds one, since either
+// would give the kernel what an independent target denies (or the port a metadata grant on it). Every list
+// src/sandbox/policy.mjs denyListFor builds for disjoint locations passes. By real path. The preflight runs it for
+// scoped and default alike (assertSandboxFits), and the own host again before each kernel profile (prepareDenyTargets).
+export function assertDenyListShape(list) {
+  const deny = list.deny.map(realish), reexpose = list.reexpose.map(realish);
+  const overlaps = [];
+  deny.forEach((a, i) => deny.forEach((b, j) => { if (i < j && (within(a, b) || within(b, a))) overlaps.push(`${list.deny[i]} and ${list.deny[j]}`); }));
+  reexpose.forEach((path, i) => {
+    const holders = deny.filter(target => within(path, target));
+    if (holders.length > 1) overlaps.push(`${list.reexpose[i]}, re-exposed, lies in ${holders.join(' and ')}`);
+    for (const target of deny) if (within(target, path)) overlaps.push(`${list.reexpose[i]}, re-exposed, holds ${target}`);
+  });
+  if (overlaps.length) fail('sandbox_conflict', `what JavaScript cells may not read overlaps: ${overlaps.join('; ')}. The cua home, the secret store and its tiers, and ~/.config/cua must not lie inside one another`,
+    {hint: 'keep CUA_HOME outside the secret store and ~/.config/cua, and the store and ~/.config/cua outside CUA_HOME'});
+}
+
+// Throws `sandbox_conflict` when `mode` is not disabled and the deny list's targets overlap (assertDenyListShape), or
+// when `mode` is scoped and a write root of `launch` (src/runtime/launch.mjs) overlaps one of
 // its trusted code paths (trustedCodePathsOf), its CODEX_HOME, its home's managed Node (`launch.managedNodeRoot`), its
 // home's install staging (`launch.stagingRoot`) or its deny list (`launch.denyRead`, except for its own run directory
 // and session temp), whichever host it runs: a vendor session's cells must not choose a later own host's Node, or what
 // an install places, either.
 export function assertSandboxFits(mode, launch) {
+  if (mode === 'disabled') return;
+  if (launch.denyRead) assertDenyListShape(launch.denyRead);
   if (mode !== 'scoped') return;
   const conflicts = sandboxConflicts({
     protectedPaths: protectedPaths({trustedCodePaths: trustedCodePathsOf(launch), codexHome: launch.env.CODEX_HOME, managedNode: launch.managedNodeRoot, staging: launch.stagingRoot,
-      denied: launch.denyRead?.deny, ownRoots: [launch.cwd, launch.sessionTmp]}),
+      denied: launch.denyRead?.deny, ownRoots: [launch.cwd, launch.sessionTmp], ownHolders: launch.cwd ? [dirname(dirname(launch.cwd)), dirname(launch.cwd)] : []}),
     writeRoots: scopedWriteRoots({cwd: launch.cwd, tmpdir: launch.env.TMPDIR}),
   });
   if (conflicts.length) fail('sandbox_conflict', describeConflicts(conflicts), {hint: SANDBOX_CONFLICT_HINT});

@@ -198,7 +198,7 @@ test('cua\'s sandbox fails closed: no deny list, a deny target that cannot be cr
     assert.match(texts(result)[0], /JavaScript never runs unconfined in its place, and nothing was run$/);
     assert.equal(existsSync(marker), false, `${mode}: nothing ran`);
   };
-  for (const value of [undefined, '{"deny":["relative"],"reexpose":[]}']) {
+  for (const value of [undefined, '{"deny":["relative"],"reexpose":[],"metadataOnly":[]}']) {
     const host = await startHost(t, {node, env: {CUA_SANDBOX_DENY_READ: value}});
     for (const mode of ['scoped', 'default']) await refused(host, mode, /^js sandbox unavailable: the launch's deny list \(CUA_SANDBOX_DENY_READ\) is missing or malformed \(sandbox_state_invalid\)/);
     assert.deepEqual(launches(host.codexHome), [], 'nothing was launched');
@@ -207,7 +207,7 @@ test('cua\'s sandbox fails closed: no deny list, a deny target that cannot be cr
   const blocked = await startHost(t, {node});
   const locked = join(blocked.root, 'locked');
   mkdirSync(locked, {mode: 0o500});
-  const denyIn = JSON.stringify({deny: [join(locked, 'store')], reexpose: []});
+  const denyIn = JSON.stringify({deny: [join(locked, 'store')], reexpose: [], metadataOnly: []});
   const uncreatable = await startHost(t, {node, env: {CUA_SANDBOX_DENY_READ: denyIn}});
   await refused(uncreatable, 'scoped', /^js sandbox unavailable: the deny target .*locked\/store could not be created \(EACCES\)/);
   const host = await startHost(t, {node});

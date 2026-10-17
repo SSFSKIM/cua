@@ -34,7 +34,8 @@
 //   lstat every component, and the denied ancestor's lstat fails with EPERM (measured on macOS 26 with the original's
 //   own rendering of "deny the cua home, read runtimes/": a module import under runtimes/ failed). Its contents and
 //   its listing stay denied. The ancestors are taken from the rendered (real-path) roots, never as a subpath; for cua's
-//   macOS layout they are exactly the cua home and its run/ (test/sandbox/reexposed.test.mjs). The one deviation that
+//   macOS layout they are exactly the cua home and its run/ (test/sandbox/reexposed.test.mjs), and the caller names the
+//   directories it allows (`metadataGrants`): any other ancestor refuses the rendering. The one deviation that
 //   widens what the original grants, accepted as a recorded deviation (#115 M1).
 import {lstatSync, readFileSync, realpathSync, statSync} from 'node:fs';
 import {posix} from 'node:path';
@@ -364,10 +365,12 @@ function reexposedAncestors(readRoots) {
 
 // The sandbox-exec invocation for `command` ([file, ...args]) under `profile` (the permission profile) in `cwd`, with
 // `:tmpdir` naming `tmpdir` (the child's TMPDIR; unset or empty: no entry). `fs` is the filesystem seam ({lstat, stat,
-// realpath, readFile}; node:fs by default) and `euid` the user whose daemon directory is protected.
+// realpath, readFile}; node:fs by default) and `euid` the user whose daemon directory is protected. `metadataGrants`:
+// the denied directories whose metadata the launch allows (the deny list's metadataOnly); a profile that would need the
+// grant anywhere else is refused, never rendered.
 // -> {file: '/usr/bin/sandbox-exec', args}. Throws SandboxStateError for an input outside cua's set or one the original
 // refuses (a write root through a symlinked component).
-export function seatbeltCommand({profile, cwd, command, tmpdir, fs = NODE_FS, euid = process.geteuid()}) {
+export function seatbeltCommand({profile, cwd, command, tmpdir, fs = NODE_FS, euid = process.geteuid(), metadataGrants = []}) {
   if (typeof cwd !== 'string' || !cwd.startsWith('/')) throw new SandboxStateError(`the sandbox working directory ${JSON.stringify(cwd)} is not an absolute path`);
   if (tmpdir !== undefined && tmpdir !== '' && !String(tmpdir).startsWith('/')) throw new SandboxStateError(`TMPDIR ${tmpdir} is not an absolute path`);
   const ops = fsOps(fs);
@@ -419,6 +422,9 @@ export function seatbeltCommand({profile, cwd, command, tmpdir, fs = NODE_FS, eu
   sections.push('(deny system-fcntl (fcntl-command 80 110))', TIOCSTI_LINE);
 
   // cua's deviation (header): metadata of the denied directories above re-exposed paths, in the read params' namespace.
+  const grantable = metadataGrants.map(path => ops.forSandbox(path));
+  const ungranted = reexposedAncestors(read.rendered).filter(path => !grantable.includes(path));
+  if (ungranted.length) throw new SandboxStateError(`the profile would let the kernel read the metadata of ${ungranted.join(', ')}, which the launch does not allow (only ${metadataGrants.join(', ') || 'none'})`);
   const reexposed = reexposedAncestors(read.rendered).map((path, index) => [`REEXPOSED_ANCESTOR_${index}`, path]);
   if (reexposed.length) sections.push(`(allow file-read-metadata ${reexposed.map(([key]) => `(literal (param "${key}"))`).join(' ')})`);
 

@@ -15,7 +15,7 @@ import {promisify} from 'node:util';
 import {existsSync, readFileSync, readdirSync} from 'node:fs';
 import {join} from 'node:path';
 import {createInterface} from 'node:readline';
-import {REPO} from './fixtures/runtime-fixture.mjs';
+import {REPO, userHomeBeside} from './fixtures/runtime-fixture.mjs';
 import {fakeInstalledHome, installedHomeSupported} from './fixtures/installed-home.mjs';
 import {clientModeDir, logDir} from '../src/chrome/extension.mjs';
 import {clientSocketName} from '../src/chrome/client-mode.mjs';
@@ -26,14 +26,14 @@ const CLI = join(REPO, 'bin', 'cua.mjs');
 const relayReady = !installedHomeSupported || (!(process.platform === 'darwin' && process.arch === 'arm64')
   && 'the relay\'s peer check needs the peer identity addon, built for Apple silicon macOS only (elsewhere every client is refused)');
 // The fake peer lives in this process's event loop, so the CLI runs asynchronously (spawnSync would starve it).
-const cli = (home, args, env) => promisify(execFile)(process.execPath, [CLI, ...args], {env: {...process.env, CUA_HOME: home, HOME: join(home, 'user'), ...env}, encoding: 'utf8'});
+const cli = (home, args, env) => promisify(execFile)(process.execPath, [CLI, ...args], {env: {...process.env, CUA_HOME: home, HOME: userHomeBeside(home), ...env}, encoding: 'utf8'});
 const waitFor = async (predicate, what, ms = 8000) => {
   const deadline = Date.now() + ms;
   while (!predicate()) { if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`); await new Promise(r => setTimeout(r, 20)); }
 };
 
 function serve(home, env = {}) {
-  const child = spawn(process.execPath, [CLI, 'serve'], {env: {...process.env, CUA_HOME: home, CUA_SHIM_SECRETS: 'off', CUA_SHIM_SURFACES: 'computer,browser', HOME: join(home, 'user'), ...env}, stdio: ['pipe', 'pipe', 'pipe']});
+  const child = spawn(process.execPath, [CLI, 'serve'], {env: {...process.env, CUA_HOME: home, CUA_SHIM_SECRETS: 'off', CUA_SHIM_SURFACES: 'computer,browser', HOME: userHomeBeside(home), ...env}, stdio: ['pipe', 'pipe', 'pipe']});
   let stderr = '';
   child.stderr.on('data', d => { stderr += d; });
   const waiters = new Map();

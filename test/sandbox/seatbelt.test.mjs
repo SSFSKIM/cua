@@ -46,7 +46,8 @@ function expected(fixture) {
 function replay(fixture, {root, fs}) {
   const input = substitute(fixture.input, {root});
   const tmpdir = fixture.tmpdir === null ? undefined : substitute(fixture.tmpdir, {root});
-  return () => seatbeltCommand({profile: input.profile, cwd: input.cwd, command: input.command, tmpdir, fs, euid: EUID});
+  const metadataGrants = (REEXPOSED_ANCESTORS[fixture.name] ?? []).map(path => substitute(path, {root}));
+  return () => seatbeltCommand({profile: input.profile, cwd: input.cwd, command: input.command, tmpdir, fs, euid: EUID, metadataGrants});
 }
 
 function check(fixture, run, {root}) {
@@ -133,7 +134,8 @@ test('a denied path whose ancestors a readable root covers needs no metadata gra
   const {args} = seatbeltCommand({profile, cwd: `${VIRTUAL_ROOT}/run`, command: ['/bin/true'], fs, euid: EUID});
   assert.doesNotMatch(args[1], /file-read-metadata/);
   const nested = {...profile, file_system: {...profile.file_system, entries: [...profile.file_system.entries, {path: path('home/secret/inner'), access: 'read'}]}};
-  const {args: nestedArgs} = seatbeltCommand({profile: nested, cwd: `${VIRTUAL_ROOT}/run`, command: ['/bin/true'], fs, euid: EUID});
+  assert.throws(() => seatbeltCommand({profile: nested, cwd: `${VIRTUAL_ROOT}/run`, command: ['/bin/true'], fs, euid: EUID}), SandboxStateError, 'not granted unless allowed');
+  const {args: nestedArgs} = seatbeltCommand({profile: nested, cwd: `${VIRTUAL_ROOT}/run`, command: ['/bin/true'], fs, euid: EUID, metadataGrants: [`${VIRTUAL_ROOT}/home/secret`]});
   assert.match(nestedArgs[1], /\n\(allow file-read-metadata \(literal \(param "REEXPOSED_ANCESTOR_0"\)\)\)$/);
   assert.ok(nestedArgs.includes(`-DREEXPOSED_ANCESTOR_0=${VIRTUAL_ROOT}/home/secret`));
 });

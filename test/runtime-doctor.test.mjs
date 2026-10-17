@@ -78,6 +78,19 @@ test('a healthy installed runtime names its release and passes every installed-r
 // Issue #36: under the scoped default a home or checkout below the caller's $TMPDIR made node_repl refuse every kernel.
 // Since #115 a session's TMPDIR is its own, inside its run directory, so the caller's $TMPDIR no longer matters; the
 // doctor still fails a home whose run directories would overlap something protected, and describes the other modes.
+// #115 M1 review: a layout whose kernel deny targets overlap (here the account's secret store and ~/.config/cua inside
+// CUA_HOME) is refused in scoped and default alike; the doctor says so before serve does.
+test('the sandbox check fails a home that holds the secret store, in scoped and default; disabled passes', {skip: !darwin}, async t => {
+  const {home, pin} = await installedHome(t);
+  const inspect = env => inspectRuntime({home, env, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: noHelper, inspectSecrets: noSecrets, inspectAgent: noAgent, inspectChrome: noChrome});
+  for (const mode of ['scoped', 'default']) {
+    const row = check(await inspect({HOME: join(realpathSync(home), 'user'), CUA_SHIM_SANDBOX: mode}), 'sandbox');
+    assert.equal(row.status, 'fail', mode);
+    assert.match(row.detail, new RegExp(`^CUA_SHIM_SANDBOX=${mode}: what JavaScript cells may not read overlaps: .*\\(sandbox_conflict\\): keep CUA_HOME outside the secret store`), mode);
+  }
+  assert.equal(check(await inspect({HOME: join(realpathSync(home), 'user'), CUA_SHIM_SANDBOX: 'disabled'}), 'sandbox').status, 'pass');
+});
+
 test('the sandbox check describes the mode, ignores the caller\'s $TMPDIR, and fails a home whose run directories overlap a protected path', {skip: !darwin}, async t => {
   const {home, pin} = await installedHome(t);
   const inspect = env => inspectRuntime({home, env, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: noHelper, inspectSecrets: noSecrets, inspectAgent: noAgent, inspectChrome: noChrome});

@@ -48,7 +48,7 @@ import {dirname, join, resolve} from 'node:path';
 import {createHash, randomBytes} from 'node:crypto';
 import {isDeepStrictEqual, parseArgs} from 'node:util';
 import {fileURLToPath} from 'node:url';
-import {sandboxArgs, sandboxPolicy, sandboxState} from '../../src/runtime/sandbox.mjs';
+import {assertDenyListShape, sandboxArgs, sandboxPolicy, sandboxState} from '../../src/runtime/sandbox.mjs';
 import {denyListFor, realDenyList, roleProfile} from '../../src/sandbox/policy.mjs';
 import {SEATBELT_EXEC, seatbeltCommand} from '../../src/sandbox/seatbelt.mjs';
 import {sandboxedEnv} from '../../src/sandbox/env.mjs';
@@ -92,8 +92,9 @@ export function cuaLaunch({node, script, tag, cwd, home, role, notificationCente
   mkdirSync(sessionTmp, {recursive: true});
   const state = sandboxState('scoped', run);
   const denyRead = realDenyList(denyListFor({home: cuaHome, env: {HOME: home}, sessionId: 'probe', sessionTmp, platform: 'darwin'}));
+  assertDenyListShape(denyRead);
   const {profile} = roleProfile({state, role, readPaths: [dirname(node)], denyRead, network: 'restricted'});
-  const {args} = seatbeltCommand({profile, cwd: run, command: [node, script, tag], tmpdir: sessionTmp});
+  const {args} = seatbeltCommand({profile, cwd: run, command: [node, script, tag], tmpdir: sessionTmp, metadataGrants: role === 'kernel' ? denyRead.metadataOnly : []});
   return {command: sandboxExec, args, cwd: run, env: sandboxedEnv({HOME: home, PATH: '/usr/bin:/bin:/usr/sbin:/sbin', TMPDIR: sessionTmp}, {platform: 'darwin', network: 'restricted'}),
     profile: `cua's ${role} profile (src/sandbox)`};
 }

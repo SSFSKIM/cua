@@ -10,7 +10,7 @@ import {execFileSync} from 'node:child_process';
 import {existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {sandboxState} from '../../src/runtime/sandbox.mjs';
+import {SandboxStateError, sandboxState} from '../../src/runtime/sandbox.mjs';
 import {sandboxedLaunch} from '../../src/sandbox/index.mjs';
 import {denyListFor, realDenyList} from '../../src/sandbox/policy.mjs';
 import {STORE_RELATIVE} from '../../src/secrets/store.mjs';
@@ -59,7 +59,7 @@ test('the macOS layout grants exactly the cua home and its run/, as metadata lit
 
 test('no grant when no re-exposed path sits under a denied directory', t => {
   const l = layout(t);
-  for (const denyRead of [{deny: [l.store, l.configCua], reexpose: []}, {deny: [l.store, l.configCua], reexpose: [l.modules]}, {deny: [l.store], reexpose: [l.cwd, l.sessionTmp]}]) {
+  for (const denyRead of [{deny: [l.store, l.configCua], reexpose: [], metadataOnly: []}, {deny: [l.store, l.configCua], reexpose: [l.modules], metadataOnly: []}, {deny: [l.store], reexpose: [l.cwd, l.sessionTmp], metadataOnly: []}]) {
     const {args} = launchFor({...l, denyRead});
     assert.deepEqual(grants(args), [], JSON.stringify(denyRead));
     assert.doesNotMatch(args[1], /file-read-metadata \(literal \(param "REEXPOSED/);
@@ -72,7 +72,7 @@ test('a cua home reached through a symlink is granted at its real path, never at
   symlinkSync(l.home, link);
   // The deny list as spelled through the link (not canonicalized by the caller): the port resolves it itself.
   const via = path => path.replace(l.home, link);
-  const denyRead = {deny: [l.store, l.configCua, link], reexpose: [via(join(l.home, 'runtimes')), via(join(l.home, 'node')), via(l.cwd), via(l.sessionTmp)]};
+  const denyRead = {deny: [l.store, l.configCua, link], reexpose: [via(join(l.home, 'runtimes')), via(join(l.home, 'node')), via(l.cwd), via(l.sessionTmp)], metadataOnly: [link, via(join(l.home, 'run'))]};
   const {args} = launchFor({...l, denyRead});
   assert.deepEqual(grants(args), [l.home, join(l.home, 'run')]);
   assert.equal(args.some(a => a.includes(link)), false, 'nothing is rendered at the link\'s spelling');
@@ -96,4 +96,31 @@ test('on a Mac, sandbox-exec gives the granted directories metadata only, and an
     [join(l.home, 'state')]: {metadata: 'deny', data: 'deny'},
     [join(l.home, 'runtimes')]: {metadata: 'allow', data: 'allow'},
   });
+});
+
+// The renderer's own bound (review finding, M1): a grant outside the launch's metadataOnly is refused, never rendered.
+test('the port refuses a profile that needs a metadata grant outside the launch\'s allowed set', t => {
+  const l = layout(t);
+  const denyRead = realDenyList(denyListFor({home: l.home, env: {HOME: l.user}, sessionId: SESSION, sessionTmp: l.sessionTmp, platform: 'darwin'}));
+  for (const metadataOnly of [[], [l.home], [join(l.home, 'run')], [l.store, l.home]])
+    assert.throws(() => launchFor({...l, denyRead: {...denyRead, metadataOnly}}), error => error instanceof SandboxStateError && /does not allow/.test(error.message), JSON.stringify(metadataOnly));
+  // An allowed set larger than needed grants only what is needed.
+  assert.deepEqual(grants(launchFor({...l, denyRead: {...denyRead, metadataOnly: [...denyRead.metadataOnly, l.store]}}).args), [l.home, join(l.home, 'run')]);
+});
+
+// Overlapping layouts: the store, ~/.config/cua or a tier inside the home, or the home inside the store, never render.
+test('an overlapping layout refuses the kernel launch before rendering, so the store never gets a metadata grant', t => {
+  const l = layout(t);
+  const layouts = {
+    'home under the store': {home: join(l.store, 'cua'), env: {HOME: l.user}},
+    'store under the home': {home: l.home, env: {HOME: l.user}, secretsDir: join(l.home, 'state', 'secrets')},
+    '~/.config/cua under the home': {home: l.home, env: {HOME: join(l.home, 'user')}},
+  };
+  for (const [label, input] of Object.entries(layouts)) {
+    const cwd = join(input.home, 'run', SESSION), sessionTmp = join(cwd, 'tmp');
+    mkdirSync(sessionTmp, {recursive: true});
+    const denyRead = realDenyList(denyListFor({...input, sessionId: SESSION, sessionTmp, platform: 'darwin'}));
+    for (const mode of ['scoped', 'default'])
+      assert.throws(() => launchFor({...l, mode, cwd, sessionTmp, denyRead}), {code: 'sandbox_conflict'}, `${label} (${mode})`);
+  }
 });

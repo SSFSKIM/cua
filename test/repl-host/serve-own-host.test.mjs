@@ -13,6 +13,7 @@ import {join} from 'node:path';
 import {PassThrough} from 'node:stream';
 import {createInterface} from 'node:readline';
 import {randomUUID} from 'node:crypto';
+import {scratchUserHome} from '../fixtures/runtime-fixture.mjs';
 import {fakeInstalledHome, installedHomeSupported, NO_SCOPED_LAUNCH} from '../fixtures/installed-home.mjs';
 import {resolveRuntime} from '../../src/runtime/manifest.mjs';
 import {openConnection} from '../../src/mcp/connection.mjs';
@@ -34,7 +35,7 @@ test('an explicitly selected own host answers a real connection: handshake, cell
   const execDouble = sandboxDouble(home, {records, exec: true});
   // cua's own sandbox (macOS) runs sandbox-exec, which the double stands in for: the launch record's one seam.
   const prepareLaunch = launch => (launch.env.CUA_REPL_SANDBOX_EXEC ? {...launch, env: {...launch.env, CUA_REPL_SANDBOX_EXEC: execDouble}} : launch);
-  const env = {PATH: '/usr/bin:/bin', HOME: home, TMPDIR: process.env.TMPDIR, CUA_REPL_HOST: 'cua', CUA_NODE: node,
+  const env = {PATH: '/usr/bin:/bin', HOME: scratchUserHome(t), TMPDIR: process.env.TMPDIR, CUA_REPL_HOST: 'cua', CUA_NODE: node,
     CUA_SHIM_SURFACES: 'browser', CUA_SHIM_SECRETS: 'off', CUA_RUNTIME_IDLE_MS: '0'};
   const input = new PassThrough(), output = new PassThrough();
   const pending = new Map();

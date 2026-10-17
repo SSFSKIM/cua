@@ -11,7 +11,7 @@ import {createServer as createNetServer} from 'node:net';
 import {join} from 'node:path';
 import {createInterface} from 'node:readline';
 import {PassThrough} from 'node:stream';
-import {REPO, scratch} from './fixtures/runtime-fixture.mjs';
+import {REPO, scratch, userHomeBeside} from './fixtures/runtime-fixture.mjs';
 import {fakeInstalledHome, installedHomeSupported} from './fixtures/installed-home.mjs';
 import {fakeUpstream, harness, textOf, tick} from './fixtures/mcp-harness.mjs';
 import {serve, settingsFrom} from '../src/mcp/server.mjs';
@@ -129,7 +129,7 @@ test('profiles_list\'s registry part launches nothing; its live check makes only
 
 // A real `cua serve` with the handshake recorded: closing it before any call needed the runtime, by EOF or by signal.
 function child(home) {
-  const proc = spawn(process.execPath, [join(REPO, 'bin', 'cua.mjs'), 'serve'], {env: {...process.env, CUA_HOME: home, HOME: join(home, 'user'), CUA_SHIM_SECRETS: 'off'}, stdio: ['pipe', 'pipe', 'pipe']});
+  const proc = spawn(process.execPath, [join(REPO, 'bin', 'cua.mjs'), 'serve'], {env: {...process.env, CUA_HOME: home, HOME: userHomeBeside(home), CUA_SHIM_SECRETS: 'off'}, stdio: ['pipe', 'pipe', 'pipe']});
   let stderr = '';
   proc.stderr.on('data', d => { stderr += d; });
   const frames = [];

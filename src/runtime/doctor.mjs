@@ -50,7 +50,7 @@ import {dirname, join} from 'node:path';
 import {CuaError} from './errors.mjs';
 import {homeLayout, realHome} from './layout.mjs';
 import {BROWSER_SERVICE, BROWSER_SERVICE_IMPL_DIR, CUA_API_DIR, CUA_API_DOCS_DIR, REPL_HOST_DIR, SANDBOX_DIR, SERVICE_SUPPORT_DIRS, SKY_SERVICE, NODE_FLOOR, ownHostNode, replHostFor} from './launch.mjs';
-import {SANDBOX_CONFLICT_HINT, describeConflicts, protectedPaths, sandboxConflicts, sandboxModeFrom, scopedWriteRoots} from './sandbox.mjs';
+import {SANDBOX_CONFLICT_HINT, assertDenyListShape, describeConflicts, protectedPaths, sandboxConflicts, sandboxModeFrom, scopedWriteRoots} from './sandbox.mjs';
 import {denyListFor} from '../sandbox/policy.mjs';
 import {loadPins, selectPin, locateRuntime, recoveryHint} from './manifest.mjs';
 import {checkLayout, checkVendorManifest, checkIpc, verifyCodeSignatures, ipcVersionsIn} from './checks.mjs';
@@ -224,18 +224,28 @@ function sandboxRow({home, env, runtime, platform, surfaces, userns, mode}) {
   const linux = platform === 'linux';
   if (mode === 'disabled' && linux && env.CUA_SHIM_SANDBOX === undefined) return result('sandbox', 'pass', 'CUA_SHIM_SANDBOX unset: on linux with the computer surface the default is disabled, because under the scoped sandbox node_repl lets no runtime process connect to a socket and the computer-use helper could not reach the X display or the session bus. JavaScript cells may write wherever your account can and reach the network (on Linux they can reach the X display directly too); CUA_SHIM_SURFACES=browser keeps scoped');
   if (mode === 'disabled') return result('sandbox', 'pass', 'CUA_SHIM_SANDBOX=disabled: JavaScript cells may write wherever your account can, cua\'s trusted code roots included (accepted under the trust model, #20), and reach the network');
+  const owned = homeLayout(realHome(home));
+  // A connection's run directory, which every session's write roots lie in (its session temp is inside it), and the
+  // deny list its kernel would get: a layout whose deny targets overlap, or whose store cannot be listed, is refused in
+  // scoped and default alike.
+  const session = join(owned.run, 'session');
+  let deny;
+  try {
+    const list = denyListFor({home: owned.home, env, sessionId: 'session', sessionTmp: join(session, 'tmp'), platform});
+    assertDenyListShape(list);
+    deny = list.deny;
+  } catch (error) {
+    if (!error.code) throw error;
+    return result('sandbox', 'fail', `CUA_SHIM_SANDBOX=${mode}: ${error.message}. cua serve and the profile listing refuse to start like this (${error.code})${error.hint ? `: ${error.hint}` : ''}`);
+  }
   if (mode === 'default') return result('sandbox', 'pass', 'CUA_SHIM_SANDBOX=default: cua sends no sandbox state; node_repl denies every write and network connection, so profile labels and other features that need scratch space fail');
   const computer = linux && surfaces.includes('computer');
   if (linux && userns && userns.status !== 'pass') return result('sandbox', 'fail', 'CUA_SHIM_SANDBOX=scoped, but bubblewrap cannot create a user namespace here (see sandbox.userns): the runtime\'s sandbox fails open in that state, running JavaScript cells with no sandbox at all, so cua serve and the profile listing refuse scoped connections (sandbox_unavailable). Fix what sandbox.userns names, or set CUA_SHIM_SANDBOX=disabled to choose that openly'
     + (computer ? '. And even with user namespaces, scoped would keep the computer-use helper (sky_linux) off the X display and the session bus; unset CUA_SHIM_SANDBOX (the Linux default with the computer surface is disabled) or use CUA_SHIM_SURFACES=browser' : ''));
   if (computer) return result('sandbox', 'fail', 'CUA_SHIM_SANDBOX=scoped with the computer surface on linux: under the scoped sandbox node_repl lets no runtime process connect to a socket, so the computer-use helper (sky_linux) cannot reach the X display or the session bus and every computer-use call fails; unset CUA_SHIM_SANDBOX (the Linux default with the computer surface is disabled) or use CUA_SHIM_SURFACES=browser');
-  const owned = homeLayout(realHome(home));
-  // A connection's run directory, which every session's write roots lie in (its session temp is inside it).
-  const session = join(owned.run, 'session');
-  const {deny} = denyListFor({home: owned.home, env, sessionId: 'session', sessionTmp: join(session, 'tmp'), platform});
   const conflicts = sandboxConflicts({
     protectedPaths: protectedPaths({trustedCodePaths: [runtime?.paths.moduleDir, REPL_HOST_DIR, CUA_API_DIR, CUA_API_DOCS_DIR, SANDBOX_DIR, dirname(SKY_SERVICE), dirname(BROWSER_SERVICE), BROWSER_SERVICE_IMPL_DIR, ...SERVICE_SUPPORT_DIRS],
-      codexHome: owned.codexHome, managedNode: owned.node, staging: owned.staging, denied: deny, ownRoots: [session]}),
+      codexHome: owned.codexHome, managedNode: owned.node, staging: owned.staging, denied: deny, ownRoots: [session], ownHolders: [owned.home, owned.run]}),
     writeRoots: scopedWriteRoots({cwd: session, cwdLabel: 'a connection\'s run directory, $CUA_HOME/run/<session>'}),
   });
   if (conflicts.length) return result('sandbox', 'fail', `${describeConflicts(conflicts)}. cua serve and the profile listing refuse to start like this (sandbox_conflict): ${SANDBOX_CONFLICT_HINT}`);

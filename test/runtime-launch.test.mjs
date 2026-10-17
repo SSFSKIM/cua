@@ -51,7 +51,7 @@ test('the launch runs the relocated vendor node on the relocated cua-repl entry,
 
 // The deny list buildLaunch resolves for AMBIENT's HOME and `home` (src/sandbox/policy.mjs denyListFor), on macOS.
 const darwinDenyList = (home, session = SESSION) => ({deny: [join('/Users/someone', STORE_RELATIVE), '/Users/someone/.config/cua', home],
-  reexpose: [join(home, 'runtimes'), join(home, 'node'), join(home, 'run', session), join(home, 'run', session, 'tmp')]});
+  reexpose: [join(home, 'runtimes'), join(home, 'node'), join(home, 'run', session), join(home, 'run', session, 'tmp')], metadataOnly: [home, join(home, 'run')]});
 
 test('the launch environment is an allowlist: OS basics plus relocated settings, nothing ambient that could redirect it', t => {
   const {home, runtime} = fixtureRuntime(t);
@@ -797,7 +797,10 @@ test('macOS: cua\'s own host runs cua\'s own sandbox (sandbox-exec), without the
 test('the scoped preflight protects the deny list and src/sandbox; only the launch\'s own run directory and session temp may lie in a deny target', t => {
   const {home, dir, runtime} = fixtureRuntime(t);
   const node = fakeNode(dir, 'n/node', '24.1.0');
-  const user = join(dir, 'user');
+  // The user's home beside the cua home, never inside it: a store or ~/.config/cua under the home is refused outright.
+  const elsewhere = scratch();
+  t.after(elsewhere.cleanup);
+  const user = join(realpathSync(elsewhere.dir), 'user');
   const own = buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, HOME: user, CUA_REPL_HOST: 'cua', CUA_NODE: node}, surfaces: BROWSER, services: {browser: BROWSER_SERVICE}});
   const vendor = buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, HOME: user}});
   for (const launch of [own, vendor]) {
@@ -807,6 +810,35 @@ test('the scoped preflight protects the deny list and src/sandbox; only the laun
       const overlap = outcome(() => assertSandboxFits('scoped', {...launch, env: {...launch.env, TMPDIR: tmpdir}}));
       assert.equal(overlap.code, 'sandbox_conflict', `${launch.replHost.host} ${tmpdir}`);
       assert.ok(overlap.message.includes(what), overlap.message);
+    }
+  }
+});
+
+// Overlapping layouts (review finding, #115 M1): with the cua home under the store, the store under the home, or
+// ~/.config/cua under the home, the kernel's deny targets overlap. The connection refuses them before its handshake in
+// scoped and default alike, and the scoped exception for the run directory never covers the store.
+test('a layout whose deny targets overlap fails the preflight in scoped and default, on either host; disabled serves', t => {
+  const {dir, runtime} = fixtureRuntime(t);
+  const node = fakeNode(dir, 'n/node', '24.1.0');
+  const elsewhere = scratch();
+  t.after(elsewhere.cleanup);
+  const user = join(realpathSync(elsewhere.dir), 'user');
+  const store = join(user, STORE_RELATIVE);
+  mkdirSync(join(store, 'cua'), {recursive: true});
+  const layouts = {
+    'the cua home under the store': {home: join(store, 'cua'), ambient: {HOME: user}},
+    'the store under the cua home': {home: dir, ambient: {HOME: user}, secretsDir: join(dir, 'state', 'secrets')},
+    '~/.config/cua under the cua home': {home: dir, ambient: {HOME: join(dir, 'user')}},
+  };
+  for (const [label, {home, ambient, secretsDir}] of Object.entries(layouts)) {
+    for (const host of [{}, {CUA_REPL_HOST: 'cua', CUA_NODE: node}]) {
+      const launch = buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, ...ambient, ...host}, secretsDir, surfaces: BROWSER, services: {browser: BROWSER_SERVICE}});
+      for (const mode of ['scoped', 'default']) {
+        const refused = outcome(() => assertSandboxFits(mode, launch));
+        assert.equal(refused.code, 'sandbox_conflict', `${label}, ${launch.replHost.host}, ${mode}`);
+        assert.match(refused.message, /what JavaScript cells may not read overlaps/);
+      }
+      assertSandboxFits('disabled', launch);
     }
   }
 });

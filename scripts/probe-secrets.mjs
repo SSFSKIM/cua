@@ -49,6 +49,7 @@ import {storeDir} from '../src/secrets/store.mjs';
 import {createStoreHome, generatedKey, removeStoreHome, seedSecret} from './accept/secret-seed.mjs';
 import {fingerprints, scanFiles, textLeaks} from './probe/leak-scan.mjs';
 import {plantCell, trustedRootStep} from './probe/trusted-roots.mjs';
+import {SECRETS_OFF, STORE_UNREADABLE, closeStep, failClosedStep, refusedLaunchResult} from './probe/fail-closed.mjs';
 import {tmpdirRoot} from '../src/runtime/sandbox.mjs';
 
 const {values: options} = parseArgs({options: {report: {type: 'string'}}, strict: true});
@@ -318,12 +319,12 @@ async function failClosedConnection(tag, recorder, targetModule, {env = {}, expe
     const out = cellOutput(await c.js(rpcCell(exec(method, input))));
     const delivered = recorder.received.length - before;
     const ok = !out.ok && errorCode(out) === expected && (!reason || out.message.includes(`(${reason})`)) && delivered === 0;
-    record(`${tag}: ${method} reference fails closed`, ok ? 'PASS' : 'FAIL', ok
+    record(failClosedStep(tag, method), ok ? 'PASS' : 'FAIL', ok
       ? `failed with ${expected}${reason ? ` (${reason})` : ''}; the target received nothing`
       : `got ${out.ok ? 'success' : `${errorCode(out)}: ${String(out.message ?? out.raw).replace(/^cua: /, '').slice(0, 120)}`}; target calls ${delivered}`);
   }
   const exit = await c.close();
-  record(`${tag}: close`, exit?.code === 0 ? 'PASS' : 'FAIL', `exit ${exit?.code ?? 'timeout'}`);
+  record(closeStep(tag), exit?.code === 0 ? 'PASS' : 'FAIL', `exit ${exit?.code ?? 'timeout'}`);
 }
 
 // A connection the server refuses before its handshake (a refused launch): `initialize` gets no answer, the server
@@ -337,11 +338,8 @@ async function refusedConnection(tag, recorder, targetModule, {env = {}, expecte
   if (!exit) c.kill('SIGTERM');
   channels.push({name: `${c.name} MCP transport`, text: c.transcript.join('\n')});
   channels.push({name: `${c.name} stderr (serve)`, text: c.stderr});
-  const delivered = recorder.received.length - before;
-  const ok = !init.result && exit !== null && exit.code !== 0 && c.stderr.includes(`[${expected}]`) && names.every(name => c.stderr.includes(name)) && delivered === 0;
-  record(`${tag}: the launch is refused`, ok ? 'PASS' : 'FAIL', ok
-    ? `refused before the handshake with ${expected}, naming ${names.length ? names.join(', ') : 'the cause'}; the target received nothing`
-    : `initialize ${init.result ? 'answered' : 'unanswered'}; exit ${exit?.code ?? 'timeout'}; stderr ${c.stderr.replace(/^cua: /, '').slice(0, 200)}; target calls ${delivered}`);
+  const step = refusedLaunchResult(tag, {answered: Boolean(init.result), exit, stderr: c.stderr, delivered: recorder.received.length - before, expected, names});
+  record(step.name, step.status, step.detail);
 }
 
 let recorder;
@@ -366,7 +364,7 @@ try {
       await realServeConnection(runtime);
       await sandboxDisabledConnection(runtime);
     }
-    await failClosedConnection('secrets off', recorder, targetModule, {env: {CUA_SHIM_SECRETS: 'off'}, expected: 'secrets_disabled'});
+    await failClosedConnection(SECRETS_OFF, recorder, targetModule, {env: {CUA_SHIM_SECRETS: 'off'}, expected: 'secrets_disabled'});
     // A second temporary home whose store directory this user cannot enter. Since #115 M1 a confined connection
     // cannot establish the store's tiers there (a tier's target outside the store, hidden by the unreadable directory,
     // would stay readable to the kernel), so the launch itself is refused, classified and naming the store, before any
@@ -374,7 +372,7 @@ try {
     unreadableHome = createStoreHome('cua-probe-unreadable-');
     mkdirSync(storeDir({HOME: unreadableHome}), {recursive: true, mode: 0o700});
     chmodSync(storeDir({HOME: unreadableHome}), 0o000);
-    await refusedConnection('store unreadable', recorder, targetModule, {env: {HOME: unreadableHome}, expected: 'sandbox_state_invalid',
+    await refusedConnection(STORE_UNREADABLE, recorder, targetModule, {env: {HOME: unreadableHome}, expected: 'sandbox_state_invalid',
       names: ['the secret store', storeDir({HOME: unreadableHome})]});
   }
 } catch (error) {

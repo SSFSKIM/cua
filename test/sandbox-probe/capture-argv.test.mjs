@@ -6,8 +6,8 @@
 import {after, test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
-import {existsSync, mkdtempSync, readFileSync, rmSync} from 'node:fs';
-import {basename, join} from 'node:path';
+import {existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
+import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {fileURLToPath} from 'node:url';
 
@@ -19,25 +19,29 @@ after(() => { if (buildDir) rmSync(buildDir, {recursive: true, force: true}); })
 // The probe, built once with the system clang -> {bin}, {skip: why} or {rejected: why}. The default SDK can be one the
 // linker cannot read (the mini: the Command Line Tools' macOS 27 SDK's libSystem.tbd against Xcode's ld, M0's evidence
 // README), and an environment rebuilt from `env -i` drops the SDKROOT a shell there exports. So each SDK on offer is
-// tried in turn: the caller's SDKROOT, the default, Xcode's own. The suite is skipped only when the toolchain is what
-// fails (no compiler, no SDK it can link against); a compiler that rejects the probe's own source fails it.
+// tried in turn: the caller's SDKROOT, the default, Xcode's own. An SDK with which the probe fails is judged by a
+// trivial C program built the same way: if that builds, the probe's own source (compiling or linking) is at fault and
+// the suite fails; only when the trivial program fails too with every SDK is the toolchain unusable here, and skipped.
 const XCODE_SDK = '/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk';
+const firstLine = r => (r.error ? String(r.error) : r.stderr.split('\n').find(Boolean)) ?? `clang exited ${r.status}`;
 function buildProbe() {
   if (!macOS) return {skip: 'macOS only'};
   buildDir = mkdtempSync(join(tmpdir(), 'cua-capture-bin-'));
-  const out = join(buildDir, 'capture-argv');
+  const out = join(buildDir, 'capture-argv'), trivial = join(buildDir, 'trivial.c');
+  writeFileSync(trivial, 'int main(void) { return 0; }\n');
   const sdks = [...new Set([process.env.SDKROOT, undefined, existsSync(XCODE_SDK) ? XCODE_SDK : null].filter(sdk => sdk !== null && sdk !== ''))];
-  const failures = [];
+  const unusable = [];
   for (const sdk of sdks) {
-    const {SDKROOT: _caller, ...env} = process.env;
-    const r = spawnSync('/usr/bin/clang', ['-O2', '-Wall', '-Werror', '-o', out, SOURCE], {encoding: 'utf8', env: sdk ? {...env, SDKROOT: sdk} : env});
-    if (r.status === 0) return {bin: out};
-    failures.push(r.error ? String(r.error) : r.stderr);
+    const {SDKROOT: _caller, ...ambient} = process.env;
+    const env = sdk ? {...ambient, SDKROOT: sdk} : ambient;
+    const clang = (source, output) => spawnSync('/usr/bin/clang', ['-O2', '-Wall', '-Werror', '-o', output, source], {encoding: 'utf8', env});
+    const built = clang(SOURCE, out);
+    if (built.status === 0) return {bin: out};
+    const control = clang(trivial, join(buildDir, 'trivial'));
+    if (control.status === 0) return {rejected: `the toolchain builds a trivial program with ${sdk ?? 'the default SDK'}, but not the probe: ${firstLine(built)}`};
+    unusable.push(`${sdk ?? 'default SDK'}: ${firstLine(control)}`);
   }
-  // A diagnostic against the probe's own source is the source's fault, whichever SDK it came from.
-  const diagnostic = failures.flatMap(text => text.split('\n')).find(line => line.includes(`${basename(SOURCE)}:`) && /\berror:/.test(line));
-  if (diagnostic) return {rejected: `the compiler rejects the probe's source: ${diagnostic}`};
-  return {skip: `the toolchain cannot build here, with any SDK on offer (${failures[0].split('\n').find(Boolean) ?? 'no output'})`};
+  return {skip: `the toolchain cannot build even a trivial C program here (${unusable.join('; ')})`};
 }
 const probe = buildProbe();
 const skip = probe.skip ?? false;

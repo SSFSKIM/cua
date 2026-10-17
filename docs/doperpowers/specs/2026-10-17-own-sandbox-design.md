@@ -735,6 +735,11 @@ Dependencies on other work: #79 merged before M2. #117 retires the compat execut
 - Observation: the original's Linux seccomp denies `connect` on every socket family under a restricted network, and there is no selective Unix-socket grant on Linux.
   Evidence: R/B §2, §6 (`U@ff6aec96:linux-sandbox/src/landlock.rs:187-297`).
 
+- Observation: the same-host latency comparison returns no verdict if the mini's or the MacBook controller's OS or Node version changes between M0 and M4.
+  Evidence: `scripts/native-baseline/compare.mjs` same-host rule (task 2). M4 checks the versions recorded in the M0 runs before measuring; a change is a re-baseline, not a loosened rule.
+- Observation: `test/deploy-cloud-vm.test.mjs` fails locally on this MacBook at base a35ccc8 (`create-hetzner.sh: line 89: printf: write error: Broken pipe`), independent of this work.
+  Evidence: task 2's report, a scratch worktree at a35ccc8: 6 pass, 1 fail. CI is the gate of record for the PRs.
+
 ## Decision Log
 
 - Decision: verification for this spec and its branch. One independent spec review by `doperpowers:adversarial-reviewer` (the design is technical and security-sensitive), and in the same round a buildability review of the execution section by `doperpowers:adversarial-reviewer` (five milestones). Each milestone PR is reviewed at `doperpowers:reviewer-high` on its whole diff. A final whole-branch `doperpowers:reviewer-high` review covers the M4 PR with the acceptance evidence.
@@ -754,6 +759,15 @@ Dependencies on other work: #79 merged before M2. #117 retires the compat execut
 
 - Decision: execution pre-flight (2026-10-17, execution session). M0 runs as three tasks of the subagent-driven loop, one PR: M0a, the mini oracles (experiment A, the golden generator and its fixtures, the argv capture, the fingerprint probe under the signed CLI and the public build, the app-server capture and replay); M0b, the harness extensions (native-baseline `--surfaces browser` and `compare --same-host`, repl-parity's GCE device, device-parameterized native lane, host-aware preparation and the transition allowance, tz-probe), local code and tests; M0c, the GCE box provisioned, the Linux probes (XShm, app launch, nesting), and the baselines and controls, which consume M0b's harness. The x64 GCE instance is created only in M3, where its smoke runs. Every other milestone is one task. M0a and M0b share no files and run concurrently, M0b in a second worktree whose branch merges into `feat/115-own-sandbox` after its review. The mini's scratch clone comes from GitHub, not the Concrete Steps' `git clone --shared` of the resident checkout, whose object store a shared clone would borrow.
   Rationale: M0 alone spans two machines, a Rust build, C probes, four harness changes and a dozen live runs; one executor for all of it would not fit one context, and M0c consumes M0b, so the frontier review falls between them. M0a's verdicts come first because a design surprise there stops the work before anything else is built.
+  Date/Author: 2026-10-17, execution session.
+
+- Decision: M0b's harness choices (2026-10-17, task 2 of the execution loop, reviewed clean).
+  - `cua-gce` is a declared repl-parity device (`{platform: 'linux', captureChrome: true}`); every live lane takes any declared device of the right platform, and `prepare` lists profiles through the own host on Linux and the vendor host on macOS. The command-line selection is a pure `parseSelection(argv)`, which the device tests exercise without reaching a device.
+  - The comparator's new `configuration-transition` entry kind accepts only `disabled` → `scoped` on the `native/` cases it lists, between the vendor control and the own host, with each differing cell declared field for field. The entry itself is written in M3, when its cells are known.
+  - native-baseline records a launch witness on every connection (`cua/sandboxLaunch`: which launcher confined the children, read from `CODEX_CLI_PATH`, and whether TMPDIR is the session's own). M1's macOS own host leaves `CODEX_CLI_PATH` unset, so the witness reads `cua`; any later change to how the launcher is chosen keeps the witness truthful.
+  - `compare --same-host` judges only `cold.miss.first_js` and `cold.hit.first_js` and permits exactly three one-way changes, each listed in its result: the launcher (`codex-cli` → `cua` or `cua-compat`), TMPDIR (`inherited` or `unset` → `session`; prepared serves start from `env -i`, so the M0 baselines record `unset`), and on Linux computer sessions the sandbox mode (`disabled` → `scoped`). It requires the default plan (`DEFAULT_PLAN`: 30 warm, 5 cold, 10 tasks) and three runs per side; anything smaller is `DIAGNOSTIC`, never PASS. It requires identical controller and device OS and Node versions.
+  - `tz-probe.mjs`: the `codex` launcher renders today's own-host scoped policy and argv against the installed CLI; the `cua` launcher throws until M1 wires it to `src/sandbox`; `--notification-center allow` is refused under `codex`. Its `verdict` subcommand gives keep, remove or inconclusive only for 80 runs bounded at 15000 ms, and `diagnostic` otherwise.
+  Rationale: each is what M0c's live runs and M4's comparison consume; the review's three findings (the unset TMPDIR handoff, acceptance verdicts from diagnostic-sized samples, a unit test with a path to ssh) were fixed before the merge.
   Date/Author: 2026-10-17, execution session.
 
 ## Outcomes & Retrospective

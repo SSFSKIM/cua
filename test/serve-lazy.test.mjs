@@ -111,7 +111,8 @@ test('profiles_list\'s registry part launches nothing; its live check makes only
   const extension = join(userData, 'Default', 'Extensions', CUA_EXTENSION_ID, '1.0_0');
   mkdirSync(extension, {recursive: true});
   writeFileSync(join(extension, 'manifest.json'), '{}');
-  const env = {CUA_SHIM_SURFACES: 'browser', CUA_SHIM_SANDBOX: 'disabled'};
+  // The vendor host the recorded handshake is for: a browser-only connection would run cua's own wherever a Node 24 is found.
+  const env = {CUA_SHIM_SURFACES: 'browser', CUA_SHIM_SANDBOX: 'disabled', CUA_REPL_HOST: 'vendor'};
   recordsFor(home, ['browser']).write(INIT.protocolVersion, {initialize: {protocolVersion: '2025-06-18', capabilities: {tools: {}}, serverInfo: {name: 'recorded', version: '0'}}, tools: {tools: []}});
   const listings = [];
   const listBackends = async () => { listings.push(1); return {backends: [{instanceId: 'inst-a', family: 'chrome'}], teardown: {confirmed: true, steps: ['eof']}}; };

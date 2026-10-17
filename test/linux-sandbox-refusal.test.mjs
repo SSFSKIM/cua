@@ -104,7 +104,8 @@ test('a disabled connection lists its profiles under disabled, unprobed, where a
   const output = new PassThrough();
   const frames = [];
   createInterface({input: output}).on('line', line => frames.push(JSON.parse(line)));
-  const env = {PATH: process.env.PATH, HOME: userHome, DISPLAY: ':0', CUA_SHIM_SURFACES: 'computer,browser'};
+  // The vendor REPL host, which the fake release fakes: on Linux the default is cua's own wherever a Node 24 is found.
+  const env = {PATH: process.env.PATH, HOME: userHome, DISPLAY: ':0', CUA_SHIM_SURFACES: 'computer,browser', CUA_REPL_HOST: 'vendor'};
   const connection = await openConnection({home, env, host: LINUX, sessionId: randomUUID(), input, output, diagnostics: () => {},
     chrome: chromeFacts({host: LINUX, env: {}, userHome}), probeUserns: probe});
   t.after(() => { input.end(); return connection.closed; });

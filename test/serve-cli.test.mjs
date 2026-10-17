@@ -1,7 +1,7 @@
 // `cua serve` and the plugin's `cua-shim.mjs` end to end, as real processes, against a scratch CUA_HOME whose
 // "installed" release runs a fake upstream in place of the vendor runtime. This proves the server consumes the actual
 // resolver and launcher: allowlisted environment, owned per-connection working directory, and cleanup at close.
-import {test} from 'node:test';
+import {test, after} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawn, spawnSync} from 'node:child_process';
 import {mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, realpathSync, symlinkSync, chmodSync, rmSync} from 'node:fs';
@@ -47,11 +47,17 @@ function withoutConfigHomes(env) {
   return env;
 }
 
+// A server a failed test left running is stopped when the file ends, so the failure ends the run instead of holding it open.
+const running = new Set();
+after(() => { for (const child of running) child.kill('SIGTERM'); });
+
 function launch(entry, home, args = [], extraEnv = {}) {
   const child = spawn(process.execPath, [entry, ...args], {
     env: withoutConfigHomes({...process.env, CUA_HOME: home, CUA_SHIM_SECRETS: 'off', AMBIENT_SECRET: 'must-not-reach-runtime', NODE_REPL_TRUSTED_SERVICES: '{"sky":"/evil.mjs"}', CUA_SHIM_CODEX_HOME: '/tmp/legacy', ...extraEnv}),
     stdio: ['pipe', 'pipe', 'pipe'],
   });
+  running.add(child);
+  child.on('exit', () => running.delete(child));
   let stderr = '';
   child.stderr.on('data', d => { stderr += d; });
   const frames = [];
@@ -79,6 +85,9 @@ function launch(entry, home, args = [], extraEnv = {}) {
   return {child, frames, exit, request, call};
 }
 
+// The fake upstream stands in for the vendor runtime, so a run without the computer surface on macOS (a browser-only
+// serve or profile listing) names the vendor REPL host: left to the default, a Node 24 or later runs cua's own host
+// instead (src/runtime/launch.mjs replHostFor), which the fake release does not fake.
 const records = home => readFileSync(join(home, 'state', 'codex', 'fake-upstream.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l));
 
 test('cua serve without an installed runtime fails classified, writing nothing to the MCP stream', {skip: !supported}, async t => {
@@ -179,7 +188,7 @@ test('profiles_list and cua profiles list check a bound profile against the live
   mkdirSync(dirname(backendsFile), {recursive: true});
   const listingOf = (...ids) => JSON.stringify({backends: ids.map(instanceId => ({instanceId, family: 'chrome', profileName: null, tabCount: null}))});
 
-  const server = launch(join(REPO, 'bin', 'cua.mjs'), home, ['serve'], {CUA_SHIM_SURFACES: 'browser', HOME: userHome});
+  const server = launch(join(REPO, 'bin', 'cua.mjs'), home, ['serve'], {CUA_SHIM_SURFACES: 'browser', HOME: userHome, CUA_REPL_HOST: 'vendor'});
   await server.request('initialize', {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'e2e', version: '0'}});
   const seen = {};
   for (const [state, listing] of [['live', listingOf('other', 'inst-a')], ['stale', listingOf('inst-new')], ['none live', listingOf()], ['listing failed', null]]) {
@@ -214,14 +223,14 @@ test('profiles_list and cua profiles list check a bound profile against the live
   assert.deepEqual(readdirSync(join(home, 'run')), [], 'every listing removed its working directory');
 
   writeFileSync(backendsFile, listingOf('inst-new'));
-  const list = spawnSync(process.execPath, [join(REPO, 'bin', 'cua.mjs'), 'profiles', 'list'], {env: withoutConfigHomes({...process.env, CUA_HOME: home, HOME: userHome}), encoding: 'utf8', timeout: 30_000});
+  const list = spawnSync(process.execPath, [join(REPO, 'bin', 'cua.mjs'), 'profiles', 'list'], {env: withoutConfigHomes({...process.env, CUA_HOME: home, HOME: userHome, CUA_REPL_HOST: 'vendor'}), encoding: 'utf8', timeout: 30_000});
   assert.equal(list.status, 0, list.stderr);
   assert.match(list.stdout, /^personal\s+not ready\s+Default\s+its bound extension instance is not among the live backends.*cua profiles bind personal.*$/m);
   writeFileSync(backendsFile, listingOf());
-  const asleep = spawnSync(process.execPath, [join(REPO, 'bin', 'cua.mjs'), 'profiles', 'list'], {env: withoutConfigHomes({...process.env, CUA_HOME: home, HOME: userHome}), encoding: 'utf8', timeout: 30_000});
+  const asleep = spawnSync(process.execPath, [join(REPO, 'bin', 'cua.mjs'), 'profiles', 'list'], {env: withoutConfigHomes({...process.env, CUA_HOME: home, HOME: userHome, CUA_REPL_HOST: 'vendor'}), encoding: 'utf8', timeout: 30_000});
   assert.match(asleep.stdout, /^personal\s+not ready\s+Default\s+no live cua extension backend serves it.*Chrome profile "Default"/m, 'the CLI says what profiles_list says');
   writeFileSync(backendsFile, listingOf('inst-a'));
-  const json = JSON.parse(spawnSync(process.execPath, [join(REPO, 'bin', 'cua.mjs'), 'profiles', 'list', '--json'], {env: withoutConfigHomes({...process.env, CUA_HOME: home, HOME: userHome}), encoding: 'utf8', timeout: 30_000}).stdout);
+  const json = JSON.parse(spawnSync(process.execPath, [join(REPO, 'bin', 'cua.mjs'), 'profiles', 'list', '--json'], {env: withoutConfigHomes({...process.env, CUA_HOME: home, HOME: userHome, CUA_REPL_HOST: 'vendor'}), encoding: 'utf8', timeout: 30_000}).stdout);
   assert.deepEqual(json.profiles.map(p => [p.key, p.ready, p.extensionInstanceId]), [['personal', true, 'inst-a']]);
 });
 
@@ -246,7 +255,7 @@ test('cua profiles bind shows each candidate\'s label, binds a unique name autom
     ...backends,
     {family: 'edge'},
   ]}));
-  const cua = args => spawnSync(process.execPath, [join(REPO, 'bin', 'cua.mjs'), 'profiles', 'bind', 'personal', ...args], {env: withoutConfigHomes({...process.env, CUA_HOME: home, HOME: userHome}), encoding: 'utf8', timeout: 30_000});
+  const cua = args => spawnSync(process.execPath, [join(REPO, 'bin', 'cua.mjs'), 'profiles', 'bind', 'personal', ...args], {env: withoutConfigHomes({...process.env, CUA_HOME: home, HOME: userHome, CUA_REPL_HOST: 'vendor'}), encoding: 'utf8', timeout: 30_000});
   const rowsOf = stdout => stdout.split('\n').filter(line => /^\s+\d\) extension instance/.test(line));
 
   live([{instanceId: 'inst-d', family: 'chrome', profileName: 'Personal', tabCount: 1}]);
@@ -308,7 +317,7 @@ test('cua profiles bind shows each candidate\'s profile directory, binds by dire
   writeFileSync(join(home, 'state', 'codex', 'fake-backends.json'), JSON.stringify({backends: [
     {instanceId: 'inst-a', family: 'chrome', profileName: '직장', tabCount: 3}, {instanceId: 'inst-b', family: 'chrome', profileName: '직장', tabCount: 1},
     {instanceId: 'inst-c', family: 'chrome', profileName: null, tabCount: 0}]}));
-  const cua = args => spawnSync(process.execPath, [join(REPO, 'bin', 'cua.mjs'), 'profiles', 'bind', 'school', ...args], {env: withoutConfigHomes({...process.env, CUA_HOME: home, HOME: userHome}), encoding: 'utf8', timeout: 30_000});
+  const cua = args => spawnSync(process.execPath, [join(REPO, 'bin', 'cua.mjs'), 'profiles', 'bind', 'school', ...args], {env: withoutConfigHomes({...process.env, CUA_HOME: home, HOME: userHome, CUA_REPL_HOST: 'vendor'}), encoding: 'utf8', timeout: 30_000});
   const rowsOf = stdout => stdout.split('\n').filter(line => /^\s+\d\) extension instance/.test(line));
 
   const dry = cua(['--dry-run']);
@@ -349,7 +358,7 @@ test('cua profiles list still shows the profiles but fails when its listing runt
   writeFileSync(join(home, 'profiles.json'), JSON.stringify({version: 1, profiles: {personal: bound}}));
   mkdirSync(join(home, 'state', 'codex'), {recursive: true});
   writeFileSync(join(home, 'state', 'codex', 'fake-backends.json'), JSON.stringify({backends: [{instanceId: 'inst-a', family: 'chrome', profileName: null, tabCount: null}]}));
-  const cua = (args, node = []) => spawnSync(process.execPath, [...node, join(REPO, 'bin', 'cua.mjs'), 'profiles', 'list', ...args], {env: withoutConfigHomes({...process.env, CUA_HOME: home, HOME: userHome}), encoding: 'utf8', timeout: 30_000});
+  const cua = (args, node = []) => spawnSync(process.execPath, [...node, join(REPO, 'bin', 'cua.mjs'), 'profiles', 'list', ...args], {env: withoutConfigHomes({...process.env, CUA_HOME: home, HOME: userHome, CUA_REPL_HOST: 'vendor'}), encoding: 'utf8', timeout: 30_000});
   const {route, ...status} = bound;
   const unlistable = {key: 'personal', ...status, ready: false, reason: 'backends_unlistable'};
 

@@ -196,3 +196,18 @@ test('runs smaller than the default plan are a diagnostic: the rule\'s verdict i
   const cli = spawnSync(process.execPath, [SCRIPT, 'compare', '--same-host', side(t, small()), side(t, small())], {encoding: 'utf8'});
   assert.equal(cli.status, 1, 'a diagnostic never exits as a pass');
 });
+
+// The mini's native runs serve the owner-approved runtime copy in place (prepare.mjs): a recorded reuse stands in for a
+// fresh install, and both sides must have served the same copy.
+test('a run that reused the approved runtime is comparable when it records the reuse, and only against the same copy', async () => {
+  const {environmentProblems} = await import('../../scripts/native-baseline/environment.mjs');
+  const reuse = {approvedHome: '/scratch', release: '26.928.40906-darwin-arm64', runtimeRoot: '/scratch/runtimes/26.928.40906-darwin-arm64', helper: '/scratch/runtimes/26.928.40906-darwin-arm64/SkyComputerUseService.app', reason: 'r'};
+  const runs = metas => metas.map((meta, i) => ({name: `run-${i + 1}`, meta}));
+  const reused = n => browserMeta({n, measurement: {schema: 2, experiment: '115-m0', freshInstall: false}, runtimeReuse: reuse});
+  assert.deepEqual(environmentProblems(runs([reused(1), reused(2), reused(3)])), []);
+  const unrecorded = browserMeta({n: 1, measurement: {schema: 2, experiment: '115-m0', freshInstall: false}});
+  assert.match(environmentProblems(runs([unrecorded]))[0], /not an M5 comparator/);
+  const otherCopy = browserMeta({n: 2, measurement: {schema: 2, experiment: '115-m0', freshInstall: false}, runtimeReuse: {...reuse, helper: '/elsewhere/Sky.app'}});
+  assert.ok(environmentProblems(runs([reused(1), otherCopy])).some(p => /runtimeReuse environment differs/.test(p)));
+  assert.ok(environmentProblems(runs([reused(1), browserMeta({n: 2})])).some(p => /runtimeReuse environment differs/.test(p)));
+});

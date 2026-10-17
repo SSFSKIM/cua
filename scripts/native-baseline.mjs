@@ -18,6 +18,11 @@
 //     Every run installs the runtime and managed Node in its own private CUA_HOME, then removes that home after cleanup.
 //     --node (cua only) is a recorded diagnostic override, never accepted by compare. Ambient CUA_NODE is cleared.
 //     --display asserts the discovered display; it never guesses an X cookie or moves the run to another session.
+//     --approved-runtime <CUA_HOME> (required for a macOS computer run): serve the runtime copy the owner approved in
+//     place instead of a fresh install, whose new helper copy would raise the screen-capture confirmation again; the
+//     run refuses if the serve would resolve any other copy. The home's state/ and run/ are the run's own (moved aside
+//     and back), HOME is the account's and XDG_CONFIG_HOME the run's scratch (scripts/native-baseline/prepare.mjs).
+//     meta.json records it as runtimeReuse, and measurement.freshInstall is false.
 //     Device declarations live in repl-parity/devices.mjs; native preparation needs no H4 home or Chrome binding.
 //   node scripts/native-baseline.mjs summary docs/evidence/<dir>
 //   node scripts/native-baseline.mjs compare <vendor-dir> <cua-dir> [--out comparison.md]
@@ -92,16 +97,20 @@ const liveIo = device => ({
 });
 
 export async function run(options) {
-  const {device, out, host, node, display, experiment, surface = 'computer', io = liveIo(device)} = options;
-  declaredDevice(device);
+  const {device, out, host, node, display, experiment, surface = 'computer', approvedRuntime, io = liveIo(device)} = options;
+  const declaration = declaredDevice(device);
   if (!HOSTS.includes(host)) throw new Error('run requires --host vendor|cua');
   assertSurface(surface);
   assertOwnNode(host, node);
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(experiment ?? '')) throw new Error('run requires --experiment <same-sitting id>');
+  // On macOS a native run serves the owner-approved runtime copy in place, never a fresh one (prepare.mjs).
+  if (declaration.platform === 'darwin' && surface === 'computer' && !approvedRuntime)
+    throw new Error('a macOS computer run needs --approved-runtime <CUA_HOME whose runtime copy the owner approved>: a fresh install would raise the screen-capture confirmation again');
+  if (approvedRuntime !== undefined && !/^\/[^\0\n]*$/.test(approvedRuntime)) throw new Error('--approved-runtime needs an absolute path');
   const file = join(resolve(out), 'meta.json');
   if (existsSync(file) || existsSync(join(resolve(out),'preparation.json')) || existsSync(join(resolve(out),'results.jsonl'))) throw new Error('Output directory already contains a run');
   mkdirSync(resolve(out), {recursive:true});
-  const prepared = JSON.parse(io.remote(preparationScript('prepare', {device, display, node})).split('\n').at(-1));
+  const prepared = JSON.parse(io.remote(preparationScript('prepare', {device, display, node, ...(approvedRuntime ? {approvedHome: approvedRuntime} : {})})).split('\n').at(-1));
   let code;
   try {
     writeFileSync(join(resolve(out),'preparation.json'),JSON.stringify(prepared,null,2)+'\n');
@@ -156,12 +165,15 @@ async function runPrepared({device, out, host, node, experiment, prepared, surfa
   if (node !== undefined && !pre.ownNode?.version) throw new Error(`the own host's Node ${node} did not run on the device`);
 
   if (node === undefined) assertManagedNode({home: prepared.home, ownNode: pre.ownNode});
+  const reuse = prepared.runtimeReuse ?? null;
+  if (reuse && (pre.home !== reuse.approvedHome || pre.runtimeRoot !== reuse.runtimeRoot))
+    throw new Error(`the serve resolves the runtime ${pre.runtimeRoot}, not the approved ${reuse.runtimeRoot}; refusing rather than serving another copy`);
 
   mkdirSync(dir, {recursive: true});
   writeFileSync(join(dir, 'results.jsonl'), '');
   const emit = row => { appendFileSync(join(dir, 'results.jsonl'), JSON.stringify(row) + '\n'); return row; };
   const linux = pre.platform === 'linux';
-  const meta = {measurement: {schema:2, experiment, freshInstall:true}, nodeMode: node ? 'diagnostic-override' : 'managed',
+  const meta = {measurement: {schema:2, experiment, freshInstall:!reuse}, ...(reuse ? {runtimeReuse: reuse} : {}), nodeMode: node ? 'diagnostic-override' : 'managed',
     preparation: prepared, controllerIdentity: io.controllerIdentity ?? {hostname:hostname(),platform:platform(),arch:arch(),os:release(),node:process.version,cpu:{model:cpus()[0]?.model,count:cpus().length}}, userHome: prepared.userHome, xSession: prepared.xSession,
     deviceIdentity: {alias:device,arch:pre.arch,hostname:pre.hostname,os:pre.os,cpu:pre.cpu},
     load: {device:{before:pre.uptime,after:null},controller:{before:io.controllerLoad(),after:null}},
@@ -185,7 +197,7 @@ async function runPrepared({device, out, host, node, experiment, prepared, surfa
   };
   meta.helperAtStart = helperAttestation();
   const connect = () => {
-    const client = io.connect({...serveCommand({device, checkout: pre.checkout, home: pre.home, userHome: prepared.userHome, xSession:prepared.xSession, host, platform: pre.platform, display, node, surface}), clientName: 'cua-native-baseline',
+    const client = io.connect({...serveCommand({device, checkout: pre.checkout, home: pre.home, userHome: prepared.userHome, configHome: prepared.configHome, xSession:prepared.xSession, host, platform: pre.platform, display, node, surface}), clientName: 'cua-native-baseline',
       answer: adapter.answer,
       onElicitation: (row, msg) => {
         const entry = {t: row.t, at: performance.now(), app: msg.params?._meta?.tool_params?.app ?? null, action: row.action};
@@ -362,7 +374,7 @@ export function compareDirs(baselineDir, candidateDir, {out, sameHost = false} =
 export async function main(argv = process.argv.slice(2)) {
   const {values, positionals} = parseArgs({args: argv, allowPositionals: true, options: {
     device: {type: 'string'}, host: {type: 'string'}, node: {type: 'string'}, display: {type: 'string'}, experiment: {type:'string'}, commit:{type:'string'}, out: {type: 'string'},
-    surfaces: {type: 'string', default: 'computer'}, 'same-host': {type: 'boolean', default: false},
+    surfaces: {type: 'string', default: 'computer'}, 'same-host': {type: 'boolean', default: false}, 'approved-runtime': {type: 'string'},
     samples: {type: 'string', default: String(DEFAULT_PLAN.samples)}, cold: {type: 'string', default: String(DEFAULT_PLAN.cold)}, tasks: {type: 'string', default: String(DEFAULT_PLAN.tasks)}}});
   const [action, dir, other] = positionals;
   if (action === 'prepare') { process.stdout.write(execute(nativePrepareCommand({device:values.device,commit:values.commit}))); return 0; }
@@ -371,13 +383,13 @@ export async function main(argv = process.argv.slice(2)) {
     if (!dir || !other) throw new Error(values['same-host'] ? 'compare --same-host requires <before-dir> <after-dir>' : 'compare requires <vendor-dir> <cua-dir>');
     return compareDirs(dir, other, {out: values.out, sameHost: values['same-host']});
   }
-  if (action !== 'run') throw new Error('Usage: native-baseline.mjs prepare --device <declared alias> --commit <SHA> | run --device <declared alias> --experiment <sitting-id> --host vendor|cua [--surfaces computer|browser] [--node <diagnostic override, cua only>] [--display <X display assertion>] --out <dir> | summary <dir> | compare <vendor-dir> <cua-dir> [--out <file>] | compare --same-host <before-dir> <after-dir> [--out <file>]');
+  if (action !== 'run') throw new Error('Usage: native-baseline.mjs prepare --device <declared alias> --commit <SHA> | run --device <declared alias> --experiment <sitting-id> --host vendor|cua [--surfaces computer|browser] [--approved-runtime <CUA_HOME>, macOS computer runs] [--node <diagnostic override, cua only>] [--display <X display assertion>] --out <dir> | summary <dir> | compare <vendor-dir> <cua-dir> [--out <file>] | compare --same-host <before-dir> <after-dir> [--out <file>]');
   if (!values.device || !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(values.device)) throw new Error('run requires --device <ssh alias>');
   if (!HOSTS.includes(values.host)) throw new Error('run requires --host vendor|cua');
   if (!values.out) throw new Error('run requires --out');
   const count = name => { const n = Number(values[name]); if (!Number.isInteger(n) || n < 1) throw new Error(`--${name} must be a positive integer`); return n; };
   assertSurface(values.surfaces);
-  return run({device: values.device, host: values.host, surface: values.surfaces, node: values.node, display: values.display, experiment:values.experiment, out: values.out, samples: count('samples'), cold: count('cold'), tasks: count('tasks')});
+  return run({device: values.device, host: values.host, surface: values.surfaces, node: values.node, display: values.display, approvedRuntime: values['approved-runtime'], experiment:values.experiment, out: values.out, samples: count('samples'), cold: count('cold'), tasks: count('tasks')});
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

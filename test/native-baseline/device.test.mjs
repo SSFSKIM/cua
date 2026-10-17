@@ -96,3 +96,58 @@ test('different SSH locales cannot change gedit or serve locale, including the l
     assert.equal(execFileSync('/bin/sh',['-c',shell],{encoding:'utf8',env:{PATH:process.env.PATH,HOME:'/account',...ambient}}),'C.UTF-8|unset|unset|unset|unset');
   }
 });
+
+// The mini's native runs reuse one approved runtime copy (the spec's Decision Log, "native runs on the mini"): a new
+// on-disk copy of the native helper raises a one-time screen-capture confirmation, so no run installs one.
+test('an approved runtime is reused in place: no install, its state/ and run/ stashed and restored, the real HOME', async t => {
+  const {mkdirSync, writeFileSync, readFileSync, readdirSync, realpathSync} = await import('node:fs');
+  const parent = realpathSync(mkdtempSync(join(tmpdir(), 'native-prepare-test-')));
+  t.after(() => rmSync(parent, {recursive:true, force:true}));
+  const approved = join(parent, 'approved'), root = join(parent, 'scratch');
+  mkdirSync(join(approved, 'state', 'codex'), {recursive: true});
+  writeFileSync(join(approved, 'state', 'codex', 'kept'), 'task 1');
+  mkdirSync(join(approved, 'run'));
+  const helper = join(approved, 'runtimes', 'r1', 'Sky.app');
+  const locate = home => ({release: 'r1', root: join(home, 'runtimes', 'r1'), helper: join(home, 'runtimes', 'r1', 'Sky.app'), pinned: 'r1'});
+  const calls = [];
+  const options = {directoryRoot: root, tempRoot: '/different-tmp', userHomeDir: '/Users/owner', locate, usersOf: () => [],
+    run: (...a) => { calls.push(a); return ''; }, inspect: ({source}) => ({home: source, ownNode: {path: join(source, 'node/24.22.0/bin/node'), version: 'v24.22.0'}})};
+  const prepared = prepareNative({device: 'mini', approvedHome: approved}, options);
+  assert.equal(calls.length, 0, 'nothing is installed');
+  assert.equal(prepared.home, approved);
+  assert.equal(prepared.userHome, '/Users/owner');
+  assert.equal(prepared.configHome, join(prepared.scratch, 'config'));
+  assert.deepEqual(prepared.runtimeReuse, {approvedHome: approved, release: 'r1', runtimeRoot: join(approved, 'runtimes', 'r1'), helper,
+    reason: 'a new on-disk copy of the native helper raises a one-time screen-capture confirmation; the approved copy is reused'});
+  assert.deepEqual(readdirSync(approved), [], 'state/ and run/ are stashed away');
+  mkdirSync(join(approved, 'state', 'handshake'), {recursive: true});   // what the run writes
+  mkdirSync(join(approved, 'run', 'session'), {recursive: true});
+  assert.throws(() => cleanupNative({...prepared, token: 'wrong'}, {directoryRoot: root}), /ownership/);
+  assert.deepEqual(cleanupNative(prepared, {directoryRoot: root}), {removed: true, restored: ['state', 'run']});
+  assert.equal(readFileSync(join(approved, 'state', 'codex', 'kept'), 'utf8'), 'task 1');
+  assert.deepEqual(readdirSync(join(approved, 'state')), ['codex']);
+  assert.deepEqual(readdirSync(join(approved, 'run')), []);
+  assert.equal(existsSync(prepared.scratch), false);
+});
+
+test('an approved runtime is refused when it is not the pinned release, is in use, or the device is not macOS', async t => {
+  const {mkdirSync} = await import('node:fs');
+  const parent = mkdtempSync(join(tmpdir(), 'native-prepare-test-'));
+  t.after(() => rmSync(parent, {recursive:true, force:true}));
+  const approved = join(parent, 'approved'), root = join(parent, 'scratch');
+  mkdirSync(join(approved, 'state'), {recursive: true});
+  const base = {directoryRoot: root, tempRoot: '/different-tmp', userHomeDir: '/Users/owner', usersOf: () => [], run: () => { throw new Error('installed'); },
+    inspect: ({source}) => ({home: source, ownNode: {path: join(source, 'node/24.22.0/bin/node'), version: 'v24.22.0'}})};
+  const locate = pinned => home => ({release: 'r1', root: join(home, 'runtimes', 'r1'), helper: join(home, 'runtimes', 'r1', 'Sky.app'), pinned});
+  assert.throws(() => prepareNative({device: 'mini', approvedHome: approved}, {...base, locate: locate('r2')}), /not the pinned release r2/);
+  assert.throws(() => prepareNative({device: 'mini', approvedHome: approved}, {...base, locate: locate('r1'), usersOf: () => [4242]}), /in use by 1 process/);
+  assert.throws(() => prepareNative({device: 'cua-bench', approvedHome: approved}, {...base, locate: locate('r1'), desktop: () => xSession}), /macOS/);
+  assert.equal(existsSync(join(approved, 'state')), true, 'nothing moved on a refusal');
+});
+
+test('a serve of a reused runtime gets the real HOME and the run\'s own XDG_CONFIG_HOME', () => {
+  const options = {device: 'mini', checkout: '/tmp', home: '/Users/owner/cua-115/home', userHome: '/Users/owner', configHome: '/scratch/run-1/config', host: 'vendor', platform: 'darwin'};
+  const script = serveCommand(options).args.at(-1);
+  const shell = script.replace('exec env ', 'env ').replace(/node .*$/, 'sh -c \'printf "%s|%s|%s" "$HOME" "$XDG_CONFIG_HOME" "$CUA_HOME"\'');
+  assert.equal(execFileSync('/bin/sh', ['-c', shell], {encoding: 'utf8', env: {PATH: process.env.PATH, HOME: '/wrong'}}), '/Users/owner|/scratch/run-1/config|/Users/owner/cua-115/home');
+});

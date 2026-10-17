@@ -38,12 +38,14 @@ export const assertDisplay = display => { if (!/^[A-Za-z0-9.-]*:\d+(\.\d+)?$/.te
 // `node` (cua host only) is the own host's Node, an absolute path on the device passed as CUA_NODE in this command's
 // environment, never a shell profile; the serve itself stays on the device's node, as the vendor baseline's did.
 // When a prepared home is supplied, build the environment rather than inheriting SSH-login CUA settings.
-export function nativeEnvironment({home, userHome, host, display, platform, xSession, node, surface = 'computer'}) {
+// `configHome`, when preparation gives one (a reused approved runtime, whose HOME is the account's), is the run's own
+// XDG_CONFIG_HOME; otherwise it is the scratch HOME's .config.
+export function nativeEnvironment({home, userHome, configHome, host, display, platform, xSession, node, surface = 'computer'}) {
   assertHost(host); assertOwnNode(host, node); assertSurface(surface);
   if (platform === 'linux') assertDisplay(xSession?.DISPLAY ?? display);
   const x = xSession === undefined ? (platform === 'linux' ? ` DISPLAY=${quote(display)} XAUTHORITY="$HOME/.Xauthority"` : '')
     : Object.entries(sessionEnvironment(xSession)).map(([key,value]) => ` ${key}=${quote(value)}`).join('');
-  const clean = userHome ? `-i PATH="$PATH" LANG=${NATIVE_LOCALE.LANG} HOME=${quote(userHome)} XDG_CONFIG_HOME=${quote(userHome + '/.config')} `
+  const clean = userHome ? `-i PATH="$PATH" LANG=${NATIVE_LOCALE.LANG} HOME=${quote(userHome)} XDG_CONFIG_HOME=${quote(configHome ?? userHome + '/.config')} `
     : '-u CUA_NODE ' + SESSION_KEYS.filter(key => xSession && !Object.hasOwn(xSession,key)).map(key => `-u ${key} `).join('');
   return `${clean}CUA_HOME=${quote(home)} CUA_REPL_HOST=${host}${node === undefined ? '' : ` CUA_NODE=${quote(node)}`} CUA_SHIM_SURFACES=${surface}${surface === 'browser' ? ' CUA_BROWSER_SERVICE=cua' : ''} CUA_SHIM_PERSIST=session CUA_SHIM_SECRETS=off${x}`;
 }

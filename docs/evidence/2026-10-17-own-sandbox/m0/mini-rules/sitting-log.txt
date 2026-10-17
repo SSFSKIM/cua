@@ -372,3 +372,8 @@
 2026-10-17T15:05:40.289Z front after tz-real-home worker: com.apple.Terminal
 2026-10-17T15:05:43.100Z tz-real-home worker: archived /Users/new/Developer/GitHub/cua-wt-115-residue/docs/evidence/2026-10-17-own-sandbox/m0/tz-probe/real-home/worker.json
 2026-10-17T15:05:43.101Z sequence done: tz-real-home
+2026-10-17T15:22:58.818Z accept-native on main: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.72 -> idle
+2026-10-17T15:23:46.871Z accept-native on main: reading 2: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.38 -> idle
+2026-10-17T15:23:46.873Z idle before accept-native on main
+2026-10-17T15:25:44.557Z front after accept-native on main: com.apple.TextEdit
+2026-10-17T15:25:44.559Z STOP: after accept-native on main: the frontmost application is com.apple.TextEdit, not Terminal

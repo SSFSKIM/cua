@@ -16,9 +16,10 @@ gates:
     lane: hosted-macos
     timeout: 15
     # The claude CLI install hung once for 6 minutes on a hosted runner: each attempt is cut at 3 minutes, 3 attempts.
+    # bun runs the vendored guard's shell-exec.ts (tests/mods/run-mods-tests.sh).
     run: |
       for attempt in 1 2 3; do
-        perl -e 'alarm 180; exec @ARGV' npm i -g @anthropic-ai/claude-code && break
+        perl -e 'alarm 180; exec @ARGV' npm i -g @anthropic-ai/claude-code bun && break
         [ "$attempt" = 3 ] && exit 1
       done
       claude plugin validate .

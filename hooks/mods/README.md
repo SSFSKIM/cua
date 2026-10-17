@@ -1,7 +1,8 @@
 # mods
 
 Function hooks of the cua plugin: one module (`register.tsx`, named by
-`hooks/hooks.json` under `modules`) that registers each mod below. The engine
+`hooks/hooks.json` under `modules`; the engine takes one per plugin) that
+registers each mod below. The engine
 loads it only where `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1` is set and ignores it
 elsewhere; the shell hook beside this folder (`cua-approve.sh`) runs everywhere.
 
@@ -10,8 +11,7 @@ The store, `~/.config/claude-secrets/<KEY>` and each project's
 since issue #66 the server's `{{secret:…}}` substitution reads it. A
 remote client keeps a device's client credential there under the key
 `cua remote enroll --json` names (`clientSecretKey`), and registers the device
-with the `$(cat …)` command it prints (`clientRegisterCommand`), the form the
-guard below allows.
+with the `$(cat …)` command it prints (`clientRegisterCommand`).
 
 The mod moved here from the doperpowers plugin on 2026-10-07, so that it is
 registered once, by the plugin that owns its store.
@@ -62,35 +62,67 @@ locked and cannot raise its unlock dialog (`User interaction is not
 allowed`), for the store and for the model's read alike. The files are
 encrypted at rest only as the disk is.
 
-The model never needs to read the store, so a tool call that would is
-refused before it runs: a command naming `~/.config/claude-secrets` (the
-projects' folders beneath it included) other than in the form
-`$(cat ~/.config/claude-secrets/KEY)` or
-`$(cat ~/.config/claude-secrets/projects/<slug>/KEY)` with the session's own
-slug, which substitutes the value where it is used, and a file tool whose path
-(a Glob's pattern) points into the folder. Another project's folder is refused
-even in that form: its values are not loaded, so nothing could scrub them.
-`projects` is not a key in either tier. What a Write or an Edit puts in a file, or what a Grep searches
-for, is not a read. In a live session the model, asked to `cat` a stored
-value, declined on the system prompt section alone, and its diagnostic `ls`
-and `wc` of the file were refused.
-
-A stored value that turns up anyway, a tool printing it, is replaced by
-`[secret:KEY]`, in its own spelling and in the encodings a command prints it
-in by accident (base64 with or without padding, hex in either case, URL
-encoding), twice over: in the tool's record at `tool.call` (the transcript
-file keeps that record as `toolUseResult`, beside the row the model reads, and
-`session.append` cannot reach it) and in every row at `session.append`, which
-also masks the value of a `/secret` echo typed where nothing masked it.
+What a tool prints of a stored value is the secrets guard's (below): `/secret`
+itself only masks the value of a `/secret` echo typed where nothing masked it,
+whichever guard holds the session: in every row the conversation keeps, a
+tool result's included, and in a tool's record (`toolUseResult`), so a tool
+that reads an echo back (a transcript, the prompt history) shows bullets. That
+value may be stored nowhere and shaped like no token, so no guard would catch
+it. The mask touches only the echo's value, so a guard's handles beside it
+stay whole in either hook order.
 
 Known limits: characters that arrive together with Enter show in the clear
 for the frame before the redraw; an edit inside the bullets (the cursor moved
 back) cannot be placed, and clears the field; a value outside printable ASCII
 is refused, since the bullets hide a stray input-method character; the mobile
-app draws no field; values under six characters are not scrubbed, which would
-strike ordinary words. The guard stops accidents, not intent: a command may
-still transform a substituted value (a slice, another encoding) or write it
-somewhere, since using it is what the store is for.
+app draws no field.
+
+## secrets guard (`guard/`, devcloud's)
+
+The guard is devcloud's (the doperpowers marketplace's second plugin),
+vendored: `guard/VENDORED.md` names the source commit, every adaptation and
+the resync. Until 0.14.0 cua had a guard of its own that refused any tool
+call naming the store, even one that only wrote its path as text, and also
+refused writes, moves and existence checks. devcloud's redacts and never
+refuses:
+
+- **What it redacts.** Stored values of both tiers and of every other
+  project's tier (`[secret:KEY]`; a global key the project's shadows is
+  `[secret:KEY@global]`, another project's `[secret:KEY@<slug>]`), values in
+  well-known credential files (`~/.config/gh/hosts.yml`, `~/.codex/auth.json`,
+  `~/.pgpass`, gcloud's key files and the like:
+  `[secret:hosts.yml:github.com.oauth_token]`), and token-shaped strings
+  anywhere (`[redacted:github-pat#…]`). An encoding a command prints a value in
+  gets its own handle (`~b64`, `~hex`, `~url` and the like), and a value that
+  changed mid-session reads `[superseded:KEY]`.
+- **Where.** A tool's result as the model reads it and as the transcript keeps
+  it (`toolUseResult`), every row appended to the conversation, an oversized
+  output's persisted file, the system prompt's sections, the first message's
+  context blocks, each attachment, and a compaction's instructions and summary.
+- **Handles restore on write.** A handle in the input of a Write, Edit,
+  MultiEdit or NotebookEdit call is restored to its exact bytes before the call
+  runs, so a file edited through a handle keeps its secret. In Bash only a
+  plain value at a plain position in a plain command is restored; any other
+  handle stays as written and the result names a read that works in its place.
+
+**One guard per session.** When devcloud's own plugin is loaded beside cua,
+devcloud's guard decides every handle and every hook of cua's copy passes the
+event on untouched (`one-guard.tsx`): two guards in sequence would lose the
+encoding a handle names, the first collapsing `[secret:KEY~b64]`. devcloud
+sets `{ owner: "devcloud", version: 1 }` under
+`$.state.get({ plugin: 'devcloud', key: 'secrets-guard' })` when its session
+starts (its Interfaces I9), and cua reads it at hook time, so load order does
+not matter. Only that exact value stands cua down: no marker, any other value,
+or a read that fails leaves cua's guard acting. cua writes no marker of its own.
+
+Known limits: if devcloud is disabled mid-session the engine may keep its
+marker (unverified), and cua then stays stood down for the rest of that
+session; a new session reads it afresh. The engine lets only devcloud write
+its marker, but any plugin with function hooks can answer `state.get` itself,
+and so stand cua's guard down; such a plugin already sees every tool result it
+hooks. The guard stops accidents, not intent: a command may still transform a
+value (a slice, its own encoding) or write it somewhere, since using it is what
+the store is for.
 
 ## Developing
 

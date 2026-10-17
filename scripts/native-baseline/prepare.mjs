@@ -27,10 +27,18 @@ const locateApproved = home => {
   const runtime = locateRuntime({home});
   return {release: runtime.release, root: runtime.root, helper: runtime.paths.skyServiceApp, pinned: selectPin(loadPins()).release};
 };
-// The processes whose command line names the home (pgrep -f, fixed-string match), so a reused home is never shared.
-const processesUsing = home => {
-  try { return execFileSync('/usr/bin/pgrep', ['-f', home.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')], {encoding: 'utf8'}).split('\n').filter(Boolean).map(Number); }
+// The processes whose command line names the home (pgrep -f, the path matched literally), so a reused home is never
+// shared. The preparing process and its callers (the ssh shell whose command names the home) are not others.
+export const processesUsing = home => {
+  let found;
+  try { found = execFileSync('/usr/bin/pgrep', ['-f', home.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')], {encoding: 'utf8'}).split('\n').filter(Boolean).map(Number); }
   catch (error) { if (error.status === 1) return []; throw error; }
+  const callers = new Set([process.pid]);
+  for (let pid = process.ppid; pid > 1 && !callers.has(pid);) {
+    callers.add(pid);
+    pid = Number(execFileSync('/bin/ps', ['-o', 'ppid=', '-p', String(pid)], {encoding: 'utf8'}).trim()) || 1;
+  }
+  return found.filter(pid => !callers.has(pid));
 };
 
 const base = () => join(homedir(), '.local/share/cua-native-baseline');

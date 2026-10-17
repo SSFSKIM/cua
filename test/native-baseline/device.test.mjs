@@ -151,3 +151,18 @@ test('a serve of a reused runtime gets the real HOME and the run\'s own XDG_CONF
   const shell = script.replace('exec env ', 'env ').replace(/node .*$/, 'sh -c \'printf "%s|%s|%s" "$HOME" "$XDG_CONFIG_HOME" "$CUA_HOME"\'');
   assert.equal(execFileSync('/bin/sh', ['-c', shell], {encoding: 'utf8', env: {PATH: process.env.PATH, HOME: '/wrong'}}), '/Users/owner|/scratch/run-1/config|/Users/owner/cua-115/home');
 });
+
+test('the in-use check sees other processes naming the home, never the preparing process or its callers', async t => {
+  const {spawn, execFileSync: run} = await import('node:child_process');
+  const {mkdtempSync: mk, realpathSync} = await import('node:fs');
+  const home = realpathSync(mk(join(tmpdir(), 'native-inuse-test-')));
+  t.after(() => rmSync(home, {recursive: true, force: true}));
+  const module = new URL('../../scripts/native-baseline/prepare.mjs', import.meta.url).href;
+  const probe = `import {processesUsing} from ${JSON.stringify(module)}; console.log(JSON.stringify(processesUsing(${JSON.stringify(home)})));`;
+  // The preparing process and its shell both name the home on their command lines, as the ssh preparation does.
+  assert.deepEqual(JSON.parse(run('/bin/sh', ['-c', `node --input-type=module -e '${probe}' ${home}`], {encoding: 'utf8'})), []);
+  const other = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)', home], {stdio: 'ignore'});   // another process naming the home
+  t.after(() => other.kill());
+  await new Promise(r => setTimeout(r, 200));
+  assert.deepEqual(JSON.parse(run('/bin/sh', ['-c', `node --input-type=module -e '${probe}' ${home}`], {encoding: 'utf8'})), [other.pid]);
+});

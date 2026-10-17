@@ -23,9 +23,10 @@
 //            and again with explicit write entries), run the check with the home's managed Node, and report each
 //            read and write it attempted.
 // Nothing it records is screen content or a secret: app ids, counts, booleans, errno codes, paths it created itself.
-// It signals only processes it started or launched (new pids of the launched application), and removes what it created.
+// It signals only processes it started, and a launched application only when that pid carries the launch's own marker
+// (endLaunched); it removes what it created.
 import {spawn, execFileSync} from 'node:child_process';
-import {createHash} from 'node:crypto';
+import {createHash, randomUUID} from 'node:crypto';
 import * as fs from 'node:fs';
 import {basename, dirname, join, resolve} from 'node:path';
 import {parseArgs} from 'node:util';
@@ -184,14 +185,46 @@ export function xshmVerdict({xshmInside, skyScreenshotInside}) {
   return `proceed for sky_linux (its screenshots work inside); ${shm}`;
 }
 
+// A launch's ownership witness. Each launch gives the sky_linux it starts LAUNCH_MARKER=<a fresh id>; sky_linux starts
+// applications by fork/exec, so the application inherits it. A new process is this launch's only when its own
+// environment carries exactly that id; a pid that cannot be read, or lacks it, is not proven and is never signalled.
+export const LAUNCH_MARKER = 'CUA_PROBE_LAUNCH';
+// Whether a /proc/<pid>/environ block carries the launch's marker with exactly `id`. Only the marker's entry is looked
+// at, and only compared: nothing else in the block is decoded, kept or returned.
+export function carriesLaunchMarker(environ, id) {
+  const prefix = Buffer.from(`${LAUNCH_MARKER}=`);
+  for (let start = 0; start < environ.length;) {
+    const nul = environ.indexOf(0, start), end = nul === -1 ? environ.length : nul;
+    if (end - start >= prefix.length && environ.subarray(start, start + prefix.length).equals(prefix))
+      return environ.subarray(start + prefix.length, end).equals(Buffer.from(id));
+    start = end + 1;
+  }
+  return false;
+}
+function launchedBy(pid, id) {
+  try { return carriesLaunchMarker(fs.readFileSync(`/proc/${pid}/environ`), id); } catch { return false; }
+}
+// Ends the new processes a launch left that are proven its own (SIGTERM, then SIGKILL after `wait`), re-proving each
+// before every signal, since a pid that ended may have been reused. -> {ended: proven pids, unproven: pids left alone}.
+export async function endLaunched({pids, owns, alive, kill, wait}) {
+  const owned = pids.filter(owns);
+  const signal = sig => { for (const pid of owned) if (alive(pid) && owns(pid)) kill(pid, sig); };
+  signal('SIGTERM');
+  if (owned.some(alive)) { await wait(500); signal('SIGKILL'); }
+  return {ended: owned.length, unproven: pids.length - owned.length};
+}
+const killQuietly = (pid, sig) => { try { process.kill(pid, sig); } catch { /* gone */ } };
+
 async function launchOne({helper, profile, sky, env, session, app, processName}) {
   const before = new Set(pidsNamed(processName));
-  const server = skyServer({helper, profile, cwd: session.cwd, sky, env});
+  const id = randomUUID(), owns = pid => launchedBy(pid, id);
+  const server = skyServer({helper, profile, cwd: session.cwd, sky, env: {...env, [LAUNCH_MARKER]: id}});
   const launched = await server.request('launch_app', {app});
   let pid = null;
   for (let i = 0; i < 40 && pid === null; i++) { await sleep(250); pid = pidsNamed(processName).find(p => !before.has(p)) ?? null; }
   const facts = {launch: {ok: launched.ok === true, error: launched.ok ? null : launched.error}, newProcess: pid !== null};
   if (pid !== null) {
+    facts.ownershipProven = owns(pid);
     await sleep(1500);
     facts.ancestry = ancestry(pid).map(a => a.comm);
     facts.samePidNamespace = readLink(`/proc/${pid}/ns/pid`) === readLink('/proc/self/ns/pid');
@@ -200,15 +233,10 @@ async function launchOne({helper, profile, sky, env, session, app, processName})
     facts.aliveBeforeSkyEnds = alive(pid);
   }
   facts.skyExit = await server.stop();
-  if (pid !== null) {
-    await sleep(2000);
-    facts.survivesSkyEnd = alive(pid);
-    if (alive(pid)) { try { process.kill(pid, 'SIGTERM'); } catch { /* gone */ } }
-    await sleep(500);
-    if (alive(pid)) { try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } }
-  }
-  // Anything still named so and not there before was ours (a D-Bus activated app may have left a service process).
-  for (const p of pidsNamed(processName).filter(p => !before.has(p))) { try { process.kill(p, 'SIGTERM'); } catch { /* gone */ } }
+  if (pid !== null) { await sleep(2000); facts.survivesSkyEnd = alive(pid); }
+  // Every new process so named (the observed one, and any a D-Bus activated app left) is ended only if proven this
+  // launch's; the rest are counted and left alone.
+  facts.cleanup = await endLaunched({pids: pidsNamed(processName).filter(p => !before.has(p)), owns, alive, kill: killQuietly, wait: sleep});
   facts.stderr = server.stderr() || null;
   return facts;
 }

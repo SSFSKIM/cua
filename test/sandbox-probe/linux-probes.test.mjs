@@ -77,3 +77,40 @@ test('the launch probe records the app listing as a count and two booleans, neve
   assert.deepEqual(appInventory(['org.gnome.gedit.desktop', 'a.desktop', 'b.desktop']), {count: 3, listed: {gedit: true, zenity: false}});
   assert.deepEqual(appInventory([]), {count: 0, listed: {gedit: false, zenity: false}});
 });
+
+// Review finding (M0 PR, P1): a launched application is signalled only when it is causally this launch's, proven by the
+// launch's marker in that one pid's environment; a refused launch followed by an unrelated new process signals nothing.
+test('the launch marker is read from one environment block, compared, and nothing else is taken from it', async () => {
+  const {LAUNCH_MARKER, carriesLaunchMarker} = await import('../../scripts/sandbox-probe/linux-probes.mjs');
+  const block = (...entries) => Buffer.from(entries.map(e => `${e}\0`).join(''));
+  assert.equal(carriesLaunchMarker(block('PATH=/usr/bin', `${LAUNCH_MARKER}=run-7`, 'SECRET=x'), 'run-7'), true);
+  assert.equal(carriesLaunchMarker(block(`${LAUNCH_MARKER}=run-6`), 'run-7'), false, 'another launch\'s marker');
+  assert.equal(carriesLaunchMarker(block('PATH=/usr/bin'), 'run-7'), false, 'no marker');
+  assert.equal(carriesLaunchMarker(block(`${LAUNCH_MARKER}_X=run-7`, `X${LAUNCH_MARKER}=run-7`), 'run-7'), false, 'a longer name is not the marker');
+  assert.equal(carriesLaunchMarker(block(`${LAUNCH_MARKER}=run-7x`), 'run-7'), false, 'a prefix of the value is not the value');
+  assert.equal(carriesLaunchMarker(Buffer.alloc(0), 'run-7'), false);
+});
+
+test('a refused launch followed by an unrelated new process signals nothing and reports it unproven', async () => {
+  const {endLaunched} = await import('../../scripts/sandbox-probe/linux-probes.mjs');
+  const signals = [];
+  const ended = await endLaunched({pids: [4242], owns: () => false, alive: () => true, kill: (pid, signal) => signals.push([pid, signal]), wait: async () => {}});
+  assert.deepEqual(signals, []);
+  assert.deepEqual(ended, {ended: 0, unproven: 1});
+});
+
+test('only proven pids are ended, TERM then KILL, ownership re-checked before each signal', async () => {
+  const {endLaunched} = await import('../../scripts/sandbox-probe/linux-probes.mjs');
+  const signals = [], living = new Set([101, 102, 103]);
+  let ownershipOf103 = true;
+  const ended = await endLaunched({
+    pids: [101, 102, 103],
+    owns: pid => pid === 102 || (pid === 103 && ownershipOf103),
+    alive: pid => living.has(pid),
+    kill: (pid, signal) => { signals.push([pid, signal]); if (signal === 'SIGKILL') living.delete(pid); },
+    // 102 ignores SIGTERM; 103 exits on it and its pid is taken by an unrelated process before the escalation.
+    wait: async () => { ownershipOf103 = false; },
+  });
+  assert.deepEqual(signals, [[102, 'SIGTERM'], [103, 'SIGTERM'], [102, 'SIGKILL']]);
+  assert.deepEqual(ended, {ended: 2, unproven: 1});
+});

@@ -144,7 +144,7 @@ export async function listLiveBackends({home, runtime, ambient = process.env, li
   const claim = claimRunSession(home, sessionId);
   let launch;
   try {
-    launch = buildLaunch({runtime, home, sessionId, ambient, surfaces: ['browser'], services: {browser: BROWSER_SERVICE}, secretsUnavailable: 'secrets_disabled', resolveOwnNode});
+    launch = buildLaunch({runtime, home, sessionId, ambient, surfaces: ['browser'], services: {browser: BROWSER_SERVICE}, secretsUnavailable: 'secrets_disabled', resolveOwnNode, sandbox});
     assertSandboxFits(sandbox, launch);
     await assertSandboxConfines(sandbox, {platform: runtime.manifest.platform, probe: probeUserns});
     launch = prepareLaunch(launch);

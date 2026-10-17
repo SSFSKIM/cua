@@ -203,6 +203,8 @@ test('cua\'s sandbox fails closed: no deny list, a deny target that cannot be cr
     for (const mode of ['scoped', 'default']) await refused(host, mode, /^js sandbox unavailable: the launch's deny list \(CUA_SANDBOX_DENY_READ\) is missing or malformed \(sandbox_state_invalid\)/);
     assert.deepEqual(launches(host.codexHome), [], 'nothing was launched');
     assert.deepEqual(texts(await host.js('nodeRepl.write("unconfined by choice")', {mode: 'disabled'})), ['unconfined by choice']);
+    // A host that ran disabled is not confined by a later call without its list: that call is refused too.
+    await refused(host, 'scoped', /^js sandbox unavailable: the launch's deny list \(CUA_SANDBOX_DENY_READ\) is missing or malformed \(sandbox_state_invalid\)/);
   }
   const blocked = await startHost(t, {node});
   const locked = join(blocked.root, 'locked');

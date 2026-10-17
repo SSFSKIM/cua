@@ -110,7 +110,8 @@
 // The working directory is <home>/run/<sessionId>; model cells can see it, so it is never the caller's directory or
 // the repository. The caller creates it and the session temp inside it (mode 0700, createLaunchDirs) before spawning
 // and removes it when the connection ends. The launch record carries both (`cwd`, `sessionTmp`) and the deny list it
-// resolved (`denyRead`), which the scoped preflight protects except for those two (src/runtime/sandbox.mjs).
+// resolved (`denyRead`; null for a disabled connection, `sandbox`), which the scoped preflight protects except for those
+// two (src/runtime/sandbox.mjs).
 import {accessSync, chmodSync, constants, mkdirSync, realpathSync, statSync} from 'node:fs';
 import {dirname, isAbsolute, join} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
@@ -168,7 +169,7 @@ const CELL_ENV_ALLOWLIST = 'CUA_REPL_ENABLED_SURFACES,CUA_REPL_BROWSER_ENV';
 // launch of it (an idle relaunch too) runs what it resolved then; a caller that gives none, a single launch, has it
 // resolved here from `ambient` and `home`, the own host's Node through `resolveOwnNode` (replHostFor's). A `cua`
 // selection carries the Node it resolved (`node`), which the launch runs.
-export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], services, secretsDir, secretsProjectDir, secretsUnavailable, ambient = process.env, browserBackends = null, replHost, resolveOwnNode}) {
+export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], services, secretsDir, secretsProjectDir, secretsUnavailable, ambient = process.env, browserBackends = null, replHost, resolveOwnNode, sandbox}) {
   if (typeof sessionId !== 'string' || !SESSION_ID.test(sessionId)) fail('invalid_session_id', 'session id must be 1-128 letters, digits or dashes');
   const enabled = canonicalSurfaces(surfaces);
   if (secretsUnavailable !== undefined && (typeof secretsUnavailable !== 'string' || !REASON.test(secretsUnavailable))) fail('invalid_secrets_reason', 'the secrets-unavailable reason must be a lowercase code');
@@ -186,14 +187,18 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
   const ownSandbox = own && !linux;
   const cwd = join(owned.run, sessionId);
   const sessionTmp = join(cwd, 'tmp');
-  const denyRead = realDenyList(denyListFor({home: owned.home, env: ambient, secretsDir, secretsProjectDir, sessionId, sessionTmp, platform: runtime.manifest.platform}));
+  // A disabled connection confines nothing, so it neither needs the deny list nor fails on discovering it (an unreadable
+  // store refuses only confined launches). Its launch carries no list, and the supervisor refuses any confined call
+  // without one, so it can never be confined later without its list.
+  const denyRead = sandbox === 'disabled' ? null
+    : realDenyList(denyListFor({home: owned.home, env: ambient, secretsDir, secretsProjectDir, sessionId, sessionTmp, platform: runtime.manifest.platform}));
 
   const env = {};
   for (const key of AMBIENT_ALLOWLIST) if (typeof ambient[key] === 'string') env[key] = ambient[key];
   env.TMPDIR = sessionTmp;
   if (linux) Object.assign(env, desktopSessionEnv(ambient));
   const trustedCodePaths = own ? [REPL_HOST_DIR, CUA_API_DIR, CUA_API_DOCS_DIR, p.moduleDir, SANDBOX_DIR] : [p.moduleDir, SANDBOX_DIR];
-  Object.assign(env, {PATH: FIXED_PATH, CUA_SANDBOX_DENY_READ: JSON.stringify(denyRead)}, ownSandbox ? {} : {CODEX_HOME: owned.codexHome});
+  Object.assign(env, {PATH: FIXED_PATH}, denyRead ? {CUA_SANDBOX_DENY_READ: JSON.stringify(denyRead)} : {}, ownSandbox ? {} : {CODEX_HOME: owned.codexHome});
   Object.assign(env, own
     ? {CUA_REPL_ENABLED_SURFACES: enabled.join(','), CUA_REPL_NODE_PATH: ownNode, CUA_REPL_OWNED_GROUP: '1', CUA_REPL_NODE_MODULE_DIRS: p.moduleDir,
       CUA_REPL_JS_BANNER: CUA_BOOTSTRAP_BANNER, CUA_REPL_UNTRUSTED_ENV_ALLOWLIST: CELL_ENV_ALLOWLIST,

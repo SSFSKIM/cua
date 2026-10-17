@@ -99,7 +99,7 @@ export async function openConnection({home, env = process.env, sessionId, input,
     // so a Node installed meanwhile takes effect on the next connection.
     const replHost = replHostFor({platform: runtime.manifest.platform, surfaces: serverSettings.surfaces, ambient: env, home, resolveOwnNode});
     const launchFor = () => buildLaunch({
-      runtime, home, sessionId, ambient: env, replHost, surfaces: serverSettings.surfaces,
+      runtime, home, sessionId, ambient: env, replHost, surfaces: serverSettings.surfaces, sandbox,
       services: Object.assign({}, ...serverSettings.surfaces.map(s => SERVICES[s])),
       secretsDir: secrets.dir, secretsProjectDir: secrets.projectDir, secretsUnavailable: secrets.unavailable?.code,
       browserBackends: browserBackends && {hostPaths: browserBackends.hostPaths(), defaultInstance: browserBackends.defaultInstance()},

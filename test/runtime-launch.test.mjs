@@ -10,7 +10,7 @@ import {buildLaunch, createLaunchDirs, replHostFor, ownHostNode, NODE_FLOOR, SKY
 import {assertSandboxFits, assertTrustedServicesContained} from '../src/runtime/sandbox.mjs';
 import {writeCuaRecord, writeVendorRecord} from './fixtures/route-records.mjs';
 import {parsePin, resolveRuntime, runtimeFor} from '../src/runtime/manifest.mjs';
-import {scratch, fixturePin} from './fixtures/runtime-fixture.mjs';
+import {scratch, scratchUserHome, fixturePin} from './fixtures/runtime-fixture.mjs';
 import {fakeInstalledHome} from './fixtures/installed-home.mjs';
 import {CuaError} from '../src/runtime/errors.mjs';
 import {STORE_RELATIVE, connectionSecrets} from '../src/secrets/store.mjs';
@@ -841,4 +841,24 @@ test('a layout whose deny targets overlap fails the preflight in scoped and defa
       assertSandboxFits('disabled', launch);
     }
   }
+});
+
+// #115 M1 review round 2: the store's tiers are discovered strictly for a confined connection only. A disabled one
+// confines nothing, so an unreadable projects/ does not refuse it, and its launch carries no deny list.
+const asRoot = typeof process.getuid === 'function' && process.getuid() === 0;
+test('an unreadable projects/ refuses a confined launch; a disabled one is built without a deny list', {skip: asRoot && 'root lists any directory'}, t => {
+  const {home, runtime} = fixtureRuntime(t);
+  const user = scratchUserHome(t);
+  const projects = join(user, STORE_RELATIVE, 'projects');
+  mkdirSync(projects, {recursive: true});
+  const build = sandbox => buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, HOME: user}, sandbox});
+  chmodSync(projects, 0o111);
+  let disabled;
+  try {
+    for (const sandbox of ['scoped', 'default', undefined]) assert.equal(outcome(() => build(sandbox)).code, 'sandbox_state_invalid', String(sandbox));
+    disabled = build('disabled');
+  } finally { chmodSync(projects, 0o700); }
+  assert.equal(disabled.denyRead, null);
+  assert.equal('CUA_SANDBOX_DENY_READ' in disabled.env, false, 'no list reaches the runtime');
+  assertSandboxFits('disabled', disabled);
 });

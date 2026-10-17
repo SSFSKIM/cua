@@ -91,12 +91,11 @@ test('the Linux pins name the vendor pool debs by length and hash, with the prov
     assert.equal(pin.layout.codexCli, 'codex');
     assert.equal(pin.layout.skyLinuxBin, `cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_${arch}`);
     assert.equal('skyServiceApp' in pin.layout || 'ipcClient' in pin.layout, false);
-    assert.equal(pin.chromePlugin.layout.host, `extension-host/linux/${arch}/extension-host`);
-    assert.deepEqual(pin.chromePlugin.signing, []);
+    assert.equal('chromePlugin' in pin, false);
   }
 });
 
-test('Linux pin parsing is strict too: no signing, no IPC, a deb archive, the Linux layout keys and an empty plugin signing list', () => {
+test('Linux pin parsing is strict too: no signing, no IPC, a deb archive and the Linux layout keys', () => {
   const cases = {
     signing: p => { p.signing = {team: '2DC432GLL2', components: ['cua_node/bin/node']}; },
     ipc: p => { p.runtime.ipc = 'CodexComputerUseIPC-5'; },
@@ -105,7 +104,6 @@ test('Linux pin parsing is strict too: no signing, no IPC, a deb archive, the Li
     darwinLayout: p => { p.layout.skyServiceApp = 'cua_node/lib/node_modules/@oai/sky/Codex Computer Use.app'; },
     ipcClient: p => { p.layout.ipcClient = 'cua_node/lib/node_modules/x.js'; },
     noSkyLinuxBin: p => { delete p.layout.skyLinuxBin; },
-    pluginSigning: p => { p.chromePlugin.signing = [p.chromePlugin.layout.host]; },
     notes: p => { p.notes = 42; },
     codexOutside: p => { p.layout.codexCli = 'usr/lib/chatgpt/resources/codex'; },
   };
@@ -119,11 +117,10 @@ test('Linux pin parsing is strict too: no signing, no IPC, a deb archive, the Li
   assert.equal(parsePin(noNotes).notes, undefined, 'notes are optional');
 });
 
-test('the darwin pin keeps its schema: no archive format, no notes, the plugin host must be signature-listed', () => {
+test('the darwin pin keeps its schema: no archive format, no notes, signing required', () => {
   const cases = {
     format: p => { p.archive.format = 'zip'; },
     notes: p => { p.notes = 'checked'; },
-    emptyPluginSigning: p => { p.chromePlugin.signing = []; },
     noSigning: p => { delete p.signing; },
   };
   for (const [name, mutate] of Object.entries(cases)) {
@@ -131,6 +128,15 @@ test('the darwin pin keeps its schema: no archive format, no notes, the plugin h
     mutate(pin);
     assert.throws(() => parsePin(pin), expectCode('invalid_pin'), name);
   }
+});
+
+test('no pin carries the Chrome plugin any more: a chromePlugin field is refused as unknown on every platform', () => {
+  // The shape the pins had before #79 removed the ChatGPT extension route.
+  const chromePlugin = {from: 'ChatGPT.app/Contents/Resources/plugins/openai-bundled/plugins/chrome', dir: 'chrome-plugin',
+    layout: {host: 'extension-host/macos/arm64/ChatGPT for Chrome'}, signing: [], nativeHost: {name: 'com.openai.codexextension', description: 'x', extensionIds: []}};
+  for (const pin of loadPins()) assert.equal('chromePlugin' in pin, false, pin.release);
+  for (const [name, json] of [['darwin', realPinJson()], ['linux', linuxPinJson()]])
+    assert.throws(() => parsePin({...json, chromePlugin}), err => expectCode('invalid_pin')(err) && /chromePlugin/.test(err.message), name);
 });
 
 test('a Linux runtime record carries its own layout paths, and the IPC check does not apply to it', () => {

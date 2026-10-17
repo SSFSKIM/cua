@@ -80,7 +80,7 @@ test('a Linux browser-only launch configures no computer-use helper', t => {
   const {env} = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, surfaces: ['browser'], services: {browser: BROWSER_SERVICE}});
   assert.equal(env.CUA_REPL_ENABLED_SURFACES, 'browser');
   for (const key of ['OAI_SKY_LINUX_BIN', 'CUA_SKY_VENDOR_SERVICE', 'SKY_CUA_SERVICE_PATH']) assert.equal(key in env, false, key);
-  assert.equal(env.CUA_BROWSER_VENDOR_SERVICE, runtime.paths.browserVendorService);
+  assert.deepEqual(Object.keys(env).filter(key => /BROWSER/.test(key)).sort(), ['BROWSER_USE_AVAILABLE_BACKENDS', 'BROWSER_USE_BACKEND_PATHS'], 'cua\'s browser service, given cua\'s sockets');
   assert.equal(env.CODEX_CLI_PATH, join(runtime.root, 'codex'));
 });
 

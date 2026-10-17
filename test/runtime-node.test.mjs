@@ -438,7 +438,23 @@ async function cliInstall(t, args, deps) {
     return {status, stdout: out.join(''), stderr: err.join('')};
   } finally { Object.assign(process.stdout, {write: write.stdout}); Object.assign(process.stderr, {write: write.stderr}); }
 }
-const runtimeInstalled = async () => ({release: '0.0.1-fixture', root: '/fixture/runtime', changed: false, releaseChanged: false, record: {source: 'archive'}, chromeHost: {root: '/fixture/runtime/chrome-plugin', changed: false}});
+const runtimeInstalled = async () => ({release: '0.0.1-fixture', root: '/fixture/runtime', changed: false, record: {source: 'archive'}});
+
+test('install reports the runtime alone: a fresh install or an already verified one, in text and JSON, with no Chrome host', async t => {
+  const ctx = setup(t, {host: thisHost});
+  const runtimePin = {release: '0.0.1-fixture', platform: thisHost.platform, arch: thisHost.arch, appVersion: '0.0.1', archive: {url: 'https://example.invalid/runtime'}};
+  const deps = changed => ({home: ctx.home, installRuntime: async () => ({...await runtimeInstalled(), changed}), pins: () => [runtimePin], nodePins: () => [ctx.pin]});
+  const fresh = await cliInstall(t, ['--no-node'], deps(true));
+  assert.equal(fresh.status, 0, fresh.stderr);
+  assert.match(fresh.stdout, /^installed and activated 0\.0\.1-fixture at \/fixture\/runtime$/m);
+  const again = await cliInstall(t, ['--no-node'], deps(false));
+  assert.match(again.stdout, /^0\.0\.1-fixture is already installed and verified; active at \/fixture\/runtime$/m);
+  assert.doesNotMatch(fresh.stdout + again.stdout, /Chrome/);
+  const json = await cliInstall(t, ['--no-node', '--json'], deps(true));
+  const out = JSON.parse(json.stdout);
+  assert.deepEqual([out.ok, out.release, out.root, out.changed, out.source], [true, '0.0.1-fixture', '/fixture/runtime', true, 'archive']);
+  assert.equal('chromeHost' in out, false);
+});
 
 test('a filesystem failure in the Node step fails classified, with the runtime-installed remedy, in JSON and in text', async t => {
   const ctx = setup(t, {host: thisHost});

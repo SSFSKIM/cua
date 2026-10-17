@@ -13,7 +13,6 @@ import {installNode} from './runtime/node-install.mjs';
 import {loadNodePins, nodeDistName, selectNodePin} from './runtime/managed-node.mjs';
 import {inspectRuntime, summarize} from './runtime/doctor.mjs';
 import {resolveRuntime} from './runtime/manifest.mjs';
-import {runLogin, loginStatus, LOGIN_STATES} from './runtime/login.mjs';
 import {CuaError, fail} from './runtime/errors.mjs';
 import {serve as serveMcp} from './mcp/server.mjs';
 import {clientSecretKey, devicesEntry, enrollDevice, readDevice, relayEndpoint} from './remote/device.mjs';
@@ -25,14 +24,14 @@ import {runSecrets, PREFERRED_ENTRY} from './secrets/commands.mjs';
 import {fileStore, storeDir} from './secrets/store.mjs';
 import {isLabel, LABEL_RULE} from './secrets/label.mjs';
 import {chromeFacts, PERMISSION_FIX} from './profiles/chrome.mjs';
-import {addProfile, readRegistry, removeProfile, reasonText} from './profiles/registry.mjs';
+import {addProfile, removeProfile, reasonText} from './profiles/registry.mjs';
 import {bindCommand, openCommand, profileReadiness} from './profiles/commands.mjs';
 import {listLiveBackends} from './profiles/inventory.mjs';
 import {sandboxModeFrom} from './runtime/sandbox.mjs';
-import {pickReasonFor} from './profiles/bind.mjs';
+import {PICK_REASONS} from './profiles/bind.mjs';
 import {isPermissionError, mapExtensionDirectories} from './profiles/directory-map.mjs';
-import {chooseVendorRoute, registerCuaHost, registerHost, unregisterCuaHost, unregisterVendorHost} from './chrome/registration.mjs';
-import {chromeRoute, effectiveRoute, extensionIdFor} from './chrome/route.mjs';
+import {registerCuaHost, unregisterCuaHost} from './chrome/registration.mjs';
+import {chromeMigration, rebindRequired} from './chrome/route.mjs';
 import {CUA_EXTENSION_ID, CUA_HOST_NAME} from './chrome/extension.mjs';
 import {configuredBackends, startClientBackends} from './chrome/client-mode.mjs';
 
@@ -59,15 +58,12 @@ export const usageFor = platform => {
   const {archive, home} = PLATFORM_USAGE[platform] ?? PLATFORM_USAGE.darwin;
   const darwin = (PLATFORM_USAGE[platform] ? platform : 'darwin') === 'darwin';
   return `usage: cua <command>
-  install [--archive <${archive}>] [--release <id>] [--json]   install and activate the pinned runtime and its Chrome host,
-          [--node-archive <node tarball> | --no-node]          then the pinned Node 24 cua's own REPL host runs on (a local
+  install [--archive <${archive}>] [--release <id>] [--json]   install and activate the pinned runtime, then the pinned
+          [--node-archive <node tarball> | --no-node]          Node 24 cua's own REPL host runs on (a local
                                                                nodejs.org tarball, or none: the host uses your Node)
   doctor [--json]                                              passive runtime health; exit 1 when a check fails
   runtime use <release> [--json]                               activate another verified installed release
   serve [--http <host:port>]                                   MCP over stdin/stdout until EOF or a signal (--http: as agent run --http)
-  login [--device-auth]                                        sign the server in to Codex, at this terminal (only the
-                                                               ChatGPT extension route, chrome register --vendor, needs it)
-  login --status                                               whether the server has a Codex login (never shows it)
   secrets set <KEY> [--project|--global]                       store a secret in ~/.config/claude-secrets/KEY (--project:
                                                                this project's, ~/.config/claude-secrets/projects/<slug>/KEY),
                                                                typed hidden at this terminal (in Claude Code, /secret KEY is
@@ -82,8 +78,6 @@ export const usageFor = platform => {
   profiles open <key> [--json]                                 open a window in that Chrome profile, then report its readiness
   chrome register [--replace] [--json]                         register cua's own Chrome host for the cua extension
   chrome unregister [--json]                                   remove that registration, restoring what it replaced
-  chrome register --vendor [--replace] [--json]                instead register the ChatGPT extension's host (until removal)
-  chrome unregister --vendor [--json]                          remove that registration, restoring what it replaced
   remote enroll [--relay <wss url>] [--rotate] [--json]        enrol this Mac for remote control; shows the client credential once
   remote show [--json]                                         the device id, relay URL and the relay's devices.json line
   agent run [--http <host:port>] [--relay]                     serve MCP to remote clients until a signal; --http 127.0.0.1:7801
@@ -142,11 +136,7 @@ async function install(args, {installRuntime: runtimeInstaller = installRuntime,
   const onProgress = values.json ? undefined : progressReporter();
   if (!values.json) process.stderr.write(`installing ${manifest.release} from ${values.archive ?? manifest.archive.url}\n`);
   const result = await runtimeInstaller({home, manifest, archivePath: values.archive, onProgress});
-  if (!values.json) {
-    if (!result.chromeHost.changed) print(`${result.release} is already installed and verified, with its Chrome host; active at ${result.root}`);
-    else if (result.releaseChanged) print(`installed and activated ${result.release} at ${result.root}, with its Chrome host at ${result.chromeHost.root}`);
-    else print(`added the Chrome host to the installed release ${result.release} at ${result.chromeHost.root}; nothing that was installed changed`);
-  }
+  if (!values.json) print(result.changed ? `installed and activated ${result.release} at ${result.root}` : `${result.release} is already installed and verified; active at ${result.root}`);
 
   let node;
   const ownNodeFallback = 'cua\'s own REPL host runs on CUA_NODE or your own Node 24 or later, else sessions keep the vendor host';
@@ -167,7 +157,7 @@ async function install(args, {installRuntime: runtimeInstaller = installRuntime,
     if (!values.json) print(node.changed ? `installed Node ${node.version} for cua's own REPL host at ${node.root}`
       : `Node ${node.version} for cua's own REPL host is already installed and verified at ${node.root}${node.activated ? '; it is the active one again' : ''}`);
   }
-  if (values.json) print({ok: true, release: result.release, root: result.root, changed: result.changed, source: result.record.source, chromeHost: result.chromeHost, node});
+  if (values.json) print({ok: true, release: result.release, root: result.root, changed: result.changed, source: result.record.source, node});
 }
 
 async function doctor(args) {
@@ -503,33 +493,6 @@ async function secrets(args) {
   return runSecrets({command, json: values.json, scope});
 }
 
-// The server's own Codex login, kept in CUA_HOME's CODEX_HOME (src/runtime/login.mjs). No key or token is ever an
-// argument, so everything but the two flags is refused with a fixed message that never repeats what was passed.
-const LOGIN_USAGE = 'login takes only --device-auth or --status';
-const LOGIN_MESSAGES = {
-  [LOGIN_STATES.loggedIn]: 'the cua server has a Codex login in its own CODEX_HOME',
-  [LOGIN_STATES.notLoggedIn]: 'the cua server has no Codex login in its own CODEX_HOME (only the ChatGPT extension route needs one: run `cua login` for it)',
-};
-
-async function login(args) {
-  let values;
-  try {
-    ({values} = parseArgs({args, options: {'device-auth': {type: 'boolean'}, status: {type: 'boolean'}}, allowPositionals: false, strict: true}));
-  } catch { throw new UsageError(LOGIN_USAGE); }
-  if (values.status && values['device-auth']) throw new UsageError(LOGIN_USAGE);
-  const home = defaultHome();
-  const runtime = resolveRuntime({home});
-  if (values.status) {
-    const result = await loginStatus({home, runtime});
-    print(LOGIN_MESSAGES[result.state] ?? `could not determine the cua server's Codex login: ${result.reason}`);
-    return result.state === LOGIN_STATES.loggedIn ? 0 : 1;
-  }
-  process.stderr.write('signing the cua server in to Codex; its login is kept in CUA_HOME, separate from any desktop Codex login\n');
-  const code = await runLogin({home, runtime, deviceAuth: values['device-auth']});
-  if (code !== 0) process.stderr.write(`cua: codex login exited ${code}\n`);
-  return code === 0 ? 0 : 1;
-}
-
 // Chrome profile registrations (src/profiles). Registering and removing only touch $CUA_HOME/profiles.json; bind runs
 // one bounded, browser-only launch of the runtime to list the live extension backends, and list runs one (without tab
 // counts) when some profile is bound, to check that its bound instance is live. Either fails (exit 1) when that
@@ -544,11 +507,10 @@ const PROFILES_USAGE = {
   open: 'profiles open takes exactly one key',
 };
 const done = value => { print(value); return 0; };
-// `extension` is the home's route's extension: OpenAI's, or cua's own.
 const ADDED = {
-  installed: ({key, extension}) => `the ${extension} extension is installed there (next: cua profiles bind ${key})`,
-  absent: ({extension}) => `the ${extension} extension is not installed there, so it stays not ready until you install it in that profile`,
-  unreadable: ({key, chromeDataError, extension}) => `this process cannot read Chrome's data directory (${chromeDataError}), so that profile and its ${extension} extension could not be checked; registered anyway (next: cua profiles bind ${key}, whose live check works without that access; for the file checks, ${PERMISSION_FIX})`,
+  installed: ({key}) => `the cua extension is installed there (next: cua profiles bind ${key})`,
+  absent: () => 'the cua extension is not installed there, so it stays not ready until you install it in that profile',
+  unreadable: ({key, chromeDataError}) => `this process cannot read Chrome's data directory (${chromeDataError}), so that profile and its cua extension could not be checked; registered anyway (next: cua profiles bind ${key}, whose live check works without that access; for the file checks, ${PERMISSION_FIX})`,
 };
 // Why the candidates carry no (or only some) profile directories: the mapping of directory-map.mjs, never a failure.
 const MAP_UNAVAILABLE = {
@@ -585,11 +547,11 @@ const describeDirectory = b => b.chromeProfile === undefined ? ''
   : `  Chrome profile ${quoted(b.chromeProfile.directory)}${b.chromeProfile.name === null ? '' : ` ${quoted(b.chromeProfile.name)}`} (${b.chromeProfile.thisProfile ? 'this profile\'s directory' : 'another profile\'s directory'})`;
 const describeBackend = (b, i) => `  ${i + 1}) extension instance ${b.instanceId}  ${b.tabCount ?? '?'} tab(s)${describeDirectory(b)}  ${describeLabel(b)}${b.likelyMatch ? '  <- likely match' : ''}`;
 const describeExcluded = n => n ? `\n  (${n} extension backend(s) of a browser other than Google Chrome not listed: cua binds Google Chrome profiles only)` : '';
-const describeStale = id => `the recorded binding, extension instance ${id}, is stale: it is not among the live backends. A reinstall of the extension (for the ChatGPT extension, also a disable/enable) mints a new id; pick this profile's new one from the live backends.`;
+const describeStale = id => `the recorded binding, extension instance ${id}, is stale: it is not among the live backends. A reinstall of the extension mints a new id; pick this profile's new one from the live backends.`;
 
-async function pickBackend(list, reason, nonChromeExcluded, {staleBinding, route} = {}) {
+async function pickBackend(list, reason, nonChromeExcluded, {staleBinding} = {}) {
   if (staleBinding) process.stderr.write(`${describeStale(staleBinding)}\n`);
-  process.stderr.write(`which live backend is this profile could not be determined: ${pickReasonFor(reason, route)}\n${list.map(describeBackend).join('\n')}${describeExcluded(nonChromeExcluded)}\n`);
+  process.stderr.write(`which live backend is this profile could not be determined: ${PICK_REASONS[reason]}\n${list.map(describeBackend).join('\n')}${describeExcluded(nonChromeExcluded)}\n`);
   const {createInterface} = await import('node:readline/promises');
   const rl = createInterface({input: process.stdin, output: process.stderr});
   try {
@@ -600,7 +562,7 @@ async function pickBackend(list, reason, nonChromeExcluded, {staleBinding, route
 }
 
 // A MAWS backend's line has no Chrome directory (—).
-const readinessLine = (p, route) => `${p.key.padEnd(12)} ${(p.ready ? 'ready' : 'not ready').padEnd(10)} ${(p.chromeProfileDirectory ?? '—').padEnd(12)} ${p.ready ? `extension instance ${p.extensionInstanceId}` : reasonText(p, {route})}`;
+const readinessLine = p => `${p.key.padEnd(12)} ${(p.ready ? 'ready' : 'not ready').padEnd(10)} ${(p.chromeProfileDirectory ?? '—').padEnd(12)} ${p.ready ? `extension instance ${p.extensionInstanceId}` : reasonText(p)}`;
 // The command as the user could paste it; it runs without a shell (execFile).
 const shellWord = word => /^[A-Za-z0-9_./=:-]+$/.test(word) ? word : `'${word.replaceAll("'", "'\\''")}'`;
 // A detached opener (Linux's google-chrome, which becomes the browser itself when none runs) is done once it has
@@ -636,14 +598,16 @@ async function profiles(args) {
     }
   };
   const home = defaultHome();
-  const route = chromeRoute(home);
-  const chrome = chromeFacts({extensionId: extensionIdFor(route)});
+  const chrome = chromeFacts();
+  // A home that is not on the cua route alone hears what to do first (src/chrome/route.mjs chromeMigration).
+  const migration = chromeMigration(home);
+  if (migration) process.stderr.write(`note: ${migration.message}\n`);
   if (command === 'add') {
     const {values, positionals} = parsed({'chrome-profile': {type: 'string'}}, 1);
     if (values['chrome-profile'] === undefined) throw new UsageError(PROFILES_USAGE.add);
     const added = addProfile({home, key: positionals[0], directory: values['chrome-profile'], chrome});
     if (values.json) return done({ok: true, ...added});
-    return done(`registered ${added.key} -> Chrome profile "${added.chromeProfileDirectory}"; ${ADDED[added.extension]({...added, extension: route === 'cua' ? 'cua' : 'OpenAI'})}`);
+    return done(`registered ${added.key} -> Chrome profile "${added.chromeProfileDirectory}"; ${ADDED[added.extension](added)}`);
   }
   // list and bind launch the runtime with the sandbox state CUA_SHIM_SANDBOX picks; a bad value fails the command here,
   // before readiness would fold a listing failure into its report.
@@ -660,7 +624,7 @@ async function profiles(args) {
     if (values.json) { print({ok: !leftover, profiles: list, ...(listingError ? {listingError: listingError.code} : {})}); return leftover ? 1 : 0; }
     if (listingError) process.stderr.write(`cua: the live Chrome extension backends could not be listed (${listingError.code}: ${listingError.message})\n`);
     if (!list.length) return done('no Chrome profiles are registered (cua profiles add <key> --chrome-profile <directory>)');
-    for (const p of list) print(readinessLine(p, route));
+    for (const p of list) print(readinessLine(p));
     return leftover ? 1 : 0;
   }
   if (command === 'open') {
@@ -672,7 +636,7 @@ async function profiles(args) {
     if (values.json) { print(result); return result.ok ? 0 : 1; }
     print(`ran: ${result.command.map(shellWord).join(' ')}`);
     if (result.readiness.listingError) process.stderr.write(`cua: the live Chrome extension backends could not be listed (${result.readiness.listingError}: ${result.readiness.listingMessage})\n`);
-    print(readinessLine({key: result.key, chromeProfileDirectory: result.directory, ...result.readiness}, route));
+    print(readinessLine({key: result.key, chromeProfileDirectory: result.directory, ...result.readiness}));
     return result.ok ? 0 : 1;
   }
   if (command === 'remove') {
@@ -687,9 +651,8 @@ async function profiles(args) {
   const runtime = resolveRuntime({home});
   if (!values.json) process.stderr.write('listing the live Chrome extension backends through the runtime (one bounded launch)...\n');
   const result = await bindCommand({home, key: positionals[0], chrome, explicitId, dryRun,
-    listBackends: () => listLiveBackends({home, runtime}), pick: interactive ? (list, reason, excluded, options) => pickBackend(list, reason, excluded, {...options, route}) : undefined,
-    mapDirectories: () => mapExtensionDirectories({home, chrome, moduleDir: runtime.paths.moduleDir,
-      extensionIds: route === 'cua' ? [CUA_EXTENSION_ID] : runtime.manifest.chromePlugin.nativeHost.extensionIds})});
+    listBackends: () => listLiveBackends({home, runtime}), pick: interactive ? pickBackend : undefined,
+    mapDirectories: () => mapExtensionDirectories({home, chrome, moduleDir: runtime.paths.moduleDir, extensionIds: [CUA_EXTENSION_ID]})});
   if (values.json) { print(result); return result.ok ? 0 : 1; }
   process.stderr.write(describeUnreadable(result));
   if (result.ok) {
@@ -699,73 +662,46 @@ async function profiles(args) {
     if (automatic) print(`live backends:\n${result.backends.map(describeBackend).join('\n')}${describeExcluded(result.nonChromeExcluded)}\nif the marked one is not this Chrome profile: cua profiles bind ${result.key} --extension-instance-id <id>`);
     return 0;
   }
-  print(`${result.key} was not bound: ${pickReasonFor(result.reason, route)}${describeExcluded(result.nonChromeExcluded)}`);
+  print(`${result.key} was not bound: ${PICK_REASONS[result.reason]}${describeExcluded(result.nonChromeExcluded)}`);
   if (result.staleBinding) print(describeStale(result.staleBinding));
   if (result.backends.length) print(`live backends:\n${result.backends.map(describeBackend).join('\n')}\nrerun with the instance of this Chrome profile: cua profiles bind ${result.key} --extension-instance-id <id>`);
   return 1;
 }
 
-// The browsers' native-messaging registration (src/chrome/registration.mjs), on the home's Chrome route
-// (src/chrome/route.mjs): cua's own host for cua's extension by default, the ChatGPT extension's (OpenAI's host, placed
-// by `cua install`) with --vendor. Whichever ran last is the route. register refuses while another host's manifest is
-// present unless --replace, which backs it up first; unregister removes only this home's manifests and restores what
-// they replaced. Exit 1 on a refusal or when a restoration is BLOCKED. A registration that switched the route names the
-// profile bindings made on the other route, which `cua profiles bind` must make again.
-const CHROME_USAGE = {register: 'chrome register takes only --vendor, --replace and --json', unregister: 'chrome unregister takes only --vendor and --json'};
-const ACTIONS = {placed: 'placed', replaced: 'replaced', updated: 'updated', unchanged: 'unchanged', removed: 'removed', restored: 'restored', not_ours: 'not ours', not_removed: 'kept', unknown: 'unknown'};
+// The browsers' native-messaging registration (src/chrome/registration.mjs): cua's own host for cua's extension, the
+// only Chrome route (src/chrome/route.mjs). register refuses while another home's manifest is present unless
+// --replace, which backs it up first; unregister removes only this home's manifests and restores what they replaced.
+// Exit 1 on a refusal or when a restoration is BLOCKED. A registration names the profile bindings made on the ChatGPT
+// extension, which `cua profiles bind` must make again, and what that removed route left in the browsers (#79).
+const CHROME_USAGE = {register: 'chrome register takes only --replace and --json', unregister: 'chrome unregister takes only --json'};
+const ACTIONS = {placed: 'placed', replaced: 'replaced', updated: 'updated', unchanged: 'unchanged', removed: 'removed', restored: 'restored', not_ours: 'not ours', not_removed: 'kept'};
 const CHECKOUT = fileURLToPath(new URL('..', import.meta.url));
-
-// The keys bound on the other route than `route` (each needs `cua profiles bind` again); none when the registry cannot
-// be read (profiles list reports that).
-function rebindRequired(home, route) {
-  try {
-    return Object.entries(readRegistry(home).profiles).filter(([, p]) => p.extensionInstanceId && effectiveRoute(p.route) !== route).map(([key]) => key);
-  } catch { return []; }
-}
-const rebindLine = keys => `note: ${keys.join(', ')} ${keys.length === 1 ? 'was' : 'were'} bound on the other Chrome route; bind again: ${keys.map(key => `cua profiles bind ${key}`).join('; ')}`;
 
 async function chrome(args) {
   const [command, ...rest] = args;
   if (!Object.hasOwn(CHROME_USAGE, command)) throw new UsageError('chrome takes register or unregister');
   let values;
-  try { ({values} = parse(rest, command === 'register' ? {replace: {type: 'boolean'}, vendor: {type: 'boolean'}} : {vendor: {type: 'boolean'}}, 0)); } catch (error) {
+  try { ({values} = parse(rest, command === 'register' ? {replace: {type: 'boolean'}} : {}, 0)); } catch (error) {
     if (error instanceof UsageError) throw new UsageError(CHROME_USAGE[command]);
     throw error;
   }
   const home = defaultHome();
-  if (!values.vendor) return command === 'register' ? registerCua(home, values) : unregisterCua(home, values);
-  if (command === 'register') {
-    const runtime = resolveRuntime({home});
-    let consequences;
-    const result = await registerHost({home, runtime, replace: values.replace, onReplace: lines => {
-      consequences = lines;
-      process.stderr.write(`replacing a registration cua did not write (backed up first). Consequences:\n${lines.map((l, i) => `  ${i + 1}. ${l}`).join('\n')}\n`);
-    }});
-    chooseVendorRoute(home);
-    const rebind = rebindRequired(home, 'vendor');
-    if (values.json) return done({ok: true, route: 'vendor', host: result.host, browsers: result.browsers, ...(consequences ? {consequences} : {}), rebindRequired: rebind});
-    print(`registered cua's Chrome host ${result.host}:`);
-    for (const b of result.browsers) print(`  ${b.browser.padEnd(8)} ${ACTIONS[b.action].padEnd(10)} ${b.manifestPath}${b.backup ? ` (previous manifest backed up to ${b.backup})` : ''}`);
-    print('the browser launches the host on the extension\'s next connection; running hosts are not stopped');
-    if (rebind.length) print(rebindLine(rebind));
-    return 0;
-  }
-  const result = unregisterVendorHost({home});
-  if (values.json) { print({ok: true, ...result}); return result.blocked ? 1 : 0; }
-  for (const line of unregisterLines(result)) print(line);
-  return result.blocked ? 1 : 0;
+  return command === 'register' ? registerCua(home, values) : unregisterCua(home, values);
 }
 
 async function registerCua(home, values) {
   const result = await registerCuaHost({home, checkout: CHECKOUT, nodePath: process.execPath, replace: values.replace});
   const previous = [...new Set(result.browsers.map(b => b.previous).filter(Boolean))];
-  const rebind = rebindRequired(home, 'cua');
-  if (values.json) return done({ok: true, route: 'cua', launcher: result.launcher, backendsDir: result.backendsDir, browsers: result.browsers, previous, rebindRequired: rebind});
+  const rebind = rebindRequired(home);
+  // What the removed ChatGPT route left (route.mjs): the registration just made is the newer, so only its record and
+  // the bindings made on it can be.
+  const leftover = chromeMigration(home);
+  if (values.json) return done({ok: true, route: 'cua', launcher: result.launcher, backendsDir: result.backendsDir, browsers: result.browsers, previous, rebindRequired: rebind, ...(leftover ? {leftover: leftover.message} : {})});
   print(`registered cua's Chrome host launcher ${result.launcher}:`);
   for (const b of result.browsers) print(`  ${b.browser.padEnd(8)} ${ACTIONS[b.action].padEnd(10)} ${b.manifestPath}${b.backup ? ` (previous manifest backed up to ${b.backup})` : ''}`);
   print(`previous launcher recorded: ${previous.length ? previous.join(', ') : 'none'}`);
   print('the browser starts the host when the cua extension next connects; running hosts are not stopped');
-  if (rebind.length) print(rebindLine(rebind));
+  if (leftover) print(`note: ${leftover.message}`);
   return 0;
 }
 
@@ -789,22 +725,7 @@ export function cuaUnregisterLines(result) {
   return lines;
 }
 
-// unregister's human-readable report. "nothing to unregister" is said only when every browser is empty or holds another
-// host's manifest: a slot whose state is unknown, or where cua's manifest was kept, is not evidence of absence.
-export function unregisterLines(result) {
-  const shown = result.browsers.filter(b => b.action !== 'absent');
-  const lines = shown.every(b => b.action === 'not_ours') ? ['nothing to unregister: no com.openai.codexextension manifest names cua\'s host'] : [];
-  for (const b of shown) {
-    const what = b.action === 'not_ours' ? `names a ${b.pathClass} host; left unchanged`
-      : b.restoration === 'restored' ? 'restored the backed-up manifest, verified byte-for-byte'
-        : b.restoration === 'not_needed' ? 'nothing to restore (cua placed it in an empty slot)'
-          : `restoration BLOCKED: ${b.reason}. To fix: ${b.userAction}`;
-    lines.push(`  ${b.browser.padEnd(8)} ${ACTIONS[b.action].padEnd(10)} ${b.manifestPath}: ${what}`);
-  }
-  return lines;
-}
-
-const COMMANDS = {install, doctor, runtime, serve, secrets, login, profiles, chrome, remote, agent, devices};
+const COMMANDS = {install, doctor, runtime, serve, secrets, profiles, chrome, remote, agent, devices};
 
 // `deps` reaches only the install handler, as its test seam.
 export async function main(argv, deps) {

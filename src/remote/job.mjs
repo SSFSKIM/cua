@@ -3,12 +3,10 @@
 // `--relay` when the device has a relay URL and `--http <host:port>` when given, the log $CUA_HOME/state/agent.log, and
 // the environment: CUA_HOME when it is set, CUA_SHIM_SURFACES (default computer,browser: remote use is for the browser
 // as much as the desktop) and each of the agent's own settings (CUA_AGENT_MAX_SESSIONS, _IDLE_MINUTES,
-// _ALLOWED_ORIGINS, _CONSOLE_CHECK) and of its sessions' CUA_RUNTIME_IDLE_MS and CUA_BROWSER_SERVICE (src/mcp/server.mjs)
-// set in the environment `install` runs in, refused (invalid_setting) as `agent run` would refuse it. CUA_BROWSER_SERVICE
-// only when given (cua or vendor, the one-release rollback a job's fixed environment could not otherwise take), never a
-// resolved default: unset, each launch resolves it from the home's route (src/runtime/launch.mjs browserServiceFor).
-// CUA_REPL_HOST likewise only when given (cua or vendor; vendor is the installed agent's rollback), never a resolved
-// default: unset, each connection resolves its REPL host afresh (src/runtime/launch.mjs replHostFor). CUA_NODE likewise
+// _ALLOWED_ORIGINS, _CONSOLE_CHECK) and of its sessions' CUA_RUNTIME_IDLE_MS (src/mcp/server.mjs) set in the
+// environment `install` runs in, refused (invalid_setting) as `agent run` would refuse it. CUA_REPL_HOST only when
+// given (cua or vendor; vendor is the installed agent's rollback), never a resolved default: unset, each connection
+// resolves its REPL host afresh (src/runtime/launch.mjs replHostFor). CUA_NODE likewise
 // only when given (an absolute path, carried as given), never the Node a connection would resolve: it is how a job whose
 // node is older than the own REPL host's floor (a Linux system Node 22) finds a Node 24 or later for it; unset, each
 // connection resolves the own host's Node afresh (src/runtime/launch.mjs ownHostNode), so a Node installed later counts.
@@ -22,7 +20,7 @@ import {checkRelayUrl, readDevice} from './device.mjs';
 import {AGENT_SETTINGS, limitsFrom} from './limits.mjs';
 import {consoleCheckFrom} from './console.mjs';
 import {parseFixedAddress} from './address.mjs';
-import {browserServiceFrom, cuaNodeFrom, replHostFrom, surfacesFrom} from '../mcp/surface.mjs';
+import {cuaNodeFrom, replHostFrom, surfacesFrom} from '../mcp/surface.mjs';
 import {runtimeIdleFrom} from '../mcp/lazy-runtime.mjs';
 import {loadWebSocket} from './relay-link.mjs';
 import {fail} from '../runtime/errors.mjs';
@@ -39,7 +37,6 @@ export async function agentJobSpec({home, env, http, surfaces = DEFAULT_SURFACES
   limitsFrom(env);
   consoleCheckFrom(env);
   runtimeIdleFrom(env);
-  const browserService = browserServiceFrom(env);
   const replHost = replHostFrom(env);
   const cuaNode = cuaNodeFrom(env);
   const device = readDevice(home);
@@ -51,7 +48,6 @@ export async function agentJobSpec({home, env, http, surfaces = DEFAULT_SURFACES
     fail('agent_nothing_to_serve', 'the agent would have nothing to serve: no relay is enrolled and no --http address was given', {hint: `give --http <${machine === 'this Mac' ? 'this Mac\'s' : 'this machine\'s'} LAN address>:7801, or enrol a relay with cua remote enroll --relay <wss url>`});
   const settings = {
     ...Object.fromEntries([...AGENT_SETTINGS, 'CUA_RUNTIME_IDLE_MS'].filter(key => env[key] !== undefined).map(key => [key, env[key]])),
-    ...(browserService ? {CUA_BROWSER_SERVICE: browserService} : {}),
     ...(replHost ? {CUA_REPL_HOST: replHost} : {}),
     ...(cuaNode ? {CUA_NODE: cuaNode} : {}),
   };

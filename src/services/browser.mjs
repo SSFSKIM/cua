@@ -1,19 +1,19 @@
-// The trusted "browser" service: with the browser surface enabled, node_repl's trusted worker loads this module
-// (NODE_REPL_TRUSTED_SERVICES, registered by `cua serve` through buildLaunch) in place of the vendor's
-// @oai/browser-desktop service, and every request is delegated to the browser service the launch selected
-// (CUA_BROWSER_SERVICE, never agent input): `cua` cua's own service, src/browser-service/index.mjs
-// (docs/doperpowers/specs/2026-10-13-own-browser-service-design.md), which buildLaunch then adds to the trusted code
-// paths, or `vendor`, kept one release for rollback (removed by #116), the vendor module the launcher names in
-// CUA_BROWSER_VENDOR_SERVICE. cua's is imported only when selected: under the vendor selection its directory is not
-// trusted. Both export only handleRpc and follow the same REPL contract; cua's never answers the {ok:false} recovery
-// envelope and rejects with a BrowserServiceError carrying a code from its kept vocabulary. The vendor service registers its
-// turn-ended hook through globalThis.nodeRepl.addTurnEndedHandler when `setup` initialises it (browser-service.mjs, the
-// turn tracker `ph`), and the trusted worker gives this module and the vendor module the same nodeRepl, so delegating
-// handleRpc keeps its hooks and its task cleanup.
+// The trusted "browser" service: with the browser surface enabled, the REPL host's trusted worker loads this module
+// (NODE_REPL_TRUSTED_SERVICES or CUA_REPL_TRUSTED_SERVICES, registered by `cua serve` through buildLaunch) in place of
+// the vendor's @oai/browser-desktop service, and every request is delegated to cua's own browser service,
+// src/browser-service/index.mjs (docs/doperpowers/specs/2026-10-13-own-browser-service-design.md), which buildLaunch
+// adds to the trusted code paths. The vendor service is never loaded (#79 removed its selection with the ChatGPT
+// extension route). cua's service exports only handleRpc and follows the vendor's REPL contract; it registers its
+// turn-ended hook through globalThis.nodeRepl.addTurnEndedHandler, and the trusted worker gives this module and the
+// service the same nodeRepl, so delegating handleRpc keeps its hooks and its task cleanup. It never answers the
+// {ok:false} recovery envelope and rejects with a BrowserServiceError carrying a code from its kept vocabulary; the
+// classification below still covers the vendor's error classes and envelope, so a substituted call that fails is
+// reported without its text whatever answered.
 //
-// Secret substitution. The vendor client sends nodeRepl.rpc("browser", {method, params}) with method "execute" or
-// "executeWithRecovery" and params the flat agent command {type, ...payload}. Exactly these pinned commands
-// (@oai/browser-desktop 0.1.1) are eligible, and only when the eligible string is entirely `{{secret:<label>}}`:
+// Secret substitution. The REPL's browser client sends nodeRepl.rpc("browser", {method, params}) with method "execute" or
+// "executeWithRecovery" and params the flat agent command {type, ...payload}. Exactly these pinned commands (the
+// @oai/browser-desktop 0.1.1 command shapes, which cua's service keeps) are eligible, and only when the eligible string
+// is entirely `{{secret:<label>}}`:
 //   {type:"playwright_locator_fill", browser_id, tab_id, selector, value, replace, timeout_ms?}      value
 //   {type:"tab_ax_action", browser_id, tab_id, action:{kind:"paste", element_index, text, format?}}  action.text
 //   {type:"tab_ax_action", browser_id, tab_id, action:{kind:"type_text", element_index, text}}      action.text
@@ -21,15 +21,15 @@
 // with string ids/selector/text, a boolean replace, a positive integer timeout_ms, element_index a non-negative
 // integer (or null for paste/type_text), and paste only in text format. Every command may also carry
 // client_timeout_ms (a positive integer, or absent/undefined): the vendor client's transport adds it to each command
-// it sends (FunctionAgentTransport.send in browser-client.mjs). Everything else is delegated untouched:
+// it sends (FunctionAgentTransport.send in the vendor's browser-client.mjs, src/cua-api/browser-client.mjs on the own
+// host). Everything else is delegated untouched:
 // other commands and fields, values that merely contain a marker, and playwright_evaluate/CDP/script strings, which
 // are never scanned. The stored value is read from the connection's secret store (src/secrets/store.mjs) and placed in a copy of the
-// request handed to the vendor.
+// request handed to the service.
 //
 // Failing closed: an invalid, reserved (a device credential, secret_reserved) or unknown label, an unsafe or unreadable store file, secrets off or unavailable, a reference in
-// any other shape of an eligible command, or a selected browser service whose real version is missing, malformed or
-// other than that selection's pin (PINNED_VENDOR_VERSION for the vendor's package.json, PINNED_CUA_VERSION for
-// src/browser-service/VERSION) fails before anything is entered. After substitution the service can fail on two
+// any other shape of an eligible command, or a service whose real version (src/browser-service/VERSION) is missing,
+// malformed or other than PINNED_CUA_VERSION fails before anything is entered. After substitution the service can fail on two
 // channels: a rejected promise, and the resolved envelope {ok:false, error} that the vendor's executeWithRecovery
 // returns for recovery errors (browser-service.mjs X2). A substituted call that fails on either becomes one fixed,
 // bounded diagnostic classified by the service's error class and its enumerated reason or code, never its text;
@@ -39,27 +39,23 @@
 // CUA_BROWSER_DEFAULT_INSTANCE in the launch environment (`cua serve` sets it to its first MAWS backend's instance id,
 // src/runtime/launch.mjs), a selection that names no browser, kind, family or instance (cua.getBrowser() sends
 // get_default_browser {}, getBrowser({url}) get_browser_for_url {url}: oai_js_cua create_browser_api.js) becomes
-// get_browser for a browser resolved at selection time from the vendor's own list_browsers: the one whose instance id
+// get_browser for a browser resolved at selection time from the service's own list_browsers: the one whose instance id
 // equals the variable, else the first whose instance id starts with maws: (the variable is the bare marker `maws:`
 // when no hello came before launch, and a known id can be missing while another session's process is not listed here
-// at all: only this process's client-mode hosts carry that prefix). The vendor's selectors fall back from a missing
-// preferred instance to any extension (browser-service.mjs fL, hL), which would land the agent in the user's Chrome
-// while MAWS is away; with no maws: browser listed the rewrite asks for the variable itself as the id, so the vendor
-// answers its own "Browser is not available" and the selection never reaches a Chrome profile.
+// at all: only this process's client-mode hosts carry that prefix). The service's selectors, like the vendor's, fall back
+// from a missing preferred instance to any extension (browser-service.mjs fL, hL), which would land the agent in the
+// user's Chrome while MAWS is away; with no maws: browser listed the rewrite asks for the variable itself as the id, so
+// the service answers its own "Browser is not available" and the selection never reaches a Chrome profile.
 // A selection naming a browser (get_browser {id}: an id, a kind, a family, or the instance's id the client resolved)
 // passes untouched.
 import {readFile} from 'node:fs/promises';
-import {dirname, join} from 'node:path';
-import {pathToFileURL} from 'node:url';
 import {parseReference} from '../secrets/reference.mjs';
 import {
   SecretInputError, NOTHING_ENTERED, isPlainObject, propertyKey, matchesShape, refuseUnusable, unavailable, readFailure,
   inputFailed, secretsFromEnv,
 } from './secret-input.mjs';
 
-export const PINNED_VENDOR_VERSION = '0.1.1';
 export const PINNED_CUA_VERSION = '0.1.0';
-const VENDOR_PACKAGE = '@oai/browser-desktop';
 const CUA_SERVICE = 'the cua browser service';
 const CUA_SERVICE_MODULE = new URL('../browser-service/index.mjs', import.meta.url);
 const CUA_SERVICE_VERSION_FILE = new URL('../browser-service/VERSION', import.meta.url);
@@ -102,8 +98,8 @@ const RECOVERY_REASONS = new Set([
   'credential_delivery_in_progress', 'credential_observation_restricted', 'retained_data_restricted',
   'credential_state_unavailable', 'protected_command_failed', 'browser_security_restricted', 'browser_security_unavailable',
 ]);
-// The kept vocabulary of cua's service (src/browser-service/errors.mjs KEPT_REASONS; a copy, because this module must
-// load under the vendor selection, where that directory is not trusted; a test keeps the two equal).
+// The kept vocabulary of cua's service (src/browser-service/errors.mjs KEPT_REASONS; a copy, so this module imports
+// nothing of the service before a request needs it; a test keeps the two equal).
 export const SERVICE_REASONS = new Set([
   'invalid_url', 'unsupported_protocol', 'tab_not_found', 'browser_not_found', 'dialog_open', 'tab_detached',
   'strict_mode_violation', 'timeout', 'evaluate_interrupted', 'download_not_found', 'file_chooser_not_found',
@@ -173,14 +169,14 @@ function unqualifiedSelection(request) {
   return {method: request.method, clientTimeout: isPositiveInt(params.client_timeout_ms) ? params.client_timeout_ms : undefined};
 }
 
-// `loadService` resolves the selected service module; `actualServiceVersion` its real version (or null);
-// `expectedVersion` the selection's pin and `serviceName` its name ('vendor' or 'cua'); `secrets` reads a label's
-// value (the file store); `secretsUnavailable`, when set, is the launch's reason there is no store; `defaultInstance`
-// the extension instance an unqualified selection is rewritten to (null: none is).
-export function createBrowserService({loadService, actualServiceVersion, expectedVersion, serviceName = 'vendor', secrets, secretsUnavailable = null, defaultInstance = null}) {
+// `loadService` resolves the service module and `actualServiceVersion` its real version (or null), cua's own by
+// default (the seams exist for tests); `secrets` reads a label's value (the file store); `secretsUnavailable`, when set,
+// is the launch's reason there is no store; `defaultInstance` the extension instance an unqualified selection is
+// rewritten to (null: none is).
+export function createBrowserService({loadService = () => import(CUA_SERVICE_MODULE.href), actualServiceVersion = cuaServiceVersion, secrets, secretsUnavailable = null, defaultInstance = null}) {
   let loaded = null;
   const selectedService = () => (loaded ??= loadService());
-  const pinned = `${serviceName === 'cua' ? CUA_SERVICE : VENDOR_PACKAGE} ${expectedVersion}`;
+  const pinned = `${CUA_SERVICE} ${PINNED_CUA_VERSION}`;
 
   async function selectDefault({method, clientTimeout}) {
     const service = await selectedService();
@@ -204,7 +200,7 @@ export function createBrowserService({loadService, actualServiceVersion, expecte
     if (secretsUnavailable) throw unavailable(secretsUnavailable);
     const service = await selectedService();
     const version = await actualServiceVersion();
-    if (typeof version !== 'string' || !VERSION_SHAPE.test(version) || version !== expectedVersion) throw new SecretInputError('unsupported_browser_runtime', `secret input in the browser is pinned to ${pinned}; this runtime has ${VERSION_SHAPE.test(version ?? '') ? version : 'an unknown version'}; ${NOTHING_ENTERED}`);
+    if (typeof version !== 'string' || !VERSION_SHAPE.test(version) || version !== PINNED_CUA_VERSION) throw new SecretInputError('unsupported_browser_runtime', `secret input in the browser is pinned to ${pinned}; this runtime has ${VERSION_SHAPE.test(version ?? '') ? version : 'an unknown version'}; ${NOTHING_ENTERED}`);
     let value;
     try { value = await secrets.read(reference.label); } catch (error) { throw readFailure(error, reference.label); }
 
@@ -221,15 +217,6 @@ export function createBrowserService({loadService, actualServiceVersion, expecte
   return {handleRpc};
 }
 
-// The vendor package's version, read from the package.json above its scripts/ directory; null when it is not the
-// expected package or cannot be read.
-async function packageVersion(vendorPath) {
-  try {
-    const pkg = JSON.parse(await readFile(join(dirname(vendorPath), '..', 'package.json'), 'utf8'));
-    return pkg?.name === VENDOR_PACKAGE && typeof pkg.version === 'string' ? pkg.version : null;
-  } catch { return null; }
-}
-
 // cua's service's version: the VERSION file beside it, or null when it is missing or malformed.
 async function cuaServiceVersion() {
   try {
@@ -238,36 +225,9 @@ async function cuaServiceVersion() {
   } catch { return null; }
 }
 
-// The browser service the launch selected (CUA_BROWSER_SERVICE): {name, loadService, actualServiceVersion,
-// expectedVersion}. Unset or empty is cua's own, for direct use only: buildLaunch always writes the selection it
-// resolved (src/runtime/launch.mjs browserServiceFor). An unknown name loads nothing.
-export function serviceSelection(env = process.env) {
-  const name = env.CUA_BROWSER_SERVICE || 'cua';
-  if (name === 'cua') return {name, loadService: () => import(CUA_SERVICE_MODULE.href), actualServiceVersion: cuaServiceVersion, expectedVersion: PINNED_CUA_VERSION};
-  const vendorPath = env.CUA_BROWSER_VENDOR_SERVICE;
-  if (name !== 'vendor') {
-    return {name, expectedVersion: PINNED_VENDOR_VERSION, actualServiceVersion: async () => null,
-      loadService: async () => { throw new Error('cua: the selected browser service is not known to this wrapper [browser_not_configured]'); }};
-  }
-  return {
-    name,
-    loadService: async () => {
-      if (!vendorPath) throw new Error('cua: the vendor browser service is not configured for this runtime [browser_not_configured]');
-      return import(pathToFileURL(vendorPath).href);
-    },
-    actualServiceVersion: async () => (vendorPath ? packageVersion(vendorPath) : null),
-    expectedVersion: PINNED_VENDOR_VERSION,
-  };
-}
-
 // The service as the trusted worker runs it, configured by the launch environment.
 export function browserServiceFromEnv(env = process.env) {
-  const {name, loadService, actualServiceVersion, expectedVersion} = serviceSelection(env);
-  return createBrowserService({
-    loadService, actualServiceVersion, expectedVersion, serviceName: name,
-    defaultInstance: env.CUA_BROWSER_DEFAULT_INSTANCE || null,
-    ...secretsFromEnv(env),
-  });
+  return createBrowserService({defaultInstance: env.CUA_BROWSER_DEFAULT_INSTANCE || null, ...secretsFromEnv(env)});
 }
 
 let service = null;

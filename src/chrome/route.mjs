@@ -1,27 +1,28 @@
 // The Chrome route of a cua home (spec docs/doperpowers/specs/2026-10-07-own-chrome-extension-design.md,
-// "Registration, launch, binding, doctor"): `cua` (cua's own extension and host, `cua chrome register`) or `vendor`
-// (the ChatGPT extension and OpenAI's host, `cua chrome register --vendor`), set by whichever registration ran last.
-// Each route keeps its own record, so neither overwrites the other's backups:
-//   $CUA_HOME/chrome/cua-registration.json   the cua route's record (registration.mjs registerCuaHost)
-//   $CUA_HOME/chrome/registration.json       the vendor route's record (registration.mjs registerHost)
-// The route is `cua` when the cua record exists and was written after the vendor record, else `vendor` when the vendor
-// record exists, else none (null). A vendor record that names no browser (what `unregister --vendor` leaves) counts as
-// absent, so unregistering the vendor route never moves a home off a cua registration that is still in place.
-// `cua chrome register --vendor` touches the vendor record (chooseVendorRoute) so it counts as the last registration
-// even when it changed no manifest.
-import {readFileSync, statSync} from 'node:fs';
+// "Registration, launch, binding, doctor"): cua's own extension and host, registered by `cua chrome register`
+// (registration.mjs registerCuaHost) and recorded in
+//   $CUA_HOME/chrome/cua-registration.json
+// A home is on the route while that record exists; it is the only one. The ChatGPT extension route (OpenAI's extension
+// and host, `cua chrome register --vendor`) was removed by #79 on 2026-10-17. Its record,
+//   $CUA_HOME/chrome/registration.json   {schema: 1, browsers: {<browser>: {manifest, replaced, backupSha256?}}}
+// is only read here, to tell a home that was on that route how to move (chromeMigration); nothing in cua writes it,
+// restores what it lists or starts the host it named. A record that names no browser (what `unregister --vendor` left)
+// counts as absent.
+import {existsSync, readFileSync, statSync} from 'node:fs';
 import {join} from 'node:path';
 import {realHome} from '../runtime/layout.mjs';
-import {OPENAI_EXTENSION_ID} from '../profiles/chrome.mjs';
-import {CUA_EXTENSION_ID} from './extension.mjs';
+import {readRegistry} from '../profiles/registry.mjs';
 
 export const cuaRecordFile = home => join(home, 'chrome', 'cua-registration.json');
 export const vendorRecordFile = home => join(home, 'chrome', 'registration.json');
+const vendorBackupDir = home => join(home, 'chrome', 'manifest-backup');
 
 const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 function readJson(path) {
   try { return JSON.parse(readFileSync(path, 'utf8')); } catch { return null; }
 }
+const writtenAt = path => { try { return statSync(path).mtimeMs; } catch { return null; } };
+const iso = ms => new Date(ms).toISOString();
 
 // The cua record, or null when it is absent or not one: {schema: 1, route: 'cua', launcher, backendsDir,
 // browsers: {<browser>: {manifestPath, previous: <launcher path>|null, backupSha256?}}}.
@@ -30,30 +31,79 @@ export function readCuaRecord(home) {
   return record?.schema === 1 && record.route === 'cua' && isObject(record.browsers) ? record : null;
 }
 
-// The vendor record, or null when it is absent, not one, or names no browser (what `unregister --vendor` leaves).
+// The removed ChatGPT route's record, or null when it is absent, not one, or names no browser.
 export function readVendorRecord(home) {
   const record = readJson(vendorRecordFile(realHome(home)));
   return record?.schema === 1 && isObject(record.browsers) && Object.keys(record.browsers).length ? record : null;
 }
 
-const writtenAt = path => { try { return statSync(path).mtimeMs; } catch { return null; } };
+// -> 'cua' | null
+export const chromeRoute = home => (readCuaRecord(home) ? 'cua' : null);
 
-// When each route's record was last written (epoch ms), null for a record that is absent or not one.
-export function registrationTimes(home) {
+// The registered profiles bound other than on the cua route (a binding without `route` was made on the ChatGPT
+// extension): each needs `cua profiles bind` again. None when the registry cannot be read (profiles list and doctor
+// report that).
+export function rebindRequired(home) {
+  try {
+    return Object.entries(readRegistry(home).profiles).filter(([, p]) => p.extensionInstanceId && p.route !== 'cua').map(([key]) => key);
+  } catch { return []; }
+}
+
+// "a was bound on the ChatGPT extension: bind it again on the cua extension: cua profiles bind a"
+export const rebindStep = keys => `${keys.join(', ')} ${keys.length === 1 ? 'was' : 'were'} bound on the ChatGPT extension: bind ${keys.length === 1 ? 'it' : 'them'} again on the cua extension: ${keys.map(key => `cua profiles bind ${key}`).join('; ')}`;
+
+// What the ChatGPT route's registration left in the browsers, as the user's steps: each com.openai.codexextension
+// manifest its record lists that still names a host in this home (cua's relocated copy of OpenAI's host) is removed or,
+// where it had replaced another program's manifest (the ChatGPT desktop app's), that one's backup is put back (the
+// desktop app also rewrites its own when it next runs); then the record and its backups go. A manifest that is gone or
+// names another host now is left alone; one this process may not read is named for the user to check.
+function leftoverSteps(root, record) {
+  const steps = [];
+  for (const [browser, entry] of Object.entries(record.browsers)) {
+    const manifest = typeof entry?.manifest === 'string' ? entry.manifest : null;
+    if (!manifest) continue;
+    let named;
+    try { named = JSON.parse(readFileSync(manifest, 'utf8'))?.path; } catch (error) {
+      if (error instanceof SyntaxError || error.code === 'ENOENT' || error.code === 'ENOTDIR') continue;
+      steps.push(`check ${manifest}, which this process may not read (${error.code ?? 'error'}): if it names a host under ${root}, remove it`);
+      continue;
+    }
+    if (typeof named !== 'string' || !named.startsWith(`${root}/`)) continue;
+    const backup = join(vendorBackupDir(root), `${browser}.json`);
+    steps.push(entry.replaced === true && existsSync(backup)
+      ? `in ${browser}, put back the manifest cua replaced: cp "${backup}" "${manifest}" (or quit and reopen the ChatGPT desktop app, which rewrites its own)`
+      : `in ${browser}, remove the manifest cua ${entry.replaced === true ? 'wrote over the ChatGPT desktop app\'s (its backup is gone; reopening the desktop app rewrites its own)' : 'placed'}: rm "${manifest}"`);
+  }
+  steps.push(`then remove the old record and its backups: rm -rf "${vendorRecordFile(root)}" "${vendorBackupDir(root)}"`);
+  return steps;
+}
+
+// What a home still has to do to be on the cua route alone, or null when nothing (spec, Decision Log 2026-10-17):
+//   chrome_not_registered   no registration at all;
+//   chatgpt_route_removed   the ChatGPT route's registration is the newest, or the only one;
+//   chatgpt_route_leftover  cua's registration is the newer, and the ChatGPT route's record is still there;
+//   rebind_required         cua's registration alone, with profiles still bound on the ChatGPT extension.
+// -> {code, registered (cua's registration is in place), message: one sentence naming the steps in order}
+export function chromeMigration(home) {
   const root = realHome(home);
-  return {cua: readCuaRecord(root) ? writtenAt(cuaRecordFile(root)) : null, vendor: readVendorRecord(root) ? writtenAt(vendorRecordFile(root)) : null};
+  const cuaAt = readCuaRecord(root) ? writtenAt(cuaRecordFile(root)) : null;
+  const vendor = readVendorRecord(root);
+  const vendorAt = vendor ? writtenAt(vendorRecordFile(root)) : null;
+  const rebind = rebindRequired(root);
+  const register = 'run `cua chrome register` (cua\'s own host, for the cua extension)';
+  const install = 'install or load the cua extension in each Chrome profile you use (README, "Chrome")';
+  const bind = rebind.length ? [rebindStep(rebind)] : [];
+  const sentence = (lead, steps) => `${lead}: ${steps.join('; ')}`;
+  if (!vendor) {
+    if (cuaAt !== null) return bind.length ? {code: 'rebind_required', registered: true, message: sentence('cua\'s own extension and host are registered', bind)} : null;
+    return {code: 'chrome_not_registered', registered: false, message: sentence('this home has no Chrome registration', [register, install, ...bind])};
+  }
+  const removed = `this home was registered for the ChatGPT extension route (cua chrome register --vendor, ${iso(vendorAt)}), which cua no longer supports (removed in #79)`;
+  if (cuaAt === null)
+    return {code: 'chatgpt_route_removed', registered: false, message: sentence(removed, [register, install, ...bind, ...leftoverSteps(root, vendor)])};
+  if (vendorAt > cuaAt)
+    return {code: 'chatgpt_route_removed', registered: true, message: sentence(`${removed}, after cua's own registration of ${iso(cuaAt)}, which is the route now`,
+      ['run `cua chrome register` again so cua\'s registration is the current one', ...bind, ...leftoverSteps(root, vendor)])};
+  return {code: 'chatgpt_route_leftover', registered: true,
+    message: sentence(`the ChatGPT extension route's registration of ${iso(vendorAt)} is left from before #79 removed that route, and cua no longer reads it`, [...bind, ...leftoverSteps(root, vendor)])};
 }
-
-// -> 'cua' | 'vendor' | null
-export function chromeRoute(home) {
-  const {cua, vendor} = registrationTimes(home);
-  if (cua !== null && (vendor === null || cua > vendor)) return 'cua';
-  return vendor !== null ? 'vendor' : null;
-}
-
-// A binding's route: a binding without one was made on the vendor route (before the cua route existed), and a home
-// with no registration is read as the vendor route, as it was before.
-export const effectiveRoute = route => route ?? 'vendor';
-
-// The extension whose presence and instance stores the route's checks read.
-export const extensionIdFor = route => (effectiveRoute(route) === 'cua' ? CUA_EXTENSION_ID : OPENAI_EXTENSION_ID);

@@ -4,7 +4,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawn, spawnSync} from 'node:child_process';
-import {mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, symlinkSync, chmodSync, rmSync} from 'node:fs';
+import {mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, realpathSync, symlinkSync, chmodSync, rmSync} from 'node:fs';
 import {join, dirname} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {createInterface} from 'node:readline';
@@ -15,8 +15,9 @@ import {REPO, scratch} from './fixtures/runtime-fixture.mjs';
 import {fakeInstalledHome, installedHomeSupported, NO_SCOPED_LAUNCH} from './fixtures/installed-home.mjs';
 import {serve} from '../src/mcp/server.mjs';
 import {SKY_SERVICE, BROWSER_SERVICE, SERVICE_SUPPORT_DIRS} from '../src/runtime/launch.mjs';
-import {chromeFacts, chromeUserData, OPENAI_EXTENSION_ID, PERMISSION_FIX} from '../src/profiles/chrome.mjs';
+import {chromeFacts, chromeUserData, CUA_EXTENSION_ID, PERMISSION_FIX} from '../src/profiles/chrome.mjs';
 import {LIVENESS_CELL} from '../src/profiles/inventory.mjs';
+import {socketNameFor, socketPathFor} from '../src/chrome/extension.mjs';
 import {sandboxState} from '../src/runtime/sandbox.mjs';
 import {CLASSIC_LEVEL_MODULES, NO_CLASSIC_LEVEL, writeStore} from './fixtures/classic-level.mjs';
 import {addDevice} from '../src/remote/devices.mjs';
@@ -137,12 +138,12 @@ test('cua serve runs the resolved runtime with an allowlisted environment in an 
   assert.deepEqual(readdirSync(join(home, 'run')), []);
 });
 
-test('with CUA_SHIM_SURFACES=computer,browser, serve registers both wrappers, configures the vendor browser service and answers profiles_list from the registry', {skip: !supported}, async t => {
+test('with CUA_SHIM_SURFACES=computer,browser, serve registers both wrappers, configures cua\'s browser service and answers profiles_list from the registry', {skip: !supported}, async t => {
   const home = fakeInstalledHome(t);
   const userHome = join(home, 'user');
   const chromeDir = join(chromeDataUnder(userHome), 'Default');
   mkdirSync(chromeDir, {recursive: true});
-  writeFileSync(join(home, 'profiles.json'), JSON.stringify({version: 1, profiles: {personal: {chromeProfileDirectory: 'Default', extensionInstanceId: 'inst-a', boundAt: '2026-10-03T00:00:00.000Z'}, school: {chromeProfileDirectory: 'Profile 6'}}}));
+  writeFileSync(join(home, 'profiles.json'), JSON.stringify({version: 1, profiles: {personal: {chromeProfileDirectory: 'Default', extensionInstanceId: 'inst-a', boundAt: '2026-10-03T00:00:00.000Z', route: 'cua'}, school: {chromeProfileDirectory: 'Profile 6'}}}));
   const server = launch(join(REPO, 'bin', 'cua.mjs'), home, ['serve'], {CUA_SHIM_SURFACES: 'computer,browser', HOME: userHome, BROWSER_USE_BACKEND_PATHS: '/tmp/evil.sock'});
   const init = await server.request('initialize', {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'e2e', version: '0'}});
   assert.match(init.result.instructions, /Each tool's description carries the rules for its surface/);
@@ -160,9 +161,9 @@ test('with CUA_SHIM_SURFACES=computer,browser, serve registers both wrappers, co
   const [{start}] = records(home);
   assert.equal(start.env.CUA_REPL_ENABLED_SURFACES, 'computer,browser');
   assert.deepEqual(JSON.parse(start.env.NODE_REPL_TRUSTED_SERVICES), {sky: SKY_SERVICE, browser: BROWSER_SERVICE});
-  assert.match(start.env.CUA_BROWSER_VENDOR_SERVICE, /@oai\/browser-desktop\/scripts\/browser-service\.mjs$/);
   assert.equal(start.env.BROWSER_USE_AVAILABLE_BACKENDS, 'chrome');
-  assert.equal(start.env.BROWSER_USE_BACKEND_PATHS, undefined, 'an ambient backend list never reaches the runtime');
+  assert.equal(start.env.BROWSER_USE_BACKEND_PATHS, socketPathFor(realpathSync(home), socketNameFor('inst-a')), 'an ambient backend list never reaches the runtime: the bound profile\'s socket is listed');
+  assert.deepEqual(Object.keys(start.env).filter(key => /BROWSER/.test(key)).sort(), ['BROWSER_USE_AVAILABLE_BACKENDS', 'BROWSER_USE_BACKEND_PATHS']);
   server.child.stdin.end();
   assert.equal((await server.exit).code, 0);
 });
@@ -170,10 +171,10 @@ test('with CUA_SHIM_SURFACES=computer,browser, serve registers both wrappers, co
 test('profiles_list and cua profiles list check a bound profile against the live backends, one tab-free listing launch per request', {skip: !supported || NO_SCOPED_LAUNCH}, async t => {
   const home = fakeInstalledHome(t);
   const userHome = join(home, 'user');
-  const extension = join(chromeDataUnder(userHome), 'Default', 'Extensions', OPENAI_EXTENSION_ID, '1.0_0');
+  const extension = join(chromeDataUnder(userHome), 'Default', 'Extensions', CUA_EXTENSION_ID, '1.0_0');
   mkdirSync(extension, {recursive: true});
   writeFileSync(join(extension, 'manifest.json'), '{}');
-  writeFileSync(join(home, 'profiles.json'), JSON.stringify({version: 1, profiles: {personal: {chromeProfileDirectory: 'Default', extensionInstanceId: 'inst-a', boundAt: '2026-10-03T00:00:00.000Z'}}}));
+  writeFileSync(join(home, 'profiles.json'), JSON.stringify({version: 1, profiles: {personal: {chromeProfileDirectory: 'Default', extensionInstanceId: 'inst-a', boundAt: '2026-10-03T00:00:00.000Z', route: 'cua'}}}));
   const backendsFile = join(home, 'state', 'codex', 'fake-backends.json');
   mkdirSync(dirname(backendsFile), {recursive: true});
   const listingOf = (...ids) => JSON.stringify({backends: ids.map(instanceId => ({instanceId, family: 'chrome', profileName: null, tabCount: null}))});
@@ -186,7 +187,7 @@ test('profiles_list and cua profiles list check a bound profile against the live
     const reply = await server.call('profiles_list');
     seen[state] = reply.result.structuredContent.profiles[0];
     if (state === 'stale') assert.match(reply.result.content[0].text, /cua profiles bind personal/);
-    if (state === 'none live') assert.match(reply.result.content[0].text, /Chrome profile "Default".*extension's icon/);
+    if (state === 'none live') assert.match(reply.result.content[0].text, /Chrome profile "Default".*cua extension's popup/);
   }
   assert.deepEqual(seen, {
     live: {key: 'personal', ready: true, extensionInstanceId: 'inst-a'},
@@ -218,7 +219,7 @@ test('profiles_list and cua profiles list check a bound profile against the live
   assert.match(list.stdout, /^personal\s+not ready\s+Default\s+its bound extension instance is not among the live backends.*cua profiles bind personal.*$/m);
   writeFileSync(backendsFile, listingOf());
   const asleep = spawnSync(process.execPath, [join(REPO, 'bin', 'cua.mjs'), 'profiles', 'list'], {env: withoutConfigHomes({...process.env, CUA_HOME: home, HOME: userHome}), encoding: 'utf8', timeout: 30_000});
-  assert.match(asleep.stdout, /^personal\s+not ready\s+Default\s+no live OpenAI extension backend serves it.*Chrome profile "Default"/m, 'the CLI says what profiles_list says');
+  assert.match(asleep.stdout, /^personal\s+not ready\s+Default\s+no live cua extension backend serves it.*Chrome profile "Default"/m, 'the CLI says what profiles_list says');
   writeFileSync(backendsFile, listingOf('inst-a'));
   const json = JSON.parse(spawnSync(process.execPath, [join(REPO, 'bin', 'cua.mjs'), 'profiles', 'list', '--json'], {env: withoutConfigHomes({...process.env, CUA_HOME: home, HOME: userHome}), encoding: 'utf8', timeout: 30_000}).stdout);
   assert.deepEqual(json.profiles.map(p => [p.key, p.ready, p.extensionInstanceId]), [['personal', true, 'inst-a']]);
@@ -230,7 +231,7 @@ test('cua profiles bind shows each candidate\'s label, binds a unique name autom
   const home = fakeInstalledHome(t);
   const userHome = join(home, 'user');
   const userData = chromeDataUnder(userHome);
-  const extension = join(userData, 'Default', 'Extensions', OPENAI_EXTENSION_ID, '1.0_0');
+  const extension = join(userData, 'Default', 'Extensions', CUA_EXTENSION_ID, '1.0_0');
   mkdirSync(extension, {recursive: true});
   writeFileSync(join(extension, 'manifest.json'), '{}');
   mkdirSync(join(userData, 'Profile 8'), {recursive: true});
@@ -293,11 +294,11 @@ test('cua profiles bind shows each candidate\'s profile directory, binds by dire
   const userHome = join(home, 'user');
   const userData = chromeDataUnder(userHome);
   for (const [dir, id] of [['Default', 'inst-a'], ['Profile 12', 'inst-b']]) {
-    const extension = join(userData, dir, 'Extensions', OPENAI_EXTENSION_ID, '1.0_0');
+    const extension = join(userData, dir, 'Extensions', CUA_EXTENSION_ID, '1.0_0');
     mkdirSync(extension, {recursive: true});
     writeFileSync(join(extension, 'manifest.json'), '{}');
     mkdirSync(join(userData, dir, 'Local Extension Settings'), {recursive: true});
-    const db = await writeStore(join(userData, dir, 'Local Extension Settings', OPENAI_EXTENSION_ID), id, {keepOpen: true});
+    const db = await writeStore(join(userData, dir, 'Local Extension Settings', CUA_EXTENSION_ID), id, {keepOpen: true});
     t.after(() => db.close());
   }
   writeFileSync(join(userData, 'Local State'), JSON.stringify({profile: {info_cache: {Default: {name: '직장'}, 'Profile 12': {name: '직장'}}}}));
@@ -341,22 +342,23 @@ const UNCONFIRMED_TEARDOWN = `--import=data:text/javascript,${encodeURIComponent
 test('cua profiles list still shows the profiles but fails when its listing runtime was not confirmed stopped; an empty listing does not fail', {skip: !supported || NO_SCOPED_LAUNCH}, async t => {
   const home = fakeInstalledHome(t);
   const userHome = join(home, 'user');
-  const extension = join(chromeDataUnder(userHome), 'Default', 'Extensions', OPENAI_EXTENSION_ID, '1.0_0');
+  const extension = join(chromeDataUnder(userHome), 'Default', 'Extensions', CUA_EXTENSION_ID, '1.0_0');
   mkdirSync(extension, {recursive: true});
   writeFileSync(join(extension, 'manifest.json'), '{}');
-  const bound = {chromeProfileDirectory: 'Default', extensionInstanceId: 'inst-a', boundAt: '2026-10-03T00:00:00.000Z'};
+  const bound = {chromeProfileDirectory: 'Default', extensionInstanceId: 'inst-a', boundAt: '2026-10-03T00:00:00.000Z', route: 'cua'};
   writeFileSync(join(home, 'profiles.json'), JSON.stringify({version: 1, profiles: {personal: bound}}));
   mkdirSync(join(home, 'state', 'codex'), {recursive: true});
   writeFileSync(join(home, 'state', 'codex', 'fake-backends.json'), JSON.stringify({backends: [{instanceId: 'inst-a', family: 'chrome', profileName: null, tabCount: null}]}));
   const cua = (args, node = []) => spawnSync(process.execPath, [...node, join(REPO, 'bin', 'cua.mjs'), 'profiles', 'list', ...args], {env: withoutConfigHomes({...process.env, CUA_HOME: home, HOME: userHome}), encoding: 'utf8', timeout: 30_000});
-  const unlistable = {key: 'personal', ...bound, ready: false, reason: 'backends_unlistable'};
+  const {route, ...status} = bound;
+  const unlistable = {key: 'personal', ...status, ready: false, reason: 'backends_unlistable'};
 
   const json = cua(['--json'], [UNCONFIRMED_TEARDOWN]);
   assert.equal(json.status, 1, json.stderr);
   assert.deepEqual(JSON.parse(json.stdout), {ok: false, profiles: [unlistable], listingError: 'runtime_teardown_unconfirmed'});
   const human = cua([], [UNCONFIRMED_TEARDOWN]);
   assert.equal(human.status, 1, human.stderr);
-  assert.match(human.stdout, /^personal\s+not ready\s+Default\s+the live OpenAI extension backends could not be listed/m);
+  assert.match(human.stdout, /^personal\s+not ready\s+Default\s+the live cua extension backends could not be listed/m);
   assert.match(human.stderr, /could not be listed \(runtime_teardown_unconfirmed: .*owned processes may remain/);
 
   writeFileSync(join(home, 'state', 'codex', 'fake-backends.json'), JSON.stringify({backends: []}));
@@ -409,10 +411,10 @@ test('under the scoped default a CUA_HOME below $TMPDIR fails serve and the list
   assert.deepEqual(readdirSync(join(home, 'run')), []);
 
   const userHome = join(home, 'user');
-  const extension = join(chromeDataUnder(userHome), 'Default', 'Extensions', OPENAI_EXTENSION_ID, '1.0_0');
+  const extension = join(chromeDataUnder(userHome), 'Default', 'Extensions', CUA_EXTENSION_ID, '1.0_0');
   mkdirSync(extension, {recursive: true});
   writeFileSync(join(extension, 'manifest.json'), '{}');
-  writeFileSync(join(home, 'profiles.json'), JSON.stringify({version: 1, profiles: {personal: {chromeProfileDirectory: 'Default', extensionInstanceId: 'inst-a', boundAt: '2026-10-03T00:00:00.000Z'}}}));
+  writeFileSync(join(home, 'profiles.json'), JSON.stringify({version: 1, profiles: {personal: {chromeProfileDirectory: 'Default', extensionInstanceId: 'inst-a', boundAt: '2026-10-03T00:00:00.000Z', route: 'cua'}}}));
   const list = args => spawnSync(process.execPath, [join(REPO, 'bin', 'cua.mjs'), 'profiles', 'list', ...args], {env: withoutConfigHomes({...process.env, CUA_HOME: home, HOME: userHome, TMPDIR: tmpdir}), encoding: 'utf8', timeout: 30_000});
   const json = list(['--json']);
   assert.equal(JSON.parse(json.stdout).listingError, 'sandbox_conflict', json.stderr);
@@ -431,10 +433,10 @@ test('under the scoped default a CUA_HOME below $TMPDIR fails serve and the list
 test('cua profiles list and bind reject an invalid CUA_SHIM_SANDBOX classified, before any listing launch', {skip: !supported}, async t => {
   const home = fakeInstalledHome(t);
   const userHome = join(home, 'user');
-  const extension = join(chromeDataUnder(userHome), 'Default', 'Extensions', OPENAI_EXTENSION_ID, '1.0_0');
+  const extension = join(chromeDataUnder(userHome), 'Default', 'Extensions', CUA_EXTENSION_ID, '1.0_0');
   mkdirSync(extension, {recursive: true});
   writeFileSync(join(extension, 'manifest.json'), '{}');
-  writeFileSync(join(home, 'profiles.json'), JSON.stringify({version: 1, profiles: {personal: {chromeProfileDirectory: 'Default', extensionInstanceId: 'inst-a', boundAt: '2026-10-03T00:00:00.000Z'}}}));
+  writeFileSync(join(home, 'profiles.json'), JSON.stringify({version: 1, profiles: {personal: {chromeProfileDirectory: 'Default', extensionInstanceId: 'inst-a', boundAt: '2026-10-03T00:00:00.000Z', route: 'cua'}}}));
   for (const args of [['profiles', 'list', '--json'], ['profiles', 'list'], ['profiles', 'bind', 'personal', '--json']]) {
     const run = spawnSync(process.execPath, [join(REPO, 'bin', 'cua.mjs'), ...args], {env: withoutConfigHomes({...process.env, CUA_HOME: home, HOME: userHome, CUA_SHIM_SANDBOX: 'managed'}), encoding: 'utf8', timeout: 30_000});
     assert.notEqual(run.status, 0, args.join(' '));
@@ -628,10 +630,10 @@ test('serve with no store yet still serves, and secrets_list lists no keys', {sk
 function boundBrowserServe(t, listBackends, {highWaterMark} = {}) {
   const home = fakeInstalledHome(t);
   const userData = chromeDataUnder(join(home, 'user'));
-  const extension = join(userData, 'Default', 'Extensions', OPENAI_EXTENSION_ID, '1.0_0');
+  const extension = join(userData, 'Default', 'Extensions', CUA_EXTENSION_ID, '1.0_0');
   mkdirSync(extension, {recursive: true});
   writeFileSync(join(extension, 'manifest.json'), '{}');
-  writeFileSync(join(home, 'profiles.json'), JSON.stringify({version: 1, profiles: {personal: {chromeProfileDirectory: 'Default', extensionInstanceId: 'inst-a', boundAt: '2026-10-03T00:00:00.000Z'}}}));
+  writeFileSync(join(home, 'profiles.json'), JSON.stringify({version: 1, profiles: {personal: {chromeProfileDirectory: 'Default', extensionInstanceId: 'inst-a', boundAt: '2026-10-03T00:00:00.000Z', route: 'cua'}}}));
   const input = new PassThrough({autoDestroy: false});
   const output = new PassThrough(highWaterMark === undefined ? {} : {highWaterMark});
   const frames = [];

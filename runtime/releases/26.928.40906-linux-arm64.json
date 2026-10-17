@@ -29,24 +29,5 @@
     "skyVendorService": "cua_node/lib/node_modules/@oai/sky/dist/project/cua/sky_js/src/service.js",
     "browserVendorService": "cua_node/lib/node_modules/@oai/browser-desktop/scripts/browser-service.mjs",
     "vendorManifest": "cua_node/manifest.json"
-  },
-  "chromePlugin": {
-    "from": "usr/lib/chatgpt/resources/plugins/openai-bundled/plugins/chrome",
-    "dir": "chrome-plugin",
-    "layout": {
-      "host": "extension-host/linux/arm64/extension-host",
-      "browserClient": "scripts/browser-client.mjs",
-      "browserService": "scripts/browser-service.mjs",
-      "installManifest": "scripts/installManifest.mjs"
-    },
-    "signing": [],
-    "nativeHost": {
-      "name": "com.openai.codexextension",
-      "description": "ChatGPT browser native messaging host",
-      "extensionIds": [
-        "hehggadaopoacecdllhhajmbjkdcmajg",
-        "odlomjlbamekndcpllcnffbgeohgkmjh"
-      ]
-    }
   }
 }

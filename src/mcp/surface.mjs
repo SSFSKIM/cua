@@ -14,15 +14,6 @@ export function surfacesFrom(value = 'computer') {
   return SURFACES.filter(s => named.includes(s));
 }
 
-// The CUA_BROWSER_SERVICE the caller set: null when unset or empty (the launch then resolves it from the home's route,
-// src/runtime/launch.mjs browserServiceFor), else exactly `cua` or `vendor`.
-export function browserServiceFrom(env) {
-  const value = env.CUA_BROWSER_SERVICE;
-  if (value === undefined || value === '') return null;
-  if (value !== 'cua' && value !== 'vendor') fail('invalid_setting', 'CUA_BROWSER_SERVICE must be cua or vendor');
-  return value;
-}
-
 // The CUA_REPL_HOST the caller set: null when unset or empty (each connection then resolves its REPL host,
 // src/runtime/launch.mjs replHostFor), else exactly `cua` or `vendor`.
 export function replHostFrom(env) {
@@ -105,27 +96,19 @@ const LINUX_SECRETS_LIST_BROWSER_TOOL = withoutSetValue(SECRETS_LIST_BROWSER_TOO
 // The Chrome rules. A failed selection sends the agent back to profiles_list: the REPL client's own error for an id
 // that is not live ("The Chrome instance is unavailable.") is raised inside the REPL, where cua cannot see it, while
 // profiles_list names a stale binding. Which profile is meant stays the user's call (the dogfood agent bound one
-// itself from tab contents). The budget and evaluate lines follow the browser service the launch selects
-// (CUA_BROWSER_SERVICE): cua's own (the default, docs/doperpowers/specs/2026-10-13-own-browser-service-design.md)
-// takes a caller's timeoutMs up to 120 s for each phase of a call (finding the element, then acting and the load it
-// starts: src/browser-service/actions.mjs) and runs evaluate in the page's main world, sent once; the vendor's, the
-// one-release rollback, caps locator actions, waits and playwright.evaluate at 3 s (spike #25: a per-call timeoutMs
-// can only shorten it) and evaluates read-only. Either way a cell timeout resets the kernel, losing the tab handle.
-const SERVICE_RULES = {
-  cua: [
-    '- Locator actions, waits and evaluate take timeoutMs per phase (finding the element, then acting): 3 s by default, at most 120 s, 0 is one attempt; give the js call a timeout_ms covering every call it awaits.',
-    '- evaluate runs in the page like its own scripts (DOM, fetch, cookies, navigation) and is sent once: after a timeout or navigation it may have run, so check the page before running it again.',
-  ],
-  vendor: [
-    '- Locator actions, waits and evaluate stop at 3 s (timeoutMs can only shorten it); to wait longer, loop short waits to your own deadline under a larger js timeout_ms.',
-    '- evaluate is read-only: no fetch, no require, objects are non-extensible.',
-  ],
-};
+// itself from tab contents). The budget and evaluate lines are cua's browser service's
+// (docs/doperpowers/specs/2026-10-13-own-browser-service-design.md): it takes a caller's timeoutMs up to 120 s for each
+// phase of a call (finding the element, then acting and the load it starts: src/browser-service/actions.mjs) and runs
+// evaluate in the page's main world, sent once. A cell timeout resets the kernel, losing the tab handle.
+const SERVICE_RULES = [
+  '- Locator actions, waits and evaluate take timeoutMs per phase (finding the element, then acting): 3 s by default, at most 120 s, 0 is one attempt; give the js call a timeout_ms covering every call it awaits.',
+  '- evaluate runs in the page like its own scripts (DOM, fetch, cookies, navigation) and is sent once: after a timeout or navigation it may have run, so check the page before running it again.',
+];
 const SELECT_RULE = '- Give cua.getBrowser({extensionInstanceId}) only an id profiles_list returned for the profile the user means; if that fails, call profiles_list again. Never pick or bind a profile for the user.';
-const browserRules = service => [
+const BROWSER_RULES = [
   SELECT_RULE,
   '- Chrome tabs are DOM-only: tab.playwright locators, not native input; press keys on a focusable element, never a frame body; tab.cua.type pastes.',
-  ...SERVICE_RULES[service],
+  ...SERVICE_RULES,
   '- createBrowserTab can take 60 s (js timeout_ms of at least 60000); after a timeout a tab may still have opened: tell the user, don\'t retry. In a one-window profile, closing your tab or end_task unloads it; mark a tab handoff to keep it.',
 ];
 
@@ -134,7 +117,7 @@ const PROFILES_LIST_HEAD = 'List the Chrome profiles the user registered for bro
   + 'Call it before any Chrome work, and drive Chrome by these rules:';
 export const PROFILES_LIST_TOOL = {
   name: 'profiles_list',
-  description: [PROFILES_LIST_HEAD, ...browserRules('cua')].join('\n'),
+  description: [PROFILES_LIST_HEAD, ...BROWSER_RULES].join('\n'),
   inputSchema: NO_ARGUMENTS,
   annotations: {readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false},
   _meta: {'anthropic/searchHint': 'list registered chrome browser profiles for browser use'},
@@ -143,8 +126,8 @@ export const PROFILES_LIST_TOOL = {
 // browser (key maws, listed first) is what cua.getBrowser() with no id selects, so the first rule's "never pick" gives
 // way to the owner's default: the in-app browser, a Chrome profile only when the user names one.
 const MAWS_RULE = '- In MAWS: cua.getBrowser() with no id is this session\'s in-app browser (key maws). Use a Chrome profile only when the user names one.';
-function profilesListTool(service, inAppBrowser) {
-  const [select, ...rest] = browserRules(service);
+function profilesListTool(inAppBrowser) {
+  const [select, ...rest] = BROWSER_RULES;
   const rules = inAppBrowser ? [select.replace(' Never pick or bind a profile for the user.', ''), MAWS_RULE, ...rest] : [select, ...rest];
   return {...PROFILES_LIST_TOOL, description: [PROFILES_LIST_HEAD, ...rules].join('\n')};
 }
@@ -239,15 +222,11 @@ const LINUX_COMPUTER_RULES = [
   '- Prefer accessibility element indexes; coordinates are screenshot pixels (apply the host\'s downscale).',
   '- No app asks for approval: this connection drives every window of the session; the trusted wrapper is not a boundary on Linux.',
 ];
-const BROWSER_POINTER = {
-  cua: '- Chrome: follow the rules in profiles_list\'s description (DOM-only tabs, per-phase budgets up to 120 s, evaluate in the page, slow createBrowserTab).',
-  vendor: '- Chrome: follow the rules in profiles_list\'s description (DOM-only tabs, the 3 s cap, read-only evaluate, slow createBrowserTab).',
-};
+const BROWSER_POINTER = '- Chrome: follow the rules in profiles_list\'s description (DOM-only tabs, per-phase budgets up to 120 s, evaluate in the page, slow createBrowserTab).';
 
-// `browserService`: the browser service the connection's launch selects (src/mcp/connection.mjs).
-export function jsRulesFor(surfaces, {platform = process.platform, browserService = 'cua'} = {}) {
+export function jsRulesFor(surfaces, {platform = process.platform} = {}) {
   const computer = !surfaces.includes('computer') ? [] : platform === 'linux' ? LINUX_COMPUTER_RULES : COMPUTER_RULES;
-  return [JS_TITLE, ...computer, ...(surfaces.includes('browser') ? [BROWSER_POINTER[browserService]] : [])].join('\n');
+  return [JS_TITLE, ...computer, ...(surfaces.includes('browser') ? [BROWSER_POINTER] : [])].join('\n');
 }
 
 // A model-visible profile entry: key and readiness, the instance id when bound, the reason when not ready. Never the
@@ -261,10 +240,9 @@ export function withHostNotes(instructions, hostNotes) {
 const hintFor = (name, surfaces, platform) => (!surfaces.includes('browser') ? PASSED_THROUGH.get(name)
   : BROWSER_HINTS[surfaces.includes('computer') ? 'both' : 'browser'][name])(hintOs(platform));
 
-// `inAppBrowser`: a MAWS backend is configured (profiles_list's description says so). `browserService`: `cua` or
-// `vendor`, whose rules profiles_list and js teach.
-export function modelTools(upstreamTools, {surfaces = ['computer'], platform = process.platform, devices = false, inAppBrowser = false, browserService = 'cua'} = {}) {
-  const jsRules = jsRulesFor(surfaces, {platform, browserService});
+// `inAppBrowser`: a MAWS backend is configured (profiles_list's description says so).
+export function modelTools(upstreamTools, {surfaces = ['computer'], platform = process.platform, devices = false, inAppBrowser = false} = {}) {
+  const jsRules = jsRulesFor(surfaces, {platform});
   const passed = (Array.isArray(upstreamTools) ? upstreamTools : [])
     .filter(tool => PASSED_THROUGH.has(tool.name))
     .map(tool => ({
@@ -275,7 +253,7 @@ export function modelTools(upstreamTools, {surfaces = ['computer'], platform = p
   const linux = platform === 'linux';
   const endTask = linux ? LINUX_END_TASK_TOOL : END_TASK_TOOL;
   const local = surfaces.includes('browser')
-    ? [...passed, endTask, linux ? LINUX_SECRETS_LIST_BROWSER_TOOL : SECRETS_LIST_BROWSER_TOOL, profilesListTool(browserService, inAppBrowser)]
+    ? [...passed, endTask, linux ? LINUX_SECRETS_LIST_BROWSER_TOOL : SECRETS_LIST_BROWSER_TOOL, profilesListTool(inAppBrowser)]
     : [...passed, endTask, linux ? LINUX_SECRETS_LIST_TOOL : SECRETS_LIST_TOOL];
   return devices ? [...local, DEVICES_LIST_TOOL, DEVICES_USE_TOOL] : local;
 }

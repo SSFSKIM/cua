@@ -1,11 +1,13 @@
-// The trusted browser wrapper with test doubles for the vendor @oai/browser-desktop service and the secret store.
-// Request shapes are the pinned 0.1.1 ones: the vendor client sends nodeRepl.rpc("browser", {method, params}) with
-// method "execute" or "executeWithRecovery" and params the flat agent command {type, ...payload}
-// (browser-client.mjs AC; browser-service.mjs X2/rYe). What the vendor double receives is what the browser would get;
-// what the wrapper returns or throws is what reaches model code. The live path is scripts/accept-chrome.mjs (opt-in).
+// The trusted browser wrapper with test doubles for the browser service it delegates to (cua's own, by default) and the
+// secret store. Request shapes are the pinned @oai/browser-desktop 0.1.1 ones, which cua's service keeps: the REPL's
+// browser client sends nodeRepl.rpc("browser", {method, params}) with method "execute" or "executeWithRecovery" and
+// params the flat agent command {type, ...payload} (browser-client.mjs AC; browser-service.mjs X2/rYe). The double
+// raises the vendor's error classes and envelope too, which the wrapper still classifies. What the double receives is
+// what the browser would get; what the wrapper returns or throws is what reaches model code. The live path is
+// scripts/accept-chrome.mjs (opt-in).
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {createBrowserService, serviceSelection, PINNED_CUA_VERSION, PINNED_VENDOR_VERSION, SERVICE_REASONS} from '../src/services/browser.mjs';
+import {browserServiceFromEnv, createBrowserService, PINNED_CUA_VERSION, SERVICE_REASONS} from '../src/services/browser.mjs';
 import {KEPT_REASONS} from '../src/browser-service/errors.mjs';
 import {handleRpc as cuaHandleRpc} from '../src/browser-service/index.mjs';
 import {SecretStoreError} from '../src/secrets/store.mjs';
@@ -18,10 +20,10 @@ const axPaste = (text, extra = {}) => ax({kind: 'paste', element_index: 3, text,
 const axType = (text, extra = {}) => ax({kind: 'type_text', element_index: null, text, ...extra});
 const axSet = (value, extra = {}) => ax({kind: 'set_value', element_index: 5, value, ...extra});
 
-function harness({answer = () => ({ok: true, value: {}}), secretsUnavailable = null, read, version = PINNED_VENDOR_VERSION, expected = PINNED_VENDOR_VERSION, name = 'vendor'} = {}) {
+function harness({answer = () => ({ok: true, value: {}}), secretsUnavailable = null, read, version = PINNED_CUA_VERSION} = {}) {
   const received = [];
   const reads = [];
-  const vendor = {handleRpc: async request => { received.push(structuredClone(request)); return answer(request); }};
+  const delegate = {handleRpc: async request => { received.push(structuredClone(request)); return answer(request); }};
   const secrets = {
     read: read ?? (async label => {
       reads.push(label);
@@ -29,7 +31,7 @@ function harness({answer = () => ({ok: true, value: {}}), secretsUnavailable = n
       return VALUES[label];
     }),
   };
-  const service = createBrowserService({loadService: async () => vendor, actualServiceVersion: async () => version, expectedVersion: expected, serviceName: name, secrets, secretsUnavailable});
+  const service = createBrowserService({loadService: async () => delegate, actualServiceVersion: async () => version, secrets, secretsUnavailable});
   return {service, received, reads};
 }
 
@@ -63,7 +65,7 @@ test('ordinary values and every other command are delegated unchanged and never 
   assert.deepEqual(reads, []);
 });
 
-test('an exact reference in each eligible field is replaced by the stored value before the vendor sees it', async () => {
+test('an exact reference in each eligible field is replaced by the stored value before the service sees it', async () => {
   const {service, received} = harness();
   const cases = [
     [fill(REF('WORK_PASSWORD')), r => r.params.value],
@@ -95,7 +97,7 @@ test('the fill shape the vendor client sends without a timeout (absent or undefi
   assert.equal(received.at(-1).params.value, VALUES['WORK_PASSWORD']);
 });
 
-test('successful substituted results are returned as the vendor gave them', async () => {
+test('successful substituted results are returned as the service gave them', async () => {
   const {service} = harness({answer: () => ({ok: true, value: {}})});
   assert.deepEqual(await service.handleRpc(fill(REF('WORK_PASSWORD'))), {ok: true, value: {}});
   const plain = harness({answer: () => ({})});
@@ -135,7 +137,7 @@ test('with secrets turned off or unavailable, a reference fails closed and is ne
   }
 });
 
-// The vendor looks the service method up by property key and command types by string, so a request that only
+// The service method is looked up by property key and command types by string, so a request that only
 // coerces to an eligible one, or carries extra or mistyped fields, fails closed before any read.
 const UNSUPPORTED = [
   fill(REF('WORK_PASSWORD'), {extra: 1}),
@@ -169,31 +171,27 @@ test('a reference in a shape other than the pinned one fails before input instea
   }
 });
 
-test('secret input is refused on a browser service other than the selection\'s pinned version, before any read', async () => {
-  const selections = [
-    ['vendor', PINNED_VENDOR_VERSION, /@oai\/browser-desktop 0\.1\.1/, ['0.1.2', '0.1.0']],
-    ['cua', PINNED_CUA_VERSION, /the cua browser service 0\.1\.0/, ['0.1.1', '0.2.0']],
-  ];
-  for (const [selection, expected, pin, wrong] of selections) {
-    // A wrong version, a missing one and a malformed one all fail closed; only a well-formed one is repeated.
-    for (const version of [...wrong, null, 'v0.1.0\n', '../0.1.0']) {
-      const {service, received, reads} = harness({version, expected, name: selection});
-      const error = await rejection(service.handleRpc(fill(REF('WORK_PASSWORD'))));
-      const what = `${selection} ${JSON.stringify(version)}`;
-      assert.equal(error.code, 'unsupported_browser_runtime', what);
-      assert.match(error.message, pin, what);
-      assert.ok(error.message.includes(wrong.includes(version) ? `this runtime has ${version};` : 'this runtime has an unknown version;'), `${what}: ${error.message}`);
-      assert.deepEqual(received, [], what);
-      assert.deepEqual(reads, [], what);
-      assert.deepEqual(await service.handleRpc(fill('ordinary')), {ok: true, value: {}}, `${what}: ordinary commands still delegate`);
-    }
-    const {service, reads} = harness({version: expected, expected, name: selection});
-    assert.deepEqual(await service.handleRpc(fill(REF('WORK_PASSWORD'))), {ok: true, value: {}}, `${selection}: the pinned version passes`);
-    assert.deepEqual(reads, ['WORK_PASSWORD']);
+test('secret input is refused on a browser service other than cua\'s pinned version, before any read', async () => {
+  assert.equal(PINNED_CUA_VERSION, '0.1.0');
+  const wrong = ['0.1.1', '0.2.0'];
+  // A wrong version, a missing one and a malformed one all fail closed; only a well-formed one is repeated.
+  for (const version of [...wrong, null, 'v0.1.0\n', '../0.1.0']) {
+    const {service, received, reads} = harness({version});
+    const error = await rejection(service.handleRpc(fill(REF('WORK_PASSWORD'))));
+    const what = JSON.stringify(version);
+    assert.equal(error.code, 'unsupported_browser_runtime', what);
+    assert.match(error.message, /pinned to the cua browser service 0\.1\.0/, what);
+    assert.ok(error.message.includes(wrong.includes(version) ? `this runtime has ${version};` : 'this runtime has an unknown version;'), `${what}: ${error.message}`);
+    assert.deepEqual(received, [], what);
+    assert.deepEqual(reads, [], what);
+    assert.deepEqual(await service.handleRpc(fill('ordinary')), {ok: true, value: {}}, `${what}: ordinary commands still delegate`);
   }
+  const {service, reads} = harness({version: PINNED_CUA_VERSION});
+  assert.deepEqual(await service.handleRpc(fill(REF('WORK_PASSWORD'))), {ok: true, value: {}}, 'the pinned version passes');
+  assert.deepEqual(reads, ['WORK_PASSWORD']);
 });
 
-test('a substituted command the vendor rejects becomes a bounded value-free classification', async () => {
+test('a substituted command the service rejects becomes a bounded value-free classification', async () => {
   const value = VALUES['WORK_PASSWORD'];
   const named = (name, props = {}) => () => { const e = new Error(`failed near ${value}`); e.name = name; Object.assign(e, props); throw e; };
   const cases = [
@@ -234,7 +232,7 @@ test('an {ok:false} recovery envelope after substitution is rewritten to the sam
   assertValueFree(oddError);
 });
 
-test('failures and envelopes of unsubstituted commands keep the vendor\'s own result untouched', async () => {
+test('failures and envelopes of unsubstituted commands keep the service\'s own result untouched', async () => {
   const original = new Error('locator.fill failed for selector #x');
   assert.equal(await rejection(harness({answer: () => { throw original; }}).service.handleRpc(fill('ordinary'))), original);
   const envelope = {ok: false, error: {schema_version: 1, reason: 'protected_command_failed'}};
@@ -253,13 +251,13 @@ test('the wrapper never writes to the console or standard streams, on success or
   assert.deepEqual(writes, []);
 });
 
-test('the vendor service loads once, and a load failure on a substituted call is reported without a value', async () => {
+test('the service loads once, and a load failure on a substituted call is reported without a value', async () => {
   let loads = 0;
-  const service = createBrowserService({loadService: async () => { loads++; return {handleRpc: async () => ({ok: true, value: {}})}; }, actualServiceVersion: async () => PINNED_VENDOR_VERSION, expectedVersion: PINNED_VENDOR_VERSION, secrets: {read: async () => 'v'}});
+  const service = createBrowserService({loadService: async () => { loads++; return {handleRpc: async () => ({ok: true, value: {}})}; }, actualServiceVersion: async () => PINNED_CUA_VERSION, secrets: {read: async () => 'v'}});
   await service.handleRpc({method: 'setup', params: {}});
   await service.handleRpc(fill(REF('WORK_PASSWORD')));
   assert.equal(loads, 1);
-  const broken = createBrowserService({loadService: async () => { throw new Error('cannot import'); }, actualServiceVersion: async () => PINNED_VENDOR_VERSION, expectedVersion: PINNED_VENDOR_VERSION, secrets: {read: async () => VALUES['WORK_PASSWORD']}});
+  const broken = createBrowserService({loadService: async () => { throw new Error('cannot import'); }, actualServiceVersion: async () => PINNED_CUA_VERSION, secrets: {read: async () => VALUES['WORK_PASSWORD']}});
   assertValueFree(await rejection(broken.handleRpc(fill(REF('WORK_PASSWORD')))));
 });
 
@@ -282,7 +280,7 @@ test('the transport field client_timeout_ms the vendor client adds to every comm
   }
 });
 
-test('a reference to a reserved CUA_DEVICE_ key is refused secret_reserved before the store or the vendor is touched', async () => {
+test('a reference to a reserved CUA_DEVICE_ key is refused secret_reserved before the store or the service is touched', async () => {
   const device = 'CUA_DEVICE_nuadM_MUKSbSN4L59EffLQ';
   for (const secretsUnavailable of [null, 'secrets_disabled']) {
     const reads = [];
@@ -314,9 +312,9 @@ test('a reserved key in lower or mixed case is refused too: the store\'s file sy
 
 // ---- the default selection in MAWS (docs/doperpowers/specs/2026-10-08-maws-in-app-browser-design.md, "Discovery") ----
 // cua.getBrowser() sends get_default_browser {}, getBrowser({url}) get_browser_for_url {url} (oai_js_cua
-// create_browser_api.js `l`); the vendor answers either from its own preference and falls back to any extension
-// (browser-service.mjs fL, hL). With CUA_BROWSER_DEFAULT_INSTANCE the wrapper turns them into get_browser for that
-// instance's browser id, so an unqualified selection is the in-app browser or the vendor's own unavailable error.
+// create_browser_api.js `l`); the service answers either from its own preference and, like the vendor's, falls back to
+// any extension (browser-service.mjs fL, hL). With CUA_BROWSER_DEFAULT_INSTANCE the wrapper turns them into get_browser for that
+// instance's browser id, so an unqualified selection is the in-app browser or the service's own unavailable error.
 
 const LISTING = [
   {id: '1', type: 'extension', family: 'chrome', name: 'cua', metadata: {extensionInstanceId: 'chrome-inst'}},
@@ -324,7 +322,7 @@ const LISTING = [
 ];
 function selectionHarness({listing = LISTING, defaultInstance = 'maws:app-1'} = {}) {
   const received = [];
-  const vendor = {handleRpc: async request => {
+  const delegate = {handleRpc: async request => {
     received.push(structuredClone(request));
     const {type, id} = request.params ?? {};
     if (type === 'list_browsers') return listing;
@@ -335,11 +333,11 @@ function selectionHarness({listing = LISTING, defaultInstance = 'maws:app-1'} = 
     }
     return {echo: type};
   }};
-  const service = createBrowserService({loadService: async () => vendor, actualServiceVersion: async () => PINNED_VENDOR_VERSION, expectedVersion: PINNED_VENDOR_VERSION, secrets: {read: async () => assert.fail('no secret is read')}, defaultInstance});
+  const service = createBrowserService({loadService: async () => delegate, actualServiceVersion: async () => PINNED_CUA_VERSION, secrets: {read: async () => assert.fail('no secret is read')}, defaultInstance});
   return {service, received};
 }
 
-test('an unqualified selection (default or by URL) is rewritten to the default instance\'s browser before the vendor sees it', async () => {
+test('an unqualified selection (default or by URL) is rewritten to the default instance\'s browser before the service sees it', async () => {
   for (const params of [{type: 'get_default_browser'}, {type: 'get_browser_for_url', url: 'https://example.com/'}, {type: 'get_default_browser', client_timeout_ms: 30000}]) {
     for (const method of ['execute', 'executeWithRecovery']) {
       const {service, received} = selectionHarness();
@@ -351,7 +349,7 @@ test('an unqualified selection (default or by URL) is rewritten to the default i
   }
 });
 
-test('with no maws: browser listed (MAWS down) an unqualified selection fails with the vendor\'s unavailable error, never another browser', async () => {
+test('with no maws: browser listed (MAWS down) an unqualified selection fails with the service\'s unavailable error, never another browser', async () => {
   for (const defaultInstance of ['maws:app-1', 'maws:']) {
     const {service, received} = selectionHarness({listing: [LISTING[0]], defaultInstance});
     await assert.rejects(service.handleRpc({method: 'execute', params: {type: 'get_default_browser'}}), new RegExp(`^Error: Browser is not available: ${defaultInstance}$`));
@@ -394,29 +392,38 @@ test('without a default instance (no MAWS backend configured) unqualified select
   assert.deepEqual(received, [{method: 'execute', params: {type: 'get_default_browser'}}]);
 });
 
-// ---- the selection (CUA_BROWSER_SERVICE) ------------------------------------------------------------------------
+// ---- the service delegated to: always cua's own (#79) -------------------------------------------------------------
 
-test('the wrapper\'s copy of the kept reasons is the cua service\'s vocabulary (it cannot import it under the vendor selection)', () => {
+test('the wrapper\'s copy of the kept reasons is the cua service\'s vocabulary (a copy, so the wrapper imports nothing of the service before a request needs it)', () => {
   assert.deepEqual([...SERVICE_REASONS].sort(), [...KEPT_REASONS].sort());
 });
 
-test('cua\'s own service is the default selection (unset, empty or named), with its VERSION file and its pin', async () => {
+// cua's service before any setup answers these itself: an unknown request method, and a command before `setup`.
+const CUA_UNSUPPORTED = /^Error: Unsupported browser service request$/;
+const CUA_UNINITIALIZED = /^Error: Browser runtime has not been initialized$/;
+
+test('by default the wrapper delegates to cua\'s own service under its VERSION file and pin; options naming another service are not read', async () => {
   assert.equal(PINNED_CUA_VERSION, '0.1.0');
-  for (const env of [{}, {CUA_BROWSER_SERVICE: ''}, {CUA_BROWSER_SERVICE: 'cua'}]) {
-    const selected = serviceSelection({...env, CUA_BROWSER_VENDOR_SERVICE: '/vendor/scripts/browser-service.mjs'});
-    assert.equal(selected.name, 'cua', JSON.stringify(env));
-    assert.equal(selected.expectedVersion, PINNED_CUA_VERSION);
-    assert.equal(await selected.actualServiceVersion(), '0.1.0');
-    assert.equal((await selected.loadService()).handleRpc, cuaHandleRpc);
+  await assert.rejects(cuaHandleRpc({method: 'nope'}), CUA_UNSUPPORTED, 'what cua\'s service answers itself');
+  for (const extra of [{}, {expectedVersion: '0.1.1', serviceName: 'vendor'}]) {
+    const reads = [];
+    const service = createBrowserService({secrets: {read: async label => { reads.push(label); return VALUES[label]; }}, ...extra});
+    await assert.rejects(service.handleRpc({method: 'nope'}), CUA_UNSUPPORTED, JSON.stringify(extra));
+    // A substituted fill passes the pin with the real VERSION (0.1.0), is read, and reaches cua's service, which has
+    // no browser runtime yet: its plain error is classified without its text.
+    const error = await rejection(service.handleRpc(fill(REF('WORK_PASSWORD'))));
+    assert.equal(error.code, 'secret_input_failed', `${JSON.stringify(extra)}: ${error.message}`);
+    assert.match(error.message, /\(failed\)/);
+    assert.deepEqual(reads, ['WORK_PASSWORD'], JSON.stringify(extra));
   }
 });
 
-test('the vendor is selected only when named (the one-release rollback); an unknown selection loads nothing and has no version', async () => {
-  const selected = serviceSelection({CUA_BROWSER_SERVICE: 'vendor', CUA_BROWSER_VENDOR_SERVICE: '/nonexistent/scripts/browser-service.mjs'});
-  assert.equal(selected.name, 'vendor');
-  assert.equal(selected.expectedVersion, PINNED_VENDOR_VERSION);
-  assert.equal(await selected.actualServiceVersion(), null, 'no package.json there');
-  const unknown = serviceSelection({CUA_BROWSER_SERVICE: 'openai'});
-  assert.equal(await unknown.actualServiceVersion(), null);
-  await assert.rejects(unknown.loadService(), /\[browser_not_configured\]$/);
+test('browserServiceFromEnv always delegates to cua\'s own service: the removed vendor settings in the environment change nothing', async () => {
+  for (const env of [{}, {CUA_BROWSER_SERVICE: 'vendor', CUA_BROWSER_VENDOR_SERVICE: '/nonexistent/scripts/browser-service.mjs'}, {CUA_BROWSER_SERVICE: 'openai'}]) {
+    const service = browserServiceFromEnv({...env, CUA_SECRETS_UNAVAILABLE: 'secrets_disabled'});
+    await assert.rejects(service.handleRpc({method: 'nope'}), CUA_UNSUPPORTED, JSON.stringify(env));
+    await assert.rejects(service.handleRpc({method: 'execute', params: {type: 'list_browsers'}}), CUA_UNINITIALIZED, JSON.stringify(env));
+    const refused = await rejection(service.handleRpc(fill(REF('WORK_PASSWORD'))));
+    assert.equal(refused.code, 'secrets_disabled', `${JSON.stringify(env)}: the launch's reason, before anything is loaded or read`);
+  }
 });

@@ -54,7 +54,7 @@ test('the peer check: a host whose relay could not load the addon blocks the row
   const row = mawsHostCheck({home: h, alive: () => true});
   assert.equal(row.status, 'blocked');
   assert.match(row.detail, /maws:app-1 \(pid 1001, peer check unavailable\), maws:app-1 \(pid 1002, peer check off\)/);
-  assert.match(row.detail, /every vendor browser connection to it is refused/);
+  assert.match(row.detail, /every browser service connection to it is refused/);
   assert.match(row.detail, /scripts\/build-peer-auth\.sh/);
 });
 

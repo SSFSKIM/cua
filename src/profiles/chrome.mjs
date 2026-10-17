@@ -1,15 +1,12 @@
-// Passive facts about the user's Chrome that the profile registry and doctor need, read from files and the process
-// table only: never a connection, a profile database, cookies, passwords or extension storage, and nothing is
-// written (bind's directory mapping reads copies of the OpenAI extension's own store; directory-map.mjs). Display names
+// Passive facts about the user's Chrome that the profile registry and doctor need, read from files only: never a connection, a profile database, cookies, passwords or extension storage, and nothing is
+// written (bind's directory mapping reads copies of the cua extension's own store; directory-map.mjs). Display names
 // are read from Chrome's `Local State` for the bind rule and for showing beside bind's candidates only; nothing stores
 // them (they can be the account holder's name).
 //   - a registered profile directory exists (a direct child of the user-data directory);
-//   - the route's extension is installed there (file presence only; it says nothing about the extension being enabled
-//     or connected): for the OpenAI extension (the vendor route) some Extensions/<id>/<version>/manifest.json exists;
-//     for cua's own extension (the cua route, `extensionId` CUA_EXTENSION_ID) that, or Local Extension Settings/<id>/,
-//     which is all an unpacked load has (Chrome loads it from its source directory; the store appears on first run);
-//   - a native-messaging manifest (com.openai.codexextension by default), and which host it names (desktop's or cua's);
-//   - how many OpenAI hosts are running, each started by the user's Chrome.
+//   - cua's extension is installed there (file presence only; it says nothing about the extension being enabled or
+//     connected): some Extensions/<id>/<version>/manifest.json exists, or Local Extension Settings/<id>/, which is all
+//     an unpacked load has (Chrome loads it from its source directory; the store appears on first run);
+//   - a native-messaging manifest (io.github.ssfskim.cua by default), and the host path it names.
 // Each file fact is three-valued: a path that is not there (ENOENT/ENOTDIR) is absent, but a read this process is not
 // allowed to make (or any other failure) is `unreadable` with its error code, never absence. macOS 26+ can put
 // Chrome's user-data directory behind privacy protection: a process without Full Disk Access (Terminal by default, and
@@ -20,7 +17,7 @@ import {readdirSync, readFileSync, statSync} from 'node:fs';
 import {homedir} from 'node:os';
 import {isAbsolute, join} from 'node:path';
 import {CuaError, fail} from '../runtime/errors.mjs';
-import {CUA_EXTENSION_ID} from '../chrome/extension.mjs';
+import {CUA_EXTENSION_ID, CUA_HOST_NAME} from '../chrome/extension.mjs';
 
 export {CUA_EXTENSION_ID};
 
@@ -39,9 +36,6 @@ export function chromeUserData({host = hostTarget(), env = process.env, userHome
   if (host.platform === 'linux') return join(linuxConfigHome({env, userHome, chromeFamily: true}), 'google-chrome');
   return join(userHome, 'Library', 'Application Support', 'Google', 'Chrome');
 }
-export const OPENAI_EXTENSION_ID = 'hehggadaopoacecdllhhajmbjkdcmajg';
-export const NATIVE_HOST_NAME = 'com.openai.codexextension';
-export const HOST_BASENAME = 'ChatGPT for Chrome';
 // What to do about a read this process was refused; the live check (the runtime's own listing) does not need it. On
 // macOS that is privacy protection (Full Disk Access); on Linux, ordinary file permissions.
 export const permissionFix = platform => platform === 'darwin'
@@ -52,7 +46,6 @@ export const PERMISSION_FIX = permissionFix(process.platform);
 export const ACCESS_NOTE = process.platform === 'darwin' ? 'macOS Privacy & Security → Full Disk Access for your terminal'
   : 'file permissions: the user cua runs as must be able to read it';
 export const PERMISSION_HINT = `${PERMISSION_FIX}; the live check still works without it`;
-const CHROME_EXECUTABLE = /\/Google Chrome\.app\/Contents\/MacOS\/Google Chrome$/;
 
 // A profile directory is named, never a path: one segment, no separators or dot names.
 const isDirectoryName = name => typeof name === 'string' && name.length > 0 && name.length <= 255
@@ -83,45 +76,18 @@ function installedCopyState(profile, extensionId) {
   return unreadable ? {unreadable} : 'absent';
 }
 // cua's extension is present when installed (Store or CRX) or loaded unpacked (only its extension store exists).
-function extensionState(profile, extensionId) {
-  const installed = installedCopyState(profile, extensionId);
-  if (installed === 'installed' || extensionId !== CUA_EXTENSION_ID) return installed;
-  const unpacked = directoryState(join(profile, 'Local Extension Settings', extensionId));
+function extensionState(profile) {
+  const installed = installedCopyState(profile, CUA_EXTENSION_ID);
+  if (installed === 'installed') return installed;
+  const unpacked = directoryState(join(profile, 'Local Extension Settings', CUA_EXTENSION_ID));
   if (unpacked === 'exists') return 'installed';
   return installed.unreadable ? installed : unpacked.unreadable ? unpacked : 'absent';
 }
 const stateName = state => typeof state === 'string' ? state : 'unreadable';
-const within = (path, root) => root && (path === root || path.startsWith(root.replace(/\/+$/, '') + '/'));
 
-// Which installation a native host path belongs to: cua's own home, the desktop app's installs (its macOS bundles, its
-// Linux deb under /usr/lib/chatgpt, or the plugin cache it writes under ~/.codex), or something else. The roots of
-// both platforms are listed together: each names a place only that platform's desktop app writes.
-export function hostPathClass(path, {cuaHome, userHome = homedir()}) {
-  if (within(path, cuaHome)) return 'cua';
-  const desktop = ['/Applications/ChatGPT.app', '/Applications/Codex.app', '/usr/lib/chatgpt', join(userHome, '.codex'), join(userHome, 'Library', 'Application Support', 'OpenAI')];
-  return desktop.some(root => within(path, root)) ? 'desktop' : 'other';
-}
-
-// The running OpenAI hosts. macOS: `ps -axo pid=,ppid=,comm=` (comm is the full path), counting hosts whose parent is
-// Google Chrome. Linux: `ps -eo pid=,args=` (comm is truncated there), counting processes whose executable is a Linux
-// host for this arch, the argument the browser passes after it.
-export function countLiveHosts(psText, {host = hostTarget()} = {}) {
-  if (host.platform === 'linux') {
-    const executable = new RegExp(`^\\s*\\d+\\s+(/.*?/extension-host/linux/${host.arch}/extension-host)(?:\\s|$)`);
-    return psText.split('\n').filter(line => executable.test(line)).length;
-  }
-  const rows = psText.split('\n').map(line => line.match(/^\s*(\d+)\s+(\d+)\s+(.*?)\s*$/)).filter(Boolean)
-    .map(([, pid, ppid, executable]) => ({pid: Number(pid), ppid: Number(ppid), executable}));
-  const byPid = new Map(rows.map(row => [row.pid, row]));
-  return rows.filter(row => row.executable.endsWith(`/${HOST_BASENAME}`) && CHROME_EXECUTABLE.test(byPid.get(row.ppid)?.executable ?? '')).length;
-}
-
-// `extensionId` is the route's extension (route.mjs extensionIdFor): the OpenAI extension unless the home is on the cua
-// route.
-export function chromeFacts({host = hostTarget(), env = process.env, userHome = homedir(), userData = chromeUserData({host, env, userHome}), extensionId = OPENAI_EXTENSION_ID} = {}) {
+export function chromeFacts({host = hostTarget(), env = process.env, userHome = homedir(), userData = chromeUserData({host, env, userHome})} = {}) {
   return {
     userData,
-    extensionId,
     // Exercise actual directory/file reads: stat alone can succeed even when TCC refuses Chrome's data.
     dataReadability() {
       try {
@@ -136,13 +102,13 @@ export function chromeFacts({host = hostTarget(), env = process.env, userHome = 
     // -> 'exists' | 'missing' | 'unreadable'
     profileDirectoryExists: name => isDirectoryName(name) ? stateName(directoryState(join(userData, name))) : 'missing',
     // -> 'installed' | 'absent' | 'unreadable'
-    extensionInstalled: name => isDirectoryName(name) ? stateName(extensionState(join(userData, name), extensionId)) : 'absent',
+    extensionInstalled: name => isDirectoryName(name) ? stateName(extensionState(join(userData, name))) : 'absent',
     // The error code behind an unreadable profile directory or extension directory, or undefined.
     readError(name) {
       if (!isDirectoryName(name)) return undefined;
       const directory = directoryState(join(userData, name));
       if (directory === 'missing') return undefined;
-      return directory.unreadable ?? extensionState(join(userData, name), extensionId).unreadable;
+      return directory.unreadable ?? extensionState(join(userData, name)).unreadable;
     },
     // Profile directory -> display name, from Local State's profile.info_cache. A Local State this process may not
     // read fails with the permission cause and its code (`readError` on the error), not as a malformed file.
@@ -164,9 +130,9 @@ export function chromeFacts({host = hostTarget(), env = process.env, userHome = 
         fail('chrome_local_state_unreadable', `Chrome's Local State in ${userData} could not be read as a profile list`);
       return new Map(Object.entries(cache).filter(([, info]) => typeof info?.name === 'string').map(([dir, info]) => [dir, info.name]));
     },
-    // The native-messaging manifest of `name` (by default the one the OpenAI extension connects to), and the class of
-    // the host it names; `readError` when this process may not read it (so whether it exists is unknown).
-    nativeHost({cuaHome, userHome, name = NATIVE_HOST_NAME}) {
+    // The native-messaging manifest of `name` (by default the one cua's extension connects to) and the host path it
+    // names; `readError` when this process may not read it (so whether it exists is unknown).
+    nativeHost({name = CUA_HOST_NAME} = {}) {
       const file = join(userData, 'NativeMessagingHosts', `${name}.json`);
       let text;
       try { text = readFileSync(file, 'utf8'); } catch (error) {
@@ -176,7 +142,7 @@ export function chromeFacts({host = hostTarget(), env = process.env, userHome = 
       let manifest;
       try { manifest = JSON.parse(text); } catch { manifest = null; }
       if (typeof manifest?.path !== 'string') return {present: true, unreadable: true};
-      return {present: true, path: manifest.path, pathClass: hostPathClass(manifest.path, {cuaHome, userHome})};
+      return {present: true, path: manifest.path};
     },
   };
 }

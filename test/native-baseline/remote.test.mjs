@@ -28,7 +28,7 @@ test('the serve has the native surface only, the requested REPL host, session ap
   assert.equal(command, 'ssh');
   assert.deepEqual(args.slice(0, 3), ['-o', 'BatchMode=yes', 'mini']);
   assert.match(args[3], /CUA_REPL_HOST=vendor CUA_SHIM_SURFACES=computer CUA_SHIM_PERSIST=session CUA_SHIM_SECRETS=off node '\/Users\/someone\/cua-parity\/bin\/cua\.mjs' serve$/);
-  assert.doesNotMatch(args[3], /DISPLAY|CUA_BROWSER_SERVICE/);
+  assert.doesNotMatch(args[3], /DISPLAY/);
   assert.throws(() => serveCommand({device: 'mini', checkout: '/x', home: '/y', host: 'other', platform: 'darwin'}), /host must be vendor or cua/);
 });
 

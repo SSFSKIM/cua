@@ -8,11 +8,11 @@ import {chmodSync, lstatSync, mkdirSync, readdirSync, readFileSync, statSync, sy
 import {join, relative} from 'node:path';
 import {scratch} from './fixtures/runtime-fixture.mjs';
 import {CLASSIC_LEVEL_MODULES, NO_CLASSIC_LEVEL, writeStore} from './fixtures/classic-level.mjs';
-import {chromeFacts, OPENAI_EXTENSION_ID} from '../src/profiles/chrome.mjs';
+import {chromeFacts, CUA_EXTENSION_ID} from '../src/profiles/chrome.mjs';
 import {mapExtensionDirectories, STAGING_PREFIX} from '../src/profiles/directory-map.mjs';
 
 const OTHER_EXTENSION_ID = 'odlomjlbamekndcpllcnffbgeohgkmjh';
-const EXTENSION_IDS = [OPENAI_EXTENSION_ID, OTHER_EXTENSION_ID];
+const EXTENSION_IDS = [CUA_EXTENSION_ID, OTHER_EXTENSION_ID];
 const asRoot = process.getuid?.() === 0;
 const skip = NO_CLASSIC_LEVEL;
 
@@ -28,7 +28,7 @@ async function setup(t, profiles) {
   for (const [dir, {name, store, other}] of Object.entries(profiles)) {
     mkdirSync(join(userData, dir), {recursive: true});
     infoCache[dir] = {name};
-    for (const [id, extension] of [[store, OPENAI_EXTENSION_ID], [other, OTHER_EXTENSION_ID]]) {
+    for (const [id, extension] of [[store, CUA_EXTENSION_ID], [other, OTHER_EXTENSION_ID]]) {
       if (id === undefined) continue;
       const path = join(userData, dir, 'Local Extension Settings', extension);
       mkdirSync(join(path, '..'), {recursive: true});
@@ -81,7 +81,7 @@ test('a store that is a symlink is copied through the link: the live store it po
   mkdirSync(join(outside, '..'), {recursive: true});
   const db = await writeStore(outside, 'inst-linked', {keepOpen: true});
   t.after(() => db.close());
-  const link = join(userData, 'Default', 'Local Extension Settings', OPENAI_EXTENSION_ID);
+  const link = join(userData, 'Default', 'Local Extension Settings', CUA_EXTENSION_ID);
   mkdirSync(join(link, '..'), {recursive: true});
   symlinkSync(outside, link);
   assert.ok(lstatSync(link).isSymbolicLink());
@@ -95,7 +95,7 @@ test('a store that is a symlink is copied through the link: the live store it po
 
 test('a store this process may not read leaves the mapping partial with the code; the readable stores still count', {skip: skip || asRoot}, async t => {
   const {map, userData, staging} = await setup(t, {Default: {name: 'A', store: 'inst-a'}, 'Profile 1': {name: 'B', store: 'inst-b'}});
-  const denied = join(userData, 'Profile 1', 'Local Extension Settings', OPENAI_EXTENSION_ID);
+  const denied = join(userData, 'Profile 1', 'Local Extension Settings', CUA_EXTENSION_ID);
   chmodSync(denied, 0o000);
   let result;
   try { result = await map(); } finally { chmodSync(denied, 0o755); }
@@ -124,7 +124,7 @@ test('a malformed Local State, or no loadable classic-level when a store exists,
 
 test('a store that is not a LevelDB, or a reader that fails, counts as unreadable and its copy is still removed', {skip}, async t => {
   const {map, userData, staging} = await setup(t, {Default: {name: 'A', store: 'inst-a'}, 'Profile 1': {name: 'B'}});
-  const bogus = join(userData, 'Profile 1', 'Local Extension Settings', OPENAI_EXTENSION_ID);
+  const bogus = join(userData, 'Profile 1', 'Local Extension Settings', CUA_EXTENSION_ID);
   mkdirSync(bogus, {recursive: true});
   writeFileSync(join(bogus, 'not-leveldb'), 'x');
   const result = await map();

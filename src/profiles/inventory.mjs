@@ -1,4 +1,4 @@
-// The live extension backends, as the vendor browser service sees them, for `cua profiles bind` and for readiness
+// The live extension backends, as the browser service sees them, for `cua profiles bind` and for readiness
 // (`cua profiles list`, profiles_list): one bounded, serve-less launch of the installed runtime with the browser surface
 // only (the same launch `cua serve` makes, with secrets off), one MCP handshake and one read-only cell — cua.listBrowsers,
 // then, for bind only, cua.listTabs per Chrome backend for a tab count — then teardown through the owned anchor. Every

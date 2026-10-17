@@ -38,7 +38,7 @@ const caught = code => `try { ${code} nodeRepl.write("resolved"); } catch (e) { 
 // (sandboxModeFrom with CUA_SHIM_SANDBOX unset).
 async function linuxSession(t, {surfaces, secrets = {}}) {
   const fixture = linuxNativeRuntime(t, {node, secrets});
-  const ambient = {HOME: fixture.home, USER: 'u', TMPDIR: process.env.TMPDIR, LANG: 'C.UTF-8', CUA_REPL_HOST: 'cua', CUA_BROWSER_SERVICE: 'cua', ...DESKTOP};
+  const ambient = {HOME: fixture.home, USER: 'u', TMPDIR: process.env.TMPDIR, LANG: 'C.UTF-8', CUA_REPL_HOST: 'cua', ...DESKTOP};
   const services = {...(surfaces.includes('computer') ? {sky: LINUX_SKY} : {}), ...(surfaces.includes('browser') ? {browser: BROWSER_SERVICE} : {})};
   const launch = buildLaunch({runtime: fixture.runtime, home: fixture.home, sessionId: 'linux-native-1', surfaces, services, secretsDir: fixture.secretsDir, ambient, resolveOwnNode: () => node});
   // The pinned wrapper fixture imports the production module: its directory is trusted as it is when that is registered.

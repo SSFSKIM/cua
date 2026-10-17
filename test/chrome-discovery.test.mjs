@@ -1,7 +1,7 @@
-// H2: backend discovery on the cua route. `cua serve` and the inventory's listing launch (both through buildLaunch)
-// set BROWSER_USE_BACKEND_PATHS to the socket of every profile bound on the cua route plus every socket present in
-// $CUA_HOME/chrome/b, so a Chrome opened after the launch is found at its pre-listed path; on the vendor route (or with
-// no registration) the variable stays unset, so the vendor's own /tmp scan finds OpenAI's hosts.
+// H2: backend discovery. `cua serve` and the inventory's listing launch (both through buildLaunch) set
+// BROWSER_USE_BACKEND_PATHS to the socket of every profile bound on the cua route plus every socket present in
+// $CUA_HOME/chrome/b, so a Chrome opened after the launch is found at its pre-listed path. The variable is always set,
+// an empty list included, so the service never scans anywhere else.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdirSync, realpathSync, writeFileSync} from 'node:fs';
@@ -9,7 +9,7 @@ import {join} from 'node:path';
 import {buildLaunch, BROWSER_SERVICE, SKY_SERVICE} from '../src/runtime/launch.mjs';
 import {parsePin, runtimeFor} from '../src/runtime/manifest.mjs';
 import {backendDir, clientModeDir, socketNameFor, socketPathFor} from '../src/chrome/extension.mjs';
-import {backendPaths, launchBackendPaths, MAWS_INSTANCE_MARKER, VENDOR_SOCKET_DIR} from '../src/chrome/discovery.mjs';
+import {backendPaths, launchBackendPaths, MAWS_INSTANCE_MARKER} from '../src/chrome/discovery.mjs';
 import {scratch, fixturePin} from './fixtures/runtime-fixture.mjs';
 
 const SESSION = '6f1c2d3e-0000-4000-8000-000000000002';
@@ -31,13 +31,13 @@ function profiles(home, entries) {
   writeFileSync(join(home, 'profiles.json'), JSON.stringify({version: 1, profiles: entries}));
 }
 
-test('with no registration and on the vendor route the backend paths stay unset (the vendor scan finds OpenAI\'s hosts)', t => {
+test('with no registration, or only the removed ChatGPT route\'s record, the backend paths are still set: empty, so nothing is scanned', t => {
   const f = fixture(t);
-  assert.equal(backendPaths(f.home), null);
-  assert.equal('BROWSER_USE_BACKEND_PATHS' in browserLaunch(f).env, false);
+  assert.deepEqual(backendPaths(f.home), []);
+  assert.equal(browserLaunch(f).env.BROWSER_USE_BACKEND_PATHS, '');
   mkdirSync(join(f.home, 'chrome'));
   writeFileSync(join(f.home, 'chrome', 'registration.json'), JSON.stringify({schema: 1, browsers: {chrome: {manifest: '/m', replaced: false}}}));
-  assert.equal('BROWSER_USE_BACKEND_PATHS' in browserLaunch(f).env, false);
+  assert.equal(browserLaunch(f).env.BROWSER_USE_BACKEND_PATHS, '');
 });
 
 test('on the cua route the paths are every cua-route binding\'s socket plus every socket present, sorted and unique', t => {
@@ -45,7 +45,7 @@ test('on the cua route the paths are every cua-route binding\'s socket plus ever
   onCuaRoute(f.home);
   profiles(f.home, {
     personal: {chromeProfileDirectory: 'Default', extensionInstanceId: 'inst-personal', boundAt: 'x', route: 'cua'},
-    work: {chromeProfileDirectory: 'Profile 1', extensionInstanceId: 'inst-work', boundAt: 'x'},           // vendor route: not listed
+    work: {chromeProfileDirectory: 'Profile 1', extensionInstanceId: 'inst-work', boundAt: 'x'},           // bound on the ChatGPT extension: not listed
     school: {chromeProfileDirectory: 'Profile 2'},                                                          // unbound
   });
   const live = join(backendDir(f.home), 'aaaaaaaaaaaa.sock');
@@ -85,7 +85,7 @@ test('a profile registry that does not parse still lists the present sockets; co
 
 const mawsLaunch = ({home, runtime}, browserBackends, extra = {}) => buildLaunch({runtime, home, sessionId: SESSION, ambient: {}, surfaces: ['browser'], services: {browser: BROWSER_SERVICE}, browserBackends, ...extra});
 
-test('with MAWS backends the paths are set on every route: this process\'s client-mode hosts first, then the cua route\'s Chrome sockets', t => {
+test('with MAWS backends this process\'s client-mode hosts come first, then the cua route\'s Chrome sockets', t => {
   const f = fixture(t);
   onCuaRoute(f.home);
   writeFileSync(join(backendDir(f.home), 'cccccccccccc.sock'), '');
@@ -97,16 +97,15 @@ test('with MAWS backends the paths are set on every route: this process\'s clien
   assert.equal(env.BROWSER_USE_AVAILABLE_BACKENDS, 'chrome');
 });
 
-test('on the vendor route (or with no registration) the sockets in the vendor\'s own directory at launch join the list, since setting the variable skips its scan', t => {
+test('the launch list is the client hosts first, then the home\'s sockets, each once; with no registration it is the client hosts alone', t => {
   const f = fixture(t);
-  const vendorDir = join(f.home, 'codex-browser-use');
-  mkdirSync(vendorDir);
-  writeFileSync(join(vendorDir, 'openai-1.sock'), '');
-  writeFileSync(join(vendorDir, 'notes.txt'), '');
   const hostPaths = [join(clientModeDir(f.home), 'aaaaaaaaaaaa-12.sock')];
-  assert.deepEqual(launchBackendPaths(f.home, {clientHosts: hostPaths, vendorDir}), [...hostPaths, join(vendorDir, 'openai-1.sock')]);
-  assert.deepEqual(launchBackendPaths(f.home, {clientHosts: hostPaths, vendorDir: join(f.home, 'absent')}), hostPaths);
-  assert.equal(VENDOR_SOCKET_DIR, '/tmp/codex-browser-use');
+  assert.deepEqual(launchBackendPaths(f.home, {clientHosts: hostPaths}), hostPaths);
+  assert.deepEqual(launchBackendPaths(f.home), []);
+  onCuaRoute(f.home);
+  const sock = join(backendDir(f.home), 'dddddddddddd.sock');
+  writeFileSync(sock, '');
+  assert.deepEqual(launchBackendPaths(f.home, {clientHosts: [...hostPaths, sock]}), [...hostPaths, sock]);
 });
 
 test('a MAWS backend that has not said hello yet is still listed; the default is the bare marker maws:, resolved at selection time', t => {

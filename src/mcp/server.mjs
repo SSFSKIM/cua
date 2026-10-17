@@ -51,7 +51,7 @@ import {projectRoot} from '../secrets/project.mjs';
 import {connectionTarget} from './target.mjs';
 import {deviceDirectory} from '../remote/directory.mjs';
 import {
-  DEVICE_TOOLS, LOCAL_TOOLS, WORK_TOOLS, browserServiceFrom, cuaNodeFrom, replHostFrom, correctImages, hostNotesFor, modelTools, persistAccepted, profileView, redactTokens, statusResult, surfacesFrom, withHostNotes,
+  DEVICE_TOOLS, LOCAL_TOOLS, WORK_TOOLS, cuaNodeFrom, replHostFrom, correctImages, hostNotesFor, modelTools, persistAccepted, profileView, redactTokens, statusResult, surfacesFrom, withHostNotes,
 } from './surface.mjs';
 import {fail} from '../runtime/errors.mjs';
 import {describeSweep, sweepRun} from '../runtime/run-dir.mjs';
@@ -80,7 +80,7 @@ const realTimer = (fn, ms) => {
 export function createServer({
   input, output, upstream, sessionId = randomUUID(), secrets = NOT_CONFIGURED, surfaces = ['computer'], profiles = NO_PROFILES,
   platform = process.platform, devices = null, persist = 'session', hostNotes = hostNotesFor(surfaces, {platform, devices: devices !== null}),
-  model, sandboxState = null, completionDeadlineMs = 5000, teardownBudgetMs = 5000, newId = randomUUID, inAppBrowser = false, browserService = 'cua',
+  model, sandboxState = null, completionDeadlineMs = 5000, teardownBudgetMs = 5000, newId = randomUUID, inAppBrowser = false,
   diagnostics = line => process.stderr.write(`cua serve: ${line}\n`), onWithdrawn = () => {}, runtimeIdleMs = 0, idleTimer = realTimer,
 }) {
   let nextUpstreamId = 0;
@@ -260,7 +260,7 @@ export function createServer({
     try {
       const list = await profiles.list({track: counted});
       const fields = {status: 'ok', profiles: list.map(profileView)};
-      const notReady = list.filter(p => !p.ready).map(p => `${p.key} is not ready (${p.reason}): ${reasonText(p, {route: profiles.route})}.`);
+      const notReady = list.filter(p => !p.ready).map(p => `${p.key} is not ready (${p.reason}): ${reasonText(p)}.`);
       if (!notReady.length) return respond(msg.id, statusResult(fields));
       const guidance = `${notReady.join('\n')}\nTell the user; do not bind or pick a profile for them.`;
       respond(msg.id, {content: [{type: 'text', text: `${guidance}\n${JSON.stringify(fields)}`}], structuredContent: {...fields, guidance}, isError: false});
@@ -320,7 +320,7 @@ export function createServer({
       // A handshake that launched the runtime arms the idle stop, as a completed call does.
       return passThrough(msg, result => { arm(); return {...result, instructions: withHostNotes(result?.instructions, hostNotes)}; });
     }
-    if (msg.method === 'tools/list') return passThrough(msg, result => ({...result, tools: modelTools(result?.tools, {surfaces, platform, devices: Boolean(target), inAppBrowser, browserService})}));
+    if (msg.method === 'tools/list') return passThrough(msg, result => ({...result, tools: modelTools(result?.tools, {surfaces, platform, devices: Boolean(target), inAppBrowser})}));
     return passThrough(msg);
   }
 
@@ -435,9 +435,6 @@ export function settingsFrom(env, {platform = process.platform, devices = false}
   const hostNotes = env.CUA_SHIM_HOST_NOTES === 'none' ? '' : (env.CUA_SHIM_HOST_NOTES ?? hostNotesFor(surfaces, {platform, devices}));
   const secrets = env.CUA_SHIM_SECRETS ?? 'on';
   if (!['on', 'off'].includes(secrets)) fail('invalid_setting', 'CUA_SHIM_SECRETS must be on or off');
-  // CUA_BROWSER_SERVICE is checked here with the browser surface, as the launch reads it; which service a launch gets
-  // (and so which rules the model is taught) is the launch's resolution (src/mcp/connection.mjs).
-  if (surfaces.includes('browser')) browserServiceFrom(env);
   // CUA_REPL_HOST is checked here whatever the surfaces; which host a connection runs, or whether it refuses one, is
   // the connection's resolution (src/mcp/connection.mjs).
   replHostFrom(env);

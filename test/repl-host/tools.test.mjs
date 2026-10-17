@@ -10,7 +10,7 @@ import {jsRulesFor, modelTools} from '../../src/mcp/surface.mjs';
 const recorded = JSON.parse(readFileSync(new URL('../../docs/evidence/2026-10-14-own-repl-host-parity/m0/vendor-1/tools.json', import.meta.url), 'utf8')).tools;
 
 test('through cua\'s proxy the own host\'s tools are exactly the effective contract M0 recorded from the vendor host', () => {
-  const shown = modelTools(toolsFor({sandboxed: true}), {surfaces: ['browser'], platform: 'darwin', browserService: 'cua'});
+  const shown = modelTools(toolsFor({sandboxed: true}), {surfaces: ['browser'], platform: 'darwin'});
   assert.deepEqual(shown.filter(t => ['js', 'js_reset'].includes(t.name)), recorded.filter(t => ['js', 'js_reset'].includes(t.name)));
   assert.ok(recorded.find(t => t.name === 'js').description.startsWith(jsRulesFor(['browser'], {platform: 'darwin'})), 'the recorded text is cua\'s rules over the base text');
 });

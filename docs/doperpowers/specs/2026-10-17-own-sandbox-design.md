@@ -788,6 +788,15 @@ Dependencies on other work: #79 merged before M2. #117 retires the compat execut
   Rationale: a new TCC prompt is an owner-only action, and a dialog on the mini blocks the CI runner other projects use.
   Date/Author: 2026-10-17, execution session.
 
+- Decision: M0a's oracle choices (2026-10-17, task 1 of the execution loop, reviewed clean).
+  - The mini's runs use the scratch tree `~/cua-115` (a GitHub clone with the worktree's commits, the upstream checkout, and the scratch CUA_HOME `~/cua-115/home` installed from the pinned archive). It is kept for M1's fingerprint under cua's launcher and M2's probes, and deleted when #115 ends.
+  - The golden generator mirrors the CLI's `-c` path into the original's policy types (not a parallel construction); its Cargo project excludes the upstream checkout and repeats upstream's patch section. Fixtures carry their filesystem setup as executable code (`scripts/sandbox-golden/fixtures.mjs`).
+  - The CLI slot in experiment A is a per-run sh script with its settings baked in; a native helper counts as the run's own only when its `CODEX_CLI_PATH` is that slot, and no other helper is ever signalled.
+  - The app-server audit matches sensitive keys in any spelling and keeps only four allowlisted settings by exact path and value; it withheld only the notification's `installationId`. The replay renders `${CUA_HOME}` from CODEX_HOME. `app-server.mjs reaudit` re-audits a committed capture from its raw log.
+  - The fingerprint comparison keys each check by operation, filter and label and compares result and errno.
+  Rationale: what M1 and M2 consume as oracles must be truthful under failure, private by construction, and never touch a process the harness did not start; the review's three findings (the audit's short-value exception, a helper adopted by a global pgrep, errno dropped from the comparison) were fixed before the merge.
+  Date/Author: 2026-10-17, execution session.
+
 ## Outcomes & Retrospective
 
 Pending — written at finish.

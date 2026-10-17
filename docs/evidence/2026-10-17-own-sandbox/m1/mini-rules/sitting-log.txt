@@ -30,3 +30,8 @@
 2026-10-17T15:41:15.561Z idle before gated sh scripts/sandbox-probe/m1-mini.sh cfprefs 90cbfe0 c55ba01 ssfs
 2026-10-17T15:57:57.475Z gated sh scripts/sandbox-probe/m1-mini.sh cfprefs 90cbfe0 c55ba01 ssfs: exit 1
 2026-10-17T15:57:58.559Z front after gated sh scripts/sandbox-probe/m1-mini.sh cfprefs 90cbfe0 c55ba01 ssfs: com.apple.Terminal
+2026-10-17T16:08:23.219Z gated sh /tmp/cua-115-m1/tier-check.sh e4bfece: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=3.72 -> idle
+2026-10-17T16:09:11.340Z gated sh /tmp/cua-115-m1/tier-check.sh e4bfece: reading 2: front=com.apple.Terminal busy=false workers=0 queued=0 load=3.88 -> idle
+2026-10-17T16:09:11.341Z idle before gated sh /tmp/cua-115-m1/tier-check.sh e4bfece
+2026-10-17T16:09:14.888Z gated sh /tmp/cua-115-m1/tier-check.sh e4bfece: exit 0
+2026-10-17T16:09:15.413Z front after gated sh /tmp/cua-115-m1/tier-check.sh e4bfece: com.apple.Terminal

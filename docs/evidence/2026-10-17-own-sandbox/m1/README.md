@@ -6,6 +6,17 @@ M1's held runs (task-4 report, "Held runs"; `scripts/sandbox-probe/m1-mini.sh`),
 
 **Where the runs come from.** Attempt 1 ran from M1's working checkout. During the cfprefs attempt, M1's executor committed four times into that checkout (15:42:57Z to 15:58:22Z), so the two sides of that measurement ran different harness code: before recorded f4bec92, after recorded 080981b. From the rerun on, the harness runs from a separate clone that nothing else writes to, and the evidence is committed on `feat/115-own-sandbox-m1-evidence`.
 
+## Tier discovery, attempt 2 (e4bfece): proceeds
+
+This is a non-GUI check, gated like every other step. It ran at 16:09:11Z with gate loads 3.72 and 3.88, and Terminal was in front afterwards.
+
+It runs that checkout's `denyListFor` (scoped; the list the default mode's launch builds) on the mini's real HOME and real secret store, as the account. The store path is built in code. The check only lists `projects/` and lstats its entries, opens nothing under the store and creates nothing; it never calls `prepareDenyTargets`. It reports class and counts only, in `tier-discovery-attempt-2/tier-check.json`:
+- outcome: **proceeds**;
+- `projects/`: absent;
+- tiers found 0, symlinked tiers 0, absent targets 0.
+
+e4bfece stopped being final right after this check, when the deny-target creation ruling changed the code (macOS creates nothing; Linux's creation is bounded). Oracles had not started at e4bfece. The whole rerun restarts from this check at the new final SHA.
+
 # Attempt 1
 
 ## SHA split (attempt 1)

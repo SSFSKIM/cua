@@ -76,7 +76,8 @@ test('classification: with the runner idle any non-Terminal frontmost applicatio
   const idle = {front: TERMINAL, busy: false, workers: 0, queued: 0, load: 1.2};
   assert.equal(classify(idle).state, 'idle');
   for (const front of ['com.apple.UserNotificationCenter', 'com.apple.TextEdit', 'com.google.Chrome']) assert.equal(classify({...idle, front}).state, 'stop');
-  for (const o of [{busy: true}, {workers: 1}, {queued: 2}, {load: 2}, {load: NaN}]) assert.equal(classify({...idle, ...o}).state, 'contention');
+  for (const o of [{busy: true}, {workers: 1}, {queued: 2}, {load: 5}, {load: NaN}]) assert.equal(classify({...idle, ...o}).state, 'contention');
+  assert.equal(classify({...idle, load: 4.9}).state, 'idle', 'the bar is a 1-minute load under 5');
 });
 
 test('the gate stops at once on a dialog, waits through contention, and needs two idle readings', async () => {
@@ -96,7 +97,7 @@ test('the gate stops at once on a dialog, waits through contention, and needs tw
   const late = world({front: () => (++reading > 1 ? 'com.apple.SecurityAgent' : TERMINAL)});
   await assert.rejects(gate('z', {exec: late.exec, sleep: noSleep, log: quiet}), /SecurityAgent/);
   // Contention that never clears stops after maxWaits.
-  const stuck = world({load: '3.5'});
+  const stuck = world({load: '5.5'});
   await assert.rejects(gate('w', {exec: stuck.exec, sleep: noSleep, log: quiet, maxWaits: 2}), /did not become idle/);
 });
 
@@ -303,5 +304,23 @@ test('frontmost rule: a system prompt always stops; another app waits while the 
   const prompt = world({busy: 'true', workers: 1, pgrepStatus: 0, front: 'com.apple.SecurityAgent'});
   let waited = 0;
   await assert.rejects(gate('z', {exec: prompt.exec, sleep: async () => { waited++; }, log: quiet}), /SecurityAgent, a system prompt/);
+  assert.equal(waited, 0);
+});
+
+test('an unread CI observation waits and reads again; an unreadable frontmost application stops', async () => {
+  // GitHub reports one queued run but delivers none (seen live, 14:46Z): read again, then proceed once it reads whole.
+  const flaky = world({runs: {queued: [], in_progress: []}, totals: {queued: 1}});
+  const lines = [];
+  let sleeps = 0;
+  await gate('x', {exec: flaky.exec, log: l => lines.push(l), sleep: async () => { if (++sleeps === 1) flaky.state.totals = {}; }});
+  assert.ok(lines.some(l => /reading 1: unread \(missing observation: queued workflow runs \(truncated: 0 of 1\)\) -> contention/.test(l)));
+  assert.ok(lines.includes('idle before x'));
+  // Never readable: it stops after maxWaits, never proceeds.
+  const never = world({fail: new Set(['/runners'])});
+  await assert.rejects(gate('y', {exec: never.exec, sleep: noSleep, log: quiet, maxWaits: 3}), /did not become idle/);
+  // An unreadable frontmost application stops at once.
+  const blind = world({fail: new Set(['lsappinfo'])});
+  let waited = 0;
+  await assert.rejects(gate('z', {exec: blind.exec, sleep: async () => { waited++; }, log: quiet}), /missing observation: frontmost application/);
   assert.equal(waited, 0);
 });

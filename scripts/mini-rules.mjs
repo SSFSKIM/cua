@@ -11,7 +11,8 @@
 //     once, no retry; while the runner is busy any other app in front is the CI job's window (contention, wait); once
 //     the runner reads idle, Terminal must be in front on both readings, and anything else stops;
 //   - the mac lane's runner `ci-kit-mac-mini` (SSFSKIM/MAWS) is not busy, no Runner.Worker runs on the mini, no MAWS job
-//     waits for a macOS runner, and the mini's 1-minute load is under 2; any of these is contention, which waits a
+//     waits for a macOS runner, and the mini's 1-minute load is under LOAD_LIMIT (5; it was 2 until 2026-10-17 14:10Z,
+//     a bar set for task 1's cargo builds at load 16); any of these is contention, which waits a
 //     minute and looks again (at most `maxWaits` times, then stops).
 // After each item, and before stopping for any reason, the frontmost application is read again; a non-Terminal one stops.
 // A failed item stops the sequence. A run directory is skipped only when it holds a complete run of this sitting whose
@@ -34,6 +35,11 @@ const MAC_LABELS = ['macOS', 'ci-kit-mac'];
 const WAITING = ['queued', 'waiting', 'pending'];
 
 export class Stop extends Error {}
+// A reading of the CI or load side that could not be completed (a failed request, a truncated list, an unparseable
+// answer). It is never read as idle: the gate waits and reads again. The frontmost application is different: if it
+// cannot be read, nothing rules out a prompt, and the gate stops.
+export class Unread extends Stop {}
+export const LOAD_LIMIT = 5;
 const missing = (what, detail) => new Stop(`missing observation: ${what}${detail ? ` (${detail})` : ''}`);
 
 // Runs `cmd args` and returns its stdout; throws on a nonzero exit (the live boundary; tests pass a double).
@@ -71,6 +77,9 @@ function pages(exec, what, path, key) {
 // One reading of everything the gate needs; throws Stop when any part is missing.
 export function observe({exec}) {
   const front = frontmost({exec});
+  try { return {front, ...observeRunner({exec})}; } catch (error) { if (error instanceof Stop) throw new Unread(error.message); throw error; }
+}
+function observeRunner({exec}) {
   const busy = call(exec, 'runner state', 'gh', ['api', `${REPO}/runners`, '--jq', '[.runners[] | select(.name == "ci-kit-mac-mini") | .busy] | first']).trim();
   if (busy !== 'true' && busy !== 'false') throw missing('runner state', `got ${JSON.stringify(busy)}`);
   let queued = 0;
@@ -88,7 +97,7 @@ export function observe({exec}) {
   if ((status === '1') !== (found === '0')) throw missing('mini workers', 'pgrep status and count disagree');
   const workers = found;
   if (load === undefined) throw missing('mini load', 'no uptime');
-  return {front, busy: busy === 'true', workers: Number(workers), queued, load: Number(load)};
+  return {busy: busy === 'true', workers: Number(workers), queued, load: Number(load)};
 }
 
 // stop (never retried), contention (wait and look again) or idle.
@@ -100,7 +109,7 @@ export function classify(o) {
   if (SYSTEM_PROMPTS.includes(o.front)) return {state: 'stop', reason: `the frontmost application is ${o.front}, a system prompt`};
   const runnerBusy = o.busy || o.workers > 0;
   if (o.front !== TERMINAL && !runnerBusy) return {state: 'stop', reason: `the frontmost application is ${o.front}, not Terminal, with the runner idle`};
-  const contention = [o.front !== TERMINAL && `${o.front} in front during the CI job`, o.busy && 'runner busy', o.workers > 0 && `${o.workers} Runner.Worker`, o.queued > 0 && `${o.queued} queued macOS job(s)`, !(o.load < 2) && `load ${o.load}`].filter(Boolean);
+  const contention = [o.front !== TERMINAL && `${o.front} in front during the CI job`, o.busy && 'runner busy', o.workers > 0 && `${o.workers} Runner.Worker`, o.queued > 0 && `${o.queued} queued macOS job(s)`, !(o.load < LOAD_LIMIT) && `load ${o.load}`].filter(Boolean);
   return contention.length ? {state: 'contention', reason: contention.join(', ')} : {state: 'idle', reason: 'idle'};
 }
 
@@ -109,7 +118,14 @@ export async function gate(what, {exec, sleep, log, maxWaits = 240, apartMs = 45
     const readings = [];
     for (const n of [0, 1]) {
       if (n) await sleep(apartMs);
-      const o = observe({exec}), c = classify(o);
+      let o;
+      try { o = observe({exec}); } catch (error) {
+        if (!(error instanceof Unread)) throw error;
+        log(`${what}: reading ${n + 1}: unread (${error.message}) -> contention`);
+        readings.push({state: 'contention'});
+        break;
+      }
+      const c = classify(o);
       log(`${what}: reading ${n + 1}: front=${o.front} busy=${o.busy} workers=${o.workers} queued=${o.queued} load=${o.load} -> ${c.state}${c.state === 'idle' ? '' : ` (${c.reason})`}`);
       if (c.state === 'stop') throw new Stop(`before ${what}: ${c.reason}`);
       readings.push(c);

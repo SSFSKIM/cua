@@ -8,9 +8,11 @@
 // is only read here, to tell a home that was on that route how to move (chromeMigration); nothing in cua writes it,
 // restores what it lists or starts the host it named. A record that names no browser (what `unregister --vendor` left)
 // counts as absent.
-import {existsSync, readFileSync, statSync} from 'node:fs';
+import {createHash} from 'node:crypto';
+import {readFileSync, statSync} from 'node:fs';
 import {join} from 'node:path';
 import {realHome} from '../runtime/layout.mjs';
+import {PERMISSION_FIX} from '../profiles/chrome.mjs';
 import {readRegistry} from '../profiles/registry.mjs';
 
 export const cuaRecordFile = home => join(home, 'chrome', 'cua-registration.json');
@@ -23,6 +25,10 @@ function readJson(path) {
 }
 const writtenAt = path => { try { return statSync(path).mtimeMs; } catch { return null; } };
 const iso = ms => new Date(ms).toISOString();
+const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
+// One shell word that the shell takes literally (registration.mjs has the same).
+const shellQuote = text => `'${text.replaceAll("'", "'\\''")}'`;
+const PERMISSION = new Set(['EPERM', 'EACCES']);
 
 // The cua record, or null when it is absent or not one: {schema: 1, route: 'cua', launcher, backendsDir,
 // browsers: {<browser>: {manifestPath, previous: <launcher path>|null, backupSha256?}}}.
@@ -52,30 +58,58 @@ export function rebindRequired(home) {
 // "a was bound on the ChatGPT extension: bind it again on the cua extension: cua profiles bind a"
 export const rebindStep = keys => `${keys.join(', ')} ${keys.length === 1 ? 'was' : 'were'} bound on the ChatGPT extension: bind ${keys.length === 1 ? 'it' : 'them'} again on the cua extension: ${keys.map(key => `cua profiles bind ${key}`).join('; ')}`;
 
-// What the ChatGPT route's registration left in the browsers, as the user's steps: each com.openai.codexextension
+// What the ChatGPT route's registration left in the browsers, as the user's steps. Each com.openai.codexextension
 // manifest its record lists that still names a host in this home (cua's relocated copy of OpenAI's host) is removed or,
-// where it had replaced another program's manifest (the ChatGPT desktop app's), that one's backup is put back (the
-// desktop app also rewrites its own when it next runs); then the record and its backups go. A manifest that is gone or
-// names another host now is left alone; one this process may not read is named for the user to check.
+// where it had replaced another program's manifest (the ChatGPT desktop app's), that one's backup is put back, but only
+// on the record's word, as the removed unregister did: the backup exists and its sha256 is the record's backupSha256.
+// A backup that is missing or does not match cannot be verified, so the step removes cua's manifest and leaves the
+// desktop app's to the user (inspect the backup, or reopen the app, which rewrites its own). A manifest that is gone or
+// names another host now is left alone; one this process may not read is named with the access to give it. Only when
+// every listed manifest is resolved (left alone, or given an rm or a verified cp) do the record and its backups go;
+// otherwise they are kept for manual recovery, and a later run, once the manifests are dealt with, names their
+// removal. Every path in a command is one single-quoted shell word, so nothing in it is expanded when the user pastes it.
 function leftoverSteps(root, record) {
   const steps = [];
+  let unresolved = false;
   for (const [browser, entry] of Object.entries(record.browsers)) {
     const manifest = typeof entry?.manifest === 'string' ? entry.manifest : null;
     if (!manifest) continue;
     let named;
     try { named = JSON.parse(readFileSync(manifest, 'utf8'))?.path; } catch (error) {
       if (error instanceof SyntaxError || error.code === 'ENOENT' || error.code === 'ENOTDIR') continue;
-      steps.push(`check ${manifest}, which this process may not read (${error.code ?? 'error'}): if it names a host under ${root}, remove it`);
+      const code = error.code ?? 'error';
+      unresolved = true;
+      steps.push(`this process cannot read ${browser}'s manifest ${manifest} (${code}), so whether it names a host under ${root} is unknown: ${PERMISSION.has(code) ? PERMISSION_FIX : 'make it readable by the user cua runs as'}, then run \`cua doctor\` again`);
       continue;
     }
     if (typeof named !== 'string' || !named.startsWith(`${root}/`)) continue;
+    if (entry.replaced !== true) {
+      steps.push(`in ${browser}, remove the manifest cua placed: rm ${shellQuote(manifest)}`);
+      continue;
+    }
     const backup = join(vendorBackupDir(root), `${browser}.json`);
-    steps.push(entry.replaced === true && existsSync(backup)
-      ? `in ${browser}, put back the manifest cua replaced: cp "${backup}" "${manifest}" (or quit and reopen the ChatGPT desktop app, which rewrites its own)`
-      : `in ${browser}, remove the manifest cua ${entry.replaced === true ? 'wrote over the ChatGPT desktop app\'s (its backup is gone; reopening the desktop app rewrites its own)' : 'placed'}: rm "${manifest}"`);
+    const doubt = backupDoubt(backup, entry.backupSha256);
+    if (!doubt) {
+      steps.push(`in ${browser}, put back the manifest cua replaced: cp ${shellQuote(backup)} ${shellQuote(manifest)} (or quit and reopen the ChatGPT desktop app, which rewrites its own)`);
+      continue;
+    }
+    unresolved = true;
+    steps.push(`in ${browser}, cua wrote over the ChatGPT desktop app's manifest and its backup ${backup} ${doubt}, so it cannot be verified: remove cua's manifest: rm ${shellQuote(manifest)}, then quit and reopen the ChatGPT desktop app, which rewrites its own${doubt === 'is missing' ? '' : ' (or inspect the backup and put it back yourself if it is the desktop app\'s)'}`);
   }
-  steps.push(`then remove the old record and its backups: rm -rf "${vendorRecordFile(root)}" "${vendorBackupDir(root)}"`);
+  steps.push(unresolved
+    ? `the old record ${vendorRecordFile(root)} and its backups in ${vendorBackupDir(root)} are kept for manual recovery: run \`cua doctor\` again once the manifests above are dealt with, and it names their removal`
+    : `then remove the old record and its backups: rm -rf ${shellQuote(vendorRecordFile(root))} ${shellQuote(vendorBackupDir(root))}`);
   return steps;
+}
+
+// Why a backup cannot be put back on the record's word, or null when it can (it exists and its sha256 is the record's).
+function backupDoubt(backup, recorded) {
+  let bytes;
+  try { bytes = readFileSync(backup); } catch (error) {
+    return error.code === 'ENOENT' || error.code === 'ENOTDIR' ? 'is missing' : `cannot be read (${error.code ?? 'error'})`;
+  }
+  if (typeof recorded !== 'string') return 'has no hash in the record';
+  return sha256(bytes) === recorded ? null : 'does not match the hash in the record';
 }
 
 // What a home still has to do to be on the cua route alone, or null when nothing (spec, Decision Log 2026-10-17):

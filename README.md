@@ -660,11 +660,19 @@ The message names the steps that apply, in order, with this home's paths:
    `rebind_required`.
 4. For each `com.openai.codexextension.json` manifest the old record lists that still names a host under this home
    (cua's relocated copy of OpenAI's host): where cua had replaced the ChatGPT desktop app's manifest and the backup is
-   there, put it back with `cp "$CUA_HOME/chrome/manifest-backup/<browser>.json" <manifest>` (quitting and reopening the
-   desktop app also rewrites its own); otherwise `rm <manifest>`. A manifest that is gone or names another host now is
-   left alone; one this process may not read is named for you to check.
-5. Remove the old record and its backups: `rm -rf "$CUA_HOME/chrome/registration.json"
-   "$CUA_HOME/chrome/manifest-backup"`.
+   there with the hash the record holds for it, put it back with `cp <backup> <manifest>`, the backup being
+   `$CUA_HOME/chrome/manifest-backup/<browser>.json` (quitting and reopening the desktop app also rewrites its own);
+   where cua placed it, `rm <manifest>`. A backup that is missing or does not match the record cannot be verified and
+   is never recommended: the step is to `rm` cua's manifest and quit and reopen the desktop app (or inspect the backup
+   and put it back yourself). A manifest that is gone or names another host now is left alone;
+   one this process may not read is named with the access to give it, and doctor is run again once it is readable.
+5. Remove the old record and its backups: `rm -rf <record> <backups>`, `$CUA_HOME/chrome/registration.json` and
+   `$CUA_HOME/chrome/manifest-backup`. This step is listed only once every manifest in step 4 is resolved; while one
+   is unreadable or its backup unverified, the record and backups are kept for manual recovery, and a later doctor run,
+   after those manifests are dealt with, lists it.
+
+The message prints each path in these commands as a single-quoted shell word with the home's real path, so pasting
+them expands nothing in it.
 
 With cua's registration in place, the old record gone and every profile bound on the cua extension, `chrome.route`
 passes. A release installed before #79 keeps its `chrome-plugin` directory (OpenAI's host); nothing reads or launches

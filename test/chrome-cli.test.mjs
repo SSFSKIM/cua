@@ -103,7 +103,7 @@ test('chrome register on a home the ChatGPT route left: --json carries leftover 
   assert.equal(migration.code, 'chatgpt_route_leftover', 'the registration just made is the newer');
   assert.equal(json.leftover, migration.message);
   assert.match(json.leftover, /cua profiles bind work/);
-  assert.ok(json.leftover.endsWith(`rm -rf "${vendorRecordFile(m.home)}" "${join(m.home, 'chrome', 'manifest-backup')}"`), json.leftover);
+  assert.ok(json.leftover.endsWith(`rm -rf '${vendorRecordFile(m.home)}' '${join(m.home, 'chrome', 'manifest-backup')}'`), json.leftover);
   const text = m.cua(['chrome', 'register']);
   assert.equal(text.status, 0, text.stderr);
   assert.ok(text.stdout.includes(`note: ${migration.message}\n`), text.stdout);

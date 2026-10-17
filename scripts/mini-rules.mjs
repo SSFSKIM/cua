@@ -190,8 +190,10 @@ export function verifyTz(file, {role, startedAt}) {
 }
 
 // accept-native on main at 94366c1, in a scratch clone, serving the approved runtime (prepare.mjs's approved-runtime
-// preparation and cleanup from the harness clone). Each run writes into a fresh directory; acceptance and cleanup report
-// their own exit status.
+// preparation and cleanup from the harness clone). accept-native runs with the preparation's own TMPDIR and
+// XDG_CONFIG_HOME (the TMPDIR is the witness cleanup uses to recognise the helper the acceptance run opened); a
+// preparation result without either stops before acceptance. Each run writes into a fresh directory; acceptance and
+// cleanup report their own exit status.
 export const ACCEPT_REMOTE = `set -u
 C=$HOME/cua-115-accept-main
 test -d "$C/.git" || git clone -q https://github.com/SSFSKIM/cua "$C" || exit 80
@@ -199,9 +201,10 @@ cd "$C" && git fetch -q origin main && git checkout -q --detach 94366c1 && test 
 OUT=$(mktemp -d /tmp/cua-115-accept.XXXXXX) || exit 82
 cd "$HOME/Developer/GitHub/cua-parity" || exit 83
 P=$(node scripts/native-baseline/prepare.mjs prepare '{"device":"mini","approvedHome":"${APPROVED}"}') || exit 84
-CONFIG=$(node -e 'console.log(JSON.parse(process.argv[1]).configHome)' "$P") || exit 85
+CONFIG=$(node -e 'const p = JSON.parse(process.argv[1]); if (!p.configHome) process.exit(1); console.log(p.configHome)' "$P") || exit 85
+RUN_TMP=$(node -e 'const p = JSON.parse(process.argv[1]); if (!p.tmpdir) process.exit(1); console.log(p.tmpdir)' "$P") || exit 86
 cd "$C"
-env -i PATH="$PATH" HOME="$HOME" USER="$USER" LOGNAME="$LOGNAME" TMPDIR="$TMPDIR" LANG=C.UTF-8 XDG_CONFIG_HOME="$CONFIG" CUA_HOME=${APPROVED} \\
+env -i PATH="$PATH" HOME="$HOME" USER="$USER" LOGNAME="$LOGNAME" TMPDIR="$RUN_TMP" LANG=C.UTF-8 XDG_CONFIG_HOME="$CONFIG" CUA_HOME=${APPROVED} \\
   node scripts/accept-native.mjs --live-secrets --live-textedit --report "$OUT/acceptance.json"
 ACCEPT=$?
 cd "$HOME/Developer/GitHub/cua-parity" && node scripts/native-baseline/prepare.mjs cleanup "$P"

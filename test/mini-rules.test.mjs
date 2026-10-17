@@ -225,3 +225,40 @@ test('the acceptance report is validated by its own fields: scenario, status mat
   ]) assert.throws(() => verifyAcceptance(bad, window), reason);
   assert.throws(() => verifyAcceptance(good, {...window, exitCode: '0'}), /does not match exit 0/);
 });
+
+// The remote launch body itself (ACCEPT_REMOTE), run by bash here with stand-ins for git, npm and node on PATH: the
+// acceptance run must get the preparation's own TMPDIR and XDG_CONFIG_HOME, never the ssh login's TMPDIR, and a
+// preparation result without a TMPDIR must stop before acceptance (and before any cleanup it would then confuse).
+test('accept-native is launched with the preparation\'s TMPDIR and XDG_CONFIG_HOME, not the login\'s', async t => {
+  const {ACCEPT_REMOTE} = await import('../scripts/mini-rules.mjs');
+  const {spawnSync} = await import('node:child_process');
+  const {chmodSync, readdirSync} = await import('node:fs');
+  const root = evidenceDir(t), home = join(root, 'home'), bin = join(root, 'bin'), seen = join(root, 'seen');
+  mkdirSync(join(home, 'cua-115-accept-main', '.git'), {recursive: true});
+  mkdirSync(join(home, 'Developer', 'GitHub', 'cua-parity'), {recursive: true});
+  mkdirSync(bin);
+  const realNode = process.execPath;
+  const before = new Set(readdirSync('/tmp').filter(d => d.startsWith('cua-115-accept.')));
+  t.after(() => { for (const dir of readdirSync('/tmp').filter(d => d.startsWith('cua-115-accept.') && !before.has(d))) rmSync(join('/tmp', dir), {recursive: true, force: true}); });
+  const stub = (name, body) => { writeFileSync(join(bin, name), `#!/bin/sh\n${body}\n`); chmodSync(join(bin, name), 0o755); };
+  stub('git', 'exit 0');
+  stub('npm', 'exit 0');
+  stub('node', `case "$*" in
+  *"prepare.mjs prepare"*) printf '%s\\n' "$PREPARED"; exit 0 ;;
+  *"prepare.mjs cleanup"*) echo cleanup >> "${seen}.cleanup"; exit 0 ;;
+  *accept-native.mjs*) printf 'TMPDIR=%s\\nXDG_CONFIG_HOME=%s\\nCUA_HOME=%s\\n' "$TMPDIR" "$XDG_CONFIG_HOME" "$CUA_HOME" > "${seen}"; exit 3 ;;
+  *) exec "${realNode}" "$@" ;;
+esac`);
+  const launch = prepared => spawnSync('/bin/bash', ['-s'], {input: ACCEPT_REMOTE, encoding: 'utf8',
+    env: {PATH: `${bin}:/usr/bin:/bin`, HOME: home, USER: 'u', LOGNAME: 'u', TMPDIR: '/ssh-login-tmp', PREPARED: JSON.stringify(prepared)}});
+  const prepared = {configHome: '/scratch/run-1/config', tmpdir: '/scratch/run-1/tmp'};
+  const ok = launch(prepared);
+  assert.match(ok.stdout, /ACCEPT 3 CLEANUP 0 OUT \/tmp\/cua-115-accept\./);
+  assert.equal(readFileSync(seen, 'utf8'), 'TMPDIR=/scratch/run-1/tmp\nXDG_CONFIG_HOME=/scratch/run-1/config\nCUA_HOME=/Users/new/cua-115/home\n');
+  assert.equal(readFileSync(`${seen}.cleanup`, 'utf8'), 'cleanup\n');
+  // No TMPDIR in the preparation result: stop before acceptance; nothing is launched.
+  rmSync(seen); rmSync(`${seen}.cleanup`);
+  const missingTmp = launch({configHome: '/scratch/run-2/config'});
+  assert.equal(missingTmp.status, 86);
+  assert.equal(existsSync(seen), false);
+});

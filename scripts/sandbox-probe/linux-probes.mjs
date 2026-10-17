@@ -225,8 +225,8 @@ async function launchProbe({helper, sky, env, session, userHome}) {
     const apps = await listing.request('list_apps');
     await listing.stop();
     const ids = apps.ok ? (typeof apps.output === 'string' ? JSON.parse(apps.output) : apps.output).map(a => a.id) : [];
-    const result = {appIds: ids, mechanism: skyLaunchStrings(sky), direct: await gtkDirect({helper, env, session})};
-    for (const [label, app, processName] of [['gedit', 'org.gnome.gedit.desktop', 'gedit'], ['zenity', 'cua-probe-zenity.desktop', 'zenity']]) {
+    const result = {apps: appInventory(ids), mechanism: skyLaunchStrings(sky), direct: await gtkDirect({helper, env, session})};
+    for (const [label, app, processName] of [['gedit', LAUNCH_TARGETS.gedit, 'gedit'], ['zenity', LAUNCH_TARGETS.zenity, 'zenity']]) {
       if (!ids.includes(app)) { result[label] = {listed: false}; continue; }
       result[label] = {
         outside: await launchOne({helper, profile: null, sky, env, session, app, processName}),
@@ -267,6 +267,10 @@ export function launchVerdict(inside) {
     ? `breaks: ${held.length} of ${inside.length} launched applications ran inside the worker's sandbox (its PID namespace and read-only root) and ended with the sky_linux that launched them`
     : 'proceed: launched applications run outside the worker sandbox';
 }
+// What the app listing contributes to the record: a count and whether the probe's two targets were listed, never the
+// inventory itself (the evidence privacy rule: counts and booleans).
+export const LAUNCH_TARGETS = {gedit: 'org.gnome.gedit.desktop', zenity: 'cua-probe-zenity.desktop'};
+export const appInventory = ids => ({count: ids.length, listed: Object.fromEntries(Object.entries(LAUNCH_TARGETS).map(([name, id]) => [name, ids.includes(id)]))});
 // What sky_linux's binary names about how it launches (static evidence beside the observed behaviour).
 function skyLaunchStrings(sky) {
   const text = fs.readFileSync(sky).toString('latin1');

@@ -85,13 +85,13 @@
     "verdict": "proceed for sky_linux (its screenshots work inside); MIT-SHM attach \"succeeds\" inside but the image never reaches the client's segment: the server resolved the private-namespace segment id against its own namespace (another process's segment)"
   },
   "launch": {
-    "appIds": [
-      "cua-probe-zenity.desktop",
-      "org.gnome.gedit.desktop",
-      "google-chrome.desktop",
-      "org.gnome.Terminal.desktop",
-      "x11vnc.desktop"
-    ],
+    "apps": {
+      "count": 5,
+      "listed": {
+        "gedit": true,
+        "zenity": true
+      }
+    },
     "mechanism": {
       "gtk-launch": false,
       "gio launch": false,

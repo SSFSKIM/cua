@@ -71,3 +71,9 @@ test('nesting: judged against a control that read every sentinel; the design, th
   assert.match(nestingVerdict({control, home: failed, homeExplicit: failed, fallback: bad}).verdict, /fallback with run\/ denied does not hold either/);
   assert.match(nestingVerdict({control: {attempts: [{label: 'read a', outcome: 'EACCES'}]}, home: ok, homeExplicit: ok, fallback: ok}).verdict, /^invalid/);
 });
+
+test('the launch probe records the app listing as a count and two booleans, never the inventory', async () => {
+  const {appInventory} = await import('../../scripts/sandbox-probe/linux-probes.mjs');
+  assert.deepEqual(appInventory(['org.gnome.gedit.desktop', 'a.desktop', 'b.desktop']), {count: 3, listed: {gedit: true, zenity: false}});
+  assert.deepEqual(appInventory([]), {count: 0, listed: {gedit: false, zenity: false}});
+});

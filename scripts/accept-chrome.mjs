@@ -1,48 +1,47 @@
 #!/usr/bin/env node
-// Phase C acceptance runner (M11: C2's live round trip). Opt-in and live: it drives the user's existing Chrome through
+// The Chrome route's live acceptance runner (M11's C2 round trip, extended by H3b). Opt-in and live: it drives the user's existing Chrome through
 // `cua serve` over MCP. Its secret lives in a store it owns: a temporary $HOME (scripts/accept/secret-seed.mjs) holding
 // one generated key with a generated sentinel, stored through `cua secrets set` typed at a pseudo-terminal and removed
 // with the temporary home in `finally`. The server resolves its store from that $HOME
 // (scripts/accept/serve-with-store.mjs), so the account's own store (~/.config/claude-secrets) is never touched.
 //
-//   node scripts/accept-chrome.mjs --live [--route cua|vendor] --profile personal --report /tmp/cua-accept-chrome.json
-//   node scripts/accept-chrome.mjs --live --route cua --chrome-restart --profile personal --report <file>
+//   node scripts/accept-chrome.mjs --live --profile personal --report /tmp/cua-accept-chrome.json
+//   node scripts/accept-chrome.mjs --live --chrome-restart --profile personal --report <file>
 //
-// Routes (spec docs/doperpowers/specs/2026-10-07-own-chrome-extension-design.md, H3b). `--route` defaults to the home's
-// route (`vendor` for a home with no registration) and must match it. On the vendor route (the ChatGPT extension and
-// OpenAI's host) the run is C2 as below and needs the server's Codex login. On the cua route (cua's own extension and
-// host) there is no login gate (`codex.login` is not needed; the run records only whether a credential file exists),
-// the live host is the profile's own socket in $CUA_HOME/chrome/b accepting a connection, and the run adds: a discovery
-// cell (cua.listBrowsers lists cua's hosts only), a cross-site iframe cell after C2, a viewport cell (800x600 set through
-// the browser's viewport capability, the screenshot's pixel size checked, then reset), goto latency per navigation, and the
-// scenarios of scripts/accept/chrome-cua.mjs: the user-tab claim (with its exception to the user-tab rule below), turn
-// end and handoff, and two `cua serve` clients. A declined elicitation stops the run's input as below: the scenarios not
-// yet run are recorded BLOCKED. A home with a Codex credential file is refused on the cua route (the no-login control). `--chrome-restart` runs only acceptance 6, which needs the owner to
-// quit and reopen Chrome while the runner waits (it prints an `OWNER STEP:` line; `--restart-wait-min`, default 15).
-// `--only <names>` (comma-separated: c2, user-tab, turn-end, two-clients) narrows a cua-route run.
+// The route (spec docs/doperpowers/specs/2026-10-07-own-chrome-extension-design.md, H3b) is cua's own extension and
+// host, the only Chrome route since #79 removed the ChatGPT extension route; a home not registered for it (`cua chrome
+// register`) is refused. There is no login gate: the run records only whether a Codex credential file exists, and a home
+// with one is refused (the no-login control). The live host is the profile's own socket in $CUA_HOME/chrome/b accepting a
+// connection. Besides C2 below the run has a discovery cell (cua.listBrowsers lists cua's hosts only), the host's own
+// getInfo (no agent header), a cross-site iframe cell after C2, a viewport cell (800x600 set through the browser's
+// viewport capability, the screenshot's pixel size checked, then reset), goto latency per navigation, and the scenarios
+// of scripts/accept/chrome-cua.mjs: the user-tab claim (with its exception to the user-tab rule below), turn end and
+// handoff, and two `cua serve` clients. A declined elicitation stops the run's input as below: the scenarios not yet run
+// are recorded BLOCKED. `--chrome-restart` runs only acceptance 6, which needs the owner to quit and reopen Chrome while
+// the runner waits (it prints an `OWNER STEP:` line; `--restart-wait-min`, default 15). `--only <names>`
+// (comma-separated: c2, user-tab, turn-end, two-clients) narrows a run.
 //
-// Path under test: a fixed agent script (not a model) -> MCP -> `cua serve` (CUA_SHIM_SURFACES=browser) -> vendor
-// cua-repl -> node_repl -> cell -> nodeRepl.rpc("browser") -> trusted worker -> src/services/browser.mjs -> the
-// store file in the temporary $HOME -> substitution -> the vendor @oai/browser-desktop service -> the original OpenAI
-// extension/host -> the profile's Chrome. The script selects the registered profile's backend by its stored instance
-// id (cua.getBrowser({extensionInstanceId})), creates one tab, navigates it to the runner's own loopback page, fills
-// its masked secret field with `{{secret:<label>}}`, clicks; the page computes SHA-256 of what it received and shows only
-// the first 16 hex digits, which the runner compares with the generated sentinel's digest. Then a substituted fill
-// the vendor must fail (no such element) shows the value-free classification, one screenshot of the masked page is
-// kept outside git, and the created tab is closed and confirmed gone.
+// Path under test: a fixed agent script (not a model) -> MCP -> `cua serve` (CUA_SHIM_SURFACES=browser) -> the REPL
+// host -> node_repl -> cell -> nodeRepl.rpc("browser") -> trusted worker -> src/services/browser.mjs -> the store file
+// in the temporary $HOME -> substitution -> cua's browser service (src/browser-service) -> cua's host -> the profile's
+// Chrome. The C2 script selects the registered profile's backend by its stored instance id
+// (cua.getBrowser({extensionInstanceId})), creates one tab, navigates it to the runner's own loopback page, fills its
+// masked secret field with `{{secret:<label>}}`, clicks; the page computes SHA-256 of what it received and shows only the
+// first 16 hex digits, which the runner compares with the generated sentinel's digest. Then a substituted fill the
+// service must fail (no such element) shows the value-free classification, one screenshot of the masked page is kept
+// outside git, and the created tab is closed and confirmed gone.
 //
-// Boundaries (spec Decision Log, 2026-10-03 pre-flight): only the runner's own page in the one tab it creates; the
-// backend is the registry's stored instance id, never a guess; the only accepted elicitation is the structured
-// origin-access request for the page's exact origin, answered persist "session"; everything else is declined, recorded
-// by kind, and stops further input. User tabs are never bound, read, screenshotted or closed (on the cua route the user-tab
-// scenario makes the one exception scripts/accept/chrome-cua.mjs documents: the tab the runner itself opened on its own
-// page, claimed, read and closed by the runner; the policy then also accepts the runner's cross-site frame origin).
-// createBrowserTab gets a
-// 60 s limit; a tab that cannot be closed while authorized is reported for the user, never reconnected to.
+// Boundaries (spec Decision Log, 2026-10-03 pre-flight): only the runner's own pages in the tabs it creates; the backend
+// is the registry's stored instance id, never a guess; the only accepted elicitation is the structured origin-access
+// request for one of the runner's own origins, answered persist "session"; everything else is declined, recorded by
+// kind, and stops further input. User tabs are never bound, read, screenshotted or closed, with the one exception the
+// user-tab scenario of scripts/accept/chrome-cua.mjs documents: the tab the runner itself opened on its own page,
+// claimed, read and closed by the runner. createBrowserTab gets a 60 s limit; a tab that cannot be closed while
+// authorized is reported for the user, never reconnected to.
 // Every observable channel is scanned for the sentinel (raw and base64 at every alignment): the MCP transport both
 // ways, serve and runtime stderr, the screenshot bytes, every regular file under $CUA_HOME/state and run (read whole;
-// the server's Codex credential file is excluded by name and never opened), and the report. Exit 0 PASS, 1 FAIL,
-// 3 BLOCKED. The report holds metadata only; the screenshot path is printed, not reported.
+// a Codex credential file is excluded by name and never opened), and the report. Exit 0 PASS, 1 FAIL, 3 BLOCKED. The
+// report holds metadata only; the screenshot path is printed, not reported.
 import {randomBytes} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
 import {existsSync, writeFileSync} from 'node:fs';
@@ -51,11 +50,9 @@ import {fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
 import {defaultHome, realHome} from '../src/runtime/layout.mjs';
 import {resolveRuntime} from '../src/runtime/manifest.mjs';
-import {loginStatus, LOGIN_STATES} from '../src/runtime/login.mjs';
-import {chromeFacts, countLiveHosts} from '../src/profiles/chrome.mjs';
+import {chromeFacts} from '../src/profiles/chrome.mjs';
 import {profileStatuses} from '../src/profiles/registry.mjs';
-import {chromeRoute, effectiveRoute, extensionIdFor} from '../src/chrome/route.mjs';
-import {processTable} from '../src/profiles/checks.mjs';
+import {chromeRoute} from '../src/chrome/route.mjs';
 import {createStoreHome, generatedKey, removeStoreHome, seedSecret} from './accept/secret-seed.mjs';
 import {fingerprints, scanFiles, textLeaks} from './probe/leak-scan.mjs';
 import {openSession} from './accept/mcp-session.mjs';
@@ -66,26 +63,13 @@ import {discoverBackends} from './accept/chrome-cells.mjs';
 import {chromeRestartScenario, hostStatus, openAsUserArgs, rawGetInfo, rawSessionCall, routePreconditions, socketAccepts, socketPathOf, turnEndScenario, twoClientScenario,
   userTabScenario} from './accept/chrome-cua.mjs';
 
-// `--all` (M13) evaluates C1-C7 as a whole and never drives a browser; see scripts/accept/chrome-all.mjs:
-//   node scripts/accept-chrome.mjs --all --report <file> [--profile <key>] [--c2-report <file>] [--c6-report <file>]
-// `--c6-slots` prints the browsers' native-messaging slots (the desktop-absent C6 gate's snapshots; read only).
-if (process.argv.includes('--c6-slots')) {
-  const {printSlots} = await import('./accept/chrome-all.mjs');
-  process.exit(printSlots());
-}
-if (process.argv.includes('--all')) {
-  const {runAll} = await import('./accept/chrome-all.mjs');
-  process.exit(await runAll(process.argv.slice(2)));
-}
-
-const {values: options} = parseArgs({options: {live: {type: 'boolean'}, profile: {type: 'string'}, report: {type: 'string'}, route: {type: 'string'},
+const {values: options} = parseArgs({options: {live: {type: 'boolean'}, profile: {type: 'string'}, report: {type: 'string'},
   'chrome-restart': {type: 'boolean'}, 'restart-wait-min': {type: 'string'}, only: {type: 'string'}}, strict: true});
 const SCENARIOS = ['c2', 'user-tab', 'turn-end', 'two-clients'];
 const only = options.only ? options.only.split(',').map(s => s.trim()) : SCENARIOS;
-if (!options.live || !options.profile || !options.report || (options.route && !['cua', 'vendor'].includes(options.route)) || only.some(s => !SCENARIOS.includes(s))
-  || ((options['chrome-restart'] || options.only) && options.route !== 'cua')) {
-  process.stderr.write('usage: node scripts/accept-chrome.mjs --live [--route cua|vendor] --profile <key> --report <file>\n'
-    + '       [--route cua] [--only c2,user-tab,turn-end,two-clients] | --route cua --chrome-restart [--restart-wait-min <n>]\n');
+if (!options.live || !options.profile || !options.report || only.some(s => !SCENARIOS.includes(s)) || (options['chrome-restart'] && options.only)) {
+  process.stderr.write('usage: node scripts/accept-chrome.mjs --live --profile <key> --report <file>\n'
+    + '       [--only c2,user-tab,turn-end,two-clients | --chrome-restart [--restart-wait-min <n>]]\n');
   process.exit(2);
 }
 
@@ -94,17 +78,15 @@ const SERVE = join(REPO, 'scripts', 'accept', 'serve-with-store.mjs');
 const SEED_MS = 15_000;
 
 const home = realHome(defaultHome());
-const homeRoute = chromeRoute(home);
-const route = options.route ?? effectiveRoute(homeRoute);
 const restartOnly = options['chrome-restart'] === true;
-const runs = name => route === 'cua' && !restartOnly && only.includes(name);
+const runs = name => !restartOnly && only.includes(name);
 const label = generatedKey('CUA_M11_ACCEPT');
 const sentinel = `cua-m11-sentinel-${randomBytes(18).toString('base64url')}`;
 const reference = `{{secret:${label}}}`;
 const PRINTS = fingerprints(sentinel);
 const steps = [];
 const record = (name, status, detail) => { steps.push({name, status, ...(detail === undefined ? {} : {detail})}); return status === 'PASS'; };
-const facts = {profile: options.profile, route, tabOperations: 0, elicitations: [], cellsSent: []};
+const facts = {profile: options.profile, tabOperations: 0, elicitations: [], cellsSent: []};
 
 // ---- preconditions -----------------------------------------------------------------------------------------------
 async function preconditions() {
@@ -112,20 +94,17 @@ async function preconditions() {
   let runtime;
   try { runtime = resolveRuntime({home}); facts.release = runtime.release; } catch (error) { missing.push(`runtime: ${error.code}`); }
   let profile;
-  // The route's extension decides presence (cua's own id on the cua route; chromeFacts defaults to the OpenAI one).
-  try { profile = profileStatuses({home, chrome: chromeFacts({extensionId: extensionIdFor(route)})}).find(p => p.key === options.profile); } catch (error) { missing.push(`profiles: ${error.code}`); }
+  try { profile = profileStatuses({home, chrome: chromeFacts()}).find(p => p.key === options.profile); } catch (error) { missing.push(`profiles: ${error.code}`); }
   const gate = profilePrecondition(profile, options.profile);
   if (gate.missing) missing.push(gate.missing);
   if (gate.chromeData) facts.chromeData = gate.chromeData;
   const instanceId = profile?.extensionInstanceId;
-  const checks = routePreconditions(route === 'cua'
-    ? {route, homeRoute, socketLive: Boolean(instanceId) && await socketAccepts(socketPathOf(home, instanceId)),
-      authPresent: existsSync(join(home, 'state', 'codex', 'auth.json'))}           // existence only; never opened
-    : {route, homeRoute, liveHosts: countLiveHosts(processTable())});
+  const checks = routePreconditions({route: chromeRoute(home), socketLive: Boolean(instanceId) && await socketAccepts(socketPathOf(home, instanceId)),
+    authPresent: existsSync(join(home, 'state', 'codex', 'auth.json'))});         // existence only; never opened
   missing.push(...checks.missing);
   facts.liveHosts = checks.liveHosts;
-  if (route === 'cua') facts.codexAuthPresent = checks.codexAuthPresent;
-  return {runtime, profile, missing, loginGate: checks.loginGate};
+  facts.codexAuthPresent = checks.codexAuthPresent;
+  return {runtime, profile, missing};
 }
 
 // ---- run -----------------------------------------------------------------------------------------------------------
@@ -138,7 +117,7 @@ let seeded = false;
 let page;
 const openServe = () => openSession({
   args: [SERVE], env: {...process.env, CUA_HOME: home, HOME: storeHome, CUA_SHIM_SURFACES: 'browser'}, clientName: 'cua-accept-chrome',
-  onServerRequest: elicitationPolicy({origins: route === 'cua' ? page.origins : [page.origin], latch, inventory: facts.elicitations}),
+  onServerRequest: elicitationPolicy({origins: page.origins, latch, inventory: facts.elicitations}),
 });
 // Each server's transcript and stderr join the scanned channels, whatever happened.
 async function closeServe(session, label) {
@@ -154,19 +133,14 @@ async function scenario(name, body) {
   try { await body(); } catch (error) { record(`${name}-unexpected`, 'FAIL', `${error.code ?? 'error'}: ${String(error.message).slice(0, 200)}`); }
 }
 try {
-  const {runtime, profile, missing, loginGate} = await preconditions();
-  let login = {state: 'not needed on the cua route'};
-  if (!missing.length && loginGate) {
-    try { login = await loginStatus({home, runtime}); } catch (error) { login = {state: `refused: ${error.code}`}; }
-  }
+  const {runtime, profile, missing} = await preconditions();
   if (missing.length) record('preconditions', 'BLOCKED', missing);
-  else if (loginGate && login.state !== LOGIN_STATES.loggedIn) record('preconditions', 'BLOCKED', `the server has no Codex login (${login.state}); run cua login`);
   else {
-    record('preconditions', 'PASS', {release: runtime.release, route, liveHosts: facts.liveHosts, login: login.state, ...(route === 'cua' ? {codexAuthPresent: facts.codexAuthPresent} : {}),
+    record('preconditions', 'PASS', {release: runtime.release, liveHosts: facts.liveHosts, codexAuthPresent: facts.codexAuthPresent,
       ...(profile.ready ? {profileReady: true}
         : {profileReady: 'pending the live check', chromeData: facts.chromeData, why: 'this process may not read Chrome\'s data directory; the profile is bound, so profiles_list decides on live evidence'})});
     storeHome = createStoreHome('cua-accept-chrome-');
-    const wantsSecret = route === 'vendor' || runs('c2');
+    const wantsSecret = runs('c2');
     const seed = wantsSecret ? await seedSecret({home: storeHome, key: label, value: sentinel, timeoutMs: SEED_MS}) : null;
     if (seed?.echoed) record('seed-disposable-secret', 'FAIL', 'the value appeared in terminal output');
     else if (seed?.timedOut) record('seed-disposable-secret', 'FAIL', `cua secrets set did not finish within ${SEED_MS} ms (${seed.prompts} prompt(s) answered)`);
@@ -191,7 +165,7 @@ try {
           ...(entry?.reason ? {reason: entry.reason} : {}), ...(entry?.reason === 'binding_stale' ? {action: `rebind: node bin/cua.mjs profiles bind ${options.profile}`} : {})})) {
           const instanceId = entry.extensionInstanceId;
           const statusOf = async () => hostStatus(home, instanceId);
-          if (route === 'cua' && !restartOnly) {
+          if (!restartOnly) {
             const found = await cellRunner({session, facts})('discoverBackends', discoverBackends(instanceId));
             const r = found.result ?? {};
             record('discovery-cua-hosts-only', r.count >= 1 && r.selectedListed === true && r.names?.every(n => n === 'cua') && r.types?.every(t => t === 'extension') ? 'PASS' : 'FAIL',
@@ -208,9 +182,9 @@ try {
               hostLive: () => socketAccepts(socketPathOf(home, instanceId)), waitMs: Number(options['restart-wait-min'] ?? 15) * 60_000,
               announce: line => process.stdout.write(`OWNER STEP: ${line}\n`)}));
           } else {
-            if (route === 'vendor' || runs('c2')) {
+            if (runs('c2')) {
               try {
-                await runAgentScript({session, page, instanceId, reference, sentinel, latch, tab, record, facts, shots, crossOriginFrame: route === 'cua', viewport: route === 'cua'});
+                await runAgentScript({session, page, instanceId, reference, sentinel, latch, tab, record, facts, shots, crossOriginFrame: true, viewport: true});
               } finally {
                 if (tab.createAttempted) record('close-created-tab', leftoverOf(tab).status === 'none' ? 'PASS' : 'FAIL', {leftover: leftoverOf(tab).status, closeAttempted: tab.closeAttempted});
               }
@@ -270,7 +244,7 @@ if (seeded) {
 const left = leftoverOf(tab);
 if (latch.stopped) facts.stoppedBy = latch.reason;
 const status = steps.some(s => s.status === 'FAIL') ? 'FAIL' : steps.some(s => s.status === 'BLOCKED') ? 'BLOCKED' : 'PASS';
-const scenarioName = route === 'vendor' ? 'C2-live-browser-secret-round-trip' : restartOnly ? 'H3b-cua-chrome-after-serve' : 'H3b-cua-route-live';
+const scenarioName = restartOnly ? 'H3b-cua-chrome-after-serve' : 'H3b-cua-route-live';
 const report = {scenario: scenarioName, status, at: new Date().toISOString(), label, ...facts, leftover: left.status, steps};
 const text = JSON.stringify(report, null, 1);
 // The disposable label is not secret and stays in the report (a failed cleanup names it); the generic guard against

@@ -20,7 +20,7 @@ export function prepareDevice({device,profile,node,home}, {ambient=process.env,i
  const experiment='parity',plan=endpointPlan(experiment,device),source=home??declaredDevice(device).discoveryHome??defaultHome(ambient);
  if(!isAbsolute(source)||/[\0\n]/.test(source))throw new Error('prepare --home needs an absolute path');
  const sourceEnv=nodeEnvironment({...ambient,CUA_HOME:source},node);delete sourceEnv.CUA_PARITY_NODE_MODE;
- const listing=JSON.parse(run(process.execPath,['bin/cua.mjs','profiles','list','--json'],{encoding:'utf8',timeout:90000,maxBuffer:1024*1024,env:{...sourceEnv,CUA_SHIM_SECRETS:'off',CUA_SHIM_SURFACES:'browser',CUA_REPL_HOST:'vendor',CUA_BROWSER_SERVICE:'cua'}}));
+ const listing=JSON.parse(run(process.execPath,['bin/cua.mjs','profiles','list','--json'],{encoding:'utf8',timeout:90000,maxBuffer:1024*1024,env:{...sourceEnv,CUA_SHIM_SECRETS:'off',CUA_SHIM_SURFACES:'browser',CUA_REPL_HOST:'vendor'}}));
  const ready=listing.profiles?.filter(p=>p.ready&&p.extensionInstanceId)??[],selected=profile?ready.find(p=>p.key===profile):ready.length===1?ready[0]:null;
  if(!selected)throw new Error('prepare requires one ready bound profile; candidates: '+ready.map(p=>p.key).join(', '));
  const mode=node?'diagnostic-override':'managed';

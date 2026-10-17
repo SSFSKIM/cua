@@ -53,7 +53,7 @@ export function writeFixtureApp(root, {vendor = {}, vendorRaw, ipc = 'CodexCompu
       ...vendor,
     }),
     'CodexCLI.app/Contents/MacOS/codex': '#!/bin/sh\necho fixture codex\n',
-    // The Chrome plugin (pin chromePlugin), placed as its own component; its host is never run by tests.
+    // The archive's Chrome plugin (OpenAI's host for the ChatGPT extension), which install leaves out since #79.
     'chrome/extension-host/macos/arm64/ChatGPT for Chrome': '#!/bin/sh\necho fixture host, never run\n',
     'chrome/scripts/browser-client.mjs': 'export {};\n',
     'chrome/scripts/browser-service.mjs': 'export {};\n',
@@ -125,52 +125,6 @@ export function forgeActiveRuntime(home, files = {}, {host} = {}) {
   writeFileSync(join(root, 'install.json'), JSON.stringify({schema: 1, release: pin.release, archive: {sha256: pin.archive.sha256, length: pin.archive.length}}));
   writeFileSync(join(home, 'current.json'), JSON.stringify({schema: 1, release: pin.release}));
   return {root, codexCli: join(root, pin.layout.codexCli)};
-}
-
-// A stand-in for the bundled `codex` CLI: a shell script (the login environment's PATH is fixed, so no `env node`)
-// that appends its argv and environment to $CODEX_HOME/fake-codex.log, prints a sentinel that must never reach cua's
-// output, and exits with `exit` (after `sleep` seconds). It never touches the network or any auth file.
-export const FAKE_CODEX_SENTINEL = 'fake-codex-account-sentinel@example.invalid';
-export function fakeCodexScript({exit = 0, sleep = 0} = {}) {
-  return `#!/bin/sh
-if [ -n "$CODEX_HOME" ] && [ -d "$CODEX_HOME" ]; then
-  { printf 'argv:'; for a in "$@"; do printf ' %s' "$a"; done; printf '\\n'; env | sed 's/^/env:/'; } >> "$CODEX_HOME/fake-codex.log"
-fi
-echo "Logged in as ${FAKE_CODEX_SENTINEL}"
-echo "${FAKE_CODEX_SENTINEL}" >&2
-${sleep ? `sleep ${sleep}` : ''}
-exit ${exit}
-`;
-}
-
-// The Chrome plugin component of a forged active runtime (forgeActiveRuntime), with its record and the host
-// configuration install would write; `config` replaces fields of that configuration. Nothing here is vendor code.
-export function forgeChromeComponent(home, {config = {}, host: target} = {}) {
-  const pin = pinFor(target);
-  const real = realpathSync(home);
-  const releaseRoot = join(real, 'runtimes', pin.release);
-  const root = join(releaseRoot, pin.chromePlugin.dir);
-  for (const rel of Object.values(pin.chromePlugin.layout)) {
-    mkdirSync(dirname(join(root, rel)), {recursive: true});
-    writeFileSync(join(root, rel), rel === pin.chromePlugin.layout.host ? '#!/bin/sh\necho fixture host, never run\n' : 'export {};\n');
-  }
-  const host = join(root, pin.chromePlugin.layout.host);
-  chmodSync(host, 0o755);
-  mkdirSync(join(real, 'state', 'codex'), {recursive: true, mode: 0o700});
-  const hostConfig = {
-    schemaVersion: 1, channel: 'prod',
-    browserClientPath: join(root, pin.chromePlugin.layout.browserClient),
-    browserServicePath: join(root, pin.chromePlugin.layout.browserService),
-    codexCliPath: join(releaseRoot, pin.layout.codexCli),
-    nodePath: join(releaseRoot, pin.layout.node),
-    nodeReplPath: join(releaseRoot, pin.layout.nodeRepl),
-    codexHome: join(real, 'state', 'codex'),
-    proxyHost: '127.0.0.1', proxyPort: 0,
-    ...config,
-  };
-  writeFileSync(join(dirname(host), 'extension-host-config.json'), JSON.stringify(hostConfig, null, 2) + '\n');
-  writeFileSync(join(root, 'component.json'), JSON.stringify({schema: 1, component: pin.chromePlugin.dir, release: pin.release, archive: {sha256: pin.archive.sha256, length: pin.archive.length}}));
-  return {root, host, config: hostConfig};
 }
 
 // ---- Linux: a harmless stand-in for the vendor's deb ----------------------------------------------------------------

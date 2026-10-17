@@ -12,7 +12,7 @@ import {registerHooks} from 'node:module';
 import {buildLaunch, SKY_SERVICE, BROWSER_SERVICE, BROWSER_SERVICE_IMPL_DIR, SERVICE_SUPPORT_DIRS} from '../src/runtime/launch.mjs';
 import {parsePin, runtimeFor} from '../src/runtime/manifest.mjs';
 import {scratch, fixturePin} from './fixtures/runtime-fixture.mjs';
-import {writeCuaRecord} from './fixtures/route-records.mjs';
+import {writeVendorRecord} from './fixtures/route-records.mjs';
 
 const SESSION = '6f1c2d3e-0000-4000-8000-000000000002';
 
@@ -63,13 +63,14 @@ function runWorker(env, requests = SKY_REQUESTS, {nodeRepl = false} = {}) {
   }));
 }
 
-// `cuaRoute`: the home has cua's Chrome registration, whose default browser service is cua's. `host`: the REPL host the
-// launch selects, explicitly (vendor unless named, as this hook copy is the vendor worker's); see ownAsVendorNames for cua.
-function launchWithFakeVendor(t, {cuaRoute = false, host = 'vendor', ambient = {}, ...options} = {}) {
+// `register` writes the home's Chrome records before the launch. `host`: the REPL host the launch selects, explicitly
+// (vendor unless named, as this hook copy is the vendor worker's); see ownAsVendorNames for cua. The runtime's vendor
+// browser service is a fake too, which a launch must never reach.
+function launchWithFakeVendor(t, {register = () => {}, host = 'vendor', ambient = {}, ...options} = {}) {
   const s = scratch();
   t.after(s.cleanup);
   const home = realpathSync(s.dir);
-  if (cuaRoute) writeCuaRecord(home);
+  register(home);
   const runtime = runtimeFor({home, pin: parsePin(fixturePin({sha256: 'a'.repeat(64), length: 1})), record: null});
   mkdirSync(dirname(runtime.paths.skyVendorService), {recursive: true});
   writeFileSync(runtime.paths.skyVendorService, 'export async function handleRpc(request) { return {vendor: request.type, text: request.args?.[0]?.text}; }\n');
@@ -107,39 +108,36 @@ test('the hook copy is effective: without the owned secrets modules trusted, the
   assert.match(result.loadError, /Trusted RPC dependency must resolve within a configured trusted code path/);
 });
 
-test('the production browser service under the vendor selection and everything it imports load under exactly the launch\'s trusted paths', {skip: typeof registerHooks !== 'function'}, async t => {
-  const {env} = launchWithFakeVendor(t, {surfaces: ['browser'], services: {browser: BROWSER_SERVICE}, secretsUnavailable: 'secrets_disabled', ambient: {CUA_BROWSER_SERVICE: 'vendor'}});
-  assert.equal(env.CUA_BROWSER_SERVICE, 'vendor');
-  const [setup, reference] = await runWorker(env, BROWSER_REQUESTS);
-  assert.deepEqual(setup, {vendor: 'setup'}, 'delegated to the vendor module named by CUA_BROWSER_VENDOR_SERVICE');
-  assert.match(reference.error, /\[secrets_disabled\]$/, 'a reference fails closed with the launch\'s reason');
+// cua's own browser service, the only one the wrapper delegates to (#79): the wrapper imports it from src/browser-service,
+// which the launch trusts with the browser surface. Its real setup runs here, under exactly the launch's environment.
+const CUA_BROWSER_REQUESTS = ['browser', {method: 'setup', params: {environment: 'codex-app'}}, BROWSER_REQUESTS[2]];
+
+test('the production browser wrapper cannot load without the owned secrets modules trusted', {skip: typeof registerHooks !== 'function'}, async t => {
+  const {env} = launchWithFakeVendor(t, {surfaces: ['browser'], services: {browser: BROWSER_SERVICE}, secretsUnavailable: 'secrets_disabled'});
   const narrowed = env.NODE_REPL_TRUSTED_CODE_PATHS.split(':').filter(dir => !SERVICE_SUPPORT_DIRS.includes(dir)).join(':');
-  const [result] = await runWorker({...env, NODE_REPL_TRUSTED_CODE_PATHS: narrowed}, BROWSER_REQUESTS);
+  const [result] = await runWorker({...env, NODE_REPL_TRUSTED_CODE_PATHS: narrowed}, CUA_BROWSER_REQUESTS, {nodeRepl: true});
   assert.match(result.loadError, /Trusted RPC dependency must resolve within a configured trusted code path/);
 });
 
-// cua's own browser service (the default selection on the cua route, or CUA_BROWSER_SERVICE=cua): the wrapper imports it from
-// src/browser-service, which the launch trusts only under that selection. Its real setup runs here, under exactly the
-// launch's environment.
-const CUA_BROWSER_REQUESTS = ['browser', {method: 'setup', params: {environment: 'codex-app'}}, BROWSER_REQUESTS[2]];
-
-// On both hosts: the vendor's, and cua's own, which a browser-only session on the cua route runs by default.
-test('cua\'s own browser service, selected by default on the cua route, and everything it imports load under exactly the launch\'s trusted paths, on either host', {skip: typeof registerHooks !== 'function'}, async t => {
-  for (const host of ['vendor', 'cua']) {
-    const launch = launchWithFakeVendor(t, {surfaces: ['browser'], services: {browser: BROWSER_SERVICE}, secretsUnavailable: 'secrets_disabled', cuaRoute: true, host});
-    assert.equal(launch.replHost.host, host);
+// On both hosts (the vendor's, and cua's own, which a browser-only session runs by default), and on homes with no
+// Chrome registration or only the removed ChatGPT route's record, with the removed selection still in the caller's
+// environment: cua's service answers, never the runtime's vendor service.
+test('cua\'s own browser service and everything it imports load under exactly the launch\'s trusted paths, on either host and every home', {skip: typeof registerHooks !== 'function'}, async t => {
+  for (const host of ['vendor', 'cua']) for (const register of [() => {}, writeVendorRecord]) for (const ambient of [{}, {CUA_BROWSER_SERVICE: 'vendor'}]) {
+    const label = `${host}, ${register === writeVendorRecord ? 'the removed route\'s record' : 'no registration'}, ${JSON.stringify(ambient)}`;
+    const launch = launchWithFakeVendor(t, {surfaces: ['browser'], services: {browser: BROWSER_SERVICE}, secretsUnavailable: 'secrets_disabled', register, ambient, host});
+    assert.equal(launch.replHost.host, host, label);
     const env = host === 'cua' ? ownAsVendorNames(launch.env) : launch.env;
-    assert.equal(env.CUA_BROWSER_SERVICE, 'cua', `${host}: the default on the cua route, written out by the launch`);
     const [setup, reference] = await runWorker(env, CUA_BROWSER_REQUESTS, {nodeRepl: true});
-    assert.equal(setup.loadError, undefined, `${host}: ${setup.loadError}`);
-    assert.deepEqual(Object.keys(setup).sort(), ['apiManifest', 'disabledMemberIds'], `${host}: cua's setup, not the fake vendor's`);
+    assert.equal(setup.loadError, undefined, `${label}: ${setup.loadError}`);
+    assert.deepEqual(Object.keys(setup).sort(), ['apiManifest', 'disabledMemberIds'], `${label}: cua's setup, not the fake vendor's`);
     assert.equal(setup.apiManifest.root, 'Agent');
-    assert.match(reference.error, /\[secrets_disabled\]$/, `${host}: a reference fails closed with the launch's reason`);
+    assert.match(reference.error, /\[secrets_disabled\]$/, `${label}: a reference fails closed with the launch's reason`);
   }
 });
 
 test('the hook copy is effective for cua\'s service: without its directory trusted, its setup cannot load', {skip: typeof registerHooks !== 'function'}, async t => {
-  const {env} = launchWithFakeVendor(t, {surfaces: ['browser'], services: {browser: BROWSER_SERVICE}, secretsUnavailable: 'secrets_disabled', ambient: {CUA_BROWSER_SERVICE: 'cua'}});
+  const {env} = launchWithFakeVendor(t, {surfaces: ['browser'], services: {browser: BROWSER_SERVICE}, secretsUnavailable: 'secrets_disabled'});
   const narrowed = env.NODE_REPL_TRUSTED_CODE_PATHS.split(':').filter(dir => dir !== BROWSER_SERVICE_IMPL_DIR).join(':');
   assert.notEqual(narrowed, env.NODE_REPL_TRUSTED_CODE_PATHS);
   const [result] = await runWorker({...env, NODE_REPL_TRUSTED_CODE_PATHS: narrowed}, CUA_BROWSER_REQUESTS, {nodeRepl: true});

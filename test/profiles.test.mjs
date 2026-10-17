@@ -8,7 +8,8 @@ import {join} from 'node:path';
 import {scratch} from './fixtures/runtime-fixture.mjs';
 import {readRegistry, addProfile, removeProfile, bindProfile, profileStatuses, withLiveness, reasonText, PROFILE_KEY} from '../src/profiles/registry.mjs';
 import {fakeChromeFacts} from './fixtures/chrome-facts.mjs';
-import {chromeFacts, OPENAI_EXTENSION_ID, hostPathClass, countLiveHosts, PERMISSION_FIX, ACCESS_NOTE} from '../src/profiles/chrome.mjs';
+import {chromeFacts, CUA_EXTENSION_ID, PERMISSION_FIX, ACCESS_NOTE} from '../src/profiles/chrome.mjs';
+import {CUA_HOST_NAME} from '../src/chrome/extension.mjs';
 import {decideBinding, isChromeBackend} from '../src/profiles/bind.mjs';
 
 // A Chrome user-data directory with `profiles` ({dir: {name, extension}}) and a Local State naming them.
@@ -22,7 +23,7 @@ function fakeChrome(t, profiles = {}, {localState} = {}) {
     mkdirSync(join(userData, dir), {recursive: true});
     infoCache[dir] = {name, avatar_icon: 'x'};
     if (extension) {
-      const version = join(userData, dir, 'Extensions', OPENAI_EXTENSION_ID, '1.26.901.11451_0');
+      const version = join(userData, dir, 'Extensions', CUA_EXTENSION_ID, '0.1.0_0');
       mkdirSync(version, {recursive: true});
       writeFileSync(join(version, 'manifest.json'), '{}');
     }
@@ -143,38 +144,16 @@ test('Chrome display names come from Local State; an unreadable Local State is a
   assert.throws(() => broken.chrome.displayNames(), error => error.code === 'chrome_local_state_unreadable');
 });
 
-test('the native-messaging registration is classified by the host path it names', t => {
+test('the native-messaging registration is read for the host path it names: cua\'s by default, another by name', t => {
   const {userData, chrome} = fakeChrome(t, THREE);
-  assert.deepEqual(chrome.nativeHost({cuaHome: '/Users/x/Library/Application Support/cua'}), {present: false});
+  assert.deepEqual(chrome.nativeHost(), {present: false});
   mkdirSync(join(userData, 'NativeMessagingHosts'));
-  const desktop = '/Users/x/.codex/plugins/cache/openai-bundled/chrome/latest/extension-host/macos/arm64/ChatGPT for Chrome';
-  writeFileSync(join(userData, 'NativeMessagingHosts', 'com.openai.codexextension.json'), JSON.stringify({name: 'com.openai.codexextension', type: 'stdio', path: desktop}));
-  assert.deepEqual(chrome.nativeHost({cuaHome: '/Users/x/Library/Application Support/cua', userHome: '/Users/x'}), {present: true, path: desktop, pathClass: 'desktop'});
-  writeFileSync(join(userData, 'NativeMessagingHosts', 'com.openai.codexextension.json'), 'garbage');
-  assert.deepEqual(chrome.nativeHost({cuaHome: '/c'}), {present: true, unreadable: true});
-});
-
-test('host path classes: cua\'s release tree, the desktop\'s installs, anything else', () => {
-  const opts = {cuaHome: '/Users/x/Library/Application Support/cua', userHome: '/Users/x'};
-  assert.equal(hostPathClass('/Users/x/Library/Application Support/cua/runtimes/r/chrome/ChatGPT for Chrome', opts), 'cua');
-  assert.equal(hostPathClass('/Users/x/.codex/plugins/cache/openai-bundled/chrome/latest/ChatGPT for Chrome', opts), 'desktop');
-  assert.equal(hostPathClass('/Applications/ChatGPT.app/Contents/Resources/x/ChatGPT for Chrome', opts), 'desktop');
-  assert.equal(hostPathClass('/Applications/Codex.app/Contents/Resources/x/ChatGPT for Chrome', opts), 'desktop');
-  assert.equal(hostPathClass('/Users/x/Library/Application Support/cua-other/ChatGPT for Chrome', opts), 'other');
-  assert.equal(hostPathClass('/opt/host', opts), 'other');
-});
-
-test('live hosts are the OpenAI host processes whose parent is the user\'s Chrome', () => {
-  const ps = [
-    '  100     1 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-    '  200   100 /Users/x/.codex/plugins/cache/openai-bundled/chrome/latest/extension-host/macos/arm64/ChatGPT for Chrome',
-    '  201   100 /Users/x/.codex/plugins/cache/openai-bundled/chrome/latest/extension-host/macos/arm64/ChatGPT for Chrome',
-    '  300   999 /somewhere/ChatGPT for Chrome',
-    '  400   100 /Applications/Google Chrome.app/Contents/Frameworks/Helper',
-  ].join('\n');
-  const darwin = {host: {platform: 'darwin', arch: 'arm64'}};
-  assert.equal(countLiveHosts(ps, darwin), 2);
-  assert.equal(countLiveHosts('', darwin), 0);
+  const launcher = '/Users/x/Library/Application Support/cua/chrome/host';
+  writeFileSync(join(userData, 'NativeMessagingHosts', `${CUA_HOST_NAME}.json`), JSON.stringify({name: CUA_HOST_NAME, type: 'stdio', path: launcher}));
+  assert.deepEqual(chrome.nativeHost(), {present: true, path: launcher});
+  assert.deepEqual(chrome.nativeHost({name: 'com.example.other'}), {present: false});
+  writeFileSync(join(userData, 'NativeMessagingHosts', `${CUA_HOST_NAME}.json`), 'garbage');
+  assert.deepEqual(chrome.nativeHost(), {present: true, unreadable: true});
 });
 
 // ---- the bind rule -------------------------------------------------------------------------------------------
@@ -301,11 +280,11 @@ test('the Chrome facts are three-valued: a refused read is unreadable with its c
 test('a Local State and a native-messaging manifest this process may not read report the permission cause', {skip: asRoot}, t => {
   const {userData, chrome} = fakeChrome(t, THREE);
   mkdirSync(join(userData, 'NativeMessagingHosts'));
-  writeFileSync(join(userData, 'NativeMessagingHosts', 'com.openai.codexextension.json'), '{"path": "/x"}');
+  writeFileSync(join(userData, 'NativeMessagingHosts', `${CUA_HOST_NAME}.json`), '{"path": "/x"}');
   withDenied([join(userData, 'Local State'), join(userData, 'NativeMessagingHosts')], () => {
     assert.throws(() => chrome.displayNames(), error => error.code === 'chrome_local_state_unreadable' && error.readError === 'EACCES'
       && /may not read/.test(error.message) && error.hint.includes(PERMISSION_FIX) && /live check still works/.test(error.hint));
-    assert.deepEqual(chrome.nativeHost({cuaHome: '/c'}), {readError: 'EACCES'});
+    assert.deepEqual(chrome.nativeHost(), {readError: 'EACCES'});
   });
 });
 
@@ -329,7 +308,7 @@ test('readiness never calls unreadable Chrome data "not installed"; a bound prof
     assert.equal(live(ids).work.reason, 'chrome_data_unreadable', 'an unbound profile cannot become ready on live evidence');
   }
   assert.ok(reasonText(files.personal).includes(ACCESS_NOTE));
-  assert.match(reasonText(files.personal), /the live check still works; its bound extension instance was not confirmed live: .*Chrome profile "Default".*extension's icon/);
+  assert.match(reasonText(files.personal), /the live check still works; its bound extension instance was not confirmed live: .*Chrome profile "Default".*the cua extension's popup \(its toolbar icon\)/);
   assert.match(reasonText(files.work), /the live check still works; it is not bound yet: cua profiles bind work works without that access/);
 });
 

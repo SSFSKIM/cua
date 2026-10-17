@@ -1,37 +1,24 @@
 // Passive diagnosis. Reports the installed runtime's health (platform, active release, files, vendor manifest, IPC
 // version, vendor signatures) separately from live-helper and permission evidence, which a passive check can only
 // observe from outside: it never opens an app, starts or signals the helper, connects to its socket or requests a
-// grant. The one connection doctor makes is chrome.hosts.live on the cua route, to cua's own host sockets. Live behavior is the job of explicit probe scripts. `blocked` marks evidence that is unavailable passively;
+// grant. The one connection doctor makes is chrome.hosts.live, to cua's own host sockets. Live behavior is the job of
+// explicit probe scripts. `blocked` marks evidence that is unavailable passively;
 // `skip` marks a check that does not apply on this host (neither a failure nor blocked evidence).
 // `ok` means runtime health only: no check failed. It does not mean the live helper, permissions or a release
 // acceptance gate were proven, and it must never be reported as release acceptance.
 // `secrets.store` (src/secrets/check.mjs) describes the secret store, $HOME/.config/claude-secrets, from metadata only:
 // absent is `blocked` (nothing stored yet), a directory or key file the trusted services would refuse is `fail`.
 // `secrets.project` describes the project tier of the working directory's project the same way, absent being `skip`.
-// `codex.login` asks the relocated bundled CLI (`codex login status`, bounded) whether the server's own CODEX_HOME holds
-// a Codex login, which the ChatGPT extension route needs (on the cua route the row is skip); only the exit code is kept
-// and no auth file is opened. It is capability evidence, never runtime health: `pass` or `blocked`, so it never changes `ok`. It is the one check that
-// executes a release binary, so it runs only when this same run found the release's files present and its vendor
-// signatures valid (`runtime.signatures` pass); otherwise it is `blocked` naming the failed check.
-// `chrome.host.config` (chrome-component.mjs) is installed-runtime health: the Chrome host component cua placed in the
-// active release, its signature and the configuration the host reads. Not placed yet is `blocked` (install adds it);
-// anything wrong with what cua placed is `fail`.
-// The Chrome checks (src/profiles/checks.mjs) are capability evidence the same way as codex.login: each registered profile's
-// extension, the com.openai.codexextension native-messaging registration and which host it names, and the running
-// OpenAI hosts, read from files and the process table only.
-// On the cua route (`cua chrome register`, src/chrome/route.mjs) the Chrome rows are cua's own (cuaChromeChecks: cua's
-// extension, the io.github.ssfskim.cua registration and this home's launcher, the sockets of cua's hosts that accept a
-// connection), codex.login is `skip` (that route needs no Codex login) and chrome.host.config, the OpenAI host's
-// configuration, is not reported. On the vendor route and with no registration they are as before.
-// `browser.service` names the browser service a launch with the browser surface gets here and why (launch.mjs
-// browserServiceFor): CUA_BROWSER_SERVICE when set, else the home's active route and the registration that made it
-// active (cua's with the cua route or MAWS's in-app browser; the vendor's otherwise, naming `cua chrome register` as the
-// way to cua's). It describes a choice, so it is `pass`, or `fail` for a value every launch would refuse.
+// The Chrome checks (src/profiles/checks.mjs) are capability evidence: they never fail, so they never change `ok`.
+// chrome.route says whether this home is registered for cua's own extension and what is left to move it there from the
+// ChatGPT extension route #79 removed (src/chrome/route.mjs chromeMigration); the other rows are cua's extension in each
+// registered profile, the io.github.ssfskim.cua registration and this home's launcher, and the sockets of cua's hosts
+// that accept a connection.
 // `repl.host` names the REPL host a connection here runs (launch.mjs replHostFor, with the surfaces CUA_SHIM_SURFACES
 // names) and the one the browser-only profile listing runs (profiles_list's live check, cua profiles list and bind),
-// each with its reason, and the browser route and the registration (or absence of one) that decided the browser side.
-// It is `pass` while both resolve to a host a launch can run, else `fail` naming the refusal every such launch meets
-// (a CUA_NODE that is not an absolute path among them, whatever the selection, as `cua serve` refuses it at start),
+// each with its reason. It is `pass` while both resolve to a host a launch can run, else `fail` naming the refusal
+// every such launch meets (a CUA_NODE that is not an absolute path among them, whatever the selection, as `cua serve`
+// refuses it at start),
 // and `warn` where one would default to cua's own host but no Node 24 or later resolves here (own_host_node_unavailable:
 // that session keeps the vendor host), naming the candidates tried (the Node `cua install` places among them) and the
 // remedies: `cua install`, a Node 24 of the user's own, or CUA_NODE. Node is resolved once for both, as
@@ -61,17 +48,14 @@ import {homedir} from 'node:os';
 import {dirname, join} from 'node:path';
 import {CuaError} from './errors.mjs';
 import {homeLayout, realHome} from './layout.mjs';
-import {BROWSER_SERVICE, BROWSER_SERVICE_IMPL_DIR, CUA_API_DIR, CUA_API_DOCS_DIR, REPL_HOST_DIR, SERVICE_SUPPORT_DIRS, SKY_SERVICE, NODE_FLOOR, browserSelectionFor, browserServiceFor, describeBrowserRoute, ownHostNode, replHostFor} from './launch.mjs';
+import {BROWSER_SERVICE, BROWSER_SERVICE_IMPL_DIR, CUA_API_DIR, CUA_API_DOCS_DIR, REPL_HOST_DIR, SERVICE_SUPPORT_DIRS, SKY_SERVICE, NODE_FLOOR, ownHostNode, replHostFor} from './launch.mjs';
 import {SANDBOX_CONFLICT_HINT, describeConflicts, protectedPaths, sandboxConflicts, sandboxModeFrom, scopedWriteRoots, tmpdirRoot} from './sandbox.mjs';
 import {loadPins, selectPin, locateRuntime, recoveryHint} from './manifest.mjs';
 import {checkLayout, checkVendorManifest, checkIpc, verifyCodeSignatures, ipcVersionsIn} from './checks.mjs';
 import {inspectSecretStore, classifyStore} from '../secrets/check.mjs';
-import {loginStatus, LOGIN_STATES} from './login.mjs';
 import {describeSweep, sweepRun} from './run-dir.mjs';
 import {chromeFacts} from '../profiles/chrome.mjs';
-import {chromeChecks, cuaChromeChecks, mawsHostCheck, processTable} from '../profiles/checks.mjs';
-import {chromeRoute, extensionIdFor, registrationTimes} from '../chrome/route.mjs';
-import {inspectChromeHostConfig} from './chrome-component.mjs';
+import {chromeChecks, mawsHostCheck} from '../profiles/checks.mjs';
 import {linuxDesktopChecks, xDisplayCheck} from './linux-desktop.mjs';
 import {cuaNodeFrom, surfacesFrom} from '../mcp/surface.mjs';
 import {checkRelayUrl, readDevice} from '../remote/device.mjs';
@@ -86,10 +70,9 @@ const LIVE_PROBE = 'scripts/probe-runtime.mjs';
 
 const result = (name, status, detail) => ({name, status, detail});
 
-export async function inspectRuntime({home, env = process.env, live = false, pins, host = {platform: process.platform, arch: process.arch}, verifySignatures = verifyCodeSignatures, inspectHelper = inspectNativeHelper, inspectSecrets = inspectSecretStore, inspectLinux = linuxDesktopChecks, inspectLogin = defaultInspectLogin, inspectChrome = defaultInspectChrome, inspectAgent = defaultInspectAgent, sweep = sweepRun, resolveOwnNode}) {
+export async function inspectRuntime({home, env = process.env, live = false, pins, host = {platform: process.platform, arch: process.arch}, verifySignatures = verifyCodeSignatures, inspectHelper = inspectNativeHelper, inspectSecrets = inspectSecretStore, inspectLinux = linuxDesktopChecks, inspectChrome = defaultInspectChrome, inspectAgent = defaultInspectAgent, sweep = sweepRun, resolveOwnNode}) {
   if (live) throw new Error(`inspectRuntime is passive; live probes are separate explicit scripts (${LIVE_PROBE})`);
   pins ??= loadPins();
-  const route = chromeRoute(home);
   const checks = [];
   let pin;
   try {
@@ -102,8 +85,6 @@ export async function inspectRuntime({home, env = process.env, live = false, pin
   }
 
   let runtime;
-  // Why no release binary may be executed in this run, until the files and signatures checks pass.
-  let untrusted = 'needs a usable installed runtime to ask; run cua install, then run cua login';
   try {
     runtime = locateRuntime({home, pins, host});
     checks.push(result('runtime.installed', 'pass', `active release ${runtime.release} at ${runtime.root}`));
@@ -120,22 +101,16 @@ export async function inspectRuntime({home, env = process.env, live = false, pin
     checks.push(result('runtime.vendor-manifest', vendor.ok ? 'pass' : 'fail', vendor.detail));
     const ipc = checkIpc(root, manifest);
     checks.push(result('runtime.ipc', ipc.ok ? 'pass' : 'fail', ipc.detail));
-    let signed = true;
     if (manifest.signing) {
       const signatures = await verifySignatures(root, manifest);
       const bad = signatures.filter(s => !s.valid);
-      signed = !bad.length && signatures.length === manifest.signing.components.length;
+      const signed = !bad.length && signatures.length === manifest.signing.components.length;
       checks.push(result('runtime.signatures', signed ? 'pass' : 'fail', signed
         ? `${signatures.length} components signed by team ${manifest.signing.team}`
         : `invalid vendor signature: ${bad.map(s => `${s.component} (${s.detail})`).join('; ') || 'unchecked components'}; ${recoveryHint(root)}`));
     } else {
       checks.push(result('runtime.signatures', 'pass', `archive hash is the trust root on ${manifest.platform}: install verified the pinned archive's length and SHA-256 before extracting it, and nothing here is code-signed`));
     }
-    if (layout.ok && signed) untrusted = null;
-    else if (layout.ok) untrusted = 'not asked: runtime.signatures failed in this run, and doctor never executes a release binary it found untrusted; fix the release first (see runtime.signatures), then run cua login';
-    if (route !== 'cua') checks.push(await inspectChromeHostConfig({runtime, verifySignatures}));
-  } else if (route !== 'cua') {
-    checks.push(result('chrome.host.config', 'blocked', 'needs an installed runtime; run cua install, which also places the Chrome host'));
   }
   const linuxRows = host.platform === 'linux' ? await inspectLinux({env}) : null;
   const sandbox = sandboxCheck({home, env, runtime, platform: host.platform, userns: linuxRows?.find(row => row.name === 'sandbox.userns')});
@@ -155,11 +130,8 @@ export async function inspectRuntime({home, env = process.env, live = false, pin
   const secretsEnabled = (env.CUA_SHIM_SECRETS ?? 'on') !== 'off';
   checks.push(classifyStore(secretsInfo, {enabled: secretsEnabled}));
   if (secretsInfo.project) checks.push(classifyStore(secretsInfo.project, {enabled: secretsEnabled, project: secretsInfo.project.root}));
-  checks.push(browserServiceCheck(home, env));
   checks.push(replHostCheck(home, env, host.platform, resolveOwnNode));
-  checks.push(route === 'cua' ? result('codex.login', 'skip', 'not needed: the cua extension route needs no Codex login (the ChatGPT extension route does)')
-    : await codexLoginCheck({home, runtime: untrusted ? null : runtime, untrusted, inspectLogin}));
-  checks.push(...await inspectChrome({home, host, env, route}));
+  checks.push(...await inspectChrome({home, host, env}));
   checks.push(...await inspectAgent({home, env, host}));
 
   const report = {ok: !checks.some(c => c.status === 'fail'), checks};
@@ -167,48 +139,23 @@ export async function inspectRuntime({home, env = process.env, live = false, pin
   return report;
 }
 
-const SERVICE_NAMES = {cua: 'cua (cua\'s own browser service)', vendor: 'vendor (OpenAI\'s, from the pinned runtime)'};
-const TO_CUA = '`cua chrome register` (the cua extension) switches this home to cua\'s own browser service';
-const at = ms => new Date(ms).toISOString();
-const SERVICE_REASONS = {
-  explicit: service => `CUA_BROWSER_SERVICE=${service}`,
-  cua_route: (service, times) => `CUA_BROWSER_SERVICE is unset and this home is on the cua route: cua's registration of ${at(times.cua)} is the most recent`,
-  maws_client_mode: () => 'CUA_BROWSER_SERVICE is unset and MAWS\'s in-app browser is configured (CUA_BROWSER_BACKENDS)',
-  chatgpt_extension_route: (service, times) => (times.vendor !== null
-    ? `CUA_BROWSER_SERVICE is unset and this home is on the ChatGPT extension route: its registration (cua chrome register --vendor) of ${at(times.vendor)} is the most recent, and that route needs the vendor's service (cua's own refuses its backends); ${TO_CUA}`
-    : `CUA_BROWSER_SERVICE is unset and this home has no Chrome registration, which is the ChatGPT extension route (the desktop app's host), and that route needs the vendor's service; ${TO_CUA}`),
-};
-
-function browserServiceCheck(home, env) {
-  try {
-    const {service, reason} = browserServiceFor(env, home);
-    return result('browser.service', 'pass', `${SERVICE_NAMES[service]}: ${SERVICE_REASONS[reason](service, registrationTimes(home))}. A launch with the browser surface uses it; CUA_BROWSER_SERVICE=cua or vendor chooses`);
-  } catch (error) {
-    if (!(error instanceof CuaError)) throw error;
-    return result('browser.service', 'fail', `${error.message}; every launch with the browser surface is refused (invalid_browser_service)`);
-  }
-}
-
 const ROLLBACK = 'CUA_REPL_HOST=vendor keeps the vendor host';
 const REPL_HOST_REASONS = {
   explicit: ({host}) => `CUA_REPL_HOST=${host}`,
-  vendor_browser_route: () => 'the browser surface\'s service is the vendor\'s, which only the vendor host runs',
   macos_native_peer_requires_vendor: () => 'the computer surface on macOS, whose helper accepts only the vendor host\'s node_repl as a peer until #117',
   linux: () => `CUA_REPL_HOST is unset, and cua's own host is the default on Linux (the browser surface, if on, uses cua's browser service); ${ROLLBACK}`,
-  browser_only: () => `CUA_REPL_HOST is unset, and cua's own host is the default for a browser-only session on cua's browser service; ${ROLLBACK}`,
+  browser_only: () => `CUA_REPL_HOST is unset, and cua's own host is the default for a browser-only session; ${ROLLBACK}`,
   own_host_node_unavailable: ({nodeTried}) => `CUA_REPL_HOST is unset, and this session would default to cua's own host, but cua's own host needs Node ${NODE_FLOOR} or later and none was found (${nodeTried.join(', ')}), so it keeps the vendor host. To move it to cua's own host, run \`cua install\` (it installs the pinned Node ${NODE_FLOOR} for it under $CUA_HOME/node), install Node ${NODE_FLOOR} or later yourself, or set CUA_NODE to the absolute path of one`,
 };
 
-// The host a launch with `surfaces` here would run -> {host, reason, node?, nodeTried?, browser} or, refused,
-// {code, message, browser}. `resolveOwnNode` is the check's one Node resolution, shared by the session and the listing.
+// The host a launch with `surfaces` here would run -> {host, reason, node?, nodeTried?} or, refused, {code, message}.
+// `resolveOwnNode` is the check's one Node resolution, shared by the session and the listing.
 function replHostSelection(home, env, platform, surfaces, resolveOwnNode) {
-  let browser = null;
   try {
-    browser = surfaces.includes('browser') ? browserSelectionFor(env, home) : null;
-    return {...replHostFor({platform, surfaces, ambient: env, home, browserSelection: browser, resolveOwnNode}), browser};
+    return replHostFor({platform, surfaces, ambient: env, home, resolveOwnNode});
   } catch (error) {
     if (!(error instanceof CuaError)) throw error;
-    return {code: error.code, message: error.message, browser};
+    return {code: error.code, message: error.message};
   }
 }
 
@@ -226,7 +173,7 @@ function resolvedOnce(resolve) {
 function replHostCheck(home, env, platform, resolveOwnNode) {
   let surfaces;
   // CUA_NODE's form first, as `cua serve` checks it at start (settingsFrom) whatever the selection: an explicit vendor
-  // host or a vendor route never asks for Node, but the connection is refused all the same.
+  // host never asks for Node, but the connection is refused all the same.
   try { surfaces = surfacesFrom(env.CUA_SHIM_SURFACES); cuaNodeFrom(env); } catch (error) {
     if (!(error instanceof CuaError)) throw error;
     return result('repl.host', 'fail', `${error.message}; every connection is refused`);
@@ -235,10 +182,9 @@ function replHostCheck(home, env, platform, resolveOwnNode) {
   const session = replHostSelection(home, env, platform, surfaces, resolve);
   const listing = replHostSelection(home, env, platform, ['browser'], resolve);
   const words = r => (r.code ? `refused (${r.code}): ${r.message}` : `${r.host} host (${r.reason})${r.node ? ` on Node ${r.node}` : ''}: ${REPL_HOST_REASONS[r.reason](r)}`);
-  const route = !surfaces.includes('browser') ? 'none, no browser surface' : (session.browser ? describeBrowserRoute(session.browser) : 'not resolved');
   const status = session.code || listing.code ? 'fail' : [session, listing].some(r => r.reason === 'own_host_node_unavailable') ? 'warn' : 'pass';
   return result('repl.host', status,
-    `${words(session)}. Browser route: ${route}. The profile listing (browser only): ${words(listing)}. CUA_REPL_HOST=cua or vendor chooses`);
+    `${words(session)}. The profile listing (browser only): ${words(listing)}. CUA_REPL_HOST=cua or vendor chooses`);
 }
 
 // sandbox.userns as it bears on this setup. A scoped connection is itself refused where the probe fails, so its row
@@ -299,23 +245,8 @@ function runSweepCheck(home, sweep) {
   return result('run.stale', found.failed.length ? 'fail' : 'pass', `${found.run}: ${describeSweep(found) ?? 'nothing stale'}${live}`);
 }
 
-const defaultInspectLogin = ({home, runtime}) => loginStatus({home, runtime});
-const defaultInspectChrome = async ({home, host, env, route}) => [...(route === 'cua'
-  ? await cuaChromeChecks({home, chrome: chromeFacts({host, env, extensionId: extensionIdFor(route)})})
-  : chromeChecks({home, host, chrome: chromeFacts({host, env}), psText: processTable({host})})), mawsHostCheck({home})];
+const defaultInspectChrome = async ({home, host, env}) => [...await chromeChecks({home, chrome: chromeFacts({host, env})}), mawsHostCheck({home})];
 const defaultInspectAgent = ({home, env, host}) => agentChecks({home, env, host});
-
-async function codexLoginCheck({home, runtime, untrusted, inspectLogin}) {
-  if (!runtime) return result('codex.login', 'blocked', untrusted);
-  let status;
-  try { status = await inspectLogin({home, runtime}); } catch (error) {
-    if (!(error instanceof CuaError)) throw error;
-    return result('codex.login', 'blocked', `${error.message}; run cua login once CUA_HOME is fixed`);
-  }
-  return status.state === LOGIN_STATES.loggedIn
-    ? result('codex.login', 'pass', 'the server has a Codex login in its own CODEX_HOME (needed by the ChatGPT extension route)')
-    : result('codex.login', 'blocked', `no Codex login in the server's own CODEX_HOME (${status.reason ?? status.state}); the ChatGPT extension route needs one: run cua login`);
-}
 
 const AGENT_ROWS = ['agent.installed', 'agent.running', 'agent.enrolled', 'agent.console', 'agent.relay'];
 

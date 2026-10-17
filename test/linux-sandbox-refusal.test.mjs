@@ -15,7 +15,7 @@ import {openConnection} from '../src/mcp/connection.mjs';
 import {listLiveBackends, listingSandboxMode} from '../src/profiles/inventory.mjs';
 import {resolveRuntime} from '../src/runtime/manifest.mjs';
 import {fakeInstalledHome} from './fixtures/installed-home.mjs';
-import {chromeFacts, OPENAI_EXTENSION_ID} from '../src/profiles/chrome.mjs';
+import {chromeFacts, CUA_EXTENSION_ID} from '../src/profiles/chrome.mjs';
 
 const LINUX = {platform: 'linux', arch: 'x64'};
 const rejection = async promise => { try { await promise; } catch (error) { return error; } assert.fail('expected a rejection'); };
@@ -91,10 +91,10 @@ test('the profile listing stays scoped on Linux unless told otherwise, and is re
 test('a disabled connection lists its profiles under disabled, unprobed, where a scoped listing would be refused', async t => {
   const home = fakeInstalledHome(t, {host: LINUX});
   const userHome = join(home, 'user');
-  const extension = join(userHome, '.config', 'google-chrome', 'Default', 'Extensions', OPENAI_EXTENSION_ID, '1.0_0');
+  const extension = join(userHome, '.config', 'google-chrome', 'Default', 'Extensions', CUA_EXTENSION_ID, '1.0_0');
   mkdirSync(extension, {recursive: true});
   writeFileSync(join(extension, 'manifest.json'), '{}');
-  writeFileSync(join(home, 'profiles.json'), JSON.stringify({version: 1, profiles: {me: {chromeProfileDirectory: 'Default', extensionInstanceId: 'inst-a', boundAt: '2026-10-06T00:00:00.000Z'}}}));
+  writeFileSync(join(home, 'profiles.json'), JSON.stringify({version: 1, profiles: {me: {chromeProfileDirectory: 'Default', extensionInstanceId: 'inst-a', boundAt: '2026-10-06T00:00:00.000Z', route: 'cua'}}}));
   const backends = join(home, 'state', 'codex', 'fake-backends.json');
   mkdirSync(dirname(backends), {recursive: true});
   writeFileSync(backends, JSON.stringify({backends: [{instanceId: 'inst-a', family: 'chrome', profileName: null, tabCount: null}]}));
@@ -104,7 +104,8 @@ test('a disabled connection lists its profiles under disabled, unprobed, where a
   const output = new PassThrough();
   const frames = [];
   createInterface({input: output}).on('line', line => frames.push(JSON.parse(line)));
-  const env = {PATH: process.env.PATH, HOME: userHome, DISPLAY: ':0', CUA_SHIM_SURFACES: 'computer,browser'};
+  // The vendor REPL host, which the fake release fakes: on Linux the default is cua's own wherever a Node 24 is found.
+  const env = {PATH: process.env.PATH, HOME: userHome, DISPLAY: ':0', CUA_SHIM_SURFACES: 'computer,browser', CUA_REPL_HOST: 'vendor'};
   const connection = await openConnection({home, env, host: LINUX, sessionId: randomUUID(), input, output, diagnostics: () => {},
     chrome: chromeFacts({host: LINUX, env: {}, userHome}), probeUserns: probe});
   t.after(() => { input.end(); return connection.closed; });

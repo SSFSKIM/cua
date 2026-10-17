@@ -1,10 +1,10 @@
-// H2 CLI: `cua chrome register|unregister` on the cua route (the default), and the route switch as `cua profiles list`
-// shows it (acceptance 9). Every run gets a scratch CUA_HOME and a scratch HOME, so no real browser manifest directory
+// H2 CLI: `cua chrome register|unregister` (cua's own host, the only Chrome route), and a binding made on the removed
+// ChatGPT extension as `cua profiles list` shows it (acceptance 9). Every run gets a scratch CUA_HOME and a scratch HOME, so no real browser manifest directory
 // and no real cua home is ever read or written.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
-import {existsSync, mkdirSync, readFileSync, realpathSync, utimesSync, writeFileSync} from 'node:fs';
+import {existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {browsersFor, manifestText} from '../src/chrome/registration.mjs';
 import {CUA_EXTENSION_ID, CUA_HOST_NAME, launcherPath} from '../src/chrome/extension.mjs';
@@ -34,7 +34,7 @@ function machine(t) {
   return {home, user, chromeData, manifest: join(nmh, `${CUA_HOST_NAME}.json`), cua};
 }
 
-test('chrome register defaults to the cua route: the manifest, the launcher on this checkout, and the per-browser table', t => {
+test('chrome register: the manifest, the launcher on this checkout, and the per-browser table', t => {
   const m = machine(t);
   const r = m.cua(['chrome', 'register']);
   assert.equal(r.status, 0, r.stderr);
@@ -73,24 +73,19 @@ test('chrome register refuses another home\'s manifest; --replace records it, an
   assert.match(m.cua(['chrome', 'unregister']).stdout, /^nothing to unregister/);
 });
 
-test('switching routes makes profiles list show rebind_required for a binding made on the other route (acceptance 9)', t => {
+test('a binding made on the ChatGPT extension shows rebind_required in profiles list, and register names it (acceptance 9)', t => {
   const m = machine(t);
-  // Bound on the vendor route (no `route` field), before the home switched to cua.
+  // Bound on the ChatGPT extension (no `route` field), before #79.
   writeFileSync(join(m.home, 'profiles.json'), JSON.stringify({version: 1, profiles: {personal: {chromeProfileDirectory: 'Default', extensionInstanceId: 'vendor-inst', boundAt: '2026-10-01T00:00:00.000Z'}}}));
   const r = m.cua(['chrome', 'register']);
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /personal.*cua profiles bind/);
+  const note = 'note: cua\'s own extension and host are registered: personal was bound on the ChatGPT extension: bind it again on the cua extension: cua profiles bind personal';
+  assert.ok(r.stdout.split('\n').includes(note), r.stdout);
   const list = m.cua(['profiles', 'list', '--json']);
   assert.equal(list.status, 0, list.stderr);
+  assert.ok(list.stderr.includes(`${note}\n`), list.stderr);
   assert.deepEqual(JSON.parse(list.stdout).profiles.map(p => [p.key, p.ready, p.reason]), [['personal', false, 'rebind_required']]);
-  assert.match(m.cua(['profiles', 'list']).stdout, /^personal\s+not ready\s+Default\s+bound on the other Chrome route/m);
-  // A later vendor registration (its record newer) takes the home back; the vendor binding is fine again.
-  const vendorRecord = join(m.home, 'chrome', 'registration.json');
-  writeFileSync(vendorRecord, JSON.stringify({schema: 1, browsers: {chrome: {manifest: '/m', replaced: false}}}));
-  const later = new Date(Date.now() + 60_000);
-  utimesSync(vendorRecord, later, later);
-  assert.equal(chromeRoute(m.home), 'vendor');
-  assert.equal(JSON.parse(m.cua(['profiles', 'list', '--json']).stdout).profiles[0].reason, 'extension_not_installed', 'the vendor route reads the OpenAI extension again');
+  assert.match(m.cua(['profiles', 'list']).stdout, /^personal\s+not ready\s+Default\s+bound on the ChatGPT extension, a route cua no longer supports \(#79\).*cua profiles bind personal/m);
 });
 
 test('profiles add on the cua route reports the cua extension loaded unpacked as installed', t => {

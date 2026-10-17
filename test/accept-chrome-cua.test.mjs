@@ -256,13 +256,10 @@ test('the raw backend client reaches a live host: another session\'s executeCdp 
   assert.equal('extensionId' in info.result.metadata, false);
 });
 
-test('the route\'s preconditions: the cua route needs no Codex login and counts its host by the profile\'s own socket', () => {
-  const cua = routePreconditions({route: 'cua', homeRoute: 'cua', socketLive: true, authPresent: false});
-  assert.deepEqual(cua, {missing: [], loginGate: false, liveHosts: 1, codexAuthPresent: false});
-  assert.deepEqual(routePreconditions({route: 'cua', homeRoute: 'cua', socketLive: false, authPresent: false}).missing, ['no cua host serves this profile\'s socket (is the cua extension loaded and connected in it?)']);
-  assert.match(routePreconditions({route: 'cua', homeRoute: 'cua', socketLive: true, authPresent: true}).missing.join(), /Codex credential file/);
-  assert.deepEqual(routePreconditions({route: 'cua', homeRoute: 'vendor', socketLive: true, authPresent: false}).missing, ['the home is on the vendor route, not cua (cua chrome register switches it)']);
-  const vendor = routePreconditions({route: 'vendor', homeRoute: 'vendor', liveHosts: 2});
-  assert.deepEqual(vendor, {missing: [], loginGate: true, liveHosts: 2});
-  assert.deepEqual(routePreconditions({route: 'vendor', homeRoute: null, liveHosts: 0}).missing, ['no OpenAI Chrome host is running']);
+test('the route\'s preconditions: a cua registration, no Codex login, and the host counted by the profile\'s own socket', () => {
+  assert.deepEqual(routePreconditions({route: 'cua', socketLive: true, authPresent: false}), {missing: [], liveHosts: 1, codexAuthPresent: false});
+  assert.deepEqual(routePreconditions({route: 'cua', socketLive: false, authPresent: false}).missing, ['no cua host serves this profile\'s socket (is the cua extension loaded and connected in it?)']);
+  assert.match(routePreconditions({route: 'cua', socketLive: true, authPresent: true}).missing.join(), /Codex credential file/);
+  // chromeRoute is null for a home with no cua registration, a home the removed ChatGPT route registered included.
+  assert.deepEqual(routePreconditions({route: null, socketLive: true, authPresent: false}).missing, ['the home is not registered for cua\'s Chrome route (run cua chrome register)']);
 });

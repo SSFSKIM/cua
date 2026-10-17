@@ -28,7 +28,7 @@ test('an explicitly selected own host answers a real connection: handshake, cell
   const runtime = resolveRuntime({home});
   copyFileSync(sandboxDouble(home), runtime.paths.codexCli);
   chmodSync(runtime.paths.codexCli, 0o755);
-  const env = {PATH: '/usr/bin:/bin', HOME: home, TMPDIR: process.env.TMPDIR, CUA_REPL_HOST: 'cua', CUA_NODE: node, CUA_BROWSER_SERVICE: 'cua',
+  const env = {PATH: '/usr/bin:/bin', HOME: home, TMPDIR: process.env.TMPDIR, CUA_REPL_HOST: 'cua', CUA_NODE: node,
     CUA_SHIM_SURFACES: 'browser', CUA_SHIM_SECRETS: 'off', CUA_RUNTIME_IDLE_MS: '0'};
   const input = new PassThrough(), output = new PassThrough();
   const pending = new Map();

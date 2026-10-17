@@ -1,20 +1,22 @@
-// H2: doctor on the cua route (acceptance 1's rows, against fixtures): chrome.extension.<key> by the cua presence rule,
-// chrome.host.registered for io.github.ssfskim.cua and this home's launcher and its targets, chrome.hosts.live counting
-// the sockets in $CUA_HOME/chrome/b that accept a connection (the one row that connects), codex.login skipped and
-// chrome.host.config not reported. Scratch homes and Chrome directories only; the sockets are this test's own.
+// H2: doctor's Chrome rows (acceptance 1's rows, against fixtures): chrome.route saying whether the home is registered
+// for the cua extension and what the removed ChatGPT extension route left (#79), chrome.extension.<key> by the cua
+// presence rule, chrome.host.registered for io.github.ssfskim.cua and this home's launcher and its targets,
+// chrome.hosts.live counting the sockets in $CUA_HOME/chrome/b that accept a connection (the one row that connects).
+// Scratch homes and Chrome directories only; the sockets are this test's own.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {existsSync, mkdirSync, realpathSync, rmSync, writeFileSync} from 'node:fs';
+import {existsSync, mkdirSync, realpathSync, rmSync, utimesSync, writeFileSync} from 'node:fs';
 import {spawnSync} from 'node:child_process';
 import {createServer} from 'node:net';
 import {join} from 'node:path';
 import {chromeFacts, CUA_EXTENSION_ID} from '../src/profiles/chrome.mjs';
-import {cuaChromeChecks} from '../src/profiles/checks.mjs';
+import {chromeChecks, routeCheck} from '../src/profiles/checks.mjs';
 import {inspectRuntime} from '../src/runtime/doctor.mjs';
 import {browsersFor, registerCuaHost} from '../src/chrome/registration.mjs';
 import {backendDir, CUA_HOST_NAME, launcherPath} from '../src/chrome/extension.mjs';
+import {cuaRecordFile} from '../src/chrome/route.mjs';
 import {shortScratch, scratch} from './fixtures/runtime-fixture.mjs';
-import {writeCuaRecord, writeVendorRecord} from './fixtures/route-records.mjs';
+import {writeVendorRecord} from './fixtures/route-records.mjs';
 
 const DARWIN = {platform: 'darwin', arch: 'arm64'};
 const byName = checks => Object.fromEntries(checks.map(c => [c.name, c]));
@@ -37,8 +39,8 @@ async function machine(t) {
   writeFileSync(join(checkout, 'src', 'chrome', 'host.mjs'), '');
   await registerCuaHost({home, checkout, nodePath: process.execPath, browsers});
   writeFileSync(join(home, 'profiles.json'), JSON.stringify({version: 1, profiles: {personal: {chromeProfileDirectory: 'Default'}, work: {chromeProfileDirectory: 'Profile 1'}}}));
-  const chrome = chromeFacts({userData, extensionId: CUA_EXTENSION_ID});
-  return {dir, home, userHome, userData, checkout, chrome, checks: () => cuaChromeChecks({home, chrome, userHome})};
+  const chrome = chromeFacts({userData});
+  return {dir, home, userHome, userData, checkout, chrome, checks: () => chromeChecks({home, chrome})};
 }
 
 function listen(t, path) {
@@ -100,65 +102,57 @@ test('chrome.hosts.live counts the sockets that accept a connection, removes a r
   assert.equal(existsSync(live), true);
 });
 
-test('doctor on the cua route skips codex.login with the stated text, omits chrome.host.config, and runs the cua Chrome checks', async t => {
+// ---- chrome.route (route.mjs chromeMigration; test/chrome-migration.test.mjs covers its messages) -----------------
+
+const EARLY = 1_760_000_000, LATE = 1_760_090_000;
+
+test('chrome.route passes on a home registered for the cua extension with nothing left, and is the first Chrome row', async t => {
   const m = await machine(t);
-  let asked = false;
-  let chromeRoute;
-  const report = await inspectRuntime({home: m.home, host: DARWIN, inspectHelper: async () => ({socket: '/x', holders: []}), inspectSecrets: async () => ({dir: '/none', exists: false}),
-    inspectAgent: async () => [], inspectLogin: async () => { asked = true; return {state: 'logged-in'}; },
-    inspectChrome: async ({route}) => { chromeRoute = route; return []; }});
-  const login = report.checks.find(c => c.name === 'codex.login');
-  assert.deepEqual(login, {name: 'codex.login', status: 'skip', detail: 'not needed: the cua extension route needs no Codex login (the ChatGPT extension route does)'});
-  assert.equal(asked, false);
-  assert.equal(report.checks.some(c => c.name === 'chrome.host.config'), false);
-  assert.equal(chromeRoute, 'cua');
+  const checks = await m.checks();
+  assert.deepEqual(checks[0], {name: 'chrome.route', status: 'pass', detail: 'cua\'s own extension and host (cua chrome register): the only Chrome route'});
 });
 
-test('doctor with no registration keeps codex.login and chrome.host.config as before', async t => {
+test('chrome.route is blocked with no registration and with only the ChatGPT route\'s record, naming the migration code', t => {
   const s = scratch();
   t.after(s.cleanup);
-  let chromeRoute = 'unset';
-  const report = await inspectRuntime({home: s.dir, host: DARWIN, inspectHelper: async () => ({socket: '/x', holders: []}), inspectSecrets: async () => ({dir: '/none', exists: false}),
-    inspectAgent: async () => [], inspectChrome: async ({route}) => { chromeRoute = route; return []; }});
-  assert.equal(report.checks.find(c => c.name === 'codex.login').status, 'blocked');
-  assert.equal(report.checks.find(c => c.name === 'chrome.host.config').status, 'blocked');
-  assert.equal(chromeRoute, null);
+  let row = routeCheck(s.dir);
+  assert.equal(row.status, 'blocked');
+  assert.match(row.detail, /^this home has no Chrome registration: run `cua chrome register`.* \[chrome_not_registered\]$/);
+  writeVendorRecord(s.dir, {at: EARLY});
+  row = routeCheck(s.dir);
+  assert.equal(row.status, 'blocked');
+  assert.match(row.detail, /ChatGPT extension route .*no longer supports.* \[chatgpt_route_removed\]$/);
 });
 
-// browser.service (spec 2026-10-13-own-browser-service-design.md, M5 task 1): which browser service a launch here gets,
-// and why: an explicit CUA_BROWSER_SERVICE, else the home's route.
-test('doctor names the browser service a launch here selects and why: the active route and the registration that made it so, MAWS, explicit; a vendor default names the way to cua\'s', async t => {
-  const stubs = {host: DARWIN, inspectHelper: async () => ({socket: '/x', holders: []}), inspectSecrets: async () => ({dir: '/none', exists: false}),
-    inspectAgent: async () => [], inspectChrome: async () => [], inspectLogin: async () => ({state: 'logged-out'})};
-  const homeWith = ({vendor, cua} = {}) => {
-    const s = scratch();
-    t.after(s.cleanup);
-    if (vendor !== undefined) writeVendorRecord(s.dir, {at: vendor});
-    if (cua !== undefined) writeCuaRecord(s.dir, {at: cua});
-    return s.dir;
-  };
-  const row = async (home, env = {}) => (await inspectRuntime({home, env, ...stubs})).checks.find(c => c.name === 'browser.service');
-  const EARLY = 1_760_000_000, LATE = 1_760_090_000;
-  const iso = at => new Date(at * 1000).toISOString();
-  const REGISTER = /`cua chrome register` \(the cua extension\) switches this home to cua's own browser service/;
-  const CUA = "^cua \\(cua's own browser service\\): ";
-  const VENDOR = "^vendor \\(OpenAI's, from the pinned runtime\\): ";
-  const cases = [
-    [homeWith(), {}, 'pass', new RegExp(`${VENDOR}CUA_BROWSER_SERVICE is unset and this home has no Chrome registration, which is the ChatGPT extension route \\(the desktop app's host\\)`), REGISTER],
-    [homeWith({vendor: EARLY}), {}, 'pass', new RegExp(`${VENDOR}CUA_BROWSER_SERVICE is unset and this home is on the ChatGPT extension route: its registration \\(cua chrome register --vendor\\) of ${iso(EARLY)} is the most recent`), REGISTER],
-    [homeWith({cua: EARLY}), {}, 'pass', new RegExp(`${CUA}CUA_BROWSER_SERVICE is unset and this home is on the cua route: cua's registration of ${iso(EARLY)} is the most recent`)],
-    [homeWith({vendor: EARLY, cua: LATE}), {}, 'pass', new RegExp(`${CUA}CUA_BROWSER_SERVICE is unset and this home is on the cua route: cua's registration of ${iso(LATE)} is the most recent`)],
-    [homeWith({vendor: LATE, cua: EARLY}), {}, 'pass', new RegExp(`${VENDOR}CUA_BROWSER_SERVICE is unset and this home is on the ChatGPT extension route: its registration \\(cua chrome register --vendor\\) of ${iso(LATE)} is the most recent`), REGISTER],
-    [homeWith(), {CUA_BROWSER_BACKENDS: '/maws/a.sock'}, 'pass', new RegExp(`${CUA}CUA_BROWSER_SERVICE is unset and MAWS's in-app browser is configured \\(CUA_BROWSER_BACKENDS\\)`)],
-    [homeWith({vendor: EARLY}), {CUA_BROWSER_SERVICE: 'cua'}, 'pass', new RegExp(`${CUA}CUA_BROWSER_SERVICE=cua`)],
-    [homeWith({cua: EARLY}), {CUA_BROWSER_SERVICE: 'vendor'}, 'pass', new RegExp(`${VENDOR}CUA_BROWSER_SERVICE=vendor`)],
-    [homeWith(), {CUA_BROWSER_SERVICE: 'openai'}, 'fail', /CUA_BROWSER_SERVICE must be cua or vendor/],
-  ];
-  for (const [home, env, status, detail, register] of cases) {
-    const found = await row(home, env);
-    assert.equal(found?.status, status, JSON.stringify(env));
-    assert.match(found.detail, detail);
-    if (register) assert.match(found.detail, register, 'a default of the vendor\'s names the way to cua\'s');
-    else assert.doesNotMatch(found.detail, REGISTER);
-  }
+test('chrome.route warns when cua\'s registration is in place but a profile is still bound on the ChatGPT extension', async t => {
+  const m = await machine(t);
+  writeFileSync(join(m.home, 'profiles.json'), JSON.stringify({version: 1, profiles: {personal: {chromeProfileDirectory: 'Default', extensionInstanceId: 'inst-p', boundAt: 'x'}}}));
+  const row = (await m.checks())[0];
+  assert.deepEqual([row.name, row.status], ['chrome.route', 'warn']);
+  assert.equal(row.detail, 'cua\'s own extension and host are registered: personal was bound on the ChatGPT extension: bind it again on the cua extension: cua profiles bind personal [rebind_required]');
+});
+
+test('chrome.route warns when cua\'s registration is in place but the ChatGPT route\'s record is newer, or left over', async t => {
+  const m = await machine(t);
+  utimesSync(cuaRecordFile(m.home), EARLY, EARLY);
+  writeVendorRecord(m.home, {at: LATE});
+  let row = (await m.checks())[0];
+  assert.deepEqual([row.name, row.status], ['chrome.route', 'warn']);
+  assert.match(row.detail, /run `cua chrome register` again.* \[chatgpt_route_removed\]$/);
+  utimesSync(cuaRecordFile(m.home), LATE + 60, LATE + 60);
+  row = (await m.checks())[0];
+  assert.equal(row.status, 'warn');
+  assert.match(row.detail, /left from before #79 .* \[chatgpt_route_leftover\]$/);
+});
+
+test('doctor runs the Chrome checks with no route argument and reports none of the removed rows', async t => {
+  const m = await machine(t);
+  let asked;
+  const report = await inspectRuntime({home: m.home, host: DARWIN, inspectHelper: async () => ({socket: '/x', holders: []}), inspectSecrets: async () => ({dir: '/none', exists: false}),
+    inspectAgent: async () => [], inspectChrome: async args => { asked = args; return chromeChecks({home: args.home, chrome: m.chrome}); }});
+  assert.deepEqual(Object.keys(asked).sort(), ['env', 'home', 'host']);
+  const names = report.checks.map(c => c.name);
+  for (const removed of ['codex.login', 'chrome.host.config', 'browser.service']) assert.equal(names.includes(removed), false, removed);
+  assert.equal(report.checks.find(c => c.name === 'chrome.route').status, 'pass');
+  assert.doesNotMatch(report.checks.find(c => c.name === 'repl.host').detail, /Browser route/);
 });

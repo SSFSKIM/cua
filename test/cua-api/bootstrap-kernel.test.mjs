@@ -16,7 +16,7 @@ const {node, skip} = kernelNode();
 const doc = name => readFileSync(new URL(`../../docs/cua-api/${name}`, import.meta.url), 'utf8');
 const CORE = `${doc('core.md')}\n${doc('confirmations.md')}`;
 const BROWSERS = [{id: 'b1', name: 'Chrome', type: 'extension', metadata: {extensionInstanceId: 'inst-1'}}];
-const browserService = browserDouble({list_browsers: BROWSERS, get_browser_documentation: 'DOC b1', list_tabs: {tabs: [{id: 't1', title: 'One'}]}, browser_user_open_tabs: {tabs: []}});
+const browserAnswer = browserDouble({list_browsers: BROWSERS, get_browser_documentation: 'DOC b1', list_tabs: {tabs: [{id: 't1', title: 'One'}]}, browser_user_open_tabs: {tabs: []}});
 const SKY = {
   mac: {setup: {target: 'mac', methods: ['list_apps', 'get_app_state', 'click']}, list_apps: [{id: 'com.apple.Notes', displayName: 'Notes'}], get_app_state: {text: 'AX Notes', screenshot: null, app: 'Notes'}},
   linux: {setup: {target: 'linux', methods: ['list_apps', 'list_windows', 'get_window_state']}, list_apps: [], list_windows: [{id: 3, app: 'gedit'}],
@@ -29,7 +29,7 @@ function reply(target, services) {
     services.push(message.service === 'sky' ? message.request.type === 'setup' ? 'sky.setup' : `sky.${message.request.method}` : `browser.${message.request.method === 'setup' ? 'setup' : message.request.params.type}`);
     const answer = message.service === 'sky'
       ? SKY[target][message.request.type === 'setup' ? 'setup' : message.request.method]
-      : message.request.method === 'setup' ? {apiManifest: API_MANIFEST, disabledMemberIds: []} : browserService(message.request.params);
+      : message.request.method === 'setup' ? {apiManifest: API_MANIFEST, disabledMemberIds: []} : browserAnswer(message.request.params);
     return {type: 'trusted_service_response', id: message.id, ok: true, value: answer ?? null};
   };
 }

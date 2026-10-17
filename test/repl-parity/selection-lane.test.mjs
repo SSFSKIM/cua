@@ -16,11 +16,13 @@ const SENTENCE='CUA_REPL_HOST must be cua or vendor';
 // Row 4 of the stopped mini run (ddc7427): doctor's repl.host row for darwin, no registration, browser only, invalid.
 const diagnostic=JSON.parse(readFileSync(join(REPO,'docs/evidence/2026-10-14-own-repl-host-parity/m5/mini/diagnostics/selection-invalid-setting/selection.json'),'utf8'));
 const invalidRow=diagnostic.rows[3];
-const doctorDetail=(ordinary,listing=ordinary)=>`${ordinary}. Browser route: the ChatGPT extension route, as a home with no Chrome registration is read. The profile listing (browser only): ${listing}. CUA_REPL_HOST=cua or vendor chooses`;
+// The row was recorded before #79, when doctor's row also named the browser route; the lane reads it unchanged.
+const recordedDetail=(ordinary,listing=ordinary)=>`${ordinary}. Browser route: the ChatGPT extension route, as a home with no Chrome registration is read. The profile listing (browser only): ${listing}. CUA_REPL_HOST=cua or vendor chooses`;
+const doctorDetail=(ordinary,listing=ordinary)=>`${ordinary}. The profile listing (browser only): ${listing}. CUA_REPL_HOST=cua or vendor chooses`;
 
 test('the recorded row is the invalid-override row the lane stopped at',()=>{
  assert.equal(invalidRow.row.override,'invalid');assert.equal(invalidRow.row.lane,'ordinary');
- assert.equal(invalidRow.doctor.detail,doctorDetail(`refused (invalid_repl_host): ${SENTENCE}`));
+ assert.equal(invalidRow.doctor.detail,recordedDetail(`refused (invalid_repl_host): ${SENTENCE}`));
 });
 
 test('an invalid override expects invalid_setting from serve and invalid_repl_host from the listing and doctor',()=>{
@@ -50,7 +52,7 @@ test('doctor must refuse an invalid override in the row\'s own lane with invalid
   ['the serve boundary code',`refused (invalid_setting): ${SENTENCE}`],
   ['another sentence',`refused (invalid_repl_host): CUA_REPL_HOST must be cua, vendor or unset`],
   ['a truncated sentence','refused (invalid_repl_host): CUA_REPL_HOST must be cua'],
-  ['a selection instead of a refusal','vendor host (vendor_browser_route): the browser surface\'s service is the vendor\'s'],
+  ['a selection instead of a refusal','vendor host (explicit): CUA_REPL_HOST=vendor'],
  ]){
   const row={...invalidRow.row,lane},error=lane==='profiles'?'invalid_repl_host':'invalid_setting';
   assert.doesNotThrow(()=>assertSelection(row,{doctor:{status:'fail',detail:doctorDetail(good)},error,errorMessage:SENTENCE}));

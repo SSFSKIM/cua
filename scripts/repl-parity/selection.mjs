@@ -9,37 +9,21 @@ import {root,remoteCommand,quote,linuxSession,ownNodeEnv,execute} from './topolo
 import {checkHost} from './remote.mjs';
 import {assertManagedNode} from './node-provenance.mjs';
 const INVALID_REPL_HOST='CUA_REPL_HOST must be cua or vendor';
-// What decides a browser route, in the documented order: an explicit CUA_BROWSER_SERVICE, then an active cua
-// registration (the later of two registrations is active), then MAWS client mode, then the ChatGPT extension route, by
-// its registration or, with none, by default. The service follows: cua's for a cua registration or MAWS.
-function browserRouteDecider(row){
- if(row.browserService)return 'explicit';
- if(['cua','chatgpt-then-cua'].includes(row.registration))return 'cua_registration';
- if(row.maws)return 'maws';
- return row.registration==='none'?'unregistered':'chatgpt_registration';
-}
-// Doctor's "Browser route:" words for each decider; MAWS is named only where MAWS client mode decides.
-const ROUTE_WORDS={
- no_browser:()=>/^none, no browser surface$/,
- explicit:row=>new RegExp(`^CUA_BROWSER_SERVICE=${row.browserService}$`),
- cua_registration:()=>/^the cua route, by cua's registration\b/,
- maws:()=>/^MAWS's in-app browser\b/,
- unregistered:()=>/^the ChatGPT extension route, as a home with no Chrome registration\b/,
- chatgpt_registration:()=>/^the ChatGPT extension route, by its registration\b/,
-};
+// The independent M5 table of production's REPL host selection (src/runtime/launch.mjs replHostFor): CUA_REPL_HOST, then
+// the computer surface on macOS, then the own host's Node. The home's Chrome registration and MAWS client mode take no
+// part since #79 removed the ChatGPT extension route and the vendor browser service's selection: either host runs cua's
+// browser service, so a home whose registration is the ChatGPT route's (`chatgpt`, `cua-then-chatgpt`) selects as any
+// other. The rows keep every registration ordering and MAWS to show exactly that.
 export function expectedSelection(row){
  const {platform,override,node24=true,lane='ordinary'}=row;
  const surfaces=lane==='profiles'?['browser']:row.surfaces;
- const browser=surfaces.includes('browser'),availableNode=node24||row.managedNode===true;
- const decider=browserRouteDecider(row),route=decider==='explicit'?row.browserService:['cua_registration','maws'].includes(decider)?'cua':'vendor';
+ const availableNode=node24||row.managedNode===true,macosComputer=platform==='darwin'&&surfaces.includes('computer');
  // An invalid value has two refusal boundaries: `cua serve` validates its settings at start (invalid_setting), while
  // the profile listing and doctor resolve the selection itself (invalid_repl_host). Both carry the one sentence.
  if(!['unset','cua','vendor'].includes(override))return {error:lane==='profiles'?'invalid_repl_host':'invalid_setting',doctorError:'invalid_repl_host',sentence:INVALID_REPL_HOST};
  if(override==='vendor')return {host:'vendor',reason:'explicit',status:'pass'};
- const refused=browser&&route==='vendor'||platform==='darwin'&&surfaces.includes('computer');
- if(override==='cua')return refused?{error:'repl_host_refused'}:!availableNode?{error:'repl_host_node'}:{host:'cua',reason:'explicit',status:'pass'};
- if(browser&&route==='vendor')return {host:'vendor',reason:'vendor_browser_route',status:'pass'};
- if(platform==='darwin'&&surfaces.includes('computer'))return {host:'vendor',reason:'macos_native_peer_requires_vendor',status:'pass'};
+ if(override==='cua')return macosComputer?{error:'repl_host_refused'}:!availableNode?{error:'repl_host_node'}:{host:'cua',reason:'explicit',status:'pass'};
+ if(macosComputer)return {host:'vendor',reason:'macos_native_peer_requires_vendor',status:'pass'};
  if(!availableNode)return {host:'vendor',reason:'own_host_node_unavailable',status:'warn'};
  return {host:'cua',reason:platform==='linux'?'linux':'browser_only',status:'pass'};
 }
@@ -47,13 +31,14 @@ export function selectionCases(platform){
  const rows=[];
  for(const registration of ['none','chatgpt','cua','cua-then-chatgpt','chatgpt-then-cua'])for(const maws of [false,true])for(const surfaces of [['browser'],['computer'],['computer','browser']])for(const lane of ['ordinary','profiles'])for(const override of ['unset','cua','vendor','invalid'])rows.push({platform,registration,maws,surfaces,lane,override,node24:true});
  for(const lane of ['ordinary','profiles'])for(const override of ['unset','cua','vendor'])rows.push({platform,registration:'cua',maws:false,surfaces:['browser'],lane,override,node24:false});
- for(const browserService of ['cua','vendor'])for(const lane of ['ordinary','profiles'])for(const override of ['unset','cua','vendor'])rows.push({platform,registration:browserService==='cua'?'none':'cua',maws:false,surfaces:['browser'],lane,override,node24:true,browserService});
  for(const lane of ['ordinary','profiles'])rows.push({platform,registration:'cua',maws:false,surfaces:['browser'],lane,override:'unset',node24:false,managedNode:true});
  return rows;
 }
-// Doctor reports ordinary and listing independently in one row; the row's lane reads its own sentence.
+// Doctor reports ordinary and listing independently in one row; the row's lane reads its own sentence. Rows recorded
+// before #79 carry a `. Browser route: ...` clause after the ordinary sentence, which is not part of it.
 function laneSentence(row,detail){
- return row.lane==='profiles'?detail.split('The profile listing (browser only): ')[1]?.split('. CUA_REPL_HOST=')[0]:detail.split('. Browser route:')[0];
+ const [ordinary,listing]=detail.split('. The profile listing (browser only): ');
+ return row.lane==='profiles'?listing?.split('. CUA_REPL_HOST=')[0]:ordinary.split('. Browser route: ')[0];
 }
 // A doctor selection sentence: `HOST host (REASON)`, then ` on Node PATH` where the own host's Node was resolved, then `: `
 // and the explanation. Only this anchored opening is read; the explanation and the other lane never stand in for it.
@@ -83,12 +68,8 @@ export function assertSelection(row,{doctor,observation,error,errorMessage},revi
  const ordinary=expectedSelection({...row,lane:'ordinary'}),listing=expectedSelection({...row,lane:'profiles'});
  const status=ordinary.error||listing.error?'fail':ordinary.status==='warn'||listing.status==='warn'?'warn':'pass';
  assert.equal(doctor.status,status);
- const decider=row.surfaces.includes('browser')?browserRouteDecider(row):'no_browser';
- const route=doctor.detail.split('. Browser route: ')[1]?.split('. The profile listing (browser only): ')[0];
- assert.match(route??'',ROUTE_WORDS[decider](row),`Doctor's browser route ${JSON.stringify(route)} is not the one ${decider} decides`);
- assert.equal(/MAWS/.test(doctor.detail),decider==='maws',`Doctor names MAWS only where MAWS client mode decides the browser route (here ${decider})`);
 }
-const describeRow=r=>[r.platform,`registration ${r.registration}`,...(r.maws?['maws']:[]),r.surfaces.join(','),r.lane,`override ${r.override}`,r.node24?'node24':'node22',...(r.managedNode?['managed Node']:[]),...(r.browserService?[`CUA_BROWSER_SERVICE=${r.browserService}`]:[])].join(', ');
+const describeRow=r=>[r.platform,`registration ${r.registration}`,...(r.maws?['maws']:[]),r.surfaces.join(','),r.lane,`override ${r.override}`,r.node24?'node24':'node22',...(r.managedNode?['managed Node']:[])].join(', ');
 // Every failing row and check, by name; a lane that stopped early or recorded fewer rows than planned never passes.
 export function selectionVerdict(evidence){
  const failures=evidence.failures??[];

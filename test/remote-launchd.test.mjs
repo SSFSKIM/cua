@@ -8,7 +8,6 @@ import {AGENT_LABEL, agentPlistPath, agentStatus, installAgent, installedJob, pa
 import {enrollDevice} from '../src/remote/device.mjs';
 import {REPO, scratch} from './fixtures/runtime-fixture.mjs';
 import {UID, fakeLaunchctl, printed} from './fixtures/fake-launchctl.mjs';
-import {writeVendorRecord} from './fixtures/route-records.mjs';
 
 const NODE = '/opt/node & <co>/bin/node';
 const CLI = '/Users/me/"cua"/bin/cua\'s.mjs';
@@ -70,7 +69,7 @@ test('install adds --relay when the device has a relay URL, takes --surfaces, an
 
 test('install carries the agent\'s settings from its environment into the job when they are set, validated as agent run validates them', async t => {
   const {home, install, plist, launchctl} = setup(t);
-  const settings = {CUA_AGENT_MAX_SESSIONS: '2', CUA_AGENT_IDLE_MINUTES: '5', CUA_AGENT_ALLOWED_ORIGINS: 'https://a.example', CUA_AGENT_CONSOLE_CHECK: 'off', CUA_RUNTIME_IDLE_MS: '300000', CUA_BROWSER_SERVICE: 'vendor'};
+  const settings = {CUA_AGENT_MAX_SESSIONS: '2', CUA_AGENT_IDLE_MINUTES: '5', CUA_AGENT_ALLOWED_ORIGINS: 'https://a.example', CUA_AGENT_CONSOLE_CHECK: 'off', CUA_RUNTIME_IDLE_MS: '300000'};
   const result = await install({http: '127.0.0.1:7801', env: {CUA_HOME: home, ...settings, CUA_AGENT_OTHER: 'x', PATH: '/bin'}});
   const job = readPlist(readFileSync(plist, 'utf8'));
   assert.deepEqual(job.environment, {CUA_HOME: home, CUA_SHIM_SURFACES: 'computer,browser', ...settings});
@@ -80,22 +79,17 @@ test('install carries the agent\'s settings from its environment into the job wh
 
   const calls = launchctl.calls.length;
   const before = readFileSync(plist, 'utf8');
-  for (const bad of [{CUA_AGENT_MAX_SESSIONS: '0'}, {CUA_AGENT_IDLE_MINUTES: 'soon'}, {CUA_AGENT_CONSOLE_CHECK: 'sometimes'}, {CUA_RUNTIME_IDLE_MS: '15m'}, {CUA_BROWSER_SERVICE: 'openai'}])
+  for (const bad of [{CUA_AGENT_MAX_SESSIONS: '0'}, {CUA_AGENT_IDLE_MINUTES: 'soon'}, {CUA_AGENT_CONSOLE_CHECK: 'sometimes'}, {CUA_RUNTIME_IDLE_MS: '15m'}])
     await assert.rejects(install({http: '127.0.0.1:7801', env: {CUA_HOME: home, ...bad}}), {code: 'invalid_setting'}, JSON.stringify(bad));
   assert.equal(readFileSync(plist, 'utf8'), before, 'a refused setting changes nothing');
   assert.equal(launchctl.calls.length, calls);
 });
 
-test('install writes CUA_BROWSER_SERVICE into the job only when it was given, never the route-resolved default', async t => {
+test('install neither validates nor carries CUA_BROWSER_SERVICE: the browser surface always runs cua\'s service (#79)', async t => {
   const {home, install, plist} = setup(t);
-  writeVendorRecord(home);   // a home whose default resolves to the vendor's service
-  for (const env of [{CUA_HOME: home}, {CUA_HOME: home, CUA_BROWSER_SERVICE: ''}]) {
-    await install({http: '127.0.0.1:7801', env});
-    assert.deepEqual(readPlist(readFileSync(plist, 'utf8')).environment, {CUA_HOME: home, CUA_SHIM_SURFACES: 'computer,browser'}, `${JSON.stringify(env.CUA_BROWSER_SERVICE)}: re-resolved at each launch`);
-  }
-  for (const service of ['cua', 'vendor']) {
+  for (const service of ['', 'cua', 'vendor', 'openai']) {
     await install({http: '127.0.0.1:7801', env: {CUA_HOME: home, CUA_BROWSER_SERVICE: service}});
-    assert.equal(readPlist(readFileSync(plist, 'utf8')).environment.CUA_BROWSER_SERVICE, service, `${service}: carried as given`);
+    assert.deepEqual(readPlist(readFileSync(plist, 'utf8')).environment, {CUA_HOME: home, CUA_SHIM_SURFACES: 'computer,browser'}, JSON.stringify(service));
   }
 });
 

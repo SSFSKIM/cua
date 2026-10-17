@@ -4,8 +4,8 @@
 // The server resolves its secret store from that $HOME exactly as `cua serve` does (src/secrets/store.mjs
 // connectionSecrets): secrets_list and the trusted services' CUA_SECRETS_DIR both name the temporary store, so the
 // account's own store is never read. Everything else sees the account's real home, as under `cua serve` in a
-// terminal: the runtime's launch environment (the vendor services find the native computer-use socket and Chrome's
-// hosts under os.homedir(), which follows HOME) and, for the browser surface, the Chrome facts and the readiness
+// terminal: the runtime's launch environment (the vendor's computer-use service finds the native computer-use socket
+// under os.homedir(), which follows HOME) and, for the browser surface, the Chrome facts and the readiness
 // listing behind profiles_list. The rest is the production server.
 //
 //   HOME=<temporary home> CUA_HOME=<scratch home> node scripts/accept/serve-with-store.mjs
@@ -14,7 +14,6 @@ import {defaultHome} from '../../src/runtime/layout.mjs';
 import {resolveRuntime} from '../../src/runtime/manifest.mjs';
 import {chromeFacts} from '../../src/profiles/chrome.mjs';
 import {listLiveBackends} from '../../src/profiles/inventory.mjs';
-import {chromeRoute, extensionIdFor} from '../../src/chrome/route.mjs';
 import {accountHome, isAccountHome, withAccountHome} from './secret-seed.mjs';
 
 if (!process.env.CUA_HOME || isAccountHome(process.env.HOME)) {
@@ -27,8 +26,8 @@ const account = {...process.env, HOME: accountHome()};
 const code = await serve({
   home,
   prepareLaunch: withAccountHome,
-  // The route's extension, as `cua serve` itself checks it (src/mcp/connection.mjs).
-  chrome: chromeFacts({env: account, userHome: account.HOME, extensionId: extensionIdFor(chromeRoute(home))}),
+  // cua's extension, as `cua serve` itself checks it (src/mcp/connection.mjs), in the account's own Chrome data.
+  chrome: chromeFacts({env: account, userHome: account.HOME}),
   listBackends: () => listLiveBackends({home, runtime: resolveRuntime({home}), ambient: account, tabCounts: false, sandbox: settingsFrom(process.env).sandbox}),
 });
 setTimeout(() => process.exit(code), 1000).unref();

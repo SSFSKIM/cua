@@ -42,12 +42,11 @@ import {spawnUpstream} from './upstream.mjs';
 import {handshakeRecords, lazyRuntime} from './lazy-runtime.mjs';
 import {homeLayout, realHome} from '../runtime/layout.mjs';
 import {resolveRuntime} from '../runtime/manifest.mjs';
-import {browserSelectionFor, buildLaunch, replHostFor, SKY_SERVICE, BROWSER_SERVICE} from '../runtime/launch.mjs';
+import {buildLaunch, replHostFor, SKY_SERVICE, BROWSER_SERVICE} from '../runtime/launch.mjs';
 import {hostIdentity} from '../repl-host/identity.mjs';
 import {claimRunSession} from '../runtime/run-dir.mjs';
 import {connectionSecrets} from '../secrets/store.mjs';
 import {chromeFacts} from '../profiles/chrome.mjs';
-import {chromeRoute, extensionIdFor} from '../chrome/route.mjs';
 import {profileReadiness} from '../profiles/commands.mjs';
 import {listLiveBackends} from '../profiles/inventory.mjs';
 import {assertSandboxConfines, assertSandboxFits, sandboxState as sandboxStateFor} from '../runtime/sandbox.mjs';
@@ -56,7 +55,7 @@ const SERVICES = {computer: {sky: SKY_SERVICE}, browser: {browser: BROWSER_SERVI
 
 export async function openConnection({home, env = process.env, sessionId, input, output, host = {platform: process.platform, arch: process.arch},
   devices = null, settings = settingsFrom(env, {platform: host.platform, devices: devices !== null}),
-  diagnostics = line => process.stderr.write(`cua serve: ${line}\n`), prepareLaunch = launch => launch, chrome = chromeFacts({host, env, extensionId: extensionIdFor(chromeRoute(home))}),
+  diagnostics = line => process.stderr.write(`cua serve: ${line}\n`), prepareLaunch = launch => launch, chrome = chromeFacts({host, env}),
   listBackends, onWithdrawn, probeUserns, browserBackends = null, project = null, idleTimer, onProfilesList, resolveOwnNode}) {
   const {secrets: secretsEnabled, sandbox, ...serverSettings} = settings;
   const runtime = resolveRuntime({home, host});
@@ -90,19 +89,17 @@ export async function openConnection({home, env = process.env, sessionId, input,
   let server;
   try {
     const secrets = connectionSecrets({enabled: secretsEnabled, env, project});
-    // The browser service and the REPL host are resolved once, at the open, from the caller's own environment (so an
-    // unset CUA_BROWSER_SERVICE stays unset to the host selection, which treats an explicit one differently), and every
-    // launch of this connection (the first, and any after an idle stop) uses them: the rules profiles_list and js teach
-    // are that service's, and the recorded handshake is that host's, so a registration of the other route meanwhile
-    // must not switch the runtime under them. An explicit CUA_REPL_HOST the connection cannot honour fails the open.
+    // The REPL host is resolved once, at the open, from the caller's own environment, and every launch of this
+    // connection (the first, and any after an idle stop) uses it: the recorded handshake is that host's, so nothing that
+    // changes meanwhile may switch the runtime under it. An explicit CUA_REPL_HOST the connection cannot honour fails
+    // the open.
     // The own host's Node is resolved with the selection, once (its probe runs `--version` on up to three candidates),
     // and only when the selection would be cua's own host: a default that finds no Node 24 keeps the vendor host
     // (own_host_node_unavailable), and the handshake records follow the host selected. A new connection resolves again,
     // so a Node installed meanwhile takes effect on the next connection.
-    const browserSelection = serverSettings.surfaces.includes('browser') ? browserSelectionFor(env, home) : null;
-    const replHost = replHostFor({platform: runtime.manifest.platform, surfaces: serverSettings.surfaces, ambient: env, home, browserSelection, resolveOwnNode});
+    const replHost = replHostFor({platform: runtime.manifest.platform, surfaces: serverSettings.surfaces, ambient: env, home, resolveOwnNode});
     const launchFor = () => buildLaunch({
-      runtime, home, sessionId, ambient: env, browserSelection, replHost, surfaces: serverSettings.surfaces,
+      runtime, home, sessionId, ambient: env, replHost, surfaces: serverSettings.surfaces,
       services: Object.assign({}, ...serverSettings.surfaces.map(s => SERVICES[s])),
       secretsDir: secrets.dir, secretsProjectDir: secrets.projectDir, secretsUnavailable: secrets.unavailable?.code,
       browserBackends: browserBackends && {hostPaths: browserBackends.hostPaths(), defaultInstance: browserBackends.defaultInstance()},
@@ -133,9 +130,8 @@ export async function openConnection({home, env = process.env, sessionId, input,
     const upstream = lazyRuntime({start, stopped, diagnostics,
       records: handshakeRecords({dir: join(homeLayout(realHome(home)).handshake, runtime.release), surfaces: planned.env.CUA_REPL_ENABLED_SURFACES.split(','),
         host: hostIdentity({host: replHost.host, release: runtime.release})})});
-    // `route` words a missing extension as the home's route's (registry.mjs reasonText).
     // `track` (createServer's): the live check counts as use of the runtime for the idle stop.
-    const profiles = {route: chromeRoute(home), list: async ({track = promise => promise} = {}) => {
+    const profiles = {list: async ({track = promise => promise} = {}) => {
       onProfilesList?.();
       await browserBackends?.waitForHellos();
       const {profiles: list, listingError} = await profileReadiness({home, chrome, listBackends: () => track(listBackends())});
@@ -144,9 +140,7 @@ export async function openConnection({home, env = process.env, sessionId, input,
       return [...(browserBackends?.entries() ?? []), ...list];
     }};
     server = createServer({input, output, sessionId, upstream, secrets, profiles, diagnostics,
-      sandboxState: sandboxStateFor(sandbox, planned.cwd), onWithdrawn, devices, inAppBrowser: Boolean(browserBackends), ...(idleTimer ? {idleTimer} : {}), ...serverSettings,
-      // The rules the model is taught are those of the service this connection's launches use.
-      browserService: browserSelection?.service ?? 'cua'});
+      sandboxState: sandboxStateFor(sandbox, planned.cwd), onWithdrawn, devices, inAppBrowser: Boolean(browserBackends), ...(idleTimer ? {idleTimer} : {}), ...serverSettings});
   } catch (error) {
     await release();
     throw error;

@@ -32,7 +32,9 @@ test('install extracts only the pinned components, preserving modes, symlinks an
   assert.equal(result.release, ctx.pin.release);
   assert.equal(result.root, root);
   assert.equal(result.changed, true);
-  assert.deepEqual(readdirSync(root).sort(), ['CodexCLI.app', 'chrome-plugin', 'cua_node', 'install.json']);
+  assert.deepEqual(Object.keys(result).sort(), ['changed', 'record', 'release', 'root'], 'no Chrome host component since #79');
+  assert.deepEqual(readdirSync(root).sort(), ['CodexCLI.app', 'cua_node', 'install.json']);
+  assert.equal(existsSync(join(realpathSync(ctx.home), 'state', 'codex')), false, 'install creates no CODEX_HOME');
   assert.equal(pointer(ctx.home), ctx.pin.release);
   assert.equal(statSync(join(root, 'cua_node/bin/node')).mode & 0o777, 0o755);
   assert.ok(lstatSync(join(root, 'cua_node/bin/corepack')).isSymbolicLink());
@@ -58,7 +60,7 @@ test('installing a verified release again re-verifies it without touching its fi
   rmSync(ctx.archive.zip);
   const again = await install(ctx, {verifySignatures: async (...a) => { verified++; return acceptSignatures(...a); }});
   assert.equal(again.changed, false);
-  assert.equal(verified, 2, 'the base release and its Chrome host component');
+  assert.equal(verified, 1, 'the release alone');
   const after = ['install.json', 'cua_node/bin/node', 'CodexCLI.app/Contents/MacOS/codex'].map(p => statSync(join(root, p)));
   assert.deepEqual(after.map(s => [s.ino, s.mtimeMs]), before.map(s => [s.ino, s.mtimeMs]));
   assert.equal(statSync(join(ctx.home, 'current.json')).mtimeMs, pointerBefore.mtimeMs);

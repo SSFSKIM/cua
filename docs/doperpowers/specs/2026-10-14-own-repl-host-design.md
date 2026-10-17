@@ -539,6 +539,7 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
+- Decision (2026-10-17, board #79; revises the HostSelection table above): with the ChatGPT extension route and the vendor browser service selection removed (`docs/doperpowers/specs/2026-10-02-standalone-cua-design.md`, Decision Log 2026-10-17), the browser surface always runs cua's own browser service, so the `vendor_browser_route` reason, the explicit-pair refusal (`CUA_REPL_HOST=cua` with `CUA_BROWSER_SERVICE=vendor`) and the refusal of `CUA_REPL_HOST=cua` on a vendor-routed home are gone, and `CUA_BROWSER_SERVICE` is no longer read. A home with no registration or only the removed route's record selects as any other: cua's own host for Linux and browser-only macOS sessions (Node 24+ permitting), the vendor host for the computer surface on macOS until #117. The parity harnesses keep their vendor-service lanes through a test-only oracle (`test/browser-parity/vendor-oracle.mjs`).
 - Decision (amends the 2026-10-15 #141 entries): the Linux pending-environment exception for the two browser scroll members carries into M5.
   - The members are coordinate and DOM scroll, 14 cells. On Linux they stay pending and are never counted as covered.
   - `test/repl-parity/pending-environment.json` moves from `through: M4` to `through: M5`. The citation is task 4's mini M5 evidence, where both hosts pass the scroll members on the same product tree (e24a1cd).

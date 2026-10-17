@@ -14,14 +14,17 @@ import {join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {isDeepStrictEqual} from 'node:util';
 import {kernelExitFacts, normalizeHostDiagnostic, projectKernelExit} from '../repl-parity/diagnostics.mjs';
+import {semantic} from '../browser-parity/compare.mjs';
 
 const EXIT_CASE = 'cells/lifecycle/child-exit-settles', EXIT_CELL = 'interrupted';
 const BEFORE = {kernel_status: 'exited(code=137)', kernelIsStderrNode: false}, AFTER = {kernel_status: 'exited(signal=9)', kernelIsStderrNode: true};
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-// A result row as repl-parity compares it: its result fields, its meta without the volatile execution duration.
+// A result row as repl-parity compares it (browser-parity/compare.mjs semantic: the envelope and result fields), its
+// meta without the volatile execution duration repl-parity also drops.
 const comparable = row => {
-  const {'codex/nodeReplExecutionDurationMs': _duration, ...meta} = row.meta ?? {};
-  return {content: row.content, isError: row.isError, structuredContent: row.structuredContent, value: row.value, meta};
+  if (!row.meta || !Object.hasOwn(row.meta, 'codex/nodeReplExecutionDurationMs')) return semantic(row);
+  const {'codex/nodeReplExecutionDurationMs': _duration, ...meta} = row.meta;
+  return semantic({...row, meta});
 };
 
 // -> {ok, incomplete: [side...], undeclared: [difference...], exitStatus: 'equal' | 'declared' | 'absent'}

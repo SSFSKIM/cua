@@ -6,7 +6,7 @@ import {judgeBeforeAfter} from '../../scripts/sandbox-probe/m1-judge.mjs';
 
 const CASE = 'cells/lifecycle/child-exit-settles';
 const WARNING = 'ExperimentalWarning: VM Modules is an experimental feature and might change at any time';
-const died = (pid, status, nodePid, {reason = 'stdout_eof', stream_error = null, tail = WARNING, meta} = {}) => ({case: CASE, cell: 'interrupted', isError: true, ...(meta ? {meta} : {}),
+const died = (pid, status, nodePid, {reason = 'stdout_eof', stream_error = null, tail = WARNING, meta, row = {}} = {}) => ({case: CASE, cell: 'interrupted', ok: true, isError: true, ...(meta ? {meta} : {}), ...row,
   content: [{type: 'text', text: 'node_repl kernel exited unexpectedly\n\nnode_repl diagnostics: '
   + JSON.stringify({kernel_pid: pid, kernel_status: status, kernel_stderr_tail: `(node:${nodePid}) ${tail}`, reason, stream_error})}]});
 const run = (rows, complete = true) => ({meta: {complete}, rows});
@@ -28,7 +28,8 @@ test('on the exit cell itself, only the declared facts are set aside: any other 
   const after = over => run([died(200, 'exited(signal=9)', 200, {meta: {'codex/nodeReplExecutionDurationMs': 9}, ...over})]);
   assert.equal(judgeBeforeAfter({diff: exitDiff, before, after: after({})}).ok, true, 'the volatile duration aside, equal');
   for (const [label, over] of [['reason', {reason: 'stream_error'}], ['stream_error', {stream_error: 'EPIPE'}], ['stderr tail', {tail: 'Error: something else'}],
-    ['meta', {meta: {'cua/replHost': {host: 'cua', version: '9'}}}]]) {
+    ['meta', {meta: {'cua/replHost': {host: 'cua', version: '9'}}}], ['ok', {row: {ok: false}}], ['error', {row: {error: {code: 'transport_closed', message: 'x'}}}],
+    ['proof', {row: {proof: {kind: 'changed'}}}]]) {
     const judgement = judgeBeforeAfter({diff: exitDiff, before, after: after(over)});
     assert.equal(judgement.ok, false, label);
     assert.equal(judgement.exitStatus, 'undeclared', label);

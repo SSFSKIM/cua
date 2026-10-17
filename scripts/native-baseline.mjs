@@ -3,8 +3,9 @@
 // before cua's own REPL host (#116) and native engine (#117) replace the vendor's, and compared after. It drives the real
 // pinned runtime as the browser parity harness does (scripts/browser-parity.mjs): `cua serve` of the parity clone on the
 // device over an ssh stdio pipe, an MCP client, js cells, every sample journaled. The surface is the native one
-// (CUA_SHIM_SURFACES=computer) and the REPL host is the requested one (--host vendor|cua, CUA_REPL_HOST, independent of
-// the browser service, which a computer-only serve does not use). The platform comes from the device: macOS drives
+// (CUA_SHIM_SURFACES=computer; --surfaces browser measures a browser-only session's cold start instead, below) and the
+// REPL host is the requested one (--host vendor|cua, CUA_REPL_HOST, independent of the browser service, which a
+// computer-only serve does not use). The platform comes from the device: macOS drives
 // TextEdit (scripts/native-baseline/macos.mjs), which must not be running when a run starts; Linux drives gedit in the X
 // session (scripts/native-baseline/linux.mjs, discovered on that device), and no gedit may be running either. Either way
 // every window the run touches is its own.

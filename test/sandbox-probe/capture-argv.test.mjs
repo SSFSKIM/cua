@@ -3,7 +3,7 @@
 // retries accumulate them. Each attempt runs in its own process group, and on every exit path the probe ends what is
 // left of the attempt's tree (TERM, then KILL) before it returns. The launcher here is a harmless shell that forks a
 // `sleep` and waits. macOS only (libproc); built with the system clang.
-import {test} from 'node:test';
+import {after, test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync, execFileSync} from 'node:child_process';
 import {mkdtempSync, readFileSync, rmSync} from 'node:fs';
@@ -13,7 +13,8 @@ import {fileURLToPath} from 'node:url';
 
 const SOURCE = fileURLToPath(new URL('../../scripts/sandbox-probe/capture-argv.c', import.meta.url));
 const macOS = process.platform === 'darwin';
-let built;
+let built, buildDir;
+after(() => { if (buildDir) rmSync(buildDir, {recursive: true, force: true}); });
 function capture(t) {
   const dir = mkdtempSync(join(tmpdir(), 'cua-capture-test-'));
   // Whatever the test's own launcher recorded and the probe left alive is ended, so a failing run leaves nothing.
@@ -22,7 +23,8 @@ function capture(t) {
     rmSync(dir, {recursive: true, force: true});
   });
   built ??= (() => {
-    const out = join(mkdtempSync(join(tmpdir(), 'cua-capture-bin-')), 'capture-argv');
+    buildDir = mkdtempSync(join(tmpdir(), 'cua-capture-bin-'));
+    const out = join(buildDir, 'capture-argv');
     execFileSync('/usr/bin/clang', ['-O2', '-Wall', '-Werror', '-o', out, SOURCE], {stdio: 'pipe'});
     return out;
   })();

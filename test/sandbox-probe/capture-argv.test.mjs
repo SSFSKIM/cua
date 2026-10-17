@@ -41,10 +41,11 @@ const run = (bin, args) => spawnSync(bin, args, {encoding: 'utf8', timeout: 30_0
 
 // sh forks the sleep(s), records their pids and its own, and waits. `ignoreTerm` makes the whole tree ignore SIGTERM
 // (an ignored signal is inherited), so only the escalation ends it. The sleeps drop the probe's stderr, so a survivor
-// cannot hold the test's pipe open (it would then outlive its sleep unseen).
+// cannot hold the test's pipe open (it would then outlive its sleep unseen). The pid file's path is the script's $1,
+// never part of its source.
 const launcher = (pidfile, {ignoreTerm = false, leaveGroup = false} = {}) => ['/bin/sh', '-c',
-  `${ignoreTerm ? 'trap "" TERM; ' : ''}echo $$ >> ${pidfile}; /bin/sleep 120 2>/dev/null & echo $! >> ${pidfile}; `
-  + `${leaveGroup ? `/usr/bin/perl -e 'setpgrp(0, 0); exec "/bin/sleep", "121"' 2>/dev/null & echo $! >> ${pidfile}; ` : ''}wait`];
+  `${ignoreTerm ? 'trap "" TERM; ' : ''}echo $$ >> "$1"; /bin/sleep 120 2>/dev/null & echo $! >> "$1"; `
+  + `${leaveGroup ? `/usr/bin/perl -e 'setpgrp(0, 0); exec "/bin/sleep", "121"' 2>/dev/null & echo $! >> "$1"; ` : ''}wait`, 'sh', pidfile];
 
 test('a missed capture window ends each attempt\'s whole tree, not only the launcher', {skip: !macOS && 'macOS only'}, async t => {
   const {dir, bin} = capture(t), pidfile = join(dir, 'pids');

@@ -13,3 +13,8 @@
 2026-10-17T15:16:53.497Z idle before gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 107c291
 2026-10-17T15:16:56.092Z gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 107c291: exit 1
 2026-10-17T15:16:56.568Z front after gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 107c291: com.apple.Terminal
+2026-10-17T15:18:56.501Z gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox c55ba01: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.97 -> idle
+2026-10-17T15:19:44.211Z gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox c55ba01: reading 2: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.2 -> idle
+2026-10-17T15:19:44.212Z idle before gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox c55ba01
+2026-10-17T15:19:49.356Z gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox c55ba01: exit 0
+2026-10-17T15:19:49.855Z front after gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox c55ba01: com.apple.Terminal

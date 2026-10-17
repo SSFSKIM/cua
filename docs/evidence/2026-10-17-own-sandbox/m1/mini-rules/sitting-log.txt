@@ -1,0 +1,15 @@
+2026-10-17T15:11:50.190Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 107c291: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.74 -> idle
+2026-10-17T15:12:37.896Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 107c291: reading 2: front=com.apple.Terminal busy=false workers=0 queued=0 load=5.65 -> contention (load 5.65)
+2026-10-17T15:12:37.901Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles 107c291
+2026-10-17T15:13:40.500Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 107c291: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=5.39 -> contention (load 5.39)
+2026-10-17T15:13:40.502Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles 107c291
+2026-10-17T15:14:43.681Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 107c291: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.63 -> idle
+2026-10-17T15:15:31.141Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 107c291: reading 2: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.77 -> idle
+2026-10-17T15:15:31.142Z idle before gated sh scripts/sandbox-probe/m1-mini.sh oracles 107c291
+2026-10-17T15:15:42.639Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 107c291: exit 0
+2026-10-17T15:15:43.018Z front after gated sh scripts/sandbox-probe/m1-mini.sh oracles 107c291: com.apple.Terminal
+2026-10-17T15:16:06.327Z gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 107c291: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.64 -> idle
+2026-10-17T15:16:53.496Z gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 107c291: reading 2: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.4 -> idle
+2026-10-17T15:16:53.497Z idle before gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 107c291
+2026-10-17T15:16:56.092Z gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 107c291: exit 1
+2026-10-17T15:16:56.568Z front after gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 107c291: com.apple.Terminal

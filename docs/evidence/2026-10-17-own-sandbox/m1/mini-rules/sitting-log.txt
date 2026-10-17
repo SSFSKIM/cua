@@ -35,3 +35,123 @@
 2026-10-17T16:09:11.341Z idle before gated sh /tmp/cua-115-m1/tier-check.sh e4bfece
 2026-10-17T16:09:14.888Z gated sh /tmp/cua-115-m1/tier-check.sh e4bfece: exit 0
 2026-10-17T16:09:15.413Z front after gated sh /tmp/cua-115-m1/tier-check.sh e4bfece: com.apple.Terminal
+2026-10-17T16:25:27.016Z gated sh /tmp/cua-115-m1/tier-check.sh 5d9bf70: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=4 -> idle
+2026-10-17T16:26:14.641Z gated sh /tmp/cua-115-m1/tier-check.sh 5d9bf70: reading 2: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.05 -> idle
+2026-10-17T16:26:14.642Z idle before gated sh /tmp/cua-115-m1/tier-check.sh 5d9bf70
+2026-10-17T16:26:18.020Z gated sh /tmp/cua-115-m1/tier-check.sh 5d9bf70: exit 0
+2026-10-17T16:26:18.505Z front after gated sh /tmp/cua-115-m1/tier-check.sh 5d9bf70: com.apple.Terminal
+2026-10-17T16:26:22.699Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.29 -> idle
+2026-10-17T16:27:10.829Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 2: front=com.apple.Terminal busy=true workers=1 queued=32 load=6.31 -> contention (runner busy, 1 Runner.Worker, 32 queued macOS job(s), load 6.31)
+2026-10-17T16:27:10.830Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70
+2026-10-17T16:28:14.256Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 1: front=com.apple.Terminal busy=true workers=1 queued=31 load=5.32 -> contention (runner busy, 1 Runner.Worker, 31 queued macOS job(s), load 5.32)
+2026-10-17T16:28:14.258Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70
+2026-10-17T16:29:17.983Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 1: front=com.apple.Terminal busy=true workers=1 queued=30 load=6.13 -> contention (runner busy, 1 Runner.Worker, 30 queued macOS job(s), load 6.13)
+2026-10-17T16:29:17.984Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70
+2026-10-17T16:30:21.459Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 1: front=com.apple.Terminal busy=true workers=1 queued=30 load=5.39 -> contention (runner busy, 1 Runner.Worker, 30 queued macOS job(s), load 5.39)
+2026-10-17T16:30:21.460Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70
+2026-10-17T16:31:24.988Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 1: front=com.apple.Terminal busy=true workers=1 queued=29 load=5.24 -> contention (runner busy, 1 Runner.Worker, 29 queued macOS job(s), load 5.24)
+2026-10-17T16:31:24.989Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70
+2026-10-17T16:32:28.865Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 1: front=com.apple.Terminal busy=true workers=1 queued=28 load=8.04 -> contention (runner busy, 1 Runner.Worker, 28 queued macOS job(s), load 8.04)
+2026-10-17T16:32:28.867Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70
+2026-10-17T16:33:32.637Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 1: front=com.apple.Terminal busy=true workers=1 queued=26 load=7.41 -> contention (runner busy, 1 Runner.Worker, 26 queued macOS job(s), load 7.41)
+2026-10-17T16:33:32.637Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70
+2026-10-17T16:34:35.848Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 1: front=com.apple.Terminal busy=true workers=1 queued=26 load=7.14 -> contention (runner busy, 1 Runner.Worker, 26 queued macOS job(s), load 7.14)
+2026-10-17T16:34:35.849Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70
+2026-10-17T16:35:39.594Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 1: front=com.apple.Terminal busy=true workers=1 queued=26 load=5.69 -> contention (runner busy, 1 Runner.Worker, 26 queued macOS job(s), load 5.69)
+2026-10-17T16:35:39.594Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70
+2026-10-17T16:36:43.406Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 1: front=com.apple.Terminal busy=true workers=1 queued=26 load=5.85 -> contention (runner busy, 1 Runner.Worker, 26 queued macOS job(s), load 5.85)
+2026-10-17T16:36:43.407Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70
+2026-10-17T16:37:47.620Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 1: front=com.apple.Terminal busy=true workers=1 queued=25 load=5.1 -> contention (runner busy, 1 Runner.Worker, 25 queued macOS job(s), load 5.1)
+2026-10-17T16:37:47.642Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70
+2026-10-17T16:38:51.662Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 1: front=com.apple.Terminal busy=true workers=1 queued=24 load=5.65 -> contention (runner busy, 1 Runner.Worker, 24 queued macOS job(s), load 5.65)
+2026-10-17T16:38:51.663Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70
+2026-10-17T16:39:55.821Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 1: front=com.apple.Terminal busy=true workers=1 queued=23 load=6.21 -> contention (runner busy, 1 Runner.Worker, 23 queued macOS job(s), load 6.21)
+2026-10-17T16:39:55.822Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70
+2026-10-17T16:40:59.428Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 1: front=com.apple.Terminal busy=true workers=1 queued=23 load=5.39 -> contention (runner busy, 1 Runner.Worker, 23 queued macOS job(s), load 5.39)
+2026-10-17T16:40:59.430Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70
+2026-10-17T16:42:03.319Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 1: front=com.apple.Terminal busy=true workers=1 queued=23 load=4.63 -> contention (runner busy, 1 Runner.Worker, 23 queued macOS job(s))
+2026-10-17T16:42:03.320Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70
+2026-10-17T16:43:06.939Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 1: front=com.apple.Terminal busy=true workers=1 queued=22 load=4.17 -> contention (runner busy, 1 Runner.Worker, 22 queued macOS job(s))
+2026-10-17T16:43:06.941Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70
+2026-10-17T16:44:10.578Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 1: front=com.apple.Terminal busy=true workers=1 queued=22 load=6.76 -> contention (runner busy, 1 Runner.Worker, 22 queued macOS job(s), load 6.76)
+2026-10-17T16:44:10.579Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70
+2026-10-17T16:45:14.238Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 1: front=com.apple.Terminal busy=true workers=1 queued=21 load=6.93 -> contention (runner busy, 1 Runner.Worker, 21 queued macOS job(s), load 6.93)
+2026-10-17T16:45:14.240Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70
+2026-10-17T16:46:17.817Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 1: front=com.apple.Terminal busy=true workers=1 queued=20 load=9.26 -> contention (runner busy, 1 Runner.Worker, 20 queued macOS job(s), load 9.26)
+2026-10-17T16:46:17.818Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70
+2026-10-17T16:47:21.401Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 1: front=com.apple.Terminal busy=true workers=1 queued=19 load=7.24 -> contention (runner busy, 1 Runner.Worker, 19 queued macOS job(s), load 7.24)
+2026-10-17T16:47:21.409Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70
+2026-10-17T16:48:25.037Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 1: front=com.apple.Terminal busy=true workers=1 queued=18 load=5.44 -> contention (runner busy, 1 Runner.Worker, 18 queued macOS job(s), load 5.44)
+2026-10-17T16:48:25.037Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70
+2026-10-17T16:49:28.534Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 1: front=com.apple.Terminal busy=true workers=1 queued=18 load=5.15 -> contention (runner busy, 1 Runner.Worker, 18 queued macOS job(s), load 5.15)
+2026-10-17T16:49:28.535Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70
+2026-10-17T16:50:31.784Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 1: front=com.apple.Terminal busy=true workers=1 queued=17 load=4.67 -> contention (runner busy, 1 Runner.Worker, 17 queued macOS job(s))
+2026-10-17T16:50:31.785Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70
+2026-10-17T16:51:36.041Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 1: front=com.apple.Terminal busy=true workers=1 queued=15 load=4.77 -> contention (runner busy, 1 Runner.Worker, 15 queued macOS job(s))
+2026-10-17T16:51:36.042Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70
+2026-10-17T16:52:40.025Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 1: front=com.apple.Terminal busy=true workers=1 queued=15 load=6.2 -> contention (runner busy, 1 Runner.Worker, 15 queued macOS job(s), load 6.2)
+2026-10-17T16:52:40.026Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70
+2026-10-17T16:53:43.667Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 1: front=com.apple.Terminal busy=true workers=1 queued=15 load=4.54 -> contention (runner busy, 1 Runner.Worker, 15 queued macOS job(s))
+2026-10-17T16:53:43.667Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70
+2026-10-17T16:54:52.319Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 1: front=com.apple.Terminal busy=true workers=1 queued=15 load=3.79 -> contention (runner busy, 1 Runner.Worker, 15 queued macOS job(s))
+2026-10-17T16:54:52.337Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70
+2026-10-17T16:55:57.865Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 1: front=com.apple.Terminal busy=true workers=1 queued=14 load=5.29 -> contention (runner busy, 1 Runner.Worker, 14 queued macOS job(s), load 5.29)
+2026-10-17T16:55:57.876Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70
+2026-10-17T16:57:02.966Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 1: front=com.apple.Terminal busy=true workers=1 queued=14 load=4.27 -> contention (runner busy, 1 Runner.Worker, 14 queued macOS job(s))
+2026-10-17T16:57:02.971Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70
+2026-10-17T16:58:06.411Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 1: front=com.apple.Terminal busy=true workers=1 queued=14 load=3.94 -> contention (runner busy, 1 Runner.Worker, 14 queued macOS job(s))
+2026-10-17T16:58:06.412Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70
+2026-10-17T16:59:10.893Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 1: front=com.apple.Terminal busy=true workers=1 queued=13 load=7.75 -> contention (runner busy, 1 Runner.Worker, 13 queued macOS job(s), load 7.75)
+2026-10-17T16:59:10.893Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70
+2026-10-17T17:00:14.793Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 1: front=com.apple.Terminal busy=true workers=1 queued=11 load=6.24 -> contention (runner busy, 1 Runner.Worker, 11 queued macOS job(s), load 6.24)
+2026-10-17T17:00:14.794Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70
+2026-10-17T17:01:18.484Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 1: front=com.apple.Terminal busy=true workers=1 queued=10 load=6.77 -> contention (runner busy, 1 Runner.Worker, 10 queued macOS job(s), load 6.77)
+2026-10-17T17:01:18.485Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70
+2026-10-17T17:02:22.389Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 1: front=com.apple.Terminal busy=true workers=1 queued=10 load=5.14 -> contention (runner busy, 1 Runner.Worker, 10 queued macOS job(s), load 5.14)
+2026-10-17T17:02:22.391Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70
+2026-10-17T17:03:26.141Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 1: front=com.apple.Terminal busy=true workers=1 queued=10 load=4.25 -> contention (runner busy, 1 Runner.Worker, 10 queued macOS job(s))
+2026-10-17T17:03:26.142Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70
+2026-10-17T17:04:29.615Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 1: front=com.apple.Terminal busy=true workers=1 queued=9 load=4.63 -> contention (runner busy, 1 Runner.Worker, 9 queued macOS job(s))
+2026-10-17T17:04:29.616Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70
+2026-10-17T17:05:33.626Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 1: front=com.apple.Terminal busy=true workers=1 queued=9 load=4.5 -> contention (runner busy, 1 Runner.Worker, 9 queued macOS job(s))
+2026-10-17T17:05:33.627Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70
+2026-10-17T17:06:37.254Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 1: front=com.apple.Terminal busy=true workers=1 queued=7 load=6.71 -> contention (runner busy, 1 Runner.Worker, 7 queued macOS job(s), load 6.71)
+2026-10-17T17:06:37.256Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70
+2026-10-17T17:07:41.001Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 1: front=com.apple.Terminal busy=true workers=1 queued=6 load=8.03 -> contention (runner busy, 1 Runner.Worker, 6 queued macOS job(s), load 8.03)
+2026-10-17T17:07:41.004Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70
+2026-10-17T17:08:45.195Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 1: front=com.apple.Terminal busy=true workers=1 queued=6 load=5.02 -> contention (runner busy, 1 Runner.Worker, 6 queued macOS job(s), load 5.02)
+2026-10-17T17:08:45.195Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70
+2026-10-17T17:09:48.762Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 1: front=com.apple.Terminal busy=true workers=1 queued=6 load=4.03 -> contention (runner busy, 1 Runner.Worker, 6 queued macOS job(s))
+2026-10-17T17:09:48.763Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70
+2026-10-17T17:10:52.491Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 1: front=com.apple.Terminal busy=true workers=1 queued=6 load=3.63 -> contention (runner busy, 1 Runner.Worker, 6 queued macOS job(s))
+2026-10-17T17:10:52.492Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70
+2026-10-17T17:11:56.246Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 1: front=com.apple.Terminal busy=true workers=1 queued=5 load=5.43 -> contention (runner busy, 1 Runner.Worker, 5 queued macOS job(s), load 5.43)
+2026-10-17T17:11:56.247Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70
+2026-10-17T17:13:00.443Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 1: front=com.apple.Terminal busy=true workers=1 queued=4 load=5.13 -> contention (runner busy, 1 Runner.Worker, 4 queued macOS job(s), load 5.13)
+2026-10-17T17:13:00.470Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70
+2026-10-17T17:14:04.559Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 1: front=com.apple.Terminal busy=true workers=1 queued=3 load=9.2 -> contention (runner busy, 1 Runner.Worker, 3 queued macOS job(s), load 9.2)
+2026-10-17T17:14:04.561Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70
+2026-10-17T17:15:08.905Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 1: front=com.apple.Terminal busy=true workers=1 queued=2 load=7.61 -> contention (runner busy, 1 Runner.Worker, 2 queued macOS job(s), load 7.61)
+2026-10-17T17:15:08.906Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70
+2026-10-17T17:16:12.533Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 1: front=com.apple.Terminal busy=true workers=1 queued=2 load=6.62 -> contention (runner busy, 1 Runner.Worker, 2 queued macOS job(s), load 6.62)
+2026-10-17T17:16:12.549Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70
+2026-10-17T17:17:16.471Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 1: front=com.apple.Terminal busy=true workers=1 queued=1 load=6.87 -> contention (runner busy, 1 Runner.Worker, 1 queued macOS job(s), load 6.87)
+2026-10-17T17:17:16.472Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70
+2026-10-17T17:18:20.349Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 1: front=com.apple.Terminal busy=true workers=1 queued=0 load=8.43 -> contention (runner busy, 1 Runner.Worker, load 8.43)
+2026-10-17T17:18:20.349Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70
+2026-10-17T17:19:22.721Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=5.66 -> contention (load 5.66)
+2026-10-17T17:19:22.722Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70
+2026-10-17T17:20:25.140Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=5.14 -> contention (load 5.14)
+2026-10-17T17:20:25.141Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70
+2026-10-17T17:21:28.100Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=5.87 -> contention (load 5.87)
+2026-10-17T17:21:28.100Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70
+2026-10-17T17:22:32.060Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.68 -> idle
+2026-10-17T17:23:19.777Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: reading 2: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.9 -> idle
+2026-10-17T17:23:19.777Z idle before gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70
+2026-10-17T17:23:31.705Z gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: exit 0
+2026-10-17T17:23:32.311Z front after gated sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70: com.apple.Terminal
+2026-10-17T17:23:36.473Z gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 5d9bf70: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.77 -> idle
+2026-10-17T17:24:23.963Z gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 5d9bf70: reading 2: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.01 -> idle
+2026-10-17T17:24:23.963Z idle before gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 5d9bf70
+2026-10-17T17:24:29.527Z gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 5d9bf70: exit 0
+2026-10-17T17:24:30.103Z front after gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 5d9bf70: com.apple.Terminal

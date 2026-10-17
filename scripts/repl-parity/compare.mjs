@@ -3,7 +3,7 @@ import {attestedSourceVersion} from './source-identity.mjs';
 import {validateToolAllowance} from './tool-contract.mjs';
 import {compareRuns} from '../browser-parity/compare.mjs';
 import {assessAssertions,vendorDefects} from './vendor-defects.mjs';
-import {normalizeHostDiagnostic} from './diagnostics.mjs';
+import {kernelExitFacts, normalizeHostDiagnostic, projectKernelExit} from './diagnostics.mjs';
 import {isDeepStrictEqual} from 'node:util';
 import {assertManagedNode} from './node-provenance.mjs';
 export function validateAttestations(meta) {
@@ -35,14 +35,15 @@ export const LINUX_COMPUTER_DEFAULT=Object.freeze({surfaces:Object.freeze(['comp
 export function compareParityRuns(a,b,{expected=[],caseIds,caseCells,sourceRepo}={}) {
   validateAttestations(a.meta);validateAttestations(b.meta);
   if(a.meta.host==='vendor'&&b.meta.host==='vendor'&&expected.length)throw new Error('No expected differences allowed for vendor determinism');
-  // M0 has no allowances. M1 may enumerate its identity marker, never whole results/documents, and the declared
-  // security departures below. M3 document branding/exclusions need the separately pinned Table 3 transformation, not an ignore rule.
+  // M0 has no allowances. M1 may enumerate its identity marker, never whole results/documents, the declared
+  // security departures below and the one declared kernel exit status (#115 M1). M3 document branding/exclusions need the separately pinned Table 3 transformation, not an ignore rule.
   validateExpected(expected);
   expected=expected.filter(e=>e.kind!=='tools-description');
   const transition=expected.find(e=>e.kind==='configuration-transition');expected=expected.filter(e=>e.kind!=='configuration-transition');
   const ownRun=a.meta.host==='cua'?a:b;
   const sourceVersion=expected.some(e=>e.cua?.value?.versionFrom==='attested-source')&&a.meta.host!==b.meta.host?attestedSourceVersion(ownRun.meta,{repo:sourceRepo}):null;
   const departures=expected.filter(e=>e.kind==='security-departure');expected=expected.filter(e=>e.kind!=='security-departure');
+  const exitStatus=expected.find(e=>e.kind==='kernel-exit-status');expected=expected.filter(e=>e.kind!=='kernel-exit-status');
   const ids=caseIds??a.meta.caseIds;const cells=caseCells??a.meta.caseCells;
   const pa=validatePendingMetadata(a.meta),pb=validatePendingMetadata(b.meta);if(!isDeepStrictEqual(pa,pb))throw new Error('Both runs must declare identical pending cells');
   const pendingLeft=pendingProjection(a,ids),pendingRight=pendingProjection(b,ids);
@@ -104,6 +105,19 @@ export function compareParityRuns(a,b,{expected=[],caseIds,caseCells,sourceRepo}
     for(const {rows,index,fields} of pairs){const row={...rows[index]};for(const field of fields)if(field==='vendorDefect')delete row[field];else row[field]=field==='assertion'?{ok:true,securityDeparture:d.id}:{securityDeparture:d.id};rows[index]=row;}
     accepted.push({case:d.case,cells:d.cells,field:d.field,kind:d.kind,issue:d.issue,reason:d.reason});
   }
+  // The declared kernel exit status: on its platform, its one cell must report exactly the vendor's facts on the control
+  // and the own host's on the own side; only those facts (status, kernel pid, the stderr's Node label) are then projected
+  // to one shared placeholder, and the rest of the diagnostic and the row still compares.
+  if(exitStatus&&a.meta.host!==b.meta.host&&a.meta.platform===exitStatus.platform&&b.meta.platform===exitStatus.platform&&ids?.includes(exitStatus.case)){
+    const [vendorRows,ownRows]=a.meta.host==='vendor'?[left,right]:[right,left];
+    const one=rows=>{const found=rows.map((row,index)=>({row,index})).filter(({row})=>row.case===exitStatus.case&&row.cell===exitStatus.cell);return found.length===1?found[0]:null;};
+    const v=one(vendorRows),o=one(ownRows);
+    if(v&&o&&isDeepStrictEqual(kernelExitFacts(v.row),exitStatus.vendor)&&isDeepStrictEqual(kernelExitFacts(o.row),exitStatus.cua)){
+      const placeholder=`<kernel-exit-status:${exitStatus.id}>`;
+      vendorRows[v.index]=projectKernelExit(v.row,placeholder);ownRows[o.index]=projectKernelExit(o.row,placeholder);
+      accepted.push({kind:exitStatus.kind,case:exitStatus.case,cell:exitStatus.cell,field:exitStatus.field,issue:exitStatus.issue,reason:exitStatus.reason});
+    }
+  }
   // A cell outcome the transition declares: each declared field must hold exactly its before value on the control and
   // its after value on the own host; only those fields are then projected to one shared placeholder on both sides, and
   // every other field of the row still compares.
@@ -140,6 +154,13 @@ const DEPARTURE_KEYS=['kind','id','issue','reason','case','platform','field','ce
 // for field (the result fields a cell reports: content, isError, structuredContent, value). At most one per file.
 const TRANSITION_KEYS=['kind','id','issue','reason','platform','field','before','after','cases','cells'];
 const TRANSITION_CELL_KEYS=['case','cell','before','after'];
+// A kernel exit status (#115 M1) is the one fact the own host's kernel being Node itself on macOS changes in a result:
+// after SIGKILL, Node's own status where the vendor reports the Codex CLI's 128+signal, and a kernel pid that is the
+// stderr's Node. It names exactly that cell and that pair; any other exit difference stays a difference. Retired in M2.
+const EXIT_STATUS=Object.freeze({kind:'kernel-exit-status',id:'own-kernel-is-node',issue:'#115',platform:'darwin',case:'cells/lifecycle/child-exit-settles',cell:'interrupted',field:'node_repl diagnostics',
+ vendor:Object.freeze({kernel_status:'exited(code=137)',kernelIsStderrNode:false}),cua:Object.freeze({kernel_status:'exited(signal=9)',kernelIsStderrNode:true})});
+const validExitStatus=e=>plainObject(e)&&isDeepStrictEqual(Object.keys(e).sort(),[...Object.keys(EXIT_STATUS),'reason'].sort())&&typeof e.reason==='string'&&e.reason!==''
+ &&Object.entries(EXIT_STATUS).every(([k,v])=>isDeepStrictEqual(e[k],typeof v==='object'?{...v}:v));
 const TRANSITION_FIELDS=['content','isError','structuredContent','value'];
 const plainObject=v=>v!==null&&typeof v==='object'&&!Array.isArray(v);
 function validTransition(e){
@@ -156,6 +177,10 @@ export function validateExpected(expected){
  if(expected.filter(e=>e?.kind==='configuration-transition').length>1)throw new Error('Invalid configuration transition: an expected-differences file declares at most one');
  for(const e of expected){
   if(e?.kind==='tools-description'){validateToolAllowance(e);continue;}
+  if(e?.kind==='kernel-exit-status'){
+   if(!validExitStatus(e)||expected.filter(x=>x?.kind==='kernel-exit-status').length>1)throw new Error('Invalid kernel exit status: it must be the one macOS child-exit-settles entry, the vendor\'s exited(code=137) against the own host\'s exited(signal=9) by Node itself, with a reason');
+   continue;
+  }
   if(e?.kind==='configuration-transition'){
    if(!validTransition(e))throw new Error('Invalid configuration transition: it must be the Linux native fixture\'s move from disabled to the scoped computer default, name an issue, a reason and its native cases, and declare each cell difference that follows, field for field');
    continue;

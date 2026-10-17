@@ -7,8 +7,8 @@
   "plugins": [
     {
       "name": "cua",
-      "description": "Computer use on macOS and Linux through OpenAI's computer-use runtime (requires the pinned runtime installed with `cua install`), one server for every machine (devices_list and devices_use switch it to a remote device added with `cua devices`), the cua-remote skill, and /secret",
-      "version": "0.13.0",
+      "description": "Computer use on macOS and Linux through OpenAI's computer-use runtime (requires the pinned runtime installed with `cua install`), one server for every machine (devices_list and devices_use switch it to a remote device added with `cua devices`), the cua-remote skill, /secret, and a secrets guard that redacts and never refuses",
+      "version": "0.14.0",
       "source": "./",
       "author": {
         "name": "SSFSKIM"

@@ -39,15 +39,16 @@ export const assertDisplay = display => { if (!/^[A-Za-z0-9.-]*:\d+(\.\d+)?$/.te
 // environment, never a shell profile; the serve itself stays on the device's node, as the vendor baseline's did.
 // When a prepared home is supplied, build the environment rather than inheriting SSH-login CUA settings.
 // `configHome`, when preparation gives one (a reused approved runtime, whose HOME is the account's), is the run's own
-// XDG_CONFIG_HOME; otherwise it is the scratch HOME's .config.
-export function nativeEnvironment({home, userHome, configHome, host, display, platform, xSession, node, surface = 'computer'}) {
+// XDG_CONFIG_HOME; otherwise it is the scratch HOME's .config. `admission` (the same run) is the token the serve presents
+// to the approved home's admission (prepare.mjs admitServe).
+export function nativeEnvironment({home, userHome, configHome, admission, host, display, platform, xSession, node, surface = 'computer'}) {
   assertHost(host); assertOwnNode(host, node); assertSurface(surface);
   if (platform === 'linux') assertDisplay(xSession?.DISPLAY ?? display);
   const x = xSession === undefined ? (platform === 'linux' ? ` DISPLAY=${quote(display)} XAUTHORITY="$HOME/.Xauthority"` : '')
     : Object.entries(sessionEnvironment(xSession)).map(([key,value]) => ` ${key}=${quote(value)}`).join('');
   const clean = userHome ? `-i PATH="$PATH" LANG=${NATIVE_LOCALE.LANG} HOME=${quote(userHome)} XDG_CONFIG_HOME=${quote(configHome ?? userHome + '/.config')} `
     : '-u CUA_NODE ' + SESSION_KEYS.filter(key => xSession && !Object.hasOwn(xSession,key)).map(key => `-u ${key} `).join('');
-  return `${clean}CUA_HOME=${quote(home)} CUA_REPL_HOST=${host}${node === undefined ? '' : ` CUA_NODE=${quote(node)}`} CUA_SHIM_SURFACES=${surface} CUA_SHIM_PERSIST=session CUA_SHIM_SECRETS=off${x}`;
+  return `${clean}CUA_HOME=${quote(home)} CUA_REPL_HOST=${host}${node === undefined ? '' : ` CUA_NODE=${quote(node)}`} CUA_SHIM_SURFACES=${surface} CUA_SHIM_PERSIST=session CUA_SHIM_SECRETS=off${admission ? ` CUA_NATIVE_ADMISSION=${quote(admission)}` : ''}${x}`;
 }
 export function serveCommand(options) {
   const {device, checkout, userHome, node} = options;

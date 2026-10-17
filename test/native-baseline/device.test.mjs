@@ -119,11 +119,11 @@ test('an approved runtime is reused in place: no install, its state/ and run/ st
   assert.equal(prepared.configHome, join(prepared.scratch, 'config'));
   assert.deepEqual(prepared.runtimeReuse, {approvedHome: approved, release: 'r1', runtimeRoot: join(approved, 'runtimes', 'r1'), helper,
     reason: 'a new on-disk copy of the native helper raises a one-time screen-capture confirmation; the approved copy is reused'});
-  assert.deepEqual(readdirSync(approved), [], 'state/ and run/ are stashed away');
+  assert.deepEqual(readdirSync(approved), ['.cua-native-admission'], 'state/ and run/ are stashed away; the run holds the admission');
   mkdirSync(join(approved, 'state', 'handshake'), {recursive: true});   // what the run writes
   mkdirSync(join(approved, 'run', 'session'), {recursive: true});
-  assert.throws(() => cleanupNative({...prepared, token: 'wrong'}, {directoryRoot: root}), /ownership/);
-  assert.deepEqual(cleanupNative(prepared, {directoryRoot: root}), {removed: true, restored: ['state', 'run']});
+  assert.throws(() => cleanupNative({...prepared, token: 'wrong'}, {directoryRoot: root, usersOf: () => []}), /ownership/);
+  assert.deepEqual(cleanupNative(prepared, {directoryRoot: root, usersOf: () => []}), {removed: true, restored: ['state', 'run'], helpersStopped: []});
   assert.equal(readFileSync(join(approved, 'state', 'codex', 'kept'), 'utf8'), 'task 1');
   assert.deepEqual(readdirSync(join(approved, 'state')), ['codex']);
   assert.deepEqual(readdirSync(join(approved, 'run')), []);
@@ -165,4 +165,23 @@ test('the in-use check sees other processes naming the home, never the preparing
   t.after(() => other.kill());
   await new Promise(r => setTimeout(r, 200));
   assert.deepEqual(JSON.parse(run('/bin/sh', ['-c', `node --input-type=module -e '${probe}' ${home}`], {encoding: 'utf8'})), [other.pid]);
+});
+
+test('the in-use check also sees a process that names the home only as CUA_HOME in its environment, and reports only its pid', async t => {
+  const {spawn} = await import('node:child_process');
+  const {mkdtempSync: mk, realpathSync} = await import('node:fs');
+  const {processesWithHome, homeUsers} = await import('../../scripts/native-baseline/prepare.mjs');
+  const home = realpathSync(mk(join(tmpdir(), 'native-inuse-env-test-')));
+  t.after(() => rmSync(home, {recursive: true, force: true}));
+  assert.deepEqual(processesWithHome(home), []);
+  const serve = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], {stdio: 'ignore', env: {PATH: process.env.PATH, CUA_HOME: home}});
+  const near = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], {stdio: 'ignore', env: {PATH: process.env.PATH, CUA_HOME: home + '-other'}});
+  t.after(() => { serve.kill(); near.kill(); });
+  await new Promise(r => setTimeout(r, 300));
+  assert.deepEqual(processesWithHome(home), [serve.pid]);
+  const [user] = homeUsers(home, join(home, 'runtimes', 'r', 'Sky.app'));
+  assert.deepEqual(Object.keys(user).sort(), ['helper', 'pid', 'startedAt']);
+  assert.equal(user.pid, serve.pid);
+  assert.equal(user.helper, false);
+  assert.ok(Math.abs(user.startedAt - Date.now()) < 3000);
 });

@@ -197,7 +197,7 @@ async function runPrepared({device, out, host, node, experiment, prepared, surfa
   };
   meta.helperAtStart = helperAttestation();
   const connect = () => {
-    const client = io.connect({...serveCommand({device, checkout: pre.checkout, home: pre.home, userHome: prepared.userHome, configHome: prepared.configHome, xSession:prepared.xSession, host, platform: pre.platform, display, node, surface}), clientName: 'cua-native-baseline',
+    const client = io.connect({...serveCommand({device, checkout: pre.checkout, home: pre.home, userHome: prepared.userHome, configHome: prepared.configHome, admission: prepared.admission, xSession:prepared.xSession, host, platform: pre.platform, display, node, surface}), clientName: 'cua-native-baseline',
       answer: adapter.answer,
       onElicitation: (row, msg) => {
         const entry = {t: row.t, at: performance.now(), app: msg.params?._meta?.tool_params?.app ?? null, action: row.action};

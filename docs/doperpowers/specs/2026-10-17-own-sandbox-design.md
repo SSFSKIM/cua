@@ -152,7 +152,7 @@ Re-exposed inside the denied home (most-specific wins):
 - on Linux, the pinned helper's version directory `sandbox/<upstreamTag>/` (read). The helper enters bubblewrap and re-executes itself from `current_exe()` inside the restricted filesystem (`U@ff6aec96:linux-sandbox/src/linux_run_main.rs:295-347,1539-1560`; confirmed again at the M3 commit), so the kernel's own launch needs it readable;
 - the launch's own run directory `run/<sessionId>` (the scoped write root) and its selected session temp (below), both writable.
 
-`buildLaunch` passes the list to the own host as `CUA_SANDBOX_DENY_READ`, JSON `{"deny": [absolute paths], "reexpose": [absolute paths], "metadataOnly": [absolute paths]}` (`metadataOnly`: the denied ancestors whose metadata alone the kernel may read, Decision Log "the metadata grant on denied ancestors"; empty on Linux), and to the vendor host's compat executable through the session's compat settings file (Design, "The compat executable"), because node_repl does not pass it to the kernel's launcher. A non-disabled launch without a well-formed value is refused (`sandbox_state_invalid`). The kernel role applies it and the worker role ignores it; one rule governs refusal for both.
+`buildLaunch` passes the list to the own host as `CUA_SANDBOX_DENY_READ`, JSON `{"deny": [absolute paths], "reexpose": [absolute paths], "metadataOnly": [absolute paths], "tiers": [absolute paths]}` (`tiers`: the deny entries that are discovered secret tiers, which Linux creates leaf-only; `metadataOnly`: the denied ancestors whose metadata alone the kernel may read, Decision Log "the metadata grant on denied ancestors"; empty on Linux), and to the vendor host's compat executable through the session's compat settings file (Design, "The compat executable"), because node_repl does not pass it to the kernel's launcher. A non-disabled launch without a well-formed value is refused (`sandbox_state_invalid`). The kernel role applies it and the worker role ignores it; one rule governs refusal for both.
 
 **A per-session TMPDIR.** `buildLaunch` selects one session temp directory per launch, records it in the launch (`sessionTmp`), creates it with mode 0700 and sets `TMPDIR` to it for both hosts. It no longer copies the caller's TMPDIR. The selected path is `run/<sessionId>/tmp`, unless M2's helper check moves the vendor host's to `$CUA_HOME/tmp/<sessionId>` (M2). Launch construction, the policy's re-exposure, the preflight's exception and cleanup all read the one recorded `sessionTmp`. Two reasons:
 
@@ -286,7 +286,7 @@ CODEX_CLI_PATH names `bin/cua-codex-compat`, by its real path in cua's checkout.
 
 **How the compat receives its per-launch settings.** node_repl spawns the kernel's launcher with a filtered environment (CODEX_HOME, HOME, PATH, TMPDIR, LANG and node_repl's own settings; Surprises & Discoveries), so nothing `buildLaunch` adds to the environment reaches the kernel's `sandbox` call. The settings travel in a file instead:
 
-- **One computation.** `buildLaunch`, through `src/sandbox`, computes the session's settings once and writes them for vendor-host launches: `$CUA_HOME/state/compat/<sessionId>.json` (`{denyRead: {deny, reexpose, metadataOnly}, sessionTmp, home}`) and `$CUA_HOME/state/compat/<sessionId>.node` (one line, the Node path, which the sh script must read before any JSON can be parsed). Both are written with mode 0600 in a 0700 directory and removed at session cleanup, on the same lifecycle as the recorded `sessionTmp`. The compat only reads them; it never derives a policy itself.
+- **One computation.** `buildLaunch`, through `src/sandbox`, computes the session's settings once and writes them for vendor-host launches: `$CUA_HOME/state/compat/<sessionId>.json` (`{denyRead: {deny, reexpose, metadataOnly, tiers}, sessionTmp, home}`) and `$CUA_HOME/state/compat/<sessionId>.node` (one line, the Node path, which the sh script must read before any JSON can be parsed). Both are written with mode 0600 in a 0700 directory and removed at session cleanup, on the same lifecycle as the recorded `sessionTmp`. The compat only reads them; it never derives a policy itself.
 - **Locating them.** The compat takes the session id from TMPDIR (the recorded `sessionTmp`: `<home>/run/<id>/tmp`, or `<home>/tmp/<id>` if M2's helper check moves it) and the state directory from CODEX_HOME (`dirname` is `<home>/state`). Both must name the same `<home>`, and the file's `home` and `sessionTmp` must equal them. A mismatch, a TMPDIR of any other shape, or a missing or malformed file exits 1 with a sentence.
 - **Both children read it.** The worker's launcher receives node_repl's full environment, but it reads its settings the same way as the kernel's, so both roles have one source.
 - **Tamper boundary.** The files lie under `$CUA_HOME/state`, inside the denied home and never re-exposed: the kernel can neither read nor write them. The worker cannot write them either: its write roots are its run directory and `sessionTmp` (scoped) or none (default), and the preflight refuses any write root overlapping the home other than those two. M2 checks the worker's write roots against `state/compat` explicitly. The compat itself runs unconfined, as the launcher.
@@ -677,10 +677,10 @@ export const ROLES = ['kernel', 'worker'];
 
 // The deny list buildLaunch resolves, as passed in CUA_SANDBOX_DENY_READ:
 // {deny: absolute paths (store, symlinked tier targets, ~/.config/cua, the cua home), reexpose: absolute paths (runtimes/, node/, on Linux sandbox/<upstreamTag>/, the launch's run directory, its sessionTmp)}.
-export function denyListFor({home, env, secretsDir, secretsProjectDir, sessionId, sessionTmp, platform}) /* -> {deny: string[], reexpose: string[], metadataOnly: string[]} */;
+export function denyListFor({home, env, secretsDir, secretsProjectDir, sessionId, sessionTmp, platform}) /* -> {deny: string[], reexpose: string[], metadataOnly: string[], tiers: string[]} */;
 
 // Creates each deny target that does not exist (0700, idempotent) and returns the list with real paths; throws SandboxStateError when one cannot be created.
-export function prepareDenyTargets(list) /* -> {deny: string[], reexpose: string[], metadataOnly: string[]} */;
+export function prepareDenyTargets(list) /* -> {deny: string[], reexpose: string[], metadataOnly: string[], tiers: string[]}; creates targets on Linux only (Design, "Policy") */;
 
 // One child's permission profile for a call's sandbox state; null for disabled.
 // state: the sandbox-state value or undefined (default mode); role: 'kernel' | 'worker';
@@ -724,7 +724,7 @@ export function sandboxedLaunch({platform, state, role, command, env, cwd, readP
 
 Environment names introduced:
 
-- `CUA_SANDBOX_DENY_READ`: JSON `{deny, reexpose, metadataOnly}` of absolute paths, set by `buildLaunch` for the own host on a confined connection (a `disabled` connection builds no list, M1 review); the vendor host's compat reads the same shape from its settings file.
+- `CUA_SANDBOX_DENY_READ`: JSON `{deny, reexpose, metadataOnly, tiers}` of absolute paths, set by `buildLaunch` for the own host on a confined connection (a `disabled` connection builds no list, M1 review); the vendor host's compat reads the same shape from its settings file.
 - `TMPDIR`: the launch's selected `sessionTmp` (0700): `run/<sessionId>/tmp`, or `$CUA_HOME/tmp/<sessionId>` for the vendor host if M2's helper check requires it. It is set by `buildLaunch` for both hosts and is never the caller's.
 - `CUA_COMPAT_NODE`: absolute path of the Node the compat executable's `app-server` runs on, set for vendor-host launches; it reaches the native helper. The `sandbox` subcommand takes its Node from the session's compat settings, since the kernel's launcher does not receive it.
 

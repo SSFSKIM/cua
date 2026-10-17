@@ -6,7 +6,7 @@ cua runs model-written JavaScript in two Node children, the kernel (the model's 
 
 Three things become possible that were not before:
 
-- **The model's cells can no longer read the user's secrets.** Today both children share one profile, so a cell can run `fs.readFileSync(<the secret store>/PASSWORD)`, and README says cua cannot prevent it. With its own launcher, cua gives the kernel a stricter profile than the worker. The kernel is denied the secret store, `~/.config/cua`, `$CUA_HOME/state` and the other sessions' run directories. The worker keeps reading the store, so substitution still works.
+- **The model's cells can no longer read the user's secrets.** Today both children share one profile, so a cell can run `fs.readFileSync(<the secret store>/PASSWORD)`, and README says cua cannot prevent it. With its own launcher, cua gives the kernel a stricter profile than the worker. The kernel is denied the secret store, `~/.config/cua` and cua's own home (state, device enrolment, Chrome registration, other sessions' run directories), except the runtime and Node it must read and its own run directory. The worker keeps reading the store, so substitution still works.
 - **Linux computer sessions get a sandbox.** They run with no sandbox at all today, because the original's network filter blocks every socket and sky_linux needs X11 and the session bus. They now default to a confined kernel, and only the worker can reach the network.
 - **The install is lighter and owned.** `cua install` stops placing CodexCLI.app. On Linux it fetches one small static helper that cua builds from upstream with a provenance attestation.
 
@@ -71,7 +71,7 @@ The public original is cited as `U@<commit>:<path>:<lines>`, with `U` meaning `h
   - `default`: read everywhere, no writes;
   - `disabled`: no sandbox.
 - **Permission profile**: the original's JSON shape `{type:'managed', file_system:{type:'restricted', entries:[{path, access}]}, network:'restricted'|'enabled'}`. `path` is `{type:'special', value:{kind}}` or `{type:'path', path}`. `access` is `read`, `write` or `none` (`none` is the original's serde alias for Deny).
-- **Deny list**: the absolute directories the kernel may not read.
+- **Deny list**: the absolute paths the kernel may not read, with the paths re-exposed inside them (Design, "Policy").
 - **Compat executable**: the cua-owned executable named by CODEX_CLI_PATH for the vendor host.
 
 ### Today, and why the Codex CLI cannot simply be dropped
@@ -126,28 +126,49 @@ To that it adds:
 - **The deny list**, kernel role only. Each directory on it becomes an entry with `access: 'none'`.
 - **Network.** `network: 'enabled'` for the worker role on Linux with the computer surface. Everything else, the kernel always, stays `restricted`.
 
-The deny list is resolved once, by `buildLaunch`, from the same values it gives the worker. Two resolutions could diverge (a test home, HOME differing between proxy and launch); the kernel would then read what the worker substitutes from. It contains:
+The deny list is resolved once, by `buildLaunch`, from the same values it gives the worker. Two resolutions could diverge (a test home, HOME differing between proxy and launch); the kernel would then read what the worker substitutes from. It has two kinds of entries.
 
-1. the secret store's global directory. That is `CUA_SECRETS_DIR` when secrets are on, else the default store path from `src/secrets/store.mjs` `storeDir`, because the directory exists whatever this connection's setting. Project tiers live under it (`projects/<slug>`), so one entry covers both;
-2. `$HOME/.config/cua`, which holds the extension signing key and agent enrolment;
-3. `<home>/state`, cua's state directory, the parent of `homeLayout(home).codexHome` and `.handshake` (`src/runtime/layout.mjs` names no key for the directory itself; M1 adds `state`);
-4. `homeLayout(home).run`, every session's run directory. The launch's own run directory, `run/<sessionId>`, is the scoped write root inside it and stays readable and writable through the original's most-specific rule.
+Denied (`access: 'none'`):
 
-`buildLaunch` passes the list to both hosts as `CUA_SANDBOX_DENY_READ`, a JSON array of absolute paths. A non-disabled launch without a well-formed list is refused (`sandbox_state_invalid`). The kernel role applies the list and the worker role ignores it; one rule governs refusal for both.
+1. **The secret store.** The global directory is `CUA_SECRETS_DIR` when secrets are on, else the default store path from `src/secrets/store.mjs` `storeDir`, because the directory exists whatever this connection's setting. Project tiers live under it (`projects/<slug>`), but containment must hold by real path, not lexically: the store follows intermediate symlinks (`src/secrets/store.mjs` joins names and opens only the final file with `O_NOFOLLOW`). So the list also carries the real target of every symlinked entry under `projects/` (enumerated at launch), and of `projects/` itself if it is a symlink, together with the real path of this connection's project tier (`CUA_SECRETS_PROJECT_DIR`) when that lies outside the global store.
+2. **`$HOME/.config/cua`.**
+3. **The whole of `$CUA_HOME`** (`homeLayout(home).home`). That covers:
+   - `state/`, where CODEX_HOME and the handshake record live;
+   - `remote/`, which holds the device enrolment (`device.json`), the device list and the extension signing key (`src/remote/device.mjs`); an enrolled device's credentials there would let a cell impersonate it;
+   - `chrome/`, with host registrations, logs and sockets;
+   - `profiles.json`, `current.json`, `staging/` and `bin/`;
+   - every other session's `run/<id>`.
 
-Before any profile is rendered, each deny target is created as a directory with mode 0700 (idempotent), and the path emitted is its real path (`realish`, `src/runtime/sandbox.mjs`). The reasons are two original behaviours:
+   Denying the home and re-exposing what the kernel needs keeps future private state covered without a list to maintain.
+
+Re-exposed inside the denied home (most-specific wins):
+
+- `runtimes/` (read: the vendor module tree the kernel resolves packages from, and on the vendor host the vendor Node it runs on);
+- `node/` (read: the Node cua installed for its own host);
+- the launch's own run directory `run/<sessionId>` (the scoped write root, and the per-session TMPDIR below).
+
+`buildLaunch` passes the list to both hosts as `CUA_SANDBOX_DENY_READ`, JSON `{"deny": [absolute paths], "reexpose": [absolute paths]}`. A non-disabled launch without a well-formed value is refused (`sandbox_state_invalid`). The kernel role applies it and the worker role ignores it; one rule governs refusal for both.
+
+**A per-session TMPDIR.** `buildLaunch` sets `TMPDIR` for every launch, both hosts, to `run/<sessionId>/tmp`, created with mode 0700. It no longer copies the caller's. Two reasons:
+
+- On macOS the caller's TMPDIR is shared by every session of the account. node_repl writes each session's `kernel.js` and `trusted-worker.js` into a `.tmpXXXXXX` directory there (R/spike-helper/shim.log). Each profile protects only its own session's script directory, so a scoped kernel in one session could overwrite another session's `trusted-worker.js` before that session's worker starts, and run as a secret-reading worker.
+- With TMPDIR inside the run directory, every write root a kernel has lies inside its own run directory, and every other session's run directory is denied.
+
+The `tmpdir` write grant then names a directory nobody else uses. `os.tmpdir()` in a cell returns it. It is removed with the run directory when the connection ends.
+
+Before any profile is rendered, each deny target is created as a directory with mode 0700 (idempotent; a file target such as a symlinked tier's target that is a file is left as it is), and the path emitted is its real path (`realish`, `src/runtime/sandbox.mjs`). The reasons are two original behaviours:
 
 - **Linux**: the original emits no mask for an unreadable root that does not exist (`U@ff6aec96:linux-sandbox/src/bwrap.rs:1320-1352`), and `--ro-bind / /` is a live view. A store created mid-session would be readable by the running kernel.
 - **macOS**: the original falls back to the logical path when canonicalization fails (`U@ff6aec96:sandboxing/src/seatbelt.rs:217-231`), which a symlinked ancestor defeats.
 
 A target that cannot be created refuses the launch. This is cheap and closes both.
 
-The deny list joins the scoped preflight's protected paths (`protectedPaths`), so a write root overlapping a deny target is refused at launch. The one exception is the launch's own run directory inside `run/`. Under the most-specific rule, a write entry nested inside a deny entry makes that subtree readable again; this exception is intended, every other overlap is a configuration error. Whether the original renders "deny `run/`, write `run/<id>`" as intended is checked:
+The deny entries join the scoped preflight's protected paths (`protectedPaths`), so a write root overlapping a deny target is refused at launch. The one exception is the launch's own run directory: under the most-specific rule, a write entry nested inside a deny entry makes that subtree readable again, and that is intended only for `run/<sessionId>`. Whether the original renders "deny the home, read `runtimes/` and `node/`, write `run/<id>`" as intended is checked on both OSes:
 
-- macOS: an explicit `deny` rule would override the later `allow` (golden fixture, M0/M1);
-- Linux: the mount order for a write bind inside a mask (`U:linux-sandbox/src/bwrap.rs:613-646`, at the M3 commit).
+- macOS: an explicit `deny` rule would override the later `allow`. Checked with the golden fixture in M0, and in M1.
+- Linux: the mount order for re-exposed binds inside a mask (`U:linux-sandbox/src/bwrap.rs:613-646`, at the M3 commit). Probed in M0.
 
-If either OS cannot express it, the `run/` entry is dropped on that OS, with a Decision Log entry and a line to the owner. The other three entries do not depend on it.
+If an OS cannot express the nesting, the home entry on that OS falls back to denying its private entries one by one: `state/`, `remote/`, `chrome/`, `profiles.json`, `current.json`. Other sessions' run directories then stay readable on that OS, which is recorded in the Decision Log and reported to the owner. The secret store and `~/.config/cua` entries do not depend on nesting.
 
 Effect on the original's semantics (R/A §2, R/critique-final 7). Any Deny entry makes `has_full_disk_read_access()` false (`U@ff6aec96:protocol/src/permissions.rs:913-931`). The kernel's profile then lists readable roots (`/` with the denied subpaths excluded) instead of `(allow file-read*)`, and it drops `seatbelt_preferences_policy.sbpl` (cfprefsd lookup, cfprefs shared memory, `user-preference-read`). Nothing cua has run before was this tight. M1 measures it: the #116 corpus runs with the sandbox denial log captured, and the result is diffed against today's profile. Two outcomes:
 
@@ -300,9 +321,9 @@ The full-read profile denies the `com.apple.system.notification_center` mach loo
 Each item is behaviour someone can check. The commands are in Concrete Steps.
 
 1. **No Codex CLI.** On the mini and on the Linux box, a fresh `cua install` places no CodexCLI.app or `codex`. During any session, `ps` shows no process named `codex`. In an own-host session on macOS, the kernel process is Node, and its parent is the supervisor.
-2. **The deny holds.** In `scoped` and `default` sessions, on both hosts and both OSes, a cell's `readFileSync`/`readdirSync` of each deny-list location fails with `EPERM` or `EACCES`. The locations: the global store, a project tier, `~/.config/cua`, `$CUA_HOME/state`, and another session's run directory. The same holds for a store directory created after the session started. In the same session, a `{{secret:KEY}}` reference in a native or browser action still delivers the synthetic value. Under `disabled`, nothing is denied, as README says.
+2. **The deny holds.** In `scoped` and `default` sessions, on both hosts and both OSes, a cell's `readFileSync`/`readdirSync` of each deny-list location fails with `EPERM` or `EACCES`. The locations: the global store; a project tier, including the real target of a symlinked tier; `~/.config/cua`; `$CUA_HOME/state`; a synthetic enrolled device under `$CUA_HOME/remote`; `$CUA_HOME/chrome`; and another session's run directory. The same cell can still import packages from the runtime's module tree. The same holds for a store directory created after the session started. In the same session, a `{{secret:KEY}}` reference in a native or browser action still delivers the synthetic value. Under `disabled`, nothing is denied, as README says.
 3. **No bypass by link.** A cell cannot read a denied file through a hard link or a clone made in its writable roots: `ln` and `cp -c` fail on macOS, `link` fails on Linux.
-4. **Writes as before.** `scripts/accept-native.mjs` item 7 passes: trusted roots unwritable, run directory and `$TMPDIR` writable. On the macOS vendor host, a cell cannot write into node_repl's script directory.
+4. **Writes confined to the session.** `scripts/accept-native.mjs` item 7 passes: trusted roots unwritable, run directory and `$TMPDIR` writable, `$TMPDIR` being the session's own. On the macOS vendor host, a cell cannot write into its own session's node_repl script directory. With two concurrent sessions, a kernel in an own-host session cannot write into a vendor-host session's script directory or run directory, and the victim session's worker still runs its own script, verified by a synthetic secret that stays unreadable to the attacker.
 5. **No network for cells.** A cell's TCP connect and AF_UNIX connect fail, on both OSes and both hosts.
 6. **macOS computer route.** On the mini, a computer session runs through the compat executable: `listApps`, Finder `getApp` and `getAXState` succeed, and the helper's app-server child is `bin/cua-codex-compat`. Approvals behave as before.
 7. **Linux computer route.** On the Linux box, a computer session drives gedit through sky_linux (bind, AX state, act, screenshot, `end_task`) with the kernel confined per items 2 and 5. `CUA_REPL_HOST=vendor` is refused there with a sentence.
@@ -327,12 +348,23 @@ Each item is behaviour someone can check. The commands are in Concrete Steps.
     - On Linux, `cua install` fetches and verifies the helper.
     - A tampered helper fails doctor and refuses launches.
     - `cua install` removes the CODEX_HOME leftovers by name.
-11. **No latency regression.** native-baseline `cold.first_js` after the change, compared with the M0 baseline using `scripts/native-baseline/compare.mjs`'s rule on the same machine, for:
-    - the vendor host computer session on the mini;
-    - an own-host browser-only session on the mini;
-    - the own host on the Linux box.
-12. **#116 parity holds.** `scripts/repl-parity.mjs` `--suite all` on the mini (own host browser, vendor host computer) and on the Linux box shows 0 unexpected differences. Expected-differences entries are added only for the deviations named here.
-13. **#138.** The 80-run repro under the final macOS profile shows zero hangs with the change kept, or the change is removed and recorded.
+11. **No latency regression.** Cold start is measured before (M0) and after (M4) on the same machine and host.
+    - **Comparison.** native-baseline's same-host comparison, which M0 adds. Its `compare` today requires a vendor baseline, a cua candidate and identical sandbox metadata.
+    - **Judged rows and limit.** `cold.miss.first_js` and `cold.hit.first_js`, medians over three runs of the harness's default samples, against the harness's limit (baseline + max(10%, 500 ms)), with the medians reported beside it.
+    - **Permitted configuration differences.** The launcher (Codex CLI versus cua), the per-session TMPDIR, and on Linux the sandbox mode (disabled, then scoped with the confined kernel), which is the change being measured.
+    - **Configurations:**
+      - the vendor host computer session on the mini;
+      - an own-host browser-only session on the mini (native-baseline's cold rows with the browser surface, which M0 adds as `--surfaces browser`: the same cold rows, no native calls);
+      - the own host computer session on the Linux box.
+12. **#116 parity holds.** `scripts/repl-parity.mjs` prepare, run and diff (Concrete Steps):
+    - **On the mini:** the own host against the vendor host (`CUA_REPL_HOST=vendor`), `--suite all` (the native scenarios are Linux-only). M1 compares the own host under cua's sandbox with the vendor host under the Codex CLI; M2 onward, both under cua's sandbox. Result: 0 unexpected differences.
+    - **On the Linux box:** the own host's `--suite all`, native included, against the vendor control runs retained from M0, the last vendor runs on Linux before M3 retires the vendor host. Expected differences are only this spec's deliberate changes, each with its reason in `test/repl-parity/expected-differences.json`: the native fixture (`test/repl-parity/serve-native.mjs`) moves from forced `disabled` to the new default, and a cell's direct socket reach is gone.
+    - **The macOS computer route** has no parity lane, because only the vendor host serves it. Acceptance 6 and the native acceptance runner prove it.
+13. **#138.** `scripts/sandbox-probe/tz-probe.mjs` (M0) runs 80 fresh children per configuration.
+    - **Each child:** a Node started under the configuration's launcher, whose first time-zone use comes late (after 300 ms idle, a `toLocaleString` with an explicit zone conversion), bounded at 10 s.
+    - **Each run** is classified as completed, hung (bound reached) or launcher failure.
+    - **M0** runs it under the signed CLI's scoped profile, for the baseline rate. **M4** runs it under cua's final kernel and worker profiles, with and without the notification_center line.
+    - **Verdict.** The line is kept only if its runs show zero hangs and zero launcher failures. Otherwise it is removed and #138 stays open with the numbers.
 14. **Gates and release.**
     - `HOME=<scratch> npm test`, `npm run test:mods` and `claude plugin validate .` pass.
     - README's sandbox, CODEX_HOME, Linux and configuration text matches the behaviour.
@@ -373,7 +405,7 @@ Each item is behaviour someone can check. The commands are in Concrete Steps.
 **Machines.**
 - This MacBook runs no heavy builds and no VMs; the cua-linux Tart VM stays off.
 - macOS builds and live runs happen on the mini (`ssh mini`; Rust is installed there).
-- Linux live runs happen on a GCE Ubuntu 24.04 box with Xvfb, openbox and AT-SPI, provisioned as `docs/evidence/2026-10-14-own-repl-host-native/m5-cua-bench/README.md` records (project ytdownload-505811, the default service account; an arm64 t2a spot instance, plus an x64 instance for the x64 helper's smoke). Stopped between milestones and deleted at the end.
+- Linux live runs happen on a GCE Ubuntu 24.04 box with Xvfb, openbox and AT-SPI, provisioned as `docs/evidence/2026-10-14-own-repl-host-native/m5-cua-bench/README.md` records (project ytdownload-505811, the default service account; an arm64 t2a spot instance with ssh alias `cua-gce`, plus an x64 instance for the x64 helper's smoke). Stopped between milestones and deleted at the end.
 - Linux helper builds happen in GitHub Actions.
 
 **Tests.**
@@ -398,7 +430,7 @@ What exists at the end: committed harness code and evidence that later milestone
     - a symlinked root;
     - a nested read entry inside a write root (the vendor host's script directory);
     - deny entries, one and several;
-    - "deny `run/`, write `run/<id>`".
+    - "deny the cua home, read `runtimes/` and `node/`, write `run/<id>`" (the nesting the deny list relies on).
   - Fixtures are committed under `test/fixtures/sandbox/seatbelt/` with path placeholders, together with the filesystem setup each one assumes.
 - **Argv capture** (`scripts/sandbox-probe/capture-argv.c`). An unprivileged poller that spawns the signed CLI itself and busy-loops `proc_listchildpids` and `KERN_PROCARGS2` from before the spawn, catching `sandbox-exec`'s argv before its exec, with bounded retries. It runs for cua's two inputs (scoped and default) on the mini. The captures are committed as evidence. eslogger is used only if the owner grants root and Full Disk Access on the mini.
 - **Fingerprint probe** (`scripts/sandbox-probe/fingerprint.c`, built with `xcrun clang` on the mini).
@@ -410,10 +442,19 @@ What exists at the end: committed harness code and evidence that later milestone
   2. Replay them from a stub app-server.
   3. Run the six native calls of the spike (`listApps` twice, Finder `getApp` and `getAXState` twice).
   The verdict: the helper accepts the replay, or the extra methods it sends, with their recorded answers.
-- **Linux probes.** On the GCE box, under the vendor `codex` with `--permission-profile` network enabled and the scoped filesystem, run (a) `XShmAttach` from a client under the helper, and (b) an app launch by sky_linux from a worker-shaped sandbox. Run also the deny-plus-nested-write mount check. Each yields a verdict.
-- **Baselines.** native-baseline `cold.first_js` for the three configurations of acceptance 11, before any change, committed under `docs/evidence/2026-10-17-own-sandbox/m0/`.
+- **Linux probes.** On the GCE box, under the vendor `codex` with `--permission-profile` network enabled and the scoped filesystem, run (a) `XShmAttach` from a client under the helper, and (b) an app launch by sky_linux from a worker-shaped sandbox. Run also the nesting check: deny the cua home, re-expose `runtimes/` and `node/` read-only, and bind `run/<id>` writable. Each yields a verdict.
+- **Harness extensions**, so later milestones can measure without inventing a harness:
+  1. `scripts/native-baseline.mjs`: a `--surfaces browser` mode producing the same cold rows with no native calls, and `compare --same-host <before> <after>`, which judges a run against a baseline of the same host and permits only the configuration differences acceptance 11 lists, each recorded in the result;
+  2. `scripts/repl-parity.mjs`: the GCE box as a declared device (ssh alias `cua-gce`; `cua-linux` stays declared but off), and the native lane parameterized by device instead of hard-coded to `cua-linux`;
+  3. the GCE box provisioned for the browser lanes: Chrome and cua's extension in a harness-owned profile bound as `repl-parity prepare` requires, with its preparation and cleanup written in the evidence README;
+  4. `scripts/sandbox-probe/tz-probe.mjs`, parameterized by launcher (the signed CLI's `codex sandbox`, or `src/sandbox` from M1) and role, as acceptance 13 describes. It replaces the history-hang probe (`docs/evidence/2026-10-14-own-repl-host-parity/m2/history-hang/sandbox-tz-probe.sh`), which hard-codes the installed CLI.
+- **Baselines and controls**, before any production change, committed under `docs/evidence/2026-10-17-own-sandbox/m0/`:
+  - native-baseline for the three configurations of acceptance 11;
+  - tz-probe's baseline rate under the signed CLI;
+  - vendor-host parity control runs on the GCE box (`--host vendor --suite all`), retained for M3 and M4;
+  - a run of `scripts/accept-native.mjs --live-secrets --live-textedit` on main on the mini, recording which items main itself reports BLOCKED.
 
-**Touches:** `scripts/sandbox-golden/`, `scripts/sandbox-probe/`, `test/fixtures/sandbox/`, `docs/evidence/2026-10-17-own-sandbox/m0/`, this spec's Surprises & Discoveries.
+**Touches:** `scripts/sandbox-golden/`, `scripts/sandbox-probe/`, `scripts/native-baseline.mjs` and `scripts/native-baseline/`, `scripts/repl-parity.mjs` and `scripts/repl-parity/` (device declaration, native lane), `test/fixtures/sandbox/`, `docs/evidence/2026-10-17-own-sandbox/m0/`, this spec's Surprises & Discoveries.
 
 **Does not touch:** any production code under `src/`, the pins, install or doctor.
 
@@ -430,7 +471,7 @@ What exists at the end: on macOS, every own-host session (browser-only) runs its
 
 **Touches:**
 - new `src/sandbox/` (`policy.mjs`, `seatbelt.mjs`, `env.mjs`, `seatbelt/*.sbpl`, `LICENSE`, `NOTICE`);
-- `src/runtime/launch.mjs`: the deny list, `CUA_SANDBOX_DENY_READ`, the own host no longer getting CODEX_CLI_PATH or CODEX_HOME;
+- `src/runtime/launch.mjs`: the deny list, `CUA_SANDBOX_DENY_READ`, the per-session TMPDIR (both hosts), `src/sandbox/` added to the trusted code paths of both hosts (it runs outside the sandbox from M1, so the preflight must refuse a write root containing or inside it), and the own host on macOS no longer getting CODEX_CLI_PATH or CODEX_HOME. The own host on Linux keeps both until M3, since it still launches through the Codex CLI;
 - `src/runtime/sandbox.mjs`: the deny list in `protectedPaths` with the own-run-directory exception;
 - `src/repl-host/supervisor.mjs`: `childLaunch` by role, the launch key, `NO_SANDBOX_SENTENCE`, the advertisement;
 - `src/repl-host/kernel-child.mjs`: header, `kernel_pid`;
@@ -438,9 +479,11 @@ What exists at the end: on macOS, every own-host session (browser-only) runs its
 
 **Decisions here:**
 - The cfprefsd measurement (Design, "Policy"): run the #116 `cells` and `services` suites on the mini under the new kernel profile with `log stream --predicate 'sender == "Sandbox"'` captured, and diff the denials against a run under today's profile. Keep the original's semantics if nothing new fails; otherwise add the preferences policy to the kernel profile as a deviation, logged.
-- The `run/` deny on macOS: the golden fixture from M0 decides whether it is expressible (Design, "Policy").
+- The home's nesting on macOS: the golden fixture from M0 and the fingerprint under cua's launcher decide whether it is expressible. If it is not, the fallback in Design, "Policy" applies.
 
-**Does not touch:** the vendor host's launch (it keeps the Codex CLI until M2); Linux (the own host on Linux keeps the Codex CLI until M3: `childLaunch` routes Linux through the old path, which M3 removes); the pins.
+**Does not touch:** the vendor host's launch, which keeps the Codex CLI until M2. Linux: the own host on Linux keeps the Codex CLI until M3. `childLaunch` routes Linux through the old path, and `sandboxPolicy`/`sandboxArgs` and the Linux CODEX_CLI_PATH stay until M3 removes their last consumer. The pins.
+
+Before its PR merges, M1 runs a Linux regression on the GCE box. A scoped own-host session there still launches through the Codex CLI with the per-session TMPDIR, and the #116 confinement cases pass. The same check gates M2.
 
 **Proves:**
 - acceptance 1 (macOS own host), 2, 3, 4 (item 7), 5, 8 (port vs fixtures, argv capture, fingerprint under cua's launcher), 9 (own-host cases), 12 (own host on the mini);
@@ -454,8 +497,7 @@ What exists at the end: macOS computer sessions run node_repl with CODEX_CLI_PAT
 
 **Touches:**
 - `bin/cua-codex-compat`, `src/sandbox/codex-compat.mjs`, `src/sandbox/app-server.mjs`, `src/sandbox/app-server-responses.json`;
-- `src/runtime/launch.mjs`: the vendor host's CODEX_CLI_PATH and CUA_COMPAT_NODE, the preflight, `bin/` and `src/sandbox/` among the trusted paths;
-- `src/runtime/sandbox.mjs`: retire `sandboxPolicy`/`sandboxArgs` once nothing uses the Codex CLI argv;
+- `src/runtime/launch.mjs`: the vendor host's CODEX_CLI_PATH and CUA_COMPAT_NODE, the preflight, and `bin/` among the trusted paths. `src/sandbox/` is there since M1. `sandboxPolicy`/`sandboxArgs` stay for the Linux own host until M3;
 - `runtime/releases/*-darwin-arm64.json`, `src/runtime/manifest.mjs`, `src/runtime/install.mjs`, `src/runtime/checks.mjs`, `src/runtime/doctor.mjs` (`sandbox.launcher`), the test fixtures that model the runtime tree (`test/fixtures/runtime-fixture.mjs` and the installed-home fixture).
 
 **Decisions here:**
@@ -482,7 +524,7 @@ What exists at the end:
 - `.github/workflows/linux-sandbox-helper.yml`, `runtime/sandbox/linux-sandbox.json`;
 - `src/sandbox/linux.mjs`;
 - `src/runtime/install.mjs` and `src/runtime/layout.mjs` (`$CUA_HOME/sandbox/`), `src/runtime/doctor.mjs`;
-- `src/runtime/sandbox.mjs` (`defaultSandboxMode`, `assertSandboxConfines` and its wording);
+- `src/runtime/sandbox.mjs` (`defaultSandboxMode`, `assertSandboxConfines` and its wording; retire `sandboxPolicy`/`sandboxArgs` and stop setting CODEX_CLI_PATH and CODEX_HOME for the own host, their last consumers gone);
 - `src/runtime/launch.mjs` (`replHostFor` on Linux);
 - `src/repl-host/supervisor.mjs` (the Linux path);
 - the Linux pins, `src/runtime/manifest.mjs` `LINUX_LAYOUT_KEYS`;
@@ -492,7 +534,7 @@ What exists at the end:
 - The upstream commit, per the Design; its CLI and JSON contract re-read and recorded in Surprises & Discoveries.
 - The release tag naming: `linux-sandbox-<upstreamTag>`.
 - Install's fetch: Node's `fetch` with the pinned URL. The pin's SHA-256 is the trust root; the attestation is recorded and checked with `gh attestation verify` in M3's evidence, not at install time.
-- The `run/` deny on Linux: decided by M0's mount-order verdict.
+- The home's nesting on Linux: decided by M0's mount-order verdict, with the same fallback.
 
 **Does not touch:** macOS behaviour.
 
@@ -545,35 +587,45 @@ ssh mini 'cd ~/cua-115/repo && scripts/sandbox-golden/generate.sh ~/cua-115/upst
 ssh mini 'cd ~/cua-115/repo && xcrun clang -O2 -o /tmp/cua-fp scripts/sandbox-probe/fingerprint.c && xcrun clang -O2 -o /tmp/cua-cap scripts/sandbox-probe/capture-argv.c'
 ```
 
-**Baselines** (`scripts/native-baseline.mjs`, which drives a computer-surface session on a device; repeat after M4 into `$E/m4/`):
+**Baselines** (`scripts/native-baseline.mjs` drives a session on a device; M0 writes `$E/m0/…`, M4 repeats each into `$E/m4/…` with the same arguments):
 
 ```
 node scripts/native-baseline.mjs prepare --device mini --commit <reviewed SHA>
-node scripts/native-baseline.mjs run --device mini --experiment 115-m0 --host vendor --out "$E/m0/mini-vendor-computer/run-1"     # three runs
-node scripts/native-baseline.mjs run --device <linux box> --experiment 115-m0 --host cua --display :0 --out "$E/m0/linux-cua/run-1"
-node scripts/native-baseline.mjs compare "$E/m0/mini-vendor-computer" "$E/m4/mini-vendor-computer"   # expect: every judged row within the harness's limit (baseline + max(10%, 500 ms))
+node scripts/native-baseline.mjs run --device mini --experiment 115-m0 --host vendor --out "$E/m0/mini-vendor-computer/run-1"                     # run-1..3
+node scripts/native-baseline.mjs run --device mini --experiment 115-m0 --host cua --surfaces browser --out "$E/m0/mini-cua-browser/run-1"         # run-1..3; --surfaces added in M0
+node scripts/native-baseline.mjs prepare --device cua-gce --commit <reviewed SHA>
+node scripts/native-baseline.mjs run --device cua-gce --experiment 115-m0 --host cua --display :0 --out "$E/m0/gce-cua-computer/run-1"           # run-1..3
+node scripts/native-baseline.mjs compare --same-host "$E/m0/<config>" "$E/m4/<config>"   # expect: every judged row within the limit; the permitted differences listed
 ```
 
-native-baseline has no browser-only mode, and on macOS the own host serves only browser-only sessions. So M0 measures the own host's cold start for a browser-only session on the mini with the smallest harness that already exists. That is the repl-parity runner's per-connection timing, or a `--surfaces browser` cold-row mode added to native-baseline; M0 picks one and records the choice. M4 repeats the same measurement.
-
-**Parity** (M1 on the mini, M2 on the mini, M3 on Linux, all in M4):
+**Parity** (repeat per milestone into `$E/<m>/`; `prepare` binds the harness-owned browser profile on the device):
 
 ```
-node scripts/repl-parity.mjs run --host cua --device mini --suite all --out "$E/<m>/mini-cua"
-node scripts/repl-parity.mjs run --host vendor --device mini --suite all --out "$E/<m>/mini-vendor"
-# expect: "0 unexpected differences"
+node scripts/repl-parity.mjs prepare --device mini --commit <SHA> --profile <harness profile>
+node scripts/repl-parity.mjs run --device mini --host vendor --suite all --out "$E/<m>/mini-vendor"
+node scripts/repl-parity.mjs run --device mini --host cua --suite all --out "$E/<m>/mini-cua"
+node scripts/repl-parity.mjs diff "$E/<m>/mini-vendor" "$E/<m>/mini-cua" --expected test/repl-parity/expected-differences.json
+# expect: "unexpected": [] in the diff's JSON
+node scripts/repl-parity.mjs prepare --device cua-gce --commit <SHA> --profile <harness profile>
+node scripts/repl-parity.mjs run --device cua-gce --host vendor --suite all --out "$E/m0/gce-vendor-control"     # M0 only: the retained control
+node scripts/repl-parity.mjs run --device cua-gce --host cua --suite all --out "$E/<m>/gce-cua"
+node scripts/repl-parity.mjs diff "$E/m0/gce-vendor-control" "$E/<m>/gce-cua" --expected test/repl-parity/expected-differences.json
+node scripts/repl-parity.mjs cleanup-prepared --device <device>
 ```
 
-**Acceptance on the mini** (M4). The runners execute on the device against an installed runtime in a scratch `CUA_HOME`, as their headers say. M1 to M3 add the new items to `scripts/accept-native.mjs` and `scripts/accept/linux-native.mjs`.
+**Native acceptance.** The runners execute on the device against an installed runtime in a scratch `CUA_HOME`, as their headers say. M1 to M3 add the new items to `scripts/accept-native.mjs` and `scripts/accept/linux-native.mjs`. `--live-textedit` types into the runner's own TextEdit document on the mini, a harness-owned target as in the native baseline; no other window receives input.
 
 ```
 # on the mini, in a scratch clone at the milestone's SHA
 export CUA_HOME="$(mktemp -d /tmp/cua-accept.XXXXXX)"
 node bin/cua.mjs install --archive <pinned ChatGPT zip>
-node scripts/accept-native.mjs --live-secrets --report "$CUA_HOME/acceptance.json"   # expect: every item PASS, item 7 and the new deny, link, network and script-directory items included
-node bin/cua.mjs doctor                                                              # expect: sandbox.launcher pass; no Codex CLI rows
-# on the Linux box, in the X session's environment
-node scripts/accept/linux-native.mjs                                                 # expect: exit 0, every step pass, kernel confined
+node scripts/accept-native.mjs --live-secrets --live-textedit --report "$CUA_HOME/acceptance.json"
+#   expect: every #115 item PASS (deny, link, network, script directory, compat route);
+#   every other item PASS or BLOCKED exactly as in M0's run on main (item 9's clean-machine and TCC gates stay BLOCKED)
+node bin/cua.mjs doctor          # expect: sandbox.launcher pass; no Codex CLI rows
+# on the GCE box, in the X session's environment
+node scripts/accept/linux-native.mjs     # expect: exit 0, every step pass, the kernel confined
+node scripts/sandbox-probe/tz-probe.mjs --launcher cua --role kernel --runs 80 --bound-ms 10000   # mini, M4; also --role worker, and with --no-notification-center
 ```
 
 **Helper release** (M3):
@@ -594,15 +646,16 @@ In `src/sandbox/policy.mjs`:
 // The roles a child can have.
 export const ROLES = ['kernel', 'worker'];
 
-// The deny list buildLaunch resolves (absolute paths, as passed in CUA_SANDBOX_DENY_READ).
-export function denyListFor({home, env, secretsDir}) /* -> string[] */;
+// The deny list buildLaunch resolves, as passed in CUA_SANDBOX_DENY_READ:
+// {deny: absolute paths (store, symlinked tier targets, ~/.config/cua, the cua home), reexpose: absolute paths (runtimes/, node/, the launch's run directory)}.
+export function denyListFor({home, env, secretsDir, secretsProjectDir, sessionId}) /* -> {deny: string[], reexpose: string[]} */;
 
-// Creates each deny target (0700, idempotent) and returns their real paths; throws SandboxStateError when one cannot be created.
-export function prepareDenyTargets(paths) /* -> string[] */;
+// Creates each deny target that does not exist (0700, idempotent) and returns the list with real paths; throws SandboxStateError when one cannot be created.
+export function prepareDenyTargets(list) /* -> {deny: string[], reexpose: string[]} */;
 
 // One child's permission profile for a call's sandbox state; null for disabled.
 // state: the sandbox-state value or undefined (default mode); role: 'kernel' | 'worker';
-// readPaths: absolute paths both roles read; denyRead: prepareDenyTargets' result; network: 'restricted' | 'enabled'.
+// readPaths: absolute paths both roles read; denyRead: prepareDenyTargets' result (kernel only; re-exposed paths become read entries, the run directory stays the write root); network: 'restricted' | 'enabled'.
 export function roleProfile({state, role, readPaths, denyRead, network}) /* -> {profile, cwd} | null */;
 
 // The launch key: equal for both roles under the same state (see Design, "The own host launches through it directly").
@@ -642,7 +695,8 @@ export function sandboxedLaunch({platform, state, role, command, env, cwd, readP
 
 Environment names introduced:
 
-- `CUA_SANDBOX_DENY_READ`: JSON array of absolute paths, set by `buildLaunch` for both hosts.
+- `CUA_SANDBOX_DENY_READ`: JSON `{deny, reexpose}` of absolute paths, set by `buildLaunch` for both hosts.
+- `TMPDIR`: now always `run/<sessionId>/tmp` (0700), set by `buildLaunch` for both hosts, never the caller's.
 - `CUA_COMPAT_NODE`: absolute path of the Node the compat executable runs on, set for vendor-host launches.
 
 Pin file `runtime/sandbox/linux-sandbox.json`, as in the Design.
@@ -668,6 +722,12 @@ Dependencies on other work: #79 merged before M2. #117 retires the compat execut
 
 - Decision: verification for this spec and its branch. One independent spec review by `doperpowers:adversarial-reviewer` (the design is technical and security-sensitive), and in the same round a buildability review of the execution section by `doperpowers:adversarial-reviewer` (five milestones). Each milestone PR is reviewed at `doperpowers:reviewer-high` on its whole diff. A final whole-branch `doperpowers:reviewer-high` review covers the M4 PR with the acceptance evidence.
   Rationale: a sandbox replacement fails silently when wrong; every milestone changes what confines model code, so each gets the frontier rung, not only the last.
+  Date/Author: 2026-10-17, design session.
+
+- Decision: spec review round 1 (2026-10-17). Both reviews were adopted in full.
+  - **Design review.** The deny list now covers cua's whole home with `runtimes/`, `node/` and the own run directory re-exposed. It had named only `state/` and other run directories, and so missed the device enrolment in `$CUA_HOME/remote` and the Chrome registration. Real-path targets of symlinked secret tiers are denied. TMPDIR becomes per-session, because the shared macOS TMPDIR let one session's kernel write another session's vendor scripts.
+  - **Buildability review.** The Linux own host keeps the Codex CLI and `sandboxPolicy`/`sandboxArgs` until M3, with a Linux regression gating M1 and M2. `src/sandbox/` is protected from M1. M0 adds the same-host latency comparison, the browser cold-row mode, the GCE device and browser profile for parity, retained Linux vendor controls and the parameterized time-zone probe. Parity and acceptance commands are corrected to the scripts' real interfaces.
+  Rationale: the home-wide deny implements the owner's ruling, that model cells do not read cua's private state, without a list that misses the next private file. Per-session TMPDIR closes a cross-session write the per-profile carve-out cannot.
   Date/Author: 2026-10-17, design session.
 
 ## Outcomes & Retrospective

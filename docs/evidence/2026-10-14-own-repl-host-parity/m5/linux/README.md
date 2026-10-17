@@ -149,9 +149,60 @@ harness or the device changed.
 `load/*.txt`: this Mac's and the VM's `uptime` and `me`'s readiness (key, ready, reason) before and after each item.
 This Mac: 1-minute load 14–102. VM: 0.05–1.7. `me` was `ready:true` at all 18 checks; no `host_not_live`.
 
+## Linux remote endpoint (`remote/`, at `fabfb11`, on the resized VM)
+
+Commands, from this worktree with `CUA_NODE` and `CUA_HOME` unset, `CUA_REPL_HOST=cua` and the `ssh-direct/` shim:
+
+```sh
+node scripts/repl-parity/remote.mjs --experiment m5t6r1 --relay wss://178-104-102-73.sslip.io/ws --out docs/evidence/2026-10-14-own-repl-host-parity/m5/linux/remote --device cua-linux
+# stopped at the two handoffs; after the relay merge and the owner's /secret transfer:
+node bin/cua.mjs devices add repl-m5t6r1-linux --relay https://178-104-102-73.sslip.io --device 92mj0CikRSA_BrFOBRkfMA
+node bin/cua.mjs devices list --json       # credentialStored: true
+node scripts/repl-parity/remote.mjs ... --action start --operator-ready --owner-ready   # stdin: a FIFO held open by a harness-owned writer
+# stdin ops: {"op":"probe","device":"cua-linux"}, then {"op":"stop"}; the controller then exited by itself (2c126f0)
+node bin/cua.mjs devices remove repl-m5t6r1-linux
+node scripts/repl-parity/remote.mjs ... --action cleanup     # owned home removed, phase operator-cleanup
+```
+
+| Field | Value |
+|---|---|
+| Device name | `repl-m5t6r1-linux` |
+| deviceId | `92mj0CikRSA_BrFOBRkfMA` |
+| Relay endpoint | `https://178-104-102-73.sslip.io/d/92mj0CikRSA_BrFOBRkfMA/mcp` |
+| Client key name | `CUA_DEVICE_92mj0CikRSA_BrFOBRkfMA` (stored by the owner through `/secret`; never read or printed here) |
+| Surfaces | `computer,browser` |
+| Home | fresh `cua install` scratch home `~/.local/share/cua-parity-remote/m5t6r1-9Kpv3q` at `fabfb11`, managed Node v24.22.0, release `26.928.40906-linux-arm64`; the 0600 `enroll.json` stayed there until the home was removed |
+
+**Start and attestation** (`remote/endpoints.json`): relay-ready, owned agent PID 41882; the harness's real `initialize`
+returned `cua-repl-host 0.5.0` and a real js result carried `{host:'cua', version:'0.5.0'}`, with the answering home's
+managed Node in its execution facts. A process sample during acceptance showed the production supervisor
+`<home>/node/24.22.0/bin/node --disable-sigusr1 …/src/repl-host/supervisor.mjs` in the endpoint's tree.
+
+**Acceptance through the plugin tools** (this session's cua MCP server):
+
+| Check | Result |
+|---|---|
+| `devices_list`, then `devices_use repl-m5t6r1-linux` | online; switched, the device's Linux host notes and tool text returned |
+| js observe/act/verify, harness-owned gedit (`gedit --standalone /tmp/cua-m5t6-proof/cua-m5t6-proof.txt`) | bound by window id; AX tree read (`at_spi`); `pressKey` ctrl+End, space, o, k; verified the editor text `remote proof line ok`. A first index click on the text view was refused by AT-SPI (`does not implement Action`); the view already had focus |
+| js observe/act/verify, harness page (`http://127.0.0.1:48741/` on the VM) in `me`'s Chrome | `before:"ready"`, click the button, `after:"clicked"` |
+| Switch with the task open | refused with `task_open` |
+| `js_reset` | bindings gone (`app` and `tab` undefined), fresh bootstrap documents emitted |
+| `end_task`, then switch to `local` | `ended`; switched |
+| Kill-client probe (`probe`) | **count exactly 1**, `requestId 3`, disruption after-started (`remote/probe.json`) |
+
+Cleanup: the controller stopped the agent and exited; `devices remove` (the stored key stays for the owner to remove);
+`--action cleanup` removed the owned home; the gedit and page fixtures were ended by their recorded PIDs. Left for the
+operator and the owner: remove relay entry `92mj0CikRSA_BrFOBRkfMA`, and the key `CUA_DEVICE_92mj0CikRSA_BrFOBRkfMA`.
+The VM's resident agent (`~/cua-58 … agent run --relay`) was not touched.
+
+**Memory at 2 vCPU / 4 GB** (`fabfb11/vm-memory-2vcpu.log`, 182 samples every 30 s across vendor-4 and the endpoint):
+MemAvailable minimum 2,571 MB, `oom_kill` 0 throughout; Chrome was never killed.
+
+## Step 8 cleanup (done)
+
+`cleanup-prepared --device cua-linux` for both CLIs: `removed: true` each. On the VM `~/.local/share/cua-parity-remote/`
+and `~/.cp` are empty, no `/tmp/cua-m5t6-*` remains, no harness-owned process runs, and the parity clone is clean.
+
 ## Left in place
 
-- repl-parity: journal `.doperpowers/sde/repl-parity/cua-linux.json`, home `/home/admin/.local/share/cua-parity-remote/parity-mbqFmF` (`fabfb11`).
-- browser-parity: journal `.doperpowers/sde/browser-parity/cua-linux.json`, home `/home/admin/.local/share/cua-parity-remote/parity-bNZR1P` (`fabfb11`).
-- The `b3cb6db` preparations (`parity-PMhCs6`, `parity-EN3voP`) were removed by `cleanup-prepared`.
-- No capability, selection or scratch home remains on the VM (`~/.cp` empty; no `/tmp/cua-m5t6-*`). The selection lane leaves its empty parent `~/.local/share/cua-parity-selection` by design.
+Nothing of this sitting remains on the VM. The selection lane leaves its empty parent `~/.local/share/cua-parity-selection` by design.

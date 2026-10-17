@@ -206,3 +206,17 @@ and `~/.cp` are empty, no `/tmp/cua-m5t6-*` remains, no harness-owned process ru
 ## Left in place
 
 Nothing of this sitting remains on the VM. The selection lane leaves its empty parent `~/.local/share/cua-parity-selection` by design.
+
+## Linux M5 completeness: diffs at `--through M4` (2026-10-16, session ruling)
+
+The fabfb11 runs carry the #141 pending declaration as it was recorded: `through: M4`, pinning the M3 mini proofs. Since 8c23f3d the comparator at HEAD approves Linux pending cells only `through: M5`. It therefore refuses these recordings with `Pending cells are approved only for Linux through M5`, which is correct: it does not relabel a recorded declaration. The session ruled against re-recording an unchanged product tree.
+
+So the diffs below were run with the comparator at fabfb11, the recordings' own head, under the declaration they carry. The command was `node scripts/repl-parity.mjs diff <a> <b> --through M4 [--expected test/repl-parity/expected-differences.json]`, from a detached fabfb11 worktree. On Linux, `--through M4` and `--through M5` select the same 493 cases.
+
+| Pair | ok | Differences | Cases | Cells | File |
+|---|---|---|---|---|---|
+| vendor-1 vs own (`--expected`) | true | 0 | 490 | 1,394 | `fabfb11/diff-through-M4-vendor-1-cua.json` |
+| vendor-4 vs own (`--expected`) | true | 0 | 490 | 1,394 | `fabfb11/diff-through-M4-vendor-4-cua.json` |
+| vendor-1 vs vendor-4 (no expected file) | true | 0 | 490 | 1,394 | `fabfb11/diff-through-M4-vendor-1-vendor-4.json` |
+
+Linux M5 completeness rests on three things together: these diffs over the identical case set, the #141 ruling (spec Decision Log, 2026-10-16), and the mini's M5 proof that both hosts pass the two scroll members (`m5/mini/`). The two Linux scroll members (14 cells) stay pending and are not counted as covered.

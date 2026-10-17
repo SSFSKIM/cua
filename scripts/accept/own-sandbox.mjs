@@ -167,17 +167,30 @@ export async function ownSandboxAcceptance({home, modes = MODES, node, log = () 
       check(`${mode}: no process named codex`, r.codexProcesses === 0);
       rmSync(join(scratch, 'outside-write'), {force: true});
     }
-    // A store created after the session started: the kernel's profile names it (created empty at launch), so a file the
-    // store gains later is denied too.
+    // A store root missing at launch, created mid-session: macOS creates no deny target, so the kernel's profile denies
+    // the missing path itself (its realish path), and seatbelt keeps it denied once it appears. Both with the scratch
+    // HOME's own ~/.config and with a ~/.config that is a symlink (the realish path is then the link's target). The
+    // store is the scratch HOME's (the store's location follows HOME; nothing here touches the account's).
     if (modes.some(m => m !== 'disabled')) {
-      rmSync(store, {recursive: true, force: true});
-      const connection = await connect({home: real, env: env(modes.find(m => m !== 'disabled'))});
-      try {
-        await connection.js('nodeRepl.write(JSON.stringify(1))');
-        const late = sentinelIn(store);
-        const out = await connection.js(`const fs = await import('node:fs'); let r; try { r = {ok: fs.readFileSync(${JSON.stringify(late)}, 'utf8') === ${JSON.stringify(value)}}; } catch (e) { r = {ok: false, code: e.code}; } nodeRepl.write(JSON.stringify(r));`);
-        check('a store created after the session started is denied', !out.ok && DENIED.has(out.code), out.code);
-      } finally { await connection.close(); }
+      const mode = modes.find(m => m !== 'disabled');
+      const linked = join(scratch, 'user-linked');
+      mkdirSync(join(scratch, 'config-real'), {mode: 0o700});
+      mkdirSync(linked, {mode: 0o700});
+      symlinkSync(join(scratch, 'config-real'), join(linked, '.config'));
+      for (const [label, home] of [['', user], [' (through a symlinked ~/.config)', linked]]) {
+        const lateStore = join(home, STORE_RELATIVE);
+        rmSync(lateStore, {recursive: true, force: true});
+        const connection = await connect({home: real, env: {...env(mode), HOME: home}});
+        try {
+          await connection.js('nodeRepl.write(JSON.stringify(1))');
+          check(`a store root missing at launch is not created${label}`, !existsSync(lateStore));
+          const late = sentinelIn(lateStore);
+          const out = await connection.js(`const fs = await import('node:fs'); const r = f => { try { f(); return {ok: true}; } catch (e) { return {ok: false, code: e.code}; } };
+nodeRepl.write(JSON.stringify({file: r(() => fs.readFileSync(${JSON.stringify(late)}, 'utf8')), listing: r(() => fs.readdirSync(${JSON.stringify(lateStore)}))}));`);
+          check(`a store root created mid-session stays denied${label}`, !out.file.ok && DENIED.has(out.file.code), out.file.code);
+          check(`a store root created mid-session cannot be listed${label}`, !out.listing.ok && DENIED.has(out.listing.code), out.listing.code);
+        } finally { await connection.close(); }
+      }
     }
   } finally {
     tcp.close(); unix.close();

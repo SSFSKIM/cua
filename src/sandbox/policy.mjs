@@ -11,9 +11,9 @@
 // disabled: no profile) plus the host's read paths. The kernel adds the deny list: each denied directory as a `none`
 // entry, each re-exposed path as a read entry (where the state also makes one writable, the original's precedence keeps
 // it writable: write beats read at equal depth). The kernel's network is always restricted.
-import {lstatSync, mkdirSync, readdirSync, realpathSync} from 'node:fs';
+import {chmodSync, lstatSync, mkdirSync, readdirSync} from 'node:fs';
 import {homedir} from 'node:os';
-import {isAbsolute, join, relative} from 'node:path';
+import {dirname, isAbsolute, join, relative} from 'node:path';
 import {SandboxStateError, assertDenyListShape, realish, sandboxPolicy} from '../runtime/sandbox.mjs';
 import {fail} from '../runtime/errors.mjs';
 import {homeLayout} from '../runtime/layout.mjs';
@@ -66,6 +66,8 @@ function realOf(path, role, store) {
 //   run/<sessionId> and its session temp re-exposed; on Linux the home's private directories and run/ one by one
 //   (state/, remote/, chrome/, run/), with run/<sessionId> and its session temp re-exposed: there the original does not
 //   re-bind a read entry inside a denied directory (#115 M0c), so runtimes/ and node/ are not denied at all.
+// `tiers`: the deny targets that are tier targets outside the store (their creation rule differs, prepareDenyTargets);
+// every other deny target is one of cua's fixed ones (the store, ~/.config/cua, the cua home or its directories).
 // `metadataOnly`: the denied directories above the re-exposed paths whose metadata the kernel may read so those paths
 // resolve (the seatbelt port's one widening, src/sandbox/seatbelt.mjs header): on macOS exactly the cua home and its
 // run/; none on Linux. The port refuses to grant anything outside it.
@@ -88,48 +90,68 @@ export function denyListFor({home, env, secretsDir, secretsProjectDir, sessionId
   if (isSymlink(projects, ROLE.store, store)) addSecret(realOf(projects, ROLE.projects, store));
   for (const name of tiersIn(projects, store)) if (isSymlink(join(projects, name), ROLE.projects, store)) addSecret(realOf(join(projects, name), ROLE.tier, store));
   if (secretsProjectDir) addSecret(realOf(secretsProjectDir, ROLE.project, store));
+  // The tier targets (projects/'s own target, each symlinked tier's, this connection's project tier): every deny target
+  // added after the store and before ~/.config/cua.
+  const tiers = deny.slice(1);
   const add = path => { if (!deny.includes(path)) deny.push(path); };
   add(join(env.HOME || homedir(), '.config', 'cua'));
   const run = join(layout.run, sessionId);
   if (platform === 'linux') {
     for (const dir of ['state', 'remote', 'chrome', 'run']) add(join(layout.home, dir));
-    return {deny, reexpose: [run, sessionTmp], metadataOnly: []};
+    return {deny, reexpose: [run, sessionTmp], metadataOnly: [], tiers};
   }
   add(layout.home);
-  return {deny, reexpose: [layout.runtimes, layout.node, run, sessionTmp], metadataOnly: [layout.home, layout.run]};
+  return {deny, reexpose: [layout.runtimes, layout.node, run, sessionTmp], metadataOnly: [layout.home, layout.run], tiers};
 }
 
 // `list` with every path at its real location (src/runtime/sandbox.mjs realish: a missing tail is kept as spelled under
 // its nearest existing ancestor's real path), nothing created: what buildLaunch records in CUA_SANDBOX_DENY_READ.
-export const realDenyList = list => ({deny: list.deny.map(realish), reexpose: list.reexpose.map(realish), metadataOnly: list.metadataOnly.map(realish)});
+export const realDenyList = list => ({deny: list.deny.map(realish), reexpose: list.reexpose.map(realish), metadataOnly: list.metadataOnly.map(realish), tiers: list.tiers.map(realish)});
 
-// Creates each deny target that does not exist, as a directory with mode 0700 at its real location (idempotent; an
-// existing target, whatever it is, is left as it is), and returns the list with real paths. A target that cannot be
-// created throws SandboxStateError: the launch is refused. Before any kernel profile is rendered: on Linux a mask is
-// only made for a root that exists, and on macOS a logical path is all the original falls back to.
-export function prepareDenyTargets(list) {
+// The deny list with every target at its real location, ready for the kernel's profile, and each missing target dealt
+// with by platform (an existing target, whatever it is, is left as it is):
+// - macOS: nothing is created. A missing target is denied at its realish path (the missing tail under its nearest
+//   existing ancestor's real path), which seatbelt matches whenever the path appears later, through a symlinked
+//   ~/.config too.
+// - Linux (bubblewrap masks only a path that exists): one of cua's fixed targets (the store, ~/.config/cua, the cua
+//   home's directories) is created 0700, with any missing parents, which must all lie inside `home` (the user's
+//   HOME); an external tier target (`list.tiers`) is created as a leaf only, 0700, when its parent exists.
+// Anything else, or a creation that fails, refuses the launch (sandbox_state_invalid); the sentence names a fixed
+// target's path but never a tier's (a tier's path names a project). Runs before any kernel profile is rendered.
+export function prepareDenyTargets(list, {platform = process.platform, home} = {}) {
   assertDenyListShape(list);
+  const tiers = list.tiers.map(realish);
   const deny = list.deny.map(path => {
     const real = realish(path);
+    if (platform === 'darwin' || exists(real)) return real;
+    const tier = tiers.includes(real);
+    const what = tier ? 'a project tier\'s target outside the secret store' : `the deny target ${real}`;
+    const refuse = why => fail('sandbox_state_invalid', `${what} does not exist and ${why}, so the kernel cannot be denied it; this confined launch is refused`,
+      {hint: 'create that directory yourself (mode 0700), or run the connection with CUA_SHIM_SANDBOX=disabled'});
+    const missing = [];
+    for (let dir = dirname(real); !exists(dir); dir = dirname(dir)) missing.push(dir);
+    if (tier && missing.length) refuse('its parent directory is missing');
+    if (missing.length && !(home && missing.every(dir => within(dir, realish(home)) && dir !== realish(home)))) refuse('a missing parent directory lies outside your HOME');
     try {
-      if (!exists(real)) mkdirSync(real, {recursive: true, mode: 0o700});
-      return realpathSync.native(real);
+      mkdirSync(real, {recursive: true, mode: 0o700});
+      chmodSync(real, 0o700);
     } catch (error) {
-      throw new SandboxStateError(`the deny target ${path} could not be created (${error.code ?? error.message})`);
+      refuse(`could not be created (${error.code ?? 'error'})`);
     }
+    return real;
   });
-  return {deny, reexpose: list.reexpose.map(realish), metadataOnly: list.metadataOnly.map(realish)};
+  return {deny, reexpose: list.reexpose.map(realish), metadataOnly: list.metadataOnly.map(realish), tiers};
 }
 
-// CUA_SANDBOX_DENY_READ's value -> {deny, reexpose, metadataOnly}, or null when it is missing or not that JSON of
+// CUA_SANDBOX_DENY_READ's value -> {deny, reexpose, metadataOnly, tiers}, or null when it is missing or not that JSON of
 // absolute paths.
 export function parseDenyRead(value) {
   if (typeof value !== 'string' || !value) return null;
   let parsed;
   try { parsed = JSON.parse(value); } catch { return null; }
   const paths = list => Array.isArray(list) && list.every(path => typeof path === 'string' && isAbsolute(path));
-  return parsed && typeof parsed === 'object' && paths(parsed.deny) && paths(parsed.reexpose) && paths(parsed.metadataOnly)
-    ? {deny: parsed.deny, reexpose: parsed.reexpose, metadataOnly: parsed.metadataOnly} : null;
+  return parsed && typeof parsed === 'object' && paths(parsed.deny) && paths(parsed.reexpose) && paths(parsed.metadataOnly) && paths(parsed.tiers)
+    ? {deny: parsed.deny, reexpose: parsed.reexpose, metadataOnly: parsed.metadataOnly, tiers: parsed.tiers} : null;
 }
 
 const PROFILE_SPECIALS = {':root': 'root', ':minimal': 'minimal', ':tmpdir': 'tmpdir', ':slash_tmp': 'slash_tmp'};

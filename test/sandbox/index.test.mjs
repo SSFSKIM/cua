@@ -13,7 +13,7 @@ function scratch(t) {
   t.after(() => rmSync(root, {recursive: true, force: true}));
   const cwd = join(root, 'cua', 'run', 's');
   mkdirSync(join(cwd, 'tmp'), {recursive: true});
-  return {root, cwd, denyRead: {deny: [join(root, 'home', 'store'), join(root, 'cua')], reexpose: [cwd, join(cwd, 'tmp')], metadataOnly: [join(root, 'cua'), join(root, 'cua', 'run')]}};
+  return {root, cwd, denyRead: {deny: [join(root, 'home', 'store'), join(root, 'cua')], reexpose: [cwd, join(cwd, 'tmp')], metadataOnly: [join(root, 'cua'), join(root, 'cua', 'run')], tiers: []}};
 }
 const COMMAND = ['/fixture/node', '--experimental-vm-modules', '/fixture/kernel.mjs'];
 
@@ -25,7 +25,7 @@ test('macOS: sandbox-exec runs the command itself under the role\'s profile, wit
   assert.equal(kernel.cwd, cwd, 'the state\'s sandbox cwd');
   assert.deepEqual(kernel.args.slice(kernel.args.indexOf('--') + 1), COMMAND);
   assert.deepEqual(kernel.env, {HOME: env.HOME, TMPDIR: env.TMPDIR, PATH: env.PATH, CODEX_SANDBOX: 'seatbelt', CODEX_SANDBOX_NETWORK_DISABLED: '1'});
-  assert.ok(existsSync(join(root, 'home', 'store')), 'a missing deny target is created before the profile is rendered');
+  assert.equal(existsSync(join(root, 'home', 'store')), false, 'macOS creates no deny target: a missing one is denied at its path');
   assert.deepEqual(kernel.args.filter(a => a.startsWith('-DREADABLE_ROOT_3')), ['-DREADABLE_ROOT_3=/', `-DREADABLE_ROOT_3_EXCLUDED_0=${join(root, 'cua')}`,
     `-DREADABLE_ROOT_3_EXCLUDED_1=${join(root, 'home', 'store')}`], 'the kernel\'s profile excludes the deny list from /');
   assert.deepEqual(kernel.args.filter(a => a.startsWith('-DWRITABLE_ROOT_') && !a.includes('EXCLUDED')), [`-DWRITABLE_ROOT_0=${join(cwd, 'tmp')}`, `-DWRITABLE_ROOT_1=${cwd}`],

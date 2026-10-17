@@ -11,11 +11,11 @@ import {sandboxedEnv} from './env.mjs';
 // -> {command, args, env, cwd}. `state`: the call's sandbox state (undefined: the default mode); `role`: 'kernel' |
 // 'worker'; `command`: [file, ...args]; `env`: the child's environment before the sandbox's own rule; `cwd`: where it
 // runs when the state names no sandbox cwd; `denyRead`: the launch's deny list (CUA_SANDBOX_DENY_READ), whose missing
-// targets are created before the kernel's profile is rendered; `network`: the worker's. Disabled runs the command as
+// targets are dealt with by platform before the kernel's profile is rendered (policy.mjs prepareDenyTargets); `network`: the worker's. Disabled runs the command as
 // it is. Throws SandboxStateError (a state or deny target that cannot be rendered) or CuaError (no renderer here).
 export function sandboxedLaunch({platform, state, role, command, env, cwd, readPaths, denyRead, network = 'restricted', fs}) {
   if (stateKey({state, readPaths}) === 'disabled') return {command: command[0], args: command.slice(1), env: {...env}, cwd};
-  const prepared = role === 'kernel' && denyRead ? prepareDenyTargets(denyRead) : denyRead;
+  const prepared = role === 'kernel' && denyRead ? prepareDenyTargets(denyRead, {platform, home: env.HOME}) : denyRead;
   const rendered = roleProfile({state, role, readPaths, denyRead: prepared, network});
   const launchCwd = rendered.cwd ?? cwd;
   if (platform !== 'darwin') fail('sandbox_unavailable', `cua renders its own sandbox on macOS only until #115 M3; ${platform} launches through the Codex CLI`);

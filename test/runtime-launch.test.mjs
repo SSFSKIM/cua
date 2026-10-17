@@ -51,7 +51,7 @@ test('the launch runs the relocated vendor node on the relocated cua-repl entry,
 
 // The deny list buildLaunch resolves for AMBIENT's HOME and `home` (src/sandbox/policy.mjs denyListFor), on macOS.
 const darwinDenyList = (home, session = SESSION) => ({deny: [join('/Users/someone', STORE_RELATIVE), '/Users/someone/.config/cua', home],
-  reexpose: [join(home, 'runtimes'), join(home, 'node'), join(home, 'run', session), join(home, 'run', session, 'tmp')], metadataOnly: [home, join(home, 'run')]});
+  reexpose: [join(home, 'runtimes'), join(home, 'node'), join(home, 'run', session), join(home, 'run', session, 'tmp')], metadataOnly: [home, join(home, 'run')], tiers: []});
 
 test('the launch environment is an allowlist: OS basics plus relocated settings, nothing ambient that could redirect it', t => {
   const {home, runtime} = fixtureRuntime(t);

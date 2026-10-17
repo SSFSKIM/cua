@@ -6,7 +6,7 @@
 // that metadata is all the grant gives.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {execFileSync} from 'node:child_process';
+import {execFileSync, spawn} from 'node:child_process';
 import {existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -59,7 +59,7 @@ test('the macOS layout grants exactly the cua home and its run/, as metadata lit
 
 test('no grant when no re-exposed path sits under a denied directory', t => {
   const l = layout(t);
-  for (const denyRead of [{deny: [l.store, l.configCua], reexpose: [], metadataOnly: []}, {deny: [l.store, l.configCua], reexpose: [l.modules], metadataOnly: []}, {deny: [l.store], reexpose: [l.cwd, l.sessionTmp], metadataOnly: []}]) {
+  for (const denyRead of [{deny: [l.store, l.configCua], reexpose: [], metadataOnly: [], tiers: []}, {deny: [l.store, l.configCua], reexpose: [l.modules], metadataOnly: [], tiers: []}, {deny: [l.store], reexpose: [l.cwd, l.sessionTmp], metadataOnly: [], tiers: []}]) {
     const {args} = launchFor({...l, denyRead});
     assert.deepEqual(grants(args), [], JSON.stringify(denyRead));
     assert.doesNotMatch(args[1], /file-read-metadata \(literal \(param "REEXPOSED/);
@@ -72,7 +72,7 @@ test('a cua home reached through a symlink is granted at its real path, never at
   symlinkSync(l.home, link);
   // The deny list as spelled through the link (not canonicalized by the caller): the port resolves it itself.
   const via = path => path.replace(l.home, link);
-  const denyRead = {deny: [l.store, l.configCua, link], reexpose: [via(join(l.home, 'runtimes')), via(join(l.home, 'node')), via(l.cwd), via(l.sessionTmp)], metadataOnly: [link, via(join(l.home, 'run'))]};
+  const denyRead = {deny: [l.store, l.configCua, link], reexpose: [via(join(l.home, 'runtimes')), via(join(l.home, 'node')), via(l.cwd), via(l.sessionTmp)], metadataOnly: [link, via(join(l.home, 'run'))], tiers: []};
   const {args} = launchFor({...l, denyRead});
   assert.deepEqual(grants(args), [l.home, join(l.home, 'run')]);
   assert.equal(args.some(a => a.includes(link)), false, 'nothing is rendered at the link\'s spelling');
@@ -122,5 +122,35 @@ test('an overlapping layout refuses the kernel launch before rendering, so the s
     const denyRead = realDenyList(denyListFor({...input, sessionId: SESSION, sessionTmp, platform: 'darwin'}));
     for (const mode of ['scoped', 'default'])
       assert.throws(() => launchFor({...l, mode, cwd, sessionTmp, denyRead}), {code: 'sandbox_conflict'}, `${label} (${mode})`);
+  }
+});
+
+// macOS creates no deny target (the dispatching session's ruling, #115 M1): a store missing at launch is denied at its
+// realish path, and seatbelt keeps denying it once it appears mid-session, through a symlinked ~/.config too.
+test('on a Mac, a store root missing at launch and created mid-session stays denied, through a symlinked ~/.config too', {skip: (process.platform !== 'darwin' || !existsSync(SANDBOX_EXEC)) && 'needs macOS sandbox-exec'}, async t => {
+  const l = layout(t);
+  for (const symlinked of [false, true]) {
+    const user = join(l.root, symlinked ? 'user-linked' : 'user-plain');
+    if (symlinked) { mkdirSync(join(l.root, 'config-real')); mkdirSync(user); symlinkSync(join(l.root, 'config-real'), join(user, '.config')); }
+    else mkdirSync(join(user, '.config'), {recursive: true});
+    const store = join(user, STORE_RELATIVE);
+    const denyRead = realDenyList(denyListFor({home: l.home, env: {HOME: user}, sessionId: SESSION, sessionTmp: l.sessionTmp, platform: 'darwin'}));
+    const signal = join(l.sessionTmp, `go-${symlinked}`);
+    const probe = 'until [ -e "$2" ]; do sleep 0.05; done; for p in "$1" "$1/KEY" "$3"; do stat "$p" >/dev/null 2>&1 && m=allow || m=deny; '
+      + 'if [ -d "$p" ]; then ls "$p" >/dev/null 2>&1 && d=allow || d=deny; else cat "$p" >/dev/null 2>&1 && d=allow || d=deny; fi; echo "$m $d"; done';
+    const launch = launchFor({...l, user, denyRead, command: ['/bin/sh', '-c', probe, 'probe', store, signal, join(user, 'control')]});
+    assert.equal(existsSync(store), false, 'missing at launch');
+    const child = spawn(launch.command, launch.args, {env: launch.env, cwd: launch.cwd});
+    let out = '';
+    child.stdout.on('data', chunk => { out += chunk; });
+    const done = new Promise(resolve => child.on('exit', resolve));
+    await new Promise(r => setTimeout(r, 300));
+    mkdirSync(store, {mode: 0o700});
+    writeFileSync(join(store, 'KEY'), 'synthetic\n', {mode: 0o600});
+    mkdirSync(join(user, 'control'));   // the control: a directory beside it, made at the same moment, which nothing denies
+    writeFileSync(signal, '');
+    await done;
+    assert.equal(existsSync(join(store, 'KEY')), true, 'the store exists by the time the kernel looks');
+    assert.equal(out.trim(), 'deny deny\ndeny deny\nallow allow', `${symlinked ? 'symlinked' : 'plain'} ~/.config: the late store and its key stay denied`);
   }
 });

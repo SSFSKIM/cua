@@ -20,7 +20,7 @@ const special = kind => ({type: 'special', value: {kind}});
 const path = p => ({type: 'path', path: p});
 const CWD = '/cua/run/s';
 const READS = ['/cua/node/24/bin', '/checkout/src/repl-host'];
-const DENY = {deny: ['/home/.config/claude-secrets', '/home/.config/cua', '/cua'], reexpose: ['/cua/runtimes', '/cua/node', CWD, `${CWD}/tmp`], metadataOnly: ['/cua', '/cua/run']};
+const DENY = {deny: ['/home/.config/claude-secrets', '/home/.config/cua', '/cua'], reexpose: ['/cua/runtimes', '/cua/node', CWD, `${CWD}/tmp`], metadataOnly: ['/cua', '/cua/run'], tiers: []};
 
 test('the roles', () => assert.deepEqual(ROLES, ['kernel', 'worker']));
 
@@ -80,7 +80,7 @@ test('secrets off: the default store is denied (it exists whatever this connecti
   const l = layout(t);
   const list = denyListFor({home: l.cua, env: {HOME: l.home}, sessionId: 's', sessionTmp: l.sessionTmp, platform: 'darwin'});
   assert.deepEqual(list, {deny: [l.store, join(l.home, '.config', 'cua'), l.cua],
-    reexpose: [join(l.cua, 'runtimes'), join(l.cua, 'node'), join(l.cua, 'run', 's'), l.sessionTmp], metadataOnly: [l.cua, join(l.cua, 'run')]});
+    reexpose: [join(l.cua, 'runtimes'), join(l.cua, 'node'), join(l.cua, 'run', 's'), l.sessionTmp], metadataOnly: [l.cua, join(l.cua, 'run')], tiers: []});
 });
 
 test('secrets on: the connection\'s store, the real target of every symlinked tier (and of projects/ itself), and a project tier outside the store', t => {
@@ -104,37 +104,75 @@ test('Linux: the home\'s private directories and run/ one by one (M0\'s nesting 
   const l = layout(t);
   const list = denyListFor({home: l.cua, env: {HOME: l.home}, sessionId: 's', sessionTmp: l.sessionTmp, platform: 'linux'});
   assert.deepEqual(list, {deny: [l.store, join(l.home, '.config', 'cua'), ...['state', 'remote', 'chrome', 'run'].map(d => join(l.cua, d))],
-    reexpose: [join(l.cua, 'run', 's'), l.sessionTmp], metadataOnly: []});
+    reexpose: [join(l.cua, 'run', 's'), l.sessionTmp], metadataOnly: [], tiers: []});
 });
 
-test('deny targets: each missing one is created 0700 at its real location, an existing one left as it is, and the real paths returned', t => {
+// Deny targets at launch (the dispatching session's ruling, #115 M1): macOS creates nothing; Linux creates cua's fixed
+// targets inside HOME and a tier's target as a leaf only.
+test('macOS: no deny target is created; a missing one is denied at its realish path, through a symlinked parent too', t => {
   const l = layout(t);
+  mkdirSync(join(l.elsewhere, 'config'));
   symlinkSync(join(l.elsewhere, 'config'), join(l.root, 'config-link'));
   const existing = join(l.root, 'existing-file');
   writeFileSync(existing, '');
-  const list = {deny: [join(l.home, '.config', 'cua'), join(l.root, 'config-link'), existing], reexpose: [join(l.cua, 'runtimes'), l.sessionTmp], metadataOnly: []};
-  const prepared = prepareDenyTargets(list);
-  assert.deepEqual(prepared, {deny: [join(l.home, '.config', 'cua'), join(l.elsewhere, 'config'), existing], reexpose: list.reexpose, metadataOnly: []});
-  for (const dir of [join(l.home, '.config', 'cua'), join(l.elsewhere, 'config')]) {
-    assert.ok(statSync(dir).isDirectory());
-    assert.equal(statSync(dir).mode & 0o777, 0o700, dir);
-  }
-  assert.ok(lstatSync(existing).isFile(), 'an existing target is never replaced');
-  assert.deepEqual(prepareDenyTargets(list), prepared, 'idempotent');
+  const list = {deny: [join(l.home, '.config', 'cua'), join(l.root, 'config-link', 'claude-store'), existing], reexpose: [join(l.cua, 'runtimes'), l.sessionTmp], metadataOnly: [], tiers: []};
+  const prepared = prepareDenyTargets(list, {platform: 'darwin', home: l.home});
+  assert.deepEqual(prepared, {deny: [join(l.home, '.config', 'cua'), join(l.elsewhere, 'config', 'claude-store'), existing], reexpose: list.reexpose, metadataOnly: [], tiers: []});
+  for (const missing of [join(l.home, '.config', 'cua'), join(l.elsewhere, 'config', 'claude-store')]) assert.equal(existsSync(missing), false, `${missing} is not created`);
+  assert.ok(lstatSync(existing).isFile(), 'an existing target is left as it is');
 });
 
-test('a deny target that cannot be created refuses the launch', t => {
+test('Linux: cua\'s fixed targets are created 0700 with their missing parents inside HOME; an existing one is left as it is', t => {
   const l = layout(t);
-  const locked = join(l.root, 'locked');
+  const existing = join(l.root, 'existing-file');
+  writeFileSync(existing, '');
+  const fixed = [join(l.home, '.config', 'cua'), join(l.home, '.local', 'share', 'cua', 'state'), join(l.cua, 'remote')];
+  const list = {deny: [...fixed, existing], reexpose: [], metadataOnly: [], tiers: []};
+  const prepared = prepareDenyTargets(list, {platform: 'linux', home: l.home});
+  assert.deepEqual(prepared.deny, [...fixed, existing]);
+  for (const dir of fixed) assert.equal(statSync(dir).mode & 0o777, 0o700, dir);
+  assert.ok(lstatSync(existing).isFile());
+  assert.deepEqual(prepareDenyTargets(list, {platform: 'linux', home: l.home}), prepared, 'idempotent');
+});
+
+test('Linux: a fixed target whose missing parent lies outside HOME, or that cannot be created, refuses', t => {
+  const l = layout(t);
+  const outside = join(l.root, 'not-home', 'deep', 'store');
+  assert.throws(() => prepareDenyTargets({deny: [outside], reexpose: [], metadataOnly: [], tiers: []}, {platform: 'linux', home: l.home}),
+    error => error.code === 'sandbox_state_invalid' && error.message.includes(outside) && /outside your HOME/.test(error.message));
+  assert.equal(existsSync(join(l.root, 'not-home')), false, 'nothing created');
+  // A leaf whose parent exists outside HOME is created: no parent is missing.
+  prepareDenyTargets({deny: [join(l.root, 'leaf-outside')], reexpose: [], metadataOnly: [], tiers: []}, {platform: 'linux', home: l.home});
+  assert.equal(statSync(join(l.root, 'leaf-outside')).mode & 0o777, 0o700);
+  const locked = join(l.home, 'locked');
   mkdirSync(locked, {mode: 0o500});
-  assert.throws(() => prepareDenyTargets({deny: [join(locked, 'store')], reexpose: [], metadataOnly: []}),
-    error => error instanceof SandboxStateError && error.message.includes(join(locked, 'store')) && /could not be created/.test(error.message));
+  try {
+    assert.throws(() => prepareDenyTargets({deny: [join(locked, 'store')], reexpose: [], metadataOnly: [], tiers: []}, {platform: 'linux', home: l.home}),
+      error => error.code === 'sandbox_state_invalid' && /could not be created \(EACCES\)/.test(error.message));
+  } finally { chmodSync(locked, 0o700); }
+});
+
+test('Linux: an external tier\'s target is created as a leaf only when its parent exists, else refused without naming it', t => {
+  const l = layout(t);
+  const leaf = join(l.elsewhere, 'tiername-acme');
+  prepareDenyTargets({deny: [l.store, leaf], reexpose: [], metadataOnly: [], tiers: [leaf]}, {platform: 'linux', home: l.home});
+  assert.equal(statSync(leaf).mode & 0o777, 0o700);
+  const orphan = join(l.elsewhere, 'gone', 'tiername-acme-deep');
+  let error;
+  try { prepareDenyTargets({deny: [l.store, orphan], reexpose: [], metadataOnly: [], tiers: [orphan]}, {platform: 'linux', home: l.home}); } catch (caught) { error = caught; }
+  assert.equal(error?.code, 'sandbox_state_invalid');
+  assert.match(error.message, /^a project tier's target outside the secret store does not exist and its parent directory is missing/);
+  assert.equal(/tiername|acme/.test(`${error.message} ${error.hint}`), false, 'no tier name');
+  assert.equal(existsSync(join(l.elsewhere, 'gone')), false);
+  // Inside HOME too: a tier never gets parents.
+  const inHome = join(l.home, 'projects-elsewhere', 'tier');
+  assert.throws(() => prepareDenyTargets({deny: [l.store, inHome], reexpose: [], metadataOnly: [], tiers: [inHome]}, {platform: 'linux', home: l.home}), {code: 'sandbox_state_invalid'});
 });
 
 test('CUA_SANDBOX_DENY_READ: only the well-formed JSON of absolute paths is accepted', () => {
   assert.deepEqual(parseDenyRead(JSON.stringify(DENY)), DENY);
-  for (const value of [undefined, '', 'nope', '[]', '{"deny":[]}', '{"deny":["relative"],"reexpose":[],"metadataOnly":[]}', '{"deny":[1],"reexpose":[],"metadataOnly":[]}', '{"deny":[],"reexpose":"/x","metadataOnly":[]}',
-    '{"deny":[],"reexpose":[]}', '{"deny":[],"reexpose":[],"metadataOnly":["relative"]}'])
+  for (const value of [undefined, '', 'nope', '[]', '{"deny":[]}', '{"deny":["relative"],"reexpose":[],"metadataOnly":[],"tiers":[]}', '{"deny":[1],"reexpose":[],"metadataOnly":[],"tiers":[]}', '{"deny":[],"reexpose":"/x","metadataOnly":[],"tiers":[]}',
+    '{"deny":[],"reexpose":[]}', '{"deny":[],"reexpose":[],"metadataOnly":["relative"]}', '{"deny":[],"reexpose":[],"metadataOnly":[]}', '{"deny":[],"reexpose":[],"metadataOnly":[],"tiers":["relative"]}'])
     assert.equal(parseDenyRead(value), null, String(value));
 });
 
@@ -171,15 +209,17 @@ test('a store or projects/ whose tiers cannot be established refuses, whatever i
   assert.deepEqual(list({secretsDir: join(l.root, 'no-store')}).deny, [join(l.root, 'no-store'), join(l.home, '.config', 'cua'), l.cua]);
 });
 
-test('a dangling symlinked tier proceeds: its absent target is denied by path and created (0700) before the kernel starts', t => {
+test('a dangling symlinked tier proceeds: its absent target is a tier deny target, created on Linux, not on macOS', t => {
   const l = layout(t);
   const target = join(l.elsewhere, 'not-there-yet');
   symlinkSync(target, join(l.store, 'projects', '-dangling'));
   const list = denyListFor({home: l.cua, env: {HOME: l.home}, sessionId: 's', sessionTmp: l.sessionTmp, platform: 'darwin'});
   assert.deepEqual(list.deny, [l.store, target, join(l.home, '.config', 'cua'), l.cua]);
-  assert.equal(existsSync(target), false, 'nothing is created while the list is computed');
-  prepareDenyTargets(list);
-  assert.equal(statSync(target).mode & 0o777, 0o700, 'created with the other missing deny targets at launch');
+  assert.deepEqual(list.tiers, [target]);
+  prepareDenyTargets(list, {platform: 'darwin', home: l.home});
+  assert.equal(existsSync(target), false, 'macOS: denied at its path, not created');
+  prepareDenyTargets(list, {platform: 'linux', home: l.home});
+  assert.equal(statSync(target).mode & 0o777, 0o700, 'Linux: created as a leaf, its parent existing');
 });
 
 test('the refusal names the directory\'s role and the store, never a tier or key name', {skip: asRoot && 'root lists any directory'}, t => {

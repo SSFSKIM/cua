@@ -56,7 +56,7 @@ test('cells persist in one kernel launched lazily under cua\'s sandbox: sandbox-
   for (const path of [dirname(node), dirname(KERNEL), ...CUA_API_READ_PATHS].map(p => realpathSync(p))) assert.ok(readable.includes(path), `${path} is readable`);
   assert.ok(params.some(p => /^-DREADABLE_ROOT_\d+_EXCLUDED_0=/.test(p) && p.endsWith(`=${host.denied}`)), 'the kernel is denied the launch\'s deny list');
   assert.deepEqual(params.filter(p => /^-DWRITABLE_ROOT_\d+=/.test(p)), [`-DWRITABLE_ROOT_0=${host.tmp}`, `-DWRITABLE_ROOT_1=${host.cwd}`], 'its TMPDIR and run directory are writable');
-  assert.ok(existsSync(host.denied), 'the missing deny target was created before the profile was rendered');
+  assert.equal(existsSync(host.denied), false, 'macOS creates no deny target: the missing one is denied at its path');
 });
 
 test('on the Codex CLI\'s route (Linux until #115 M3) the kernel launches under the recovered `codex sandbox` argv', own, async t => {
@@ -189,7 +189,7 @@ test('cua\'s sandbox splits the roles: the kernel is denied the deny list, the t
   assert.ok(!kernel.argv.includes('(allow file-read*)'), 'the kernel lists what it reads');
 });
 
-test('cua\'s sandbox fails closed: no deny list, a deny target that cannot be created, a state it cannot render; disabled still runs', own, async t => {
+test('cua\'s sandbox fails closed: no deny list, overlapping deny targets, a state it cannot render; disabled still runs', own, async t => {
   const refused = async (host, mode, why) => {
     const marker = join(host.tmp, `must-not-run-${mode}`);
     const result = await host.js(`(await import('node:fs')).writeFileSync(${JSON.stringify(marker)},'executed');`, {mode});
@@ -198,7 +198,7 @@ test('cua\'s sandbox fails closed: no deny list, a deny target that cannot be cr
     assert.match(texts(result)[0], /JavaScript never runs unconfined in its place, and nothing was run$/);
     assert.equal(existsSync(marker), false, `${mode}: nothing ran`);
   };
-  for (const value of [undefined, '{"deny":["relative"],"reexpose":[],"metadataOnly":[]}']) {
+  for (const value of [undefined, '{"deny":["relative"],"reexpose":[],"metadataOnly":[],"tiers":[]}']) {
     const host = await startHost(t, {node, env: {CUA_SANDBOX_DENY_READ: value}});
     for (const mode of ['scoped', 'default']) await refused(host, mode, /^js sandbox unavailable: the launch's deny list \(CUA_SANDBOX_DENY_READ\) is missing or malformed \(sandbox_state_invalid\)/);
     assert.deepEqual(launches(host.codexHome), [], 'nothing was launched');
@@ -206,12 +206,12 @@ test('cua\'s sandbox fails closed: no deny list, a deny target that cannot be cr
     // A host that ran disabled is not confined by a later call without its list: that call is refused too.
     await refused(host, 'scoped', /^js sandbox unavailable: the launch's deny list \(CUA_SANDBOX_DENY_READ\) is missing or malformed \(sandbox_state_invalid\)/);
   }
+  // A deny list whose targets overlap is refused before the kernel's profile is rendered (macOS creates no deny target,
+  // so a missing one is no refusal there; Linux's creation rule is policy.test's).
   const blocked = await startHost(t, {node});
-  const locked = join(blocked.root, 'locked');
-  mkdirSync(locked, {mode: 0o500});
-  const denyIn = JSON.stringify({deny: [join(locked, 'store')], reexpose: [], metadataOnly: []});
-  const uncreatable = await startHost(t, {node, env: {CUA_SANDBOX_DENY_READ: denyIn}});
-  await refused(uncreatable, 'scoped', /^js sandbox unavailable: the deny target .*locked\/store could not be created \(EACCES\)/);
+  const nested = JSON.stringify({deny: [join(blocked.root, 'store'), join(blocked.root, 'store', 'inner')], reexpose: [], metadataOnly: [], tiers: []});
+  const overlapping = await startHost(t, {node, env: {CUA_SANDBOX_DENY_READ: nested}});
+  await refused(overlapping, 'scoped', /^js sandbox unavailable: what JavaScript cells may not read overlaps: /);
   const host = await startHost(t, {node});
   symlinkSync(host.cwd, join(host.root, 'run-link'));
   const linked = join(host.root, 'run-link');

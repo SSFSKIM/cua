@@ -146,7 +146,7 @@ test('the kernel profile denies by the deny list\'s paths as given (buildLaunch 
 
 // Discovery fails closed (review finding, M1): only an absent path means "nothing to deny there".
 const asRoot = typeof process.getuid === 'function' && process.getuid() === 0;
-test('a projects/ the account cannot list refuses the launch rather than miss a symlinked tier; an absent one proceeds', {skip: asRoot && 'root lists any directory'}, t => {
+test('a searchable projects/ the account cannot list (0111) refuses rather than miss a symlinked tier; an unsearchable store or projects/ (0000) and an absent one proceed, the store denied', {skip: asRoot && 'root lists any directory'}, t => {
   const l = layout(t);
   const tier = join(l.elsewhere, 'tier');
   symlinkSync(tier, join(l.store, 'projects', '-linked-project'));
@@ -154,8 +154,12 @@ test('a projects/ the account cannot list refuses the launch rather than miss a 
   const withMode = (path, mode, check) => { chmodSync(path, mode); try { check(); } finally { chmodSync(path, 0o700); } };
   withMode(join(l.store, 'projects'), 0o111, () => assert.throws(() => denyListFor({home: l.cua, env: {HOME: l.home}, sessionId: 's', sessionTmp: l.sessionTmp, platform: 'darwin'}),
     error => error.code === 'sandbox_state_invalid' && error.message.includes(join(l.store, 'projects')) && /EACCES/.test(error.message)));
-  // A store the account cannot search: projects/ itself cannot be inspected.
-  withMode(l.store, 0o600, () => assert.throws(() => denyListFor({home: l.cua, env: {HOME: l.home}, sessionId: 's', sessionTmp: l.sessionTmp, platform: 'linux'}), {code: 'sandbox_state_invalid'}));
+  // A store or projects/ this uid cannot search (0000, 0600): nothing under it resolves by path for this uid, so the
+  // launch proceeds with the store itself denied (probe-secrets then meets secret_unreadable at use).
+  const expected = platform => (platform === 'darwin' ? [l.store, join(l.home, '.config', 'cua'), l.cua] : [l.store, join(l.home, '.config', 'cua'), ...['state', 'remote', 'chrome', 'run'].map(d => join(l.cua, d))]);
+  for (const [dir, mode] of [[l.store, 0o000], [l.store, 0o600], [join(l.store, 'projects'), 0o000], [join(l.store, 'projects'), 0o444]])
+    for (const platform of ['darwin', 'linux'])
+      withMode(dir, mode, () => assert.deepEqual(denyListFor({home: l.cua, env: {HOME: l.home}, sessionId: 's', sessionTmp: l.sessionTmp, platform}).deny, expected(platform), `${dir} ${mode.toString(8)} ${platform}`));
   // Absent: no store, or a store without projects/, has no tiers to deny.
   rmSync(join(l.store, 'projects'), {recursive: true});
   assert.deepEqual(denyListFor({home: l.cua, env: {HOME: l.home}, sessionId: 's', sessionTmp: l.sessionTmp, platform: 'darwin'}).deny, [l.store, join(l.home, '.config', 'cua'), l.cua]);

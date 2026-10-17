@@ -5,9 +5,9 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync} from 'node:fs';
-import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {execFileSync} from 'node:child_process';
 import {SandboxStateError} from '../../src/runtime/sandbox.mjs';
 import {SEATBELT_EXEC, seatbeltCommand} from '../../src/sandbox/seatbelt.mjs';
 import {sandboxedEnv} from '../../src/sandbox/env.mjs';
@@ -72,9 +72,15 @@ test('every golden fixture: the port renders the original\'s argv byte for byte,
   }
 });
 
+// The fixtures were rendered under the account's own temp directory (/private/var/folders/.../T, @VAR_ROOT@), whose
+// path holds no regex metacharacter. The replay roots there, whatever TMPDIR this process was given: a TMPDIR outside
+// /private/var or with a '-' in its path (a prepared run's ~/.local/share/cua-native-baseline/run-XXXX/tmp) is no
+// fixture root.
+const darwinUserTemp = () => realpathSync(execFileSync('/usr/bin/getconf', ['DARWIN_USER_TEMP_DIR'], {encoding: 'utf8'}).trim());
 test('on a Mac, every golden fixture replays on the real filesystem too', {skip: process.platform !== 'darwin' && 'the fixtures assume macOS\'s /tmp and /var aliases'}, () => {
+  const parent = darwinUserTemp();
   for (const fixture of FIXTURES) {
-    const root = realpathSync(mkdtempSync(join(realpathSync(tmpdir()), 'sg')));
+    const root = realpathSync(mkdtempSync(join(parent, 'sg')));
     try {
       assertFixtureRoot(root);
       materialize(fixture.setup, {root});

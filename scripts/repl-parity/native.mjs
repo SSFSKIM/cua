@@ -1,8 +1,10 @@
 import {randomUUID} from 'node:crypto';
 import {remoteCommand,quote,linuxSession,ownNodeEnv,preparedHomeEnv} from './topology.mjs';
 import {runRawScenario} from './runner.mjs';
+import {declaredDevice} from './devices.mjs';
+// The native lane runs on the declared Linux device it was prepared on (cua-gce, or the paused cua-linux VM).
 export function nativeCommand({device,checkout,home,host,fixtureMode='blank',...facts}){
- if(device!=='cua-linux'||facts.platform!=='linux'||!['vendor','cua'].includes(host))throw Error('Native parity requires prepared cua-linux');
+ if(declaredDevice(device).platform!=='linux'||facts.platform!=='linux'||!['vendor','cua'].includes(host))throw Error('Native parity requires a prepared declared Linux device');
  if(!['blank','drag','scroll'].includes(fixtureMode))throw Error('Unknown native fixture mode');
  const expectedFacts={device,checkout,home,...facts},nativeFilename=`cua-m4-${randomUUID()}.txt`;
  return {expectedFacts,nativeFilename,closeTimeoutMs:20000,...remoteCommand(device,`${linuxSession}\ncd ${quote(checkout)} && exec env ${ownNodeEnv(facts)}${preparedHomeEnv(facts)}CUA_PARITY_EXPECTED=${quote(JSON.stringify(expectedFacts))} CUA_PARITY_REMOTE=1 CUA_PARITY_NATIVE_FILENAME=${quote(nativeFilename)} CUA_PARITY_NATIVE_MODE=${quote(fixtureMode)} CUA_HOME=${quote(home)} CUA_REPL_HOST=${quote(host)} node test/repl-parity/serve-native.mjs`)};

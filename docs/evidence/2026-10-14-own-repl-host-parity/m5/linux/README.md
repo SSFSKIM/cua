@@ -7,14 +7,16 @@ started or stopped.
 
 **Status (resumed at `fabfb11`, 2026-10-16/17):** the archive-cache fix (fabfb11) and the confirmed Linux over-limit
 oracle (1c2f41e) landed, the preparations were redone at `fabfb11`, and the sandwich's first two runs are recorded:
-vendor `fabfb11/all-vendor-1` and own `fabfb11/all-cua`, **0 differences** (below). The trailing vendor control is still
-owed: one attempt failed a vendor assertion and one aborted on a fixture bound under this Mac's load (both kept as
-diagnostics). The sitting paused there for the VM's resize. Steps 3–7 (services, runners, lifeline, native-pipe tests,
+vendor `fabfb11/all-vendor-1`, own `fabfb11/all-cua` and, after the VM's resize, the trailing vendor control
+`fabfb11/all-vendor-4`: **0 unexpected differences on both sides of the own run, and 0 differences between the vendor
+controls** (below). Two earlier trailing attempts are kept as diagnostics. Steps 3–7 (services, runners, lifeline, native-pipe tests,
 selection, doctor) stand as recorded at `b3cb6db`, with the same product code `e24a1cd`; the first part of this README
 describes them.
 
 **VM size.** Everything up to this pause ran on cua-linux at **4 vCPU / 8 GB**. The owner directed a resize to
-**2 vCPU / 4 GB** (restart by the session) before the trailing vendor control, the remote endpoint and cleanup.
+**2 vCPU / 4 GB** (3,896 MB; restart by the session) before the trailing vendor control, the remote endpoint and cleanup.
+`all-vendor-4` ran at that size: 72 min against 44 min at 4 vCPU; MemAvailable never fell below 2,571 MB, sampled every
+30 s on the VM, and `/proc/vmstat` `oom_kill` stayed 0.
 
 ## The sandwich at `fabfb11` (`fabfb11/`)
 
@@ -34,7 +36,9 @@ through M4 (`test/repl-parity/pending-environment.json`); on Linux the M4 and M5
 | `all-vendor-1` | 22:07–22:51 | 493 cases complete, 490 covered; the #135 vendor defect recorded; 91 connections `rmcp 1.5.0`, no `cua/replHost` |
 | `all-cua` | 22:51–23:36 | 493 complete, assertions PASS, 491 covered; 91 connections `cua-repl-host 0.5.0` with the result marker, every one answering on its fresh capability home's managed Node v24.22.0 |
 | `diff-vendor-1-cua.json` | | **`ok: true`, 0 differences**, 490 cases, 1,394 cells; 1,362 expected = 1,361 identity slots + the #135 security departure; the 14 #141 pending cells blocked on both sides, 0 unexpected passes; 0 provisional cells (`connect-over-limit` now counts, identical on both hosts) |
-| trailing vendor control | | **owed** |
+| `all-vendor-4` (2 vCPU / 4 GB) | 01:42–02:54 (10-17) | 493 complete, 490 covered, the #135 defect recorded; 91 connections `rmcp 1.5.0` |
+| `diff-vendor-4-cua.json` | | **`ok: true`, 0 differences**, 490 cases, 1,394 cells, the same 1,362 expected entries, 14 #141 cells blocked on both sides |
+| `diff-vendor-1-vendor-4.json` | | vendor determinism, no expected file: **`ok: true`, 0 differences**, 490 cases, 1,394 cells |
 
 Diagnostics (`fabfb11/diagnostics/`, not evidence):
 - `all-vendor-2-browser-tab-back/` (23:36–00:26): complete, but the vendor failed its own assertion in
@@ -71,7 +75,7 @@ Both are fresh `cua install` scratch homes with the managed Node (`nodeMode: man
 
 | Step | Item | Verdict |
 |---|---|---|
-| 2 | `--suite all` vendor/own/vendor | at `b3cb6db` held by the bound below; recorded at `fabfb11` ("The sandwich at `fabfb11`" above): vendor-1 vs own 0 differences, trailing vendor control owed |
+| 2 | `--suite all` vendor/own/vendor | at `b3cb6db` held by the bound below; recorded at `fabfb11` ("The sandwich at `fabfb11`" above): vendor-1/own/vendor-4, 0 unexpected differences each way, vendor pair 0 |
 | 2 | services suite, vendor `services-vendor/` and own `services-cua/` | both 40/40 recorded, complete, assertions PASS; 41 connections each (`rmcp 1.5.0`; `cua-repl-host 0.5.0` with the result marker). `services-diff.json`: **0 differences**, 75 cells, 74 expected (identity slots only) |
 | 2 | Linux `stat-missing` | vendor and own byte-identical: `native pipe path unavailable: No such file or directory (os error 2)`, the oracle's Linux value |
 | 2 | Linux `connect-over-limit` (provisional) | **the live Linux vendor does exactly what the disassembly predicted**: `{bytes:[], message:'failed to connect native pipe: path must be shorter than SUN_LEN', pathBytes:192, peer:{accepted:0, received:[]}, platform:'linux', status:'refused', sunPathBytes:108}`. The own host is byte-identical. The case stays provisional (not counted) until the oracle owner cites this control |

@@ -1,0 +1,69 @@
+{
+  "experimentId": "orh-m5-host-a",
+  "host": "vendor",
+  "hostAttestations": [
+    {
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 62,
+        "cua/taskId": "15ffdb6e-f7a5-450e-9a2e-70bf75c5c075"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/m5t5r1-weUX8M",
+        "commit": "1d1ed89bb192041e1be4e50d62bd772f12577356",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/m5t5r1-weUX8M/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792175387349.6655
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/m5t5r1-weUX8M/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "connection": "endpoint-restart-before-vendor-run-2",
+      "level": "endpoint",
+      "agentPid": 44581
+    }
+  ],
+  "service": "cua",
+  "surfaces": [
+    "browser"
+  ],
+  "commit": "1d1ed89bb192041e1be4e50d62bd772f12577356",
+  "profile": "ssfs",
+  "model": "claude-sonnet (benchmark controller subagent)",
+  "node": "vendor runtime Node v24.21.0 (26.928.40906-darwin-arm64); agent on v24.18.0",
+  "runtime": "26.928.40906-darwin-arm64",
+  "platform": "darwin-arm64",
+  "sandbox": "scoped (cua proxy default for browser-only)",
+  "backend": "cua extension backend, profile ssfs",
+  "started": "2026-10-17T00:29:47.270Z",
+  "finished": "2026-10-17T00:32:39.118Z",
+  "attestation": {
+    "route": "harness-owned browser-only endpoint repl-m5t5r1-mini-browser (scripts/repl-parity/remote.mjs, agent restarted under CUA_REPL_HOST=vendor by the dispatcher)",
+    "residentCommit": "1d1ed89bb192041e1be4e50d62bd772f12577356",
+    "selectedBrowserHeader": "Selected Browser: Name: cua, Type: extension, ID: 1, Service: cua browser service 0.1.0",
+    "marker": "cua browser service 0.1.0"
+  },
+  "remoteDirectory": "/var/folders/c1/l4z5k02n2779byvnymzxsvth0000gn/T/cua-bench/orh-m5-host-a/vendor/cua/run-2"
+}

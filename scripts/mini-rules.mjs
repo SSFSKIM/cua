@@ -17,7 +17,7 @@
 // created for itself, only after the copy is verified (parsed, complete, newer than the item's start), and the remote
 // copy is removed only after that. Every check and decision is appended to the sitting log.
 import {execFileSync, spawnSync} from 'node:child_process';
-import {appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync} from 'node:fs';
+import {appendFileSync, existsSync, mkdirSync, readFileSync, rmSync} from 'node:fs';
 import {join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
@@ -47,6 +47,25 @@ export function frontmost({exec}) {
   return id;
 }
 
+export const WORKER_PROBE = 'p=$(pgrep -f actions-runner-maws/bin/Runner.Worker); s=$?; echo "pgrep_status=$s"; echo "workers=$(printf "%s" "$p" | grep -c .)"; uptime';
+const PAGE = 100;
+// Every record of a paginated GitHub list (`key` holds the records, `total_count` their number): pages are read until the
+// total is reached; a page that is short of it, a missing total or a total that changes is a failed observation.
+function pages(exec, what, path, key) {
+  const records = [];
+  for (let page = 1; ; page++) {
+    const body = json(call(exec, what, 'gh', ['api', `${path}${path.includes('?') ? '&' : '?'}per_page=${PAGE}&page=${page}`]), what);
+    const list = body?.[key], total = body?.total_count;
+    if (!Array.isArray(list) || !Number.isInteger(total)) throw missing(what, `no ${key} or total_count`);
+    records.push(...list);
+    if (records.length >= total) {
+      if (records.length !== total) throw missing(what, `${records.length} records for a total of ${total}`);
+      return records;
+    }
+    if (list.length < PAGE) throw missing(what, `truncated: ${records.length} of ${total}`);
+  }
+}
+
 // One reading of everything the gate needs; throws Stop when any part is missing.
 export function observe({exec}) {
   const front = frontmost({exec});
@@ -54,17 +73,18 @@ export function observe({exec}) {
   if (busy !== 'true' && busy !== 'false') throw missing('runner state', `got ${JSON.stringify(busy)}`);
   let queued = 0;
   for (const status of ['queued', 'in_progress']) {
-    const runs = json(call(exec, `${status} workflow runs`, 'gh', ['api', `${REPO}/runs?status=${status}&per_page=50`]), `${status} workflow runs`).workflow_runs;
-    if (!Array.isArray(runs)) throw missing(`${status} workflow runs`, 'no workflow_runs');
-    for (const {id} of runs) {
-      const jobs = json(call(exec, `jobs of run ${id}`, 'gh', ['api', `${REPO}/runs/${id}/jobs?per_page=100`]), `jobs of run ${id}`).jobs;
-      if (!Array.isArray(jobs)) throw missing(`jobs of run ${id}`, 'no jobs');
-      queued += jobs.filter(job => WAITING.includes(job.status) && job.labels?.some(label => MAC_LABELS.includes(label))).length;
+    for (const {id} of pages(exec, `${status} workflow runs`, `${REPO}/runs?status=${status}`, 'workflow_runs')) {
+      queued += pages(exec, `jobs of run ${id}`, `${REPO}/runs/${id}/jobs`, 'jobs')
+        .filter(job => WAITING.includes(job.status) && job.labels?.some(label => MAC_LABELS.includes(label))).length;
     }
   }
-  const remote = call(exec, 'mini workers and load', 'ssh', ['-o', 'BatchMode=yes', 'mini', 'echo workers=$(pgrep -f actions-runner-maws/bin/Runner.Worker | wc -l | tr -d " "); uptime']);
-  const workers = /workers=(\d+)/.exec(remote)?.[1], load = /load averages?: ([0-9.]+)/.exec(remote)?.[1];
-  if (workers === undefined) throw missing('mini workers', 'no count');
+  // pgrep's own status is kept: 0 found, 1 none; anything else is a failed observation, never zero workers.
+  const remote = call(exec, 'mini workers and load', 'ssh', ['-o', 'BatchMode=yes', 'mini', WORKER_PROBE]);
+  const status = /pgrep_status=(\d+)/.exec(remote)?.[1], found = /workers=(\d+)/.exec(remote)?.[1], load = /load averages?: ([0-9.]+)/.exec(remote)?.[1];
+  if (status === undefined || found === undefined) throw missing('mini workers', 'no pgrep result');
+  if (status !== '0' && status !== '1') throw missing('mini workers', `pgrep exited ${status}`);
+  if ((status === '1') !== (found === '0')) throw missing('mini workers', 'pgrep status and count disagree');
+  const workers = found;
   if (load === undefined) throw missing('mini load', 'no uptime');
   return {front, busy: busy === 'true', workers: Number(workers), queued, load: Number(load)};
 }
@@ -201,9 +221,7 @@ async function accept(_item, ctx) {
   mkdirSync(target, {recursive: true});
   try {
     exec('scp', ['-q', `mini:${out}/acceptance.json`, `${target}/acceptance.json`]);
-    const report = JSON.parse(readFileSync(join(target, 'acceptance.json'), 'utf8'));
-    if (!report || typeof report !== 'object') throw new Error('not a report');
-    if (!(statSync(join(target, 'acceptance.json')).mtimeMs >= started - 5000)) throw new Error('older than this run');
+    verifyAcceptance(JSON.parse(readFileSync(join(target, 'acceptance.json'), 'utf8')), {startedAt: started, finishedBy: now(), exitCode: acceptCode});
   } catch (error) {
     rmSync(join(target, 'acceptance.json'), {force: true});
     throw new Stop(`accept-native: the report did not copy and verify (${error.message}); it stays on the mini in ${out}`);
@@ -211,6 +229,22 @@ async function accept(_item, ctx) {
   exec('ssh', ['-o', 'BatchMode=yes', 'mini', `rm -rf ${out}`]);
   if (cleanupCode !== '0') throw new Stop(`accept-native: the approved home's cleanup failed (exit ${cleanupCode}); see prepare.mjs's recovery message on the mini`);
   if (!['0', '3'].includes(acceptCode)) throw new Stop(`accept-native exited ${acceptCode}`);
+}
+
+// accept-native's report (scripts/accept-native.mjs on main: scenario, status, startedAt, finishedAt, summary, items):
+// its own times fall inside this item (a minute's clock skew between the controller and the mini allowed), its status
+// is the one its exit code reports, and it carries a non-empty item inventory, each item with an id and a status.
+const STATUS_OF_EXIT = {0: 'PASS', 1: 'FAIL', 3: 'BLOCKED'};
+export function verifyAcceptance(report, {startedAt, finishedBy, exitCode, skewMs = 60_000}) {
+  if (!report || typeof report !== 'object' || report.scenario !== 'accept-native') throw new Error('not an accept-native report');
+  if (!['PASS', 'FAIL', 'BLOCKED'].includes(report.status)) throw new Error('no status');
+  if (STATUS_OF_EXIT[exitCode] !== report.status) throw new Error(`status ${report.status} does not match exit ${exitCode}`);
+  const begun = Date.parse(report.startedAt), ended = Date.parse(report.finishedAt);
+  if (!Number.isFinite(begun) || !Number.isFinite(ended) || ended < begun) throw new Error('no valid startedAt/finishedAt');
+  if (begun < startedAt - skewMs || ended > finishedBy + skewMs) throw new Error('its startedAt/finishedAt fall outside this run');
+  if (!Array.isArray(report.items) || !report.items.length || report.items.some(i => !Number.isInteger(i?.id) || typeof i.status !== 'string')) throw new Error('no item inventory');
+  if (!report.summary || typeof report.summary !== 'object' || Object.keys(report.summary).length !== report.items.length) throw new Error('the summary does not match the items');
+  return report;
 }
 
 const ITEMS = {vendor: baseline, browser: baseline, tz, 'tz-real-home': tz, accept};

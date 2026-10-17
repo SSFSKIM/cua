@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import {mkdirSync, mkdtempSync, rmSync, writeFileSync, existsSync, readFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {observe, classify, gate, frontAfter, runState, sequence, verifyTz, Stop, TERMINAL} from '../scripts/mini-rules.mjs';
+import {observe, classify, gate, frontAfter, runState, sequence, verifyTz, verifyAcceptance, Stop, TERMINAL} from '../scripts/mini-rules.mjs';
 
 // The device and GitHub as one double. `state` drives the answers; `calls` records them.
 function world(over = {}) {
@@ -19,11 +19,13 @@ function world(over = {}) {
     if (failing) throw new Error(`double: ${failing} failed`);
     if (cmd === 'ssh' && line.includes('lsappinfo')) return state.front === null ? 'garbage\n' : `[ NULL ] ASN:0x0: (in front)\n    bundleID="${typeof state.front === 'function' ? state.front() : state.front}"\n`;
     if (cmd === 'gh' && line.includes('/runners')) return `${state.busy}\n`;
+    // GitHub's paginated lists: 100 a page, with total_count (state.totals overrides it to model a truncated list).
+    const page = Number(/[?&]page=(\d+)/.exec(line)?.[1] ?? 1), slice = list => list.slice((page - 1) * 100, page * 100);
     const runs = /runs\?status=(\w+)/.exec(line);
-    if (cmd === 'gh' && runs) return JSON.stringify({workflow_runs: state.runs[runs[1]]});
+    if (cmd === 'gh' && runs) { const all = state.runs[runs[1]]; return JSON.stringify({total_count: state.totals?.[runs[1]] ?? all.length, workflow_runs: slice(all)}); }
     const jobs = /runs\/(\d+)\/jobs/.exec(line);
-    if (cmd === 'gh' && jobs) return JSON.stringify({jobs: state.jobs[jobs[1]] ?? []});
-    if (cmd === 'ssh' && line.includes('Runner.Worker')) return `workers=${state.workers}\n 19:00  up 8 days, 2 users, load averages: ${state.load} 1.0 1.0\n`;
+    if (cmd === 'gh' && jobs) { const all = state.jobs[jobs[1]] ?? []; return JSON.stringify({total_count: state.totals?.[`jobs${jobs[1]}`] ?? all.length, jobs: slice(all)}); }
+    if (cmd === 'ssh' && line.includes('Runner.Worker')) return `pgrep_status=${state.pgrepStatus ?? (state.workers > 0 ? 0 : 1)}\nworkers=${state.workers}\n 19:00  up 8 days, 2 users, load averages: ${state.load} 1.0 1.0\n`;
     if (cmd === 'ssh' && line.includes('tz-probe.mjs')) { const role = /--role (\w+)/.exec(line)[1]; return state.tz[role] ?? `TZ 0 /tmp/cua-115-tz.R${role}\n`; }
     if (cmd === 'scp') { const copy = state.copies[args.at(-2)] ?? state.copies.default; if (copy) copy(args); return ''; }
     if (cmd === 'ssh' && line.includes('rm -rf')) return '';
@@ -46,6 +48,28 @@ test('every observation must be present: a failed or unparseable answer stops, n
   assert.throws(() => observe(jobsFail), /missing observation: jobs of run 7/);
   const {exec} = world({runs: {queued: [], in_progress: [{id: 9}]}, jobs: {9: [{status: 'queued', labels: ['self-hosted', 'macOS']}, {status: 'queued', labels: ['ubuntu-24.04']}, {status: 'in_progress', labels: ['macOS']}]}});
   assert.deepEqual(observe({exec}), {front: TERMINAL, busy: false, workers: 0, queued: 1, load: 0.8});
+});
+
+test('inner boundaries: lists are read to their total across pages, a truncated list or a failed pgrep is a missing observation', () => {
+  // 151 queued runs across two pages, the last one carrying a waiting macOS job: counted, not truncated to idle.
+  const many = Array.from({length: 151}, (_, i) => ({id: i + 1}));
+  const paged = world({runs: {queued: many, in_progress: []}, jobs: {151: [{status: 'queued', labels: ['macOS']}]}});
+  assert.equal(observe(paged).queued, 1);
+  assert.ok(paged.calls.some(c => c.includes('status=queued&per_page=100&page=2')));
+  // total_count 51 with only 50 records delivered: truncated.
+  const truncated = world({runs: {queued: Array.from({length: 50}, (_, i) => ({id: i + 1})), in_progress: []}, totals: {queued: 51}});
+  assert.throws(() => observe(truncated), /missing observation: queued workflow runs \(truncated: 50 of 51\)/);
+  // A job list that claims more than it holds, and one without a total.
+  const jobsShort = world({runs: {queued: [{id: 4}], in_progress: []}, jobs: {4: [{status: 'queued', labels: ['ubuntu']}]}, totals: {jobs4: 2}});
+  assert.throws(() => observe(jobsShort), /missing observation: jobs of run 4 \(truncated/);
+  const noTotal = world();
+  const raw = noTotal.exec;
+  assert.throws(() => observe({exec: (cmd, args) => (args.some(a => a.includes('status=in_progress')) ? JSON.stringify({workflow_runs: []}) : raw(cmd, args))}), /in_progress workflow runs \(no workflow_runs or total_count\)/);
+  // pgrep: 1 is no match (zero workers), 0 with a count is workers, anything else is a failed observation.
+  assert.equal(observe(world({workers: 0, pgrepStatus: 1})).workers, 0);
+  assert.equal(observe(world({workers: 2, pgrepStatus: 0})).workers, 2);
+  assert.throws(() => observe(world({workers: 0, pgrepStatus: 2})), /missing observation: mini workers \(pgrep exited 2\)/);
+  assert.throws(() => observe(world({workers: 0, pgrepStatus: 0})), /status and count disagree/);
 });
 
 test('classification: any non-Terminal frontmost application is a stop; CI and load are contention', () => {
@@ -159,18 +183,19 @@ test('tz: the remote result is removed only after its copy verifies; a failed or
 test('accept-native: cleanup and acceptance statuses are both reported, the report comes only from this run\'s directory and verifies', async t => {
   const evidence = evidenceDir(t);
   const target = join(evidence, 'accept-native-main');
-  const copyReport = args => { mkdirSync(target, {recursive: true}); writeFileSync(args.at(-1), JSON.stringify({items: []})); };
+  const report = status => ({scenario: 'accept-native', status, startedAt: new Date().toISOString(), finishedAt: new Date().toISOString(), summary: {1: 'PASS', 9: 'BLOCKED'}, items: [{id: 1, status: 'PASS'}, {id: 9, status: 'BLOCKED'}]});
+  const copyReport = args => { mkdirSync(target, {recursive: true}); writeFileSync(args.at(-1), JSON.stringify(report('BLOCKED'))); };
   // BLOCKED acceptance (3) with a clean cleanup completes; the report is archived and the remote directory removed.
   const ok = world({accept: 'ACCEPT 3 CLEANUP 0 OUT /tmp/cua-115-accept.A1\n'});
   ok.state.copies.default = copyReport;
   await sequence(['accept'], {exec: ok.exec, run: () => 0, log: quiet, evidence, now: Date.now, sleep: noSleep});
-  assert.deepEqual(JSON.parse(readFileSync(join(target, 'acceptance.json'), 'utf8')), {items: []});
+  assert.equal(JSON.parse(readFileSync(join(target, 'acceptance.json'), 'utf8')).status, 'BLOCKED');
   assert.ok(ok.calls.some(c => c.includes('mini:/tmp/cua-115-accept.A1/acceptance.json')));
   assert.ok(ok.calls.some(c => c === 'ssh -o BatchMode=yes mini rm -rf /tmp/cua-115-accept.A1'));
   // A failed cleanup is not masked by a passing acceptance.
   const e2 = evidenceDir(t);
   const cleanupFailed = world({accept: 'ACCEPT 0 CLEANUP 1 OUT /tmp/cua-115-accept.A2\n'});
-  cleanupFailed.state.copies.default = args => { mkdirSync(join(e2, 'accept-native-main'), {recursive: true}); writeFileSync(args.at(-1), '{}'); };
+  cleanupFailed.state.copies.default = args => { mkdirSync(join(e2, 'accept-native-main'), {recursive: true}); writeFileSync(args.at(-1), JSON.stringify(report('PASS'))); };
   await assert.rejects(sequence(['accept'], {exec: cleanupFailed.exec, run: () => 0, log: quiet, evidence: e2, now: Date.now, sleep: noSleep}), /cleanup failed \(exit 1\)/);
   // A report that fails to copy keeps the remote one and archives nothing.
   const e3 = evidenceDir(t);
@@ -181,4 +206,22 @@ test('accept-native: cleanup and acceptance statuses are both reported, the repo
   const e4 = evidenceDir(t);
   await assert.rejects(sequence(['accept'], {exec: world({accept: 'exit 84\n'}).exec, run: () => 0, log: quiet, evidence: e4, now: Date.now, sleep: noSleep}), /printed no result line/);
   await assert.rejects(sequence(['accept'], {exec: world().exec, run: () => 0, log: quiet, evidence, now: Date.now, sleep: noSleep}), /already exists/);
+});
+
+test('the acceptance report is validated by its own fields: scenario, status matching the exit code, times inside this run, an item inventory', () => {
+  const now = Date.parse('2026-10-17T12:00:00Z');
+  const good = {scenario: 'accept-native', status: 'BLOCKED', startedAt: '2026-10-17T12:01:00Z', finishedAt: '2026-10-17T12:20:00Z', summary: {1: 'PASS', 9: 'BLOCKED'}, items: [{id: 1, status: 'PASS'}, {id: 9, status: 'BLOCKED'}]};
+  const window = {startedAt: now, finishedBy: now + 30 * 60_000, exitCode: '3'};
+  assert.equal(verifyAcceptance(good, window), good);
+  for (const [bad, reason] of [
+    [{...good, scenario: 'other'}, /not an accept-native report/],
+    [{...good, status: 'OK'}, /no status/],
+    [{...good, startedAt: '2026-10-16T12:00:00Z'}, /outside this run/],
+    [{...good, finishedAt: '2026-10-17T13:00:00Z'}, /outside this run/],
+    [{...good, finishedAt: 'never'}, /no valid startedAt/],
+    [{...good, items: []}, /no item inventory/],
+    [{...good, items: [{id: '1', status: 'PASS'}]}, /no item inventory/],
+    [{...good, summary: {1: 'PASS'}}, /summary does not match/],
+  ]) assert.throws(() => verifyAcceptance(bad, window), reason);
+  assert.throws(() => verifyAcceptance(good, {...window, exitCode: '0'}), /does not match exit 0/);
 });

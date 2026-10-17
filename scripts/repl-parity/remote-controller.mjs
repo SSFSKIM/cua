@@ -28,6 +28,13 @@ export async function liveDisconnect(e,helper){
  };
  return disconnectProbe(io);
 }
+// Foreground commands until {"op":"stop"} or EOF. The input is then destroyed: a paused stdin whose writer stays open
+// (a held FIFO) would otherwise keep the controller alive after its agents stopped.
+export async function foregroundCommands(input,run){
+ const lines=createInterface({input});
+ try{for await(const line of lines){const command=JSON.parse(line);if(command.op==='stop')break;await run(command);}}
+ finally{lines.close();input.destroy();}
+}
 export async function runRemoteProof(v){
  const out=resolve(v.out),journal=join(out,'endpoints.json');mkdirSync(out,{recursive:true,mode:0o700});
  const state=existsSync(journal)?json(journal):undefined,helpers=new Map();
@@ -67,12 +74,11 @@ export async function runRemoteProof(v){
   else if(v.action==='start'){
    await proof.start({operatorReady:v['operator-ready'],ownerReady:v['owner-ready']});
    console.log('Endpoints ready and attested. Foreground controller owns their lifetime. stdin JSON commands: {"op":"restart","device":"mini","host":"vendor|cua"}, {"op":"probe","device":"mini|cua-linux"}, {"op":"stop"}. EOF stops agents, keeping enrollment for a later start.');
-   const lines=createInterface({input:process.stdin});
-   for await(const line of lines){const command=JSON.parse(line);if(command.op==='stop')break;
+   await foregroundCommands(process.stdin,async command=>{
     if(command.op==='restart')await proof.restart(command.device,command.host);
     else if(command.op==='probe'){const e=proof.state.endpoints.find(e=>e.device===command.device);if(!e)throw new Error('Unknown experiment endpoint');const load=execFileSync('ssh',['-o','BatchMode=yes',e.device,'uptime'],{encoding:'utf8'}).trim();const result=await liveDisconnect(e,await helper(e.device));e.disconnect={...result,load};await proof.save();console.log(JSON.stringify({device:e.device,...result}));}
     else throw new Error('Unknown foreground command');
-   }
+   });
   }else throw new Error('Unknown remote proof action');
  }finally{
   for(const e of proof.state.endpoints)if(e.pid&&helpers.get(e.device)?.attached){try{await io.stop(e);delete e.pid;e.ready=false;}catch{proof.state.phase='cleanup-failed';}}

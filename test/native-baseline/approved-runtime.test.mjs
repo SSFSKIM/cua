@@ -191,6 +191,14 @@ test('ownership is the exact executable plus the run\'s TMPDIR; argv mentions an
     assert.equal(`${error.message} ${error.stack} ${JSON.stringify(error)} ${error.cause ?? ''}`.includes(sentinel), false);
     assert.match(error.message, /^could not read TMPDIR of process \d+$/);
   }
+  // Since #115 M1 a helper carries its session's own TMPDIR, <home>/run/<session>/tmp: one of this home's is the run's,
+  // anything else under run/ or another home's is not.
+  const session = start(executable, keep, join(dir, 'run', '6f1c2d3e-0000-4000-8000-000000000001', 'tmp'));
+  const deeper = start(executable, keep, join(dir, 'run', 'x', 'tmp', 'deeper'));
+  const elsewhere = start(executable, keep, join(dir, 'other-home', 'run', 's', 'tmp'));
+  await new Promise(r => setTimeout(r, 400));
+  assert.deepEqual(homeUsers(dir, {executable, tmpdir: runTmp}, {candidates: () => [session, deeper, elsewhere]}),
+    [{pid: session, helper: true, owned: true}, {pid: deeper, helper: true, owned: false}, {pid: elsewhere, helper: true, owned: false}]);
   // A failed read in homeUsers marks the helper unreadable, never owned, and carries nothing from the environment.
   const unreadable = homeUsers(dir, {executable, tmpdir: runTmp}, {candidates: () => [owned], exec: (cmd, args, options) => cmd === '/bin/ps' ? leaky(cmd, args) : execFileSyncReal(cmd, args, options)});
   assert.deepEqual(unreadable, [{pid: owned, helper: true, owned: false, unreadable: true}]);

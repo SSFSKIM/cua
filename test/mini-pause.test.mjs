@@ -35,10 +35,10 @@ function exec({busy = 'false', queued = 0, workers = 0, ghFails = false} = {}) {
 }
 
 test('a reading is a pause when the runner is busy, a Runner.Worker runs or a macOS job is queued, or when it cannot be read', () => {
-  assert.deepEqual(pauseReading({exec: exec()}), {pause: false, reason: 'idle'});
-  assert.deepEqual(pauseReading({exec: exec({busy: 'true'})}), {pause: true, reason: 'runner busy'});
-  assert.deepEqual(pauseReading({exec: exec({workers: 1})}), {pause: true, reason: '1 Runner.Worker'});
-  assert.deepEqual(pauseReading({exec: exec({queued: 2})}), {pause: true, reason: '2 queued macOS job(s)'});
+  assert.deepEqual(pauseReading({exec: exec()}), {pause: false, reason: 'idle', seen: []});
+  assert.deepEqual(pauseReading({exec: exec({busy: 'true'})}), {pause: true, reason: 'runner busy', seen: []});
+  assert.deepEqual(pauseReading({exec: exec({workers: 1})}), {pause: true, reason: '1 Runner.Worker', seen: []});
+  assert.deepEqual(pauseReading({exec: exec({queued: 2})}), {pause: true, reason: '2 queued macOS job(s)', seen: []});
   const unread = pauseReading({exec: exec({ghFails: true})});
   assert.equal(unread.pause, true);
   assert.match(unread.reason, /^unread \(missing observation: runner state/);
@@ -207,4 +207,35 @@ createInterface({input: process.stdin}).on('line', line => { const m = JSON.pars
   assert.equal(result.content[0].text, 'ran');
   assert.deepEqual(events.map(e => e[0]), ['wait', 'answered']);
   assert.equal(typeof setup.requestId === 'undefined' || typeof setup.requestId === 'number', true);
+});
+
+// Runner.Worker readings and long pauses (#115 M1, from CI-opt's evidence).
+test('a reading that sees a Runner.Worker logs it, and a pause over 20 minutes is recorded once, in the log and the heartbeat', async t => {
+  const file = join(scratch(t), 'pause.json');
+  const worker = {pid: 4242, etime: '01:02', command: '/Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 1 2', ppid: 4200, parent: '/Users/new/actions-runner-maws/bin/Runner.Listener run'};
+  let ms = Date.UTC(2026, 9, 17, 12), readings = 0;
+  const lines = [], beats = [];
+  await watchPause({file, exec: null, now: () => new Date(ms), sleep: async wait => { ms += wait; beats.push(JSON.parse(readFileSync(heartbeatOf(file), 'utf8'))); },
+    log: line => lines.push(line), maxReadings: 100,
+    read: () => ++readings <= 90 ? {pause: true, reason: '1 Runner.Worker', seen: [worker]} : {pause: false, reason: 'idle', seen: []}});
+  assert.equal(lines.filter(line => line === 'Runner.Worker seen: pid 4242 (elapsed 01:02) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 1 2; parent 4200 /Users/new/actions-runner-maws/bin/Runner.Listener run').length, 90,
+    'every worker reading says what it saw');
+  const long = lines.filter(line => line.startsWith('pause over 20 minutes'));
+  assert.equal(long.length, 1, lines.join('\n'));
+  assert.match(long[0], /since 2026-10-17T12:00:00\.000Z \(1 Runner\.Worker\); report it to the runner's operator/);
+  assert.deepEqual(beats.find(b => b.longPause)?.longPause, {since: '2026-10-17T12:00:00.000Z', reason: '1 Runner.Worker'});
+  assert.equal(beats.at(-1).longPause, undefined, 'it ends with the pause');
+});
+
+test('the harness surfaces a pause the watcher marked as over 20 minutes on stderr, once', async t => {
+  const file = join(scratch(t), 'pause.json');
+  writeFileSync(file, JSON.stringify({since: '2026-10-17T12:00:00.000Z', reason: 'runner busy'}));
+  writeFileSync(heartbeatOf(file), JSON.stringify({generation: 1, paused: true, longPause: {since: '2026-10-17T12:00:00.000Z', reason: 'runner busy'}}));
+  const warned = [];
+  let polls = 0;
+  const gate = pauseGate({file, warn: line => warned.push(line), sleep: async () => { if (++polls === 5) rmSync(file); }});
+  await gate.wait('cell-1');
+  assert.equal(warned.length, 1);
+  assert.match(warned[0], /pause over 20 minutes since 2026-10-17T12:00:00\.000Z \(runner busy\), held at cell-1: report it to the runner's operator/);
+  assert.match(readFileSync(new URL('../scripts/mini-pause.mjs', import.meta.url), 'utf8'), /warn = line => console\.error\(/, 'stderr by default');
 });

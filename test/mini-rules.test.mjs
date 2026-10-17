@@ -47,7 +47,7 @@ test('every observation must be present: a failed or unparseable answer stops, n
   const jobsFail = world({runs: {queued: [{id: 7}], in_progress: []}, fail: new Set(['runs/7/jobs'])});
   assert.throws(() => observe(jobsFail), /missing observation: jobs of run 7/);
   const {exec} = world({runs: {queued: [], in_progress: [{id: 9}]}, jobs: {9: [{status: 'queued', labels: ['self-hosted', 'macOS']}, {status: 'queued', labels: ['ubuntu-24.04']}, {status: 'in_progress', labels: ['macOS']}]}});
-  assert.deepEqual(observe({exec}), {front: TERMINAL, busy: false, workers: 0, queued: 1, load: 0.8});
+  assert.deepEqual(observe({exec}), {front: TERMINAL, busy: false, workers: 0, seen: [], queued: 1, load: 0.8});
 });
 
 test('inner boundaries: lists are read to their total across pages, a truncated list or a failed pgrep is a missing observation', () => {
@@ -65,11 +65,13 @@ test('inner boundaries: lists are read to their total across pages, a truncated 
   const noTotal = world();
   const raw = noTotal.exec;
   assert.throws(() => observe({exec: (cmd, args) => (args.some(a => a.includes('status=in_progress')) ? JSON.stringify({workflow_runs: []}) : raw(cmd, args))}), /in_progress workflow runs \(no workflow_runs or total_count\)/);
-  // pgrep: 1 is no match (zero workers), 0 with a count is workers, anything else is a failed observation.
+  // pgrep: 1 is no match (zero workers), 0 with a count is workers (zero when no match is the runner's own executable),
+  // anything else is a failed observation.
   assert.equal(observe(world({workers: 0, pgrepStatus: 1})).workers, 0);
   assert.equal(observe(world({workers: 2, pgrepStatus: 0})).workers, 2);
   assert.throws(() => observe(world({workers: 0, pgrepStatus: 2})), /missing observation: mini workers \(pgrep exited 2\)/);
-  assert.throws(() => observe(world({workers: 0, pgrepStatus: 0})), /status and count disagree/);
+  assert.equal(observe(world({workers: 0, pgrepStatus: 0})).workers, 0);
+  assert.throws(() => observe(world({workers: 1, pgrepStatus: 1})), /status and count disagree/);
 });
 
 test('classification: with the runner idle any non-Terminal frontmost application is a stop; CI and load are contention', () => {

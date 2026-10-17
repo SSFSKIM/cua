@@ -24,9 +24,10 @@
 // copy is removed only after that. Every check and decision is appended to the sitting log.
 import {execFileSync, spawn, spawnSync} from 'node:child_process';
 import {appendFileSync, existsSync, mkdirSync, readFileSync, rmSync} from 'node:fs';
-import {join, resolve} from 'node:path';
+import {basename, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {heartbeatOf, removePauseFiles, sshMirror} from './mini-pause.mjs';
+import {quote} from './browser-parity/topology.mjs';
 
 export const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
 export const EVIDENCE = join(ROOT, 'docs/evidence/2026-10-17-own-sandbox/m0');
@@ -59,7 +60,29 @@ export function frontmost({exec}) {
   return id;
 }
 
-export const WORKER_PROBE = 'p=$(pgrep -f actions-runner-maws/bin/Runner.Worker); s=$?; echo "pgrep_status=$s"; echo "workers=$(printf "%s" "$p" | grep -c .)"; uptime';
+// The mac lane runner's job process. A worker is a process whose executable is this file: pgrep -x matches the process
+// name, and its command must start with this path. Matching argv instead (pgrep -f) counted any concurrent reader's own
+// probe shell, whose argv names the path. Each worker is reported with its command (args only), its parent's pid and
+// command and its elapsed time; never its environment (no ps -E).
+export const RUNNER_WORKER = '/Users/new/actions-runner-maws/bin/Runner.Worker';
+export const workerProbe = (executable = RUNNER_WORKER) => {
+  const exe = quote(executable);
+  return `p=$(pgrep -x ${quote(basename(executable))}); s=$?; echo "pgrep_status=$s"; n=0
+for pid in $p; do c=$(ps -o command= -p "$pid") || continue
+  case "$c" in ${exe}|${exe}' '*) n=$((n+1)); pp=$(ps -o ppid= -p "$pid" | tr -d ' ')
+    echo "worker_pid=$pid"; echo "worker_etime=$(ps -o etime= -p "$pid" | tr -d ' ')"; echo "worker_command=$c"; echo "worker_ppid=$pp"; echo "worker_parent=$(ps -o command= -p "$pp")";; esac
+done; echo "workers=$n"; uptime`;
+};
+// The probe's worker lines -> [{pid, etime, command, ppid, parent}].
+function workersSeen(text) {
+  const seen = [];
+  for (const [, key, value] of text.matchAll(/^worker_(pid|etime|command|ppid|parent)=(.*)$/gm)) {
+    if (key === 'pid') seen.push({});
+    seen.at(-1)[key] = key === 'pid' || key === 'ppid' ? Number(value) : value;
+  }
+  return seen;
+}
+export const describeWorker = w => `Runner.Worker seen: pid ${w.pid} (elapsed ${w.etime}) ${w.command}; parent ${w.ppid} ${w.parent}`;
 const PAGE = 100;
 // Every record of a paginated GitHub list (`key` holds the records, `total_count` their number): pages are read until the
 // total is reached; a page that is short of it, a missing total or a total that changes is a failed observation.
@@ -93,15 +116,15 @@ export function observeRunner({exec}) {
         .filter(job => WAITING.includes(job.status) && job.labels?.some(label => MAC_LABELS.includes(label))).length;
     }
   }
-  // pgrep's own status is kept: 0 found, 1 none; anything else is a failed observation, never zero workers.
-  const remote = call(exec, 'mini workers and load', 'ssh', ['-o', 'BatchMode=yes', 'mini', WORKER_PROBE]);
+  // pgrep's own status is kept: 0 found (the count may then be zero: a process named Runner.Worker that is not the
+  // runner's), 1 none; anything else is a failed observation, never zero workers.
+  const remote = call(exec, 'mini workers and load', 'ssh', ['-o', 'BatchMode=yes', 'mini', workerProbe()]);
   const status = /pgrep_status=(\d+)/.exec(remote)?.[1], found = /workers=(\d+)/.exec(remote)?.[1], load = /load averages?: ([0-9.]+)/.exec(remote)?.[1];
   if (status === undefined || found === undefined) throw missing('mini workers', 'no pgrep result');
   if (status !== '0' && status !== '1') throw missing('mini workers', `pgrep exited ${status}`);
-  if ((status === '1') !== (found === '0')) throw missing('mini workers', 'pgrep status and count disagree');
-  const workers = found;
+  if (status === '1' && found !== '0') throw missing('mini workers', 'pgrep status and count disagree');
   if (load === undefined) throw missing('mini load', 'no uptime');
-  return {busy: busy === 'true', workers: Number(workers), queued, load: Number(load)};
+  return {busy: busy === 'true', workers: Number(found), seen: workersSeen(remote), queued, load: Number(load)};
 }
 
 // stop (never retried), contention (wait and look again) or idle.
@@ -130,6 +153,7 @@ export async function gate(what, {exec, sleep, log, maxWaits = 240, apartMs = 45
         break;
       }
       const c = classify(o);
+      for (const w of o.seen) log(`${what}: reading ${n + 1}: ${describeWorker(w)}`);
       log(`${what}: reading ${n + 1}: front=${o.front} busy=${o.busy} workers=${o.workers} queued=${o.queued} load=${o.load} -> ${c.state}${c.state === 'idle' ? '' : ` (${c.reason})`}`);
       if (c.state === 'stop') throw new Stop(`before ${what}: ${c.reason}`);
       readings.push(c);

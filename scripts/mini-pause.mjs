@@ -8,8 +8,10 @@
 // The watcher (on the controller, where scripts/mini-rules.mjs reads the same observations as the gate) writes the
 // pause file ({since, reason}) when a reading is not idle and removes it after two idle readings `apartMs` apart. A
 // reading that cannot be completed is never idle. With each reading it rewrites its heartbeat, `<file>.alive`
-// ({pid, generation, paused, at}; `generation` counts the pauses it has started). `--mirror` keeps a copy of both on the
-// mini, for a group that runs there (accept-native). Each pause it ends is logged with its start, end and reason.
+// ({pid, generation, paused, longPause?, at}; `generation` counts the pauses it has started). `--mirror` keeps a copy of
+// both on the mini, for a group that runs there (accept-native). Each pause it ends is logged with its start, end and
+// reason, each Runner.Worker a reading sees with its command, parent and elapsed time, and a pause past 20 minutes once
+// (and in the heartbeat as `longPause`, which the harness surfaces on stderr) for the runner's operator.
 //
 // It fails closed. If it fails, it leaves a pause in place (writing one if there was none) and stops beating; on
 // SIGTERM it just stops. It never removes the pause file on exit: the group's owner does, once the group has finished
@@ -24,19 +26,22 @@ import {appendFileSync, existsSync, readFileSync, rmSync, statSync, writeFileSyn
 import {resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
-import {Stop, liveExec, observeRunner} from './mini-rules.mjs';
+import {Stop, describeWorker, liveExec, observeRunner} from './mini-rules.mjs';
 import {quote} from './browser-parity/topology.mjs';
 
-// One reading -> {pause, reason}: the runner busy (its flag or a Runner.Worker) or a macOS job queued; unread is a pause.
+// One reading -> {pause, reason, seen}: the runner busy (its flag or a Runner.Worker) or a macOS job queued; unread is a
+// pause. `seen`: the workers it saw (mini-rules.mjs workerProbe), each logged.
 export function pauseReading({exec}) {
   let o;
   try { o = observeRunner({exec}); } catch (error) {
-    if (error instanceof Stop) return {pause: true, reason: `unread (${error.message})`};
+    if (error instanceof Stop) return {pause: true, reason: `unread (${error.message})`, seen: []};
     throw error;
   }
   const reasons = [o.busy && 'runner busy', o.workers > 0 && `${o.workers} Runner.Worker`, o.queued > 0 && `${o.queued} queued macOS job(s)`].filter(Boolean);
-  return {pause: reasons.length > 0, reason: reasons.length ? reasons.join(', ') : 'idle'};
+  return {pause: reasons.length > 0, reason: reasons.length ? reasons.join(', ') : 'idle', seen: o.seen};
 }
+// A pause longer than this is the runner's operator's to hear about: the watcher records it, the harness surfaces it.
+export const LONG_PAUSE_MS = 20 * 60_000;
 
 const readJson = (file, fallback) => { try { return JSON.parse(readFileSync(file, 'utf8')); } catch { return fallback; } };
 export const heartbeatOf = file => `${file}.alive`;
@@ -63,14 +68,20 @@ export async function watchPause({file, exec, sleep, now = () => new Date(), log
   let paused = existsSync(file) ? {since: now().toISOString(), ...readJson(file, {reason: 'unknown'})} : null;
   let generation = paused ? 1 : 0;
   const beat = () => {
-    const text = JSON.stringify({pid, generation, paused: Boolean(paused), at: now().toISOString()});
+    if (paused && !paused.long && now().getTime() - Date.parse(paused.since) > LONG_PAUSE_MS) {
+      paused.long = true;
+      log(`pause over 20 minutes since ${paused.since} (${paused.reason}); report it to the runner's operator`);
+    }
+    const longPause = paused?.long ? {since: paused.since, reason: paused.reason} : undefined;
+    const text = JSON.stringify({pid, generation, paused: Boolean(paused), ...(longPause ? {longPause} : {}), at: now().toISOString()});
     writeFileSync(heartbeatOf(file), text);
     mirror?.write(text, heartbeatOf(mirror.path));
   };
+  const reading = () => { const r = read(); for (const w of r.seen ?? []) log(describeWorker(w)); return r; };
   if (paused) log(`pause file present at start (${paused.reason}): it stays until two idle readings`);
   beat();
   for (let readings = 0; readings < maxReadings && !stopped();) {
-    const first = read(); readings++;
+    const first = reading(); readings++;
     if (!paused) {
       if (first.pause) {
         paused = {since: now().toISOString(), reason: first.reason};
@@ -88,7 +99,7 @@ export async function watchPause({file, exec, sleep, now = () => new Date(), log
     if (first.pause) { await sleep(pollMs); continue; }
     await sleep(apartMs);
     if (stopped()) break;
-    const second = read(); readings++;
+    const second = reading(); readings++;
     beat();
     if (second.pause) { log(`pause holds: the second reading is ${second.reason}`); await sleep(pollMs); continue; }
     rmSync(file, {force: true});
@@ -116,14 +127,22 @@ export class PauseLost extends Error {}
 // wait() returns null when no pause holds, else waits until it is gone and returns {where, reason, startedAt, endedAt},
 // after handing it to `record`. A stale heartbeat (older than `staleMs`, by the file's own mtime, so a mirror is judged
 // by the mini's clock) is a lost watcher: `onLost` 'stop' throws PauseLost, 'wait' stays paused until it beats again.
+// A pause the watcher marked as long (over LONG_PAUSE_MS) is surfaced through `warn`, once per pause.
 export function pauseGate({file, sleep = ms => new Promise(r => setTimeout(r, ms)), now = () => new Date(), log = () => {}, record = () => {},
-  pollMs = 2000, staleMs = 180_000, onLost = 'stop'} = {}) {
+  pollMs = 2000, staleMs = 180_000, onLost = 'stop', warn = line => console.error(`mini-pause: ${line}`)} = {}) {
   if (!file) return NO_PAUSE;
   const heartbeat = heartbeatOf(file);
   const alive = () => { try { return now().getTime() - statSync(heartbeat).mtimeMs <= staleMs; } catch { return false; } };
   const generation = () => readJson(heartbeat, {}).generation ?? null;
   const reason = () => readJson(file, {reason: 'unknown'}).reason;
   const held = () => existsSync(file) || !alive();
+  let warnedSince = null;
+  const surfaceLong = where => {
+    const long = readJson(heartbeat, {}).longPause;
+    if (!long || long.since === warnedSince) return;
+    warnedSince = long.since;
+    warn(`pause over 20 minutes since ${long.since} (${long.reason}), held at ${where}: report it to the runner's operator`);
+  };
   return {
     async wait(where) {
       if (!held()) return null;
@@ -131,6 +150,7 @@ export function pauseGate({file, sleep = ms => new Promise(r => setTimeout(r, ms
       let why = alive() ? reason() : 'the pause watcher has no heartbeat';
       log(`paused before ${where}: ${why}`);
       while (held()) {
+        surfaceLong(where);
         if (!alive()) {
           why = 'the pause watcher has no heartbeat';
           if (onLost === 'stop') throw new PauseLost(`the pause watcher is gone (no heartbeat within ${staleMs / 1000} s); the group stops before ${where}`);

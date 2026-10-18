@@ -15,6 +15,10 @@
 //     set them (serve-slot.mjs records the launch; cli-slot.mjs the values and node_repl's permissions table). Under
 //     disabled it records whether node_repl calls the launcher at all. It refuses to start while any native helper runs
 //     and stops (by pid) any this run's slot started, as a native run does.
+//   node scripts/sandbox-probe/experiment.mjs --native --watch-session-tmp … --host vendor …
+//     #115 M2's helper check (session-tmp.mjs): the native calls plus Finder's getScreenshot (its size only), and after
+//     each, what lies under the launch's session temp besides node_repl's script directories and what this run's own
+//     helper holds open there (`sessionTmp`, names and paths only).
 //
 // CUA_HOME is a scratch install; nothing of the owner's runtime home is used. For a --native run HOME must be the
 // account's own: node_repl finds the helper's native pipe through HOME while the helper, an app-sandboxed process,
@@ -37,6 +41,7 @@ import {resolveRuntime} from '../../src/runtime/manifest.mjs';
 import {auditExchange} from './app-server.mjs';
 import {createHelperTracker, helperPids, isAlive} from './helpers.mjs';
 import {launchEnvVerdict} from './launch-env.mjs';
+import {openUnder, sessionTmpEntries, sessionTmpVerdict} from './session-tmp.mjs';
 
 const SERVE = fileURLToPath(new URL('./serve-slot.mjs', import.meta.url));
 const SLOT_BODY = fileURLToPath(new URL('./cli-slot.mjs', import.meta.url));
@@ -90,6 +95,8 @@ const NATIVE = [
   ['Finder getAXState#2', `const app = await cua.getApp(${JSON.stringify(FINDER)}); const ax = await app.getAXState({emit: false, disableDiffing: true}); return {chars: ax?.length ?? null};`],
 ];
 
+const SCREENSHOT = ['Finder getScreenshot', `const app = await cua.getApp(${JSON.stringify(FINDER)}); const shot = await app.getScreenshot({emit: false}); return {bytes: shot?.length ?? null};`];
+
 const shQuote = value => `'${String(value).replaceAll("'", "'\\''")}'`;
 // The run's CODEX_CLI_PATH: a sh script that runs cli-slot.mjs on this Node with the run's settings.
 export function slotScript({node, real, appServer, logDir, responses}) {
@@ -102,13 +109,15 @@ const readJsonl = file => { try { return readFileSync(file, 'utf8').split('\n').
 async function main() {
   const {values} = parseArgs({options: {home: {type: 'string'}, 'user-home': {type: 'string'}, scratch: {type: 'string'}, host: {type: 'string'},
     mode: {type: 'string'}, cli: {type: 'string'}, 'app-server': {type: 'string', default: 'forward'}, responses: {type: 'string'}, native: {type: 'boolean', default: false},
-    label: {type: 'string'}, out: {type: 'string'}, 'config-home': {type: 'string'}, 'env-probe': {type: 'boolean', default: false}}});
+    label: {type: 'string'}, out: {type: 'string'}, 'config-home': {type: 'string'}, 'env-probe': {type: 'boolean', default: false}, 'watch-session-tmp': {type: 'boolean', default: false}}});
   const {home, scratch, host, mode, cli, label} = values;
   const userHome = values['user-home'];
   const envProbe = values['env-probe'];
   if (!['vendor', 'cua'].includes(host) || !(envProbe ? ['scoped', 'default', 'disabled'] : ['scoped', 'default']).includes(mode)) throw new Error('--host vendor|cua and --mode scoped|default (with --env-probe also disabled)');
   if (values.native && host !== 'vendor') throw new Error('--native runs on the vendor host (macOS computer sessions)');
   if (envProbe && (values.native || host !== 'vendor')) throw new Error('--env-probe runs on the vendor host without --native');
+  const watchTmp = values['watch-session-tmp'];
+  if (watchTmp && !values.native) throw new Error('--watch-session-tmp watches a --native run');
   const watchHelpers = values.native || envProbe;
   const out = {label, host, mode, cli, appServer: values['app-server'], native: values.native, envProbe, started: new Date().toISOString(), events: []};
   const ev = (what, data = {}) => { out.events.push({at: new Date().toISOString(), what, ...data}); process.stderr.write(`[${label}] ${what} ${JSON.stringify(data).slice(0, 300)}\n`); };
@@ -170,10 +179,17 @@ async function main() {
     if (envProbe) helpers.observe();
     else results.confinement = await js('confinement', confinementCell({outside, marker, moduleDir: runtime.paths.moduleDir, cuaHome: home, tcpPort: tcp.address().port, unixPath, sessionTmp}));
     if (values.native) {
-      for (const [name, body] of NATIVE) {
+      const tmpSeen = [];
+      for (const [name, body] of watchTmp ? [...NATIVE, SCREENSHOT] : NATIVE) {
         results[name] = await js(name, body);
         helpers.observe();
+        if (watchTmp) {
+          const tmp = readJsonl(launchLog).at(-1)?.sessionTmp;
+          tmpSeen.push({label: name, sessionTmp: tmp ?? null, entries: tmp ? sessionTmpEntries(tmp) : null,
+            helperOpen: tmp ? helpers.owned().flatMap(pid => openUnder(pid, tmp)) : []});
+        }
       }
+      if (watchTmp) out.sessionTmp = {seen: tmpSeen, verdict: sessionTmpVerdict(tmpSeen.filter(o => o.entries !== null))};
     }
     await client.call('end_task', {}).catch(() => null);
   } catch (error) {

@@ -53,3 +53,10 @@ test('a revision that is not a commit id is refused before anything reaches the 
   assert.equal(run.status, 2);
   assert.equal(run.log, '');
 });
+
+test('helper-tmp: one native vendor-host session under the real HOME and a scratch config home, watching the session temp', t => {
+  const run = wrapper(t, ['helper-tmp', 'abc1234']);
+  assert.match(run.log, /experiment\.mjs --native --watch-session-tmp --home ~\/cua-115\/home --user-home "\$HOME" --config-home ~\/cua-115\/userhome\/\.config .*--host vendor --mode scoped .*--out ~\/cua-115\/m2-helper-tmp\/helper-tmp\.json/);
+  assert.match(run.log, /scp -q mini:~\/cua-115\/m2-helper-tmp\/helper-tmp\.json /);
+  assert.equal(run.status, 0, 'no evidence came back from the double, so no verdict step ran');
+});

@@ -2,6 +2,8 @@
 
 ## Open
 
+- **2026-10-18 — `scripts/probe-runtime.mjs` still names CodexCLI.app (minor, #115 M2).** That live probe, the one `cua doctor`'s `helper.permissions` row points to, builds its own vendor-host environment (`scripts/probe/lib.mjs` `runtimePaths`/`probeEnv`) with `CODEX_CLI_PATH` set to `runtimes/<release>/CodexCLI.app/Contents/MacOS/codex`, and refuses to start without that file. M2 dropped CodexCLI.app from the darwin pin, so the probe still works on a tree installed before M2 (the file is left in place) and refuses on a fresh install. Fix: build the launch through `buildLaunch`/`createLaunchDirs`, so it runs through cua's compat executable with the session's compat settings, or retire the probe in favour of `scripts/accept/compat-route.mjs`. Belongs with M4's cleanup of the leftover CodexCLI.app.
+
 - **2026-10-17 — Leftovers of the vendor browser service in the bind rule and the wrapper (minor, #79).** (a) `cua
   profiles bind`'s name branch (src/profiles/bind.mjs, "Name") and the labelling story in src/profiles/inventory.mjs's
   header rest on the vendor service's profile enrichment; cua's service labels only MAWS backends, which bind ignores,

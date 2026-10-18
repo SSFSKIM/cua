@@ -255,8 +255,8 @@ export async function assertSandboxConfines(mode, {platform, probe = bwrapUserns
   fail('sandbox_unavailable', `CUA_SHIM_SANDBOX=scoped, but ${why}, and the runtime would then run JavaScript cells with no sandbox at all; nothing was started`, {hint: SANDBOX_UNAVAILABLE_HINT});
 }
 
-// The sandbox cua's own REPL host runs its children under: the retained Codex launcher (`codex sandbox`, the relocated
-// CodexCLI.app on macOS, the relocated codex on Linux) until #115 replaces it, given the policy the vendor's node_repl
+// The sandbox cua's own REPL host on Linux runs its children under: the retained Codex launcher (`codex sandbox`, the
+// relocated codex) until #115 M3 replaces it (macOS renders cua's own since M1, src/sandbox), given the policy the vendor's node_repl
 // derives from the same per-call `codex/sandbox-state-meta`. The argv template is the recovered one
 // (docs/doperpowers/research/2026-10-14-own-repl-host/node-repl-embedded-INDEX.md "Default timeout and launch
 // templates"), rendered as the pinned node_repl renders it (its live kernel command lines, observed 2026-10-14):

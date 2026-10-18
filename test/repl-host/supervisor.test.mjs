@@ -3,7 +3,7 @@
 // the M1 probes of 2026-10-14). Needs Node 24 or later for the kernel (CUA_NODE); skips visibly otherwise.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {existsSync, mkdirSync, readFileSync, realpathSync, symlinkSync} from 'node:fs';
+import {existsSync, mkdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
 import {dirname, join} from 'node:path';
 import {kernelNode} from './kernel-harness.mjs';
@@ -59,14 +59,26 @@ test('cells persist in one kernel launched lazily under cua\'s sandbox: sandbox-
   assert.equal(existsSync(host.denied), false, 'macOS creates no deny target: the missing one is denied at its path');
 });
 
-test('on the Codex CLI\'s route (Linux until #115 M3) the kernel launches under the recovered `codex sandbox` argv', own, async t => {
-  const host = await startHost(t, {node, launcher: 'codex'});
+test('on the Linux route the kernel launches under the pinned helper with its role\'s profile, the helper checked before each launch', own, async t => {
+  const host = await startHost(t, {node, launcher: 'helper'});
   await host.js('nodeRepl.write(1)');
   const [launch] = launches(host.codexHome);
   const sessionId = launch.argv[launch.argv.indexOf('--session-id') + 1];
-  assert.deepEqual(launch.argv, ['sandbox', '-c', 'shell_environment_policy.inherit="all"', '-c', 'default_permissions="node_repl"', '-c',
-    `permissions.node_repl={filesystem = {${[dirname(node), dirname(KERNEL), ...CUA_API_READ_PATHS].sort().map(p => `"${p}" = "read"`).join(', ')}, ":root" = "read", ":tmpdir" = "write", ":workspace_roots" = {"." = "write"}}, network = {enabled = false}}`,
+  const profile = JSON.parse(launch.argv[5]);
+  assert.deepEqual(launch.argv, ['--sandbox-policy-cwd', host.cwd, '--command-cwd', host.cwd, '--permission-profile', launch.argv[5],
     '--', node, '--experimental-vm-modules', KERNEL, '--session-id', sessionId, '--working-dir', host.cwd]);
+  assert.equal(profile.network, 'restricted');
+  const access = Object.fromEntries(profile.file_system.entries.map(e => [e.path.type === 'path' ? e.path.path : `:${e.path.value.kind}`, e.access]));
+  for (const path of [dirname(node), dirname(KERNEL), ...CUA_API_READ_PATHS]) assert.equal(access[path], 'read', path);
+  assert.deepEqual([access[':root'], access[':project_roots'], access[':tmpdir'], access[host.denied]], ['read', 'write', 'write', 'none']);
+  assert.equal(existsSync(host.denied), true, 'Linux creates a missing deny target before the launch (bubblewrap masks only what exists)');
+  // A helper whose bytes change is not the pinned one: the next launch is refused, and nothing runs unconfined.
+  writeFileSync(host.double, `${readFileSync(host.double, 'utf8')}\n# tampered\n`);
+  assert.deepEqual(texts(await host.call('js_reset')), ['js kernel reset']);
+  const refused = await host.js('nodeRepl.write(2)');
+  assert.equal(refused.isError, true);
+  assert.match(texts(refused)[0], /^js sandbox unavailable: cua's Linux sandbox helper .* has SHA-256 [0-9a-f]{64}, not the pinned [0-9a-f]{64}; it is not run/);
+  assert.equal(launches(host.codexHome).length, 1, 'nothing more was launched');
 });
 
 test('output assembly: named writes first, then unnamed output, then images; an error leads and drops images', own, async t => {
@@ -129,9 +141,9 @@ test('js_reset stops the kernel and clears bindings, launched or not; a cancella
 });
 
 test('a kernel that dies under a running cell answers it with the vendor\'s exit diagnostic; the next cell gets a fresh kernel', own, async t => {
-  // Under cua's sandbox the kernel process is Node itself (sandbox-exec execs it): its pid and its own signal death are
-  // reported. Under the Codex CLI the launcher's are, as the vendor reports them (128 + the signal).
-  for (const [launcher, status] of [['seatbelt', 'exited(signal=9)'], ['codex', 'exited(code=137)']]) {
+  // Under sandbox-exec the kernel process is Node itself (it execs it): its pid and its own signal death are reported.
+  // Under the Linux helper (its double here, which runs the command as its child) the helper's are (128 + the signal).
+  for (const [launcher, status] of [['seatbelt', 'exited(signal=9)'], ['helper', 'exited(code=137)']]) {
     const host = await startHost(t, {node, launcher});
     await host.js('nodeRepl.write("warm")');
     const running = host.js('let fs=await import("node:fs");fs.writeSync(2,"fixture stderr line\\n");await new Promise(r=>setTimeout(r,5000));');
@@ -374,7 +386,8 @@ test('a forced shutdown that arrives while a policy change stops the old kernel 
   const input = new PassThrough(), output = new PassThrough();
   const replies = new Map();
   output.setEncoding('utf8').on('data', chunk => { for (const line of chunk.split('\n').filter(Boolean)) { const msg = JSON.parse(line); replies.get(msg.id)?.(msg); } });
-  const supervisor = createSupervisor({input, output, env: {CUA_REPL_NODE_PATH: '/fixture/node', CODEX_CLI_PATH: '/fixture/codex', PATH: '/usr/bin:/bin'}, cwd: '/fixture/run', startKernel, log: () => {}});
+  const supervisor = createSupervisor({input, output, env: {CUA_REPL_NODE_PATH: '/fixture/node', CUA_REPL_SANDBOX_EXEC: '/usr/bin/sandbox-exec', PATH: '/usr/bin:/bin',
+    CUA_SANDBOX_DENY_READ: JSON.stringify({deny: ['/fixture/denied'], reexpose: [], metadataOnly: [], tiers: []})}, cwd: '/fixture/run', startKernel, log: () => {}});
   const request = (id, method, params) => new Promise(resolve => { replies.set(id, resolve); input.write(`${JSON.stringify({jsonrpc: '2.0', id, method, params})}\n`); });
   await request(1, 'initialize', {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 't', version: '0'}});
   const disabled = {'codex/sandbox-state-meta': {permissionProfile: {type: 'disabled'}, sandboxCwd: 'file:///fixture/run'}};

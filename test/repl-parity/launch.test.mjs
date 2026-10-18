@@ -36,7 +36,7 @@ test('on the macOS vendor host a boundary lane\'s markers directory is the launc
  const {tmpdir}=await import('node:os');const {join}=await import('node:path');const {PassThrough}=await import('node:stream');
  const {buildLaunch,createLaunchDirs,removeLaunchDirs}=await import('../../src/runtime/launch.mjs');
  const {parsePin,runtimeFor}=await import('../../src/runtime/manifest.mjs');
- const {assertSandboxFits,sandboxArgs,sandboxPolicy,sandboxState}=await import('../../src/runtime/sandbox.mjs');
+ const {assertSandboxFits,sandboxState}=await import('../../src/runtime/sandbox.mjs');const {policyTable:sandboxPolicy}=await import('../../src/sandbox/policy.mjs');const {sandboxArgs}=await import('../../scripts/sandbox-probe/codex-template.mjs');
  const {main}=await import('../../src/sandbox/codex-compat.mjs');
  const {fixturePin}=await import('../fixtures/runtime-fixture.mjs');
  const {boundaryMarkersDir}=await import('./fixture-launch.mjs');

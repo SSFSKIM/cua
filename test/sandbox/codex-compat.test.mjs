@@ -8,7 +8,9 @@ import {mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {PassThrough} from 'node:stream';
-import {sandboxArgs, sandboxPolicy, sandboxState} from '../../src/runtime/sandbox.mjs';
+import {sandboxState} from '../../src/runtime/sandbox.mjs';
+import {policyTable as sandboxPolicy} from '../../src/sandbox/policy.mjs';
+import {sandboxArgs} from '../../scripts/sandbox-probe/codex-template.mjs';
 import {main, parseInlineTable, parseSandboxArgv, roleOf, sandboxRequest} from '../../src/sandbox/codex-compat.mjs';
 import {locateSettings, readSettings} from '../../src/sandbox/compat-settings.mjs';
 

@@ -50,7 +50,9 @@ import {sandboxedEnv} from '../../src/sandbox/env.mjs';
 import {homeLayout, realHome} from '../../src/runtime/layout.mjs';
 import {ownHostNode} from '../../src/runtime/launch.mjs';
 import {resolveRuntime} from '../../src/runtime/manifest.mjs';
-import {sandboxArgs, sandboxPolicy, sandboxState} from '../../src/runtime/sandbox.mjs';
+import {sandboxState} from '../../src/runtime/sandbox.mjs';
+import {policyTable as sandboxPolicy} from '../../src/sandbox/policy.mjs';
+import {sandboxArgs} from './codex-template.mjs';
 import {STORE_RELATIVE} from '../../src/secrets/store.mjs';
 import {compareCapture, compareExperiments, compareFingerprints, comparePortToCapture, judgeFingerprints, metadataGrantPins, profileFromPolicy} from './compare.mjs';
 

@@ -1,5 +1,6 @@
 import {createAgentState} from '../src/remote/health.mjs';
 import {test} from 'node:test';
+import {loadHelperPin} from '../src/sandbox/linux.mjs';
 import assert from 'node:assert/strict';
 import {join} from 'node:path';
 import {chmodSync, mkdirSync, readFileSync, readdirSync, rmSync, realpathSync, symlinkSync, writeFileSync} from 'node:fs';
@@ -109,7 +110,7 @@ test('the sandbox check describes the mode, ignores the caller\'s $TMPDIR, and f
   assert.match(failed.detail, /a connection's run directory, \$CUA_HOME\/run\/<session> \(.*\), which lies inside cua install's staging directory/);
   assert.match(failed.detail, /cua serve .*refuse/);
   assert.match(failed.detail, /CUA_SHIM_SANDBOX=disabled/);
-  for (const [mode, text] of [['disabled', /wherever your account can.*network/], ['default', /denies every write/]]) {
+  for (const [mode, text] of [['disabled', /wherever your account can.*network/], ['default', /write nowhere and have no network/]]) {
     const row = check(await inspect({CUA_SHIM_SANDBOX: mode}), 'sandbox');
     assert.equal(row.status, 'pass', mode);
     assert.match(row.detail, text, mode);
@@ -609,11 +610,23 @@ test('sandbox.launcher (macOS) passes with sandbox-exec, the compat executable a
   assert.match(noNode.detail, /the vendor's pinned Node it runs on/);
 });
 
-test('Linux has no sandbox.launcher row until #115 M3', async t => {
+test('Linux: sandbox.launcher passes for the pinned helper and fails, with the remedy, for a missing or tampered one (#115 M3)', async t => {
   const s = scratch();
   t.after(s.cleanup);
-  const report = await inspectRuntime({home: s.dir, host: {platform: 'linux', arch: 'x64'}, inspectHelper: noHelper, inspectSecrets: noSecrets, inspectAgent: noAgent, inspectChrome: noChrome, inspectLinux: async () => []});
-  assert.equal(check(report, 'sandbox.launcher'), undefined);
+  const home = realpathSync(s.dir);
+  const pin = loadHelperPin();
+  const linuxHost = {platform: 'linux', arch: 'x64'};
+  const run = linuxHelper => inspectRuntime({home, host: linuxHost, inspectHelper: noHelper, inspectSecrets: noSecrets, inspectAgent: noAgent, inspectChrome: noChrome, inspectLinux: async () => [], linuxHelper});
+  const missing = check(await run(undefined), 'sandbox.launcher');
+  assert.equal(missing.status, 'fail');
+  assert.match(missing.detail, new RegExp(`cua's Linux sandbox helper ${join(home, 'sandbox', pin.upstreamTag, 'codex-linux-sandbox')} is not installed .*; run \`cua install\``));
+  mkdirSync(join(home, 'sandbox', pin.upstreamTag), {recursive: true});
+  writeFileSync(join(home, 'sandbox', pin.upstreamTag, 'codex-linux-sandbox'), 'tampered');
+  assert.match(check(await run(undefined), 'sandbox.launcher').detail, /has SHA-256 [0-9a-f]{64}, not the pinned [0-9a-f]{64}.*remove/);
+  const pinned = {path: join(home, 'sandbox', pin.upstreamTag, 'codex-linux-sandbox'), sha256: pin.assets['linux-x64'].sha256};
+  const passing = check(await run(({home: h, arch}) => { assert.deepEqual([h, arch], [home, 'x64']); return pinned; }), 'sandbox.launcher');
+  assert.equal(passing.status, 'pass');
+  assert.match(passing.detail, /the pinned helper .*codex-linux-sandbox \(SHA-256 [0-9a-f]{64}\); no Codex CLI is launched/);
 });
 
 // #115 M2 review: a checkout whose bin/cua-codex-compat is missing still loads launch.mjs and doctor (nothing resolves the

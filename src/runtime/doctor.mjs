@@ -26,14 +26,17 @@
 // `sandbox` describes the CUA_SHIM_SANDBOX in `env` (src/runtime/sandbox.mjs). Under scoped it fails when the
 // profile's write roots ($CUA_HOME/run: a connection's run directory and its session temp, which is its TMPDIR) overlap
 // a trusted code path (the release's modules, the checkout's src/repl-host, src/sandbox, src/services and src/secrets),
-// the runtime's CODEX_HOME, $CUA_HOME/node, $CUA_HOME/staging or what JavaScript cells may not read (the secret store,
-// ~/.config/cua and the cua home around run/): `cua serve` and the listing launch refuse such a launch.
-// Another mode is the user's choice and only described.
-// `sandbox.launcher` (macOS, #115): what confines the children instead of the Codex CLI, which no row names any more:
+// the runtime's CODEX_HOME, $CUA_HOME/node, $CUA_HOME/staging, $CUA_HOME/sandbox or what JavaScript cells may not read
+// (the secret store, ~/.config/cua and the cua home around run/): `cua serve` and the listing launch refuse such a
+// launch. On Linux scoped and default also fail where bubblewrap cannot create a user namespace (sandbox.userns), since
+// cua's helper then cannot confine anything and confined connections are refused. Another mode is the user's choice
+// and only described.
+// `sandbox.launcher` (#115): what confines the children instead of the Codex CLI, which no row names any more. macOS:
 // /usr/bin/sandbox-exec (cua's own host, and the compat executable's exec), bin/cua-codex-compat (the vendor host's
 // CODEX_CLI_PATH) and the vendor's pinned Node it runs on, each an executable file; `fail` names what is missing, since
-// cua serve then refuses a confined vendor-host launch (sandbox_unavailable). Linux launches through the Codex CLI
-// until #115 M3, whose row this becomes.
+// cua serve then refuses a confined vendor-host launch (sandbox_unavailable). Linux: the pinned helper
+// (src/sandbox/linux.mjs) present at $CUA_HOME/sandbox/<tag>/ with the pinned SHA-256; `fail` names a missing or
+// tampered helper, which every confined launch refuses (sandbox_unavailable).
 // On Linux the release is trusted by its archive hash (runtime.signatures says so; no codesign runs), runtime.ipc does
 // not apply, the darwin helper.live and helper.permissions rows give way to display, accessibility.bus and
 // sandbox.userns (linux-desktop.mjs; the group-container socket, lsof and plutil are never consulted).
@@ -58,6 +61,7 @@ import {BROWSER_SERVICE, BROWSER_SERVICE_IMPL_DIR, COMPAT_EXECUTABLE, compatExec
 import {SANDBOX_CONFLICT_HINT, assertDenyListShape, describeConflicts, protectedPaths, sandboxConflicts, sandboxModeFrom, scopedWriteRoots} from './sandbox.mjs';
 import {denyListFor} from '../sandbox/policy.mjs';
 import {SEATBELT_EXEC} from '../sandbox/seatbelt.mjs';
+import {linuxHelper as verifiedLinuxHelper} from '../sandbox/linux.mjs';
 import {loadPins, selectPin, locateRuntime, recoveryHint} from './manifest.mjs';
 import {checkLayout, checkVendorManifest, checkIpc, verifyCodeSignatures, ipcVersionsIn} from './checks.mjs';
 import {inspectSecretStore, classifyStore} from '../secrets/check.mjs';
@@ -79,6 +83,17 @@ const LIVE_PROBE = 'scripts/probe-runtime.mjs';
 const result = (name, status, detail) => ({name, status, detail});
 
 const executableFile = path => { try { accessSync(path, constants.X_OK); return statSync(path).isFile(); } catch { return false; } };
+// sandbox.launcher on Linux: the pinned helper for this home and architecture, verified (`verifyHelper`, injectable).
+function helperCheck({home, arch, linuxHelper}) {
+  try {
+    const helper = linuxHelper({home: realHome(home), arch});
+    return result('sandbox.launcher', 'pass', `cua's own sandbox confines the children: the pinned helper ${helper.path} (SHA-256 ${helper.sha256}); no Codex CLI is launched`);
+  } catch (error) {
+    if (!(error instanceof CuaError)) throw error;
+    return result('sandbox.launcher', 'fail', `${error.message}${error.hint ? `; ${error.hint}` : ''}`);
+  }
+}
+
 // sandbox.launcher on macOS: `node` is the installed release's vendor Node (absent without an installed release).
 function launcherCheck({sandboxExec, compat, node}) {
   const parts = [['sandbox-exec', sandboxExec], ['cua\'s compat executable', compat], ...(node ? [['the vendor\'s pinned Node it runs on', node]] : [])];
@@ -87,7 +102,7 @@ function launcherCheck({sandboxExec, compat, node}) {
   return result('sandbox.launcher', 'pass', `cua's own sandbox confines the children: ${sandboxExec} for cua's own host, and on the vendor host ${compat}${node ? ` on ${node}` : ''}; no Codex CLI is launched`);
 }
 
-export async function inspectRuntime({home, env = process.env, live = false, pins, host = {platform: process.platform, arch: process.arch}, verifySignatures = verifyCodeSignatures, inspectHelper = inspectNativeHelper, inspectSecrets = inspectSecretStore, inspectLinux = linuxDesktopChecks, inspectChrome = defaultInspectChrome, inspectAgent = defaultInspectAgent, sweep = sweepRun, resolveOwnNode, launcher = {sandboxExec: SEATBELT_EXEC, compat: COMPAT_EXECUTABLE}}) {
+export async function inspectRuntime({home, env = process.env, live = false, pins, host = {platform: process.platform, arch: process.arch}, verifySignatures = verifyCodeSignatures, inspectHelper = inspectNativeHelper, inspectSecrets = inspectSecretStore, inspectLinux = linuxDesktopChecks, inspectChrome = defaultInspectChrome, inspectAgent = defaultInspectAgent, sweep = sweepRun, resolveOwnNode, launcher = {sandboxExec: SEATBELT_EXEC, compat: COMPAT_EXECUTABLE}, linuxHelper = verifiedLinuxHelper}) {
   if (live) throw new Error(`inspectRuntime is passive; live probes are separate explicit scripts (${LIVE_PROBE})`);
   pins ??= loadPins();
   const checks = [];
@@ -133,9 +148,10 @@ export async function inspectRuntime({home, env = process.env, live = false, pin
   const sandbox = sandboxCheck({home, env, runtime, platform: host.platform, userns: linuxRows?.find(row => row.name === 'sandbox.userns')});
   checks.push(sandbox.row);
   if (host.platform === 'darwin') checks.push(launcherCheck({...launcher, compat: compatExecutable(launcher.compat), node: runtime?.paths.node}));
+  if (host.platform === 'linux') checks.push(helperCheck({home, arch: host.arch, linuxHelper}));
   checks.push(runSweepCheck(home, sweep));
 
-  if (linuxRows) checks.push(...linuxRows.map(row => (row.name === 'sandbox.userns' ? usernsRow(row, {env, sandbox}) : row)));
+  if (linuxRows) checks.push(...linuxRows.map(row => (row.name === 'sandbox.userns' ? usernsRow(row, {sandbox}) : row)));
   if (!linuxRows) {
     const expectedIpc = (runtime?.manifest ?? pin).runtime.ipc;
     const helper = classifyHelper(await inspectHelper({expectedIpc}), {expectedIpc, runtimeRoot: runtime?.root});
@@ -205,30 +221,22 @@ function replHostCheck(home, env, platform, resolveOwnNode) {
     `${words(session)}. The profile listing (browser only): ${words(listing)}. CUA_REPL_HOST=cua or vendor chooses`);
 }
 
-// sandbox.userns as it bears on this setup. A scoped connection is itself refused where the probe fails, so its row
-// stands. Otherwise it is `skip` only when no scoped launch can happen here: the browser surface is off (only the
-// profile listing launches scoped behind a disabled connection), or CUA_SHIM_SANDBOX is set to another mode, which the
-// listing honours too. Otherwise a refusal stays `blocked`: the connection runs disabled, but `cua profiles list` and
-// `bind` launch scoped and are refused (sandbox_unavailable).
-function usernsRow(row, {env, sandbox}) {
-  if (row.status === 'pass' || !sandbox.surfaces || sandbox.mode === 'scoped') return row;
-  const explicitOther = env.CUA_SHIM_SANDBOX !== undefined && env.CUA_SHIM_SANDBOX !== 'scoped';
-  if (!sandbox.surfaces.includes('browser') || explicitOther) return result('sandbox.userns', 'skip', `not needed here: no scoped launch happens with ${explicitOther ? `CUA_SHIM_SANDBOX=${env.CUA_SHIM_SANDBOX}` : 'the browser surface off'}. CUA_SHIM_SANDBOX=scoped or the browser surface's profile listing would need it, and it would read: ${row.detail}`);
-  return result('sandbox.userns', 'blocked', `${row.detail}. The connection runs under ${sandbox.mode}, but cua profiles list and bind launch under scoped and are refused (sandbox_unavailable)`);
+// sandbox.userns as it bears on this setup: every scoped or default launch on Linux runs under cua's helper, which
+// needs it, and the profile listing runs under the same CUA_SHIM_SANDBOX, so the row stands unless the mode is disabled.
+function usernsRow(row, {sandbox}) {
+  if (row.status === 'pass' || sandbox.mode !== 'disabled') return row;
+  return result('sandbox.userns', 'skip', `not needed here: CUA_SHIM_SANDBOX=disabled confines nothing. Under scoped (the default) or default cua's sandbox helper would need it, and it would read: ${row.detail}`);
 }
 
-// -> {mode, surfaces, row}. On Linux the row also says what F2 measured there (src/runtime/sandbox.mjs
-// defaultSandboxMode): the scoped sandbox keeps the computer-use helper off the X display and the session bus, and where
-// bubblewrap cannot create a user namespace (`userns`, the sandbox.userns row) the runtime's sandbox fails open, so
-// scoped launches are refused. The surfaces are read on Linux only, where the default and the remedies depend on them;
-// the darwin row is what it was before Phase F, and serve rejects an invalid CUA_SHIM_SURFACES itself.
+// -> {mode, surfaces, row}. The surfaces are read on Linux only, where the row says the trusted worker reaches the
+// network with the computer surface; serve rejects an invalid CUA_SHIM_SURFACES itself.
 function sandboxCheck({home, env, runtime, platform, userns}) {
   const linux = platform === 'linux';
   let surfaces = null;
   let mode;
   try {
     if (linux) surfaces = surfacesFrom(env.CUA_SHIM_SURFACES);
-    mode = sandboxModeFrom(env, linux ? {platform, surfaces} : {platform});
+    mode = sandboxModeFrom(env);
   } catch (error) {
     if (!(error instanceof CuaError)) throw error;
     return {mode: null, surfaces: null, row: result('sandbox', 'fail', error.message)};
@@ -238,7 +246,6 @@ function sandboxCheck({home, env, runtime, platform, userns}) {
 
 function sandboxRow({home, env, runtime, platform, surfaces, userns, mode}) {
   const linux = platform === 'linux';
-  if (mode === 'disabled' && linux && env.CUA_SHIM_SANDBOX === undefined) return result('sandbox', 'pass', 'CUA_SHIM_SANDBOX unset: on linux with the computer surface the default is disabled, because under the scoped sandbox node_repl lets no runtime process connect to a socket and the computer-use helper could not reach the X display or the session bus. JavaScript cells may write wherever your account can and reach the network (on Linux they can reach the X display directly too); CUA_SHIM_SURFACES=browser keeps scoped');
   if (mode === 'disabled') return result('sandbox', 'pass', 'CUA_SHIM_SANDBOX=disabled: JavaScript cells may write wherever your account can, cua\'s trusted code roots included (accepted under the trust model, #20), and reach the network');
   const owned = homeLayout(realHome(home));
   // A connection's run directory, which every session's write roots lie in (its session temp is inside it), and the
@@ -247,25 +254,24 @@ function sandboxRow({home, env, runtime, platform, surfaces, userns, mode}) {
   const session = join(owned.run, 'session');
   let deny;
   try {
-    const list = denyListFor({home: owned.home, env, sessionId: 'session', sessionTmp: join(session, 'tmp'), platform});
+    const list = denyListFor({home: owned.home, env, sessionId: 'session', sessionTmp: join(session, 'tmp'), platform, mode});
     assertDenyListShape(list);
     deny = list.deny;
   } catch (error) {
     if (!error.code) throw error;
     return result('sandbox', 'fail', `CUA_SHIM_SANDBOX=${mode}: ${error.message}. cua serve and the profile listing refuse to start like this (${error.code})${error.hint ? `: ${error.hint}` : ''}`);
   }
-  if (mode === 'default') return result('sandbox', 'pass', 'CUA_SHIM_SANDBOX=default: cua sends no sandbox state; node_repl denies every write and network connection, so profile labels and other features that need scratch space fail');
+  if (linux && userns && userns.status !== 'pass') return result('sandbox', 'fail', `CUA_SHIM_SANDBOX=${mode}, but bubblewrap cannot create a user namespace here (see sandbox.userns), so cua's sandbox helper cannot confine anything and cua serve and the profile listing refuse confined connections (sandbox_unavailable). Fix what sandbox.userns names, or set CUA_SHIM_SANDBOX=disabled to run without a sandbox openly`);
+  if (mode === 'default') return result('sandbox', 'pass', 'CUA_SHIM_SANDBOX=default: JavaScript cells and trusted services read everywhere but what cells may not read, write nowhere and have no network, so profile labels, screenshots and other features that need scratch space fail');
   const computer = linux && surfaces.includes('computer');
-  if (linux && userns && userns.status !== 'pass') return result('sandbox', 'fail', 'CUA_SHIM_SANDBOX=scoped, but bubblewrap cannot create a user namespace here (see sandbox.userns): the runtime\'s sandbox fails open in that state, running JavaScript cells with no sandbox at all, so cua serve and the profile listing refuse scoped connections (sandbox_unavailable). Fix what sandbox.userns names, or set CUA_SHIM_SANDBOX=disabled to choose that openly'
-    + (computer ? '. And even with user namespaces, scoped would keep the computer-use helper (sky_linux) off the X display and the session bus; unset CUA_SHIM_SANDBOX (the Linux default with the computer surface is disabled) or use CUA_SHIM_SURFACES=browser' : ''));
-  if (computer) return result('sandbox', 'fail', 'CUA_SHIM_SANDBOX=scoped with the computer surface on linux: under the scoped sandbox node_repl lets no runtime process connect to a socket, so the computer-use helper (sky_linux) cannot reach the X display or the session bus and every computer-use call fails; unset CUA_SHIM_SANDBOX (the Linux default with the computer surface is disabled) or use CUA_SHIM_SURFACES=browser');
   const conflicts = sandboxConflicts({
     protectedPaths: protectedPaths({trustedCodePaths: [runtime?.paths.moduleDir, REPL_HOST_DIR, CUA_API_DIR, CUA_API_DOCS_DIR, SANDBOX_DIR, dirname(SKY_SERVICE), dirname(BROWSER_SERVICE), BROWSER_SERVICE_IMPL_DIR, ...SERVICE_SUPPORT_DIRS],
-      codexHome: owned.codexHome, managedNode: owned.node, staging: owned.staging, denied: deny, ownRoots: [session], ownHolders: [owned.home, owned.run]}),
+      codexHome: owned.codexHome, managedNode: owned.node, staging: owned.staging, sandboxHelper: owned.sandbox, denied: deny, ownRoots: [session], ownHolders: [owned.home, owned.run]}),
     writeRoots: scopedWriteRoots({cwd: session, cwdLabel: 'a connection\'s run directory, $CUA_HOME/run/<session>'}),
   });
   if (conflicts.length) return result('sandbox', 'fail', `${describeConflicts(conflicts)}. cua serve and the profile listing refuse to start like this (sandbox_conflict): ${SANDBOX_CONFLICT_HINT}`);
-  return result('sandbox', 'pass', 'CUA_SHIM_SANDBOX=scoped (the default): JavaScript cells write only their connection\'s run directory and its session temp ($CUA_HOME/run/<session>, their TMPDIR), no trusted code path lies under either, and cells have no network; CUA_SHIM_SANDBOX=disabled lifts both limits');
+  return result('sandbox', 'pass', 'CUA_SHIM_SANDBOX=scoped (the default): JavaScript cells write only their connection\'s run directory and its session temp ($CUA_HOME/run/<session>, their TMPDIR), no trusted code path lies under either, and cells have no network'
+    + (computer ? ' (the trusted services do, so the computer-use helper reaches the X display and the session bus)' : '') + '; CUA_SHIM_SANDBOX=disabled lifts both limits');
 }
 
 function runSweepCheck(home, sweep) {

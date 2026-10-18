@@ -403,8 +403,9 @@ test('acceptance 9\'s fifth case: no CUA_NODE, Node 22 on PATH and running cua, 
   const ambient = {PATH: dirname(node22)};
   const select = platform => replHostFor({platform, surfaces: ['computer'], ambient, home: ctx.home, browserSelection: null,
     resolveOwnNode: () => ownHostNode({ambient, home: ctx.home, execPath: node22})});
-  assert.deepEqual(select('linux'), {host: 'vendor', reason: 'own_host_node_unavailable',
-    nodeTried: ['CUA_NODE (unset)', 'the cua-installed Node (not installed)', `the node running cua ${node22} (v22.23.2)`, `node on PATH ${node22} (v22.23.2)`]});
+  // Linux has no vendor host to fall back to (#115 M3): the session is refused, naming what was tried and `cua install`.
+  assert.throws(() => select('linux'), error => error.code === 'repl_host_node' && /run `cua install`/.test(error.message)
+    && JSON.stringify(error.tried) === JSON.stringify(['CUA_NODE (unset)', 'the cua-installed Node (not installed)', `the node running cua ${node22} (v22.23.2)`, `node on PATH ${node22} (v22.23.2)`]));
   await install(ctx, {verifySignature: acceptSignature});
   assert.deepEqual(select('linux'), {host: 'cua', reason: 'linux', node: join(nodeDir(ctx.home), VERSION, 'bin/node')});
   // The production default resolver reads the home it is given.

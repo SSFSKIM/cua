@@ -24,6 +24,18 @@
 // message, stack or properties may carry the value (SkyComputerUseError keeps the request it sent). The trusted worker
 // returns a rejection's message to model code and console output to the model, so this module never logs, and no
 // error it raises carries a cause, a vendor payload or anything derived from the value. Labels are not secret.
+//
+// Launching applications on Linux (#115 M3, docs/doperpowers/specs/2026-10-17-own-sandbox-design.md, Design "Linux
+// computer sessions"): this service runs in the confined trusted worker, and sky_linux, its child, launches an
+// application by fork/exec, so the application would start inside the worker's sandbox and die there (#115 M0's probe).
+// So `{type: "execute", method: "launch_app", args: [{app}]}` with a string `app` and nothing else is answered here: the
+// id must be in sky_linux's own inventory (`list_apps`), else it fails with sky_linux's sentence (`launchable
+// application "<app>" was not found`); its desktop entry is found as the XDG specification finds a desktop file id
+// (desktopEntryFor), and the supervisor launches it outside the sandbox (nodeRepl.launchServices.openApplication,
+// src/repl-host/launch-services.mjs). It answers as the vendor's launch_app does (undefined). Any other launch_app shape
+// goes to the vendor unchanged, as on macOS.
+import {statSync} from 'node:fs';
+import {isAbsolute, join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {parseReference} from '../secrets/reference.mjs';
 import {
@@ -101,15 +113,58 @@ function vendorFailureKind(error) {
   return 'failed';
 }
 
+// The desktop entry of desktop file id `id` (`org.gnome.gedit.desktop`, `kde-okular.desktop`) in the XDG data
+// directories `env` names ($XDG_DATA_HOME or ~/.local/share first, then $XDG_DATA_DIRS or /usr/local/share:/usr/share),
+// or null. As the Desktop Entry Specification maps them, a dash in the id may stand for a subdirectory of
+// applications/; the first directory that has the entry wins.
+export function desktopEntryFor(id, env) {
+  if (typeof id !== 'string' || !/^[^/.][^/]*\.desktop$/.test(id)) return null;
+  const file = path => { try { return statSync(path).isFile(); } catch { return false; } };
+  const dir = path => { try { return statSync(path).isDirectory(); } catch { return false; } };
+  const find = (base, rest) => {
+    if (file(join(base, rest))) return join(base, rest);
+    for (let i = rest.indexOf('-'); i > 0; i = rest.indexOf('-', i + 1)) {
+      const sub = join(base, rest.slice(0, i));
+      if (dir(sub)) { const found = find(sub, rest.slice(i + 1)); if (found) return found; }
+    }
+    return null;
+  };
+  const home = isAbsolute(env.XDG_DATA_HOME ?? '') ? env.XDG_DATA_HOME : join(env.HOME ?? '/', '.local', 'share');
+  for (const data of [home, ...(env.XDG_DATA_DIRS || '/usr/local/share:/usr/share').split(':').filter(isAbsolute)]) {
+    const found = find(join(data, 'applications'), id);
+    if (found) return found;
+  }
+  return null;
+}
+
+// Exactly `{type: 'execute', method: 'launch_app', args: [{app: <string>}]}`: the app id, else null.
+function launchAppId(request) {
+  if (!isPlainObject(request) || request.type !== 'execute' || request.method !== 'launch_app' || !Object.keys(request).every(key => REQUEST_KEYS.includes(key))) return null;
+  const input = Array.isArray(request.args) && request.args.length === 1 ? request.args[0] : null;
+  return isPlainObject(input) && Object.keys(input).length === 1 && typeof input.app === 'string' ? input.app : null;
+}
+
 // `loadVendor` resolves the vendor service module; `secrets` reads a label's value (the file store);
 // `secretsUnavailable`, when set, is the launch's reason this connection has no store; `platform` picks the pinned
-// shapes (the process's own; the vendor target matches the platform it runs on).
-export function createSkyService({loadVendor, secrets, secretsUnavailable = null, platform = process.platform}) {
+// shapes (the process's own; the vendor target matches the platform it runs on). On Linux `openApplication` (the
+// trusted worker's nodeRepl.launchServices.openApplication) launches a desktop entry outside the sandbox, and `env`
+// names the XDG data directories it is found in.
+export function createSkyService({loadVendor, secrets, secretsUnavailable = null, platform = process.platform, env = process.env,
+  openApplication = target => globalThis.nodeRepl.launchServices.openApplication(target)}) {
   const eligible = ELIGIBLE_BY_PLATFORM[platform] ?? {};
   let vendor = null;
   const vendorService = () => (vendor ??= loadVendor());
 
+  async function launchLinuxApp(app) {
+    const apps = await (await vendorService()).handleRpc({type: 'execute', method: 'list_apps', args: []});
+    const entry = Array.isArray(apps) && apps.some(listed => listed?.id === app) ? desktopEntryFor(app, env) : null;
+    if (!entry) throw new Error(`launchable application "${app}" was not found`);
+    await openApplication({applicationPath: entry});
+  }
+
   async function handleRpc(request) {
+    const app = platform === 'linux' ? launchAppId(request) : null;
+    if (app !== null) return launchLinuxApp(app);
     const plan = substitutionFor(request, eligible);
     if (!plan) return (await vendorService()).handleRpc(request);
 
@@ -139,6 +194,7 @@ export function skyServiceFromEnv(env = process.env) {
       return import(pathToFileURL(vendorPath).href);
     },
     ...secretsFromEnv(env),
+    env,
   });
 }
 

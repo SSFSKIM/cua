@@ -440,7 +440,7 @@ export function settingsFrom(env, {platform = process.platform, devices = false}
   replHostFrom(env);
   // CUA_NODE likewise: only its form here; whether it names a Node 24 is the connection's resolution (launch.mjs ownHostNode).
   cuaNodeFrom(env);
-  return {persist, hostNotes, model: env.CUA_SHIM_MODEL, secrets: secrets === 'on', surfaces, sandbox: sandboxModeFrom(env, {platform, surfaces}), platform,
+  return {persist, hostNotes, model: env.CUA_SHIM_MODEL, secrets: secrets === 'on', surfaces, sandbox: sandboxModeFrom(env), platform,
     runtimeIdleMs: runtimeIdleFrom(env)};
 }
 

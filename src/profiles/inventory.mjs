@@ -129,24 +129,24 @@ export function teardownUnconfirmed(teardown, failure) {
 // only and secrets off, in its own session directory (removed afterwards with the session's approval file), with the
 // sandbox state of `sandbox`: a connection's own readiness listing passes the connection's mode (inside a disabled
 // connection the model's cells already run unconfined, so a refused listing would protect nothing). Without it, as for
-// `cua profiles list` and `bind`, it is the mode CUA_SHIM_SANDBOX in `ambient` picks for the browser surface: scoped
-// unless set otherwise, on Linux too (the browser surface works under it), so on Linux it is refused like a scoped
-// connection where user namespaces are (`probeUserns`, injectable for tests).
-export const listingSandboxMode = (ambient, platform) => sandboxModeFrom(ambient, {platform, surfaces: ['browser']});
+// `cua profiles list` and `bind`, it is the mode CUA_SHIM_SANDBOX in `ambient` picks: scoped unless set otherwise, so on
+// Linux it is refused like a confined connection where the pinned helper is missing or bubblewrap cannot create a user
+// namespace (`verifyHelper` and `probeUserns`, injectable for tests).
+export const listingSandboxMode = ambient => sandboxModeFrom(ambient);
 
 // The launch resolves its browser service and REPL host from `ambient` as a browser-only connection of its own would
 // (src/runtime/launch.mjs replHostFor), so a refused selection fails the listing before anything is launched.
 // `prepareLaunch` may adjust the launch record before it is spawned, and `resolveOwnNode` resolves the own host's Node
 // (replHostFor's); both exist for tests, as openConnection's do.
-export async function listLiveBackends({home, runtime, ambient = process.env, limits, tabCounts = true, sandbox, probeUserns, resolveOwnNode, prepareLaunch = launch => launch}) {
-  sandbox ??= listingSandboxMode(ambient, runtime.manifest.platform);
+export async function listLiveBackends({home, runtime, ambient = process.env, limits, tabCounts = true, sandbox, probeUserns, verifyHelper, resolveOwnNode, prepareLaunch = launch => launch}) {
+  sandbox ??= listingSandboxMode(ambient);
   const sessionId = randomUUID();
   const claim = claimRunSession(home, sessionId);
   let launch;
   try {
     launch = buildLaunch({runtime, home, sessionId, ambient, surfaces: ['browser'], services: {browser: BROWSER_SERVICE}, secretsUnavailable: 'secrets_disabled', resolveOwnNode, sandbox});
     assertSandboxFits(sandbox, launch);
-    await assertSandboxConfines(sandbox, {platform: runtime.manifest.platform, probe: probeUserns});
+    await assertSandboxConfines(sandbox, {platform: runtime.manifest.platform, launch, probe: probeUserns, verifyHelper});
     launch = prepareLaunch(launch);
     createLaunchDirs(launch);
     const result = await listBackendsWith(spawnUpstream(launch, {stderr: 'ignore'}), {limits, tabCounts, sandboxState: sandboxStateFor(sandbox, launch.cwd)});

@@ -1,10 +1,11 @@
 // Drives cua's own REPL host (src/repl-host/supervisor.mjs) as cua's proxy does: a real supervisor process on the own
 // host's Node, a real kernel, MCP over its stdio. The sandbox launcher is a double (`sandboxDouble`): a script that
 // records its argv and runs the command after `--` without confining it: as sandbox-exec does (it execs the command:
-// cua's own sandbox, the macOS route, CUA_REPL_SANDBOX_EXEC) or as `codex sandbox` does (as its own child: the Codex
-// CLI's route, CODEX_CLI_PATH). The real launchers are exercised only by the live runs. Every process belongs to the
-// test and is gone after it.
+// cua's own sandbox, the macOS route, CUA_REPL_SANDBOX_EXEC) or as the Linux helper does (as its descendant: the pinned
+// codex-linux-sandbox, CUA_REPL_SANDBOX_HELPER, named with the double's own SHA-256 as the pinned one). The real
+// launchers are exercised only by the live runs. Every process belongs to the test and is gone after it.
 import {spawn, execFileSync} from 'node:child_process';
+import {createHash} from 'node:crypto';
 import {chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -16,7 +17,7 @@ export const SUPERVISOR = fileURLToPath(new URL('../../src/repl-host/supervisor.
 const DEADLINE_MS = 20_000;
 
 // The launcher double, recording each launch's argv in <records>/launches/<pid>. `exec`: it execs the command (as
-// sandbox-exec does), else runs it as its own child (as `codex sandbox` does). `refuse`: it prints to stderr and exits 73
+// sandbox-exec does), else runs it as its own child (as the Linux helper's stages do). `refuse`: it prints to stderr and exits 73
 // without running anything, like a sandbox that cannot start. `denyLifeline` ('kernel' | 'worker'): for that child it
 // takes read access to the child's lifeline FIFO away before running it, as a sandbox policy that denied the path would.
 export function sandboxDouble(dir, {refuse = false, denyLifeline = null, exec = false, records = join(dir, 'codex')} = {}) {
@@ -68,8 +69,8 @@ export const SCOPED = cwd => ({type: 'managed', file_system: {type: 'restricted'
 
 // Starts a supervisor -> the driver. `env` adds to (or, as undefined, removes from) the host's environment; `sandbox`
 // is 'double' (default), 'refusing' or null (no sandbox launcher); `launcher` the route the double stands in for:
-// 'seatbelt' (default: CUA_REPL_SANDBOX_EXEC, cua's own sandbox, with a deny list of <root>/denied) or 'codex'
-// (CODEX_CLI_PATH and CODEX_HOME, the Codex CLI's). `services` ({name: module source}) are fixture trusted
+// 'seatbelt' (default: CUA_REPL_SANDBOX_EXEC, the macOS route) or 'helper' (CUA_REPL_SANDBOX_HELPER and its pinned
+// SHA-256, the Linux route), each with a deny list of <root>/denied. `services` ({name: module source}) are fixture trusted
 // services, written as <root>/trusted/<name>.mjs (the one trusted code path) and registered with rpc enabled.
 // `capabilities` are the client's in initialize; `onServerRequest(msg)` answers the requests the host sends the client
 // (elicitations), returning the reply's {result} or {error}, or nothing to leave it unanswered.
@@ -88,9 +89,9 @@ export async function startHost(t, {node, env = {}, sandbox = 'double', launcher
   }
   const denied = join(root, 'denied');
   const double = sandbox ? sandboxDouble(root, {refuse: sandbox === 'refusing', denyLifeline, exec: launcher === 'seatbelt'}) : null;
-  const launcherEnv = !double ? {} : launcher === 'seatbelt'
-    ? {CUA_REPL_SANDBOX_EXEC: double, CUA_SANDBOX_DENY_READ: JSON.stringify({deny: [denied], reexpose: [], metadataOnly: [], tiers: []})}
-    : {CODEX_CLI_PATH: double, CODEX_HOME: codexHome};
+  const denyRead = {CUA_SANDBOX_DENY_READ: JSON.stringify({deny: [denied], reexpose: [], metadataOnly: [], tiers: []})};
+  const launcherEnv = !double ? {} : launcher === 'seatbelt' ? {CUA_REPL_SANDBOX_EXEC: double, ...denyRead}
+    : {CUA_REPL_SANDBOX_HELPER: double, CUA_REPL_SANDBOX_HELPER_SHA256: createHash('sha256').update(readFileSync(double)).digest('hex'), ...denyRead};
   const base = {PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: root, TMPDIR: tmp, CUA_REPL_NODE_PATH: node, ...serviceEnv, ...launcherEnv};
   const childEnv = Object.fromEntries(Object.entries({...base, ...env}).filter(([, v]) => v !== undefined));
   const child = spawn(node, ['--disable-sigusr1', SUPERVISOR], {cwd, env: childEnv, stdio: ['pipe', 'pipe', 'pipe']});
@@ -146,7 +147,7 @@ export async function startHost(t, {node, env = {}, sandbox = 'double', launcher
   const kill = child.kill.bind(child), end = child.stdin.end.bind(child.stdin);
   child.kill = (...args) => { if (child.exitCode === null && child.signalCode === null) track(); return kill(...args); };
   child.stdin.end = (...args) => { if (child.exitCode === null && child.signalCode === null) track(); return end(...args); };
-  const host = {child, cwd, root, codexHome, tmp, trusted, denied, send, request, call, js, exited, frames, serverRequests, track, stderr: () => stderr};
+  const host = {child, cwd, root, codexHome, tmp, trusted, denied, double, send, request, call, js, exited, frames, serverRequests, track, stderr: () => stderr};
   if (initialize) {
     host.initialized = await request('initialize', {protocolVersion: '2025-06-18', capabilities, clientInfo: {name: 'test', version: '0'}});
     send({jsonrpc: '2.0', method: 'notifications/initialized'});

@@ -1,37 +1,37 @@
-// node_repl's per-call sandbox state: `_meta["codex/sandbox-state-meta"]` on a tools/call, the field Codex sends
-// (issues #20, #33, #36). Without it node_repl applies its restrictive default to cells and trusted services: reads
-// allowed, every write denied, temp directories included. CUA_SHIM_SANDBOX picks what cua sends on every call it makes
-// to the runtime:
-//   scoped    (default; on Linux only without the computer surface, see defaultSandboxMode) a managed profile: reads
-//             everywhere, writes only to the launch's working directory (the run directory, node_repl's
-//             `project_roots`, resolved against sandboxCwd) and $TMPDIR (`tmpdir`), no network.
-//             node_repl denies every kernel connection under any managed profile, so `network` says `restricted`.
-//             `slash_tmp` stays out: it would make any checkout or runtime under /tmp writable.
+// The per-call sandbox state: `_meta["codex/sandbox-state-meta"]` on a tools/call, the field Codex sends (issues #20,
+// #33, #36), which cua's proxy sets on every call it makes to the runtime and which both REPL hosts confine their
+// children by (cua's own sandbox, src/sandbox: on macOS its seatbelt port, on Linux the pinned helper; the macOS vendor
+// host through cua's compat executable). CUA_SHIM_SANDBOX picks it, the same on every platform and surface:
+//   scoped    (the default) a managed profile: reads everywhere, writes only to the launch's working directory (the run
+//             directory, `project_roots`, resolved against sandboxCwd) and $TMPDIR (`tmpdir`, the session's own temp),
+//             no network for cells. `slash_tmp` stays out: it would make any checkout or runtime under /tmp writable.
+//             On Linux with the computer surface the trusted worker alone gets the network, so the computer-use helper
+//             (sky_linux, its child) reaches the X display and the session bus (src/runtime/launch.mjs).
 //   disabled  the disabled permission profile: cells may write wherever the user can, and reach the network
-//   default   nothing, leaving node_repl's write-denying default
-// node_repl refuses the field without `sandboxCwd`, an absolute file URI; cua gives the launch's working directory.
-// Under a managed profile node_repl refuses to start a kernel when a write root covers a trusted code path
-// ("Trusted RPC dependency must resolve within a configured trusted code path"); assertSandboxFits refuses that
-// launch first, saying which root and which path, and also one whose write roots would cover CODEX_HOME.
+//   default   nothing, leaving the write-denying default: reads everywhere, no writes, no network
+// The vendor's node_repl refuses the field without `sandboxCwd`, an absolute file URI; cua gives the launch's working
+// directory. Under a managed profile node_repl refuses to start a kernel when a write root covers a trusted code path
+// ("Trusted RPC dependency must resolve within a configured trusted code path"); assertSandboxFits refuses that launch
+// first, for either host, saying which root and which path, and also one whose write roots would cover what cua keeps
+// private (CODEX_HOME, the kernel's deny list, cua's Node and its sandbox helper).
 import {accessSync, constants, lstatSync, readlinkSync, realpathSync, statSync} from 'node:fs';
 import {basename, dirname, isAbsolute, join, relative, resolve} from 'node:path';
-import {fileURLToPath, pathToFileURL} from 'node:url';
+import {pathToFileURL} from 'node:url';
 import {fail} from './errors.mjs';
 import {USERNS_REMEDY, bwrapUserns} from './linux-desktop.mjs';
 import {homeLayout} from './layout.mjs';
+import {verifyHelper as verifyLinuxHelper} from '../sandbox/linux.mjs';
 
 export const SANDBOX_META_KEY = 'codex/sandbox-state-meta';
 const MODES = ['scoped', 'disabled', 'default'];
 
-// The mode when CUA_SHIM_SANDBOX is unset: scoped, except on Linux with the computer surface, where it is disabled.
-// Under any managed profile node_repl lets no runtime process connect to a socket (measured on Ubuntu 24.04, F2: its
-// NODE_REPL_SANDBOX_ALLOWED_UNIX_SOCKETS and a profile's `network: enabled` are not honoured there), so the scoped
-// sandbox would keep the computer-use helper (sky_linux, a child of the trusted worker) off the X display and the
-// session bus. The browser surface reaches its backends through node_repl and works under scoped.
-export const defaultSandboxMode = ({platform, surfaces}) => (platform === 'linux' && surfaces.includes('computer') ? 'disabled' : 'scoped');
+// The mode when CUA_SHIM_SANDBOX is unset: scoped, on every platform and surface. Linux computer sessions defaulted
+// to disabled until #115 M3, because the vendor's sandbox refused every socket and sky_linux could not reach X11 or the
+// bus; cua's own Linux sandbox gives the trusted worker the network instead, and the kernel none.
+export const defaultSandboxMode = () => 'scoped';
 
-export function sandboxModeFrom(env, {platform = process.platform, surfaces = ['computer']} = {}) {
-  const mode = env.CUA_SHIM_SANDBOX ?? defaultSandboxMode({platform, surfaces});
+export function sandboxModeFrom(env) {
+  const mode = env.CUA_SHIM_SANDBOX ?? defaultSandboxMode();
   if (!MODES.includes(mode)) fail('invalid_setting', 'CUA_SHIM_SANDBOX must be scoped, disabled or default');
   return mode;
 }
@@ -92,12 +92,15 @@ const within = (path, root) => {
 // that is one of `ownHolders` (the run directory's home and run/), and inside no other: not the secret store, its tiers
 // or ~/.config/cua, wherever the home is placed.
 // A macOS vendor-host launch adds its compat settings directory (`compatSettings`, src/sandbox/compat-settings.mjs: what
-// the compat executable confines both children by; writable, a worker could rewrite the kernel's deny list).
-export const protectedPaths = ({trustedCodePaths, codexHome, compatSettings, managedNode, staging, denied = [], ownRoots = [], ownHolders = []}) => [
+// the compat executable confines both children by; writable, a worker could rewrite the kernel's deny list), and every
+// launch $CUA_HOME/sandbox (`sandboxHelper`: the Linux helper, which runs outside every sandbox; writable, a cell could
+// swap what confines the next child, or plant a bubblewrap beside it).
+export const protectedPaths = ({trustedCodePaths, codexHome, compatSettings, managedNode, staging, sandboxHelper, denied = [], ownRoots = [], ownHolders = []}) => [
   ...trustedCodePaths.filter(Boolean).map(path => ({label: 'the trusted code path', path})),
   ...(codexHome ? [{label: 'the runtime\'s configuration and approvals', path: codexHome}] : []),
   ...(compatSettings ? [{label: 'the vendor host\'s compat settings', path: compatSettings}] : []),
   ...(managedNode ? [{label: 'the Node cua installed for its own REPL host', path: managedNode}] : []),
+  ...(sandboxHelper ? [{label: 'cua\'s sandbox helper', path: sandboxHelper}] : []),
   ...(staging ? [{label: 'cua install\'s staging directory', path: staging}] : []),
   ...denied.map(path => ({label: 'what JavaScript cells may not read', path, except: ownHolders.filter(Boolean).map(realish).includes(realish(path)) ? ownRoots.filter(Boolean) : []})),
 ];
@@ -211,7 +214,7 @@ export function assertDenyListShape(list) {
 // Throws `sandbox_conflict` when `mode` is not disabled and the deny list's targets overlap (assertDenyListShape), or
 // when `mode` is scoped and a write root of `launch` (src/runtime/launch.mjs) overlaps one of
 // its trusted code paths (trustedCodePathsOf), its CODEX_HOME, its home's managed Node (`launch.managedNodeRoot`), its
-// home's install staging (`launch.stagingRoot`) or its deny list (`launch.denyRead`, except for its own run directory
+// home's install staging (`launch.stagingRoot`), its home's sandbox helper (`launch.sandboxHelperRoot`) or its deny list (`launch.denyRead`, except for its own run directory
 // and session temp), whichever host it runs: a vendor session's cells must not choose a later own host's Node, or what
 // an install places, either.
 //
@@ -226,7 +229,7 @@ export function assertSandboxFits(mode, launch) {
   if (mode !== 'scoped') return;
   const conflicts = sandboxConflicts({
     protectedPaths: protectedPaths({trustedCodePaths: trustedCodePathsOf(launch), codexHome: launch.env.CODEX_HOME, compatSettings: launch.compat && homeLayout(launch.compat.home).compat,
-      managedNode: launch.managedNodeRoot, staging: launch.stagingRoot,
+      managedNode: launch.managedNodeRoot, staging: launch.stagingRoot, sandboxHelper: launch.sandboxHelperRoot,
       denied: launch.denyRead?.deny, ownRoots: [launch.cwd, launch.sessionTmp], ownHolders: launch.cwd ? [dirname(dirname(launch.cwd)), dirname(launch.cwd)] : []}),
     writeRoots: scopedWriteRoots({cwd: launch.cwd, tmpdir: launch.env.TMPDIR}),
   });
@@ -240,72 +243,23 @@ function assertVendorLauncher(path) {
     {hint: 'restore cua\'s checkout (bin/cua-codex-compat), or set CUA_SHIM_SANDBOX=disabled to run without a sandbox openly'});
 }
 
-// Linux: the vendor's sandbox fails open where bubblewrap cannot create an unprivileged user namespace (measured on
-// Ubuntu 24.04, F2: the runtime then starts its kernel and trusted worker with no sandbox, and cells write anywhere and
-// reach the network). A scoped launch there is refused with sandbox_unavailable before anything starts, rather than run
-// unconfined while cua claims scoped. `probe` is bwrapUserns (doctor's sandbox.userns probe), injectable for tests; it
-// runs once per launch, and only for scoped on Linux.
+// Linux: cua's sandbox helper (src/sandbox/linux.mjs) confines both children of a scoped or default launch, so before
+// anything starts the launch's helper must be the pinned one (the bytes `cua install` placed, checked against the pin
+// again: `verifyHelper`), and bubblewrap must be able to create an unprivileged user namespace (`probe`, doctor's
+// sandbox.userns probe, bwrapUserns). The helper itself fails closed without them, so every cell would fail; this
+// refuses the connection instead (sandbox_unavailable), with the remedy. Each runs once per launch, on Linux only, and
+// never for disabled. Both seams are injectable for tests.
 export const SANDBOX_UNAVAILABLE_HINT = `${USERNS_REMEDY}; install bubblewrap if it is missing; or set CUA_SHIM_SANDBOX=disabled to run without a sandbox openly`;
-export async function assertSandboxConfines(mode, {platform, probe = bwrapUserns}) {
-  if (mode !== 'scoped' || platform !== 'linux') return;
+export async function assertSandboxConfines(mode, {platform, launch, probe = bwrapUserns, verifyHelper = verifyLinuxHelper}) {
+  if (mode === 'disabled' || platform !== 'linux') return;
+  verifyHelper({path: launch.env.CUA_REPL_SANDBOX_HELPER, sha256: launch.env.CUA_REPL_SANDBOX_HELPER_SHA256});
   const found = await probe();
   if (found.status === 'pass') return;
   const why = found.status === 'missing' ? 'bubblewrap (bwrap) is not installed'
     : `bubblewrap cannot create an unprivileged user namespace here (bwrap --ro-bind / / true: ${found.detail})`;
-  fail('sandbox_unavailable', `CUA_SHIM_SANDBOX=scoped, but ${why}, and the runtime would then run JavaScript cells with no sandbox at all; nothing was started`, {hint: SANDBOX_UNAVAILABLE_HINT});
+  fail('sandbox_unavailable', `CUA_SHIM_SANDBOX=${mode}, but ${why}, so cua's sandbox helper cannot confine JavaScript cells, and none would run; nothing was started`, {hint: SANDBOX_UNAVAILABLE_HINT});
 }
 
-// The sandbox cua's own REPL host on Linux runs its children under: the retained Codex launcher (`codex sandbox`, the
-// relocated codex) until #115 M3 replaces it (macOS renders cua's own since M1, src/sandbox), given the policy the vendor's node_repl
-// derives from the same per-call `codex/sandbox-state-meta`. The argv template is the recovered one
-// (docs/doperpowers/research/2026-10-14-own-repl-host/node-repl-embedded-INDEX.md "Default timeout and launch
-// templates"), rendered as the pinned node_repl renders it (its live kernel command lines, observed 2026-10-14):
-//   codex sandbox -c shell_environment_policy.inherit="all" -c default_permissions="node_repl"
-//     -c permissions.node_repl={filesystem = {"<read path>" = "read", ..., ":root" = "read", ...}, network = {enabled = false}}
-//     -- <node> --experimental-vm-modules <script> <args>...
-// Filesystem entries are the host's own read paths (its Node's directory, its code, cua's facade and its documents, its
-// module directories) and the profile's, keyed and sorted as a TOML table (byte order); the network is always off. A
-// state that is absent (the default mode) reads everything and writes nothing; a disabled profile runs the child with
-// no sandbox at all (the `disabled` mode, an explicit choice); a state this host cannot render is refused, never run
-// unconfined.
-const SPECIAL_KEYS = {root: ':root', minimal: ':minimal', tmpdir: ':tmpdir', slash_tmp: ':slash_tmp'};
-const ACCESS = ['read', 'write', 'none'];
-
+// A per-call sandbox state the sandbox cannot render (src/sandbox/policy.mjs policyTable), or a kernel launch without its
+// deny list: refused, never run unconfined.
 export class SandboxStateError extends Error {}
-
-// `state`: the call's `codex/sandbox-state-meta` value, or undefined when the call sent none. -> {disabled: true, cwd}
-// or {filesystem: [[key, access]...], cwd}; `cwd` is the sandboxCwd path (null without a state). Throws
-// SandboxStateError for a value the vendor's would refuse or this host cannot render.
-export function sandboxPolicy(state, {readPaths = []} = {}) {
-  const filesystem = new Map(readPaths.filter(Boolean).map(path => [path, 'read']));
-  if (state === undefined) return {filesystem: sortedEntries(filesystem.set(':root', 'read')), cwd: null};
-  if (state === null || typeof state !== 'object' || Array.isArray(state)) throw new SandboxStateError(`invalid type: ${state === null ? 'null' : Array.isArray(state) ? 'sequence' : typeof state}, expected struct SandboxState`);
-  const {permissionProfile: profile, sandboxCwd} = state;
-  if (typeof sandboxCwd !== 'string') throw new SandboxStateError('missing field `sandboxCwd`');
-  let cwd;
-  try { cwd = fileURLToPath(sandboxCwd); } catch { throw new SandboxStateError('sandboxCwd must be an absolute file URI'); }
-  if (profile?.type === 'disabled') return {disabled: true, cwd};
-  if (profile?.type !== 'managed' || profile.file_system?.type !== 'restricted' || !Array.isArray(profile.file_system.entries))
-    throw new SandboxStateError('unsupported permission profile: only managed restricted and disabled profiles are supported');
-  for (const entry of profile.file_system.entries) {
-    if (!ACCESS.includes(entry?.access)) throw new SandboxStateError(`unsupported filesystem access ${JSON.stringify(entry?.access)}`);
-    const path = entry.path;
-    if (path?.type === 'special' && path.value?.kind === 'project_roots' && path.value.subpath == null) filesystem.set(':workspace_roots', {'.': entry.access});
-    else if (path?.type === 'special' && Object.hasOwn(SPECIAL_KEYS, path.value?.kind)) filesystem.set(SPECIAL_KEYS[path.value.kind], entry.access);
-    else if (path?.type === 'path' && typeof path.path === 'string' && isAbsolute(path.path)) filesystem.set(path.path, entry.access);
-    else throw new SandboxStateError(`unsupported filesystem path ${JSON.stringify(path)}`);
-  }
-  return {filesystem: sortedEntries(filesystem), cwd};
-}
-
-const sortedEntries = map => [...map].sort(([a], [b]) => Buffer.compare(Buffer.from(a), Buffer.from(b)));
-const tomlString = value => JSON.stringify(value);
-const tomlValue = value => (typeof value === 'string' ? tomlString(value)
-  : `{${Object.entries(value).map(([k, v]) => `${tomlString(k)} = ${tomlString(v)}`).join(', ')}}`);
-
-// The launcher argv for `command` ([executable, ...args]) under a non-disabled `policy` (sandboxPolicy).
-export function sandboxArgs(policy, command) {
-  const filesystem = policy.filesystem.map(([key, access]) => `${tomlString(key)} = ${tomlValue(access)}`).join(', ');
-  return ['sandbox', '-c', 'shell_environment_policy.inherit="all"', '-c', 'default_permissions="node_repl"',
-    '-c', `permissions.node_repl={filesystem = {${filesystem}}, network = {enabled = false}}`, '--', ...command];
-}

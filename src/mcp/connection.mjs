@@ -25,7 +25,8 @@
 // `prepareLaunch` may adjust the launch record, and is called once per launch; it exists for tests and the opt-in live probes
 // (scripts/probe-secrets.mjs points the sky service at a controlled fake target) and is not reachable from the CLI. `chrome` (the Chrome facts), `listBackends` (the readiness listing) and `host` ({platform,
 // arch}, the process's by default: which pin resolves and the host notes) and
-// `probeUserns` (whether bubblewrap can create a user namespace, asked for a scoped launch on Linux) exist for tests
+// `probeUserns` (whether bubblewrap can create a user namespace) and `verifyHelper` (the pinned Linux sandbox helper's
+// check, src/sandbox/linux.mjs), both asked for a confined launch on Linux, exist for tests
 // only, as are `resolveOwnNode` (the own REPL host's Node, src/runtime/launch.mjs replHostFor) and `idleTimer` (createServer's clock for the idle stop). `onWithdrawn(requestId)` is told when a cancellation withdrew a request before it reached the runtime, the one
 // case in which a request is never answered (the HTTP layer ends the stream that waits for it). `devices` (a device
 // directory, src/remote/directory.mjs) gives the connection the device tools and their host-notes rule: the stdio `serve`
@@ -56,11 +57,11 @@ const SERVICES = {computer: {sky: SKY_SERVICE}, browser: {browser: BROWSER_SERVI
 export async function openConnection({home, env = process.env, sessionId, input, output, host = {platform: process.platform, arch: process.arch},
   devices = null, settings = settingsFrom(env, {platform: host.platform, devices: devices !== null}),
   diagnostics = line => process.stderr.write(`cua serve: ${line}\n`), prepareLaunch = launch => launch, chrome = chromeFacts({host, env}),
-  listBackends, onWithdrawn, probeUserns, browserBackends = null, project = null, idleTimer, onProfilesList, resolveOwnNode}) {
+  listBackends, onWithdrawn, probeUserns, verifyHelper, browserBackends = null, project = null, idleTimer, onProfilesList, resolveOwnNode}) {
   const {secrets: secretsEnabled, sandbox, ...serverSettings} = settings;
   const runtime = resolveRuntime({home, host});
   // The readiness listing runs under this connection's own mode (src/profiles/inventory.mjs listLiveBackends).
-  listBackends ??= () => listLiveBackends({home, runtime, ambient: env, tabCounts: false, sandbox, probeUserns, resolveOwnNode});
+  listBackends ??= () => listLiveBackends({home, runtime, ambient: env, tabCounts: false, sandbox, probeUserns, verifyHelper, resolveOwnNode});
   const claim = claimRunSession(home, sessionId);
   let launch;
   let listingLeftover = false;
@@ -108,7 +109,7 @@ export async function openConnection({home, env = process.env, sessionId, input,
     // handshake; nothing is spawned or created for it.
     const planned = launchFor();
     assertSandboxFits(sandbox, planned);
-    await assertSandboxConfines(sandbox, {platform: runtime.manifest.platform, probe: probeUserns});
+    await assertSandboxConfines(sandbox, {platform: runtime.manifest.platform, launch: planned, probe: probeUserns, verifyHelper});
     // The launch itself (lazy-runtime.mjs): on the first call that needs the runtime, after the MAWS backends' hellos
     // (so the launch prefers the in-app browser's instance and the first listBrowsers finds its host).
     const start = async ({signal}) => {

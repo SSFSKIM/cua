@@ -30,9 +30,19 @@
 // $CUA_HOME/run/<id>), default writes nothing; disabled denies nothing. Under scoped and default a hard link and a clone
 // of the store sentinel fail, and TCP and Unix connects fail. The kernel is Node itself, the supervisor's child, and no
 // process named codex runs. Exit 0 when every expectation holds, 1 otherwise.
+//
+// On Linux (#115 M3, acceptance 1 to 5 for cua's own host there) the same connection runs its children under the
+// pinned helper (codex-linux-sandbox, bubblewrap and seccomp), so: there is no clone to try (`cp -c` is macOS's), the
+// kernel is Node under bubblewrap (an ancestor named bwrap, the pinned helper started it, no seatbelt marker), and under
+// default another session's run directory stays readable (the recorded per-directory fallback: bubblewrap re-binds
+// nothing read-only inside a denied run/, Decision Log, 2026-10-18). Deny targets are created there, so a store root
+// missing at launch is created 0700 and stays denied. And the four creation cases run for real (Decision Log, "deny
+// targets are created on Linux only, and bounded there"): a missing fixed target created 0700 inside HOME, a dangling
+// tier target created leaf-only, a tier whose parent is missing refused, and a fixed target whose missing parent lies
+// outside HOME refused; each time the kernel can neither list nor read the target.
 import {execFileSync} from 'node:child_process';
 import {randomBytes, randomUUID} from 'node:crypto';
-import {mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync, existsSync} from 'node:fs';
+import {mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync, existsSync} from 'node:fs';
 import {createServer} from 'node:net';
 import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
@@ -124,13 +134,73 @@ nodeRepl.write(JSON.stringify({
   listRun: code(() => fs.readdirSync(${JSON.stringify(run)}))}));
 `;
 
+const linux = process.platform === 'linux';
 const commandOf = pid => { try { return execFileSync('ps', ['-ww', '-o', 'command=', '-p', String(pid)], {encoding: 'utf8'}).trim(); } catch { return null; } };
 const descendants = pid => {
-  const rows = execFileSync('ps', ['-axo', 'pid=,ppid=,comm='], {encoding: 'utf8'}).trim().split('\n').map(l => l.trim().match(/^(\d+)\s+(\d+)\s+(.*)$/)).filter(Boolean).map(m => [Number(m[1]), Number(m[2]), m[3]]);
+  const rows = execFileSync('ps', ['-axo', 'pid=,ppid=,comm='], {encoding: 'utf8'}).trim().split('\n').map(l => l.trim().match(/^(\d+)\s+(\d+)\s+(.*)$/)).filter(Boolean).map(m => [Number(m[1]), Number(m[2]), m[3].trim()]);
   const owned = new Set([pid]);
   for (let changed = true; changed;) { changed = false; for (const [p, pp] of rows) if (owned.has(pp) && !owned.has(p)) { owned.add(p); changed = true; } }
   return rows.filter(([p]) => p !== pid && owned.has(p));
 };
+
+// Linux's four deny-target creation cases, for real under bubblewrap (the header). Each runs its own connection with a
+// scratch HOME (or tier) shaped for the case; the cell either reads and lists the target (both refused) or is refused
+// before its kernel starts, with the classified sentence, and then nothing was created.
+const CREATION_REFUSED = /^js sandbox unavailable: .* does not exist and (its parent directory is missing|a missing parent directory lies outside your HOME), so the kernel cannot be denied it; this confined launch is refused/;
+async function creationCases({real, env, mode, scratch, check, sentinelIn}) {
+  const readCell = path => `const fs = await import('node:fs'), path = await import('node:path'); const r = f => { try { f(); return {ok: true}; } catch (e) { return {ok: false, code: e.code}; } };
+nodeRepl.write(JSON.stringify({list: r(() => fs.readdirSync(${JSON.stringify(path)})), read: r(() => fs.readFileSync(path.join(${JSON.stringify(path)}, 'SENTINEL'), 'utf8'))}));`;
+  const refusedText = async connection => { try { await connection.js('nodeRepl.write(JSON.stringify(1))'); return null; } catch (error) { return error.message.replace(/^cell failed: /, ''); } };
+  const mode700 = path => existsSync(path) && (statSync(path).mode & 0o777) === 0o700;
+  // 1. A missing fixed target inside HOME, with a missing parent inside HOME: ~/.config/cua under a HOME without ~/.config.
+  {
+    const home = join(scratch, 'create-fixed'), target = join(home, '.config', 'cua');
+    mkdirSync(home, {mode: 0o700});
+    const connection = await connect({home: real, env: {...env(mode), HOME: home}});
+    try {
+      await connection.js('nodeRepl.write(JSON.stringify(1))');
+      check('linux creation: a missing fixed target inside HOME is created 0700 (~/.config/cua, its parent too)', mode700(target) && existsSync(join(home, '.config')));
+      sentinelIn(target);
+      const out = await connection.js(readCell(target));
+      check('linux creation: the kernel can neither list nor read the created fixed target', !out.list.ok && !out.read.ok && DENIED.has(out.list.code) && DENIED.has(out.read.code), `${out.list.code}/${out.read.code}`);
+    } finally { await connection.close(); }
+  }
+  // 2. A dangling tier target whose parent exists: created as its leaf only.
+  {
+    const home = join(scratch, 'create-tier'), parent = join(scratch, 'tier-parent'), leaf = join(parent, 'leaf');
+    mkdirSync(join(home, STORE_RELATIVE, 'projects'), {recursive: true, mode: 0o700});
+    mkdirSync(parent, {mode: 0o755});
+    symlinkSync(leaf, join(home, STORE_RELATIVE, 'projects', '-synthetic-dangling-project'));
+    const connection = await connect({home: real, env: {...env(mode), HOME: home}});
+    try {
+      await connection.js('nodeRepl.write(JSON.stringify(1))');
+      check('linux creation: a dangling tier target is created as its leaf only, 0700', mode700(leaf) && (statSync(parent).mode & 0o777) === 0o755);
+      sentinelIn(leaf);
+      const out = await connection.js(readCell(leaf));
+      check('linux creation: the kernel can neither list nor read the created tier target', !out.list.ok && !out.read.ok && DENIED.has(out.list.code) && DENIED.has(out.read.code), `${out.list.code}/${out.read.code}`);
+    } finally { await connection.close(); }
+  }
+  // 3. A tier whose target's parent is missing: refused, nothing created.
+  {
+    const home = join(scratch, 'refuse-tier'), parent = join(scratch, 'absent-tier-parent'), leaf = join(parent, 'leaf');
+    mkdirSync(join(home, STORE_RELATIVE, 'projects'), {recursive: true, mode: 0o700});
+    symlinkSync(leaf, join(home, STORE_RELATIVE, 'projects', '-synthetic-orphan-project'));
+    const connection = await connect({home: real, env: {...env(mode), HOME: home}});
+    let text;
+    try { text = await refusedText(connection); } finally { await connection.close(); }
+    check('linux creation: a tier whose parent is missing is refused with the classified sentence, naming no tier', CREATION_REFUSED.test(text ?? '') && /its parent directory is missing/.test(text) && !text.includes('orphan'), text?.slice(0, 300));
+    check('linux creation: the refused tier\'s target and parent were not created (the kernel never ran, so it read nothing)', !existsSync(parent));
+  }
+  // 4. A fixed target whose missing parent lies outside HOME: HOME itself does not exist.
+  {
+    const home = join(scratch, 'absent-home');
+    const connection = await connect({home: real, env: {...env(mode), HOME: home}});
+    let text;
+    try { text = await refusedText(connection); } finally { await connection.close(); }
+    check('linux creation: a fixed target whose missing parent lies outside HOME is refused with the classified sentence', CREATION_REFUSED.test(text ?? '') && /a missing parent directory lies outside your HOME/.test(text), text?.slice(0, 300));
+    check('linux creation: nothing was created for the refused fixed target (the kernel never ran, so it read nothing)', !existsSync(home));
+  }
+}
 
 export async function ownSandboxAcceptance({home, host = 'cua', modes = MODES, node, log = () => {}}) {
   const vendor = host === 'vendor';
@@ -180,20 +250,34 @@ export async function ownSandboxAcceptance({home, host = 'cua', modes = MODES, n
         out = await connection.js(cell);
         if (vendor && mode !== 'disabled') scripts = await connection.js(scriptDirCell());
         out.descendants = descendants(process.pid).map(([pid, ppid, comm]) => ({pid, ppid, comm}));
-        const kernel = out.descendants.find(p => p.pid === out.process.pid);
+        // On Linux the kernel runs in bubblewrap's PID namespace, so the pid it reports is not this host's: it is found
+        // by its command line instead.
+        const kernel = linux ? out.descendants.find(p => p.comm === 'node' && /src\/repl-host\/kernel\.mjs/.test(commandOf(p.pid) ?? ''))
+          : out.descendants.find(p => p.pid === out.process.pid);
         out.process.execPath = kernel?.comm ?? null;
         out.parentCommand = kernel ? commandOf(kernel.ppid) : null;
+        const ancestors = [];
+        for (let p = kernel; p; p = out.descendants.find(d => d.pid === p.ppid)) if (p !== kernel) ancestors.push(p.comm);
+        out.ancestors = ancestors;
       } finally { await connection.close(); }
       report.modes[mode] = {reads: out.reads, moduleTree: out.moduleTree, writes: out.writes, link: out.link, clone: out.clone, tcp: out.tcp, unix: out.unix,
         tmpdir: {own: out.tmpdir.value === out.tmpdir.env && out.tmpdir.value === join(out.tmpdir.cwd, 'tmp') && out.tmpdir.cwd.startsWith(`${layout.run}/`)},
         kernel: {execPathIsNode: /(^|\/)node$/.test(out.process.execPath ?? ''), parentIsSupervisor: /src\/repl-host\/supervisor\.mjs/.test(out.parentCommand ?? ''),
-          parentIsNodeRepl: /(^|\/)node_repl( |$)/.test(out.parentCommand ?? ''), sandbox: out.process.sandbox},
+          parentIsNodeRepl: /(^|\/)node_repl( |$)/.test(out.parentCommand ?? ''), sandbox: out.process.sandbox,
+          ...(linux ? {underBwrap: out.ancestors.includes('bwrap'), underHelper: out.ancestors.some(comm => comm.startsWith('codex-linux-sa'))} : {})},
         ...(scripts ? {scriptDirectory: scripts} : {}),
         codexProcesses: out.descendants.filter(p => /(^|\/)codex$/.test(p.comm)).length};
       const r = report.modes[mode];
       const confined = mode !== 'disabled';
-      for (const [label, result] of Object.entries(out.reads))
-        check(`${mode}: ${confined ? 'denied' : 'readable'}: ${label}`, confined ? !result.ok && DENIED.has(result.code) : result.ok && result.value === true, result.ok ? undefined : result.code);
+      for (const [label, result] of Object.entries(out.reads)) {
+        // Linux under default: the per-directory fallback leaves run/ undenied (the header). Under scoped run/ is masked
+        // as the ancestor of the session's own writable directory (an empty tmpfs that may only be traversed), so
+        // another session's directory is not even there: ENOENT, which reveals less than EACCES.
+        const otherRun = label.startsWith('another session\'s run directory');
+        const denied = confined && !(linux && mode === 'default' && otherRun);
+        const refused = code => DENIED.has(code) || (linux && otherRun && code === 'ENOENT');
+        check(`${mode}: ${denied ? 'denied' : 'readable'}: ${label}`, denied ? !result.ok && refused(result.code) : result.ok && result.value === true, result.ok ? undefined : result.code);
+      }
       check(`${mode}: a package resolves and reads from the runtime's module tree`, out.moduleTree.ok && out.moduleTree.value === true, out.moduleTree.code);
       check(`${mode}: TMPDIR is the session's own, under $CUA_HOME/run/<id>`, r.tmpdir.own);
       check(`${mode}: the run directory is ${mode === 'default' ? 'not ' : ''}writable`, mode === 'default' ? !out.writes.runDirectory.ok : out.writes.runDirectory.ok, out.writes.runDirectory.code);
@@ -201,7 +285,7 @@ export async function ownSandboxAcceptance({home, host = 'cua', modes = MODES, n
       check(`${mode}: a write outside the session ${confined ? 'fails' : 'succeeds'}`, confined ? !out.writes.outside.ok : out.writes.outside.ok, out.writes.outside.code);
       if (confined) {
         check(`${mode}: a hard link of the store sentinel fails`, !out.link.ok, out.link.code);
-        check(`${mode}: a clone (cp -c) of the store sentinel fails`, !out.clone.ok, out.clone.code);
+        if (!linux) check(`${mode}: a clone (cp -c) of the store sentinel fails`, !out.clone.ok, out.clone.code);
         check(`${mode}: a TCP connect fails`, !out.tcp.ok, out.tcp.code);
         check(`${mode}: an AF_UNIX connect fails`, !out.unix.ok, out.unix.code);
         if (vendor) {
@@ -209,7 +293,8 @@ export async function ownSandboxAcceptance({home, host = 'cua', modes = MODES, n
           check(`${mode}: node_repl's script directory lies in the session temp`, scripts?.count === 1, scripts?.count);
           check(`${mode}: the kernel reads its script directory`, scripts?.read?.ok === true, scripts?.read?.code);
           check(`${mode}: the kernel cannot write into its script directory`, scripts?.write?.ok === false && scripts?.add?.ok === false, `${scripts?.write?.code}/${scripts?.add?.code}`);
-        } else check(`${mode}: the kernel is Node itself, the supervisor's child, marked seatbelt`, r.kernel.execPathIsNode && r.kernel.parentIsSupervisor && r.kernel.sandbox === 'seatbelt');
+        } else if (linux) check(`${mode}: the kernel is Node under bubblewrap, started by the pinned helper, with no seatbelt marker`, r.kernel.execPathIsNode && r.kernel.underBwrap && r.kernel.underHelper && r.kernel.sandbox === null, out.ancestors);
+        else check(`${mode}: the kernel is Node itself, the supervisor's child, marked seatbelt`, r.kernel.execPathIsNode && r.kernel.parentIsSupervisor && r.kernel.sandbox === 'seatbelt');
       }
       check(`${mode}: no process named codex`, r.codexProcesses === 0);
       rmSync(join(scratch, 'outside-write'), {force: true});
@@ -236,9 +321,10 @@ nodeRepl.write(JSON.stringify({scripts: dir ? path.join(tmp, dir) : null, run: n
       } finally { await victim.close(); }
     }
     // A store root missing at launch, created mid-session: macOS creates no deny target, so the kernel's profile denies
-    // the missing path itself (its realish path), and seatbelt keeps it denied once it appears. Both with the scratch
-    // HOME's own ~/.config and with a ~/.config that is a symlink (the realish path is then the link's target). The
-    // store is the scratch HOME's (the store's location follows HOME; nothing here touches the account's).
+    // the missing path itself (its realish path), and seatbelt keeps it denied once it appears. Linux creates it 0700 at
+    // the kernel's launch (bubblewrap masks only a path that exists), and it stays denied. Both with the scratch HOME's
+    // own ~/.config and with a ~/.config that is a symlink (the realish path is then the link's target). The store is the
+    // scratch HOME's (the store's location follows HOME; nothing here touches the account's).
     if (modes.some(m => m !== 'disabled')) {
       const mode = modes.find(m => m !== 'disabled');
       const linked = join(scratch, 'user-linked');
@@ -251,7 +337,8 @@ nodeRepl.write(JSON.stringify({scripts: dir ? path.join(tmp, dir) : null, run: n
         const connection = await connect({home: real, env: {...env(mode), HOME: home}});
         try {
           await connection.js('nodeRepl.write(JSON.stringify(1))');
-          check(`a store root missing at launch is not created${label}`, !existsSync(lateStore));
+          if (linux) check(`a store root missing at launch is created 0700 (a missing fixed target inside HOME)${label}`, existsSync(lateStore) && (statSync(lateStore).mode & 0o777) === 0o700);
+          else check(`a store root missing at launch is not created${label}`, !existsSync(lateStore));
           const late = sentinelIn(lateStore);
           const out = await connection.js(`const fs = await import('node:fs'); const r = f => { try { f(); return {ok: true}; } catch (e) { return {ok: false, code: e.code}; } };
 nodeRepl.write(JSON.stringify({file: r(() => fs.readFileSync(${JSON.stringify(late)}, 'utf8')), listing: r(() => fs.readdirSync(${JSON.stringify(lateStore)}))}));`);
@@ -260,6 +347,7 @@ nodeRepl.write(JSON.stringify({file: r(() => fs.readFileSync(${JSON.stringify(la
         } finally { await connection.close(); }
       }
     }
+    if (linux && modes.some(m => m !== 'disabled')) await creationCases({real, env, mode: modes.find(m => m !== 'disabled'), scratch, check, sentinelIn});
   } finally {
     tcp.close(); unix.close();
     for (const dir of [...homeDirs, otherRun]) rmSync(dir, {recursive: true, force: true});

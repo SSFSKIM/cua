@@ -400,7 +400,9 @@ test('a tombstone left by a failed prune is a leftover: doctor names it, and the
   const tombstone = readdirSync(root).find(name => /^\.CodexCLI\.app\.pruning-[0-9a-f]+$/.test(name));
   assert.ok(tombstone, readdirSync(root).join(', '));
   t.after(() => { try { chmodSync(join(root, tombstone, 'Contents'), 0o755); } catch {} });
-  assert.deepEqual(first.failed.map(f => [f.path, f.code]), [[join(root, tombstone), 'EACCES']]);
+  // The delete fails; its errno is the platform's (EACCES here, ENOTEMPTY on GitHub's macOS runner), so only its presence is pinned.
+  assert.deepEqual(first.failed.map(f => f.path), [join(root, tombstone)]);
+  assert.ok(typeof first.failed[0].code === 'string' && first.failed[0].code.length > 0, JSON.stringify(first.failed));
   assert.equal(existsSync(join(root, 'CodexCLI.app')), false, 'never renamed back');
 
   const found = findCodexLeftovers({home, pins: [pin]});

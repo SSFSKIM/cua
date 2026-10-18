@@ -28,6 +28,7 @@ import {basename, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {heartbeatOf, removePauseFiles, sshMirror} from './mini-pause.mjs';
 import {quote} from './browser-parity/topology.mjs';
+import {parseFrontmost} from './accept/key-guard.mjs';
 
 export const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
 export const EVIDENCE = join(ROOT, 'docs/evidence/2026-10-17-own-sandbox/m0');
@@ -55,7 +56,7 @@ const call = (exec, what, cmd, args) => { try { return exec(cmd, args); } catch 
 // The frontmost application's bundle id on the mini.
 export function frontmost({exec}) {
   const text = call(exec, 'frontmost application', 'ssh', ['-o', 'BatchMode=yes', 'mini', 'lsappinfo info -only bundleid "$(lsappinfo front)"']);
-  const id = /bundleID="([^"]+)"/.exec(text)?.[1];
+  const id = parseFrontmost(text);  // either lsappinfo spelling: bundleID="…" or "CFBundleIdentifier"="…" (macOS 26)
   if (!id) throw missing('frontmost application', 'no bundle id');
   return id;
 }

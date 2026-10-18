@@ -9,7 +9,7 @@ import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {
   approvalObservation, doctorHealth, inventoryCheck, PROBE_SECRETS_PHASES, probePhasesFor, scenarioVerdict,
-  diffSnapshots, forbiddenPaths, isTextEditApproval, missingFromPackage, PACKAGE_REQUIRED, rollup, snapshotTree, suiteVerdict, testReporterEnv, testSummary, tokenLike,
+  diffSnapshots, forbiddenPaths, isTextEditApproval, missingFromPackage, PACKAGE_REQUIRED, rollup, snapshotTree, suiteVerdict, testReporterEnv, testSummary, tokenLike, MINI_LAYOUT_FILES, personalText, researchTreeLines,
 } from '../scripts/accept/lib.mjs';
 import {scratch} from './fixtures/runtime-fixture.mjs';
 import {agentChecks} from '../src/runtime/doctor.mjs';
@@ -356,4 +356,17 @@ test('the fail-closed phase passes on the steps probe-secrets now records, and s
   // A launch that was not refused as declared fails the phase.
   const answered = refusedLaunchResult(STORE_UNREADABLE, {answered: true, exit: {code: 0}, stderr: '', delivered: 0, expected: 'sandbox_state_invalid', names: []});
   assert.equal(inventoryCheck(phase.name, [...emitted.slice(0, -1), answered], phase.steps).status, 'FAIL');
+});
+
+test('tracked-file rules (#157): the home rule spares only the declared mini-layout files; tokens are never spared', () => {
+  const home = '/Users/someone';
+  assert.deepEqual(personalText('test/secrets-project.test.mjs', "projectSlug('/Users/someone/x')", home), {home: true, token: false});
+  assert.deepEqual(personalText('test/secrets-project.test.mjs', "projectSlug('/Users/example/x')", home), {home: false, token: false});
+  for (const path of MINI_LAYOUT_FILES) assert.equal(personalText(path, '/Users/someone/actions-runner-maws', home).home, false, path);
+  assert.equal(personalText('scripts/mini-rules.mjs', ['x = sk', '-proj-', 'abcdefghijklmnopqrstuvwxyz012345'].join(''), home).token, true);
+});
+
+test('research-tree references: code lines count, citations in comments do not', () => {
+  const text = ['// see ~/codex-app-src/readable/x', ' * in /Users/x/codex-app-src/y', '# codex-app-src', "const dir = '/Users/x/codex-app-src';", "read(p); // codex-app-src cited", "run('codex-app-src') // here"].join('\n');
+  assert.deepEqual(researchTreeLines(text), [4, 6]);
 });

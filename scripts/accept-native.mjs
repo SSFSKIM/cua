@@ -65,7 +65,7 @@ import {socketHolders} from './probe/lib.mjs';
 import {fingerprints, textLeaks} from './probe/leak-scan.mjs';
 import {
   approvalObservation, diffSnapshots, doctorHealth, forbiddenPaths, inventoryCheck, missingFromPackage, PROBE_SECRETS_PHASES, probePhasesFor, rollup, scenarioVerdict,
-  snapshotTree, suiteVerdict, testReporterEnv, testSummary, tokenLike,
+  snapshotTree, suiteVerdict, testReporterEnv, testSummary, personalText, researchTreeLines, MINI_LAYOUT_FILES,
 } from './accept/lib.mjs';
 import {OWN_STEPS, runTextEdit, SECRET_STEPS} from './accept/textedit.mjs';
 import {createStoreHome, generatedKey, isAccountHome, removeStoreHome, seedSecret} from './accept/secret-seed.mjs';
@@ -424,9 +424,11 @@ async function item10() {
   const badTracked = forbiddenPaths(tracked);
   const userHome = homedir();
   const code = tracked.filter(p => !p.startsWith('docs/') && !/\.md$/.test(p) && existsSync(join(REPO, p)));
-  const personal = code.filter(p => { const text = readFileSync(join(REPO, p), 'latin1'); return text.includes(userHome + '/') || tokenLike(text); });
+  // Each file by its rule (the home path or a token-like string), never the text itself.
+  const personal = code.map(p => ({p, ...personalText(p, readFileSync(join(REPO, p), 'latin1'), userHome)})).filter(r => r.home || r.token)
+    .map(r => `${r.p} (${[r.home && 'names this user\'s home', r.token && 'token-like string'].filter(Boolean).join(', ')})`);
   checks.push(check('nothing tracked is an archive, runtime, credential, log or machine-specific token', tracked.length && !badTracked.length && !personal.length ? 'PASS' : 'FAIL',
-    `${tracked.length} tracked files; forbidden: ${badTracked.join(', ') || 'none'}; code/config naming this user's home or holding token-like strings: ${personal.join(', ') || 'none'}`));
+    `${tracked.length} tracked files; forbidden: ${badTracked.join(', ') || 'none'}; code/config naming this user's home or holding token-like strings: ${personal.join(', ') || 'none'} (the mini's own layout is declared: ${MINI_LAYOUT_FILES.length} files, home rule only)`));
 
   const pack = await run('npm', ['pack', '--dry-run', '--json'], {env: suiteEnv()});
   const packed = parseJson(pack.stdout);
@@ -442,19 +444,26 @@ async function item10() {
   checks.push(check('existing MCP registration untouched', spawnsClaude.length ? 'FAIL' : 'PASS',
     spawnsClaude.length ? `code that runs claude: ${spawnsClaude.join(', ')}` : 'no tracked code runs `claude` or edits ~/.claude; registration is documented (README) and never executed by acceptance'));
 
-  const head = sh('git', ['-C', REPO, 'rev-parse', '--short', 'HEAD']).trim();
+  const head = sh('git', ['-C', REPO, 'rev-parse', '--short', 'HEAD']).trim(), headSha = sh('git', ['-C', REPO, 'rev-parse', 'HEAD']).trim();
   const branch = sh('git', ['-C', REPO, 'rev-parse', '--abbrev-ref', 'HEAD']).trim();
   const dirty = sh('git', ['-C', REPO, 'status', '--porcelain']).trim().length > 0;
   const clone = mkdtempSync('/tmp/cua-clean.');
   try {
-    const cloned = await run('git', ['clone', '--quiet', '--branch', branch, REPO, join(clone, 'cua')], {cwd: clone, timeoutMs: 120_000});
-    if (cloned.code !== 0) checks.push(check('clean clone tests', 'FAIL', `git clone failed: ${cloned.stderr.trim()}`));
+    // The checkout's HEAD commit, whether a branch or detached (a scratch clone at a SHA): cloned without a checkout,
+    // then that commit fetched from the checkout's own HEAD and checked out detached.
+    const dir = join(clone, 'cua');
+    let cloned = await run('git', ['clone', '--quiet', '--no-checkout', REPO, dir], {cwd: clone, timeoutMs: 120_000});
+    if (cloned.code === 0) cloned = await run('git', ['-C', dir, 'fetch', '--quiet', REPO, 'HEAD'], {cwd: clone, timeoutMs: 120_000});
+    if (cloned.code === 0) cloned = await run('git', ['-C', dir, 'checkout', '--quiet', '--detach', 'FETCH_HEAD'], {cwd: clone, timeoutMs: 120_000});
+    const clonedHead = cloned.code === 0 ? sh('git', ['-C', dir, 'rev-parse', 'HEAD']).trim() : '';
+    if (cloned.code !== 0 || clonedHead !== headSha) checks.push(check('clean clone tests', 'FAIL', cloned.code !== 0 ? `git clone failed: ${cloned.stderr.trim()}` : `the clean clone is at ${clonedHead.slice(0, 7)}, not ${head}`));
     else {
-      const dir = join(clone, 'cua');
       checks.push(...await suites(dir, {label: 'clean clone: '}));
       // This runner holds the pattern itself, so it is not searched.
-      const researchRefs = sh('git', ['-C', dir, 'grep', '-l', '-e', 'codex-app-src', '--', ':!docs', ':!*.md', ':!scripts/accept-native.mjs']).trim();
-      checks.push(check('clean clone needs no research trees', researchRefs ? 'FAIL' : 'PASS', researchRefs ? `code referring to research trees: ${researchRefs}` : 'no code or config outside docs refers to the local research trees'));
+      // A comment that cites a research tree is not a dependency on one (researchTreeLines).
+      const researchRefs = sh('git', ['-C', dir, 'grep', '-l', '-e', 'codex-app-src', '--', ':!docs', ':!*.md', ':!scripts/accept-native.mjs']).split('\n').filter(Boolean)
+        .flatMap(p => researchTreeLines(readFileSync(join(dir, p), 'utf8')).map(line => `${p}:${line}`));
+      checks.push(check('clean clone needs no research trees', researchRefs.length ? 'FAIL' : 'PASS', researchRefs.length ? `code referring to research trees: ${researchRefs.join(', ')}` : 'no code or config outside docs refers to the local research trees (citations in comments aside)'));
     }
   } finally { rmSync(clone, {recursive: true, force: true}); }
   addItem(10, 'Packaging, plugin README, tracked files, clean checkout', checks, {head, branch, workingTreeDirty: dirty, cloneRemoved: !existsSync(clone)});

@@ -203,6 +203,27 @@ const TOKEN_PATTERNS = [
 ];
 export const tokenLike = text => TOKEN_PATTERNS.some(pattern => pattern.test(text));
 
+// Acceptance 10's tracked-file check: a code or config file fails when it names the running account's home (`home`/)
+// or holds a token-like string. The home rule has one declared exception: files that are by design the mini's own
+// layout, whose account home is the controller's too (/Users/new): the gate's paths to the approved runtime and the
+// runner's executable (scripts/mini-rules.mjs), the tests that pin them, and a sandbox recording made on the mini.
+// Every other fixture uses a made-up home. Token-like strings have no exception anywhere.
+export const MINI_LAYOUT_FILES = [
+  'scripts/mini-rules.mjs', 'test/mini-pause.test.mjs', 'test/mini-rules.test.mjs', 'test/mini-worker-probe.test.mjs',
+  'test/fixtures/sandbox/seatbelt/tmpdir-relative.json',
+];
+// -> {home, token}: whether `text` (the tracked file `path`) breaks either rule.
+export const personalText = (path, text, home) => ({home: !MINI_LAYOUT_FILES.includes(path) && text.includes(home + '/'), token: tokenLike(text)});
+
+// Acceptance 10's "clean clone needs no research trees": a line of code that names a local research tree. A comment
+// that cites one (a `//` before the name, or a line opening with * or #) is a citation, not a dependency.
+export function researchTreeLines(text, pattern = 'codex-app-src') {
+  return text.split('\n').map((line, index) => ({line: index + 1, text: line})).filter(({text: line}) => {
+    const at = line.indexOf(pattern);
+    return at >= 0 && !line.slice(0, at).includes('//') && !/^\s*[*#]/.test(line);
+  }).map(({line}) => line);
+}
+
 // Acceptance 6/7: every step scripts/probe-secrets.mjs records on a complete run, grouped into the spec's phases, with
 // the items each phase is evidence for. A phase passes only when each of its steps ran and passed; a step that never
 // ran is BLOCKED (requested, not executed). The trusted-root guarantee is proven under the scoped default; what an

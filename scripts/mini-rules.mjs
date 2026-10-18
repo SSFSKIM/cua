@@ -4,7 +4,7 @@
 // controller:
 //
 //   node scripts/mini-rules.mjs <item>...      items: vendor, browser, tz, tz-real-home, accept (in the order given)
-//   node scripts/mini-rules.mjs gated -- <command> [args...]
+//   node scripts/mini-rules.mjs gated [--hold] -- <command> [args...]
 //     any other mini run (M1 on): the gate below, then the command on the controller (which reaches the mini itself),
 //     then the frontmost-application check; exits with the command's status, or 4 when a rule stops it.
 //
@@ -28,6 +28,7 @@ import {basename, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {heartbeatOf, removePauseFiles, sshMirror} from './mini-pause.mjs';
 import {quote} from './browser-parity/topology.mjs';
+import {parseFrontmost} from './accept/key-guard.mjs';
 
 export const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
 export const EVIDENCE = join(ROOT, 'docs/evidence/2026-10-17-own-sandbox/m0');
@@ -55,7 +56,7 @@ const call = (exec, what, cmd, args) => { try { return exec(cmd, args); } catch 
 // The frontmost application's bundle id on the mini.
 export function frontmost({exec}) {
   const text = call(exec, 'frontmost application', 'ssh', ['-o', 'BatchMode=yes', 'mini', 'lsappinfo info -only bundleid "$(lsappinfo front)"']);
-  const id = /bundleID="([^"]+)"/.exec(text)?.[1];
+  const id = parseFrontmost(text);  // either lsappinfo spelling: bundleID="…" or "CFBundleIdentifier"="…" (macOS 26)
   if (!id) throw missing('frontmost application', 'no bundle id');
   return id;
 }
@@ -133,15 +134,16 @@ export function observeRunner({exec}) {
 // whatever the runner does. While the runner is busy (its busy flag or a Runner.Worker), any other non-Terminal app is
 // the CI job's own window: contention, wait. Once the runner reads idle, Terminal must be in front; anything else stops.
 export const SYSTEM_PROMPTS = ['com.apple.UserNotificationCenter', 'com.apple.SecurityAgent', 'com.apple.coreservices.uiagent'];
-export function classify(o) {
+// Inside a CI-opt hold (`ignoreQueue`, gated --hold) a queued macOS job is not contention: the hold keeps it queued.
+export function classify(o, {ignoreQueue = false} = {}) {
   if (SYSTEM_PROMPTS.includes(o.front)) return {state: 'stop', reason: `the frontmost application is ${o.front}, a system prompt`};
   const runnerBusy = o.busy || o.workers > 0;
   if (o.front !== TERMINAL && !runnerBusy) return {state: 'stop', reason: `the frontmost application is ${o.front}, not Terminal, with the runner idle`};
-  const contention = [o.front !== TERMINAL && `${o.front} in front during the CI job`, o.busy && 'runner busy', o.workers > 0 && `${o.workers} Runner.Worker`, o.queued > 0 && `${o.queued} queued macOS job(s)`, !(o.load < LOAD_LIMIT) && `load ${o.load}`].filter(Boolean);
+  const contention = [o.front !== TERMINAL && `${o.front} in front during the CI job`, o.busy && 'runner busy', o.workers > 0 && `${o.workers} Runner.Worker`, !ignoreQueue && o.queued > 0 && `${o.queued} queued macOS job(s)`, !(o.load < LOAD_LIMIT) && `load ${o.load}`].filter(Boolean);
   return contention.length ? {state: 'contention', reason: contention.join(', ')} : {state: 'idle', reason: 'idle'};
 }
 
-export async function gate(what, {exec, sleep, log, maxWaits = 240, apartMs = 45_000, retryMs = 60_000}) {
+export async function gate(what, {exec, sleep, log, maxWaits = 240, apartMs = 45_000, retryMs = 60_000, ignoreQueue = false}) {
   for (let attempt = 0; attempt <= maxWaits; attempt++) {
     const readings = [];
     for (const n of [0, 1]) {
@@ -153,9 +155,9 @@ export async function gate(what, {exec, sleep, log, maxWaits = 240, apartMs = 45
         readings.push({state: 'contention'});
         break;
       }
-      const c = classify(o);
+      const c = classify(o, {ignoreQueue});
       for (const w of o.seen) log(`${what}: reading ${n + 1}: ${describeWorker(w)}`);
-      log(`${what}: reading ${n + 1}: front=${o.front} busy=${o.busy} workers=${o.workers} queued=${o.queued} load=${o.load} -> ${c.state}${c.state === 'idle' ? '' : ` (${c.reason})`}`);
+      log(`${what}: reading ${n + 1}: front=${o.front} busy=${o.busy} workers=${o.workers} queued=${o.queued}${ignoreQueue ? ' (ignored in the hold)' : ''} load=${o.load} -> ${c.state}${c.state === 'idle' ? '' : ` (${c.reason})`}`);
       if (c.state === 'stop') throw new Stop(`before ${what}: ${c.reason}`);
       readings.push(c);
       if (c.state === 'contention') break;
@@ -364,7 +366,9 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   // watcher (scripts/mini-pause.mjs) runs beside the command, which gets the pause file as CUA_PAUSE_FILE (the mirror's
   // path, for a group that runs on the mini) and waits at its cell boundaries; the watcher ends with it.
   const options = [];
-  while (rest[0] === '--pause' || rest[0] === '--mirror') options.push(...(rest[0] === '--mirror' ? rest.splice(0, 2) : rest.splice(0, 1)));
+  // --hold: inside a CI-opt hold the gate ignores the queue (a busy runner or a Runner.Worker still waits).
+  while (rest[0] === '--pause' || rest[0] === '--mirror' || rest[0] === '--hold') options.push(...(rest[0] === '--mirror' ? rest.splice(0, 2) : rest.splice(0, 1)));
+  if (options.includes('--hold')) ctx.ignoreQueue = true;
   if (rest[0] === '--') rest.shift();
   let work;
   if (first === 'gated' && options.includes('--pause')) {

@@ -1,7 +1,7 @@
 // Pure, testable pieces of the acceptance runner (scripts/accept-native.mjs): how sub-check statuses roll up, how the
 // suites' summaries are read, the narrow TextEdit approval rule of the live fixture, the installed-tree snapshot that
 // proves a reinstall mutated nothing, and the packaging/tracking policies of acceptance 10.
-import {lstatSync, readdirSync, readlinkSync} from 'node:fs';
+import {existsSync, lstatSync, readdirSync, readlinkSync} from 'node:fs';
 import {join} from 'node:path';
 import {SANDBOX_DISABLED_STEP, SANDBOX_SCOPED_STEP} from '../probe/trusted-roots.mjs';
 import {SECRETS_OFF, STORE_UNREADABLE, failClosedSteps, refusedLaunchStep} from '../probe/fail-closed.mjs';
@@ -42,16 +42,59 @@ export function doctorHealth({code, doctor, informational = DOCTOR_INFORMATIONAL
   };
 }
 
+// Skips that are not missing coverage on this host (#157), each by its exact reason and only while its gate is really
+// absent: a vendor differential needs a local research tree (its variable unset, or naming a path that does not exist;
+// a clean checkout must not need one, acceptance 10); a platform-only test cannot run elsewhere; and a test of an npm
+// package skips in a checkout without it (acceptance 10's clean clone, which proves npm test runs without
+// node_modules, README). A declared skip whose gate is present (the tree there, the package installed), and any other
+// skip, is missing coverage.
+export const DECLARED_SKIPS = [
+  {reason: 'set CUA_VENDOR_CUA to the readable @oai/cua directory to compare with the vendor facade', researchTree: 'CUA_VENDOR_CUA'},
+  {reason: 'set CUA_VENDOR_CUA to the readable @oai/cua directory to compare with the vendor Sky facade', researchTree: 'CUA_VENDOR_CUA'},
+  {reason: 'set CUA_VENDOR_BROWSER_CLIENT to the vendor\'s readable browser-client.js to compare', researchTree: 'CUA_VENDOR_BROWSER_CLIENT'},
+  {reason: 'std\'s SUN_LEN refusal is the Linux vendor\'s connect', onlyOn: 'linux'},
+  {reason: 'non-UTF-8 file names exist only on Linux (APFS refuses them with EILSEQ)', onlyOn: 'linux'},
+  {reason: 'Linux only: a systemd user unit', onlyOn: 'linux'},
+  {reason: 'needs the ws package: run npm ci', dependency: 'ws'},
+  {reason: 'playwright-core not installed (npm ci): the drift check needs the pinned package', dependency: 'playwright-core'},
+  {reason: 'markdown-it not installed (npm ci): the drift check needs the pinned package', dependency: 'markdown-it'},
+  {reason: 'meriyah not installed (npm ci): the drift check needs the pinned package', dependency: 'meriyah'},
+  {reason: 'zod is not installed (npm ci)', dependency: 'zod'},
+];
+// Each skipped test's reason in TAP output (`ok N - name # SKIP reason`, nested subtests too) -> Map reason -> count.
+export function skipReasons(text) {
+  const tally = new Map();
+  for (const [, reason = ''] of text.replace(/\x1b\[[0-9;]*m/g, '').matchAll(/^\s*ok \d+ - .*? # SKIP(?: (.*?))?\s*$/gm)) tally.set(reason, (tally.get(reason) ?? 0) + 1);
+  return tally;
+}
+// -> {accepted: [{reason, count}], other: [{reason, count}]} for this host (`env`, `platform`, `exists`) and the
+// checkout the suite ran in (`root`, whose node_modules a dependency entry looks in).
+export function judgeSkips(tally, {env = process.env, platform = process.platform, root, exists = existsSync, declared = DECLARED_SKIPS} = {}) {
+  const applies = d => d.researchTree ? !env[d.researchTree] || !exists(env[d.researchTree])
+    : d.dependency ? Boolean(root) && !exists(join(root, 'node_modules', d.dependency, 'package.json')) : d.onlyOn !== platform;
+  const accepted = [], other = [];
+  for (const [reason, count] of tally) (declared.some(d => d.reason === reason && applies(d)) ? accepted : other).push({reason, count});
+  return {accepted, other};
+}
+
 // What a required suite's run proves. Exit 0 with no failure is not enough: a suite that executed nothing, or skipped
 // or left TODO any test, has not shown its coverage, so it is BLOCKED (never PASS); a failure, cancellation, nonzero
-// exit or a missing, incomplete or conflicting summary (testSummary's `problem`) is FAIL.
-export function suiteVerdict({code, totals, problem}) {
+// exit or a missing, incomplete or conflicting summary (testSummary's `problem`) is FAIL. The one exception is a skip
+// declared above whose gate is absent on this host (`skips`, judgeSkips): it is listed with its count, not missing
+// coverage, provided the reasons account for every skipped test.
+export function suiteVerdict({code, totals, problem, skips = null}) {
   if (!totals) return {status: 'FAIL', reason: problem ?? 'no test summary'};
   if (code !== 0 || totals.fail > 0 || totals.cancelled > 0) return {status: 'FAIL', reason: `exit ${code}, ${totals.fail} failed, ${totals.cancelled} cancelled`};
   if (totals.tests === 0 || totals.pass === 0) return {status: 'BLOCKED', reason: 'no test was executed'};
-  if (totals.skipped > 0 || totals.todo > 0) return {status: 'BLOCKED', reason: `${totals.skipped} skipped and ${totals.todo} TODO of ${totals.tests}: required coverage did not run`};
-  if (totals.pass !== totals.tests) return {status: 'FAIL', reason: `${totals.pass} of ${totals.tests} passed`};
-  return {status: 'PASS', reason: `${totals.pass}/${totals.tests} passed`};
+  const accepted = skips?.accepted ?? [], acceptedCount = accepted.reduce((n, s) => n + s.count, 0);
+  const declaredOnly = skips && !skips.other.length && acceptedCount === totals.skipped;
+  const listed = accepted.length ? `; declared skips not applicable on this host: ${accepted.map(s => `${s.count} × "${s.reason}"`).join('; ')}` : '';
+  if ((totals.skipped > 0 && !declaredOnly) || totals.todo > 0) {
+    const undeclared = skips?.other.length ? `; not declared: ${skips.other.map(s => `${s.count} × "${s.reason || '(no reason)'}"`).join('; ')}` : '';
+    return {status: 'BLOCKED', reason: `${totals.skipped} skipped and ${totals.todo} TODO of ${totals.tests}: required coverage did not run${undeclared}`};
+  }
+  if (totals.pass + totals.skipped !== totals.tests) return {status: 'FAIL', reason: `${totals.pass} of ${totals.tests} passed`};
+  return {status: 'PASS', reason: `${totals.pass}/${totals.tests} passed${listed}`};
 }
 
 // The summary node:test prints at the end of a run. Two forms are read: the TAP reporter's `# tests N` lines, which the
@@ -202,6 +245,28 @@ const TOKEN_PATTERNS = [
   /\bAKIA[0-9A-Z]{16}\b/,
 ];
 export const tokenLike = text => TOKEN_PATTERNS.some(pattern => pattern.test(text));
+
+// Acceptance 10's tracked-file check: a code or config file fails when it names the running account's home (`home`/)
+// or holds a token-like string. The home rule has one declared exception: files that are by design the mini's own
+// layout, whose account home is the controller's too (/Users/new): the gate's paths to the approved runtime and the
+// runner's executable (scripts/mini-rules.mjs), the tests that pin them, and a sandbox recording made on the mini.
+// Every other fixture uses a made-up home. Token-like strings have no exception anywhere.
+export const MINI_LAYOUT_FILES = [
+  'scripts/mini-rules.mjs', 'test/mini-pause.test.mjs', 'test/mini-rules.test.mjs', 'test/mini-worker-probe.test.mjs',
+  'test/fixtures/sandbox/seatbelt/tmpdir-relative.json',
+];
+// -> {home, token}: whether `text` (the tracked file `path`) breaks either rule.
+export const personalText = (path, text, home) => ({home: !MINI_LAYOUT_FILES.includes(path) && text.includes(home + '/'), token: tokenLike(text)});
+
+// Acceptance 10's "clean clone needs no research trees": the lines of code that name `pattern`, a local research tree
+// (the pattern itself lives only in accept-native.mjs, which the check does not search). A comment that cites one (a
+// `//` before the name, or a line opening with * or #) is a citation, not a dependency.
+export function researchTreeLines(text, pattern) {
+  return text.split('\n').map((line, index) => ({line: index + 1, text: line})).filter(({text: line}) => {
+    const at = line.indexOf(pattern);
+    return at >= 0 && !line.slice(0, at).includes('//') && !/^\s*[*#]/.test(line);
+  }).map(({line}) => line);
+}
 
 // Acceptance 6/7: every step scripts/probe-secrets.mjs records on a complete run, grouped into the spec's phases, with
 // the items each phase is evidence for. A phase passes only when each of its steps ran and passed; a step that never

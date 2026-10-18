@@ -1,0 +1,102 @@
+{
+  "scenario": "accept-native",
+  "status": "PASS",
+  "options": {
+    "liveSecrets": false,
+    "liveTextedit": false,
+    "callerSecretKey": false,
+    "items": [
+      1,
+      10
+    ]
+  },
+  "release": null,
+  "home": "$CUA_HOME",
+  "host": "darwin-arm64",
+  "node": "v26.4.0",
+  "startedAt": "2026-10-18T18:25:26.262Z",
+  "finishedAt": "2026-10-18T18:27:42.357Z",
+  "summary": {
+    "1": "PASS",
+    "10": "PASS"
+  },
+  "connectionDirectoriesLeft": 0,
+  "items": [
+    {
+      "id": 1,
+      "title": "npm test",
+      "status": "PASS",
+      "checks": [
+        {
+          "name": "npm test",
+          "status": "PASS",
+          "detail": "2892/2963 passed; declared skips not applicable on this host: 1 × \"Linux only: a systemd user unit\"; 30 × \"set CUA_VENDOR_BROWSER_CLIENT to the vendor's readable browser-client.js to compare\"; 32 × \"set CUA_VENDOR_CUA to the readable @oai/cua directory to compare with the vendor facade\"; 6 × \"set CUA_VENDOR_CUA to the readable @oai/cua directory to compare with the vendor Sky facade\"; 1 × \"std's SUN_LEN refusal is the Linux vendor's connect\"; 1 × \"non-UTF-8 file names exist only on Linux (APFS refuses them with EILSEQ)\"; 0 failed, 71 skipped, 0 TODO in 67.5 s",
+          "totals": {
+            "tests": 2963,
+            "pass": 2892,
+            "fail": 0,
+            "cancelled": 0,
+            "skipped": 71,
+            "todo": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "Packaging, plugin README, tracked files, clean checkout",
+      "status": "PASS",
+      "checks": [
+        {
+          "name": "README: standalone requirements, limitations and exact commands",
+          "status": "PASS",
+          "detail": "mentions npm test, cua.mjs install, doctor, secrets set, claude-secrets, serve, claude mcp add, accept-native.mjs, Chrome"
+        },
+        {
+          "name": "plugin launches the standalone server; no Stop/SubagentStop hooks",
+          "status": "PASS",
+          "detail": "cua_repl: node --disable-sigusr1 ${CLAUDE_PLUGIN_ROOT}/cua-shim.mjs; shell hooks Elicitation"
+        },
+        {
+          "name": "nothing tracked is an archive, runtime, credential, log or machine-specific token",
+          "status": "PASS",
+          "detail": "2636 tracked files; forbidden: none; code/config naming this user's home or holding token-like strings: none (the mini's own layout is declared: 5 files, home rule only)"
+        },
+        {
+          "name": "package files: what runs and diagnoses; nothing else",
+          "status": "PASS",
+          "detail": "218 files"
+        },
+        {
+          "name": "existing MCP registration untouched",
+          "status": "PASS",
+          "detail": "no tracked code runs `claude` or edits ~/.claude; registration is documented (README) and never executed by acceptance"
+        },
+        {
+          "name": "clean clone: npm test",
+          "status": "PASS",
+          "detail": "2857/2963 passed; declared skips not applicable on this host: 1 × \"playwright-core not installed (npm ci): the drift check needs the pinned package\"; 1 × \"markdown-it not installed (npm ci): the drift check needs the pinned package\"; 1 × \"Linux only: a systemd user unit\"; 30 × \"set CUA_VENDOR_BROWSER_CLIENT to the vendor's readable browser-client.js to compare\"; 1 × \"zod is not installed (npm ci)\"; 32 × \"set CUA_VENDOR_CUA to the readable @oai/cua directory to compare with the vendor facade\"; 6 × \"set CUA_VENDOR_CUA to the readable @oai/cua directory to compare with the vendor Sky facade\"; 31 × \"needs the ws package: run npm ci\"; 1 × \"meriyah not installed (npm ci): the drift check needs the pinned package\"; 1 × \"std's SUN_LEN refusal is the Linux vendor's connect\"; 1 × \"non-UTF-8 file names exist only on Linux (APFS refuses them with EILSEQ)\"; 0 failed, 106 skipped, 0 TODO in 67.3 s",
+          "totals": {
+            "tests": 2963,
+            "pass": 2857,
+            "fail": 0,
+            "cancelled": 0,
+            "skipped": 106,
+            "todo": 0
+          }
+        },
+        {
+          "name": "clean clone needs no research trees",
+          "status": "PASS",
+          "detail": "no code or config outside docs refers to the local research trees (citations in comments aside)"
+        }
+      ],
+      "evidence": {
+        "head": "8318fe3",
+        "branch": "HEAD",
+        "workingTreeDirty": false,
+        "cloneRemoved": true
+      }
+    }
+  ]
+}

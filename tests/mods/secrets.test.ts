@@ -214,12 +214,12 @@ const typeInField = async ($: Engine, text: string) => {
 
 describe('the tiers', () => {
   test('a project is named as Claude Code names its folder under ~/.claude/projects/', () => {
-    expect(projectSlug('/Users/new/Developer/GitHub/MAWS')).toBe('-Users-new-Developer-GitHub-MAWS')
+    expect(projectSlug('/Users/dev/Developer/GitHub/MAWS')).toBe('-Users-dev-Developer-GitHub-MAWS')
     expect(projectSlug('/private/tmp/fold-smoke/.claude/worktrees/72-api-architect')).toBe('-private-tmp-fold-smoke--claude-worktrees-72-api-architect')
     // Past 200 characters, the first 200 and a hash of the whole path (the same value src/secrets/store.mjs gives).
-    const long = projectSlug(`/Users/new/${'a'.repeat(120)}/${'b'.repeat(100)}`)
+    const long = projectSlug(`/Users/dev/${'a'.repeat(120)}/${'b'.repeat(100)}`)
     expect(long.length).toBe(207)
-    expect(long.slice(195)).toBe('bbbbb-iqtzp2')
+    expect(long.slice(195)).toBe('bbbbb-bt89mn')
   })
 
   test("a worktree's project is its main checkout; a submodule's is its own top level", () => {

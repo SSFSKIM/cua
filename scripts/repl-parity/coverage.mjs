@@ -3,6 +3,7 @@ import {readFileSync,existsSync,globSync} from 'node:fs';
 import {resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
+import {testReporterEnv} from '../accept/lib.mjs';
 const repository=fileURLToPath(new URL('../../',import.meta.url));
 export const unitProofKey=proof=>`${proof.file}#${proof.name}`;
 export function rowCovered(row,executableCases,passedUnitProofs=new Set()){
@@ -24,8 +25,10 @@ export function verifyUnitProofs(rows,{root=repository}={}){
   if(!proof||Object.keys(proof).sort().join(',')!=='file,name'||typeof proof.file!=='string'||!/^test\/(?:[A-Za-z0-9_.-]+\/)*[A-Za-z0-9_.-]+\.test\.mjs$/.test(proof.file)||typeof proof.name!=='string'||!proof.name.trim())throw new Error('Invalid named unit proof');
   const file=resolve(root,proof.file);if(!existsSync(file))throw new Error('Referenced unit proof file missing');
   if(!discovered.has(file))throw new Error('Referenced unit proof does not run under npm test');
-  const env={...process.env,FORCE_COLOR:'0',NO_COLOR:'1'};delete env.NODE_TEST_CONTEXT;
-  const result=spawnSync(process.execPath,['--test','--test-reporter=tap','--test-name-pattern',`^${escaped(proof.name)}$`,file],{cwd:root,encoding:'utf8',timeout:30000,maxBuffer:2*1024*1024,env});
+  // TAP on stdout through NODE_OPTIONS alone (testReporterEnv replaces any reporter already there): a reporter on the
+  // command line as well would leave two reporters for one destination, and node --test refuses to start (#157).
+  const env=testReporterEnv({...process.env,FORCE_COLOR:'0',NO_COLOR:'1'});delete env.NODE_TEST_CONTEXT;
+  const result=spawnSync(process.execPath,['--test','--test-name-pattern',`^${escaped(proof.name)}$`,file],{cwd:root,encoding:'utf8',timeout:30000,maxBuffer:2*1024*1024,env});
   if(result.status!==0||!new RegExp(`^ok \\d+ - ${escaped(proof.name)}$`,'m').test(result.stdout??''))throw new Error(`Referenced unit proof did not pass: ${key}`);
   passed.add(key);
  }

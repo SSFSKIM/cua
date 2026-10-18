@@ -10,8 +10,11 @@ const [log, declaredFile] = process.argv.slice(2);
 const normal = d => `${d.operation} ${d.target.replace(/:\d+$/, ':<port>')}`;
 const declared = new Set(JSON.parse(readFileSync(declaredFile, 'utf8')).declared.map(normal));
 const after = summarize(readFileSync(log, 'utf8'));
+// One line per normalised kind (two loopback connections differ only in their ephemeral port).
+const kinds = new Map();
+for (const d of after) kinds.set(normal(d), (kinds.get(normal(d)) ?? 0) + d.count);
 const preferences = compareDenials([], after).preferences;
-const outside = after.filter(d => !declared.has(normal(d)));
-for (const d of after) console.log(`  denial: ${normal(d)} x${d.count}${declared.has(normal(d)) ? '' : '  (undeclared)'}`);
-console.log(`  denials ${after.length} kinds, preferences ${preferences.length}, undeclared ${outside.length}`);
+const outside = [...kinds.keys()].filter(kind => !declared.has(kind));
+for (const [kind, count] of kinds) console.log(`  denial: ${kind} x${count}${declared.has(kind) ? '' : '  (undeclared)'}`);
+console.log(`  denials ${kinds.size} kinds, preferences ${preferences.length}, undeclared ${outside.length}`);
 process.exitCode = preferences.length || outside.length ? 1 : 0;

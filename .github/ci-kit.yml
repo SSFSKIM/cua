@@ -1,7 +1,9 @@
 # cua's CI gates, run by ci-kit (https://github.com/SSFSKIM/ci-kit/blob/main/docs/adopting.md): on pull requests, and
-# from any worktree with `ci-gate`. Both gates run on GitHub's hosted macOS runner, free for a public repo; an ubuntu
-# leg waits for the Linux fixes in #142. Live checks (verify.mjs, accept-native, accept-chrome) need the real $CUA_HOME,
-# the native helper and the GUI, so they stay local.
+# from any worktree with `ci-gate`. Every gate runs on GitHub's hosted macOS runner, free for a public repo; an ubuntu
+# leg waits for the Linux fixes in #142. Live checks that need the owner, a TCC grant or the native helper (verify.mjs,
+# accept-native, accept-chrome, parity's computer lanes) stay on the Mac mini; the headless ones run in `sandbox-live`,
+# the cfprefs denial check and parity's browser lanes (on a harness Chrome for Testing) in `sandbox-denials` and
+# `parity-browser` (by hand until its two racy cells are fixed).
 version: 1
 setup:
   node: "24"          # Node 22 skips the own REPL host's tests
@@ -24,3 +26,111 @@ gates:
       done
       claude plugin validate .
       npm run test:mods
+  # #159: cua's headless macOS live checks (the #115 oracles, own-sandbox on both hosts, probe-secrets) on a runtime
+  # `cua install` fetches into a scratch home, so a sandbox change is proven with no time on the Mac mini. Public logs
+  # and artifact: labels, outcomes, booleans and counts (and the fingerprints' scratch paths); the raw reports stay in
+  # the scratch root; every secret is synthetic (scripts/sandbox-probe/hosted-gate.sh's header).
+  - name: sandbox-live
+    lane: hosted-macos
+    timeout: 30
+    run: sh scripts/sandbox-probe/hosted-gate.sh
+    # Every input whose change can alter the gate's result: the code under test, the probes, the committed evidence
+    # they judge against, and this file.
+    paths:
+      - "src/sandbox/**"
+      - "src/runtime/**"
+      - "src/secrets/**"
+      - "src/repl-host/**"
+      - "src/services/**"
+      - "src/mcp/**"            # own-sandbox's connection, probe-secrets' server
+      - "src/cua-api/**"        # the own host's API, which the kernel reads
+      - "src/cli.mjs"           # install and doctor
+      - "bin/cua.mjs"
+      - "bin/cua-codex-compat"
+      - "runtime/**"
+      - "scripts/sandbox-probe/**"
+      - "scripts/accept/own-sandbox.mjs"
+      - "scripts/accept/secret-seed.mjs"
+      - "scripts/accept/serve-with-store.mjs"
+      - "scripts/probe-secrets.mjs"
+      - "scripts/probe/**"
+      - "docs/evidence/2026-10-17-own-sandbox/m0/**"
+      - "docs/evidence/2026-10-18-hosted-macos-gate/baseline/**"
+      - ".github/ci-kit.yml"
+    artifacts: ["hosted-gate-out/**"]
+  # #159: repl-parity's live checks that need a browser but no owner or TCC grant, on a harness Chrome (Chrome for
+  # Testing with cua's extension, a fresh profile) and the runner reaching itself as device `hosted-macos`
+  # (scripts/repl-parity/hosted/hosted.sh's header). Two gates so they run on two runners at once. Public log only:
+  # labels, outcomes, booleans and counts; no artifact. Each runs only when a change can move what it catches.
+  - name: sandbox-denials
+    # cua's own host's cells and services suites under `log stream`: the assertions pass, no preferences (cfprefs)
+    # denial, every denial kind in #115 M1's declared set. About 25 minutes with the setup.
+    lane: hosted-macos
+    timeout: 60
+    run: sh scripts/repl-parity/hosted/hosted.sh denials
+    # What the kernel and the worker can reach: the sandbox, the launch code that builds the sandboxed launch and the
+    # inputs of its profile (the home's layout, the secret store and projects folder it denies, the kernel's Node), the
+    # kernel child's spawn, the launches the supervisor brokers, the compat launcher; and the gate's own script, judge,
+    # declared set and the reduction it uses.
+    paths:
+      - "src/sandbox/**"
+      - "src/runtime/sandbox.mjs"
+      - "src/runtime/launch.mjs"
+      - "src/runtime/run-dir.mjs"
+      - "src/runtime/layout.mjs"
+      - "src/runtime/managed-node.mjs"
+      - "src/secrets/store.mjs"
+      - "src/secrets/label.mjs"
+      - "src/repl-host/supervisor.mjs"
+      - "src/repl-host/kernel-child.mjs"
+      - "src/repl-host/launch-services.mjs"
+      - "bin/cua-codex-compat"
+      - "scripts/repl-parity/hosted/**"
+      - "scripts/sandbox-probe/denials.mjs"
+      - ".github/ci-kit.yml"
+  - name: parity-browser
+    # The vendor host and cua's own host over suites api and docs-profiles, each pair diffed with the declared expected
+    # differences: none undeclared. About 11 minutes with the setup.
+    # Not on pull requests yet: 3 of its first 6 hosted runs went red on two parity cells' races, not on the change
+    # (the waitfor cell's two deadlines, cua's drag cell; tech-debt-tracker.md). A flaky required check is worse than
+    # none, so it runs by hand (`ci-gate --gates parity-browser`, a dispatch) until those cells are fixed; then add `pr`.
+    on: [ci-ref, dispatch]
+    lane: hosted-macos
+    timeout: 40
+    run: sh scripts/repl-parity/hosted/hosted.sh browser
+    # The browser route and cua's own REPL host, the browser side of its API (and the documents docs-profiles reads),
+    # the extension, parity's own harness and suites (the gate's script among them), and what they import: the browser
+    # harness repl-parity runs on (runner, comparator, topology, MCP client) and its scenarios and fixture server, the
+    # pause gate, and the server both hosts are run under (test/repl-parity/serve-production.mjs: the MCP server, the
+    # profiles, the device directory, the runtime and the sandboxed launch, the secrets the browser service reads); and the
+    # pinned runtime `cua install` fetches, the vendor host among it.
+    paths:
+      - "src/chrome/**"
+      - "src/browser-service/**"
+      - "src/services/browser.mjs"
+      - "src/repl-host/**"
+      - "src/cua-api/browser-api.mjs"
+      - "src/cua-api/browser-client.mjs"
+      - "src/cua-api/bind-tab.mjs"
+      - "src/cua-api/documentation.mjs"
+      - "docs/cua-api/**"
+      - "extension/**"
+      - "scripts/repl-parity.mjs"
+      - "scripts/repl-parity/**"
+      - "test/repl-parity/**"
+      - "scripts/browser-parity/**"
+      - "test/browser-parity/**"
+      - "scripts/mini-pause.mjs"
+      - "scripts/mini-rules.mjs"
+      - "scripts/accept/key-guard.mjs"
+      - "scripts/harness-home.mjs"
+      - "src/mcp/**"
+      - "src/profiles/**"
+      - "src/remote/**"
+      - "src/runtime/**"
+      - "src/sandbox/**"
+      - "src/secrets/**"
+      - "src/services/secret-input.mjs"
+      - "src/services/sky.mjs"
+      - "runtime/releases/**"
+      - ".github/ci-kit.yml"

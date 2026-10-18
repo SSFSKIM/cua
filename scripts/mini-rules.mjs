@@ -8,6 +8,19 @@
 //     any other mini run (M1 on): the gate below, then the command on the controller (which reaches the mini itself),
 //     then the frontmost-application check; exits with the command's status, or 4 when a rule stops it.
 //
+// What still comes to the mini (#159, docs/evidence/2026-10-18-hosted-macos-gate/README.md, "What stays on the mini"):
+// only what needs the owner, a TCC grant or the mini's own state. The headless checks (the oracles against a hosted
+// baseline, port-vs-capture, own-sandbox on both hosts, probe-secrets, doctor) prove a pull request on GitHub's hosted
+// macOS runner, ci-kit gate `sandbox-live`; the cfprefs denial check (the cells and services suites' denials within M1's
+// declared set) and parity's browser lanes (suites api and docs-profiles, vendor against cua, on a harness Chrome for
+// Testing) do too, gates `sandbox-denials` and `parity-browser` (scripts/repl-parity/hosted/hosted.sh; the latter by hand for now). None of these is
+// repeated here for evidence. The mini keeps: anything that needs
+// the native computer-use helper's Screen Recording or Accessibility grant (accept-native's native items, native-baseline's
+// computer runs, parity's computer lanes; probe-secrets' one helper call, an absent app's lookup, needs neither and runs
+// hosted), the owner's sittings, the M0 oracle pairs (golden kernel and signed CLI, taken on the mini's
+// macOS; the hosted macOS answers file-link differently), the measured bounds, checks of the owner's real store, and
+// browser checks that need branded Google Chrome or the owner's real profile.
+//
 // Before each item, the gate: two readings about 45 s apart, each with every observation present (a request that fails
 // or an answer that does not parse stops the sequence; nothing missing is ever read as idle):
 //   - the frontmost application: a system prompt (UserNotificationCenter, SecurityAgent, CoreServicesUIAgent) stops at

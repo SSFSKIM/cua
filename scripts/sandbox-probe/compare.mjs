@@ -90,10 +90,56 @@ export function comparePortToCapture({captured, port}) {
     equalButDeviations: result.argvEqual && !differing.length && !onlyCaptured.length && !result.env.onlyGolden.length};
 }
 
+// #159: a capture (oracle.mjs capture) moved from the root it was taken under (`from`, M0's scratch root on the mini) to
+// `to` on the machine replaying it, so port-vs-capture renders the same input there. Every string of the record has
+// `from` replaced as a whole path prefix, in its plain spelling and in the regex-escaped one the original's profile uses
+// for its carve-outs (regex-lite's escape, the capture's own), each occurrence once and by the spelling it was found in
+// (so a `to` under `from` is never moved again); and the protected daemon directory takes `euid`, the replaying user's,
+// as the port renders it. A copy; the record is left as it was. A `from` with no regex-lite metacharacter spells both
+// ways alike, so an occurrence cannot say which spelling of `to` it needs: refused when `to`'s two spellings differ.
+const regexLiteEscape = text => text.replace(/[\\.+*?()|[\]{}^$#&\-~]/g, '\\$&');
+export function relocateCapture(record, {from, to, euid}) {
+  for (const root of [from, to]) if (!root?.startsWith('/') || root === '/' || root.endsWith('/')) throw new Error(`relocate: ${JSON.stringify(root)} is not an absolute directory path`);
+  const [fromEscaped, toEscaped] = [regexLiteEscape(from), regexLiteEscape(to)];
+  if (fromEscaped === from && toEscaped !== to)
+    throw new Error(`relocate: cannot tell ${JSON.stringify(from)}'s plain and regex-escaped spellings apart (it has no regex-lite metacharacter), and ${JSON.stringify(to)}'s differ`);
+  // One pass, the escaped spelling tried first; in it a name also goes on after a backslash (`\.`, `\-`), so a sibling
+  // spelled that way is not under the root either.
+  const end = `(?![A-Za-z0-9._-]|\\\\[A-Za-z0-9._-])`;
+  const pattern = new RegExp(`(${escapeRegExp(fromEscaped)})${end}|${escapeRegExp(from)}${end}`, 'g');
+  const move = value => {
+    if (typeof value === 'string') return value.replace(pattern, (_, escaped) => escaped === undefined ? to : toEscaped).replace(/\/private\/tmp\/codex-daemon-\d+/g, `/private/tmp/codex-daemon-${euid}`);
+    if (Array.isArray(value)) return value.map(move);
+    if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, move(item)]));
+    return value;
+  };
+  return move(record);
+}
+
 // Named per run: the CLI's arg0 directory ($CODEX_HOME/tmp/arg0/codex-arg0<random>) and the session's run directory
-// (run/<uuid>, with its temp).
-const normalizeValue = value => value.replace(/codex-arg0[A-Za-z0-9]+/g, 'codex-arg0*')
+// (run/<uuid>, with its temp). Exported for the hosted gate's public form (hosted-public.mjs).
+export const normalizeValue = value => value.replace(/codex-arg0[A-Za-z0-9]+/g, 'codex-arg0*')
   .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, '<session>');
+
+// Where the run's machine put things (#159: M0's fingerprints come from the mini, the hosted gate's from a runner): the
+// targets the harness passed the fingerprint name its roots, the cua home, the user home and the checkout, and a value
+// under one reads as `<label>/…` (inside a JSON value too), longest root first so a nested root wins. A root matches
+// whole, never a sibling sharing its prefix. The user home is the grandparent of `config-cua` (oracle.mjs passes
+// <userHome>/.config/cua), never fingerprint.c's own `home` target: that is the child's HOME, and a root taken from what
+// the child reports would erase a change in it. Exported for the hosted gate's public form (hosted-public.mjs), which
+// publishes values this way and drops the targets: a public form names no root, so it reads as itself here, and two
+// public forms compare as their raw records do.
+const CONFIG_CUA = '/.config/cua';
+const escapeRegExp = text => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+// A root ends where a path name could not go on: not before another name character (a sibling `home2`, `home.bak`).
+const WHOLE = '(?![A-Za-z0-9._-])';
+export function relativeToRoots(fingerprint) {
+  const target = label => fingerprint.checks.find(row => row.filter === 'path' && row.label === label)?.target;
+  const configCua = target('config-cua');
+  const roots = [['cua-home', target('cua-home')], ['home', configCua?.endsWith(CONFIG_CUA) ? configCua.slice(0, -CONFIG_CUA.length) : undefined], ['checkout', target('checkout')]]
+    .filter(([, root]) => typeof root === 'string' && root.startsWith('/') && root !== '/').sort(([, a], [, b]) => b.length - a.length);
+  return value => roots.reduce((text, [label, root]) => text.replace(new RegExp(`${escapeRegExp(root)}${WHOLE}`, 'g'), `<${label}>`), value);
+}
 
 // Checks are matched by (op, filter, label) and compared by result and errno: two failures of the same check are
 // different outcomes when their errno differs (EPERM from the sandbox against ECONNREFUSED from an absent listener).
@@ -106,9 +152,10 @@ export function compareFingerprints(left, right) {
       const [op, filter, label] = key.split(SEP);
       return {op, filter, label, left: a.get(key) ?? null, right: b.get(key) ?? null};
     });
-  const normalize = env => Object.fromEntries(Object.entries(env).map(([k, v]) => [k, normalizeValue(v)]));
-  const env = envDiff(normalize(left.env), normalize(right.env));
-  const cwdEqual = normalizeValue(left.cwd) === normalizeValue(right.cwd);
+  const [inLeft, inRight] = [relativeToRoots(left), relativeToRoots(right)];
+  const normalize = (env, relative) => Object.fromEntries(Object.entries(env).map(([k, v]) => [k, normalizeValue(relative(v))]));
+  const env = envDiff(normalize(left.env, inLeft), normalize(right.env, inRight));
+  const cwdEqual = normalizeValue(inLeft(left.cwd)) === normalizeValue(inRight(right.cwd));
   const equal = checks.length === 0 && env.onlyLeft.length + env.onlyRight.length + env.differing.length === 0 && cwdEqual && left.sandboxed === right.sandboxed;
   return {equal, sandboxed: [left.sandboxed, right.sandboxed], cwdEqual, checks, env};
 }
@@ -133,6 +180,7 @@ export function metadataGrantPins(fingerprint) {
 //   signed/cua-worker         M0's signed-CLI kernel (no deny list) against cua's trusted worker: the new target; the
 //                             CLI's CODEX_HOME, CoreFoundation's __CF_USER_TEXT_ENCODING and its arg0 PATH entry; the
 //                             worker's own host settings, which it gets and a kernel never does.
+//   hosted-baseline/cua       (#159) cua's launcher against itself on the hosted image: nothing.
 const NEW_TARGET = row => row.label === 'cua-home/run' && row.left === null;
 export const FINGERPRINT_DEVIATIONS = Object.freeze({
   'golden-kernel/cua-kernel': {
@@ -144,6 +192,11 @@ export const FINGERPRINT_DEVIATIONS = Object.freeze({
     onlyLeft: ['CODEX_HOME', '__CF_USER_TEXT_ENCODING'], onlyRight: ['CUA_REPL_NODE_PATH', 'CUA_REPL_SANDBOX_EXEC', 'CUA_SANDBOX_DENY_READ', 'LANG'],
     differing: ({name, left, right}) => name === 'PATH' && left === `${/^[^:]*\/arg0\/codex-arg0[^:]*:/.exec(left)?.[0] ?? '\0'}${right}`,
   },
+  // #159: the hosted gate's baseline (cua's launcher at a reviewed commit, recorded on the hosted image) against the
+  // change under test on that image: the same launcher, so nothing is declared. A different OS sees some checks
+  // differently (file-link on system paths: denied on the mini's macOS 27, allowed on the hosted macOS 26), which is
+  // why the hosted gate judges against its own image's baseline and M0's pairs stay with the mini.
+  'hosted-baseline/cua': {check: () => false, onlyLeft: [], onlyRight: [], differing: () => false},
 });
 export function judgeFingerprints(comparison, pair) {
   const declared = FINGERPRINT_DEVIATIONS[pair];

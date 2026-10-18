@@ -7,6 +7,9 @@ export const DEVICES = Object.freeze({
   'cua-linux': Object.freeze({platform: 'linux', discoveryHome: '/home/admin/.local/share/cua-h4', captureChrome: true}),
   'cua-gce': Object.freeze({platform: 'linux', captureChrome: true}),
   'cua-bench': Object.freeze({platform: 'linux'}),
+  // GitHub's hosted macOS runner reaching itself over a loopback ssh alias, which scripts/repl-parity/hosted/hosted.sh
+  // sets up there (#159, ci-kit gates sandbox-denials and parity-browser).
+  'hosted-macos': Object.freeze({platform: 'darwin'}),
 });
 export function declaredDevice(device) {
   const declaration = DEVICES[device];

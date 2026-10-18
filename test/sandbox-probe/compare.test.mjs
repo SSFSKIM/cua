@@ -3,7 +3,7 @@
 // CLI's arg0 directory, the pid) normalized away and every remaining difference named.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {compareCapture, compareExperiments, compareFingerprints, comparePortToCapture, envDiff, envObject, judgeFingerprints, metadataGrantPins, profileFromPolicy} from '../../scripts/sandbox-probe/compare.mjs';
+import {compareCapture, compareExperiments, compareFingerprints, comparePortToCapture, envDiff, envObject, judgeFingerprints, metadataGrantPins, profileFromPolicy, relocateCapture} from '../../scripts/sandbox-probe/compare.mjs';
 
 test('profileFromPolicy turns cua\'s sorted -c table into the original\'s permission profile, in the same order', () => {
   const policy = {filesystem: [['/a', 'read'], ['/z', 'none'], [':root', 'read'], [':tmpdir', 'write'], [':workspace_roots', {'.': 'write'}]], cwd: '/run'};
@@ -93,6 +93,42 @@ test('compareFingerprints treats per-launch session ids (UUIDs in the run direct
   assert.equal(result.cwdEqual, true);
 });
 
+// #159: M0's fingerprints were taken on the mini; the hosted gate's run on another machine, under other roots.
+const machine = (root, extra = {}) => {
+  const roots = {'cua-home': `${root}/cuahome`, home: `${root}/userhome`, 'config-cua': `${root}/userhome/.config/cua`, checkout: `${root}/repo`};
+  const value = fp({'file-read-data home': 'allow', 'file-read-data cua-home': 'deny', 'file-read-data config-cua': 'deny', 'file-read-data checkout': 'allow'}, {HOME: roots.home,
+      TMPDIR: `${roots['cua-home']}/run/0fa27729-814e-47fb-8f46-66727511dc72/tmp`, CUA_REPL_NODE_MODULE_DIRS: `${roots['cua-home']}/runtimes/r/lib`,
+    NODE_PATH: `${roots.checkout}/src:${roots.home}/lib`, DENY: JSON.stringify({deny: [roots['cua-home'], `${roots.home}/.config/cua`]}), ...extra});
+  for (const row of value.checks) row.target = roots[row.label];
+  value.cwd = `${roots['cua-home']}/run/0fa27729-814e-47fb-8f46-66727511dc72`;
+  return value;
+};
+test('compareFingerprints reads each side\'s env and cwd relative to its own labelled roots (cua-home, the user home, checkout)', () => {
+  const same = compareFingerprints(machine('/Users/new/cua-115'), machine('/Users/runner/work/_temp/cua159.AbC123'));
+  assert.equal(same.equal, true, JSON.stringify(same));
+  // What lies below a root still counts, and a path outside every root is compared as it is.
+  const moved = compareFingerprints(machine('/a'), machine('/b', {CUA_REPL_NODE_MODULE_DIRS: '/b/cuahome/runtimes/other/lib', SHELL: '/b/bin/sh'}));
+  assert.deepEqual(moved.env.differing.map(d => [d.name, d.left, d.right]), [['CUA_REPL_NODE_MODULE_DIRS', '<cua-home>/runtimes/r/lib', '<cua-home>/runtimes/other/lib']]);
+  assert.deepEqual(moved.env.onlyRight, ['SHELL']);
+  // A root is matched whole: a sibling that merely shares its prefix is not under it.
+  const sibling = compareFingerprints(machine('/a', {X: '/a/cuahome2'}), machine('/b', {X: '/b/cuahome2'}));
+  assert.deepEqual(sibling.env.differing.map(d => d.name), ['X']);
+});
+
+// #159 review: the user-home root is the harness's (its config-cua target's grandparent), never the HOME the child
+// reports: a kernel whose HOME moved must not have the move erased by a root that moved with it.
+test('compareFingerprints takes the user-home root from the harness\'s config-cua target, not the child\'s HOME', () => {
+  const moved = machine('/b');
+  moved.env.HOME = '/Users';
+  for (const row of moved.checks) if (row.label === 'home') row.target = '/Users';
+  const result = compareFingerprints(machine('/a'), moved);
+  assert.equal(result.equal, false);
+  assert.deepEqual(result.env.differing.map(d => [d.name, d.left, d.right]), [['HOME', '<home>', '/Users']]);
+  // Without a config-cua target there is no user-home root to read against, so nothing under it is erased.
+  const bare = value => ({...value, checks: value.checks.filter(row => row.label !== 'config-cua')});
+  assert.deepEqual(compareFingerprints(bare(machine('/a')), bare(machine('/b'))).env.differing.map(d => d.name), ['DENY', 'HOME', 'NODE_PATH']);
+});
+
 test('compareExperiments: the confinement outcomes key by key, and each side\'s cell outcomes, apart from timings', () => {
   const run = (confinement, natives) => ({label: 'x', results: {banner: {ok: true, wallMs: 5}, confinement: {ok: true, value: confinement, ms: 3},
     ...Object.fromEntries(natives.map(([name, ok]) => [name, {ok, value: {apps: 3}, ms: 9, wallMs: 10}]))}});
@@ -131,6 +167,41 @@ test('comparePortToCapture: cua\'s port against the signed CLI\'s capture, equal
   assert.equal(extraEnv.equalButDeviations, false, 'any other environment difference is a difference');
 });
 
+// #159: M0's captures name the mini's scratch root; the hosted gate replays them under its own.
+test('relocateCapture moves a capture to another root, plain and regex-escaped spellings alike, and its daemon euid', () => {
+  const from = '/Users/new/cua-115', to = '/Users/runner/work/_temp/cua159.x-Y';
+  const record = {input: {cwd: `${from}/home/run/s`, env: {HOME: `${from}/userhome`, PATH: `${from}/home/bin:/usr/bin`}, policy: {filesystem: [[`${from}/repo/src`, 'read'], [':root', 'read']]},
+    args: ['sandbox', '--', `${from}/home/node`]},
+  captured: {captured: true, argv: ['/usr/bin/sandbox-exec', '-p', `(regex #"^/Users/new/cua\\-115/home/run/s/\\.git(/.*)?$")\n(literal "/private/tmp/codex-daemon-501")`, `-DWRITABLE_ROOT_0=${from}/home/run/s`, '--', `${from}/home/node`],
+    env: [`HOME=${from}/userhome`, `SIBLING=${from}0/x`, 'ELSEWHERE=/Users/new/other']}};
+  const moved = relocateCapture(record, {from, to, euid: 502});
+  assert.equal(moved.input.cwd, `${to}/home/run/s`);
+  assert.deepEqual(moved.input.env, {HOME: `${to}/userhome`, PATH: `${to}/home/bin:/usr/bin`});
+  assert.deepEqual(moved.input.policy.filesystem, [[`${to}/repo/src`, 'read'], [':root', 'read']]);
+  assert.equal(moved.captured.argv[2], '(regex #"^/Users/runner/work/_temp/cua159\\.x\\-Y/home/run/s/\\.git(/.*)?$")\n(literal "/private/tmp/codex-daemon-502")');
+  assert.deepEqual(moved.captured.argv.slice(3), [`-DWRITABLE_ROOT_0=${to}/home/run/s`, '--', `${to}/home/node`]);
+  assert.deepEqual(moved.captured.env, [`HOME=${to}/userhome`, `SIBLING=${from}0/x`, 'ELSEWHERE=/Users/new/other']);
+  assert.equal(record.input.cwd, `${from}/home/run/s`, 'the record itself is left as it was');
+  assert.throws(() => relocateCapture(record, {from, to: 'relative/root', euid: 502}), /absolute/);
+});
+
+// #159 review: each original occurrence is replaced once, so a destination under the original root is not moved twice.
+test('relocateCapture rewrites each occurrence once, a destination nested under the original included', () => {
+  const plain = relocateCapture({p: '/Users/new/cua115/home', q: ['/Users/new/cua115']}, {from: '/Users/new/cua115', to: '/Users/new/cua115/hosted', euid: 501});
+  assert.deepEqual(plain, {p: '/Users/new/cua115/hosted/home', q: ['/Users/new/cua115/hosted']});
+  const from = '/Users/new/cua-115', to = '/Users/new/cua-115/hosted.x';
+  const moved = relocateCapture({p: `${from}/home`, r: '(subpath "/Users/new/cua-115/home")\n(regex #"^/Users/new/cua\\-115/home(/.*)?$")', s: '/Users/new/cua\\-115\\.bak'}, {from, to, euid: 501});
+  assert.deepEqual(moved, {p: `${to}/home`, r: '(subpath "/Users/new/cua-115/hosted.x/home")\n(regex #"^/Users/new/cua\\-115/hosted\\.x/home(/.*)?$")',
+    s: '/Users/new/cua\\-115\\.bak'}, 'an escaped sibling sharing the prefix is not under the root');
+});
+
+// #159 review: with no regex-lite metacharacter in `from`, its plain and escaped spellings are one string, so an occurrence
+// cannot say which spelling of `to` it needs; when those differ the relocation is refused, not guessed.
+test('relocateCapture refuses a root whose spellings cannot be told apart when the destination\'s can', () => {
+  assert.throws(() => relocateCapture({p: '/Users/new/cua115/home'}, {from: '/Users/new/cua115', to: '/Users/runner/cua-159', euid: 501}), /cannot tell/);
+  assert.deepEqual(relocateCapture({p: '/Users/new/cua115/home'}, {from: '/Users/new/cua115', to: '/Users/runner/cua159', euid: 501}), {p: '/Users/runner/cua159/home'});
+});
+
 // #115 M1: the fingerprint under cua's kernel launcher pins the port's metadata grant (src/sandbox/seatbelt.mjs header):
 // the cua home and its run/ resolvable but not listable, another session's run directory neither.
 test('metadataGrantPins holds only for metadata-only on the granted directories and nothing on another session', () => {
@@ -156,6 +227,10 @@ test('judgeFingerprints accepts exactly the declared deviations of each pair', (
   const arg0 = {name: 'PATH', left: '/h/state/codex/tmp/arg0/codex-arg0*:/usr/bin:/bin', right: '/usr/bin:/bin'};
   const worker = comparison([newTarget], {onlyLeft: ['CODEX_HOME', '__CF_USER_TEXT_ENCODING'], onlyRight: ['CUA_REPL_NODE_PATH', 'CUA_REPL_SANDBOX_EXEC', 'CUA_SANDBOX_DENY_READ', 'LANG'], differing: [arg0]});
   assert.equal(judgeFingerprints(worker, 'signed/cua-worker').ok, true);
+  // #159: the hosted gate's own baseline, cua's launcher on the same image: nothing may differ.
+  assert.equal(judgeFingerprints(comparison(), 'hosted-baseline/cua').ok, true);
+  for (const c of [comparison([grant]), comparison([newTarget]), comparison([], {onlyLeft: ['CODEX_HOME']}), comparison([], {differing: [arg0]}), comparison([], {}, {cwdEqual: false})])
+    assert.equal(judgeFingerprints(c, 'hosted-baseline/cua').ok, false, JSON.stringify(c));
   const rejected = [
     ['golden-kernel/cua-kernel', comparison([grant], {}, {cwdEqual: false})],
     ['golden-kernel/cua-kernel', comparison([{...grant, op: 'file-read-data'}])],

@@ -111,6 +111,8 @@ export const macosAdapter = {
       steps.push(row('task.close', sample, close));
       const ok = steps.length === 3 && steps.every(s => s.ok);
       const sum = key => round(steps.reduce((total, s) => total + (s[key] ?? 0), 0));
+      // `cells` counts the task's rows (act, verify, close); since 9173dbf the act row joins two cells (TASK_NEW and
+      // TASK_TYPE), so a successful task dispatches four.
       emit({op: 'task.total', sample, ok, wallMs: sum('wallMs'), inCellMs: sum('inCellMs'), cells: steps.length, actions: sum('actions'), observations: sum('observations'),
         outcome: ok ? 'typed text verified, document closed without saving' : steps.find(s => !s.ok)?.error ?? 'failed'});
       ctx.log(`task ${sample}: ${ok ? 'ok' : 'FAIL'}`);

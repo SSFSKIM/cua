@@ -156,6 +156,13 @@ group types into any window: there is no live typing anywhere in M4's acceptance
    rest as in M2's run, re-proving the macOS computer route (acceptance 6) read-only. `--live-secrets` may run as in
    M2: its value goes to a controlled fake input target, never a window.
 
+**Methodology note: the guarded task's timings (as of 9173dbf).** Each native-baseline task on macOS now opens its
+document and types into it in two cells, `TASK_NEW` and `TASK_TYPE`, each sent only after the frontmost guard (#162),
+so `task.act` includes one more cell round trip and one more AX observation than before. `task.act` and `task.total`
+are therefore not comparable like-for-like with M0's baselines unless fresh guarded baselines are taken to match.
+Acceptance 11 judges only the cold `first_js` rows, which are unchanged. A `task.total` row's `cells` still counts the
+task's rows (act, verify, close: 3), while a successful task now dispatches four cells.
+
 **Group C, the owner's TextEdit sitting: skipped.** The three reasons, as recorded in the Decision Log:
 
 - M4 does not touch the macOS computer route or the compat executable;

@@ -112,8 +112,9 @@ const PRUNE_ADVICE = `once every cua using this home is updated (an older one ma
 // A release's CLI is checked for sessions right before it goes and again after it is renamed aside to a tombstone in
 // its own directory (one rename, so no launch ever sees half a bundle); a session found the second time puts it back.
 // What remains is a session that starts after that second check and launches the CLI before the tombstone is deleted:
-// only an older cua does that (this one never launches it), which is what "update every cua first" is for, and its
-// launch then fails, never runs unconfined. A tombstone whose delete failed (an unreadable directory inside, a crash)
+// only an older cua does that (this one never launches it). On macOS its launch then fails; on Linux an older cua on
+// the vendor host may run its kernel unconfined after a failed launch (#135), so updating every cua that shares the
+// home before pruning is a precondition, not a nicety. A tombstone whose delete failed (an unreadable directory inside, a crash)
 // stays a leftover by its exact shape, `.<component>.pruning-<hex>` in an installed tree: doctor names it and the next
 // prune removes it with no session condition, since no cua launches that name. It is never renamed back.
 export function removeCodexLeftovers({home, pins, sweep = sweepRun}) {

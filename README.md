@@ -77,8 +77,10 @@ stays); and in each installed release whose pin no longer lists it, the unused `
 the `codex` file). A release's Codex CLI is removed only while no `cua serve` or profile listing of this home runs:
 the prune checks right before removing it, renames it aside in one step, checks again, and puts it back if a session
 appeared; otherwise it says so and leaves it for a later prune. A session that starts in the instant after that
-second check is not seen; only an older cua would launch the CLI then, which is why every cua using the home is
-updated first, and its launch would fail rather than run unconfined. If `run/`, `state/`, `state/compat/` or
+second check is not seen; only an older cua would launch the CLI then. On macOS that older cua's launch fails; on
+Linux an older cua on the vendor host may run its kernel unconfined after a failed launch (#135). So updating every
+cua that shares the home before pruning is a precondition, not a nicety, and it holds for the whole time after the
+prune, not only that instant. If `run/`, `state/`, `state/compat/` or
 `kernel/` in the home is a symbolic link, the prune refuses and removes nothing, and a directory it cannot read is
 reported, never taken as clean. A Codex CLI the prune renamed aside but could not delete
 (`.CodexCLI.app.pruning-<hex>` beside the release's files) stays a leftover: doctor names it and the next prune

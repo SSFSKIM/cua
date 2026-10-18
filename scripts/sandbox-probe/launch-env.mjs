@@ -8,12 +8,10 @@
 // the launch whose run directory it ran in (node_repl runs its children there). Per value: `equal`, `absent` or
 // `rewritten`; a role's verdict is its worst call's.
 
-// The role the compat executable would give `command` ([node, ...options, script, ...args]): the script's basename,
-// `trusted-worker.js` the worker and anything else the kernel.
-export function roleOfCommand(command) {
-  const script = command.slice(1).find(arg => !arg.startsWith('-'));
-  return script?.split('/').at(-1) === 'trusted-worker.js' ? 'worker' : 'kernel';
-}
+import {roleOf} from '../../src/sandbox/codex-compat.mjs';
+
+// The role the compat executable gives `command` ([node, ...options, script, ...args]).
+export const roleOfCommand = roleOf;
 
 const NAMES = ['TMPDIR', 'CODEX_HOME'];
 const RANK = {equal: 0, rewritten: 1, absent: 2};

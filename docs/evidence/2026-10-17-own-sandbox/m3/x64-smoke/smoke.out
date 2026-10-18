@@ -1,0 +1,25 @@
+M3SMOKE start 2026-10-18T08:33:47Z x86_64 Ubuntu 24.04.5 LTS kernel 7.0.0-1014-gcp
+M3SMOKE bwrap bubblewrap 0.9.0
+M3SMOKE sha256 da88ac0975a1138b0c90d7cecdf6d30de26e9fc36296d4d537bb9cf1cdb0f344 pinned da88ac0975a1138b0c90d7cecdf6d30de26e9fc36296d4d537bb9cf1cdb0f344 MATCH
+M3SMOKE file ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), static-pie linked, stri
+M3SMOKE network-restricted write-run-dir ok
+M3SMOKE network-restricted write-session-tmp ok
+M3SMOKE network-restricted write-etc refused
+M3SMOKE network-restricted write-home refused
+M3SMOKE network-restricted read-denied-state refused
+M3SMOKE network-restricted list-denied-state refused
+M3SMOKE network-restricted read-other-run refused
+M3SMOKE network-restricted link-denied refused
+M3SMOKE network-restricted tcp-connect refused
+M3SMOKE network-restricted exit=0
+M3SMOKE network-enabled write-run-dir ok
+M3SMOKE network-enabled write-session-tmp ok
+M3SMOKE network-enabled write-etc refused
+M3SMOKE network-enabled write-home refused
+M3SMOKE network-enabled read-denied-state refused
+M3SMOKE network-enabled list-denied-state refused
+M3SMOKE network-enabled read-other-run refused
+M3SMOKE network-enabled link-denied refused
+M3SMOKE network-enabled tcp-connect ok
+M3SMOKE network-enabled exit=0
+M3SMOKE done 2026-10-18T08:34:54Z

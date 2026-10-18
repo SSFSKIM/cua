@@ -177,7 +177,7 @@ const ROLLBACK = 'CUA_REPL_HOST=vendor keeps the vendor host';
 const REPL_HOST_REASONS = {
   explicit: ({host}) => `CUA_REPL_HOST=${host}`,
   macos_native_peer_requires_vendor: () => 'the computer surface on macOS, whose helper accepts only the vendor host\'s node_repl as a peer until #117',
-  linux: () => `CUA_REPL_HOST is unset, and cua's own host is the default on Linux (the browser surface, if on, uses cua's browser service); ${ROLLBACK}`,
+  linux: () => 'CUA_REPL_HOST is unset, and cua\'s own host is the only one on Linux (the browser surface, if on, uses cua\'s browser service; the vendor host is retired there, #115)',
   browser_only: () => `CUA_REPL_HOST is unset, and cua's own host is the default for a browser-only session; ${ROLLBACK}`,
   own_host_node_unavailable: ({nodeTried}) => `CUA_REPL_HOST is unset, and this session would default to cua's own host, but cua's own host needs Node ${NODE_FLOOR} or later and none was found (${nodeTried.join(', ')}), so it keeps the vendor host. To move it to cua's own host, run \`cua install\` (it installs the pinned Node ${NODE_FLOOR} for it under $CUA_HOME/node), install Node ${NODE_FLOOR} or later yourself, or set CUA_NODE to the absolute path of one`,
 };

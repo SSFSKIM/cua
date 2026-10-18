@@ -105,6 +105,18 @@ test('Linux: the home\'s private directories and run/ one by one (M0\'s nesting 
   const list = denyListFor({home: l.cua, env: {HOME: l.home}, sessionId: 's', sessionTmp: l.sessionTmp, platform: 'linux'});
   assert.deepEqual(list, {deny: [l.store, join(l.home, '.config', 'cua'), ...['state', 'remote', 'chrome', 'run'].map(d => join(l.cua, d))],
     reexpose: [join(l.cua, 'run', 's'), l.sessionTmp], metadataOnly: [], tiers: []});
+  assert.deepEqual(denyListFor({home: l.cua, env: {HOME: l.home}, sessionId: 's', sessionTmp: l.sessionTmp, platform: 'linux', mode: 'scoped'}), list, 'scoped is the default mode');
+});
+
+// #115 M3: under default nothing is writable, and bubblewrap re-binds only writable roots inside a denied directory, so a
+// denied run/ would hide the kernel's own run directory (its working directory) too: Linux leaves run/ out there (the
+// Design's per-directory fallback). macOS, which expresses the nesting, keeps its list in every mode.
+test('Linux under default: state/, remote/ and chrome/ only, the session still re-exposed; macOS is unchanged', t => {
+  const l = layout(t);
+  assert.deepEqual(denyListFor({home: l.cua, env: {HOME: l.home}, sessionId: 's', sessionTmp: l.sessionTmp, platform: 'linux', mode: 'default'}),
+    {deny: [l.store, join(l.home, '.config', 'cua'), ...['state', 'remote', 'chrome'].map(d => join(l.cua, d))], reexpose: [join(l.cua, 'run', 's'), l.sessionTmp], metadataOnly: [], tiers: []});
+  const darwin = mode => denyListFor({home: l.cua, env: {HOME: l.home}, sessionId: 's', sessionTmp: l.sessionTmp, platform: 'darwin', mode});
+  assert.deepEqual(darwin('default'), darwin('scoped'));
 });
 
 // Deny targets at launch (the dispatching session's ruling, #115 M1): macOS creates nothing; Linux creates cua's fixed

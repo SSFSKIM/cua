@@ -148,3 +148,18 @@
 2026-10-18T05:20:05.750Z gated sh scripts/sandbox-probe/m2-mini.sh env-probe 475881a: hold reading: front=com.apple.Terminal busy=false workers=0 queued=0 (ignored in the hold) load=4.73 -> idle
 2026-10-18T05:20:25.013Z gated sh scripts/sandbox-probe/m2-mini.sh env-probe 475881a: exit 0
 2026-10-18T05:20:25.677Z front after gated sh scripts/sandbox-probe/m2-mini.sh env-probe 475881a: com.apple.Terminal
+2026-10-18T05:21:31Z helper-tmp at 475881a: native rules (two readings, runner idle, queue empty, Terminal in front, front check after)
+2026-10-18T05:21:35.185Z gated sh scripts/sandbox-probe/m2-mini.sh helper-tmp 475881a: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.24 -> idle
+2026-10-18T05:22:23.589Z gated sh scripts/sandbox-probe/m2-mini.sh helper-tmp 475881a: reading 2: front=com.apple.Terminal busy=false workers=0 queued=0 load=5.4 -> contention (load 5.4)
+2026-10-18T05:22:23.590Z waiting before gated sh scripts/sandbox-probe/m2-mini.sh helper-tmp 475881a
+2026-10-18T05:23:26.138Z gated sh scripts/sandbox-probe/m2-mini.sh helper-tmp 475881a: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=6.07 -> contention (load 6.07)
+2026-10-18T05:23:26.139Z waiting before gated sh scripts/sandbox-probe/m2-mini.sh helper-tmp 475881a
+2026-10-18T05:24:28.509Z gated sh scripts/sandbox-probe/m2-mini.sh helper-tmp 475881a: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=5.06 -> contention (load 5.06)
+2026-10-18T05:24:28.509Z waiting before gated sh scripts/sandbox-probe/m2-mini.sh helper-tmp 475881a
+2026-10-18T05:25:35.567Z gated sh scripts/sandbox-probe/m2-mini.sh helper-tmp 475881a: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=5.48 -> contention (load 5.48)
+2026-10-18T05:25:35.568Z waiting before gated sh scripts/sandbox-probe/m2-mini.sh helper-tmp 475881a
+2026-10-18T05:26:40.598Z gated sh scripts/sandbox-probe/m2-mini.sh helper-tmp 475881a: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.83 -> idle
+2026-10-18T05:27:28.320Z gated sh scripts/sandbox-probe/m2-mini.sh helper-tmp 475881a: reading 2: front=com.apple.Terminal busy=false workers=0 queued=0 load=3.99 -> idle
+2026-10-18T05:27:28.321Z idle before gated sh scripts/sandbox-probe/m2-mini.sh helper-tmp 475881a
+2026-10-18T05:27:37.542Z gated sh scripts/sandbox-probe/m2-mini.sh helper-tmp 475881a: exit 0
+2026-10-18T05:27:38.056Z front after gated sh scripts/sandbox-probe/m2-mini.sh helper-tmp 475881a: com.apple.Terminal

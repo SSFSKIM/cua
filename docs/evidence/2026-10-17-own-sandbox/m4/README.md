@@ -92,6 +92,7 @@ placed helper against its pin) and no Codex CLI rows.
   new `CUA_HOME`, or a machine installing for the first time, places a new copy and sees the confirmation once.
 - **Kernel exit status.** On cua's own host the kernel is Node itself, so a killed kernel reports Node's own exit
   (`signal=9`), not a launcher's.
+- Linux: the first cell of a session starts ~50–70 ms slower, the cost of the confined kernel
 
 **#138 (the time-zone hang) stays open, not reproduced.** The one grant that would address it,
 `(allow mach-lookup (global-name "com.apple.system.notification_center"))` in both macOS roles' profiles, is ready
@@ -160,9 +161,28 @@ group types into any window: there is no live typing anywhere in M4's acceptance
 - M2's sitting proved typing and approvals at its SHA;
 - group B re-proves the route read-only.
 
-**Linux (GCE): no new run.** M4's merge changed no Linux launch code, so the Linux launch is the one M3's full parity
-ran at bf7739f, and Linux acceptance 12 (and M3's Linux items) rest on that run. The Linux prune of a pre-M3 tree's
-`codex` file is covered by the unit suite.
+**Linux (GCE), at 7b87873 (`gce/`, its README per item).** Linux acceptance 12 (parity) rests on M3's full run at
+bf7739f: M4's merge changed no Linux launch code. On cua-gce, 2026-10-18 15:03–15:34Z: item 1 (no `codex` installed;
+no `codex` process in 883 `ps` samples), items 2 to 5 (own-sandbox 82/82, the four creation cases included), item 7
+(linux-native PASS; `CUA_REPL_HOST=vendor` refused with its sentence) and item 10 (the prune of a pre-M3 tree's `codex`
+and the planted `state/codex` names, with and without a live session record) all pass.
+
+Item 11 on Linux, the own host's computer session against M0's `gce-cua-computer` with M0's arguments:
+`compare --same-host` **PASS** (`cold.miss.first_js` 735.1 ms against a limit of 1166.5, `cold.hit.first_js` 825.8
+against 1273.6), after the harness learned to take a `memoryBytes` difference under 0.1% as the same hardware (the
+first comparison read NO VERDICT on 4 KiB of MemTotal between two boots; both are kept in `gce/gce-cua-computer/`).
+Against M0's run-to-run spread both cold rows are slower:
+
+| Row | M0 per-run medians (ms) | M0 pooled | M4 per-run medians (ms) | M4 pooled |
+|---|---|---|---|---|
+| cold.miss.first_js | 661.1, 678.1, 591.1 | 666.5 | 744.6, 729.0, 728.3 | 735.1 (+68.6, +10.3%) |
+| cold.hit.first_js | 771.4, 818.8, 749.2 | 773.6 | 825.8, 810.8, 899.9 | 825.8 (+52.2, +6.7%) |
+
+The cause: the first cell starts the kernel through the helper, bubblewrap and seccomp, where M0 ran it unconfined.
+**Ruled accepted by the dispatching session (2026-10-18):** the cost is the confinement itself; acceptance 11 names
+`disabled → scoped` as the change being measured; both rows are inside the spec's limit; and the owner's "no
+regression" was set for the browser service and the macOS GUI. The release notes say it under behaviour changes;
+`tech-debt-tracker.md` keeps the candidates for the cost.
 
 - **Acceptance 13 (#138).** No sitting is planned: the line ships off (above). When a reproduction appears, on the
   mini, per role, the denying control and the grant:

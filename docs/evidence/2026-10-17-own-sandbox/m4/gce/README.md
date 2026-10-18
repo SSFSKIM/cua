@@ -62,10 +62,17 @@ kernel 7.0.0-1014-gcp, box Node v22.23.3, managed Node v24.22.0, release 26.928.
 controller this MacBook (Darwin 25.6.0, Node v22.23.2) as M0; the controller's 1-minute load ranged 31 to 97 (M0: 58
 to 127). Every run complete, attested `cua-repl-host 0.5.0`, launcher `cua`, TMPDIR `session`, sandbox `scoped`.
 
-`compare --same-host` reads **NO VERDICT** for one problem: "hardware environment differs" — `meta.hardware.memoryBytes`
-is 16,722,034,688 against M0's 16,722,038,784 (4 KiB less MemTotal, the same t2a-standard-4); model and chip are equal.
-By the rule's own limits both judged rows would pass (`cold.miss.first_js` 735.1 ms against a limit of 1166.5;
-`cold.hit.first_js` 825.8 against 1273.6). Against M0's run-to-run spread, though, they are slower:
+**Two comparisons of the same retained runs, and why.** At first `compare --same-host` read **NO VERDICT** for one
+problem, "hardware environment differs" (`comparison-before-memory-tolerance.md`, `compare-output-before-memory-tolerance.txt`):
+`meta.hardware.memoryBytes` was 16,722,034,688 against M0's 16,722,038,784, 4 KiB less MemTotal on the same
+t2a-standard-4, with model and chip equal. The MemTotal a machine reports moves by a few KiB between boots, so the
+harness now treats `memoryBytes` alone as equal when it differs by under 0.1% of the baseline's value; at or over
+that, or for any other host field, it is still a hardware change (`scripts/native-baseline/environment.mjs`
+`sameEnvironmentValue`, with tests). Re-run on the same retained runs, no new box time: **PASS**
+(`comparison.md`, `compare-output.txt`): `cold.miss.first_js` 735.1 ms against a limit of 1166.5, `cold.hit.first_js`
+825.8 against 1273.6, every sample successful.
+
+**Against M0's run-to-run spread the cold rows are slower:**
 
 | Row | M0 per-run medians (ms) | M0 pooled median | M4 per-run medians (ms) | M4 pooled median |
 |---|---|---|---|---|
@@ -73,10 +80,15 @@ By the rule's own limits both judged rows would pass (`cold.miss.first_js` 735.1
 | cold.hit.first_js | 771.4, 818.8, 749.2 (samples 735.8–992.4) | 773.6 | 825.8, 810.8, 899.9 (samples 808.1–901.7) | 825.8 (+52.2, +6.7%) |
 
 Every M4 per-run median of `cold.miss.first_js` lies above M0's highest (678.1), and two of three for
-`cold.hit.first_js` (above 818.8). The first cell of a connection now starts the kernel through the helper
-(bubblewrap's namespaces and seccomp) where M0's ran it unconfined, so a launch cost of this size is the expected
-shape; it is reported to the dispatching session, not recorded as debt. The warm rows and the tasks are equal or
+`cold.hit.first_js` (above 818.8). **Cause:** the first cell of a connection now starts the kernel through the
+helper, bubblewrap's namespaces and seccomp, where M0 ran it unconfined. The warm rows and the tasks are equal or
 faster (`comparison.md`).
+
+**Ruling (the dispatching session, 2026-10-18): accepted.** Its grounds: the cost is the confinement itself;
+acceptance 11 names `disabled → scoped` as the change being measured; both rows are inside the spec's limit; and the
+owner's "no regression" was set for the browser service and the macOS GUI. The release notes say it (`../README.md`,
+behaviour changes), and `tech-debt-tracker.md` keeps the candidates for the first-cell cost in case Linux latency ever
+matters.
 
 ## Privacy
 

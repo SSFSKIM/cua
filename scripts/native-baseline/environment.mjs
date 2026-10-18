@@ -1,5 +1,6 @@
 // A fresh-home path changes each run; its role does not. Everything else affecting this native experiment is exact,
-// including whether the runtime was a fresh install or the approved copy reused in place (and which copy).
+// including whether the runtime was a fresh install or the approved copy reused in place (and which copy), but for the
+// host's memoryBytes, which may move by under 0.1% between boots (sameEnvironmentValue).
 import {isDeepStrictEqual} from 'node:util';
 import {assertManagedNode} from '../repl-parity/node-provenance.mjs';
 import {surfaceOf} from './summary.mjs';
@@ -12,6 +13,18 @@ export function comparisonEnvironment(meta) {
     runtime:meta.runtime, sandbox:meta.sandbox, protocolVersion:meta.protocolVersion, plan:meta.plan,
     experiment:meta.measurement?.experiment, runtimeReuse:meta.runtimeReuse ? {release:meta.runtimeReuse.release, helper:meta.runtimeReuse.helper} : null};
 }
+// Whether `actual`'s value for the environment key `key` is `reference`'s. Exact, but for the host's memoryBytes: the
+// MemTotal a machine reports moves by a few KiB between boots of the same machine type (#115 M4: 4 KiB on the GCE box),
+// so a difference under 0.1% of the reference's value is the same hardware; anything else in the host is exact.
+export const MEMORY_TOLERANCE = 0.001;
+export function sameEnvironmentValue(key, reference, actual) {
+  if (key !== 'hardware' || !reference || !actual) return isDeepStrictEqual(reference, actual);
+  const {memoryBytes: a, ...restA} = reference, {memoryBytes: b, ...restB} = actual;
+  if (!isDeepStrictEqual(restA, restB)) return false;
+  if (a === b) return true;
+  return Number.isFinite(a) && Number.isFinite(b) && a > 0 && Math.abs(a - b) < a * MEMORY_TOLERANCE;
+}
+
 export function environmentProblems(runs) {
   const problems = [], reference = comparisonEnvironment(runs[0]?.meta ?? {});
   for (const {name, meta} of runs) {
@@ -38,7 +51,7 @@ export function environmentProblems(runs) {
     if (native && (!meta.xSession?.DISPLAY || !meta.gedit?.version)) problems.push(`${name}: Linux desktop environment is incomplete`);
     if (native && !meta.gedit?.locale?.LANG) problems.push(`${name}: gedit locale is missing`);
     const actual = comparisonEnvironment(meta);
-    for (const key of Object.keys(reference)) if (!isDeepStrictEqual(reference[key],actual[key])) problems.push(`${name}: ${key} environment differs from ${runs[0].name}`);
+    for (const key of Object.keys(reference)) if (!sameEnvironmentValue(key, reference[key], actual[key])) problems.push(`${name}: ${key} environment differs from ${runs[0].name}`);
   }
   return problems;
 }

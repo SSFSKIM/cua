@@ -61,6 +61,6 @@ None.
 
 ## Problems
 
-- hardware environment differs between the baseline and the candidate
+None: both sides are complete, attested and comparable.
 
-Verdict: **NO VERDICT**
+Verdict: **PASS**

@@ -372,3 +372,48 @@ and the `drag` cell's cause is read on a rerun (`tech-debt-tracker.md`).
 
 The vendor runtime is not cached. Install takes 16 to 21 s, so a cache would save little, and it would put the vendor
 archive into Actions storage.
+
+`parity-browser` stays off pull requests until its two racy cells are fixed (above). The dispatching session agreed on
+2026-10-18.
+
+## Review
+
+Five rounds of `doperpowers:reviewer-medium` were run, each followed by a fix wave.
+
+**`sandbox-live`, rounds 1 to 3:**
+- **The paths filter** missed gate inputs.
+- **The HOME root** came from the child's own HOME, so a HOME regression could hide itself.
+- **Relocation** could rewrite a nested destination twice, or misread the regex spelling as the plain one.
+- **Public output** was too broad, which led to the allowlisted forms, withheld stderr, and failed publications failing
+  their step.
+- **Round 3** found nothing material.
+
+**The browser gates, rounds 4 and 5:**
+- **[P1] Merge-commit checkout.** A pull request's synthetic merge commit could not be checked out by the parity clone,
+  so the clone is now made from the job's checkout.
+- **Truncated denial records** passed the judge; they now fail it.
+- **`parity-browser`'s filter** missed harness inputs.
+- **Round 5** found nothing material.
+
+**Deferred.** If `hosted.sh` fails before its first step, or in its exit trap, `mktemp`/`mkdir`/`rm` diagnostics reach
+the log unfiltered (`tech-debt-tracker.md`). The only thing exposed is the runner's temp path.
+
+## Residue (for tickets)
+
+- **Make `parity-browser` a pull-request gate.** Two parity cells must be fixed first; both are in
+  `tech-debt-tracker.md`.
+  - **The `waitfor` cell** (`api/browser-playwrightlocator/waitfor`, cell
+    `locator-contract-diagnostics-no-matches`) races two 100 ms deadlines: the locator's and the CDP command's.
+    - Whichever fires first decides the error's first line, so the diff differs while both sides' assertions pass.
+    - Fix: in the scenario, compare only the diagnostics line or give the cell a deadline the CDP command cannot reach
+      first. Not by a comparison allowance.
+  - **cua's `api/browser-cuaapi/drag`** failed its case assertion once in 6 runs.
+    - The likely cause is the cell's 1.5 s wait for the page's `ended`
+      (`test/browser-parity/scenarios/input/coordinates.mjs`).
+    - Read the run directory on a rerun before widening it.
+  - Then add `pr` to the gate's `on:`.
+- **Re-record the hosted baseline when the image moves.** When `macos-latest` moves, `sandbox-live`'s baseline
+  judgement fails with both images named. The baseline is then re-recorded from a run of main's code, as described
+  above. A scheduled run could catch the move before a pull request does.
+- **`test/remote-client.test.mjs` on Node 26.** Two resume-budget timing tests fail locally on Node 26, on main too.
+  They pass on CI's Node 24.

@@ -9,7 +9,7 @@ import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {SandboxStateError, assertDenyListShape, sandboxState} from '../../src/runtime/sandbox.mjs';
 import {STORE_RELATIVE} from '../../src/secrets/store.mjs';
-import {ROLES, denyListFor, parseDenyRead, prepareDenyTargets, roleProfile, stateKey} from '../../src/sandbox/policy.mjs';
+import {ROLES, denyListFor, parseDenyRead, policyTable, prepareDenyTargets, roleProfile, stateKey, writeRootsOf} from '../../src/sandbox/policy.mjs';
 
 const scratch = t => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'cua-policy-')));
@@ -275,4 +275,19 @@ test('a deny list whose targets lie inside one another is refused before any tar
   // A re-exposed path that holds a target, or lies in two.
   assert.throws(() => assertDenyListShape({deny: ['/a', '/b'], reexpose: ['/'], metadataOnly: []}), {code: 'sandbox_conflict'});
   assert.throws(() => assertDenyListShape({deny: ['/a'], reexpose: ['/a/x', '/a'], metadataOnly: []}), {code: 'sandbox_conflict'});
+});
+
+// The write roots of a call's policy (the supervisor refuses to launch an application from any of them, #115 M3):
+// scoped's workspace root and TMPDIR, an explicit writable path, /tmp for slash_tmp and / for a writable root; none
+// for the default state.
+test('writeRootsOf: the directories a policy table lets a child write', () => {
+  const at = {cwd: '/h/run/s', tmpdir: '/h/run/s/tmp'};
+  assert.deepEqual(writeRootsOf(policyTable(sandboxState('scoped', '/h/run/s')), at).sort(), ['/h/run/s', '/h/run/s/tmp']);
+  assert.deepEqual(writeRootsOf(policyTable(undefined), at), []);
+  const wide = {permissionProfile: {type: 'managed', file_system: {type: 'restricted', entries: [
+    {path: {type: 'path', path: '/data/out'}, access: 'write'}, {path: {type: 'special', value: {kind: 'slash_tmp'}}, access: 'write'},
+    {path: {type: 'path', path: '/data/in'}, access: 'read'}]}}, sandboxCwd: 'file:///h/run/s'};
+  assert.deepEqual(writeRootsOf(policyTable(wide), at).sort(), ['/data/out', '/tmp']);
+  const root = {...wide, permissionProfile: {...wide.permissionProfile, file_system: {type: 'restricted', entries: [{path: {type: 'special', value: {kind: 'root'}}, access: 'write'}]}}};
+  assert.deepEqual(writeRootsOf(policyTable(root), at), ['/']);
 });

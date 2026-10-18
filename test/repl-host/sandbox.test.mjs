@@ -1,9 +1,12 @@
-// The sandbox the own host launches its kernel under: the recovered `codex sandbox` argv, rendered as the pinned
-// node_repl renders it (its live command lines on the mini, 2026-10-14), for cua's three modes; and the trusted roots
-// the scoped preflight protects for each host.
+// The policy table of a call's sandbox state (src/sandbox/policy.mjs policyTable, node_repl's validation and key order)
+// and the recovered `codex sandbox` argv node_repl renders from it (its live command lines on the mini, 2026-10-14;
+// scripts/sandbox-probe/codex-template.mjs, the oracle the macOS compat executable parses), for cua's three modes; and
+// the trusted roots the scoped preflight protects for each host.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {SandboxStateError, sandboxArgs, sandboxPolicy, sandboxState, trustedCodePathsOf} from '../../src/runtime/sandbox.mjs';
+import {SandboxStateError, sandboxState, trustedCodePathsOf} from '../../src/runtime/sandbox.mjs';
+import {policyTable as sandboxPolicy} from '../../src/sandbox/policy.mjs';
+import {sandboxArgs} from '../../scripts/sandbox-probe/codex-template.mjs';
 
 const CWD = '/private/tmp/cua-cap-x/run/s';
 const READS = ['/R/cua_node/bin', '/R/cua_node/lib/node_modules', '/var/folders/T/.tmpK'];

@@ -19,7 +19,7 @@ import {userInfo} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {ownNodeFacts} from '../repl-parity/provenance.mjs';
-import {cachedArchives} from '../repl-parity/archive-cache.mjs';
+import {cachedArchives, installArgs} from '../repl-parity/archive-cache.mjs';
 import {assertManagedNode,nodeEnvironment} from '../repl-parity/node-provenance.mjs';
 import {defaultHome, homeLayout, readPointer, writePointer} from '../../src/runtime/layout.mjs';
 import {cuaRecordFile} from '../../src/chrome/route.mjs';
@@ -27,7 +27,7 @@ import {backendDir} from '../../src/chrome/extension.mjs';
 
 // The installer and executable-facts boundaries are synchronous and injectable; local doubles never run install.
 function installRuntime({env,run,archives}) {
-  run(process.execPath, ['bin/cua.mjs', 'install', '--archive', archives.vendor, '--node-archive', archives.node], {
+  run(process.execPath, ['bin/cua.mjs', ...installArgs(archives)], {
     cwd: fileURLToPath(new URL('../../', import.meta.url)), env,
     stdio: ['ignore', 'ignore', 'pipe'], timeout: 300000, maxBuffer: 1024 * 1024,
   });

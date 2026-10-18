@@ -1,0 +1,102 @@
+{
+ "home": "/tmp/cua-m3-home.jONXuy",
+ "sandbox": "(unset: the platform default)",
+ "steps": [
+  {
+   "name": "preconditions",
+   "status": "PASS",
+   "detail": {
+    "platform": "linux",
+    "display": ":0",
+    "gedit": "/usr/bin/gedit"
+   }
+  },
+  {
+   "name": "bind the fixture window by X11 id",
+   "status": "PASS",
+   "detail": {
+    "windowId": 18874616,
+    "app": "org.gnome.gedit",
+    "title": "fixture-a1da52.txt (/tmp/cua-linux-native-6JtKzD) - gedit"
+   }
+  },
+  {
+   "name": "type the marker and read it back from the accessibility tree",
+   "status": "PASS",
+   "detail": {
+    "source": "at_spi",
+    "readBack": true
+   }
+  },
+  {
+   "name": "the kernel is confined: no private state or store, no X11, TCP or session-bus connect",
+   "status": "PASS",
+   "detail": {
+    "state": "EACCES",
+    "store": "EACCES",
+    "x11": "EPERM",
+    "tcp": "EPERM",
+    "bus": "EPERM"
+   }
+  },
+  {
+   "name": "screenshot of the window",
+   "status": "PASS",
+   "detail": {
+    "mimeType": "image/jpeg",
+    "bytes": 36738,
+    "savedTo": null
+   }
+  },
+  {
+   "name": "launch_app starts the application outside the sandbox (this PID namespace), and it outlives the call",
+   "status": "PASS",
+   "detail": {
+    "result": "launched",
+    "processes": 1,
+    "sameNamespace": true
+   }
+  },
+  {
+   "name": "end_task",
+   "status": "PASS",
+   "detail": {
+    "status": "ended",
+    "ended": true,
+    "taskId": "b1af2275-033c-41a1-9df7-2e7829758006"
+   }
+  },
+  {
+   "name": "cua serve exited cleanly",
+   "status": "PASS",
+   "detail": {
+    "code": 0,
+    "signal": null
+   }
+  },
+  {
+   "name": "no run entry left for the connection",
+   "status": "PASS",
+   "detail": {
+    "before": [],
+    "after": []
+   }
+  },
+  {
+   "name": "CUA_REPL_HOST=vendor is refused on Linux with a sentence",
+   "status": "PASS",
+   "detail": {
+    "initialize": "initialize failed (no answer)",
+    "exit": {
+     "code": 1,
+     "signal": null
+    },
+    "stderr": [
+     "cua: CUA_REPL_HOST=vendor is not supported on Linux: the vendor host there is retired (#115), because its node_repl ran JavaScript cells unconfined when its sandbox launcher failed (#135), and cua's own sandbox does not serve it. Unset CUA_REPL_HOST (or use CUA_REPL_HOST=cua) for cua's own host [repl_host_refused]"
+    ]
+   }
+  }
+ ],
+ "marker": "cua-f2-fbc596e7",
+ "status": "PASS"
+}

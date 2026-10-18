@@ -33,7 +33,7 @@ test('the client\'s answer: accept, decline and cancel with content and meta int
   assert.deepEqual(elicitationOutcome({error: {code: -1}}), {ok: false, error: UNEXPECTED_RESPONSE_SENTENCE});
 });
 
-test('LaunchServices opens exactly one target through the OS boundary, on macOS only, and reports a dispatch failure', async () => {
+test('LaunchServices opens exactly one target through the OS boundary, on macOS, and reports a dispatch failure', async () => {
   const calls = [];
   const open = async args => { calls.push(args); };
   await launchServicesAction({action: 'open_application', application_path: '/Applications/Example.app'}, {platform: 'darwin', open});
@@ -47,7 +47,7 @@ test('LaunchServices opens exactly one target through the OS boundary, on macOS 
   assert.equal(await refused({action: 'open_application', application_path: 'Example.app'}), PATH_NOT_ABSOLUTE_SENTENCE);
   assert.equal(await refused({action: 'open_application', bundle_identifier: ''}), EXACTLY_ONE_SENTENCE);
   assert.equal(await refused({action: 'close_application', bundle_identifier: 'com.a'}), 'unsupported LaunchServices action: close_application');
-  assert.equal(await refused({action: 'open_application', bundle_identifier: 'com.a'}, 'linux'), MACOS_ONLY_SENTENCE);
+  assert.equal(await refused({action: 'open_application', bundle_identifier: 'com.a'}, 'win32'), MACOS_ONLY_SENTENCE, 'Linux launches desktop entries instead (linux-launch.test.mjs)');
   assert.equal(await refused({action: 'open_application', bundle_identifier: 'com.a'}, 'darwin', async () => { throw new Error('LSOpenURLsWithRole() failed with error -10814'); }),
     `${DISPATCH_FAILED_PREFIX}LSOpenURLsWithRole() failed with error -10814`);
   assert.equal(calls.length, 2, 'no refused target reached the boundary');

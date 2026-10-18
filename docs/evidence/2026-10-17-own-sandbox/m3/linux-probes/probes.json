@@ -1,0 +1,1095 @@
+{
+ "at": "2026-10-18T08:16:15.402Z",
+ "machine": {
+  "kernel": "7.0.0-1014-gcp",
+  "arch": "arm64",
+  "distribution": "Ubuntu 24.04.5 LTS",
+  "bwrap": "bubblewrap 0.9.0",
+  "userns": "0",
+  "display": ":0"
+ },
+ "helper": {
+  "source": "/tmp/m3x/codex-linux-sandbox-0.163.0",
+  "sourceVersion": "error: error: unexpected argument '--version' found",
+  "placed": "/tmp/cua-m3-probe-home.BMruPF/sandbox/rust-v0.163.0/codex-linux-sandbox",
+  "sha256": "807448d058065db9e50ed8f24a739ac42f6a738503083ad93ee3626655916088",
+  "tag": "rust-v0.163.0"
+ },
+ "runtime": "26.928.40906-linux-arm64",
+ "session": {
+  "cwd": "/tmp/cua-m3-probe-home.BMruPF/run/probe-2058",
+  "tmp": "/tmp/cua-m3-probe-home.BMruPF/run/probe-2058/tmp"
+ },
+ "xshm": {
+  "xshmOutside": {
+   "display": true,
+   "extension": true,
+   "version": "1.2",
+   "versionQuery": true,
+   "sharedPixmaps": true,
+   "plainGetImage": true,
+   "shmid": 3,
+   "shmgetErrno": 0,
+   "shmatErrno": 0,
+   "attachStatus": 1,
+   "attachError": "none",
+   "attachErrorCode": 0,
+   "attachErrorRequest": 0,
+   "attachErrorMinor": 0,
+   "shmGetImage": true,
+   "imageArrived": true
+  },
+  "xshmInside": {
+   "display": true,
+   "extension": true,
+   "version": "1.2",
+   "versionQuery": true,
+   "sharedPixmaps": true,
+   "plainGetImage": true,
+   "shmid": 0,
+   "shmgetErrno": 0,
+   "shmatErrno": 0,
+   "attachStatus": 1,
+   "attachError": "none",
+   "attachErrorCode": 0,
+   "attachErrorRequest": 0,
+   "attachErrorMinor": 0,
+   "shmGetImage": true,
+   "imageArrived": false
+  },
+  "skyScreenshotOutside": {
+   "ok": true,
+   "error": null,
+   "images": 1,
+   "underSessionTmp": [
+    true
+   ],
+   "sizes": [
+    77127
+   ],
+   "stderr": null
+  },
+  "skyScreenshotInside": {
+   "ok": true,
+   "error": null,
+   "images": 1,
+   "underSessionTmp": [
+    true
+   ],
+   "sizes": [
+    77127
+   ],
+   "stderr": null
+  },
+  "skyNamesMitShm": false,
+  "verdict": "proceed for sky_linux (its screenshots work inside); MIT-SHM attach \"succeeds\" inside but the image never reaches the client's segment: the server resolved the private-namespace segment id against its own namespace (another process's segment)"
+ },
+ "launch": {
+  "apps": {
+   "count": 5,
+   "listed": {
+    "gedit": true,
+    "zenity": true
+   }
+  },
+  "mechanism": {
+   "gtk-launch": false,
+   "gio launch": false,
+   "g_app_info_launch": false,
+   "systemd-run": false,
+   "xdg-open": false,
+   "DBusActivatable": false,
+   "org.freedesktop.Application": false,
+   "posix_spawnp": true,
+   "execvp": true,
+   "setsid": true,
+   "failed to launch application": true,
+   "MIT-SHM": false
+  },
+  "direct": {
+   "zenity.outside": {
+    "aliveAtBound": true,
+    "exit": null,
+    "signal": "SIGKILL",
+    "ms": 6018,
+    "mitShmBadAccess": false,
+    "dconfReadOnly": false
+   },
+   "zenity.inside": {
+    "aliveAtBound": false,
+    "exit": 1,
+    "signal": null,
+    "ms": 871,
+    "mitShmBadAccess": true,
+    "dconfReadOnly": true
+   },
+   "gedit.outside": {
+    "aliveAtBound": true,
+    "exit": null,
+    "signal": "SIGKILL",
+    "ms": 6014,
+    "mitShmBadAccess": false,
+    "dconfReadOnly": false
+   },
+   "gedit.inside": {
+    "aliveAtBound": false,
+    "exit": 1,
+    "signal": null,
+    "ms": 151,
+    "mitShmBadAccess": true,
+    "dconfReadOnly": true
+   }
+  },
+  "gedit": {
+   "outside": {
+    "launch": {
+     "ok": true,
+     "error": null
+    },
+    "newProcess": true,
+    "ancestry": [
+     "gedit",
+     "sky_linux_arm64",
+     "node",
+     "bash",
+     "sshd",
+     "sshd",
+     "sshd"
+    ],
+    "samePidNamespace": true,
+    "sameMountNamespace": true,
+    "rootMountOptions": "rw,relatime",
+    "aliveBeforeSkyEnds": true,
+    "skyExit": {
+     "code": 0,
+     "signal": null
+    },
+    "survivesSkyEnd": true,
+    "stderr": null
+   },
+   "inside": {
+    "launch": {
+     "ok": true,
+     "error": null
+    },
+    "newProcess": false,
+    "skyExit": {
+     "code": 0,
+     "signal": null
+    },
+    "stderr": null
+   }
+  },
+  "zenity": {
+   "outside": {
+    "launch": {
+     "ok": true,
+     "error": null
+    },
+    "newProcess": true,
+    "ancestry": [
+     "zenity",
+     "sky_linux_arm64",
+     "node",
+     "bash",
+     "sshd",
+     "sshd",
+     "sshd"
+    ],
+    "samePidNamespace": true,
+    "sameMountNamespace": true,
+    "rootMountOptions": "rw,relatime",
+    "aliveBeforeSkyEnds": true,
+    "skyExit": {
+     "code": 0,
+     "signal": null
+    },
+    "survivesSkyEnd": true,
+    "stderr": null
+   },
+   "inside": {
+    "launch": {
+     "ok": true,
+     "error": null
+    },
+    "newProcess": true,
+    "ancestry": [
+     null
+    ],
+    "samePidNamespace": false,
+    "sameMountNamespace": false,
+    "rootMountOptions": "unreadable (ENOENT)",
+    "aliveBeforeSkyEnds": false,
+    "skyExit": {
+     "code": 0,
+     "signal": null
+    },
+    "survivesSkyEnd": false,
+    "stderr": null
+   }
+  },
+  "verdict": "breaks: 2 of 2 applications sky_linux launched inside the worker-shaped sandbox died at start (they inherit the sandbox; see the direct runs for why)"
+ },
+ "nesting": {
+  "node": "/tmp/cua-m3-probe-home.BMruPF/node/24.22.0/bin/node",
+  "helper": "/tmp/cua-m3-probe-home.BMruPF/sandbox/rust-v0.163.0/codex-linux-sandbox",
+  "control": {
+   "execPath": "/tmp/cua-m3-probe-home.BMruPF/node/24.22.0/bin/node",
+   "tmpdir": "/tmp/cua-m3-probe-home.BMruPF/run/probe-2058/tmp",
+   "attempts": [
+    {
+     "label": "read the home",
+     "expect": "denied",
+     "outcome": "ok"
+    },
+    {
+     "label": "read current.json",
+     "expect": "denied",
+     "outcome": "ok"
+    },
+    {
+     "label": "read state/ sentinel",
+     "expect": "denied",
+     "outcome": "ok"
+    },
+    {
+     "label": "read remote/device.json",
+     "expect": "denied",
+     "outcome": "ok"
+    },
+    {
+     "label": "read chrome/ sentinel",
+     "expect": "denied",
+     "outcome": "ok"
+    },
+    {
+     "label": "read another session's run directory",
+     "expect": "denied",
+     "outcome": "ok"
+    },
+    {
+     "label": "read the store",
+     "expect": "denied",
+     "outcome": "ok"
+    },
+    {
+     "label": "read a store key",
+     "expect": "denied",
+     "outcome": "ok"
+    },
+    {
+     "label": "read runtimes/",
+     "expect": "ok",
+     "outcome": "ok"
+    },
+    {
+     "label": "read the runtime manifest",
+     "expect": "ok",
+     "outcome": "ok"
+    },
+    {
+     "label": "read node/",
+     "expect": "ok",
+     "outcome": "ok"
+    },
+    {
+     "label": "read the helper directory",
+     "expect": "ok",
+     "outcome": "ok"
+    },
+    {
+     "label": "read the run directory",
+     "expect": "ok",
+     "outcome": "ok"
+    },
+    {
+     "label": "write the run directory",
+     "expect": "ok",
+     "outcome": "ok"
+    },
+    {
+     "label": "write the session temp",
+     "expect": "ok",
+     "outcome": "ok"
+    },
+    {
+     "label": "write the home",
+     "expect": "denied",
+     "outcome": "ok"
+    },
+    {
+     "label": "write runtimes/",
+     "expect": "denied",
+     "outcome": "ok"
+    },
+    {
+     "label": "write node/",
+     "expect": "denied",
+     "outcome": "ok"
+    },
+    {
+     "label": "write another session's run directory",
+     "expect": "denied",
+     "outcome": "ok"
+    },
+    {
+     "label": "link state/ sentinel into the run directory",
+     "expect": "denied",
+     "outcome": "ok"
+    },
+    {
+     "label": "link a store key into the session temp",
+     "expect": "denied",
+     "outcome": "ok"
+    }
+   ],
+   "mounts": []
+  },
+  "home": {
+   "profile": {
+    "type": "managed",
+    "file_system": {
+     "type": "restricted",
+     "entries": [
+      {
+       "path": {
+        "type": "special",
+        "value": {
+         "kind": "root"
+        }
+       },
+       "access": "read"
+      },
+      {
+       "path": {
+        "type": "special",
+        "value": {
+         "kind": "project_roots"
+        }
+       },
+       "access": "write"
+      },
+      {
+       "path": {
+        "type": "special",
+        "value": {
+         "kind": "tmpdir"
+        }
+       },
+       "access": "write"
+      },
+      {
+       "path": {
+        "type": "path",
+        "path": "/tmp/cua-m3-probe-home.BMruPF"
+       },
+       "access": "none"
+      },
+      {
+       "path": {
+        "type": "path",
+        "path": "/tmp/probe-scratch-1aGmOQ/store"
+       },
+       "access": "none"
+      },
+      {
+       "path": {
+        "type": "path",
+        "path": "/tmp/cua-m3-probe-home.BMruPF/runtimes"
+       },
+       "access": "read"
+      },
+      {
+       "path": {
+        "type": "path",
+        "path": "/tmp/cua-m3-probe-home.BMruPF/node"
+       },
+       "access": "read"
+      },
+      {
+       "path": {
+        "type": "path",
+        "path": "/tmp/cua-m3-probe-home.BMruPF/sandbox/rust-v0.163.0"
+       },
+       "access": "read"
+      }
+     ]
+    },
+    "network": "restricted"
+   },
+   "launch": {
+    "code": 1,
+    "signal": null,
+    "stderr": "bwrap: execvp /tmp/cua-m3-probe-home.BMruPF/sandbox/rust-v0.163.0/codex-linux-sandbox: No such file or directory",
+    "stdout": ""
+   }
+  },
+  "homeExplicit": {
+   "profile": {
+    "type": "managed",
+    "file_system": {
+     "type": "restricted",
+     "entries": [
+      {
+       "path": {
+        "type": "special",
+        "value": {
+         "kind": "root"
+        }
+       },
+       "access": "read"
+      },
+      {
+       "path": {
+        "type": "special",
+        "value": {
+         "kind": "project_roots"
+        }
+       },
+       "access": "write"
+      },
+      {
+       "path": {
+        "type": "special",
+        "value": {
+         "kind": "tmpdir"
+        }
+       },
+       "access": "write"
+      },
+      {
+       "path": {
+        "type": "path",
+        "path": "/tmp/cua-m3-probe-home.BMruPF"
+       },
+       "access": "none"
+      },
+      {
+       "path": {
+        "type": "path",
+        "path": "/tmp/probe-scratch-1aGmOQ/store"
+       },
+       "access": "none"
+      },
+      {
+       "path": {
+        "type": "path",
+        "path": "/tmp/cua-m3-probe-home.BMruPF/runtimes"
+       },
+       "access": "read"
+      },
+      {
+       "path": {
+        "type": "path",
+        "path": "/tmp/cua-m3-probe-home.BMruPF/node"
+       },
+       "access": "read"
+      },
+      {
+       "path": {
+        "type": "path",
+        "path": "/tmp/cua-m3-probe-home.BMruPF/sandbox/rust-v0.163.0"
+       },
+       "access": "read"
+      },
+      {
+       "path": {
+        "type": "path",
+        "path": "/tmp/cua-m3-probe-home.BMruPF/run/probe-2058"
+       },
+       "access": "write"
+      },
+      {
+       "path": {
+        "type": "path",
+        "path": "/tmp/cua-m3-probe-home.BMruPF/run/probe-2058/tmp"
+       },
+       "access": "write"
+      }
+     ]
+    },
+    "network": "restricted"
+   },
+   "launch": {
+    "code": 1,
+    "signal": null,
+    "stderr": "bwrap: execvp /tmp/cua-m3-probe-home.BMruPF/sandbox/rust-v0.163.0/codex-linux-sandbox: No such file or directory",
+    "stdout": ""
+   }
+  },
+  "fallback": {
+   "profile": {
+    "type": "managed",
+    "file_system": {
+     "type": "restricted",
+     "entries": [
+      {
+       "path": {
+        "type": "special",
+        "value": {
+         "kind": "root"
+        }
+       },
+       "access": "read"
+      },
+      {
+       "path": {
+        "type": "special",
+        "value": {
+         "kind": "project_roots"
+        }
+       },
+       "access": "write"
+      },
+      {
+       "path": {
+        "type": "special",
+        "value": {
+         "kind": "tmpdir"
+        }
+       },
+       "access": "write"
+      },
+      {
+       "path": {
+        "type": "path",
+        "path": "/tmp/cua-m3-probe-home.BMruPF/state"
+       },
+       "access": "none"
+      },
+      {
+       "path": {
+        "type": "path",
+        "path": "/tmp/cua-m3-probe-home.BMruPF/remote"
+       },
+       "access": "none"
+      },
+      {
+       "path": {
+        "type": "path",
+        "path": "/tmp/cua-m3-probe-home.BMruPF/chrome"
+       },
+       "access": "none"
+      },
+      {
+       "path": {
+        "type": "path",
+        "path": "/tmp/cua-m3-probe-home.BMruPF/run"
+       },
+       "access": "none"
+      },
+      {
+       "path": {
+        "type": "path",
+        "path": "/tmp/probe-scratch-1aGmOQ/store"
+       },
+       "access": "none"
+      },
+      {
+       "path": {
+        "type": "path",
+        "path": "/tmp/cua-m3-probe-home.BMruPF/run/probe-2058"
+       },
+       "access": "write"
+      },
+      {
+       "path": {
+        "type": "path",
+        "path": "/tmp/cua-m3-probe-home.BMruPF/run/probe-2058/tmp"
+       },
+       "access": "write"
+      }
+     ]
+    },
+    "network": "restricted"
+   },
+   "launch": {
+    "code": 0,
+    "signal": null,
+    "stderr": null
+   },
+   "execPath": "/tmp/cua-m3-probe-home.BMruPF/node/24.22.0/bin/node",
+   "tmpdir": "/tmp/cua-m3-probe-home.BMruPF/run/probe-2058/tmp",
+   "attempts": [
+    {
+     "label": "read state/ sentinel",
+     "expect": "denied",
+     "outcome": "EACCES"
+    },
+    {
+     "label": "read remote/device.json",
+     "expect": "denied",
+     "outcome": "EACCES"
+    },
+    {
+     "label": "read chrome/ sentinel",
+     "expect": "denied",
+     "outcome": "EACCES"
+    },
+    {
+     "label": "read another session's run directory",
+     "expect": "denied",
+     "outcome": "ENOENT"
+    },
+    {
+     "label": "read the store",
+     "expect": "denied",
+     "outcome": "EACCES"
+    },
+    {
+     "label": "read a store key",
+     "expect": "denied",
+     "outcome": "EACCES"
+    },
+    {
+     "label": "read the home",
+     "expect": "ok",
+     "outcome": "ok"
+    },
+    {
+     "label": "read current.json",
+     "expect": "ok",
+     "outcome": "ok"
+    },
+    {
+     "label": "read runtimes/",
+     "expect": "ok",
+     "outcome": "ok"
+    },
+    {
+     "label": "read the runtime manifest",
+     "expect": "ok",
+     "outcome": "ok"
+    },
+    {
+     "label": "read node/",
+     "expect": "ok",
+     "outcome": "ok"
+    },
+    {
+     "label": "read the helper directory",
+     "expect": "ok",
+     "outcome": "ok"
+    },
+    {
+     "label": "read the run directory",
+     "expect": "ok",
+     "outcome": "ok"
+    },
+    {
+     "label": "write the run directory",
+     "expect": "ok",
+     "outcome": "ok"
+    },
+    {
+     "label": "write the session temp",
+     "expect": "ok",
+     "outcome": "ok"
+    },
+    {
+     "label": "write the home",
+     "expect": "denied",
+     "outcome": "EROFS"
+    },
+    {
+     "label": "write runtimes/",
+     "expect": "denied",
+     "outcome": "EROFS"
+    },
+    {
+     "label": "write node/",
+     "expect": "denied",
+     "outcome": "EROFS"
+    },
+    {
+     "label": "write another session's run directory",
+     "expect": "denied",
+     "outcome": "ENOENT"
+    },
+    {
+     "label": "link state/ sentinel into the run directory",
+     "expect": "denied",
+     "outcome": "EACCES"
+    },
+    {
+     "label": "link a store key into the session temp",
+     "expect": "denied",
+     "outcome": "EACCES"
+    }
+   ],
+   "mounts": [
+    {
+     "mountPoint": "/tmp/cua-m3-probe-home.BMruPF/run",
+     "options": "ro,nosuid,nodev,relatime",
+     "fsType": "tmpfs"
+    },
+    {
+     "mountPoint": "/tmp/cua-m3-probe-home.BMruPF/run/probe-2058",
+     "options": "rw,nosuid,nodev,relatime",
+     "fsType": "ext4"
+    },
+    {
+     "mountPoint": "/tmp/cua-m3-probe-home.BMruPF/run/probe-2058/.codex",
+     "options": "ro,nosuid,nodev,relatime",
+     "fsType": "tmpfs"
+    },
+    {
+     "mountPoint": "/tmp/cua-m3-probe-home.BMruPF/run/probe-2058/.git",
+     "options": "ro,nosuid,nodev,relatime",
+     "fsType": "tmpfs"
+    },
+    {
+     "mountPoint": "/tmp/cua-m3-probe-home.BMruPF/run/probe-2058/.agents",
+     "options": "ro,nosuid,nodev,relatime",
+     "fsType": "tmpfs"
+    },
+    {
+     "mountPoint": "/tmp/cua-m3-probe-home.BMruPF/run/probe-2058/.aws",
+     "options": "ro,nosuid,nodev,relatime",
+     "fsType": "tmpfs"
+    },
+    {
+     "mountPoint": "/tmp/cua-m3-probe-home.BMruPF/run/probe-2058/tmp/codex-bwrap-synthetic-mount-targets-1001",
+     "options": "ro,nosuid,nodev,relatime",
+     "fsType": "ext4"
+    },
+    {
+     "mountPoint": "/tmp/cua-m3-probe-home.BMruPF/run/probe-2058/tmp",
+     "options": "rw,nosuid,nodev,relatime",
+     "fsType": "ext4"
+    },
+    {
+     "mountPoint": "/tmp/cua-m3-probe-home.BMruPF/run/probe-2058/tmp/.git",
+     "options": "ro,nosuid,nodev,relatime",
+     "fsType": "tmpfs"
+    },
+    {
+     "mountPoint": "/tmp/cua-m3-probe-home.BMruPF/run/probe-2058/tmp/.agents",
+     "options": "ro,nosuid,nodev,relatime",
+     "fsType": "tmpfs"
+    },
+    {
+     "mountPoint": "/tmp/cua-m3-probe-home.BMruPF/run/probe-2058/tmp/.codex",
+     "options": "ro,nosuid,nodev,relatime",
+     "fsType": "tmpfs"
+    },
+    {
+     "mountPoint": "/tmp/cua-m3-probe-home.BMruPF/run/probe-2058/tmp/.aws",
+     "options": "ro,nosuid,nodev,relatime",
+     "fsType": "tmpfs"
+    },
+    {
+     "mountPoint": "/tmp/cua-m3-probe-home.BMruPF/run/probe-2058/tmp/codex-bwrap-synthetic-mount-targets-1001",
+     "options": "ro,nosuid,nodev,relatime",
+     "fsType": "ext4"
+    },
+    {
+     "mountPoint": "/tmp/cua-m3-probe-home.BMruPF/chrome",
+     "options": "ro,nosuid,nodev,relatime",
+     "fsType": "tmpfs"
+    },
+    {
+     "mountPoint": "/tmp/cua-m3-probe-home.BMruPF/remote",
+     "options": "ro,nosuid,nodev,relatime",
+     "fsType": "tmpfs"
+    },
+    {
+     "mountPoint": "/tmp/cua-m3-probe-home.BMruPF/state",
+     "options": "ro,nosuid,nodev,relatime",
+     "fsType": "tmpfs"
+    },
+    {
+     "mountPoint": "/tmp/probe-scratch-1aGmOQ/store",
+     "options": "ro,nosuid,nodev,relatime",
+     "fsType": "tmpfs"
+    }
+   ]
+  },
+  "homeDiagnostic": {
+   "profile": {
+    "type": "managed",
+    "file_system": {
+     "type": "restricted",
+     "entries": [
+      {
+       "path": {
+        "type": "special",
+        "value": {
+         "kind": "root"
+        }
+       },
+       "access": "read"
+      },
+      {
+       "path": {
+        "type": "special",
+        "value": {
+         "kind": "project_roots"
+        }
+       },
+       "access": "write"
+      },
+      {
+       "path": {
+        "type": "special",
+        "value": {
+         "kind": "tmpdir"
+        }
+       },
+       "access": "write"
+      },
+      {
+       "path": {
+        "type": "path",
+        "path": "/tmp/cua-m3-probe-home.BMruPF"
+       },
+       "access": "none"
+      },
+      {
+       "path": {
+        "type": "path",
+        "path": "/tmp/probe-scratch-1aGmOQ/store"
+       },
+       "access": "none"
+      },
+      {
+       "path": {
+        "type": "path",
+        "path": "/tmp/cua-m3-probe-home.BMruPF/runtimes"
+       },
+       "access": "read"
+      },
+      {
+       "path": {
+        "type": "path",
+        "path": "/tmp/cua-m3-probe-home.BMruPF/node"
+       },
+       "access": "read"
+      },
+      {
+       "path": {
+        "type": "path",
+        "path": "/tmp/cua-m3-probe-home.BMruPF/sandbox/rust-v0.163.0"
+       },
+       "access": "read"
+      }
+     ]
+    },
+    "network": "restricted"
+   },
+   "launch": {
+    "code": 0,
+    "signal": null,
+    "stderr": null
+   },
+   "execPath": "/usr/bin/node",
+   "tmpdir": "/tmp/cua-m3-probe-home.BMruPF/run/probe-2058/tmp",
+   "attempts": [
+    {
+     "label": "read the home",
+     "expect": "denied",
+     "outcome": "EACCES"
+    },
+    {
+     "label": "read current.json",
+     "expect": "denied",
+     "outcome": "ENOENT"
+    },
+    {
+     "label": "read state/ sentinel",
+     "expect": "denied",
+     "outcome": "ENOENT"
+    },
+    {
+     "label": "read remote/device.json",
+     "expect": "denied",
+     "outcome": "ENOENT"
+    },
+    {
+     "label": "read chrome/ sentinel",
+     "expect": "denied",
+     "outcome": "ENOENT"
+    },
+    {
+     "label": "read another session's run directory",
+     "expect": "denied",
+     "outcome": "ENOENT"
+    },
+    {
+     "label": "read the store",
+     "expect": "denied",
+     "outcome": "EACCES"
+    },
+    {
+     "label": "read a store key",
+     "expect": "denied",
+     "outcome": "EACCES"
+    },
+    {
+     "label": "read runtimes/",
+     "expect": "ok",
+     "outcome": "ENOENT"
+    },
+    {
+     "label": "read the runtime manifest",
+     "expect": "ok",
+     "outcome": "ENOENT"
+    },
+    {
+     "label": "read node/",
+     "expect": "ok",
+     "outcome": "ENOENT"
+    },
+    {
+     "label": "read the helper directory",
+     "expect": "ok",
+     "outcome": "ENOENT"
+    },
+    {
+     "label": "read the run directory",
+     "expect": "ok",
+     "outcome": "ok"
+    },
+    {
+     "label": "write the run directory",
+     "expect": "ok",
+     "outcome": "ok"
+    },
+    {
+     "label": "write the session temp",
+     "expect": "ok",
+     "outcome": "ok"
+    },
+    {
+     "label": "write the home",
+     "expect": "denied",
+     "outcome": "EROFS"
+    },
+    {
+     "label": "write runtimes/",
+     "expect": "denied",
+     "outcome": "ENOENT"
+    },
+    {
+     "label": "write node/",
+     "expect": "denied",
+     "outcome": "ENOENT"
+    },
+    {
+     "label": "write another session's run directory",
+     "expect": "denied",
+     "outcome": "ENOENT"
+    },
+    {
+     "label": "link state/ sentinel into the run directory",
+     "expect": "denied",
+     "outcome": "ENOENT"
+    },
+    {
+     "label": "link a store key into the session temp",
+     "expect": "denied",
+     "outcome": "EACCES"
+    }
+   ],
+   "mounts": [
+    {
+     "mountPoint": "/tmp/cua-m3-probe-home.BMruPF",
+     "options": "ro,nosuid,nodev,relatime",
+     "fsType": "tmpfs"
+    },
+    {
+     "mountPoint": "/tmp/cua-m3-probe-home.BMruPF/run/probe-2058",
+     "options": "rw,nosuid,nodev,relatime",
+     "fsType": "ext4"
+    },
+    {
+     "mountPoint": "/tmp/cua-m3-probe-home.BMruPF/run/probe-2058/.codex",
+     "options": "ro,nosuid,nodev,relatime",
+     "fsType": "tmpfs"
+    },
+    {
+     "mountPoint": "/tmp/cua-m3-probe-home.BMruPF/run/probe-2058/.git",
+     "options": "ro,nosuid,nodev,relatime",
+     "fsType": "tmpfs"
+    },
+    {
+     "mountPoint": "/tmp/cua-m3-probe-home.BMruPF/run/probe-2058/.agents",
+     "options": "ro,nosuid,nodev,relatime",
+     "fsType": "tmpfs"
+    },
+    {
+     "mountPoint": "/tmp/cua-m3-probe-home.BMruPF/run/probe-2058/.aws",
+     "options": "ro,nosuid,nodev,relatime",
+     "fsType": "tmpfs"
+    },
+    {
+     "mountPoint": "/tmp/cua-m3-probe-home.BMruPF/run/probe-2058/tmp/codex-bwrap-synthetic-mount-targets-1001",
+     "options": "ro,nosuid,nodev,relatime",
+     "fsType": "ext4"
+    },
+    {
+     "mountPoint": "/tmp/cua-m3-probe-home.BMruPF/run/probe-2058/tmp",
+     "options": "rw,nosuid,nodev,relatime",
+     "fsType": "ext4"
+    },
+    {
+     "mountPoint": "/tmp/cua-m3-probe-home.BMruPF/run/probe-2058/tmp/.git",
+     "options": "ro,nosuid,nodev,relatime",
+     "fsType": "tmpfs"
+    },
+    {
+     "mountPoint": "/tmp/cua-m3-probe-home.BMruPF/run/probe-2058/tmp/.agents",
+     "options": "ro,nosuid,nodev,relatime",
+     "fsType": "tmpfs"
+    },
+    {
+     "mountPoint": "/tmp/cua-m3-probe-home.BMruPF/run/probe-2058/tmp/.codex",
+     "options": "ro,nosuid,nodev,relatime",
+     "fsType": "tmpfs"
+    },
+    {
+     "mountPoint": "/tmp/cua-m3-probe-home.BMruPF/run/probe-2058/tmp/.aws",
+     "options": "ro,nosuid,nodev,relatime",
+     "fsType": "tmpfs"
+    },
+    {
+     "mountPoint": "/tmp/cua-m3-probe-home.BMruPF/run/probe-2058/tmp/codex-bwrap-synthetic-mount-targets-1001",
+     "options": "ro,nosuid,nodev,relatime",
+     "fsType": "ext4"
+    },
+    {
+     "mountPoint": "/tmp/probe-scratch-1aGmOQ/store",
+     "options": "ro,nosuid,nodev,relatime",
+     "fsType": "tmpfs"
+    }
+   ]
+  },
+  "judged": {
+   "home": {
+    "holds": false,
+    "why": "the helper did not run the check (exit 1)",
+    "stderr": "bwrap: execvp /tmp/cua-m3-probe-home.BMruPF/sandbox/rust-v0.163.0/codex-linux-sandbox: No such file or directory"
+   },
+   "homeExplicit": {
+    "holds": false,
+    "why": "the helper did not run the check (exit 1)",
+    "stderr": "bwrap: execvp /tmp/cua-m3-probe-home.BMruPF/sandbox/rust-v0.163.0/codex-linux-sandbox: No such file or directory"
+   },
+   "fallback": {
+    "holds": true,
+    "wrong": []
+   },
+   "homeDiagnostic": {
+    "holds": false,
+    "wrong": [
+     "read runtimes/: ENOENT",
+     "read the runtime manifest: ENOENT",
+     "read node/: ENOENT",
+     "read the helper directory: ENOENT"
+    ]
+   }
+  },
+  "controlReadsEverything": true,
+  "verdict": "not expressible: the fallback applies on Linux, and it holds with run/ denied too (the launch's run directory and session temp re-exposed writable inside it)"
+ }
+}

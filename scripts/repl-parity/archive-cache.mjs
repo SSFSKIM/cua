@@ -1,9 +1,10 @@
-// The managed parity preparation's archive cache: the two pinned archives `cua install` takes (the vendor's ChatGPT
-// archive and the official Node tarball), fetched once per preparation with the installer's own download and
-// verification (the pin's URL, length cap and SHA-256), kept under the prepared home so its removal removes them.
-// Every managed fixture still runs the real release install into its fresh scratch home, from these local copies
-// (`cua install --archive … --node-archive …`, which re-verifies both against the pins); a fixture never downloads,
-// so an absent or damaged cache is a preparation fault: clean up and prepare again.
+// The managed parity preparation's archive cache: the pinned archives `cua install` takes (the vendor's ChatGPT
+// archive, the official Node tarball and, on Linux, cua's sandbox helper, #115 M3), fetched once per preparation with
+// the installer's own download and verification (the pin's URL, length cap and SHA-256), kept under the prepared home so
+// its removal removes them. Every managed fixture still runs the real release install into its fresh scratch home, from
+// these local copies (`cua install --archive … --node-archive … [--sandbox-helper …]`, installArgs, which re-verifies
+// each against its pin); a fixture never downloads, so an absent or damaged cache is a preparation fault: clean up and
+// prepare again.
 import {execFileSync} from 'node:child_process';
 import {lstatSync,mkdirSync,renameSync,rmSync} from 'node:fs';
 import {isAbsolute,join} from 'node:path';
@@ -11,19 +12,25 @@ import {fileURLToPath,pathToFileURL} from 'node:url';
 import {download,verifyArchive} from '../../src/runtime/install.mjs';
 import {loadPins,selectPin} from '../../src/runtime/manifest.mjs';
 import {loadNodePins,nodeDistName,selectNodePin} from '../../src/runtime/managed-node.mjs';
+import {helperAsset,loadHelperPin} from '../../src/sandbox/linux.mjs';
 
 const SCRIPT=fileURLToPath(import.meta.url);
 export const archiveCacheDir=home=>join(home,'parity-archives');
 
-// {vendor, node}: {file, archive: the pin's own {url, length, sha256}} for this host's install.
-export function pinnedArchives({host={platform:process.platform,arch:process.arch},pins=loadPins(),nodePins=loadNodePins()}={}){
+// {vendor, node, helper?}: {file, archive: the pin's own {url, length, sha256}} for this host's install; `helper` on
+// Linux only.
+export function pinnedArchives({host={platform:process.platform,arch:process.arch},pins=loadPins(),nodePins=loadNodePins(),helperPin=host.platform==='linux'?loadHelperPin():null}={}){
  const vendor=selectPin(pins,host),node=selectNodePin(nodePins,host);
  if(!node)throw new Error(`No Node is pinned for ${host.platform}-${host.arch}; managed parity preparation installs the pinned Node`);
  return {
   vendor:{file:`${vendor.release}-${vendor.platform}-${vendor.arch}.${vendor.archive.format??'zip'}`,archive:vendor.archive},
   node:{file:`${nodeDistName(node)}.tar.gz`,archive:node.archive},
+  ...(helperPin?{helper:{file:`codex-linux-sandbox-${helperPin.upstreamTag}-linux-${host.arch}`,archive:helperAsset(helperPin,host.arch)}}:{}),
  };
 }
+
+// `cua install`'s arguments for the cached archives (cachedArchives).
+export const installArgs=archives=>['install','--archive',archives.vendor,'--node-archive',archives.node,...(archives.helper?['--sandbox-helper',archives.helper]:[])];
 
 // Preparation only, into a home that has no cache yet. Each archive lands under its name only once verified.
 export async function fetchArchives(home,{pins=pinnedArchives(),fetch=globalThis.fetch}={}){

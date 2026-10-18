@@ -5,6 +5,8 @@
 //   run/<session>.sock   only from a cua before issue #66 (its secrets broker endpoint): removed with its session
 //   state/compat/<session>.json, .node   a macOS vendor-host session's compat settings (src/sandbox/compat-settings.mjs,
 //                        written by createLaunchDirs): removed with its session, before the run directory
+//   kernel/<session>/    a Linux default-mode session's kernel directory (src/runtime/launch.mjs kernelDir, made by
+//                        createLaunchDirs): removed with its session, before the run directory
 // The owner removes them when it closes, and a process exit cua does not handle in order (an uncaught error, a crash)
 // still removes them through an exit hook. A process killed outright (SIGKILL, a client killing its process group)
 // cannot; the sweep removes every session whose recorded owner is no longer alive, at `cua serve` start and in
@@ -32,12 +34,14 @@ function removeSession(run, sessionId) {
   const errors = [];
   const sock = join(run, `${sessionId}.sock`);
   const dir = join(run, sessionId);
-  const {compat} = homeLayout(dirname(run));
+  const {compat, kernel} = homeLayout(dirname(run));
   const settings = [join(compat, `${sessionId}.json`), join(compat, `${sessionId}.node`)];
+  const kernelDir = join(kernel, sessionId);
   for (const file of settings) try { rmSync(file, {force: true}); } catch (error) { errors.push(`${file}: ${error.code ?? 'error'}`); }
+  try { rmSync(kernelDir, {recursive: true, force: true}); } catch (error) { errors.push(`${kernelDir}: ${error.code ?? 'error'}`); }
   if (isSocket(sock)) try { rmSync(sock, {force: true}); } catch (error) { errors.push(`${sock}: ${error.code ?? 'error'}`); }
   try { rmSync(dir, {recursive: true, force: true}); } catch (error) { errors.push(`${dir}: ${error.code ?? 'error'}`); }
-  if (!exists(sock) && !exists(dir) && !settings.some(exists)) try { rmSync(join(run, `${sessionId}.pid`), {force: true}); } catch (error) { errors.push(`${sessionId}.pid: ${error.code ?? 'error'}`); }
+  if (!exists(sock) && !exists(dir) && !exists(kernelDir) && !settings.some(exists)) try { rmSync(join(run, `${sessionId}.pid`), {force: true}); } catch (error) { errors.push(`${sessionId}.pid: ${error.code ?? 'error'}`); }
   return errors;
 }
 

@@ -440,12 +440,12 @@ test('launchServices.openApplication reaches the host\'s LaunchServices boundary
   writeFileSync(join(trusted, 'ls.mjs'), `export async function handleRpc(request) {
     try { return await nodeRepl.launchServices.openApplication(request.target); } catch (e) { return {rejected: e.message}; }
   }`);
-  const opened = [];
+  const opened = [], roots = [];
   const input = new PassThrough(), output = new PassThrough();
   const supervisor = createSupervisor({input, output, cwd: root, log: () => {},
     env: {PATH: '/usr/bin:/bin', HOME: root, TMPDIR: root, CUA_REPL_NODE_PATH: node, CUA_REPL_TRUSTED_RPC_ENABLED: '1',
       CUA_REPL_TRUSTED_SERVICES: JSON.stringify({ls: join(trusted, 'ls.mjs')}), CUA_REPL_TRUSTED_CODE_PATHS: trusted},
-    launchServices: async message => { opened.push(message); if (message.bundle_identifier === 'com.example.missing') throw new Error('failed to dispatch LaunchServices open: not found'); }});
+    launchServices: async (message, {writeRoots}) => { opened.push(message); roots.push(writeRoots); if (message.bundle_identifier === 'com.example.missing') throw new Error('failed to dispatch LaunchServices open: not found'); }});
   t.after(async () => { await supervisor.shutdown(); rmSync(root, {recursive: true, force: true}); });
   const pending = new Map();
   createInterface({input: output}).on('line', line => { const msg = JSON.parse(line); pending.get(msg.id)?.(msg); });
@@ -464,6 +464,7 @@ test('launchServices.openApplication reaches the host\'s LaunchServices boundary
     {type: 'launch_services_action', action: 'open_application', application_path: '/Applications/Example.app', bundle_identifier: undefined},
     {type: 'launch_services_action', action: 'open_application', application_path: undefined, bundle_identifier: 'com.example.missing'},
   ], 'normalized by the worker; refused targets never reach the boundary');
+  assert.deepEqual(roots[0], [root, root], 'the boundary is told the session\'s write roots (here the run directory and its temp), which it never launches from');
 });
 
 test('a worker that dies inside withSuspendedTimeout releases its suspensions: a cell that catches the exit is still held to its budget', own, async t => {

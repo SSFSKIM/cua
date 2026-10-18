@@ -1,0 +1,217 @@
+# Builds openai/codex's Linux sandbox helper (codex-linux-sandbox) from an exact upstream release commit, unmodified,
+# for x86_64 and aarch64 (static musl, upstream's musl recipe), attests its build provenance and publishes both binaries
+# with upstream's LICENSE and NOTICE as the release `linux-sandbox-<upstream_tag>` on this repository. cua pins the
+# assets by SHA-256 (runtime/sandbox/linux-sandbox.json); `cua install` fetches the one for the machine's architecture.
+# Spec: docs/doperpowers/specs/2026-10-17-own-sandbox-design.md, Design "Linux: the original helper, invoked directly".
+#
+#   gh workflow run linux-sandbox-helper.yml -f upstream_tag=rust-v0.163.0 -f upstream_commit=<40-hex sha>
+#   gh attestation verify <asset> --repo SSFSKIM/cua
+name: linux-sandbox-helper
+on:
+  # A push of this file only registers the workflow, so it can be dispatched on a branch before it reaches main; its
+  # jobs run on dispatch only.
+  push:
+    paths: ['.github/workflows/linux-sandbox-helper.yml']
+  workflow_dispatch:
+    inputs:
+      upstream_tag:
+        description: 'openai/codex stable release tag (rust-vX.Y.Z)'
+        required: true
+      upstream_commit:
+        description: 'the commit that tag names (40 hex digits); the run refuses a mismatch'
+        required: true
+permissions: {}
+concurrency:
+  group: linux-sandbox-helper-${{ inputs.upstream_tag }}
+  cancel-in-progress: false
+env:
+  UPSTREAM_TAG: ${{ inputs.upstream_tag }}
+  UPSTREAM_COMMIT: ${{ inputs.upstream_commit }}
+jobs:
+  build:
+    name: build ${{ matrix.target }}
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - {arch: x64, target: x86_64-unknown-linux-musl, runner: ubuntu-24.04}
+          - {arch: arm64, target: aarch64-unknown-linux-musl, runner: ubuntu-24.04-arm}
+    steps:
+      - name: Check the inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$UPSTREAM_TAG" =~ ^rust-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "upstream_tag must be a stable rust-vX.Y.Z tag" >&2; exit 1; }
+          [[ "$UPSTREAM_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo "upstream_commit must be 40 lowercase hex digits" >&2; exit 1; }
+      - name: Check out openai/codex at the commit
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: openai/codex
+          ref: ${{ inputs.upstream_commit }}
+          path: upstream
+          persist-credentials: false
+      - name: Check that the tag names the commit
+        shell: bash
+        working-directory: upstream
+        run: |
+          set -euo pipefail
+          tagged="$(git ls-remote https://github.com/openai/codex "refs/tags/${UPSTREAM_TAG}^{}" | cut -f1)"
+          [[ -n "$tagged" ]] || tagged="$(git ls-remote https://github.com/openai/codex "refs/tags/${UPSTREAM_TAG}" | cut -f1)"
+          [[ "$tagged" == "$UPSTREAM_COMMIT" ]] || { echo "${UPSTREAM_TAG} names ${tagged:-nothing}, not ${UPSTREAM_COMMIT}" >&2; exit 1; }
+          [[ "$(git rev-parse HEAD)" == "$UPSTREAM_COMMIT" ]]
+          git status --porcelain | { ! grep -q .; }
+      - name: Install the Linux build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -y
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends binutils pkg-config libcap-dev file
+      - name: Set up the Rust toolchain (upstream's rust-toolchain.toml, 1.95.0)
+        uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582 # 1.95.0
+        with:
+          targets: ${{ matrix.target }}
+      - name: Use a hermetic Cargo home
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo_home="${GITHUB_WORKSPACE}/.cargo-home"
+          mkdir -p "${cargo_home}/bin"
+          echo "CARGO_HOME=${cargo_home}" >> "$GITHUB_ENV"
+          echo "${cargo_home}/bin" >> "$GITHUB_PATH"
+          : > "${cargo_home}/config.toml"
+      - name: Install Zig
+        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.14.0
+          use-cache: false
+      - name: Install the musl build tools (upstream's recipe)
+        env:
+          TARGET: ${{ matrix.target }}
+        run: bash "${GITHUB_WORKSPACE}/upstream/.github/scripts/install-musl-build-tools.sh"
+      - name: Build codex-linux-sandbox
+        shell: bash
+        working-directory: upstream/codex-rs
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          # Upstream's recipe sets no rustflags for Linux targets. The build paths are remapped so the binary names no
+          # runner directory (panic locations of dependencies and of inlined standard-library code would otherwise carry
+          # the Cargo home's and the toolchain's absolute paths).
+          sysroot="$(rustc --print sysroot)"
+          export RUSTFLAGS="--remap-path-prefix=${CARGO_HOME}=/cargo --remap-path-prefix=${GITHUB_WORKSPACE}/upstream=/codex --remap-path-prefix=${sysroot}=/rust"
+          # A release tag's commit bumps the workspace version in Cargo.toml but leaves the workspace members at 0.0.0 in
+          # Cargo.lock (upstream's release builds without --locked). So the build may rewrite only those members'
+          # version lines; any other change to the lock (a dependency resolved anew) fails the build, which is what
+          # --locked would guard.
+          version="${UPSTREAM_TAG#rust-v}"
+          cargo build --release -p codex-linux-sandbox --bin codex-linux-sandbox --target "$TARGET"
+          changed="$(git diff -U0 -- Cargo.lock | grep -E '^[-+]' | grep -Ev '^(---|\+\+\+) ' || true)"
+          if printf '%s\n' "$changed" | grep -Ev "^(-version = \"0\.0\.0\"|\+version = \"${version//./\\.}\")$" | grep -q .; then
+            echo "the build changed Cargo.lock beyond the workspace members' version:" >&2; printf '%s\n' "$changed" >&2; exit 1
+          fi
+          [[ "$(printf '%s\n' "$changed" | grep -c '^-')" == "$(printf '%s\n' "$changed" | grep -c '^+')" ]]
+          echo "Cargo.lock: $(printf '%s\n' "$changed" | grep -c '^+') workspace member versions set to ${version}; nothing else changed"
+          bin="target/${TARGET}/release/codex-linux-sandbox"
+          strip --strip-debug --strip-unneeded "$bin"
+          file "$bin"
+          file "$bin" | grep -Eq 'static(-pie|ally) linked'
+          mkdir -p "${GITHUB_WORKSPACE}/dist"
+          cp "$bin" "${GITHUB_WORKSPACE}/dist/codex-linux-sandbox-${TARGET}"
+      - name: Smoke the binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          "${GITHUB_WORKSPACE}/dist/codex-linux-sandbox-${{ matrix.target }}" --help | head -5
+      - name: Check the binary carries no runner path or token
+        shell: bash
+        run: |
+          set -euo pipefail
+          bin="${GITHUB_WORKSPACE}/dist/codex-linux-sandbox-${{ matrix.target }}"
+          # Counts per category only: a match is never printed, since it could be the secret itself.
+          found=0
+          for category in 'home path:/home/|/Users/|/root/' 'GitHub token:ghp_|gho_|ghs_|github_pat_|ACTIONS_RUNTIME_TOKEN' 'private key:BEGIN [A-Z ]*PRIVATE KEY'; do
+            count=$(strings -a "$bin" | grep -E -c "${category#*:}" || true)
+            echo "${category%%:*}: ${count}"
+            [ "$count" = 0 ] || found=1
+          done
+          if [ "$found" != 0 ]; then
+            echo "the binary names a home directory or carries a token-shaped string" >&2; exit 1
+          fi
+          echo "no home path or token-shaped string in $(basename "$bin")"
+      - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: codex-linux-sandbox-${{ matrix.target }}
+          path: dist/codex-linux-sandbox-${{ matrix.target }}
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: codex-linux-sandbox-*
+          path: dist
+          merge-multiple: true
+      - name: Add upstream's LICENSE and NOTICE, the modifications statement and the checksums
+        shell: bash
+        working-directory: dist
+        run: |
+          set -euo pipefail
+          for file in LICENSE NOTICE; do
+            curl -fsSL "https://raw.githubusercontent.com/openai/codex/${UPSTREAM_COMMIT}/${file}" -o "$file"
+          done
+          cat > MODIFICATIONS.md <<EOF
+          # Modifications
+
+          codex-linux-sandbox is openai/codex's Linux sandbox helper, built from tag ${UPSTREAM_TAG} (commit
+          ${UPSTREAM_COMMIT}, https://github.com/openai/codex/tree/${UPSTREAM_COMMIT}/codex-rs/linux-sandbox) under the
+          Apache License 2.0 (LICENSE, NOTICE beside this file).
+
+          cua made no modifications to the source. The build follows upstream's musl recipe
+          (.github/scripts/install-musl-build-tools.sh at that commit) with one build flag added: --remap-path-prefix,
+          which replaces the build's absolute directories (the Cargo home, the checkout, the Rust toolchain) in the
+          binary's embedded source paths. The binaries are stripped.
+
+          Built by ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID} at ${GITHUB_SHA}.
+          EOF
+          chmod 0755 codex-linux-sandbox-*
+          sha256sum codex-linux-sandbox-* LICENSE NOTICE MODIFICATIONS.md > SHA256SUMS
+          cat SHA256SUMS
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            dist/codex-linux-sandbox-x86_64-unknown-linux-musl
+            dist/codex-linux-sandbox-aarch64-unknown-linux-musl
+      - name: Publish the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="linux-sandbox-${UPSTREAM_TAG}"
+          {
+            echo "openai/codex's Linux sandbox helper (codex-linux-sandbox), built unmodified from ${UPSTREAM_TAG} (${UPSTREAM_COMMIT}) for cua's sandbox."
+            echo
+            echo "- Workflow run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID} (run id ${GITHUB_RUN_ID}), at ${GITHUB_SHA}."
+            echo "- Provenance: \`gh attestation verify <asset> --repo ${GITHUB_REPOSITORY}\`."
+            echo "- Licence: Apache-2.0 (LICENSE, NOTICE); MODIFICATIONS.md states what cua changed (nothing in the source)."
+            echo
+            echo '```'
+            cat dist/SHA256SUMS
+            echo '```'
+          } > notes.md
+          gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "$tag" --notes-file notes.md --latest=false \
+            dist/codex-linux-sandbox-x86_64-unknown-linux-musl dist/codex-linux-sandbox-aarch64-unknown-linux-musl \
+            dist/LICENSE dist/NOTICE dist/MODIFICATIONS.md dist/SHA256SUMS

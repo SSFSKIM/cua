@@ -41,10 +41,10 @@ test('the macOS vendor host names the compat executable and its Node; bin/ is tr
   assert.deepEqual([own.env.CODEX_CLI_PATH, own.env.CUA_COMPAT_NODE, own.compat], [undefined, undefined, null]);
 });
 
-test('Linux keeps the Codex CLI until M3: no compat executable, Node or settings', t => {
+test('Linux has no compat executable: its own host names no Codex CLI, compat Node or settings', t => {
   const {home, runtime} = runtimeOf(t, linuxFixturePin({arch: 'x64', sha256: 'a'.repeat(64), length: 1}));
-  const launch = buildLaunch({runtime, home, sessionId: SESSION, ambient: {...ambient(t), CUA_REPL_HOST: 'vendor'}});
-  assert.deepEqual([launch.env.CODEX_CLI_PATH, launch.env.CUA_COMPAT_NODE, launch.compat], [runtime.paths.codexCli, undefined, null]);
+  const launch = buildLaunch({runtime, home, sessionId: SESSION, ambient: ambient(t), resolveOwnNode: () => '/opt/node-24/bin/node'});
+  assert.deepEqual([launch.env.CODEX_CLI_PATH, launch.env.CODEX_HOME, launch.env.CUA_COMPAT_NODE, launch.compat], [undefined, undefined, undefined, null]);
 });
 
 test('createLaunchDirs writes the session\'s compat settings beside the session temp; the compat reads them back from the launch\'s environment', t => {

@@ -1,5 +1,5 @@
 // Installing a Linux pin (Phase F): the deb is verified by length and hash, its data tar unpacked with the system `ar`
-// and `tar`, the pinned components (one of them a file) kept (the deb's Chrome plugin is not, since #79), and the release
+// and `tar`, the pinned component kept (the deb's Chrome plugin is not, since #79, nor its Codex CLI, since #115 M3), and the release
 // activated with no code-signature step. Runs on any host: the Linux host is injected, and the fixture deb is a few harmless files.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
@@ -24,16 +24,14 @@ function setup(t, {arch = 'x64', deb: debOptions = {}, pin: pinOverrides = {}} =
 const install = (ctx, extra = {}) => installRuntime({home: ctx.home, manifest: ctx.pin, archivePath: ctx.archive.deb, verifySignatures: noSignatures, host: ctx.host, tools: debTools(), ...extra});
 
 for (const arch of ['x64', 'arm64']) {
-  test(`the ${arch} deb installs: only the pinned components (codex a file), then activation`, async t => {
+  test(`the ${arch} deb installs: only the pinned component (no Codex CLI), then activation`, async t => {
     const ctx = setup(t, {arch});
     const result = await install(ctx);
     const home = realpathSync(ctx.home);
     const root = join(home, 'runtimes', ctx.pin.release);
     assert.equal(result.root, root);
     assert.equal(result.changed, true);
-    assert.deepEqual(readdirSync(root).sort(), ['codex', 'cua_node', 'install.json']);
-    assert.ok(statSync(join(root, 'codex')).isFile());
-    assert.equal(statSync(join(root, 'codex')).mode & 0o100, 0o100, 'the sandbox CLI stays executable');
+    assert.deepEqual(readdirSync(root).sort(), ['cua_node', 'install.json'], 'the deb\'s codex is not placed');
     assert.equal(statSync(join(root, 'cua_node/bin/node_repl')).mode & 0o100, 0o100);
     assert.ok(existsSync(join(root, `cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_${arch}`)));
     assert.equal(pointer(ctx.home), ctx.pin.release);
@@ -47,7 +45,7 @@ test('an installed Linux release resolves, re-installs as a no-op without the ar
   const ctx = setup(t);
   await install(ctx);
   const runtime = resolveRuntime({home: ctx.home, pins: [ctx.pin], host: ctx.host});
-  assert.equal(runtime.paths.codexCli, join(runtime.root, 'codex'));
+  assert.equal('codexCli' in runtime.paths, false);
   assert.equal(runtime.paths.skyLinuxBin, join(runtime.root, 'cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64'));
   const again = await install(ctx, {archivePath: join(ctx.dir, 'gone.deb')});
   assert.equal(again.changed, false);
@@ -81,13 +79,13 @@ test('a deb with the wrong hash is refused before extraction; one missing a comp
   const tampered = parsePin(linuxFixturePin({sha256: 'f'.repeat(64), length: wrong.archive.length}));
   await assert.rejects(install({...wrong, pin: tampered}), expectCode('archive_hash_mismatch'));
 
-  const noCodex = setup(t, {deb: {omit: ['codex']}});
-  await assert.rejects(install(noCodex), expectCode('layout_invalid'));
+  const noNodeRepl = setup(t, {deb: {omit: ['cua_node/bin/node_repl']}});
+  await assert.rejects(install(noNodeRepl), expectCode('layout_invalid'));
   const otherArch = setup(t, {deb: {vendor: {arch: 'arm64', target: 'linux-arm64'}}});
   await assert.rejects(install(otherArch), expectCode('vendor_manifest_mismatch'));
   const noPayload = setup(t, {deb: {dataMember: 'data.tar.zst'}});
   await assert.rejects(install(noPayload), expectCode('extract_failed'));
-  for (const ctx of [wrong, noCodex, otherArch, noPayload]) {
+  for (const ctx of [wrong, noNodeRepl, otherArch, noPayload]) {
     assert.equal(pointer(ctx.home), null);
     assert.deepEqual(stagingLeftovers(ctx.home), []);
   }

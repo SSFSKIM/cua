@@ -17,11 +17,12 @@
 //                                            DISPLAY and XAUTHORITY a model cell can reach X directly: on Linux the
 //                                            trusted sky wrapper is not a boundary
 //   PATH                                     fixed system path
-//   CUA_SANDBOX_DENY_READ                    JSON {deny, reexpose}: what the kernel may not read, by real path, and
-//                                            what is re-exposed inside it (src/sandbox/policy.mjs denyListFor), resolved
-//                                            once here from the same store directories and HOME the worker gets
-//   CODEX_HOME                               <home>/state/codex: runtime config and per-user approvals (not for cua's
-//                                            own host on macOS, which no longer launches through the Codex CLI)
+//   CUA_SANDBOX_DENY_READ                    JSON {deny, reexpose, metadataOnly, tiers}: what the kernel may not read,
+//                                            by real path, and what is re-exposed inside it (src/sandbox/policy.mjs
+//                                            denyListFor), resolved once here from the same store directories and HOME
+//                                            the worker gets; not for a disabled connection
+//   CODEX_HOME                               macOS vendor host only: <home>/state/codex, node_repl's config and
+//                                            per-user approvals (cua's own host launches through no Codex CLI)
 //   CUA_REPL_NODE_REPL_PATH                  relocated node_repl (required by the vendor launcher)
 //   CUA_REPL_ENABLED_SURFACES                required by the vendor launcher: `computer` (the default), `browser` or
 //                                            `computer,browser`, from the caller's `surfaces`
@@ -41,11 +42,10 @@
 //   NODE_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS=1000, NODE_REPL_DISABLE_ANALYTICS=1
 //   CODEX_CLI_PATH                           macOS vendor host: bin/cua-codex-compat by its real path, cua's compat
 //                                            executable (src/sandbox/codex-compat.mjs: node_repl's `sandbox` calls under
-//                                            cua's profiles, the native helper's `app-server`); linux: the relocated
-//                                            `codex` until #115 M3. No unsandboxed fallback: node_repl runs its children
-//                                            unconfined without it, so the vendor-host preflight refuses a launch whose
-//                                            value is not an executable file (src/runtime/sandbox.mjs). Not for cua's own
-//                                            host on macOS
+//                                            cua's profiles, the native helper's `app-server`). No unsandboxed fallback:
+//                                            node_repl runs its children unconfined without it, so the vendor-host
+//                                            preflight refuses a launch whose value is not an executable file
+//                                            (src/runtime/sandbox.mjs). Never for cua's own host
 //   CUA_COMPAT_NODE                          macOS vendor host: the vendor's pinned Node, which the compat executable's
 //                                            `app-server` runs on; it reaches the native helper through `open`. Its
 //                                            `sandbox` takes the same Node from the session's compat settings (below),
@@ -86,12 +86,21 @@
 // (at least NODE_FLOOR: CUA_NODE, the Node `cua install` pins under $CUA_HOME/node, else the user's; never the vendor's
 // pinned Node) running the supervisor with --disable-sigusr1, under the same allowlist, surfaces, services and secrets
 // settings, with the host's own settings under owned names in place of the vendor's NODE_REPL_ ones (no vendor
-// launcher, node_repl or vendor Node path is set). Its children's sandbox: on macOS cua's own (src/sandbox), through
-// CUA_REPL_SANDBOX_EXEC, with neither CODEX_CLI_PATH nor CODEX_HOME; on Linux the Codex CLI (CODEX_CLI_PATH and
-// CODEX_HOME) until #115 M3:
+// launcher, node_repl or vendor Node path is set). Its children's sandbox is cua's own (src/sandbox), with neither
+// CODEX_CLI_PATH nor CODEX_HOME:
 //   CUA_REPL_SANDBOX_EXEC                    macOS: /usr/bin/sandbox-exec, which the supervisor runs each child under
 //                                            with the profile src/sandbox renders for its role
-//   CUA_REPL_NODE_PATH                       the resolved Node the kernel runs on
+//   CUA_REPL_SANDBOX_HELPER, CUA_REPL_SANDBOX_HELPER_SHA256   Linux: the pinned sandbox helper,
+//                                            <home>/sandbox/<upstreamTag>/codex-linux-sandbox (src/sandbox/linux.mjs, the
+//                                            pin runtime/sandbox/linux-sandbox.json), and its pinned SHA-256, which the
+//                                            connection's preflight and the supervisor check the placed bytes against
+//                                            before each launch
+//   CUA_REPL_WORKER_NETWORK=enabled          Linux with the computer surface: the trusted worker's profile has the
+//                                            network, so sky_linux (its child) reaches the X display and the session
+//                                            bus; the kernel's never has
+//   CUA_REPL_KERNEL_DIR                      Linux under the default mode: the kernel's own directory outside run/,
+//                                            `kernelDir` (below)
+//   CUA_REPL_NODE_PATH                      the resolved Node the kernel runs on
 //   CUA_REPL_TRUSTED_CODE_PATHS              src/repl-host (the host's own code), src/cua-api and docs/cua-api (the cua
 //                                            facade the banner imports and the documents it reads), then what
 //                                            NODE_REPL_TRUSTED_CODE_PATHS lists for the vendor; the scoped preflight
@@ -113,9 +122,10 @@
 //                                            (src/repl-host/instructions.mjs), as NODE_REPL_TOOL_OVERRIDES
 //   NODE_REPL_DISABLE_ANALYTICS=1            kept: the retained vendor sky service reads it
 //
-// The launch record also carries `managedNodeRoot`, <home>/node (the Node `cua install` places for the own host), and
-// `stagingRoot`, <home>/staging (where install verifies what it places), which the scoped preflight protects for either
-// host (src/runtime/sandbox.mjs assertSandboxFits); neither is in `env`.
+// The launch record also carries `managedNodeRoot`, <home>/node (the Node `cua install` places for the own host),
+// `stagingRoot`, <home>/staging (where install verifies what it places), and `sandboxHelperRoot`, <home>/sandbox (the
+// Linux helper `cua install` places, which runs outside every sandbox and re-executes itself inside one), which the
+// scoped preflight protects for either host (src/runtime/sandbox.mjs assertSandboxFits); none is in `env`.
 // A macOS vendor-host launch also carries `compat` ({home, sessionId, node}): createLaunchDirs writes the session's
 // compat settings from it (src/sandbox/compat-settings.mjs: <home>/state/compat/<sessionId>.json with the deny list and
 // the session temp, and .node with the Node), which the run directory's removal removes too (removeLaunchDirs, and
@@ -125,6 +135,12 @@
 // and removes it when the connection ends. The launch record carries both (`cwd`, `sessionTmp`) and the deny list it
 // resolved (`denyRead`; null for a disabled connection, `sandbox`), which the scoped preflight protects except for those
 // two (src/runtime/sandbox.mjs).
+// On Linux under the default mode the record also carries `kernelDir`, <home>/kernel/<sessionId>, named to the host as
+// CUA_REPL_KERNEL_DIR: run/ is denied to the kernel whole there as under scoped, and since nothing is writable to it the
+// helper re-binds nothing of run/<sessionId> inside the denied run/ (it re-binds only writable roots, #115 M0c), so the
+// kernel works in that directory instead, with its tmp/ as its TMPDIR (src/repl-host/supervisor.mjs kernelLaunch). It
+// holds nothing but the kernel's lifeline while it runs; createLaunchDirs makes it, and it goes with the session
+// (removeLaunchDirs, src/runtime/run-dir.mjs). Null otherwise.
 import {accessSync, chmodSync, constants, mkdirSync, realpathSync, rmSync, statSync} from 'node:fs';
 import {dirname, isAbsolute, join} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
@@ -139,6 +155,7 @@ import {cuaNodeFrom} from '../mcp/surface.mjs';
 import {NODE_FLOOR, managedNode, nodeVersion} from './managed-node.mjs';
 import {denyListFor, realDenyList} from '../sandbox/policy.mjs';
 import {SEATBELT_EXEC} from '../sandbox/seatbelt.mjs';
+import {helperFor} from '../sandbox/linux.mjs';
 import {removeCompatSettings, SESSION_ID, writeCompatSettings} from '../sandbox/compat-settings.mjs';
 
 export {NODE_FLOOR};
@@ -203,12 +220,13 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
   const p = runtime.paths;
   const linux = runtime.manifest.platform === 'linux';
 
-  // cua's own host on macOS confines its children with cua's own sandbox, and the vendor host there through cua's compat
-  // executable; Linux keeps the Codex CLI's until #115 M3.
-  const ownSandbox = own && !linux;
-  const compat = !own && !linux;
+  // cua's own host confines its children with cua's own sandbox (macOS: sandbox-exec; Linux: the pinned helper), and the
+  // macOS vendor host through cua's compat executable. Linux has no vendor host (replHostFor).
+  if (linux && !own) fail('repl_host_refused', 'the vendor host is retired on Linux (#115); only cua\'s own host launches there');
+  const compat = !own;
   const cwd = join(owned.run, sessionId);
   const sessionTmp = join(cwd, 'tmp');
+  const kernelDir = linux && sandbox === 'default' ? join(owned.kernel, sessionId) : null;
   // A disabled connection confines nothing, so it neither needs the deny list nor fails on discovering it (an unreadable
   // store refuses only confined launches). Its launch carries no list, and the supervisor refuses any confined call
   // without one, so it can never be confined later without its list.
@@ -220,7 +238,7 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
   env.TMPDIR = sessionTmp;
   if (linux) Object.assign(env, desktopSessionEnv(ambient));
   const trustedCodePaths = own ? [REPL_HOST_DIR, CUA_API_DIR, CUA_API_DOCS_DIR, p.moduleDir, SANDBOX_DIR, BIN_DIR] : [p.moduleDir, SANDBOX_DIR, BIN_DIR];
-  Object.assign(env, {PATH: FIXED_PATH}, denyRead ? {CUA_SANDBOX_DENY_READ: JSON.stringify(denyRead)} : {}, ownSandbox ? {} : {CODEX_HOME: owned.codexHome});
+  Object.assign(env, {PATH: FIXED_PATH}, denyRead ? {CUA_SANDBOX_DENY_READ: JSON.stringify(denyRead)} : {}, compat ? {CODEX_HOME: owned.codexHome} : {});
   Object.assign(env, own
     ? {CUA_REPL_ENABLED_SURFACES: enabled.join(','), CUA_REPL_NODE_PATH: ownNode, CUA_REPL_OWNED_GROUP: '1', CUA_REPL_NODE_MODULE_DIRS: p.moduleDir,
       CUA_REPL_JS_BANNER: CUA_BOOTSTRAP_BANNER, CUA_REPL_UNTRUSTED_ENV_ALLOWLIST: CELL_ENV_ALLOWLIST,
@@ -240,7 +258,8 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
     [names.codePaths]: trustedCodePaths.join(':'),
     [names.pipeTimeout]: '1000',
     NODE_REPL_DISABLE_ANALYTICS: '1',
-    ...(ownSandbox ? {CUA_REPL_SANDBOX_EXEC: SEATBELT_EXEC} : compat ? {CODEX_CLI_PATH: compatExecutable(), CUA_COMPAT_NODE: p.node} : {CODEX_CLI_PATH: p.codexCli}),
+    ...(compat ? {CODEX_CLI_PATH: compatExecutable(), CUA_COMPAT_NODE: p.node} : linux ? linuxSandboxEnv(owned.home, runtime.manifest.arch, enabled) : {CUA_REPL_SANDBOX_EXEC: SEATBELT_EXEC}),
+    ...(kernelDir ? {CUA_REPL_KERNEL_DIR: kernelDir} : {}),
   });
   if (enabled.includes('computer')) Object.assign(env, linux ? {OAI_SKY_LINUX_BIN: p.skyLinuxBin} : {SKY_CUA_SERVICE_PATH: p.skyServiceApp}, {CUA_SKY_VENDOR_SERVICE: p.skyVendorService});
   if (enabled.includes('browser')) {
@@ -255,39 +274,52 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
     env[STORE_ENV.dir] = secretsDir;
     if (secretsProjectDir) env[STORE_ENV.projectDir] = secretsProjectDir;
   } else if (secretsUnavailable) env[STORE_ENV.unavailable] = secretsUnavailable;
-  const launch = {command: own ? ownNode : p.node, args: own ? ['--disable-sigusr1', REPL_HOST_SUPERVISOR] : [p.cuaRepl], env, cwd, sessionTmp, denyRead,
-    replHost: {host: replHost.host, reason: replHost.reason}, managedNodeRoot: owned.node, stagingRoot: owned.staging,
+  const launch = {command: own ? ownNode : p.node, args: own ? ['--disable-sigusr1', REPL_HOST_SUPERVISOR] : [p.cuaRepl], env, cwd, sessionTmp, kernelDir, denyRead,
+    replHost: {host: replHost.host, reason: replHost.reason}, managedNodeRoot: owned.node, stagingRoot: owned.staging, sandboxHelperRoot: owned.sandbox,
     compat: compat ? {home: owned.home, sessionId, node: p.node} : null};
   if (own) assertTrustedServicesContained(launch);
   return launch;
 }
 
-// Creates `launch`'s working directory and its session temp, each mode 0700 (a directory left from an earlier launch of
-// the same session is reused and made private again), the runtime's CODEX_HOME where the launch has one, and a macOS
-// vendor-host launch's compat settings (rewritten for each launch of the session).
+// Creates `launch`'s working directory and its session temp, and a Linux default-mode launch's kernel directory and its
+// tmp/, each mode 0700 (a directory left from an earlier launch of the same session is reused and made private again),
+// the runtime's CODEX_HOME where the launch has one, and a macOS vendor-host launch's compat settings (rewritten for each
+// launch of the session).
 export function createLaunchDirs(launch) {
   if (launch.env.CODEX_HOME) mkdirSync(launch.env.CODEX_HOME, {recursive: true, mode: 0o700});
-  for (const dir of [launch.cwd, launch.sessionTmp]) {
+  for (const dir of [launch.cwd, launch.sessionTmp, ...(launch.kernelDir ? [launch.kernelDir, join(launch.kernelDir, 'tmp')] : [])]) {
     mkdirSync(dir, {recursive: true, mode: 0o700});
     chmodSync(dir, 0o700);
   }
   if (launch.compat) writeCompatSettings({...launch.compat, denyRead: launch.denyRead, sessionTmp: launch.sessionTmp});
 }
 
-// Removes what createLaunchDirs made for `launch` but CODEX_HOME: its run directory (with the session temp) and its
-// compat settings. Throws what the removal of the run directory throws.
+// Removes what createLaunchDirs made for `launch` but CODEX_HOME: its kernel directory, its run directory (with the
+// session temp) and its compat settings. Throws what the removal of either directory throws.
 export function removeLaunchDirs(launch) {
   if (launch.compat) removeCompatSettings(launch.compat);
+  if (launch.kernelDir) rmSync(launch.kernelDir, {recursive: true, force: true});
   rmSync(launch.cwd, {recursive: true, force: true});
+}
+
+// The own host's Linux sandbox settings: the pinned helper for this home and architecture (placed by `cua install`; its
+// bytes are checked by the connection's preflight and before each child, not here) and, with the computer surface, the
+// network for the trusted worker alone.
+function linuxSandboxEnv(home, arch, surfaces) {
+  const helper = helperFor({home, arch});
+  return {CUA_REPL_SANDBOX_HELPER: helper.path, CUA_REPL_SANDBOX_HELPER_SHA256: helper.sha256, ...(surfaces.includes('computer') ? {CUA_REPL_WORKER_NETWORK: 'enabled'} : {})};
 }
 
 // The REPL host a launch with `surfaces` on `platform` runs, and why -> {host: 'cua' | 'vendor', reason}, plus, for
 // `cua`, `node`: the Node it runs on, and for `own_host_node_unavailable`, `nodeTried`: the candidates ownHostNode tried.
+// On Linux it is always cua's own host (#115 M3, which closes #135): the vendor host there is retired, because its
+// node_repl ran JavaScript unconfined when its launcher failed at run time, and cua's sandbox does not serve it.
 // `resolveOwnNode` resolves the own host's Node (ownHostNode from `ambient` and `home` by default), asked at most once
 // and only when the selection would be cua's own host: a connection resolves its selection once, so its Node too.
 // Either host runs cua's browser service with the browser surface. CUA_REPL_HOST in `ambient`, the caller's original
 // environment:
-//   vendor   always the vendor host (`explicit`): the rollback; Node is never asked for.
+//   vendor   the vendor host (`explicit`): the macOS rollback; Node is never asked for. Refused on Linux
+//            (repl_host_refused, naming why), never downgraded.
 //   cua      cua's own host (`explicit`) where it can run, else refused before launch (repl_host_refused), never
 //            downgraded: with the computer surface on macOS, whose native helper accepts only the vendor host's
 //            node_repl as a peer until #117. Where it can run but no Node 24 or later resolves, refused too
@@ -295,15 +327,20 @@ export function removeLaunchDirs(launch) {
 //   unset or empty   the vendor host with `macos_native_peer_requires_vendor` for the computer surface on macOS (MAWS
 //            client mode does not change that); else cua's own host, the default since #116's last stage (M5):
 //            `linux` on Linux, `browser_only` for a macOS session with only the browser surface. That default needs a
-//            Node 24 or later: where none resolves, the vendor host with `own_host_node_unavailable`, never a refused
-//            session (cua itself runs on Node 22).
+//            Node 24 or later: on macOS, where none resolves, the vendor host with `own_host_node_unavailable`, never a
+//            refused session (cua itself runs on Node 22); on Linux, which has no vendor host to fall back to, the
+//            session is refused (repl_host_node) with the remedy (`cua install` places the pinned Node 24).
 // Any other CUA_REPL_HOST is refused (invalid_repl_host), as is a CUA_NODE that is not an absolute path wherever Node is
 // asked for (invalid_setting).
 export function replHostFor({platform, surfaces, ambient, home, resolveOwnNode = () => ownHostNode({ambient, home})}) {
   const value = ambient.CUA_REPL_HOST;
   const requested = value === undefined || value === '' ? null : value;
   if (requested !== null && !REPL_HOSTS.includes(requested)) fail('invalid_repl_host', `CUA_REPL_HOST must be ${REPL_HOSTS.join(' or ')}`);
-  if (requested === 'vendor') return {host: 'vendor', reason: 'explicit'};
+  if (requested === 'vendor') {
+    if (platform === 'linux')
+      fail('repl_host_refused', 'CUA_REPL_HOST=vendor is not supported on Linux: the vendor host there is retired (#115), because its node_repl ran JavaScript cells unconfined when its sandbox launcher failed (#135), and cua\'s own sandbox does not serve it. Unset CUA_REPL_HOST (or use CUA_REPL_HOST=cua) for cua\'s own host');
+    return {host: 'vendor', reason: 'explicit'};
+  }
   const macosComputer = platform === 'darwin' && surfaces.includes('computer');
   if (requested === 'cua') {
     if (macosComputer)
@@ -315,7 +352,7 @@ export function replHostFor({platform, surfaces, ambient, home, resolveOwnNode =
   try {
     return {host: 'cua', reason, node: resolveOwnNode()};
   } catch (error) {
-    if (error?.code !== 'repl_host_node') throw error;
+    if (error?.code !== 'repl_host_node' || platform === 'linux') throw error;
     return {host: 'vendor', reason: 'own_host_node_unavailable', nodeTried: error.tried};
   }
 }

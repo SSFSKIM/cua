@@ -1,14 +1,16 @@
-// The launch record on Linux (Phase F): the X11 and session-bus variables pass through the ambient allowlist (the bus
-// address derived from XDG_RUNTIME_DIR when an SSH session lacks it), the vendor's Linux helper is pinned through
-// OAI_SKY_LINUX_BIN, the sandbox is the pinned `codex` file, and no macOS helper app is named. A macOS launch is
-// unchanged by any of these variables.
+// The launch record on Linux (Phase F, #115 M3): the X11 and session-bus variables pass through the ambient allowlist
+// (the bus address derived from XDG_RUNTIME_DIR when an SSH session lacks it), the vendor's Linux helper is pinned
+// through OAI_SKY_LINUX_BIN, the sandbox is cua's pinned helper under the home, and no macOS helper app is named. A
+// macOS launch is unchanged by any of these variables.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {realpathSync} from 'node:fs';
+import {existsSync, mkdirSync, realpathSync, statSync, symlinkSync} from 'node:fs';
 import {join} from 'node:path';
-import {buildLaunch, SKY_SERVICE, BROWSER_SERVICE} from '../src/runtime/launch.mjs';
+import {buildLaunch, createLaunchDirs, removeLaunchDirs, SKY_SERVICE, BROWSER_SERVICE} from '../src/runtime/launch.mjs';
 import {parsePin, runtimeFor} from '../src/runtime/manifest.mjs';
 import {scratch, fixturePin, linuxFixturePin} from './fixtures/runtime-fixture.mjs';
+import {helperFor} from '../src/sandbox/linux.mjs';
+import {assertSandboxFits} from '../src/runtime/sandbox.mjs';
 
 const SESSION = '6f1c2d3e-0000-4000-8000-000000000002';
 const DESKTOP = {DISPLAY: ':0', XAUTHORITY: '/home/u/.Xauthority', DBUS_SESSION_BUS_ADDRESS: 'unix:path=/run/user/1000/bus', XDG_RUNTIME_DIR: '/run/user/1000', XDG_DATA_DIRS: '/usr/local/share:/usr/share'};
@@ -23,73 +25,90 @@ function runtimeOf(t, pinJson) {
 }
 const linux = (t, arch = 'x64') => runtimeOf(t, linuxFixturePin({arch, sha256: 'a'.repeat(64), length: 1}));
 
-test('a Linux computer-use launch on the vendor host passes the desktop session through and pins the Linux helper and sandbox CLI', t => {
+const NODE = '/opt/node-24/bin/node';
+const ownNode = () => NODE;
+
+// Linux runs cua's own host only (#115 M3): its children go through the pinned helper, the worker alone has the network
+// with the computer surface, and no Codex CLI or CODEX_HOME is named.
+test('a Linux computer-use launch runs cua\'s own host: the desktop session, the pinned Linux helper, the pinned sandbox helper, the worker\'s network', t => {
   const {home, runtime} = linux(t, 'arm64');
   const p = runtime.paths;
-  const {env} = buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, CUA_REPL_HOST: 'vendor'}, services: {sky: SKY_SERVICE}});
+  const launch = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, services: {sky: SKY_SERVICE}, resolveOwnNode: ownNode});
+  assert.deepEqual(launch.replHost, {host: 'cua', reason: 'linux'});
+  assert.equal(launch.command, NODE);
+  const {env} = launch;
+  const helper = helperFor({home, arch: 'arm64'});
   assert.deepEqual(env, {
     HOME: '/home/u', USER: 'u', LOGNAME: 'u', LANG: 'C.UTF-8', ...DESKTOP, TMPDIR: join(home, 'run', SESSION, 'tmp'),
     PATH: '/usr/bin:/bin:/usr/sbin:/sbin',
     CUA_SANDBOX_DENY_READ: env.CUA_SANDBOX_DENY_READ,
-    CODEX_HOME: join(home, 'state', 'codex'),
-    CUA_REPL_NODE_REPL_PATH: p.nodeRepl,
-    CUA_REPL_ENABLED_SURFACES: 'computer',
-    NODE_REPL_NODE_PATH: p.node,
-    NODE_REPL_NODE_MODULE_DIRS: p.moduleDir,
-    NODE_REPL_TRUSTED_SERVICES: env.NODE_REPL_TRUSTED_SERVICES,
-    NODE_REPL_TRUSTED_CODE_PATHS: env.NODE_REPL_TRUSTED_CODE_PATHS,
-    NODE_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS: '1000',
-    NODE_REPL_DISABLE_ANALYTICS: '1',
-    CODEX_CLI_PATH: join(runtime.root, 'codex'),
+    CUA_REPL_ENABLED_SURFACES: 'computer', CUA_REPL_NODE_PATH: NODE, CUA_REPL_OWNED_GROUP: '1', CUA_REPL_NODE_MODULE_DIRS: p.moduleDir,
+    CUA_REPL_JS_BANNER: env.CUA_REPL_JS_BANNER, CUA_REPL_UNTRUSTED_ENV_ALLOWLIST: 'CUA_REPL_ENABLED_SURFACES,CUA_REPL_BROWSER_ENV', CUA_REPL_TOOL_OVERRIDES: env.CUA_REPL_TOOL_OVERRIDES,
+    CUA_REPL_TRUSTED_SERVICES: env.CUA_REPL_TRUSTED_SERVICES, CUA_REPL_TRUSTED_RPC_ENABLED: '1', CUA_REPL_TRUSTED_CODE_PATHS: env.CUA_REPL_TRUSTED_CODE_PATHS,
+    CUA_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS: '1000', NODE_REPL_DISABLE_ANALYTICS: '1',
+    CUA_REPL_SANDBOX_HELPER: join(home, 'sandbox', helper.path.split('/').at(-2), 'codex-linux-sandbox'), CUA_REPL_SANDBOX_HELPER_SHA256: helper.sha256,
+    CUA_REPL_WORKER_NETWORK: 'enabled',
     OAI_SKY_LINUX_BIN: join(runtime.root, 'cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64'),
     CUA_SKY_VENDOR_SERVICE: p.skyVendorService,
   });
-  assert.equal(JSON.parse(env.NODE_REPL_TRUSTED_SERVICES).sky, SKY_SERVICE);
+  assert.equal(JSON.parse(env.CUA_REPL_TRUSTED_SERVICES).sky, SKY_SERVICE);
+  assert.equal(launch.sandboxHelperRoot, join(home, 'sandbox'), 'the helper\'s directory, which the scoped preflight protects');
   // The Linux shape of the deny list (#115 M0c): the home's private directories and run/ one by one, the session re-exposed.
   const {deny, reexpose} = JSON.parse(env.CUA_SANDBOX_DENY_READ);
   assert.deepEqual(deny.slice(-4), ['state', 'remote', 'chrome', 'run'].map(dir => join(home, dir)));
   assert.deepEqual(reexpose, [join(home, 'run', SESSION), join(home, 'run', SESSION, 'tmp')]);
+  assert.equal(launch.kernelDir, null, 'under scoped the kernel works in its run directory');
 });
 
-// M5's default (spec 2026-10-14-own-repl-host-design.md, "Selection is a connection fact"): a Linux session runs cua's
-// own host where a Node 24 or later resolves, with the same desktop session, helper and sandbox CLI.
-test('by default a Linux computer-use launch runs cua\'s own host on the resolved Node, with the same desktop session, helper and sandbox CLI', t => {
+// #115 M3: under default run/ is denied to the Linux kernel whole, as under scoped; since nothing is writable to it and
+// bubblewrap re-binds only writable roots inside a denied directory, it works in its own directory outside run/
+// (<home>/kernel/<session>, its TMPDIR that directory's tmp/), which the launch names and createLaunchDirs makes.
+test('a Linux launch under default names the kernel\'s own directory outside run/, and run/ stays denied', t => {
   const {home, runtime} = linux(t, 'arm64');
-  const node = '/opt/node-24/bin/node';
-  const launch = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, services: {sky: SKY_SERVICE}, resolveOwnNode: () => node});
-  assert.deepEqual(launch.replHost, {host: 'cua', reason: 'linux'});
-  assert.equal(launch.command, node);
-  const {env} = launch;
-  for (const [key, value] of Object.entries(DESKTOP)) assert.equal(env[key], value, key);
-  assert.equal(env.OAI_SKY_LINUX_BIN, join(runtime.root, 'cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64'));
-  assert.equal(env.CODEX_CLI_PATH, join(runtime.root, 'codex'), 'the own host on Linux keeps the Codex CLI until #115 M3');
-  assert.equal(env.CODEX_HOME, join(home, 'state', 'codex'));
-  assert.equal(env.CUA_REPL_SANDBOX_EXEC, undefined, 'cua\'s own sandbox is macOS\'s until M3');
-  assert.equal(env.TMPDIR, join(home, 'run', SESSION, 'tmp'), 'the session\'s own TMPDIR, on Linux too');
-  assert.equal(env.CUA_REPL_NODE_PATH, node);
-  assert.equal(JSON.parse(env.CUA_REPL_TRUSTED_SERVICES).sky, SKY_SERVICE);
-  assert.deepEqual(Object.keys(env).filter(key => key.startsWith('NODE_REPL_') && key !== 'NODE_REPL_DISABLE_ANALYTICS'), [], 'no vendor host setting');
-  // Where no Node 24 resolves, the vendor host, as before M5.
-  const fallback = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, services: {sky: SKY_SERVICE}, resolveOwnNode: () => { throw Object.assign(new Error('none'), {code: 'repl_host_node', tried: []}); }});
-  assert.deepEqual([fallback.replHost, fallback.command], [{host: 'vendor', reason: 'own_host_node_unavailable'}, runtime.paths.node]);
+  const launch = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, services: {sky: SKY_SERVICE}, resolveOwnNode: ownNode, sandbox: 'default'});
+  const kernelDir = join(home, 'kernel', SESSION);
+  assert.equal(launch.kernelDir, kernelDir);
+  assert.equal(launch.env.CUA_REPL_KERNEL_DIR, kernelDir);
+  assert.equal(launch.cwd, join(home, 'run', SESSION), 'the host and the worker keep the run directory');
+  const {deny} = JSON.parse(launch.env.CUA_SANDBOX_DENY_READ);
+  assert.deepEqual(deny.slice(-4), ['state', 'remote', 'chrome', 'run'].map(dir => join(home, dir)));
+  createLaunchDirs(launch);
+  for (const dir of [kernelDir, join(kernelDir, 'tmp')]) assert.equal(statSync(dir).mode & 0o777, 0o700, dir);
+  removeLaunchDirs(launch);
+  assert.equal(existsSync(kernelDir), false, 'removed with the run directory');
+  assert.equal(existsSync(launch.cwd), false);
+  const mac = buildLaunch({runtime: runtimeOf(t, fixturePin({sha256: 'a'.repeat(64), length: 1})).runtime, home, sessionId: SESSION, ambient: AMBIENT, resolveOwnNode: ownNode, sandbox: 'default'});
+  assert.equal(mac.kernelDir ?? null, null, 'macOS re-exposes the run directory inside its deny list, so nothing moves there');
+  assert.equal(mac.env.CUA_REPL_KERNEL_DIR, undefined);
+});
+
+test('the vendor host is refused on Linux (#135), explicitly or as a fallback: no Node 24 refuses the session', t => {
+  const {home, runtime} = linux(t, 'arm64');
+  assert.throws(() => buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, CUA_REPL_HOST: 'vendor'}, services: {sky: SKY_SERVICE}}),
+    error => error.code === 'repl_host_refused' && /CUA_REPL_HOST=vendor is not supported on Linux/.test(error.message) && /#135/.test(error.message));
+  assert.throws(() => buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, services: {sky: SKY_SERVICE},
+    resolveOwnNode: () => { throw Object.assign(new Error('none'), {code: 'repl_host_node', tried: []}); }}), {code: 'repl_host_node'});
+  assert.throws(() => buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, services: {sky: SKY_SERVICE}, replHost: {host: 'vendor', reason: 'explicit'}}),
+    {code: 'repl_host_refused'}, 'a vendor selection handed in is refused too');
 });
 
 test('without DBUS_SESSION_BUS_ADDRESS the bus is derived from XDG_RUNTIME_DIR; with neither, no bus variable is set', t => {
   const {home, runtime} = linux(t);
   const {DBUS_SESSION_BUS_ADDRESS, ...ssh} = AMBIENT;
-  assert.equal(buildLaunch({runtime, home, sessionId: SESSION, ambient: ssh}).env.DBUS_SESSION_BUS_ADDRESS, 'unix:path=/run/user/1000/bus');
+  assert.equal(buildLaunch({runtime, home, sessionId: SESSION, ambient: ssh, resolveOwnNode: ownNode}).env.DBUS_SESSION_BUS_ADDRESS, 'unix:path=/run/user/1000/bus');
   const {XDG_RUNTIME_DIR, ...bare} = ssh;
-  const env = buildLaunch({runtime, home, sessionId: SESSION, ambient: bare}).env;
+  const env = buildLaunch({runtime, home, sessionId: SESSION, ambient: bare, resolveOwnNode: ownNode}).env;
   assert.equal('DBUS_SESSION_BUS_ADDRESS' in env || 'XDG_RUNTIME_DIR' in env, false);
 });
 
 test('a Linux browser-only launch configures no computer-use helper', t => {
   const {home, runtime} = linux(t);
-  const {env} = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, surfaces: ['browser'], services: {browser: BROWSER_SERVICE}});
+  const {env} = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, surfaces: ['browser'], services: {browser: BROWSER_SERVICE}, resolveOwnNode: ownNode});
   assert.equal(env.CUA_REPL_ENABLED_SURFACES, 'browser');
   for (const key of ['OAI_SKY_LINUX_BIN', 'CUA_SKY_VENDOR_SERVICE', 'SKY_CUA_SERVICE_PATH']) assert.equal(key in env, false, key);
   assert.deepEqual(Object.keys(env).filter(key => /BROWSER/.test(key)).sort(), ['BROWSER_USE_AVAILABLE_BACKENDS', 'BROWSER_USE_BACKEND_PATHS'], 'cua\'s browser service, given cua\'s sockets');
-  assert.equal(env.CODEX_CLI_PATH, join(runtime.root, 'codex'));
+  assert.deepEqual([env.CUA_REPL_SANDBOX_HELPER, env.CUA_REPL_WORKER_NETWORK, env.CODEX_CLI_PATH], [helperFor({home, arch: 'x64'}).path, undefined, undefined],
+    'confined by the helper, the worker with no network: nothing it runs needs one');
 });
 
 test('a macOS launch ignores the Linux desktop variables', t => {
@@ -97,4 +116,20 @@ test('a macOS launch ignores the Linux desktop variables', t => {
   const {env} = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT});
   for (const key of [...Object.keys(DESKTOP), 'OAI_SKY_LINUX_BIN']) assert.equal(key in env, false, key);
   assert.equal(env.SKY_CUA_SERVICE_PATH, runtime.paths.skyServiceApp);
+});
+
+// launch_app starts what an XDG applications directory holds outside the sandbox (src/repl-host/launch-services.mjs), so
+// under scoped no applications directory of the launch's environment may overlap a directory cells can write: the
+// preflight refuses that layout, whether the directory exists yet or not.
+test('scoped on Linux: an XDG applications directory inside a write root is refused before anything starts', t => {
+  const {home, runtime} = linux(t);
+  const build = ambient => buildLaunch({runtime, home, sessionId: SESSION, ambient, services: {sky: SKY_SERVICE}, resolveOwnNode: ownNode});
+  assertSandboxFits('scoped', build(AMBIENT));
+  const inRun = build({...AMBIENT, XDG_DATA_DIRS: `/usr/share:${join(home, 'run', SESSION, 'share')}`});
+  assert.throws(() => assertSandboxFits('scoped', inRun), error => error.code === 'sandbox_conflict' && /XDG applications directory/.test(error.message));
+  mkdirSync(join(home, 'run', SESSION), {recursive: true});
+  symlinkSync(join(home, 'run', SESSION), join(home, 'alias'));
+  const linked = build({...AMBIENT, XDG_DATA_DIRS: join(home, 'alias', 'tmp', 'share')});
+  assert.throws(() => assertSandboxFits('scoped', linked), error => error.code === 'sandbox_conflict' && /XDG applications directory/.test(error.message), 'through a symlink too');
+  assertSandboxFits('default', inRun);
 });

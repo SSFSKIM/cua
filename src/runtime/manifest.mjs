@@ -6,7 +6,7 @@
 //
 // The schema branches on `platform`. A darwin pin names a zip whose components are signed by the pinned Apple team.
 // A linux pin names a vendor deb (`archive.format: "deb"`) whose length and SHA-256 are the whole trust root: it has no
-// `signing`, no native IPC version and no helper app, its components may be files (the `codex` sandbox CLI), its layout
+// `signing`, no native IPC version and no helper app, its components may be files, its layout
 // names the X11 helper (`skyLinuxBin`), and an optional `notes` records how the archive's provenance was checked when
 // the pin was written. A pin is selected only by its own host, so the
 // Linux pins ship beside the darwin one without affecting a macOS install.
@@ -23,9 +23,10 @@ export const RECORD_FILE = 'install.json';
 // the parity harnesses' vendor oracle loads it (test/browser-parity/vendor-oracle.mjs).
 // The darwin layout names no Codex CLI since #115 M2 (the vendor host's CODEX_CLI_PATH is cua's compat executable,
 // bin/cua-codex-compat); a release installed before keeps its CodexCLI.app until M4's cleanup, and nothing checks or
-// launches it. The Linux layout keeps `codexCli` until M3.
+// launches it. The Linux layout names none since #115 M3 (cua's own host confines its children with the pinned
+// helper, src/sandbox/linux.mjs); a Linux release installed before keeps its `codex` file, which nothing launches.
 export const LAYOUT_KEYS = ['node', 'nodeRepl', 'moduleDir', 'cuaRepl', 'skyServiceApp', 'skyVendorService', 'browserVendorService', 'vendorManifest', 'ipcClient'];
-export const LINUX_LAYOUT_KEYS = ['node', 'nodeRepl', 'moduleDir', 'cuaRepl', 'codexCli', 'skyLinuxBin', 'skyVendorService', 'browserVendorService', 'vendorManifest'];
+export const LINUX_LAYOUT_KEYS = ['node', 'nodeRepl', 'moduleDir', 'cuaRepl', 'skyLinuxBin', 'skyVendorService', 'browserVendorService', 'vendorManifest'];
 // What `cua install --archive` takes on each platform.
 const ARCHIVE_KIND = {darwin: 'ChatGPT zip', linux: 'ChatGPT deb'};
 export const installHint = (platform = process.platform) => `run \`cua install\` (or \`cua install --archive <${ARCHIVE_KIND[platform] ?? ARCHIVE_KIND.darwin}>\` with the pinned archive)`;

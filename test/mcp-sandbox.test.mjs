@@ -29,24 +29,21 @@ const SCOPED = {
 test('CUA_SHIM_SANDBOX defaults to scoped, accepts disabled and default and rejects anything else as an invalid setting', () => {
   assert.equal(SANDBOX_META_KEY, 'codex/sandbox-state-meta');
   assert.equal(settingsFrom({}, {platform: 'darwin'}).sandbox, 'scoped');
-  assert.equal(sandboxModeFrom({}, {platform: 'darwin'}), 'scoped');
+  assert.equal(sandboxModeFrom({}), 'scoped');
   for (const mode of ['scoped', 'disabled', 'default']) assert.equal(settingsFrom({CUA_SHIM_SANDBOX: mode}).sandbox, mode);
   for (const value of ['', 'Scoped', 'off', 'managed', 'disabled,default'])
     assert.throws(() => settingsFrom({CUA_SHIM_SANDBOX: value}), {code: 'invalid_setting', message: /CUA_SHIM_SANDBOX must be scoped, disabled or default/});
 });
 
-// F2: under any managed profile node_repl lets no runtime process connect to a socket, so on Linux the scoped sandbox
-// would keep the computer-use helper off the X display; the browser surface alone works under it.
-test('on Linux the default is disabled with the computer surface and scoped without it; an explicit mode always wins', () => {
-  const linux = {platform: 'linux'};
-  assert.equal(sandboxModeFrom({}, {...linux, surfaces: ['computer']}), 'disabled');
-  assert.equal(sandboxModeFrom({}, {...linux, surfaces: ['computer', 'browser']}), 'disabled');
-  assert.equal(sandboxModeFrom({}, {...linux, surfaces: ['browser']}), 'scoped');
-  assert.equal(sandboxModeFrom({}, {platform: 'darwin', surfaces: ['computer']}), 'scoped');
-  assert.equal(sandboxModeFrom({CUA_SHIM_SANDBOX: 'scoped'}, {...linux, surfaces: ['computer']}), 'scoped');
-  assert.equal(settingsFrom({}, linux).sandbox, 'disabled');
-  assert.equal(settingsFrom({CUA_SHIM_SURFACES: 'browser'}, linux).sandbox, 'scoped');
-  assert.equal(settingsFrom({CUA_SHIM_SURFACES: 'computer,browser'}, {platform: 'darwin'}).sandbox, 'scoped');
+// #115 M3: cua's own Linux sandbox gives the trusted worker the network and the kernel none, so the computer surface works
+// under scoped there too, and the default is scoped on every platform and surface (it was disabled for Linux computer
+// sessions, F2, while the vendor's sandbox refused every socket).
+test('the default is scoped on every platform and surface; an explicit mode always wins', () => {
+  assert.equal(sandboxModeFrom({}), 'scoped');
+  assert.equal(sandboxModeFrom({CUA_SHIM_SANDBOX: 'disabled'}), 'disabled');
+  for (const platform of ['linux', 'darwin']) for (const surfaces of ['computer', 'computer,browser', 'browser'])
+    assert.equal(settingsFrom({CUA_SHIM_SURFACES: surfaces}, {platform}).sandbox, 'scoped', `${platform} ${surfaces}`);
+  assert.equal(settingsFrom({CUA_SHIM_SANDBOX: 'disabled'}, {platform: 'linux'}).sandbox, 'disabled');
 });
 
 test('scoped is the managed restricted profile of spike #33 with the session directory as an absolute file URI', () => {

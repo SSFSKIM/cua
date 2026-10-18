@@ -15,15 +15,24 @@
 //
 // A linux pin names the vendor's deb (`archive.format: "deb"`): the system `ar` takes its data.tar.xz member out and
 // `tar` unpacks that, both checked for (with `xz`, which tar runs) before anything is downloaded, so a machine without
-// them is refused with missing_tool and the package to install. A component may be a file (the `codex` sandbox CLI).
+// them is refused with missing_tool and the package to install. A component may be a file.
 // A linux pin lists nothing to signature-check; the archive hash is its trust root.
 //
 // The archive's Chrome plugin (OpenAI's host for the ChatGPT extension) is not installed: #79 removed that route. A
 // release installed before keeps the chrome-plugin directory it was given; nothing reads or launches it.
 //
+// installSandboxHelper is `cua install`'s Linux sandbox helper step (#115 M3; src/sandbox/linux.mjs): the pinned asset
+// for the machine's architecture, fetched from its pinned URL (Node's fetch) or taken from a local file, checked against
+// the pin's length and SHA-256 in staging before anything else reads it, then placed at
+// $CUA_HOME/sandbox/<upstreamTag>/codex-linux-sandbox (0755, in a 0755 directory) with one rename. The pin's hash is
+// the trust root; the release's provenance attestation is checked when the pin is written, not here. A helper already
+// placed with the pinned bytes makes the step a no-op (but for its mode, set back to 0755 if it was changed, since a
+// launch refuses a helper it cannot execute); one whose bytes differ is never replaced in place (running
+// children may be executing it, and a tampered file is a finding), so the step refuses with the remedy.
+//
 // The signature checker, fetch and the tool lookup are injectable for tests through this module API only; the CLI
 // always uses the production codesign check, the global fetch and the PATH.
-import {mkdirSync, mkdtempSync, rmSync, rmdirSync, statSync, lstatSync, renameSync, writeFileSync, copyFileSync, constants as fsConstants, createReadStream, createWriteStream} from 'node:fs';
+import {chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, rmdirSync, statSync, lstatSync, renameSync, writeFileSync, copyFileSync, constants as fsConstants, createReadStream, createWriteStream} from 'node:fs';
 import {execFile} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {pipeline} from 'node:stream/promises';
@@ -34,6 +43,7 @@ import {homeLayout, readPointer, writePointer, realHome} from './layout.mjs';
 import {findPin, loadPins, readInstalledRecord, assertHostSupports, recoveryHint, isRealDirectory, RECORD_FILE} from './manifest.mjs';
 import {verifyCodeSignatures, verifyRuntimeTree} from './checks.mjs';
 import {findTool, requireTools} from './tools.mjs';
+import {helperAsset, helperDir, helperPath, loadHelperPin, sha256Of} from '../sandbox/linux.mjs';
 
 // What unpacking a deb runs, and the package each comes from.
 const DEB_TOOLS = {ar: 'binutils', tar: 'tar', xz: 'xz-utils'};
@@ -236,4 +246,46 @@ export async function verifyArchive(path, {length, sha256}) {
   await pipeline(createReadStream(path), hash);
   const actual = hash.digest('hex');
   if (actual !== sha256) fail('archive_hash_mismatch', `archive SHA-256 is ${actual}; the pin expects ${sha256}`);
+}
+
+// `cua install`'s Linux sandbox helper step (the header) -> {path, sha256, changed}. `path` is a local copy of the
+// pinned asset to take instead of downloading it.
+export async function installSandboxHelper({home, pin = loadHelperPin(), path, fetch = globalThis.fetch, host = {platform: process.platform, arch: process.arch}, onProgress}) {
+  if (host.platform !== 'linux') fail('unsupported_platform', `cua's sandbox helper is a Linux binary; this host is ${host.platform}-${host.arch}`);
+  const asset = helperAsset(pin, host.arch);
+  const real = realHome(home, {create: true});
+  const target = helperPath(real, pin);
+  let placed = null;
+  try { placed = readFileSync(target); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+  if (placed) {
+    if (sha256Of(placed) === asset.sha256) {
+      // The pinned bytes without their mode would fail at spawn (src/sandbox/linux.mjs verifyHelper refuses them): restored.
+      if ((statSync(target).mode & 0o777) === 0o755) return {path: target, sha256: asset.sha256, changed: false};
+      chmodSync(target, 0o755);
+      return {path: target, sha256: asset.sha256, changed: true};
+    }
+    fail('sandbox_helper_invalid', `the sandbox helper at ${target} is not the pinned ${pin.upstreamTag} helper for linux-${host.arch}; it is not replaced in place`,
+      {hint: `stop any \`cua serve\` using it, remove ${helperDir(real, pin)}, then run \`cua install\` again`});
+  }
+  const staging = homeLayout(real).staging;
+  mkdirSync(staging, {recursive: true, mode: 0o700});
+  const stage = mkdtempSync(join(staging, 'sandbox-helper-'));
+  try {
+    const staged = join(stage, 'codex-linux-sandbox');
+    if (path) {
+      let stat;
+      try { stat = statSync(path); } catch (error) { fail('archive_missing', `sandbox helper ${path} is not readable: ${error.code ?? error.message}`); }
+      if (!stat.isFile()) fail('archive_missing', `sandbox helper ${path} is not a file`);
+      copyFileSync(path, staged);
+    } else {
+      await download(asset, staged, fetch, onProgress);
+    }
+    await verifyArchive(staged, asset);
+    chmodSync(staged, 0o755);
+    mkdirSync(helperDir(real, pin), {recursive: true, mode: 0o755});
+    renameSync(staged, target);
+    return {path: target, sha256: asset.sha256, changed: true};
+  } finally {
+    rmSync(stage, {recursive: true, force: true});
+  }
 }

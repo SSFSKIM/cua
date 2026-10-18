@@ -3,10 +3,12 @@
 // cua's host. It speaks MCP (JSON-RPC 2.0, one message per line on stdin/stdout; stdout carries nothing else) with
 // cua's proxy (src/mcp/server.mjs), answers the HostMcp contract (./tools.mjs) and supplies the vendor supervisor's
 // behaviour around its two children, each launched lazily under a sandbox for the policy each call's
-// `codex/sandbox-state-meta` carries: on macOS cua's own (src/sandbox: the role's profile under /usr/bin/sandbox-exec,
-// which execs the child, so the child process is Node itself), elsewhere the retained Codex CLI (src/runtime/sandbox.mjs
-// sandboxPolicy/sandboxArgs) until #115 M3. The kernel's profile adds the launch's deny list (CUA_SANDBOX_DENY_READ):
-// the secret store, ~/.config/cua and cua's home, with what the kernel needs re-exposed; the worker's does not:
+// `codex/sandbox-state-meta` carries, by cua's own sandbox (src/sandbox): on macOS the role's profile under
+// /usr/bin/sandbox-exec, which execs the child, so the child process is Node itself; on Linux the pinned helper
+// (codex-linux-sandbox), checked against its pin before each child, which runs Node inside bubblewrap and seccomp. The
+// kernel's profile adds the launch's deny list (CUA_SANDBOX_DENY_READ): the secret store, ~/.config/cua and cua's home
+// (on Linux its private directories and run/), with what the kernel needs re-exposed; the worker's does not, and on
+// Linux with the computer surface the worker alone has the network (CUA_REPL_WORKER_NETWORK), which sky_linux needs:
 // - the kernel (./kernel.mjs, KernelWire), which runs cells: the host times executions, assembles their results
 //   (./results.mjs) and owns the kernel's lifecycle;
 // - the trusted worker (./trusted-worker.mjs, TrustedServiceWire), which runs the registered trusted services
@@ -67,16 +69,17 @@
 //
 // Settings (environment, owned names; src/runtime/launch.mjs builds them): CUA_REPL_NODE_PATH (the Node both children
 // run on, absolute), the sandbox launcher (without one no sandboxed execution runs at all): CUA_REPL_SANDBOX_EXEC
-// (macOS: sandbox-exec, under which src/sandbox renders each child's profile) or else CODEX_CLI_PATH and CODEX_HOME (the
-// Codex CLI's `sandbox`), CUA_SANDBOX_DENY_READ (the kernel's deny list; without a well-formed one no sandboxed child of
-// either role is launched on cua's own sandbox), CUA_REPL_TRUSTED_SERVICES and CUA_REPL_TRUSTED_RPC_ENABLED (the worker
-// and cells' rpc),
+// (macOS: sandbox-exec, under which src/sandbox renders each child's profile) or CUA_REPL_SANDBOX_HELPER with
+// CUA_REPL_SANDBOX_HELPER_SHA256 (Linux: the pinned helper and its pinned hash), CUA_SANDBOX_DENY_READ (the kernel's deny
+// list; without a well-formed one no sandboxed child of either role is launched), CUA_REPL_WORKER_NETWORK (`enabled`:
+// the worker's profile has the network), CUA_REPL_TRUSTED_SERVICES and CUA_REPL_TRUSTED_RPC_ENABLED (the worker and
+// cells' rpc),
 // CUA_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS, CUA_REPL_TOOL_OVERRIDES (the tool text, ./tools.mjs), and for the kernel
 // CUA_REPL_JS_BANNER, CUA_REPL_UNTRUSTED_ENV_ALLOWLIST (and the names it lists), CUA_REPL_NODE_MODULE_DIRS. The
 // kernel's environment is only these and HOME, PATH, TMPDIR, TMP and LC_ALL, never the host's own; the worker, trusted
 // code, gets the host's whole (already allowlisted) environment, as the vendor's does.
 import {randomUUID} from 'node:crypto';
-import {delimiter, dirname, isAbsolute} from 'node:path';
+import {delimiter, dirname, isAbsolute, join} from 'node:path';
 import {createInterface} from 'node:readline';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {REPL_HOST_META_KEY, REPL_HOST_VERSION} from './identity.mjs';
@@ -87,8 +90,8 @@ import {executionBudget, timer} from './budget.mjs';
 import {DEFAULT_CONNECT_TIMEOUT_MS, nativePipeRelay} from './native-pipe.mjs';
 import {ELICITATION_CANCELLED_SENTENCE, elicitationOutcome, elicitationParams, formElicitationSupported} from './elicitation.mjs';
 import {launchServicesAction} from './launch-services.mjs';
-import {SANDBOX_META_KEY, SandboxStateError, sandboxArgs, sandboxPolicy} from '../runtime/sandbox.mjs';
-import {parseDenyRead, tableKey as launchKey} from '../sandbox/policy.mjs';
+import {SANDBOX_META_KEY, SandboxStateError} from '../runtime/sandbox.mjs';
+import {parseDenyRead, policyTable, tableKey as launchKey, writeRootsOf} from '../sandbox/policy.mjs';
 import {sandboxedLaunch} from '../sandbox/index.mjs';
 
 export const KERNEL = fileURLToPath(new URL('./kernel.mjs', import.meta.url));
@@ -134,8 +137,8 @@ export function hostSettings(env, {cwd}) {
   const node = env.CUA_REPL_NODE_PATH;
   if (typeof node !== 'string' || !isAbsolute(node)) throw new Error('CUA_REPL_NODE_PATH must be the absolute path of the kernel\'s Node');
   const absolute = value => (typeof value === 'string' && isAbsolute(value) ? value : null);
-  const launcher = absolute(env.CUA_REPL_SANDBOX_EXEC) ? {kind: 'seatbelt', exec: env.CUA_REPL_SANDBOX_EXEC}
-    : absolute(env.CODEX_CLI_PATH) ? {kind: 'codex', cli: env.CODEX_CLI_PATH, codexHome: env.CODEX_HOME ?? null} : null;
+  const launcher = absolute(env.CUA_REPL_SANDBOX_EXEC) ? {kind: 'seatbelt', platform: 'darwin', exec: env.CUA_REPL_SANDBOX_EXEC}
+    : absolute(env.CUA_REPL_SANDBOX_HELPER) ? {kind: 'helper', platform: 'linux', helper: {path: env.CUA_REPL_SANDBOX_HELPER, sha256: env.CUA_REPL_SANDBOX_HELPER_SHA256}} : null;
   const moduleDirs = (env.CUA_REPL_NODE_MODULE_DIRS ?? '').split(delimiter).filter(dir => isAbsolute(dir));
   const kernelEnv = {};
   for (const key of KERNEL_ENV) if (typeof env[key] === 'string') kernelEnv[key] = env[key];
@@ -151,13 +154,14 @@ export function hostSettings(env, {cwd}) {
   }
   const pipeTimeout = Number(env.CUA_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS);
   const workerEnv = Object.fromEntries(Object.entries(env).filter(([, value]) => typeof value === 'string'));
-  return {node, launcher, denyRead: parseDenyRead(env.CUA_SANDBOX_DENY_READ), workingDir: cwd, kernelEnv, workerEnv,
+  return {node, launcher, denyRead: parseDenyRead(env.CUA_SANDBOX_DENY_READ), workerNetwork: env.CUA_REPL_WORKER_NETWORK === 'enabled' ? 'enabled' : 'restricted', workingDir: cwd,
+    kernelDir: absolute(env.CUA_REPL_KERNEL_DIR), kernelEnv, workerEnv,
     services: rpcEnabled && Object.keys(services).length > 0, toolOverrides: parseToolOverrides(env.CUA_REPL_TOOL_OVERRIDES),
     pipeConnectTimeoutMs: Number.isSafeInteger(pipeTimeout) && pipeTimeout > 0 ? pipeTimeout : DEFAULT_CONNECT_TIMEOUT_MS,
     readPaths: [dirname(node), dirname(KERNEL), ...CUA_API_READ_PATHS, ...moduleDirs], sessionId: randomUUID().replaceAll('-', '')};
 }
 
-// A child launch of `command` ([node, ...args]) with `env` in `role` for `policy` (sandboxPolicy's, carrying the call's
+// A child launch of `command` ([node, ...args]) with `env` in `role` for `policy` (policyTable's, carrying the call's
 // `state`) -> {command, args, env, cwd, key}. `key` is the policy state's (src/sandbox/policy.mjs tableKey), the same for
 // both children, so a call under another state gets fresh ones. Throws LaunchRefused, with the sentence the call is answered with, when
 // the sandbox cannot launch it as asked.
@@ -165,22 +169,25 @@ function childLaunch(settings, policy, role, command, env) {
   const key = launchKey(policy);
   if (policy.disabled) return {command: command[0], args: command.slice(1), env: {...env}, cwd: settings.workingDir, key};
   const {launcher} = settings;
-  if (launcher.kind === 'codex') {
-    const cwd = policy.cwd ?? settings.workingDir;
-    return {command: launcher.cli, args: sandboxArgs(policy, command), env: {...env, ...(launcher.codexHome ? {CODEX_HOME: launcher.codexHome} : {})}, cwd, key};
-  }
   if (!settings.denyRead) throw new LaunchRefused(sandboxRefusedSentence(DENY_LIST_INVALID));
   try {
-    const launch = sandboxedLaunch({platform: 'darwin', state: policy.state, role, command, env, cwd: settings.workingDir, readPaths: settings.readPaths, denyRead: settings.denyRead});
-    return {...launch, command: launcher.exec, key};
+    const launch = sandboxedLaunch({platform: launcher.platform, state: policy.state, role, command, env, cwd: settings.workingDir, readPaths: settings.readPaths,
+      denyRead: settings.denyRead, network: role === 'worker' ? settings.workerNetwork : 'restricted', helper: launcher.helper});
+    return launcher.kind === 'seatbelt' ? {...launch, command: launcher.exec, key} : {...launch, key};
   } catch (error) {
     if (error instanceof SandboxStateError || error?.code) throw new LaunchRefused(sandboxRefusedSentence(error.message));
     throw error;
   }
 }
 
+// Under the default mode with a kernel directory (CUA_REPL_KERNEL_DIR, Linux: src/runtime/launch.mjs kernelDir) the
+// kernel works there, its TMPDIR (and so its lifeline) that directory's tmp/: run/ is denied to it whole, and the
+// helper re-binds nothing of the run directory inside it when nothing is writable. The worker keeps the run directory.
 export function kernelLaunch(settings, policy) {
-  return childLaunch(settings, policy, 'kernel', [settings.node, '--experimental-vm-modules', KERNEL, '--session-id', settings.sessionId, '--working-dir', settings.workingDir], settings.kernelEnv);
+  const own = policy.state === undefined && !policy.disabled ? settings.kernelDir : null;
+  const workingDir = own ?? settings.workingDir;
+  const env = own ? {...settings.kernelEnv, TMPDIR: join(own, 'tmp'), ...(settings.kernelEnv.TMP ? {TMP: join(own, 'tmp')} : {})} : settings.kernelEnv;
+  return childLaunch({...settings, workingDir}, policy, 'kernel', [settings.node, '--experimental-vm-modules', KERNEL, '--session-id', settings.sessionId, '--working-dir', workingDir], env);
 }
 
 export function workerLaunch(settings, policy) {
@@ -490,7 +497,10 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
         return;
       case 'launch_services_action':
         if (!current) return reply({type: 'privileged_result', id: message.id, ok: false, error: EXEC_CONTEXT_NOT_FOUND});
-        return void launchServices(message).then(
+        // Nothing the sandbox lets a child write is launched outside it (./launch-services.mjs): the session's run
+        // directory and temp, whatever the policy, and every root the call's policy makes writable.
+        return void launchServices(message, {writeRoots: [settings.workingDir, settings.kernelEnv.TMPDIR,
+          ...(current.policy.disabled ? [] : writeRootsOf(current.policy, {cwd: settings.workingDir, tmpdir: settings.kernelEnv.TMPDIR}))].filter(Boolean)}).then(
           () => reply({type: 'privileged_result', id: message.id, ok: true}),
           error => reply({type: 'privileged_result', id: message.id, ok: false, error: error.message}));
       case 'native_pipe_request':
@@ -625,7 +635,7 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
         const parsed = jsArguments(args);
         let policy;
         const state = meta && Object.hasOwn(meta, SANDBOX_META_KEY) ? meta[SANDBOX_META_KEY] : undefined;
-        try { policy = {...sandboxPolicy(state, {readPaths: settings.readPaths}), state}; } catch (error) {
+        try { policy = {...policyTable(state, {readPaths: settings.readPaths}), state}; } catch (error) {
           if (error instanceof SandboxStateError) throw new InvalidParams(`js: ${SANDBOX_META_KEY}: ${error.message}`);
           throw error;
         }

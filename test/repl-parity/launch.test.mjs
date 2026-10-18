@@ -12,10 +12,20 @@ test('isolated own-host lane keeps the supervisor launch and gives it the same n
  assert.deepEqual([launch.env.CUA_REPL_TRUSTED_SERVICES,launch.env.CUA_REPL_TRUSTED_RPC_ENABLED,launch.env.CUA_REPL_UNTRUSTED_ENV_ALLOWLIST],['{}','0','']);
  assert.equal(launch.env.CUA_REPL_JS_BANNER,'globalThis.__parityBannerWitness = Symbol("fixture-banner");');
  for(const key of ['SKY_CUA_SERVICE_PATH','CUA_BROWSER_SERVICE','BROWSER_USE_BACKEND_PATHS'])assert.equal(launch.env[key],undefined,key);
- assert.equal(noServicesLaunch(supervisor,{host:'cua',brokenSandbox:'/fixture/failing-sandbox'}).env.CODEX_CLI_PATH,'/fixture/failing-sandbox');
+ assert.equal(noServicesLaunch(supervisor,{host:'cua',brokenSandbox:'/fixture/failing-sandbox'}).env.CODEX_CLI_PATH,'/fixture/failing-sandbox','the Codex CLI\'s, where a launch names it');
  const seatbelt={...supervisor,env:{...supervisor.env,CODEX_CLI_PATH:undefined,CUA_REPL_SANDBOX_EXEC:'/usr/bin/sandbox-exec'}};
  const broken=noServicesLaunch(seatbelt,{host:'cua',brokenSandbox:'/fixture/failing-sandbox'}).env;
  assert.deepEqual([broken.CUA_REPL_SANDBOX_EXEC,broken.CODEX_CLI_PATH],['/fixture/failing-sandbox',undefined],'cua\'s own sandbox launcher is the one replaced on the macOS own host');
+});
+// #115 M3: on Linux the broken launcher is the pinned helper that fails at run time, named with its own hash, so the
+// supervisor runs it (and records its refusal) instead of refusing an unpinned helper before it starts.
+test('on the Linux own host the broken launcher replaces the pinned helper and is pinned by its own hash',async t=>{
+ const {mkdtempSync,writeFileSync,rmSync}=await import('node:fs');const {tmpdir}=await import('node:os');const {join}=await import('node:path');const {createHash}=await import('node:crypto');
+ const dir=mkdtempSync(join(tmpdir(),'cua-broken-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
+ const failing=join(dir,'failing-sandbox');writeFileSync(failing,'#!/bin/sh\nexit 73\n');
+ const linux={command:'/user/node',args:[],cwd:'/run/s',env:{CUA_REPL_SANDBOX_HELPER:'/home/u/.local/share/cua/sandbox/rust-v0.163.0/codex-linux-sandbox',CUA_REPL_SANDBOX_HELPER_SHA256:'a'.repeat(64)}};
+ const broken=noServicesLaunch(linux,{host:'cua',brokenSandbox:failing}).env;
+ assert.deepEqual([broken.CUA_REPL_SANDBOX_HELPER,broken.CUA_REPL_SANDBOX_HELPER_SHA256,broken.CODEX_CLI_PATH],[failing,createHash('sha256').update('#!/bin/sh\nexit 73\n').digest('hex'),undefined]);
 });
 // #115 M1: a connection's TMPDIR is its session temp. A boundary lane's markers live in its probe's directory and must
 // outlive the connection (a reconnect reads them), so that lane names the directory and it becomes the launch's TMPDIR,
@@ -36,7 +46,7 @@ test('on the macOS vendor host a boundary lane\'s markers directory is the launc
  const {tmpdir}=await import('node:os');const {join}=await import('node:path');const {PassThrough}=await import('node:stream');
  const {buildLaunch,createLaunchDirs,removeLaunchDirs}=await import('../../src/runtime/launch.mjs');
  const {parsePin,runtimeFor}=await import('../../src/runtime/manifest.mjs');
- const {assertSandboxFits,sandboxArgs,sandboxPolicy,sandboxState}=await import('../../src/runtime/sandbox.mjs');
+ const {assertSandboxFits,sandboxState}=await import('../../src/runtime/sandbox.mjs');const {policyTable:sandboxPolicy}=await import('../../src/sandbox/policy.mjs');const {sandboxArgs}=await import('../../scripts/sandbox-probe/codex-template.mjs');
  const {main}=await import('../../src/sandbox/codex-compat.mjs');
  const {fixturePin}=await import('../fixtures/runtime-fixture.mjs');
  const {boundaryMarkersDir}=await import('./fixture-launch.mjs');
@@ -62,4 +72,18 @@ test('on the macOS vendor host a boundary lane\'s markers directory is the launc
  writeFileSync(join(markers,'counter'),'x');
  removeLaunchDirs(prepared);rmSync(launch.cwd,{recursive:true,force:true});
  assert.ok(existsSync(join(markers,'counter'))&&!existsSync(launch.cwd),'the markers outlive the connection\'s run directory');
+});
+// #115 M3: the native-secret fixture moves the children's HOME into the run directory, a write root; their XDG
+// applications directories must stay out of it (the own host's scoped preflight refuses that layout,
+// src/runtime/sandbox.mjs), so XDG_DATA_HOME stays with the connection's HOME.
+test('the native-secret fixture keeps the children\'s XDG applications directories outside the run directory',async t=>{
+ const {mkdtempSync,mkdirSync,realpathSync,rmSync}=await import('node:fs');const {tmpdir}=await import('node:os');const {join}=await import('node:path');
+ const {protectedPaths,sandboxConflicts,scopedWriteRoots}=await import('../../src/runtime/sandbox.mjs');const {xdgApplicationRoots}=await import('../../src/repl-host/launch-services.mjs');
+ const root=realpathSync(mkdtempSync(join(tmpdir(),'cua-native-secret-')));t.after(()=>rmSync(root,{recursive:true,force:true}));
+ const user=join(root,'user'),cwd=join(root,'cua','run','s');mkdirSync(user);mkdirSync(join(cwd,'tmp'),{recursive:true});
+ const launch={command:'/user/node',args:[],cwd,env:{HOME:user,TMPDIR:join(cwd,'tmp'),XDG_DATA_DIRS:'/usr/local/share:/usr/share',CUA_REPL_NODE_MODULE_DIRS:'/runtime/node_modules'}};
+ const next=noServicesLaunch(launch,{host:'cua',fixtureServices:{env:{PARITY_NATIVE_SECRET_FIXTURE:'1'},services:{},roots:[]}});
+ assert.equal(next.env.HOME,join(cwd,'home'));
+ assert.equal(next.env.XDG_DATA_HOME,join(user,'.local','share'));
+ assert.deepEqual(sandboxConflicts({protectedPaths:protectedPaths({trustedCodePaths:[],applications:xdgApplicationRoots(next.env)}),writeRoots:scopedWriteRoots({cwd,tmpdir:next.env.TMPDIR})}),[]);
 });

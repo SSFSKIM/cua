@@ -12,6 +12,7 @@ import {fileDigest, loadNodePins, managedNode, parseNodePin, selectNodePin, NODE
 import {developerIdRequirement, installNode, verifyNodeSignature} from '../src/runtime/node-install.mjs';
 import {ownHostNode, replHostFor} from '../src/runtime/launch.mjs';
 import {main} from '../src/cli.mjs';
+import {CuaError} from '../src/runtime/errors.mjs';
 import {digest, scratch} from './fixtures/runtime-fixture.mjs';
 
 const expectCode = code => err => { assert.equal(err.code, code, `expected ${code}, got ${err.code}: ${err.message}`); return true; };
@@ -403,8 +404,9 @@ test('acceptance 9\'s fifth case: no CUA_NODE, Node 22 on PATH and running cua, 
   const ambient = {PATH: dirname(node22)};
   const select = platform => replHostFor({platform, surfaces: ['computer'], ambient, home: ctx.home, browserSelection: null,
     resolveOwnNode: () => ownHostNode({ambient, home: ctx.home, execPath: node22})});
-  assert.deepEqual(select('linux'), {host: 'vendor', reason: 'own_host_node_unavailable',
-    nodeTried: ['CUA_NODE (unset)', 'the cua-installed Node (not installed)', `the node running cua ${node22} (v22.23.2)`, `node on PATH ${node22} (v22.23.2)`]});
+  // Linux has no vendor host to fall back to (#115 M3): the session is refused, naming what was tried and `cua install`.
+  assert.throws(() => select('linux'), error => error.code === 'repl_host_node' && /run `cua install`/.test(error.message)
+    && JSON.stringify(error.tried) === JSON.stringify(['CUA_NODE (unset)', 'the cua-installed Node (not installed)', `the node running cua ${node22} (v22.23.2)`, `node on PATH ${node22} (v22.23.2)`]));
   await install(ctx, {verifySignature: acceptSignature});
   assert.deepEqual(select('linux'), {host: 'cua', reason: 'linux', node: join(nodeDir(ctx.home), VERSION, 'bin/node')});
   // The production default resolver reads the home it is given.
@@ -447,6 +449,7 @@ test('install reports the runtime alone: a fresh install or an already verified 
   const fresh = await cliInstall(t, ['--no-node'], deps(true));
   assert.equal(fresh.status, 0, fresh.stderr);
   assert.match(fresh.stdout, /^installed and activated 0\.0\.1-fixture at \/fixture\/runtime$/m);
+  if (thisHost.platform !== 'linux') assert.match(fresh.stdout, /^skipped the pinned Node \(--no-node\): .*else sessions keep the vendor host$/m);
   const again = await cliInstall(t, ['--no-node'], deps(false));
   assert.match(again.stdout, /^0\.0\.1-fixture is already installed and verified; active at \/fixture\/runtime$/m);
   assert.doesNotMatch(fresh.stdout + again.stdout, /Chrome/);
@@ -480,4 +483,30 @@ test('a filesystem failure in the Node step fails classified, with the runtime-i
   assert.match(raw.stderr, /^ {2}0\.0\.1-fixture is installed and active; for the Node/m);
   assert.doesNotMatch(raw.stderr, /unexpected error/);
   assert.match(raw.stdout, /0\.0\.1-fixture is already installed and verified/, 'the runtime\'s own line came first');
+});
+
+// #115 M3: on Linux `cua install` places cua's sandbox helper after the runtime (a local copy with --sandbox-helper);
+// a failure says the runtime is in place and what to do. Elsewhere there is no helper step, and the flag is refused.
+test('the Linux helper step: placed after the runtime from a local copy, reported in text and JSON; a failure keeps the runtime remedy', async t => {
+  const ctx = setup(t, {host: thisHost});
+  const runtimePin = {release: '0.0.1-fixture', platform: thisHost.platform, arch: thisHost.arch, appVersion: '0.0.1', archive: {url: 'https://example.invalid/runtime'}};
+  const calls = [];
+  const placed = {path: '/fixture/home/sandbox/rust-v0.163.0/codex-linux-sandbox', sha256: 'a'.repeat(64), changed: true};
+  const deps = installHelper => ({home: ctx.home, platform: 'linux', installRuntime: runtimeInstalled, pins: () => [runtimePin], nodePins: () => [ctx.pin], installHelper});
+  const text = await cliInstall(t, ['--no-node', '--sandbox-helper', '/fixture/asset'], deps(async options => { calls.push(options); return placed; }));
+  assert.equal(text.status, 0, text.stderr);
+  assert.deepEqual(calls.map(c => [c.home, c.path]), [[ctx.home, '/fixture/asset']]);
+  assert.match(text.stdout, /^installed cua's sandbox helper at \/fixture\/home\/sandbox\/rust-v0\.163\.0\/codex-linux-sandbox$/m);
+  assert.match(text.stdout, /^skipped the pinned Node \(--no-node\): .*else sessions are refused \(Linux has no vendor host\)$/m);
+  const json = JSON.parse((await cliInstall(t, ['--no-node', '--json'], deps(async () => ({...placed, changed: false})))).stdout);
+  assert.deepEqual(json.sandboxHelper, {...placed, changed: false});
+  const failed = await cliInstall(t, ['--no-node', '--json'], deps(async () => { throw new CuaError('archive_hash_mismatch', 'archive SHA-256 is x; the pin expects y'); }));
+  assert.equal(failed.status, 1);
+  const {error} = JSON.parse(failed.stdout);
+  assert.equal(error.code, 'archive_hash_mismatch');
+  assert.match(error.message, /^cua's sandbox helper was not installed: archive SHA-256 is x/);
+  assert.match(error.hint, /^0\.0\.1-fixture is installed and active; for the helper, run cua install again, or pass --sandbox-helper <file>/);
+  const elsewhere = await cliInstall(t, ['--no-node', '--sandbox-helper', '/fixture/asset'], {...deps(async () => assert.fail('no helper step')), platform: 'darwin'});
+  assert.equal(elsewhere.status, 2);
+  assert.match(elsewhere.stderr, /--sandbox-helper on Linux only/);
 });

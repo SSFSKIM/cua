@@ -3,9 +3,9 @@
 // model's cells) out of cua's private state while the trusted worker keeps reading the secret store.
 //
 // A profile is the original's JSON shape ({type: 'managed', file_system: {type: 'restricted', entries}, network}), with
-// entries in the order the Codex CLI compiles cua's `-c permissions.node_repl` table (src/runtime/sandbox.mjs
-// sandboxPolicy, whose validation and key order it reuses): absolute paths by bytes, then the special paths. So the
-// port (./seatbelt.mjs) renders what the signed CLI renders for the same input.
+// entries in the order the Codex CLI compiled node_repl's `-c permissions.node_repl` table (policyTable: the vendor's
+// validation and key order): absolute paths by bytes, then the special paths. So the port (./seatbelt.mjs) renders what
+// the signed CLI renders for the same input, and the Linux helper (./linux.mjs) gets the same entries.
 //
 // Both roles start from the state (scoped: `:root` read, project roots and `:tmpdir` write; default: `:root` read;
 // disabled: no profile) plus the host's read paths. The kernel adds the deny list: each denied directory as a `none`
@@ -14,7 +14,8 @@
 import {chmodSync, lstatSync, mkdirSync, readdirSync} from 'node:fs';
 import {homedir} from 'node:os';
 import {dirname, isAbsolute, join, relative} from 'node:path';
-import {SandboxStateError, assertDenyListShape, realish, sandboxPolicy} from '../runtime/sandbox.mjs';
+import {fileURLToPath} from 'node:url';
+import {SandboxStateError, assertDenyListShape, realish} from '../runtime/sandbox.mjs';
 import {fail} from '../runtime/errors.mjs';
 import {homeLayout} from '../runtime/layout.mjs';
 import {storeDir} from '../secrets/store.mjs';
@@ -81,7 +82,9 @@ function linkedOutOf(home, reexposed) {
 //   other session's run/<id>, with runtimes/ and node/ (what the kernel's Node and packages load from), the launch's
 //   run/<sessionId> and its session temp re-exposed; on Linux the home's private directories and run/ one by one
 //   (state/, remote/, chrome/, run/), with run/<sessionId> and its session temp re-exposed: there the original does not
-//   re-bind a read entry inside a denied directory (#115 M0c), so runtimes/ and node/ are not denied at all;
+//   re-bind a read entry inside a denied directory (#115 M0c), so runtimes/ and node/ are not denied at all. The list
+//   is the same under `default`, where nothing is writable and so nothing would be re-bound inside run/: the
+//   default-mode kernel works in its own directory outside run/ instead (src/runtime/launch.mjs kernelDir, #115 M3);
 // - on macOS, the real target of every top-level entry of the home that is a symlink, but runtimes/ and node/ (re-exposed
 //   at their real paths): a symlinked state/, remote/, chrome/, run/... leads out of the denied home (linkedOutOf). On
 //   Linux the listed directories are denied at their real paths (realDenyList), which is the same rule there.
@@ -187,6 +190,38 @@ function assertReadPathsOutsideDenied(readPaths, denyRead) {
   }
 }
 
+const SPECIAL_KEYS = {root: ':root', minimal: ':minimal', tmpdir: ':tmpdir', slash_tmp: ':slash_tmp'};
+const ACCESS = ['read', 'write', 'none'];
+// The policy table of a call's sandbox state, validated as the vendor's node_repl validated it and keyed as it rendered
+// its `-c permissions.node_repl` table (the recovered launch template, docs/doperpowers/research/2026-10-14-own-repl-host/
+// node-repl-embedded-INDEX.md "Default timeout and launch templates"): the host's read paths as `read`, the profile's
+// entries keyed `:root`, `:workspace_roots` ({'.': access}), `:tmpdir`, ... or by absolute path, in byte order.
+// `state`: the call's `codex/sandbox-state-meta` value, or undefined when the call sent none. -> {disabled: true, cwd}
+// or {filesystem: [[key, access]...], cwd}; `cwd` is the sandboxCwd path (null without a state). A state that is
+// absent (the default mode) reads everything and writes nothing. Throws SandboxStateError for a value the vendor's
+// would refuse or this sandbox cannot render.
+export function policyTable(state, {readPaths = []} = {}) {
+  const filesystem = new Map(readPaths.filter(Boolean).map(path => [path, 'read']));
+  if (state === undefined) return {filesystem: sortedEntries(filesystem.set(':root', 'read')), cwd: null};
+  if (state === null || typeof state !== 'object' || Array.isArray(state)) throw new SandboxStateError(`invalid type: ${state === null ? 'null' : Array.isArray(state) ? 'sequence' : typeof state}, expected struct SandboxState`);
+  const {permissionProfile: profile, sandboxCwd} = state;
+  if (typeof sandboxCwd !== 'string') throw new SandboxStateError('missing field `sandboxCwd`');
+  let cwd;
+  try { cwd = fileURLToPath(sandboxCwd); } catch { throw new SandboxStateError('sandboxCwd must be an absolute file URI'); }
+  if (profile?.type === 'disabled') return {disabled: true, cwd};
+  if (profile?.type !== 'managed' || profile.file_system?.type !== 'restricted' || !Array.isArray(profile.file_system.entries))
+    throw new SandboxStateError('unsupported permission profile: only managed restricted and disabled profiles are supported');
+  for (const entry of profile.file_system.entries) {
+    if (!ACCESS.includes(entry?.access)) throw new SandboxStateError(`unsupported filesystem access ${JSON.stringify(entry?.access)}`);
+    const path = entry.path;
+    if (path?.type === 'special' && path.value?.kind === 'project_roots' && path.value.subpath == null) filesystem.set(':workspace_roots', {'.': entry.access});
+    else if (path?.type === 'special' && Object.hasOwn(SPECIAL_KEYS, path.value?.kind)) filesystem.set(SPECIAL_KEYS[path.value.kind], entry.access);
+    else if (path?.type === 'path' && typeof path.path === 'string' && isAbsolute(path.path)) filesystem.set(path.path, entry.access);
+    else throw new SandboxStateError(`unsupported filesystem path ${JSON.stringify(path)}`);
+  }
+  return {filesystem: sortedEntries(filesystem), cwd};
+}
+
 const PROFILE_SPECIALS = {':root': 'root', ':minimal': 'minimal', ':tmpdir': 'tmpdir', ':slash_tmp': 'slash_tmp'};
 const sortedEntries = map => [...map].sort(([a], [b]) => Buffer.compare(Buffer.from(a), Buffer.from(b)));
 const entryOf = ([key, access]) => {
@@ -195,6 +230,15 @@ const entryOf = ([key, access]) => {
   return {path: {type: 'path', path: key}, access};
 };
 
+// The directories a policy table (policyTable's, not disabled) lets a child write, as the helper and seatbelt resolve
+// them: the workspace root at the table's cwd (else `cwd`), `tmpdir` for :tmpdir, /tmp for :slash_tmp, / for a writable
+// :root, and each writable path.
+export function writeRootsOf(table, {cwd, tmpdir}) {
+  const special = {':workspace_roots': table.cwd ?? cwd, ':tmpdir': tmpdir, ':slash_tmp': '/tmp', ':root': '/', ':minimal': '/'};
+  return (table.filesystem ?? []).filter(([, access]) => (typeof access === 'object' ? access['.'] : access) === 'write')
+    .map(([key]) => (Object.hasOwn(special, key) ? special[key] : key)).filter(Boolean);
+}
+
 // One child's permission profile for a call's sandbox state -> {profile, cwd} (cwd: the state's sandboxCwd, null for
 // the default state), or null for disabled. `state`: the call's sandbox-state value, or undefined (the default mode);
 // `readPaths`: what both roles read; `denyRead`: prepareDenyTargets' result, which the kernel needs (SandboxStateError
@@ -202,7 +246,7 @@ const entryOf = ([key, access]) => {
 // be rendered.
 export function roleProfile({state, role, readPaths = [], denyRead, network = 'restricted'}) {
   if (!ROLES.includes(role)) throw new TypeError(`roleProfile: unknown role ${role}`);
-  const table = sandboxPolicy(state, {readPaths});
+  const table = policyTable(state, {readPaths});
   if (table.disabled) return null;
   const filesystem = new Map(table.filesystem);
   if (role === 'kernel') {
@@ -218,6 +262,6 @@ export function roleProfile({state, role, readPaths = [], denyRead, network = 'r
 // The launch key: the call's sandbox state, its cwd and the read paths, never the role-rendered profile, so the kernel
 // and the trusted worker of one state share it (the supervisor stops the worker whenever its key differs from the
 // kernel launch's). Throws SandboxStateError for a state that cannot be rendered. `tableKey` is the same key for a state
-// already validated (sandboxPolicy's result).
+// already validated (policyTable's result).
 export const tableKey = table => (table.disabled ? 'disabled' : JSON.stringify([table.cwd, table.filesystem]));
-export const stateKey = ({state, readPaths = []}) => tableKey(sandboxPolicy(state, {readPaths}));
+export const stateKey = ({state, readPaths = []}) => tableKey(policyTable(state, {readPaths}));

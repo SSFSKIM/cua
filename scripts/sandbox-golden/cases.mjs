@@ -12,7 +12,7 @@
 // are inputs the port must reproduce, not that decision.
 import {pathToFileURL} from 'node:url';
 import {STORE_RELATIVE} from '../../src/secrets/store.mjs';
-import {sandboxPolicy} from '../../src/runtime/sandbox.mjs';
+import {policyTable as sandboxPolicy} from '../../src/sandbox/policy.mjs';
 import {profileFromPolicy} from '../sandbox-probe/compare.mjs';
 
 const SESSION = '7062c419-3288-4b60-970f-a808ecfcf291';

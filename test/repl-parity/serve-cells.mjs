@@ -1,10 +1,10 @@
 // Isolated no-services parity lane, not a production empty-surface option. Remote device only.
-import {writeFileSync,mkdirSync,realpathSync} from 'node:fs';
+import {writeFileSync,mkdirSync,readFileSync,realpathSync} from 'node:fs';
 import {join,delimiter,relative} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {fixtureServices as createFixtureServices} from './fixtures/service-home.mjs';
 import {executionFacts,assertPreparedFacts,attestedOutput} from '../../scripts/repl-parity/provenance.mjs';
-import {randomUUID} from 'node:crypto';
+import {createHash,randomUUID} from 'node:crypto';
 import {pathToFileURL} from 'node:url';
 import {cellsServeEnv,markersLaunch} from './fixture-launch.mjs';
 import {openConnection} from '../../src/mcp/connection.mjs';
@@ -38,15 +38,28 @@ export function noServicesLaunch(launch,{host='vendor',witness=false,brokenSandb
   if(fixtureTmpdir){if(launch.compat){launch=markersLaunch(launch,fixtureTmpdir);Object.assign(env,{TMPDIR:launch.env.TMPDIR,CODEX_HOME:launch.env.CODEX_HOME});}else env.TMPDIR=fixtureTmpdir;}
   delete env[host==='vendor'?'NODE_REPL_TOOL_OVERRIDES':'CUA_REPL_TOOL_OVERRIDES'];
   // The broken launcher stands in for whichever sandbox launcher the launch names: cua's own (sandbox-exec, the macOS
-  // own host since #115 M1) or the Codex CLI.
-  if(brokenSandbox)env[env.CUA_REPL_SANDBOX_EXEC?'CUA_REPL_SANDBOX_EXEC':'CODEX_CLI_PATH']=typeof brokenSandbox==='string'?brokenSandbox:'/cua-parity-unavailable-sandbox';
+  // own host since #115 M1; the pinned Linux helper since M3, named with the broken launcher's own hash, so it is the
+  // pinned one that fails at run time, the shape #135 is about) or the Codex CLI (the macOS vendor host's compat).
+  if(brokenSandbox){
+   const path=typeof brokenSandbox==='string'?brokenSandbox:'/cua-parity-unavailable-sandbox';
+   if(env.CUA_REPL_SANDBOX_HELPER){env.CUA_REPL_SANDBOX_HELPER=path;try{env.CUA_REPL_SANDBOX_HELPER_SHA256=createHash('sha256').update(readFileSync(path)).digest('hex');}catch{/* a missing launcher stays unpinned */}}
+   else env[env.CUA_REPL_SANDBOX_EXEC?'CUA_REPL_SANDBOX_EXEC':'CODEX_CLI_PATH']=path;
+  }
   const banner=witness?'globalThis.__parityBannerWitness = Symbol("fixture-banner");':'void 0;';
   for(const key of Object.keys(env))if(/^(SKY_|OAI_SKY_|CUA_SKY_|CUA_BROWSER_|BROWSER_USE_)/.test(key))delete env[key];
   if(fixtureServices){
     const prefix=host==='vendor'?'NODE_REPL':'CUA_REPL';
     Object.assign(env,fixtureServices.env,{[`${prefix}_TRUSTED_SERVICES`]:JSON.stringify(fixtureServices.services),[`${prefix}_TRUSTED_CODE_PATHS`]:fixtureServices.roots.join(delimiter),[`${prefix}_TRUSTED_RPC_ENABLED`]:'1',[`${prefix}_JS_BANNER`]:banner,[`${prefix}_UNTRUSTED_ENV_ALLOWLIST`]:'PARITY_CELL_VISIBLE'});
     if(fixtureServices.env.PARITY_NATIVE_SECRET_FIXTURE==='1'){
+      // The launch's deny list (CUA_SANDBOX_DENY_READ) was resolved from the connection's HOME, and on Linux the own host
+      // creates a missing fixed target there only when its missing parents lie inside the children's HOME (#115 M3),
+      // which this fixture moves into the run directory: the connection HOME's ~/.config exists first, so only the
+      // targets' leaves are created.
+      if(launch.env.HOME)mkdirSync(join(launch.env.HOME,'.config'),{recursive:true,mode:0o700});
       const home=join(launch.cwd,'home');mkdirSync(home,{recursive:true,mode:0o700});if(realpathSync(home)!==home)throw Error('Native secret fixture HOME must be canonical');env.HOME=home;
+      // No real session's HOME lies in its run directory: the XDG data directories stay with the connection's HOME, so
+      // no applications directory launch_app reads from lies in a write root (the own host's scoped preflight).
+      if(launch.env.HOME)env.XDG_DATA_HOME=join(launch.env.HOME,'.local','share');
       const modules=launch.env[`${prefix}_NODE_MODULE_DIRS`].split(delimiter)[0];
       const facade=host==='vendor'?join(modules,'@oai/cua/dist/lib/js/oai_js_cua/src/tinysky_alt/create_tinysky_alt.js'):fileURLToPath(new URL('../../src/cua-api/create-tinysky-alt.mjs',import.meta.url));
       env[`${prefix}_JS_BANNER`]=`globalThis.nativeSecretFactory=()=>import(${JSON.stringify(pathToFileURL(facade).href)});`;

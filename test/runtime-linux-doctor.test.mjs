@@ -1,5 +1,5 @@
-// Doctor on Linux (Phase F): the darwin helper and permission rows give way to display, accessibility.bus and
-// sandbox.userns; the IPC and signature rows say why they do not apply; secrets read `skip`. The Linux host and every
+// Doctor on Linux (Phase F, #115 M3): the darwin helper and permission rows give way to display, accessibility.bus,
+// sandbox.userns and sandbox.launcher (the pinned helper); the IPC and signature rows say why they do not apply. The Linux host and every
 // system probe are injected, so this runs on any machine.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
@@ -33,61 +33,63 @@ const DESKTOP_ROWS = [
   {name: 'sandbox.userns', status: 'blocked', detail: 'fixture'},
 ];
 
-test('a healthy Linux install: no darwin rows, the Linux desktop rows, IPC and signatures not applicable, the secret store', async t => {
+const pinnedHelper = ({home, arch}) => ({path: join(home, 'sandbox', 'rust-v0.163.0', 'codex-linux-sandbox'), sha256: arch.padEnd(64, '0')});
+
+test('a healthy Linux install: no darwin rows, the Linux desktop rows, IPC and signatures not applicable, the pinned sandbox helper, the secret store', async t => {
   const {home, pin} = await linuxHome(t);
   const report = await inspectRuntime({home, env: {}, pins: [pin], host: LINUX, verifySignatures: never('codesign'),
     inspectHelper: never('the native socket helper inspection'), inspectSecrets: async () => ({dir: '/home/u/.config/claude-secrets', exists: true, directory: true, owned: true, mode: 0o700, keys: ['K'], unsafe: []}),
-    inspectLinux: async ({env}) => { assert.deepEqual(env, {}); return DESKTOP_ROWS; },
-    inspectChrome: async () => [], inspectAgent: async () => [],
+    inspectLinux: async ({env}) => { assert.deepEqual(env, {}); return DESKTOP_ROWS.map(row => (row.name === 'sandbox.userns' ? {...row, status: 'pass'} : row)); },
+    inspectChrome: async () => [], inspectAgent: async () => [], linuxHelper: pinnedHelper,
     resolveOwnNode: () => '/opt/node-24/bin/node'});   // healthy includes a Node 24 for the own host, whatever runs the tests
   const rows = byName(report);
   assert.equal(report.ok, true);
   assert.equal(rows['repl.host'].status, 'pass');
-  for (const name of ['platform', 'runtime.installed', 'runtime.files', 'runtime.vendor-manifest', 'runtime.ipc', 'runtime.signatures', 'sandbox'])
+  for (const name of ['platform', 'runtime.installed', 'runtime.files', 'runtime.vendor-manifest', 'runtime.ipc', 'runtime.signatures', 'sandbox', 'sandbox.launcher', 'sandbox.userns'])
     assert.equal(rows[name]?.status, 'pass', name);
   assert.equal(rows['runtime.ipc'].detail, 'not applicable on linux');
   assert.match(rows['runtime.signatures'].detail, /archive hash is the trust root on linux/);
+  assert.match(rows['sandbox.launcher'].detail, /the pinned helper .*\/sandbox\/rust-v0\.163\.0\/codex-linux-sandbox/);
   assert.equal(rows['helper.live'], undefined);
   assert.equal(rows['helper.permissions'], undefined);
   assert.deepEqual(['display', 'accessibility.bus'].map(n => rows[n].status), ['pass', 'pass']);
-  assert.match(rows.sandbox.detail, /^CUA_SHIM_SANDBOX unset: on linux with the computer surface the default is disabled/);
-  assert.equal(rows['sandbox.userns'].status, 'skip', 'no sandbox runs under the Linux default, so a refusing bubblewrap blocks nothing');
+  assert.match(rows.sandbox.detail, /^CUA_SHIM_SANDBOX=scoped \(the default\): .*no network \(the trusted services do, so the computer-use helper reaches the X display and the session bus\)/);
   assert.equal(rows['secrets.helper'], undefined);
   assert.equal(rows['secrets.store'].status, 'pass', 'Linux has the same file store');
   assert.equal(summarize(report), 'passive runtime checks pass');
 });
 
-// What F2 measured on Ubuntu 24.04 (docs/evidence/2026-10-06-linux-acceptance.md): under any managed profile node_repl
-// lets no runtime process connect to a socket, so the scoped sandbox keeps the computer-use helper off the X display
-// and the session bus; and where bubblewrap cannot create a user namespace the runtime runs cells with no sandbox.
-test('the sandbox row on Linux says what the mode does there: scoped breaks the computer surface, and confines nothing without user namespaces', async t => {
+// #115 M3: every scoped or default launch on Linux runs under cua's pinned helper, which needs bubblewrap and user
+// namespaces; without them confined connections are refused. The computer surface works under scoped (the worker has
+// the network), so nothing about the surfaces fails the row any more.
+test('the sandbox row on Linux: scoped and default need user namespaces for the helper; disabled needs nothing', async t => {
   const {home, pin} = await linuxHome(t);
   const doctor = (env, userns) => inspectRuntime({home, env, pins: [pin], host: LINUX, verifySignatures: never('codesign'),
     inspectHelper: never('the native socket helper inspection'), inspectSecrets: async () => ({dir: '/home/u/.config/claude-secrets', exists: true, directory: true, owned: true, mode: 0o700, keys: ['K'], unsafe: []}),
     inspectLinux: async () => [DESKTOP_ROWS[0], DESKTOP_ROWS[1], {name: 'sandbox.userns', status: userns, detail: 'fixture'}],
-    inspectChrome: async () => [], inspectAgent: async () => []}).then(byName);
+    inspectChrome: async () => [], inspectAgent: async () => [], linuxHelper: pinnedHelper}).then(byName);
 
-  let rows = await doctor({CUA_SHIM_SANDBOX: 'scoped'}, 'pass');
-  assert.equal(rows.sandbox.status, 'fail');
-  assert.match(rows.sandbox.detail, /computer-use helper \(sky_linux\) cannot reach the X display or the session bus/);
-  assert.match(rows.sandbox.detail, /CUA_SHIM_SURFACES=browser/);
-  assert.equal(rows['sandbox.userns'].status, 'pass');
-
-  rows = await doctor({CUA_SHIM_SURFACES: 'browser'}, 'pass');
-  assert.equal(rows.sandbox.status, 'pass', 'the browser surface alone keeps scoped, and it works there');
-  assert.match(rows.sandbox.detail, /^CUA_SHIM_SANDBOX=scoped/);
-
-  rows = await doctor({CUA_SHIM_SURFACES: 'browser'}, 'blocked');
-  assert.equal(rows.sandbox.status, 'fail');
-  assert.match(rows.sandbox.detail, /fails open/);
-  assert.match(rows.sandbox.detail, /refuse scoped connections \(sandbox_unavailable\)/);
-  assert.equal(rows['sandbox.userns'].status, 'blocked', 'the probe row keeps its own verdict and remedy');
-
-  rows = await doctor({CUA_SHIM_SANDBOX: 'scoped'}, 'blocked');
-  assert.equal(rows.sandbox.status, 'fail');
-  assert.match(rows.sandbox.detail, /fails open/, 'refused user namespaces are named first: that is what happens in this state');
-  assert.match(rows.sandbox.detail, /refuse scoped connections \(sandbox_unavailable\)/);
-  assert.match(rows.sandbox.detail, /even with user namespaces.*X display/, 'the computer surface\'s own problem is still said');
+  for (const surfaces of ['computer', 'browser', 'computer,browser']) {
+    const rows = await doctor({CUA_SHIM_SURFACES: surfaces}, 'pass');
+    assert.equal(rows.sandbox.status, 'pass', surfaces);
+    assert.match(rows.sandbox.detail, /^CUA_SHIM_SANDBOX=scoped \(the default\)/);
+    assert.equal(/the trusted services do/.test(rows.sandbox.detail), surfaces.includes('computer'), 'the worker\'s network, with the computer surface only');
+    assert.equal(rows['sandbox.userns'].status, 'pass');
+  }
+  for (const mode of ['scoped', 'default']) {
+    const rows = await doctor({CUA_SHIM_SANDBOX: mode}, 'blocked');
+    assert.equal(rows.sandbox.status, 'fail', mode);
+    assert.match(rows.sandbox.detail, new RegExp(`^CUA_SHIM_SANDBOX=${mode}, but bubblewrap cannot create a user namespace here \\(see sandbox.userns\\)`));
+    assert.match(rows.sandbox.detail, /refuse confined connections \(sandbox_unavailable\)/);
+    assert.equal(rows['sandbox.userns'].status, 'blocked', 'the probe row keeps its own verdict and remedy');
+    assert.equal(rows['sandbox.userns'].detail, 'fixture');
+  }
+  let rows = await doctor({CUA_SHIM_SANDBOX: 'default'}, 'pass');
+  assert.equal(rows.sandbox.status, 'pass');
+  assert.match(rows.sandbox.detail, /^CUA_SHIM_SANDBOX=default: .*write nowhere.*; cells have no network \(the trusted services do, so the computer-use helper reaches the X display/,
+    'with the computer surface the trusted worker has the network under default too');
+  rows = await doctor({CUA_SHIM_SANDBOX: 'default', CUA_SHIM_SURFACES: 'browser'}, 'pass');
+  assert.match(rows.sandbox.detail, /^CUA_SHIM_SANDBOX=default: .*write nowhere.*; neither has the network$/);
 
   for (const value of ['', 'computer,', 'mouse']) {
     rows = await doctor({CUA_SHIM_SURFACES: value}, 'pass');
@@ -95,24 +97,11 @@ test('the sandbox row on Linux says what the mode does there: scoped breaks the 
     assert.match(rows.sandbox.detail, /CUA_SHIM_SURFACES must be computer, browser or computer,browser/);
   }
 
-  // Fix wave 2: computer,browser with the mode unset serves under disabled, but cua profiles list and bind still
-  // launch scoped and are refused, so the probe's verdict stands.
-  rows = await doctor({CUA_SHIM_SURFACES: 'computer,browser'}, 'blocked');
-  assert.equal(rows.sandbox.status, 'pass');
-  assert.equal(rows['sandbox.userns'].status, 'blocked');
-  assert.match(rows['sandbox.userns'].detail, /cua profiles list and bind launch under scoped and are refused \(sandbox_unavailable\)/);
-  // Fix wave 3: an explicitly scoped connection is itself refused, browser surface or not, so the probe's row stands.
-  rows = await doctor({CUA_SHIM_SANDBOX: 'scoped'}, 'blocked');
-  assert.equal(rows['sandbox.userns'].status, 'blocked', 'scoped with the computer surface only is still a scoped launch');
-  assert.equal(rows['sandbox.userns'].detail, 'fixture');
-  rows = await doctor({CUA_SHIM_SURFACES: 'computer,browser', CUA_SHIM_SANDBOX: 'disabled'}, 'blocked');
-  assert.equal(rows['sandbox.userns'].status, 'skip', 'an explicit disabled reaches the listing too');
-
   rows = await doctor({CUA_SHIM_SANDBOX: 'disabled'}, 'blocked');
   assert.equal(rows.sandbox.status, 'pass');
   assert.match(rows.sandbox.detail, /^CUA_SHIM_SANDBOX=disabled/);
   assert.equal(rows['sandbox.userns'].status, 'skip');
-  assert.match(rows['sandbox.userns'].detail, /not needed here: no scoped launch happens with CUA_SHIM_SANDBOX=disabled/);
+  assert.match(rows['sandbox.userns'].detail, /not needed here: CUA_SHIM_SANDBOX=disabled confines nothing/);
 });
 
 test('skip is neither a failure nor blocked: ok stays true and the verdict does not list it', () => {

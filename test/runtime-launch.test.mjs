@@ -318,10 +318,13 @@ test('the REPL host follows the selection table: macOS computer keeps vendor, Li
       assert.equal(resolve.calls, expected.host === 'cua' ? 1 : 0, label(`${platform} ${surfaces}: Node is asked for only where the default is cua's host, once`));
     }
   }
-  for (const platform of ['darwin', 'linux']) for (const surfaces of [COMPUTER, BROWSER, BOTH]) for (const extra of IGNORED) {
+  for (const surfaces of [COMPUTER, BROWSER, BOTH]) for (const extra of IGNORED) {
     const resolve = counted(withNode);
-    assert.deepEqual(hostFor(platform, surfaces, 'vendor', resolve, extra), vendor('explicit'), `${platform} ${surfaces}: an explicit vendor is the rollback everywhere`);
-    assert.equal(resolve.calls, 0, 'the rollback never probes Node');
+    assert.deepEqual(hostFor('darwin', surfaces, 'vendor', resolve, extra), vendor('explicit'), `${surfaces}: an explicit vendor is the rollback on macOS`);
+    const linux = hostFor('linux', surfaces, 'vendor', resolve, extra);
+    assert.equal(linux.code, 'repl_host_refused', `${surfaces}: the vendor host is retired on Linux (#115 M3, #135)`);
+    assert.match(linux.message, /CUA_REPL_HOST=vendor is not supported on Linux.*#135/);
+    assert.equal(resolve.calls, 0, 'the rollback (or its refusal) never probes Node');
   }
 });
 
@@ -344,9 +347,12 @@ test('a home with no registration or only the removed route\'s record selects th
   }
 });
 
-test('with no Node 24 or later, a session the table moves to cua\'s own host keeps the vendor host, naming why and what was tried', () => {
-  for (const unset of [undefined, '']) for (const [platform, surfaces] of [['linux', COMPUTER], ['linux', BROWSER], ['linux', BOTH], ['darwin', BROWSER]])
-    assert.deepEqual(hostFor(platform, surfaces, unset, withoutNode), {host: 'vendor', reason: 'own_host_node_unavailable', nodeTried: TRIED}, `${platform} ${surfaces}`);
+test('with no Node 24 or later, a macOS session the table moves to cua\'s own host keeps the vendor host, naming why and what was tried; Linux, with no vendor host, is refused', () => {
+  for (const unset of [undefined, '']) {
+    assert.deepEqual(hostFor('darwin', BROWSER, unset, withoutNode), {host: 'vendor', reason: 'own_host_node_unavailable', nodeTried: TRIED});
+    for (const surfaces of [COMPUTER, BROWSER, BOTH])
+      assert.deepEqual(hostFor('linux', surfaces, unset, withoutNode), {code: 'repl_host_node', message: 'cua\'s own REPL host needs Node 24 or later, and none was found'}, surfaces);
+  }
   // Sessions that keep the vendor host for another reason keep that reason.
   assert.deepEqual(hostFor('darwin', BOTH, undefined, withoutNode), {host: 'vendor', reason: 'macos_native_peer_requires_vendor'});
   // A CUA_NODE that is not an absolute path is an invalid setting, refused, not a missing Node.
@@ -356,8 +362,9 @@ test('with no Node 24 or later, a session the table moves to cua\'s own host kee
   const s = scratch();
   try {
     const old = fakeNode(realpathSync(s.dir), 'old/node', '22.23.2');
-    assert.deepEqual(outcome(() => replHostFor({platform: 'linux', surfaces: COMPUTER, ambient: {CUA_NODE: old, PATH: dirname(old)}})).reason,
-      Number(process.versions.node.split('.')[0]) >= NODE_FLOOR ? 'linux' : 'own_host_node_unavailable', 'the node running cua is the second candidate');
+    const selected = outcome(() => replHostFor({platform: 'linux', surfaces: COMPUTER, ambient: {CUA_NODE: old, PATH: dirname(old)}}));
+    assert.deepEqual(Number(process.versions.node.split('.')[0]) >= NODE_FLOOR ? selected.reason : selected.code,
+      Number(process.versions.node.split('.')[0]) >= NODE_FLOOR ? 'linux' : 'repl_host_node', 'the node running cua is the second candidate');
   } finally { s.cleanup(); }
 });
 
@@ -376,13 +383,14 @@ test('an explicit CUA_REPL_HOST=cua is honoured where the own host can run, and 
   }
 
   // Whatever the inputs: no override selects cua exactly where an explicit cua is honoured and a Node 24 resolves,
-  // and never refuses; vendor is always vendor; cua is cua or a refusal.
+  // and never refuses; cua is cua or a refusal; without a Node 24 macOS keeps the vendor host and Linux refuses.
   for (const platform of ['darwin', 'linux']) for (const surfaces of [COMPUTER, BROWSER, BOTH]) {
     const cua = hostFor(platform, surfaces, 'cua');
     assert.ok(cua.host === 'cua' || cua.code === 'repl_host_refused', JSON.stringify(cua));
     const implicit = hostFor(platform, surfaces, undefined);
     assert.equal(implicit.host, cua.host === 'cua' ? 'cua' : 'vendor', JSON.stringify(implicit));
-    assert.equal(hostFor(platform, surfaces, undefined, withoutNode).host, 'vendor');
+    const without = hostFor(platform, surfaces, undefined, withoutNode);
+    assert.ok(platform === 'linux' ? without.code === 'repl_host_node' : without.host === 'vendor', JSON.stringify(without));
   }
 });
 
@@ -598,6 +606,7 @@ test('connections, the profiles listing and doctor agree with the selection tabl
   const STOP = Object.assign(new Error('stopped before spawn'), {code: 'test_stop'});
   const capture = launches => launch => { launches.push(launch); throw STOP; };
   const usernsPass = async () => ({status: 'pass'});
+  const helperPass = helper => helper;   // the pinned Linux sandbox helper's check (#115 M3), passing
   const ROUTES = {
     'no registration': () => {},
     'the removed route\'s record': home => writeVendorRecord(home),
@@ -630,7 +639,7 @@ test('connections, the profiles listing and doctor agree with the selection tabl
         // The independent listing: browser only, whatever the connection's surfaces.
         const listingExpected = expected({platform: host.platform, surfaces: BROWSER, env: base, home, resolveOwnNode: resolve});
         const listed = [];
-        const listing = await listLiveBackends({home, runtime, ambient: base, tabCounts: false, probeUserns: usernsPass, resolveOwnNode: resolve, prepareLaunch: capture(listed)}).then(() => ({}), error => error);
+        const listing = await listLiveBackends({home, runtime, ambient: base, tabCounts: false, probeUserns: usernsPass, verifyHelper: helperPass, resolveOwnNode: resolve, prepareLaunch: capture(listed)}).then(() => ({}), error => error);
         const label = `${host.platform}, ${routeLabel}, ${nodeLabel}, ${browserLabel}, ${hostLabel}`;
         if (listingExpected.code) assert.deepEqual({code: listing.code, message: listing.message, launches: listed.length}, {...listingExpected, launches: 0}, `listing: ${label}`);
         else {
@@ -648,7 +657,7 @@ test('connections, the profiles listing and doctor agree with the selection tabl
           const frames = [];
           createInterface({input: output}).on('line', line => frames.push(JSON.parse(line)));
           const resolveOwnNode = counted(resolve);
-          const opened = await openConnection({home, env, host, sessionId: randomUUID(), input, output, diagnostics: () => {}, prepareLaunch: capture(launches), probeUserns: usernsPass,
+          const opened = await openConnection({home, env, host, sessionId: randomUUID(), input, output, diagnostics: () => {}, prepareLaunch: capture(launches), probeUserns: usernsPass, verifyHelper: helperPass,
             chrome: {}, listBackends: async () => ({backends: []}), resolveOwnNode}).then(connection => ({connection}), error => ({error}));
           if (sessionExpected.code) {
             assert.deepEqual({code: opened.error?.code, message: opened.error?.message}, sessionExpected, `connection: ${full}`);
@@ -710,7 +719,9 @@ test('doctor\'s repl.host row explains the M5 defaults, and warns with the remed
   assert.ok(browserOnly.detail.startsWith(`cua host (browser_only) on Node ${NODE24}: CUA_REPL_HOST is unset, and cua's own host is the default for a browser-only session;`), browserOnly.detail);
   assert.match(browserOnly.detail, /CUA_REPL_HOST=vendor/, 'names the rollback');
   const linux = await row(LINUX, {CUA_SHIM_SURFACES: 'computer', DISPLAY: ':0'}, withNode);
-  assert.ok(linux.detail.startsWith(`cua host (linux) on Node ${NODE24}: CUA_REPL_HOST is unset, and cua's own host is the default on Linux`), linux.detail);
+  assert.ok(linux.detail.startsWith(`cua host (linux) on Node ${NODE24}: CUA_REPL_HOST is unset, and cua's own host is the only one on Linux`), linux.detail);
+  assert.match(linux.detail, /the vendor host is retired there, #115/);
+  assert.doesNotMatch(linux.detail, /CUA_REPL_HOST=cua or vendor chooses/, 'no vendor rollback on Linux (#115 M3)');
   assert.ok(linux.detail.includes(`The profile listing (browser only): cua host (linux) on Node ${NODE24}`), linux.detail);
 
   // No Node 24: both the session and the listing keep the vendor host, and the row is a warning naming the remedies,

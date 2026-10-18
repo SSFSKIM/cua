@@ -10,14 +10,16 @@
 //   window 7 works, window 8 fails every input with an error that repeats the text it was given (as a native error may
 //   carry what it was asked to type). It records each request in helper.jsonl beside itself: its pid, the command, the
 //   window id and, for text, only the SHA-256 of what arrived.
-// - The sandbox launcher (runtime.paths.codexCli) is a recording double: it writes its argv under
-//   $CODEX_HOME/launches and runs the command after `--` unconfined.
+// - The sandbox helper (where `cua install` places the pinned codex-linux-sandbox, src/sandbox/linux.mjs) is a recording
+//   double: it writes its argv under <home>/helper-launches and runs the command after `--` unconfined, as its child.
+//   Its SHA-256 (`helperSha`) is what a launch must name as the pinned one (CUA_REPL_SANDBOX_HELPER_SHA256).
 import {chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, writeFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {dirname, join} from 'node:path';
 import {parsePin, runtimeFor} from '../../src/runtime/manifest.mjs';
 import {linuxFixturePin, shortScratch} from './runtime-fixture.mjs';
 import {quote} from '../../scripts/browser-parity/topology.mjs';
+import {helperFor} from '../../src/sandbox/linux.mjs';
 
 const VENDOR_SKY = `import {spawn} from 'node:child_process';
 const LINUX_METHODS = ['perform_secondary_action', 'click', 'clipboard_read', 'clipboard_release', 'clipboard_write', 'drag', 'drag_handle',
@@ -101,12 +103,12 @@ createInterface({input: process.stdin}).on('line', line => {
 });
 `;
 
-const LAUNCHER = '#!/bin/sh\nmkdir -p "$CODEX_HOME/launches"\nfor a in "$@"; do printf \'%s\\n\' "$a"; done > "$CODEX_HOME/launches/$$"\n'
+const launcher = dir => `#!/bin/sh\nmkdir -p ${quote(dir)}\nfor a in "$@"; do printf '%s\\n' "$a"; done > ${quote(dir)}/$$\n`
   + 'while [ "$#" -gt 0 ] && [ "$1" != "--" ]; do shift; done\nshift\n"$@"\nexit $?\n';
 
 export const sha256 = text => createHash('sha256').update(text).digest('hex');
 
-// -> {home, runtime, helperLog(), launches()}. `node` runs the sky_linux double. `secrets` ({label: value}) are written
+// -> {home, runtime, helperSha, helperLog(), launches()}. `node` runs the sky_linux double. `secrets` ({label: value}) are written
 // into a store at <home>/secrets (mode 0600 files in a 0700 directory), returned as `secretsDir`.
 export function linuxNativeRuntime(t, {node, arch = 'arm64', secrets = {}}) {
   const scratch = shortScratch();
@@ -115,8 +117,10 @@ export function linuxNativeRuntime(t, {node, arch = 'arm64', secrets = {}}) {
   const runtime = runtimeFor({home, pin: parsePin(linuxFixturePin({arch, sha256: 'a'.repeat(64), length: 1})), record: null});
   const p = runtime.paths;
   mkdirSync(p.moduleDir, {recursive: true});
+  const launchesDir = join(home, 'helper-launches');
+  const helper = helperFor({home, arch});
   for (const [path, body, mode] of [[p.skyVendorService, VENDOR_SKY], [`${p.skyLinuxBin}.mjs`, HELPER],
-    [p.skyLinuxBin, `#!/bin/sh\nexec ${quote(node)} ${quote(`${p.skyLinuxBin}.mjs`)} "$@"\n`, 0o755], [p.codexCli, LAUNCHER, 0o755]]) {
+    [p.skyLinuxBin, `#!/bin/sh\nexec ${quote(node)} ${quote(`${p.skyLinuxBin}.mjs`)} "$@"\n`, 0o755], [helper.path, launcher(launchesDir), 0o755]]) {
     mkdirSync(dirname(path), {recursive: true});
     writeFileSync(path, body);
     if (mode) chmodSync(path, mode);
@@ -125,9 +129,8 @@ export function linuxNativeRuntime(t, {node, arch = 'arm64', secrets = {}}) {
   mkdirSync(secretsDir, {mode: 0o700});
   for (const [label, value] of Object.entries(secrets)) writeFileSync(join(secretsDir, label), value, {mode: 0o600});
   const helperLogFile = join(dirname(p.skyLinuxBin), 'helper.jsonl');
-  const launchesDir = join(home, 'state', 'codex', 'launches');
   return {
-    home, runtime, secretsDir,
+    home, runtime, secretsDir, helperSha: sha256(readFileSync(helper.path)),
     helperLog: () => (existsSync(helperLogFile) ? readFileSync(helperLogFile, 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line)) : []),
     launches: () => (existsSync(launchesDir) ? readdirSync(launchesDir).map(pid => readFileSync(join(launchesDir, pid), 'utf8').split('\n').slice(0, -1)) : []),
   };

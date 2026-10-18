@@ -57,6 +57,24 @@ test('release removes the session entirely, a socket left by a cua from before t
   assert.deepEqual(readdirSync(run), []);
 });
 
+// #115 M3: a Linux default-mode session's kernel directory (<home>/kernel/<session>, src/runtime/launch.mjs) belongs
+// to the session too: release and the sweep remove it, before the record.
+test('release and the sweep remove a session\'s kernel directory outside run/ as well', async t => {
+  const dir = home(t);
+  const run = join(dir, 'run');
+  const kernel = id => join(dir, 'kernel', id);
+  const claim = claimRunSession(dir, ID(1));
+  mkdirSync(join(kernel(ID(1)), 'tmp'), {recursive: true});
+  assert.deepEqual(claim.release(), []);
+  assert.equal(existsSync(kernel(ID(1))), false);
+  session(run, ID(2), 999_999, {socket: false});
+  mkdirSync(join(kernel(ID(2)), 'tmp'), {recursive: true});
+  mkdirSync(join(kernel(ID(3)), 'tmp'), {recursive: true});
+  session(run, ID(3), process.pid, {socket: false});
+  assert.deepEqual(sweepRun(dir, {alive: pid => pid === process.pid}).swept.map(s => s.session), [ID(2)]);
+  assert.deepEqual(readdirSync(join(dir, 'kernel')), [ID(3)], 'a live session keeps its kernel directory');
+});
+
 test('the sweep removes sessions whose owner is gone, leaves live ones, and reports entries without a record untouched', async t => {
   const dir = home(t);
   const run = join(dir, 'run');

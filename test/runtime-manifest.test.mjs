@@ -100,8 +100,8 @@ test('the Linux pins name the vendor pool debs by length and hash, with the prov
     assert.match(pin.notes, new RegExp(`chatgpt_26\\.928\\.40906_${deb}\\.deb`));
     assert.equal(pin.signing, undefined);
     assert.deepEqual(pin.runtime, {version: '0.0.27/20260927214556-b77d38801cca', node: '24.21.0-cua.1'});
-    assert.deepEqual(pin.components, {cua_node: 'usr/lib/chatgpt/resources/cua_node', codex: 'usr/lib/chatgpt/resources/codex'});
-    assert.equal(pin.layout.codexCli, 'codex');
+    assert.deepEqual(pin.components, {cua_node: 'usr/lib/chatgpt/resources/cua_node'}, 'no Codex CLI since #115 M3');
+    assert.equal('codexCli' in pin.layout, false);
     assert.equal(pin.layout.skyLinuxBin, `cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_${arch}`);
     assert.equal('skyServiceApp' in pin.layout || 'ipcClient' in pin.layout, false);
     assert.equal('chromePlugin' in pin, false);
@@ -118,7 +118,7 @@ test('Linux pin parsing is strict too: no signing, no IPC, a deb archive and the
     ipcClient: p => { p.layout.ipcClient = 'cua_node/lib/node_modules/x.js'; },
     noSkyLinuxBin: p => { delete p.layout.skyLinuxBin; },
     notes: p => { p.notes = 42; },
-    codexOutside: p => { p.layout.codexCli = 'usr/lib/chatgpt/resources/codex'; },
+    codexCli: p => { p.layout.codexCli = 'cua_node/bin/codex'; },
   };
   for (const [name, mutate] of Object.entries(cases)) {
     const pin = linuxPinJson();
@@ -156,7 +156,6 @@ test('a Linux runtime record carries its own layout paths, and the IPC check doe
   const pin = parsePin(linuxPinJson('arm64'));
   const runtime = runtimeFor({home: '/home/u/.local/share/cua', pin, record: null});
   const root = '/home/u/.local/share/cua/runtimes/26.928.40906-linux-arm64';
-  assert.equal(runtime.paths.codexCli, `${root}/codex`);
   assert.equal(runtime.paths.skyLinuxBin, `${root}/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64`);
   assert.deepEqual(Object.keys(runtime.paths), Object.keys(pin.layout));
   assert.deepEqual(checkIpc(root, pin), {ok: true, found: [], detail: 'not applicable on linux'});

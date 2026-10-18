@@ -14,11 +14,17 @@ export function prepareLiveSecretsLaunch(launch,{host,vendorClient,ownClient,use
  // prepareLaunch precedes connection's mkdir(cwd). Create each child only after checking its parent, so a
  // symlink at run/session/home is refused before creating any child through it. No store values are written here.
  for(const path of [join(capabilityHome,'run'),launch.cwd,workerHome]){mkdirSync(path,{recursive:true,mode:0o700});if(realpathSync(path)!==path)throw Error('Live secret launch refuses a symlinked scratch directory');}
+ // The launch's deny list was resolved from the connection's HOME (userHome), and on Linux the own host creates a
+ // missing fixed target there only when its missing parents lie inside the children's HOME (#115 M3), which this
+ // fixture moves into the run directory: userHome's ~/.config exists first, so only the targets' leaves are created.
+ mkdirSync(join(userHome,'.config'),{recursive:true,mode:0o700});
  const next=prepareCapabilityApiLaunch(launch,{host,vendorClient,ownClient}),prefix=host==='vendor'?'NODE_REPL':'CUA_REPL';
  const fixture=fileURLToPath(new URL('./fixtures/live-secret-service.mjs',import.meta.url));
  const registered=JSON.parse(next.env[`${prefix}_TRUSTED_SERVICES`]);registered.browser=fixture;
  next.env[`${prefix}_TRUSTED_SERVICES`]=JSON.stringify(registered);
  next.env[`${prefix}_TRUSTED_CODE_PATHS`]=[...new Set([...next.env[`${prefix}_TRUSTED_CODE_PATHS`].split(delimiter),dirname(fixture)])].join(delimiter);
- Object.assign(next.env,{HOME:workerHome,PARITY_LIVE_SECRET_REMOTE:'1',PARITY_LIVE_SECRET_HOME:workerHome,PARITY_LIVE_SECRET_CAPABILITY_HOME:capabilityHome,PARITY_LIVE_SECRET_CAPABILITY_ROOT:expectedCapabilityHome,PARITY_LIVE_SECRET_RUN_DIRECTORY:launch.cwd});
+ // No real session's HOME lies in its run directory: the XDG data directories stay with the connection's HOME, so no
+ // applications directory launch_app reads from lies in a write root (the own host's scoped preflight).
+ Object.assign(next.env,{HOME:workerHome,XDG_DATA_HOME:join(userHome,'.local','share'),PARITY_LIVE_SECRET_REMOTE:'1',PARITY_LIVE_SECRET_HOME:workerHome,PARITY_LIVE_SECRET_CAPABILITY_HOME:capabilityHome,PARITY_LIVE_SECRET_CAPABILITY_ROOT:expectedCapabilityHome,PARITY_LIVE_SECRET_RUN_DIRECTORY:launch.cwd});
  return next;
 }

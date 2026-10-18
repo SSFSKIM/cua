@@ -1,0 +1,20 @@
+{
+  "upstreamTag": "rust-v0.163.0",
+  "upstreamCommit": "83086188ae0614bd882818ff1aa23f3194962012",
+  "assets": {
+    "linux-x64": {
+      "url": "https://github.com/SSFSKIM/cua/releases/download/linux-sandbox-rust-v0.163.0/codex-linux-sandbox-x86_64-unknown-linux-musl",
+      "length": 9387872,
+      "sha256": "da88ac0975a1138b0c90d7cecdf6d30de26e9fc36296d4d537bb9cf1cdb0f344"
+    },
+    "linux-arm64": {
+      "url": "https://github.com/SSFSKIM/cua/releases/download/linux-sandbox-rust-v0.163.0/codex-linux-sandbox-aarch64-unknown-linux-musl",
+      "length": 7761056,
+      "sha256": "807448d058065db9e50ed8f24a739ac42f6a738503083ad93ee3626655916088"
+    }
+  },
+  "attestation": {
+    "workflow": ".github/workflows/linux-sandbox-helper.yml",
+    "runId": 39110168611
+  }
+}

@@ -8,7 +8,7 @@ import {hostname} from 'node:os';
 import {fileURLToPath} from 'node:url';
 import {defaultHome, realHome} from './runtime/layout.mjs';
 import {loadPins, selectPin, findPin} from './runtime/manifest.mjs';
-import {installRuntime, useRuntime} from './runtime/install.mjs';
+import {installRuntime, installSandboxHelper, useRuntime} from './runtime/install.mjs';
 import {installNode} from './runtime/node-install.mjs';
 import {loadNodePins, nodeDistName, selectNodePin} from './runtime/managed-node.mjs';
 import {inspectRuntime, summarize} from './runtime/doctor.mjs';
@@ -61,7 +61,9 @@ export const usageFor = platform => {
   install [--archive <${archive}>] [--release <id>] [--json]   install and activate the pinned runtime, then the pinned
           [--node-archive <node tarball> | --no-node]          Node 24 cua's own REPL host runs on (a local
                                                                nodejs.org tarball, or none: the host uses your Node)
-  doctor [--json]                                              passive runtime health; exit 1 when a check fails
+${darwin ? '' : `          [--sandbox-helper <file>]                            and first cua's pinned sandbox helper (a local copy of
+                                                               the release asset instead of the download)
+`}  doctor [--json]                                              passive runtime health; exit 1 when a check fails
   runtime use <release> [--json]                               activate another verified installed release
   serve [--http <host:port>]                                   MCP over stdin/stdout until EOF or a signal (--http: as agent run --http)
   secrets set <KEY> [--project|--global]                       store a secret in ~/.config/claude-secrets/KEY (--project:
@@ -122,13 +124,16 @@ function progressReporter() {
   };
 }
 
-// The runtime first, then the own REPL host's Node (spec 2026-10-14-own-repl-host-design.md, Decision Log 2026-10-16),
-// each verified and activated on its own. A failed Node step fails the command after the runtime is in place, saying
-// so; --no-node skips it (an offline install without the tarball), and a platform with no Node pin has none to take.
-// Either way the own host then runs on CUA_NODE or the user's Node 24, else sessions keep the vendor host.
-// `deps` is a test seam of this module API only (the installers, the pins and the home); the CLI passes none.
-async function install(args, {installRuntime: runtimeInstaller = installRuntime, installNode: nodeInstaller = installNode, pins: pinsOf = loadPins, nodePins = loadNodePins, home = defaultHome()} = {}) {
-  const {values} = parse(args, {archive: {type: 'string'}, release: {type: 'string'}, 'node-archive': {type: 'string'}, 'no-node': {type: 'boolean'}});
+// The runtime first, then on Linux cua's sandbox helper (#115 M3: what confines both children there; --sandbox-helper
+// takes a local copy of the pinned asset instead of downloading it), then the own REPL host's Node (spec
+// 2026-10-14-own-repl-host-design.md, Decision Log 2026-10-16), each verified and activated on its own. A failed helper
+// or Node step fails the command after the runtime is in place, saying so; --no-node skips the Node step (an offline
+// install without the tarball), and a platform with no Node pin has none to take. Either way the own host then runs on
+// CUA_NODE or the user's Node 24, else macOS sessions keep the vendor host and Linux sessions are refused.
+// `deps` is a test seam of this module API only (the installers, the pins, the home and the host); the CLI passes none.
+async function install(args, {installRuntime: runtimeInstaller = installRuntime, installNode: nodeInstaller = installNode, installHelper = installSandboxHelper, pins: pinsOf = loadPins, nodePins = loadNodePins, home = defaultHome(), platform = process.platform} = {}) {
+  const {values} = parse(args, {archive: {type: 'string'}, release: {type: 'string'}, 'node-archive': {type: 'string'}, 'no-node': {type: 'boolean'}, 'sandbox-helper': {type: 'string'}});
+  if (values['sandbox-helper'] !== undefined && platform !== 'linux') throw new UsageError('install takes --sandbox-helper on Linux only');
   if (values['no-node'] && values['node-archive'] !== undefined) throw new UsageError('install takes --node-archive or --no-node, not both');
   const pins = pinsOf();
   const manifest = values.release ? findPin(pins, values.release) : selectPin(pins);
@@ -138,8 +143,21 @@ async function install(args, {installRuntime: runtimeInstaller = installRuntime,
   const result = await runtimeInstaller({home, manifest, archivePath: values.archive, onProgress});
   if (!values.json) print(result.changed ? `installed and activated ${result.release} at ${result.root}` : `${result.release} is already installed and verified; active at ${result.root}`);
 
+  let sandboxHelper = null;
+  if (platform === 'linux') {
+    try {
+      sandboxHelper = await installHelper({home, path: values['sandbox-helper'], onProgress});
+    } catch (error) {
+      const code = error instanceof CuaError ? error.code : 'sandbox_helper_install_failed';
+      const why = error instanceof CuaError ? error.message : `${error.code ?? 'error'}: ${error.message}`;
+      const remedy = `${result.release} is installed and active; for the helper, run cua install again, or pass --sandbox-helper <file> with the pinned asset (confined sessions are refused without it, CUA_SHIM_SANDBOX=disabled runs unconfined)`;
+      throw new CuaError(code, `cua's sandbox helper was not installed: ${why}`, {hint: error.hint ? `${error.hint}; ${remedy}` : remedy, cause: error});
+    }
+    if (!values.json) print(sandboxHelper.changed ? `installed cua's sandbox helper at ${sandboxHelper.path}` : `cua's sandbox helper is already installed and verified at ${sandboxHelper.path}`);
+  }
+
   let node;
-  const ownNodeFallback = 'cua\'s own REPL host runs on CUA_NODE or your own Node 24 or later, else sessions keep the vendor host';
+  const ownNodeFallback = `cua's own REPL host runs on CUA_NODE or your own Node 24 or later, else ${platform === 'linux' ? 'sessions are refused (Linux has no vendor host)' : 'sessions keep the vendor host'}`;
   if (!nodePin) {
     node = {skipped: values['no-node'] ? 'no_node' : 'unpinned'};
     if (!values.json) print(values['no-node'] ? `skipped the pinned Node (--no-node): ${ownNodeFallback}` : `no Node is pinned for ${process.platform}-${process.arch}: ${ownNodeFallback}`);
@@ -157,7 +175,7 @@ async function install(args, {installRuntime: runtimeInstaller = installRuntime,
     if (!values.json) print(node.changed ? `installed Node ${node.version} for cua's own REPL host at ${node.root}`
       : `Node ${node.version} for cua's own REPL host is already installed and verified at ${node.root}${node.activated ? '; it is the active one again' : ''}`);
   }
-  if (values.json) print({ok: true, release: result.release, root: result.root, changed: result.changed, source: result.record.source, node});
+  if (values.json) print({ok: true, release: result.release, root: result.root, changed: result.changed, source: result.record.source, ...(sandboxHelper ? {sandboxHelper} : {}), node});
 }
 
 async function doctor(args) {

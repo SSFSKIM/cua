@@ -23,12 +23,23 @@ a CI-opt hold the dispatching session arranged (18:17:43Z to 18:37:43Z).
 
 The dispatching session asked first whether the process environment could serve as the witness. It cannot. `ps -E` shows
 no environment for platform apps: 0 entries for Finder and Terminal on both Macs (macOS 26.6.2 and 27.0), and none for
-the TextEdit the witness started (`envShownByPsE: [false]`). Ownership is therefore by launch, as the session allowed. A
-pid is the run's own when it was absent from the before-set and its `ps -o lstart` launch time (C locale, whole
-seconds) is no earlier than the second the run began. A TextEdit running before the run is never quit. `open` hands the
-document to that process rather than starting another, and the fixture closes only its own window, as before. The
-fixture sends SIGTERM and waits up to 5 s. A TextEdit that does not exit is a FAIL step that asks for a manual quit. The
-fixture then activates the app that was frontmost before the run (`open -b`) and confirms it.
+the TextEdit the witness started (`envShownByPsE: [false]`). Ownership is therefore by launch, as the session allowed.
+After review round 1 the rule is:
+- **Captured at launch.** Right after its own `open` returns, the run polls for a new TextEdit pid, every 100 ms for at
+  most 10 s, and records the time it took. A pid counts when it was absent from the before-set and its `ps -o lstart`
+  launch time (C locale, read in UTC so a fall-back hour is not ambiguous; whole seconds) is no earlier than the second
+  the run began. Exactly one such pid is recorded as `{pid, launch time}`. None means the document went to a TextEdit
+  already running. Several is ambiguous and records none. A poll that runs past the bound is a miss, recorded as one and
+  never guessed.
+- **Never re-scanned.** Cleanup considers only the recorded pid, and only while that pid still has the same launch
+  time. A TextEdit the owner starts mid-run, one relaunched after ours exits, or a reused pid is never selected. A
+  TextEdit running before the run is never quit.
+- **Quit only when alone.** A TextEdit the run started can still receive someone else's document during a pause, so it
+  is quit only when the fixture's close step saw TextEdit report no window at all and no GUI stop or identity loss
+  happened. Otherwise nothing is signalled, the quit step is BLOCKED and names the pid left running, and the front is
+  still handed back.
+- **Quit and hand back.** The fixture sends SIGTERM and waits up to 5 s. A TextEdit that does not exit is a FAIL step.
+  The fixture then activates the app that was frontmost before the run (`open -b`) and confirms it.
 
 The full accept-native TextEdit sitting (item 5 with a live helper) is **deferred to the next owner sitting with an
 approved helper**. The approved runtime copy, `~/cua-115/home`, was removed on 2026-10-18. A fresh install would put a

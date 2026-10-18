@@ -8,12 +8,16 @@ import {quote} from '../../scripts/browser-parity/topology.mjs';
 import {desktopSessionEnv} from '../../src/runtime/linux-desktop.mjs';
 import {join, posix} from 'node:path';
 
+// The runtime is kept warm in every rebuilt connection environment: a run paused for CI can hold a cell past the
+// 15-minute idle stop, and a restarted runtime adds a restart notice and loses its REPL state (#157; topology.mjs ownNodeEnv).
+export const WARM_RUNTIME = {CUA_RUNTIME_IDLE_MS: '0'};
+
 export const explicitNode = ambient => ({...(ambient.CUA_PARITY_NODE_MODE?{CUA_PARITY_NODE_MODE:ambient.CUA_PARITY_NODE_MODE}:{}),...(ambient.CUA_PARITY_NODE_MODE!=='managed'&&ambient.CUA_NODE?{CUA_NODE:ambient.CUA_NODE}:{})});
 
 // The serve-cells connection: built, not inherited (only the X session, PATH and TMPDIR come from the caller).
 export function cellsServeEnv(ambient, {scratch, sandbox, host}) {
   return {...desktopSessionEnv(ambient), PATH: ambient.PATH, HOME: scratch.userHome, TMPDIR: ambient.TMPDIR,
-    CUA_HOME: scratch.dir, CUA_SHIM_SANDBOX: sandbox, CUA_REPL_HOST: host, CUA_BROWSER_SERVICE: 'cua', CUA_SHIM_SURFACES: 'browser', CUA_SHIM_SECRETS: 'off', ...explicitNode(ambient)};
+    CUA_HOME: scratch.dir, CUA_SHIM_SANDBOX: sandbox, CUA_REPL_HOST: host, CUA_BROWSER_SERVICE: 'cua', CUA_SHIM_SURFACES: 'browser', CUA_SHIM_SECRETS: 'off', ...WARM_RUNTIME, ...explicitNode(ambient)};
 }
 
 // Where a boundary probe in `dir` keeps its markers. On the macOS vendor host (#115 M2) cua's compat executable finds
@@ -39,7 +43,7 @@ export function markersLaunch(launch, tmp) {
 export function boundaryServeEnv(ambient, {tmp, home, host, facts, control, sandbox, witness, brokenSandbox}) {
   return {...(ambient.CUA_PARITY_CAPTURE_CHROME==='1'?{CUA_PARITY_CAPTURE_CHROME:'1'}:{}),CUA_PARITY_SCRATCH_PREFIX:ambient.CUA_PARITY_SCRATCH_PREFIX,PATH: ambient.PATH, HOME: ambient.HOME, ...desktopSessionEnv(ambient), TMPDIR: tmp, CUA_PARITY_FIXTURE_TMPDIR: tmp, CUA_HOME: home, CUA_REPL_HOST: host, CUA_PARITY_REMOTE: '1',
     CUA_PARITY_EXPECTED: JSON.stringify(facts), CUA_PARITY_CONTROL_DIR: control, CUA_PARITY_SANDBOX: sandbox, CUA_PARITY_BANNER_WITNESS: witness ? '1' : '0',
-    CUA_PARITY_BROKEN_SANDBOX: brokenSandbox || '', ...explicitNode(ambient)};
+    CUA_PARITY_BROKEN_SANDBOX: brokenSandbox || '', ...WARM_RUNTIME, ...explicitNode(ambient)};
 }
 
 // A boundary probe's negative preflight connection, in a scratch capability home.

@@ -48,6 +48,17 @@ import {STORE_RELATIVE} from '../../src/secrets/store.mjs';
 const MODES = ['scoped', 'default', 'disabled'];
 const DENIED = new Set(['EPERM', 'EACCES']);
 
+// A cell's code in a block of its own: the vendor host's node_repl keeps a cell's top-level bindings for the next one
+// (a second top-level `const fs` is then a redeclaration), cua's own host gives each cell a fresh scope; a block holds on
+// both. Top-level await stays allowed inside it.
+export const cellCode = code => `{\n${code}\n}`;
+// A cell's JSON report among its texts: the last that parses as JSON (the bootstrap's first-call document, or a host's
+// warning, may come before or after it). Throws when none does.
+export function cellResult(texts) {
+  for (const text of [...texts].reverse()) { try { return JSON.parse(text); } catch { /* not the report */ } }
+  throw new Error(`the cell returned no JSON report (${texts.length} text(s): ${texts.map(t => t.slice(0, 120)).join(' | ')})`);
+}
+
 // One own-host connection -> {js(code), close()}. `env` is the connection's environment.
 async function connect({home, env}) {
   const input = new PassThrough(), output = new PassThrough();
@@ -57,18 +68,17 @@ async function connect({home, env}) {
   let id = 0;
   const request = (method, params) => new Promise(done => { const n = ++id; pending.set(n, done); input.write(`${JSON.stringify({jsonrpc: '2.0', id: n, method, params})}\n`); });
   await request('initialize', {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'own-sandbox-acceptance', version: '0'}});
-  // A cell's last text is its JSON report; the bootstrap's first-call document comes before it.
   const js = async code => {
-    const result = (await request('tools/call', {name: 'js', arguments: {code: `${code}`}})).result;
+    const result = (await request('tools/call', {name: 'js', arguments: {code: cellCode(code)}})).result;
     const texts = (result.content ?? []).filter(c => c.type === 'text').map(c => c.text);
     if (result.isError) throw new Error(`cell failed: ${texts[0]?.slice(0, 2000)}`);
-    return JSON.parse(texts.at(-1));
+    return cellResult(texts);
   };
   return {js, close: async () => { input.end(); return connection.closed; }};
 }
 
 // The cell that tries everything: `targets` {label: {path, read: 'file' | 'dir', expect?}} and the rest.
-const probeCell = ({targets, moduleDir, packageName, sentinel, writeOutside, tcpPort, socketPath}) => `
+export const probeCell = ({targets, moduleDir, packageName, sentinel, writeOutside, tcpPort, socketPath}) => `
 const fs = await import('node:fs'), os = await import('node:os'), path = await import('node:path'), net = await import('node:net');
 const {createRequire} = await import('node:module'), {execFileSync} = await import('node:child_process');
 // A cell has no \`process\`: what it is (its pid, its environment, its working directory) is read through a child it runs.
@@ -95,7 +105,7 @@ out.process = {pid: self.pid, sandbox: self.sandbox};
 nodeRepl.write(JSON.stringify(out));
 `;
 
-const scriptDirCell = () => `
+export const scriptDirCell = () => `
 const fs = await import('node:fs'), os = await import('node:os'), path = await import('node:path');
 const tmp = os.tmpdir();
 const dirs = fs.readdirSync(tmp).filter(n => n.startsWith('.tmp') && fs.existsSync(path.join(tmp, n, 'kernel.js')));
@@ -104,7 +114,7 @@ nodeRepl.write(JSON.stringify({count: dirs.length, read: dirs.length ? code(() =
   write: dirs.length ? code(() => fs.writeFileSync(path.join(tmp, dirs[0], 'trusted-worker.js'), 'tampered', {flag: 'a'})) : null,
   add: dirs.length ? code(() => fs.writeFileSync(path.join(tmp, dirs[0], 'planted.js'), 'x')) : null}));
 `;
-const attackCell = ({scripts, run}) => `
+export const attackCell = ({scripts, run}) => `
 const fs = await import('node:fs'), path = await import('node:path');
 const code = fn => { try { fn(); return {ok: true}; } catch (error) { return {ok: false, code: error.code ?? 'error'}; } };
 nodeRepl.write(JSON.stringify({

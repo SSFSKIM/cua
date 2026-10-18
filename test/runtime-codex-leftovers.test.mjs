@@ -5,9 +5,9 @@
 // the command that removes them. Every tree here is a scratch one; nothing reads the user's home or a real runtime.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, symlinkSync, writeFileSync} from 'node:fs';
+import {chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync} from 'node:fs';
 import {dirname, join} from 'node:path';
-import {CODEX_HOME_LEFTOVERS, findCodexLeftovers, removeCodexLeftovers} from '../src/runtime/codex-leftovers.mjs';
+import {CODEX_HOME_LEFTOVERS, describeRemoval, findCodexLeftovers, removeCodexLeftovers} from '../src/runtime/codex-leftovers.mjs';
 import {inspectRuntime} from '../src/runtime/doctor.mjs';
 import {loadPins, parsePin} from '../src/runtime/manifest.mjs';
 import {sweepRun} from '../src/runtime/run-dir.mjs';
@@ -88,7 +88,9 @@ test('symbolic links are never followed out of CODEX_HOME: a leftover that is a 
   symlinkSync(join(outside, 'auth.json'), join(codexHome, 'installation_id'));
 
   assert.deepEqual(findCodexLeftovers({home, pins: []}).files, ['installation_id', 'cache'], 'tmp/arg0 and browser/sessions lie behind links');
-  removeCodexLeftovers({home, pins: [], sweep: noSessions});
+  assert.deepEqual(findCodexLeftovers({home, pins: []}).uninspected, [join(codexHome, 'tmp'), join(codexHome, 'browser')], 'and are reported as not inspected');
+  const pruned = removeCodexLeftovers({home, pins: [], sweep: noSessions});
+  assert.deepEqual(pruned.failed, [join(codexHome, 'tmp'), join(codexHome, 'browser')].map(path => ({path, code: 'symlink_not_inspected'})));
   assert.equal(existsSync(join(codexHome, 'cache')) || existsSync(join(codexHome, 'installation_id')), false, 'the links themselves are removed');
   for (const rel of ['cache/x.json', 'tmp/arg0/apply_patch', 'browser/sessions/b1.json', 'auth.json']) assert.equal(readFileSync(join(outside, rel), 'utf8'), SENTINEL, `${rel} outside is untouched`);
   assert.ok(lstatSync(join(codexHome, 'tmp')).isSymbolicLink() && lstatSync(join(codexHome, 'browser')).isSymbolicLink());
@@ -101,6 +103,7 @@ test('symbolic links are never followed out of CODEX_HOME: a leftover that is a 
     mkdirSync(dirname(join(other.home, linked)), {recursive: true});
     symlinkSync(target, join(other.home, linked));
     assert.deepEqual(findCodexLeftovers({home: other.home, pins: []}).files, [], linked);
+    assert.deepEqual(findCodexLeftovers({home: other.home, pins: []}).uninspected, [join(other.home, linked)], `${linked} is reported as not inspected`);
     // state/ is also where a session's compat settings live, so a link there refuses the prune outright.
     if (linked === 'state') assert.throws(() => removeCodexLeftovers({home: other.home, pins: [], sweep: noSessions}), error => error.code === 'prune_refused');
     else removeCodexLeftovers({home: other.home, pins: [], sweep: noSessions});
@@ -148,8 +151,10 @@ test('CodexCLI.app stays when its pin still lists it, the tree is not one cua in
 
   const pins = [listed, unrecorded, linkedApp, linkedTree];
   assert.deepEqual(findCodexLeftovers({home, pins}).trees, []);
+  const linked = [join(appRoot, 'CodexCLI.app'), join(home, 'runtimes', linkedTree.release)];
+  assert.deepEqual(findCodexLeftovers({home, pins}).uninspected, linked, 'the links are not followed, and are reported');
   const result = removeCodexLeftovers({home, pins, sweep: noSessions});
-  assert.deepEqual([result.removed, result.deferred, result.failed], [[], [], []]);
+  assert.deepEqual([result.removed, result.deferred, result.failed], [[], [], linked.map(path => ({path, code: 'symlink_not_inspected'}))]);
   for (const root of roots) assert.ok(existsSync(join(root, 'CodexCLI.app', 'Contents', 'MacOS', 'codex')), root);
   assert.equal(readFileSync(join(dir, 'real-app', 'Contents', 'MacOS', 'codex'), 'utf8'), SENTINEL);
   assert.ok(lstatSync(join(appRoot, 'CodexCLI.app')).isSymbolicLink());
@@ -383,7 +388,7 @@ test('an unreadable install.json is a scan error, not a stranger\'s tree: doctor
     assert.ok(existsSync(join(root, 'CodexCLI.app')));
   } finally { chmodSync(record, 0o644); }
   writeFileSync(record, '{"not": "a record"}');
-  assert.deepEqual(findCodexLeftovers({home, pins: [pin]}), {codexHome: codexHomeOf(home), files: [], trees: [], errors: []}, 'readable but invalid: not cua\'s, left alone');
+  assert.deepEqual(findCodexLeftovers({home, pins: [pin]}), {codexHome: codexHomeOf(home), files: [], trees: [], errors: [], uninspected: []}, 'readable but invalid: not cua\'s, left alone');
 });
 
 test('a tombstone left by a failed prune is a leftover: doctor names it, and the next prune removes it without waiting for sessions', {skip: process.getuid?.() === 0}, async t => {
@@ -413,3 +418,32 @@ test('a tombstone left by a failed prune is a leftover: doctor names it, and the
   for (const name of ['.CodexCLI.app.pruning-', '.CodexCLI.app.pruning-xyz', '.codexcli.pruning-ab12', 'CodexCLI.app.pruning-ab12']) mkdirSync(join(root, name));
   assert.deepEqual(findCodexLeftovers({home, pins: [pin]}).trees, []);
 });
+
+// Links on the way to a leftover are never followed, and never read as clean either (#161 review): a linked
+// state/codex, a linked tmp/ or browser/ inside it (the reviewer's case: tmp/ linked to another directory of the same
+// home holding arg0/), a linked runtimes/ and a linked release directory are each named as not inspected, by doctor
+// (warn), the prune (failed) and a plain install's notice.
+// Each setup returns the link and a file behind it that must survive.
+for (const [label, setup] of [
+  ['state/codex', ({dir, home}) => { put(join(dir, 'x', 'auth.json')); mkdirSync(join(home, 'state'), {recursive: true}); symlinkSync(join(dir, 'x'), codexHomeOf(home)); return [codexHomeOf(home), join(dir, 'x', 'auth.json')]; }],
+  ['tmp/ inside state/codex', ({home}) => { put(join(home, 'other', 'arg0', 'marker')); mkdirSync(codexHomeOf(home), {recursive: true}); symlinkSync(join(home, 'other'), join(codexHomeOf(home), 'tmp')); return [join(codexHomeOf(home), 'tmp'), join(home, 'other', 'arg0', 'marker')]; }],
+  ['runtimes/', ({dir, home}) => { const real = installedTree(dir, darwinPin()); symlinkSync(join(dir, 'runtimes'), join(home, 'runtimes')); return [join(home, 'runtimes'), join(real, 'CodexCLI.app', 'Contents', 'MacOS', 'codex')]; }],
+  ['release directory', ({dir, home}) => { const pin = darwinPin(); const real = installedTree(dir, pin); mkdirSync(join(home, 'runtimes')); symlinkSync(real, join(home, 'runtimes', pin.release)); return [join(home, 'runtimes', pin.release), join(real, 'CodexCLI.app', 'Contents', 'MacOS', 'codex')]; }],
+]) {
+  test(`a linked ${label} is reported as not inspected by doctor, the prune and a plain install, and nothing behind it is touched`, async t => {
+    const ctx = cliHome(t);
+    rmSync(join(ctx.home, 'runtimes'), {recursive: true, force: true});   // cliHome's own tree, out of the way
+    const [link, behind] = setup(ctx);
+    const pins = [darwinPin()];
+    assert.deepEqual(findCodexLeftovers({home: ctx.home, pins}).uninspected, [link]);
+    const row = leftoverRow(await inspectRuntime({home: ctx.home, env: {HOME: ctx.home}, pins, ...passive}));
+    assert.equal(row.status, 'warn', row.detail);
+    assert.ok(row.detail.includes(`${link} is a symbolic link and was not inspected`), row.detail);
+    const pruned = removeCodexLeftovers({home: ctx.home, pins, sweep: noSessions});
+    assert.deepEqual(pruned.failed, [{path: link, code: 'symlink_not_inspected'}]);
+    assert.ok(describeRemoval(pruned).some(line => line.includes(`${link} is a symbolic link and was not inspected`)));
+    assert.match((await ctx.run([])).stdout, new RegExp(`${link.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} is a symbolic link and was not inspected`));
+    assert.ok(lstatSync(link).isSymbolicLink(), 'the link stays');
+    assert.equal(readFileSync(behind, 'utf8'), SENTINEL, 'what lies behind it is untouched');
+  });
+}

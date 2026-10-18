@@ -85,7 +85,9 @@ prune, not only that instant. If `run/`, `state/`, `state/compat/` or
 reported, never taken as clean. A Codex CLI the prune renamed aside but could not delete
 (`.CodexCLI.app.pruning-<hex>` beside the release's files) stays a leftover: doctor names it and the next prune
 removes it. Nothing is followed through a symbolic link: a leftover
-that is itself a link is unlinked and its target left, and a linked directory on the way is skipped. Until then
+that is itself a link is unlinked and its target left, and a linked directory on the way to one (`state/codex`, its
+`tmp/` or `browser/`, `runtimes/`, a release directory) is skipped and named as not inspected, by doctor, the prune
+and a plain install alike, so it never reads as clean. Until then
 `cua doctor`'s `runtime.leftovers` row names what is left and the command (`warn`, never a failure).
 
 `cua install` does not take the pinned archive's Chrome plugin (OpenAI's native host for the ChatGPT extension): the

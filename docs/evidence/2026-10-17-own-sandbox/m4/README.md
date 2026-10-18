@@ -56,7 +56,7 @@ cua using that home, is updated, `cua install --prune-leftovers` removes, by nam
 `models_cache.json`, `cache/`, `plugins/`, `skills/`, `log/`, `tmp/arg0`, `browser/sessions`), and the unused
 `CodexCLI.app` (about 229 MB; on Linux the `codex` file) from each installed release whose pin no longer lists it. It
 prints each name, never a file's content; it never reads the environment's `CODEX_HOME` or `~/.codex`, never follows a
-symbolic link, and leaves node_repl's own state (`config.toml`, `computer-use/sessions`, `node_repl/active_execs`). A
+symbolic link (a linked directory on the way to a leftover is named as not inspected, never taken as clean), and leaves node_repl's own state (`config.toml`, `computer-use/sessions`, `node_repl/active_execs`). A
 release's Codex CLI is removed only while no `cua serve` or profile listing of that home runs (checked right before,
 then again after renaming it aside, putting it back if a session appeared); otherwise the prune says so and a later
 one finishes the job. A session starting in the instant after the second check is not seen; only an older cua would
@@ -116,29 +116,54 @@ whose CLI is still an oracle (or copy the CLI out first); prune only fresh scrat
 shared by the long-lived 0.5.0, 0.9.0 and 0.11.0 shims and a checkout's serve and agent, so it is pruned only after
 all of them run this release, by the dispatching session.
 
-- **Acceptance 1, 10 (macOS, mini).** A fresh scratch `CUA_HOME`, `node bin/cua.mjs install --archive <pinned zip>`:
-  the tree holds `cua_node` and `install.json` only. `cua doctor`: `sandbox.launcher` pass, `runtime.leftovers` pass,
-  no row naming the Codex CLI.
-- **Acceptance 10, the prune live (mini; launches nothing, so no prompt).** In a second fresh scratch home, install
-  from a pre-M2 checkout (90cbfe0) with the pinned zip and `--no-node`: that places `CodexCLI.app`. Plant synthetic
-  files by the prune's names in `state/codex` (never a real `auth.json`) and node_repl's three keepers, and point the
-  shell's `CODEX_HOME` at a second planted directory with the same names. At the final SHA: `cua doctor` shows
-  `runtime.leftovers` warn naming them and the command; a plain `cua install --archive <pinned zip> --no-node` removes
-  nothing and says so; `cua install --archive <pinned zip> --no-node --prune-leftovers` prints each removal; doctor
-  then passes the row; the environment's planted directory is intact; the keepers remain; `du -sh` of the tree drops by about 229 MB; the native
-  helper's `SkyComputerUseService` keeps its inode (`stat -f %i` before and after). Repeat with a session record of a
-  live pid in `run/` first: the prune defers the `CodexCLI.app` with the sentence, removes the `state/codex` names.
-- **Acceptance 10 (Linux, GCE).** The same with a pre-M3 install (the tree's `codex` file) and the Linux prune; and
-  M3's helper rows as before.
-- **Acceptance 2 to 9, 12 (both platforms).** As M1 to M3 ran them, at the final SHA: `scripts/accept-native.mjs
-  --live-secrets --live-textedit` on the mini (items 11 to 13 PASS, the rest as on main 94366c1 and M2), own-sandbox
-  and the compat route; on GCE `scripts/accept/linux-native.mjs`, own-sandbox, `linux-helper-compare.mjs` (with the
-  vendor `codex` copied out first, above); parity `--suite all` on the mini (vendor vs own) and on GCE (own vs
-  `m0/gce-vendor-control`) with `test/repl-parity/expected-differences.json`.
-- **Acceptance 11 (latency).** `scripts/native-baseline.mjs run` three times per configuration into
-  `m4/mini-vendor-computer/`, `m4/mini-cua-browser/` and `m4/gce-cua-computer/`, with the arguments M0 used, then
-  `compare --same-host m0/<config> m4/<config>`. First check that the controller's and devices' OS and Node versions
-  equal those recorded in the M0 runs (Surprises & Discoveries: a change is a re-baseline, not a loosened rule).
+The macOS acceptance runs in three groups (the spec's Decision Log, "M4's macOS acceptance runs in three groups"). No
+group types into any window: there is no live typing anywhere in M4's acceptance.
+
+**Group A, headless (mini): items 1 to 5, 8, 9 and 10.**
+
+- **Item 1.** A fresh scratch `CUA_HOME`, `node bin/cua.mjs install --archive <pinned zip>`: the tree holds `cua_node`
+  and `install.json` only; during the runs below `ps` shows no process named `codex`.
+- **Items 2 to 5** on both macOS hosts, as M1 and M2 ran them headless: own-sandbox (`scripts/accept/own-sandbox.mjs`:
+  the deny list, no bypass by link, writes confined to the session, no network for cells) on cua's own host, and the
+  compat route on the vendor host.
+- **Item 8.** The golden fixtures and argv parity run in the unit suite; the fingerprint under cua's launcher as M1 ran
+  it (`scripts/sandbox-probe/m1-mini.sh`).
+- **Item 9.** The fail-closed cases as M1 and M2 ran them (own host and compat).
+- **Item 10.** `cua doctor`: `sandbox.launcher` pass, `runtime.leftovers` pass, no row checking for a Codex CLI. Then
+  the prune, live but launching nothing (so no prompt): in a second fresh scratch home, install from a pre-M2 checkout
+  (90cbfe0) with the pinned zip and `--no-node`, which places `CodexCLI.app`; plant synthetic files by the prune's
+  names in `state/codex` (never a real `auth.json`) and node_repl's three keepers, and point the shell's `CODEX_HOME`
+  at a second planted directory with the same names. At the final SHA: `cua doctor` shows `runtime.leftovers` warn
+  naming them and the command; a plain `cua install --archive <pinned zip> --no-node` removes nothing and says so;
+  `cua install --archive <pinned zip> --no-node --prune-leftovers` prints each removal; doctor then passes the row;
+  the environment's planted directory is intact; the keepers remain; `du -sh` of the tree drops by about 229 MB; the
+  native helper's `SkyComputerUseService` keeps its inode (`stat -f %i` before and after). Repeat with a session
+  record of a live pid in `run/` first: the prune defers the `CodexCLI.app` with the sentence and removes the
+  `state/codex` names.
+
+**Group B, in a CI-opt hold (mini), in this order:**
+
+1. **Item 11, latency.** `scripts/native-baseline.mjs run` three times each into `m4/mini-vendor-computer/` and
+   `m4/mini-cua-browser/`, with the arguments M0 used, then `compare --same-host m0/<config> m4/<config>`. First
+   check that the controller's and the mini's OS and Node versions equal those recorded in M0's runs (Surprises &
+   Discoveries: a change is a re-baseline, not a loosened rule). A regression on either host's cold rows beyond M0's
+   run-to-run spread goes to the dispatching session before the merge.
+2. **Item 12, parity.** `scripts/repl-parity.mjs` `--suite all` on the mini, the vendor host against cua's own, diffed
+   with `test/repl-parity/expected-differences.json`.
+3. **accept-native.** `scripts/accept-native.mjs` **without** `--live-textedit`: its #115 items (11 to 13) PASS and the
+   rest as in M2's run, re-proving the macOS computer route (acceptance 6) read-only. `--live-secrets` may run as in
+   M2: its value goes to a controlled fake input target, never a window.
+
+**Group C, the owner's TextEdit sitting: skipped.** The three reasons, as recorded in the Decision Log:
+
+- M4 does not touch the macOS computer route or the compat executable;
+- M2's sitting proved typing and approvals at its SHA;
+- group B re-proves the route read-only.
+
+**Linux (GCE): no new run.** M4's merge changed no Linux launch code, so the Linux launch is the one M3's full parity
+ran at bf7739f, and Linux acceptance 12 (and M3's Linux items) rest on that run. The Linux prune of a pre-M3 tree's
+`codex` file is covered by the unit suite.
+
 - **Acceptance 13 (#138).** No sitting is planned: the line ships off (above). When a reproduction appears, on the
   mini, per role, the denying control and the grant:
   `node scripts/sandbox-probe/tz-probe.mjs --launcher cua --home real --role kernel --runs 80 --bound-ms 15000

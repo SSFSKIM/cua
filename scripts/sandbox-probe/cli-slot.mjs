@@ -31,8 +31,12 @@ log('invocations.jsonl', {ppid: process.ppid, sub, cwd: process.cwd(), mode: sub
   configKeys: argv.flatMap((a, i) => (a === '-c' ? [argv[i + 1]?.split('=')[0]] : [])),
   script: dash === -1 ? null : basename(argv.slice(dash + 1).find(a => /\.(m?js)$/.test(a)) ?? argv[dash + 1] ?? ''),
   args: sub === 'app-server' ? argv : undefined,
-  // Which names reach the CLI from its caller (node_repl, the helper), never their values.
-  envNames: Object.keys(process.env).filter(name => !name.startsWith('CUA_PROBE_')).sort()});
+  // Which names reach the CLI from its caller (node_repl, the helper), never their values; but for `sandbox` (#115 M2's
+  // opening probe, ./launch-env.mjs) the two path values the compat executable locates its settings from, the
+  // permissions table node_repl rendered and the command it launches (paths and options only).
+  envNames: Object.keys(process.env).filter(name => !name.startsWith('CUA_PROBE_')).sort(),
+  ...(sub === 'sandbox' ? {envValues: Object.fromEntries(['TMPDIR', 'CODEX_HOME'].filter(name => name in process.env).map(name => [name, process.env[name]])),
+    permissions: argv.find((a, i) => argv[i - 1] === '-c' && a.startsWith('permissions.node_repl=')) ?? null, command: dash === -1 ? null : argv.slice(dash + 1)} : {})});
 
 if (sub === 'app-server' && appServerMode === 'replay') {
   const audited = JSON.parse(readFileSync(process.env.CUA_PROBE_RESPONSES, 'utf8'));

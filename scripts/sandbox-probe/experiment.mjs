@@ -9,6 +9,12 @@
 //   node scripts/sandbox-probe/experiment.mjs --home <CUA_HOME> --user-home <HOME> [--config-home <XDG_CONFIG_HOME>]
 //     --scratch <dir> --host vendor|cua --mode scoped|default --cli <CLI under test> --app-server forward|replay
 //     [--responses <audited.json>] [--native] --label <name> --out <file>
+//   node scripts/sandbox-probe/experiment.mjs --env-probe … --host vendor --mode scoped|default|disabled …
+//     #115 M2's opening probe: one banner cell, no confinement cell and no native call, and the verdict of
+//     launch-env.mjs (`launchEnv`): did each child's `sandbox` call receive TMPDIR and CODEX_HOME exactly as buildLaunch
+//     set them (serve-slot.mjs records the launch; cli-slot.mjs the values and node_repl's permissions table). Under
+//     disabled it records whether node_repl calls the launcher at all. It refuses to start while any native helper runs
+//     and stops (by pid) any this run's slot started, as a native run does.
 //
 // CUA_HOME is a scratch install; nothing of the owner's runtime home is used. For a --native run HOME must be the
 // account's own: node_repl finds the helper's native pipe through HOME while the helper, an app-sandboxed process,
@@ -30,6 +36,7 @@ import {StdioClient, textOf} from '../browser-parity/mcp.mjs';
 import {resolveRuntime} from '../../src/runtime/manifest.mjs';
 import {auditExchange} from './app-server.mjs';
 import {createHelperTracker, helperPids, isAlive} from './helpers.mjs';
+import {launchEnvVerdict} from './launch-env.mjs';
 
 const SERVE = fileURLToPath(new URL('./serve-slot.mjs', import.meta.url));
 const SLOT_BODY = fileURLToPath(new URL('./cli-slot.mjs', import.meta.url));
@@ -95,15 +102,18 @@ const readJsonl = file => { try { return readFileSync(file, 'utf8').split('\n').
 async function main() {
   const {values} = parseArgs({options: {home: {type: 'string'}, 'user-home': {type: 'string'}, scratch: {type: 'string'}, host: {type: 'string'},
     mode: {type: 'string'}, cli: {type: 'string'}, 'app-server': {type: 'string', default: 'forward'}, responses: {type: 'string'}, native: {type: 'boolean', default: false},
-    label: {type: 'string'}, out: {type: 'string'}, 'config-home': {type: 'string'}}});
+    label: {type: 'string'}, out: {type: 'string'}, 'config-home': {type: 'string'}, 'env-probe': {type: 'boolean', default: false}}});
   const {home, scratch, host, mode, cli, label} = values;
   const userHome = values['user-home'];
-  if (!['vendor', 'cua'].includes(host) || !['scoped', 'default'].includes(mode)) throw new Error('--host vendor|cua and --mode scoped|default');
+  const envProbe = values['env-probe'];
+  if (!['vendor', 'cua'].includes(host) || !(envProbe ? ['scoped', 'default', 'disabled'] : ['scoped', 'default']).includes(mode)) throw new Error('--host vendor|cua and --mode scoped|default (with --env-probe also disabled)');
   if (values.native && host !== 'vendor') throw new Error('--native runs on the vendor host (macOS computer sessions)');
-  const out = {label, host, mode, cli, appServer: values['app-server'], native: values.native, started: new Date().toISOString(), events: []};
+  if (envProbe && (values.native || host !== 'vendor')) throw new Error('--env-probe runs on the vendor host without --native');
+  const watchHelpers = values.native || envProbe;
+  const out = {label, host, mode, cli, appServer: values['app-server'], native: values.native, envProbe, started: new Date().toISOString(), events: []};
   const ev = (what, data = {}) => { out.events.push({at: new Date().toISOString(), what, ...data}); process.stderr.write(`[${label}] ${what} ${JSON.stringify(data).slice(0, 300)}\n`); };
 
-  if (values.native) {
+  if (watchHelpers) {
     const running = helperPids();
     if (running.length) {
       out.refused = 'a SkyComputerUseService this run did not start is running';
@@ -114,7 +124,7 @@ async function main() {
   const run = mkdtempSync(join(scratch, `${label}-`));
   // The session's TMPDIR: a fresh directory of its own under the account's temporary directory (see the header).
   const sessionTmp = mkdtempSync(join(tmpdir(), 'cua115-'));
-  const logDir = join(run, 'slot'), outside = join(run, 'outside');
+  const logDir = join(run, 'slot'), outside = join(run, 'outside'), launchLog = join(run, 'launches.jsonl');
   for (const dir of [logDir, outside]) mkdirSync(dir, {recursive: true, mode: 0o700});
   const marker = join(outside, 'cua115-marker.txt');
   writeFileSync(marker, 'synthetic marker\n');
@@ -129,7 +139,7 @@ async function main() {
   const env = {HOME: userHome, XDG_CONFIG_HOME: values['config-home'] ?? join(userHome, '.config'), USER: process.env.USER, LOGNAME: process.env.LOGNAME, LANG: 'C.UTF-8',
     PATH: process.env.PATH, TMPDIR: sessionTmp, CUA_HOME: home, CUA_REPL_HOST: host, CUA_SHIM_SURFACES: host === 'vendor' ? 'computer' : 'browser',
     CUA_SHIM_SANDBOX: mode, CUA_SHIM_PERSIST: 'session', CUA_SHIM_SECRETS: 'off',
-    CUA_PROBE_SLOT: slot};
+    CUA_PROBE_SLOT: slot, CUA_PROBE_LAUNCH_LOG: launchLog};
   const elicitations = [];
   const client = new StdioClient({command: process.execPath, args: [SERVE], env, cwd: run, timeoutMs: 120_000, clientName: 'cua-115-m0',
     answer: msg => {
@@ -157,7 +167,8 @@ async function main() {
     const init = await client.initialize({elicitation: {form: {}}});
     out.serverInfo = init?.serverInfo ?? null;
     results.banner = await js('banner', 'return {ready: true};');
-    results.confinement = await js('confinement', confinementCell({outside, marker, moduleDir: runtime.paths.moduleDir, cuaHome: home, tcpPort: tcp.address().port, unixPath, sessionTmp}));
+    if (envProbe) helpers.observe();
+    else results.confinement = await js('confinement', confinementCell({outside, marker, moduleDir: runtime.paths.moduleDir, cuaHome: home, tcpPort: tcp.address().port, unixPath, sessionTmp}));
     if (values.native) {
       for (const [name, body] of NATIVE) {
         results[name] = await js(name, body);
@@ -172,7 +183,7 @@ async function main() {
     out.serveExit = await client.close();
     tcp.close(); uds.close(); rmSync(unixPath, {force: true});
   }
-  if (values.native) {
+  if (watchHelpers) {
     for (let i = 0; i < 50 && helpers.owned().some(isAlive); i++) await sleep(100);
     out.helpers = {...helpers.stopLeft(), foreignSeen: helpers.foreignSeen().length};
   }
@@ -180,7 +191,12 @@ async function main() {
   out.elicitations = elicitations;
   // What the slot saw: the CLI invocations, and per app-server the audited exchange (never the raw lines).
   const invocations = readJsonl(join(logDir, 'invocations.jsonl'));
-  out.slot = {invocations: invocations.map(({t, sub, mode: m, configKeys, script, args, envNames}) => ({t, sub, mode: m, configKeys, script, args, envNames}))};
+  out.slot = {invocations: invocations.map(({t, sub, mode: m, cwd, configKeys, script, args, envNames, envValues, permissions, command}) =>
+    ({t, sub, mode: m, configKeys, script, args, envNames, ...(envProbe ? {cwd, envValues, permissions, command} : {})}))};
+  if (envProbe) {
+    out.launches = readJsonl(launchLog);
+    out.launchEnv = launchEnvVerdict({launches: out.launches, invocations});
+  }
   const codexHome = join(home, 'state', 'codex');
   out.appServers = readdirSync(logDir).filter(f => /^(app-server|replay)-\d+\.jsonl$/.test(f)).sort().map(file => {
     const records = readJsonl(join(logDir, file));
@@ -195,6 +211,8 @@ async function main() {
   rmSync(marker, {force: true});
   rmSync(sessionTmp, {recursive: true, force: true});
   if (out.driverError) process.exitCode = 1;
+  // Under disabled the probe only records whether node_repl calls the launcher; scoped and default must pass.
+  if (envProbe && mode !== 'disabled' && !out.launchEnv.ok) process.exitCode = 1;
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) await main();

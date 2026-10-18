@@ -21,29 +21,41 @@
 // state/codex, runtimes/, a release directory, tmp/ or browser/ in CODEX_HOME) is never followed, and a leftover that is
 // itself a link is unlinked, its target left as it is. Results carry paths, never content. A removal that fails is
 // reported and left for doctor to keep naming; it never fails the install.
-import {lstatSync, readdirSync, rmSync} from 'node:fs';
-import {join} from 'node:path';
-import {CuaError} from './errors.mjs';
+import {lstatSync, readdirSync, renameSync, rmSync} from 'node:fs';
+import {randomBytes} from 'node:crypto';
+import {dirname, join} from 'node:path';
+import {CuaError, fail} from './errors.mjs';
 import {homeLayout, realHome} from './layout.mjs';
-import {readInstalledRecord} from './manifest.mjs';
-import {sweepRun} from './run-dir.mjs';
+import {RECORD_FILE, readInstalledRecord} from './manifest.mjs';
+import {assertSessionParents, sweepRun} from './run-dir.mjs';
 
 export const CODEX_HOME_LEFTOVERS = ['auth.json', 'installation_id', 'models_cache.json', 'cache', 'plugins', 'skills', 'log', 'tmp/arg0', 'browser/sessions'];
 const SQLITE = /\.sqlite(-wal|-shm)?$/;
 // The Codex CLI component a release pin used to list, per platform, and whether it is a directory.
 const CLI_COMPONENT = {darwin: {name: 'CodexCLI.app', directory: true}, linux: {name: 'codex', directory: false}};
 
-const lstat = path => { try { return lstatSync(path); } catch { return null; } };
-const realDirectory = path => lstat(path)?.isDirectory() ?? false;
-const names = dir => { try { return readdirSync(dir).sort(); } catch { return []; } };
-
-// -> {codexHome, files: CODEX_HOME-relative names present, trees: [{release, name, path}]}.
-export function findCodexLeftovers({home, pins}) {
-  const layout = homeLayout(realHome(home));
-  return {codexHome: layout.codexHome, files: codexHomeLeftovers(layout), trees: unusedCliComponents(layout, pins)};
+// A scan of the home: every lstat or listing error other than a missing path (ENOENT, ENOTDIR) is recorded in
+// `errors`, so an unreadable directory never reads as clean.
+function scanner() {
+  const errors = [];
+  const record = (path, error) => { if (error.code !== 'ENOENT' && error.code !== 'ENOTDIR') errors.push({path, code: error.code ?? 'error'}); };
+  const lstat = path => { try { return lstatSync(path); } catch (error) { record(path, error); return null; } };
+  return {
+    errors,
+    lstat,
+    realDirectory: path => lstat(path)?.isDirectory() ?? false,
+    names: dir => { try { return readdirSync(dir).sort(); } catch (error) { record(dir, error); return []; } },
+  };
 }
 
-function codexHomeLeftovers({home, codexHome}) {
+// -> {codexHome, files: CODEX_HOME-relative names present, trees: [{release, name, path}], errors: [{path, code}]}.
+export function findCodexLeftovers({home, pins}) {
+  const layout = homeLayout(realHome(home));
+  const scan = scanner();
+  return {codexHome: layout.codexHome, files: codexHomeLeftovers(layout, scan), trees: unusedCliComponents(layout, pins, scan), errors: scan.errors};
+}
+
+function codexHomeLeftovers({home, codexHome}, {lstat, realDirectory, names}) {
   if (!realDirectory(join(home, 'state')) || !realDirectory(codexHome)) return [];
   const found = CODEX_HOME_LEFTOVERS.filter(rel => {
     const parent = rel.includes('/') ? join(codexHome, rel.split('/')[0]) : null;
@@ -52,7 +64,7 @@ function codexHomeLeftovers({home, codexHome}) {
   return [...found, ...names(codexHome).filter(name => SQLITE.test(name))];
 }
 
-function unusedCliComponents({runtimes}, pins) {
+function unusedCliComponents({runtimes}, pins, {lstat, realDirectory, names}) {
   if (!realDirectory(runtimes)) return [];
   const found = [];
   for (const release of names(runtimes)) {
@@ -61,6 +73,8 @@ function unusedCliComponents({runtimes}, pins) {
     if (!component || Object.hasOwn(pin.components ?? {}, component.name)) continue;
     const root = join(runtimes, release);
     if (!realDirectory(root)) continue;
+    // The record must be readable to tell a tree cua installed; an unreadable one is a scan error, not a stranger.
+    if (lstat(join(root, RECORD_FILE)) === null) continue;
     try { readInstalledRecord(root, pin); } catch (error) { if (error instanceof CuaError) continue; throw error; }
     const path = join(root, component.name);
     const stat = lstat(path);
@@ -79,27 +93,46 @@ export function sessionsInUse(home, sweep = sweepRun) {
 export const PRUNE_COMMAND = 'cua install --prune-leftovers';
 const PRUNE_ADVICE = `once every cua using this home is updated (an older one may still launch the Codex CLI), \`${PRUNE_COMMAND}\` removes them`;
 
-// `cua install --prune-leftovers`'s cleanup -> {codexHome, removed: [path], deferred: [{path, reason}], failed: [{path, code}]}.
-// `sweep` is the run/ sweep (injectable for tests), asked only when a release tree has something to remove.
+// `cua install --prune-leftovers`'s cleanup -> {codexHome, removed: [path], deferred: [{path, reason}], failed: [{path,
+// code}]} (`failed` also carries the scan's errors). `sweep` is the run/ sweep (injectable for tests). Refuses
+// (prune_refused), removing nothing, when a directory a session's entries live in is a symbolic link
+// (run-dir.mjs assertSessionParents), since the sweep would have to look through it.
+// A release's CLI is checked for sessions right before it goes and again after it is renamed aside to a tombstone in
+// its own directory (one rename, so no launch ever sees half a bundle); a session found the second time puts it back.
+// What remains is a session that starts after that second check and launches the CLI before the tombstone is deleted:
+// only an older cua does that (this one never launches it), which is what "update every cua first" is for, and its
+// launch then fails, never runs unconfined.
 export function removeCodexLeftovers({home, pins, sweep = sweepRun}) {
+  try { assertSessionParents(realHome(home)); } catch (error) {
+    if (!error.code) throw error;
+    fail('prune_refused', `the Codex CLI's leftovers were not pruned: ${error.message}`, {hint: 'make it a real directory of the cua home again, then run cua install --prune-leftovers'});
+  }
   const found = findCodexLeftovers({home, pins});
-  const result = {codexHome: found.codexHome, removed: [], deferred: [], failed: []};
-  const remove = path => {
-    try { rmSync(path, {recursive: true, force: true}); result.removed.push(path); } catch (error) { result.failed.push({path, code: error.code ?? 'error'}); }
+  const result = {codexHome: found.codexHome, removed: [], deferred: [], failed: [...found.errors]};
+  const remove = (path, removing = path) => {
+    try { rmSync(removing, {recursive: true, force: true}); result.removed.push(path); } catch (error) { result.failed.push({path: removing, code: error.code ?? 'error'}); }
   };
   for (const rel of found.files) remove(join(found.codexHome, rel));
-  const inUse = found.trees.length ? sessionsInUse(home, sweep) : [];
-  for (const {path} of found.trees) {
-    if (inUse.length) result.deferred.push({path, reason: `a session may be running from this home: ${inUse.join(', ')}`});
-    else remove(path);
+  const busy = () => { const inUse = sessionsInUse(home, sweep); return inUse.length ? `a session may be running from this home: ${inUse.join(', ')}` : null; };
+  for (const {path, name} of found.trees) {
+    const before = busy();
+    if (before) { result.deferred.push({path, reason: before}); continue; }
+    const tombstone = join(dirname(path), `.${name}.pruning-${randomBytes(4).toString('hex')}`);
+    try { renameSync(path, tombstone); } catch (error) { result.failed.push({path, code: error.code ?? 'error'}); continue; }
+    const after = busy();
+    if (after) {
+      try { renameSync(tombstone, path); result.deferred.push({path, reason: after}); } catch (error) { result.failed.push({path: tombstone, code: error.code ?? 'error'}); }
+      continue;
+    }
+    remove(path, tombstone);
   }
   return result;
 }
 
 // The line a plain `cua install` prints when leftovers are there (it removes nothing), or none.
-export function describeLeftovers({codexHome, files, trees}) {
-  if (!files.length && !trees.length) return [];
-  const parts = [...(files.length ? [`${codexHome}: ${files.join(', ')}`] : []), ...trees.map(t => t.path)];
+export function describeLeftovers({codexHome, files, trees, errors = []}) {
+  if (!files.length && !trees.length && !errors.length) return [];
+  const parts = [...(files.length ? [`${codexHome}: ${files.join(', ')}`] : []), ...trees.map(t => t.path), ...errors.map(e => `${e.path} could not be read (${e.code})`)];
   return [`the Codex CLI's leftovers are still here (${parts.join('; ')}); once every cua using this home is updated, run \`${PRUNE_COMMAND}\``];
 }
 
@@ -110,16 +143,18 @@ export function describeRemoval({codexHome, removed, deferred, failed}) {
     ...(inHome.length ? [`removed the Codex CLI's leftovers from ${codexHome}: ${inHome.join(', ')}`] : []),
     ...removed.filter(path => !path.startsWith(`${codexHome}/`)).map(path => `removed the Codex CLI's unused ${path}`),
     ...deferred.map(({path, reason}) => `left the Codex CLI's unused ${path} in place, since ${reason}; run ${PRUNE_COMMAND} again when none is`),
-    ...failed.map(({path, code}) => `could not remove the Codex CLI's leftover ${path} (${code}); cua doctor keeps naming it`),
+    ...failed.map(({path, code}) => `could not read or remove ${path} (${code}), so what the Codex CLI left there stays; cua doctor keeps naming it`),
   ];
 }
 
 // doctor's runtime.leftovers row: `warn` naming every leftover and the command that removes it, else `pass`. `inUse` is
 // sessionsInUse's answer after doctor's own sweep.
 export function leftoversCheck({home, pins, inUse}) {
-  const {codexHome, files, trees} = findCodexLeftovers({home, pins});
-  if (!files.length && !trees.length) return {name: 'runtime.leftovers', status: 'pass', detail: 'nothing the Codex CLI left behind is here; cua runs no Codex CLI (#115)'};
+  const {codexHome, files, trees, errors} = findCodexLeftovers({home, pins});
+  const unread = errors.length ? `; what is there could not be read: ${errors.map(e => `${e.path} (${e.code})`).join(', ')}` : '';
+  if (!files.length && !trees.length && !errors.length) return {name: 'runtime.leftovers', status: 'pass', detail: 'nothing the Codex CLI left behind is here; cua runs no Codex CLI (#115)'};
   const parts = [...(files.length ? [`${codexHome}: ${files.join(', ')}`] : []), ...trees.map(t => t.path)];
+  if (!parts.length) return {name: 'runtime.leftovers', status: 'warn', detail: `whether the Codex CLI left anything here is unknown${unread}`};
   const waiting = trees.length && inUse.length ? ` (the release's ${trees.map(t => t.name).join(', ')} once no session runs from this home (now: ${inUse.join(', ')}))` : '';
-  return {name: 'runtime.leftovers', status: 'warn', detail: `the Codex CLI's leftovers, unused by this cua since it runs its own sandbox (#115): ${parts.join('; ')}; ${PRUNE_ADVICE}${waiting}`};
+  return {name: 'runtime.leftovers', status: 'warn', detail: `the Codex CLI's leftovers, unused by this cua since it runs its own sandbox (#115): ${parts.join('; ')}; ${PRUNE_ADVICE}${waiting}${unread}`};
 }

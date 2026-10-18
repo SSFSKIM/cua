@@ -152,7 +152,13 @@ async function install(args, {installRuntime: runtimeInstaller = installRuntime,
   // The Codex CLI's leftovers (#115 M4), once the runtime is in place: removed only when asked (--prune-leftovers),
   // since an older cua sharing this home may still launch the CLI; named, never shown, and never a failure. Otherwise
   // install only says they are there.
-  const codexLeftovers = values['prune-leftovers'] ? removeCodexLeftovers({home, pins}) : null;
+  let codexLeftovers = null;
+  if (values['prune-leftovers']) {
+    try { codexLeftovers = removeCodexLeftovers({home, pins}); } catch (error) {
+      if (!(error instanceof CuaError)) throw error;
+      throw new CuaError(error.code, error.message, {hint: `${error.hint}; ${result.release} is installed and active`, cause: error});
+    }
+  }
   if (!values.json) for (const line of codexLeftovers ? describeRemoval(codexLeftovers) : describeLeftovers(findCodexLeftovers({home, pins}))) print(line);
 
   let sandboxHelper = null;

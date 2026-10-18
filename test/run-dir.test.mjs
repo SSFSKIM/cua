@@ -4,7 +4,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawn, spawnSync} from 'node:child_process';
-import {chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, writeFileSync} from 'node:fs';
+import {chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {REPO, shortScratch} from './fixtures/runtime-fixture.mjs';
@@ -139,5 +139,50 @@ for (const [how, crash, cleaned] of [
     assert.deepEqual(readdirSync(run).sort(), [ID(1), `${ID(1)}.pid`, `${ID(1)}.sock`]);
     assert.deepEqual(sweepRun(dir).swept, [{session: ID(1), pid: child.pid}]);
     assert.equal(existsSync(run) && readdirSync(run).length, 0);
+  });
+}
+
+// A run/ that is a symbolic link is never followed (#115 M4 review): the sweep refuses it, so no session directory
+// outside the home is ever removed, by `cua serve`'s, the agent's or doctor's sweep alike.
+test('the sweep refuses a run/ that is a symbolic link and removes nothing through it', t => {
+  const dir = home(t);
+  const outside = join(dir, 'elsewhere');
+  mkdirSync(join(outside, ID(1)), {recursive: true});
+  writeFileSync(join(outside, ID(1), 'kept.txt'), 'not cua\'s');
+  writeFileSync(join(outside, `${ID(1)}.pid`), '999999\n');
+  const cua = join(dir, 'cua');
+  mkdirSync(cua);
+  symlinkSync(outside, join(cua, 'run'));
+  assert.throws(() => sweepRun(cua, {alive: () => false}), error => error.code === 'session_parent_not_directory' && error.message.includes(join(cua, 'run')));
+  assert.deepEqual(readdirSync(outside).sort(), [ID(1), `${ID(1)}.pid`]);
+  assert.equal(readFileSync(join(outside, ID(1), 'kept.txt'), 'utf8'), 'not cua\'s');
+});
+
+// The same for every other directory a session's entries are removed from: a link at state/, state/compat/ or kernel/
+// refuses the sweep, and a release removes nothing through it, so a session's compat settings or kernel directory
+// outside the home are never deleted.
+for (const parent of ['state', 'state/compat', 'kernel']) {
+  test(`the sweep refuses a ${parent}/ that is a symbolic link, and a release removes nothing through it`, t => {
+    const dir = realpathSync(home(t));
+    const cua = join(dir, 'cua');
+    const outside = join(dir, 'elsewhere');
+    mkdirSync(outside);
+    // What a session of ID(1) owns under each parent, planted at the link's target.
+    const planted = parent === 'kernel' ? [join(outside, ID(1), 'tmp')] : [];
+    const files = parent === 'state' ? [join(outside, 'compat', `${ID(1)}.json`)] : parent === 'state/compat' ? [join(outside, `${ID(1)}.json`), join(outside, `${ID(1)}.node`)] : [];
+    for (const d of planted) mkdirSync(d, {recursive: true});
+    for (const f of files) { mkdirSync(join(f, '..'), {recursive: true}); writeFileSync(f, 'not cua\'s'); }
+    mkdirSync(join(cua, parent, '..'), {recursive: true});
+    symlinkSync(outside, join(cua, parent));
+    mkdirSync(join(cua, 'run', ID(1)), {recursive: true});
+    writeFileSync(join(cua, 'run', `${ID(1)}.pid`), '999999\n');
+    assert.throws(() => sweepRun(cua, {alive: () => false}), error => error.code === 'session_parent_not_directory' && error.message.includes(join(cua, parent)));
+    for (const p of [...planted, ...files]) assert.ok(existsSync(p), `${p} survives`);
+    assert.ok(existsSync(join(cua, 'run', ID(1))), 'the session itself is left for a later sweep');
+
+    rmSync(join(cua, 'run', `${ID(1)}.pid`));
+    const claim = claimRunSession(cua, ID(1));
+    assert.deepEqual(claim.release(), [`${join(cua, parent)}: not a directory, nothing removed under it`]);
+    for (const p of [...planted, ...files]) assert.ok(existsSync(p), `${p} survives a release`);
   });
 }

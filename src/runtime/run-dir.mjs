@@ -28,9 +28,32 @@ function exists(path) {
   try { lstatSync(path); return true; } catch { return false; }
 }
 
+// The directories a session's entries are removed from: run/, state/, state/compat/ and kernel/ under the (real) home,
+// in that order, so each lstat sees its parent already checked. Each must be a real directory or absent; a symbolic
+// link at any of them would steer a removal outside the home, so it is never followed (#115 M4 review). The home itself
+// may be a link (realHome resolves it). -> the offending path, or null.
+function linkedSessionParent(home) {
+  const {run, kernel, compat} = homeLayout(home);
+  for (const dir of [run, join(home, 'state'), compat, kernel]) {
+    let stat;
+    try { stat = lstatSync(dir); } catch (error) { if (error.code === 'ENOENT') continue; throw error; }
+    if (!stat.isDirectory()) return dir;
+  }
+  return null;
+}
+
+// Throws `session_parent_not_directory` when linkedSessionParent finds one.
+export function assertSessionParents(home) {
+  const dir = linkedSessionParent(home);
+  if (dir) throw Object.assign(new Error(`${dir} is not a directory (a symbolic link?); cua removes session entries only from directories of its own home`), {code: 'session_parent_not_directory'});
+}
+
 // Removes a session's entries, the record last and only once nothing else of the session remains (a later sweep
-// retries what is left).
+// retries what is left). Nothing is removed when a parent directory is not a real one (linkedSessionParent); an entry
+// that is itself a symbolic link is removed as the link.
 function removeSession(run, sessionId) {
+  const linked = linkedSessionParent(dirname(run));
+  if (linked) return [`${linked}: not a directory, nothing removed under it`];
   const errors = [];
   const sock = join(run, `${sessionId}.sock`);
   const dir = join(run, sessionId);
@@ -76,6 +99,7 @@ const defaultAlive = pid => {
 // pid}], unowned: [entry names with no readable record], failed: [{session, pid, errors}]}.
 export function sweepRun(home, {alive = defaultAlive} = {}) {
   const {run} = homeLayout(realHome(home));
+  assertSessionParents(dirname(run));
   let names;
   try { names = readdirSync(run); } catch (error) {
     if (error.code === 'ENOENT') return {run, swept: [], live: [], unowned: [], failed: []};

@@ -5,7 +5,7 @@
 // the command that removes them. Every tree here is a scratch one; nothing reads the user's home or a real runtime.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, symlinkSync, writeFileSync} from 'node:fs';
+import {chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, symlinkSync, writeFileSync} from 'node:fs';
 import {dirname, join} from 'node:path';
 import {CODEX_HOME_LEFTOVERS, findCodexLeftovers, removeCodexLeftovers} from '../src/runtime/codex-leftovers.mjs';
 import {inspectRuntime} from '../src/runtime/doctor.mjs';
@@ -101,7 +101,9 @@ test('symbolic links are never followed out of CODEX_HOME: a leftover that is a 
     mkdirSync(dirname(join(other.home, linked)), {recursive: true});
     symlinkSync(target, join(other.home, linked));
     assert.deepEqual(findCodexLeftovers({home: other.home, pins: []}).files, [], linked);
-    removeCodexLeftovers({home: other.home, pins: [], sweep: noSessions});
+    // state/ is also where a session's compat settings live, so a link there refuses the prune outright.
+    if (linked === 'state') assert.throws(() => removeCodexLeftovers({home: other.home, pins: [], sweep: noSessions}), error => error.code === 'prune_refused');
+    else removeCodexLeftovers({home: other.home, pins: [], sweep: noSessions});
     assert.equal(readFileSync(join(target, linked === 'state' ? 'codex/auth.json' : 'auth.json'), 'utf8'), SENTINEL, linked);
   }
 });
@@ -304,4 +306,63 @@ test('the environment\'s CODEX_HOME is never touched, by the prune, by install o
 
 test('the usage names the prune and why it waits for every cua using the home', () => {
   for (const platform of ['darwin', 'linux']) assert.match(usageFor(platform), /\[--prune-leftovers\][^]*an older cua sharing the home may still need it/, platform);
+});
+
+// ---- review regressions ----
+
+test('a run/ that is a symbolic link refuses the prune with a sentence, and nothing is removed anywhere', t => {
+  const {dir, home} = scratchHome(t);
+  const pin = darwinPin();
+  const root = installedTree(home, pin);
+  put(join(codexHomeOf(home), 'auth.json'));
+  const outside = join(dir, 'elsewhere');
+  put(join(outside, 's1', 'kept.txt'));
+  writeFileSync(join(outside, 's1.pid'), '999999\n');
+  symlinkSync(outside, join(home, 'run'));
+  assert.throws(() => removeCodexLeftovers({home, pins: [pin], sweep: h => sweepRun(h, {alive: () => false})}),
+    error => error.code === 'prune_refused' && error.message.includes(`${join(home, 'run')} is not a directory`));
+  assert.ok(existsSync(join(codexHomeOf(home), 'auth.json')) && existsSync(join(root, 'CodexCLI.app')), 'nothing removed');
+  assert.equal(readFileSync(join(outside, 's1', 'kept.txt'), 'utf8'), SENTINEL);
+  assert.ok(existsSync(join(outside, 's1.pid')));
+});
+
+test('a session that appears between the check and the removal defers it: the tree is renamed aside, re-checked, and renamed back', t => {
+  const {home} = scratchHome(t);
+  const pin = darwinPin();
+  const root = installedTree(home, pin);
+  let calls = 0;
+  // Clean when first asked, a live session when asked again after the rename.
+  const sweep = () => (++calls === 1 ? {live: [], unowned: []} : {live: [{session: 'late', pid: 4242}], unowned: []});
+  const result = removeCodexLeftovers({home, pins: [pin], sweep});
+  assert.equal(calls, 2, 'checked before the rename and again after it');
+  assert.deepEqual(result.removed, []);
+  assert.equal(result.deferred[0].path, join(root, 'CodexCLI.app'));
+  assert.match(result.deferred[0].reason, /session late \(pid 4242\)/);
+  assert.equal(readFileSync(join(root, 'CodexCLI.app', 'Contents', 'MacOS', 'codex'), 'utf8'), SENTINEL, 'renamed back, whole');
+  assert.deepEqual(readdirSync(root).sort(), ['CodexCLI.app', 'cua_node', 'install.json'], 'no tombstone left');
+
+  // Clean both times: removed through its tombstone, which goes too.
+  const done = removeCodexLeftovers({home, pins: [pin], sweep: noSessions});
+  assert.deepEqual(done.removed, [join(root, 'CodexCLI.app')]);
+  assert.deepEqual(readdirSync(root).sort(), ['cua_node', 'install.json']);
+});
+
+test('an unreadable CODEX_HOME, runtimes/ or release tree never reads as clean: doctor warns with the path and errno, the prune reports a failure', {skip: process.getuid?.() === 0}, async t => {
+  const {home} = scratchHome(t);
+  const pin = darwinPin();
+  const root = installedTree(home, pin);
+  put(join(codexHomeOf(home), 'auth.json'));
+  const env = {HOME: home};
+  for (const [label, path] of [['CODEX_HOME', codexHomeOf(home)], ['runtimes/', join(home, 'runtimes')], ['the release tree', root]]) {
+    chmodSync(path, 0o000);
+    try {
+      const found = findCodexLeftovers({home, pins: [pin]});
+      assert.ok(found.errors.some(e => e.path.startsWith(path) && e.code === 'EACCES'), `${label}: ${JSON.stringify(found.errors)}`);
+      const row = leftoverRow(await inspectRuntime({home, env, pins: [pin], ...passive}));
+      assert.equal(row.status, 'warn', `${label}: ${row.detail}`);
+      assert.match(row.detail, new RegExp(`could not be read: ${path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^ ]* \\(EACCES\\)`), label);
+      const pruned = removeCodexLeftovers({home, pins: [pin], sweep: noSessions});
+      assert.ok(pruned.failed.some(f => f.path.startsWith(path) && f.code === 'EACCES'), `${label}: ${JSON.stringify(pruned.failed)}`);
+    } finally { chmodSync(path, 0o755); }
+  }
 });

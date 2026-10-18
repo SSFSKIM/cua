@@ -964,6 +964,12 @@ Dependencies on other work: #79 merged before M2. #117 retires the compat execut
     - group B re-proves the route read-only.
   - A latency regression on either host's cold rows beyond M0's run-to-run spread goes to the dispatching session before merging.
   Date/Author: 2026-10-18, execution session.
+- Decision: Linux acceptance 11 is accepted with the confined kernel's first-cell cost (2026-10-18, ruled by the dispatching session). Three runs on cua-gce at 7b87873 against M0's same-host baseline: `cold.miss.first_js` 735.1 ms pooled against 666.5 (+10.3%), and `cold.hit.first_js` 825.8 against 773.6 (+6.7%). Both are beyond M0's run-to-run spread and well inside the spec's limit (baseline + max(10%, 500 ms)); the warm rows and tasks are equal or faster.
+  - Cause: a session's first cell now starts the kernel through the helper (bubblewrap and seccomp), where M0 ran it unconfined. That is the disabled → scoped change acceptance 11 names as being measured.
+  - Why it stands: the owner's "no regression" was set for the browser service and the macOS GUI, whose rows come from group B under the same beyond-the-spread rule.
+  - The release notes state the cost. `compare --same-host` gains a tolerance for a `memoryBytes` difference under 0.1%, and nothing else: the box read 4 KiB lower on the same machine type, which it had treated as a hardware change.
+  - Candidates for the cost, if Linux latency ever matters: bwrap's namespace setup and the helper's inner fork (tech-debt-tracker.md).
+  Date/Author: 2026-10-18, execution session.
 
 ## Outcomes & Retrospective
 

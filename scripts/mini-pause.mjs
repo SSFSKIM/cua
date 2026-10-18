@@ -174,10 +174,14 @@ export function pauseGate({file, sleep = ms => new Promise(r => setTimeout(r, ms
   };
 }
 // `session` (anything with a js(code, ...) method) with each cell waiting at its boundary while `gate` holds a pause:
-// for a sitting that must wait and never abort (accept-native's TextEdit, its owner standing by). In place.
+// for a sitting that must wait and never abort (accept-native's TextEdit, its owner standing by). In place. A caller
+// that must check something after the pause and right before the cell goes (the frontmost guard, #162) uses the two
+// halves instead: `pauseWait()`, then `dispatch(...)`, which sends with no further wait.
 export function pausing(session, gate, where = 'a cell') {
   const js = session.js.bind(session);
   session.js = async (...args) => { await gate.wait(where); return js(...args); };
+  session.pauseWait = () => gate.wait(where);
+  session.dispatch = js;
   return session;
 }
 export const NO_PAUSE = Object.freeze({wait: async () => null, begin: () => ({generation: null}), overlapped: () => null});

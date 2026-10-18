@@ -35,7 +35,7 @@ import {fileStore, storeDir} from '../../src/secrets/store.mjs';
 import {socketHolders} from '../probe/lib.mjs';
 import {fingerprintable, fingerprints, textLeaks, UNFINGERPRINTABLE} from '../probe/leak-scan.mjs';
 import {isTextEditApproval, TEXTEDIT_BUNDLE} from './lib.mjs';
-import {localFrontmost, sendIfFrontmost} from './key-guard.mjs';
+import {localFrontmost, sendToPausedSession} from './key-guard.mjs';
 import {openSession, resultText} from './mcp-session.mjs';
 import {pauseGate, pausing} from '../mini-pause.mjs';
 import {createStoreHome, generatedKey, isAccountHome, removeStoreHome, seedSecret} from './secret-seed.mjs';
@@ -166,7 +166,8 @@ export async function runTextEdit({home, secret = false, forbid = () => {}, step
   // ./key-guard.mjs); otherwise nothing is sent, the skip is recorded (observations.keySkipped) and the step fails, and
   // the fixture sends no further input. -> the cell's reply, or null when it was skipped.
   const keyCell = async (session, step, keys, code) => {
-    const sent = await sendIfFrontmost({target: TEXTEDIT_BUNDLE, keys, frontmost, send: () => session.js(code, stepMs)});
+    // The pause wait (pausing()) comes first, then the check, then the cell with no pause between them.
+    const sent = await sendToPausedSession({session, target: TEXTEDIT_BUNDLE, keys, frontmost, args: [code, stepMs]});
     if (sent.sent) return sent.result;
     (observations.keySkipped ??= []).push(sent.skipped);
     guiStopped = `${sent.skipped.event}: ${keys.join(', ')} not sent, the frontmost application is ${sent.skipped.frontmost}, not TextEdit (#162)`;

@@ -6,7 +6,9 @@
 // further input. A frontmost app that cannot be read counts as not the target.
 // The check is made by the harness right before it sends the cell, outside the sandbox (cells cannot ask
 // LaunchServices); the cell's own check that TextEdit's front window is the expected document stays. What remains is
-// the time between this read and the key inside the cell (an AX read, well under a second).
+// the time between this read and the key inside the cell (an AX read, well under a second): a cell that waits for a
+// window before sending keys is split so the keys get their own check (native-baseline's TASK_NEW and TASK_TYPE), and a
+// paused session waits before the check, never between it and the dispatch (sendToPausedSession).
 // Callers: scripts/native-baseline/macos.mjs (the device over ssh) and scripts/accept/textedit.mjs (on the Mac itself).
 import {execFileSync} from 'node:child_process';
 
@@ -29,4 +31,12 @@ export async function sendIfFrontmost({target, keys, frontmost, send}) {
   try { front = await frontmost(); } catch { front = null; }
   if (front !== target) return {sent: false, skipped: {event: KEY_SKIPPED, keys, target, frontmost: front ?? 'unreadable'}};
   return {sent: true, result: await send()};
+}
+
+// For a session wrapped by scripts/mini-pause.mjs pausing(): the pause wait first, then the frontmost check, then the
+// cell through `dispatch`, which does not wait again, so no pause can fall between the check and the key. `args` are
+// the js call's (code, timeout). A session that is not paused (no pauseWait) is checked and sent as it is.
+export async function sendToPausedSession({session, target, keys, frontmost, args}) {
+  await session.pauseWait?.();
+  return sendIfFrontmost({target, keys, frontmost, send: () => (session.dispatch ?? session.js.bind(session))(...args)});
 }

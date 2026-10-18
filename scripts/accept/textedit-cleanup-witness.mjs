@@ -24,6 +24,9 @@ import {TEXTEDIT_BUNDLE} from './lib.mjs';
 
 const {values} = parseArgs({options: {out: {type: 'string'}}});
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+// The witness confirms the sole-windows condition itself (`alone: true`): it refuses to start beside any TextEdit it did
+// not start and opens only its own empty files, so every document its TextEdits hold is its own.
+const ALONE = true;
 const textEdits = () => pidsOf('TextEdit');
 const checks = [];
 const check = (name, ok, detail) => { checks.push({name, status: ok ? 'PASS' : 'FAIL', detail}); return ok; };
@@ -56,7 +59,7 @@ try {
   await sleep(2000);
   b.launch = captureLaunch({pids: textEdits(), before: b.before, startedAt: b.startedAt}).launch;
   report.runningBefore = {preexisting, front: b.front, frontDuring: localFrontmost(), runningDuring: textEdits()};
-  const cleanB = await cleanUpFixtureApp({name: 'TextEdit', bundle: TEXTEDIT_BUNDLE, run: b, frontmost: localFrontmost});
+  const cleanB = await cleanUpFixtureApp({name: 'TextEdit', bundle: TEXTEDIT_BUNDLE, run: b, alone: ALONE, frontmost: localFrontmost});
   report.runningBefore.cleanup = cleanB;
   check('running before: the run\'s document went to that TextEdit (no new pid)', preexisting.length === 1 && report.runningBefore.runningDuring.join() === preexisting.join(), `before ${preexisting.join(', ')}; during ${report.runningBefore.runningDuring.join(', ')}`);
   check('running before: the cleanup quit nothing and that TextEdit survives it', !cleanB.launch && !cleanB.quit.length && preexisting.every(pid => textEdits().includes(pid)), `launch recorded ${cleanB.launch?.pid ?? 'none'}; kept ${cleanB.keptBefore.join(', ')}; running ${textEdits().join(', ')}`);
@@ -75,7 +78,7 @@ try {
   a.launch = captureLaunch({pids: started, before: a.before, startedAt: a.startedAt}).launch;
   if (a.launch) seen.push(a.launch);
   report.startedByRun = {front: a.front, frontDuring: localFrontmost(), started, envShownByPsE: started.map(envShown)};
-  const cleanA = await cleanUpFixtureApp({name: 'TextEdit', bundle: TEXTEDIT_BUNDLE, run: a, frontmost: localFrontmost});
+  const cleanA = await cleanUpFixtureApp({name: 'TextEdit', bundle: TEXTEDIT_BUNDLE, run: a, alone: ALONE, frontmost: localFrontmost});
   report.startedByRun.cleanup = cleanA;
   check('started by the run: that TextEdit is the one owned', started.length === 1 && cleanA.launch?.pid === started[0], `started ${started.join(', ')}; launch recorded ${cleanA.launch?.pid ?? 'none'}`);
   check('started by the run: it quit', cleanA.quit.length === 1 && !cleanA.remaining.length && await waitFor(() => !textEdits().length, 3000), `quit ${cleanA.quit.join(', ')}; remaining ${cleanA.remaining.join(', ') || 'none'}; running now ${textEdits().join(', ') || 'none'}`);

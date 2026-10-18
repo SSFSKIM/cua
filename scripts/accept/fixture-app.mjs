@@ -7,7 +7,9 @@
 // as {pid, at}. None such means the document went to an app already running; more than one is ambiguous and records
 // none. At cleanup only that recorded process is a candidate, and only while the pid still has the same launch time (a
 // pid gone, reused or unreadable is not the run's); nothing is re-scanned then, so an app the owner starts mid-run, or
-// relaunches after the run's own exits, is never selected. An app that was running before the run is never quit. The
+// relaunches after the run's own exits, is never selected. An app that was running before the run is never quit. Even
+// the run's own launch is quit only when the caller confirms it holds no window but the fixture's (`alone`): a process
+// the run started can still receive someone else's document mid-run, so unconfirmed it is left running, unsignalled. The
 // process's environment is not the witness here: ps -E shows nothing of a platform app's environment (Finder, Terminal,
 // TextEdit on macOS 26 and 27), so a marker passed through `open` could not be read back.
 import {execFileSync} from 'node:child_process';
@@ -69,12 +71,15 @@ export async function restoreFront(previous, {frontmost, activate = id => run('/
 
 // The whole cleanup: the run's recorded launch quit (when it is still that process), then the front handed back. `run`
 // is what the run recorded: {before (pids), front (bundle id or null), launch ({pid, at} from captureLaunch, or null)}.
-// `pids` is read only to report which processes running before are still there; it never selects anything to quit.
-// -> {launch, live, quit, remaining, keptBefore, front}.
-export async function cleanUpFixtureApp({name, bundle, run: started, pids = () => pidsOf(name), launchOf: launch = pid => launchOf(pid), quit = quitOwned, frontmost, activate, sleep}) {
+// `alone` must be exactly true, the caller's positive confirmation that the app holds no window but the fixture's; without
+// it nothing is signalled and a live recorded launch is returned as `leftRunning`. `pids` is read only to report which
+// processes running before are still there; it never selects anything to quit.
+// -> {launch, live, alone, quit, remaining, leftRunning, keptBefore, front}.
+export async function cleanUpFixtureApp({name, bundle, run: started, alone = false, pids = () => pidsOf(name), launchOf: launch = pid => launchOf(pid), quit = quitOwned, frontmost, activate, sleep}) {
   const live = isSameLaunch(started.launch, {launchOf: launch});
-  const {quit: quitPids, remaining} = live ? await quit([started.launch.pid]) : {quit: [], remaining: []};
+  const confirmed = alone === true;
+  const {quit: quitPids, remaining} = live && confirmed ? await quit([started.launch.pid]) : {quit: [], remaining: []};
   const running = pids();
   const front = await restoreFront(started.front, {frontmost, app: bundle, ...(activate ? {activate} : {}), ...(sleep ? {sleep} : {})});
-  return {launch: started.launch ?? null, live, quit: quitPids, remaining, keptBefore: started.before.filter(pid => running.includes(pid)), front};
+  return {launch: started.launch ?? null, live, alone: confirmed, quit: quitPids, remaining, leftRunning: live && !confirmed ? started.launch.pid : null, keptBefore: started.before.filter(pid => running.includes(pid)), front};
 }

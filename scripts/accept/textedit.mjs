@@ -12,7 +12,8 @@
 // It never touches another TextEdit window or document. At the end it quits TextEdit only when this run started it, by
 // the identity it recorded right after its `open` (./fixture-app.mjs: the one pid absent before the run and launched
 // after it began, with that launch time; none or more than one records none, and a TextEdit running before is left as
-// it is), and hands the front back to the application that was frontmost before the run (#157). The vendor asks before
+// it is), and only when its close step confirmed TextEdit then held no window at all, so no document of anyone else's
+// can be in it (unconfirmed, that TextEdit is left running and the step is BLOCKED). It then hands the front back to the application that was frontmost before the run (#157). The vendor asks before
 // CUA first uses an app; the fixture accepts that elicitation only
 // when it is exactly the pinned request for com.apple.TextEdit (scripts/accept/lib.mjs isTextEditApproval), for the
 // session only (CUA_SHIM_PERSIST=session in this scratch home, never "always"), and declines every other request.
@@ -124,6 +125,7 @@ export async function runTextEdit({home, secret = false, forbid = () => {}, step
   const own = `__window === ${JSON.stringify(docName)}`;
   let docDir = null;      // created exclusively by this invocation
   let docOpen = false;
+  let soleWindowConfirmed = false;  // the close step saw TextEdit hold no window at all once the fixture's closed
   let guiStopped = null;  // why no further input may be sent
   const sessions = [];
 
@@ -308,7 +310,7 @@ ${out(`{ownStillFront: __after === ${JSON.stringify(docName)}, otherFront: __aft
         if (!closed) { /* skipped: recorded by keyCell */ } else if (closed.timedOut) record(STEP.closeDoc, 'BLOCKED', `no answer within ${stepMs} ms; ${PROMPT_ACTION}`);
         else if (closed.identityLost) lost(STEP.closeDoc, 'close it');
         else if (closed.isError) record(STEP.closeDoc, 'FAIL', `the close cell failed: ${closed.error}`);
-        else if (closed.noWindows) { docOpen = false; record(STEP.closeDoc, 'PASS', 'super+w closed the verified fixture window; TextEdit then reported no window at all'); }
+        else if (closed.noWindows) { docOpen = false; soleWindowConfirmed = true; record(STEP.closeDoc, 'PASS', 'super+w closed the verified fixture window; TextEdit then reported no window at all'); }
         else if (closed.ownStillFront) record(STEP.closeDoc, 'FAIL', 'the fixture document is still in front after super+w; close it by hand without saving elsewhere');
         else record(STEP.closeDoc, 'BLOCKED', closed.otherFront
           ? 'super+w went to the verified fixture window, but another TextEdit window (perhaps its Open panel) is now in front, so the document\'s absence cannot be confirmed; that window was not touched'
@@ -330,16 +332,18 @@ ${out(`{ownStillFront: __after === ${JSON.stringify(docName)}, otherFront: __aft
       record(STEP.teardown, stuck.length ? 'FAIL' : 'PASS', `${exits.map(e => `${e.name}: ${e.exit.stuck ? 'still alive after SIGTERM, killed' : `exit ${e.exit.code ?? e.exit.signal}${e.exit.forced ? ' after SIGTERM' : ''}`}`).join('; ')}`);
     }
     if (opened) {
-      const app = await cleanUpFixtureApp({name: 'TextEdit', bundle: TEXTEDIT_BUNDLE, run: {before: textEditBefore, front: frontBefore, launch: launched?.launch ?? null}, frontmost});
+      const app = await cleanUpFixtureApp({name: 'TextEdit', bundle: TEXTEDIT_BUNDLE, run: {before: textEditBefore, front: frontBefore, launch: launched?.launch ?? null},
+        alone: soleWindowConfirmed && !guiStopped, frontmost});
       observations.textEdit.quitByFixture = app.quit.length > 0;
       observations.front = {before: app.front.previous, atCleanup: app.front.before, after: app.front.after, restored: app.front.restored};
       const kept = app.keptBefore.length ? `; pid ${app.keptBefore.join(', ')}, running before, left as it is` : '';
       const [quitStatus, quitDetail] = app.remaining.length ? ['FAIL', `TextEdit pid ${app.remaining.join(', ')}, started by this run, did not exit after SIGTERM; quit it by hand`]
         : app.quit.length ? ['PASS', `quit the TextEdit this run started (pid ${app.quit.join(', ')}, identified by its launch right after the open)${kept}`]
-          : app.launch ? ['PASS', `nothing to quit: pid ${app.launch.pid}, the TextEdit this run started, is no longer that process (it exited, or the pid now has another launch time)${kept}`]
-            : launched?.candidates.length > 1 ? ['BLOCKED', `nothing quit: TextEdit pids ${launched.candidates.join(', ')} all started after the run began, so which one this run started is ambiguous and none was recorded as its own; check TextEdit by hand`]
-              : textEditBefore.length ? ['PASS', `nothing to quit: TextEdit was running before the run (pid ${textEditBefore.join(', ')}) and is left as it is`]
-                : ['PASS', 'nothing to quit: no TextEdit started by the open was seen right after it'];
+          : app.leftRunning ? ['BLOCKED', `the TextEdit this run started (pid ${app.leftRunning}) was left running because its windows could not be confirmed to be only the fixture's (${guiStopped ?? 'the close step did not see TextEdit hold no window at all'}); nothing was signalled. Quit it by hand once nothing of yours is open in it`]
+            : app.launch ? ['PASS', `nothing to quit: pid ${app.launch.pid}, the TextEdit this run started, is no longer that process (it exited, or the pid now has another launch time)${kept}`]
+              : launched?.candidates.length > 1 ? ['BLOCKED', `nothing quit: TextEdit pids ${launched.candidates.join(', ')} all started after the run began, so which one this run started is ambiguous and none was recorded as its own; check TextEdit by hand`]
+                : textEditBefore.length ? ['PASS', `nothing to quit: TextEdit was running before the run (pid ${textEditBefore.join(', ')}) and is left as it is`]
+                  : ['PASS', 'nothing to quit: no TextEdit started by the open was seen right after it'];
       record(STEP.quitApp, quitStatus, quitDetail);
       record(STEP.front, app.front.restored ? 'PASS' : frontBefore ? 'FAIL' : 'BLOCKED', app.front.restored
         ? `${app.front.previous} is frontmost${app.front.before === app.front.previous ? ' (it still was)' : ` again (it was ${app.front.before ?? 'unreadable'})`}`

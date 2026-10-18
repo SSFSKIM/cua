@@ -1,5 +1,6 @@
 // The fixture app's cleanup (scripts/accept/fixture-app.mjs, #157): only the launch the run recorded right after its
-// `open` is quit, and only while it is still that process; a process that was running before, or one the owner starts
+// `open` is quit, only while it is still that process and only when the caller confirms it holds no window but the
+// fixture's; a process that was running before, or one the owner starts
 // mid-run, is never touched, and the front goes back to the app that had it.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
@@ -61,19 +62,31 @@ test('restoreFront activates the previous front only when another app holds it, 
 const startedAt = Date.parse('2026-10-18T10:00:05.000Z');
 const ours = {pid: 42, at: startedAt + 2000};
 // A cleanup with fakes: `running` pids and their launch times; `quit` records what it was asked to signal.
-async function cleanup({launch = ours, before = [7], running = [7, 42], launches = {7: startedAt - 3_600_000, 42: ours.at}} = {}) {
+async function cleanup({launch = ours, alone = true, before = [7], running = [7, 42], launches = {7: startedAt - 3_600_000, 42: ours.at}} = {}) {
   const quitCalls = []; let front = 'com.apple.TextEdit';
-  const r = await cleanUpFixtureApp({name: 'TextEdit', bundle: 'com.apple.TextEdit', run: {before, front: 'com.apple.Terminal', launch},
+  const r = await cleanUpFixtureApp({name: 'TextEdit', bundle: 'com.apple.TextEdit', run: {before, front: 'com.apple.Terminal', launch}, alone,
     pids: () => running, launchOf: pid => launches[pid] ?? null,
     quit: async pids => { quitCalls.push(pids); return {quit: pids, remaining: []}; },
     frontmost: () => front, activate: id => { front = id; }, sleep: async () => {}});
   return {r, quitCalls};
 }
 
-test('cleanup: the recorded launch is quit, a TextEdit running before is kept, the front is handed back', async () => {
+test('cleanup: the recorded launch, confirmed alone, is quit; a TextEdit running before is kept; the front is handed back', async () => {
   const {r, quitCalls} = await cleanup();
   assert.deepEqual(quitCalls, [[42]]);
-  assert.deepEqual({quit: r.quit, remaining: r.remaining, keptBefore: r.keptBefore, restored: r.front.restored}, {quit: [42], remaining: [], keptBefore: [7], restored: true});
+  assert.deepEqual({quit: r.quit, remaining: r.remaining, leftRunning: r.leftRunning, keptBefore: r.keptBefore, restored: r.front.restored}, {quit: [42], remaining: [], leftRunning: null, keptBefore: [7], restored: true});
+});
+
+test('cleanup: the run\'s own launch not confirmed to hold only the fixture\'s windows is left running, unsignalled, and the front still goes back', async () => {
+  for (const alone of [false, null, 'yes', 1]) {
+    const {r, quitCalls} = await cleanup({alone});
+    assert.deepEqual(quitCalls, [], String(alone));
+    assert.deepEqual({live: r.live, alone: r.alone, quit: r.quit, leftRunning: r.leftRunning, restored: r.front.restored}, {live: true, alone: false, quit: [], leftRunning: 42, restored: true}, String(alone));
+  }
+  // Omitted, the confirmation is absent too.
+  const omitted = await cleanUpFixtureApp({name: 'TextEdit', bundle: 'com.apple.TextEdit', run: {before: [], front: null, launch: ours}, pids: () => [42], launchOf: () => ours.at,
+    quit: async () => assert.fail('nothing may be signalled'), frontmost: () => 'com.apple.Terminal', sleep: async () => {}});
+  assert.equal(omitted.leftRunning, 42);
 });
 
 test('cleanup: running before (nothing recorded) is never quit, and the front still goes back', async () => {

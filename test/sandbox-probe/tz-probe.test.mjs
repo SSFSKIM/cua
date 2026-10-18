@@ -11,6 +11,7 @@ import {tmpdir, userInfo} from 'node:os';
 import {createHash} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {childScript, classify, codexLaunch, cuaLaunch, MARKER, main, probe, sandboxSourceDigest, tzVerdict} from '../../scripts/sandbox-probe/tz-probe.mjs';
+import {NOTIFICATION_CENTER_LINE} from '../../src/sandbox/seatbelt.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../../scripts/sandbox-probe/tz-probe.mjs', import.meta.url));
 const scratch = t => { const dir = mkdtempSync(join(tmpdir(), 'cua-tz-test-')); t.after(() => rmSync(dir, {recursive: true, force: true})); return dir; };
@@ -107,7 +108,16 @@ test('the cua launcher is cua\'s own: the role\'s profile under sandbox-exec, in
   assert.match(worker.args[1], /\n\(allow file-read\*\)\n/, 'the worker reads everywhere');
   assert.equal(existsSync(join(dir, 'home')), false, 'no deny target is created: the probe never writes into a HOME');
   assert.match(kernel.profile, /kernel profile/);
-  assert.throws(() => cuaLaunch({node: '/n', script: '/s', tag: 't', cwd: dir, home: '/h', role: 'kernel', notificationCenter: 'allow'}), /M4/);
+  // #138's pair: cua's final profiles without the notification_center line (the denying control, whatever the shipped
+  // switch says) and with it, last; nothing else differs.
+  for (const role of ['kernel', 'worker']) {
+    const deny = launch(role), allow = cuaLaunch({node: '/rt/node/bin/node', script: join(dir, 'child.mjs'), tag: 'cua-tz-probe-ab12-1', cwd: dir, home: join(dir, 'home'), role, notificationCenter: 'allow'});
+    assert.equal(deny.args[1].includes('notification_center'), false, `${role}: the control has no line`);
+    assert.equal(allow.args[1], `${deny.args[1]}\n${NOTIFICATION_CENTER_LINE}`, `${role}: the grant adds the line, last`);
+    assert.deepEqual([allow.args.slice(2), allow.env, allow.cwd], [deny.args.slice(2), deny.env, deny.cwd], role);
+    assert.match(allow.profile, new RegExp(`${role} profile .*with the notification_center line`));
+    assert.match(deny.profile, new RegExp(`${role} profile .*without the notification_center line`));
+  }
 });
 
 test('a probe under the cua launcher runs its children through sandbox-exec and records which src/sandbox build rendered them', async t => {
@@ -119,7 +129,14 @@ test('a probe under the cua launcher runs its children through sandbox-exec and 
   assert.deepEqual(result.counts, {completed: 1, hung: 0, launcherFailure: 0});
   assert.deepEqual(result.launcherIdentity, {launcher: 'cua', sandboxExec: exec, source: 'src/sandbox', sha256: sandboxSourceDigest()});
   assert.match(result.launcherIdentity.sha256, /^[0-9a-f]{64}$/);
-  await assert.rejects(probe({launcher: 'cua', role: 'kernel', runs: 1, notificationCenter: 'allow', node: process.execPath, sandboxExec: exec}), /M4/);
+  const allow = await probe({launcher: 'cua', role: 'kernel', runs: 1, boundMs: 15_000, notificationCenter: 'allow', node: process.execPath, targetMs: 0, sandboxExec: exec});
+  assert.deepEqual([allow.notificationCenter, allow.counts], ['allow', {completed: 1, hung: 0, launcherFailure: 0}]);
+  assert.deepEqual(allow.launcherIdentity, result.launcherIdentity, 'one build renders both sides of the pair');
+  assert.equal(tzVerdict(result, allow).verdict, 'diagnostic', 'the pair is comparable (a 1-run pair is only a diagnostic)');
+});
+
+test('the codex launcher needs --codex: cua installs no Codex CLI since #115', async () => {
+  await assert.rejects(probe({launcher: 'codex', role: 'kernel', runs: 1, node: process.execPath}), /--launcher codex needs --codex <path>/);
 });
 
 test('the CLI accepts the documented options, writes its result and refuses anything else', async t => {

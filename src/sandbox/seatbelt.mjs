@@ -37,6 +37,14 @@
 //   macOS layout they are exactly the cua home and its run/ (test/sandbox/reexposed.test.mjs), and the caller names the
 //   directories it allows (`metadataGrants`): any other ancestor refuses the rendering. The one deviation that
 //   widens what the original grants, accepted as a recorded deviation (#115 M1).
+// - #138's switch, off (NOTIFICATION_CENTER_GRANT): on, both roles' profiles end with
+//   `(allow mach-lookup (global-name "com.apple.system.notification_center"))`, the lookup notify_register_tz makes on a
+//   process's first host-local-time use, which the original grants only in its `:minimal` platform defaults. A denied
+//   lookup there fits #138's hang, but #138 has not reproduced since (#115 M0: none in 80 runs per role under the real
+//   HOME, nor in 160 under a scratch one), so nothing measures what the grant fixes and it ships off (cua 0.15.0); a
+//   widening needs evidence. scripts/sandbox-probe/tz-probe.mjs renders the profiles with it and without it, so a
+//   reproduction can decide it by acceptance 13's rule. The own host's time-zone warm-up
+//   (src/repl-host/worker-runtime.mjs) stays either way.
 import {lstatSync, readFileSync, realpathSync, statSync} from 'node:fs';
 import {posix} from 'node:path';
 import {SandboxStateError} from '../runtime/sandbox.mjs';
@@ -49,6 +57,9 @@ const PREFERENCES_POLICY = SBPL('preferences_policy');
 const PLATFORM_DEFAULTS = SBPL('read_only_platform_defaults');
 const TLS_TRUST_POLICY = '(allow mach-lookup (global-name "com.apple.TrustEvaluationAgent"))\n';
 const TIOCSTI_LINE = '(deny file-ioctl (ioctl-command 2147578994))';
+// #138's switch (header): off.
+export const NOTIFICATION_CENTER_LINE = '(allow mach-lookup (global-name "com.apple.system.notification_center"))';
+export const NOTIFICATION_CENTER_GRANT = false;
 const PROTECTED_NAMES = ['.git', '.agents', '.codex', '.aws'];
 const SPECIAL_KINDS = ['root', 'project_roots', 'tmpdir', 'slash_tmp', 'minimal'];
 // The original's access precedence at equal specificity: deny beats write, write beats read.
@@ -367,10 +378,11 @@ function reexposedAncestors(readRoots) {
 // `:tmpdir` naming `tmpdir` (the child's TMPDIR; unset or empty: no entry). `fs` is the filesystem seam ({lstat, stat,
 // realpath, readFile}; node:fs by default) and `euid` the user whose daemon directory is protected. `metadataGrants`:
 // the denied directories whose metadata the launch allows (the deny list's metadataOnly); a profile that would need the
-// grant anywhere else is refused, never rendered.
+// grant anywhere else is refused, never rendered. `notificationCenter`: whether the profile ends with #138's line
+// (header; NOTIFICATION_CENTER_GRANT, off, unless the caller says).
 // -> {file: '/usr/bin/sandbox-exec', args}. Throws SandboxStateError for an input outside cua's set or one the original
 // refuses (a write root through a symlinked component).
-export function seatbeltCommand({profile, cwd, command, tmpdir, fs = NODE_FS, euid = process.geteuid(), metadataGrants = []}) {
+export function seatbeltCommand({profile, cwd, command, tmpdir, fs = NODE_FS, euid = process.geteuid(), metadataGrants = [], notificationCenter = NOTIFICATION_CENTER_GRANT}) {
   if (typeof cwd !== 'string' || !cwd.startsWith('/')) throw new SandboxStateError(`the sandbox working directory ${JSON.stringify(cwd)} is not an absolute path`);
   if (tmpdir !== undefined && tmpdir !== '' && !String(tmpdir).startsWith('/')) throw new SandboxStateError(`TMPDIR ${tmpdir} is not an absolute path`);
   const ops = fsOps(fs);
@@ -427,6 +439,7 @@ export function seatbeltCommand({profile, cwd, command, tmpdir, fs = NODE_FS, eu
   if (ungranted.length) throw new SandboxStateError(`the profile would let the kernel read the metadata of ${ungranted.join(', ')}, which the launch does not allow (only ${metadataGrants.join(', ') || 'none'})`);
   const reexposed = reexposedAncestors(read.rendered).map((path, index) => [`REEXPOSED_ANCESTOR_${index}`, path]);
   if (reexposed.length) sections.push(`(allow file-read-metadata ${reexposed.map(([key]) => `(literal (param "${key}"))`).join(' ')})`);
+  if (notificationCenter) sections.push(NOTIFICATION_CENTER_LINE);
 
   const params = [...read.params, ...write.params, ...ancestorParams, ...reexposed];
   return {file: SEATBELT_EXEC, args: ['-p', sections.join('\n'), ...params.map(([key, value]) => `-D${key}=${value}`), '--', ...command]};

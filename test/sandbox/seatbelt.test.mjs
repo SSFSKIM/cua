@@ -9,7 +9,7 @@ import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {execFileSync} from 'node:child_process';
 import {SandboxStateError} from '../../src/runtime/sandbox.mjs';
-import {SEATBELT_EXEC, seatbeltCommand} from '../../src/sandbox/seatbelt.mjs';
+import {NOTIFICATION_CENTER_GRANT, NOTIFICATION_CENTER_LINE, SEATBELT_EXEC, seatbeltCommand} from '../../src/sandbox/seatbelt.mjs';
 import {sandboxedEnv} from '../../src/sandbox/env.mjs';
 import {assertFixtureRoot, materialize, placehold, substitute} from '../../scripts/sandbox-golden/fixtures.mjs';
 import {virtualFs} from './vfs.mjs';
@@ -86,6 +86,30 @@ test('on a Mac, every golden fixture replays on the real filesystem too', {skip:
       materialize(fixture.setup, {root});
       check(fixture, replay(fixture, {root, fs: undefined}), {root});
     } finally { rmSync(root, {recursive: true, force: true}); }
+  }
+});
+
+// #138's notification_center line (src/sandbox/seatbelt.mjs): one switch, off. Off, the profiles are the fixtures' (above);
+// on, both roles' profiles gain exactly the one line, last, and nothing else changes.
+test('the notification_center switch is off by default; on, it adds the one mach-lookup line, last, to both roles\' profiles', () => {
+  assert.equal(NOTIFICATION_CENTER_GRANT, false, 'the line ships off (0.15.0): #138 has not reproduced, so nothing measures what it fixes');
+  assert.equal(NOTIFICATION_CENTER_LINE, '(allow mach-lookup (global-name "com.apple.system.notification_center"))');
+  for (const name of ['scoped-kernel', 'scoped-worker', 'default-kernel', 'default-worker', 'home-nesting']) {
+    const fixture = FIXTURES.find(f => f.name === name);
+    const fs = virtualFs({root: VIRTUAL_ROOT, setup: fixture.setup, fill: value => substitute(value, {root: VIRTUAL_ROOT})});
+    const render = notificationCenter => {
+      const input = substitute(fixture.input, {root: VIRTUAL_ROOT});
+      const tmpdir = fixture.tmpdir === null ? undefined : substitute(fixture.tmpdir, {root: VIRTUAL_ROOT});
+      const metadataGrants = (REEXPOSED_ANCESTORS[fixture.name] ?? []).map(path => substitute(path, {root: VIRTUAL_ROOT}));
+      return placehold(seatbeltCommand({profile: input.profile, cwd: input.cwd, command: input.command, tmpdir, fs, euid: EUID, metadataGrants,
+        ...(notificationCenter === undefined ? {} : {notificationCenter})}).args, {root: VIRTUAL_ROOT, euid: EUID});
+    };
+    const off = render(false), on = render(true);
+    assert.deepEqual(render(undefined), off, `${name}: the default is off`);
+    assert.deepEqual(off, expected(fixture), `${name}: off is the port's rendering`);
+    assert.equal(off[1].includes('notification_center'), false, name);
+    assert.equal(on[1], `${off[1]}\n${NOTIFICATION_CENTER_LINE}`, `${name}: on adds the line, last`);
+    assert.deepEqual(on.slice(2), off.slice(2), `${name}: and no parameter`);
   }
 });
 

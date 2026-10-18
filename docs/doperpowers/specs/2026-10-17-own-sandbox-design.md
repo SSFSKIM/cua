@@ -970,6 +970,15 @@ Dependencies on other work: #79 merged before M2. #117 retires the compat execut
   - The release notes state the cost. `compare --same-host` gains a tolerance for a `memoryBytes` difference under 0.1%, and nothing else: the box read 4 KiB lower on the same machine type, which it had treated as a hardware change.
   - Candidates for the cost, if Linux latency ever matters: bwrap's namespace setup and the helper's inner fork (tech-debt-tracker.md).
   Date/Author: 2026-10-18, execution session.
+- Decision: macOS acceptance 11 is accepted on three runs (2026-10-18, ruled by the dispatching session). Measured on the mini at 8782604, inside the group B hold; `compare --same-host` passes both configurations.
+  - The vendor host computer session's `cold.hit.first_js` pooled 489.0 ms against M0's 429.3. Its M0 runs spread 412 to 472, so it is beyond that spread, but inside the 929.3 limit.
+  - Its `cold.miss.first_js` improved from 400.9 to 258.7 ms.
+  - The own host browser-only rows improved: miss 1160.5 → 229.6 ms, hit 316.6 → 301.0 ms.
+  - Likely cause of the hit-row cost: `bin/cua-codex-compat` starts Node before it execve's sandbox-exec, where the signed Codex CLI was a native binary. Pre-rendering the per-session profile in `buildLaunch` would remove it; that is in tech-debt-tracker.md, not M4.
+  - The three confirming runs were not taken. Both of the day's closures of the owner's Chrome window followed runs whose native helper typed into TextEdit and sent super+w and super+q. Every key was confirmed in TextEdit, so this is a correlation, not a mechanism, but a stray super+q would quit the owner's Chrome. The question is #162.
+  - Until #162 settles it, native-baseline's task cells and accept-native's TextEdit fixture send super+n, typing, super+w and super+q only while TextEdit is frontmost (`scripts/accept/key-guard.mjs`). Otherwise they skip the key, record it and fail the run.
+  - The release notes state the cost.
+  Date/Author: 2026-10-18, execution session.
 
 ## Outcomes & Retrospective
 

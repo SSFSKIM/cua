@@ -939,6 +939,31 @@ Dependencies on other work: #79 merged before M2. #117 retires the compat execut
   Date/Author: 2026-10-18, execution session.
 - Decision: Linux acceptance 12 closes on a full suite run at M3's final code, not on a single-suite rerun (2026-10-18, ruled by the dispatching session). The fix wave moved the default-mode kernel's cwd and lifeline and added launch_app refusals, and only the api suite had run since. The full run at 43c543d found the fixture defect described in Surprises; the full run at bf7739f compares clean. Nothing under `src/` changed after the review fixes (fedc016).
   Date/Author: 2026-10-18, execution session.
+- Decision: M4 was prepared on a branch cut from M3's head (43c543d) while #160 was still open, and took main by a merge once #160 merged as 108d49f (2026-10-18; accepted by the dispatching session). This departs from "later milestones branch from main after the preceding PR merges". The merge changed no M3 launch code: M4's `src/` changes against main are comments in `launch.mjs`, `sandbox.mjs`, `install.mjs`, `manifest.mjs`, `layout.mjs` and `surface.mjs`, plus the leftovers module, the CLI and doctor rows, the seatbelt switch and the session-parent guard in `run-dir.mjs`. The Linux launch is therefore the one M3's full parity ran at bf7739f, and Linux acceptance 12 rests on that run.
+  Date/Author: 2026-10-18, execution session.
+- Decision: the Codex CLI's leftovers are removed only by an explicit `cua install --prune-leftovers`; a plain install removes nothing (2026-10-18, ruled by the dispatching session; supersedes "removed by `cua install`" in Design, "Removal, CODEX_HOME and the install").
+  - What the prune removes: CodexCLI.app, the pre-M3 Linux `codex` file and the CODEX_HOME leftovers, by name. It keeps the three conditions and runs the stale sweep first.
+  - Doctor's `runtime.leftovers` row names what is left and the command. The README and release notes say to update every cua sharing the home first.
+  - Rejected alternative: automatic removal at install. A session's run record cannot show version skew, meaning an older cua sharing the same CUA_HOME that still launches CodexCLI.app. Both cases are real: this MacBook's installed 0.14.0 plugin, and the mini's long-lived 0.5.0, 0.9.0 and 0.11.0 shims and checkout-based serve and agent, which may write no run record or an old-format one.
+  - On Linux, an older cua on the vendor host may run its kernel unconfined after a failed launch (#135), so updating first is a precondition.
+  - The cleanup touches only `$CUA_HOME/state/codex`, never an environment CODEX_HOME, and never follows a symlink out of it.
+  - A removal renames the component to a tombstone (`.<name>.pruning-<hex>`) between two session checks, and the scan recognises tombstones, so a failed or interrupted removal stays reported.
+  - The task review found that the session sweep followed a symlinked `run/`, `state/`, `state/compat/` or `kernel/`, an exposure that dates from 2026-10-05, M2 and M3 respectively. The sweep now refuses on such a parent for every caller; serve and the agent log the refusal and carry on.
+  Date/Author: 2026-10-18, execution session.
+- Decision: the notification_center line ships off in 0.15.0, and M4 runs no time-zone sittings for it (2026-10-18, ruled by the dispatching session; replaces acceptance 13's M4 runs).
+  - Why no sittings: M0 measured 0 of 80 hangs per role under the real HOME without the line, and 0 of 160 in the scratch control. A denying control that does not reproduce cannot show what the line does, and a widening grant needs evidence that it fixes something.
+  - What remains: the switch in `src/sandbox/seatbelt.mjs`, off, and tz-probe's `deny` and `allow` modes. #138 stays open as not reproduced, with the switch ready for when a reproduction turns up.
+  - Unchanged: the logd and diagnosticd denials stay; the release notes list them under behaviour changes.
+  Date/Author: 2026-10-18, execution session.
+- Decision: M4's macOS acceptance runs in three groups, and the owner's TextEdit sitting is skipped (2026-10-18, approved by the dispatching session).
+  - Group A (headless): items 1 to 5, 8, 9 and 10.
+  - Group B (a CI-opt hold): latency first, then parity, then accept-native without `--live-textedit`.
+  - Why the sitting can go:
+    - M4 does not touch the macOS computer route or the compat;
+    - M2's sitting proved typing and approvals at its SHA;
+    - group B re-proves the route read-only.
+  - A latency regression on either host's cold rows beyond M0's run-to-run spread goes to the dispatching session before merging.
+  Date/Author: 2026-10-18, execution session.
 
 ## Outcomes & Retrospective
 

@@ -25,14 +25,17 @@ trusted worker that runs cua's trusted services, with cua's own launcher:
   (`sandbox_unavailable`).
 
 **Cells can no longer read your secrets.** Under `scoped` (the default) and `default`, the kernel gets its own
-profile: it is denied the secret store and every project tier (by real path), `~/.config/cua` and cua's own home,
-except the runtime, cua's Node and the connection's own run directory. A cell's read there fails with `EPERM` or
-`EACCES`; the trusted worker still reads the store, so `{{secret:KEY}}` still types the value. Other sessions' run
-directories, the remote-control enrolment and Chrome's registration are out of a cell's reach too. Under
-`CUA_SHIM_SANDBOX=disabled` nothing changes: cells read everywhere.
+profile: it is denied the secret store and every project tier (by real path), `~/.config/cua` and cua's own home.
+On macOS that is the whole home except the runtime, cua's Node and the connection's own run directory; on Linux it is
+the home's `state/`, `remote/`, `chrome/` and `run/` except the connection's own run directory (the rest of the home,
+`profiles.json`, `current.json`, `staging/` and `bin/` among it, stays readable there). A cell's read there fails with
+`EPERM` or `EACCES`; the trusted worker still reads the store, so `{{secret:KEY}}` still types the value. Other
+sessions' run directories, the remote-control enrolment and Chrome's registration are out of a cell's reach on both
+platforms. Under `CUA_SHIM_SANDBOX=disabled` nothing changes: cells read everywhere.
 
 **Each connection has its own `TMPDIR`**, `$CUA_HOME/run/<session>/tmp`, removed with the connection, instead of the
-account's shared temp directory.
+account's shared temp directory. On Linux under `default` the kernel's is `$CUA_HOME/kernel/<session>/tmp` (its own
+directory outside `run/`, which is denied to it whole), removed with the session too.
 
 **Linux computer sessions are sandboxed by default.** `CUA_SHIM_SANDBOX` now defaults to `scoped` on Linux for the
 computer surface too (it was `disabled`). The cells' kernel has no socket at all, so a cell can no longer reach the X
@@ -54,8 +57,16 @@ cua using that home, is updated, `cua install --prune-leftovers` removes, by nam
 `CodexCLI.app` (about 229 MB; on Linux the `codex` file) from each installed release whose pin no longer lists it. It
 prints each name, never a file's content; it never reads the environment's `CODEX_HOME` or `~/.codex`, never follows a
 symbolic link, and leaves node_repl's own state (`config.toml`, `computer-use/sessions`, `node_repl/active_execs`). A
-release's Codex CLI is removed only while no `cua serve` or profile listing of that home runs; otherwise the prune says
-so and a later one finishes the job. Until then `cua doctor`'s new `runtime.leftovers` row names what is left and the
+release's Codex CLI is removed only while no `cua serve` or profile listing of that home runs (checked right before,
+then again after renaming it aside, putting it back if a session appeared); otherwise the prune says so and a later
+one finishes the job. A session starting in the instant after the second check is not seen; only an older cua would
+launch the CLI then, and that launch fails rather than running unconfined. A symbolic link at the home's `run/`,
+`state/`, `state/compat/` or `kernel/` refuses the prune, and an unreadable directory is reported, never taken as
+clean.
+
+**The run/ sweep never follows a link.** `cua serve`, the agent and doctor sweep the leftovers of dead sessions at
+start; a symbolic link at `run/`, `state/`, `state/compat/` or `kernel/` now refuses the sweep (it is reported) and a
+session's own cleanup, instead of letting them remove files outside the home. This exposure predates 0.15.0. Until then `cua doctor`'s new `runtime.leftovers` row names what is left and the
 command (`warn`, never a failure), and a plain install says the same. `CODEX_HOME` itself stays only for the macOS
 vendor host.
 

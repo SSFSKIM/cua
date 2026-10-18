@@ -74,8 +74,13 @@ environment's `CODEX_HOME` and `~/.codex` are never looked at), `auth.json`, `in
 with their `-wal` and `-shm`, `models_cache.json`, `cache/`, `plugins/`, `skills/`, `log/`, `tmp/arg0` and
 `browser/sessions` (what `node_repl` keeps there, `config.toml`, `computer-use/sessions` and `node_repl/active_execs`,
 stays); and in each installed release whose pin no longer lists it, the unused `CodexCLI.app` (about 229 MB; on Linux
-the `codex` file). A release's Codex CLI is removed only while no `cua serve` or profile listing of this home runs;
-otherwise the prune says so and leaves it for a later one. Nothing is followed through a symbolic link: a leftover
+the `codex` file). A release's Codex CLI is removed only while no `cua serve` or profile listing of this home runs:
+the prune checks right before removing it, renames it aside in one step, checks again, and puts it back if a session
+appeared; otherwise it says so and leaves it for a later prune. A session that starts in the instant after that
+second check is not seen; only an older cua would launch the CLI then, which is why every cua using the home is
+updated first, and its launch would fail rather than run unconfined. If `run/`, `state/`, `state/compat/` or
+`kernel/` in the home is a symbolic link, the prune refuses and removes nothing, and a directory it cannot read is
+reported, never taken as clean. Nothing is followed through a symbolic link: a leftover
 that is itself a link is unlinked and its target left, and a linked directory on the way is skipped. Until then
 `cua doctor`'s `runtime.leftovers` row names what is left and the command (`warn`, never a failure).
 
@@ -333,7 +338,8 @@ REPL client read back diagnostics of the matched elements (tag, role, type, labe
 **What the store does not protect against.** The store is as private as your account: any process running as you can
 read it. The agent's JavaScript cells cannot, under the `scoped` default and `default` (#115): cua's sandbox gives the
 cells' kernel its own profile, which denies the store and every project tier (by real path, a symlinked tier's target
-too), `~/.config/cua` and cua's own home but for the runtime, its Node and the connection's own run directory, so a
+too), `~/.config/cua` and cua's own home (on macOS all of it but the runtime, its Node and the connection's own run
+directory; on Linux its `state/`, `remote/`, `chrome/` and `run/` but that run directory: see Configuration), so a
 cell's read fails with `EPERM` or `EACCES`, while the trusted worker, which fills `{{secret:KEY}}` in, still reads it.
 Under `CUA_SHIM_SANDBOX=disabled` nothing is denied and cells read everywhere your account can. Bash in Claude Code is
 not sandboxed this way: nothing keeps the model from reading the directory there, so the plugin's secrets guard (not a

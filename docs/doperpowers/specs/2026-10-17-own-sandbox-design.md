@@ -797,6 +797,13 @@ Dependencies on other work: #79 merged before M2. #117 retires the compat execut
 - Observation: the api-only rerun at fedc016 could not show what the fix wave's launch change did to the suites that build their own HOME. The full Linux parity at 43c543d stopped at its first case. The native-secret and live-secrets fixtures move the children's HOME into `run/<id>/home`, which puts `~/.local/share/applications` inside a write root, and fedc016's scoped preflight correctly refuses that. No real session's HOME lies in its run directory. The fixtures now keep `XDG_DATA_HOME` with the connection's HOME (bf7739f, test-only). A sweep of every HOME and `XDG_*` assignment in `test/`, `scripts/` and `bin/` found no other fixture of that shape. The full rerun at bf7739f was clean.
   Evidence: `docs/evidence/2026-10-17-own-sandbox/m3/gce-cua-43c543d-attempt-1/`, `m3/gce-cua-bf7739f/`.
 
+- Observation (2026-10-18, after merge): the two closures of the owner's Chrome window on the mini were the owner's own clicks, not cua's. Each was an AppKit close-button click (`trackMouse send action on mouseUp`, then `windowShouldClose`) arriving through a Screen Sharing session (screensharingd forwarding pointer events), with no keyboard event, no cua session and no helper activity at that second:
+  - 03:14:43.572Z, 35 s before accept-native started (03:15:18.764Z), while its gate waited on Chrome in front.
+  - 15:31:52.737Z, three seconds after the Default profile's window was closed the same way and 11 minutes before group B's first vendor run (15:43:18Z), not between 15:43Z and 15:48Z as first recorded. Chrome's own session files and cua's host log (`native port closed` at 15:31:52.806Z) agree.
+  - Separately, a static read of the native helper (#162) found that it posts pressKey and typeText to the bound app's pid (`SynthesizedEvent.send(to:delay:)` → `CGEventAPI.postToPid`) and activates an app only on the click path. So a session's keys cannot reach the frontmost app, and no key guard is added to cua's API layer. The harness guard (`scripts/accept/key-guard.mjs`) stays as a test-side safety check.
+  - ci-kit's desktop posture read `remote=none` at 15:28:41Z and 15:32:07Z while that Screen Sharing viewer was attached and clicking, so "nobody at the mini" cannot rest on it or on HID idle alone.
+  Evidence: SSFSKIM/cua#162 (the static finding and the timeline comment); the mini's unified log for Google Chrome, screensharingd and ScreensharingAgent at those seconds.
+
 ## Decision Log
 
 - Decision: verification for this spec and its branch. One independent spec review by `doperpowers:adversarial-reviewer` (the design is technical and security-sensitive), and in the same round a buildability review of the execution section by `doperpowers:adversarial-reviewer` (five milestones). Each milestone PR is reviewed at `doperpowers:reviewer-high` on its whole diff. A final whole-branch `doperpowers:reviewer-high` review covers the M4 PR with the acceptance evidence.
@@ -1006,12 +1013,12 @@ The #138 time-zone line ships off: the hang never reproduced, so no measurement 
 
 **What it cost, and what to do differently.**
 - Deletion code took four review rounds: symlinked parents, snapshot races, swallowed scan errors, orphaned tombstones. Anything that deletes from a user's home should start from an explicit command, guard every parent it mutates, and report everything it could not inspect. Those rules surfaced late, one review at a time.
-- Live runs on a shared Mac collide with the owner's own state. The owner's Chrome window closed twice after runs that typed into TextEdit. The guard added in M4 (keys only while the target is frontmost) and #162 address that, and harness keystrokes should be treated as a shared-machine risk from the start.
+- Live runs on a shared Mac collide with the owner's own state. The owner's Chrome window closed twice near runs that typed into TextEdit, and the correlation was taken for a mechanism. The closures were the owner's own clicks over Screen Sharing, and the helper's keys go to the bound app's pid (#162). Before blaming automation for a change on a shared desktop, read the unified log for the input that caused it; it names the click or key, its source and the second.
 - Scheduling against other sessions' holds and gates cost more wall time than any build. Batching the mini's headless and GUI groups, and asking for holds early, kept it bounded.
 
 **Left open.**
 - #138: not reproduced; the switch is ready.
-- #162: key routing.
+- #162: closed. Keys are posted to the bound app's pid; the window closures were manual (Surprises, 2026-10-18).
 - #157: M1 residue.
 - tech-debt-tracker.md: the waitfor race; the prune's residual race; the pre-rendered compat profile; Linux helper startup.
 - The mini's resident cua update and prune, which the dispatching session owns.

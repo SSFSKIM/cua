@@ -73,3 +73,17 @@ test('on the macOS vendor host a boundary lane\'s markers directory is the launc
  removeLaunchDirs(prepared);rmSync(launch.cwd,{recursive:true,force:true});
  assert.ok(existsSync(join(markers,'counter'))&&!existsSync(launch.cwd),'the markers outlive the connection\'s run directory');
 });
+// #115 M3: the native-secret fixture moves the children's HOME into the run directory, a write root; their XDG
+// applications directories must stay out of it (the own host's scoped preflight refuses that layout,
+// src/runtime/sandbox.mjs), so XDG_DATA_HOME stays with the connection's HOME.
+test('the native-secret fixture keeps the children\'s XDG applications directories outside the run directory',async t=>{
+ const {mkdtempSync,mkdirSync,realpathSync,rmSync}=await import('node:fs');const {tmpdir}=await import('node:os');const {join}=await import('node:path');
+ const {protectedPaths,sandboxConflicts,scopedWriteRoots}=await import('../../src/runtime/sandbox.mjs');const {xdgApplicationRoots}=await import('../../src/repl-host/launch-services.mjs');
+ const root=realpathSync(mkdtempSync(join(tmpdir(),'cua-native-secret-')));t.after(()=>rmSync(root,{recursive:true,force:true}));
+ const user=join(root,'user'),cwd=join(root,'cua','run','s');mkdirSync(user);mkdirSync(join(cwd,'tmp'),{recursive:true});
+ const launch={command:'/user/node',args:[],cwd,env:{HOME:user,TMPDIR:join(cwd,'tmp'),XDG_DATA_DIRS:'/usr/local/share:/usr/share',CUA_REPL_NODE_MODULE_DIRS:'/runtime/node_modules'}};
+ const next=noServicesLaunch(launch,{host:'cua',fixtureServices:{env:{PARITY_NATIVE_SECRET_FIXTURE:'1'},services:{},roots:[]}});
+ assert.equal(next.env.HOME,join(cwd,'home'));
+ assert.equal(next.env.XDG_DATA_HOME,join(user,'.local','share'));
+ assert.deepEqual(sandboxConflicts({protectedPaths:protectedPaths({trustedCodePaths:[],applications:xdgApplicationRoots(next.env)}),writeRoots:scopedWriteRoots({cwd,tmpdir:next.env.TMPDIR})}),[]);
+});

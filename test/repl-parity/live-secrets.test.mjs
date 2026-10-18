@@ -5,6 +5,8 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createLiveSecretOracle,assertScratchHome,errorIsSafe} from './fixtures/live-secret-service.mjs';
 import {prepareLiveSecretsLaunch} from './serve-live-secrets.mjs';
+import {protectedPaths,sandboxConflicts,scopedWriteRoots} from '../../src/runtime/sandbox.mjs';
+import {xdgApplicationRoots} from '../../src/repl-host/launch-services.mjs';
 const ref='{{secret:PARITY_SYNTHETIC}}';
 const rpc=(s,method,params)=>s.handleRpc({method,params});
 const fill=(method='execute',value=ref)=>({method,params:{type:'playwright_locator_fill',browser_id:'fixture',tab_id:'7',selector:'#fixture',value,replace:true}});
@@ -102,6 +104,10 @@ test('launch keeps synthetic HOME within its existing scoped writable run direct
  assert.equal(next.cwd,cwd);assert.equal(next.env.TMPDIR,launch.env.TMPDIR);assert.equal(next.env.HOME,join(cwd,'home'));
  assert.equal(next.env.PARITY_LIVE_SECRET_HOME,next.env.HOME);assert.equal(next.env.PARITY_LIVE_SECRET_RUN_DIRECTORY,cwd);
  assert.equal(await realpath(next.env.HOME),next.env.HOME);
+ // The children's HOME lies in the run directory, a write root; their XDG applications directories must not (the own
+ // host's scoped preflight refuses that layout, src/runtime/sandbox.mjs): XDG_DATA_HOME stays with the connection's HOME.
+ assert.deepEqual(sandboxConflicts({protectedPaths:protectedPaths({trustedCodePaths:[],applications:xdgApplicationRoots(next.env)}),writeRoots:scopedWriteRoots({cwd,tmpdir:next.env.TMPDIR})}),[]);
+ assert.equal(next.env.XDG_DATA_HOME,join(dirs.userHome,'.local','share'));
  const service=await createLiveSecretOracle({capabilityHome:dirs.capabilityHome,expectedCapabilityHome:dirs.expectedCapabilityHome,userHome:next.env.HOME,runDirectory:cwd});
  await rpc(service,'secret.configure',{id:'secrets/browser-live/execute/fill'});passed(await exercise(service,fill()));
  assert.throws(()=>prepareLiveSecretsLaunch({...launch,cwd:dirs.userHome},{host:'vendor',...dirs,remote:true}),/scratch/);

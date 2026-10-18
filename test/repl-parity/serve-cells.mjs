@@ -57,6 +57,9 @@ export function noServicesLaunch(launch,{host='vendor',witness=false,brokenSandb
       // targets' leaves are created.
       if(launch.env.HOME)mkdirSync(join(launch.env.HOME,'.config'),{recursive:true,mode:0o700});
       const home=join(launch.cwd,'home');mkdirSync(home,{recursive:true,mode:0o700});if(realpathSync(home)!==home)throw Error('Native secret fixture HOME must be canonical');env.HOME=home;
+      // No real session's HOME lies in its run directory: the XDG data directories stay with the connection's HOME, so
+      // no applications directory launch_app reads from lies in a write root (the own host's scoped preflight).
+      if(launch.env.HOME)env.XDG_DATA_HOME=join(launch.env.HOME,'.local','share');
       const modules=launch.env[`${prefix}_NODE_MODULE_DIRS`].split(delimiter)[0];
       const facade=host==='vendor'?join(modules,'@oai/cua/dist/lib/js/oai_js_cua/src/tinysky_alt/create_tinysky_alt.js'):fileURLToPath(new URL('../../src/cua-api/create-tinysky-alt.mjs',import.meta.url));
       env[`${prefix}_JS_BANNER`]=`globalThis.nativeSecretFactory=()=>import(${JSON.stringify(pathToFileURL(facade).href)});`;

@@ -25,7 +25,7 @@ This is child 2 of the independence composite #114, after #113 (own browser serv
   - **M0 residue, held by the mini's native-run hold and run in the next cleared window, before M1's live acceptance and before M2 or M4 depend on them** (`node scripts/mini-rules.mjs <item>`, with the harness clone prepared at 90cbfe0, M0's merge, never a later main: these runs measure the pre-M1 launcher and TMPDIR; in order): `vendor` (the vendor computer triple, retaken whole with per-run TMPDIR), `browser` (the own-host browser-only triple), `tz-real-home` (the tz baseline under the real HOME), `accept` (accept-native at main 94366c1, only on the dispatching session's separate go).
 - [x] (2026-10-18) M1 — Policy model, deny list, seatbelt port; cua's own host on macOS (task 4 reviewed clean; PR #156 reviewed at reviewer-high, correct after one fix round; the mini's acceptance at code f8019bf: tier-check, oracles, own-sandbox 76/76, cfprefs, parity 479/479 with no undeclared difference, accept-native item 11 76/76, probe-secrets standalone).
 - [x] (2026-10-18) M2 — Compatibility executable for the macOS vendor host; CodexCLI.app leaves the macOS pin (task 5 reviewed clean; PR #158 at reviewer-high, product confirmed, harness fixes; mini acceptance at code 249a2a9: env probe, helper check, parity 479/479 with no undeclared difference, vendor own-sandbox 86/86, accept-native items 11/12/13).
-- [ ] M3 — Linux helper (built, attested, released), cua's own host on Linux, confined Linux computer default, Linux vendor host retired; `codex` leaves the Linux pins.
+- [x] (2026-10-18) M3 — Linux helper (built, attested, released), cua's own host on Linux, confined Linux computer default, Linux vendor host retired; `codex` leaves the Linux pins. Task 6 was reviewed clean after one fix round, which closed the launch_app write-root and helper-mode gaps; Linux `default` mode now denies `run/`. PR #160 at reviewer-high: no material findings. Release `linux-sandbox-rust-v0.163.0`, tag target da0c530, attested by run 39110168611. On GCE at code fedc016: own-sandbox 82/82, linux-native PASS, helper comparison equal, x64 smoke. Full parity at bf7739f: 493 cases, diff ok with no difference beyond the declared transition and #135. Merged with a merge commit.
 - [ ] M4 — #138 measured change, CODEX_HOME narrowing and cleanup, documentation, final acceptance and latency, plugin release.
 
 ## Scope, inheritance and evidence
@@ -794,6 +794,8 @@ Dependencies on other work: #79 merged before M2. #117 retires the compat execut
 
 - Observation: M2's opening probe confirms route (a). On the mini, under scoped and default, node_repl's kernel and worker `sandbox` calls carried TMPDIR and CODEX_HOME exactly as `buildLaunch` set them, with no unmatched call. Under `disabled`, node_repl does not call the launcher at all (zero invocations), so a vendor-host `disabled` session never reaches the compat executable.
   Evidence: docs/evidence/2026-10-17-own-sandbox/m2/ (feat/115-own-sandbox-m2-evidence 2ea31a8), run at 475881a, 2026-10-18 05:20:25Z.
+- Observation: the api-only rerun at fedc016 could not show what the fix wave's launch change did to the suites that build their own HOME. The full Linux parity at 43c543d stopped at its first case. The native-secret and live-secrets fixtures move the children's HOME into `run/<id>/home`, which puts `~/.local/share/applications` inside a write root, and fedc016's scoped preflight correctly refuses that. No real session's HOME lies in its run directory. The fixtures now keep `XDG_DATA_HOME` with the connection's HOME (bf7739f, test-only). A sweep of every HOME and `XDG_*` assignment in `test/`, `scripts/` and `bin/` found no other fixture of that shape. The full rerun at bf7739f was clean.
+  Evidence: `docs/evidence/2026-10-17-own-sandbox/m3/gce-cua-43c543d-attempt-1/`, `m3/gce-cua-bf7739f/`.
 
 ## Decision Log
 
@@ -934,6 +936,8 @@ Dependencies on other work: #79 merged before M2. #117 retires the compat execut
   - `launch_app` on Linux starts only an id `list_apps` returned, resolved to a desktop entry outside every sandbox write root, through `gio launch` outside the sandbox. The scoped preflight refuses an XDG applications root that overlaps a write root.
   - The parity transition entry lists 19 native cases and no cell differences.
   Rationale: each follows the Design; the review found the desktop-entry and executable-bit gaps, which were fixed before merge.
+  Date/Author: 2026-10-18, execution session.
+- Decision: Linux acceptance 12 closes on a full suite run at M3's final code, not on a single-suite rerun (2026-10-18, ruled by the dispatching session). The fix wave moved the default-mode kernel's cwd and lifeline and added launch_app refusals, and only the api suite had run since. The full run at 43c543d found the fixture defect described in Surprises; the full run at bf7739f compares clean. Nothing under `src/` changed after the review fixes (fedc016).
   Date/Author: 2026-10-18, execution session.
 
 ## Outcomes & Retrospective

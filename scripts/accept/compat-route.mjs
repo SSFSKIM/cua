@@ -8,7 +8,7 @@
 // under the session; and the run's helper quit or was quit by its pid. Counts and error codes only.
 //
 //   node scripts/accept/compat-route.mjs --home <CUA_HOME> --user-home <HOME> --config-home <XDG_CONFIG_HOME> --out <file>
-import {spawnSync} from 'node:child_process';
+import {spawn} from 'node:child_process';
 import {mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
@@ -48,23 +48,43 @@ export function compatRouteChecks(result, {compat = COMPAT_EXECUTABLE} = {}) {
   return checks;
 }
 
-// Runs the experiment and judges it -> {ok, checks, raw: path of the result on this machine}.
-export function compatRouteAcceptance({home, userHome, configHome, node = process.execPath}) {
+// Whether `result` proves the run's teardown: the experiment exited on its own and accounted for every helper it
+// started (each quit by itself or was quit by its pid).
+const teardownProven = (exit, result) => exit.signal !== 'SIGKILL' && result?.helpers && Number.isInteger(result.helpers.started)
+  && result.helpers.started === result.helpers.quitByThemselves + result.helpers.quitByHarness;
+
+// Runs the experiment and judges it -> {ok, checks, kept}. Past `timeoutMs` it is cancelled cooperatively (SIGTERM: the
+// experiment closes its serve, stops its own helpers by pid and writes its result) and given `graceMs` to finish; only
+// then is it killed. The scratch directory (the experiment's result, its launch log naming each session temp, the
+// helpers' ownership witness) is removed only when the teardown is proven, else kept and named (`kept`).
+// `experiment` and `node` are injectable for tests.
+export async function compatRouteAcceptance({home, userHome, configHome, node = process.execPath, experiment = EXPERIMENT, timeoutMs = 600_000, graceMs = 90_000}) {
   const scratch = mkdtempSync(join(tmpdir(), 'cua-compat-route-'));
   const out = join(scratch, 'result.json');
-  const run = spawnSync(node, [EXPERIMENT, '--native', '--home', home, '--user-home', userHome, '--config-home', configHome, '--scratch', scratch,
-    '--host', 'vendor', '--mode', 'scoped', '--label', 'compat-route', '--out', out], {encoding: 'utf8', timeout: 600_000});
+  const child = spawn(node, [experiment, '--native', '--home', home, '--user-home', userHome, '--config-home', configHome, '--scratch', scratch,
+    '--host', 'vendor', '--mode', 'scoped', '--label', 'compat-route', '--out', out], {stdio: ['ignore', 'ignore', 'pipe']});
+  let stderr = '';
+  child.stderr.on('data', chunk => { stderr = (stderr + chunk).slice(-4000); });
+  let timedOut = false;
+  const exit = await new Promise(done => {
+    let grace;
+    const timer = setTimeout(() => { timedOut = true; child.kill('SIGTERM'); grace = setTimeout(() => child.kill('SIGKILL'), graceMs); }, timeoutMs);
+    child.once('exit', (code, signal) => { clearTimeout(timer); clearTimeout(grace); done({code, signal}); });
+  });
   let result = null;
   try { result = JSON.parse(readFileSync(out, 'utf8')); } catch { /* judged below */ }
-  const checks = result ? compatRouteChecks(result) : [{label: 'the experiment wrote its result', pass: false, detail: `exit ${run.status}: ${(run.stderr || '').trim().split('\n').at(-1) ?? ''}`.slice(0, 300)}];
-  rmSync(scratch, {recursive: true, force: true});
-  return {ok: checks.every(c => c.pass), checks};
+  const checks = result ? compatRouteChecks(result) : [{label: 'the experiment wrote its result', pass: false, detail: `exit ${exit.code ?? exit.signal}: ${stderr.trim().split('\n').at(-1) ?? ''}`.slice(0, 300)}];
+  if (timedOut) checks.push({label: `the experiment finished within ${timeoutMs} ms`, pass: false, detail: exit.signal === 'SIGKILL' ? `killed after a ${graceMs} ms grace` : 'cancelled; it tore down on its own'});
+  const proven = teardownProven(exit, result);
+  if (!proven) checks.push({label: 'the run\'s teardown is proven (its helpers accounted for); the evidence is kept', pass: false, detail: scratch});
+  else rmSync(scratch, {recursive: true, force: true});
+  return {ok: checks.every(c => c.pass), checks, kept: proven ? null : scratch};
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const {values} = parseArgs({options: {home: {type: 'string'}, 'user-home': {type: 'string'}, 'config-home': {type: 'string'}, out: {type: 'string'}}});
   if (!values.home || !values['user-home'] || !values['config-home']) { console.error('usage: compat-route.mjs --home <CUA_HOME> --user-home <HOME> --config-home <XDG_CONFIG_HOME> [--out <file>]'); process.exit(2); }
-  const report = compatRouteAcceptance({home: values.home, userHome: values['user-home'], configHome: values['config-home']});
+  const report = await compatRouteAcceptance({home: values.home, userHome: values['user-home'], configHome: values['config-home']});
   if (values.out) writeFileSync(values.out, `${JSON.stringify(report, null, 2)}\n`);
   console.log(JSON.stringify({ok: report.ok, failed: report.checks.filter(c => !c.pass).map(c => c.label)}));
   process.exitCode = report.ok ? 0 : 1;

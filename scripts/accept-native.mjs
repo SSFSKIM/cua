@@ -479,13 +479,13 @@ async function item12() {
 }
 
 // --- 13. #115 acceptance 6: the compat route ---------------------------------------------------------------------------
-function item13() {
+async function item13() {
   const title = 'the macOS computer route through cua\'s compat executable (#115 acceptance 6): native calls, the helper\'s app-server, confinement';
   if (process.platform !== 'darwin') return addItem(13, title, [check('compat route', 'BLOCKED', 'the vendor host runs on macOS only')]);
   const configHome = process.env.XDG_CONFIG_HOME;
   if (!configHome || !process.env.HOME) return addItem(13, title, [check('compat route', 'BLOCKED', 'needs the account\'s HOME and a scratch XDG_CONFIG_HOME (the approved-runtime preparation gives both)')]);
   let report;
-  try { report = compatRouteAcceptance({home, userHome: process.env.HOME, configHome}); } catch (error) { return addItem(13, title, [check('compat route run', 'FAIL', error.message)]); }
+  try { report = await compatRouteAcceptance({home, userHome: process.env.HOME, configHome}); } catch (error) { return addItem(13, title, [check('compat route run', 'FAIL', error.message)]); }
   addItem(13, title, report.checks.map(c => check(c.label, c.pass ? 'PASS' : 'FAIL', c.detail === undefined ? (c.pass ? 'as expected' : 'not as expected') : String(c.detail))));
 }
 
@@ -495,7 +495,7 @@ const runDirBefore = existsSync(join(home, 'run')) ? readdirSync(join(home, 'run
 await item1();
 await item3();          // doctor first: item 2 reads its verification result
 await item2();
-item13();               // before the other native items: it starts the session's helper itself and needs none running
+await item13();         // before the other native items: it starts the session's helper itself and needs none running
 await item4();
 const probe = await liveSecrets();
 const textedit = await liveTextEdit();

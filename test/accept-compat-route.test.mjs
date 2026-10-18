@@ -2,7 +2,10 @@
 // macOS vendor host must show for acceptance 6 and the vendor host's share of 2 to 5.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {compatRouteChecks} from '../scripts/accept/compat-route.mjs';
+import {mkdtempSync, rmSync, writeFileSync, existsSync, readdirSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {compatRouteAcceptance, compatRouteChecks} from '../scripts/accept/compat-route.mjs';
 import {COMPAT_EXECUTABLE} from '../src/runtime/launch.mjs';
 
 const ok = value => ({ok: true, value});
@@ -41,4 +44,51 @@ test('each departure fails its own check', () => {
     change(r);
     assert.equal(compatRouteChecks(r).filter(c => !c.pass).length, 1, label);
   }
+});
+
+// The run's timeout (#115 M2 review): the experiment is cancelled cooperatively and given a bounded grace; its evidence
+// is removed only when its teardown is proven. Doubles stand in for experiment.mjs: no serve, no native helper.
+
+const DOUBLE_HEAD = `const out = process.argv[process.argv.indexOf('--out') + 1];
+const fs = require('node:fs');
+const write = r => fs.writeFileSync(out, JSON.stringify(r));
+`;
+function double(t, body) {
+  const dir = mkdtempSync(join(tmpdir(), 'cua-route-double-'));
+  t.after(() => rmSync(dir, {recursive: true, force: true}));
+  const file = join(dir, 'experiment.cjs');
+  writeFileSync(file, DOUBLE_HEAD + body);
+  return file;
+}
+const run = (experiment, extra = {}) => compatRouteAcceptance({home: '/h', userHome: '/u', configHome: '/c', experiment, timeoutMs: 300, graceMs: 300, ...extra});
+const keptDirs = new Set();
+const kept = r => { if (r.kept) keptDirs.add(r.kept); return r.kept; };
+test.after(() => { for (const dir of keptDirs) rmSync(dir, {recursive: true, force: true}); });
+
+test('a run that cancels cooperatively and accounts for its helpers is judged failed, and its scratch removed', async t => {
+  const experiment = double(t, `process.on('SIGTERM', () => { write({cancelled: true, driverError: 'cancelled', helpers: {started: 1, quitByThemselves: 0, quitByHarness: 1}}); process.exit(1); });
+setInterval(() => {}, 1000);`);
+  const r = await run(experiment);
+  assert.equal(r.ok, false);
+  assert.ok(r.checks.some(c => !c.pass && /finished within 300 ms/.test(c.label) && /cancelled/.test(c.detail)));
+  assert.equal(kept(r), null, 'teardown proven: nothing kept');
+});
+
+test('a run that ignores the cancellation is killed after the grace, and its scratch (the ownership log) is kept', async t => {
+  const experiment = double(t, `process.on('SIGTERM', () => {}); fs.writeFileSync(require('node:path').join(require('node:path').dirname(out), 'launches.jsonl'), '{}\\n'); setInterval(() => {}, 1000);`);
+  const r = await run(experiment);
+  assert.equal(r.ok, false);
+  assert.ok(r.checks.some(c => /killed after a 300 ms grace/.test(c.detail ?? '')));
+  assert.ok(kept(r) && existsSync(join(r.kept, 'launches.jsonl')), 'the evidence stays');
+});
+
+test('a run that exits with helpers unaccounted for keeps its scratch; a clean one removes it', async t => {
+  const leaky = double(t, `write({helpers: {started: 1, quitByThemselves: 0, quitByHarness: 0}});`);
+  const r = await run(leaky, {timeoutMs: 10_000});
+  assert.ok(kept(r) && readdirSync(r.kept).includes('result.json'));
+  assert.ok(r.checks.some(c => /teardown is proven/.test(c.label) && !c.pass));
+  const clean = double(t, `write({helpers: {started: 1, quitByThemselves: 1, quitByHarness: 0}});`);
+  const c = await run(clean, {timeoutMs: 10_000});
+  assert.equal(kept(c), null);
+  assert.equal(c.checks.some(x => /teardown is proven/.test(x.label)), false);
 });

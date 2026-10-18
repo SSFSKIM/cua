@@ -12,13 +12,13 @@ import {prepareCapabilityHome} from '../../scripts/browser-parity/capability-hom
 import {openConnection} from '../../src/mcp/connection.mjs';
 import {resolveRuntime} from '../../src/runtime/manifest.mjs';
 import {homeLayout} from '../../src/runtime/layout.mjs';
-import {boundaryPreflightEnv,boundaryServeEnv,failingSandboxScript} from './fixture-launch.mjs';
+import {boundaryMarkersDir,boundaryPreflightEnv,boundaryServeEnv,failingSandboxScript} from './fixture-launch.mjs';
 import boundaryScenarios from './scenarios/boundaries.mjs';
 import {ownedProcesses,killOwnedKernel,alive} from '../../scripts/repl-parity/processes.mjs';
 if(process.env.CUA_PARITY_REMOTE!=='1')throw new Error('Boundary probes are remote-only');
 const probe=process.argv[2],id=`cells/${probe}`,host=process.env.CUA_REPL_HOST??'vendor';
 const facts=executionFacts({source:process.env.CUA_HOME});assertPreparedFacts(JSON.parse(process.env.CUA_PARITY_EXPECTED),facts);
-const dir=mkdtempSync(join(tmpdir(),(process.env.CUA_PARITY_SCRATCH_PREFIX??'cua-')+'bounds-'));mkdirSync(join(dir,'tmp'));
+const dir=mkdtempSync(join(tmpdir(),(process.env.CUA_PARITY_SCRATCH_PREFIX??'cua-')+'bounds-')),markers=boundaryMarkersDir(dir,{host});mkdirSync(markers,{recursive:true});
 const pool=new AttestedConnections(host),clients=[],rows=[],normalize=createNormalizer({imageMode:'exact',schemaFields:false});
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 async function until(check,ms=10000){const deadline=Date.now()+ms;while(!check()){if(Date.now()>deadline)throw new Error('Fixture condition timed out');await delay(20);}}
@@ -27,7 +27,7 @@ async function record(label,result){rows.push({case:id,cell:label,ok:true,...awa
 async function open({sandbox='scoped',witness=false,brokenSandbox=false}={}){
  const control=join(dir,`connection-${clients.length+1}`);mkdirSync(control);
  const sandboxFailure=join(control,'failing-sandbox');if(brokenSandbox){writeFileSync(sandboxFailure,failingSandboxScript(join(control,'sandbox-invoked')));chmodSync(sandboxFailure,0o700);}
- const client=await pool.open({expectedFacts:facts,command:process.execPath,args:[fileURLToPath(new URL('./serve-cells.mjs',import.meta.url))],env:boundaryServeEnv(process.env,{tmp:join(dir,'tmp'),home:process.env.CUA_HOME,host,facts,control,sandbox,witness,brokenSandbox:brokenSandbox?sandboxFailure:''})});
+ const client=await pool.open({expectedFacts:facts,command:process.execPath,args:[fileURLToPath(new URL('./serve-cells.mjs',import.meta.url))],env:boundaryServeEnv(process.env,{tmp:markers,home:process.env.CUA_HOME,host,facts,control,sandbox,witness,brokenSandbox:brokenSandbox?sandboxFailure:''})});
  clients.push({client,control,sandbox,witness,brokenSandbox});return client;
 }
 async function js(client,label,code,timeoutMs){return record(label,await client.call('js',{code,title:'Owned boundary fixture',...(timeoutMs?{timeout_ms:timeoutMs}:{})}));}
@@ -41,7 +41,7 @@ async function close(client){
 }
 async function negativePreflight(kind){
  const scratch=prepareCapabilityHome({source:process.env.CUA_HOME});let launched=false;
- const env=boundaryPreflightEnv(process.env,{scratch,tmp:join(dir,'tmp'),host});
+ const env=boundaryPreflightEnv(process.env,{scratch,tmp:markers,host});
  // The scratch home's run directory resolves into its own runtime copy's modules, so the session's write roots cover a
  // trusted code path (since #115 M1 the caller's TMPDIR is no write root, so it can no longer stage the overlap).
  if(kind==='trusted-write-root-overlap'){const run=homeLayout(scratch.dir).run;rmSync(run,{recursive:true,force:true});symlinkSync(resolveRuntime({home:scratch.dir}).paths.moduleDir,run);}
@@ -62,12 +62,12 @@ try{
   assert.equal(result.isError,false);const value=JSON.parse(text(result));assert.deepEqual(value,{cwdWrite:sandbox!=='default',outsideWrite:sandbox==='disabled',network:sandbox==='disabled'});proof={kind:'sandbox-behavior',mode:sandbox,...value};
  }else if(probe==='confinement/no-unsandboxed-fallback'){
   const client=await open({brokenSandbox:true});await record('reset',await client.call('js_reset'));
-  const marker=join(dir,'tmp','must-not-run'),outside=join(dir,'outside-policy');
+  const marker=join(markers,'must-not-run'),outside=join(dir,'outside-policy');
   const result=await js(client,'refused',`let fs=await import('node:fs');fs.writeFileSync(${JSON.stringify(marker)},'executed');let outsideWrite=false;try{fs.writeFileSync(${JSON.stringify(outside)},'executed');outsideWrite=true;}catch{}nodeRepl.write(JSON.stringify({outsideWrite}));`);
   const outsideWrite=existsSync(outside);proof={kind:'sandbox-launch-failure',codeExecuted:existsSync(marker),toolError:result.isError===true,
     ...(process.platform==='linux'?{outsideWrite,launcherInvoked:existsSync(join(clients.at(-1).control,'sandbox-invoked'))}:outsideWrite?{outsideWrite}:{} )};
  }else if(probe==='timeouts/late-reply-generation-fence'||probe==='reset/generation-fence'){
-  const client=await open(),marker=join(dir,'tmp','stale');
+  const client=await open(),marker=join(markers,'stale');
   const schedule=`let oldBinding=1;let fs=await import('node:fs');setTimeout(()=>{fs.writeFileSync(${JSON.stringify(marker)},'stale');nodeRepl.write('STALE');},1000);`;
   if(probe.startsWith('timeouts/')){const result=await js(client,'timeout',schedule+'await new Promise(()=>{});',50);assert.equal(result.isError,true);}
   else{await js(client,'schedule',schedule+`nodeRepl.write('scheduled');`);await record('reset',await client.call('js_reset'));}
@@ -87,7 +87,7 @@ try{
    await js(client,'background',`setInterval(()=>{},1000);nodeRepl.write('background-active');`);const terminal=await close(client);await until(()=>owned.every(p=>!alive(p.pid)));
    proof={kind:'owned-group',confirmed:terminal.teardown.confirmed,allObservedChildrenGone:true};
   }else{
-   const counter=join(dir,'tmp','counter'),release=join(dir,'tmp','release');
+   const counter=join(markers,'counter'),release=join(markers,'release');
    const pending=client.call('js',{code:`let fs=await import('node:fs');fs.appendFileSync(${JSON.stringify(counter)},'x');while(!fs.existsSync(${JSON.stringify(release)}))await new Promise(r=>setTimeout(r,20));nodeRepl.write('released');`,title:'Owned interruption fixture'}).then(result=>({result}),error=>({error}));
    await until(()=>existsSync(counter));
    if(probe.endsWith('child-exit-settles'))killOwnedKernel(client.child.pid,launch.cwd,{host,nodePath:launch.nodePath});

@@ -173,7 +173,10 @@ export const SANDBOX_DIR = ownedPath('../sandbox');
 // cua's compat executable for the Codex CLI (#115 M2), the macOS vendor host's CODEX_CLI_PATH, and its directory, which
 // is trusted code for the scoped preflight of either host: it runs outside every sandbox too.
 export const BIN_DIR = ownedPath('../../bin');
-export const COMPAT_EXECUTABLE = ownedPath('../../bin/cua-codex-compat');
+// Its absolute path beside bin/ at load (it may be missing: doctor's sandbox.launcher and the vendor launch preflight
+// say so); `compatExecutable()` is its real path, resolved when a launch or doctor names it.
+export const COMPAT_EXECUTABLE = join(BIN_DIR, 'cua-codex-compat');
+export const compatExecutable = (path = COMPAT_EXECUTABLE) => { try { return realpathSync(path); } catch { return path; } };
 export const CUA_BOOTSTRAP_BANNER = `await import(${JSON.stringify(pathToFileURL(join(CUA_API_DIR, 'bootstrap.mjs')).href)});\n`;
 const REPL_HOSTS = ['cua', 'vendor'];
 // The environment names a cell may read through nodeRepl.env on the own host: the vendor launcher's own additions to
@@ -237,7 +240,7 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
     [names.codePaths]: trustedCodePaths.join(':'),
     [names.pipeTimeout]: '1000',
     NODE_REPL_DISABLE_ANALYTICS: '1',
-    ...(ownSandbox ? {CUA_REPL_SANDBOX_EXEC: SEATBELT_EXEC} : compat ? {CODEX_CLI_PATH: COMPAT_EXECUTABLE, CUA_COMPAT_NODE: p.node} : {CODEX_CLI_PATH: p.codexCli}),
+    ...(ownSandbox ? {CUA_REPL_SANDBOX_EXEC: SEATBELT_EXEC} : compat ? {CODEX_CLI_PATH: compatExecutable(), CUA_COMPAT_NODE: p.node} : {CODEX_CLI_PATH: p.codexCli}),
   });
   if (enabled.includes('computer')) Object.assign(env, linux ? {OAI_SKY_LINUX_BIN: p.skyLinuxBin} : {SKY_CUA_SERVICE_PATH: p.skyServiceApp}, {CUA_SKY_VENDOR_SERVICE: p.skyVendorService});
   if (enabled.includes('browser')) {

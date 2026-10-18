@@ -173,7 +173,12 @@ async function main() {
       return app === FINDER ? {action: 'accept', content: {}} : {action: 'decline'};
     },
     onElicitation: (row, msg) => elicitations.push({...row, app: msg.params?._meta?.tool_params?.app ?? null, persist: msg.params?._meta?.persist ?? null})});
+  // Cooperative cancellation (scripts/accept/compat-route.mjs's timeout): SIGTERM fails the pending call and stops the
+  // cells; the teardown below still runs (the serve closed, this run's helpers stopped by pid) and the result is written.
+  let cancelled = false;
+  process.once('SIGTERM', () => { cancelled = true; ev('cancelled (SIGTERM)'); client.failAll(new Error('cancelled')); });
   const js = async (name, body) => {
+    if (cancelled) throw new Error('cancelled');
     const t = Date.now();
     let result;
     try {
@@ -228,6 +233,7 @@ async function main() {
     out.helpers = {...helpers.stopLeft(), foreignSeen: helpers.foreignSeen().length};
   }
   out.results = results;
+  if (cancelled) out.cancelled = true;
   out.elicitations = elicitations;
   // What the slot saw: the CLI invocations, and per app-server the audited exchange (never the raw lines).
   const invocations = readJsonl(join(logDir, 'invocations.jsonl'));

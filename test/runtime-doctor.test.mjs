@@ -615,3 +615,30 @@ test('Linux has no sandbox.launcher row until #115 M3', async t => {
   const report = await inspectRuntime({home: s.dir, host: {platform: 'linux', arch: 'x64'}, inspectHelper: noHelper, inspectSecrets: noSecrets, inspectAgent: noAgent, inspectChrome: noChrome, inspectLinux: async () => []});
   assert.equal(check(report, 'sandbox.launcher'), undefined);
 });
+
+// #115 M2 review: a checkout whose bin/cua-codex-compat is missing still loads launch.mjs and doctor (nothing resolves the
+// compat executable at load), and doctor's sandbox.launcher names it. A copy of the checkout without that one file.
+test('without bin/cua-codex-compat, doctor still loads and sandbox.launcher fails naming the compat executable', async t => {
+  const {cpSync, symlinkSync: link} = await import('node:fs');
+  const {spawnSync} = await import('node:child_process');
+  const repo = realpathSync(new URL('..', import.meta.url).pathname);
+  const s = scratch('cua-no-compat-');
+  t.after(s.cleanup);
+  const copy = join(realpathSync(s.dir), 'cua');
+  for (const dir of ['src', 'runtime', join('docs', 'cua-api')]) cpSync(join(repo, dir), join(copy, dir), {recursive: true});
+  mkdirSync(join(copy, 'bin'));
+  cpSync(join(repo, 'bin', 'cua.mjs'), join(copy, 'bin', 'cua.mjs'));
+  cpSync(join(repo, 'package.json'), join(copy, 'package.json'));
+  link(join(repo, 'node_modules'), join(copy, 'node_modules'));
+  const script = `const {inspectRuntime} = await import(${JSON.stringify(join(copy, 'src', 'runtime', 'doctor.mjs'))});
+const none = async () => [];
+const r = await inspectRuntime({home: ${JSON.stringify(join(s.dir, 'home'))}, host: {platform: 'darwin', arch: 'arm64'}, inspectHelper: async () => ({socket: '/x', holders: []}),
+  inspectSecrets: async () => ({dir: '/none', exists: false}), inspectAgent: none, inspectChrome: none});
+console.log(JSON.stringify(r.checks.find(c => c.name === 'sandbox.launcher')));`;
+  const run = spawnSync(process.execPath, ['--input-type=module', '-e', script], {encoding: 'utf8', env: {PATH: process.env.PATH, HOME: s.dir}});
+  assert.equal(run.status, 0, run.stderr);
+  const row = JSON.parse(run.stdout.trim().split('\n').at(-1));
+  assert.equal(row.status, 'fail');
+  assert.ok(row.detail.includes(`cua's compat executable (${join(copy, 'bin', 'cua-codex-compat')})`), row.detail);
+  assert.match(row.detail, /restore cua's checkout/);
+});

@@ -54,7 +54,7 @@ import {homedir} from 'node:os';
 import {dirname, join} from 'node:path';
 import {CuaError} from './errors.mjs';
 import {homeLayout, realHome} from './layout.mjs';
-import {BROWSER_SERVICE, BROWSER_SERVICE_IMPL_DIR, COMPAT_EXECUTABLE, CUA_API_DIR, CUA_API_DOCS_DIR, REPL_HOST_DIR, SANDBOX_DIR, SERVICE_SUPPORT_DIRS, SKY_SERVICE, NODE_FLOOR, ownHostNode, replHostFor} from './launch.mjs';
+import {BROWSER_SERVICE, BROWSER_SERVICE_IMPL_DIR, COMPAT_EXECUTABLE, compatExecutable, CUA_API_DIR, CUA_API_DOCS_DIR, REPL_HOST_DIR, SANDBOX_DIR, SERVICE_SUPPORT_DIRS, SKY_SERVICE, NODE_FLOOR, ownHostNode, replHostFor} from './launch.mjs';
 import {SANDBOX_CONFLICT_HINT, assertDenyListShape, describeConflicts, protectedPaths, sandboxConflicts, sandboxModeFrom, scopedWriteRoots} from './sandbox.mjs';
 import {denyListFor} from '../sandbox/policy.mjs';
 import {SEATBELT_EXEC} from '../sandbox/seatbelt.mjs';
@@ -132,7 +132,7 @@ export async function inspectRuntime({home, env = process.env, live = false, pin
   const linuxRows = host.platform === 'linux' ? await inspectLinux({env}) : null;
   const sandbox = sandboxCheck({home, env, runtime, platform: host.platform, userns: linuxRows?.find(row => row.name === 'sandbox.userns')});
   checks.push(sandbox.row);
-  if (host.platform === 'darwin') checks.push(launcherCheck({...launcher, node: runtime?.paths.node}));
+  if (host.platform === 'darwin') checks.push(launcherCheck({...launcher, compat: compatExecutable(launcher.compat), node: runtime?.paths.node}));
   checks.push(runSweepCheck(home, sweep));
 
   if (linuxRows) checks.push(...linuxRows.map(row => (row.name === 'sandbox.userns' ? usernsRow(row, {env, sandbox}) : row)));

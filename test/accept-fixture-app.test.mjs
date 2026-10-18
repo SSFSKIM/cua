@@ -4,9 +4,13 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {cleanUpFixtureApp, ownedLaunches, parseLaunch, quitOwned, restoreFront} from '../scripts/accept/fixture-app.mjs';
 
-test('ps lstart text (C locale) parses to local epoch ms; anything else is null', () => {
-  assert.equal(parseLaunch('Sun Oct 18 02:51:07 2026    \n'), new Date(2026, 9, 18, 2, 51, 7).getTime());
-  assert.equal(parseLaunch('Mon Oct  5 09:01:02 2026'), new Date(2026, 9, 5, 9, 1, 2).getTime());
+test('ps lstart text (C locale, UTC) parses to epoch ms; anything else is null', () => {
+  assert.equal(parseLaunch('Sun Oct 18 02:51:07 2026    \n'), Date.parse('2026-10-18T02:51:07Z'));
+  assert.equal(parseLaunch('Mon Oct  5 09:01:02 2026'), Date.parse('2026-10-05T09:01:02Z'));
+  // A US fall-back hour (01:00-02:00 local happens twice on 2026-11-01): in UTC each instant has one text, so the second
+  // occurrence (06:30Z, 01:30 EST) is not read as the first (05:30Z, 01:30 EDT), whatever this process's time zone.
+  assert.equal(parseLaunch('Sun Nov  1 06:30:00 2026'), Date.parse('2026-11-01T06:30:00Z'));
+  assert.equal(parseLaunch('Sun Nov  1 05:30:00 2026'), Date.parse('2026-11-01T05:30:00Z'));
   for (const bad of ['', '2026년 10월 18일 일요일 10시 53분 03초', 'Sun Foo 18 02:51:07 2026']) assert.equal(parseLaunch(bad), null, bad);
 });
 

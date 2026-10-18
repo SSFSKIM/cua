@@ -9,21 +9,22 @@
 // on macOS 26 and 27), so a marker passed through `open` could not be read back.
 import {execFileSync} from 'node:child_process';
 
-const run = (cmd, args) => execFileSync(cmd, args, {encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], env: {...process.env, LC_ALL: 'C'}, timeout: 10_000});
+// ps in the C locale and in UTC: `lstart` carries no UTC offset, so local time would be ambiguous in a fall-back hour.
+const run = (cmd, args) => execFileSync(cmd, args, {encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], env: {...process.env, LC_ALL: 'C', TZ: 'UTC'}, timeout: 10_000});
 
 // The running pids of an executable name (pgrep -x), or [] when none runs.
 export function pidsOf(name, {exec = run} = {}) {
   try { return String(exec('/usr/bin/pgrep', ['-x', name])).split('\n').filter(Boolean).map(Number); } catch { return []; }
 }
 
-// `ps -o lstart=` text in the C locale ("Sun Oct 18 02:51:07 2026", local time) -> epoch ms, or null.
+// `ps -o lstart=` text in the C locale and UTC ("Sun Oct 18 02:51:07 2026", as `run` invokes ps) -> epoch ms, or null.
 export function parseLaunch(text) {
   const t = String(text).trim().replace(/\s+/g, ' ');
   const m = /^\w{3} (\w{3}) (\d{1,2}) (\d{2}):(\d{2}):(\d{2}) (\d{4})$/.exec(t);
   if (!m) return null;
   const month = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].indexOf(m[1]);
   if (month < 0) return null;
-  return new Date(Number(m[6]), month, Number(m[2]), Number(m[3]), Number(m[4]), Number(m[5])).getTime();
+  return Date.UTC(Number(m[6]), month, Number(m[2]), Number(m[3]), Number(m[4]), Number(m[5]));
 }
 
 // A pid's launch time (epoch ms, to the second), or null when it is gone or unreadable.

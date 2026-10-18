@@ -54,7 +54,66 @@ The first pause passed 20 minutes and was reported; the controller ruled it a no
 - **logd and diagnosticd.** These lookups are among the original's `:minimal` platform defaults, and no suite failed without them. They stay denied and are noted, not granted; the spec's Surprises carries this.
 - **The suspend-resume difference.** Accepted as a pause artefact: the before side was held past the runtime's 15-minute idle stop. Logged as harness debt.
 
-Parity (f8019bf) follows. The 5d9bf70 runs of the steps above are kept as `tier-discovery-attempt-3/`, `oracles-attempt-2/` and `own-sandbox-attempt-2/`.
+**Close-out.** Parity's cua side (below) ran `cells/budget/suspend-resume` unpaused under f8019bf's kernel profile, and the diff against the vendor run shows no undeclared difference. The suspend-resume case is closed.
+
+### Parity at f8019bf: diff ok, no undeclared difference
+
+Profile ssfs. The harness is this clone at f8019bf. Evidence is in `parity-mini/`.
+
+| Side | Prepare | Run | Gate | Pauses | Result |
+|---|---|---|---|---|---|
+| vendor | 00:04:44Z | 00:07:59Z to about 00:22Z | loads 4.21 and 4.25 | `cells/budget/suspend-resume` warm, 00:12:06Z to 00:13:09Z (unread blip) | 479/479 PASS |
+| cua | 02:57:25Z | 02:57:49Z to 03:09:49Z | one hold reading (exception below), loads 3.8 and 4.4 | none | 479/479, complete |
+
+- **Diff.** `repl-parity.mjs diff vendor cua --expected test/repl-parity/expected-differences.json` (`diff.json`): **ok, 0 undeclared differences**. The 1368 expected entries are the declared fields `meta.cua/replHost` and node_repl diagnostics.
+- **cua attempt 1.** Ended during a 34-job CI burst; it is kept in `cua-attempt-1/` with its INVALID.md.
+- **The hold exception.** Approved by both rule owners. CI-opt took the mini's runner offline from 02:41:10Z; the window was first set to end at 03:11:10Z and was extended to 03:55:00Z.
+  - Inside the window, the gate and both watchers counted busy=false with no Runner.Worker as idle, and ignored the queue (27 jobs).
+  - The gate took one reading instead of two. Terminal in front, load and dialog checks were unchanged.
+  - The waits before the hold are in `pauses-cua-gatewait.log`.
+- **Terminal raises.** Each run left Chrome in front. By the HID-idle rule, Terminal was raised with `open -a Terminal` at 00:23:37Z (HIDIdleTime 14460 s) and 03:09:44Z (24426 s).
+- **Cleanup.** The owner connected over Screen Sharing at 03:09Z, which put Chrome in front, and the cleanup gate refused. cleanup-prepared was then run directly and reported removed and siblingRemoved.
+- **Chrome.** pid 36513 with 1 ssfs tab before and after each side (`chrome-*.json`).
+
+### accept-native at f8019bf with item 11: the TextEdit sitting
+
+This is the second TextEdit run of the pair; the owner was connected over Screen Sharing.
+
+**Setup:**
+- The remote script is the clone's `ACCEPT_REMOTE`, with its own scratch clone `~/cua-115-accept-m1` at f8019bf on the approved home.
+- The harness clone `~/Developer/GitHub/cua-parity` was at f8019bf.
+- Synthetic key only: `--live-secrets --live-textedit`, with no `--secret-key`.
+- The DL 58 pause file was mirrored to the mini as `CUA_PAUSE_FILE`, with the hold exception applied.
+- A watch that stops the run only on a system dialog.
+
+**Run:**
+- Started at 03:15:15Z, once the owner had Terminal in front (hold reading at load 4.75).
+- The report covers 03:15:18Z to 03:17:52Z, and the cleanup exited 0.
+- No pause occurred and no system dialog appeared.
+- TextEdit was in front afterwards: pid 36158, started 03:17:24Z, inside the run. It was quit by pid at 03:17:56Z, and Terminal was refocused at 03:17:59Z.
+- The hold was released to CI-opt at 03:18Z.
+
+The report is `accept-native/acceptance.json`. Overall: FAIL.
+
+| Item | main 94366c1 | M1 f8019bf | Note |
+|---|---|---|---|
+| 1 npm test | FAIL (2 of 2586) | FAIL (2 of 2809) | the same two tests as main (`test/repl-parity/coverage.test.mjs:14`, `test/repl-parity/inventory.test.mjs:298`); attempt 1's six M0/M1 failures are gone |
+| 2 pinned install | FAIL | FAIL | cascade from item 1; download mode BLOCKED in both |
+| 3 doctor | FAIL | FAIL | cascade from item 1 |
+| 4 serve, verify.mjs | PASS | PASS | |
+| 5 live TextEdit fixture | PASS | PASS | |
+| 6 secrets | FAIL (cascade only) | FAIL | the cascade, plus live probe-secrets' step "store unreadable: the launch is refused" (below) |
+| 7 substitution | FAIL (cascade only) | FAIL | the same cascade and live step |
+| 8 lifecycle | FAIL | FAIL | cascade from item 1 |
+| 9 release gates | BLOCKED | BLOCKED | |
+| 10 packaging | FAIL | FAIL | the same detached-clone and home-path checks as main |
+| 11 own sandbox (#115) | n/a | **PASS** | 76 of 76 checks |
+
+**The one live finding.** probe-secrets' step "store unreadable: the launch is refused" fails with the detail "initialize unanswered; exit 0; stderr the secret store … could not be read (EACCES) … this confined launch is refused; target calls 0".
+- The refusal itself happens: the deny list's fail-closed refusal is on stderr, and the target receives nothing.
+- The step fails on the exit status: the refused launch exits 0, and the probe expects a failing exit.
+- So either the probe's expectation or the serve's exit code needs a ruling.
+ The 5d9bf70 runs of the steps above are kept as `tier-discovery-attempt-3/`, `oracles-attempt-2/` and `own-sandbox-attempt-2/`.
 
 # The rerun at 5d9bf70 (superseded by f8019bf)
 

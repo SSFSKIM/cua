@@ -1439,3 +1439,27 @@
 2026-10-18T03:11:30.407Z gated node scripts/repl-parity.mjs cleanup-prepared --device mini: reading 1: front=com.google.Chrome busy=false workers=0 queued=27 load=6.89 -> stop (the frontmost application is com.google.Chrome, not Terminal, with the runner idle)
 2026-10-18T03:11:30.407Z STOP: before gated node scripts/repl-parity.mjs cleanup-prepared --device mini: the frontmost application is com.google.Chrome, not Terminal, with the runner idle
 2026-10-18T03:11:55Z parity cua: cleanup-prepared run directly after its gate refused on Chrome in front (the owner connected over Screen Sharing from 03:09Z)
+2026-10-18T03:12:47Z TextEdit sitting started (accept-native at f8019bf, CUA_PAUSE_FILE mirrored to /tmp/cua115-accept-pause.json)
+2026-10-18T03:12:47.256Z watch accept-native-f8019bf: started for pid 76955 (mode dialog-only)
+2026-10-18T03:12:51.169Z watch accept-native-f8019bf: reading: front=com.google.Chrome busy=false workers=0 queued=27 load=4.44 -> idle
+2026-10-18T03:12:51.506Z accept-native at f8019bf (M1, item 11): hold reading: front=com.google.Chrome busy=false workers=0 queued=27 (ignored in the hold) load=4.44 -> wait
+2026-10-18T03:13:15.789Z accept-native at f8019bf (M1, item 11): hold reading: front=com.google.Chrome busy=false workers=0 queued=27 (ignored in the hold) load=4.04 -> wait
+2026-10-18T03:13:28.276Z watch accept-native-f8019bf: reading: front=com.google.Chrome busy=false workers=0 queued=27 load=3.73 -> idle
+2026-10-18T03:13:39.812Z accept-native at f8019bf (M1, item 11): hold reading: front=com.google.Chrome busy=false workers=0 queued=27 (ignored in the hold) load=4.85 -> wait
+2026-10-18T03:14:02.255Z watch accept-native-f8019bf: reading: front=com.google.Chrome busy=false workers=0 queued=27 load=4.71 -> idle
+2026-10-18T03:14:03.871Z accept-native at f8019bf (M1, item 11): hold reading: front=com.google.Chrome busy=false workers=0 queued=27 (ignored in the hold) load=4.57 -> wait
+2026-10-18T03:14:27.621Z accept-native at f8019bf (M1, item 11): hold reading: front=com.google.Chrome busy=false workers=0 queued=27 (ignored in the hold) load=4.66 -> wait
+2026-10-18T03:14:36.627Z watch accept-native-f8019bf: reading: front=com.google.Chrome busy=false workers=0 queued=27 load=4.4 -> idle
+2026-10-18T03:14:51.808Z accept-native at f8019bf (M1, item 11): hold reading: front=com.google.Chrome busy=false workers=0 queued=27 (ignored in the hold) load=4.08 -> wait
+2026-10-18T03:15:11.563Z watch accept-native-f8019bf: reading: front=com.google.Chrome busy=false workers=0 queued=27 load=4.72 -> idle
+2026-10-18T03:15:15.753Z accept-native at f8019bf (M1, item 11): hold reading: front=com.apple.Terminal busy=false workers=0 queued=27 (ignored in the hold) load=4.75 -> idle
+2026-10-18T03:15:45.287Z watch accept-native-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=27 load=5.55 -> idle
+2026-10-18T03:16:19.290Z watch accept-native-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=27 load=6.97 -> idle
+2026-10-18T03:16:53.656Z watch accept-native-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=27 load=5.77 -> idle
+2026-10-18T03:17:28.168Z watch accept-native-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=27 load=5.24 -> idle
+2026-10-18T03:17:53.760Z front after accept-native at f8019bf (M1, item 11): com.apple.TextEdit
+2026-10-18T03:17:54.382Z TextEdit after accept-native at f8019bf (M1, item 11): pid 36158 started 2026-10-18T03:17:24.000Z (run window 2026-10-18T03:15:15.753Z to 2026-10-18T03:17:53.045Z)
+2026-10-18T03:17:54.383Z accept-native at f8019bf (M1, item 11): exit 1 (0 PASS, 1 FAIL, 3 BLOCKED), cleanup exit 0, report in mini:/tmp/cua-115-accept.hXpQKt
+2026-10-18T03:17:55.642Z accept-native at f8019bf (M1, item 11): done
+2026-10-18T03:17:56Z quit the fixture TextEdit pid 36158 (started 2026-10-18T03:17:24Z, inside the run)
+2026-10-18T03:17:59Z Terminal refocused; front: bundleID="com.apple.Terminal"

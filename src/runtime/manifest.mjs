@@ -21,7 +21,10 @@ export const RELEASES_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 
 export const RECORD_FILE = 'install.json';
 // `browserVendorService` names the vendor's @oai/browser-desktop service module, which no launch selects since #79; only
 // the parity harnesses' vendor oracle loads it (test/browser-parity/vendor-oracle.mjs).
-export const LAYOUT_KEYS = ['node', 'nodeRepl', 'moduleDir', 'cuaRepl', 'codexCli', 'skyServiceApp', 'skyVendorService', 'browserVendorService', 'vendorManifest', 'ipcClient'];
+// The darwin layout names no Codex CLI since #115 M2 (the vendor host's CODEX_CLI_PATH is cua's compat executable,
+// bin/cua-codex-compat); a release installed before keeps its CodexCLI.app until M4's cleanup, and nothing checks or
+// launches it. The Linux layout keeps `codexCli` until M3.
+export const LAYOUT_KEYS = ['node', 'nodeRepl', 'moduleDir', 'cuaRepl', 'skyServiceApp', 'skyVendorService', 'browserVendorService', 'vendorManifest', 'ipcClient'];
 export const LINUX_LAYOUT_KEYS = ['node', 'nodeRepl', 'moduleDir', 'cuaRepl', 'codexCli', 'skyLinuxBin', 'skyVendorService', 'browserVendorService', 'vendorManifest'];
 // What `cua install --archive` takes on each platform.
 const ARCHIVE_KIND = {darwin: 'ChatGPT zip', linux: 'ChatGPT deb'};

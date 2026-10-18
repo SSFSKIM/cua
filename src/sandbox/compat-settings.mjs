@@ -14,6 +14,7 @@
 // under another session's settings or none.
 import {chmodSync, closeSync, constants, fstatSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import {isAbsolute, posix} from 'node:path';
+import {homeLayout} from '../runtime/layout.mjs';
 import {parseDenyRead} from './policy.mjs';
 
 // A session id as buildLaunch accepts it (src/runtime/launch.mjs).
@@ -24,7 +25,7 @@ const refuse = why => { throw new CompatSettingsError(`the session's compat sett
 
 // The two files of `sessionId` in `home` -> {dir, json, node}.
 export function compatFiles({home, sessionId}) {
-  const dir = posix.join(home, 'state', 'compat');
+  const dir = homeLayout(home).compat;
   return {dir, json: posix.join(dir, `${sessionId}.json`), node: posix.join(dir, `${sessionId}.node`)};
 }
 

@@ -26,3 +26,20 @@ test('a boundary lane\'s marker directory is its launch\'s TMPDIR on either host
   assert.equal(noServicesLaunch(launch,{host}).env.TMPDIR,'/run/s/tmp',host);
  }
 });
+
+// #115 M2: on the macOS vendor host the compat executable finds the session from TMPDIR, so a boundary lane keeps the
+// session temp as TMPDIR and links it to its marker directory instead; the run directory's removal leaves the markers.
+test('on the macOS vendor host a boundary lane\'s session temp is a link to its marker directory, TMPDIR unchanged',async t=>{
+ const {mkdtempSync,mkdirSync,readlinkSync,rmSync,existsSync,writeFileSync,realpathSync}=await import('node:fs');
+ const {tmpdir}=await import('node:os');const {join}=await import('node:path');
+ const root=realpathSync(mkdtempSync(join(tmpdir(),'cua-bounds-')));t.after(()=>rmSync(root,{recursive:true,force:true}));
+ const markers=join(root,'markers');mkdirSync(markers);
+ const cwd=join(root,'home','run','s'),launch={command:'node',args:[],cwd,sessionTmp:join(cwd,'tmp'),compat:{home:join(root,'home'),sessionId:'s',node:'/n'},env:{CUA_REPL_NODE_REPL_PATH:'/pinned/node_repl',TMPDIR:join(cwd,'tmp')}};
+ for(let i=0;i<2;i++){
+  assert.equal(noServicesLaunch(launch,{host:'vendor',fixtureTmpdir:markers}).env.TMPDIR,join(cwd,'tmp'));
+  assert.equal(readlinkSync(join(cwd,'tmp')),markers,'relinked on a relaunch');
+ }
+ writeFileSync(join(cwd,'tmp','counter'),'1');
+ rmSync(cwd,{recursive:true,force:true});
+ assert.ok(existsSync(join(markers,'counter')),'the markers outlive the run directory');
+});

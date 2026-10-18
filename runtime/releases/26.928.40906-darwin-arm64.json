@@ -10,8 +10,7 @@
     "sha256": "93bf16b32c80c567e46141f87317ab48489f5b9b6454060ba694f1eed5fbf857"
   },
   "components": {
-    "cua_node": "ChatGPT.app/Contents/Resources/cua_node",
-    "CodexCLI.app": "ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app"
+    "cua_node": "ChatGPT.app/Contents/Resources/cua_node"
   },
   "runtime": {
     "version": "0.0.27/20260927214556-b77d38801cca",
@@ -23,7 +22,6 @@
     "nodeRepl": "cua_node/bin/node_repl",
     "moduleDir": "cua_node/lib/node_modules",
     "cuaRepl": "cua_node/lib/node_modules/@oai/cua-repl/bin/cua-repl.mjs",
-    "codexCli": "CodexCLI.app/Contents/MacOS/codex",
     "skyServiceApp": "cua_node/lib/node_modules/@oai/sky/Codex Computer Use.app",
     "skyVendorService": "cua_node/lib/node_modules/@oai/sky/dist/project/cua/sky_js/src/service.js",
     "browserVendorService": "cua_node/lib/node_modules/@oai/browser-desktop/scripts/browser-service.mjs",
@@ -35,7 +33,6 @@
     "components": [
       "cua_node/bin/node",
       "cua_node/bin/node_repl",
-      "CodexCLI.app",
       "cua_node/lib/node_modules/@oai/sky/Codex Computer Use.app"
     ]
   }

@@ -1,5 +1,5 @@
 // Isolated no-services parity lane, not a production empty-surface option. Remote device only.
-import {writeFileSync,mkdirSync,realpathSync} from 'node:fs';
+import {writeFileSync,mkdirSync,realpathSync,rmSync,symlinkSync} from 'node:fs';
 import {join,delimiter,relative} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {fixtureServices as createFixtureServices} from './fixtures/service-home.mjs';
@@ -31,10 +31,18 @@ export function attestFixtureLaunch(launch,{facts,home,host,nodeMode=process.env
   return launch;
 }
 
+export function linkSessionTmp(launch,target){
+  mkdirSync(launch.cwd,{recursive:true,mode:0o700});
+  rmSync(launch.sessionTmp,{force:true});
+  symlinkSync(target,launch.sessionTmp);
+}
 export function noServicesLaunch(launch,{host='vendor',witness=false,brokenSandbox=false,fixtureServices,fixtureTmpdir}={}) {
   const env={...launch.env};
-  // A boundary lane's marker directory (fixture-launch.mjs boundaryServeEnv) in place of the session temp.
-  if(fixtureTmpdir)env.TMPDIR=fixtureTmpdir;
+  // A boundary lane's marker directory (fixture-launch.mjs boundaryServeEnv) in place of the session temp. On the macOS
+  // vendor host (#115 M2) the compat executable locates the session's settings from TMPDIR's shape, so TMPDIR stays
+  // the session temp and the session temp becomes a link to the marker directory: its write root is the marker
+  // directory by real path, and the run directory's removal removes only the link.
+  if(fixtureTmpdir){if(launch.compat)linkSessionTmp(launch,fixtureTmpdir);else env.TMPDIR=fixtureTmpdir;}
   delete env[host==='vendor'?'NODE_REPL_TOOL_OVERRIDES':'CUA_REPL_TOOL_OVERRIDES'];
   // The broken launcher stands in for whichever sandbox launcher the launch names: cua's own (sandbox-exec, the macOS
   // own host since #115 M1) or the Codex CLI.

@@ -13,11 +13,12 @@
 // Under a managed profile node_repl refuses to start a kernel when a write root covers a trusted code path
 // ("Trusted RPC dependency must resolve within a configured trusted code path"); assertSandboxFits refuses that
 // launch first, saying which root and which path, and also one whose write roots would cover CODEX_HOME.
-import {lstatSync, readlinkSync, realpathSync} from 'node:fs';
+import {accessSync, constants, lstatSync, readlinkSync, realpathSync, statSync} from 'node:fs';
 import {basename, dirname, isAbsolute, join, relative, resolve} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {fail} from './errors.mjs';
 import {USERNS_REMEDY, bwrapUserns} from './linux-desktop.mjs';
+import {homeLayout} from './layout.mjs';
 
 export const SANDBOX_META_KEY = 'codex/sandbox-state-meta';
 const MODES = ['scoped', 'disabled', 'default'];
@@ -90,9 +91,12 @@ const within = (path, root) => {
 // run/), re-exposed to that launch's kernel only, so a write root equal to one of them may lie inside the deny target
 // that is one of `ownHolders` (the run directory's home and run/), and inside no other: not the secret store, its tiers
 // or ~/.config/cua, wherever the home is placed.
-export const protectedPaths = ({trustedCodePaths, codexHome, managedNode, staging, denied = [], ownRoots = [], ownHolders = []}) => [
+// A macOS vendor-host launch adds its compat settings directory (`compatSettings`, src/sandbox/compat-settings.mjs: what
+// the compat executable confines both children by; writable, a worker could rewrite the kernel's deny list).
+export const protectedPaths = ({trustedCodePaths, codexHome, compatSettings, managedNode, staging, denied = [], ownRoots = [], ownHolders = []}) => [
   ...trustedCodePaths.filter(Boolean).map(path => ({label: 'the trusted code path', path})),
   ...(codexHome ? [{label: 'the runtime\'s configuration and approvals', path: codexHome}] : []),
+  ...(compatSettings ? [{label: 'the vendor host\'s compat settings', path: compatSettings}] : []),
   ...(managedNode ? [{label: 'the Node cua installed for its own REPL host', path: managedNode}] : []),
   ...(staging ? [{label: 'cua install\'s staging directory', path: staging}] : []),
   ...denied.map(path => ({label: 'what JavaScript cells may not read', path, except: ownHolders.filter(Boolean).map(realish).includes(realish(path)) ? ownRoots.filter(Boolean) : []})),
@@ -210,16 +214,30 @@ export function assertDenyListShape(list) {
 // home's install staging (`launch.stagingRoot`) or its deny list (`launch.denyRead`, except for its own run directory
 // and session temp), whichever host it runs: a vendor session's cells must not choose a later own host's Node, or what
 // an install places, either.
+//
+// And on the macOS vendor host (a launch carrying `compat`), under scoped and default, it throws `sandbox_unavailable`
+// unless CODEX_CLI_PATH names an executable file by an absolute path: node_repl runs its children with no sandbox at
+// all when it is unset (#115 spike), so a launch without its launcher is refused rather than run unconfined. Under
+// disabled node_repl calls no launcher (#115 M2's probe).
 export function assertSandboxFits(mode, launch) {
   if (mode === 'disabled') return;
+  if (launch.compat) assertVendorLauncher(launch.env.CODEX_CLI_PATH);
   if (launch.denyRead) assertDenyListShape(launch.denyRead);
   if (mode !== 'scoped') return;
   const conflicts = sandboxConflicts({
-    protectedPaths: protectedPaths({trustedCodePaths: trustedCodePathsOf(launch), codexHome: launch.env.CODEX_HOME, managedNode: launch.managedNodeRoot, staging: launch.stagingRoot,
+    protectedPaths: protectedPaths({trustedCodePaths: trustedCodePathsOf(launch), codexHome: launch.env.CODEX_HOME, compatSettings: launch.compat && homeLayout(launch.compat.home).compat,
+      managedNode: launch.managedNodeRoot, staging: launch.stagingRoot,
       denied: launch.denyRead?.deny, ownRoots: [launch.cwd, launch.sessionTmp], ownHolders: launch.cwd ? [dirname(dirname(launch.cwd)), dirname(launch.cwd)] : []}),
     writeRoots: scopedWriteRoots({cwd: launch.cwd, tmpdir: launch.env.TMPDIR}),
   });
   if (conflicts.length) fail('sandbox_conflict', describeConflicts(conflicts), {hint: SANDBOX_CONFLICT_HINT});
+}
+
+function assertVendorLauncher(path) {
+  let ok = false;
+  try { ok = typeof path === 'string' && isAbsolute(path) && statSync(path).isFile() && (accessSync(path, constants.X_OK), true); } catch { ok = false; }
+  if (!ok) fail('sandbox_unavailable', `the vendor host's sandbox launcher (CODEX_CLI_PATH ${path === undefined ? 'unset' : JSON.stringify(path)}) is not an executable file, and node_repl would then run JavaScript cells with no sandbox at all; nothing was started`,
+    {hint: 'restore cua\'s checkout (bin/cua-codex-compat), or set CUA_SHIM_SANDBOX=disabled to run without a sandbox openly'});
 }
 
 // Linux: the vendor's sandbox fails open where bubblewrap cannot create an unprivileged user namespace (measured on

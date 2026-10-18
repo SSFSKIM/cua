@@ -142,11 +142,11 @@ test('signature and layout damage in the installed tree fail the doctor with the
   assert.equal(report.ok, false);
   assert.equal(check(report, 'runtime.signatures').status, 'fail');
   assert.match(check(report, 'runtime.signatures').detail, /cua_node\/bin\/node/);
-  rmSync(join(realpathSync(home), 'runtimes', pin.release, 'CodexCLI.app/Contents/MacOS/codex'));
+  rmSync(join(realpathSync(home), 'runtimes', pin.release, 'cua_node/bin/node_repl'));
   const damaged = await inspectRuntime({home, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: noHelper, inspectSecrets: noSecrets, inspectAgent: noAgent, inspectChrome: noChrome});
   assert.equal(damaged.ok, false);
   assert.equal(check(damaged, 'runtime.files').status, 'fail');
-  assert.match(check(damaged, 'runtime.files').detail, /codexCli/);
+  assert.match(check(damaged, 'runtime.files').detail, /nodeRepl/);
   // A damaged release is never repaired in place, so the advice is the offline recovery, not a bare reinstall.
   const root = join(realpathSync(home), 'runtimes', pin.release);
   assert.ok(check(damaged, 'runtime.files').detail.includes(recoveryHint(root)), check(damaged, 'runtime.files').detail);
@@ -566,4 +566,52 @@ test('doctor reports the running agent process Chrome access with the installed 
   assert.equal((await rows())['chrome.agent'].status, 'blocked', 'restarts invalidate observations');
   launchctl.running = false;
   assert.equal((await rows())['chrome.agent'].status, 'blocked');
+});
+
+// #115 M2: the darwin pin no longer lists CodexCLI.app. A release installed before keeps it in its tree until M4's
+// cleanup; one whose copy the user deleted by hand, or a fresh install that never placed it, is just as healthy: no row
+// checks or signature-verifies it.
+test('doctor neither checks nor verifies CodexCLI.app: a tree with the old copy and one without it are both healthy', {skip: !darwin}, async t => {
+  const {home, pin} = await installedHome(t);
+  const root = join(realpathSync(home), 'runtimes', pin.release);
+  assert.equal(readdirSync(root).includes('CodexCLI.app'), false, 'a fresh install places no CodexCLI.app');
+  assert.ok(!pin.signing.components.includes('CodexCLI.app') && !Object.hasOwn(pin.layout, 'codexCli'));
+  const asked = [];
+  const recording = async (r, p) => { asked.push(...p.signing.components); return acceptSignatures(r, p); };
+  const fresh = await inspectRuntime({home, pins: [pin], host: HOST, verifySignatures: recording, inspectHelper: noHelper, inspectSecrets: noSecrets, inspectAgent: noAgent, inspectChrome: noChrome});
+  for (const name of ['runtime.files', 'runtime.signatures', 'sandbox.launcher']) assert.equal(check(fresh, name).status, 'pass', `${name}: ${check(fresh, name).detail}`);
+  mkdirSync(join(root, 'CodexCLI.app', 'Contents', 'MacOS'), {recursive: true});
+  writeFileSync(join(root, 'CodexCLI.app', 'Contents', 'MacOS', 'codex'), 'left from before #115 M2');
+  const kept = await inspectRuntime({home, pins: [pin], host: HOST, verifySignatures: recording, inspectHelper: noHelper, inspectSecrets: noSecrets, inspectAgent: noAgent, inspectChrome: noChrome});
+  for (const name of ['runtime.files', 'runtime.signatures']) assert.equal(check(kept, name).status, 'pass', name);
+  rmSync(join(root, 'CodexCLI.app'), {recursive: true});
+  const deleted = await inspectRuntime({home, pins: [pin], host: HOST, verifySignatures: recording, inspectHelper: noHelper, inspectSecrets: noSecrets, inspectAgent: noAgent, inspectChrome: noChrome});
+  for (const name of ['runtime.files', 'runtime.signatures']) assert.equal(check(deleted, name).status, 'pass', name);
+  assert.equal(asked.some(c => c.startsWith('CodexCLI.app')), false, 'never asked to verify CodexCLI.app');
+  assert.equal(JSON.stringify([fresh, kept, deleted]).includes('codexCli'), false, 'no row names the Codex CLI');
+});
+
+test('sandbox.launcher (macOS) passes with sandbox-exec, the compat executable and the vendor Node, and names whatever is missing', {skip: !darwin}, async t => {
+  const {home, pin} = await installedHome(t);
+  const inspect = launcher => inspectRuntime({home, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: noHelper, inspectSecrets: noSecrets, inspectAgent: noAgent, inspectChrome: noChrome, launcher});
+  const ok = check(await inspect(undefined), 'sandbox.launcher');
+  assert.equal(ok.status, 'pass', ok.detail);
+  assert.match(ok.detail, /\/usr\/bin\/sandbox-exec.*bin\/cua-codex-compat.*cua_node\/bin\/node/);
+  const plain = join(home, 'plain');
+  writeFileSync(plain, '');
+  chmodSync(plain, 0o644);
+  const broken = check(await inspect({sandboxExec: join(home, 'absent'), compat: plain}), 'sandbox.launcher');
+  assert.equal(broken.status, 'fail');
+  assert.match(broken.detail, /sandbox-exec \(.*absent\), cua's compat executable \(.*plain\); .*restore cua's checkout/);
+  rmSync(join(realpathSync(home), 'runtimes', pin.release, 'cua_node/bin/node'));
+  const noNode = check(await inspect(undefined), 'sandbox.launcher');
+  assert.equal(noNode.status, 'fail');
+  assert.match(noNode.detail, /the vendor's pinned Node it runs on/);
+});
+
+test('Linux has no sandbox.launcher row until #115 M3', async t => {
+  const s = scratch();
+  t.after(s.cleanup);
+  const report = await inspectRuntime({home: s.dir, host: {platform: 'linux', arch: 'x64'}, inspectHelper: noHelper, inspectSecrets: noSecrets, inspectAgent: noAgent, inspectChrome: noChrome, inspectLinux: async () => []});
+  assert.equal(check(report, 'sandbox.launcher'), undefined);
 });

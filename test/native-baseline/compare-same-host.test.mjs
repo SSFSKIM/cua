@@ -178,7 +178,7 @@ test('a prepared serve has no TMPDIR; since M1 its launches carry the session\'s
   assert.equal(serveEnv.TMPDIR, undefined, 'env -i drops the caller\'s TMPDIR');
   const runtime = runtimeFor({home, pin: parsePin(fixturePin({sha256: 'a'.repeat(64), length: 1})), record: null});
   const vendor = buildLaunch({runtime, home, sessionId: '6f1c2d3e-0000-4000-8000-000000000001', ambient: serveEnv});
-  assert.deepEqual(sandboxLaunchOf(vendor, home), {launcher: 'codex-cli', tmpdir: 'session'}, 'the vendor host keeps the Codex CLI until M2, with the session\'s TMPDIR');
+  assert.deepEqual(sandboxLaunchOf(vendor, home), {launcher: 'cua-compat', tmpdir: 'session'}, 'the macOS vendor host launches through cua\'s compat executable since M2, with the session\'s TMPDIR');
   const own = buildLaunch({runtime, home, sessionId: '6f1c2d3e-0000-4000-8000-000000000001', ambient: {...serveEnv, CUA_REPL_HOST: 'cua'}, surfaces: ['browser'], resolveOwnNode: () => process.execPath});
   assert.deepEqual(sandboxLaunchOf(own, home), {launcher: runtime.manifest.platform === 'darwin' ? 'cua' : 'codex-cli', tmpdir: 'session'}, 'the macOS own host launches through cua\'s own sandbox');
   const m0 = {launcher: 'codex-cli', tmpdir: 'unset'};

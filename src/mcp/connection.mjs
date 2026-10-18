@@ -42,7 +42,7 @@ import {spawnUpstream} from './upstream.mjs';
 import {handshakeRecords, lazyRuntime} from './lazy-runtime.mjs';
 import {homeLayout, realHome} from '../runtime/layout.mjs';
 import {resolveRuntime} from '../runtime/manifest.mjs';
-import {buildLaunch, createLaunchDirs, replHostFor, SKY_SERVICE, BROWSER_SERVICE} from '../runtime/launch.mjs';
+import {buildLaunch, createLaunchDirs, removeLaunchDirs, replHostFor, SKY_SERVICE, BROWSER_SERVICE} from '../runtime/launch.mjs';
 import {hostIdentity} from '../repl-host/identity.mjs';
 import {claimRunSession} from '../runtime/run-dir.mjs';
 import {connectionSecrets} from '../secrets/store.mjs';
@@ -121,7 +121,7 @@ export async function openConnection({home, env = process.env, sessionId, input,
     };
     // An idle stop removes the runtime's working directory; if removal fails, the next launch reuses it.
     const stopped = () => {
-      try { rmSync(launch.cwd, {recursive: true, force: true}); } catch (error) {
+      try { removeLaunchDirs(launch); } catch (error) {
         diagnostics(`the stopped runtime's working directory could not be removed (${error.code ?? error.message}); the next launch reuses it and the connection's close retries removal`);
       }
     };

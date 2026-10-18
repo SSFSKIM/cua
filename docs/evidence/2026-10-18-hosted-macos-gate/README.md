@@ -105,6 +105,7 @@ The dispatching session ruled (2026-10-18): don't widen the M0 pairs' deviations
 | [39152583978](https://github.com/SSFSKIM/cua/actions/runs/39152583978) | f0cd3de | GREEN 1m20s | |
 | [39153110600](https://github.com/SSFSKIM/cua/actions/runs/39153110600) | 242f662 | GREEN 1m20s | |
 | [39153113713](https://github.com/SSFSKIM/cua/actions/runs/39153113713) | 242f662 | GREEN 1m46s | |
+| [39154681618](https://github.com/SSFSKIM/cua/actions/runs/39154681618) | afc659a | GREEN 1m23s | the review fixes: judged against the reduced baseline, public forms only in the artifact |
 
 **Flakiness.** Five of five runs with the baseline in place were green, three of them concurrent, and every step
 passed in each. No result was intermittent. Each of the first three reds was deterministic, a harness or record

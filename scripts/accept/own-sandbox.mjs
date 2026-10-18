@@ -256,10 +256,12 @@ export async function ownSandboxAcceptance({home, host = 'cua', modes = MODES, n
         if (vendor && mode !== 'disabled') scripts = await connection.js(scriptDirCell());
         out.descendants = descendants(process.pid).map(([pid, ppid, comm]) => ({pid, ppid, comm}));
         // On Linux the kernel runs in bubblewrap's PID namespace, so the pid it reports is not this host's: it is found
-        // by its command line instead.
-        const kernel = linux ? out.descendants.find(p => p.comm === 'node' && /src\/repl-host\/kernel\.mjs/.test(commandOf(p.pid) ?? ''))
+        // by its command line instead (Node's own, not the helper's that carries it after `--`), and Node names its main
+        // thread MainThread there, so its executable is read from that command line.
+        const kernelCommand = pid => commandOf(pid) ?? '';
+        const kernel = linux ? out.descendants.find(p => /src\/repl-host\/kernel\.mjs/.test(kernelCommand(p.pid)) && !kernelCommand(p.pid).includes('--permission-profile'))
           : out.descendants.find(p => p.pid === out.process.pid);
-        out.process.execPath = kernel?.comm ?? null;
+        out.process.execPath = linux ? (kernel ? kernelCommand(kernel.pid).split(' ')[0] : null) : kernel?.comm ?? null;
         out.parentCommand = kernel ? commandOf(kernel.ppid) : null;
         const ancestors = [];
         for (let p = kernel; p; p = out.descendants.find(d => d.pid === p.ppid)) if (p !== kernel) ancestors.push(p.comm);

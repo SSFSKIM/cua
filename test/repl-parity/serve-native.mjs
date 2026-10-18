@@ -8,6 +8,7 @@ import {openConnection} from '../../src/mcp/connection.mjs';
 import {prepareCapabilityHome} from '../../scripts/browser-parity/capability-home.mjs';
 import {executionFacts,assertPreparedFacts,attestedOutput} from '../../scripts/repl-parity/provenance.mjs';
 import {cellsServeEnv} from './fixture-launch.mjs';
+import {LINUX_COMPUTER_DEFAULT} from '../../scripts/repl-parity/compare.mjs';
 import {attestFixtureLaunch,fixtureNodeEnvironment} from './serve-cells.mjs';
 if(process.env.CUA_PARITY_REMOTE!=='1'||process.platform!=='linux')throw Error('Native parity is remote Linux only');
 const source=process.env.CUA_HOME,host=process.env.CUA_REPL_HOST,facts=executionFacts({source});
@@ -20,7 +21,9 @@ try{
  writeFileSync(file,mode==='drag'?'alpha bravo charlie delta echo foxtrot\n':mode==='scroll'?Array.from({length:200},(_,i)=>`line ${String(i).padStart(3,'0')} owned native scroll fixture`).join('\n'):'');
  child=spawn('gedit',['--standalone',file],{stdio:'ignore'});
  exited=new Promise((resolve,reject)=>{child.once('exit',resolve);child.once('error',reject);});exited.catch(()=>{});
- const env={...cellsServeEnv(fixtureNodeEnvironment(process.env),{scratch,sandbox:'disabled',host}),CUA_SHIM_SURFACES:'computer'};
+ // The Linux computer default since #115 M3 (scoped: the kernel confined, the trusted worker with the network); M0's
+ // vendor control ran the fixture's earlier forced disabled (scripts/repl-parity/compare.mjs NATIVE_FIXTURE).
+ const env={...cellsServeEnv(fixtureNodeEnvironment(process.env),{scratch,sandbox:LINUX_COMPUTER_DEFAULT.sandbox,host}),CUA_SHIM_SURFACES:LINUX_COMPUTER_DEFAULT.surfaces.join(',')};
  connection=await openConnection({home:scratch.dir,env,sessionId:randomUUID(),input:process.stdin,output:attestedOutput(process.stdout,facts),chrome:{profiles:[]},listBackends:async()=>[],prepareLaunch:launch=>attestFixtureLaunch(launch,{host,facts,home:scratch.dir})});
  const stop=()=>connection.close('signal');process.once('SIGTERM',stop);process.once('SIGINT',stop);
  try{process.exitCode=(await connection.closed).code;}finally{process.off('SIGTERM',stop);process.off('SIGINT',stop);}

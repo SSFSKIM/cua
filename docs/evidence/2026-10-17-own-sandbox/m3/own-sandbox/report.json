@@ -1,0 +1,712 @@
+{
+  "probe": "own-sandbox",
+  "host": "cua",
+  "home": "/tmp/cua-m3-home.3zvmCJ",
+  "packageName": "@img/colour",
+  "modes": {
+    "scoped": {
+      "reads": {
+        "store": {
+          "ok": false,
+          "code": "EACCES"
+        },
+        "store (listing)": {
+          "ok": false,
+          "code": "EACCES"
+        },
+        "store (symlinked tier target)": {
+          "ok": false,
+          "code": "EACCES"
+        },
+        "store (symlinked tier target) (listing)": {
+          "ok": false,
+          "code": "EACCES"
+        },
+        "~/.config/cua": {
+          "ok": false,
+          "code": "EACCES"
+        },
+        "~/.config/cua (listing)": {
+          "ok": false,
+          "code": "EACCES"
+        },
+        "$CUA_HOME/state": {
+          "ok": false,
+          "code": "EACCES"
+        },
+        "$CUA_HOME/state (listing)": {
+          "ok": false,
+          "code": "EACCES"
+        },
+        "$CUA_HOME/remote (enrolled device)": {
+          "ok": false,
+          "code": "EACCES"
+        },
+        "$CUA_HOME/remote (enrolled device) (listing)": {
+          "ok": false,
+          "code": "EACCES"
+        },
+        "$CUA_HOME/chrome": {
+          "ok": false,
+          "code": "EACCES"
+        },
+        "$CUA_HOME/chrome (listing)": {
+          "ok": false,
+          "code": "EACCES"
+        },
+        "another session's run directory": {
+          "ok": false,
+          "code": "ENOENT"
+        },
+        "another session's run directory (listing)": {
+          "ok": false,
+          "code": "ENOENT"
+        }
+      },
+      "moduleTree": {
+        "ok": true,
+        "value": true
+      },
+      "writes": {
+        "runDirectory": {
+          "ok": true,
+          "value": true
+        },
+        "tmpdir": {
+          "ok": true,
+          "value": true
+        },
+        "outside": {
+          "ok": false,
+          "code": "EROFS"
+        }
+      },
+      "link": {
+        "ok": false,
+        "code": "EACCES"
+      },
+      "clone": {
+        "ok": false,
+        "code": "exit 1"
+      },
+      "tcp": {
+        "ok": false,
+        "code": "EPERM"
+      },
+      "unix": {
+        "ok": false,
+        "code": "EPERM"
+      },
+      "tmpdir": {
+        "own": true
+      },
+      "kernel": {
+        "execPathIsNode": true,
+        "parentIsSupervisor": false,
+        "parentIsNodeRepl": false,
+        "sandbox": null,
+        "underBwrap": true,
+        "underHelper": true
+      },
+      "codexProcesses": 0
+    },
+    "default": {
+      "reads": {
+        "store": {
+          "ok": false,
+          "code": "EACCES"
+        },
+        "store (listing)": {
+          "ok": false,
+          "code": "EACCES"
+        },
+        "store (symlinked tier target)": {
+          "ok": false,
+          "code": "EACCES"
+        },
+        "store (symlinked tier target) (listing)": {
+          "ok": false,
+          "code": "EACCES"
+        },
+        "~/.config/cua": {
+          "ok": false,
+          "code": "EACCES"
+        },
+        "~/.config/cua (listing)": {
+          "ok": false,
+          "code": "EACCES"
+        },
+        "$CUA_HOME/state": {
+          "ok": false,
+          "code": "EACCES"
+        },
+        "$CUA_HOME/state (listing)": {
+          "ok": false,
+          "code": "EACCES"
+        },
+        "$CUA_HOME/remote (enrolled device)": {
+          "ok": false,
+          "code": "EACCES"
+        },
+        "$CUA_HOME/remote (enrolled device) (listing)": {
+          "ok": false,
+          "code": "EACCES"
+        },
+        "$CUA_HOME/chrome": {
+          "ok": false,
+          "code": "EACCES"
+        },
+        "$CUA_HOME/chrome (listing)": {
+          "ok": false,
+          "code": "EACCES"
+        },
+        "another session's run directory": {
+          "ok": true,
+          "value": true
+        },
+        "another session's run directory (listing)": {
+          "ok": true,
+          "value": true
+        }
+      },
+      "moduleTree": {
+        "ok": true,
+        "value": true
+      },
+      "writes": {
+        "runDirectory": {
+          "ok": false,
+          "code": "EROFS"
+        },
+        "tmpdir": {
+          "ok": false,
+          "code": "EROFS"
+        },
+        "outside": {
+          "ok": false,
+          "code": "EROFS"
+        }
+      },
+      "link": {
+        "ok": false,
+        "code": "EACCES"
+      },
+      "clone": {
+        "ok": false,
+        "code": "exit 1"
+      },
+      "tcp": {
+        "ok": false,
+        "code": "EPERM"
+      },
+      "unix": {
+        "ok": false,
+        "code": "EPERM"
+      },
+      "tmpdir": {
+        "own": true
+      },
+      "kernel": {
+        "execPathIsNode": true,
+        "parentIsSupervisor": false,
+        "parentIsNodeRepl": false,
+        "sandbox": null,
+        "underBwrap": true,
+        "underHelper": true
+      },
+      "codexProcesses": 0
+    },
+    "disabled": {
+      "reads": {
+        "store": {
+          "ok": true,
+          "value": true
+        },
+        "store (listing)": {
+          "ok": true,
+          "value": true
+        },
+        "store (symlinked tier target)": {
+          "ok": true,
+          "value": true
+        },
+        "store (symlinked tier target) (listing)": {
+          "ok": true,
+          "value": true
+        },
+        "~/.config/cua": {
+          "ok": true,
+          "value": true
+        },
+        "~/.config/cua (listing)": {
+          "ok": true,
+          "value": true
+        },
+        "$CUA_HOME/state": {
+          "ok": true,
+          "value": true
+        },
+        "$CUA_HOME/state (listing)": {
+          "ok": true,
+          "value": true
+        },
+        "$CUA_HOME/remote (enrolled device)": {
+          "ok": true,
+          "value": true
+        },
+        "$CUA_HOME/remote (enrolled device) (listing)": {
+          "ok": true,
+          "value": true
+        },
+        "$CUA_HOME/chrome": {
+          "ok": true,
+          "value": true
+        },
+        "$CUA_HOME/chrome (listing)": {
+          "ok": true,
+          "value": true
+        },
+        "another session's run directory": {
+          "ok": true,
+          "value": true
+        },
+        "another session's run directory (listing)": {
+          "ok": true,
+          "value": true
+        }
+      },
+      "moduleTree": {
+        "ok": true,
+        "value": true
+      },
+      "writes": {
+        "runDirectory": {
+          "ok": true,
+          "value": true
+        },
+        "tmpdir": {
+          "ok": true,
+          "value": true
+        },
+        "outside": {
+          "ok": true,
+          "value": true
+        }
+      },
+      "link": {
+        "ok": true,
+        "value": true
+      },
+      "clone": {
+        "ok": false,
+        "code": "exit 1"
+      },
+      "tcp": {
+        "ok": true
+      },
+      "unix": {
+        "ok": true
+      },
+      "tmpdir": {
+        "own": true
+      },
+      "kernel": {
+        "execPathIsNode": true,
+        "parentIsSupervisor": true,
+        "parentIsNodeRepl": false,
+        "sandbox": null,
+        "underBwrap": false,
+        "underHelper": false
+      },
+      "codexProcesses": 0
+    }
+  },
+  "checks": [
+    {
+      "label": "scoped: denied: store",
+      "pass": true,
+      "detail": "EACCES"
+    },
+    {
+      "label": "scoped: denied: store (listing)",
+      "pass": true,
+      "detail": "EACCES"
+    },
+    {
+      "label": "scoped: denied: store (symlinked tier target)",
+      "pass": true,
+      "detail": "EACCES"
+    },
+    {
+      "label": "scoped: denied: store (symlinked tier target) (listing)",
+      "pass": true,
+      "detail": "EACCES"
+    },
+    {
+      "label": "scoped: denied: ~/.config/cua",
+      "pass": true,
+      "detail": "EACCES"
+    },
+    {
+      "label": "scoped: denied: ~/.config/cua (listing)",
+      "pass": true,
+      "detail": "EACCES"
+    },
+    {
+      "label": "scoped: denied: $CUA_HOME/state",
+      "pass": true,
+      "detail": "EACCES"
+    },
+    {
+      "label": "scoped: denied: $CUA_HOME/state (listing)",
+      "pass": true,
+      "detail": "EACCES"
+    },
+    {
+      "label": "scoped: denied: $CUA_HOME/remote (enrolled device)",
+      "pass": true,
+      "detail": "EACCES"
+    },
+    {
+      "label": "scoped: denied: $CUA_HOME/remote (enrolled device) (listing)",
+      "pass": true,
+      "detail": "EACCES"
+    },
+    {
+      "label": "scoped: denied: $CUA_HOME/chrome",
+      "pass": true,
+      "detail": "EACCES"
+    },
+    {
+      "label": "scoped: denied: $CUA_HOME/chrome (listing)",
+      "pass": true,
+      "detail": "EACCES"
+    },
+    {
+      "label": "scoped: denied: another session's run directory",
+      "pass": true,
+      "detail": "ENOENT"
+    },
+    {
+      "label": "scoped: denied: another session's run directory (listing)",
+      "pass": true,
+      "detail": "ENOENT"
+    },
+    {
+      "label": "scoped: a package resolves and reads from the runtime's module tree",
+      "pass": true
+    },
+    {
+      "label": "scoped: TMPDIR is the session's own, under $CUA_HOME/run/<id>",
+      "pass": true
+    },
+    {
+      "label": "scoped: the run directory is writable",
+      "pass": true
+    },
+    {
+      "label": "scoped: TMPDIR is writable",
+      "pass": true
+    },
+    {
+      "label": "scoped: a write outside the session fails",
+      "pass": true,
+      "detail": "EROFS"
+    },
+    {
+      "label": "scoped: a hard link of the store sentinel fails",
+      "pass": true,
+      "detail": "EACCES"
+    },
+    {
+      "label": "scoped: a TCP connect fails",
+      "pass": true,
+      "detail": "EPERM"
+    },
+    {
+      "label": "scoped: an AF_UNIX connect fails",
+      "pass": true,
+      "detail": "EPERM"
+    },
+    {
+      "label": "scoped: the kernel is Node under bubblewrap, started by the pinned helper, with no seatbelt marker",
+      "pass": true,
+      "detail": [
+        "codex-linux-san",
+        "bwrap",
+        "codex-linux-san",
+        "MainThread",
+        "node"
+      ]
+    },
+    {
+      "label": "scoped: no process named codex",
+      "pass": true
+    },
+    {
+      "label": "default: denied: store",
+      "pass": true,
+      "detail": "EACCES"
+    },
+    {
+      "label": "default: denied: store (listing)",
+      "pass": true,
+      "detail": "EACCES"
+    },
+    {
+      "label": "default: denied: store (symlinked tier target)",
+      "pass": true,
+      "detail": "EACCES"
+    },
+    {
+      "label": "default: denied: store (symlinked tier target) (listing)",
+      "pass": true,
+      "detail": "EACCES"
+    },
+    {
+      "label": "default: denied: ~/.config/cua",
+      "pass": true,
+      "detail": "EACCES"
+    },
+    {
+      "label": "default: denied: ~/.config/cua (listing)",
+      "pass": true,
+      "detail": "EACCES"
+    },
+    {
+      "label": "default: denied: $CUA_HOME/state",
+      "pass": true,
+      "detail": "EACCES"
+    },
+    {
+      "label": "default: denied: $CUA_HOME/state (listing)",
+      "pass": true,
+      "detail": "EACCES"
+    },
+    {
+      "label": "default: denied: $CUA_HOME/remote (enrolled device)",
+      "pass": true,
+      "detail": "EACCES"
+    },
+    {
+      "label": "default: denied: $CUA_HOME/remote (enrolled device) (listing)",
+      "pass": true,
+      "detail": "EACCES"
+    },
+    {
+      "label": "default: denied: $CUA_HOME/chrome",
+      "pass": true,
+      "detail": "EACCES"
+    },
+    {
+      "label": "default: denied: $CUA_HOME/chrome (listing)",
+      "pass": true,
+      "detail": "EACCES"
+    },
+    {
+      "label": "default: readable: another session's run directory",
+      "pass": true
+    },
+    {
+      "label": "default: readable: another session's run directory (listing)",
+      "pass": true
+    },
+    {
+      "label": "default: a package resolves and reads from the runtime's module tree",
+      "pass": true
+    },
+    {
+      "label": "default: TMPDIR is the session's own, under $CUA_HOME/run/<id>",
+      "pass": true
+    },
+    {
+      "label": "default: the run directory is not writable",
+      "pass": true,
+      "detail": "EROFS"
+    },
+    {
+      "label": "default: TMPDIR is not writable",
+      "pass": true,
+      "detail": "EROFS"
+    },
+    {
+      "label": "default: a write outside the session fails",
+      "pass": true,
+      "detail": "EROFS"
+    },
+    {
+      "label": "default: a hard link of the store sentinel fails",
+      "pass": true,
+      "detail": "EACCES"
+    },
+    {
+      "label": "default: a TCP connect fails",
+      "pass": true,
+      "detail": "EPERM"
+    },
+    {
+      "label": "default: an AF_UNIX connect fails",
+      "pass": true,
+      "detail": "EPERM"
+    },
+    {
+      "label": "default: the kernel is Node under bubblewrap, started by the pinned helper, with no seatbelt marker",
+      "pass": true,
+      "detail": [
+        "codex-linux-san",
+        "bwrap",
+        "MainThread",
+        "node"
+      ]
+    },
+    {
+      "label": "default: no process named codex",
+      "pass": true
+    },
+    {
+      "label": "disabled: readable: store",
+      "pass": true
+    },
+    {
+      "label": "disabled: readable: store (listing)",
+      "pass": true
+    },
+    {
+      "label": "disabled: readable: store (symlinked tier target)",
+      "pass": true
+    },
+    {
+      "label": "disabled: readable: store (symlinked tier target) (listing)",
+      "pass": true
+    },
+    {
+      "label": "disabled: readable: ~/.config/cua",
+      "pass": true
+    },
+    {
+      "label": "disabled: readable: ~/.config/cua (listing)",
+      "pass": true
+    },
+    {
+      "label": "disabled: readable: $CUA_HOME/state",
+      "pass": true
+    },
+    {
+      "label": "disabled: readable: $CUA_HOME/state (listing)",
+      "pass": true
+    },
+    {
+      "label": "disabled: readable: $CUA_HOME/remote (enrolled device)",
+      "pass": true
+    },
+    {
+      "label": "disabled: readable: $CUA_HOME/remote (enrolled device) (listing)",
+      "pass": true
+    },
+    {
+      "label": "disabled: readable: $CUA_HOME/chrome",
+      "pass": true
+    },
+    {
+      "label": "disabled: readable: $CUA_HOME/chrome (listing)",
+      "pass": true
+    },
+    {
+      "label": "disabled: readable: another session's run directory",
+      "pass": true
+    },
+    {
+      "label": "disabled: readable: another session's run directory (listing)",
+      "pass": true
+    },
+    {
+      "label": "disabled: a package resolves and reads from the runtime's module tree",
+      "pass": true
+    },
+    {
+      "label": "disabled: TMPDIR is the session's own, under $CUA_HOME/run/<id>",
+      "pass": true
+    },
+    {
+      "label": "disabled: the run directory is writable",
+      "pass": true
+    },
+    {
+      "label": "disabled: TMPDIR is writable",
+      "pass": true
+    },
+    {
+      "label": "disabled: a write outside the session succeeds",
+      "pass": true
+    },
+    {
+      "label": "disabled: no process named codex",
+      "pass": true
+    },
+    {
+      "label": "a store root missing at launch is created 0700 (a missing fixed target inside HOME)",
+      "pass": true
+    },
+    {
+      "label": "a store root created mid-session stays denied",
+      "pass": true,
+      "detail": "EACCES"
+    },
+    {
+      "label": "a store root created mid-session cannot be listed",
+      "pass": true,
+      "detail": "EACCES"
+    },
+    {
+      "label": "a store root missing at launch is created 0700 (a missing fixed target inside HOME) (through a symlinked ~/.config)",
+      "pass": true
+    },
+    {
+      "label": "a store root created mid-session stays denied (through a symlinked ~/.config)",
+      "pass": true,
+      "detail": "EACCES"
+    },
+    {
+      "label": "a store root created mid-session cannot be listed (through a symlinked ~/.config)",
+      "pass": true,
+      "detail": "EACCES"
+    },
+    {
+      "label": "linux creation: a missing fixed target inside HOME is created 0700 (~/.config/cua, its parent too)",
+      "pass": true
+    },
+    {
+      "label": "linux creation: the kernel can neither list nor read the created fixed target",
+      "pass": true,
+      "detail": "EACCES/EACCES"
+    },
+    {
+      "label": "linux creation: a dangling tier target is created as its leaf only, 0700",
+      "pass": true
+    },
+    {
+      "label": "linux creation: the kernel can neither list nor read the created tier target",
+      "pass": true,
+      "detail": "EACCES/EACCES"
+    },
+    {
+      "label": "linux creation: a tier whose parent is missing is refused with the classified sentence, naming no tier",
+      "pass": true,
+      "detail": "js sandbox unavailable: a project tier's target outside the secret store does not exist and its parent directory is missing, so the kernel cannot be denied it; this confined launch is refused; JavaScript never runs unconfined in its place, and nothing was run"
+    },
+    {
+      "label": "linux creation: the refused tier's target and parent were not created (the kernel never ran, so it read nothing)",
+      "pass": true
+    },
+    {
+      "label": "linux creation: a fixed target whose missing parent lies outside HOME is refused with the classified sentence",
+      "pass": true,
+      "detail": "js sandbox unavailable: the deny target /tmp/cua-own-sandbox-cLjDNy/absent-home/.config/claude-secrets does not exist and a missing parent directory lies outside your HOME, so the kernel cannot be denied it; this confined launch is refused; JavaScript never runs unconfined in its place, and nothing "
+    },
+    {
+      "label": "linux creation: nothing was created for the refused fixed target (the kernel never ran, so it read nothing)",
+      "pass": true
+    }
+  ],
+  "ok": true
+}

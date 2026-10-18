@@ -17,7 +17,7 @@ import {executionFacts,assertPreparedFacts} from './provenance.mjs';
 import {endpointPlan,safeEnrollment} from './remote.mjs';
 import {assertManagedNode,nodeEnvironment,verifyOwnedHostNode} from './node-provenance.mjs';
 import {ownedProcesses} from './processes.mjs';
-import {prepareArchiveCache} from './archive-cache.mjs';
+import {installArgs,prepareArchiveCache} from './archive-cache.mjs';
 const pause=ms=>new Promise(r=>setTimeout(r,ms));
 export async function until(check,{timeoutMs=30000}={}){const end=Date.now()+timeoutMs;do{const value=await check();if(value)return value;await pause(100);}while(Date.now()<end);throw new Error('Remote proof readiness deadline expired');}
 const base=()=>join(homedir(),'.local','share','cua-parity-remote');
@@ -45,7 +45,7 @@ export function prepareEndpoint({experiment,relay,plan,prepared,enrollment=true}
   // The pinned archives are fetched and verified once, into this home; this install and every managed fixture's
   // fresh install take them from there (archive-cache.mjs). Removing the home removes them.
   const archives=cacheArchives(home);
-  runCli(home,['install','--archive',archives.vendor,'--node-archive',archives.node]);
+  runCli(home,installArgs(archives));
   const installed=inspect({source:home,ambient:nodeEnvironment({...process.env,...scratchEnvironment(home)},endpoint.nodeOverride)});
   if(!endpoint.nodeOverride)assertManagedNode(installed);
   // Discovery aliases only. Never copy profile contents or register/rebind an extension.

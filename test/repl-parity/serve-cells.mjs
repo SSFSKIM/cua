@@ -1,10 +1,10 @@
 // Isolated no-services parity lane, not a production empty-surface option. Remote device only.
-import {writeFileSync,mkdirSync,realpathSync} from 'node:fs';
+import {writeFileSync,mkdirSync,readFileSync,realpathSync} from 'node:fs';
 import {join,delimiter,relative} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {fixtureServices as createFixtureServices} from './fixtures/service-home.mjs';
 import {executionFacts,assertPreparedFacts,attestedOutput} from '../../scripts/repl-parity/provenance.mjs';
-import {randomUUID} from 'node:crypto';
+import {createHash,randomUUID} from 'node:crypto';
 import {pathToFileURL} from 'node:url';
 import {cellsServeEnv,markersLaunch} from './fixture-launch.mjs';
 import {openConnection} from '../../src/mcp/connection.mjs';
@@ -38,8 +38,13 @@ export function noServicesLaunch(launch,{host='vendor',witness=false,brokenSandb
   if(fixtureTmpdir){if(launch.compat){launch=markersLaunch(launch,fixtureTmpdir);Object.assign(env,{TMPDIR:launch.env.TMPDIR,CODEX_HOME:launch.env.CODEX_HOME});}else env.TMPDIR=fixtureTmpdir;}
   delete env[host==='vendor'?'NODE_REPL_TOOL_OVERRIDES':'CUA_REPL_TOOL_OVERRIDES'];
   // The broken launcher stands in for whichever sandbox launcher the launch names: cua's own (sandbox-exec, the macOS
-  // own host since #115 M1) or the Codex CLI.
-  if(brokenSandbox)env[env.CUA_REPL_SANDBOX_EXEC?'CUA_REPL_SANDBOX_EXEC':'CODEX_CLI_PATH']=typeof brokenSandbox==='string'?brokenSandbox:'/cua-parity-unavailable-sandbox';
+  // own host since #115 M1; the pinned Linux helper since M3, named with the broken launcher's own hash, so it is the
+  // pinned one that fails at run time, the shape #135 is about) or the Codex CLI (the macOS vendor host's compat).
+  if(brokenSandbox){
+   const path=typeof brokenSandbox==='string'?brokenSandbox:'/cua-parity-unavailable-sandbox';
+   if(env.CUA_REPL_SANDBOX_HELPER){env.CUA_REPL_SANDBOX_HELPER=path;try{env.CUA_REPL_SANDBOX_HELPER_SHA256=createHash('sha256').update(readFileSync(path)).digest('hex');}catch{/* a missing launcher stays unpinned */}}
+   else env[env.CUA_REPL_SANDBOX_EXEC?'CUA_REPL_SANDBOX_EXEC':'CODEX_CLI_PATH']=path;
+  }
   const banner=witness?'globalThis.__parityBannerWitness = Symbol("fixture-banner");':'void 0;';
   for(const key of Object.keys(env))if(/^(SKY_|OAI_SKY_|CUA_SKY_|CUA_BROWSER_|BROWSER_USE_)/.test(key))delete env[key];
   if(fixtureServices){

@@ -53,7 +53,8 @@ export function helperLauncherIs(pid, expected, {exec = execFileSync} = {}) {
   return typeof expected === 'string' && values.length === 1 && values[0] === expected;
 }
 
-export function createHelperTracker({owns, list = helperPids, isAlive: alive = isAlive, kill = pid => process.kill(pid, 'SIGTERM')}) {
+// `kill(pid, signal)` and `sleep(ms)` are the process boundary, doubled in tests.
+export function createHelperTracker({owns, list = helperPids, isAlive: alive = isAlive, kill = (pid, signal) => process.kill(pid, signal), sleep = ms => new Promise(r => setTimeout(r, ms))}) {
   const owned = new Set(), foreign = new Set();
   return {
     // Classifies every helper running now that has not been classified yet.
@@ -71,11 +72,28 @@ export function createHelperTracker({owns, list = helperPids, isAlive: alive = i
     },
     owned: () => [...owned],
     foreignSeen: () => [...foreign],
-    // Stops this run's helpers that are still running (by pid, SIGTERM); never any other.
-    stopLeft() {
+    // Stops this run's helpers that are still running, by pid, and verifies they are gone: SIGTERM, a bounded wait
+    // (`waitMs`), then for each one still alive its ownership read again, and SIGKILL only for a pid still proven this
+    // run's, and a second bounded wait. Never signals any other pid. -> {started, quitByThemselves, quitByHarness (gone
+    // after our signal), stillAlive (alive at the end), uncertain (alive, its ownership no longer proven: not escalated)}.
+    async stopLeft({waitMs = 10_000, pollMs = 100} = {}) {
       const left = [...owned].filter(pid => alive(pid));
-      for (const pid of left) kill(pid);
-      return {started: owned.size, quitByThemselves: owned.size - left.length, quitByHarness: left.length};
+      const waitGone = async pids => {
+        for (const end = Date.now() + waitMs; pids.some(pid => alive(pid)) && Date.now() < end;) await sleep(pollMs);
+        return pids.filter(pid => alive(pid));
+      };
+      for (const pid of left) kill(pid, 'SIGTERM');
+      let uncertain = 0;
+      const escalate = [];
+      for (const pid of await waitGone(left)) {
+        let mine = false;
+        try { mine = owns(pid) === true; } catch { mine = false; }
+        if (mine) escalate.push(pid); else if (alive(pid)) uncertain++;
+      }
+      for (const pid of escalate) kill(pid, 'SIGKILL');
+      await waitGone(escalate);
+      const stillAlive = left.filter(pid => alive(pid)).length;
+      return {started: owned.size, quitByThemselves: owned.size - left.length, quitByHarness: left.length - stillAlive, stillAlive, uncertain};
     },
   };
 }

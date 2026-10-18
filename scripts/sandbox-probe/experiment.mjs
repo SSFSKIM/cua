@@ -230,7 +230,7 @@ async function main() {
   }
   if (watchHelpers) {
     for (let i = 0; i < 50 && helpers.owned().some(isAlive); i++) await sleep(100);
-    out.helpers = {...helpers.stopLeft(), foreignSeen: helpers.foreignSeen().length};
+    out.helpers = {...await helpers.stopLeft(), foreignSeen: helpers.foreignSeen().length};
   }
   out.results = results;
   if (cancelled) out.cancelled = true;

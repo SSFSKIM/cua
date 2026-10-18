@@ -42,16 +42,16 @@ export function compatRouteChecks(result, {compat = COMPAT_EXECUTABLE} = {}) {
     add('TCP and AF_UNIX connects fail', DENIED.includes(c.tcp) && DENIED.includes(c.unix) && DENIED.includes(c.mDNSResponder), `${c.tcp}/${c.unix}/${c.mDNSResponder}`);
   }
   add('no process named codex runs under the session', result?.codexDescendants === 0, result?.codexDescendants);
-  add('the run\'s helper quit by itself or was quit by its pid; no other was signalled', result?.helpers?.started >= 1 && result.helpers.started === result.helpers.quitByThemselves + result.helpers.quitByHarness,
+  add('the run\'s helper quit by itself or was quit by its pid, and is verified gone; no other was signalled', result?.helpers?.started >= 1 && helpersGone(result.helpers),
     result?.helpers ? JSON.stringify(result.helpers) : 'no helper record');
   add('the run completed without a driver error', !result?.driverError && !result?.refused, result?.driverError ?? result?.refused);
   return checks;
 }
 
-// Whether `result` proves the run's teardown: the experiment exited on its own and accounted for every helper it
-// started (each quit by itself or was quit by its pid).
-const teardownProven = (exit, result) => exit.signal !== 'SIGKILL' && result?.helpers && Number.isInteger(result.helpers.started)
-  && result.helpers.started === result.helpers.quitByThemselves + result.helpers.quitByHarness;
+// Whether `result` proves the run's teardown: the experiment exited on its own and every helper it started is verified
+// gone (quit by itself, or gone after its pid was signalled), none left alive or of uncertain ownership.
+const helpersGone = h => Boolean(h) && Number.isInteger(h.started) && h.started === h.quitByThemselves + h.quitByHarness && h.stillAlive === 0 && h.uncertain === 0;
+const teardownProven = (exit, result) => exit.signal !== 'SIGKILL' && helpersGone(result?.helpers);
 
 // Runs the experiment and judges it -> {ok, checks, kept}. Past `timeoutMs` it is cancelled cooperatively (SIGTERM: the
 // experiment closes its serve, stops its own helpers by pid and writes its result) and given `graceMs` to finish; only

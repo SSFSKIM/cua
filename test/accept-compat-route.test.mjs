@@ -14,7 +14,7 @@ const passing = () => ({
     confinement: ok({cwdWrite: 'ok', tmpdirIsSession: true, tmpdirWrite: 'ok', outsideWrite: 'EPERM', trustedWrite: 'EPERM', slashTmpWrite: 'EPERM', listCuaHome: 'EPERM',
       hardLink: 'EPERM', tcp: 'EPERM', unix: 'EPERM', mDNSResponder: 'EPERM', scriptDirs: 1, scriptDirWrite: 'EPERM'})},
   launcher: {codexCliPath: COMPAT_EXECUTABLE, helpers: [{launcherIsTheLaunch: true}]},
-  codexDescendants: 0, helpers: {started: 1, quitByThemselves: 1, quitByHarness: 0, foreignSeen: 0},
+  codexDescendants: 0, helpers: {started: 1, quitByThemselves: 1, quitByHarness: 0, stillAlive: 0, uncertain: 0, foreignSeen: 0},
 });
 
 test('a run through the compat executable with every expectation met passes every check', () => {
@@ -36,7 +36,8 @@ test('each departure fails its own check', () => {
     'a link succeeded': r => { r.results.confinement.value.hardLink = 'ok'; },
     'a socket reached': r => { r.results.confinement.value.unix = 'ok'; },
     'a codex process ran': r => { r.codexDescendants = 1; },
-    'a helper left running': r => { r.helpers = {started: 1, quitByThemselves: 0, quitByHarness: 0}; },
+    'a helper left running': r => { r.helpers = {started: 1, quitByThemselves: 0, quitByHarness: 0, stillAlive: 1, uncertain: 0}; },
+    'a helper signalled but still alive': r => { r.helpers = {started: 1, quitByThemselves: 0, quitByHarness: 1, stillAlive: 1, uncertain: 0}; },
     'a driver error': r => { r.driverError = 'timeout'; },
   };
   for (const [label, change] of Object.entries(cases)) {
@@ -66,7 +67,7 @@ const kept = r => { if (r.kept) keptDirs.add(r.kept); return r.kept; };
 test.after(() => { for (const dir of keptDirs) rmSync(dir, {recursive: true, force: true}); });
 
 test('a run that cancels cooperatively and accounts for its helpers is judged failed, and its scratch removed', async t => {
-  const experiment = double(t, `process.on('SIGTERM', () => { write({cancelled: true, driverError: 'cancelled', helpers: {started: 1, quitByThemselves: 0, quitByHarness: 1}}); process.exit(1); });
+  const experiment = double(t, `process.on('SIGTERM', () => { write({cancelled: true, driverError: 'cancelled', helpers: {started: 1, quitByThemselves: 0, quitByHarness: 1, stillAlive: 0, uncertain: 0}}); process.exit(1); });
 setInterval(() => {}, 1000);`);
   const r = await run(experiment);
   assert.equal(r.ok, false);
@@ -83,11 +84,11 @@ test('a run that ignores the cancellation is killed after the grace, and its scr
 });
 
 test('a run that exits with helpers unaccounted for keeps its scratch; a clean one removes it', async t => {
-  const leaky = double(t, `write({helpers: {started: 1, quitByThemselves: 0, quitByHarness: 0}});`);
+  const leaky = double(t, `write({helpers: {started: 1, quitByThemselves: 0, quitByHarness: 1, stillAlive: 1, uncertain: 0}});`);
   const r = await run(leaky, {timeoutMs: 10_000});
   assert.ok(kept(r) && readdirSync(r.kept).includes('result.json'));
   assert.ok(r.checks.some(c => /teardown is proven/.test(c.label) && !c.pass));
-  const clean = double(t, `write({helpers: {started: 1, quitByThemselves: 1, quitByHarness: 0}});`);
+  const clean = double(t, `write({helpers: {started: 1, quitByThemselves: 1, quitByHarness: 0, stillAlive: 0, uncertain: 0}});`);
   const c = await run(clean, {timeoutMs: 10_000});
   assert.equal(kept(c), null);
   assert.equal(c.checks.some(x => /teardown is proven/.test(x.label)), false);

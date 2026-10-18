@@ -15,7 +15,7 @@ const desktop = clis => {
     isAlive: pid => alive.has(pid), kill: pid => { killed.push(pid); alive.delete(pid); }})};
 };
 
-test('a helper that appears after startup with another TMPDIR is never adopted or stopped', () => {
+test('a helper that appears after startup with another TMPDIR is never adopted or stopped', async () => {
   const d = desktop({100: RUN_TMP, 200: '/Users/owner/Library/Application Support/cua/run/theirs/tmp', 300: null});
   const tracker = d.tracker();
   d.alive.add(100); // this run's helper, started by the first native call
@@ -24,18 +24,18 @@ test('a helper that appears after startup with another TMPDIR is never adopted o
   tracker.observe();
   assert.deepEqual(tracker.owned(), [100]);
   assert.deepEqual(tracker.foreignSeen(), [200, 300]);
-  assert.deepEqual(tracker.stopLeft(), {started: 1, quitByThemselves: 0, quitByHarness: 1});
+  assert.deepEqual(await tracker.stopLeft({waitMs: 50, pollMs: 5}), {started: 1, quitByThemselves: 0, quitByHarness: 1, stillAlive: 0, uncertain: 0});
   assert.deepEqual(d.killed, [100]);
   assert.ok(d.alive.has(200) && d.alive.has(300));
 });
 
-test('a helper of this run that quit by itself is counted and not signalled', () => {
+test('a helper of this run that quit by itself is counted and not signalled', async () => {
   const d = desktop({100: RUN_TMP});
   const tracker = d.tracker();
   d.alive.add(100);
   tracker.observe();
   d.alive.delete(100);
-  assert.deepEqual(tracker.stopLeft(), {started: 1, quitByThemselves: 1, quitByHarness: 0});
+  assert.deepEqual(await tracker.stopLeft({waitMs: 50, pollMs: 5}), {started: 1, quitByThemselves: 1, quitByHarness: 0, stillAlive: 0, uncertain: 0});
   assert.deepEqual(d.killed, []);
 });
 
@@ -68,4 +68,28 @@ test('the helper\'s launcher is read from its environment\'s CODEX_CLI_PATH alon
   assert.equal(helperLauncherIs(7, '/r/CodexCLI.app/Contents/MacOS/codex', {exec}), false);
   assert.equal(helperLauncherIs(7, undefined, {exec}), false);
   assert.throws(() => helperLauncherIs(7, '/x', {exec: () => ''}), /could not read CODEX_CLI_PATH/);
+});
+
+// #115 M2 re-review: a signalled helper counts as stopped only once its pid is verified gone. A harmless child that
+// ignores SIGTERM stands in for a helper (no native helper is started).
+test('stopLeft verifies each pid is gone: TERM ignored, ownership re-read, then KILL for a pid still ours', async t => {
+  const {spawn} = await import('node:child_process');
+  const stubborn = () => {
+    const child = spawn(process.execPath, ['-e', "process.on('SIGTERM', () => {}); process.stdout.write('ready'); setInterval(() => {}, 1000);"], {stdio: ['ignore', 'pipe', 'ignore']});
+    t.after(() => { try { process.kill(child.pid, 'SIGKILL'); } catch {} });
+    return new Promise(done => child.stdout.once('data', () => done(child)));
+  };
+  const signals = [];
+  const ours = await stubborn();
+  const tracker = createHelperTracker({list: () => [ours.pid], owns: pid => pid === ours.pid, kill: (pid, signal) => { signals.push([pid, signal]); process.kill(pid, signal); }});
+  tracker.observe();
+  assert.deepEqual(await tracker.stopLeft({waitMs: 500, pollMs: 20}), {started: 1, quitByThemselves: 0, quitByHarness: 1, stillAlive: 0, uncertain: 0});
+  assert.deepEqual(signals, [[ours.pid, 'SIGTERM'], [ours.pid, 'SIGKILL']]);
+  // Ownership no longer proven after TERM: never escalated, reported alive and uncertain.
+  const other = await stubborn();
+  let reads = 0;
+  const unsure = createHelperTracker({list: () => [other.pid], owns: pid => pid === other.pid && reads++ === 0, kill: (pid, signal) => { signals.push([pid, signal]); process.kill(pid, signal); }});
+  unsure.observe();
+  assert.deepEqual(await unsure.stopLeft({waitMs: 300, pollMs: 20}), {started: 1, quitByThemselves: 0, quitByHarness: 0, stillAlive: 1, uncertain: 1});
+  assert.deepEqual(signals.filter(([pid]) => pid === other.pid), [[other.pid, 'SIGTERM']]);
 });

@@ -1,0 +1,14 @@
+{
+  "device": "mini",
+  "home": "/Users/new/.local/share/cua-native-baseline/run-UTZOwk",
+  "userHome": "/Users/new/.local/share/cua-native-baseline/run-UTZOwk.home",
+  "token": "3e5210b4-1cb5-445e-aea1-b8ffbaa1e4bd",
+  "xSession": {},
+  "tmpdir": "/Users/new/.local/share/cua-native-baseline/run-UTZOwk/harness-tmp",
+  "nodeMode": "managed",
+  "nodeOverride": null,
+  "ownNode": {
+    "path": "/Users/new/.local/share/cua-native-baseline/run-UTZOwk/node/24.22.0/bin/node",
+    "version": "v24.22.0"
+  }
+}

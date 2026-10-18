@@ -201,3 +201,94 @@ regression" was set for the browser service and the macOS GUI. The release notes
 - **Acceptance 14.** `HOME=$(mktemp -d) npm test`, `npm run test:mods`, `claude plugin validate .` at the final SHA
   (CI runs them on the PR), and a read of README's sandbox, `CODEX_HOME`, Linux and configuration text against the
   behaviour observed above.
+
+## Results on the mini (macOS), 2026-10-18
+
+The mini (Mac14,12, macOS 27.0 26A428, runtime 26.928.40906-darwin-arm64), a scratch clone and scratch homes under
+`~/cua-115/`, the gate and its sitting log in `mini-rules/` (the pause watcher's readings in `mini-rules/watch-log.txt`).
+Group A ran under the headless rule; group B ran inside a CI-opt hold, where busy=false with no Runner.Worker counted
+as idle, the queue was ignored and one reading sufficed. No TCC dialog, password prompt or system dialog appeared.
+
+**Group A, headless, at 7b87873 (item 10 at a920e2f), 15:06–15:41Z (`headless/`, `group-a/`, `oracles/`).**
+
+| Item | Result |
+|---|---|
+| 1 fresh install | PASS: the tree holds `cua_node` and `install.json`; doctor's `sandbox.launcher` and `runtime.leftovers` pass; no `codex` process during the own-sandbox runs, where the kernel is Node, a child of the supervisor or of node_repl |
+| 2 to 5 | PASS: own-sandbox 76/76 on cua's host, 86/86 on the vendor host |
+| 8 | PASS: golden 18/18, the oracles ok; the switch-off profiles are byte-identical to M2's once the checkout path and session UUIDs are normalised (`group-a/tests/item8-render-normalised-*.json`) |
+| 9 | PASS: the fail-closed suites 153/153, compat-launch 6/6 |
+| 10 | PASS: a plain install removes nothing; `--prune-leftovers` removes the names and `CodexCLI.app` (229 MB freed), doctor goes warn → pass; the keepers and the environment's `CODEX_HOME` are untouched; the helper's inode is unchanged; a live session record defers `CodexCLI.app`; a linked `state/codex/tmp` is reported by doctor, and the marker and the link survive |
+
+`m2-mini.sh headless` exits 1 on the approved home only because its doctor step judges `runtime.leftovers`, which
+warns there: that home keeps `CodexCLI.app` and the task-1 state as the M0 oracles. Item 1 is judged on the fresh home.
+
+**Group B, in the CI-opt hold, at 8782604, 15:43–16:17Z.** The OS and hardware equal M0's runs (the comparisons'
+header rows). The frontmost key guard (9173dbf, #162) landed after group B; nothing here ran with it.
+
+*Item 11, latency (`mini-vendor-computer/`, `mini-cua-browser/`, each with `comparison.md`).* `compare --same-host`
+**PASS** for both configurations. The judged rows, milliseconds:
+
+| Configuration, row | M0 per-run medians | M0 pooled | M4 per-run medians | M4 pooled | Limit |
+|---|---|---|---|---|---|
+| vendor computer, cold.miss.first_js | 1264, 1240, 363 | 400.9 | 283, 320, 250 | 258.7 (−142) | 900.9 |
+| vendor computer, cold.hit.first_js | 412, 460, 472 | 429.3 | 489, 466, 513 | 489.0 (+59.7) | 929.3 |
+| cua browser, cold.miss.first_js | 1192, 1152, 1168 | 1160.5 | 311, 207, 230 | 229.6 (−931) | 1660.5 |
+| cua browser, cold.hit.first_js | 317, 344, 314 | 316.6 | 298, 300, 303 | 301.0 (−15.6) | 816.6 |
+
+The vendor host's cold.hit row is +60 ms, beyond M0's run-to-run spread (412–472) but well inside the limit. **Ruled
+accepted by the dispatching session (2026-10-18) on the basis of the three runs**, with that configuration's miss row
+140 ms faster. The likely cause is the compat executable's Node startup: on the vendor host, `bin/cua-codex-compat` is
+a shell wrapper that runs `src/sandbox/codex-compat.mjs` on the pinned Node, which then `process.execve`s
+`sandbox-exec`, where M0 started the signed Codex CLI. This is not measured: the
+spawn-to-execve timing (`/usr/bin/true` against the compat's refusal path, no input, no native calls) was prepared,
+but the hold's gate requires Terminal in front, parity left Chrome in front, and the hold was released at about
+16:37Z before it got a slot. It did not run.
+
+Three extra vendor runs, planned to firm up the cold.hit row, were **not run**. A vendor computer run sends synthetic
+keys through the native helper (`super+n`, `typeText`, `super+w` ×10, `super+q`), and a `super+q` that reached Chrome
+would quit the owner's Chrome. The extra runs wait for the frontmost key guard (#162).
+
+*The ssfs window's closure (tab log).* The coordinator saw the ssfs Profile 1 window's last tab closed between about
+15:43Z and 15:48Z; it was reopened at 15:52:25Z, with 1 tab at 15:52:45Z. From our logs, our runs did not close it:
+
+- The browser latency runs used their own scratch HOME and CUA_HOME with no Chrome registration or extension host, and
+  made only the cold rows (initialize, tools/list, a banner cell, end_task).
+- The vendor runs' keys all landed in TextEdit by AX confirmation: task.act 10/10, task.close 10/10,
+  setup.newDocument 1/1 and guard.scratch 2/2 in each run; TextEdit launched and quit by the run; Terminal in front
+  after each run; Chrome's pid unchanged.
+- Our last tab count before group B was at 07:02:21Z, so our logs cannot place the closure inside the window
+  themselves.
+- One correlation: both recent closures followed a run whose native helper typed into TextEdit (the 03:15Z sitting,
+  and these vendor runs). Every key we sent is confirmed in TextEdit, so this is a correlation, not a mechanism; #157's
+  last-tab guard would not cover it, since nothing of ours closes tabs.
+
+*HID idle.* The reading of 329 s at 15:52:25Z puts the last input at 15:46:56Z, the end of vendor run-3 and its
+`super+q`. The helper's synthetic keys count as HID input, so an HID-idle reading cannot by itself show that a human
+is present.
+
+*Item 12, parity (`parity/`), 15:52:50–16:16:36Z, profile ssfs.* **PASS**: vendor host 479 cases complete, cua's
+host 479 complete, every assertion passed; the diff with `test/repl-parity/expected-differences.json` is ok with 0
+undeclared differences, 0 vendor defects, nothing pending or provisional. The 1367 expected differences are all one
+declared field, `meta.cua/replHost` (the own host's result attestation). This is identical to M2's run at 249a2a9
+(479/479, 1380 cells, 1367 expected). No pause occurred. Chrome: pid 36513 with 1 tab before and after. Parity's
+browser cases left Chrome in front from about 16:04Z, and Terminal was not raised afterwards (the hold had ended, and
+no further mini action was authorised).
+
+*accept-native, without `--live-textedit`, with `--live-secrets` (`accept-native/acceptance.json`),
+15:49:13–15:51:41Z, run while ssfs was down.* Against M2's table (`../m2/README.md`):
+
+| Item | M2 6de47ae | M4 8782604 | Same as M2? |
+|---|---|---|---|
+| 1 npm test | FAIL (2) | FAIL: the same 2 tests (unit proof must exist; selected-stage completeness) | yes |
+| 2, 3, 8 | FAIL (cascade) | FAIL (cascade from item 1; item 2's download mode BLOCKED as in M2) | yes; item 8 also BLOCKS "per-connection app approvals observed", which needs the TextEdit fixture |
+| 4 | PASS | PASS 3/3 | yes |
+| 5 | PASS 11/11 | BLOCKED: the TextEdit fixture, not requested | **differs, by design** (no `--live-textedit`) |
+| 6, 7 | FAIL (cascade only; live probe-secrets pass) | FAIL (cascade only; live probe-secrets pass) | yes; item 6 has 16 checks, not 20: the four optional UI-delivery checks type into TextEdit and were not run |
+| 9 | BLOCKED | BLOCKED (the same three) | yes |
+| 10 | FAIL (two checks) | FAIL (the same two: tracked files naming the home; the clean clone's `HEAD`) | yes; the tracked-files list no longer names `scripts/sandbox-probe/m2-mini.sh` |
+| 11 own sandbox | PASS 76/76 | PASS 76/76 | yes |
+| 12 vendor-host sandbox | PASS 86/86 | PASS 86/86 | yes |
+| 13 computer route via compat | PASS 18/18 | PASS 18/18 | yes |
+
+The #115 items (11 to 13) pass and acceptance 6, the macOS computer route, is re-proved read-only. The only item
+that differs is 5, which needs the live TextEdit run that group B leaves out.

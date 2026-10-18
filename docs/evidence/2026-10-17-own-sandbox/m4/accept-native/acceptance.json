@@ -1,0 +1,1669 @@
+{
+  "scenario": "accept-native",
+  "status": "FAIL",
+  "options": {
+    "liveSecrets": true,
+    "liveTextedit": false,
+    "callerSecretKey": false
+  },
+  "release": "26.928.40906-darwin-arm64",
+  "home": "$CUA_HOME",
+  "host": "darwin-arm64",
+  "node": "v26.4.0",
+  "startedAt": "2026-10-18T15:49:13.380Z",
+  "finishedAt": "2026-10-18T15:51:41.763Z",
+  "summary": {
+    "1": "FAIL",
+    "2": "FAIL",
+    "3": "FAIL",
+    "4": "PASS",
+    "5": "BLOCKED",
+    "6": "FAIL",
+    "7": "FAIL",
+    "8": "FAIL",
+    "9": "BLOCKED",
+    "10": "FAIL",
+    "11": "PASS",
+    "12": "PASS",
+    "13": "PASS"
+  },
+  "connectionDirectoriesLeft": 0,
+  "items": [
+    {
+      "id": 1,
+      "title": "npm test",
+      "status": "FAIL",
+      "checks": [
+        {
+          "name": "npm test",
+          "status": "FAIL",
+          "detail": "exit 1, 2 failed, 0 cancelled; 2 failed (unit proof must exist, run by npm test and actually pass its exact named test; selected-stage completeness reports later contracts as pending, never covered), 71 skipped, 0 TODO in 67.0 s",
+          "totals": {
+            "tests": 2937,
+            "pass": 2864,
+            "fail": 2,
+            "cancelled": 0,
+            "skipped": 71,
+            "todo": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Pinned install: verified private tree, idempotent reinstall, refusal of bad archives, download mode",
+      "status": "FAIL",
+      "checks": [
+        {
+          "name": "installed release",
+          "status": "PASS",
+          "detail": "active 26.928.40906-darwin-arm64 (pin 26.928.40906-darwin-arm64), installed from archive, archive sha256 93bf16b32c80…, 687457051 bytes"
+        },
+        {
+          "name": "verified private runtime tree",
+          "status": "PASS",
+          "detail": "runtime.files pass; runtime.vendor-manifest pass; runtime.ipc pass; runtime.signatures pass (3 components signed by team 2DC432GLL2)"
+        },
+        {
+          "name": "reinstall mutates nothing",
+          "status": "PASS",
+          "detail": "install --json → ok true, changed false; 3398 entries compared (type, mode, size, mtime, inode): identical"
+        },
+        {
+          "name": "bad hash, length, manifest or signature never activates",
+          "status": "FAIL",
+          "detail": "npm test was FAIL in item 1; see test/runtime-install.test.mjs, test/runtime-manifest.test.mjs, test/cli.test.mjs"
+        },
+        {
+          "name": "download mode (official pinned URL)",
+          "status": "BLOCKED",
+          "detail": "acquisition code changed since bc315bc (ebede30, 917ed9b, fedc016, 2c8abf6, ef12714, a99f951, 7ae266b, 81f55e3, 2e50598, 8157440, 16aaee5, f03bb74, fe09732, 6931ac2, ad8fe16, 2a8a7c4, 389ac71, bc16f1d): rerun CUA_HOME=\"$(mktemp -d /tmp/cua-download.XXXXXX)\" node bin/cua.mjs install",
+          "evidence": "needs rerun"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "doctor --json: release, paths, signatures, compatibility; runtime health apart from live evidence",
+      "status": "FAIL",
+      "checks": [
+        {
+          "name": "doctor --json on the installed home",
+          "status": "PASS",
+          "detail": "exit 1; ok false; informational, not gating: secrets.store pass, agent.installed pass, agent.running pass, agent.enrolled fail, agent.console pass; release 26.928.40906-darwin-arm64; platform pass, runtime.installed pass, runtime.files pass, runtime.vendor-manifest pass, runtime.ipc pass, runtime.signatures pass, helper.live blocked, helper.permissions blocked, secrets.store pass",
+          "checks": [
+            {
+              "name": "platform",
+              "status": "pass"
+            },
+            {
+              "name": "runtime.installed",
+              "status": "pass"
+            },
+            {
+              "name": "runtime.files",
+              "status": "pass"
+            },
+            {
+              "name": "runtime.vendor-manifest",
+              "status": "pass"
+            },
+            {
+              "name": "runtime.ipc",
+              "status": "pass"
+            },
+            {
+              "name": "runtime.signatures",
+              "status": "pass"
+            },
+            {
+              "name": "sandbox",
+              "status": "pass"
+            },
+            {
+              "name": "sandbox.launcher",
+              "status": "pass"
+            },
+            {
+              "name": "run.stale",
+              "status": "pass"
+            },
+            {
+              "name": "runtime.leftovers",
+              "status": "warn"
+            },
+            {
+              "name": "helper.live",
+              "status": "blocked"
+            },
+            {
+              "name": "helper.permissions",
+              "status": "blocked"
+            },
+            {
+              "name": "secrets.store",
+              "status": "pass"
+            },
+            {
+              "name": "secrets.project",
+              "status": "skip"
+            },
+            {
+              "name": "repl.host",
+              "status": "pass"
+            },
+            {
+              "name": "chrome.route",
+              "status": "blocked"
+            },
+            {
+              "name": "chrome.host.registered",
+              "status": "blocked"
+            },
+            {
+              "name": "chrome.hosts.live",
+              "status": "blocked"
+            },
+            {
+              "name": "maws.hosts",
+              "status": "skip"
+            },
+            {
+              "name": "agent.installed",
+              "status": "pass"
+            },
+            {
+              "name": "agent.running",
+              "status": "pass"
+            },
+            {
+              "name": "agent.enrolled",
+              "status": "fail"
+            },
+            {
+              "name": "agent.console",
+              "status": "pass"
+            },
+            {
+              "name": "agent.relay",
+              "status": "skip"
+            },
+            {
+              "name": "chrome.agent",
+              "status": "blocked"
+            }
+          ]
+        },
+        {
+          "name": "runtime health reported apart from live helper and permission evidence",
+          "status": "PASS",
+          "detail": "helper.live blocked and helper.permissions blocked are separate checks; a blocked live check does not fail runtime health"
+        },
+        {
+          "name": "missing runtime gives install guidance and a nonzero exit",
+          "status": "PASS",
+          "detail": "exit 1; runtime.installed fail: no runtime is installed in /private<empty home>; run `cua install` (or `cua install --archive <ChatGPT zip>` with the pinned archive)"
+        },
+        {
+          "name": "unsupported platform, incompatible helper, secret store state explicit",
+          "status": "FAIL",
+          "detail": "npm test was FAIL in item 1; see test/runtime-doctor.test.mjs, test/secrets-store.test.mjs"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "serve and verify.mjs: four-tool surface on relocated binaries and own configuration",
+      "status": "PASS",
+      "checks": [
+        {
+          "name": "node verify.mjs",
+          "status": "PASS",
+          "detail": "exit 0; tools js, js_reset, end_task, secrets_list, devices_list, devices_use; task stable across calls, end ended, repeat noop; problems: none"
+        },
+        {
+          "name": "relocated binaries and own configuration; no installed-desktop runtime path",
+          "status": "PASS",
+          "detail": "6 processes (server, anchor, runtime): <host node> bin/cua.mjs serve; <host node>; $RUNTIME/cua_node/bin/node; $RUNTIME/cua_node/bin/node_repl"
+        },
+        {
+          "name": "native without an account (owned empty CODEX_HOME)",
+          "status": "PASS",
+          "detail": "the runtime's CODEX_HOME ($CUA_HOME/state/codex) holds no auth file and nothing was copied from ~/.codex; the verify run above loaded the vendor API and reached the native helper without any account"
+        }
+      ],
+      "evidence": {
+        "nativeHelper": [],
+        "secretsList": {
+          "status": "ok",
+          "labelCount": 2
+        },
+        "elicitationsDeclined": 0
+      }
+    },
+    {
+      "id": 5,
+      "title": "Live native fixture: its own disposable TextEdit document",
+      "status": "BLOCKED",
+      "checks": [
+        {
+          "name": "opt-in --live-textedit",
+          "status": "BLOCKED",
+          "detail": "not run: pass --live-textedit to run it (never counted as a pass when skipped)"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Secrets: terminal-only masked set, key-only listing, live store roundtrip",
+      "status": "FAIL",
+      "checks": [
+        {
+          "name": "secrets set requires a terminal",
+          "status": "PASS",
+          "detail": "without a terminal: exit 1, \"  run it in a terminal; in Claude Code, the cua plugin's /secret KEY stores a secret in the same store, for the session's project (/secret -g KEY: for every project), and is preferred\"; nothing was stored"
+        },
+        {
+          "name": "secrets set at a terminal: masked, typed twice, stored exactly, 0600 in 0700",
+          "status": "PASS",
+          "detail": "on a pty: exit 0, 2 prompt(s) answered, value never echoed; the file reads back exactly the typed value; directory 700, file 600"
+        },
+        {
+          "name": "secrets list returns keys only",
+          "status": "PASS",
+          "detail": "{ok, project, labels, scopes}: the stored key, in the global tier, and no value (1 key(s))"
+        },
+        {
+          "name": "secrets remove deletes the key's file",
+          "status": "PASS",
+          "detail": "exit 0; the key is gone"
+        },
+        {
+          "name": "the temporary store home is removed",
+          "status": "PASS",
+          "detail": "key file gone; home removed"
+        },
+        {
+          "name": "MCP secrets_list returns keys only",
+          "status": "PASS",
+          "detail": "verify.mjs: {\"status\":\"ok\",\"labelCount\":2}"
+        },
+        {
+          "name": "masked prompt: no-terminal refusal, nothing echoed, mismatch, empty and cancel store nothing",
+          "status": "FAIL",
+          "detail": "npm test was FAIL in item 1; see test/secrets-cli.test.mjs"
+        },
+        {
+          "name": "live: scripts/probe-secrets.mjs verdict",
+          "status": "PASS",
+          "detail": "scenario status PASS; 31 steps, all passed; informational: sandbox disabled (CUA_SHIM_SANDBOX=disabled): trusted roots a cell could write (accepted, #20)"
+        },
+        {
+          "name": "live: preconditions and create (generated sentinel, cua secrets set at a pty, temporary $HOME)",
+          "status": "PASS",
+          "detail": "preconditions: PASS; create: PASS"
+        },
+        {
+          "name": "live: first substitution through store file → trusted wrapper → controlled target",
+          "status": "PASS",
+          "detail": "first value: paste substitution: PASS; first value: type_text substitution: PASS; first value: set_value substitution: PASS"
+        },
+        {
+          "name": "live: replace with a second generated sentinel and substitute it",
+          "status": "PASS",
+          "detail": "replace: PASS; replaced value: type_text substitution: PASS"
+        },
+        {
+          "name": "live: failure output stays value-free (induced and real vendor failures)",
+          "status": "PASS",
+          "detail": "first value: induced substituted-command failure: PASS; first value: cell timeout during a substituted call: PASS; real vendor: failure after substitution: PASS; real vendor: unknown label: PASS"
+        },
+        {
+          "name": "live: fail closed before any input (secrets off; store unreadable: the launch is refused)",
+          "status": "PASS",
+          "detail": "secrets off: type_text reference fails closed: PASS; secrets off: paste reference fails closed: PASS; secrets off: set_value reference fails closed: PASS; secrets off: close: PASS; store unreadable: the launch is refused: PASS"
+        },
+        {
+          "name": "live: every connection closed cleanly",
+          "status": "PASS",
+          "detail": "first value: close: PASS; replaced value: close: PASS; real serve: close: PASS; real serve (sandbox disabled): close: PASS"
+        },
+        {
+          "name": "live: no value in any observed channel or report",
+          "status": "PASS",
+          "detail": "scanner self-check: PASS; sentinel scan: PASS"
+        },
+        {
+          "name": "live: finally cleanup of the scenario-owned key and temporary homes",
+          "status": "PASS",
+          "detail": "cleanup: PASS (the probe's key file and its temporary homes were removed)"
+        }
+      ],
+      "evidence": {
+        "liveSecrets": {
+          "status": "PASS",
+          "key": "CUA_PROBE_16A23873F0AA2AB9",
+          "steps": [
+            {
+              "name": "preconditions",
+              "status": "PASS",
+              "detail": "runtime 26.928.40906-darwin-arm64; key CUA_PROBE_16A23873F0AA2AB9 in a temporary $HOME"
+            },
+            {
+              "name": "create",
+              "status": "PASS",
+              "detail": "stored by cua secrets set, typed twice at its masked prompt on a pty, in the probe's temporary $HOME"
+            },
+            {
+              "name": "first value: paste substitution",
+              "status": "PASS",
+              "detail": "the fake target received exactly the stored value in the eligible field; the cell got no value back"
+            },
+            {
+              "name": "first value: type_text substitution",
+              "status": "PASS",
+              "detail": "the fake target received exactly the stored value in the eligible field; the cell got no value back"
+            },
+            {
+              "name": "first value: set_value substitution",
+              "status": "PASS",
+              "detail": "the fake target received exactly the stored value in the eligible field; the cell got no value back"
+            },
+            {
+              "name": "first value: ordinary input",
+              "status": "PASS",
+              "detail": "ordinary text reaches the target unchanged"
+            },
+            {
+              "name": "first value: unsupported method",
+              "status": "PASS",
+              "detail": "a marker in press_key is delegated literally, not expanded"
+            },
+            {
+              "name": "first value: unknown label",
+              "status": "PASS",
+              "detail": "failed before input with secret_not_found"
+            },
+            {
+              "name": "first value: invalid label",
+              "status": "PASS",
+              "detail": "failed before input with invalid_secret_label"
+            },
+            {
+              "name": "first value: unsupported shape",
+              "status": "PASS",
+              "detail": "failed before input with unsupported_secret_shape"
+            },
+            {
+              "name": "first value: induced substituted-command failure",
+              "status": "PASS",
+              "detail": "the target received the value and threw an error containing it; the cell got only the fixed diagnostic"
+            },
+            {
+              "name": "first value: cell timeout during a substituted call",
+              "status": "PASS",
+              "detail": "the cell timed out while the target held the substituted request; node_repl logged the redacted cell source (stderr is scanned below)"
+            },
+            {
+              "name": "first value: target saw only what it should",
+              "status": "PASS",
+              "detail": "7 target calls recorded"
+            },
+            {
+              "name": "first value: close",
+              "status": "PASS",
+              "detail": "exit 0"
+            },
+            {
+              "name": "replace",
+              "status": "PASS",
+              "detail": "stored by cua secrets set, typed twice at its masked prompt on a pty, in the probe's temporary $HOME"
+            },
+            {
+              "name": "replaced value: type_text substitution",
+              "status": "PASS",
+              "detail": "the fake target received exactly the stored value in the eligible field; the cell got no value back"
+            },
+            {
+              "name": "replaced value: close",
+              "status": "PASS",
+              "detail": "exit 0"
+            },
+            {
+              "name": "real vendor: failure after substitution",
+              "status": "PASS",
+              "detail": "value-free diagnostic: type_text with secret \"CUA_PROBE_16A23873F0AA2AB9\" failed (invalidApp) after the secret was read; it may have been partly entered. The runtime's error is withhe"
+            },
+            {
+              "name": "real vendor: unknown label",
+              "status": "PASS",
+              "detail": "fails before input with secret_not_found"
+            },
+            {
+              "name": "sandbox scoped (default): trusted roots unwritable, run directory and $TMPDIR writable",
+              "status": "PASS",
+              "detail": "4 trusted roots: state/codex EPERM, src/services EPERM, src/secrets EPERM, vendor modules EPERM; run directory written, $TMPDIR written"
+            },
+            {
+              "name": "real serve: close",
+              "status": "PASS",
+              "detail": "exit 0"
+            },
+            {
+              "name": "sandbox disabled (CUA_SHIM_SANDBOX=disabled): trusted roots a cell could write (accepted, #20)",
+              "status": "INFO",
+              "detail": "writable: state/codex, src/services, src/secrets, vendor modules; refused: none; for comparison, own cwd written, tmpDir written; every file the probe wrote was removed and verified removed; accepted under the trust model (owner decision, #20): code integrity is the user's responsibility; the scoped default keeps them read-only"
+            },
+            {
+              "name": "real serve (sandbox disabled): close",
+              "status": "PASS",
+              "detail": "exit 0"
+            },
+            {
+              "name": "secrets off: type_text reference fails closed",
+              "status": "PASS",
+              "detail": "failed with secrets_disabled; the target received nothing"
+            },
+            {
+              "name": "secrets off: paste reference fails closed",
+              "status": "PASS",
+              "detail": "failed with secrets_disabled; the target received nothing"
+            },
+            {
+              "name": "secrets off: set_value reference fails closed",
+              "status": "PASS",
+              "detail": "failed with secrets_disabled; the target received nothing"
+            },
+            {
+              "name": "secrets off: close",
+              "status": "PASS",
+              "detail": "exit 0"
+            },
+            {
+              "name": "store unreadable: the launch is refused",
+              "status": "PASS",
+              "detail": "refused before the handshake with sandbox_state_invalid, naming the secret store, ~/.local/share/cua-native-baseline/run-VvLtdb/tmp/cua-probe-unreadable-wsY2wI/.config/<store-dir>; the target received nothing"
+            },
+            {
+              "name": "cleanup",
+              "status": "PASS",
+              "detail": "the probe's key file and its temporary homes were removed"
+            },
+            {
+              "name": "scanner self-check",
+              "status": "PASS",
+              "detail": "a generated value is found raw and as base64 at every byte offset"
+            },
+            {
+              "name": "sentinel scan",
+              "status": "PASS",
+              "detail": "no generated value (raw or base64) in 12 streams (target-first value MCP transport; target-first value stderr (serve, runtime, node_repl, kernel, trusted worker); target-replaced value MCP transport; target-replaced value stderr (serve, runtime, node_repl, kernel, trusted worker); real-serve MCP transport; real-serve stderr (serve, runtime, node_repl, kernel, trusted worker); real-serve sandbox disabled MCP transport; real-serve sandbox disabled stderr (serve, runtime, node_repl, kernel, trusted worker); fail-closed secrets off MCP transport; fail-closed secrets off stderr (serve, runtime, node_repl, kernel, trusted worker); fail-closed store unreadable MCP transport; fail-closed store unreadable stderr (serve)) or in 2 runtime files read whole (0 symbolic links not followed)"
+            }
+          ],
+          "runtimeFiles": {
+            "scanned": 2,
+            "unread": [],
+            "symbolicLinks": 0
+          },
+          "channels": [
+            {
+              "name": "target-first value MCP transport",
+              "bytes": 29945,
+              "containsReference": true
+            },
+            {
+              "name": "target-first value stderr (serve, runtime, node_repl, kernel, trusted worker)",
+              "bytes": 553,
+              "containsReference": false
+            },
+            {
+              "name": "target-replaced value MCP transport",
+              "bytes": 23299,
+              "containsReference": true
+            },
+            {
+              "name": "target-replaced value stderr (serve, runtime, node_repl, kernel, trusted worker)",
+              "bytes": 0,
+              "containsReference": false
+            },
+            {
+              "name": "real-serve MCP transport",
+              "bytes": 25859,
+              "containsReference": true
+            },
+            {
+              "name": "real-serve stderr (serve, runtime, node_repl, kernel, trusted worker)",
+              "bytes": 0,
+              "containsReference": false
+            },
+            {
+              "name": "real-serve sandbox disabled MCP transport",
+              "bytes": 24091,
+              "containsReference": false
+            },
+            {
+              "name": "real-serve sandbox disabled stderr (serve, runtime, node_repl, kernel, trusted worker)",
+              "bytes": 0,
+              "containsReference": false
+            },
+            {
+              "name": "fail-closed secrets off MCP transport",
+              "bytes": 24962,
+              "containsReference": true
+            },
+            {
+              "name": "fail-closed secrets off stderr (serve, runtime, node_repl, kernel, trusted worker)",
+              "bytes": 0,
+              "containsReference": false
+            },
+            {
+              "name": "fail-closed store unreadable MCP transport",
+              "bytes": 162,
+              "containsReference": false
+            },
+            {
+              "name": "fail-closed store unreadable stderr (serve)",
+              "bytes": 400,
+              "containsReference": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": 7,
+      "title": "Native input substitution: methods, rejection before dispatch, store refusals",
+      "status": "FAIL",
+      "checks": [
+        {
+          "name": "exact reference expansion per method, ordinary input, invalid/missing/refused-file rejection before dispatch, value-free errors, unsupported shapes",
+          "status": "FAIL",
+          "detail": "npm test was FAIL in item 1; see test/services-sky.test.mjs, test/secrets-reference.test.mjs, test/services-sky-trust.test.mjs"
+        },
+        {
+          "name": "the store reads only a regular, owned, 0600 file without following links; every refusal is classified and value-free",
+          "status": "FAIL",
+          "detail": "npm test was FAIL in item 1; see test/secrets-store.test.mjs"
+        },
+        {
+          "name": "live: scripts/probe-secrets.mjs verdict",
+          "status": "PASS",
+          "detail": "scenario status PASS; 31 steps, all passed; informational: sandbox disabled (CUA_SHIM_SANDBOX=disabled): trusted roots a cell could write (accepted, #20)"
+        },
+        {
+          "name": "live: first substitution through store file → trusted wrapper → controlled target",
+          "status": "PASS",
+          "detail": "first value: paste substitution: PASS; first value: type_text substitution: PASS; first value: set_value substitution: PASS"
+        },
+        {
+          "name": "live: ordinary input, unsupported method, unknown/invalid label, unsupported shape",
+          "status": "PASS",
+          "detail": "first value: ordinary input: PASS; first value: unsupported method: PASS; first value: unknown label: PASS; first value: invalid label: PASS; first value: unsupported shape: PASS; first value: target saw only what it should: PASS"
+        },
+        {
+          "name": "live: sandbox scoped (default): trusted roots unwritable, run directory and $TMPDIR writable",
+          "status": "PASS",
+          "detail": "sandbox scoped (default): trusted roots unwritable, run directory and $TMPDIR writable: PASS (4 trusted roots: state/codex EPERM, src/services EPERM, src/secrets EPERM, vendor modules EPERM; run directory written, $TMPDIR written)"
+        },
+        {
+          "name": "live (informational): sandbox disabled (CUA_SHIM_SANDBOX=disabled): trusted roots a cell could write, accepted under the trust model (#20)",
+          "status": "INFO",
+          "detail": "sandbox disabled (CUA_SHIM_SANDBOX=disabled): trusted roots a cell could write (accepted, #20): INFO (writable: state/codex, src/services, src/secrets, vendor modules; refused: none; for comparison, own cwd written, tmpDir written; every file the probe wrote was removed and verified removed; accepted under the trust model (owner decision, #20): code integrity is the user's responsibility; the scoped default keeps them read-only)"
+        },
+        {
+          "name": "live: fail closed before any input (secrets off; store unreadable: the launch is refused)",
+          "status": "PASS",
+          "detail": "secrets off: type_text reference fails closed: PASS; secrets off: paste reference fails closed: PASS; secrets off: set_value reference fails closed: PASS; secrets off: close: PASS; store unreadable: the launch is refused: PASS"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Task lifecycle: IDs, end_task outcomes, fail-closed completion; native cancel/approval behaviour observed",
+      "status": "FAIL",
+      "checks": [
+        {
+          "name": "lifecycle state machine, races, deadlines, EOF, elicitation routing, bounded teardown",
+          "status": "FAIL",
+          "detail": "npm test was FAIL in item 1; see test/mcp-lifecycle.test.mjs, test/mcp-server.test.mjs, test/mcp-upstream.test.mjs, test/serve-cli.test.mjs"
+        },
+        {
+          "name": "observed: cancel does not stop a running cell (it replies normally)",
+          "status": "PASS",
+          "detail": "as documented in docs/evidence/m3-mcp-lifecycle.md"
+        },
+        {
+          "name": "observed: end_task after a cancelled cell ends",
+          "status": "PASS",
+          "detail": "as documented in docs/evidence/m3-mcp-lifecycle.md"
+        },
+        {
+          "name": "observed: end_task with work in flight rejects new work as task_ending and ends after it",
+          "status": "PASS",
+          "detail": "as documented in docs/evidence/m3-mcp-lifecycle.md"
+        },
+        {
+          "name": "observed: uncertain completion fails closed (completion_timeout, native cleanup unconfirmed, exit 1, no runtime left)",
+          "status": "PASS",
+          "detail": "as documented in docs/evidence/m3-mcp-lifecycle.md"
+        },
+        {
+          "name": "observed: idle EOF closes cleanly with no runtime left",
+          "status": "PASS",
+          "detail": "as documented in docs/evidence/m3-mcp-lifecycle.md"
+        },
+        {
+          "name": "per-connection app approvals observed",
+          "status": "BLOCKED",
+          "detail": "observed only by the live TextEdit fixture: pass --live-textedit"
+        }
+      ],
+      "evidence": {
+        "cancelReplyMs": 2506,
+        "uncertainExitCode": 1,
+        "idleCloseMs": 56
+      }
+    },
+    {
+      "id": 9,
+      "title": "Release gates this host cannot prove (each blocked individually)",
+      "status": "BLOCKED",
+      "checks": [
+        {
+          "name": "clean macOS machine/VM without the desktop app: install, permissions, native fixture, real secret substitution",
+          "status": "BLOCKED",
+          "detail": "this host has ChatGPT.app installed. Needs: a clean macOS arm64 VM or machine with no ChatGPT/Codex installed, where a human runs install, grants Accessibility and Screen Recording when macOS asks, then accept-native --live-textedit --live-secrets"
+        },
+        {
+          "name": "cold start of the pinned native helper",
+          "status": "BLOCKED",
+          "detail": "the native socket is held by nothing right now; this run reused whatever helper served and never stops one. Needs: an environment where no other installation's helper runs (the clean VM above), so the pinned helper's LaunchServices start is what serves"
+        },
+        {
+          "name": "fresh permission (TCC) onboarding",
+          "status": "BLOCKED",
+          "detail": "this account already granted the helper bundle id; existing grants are not evidence of the first-run flow. Needs: a fresh macOS user account or VM where a human answers the Accessibility and Screen Recording prompts"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "Packaging, plugin README, tracked files, clean checkout",
+      "status": "FAIL",
+      "checks": [
+        {
+          "name": "README: standalone requirements, limitations and exact commands",
+          "status": "PASS",
+          "detail": "mentions npm test, cua.mjs install, doctor, secrets set, <store-dir>, serve, claude mcp add, accept-native.mjs, Chrome"
+        },
+        {
+          "name": "plugin launches the standalone server; no Stop/SubagentStop hooks",
+          "status": "PASS",
+          "detail": "cua_repl: node --disable-sigusr1 ${CLAUDE_PLUGIN_ROOT}/cua-shim.mjs; shell hooks Elicitation"
+        },
+        {
+          "name": "nothing tracked is an archive, runtime, credential, log or machine-specific token",
+          "status": "FAIL",
+          "detail": "2551 tracked files; forbidden: none; code/config naming this user's home or holding token-like strings: scripts/accept/linux-chrome-features.mjs, scripts/mini-rules.mjs, test/fixtures/sandbox/seatbelt/tmpdir-relative.json, test/mini-pause.test.mjs, test/mini-rules.test.mjs, test/mini-worker-probe.test.mjs, test/secrets-project.test.mjs, tests/mods/guard/shell-exec.ts, tests/mods/secrets.test.ts"
+        },
+        {
+          "name": "package files: what runs and diagnoses; nothing else",
+          "status": "PASS",
+          "detail": "218 files"
+        },
+        {
+          "name": "existing MCP registration untouched",
+          "status": "PASS",
+          "detail": "no tracked code runs `claude` or edits ~/.claude; registration is documented (README) and never executed by acceptance"
+        },
+        {
+          "name": "clean clone tests",
+          "status": "FAIL",
+          "detail": "git clone failed: fatal: Remote branch HEAD not found in upstream origin"
+        }
+      ],
+      "evidence": {
+        "head": "8782604",
+        "branch": "HEAD",
+        "workingTreeDirty": false,
+        "cloneRemoved": true
+      }
+    },
+    {
+      "id": 11,
+      "title": "cua's own sandbox (#115): the own host's deny list, writes, links and network, no codex",
+      "status": "PASS",
+      "checks": [
+        {
+          "name": "scoped: denied: store",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "scoped: denied: store (listing)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "scoped: denied: store (symlinked tier target)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "scoped: denied: store (symlinked tier target) (listing)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "scoped: denied: ~/.config/cua",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "scoped: denied: ~/.config/cua (listing)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "scoped: denied: $CUA_HOME/state",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "scoped: denied: $CUA_HOME/state (listing)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "scoped: denied: $CUA_HOME/remote (enrolled device)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "scoped: denied: $CUA_HOME/remote (enrolled device) (listing)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "scoped: denied: $CUA_HOME/chrome",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "scoped: denied: $CUA_HOME/chrome (listing)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "scoped: denied: another session's run directory",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "scoped: denied: another session's run directory (listing)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "scoped: a package resolves and reads from the runtime's module tree",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "scoped: TMPDIR is the session's own, under $CUA_HOME/run/<id>",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "scoped: the run directory is writable",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "scoped: TMPDIR is writable",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "scoped: a write outside the session fails",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "scoped: a hard link of the store sentinel fails",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "scoped: a clone (cp -c) of the store sentinel fails",
+          "status": "PASS",
+          "detail": "exit 1"
+        },
+        {
+          "name": "scoped: a TCP connect fails",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "scoped: an AF_UNIX connect fails",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "scoped: the kernel is Node itself, the supervisor's child, marked seatbelt",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "scoped: no process named codex",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "default: denied: store",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: denied: store (listing)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: denied: store (symlinked tier target)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: denied: store (symlinked tier target) (listing)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: denied: ~/.config/cua",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: denied: ~/.config/cua (listing)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: denied: $CUA_HOME/state",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: denied: $CUA_HOME/state (listing)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: denied: $CUA_HOME/remote (enrolled device)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: denied: $CUA_HOME/remote (enrolled device) (listing)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: denied: $CUA_HOME/chrome",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: denied: $CUA_HOME/chrome (listing)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: denied: another session's run directory",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: denied: another session's run directory (listing)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: a package resolves and reads from the runtime's module tree",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "default: TMPDIR is the session's own, under $CUA_HOME/run/<id>",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "default: the run directory is not writable",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: TMPDIR is not writable",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: a write outside the session fails",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: a hard link of the store sentinel fails",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: a clone (cp -c) of the store sentinel fails",
+          "status": "PASS",
+          "detail": "exit 1"
+        },
+        {
+          "name": "default: a TCP connect fails",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: an AF_UNIX connect fails",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: the kernel is Node itself, the supervisor's child, marked seatbelt",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "default: no process named codex",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: readable: store",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: readable: store (listing)",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: readable: store (symlinked tier target)",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: readable: store (symlinked tier target) (listing)",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: readable: ~/.config/cua",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: readable: ~/.config/cua (listing)",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: readable: $CUA_HOME/state",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: readable: $CUA_HOME/state (listing)",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: readable: $CUA_HOME/remote (enrolled device)",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: readable: $CUA_HOME/remote (enrolled device) (listing)",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: readable: $CUA_HOME/chrome",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: readable: $CUA_HOME/chrome (listing)",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: readable: another session's run directory",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: readable: another session's run directory (listing)",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: a package resolves and reads from the runtime's module tree",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: TMPDIR is the session's own, under $CUA_HOME/run/<id>",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: the run directory is writable",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: TMPDIR is writable",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: a write outside the session succeeds",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: no process named codex",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "a store root missing at launch is not created",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "a store root created mid-session stays denied",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "a store root created mid-session cannot be listed",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "a store root missing at launch is not created (through a symlinked ~/.config)",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "a store root created mid-session stays denied (through a symlinked ~/.config)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "a store root created mid-session cannot be listed (through a symlinked ~/.config)",
+          "status": "PASS",
+          "detail": "EPERM"
+        }
+      ],
+      "evidence": {
+        "modes": [
+          "scoped",
+          "default",
+          "disabled"
+        ],
+        "package": "@img/colour"
+      }
+    },
+    {
+      "id": 12,
+      "title": "cua's sandbox on the macOS vendor host (#115 M2): the deny list, writes, script directory, links and network through the compat executable",
+      "status": "PASS",
+      "checks": [
+        {
+          "name": "scoped: denied: store",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "scoped: denied: store (listing)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "scoped: denied: store (symlinked tier target)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "scoped: denied: store (symlinked tier target) (listing)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "scoped: denied: ~/.config/cua",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "scoped: denied: ~/.config/cua (listing)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "scoped: denied: $CUA_HOME/state",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "scoped: denied: $CUA_HOME/state (listing)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "scoped: denied: $CUA_HOME/remote (enrolled device)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "scoped: denied: $CUA_HOME/remote (enrolled device) (listing)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "scoped: denied: $CUA_HOME/chrome",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "scoped: denied: $CUA_HOME/chrome (listing)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "scoped: denied: another session's run directory",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "scoped: denied: another session's run directory (listing)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "scoped: a package resolves and reads from the runtime's module tree",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "scoped: TMPDIR is the session's own, under $CUA_HOME/run/<id>",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "scoped: the run directory is writable",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "scoped: TMPDIR is writable",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "scoped: a write outside the session fails",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "scoped: a hard link of the store sentinel fails",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "scoped: a clone (cp -c) of the store sentinel fails",
+          "status": "PASS",
+          "detail": "exit 1"
+        },
+        {
+          "name": "scoped: a TCP connect fails",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "scoped: an AF_UNIX connect fails",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "scoped: the kernel is Node itself, node_repl's child, marked seatbelt (cua's compat executable exec'd it)",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "scoped: node_repl's script directory lies in the session temp",
+          "status": "PASS",
+          "detail": 1
+        },
+        {
+          "name": "scoped: the kernel reads its script directory",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "scoped: the kernel cannot write into its script directory",
+          "status": "PASS",
+          "detail": "EPERM/EPERM"
+        },
+        {
+          "name": "scoped: no process named codex",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "default: denied: store",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: denied: store (listing)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: denied: store (symlinked tier target)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: denied: store (symlinked tier target) (listing)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: denied: ~/.config/cua",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: denied: ~/.config/cua (listing)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: denied: $CUA_HOME/state",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: denied: $CUA_HOME/state (listing)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: denied: $CUA_HOME/remote (enrolled device)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: denied: $CUA_HOME/remote (enrolled device) (listing)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: denied: $CUA_HOME/chrome",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: denied: $CUA_HOME/chrome (listing)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: denied: another session's run directory",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: denied: another session's run directory (listing)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: a package resolves and reads from the runtime's module tree",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "default: TMPDIR is the session's own, under $CUA_HOME/run/<id>",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "default: the run directory is not writable",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: TMPDIR is not writable",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: a write outside the session fails",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: a hard link of the store sentinel fails",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: a clone (cp -c) of the store sentinel fails",
+          "status": "PASS",
+          "detail": "exit 1"
+        },
+        {
+          "name": "default: a TCP connect fails",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: an AF_UNIX connect fails",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "default: the kernel is Node itself, node_repl's child, marked seatbelt (cua's compat executable exec'd it)",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "default: node_repl's script directory lies in the session temp",
+          "status": "PASS",
+          "detail": 1
+        },
+        {
+          "name": "default: the kernel reads its script directory",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "default: the kernel cannot write into its script directory",
+          "status": "PASS",
+          "detail": "EPERM/EPERM"
+        },
+        {
+          "name": "default: no process named codex",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: readable: store",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: readable: store (listing)",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: readable: store (symlinked tier target)",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: readable: store (symlinked tier target) (listing)",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: readable: ~/.config/cua",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: readable: ~/.config/cua (listing)",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: readable: $CUA_HOME/state",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: readable: $CUA_HOME/state (listing)",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: readable: $CUA_HOME/remote (enrolled device)",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: readable: $CUA_HOME/remote (enrolled device) (listing)",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: readable: $CUA_HOME/chrome",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: readable: $CUA_HOME/chrome (listing)",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: readable: another session's run directory",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: readable: another session's run directory (listing)",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: a package resolves and reads from the runtime's module tree",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: TMPDIR is the session's own, under $CUA_HOME/run/<id>",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: the run directory is writable",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: TMPDIR is writable",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: a write outside the session succeeds",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "disabled: no process named codex",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "across sessions: an own-host kernel cannot write into a vendor-host session's script directory",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "across sessions: an own-host kernel cannot read a vendor-host session's trusted-worker.js",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "across sessions: an own-host kernel cannot write into or list a vendor-host session's run directory",
+          "status": "PASS",
+          "detail": "EPERM/EPERM"
+        },
+        {
+          "name": "across sessions: the vendor-host session's trusted-worker.js is what node_repl wrote",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "a store root missing at launch is not created",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "a store root created mid-session stays denied",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "a store root created mid-session cannot be listed",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "a store root missing at launch is not created (through a symlinked ~/.config)",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "a store root created mid-session stays denied (through a symlinked ~/.config)",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "a store root created mid-session cannot be listed (through a symlinked ~/.config)",
+          "status": "PASS",
+          "detail": "EPERM"
+        }
+      ],
+      "evidence": {
+        "modes": [
+          "scoped",
+          "default",
+          "disabled"
+        ]
+      }
+    },
+    {
+      "id": 13,
+      "title": "the macOS computer route through cua's compat executable (#115 acceptance 6): native calls, the helper's app-server, confinement",
+      "status": "PASS",
+      "checks": [
+        {
+          "name": "the session started (banner cell)",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "native call listApps#1 succeeds through the compat executable's app-server",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "native call Finder getApp+getAXState#1 succeeds through the compat executable's app-server",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "native call listApps#2 succeeds through the compat executable's app-server",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "native call Finder getAXState#2 succeeds through the compat executable's app-server",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "the launch names cua's compat executable as CODEX_CLI_PATH",
+          "status": "PASS",
+          "detail": "<repo>/bin/cua-codex-compat"
+        },
+        {
+          "name": "the run's own helper runs app-server from the compat executable (its CODEX_CLI_PATH)",
+          "status": "PASS",
+          "detail": "1 helper(s)"
+        },
+        {
+          "name": "the confinement cell ran",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "the kernel's TMPDIR is its session's own",
+          "status": "PASS",
+          "detail": "as expected"
+        },
+        {
+          "name": "the kernel writes its run directory and session temp",
+          "status": "PASS",
+          "detail": "ok/ok"
+        },
+        {
+          "name": "node_repl's script directory lies in the session temp and the kernel cannot write into it",
+          "status": "PASS",
+          "detail": "1 dir(s), EPERM"
+        },
+        {
+          "name": "writes outside the session fail",
+          "status": "PASS",
+          "detail": "EPERM/EPERM/EPERM"
+        },
+        {
+          "name": "the kernel cannot list cua's home",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "a hard link into the session fails",
+          "status": "PASS",
+          "detail": "EPERM"
+        },
+        {
+          "name": "TCP and AF_UNIX connects fail",
+          "status": "PASS",
+          "detail": "EPERM/EPERM/EPERM"
+        },
+        {
+          "name": "no process named codex runs under the session",
+          "status": "PASS",
+          "detail": "0"
+        },
+        {
+          "name": "the run's helper quit by itself or was quit by its pid, and is verified gone; no other was signalled",
+          "status": "PASS",
+          "detail": "{\"started\":1,\"quitByThemselves\":1,\"quitByHarness\":0,\"stillAlive\":0,\"uncertain\":0,\"unclassified\":0,\"foreignSeen\":0}"
+        },
+        {
+          "name": "the run completed without a driver error",
+          "status": "PASS",
+          "detail": "as expected"
+        }
+      ]
+    }
+  ]
+}

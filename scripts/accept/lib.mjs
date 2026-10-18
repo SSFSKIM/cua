@@ -44,8 +44,10 @@ export function doctorHealth({code, doctor, informational = DOCTOR_INFORMATIONAL
 
 // Skips that are not missing coverage on this host (#157), each by its exact reason and only while its gate is really
 // absent: a vendor differential needs a local research tree (its variable unset, or naming a path that does not exist;
-// a clean checkout must not need one, acceptance 10), and a platform-only test cannot run elsewhere. A declared
-// differential that still skips with its tree present, and any other skip, is missing coverage.
+// a clean checkout must not need one, acceptance 10); a platform-only test cannot run elsewhere; and a test of an npm
+// package skips in a checkout without it (acceptance 10's clean clone, which proves npm test runs without
+// node_modules, README). A declared skip whose gate is present (the tree there, the package installed), and any other
+// skip, is missing coverage.
 export const DECLARED_SKIPS = [
   {reason: 'set CUA_VENDOR_CUA to the readable @oai/cua directory to compare with the vendor facade', researchTree: 'CUA_VENDOR_CUA'},
   {reason: 'set CUA_VENDOR_CUA to the readable @oai/cua directory to compare with the vendor Sky facade', researchTree: 'CUA_VENDOR_CUA'},
@@ -53,6 +55,11 @@ export const DECLARED_SKIPS = [
   {reason: 'std\'s SUN_LEN refusal is the Linux vendor\'s connect', onlyOn: 'linux'},
   {reason: 'non-UTF-8 file names exist only on Linux (APFS refuses them with EILSEQ)', onlyOn: 'linux'},
   {reason: 'Linux only: a systemd user unit', onlyOn: 'linux'},
+  {reason: 'needs the ws package: run npm ci', dependency: 'ws'},
+  {reason: 'playwright-core not installed (npm ci): the drift check needs the pinned package', dependency: 'playwright-core'},
+  {reason: 'markdown-it not installed (npm ci): the drift check needs the pinned package', dependency: 'markdown-it'},
+  {reason: 'meriyah not installed (npm ci): the drift check needs the pinned package', dependency: 'meriyah'},
+  {reason: 'zod is not installed (npm ci)', dependency: 'zod'},
 ];
 // Each skipped test's reason in TAP output (`ok N - name # SKIP reason`, nested subtests too) -> Map reason -> count.
 export function skipReasons(text) {
@@ -60,9 +67,11 @@ export function skipReasons(text) {
   for (const [, reason = ''] of text.replace(/\x1b\[[0-9;]*m/g, '').matchAll(/^\s*ok \d+ - .*? # SKIP(?: (.*?))?\s*$/gm)) tally.set(reason, (tally.get(reason) ?? 0) + 1);
   return tally;
 }
-// -> {accepted: [{reason, count}], other: [{reason, count}]} for this host (`env`, `platform`, `exists`).
-export function judgeSkips(tally, {env = process.env, platform = process.platform, exists = existsSync, declared = DECLARED_SKIPS} = {}) {
-  const applies = d => d.researchTree ? !env[d.researchTree] || !exists(env[d.researchTree]) : d.onlyOn !== platform;
+// -> {accepted: [{reason, count}], other: [{reason, count}]} for this host (`env`, `platform`, `exists`) and the
+// checkout the suite ran in (`root`, whose node_modules a dependency entry looks in).
+export function judgeSkips(tally, {env = process.env, platform = process.platform, root, exists = existsSync, declared = DECLARED_SKIPS} = {}) {
+  const applies = d => d.researchTree ? !env[d.researchTree] || !exists(env[d.researchTree])
+    : d.dependency ? Boolean(root) && !exists(join(root, 'node_modules', d.dependency, 'package.json')) : d.onlyOn !== platform;
   const accepted = [], other = [];
   for (const [reason, count] of tally) (declared.some(d => d.reason === reason && applies(d)) ? accepted : other).push({reason, count});
   return {accepted, other};

@@ -159,7 +159,7 @@ async function suites(cwd, {label}) {
   const {totals} = summary;
   const failed = [...node.stdout.matchAll(/^not ok \d+ - (.*)$/gm)].map(m => m[1]);
   // Skips declared not applicable on this host (lib.mjs DECLARED_SKIPS), judged against the suite's own environment.
-  const verdict = suiteVerdict({code: node.code, ...summary, skips: judgeSkips(skipReasons(node.stdout), {env: suiteEnv()})});
+  const verdict = suiteVerdict({code: node.code, ...summary, skips: judgeSkips(skipReasons(node.stdout), {env: suiteEnv(), root: cwd})});
   out.push(check(`${label}npm test`, verdict.status,
     totals ? `${verdict.reason}; ${totals.fail} failed${failed.length ? ` (${failed.join('; ')})` : ''}, ${totals.skipped} skipped, ${totals.todo} TODO in ${seconds(node.ms)}${noisy(node.stdout + node.stderr) ? '; output has warnings' : ''}` : `${ended(node)}; ${verdict.reason}${failed.length ? ` (failed before that: ${failed.join('; ')})` : ''}`,
     {totals}));

@@ -400,5 +400,11 @@ test('declared skips (#157): exact reasons, only while their gate is absent, lis
   assert.match(blocked.reason, /not declared: 1 × "the own kernel needs Node 24/);
   assert.equal(suiteVerdict({code: 0, totals: {...totals, skipped: 4, pass: 1}, skips: onMac}).status, 'BLOCKED');
   assert.equal(suiteVerdict({code: 0, totals: {...totals, todo: 1, pass: 1}, skips: onMac}).status, 'BLOCKED');
-  assert.ok(DECLARED_SKIPS.every(d => Boolean(d.researchTree) !== Boolean(d.onlyOn)));
+  assert.ok(DECLARED_SKIPS.every(d => [d.researchTree, d.onlyOn, d.dependency].filter(Boolean).length === 1));
+  // A package-gated skip: accepted only in a checkout without that package.
+  const ws = skipReasons('ok 1 - relay # SKIP needs the ws package: run npm ci');
+  const wsTotals = {tests: 2, pass: 1, fail: 0, cancelled: 0, skipped: 1, todo: 0};
+  assert.equal(suiteVerdict({code: 0, totals: wsTotals, skips: judgeSkips(ws, {env: {}, root: '/clone', exists: () => false})}).status, 'PASS');
+  assert.equal(suiteVerdict({code: 0, totals: wsTotals, skips: judgeSkips(ws, {env: {}, root: '/repo', exists: path => path === '/repo/node_modules/ws/package.json'})}).status, 'BLOCKED');
+  assert.equal(suiteVerdict({code: 0, totals: wsTotals, skips: judgeSkips(ws, {env: {}})}).status, 'BLOCKED');
 });

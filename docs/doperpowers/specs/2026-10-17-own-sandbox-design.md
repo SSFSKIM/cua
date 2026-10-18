@@ -922,6 +922,20 @@ Dependencies on other work: #79 merged before M2. #117 retires the compat execut
   Rationale: each follows the Design and closes a gap the task and live reviews found.
   Date/Author: 2026-10-18, execution session.
 
+- Decision: Linux `default` mode denies `run/` too, with the kernel's cwd moved out of it (2026-10-18, M3; ruled by the dispatching session in place of reporting an exposure). The upstream helper's `--permission-profile` re-binds only writable roots inside a denied directory (`U@83086188:linux-sandbox/src/bwrap.rs:414-430,566-669,790-800`). Under `default`, which has no write roots, `run/<id>` could not be re-exposed for reading, and the first build left `run/` readable in that mode. The default-mode kernel needs only its working directory and its lifeline FIFO from the session, so both now live in `$CUA_HOME/kernel/<session>/`. That directory, with its `tmp/` as TMPDIR, is created with the session and removed with it, including by the stale sweep. The deny list is the same in every mode, so other sessions' run directories are denied under `default` as under `scoped`. The GCE check showed EACCES for another session's run directory under `default`.
+  Rationale: the owner's ruling denies the kernel other sessions' run directories. The shape that keeps it costs one directory per session.
+  Date/Author: 2026-10-18, execution session.
+- Decision: M3's other choices (2026-10-18, task 6).
+  - The helper is built from rust-v0.163.0 (`83086188`) in run 39110168611. It is released as `linux-sandbox-rust-v0.163.0` with upstream's LICENSE and NOTICE; the release tag targets da0c530. Its build-provenance attestation names the feature branch's run, and M3 merges with a merge commit so that commit stays in main's history.
+  - The build replaces `--locked` with a lockfile-drift check, remaps paths and strips the binary. The pin records each asset's length.
+  - Every child launch re-hashes the helper, and the helper must be a regular executable file; install restores mode 0755 on the pinned bytes.
+  - The worker's network on Linux computer sessions comes through `CUA_REPL_WORKER_NETWORK`.
+  - Linux never falls back to the vendor host: an explicit vendor selection is refused, and a missing Node 24 refuses.
+  - `launch_app` on Linux starts only an id `list_apps` returned, resolved to a desktop entry outside every sandbox write root, through `gio launch` outside the sandbox. The scoped preflight refuses an XDG applications root that overlaps a write root.
+  - The parity transition entry lists 19 native cases and no cell differences.
+  Rationale: each follows the Design; the review found the desktop-entry and executable-bit gaps, which were fixed before merge.
+  Date/Author: 2026-10-18, execution session.
+
 ## Outcomes & Retrospective
 
 Pending — written at finish.

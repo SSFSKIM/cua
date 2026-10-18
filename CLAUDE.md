@@ -26,6 +26,10 @@ Working rules:
 - Permission dialogs need the GUI login session: run live GUI steps from the console, not over SSH. Tests and probes
   that touch secrets use a temporary `$HOME`, never the owner's real `~/.config/claude-secrets`. A terminal without Full Disk Access cannot read Chrome's
   user-data directory on macOS 27.
+- Sandbox, runtime and secrets changes are proven headless on GitHub's hosted macOS runner (ci-kit gate `sandbox-live`,
+  `scripts/sandbox-probe/hosted-gate.sh`). The Mac mini is MAWS's shared CI runner: take to it only what needs the owner, a
+  TCC grant or its own state (`scripts/mini-rules.mjs`'s header). A change that moves a sandbox fingerprint on purpose
+  re-records `docs/evidence/2026-10-18-hosted-macos-gate/baseline/` in the same pull request.
 - Board Write Hard Gate: issue creation and every state/edge change MUST go through the doperpowers issue-tracker
   scripts, never raw `gh issue edit` for `status:*` labels or sub-issue/dependency edges. At registration, category +
   status + parent + blocked-by are each either set or consciously N/A; silence is not N/A.

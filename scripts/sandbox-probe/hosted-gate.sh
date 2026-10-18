@@ -109,5 +109,10 @@ step "own-sandbox, vendor host" own_sandbox vendor
 step "probe-secrets, synthetic store" probe_secrets
 
 printf '\nhosted-gate summary\n%s' "$results" >&2
-if [ "$failed" -gt 0 ]; then echo "hosted-gate: $failed step(s) failed; the reports are in $OUT" >&2; exit 1; fi
+if [ "$failed" -gt 0 ]; then
+  if printf '%s' "$results" | grep -q '^FAIL oracles: .* equals the hosted baseline' && ! node -e 'const [a, b] = process.argv.slice(1).map(f => JSON.parse(require("fs").readFileSync(f, "utf8"))); process.exit(a.productVersion === b.productVersion && a.buildVersion === b.buildVersion ? 0 : 1)' "$BASELINE/image.json" "$OUT/oracles/image.json" 2>/dev/null; then
+    echo "hosted-gate: this runner's macOS is not the baseline's: a fingerprint difference may be the OS's, not the change's. Compare the two images above; if only the OS moved, record the new baseline from a run of main's code (this gate's artifact, oracles/), as docs/evidence/2026-10-18-hosted-macos-gate/README.md says" >&2
+  fi
+  echo "hosted-gate: $failed step(s) failed; the reports are in $OUT" >&2; exit 1
+fi
 echo "hosted-gate: every step passed" >&2

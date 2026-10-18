@@ -979,6 +979,11 @@ Dependencies on other work: #79 merged before M2. #117 retires the compat execut
   - Until #162 settles it, native-baseline's task cells and accept-native's TextEdit fixture send super+n, typing, super+w and super+q only while TextEdit is frontmost (`scripts/accept/key-guard.mjs`). Otherwise they skip the key, record it and fail the run.
   - The release notes state the cost.
   Date/Author: 2026-10-18, execution session.
+- Decision: the headless acceptance runs on GitHub's hosted macOS runner (2026-10-18, #159, ci-kit gate `sandbox-live`, `scripts/sandbox-probe/hosted-gate.sh`). It covers acceptance 1 to 5 on both macOS hosts (own-sandbox), 6 and 7's live probe-secrets roundtrip against its synthetic store, 8's port-vs-capture and 10's doctor row, on a runtime `cua install` fetches into a scratch home on each run. The mini keeps what needs the owner, a TCC grant or its own state.
+  - M0's fingerprint pairs (golden kernel against cua's kernel, signed CLI against cua's worker) stay the mini's. The same cua code fingerprinted on the hosted macOS 26.6.2 and on the mini's macOS 27.0 differs only in `file-link` on six system paths: denied on the mini, allowed on the hosted runner. That is the OS, not the profile, so the hosted gate judges its fingerprints equal to a baseline recorded on its own image (`docs/evidence/2026-10-18-hosted-macos-gate/baseline/`, pair `hosted-baseline/cua` in `compare.mjs`) instead of widening the M0 pairs' deviations.
+  - port-vs-capture is a rendering, not an OS answer, so M0's captures replay on any Mac: `--relocate` moves a capture from the mini's scratch root to the runner's (`compare.mjs` relocateCapture), and `compareFingerprints` reads env and cwd relative to each side's labelled roots. Both leave the mini's judgements unchanged (M4's four recomputed: ok).
+  - The fingerprint now creates the cua home's `state/`, as it creates the other targets: a fresh install has none, and `sandbox_check` reports a missing path as denied.
+  Date/Author: 2026-10-18, #159 execution session.
 
 ## Outcomes & Retrospective
 

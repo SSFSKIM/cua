@@ -126,9 +126,9 @@ function progressReporter() {
 }
 
 // The runtime first, then the Codex CLI's leftovers in this home are removed (src/runtime/codex-leftovers.mjs: each
-// named in the output, none of them a failure), then on Linux cua's sandbox helper (#115 M3: what confines both children there; --sandbox-helper
-// takes a local copy of the pinned asset instead of downloading it), then the own REPL host's Node (spec
-// 2026-10-14-own-repl-host-design.md, Decision Log 2026-10-16), each verified and activated on its own. A failed helper
+// named in the output, none of them a failure), then on Linux cua's sandbox helper (#115 M3: what confines both
+// children there; --sandbox-helper takes a local copy of the pinned asset instead of downloading it), then the own
+// REPL host's Node (spec 2026-10-14-own-repl-host-design.md, Decision Log 2026-10-16), each verified and activated on its own. A failed helper
 // or Node step fails the command after the runtime is in place, saying so; --no-node skips the Node step (an offline
 // install without the tarball), and a platform with no Node pin has none to take. Either way the own host then runs on
 // CUA_NODE or the user's Node 24, else macOS sessions keep the vendor host and Linux sessions are refused.

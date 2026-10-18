@@ -24,3 +24,8 @@ gates:
       done
       claude plugin validate .
       npm run test:mods
+  - name: spike159
+    lane: hosted-macos
+    timeout: 120
+    on: [ci-ref, dispatch]
+    run: bash scripts/spike-159/hosted.sh

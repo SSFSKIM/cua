@@ -1,50 +1,7 @@
-// Pure helpers behind scripts/probe-runtime.mjs: relocated paths, the probe's allowlisted child environment,
-// process-tree classification, socket-holder parsing and evidence sanitization. No I/O here, so the verdict-bearing
-// logic is testable without the vendor runtime.
-
-// Only these ambient variables reach the vendor runtime; everything else (NODE_REPL_*, SKY_*, BROWSER_USE_*,
-// NODE_OPTIONS, CODEX_HOME, ...) is dropped so a stray override cannot redirect the relocated launch.
-const AMBIENT_ALLOWLIST = ['HOME', 'USER', 'LOGNAME', 'TMPDIR', 'LANG', 'LC_ALL', 'LC_CTYPE', '__CF_USER_TEXT_ENCODING'];
-const FIXED_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
-
-export function runtimePaths({home, release}) {
-  const root = `${home}/runtimes/${release}`;
-  const moduleDir = `${root}/cua_node/lib/node_modules`;
-  return {
-    root,
-    node: `${root}/cua_node/bin/node`,
-    nodeRepl: `${root}/cua_node/bin/node_repl`,
-    moduleDir,
-    cuaRepl: `${moduleDir}/@oai/cua-repl/bin/cua-repl.mjs`,
-    codexCli: `${root}/CodexCLI.app/Contents/MacOS/codex`,
-    codexCliApp: `${root}/CodexCLI.app`,
-    skyServiceApp: `${moduleDir}/@oai/sky/Codex Computer Use.app`,
-    skyVendorService: `${moduleDir}/@oai/sky/dist/project/cua/sky_js/src/service.js`,
-    codexHome: `${home}/state/codex`,
-  };
-}
-
-export function probeEnv({ambient, paths, wrapperPath, trustedCodeDirs, allowUnixSockets = []}) {
-  const env = {};
-  for (const key of AMBIENT_ALLOWLIST) if (typeof ambient[key] === 'string') env[key] = ambient[key];
-  Object.assign(env, {
-    PATH: FIXED_PATH,
-    CODEX_HOME: paths.codexHome,
-    CUA_REPL_NODE_REPL_PATH: paths.nodeRepl,
-    CUA_REPL_ENABLED_SURFACES: 'computer',
-    NODE_REPL_NODE_PATH: paths.node,
-    NODE_REPL_NODE_MODULE_DIRS: paths.moduleDir,
-    NODE_REPL_TRUSTED_CODE_PATHS: [paths.codexHome, paths.moduleDir, ...trustedCodeDirs].join(':'),
-    NODE_REPL_TRUSTED_SERVICES: JSON.stringify({sky: wrapperPath}),
-    NODE_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS: '1000',
-    NODE_REPL_DISABLE_ANALYTICS: '1',
-    CODEX_CLI_PATH: paths.codexCli,
-    SKY_CUA_SERVICE_PATH: paths.skyServiceApp,
-    CUA_SKY_VENDOR_SERVICE: paths.skyVendorService,
-  });
-  if (allowUnixSockets.length) env.NODE_REPL_SANDBOX_ALLOWED_UNIX_SOCKETS = allowUnixSockets.join(':');
-  return env;
-}
+// Pure helpers behind scripts/probe-runtime.mjs and verify.mjs: process-tree classification, socket-holder parsing and
+// evidence sanitization. No I/O here, so the verdict-bearing logic is testable without the vendor runtime. (The probe's
+// launch is cua serve's own, src/runtime/launch.mjs buildLaunch, since #115 M4: a copy here had drifted to the Codex
+// CLI cua no longer installs.)
 
 // `ps -axo pid=,ppid=,comm=` text -> the probe child and everything below it, breadth-first. `comm` is the full
 // executable path, which may contain spaces ("Codex Computer Use.app"), so it is the rest of the line.

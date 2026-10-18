@@ -13,7 +13,7 @@
 // directory. Under a managed profile node_repl refuses to start a kernel when a write root covers a trusted code path
 // ("Trusted RPC dependency must resolve within a configured trusted code path"); assertSandboxFits refuses that launch
 // first, for either host, saying which root and which path, and also one whose write roots would cover what cua keeps
-// private (CODEX_HOME, the kernel's deny list, cua's Node and its sandbox helper).
+// private (the macOS vendor host's CODEX_HOME, the kernel's deny list, cua's Node and its sandbox helper).
 import {accessSync, constants, lstatSync, readlinkSync, realpathSync, statSync} from 'node:fs';
 import {basename, dirname, isAbsolute, join, relative, resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';

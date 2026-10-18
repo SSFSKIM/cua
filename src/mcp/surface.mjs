@@ -167,8 +167,9 @@ const TITLE = 'Host notes:';
 const COMPUTER_HEAD = '- Use when a macOS app\'s GUI is the only way; the first js call returns the API docs.';
 const LINUX_COMPUTER_HEAD = '- Use when a Linux app\'s GUI is the only way; the first js call returns the API docs.';
 const BROWSER_HEAD = '- Use for the user\'s existing Chrome profiles when no API or skill fits; the first js call returns the API docs.';
-// The store is a plain directory any cell can read under every sandbox mode (the vendor's read-deny would bind the
-// trusted worker too); the rule keeps the agent on the reference. It names the store's root, so it covers the
+// The store is a plain directory. Under scoped and default cua's sandbox denies it to the cells' kernel (a read fails
+// with EPERM or EACCES) while the trusted worker, which substitutes from it, still reads it (#115); under disabled any
+// cell can read it. The rule keeps the agent on the reference either way. It names the store's root, so it covers the
 // projects' directories beneath it (the project tier) as well.
 const SECRETS_NOTE = '- Never read ~/.config/claude-secrets; type secrets as {{secret:KEY}}.';
 const GENERAL_NOTES = [

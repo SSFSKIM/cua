@@ -4,13 +4,16 @@
 //
 //   node scripts/probe-runtime.mjs --home "$CUA_HOME" [--release 26.928.40906-darwin-arm64] [--out DIR]
 //
-// Expects the release already extracted at $CUA_HOME/runtimes/<release>/{cua_node,CodexCLI.app} (M2's installer will
-// own that step). For each variant (no sandbox socket allowance, then an explicit one) it launches the runtime as an
-// MCP stdio child, runs initialize, tools/list, one js cell (`cua.getState()` inventory counts only, the probe
-// wrapper's report, and whether untrusted cell code can reach a probe-owned stand-in socket for the M4 secrets broker,
-// removed since by issue #66), and the hidden turn_ended; snapshots the owned process tree and the native socket's
-// holder; then shuts the child down. Elicitations are declined, never accepted. No GUI actions, no app approvals, no
-// secrets.
+// Expects the release installed by `cua install` in that home (resolveRuntime). It launches the runtime as the vendor
+// host exactly as `cua serve` does (src/runtime/launch.mjs buildLaunch, under a claimed run/ session: cua's compat
+// executable as CODEX_CLI_PATH, so both children run under cua's own sandbox and the native helper's app-server is
+// cua's, #115; the per-session TMPDIR and compat settings), with the probe's wrapper as the trusted sky service, as an
+// MCP stdio child; runs initialize, tools/list, one js cell (`cua.getState()` inventory counts only, the probe
+// wrapper's report, and whether the trusted worker or untrusted cell code can reach a probe-owned unix socket), and the
+// hidden turn_ended; snapshots the owned process tree and the native socket's holder; then shuts the child down and
+// removes its session. Elicitations are declined, never accepted. No GUI actions, no app approvals, no secrets. There is
+// one variant, `none`: the socket allowance variant is gone, since cua's compat executable refuses
+// node_repl's --allow-unix-socket (cua never grants one).
 // Writes sanitized JSON evidence to --out (default $CUA_HOME/probe/runtime-probe.json).
 import {spawn, spawnSync} from 'node:child_process';
 import {createServer} from 'node:net';
@@ -21,19 +24,24 @@ import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createInterface} from 'node:readline';
 import {parseArgs} from 'node:util';
-import {runtimePaths, probeEnv, descendants, classifyProcesses, socketHolders, sanitize} from './probe/lib.mjs';
+import {descendants, classifyProcesses, socketHolders, sanitize} from './probe/lib.mjs';
+import {buildLaunch, createLaunchDirs, removeLaunchDirs} from '../src/runtime/launch.mjs';
+import {resolveRuntime} from '../src/runtime/manifest.mjs';
+import {claimRunSession} from '../src/runtime/run-dir.mjs';
+import {SEATBELT_EXEC} from '../src/sandbox/seatbelt.mjs';
 
 const {values: opts} = parseArgs({options: {
   home: {type: 'string', default: process.env.CUA_HOME},
   release: {type: 'string', default: '26.928.40906-darwin-arm64'},
   out: {type: 'string'},
-  variants: {type: 'string', default: 'none,allow'},
 }});
 if (!opts.home) fail('pass --home or set CUA_HOME to an explicit scratch directory');
 if (platform() !== 'darwin' || arch() !== 'arm64') fail(`unsupported platform ${platform()}-${arch()}; the pinned runtime is darwin-arm64`);
 
 const home = realpathSync(opts.home);
-const paths = runtimePaths({home, release: opts.release});
+let runtime;
+try { runtime = resolveRuntime({home, release: opts.release}); } catch (error) { fail(`${error.message}${error.hint ? `; ${error.hint}` : ''}`); }
+const paths = {...runtime.paths, root: runtime.root};
 const probeDir = dirname(fileURLToPath(import.meta.url)) + '/probe';
 const wrapperPath = probeDir + '/sky-wrapper-fixture.mjs';
 const outFile = opts.out ? join(opts.out, 'runtime-probe.json') : join(home, 'probe', 'runtime-probe.json');
@@ -45,8 +53,6 @@ function fail(message) { process.stderr.write(`probe-runtime: ${message}\n`); pr
 function run(cmd, args) { const r = spawnSync(cmd, args, {encoding: 'utf8'}); return {status: r.status, output: (r.stdout ?? '') + (r.stderr ?? '')}; }
 const sh = (cmd, args) => run(cmd, args).output;
 
-for (const key of ['node', 'nodeRepl', 'cuaRepl', 'codexCli', 'skyServiceApp', 'skyVendorService'])
-  if (!existsSync(paths[key])) fail(`missing ${key} at ${paths[key]}; extract the pinned release under ${paths.root}`);
 
 function checkSignature(path) {
   const verify = run('codesign', ['--verify', '--deep', '--strict', path]);
@@ -124,16 +130,19 @@ const alive = pid => { try { process.kill(pid, 0); return true; } catch { return
 async function runVariant(name) {
   const runDir = join(home, 'run');
   mkdirSync(runDir, {recursive: true, mode: 0o700});
-  mkdirSync(paths.codexHome, {recursive: true, mode: 0o700});
   const socketPath = join(runDir, `probe-${name}.sock`);
   const nonce = randomUUID();
   const kernelNonce = randomUUID();
   const broker = await startEchoBroker(socketPath, {trustedWorker: nonce, kernel: kernelNonce});
-  const env = probeEnv({ambient: process.env, paths, wrapperPath, trustedCodeDirs: [probeDir], allowUnixSockets: name === 'allow' ? [socketPath] : []});
   const sessionId = randomUUID();
   const turnId = randomUUID();
+  const launch = buildLaunch({runtime, home, sessionId, surfaces: ['computer'], services: {sky: wrapperPath}, secretsUnavailable: 'secrets_disabled',
+    replHost: {host: 'vendor', reason: 'explicit'}, ambient: process.env});
+  const claim = claimRunSession(home, sessionId);
+  createLaunchDirs(launch);
+  const {env} = launch;
   const result = {name, sandboxAllowance: env.NODE_REPL_SANDBOX_ALLOWED_UNIX_SOCKETS ?? null, helperBefore: helperSnapshot(), elicitations: [], serverRequests: [], nonJsonLines: 0, stderrTail: ''};
-  const child = spawn(paths.node, [paths.cuaRepl], {env, cwd: home, stdio: ['pipe', 'pipe', 'pipe']});
+  const child = spawn(launch.command, launch.args, {env, cwd: launch.cwd, stdio: ['pipe', 'pipe', 'pipe']});
   child.stderr.on('data', d => { result.stderrTail = (result.stderrTail + d).slice(-2000); });
   const exited = new Promise(resolve => child.on('exit', (code, signal) => resolve({code, signal})));
   const client = mcpClient(child, result);
@@ -168,7 +177,7 @@ nodeRepl.write("CUA_PROBE_RESULT " + JSON.stringify({probe: __probe, state: __st
     result.js = {isError: call.isError === true, apiDocumentChars: text.length, report: marker ? JSON.parse(marker[1]) : null, errorText: marker ? null : text.slice(-1500)};
     result.processes = descendants(sh('ps', ['-axo', 'pid=,ppid=,comm=']), child.pid);
     for (const p of result.processes) p.args = sh('ps', ['-o', 'args=', '-p', String(p.pid)]).trim().slice(0, 2000);
-    result.classification = classifyProcesses(result.processes, {relocatedRoot: paths.root});
+    result.classification = classifyProcesses(result.processes, {relocatedRoot: paths.root, systemSandbox: [SEATBELT_EXEC]});
     result.helperAfter = helperSnapshot();
     try {
       result.turnEnded = {ok: true, result: await client.request('tools/call', {name: 'turn_ended', arguments: {hook_event_name: 'Stop', session_id: sessionId, turn_id: turnId}, _meta: meta(randomUUID())}, 30_000)};
@@ -189,6 +198,8 @@ nodeRepl.write("CUA_PROBE_RESULT " + JSON.stringify({probe: __probe, state: __st
     for (const p of leftover) if (p.executable.startsWith(paths.root + '/')) process.kill(p.pid, 'SIGTERM');
     broker.server.close();
     rmSync(socketPath, {force: true});
+    try { removeLaunchDirs(launch); } catch (error) { result.cleanupError = error.code ?? error.message; }
+    claim.release();
   }
   return result;
 }
@@ -200,10 +211,10 @@ const evidence = {
   hostNode: process.version,
   // The launcher's parent: shows whether anything OpenAI-signed sits above the vendor node.
   launcherParent: {executable: process.execPath, team: sh('codesign', ['-dvv', process.execPath]).match(/^TeamIdentifier=(.*)$/m)?.[1] ?? 'none'},
-  signatures: [paths.node, paths.nodeRepl, paths.codexCliApp, paths.skyServiceApp].map(checkSignature),
+  signatures: [paths.node, paths.nodeRepl, paths.skyServiceApp].map(checkSignature),
   variants: [],
 };
-for (const name of opts.variants.split(',')) evidence.variants.push(await runVariant(name));
+evidence.variants.push(await runVariant('none'));
 
 const okVariant = evidence.variants.find(v => v.js?.report?.state?.ok);
 const report = okVariant?.js.report;

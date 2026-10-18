@@ -99,7 +99,7 @@ test('compareFingerprints reads each side\'s env and cwd relative to its own lab
     const roots = {'cua-home': `${root}/cuahome`, home: `${root}/userhome`, checkout: `${root}/repo`};
     const value = fp({'file-read-data home': 'allow', 'file-read-data cua-home': 'deny', 'file-read-data checkout': 'allow'}, {HOME: roots.home,
       TMPDIR: `${roots['cua-home']}/run/0fa27729-814e-47fb-8f46-66727511dc72/tmp`, CUA_REPL_NODE_MODULE_DIRS: `${roots['cua-home']}/runtimes/r/lib`,
-      NODE_PATH: `${roots.checkout}/src:${roots.home}/lib`, ...extra});
+      NODE_PATH: `${roots.checkout}/src:${roots.home}/lib`, DENY: JSON.stringify({deny: [roots['cua-home'], `${roots.home}/.config/cua`]}), ...extra});
     for (const row of value.checks) row.target = roots[row.label];
     value.cwd = `${roots['cua-home']}/run/0fa27729-814e-47fb-8f46-66727511dc72`;
     return value;

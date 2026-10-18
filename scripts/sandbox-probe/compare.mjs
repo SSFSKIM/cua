@@ -98,7 +98,7 @@ export function comparePortToCapture({captured, port}) {
 const regexLiteEscape = text => text.replace(/[\\.+*?()|[\]{}^$#&\-~]/g, '\\$&');
 export function relocateCapture(record, {from, to, euid}) {
   for (const root of [from, to]) if (!root?.startsWith('/') || root === '/' || root.endsWith('/')) throw new Error(`relocate: ${JSON.stringify(root)} is not an absolute directory path`);
-  const spellings = [[from, to], [regexLiteEscape(from), regexLiteEscape(to)]].map(([a, b]) => [new RegExp(`${escapeRegExp(a)}(?=/|:|"|$)`, 'g'), b]);
+  const spellings = [[from, to], [regexLiteEscape(from), regexLiteEscape(to)]].map(([a, b]) => [new RegExp(`${escapeRegExp(a)}${WHOLE}`, 'g'), b]);
   const move = value => {
     if (typeof value === 'string') return spellings.reduce((text, [pattern, replacement]) => text.replace(pattern, () => replacement), value).replace(/\/private\/tmp\/codex-daemon-\d+/g, `/private/tmp/codex-daemon-${euid}`);
     if (Array.isArray(value)) return value.map(move);
@@ -115,13 +115,16 @@ const normalizeValue = value => value.replace(/codex-arg0[A-Za-z0-9]+/g, 'codex-
 
 // Where the run's machine put things (#159: M0's fingerprints come from the mini, the hosted gate's from a runner): the
 // fingerprint's own labelled targets name its roots, the cua home, the user home and the checkout, and a value under one
-// reads as `<label>/…`, longest root first so a nested root wins. A root matches whole, never a sibling sharing its prefix.
+// reads as `<label>/…` (inside a JSON value too), longest root first so a nested root wins. A root matches whole, never a
+// sibling sharing its prefix.
 const ROOT_LABELS = ['cua-home', 'home', 'checkout'];
 const escapeRegExp = text => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+// A root ends where a path name could not go on: not before another name character (a sibling `home2`, `home.bak`).
+const WHOLE = '(?![A-Za-z0-9._-])';
 function relativeToRoots(fingerprint) {
   const roots = ROOT_LABELS.map(label => [label, fingerprint.checks.find(row => row.filter === 'path' && row.label === label)?.target])
     .filter(([, root]) => typeof root === 'string' && root.startsWith('/') && root !== '/').sort(([, a], [, b]) => b.length - a.length);
-  return value => roots.reduce((text, [label, root]) => text.replace(new RegExp(`${escapeRegExp(root)}(?=/|:|$)`, 'g'), `<${label}>`), value);
+  return value => roots.reduce((text, [label, root]) => text.replace(new RegExp(`${escapeRegExp(root)}${WHOLE}`, 'g'), `<${label}>`), value);
 }
 
 // Checks are matched by (op, filter, label) and compared by result and errno: two failures of the same check are

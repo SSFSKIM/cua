@@ -10,4 +10,7 @@ const code = await serve({home: defaultHome(), prepareLaunch: launch => {
   process.stderr.write(`serve-slot: built CODEX_CLI_PATH=${launch.env.CODEX_CLI_PATH}; the run uses ${slot}\n`);
   return {...launch, env: {...launch.env, CODEX_CLI_PATH: slot}};
 }});
+// The exit status is set first: the timer below is unreferenced, so a process with nothing left to run exits
+// naturally before it fires, with this status (as bin/cua.mjs sets main's), never a default 0.
+process.exitCode = code;
 setTimeout(() => process.exit(code), 1000).unref();

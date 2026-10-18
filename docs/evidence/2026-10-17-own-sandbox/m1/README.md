@@ -280,3 +280,20 @@ The clean-clone check fails as it does on main: "Remote branch HEAD not found in
   - two network-outbound to loopback ports.
 - **After (c55ba01).** Both suites failed at connect with "MCP exited (1)". Their meta.json is `complete:false` with no cells, so there is no after-side denial set. The judge step crashed on the missing `tools.json`. The harness keeps no runtime stderr, so the cause cannot be recovered. That cause is either c55ba01's launch refusal in the prepared home or the harness change under the run (above).
 - **Chrome.** Before (15:40:25Z): pid 36513, 1 tab in the ssfs backend. After (15:57:59Z): pid 36513, 1 tab (`chrome-before.json`, `chrome-after.json`; counts only). Chrome was never quit, and the Profile 1 window was left open.
+
+### The refused-exit fix: probe-secrets and own-sandbox at 6ad675c
+
+The code under test is still f8019bf: src/, bin/, extension/ and package.json are identical. The harness is 6ad675c, which fixes the probe serve wrappers (`scripts/probe/serve-fake-sky-target.mjs`, `scripts/sandbox-probe/serve-slot.mjs`). Before the fix, a refused launch exited 0 on its own, before the exit timer fired.
+
+**Gate exception.** Both items are headless, so DL 58's in-run rule does not apply to them. The controller ruled that the queue may be ignored at their start (27 jobs were queued while the runner was idle). The rest of the start gate still applied: the runner idle with no Runner.Worker, Terminal in front, no dialog and load under 5. One reading was taken, and a worker appearing mid-run would have been ignored.
+
+| Item | Ran | Gate | Result | Evidence |
+|---|---|---|---|---|
+| own-sandbox | 03:46:57Z to 03:47:11Z | load 3.25 | **PASS**, 76/76 | `own-sandbox/own-sandbox.json` |
+| probe-secrets, standalone | 03:47:15Z to 03:47:59Z | load 3.1 | **PASS**, 30 steps PASS and 1 INFO, 0 FAIL | `probe-secrets/probe-secrets.json` |
+
+- **probe-secrets setup:** `CUA_HOME=~/cua-115/home node scripts/probe-secrets.mjs --report …`. It used generated keys in its own temporary HOME, with no GUI and no native delivery.
+- **The fixed step.** "store unreadable: the launch is refused" now **PASSES**: "refused before the handshake with sandbox_state_invalid, naming the secret store".
+- **The INFO row** is the accepted `disabled` trusted-root row (#20).
+- **Earlier run.** The f8019bf own-sandbox run is kept as `own-sandbox-f8019bf/`.
+- **Front app.** Terminal was in front after both runs.

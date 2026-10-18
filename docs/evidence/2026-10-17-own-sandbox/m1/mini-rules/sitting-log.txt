@@ -1463,3 +1463,50 @@
 2026-10-18T03:17:55.642Z accept-native at f8019bf (M1, item 11): done
 2026-10-18T03:17:56Z quit the fixture TextEdit pid 36158 (started 2026-10-18T03:17:24Z, inside the run)
 2026-10-18T03:17:59Z Terminal refocused; front: bundleID="com.apple.Terminal"
+2026-10-18T03:25:46.453Z gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 6ad675c: reading 1: front=com.apple.Terminal busy=false workers=0 queued=27 load=5.91 -> contention (27 queued macOS job(s), load 5.91)
+2026-10-18T03:25:46.456Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 6ad675c
+2026-10-18T03:26:51.188Z gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 6ad675c: reading 1: front=com.apple.Terminal busy=false workers=0 queued=27 load=5.72 -> contention (27 queued macOS job(s), load 5.72)
+2026-10-18T03:26:51.189Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 6ad675c
+2026-10-18T03:27:55.461Z gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 6ad675c: reading 1: front=com.apple.Terminal busy=false workers=0 queued=27 load=6.3 -> contention (27 queued macOS job(s), load 6.3)
+2026-10-18T03:27:55.463Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 6ad675c
+2026-10-18T03:29:03.989Z gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 6ad675c: reading 1: front=com.apple.Terminal busy=false workers=0 queued=27 load=5.57 -> contention (27 queued macOS job(s), load 5.57)
+2026-10-18T03:29:03.991Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 6ad675c
+2026-10-18T03:30:08.536Z gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 6ad675c: reading 1: front=com.apple.Terminal busy=false workers=0 queued=27 load=4.94 -> contention (27 queued macOS job(s))
+2026-10-18T03:30:08.537Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 6ad675c
+2026-10-18T03:31:12.273Z gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 6ad675c: reading 1: front=com.apple.Terminal busy=false workers=0 queued=27 load=3.92 -> contention (27 queued macOS job(s))
+2026-10-18T03:31:12.274Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 6ad675c
+2026-10-18T03:32:16.713Z gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 6ad675c: reading 1: front=com.apple.Terminal busy=false workers=0 queued=27 load=3.81 -> contention (27 queued macOS job(s))
+2026-10-18T03:32:16.714Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 6ad675c
+2026-10-18T03:33:23.170Z gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 6ad675c: reading 1: front=com.apple.Terminal busy=false workers=0 queued=27 load=3.69 -> contention (27 queued macOS job(s))
+2026-10-18T03:33:23.171Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 6ad675c
+2026-10-18T03:34:27.150Z gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 6ad675c: reading 1: front=com.apple.Terminal busy=false workers=0 queued=27 load=6.05 -> contention (27 queued macOS job(s), load 6.05)
+2026-10-18T03:34:27.151Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 6ad675c
+2026-10-18T03:35:31.074Z gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 6ad675c: reading 1: front=com.apple.Terminal busy=false workers=0 queued=27 load=4.98 -> contention (27 queued macOS job(s))
+2026-10-18T03:35:31.074Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 6ad675c
+2026-10-18T03:36:35.034Z gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 6ad675c: reading 1: front=com.apple.Terminal busy=false workers=0 queued=27 load=5.02 -> contention (27 queued macOS job(s), load 5.02)
+2026-10-18T03:36:35.035Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 6ad675c
+2026-10-18T03:37:38.967Z gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 6ad675c: reading 1: front=com.apple.Terminal busy=false workers=0 queued=27 load=4.81 -> contention (27 queued macOS job(s))
+2026-10-18T03:37:38.968Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 6ad675c
+2026-10-18T03:38:43.150Z gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 6ad675c: reading 1: front=com.apple.Terminal busy=false workers=0 queued=27 load=6.39 -> contention (27 queued macOS job(s), load 6.39)
+2026-10-18T03:38:43.151Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 6ad675c
+2026-10-18T03:39:47.352Z gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 6ad675c: reading 1: front=com.apple.Terminal busy=false workers=0 queued=27 load=6.06 -> contention (27 queued macOS job(s), load 6.06)
+2026-10-18T03:39:47.353Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 6ad675c
+2026-10-18T03:40:53.489Z gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 6ad675c: reading 1: front=com.apple.Terminal busy=false workers=0 queued=27 load=5.96 -> contention (27 queued macOS job(s), load 5.96)
+2026-10-18T03:40:53.489Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 6ad675c
+2026-10-18T03:41:57.917Z gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 6ad675c: reading 1: front=com.apple.Terminal busy=false workers=0 queued=27 load=6.91 -> contention (27 queued macOS job(s), load 6.91)
+2026-10-18T03:41:57.918Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 6ad675c
+2026-10-18T03:43:02.626Z gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 6ad675c: reading 1: front=com.apple.Terminal busy=false workers=0 queued=27 load=4.79 -> contention (27 queued macOS job(s))
+2026-10-18T03:43:02.627Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 6ad675c
+2026-10-18T03:44:06.902Z gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 6ad675c: reading 1: front=com.apple.Terminal busy=false workers=0 queued=27 load=4.42 -> contention (27 queued macOS job(s))
+2026-10-18T03:44:06.903Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 6ad675c
+2026-10-18T03:45:11.308Z gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 6ad675c: reading 1: front=com.apple.Terminal busy=false workers=0 queued=27 load=3.99 -> contention (27 queued macOS job(s))
+2026-10-18T03:45:11.310Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 6ad675c
+2026-10-18T03:46:17.525Z gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 6ad675c: reading 1: front=com.apple.Terminal busy=false workers=0 queued=27 load=3.67 -> contention (27 queued macOS job(s))
+2026-10-18T03:46:17.526Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 6ad675c
+2026-10-18T03:46:28Z own-sandbox and probe-secrets at 6ad675c: the controller's headless exception (queue ignored at start; runner idle, no Runner.Worker, Terminal in front, no dialog, load under 5)
+2026-10-18T03:46:57.355Z gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 6ad675c: hold reading: front=com.apple.Terminal busy=false workers=0 queued=27 (ignored in the hold) load=3.25 -> idle
+2026-10-18T03:47:10.749Z gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 6ad675c: exit 0
+2026-10-18T03:47:11.216Z front after gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 6ad675c: com.apple.Terminal
+2026-10-18T03:47:15.306Z gated sh /tmp/cua-115-m1/probe-secrets.sh 6ad675c: hold reading: front=com.apple.Terminal busy=false workers=0 queued=27 (ignored in the hold) load=3.1 -> idle
+2026-10-18T03:47:59.442Z gated sh /tmp/cua-115-m1/probe-secrets.sh 6ad675c: exit 0
+2026-10-18T03:47:59.948Z front after gated sh /tmp/cua-115-m1/probe-secrets.sh 6ad675c: com.apple.Terminal

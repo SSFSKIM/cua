@@ -258,3 +258,48 @@
 2026-10-18T06:32:07.120Z gated sh scripts/sandbox-probe/m2-mini.sh parity 249a2a9 ssfs: hold reading: front=com.apple.Terminal busy=false workers=0 queued=0 (ignored in the hold) load=4.06 -> idle
 2026-10-18T07:02:19.527Z gated sh scripts/sandbox-probe/m2-mini.sh parity 249a2a9 ssfs: exit 0
 2026-10-18T07:02:20.092Z front after gated sh scripts/sandbox-probe/m2-mini.sh parity 249a2a9 ssfs: com.google.Chrome
+2026-10-18T07:03:57Z M2 TextEdit sitting started (accept at 6de47ae, CUA_PAUSE_FILE mirrored to /tmp/cua115-m2-accept-pause.json)
+2026-10-18T07:04:04.284Z gated sh scripts/sandbox-probe/m2-mini.sh accept 6de47ae: hold reading: front=com.google.Chrome busy=false workers=0 queued=0 (ignored in the hold) load=1.73 -> wait
+2026-10-18T07:04:29.735Z gated sh scripts/sandbox-probe/m2-mini.sh accept 6de47ae: hold reading: front=com.google.Chrome busy=false workers=0 queued=0 (ignored in the hold) load=1.79 -> wait
+2026-10-18T07:04:52.505Z gated sh scripts/sandbox-probe/m2-mini.sh accept 6de47ae: hold reading: front=com.google.Chrome busy=false workers=0 queued=0 (ignored in the hold) load=1.67 -> wait
+2026-10-18T07:05:16.170Z gated sh scripts/sandbox-probe/m2-mini.sh accept 6de47ae: hold reading: front=com.google.Chrome busy=false workers=0 queued=0 (ignored in the hold) load=1.48 -> wait
+2026-10-18T07:05:38.999Z gated sh scripts/sandbox-probe/m2-mini.sh accept 6de47ae: hold reading: front=com.google.Chrome busy=false workers=0 queued=0 (ignored in the hold) load=1.52 -> wait
+2026-10-18T07:06:04.191Z gated sh scripts/sandbox-probe/m2-mini.sh accept 6de47ae: hold reading: front=com.google.Chrome busy=false workers=0 queued=0 (ignored in the hold) load=1.48 -> wait
+2026-10-18T07:06:27.177Z gated sh scripts/sandbox-probe/m2-mini.sh accept 6de47ae: hold reading: front=com.google.Chrome busy=false workers=0 queued=0 (ignored in the hold) load=1.63 -> wait
+2026-10-18T07:06:49.918Z gated sh scripts/sandbox-probe/m2-mini.sh accept 6de47ae: hold reading: front=com.google.Chrome busy=false workers=0 queued=0 (ignored in the hold) load=1.66 -> wait
+2026-10-18T07:07:19.080Z gated sh scripts/sandbox-probe/m2-mini.sh accept 6de47ae: hold reading: front=com.google.Chrome busy=false workers=0 queued=0 (ignored in the hold) load=1.41 -> wait
+2026-10-18T07:07:48.124Z gated sh scripts/sandbox-probe/m2-mini.sh accept 6de47ae: hold reading: front=com.google.Chrome busy=false workers=0 queued=0 (ignored in the hold) load=2.5 -> wait
+2026-10-18T07:08:10.883Z gated sh scripts/sandbox-probe/m2-mini.sh accept 6de47ae: hold reading: front=com.google.Chrome busy=false workers=0 queued=0 (ignored in the hold) load=2.27 -> wait
+2026-10-18T07:08:33.794Z gated sh scripts/sandbox-probe/m2-mini.sh accept 6de47ae: hold reading: front=com.google.Chrome busy=false workers=0 queued=0 (ignored in the hold) load=2.1 -> wait
+2026-10-18T07:08:56.799Z gated sh scripts/sandbox-probe/m2-mini.sh accept 6de47ae: hold reading: front=com.google.Chrome busy=false workers=0 queued=0 (ignored in the hold) load=1.83 -> wait
+2026-10-18T07:09:23.564Z gated sh scripts/sandbox-probe/m2-mini.sh accept 6de47ae: hold reading: front=com.google.Chrome busy=false workers=0 queued=0 (ignored in the hold) load=1.85 -> wait
+2026-10-18T07:09:46.503Z gated sh scripts/sandbox-probe/m2-mini.sh accept 6de47ae: hold reading: front=com.google.Chrome busy=false workers=0 queued=0 (ignored in the hold) load=2.24 -> wait
+2026-10-18T07:10:09.252Z gated sh scripts/sandbox-probe/m2-mini.sh accept 6de47ae: hold reading: front=com.google.Chrome busy=false workers=0 queued=0 (ignored in the hold) load=2.85 -> wait
+2026-10-18T07:10:32.028Z gated sh scripts/sandbox-probe/m2-mini.sh accept 6de47ae: hold reading: front=com.google.Chrome busy=false workers=0 queued=0 (ignored in the hold) load=2.41 -> wait
+2026-10-18T07:10:56.192Z gated sh scripts/sandbox-probe/m2-mini.sh accept 6de47ae: hold reading: front=com.google.Chrome busy=false workers=0 queued=0 (ignored in the hold) load=2.08 -> wait
+2026-10-18T07:11:18.883Z gated sh scripts/sandbox-probe/m2-mini.sh accept 6de47ae: hold reading: front=com.google.Chrome busy=false workers=0 queued=0 (ignored in the hold) load=2.47 -> wait
+2026-10-18T07:11:41.521Z gated sh scripts/sandbox-probe/m2-mini.sh accept 6de47ae: hold reading: front=com.google.Chrome busy=false workers=0 queued=0 (ignored in the hold) load=2.33 -> wait
+2026-10-18T07:12:05.652Z gated sh scripts/sandbox-probe/m2-mini.sh accept 6de47ae: hold reading: front=com.google.Chrome busy=false workers=0 queued=0 (ignored in the hold) load=2 -> wait
+2026-10-18T07:12:27.909Z gated sh scripts/sandbox-probe/m2-mini.sh accept 6de47ae: hold reading: front=com.google.Chrome busy=false workers=0 queued=0 (ignored in the hold) load=2.29 -> wait
+2026-10-18T07:12:51.052Z gated sh scripts/sandbox-probe/m2-mini.sh accept 6de47ae: hold reading: front=com.google.Chrome busy=false workers=0 queued=0 (ignored in the hold) load=2.57 -> wait
+2026-10-18T07:13:13.704Z gated sh scripts/sandbox-probe/m2-mini.sh accept 6de47ae: hold reading: front=com.google.Chrome busy=false workers=0 queued=0 (ignored in the hold) load=1.97 -> wait
+2026-10-18T07:13:36.131Z gated sh scripts/sandbox-probe/m2-mini.sh accept 6de47ae: hold reading: front=com.google.Chrome busy=false workers=0 queued=0 (ignored in the hold) load=1.5 -> wait
+2026-10-18T07:14:04.447Z gated sh scripts/sandbox-probe/m2-mini.sh accept 6de47ae: hold reading: front=com.google.Chrome busy=false workers=0 queued=0 (ignored in the hold) load=1.38 -> wait
+2026-10-18T07:14:26Z before the M2 sitting: Chrome in front since parity (our run), HIDIdleTime 14032 s: raised Terminal (open -a Terminal)
+2026-10-18T07:14:27.494Z gated sh scripts/sandbox-probe/m2-mini.sh accept 6de47ae: hold reading: front=com.google.Chrome busy=false workers=0 queued=0 (ignored in the hold) load=1.34 -> wait
+2026-10-18T07:15:09.590Z gated sh scripts/sandbox-probe/m2-mini.sh accept 6de47ae: hold reading: front=com.apple.Terminal busy=false workers=0 queued=0 (ignored in the hold) load=1.23 -> idle
+2026-10-18T07:15:19.661Z gated sh scripts/sandbox-probe/m2-mini.sh accept 6de47ae: exit 1
+2026-10-18T07:15:20.242Z front after gated sh scripts/sandbox-probe/m2-mini.sh accept 6de47ae: com.apple.Terminal
+2026-10-18T07:15:23Z Terminal refocused; front: bundleID="com.apple.Terminal"
+2026-10-18T07:16:07Z M2 sitting attempt 1 (m2-mini.sh accept 6de47ae): stopped before acceptance, exit 84: native-baseline prepare.mjs refuses outside the prepared parity clone (m2-mini.sh runs it from ~/cua-115/repo); nothing was prepared. Rerun through M1's route (ACCEPT_REMOTE with the harness clone at 6de47ae)
+2026-10-18T07:16:12Z TextEdit sitting started (accept-native at 6de47ae, CUA_PAUSE_FILE mirrored to /tmp/cua115-m2-accept-pause.json)
+2026-10-18T07:16:15.117Z accept-native at 6de47ae (M2): hold reading: front=com.apple.Terminal busy=false workers=0 queued=0 (ignored in the hold) load=2.54 -> idle
+2026-10-18T07:19:05.668Z front after accept-native at 6de47ae (M2): com.apple.TextEdit
+2026-10-18T07:19:06.216Z TextEdit after accept-native at 6de47ae (M2): pid 76277 started 2026-10-18T07:18:32.000Z (run window 2026-10-18T07:16:15.118Z to 2026-10-18T07:19:05.064Z)
+2026-10-18T07:19:06.216Z accept-native at 6de47ae (M2): exit 1 (0 PASS, 1 FAIL, 3 BLOCKED), cleanup exit 0, report in mini:/tmp/cua-115-accept.0Gm4Dc
+2026-10-18T07:19:07.637Z accept-native at 6de47ae (M2): done
+2026-10-18T07:19:08Z quit the fixture TextEdit pid 76277 (started 2026-10-18T07:18:32Z, inside the run)
+2026-10-18T07:19:11Z Terminal refocused; front: bundleID="com.apple.Terminal"
+2026-10-18T07:19:39.451Z gated sh /tmp/cua-115-m1/m2-vendor-os.sh 6de47ae: hold reading: front=com.apple.Terminal busy=false workers=0 queued=0 (ignored in the hold) load=2.61 -> idle
+2026-10-18T07:19:52.747Z gated sh /tmp/cua-115-m1/m2-vendor-os.sh 6de47ae: exit 0
+2026-10-18T07:19:53.422Z front after gated sh /tmp/cua-115-m1/m2-vendor-os.sh 6de47ae: com.apple.Terminal

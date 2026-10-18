@@ -1,0 +1,744 @@
+{
+  "probe": "own-sandbox",
+  "host": "vendor",
+  "home": "/Users/new/cua-115/home",
+  "packageName": "@img/colour",
+  "modes": {
+    "scoped": {
+      "reads": {
+        "store": {
+          "ok": false,
+          "code": "EPERM"
+        },
+        "store (listing)": {
+          "ok": false,
+          "code": "EPERM"
+        },
+        "store (symlinked tier target)": {
+          "ok": false,
+          "code": "EPERM"
+        },
+        "store (symlinked tier target) (listing)": {
+          "ok": false,
+          "code": "EPERM"
+        },
+        "~/.config/cua": {
+          "ok": false,
+          "code": "EPERM"
+        },
+        "~/.config/cua (listing)": {
+          "ok": false,
+          "code": "EPERM"
+        },
+        "$CUA_HOME/state": {
+          "ok": false,
+          "code": "EPERM"
+        },
+        "$CUA_HOME/state (listing)": {
+          "ok": false,
+          "code": "EPERM"
+        },
+        "$CUA_HOME/remote (enrolled device)": {
+          "ok": false,
+          "code": "EPERM"
+        },
+        "$CUA_HOME/remote (enrolled device) (listing)": {
+          "ok": false,
+          "code": "EPERM"
+        },
+        "$CUA_HOME/chrome": {
+          "ok": false,
+          "code": "EPERM"
+        },
+        "$CUA_HOME/chrome (listing)": {
+          "ok": false,
+          "code": "EPERM"
+        },
+        "another session's run directory": {
+          "ok": false,
+          "code": "EPERM"
+        },
+        "another session's run directory (listing)": {
+          "ok": false,
+          "code": "EPERM"
+        }
+      },
+      "moduleTree": {
+        "ok": true,
+        "value": true
+      },
+      "writes": {
+        "runDirectory": {
+          "ok": true,
+          "value": true
+        },
+        "tmpdir": {
+          "ok": true,
+          "value": true
+        },
+        "outside": {
+          "ok": false,
+          "code": "EPERM"
+        }
+      },
+      "link": {
+        "ok": false,
+        "code": "EPERM"
+      },
+      "clone": {
+        "ok": false,
+        "code": "exit 1"
+      },
+      "tcp": {
+        "ok": false,
+        "code": "EPERM"
+      },
+      "unix": {
+        "ok": false,
+        "code": "EPERM"
+      },
+      "tmpdir": {
+        "own": true
+      },
+      "kernel": {
+        "execPathIsNode": true,
+        "parentIsSupervisor": false,
+        "parentIsNodeRepl": true,
+        "sandbox": "seatbelt"
+      },
+      "scriptDirectory": {
+        "count": 1,
+        "read": {
+          "ok": true
+        },
+        "write": {
+          "ok": false,
+          "code": "EPERM"
+        },
+        "add": {
+          "ok": false,
+          "code": "EPERM"
+        }
+      },
+      "codexProcesses": 0
+    },
+    "default": {
+      "reads": {
+        "store": {
+          "ok": false,
+          "code": "EPERM"
+        },
+        "store (listing)": {
+          "ok": false,
+          "code": "EPERM"
+        },
+        "store (symlinked tier target)": {
+          "ok": false,
+          "code": "EPERM"
+        },
+        "store (symlinked tier target) (listing)": {
+          "ok": false,
+          "code": "EPERM"
+        },
+        "~/.config/cua": {
+          "ok": false,
+          "code": "EPERM"
+        },
+        "~/.config/cua (listing)": {
+          "ok": false,
+          "code": "EPERM"
+        },
+        "$CUA_HOME/state": {
+          "ok": false,
+          "code": "EPERM"
+        },
+        "$CUA_HOME/state (listing)": {
+          "ok": false,
+          "code": "EPERM"
+        },
+        "$CUA_HOME/remote (enrolled device)": {
+          "ok": false,
+          "code": "EPERM"
+        },
+        "$CUA_HOME/remote (enrolled device) (listing)": {
+          "ok": false,
+          "code": "EPERM"
+        },
+        "$CUA_HOME/chrome": {
+          "ok": false,
+          "code": "EPERM"
+        },
+        "$CUA_HOME/chrome (listing)": {
+          "ok": false,
+          "code": "EPERM"
+        },
+        "another session's run directory": {
+          "ok": false,
+          "code": "EPERM"
+        },
+        "another session's run directory (listing)": {
+          "ok": false,
+          "code": "EPERM"
+        }
+      },
+      "moduleTree": {
+        "ok": true,
+        "value": true
+      },
+      "writes": {
+        "runDirectory": {
+          "ok": false,
+          "code": "EPERM"
+        },
+        "tmpdir": {
+          "ok": false,
+          "code": "EPERM"
+        },
+        "outside": {
+          "ok": false,
+          "code": "EPERM"
+        }
+      },
+      "link": {
+        "ok": false,
+        "code": "EPERM"
+      },
+      "clone": {
+        "ok": false,
+        "code": "exit 1"
+      },
+      "tcp": {
+        "ok": false,
+        "code": "EPERM"
+      },
+      "unix": {
+        "ok": false,
+        "code": "EPERM"
+      },
+      "tmpdir": {
+        "own": true
+      },
+      "kernel": {
+        "execPathIsNode": true,
+        "parentIsSupervisor": false,
+        "parentIsNodeRepl": true,
+        "sandbox": "seatbelt"
+      },
+      "scriptDirectory": {
+        "count": 1,
+        "read": {
+          "ok": true
+        },
+        "write": {
+          "ok": false,
+          "code": "EPERM"
+        },
+        "add": {
+          "ok": false,
+          "code": "EPERM"
+        }
+      },
+      "codexProcesses": 0
+    },
+    "disabled": {
+      "reads": {
+        "store": {
+          "ok": true,
+          "value": true
+        },
+        "store (listing)": {
+          "ok": true,
+          "value": true
+        },
+        "store (symlinked tier target)": {
+          "ok": true,
+          "value": true
+        },
+        "store (symlinked tier target) (listing)": {
+          "ok": true,
+          "value": true
+        },
+        "~/.config/cua": {
+          "ok": true,
+          "value": true
+        },
+        "~/.config/cua (listing)": {
+          "ok": true,
+          "value": true
+        },
+        "$CUA_HOME/state": {
+          "ok": true,
+          "value": true
+        },
+        "$CUA_HOME/state (listing)": {
+          "ok": true,
+          "value": true
+        },
+        "$CUA_HOME/remote (enrolled device)": {
+          "ok": true,
+          "value": true
+        },
+        "$CUA_HOME/remote (enrolled device) (listing)": {
+          "ok": true,
+          "value": true
+        },
+        "$CUA_HOME/chrome": {
+          "ok": true,
+          "value": true
+        },
+        "$CUA_HOME/chrome (listing)": {
+          "ok": true,
+          "value": true
+        },
+        "another session's run directory": {
+          "ok": true,
+          "value": true
+        },
+        "another session's run directory (listing)": {
+          "ok": true,
+          "value": true
+        }
+      },
+      "moduleTree": {
+        "ok": true,
+        "value": true
+      },
+      "writes": {
+        "runDirectory": {
+          "ok": true,
+          "value": true
+        },
+        "tmpdir": {
+          "ok": true,
+          "value": true
+        },
+        "outside": {
+          "ok": true,
+          "value": true
+        }
+      },
+      "link": {
+        "ok": true,
+        "value": true
+      },
+      "clone": {
+        "ok": true,
+        "value": true
+      },
+      "tcp": {
+        "ok": true
+      },
+      "unix": {
+        "ok": true
+      },
+      "tmpdir": {
+        "own": true
+      },
+      "kernel": {
+        "execPathIsNode": true,
+        "parentIsSupervisor": false,
+        "parentIsNodeRepl": true,
+        "sandbox": null
+      },
+      "codexProcesses": 0
+    }
+  },
+  "checks": [
+    {
+      "label": "scoped: denied: store",
+      "pass": true,
+      "detail": "EPERM"
+    },
+    {
+      "label": "scoped: denied: store (listing)",
+      "pass": true,
+      "detail": "EPERM"
+    },
+    {
+      "label": "scoped: denied: store (symlinked tier target)",
+      "pass": true,
+      "detail": "EPERM"
+    },
+    {
+      "label": "scoped: denied: store (symlinked tier target) (listing)",
+      "pass": true,
+      "detail": "EPERM"
+    },
+    {
+      "label": "scoped: denied: ~/.config/cua",
+      "pass": true,
+      "detail": "EPERM"
+    },
+    {
+      "label": "scoped: denied: ~/.config/cua (listing)",
+      "pass": true,
+      "detail": "EPERM"
+    },
+    {
+      "label": "scoped: denied: $CUA_HOME/state",
+      "pass": true,
+      "detail": "EPERM"
+    },
+    {
+      "label": "scoped: denied: $CUA_HOME/state (listing)",
+      "pass": true,
+      "detail": "EPERM"
+    },
+    {
+      "label": "scoped: denied: $CUA_HOME/remote (enrolled device)",
+      "pass": true,
+      "detail": "EPERM"
+    },
+    {
+      "label": "scoped: denied: $CUA_HOME/remote (enrolled device) (listing)",
+      "pass": true,
+      "detail": "EPERM"
+    },
+    {
+      "label": "scoped: denied: $CUA_HOME/chrome",
+      "pass": true,
+      "detail": "EPERM"
+    },
+    {
+      "label": "scoped: denied: $CUA_HOME/chrome (listing)",
+      "pass": true,
+      "detail": "EPERM"
+    },
+    {
+      "label": "scoped: denied: another session's run directory",
+      "pass": true,
+      "detail": "EPERM"
+    },
+    {
+      "label": "scoped: denied: another session's run directory (listing)",
+      "pass": true,
+      "detail": "EPERM"
+    },
+    {
+      "label": "scoped: a package resolves and reads from the runtime's module tree",
+      "pass": true
+    },
+    {
+      "label": "scoped: TMPDIR is the session's own, under $CUA_HOME/run/<id>",
+      "pass": true
+    },
+    {
+      "label": "scoped: the run directory is writable",
+      "pass": true
+    },
+    {
+      "label": "scoped: TMPDIR is writable",
+      "pass": true
+    },
+    {
+      "label": "scoped: a write outside the session fails",
+      "pass": true,
+      "detail": "EPERM"
+    },
+    {
+      "label": "scoped: a hard link of the store sentinel fails",
+      "pass": true,
+      "detail": "EPERM"
+    },
+    {
+      "label": "scoped: a clone (cp -c) of the store sentinel fails",
+      "pass": true,
+      "detail": "exit 1"
+    },
+    {
+      "label": "scoped: a TCP connect fails",
+      "pass": true,
+      "detail": "EPERM"
+    },
+    {
+      "label": "scoped: an AF_UNIX connect fails",
+      "pass": true,
+      "detail": "EPERM"
+    },
+    {
+      "label": "scoped: the kernel is Node itself, node_repl's child, marked seatbelt (cua's compat executable exec'd it)",
+      "pass": true
+    },
+    {
+      "label": "scoped: node_repl's script directory lies in the session temp",
+      "pass": true,
+      "detail": 1
+    },
+    {
+      "label": "scoped: the kernel reads its script directory",
+      "pass": true
+    },
+    {
+      "label": "scoped: the kernel cannot write into its script directory",
+      "pass": true,
+      "detail": "EPERM/EPERM"
+    },
+    {
+      "label": "scoped: no process named codex",
+      "pass": true
+    },
+    {
+      "label": "default: denied: store",
+      "pass": true,
+      "detail": "EPERM"
+    },
+    {
+      "label": "default: denied: store (listing)",
+      "pass": true,
+      "detail": "EPERM"
+    },
+    {
+      "label": "default: denied: store (symlinked tier target)",
+      "pass": true,
+      "detail": "EPERM"
+    },
+    {
+      "label": "default: denied: store (symlinked tier target) (listing)",
+      "pass": true,
+      "detail": "EPERM"
+    },
+    {
+      "label": "default: denied: ~/.config/cua",
+      "pass": true,
+      "detail": "EPERM"
+    },
+    {
+      "label": "default: denied: ~/.config/cua (listing)",
+      "pass": true,
+      "detail": "EPERM"
+    },
+    {
+      "label": "default: denied: $CUA_HOME/state",
+      "pass": true,
+      "detail": "EPERM"
+    },
+    {
+      "label": "default: denied: $CUA_HOME/state (listing)",
+      "pass": true,
+      "detail": "EPERM"
+    },
+    {
+      "label": "default: denied: $CUA_HOME/remote (enrolled device)",
+      "pass": true,
+      "detail": "EPERM"
+    },
+    {
+      "label": "default: denied: $CUA_HOME/remote (enrolled device) (listing)",
+      "pass": true,
+      "detail": "EPERM"
+    },
+    {
+      "label": "default: denied: $CUA_HOME/chrome",
+      "pass": true,
+      "detail": "EPERM"
+    },
+    {
+      "label": "default: denied: $CUA_HOME/chrome (listing)",
+      "pass": true,
+      "detail": "EPERM"
+    },
+    {
+      "label": "default: denied: another session's run directory",
+      "pass": true,
+      "detail": "EPERM"
+    },
+    {
+      "label": "default: denied: another session's run directory (listing)",
+      "pass": true,
+      "detail": "EPERM"
+    },
+    {
+      "label": "default: a package resolves and reads from the runtime's module tree",
+      "pass": true
+    },
+    {
+      "label": "default: TMPDIR is the session's own, under $CUA_HOME/run/<id>",
+      "pass": true
+    },
+    {
+      "label": "default: the run directory is not writable",
+      "pass": true,
+      "detail": "EPERM"
+    },
+    {
+      "label": "default: TMPDIR is not writable",
+      "pass": true,
+      "detail": "EPERM"
+    },
+    {
+      "label": "default: a write outside the session fails",
+      "pass": true,
+      "detail": "EPERM"
+    },
+    {
+      "label": "default: a hard link of the store sentinel fails",
+      "pass": true,
+      "detail": "EPERM"
+    },
+    {
+      "label": "default: a clone (cp -c) of the store sentinel fails",
+      "pass": true,
+      "detail": "exit 1"
+    },
+    {
+      "label": "default: a TCP connect fails",
+      "pass": true,
+      "detail": "EPERM"
+    },
+    {
+      "label": "default: an AF_UNIX connect fails",
+      "pass": true,
+      "detail": "EPERM"
+    },
+    {
+      "label": "default: the kernel is Node itself, node_repl's child, marked seatbelt (cua's compat executable exec'd it)",
+      "pass": true
+    },
+    {
+      "label": "default: node_repl's script directory lies in the session temp",
+      "pass": true,
+      "detail": 1
+    },
+    {
+      "label": "default: the kernel reads its script directory",
+      "pass": true
+    },
+    {
+      "label": "default: the kernel cannot write into its script directory",
+      "pass": true,
+      "detail": "EPERM/EPERM"
+    },
+    {
+      "label": "default: no process named codex",
+      "pass": true
+    },
+    {
+      "label": "disabled: readable: store",
+      "pass": true
+    },
+    {
+      "label": "disabled: readable: store (listing)",
+      "pass": true
+    },
+    {
+      "label": "disabled: readable: store (symlinked tier target)",
+      "pass": true
+    },
+    {
+      "label": "disabled: readable: store (symlinked tier target) (listing)",
+      "pass": true
+    },
+    {
+      "label": "disabled: readable: ~/.config/cua",
+      "pass": true
+    },
+    {
+      "label": "disabled: readable: ~/.config/cua (listing)",
+      "pass": true
+    },
+    {
+      "label": "disabled: readable: $CUA_HOME/state",
+      "pass": true
+    },
+    {
+      "label": "disabled: readable: $CUA_HOME/state (listing)",
+      "pass": true
+    },
+    {
+      "label": "disabled: readable: $CUA_HOME/remote (enrolled device)",
+      "pass": true
+    },
+    {
+      "label": "disabled: readable: $CUA_HOME/remote (enrolled device) (listing)",
+      "pass": true
+    },
+    {
+      "label": "disabled: readable: $CUA_HOME/chrome",
+      "pass": true
+    },
+    {
+      "label": "disabled: readable: $CUA_HOME/chrome (listing)",
+      "pass": true
+    },
+    {
+      "label": "disabled: readable: another session's run directory",
+      "pass": true
+    },
+    {
+      "label": "disabled: readable: another session's run directory (listing)",
+      "pass": true
+    },
+    {
+      "label": "disabled: a package resolves and reads from the runtime's module tree",
+      "pass": true
+    },
+    {
+      "label": "disabled: TMPDIR is the session's own, under $CUA_HOME/run/<id>",
+      "pass": true
+    },
+    {
+      "label": "disabled: the run directory is writable",
+      "pass": true
+    },
+    {
+      "label": "disabled: TMPDIR is writable",
+      "pass": true
+    },
+    {
+      "label": "disabled: a write outside the session succeeds",
+      "pass": true
+    },
+    {
+      "label": "disabled: no process named codex",
+      "pass": true
+    },
+    {
+      "label": "across sessions: an own-host kernel cannot write into a vendor-host session's script directory",
+      "pass": true,
+      "detail": "EPERM"
+    },
+    {
+      "label": "across sessions: an own-host kernel cannot read a vendor-host session's trusted-worker.js",
+      "pass": true,
+      "detail": "EPERM"
+    },
+    {
+      "label": "across sessions: an own-host kernel cannot write into or list a vendor-host session's run directory",
+      "pass": true,
+      "detail": "EPERM/EPERM"
+    },
+    {
+      "label": "across sessions: the vendor-host session's trusted-worker.js is what node_repl wrote",
+      "pass": true
+    },
+    {
+      "label": "a store root missing at launch is not created",
+      "pass": true
+    },
+    {
+      "label": "a store root created mid-session stays denied",
+      "pass": true,
+      "detail": "EPERM"
+    },
+    {
+      "label": "a store root created mid-session cannot be listed",
+      "pass": true,
+      "detail": "EPERM"
+    },
+    {
+      "label": "a store root missing at launch is not created (through a symlinked ~/.config)",
+      "pass": true
+    },
+    {
+      "label": "a store root created mid-session stays denied (through a symlinked ~/.config)",
+      "pass": true,
+      "detail": "EPERM"
+    },
+    {
+      "label": "a store root created mid-session cannot be listed (through a symlinked ~/.config)",
+      "pass": true,
+      "detail": "EPERM"
+    }
+  ],
+  "ok": true
+}

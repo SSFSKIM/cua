@@ -1565,3 +1565,12 @@
 2026-10-18T07:01:07.962Z watch m2-parity-249a2a9: reading: front=com.google.Chrome busy=false workers=0 queued=0 load=3.34 -> idle
 2026-10-18T07:01:40.410Z watch m2-parity-249a2a9: reading: front=com.google.Chrome busy=false workers=0 queued=0 load=2.64 -> idle
 2026-10-18T07:02:13.101Z watch m2-parity-249a2a9: reading: front=com.google.Chrome busy=false workers=0 queued=0 load=2.36 -> idle
+2026-10-18T07:15:09.641Z watch m2-accept-6de47ae: started for pid 5419 (mode dialog-only)
+2026-10-18T07:15:12.713Z watch m2-accept-6de47ae: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=1.29 -> idle
+2026-10-18T07:16:12.357Z watch accept-native-6de47ae: started for pid 39341 (mode dialog-only)
+2026-10-18T07:16:15.117Z watch accept-native-6de47ae: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.54 -> idle
+2026-10-18T07:16:48.552Z watch accept-native-6de47ae: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.55 -> idle
+2026-10-18T07:17:21.593Z watch accept-native-6de47ae: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.11 -> idle
+2026-10-18T07:17:53.994Z watch accept-native-6de47ae: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=3.08 -> idle
+2026-10-18T07:18:26.798Z watch accept-native-6de47ae: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.5 -> idle
+2026-10-18T07:18:59.632Z watch accept-native-6de47ae: reading: front=com.apple.TextEdit busy=false workers=0 queued=0 load=2.25 -> idle

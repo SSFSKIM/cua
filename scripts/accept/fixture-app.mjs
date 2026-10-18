@@ -2,11 +2,14 @@
 // then hands the front back to the application that was frontmost before it. Callers: scripts/accept/textedit.mjs
 // (accept-native's TextEdit fixture) and scripts/accept/textedit-cleanup-witness.mjs (the same path, without cua).
 //
-// Ownership is causal, by launch: a pid of the app that was not running when the run took its before-set, and that
-// started (ps's launch time) no earlier than the second the run began. A TextEdit that was running before the run is
-// never quit, whatever the run did to it (`open` hands the document to it rather than starting another). The process's
-// environment is not the witness here: ps -E shows nothing of a platform app's environment (Finder, Terminal, TextEdit
-// on macOS 26 and 27), so a marker passed through `open` could not be read back.
+// Ownership is causal, captured at launch: right after its own `open`, the run records the one pid of the app that was
+// not running when it took its before-set and that started (ps's launch time) no earlier than the second the run began,
+// as {pid, at}. None such means the document went to an app already running; more than one is ambiguous and records
+// none. At cleanup only that recorded process is a candidate, and only while the pid still has the same launch time (a
+// pid gone, reused or unreadable is not the run's); nothing is re-scanned then, so an app the owner starts mid-run, or
+// relaunches after the run's own exits, is never selected. An app that was running before the run is never quit. The
+// process's environment is not the witness here: ps -E shows nothing of a platform app's environment (Finder, Terminal,
+// TextEdit on macOS 26 and 27), so a marker passed through `open` could not be read back.
 import {execFileSync} from 'node:child_process';
 
 // ps in the C locale and in UTC: `lstart` carries no UTC offset, so local time would be ambiguous in a fall-back hour.
@@ -32,12 +35,17 @@ export function launchOf(pid, {exec = run} = {}) {
   try { return parseLaunch(exec('/bin/ps', ['-o', 'lstart=', '-p', String(pid)])); } catch { return null; }
 }
 
-// The run's own processes among `pids`: absent from `before`, launched no earlier than the second `startedAt` falls in
-// (ps reports whole seconds). A pid whose launch time cannot be read is not the run's.
-export function ownedLaunches({pids, before, startedAt, launchOf: launch}) {
+// The run's own launch among `pids`, read right after its `open`: the pids absent from `before` that launched no earlier
+// than the second `startedAt` falls in (ps reports whole seconds; a pid whose launch time cannot be read is not the
+// run's). -> {launch: {pid, at} when exactly one, else null; candidates: [pid]} (more than one candidate: ambiguous).
+export function captureLaunch({pids, before, startedAt, launchOf: launch = pid => launchOf(pid)}) {
   const floor = Math.floor(startedAt / 1000) * 1000;
-  return pids.filter(pid => !before.includes(pid)).filter(pid => { const at = launch(pid); return at !== null && at >= floor; });
+  const found = pids.filter(pid => !before.includes(pid)).map(pid => ({pid, at: launch(pid)})).filter(({at}) => at !== null && at >= floor);
+  return {launch: found.length === 1 ? found[0] : null, candidates: found.map(({pid}) => pid)};
 }
+
+// Whether a recorded launch is still that process: its pid alive with the same launch time.
+export const isSameLaunch = (recorded, {launchOf: launch = pid => launchOf(pid)} = {}) => Boolean(recorded) && launch(recorded.pid) === recorded.at;
 
 // SIGTERM to each owned pid, then up to `waitMs` for it to exit. -> {quit: [pid], remaining: [pid]}.
 export async function quitOwned(pids, {kill = (pid, signal) => process.kill(pid, signal), alive = pid => { try { process.kill(pid, 0); return true; } catch (error) { return error.code === 'EPERM'; } },
@@ -59,12 +67,14 @@ export async function restoreFront(previous, {frontmost, activate = id => run('/
   return {previous, before, after, restored: after === previous};
 }
 
-// The whole cleanup: the run's own launches of `name` quit, then the front handed back. `run` is what the start of the
-// run recorded: {startedAt, before (pids), front (bundle id or null)}.
+// The whole cleanup: the run's recorded launch quit (when it is still that process), then the front handed back. `run`
+// is what the run recorded: {before (pids), front (bundle id or null), launch ({pid, at} from captureLaunch, or null)}.
+// `pids` is read only to report which processes running before are still there; it never selects anything to quit.
+// -> {launch, live, quit, remaining, keptBefore, front}.
 export async function cleanUpFixtureApp({name, bundle, run: started, pids = () => pidsOf(name), launchOf: launch = pid => launchOf(pid), quit = quitOwned, frontmost, activate, sleep}) {
+  const live = isSameLaunch(started.launch, {launchOf: launch});
+  const {quit: quitPids, remaining} = live ? await quit([started.launch.pid]) : {quit: [], remaining: []};
   const running = pids();
-  const owned = ownedLaunches({pids: running, before: started.before, startedAt: started.startedAt, launchOf: launch});
-  const {quit: quitPids, remaining} = owned.length ? await quit(owned) : {quit: [], remaining: []};
   const front = await restoreFront(started.front, {frontmost, app: bundle, ...(activate ? {activate} : {}), ...(sleep ? {sleep} : {})});
-  return {owned, quit: quitPids, remaining, keptBefore: started.before.filter(pid => running.includes(pid)), front};
+  return {launch: started.launch ?? null, live, quit: quitPids, remaining, keptBefore: started.before.filter(pid => running.includes(pid)), front};
 }

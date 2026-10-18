@@ -1,8 +1,9 @@
-// The fixture app's cleanup (scripts/accept/fixture-app.mjs, #157): only a launch the run caused is quit, a process
-// that was running before is never touched, and the front goes back to the app that had it.
+// The fixture app's cleanup (scripts/accept/fixture-app.mjs, #157): only the launch the run recorded right after its
+// `open` is quit, and only while it is still that process; a process that was running before, or one the owner starts
+// mid-run, is never touched, and the front goes back to the app that had it.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {cleanUpFixtureApp, ownedLaunches, parseLaunch, quitOwned, restoreFront} from '../scripts/accept/fixture-app.mjs';
+import {captureLaunch, cleanUpFixtureApp, isSameLaunch, parseLaunch, quitOwned, restoreFront} from '../scripts/accept/fixture-app.mjs';
 
 test('ps lstart text (C locale, UTC) parses to epoch ms; anything else is null', () => {
   assert.equal(parseLaunch('Sun Oct 18 02:51:07 2026    \n'), Date.parse('2026-10-18T02:51:07Z'));
@@ -14,11 +15,24 @@ test('ps lstart text (C locale, UTC) parses to epoch ms; anything else is null',
   for (const bad of ['', '2026년 10월 18일 일요일 10시 53분 03초', 'Sun Foo 18 02:51:07 2026']) assert.equal(parseLaunch(bad), null, bad);
 });
 
-test('ownership by launch: absent before the run and launched in or after its first second; unreadable is not ours', () => {
+test('launch capture right after the open: one new pid launched in or after the run\'s first second is the run\'s; none or several record none', () => {
   const startedAt = Date.parse('2026-10-18T10:00:05.700Z');
   const launches = {11: Date.parse('2026-10-18T10:00:05.000Z'), 12: Date.parse('2026-10-18T10:00:04.000Z'), 13: Date.parse('2026-10-18T10:00:09.000Z'), 14: null, 15: Date.parse('2026-10-18T10:00:09.000Z')};
-  const owned = ownedLaunches({pids: [11, 12, 13, 14, 15], before: [15], startedAt, launchOf: pid => launches[pid]});
-  assert.deepEqual(owned, [11, 13]);  // 12 launched before the run, 14 unreadable, 15 was running before
+  const launchOf = pid => launches[pid];
+  // 12 launched before the run, 14 unreadable, 15 was running before: 11 is the run's.
+  assert.deepEqual(captureLaunch({pids: [11, 12, 14, 15], before: [15], startedAt, launchOf}), {launch: {pid: 11, at: launches[11]}, candidates: [11]});
+  // The document went to a TextEdit already running: nothing is the run's.
+  assert.deepEqual(captureLaunch({pids: [15], before: [15], startedAt, launchOf}), {launch: null, candidates: []});
+  // Two new launches (the owner started one too): ambiguous, nothing recorded.
+  assert.deepEqual(captureLaunch({pids: [11, 13, 15], before: [15], startedAt, launchOf}), {launch: null, candidates: [11, 13]});
+});
+
+test('a recorded launch is still that process only while its pid has the same launch time', () => {
+  const at = Date.parse('2026-10-18T10:00:06.000Z');
+  assert.equal(isSameLaunch({pid: 42, at}, {launchOf: () => at}), true);
+  assert.equal(isSameLaunch({pid: 42, at}, {launchOf: () => at + 60_000}), false);  // the pid was reused
+  assert.equal(isSameLaunch({pid: 42, at}, {launchOf: () => null}), false);         // gone or unreadable
+  assert.equal(isSameLaunch(null, {launchOf: () => at}), false);
 });
 
 test('quitOwned: SIGTERM, then waits for each to go; one that stays is reported', async () => {
@@ -44,18 +58,48 @@ test('restoreFront activates the previous front only when another app holds it, 
   assert.equal(stuck.restored, false);
 });
 
-test('cleanup: the run\'s own launch is quit, a TextEdit running before is kept, the front is handed back', async () => {
-  const startedAt = Date.parse('2026-10-18T10:00:05.000Z');
-  let running = [7, 42], front = 'com.apple.TextEdit';
-  const quitCalls = [];
-  const r = await cleanUpFixtureApp({name: 'TextEdit', bundle: 'com.apple.TextEdit', run: {startedAt, before: [7], front: 'com.apple.Terminal'},
-    pids: () => running, launchOf: pid => (pid === 42 ? startedAt + 2000 : startedAt - 3_600_000),
-    quit: async pids => { quitCalls.push(pids); running = running.filter(p => !pids.includes(p)); return {quit: pids, remaining: []}; },
+const startedAt = Date.parse('2026-10-18T10:00:05.000Z');
+const ours = {pid: 42, at: startedAt + 2000};
+// A cleanup with fakes: `running` pids and their launch times; `quit` records what it was asked to signal.
+async function cleanup({launch = ours, before = [7], running = [7, 42], launches = {7: startedAt - 3_600_000, 42: ours.at}} = {}) {
+  const quitCalls = []; let front = 'com.apple.TextEdit';
+  const r = await cleanUpFixtureApp({name: 'TextEdit', bundle: 'com.apple.TextEdit', run: {before, front: 'com.apple.Terminal', launch},
+    pids: () => running, launchOf: pid => launches[pid] ?? null,
+    quit: async pids => { quitCalls.push(pids); return {quit: pids, remaining: []}; },
     frontmost: () => front, activate: id => { front = id; }, sleep: async () => {}});
+  return {r, quitCalls};
+}
+
+test('cleanup: the recorded launch is quit, a TextEdit running before is kept, the front is handed back', async () => {
+  const {r, quitCalls} = await cleanup();
   assert.deepEqual(quitCalls, [[42]]);
-  assert.deepEqual({owned: r.owned, quit: r.quit, remaining: r.remaining, keptBefore: r.keptBefore, restored: r.front.restored}, {owned: [42], quit: [42], remaining: [], keptBefore: [7], restored: true});
-  // Nothing launched by the run (the document went to the TextEdit already running): nothing is quit.
-  const none = await cleanUpFixtureApp({name: 'TextEdit', bundle: 'com.apple.TextEdit', run: {startedAt, before: [7], front: 'com.apple.Terminal'},
-    pids: () => [7], launchOf: () => startedAt - 1000, quit: async () => assert.fail('nothing to quit'), frontmost: () => 'com.apple.Terminal', sleep: async () => {}});
-  assert.deepEqual({owned: none.owned, keptBefore: none.keptBefore}, {owned: [], keptBefore: [7]});
+  assert.deepEqual({quit: r.quit, remaining: r.remaining, keptBefore: r.keptBefore, restored: r.front.restored}, {quit: [42], remaining: [], keptBefore: [7], restored: true});
+});
+
+test('cleanup: running before (nothing recorded) is never quit, and the front still goes back', async () => {
+  const {r, quitCalls} = await cleanup({launch: null, running: [7]});
+  assert.deepEqual(quitCalls, []);
+  assert.deepEqual({keptBefore: r.keptBefore, restored: r.front.restored}, {keptBefore: [7], restored: true});
+});
+
+test('cleanup: a TextEdit the owner launches mid-run is never selected (nothing is re-scanned)', async () => {
+  // The document went to the TextEdit running before, so nothing was recorded; the owner then starts pid 50.
+  const {quitCalls} = await cleanup({launch: null, running: [7, 50], launches: {7: startedAt - 3_600_000, 50: startedAt + 30_000}});
+  assert.deepEqual(quitCalls, []);
+  // Ours exited, and the owner relaunched TextEdit as pid 50: still only the recorded pid is a candidate, and it is gone.
+  const relaunched = await cleanup({running: [50], launches: {50: startedAt + 30_000}});
+  assert.deepEqual(relaunched.quitCalls, []);
+});
+
+test('cleanup: a reused pid (the recorded pid, another launch time) is not quit', async () => {
+  const {r, quitCalls} = await cleanup({running: [42], launches: {42: ours.at + 120_000}});
+  assert.deepEqual(quitCalls, []);
+  assert.equal(r.live, false);
+});
+
+test('cleanup: an ambiguous launch records nothing, so nothing is quit', async () => {
+  const captured = captureLaunch({pids: [42, 50], before: [], startedAt, launchOf: pid => ({42: ours.at, 50: ours.at + 1000})[pid]});
+  assert.equal(captured.launch, null);
+  const {quitCalls} = await cleanup({launch: captured.launch, before: [], running: [42, 50], launches: {42: ours.at, 50: ours.at + 1000}});
+  assert.deepEqual(quitCalls, []);
 });

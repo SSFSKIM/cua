@@ -9,9 +9,11 @@
 //     window (super+w; TextEdit autosaves a file-backed document into the temporary file, never a user location),
 //     counting the close as confirmed only when TextEdit then reports no window at all;
 //   - it removes its own directory (and a store it created) in `finally`, and ends every server it started.
-// It never touches another TextEdit window or document. At the end it quits TextEdit only when this run started it (a
-// pid absent before the run and launched after it began, ./fixture-app.mjs; a TextEdit that was running before is left
-// as it is) and hands the front back to the application that was frontmost before the run (#157). The vendor asks before CUA first uses an app; the fixture accepts that elicitation only
+// It never touches another TextEdit window or document. At the end it quits TextEdit only when this run started it, by
+// the identity it recorded right after its `open` (./fixture-app.mjs: the one pid absent before the run and launched
+// after it began, with that launch time; none or more than one records none, and a TextEdit running before is left as
+// it is), and hands the front back to the application that was frontmost before the run (#157). The vendor asks before
+// CUA first uses an app; the fixture accepts that elicitation only
 // when it is exactly the pinned request for com.apple.TextEdit (scripts/accept/lib.mjs isTextEditApproval), for the
 // session only (CUA_SHIM_PERSIST=session in this scratch home, never "always"), and declines every other request.
 // That auto-answer lives only in this test harness; `cua serve` forwards approvals to its client unchanged. Two
@@ -37,7 +39,7 @@ import {socketHolders} from '../probe/lib.mjs';
 import {fingerprintable, fingerprints, textLeaks, UNFINGERPRINTABLE} from '../probe/leak-scan.mjs';
 import {isTextEditApproval, TEXTEDIT_BUNDLE} from './lib.mjs';
 import {localFrontmost, sendToPausedSession} from './key-guard.mjs';
-import {cleanUpFixtureApp} from './fixture-app.mjs';
+import {captureLaunch, cleanUpFixtureApp} from './fixture-app.mjs';
 import {openSession, resultText} from './mcp-session.mjs';
 import {pauseGate, pausing} from '../mini-pause.mjs';
 import {createStoreHome, generatedKey, isAccountHome, removeStoreHome, seedSecret} from './secret-seed.mjs';
@@ -195,6 +197,7 @@ export async function runTextEdit({home, secret = false, forbid = () => {}, step
   const textEditBefore = textEditPids();
   const frontBefore = (() => { try { return frontmost(); } catch { return null; } })();
   let opened = false;  // `open` was called: a TextEdit may have been started by this run
+  let launched = null;  // captureLaunch's reading right after the `open`: the run's own TextEdit, if it started one
   const helpersBefore = nativeHelpers();
   const sessionsBefore = sessionFiles(home);
   observations.textEdit = {runningBefore: textEditBefore.length > 0};
@@ -238,7 +241,12 @@ export async function runTextEdit({home, secret = false, forbid = () => {}, step
     docOpen = true;
     for (let i = 0; i < 50 && !textEditPids().length; i++) await sleep(100);
     await sleep(1000);  // let the document window come to the front
-    record(STEP.open, textEditPids().length ? 'PASS' : 'FAIL', `a new empty file in a directory created for this run under $CUA_HOME opened in TextEdit${textEditBefore.length ? ' (already running)' : ' (started by the open)'}`);
+    // The run's own TextEdit, if the open started one, is identified now (pid and launch time), never later.
+    launched = captureLaunch({pids: textEditPids(), before: textEditBefore, startedAt: runStartedAt});
+    observations.textEdit.launch = launched.launch ? {captured: true} : {captured: false, candidates: launched.candidates.length};
+    record(STEP.open, textEditPids().length ? 'PASS' : 'FAIL', `a new empty file in a directory created for this run under $CUA_HOME opened in TextEdit${launched.launch ? ` (started by the open: pid ${launched.launch.pid})`
+      : launched.candidates.length > 1 ? ` (TextEdit pids ${launched.candidates.join(', ')} all started since the run began; which is this run's is ambiguous, so none is recorded as its own)`
+        : textEditBefore.length ? ' (already running)' : ''}`);
 
     // Connection A: type the marker and observe it.
     const a = await connect('connection A');
@@ -322,13 +330,17 @@ ${out(`{ownStillFront: __after === ${JSON.stringify(docName)}, otherFront: __aft
       record(STEP.teardown, stuck.length ? 'FAIL' : 'PASS', `${exits.map(e => `${e.name}: ${e.exit.stuck ? 'still alive after SIGTERM, killed' : `exit ${e.exit.code ?? e.exit.signal}${e.exit.forced ? ' after SIGTERM' : ''}`}`).join('; ')}`);
     }
     if (opened) {
-      const app = await cleanUpFixtureApp({name: 'TextEdit', bundle: TEXTEDIT_BUNDLE, run: {startedAt: runStartedAt, before: textEditBefore, front: frontBefore}, frontmost});
+      const app = await cleanUpFixtureApp({name: 'TextEdit', bundle: TEXTEDIT_BUNDLE, run: {before: textEditBefore, front: frontBefore, launch: launched?.launch ?? null}, frontmost});
       observations.textEdit.quitByFixture = app.quit.length > 0;
       observations.front = {before: app.front.previous, atCleanup: app.front.before, after: app.front.after, restored: app.front.restored};
-      record(STEP.quitApp, app.remaining.length ? 'FAIL' : 'PASS', app.remaining.length
-        ? `TextEdit pid ${app.remaining.join(', ')}, started by this run, did not exit after SIGTERM; quit it by hand`
-        : app.quit.length ? `quit the TextEdit this run started (pid ${app.quit.join(', ')}, launched after the run began)${app.keptBefore.length ? `; pid ${app.keptBefore.join(', ')}, running before, left as it is` : ''}`
-          : textEditBefore.length ? `nothing to quit: TextEdit was running before the run (pid ${textEditBefore.join(', ')}) and is left as it is` : 'nothing to quit: no TextEdit started by this run is running');
+      const kept = app.keptBefore.length ? `; pid ${app.keptBefore.join(', ')}, running before, left as it is` : '';
+      const [quitStatus, quitDetail] = app.remaining.length ? ['FAIL', `TextEdit pid ${app.remaining.join(', ')}, started by this run, did not exit after SIGTERM; quit it by hand`]
+        : app.quit.length ? ['PASS', `quit the TextEdit this run started (pid ${app.quit.join(', ')}, identified by its launch right after the open)${kept}`]
+          : app.launch ? ['PASS', `nothing to quit: pid ${app.launch.pid}, the TextEdit this run started, is no longer that process (it exited, or the pid now has another launch time)${kept}`]
+            : launched?.candidates.length > 1 ? ['BLOCKED', `nothing quit: TextEdit pids ${launched.candidates.join(', ')} all started after the run began, so which one this run started is ambiguous and none was recorded as its own; check TextEdit by hand`]
+              : textEditBefore.length ? ['PASS', `nothing to quit: TextEdit was running before the run (pid ${textEditBefore.join(', ')}) and is left as it is`]
+                : ['PASS', 'nothing to quit: no TextEdit started by the open was seen right after it'];
+      record(STEP.quitApp, quitStatus, quitDetail);
       record(STEP.front, app.front.restored ? 'PASS' : frontBefore ? 'FAIL' : 'BLOCKED', app.front.restored
         ? `${app.front.previous} is frontmost${app.front.before === app.front.previous ? ' (it still was)' : ` again (it was ${app.front.before ?? 'unreadable'})`}`
         : frontBefore ? `${frontBefore} was frontmost before the run; now ${app.front.after ?? 'unreadable'}` : 'the frontmost application before the run could not be read, so there is nothing to hand back to');
@@ -354,7 +366,7 @@ ${out(`{ownStillFront: __after === ${JSON.stringify(docName)}, otherFront: __aft
     reused: helpersBefore.length > 0 && helpersAfter.some(h => helpersBefore.some(b => b.pid === h.pid))};
   const textEditAfter = textEditPids();
   observations.textEdit.runningAfter = textEditAfter.length > 0;
-  observations.textEdit.startedByFixture = !textEditBefore.length && textEditAfter.length > 0;
+  observations.textEdit.startedByFixture = Boolean(launched?.launch);
   observations.textEdit.quitByFixture ??= false;
   observations.guiInputStopped = guiStopped;
   const after = sessionFiles(home);

@@ -1,0 +1,10 @@
+{
+  "ok": true,
+  "release": "26.928.40906-linux-arm64",
+  "root": "/tmp/cua-m4-prune.nScD2X/runtimes/26.928.40906-linux-arm64",
+  "changed": true,
+  "source": "archive",
+  "node": {
+    "skipped": "no_node"
+  }
+}

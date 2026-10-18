@@ -2,6 +2,8 @@
 
 ## Open
 
+- **2026-10-18 — The Linux first cell costs ~50–70 ms more under the confined kernel (minor, #115 M4; accepted).** If Linux latency ever matters: the candidates for the first-cell cost are bubblewrap's namespace setup and the helper's own inner fork (0.163.0's inner stage forks the command and forwards signals instead of exec'ing it). Evidence: `docs/evidence/2026-10-17-own-sandbox/m4/gce/README.md` (item 11) against `m0/gce-cua-computer/`.
+
 - **2026-10-18 — A parity cell races two 100 ms deadlines (minor, #115 M3).** `api/browser-playwrightlocator/waitfor`, cell `locator-contract-diagnostics-no-matches`, waits for an absent selector with a 100 ms timeout. Which deadline fires first decides the message: the locator's (`Playwright selector deadline exceeded`) or the CDP command's (`Timed out after 1ms waiting for CDP command Runtime.evaluate.`); the locator diagnostics after it are the same either way. On the GCE box the own host's run at 65d3ac0 got the CDP wording and the one at 6b9e4d0 the locator's, with the browser path unchanged between them (`docs/evidence/2026-10-17-own-sandbox/m3/README.md`, Parity), so a parity diff can turn red on load alone. Fix: give the cell a deadline the CDP command cannot reach first (or compare only the diagnostics line), in the scenario, not by a comparison allowance.
 
 - **2026-10-17 — Leftovers of the vendor browser service in the bind rule and the wrapper (minor, #79).** (a) `cua

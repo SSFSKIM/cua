@@ -1,0 +1,76 @@
+{
+  "home": "/tmp/cua-m4-home.30wq6j",
+  "ok": false,
+  "checks": [
+    {
+      "name": "platform",
+      "status": "pass",
+      "detail": "linux-arm64 has pinned release 26.928.40906-linux-arm64"
+    },
+    {
+      "name": "runtime.installed",
+      "status": "pass",
+      "detail": "active release 26.928.40906-linux-arm64 at /tmp/cua-m4-home.30wq6j/runtimes/26.928.40906-linux-arm64"
+    },
+    {
+      "name": "runtime.files",
+      "status": "pass",
+      "detail": "every pinned runtime path is present"
+    },
+    {
+      "name": "runtime.vendor-manifest",
+      "status": "pass",
+      "detail": "runtime 0.0.27/20260927214556-b77d38801cca, node 24.21.0-cua.1, linux-arm64"
+    },
+    {
+      "name": "runtime.ipc",
+      "status": "pass",
+      "detail": "not applicable on linux"
+    },
+    {
+      "name": "runtime.signatures",
+      "status": "pass",
+      "detail": "archive hash is the trust root on linux: install verified the pinned archive's length and SHA-256 before extracting it, and nothing here is code-signed"
+    },
+    {
+      "name": "sandbox",
+      "status": "pass",
+      "detail": "CUA_SHIM_SANDBOX=scoped (the default): JavaScript cells write only their connection's run directory and its session temp ($CUA_HOME/run/<session>, their TMPDIR), no trusted code path lies under either, and cells have no network (the trusted services do, so the computer-use helper reaches the X display and the session bus); CUA_SHIM_SANDBOX=disabled lifts both limits"
+    },
+    {
+      "name": "sandbox.launcher",
+      "status": "pass",
+      "detail": "cua's own sandbox confines the children: the pinned helper /tmp/cua-m4-home.30wq6j/sandbox/rust-v0.163.0/codex-linux-sandbox (SHA-256 807448d058065db9e50ed8f24a739ac42f6a738503083ad93ee3626655916088); no Codex CLI is launched"
+    },
+    {
+      "name": "runtime.leftovers",
+      "status": "pass",
+      "detail": "nothing the Codex CLI left behind is here; cua runs no Codex CLI (#115)"
+    },
+    {
+      "name": "sandbox.userns",
+      "status": "pass",
+      "detail": "bubblewrap can create an unprivileged user namespace (bwrap --ro-bind / / true), which the runtime's sandbox uses"
+    },
+    {
+      "name": "repl.host",
+      "status": "pass",
+      "detail": "cua host (linux) on Node /tmp/cua-m4-home.30wq6j/node/24.22.0/bin/node: CUA_REPL_HOST is unset, and cua's own host is the only one on Linux (the browser surface, if on, uses cua's browser service; the vendor host is retired there, #115). The profile listing (browser only): cua host (linux) on Node /tmp/cua-m4-home.30wq6j/node/24.22.0/bin/node: CUA_REPL_HOST is unset, and cua's own host is the only one on Linux (the browser surface, if on, uses cua's browser service; the vendor host is retired there, #115)."
+    }
+  ],
+  "runtime": {
+    "release": "26.928.40906-linux-arm64",
+    "root": "/tmp/cua-m4-home.30wq6j/runtimes/26.928.40906-linux-arm64",
+    "paths": {
+      "node": "/tmp/cua-m4-home.30wq6j/runtimes/26.928.40906-linux-arm64/cua_node/bin/node",
+      "nodeRepl": "/tmp/cua-m4-home.30wq6j/runtimes/26.928.40906-linux-arm64/cua_node/bin/node_repl",
+      "moduleDir": "/tmp/cua-m4-home.30wq6j/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules",
+      "cuaRepl": "/tmp/cua-m4-home.30wq6j/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/cua-repl/bin/cua-repl.mjs",
+      "skyLinuxBin": "/tmp/cua-m4-home.30wq6j/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64",
+      "skyVendorService": "/tmp/cua-m4-home.30wq6j/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky/dist/project/cua/sky_js/src/service.js",
+      "browserVendorService": "/tmp/cua-m4-home.30wq6j/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/browser-desktop/scripts/browser-service.mjs",
+      "vendorManifest": "/tmp/cua-m4-home.30wq6j/runtimes/26.928.40906-linux-arm64/cua_node/manifest.json"
+    }
+  },
+  "note": "rows other than platform, runtime.*, sandbox* and repl.* removed (Chrome, secrets and agent rows describe the box, not item 1)"
+}

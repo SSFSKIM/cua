@@ -27,7 +27,7 @@
 // labelled DIAGNOSTIC, with the verdict it would have had, and is never a PASS.
 import {isDeepStrictEqual} from 'node:util';
 import {attestation, DEFAULT_PLAN, isDefaultPlan, operationRank, summarize, surfaceOf} from './summary.mjs';
-import {comparisonEnvironment, environmentProblems} from './environment.mjs';
+import {comparisonEnvironment, environmentProblems, sameEnvironmentValue} from './environment.mjs';
 
 export const TOLERANCE = {ratio: 0.1, floorMs: 500};
 export const latencyLimit = median => median + Math.max(TOLERANCE.ratio * median, TOLERANCE.floorMs);
@@ -183,7 +183,7 @@ export function compareSameHost(baselineRuns, candidateRuns) {
   const left = attestation(before), right = attestation(after);
   for (const [key, label] of Object.entries(COMPARABLE)) if (key !== 'sandbox' && left[key] !== right[key]) problems.push(`${label} differs (baseline ${left[key] ?? '–'}, candidate ${right[key] ?? '–'})`);
   const [envBefore, envAfter] = [before, after].map(comparisonEnvironment);
-  for (const key of Object.keys(envBefore)) if (!['sandbox', 'experiment'].includes(key) && !isDeepStrictEqual(envBefore[key], envAfter[key])) problems.push(`${key} environment differs between the baseline and the candidate`);
+  for (const key of Object.keys(envBefore)) if (!['sandbox', 'experiment'].includes(key) && !sameEnvironmentValue(key, envBefore[key], envAfter[key])) problems.push(`${key} environment differs between the baseline and the candidate`);
   const changes = permittedChanges(before, after);
   problems.push(...changes.problems);
   const ops = [...new Set([...baseline.summary.operations, ...candidate.summary.operations].map(o => o.op))]

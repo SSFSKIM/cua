@@ -1,0 +1,248 @@
+{
+ "probe": "linux-helper-compare",
+ "helpers": {
+  "vendor": "/tmp/cua-m3-home.jONXuy/sandbox/compare-vendor/codex-linux-sandbox",
+  "cua": "/tmp/cua-m3-home.jONXuy/sandbox/compare-cua/codex-linux-sandbox"
+ },
+ "results": {
+  "scoped kernel": {
+   "vendor": {
+    "code": 0,
+    "outcomes": {
+     "read store": "EACCES",
+     "list store": "EACCES",
+     "read config cua": "EACCES",
+     "list config cua": "EACCES",
+     "read state": "EACCES",
+     "list state": "EACCES",
+     "read remote": "EACCES",
+     "list remote": "EACCES",
+     "read chrome": "EACCES",
+     "list chrome": "EACCES",
+     "read other run": "ENOENT",
+     "list other run": "ENOENT",
+     "read module tree": "EISDIR",
+     "list module tree": "ok",
+     "write run directory": "ok",
+     "write session temp": "ok",
+     "write home": "EROFS",
+     "write runtimes": "EROFS",
+     "write outside": "EROFS",
+     "link store into run directory": "EACCES",
+     "link state into session temp": "EACCES",
+     "tcp connect": "EPERM",
+     "unix connect": "EPERM"
+    }
+   },
+   "cua": {
+    "code": 0,
+    "outcomes": {
+     "read store": "EACCES",
+     "list store": "EACCES",
+     "read config cua": "EACCES",
+     "list config cua": "EACCES",
+     "read state": "EACCES",
+     "list state": "EACCES",
+     "read remote": "EACCES",
+     "list remote": "EACCES",
+     "read chrome": "EACCES",
+     "list chrome": "EACCES",
+     "read other run": "ENOENT",
+     "list other run": "ENOENT",
+     "read module tree": "EISDIR",
+     "list module tree": "ok",
+     "write run directory": "ok",
+     "write session temp": "ok",
+     "write home": "EROFS",
+     "write runtimes": "EROFS",
+     "write outside": "EROFS",
+     "link store into run directory": "EACCES",
+     "link state into session temp": "EACCES",
+     "tcp connect": "EPERM",
+     "unix connect": "EPERM"
+    }
+   }
+  },
+  "scoped worker": {
+   "vendor": {
+    "code": 0,
+    "outcomes": {
+     "read store": "ok",
+     "list store": "ok",
+     "read config cua": "ok",
+     "list config cua": "ok",
+     "read state": "ok",
+     "list state": "ok",
+     "read remote": "ok",
+     "list remote": "ok",
+     "read chrome": "ok",
+     "list chrome": "ok",
+     "read other run": "ok",
+     "list other run": "ok",
+     "read module tree": "EISDIR",
+     "list module tree": "ok",
+     "write run directory": "ok",
+     "write session temp": "ok",
+     "write home": "EROFS",
+     "write runtimes": "EROFS",
+     "write outside": "EROFS",
+     "link store into run directory": "EXDEV",
+     "link state into session temp": "EXDEV",
+     "tcp connect": "EPERM",
+     "unix connect": "EPERM"
+    }
+   },
+   "cua": {
+    "code": 0,
+    "outcomes": {
+     "read store": "ok",
+     "list store": "ok",
+     "read config cua": "ok",
+     "list config cua": "ok",
+     "read state": "ok",
+     "list state": "ok",
+     "read remote": "ok",
+     "list remote": "ok",
+     "read chrome": "ok",
+     "list chrome": "ok",
+     "read other run": "ok",
+     "list other run": "ok",
+     "read module tree": "EISDIR",
+     "list module tree": "ok",
+     "write run directory": "ok",
+     "write session temp": "ok",
+     "write home": "EROFS",
+     "write runtimes": "EROFS",
+     "write outside": "EROFS",
+     "link store into run directory": "EXDEV",
+     "link state into session temp": "EXDEV",
+     "tcp connect": "EPERM",
+     "unix connect": "EPERM"
+    }
+   }
+  },
+  "default kernel": {
+   "vendor": {
+    "code": 0,
+    "outcomes": {
+     "read store": "EACCES",
+     "list store": "EACCES",
+     "read config cua": "EACCES",
+     "list config cua": "EACCES",
+     "read state": "EACCES",
+     "list state": "EACCES",
+     "read remote": "EACCES",
+     "list remote": "EACCES",
+     "read chrome": "EACCES",
+     "list chrome": "EACCES",
+     "read other run": "EACCES",
+     "list other run": "EACCES",
+     "read module tree": "EISDIR",
+     "list module tree": "ok",
+     "write run directory": "EACCES",
+     "write session temp": "EACCES",
+     "write home": "EROFS",
+     "write runtimes": "EROFS",
+     "write outside": "EROFS",
+     "link store into run directory": "EACCES",
+     "link state into session temp": "EACCES",
+     "tcp connect": "EPERM",
+     "unix connect": "EPERM"
+    }
+   },
+   "cua": {
+    "code": 0,
+    "outcomes": {
+     "read store": "EACCES",
+     "list store": "EACCES",
+     "read config cua": "EACCES",
+     "list config cua": "EACCES",
+     "read state": "EACCES",
+     "list state": "EACCES",
+     "read remote": "EACCES",
+     "list remote": "EACCES",
+     "read chrome": "EACCES",
+     "list chrome": "EACCES",
+     "read other run": "EACCES",
+     "list other run": "EACCES",
+     "read module tree": "EISDIR",
+     "list module tree": "ok",
+     "write run directory": "EACCES",
+     "write session temp": "EACCES",
+     "write home": "EROFS",
+     "write runtimes": "EROFS",
+     "write outside": "EROFS",
+     "link store into run directory": "EACCES",
+     "link state into session temp": "EACCES",
+     "tcp connect": "EPERM",
+     "unix connect": "EPERM"
+    }
+   }
+  },
+  "default worker": {
+   "vendor": {
+    "code": 0,
+    "outcomes": {
+     "read store": "ok",
+     "list store": "ok",
+     "read config cua": "ok",
+     "list config cua": "ok",
+     "read state": "ok",
+     "list state": "ok",
+     "read remote": "ok",
+     "list remote": "ok",
+     "read chrome": "ok",
+     "list chrome": "ok",
+     "read other run": "ok",
+     "list other run": "ok",
+     "read module tree": "EISDIR",
+     "list module tree": "ok",
+     "write run directory": "EROFS",
+     "write session temp": "EROFS",
+     "write home": "EROFS",
+     "write runtimes": "EROFS",
+     "write outside": "EROFS",
+     "link store into run directory": "EROFS",
+     "link state into session temp": "EROFS",
+     "tcp connect": "EPERM",
+     "unix connect": "EPERM"
+    }
+   },
+   "cua": {
+    "code": 0,
+    "outcomes": {
+     "read store": "ok",
+     "list store": "ok",
+     "read config cua": "ok",
+     "list config cua": "ok",
+     "read state": "ok",
+     "list state": "ok",
+     "read remote": "ok",
+     "list remote": "ok",
+     "read chrome": "ok",
+     "list chrome": "ok",
+     "read other run": "ok",
+     "list other run": "ok",
+     "read module tree": "EISDIR",
+     "list module tree": "ok",
+     "write run directory": "EROFS",
+     "write session temp": "EROFS",
+     "write home": "EROFS",
+     "write runtimes": "EROFS",
+     "write outside": "EROFS",
+     "link store into run directory": "EROFS",
+     "link state into session temp": "EROFS",
+     "tcp connect": "EPERM",
+     "unix connect": "EPERM"
+    }
+   }
+  }
+ },
+ "equal": {
+  "scoped kernel": true,
+  "scoped worker": true,
+  "default kernel": true,
+  "default worker": true
+ },
+ "ok": true
+}

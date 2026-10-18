@@ -4,12 +4,13 @@
 // macOS launch is unchanged by any of these variables.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {existsSync, realpathSync, statSync} from 'node:fs';
+import {existsSync, mkdirSync, realpathSync, statSync, symlinkSync} from 'node:fs';
 import {join} from 'node:path';
 import {buildLaunch, createLaunchDirs, removeLaunchDirs, SKY_SERVICE, BROWSER_SERVICE} from '../src/runtime/launch.mjs';
 import {parsePin, runtimeFor} from '../src/runtime/manifest.mjs';
 import {scratch, fixturePin, linuxFixturePin} from './fixtures/runtime-fixture.mjs';
 import {helperFor} from '../src/sandbox/linux.mjs';
+import {assertSandboxFits} from '../src/runtime/sandbox.mjs';
 
 const SESSION = '6f1c2d3e-0000-4000-8000-000000000002';
 const DESKTOP = {DISPLAY: ':0', XAUTHORITY: '/home/u/.Xauthority', DBUS_SESSION_BUS_ADDRESS: 'unix:path=/run/user/1000/bus', XDG_RUNTIME_DIR: '/run/user/1000', XDG_DATA_DIRS: '/usr/local/share:/usr/share'};
@@ -115,4 +116,20 @@ test('a macOS launch ignores the Linux desktop variables', t => {
   const {env} = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT});
   for (const key of [...Object.keys(DESKTOP), 'OAI_SKY_LINUX_BIN']) assert.equal(key in env, false, key);
   assert.equal(env.SKY_CUA_SERVICE_PATH, runtime.paths.skyServiceApp);
+});
+
+// launch_app starts what an XDG applications directory holds outside the sandbox (src/repl-host/launch-services.mjs), so
+// under scoped no applications directory of the launch's environment may overlap a directory cells can write: the
+// preflight refuses that layout, whether the directory exists yet or not.
+test('scoped on Linux: an XDG applications directory inside a write root is refused before anything starts', t => {
+  const {home, runtime} = linux(t);
+  const build = ambient => buildLaunch({runtime, home, sessionId: SESSION, ambient, services: {sky: SKY_SERVICE}, resolveOwnNode: ownNode});
+  assertSandboxFits('scoped', build(AMBIENT));
+  const inRun = build({...AMBIENT, XDG_DATA_DIRS: `/usr/share:${join(home, 'run', SESSION, 'share')}`});
+  assert.throws(() => assertSandboxFits('scoped', inRun), error => error.code === 'sandbox_conflict' && /XDG applications directory/.test(error.message));
+  mkdirSync(join(home, 'run', SESSION), {recursive: true});
+  symlinkSync(join(home, 'run', SESSION), join(home, 'alias'));
+  const linked = build({...AMBIENT, XDG_DATA_DIRS: join(home, 'alias', 'tmp', 'share')});
+  assert.throws(() => assertSandboxFits('scoped', linked), error => error.code === 'sandbox_conflict' && /XDG applications directory/.test(error.message), 'through a symlink too');
+  assertSandboxFits('default', inRun);
 });

@@ -91,7 +91,7 @@ import {DEFAULT_CONNECT_TIMEOUT_MS, nativePipeRelay} from './native-pipe.mjs';
 import {ELICITATION_CANCELLED_SENTENCE, elicitationOutcome, elicitationParams, formElicitationSupported} from './elicitation.mjs';
 import {launchServicesAction} from './launch-services.mjs';
 import {SANDBOX_META_KEY, SandboxStateError} from '../runtime/sandbox.mjs';
-import {parseDenyRead, policyTable, tableKey as launchKey} from '../sandbox/policy.mjs';
+import {parseDenyRead, policyTable, tableKey as launchKey, writeRootsOf} from '../sandbox/policy.mjs';
 import {sandboxedLaunch} from '../sandbox/index.mjs';
 
 export const KERNEL = fileURLToPath(new URL('./kernel.mjs', import.meta.url));
@@ -497,7 +497,10 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
         return;
       case 'launch_services_action':
         if (!current) return reply({type: 'privileged_result', id: message.id, ok: false, error: EXEC_CONTEXT_NOT_FOUND});
-        return void launchServices(message).then(
+        // Nothing the sandbox lets a child write is launched outside it (./launch-services.mjs): the session's run
+        // directory and temp, whatever the policy, and every root the call's policy makes writable.
+        return void launchServices(message, {writeRoots: [settings.workingDir, settings.kernelEnv.TMPDIR,
+          ...(current.policy.disabled ? [] : writeRootsOf(current.policy, {cwd: settings.workingDir, tmpdir: settings.kernelEnv.TMPDIR}))].filter(Boolean)}).then(
           () => reply({type: 'privileged_result', id: message.id, ok: true}),
           error => reply({type: 'privileged_result', id: message.id, ok: false, error: error.message}));
       case 'native_pipe_request':

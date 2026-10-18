@@ -26,7 +26,8 @@
 // the pin's length and SHA-256 in staging before anything else reads it, then placed at
 // $CUA_HOME/sandbox/<upstreamTag>/codex-linux-sandbox (0755, in a 0755 directory) with one rename. The pin's hash is
 // the trust root; the release's provenance attestation is checked when the pin is written, not here. A helper already
-// placed with the pinned bytes makes the step a no-op; one whose bytes differ is never replaced in place (running
+// placed with the pinned bytes makes the step a no-op (but for its mode, set back to 0755 if it was changed, since a
+// launch refuses a helper it cannot execute); one whose bytes differ is never replaced in place (running
 // children may be executing it, and a tampered file is a finding), so the step refuses with the remedy.
 //
 // The signature checker, fetch and the tool lookup are injectable for tests through this module API only; the CLI
@@ -257,7 +258,12 @@ export async function installSandboxHelper({home, pin = loadHelperPin(), path, f
   let placed = null;
   try { placed = readFileSync(target); } catch (error) { if (error.code !== 'ENOENT') throw error; }
   if (placed) {
-    if (sha256Of(placed) === asset.sha256) return {path: target, sha256: asset.sha256, changed: false};
+    if (sha256Of(placed) === asset.sha256) {
+      // The pinned bytes without their mode would fail at spawn (src/sandbox/linux.mjs verifyHelper refuses them): restored.
+      if ((statSync(target).mode & 0o777) === 0o755) return {path: target, sha256: asset.sha256, changed: false};
+      chmodSync(target, 0o755);
+      return {path: target, sha256: asset.sha256, changed: true};
+    }
     fail('sandbox_helper_invalid', `the sandbox helper at ${target} is not the pinned ${pin.upstreamTag} helper for linux-${host.arch}; it is not replaced in place`,
       {hint: `stop any \`cua serve\` using it, remove ${helperDir(real, pin)}, then run \`cua install\` again`});
   }

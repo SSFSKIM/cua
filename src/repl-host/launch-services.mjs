@@ -15,8 +15,10 @@
 // application's desktop entry, which is launched with `gio launch` in a session of its own (it is never in the
 // supervisor's process group, which the reaper may clear) and with the desktop session's environment only. The entry
 // must be a `.desktop` file whose real path lies in an `applications/` directory of the supervisor's own XDG data
-// directories ($XDG_DATA_HOME or ~/.local/share, then $XDG_DATA_DIRS or /usr/local/share:/usr/share): nothing a cell
-// or the worker can write is ever launched outside the sandbox.
+// directories ($XDG_DATA_HOME or ~/.local/share, then $XDG_DATA_DIRS or /usr/local/share:/usr/share) and in none of
+// the sandbox's write roots (`writeRoots`: the session's run directory and temp and what the call's policy makes
+// writable, by real path): nothing a cell or the worker can write is ever launched outside the sandbox. The scoped
+// preflight refuses a layout whose applications directories overlap a write root (src/runtime/sandbox.mjs).
 import {execFile} from 'node:child_process';
 import {realpathSync, statSync} from 'node:fs';
 import {isAbsolute, join, relative} from 'node:path';
@@ -62,20 +64,25 @@ const within = (path, root) => {
 const realOrNull = path => { try { return realpathSync(path); } catch { return null; } };
 const isFile = path => { try { return statSync(path).isFile(); } catch { return false; } };
 
-// The applications directories of the XDG data directories `env` names, by real path (those that exist).
-export function xdgApplicationDirs(env) {
+// The applications directories of the XDG data directories `env` names, as spelled, whether or not they exist.
+export function xdgApplicationRoots(env) {
   const home = isAbsolute(env.XDG_DATA_HOME ?? '') ? env.XDG_DATA_HOME : join(env.HOME ?? '/', '.local', 'share');
   const dirs = (env.XDG_DATA_DIRS || '/usr/local/share:/usr/share').split(':').filter(isAbsolute);
-  return [home, ...dirs].map(dir => realOrNull(join(dir, 'applications'))).filter(Boolean);
+  return [home, ...dirs].map(dir => join(dir, 'applications'));
 }
 
-async function launchLinux(message, {launch, env}) {
+// Those that exist, by real path.
+export const xdgApplicationDirs = env => xdgApplicationRoots(env).map(realOrNull).filter(Boolean);
+
+async function launchLinux(message, {launch, env, writeRoots}) {
   const path = message.application_path ?? null;
   if (path === null || message.bundle_identifier != null) throw new Error(`${LINUX_ENTRY_REFUSED_PREFIX}anything but a desktop entry's path on Linux`);
   if (typeof path !== 'string' || !isAbsolute(path)) throw new Error(PATH_NOT_ABSOLUTE_SENTENCE);
   const real = realOrNull(path);
   if (real === null || !isFile(real) || !real.endsWith('.desktop') || !xdgApplicationDirs(env).some(dir => within(real, dir)))
     throw new Error(`${LINUX_ENTRY_REFUSED_PREFIX}${path}: only a desktop entry in an XDG applications directory is launched`);
+  if (writeRoots.map(root => realOrNull(root) ?? root).some(root => within(real, root)))
+    throw new Error(`${LINUX_ENTRY_REFUSED_PREFIX}${path}: it lies where the sandbox lets JavaScript write, so it is not launched outside it`);
   const desktopEnv = Object.fromEntries(DESKTOP_ENV.filter(name => typeof env[name] === 'string').map(name => [name, env[name]]));
   try {
     await launch(real, desktopEnv);
@@ -85,10 +92,11 @@ async function launchLinux(message, {launch, env}) {
 }
 
 // A `launch_services_action` -> resolves once the OS was asked to open the application; rejects with the sentence the
-// worker is answered. `env` is the supervisor's environment (the XDG directories and the desktop session).
-export async function launchServicesAction(message, {platform = process.platform, open = runOpen, launch = runGioLaunch, env = process.env} = {}) {
+// worker is answered. `env` is the supervisor's environment (the XDG directories and the desktop session);
+// `writeRoots`, the sandbox's write roots for the call (Linux).
+export async function launchServicesAction(message, {platform = process.platform, open = runOpen, launch = runGioLaunch, env = process.env, writeRoots = []} = {}) {
   if (message.action !== 'open_application') throw new Error(`unsupported LaunchServices action: ${String(message.action)}`);
-  if (platform === 'linux') return launchLinux(message, {launch, env});
+  if (platform === 'linux') return launchLinux(message, {launch, env, writeRoots});
   const path = message.application_path ?? null;
   const bundle = message.bundle_identifier ?? null;
   if ((path === null) === (bundle === null)) throw new Error(EXACTLY_ONE_SENTENCE);

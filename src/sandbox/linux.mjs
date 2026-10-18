@@ -14,7 +14,7 @@
 // /usr/bin:/bin:/usr/sbin:/sbin), re-executes itself from its own path inside the restricted filesystem, applies
 // no_new_privs and seccomp (every socket `connect` refused unless the network is enabled) and runs the command; it fails
 // closed on every setup error. cua never passes --use-legacy-landlock, --managed-network or the helper's internal flags.
-import {readFileSync} from 'node:fs';
+import {accessSync, constants, readFileSync, statSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -80,10 +80,11 @@ export function helperFor({home, arch, pin = loadHelperPin()}) {
   return {path: helperPath(home, pin), sha256: helperAsset(pin, arch).sha256};
 }
 
-// `helper` ({path, sha256}) when the file at `path` is exactly the pinned bytes; a missing, unreadable or different file
-// refuses (sandbox_unavailable): nothing is ever launched under a helper the pin does not name, and nothing runs
-// unconfined in its place. Read whole on every call (the helper is a few MB), so a file replaced after an earlier
-// check is caught at the next launch.
+// `helper` ({path, sha256}) when the file at `path` is a regular executable file holding exactly the pinned bytes; a
+// missing, unreadable, non-executable or different file refuses (sandbox_unavailable): nothing is ever launched under a
+// helper the pin does not name, a helper that would fail at spawn is refused before anything starts, and nothing runs
+// unconfined in its place. Checked whole on every call (the helper is a few MB), so a file replaced or made
+// non-executable after an earlier check is caught at the next launch.
 export function verifyHelper(helper) {
   const {path, sha256} = helper ?? {};
   if (typeof path !== 'string' || typeof sha256 !== 'string')
@@ -93,6 +94,10 @@ export function verifyHelper(helper) {
     fail('sandbox_unavailable', `cua's Linux sandbox helper ${path} is not installed (${error.code ?? 'unreadable'}), so no JavaScript cell or trusted service can be confined; nothing was started`,
       {hint: 'run `cua install` to fetch and verify it, or set CUA_SHIM_SANDBOX=disabled to run without a sandbox openly'});
   }
+  let executable = false;
+  try { executable = statSync(path).isFile() && (accessSync(path, constants.X_OK), true); } catch { executable = false; }
+  if (!executable) fail('sandbox_unavailable', `cua's Linux sandbox helper ${path} is not an executable file, so no JavaScript cell or trusted service can be confined; nothing was started`,
+    {hint: 'run `cua install` to restore its mode, or set CUA_SHIM_SANDBOX=disabled to run without a sandbox openly'});
   const actual = sha256Of(bytes);
   if (actual !== sha256) fail('sandbox_unavailable', `cua's Linux sandbox helper ${path} has SHA-256 ${actual}, not the pinned ${sha256}; it is not run, and nothing was started`,
     {hint: `remove ${dirname(path)} and run \`cua install\` to place the pinned helper again`});

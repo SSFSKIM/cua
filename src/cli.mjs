@@ -157,7 +157,7 @@ async function install(args, {installRuntime: runtimeInstaller = installRuntime,
   }
 
   let node;
-  const ownNodeFallback = 'cua\'s own REPL host runs on CUA_NODE or your own Node 24 or later, else sessions keep the vendor host';
+  const ownNodeFallback = `cua's own REPL host runs on CUA_NODE or your own Node 24 or later, else ${platform === 'linux' ? 'sessions are refused (Linux has no vendor host)' : 'sessions keep the vendor host'}`;
   if (!nodePin) {
     node = {skipped: values['no-node'] ? 'no_node' : 'unpinned'};
     if (!values.json) print(values['no-node'] ? `skipped the pinned Node (--no-node): ${ownNodeFallback}` : `no Node is pinned for ${process.platform}-${process.arch}: ${ownNodeFallback}`);

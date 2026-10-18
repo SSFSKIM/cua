@@ -132,7 +132,14 @@ jobs:
         run: |
           set -euo pipefail
           bin="${GITHUB_WORKSPACE}/dist/codex-linux-sandbox-${{ matrix.target }}"
-          if strings -a "$bin" | grep -E -n '/home/|/Users/|/root/|ghp_|gho_|ghs_|github_pat_|ACTIONS_RUNTIME_TOKEN|BEGIN [A-Z ]*PRIVATE KEY' ; then
+          # Counts per category only: a match is never printed, since it could be the secret itself.
+          found=0
+          for category in 'home path:/home/|/Users/|/root/' 'GitHub token:ghp_|gho_|ghs_|github_pat_|ACTIONS_RUNTIME_TOKEN' 'private key:BEGIN [A-Z ]*PRIVATE KEY'; do
+            count=$(strings -a "$bin" | grep -E -c "${category#*:}" || true)
+            echo "${category%%:*}: ${count}"
+            [ "$count" = 0 ] || found=1
+          done
+          if [ "$found" != 0 ]; then
             echo "the binary names a home directory or carries a token-shaped string" >&2; exit 1
           fi
           echo "no home path or token-shaped string in $(basename "$bin")"

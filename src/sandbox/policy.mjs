@@ -230,6 +230,15 @@ const entryOf = ([key, access]) => {
   return {path: {type: 'path', path: key}, access};
 };
 
+// The directories a policy table (policyTable's, not disabled) lets a child write, as the helper and seatbelt resolve
+// them: the workspace root at the table's cwd (else `cwd`), `tmpdir` for :tmpdir, /tmp for :slash_tmp, / for a writable
+// :root, and each writable path.
+export function writeRootsOf(table, {cwd, tmpdir}) {
+  const special = {':workspace_roots': table.cwd ?? cwd, ':tmpdir': tmpdir, ':slash_tmp': '/tmp', ':root': '/', ':minimal': '/'};
+  return (table.filesystem ?? []).filter(([, access]) => (typeof access === 'object' ? access['.'] : access) === 'write')
+    .map(([key]) => (Object.hasOwn(special, key) ? special[key] : key)).filter(Boolean);
+}
+
 // One child's permission profile for a call's sandbox state -> {profile, cwd} (cwd: the state's sandboxCwd, null for
 // the default state), or null for disabled. `state`: the call's sandbox-state value, or undefined (the default mode);
 // `readPaths`: what both roles read; `denyRead`: prepareDenyTargets' result, which the kernel needs (SandboxStateError

@@ -59,6 +59,7 @@ import {CuaError} from './errors.mjs';
 import {homeLayout, realHome} from './layout.mjs';
 import {BROWSER_SERVICE, BROWSER_SERVICE_IMPL_DIR, COMPAT_EXECUTABLE, compatExecutable, CUA_API_DIR, CUA_API_DOCS_DIR, REPL_HOST_DIR, SANDBOX_DIR, SERVICE_SUPPORT_DIRS, SKY_SERVICE, NODE_FLOOR, ownHostNode, replHostFor} from './launch.mjs';
 import {SANDBOX_CONFLICT_HINT, assertDenyListShape, describeConflicts, protectedPaths, sandboxConflicts, sandboxModeFrom, scopedWriteRoots} from './sandbox.mjs';
+import {xdgApplicationRoots} from '../repl-host/launch-services.mjs';
 import {denyListFor} from '../sandbox/policy.mjs';
 import {SEATBELT_EXEC} from '../sandbox/seatbelt.mjs';
 import {linuxHelper as verifiedLinuxHelper} from '../sandbox/linux.mjs';
@@ -262,16 +263,20 @@ function sandboxRow({home, env, runtime, platform, surfaces, userns, mode}) {
     return result('sandbox', 'fail', `CUA_SHIM_SANDBOX=${mode}: ${error.message}. cua serve and the profile listing refuse to start like this (${error.code})${error.hint ? `: ${error.hint}` : ''}`);
   }
   if (linux && userns && userns.status !== 'pass') return result('sandbox', 'fail', `CUA_SHIM_SANDBOX=${mode}, but bubblewrap cannot create a user namespace here (see sandbox.userns), so cua's sandbox helper cannot confine anything and cua serve and the profile listing refuse confined connections (sandbox_unavailable). Fix what sandbox.userns names, or set CUA_SHIM_SANDBOX=disabled to run without a sandbox openly`);
-  if (mode === 'default') return result('sandbox', 'pass', 'CUA_SHIM_SANDBOX=default: JavaScript cells and trusted services read everywhere but what cells may not read, write nowhere and have no network, so profile labels, screenshots and other features that need scratch space fail');
+  // On Linux with the computer surface the trusted worker has the network in every confined mode (src/runtime/launch.mjs).
   const computer = linux && surfaces.includes('computer');
+  const workerNetwork = ' (the trusted services do, so the computer-use helper reaches the X display and the session bus)';
+  if (mode === 'default') return result('sandbox', 'pass', 'CUA_SHIM_SANDBOX=default: JavaScript cells and trusted services read everywhere but what cells may not read and write nowhere, so profile labels, screenshots and other features that need scratch space fail; '
+    + (computer ? `cells have no network${workerNetwork}` : 'neither has the network'));
   const conflicts = sandboxConflicts({
     protectedPaths: protectedPaths({trustedCodePaths: [runtime?.paths.moduleDir, REPL_HOST_DIR, CUA_API_DIR, CUA_API_DOCS_DIR, SANDBOX_DIR, dirname(SKY_SERVICE), dirname(BROWSER_SERVICE), BROWSER_SERVICE_IMPL_DIR, ...SERVICE_SUPPORT_DIRS],
-      codexHome: owned.codexHome, managedNode: owned.node, staging: owned.staging, sandboxHelper: owned.sandbox, denied: deny, ownRoots: [session], ownHolders: [owned.home, owned.run]}),
+      codexHome: owned.codexHome, managedNode: owned.node, staging: owned.staging, sandboxHelper: owned.sandbox, applications: linux ? xdgApplicationRoots({HOME: env.HOME, XDG_DATA_DIRS: env.XDG_DATA_DIRS}) : [],
+      denied: deny, ownRoots: [session], ownHolders: [owned.home, owned.run]}),
     writeRoots: scopedWriteRoots({cwd: session, cwdLabel: 'a connection\'s run directory, $CUA_HOME/run/<session>'}),
   });
   if (conflicts.length) return result('sandbox', 'fail', `${describeConflicts(conflicts)}. cua serve and the profile listing refuse to start like this (sandbox_conflict): ${SANDBOX_CONFLICT_HINT}`);
   return result('sandbox', 'pass', 'CUA_SHIM_SANDBOX=scoped (the default): JavaScript cells write only their connection\'s run directory and its session temp ($CUA_HOME/run/<session>, their TMPDIR), no trusted code path lies under either, and cells have no network'
-    + (computer ? ' (the trusted services do, so the computer-use helper reaches the X display and the session bus)' : '') + '; CUA_SHIM_SANDBOX=disabled lifts both limits');
+    + (computer ? workerNetwork : '') + '; CUA_SHIM_SANDBOX=disabled lifts both limits');
 }
 
 function runSweepCheck(home, sweep) {

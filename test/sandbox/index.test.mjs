@@ -62,7 +62,7 @@ function linuxScratch(t) {
   mkdirSync(home);
   const helper = join(cuaHome, 'sandbox', 'rust-v0.163.0', 'codex-linux-sandbox');
   mkdirSync(join(helper, '..'), {recursive: true});
-  writeFileSync(helper, '#!/bin/sh\nexec "$@"\n');
+  writeFileSync(helper, '#!/bin/sh\nexec "$@"\n', {mode: 0o755});
   const deny = [join(home, '.config', 'claude-secrets'), join(home, '.config', 'cua'), ...['state', 'remote', 'chrome', 'run'].map(d => join(cuaHome, d))];
   return {root, home, cuaHome, cwd, helper: {path: helper, sha256: createHash('sha256').update(readFileSync(helper)).digest('hex')},
     denyRead: {deny, reexpose: [cwd, join(cwd, 'tmp')], metadataOnly: [], tiers: []}};

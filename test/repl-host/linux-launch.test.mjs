@@ -59,3 +59,24 @@ test('Linux: a launch gio reports failed is answered with its last line', async 
   await assert.rejects(launchServicesAction({action: 'open_application', application_path: path}, {platform: 'linux', launch, env: d.env}),
     error => error.message === `${LINUX_LAUNCH_FAILED_PREFIX}gio: file:///usr/share/applications/broken.desktop: Failed to execute child process`);
 });
+
+// A desktop entry a cell could have written is never launched outside the sandbox, even inside an XDG applications
+// directory: its real path must lie in none of the sandbox's write roots (the session's run directory and temp, and every
+// root the call's policy makes writable), symlinked roots included.
+test('Linux: an entry whose real path lies inside a sandbox write root is refused, even in an XDG applications directory', async t => {
+  const d = desktop(t);
+  const run = join(d.root, 'run', 's');
+  const writable = join(run, 'share');
+  mkdirSync(join(writable, 'applications'), {recursive: true});
+  const planted = d.entry(join(writable, 'applications'), 'planted.desktop');
+  const linkedRoot = join(d.root, 'linked-run');
+  symlinkSync(run, linkedRoot);
+  const legit = d.entry(join(d.system, 'applications'), 'org.gnome.gedit.desktop');
+  const env = {...d.env, XDG_DATA_DIRS: `${writable}:${d.system}`};
+  const calls = [];
+  const launch = async path => { calls.push(path); };
+  const refused = async (path, writeRoots) => { try { await launchServicesAction({action: 'open_application', application_path: path}, {platform: 'linux', launch, env, writeRoots}); return null; } catch (error) { return error.message; } };
+  for (const roots of [[run], [linkedRoot]]) assert.match(await refused(planted, roots) ?? '', new RegExp(`^${LINUX_ENTRY_REFUSED_PREFIX}.*writ`), String(roots));
+  assert.equal(await refused(legit, [run]), null);
+  assert.deepEqual(calls, [legit], 'the planted entry never reached gio');
+});

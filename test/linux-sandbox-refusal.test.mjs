@@ -7,11 +7,12 @@
 // the fake upstream in for the supervisor (`prepareLaunch`).
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync} from 'node:fs';
+import {chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
 import {dirname, join} from 'node:path';
 import {createInterface} from 'node:readline';
 import {PassThrough} from 'node:stream';
-import {randomUUID} from 'node:crypto';
+import {createHash, randomUUID} from 'node:crypto';
 import {assertSandboxConfines} from '../src/runtime/sandbox.mjs';
 import {bwrapUserns} from '../src/runtime/linux-desktop.mjs';
 import {openConnection} from '../src/mcp/connection.mjs';
@@ -60,6 +61,22 @@ test('a confined mode on Linux checks the pinned helper, then probes; disabled a
     assert.equal(noHelper.code, 'sandbox_unavailable');
     assert.equal(probe.calls, 0, 'a missing helper refuses before the probe');
   }
+});
+
+// The real verifier before launch: the pinned bytes without execute bits are refused up front, never at spawn.
+test('the real check: a helper with the pinned bytes but no execute bits is refused before the probe', {skip: process.getuid?.() === 0 && 'root executes any file'}, async t => {
+  const dir = mkdtempSync(join(tmpdir(), 'cua-helper-mode-'));
+  t.after(() => rmSync(dir, {recursive: true, force: true}));
+  const path = join(dir, 'codex-linux-sandbox');
+  writeFileSync(path, '#!/bin/sh\n', {mode: 0o644});
+  const launch = {env: {CUA_REPL_SANDBOX_HELPER: path, CUA_REPL_SANDBOX_HELPER_SHA256: createHash('sha256').update('#!/bin/sh\n').digest('hex')}};
+  const probe = counted('pass');
+  const refused = await rejection(assertSandboxConfines('scoped', {platform: 'linux', launch, probe}));
+  assert.equal(refused.code, 'sandbox_unavailable');
+  assert.match(refused.message, /is not an executable file/);
+  assert.equal(probe.calls, 0);
+  chmodSync(path, 0o755);
+  await assertSandboxConfines('scoped', {platform: 'linux', launch, probe});
 });
 
 test('the real check: a confined Linux connection whose helper is not installed is refused before any runtime starts', async t => {

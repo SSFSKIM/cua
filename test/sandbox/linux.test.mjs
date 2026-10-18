@@ -86,6 +86,22 @@ test('linuxHelper refuses a missing helper and a helper whose hash differs from 
   assert.throws(() => linuxHelper({home: root, arch: 'arm64', pin: PIN}), {code: 'sandbox_unavailable'}, 'another architecture\'s helper is not this one');
 });
 
+// The pinned bytes are not enough: a helper that cannot be executed would pass the check and then fail at spawn with
+// EACCES, so the verifier wants a regular executable file, and refuses anything else the same way (sandbox_unavailable).
+test('verifyHelper refuses the pinned bytes when they are not a regular executable file', {skip: process.getuid?.() === 0 && 'root executes any file'}, t => {
+  const root = home(t);
+  const path = place(root, 'arm64-bin');
+  const helper = {path, sha256: PIN.assets['linux-arm64'].sha256};
+  assert.deepEqual(verifyHelper(helper), helper);
+  chmodSync(path, 0o644);
+  assert.throws(() => verifyHelper(helper), error => error.code === 'sandbox_unavailable' && /is not an executable file/.test(error.message) && /cua install/.test(error.hint));
+  chmodSync(path, 0o755);
+  assert.deepEqual(verifyHelper(helper), helper);
+  const dir = join(root, 'not-a-file');
+  mkdirSync(dir);
+  assert.throws(() => verifyHelper({path: dir, sha256: helper.sha256}), {code: 'sandbox_unavailable'});
+});
+
 test('linuxCommand renders the original\'s argv: policy cwd and command cwd, the profile as JSON, then the command', () => {
   const profile = {type: 'managed', network: 'restricted', file_system: {type: 'restricted', entries: [{path: {type: 'special', value: {kind: 'root'}}, access: 'read'}]}};
   const command = ['/node', '--experimental-vm-modules', '/kernel.mjs', '--working-dir', '/run/s'];

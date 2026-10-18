@@ -3,7 +3,7 @@
 // the M1 probes of 2026-10-14). Needs Node 24 or later for the kernel (CUA_NODE); skips visibly otherwise.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync} from 'node:fs';
+import {chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {pathToFileURL} from 'node:url';
 import {dirname, join} from 'node:path';
@@ -79,6 +79,18 @@ test('on the Linux route the kernel launches under the pinned helper with its ro
   const refused = await host.js('nodeRepl.write(2)');
   assert.equal(refused.isError, true);
   assert.match(texts(refused)[0], /^js sandbox unavailable: cua's Linux sandbox helper .* has SHA-256 [0-9a-f]{64}, not the pinned [0-9a-f]{64}; it is not run/);
+  assert.equal(launches(host.codexHome).length, 1, 'nothing more was launched');
+});
+
+// A helper that loses its execute bits between launches would fail at spawn: the next launch is refused before it.
+test('on the Linux route a helper that loses its execute bits is refused at the next launch; nothing runs unconfined', {...own, skip: own.skip || (process.getuid?.() === 0 && 'root executes any file')}, async t => {
+  const host = await startHost(t, {node, launcher: 'helper'});
+  assert.deepEqual(texts(await host.js('nodeRepl.write(1)')), ['1']);
+  chmodSync(host.double, 0o644);
+  assert.deepEqual(texts(await host.call('js_reset')), ['js kernel reset']);
+  const refused = await host.js('nodeRepl.write(2)');
+  assert.equal(refused.isError, true);
+  assert.match(texts(refused)[0], /^js sandbox unavailable: cua's Linux sandbox helper .* is not an executable file/);
   assert.equal(launches(host.codexHome).length, 1, 'nothing more was launched');
 });
 

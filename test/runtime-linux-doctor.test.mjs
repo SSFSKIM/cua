@@ -86,7 +86,10 @@ test('the sandbox row on Linux: scoped and default need user namespaces for the 
   }
   let rows = await doctor({CUA_SHIM_SANDBOX: 'default'}, 'pass');
   assert.equal(rows.sandbox.status, 'pass');
-  assert.match(rows.sandbox.detail, /^CUA_SHIM_SANDBOX=default: .*write nowhere and have no network/);
+  assert.match(rows.sandbox.detail, /^CUA_SHIM_SANDBOX=default: .*write nowhere.*; cells have no network \(the trusted services do, so the computer-use helper reaches the X display/,
+    'with the computer surface the trusted worker has the network under default too');
+  rows = await doctor({CUA_SHIM_SANDBOX: 'default', CUA_SHIM_SURFACES: 'browser'}, 'pass');
+  assert.match(rows.sandbox.detail, /^CUA_SHIM_SANDBOX=default: .*write nowhere.*; neither has the network$/);
 
   for (const value of ['', 'computer,', 'mouse']) {
     rows = await doctor({CUA_SHIM_SURFACES: value}, 'pass');

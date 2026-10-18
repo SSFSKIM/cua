@@ -5,7 +5,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync} from 'node:fs';
+import {chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {installSandboxHelper} from '../src/runtime/install.mjs';
@@ -39,6 +39,18 @@ test('the helper is fetched from the pinned URL, verified, and placed 0755 in a 
   assert.equal(statSync(join(realpathSync(home), 'sandbox', 'rust-v0.163.0')).mode & 0o777, 0o755);
   assert.deepEqual(readdirSync(join(realpathSync(home), 'staging')), []);
   assert.ok(linuxHelper({home: realpathSync(home), arch: 'x64', pin: PIN}), 'what install placed is what every launch accepts');
+});
+
+// The pinned bytes placed without their execute bits (copied by hand, a umask, a chmod) would pass a digest check and
+// then fail at spawn: install restores the mode, so what it leaves is what every launch accepts.
+test('a placed helper with the pinned bytes but no execute bits gets its mode back', {skip: process.getuid?.() === 0 && 'root executes any file'}, async t => {
+  const {home} = setup(t);
+  const placed = await installSandboxHelper({home, pin: PIN, host: LINUX, fetch: serving(BYTES)});
+  chmodSync(placed.path, 0o644);
+  assert.throws(() => linuxHelper({home: realpathSync(home), arch: 'x64', pin: PIN}), {code: 'sandbox_unavailable'});
+  assert.deepEqual(await installSandboxHelper({home, pin: PIN, host: LINUX, fetch: async () => assert.fail('no download')}), {...placed, changed: true});
+  assert.equal(statSync(placed.path).mode & 0o777, 0o755);
+  assert.ok(linuxHelper({home: realpathSync(home), arch: 'x64', pin: PIN}));
 });
 
 test('a local file is taken instead of the download; a verified helper makes the step a no-op', async t => {

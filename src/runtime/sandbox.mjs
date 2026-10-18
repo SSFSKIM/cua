@@ -21,6 +21,7 @@ import {fail} from './errors.mjs';
 import {USERNS_REMEDY, bwrapUserns} from './linux-desktop.mjs';
 import {homeLayout} from './layout.mjs';
 import {verifyHelper as verifyLinuxHelper} from '../sandbox/linux.mjs';
+import {xdgApplicationRoots} from '../repl-host/launch-services.mjs';
 
 export const SANDBOX_META_KEY = 'codex/sandbox-state-meta';
 const MODES = ['scoped', 'disabled', 'default'];
@@ -94,14 +95,17 @@ const within = (path, root) => {
 // A macOS vendor-host launch adds its compat settings directory (`compatSettings`, src/sandbox/compat-settings.mjs: what
 // the compat executable confines both children by; writable, a worker could rewrite the kernel's deny list), and every
 // launch $CUA_HOME/sandbox (`sandboxHelper`: the Linux helper, which runs outside every sandbox; writable, a cell could
-// swap what confines the next child, or plant a bubblewrap beside it).
-export const protectedPaths = ({trustedCodePaths, codexHome, compatSettings, managedNode, staging, sandboxHelper, denied = [], ownRoots = [], ownHolders = []}) => [
+// swap what confines the next child, or plant a bubblewrap beside it). A Linux own-host launch adds the XDG
+// applications directories of its environment (`applications`, src/repl-host/launch-services.mjs: launch_app starts
+// their desktop entries outside the sandbox; writable, a cell could plant one), whether they exist yet or not.
+export const protectedPaths = ({trustedCodePaths, codexHome, compatSettings, managedNode, staging, sandboxHelper, applications = [], denied = [], ownRoots = [], ownHolders = []}) => [
   ...trustedCodePaths.filter(Boolean).map(path => ({label: 'the trusted code path', path})),
   ...(codexHome ? [{label: 'the runtime\'s configuration and approvals', path: codexHome}] : []),
   ...(compatSettings ? [{label: 'the vendor host\'s compat settings', path: compatSettings}] : []),
   ...(managedNode ? [{label: 'the Node cua installed for its own REPL host', path: managedNode}] : []),
   ...(sandboxHelper ? [{label: 'cua\'s sandbox helper', path: sandboxHelper}] : []),
   ...(staging ? [{label: 'cua install\'s staging directory', path: staging}] : []),
+  ...applications.map(path => ({label: 'the XDG applications directory launch_app starts entries from', path})),
   ...denied.map(path => ({label: 'what JavaScript cells may not read', path, except: ownHolders.filter(Boolean).map(realish).includes(realish(path)) ? ownRoots.filter(Boolean) : []})),
 ];
 
@@ -230,6 +234,7 @@ export function assertSandboxFits(mode, launch) {
   const conflicts = sandboxConflicts({
     protectedPaths: protectedPaths({trustedCodePaths: trustedCodePathsOf(launch), codexHome: launch.env.CODEX_HOME, compatSettings: launch.compat && homeLayout(launch.compat.home).compat,
       managedNode: launch.managedNodeRoot, staging: launch.stagingRoot, sandboxHelper: launch.sandboxHelperRoot,
+      applications: launch.env.CUA_REPL_SANDBOX_HELPER ? xdgApplicationRoots(launch.env) : [],
       denied: launch.denyRead?.deny, ownRoots: [launch.cwd, launch.sessionTmp], ownHolders: launch.cwd ? [dirname(dirname(launch.cwd)), dirname(launch.cwd)] : []}),
     writeRoots: scopedWriteRoots({cwd: launch.cwd, tmpdir: launch.env.TMPDIR}),
   });

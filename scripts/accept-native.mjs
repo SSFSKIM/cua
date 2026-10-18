@@ -8,6 +8,7 @@
 //   node bin/cua.mjs install --archive <pinned ChatGPT zip>
 //   node scripts/accept-native.mjs [--live-secrets] [--live-textedit] [--archive <zip>] --report "$CUA_HOME/acceptance.json"
 //   node scripts/accept-native.mjs --live-secrets --live-textedit --secret-key <KEY> [--secret-home <dir>] --report …
+//   node scripts/accept-native.mjs --items 1,10 --report …   only the items named (a headless re-check of some items)
 //
 // --secret-key types a key the caller stored beforehand (`HOME=<dir> node bin/cua.mjs secrets set <KEY>`) instead of a
 // generated one; its store is the one under --secret-home, by default $HOME, which must not be this account's home.
@@ -74,8 +75,16 @@ import {compatRouteAcceptance} from './accept/compat-route.mjs';
 
 const {values: options} = parseArgs({options: {
   report: {type: 'string'}, 'live-secrets': {type: 'boolean'}, 'live-textedit': {type: 'boolean'}, archive: {type: 'string'},
-  'secret-key': {type: 'string'}, 'secret-home': {type: 'string'},
+  'secret-key': {type: 'string'}, 'secret-home': {type: 'string'}, items: {type: 'string'},
 }, strict: true});
+// --items 1,10: only those items run (a headless re-check of some items, #157); the report names the selection, and an
+// item that reads another's result (item 2 reads item 1's suite) finds it not run.
+const selected = options.items === undefined ? null : new Set(options.items.split(',').map(Number));
+if (selected && ![...selected].every(id => Number.isInteger(id) && id >= 1 && id <= 13)) {
+  console.error('accept-native: --items takes item numbers 1 to 13, comma-separated');
+  process.exit(2);
+}
+const wanted = id => !selected || selected.has(id);
 const REPO = realpathSync(fileURLToPath(new URL('..', import.meta.url)));
 const CLI = join(REPO, 'bin', 'cua.mjs');
 // The commit whose evidence (docs/evidence/m2-installer.md) proved download mode; acquisition code unchanged since
@@ -501,27 +510,27 @@ async function item13() {
 // --- run -------------------------------------------------------------------------------------------------------------
 const started = new Date();
 const runDirBefore = existsSync(join(home, 'run')) ? readdirSync(join(home, 'run')) : [];
-await item1();
-await item3();          // doctor first: item 2 reads its verification result
-await item2();
-await item13();         // before the other native items: it starts the session's helper itself and needs none running
-await item4();
-const probe = await liveSecrets();
-const textedit = await liveTextEdit();
-await item5(textedit);
-await item6(probe, textedit);
-await item7(probe);
-await item8(textedit);
-item9();
-await item10();
-await item11();
-await item12();
+if (wanted(1)) await item1();
+if (wanted(3)) await item3();          // doctor first: item 2 reads its verification result
+if (wanted(2)) await item2();
+if (wanted(13)) await item13();        // before the other native items: it starts the session's helper itself and needs none running
+if (wanted(4)) await item4();
+const probe = [6, 7].some(wanted) ? await liveSecrets() : null;
+const textedit = [5, 6, 8].some(wanted) ? await liveTextEdit() : null;
+if (wanted(5)) await item5(textedit);
+if (wanted(6)) await item6(probe, textedit);
+if (wanted(7)) await item7(probe);
+if (wanted(8)) await item8(textedit);
+if (wanted(9)) item9();
+if (wanted(10)) await item10();
+if (wanted(11)) await item11();
+if (wanted(12)) await item12();
 items.sort((a, b) => a.id - b.id);
 
 const runLeftovers = (existsSync(join(home, 'run')) ? readdirSync(join(home, 'run')) : []).filter(name => !runDirBefore.includes(name));
 const report = {
   scenario: 'accept-native', status: rollup(items.map(i => i.status)),
-  options: {liveSecrets: Boolean(options['live-secrets']), liveTextedit: Boolean(options['live-textedit']), callerSecretKey: Boolean(callerSecret)},
+  options: {liveSecrets: Boolean(options['live-secrets']), liveTextedit: Boolean(options['live-textedit']), callerSecretKey: Boolean(callerSecret), ...(selected ? {items: [...selected].sort((a, b) => a - b)} : {})},
   release: state.doctor?.runtime?.release ?? null, home: '$CUA_HOME', host: `${process.platform}-${process.arch}`, node: process.version,
   startedAt: started.toISOString(), finishedAt: new Date().toISOString(),
   summary: Object.fromEntries(items.map(i => [i.id, i.status])),

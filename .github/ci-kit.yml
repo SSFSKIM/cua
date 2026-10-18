@@ -25,18 +25,25 @@ gates:
       claude plugin validate .
       npm run test:mods
   # #159: cua's headless macOS live checks (the #115 oracles, own-sandbox on both hosts, probe-secrets) on a runtime
-  # `cua install` fetches into a scratch home, so a sandbox change is proven with no time on the Mac mini. Public logs:
-  # labels, outcomes and booleans only; every secret is synthetic (scripts/sandbox-probe/hosted-gate.sh).
+  # `cua install` fetches into a scratch home, so a sandbox change is proven with no time on the Mac mini. Public logs
+  # and artifact: labels, outcomes, booleans and counts (and the fingerprints' scratch paths); the raw reports stay in
+  # the scratch root; every secret is synthetic (scripts/sandbox-probe/hosted-gate.sh's header).
   - name: sandbox-live
     lane: hosted-macos
     timeout: 30
     run: sh scripts/sandbox-probe/hosted-gate.sh
+    # Every input whose change can alter the gate's result: the code under test, the probes, the committed evidence
+    # they judge against, and this file.
     paths:
       - "src/sandbox/**"
       - "src/runtime/**"
       - "src/secrets/**"
       - "src/repl-host/**"
       - "src/services/**"
+      - "src/mcp/**"            # own-sandbox's connection, probe-secrets' server
+      - "src/cua-api/**"        # the own host's API, which the kernel reads
+      - "src/cli.mjs"           # install and doctor
+      - "bin/cua.mjs"
       - "bin/cua-codex-compat"
       - "runtime/**"
       - "scripts/sandbox-probe/**"
@@ -46,5 +53,6 @@ gates:
       - "scripts/probe-secrets.mjs"
       - "scripts/probe/**"
       - "docs/evidence/2026-10-17-own-sandbox/m0/**"
+      - "docs/evidence/2026-10-18-hosted-macos-gate/baseline/**"
       - ".github/ci-kit.yml"
     artifacts: ["hosted-gate-out/**"]

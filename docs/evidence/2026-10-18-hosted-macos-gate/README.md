@@ -10,8 +10,11 @@ offline for about two hours.
 `scripts/sandbox-probe/hosted-gate.sh` on GitHub's hosted macOS runner. It runs on every pull request that touches:
 
 - `src/sandbox`, `src/runtime`, `src/secrets`, `src/repl-host` or `src/services`;
+- `src/mcp` (own-sandbox's connection, probe-secrets' server) or `src/cua-api` (the own host's API, which the kernel
+  reads);
+- `src/cli.mjs` or `bin/cua.mjs` (install and doctor);
 - `bin/cua-codex-compat` or `runtime/`;
-- the checks' own scripts, or the records they judge against.
+- the checks' own scripts, or the records they judge against (M0's, and the hosted baseline).
 
 A run takes about 1.5 minutes, the runtime install included. A pull request that changes the sandbox policy gets the
 oracles' and own-sandbox's results from this gate, with no mini time used.
@@ -57,7 +60,7 @@ The dispatching session ruled (2026-10-18): don't widen the M0 pairs' deviations
 
 - **A change moves a fingerprint on purpose.** It records the new baseline in the same pull request, so the review sees
   the behavioural diff. The failing gate's artifact (`sandbox-live`, `oracles/fp-cua-*.json` and `image.json`) holds
-  that run's fingerprints: copy them into `baseline/`.
+  that run's fingerprints in the baseline's form: copy them into `baseline/`.
 - **The hosted image moves.** `macos-latest` can change, and a new OS can answer a check differently. The gate prints
   both images. When a baseline judgement fails on a different image, it says so. Record the new baseline from a run of
   main's code (`ci-gate <a main worktree> --gates sandbox-live` fails and uploads it).
@@ -65,7 +68,10 @@ The dispatching session ruled (2026-10-18): don't widen the M0 pairs' deviations
 ## Harness changes
 
 - **`compareFingerprints`** (`scripts/sandbox-probe/compare.mjs`) reads each side's env and cwd relative to that
-  side's own roots. The roots are the targets it labels `cua-home`, `home` and `checkout`.
+  side's own roots, taken from the targets the harness passed the probe: `cua-home`, `checkout`, and the user home as
+  the grandparent of `config-cua` (`<userHome>/.config/cua`). Not fingerprint.c's own `home` target: that is the
+  child's `HOME`, so a regression moving the kernel's `HOME` would also move the root that erases it (review finding;
+  a unit test pins it).
   - A root is matched whole, including inside a JSON value such as `CUA_SANDBOX_DENY_READ`, and never matches a
     sibling that shares its prefix.
   - Both machines' runs then compare even though their paths differ.
@@ -73,12 +79,19 @@ The dispatching session ruled (2026-10-18): don't widen the M0 pairs' deviations
 - **`relocateCapture`**, and `oracle.mjs port-vs-capture --relocate <from>=<to>`, move a capture's root in both
   spellings: plain, and the regex-escaped one the original's profile uses for its carve-outs. They also move the
   protected daemon directory's euid.
+  - One pass replaces each occurrence once, by the spelling it was found in, so a destination under the original root
+    is never moved twice.
+  - A root with no regex-lite metacharacter spells both ways alike, so an occurrence cannot say which spelling of the
+    destination it needs: when the destination's two spellings differ, the relocation is refused. The mini's root
+    (`/Users/new/cua-115`) has one, so M0's captures relocate.
   - Relocated locally, both modes give `equalButDeviations`.
 - **`oracle.mjs fingerprint`** creates the cua home's `state/`. A fresh install has none, and `sandbox_check` reports a
   missing path as denied. The first hosted run read `cua-home/state` as denied for exactly that reason; the mini's home
   had task 1's `state/`.
+- **`scripts/sandbox-probe/hosted-public.mjs`** writes the public form of each report the gate publishes (below).
 - **Unit tests** in `test/sandbox-probe/compare.test.mjs` cover the root-relative comparison, the relocation and the
-  `hosted-baseline/cua` pair.
+  `hosted-baseline/cua` pair; `test/sandbox-probe/hosted-public.test.mjs` plants a value in each free-text field and
+  shows no public form carries it.
 
 ## Runs (hosted macOS, image macos26 20261013.0424.1, Node 24.21.0)
 
@@ -109,22 +122,39 @@ So the gate catches a policy regression.
 
 ## Public output
 
-The repository is public, so the gate's logs and its failure artifacts are public. They carry:
+The repository is public, so the gate's log and its failure artifact are public. The raw reports (the oracle records
+with the launch's args, environment and rendered profiles; own-sandbox's free-text details; probe-secrets' stderr
+excerpts; install's and doctor's JSON) stay in the scratch root, which is removed at exit.
 
-- step labels, PASS/FAIL, durations and counts;
-- probe-secrets' step names and statuses;
-- the image's macOS version;
-- the runner's scratch paths;
-- the undeclared differences of a failed judgement (check and label names, and environment values that are paths).
+The log carries:
 
-They carry no secret value:
+- each step's PASS/FAIL line, its duration, and the summary;
+- own-sandbox's check labels with PASS/FAIL, and probe-secrets' step names and statuses;
+- the count of Codex CLI files in the installed tree, and doctor's `sandbox.launcher` status;
+- the image's and the baseline's macOS version and image name;
+- of a failed baseline judgement, the undeclared checks (operation, label, both results) and the **names** of the
+  environment variables that differ, never their values.
+
+The artifact (`hosted-gate-out/`, uploaded only when the gate fails) holds only the allowlisted forms
+`scripts/sandbox-probe/hosted-public.mjs` writes:
+
+| File | Holds |
+|---|---|
+| `oracles/fp-cua-*.json` | `{launcher, fingerprint: {sandboxed, cwd, env, checks}, pins}`, without the launch's `input`: the runner's scratch paths and fixed flags, credential-like names redacted by fingerprint.c. The baseline's form, and what the gate judges |
+| `oracles/image.json` | the runner's macOS and image |
+| `oracles/port-vs-signed-*.json` | the comparison's booleans (argv, profile, command equal; `equalButDeviations`), the TIOCSTI form, the first differing profile line's number, the count of differing parameters, the names of differing environment variables; never the args or profiles |
+| `own-sandbox-*.json` | `{ok, checks: [{label, pass, code?}]}`; `code` only when it is an error code or a number |
+| `probe-secrets.json` | `{status, steps: [{name, status}]}` |
+| `doctor.json` | `{ok, checks: [{name, status}]}` |
+
+Nothing of install's is published beyond its step line. No secret value is in either:
 
 - own-sandbox's sentinels never leave their cells, and own-sandbox refuses to write a report that contains one;
 - probe-secrets scans its own report for both of its generated values and refuses to write it if either is found;
 - the fingerprint's environment redacts credential-like names.
 
-The store is always a scratch store, and no owner profile or real store exists on the runner. The artifact holds the
-reports only (about 300 KB, checked: no runtime file).
+The store is always a scratch store, and no owner profile or real store exists on the runner. The runtime is never
+copied out of the scratch root.
 
 ## What stays on the mini
 

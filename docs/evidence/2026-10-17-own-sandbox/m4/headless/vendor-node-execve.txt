@@ -1,0 +1,56 @@
+node:internal/process/per_thread:326
+    _execve(execPath, args, envArray);
+    ^
+
+process.execve failed with error code ENOENT
+
+----- Native stack trace -----
+
+ 1: 0x102b0bf44 node::(anonymous namespace)::DefaultAbortHandler(char const*, char const*) [/Users/new/cua-115/home/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node]
+ 2: 0x102bb5578 node::Execve(v8::FunctionCallbackInfo<v8::Value> const&) [/Users/new/cua-115/home/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node]
+ 3: 0x103a1e818 Builtins_CallApiCallbackGeneric [/Users/new/cua-115/home/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node]
+ 4: 0x103a1cbec Builtins_InterpreterEntryTrampoline [/Users/new/cua-115/home/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node]
+ 5: 0x103a1cbec Builtins_InterpreterEntryTrampoline [/Users/new/cua-115/home/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node]
+ 6: 0x103a1a8cc Builtins_JSEntryTrampoline [/Users/new/cua-115/home/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node]
+ 7: 0x103a1a570 Builtins_JSEntry [/Users/new/cua-115/home/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node]
+ 8: 0x102f329a8 v8::internal::(anonymous namespace)::Invoke(v8::internal::Isolate*, v8::internal::(anonymous namespace)::InvokeParams const&) [/Users/new/cua-115/home/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node]
+ 9: 0x102f32f6c v8::internal::Execution::CallScript(v8::internal::Isolate*, v8::internal::DirectHandle<v8::internal::JSFunction>, v8::internal::DirectHandle<v8::internal::Object>, v8::internal::DirectHandle<v8::internal::Object>) [/Users/new/cua-115/home/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node]
+10: 0x102d956d0 v8::Script::Run(v8::Local<v8::Context>, v8::Local<v8::Data>) [/Users/new/cua-115/home/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node]
+11: 0x102af4c30 node::contextify::ContextifyScript::EvalMachine(v8::Local<v8::Context>, node::Environment*, long long, bool, bool, bool, v8::MicrotaskQueue*, v8::FunctionCallbackInfo<v8::Value> const&) [/Users/new/cua-115/home/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node]
+12: 0x102af45d4 node::contextify::ContextifyScript::RunInContext(v8::FunctionCallbackInfo<v8::Value> const&) [/Users/new/cua-115/home/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node]
+13: 0x103a1e818 Builtins_CallApiCallbackGeneric [/Users/new/cua-115/home/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node]
+14: 0x103a1cbec Builtins_InterpreterEntryTrampoline [/Users/new/cua-115/home/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node]
+15: 0x103a1cbec Builtins_InterpreterEntryTrampoline [/Users/new/cua-115/home/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node]
+16: 0x103a1cbec Builtins_InterpreterEntryTrampoline [/Users/new/cua-115/home/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node]
+17: 0x103a1cbec Builtins_InterpreterEntryTrampoline [/Users/new/cua-115/home/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node]
+18: 0x103a1cbec Builtins_InterpreterEntryTrampoline [/Users/new/cua-115/home/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node]
+19: 0x103a1cbec Builtins_InterpreterEntryTrampoline [/Users/new/cua-115/home/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node]
+20: 0x103a1cbec Builtins_InterpreterEntryTrampoline [/Users/new/cua-115/home/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node]
+21: 0x103a1a8cc Builtins_JSEntryTrampoline [/Users/new/cua-115/home/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node]
+22: 0x103a1a570 Builtins_JSEntry [/Users/new/cua-115/home/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node]
+23: 0x102f329a8 v8::internal::(anonymous namespace)::Invoke(v8::internal::Isolate*, v8::internal::(anonymous namespace)::InvokeParams const&) [/Users/new/cua-115/home/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node]
+24: 0x102f3230c v8::internal::Execution::Call(v8::internal::Isolate*, v8::internal::DirectHandle<v8::internal::Object>, v8::internal::DirectHandle<v8::internal::Object>, v8::base::Vector<v8::internal::DirectHandle<v8::internal::Object> const>) [/Users/new/cua-115/home/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node]
+25: 0x102da6c90 v8::Function::Call(v8::Isolate*, v8::Local<v8::Context>, v8::Local<v8::Value>, int, v8::Local<v8::Value>*) [/Users/new/cua-115/home/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node]
+26: 0x102adba84 node::builtins::BuiltinLoader::CompileAndCall(v8::Local<v8::Context>, char const*, node::Realm*) [/Users/new/cua-115/home/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node]
+27: 0x102bc16f4 node::Realm::ExecuteBootstrapper(char const*) [/Users/new/cua-115/home/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node]
+28: 0x102ab4d9c node::StartExecution(node::Environment*, char const*) [/Users/new/cua-115/home/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node]
+29: 0x102ab4b80 node::StartExecution(node::Environment*, std::__1::function<v8::MaybeLocal<v8::Value> (node::StartExecutionCallbackInfoWithModule const&)>) [/Users/new/cua-115/home/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node]
+30: 0x1029e58a0 node::LoadEnvironment(node::Environment*, std::__1::function<v8::MaybeLocal<v8::Value> (node::StartExecutionCallbackInfoWithModule const&)>, std::__1::function<void (node::Environment*, v8::Local<v8::Value>, v8::Local<v8::Value>)>) [/Users/new/cua-115/home/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node]
+31: 0x102b67ec0 node::NodeMainInstance::Run() [/Users/new/cua-115/home/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node]
+32: 0x102ab87d8 node::Start(int, char**) [/Users/new/cua-115/home/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node]
+33: 0x192203e80 start [/usr/lib/dyld]
+
+----- JavaScript stack trace -----
+
+1: execve (node:internal/process/per_thread:326:5)
+2: [eval]:1:15
+3: runScriptInThisContext (node:internal/vm:219:10)
+4: node:internal/process/execution:451:12
+5: [eval]-wrapper:6:24
+6: runScriptInContext (node:internal/process/execution:449:60)
+7: evalFunction (node:internal/process/execution:283:30)
+8: evalTypeScript (node:internal/process/execution:295:3)
+9: node:internal/main/eval_string:71:3
+
+
+exit 134

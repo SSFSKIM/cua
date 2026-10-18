@@ -1,0 +1,4 @@
+installing 26.928.40906-darwin-arm64 from /Users/new/cua-115/archive.zip
+installed and activated 26.928.40906-darwin-arm64 at /Users/new/cua-115/scratch/m4-RxoevL/fresh/runtimes/26.928.40906-darwin-arm64
+installing Node 24.22.0 for cua's own REPL host from https://nodejs.org/dist/v24.22.0/node-v24.22.0-darwin-arm64.tar.gz
+installed Node 24.22.0 for cua's own REPL host at /Users/new/cua-115/scratch/m4-RxoevL/fresh/node/24.22.0

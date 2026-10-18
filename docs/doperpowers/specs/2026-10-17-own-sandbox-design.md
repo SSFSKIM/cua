@@ -914,6 +914,10 @@ Dependencies on other work: #79 merged before M2. #117 retires the compat execut
   Rationale: a new helper copy path raises a one-time screen-capture prompt per machine (Surprises). Keeping the path avoids that cost for 229 MB of disk that M4 reclaims.
   Date/Author: 2026-10-18, execution session.
 
+- Decision: a failed `process.execve` in the compat aborts rather than exiting 1 (2026-10-18, M2). On the vendor's Node 24.21.0 a failed `process.execve` is not catchable: it prints "process.execve failed with error code …" with a native stack and dies by SIGABRT (exit 134). Node 26 throws instead. The compat checks that `/usr/bin/sandbox-exec` is executable before calling it, so the abort is reached only if that file vanishes between the check and the call. The exit is still nonzero, and node_repl refuses the cell on a launcher failure, so the launch fails closed. The Design's "exits 1 with a sentence" holds for every refusal before the call.
+  Rationale: the vendor's Node cannot report an execve failure any other way, and the pre-check makes the window negligible.
+  Date/Author: 2026-10-18, execution session.
+
 ## Outcomes & Retrospective
 
 Pending — written at finish.

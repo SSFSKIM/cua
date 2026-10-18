@@ -8,6 +8,10 @@
 #   gh attestation verify <asset> --repo SSFSKIM/cua
 name: linux-sandbox-helper
 on:
+  # A push of this file only registers the workflow, so it can be dispatched on a branch before it reaches main; its
+  # jobs run on dispatch only.
+  push:
+    paths: ['.github/workflows/linux-sandbox-helper.yml']
   workflow_dispatch:
     inputs:
       upstream_tag:
@@ -26,6 +30,7 @@ env:
 jobs:
   build:
     name: build ${{ matrix.target }}
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read

@@ -35,6 +35,8 @@ fi
 # --- 2. The discovery home: cua install, cua's host registered -------------------------------------------------------
 CUA_HOME_D="$HOME/Library/Application Support/cua"
 step "cua install (discovery home)" sh -c "node bin/cua.mjs install --json > '$W/install.json' 2> '$W/install.err'" || tail -c 600 "$W/install.err" | sed 's/^/  install stderr: /'
+# register looks for a browser's user-data directory: the harness Chrome's (below) is made here, before its first launch.
+mkdir -p "$HOME/Library/Application Support/Google/Chrome"
 step "cua chrome register" sh -c "node bin/cua.mjs chrome register --json > '$W/register.json' 2> '$W/register.err'" || tail -c 600 "$W/register.err" | sed 's/^/  register stderr: /'
 NMH="$HOME/Library/Application Support/Google/Chrome/NativeMessagingHosts/io.github.ssfskim.cua.json"
 say "native host manifest in Google/Chrome: $([ -f "$NMH" ] && echo yes || echo no); allowed origin is the extension id: $(grep -q 'chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/' "$NMH" 2>/dev/null && echo yes || echo no)"

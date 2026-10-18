@@ -212,11 +212,11 @@ export function assertDenyListShape(list) {
 }
 
 // Throws `sandbox_conflict` when `mode` is not disabled and the deny list's targets overlap (assertDenyListShape), or
-// when `mode` is scoped and a write root of `launch` (src/runtime/launch.mjs) overlaps one of
-// its trusted code paths (trustedCodePathsOf), its CODEX_HOME, its home's managed Node (`launch.managedNodeRoot`), its
-// home's install staging (`launch.stagingRoot`), its home's sandbox helper (`launch.sandboxHelperRoot`) or its deny list (`launch.denyRead`, except for its own run directory
-// and session temp), whichever host it runs: a vendor session's cells must not choose a later own host's Node, or what
-// an install places, either.
+// when `mode` is scoped and a write root of `launch` (src/runtime/launch.mjs) overlaps one of its trusted code paths
+// (trustedCodePathsOf), its CODEX_HOME, its home's managed Node (`launch.managedNodeRoot`), its home's install staging
+// (`launch.stagingRoot`), its home's sandbox helper (`launch.sandboxHelperRoot`) or its deny list (`launch.denyRead`,
+// except for its own run directory and session temp), whichever host it runs: a vendor session's cells must not choose
+// a later own host's Node, or what an install places, either.
 //
 // And on the macOS vendor host (a launch carrying `compat`), under scoped and default, it throws `sandbox_unavailable`
 // unless CODEX_CLI_PATH names an executable file by an absolute path: node_repl runs its children with no sandbox at

@@ -51,6 +51,11 @@ export function noServicesLaunch(launch,{host='vendor',witness=false,brokenSandb
     const prefix=host==='vendor'?'NODE_REPL':'CUA_REPL';
     Object.assign(env,fixtureServices.env,{[`${prefix}_TRUSTED_SERVICES`]:JSON.stringify(fixtureServices.services),[`${prefix}_TRUSTED_CODE_PATHS`]:fixtureServices.roots.join(delimiter),[`${prefix}_TRUSTED_RPC_ENABLED`]:'1',[`${prefix}_JS_BANNER`]:banner,[`${prefix}_UNTRUSTED_ENV_ALLOWLIST`]:'PARITY_CELL_VISIBLE'});
     if(fixtureServices.env.PARITY_NATIVE_SECRET_FIXTURE==='1'){
+      // The launch's deny list (CUA_SANDBOX_DENY_READ) was resolved from the connection's HOME, and on Linux the own host
+      // creates a missing fixed target there only when its missing parents lie inside the children's HOME (#115 M3),
+      // which this fixture moves into the run directory: the connection HOME's ~/.config exists first, so only the
+      // targets' leaves are created.
+      if(launch.env.HOME)mkdirSync(join(launch.env.HOME,'.config'),{recursive:true,mode:0o700});
       const home=join(launch.cwd,'home');mkdirSync(home,{recursive:true,mode:0o700});if(realpathSync(home)!==home)throw Error('Native secret fixture HOME must be canonical');env.HOME=home;
       const modules=launch.env[`${prefix}_NODE_MODULE_DIRS`].split(delimiter)[0];
       const facade=host==='vendor'?join(modules,'@oai/cua/dist/lib/js/oai_js_cua/src/tinysky_alt/create_tinysky_alt.js'):fileURLToPath(new URL('../../src/cua-api/create-tinysky-alt.mjs',import.meta.url));

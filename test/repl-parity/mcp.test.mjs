@@ -35,3 +35,31 @@ test('closing the attested connections closes every one before reporting those t
  await assert.rejects(pool.close(),/Harness connection cleanup failed: connection-2 \(1\)$/);
  assert.deepEqual(closed,['connection-1','connection-2','connection-3']);
 });
+
+// #157: a connection that ends abnormally leaves the tail of its stderr for a diagnosis; one that ends as asked leaves none.
+test('stderr tail: written, bounded, only when a connection ends abnormally',async t=>{
+ const {mkdtempSync,readFileSync,existsSync,rmSync}=await import('node:fs');const {tmpdir}=await import('node:os');const {join}=await import('node:path');
+ const dir=mkdtempSync(join(tmpdir(),'cua-stderr-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
+ const server=script=>({command:process.execPath,args:['-e',script]});
+ // Exits 1 by itself, after more stderr than the bound: the file holds the last bytes and says why it was written.
+ const failing=new StdioClient({...server(`process.stderr.write('x'.repeat(5000)+'THE END');setTimeout(()=>process.exit(1),50);`),stderrFile:join(dir,'a','connection-1.stderr.log'),stderrBytes:1000});
+ assert.equal((await failing.exited).code,1);
+ const text=readFileSync(join(dir,'a','connection-1.stderr.log'),'utf8');
+ assert.match(text,/^# \S+ exit 1 before the harness closed it; the last 1000 bytes of stderr follow\n/);
+ assert.ok(text.endsWith('THE END'));assert.equal(text.split('\n')[1].length,1000);
+ assert.equal(failing.stderrFile,join(dir,'a','connection-1.stderr.log'));
+ // Closed by the harness and exiting 0, or dropped with SIGTERM: nothing written.
+ const calm=server(`process.stderr.write('noise');process.stdin.resume();process.stdin.on('end',()=>process.exit(0));`);
+ const eof=new StdioClient({...calm,stderrFile:join(dir,'eof.log')});await new Promise(r=>setTimeout(r,100));assert.equal((await eof.close()).code,0);
+ const dropped=new StdioClient({...calm,stderrFile:join(dir,'drop.log')});await new Promise(r=>setTimeout(r,100));assert.equal((await dropped.close({drop:true})).signal,'SIGTERM');
+ assert.equal(existsSync(join(dir,'eof.log')),false);assert.equal(existsSync(join(dir,'drop.log')),false);
+ // Closed by the harness but exiting nonzero: written.
+ const sour=new StdioClient({...server(`process.stderr.write('bad');process.stdin.resume();process.stdin.on('end',()=>process.exit(3));`),stderrFile:join(dir,'sour.log')});
+ await new Promise(r=>setTimeout(r,100));assert.equal((await sour.close()).code,3);
+ assert.match(readFileSync(join(dir,'sour.log'),'utf8'),/exit 3 after the harness's eof[^\n]*\nbad$/);
+ // The pool names each connection's file after the connection.
+ const {AttestedConnections}=await import('../../scripts/repl-parity/runner.mjs');
+ const pool=new AttestedConnections('vendor',{diagnostics:join(dir,'diagnostics')});
+ const opened=pool.open(server(`process.stderr.write('pool');setTimeout(()=>process.exit(1),50);`));await assert.rejects(opened,/MCP exited \(1\)/);
+ assert.match(readFileSync(join(dir,'diagnostics','connection-1.stderr.log'),'utf8'),/pool$/);
+});

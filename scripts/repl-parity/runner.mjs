@@ -6,6 +6,7 @@ import {exactImage,imageHash} from '../browser-parity/image-hash.mjs';
 import {assertPreparedFacts} from './provenance.mjs';
 import {validateAttestations} from './compare.mjs';
 import {NO_PAUSE} from '../mini-pause.mjs';
+import {join} from 'node:path';
 // The run's pause gate (scripts/mini-pause.mjs pauseGate, MAWS DL 58), set once per run: every lane's cells wait at
 // their boundary while the mini's CI runner is busy, and every js call a connection makes waits there too (a lane's
 // own setup cells included), so nothing reaches the mini's GUI during a pause. A cell that waited, or that a pause
@@ -14,13 +15,15 @@ import {NO_PAUSE} from '../mini-pause.mjs';
 let runPause=NO_PAUSE;
 export const usePauseGate=gate=>{runPause=gate??NO_PAUSE;};
 export class AttestedConnections {
-  constructor(host){this.host=host;this.clients=[];this.hostAttestations=[];this.externalConnections=[];}
+  // `diagnostics`: a directory for each connection's stderr tail when it ends abnormally (StdioClient stderrFile).
+  constructor(host,{diagnostics}={}){this.host=host;this.diagnostics=diagnostics;this.clients=[];this.hostAttestations=[];this.externalConnections=[];}
   async open(command,{capabilities}={}){
     let answeringHost;
-    const client=new StdioClient({...command,onNotification:message=>{
+    const connection=`connection-${this.clients.length+1}`;
+    const client=new StdioClient({...command,...(this.diagnostics?{stderrFile:join(this.diagnostics,`${connection}.stderr.log`)}:{}),onNotification:message=>{
       if(message.method==='cua/parityAnsweringHost')answeringHost=message.params;
       command.onNotification?.(message);
-    }}),connection=`connection-${this.clients.length+1}`;
+    }});
     this.clients.push({client,connection});
     const init=await client.initialize(capabilities);
     const executionFacts=init._meta?.['cua/parityExecution'];if(command.expectedFacts)assertPreparedFacts(command.expectedFacts,executionFacts);

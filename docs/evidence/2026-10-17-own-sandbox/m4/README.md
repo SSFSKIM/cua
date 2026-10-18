@@ -61,8 +61,9 @@ release's Codex CLI is removed only while no `cua serve` or profile listing of t
 then again after renaming it aside, putting it back if a session appeared); otherwise the prune says so and a later
 one finishes the job. A session starting in the instant after the second check is not seen; only an older cua would
 launch the CLI then, and that launch fails rather than running unconfined. A symbolic link at the home's `run/`,
-`state/`, `state/compat/` or `kernel/` refuses the prune, and an unreadable directory is reported, never taken as
-clean.
+`state/`, `state/compat/` or `kernel/` refuses the prune, and an unreadable directory or install record is reported,
+never taken as clean. A CLI renamed aside but not deleted (`.CodexCLI.app.pruning-<hex>`) stays a leftover that doctor
+names and the next prune removes.
 
 **The run/ sweep never follows a link.** `cua serve`, the agent and doctor sweep the leftovers of dead sessions at
 start; a symbolic link at `run/`, `state/`, `state/compat/` or `kernel/` now refuses the sweep (it is reported) and a

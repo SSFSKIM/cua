@@ -21,7 +21,7 @@
 // state/codex, runtimes/, a release directory, tmp/ or browser/ in CODEX_HOME) is never followed, and a leftover that is
 // itself a link is unlinked, its target left as it is. Results carry paths, never content. A removal that fails is
 // reported and left for doctor to keep naming; it never fails the install.
-import {lstatSync, readdirSync, renameSync, rmSync} from 'node:fs';
+import {lstatSync, readFileSync, readdirSync, renameSync, rmSync} from 'node:fs';
 import {randomBytes} from 'node:crypto';
 import {dirname, join} from 'node:path';
 import {CuaError, fail} from './errors.mjs';
@@ -33,6 +33,10 @@ export const CODEX_HOME_LEFTOVERS = ['auth.json', 'installation_id', 'models_cac
 const SQLITE = /\.sqlite(-wal|-shm)?$/;
 // The Codex CLI component a release pin used to list, per platform, and whether it is a directory.
 const CLI_COMPONENT = {darwin: {name: 'CodexCLI.app', directory: true}, linux: {name: 'codex', directory: false}};
+// What a prune renames a release's CLI to before deleting it (removeCodexLeftovers); one left by a failed delete or a
+// crash is a leftover too, found by exactly this shape.
+const tombstoneName = name => `.${name}.pruning-${randomBytes(4).toString('hex')}`;
+const TOMBSTONE = /^\.(CodexCLI\.app|codex)\.pruning-[0-9a-f]+$/;
 
 // A scan of the home: every lstat or listing error other than a missing path (ENOENT, ENOTDIR) is recorded in
 // `errors`, so an unreadable directory never reads as clean.
@@ -45,6 +49,7 @@ function scanner() {
     lstat,
     realDirectory: path => lstat(path)?.isDirectory() ?? false,
     names: dir => { try { return readdirSync(dir).sort(); } catch (error) { record(dir, error); return []; } },
+    readable: path => { try { readFileSync(path); return true; } catch (error) { record(path, error); return false; } },
   };
 }
 
@@ -64,18 +69,25 @@ function codexHomeLeftovers({home, codexHome}, {lstat, realDirectory, names}) {
   return [...found, ...names(codexHome).filter(name => SQLITE.test(name))];
 }
 
-function unusedCliComponents({runtimes}, pins, {lstat, realDirectory, names}) {
+// The release CLI components, and the tombstones a prune left (`tombstone: true`, whichever the pin lists).
+function unusedCliComponents({runtimes}, pins, {lstat, realDirectory, names, readable}) {
   if (!realDirectory(runtimes)) return [];
   const found = [];
   for (const release of names(runtimes)) {
     const pin = pins.find(p => p.release === release);
     const component = pin && CLI_COMPONENT[pin.platform];
-    if (!component || Object.hasOwn(pin.components ?? {}, component.name)) continue;
+    if (!component) continue;
     const root = join(runtimes, release);
     if (!realDirectory(root)) continue;
-    // The record must be readable to tell a tree cua installed; an unreadable one is a scan error, not a stranger.
-    if (lstat(join(root, RECORD_FILE)) === null) continue;
+    // The record must be readable to tell a tree cua installed: an unreadable one is a scan error (any error but
+    // ENOENT), not a stranger's tree; readable content that is not a valid record is one, and is left alone.
+    if (!readable(join(root, RECORD_FILE))) continue;
     try { readInstalledRecord(root, pin); } catch (error) { if (error instanceof CuaError) continue; throw error; }
+    for (const name of names(root)) {
+      const match = TOMBSTONE.exec(name);
+      if (match && lstat(join(root, name))) found.push({release, name: match[1], path: join(root, name), tombstone: true});
+    }
+    if (Object.hasOwn(pin.components ?? {}, component.name)) continue;
     const path = join(root, component.name);
     const stat = lstat(path);
     if (stat && (component.directory ? stat.isDirectory() : stat.isFile())) found.push({release, name: component.name, path});
@@ -101,7 +113,9 @@ const PRUNE_ADVICE = `once every cua using this home is updated (an older one ma
 // its own directory (one rename, so no launch ever sees half a bundle); a session found the second time puts it back.
 // What remains is a session that starts after that second check and launches the CLI before the tombstone is deleted:
 // only an older cua does that (this one never launches it), which is what "update every cua first" is for, and its
-// launch then fails, never runs unconfined.
+// launch then fails, never runs unconfined. A tombstone whose delete failed (an unreadable directory inside, a crash)
+// stays a leftover by its exact shape, `.<component>.pruning-<hex>` in an installed tree: doctor names it and the next
+// prune removes it with no session condition, since no cua launches that name. It is never renamed back.
 export function removeCodexLeftovers({home, pins, sweep = sweepRun}) {
   try { assertSessionParents(realHome(home)); } catch (error) {
     if (!error.code) throw error;
@@ -114,10 +128,12 @@ export function removeCodexLeftovers({home, pins, sweep = sweepRun}) {
   };
   for (const rel of found.files) remove(join(found.codexHome, rel));
   const busy = () => { const inUse = sessionsInUse(home, sweep); return inUse.length ? `a session may be running from this home: ${inUse.join(', ')}` : null; };
-  for (const {path, name} of found.trees) {
+  for (const {path, name, tombstone: left} of found.trees) {
+    // A tombstone's name is launched by no cua (an older one launches the component's exact name), so it goes now.
+    if (left) { remove(path); continue; }
     const before = busy();
     if (before) { result.deferred.push({path, reason: before}); continue; }
-    const tombstone = join(dirname(path), `.${name}.pruning-${randomBytes(4).toString('hex')}`);
+    const tombstone = join(dirname(path), tombstoneName(name));
     try { renameSync(path, tombstone); } catch (error) { result.failed.push({path, code: error.code ?? 'error'}); continue; }
     const after = busy();
     if (after) {
@@ -155,6 +171,7 @@ export function leftoversCheck({home, pins, inUse}) {
   if (!files.length && !trees.length && !errors.length) return {name: 'runtime.leftovers', status: 'pass', detail: 'nothing the Codex CLI left behind is here; cua runs no Codex CLI (#115)'};
   const parts = [...(files.length ? [`${codexHome}: ${files.join(', ')}`] : []), ...trees.map(t => t.path)];
   if (!parts.length) return {name: 'runtime.leftovers', status: 'warn', detail: `whether the Codex CLI left anything here is unknown${unread}`};
-  const waiting = trees.length && inUse.length ? ` (the release's ${trees.map(t => t.name).join(', ')} once no session runs from this home (now: ${inUse.join(', ')}))` : '';
+  const held = trees.filter(t => !t.tombstone);
+  const waiting = held.length && inUse.length ? ` (the release's ${held.map(t => t.name).join(', ')} once no session runs from this home (now: ${inUse.join(', ')}))` : '';
   return {name: 'runtime.leftovers', status: 'warn', detail: `the Codex CLI's leftovers, unused by this cua since it runs its own sandbox (#115): ${parts.join('; ')}; ${PRUNE_ADVICE}${waiting}${unread}`};
 }

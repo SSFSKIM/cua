@@ -80,7 +80,9 @@ appeared; otherwise it says so and leaves it for a later prune. A session that s
 second check is not seen; only an older cua would launch the CLI then, which is why every cua using the home is
 updated first, and its launch would fail rather than run unconfined. If `run/`, `state/`, `state/compat/` or
 `kernel/` in the home is a symbolic link, the prune refuses and removes nothing, and a directory it cannot read is
-reported, never taken as clean. Nothing is followed through a symbolic link: a leftover
+reported, never taken as clean. A Codex CLI the prune renamed aside but could not delete
+(`.CodexCLI.app.pruning-<hex>` beside the release's files) stays a leftover: doctor names it and the next prune
+removes it. Nothing is followed through a symbolic link: a leftover
 that is itself a link is unlinked and its target left, and a linked directory on the way is skipped. Until then
 `cua doctor`'s `runtime.leftovers` row names what is left and the command (`warn`, never a failure).
 

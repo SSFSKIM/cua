@@ -366,3 +366,50 @@ test('an unreadable CODEX_HOME, runtimes/ or release tree never reads as clean: 
     } finally { chmodSync(path, 0o755); }
   }
 });
+
+test('an unreadable install.json is a scan error, not a stranger\'s tree: doctor warns and the prune reports it; readable invalid content is still skipped', {skip: process.getuid?.() === 0}, async t => {
+  const {home} = scratchHome(t);
+  const pin = darwinPin();
+  const root = installedTree(home, pin);
+  const record = join(root, 'install.json');
+  chmodSync(record, 0o000);
+  try {
+    const found = findCodexLeftovers({home, pins: [pin]});
+    assert.deepEqual(found.errors, [{path: record, code: 'EACCES'}]);
+    const row = leftoverRow(await inspectRuntime({home, env: {HOME: home}, pins: [pin], ...passive}));
+    assert.equal(row.status, 'warn');
+    assert.ok(row.detail.includes(`${record} (EACCES)`), row.detail);
+    assert.deepEqual(removeCodexLeftovers({home, pins: [pin], sweep: noSessions}).failed, [{path: record, code: 'EACCES'}]);
+    assert.ok(existsSync(join(root, 'CodexCLI.app')));
+  } finally { chmodSync(record, 0o644); }
+  writeFileSync(record, '{"not": "a record"}');
+  assert.deepEqual(findCodexLeftovers({home, pins: [pin]}), {codexHome: codexHomeOf(home), files: [], trees: [], errors: []}, 'readable but invalid: not cua\'s, left alone');
+});
+
+test('a tombstone left by a failed prune is a leftover: doctor names it, and the next prune removes it without waiting for sessions', {skip: process.getuid?.() === 0}, async t => {
+  const {home} = scratchHome(t);
+  const pin = darwinPin();
+  const root = installedTree(home, pin);
+  chmodSync(join(root, 'CodexCLI.app', 'Contents'), 0o000);
+  const first = removeCodexLeftovers({home, pins: [pin], sweep: noSessions});
+  const tombstone = readdirSync(root).find(name => /^\.CodexCLI\.app\.pruning-[0-9a-f]+$/.test(name));
+  assert.ok(tombstone, readdirSync(root).join(', '));
+  t.after(() => { try { chmodSync(join(root, tombstone, 'Contents'), 0o755); } catch {} });
+  assert.deepEqual(first.failed.map(f => [f.path, f.code]), [[join(root, tombstone), 'EACCES']]);
+  assert.equal(existsSync(join(root, 'CodexCLI.app')), false, 'never renamed back');
+
+  const found = findCodexLeftovers({home, pins: [pin]});
+  assert.deepEqual(found.trees, [{release: pin.release, name: 'CodexCLI.app', path: join(root, tombstone), tombstone: true}]);
+  const row = leftoverRow(await inspectRuntime({home, env: {HOME: home}, pins: [pin], ...passive}));
+  assert.equal(row.status, 'warn');
+  assert.ok(row.detail.includes(join(root, tombstone)), row.detail);
+
+  chmodSync(join(root, tombstone, 'Contents'), 0o755);
+  const busy = () => ({live: [{session: 's1', pid: 4242}], unowned: []});
+  const second = removeCodexLeftovers({home, pins: [pin], sweep: busy});
+  assert.deepEqual([second.removed, second.deferred, second.failed], [[join(root, tombstone)], [], []], 'no session condition for a name no cua launches');
+  assert.deepEqual(readdirSync(root).sort(), ['cua_node', 'install.json']);
+  // Only the exact shape counts: other names beside it are not cua's to remove.
+  for (const name of ['.CodexCLI.app.pruning-', '.CodexCLI.app.pruning-xyz', '.codexcli.pruning-ab12', 'CodexCLI.app.pruning-ab12']) mkdirSync(join(root, name));
+  assert.deepEqual(findCodexLeftovers({home, pins: [pin]}).trees, []);
+});

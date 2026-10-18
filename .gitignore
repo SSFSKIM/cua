@@ -25,3 +25,6 @@ current.json
 scripts/sandbox-golden/upstream
 scripts/sandbox-golden/Cargo.lock
 scripts/sandbox-golden/target/
+
+# scripts/sandbox-probe/hosted-gate.sh's reports (the ci-kit gate sandbox-live uploads them when it fails)
+.hosted-gate/

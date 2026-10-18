@@ -3,7 +3,7 @@
 // CLI's arg0 directory, the pid) normalized away and every remaining difference named.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {compareCapture, compareExperiments, compareFingerprints, comparePortToCapture, envDiff, envObject, judgeFingerprints, metadataGrantPins, profileFromPolicy} from '../../scripts/sandbox-probe/compare.mjs';
+import {compareCapture, compareExperiments, compareFingerprints, comparePortToCapture, envDiff, envObject, judgeFingerprints, metadataGrantPins, profileFromPolicy, relocateCapture} from '../../scripts/sandbox-probe/compare.mjs';
 
 test('profileFromPolicy turns cua\'s sorted -c table into the original\'s permission profile, in the same order', () => {
   const policy = {filesystem: [['/a', 'read'], ['/z', 'none'], [':root', 'read'], [':tmpdir', 'write'], [':workspace_roots', {'.': 'write'}]], cwd: '/run'};
@@ -93,6 +93,28 @@ test('compareFingerprints treats per-launch session ids (UUIDs in the run direct
   assert.equal(result.cwdEqual, true);
 });
 
+// #159: M0's fingerprints were taken on the mini; the hosted gate's run on another machine, under other roots.
+test('compareFingerprints reads each side\'s env and cwd relative to its own labelled roots (cua-home, home, checkout)', () => {
+  const machine = (root, extra = {}) => {
+    const roots = {'cua-home': `${root}/cuahome`, home: `${root}/userhome`, checkout: `${root}/repo`};
+    const value = fp({'file-read-data home': 'allow', 'file-read-data cua-home': 'deny', 'file-read-data checkout': 'allow'}, {HOME: roots.home,
+      TMPDIR: `${roots['cua-home']}/run/0fa27729-814e-47fb-8f46-66727511dc72/tmp`, CUA_REPL_NODE_MODULE_DIRS: `${roots['cua-home']}/runtimes/r/lib`,
+      NODE_PATH: `${roots.checkout}/src:${roots.home}/lib`, ...extra});
+    for (const row of value.checks) row.target = roots[row.label];
+    value.cwd = `${roots['cua-home']}/run/0fa27729-814e-47fb-8f46-66727511dc72`;
+    return value;
+  };
+  const same = compareFingerprints(machine('/Users/new/cua-115'), machine('/Users/runner/work/_temp/cua159.AbC123'));
+  assert.equal(same.equal, true, JSON.stringify(same));
+  // What lies below a root still counts, and a path outside every root is compared as it is.
+  const moved = compareFingerprints(machine('/a'), machine('/b', {CUA_REPL_NODE_MODULE_DIRS: '/b/cuahome/runtimes/other/lib', SHELL: '/b/bin/sh'}));
+  assert.deepEqual(moved.env.differing.map(d => [d.name, d.left, d.right]), [['CUA_REPL_NODE_MODULE_DIRS', '<cua-home>/runtimes/r/lib', '<cua-home>/runtimes/other/lib']]);
+  assert.deepEqual(moved.env.onlyRight, ['SHELL']);
+  // A root is matched whole: a sibling that merely shares its prefix is not under it.
+  const sibling = compareFingerprints(machine('/a', {X: '/a/cuahome2'}), machine('/b', {X: '/b/cuahome2'}));
+  assert.deepEqual(sibling.env.differing.map(d => d.name), ['X']);
+});
+
 test('compareExperiments: the confinement outcomes key by key, and each side\'s cell outcomes, apart from timings', () => {
   const run = (confinement, natives) => ({label: 'x', results: {banner: {ok: true, wallMs: 5}, confinement: {ok: true, value: confinement, ms: 3},
     ...Object.fromEntries(natives.map(([name, ok]) => [name, {ok, value: {apps: 3}, ms: 9, wallMs: 10}]))}});
@@ -129,6 +151,24 @@ test('comparePortToCapture: cua\'s port against the signed CLI\'s capture, equal
   assert.deepEqual(other.paramsDiffering, [{index: 0, captured: '-DWRITABLE_ROOT_0=/run', golden: '-DWRITABLE_ROOT_0=/elsewhere'}]);
   const extraEnv = comparePortToCapture({captured: {...captured, env: [...captured.env, 'SURPRISE=1']}, port});
   assert.equal(extraEnv.equalButDeviations, false, 'any other environment difference is a difference');
+});
+
+// #159: M0's captures name the mini's scratch root; the hosted gate replays them under its own.
+test('relocateCapture moves a capture to another root, plain and regex-escaped spellings alike, and its daemon euid', () => {
+  const from = '/Users/new/cua-115', to = '/Users/runner/work/_temp/cua159.x-Y';
+  const record = {input: {cwd: `${from}/home/run/s`, env: {HOME: `${from}/userhome`, PATH: `${from}/home/bin:/usr/bin`}, policy: {filesystem: [[`${from}/repo/src`, 'read'], [':root', 'read']]},
+    args: ['sandbox', '--', `${from}/home/node`]},
+  captured: {captured: true, argv: ['/usr/bin/sandbox-exec', '-p', `(regex #"^/Users/new/cua\\-115/home/run/s/\\.git(/.*)?$")\n(literal "/private/tmp/codex-daemon-501")`, `-DWRITABLE_ROOT_0=${from}/home/run/s`, '--', `${from}/home/node`],
+    env: [`HOME=${from}/userhome`, `SIBLING=${from}0/x`, 'ELSEWHERE=/Users/new/other']}};
+  const moved = relocateCapture(record, {from, to, euid: 502});
+  assert.equal(moved.input.cwd, `${to}/home/run/s`);
+  assert.deepEqual(moved.input.env, {HOME: `${to}/userhome`, PATH: `${to}/home/bin:/usr/bin`});
+  assert.deepEqual(moved.input.policy.filesystem, [[`${to}/repo/src`, 'read'], [':root', 'read']]);
+  assert.equal(moved.captured.argv[2], '(regex #"^/Users/runner/work/_temp/cua159\\.x\\-Y/home/run/s/\\.git(/.*)?$")\n(literal "/private/tmp/codex-daemon-502")');
+  assert.deepEqual(moved.captured.argv.slice(3), [`-DWRITABLE_ROOT_0=${to}/home/run/s`, '--', `${to}/home/node`]);
+  assert.deepEqual(moved.captured.env, [`HOME=${to}/userhome`, `SIBLING=${from}0/x`, 'ELSEWHERE=/Users/new/other']);
+  assert.equal(record.input.cwd, `${from}/home/run/s`, 'the record itself is left as it was');
+  assert.throws(() => relocateCapture(record, {from, to: 'relative/root', euid: 502}), /absolute/);
 });
 
 // #115 M1: the fingerprint under cua's kernel launcher pins the port's metadata grant (src/sandbox/seatbelt.mjs header):

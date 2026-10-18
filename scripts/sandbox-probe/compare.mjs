@@ -90,10 +90,39 @@ export function comparePortToCapture({captured, port}) {
     equalButDeviations: result.argvEqual && !differing.length && !onlyCaptured.length && !result.env.onlyGolden.length};
 }
 
+// #159: a capture (oracle.mjs capture) moved from the root it was taken under (`from`, M0's scratch root on the mini) to
+// `to` on the machine replaying it, so port-vs-capture renders the same input there. Every string of the record has
+// `from` replaced as a whole path prefix, in its plain spelling and in the regex-escaped one the original's profile uses
+// for its carve-outs (regex-lite's escape, the capture's own); and the protected daemon directory takes `euid`, the
+// replaying user's, as the port renders it. A copy; the record is left as it was.
+const regexLiteEscape = text => text.replace(/[\\.+*?()|[\]{}^$#&\-~]/g, '\\$&');
+export function relocateCapture(record, {from, to, euid}) {
+  for (const root of [from, to]) if (!root?.startsWith('/') || root === '/' || root.endsWith('/')) throw new Error(`relocate: ${JSON.stringify(root)} is not an absolute directory path`);
+  const spellings = [[from, to], [regexLiteEscape(from), regexLiteEscape(to)]].map(([a, b]) => [new RegExp(`${escapeRegExp(a)}(?=/|:|"|$)`, 'g'), b]);
+  const move = value => {
+    if (typeof value === 'string') return spellings.reduce((text, [pattern, replacement]) => text.replace(pattern, () => replacement), value).replace(/\/private\/tmp\/codex-daemon-\d+/g, `/private/tmp/codex-daemon-${euid}`);
+    if (Array.isArray(value)) return value.map(move);
+    if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, move(item)]));
+    return value;
+  };
+  return move(record);
+}
+
 // Named per run: the CLI's arg0 directory ($CODEX_HOME/tmp/arg0/codex-arg0<random>) and the session's run directory
 // (run/<uuid>, with its temp).
 const normalizeValue = value => value.replace(/codex-arg0[A-Za-z0-9]+/g, 'codex-arg0*')
   .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, '<session>');
+
+// Where the run's machine put things (#159: M0's fingerprints come from the mini, the hosted gate's from a runner): the
+// fingerprint's own labelled targets name its roots, the cua home, the user home and the checkout, and a value under one
+// reads as `<label>/…`, longest root first so a nested root wins. A root matches whole, never a sibling sharing its prefix.
+const ROOT_LABELS = ['cua-home', 'home', 'checkout'];
+const escapeRegExp = text => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+function relativeToRoots(fingerprint) {
+  const roots = ROOT_LABELS.map(label => [label, fingerprint.checks.find(row => row.filter === 'path' && row.label === label)?.target])
+    .filter(([, root]) => typeof root === 'string' && root.startsWith('/') && root !== '/').sort(([, a], [, b]) => b.length - a.length);
+  return value => roots.reduce((text, [label, root]) => text.replace(new RegExp(`${escapeRegExp(root)}(?=/|:|$)`, 'g'), `<${label}>`), value);
+}
 
 // Checks are matched by (op, filter, label) and compared by result and errno: two failures of the same check are
 // different outcomes when their errno differs (EPERM from the sandbox against ECONNREFUSED from an absent listener).
@@ -106,9 +135,10 @@ export function compareFingerprints(left, right) {
       const [op, filter, label] = key.split(SEP);
       return {op, filter, label, left: a.get(key) ?? null, right: b.get(key) ?? null};
     });
-  const normalize = env => Object.fromEntries(Object.entries(env).map(([k, v]) => [k, normalizeValue(v)]));
-  const env = envDiff(normalize(left.env), normalize(right.env));
-  const cwdEqual = normalizeValue(left.cwd) === normalizeValue(right.cwd);
+  const [inLeft, inRight] = [relativeToRoots(left), relativeToRoots(right)];
+  const normalize = (env, relative) => Object.fromEntries(Object.entries(env).map(([k, v]) => [k, normalizeValue(relative(v))]));
+  const env = envDiff(normalize(left.env, inLeft), normalize(right.env, inRight));
+  const cwdEqual = normalizeValue(inLeft(left.cwd)) === normalizeValue(inRight(right.cwd));
   const equal = checks.length === 0 && env.onlyLeft.length + env.onlyRight.length + env.differing.length === 0 && cwdEqual && left.sandboxed === right.sandboxed;
   return {equal, sandboxed: [left.sandboxed, right.sandboxed], cwdEqual, checks, env};
 }

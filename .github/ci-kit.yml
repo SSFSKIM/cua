@@ -1,7 +1,7 @@
 # cua's CI gates, run by ci-kit (https://github.com/SSFSKIM/ci-kit/blob/main/docs/adopting.md): on pull requests, and
-# from any worktree with `ci-gate`. Both gates run on GitHub's hosted macOS runner, free for a public repo; an ubuntu
-# leg waits for the Linux fixes in #142. Live checks (verify.mjs, accept-native, accept-chrome) need the real $CUA_HOME,
-# the native helper and the GUI, so they stay local.
+# from any worktree with `ci-gate`. Every gate runs on GitHub's hosted macOS runner, free for a public repo; an ubuntu
+# leg waits for the Linux fixes in #142. Live checks that need the owner, a TCC grant or the native helper (verify.mjs,
+# accept-native, accept-chrome, parity's computer lanes) stay on the Mac mini; the headless ones run in `sandbox-live`.
 version: 1
 setup:
   node: "24"          # Node 22 skips the own REPL host's tests
@@ -24,3 +24,27 @@ gates:
       done
       claude plugin validate .
       npm run test:mods
+  # #159: cua's headless macOS live checks (the #115 oracles, own-sandbox on both hosts, probe-secrets) on a runtime
+  # `cua install` fetches into a scratch home, so a sandbox change is proven with no time on the Mac mini. Public logs:
+  # labels, outcomes and booleans only; every secret is synthetic (scripts/sandbox-probe/hosted-gate.sh).
+  - name: sandbox-live
+    lane: hosted-macos
+    timeout: 30
+    run: sh scripts/sandbox-probe/hosted-gate.sh
+    paths:
+      - "src/sandbox/**"
+      - "src/runtime/**"
+      - "src/secrets/**"
+      - "src/repl-host/**"
+      - "src/services/**"
+      - "bin/cua-codex-compat"
+      - "runtime/**"
+      - "scripts/sandbox-probe/**"
+      - "scripts/accept/own-sandbox.mjs"
+      - "scripts/accept/secret-seed.mjs"
+      - "scripts/accept/serve-with-store.mjs"
+      - "scripts/probe-secrets.mjs"
+      - "scripts/probe/**"
+      - "docs/evidence/2026-10-17-own-sandbox/m0/**"
+      - ".github/ci-kit.yml"
+    artifacts: [".hosted-gate/**"]

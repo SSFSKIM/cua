@@ -21,10 +21,12 @@
 //     buildLaunch resolves for the scratch home and user home (its missing targets created there, as the host does).
 //     The kernel's run records `pins` (compare.mjs metadataGrantPins) and fails when the port's metadata grant gives
 //     more than the cua home's and its run/'s metadata.
-//   node scripts/sandbox-probe/oracle.mjs port-vs-capture --capture <capture.json> --out <file>
+//   node scripts/sandbox-probe/oracle.mjs port-vs-capture --capture <capture.json> [--relocate <from>=<to>] --out <file>
 //     (M1) cua's port (src/sandbox/seatbelt.mjs) rendering a capture's own input, compared with what the signed CLI
 //     handed sandbox-exec (compare.mjs comparePortToCapture). The capture's run directory and its temp are recreated
-//     for the rendering, as they were when the capture ran, and removed after.
+//     for the rendering, as they were when the capture ran, and removed after. --relocate (#159) replays a capture
+//     taken under another machine's root `from` (M0's, on the mini) under `to` on this one (compare.mjs
+//     relocateCapture); `to` must spell its real path (no symbolic link on the way), as `from` did on the mini.
 //   node scripts/sandbox-probe/oracle.mjs compare-fingerprints <a.json> <b.json> [--expect <pair>] [--out <file>]
 //     (M1) --expect judges the comparison against that pair's declared deviations (compare.mjs judgeFingerprints) and
 //     exits 1 beyond them; port-vs-capture likewise exits 1 unless the port equals the capture but for its deviations.
@@ -54,7 +56,7 @@ import {sandboxState} from '../../src/runtime/sandbox.mjs';
 import {policyTable as sandboxPolicy} from '../../src/sandbox/policy.mjs';
 import {sandboxArgs} from './codex-template.mjs';
 import {STORE_RELATIVE} from '../../src/secrets/store.mjs';
-import {compareCapture, compareExperiments, compareFingerprints, comparePortToCapture, judgeFingerprints, metadataGrantPins, profileFromPolicy} from './compare.mjs';
+import {compareCapture, compareExperiments, compareFingerprints, comparePortToCapture, judgeFingerprints, metadataGrantPins, profileFromPolicy, relocateCapture} from './compare.mjs';
 
 const FIXED_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
 // KERN_PROCARGS2 carries the kernel's "apple" strings after the environment (per-process entropy and code identity, not
@@ -135,7 +137,11 @@ function kernelPolicy({mode, cwd, readPaths, deny, reexpose}) {
 // signed CLI handed sandbox-exec. The rendering looks at the filesystem as the CLI did: the run directory and its temp
 // are recreated for it when missing (the capture's `golden` step removed them) and what was created is removed again.
 function portVsCapture(values) {
-  const record = JSON.parse(readFileSync(values.capture, 'utf8'));
+  let record = JSON.parse(readFileSync(values.capture, 'utf8'));
+  if (values.relocate) {
+    const at = values.relocate.indexOf('=');
+    record = relocateCapture(record, {from: values.relocate.slice(0, at), to: values.relocate.slice(at + 1), euid: process.geteuid()});
+  }
   const {input, captured} = record;
   // The topmost directory this rendering has to create, removed again after it.
   let created = null;
@@ -229,7 +235,7 @@ function compareFiles(values, positionals, kind) {
 async function main() {
   const {values, positionals} = parseArgs({allowPositionals: true, options: {home: {type: 'string'}, 'user-home': {type: 'string'}, mode: {type: 'string'},
     cli: {type: 'string'}, cap: {type: 'string'}, fp: {type: 'string'}, out: {type: 'string'}, generator: {type: 'string'}, capture: {type: 'string'}, label: {type: 'string'},
-    launcher: {type: 'string'}, role: {type: 'string'}, expect: {type: 'string'}}});
+    launcher: {type: 'string'}, role: {type: 'string'}, expect: {type: 'string'}, relocate: {type: 'string'}}});
   const [command, ...rest] = positionals;
   if (command === 'capture') capture(values);
   else if (command === 'golden') golden(values);

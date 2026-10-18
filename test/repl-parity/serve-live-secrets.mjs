@@ -23,6 +23,8 @@ export function prepareLiveSecretsLaunch(launch,{host,vendorClient,ownClient,use
  const registered=JSON.parse(next.env[`${prefix}_TRUSTED_SERVICES`]);registered.browser=fixture;
  next.env[`${prefix}_TRUSTED_SERVICES`]=JSON.stringify(registered);
  next.env[`${prefix}_TRUSTED_CODE_PATHS`]=[...new Set([...next.env[`${prefix}_TRUSTED_CODE_PATHS`].split(delimiter),dirname(fixture)])].join(delimiter);
- Object.assign(next.env,{HOME:workerHome,PARITY_LIVE_SECRET_REMOTE:'1',PARITY_LIVE_SECRET_HOME:workerHome,PARITY_LIVE_SECRET_CAPABILITY_HOME:capabilityHome,PARITY_LIVE_SECRET_CAPABILITY_ROOT:expectedCapabilityHome,PARITY_LIVE_SECRET_RUN_DIRECTORY:launch.cwd});
+ // No real session's HOME lies in its run directory: the XDG data directories stay with the connection's HOME, so no
+ // applications directory launch_app reads from lies in a write root (the own host's scoped preflight).
+ Object.assign(next.env,{HOME:workerHome,XDG_DATA_HOME:join(userHome,'.local','share'),PARITY_LIVE_SECRET_REMOTE:'1',PARITY_LIVE_SECRET_HOME:workerHome,PARITY_LIVE_SECRET_CAPABILITY_HOME:capabilityHome,PARITY_LIVE_SECRET_CAPABILITY_ROOT:expectedCapabilityHome,PARITY_LIVE_SECRET_RUN_DIRECTORY:launch.cwd});
  return next;
 }

@@ -14,6 +14,10 @@ export function prepareLiveSecretsLaunch(launch,{host,vendorClient,ownClient,use
  // prepareLaunch precedes connection's mkdir(cwd). Create each child only after checking its parent, so a
  // symlink at run/session/home is refused before creating any child through it. No store values are written here.
  for(const path of [join(capabilityHome,'run'),launch.cwd,workerHome]){mkdirSync(path,{recursive:true,mode:0o700});if(realpathSync(path)!==path)throw Error('Live secret launch refuses a symlinked scratch directory');}
+ // The launch's deny list was resolved from the connection's HOME (userHome), and on Linux the own host creates a
+ // missing fixed target there only when its missing parents lie inside the children's HOME (#115 M3), which this
+ // fixture moves into the run directory: userHome's ~/.config exists first, so only the targets' leaves are created.
+ mkdirSync(join(userHome,'.config'),{recursive:true,mode:0o700});
  const next=prepareCapabilityApiLaunch(launch,{host,vendorClient,ownClient}),prefix=host==='vendor'?'NODE_REPL':'CUA_REPL';
  const fixture=fileURLToPath(new URL('./fixtures/live-secret-service.mjs',import.meta.url));
  const registered=JSON.parse(next.env[`${prefix}_TRUSTED_SERVICES`]);registered.browser=fixture;

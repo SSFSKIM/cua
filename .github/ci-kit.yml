@@ -3,7 +3,7 @@
 # leg waits for the Linux fixes in #142. Live checks that need the owner, a TCC grant or the native helper (verify.mjs,
 # accept-native, accept-chrome, parity's computer lanes) stay on the Mac mini; the headless ones run in `sandbox-live`,
 # the cfprefs denial check and parity's browser lanes (on a harness Chrome for Testing) in `sandbox-denials` and
-# `parity-browser`.
+# `parity-browser` (by hand until its two racy cells are fixed).
 version: 1
 setup:
   node: "24"          # Node 22 skips the own REPL host's tests
@@ -83,6 +83,10 @@ gates:
   - name: parity-browser
     # The vendor host and cua's own host over suites api and docs-profiles, each pair diffed with the declared expected
     # differences: none undeclared. About 11 minutes with the setup.
+    # Not on pull requests yet: 3 of its first 6 hosted runs went red on two parity cells' races, not on the change
+    # (the waitfor cell's two deadlines, cua's drag cell; tech-debt-tracker.md). A flaky required check is worse than
+    # none, so it runs by hand (`ci-gate --gates parity-browser`, a dispatch) until those cells are fixed; then add `pr`.
+    on: [ci-ref, dispatch]
     lane: hosted-macos
     timeout: 40
     run: sh scripts/repl-parity/hosted/hosted.sh browser

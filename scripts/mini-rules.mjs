@@ -13,7 +13,7 @@
 // baseline, port-vs-capture, own-sandbox on both hosts, probe-secrets, doctor) prove a pull request on GitHub's hosted
 // macOS runner, ci-kit gate `sandbox-live`; the cfprefs denial check (the cells and services suites' denials within M1's
 // declared set) and parity's browser lanes (suites api and docs-profiles, vendor against cua, on a harness Chrome for
-// Testing) do too, gates `sandbox-denials` and `parity-browser` (scripts/repl-parity/hosted/hosted.sh). None of these is
+// Testing) do too, gates `sandbox-denials` and `parity-browser` (scripts/repl-parity/hosted/hosted.sh; the latter by hand for now). None of these is
 // repeated here for evidence. The mini keeps: anything that needs
 // the native computer-use helper's Screen Recording or Accessibility grant (accept-native's native items, native-baseline's
 // computer runs, parity's computer lanes; probe-secrets' one helper call, an absent app's lookup, needs neither and runs

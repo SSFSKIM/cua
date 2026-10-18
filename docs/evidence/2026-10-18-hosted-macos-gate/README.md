@@ -21,6 +21,8 @@ oracles' and own-sandbox's results from this gate, with no mini time used.
 
 Two more gates, `sandbox-denials` (the cfprefs denial check) and `parity-browser` (parity's browser lanes), run on a
 harness Chrome for Testing on the same hosted runner. They are described in their own section below.
+`sandbox-denials` runs on pull requests. `parity-browser` runs by hand only (`ci-gate --gates parity-browser`, or a
+dispatch) until two racy parity cells are fixed: 3 of its first 6 runs went red on them, not on the change.
 
 ## What the gate runs
 
@@ -318,6 +320,12 @@ A `parity-browser` run takes 7.5 to 10 minutes: the setup about 1.5, each host's
   `ended` before reading it (`test/browser-parity/scenarios/input/coordinates.mjs`).
 
 `sandbox-denials` showed no intermittent result in 4 runs, and none in the spike's 3 green ones.
+
+**So `parity-browser` does not run on pull requests yet** (`on: [ci-ref, dispatch]`; ruled by this ticket's executor
+under the brief's rule that a flaky gate is worse than none, after the dispatching session had asked for both long gates
+on pull requests before the flake was known). It runs by hand: `ci-gate <worktree> --gates parity-browser`, or a
+workflow dispatch. Adding `pr` to its `on:` list is the one-line change once the `waitfor` cell is fixed in the scenario
+and the `drag` cell's cause is read on a rerun (`tech-debt-tracker.md`).
 
 ### What a hosted pass does not show
 

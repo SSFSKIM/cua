@@ -1,0 +1,2 @@
+problem: hardware environment differs between the baseline and the candidate
+verdict: NO VERDICT

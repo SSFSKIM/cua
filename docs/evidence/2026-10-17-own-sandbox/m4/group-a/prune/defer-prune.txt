@@ -1,0 +1,5 @@
+installing 26.928.40906-darwin-arm64 from /Users/new/cua-115/archive.zip
+26.928.40906-darwin-arm64 is already installed and verified; active at <scratch>/defer/runtimes/26.928.40906-darwin-arm64
+removed the Codex CLI's leftovers from <scratch>/defer/state/codex: auth.json, installation_id, models_cache.json, cache, plugins, skills, log, tmp/arg0, browser/sessions, logs_1.sqlite, state_1.sqlite, state_1.sqlite-shm, state_1.sqlite-wal
+left the Codex CLI's unused <scratch>/defer/runtimes/26.928.40906-darwin-arm64/CodexCLI.app in place, since a session may be running from this home: session cua115-live (pid 86389); run cua install --prune-leftovers again when none is
+skipped the pinned Node (--no-node): cua's own REPL host runs on CUA_NODE or your own Node 24 or later, else sessions keep the vendor host

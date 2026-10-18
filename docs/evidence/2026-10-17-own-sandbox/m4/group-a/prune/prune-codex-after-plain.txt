@@ -1,0 +1,16 @@
+auth.json
+browser
+cache
+computer-use
+config.toml
+installation_id
+log
+logs_1.sqlite
+models_cache.json
+node_repl
+plugins
+skills
+state_1.sqlite
+state_1.sqlite-shm
+state_1.sqlite-wal
+tmp

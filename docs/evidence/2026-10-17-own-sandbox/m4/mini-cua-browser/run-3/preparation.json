@@ -1,0 +1,14 @@
+{
+  "device": "mini",
+  "home": "/Users/new/.local/share/cua-native-baseline/run-j9rr4s",
+  "userHome": "/Users/new/.local/share/cua-native-baseline/run-j9rr4s.home",
+  "token": "5ed9a043-2c86-4cff-a0c8-d01cda82bbe3",
+  "xSession": {},
+  "tmpdir": "/Users/new/.local/share/cua-native-baseline/run-j9rr4s/harness-tmp",
+  "nodeMode": "managed",
+  "nodeOverride": null,
+  "ownNode": {
+    "path": "/Users/new/.local/share/cua-native-baseline/run-j9rr4s/node/24.22.0/bin/node",
+    "version": "v24.22.0"
+  }
+}

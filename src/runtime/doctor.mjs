@@ -43,6 +43,11 @@
 // `run.stale` sweeps $CUA_HOME/run as `cua serve` does at start (src/runtime/run-dir.mjs), the one thing doctor
 // changes: the leftovers of sessions whose owning cua process is gone are removed and named. It is cua's own
 // housekeeping, never runtime health: `pass`, or `fail` when a stale session could not be removed.
+// `runtime.leftovers` (src/runtime/codex-leftovers.mjs, #115 M4) names what the Codex CLI left in the runtime's
+// CODEX_HOME and the unused CLI component in installed release trees, by name and path only, with the command that
+// removes them (`cua install --prune-leftovers`, once every cua using the home is updated): `warn` while any is there
+// (and, for a release's CLI, which sessions the sweep left that hold it back), else `pass`. They are dead weight to
+// this cua, never a health failure.
 // The `agent.*` rows describe remote control (src/remote): the launchd job (`agent.installed`, `agent.running`), the
 // device enrolment (`agent.enrolled`) and whether this user's session is on the console and unlocked (`agent.console`,
 // the state in which remote js does nothing and is refused as console_locked). On a Mac never enrolled, with no job
@@ -67,6 +72,7 @@ import {loadPins, selectPin, locateRuntime, recoveryHint} from './manifest.mjs';
 import {checkLayout, checkVendorManifest, checkIpc, verifyCodeSignatures, ipcVersionsIn} from './checks.mjs';
 import {inspectSecretStore, classifyStore} from '../secrets/check.mjs';
 import {describeSweep, sweepRun} from './run-dir.mjs';
+import {leftoversCheck, sessionsInUse} from './codex-leftovers.mjs';
 import {chromeFacts} from '../profiles/chrome.mjs';
 import {chromeChecks, mawsHostCheck} from '../profiles/checks.mjs';
 import {linuxDesktopChecks, xDisplayCheck} from './linux-desktop.mjs';
@@ -150,7 +156,9 @@ export async function inspectRuntime({home, env = process.env, live = false, pin
   checks.push(sandbox.row);
   if (host.platform === 'darwin') checks.push(launcherCheck({...launcher, compat: compatExecutable(launcher.compat), node: runtime?.paths.node}));
   if (host.platform === 'linux') checks.push(helperCheck({home, arch: host.arch, linuxHelper}));
-  checks.push(runSweepCheck(home, sweep));
+  const swept = runSweepCheck(home, sweep);
+  checks.push(swept.row);
+  checks.push(leftoversCheck({home, pins, inUse: sessionsInUse(home, () => { if (swept.error) throw swept.error; return swept.found; })}));
 
   if (linuxRows) checks.push(...linuxRows.map(row => (row.name === 'sandbox.userns' ? usernsRow(row, {sandbox}) : row)));
   if (!linuxRows) {
@@ -279,13 +287,14 @@ function sandboxRow({home, env, runtime, platform, surfaces, userns, mode}) {
     + (computer ? workerNetwork : '') + '; CUA_SHIM_SANDBOX=disabled lifts both limits');
 }
 
+// -> {row, found} (the sweep's result), or {row, error} when run/ could not be swept.
 function runSweepCheck(home, sweep) {
   let found;
   try { found = sweep(home); } catch (error) {
-    return result('run.stale', 'fail', `${homeLayout(realHome(home)).run} could not be swept (${error.code ?? error.message}); cua serve cannot use it either`);
+    return {error, row: result('run.stale', 'fail', `${homeLayout(realHome(home)).run} could not be swept (${error.code ?? error.message}); cua serve cannot use it either`)};
   }
   const live = found.live.length ? `; ${found.live.length} live session${found.live.length === 1 ? '' : 's'} left alone` : '';
-  return result('run.stale', found.failed.length ? 'fail' : 'pass', `${found.run}: ${describeSweep(found) ?? 'nothing stale'}${live}`);
+  return {found, row: result('run.stale', found.failed.length ? 'fail' : 'pass', `${found.run}: ${describeSweep(found) ?? 'nothing stale'}${live}`)};
 }
 
 const defaultInspectChrome = async ({home, host, env}) => [...await chromeChecks({home, chrome: chromeFacts({host, env})}), mawsHostCheck({home})];

@@ -1,0 +1,70 @@
+2026-10-18T15:43:16.277Z watch b-8782604: started for pid 95258 (mode dialog-only)
+2026-10-18T15:43:18.733Z watch b-8782604: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=1.7 -> idle
+2026-10-18T15:43:51.091Z watch b-8782604: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.52 -> idle
+2026-10-18T15:44:23.748Z watch b-8782604: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.82 -> idle
+2026-10-18T15:44:31.401Z watch b-8782604: started for pid 52726 (mode dialog-only)
+2026-10-18T15:44:33.686Z watch b-8782604: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.39 -> idle
+2026-10-18T15:45:06.059Z watch b-8782604: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.84 -> idle
+2026-10-18T15:45:38.660Z watch b-8782604: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.95 -> idle
+2026-10-18T15:45:44.950Z watch b-8782604: started for pid 9191 (mode dialog-only)
+2026-10-18T15:45:47.116Z watch b-8782604: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=3.25 -> idle
+2026-10-18T15:46:19.574Z watch b-8782604: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=3.14 -> idle
+2026-10-18T15:46:52.152Z watch b-8782604: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=3.5 -> idle
+2026-10-18T15:46:57.419Z watch b-8782604: started for pid 61069 (mode dialog-only)
+2026-10-18T15:47:00.071Z watch b-8782604: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=3.38 -> idle
+2026-10-18T15:47:32.119Z watch b-8782604: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.79 -> idle
+2026-10-18T15:47:34.893Z watch b-8782604: started for pid 88932 (mode dialog-only)
+2026-10-18T15:47:37.311Z watch b-8782604: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.57 -> idle
+2026-10-18T15:48:10.716Z watch b-8782604: started for pid 15421 (mode dialog-only)
+2026-10-18T15:48:12.943Z watch b-8782604: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.5 -> idle
+2026-10-18T15:49:07.142Z watch accept-native-8782604: started for pid 59086 (mode dialog-only)
+2026-10-18T15:49:09.481Z watch accept-native-8782604: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.93 -> idle
+2026-10-18T15:49:41.917Z watch accept-native-8782604: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.18 -> idle
+2026-10-18T15:50:14.367Z watch accept-native-8782604: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=3.98 -> idle
+2026-10-18T15:50:46.445Z watch accept-native-8782604: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=3.02 -> idle
+2026-10-18T15:51:18.999Z watch accept-native-8782604: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.54 -> idle
+2026-10-18T15:52:52.679Z watch m4-parity-8782604: started for pid 21307 (mode pause-aware)
+2026-10-18T15:52:54.950Z watch m4-parity-8782604: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.67 -> idle
+2026-10-18T15:53:27.096Z watch m4-parity-8782604: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.88 -> idle
+2026-10-18T15:53:59.335Z watch m4-parity-8782604: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.13 -> idle
+2026-10-18T15:54:31.500Z watch m4-parity-8782604: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.38 -> idle
+2026-10-18T15:55:03.786Z watch m4-parity-8782604: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.31 -> idle
+2026-10-18T15:55:35.961Z watch m4-parity-8782604: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.19 -> idle
+2026-10-18T15:56:08.366Z watch m4-parity-8782604: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=3.77 -> idle
+2026-10-18T15:56:40.963Z watch m4-parity-8782604: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.25 -> idle
+2026-10-18T15:57:13.508Z watch m4-parity-8782604: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.03 -> idle
+2026-10-18T15:57:45.650Z watch m4-parity-8782604: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=3.95 -> idle
+2026-10-18T15:58:17.859Z watch m4-parity-8782604: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=3.72 -> idle
+2026-10-18T15:58:49.814Z watch m4-parity-8782604: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=3.37 -> idle
+2026-10-18T15:59:22.533Z watch m4-parity-8782604: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=3.17 -> idle
+2026-10-18T15:59:54.691Z watch m4-parity-8782604: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.8 -> idle
+2026-10-18T16:00:26.937Z watch m4-parity-8782604: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=3.48 -> idle
+2026-10-18T16:00:59.210Z watch m4-parity-8782604: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=3.28 -> idle
+2026-10-18T16:01:31.620Z watch m4-parity-8782604: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.73 -> idle
+2026-10-18T16:02:05.068Z watch m4-parity-8782604: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=3.07 -> idle
+2026-10-18T16:02:37.287Z watch m4-parity-8782604: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.52 -> idle
+2026-10-18T16:03:09.451Z watch m4-parity-8782604: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.75 -> idle
+2026-10-18T16:03:41.737Z watch m4-parity-8782604: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=3.43 -> idle
+2026-10-18T16:04:13.853Z watch m4-parity-8782604: reading: front=com.google.Chrome busy=false workers=0 queued=0 load=3.23 -> idle
+2026-10-18T16:04:46.230Z watch m4-parity-8782604: reading: front=com.google.Chrome busy=false workers=0 queued=0 load=3.9 -> idle
+2026-10-18T16:05:18.462Z watch m4-parity-8782604: reading: front=com.google.Chrome busy=false workers=0 queued=0 load=3.13 -> idle
+2026-10-18T16:05:50.836Z watch m4-parity-8782604: reading: front=com.google.Chrome busy=false workers=0 queued=0 load=2.35 -> idle
+2026-10-18T16:06:22.933Z watch m4-parity-8782604: reading: front=com.google.Chrome busy=false workers=0 queued=0 load=1.88 -> idle
+2026-10-18T16:06:55.294Z watch m4-parity-8782604: reading: front=com.google.Chrome busy=false workers=0 queued=0 load=2.92 -> idle
+2026-10-18T16:07:27.452Z watch m4-parity-8782604: reading: front=com.google.Chrome busy=false workers=0 queued=0 load=3.81 -> idle
+2026-10-18T16:07:59.455Z watch m4-parity-8782604: reading: front=com.google.Chrome busy=false workers=0 queued=0 load=4.05 -> idle
+2026-10-18T16:08:31.754Z watch m4-parity-8782604: reading: front=com.google.Chrome busy=false workers=0 queued=0 load=3.83 -> idle
+2026-10-18T16:09:03.855Z watch m4-parity-8782604: reading: front=com.google.Chrome busy=false workers=0 queued=0 load=3.57 -> idle
+2026-10-18T16:09:36.330Z watch m4-parity-8782604: reading: front=com.google.Chrome busy=false workers=0 queued=0 load=6.31 -> idle
+2026-10-18T16:10:09.726Z watch m4-parity-8782604: reading: front=com.google.Chrome busy=false workers=0 queued=0 load=7.39 -> idle
+2026-10-18T16:10:42.739Z watch m4-parity-8782604: reading: front=com.google.Chrome busy=false workers=0 queued=0 load=4.85 -> idle
+2026-10-18T16:11:15.439Z watch m4-parity-8782604: reading: front=com.google.Chrome busy=false workers=0 queued=0 load=4.21 -> idle
+2026-10-18T16:11:53.194Z watch m4-parity-8782604: reading: front=com.google.Chrome busy=false workers=0 queued=0 load=4.17 -> idle
+2026-10-18T16:12:25.537Z watch m4-parity-8782604: reading: front=com.google.Chrome busy=false workers=0 queued=0 load=3.93 -> idle
+2026-10-18T16:12:57.580Z watch m4-parity-8782604: reading: front=com.google.Chrome busy=false workers=0 queued=0 load=3.35 -> idle
+2026-10-18T16:13:30.072Z watch m4-parity-8782604: reading: front=com.google.Chrome busy=false workers=0 queued=0 load=4.21 -> idle
+2026-10-18T16:14:02.617Z watch m4-parity-8782604: reading: front=com.google.Chrome busy=false workers=0 queued=0 load=3.98 -> idle
+2026-10-18T16:14:34.722Z watch m4-parity-8782604: reading: front=com.google.Chrome busy=false workers=0 queued=0 load=4.72 -> idle
+2026-10-18T16:15:07.194Z watch m4-parity-8782604: reading: front=com.google.Chrome busy=false workers=0 queued=0 load=3.84 -> idle
+2026-10-18T16:15:39.603Z watch m4-parity-8782604: reading: front=com.google.Chrome busy=false workers=0 queued=0 load=6.54 -> idle
+2026-10-18T16:16:11.687Z watch m4-parity-8782604: reading: front=com.google.Chrome busy=false workers=0 queued=0 load=5.87 -> idle

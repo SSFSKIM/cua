@@ -26,7 +26,7 @@ This is child 2 of the independence composite #114, after #113 (own browser serv
 - [x] (2026-10-18) M1 — Policy model, deny list, seatbelt port; cua's own host on macOS (task 4 reviewed clean; PR #156 reviewed at reviewer-high, correct after one fix round; the mini's acceptance at code f8019bf: tier-check, oracles, own-sandbox 76/76, cfprefs, parity 479/479 with no undeclared difference, accept-native item 11 76/76, probe-secrets standalone).
 - [x] (2026-10-18) M2 — Compatibility executable for the macOS vendor host; CodexCLI.app leaves the macOS pin (task 5 reviewed clean; PR #158 at reviewer-high, product confirmed, harness fixes; mini acceptance at code 249a2a9: env probe, helper check, parity 479/479 with no undeclared difference, vendor own-sandbox 86/86, accept-native items 11/12/13).
 - [x] (2026-10-18) M3 — Linux helper (built, attested, released), cua's own host on Linux, confined Linux computer default, Linux vendor host retired; `codex` leaves the Linux pins. Task 6 was reviewed clean after one fix round, which closed the launch_app write-root and helper-mode gaps; Linux `default` mode now denies `run/`. PR #160 at reviewer-high: no material findings. Release `linux-sandbox-rust-v0.163.0`, tag target da0c530, attested by run 39110168611. On GCE at code fedc016: own-sandbox 82/82, linux-native PASS, helper comparison equal, x64 smoke. Full parity at bf7739f: 493 cases, diff ok with no difference beyond the declared transition and #135. Merged with a merge commit.
-- [ ] M4 — #138 measured change, CODEX_HOME narrowing and cleanup, documentation, final acceptance and latency, plugin release.
+- [x] (2026-10-18) M4 — #138 measured change, CODEX_HOME narrowing and cleanup, documentation, final acceptance and latency, plugin release. Task 7 was reviewed clean after four rounds. The prune became explicit, the sweep guards its parents, and tombstones and unreadable paths are reported. PR #161 at reviewer-high: correct after one fix round (skipped links reported; acceptance recipe). The frontmost key guard was reviewed clean. Mini group A at 7b87873/a920e2f and group B at 8782604, all pass: parity 479/479 with 0 undeclared differences; latency within the limit, with the vendor cold.hit row ruled. GCE at 7b87873: items 1, 2-5, 7 and 10 pass; Linux latency ruled. The #138 line ships off, and the owner's sitting was skipped, both by ruling. Plugin 0.15.0.
 
 ## Scope, inheritance and evidence
 
@@ -939,7 +939,79 @@ Dependencies on other work: #79 merged before M2. #117 retires the compat execut
   Date/Author: 2026-10-18, execution session.
 - Decision: Linux acceptance 12 closes on a full suite run at M3's final code, not on a single-suite rerun (2026-10-18, ruled by the dispatching session). The fix wave moved the default-mode kernel's cwd and lifeline and added launch_app refusals, and only the api suite had run since. The full run at 43c543d found the fixture defect described in Surprises; the full run at bf7739f compares clean. Nothing under `src/` changed after the review fixes (fedc016).
   Date/Author: 2026-10-18, execution session.
+- Decision: M4 was prepared on a branch cut from M3's head (43c543d) while #160 was still open, and took main by a merge once #160 merged as 108d49f (2026-10-18; accepted by the dispatching session). This departs from "later milestones branch from main after the preceding PR merges". The merge changed no M3 launch code: M4's `src/` changes against main are comments in `launch.mjs`, `sandbox.mjs`, `install.mjs`, `manifest.mjs`, `layout.mjs` and `surface.mjs`, plus the leftovers module, the CLI and doctor rows, the seatbelt switch and the session-parent guard in `run-dir.mjs`. The Linux launch is therefore the one M3's full parity ran at bf7739f, and Linux acceptance 12 rests on that run.
+  Date/Author: 2026-10-18, execution session.
+- Decision: the Codex CLI's leftovers are removed only by an explicit `cua install --prune-leftovers`; a plain install removes nothing (2026-10-18, ruled by the dispatching session; supersedes "removed by `cua install`" in Design, "Removal, CODEX_HOME and the install").
+  - What the prune removes: CodexCLI.app, the pre-M3 Linux `codex` file and the CODEX_HOME leftovers, by name. It keeps the three conditions and runs the stale sweep first.
+  - Doctor's `runtime.leftovers` row names what is left and the command. The README and release notes say to update every cua sharing the home first.
+  - Rejected alternative: automatic removal at install. A session's run record cannot show version skew, meaning an older cua sharing the same CUA_HOME that still launches CodexCLI.app. Both cases are real: this MacBook's installed 0.14.0 plugin, and the mini's long-lived 0.5.0, 0.9.0 and 0.11.0 shims and checkout-based serve and agent, which may write no run record or an old-format one.
+  - On Linux, an older cua on the vendor host may run its kernel unconfined after a failed launch (#135), so updating first is a precondition.
+  - The cleanup touches only `$CUA_HOME/state/codex`, never an environment CODEX_HOME, and never follows a symlink out of it.
+  - A removal renames the component to a tombstone (`.<name>.pruning-<hex>`) between two session checks, and the scan recognises tombstones, so a failed or interrupted removal stays reported.
+  - The task review found that the session sweep followed a symlinked `run/`, `state/`, `state/compat/` or `kernel/`, an exposure that dates from 2026-10-05, M2 and M3 respectively. The sweep now refuses on such a parent for every caller; serve and the agent log the refusal and carry on.
+  Date/Author: 2026-10-18, execution session.
+- Decision: the notification_center line ships off in 0.15.0, and M4 runs no time-zone sittings for it (2026-10-18, ruled by the dispatching session; replaces acceptance 13's M4 runs).
+  - Why no sittings: M0 measured 0 of 80 hangs per role under the real HOME without the line, and 0 of 160 in the scratch control. A denying control that does not reproduce cannot show what the line does, and a widening grant needs evidence that it fixes something.
+  - What remains: the switch in `src/sandbox/seatbelt.mjs`, off, and tz-probe's `deny` and `allow` modes. #138 stays open as not reproduced, with the switch ready for when a reproduction turns up.
+  - Unchanged: the logd and diagnosticd denials stay; the release notes list them under behaviour changes.
+  Date/Author: 2026-10-18, execution session.
+- Decision: M4's macOS acceptance runs in three groups, and the owner's TextEdit sitting is skipped (2026-10-18, approved by the dispatching session).
+  - Group A (headless): items 1 to 5, 8, 9 and 10.
+  - Group B (a CI-opt hold): latency first, then parity, then accept-native without `--live-textedit`.
+  - Why the sitting can go:
+    - M4 does not touch the macOS computer route or the compat;
+    - M2's sitting proved typing and approvals at its SHA;
+    - group B re-proves the route read-only.
+  - A latency regression on either host's cold rows beyond M0's run-to-run spread goes to the dispatching session before merging.
+  Date/Author: 2026-10-18, execution session.
+- Decision: Linux acceptance 11 is accepted with the confined kernel's first-cell cost (2026-10-18, ruled by the dispatching session). Three runs on cua-gce at 7b87873 against M0's same-host baseline: `cold.miss.first_js` 735.1 ms pooled against 666.5 (+10.3%), and `cold.hit.first_js` 825.8 against 773.6 (+6.7%). Both are beyond M0's run-to-run spread and well inside the spec's limit (baseline + max(10%, 500 ms)); the warm rows and tasks are equal or faster.
+  - Cause: a session's first cell now starts the kernel through the helper (bubblewrap and seccomp), where M0 ran it unconfined. That is the disabled → scoped change acceptance 11 names as being measured.
+  - Why it stands: the owner's "no regression" was set for the browser service and the macOS GUI, whose rows come from group B under the same beyond-the-spread rule.
+  - The release notes state the cost. `compare --same-host` gains a tolerance for a `memoryBytes` difference under 0.1%, and nothing else: the box read 4 KiB lower on the same machine type, which it had treated as a hardware change.
+  - Candidates for the cost, if Linux latency ever matters: bwrap's namespace setup and the helper's inner fork (tech-debt-tracker.md).
+  Date/Author: 2026-10-18, execution session.
+- Decision: macOS acceptance 11 is accepted on three runs (2026-10-18, ruled by the dispatching session). Measured on the mini at 8782604, inside the group B hold; `compare --same-host` passes both configurations.
+  - The vendor host computer session's `cold.hit.first_js` pooled 489.0 ms against M0's 429.3. Its M0 runs spread 412 to 472, so it is beyond that spread, but inside the 929.3 limit.
+  - Its `cold.miss.first_js` improved from 400.9 to 258.7 ms.
+  - The own host browser-only rows improved: miss 1160.5 → 229.6 ms, hit 316.6 → 301.0 ms.
+  - Likely cause of the hit-row cost: `bin/cua-codex-compat` starts Node before it execve's sandbox-exec, where the signed Codex CLI was a native binary. Pre-rendering the per-session profile in `buildLaunch` would remove it; that is in tech-debt-tracker.md, not M4.
+  - The three confirming runs were not taken. Both of the day's closures of the owner's Chrome window followed runs whose native helper typed into TextEdit and sent super+w and super+q. Every key was confirmed in TextEdit, so this is a correlation, not a mechanism, but a stray super+q would quit the owner's Chrome. The question is #162.
+  - Until #162 settles it, native-baseline's task cells and accept-native's TextEdit fixture send super+n, typing, super+w and super+q only while TextEdit is frontmost (`scripts/accept/key-guard.mjs`). Otherwise they skip the key, record it and fail the run.
+  - The release notes state the cost.
+  Date/Author: 2026-10-18, execution session.
 
 ## Outcomes & Retrospective
 
-Pending — written at finish.
+**What shipped (0.15.0, PRs #153, #156, #158, #160, #161).** cua no longer runs the Codex CLI.
+- On macOS, its kernel and the vendor host's node_repl run under cua's own seatbelt profiles. They come from a JS port of the original generator, and conformance is proven three ways: byte-equal golden fixtures, the signed CLI's argv, and a fingerprint matrix.
+- On Linux, both children run under the original `codex-linux-sandbox` helper. cua builds it from a pinned upstream commit, attests it and publishes it as its own release.
+- The credential store, `~/.config/cua`, cua's state, remote enrolments, Chrome data and other sessions' run directories are denied to model cells in every confined mode. On Linux the deny is per directory; on macOS the whole home is denied with metadata grants.
+- Linux computer sessions are confined by default, and the Linux vendor host is retired.
+- The Codex CLI's leftovers are removed by an explicit `cua install --prune-leftovers`, after every cua sharing the home has been updated.
+
+**Against the purpose.** The acceptance holds on both platforms:
+- The deny holds: own-sandbox 76/76 and 86/86 on the mini, 82/82 on Linux.
+- Parity holds: mini 479/479, Linux 493/493, with no undeclared difference.
+- The own host is no slower where the owner works: the browser-only cold rows improved by about 900 ms (miss) and 16 ms (hit).
+
+Two costs are accepted by ruling:
+- On Linux, a session's first cell is 50–70 ms slower. That is the price of the confined kernel.
+- On the macOS vendor host, the cached first cell is about 60 ms slower. That is likely the compat's Node startup, and a fix is logged as debt.
+
+The #138 time-zone line ships off: the hang never reproduced, so no measurement could decide it.
+
+**What went well.**
+- The probes before building (M0's oracles, the Linux nesting and app-launch probes) settled the hard design forks before code depended on them. The per-directory deny on Linux and the supervisor-side `launch_app` came from evidence, not assumption.
+- Full-suite runs at each milestone's final code caught what partial reruns could not. The Linux parity at 43c543d found fixtures whose HOME layout no real session has.
+
+**What it cost, and what to do differently.**
+- Deletion code took four review rounds: symlinked parents, snapshot races, swallowed scan errors, orphaned tombstones. Anything that deletes from a user's home should start from an explicit command, guard every parent it mutates, and report everything it could not inspect. Those rules surfaced late, one review at a time.
+- Live runs on a shared Mac collide with the owner's own state. The owner's Chrome window closed twice after runs that typed into TextEdit. The guard added in M4 (keys only while the target is frontmost) and #162 address that, and harness keystrokes should be treated as a shared-machine risk from the start.
+- Scheduling against other sessions' holds and gates cost more wall time than any build. Batching the mini's headless and GUI groups, and asking for holds early, kept it bounded.
+
+**Left open.**
+- #138: not reproduced; the switch is ready.
+- #162: key routing.
+- #157: M1 residue.
+- tech-debt-tracker.md: the waitfor race; the prune's residual race; the pre-rendered compat profile; Linux helper startup.
+- The mini's resident cua update and prune, which the dispatching session owns.

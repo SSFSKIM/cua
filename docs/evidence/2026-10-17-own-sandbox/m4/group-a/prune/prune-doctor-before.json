@@ -1,0 +1,146 @@
+{
+  "home": "<scratch>/prune",
+  "ok": true,
+  "checks": [
+    {
+      "name": "platform",
+      "status": "pass",
+      "detail": "darwin-arm64 has pinned release 26.928.40906-darwin-arm64"
+    },
+    {
+      "name": "runtime.installed",
+      "status": "pass",
+      "detail": "active release 26.928.40906-darwin-arm64 at <scratch>/prune/runtimes/26.928.40906-darwin-arm64"
+    },
+    {
+      "name": "runtime.files",
+      "status": "pass",
+      "detail": "every pinned runtime path is present"
+    },
+    {
+      "name": "runtime.vendor-manifest",
+      "status": "pass",
+      "detail": "runtime 0.0.27/20260927214556-b77d38801cca, node 24.21.0-cua.1, darwin-arm64"
+    },
+    {
+      "name": "runtime.ipc",
+      "status": "pass",
+      "detail": "client speaks CodexComputerUseIPC-5"
+    },
+    {
+      "name": "runtime.signatures",
+      "status": "pass",
+      "detail": "3 components signed by team 2DC432GLL2"
+    },
+    {
+      "name": "sandbox",
+      "status": "pass",
+      "detail": "CUA_SHIM_SANDBOX=scoped (the default): JavaScript cells write only their connection's run directory and its session temp ($CUA_HOME/run/<session>, their TMPDIR), no trusted code path lies under either, and cells have no network; CUA_SHIM_SANDBOX=disabled lifts both limits"
+    },
+    {
+      "name": "sandbox.launcher",
+      "status": "pass",
+      "detail": "cua's own sandbox confines the children: /usr/bin/sandbox-exec for cua's own host, and on the vendor host /Users/new/cua-115/repo/bin/cua-codex-compat on <scratch>/prune/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node; no Codex CLI is launched"
+    },
+    {
+      "name": "run.stale",
+      "status": "pass",
+      "detail": "<scratch>/prune/run: nothing stale"
+    },
+    {
+      "name": "runtime.leftovers",
+      "status": "warn",
+      "detail": "the Codex CLI's leftovers, unused by this cua since it runs its own sandbox (#115): <scratch>/prune/state/codex: auth.json, installation_id, models_cache.json, cache, plugins, skills, log, tmp/arg0, browser/sessions, logs_1.sqlite, state_1.sqlite, state_1.sqlite-shm, state_1.sqlite-wal; <scratch>/prune/runtimes/26.928.40906-darwin-arm64/CodexCLI.app; once every cua using this home is updated (an older one may still launch the Codex CLI), `cua install --prune-leftovers` removes them"
+    },
+    {
+      "name": "helper.live",
+      "status": "blocked",
+      "detail": "no native helper holds <scratch>/userhome/Library/Group Containers/2DC432GLL2.com.openai.sky.CUAService/IPC/computeruse.sock; the pinned helper is opened through LaunchServices on first use. Whether it starts, and with which permissions, only a live probe (scripts/probe-runtime.mjs) shows."
+    },
+    {
+      "name": "helper.permissions",
+      "status": "blocked",
+      "detail": "Accessibility and Screen Recording belong to the Codex Computer Use helper and are granted by you in System Settings > Privacy & Security when macOS asks on first use; a passive check cannot read them. Confirm with a live probe (scripts/probe-runtime.mjs)."
+    },
+    {
+      "name": "secrets.store",
+      "status": "blocked",
+      "detail": "no secret store at <scratch>/userhome/.config/<store-dir> yet, so nothing is stored; /secret KEY in Claude Code (the cua plugin's mod) or cua secrets set KEY creates it"
+    },
+    {
+      "name": "secrets.project",
+      "status": "skip",
+      "detail": "no project secrets for /Users/new/cua-115/repo (<scratch>/userhome/.config/<store-dir>/projects/-Users-new-cua-115-repo); /secret KEY in a Claude Code session there, or cua secrets set KEY --project, stores the first"
+    },
+    {
+      "name": "repl.host",
+      "status": "pass",
+      "detail": "vendor host (macos_native_peer_requires_vendor): the computer surface on macOS, whose helper accepts only the vendor host's node_repl as a peer until #117. The profile listing (browser only): cua host (browser_only) on Node /opt/homebrew/Cellar/node/26.4.0/bin/node: CUA_REPL_HOST is unset, and cua's own host is the default for a browser-only session; CUA_REPL_HOST=vendor keeps the vendor host. CUA_REPL_HOST=cua or vendor chooses"
+    },
+    {
+      "name": "chrome.route",
+      "status": "blocked",
+      "detail": "this home has no Chrome registration: run `cua chrome register` (cua's own host, for the cua extension); install or load the cua extension in each Chrome profile you use (README, \"Chrome\") [chrome_not_registered]"
+    },
+    {
+      "name": "chrome.host.registered",
+      "status": "blocked",
+      "detail": "no native-messaging manifest for io.github.ssfskim.cua in <scratch>/userhome/Library/Application Support/Google/Chrome: the cua extension cannot reach a host; run cua chrome register"
+    },
+    {
+      "name": "chrome.hosts.live",
+      "status": "blocked",
+      "detail": "no cua host is serving in <scratch>/prune/chrome/b: open Chrome with the cua extension enabled in a profile"
+    },
+    {
+      "name": "maws.hosts",
+      "status": "skip",
+      "detail": "no cua process is connected to a MAWS backend (MAWS passes CUA_BROWSER_BACKENDS to its sessions' engines; cua serve connects then)"
+    },
+    {
+      "name": "agent.installed",
+      "status": "skip",
+      "detail": "this Mac is not set up for remote control (not applicable); to set it up: run cua remote enroll, then cua agent install"
+    },
+    {
+      "name": "agent.running",
+      "status": "skip",
+      "detail": "this Mac is not set up for remote control (not applicable); to set it up: run cua remote enroll, then cua agent install"
+    },
+    {
+      "name": "agent.enrolled",
+      "status": "skip",
+      "detail": "this Mac is not set up for remote control (not applicable); to set it up: run cua remote enroll, then cua agent install"
+    },
+    {
+      "name": "agent.console",
+      "status": "skip",
+      "detail": "this Mac is not set up for remote control (not applicable); to set it up: run cua remote enroll, then cua agent install"
+    },
+    {
+      "name": "agent.relay",
+      "status": "skip",
+      "detail": "this Mac is not set up for remote control (not applicable); to set it up: run cua remote enroll, then cua agent install"
+    },
+    {
+      "name": "chrome.agent",
+      "status": "skip",
+      "detail": "no installed launchd agent; chrome.extension.* describes this calling process only"
+    }
+  ],
+  "runtime": {
+    "release": "26.928.40906-darwin-arm64",
+    "root": "<scratch>/prune/runtimes/26.928.40906-darwin-arm64",
+    "paths": {
+      "node": "<scratch>/prune/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node",
+      "nodeRepl": "<scratch>/prune/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node_repl",
+      "moduleDir": "<scratch>/prune/runtimes/26.928.40906-darwin-arm64/cua_node/lib/node_modules",
+      "cuaRepl": "<scratch>/prune/runtimes/26.928.40906-darwin-arm64/cua_node/lib/node_modules/@oai/cua-repl/bin/cua-repl.mjs",
+      "skyServiceApp": "<scratch>/prune/runtimes/26.928.40906-darwin-arm64/cua_node/lib/node_modules/@oai/sky/Codex Computer Use.app",
+      "skyVendorService": "<scratch>/prune/runtimes/26.928.40906-darwin-arm64/cua_node/lib/node_modules/@oai/sky/dist/project/cua/sky_js/src/service.js",
+      "browserVendorService": "<scratch>/prune/runtimes/26.928.40906-darwin-arm64/cua_node/lib/node_modules/@oai/browser-desktop/scripts/browser-service.mjs",
+      "vendorManifest": "<scratch>/prune/runtimes/26.928.40906-darwin-arm64/cua_node/manifest.json",
+      "ipcClient": "<scratch>/prune/runtimes/26.928.40906-darwin-arm64/cua_node/lib/node_modules/@oai/sky/dist/project/cua/sky_js/src/targets/mac/client.js"
+    }
+  }
+}

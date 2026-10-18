@@ -184,8 +184,8 @@ test('a cell that times out stops all further input, and the run still ends its 
 // The mini's native runs serve the approved runtime copy in place (prepare.mjs): the double prepares one.
 const reuseOf = home => ({approvedHome: home, release: '26.928.40906-darwin-arm64', runtimeRoot: `${home}/runtimes/26.928.40906-darwin-arm64`,
   helper: `${home}/runtimes/26.928.40906-darwin-arm64/SkyComputerUseService.app`, reason: 'reused'});
-test('a macOS vendor-host run keeps the TextEdit baseline\'s sequence and attests its host', async t => {
-  const app = textEdit();
+// One macOS vendor-host run against the doubles; `frontmost(app)` is the device's frontmost-application reader (#162).
+async function macRun(t, {frontmost = () => 'com.apple.TextEdit', app = textEdit()} = {}) {
   const state = {record: true, scripts: [], answeringHost: 'vendor'};
   const approval = {method: 'elicitation/create', params: {message: 'Allow Computer Use to use "TextEdit"?', mode: 'form', requestedSchema: {type: 'object', properties: {}},
     _meta: {connector_id: 'computer-use', codex_approval_kind: 'mcp_tool_call', tool_params: {app: 'com.apple.TextEdit'}}}};
@@ -217,10 +217,17 @@ test('a macOS vendor-host run keeps the TextEdit baseline\'s sequence and attest
     if (script.startsWith('rm -f')) state.record = false;
     return state.record ? 'present' : 'absent';
   };
-  const device = {helpers: () => [], leftovers: () => ({serves: 0, textEditRunning: launched && !app.quit})};
+  const frontmosts = [];
+  const device = {helpers: () => [], leftovers: () => ({serves: 0, textEditRunning: launched && !app.quit}),
+    frontmost: () => { const id = frontmost(app); frontmosts.push(id); return id; }};
   const out = outDir(t);
   const code = await run({device: 'mini', out, host: 'vendor', approvedRuntime: home, ...plan, io: {remote, controllerLoad:()=> 'controller load', device: () => device, connect: options => fakeClient(options, cua, state)}});
   const meta = metaOf(out), rows = results(out);
+  return {code, meta, rows, app, state, frontmosts, home};
+}
+
+test('a macOS vendor-host run keeps the TextEdit baseline\'s sequence and attests its host', async t => {
+  const {code, meta, rows, app, state, frontmosts, home} = await macRun(t);
   assert.equal(code, 0, meta.error);
   assert.match(state.prepareScript, /"approvedHome":"\/Users\/someone\/Library\/Application Support\/cua"/);
   assert.equal(meta.measurement.freshInstall, false);
@@ -235,6 +242,22 @@ test('a macOS vendor-host run keeps the TextEdit baseline\'s sequence and attest
   assert.deepEqual(meta.environment, {CUA_REPL_HOST: 'vendor', CUA_SHIM_SURFACES: 'computer', CUA_SHIM_PERSIST: 'session', CUA_SHIM_SECRETS: 'off'});
   assert.equal(meta.hostAttestations.length, 3);
   assert.equal(app.windows.length, 1);
+  assert.equal(frontmosts.length, plan.tasks * 3 + 1, 'the frontmost app is read before every key-sending cell: each task\'s new document, typing and close, and the quit');
+});
+
+// #162: a super+w or super+q (and the task's super+n and typing) is sent only while TextEdit, which the run launched, is
+// the frontmost application. Otherwise the key is not sent, the skip is recorded with the frontmost app's bundle id,
+// and the run fails with no further input.
+test('a macOS run whose target is not frontmost sends no key, records key_skipped_not_frontmost and fails', async t => {
+  let reads = 0;
+  // TextEdit is frontmost for the first task's new document and typing, then Chrome is before its close.
+  const {code, meta, rows, app} = await macRun(t, {frontmost: () => (++reads <= 2 ? 'com.apple.TextEdit' : 'com.google.Chrome')});
+  assert.equal(code, 1);
+  assert.ok(!app.keys.includes('super+w') && !app.keys.includes('super+q'), JSON.stringify(app.keys));
+  assert.deepEqual(meta.keySkipped, [{event: 'key_skipped_not_frontmost', keys: ['super+w'], target: 'com.apple.TextEdit', frontmost: 'com.google.Chrome'}]);
+  assert.match(meta.stopped, /key_skipped_not_frontmost.*com\.google\.Chrome/);
+  assert.ok(rows.some(r => r.op === 'key.skipped' && r.ok === false && r.frontmost === 'com.google.Chrome'));
+  assert.equal(meta.complete, false);
 });
 
 test('a method case whose read-back fails is recorded as failed, never as text that went in', async t => {
@@ -340,4 +363,26 @@ test('a macOS computer run refuses to start without the approved runtime, and on
   await assert.rejects(run({device: 'mini', out: outDir(t), host: 'vendor', approvedRuntime: home, experiment: 'x', ...plan, io: {remote: remote2, controllerLoad: () => 'l', connect: () => { throw new Error('no'); }}}),
     /resolves the runtime \/elsewhere\/runtimes\/26\.928\.40906-darwin-arm64, not the approved/);
   assert.equal(cleaned.length, 1, 'the stash is restored');
+});
+
+// The typing gets its own check, after the up-to-10-s wait for the task document (#162 review): focus that moves during
+// that wait stops the run before anything is typed.
+test('a macOS run whose focus moves while the task document opens types nothing and fails', async t => {
+  let reads = 0;
+  const {code, meta, app} = await macRun(t, {frontmost: () => (++reads === 1 ? 'com.apple.TextEdit' : 'com.google.Chrome')});
+  assert.equal(code, 1);
+  assert.deepEqual(app.keys, ['super+n'], 'the task document opened, nothing else was sent');
+  assert.ok(app.windows.every(w => w.text === ''), 'nothing was typed');
+  assert.deepEqual(meta.keySkipped, [{event: 'key_skipped_not_frontmost', keys: ['typeText'], target: 'com.apple.TextEdit', frontmost: 'com.google.Chrome'}]);
+});
+
+// The scratch document's keyboard path (TextEdit already shows a window, so there is no Open panel button) is guarded
+// as well (#162 review): with another app in front, super+n is not sent and the run fails.
+test('a macOS run whose scratch document needs super+n sends it only with TextEdit frontmost', async t => {
+  const app = textEdit();
+  await app.click(74);   // TextEdit already shows a window of its own
+  const {code, meta} = await macRun(t, {app, frontmost: () => 'com.google.Chrome'});
+  assert.equal(code, 1);
+  assert.deepEqual(app.keys, []);
+  assert.deepEqual(meta.keySkipped, [{event: 'key_skipped_not_frontmost', keys: ['super+n'], target: 'com.apple.TextEdit', frontmost: 'com.google.Chrome'}]);
 });

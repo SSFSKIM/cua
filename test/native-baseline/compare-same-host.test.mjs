@@ -215,3 +215,29 @@ test('a run that reused the approved runtime is comparable when it records the r
   assert.ok(environmentProblems(runs([reused(1), otherCopy])).some(p => /runtimeReuse environment differs/.test(p)));
   assert.ok(environmentProblems(runs([reused(1), browserMeta({n: 2})])).some(p => /runtimeReuse environment differs/.test(p)));
 });
+
+// A host's MemTotal varies by a few KiB between boots of the same machine type (#115 M4: 16,722,038,784 bytes at M0's
+// GCE sitting, 16,722,034,688 at M4's), so memoryBytes alone may differ by under 0.1% of the baseline's value; at or over
+// that it is a hardware change, and every other host field stays exact.
+test('hardware: memoryBytes within 0.1% of the baseline compares; a real memory change or any other field gives no verdict', t => {
+  const memory = bytes => ({hardware: {model: 'Google Compute Engine', chip: 'arm64, 4 CPUs', memoryBytes: bytes}});
+  const before = linuxThree(memory(16722038784));
+  const boot = judge(t, before, linuxThree({sandbox: 'scoped', launch: AFTER, ...memory(16722034688)}));
+  assert.deepEqual(boot.problems, []);
+  assert.equal(boot.verdict, 'PASS');
+  const changed = [
+    ['16 GiB to 32 GiB', memory(32 * 1024 ** 3)],
+    ['exactly 0.1% less', memory(16722038784 - 16722038.784)],
+    ['the chip', {hardware: {model: 'Google Compute Engine', chip: 'arm64, 8 CPUs', memoryBytes: 16722038784}}],
+    ['the model', {hardware: {model: 'Other Cloud', chip: 'arm64, 4 CPUs', memoryBytes: 16722038784}}],
+    ['memory gone', {hardware: {model: 'Google Compute Engine', chip: 'arm64, 4 CPUs'}}],
+  ];
+  for (const [label, hardware] of changed) {
+    const result = judge(t, before, linuxThree({sandbox: 'scoped', launch: AFTER, ...hardware}));
+    assert.equal(result.verdict, 'NO VERDICT', label);
+    assert.ok(result.problems.some(p => /hardware/.test(p)), `${label}: ${result.problems.join(' | ')}`);
+  }
+  // Within one side, too: a run on another boot of the same machine type belongs with its side.
+  const mixed = linuxThree({sandbox: 'scoped', launch: AFTER}).map((r, i) => (i === 1 ? {...r, meta: {...r.meta, ...memory(16 * 1024 ** 3 - 4096)}} : r));
+  assert.equal(judge(t, linuxThree(), mixed).verdict, 'PASS');
+});

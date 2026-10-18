@@ -64,19 +64,34 @@ export const BIND = cell(`globalThis.app = await cua.getApp(${JSON.stringify(TEX
 // A new scratch document in front, kept for the observation samples and as the window every task returns to
 // (`globalThis.__scratch` keeps its title, compared by later cells). TextEdit launched with no document shows its Open
 // panel, which is served out of process and takes no keys sent to TextEdit (measured on the mini: super+n, Escape and
-// typing do not reach it), so from the panel the document comes from its New Document button (ID NewDocumentButton);
-// otherwise from super+n. The new front window must be one that was not in front before.
+// typing do not reach it), so from the panel the document comes from its New Document button (ID NewDocumentButton),
+// a click with no modifier key. Otherwise (TextEdit already shows a window, no window at all, or no button) the cell
+// sends nothing and returns `needsKeys`: the harness then checks that TextEdit is the frontmost application before it
+// sends NEW_DOCUMENT_KEYS' super+n (#162, ./macos.mjs). The new front window must be one that was not in front before.
 export const NEW_DOCUMENT = cell(`${HELPERS}
 const before = await tree(); __observations++;
-let via = "keys";
 const button = before === null || !__panel(before) ? null : before.match(/^\\s*(\\d+) [^\\n]*ID: NewDocumentButton\\b/m)?.[1];
-if (button !== null && button !== undefined) { await app.click(Number(button)); via = "panel"; } else await app.pressKey("super+n");
 const previous = frontOf(before);
+if (button === null || button === undefined) { globalThis.__beforeScratch = previous; return {needsKeys: true, observations: __observations}; }
+await app.click(Number(button));
 const after = await until(ax => { const f = frontOf(ax); return f !== null && f !== "(panel)" && f !== previous; });
 const front = frontOf(after);
 if (front === null || front === "(panel)" || front === previous) throw new Error("no new document came to the front");
 globalThis.__scratch = front;
-return {actions: 1, observations: __observations, via};`);
+return {actions: 1, observations: __observations, via: "panel"};`);
+
+// The scratch document from super+n, after NEW_DOCUMENT returned needsKeys and the harness found TextEdit frontmost.
+// The front window must still be the one NEW_DOCUMENT saw, and the new one must differ from it.
+export const NEW_DOCUMENT_KEYS = cell(`${HELPERS}
+const previous = globalThis.__beforeScratch;
+if (frontOf(await tree()) !== previous) throw new Error("TextEdit's front window changed since it was checked; nothing was sent");
+__observations++;
+await app.pressKey("super+n");
+const after = await until(ax => { const f = frontOf(ax); return f !== null && f !== "(panel)" && f !== previous; });
+const front = frontOf(after);
+if (front === null || front === "(panel)" || front === previous) throw new Error("no new document came to the front");
+globalThis.__scratch = front;
+return {actions: 1, observations: __observations, via: "keys"};`);
 
 // Whether the scratch document is in front: run before and after a series whose samples cannot check it themselves.
 export const SCRATCH_GUARD = cell(`${HELPERS}
@@ -105,9 +120,12 @@ else if (shot[0] === 0xff && shot[1] === 0xd8) {
 }
 return {bytes: shot.length, width, height, format, sha256: createHash("sha256").update(shot).digest("hex").slice(0, 16)};`);
 
-// The observe -> act -> verify task, three cells per sample, each starting from the scratch document in front. Each
-// acting cell first checks that the front window is the one it expects, and does nothing otherwise.
-export const TASK_ACT = cell(`${HELPERS}
+// The observe -> act -> verify task, each sample starting from the scratch document in front. Each acting cell first
+// checks that the front window is the one it expects, and does nothing otherwise. The act is two cells, so that the
+// harness checks TextEdit is the frontmost application right before each sends keys (#162): TASK_NEW opens the task
+// document (super+n, then a wait of up to TRANSITION_MS for it), and TASK_TYPE types into it. Their row is one
+// (task.act, ./macos.mjs).
+export const TASK_NEW = cell(`${HELPERS}
 const before = await tree(); __observations++;
 if (frontOf(before) !== globalThis.__scratch) throw new Error("the scratch document is not in front; nothing was done");
 await app.pressKey("super+n");
@@ -115,8 +133,13 @@ const opened = await until(ax => { const f = frontOf(ax); return f !== null && f
 const front = frontOf(opened);
 if (front === null || front === "(panel)" || front === globalThis.__scratch) throw new Error("no new document came to the front");
 globalThis.__task = front;
+return {actions: 1, observations: __observations};`);
+
+export const TASK_TYPE = cell(`${HELPERS}
+if (frontOf(await tree()) !== globalThis.__task) throw new Error("the task document is not in front; nothing was typed");
+__observations++;
 await app.typeText(${JSON.stringify(SENTENCE)});
-return {actions: 2, observations: __observations};`);
+return {actions: 1, observations: __observations};`);
 
 export const TASK_VERIFY = cell(`${HELPERS}
 const ax = await app.getAXState({emit: false, disableDiffing: true});

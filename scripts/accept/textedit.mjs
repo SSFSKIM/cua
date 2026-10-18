@@ -35,6 +35,7 @@ import {fileStore, storeDir} from '../../src/secrets/store.mjs';
 import {socketHolders} from '../probe/lib.mjs';
 import {fingerprintable, fingerprints, textLeaks, UNFINGERPRINTABLE} from '../probe/leak-scan.mjs';
 import {isTextEditApproval, TEXTEDIT_BUNDLE} from './lib.mjs';
+import {localFrontmost, sendToPausedSession} from './key-guard.mjs';
 import {openSession, resultText} from './mcp-session.mjs';
 import {pauseGate, pausing} from '../mini-pause.mjs';
 import {createStoreHome, generatedKey, isAccountHome, removeStoreHome, seedSecret} from './secret-seed.mjs';
@@ -94,7 +95,7 @@ ${action}
 // `secret`: false, true (a generated key and value in a temporary $HOME), or {key, home} (the caller's stored key).
 // `pauseFile` (CUA_PAUSE_FILE, scripts/mini-pause.mjs): every cell waits at its boundary while the mini's CI runner is
 // busy, and never aborts, the owner standing by; each pause is in the observations.
-export async function runTextEdit({home, secret = false, forbid = () => {}, stepMs = 60_000, pauseFile = process.env.CUA_PAUSE_FILE}) {
+export async function runTextEdit({home, secret = false, forbid = () => {}, stepMs = 60_000, pauseFile = process.env.CUA_PAUSE_FILE, frontmost = localFrontmost}) {
   const callerKey = secret && typeof secret === 'object' ? secret : null;
   const steps = [];
   const record = (name, status, detail) => { steps.push({name, status, detail}); return status === 'PASS'; };
@@ -161,6 +162,18 @@ export async function runTextEdit({home, secret = false, forbid = () => {}, step
     guiStopped = `TextEdit's front window was not the fixture's document when it was about to ${what}`;
     return record(step, 'BLOCKED', `${guiStopped}; that cell did nothing and the fixture sent no further input. Bring the fixture document to the front (or close it by hand) and re-run`);
   };
+  // A cell that types or sends a key runs only while TextEdit is this Mac's frontmost application (#162,
+  // ./key-guard.mjs); otherwise nothing is sent, the skip is recorded (observations.keySkipped) and the step fails, and
+  // the fixture sends no further input. -> the cell's reply, or null when it was skipped.
+  const keyCell = async (session, step, keys, code) => {
+    // The pause wait (pausing()) comes first, then the check, then the cell with no pause between them.
+    const sent = await sendToPausedSession({session, target: TEXTEDIT_BUNDLE, keys, frontmost, args: [code, stepMs]});
+    if (sent.sent) return sent.result;
+    (observations.keySkipped ??= []).push(sent.skipped);
+    guiStopped = `${sent.skipped.event}: ${keys.join(', ')} not sent, the frontmost application is ${sent.skipped.frontmost}, not TextEdit (#162)`;
+    record(step, 'FAIL', `${guiStopped}; nothing was sent and the fixture sent no further input`);
+    return null;
+  };
   // Bind TextEdit and prove its front window is the fixture's document.
   const bind = async (session, name, step) => {
     const reply = cellJson(await session.js(`globalThis.app = await cua.getApp(${JSON.stringify(TEXTEDIT_BUNDLE)});\n${OBSERVE}\n${out(`{own: ${own}}`)}`, stepMs));
@@ -221,12 +234,13 @@ export async function runTextEdit({home, secret = false, forbid = () => {}, step
     // Connection A: type the marker and observe it.
     const a = await connect('connection A');
     if (await bind(a, 'connection A', STEP.bindA)) {
-      const typed = cellJson(await a.js(guarded(docName, `await app.typeText(${JSON.stringify(marker)});\n${OBSERVE}
+      const typedReply = await keyCell(a, STEP.type, ['typeText'], guarded(docName, `await app.typeText(${JSON.stringify(marker)});\n${OBSERVE}
 const __shot = await app.getScreenshot({emit: false});
 const __format = __shot[0] === 0xff && __shot[1] === 0xd8 ? "jpeg" : __shot[0] === 0x89 && __shot[1] === 0x50 ? "png" : "unknown";
-${out(`{own: ${own}, valueIsMarker: ${own} && __value === ${JSON.stringify(marker)}, screenshot: {bytes: __shot.length, format: __format}}`)}`), stepMs));
-      observations.screenshot = typed.screenshot ?? null;
-      if (typed.timedOut) record(STEP.type, 'BLOCKED', `no answer within ${stepMs} ms; ${PROMPT_ACTION}`);
+${out(`{own: ${own}, valueIsMarker: ${own} && __value === ${JSON.stringify(marker)}, screenshot: {bytes: __shot.length, format: __format}}`)}`));
+      const typed = typedReply ? cellJson(typedReply) : null;
+      if (typed) observations.screenshot = typed.screenshot ?? null;
+      if (!typed) { /* skipped: recorded by keyCell */ } else if (typed.timedOut) record(STEP.type, 'BLOCKED', `no answer within ${stepMs} ms; ${PROMPT_ACTION}`);
       else if (typed.identityLost) lost(STEP.type, 'type the marker');
       else record(STEP.type, !typed.isError && typed.own && typed.valueIsMarker && typed.screenshot?.bytes > 0 ? 'PASS' : 'FAIL',
         typed.isError ? `failed: ${typed.error}` : `accessibility value ${typed.valueIsMarker ? 'is exactly the typed marker' : 'differs from the typed marker'}; screenshot ${typed.screenshot?.format} ${typed.screenshot?.bytes} bytes (metadata only)`);
@@ -238,8 +252,9 @@ ${out(`{own: ${own}, valueIsMarker: ${own} && __value === ${JSON.stringify(marke
     // then closes the fixture document.
     const b = await connect('connection B');
     if (await bind(b, 'connection B', STEP.bindB)) {
-      if (secret) {
-        const delivered = cellJson(await b.js(guarded(docName, `await app.typeText(${JSON.stringify(`{{secret:${label}}}`)});\n${out('{done: true}')}`), stepMs));
+      const deliveredReply = secret ? await keyCell(b, STEP.secretType, ['typeText'], guarded(docName, `await app.typeText(${JSON.stringify(`{{secret:${label}}}`)});\n${out('{done: true}')}`)) : null;
+      if (deliveredReply) {
+        const delivered = cellJson(deliveredReply);
         const leakedBefore = textLeaks(b.transcript.join('\n') + b.stderr, prints);
         if (delivered.timedOut) record(STEP.secretType, 'BLOCKED', `no answer within ${stepMs} ms; ${PROMPT_ACTION}`);
         else if (delivered.identityLost) lost(STEP.secretType, 'type the reference');
@@ -265,14 +280,15 @@ ${out(`{own: ${own}, valueIsMarker: ${own} && __value === ${JSON.stringify(marke
         // super+w only after confirming, in the same cell, that the fixture's window is in front. Right after it closes
         // TextEdit can briefly report no front window, so the observation is retried; the close counts as confirmed
         // only when TextEdit reports no window at all.
-        const closed = cellJson(await b.js(guarded(docName, `await app.pressKey("super+w");
+        const closedReply = await keyCell(b, STEP.closeDoc, ['super+w'], guarded(docName, `await app.pressKey("super+w");
 let __after = null, __error = null;
 for (let attempt = 0; attempt < 6 && __after === null && __error === null; attempt++) {
   if (attempt) await new Promise(resolve => setTimeout(resolve, 500));
   try { __after = (await app.getAXState({emit: false, disableDiffing: true})).match(/^Window: "([^"]*)"/m)?.[1] ?? null; } catch (error) { __error = String(error?.message ?? error); }
 }
-${out(`{ownStillFront: __after === ${JSON.stringify(docName)}, otherFront: __after !== null && __after !== ${JSON.stringify(docName)}, noWindows: /noWindowsAvailable/.test(__error ?? ""), error: __error && !/noWindowsAvailable/.test(__error) ? __error.slice(0, 160) : undefined}`)}`), stepMs));
-        if (closed.timedOut) record(STEP.closeDoc, 'BLOCKED', `no answer within ${stepMs} ms; ${PROMPT_ACTION}`);
+${out(`{ownStillFront: __after === ${JSON.stringify(docName)}, otherFront: __after !== null && __after !== ${JSON.stringify(docName)}, noWindows: /noWindowsAvailable/.test(__error ?? ""), error: __error && !/noWindowsAvailable/.test(__error) ? __error.slice(0, 160) : undefined}`)}`));
+        const closed = closedReply ? cellJson(closedReply) : null;
+        if (!closed) { /* skipped: recorded by keyCell */ } else if (closed.timedOut) record(STEP.closeDoc, 'BLOCKED', `no answer within ${stepMs} ms; ${PROMPT_ACTION}`);
         else if (closed.identityLost) lost(STEP.closeDoc, 'close it');
         else if (closed.isError) record(STEP.closeDoc, 'FAIL', `the close cell failed: ${closed.error}`);
         else if (closed.noWindows) { docOpen = false; record(STEP.closeDoc, 'PASS', 'super+w closed the verified fixture window; TextEdit then reported no window at all'); }

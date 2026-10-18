@@ -26,15 +26,17 @@
 // Launchers:
 //   codex  the signed Codex CLI's `codex sandbox`, with the policy cua's own host passes it today (src/runtime/sandbox.mjs
 //          sandboxPolicy/sandboxArgs, scoped: root read, the working directory and TMPDIR writable, no network, the
-//          child's Node directory read). That CLI renders one profile for both roles. --codex names it; by default it is
-//          the installed runtime's (CUA_HOME or the default home). It cannot carry the notification_center grant.
+//          child's Node directory read). That CLI renders one profile for both roles. --codex names it (required: cua
+//          installs no Codex CLI since #115, so there is no installed one to default to). It cannot carry the
+//          notification_center grant.
 //   cua    cua's own launcher, src/sandbox (M1): /usr/bin/sandbox-exec with the role's profile, for a scoped session laid
 //          out as cua lays one out (the child's working directory is run/<id> of a cua home inside the probe's scratch
 //          directory, its TMPDIR run/<id>/tmp), the kernel's with the deny list for that home and the probe's HOME. The
 //          deny targets are not created (the probe never writes into a real HOME): one that is missing is denied by its
-//          logical path. With --notification-center allow it adds the one
-//          `(allow mach-lookup (global-name "com.apple.system.notification_center"))` line M4 measures; until M4 adds it
-//          to src/sandbox, allow is refused.
+//          logical path. --notification-center says whether the profile ends with #138's
+//          `(allow mach-lookup (global-name "com.apple.system.notification_center"))` line (src/sandbox/seatbelt.mjs
+//          NOTIFICATION_CENTER_LINE): `deny` renders it without (the denying control, whatever cua ships), `allow` with.
+//          cua 0.15.0 ships it off: #138 did not reproduce in M0, so the pair waits for a reproduction.
 //
 // `verdict` applies acceptance 13 to one role's pair of results: the grant is kept only if the denying control hung at
 // least once and the grant's runs neither hung nor failed to launch; a control that did not hang is inconclusive. Only
@@ -89,16 +91,17 @@ export function codexLaunch({codex, node, script, tag, cwd, home, notificationCe
 // the probe's tests) for `node script tag` in a cua-shaped session inside the probe's scratch `cwd`. Same parameters as
 // codexLaunch, less `codex`; -> {command, args, env, cwd, profile}.
 export function cuaLaunch({node, script, tag, cwd, home, role, notificationCenter, sandboxExec = SEATBELT_EXEC}) {
-  if (notificationCenter !== 'deny') throw new Error('cua\'s profiles carry no notification_center grant until #115 M4 adds it to src/sandbox; --notification-center allow is M4\'s');
+  if (!NOTIFICATION_CENTER.includes(notificationCenter)) throw new Error('--notification-center must be deny or allow');
   const cuaHome = join(cwd, 'cuahome'), run = join(cuaHome, 'run', 'probe'), sessionTmp = join(run, 'tmp');
   mkdirSync(sessionTmp, {recursive: true});
   const state = sandboxState('scoped', run);
   const denyRead = realDenyList(denyListFor({home: cuaHome, env: {HOME: home}, sessionId: 'probe', sessionTmp, platform: 'darwin'}));
   assertDenyListShape(denyRead);
   const {profile} = roleProfile({state, role, readPaths: [dirname(node)], denyRead, network: 'restricted'});
-  const {args} = seatbeltCommand({profile, cwd: run, command: [node, script, tag], tmpdir: sessionTmp, metadataGrants: role === 'kernel' ? denyRead.metadataOnly : []});
+  const {args} = seatbeltCommand({profile, cwd: run, command: [node, script, tag], tmpdir: sessionTmp, metadataGrants: role === 'kernel' ? denyRead.metadataOnly : [],
+    notificationCenter: notificationCenter === 'allow'});
   return {command: sandboxExec, args, cwd: run, env: sandboxedEnv({HOME: home, PATH: '/usr/bin:/bin:/usr/sbin:/sbin', TMPDIR: sessionTmp}, {platform: 'darwin', network: 'restricted'}),
-    profile: `cua's ${role} profile (src/sandbox)`};
+    profile: `cua's ${role} profile (src/sandbox), ${notificationCenter === 'allow' ? 'with' : 'without'} the notification_center line`};
 }
 
 // The SHA-256 of src/sandbox (every file's path and bytes, in path order): which build of cua's launcher rendered the
@@ -160,11 +163,6 @@ function runOnce(launch, {boundMs, tag}) {
 }
 
 const nodeVersion = node => { try { return execFileSync(node, ['--version'], {encoding: 'utf8', env: {PATH: '/usr/bin:/bin'}}).trim(); } catch { return null; } };
-async function installedCodex() {
-  const {defaultHome} = await import('../../src/runtime/layout.mjs');
-  const {resolveRuntime} = await import('../../src/runtime/manifest.mjs');
-  return resolveRuntime({home: defaultHome()}).paths.codexCli;
-}
 
 // Runs `runs` children under the launcher and role. -> the result: what ran, every run's outcome and the counts.
 // `sandboxExec` stands in for /usr/bin/sandbox-exec under --launcher cua (the probe's tests).
@@ -174,9 +172,10 @@ export async function probe({launcher, role, runs = 80, boundMs = 15_000, notifi
   if (!NOTIFICATION_CENTER.includes(notificationCenter)) throw new Error('--notification-center must be deny or allow');
   if (!HOMES.includes(home)) throw new Error('--home must be real or scratch');
   for (const [name, value] of [['runs', runs], ['bound-ms', boundMs]]) if (!Number.isSafeInteger(value) || value < 1) throw new Error(`--${name} must be a positive integer`);
-  if (notificationCenter !== 'deny') (launcher === 'codex' ? codexLaunch : cuaLaunch)({notificationCenter});
+  if (launcher === 'codex' && notificationCenter !== 'deny') codexLaunch({notificationCenter});
+  if (launcher === 'codex' && !codex) throw new Error('--launcher codex needs --codex <path>: cua installs no Codex CLI since #115, so there is no installed one to default to');
   const launchOf = launcher === 'codex' ? codexLaunch : cuaLaunch;
-  const codexPath = launcher === 'codex' ? resolve(codex ?? await installedCodex()) : null;
+  const codexPath = launcher === 'codex' ? resolve(codex) : null;
   const id = randomBytes(4).toString('hex'), tagOf = n => `cua-tz-probe-${id}-${n}`;
   const dir = realpathSync(mkdtempSync(join(tmpdir(), 'cua-tz-probe-')));
   // The probe's own scratch HOME is a directory of its own beside the working directory, as the M0 baseline's was.

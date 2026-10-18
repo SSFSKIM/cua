@@ -9,6 +9,7 @@ import {fileURLToPath} from 'node:url';
 import {defaultHome, realHome} from './runtime/layout.mjs';
 import {loadPins, selectPin, findPin} from './runtime/manifest.mjs';
 import {installRuntime, installSandboxHelper, useRuntime} from './runtime/install.mjs';
+import {describeLeftovers, describeRemoval, findCodexLeftovers, removeCodexLeftovers} from './runtime/codex-leftovers.mjs';
 import {installNode} from './runtime/node-install.mjs';
 import {loadNodePins, nodeDistName, selectNodePin} from './runtime/managed-node.mjs';
 import {inspectRuntime, summarize} from './runtime/doctor.mjs';
@@ -63,7 +64,11 @@ export const usageFor = platform => {
                                                                nodejs.org tarball, or none: the host uses your Node)
 ${darwin ? '' : `          [--sandbox-helper <file>]                            and first cua's pinned sandbox helper (a local copy of
                                                                the release asset instead of the download)
-`}  doctor [--json]                                              passive runtime health; exit 1 when a check fails
+`}          [--prune-leftovers]                                  then remove what the Codex CLI left in this home (its
+                                                               CODEX_HOME files, a release's unused ${darwin ? 'CodexCLI.app' : 'codex file'}):
+                                                               only once every cua using this home is updated, since
+                                                               an older cua sharing the home may still need it
+  doctor [--json]                                              passive runtime health; exit 1 when a check fails
   runtime use <release> [--json]                               activate another verified installed release
   serve [--http <host:port>]                                   MCP over stdin/stdout until EOF or a signal (--http: as agent run --http)
   secrets set <KEY> [--project|--global]                       store a secret in ~/.config/claude-secrets/KEY (--project:
@@ -124,15 +129,17 @@ function progressReporter() {
   };
 }
 
-// The runtime first, then on Linux cua's sandbox helper (#115 M3: what confines both children there; --sandbox-helper
-// takes a local copy of the pinned asset instead of downloading it), then the own REPL host's Node (spec
-// 2026-10-14-own-repl-host-design.md, Decision Log 2026-10-16), each verified and activated on its own. A failed helper
+// The runtime first, then, with --prune-leftovers, the Codex CLI's leftovers in this home are removed
+// (src/runtime/codex-leftovers.mjs: each named in the output, none of them a failure; without it install only says
+// they are there), then on Linux cua's sandbox helper (#115 M3: what confines both
+// children there; --sandbox-helper takes a local copy of the pinned asset instead of downloading it), then the own
+// REPL host's Node (spec 2026-10-14-own-repl-host-design.md, Decision Log 2026-10-16), each verified and activated on its own. A failed helper
 // or Node step fails the command after the runtime is in place, saying so; --no-node skips the Node step (an offline
 // install without the tarball), and a platform with no Node pin has none to take. Either way the own host then runs on
 // CUA_NODE or the user's Node 24, else macOS sessions keep the vendor host and Linux sessions are refused.
 // `deps` is a test seam of this module API only (the installers, the pins, the home and the host); the CLI passes none.
 async function install(args, {installRuntime: runtimeInstaller = installRuntime, installNode: nodeInstaller = installNode, installHelper = installSandboxHelper, pins: pinsOf = loadPins, nodePins = loadNodePins, home = defaultHome(), platform = process.platform} = {}) {
-  const {values} = parse(args, {archive: {type: 'string'}, release: {type: 'string'}, 'node-archive': {type: 'string'}, 'no-node': {type: 'boolean'}, 'sandbox-helper': {type: 'string'}});
+  const {values} = parse(args, {archive: {type: 'string'}, release: {type: 'string'}, 'node-archive': {type: 'string'}, 'no-node': {type: 'boolean'}, 'sandbox-helper': {type: 'string'}, 'prune-leftovers': {type: 'boolean'}});
   if (values['sandbox-helper'] !== undefined && platform !== 'linux') throw new UsageError('install takes --sandbox-helper on Linux only');
   if (values['no-node'] && values['node-archive'] !== undefined) throw new UsageError('install takes --node-archive or --no-node, not both');
   const pins = pinsOf();
@@ -142,6 +149,17 @@ async function install(args, {installRuntime: runtimeInstaller = installRuntime,
   if (!values.json) process.stderr.write(`installing ${manifest.release} from ${values.archive ?? manifest.archive.url}\n`);
   const result = await runtimeInstaller({home, manifest, archivePath: values.archive, onProgress});
   if (!values.json) print(result.changed ? `installed and activated ${result.release} at ${result.root}` : `${result.release} is already installed and verified; active at ${result.root}`);
+  // The Codex CLI's leftovers (#115 M4), once the runtime is in place: removed only when asked (--prune-leftovers),
+  // since an older cua sharing this home may still launch the CLI; named, never shown, and never a failure. Otherwise
+  // install only says they are there.
+  let codexLeftovers = null;
+  if (values['prune-leftovers']) {
+    try { codexLeftovers = removeCodexLeftovers({home, pins}); } catch (error) {
+      if (!(error instanceof CuaError)) throw error;
+      throw new CuaError(error.code, error.message, {hint: `${error.hint}; ${result.release} is installed and active`, cause: error});
+    }
+  }
+  if (!values.json) for (const line of codexLeftovers ? describeRemoval(codexLeftovers) : describeLeftovers(findCodexLeftovers({home, pins}))) print(line);
 
   let sandboxHelper = null;
   if (platform === 'linux') {
@@ -175,7 +193,7 @@ async function install(args, {installRuntime: runtimeInstaller = installRuntime,
     if (!values.json) print(node.changed ? `installed Node ${node.version} for cua's own REPL host at ${node.root}`
       : `Node ${node.version} for cua's own REPL host is already installed and verified at ${node.root}${node.activated ? '; it is the active one again' : ''}`);
   }
-  if (values.json) print({ok: true, release: result.release, root: result.root, changed: result.changed, source: result.record.source, ...(sandboxHelper ? {sandboxHelper} : {}), node});
+  if (values.json) print({ok: true, release: result.release, root: result.root, changed: result.changed, source: result.record.source, ...(codexLeftovers ? {codexLeftovers} : {}), ...(sandboxHelper ? {sandboxHelper} : {}), node});
 }
 
 async function doctor(args) {

@@ -1,0 +1,121 @@
+{
+  "left": {
+    "file": "docs/evidence/2026-10-17-own-sandbox/m0/fingerprint/fp-signed-default.json",
+    "launcher": "signed"
+  },
+  "right": {
+    "file": "/Users/new/cua-115/m1-oracles/fp-cua-worker-default.json",
+    "launcher": "cua-worker"
+  },
+  "equal": false,
+  "sandboxed": [
+    true,
+    true
+  ],
+  "cwdEqual": true,
+  "checks": [
+    {
+      "op": "file-clone",
+      "filter": "path",
+      "label": "cua-home/run",
+      "left": null,
+      "right": {
+        "result": "allow",
+        "errno": null
+      }
+    },
+    {
+      "op": "file-link",
+      "filter": "path",
+      "label": "cua-home/run",
+      "left": null,
+      "right": {
+        "result": "allow",
+        "errno": null
+      }
+    },
+    {
+      "op": "file-read-data",
+      "filter": "path",
+      "label": "cua-home/run",
+      "left": null,
+      "right": {
+        "result": "allow",
+        "errno": null
+      }
+    },
+    {
+      "op": "file-read-metadata",
+      "filter": "path",
+      "label": "cua-home/run",
+      "left": null,
+      "right": {
+        "result": "allow",
+        "errno": null
+      }
+    },
+    {
+      "op": "file-write-create",
+      "filter": "path",
+      "label": "cua-home/run",
+      "left": null,
+      "right": {
+        "result": "deny",
+        "errno": null
+      }
+    },
+    {
+      "op": "file-write-data",
+      "filter": "path",
+      "label": "cua-home/run",
+      "left": null,
+      "right": {
+        "result": "deny",
+        "errno": null
+      }
+    },
+    {
+      "op": "file-write-unlink",
+      "filter": "path",
+      "label": "cua-home/run",
+      "left": null,
+      "right": {
+        "result": "deny",
+        "errno": null
+      }
+    }
+  ],
+  "env": {
+    "onlyLeft": [
+      "CODEX_HOME",
+      "__CF_USER_TEXT_ENCODING"
+    ],
+    "onlyRight": [
+      "CUA_REPL_NODE_PATH",
+      "CUA_REPL_SANDBOX_EXEC",
+      "CUA_SANDBOX_DENY_READ",
+      "LANG"
+    ],
+    "differing": [
+      {
+        "name": "PATH",
+        "left": "/Users/new/cua-115/home/state/codex/tmp/arg0/codex-arg0*:/usr/bin:/bin:/usr/sbin:/sbin",
+        "right": "/usr/bin:/bin:/usr/sbin:/sbin"
+      }
+    ]
+  },
+  "judgement": {
+    "ok": true,
+    "pair": "signed/cua-worker",
+    "undeclared": {
+      "checks": [],
+      "env": {
+        "onlyLeft": [],
+        "onlyRight": [],
+        "differing": []
+      },
+      "cwd": false,
+      "sandboxed": false
+    }
+  }
+}

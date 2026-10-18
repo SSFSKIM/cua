@@ -1,0 +1,122 @@
+{
+  "left": {
+    "file": "docs/evidence/2026-10-17-own-sandbox/m0/fingerprint/fp-golden-kernel-default.json",
+    "launcher": "golden-kernel"
+  },
+  "right": {
+    "file": "/Users/new/cua-115/m1-oracles/fp-cua-kernel-default.json",
+    "launcher": "cua-kernel"
+  },
+  "equal": false,
+  "sandboxed": [
+    true,
+    true
+  ],
+  "cwdEqual": true,
+  "checks": [
+    {
+      "op": "file-clone",
+      "filter": "path",
+      "label": "cua-home/run",
+      "left": null,
+      "right": {
+        "result": "allow",
+        "errno": null
+      }
+    },
+    {
+      "op": "file-link",
+      "filter": "path",
+      "label": "cua-home/run",
+      "left": null,
+      "right": {
+        "result": "allow",
+        "errno": null
+      }
+    },
+    {
+      "op": "file-read-data",
+      "filter": "path",
+      "label": "cua-home/run",
+      "left": null,
+      "right": {
+        "result": "deny",
+        "errno": null
+      }
+    },
+    {
+      "op": "file-read-metadata",
+      "filter": "path",
+      "label": "cua-home",
+      "left": {
+        "result": "deny",
+        "errno": null
+      },
+      "right": {
+        "result": "allow",
+        "errno": null
+      }
+    },
+    {
+      "op": "file-read-metadata",
+      "filter": "path",
+      "label": "cua-home/run",
+      "left": null,
+      "right": {
+        "result": "allow",
+        "errno": null
+      }
+    },
+    {
+      "op": "file-write-create",
+      "filter": "path",
+      "label": "cua-home/run",
+      "left": null,
+      "right": {
+        "result": "deny",
+        "errno": null
+      }
+    },
+    {
+      "op": "file-write-data",
+      "filter": "path",
+      "label": "cua-home/run",
+      "left": null,
+      "right": {
+        "result": "deny",
+        "errno": null
+      }
+    },
+    {
+      "op": "file-write-unlink",
+      "filter": "path",
+      "label": "cua-home/run",
+      "left": null,
+      "right": {
+        "result": "deny",
+        "errno": null
+      }
+    }
+  ],
+  "env": {
+    "onlyLeft": [
+      "CODEX_HOME"
+    ],
+    "onlyRight": [],
+    "differing": []
+  },
+  "judgement": {
+    "ok": true,
+    "pair": "golden-kernel/cua-kernel",
+    "undeclared": {
+      "checks": [],
+      "env": {
+        "onlyLeft": [],
+        "onlyRight": [],
+        "differing": []
+      },
+      "cwd": false,
+      "sandboxed": false
+    }
+  }
+}

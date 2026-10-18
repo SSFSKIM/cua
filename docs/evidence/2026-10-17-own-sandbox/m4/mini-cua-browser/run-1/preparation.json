@@ -1,0 +1,14 @@
+{
+  "device": "mini",
+  "home": "/Users/new/.local/share/cua-native-baseline/run-5KAB71",
+  "userHome": "/Users/new/.local/share/cua-native-baseline/run-5KAB71.home",
+  "token": "b37e296a-e5d9-46f6-ab66-07428a5f696e",
+  "xSession": {},
+  "tmpdir": "/Users/new/.local/share/cua-native-baseline/run-5KAB71/harness-tmp",
+  "nodeMode": "managed",
+  "nodeOverride": null,
+  "ownNode": {
+    "path": "/Users/new/.local/share/cua-native-baseline/run-5KAB71/node/24.22.0/bin/node",
+    "version": "v24.22.0"
+  }
+}

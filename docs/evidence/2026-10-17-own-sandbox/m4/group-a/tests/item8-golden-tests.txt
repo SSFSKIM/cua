@@ -1,0 +1,26 @@
+✔ substitute fills @ROOT@ and the /var alias spelling at every depth (1.1385ms)
+✔ substitute refuses the /var alias for a root that is not under /private/var (0.236834ms)
+✔ placehold maps the root, its alias spelling and the daemon directory euid back to placeholders (0.134ms)
+✔ placehold is the inverse of substitute on fixture inputs (0.118417ms)
+✔ a fixture root must be absolute, real-path shaped and free of regex metacharacters (0.274709ms)
+✔ materialize creates the setup: directories, files and symlinks, targets substituted (1.461334ms)
+✔ the case matrix covers the spec's fixtures, each case named once (0.226416ms)
+✔ case entries are in cua's TOML key order: absolute paths by bytes, then :root, :tmpdir, :workspace_roots (0.307292ms)
+✔ the committed fixtures are the case matrix's, input for input, each with an output or the original's refusal (2.557958ms)
+✔ every golden fixture: the port renders the original's argv byte for byte, with cua's deviations only (27.612375ms)
+✔ on a Mac, every golden fixture replays on the real filesystem too (132.591583ms)
+✔ the notification_center switch is off by default; on, it adds the one mach-lookup line, last, to both roles' profiles (13.170875ms)
+✔ the child's environment: the original's strip list (any case) and CODEX_GUARDIAN_DECISIONS_API_KEY go, CODEX_SANDBOX and the network flag come (0.293167ms)
+✔ inputs outside cua's set are refused, never rendered (0.37125ms)
+✔ the run directory spelled through a symlinked component is refused, as the original refuses it (0.280917ms)
+✔ the daemon directory follows /tmp's real path and the effective uid (0.133667ms)
+✔ a denied path whose ancestors a readable root covers needs no metadata grant (0.379459ms)
+✔ at equal specificity deny beats write and write beats read (the original's precedence) (0.350667ms)
+ℹ tests 18
+ℹ suites 0
+ℹ pass 18
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 240.992417

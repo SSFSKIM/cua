@@ -4,7 +4,8 @@
 // one retry on the launch's timeoutReached), a scratch document, the guarded observation series, the
 // new-document -> typeText -> verify -> delete task, and quitting the TextEdit it launched. Every cell guards the window
 // it acts on (./cells.mjs).
-import {isTextEditApproval} from '../accept/lib.mjs';
+import {isTextEditApproval, TEXTEDIT_BUNDLE} from '../accept/lib.mjs';
+import {FRONTMOST_SCRIPT, parseFrontmost, sendIfFrontmost} from '../accept/key-guard.mjs';
 import * as cells from './cells.mjs';
 import {classifyHelpers, HELPER_SCRIPT, leftoverScript} from './remote.mjs';
 
@@ -16,18 +17,42 @@ export function macosDevice(remote, {checkout, runtimeRoot}) {
   return {
     helpers: () => classifyHelpers(remote(HELPER_SCRIPT), runtimeRoot),
     leftovers() { const [serves, textEdit] = remote(leftoverScript(checkout)).split(' ').map(Number); return {serves, textEditRunning: textEdit > 0}; },
+    frontmost: () => parseFrontmost(remote(FRONTMOST_SCRIPT)),
   };
+}
+
+// A cell that sends keys to TextEdit runs only while TextEdit is the device's frontmost application (#162,
+// scripts/accept/key-guard.mjs); otherwise it is not sent, the skip is recorded (meta.keySkipped and a key.skipped row),
+// and the run stops with no further input. The scratch document's click on the Open panel's New Document button (a
+// fresh launch; the panel is served out of process, so it may be what is frontmost then, and a click sends no modifier)
+// is not guarded; its super+n path is, as its own cell (NEW_DOCUMENT_KEYS). A task's new document and its typing are
+// separate cells, each checked right before it is sent, since the first waits up to TRANSITION_MS for the document.
+async function keyCell(ctx, code, keys) {
+  const out = await sendIfFrontmost({target: TEXTEDIT_BUNDLE, keys, frontmost: () => ctx.device.frontmost(), send: () => ctx.js(code)});
+  if (out.sent) return out.result;
+  (ctx.meta.keySkipped ??= []).push(out.skipped);
+  ctx.emit({op: 'key.skipped', sample: ctx.meta.keySkipped.length, ok: false, ...out.skipped});
+  return ctx.stop(`${out.skipped.event}: ${keys.join(', ')} not sent, the frontmost application is ${out.skipped.frontmost}, not TextEdit (#162)`);
 }
 
 // TextEdit this run launched is quit from its scratch document (the cell refuses when that is not in front).
 async function quitTextEdit(ctx) {
   const {meta, device} = ctx;
   if (!meta.textEdit?.launchedByRun || meta.textEdit.quitByRun || !ctx.warmOpen()) return;
-  const quit = await ctx.js(cells.QUIT_TEXTEDIT);
+  const quit = await keyCell(ctx, cells.QUIT_TEXTEDIT, ['super+q']);
   let running = true;
   for (let i = 0; i < 10 && running; i++) { await sleep(500); running = device.leftovers().textEditRunning; }
   meta.textEdit.quitByRun = Boolean(quit.cell?.ok) && !running;
   if (!meta.textEdit.quitByRun) meta.textEdit.quitError = quit.cell?.error ?? quit.failure ?? 'TextEdit still running after super+q';
+}
+
+// The task's act as one result (its task.act row): the two cells' times and counts added, the second's outcome.
+function joined(first, second) {
+  const inCellMs = (first.cell?.inCellMs ?? 0) + (second.cell?.inCellMs ?? 0);
+  const cell = second.cell && (second.cell.ok
+    ? {ok: true, inCellMs, value: {actions: first.cell.value.actions + second.cell.value.actions, observations: first.cell.value.observations + second.cell.value.observations}}
+    : {...second.cell, inCellMs});
+  return {...second, wallMs: first.wallMs + second.wallMs, started: first.started, cell};
 }
 
 export const macosAdapter = {
@@ -57,7 +82,8 @@ export const macosAdapter = {
     meta.service = {surface: 'computer', engine: 'sky', answered: 'vendor', ...ctx.helperAttestation()};
     if (!bound.cell?.ok) throw new Error(`cua.getApp(TextEdit) failed: ${bound.cell?.error ?? bound.failure}`);
 
-    const scratch = guard(await js(cells.NEW_DOCUMENT), 'the scratch document');
+    let scratch = guard(await js(cells.NEW_DOCUMENT), 'the scratch document');
+    if (scratch.cell?.ok && scratch.cell.value?.needsKeys) scratch = guard(await keyCell(ctx, cells.NEW_DOCUMENT_KEYS, ['super+n']), 'the scratch document');
     row('setup.newDocument', 1, scratch);
     if (!scratch.cell?.ok) throw new Error(`no scratch document: ${scratch.cell?.error ?? scratch.failure}`);
     // The scratch document in front, checked between series (op guard.scratch, not charged to any sample).
@@ -77,13 +103,16 @@ export const macosAdapter = {
 
     for (let sample = 1; sample <= ctx.tasks; sample++) {
       const steps = [];
-      const act = guard(await js(cells.TASK_ACT), `task ${sample}`);
+      const opened = guard(await keyCell(ctx, cells.TASK_NEW, ['super+n']), `task ${sample}`);
+      const act = opened.cell?.ok ? joined(opened, guard(await keyCell(ctx, cells.TASK_TYPE, ['typeText']), `task ${sample}`)) : opened;
       steps.push(row('task.act', sample, act));
       if (act.cell?.ok) steps.push(row('task.verify', sample, guard(await js(cells.TASK_VERIFY), `task ${sample}`)));
-      const close = guard(await js(cells.TASK_CLOSE), `task ${sample}`);
+      const close = guard(await keyCell(ctx, cells.TASK_CLOSE, ['super+w']), `task ${sample}`);
       steps.push(row('task.close', sample, close));
       const ok = steps.length === 3 && steps.every(s => s.ok);
       const sum = key => round(steps.reduce((total, s) => total + (s[key] ?? 0), 0));
+      // `cells` counts the task's rows (act, verify, close); since 9173dbf the act row joins two cells (TASK_NEW and
+      // TASK_TYPE), so a successful task dispatches four.
       emit({op: 'task.total', sample, ok, wallMs: sum('wallMs'), inCellMs: sum('inCellMs'), cells: steps.length, actions: sum('actions'), observations: sum('observations'),
         outcome: ok ? 'typed text verified, document closed without saving' : steps.find(s => !s.ok)?.error ?? 'failed'});
       ctx.log(`task ${sample}: ${ok ? 'ok' : 'FAIL'}`);

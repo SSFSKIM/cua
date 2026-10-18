@@ -1,0 +1,14 @@
+✔ the macOS vendor host names the compat executable and its Node; bin/ is trusted code for both hosts (6.453834ms)
+✔ Linux has no compat executable: its own host names no Codex CLI, compat Node or settings (2.920041ms)
+✔ createLaunchDirs writes the session's compat settings beside the session temp; the compat reads them back from the launch's environment (3.927ms)
+✔ the session's release removes its compat settings with its run directory (2.987916ms)
+✔ the vendor-host preflight refuses a CODEX_CLI_PATH that is unset, missing, a directory or not executable, under scoped and default (4.381375ms)
+✔ a write root over the compat settings is refused by name (3.051417ms)
+ℹ tests 6
+ℹ suites 0
+ℹ pass 6
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 94.935709

@@ -15,6 +15,8 @@ import {fileStore} from '../src/secrets/store.mjs';
 import {openConnection} from '../src/mcp/connection.mjs';
 import {LINUX_HOST_NOTES} from '../src/mcp/surface.mjs';
 import {fakeInstalledHome} from './fixtures/installed-home.mjs';
+import {resolveRuntime} from '../src/runtime/manifest.mjs';
+import {helperFor} from '../src/sandbox/linux.mjs';
 
 const LINUX = {platform: 'linux', arch: 'x64'};
 
@@ -43,10 +45,14 @@ test('a real Linux connection: Linux host notes, secrets_list lists the store, t
   const output = new PassThrough();
   const frames = [];
   createInterface({input: output}).on('line', line => frames.push(JSON.parse(line)));
-  // The vendor host, explicitly: the fake installed runtime's launcher is the vendor's (fake-upstream-process.mjs), and a
-  // Linux session would otherwise default to cua's own host wherever the Node running the tests is 24 or later.
-  const env = {PATH: process.env.PATH, HOME: user.home, TMPDIR: process.env.TMPDIR, CUA_SHIM_SECRETS: 'on', DISPLAY: ':0', XDG_RUNTIME_DIR: '/run/user/1000', CUA_REPL_HOST: 'vendor'};
-  const connection = await openConnection({home, env, host: LINUX, sessionId: randomUUID(), input, output, diagnostics: () => {}});
+  // Linux runs cua's own host (#115 M3): the fake installed runtime's upstream (fake-upstream-process.mjs) stands in for
+  // its supervisor, logging under CODEX_HOME; the own host's Node, the helper check and the user-namespace probe are
+  // injected.
+  const env = {PATH: process.env.PATH, HOME: user.home, TMPDIR: process.env.TMPDIR, CUA_SHIM_SECRETS: 'on', DISPLAY: ':0', XDG_RUNTIME_DIR: '/run/user/1000'};
+  const runtime = resolveRuntime({home, host: LINUX});
+  const prepareLaunch = launch => ({...launch, command: runtime.paths.node, args: [runtime.paths.cuaRepl], env: {...launch.env, CODEX_HOME: join(home, 'state', 'codex')}});
+  const connection = await openConnection({home, env, host: LINUX, sessionId: randomUUID(), input, output, diagnostics: () => {}, prepareLaunch,
+    resolveOwnNode: () => process.execPath, verifyHelper: helper => helper, probeUserns: async () => ({status: 'pass'})});
   const reply = async id => { for (let i = 0; i < 400; i++) { const f = frames.find(m => m.id === id); if (f) return f; await new Promise(r => setTimeout(r, 25)); } throw new Error(`no reply ${id}`); };
   const send = msg => input.write(JSON.stringify({jsonrpc: '2.0', ...msg}) + '\n');
   send({id: 1, method: 'initialize', params: {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'linux-test', version: '0'}}});
@@ -61,7 +67,9 @@ test('a real Linux connection: Linux host notes, secrets_list lists the store, t
   assert.equal(start.env.CUA_SECRETS_DIR, user.dir);
   assert.equal('CUA_SECRETS_UNAVAILABLE' in start.env, false);
   assert.equal(start.env.OAI_SKY_LINUX_BIN, join(root, 'cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64'));
-  assert.equal(start.env.CODEX_CLI_PATH, join(root, 'codex'));
+  assert.equal(start.env.CUA_REPL_SANDBOX_HELPER, helperFor({home, arch: 'x64'}).path, 'cua\'s pinned sandbox helper, no Codex CLI');
+  assert.equal(start.env.CUA_REPL_WORKER_NETWORK, 'enabled', 'the computer surface\'s worker reaches the display and the bus');
+  assert.equal('CODEX_CLI_PATH' in start.env, false);
   assert.equal(start.env.DISPLAY, ':0');
   assert.equal(start.env.DBUS_SESSION_BUS_ADDRESS, 'unix:path=/run/user/1000/bus');
   assert.equal('SKY_CUA_SERVICE_PATH' in start.env, false);

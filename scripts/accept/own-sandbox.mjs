@@ -91,10 +91,15 @@ async function connect({home, env}) {
 export const probeCell = ({targets, moduleDir, packageName, sentinel, writeOutside, tcpPort, socketPath}) => `
 const fs = await import('node:fs'), os = await import('node:os'), path = await import('node:path'), net = await import('node:net');
 const {createRequire} = await import('node:module'), {execFileSync} = await import('node:child_process');
-// A cell has no \`process\`: what it is (its pid, its environment, its working directory) is read through a child it runs.
+// A cell has no \`process\`: what it is (its pid, its environment, its working directory) is read through a child it runs
+// on macOS, and from /proc/self on Linux, where the helper's seccomp refuses the socketpairs Node gives a child's piped
+// stdio (and the pid would be bubblewrap's namespace's anyway).
 const run = (file, args = []) => execFileSync(file, args, {encoding: 'utf8'}).trim();
-const env = Object.fromEntries(run('/usr/bin/env').split('\\n').map(line => [line.slice(0, line.indexOf('=')), line.slice(line.indexOf('=') + 1)]));
-const self = {pid: Number(run('/bin/sh', ['-c', 'echo $PPID'])), cwd: run('/bin/pwd'), tmpdir: env.TMPDIR, sandbox: env.CODEX_SANDBOX ?? null};
+const proc = fs.existsSync('/proc/self/environ');
+const env = Object.fromEntries((proc ? fs.readFileSync('/proc/self/environ', 'utf8').split('\\0').filter(Boolean) : run('/usr/bin/env').split('\\n'))
+  .map(line => [line.slice(0, line.indexOf('=')), line.slice(line.indexOf('=') + 1)]));
+const self = {pid: proc ? null : Number(run('/bin/sh', ['-c', 'echo $PPID'])), cwd: proc ? fs.readlinkSync('/proc/self/cwd') : run('/bin/pwd'), tmpdir: env.TMPDIR, sandbox: env.CODEX_SANDBOX ?? null,
+  networkDisabled: env.CODEX_SANDBOX_NETWORK_DISABLED ?? null};
 const code = fn => { try { const value = fn(); return {ok: true, value}; } catch (error) { return {ok: false, code: error.code ?? (error.status != null ? \`exit \${error.status}\` : 'error')}; } };
 const targets = ${JSON.stringify(targets)};
 const out = {reads: {}, writes: {}};
@@ -111,7 +116,7 @@ out.clone = code(() => { execFileSync('/bin/cp', ['-c', ${JSON.stringify(sentine
 const connect = options => new Promise(done => { const s = net.connect(options); s.once('connect', () => { s.destroy(); done({ok: true}); }); s.once('error', e => done({ok: false, code: e.code})); });
 out.tcp = await connect({host: '127.0.0.1', port: ${tcpPort}});
 out.unix = await connect({path: ${JSON.stringify(socketPath)}});
-out.process = {pid: self.pid, sandbox: self.sandbox};
+out.process = {pid: self.pid, sandbox: self.sandbox, networkDisabled: self.networkDisabled};
 nodeRepl.write(JSON.stringify(out));
 `;
 

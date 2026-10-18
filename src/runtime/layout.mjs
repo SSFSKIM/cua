@@ -3,7 +3,8 @@
 //   current.json          {schema, release}: the active release, replaced atomically
 //   staging/              per-operation scratch for downloads and extraction (same volume, so renames are atomic), and
 //                         bind's short-lived copies of Chrome extension stores (src/profiles/directory-map.mjs)
-//   state/codex/          CODEX_HOME for the runtime: its config and per-user approvals
+//   state/codex/          CODEX_HOME for the macOS vendor host's node_repl: its config and per-user approvals (the
+//                         Codex CLI's leftovers there are removed by `cua install`: src/runtime/codex-leftovers.mjs)
 //   state/handshake/      per release, the runtime's recorded MCP handshake answers (src/mcp/lazy-runtime.mjs)
 //   state/compat/         per vendor-host session, the compat executable's settings (src/sandbox/compat-settings.mjs)
 //   node/                 the pinned Node cua's own REPL host runs on, and its pointer (src/runtime/managed-node.mjs)

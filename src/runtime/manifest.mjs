@@ -22,9 +22,10 @@ export const RECORD_FILE = 'install.json';
 // `browserVendorService` names the vendor's @oai/browser-desktop service module, which no launch selects since #79; only
 // the parity harnesses' vendor oracle loads it (test/browser-parity/vendor-oracle.mjs).
 // The darwin layout names no Codex CLI since #115 M2 (the vendor host's CODEX_CLI_PATH is cua's compat executable,
-// bin/cua-codex-compat); a release installed before keeps its CodexCLI.app until M4's cleanup, and nothing checks or
-// launches it. The Linux layout names none since #115 M3 (cua's own host confines its children with the pinned
-// helper, src/sandbox/linux.mjs); a Linux release installed before keeps its `codex` file, which nothing launches.
+// bin/cua-codex-compat); a release installed before keeps its CodexCLI.app, which nothing checks or launches, until
+// `cua install` removes it (src/runtime/codex-leftovers.mjs). The Linux layout names none since #115 M3 (cua's own host
+// confines its children with the pinned helper, src/sandbox/linux.mjs); a Linux release installed before keeps its
+// `codex` file, which nothing launches, until the same cleanup removes it.
 export const LAYOUT_KEYS = ['node', 'nodeRepl', 'moduleDir', 'cuaRepl', 'skyServiceApp', 'skyVendorService', 'browserVendorService', 'vendorManifest', 'ipcClient'];
 export const LINUX_LAYOUT_KEYS = ['node', 'nodeRepl', 'moduleDir', 'cuaRepl', 'skyLinuxBin', 'skyVendorService', 'browserVendorService', 'vendorManifest'];
 // What `cua install --archive` takes on each platform.

@@ -9,6 +9,7 @@ import {fileURLToPath} from 'node:url';
 import {defaultHome, realHome} from './runtime/layout.mjs';
 import {loadPins, selectPin, findPin} from './runtime/manifest.mjs';
 import {installRuntime, installSandboxHelper, useRuntime} from './runtime/install.mjs';
+import {describeRemoval, removeCodexLeftovers} from './runtime/codex-leftovers.mjs';
 import {installNode} from './runtime/node-install.mjs';
 import {loadNodePins, nodeDistName, selectNodePin} from './runtime/managed-node.mjs';
 import {inspectRuntime, summarize} from './runtime/doctor.mjs';
@@ -124,7 +125,8 @@ function progressReporter() {
   };
 }
 
-// The runtime first, then on Linux cua's sandbox helper (#115 M3: what confines both children there; --sandbox-helper
+// The runtime first, then the Codex CLI's leftovers in this home are removed (src/runtime/codex-leftovers.mjs: each
+// named in the output, none of them a failure), then on Linux cua's sandbox helper (#115 M3: what confines both children there; --sandbox-helper
 // takes a local copy of the pinned asset instead of downloading it), then the own REPL host's Node (spec
 // 2026-10-14-own-repl-host-design.md, Decision Log 2026-10-16), each verified and activated on its own. A failed helper
 // or Node step fails the command after the runtime is in place, saying so; --no-node skips the Node step (an offline
@@ -142,6 +144,9 @@ async function install(args, {installRuntime: runtimeInstaller = installRuntime,
   if (!values.json) process.stderr.write(`installing ${manifest.release} from ${values.archive ?? manifest.archive.url}\n`);
   const result = await runtimeInstaller({home, manifest, archivePath: values.archive, onProgress});
   if (!values.json) print(result.changed ? `installed and activated ${result.release} at ${result.root}` : `${result.release} is already installed and verified; active at ${result.root}`);
+  // The Codex CLI's leftovers (#115 M4), once the runtime is in place: named, never shown, and never a failure.
+  const codexLeftovers = removeCodexLeftovers({home, pins});
+  if (!values.json) for (const line of describeRemoval(codexLeftovers)) print(line);
 
   let sandboxHelper = null;
   if (platform === 'linux') {
@@ -175,7 +180,7 @@ async function install(args, {installRuntime: runtimeInstaller = installRuntime,
     if (!values.json) print(node.changed ? `installed Node ${node.version} for cua's own REPL host at ${node.root}`
       : `Node ${node.version} for cua's own REPL host is already installed and verified at ${node.root}${node.activated ? '; it is the active one again' : ''}`);
   }
-  if (values.json) print({ok: true, release: result.release, root: result.root, changed: result.changed, source: result.record.source, ...(sandboxHelper ? {sandboxHelper} : {}), node});
+  if (values.json) print({ok: true, release: result.release, root: result.root, changed: result.changed, source: result.record.source, codexLeftovers, ...(sandboxHelper ? {sandboxHelper} : {}), node});
 }
 
 async function doctor(args) {

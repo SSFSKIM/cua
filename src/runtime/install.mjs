@@ -7,6 +7,8 @@
 // the previous pointer and every existing release untouched, and the staging directory is always removed.
 //
 // An existing release tree is never repaired, replaced or deleted: a running connection may still execute from it.
+// (The one removal inside a tree is `cua install`'s cleanup of the Codex CLI component its pin no longer lists, done
+// apart from this module and only while no session runs: src/runtime/codex-leftovers.mjs.)
 // A verified release makes install a no-op; a damaged one is an error with offline recovery guidance; a target path
 // that is not positively a release this tool installed (a file, symlink, empty directory, or a directory without a
 // valid install record) is refused and left exactly as it is. Vendor

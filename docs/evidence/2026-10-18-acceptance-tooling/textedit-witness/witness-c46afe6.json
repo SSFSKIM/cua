@@ -1,0 +1,149 @@
+{
+  "startedAt": "2026-10-18T18:49:45.499Z",
+  "host": "Mac-mini.local",
+  "macos": "27.0",
+  "initialFront": "com.apple.Terminal",
+  "runningBefore": {
+    "preexisting": [
+      1650
+    ],
+    "front": "com.apple.Terminal",
+    "frontDuring": "com.apple.TextEdit",
+    "runningDuring": [
+      1650
+    ],
+    "capture": {
+      "waitedMs": 26,
+      "missed": false,
+      "candidates": []
+    },
+    "cleanup": {
+      "launch": null,
+      "live": false,
+      "alone": true,
+      "quit": [],
+      "remaining": [],
+      "leftRunning": null,
+      "keptBefore": [
+        1650
+      ],
+      "front": {
+        "previous": "com.apple.Terminal",
+        "before": "com.apple.TextEdit",
+        "after": "com.apple.Terminal",
+        "restored": true
+      }
+    },
+    "witnessTeardown": {
+      "quit": [
+        1650
+      ],
+      "remaining": []
+    }
+  },
+  "startedByRun": {
+    "front": "com.apple.Terminal",
+    "frontDuring": "com.apple.TextEdit",
+    "started": [
+      1924
+    ],
+    "capture": {
+      "waitedMs": 16,
+      "missed": false,
+      "candidates": [
+        1924
+      ]
+    },
+    "envShownByPsE": [
+      false
+    ],
+    "cleanup": {
+      "launch": {
+        "pid": 1924,
+        "at": 1792349389000
+      },
+      "live": true,
+      "alone": true,
+      "quit": [
+        1924
+      ],
+      "remaining": [],
+      "leftRunning": null,
+      "keptBefore": [],
+      "front": {
+        "previous": "com.apple.Terminal",
+        "before": "com.apple.Terminal",
+        "after": "com.apple.Terminal",
+        "restored": true
+      }
+    }
+  },
+  "final": {
+    "front": {
+      "previous": "com.apple.Terminal",
+      "before": "com.apple.Terminal",
+      "after": "com.apple.Terminal",
+      "restored": true
+    },
+    "running": []
+  },
+  "finishedAt": "2026-10-18T18:49:51.815Z",
+  "checks": [
+    {
+      "name": "no TextEdit runs at the start",
+      "status": "PASS",
+      "detail": "front com.apple.Terminal"
+    },
+    {
+      "name": "running before: the run's document went to that TextEdit (no new pid)",
+      "status": "PASS",
+      "detail": "before 1650; during 1650"
+    },
+    {
+      "name": "running before: the cleanup quit nothing and that TextEdit survives it",
+      "status": "PASS",
+      "detail": "launch recorded none; kept 1650; running 1650"
+    },
+    {
+      "name": "running before: the front is handed back",
+      "status": "PASS",
+      "detail": "before com.apple.Terminal, at cleanup com.apple.TextEdit, after com.apple.Terminal"
+    },
+    {
+      "name": "running before: the witness quit its own TextEdit afterwards",
+      "status": "PASS",
+      "detail": "quit 1650; running none"
+    },
+    {
+      "name": "started by the run: its pid was captured right after the open, within the bound",
+      "status": "PASS",
+      "detail": "pid 1924 after 16 ms"
+    },
+    {
+      "name": "started by the run: that TextEdit is the one owned",
+      "status": "PASS",
+      "detail": "started 1924; launch recorded 1924"
+    },
+    {
+      "name": "started by the run: it quit",
+      "status": "PASS",
+      "detail": "quit 1924; remaining none; running now none"
+    },
+    {
+      "name": "started by the run: the front is handed back",
+      "status": "PASS",
+      "detail": "before com.apple.Terminal, at cleanup com.apple.Terminal, after com.apple.Terminal"
+    },
+    {
+      "name": "end: no TextEdit of the witness is left",
+      "status": "PASS",
+      "detail": "running none (the witness's: 1650, 1924)"
+    },
+    {
+      "name": "end: the front at the start is frontmost again",
+      "status": "PASS",
+      "detail": "com.apple.Terminal (start com.apple.Terminal)"
+    }
+  ],
+  "status": "PASS"
+}

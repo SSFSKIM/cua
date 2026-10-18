@@ -347,3 +347,16 @@ test('an unread CI observation waits and reads again; an unreadable frontmost ap
   await assert.rejects(gate('z', {exec: blind.exec, sleep: async () => { waited++; }, log: quiet}), /missing observation: frontmost application/);
   assert.equal(waited, 0);
 });
+
+test('inside a hold the gate ignores the queue; a busy runner or a Runner.Worker still waits (#157)', async () => {
+  const queued = {front: TERMINAL, busy: false, workers: 0, queued: 3, load: 1};
+  assert.equal(classify(queued).state, 'contention');
+  assert.equal(classify(queued, {ignoreQueue: true}).state, 'idle');
+  assert.equal(classify({...queued, busy: true}, {ignoreQueue: true}).state, 'contention');
+  assert.equal(classify({...queued, workers: 1}, {ignoreQueue: true}).state, 'contention');
+  const lines = [];
+  const w = world({runs: {queued: [{id: 5}], in_progress: []}, jobs: {5: [{status: 'queued', labels: ['macOS']}]}});
+  await gate('h', {exec: w.exec, sleep: noSleep, log: line => lines.push(line), ignoreQueue: true});
+  assert.ok(lines.includes('idle before h'));
+  assert.ok(lines.some(line => /queued=1 \(ignored in the hold\)/.test(line)));
+});

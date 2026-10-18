@@ -43,3 +43,13 @@
 2026-10-18T18:19:46.355Z idle before gated sh -c ssh -o BatchMode=yes mini "cd ~/cua-157 && git fetch -q origin fix/157-acceptance-tooling && git checkout -q --detach e9cdc1f && node scripts/accept/textedit-cleanup-witness.mjs --out /tmp/cua-157-witness.json"
 2026-10-18T18:19:54.360Z gated sh -c ssh -o BatchMode=yes mini "cd ~/cua-157 && git fetch -q origin fix/157-acceptance-tooling && git checkout -q --detach e9cdc1f && node scripts/accept/textedit-cleanup-witness.mjs --out /tmp/cua-157-witness.json": exit 0
 2026-10-18T18:19:54.902Z front after gated sh -c ssh -o BatchMode=yes mini "cd ~/cua-157 && git fetch -q origin fix/157-acceptance-tooling && git checkout -q --detach e9cdc1f && node scripts/accept/textedit-cleanup-witness.mjs --out /tmp/cua-157-witness.json": com.apple.Terminal
+2026-10-18T18:20:30.175Z gated sh -c ssh -o BatchMode=yes mini bash -s < /tmp/cua-157/items-1-10.sh > /tmp/cua-157/items-1-10.out 2>&1: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=3.24 -> idle
+2026-10-18T18:21:20.970Z gated sh -c ssh -o BatchMode=yes mini bash -s < /tmp/cua-157/items-1-10.sh > /tmp/cua-157/items-1-10.out 2>&1: reading 2: front=com.apple.Terminal busy=false workers=0 queued=0 load=1.87 -> idle
+2026-10-18T18:21:20.972Z idle before gated sh -c ssh -o BatchMode=yes mini bash -s < /tmp/cua-157/items-1-10.sh > /tmp/cua-157/items-1-10.out 2>&1
+2026-10-18T18:23:38.974Z gated sh -c ssh -o BatchMode=yes mini bash -s < /tmp/cua-157/items-1-10.sh > /tmp/cua-157/items-1-10.out 2>&1: exit 0
+2026-10-18T18:23:39.501Z front after gated sh -c ssh -o BatchMode=yes mini bash -s < /tmp/cua-157/items-1-10.sh > /tmp/cua-157/items-1-10.out 2>&1: com.apple.Terminal
+2026-10-18T18:24:35.158Z gated sh -c ssh -o BatchMode=yes mini bash -s < /tmp/cua-157/items-1-10.sh > /tmp/cua-157/items-1-10.out 2>&1: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=3.61 -> idle
+2026-10-18T18:25:24.351Z gated sh -c ssh -o BatchMode=yes mini bash -s < /tmp/cua-157/items-1-10.sh > /tmp/cua-157/items-1-10.out 2>&1: reading 2: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.52 -> idle
+2026-10-18T18:25:24.351Z idle before gated sh -c ssh -o BatchMode=yes mini bash -s < /tmp/cua-157/items-1-10.sh > /tmp/cua-157/items-1-10.out 2>&1
+2026-10-18T18:27:42.349Z gated sh -c ssh -o BatchMode=yes mini bash -s < /tmp/cua-157/items-1-10.sh > /tmp/cua-157/items-1-10.out 2>&1: exit 0
+2026-10-18T18:27:43.198Z front after gated sh -c ssh -o BatchMode=yes mini bash -s < /tmp/cua-157/items-1-10.sh > /tmp/cua-157/items-1-10.out 2>&1: com.apple.Terminal

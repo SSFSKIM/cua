@@ -22,19 +22,26 @@
 #   probe-secrets scripts/probe-secrets.mjs against its own synthetic store (#115 items 6 and 7's live roundtrip).
 # The golden fixtures and the fail-closed suites run in the unit suite (gate `test`).
 #
-# Public output (the repo is public): the runner's log carries each step's PASS/FAIL line and the summary, each
-# probe's check labels and outcomes, and of a fingerprint judged unequal its differing checks' labels and results and its
-# environment differences' names, never their values. The raw reports (oracle records with the launch's args, env and
-# rendered profiles; free-text details; stderr excerpts; install's and doctor's JSON) stay in the scratch root, removed
-# at exit. The artifact, $HOSTED_GATE_OUT (default <checkout>/hosted-gate-out, uploaded only when the gate fails; not a
-# dotted name, which upload-artifact skips), holds only the allowlisted public forms scripts/sandbox-probe/hosted-public.mjs
-# writes: oracles/fp-*.json the fingerprints ({launcher, fingerprint: {sandboxed, cwd, env, checks}, pins}: the runner's
-# scratch paths and fixed flags, credential-like names redacted by fingerprint.c; the baseline's form), oracles/image.json,
+# Public output (the repo is public). The runner's log carries only: each step's PASS/FAIL line and the summary; the
+# gate's own `hosted-gate:` lines (the run's and the baseline's images, the count of Codex CLI files in the installed
+# tree, doctor's sandbox.launcher status, probe-secrets' step names and statuses, of a fingerprint judged unequal its
+# undeclared checks' labels and results and its environment differences' names, never their values, and of a command
+# that failed its exit status and how many stderr lines were withheld); own-sandbox's `PASS <label>` and `FAIL <label>`
+# lines; hosted-public.mjs's one failure line, naming the form and the files' basenames. Every producer's stderr (an
+# oracle's child stderr, install's and doctor's own, the publisher's) goes to the scratch root (quiet), never to the log.
+# The raw reports (oracle records with the launch's args, env and rendered profiles and the checks' target paths;
+# free-text details; stderr excerpts; install's and doctor's JSON) stay in the scratch root too, removed at exit. The
+# artifact, $HOSTED_GATE_OUT (default <checkout>/hosted-gate-out, uploaded only when the gate fails; not a dotted name,
+# which upload-artifact skips), holds only the allowlisted public forms scripts/sandbox-probe/hosted-public.mjs writes:
+# oracles/fp-*.json the fingerprints ({launcher, fingerprint: {sandboxed, cwd, env, checks: [{op, filter, label, result,
+# errno?}]}, pins?: {ok, rows: [{label, op, want, got}]}}: cwd and the values of the launcher's own variables relative
+# to the run's roots, `<cua-home>/…`, `<home>/…`, `<checkout>/…`, `<session>`; any other variable by name, its value
+# `<withheld>`; no check target; the baseline's form, and what the judgement compares), oracles/image.json,
 # oracles/port-vs-signed-*.json the comparison's booleans and counts, own-sandbox-*.json check labels, passes and error
 # codes, probe-secrets.json and doctor.json statuses by name; nothing of install's. Every secret is a generated
 # synthetic value that the checks keep inside their cells and scan their own reports for; the runtime is never copied
-# out of the scratch root. Every step runs and is reported even after an earlier one failed; the gate then exits 1
-# naming each failed step.
+# out of the scratch root. Every step runs and is reported even after an earlier one failed, and a step whose report
+# could not be published fails; the gate then exits 1 naming each failed step.
 set -eu
 [ "$(uname -s)" = Darwin ] || { echo "hosted-gate: refused: macOS only" >&2; exit 2; }
 R=$(cd "$(dirname "$0")/../.." && pwd -P)
@@ -47,9 +54,10 @@ S=$(mktemp -d "${RUNNER_TEMP:-$HOME}/cua159.XXXXXX")
 S=$(cd "$S" && pwd -P)
 trap 'rm -rf "$S"' EXIT
 H=$S/home U=$S/userhome
-# The raw reports, kept in the scratch root; $OUT gets their public forms (publish).
-RAW=$S/reports
-mkdir -p "$U" "$RAW/oracles"
+# The raw reports, kept in the scratch root; $OUT gets their public forms (publish). Beside them every producer's
+# stderr, which can quote a report, a rendered profile or a child's own output (quiet).
+RAW=$S/reports ERR=$S/stderr
+mkdir -p "$U" "$RAW/oracles" "$ERR"
 M0=docs/evidence/2026-10-17-own-sandbox/m0
 BASELINE=docs/evidence/2026-10-18-hosted-macos-gate/baseline
 # The mini's scratch root in M0's records (oracle.mjs ran there with --home ~/cua-115/home --user-home ~/cua-115/userhome).
@@ -57,8 +65,26 @@ M0_ROOT=/Users/new/cua-115
 # What every cua command here sees: the scratch homes, a fixed PATH with this Node.
 scratch() { env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin:$(dirname "$(command -v node)")" HOME="$U" CUA_HOME="$H" LANG=C.UTF-8 TMPDIR="$S/tmp" "$@"; }
 mkdir -p "$S/tmp"
-# publish <form> <raw> <public>: the raw report's public form (hosted-public.mjs), when the raw one was written.
-publish() { [ ! -f "$2" ] || node scripts/sandbox-probe/hosted-public.mjs "$@"; }
+# quiet <name> <public> <command...>: the command with its stderr kept in $ERR/<name>. The log gets only the lines of it
+# matching <public> (an extended regex; '' for none) and, when the command fails, its status and how many lines were
+# withheld. -> the command's status.
+quiet() {
+  q_name=$1 q_public=$2; shift 2
+  q_code=0
+  "$@" 2> "$ERR/$q_name" || q_code=$?
+  q_shown=0
+  if [ -n "$q_public" ]; then
+    grep -E "$q_public" "$ERR/$q_name" >&2 || true
+    q_shown=$(grep -cE "$q_public" "$ERR/$q_name" || true)
+  fi
+  q_withheld=$(( $(wc -l < "$ERR/$q_name") - q_shown ))
+  [ "$q_code" = 0 ] || echo "hosted-gate: $q_name exited $q_code$([ "$q_withheld" = 0 ] || echo "; stderr withheld ($q_withheld lines)")" >&2
+  return "$q_code"
+}
+# publish <form> <raw> <public>: the raw report's public form (hosted-public.mjs, whose one line on a failure names the
+# form and the files only). It fails when the raw report is missing. Each step below that publishes fails when its
+# producer or its publication does, with the producer's status when both do.
+publish() { quiet "publish-$(basename "$3" .json)" '^hosted-public: ' node scripts/sandbox-probe/hosted-public.mjs "$@"; }
 
 failed=0 results=''
 step() {
@@ -71,52 +97,56 @@ step() {
 "
 }
 
-install() { scratch node bin/cua.mjs install --json > "$RAW/install.json"; }
+install() { quiet install '' scratch node bin/cua.mjs install --json > "$RAW/install.json"; }
 no_codex() {
-  found=$(find "$H" \( -name CodexCLI.app -o \( -name codex -type f \) \) -print | wc -l | tr -d ' ')
+  found=$(find "$H" \( -name CodexCLI.app -o \( -name codex -type f \) \) -print 2> "$ERR/no-codex" | wc -l | tr -d ' ')
   echo "hosted-gate: Codex CLI files in the installed tree: $found" >&2
   [ "$found" = 0 ]
 }
+# doctor's own status is not the step's (a check this gate does not judge may fail on a runner).
 doctor() {
-  scratch node bin/cua.mjs doctor --json > "$RAW/doctor.json" || true
-  publish doctor "$RAW/doctor.json" "$OUT/doctor.json"
-  node -e 'const r = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); const row = r.checks.find(c => c.name === "sandbox.launcher");
+  scratch node bin/cua.mjs doctor --json > "$RAW/doctor.json" 2> "$ERR/doctor" || true
+  code=0
+  quiet doctor-read '^hosted-gate: ' node -e 'const r = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); const row = r.checks.find(c => c.name === "sandbox.launcher");
     const named = /codexCli|CodexCLI/.test(JSON.stringify(r)); console.error(`hosted-gate: doctor sandbox.launcher ${row?.status}, a Codex CLI row ${named}`);
-    process.exit(row?.status === "pass" && !named ? 0 : 1)' "$RAW/doctor.json"
+    process.exit(row?.status === "pass" && !named ? 0 : 1)' "$RAW/doctor.json" || code=$?
+  publish doctor "$RAW/doctor.json" "$OUT/doctor.json" || [ "$code" != 0 ] || code=1
+  return "$code"
 }
-build_fp() { xcrun clang -O2 -Wall -o "$S/cua-fp" scripts/sandbox-probe/fingerprint.c; }
+build_fp() { quiet build-fp '' xcrun clang -O2 -Wall -o "$S/cua-fp" scripts/sandbox-probe/fingerprint.c; }
 # The fingerprint's public form is the baseline's, and what the judgement compares.
 fingerprint() {
   code=0
-  scratch node scripts/sandbox-probe/oracle.mjs fingerprint --home "$H" --user-home "$U" --mode "$1" --launcher cua --role "$2" --fp "$S/cua-fp" --out "$RAW/oracles/fp-cua-$2-$1.json" || code=$?
-  publish fingerprint "$RAW/oracles/fp-cua-$2-$1.json" "$OUT/oracles/fp-cua-$2-$1.json"
+  quiet "fingerprint-$2-$1" '' scratch node scripts/sandbox-probe/oracle.mjs fingerprint --home "$H" --user-home "$U" --mode "$1" --launcher cua --role "$2" --fp "$S/cua-fp" --out "$RAW/oracles/fp-cua-$2-$1.json" || code=$?
+  publish fingerprint "$RAW/oracles/fp-cua-$2-$1.json" "$OUT/oracles/fp-cua-$2-$1.json" || [ "$code" != 0 ] || code=1
   return "$code"
 }
 judge() {
   code=0
-  node scripts/sandbox-probe/oracle.mjs compare-fingerprints "$1" "$2" --expect "$3" --out "$4" > /dev/null || code=$?
-  [ -f "$4" ] && node -e 'const {judgement: j} = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); const e = j.undeclared.env;
+  quiet "$(basename "$4" .json)" '' node scripts/sandbox-probe/oracle.mjs compare-fingerprints "$1" "$2" --expect "$3" --out "$4" > /dev/null || code=$?
+  [ ! -f "$4" ] || quiet "$(basename "$4" .json)-read" '^hosted-gate: ' node -e 'const {judgement: j} = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); const e = j.undeclared.env;
     if (!j.ok) console.error(`hosted-gate: undeclared: ${JSON.stringify({checks: j.undeclared.checks.map(c => `${c.op} ${c.label} ${c.left?.result ?? "-"}/${c.right?.result ?? "-"}`),
-      env: {onlyLeft: e.onlyLeft, onlyRight: e.onlyRight, differing: e.differing.map(d => d.name)}, cwd: j.undeclared.cwd, sandboxed: j.undeclared.sandboxed})}`)' "$4"
+      env: {onlyLeft: e.onlyLeft, onlyRight: e.onlyRight, differing: e.differing.map(d => d.name)}, cwd: j.undeclared.cwd, sandboxed: j.undeclared.sandboxed})}`)' "$4" || true
   return "$code"
 }
 port_vs_capture() {
   code=0
-  scratch node scripts/sandbox-probe/oracle.mjs port-vs-capture --capture "$M0/argv-capture/capture-signed-$1.json" --relocate "$M0_ROOT=$S/m0" --out "$RAW/oracles/port-vs-signed-$1.json" || code=$?
-  publish port-vs-capture "$RAW/oracles/port-vs-signed-$1.json" "$OUT/oracles/port-vs-signed-$1.json"
+  quiet "port-vs-signed-$1" '' scratch node scripts/sandbox-probe/oracle.mjs port-vs-capture --capture "$M0/argv-capture/capture-signed-$1.json" --relocate "$M0_ROOT=$S/m0" --out "$RAW/oracles/port-vs-signed-$1.json" || code=$?
+  publish port-vs-capture "$RAW/oracles/port-vs-signed-$1.json" "$OUT/oracles/port-vs-signed-$1.json" || [ "$code" != 0 ] || code=1
   return "$code"
 }
 own_sandbox() {
   code=0
-  scratch node scripts/accept/own-sandbox.mjs --home "$H" --host "$1" --out "$RAW/own-sandbox-$1.json" > /dev/null || code=$?
-  publish own-sandbox "$RAW/own-sandbox-$1.json" "$OUT/own-sandbox-$1.json"
+  # Its stderr's `PASS <label>` and `FAIL <label>` lines are its checks' labels (own-sandbox.mjs `check`), the rest withheld.
+  quiet "own-sandbox-$1" '^(PASS|FAIL) ' scratch node scripts/accept/own-sandbox.mjs --home "$H" --host "$1" --out "$RAW/own-sandbox-$1.json" > /dev/null || code=$?
+  publish own-sandbox "$RAW/own-sandbox-$1.json" "$OUT/own-sandbox-$1.json" || [ "$code" != 0 ] || code=1
   return "$code"
 }
 probe_secrets() {
   code=0
-  scratch node scripts/probe-secrets.mjs --report "$RAW/probe-secrets.json" > /dev/null || code=$?
-  [ -f "$RAW/probe-secrets.json" ] && node -e 'for (const s of JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).steps) console.error(`hosted-gate: probe-secrets ${s.status} ${s.name}`)' "$RAW/probe-secrets.json"
-  publish probe-secrets "$RAW/probe-secrets.json" "$OUT/probe-secrets.json"
+  quiet probe-secrets '' scratch node scripts/probe-secrets.mjs --report "$RAW/probe-secrets.json" > /dev/null || code=$?
+  [ ! -f "$RAW/probe-secrets.json" ] || quiet probe-secrets-read '^hosted-gate: ' node -e 'for (const s of JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).steps) console.error(`hosted-gate: probe-secrets ${s.status} ${s.name}`)' "$RAW/probe-secrets.json" || true
+  publish probe-secrets "$RAW/probe-secrets.json" "$OUT/probe-secrets.json" || [ "$code" != 0 ] || code=1
   return "$code"
 }
 

@@ -117,8 +117,8 @@ export function relocateCapture(record, {from, to, euid}) {
 }
 
 // Named per run: the CLI's arg0 directory ($CODEX_HOME/tmp/arg0/codex-arg0<random>) and the session's run directory
-// (run/<uuid>, with its temp).
-const normalizeValue = value => value.replace(/codex-arg0[A-Za-z0-9]+/g, 'codex-arg0*')
+// (run/<uuid>, with its temp). Exported for the hosted gate's public form (hosted-public.mjs).
+export const normalizeValue = value => value.replace(/codex-arg0[A-Za-z0-9]+/g, 'codex-arg0*')
   .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, '<session>');
 
 // Where the run's machine put things (#159: M0's fingerprints come from the mini, the hosted gate's from a runner): the
@@ -126,12 +126,14 @@ const normalizeValue = value => value.replace(/codex-arg0[A-Za-z0-9]+/g, 'codex-
 // under one reads as `<label>/…` (inside a JSON value too), longest root first so a nested root wins. A root matches
 // whole, never a sibling sharing its prefix. The user home is the grandparent of `config-cua` (oracle.mjs passes
 // <userHome>/.config/cua), never fingerprint.c's own `home` target: that is the child's HOME, and a root taken from what
-// the child reports would erase a change in it.
+// the child reports would erase a change in it. Exported for the hosted gate's public form (hosted-public.mjs), which
+// publishes values this way and drops the targets: a public form names no root, so it reads as itself here, and two
+// public forms compare as their raw records do.
 const CONFIG_CUA = '/.config/cua';
 const escapeRegExp = text => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 // A root ends where a path name could not go on: not before another name character (a sibling `home2`, `home.bak`).
 const WHOLE = '(?![A-Za-z0-9._-])';
-function relativeToRoots(fingerprint) {
+export function relativeToRoots(fingerprint) {
   const target = label => fingerprint.checks.find(row => row.filter === 'path' && row.label === label)?.target;
   const configCua = target('config-cua');
   const roots = [['cua-home', target('cua-home')], ['home', configCua?.endsWith(CONFIG_CUA) ? configCua.slice(0, -CONFIG_CUA.length) : undefined], ['checkout', target('checkout')]]

@@ -88,10 +88,14 @@ The dispatching session ruled (2026-10-18): don't widen the M0 pairs' deviations
 - **`oracle.mjs fingerprint`** creates the cua home's `state/`. A fresh install has none, and `sandbox_check` reports a
   missing path as denied. The first hosted run read `cua-home/state` as denied for exactly that reason; the mini's home
   had task 1's `state/`.
-- **`scripts/sandbox-probe/hosted-public.mjs`** writes the public form of each report the gate publishes (below).
+- **`scripts/sandbox-probe/hosted-public.mjs`** writes the public form of each report the gate publishes (below). The
+  committed baseline is in the fingerprint's public form, converted from the recorded one by it; the recorded and the
+  converted baseline judge equal, and the mini's M4 judgements are unchanged.
 - **Unit tests** in `test/sandbox-probe/compare.test.mjs` cover the root-relative comparison, the relocation and the
-  `hosted-baseline/cua` pair; `test/sandbox-probe/hosted-public.test.mjs` plants a value in each free-text field and
-  shows no public form carries it.
+  `hosted-baseline/cua` pair. `test/sandbox-probe/hosted-public.test.mjs` plants a value in each free-text field, an
+  unknown variable and an extra check field and shows no public form carries it; shows two runs under different
+  scratch roots publish the same fingerprint, and that the public forms still catch a check row, the deny list and
+  `HOME` moving; and shows a report that cannot be published fails with the fixed line only.
 
 ## Runs (hosted macOS, image macos26 20261013.0424.1, Node 24.21.0)
 
@@ -123,36 +127,49 @@ So the gate catches a policy regression.
 
 ## Public output
 
-The repository is public, so the gate's log and its failure artifact are public. The raw reports (the oracle records
-with the launch's args, environment and rendered profiles; own-sandbox's free-text details; probe-secrets' stderr
-excerpts; install's and doctor's JSON) stay in the scratch root, which is removed at exit.
+The repository is public, so the gate's log and its failure artifact are public. The raw reports stay in the scratch
+root, which is removed at exit: the oracle records (the launch's args, environment and rendered profiles, the checks'
+target paths), own-sandbox's free-text details, probe-secrets' stderr excerpts, and install's and doctor's JSON. So does
+every producer's stderr: an oracle's child stderr, install's and doctor's own, and the publisher's.
 
-The log carries:
+The log carries only:
 
 - each step's PASS/FAIL line, its duration, and the summary;
-- own-sandbox's check labels with PASS/FAIL, and probe-secrets' step names and statuses;
-- the count of Codex CLI files in the installed tree, and doctor's `sandbox.launcher` status;
-- the image's and the baseline's macOS version and image name;
-- of a failed baseline judgement, the undeclared checks (operation, label, both results) and the **names** of the
-  environment variables that differ, never their values.
+- own-sandbox's `PASS <label>` and `FAIL <label>` lines;
+- the gate's own `hosted-gate:` lines:
+  - the run's and the baseline's macOS version and image name;
+  - the count of Codex CLI files in the installed tree, and doctor's `sandbox.launcher` status;
+  - probe-secrets' step names and statuses;
+  - of a failed baseline judgement, the undeclared checks (operation, label, both results) and the **names** of the
+    environment variables that differ, never their values;
+  - of a command that failed, its exit status and how many stderr lines were withheld, never a line;
+- `hosted-public.mjs`'s one failure line, which names the form and the two files' basenames, never the input.
+
+A step whose report could not be published fails, keeping the producer's status when both failed.
 
 The artifact (`hosted-gate-out/`, uploaded only when the gate fails) holds only the allowlisted forms
 `scripts/sandbox-probe/hosted-public.mjs` writes:
 
 | File | Holds |
 |---|---|
-| `oracles/fp-cua-*.json` | `{launcher, fingerprint: {sandboxed, cwd, env, checks}, pins}`, without the launch's `input`: the runner's scratch paths and fixed flags, credential-like names redacted by fingerprint.c. The baseline's form, and what the gate judges |
+| `oracles/fp-cua-*.json` | `{launcher, fingerprint: {sandboxed, cwd, env, checks: [{op, filter, label, result, errno?}]}, pins?: {ok, rows: [{label, op, want, got}]}}`. `cwd` and the values of the launcher's own variables (`HOME`, `PATH`, `TMPDIR`, `LANG`, `CODEX_SANDBOX`, `CODEX_SANDBOX_NETWORK_DISABLED`, `CODEX_HOME`, `CUA_REPL_NODE_PATH`, `CUA_REPL_NODE_MODULE_DIRS`, `CUA_REPL_SANDBOX_EXEC`, `CUA_SANDBOX_DENY_READ`) are read relative to the run's own roots by `compare.mjs`'s `relativeToRoots`: `<cua-home>/…`, `<home>/…`, `<checkout>/…`, and `<session>` for a session id. Any other variable is published by name with the value `<withheld>`. No check's target, no launch `input`. The baseline's form, and what the gate judges |
 | `oracles/image.json` | the runner's macOS and image |
 | `oracles/port-vs-signed-*.json` | the comparison's booleans (argv, profile, command equal; `equalButDeviations`), the TIOCSTI form, the first differing profile line's number, the count of differing parameters, the names of differing environment variables; never the args or profiles |
 | `own-sandbox-*.json` | `{ok, checks: [{label, pass, code?}]}`; `code` only when it is an error code or a number |
 | `probe-secrets.json` | `{status, steps: [{name, status}]}` |
 | `doctor.json` | `{ok, checks: [{name, status}]}` |
 
+Judged public form against public form, the fingerprints still show what the raw records did: a check's result or
+errno, a change in the workers' `CUA_SANDBOX_DENY_READ` (the negative control below was caught on the workers only
+there), `HOME` moving, a variable appearing or going. Both sides arrive relativized, so the comparison finds no root
+in either and compares them as they are.
+
 Nothing of install's is published beyond its step line. No secret value is in either:
 
 - own-sandbox's sentinels never leave their cells, and own-sandbox refuses to write a report that contains one;
 - probe-secrets scans its own report for both of its generated values and refuses to write it if either is found;
-- the fingerprint's environment redacts credential-like names.
+- the fingerprint's environment redacts credential-like names, and the public form withholds every value but the
+  launcher's own.
 
 The store is always a scratch store, and no owner profile or real store exists on the runner. The runtime is never
 copied out of the scratch root.

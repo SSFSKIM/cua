@@ -202,8 +202,9 @@ export function hostNotesFor(surfaces, {platform = process.platform, devices = f
 //
 // On Linux (Phase F) they differ where the vendor's Linux target does: apps are bound by X11 window, key names are X
 // keysyms, setValue and selectText do not exist and paste types, and nothing asks the user per app (the owner's
-// allow-all decision; cua adds no allowlist). DISPLAY and XAUTHORITY reach the runtime, so a model cell can talk to X
-// directly: the trusted wrapper is not a boundary there. Text input is F2's measurement on Ubuntu 24.04 arm64
+// allow-all decision; cua adds no allowlist). DISPLAY and XAUTHORITY reach the runtime; since #115 a confined cell has
+// no socket to reach X with (only the trusted worker has the network), but under CUA_SHIM_SANDBOX=disabled a cell can
+// talk to X directly, so the rule keeps its cautious wording: the trusted wrapper is not a boundary there. Text input is F2's measurement on Ubuntu 24.04 arm64
 // (docs/evidence/2026-10-06-linux-acceptance.md): the helper's typeText and paste insert through AT-SPI and crashed the
 // GTK3 editors gedit and mousepad (SIGSEGV in gtk_text_buffer_get_iter_at_offset), while pressKey typed into gedit; in
 // GTK4's gnome-text-editor they inserted the text and then threw (Text.SetCaretOffset unsupported), which the general

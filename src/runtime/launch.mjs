@@ -13,9 +13,10 @@
 //   DISPLAY XAUTHORITY DBUS_SESSION_BUS_ADDRESS XDG_RUNTIME_DIR XDG_DATA_DIRS   linux only, copied when set: the X11
 //                                            display and the session bus (AT-SPI) the vendor helper uses, and where
 //                                            its app discovery reads .desktop entries. Without DBUS_SESSION_BUS_ADDRESS
-//                                            (an SSH session) it is derived as unix:path=$XDG_RUNTIME_DIR/bus. With
-//                                            DISPLAY and XAUTHORITY a model cell can reach X directly: on Linux the
-//                                            trusted sky wrapper is not a boundary
+//                                            (an SSH session) it is derived as unix:path=$XDG_RUNTIME_DIR/bus. A
+//                                            confined cell has no socket to reach X with (#115: only the trusted
+//                                            worker has the network); under disabled a model cell can reach X
+//                                            directly, and the trusted sky wrapper is then not a boundary
 //   PATH                                     fixed system path
 //   CUA_SANDBOX_DENY_READ                    JSON {deny, reexpose, metadataOnly, tiers}: what the kernel may not read,
 //                                            by real path, and what is re-exposed inside it (src/sandbox/policy.mjs

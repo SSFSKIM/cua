@@ -3,12 +3,14 @@
 Lets Claude Code read and operate macOS and Linux apps (accessibility tree, screenshots, clicks, typing, menus).
 `cua serve` (the plugin runs it through `cua-shim.mjs`) is a stdio MCP server: supported sessions now use cua's own
 JavaScript REPL host and vendor-compatible `cua` API; macOS computer sessions keep OpenAI's host (see Use). Both still
-need the pinned runtime that `cua install` verifies and places under `CUA_HOME`, for the native engine, the sandbox and
-the retained vendor host. Vendor files stay unmodified, and nothing in ChatGPT.app or
-`~/.codex` is read or modified. With the browser surface turned on it also drives your existing Chrome profiles,
+need the pinned runtime that `cua install` verifies and places under `CUA_HOME`, for the native engine and the retained
+vendor host. The sandbox that confines the model's JavaScript is cua's own on both platforms, and no Codex CLI is
+installed or launched (#115; see Configuration). Vendor files stay unmodified, and nothing in ChatGPT.app or `~/.codex`
+is read or modified. With the browser surface turned on it also drives your existing Chrome profiles,
 signed-in sessions included, through cua's own browser service, Chrome extension and native host, with no ChatGPT
 account or Codex login (see Chrome), and with `cua agent` it serves a client on another machine (see Remote control).
-The design and its status are in `docs/doperpowers/specs/2026-10-02-standalone-cua-design.md`, for remote control in
+The design and its status are in `docs/doperpowers/specs/2026-10-02-standalone-cua-design.md`, for the sandbox in
+`docs/doperpowers/specs/2026-10-17-own-sandbox-design.md`, for remote control in
 `docs/doperpowers/specs/2026-10-06-remote-and-linux-design.md`, for the Chrome extension in
 `docs/doperpowers/specs/2026-10-07-own-chrome-extension-design.md`, for the browser service in
 `docs/doperpowers/specs/2026-10-13-own-browser-service-design.md`, and for the REPL host in
@@ -30,8 +32,9 @@ The design and its status are in `docs/doperpowers/specs/2026-10-02-standalone-c
   runtime through LaunchServices). macOS asks on first use; `cua doctor` cannot see these grants and reports them as
   `blocked` until a live run shows them. Where ChatGPT's Computer Use already runs, its compatible helper serves this
   runtime too and is reused as it is, never stopped or replaced.
-- Native control needs no account: the runtime gets its own empty `CODEX_HOME` under `CUA_HOME` (kept until
-  #115: the vendor's `node_repl` and helper still use it), and nothing is read from ChatGPT.app or `~/.codex`.
+- Native control needs no account, and nothing is read from ChatGPT.app or `~/.codex`. macOS computer sessions, the one
+  place the vendor's `node_repl` still runs, give it its own `CODEX_HOME` under `CUA_HOME` (`state/codex`, its config
+  and app approvals) until #117; cua's own host and Linux use none.
 - For Chrome only: Google Chrome with the cua extension in each profile you want to use (loaded unpacked from the
   checkout's `extension/` today; it will be listed on the Chrome Web Store) and `cua chrome register` run once (see
   Chrome). No account or login is needed. cua never installs the extension for you.
@@ -54,7 +57,18 @@ node bin/cua.mjs doctor                    # --json for the structured checks; e
 
 `cua install` is idempotent for a verified release and never repairs one in place; `cua runtime use <release>`
 switches between verified installed releases. A release that no longer verifies is reported with its offline recovery:
-stop the servers using it, remove its directory, install again.
+stop the servers using it, remove its directory, install again. On Linux it also fetches cua's sandbox helper (see
+Linux).
+
+`cua install` also removes what the Codex CLI left in this home, which nothing has used since cua runs its own sandbox
+(#115), and prints each name it removes, never its content: in `CUA_HOME/state/codex`, `auth.json`,
+`installation_id`, the `*.sqlite` files with their `-wal` and `-shm`, `models_cache.json`, `cache/`, `plugins/`,
+`skills/`, `log/`, `tmp/arg0` and `browser/sessions` (what `node_repl` keeps there, `config.toml`,
+`computer-use/sessions` and `node_repl/active_execs`, stays); and in each installed release whose pin no longer lists
+it, the unused `CodexCLI.app` (about 229 MB; on Linux the `codex` file). A release's Codex CLI is removed only while no
+`cua serve` or profile listing of this home runs, since one started by an older cua may still launch it; otherwise
+install says so and leaves it for a later install. Nothing is followed through a symbolic link. Until install has run,
+`cua doctor`'s `runtime.leftovers` row names what is left (`warn`, never a failure).
 
 `cua install` does not take the pinned archive's Chrome plugin (OpenAI's native host for the ChatGPT extension): the
 route that used it was removed (#79), and cua's own host comes from the checkout (`cua chrome register`; see Chrome). A
@@ -156,7 +170,7 @@ With `CUA_REPL_HOST` unset or empty, the defaults are:
 
 | session | REPL host | why |
 |---|---|---|
-| Linux | `cua`, with Node 24+ | The owned host supports Linux computer and browser sessions (`linux`) |
+| Linux | `cua`, with Node 24+ | The owned host serves Linux computer and browser sessions (`linux`); it is the only host there: the vendor host is retired on Linux (#115), so `CUA_REPL_HOST=vendor` is refused (`repl_host_refused`) and a missing Node 24 refuses (`repl_host_node`) |
 | macOS, browser only (MAWS and profile listing included) | `cua`, with Node 24+ | No native-helper peer is needed (`browser_only`) |
 | macOS, computer enabled | `vendor` | The native helper accepts only the vendor host's `node_repl` as a peer until #117 (`macos_native_peer_requires_vendor`); MAWS does not override this |
 
@@ -172,23 +186,24 @@ macOS also unless `bin/node` carries the OpenJS Foundation's Developer ID signat
 binary's SHA-256: a `bin/node` that no longer matches its record is never run, neither by a later install nor as a
 candidate. Like the runtime, a verified Node makes it a no-op, and a damaged one is reported, never repaired in place. If that step fails,
 the command fails after the runtime is in place and says so; `--no-node` skips it, as for an offline install without
-the tarball. If no candidate qualifies, a session that would default to cua keeps the vendor host with reason
-`own_host_node_unavailable`: run `cua install`, install Node 24 or later yourself, or set `CUA_NODE` to one.
-This is selection before launch, not a retry on another host after a failed launch. `CUA_REPL_HOST=vendor` is the
-rollback. An explicit `CUA_REPL_HOST=cua` instead refuses when no suitable Node is found (`repl_host_node`) or when the
+the tarball. If no candidate qualifies, a macOS session that would default to cua keeps the vendor host with reason
+`own_host_node_unavailable`, and a Linux session is refused: run `cua install`, install Node 24 or later yourself, or
+set `CUA_NODE` to one. This is selection before launch, not a retry on another host after a failed launch. On macOS
+`CUA_REPL_HOST=vendor` is the rollback. An explicit `CUA_REPL_HOST=cua` instead refuses when no suitable Node is found (`repl_host_node`) or when the
 computer surface is enabled on macOS (`repl_host_refused`); it is never silently downgraded. This replaces the host and
 facade on supported sessions, not the installed vendor runtime.
 
 `cua doctor`'s `repl.host` row names the host and reason for the configured session and the separate browser-only
 profile listing. It reads `pass` for usable selections, `fail` for a setting or explicit
 selection that refuses, and `warn` when either would use cua's host but cannot find Node 24, naming the candidates
-tried and the remedies above. A `warn` does not make `ok` false or the exit nonzero: the session keeps working on the
-vendor host.
+tried and the remedies above. A `warn` does not make `ok` false or the exit nonzero: on macOS the session keeps working
+on the vendor host.
 
 **Process footprint.** Claude Code starts the plugin's server in every session, used or not, so `cua serve` holds no
 runtime until a call needs one. It answers the MCP handshake and the tool list itself and launches the selected host
 on the first `js` or `js_reset`: cua's supervisor on user Node, with its kernel and trusted worker, or the vendor's
-`node`, `node_repl` and their children. Confined children of both hosts still use Codex's sandbox (Configuration).
+`node`, `node_repl` and their children. Both hosts confine their children with cua's own sandbox (Configuration); no
+`codex` process runs.
 A runtime that goes 15 minutes (`CUA_RUNTIME_IDLE_MS`, in milliseconds; `0` keeps it for the session's life) without a
 `js`, `js_reset`, `end_task` or `profiles_list` live check is stopped as a task's end and a session's close stop it: an
 open task is completed first (its app and Chrome attachments released, a MAWS browser's lease included), the processes are torn down
@@ -307,12 +322,14 @@ script evaluation, CDP commands and every other browser command are never scanne
 REPL client read back diagnostics of the matched elements (tag, role, type, label, text; not the input's value).
 
 **What the store does not protect against.** The store is as private as your account: any process running as you can
-read it, and that includes the agent's JavaScript cells. Under every sandbox mode cells read everywhere your account
-can (the vendor's sandbox can deny a directory, but the same profile binds the trusted service that must read the
-value, so cua cannot deny the store to cells alone; measured, Decision Log 2026-10-07). This is the same exposure as
-Bash in Claude Code, where nothing keeps the model from reading the directory: the plugin's secrets guard (not a
-sandbox) redacts what it reads instead, and cua's host notes tell the agent never to read it. The guarantee is
-narrower and holds: the agent works with keys, and trusted code fills the value in.
+read it. The agent's JavaScript cells cannot, under the `scoped` default and `default` (#115): cua's sandbox gives the
+cells' kernel its own profile, which denies the store and every project tier (by real path, a symlinked tier's target
+too), `~/.config/cua` and cua's own home but for the runtime, its Node and the connection's own run directory, so a
+cell's read fails with `EPERM` or `EACCES`, while the trusted worker, which fills `{{secret:KEY}}` in, still reads it.
+Under `CUA_SHIM_SANDBOX=disabled` nothing is denied and cells read everywhere your account can. Bash in Claude Code is
+not sandboxed this way: nothing keeps the model from reading the directory there, so the plugin's secrets guard (not a
+sandbox) redacts what it reads instead, and cua's host notes tell the agent never to read it. Until 0.15.0 cells could
+read the store under every mode.
 
 **The secrets guard.** Where function hooks are enabled, the plugin carries devcloud's secrets guard (vendored from
 the doperpowers marketplace; `hooks/mods/guard/VENDORED.md`). It redacts and never refuses: no tool call is refused
@@ -612,8 +629,9 @@ sessions); exports and page-asset bundles are written under the system temporary
 and downloads land where Chrome puts them.
 
 The REPL host around it depends on the session (Use). cua's own host does not call the vendor's telemetry, account or
-app-server APIs, but it still launches confined children through the pinned `codex sandbox`; replacing that launcher
-is issue #115. The vendor host runs unmodified. In the launches measured before cua's browser service existed,
+app-server APIs, and it confines its children with cua's own sandbox (#115). The vendor host runs unmodified, with
+cua's compat executable as its `CODEX_CLI_PATH`: it confines node_repl's children with the same sandbox and answers the
+native helper's three app-server policy reads from recorded answers, with no network. In the launches measured before cua's browser service existed,
 node_repl's process group also ran `codex app-server` in the server's own `CODEX_HOME` (`$CUA_HOME/state/codex`), which
 keeps its own state there and does its own fetching (`docs/evidence/2026-10-07-s0-no-header-spike.md`); those launches
 ran OpenAI's browser service, which made the app-server's config and auth requests and OpenAI's site-status, telemetry
@@ -987,16 +1005,18 @@ rest.
 
 ## Linux
 
-cua still installs its retained native engine, sandbox and vendor host from OpenAI's official Linux package of the same
-ChatGPT release, the `chatgpt` deb for amd64 or arm64 (pins `26.928.40906-linux-x64` and `26.928.40906-linux-arm64`).
-The `@oai/*` JavaScript is the macOS release's byte for byte; the platform binaries are Linux ones: `node_repl`, the
-computer-use helper `sky_linux` and `codex` (the deb's Chrome native host, for the ChatGPT extension, is no longer
-installed: #79). Linux sessions now default to cua's own REPL host when Node 24+ resolves (Use); that host still uses
-the pinned `sky_linux` and Codex sandbox. The vendor host has been shown on an Ubuntu 24.04 arm64 VM with Xorg and
-Openbox (`docs/evidence/2026-10-06-linux-acceptance.md`): install, doctor, `verify.mjs`, a native action in gedit, and,
-on the ChatGPT extension route of the time, the Chrome host, profile binding and a browser round trip. The x64 pin and
-the agent as a systemd user unit, driven through the hosted relay, are shown in
-`docs/evidence/2026-10-06-linux-agent-and-x64.md`.
+cua still installs its retained native engine from OpenAI's official Linux package of the same ChatGPT release, the
+`chatgpt` deb for amd64 or arm64 (pins `26.928.40906-linux-x64` and `26.928.40906-linux-arm64`). The `@oai/*`
+JavaScript is the macOS release's byte for byte; the platform binary cua uses is the computer-use helper `sky_linux`
+(the deb's `codex` and its Chrome native host are no longer installed: #115, #79). Every Linux session runs cua's own
+REPL host on Node 24 or later (Use): the vendor host is retired on Linux, `CUA_REPL_HOST=vendor` is refused
+(`repl_host_refused`), and a machine with no Node 24 is refused (`repl_host_node`) until `cua install` places one. The
+own host drives the pinned `sky_linux` and confines its children with cua's sandbox helper (below). The computer
+surface under that sandbox is shown on an Ubuntu 24.04 arm64 GCE box with Xvfb and Openbox
+(`docs/evidence/2026-10-17-own-sandbox/m3/`: gedit through `sky_linux` with the kernel confined, the #116 parity
+suites). The vendor host was shown earlier on an Ubuntu 24.04 arm64 VM with Xorg and Openbox
+(`docs/evidence/2026-10-06-linux-acceptance.md`), and the x64 pin and the agent as a systemd user unit, driven through
+the hosted relay, in `docs/evidence/2026-10-06-linux-agent-and-x64.md`.
 
 **A cloud VM in one step.** `deploy/cloud-vm/` turns a fresh Ubuntu 24.04 cloud VM into such a machine from user data:
 the X11 desktop with autologin, deb Chrome with the extension by policy and AT-SPI on, Node 22, a checkout with the
@@ -1005,9 +1025,9 @@ enrolment and the agent unit; it prints doctor's summary and the steps left to y
 nobody signs in to anything). `deploy/cloud-vm/create-hetzner.sh` does it on Hetzner Cloud in about four minutes;
 `deploy/cloud-vm/render.sh` prints the user data for any other provider. See `deploy/cloud-vm/README.md` and
 `docs/evidence/2026-10-07-cloud-vm-provisioning.md`. Its `cua install` also places the pinned Node 24 the own host
-runs on, so the machine's Node 22 no longer keeps sessions on the vendor host for want of a Node. A Node 22-only
-machine installed with `--no-node` keeps the vendor REPL host with `own_host_node_unavailable` until `cua install`
-runs again, Node 24 or later is installed, or its absolute path is passed as `CUA_NODE` when installing the agent.
+runs on. A Node 22-only machine installed with `--no-node` has its sessions refused (`repl_host_node`) until `cua
+install` runs again, Node 24 or later is installed, or its absolute path is passed as `CUA_NODE` when installing the
+agent.
 
 What it needs:
 
@@ -1023,7 +1043,8 @@ What it needs:
   sudo apt-get install binutils xz-utils x11-utils dbus-x11 at-spi2-core bubblewrap
   ```
 
-  `ar`, `tar` and `xz` unpack the deb, `xdpyinfo` and `dbus-send` are doctor's probes, and `bwrap` is the sandbox.
+  `ar`, `tar` and `xz` unpack the deb, `xdpyinfo` and `dbus-send` are doctor's probes, and `bwrap` is what cua's
+  sandbox helper runs (the system's, from a fixed `PATH`).
   `cua install` refuses with `missing_tool`, naming the package, when one is absent.
 - **Google Chrome as a deb or rpm, never Flatpak or snap.** A Flatpak or snap Chrome cannot start a native host outside
   its own sandbox. Put the cua extension in each profile you want to use: loaded unpacked as on macOS, or by policy
@@ -1044,19 +1065,38 @@ against the pin as it would a download. Trust is the archive's pinned length and
 is code-signed. Doctor's `runtime.signatures` says so. Each deb's own OpenPGP signature (`_gpgorigin`) was checked
 against OpenAI's repository key when the pin was written; the pin's `notes` record the check.
 
-**The sandbox.** Both hosts retain `codex sandbox` until #115. With the computer surface, `CUA_SHIM_SANDBOX` defaults
-to `disabled` on Linux: the confined trusted worker's helper could not reach the X display or the session bus under
-that policy, so every computer-use call would fail. With the computer surface, JavaScript cells can therefore write
-wherever your account can and reach the network. Doctor's `sandbox` row says so. A connection's own `profiles_list`
-check runs under the connection's mode, so with `computer,browser` it is `disabled` too.
+**The sandbox.** cua confines both of the own host's children with its sandbox helper, `codex-linux-sandbox`: OpenAI's
+open-source Linux sandbox (openai/codex `rust-v0.163.0`, Apache-2.0), unmodified, built by this repository's GitHub
+Actions workflow (`.github/workflows/linux-sandbox-helper.yml`) with a build-provenance attestation and published as
+the release `linux-sandbox-rust-v0.163.0`. The pin `runtime/sandbox/linux-sandbox.json` names each architecture's
+asset, length and SHA-256. `cua install` fetches the one for this machine, or takes a local copy with
+`--sandbox-helper <file>`, checks it against the pin and places it at `$CUA_HOME/sandbox/<tag>/codex-linux-sandbox`;
+every child launch hashes it again, and a helper that is missing, not executable or not the pinned bytes is refused
+(`sandbox_unavailable`), never run. A placed helper whose bytes differ is not replaced in place: remove its directory
+and install again. To check the attestation yourself: `gh attestation verify <asset> --repo SSFSKIM/cua`. The helper
+runs the system's `bwrap` with seccomp and fails closed on any setup error.
 
-The browser surface alone (`CUA_SHIM_SURFACES=browser`) keeps `scoped`, which works there, and so do `cua profiles
-list` and `bind` unless `CUA_SHIM_SANDBOX` says otherwise. `scoped` needs bubblewrap to create unprivileged user
-namespaces, and Ubuntu 23.10 and later restrict those through AppArmor. Where they are refused, the vendor's sandbox
-fails open: the runtime would run cells with no sandbox at all. So `cua serve` and the profile listing refuse a scoped
-launch there with `sandbox_unavailable`, before anything starts. Doctor fails `sandbox` for a scoped setup and reads
-`sandbox.userns` `blocked` whenever the browser surface is on and the mode is not explicitly something other than
-`scoped`, since `cua profiles list` and `bind` would be refused. To lift the restriction:
+`CUA_SHIM_SANDBOX` defaults to `scoped` on Linux for every surface, the computer surface included (until 0.15.0 the
+computer surface defaulted to `disabled`). The cells' kernel gets no socket of any kind (seccomp denies `connect` on
+every family), so a cell can no longer reach the X display, the session bus or the network directly, and it is denied
+the secret store, `~/.config/cua` and cua's `state/`, `remote/`, `chrome/` and `run/` but its own run directory (on
+Linux the denial is per directory: `profiles.json`, `current.json`, `staging/` and `bin/` stay readable). With the
+computer surface the trusted worker has the network, so `sky_linux`, its child, reaches X and the session bus; it
+keeps the same filesystem limits. `launch_app` on Linux starts the application outside the sandbox: cua checks the id
+against `sky_linux`'s own `list_apps`, resolves it to a desktop entry outside every sandbox write root, and runs it
+with `gio launch` in the desktop session, so the application is not confined with the worker. A connection's own
+`profiles_list` check runs under the connection's mode. `CUA_SHIM_SANDBOX=disabled`, set in `cua serve`'s environment,
+is the operator's explicit opt-out: nothing is confined and cells reach X and the network again (doctor's `sandbox`
+row says which applies).
+
+Confined cells cannot start a child process with piped stdio (seccomp also refuses the `socketpair` it needs, `EPERM`);
+use files or ignored stdio, or the computer API. Under `default` nothing is writable, so features that stage files
+fail there; the kernel then works in its own directory, `$CUA_HOME/kernel/<session>`, removed with the session.
+
+Every confined launch needs bubblewrap to create unprivileged user namespaces, and Ubuntu 23.10 and later restrict
+those through AppArmor. Where they are refused, `cua serve` and the profile listing refuse a `scoped` or `default`
+launch with `sandbox_unavailable`, before anything starts; doctor fails `sandbox` and `sandbox.userns`. Nothing falls
+back to running unconfined (the vendor host's fail-open path, #135, is gone with it). To lift the restriction:
 
 ```sh
 echo 'kernel.apparmor_restrict_unprivileged_userns = 0' | sudo tee /etc/sysctl.d/60-cua-userns.conf
@@ -1071,8 +1111,7 @@ printf 'abi <abi/4.0>,\ninclude <tunables/global>\nprofile bwrap /usr/bin/bwrap 
   | sudo tee /etc/apparmor.d/bwrap && sudo apparmor_parser -r /etc/apparmor.d/bwrap
 ```
 
-A profile on the release's `codex` instead also sandboxes the runtime, but cua's own check runs bubblewrap outside
-it, so cua still refuses.
+A profile on cua's helper instead does not help: cua's own check runs bubblewrap outside it, so cua still refuses.
 
 **Remote control (the agent as a systemd user unit).** Enrol and pick a relay or an address as in "Remote control"
 above, then, in the user's own login (SSH is fine):
@@ -1100,15 +1139,17 @@ lack of `DISPLAY`.
 **What differs from macOS:**
 
 - **Apps are bound by window.** Use `cua.getApp({windowId})` with an id from `listWindows()`. No app asks for
-  approval, so one connection can drive every window of the session. `DISPLAY` and `XAUTHORITY` reach the runtime, so
-  a model cell can talk to X directly. The trusted wrapper is not a boundary on Linux. The `js` description says so.
+  approval, so one connection can drive every window of the session. `DISPLAY` and `XAUTHORITY` reach the runtime;
+  under `scoped` and `default` a model cell has no socket to use them with, but under `disabled` it can talk to X
+  directly, and the trusted wrapper is then not a boundary. The `js` description keeps that cautious wording.
 - **Typing.** The helper's `typeText` and `paste` insert text through AT-SPI. In GTK3 text views (gedit, mousepad)
   they crashed the app on arm64, and on x64 failed without inserting ("editable Paste did not insert text").
   `pressKey`, one X keysym per character, types there on both. In GTK4 they inserted the text and then threw.
 - **Secrets.** The same file store as on macOS (see Secrets): `secrets_list` lists `~/.config/claude-secrets` and the project's tier, and a
   `{{secret:KEY}}` reference is substituted as the whole text of `typeText` or `paste` (both arrive as `type_text
   {window, text}`). The typing caveat above applies: in a GTK3 text view the substituted `type_text` is what crashes.
-- **Doctor's rows.** `display`, `accessibility.bus` and `sandbox.userns` replace the macOS helper rows.
+- **Doctor's rows.** `display`, `accessibility.bus` and `sandbox.userns` replace the macOS helper rows, and
+  `sandbox.launcher` checks the placed helper against its pin.
 - **Remote control.** `cua remote enroll`, `cua agent run` and the relay work as on macOS, and `cua agent install`
   runs the agent as a systemd user unit (below). The agent reads no console state on Linux: there is no portable
   screen-lock signal, so `console_locked` is never answered, and doctor's `agent.console` checks instead that the
@@ -1153,8 +1194,9 @@ Every surface:
   wall time went.
 - **`timeout_ms` bounds a cell.** Cancelling a call does not stop a running cell, and `js_reset` waits for it.
 - **Cells have no network and write only scratch space.** Under the default sandbox (`scoped`, Configuration) `fetch`,
-  sockets and DNS fail in a cell, and files can be written only under the connection's run directory and `$TMPDIR`.
-  Do the work through the computer or browser API instead; an `EPERM` there is the sandbox, not a transient fault.
+  sockets and DNS fail in a cell, files can be written only under the connection's run directory and `$TMPDIR` (the
+  connection's own, inside it), and the secret store, `~/.config/cua` and cua's own home cannot be read. Do the work
+  through the computer or browser API instead; an `EPERM` or `EACCES` there is the sandbox, not a transient fault.
 
 Chrome (browser surface):
 
@@ -1293,51 +1335,74 @@ The ChatGPT extension route's whole-phase runner (`--all`: C1–C7 with the host
 
 | variable | default | meaning |
 |---|---|---|
-| `CUA_HOME` | `~/Library/Application Support/cua`; on Linux `${XDG_DATA_HOME:-~/.local/share}/cua` | the installed runtime, its config and approvals (`state/codex`), the runtime's recorded handshake answers (`state/handshake`), and per-connection directories (`run/`: each connection's working directory and a record of the process that owns it; a process killed before it could remove them is found dead by the next `cua serve` or `cua doctor`, which removes its entries and says so, `doctor` in its `run.stale` row) |
+| `CUA_HOME` | `~/Library/Application Support/cua`; on Linux `${XDG_DATA_HOME:-~/.local/share}/cua` | the installed runtime (`runtimes/`), the Node `cua install` places for cua's own host (`node/`), on Linux cua's sandbox helper (`sandbox/<tag>/`), on macOS the vendor host's config and approvals (`state/codex`, its `CODEX_HOME`) and its per-session compat settings (`state/compat`), the runtime's recorded handshake answers (`state/handshake`), and per-connection directories (`run/`: each connection's working directory, with its session temp `run/<session>/tmp`, which is the connection's `TMPDIR`, and a record of the process that owns it; on Linux under `default` also `kernel/<session>`; a process killed before it could remove them is found dead by the next `cua serve` or `cua doctor`, which removes its entries and says so, `doctor` in its `run.stale` row). JavaScript cells cannot read it under `scoped` or `default` but the runtime, the Node and their own run directory (see below) |
 | `CUA_SHIM_SURFACES` | `computer` | `computer`, `browser` or `computer,browser`: with `browser` the agent also gets the browser API for your existing Chrome profiles (through cua's own extension and host and cua's own browser service, no login needed), the `profiles_list` tool and `{{secret:…}}` in Chrome fills; registered with `cua profiles add`/`bind` |
 | `CUA_BROWSER_BACKENDS` | unset | with the browser surface: MAWS's in-app browser sockets, absolute paths separated by `:` (MAWS sets it for its sessions' engines; see For MAWS) |
-| `CUA_REPL_HOST` | per session and Node availability (Use) | `cua` or `vendor`: selects the JavaScript host and facade, not the browser service (either host runs cua's). Unset or empty, Linux and browser-only macOS use cua's host when Node 24+ resolves; macOS computer sessions stay on the vendor host. If only Node is missing the reason is `own_host_node_unavailable`. `vendor` forces the vendor host as the rollback; explicit `cua` refuses the computer surface on macOS (`repl_host_refused`) or missing Node 24 (`repl_host_node`), never downgrades. Other nonempty values refuse (`invalid_setting` at start). `cua serve` and the independent profile listing use the same rule; `cua doctor` reports it in `repl.host`. `cua agent install` stores only an explicit nonempty value, never the resolved default |
+| `CUA_REPL_HOST` | per session and Node availability (Use) | `cua` or `vendor`: selects the JavaScript host and facade, not the browser service (either host runs cua's). Unset or empty, Linux and browser-only macOS use cua's host when Node 24+ resolves; macOS computer sessions stay on the vendor host. If only Node is missing, macOS keeps the vendor host (`own_host_node_unavailable`) and Linux refuses (`repl_host_node`). `vendor` forces the vendor host as the rollback on macOS and is refused on Linux, where that host is retired (`repl_host_refused`, #115); explicit `cua` refuses the computer surface on macOS (`repl_host_refused`) or missing Node 24 (`repl_host_node`), never downgrades. Other nonempty values refuse (`invalid_setting` at start). `cua serve` and the independent profile listing use the same rule; `cua doctor` reports it in `repl.host`. `cua agent install` stores only an explicit nonempty value, never the resolved default |
 | `CUA_NODE` | unset | absolute path to a Node executable to try first for cua's own host (24+), before the Node `cua install` placed under `$CUA_HOME/node`, the node running cua and the first `node` on `PATH`. A missing, unreadable or older candidate falls through to the next; a relative path refuses (`invalid_setting` at start). Never selects the vendor's pinned Node. `cua agent install` stores an explicit nonempty path as given, validated as absolute but not resolved or probed; unset or empty is omitted, so each later connection resolves afresh |
 | `CUA_SHIM_PERSIST` | `session` | `session`, `always` or `none`: how an accepted approval is remembered |
 | `CUA_SHIM_HOST_NOTES` | built in | replacement host notes; `none` disables them |
 | `CUA_SHIM_MODEL` | the client's name from `initialize` | model label sent in the runtime's turn metadata |
 | `CUA_SHIM_SECRETS` | `on` | `off` hands the runtime no secret store; `secrets_list` then reports secrets as disabled and a `{{secret:…}}` reference fails with `secrets_disabled` |
 | `CUA_RUNTIME_IDLE_MS` | `900000` (15 minutes) | how long a launched runtime may go without a `js`, `js_reset`, `end_task` or `profiles_list` live check before it is stopped (the next `js` or `js_reset` launches a fresh one, its REPL state gone; see Process footprint); `0` keeps it for the connection's life; maximum `2147483647` (about 24.8 days) |
-| `CUA_SHIM_SANDBOX` | `scoped`; on Linux with the computer surface `disabled` (see Linux) | the sandbox either host applies to its JavaScript children: `scoped` lets them write only the connection's run directory and valid absolute `$TMPDIR`, with no network; `disabled` turns the sandbox off; `default` leaves the host's read-only default, which denies every write. Both hosts retain `codex sandbox` until #115. Also read by `cua profiles list` and `bind` and reported by `cua doctor` |
+| `CUA_SHIM_SANDBOX` | `scoped` | the sandbox either host applies to its JavaScript children (cua's own, below): `scoped` lets them write only the connection's run directory and its session temp (`$TMPDIR`), with no network for cells; `default` denies every write; under both, cells cannot read the secret store, `~/.config/cua` or cua's home. `disabled` turns the sandbox off. Set it in `cua serve`'s environment; no client can change it per call. Also read by `cua profiles list` and `bind` and reported by `cua doctor` |
 
 cua sends the selected host a sandbox state, in the field Codex uses for it (`_meta["codex/sandbox-state-meta"]`), on
 every call it makes, including the bounded launch behind `cua profiles list`/`bind` and `profiles_list`. Any sandbox
-state a client puts in its own `_meta` is replaced by cua's. The own host confines both the kernel and the trusted
-worker through the installed `codex sandbox`, just as the vendor host does: the release's relocated CodexCLI.app on
-macOS, its `codex` on Linux, named to the runtime as `CODEX_CLI_PATH`. This launcher is retained until #115, not
-replaced by #116 or #79.
+state a client puts in its own `_meta` is replaced by cua's.
 
-With the `scoped` default (on Linux the default only for the browser surface alone; see Linux), JavaScript cells and
-trusted services can read everywhere your account can, but write only to the connection's own run directory
-(`$CUA_HOME/run/<session>`, removed when the connection closes) and `$TMPDIR` (only when nonempty and absolute).
-Outside those roots writes are denied, including to the installed vendor modules and cua's trusted code: the enabled
-services and secret wrappers (`src/services`, `src/secrets`, `src/browser-service`) and, on the own host, the host,
-facade and documents (`src/repl-host`, `src/cua-api`, `docs/cua-api`). Model cells cannot plant code in a trusted root.
-Cells also have **no network**: `fetch`, sockets and DNS lookups fail. The native helper and Chrome extension are
-reached through the host's trusted pipes instead. Reading everywhere includes the secret store (see Secrets).
+**cua's sandbox** (#115; `docs/doperpowers/specs/2026-10-17-own-sandbox-design.md`). Both hosts confine both of their
+JavaScript children, the kernel that runs the model's cells and the trusted worker that runs cua's trusted services,
+with cua's own launcher; no Codex CLI is installed or launched. On macOS that is `/usr/bin/sandbox-exec` with a
+seatbelt profile cua renders itself (`src/sandbox/seatbelt.mjs`, a port of OpenAI's open-source Codex profile
+generation at `rust-v0.159.2`, Apache-2.0, byte for byte equal to the original's output but for the deviations its
+header names). The own host runs it directly, so the kernel is a plain `node` process under the supervisor; the
+vendor host reaches it through cua's compat executable, `bin/cua-codex-compat`, named to node_repl as `CODEX_CLI_PATH`.
+On Linux it is the pinned helper (see Linux). `cua doctor`'s `sandbox.launcher` row checks the launcher is in place.
 
-`scoped` places one requirement on where things live: `CUA_HOME` and the cua checkout must not be inside `$TMPDIR`
-(on macOS the per-user `/var/folders/…/T` directory; `mktemp -d` without a template puts things there), and nothing of
-cua's may sit under `$CUA_HOME/run`. A checkout there would make cua's trusted code writable; a `CUA_HOME` there
-would let cells rewrite the runtime's configuration and approvals, the Node `cua install` placed for cua's own host
-under `$CUA_HOME/node`, or what `cua install` verifies in `$CUA_HOME/staging` before placing it. The default `CUA_HOME` and a directory under
-`/tmp` work when `/tmp` is not itself the temp write root. `cua serve` and the profile listing refuse such a layout
-with `sandbox_conflict`, naming each directory involved, and `cua doctor`'s `sandbox` check fails with the same
-explanation. This protects either host's trusted roots, not just the vendor's modules.
+The two children get different profiles. Both read everywhere else and write only where the mode allows. The kernel
+is also denied the secret store and its project tiers (by real path, a symlinked tier's target too), `~/.config/cua`
+and cua's own home, except the runtime, the Node and the connection's own run directory and session temp, so it
+cannot read other sessions, the device enrolment under `remote/`, Chrome's registration or cua's state. On macOS the
+denial covers the whole home and grants only the bare metadata of the home and its `run/` directory, which path
+resolution needs; on Linux it covers `state/`, `remote/`, `chrome/` and `run/`. The worker keeps reading the store,
+so `{{secret:KEY}}` still works. A cell cannot reach a denied file through a hard link or a clone made in its
+writable roots either: neither works under the sandbox. Cells have no network on either platform; on Linux with the
+computer surface the worker has it (see Linux).
+
+With the `scoped` default, JavaScript cells and trusted services can write only to the connection's own run directory
+(`$CUA_HOME/run/<session>`, removed when the connection closes) and its session temp inside it, which is their
+`$TMPDIR`: never the `$TMPDIR` cua was started with, which on macOS every session of the account shares. Outside those
+writes are denied, including to the installed vendor modules and cua's trusted code: the sandbox and its compat
+executable (`src/sandbox`, `bin`), the enabled services and secret wrappers (`src/services`, `src/secrets`,
+`src/browser-service`) and, on the own host, the host, facade and documents (`src/repl-host`, `src/cua-api`,
+`docs/cua-api`). Model cells cannot plant code in a trusted root. The native helper and Chrome extension are reached
+through the host's trusted pipes.
+
+`scoped` places requirements on where things live. Nothing of cua's may sit under `$CUA_HOME/run`: a checkout there
+would make cua's trusted code writable, and a write root over the runtime's configuration and approvals, the Node
+`cua install` placed under `$CUA_HOME/node`, its sandbox helper or what it verifies in `$CUA_HOME/staging` would let
+cells choose what later runs outside the sandbox. On macOS, under `scoped` and `default` alike, `CUA_HOME`, the secret
+store and `~/.config/cua` must not lie inside one another (a custom `CUA_HOME` under `~/.config`, say): the kernel's
+denial of one would cut through the other. `cua serve` and the profile listing refuse such a layout with
+`sandbox_conflict`, naming each directory involved, and `cua doctor`'s `sandbox` check fails with the same explanation;
+move them apart, or run the connection `disabled`. A layout like that worked before 0.15.0. A secret store whose
+tiers cannot be listed (a directory with broken permissions) refuses confined launches too (`sandbox_state_invalid`),
+since its tiers could not be denied.
 
 `CUA_SHIM_SANDBOX=disabled` is the way to give cells the network and writes everywhere else: cua sends the
-`disabled` permission profile, so cells and trusted services can write wherever your account can and the sandbox no
-longer refuses their network connections. This fits the trust model (the agent is trusted, and cua adds no policy
-against exfiltration), but it also lets a cell write cua's trusted code roots, the runtime's configuration and
-approvals in `state/codex` and the vendor's modules in the installed release; you accept that cua no longer protects
-the integrity of that code from the agent. With `default`, cua sends no sandbox state; either host then allows reads
-and denies all writes, including to `$TMPDIR` and `/tmp`, as well as network connections, and the features that need
-scratch space fail.
+`disabled` permission profile, so cells and trusted services can read and write wherever your account can, the secret
+store included, and the sandbox no longer refuses their network connections. This fits the trust model (the agent is
+trusted, and cua adds no policy against exfiltration), but it also lets a cell write cua's trusted code roots, the
+runtime's configuration and approvals in `state/codex` and the vendor's modules in the installed release; you accept
+that cua no longer protects the integrity of that code from the agent. With `default`, cua sends no sandbox state;
+either host then allows reads but the denied ones and denies all writes, including to `$TMPDIR` and `/tmp`, as well as
+network connections, and the features that need scratch space fail.
+
+On macOS the kernel's profile also denies the unified log (`logd` and `diagnosticd`), as the original's does for such a
+profile, so `os_log` output from a kernel cell goes nowhere. #138's time-zone hang is not reproduced and stays open:
+the one grant that would address it (`com.apple.system.notification_center`) is ready behind a switch in
+`src/sandbox/seatbelt.mjs` and ships off.
 
 The remote agent's own variables (`CUA_AGENT_MAX_SESSIONS`, `CUA_AGENT_IDLE_MINUTES`, `CUA_AGENT_ALLOWED_ORIGINS`,
 `CUA_AGENT_CONSOLE_CHECK`) are described under Remote control.
@@ -1352,7 +1417,13 @@ variables (`HOME`, `USER`, `TMPDIR`, locale), nothing else in the server's envir
 
 - **The installed runtime** is OpenAI's: `cua install` downloads the pinned ChatGPT archive from its official URL (or
   takes your copy) and places it under `CUA_HOME` unmodified; this repository does not contain or redistribute it.
-  The own REPL host does not delete that tree: the sandbox, the native engine and the vendor host still use it.
+  The native engine and the vendor host still use that tree; `cua install` removes only the unused Codex CLI from it
+  (see Install).
+- **cua's sandbox** is ported from, or built unmodified from, OpenAI's open-source Codex (`openai/codex`,
+  **Apache-2.0**, with its NOTICE): `src/sandbox/seatbelt.mjs` and its `.sbpl` files (byte copies) from `rust-v0.159.2`,
+  with `src/sandbox/LICENSE` and `NOTICE` beside them and a provenance header naming every source range; the Linux
+  helper `codex-linux-sandbox`, built from `rust-v0.163.0` by `.github/workflows/linux-sandbox-helper.yml` and released
+  with upstream's LICENSE and NOTICE and a statement of the build's changes (path remapping and stripping only).
 - **Vendored open-source code**, each with its version in a `VERSION` file, its licence text and an exact-pin
   extractor that refuses a mismatch:
   - Under `src/browser-service/vendor/`: Playwright's injected script from `playwright-core` 1.59.1

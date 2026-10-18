@@ -45,15 +45,19 @@ longer start a child process with piped stdio there (the helper's seccomp refuse
 Linux machine with no Node 24 is refused (`repl_host_node`) rather than falling back; `cua install` places the pinned
 Node 24. This closes #135, the vendor host's fail-open path.
 
-**`cua install` cleans up after the Codex CLI.** It removes, by name, what the CLI left in `$CUA_HOME/state/codex`
-(`auth.json`, `installation_id`, the `*.sqlite` files with their `-wal` and `-shm`, `models_cache.json`, `cache/`,
-`plugins/`, `skills/`, `log/`, `tmp/arg0`, `browser/sessions`), and the unused `CodexCLI.app` (about 229 MB; on Linux
-the `codex` file) from each installed release whose pin no longer lists it. It prints each name, never a file's
-content, never follows a symbolic link, and leaves node_repl's own state there (`config.toml`,
-`computer-use/sessions`, `node_repl/active_execs`). A release's Codex CLI is removed only while no `cua serve` or
-profile listing of that home runs; otherwise install says so and a later install finishes the job. Until then `cua
-doctor`'s new `runtime.leftovers` row names what is left (`warn`, never a failure). `CODEX_HOME` itself stays only for
-the macOS vendor host.
+**Cleaning up after the Codex CLI: update first, then `cua install --prune-leftovers`.** A plain `cua install` removes
+nothing, because an older cua sharing the same `CUA_HOME` (an earlier plugin version, a long-running `cua serve`,
+shim or agent from an older checkout) may still launch the release's `CodexCLI.app`. Once the plugin, and every other
+cua using that home, is updated, `cua install --prune-leftovers` removes, by name, what the CLI left in cua's own
+`$CUA_HOME/state/codex` (`auth.json`, `installation_id`, the `*.sqlite` files with their `-wal` and `-shm`,
+`models_cache.json`, `cache/`, `plugins/`, `skills/`, `log/`, `tmp/arg0`, `browser/sessions`), and the unused
+`CodexCLI.app` (about 229 MB; on Linux the `codex` file) from each installed release whose pin no longer lists it. It
+prints each name, never a file's content; it never reads the environment's `CODEX_HOME` or `~/.codex`, never follows a
+symbolic link, and leaves node_repl's own state (`config.toml`, `computer-use/sessions`, `node_repl/active_execs`). A
+release's Codex CLI is removed only while no `cua serve` or profile listing of that home runs; otherwise the prune says
+so and a later one finishes the job. Until then `cua doctor`'s new `runtime.leftovers` row names what is left and the
+command (`warn`, never a failure), and a plain install says the same. `CODEX_HOME` itself stays only for the macOS
+vendor host.
 
 **`cua doctor`** has a `sandbox.launcher` row (macOS: `sandbox-exec`, the compat executable and its Node; Linux: the
 placed helper against its pin) and no Codex CLI rows.
@@ -70,7 +74,7 @@ placed helper against its pin) and no Codex CLI rows.
   original's profile does for a profile with denied paths; nothing fails without them.
 - **One screen-capture confirmation per new helper copy.** macOS asks once per machine to confirm screen capture the
   first time a new on-disk copy of the native helper captures the screen. The darwin release keeps its id, so an
-  existing install keeps its helper where it is and sees no new prompt, and the cleanup never touches the helper. A
+  existing install keeps its helper where it is and sees no new prompt, and the prune never touches the helper. A
   new `CUA_HOME`, or a machine installing for the first time, places a new copy and sees the confirmation once.
 - **Kernel exit status.** On cua's own host the kernel is Node itself, so a killed kernel reports Node's own exit
   (`signal=9`), not a launcher's.
@@ -89,27 +93,28 @@ Nothing here was run on the mini, GCE or any remote machine. Every live item bel
 after #160 has merged and main has been merged in, under the mini's rules (Decision Log, "native runs on the mini",
 "one load threshold") and on the GCE box as M3 ran it.
 
-**Hazard first: install's cleanup removes oracles.** M4's `cua install` removes `CodexCLI.app` and `codex` from any
-installed tree whose pin no longer lists them, which is every tree of this release. Several harnesses take the signed
+**Hazard first: the prune removes oracles.** `cua install --prune-leftovers` removes `CodexCLI.app` and `codex` from
+any installed tree of this release (a plain `cua install` no longer touches them). Several harnesses take the signed
 Codex CLI from such a tree: the mini's approved scratch runtime `~/cua-115/home` (the M0 oracles: argv capture,
 fingerprint, `tz-probe --launcher codex`, `scripts/sandbox-probe/m2-mini.sh`'s `SIGNED_CLI`, `scripts/mini-rules.mjs`'s
-`tz` items) and, on Linux, the vendor `codex` that `linux-helper-compare.mjs --vendor` ran in M3. Before running M4's
-`cua install` on a home whose CLI is still an oracle, copy the CLI out of the tree (or install into a fresh scratch
-home instead). The same holds for the mini's resident cua: the dispatching session's update installs from the new
-plugin, and its first `cua install` with no session of that home running removes the resident `CodexCLI.app`; with a
-session running it defers and says so.
+`tz` items) and, on Linux, the vendor `codex` that `linux-helper-compare.mjs --vendor` ran in M3. Never prune a home
+whose CLI is still an oracle (or copy the CLI out first); prune only fresh scratch homes. The mini's resident home is
+shared by the long-lived 0.5.0, 0.9.0 and 0.11.0 shims and a checkout's serve and agent, so it is pruned only after
+all of them run this release, by the dispatching session.
 
 - **Acceptance 1, 10 (macOS, mini).** A fresh scratch `CUA_HOME`, `node bin/cua.mjs install --archive <pinned zip>`:
   the tree holds `cua_node` and `install.json` only. `cua doctor`: `sandbox.launcher` pass, `runtime.leftovers` pass,
   no row naming the Codex CLI.
-- **Acceptance 10, the cleanup live (mini; launches nothing, so no prompt).** In a second fresh scratch home, install
+- **Acceptance 10, the prune live (mini; launches nothing, so no prompt).** In a second fresh scratch home, install
   from a pre-M2 checkout (90cbfe0) with the pinned zip and `--no-node`: that places `CodexCLI.app`. Plant synthetic
-  files by the cleanup's names in `state/codex` (never a real `auth.json`) and node_repl's three keepers. At the final
-  SHA: `cua doctor` shows `runtime.leftovers` warn naming them; `cua install --archive <pinned zip> --no-node` prints
-  each removal; doctor then passes the row; the keepers remain; `du -sh` of the tree drops by about 229 MB; the native
+  files by the prune's names in `state/codex` (never a real `auth.json`) and node_repl's three keepers, and point the
+  shell's `CODEX_HOME` at a second planted directory with the same names. At the final SHA: `cua doctor` shows
+  `runtime.leftovers` warn naming them and the command; a plain `cua install --archive <pinned zip> --no-node` removes
+  nothing and says so; `cua install --archive <pinned zip> --no-node --prune-leftovers` prints each removal; doctor
+  then passes the row; the environment's planted directory is intact; the keepers remain; `du -sh` of the tree drops by about 229 MB; the native
   helper's `SkyComputerUseService` keeps its inode (`stat -f %i` before and after). Repeat with a session record of a
-  live pid in `run/` first: install defers the `CodexCLI.app` with the sentence, removes the `state/codex` names.
-- **Acceptance 10 (Linux, GCE).** The same with a pre-M3 install (the tree's `codex` file) and the Linux cleanup; and
+  live pid in `run/` first: the prune defers the `CodexCLI.app` with the sentence, removes the `state/codex` names.
+- **Acceptance 10 (Linux, GCE).** The same with a pre-M3 install (the tree's `codex` file) and the Linux prune; and
   M3's helper rows as before.
 - **Acceptance 2 to 9, 12 (both platforms).** As M1 to M3 ran them, at the final SHA: `scripts/accept-native.mjs
   --live-secrets --live-textedit` on the mini (items 11 to 13 PASS, the rest as on main 94366c1 and M2), own-sandbox

@@ -60,15 +60,24 @@ switches between verified installed releases. A release that no longer verifies 
 stop the servers using it, remove its directory, install again. On Linux it also fetches cua's sandbox helper (see
 Linux).
 
-`cua install` also removes what the Codex CLI left in this home, which nothing has used since cua runs its own sandbox
-(#115), and prints each name it removes, never its content: in `CUA_HOME/state/codex`, `auth.json`,
-`installation_id`, the `*.sqlite` files with their `-wal` and `-shm`, `models_cache.json`, `cache/`, `plugins/`,
-`skills/`, `log/`, `tmp/arg0` and `browser/sessions` (what `node_repl` keeps there, `config.toml`,
-`computer-use/sessions` and `node_repl/active_execs`, stays); and in each installed release whose pin no longer lists
-it, the unused `CodexCLI.app` (about 229 MB; on Linux the `codex` file). A release's Codex CLI is removed only while no
-`cua serve` or profile listing of this home runs, since one started by an older cua may still launch it; otherwise
-install says so and leaves it for a later install. Nothing is followed through a symbolic link. Until install has run,
-`cua doctor`'s `runtime.leftovers` row names what is left (`warn`, never a failure).
+**Removing the Codex CLI's leftovers.** This cua no longer uses what the Codex CLI left in its home (#115), but an
+older cua sharing the same `CUA_HOME` may: an earlier plugin version, a long-running `cua serve` or agent from an
+older checkout, whose vendor host still launches the release's `CodexCLI.app`. So a plain `cua install` removes
+nothing and only says what is there. Update the plugin, and every other cua that uses this home, first; then run:
+
+```sh
+node bin/cua.mjs install --prune-leftovers
+```
+
+It removes, by name, and prints each name, never its content: in `CUA_HOME/state/codex` (cua's own `CODEX_HOME`; the
+environment's `CODEX_HOME` and `~/.codex` are never looked at), `auth.json`, `installation_id`, the `*.sqlite` files
+with their `-wal` and `-shm`, `models_cache.json`, `cache/`, `plugins/`, `skills/`, `log/`, `tmp/arg0` and
+`browser/sessions` (what `node_repl` keeps there, `config.toml`, `computer-use/sessions` and `node_repl/active_execs`,
+stays); and in each installed release whose pin no longer lists it, the unused `CodexCLI.app` (about 229 MB; on Linux
+the `codex` file). A release's Codex CLI is removed only while no `cua serve` or profile listing of this home runs;
+otherwise the prune says so and leaves it for a later one. Nothing is followed through a symbolic link: a leftover
+that is itself a link is unlinked and its target left, and a linked directory on the way is skipped. Until then
+`cua doctor`'s `runtime.leftovers` row names what is left and the command (`warn`, never a failure).
 
 `cua install` does not take the pinned archive's Chrome plugin (OpenAI's native host for the ChatGPT extension): the
 route that used it was removed (#79), and cua's own host comes from the checkout (`cua chrome register`; see Chrome). A

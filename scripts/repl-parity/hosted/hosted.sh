@@ -44,15 +44,17 @@ fi
 R=$(cd "$(dirname "$0")/../../.." && pwd -P)
 cd "$R" || exit 2
 H=scripts/repl-parity/hosted
-S=$(mktemp -d "${RUNNER_TEMP:-$HOME}/cua159p.XXXXXX")
-S=$(cd "$S" && pwd -P)
+S=$(mktemp -d "${RUNNER_TEMP:-$HOME}/cua159p.XXXXXX") && S=$(cd "$S" && pwd -P) || exit 2
+case "$S" in */cua159p.*) ;; *) echo "hosted-parity: no scratch root" >&2; exit 2 ;; esac
 ERR=$S/stderr RUNS=$S/runs SSHD=$S/sshd
 mkdir -p "$ERR" "$RUNS" "$SSHD"
 CFT="/Applications/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
 UDD="$HOME/Library/Application Support/Google/Chrome"
 EXTENSION_ID=jkejaaijdfpohkdhankllbekkhmnippb
 DEVICE=hosted-macos
-say() { echo "hosted-parity: $*" >&2; }
+# The log is fd 3; inside a step, stderr is the step's scratch file (step).
+exec 3>&2
+say() { echo "hosted-parity: $*" >&3; }
 
 prepared=no
 cleanup() {
@@ -60,7 +62,7 @@ cleanup() {
   sudo -n pkill -f "log stream --style ndjson" 2> /dev/null
   [ -f "$S/chrome.pid" ] && kill "$(cat "$S/chrome.pid")" 2> /dev/null
   [ -f "$SSHD/sshd.pid" ] && kill "$(cat "$SSHD/sshd.pid")" 2> /dev/null
-  rm -rf "$S"
+  case "$S" in */cua159p.*) rm -rf "$S" ;; esac
 }
 trap cleanup EXIT
 
@@ -79,12 +81,17 @@ public() { node "$H/public.mjs" "$@" 2>> "$ERR/public"; }
 
 failed=0 results=''
 record() { results="$results$1
-"; echo "hosted-parity: $1" >&2; }
-# step <label> <command...>: PASS or FAIL with its duration; a failure counts against the gate. -> the command's status.
+"; echo "hosted-parity: $1" >&3; }
+# step <label> <command...>: PASS or FAIL with its duration; a failure counts against the gate. Whatever the step writes
+# to stderr outside `quiet` (a shell diagnostic, a failed redirection) is kept in the scratch root and only counted.
+# -> the command's status.
+steps=0
 step() {
   s_label=$1; shift
-  s_start=$(date +%s) s_code=0
-  "$@" || s_code=$?
+  s_start=$(date +%s) s_code=0 steps=$((steps + 1))
+  "$@" 2> "$ERR/step-$steps" || s_code=$?
+  s_lines=$(wc -l < "$ERR/step-$steps" | tr -d ' ')
+  [ "$s_lines" = 0 ] || say "stderr withheld ($s_lines lines)"
   if [ "$s_code" = 0 ]; then s_status=PASS; else s_status=FAIL; failed=$((failed + 1)); fi
   record "$s_status $s_label ($(( $(date +%s) - s_start ))s)"
   return "$s_code"
@@ -110,14 +117,16 @@ register() {
 }
 launch_chrome() {
   "$CFT" --user-data-dir="$UDD" --profile-directory=Default --no-first-run --no-default-browser-check \
-    --disable-search-engine-choice-screen --load-extension="$R/extension" about:blank > /dev/null 2> "$ERR/chrome" &
+    --disable-search-engine-choice-screen --load-extension="$R/extension" about:blank > /dev/null 2> "$ERR/chrome" 3>&- &
   echo $! > "$S/chrome.pid"
   n=0; while [ ! -d "$UDD/Default" ] && [ $n -lt 60 ]; do sleep 1; n=$((n + 1)); done
   [ -d "$UDD/Default" ] || { say "Chrome made no Default profile in 60 s"; return 1; }
 }
 profile_add() { quiet profiles-add node bin/cua.mjs profiles add harness --chrome-profile Default --json > "$S/add.json"; }
+# A live backend that cua would not bind on its own (pick_required) exits 1 here and is still live: the report decides.
 backend_live() {
-  node bin/cua.mjs profiles bind harness --dry-run --json > "$S/bind-dry.json" 2> "$ERR/bind-dry" && public live "$S/bind-dry.json"
+  node bin/cua.mjs profiles bind harness --dry-run --json > "$S/bind-dry.json" 2> "$ERR/bind-dry"
+  public live "$S/bind-dry.json"
 }
 wait_backend() {
   n=0; while [ $n -lt 45 ]; do backend_live && break; sleep 2; n=$((n + 1)); done
@@ -162,7 +171,7 @@ Host $DEVICE
   UserKnownHostsFile /dev/null
   LogLevel ERROR
 EOF
-  quiet sshd /usr/sbin/sshd -f "$SSHD/sshd_config" -E "$SSHD/sshd.log" || return
+  quiet sshd /usr/sbin/sshd -f "$SSHD/sshd_config" -E "$SSHD/sshd.log" 3>&- || return
   sleep 1
 }
 ssh_node() {
@@ -190,18 +199,19 @@ gated $device "ssh $DEVICE reaches this runner with the job's node" ssh_node || 
 [ $device = yes ] || ok=no
 gated $ok "repl-parity prepare on $DEVICE, profile harness" prepare || ok=no
 
-# run <host> <suite>: repl-parity's run; its assertions must pass. -> its status.
+# run <host> <suite>: repl-parity's run; it must exit 0 and its summary show a complete run whose assertions passed.
+# -> nonzero when either does not hold.
 run() {
   r_dir=$RUNS/$1-$2 r_code=0
   quiet "run-$1-$2" node scripts/repl-parity.mjs run --device "$DEVICE" --host "$1" --suite "$2" --out "$r_dir" > "$r_dir.out" || r_code=$?
-  public run "$r_dir.out" "$r_dir" "$1/$2"
+  public run "$r_dir.out" "$r_dir" "$1/$2" || [ "$r_code" != 0 ] || r_code=1
   return "$r_code"
 }
 
 # --- denials -------------------------------------------------------------------------------------------------------
 LOGPID=''
 stream_start() {
-  sudo -n log stream --style ndjson --predicate 'sender == "Sandbox"' > "$S/denials.ndjson" 2> "$ERR/log-stream" &
+  sudo -n log stream --style ndjson --predicate 'sender == "Sandbox"' > "$S/denials.ndjson" 2> "$ERR/log-stream" 3>&- &
   LOGPID=$!
   sleep 2
   kill -0 "$LOGPID" 2> /dev/null || { say "log stream is not running"; return 1; }
@@ -217,7 +227,7 @@ stream_stop() {
 }
 judge() {
   j_code=0
-  quiet judge node "$H/denials-within.mjs" "$S/denials.ndjson" "$H/denials-declared.json" >&2 || j_code=$?
+  quiet judge node "$H/denials-within.mjs" "$S/denials.ndjson" "$H/denials-declared.json" || j_code=$?
   rm -f "$S/denials.ndjson"
   return "$j_code"
 }
@@ -235,9 +245,12 @@ if [ "$ITEM" = denials ]; then
 fi
 
 # --- browser -------------------------------------------------------------------------------------------------------
+# The comparator must exit 0 and its report show no undeclared difference.
 diff_suite() {
-  quiet "diff-$1" node scripts/repl-parity.mjs diff "$RUNS/vendor-$1" "$RUNS/cua-$1" --expected test/repl-parity/expected-differences.json > "$S/diff-$1.json"
-  public diff "$S/diff-$1.json" "$1"
+  d_code=0
+  quiet "diff-$1" node scripts/repl-parity.mjs diff "$RUNS/vendor-$1" "$RUNS/cua-$1" --expected test/repl-parity/expected-differences.json > "$S/diff-$1.json" || d_code=$?
+  public diff "$S/diff-$1.json" "$1" || [ "$d_code" != 0 ] || d_code=1
+  return "$d_code"
 }
 if [ "$ITEM" = browser ]; then
   for suite in api docs-profiles; do
@@ -252,8 +265,8 @@ fi
 cleanup_prepared() { quiet cleanup-prepared node scripts/repl-parity.mjs cleanup-prepared --device "$DEVICE" > /dev/null && prepared=no; }
 [ $prepared = no ] || step "repl-parity cleanup-prepared" cleanup_prepared
 
-printf '\nhosted-parity summary (%s)\n%s' "$ITEM" "$results" >&2
+printf '\nhosted-parity summary (%s)\n%s' "$ITEM" "$results" >&3
 if [ "$failed" -gt 0 ]; then
-  echo "hosted-parity: $failed step(s) failed" >&2; exit 1
+  say "$failed step(s) failed"; exit 1
 fi
-echo "hosted-parity: every step passed" >&2
+say "every step passed"

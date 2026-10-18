@@ -42,9 +42,11 @@ test('an undeclared kind fails the judgement', () => {
   assert.equal(verdict.kinds.find(k => !k.declared).line, 'mach-lookup com.apple.windowserver.active');
 });
 
-test('any preferences denial fails, whether a cfprefsd lookup, a preference operation or a preferences file', () => {
+test('any preferences denial fails, whether a cfprefsd lookup, a preference operation or a preferences file, even one the reduction classes as a declared kind', () => {
   for (const denial of [node('mach-lookup', 'com.apple.cfprefsd.daemon'), node('user-preference-read', 'kCFPreferencesAnyApplication'),
-    node('file-read-data', '/Users/runner/Library/Preferences/com.apple.x.plist'), node('file-read-data', '/Library/Preferences/com.apple.y.plist')]) {
+    node('file-read-data', '/Users/runner/Library/Preferences/com.apple.x.plist'), node('file-read-data', '/Library/Preferences/com.apple.y.plist'),
+    node('file-write-create', '/private/tmp/fixture/Library/Preferences/com.apple.x.plist'),
+    node('file-write-create', '/Users/runner/Library/Application Support/cua/run/0526d32c/Library/Preferences/x.plist')]) {
     const verdict = judgeDenials([...declaredStream, denial].join('\n'), DECLARED);
     assert.equal(verdict.ok, false, denial);
     assert.equal(verdict.preferences, 1, denial);
@@ -105,11 +107,18 @@ test('the public readers print labels, booleans and counts; free text is withhel
   try {
     writeFileSync(join(dir, 'meta.json'), JSON.stringify({complete: false, error: `boom at /Users/runner/${PLANTED}`}));
     writeFileSync(join(dir, 'results.jsonl'), [{case: 'cells/a', cell: 1, assertion: {ok: true}}, {case: 'cells/b', cell: 3, assertion: {ok: false, message: PLANTED}}].map(r => JSON.stringify(r)).join('\n'));
-    const lines = runLines(`progress ${PLANTED}\n${JSON.stringify({cases: 2, complete: false, assertions: 'FAIL', coveredCases: ['cells/a'], recordedVendorDefects: 0, out: `/x/${PLANTED}`})}\n`, dir, 'cua/cells');
+    const {lines, ok} = runLines(`progress ${PLANTED}\n${JSON.stringify({cases: 2, complete: false, assertions: 'FAIL', coveredCases: ['cells/a'], recordedVendorDefects: 0, out: `/x/${PLANTED}`})}\n`, dir, 'cua/cells');
     assert.equal(lines.join('\n').includes(PLANTED), false);
     assert.deepEqual(lines, ['hosted-parity: run cua/cells: cases 2 complete false assertions FAIL covered 1 pending 0 vendorDefects 0',
       '  meta: complete false error present (withheld)', '  failed assertion: cells/b 3', '  rows 2, failed assertions 1']);
-    assert.deepEqual(runLines(JSON.stringify({cases: 2, complete: true, assertions: 'PASS', coveredCases: ['a', 'b']}), dir, 'cua/cells').length, 1);
+    assert.equal(ok, false);
+    const passed = runLines(JSON.stringify({cases: 2, complete: true, assertions: 'PASS', coveredCases: ['a', 'b']}), dir, 'cua/cells');
+    assert.deepEqual([passed.ok, passed.lines.length], [true, 1]);
+    // No usable report fails closed: no summary, an empty run, an incomplete one.
+    for (const stdout of ['', JSON.stringify({cases: 0, complete: true, assertions: 'PASS'}), JSON.stringify({cases: 2, complete: false, assertions: 'PASS'})])
+      assert.equal(runLines(stdout, join(dir, 'absent'), 'cua/cells').ok, false, stdout);
+    const reader = spawnSync(process.execPath, [join(HOSTED, 'public.mjs'), 'run', join(dir, 'absent.out'), join(dir, 'absent'), 'cua/cells'], {encoding: 'utf8'});
+    assert.equal(reader.status, 1);
   } finally { rmSync(dir, {recursive: true, force: true}); }
 });
 

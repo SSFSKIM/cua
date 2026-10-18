@@ -4,8 +4,9 @@
 // hosted check is one-sided. The denials cua's own host raises over repl-parity's `cells` and `services` suites
 // (`log stream --style ndjson --predicate 'sender == "Sandbox"'`), reduced by scripts/sandbox-probe/denials.mjs (node
 // processes only, filesystem targets as classes), must hold no preferences (cfprefs) denial and stay within the
-// declared set, M1's accepted after side (denials-declared.json). A stream that recorded no Sandbox event at all fails:
-// the check would be vacuous.
+// declared set, M1's accepted after side (denials-declared.json). Preferences denials are counted on node's raw events,
+// before the reduction, which would class a Preferences directory elsewhere under another class (`<other>`).
+// A stream that recorded no Sandbox event at all fails: the check would be vacuous.
 //
 //   node scripts/repl-parity/hosted/denials-within.mjs <denials.ndjson> <denials-declared.json>
 //
@@ -15,11 +16,14 @@
 import {readFileSync} from 'node:fs';
 import {resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {compareDenials, summarize} from '../../sandbox-probe/denials.mjs';
+import {summarize} from '../../sandbox-probe/denials.mjs';
 
 // Two loopback connections differ only in their ephemeral port.
 export const kindOf = ({operation, target}) => `${operation} ${target.replace(/:\d+$/, ':<port>')}`;
-const PREFERENCES = /cfprefs|user-preference|preferences/;
+// A node denial of the preferences system: a cfprefsd lookup, a preference operation, or a file in any Preferences
+// directory.
+const NODE_DENIAL = /Sandbox: node\(\d+\) deny\(\d+\) (\S+)(?: (.*))?$/;
+const PREFERENCES = /cfprefs|user-preference|\/Preferences(\/|$)/i;
 const PUBLIC_OPERATION = /^[a-z][a-z0-9*-]{0,63}$/;
 const PUBLIC_TARGET = /^(<[a-z ]{1,40}>|[A-Za-z0-9][A-Za-z0-9._-]{0,127}|remote:\*:<port>)$/;
 
@@ -32,12 +36,17 @@ export function publicKind({operation, target}, declared) {
 }
 
 // ndjson text, the declared list ({operation, target}) -> {events, kinds: [{kind, line, count, declared}], preferences,
-// undeclared, ok}. `events` counts the stream's Sandbox denials of every process, before the reduction keeps node's.
+// undeclared, ok}. `events` counts the stream's Sandbox denials of every process, before the reduction keeps node's;
+// `preferences` node's denials of the preferences system.
 export function judgeDenials(text, declaredList) {
   const declared = new Set(declaredList.map(kindOf));
-  let events = 0;
+  let events = 0, preferences = 0;
   for (const line of text.split('\n')) {
-    try { if (/\bdeny\(\d+\)/.test(String(JSON.parse(line).eventMessage ?? ''))) events++; } catch {}
+    let message;
+    try { message = String(JSON.parse(line).eventMessage ?? ''); } catch { continue; }
+    if (/\bdeny\(\d+\)/.test(message)) events++;
+    const node = NODE_DENIAL.exec(message);
+    if (node && PREFERENCES.test(`${node[1]} ${node[2] ?? ''}`)) preferences++;
   }
   const after = summarize(text);
   const kinds = new Map();
@@ -48,7 +57,6 @@ export function judgeDenials(text, declaredList) {
     kinds.set(kind, entry);
   }
   const list = [...kinds.values()];
-  const preferences = new Set([...compareDenials([], after).preferences.map(kindOf), ...list.filter(k => PREFERENCES.test(k.kind)).map(k => k.kind)]).size;
   const undeclared = list.filter(k => !k.declared).length;
   return {events, kinds: list, preferences, undeclared, ok: events > 0 && preferences === 0 && undeclared === 0};
 }

@@ -8,7 +8,8 @@
 //   node scripts/repl-parity/hosted/public.mjs bind <bind.json>             the outcome; exit 0 when bound
 //   node scripts/repl-parity/hosted/public.mjs only-backend <bind.json>     the one live backend's id on stdout (never logged)
 //   node scripts/repl-parity/hosted/public.mjs ready <list.json> <key>      the profile's readiness; exit 0 when ready and bound
-//   node scripts/repl-parity/hosted/public.mjs run <run.out> <run-dir> <title>   the run's counts and, of a failed run, its failed cases
+//   node scripts/repl-parity/hosted/public.mjs run <run.out> <run-dir> <title>   the run's counts and, of a failed run, its
+//                                                       failed cases; exit 0 only for a complete run whose assertions passed
 //   node scripts/repl-parity/hosted/public.mjs diff <diff.json>             the diff's counts and undeclared differences; exit 0 when ok
 import {readFileSync} from 'node:fs';
 import {join, resolve} from 'node:path';
@@ -35,14 +36,17 @@ export function readyLines(r, key) {
   const profile = (r.profiles ?? []).find(p => p.key === key);
   return {lines, ok: profile?.ready === true && Boolean(profile.extensionInstanceId)};
 }
-// The run's last stdout line (repl-parity.mjs run's summary) and, when the run did not pass, its run directory.
+// A run passes when its summary (repl-parity.mjs run's last stdout line) shows a complete run of at least one case whose
+// assertions passed (a declared vendor defect recorded counts as passed; the diff judges it).
+export const runPassed = summary => summary?.complete === true && count(summary.cases) > 0 && ['PASS', 'RECORDED_VENDOR_DEFECT'].includes(summary.assertions);
+// The run's summary line and, when the run did not pass, what its run directory says.
 export function runLines(stdout, dir, title) {
   let summary = null;
   try { summary = JSON.parse(stdout.trim().split('\n').at(-1)); } catch {}
   const lines = [`${PREFIX} run ${label(title)}: ` + (summary
     ? `cases ${count(summary.cases)} complete ${summary.complete === true} assertions ${label(summary.assertions)} covered ${count(summary.coveredCases)} pending ${count(summary.pending)} vendorDefects ${count(summary.recordedVendorDefects)}`
     : 'no summary')];
-  if (summary?.complete === true && summary.assertions === 'PASS') return lines;
+  if (runPassed(summary)) return {lines, ok: true};
   try {
     const meta = json(join(dir, 'meta.json'));
     lines.push(`  meta: complete ${meta.complete === true} error ${meta.error ? 'present (withheld)' : 'none'}`);
@@ -53,7 +57,7 @@ export function runLines(stdout, dir, title) {
     for (const row of failed.slice(0, 30)) lines.push(`  failed assertion: ${label(row.case)} ${label(row.cell)}`);
     lines.push(`  rows ${rows.length}, failed assertions ${failed.length}`);
   } catch { lines.push('  results: unreadable'); }
-  return lines;
+  return {lines, ok: false};
 }
 export function diffLines(r, suite) {
   const undeclared = r.differences ?? [];
@@ -70,7 +74,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     else if (command === 'bind') { const r = json(file); console.log(bindLine(r)); process.exitCode = r.ok === true ? 0 : 1; }
     else if (command === 'only-backend') { const id = onlyBackend(json(file)); if (id) console.log(id); else process.exitCode = 1; }
     else if (command === 'ready') { const {lines, ok} = readyLines(json(file), extra); for (const line of lines) console.log(line); process.exitCode = ok ? 0 : 1; }
-    else if (command === 'run') { let stdout = ''; try { stdout = readFileSync(file, 'utf8'); } catch {} for (const line of runLines(stdout, extra, title)) console.log(line); }
+    else if (command === 'run') { let stdout = ''; try { stdout = readFileSync(file, 'utf8'); } catch {} const {lines, ok} = runLines(stdout, extra, title); for (const line of lines) console.log(line); process.exitCode = ok ? 0 : 1; }
     else if (command === 'diff') { const {lines, ok} = diffLines(json(file), extra); for (const line of lines) console.log(line); process.exitCode = ok ? 0 : 1; }
     else { console.error('usage: public.mjs live|bind|only-backend|ready|run|diff <file> [arg]'); process.exitCode = 2; }
   } catch {

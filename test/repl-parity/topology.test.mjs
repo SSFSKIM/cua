@@ -29,7 +29,7 @@ function deviceShell(run) {
  writeFileSync(join(bin,'git'),'#!/bin/sh\nprintf "git %s\\n" "$*" >> "$COMMAND_LOG"\nif [ "$1" = status ]; then printf "%s" "$DIRTY"; fi\n',{mode:0o700});
  writeFileSync(join(bin,'npm'),'#!/bin/sh\nprintf "npm %s\\n" "$*" >> "$COMMAND_LOG"\n',{mode:0o700});
  writeFileSync(join(bin,'uname'),'#!/bin/sh\nprintf "%s\\n" "${DEVICE_OS:-Darwin}"\n',{mode:0o700});
- writeFileSync(join(bin,'node'),`#!${process.execPath}\nconst keys=['CUA_NODE','CUA_PARITY_NODE_MODE','CUA_HOME','HOME','CHROME_CONFIG_HOME','XDG_CONFIG_HOME','DISPLAY','CUA_PARITY_REMOTE'];if(process.argv[2]==='--input-type=module')console.log("export DISPLAY=':77'");else console.log(JSON.stringify({args:process.argv.slice(2),env:Object.fromEntries(keys.filter(k=>process.env[k]!==undefined).map(k=>[k,process.env[k]]))}));\n`,{mode:0o700});
+ writeFileSync(join(bin,'node'),`#!${process.execPath}\nconst keys=['CUA_NODE','CUA_PARITY_NODE_MODE','CUA_HOME','HOME','CHROME_CONFIG_HOME','XDG_CONFIG_HOME','DISPLAY','CUA_PARITY_REMOTE','CUA_RUNTIME_IDLE_MS'];if(process.argv[2]==='--input-type=module')console.log("export DISPLAY=':77'");else console.log(JSON.stringify({args:process.argv.slice(2),env:Object.fromEntries(keys.filter(k=>process.env[k]!==undefined).map(k=>[k,process.env[k]]))}));\n`,{mode:0o700});
  const execute=(command,env={})=>spawnSync('/bin/sh',['-c',command.args.at(-1)],{encoding:'utf8',env:{PATH:bin+':/usr/bin:/bin',HOME:home,COMMAND_LOG:log,CUA_NODE:'/ambient/node',CUA_PARITY_NODE_MODE:'ambient-mode',...env}});
  try{return run({execute,home,checkout,commands:()=>readFileSync(log,'utf8')});}finally{rmSync(home,{recursive:true,force:true});}
 }
@@ -58,6 +58,7 @@ test('all ordinary launches clear ambient Node overrides and preserve private sc
    const result=execute(command);assert.equal(result.status,0,result.stderr);const {env}=JSON.parse(result.stdout);
    assert.equal(env.CUA_NODE,nodeOverride??undefined);assert.equal(env.CUA_PARITY_NODE_MODE,nodeMode);
    assert.equal(env.HOME,'/owned/scratch/home');assert.equal(env.CHROME_CONFIG_HOME,'/owned/scratch/home/.config');assert.equal(env.XDG_CONFIG_HOME,env.CHROME_CONFIG_HOME);
+   if(command.args.join(' ').includes('serve-cells.mjs'))assert.equal(env.CUA_RUNTIME_IDLE_MS,'0');
   }
  }
  assert.ok(ownNodeEnv({nodeMode:'managed'}).startsWith('-u CUA_NODE '));
@@ -68,4 +69,15 @@ test('the device scratch prefix is the harness run\'s own, validated before it r
  assert.equal(parityScratchPrefix({CUA_PARITY_SCRATCH_PREFIX:'cua-m4t3-'}),'cua-m4t3-');
  for(const bad of ['m4t3-','cua-m4t3','cua-$(id)-','cua-a/b-','cua-A b-'])assert.throws(()=>parityScratchPrefix({CUA_PARITY_SCRATCH_PREFIX:bad}),/scratch prefix/);
  assert.ok(linuxSession.includes(`export CUA_PARITY_SCRATCH_PREFIX=${parityScratchPrefix(process.env)}\n`));
+});
+
+// #157: a paused cell is judged without a false difference because the serve never idles out during a pause: every
+// parity lane's serve runs with CUA_RUNTIME_IDLE_MS=0 (ownNodeEnv), and that setting never stops the runtime.
+test('every parity lane keeps its runtime warm through a pause',async()=>{
+ const {apiCommand}=await import('../../scripts/repl-parity/api-lanes.mjs');const {nativeCommand}=await import('../../scripts/repl-parity/native.mjs');
+ const {settingsFrom}=await import('../../src/mcp/server.mjs');
+ const facts={device:'mini',checkout:'/c',home:'/h',host:'cua',nodeMode:'managed'};
+ for(const command of [cellsCommand(facts),apiCommand(facts),apiCommand(facts,{lane:'binder-double'}),nativeCommand({...facts,device:'cua-linux',platform:'linux'})])
+  assert.match(command.args.at(-1),/exec env -u CUA_NODE -u CUA_PARITY_NODE_MODE CUA_RUNTIME_IDLE_MS=0 /);
+ assert.equal(settingsFrom({CUA_RUNTIME_IDLE_MS:'0'}).runtimeIdleMs,0);
 });

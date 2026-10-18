@@ -70,7 +70,7 @@ export async function main(argv=process.argv.slice(2)){
  if(pauseFile){meta.pauses=[];usePauseGate(pauseGate({file:pauseFile,record:p=>meta.pauses.push(p),log:line=>console.error(`repl-parity: ${line}`)}));}
  const pause=pauseFile?pauseGate({file:pauseFile,record:p=>meta.pauses.push(p)}):null;
  save(join(out,'meta.json'),meta);writeFileSync(join(out,'results.jsonl'),'');
- const pool=new AttestedConnections(v.host);let failed=false;const resources=[],runRows=[];
+ const pool=new AttestedConnections(v.host,{diagnostics:join(out,'diagnostics')});let failed=false;const resources=[],runRows=[];
  const clients=new Map();let browserFixture,profileClient;const profileObservations=[];
  const profiles=async()=>{
   if(!profileClient)profileClient=await pool.open({...apiCommand({...prepared,host:v.host},{lane:'profiles'}),onNotification:message=>{if(message.method==='cua/parityProfiles')profileObservations.push(message.params);}});

@@ -17,7 +17,11 @@ export const linuxSession=`if [ "$(uname -s)" = Linux ]; then
 fi`;
 // A resolved Node is an observation, never an override. Clear ambient CUA_NODE; only prepare --node diagnostics
 // explicitly reintroduce it. This string is env options followed by assignments, so it precedes other assignments.
-export const ownNodeEnv=facts=>'-u CUA_NODE -u CUA_PARITY_NODE_MODE '+(['managed','diagnostic-override'].includes(facts?.nodeMode)?`CUA_PARITY_NODE_MODE=${quote(facts.nodeMode)} `:'')+(facts?.nodeOverride?`CUA_NODE=${quote(facts.nodeOverride)} `:'')+(facts?.chromeLaunch?'CUA_PARITY_CAPTURE_CHROME=1 ':'');
+// Every lane's serve also keeps its runtime warm (CUA_RUNTIME_IDLE_MS=0, on both hosts): a run paused for CI (MAWS DL 58,
+// scripts/mini-pause.mjs) can hold a cell past the 15-minute idle stop, and a stopped runtime restarts for the next call
+// with a restart notice in its output and its REPL state gone, a difference the pause made, not either host (#157).
+export const WARM_RUNTIME_ENV='CUA_RUNTIME_IDLE_MS=0 ';
+export const ownNodeEnv=facts=>'-u CUA_NODE -u CUA_PARITY_NODE_MODE '+WARM_RUNTIME_ENV+(['managed','diagnostic-override'].includes(facts?.nodeMode)?`CUA_PARITY_NODE_MODE=${quote(facts.nodeMode)} `:'')+(facts?.nodeOverride?`CUA_NODE=${quote(facts.nodeOverride)} `:'')+(facts?.chromeLaunch?'CUA_PARITY_CAPTURE_CHROME=1 ':'');
 export const preparedHomeEnv=facts=>facts?.userHome?`HOME=${quote(facts.userHome)} CHROME_CONFIG_HOME=${quote(facts.userHome+'/.config')} XDG_CONFIG_HOME=${quote(facts.userHome+'/.config')} `:'';
 export function prepareCommand({device,commit,profile,node,home=declaredDevice(device).discoveryHome}) {
   const declaration=declaredDevice(device);

@@ -27,12 +27,12 @@ const put = (dir, key, content, mode = 0o600) => {
 };
 
 test('a project is named as Claude Code names its folder under ~/.claude/projects/', () => {
-  assert.equal(projectSlug('/Users/new/Developer/GitHub/MAWS'), '-Users-new-Developer-GitHub-MAWS');
+  assert.equal(projectSlug('/Users/dev/Developer/GitHub/MAWS'), '-Users-dev-Developer-GitHub-MAWS');
   assert.equal(projectSlug('/private/tmp/fold-smoke/.claude/worktrees/72-api-architect'), '-private-tmp-fold-smoke--claude-worktrees-72-api-architect');
   // Past 200 characters: the first 200 and a base-36 hash of the whole path (the mod's tests hold the same value).
-  const long = projectSlug(`/Users/new/${'a'.repeat(120)}/${'b'.repeat(100)}`);
+  const long = projectSlug(`/Users/dev/${'a'.repeat(120)}/${'b'.repeat(100)}`);
   assert.equal(long.length, 207);
-  assert.equal(long.slice(195), 'bbbbb-iqtzp2');
+  assert.equal(long.slice(195), 'bbbbb-bt89mn');
   assert.equal(projectStoreDir('/Users/u/repo', {HOME: '/Users/u'}), '/Users/u/.config/claude-secrets/projects/-Users-u-repo');
 });
 

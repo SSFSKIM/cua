@@ -8,6 +8,7 @@
 //   node bin/cua.mjs install --archive <pinned ChatGPT zip>
 //   node scripts/accept-native.mjs [--live-secrets] [--live-textedit] [--archive <zip>] --report "$CUA_HOME/acceptance.json"
 //   node scripts/accept-native.mjs --live-secrets --live-textedit --secret-key <KEY> [--secret-home <dir>] --report …
+//   node scripts/accept-native.mjs --items 1,10 --report …   only the items named (a headless re-check of some items)
 //
 // --secret-key types a key the caller stored beforehand (`HOME=<dir> node bin/cua.mjs secrets set <KEY>`) instead of a
 // generated one; its store is the one under --secret-home, by default $HOME, which must not be this account's home.
@@ -65,7 +66,7 @@ import {socketHolders} from './probe/lib.mjs';
 import {fingerprints, textLeaks} from './probe/leak-scan.mjs';
 import {
   approvalObservation, diffSnapshots, doctorHealth, forbiddenPaths, inventoryCheck, missingFromPackage, PROBE_SECRETS_PHASES, probePhasesFor, rollup, scenarioVerdict,
-  snapshotTree, suiteVerdict, testReporterEnv, testSummary, tokenLike,
+  snapshotTree, suiteVerdict, judgeSkips, skipReasons, testReporterEnv, testSummary, personalText, researchTreeLines, MINI_LAYOUT_FILES,
 } from './accept/lib.mjs';
 import {OWN_STEPS, runTextEdit, SECRET_STEPS} from './accept/textedit.mjs';
 import {createStoreHome, generatedKey, isAccountHome, removeStoreHome, seedSecret} from './accept/secret-seed.mjs';
@@ -74,8 +75,16 @@ import {compatRouteAcceptance} from './accept/compat-route.mjs';
 
 const {values: options} = parseArgs({options: {
   report: {type: 'string'}, 'live-secrets': {type: 'boolean'}, 'live-textedit': {type: 'boolean'}, archive: {type: 'string'},
-  'secret-key': {type: 'string'}, 'secret-home': {type: 'string'},
+  'secret-key': {type: 'string'}, 'secret-home': {type: 'string'}, items: {type: 'string'},
 }, strict: true});
+// --items 1,10: only those items run (a headless re-check of some items, #157); the report names the selection, and an
+// item that reads another's result (item 2 reads item 1's suite) finds it not run.
+const selected = options.items === undefined ? null : new Set(options.items.split(',').map(Number));
+if (selected && ![...selected].every(id => Number.isInteger(id) && id >= 1 && id <= 13)) {
+  console.error('accept-native: --items takes item numbers 1 to 13, comma-separated');
+  process.exit(2);
+}
+const wanted = id => !selected || selected.has(id);
 const REPO = realpathSync(fileURLToPath(new URL('..', import.meta.url)));
 const CLI = join(REPO, 'bin', 'cua.mjs');
 // The commit whose evidence (docs/evidence/m2-installer.md) proved download mode; acquisition code unchanged since
@@ -149,7 +158,8 @@ async function suites(cwd, {label}) {
   const summary = testSummary(node.stdout);
   const {totals} = summary;
   const failed = [...node.stdout.matchAll(/^not ok \d+ - (.*)$/gm)].map(m => m[1]);
-  const verdict = suiteVerdict({code: node.code, ...summary});
+  // Skips declared not applicable on this host (lib.mjs DECLARED_SKIPS), judged against the suite's own environment.
+  const verdict = suiteVerdict({code: node.code, ...summary, skips: judgeSkips(skipReasons(node.stdout), {env: suiteEnv(), root: cwd})});
   out.push(check(`${label}npm test`, verdict.status,
     totals ? `${verdict.reason}; ${totals.fail} failed${failed.length ? ` (${failed.join('; ')})` : ''}, ${totals.skipped} skipped, ${totals.todo} TODO in ${seconds(node.ms)}${noisy(node.stdout + node.stderr) ? '; output has warnings' : ''}` : `${ended(node)}; ${verdict.reason}${failed.length ? ` (failed before that: ${failed.join('; ')})` : ''}`,
     {totals}));
@@ -424,9 +434,11 @@ async function item10() {
   const badTracked = forbiddenPaths(tracked);
   const userHome = homedir();
   const code = tracked.filter(p => !p.startsWith('docs/') && !/\.md$/.test(p) && existsSync(join(REPO, p)));
-  const personal = code.filter(p => { const text = readFileSync(join(REPO, p), 'latin1'); return text.includes(userHome + '/') || tokenLike(text); });
+  // Each file by its rule (the home path or a token-like string), never the text itself.
+  const personal = code.map(p => ({p, ...personalText(p, readFileSync(join(REPO, p), 'latin1'), userHome)})).filter(r => r.home || r.token)
+    .map(r => `${r.p} (${[r.home && 'names this user\'s home', r.token && 'token-like string'].filter(Boolean).join(', ')})`);
   checks.push(check('nothing tracked is an archive, runtime, credential, log or machine-specific token', tracked.length && !badTracked.length && !personal.length ? 'PASS' : 'FAIL',
-    `${tracked.length} tracked files; forbidden: ${badTracked.join(', ') || 'none'}; code/config naming this user's home or holding token-like strings: ${personal.join(', ') || 'none'}`));
+    `${tracked.length} tracked files; forbidden: ${badTracked.join(', ') || 'none'}; code/config naming this user's home or holding token-like strings: ${personal.join(', ') || 'none'} (the mini's own layout is declared: ${MINI_LAYOUT_FILES.length} files, home rule only)`));
 
   const pack = await run('npm', ['pack', '--dry-run', '--json'], {env: suiteEnv()});
   const packed = parseJson(pack.stdout);
@@ -442,19 +454,26 @@ async function item10() {
   checks.push(check('existing MCP registration untouched', spawnsClaude.length ? 'FAIL' : 'PASS',
     spawnsClaude.length ? `code that runs claude: ${spawnsClaude.join(', ')}` : 'no tracked code runs `claude` or edits ~/.claude; registration is documented (README) and never executed by acceptance'));
 
-  const head = sh('git', ['-C', REPO, 'rev-parse', '--short', 'HEAD']).trim();
+  const head = sh('git', ['-C', REPO, 'rev-parse', '--short', 'HEAD']).trim(), headSha = sh('git', ['-C', REPO, 'rev-parse', 'HEAD']).trim();
   const branch = sh('git', ['-C', REPO, 'rev-parse', '--abbrev-ref', 'HEAD']).trim();
   const dirty = sh('git', ['-C', REPO, 'status', '--porcelain']).trim().length > 0;
   const clone = mkdtempSync('/tmp/cua-clean.');
   try {
-    const cloned = await run('git', ['clone', '--quiet', '--branch', branch, REPO, join(clone, 'cua')], {cwd: clone, timeoutMs: 120_000});
-    if (cloned.code !== 0) checks.push(check('clean clone tests', 'FAIL', `git clone failed: ${cloned.stderr.trim()}`));
+    // The checkout's HEAD commit, whether a branch or detached (a scratch clone at a SHA): cloned without a checkout,
+    // then that commit fetched from the checkout's own HEAD and checked out detached.
+    const dir = join(clone, 'cua');
+    let cloned = await run('git', ['clone', '--quiet', '--no-checkout', REPO, dir], {cwd: clone, timeoutMs: 120_000});
+    if (cloned.code === 0) cloned = await run('git', ['-C', dir, 'fetch', '--quiet', REPO, 'HEAD'], {cwd: clone, timeoutMs: 120_000});
+    if (cloned.code === 0) cloned = await run('git', ['-C', dir, 'checkout', '--quiet', '--detach', 'FETCH_HEAD'], {cwd: clone, timeoutMs: 120_000});
+    const clonedHead = cloned.code === 0 ? sh('git', ['-C', dir, 'rev-parse', 'HEAD']).trim() : '';
+    if (cloned.code !== 0 || clonedHead !== headSha) checks.push(check('clean clone tests', 'FAIL', cloned.code !== 0 ? `git clone failed: ${cloned.stderr.trim()}` : `the clean clone is at ${clonedHead.slice(0, 7)}, not ${head}`));
     else {
-      const dir = join(clone, 'cua');
       checks.push(...await suites(dir, {label: 'clean clone: '}));
       // This runner holds the pattern itself, so it is not searched.
-      const researchRefs = sh('git', ['-C', dir, 'grep', '-l', '-e', 'codex-app-src', '--', ':!docs', ':!*.md', ':!scripts/accept-native.mjs']).trim();
-      checks.push(check('clean clone needs no research trees', researchRefs ? 'FAIL' : 'PASS', researchRefs ? `code referring to research trees: ${researchRefs}` : 'no code or config outside docs refers to the local research trees'));
+      // A comment that cites a research tree is not a dependency on one (researchTreeLines).
+      const researchRefs = sh('git', ['-C', dir, 'grep', '-l', '-e', 'codex-app-src', '--', ':!docs', ':!*.md', ':!scripts/accept-native.mjs']).split('\n').filter(Boolean)
+        .flatMap(p => researchTreeLines(readFileSync(join(dir, p), 'utf8'), 'codex-app-src').map(line => `${p}:${line}`));
+      checks.push(check('clean clone needs no research trees', researchRefs.length ? 'FAIL' : 'PASS', researchRefs.length ? `code referring to research trees: ${researchRefs.join(', ')}` : 'no code or config outside docs refers to the local research trees (citations in comments aside)'));
     }
   } finally { rmSync(clone, {recursive: true, force: true}); }
   addItem(10, 'Packaging, plugin README, tracked files, clean checkout', checks, {head, branch, workingTreeDirty: dirty, cloneRemoved: !existsSync(clone)});
@@ -492,27 +511,27 @@ async function item13() {
 // --- run -------------------------------------------------------------------------------------------------------------
 const started = new Date();
 const runDirBefore = existsSync(join(home, 'run')) ? readdirSync(join(home, 'run')) : [];
-await item1();
-await item3();          // doctor first: item 2 reads its verification result
-await item2();
-await item13();         // before the other native items: it starts the session's helper itself and needs none running
-await item4();
-const probe = await liveSecrets();
-const textedit = await liveTextEdit();
-await item5(textedit);
-await item6(probe, textedit);
-await item7(probe);
-await item8(textedit);
-item9();
-await item10();
-await item11();
-await item12();
+if (wanted(1)) await item1();
+if (wanted(3)) await item3();          // doctor first: item 2 reads its verification result
+if (wanted(2)) await item2();
+if (wanted(13)) await item13();        // before the other native items: it starts the session's helper itself and needs none running
+if (wanted(4)) await item4();
+const probe = [6, 7].some(wanted) ? await liveSecrets() : null;
+const textedit = [5, 6, 8].some(wanted) ? await liveTextEdit() : null;
+if (wanted(5)) await item5(textedit);
+if (wanted(6)) await item6(probe, textedit);
+if (wanted(7)) await item7(probe);
+if (wanted(8)) await item8(textedit);
+if (wanted(9)) item9();
+if (wanted(10)) await item10();
+if (wanted(11)) await item11();
+if (wanted(12)) await item12();
 items.sort((a, b) => a.id - b.id);
 
 const runLeftovers = (existsSync(join(home, 'run')) ? readdirSync(join(home, 'run')) : []).filter(name => !runDirBefore.includes(name));
 const report = {
   scenario: 'accept-native', status: rollup(items.map(i => i.status)),
-  options: {liveSecrets: Boolean(options['live-secrets']), liveTextedit: Boolean(options['live-textedit']), callerSecretKey: Boolean(callerSecret)},
+  options: {liveSecrets: Boolean(options['live-secrets']), liveTextedit: Boolean(options['live-textedit']), callerSecretKey: Boolean(callerSecret), ...(selected ? {items: [...selected].sort((a, b) => a - b)} : {})},
   release: state.doctor?.runtime?.release ?? null, home: '$CUA_HOME', host: `${process.platform}-${process.arch}`, node: process.version,
   startedAt: started.toISOString(), finishedAt: new Date().toISOString(),
   summary: Object.fromEntries(items.map(i => [i.id, i.status])),

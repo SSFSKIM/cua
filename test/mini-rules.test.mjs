@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import {mkdirSync, mkdtempSync, rmSync, writeFileSync, existsSync, readFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {observe, classify, gate, gated, frontAfter, runState, sequence, verifyTz, verifyAcceptance, Stop, TERMINAL} from '../scripts/mini-rules.mjs';
+import {frontmost, observe, classify, gate, gated, frontAfter, runState, sequence, verifyTz, verifyAcceptance, Stop, TERMINAL} from '../scripts/mini-rules.mjs';
 
 // The device and GitHub as one double. `state` drives the answers; `calls` records them.
 function world(over = {}) {
@@ -72,6 +72,13 @@ test('inner boundaries: lists are read to their total across pages, a truncated 
   assert.throws(() => observe(world({workers: 0, pgrepStatus: 2})), /missing observation: mini workers \(pgrep exited 2\)/);
   assert.equal(observe(world({workers: 0, pgrepStatus: 0})).workers, 0);
   assert.throws(() => observe(world({workers: 1, pgrepStatus: 1})), /status and count disagree/);
+});
+
+test('the frontmost reader takes either lsappinfo spelling: bundleID="…" and macOS 26\'s "CFBundleIdentifier"="…" (#157)', () => {
+  const answer = text => (cmd, args) => (cmd === 'ssh' && args.join(' ').includes('lsappinfo') ? text : '');
+  assert.equal(frontmost({exec: answer('    bundleID="com.apple.Terminal"\n')}), TERMINAL);
+  assert.equal(frontmost({exec: answer('    "CFBundleIdentifier"="com.apple.Terminal"\n')}), TERMINAL);
+  assert.throws(() => frontmost({exec: answer('    "LSDisplayName"="Terminal"\n')}), /no bundle id/);
 });
 
 test('classification: with the runner idle any non-Terminal frontmost application is a stop; CI and load are contention', () => {
@@ -339,4 +346,17 @@ test('an unread CI observation waits and reads again; an unreadable frontmost ap
   let waited = 0;
   await assert.rejects(gate('z', {exec: blind.exec, sleep: async () => { waited++; }, log: quiet}), /missing observation: frontmost application/);
   assert.equal(waited, 0);
+});
+
+test('inside a hold the gate ignores the queue; a busy runner or a Runner.Worker still waits (#157)', async () => {
+  const queued = {front: TERMINAL, busy: false, workers: 0, queued: 3, load: 1};
+  assert.equal(classify(queued).state, 'contention');
+  assert.equal(classify(queued, {ignoreQueue: true}).state, 'idle');
+  assert.equal(classify({...queued, busy: true}, {ignoreQueue: true}).state, 'contention');
+  assert.equal(classify({...queued, workers: 1}, {ignoreQueue: true}).state, 'contention');
+  const lines = [];
+  const w = world({runs: {queued: [{id: 5}], in_progress: []}, jobs: {5: [{status: 'queued', labels: ['macOS']}]}});
+  await gate('h', {exec: w.exec, sleep: noSleep, log: line => lines.push(line), ignoreQueue: true});
+  assert.ok(lines.includes('idle before h'));
+  assert.ok(lines.some(line => /queued=1 \(ignored in the hold\)/.test(line)));
 });

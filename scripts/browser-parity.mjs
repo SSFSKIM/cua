@@ -142,7 +142,7 @@ export async function main(argv=process.argv.slice(2)) {
     const actual=execute(remoteCommand(values.device,`cd ${quote(prepared.checkout)} && git rev-parse HEAD`)).trim();
     if(actual!==prepared.commit)throw new Error('Parity clone moved since prepare');
   }
-  let fixture,trace,client,failed=false;const ownedClients=new Set(),pool=new AttestedConnections(values['repl-host']);
+  let fixture,trace,client,failed=false;const ownedClients=new Set(),pool=new AttestedConnections(values['repl-host'],{diagnostics:join(out,'diagnostics')});
   try {
     fixture=local?await startFixture({port:0}):await fixtureProcess(prepared);
     if(capability)capabilityHost=await startCapabilityHost({home:capabilityHome.dir});

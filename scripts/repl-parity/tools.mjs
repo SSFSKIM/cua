@@ -33,7 +33,7 @@ export async function main(argv=process.argv.slice(2)){
  if(action!=='record'||!v.out||!['mini','cua-linux'].includes(v.device)||!['vendor','cua'].includes(v.host))throw new Error('Usage: tools.mjs record --device mini --host vendor|cua --out DIR | diff LEFT RIGHT');
  const prepared=read(join(root,'.doperpowers/sde/repl-parity',`${v.device}.json`)),out=resolve(v.out);mkdirSync(out,{recursive:false});
  const meta={...prepared,host:v.host,observedHost:v.host,service:'cua',surfaces:['browser'],lane:'production',complete:false};
- const pool=new AttestedConnections(v.host);
+ const pool=new AttestedConnections(v.host,{diagnostics:join(out,'diagnostics')});
  try{
   const command=serveCommand({...prepared,service:'cua',replHost:v.host});command.expectedFacts=prepared;
   const client=await pool.open(command),tools=await client.request('tools/list');save(join(out,'tools.json'),tools);

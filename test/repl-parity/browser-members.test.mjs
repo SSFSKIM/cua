@@ -2,7 +2,10 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import {readFileSync} from 'node:fs';
-import {parseModule} from 'meriyah';
+// The pinned Meriyah cua's kernel ships (src/repl-host/vendor/meriyah, the devDependency's exact version): npm test runs
+// without node_modules (README), as acceptance 10's clean clone does.
+import meriyah from '../../src/repl-host/vendor/meriyah/meriyah.mjs';
+const {parseModule}=meriyah;
 import scenarios from './scenarios/browser-members.mjs';
 import {caseSchedule,validateRegistry} from '../../scripts/repl-parity/registry.mjs';
 import {parseCell,RESULT_MARKER} from '../../scripts/browser-parity/runner.mjs';

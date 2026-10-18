@@ -132,7 +132,7 @@ test('agent install, uninstall and status are listed on both platforms (launchd 
   for (const platform of ['darwin', 'linux']) assert.match(usageFor(platform), /agent run \[--http <host:port>\] \[--relay\][^]*dials the relay/);
 });
 
-test('on Linux, agent status reads the systemd user unit under the user\'s home without asking the manager when there is none', {skip: process.platform !== 'linux'}, () => {
+test('on Linux, agent status reads the systemd user unit under the user\'s home without asking the manager when there is none', {skip: process.platform !== 'linux' && 'Linux only: a systemd user unit'}, () => {
   const s = scratch();
   try {
     const r = cua(['agent', 'status', '--json'], s.dir, {HOME: s.dir});

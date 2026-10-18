@@ -5,7 +5,7 @@
 // dialogs, file chooser and connection cleanup.
 //   node scripts/accept/linux-chrome-features.mjs [<profile key>]   JSON report; exit 0 when all required steps pass
 // API citations below are BS = the pinned readable browser-service.mjs in
-// /Users/new/codex-app-src/readable/chatgpt-26.928.40906/cua_node/@oai/browser-desktop/scripts/.
+// ~/codex-app-src/readable/chatgpt-26.928.40906/cua_node/@oai/browser-desktop/scripts/.
 import {readFileSync, readdirSync, existsSync, lstatSync, unlinkSync, mkdtempSync, writeFileSync, rmdirSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {tmpdir} from 'node:os';

@@ -10,6 +10,7 @@ import {tmpdir} from 'node:os';
 import {boundaryPreflightEnv, boundaryServeEnv, cellsServeEnv, failingSandboxScript} from './fixture-launch.mjs';
 import {remoteCapabilityLane} from '../../scripts/repl-parity/capability.mjs';
 import {cellsCommand, prepareCommand} from '../../scripts/repl-parity/topology.mjs';
+import {settingsFrom} from '../../src/mcp/server.mjs';
 
 const NODE = '/opt/node-24/bin/node';
 const scratch = {dir: '/tmp/scratch-home', userHome: '/tmp/scratch-home/user'};
@@ -23,6 +24,13 @@ test('serve-cells keeps an explicit CUA_NODE in the connection environment it re
   assert.equal(env.DISPLAY, ':0');
   assert.equal('CUA_NODE' in cellsServeEnv({...ambient, CUA_NODE: undefined}, {scratch, sandbox: 'scoped', host: 'cua'}), false);
   assert.equal('CUA_NODE' in cellsServeEnv({...ambient, CUA_NODE: ''}, {scratch, sandbox: 'scoped', host: 'cua'}), false);
+});
+
+test('the rebuilt connection environments keep the runtime warm, whatever the ambient environment lacks (#157)', () => {
+  assert.equal('CUA_RUNTIME_IDLE_MS' in ambient, false);
+  assert.equal(settingsFrom(cellsServeEnv(ambient, {scratch, sandbox: 'scoped', host: 'cua'})).runtimeIdleMs, 0);
+  assert.equal(settingsFrom(boundaryServeEnv(ambient, {tmp: '/tmp/b/tmp', home: '/tmp/cua-home', host: 'cua', facts: {}, control: '/tmp/b/c1', sandbox: 'scoped', witness: false, brokenSandbox: ''})).runtimeIdleMs, 0);
+  assert.notEqual(settingsFrom({}).runtimeIdleMs, 0, 'the default would stop an idle runtime');
 });
 
 test('managed mode survives boundary child rebuilding without importing an ambient Node override',()=>{

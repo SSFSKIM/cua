@@ -17,7 +17,8 @@
 //     read) defers it to a later install. A session started by a cua before #115 runs its children through that CLI.
 // Only cua's own CODEX_HOME is ever looked at, $CUA_HOME/state/codex from the home's layout: the environment's
 // CODEX_HOME (the Codex CLI's own setting, which may name the user's ~/.codex) is never read.
-// Every path is reached from the real home through real directories only: a symbolic link at any step (state/,
+// Every path is reached from the real home through real directories only (a link on the way is not followed, and is
+// reported as not inspected, so it never reads as clean): a symbolic link at any step (state/,
 // state/codex, runtimes/, a release directory, tmp/ or browser/ in CODEX_HOME) is never followed, and a leftover that is
 // itself a link is unlinked, its target left as it is. Results carry paths, never content. A removal that fails is
 // reported and left for doctor to keep naming; it never fails the install.
@@ -39,46 +40,55 @@ const tombstoneName = name => `.${name}.pruning-${randomBytes(4).toString('hex')
 const TOMBSTONE = /^\.(CodexCLI\.app|codex)\.pruning-[0-9a-f]+$/;
 
 // A scan of the home: every lstat or listing error other than a missing path (ENOENT, ENOTDIR) is recorded in
-// `errors`, so an unreadable directory never reads as clean.
+// `errors`, and every symbolic link on the way to a leftover (`ownDirectory`) in `uninspected`, so neither an
+// unreadable directory nor a link that is not followed ever reads as clean.
+export const UNINSPECTED = 'symlink_not_inspected';
 function scanner() {
-  const errors = [];
+  const errors = [], uninspected = [];
   const record = (path, error) => { if (error.code !== 'ENOENT' && error.code !== 'ENOTDIR') errors.push({path, code: error.code ?? 'error'}); };
   const lstat = path => { try { return lstatSync(path); } catch (error) { record(path, error); return null; } };
   return {
     errors,
+    uninspected,
     lstat,
-    realDirectory: path => lstat(path)?.isDirectory() ?? false,
+    // A directory of cua's own on the way to a leftover: a link there is not followed, and is reported.
+    ownDirectory: path => {
+      const stat = lstat(path);
+      if (stat?.isSymbolicLink()) uninspected.push(path);
+      return stat?.isDirectory() ?? false;
+    },
     names: dir => { try { return readdirSync(dir).sort(); } catch (error) { record(dir, error); return []; } },
     readable: path => { try { readFileSync(path); return true; } catch (error) { record(path, error); return false; } },
   };
 }
 
-// -> {codexHome, files: CODEX_HOME-relative names present, trees: [{release, name, path}], errors: [{path, code}]}.
+// -> {codexHome, files: CODEX_HOME-relative names present, trees: [{release, name, path}], errors: [{path, code}],
+// uninspected: [path of a link on the way, not followed]}.
 export function findCodexLeftovers({home, pins}) {
   const layout = homeLayout(realHome(home));
   const scan = scanner();
-  return {codexHome: layout.codexHome, files: codexHomeLeftovers(layout, scan), trees: unusedCliComponents(layout, pins, scan), errors: scan.errors};
+  return {codexHome: layout.codexHome, files: codexHomeLeftovers(layout, scan), trees: unusedCliComponents(layout, pins, scan), errors: scan.errors, uninspected: scan.uninspected};
 }
 
-function codexHomeLeftovers({home, codexHome}, {lstat, realDirectory, names}) {
-  if (!realDirectory(join(home, 'state')) || !realDirectory(codexHome)) return [];
+function codexHomeLeftovers({home, codexHome}, {lstat, ownDirectory, names}) {
+  if (!ownDirectory(join(home, 'state')) || !ownDirectory(codexHome)) return [];
   const found = CODEX_HOME_LEFTOVERS.filter(rel => {
     const parent = rel.includes('/') ? join(codexHome, rel.split('/')[0]) : null;
-    return (!parent || realDirectory(parent)) && lstat(join(codexHome, rel)) !== null;
+    return (!parent || ownDirectory(parent)) && lstat(join(codexHome, rel)) !== null;
   });
   return [...found, ...names(codexHome).filter(name => SQLITE.test(name))];
 }
 
 // The release CLI components, and the tombstones a prune left (`tombstone: true`, whichever the pin lists).
-function unusedCliComponents({runtimes}, pins, {lstat, realDirectory, names, readable}) {
-  if (!realDirectory(runtimes)) return [];
+function unusedCliComponents({runtimes}, pins, {lstat, ownDirectory, names, readable, uninspected}) {
+  if (!ownDirectory(runtimes)) return [];
   const found = [];
   for (const release of names(runtimes)) {
     const pin = pins.find(p => p.release === release);
     const component = pin && CLI_COMPONENT[pin.platform];
     if (!component) continue;
     const root = join(runtimes, release);
-    if (!realDirectory(root)) continue;
+    if (!ownDirectory(root)) continue;
     // The record must be readable to tell a tree cua installed: an unreadable one is a scan error (any error but
     // ENOENT), not a stranger's tree; readable content that is not a valid record is one, and is left alone.
     if (!readable(join(root, RECORD_FILE))) continue;
@@ -90,7 +100,8 @@ function unusedCliComponents({runtimes}, pins, {lstat, realDirectory, names, rea
     if (Object.hasOwn(pin.components ?? {}, component.name)) continue;
     const path = join(root, component.name);
     const stat = lstat(path);
-    if (stat && (component.directory ? stat.isDirectory() : stat.isFile())) found.push({release, name: component.name, path});
+    if (stat?.isSymbolicLink()) uninspected.push(path);
+    else if (stat && (component.directory ? stat.isDirectory() : stat.isFile())) found.push({release, name: component.name, path});
   }
   return found;
 }
@@ -123,7 +134,7 @@ export function removeCodexLeftovers({home, pins, sweep = sweepRun}) {
     fail('prune_refused', `the Codex CLI's leftovers were not pruned: ${error.message}`, {hint: 'make it a real directory of the cua home again, then run cua install --prune-leftovers'});
   }
   const found = findCodexLeftovers({home, pins});
-  const result = {codexHome: found.codexHome, removed: [], deferred: [], failed: [...found.errors]};
+  const result = {codexHome: found.codexHome, removed: [], deferred: [], failed: [...found.errors, ...found.uninspected.map(path => ({path, code: UNINSPECTED}))]};
   const remove = (path, removing = path) => {
     try { rmSync(removing, {recursive: true, force: true}); result.removed.push(path); } catch (error) { result.failed.push({path: removing, code: error.code ?? 'error'}); }
   };
@@ -147,9 +158,12 @@ export function removeCodexLeftovers({home, pins, sweep = sweepRun}) {
 }
 
 // The line a plain `cua install` prints when leftovers are there (it removes nothing), or none.
-export function describeLeftovers({codexHome, files, trees, errors = []}) {
-  if (!files.length && !trees.length && !errors.length) return [];
-  const parts = [...(files.length ? [`${codexHome}: ${files.join(', ')}`] : []), ...trees.map(t => t.path), ...errors.map(e => `${e.path} could not be read (${e.code})`)];
+const notInspected = path => `${path} is a symbolic link and was not inspected (cua never follows one)`;
+
+export function describeLeftovers({codexHome, files, trees, errors = [], uninspected = []}) {
+  if (!files.length && !trees.length && !errors.length && !uninspected.length) return [];
+  const parts = [...(files.length ? [`${codexHome}: ${files.join(', ')}`] : []), ...trees.map(t => t.path), ...errors.map(e => `${e.path} could not be read (${e.code})`),
+    ...uninspected.map(notInspected)];
   return [`the Codex CLI's leftovers are still here (${parts.join('; ')}); once every cua using this home is updated, run \`${PRUNE_COMMAND}\``];
 }
 
@@ -160,16 +174,19 @@ export function describeRemoval({codexHome, removed, deferred, failed}) {
     ...(inHome.length ? [`removed the Codex CLI's leftovers from ${codexHome}: ${inHome.join(', ')}`] : []),
     ...removed.filter(path => !path.startsWith(`${codexHome}/`)).map(path => `removed the Codex CLI's unused ${path}`),
     ...deferred.map(({path, reason}) => `left the Codex CLI's unused ${path} in place, since ${reason}; run ${PRUNE_COMMAND} again when none is`),
-    ...failed.map(({path, code}) => `could not read or remove ${path} (${code}), so what the Codex CLI left there stays; cua doctor keeps naming it`),
+    ...failed.map(({path, code}) => (code === UNINSPECTED
+      ? `${notInspected(path)}, so whatever the Codex CLI left behind it stays; cua doctor keeps naming it`
+      : `could not read or remove ${path} (${code}), so what the Codex CLI left there stays; cua doctor keeps naming it`)),
   ];
 }
 
 // doctor's runtime.leftovers row: `warn` naming every leftover and the command that removes it, else `pass`. `inUse` is
 // sessionsInUse's answer after doctor's own sweep.
 export function leftoversCheck({home, pins, inUse}) {
-  const {codexHome, files, trees, errors} = findCodexLeftovers({home, pins});
-  const unread = errors.length ? `; what is there could not be read: ${errors.map(e => `${e.path} (${e.code})`).join(', ')}` : '';
-  if (!files.length && !trees.length && !errors.length) return {name: 'runtime.leftovers', status: 'pass', detail: 'nothing the Codex CLI left behind is here; cua runs no Codex CLI (#115)'};
+  const {codexHome, files, trees, errors, uninspected} = findCodexLeftovers({home, pins});
+  const unread = (errors.length ? `; what is there could not be read: ${errors.map(e => `${e.path} (${e.code})`).join(', ')}` : '')
+    + (uninspected.length ? `; ${uninspected.map(notInspected).join('; ')}` : '');
+  if (!files.length && !trees.length && !errors.length && !uninspected.length) return {name: 'runtime.leftovers', status: 'pass', detail: 'nothing the Codex CLI left behind is here; cua runs no Codex CLI (#115)'};
   const parts = [...(files.length ? [`${codexHome}: ${files.join(', ')}`] : []), ...trees.map(t => t.path)];
   if (!parts.length) return {name: 'runtime.leftovers', status: 'warn', detail: `whether the Codex CLI left anything here is unknown${unread}`};
   const held = trees.filter(t => !t.tombstone);

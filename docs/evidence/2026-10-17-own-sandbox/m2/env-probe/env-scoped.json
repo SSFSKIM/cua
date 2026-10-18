@@ -1,0 +1,171 @@
+{
+  "label": "m2-env-scoped",
+  "host": "vendor",
+  "mode": "scoped",
+  "cli": "/Users/new/cua-115/home/runtimes/26.928.40906-darwin-arm64/CodexCLI.app/Contents/MacOS/codex",
+  "appServer": "forward",
+  "native": false,
+  "envProbe": true,
+  "started": "2026-10-18T05:20:09.172Z",
+  "events": [
+    {
+      "at": "2026-10-18T05:20:12.009Z",
+      "what": "cell banner",
+      "ok": true,
+      "value": {
+        "ready": true
+      },
+      "ms": 0,
+      "wallMs": 2321
+    }
+  ],
+  "serverInfo": {
+    "name": "rmcp",
+    "version": "1.5.0"
+  },
+  "serveExit": {
+    "code": 0,
+    "signal": null
+  },
+  "helpers": {
+    "started": 0,
+    "quitByThemselves": 0,
+    "quitByHarness": 0,
+    "foreignSeen": 0
+  },
+  "results": {
+    "banner": {
+      "ok": true,
+      "value": {
+        "ready": true
+      },
+      "ms": 0,
+      "wallMs": 2321
+    }
+  },
+  "elicitations": [],
+  "slot": {
+    "invocations": [
+      {
+        "t": "2026-10-18T05:20:09.960Z",
+        "sub": "sandbox",
+        "mode": "forward",
+        "configKeys": [
+          "shell_environment_policy.inherit",
+          "default_permissions",
+          "permissions.node_repl"
+        ],
+        "script": "trusted-worker.js",
+        "envNames": [
+          "CODEX_CLI_PATH",
+          "CODEX_HOME",
+          "CUA_REPL_ENABLED_SURFACES",
+          "CUA_REPL_NODE_REPL_PATH",
+          "CUA_SANDBOX_DENY_READ",
+          "CUA_SECRETS_UNAVAILABLE",
+          "CUA_SKY_VENDOR_SERVICE",
+          "HOME",
+          "LANG",
+          "LOGNAME",
+          "NODE_REPL_DISABLE_ANALYTICS",
+          "NODE_REPL_JS_BANNER",
+          "NODE_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS",
+          "NODE_REPL_NODE_MODULE_DIRS",
+          "NODE_REPL_NODE_PATH",
+          "NODE_REPL_TOOL_OVERRIDES",
+          "NODE_REPL_TRUSTED_CODE_PATHS",
+          "NODE_REPL_TRUSTED_SERVICES",
+          "NODE_REPL_UNTRUSTED_ENV_ALLOWLIST",
+          "PATH",
+          "PWD",
+          "SHLVL",
+          "SKY_CUA_SERVICE_PATH",
+          "TMPDIR",
+          "USER",
+          "__CF_USER_TEXT_ENCODING"
+        ],
+        "cwd": "/Users/new/cua-115/home/run/cb5ac66f-0478-48e3-a858-1e862a102022",
+        "envValues": {
+          "TMPDIR": "/Users/new/cua-115/home/run/cb5ac66f-0478-48e3-a858-1e862a102022/tmp",
+          "CODEX_HOME": "/Users/new/cua-115/home/state/codex"
+        },
+        "permissions": "permissions.node_repl={filesystem = {\"/Users/new/cua-115/home/run/cb5ac66f-0478-48e3-a858-1e862a102022/tmp/.tmpbsDTXa\" = \"read\", \"/Users/new/cua-115/home/runtimes/26.928.40906-darwin-arm64/cua_node/bin\" = \"read\", \"/Users/new/cua-115/home/runtimes/26.928.40906-darwin-arm64/cua_node/lib/node_modules\" = \"read\", \"/Users/new/cua-115/repo/src/services\" = \"read\", \":root\" = \"read\", \":tmpdir\" = \"write\", \":workspace_roots\" = {\".\" = \"write\"}}, network = {enabled = false}}",
+        "command": [
+          "/Users/new/cua-115/home/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node",
+          "--experimental-vm-modules",
+          "/Users/new/cua-115/home/run/cb5ac66f-0478-48e3-a858-1e862a102022/tmp/.tmpbsDTXa/trusted-worker.js",
+          "/Users/new/cua-115/home/run/cb5ac66f-0478-48e3-a858-1e862a102022"
+        ]
+      },
+      {
+        "t": "2026-10-18T05:20:09.960Z",
+        "sub": "sandbox",
+        "mode": "forward",
+        "configKeys": [
+          "shell_environment_policy.inherit",
+          "default_permissions",
+          "permissions.node_repl"
+        ],
+        "script": "kernel.js",
+        "envNames": [
+          "CODEX_HOME",
+          "CUA_REPL_ENABLED_SURFACES",
+          "HOME",
+          "LANG",
+          "NODE_REPL_JS_BANNER",
+          "NODE_REPL_NODE_MODULE_DIRS",
+          "NODE_REPL_TRUSTED_RPC_ENABLED",
+          "NODE_REPL_UNTRUSTED_ENV_ALLOWLIST",
+          "PATH",
+          "PWD",
+          "SHLVL",
+          "TMPDIR",
+          "__CF_USER_TEXT_ENCODING"
+        ],
+        "cwd": "/Users/new/cua-115/home/run/cb5ac66f-0478-48e3-a858-1e862a102022",
+        "envValues": {
+          "TMPDIR": "/Users/new/cua-115/home/run/cb5ac66f-0478-48e3-a858-1e862a102022/tmp",
+          "CODEX_HOME": "/Users/new/cua-115/home/state/codex"
+        },
+        "permissions": "permissions.node_repl={filesystem = {\"/Users/new/cua-115/home/run/cb5ac66f-0478-48e3-a858-1e862a102022/tmp/.tmpbsDTXa\" = \"read\", \"/Users/new/cua-115/home/runtimes/26.928.40906-darwin-arm64/cua_node/bin\" = \"read\", \"/Users/new/cua-115/home/runtimes/26.928.40906-darwin-arm64/cua_node/lib/node_modules\" = \"read\", \":root\" = \"read\", \":tmpdir\" = \"write\", \":workspace_roots\" = {\".\" = \"write\"}}, network = {enabled = false}}",
+        "command": [
+          "/Users/new/cua-115/home/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node",
+          "--experimental-vm-modules",
+          "/Users/new/cua-115/home/run/cb5ac66f-0478-48e3-a858-1e862a102022/tmp/.tmpbsDTXa/kernel.js",
+          "--session-id",
+          "bde7d3d93ddc447986b3bdf35468b973",
+          "--working-dir",
+          "/Users/new/cua-115/home/run/cb5ac66f-0478-48e3-a858-1e862a102022"
+        ]
+      }
+    ]
+  },
+  "launches": [
+    {
+      "t": "2026-10-18T05:20:09.265Z",
+      "cwd": "/Users/new/cua-115/home/run/cb5ac66f-0478-48e3-a858-1e862a102022",
+      "sessionTmp": "/Users/new/cua-115/home/run/cb5ac66f-0478-48e3-a858-1e862a102022/tmp",
+      "TMPDIR": "/Users/new/cua-115/home/run/cb5ac66f-0478-48e3-a858-1e862a102022/tmp",
+      "CODEX_HOME": "/Users/new/cua-115/home/state/codex"
+    }
+  ],
+  "launchEnv": {
+    "ok": true,
+    "roles": {
+      "kernel": {
+        "TMPDIR": "equal",
+        "CODEX_HOME": "equal",
+        "calls": 1
+      },
+      "worker": {
+        "TMPDIR": "equal",
+        "CODEX_HOME": "equal",
+        "calls": 1
+      }
+    },
+    "unmatched": 0
+  },
+  "appServers": [],
+  "rawLogDir": "/Users/new/cua-115/scratch/m2-env-scoped-zbjsCh/slot",
+  "finished": "2026-10-18T05:20:12.088Z"
+}

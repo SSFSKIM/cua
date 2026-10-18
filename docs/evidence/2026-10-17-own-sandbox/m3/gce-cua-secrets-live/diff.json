@@ -1,0 +1,329 @@
+{
+  "ok": false,
+  "differences": [
+    {
+      "kind": "configuration",
+      "field": "backend"
+    },
+    {
+      "kind": "configuration",
+      "field": "sandbox"
+    },
+    {
+      "kind": "configuration",
+      "field": "surfaces"
+    }
+  ],
+  "expected": [
+    {
+      "case": "secrets/browser-live/execute/fill",
+      "cell": "setup",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "secrets/browser-live/execute/fill",
+      "cell": "exercise",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "secrets/browser-live/execute/ax-paste",
+      "cell": "setup",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "secrets/browser-live/execute/ax-paste",
+      "cell": "exercise",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "secrets/browser-live/execute/ax-type-text",
+      "cell": "setup",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "secrets/browser-live/execute/ax-type-text",
+      "cell": "exercise",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "secrets/browser-live/execute/ax-set-value",
+      "cell": "setup",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "secrets/browser-live/execute/ax-set-value",
+      "cell": "exercise",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "secrets/browser-live/execute-with-recovery/fill",
+      "cell": "setup",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "secrets/browser-live/execute-with-recovery/fill",
+      "cell": "exercise",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "secrets/browser-live/execute-with-recovery/ax-paste",
+      "cell": "setup",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "secrets/browser-live/execute-with-recovery/ax-paste",
+      "cell": "exercise",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "secrets/browser-live/execute-with-recovery/ax-type-text",
+      "cell": "setup",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "secrets/browser-live/execute-with-recovery/ax-type-text",
+      "cell": "exercise",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "secrets/browser-live/execute-with-recovery/ax-set-value",
+      "cell": "setup",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "secrets/browser-live/execute-with-recovery/ax-set-value",
+      "cell": "exercise",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "secrets/browser-live/refuse/invalid-label",
+      "cell": "setup",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "secrets/browser-live/refuse/invalid-label",
+      "cell": "exercise",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "secrets/browser-live/refuse/reserved-label",
+      "cell": "setup",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "secrets/browser-live/refuse/reserved-label",
+      "cell": "exercise",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "secrets/browser-live/refuse/unsupported-shape",
+      "cell": "setup",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "secrets/browser-live/refuse/unsupported-shape",
+      "cell": "exercise",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "secrets/browser-live/refuse/disabled",
+      "cell": "setup",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "secrets/browser-live/refuse/disabled",
+      "cell": "exercise",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "secrets/browser-live/refuse/unavailable",
+      "cell": "setup",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "secrets/browser-live/refuse/unavailable",
+      "cell": "exercise",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "secrets/browser-live/refuse/unknown-label",
+      "cell": "setup",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "secrets/browser-live/refuse/unknown-label",
+      "cell": "exercise",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "secrets/browser-live/refuse/unsafe-store",
+      "cell": "setup",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "secrets/browser-live/refuse/unsafe-store",
+      "cell": "exercise",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "secrets/browser-live/refuse/unreadable-store",
+      "cell": "setup",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "secrets/browser-live/refuse/unreadable-store",
+      "cell": "exercise",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "secrets/browser-live/refuse/service-version",
+      "cell": "setup",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "secrets/browser-live/refuse/service-version",
+      "cell": "exercise",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "secrets/browser-live/errors/rejection-sanitized",
+      "cell": "setup",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "secrets/browser-live/errors/rejection-sanitized",
+      "cell": "exercise",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "secrets/browser-live/errors/recovery-envelope-sanitized",
+      "cell": "setup",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "secrets/browser-live/errors/recovery-envelope-sanitized",
+      "cell": "exercise",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "secrets/browser-live/reports/labels-not-values",
+      "cell": "setup",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "secrets/browser-live/reports/labels-not-values",
+      "cell": "exercise",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "secrets/browser-live/no-substitution/embedded-marker",
+      "cell": "setup",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "secrets/browser-live/no-substitution/embedded-marker",
+      "cell": "exercise",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "secrets/browser-live/no-substitution/unsupported-fields",
+      "cell": "setup",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "secrets/browser-live/no-substitution/unsupported-fields",
+      "cell": "exercise",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "secrets/browser-live/no-substitution/evaluate-strings",
+      "cell": "setup",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "secrets/browser-live/no-substitution/evaluate-strings",
+      "cell": "exercise",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "secrets/browser-live/no-substitution/cdp-strings",
+      "cell": "setup",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "secrets/browser-live/no-substitution/cdp-strings",
+      "cell": "exercise",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "secrets/browser-live/optional-fields/timeouts-and-text-format",
+      "cell": "setup",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "secrets/browser-live/optional-fields/timeouts-and-text-format",
+      "cell": "exercise",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    }
+  ],
+  "cases": 0,
+  "cells": 50,
+  "recordedCases": 0,
+  "vendorDefects": [],
+  "pendingCells": [],
+  "pendingObligations": [],
+  "pendingUnexpectedPasses": [],
+  "provisionalCells": [],
+  "allAssertionsPassed": false,
+  "doubleCases": 0
+}

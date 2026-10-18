@@ -35,6 +35,7 @@ const envShown = pid => { try { const c = execFileSync('/bin/ps', ['-ww', '-o', 
 
 const report = {startedAt: new Date().toISOString(), host: execFileSync('/bin/hostname', {encoding: 'utf8'}).trim(), macos: execFileSync('/usr/bin/sw_vers', ['-productVersion'], {encoding: 'utf8'}).trim()};
 const witnessStart = Date.now(), initialFront = localFrontmost();
+const seen = new Set();  // every TextEdit pid the witness itself caused to start (A's, and B's running-before one)
 report.initialFront = initialFront;
 try {
   if (textEdits().length) { check('no TextEdit runs at the start', false, `TextEdit pid ${textEdits().join(', ')} runs; the witness touches nothing`); throw new Error('stop'); }
@@ -45,6 +46,7 @@ try {
   open(file('a.txt'));
   await waitFor(() => textEdits().length > 0); await sleep(1500);
   const started = textEdits();
+  for (const pid of started) seen.add(pid);
   report.a = {front: a.front, frontDuring: localFrontmost(), started, envShownByPsE: started.map(envShown)};
   const cleanA = await cleanUpFixtureApp({name: 'TextEdit', bundle: TEXTEDIT_BUNDLE, run: a, frontmost: localFrontmost});
   report.a.cleanup = cleanA;
@@ -56,6 +58,7 @@ try {
   open(file('before.txt'));
   await waitFor(() => textEdits().length > 0); await sleep(1500);
   const preexisting = textEdits();
+  for (const pid of preexisting) seen.add(pid);
   await restoreFront(initialFront, {frontmost: localFrontmost, app: TEXTEDIT_BUNDLE});
   const b = {startedAt: Date.now(), before: textEdits(), front: localFrontmost()};
   open(file('b.txt'));
@@ -69,12 +72,13 @@ try {
 } catch (error) {
   if (error.message !== 'stop') check('the witness ran to the end', false, error.message.split('\n')[0]);
 } finally {
-  // The witness's own leftovers: any TextEdit launched since it began (it refused to start while one ran).
-  const own = ownedLaunches({pids: textEdits(), before: [], startedAt: witnessStart, launchOf: pid => launchOf(pid)});
+  // The witness's own leftovers: only pids it saw start (it refused to start while a TextEdit ran), still launched after
+  // it began (a pid reused by another process since is not its own).
+  const own = ownedLaunches({pids: textEdits().filter(pid => seen.has(pid)), before: [], startedAt: witnessStart, launchOf: pid => launchOf(pid)});
   if (checks[0]?.status === 'PASS' && own.length) report.teardown = await quitOwned(own);
   if (checks[0]?.status === 'PASS') {
     report.final = {front: await restoreFront(initialFront, {frontmost: localFrontmost, app: TEXTEDIT_BUNDLE}), running: textEdits()};
-    check('end: no TextEdit of the witness is left', !textEdits().length, `running ${textEdits().join(', ') || 'none'}`);
+    check('end: no TextEdit of the witness is left', !textEdits().some(pid => seen.has(pid)), `running ${textEdits().join(', ') || 'none'} (the witness's: ${[...seen].join(', ') || 'none'})`);
     check('end: the front at the start is frontmost again', localFrontmost() === initialFront, `${localFrontmost()} (start ${initialFront})`);
   }
   rmSync(dir, {recursive: true, force: true});

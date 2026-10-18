@@ -243,3 +243,15 @@
 2026-10-18T06:24:26.132Z gated sh scripts/sandbox-probe/m2-mini.sh headless dd88113: hold reading: front=com.apple.Terminal busy=true workers=1 queued=0 (ignored in the hold) load=6.59 -> wait
 2026-10-18T06:24:53.453Z gated sh scripts/sandbox-probe/m2-mini.sh headless dd88113: hold reading: front=com.apple.Terminal busy=true workers=1 queued=0 (ignored in the hold) load=5.49 -> wait
 2026-10-18T06:24:59Z headless at dd88113 never passed its gate (CI busy); superseded by 249a2a9
+2026-10-18T06:25:01Z headless group at 249a2a9: the approved headless rule
+2026-10-18T06:25:04.839Z gated sh scripts/sandbox-probe/m2-mini.sh headless 249a2a9: hold reading: front=com.apple.Terminal busy=true workers=1 queued=0 (ignored in the hold) load=5.02 -> wait
+2026-10-18T06:25:35.412Z gated sh scripts/sandbox-probe/m2-mini.sh headless 249a2a9: hold reading: front=com.apple.Terminal busy=true workers=1 queued=0 (ignored in the hold) load=4.92 -> wait
+2026-10-18T06:25:58.996Z gated sh scripts/sandbox-probe/m2-mini.sh headless 249a2a9: hold reading: front=com.apple.Terminal busy=true workers=1 queued=0 (ignored in the hold) load=4.48 -> wait
+2026-10-18T06:26:24.528Z gated sh scripts/sandbox-probe/m2-mini.sh headless 249a2a9: hold reading: front=com.apple.Terminal busy=true workers=1 queued=0 (ignored in the hold) load=3.83 -> wait
+2026-10-18T06:26:47.602Z gated sh scripts/sandbox-probe/m2-mini.sh headless 249a2a9: hold reading: front=com.apple.Terminal busy=true workers=1 queued=0 (ignored in the hold) load=4.88 -> wait
+2026-10-18T06:27:10.994Z gated sh scripts/sandbox-probe/m2-mini.sh headless 249a2a9: hold reading: front=com.apple.Terminal busy=true workers=1 queued=0 (ignored in the hold) load=4.76 -> wait
+2026-10-18T06:27:34.090Z gated sh scripts/sandbox-probe/m2-mini.sh headless 249a2a9: hold reading: front=com.apple.Terminal busy=true workers=1 queued=0 (ignored in the hold) load=4.28 -> wait
+2026-10-18T06:27:57.433Z gated sh scripts/sandbox-probe/m2-mini.sh headless 249a2a9: hold reading: front=com.apple.Terminal busy=false workers=0 queued=0 (ignored in the hold) load=5.75 -> wait
+2026-10-18T06:28:19.891Z gated sh scripts/sandbox-probe/m2-mini.sh headless 249a2a9: hold reading: front=com.apple.Terminal busy=false workers=0 queued=0 (ignored in the hold) load=4.6 -> idle
+2026-10-18T06:28:30.886Z gated sh scripts/sandbox-probe/m2-mini.sh headless 249a2a9: exit 1
+2026-10-18T06:28:31.521Z front after gated sh scripts/sandbox-probe/m2-mini.sh headless 249a2a9: com.apple.Terminal

@@ -184,7 +184,8 @@ test('a cell that times out stops all further input, and the run still ends its 
 // The mini's native runs serve the approved runtime copy in place (prepare.mjs): the double prepares one.
 const reuseOf = home => ({approvedHome: home, release: '26.928.40906-darwin-arm64', runtimeRoot: `${home}/runtimes/26.928.40906-darwin-arm64`,
   helper: `${home}/runtimes/26.928.40906-darwin-arm64/SkyComputerUseService.app`, reason: 'reused'});
-test('a macOS vendor-host run keeps the TextEdit baseline\'s sequence and attests its host', async t => {
+// One macOS vendor-host run against the doubles; `frontmost(app)` is the device's frontmost-application reader (#162).
+async function macRun(t, {frontmost = () => 'com.apple.TextEdit'} = {}) {
   const app = textEdit();
   const state = {record: true, scripts: [], answeringHost: 'vendor'};
   const approval = {method: 'elicitation/create', params: {message: 'Allow Computer Use to use "TextEdit"?', mode: 'form', requestedSchema: {type: 'object', properties: {}},
@@ -217,10 +218,17 @@ test('a macOS vendor-host run keeps the TextEdit baseline\'s sequence and attest
     if (script.startsWith('rm -f')) state.record = false;
     return state.record ? 'present' : 'absent';
   };
-  const device = {helpers: () => [], leftovers: () => ({serves: 0, textEditRunning: launched && !app.quit})};
+  const frontmosts = [];
+  const device = {helpers: () => [], leftovers: () => ({serves: 0, textEditRunning: launched && !app.quit}),
+    frontmost: () => { const id = frontmost(app); frontmosts.push(id); return id; }};
   const out = outDir(t);
   const code = await run({device: 'mini', out, host: 'vendor', approvedRuntime: home, ...plan, io: {remote, controllerLoad:()=> 'controller load', device: () => device, connect: options => fakeClient(options, cua, state)}});
   const meta = metaOf(out), rows = results(out);
+  return {code, meta, rows, app, state, frontmosts, home};
+}
+
+test('a macOS vendor-host run keeps the TextEdit baseline\'s sequence and attests its host', async t => {
+  const {code, meta, rows, app, state, frontmosts, home} = await macRun(t);
   assert.equal(code, 0, meta.error);
   assert.match(state.prepareScript, /"approvedHome":"\/Users\/someone\/Library\/Application Support\/cua"/);
   assert.equal(meta.measurement.freshInstall, false);
@@ -235,6 +243,22 @@ test('a macOS vendor-host run keeps the TextEdit baseline\'s sequence and attest
   assert.deepEqual(meta.environment, {CUA_REPL_HOST: 'vendor', CUA_SHIM_SURFACES: 'computer', CUA_SHIM_PERSIST: 'session', CUA_SHIM_SECRETS: 'off'});
   assert.equal(meta.hostAttestations.length, 3);
   assert.equal(app.windows.length, 1);
+  assert.equal(frontmosts.length, plan.tasks * 2 + 1, 'the frontmost app is read before every key-sending cell: each task\'s act and close, and the quit');
+});
+
+// #162: a super+w or super+q (and the task's super+n and typing) is sent only while TextEdit, which the run launched, is
+// the frontmost application. Otherwise the key is not sent, the skip is recorded with the frontmost app's bundle id,
+// and the run fails with no further input.
+test('a macOS run whose target is not frontmost sends no key, records key_skipped_not_frontmost and fails', async t => {
+  let reads = 0;
+  // TextEdit is frontmost for the first task's act, then Chrome is before its close.
+  const {code, meta, rows, app} = await macRun(t, {frontmost: () => (++reads === 1 ? 'com.apple.TextEdit' : 'com.google.Chrome')});
+  assert.equal(code, 1);
+  assert.ok(!app.keys.includes('super+w') && !app.keys.includes('super+q'), JSON.stringify(app.keys));
+  assert.deepEqual(meta.keySkipped, [{event: 'key_skipped_not_frontmost', keys: ['super+w'], target: 'com.apple.TextEdit', frontmost: 'com.google.Chrome'}]);
+  assert.match(meta.stopped, /key_skipped_not_frontmost.*com\.google\.Chrome/);
+  assert.ok(rows.some(r => r.op === 'key.skipped' && r.ok === false && r.frontmost === 'com.google.Chrome'));
+  assert.equal(meta.complete, false);
 });
 
 test('a method case whose read-back fails is recorded as failed, never as text that went in', async t => {

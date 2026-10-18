@@ -4,7 +4,8 @@
 // one retry on the launch's timeoutReached), a scratch document, the guarded observation series, the
 // new-document -> typeText -> verify -> delete task, and quitting the TextEdit it launched. Every cell guards the window
 // it acts on (./cells.mjs).
-import {isTextEditApproval} from '../accept/lib.mjs';
+import {isTextEditApproval, TEXTEDIT_BUNDLE} from '../accept/lib.mjs';
+import {FRONTMOST_SCRIPT, parseFrontmost, sendIfFrontmost} from '../accept/key-guard.mjs';
 import * as cells from './cells.mjs';
 import {classifyHelpers, HELPER_SCRIPT, leftoverScript} from './remote.mjs';
 
@@ -16,14 +17,28 @@ export function macosDevice(remote, {checkout, runtimeRoot}) {
   return {
     helpers: () => classifyHelpers(remote(HELPER_SCRIPT), runtimeRoot),
     leftovers() { const [serves, textEdit] = remote(leftoverScript(checkout)).split(' ').map(Number); return {serves, textEditRunning: textEdit > 0}; },
+    frontmost: () => parseFrontmost(remote(FRONTMOST_SCRIPT)),
   };
+}
+
+// A cell that sends keys to TextEdit runs only while TextEdit is the device's frontmost application (#162,
+// scripts/accept/key-guard.mjs); otherwise it is not sent, the skip is recorded (meta.keySkipped and a key.skipped row),
+// and the run stops with no further input. The scratch document's opening is not guarded: on a fresh launch it clicks
+// the Open panel's New Document button (served out of process, which may be what is frontmost then), and its super+n
+// path is taken only when TextEdit already shows a window of its own.
+async function keyCell(ctx, code, keys) {
+  const out = await sendIfFrontmost({target: TEXTEDIT_BUNDLE, keys, frontmost: () => ctx.device.frontmost(), send: () => ctx.js(code)});
+  if (out.sent) return out.result;
+  (ctx.meta.keySkipped ??= []).push(out.skipped);
+  ctx.emit({op: 'key.skipped', sample: ctx.meta.keySkipped.length, ok: false, ...out.skipped});
+  return ctx.stop(`${out.skipped.event}: ${keys.join(', ')} not sent, the frontmost application is ${out.skipped.frontmost}, not TextEdit (#162)`);
 }
 
 // TextEdit this run launched is quit from its scratch document (the cell refuses when that is not in front).
 async function quitTextEdit(ctx) {
   const {meta, device} = ctx;
   if (!meta.textEdit?.launchedByRun || meta.textEdit.quitByRun || !ctx.warmOpen()) return;
-  const quit = await ctx.js(cells.QUIT_TEXTEDIT);
+  const quit = await keyCell(ctx, cells.QUIT_TEXTEDIT, ['super+q']);
   let running = true;
   for (let i = 0; i < 10 && running; i++) { await sleep(500); running = device.leftovers().textEditRunning; }
   meta.textEdit.quitByRun = Boolean(quit.cell?.ok) && !running;
@@ -77,10 +92,10 @@ export const macosAdapter = {
 
     for (let sample = 1; sample <= ctx.tasks; sample++) {
       const steps = [];
-      const act = guard(await js(cells.TASK_ACT), `task ${sample}`);
+      const act = guard(await keyCell(ctx, cells.TASK_ACT, ['super+n', 'typeText']), `task ${sample}`);
       steps.push(row('task.act', sample, act));
       if (act.cell?.ok) steps.push(row('task.verify', sample, guard(await js(cells.TASK_VERIFY), `task ${sample}`)));
-      const close = guard(await js(cells.TASK_CLOSE), `task ${sample}`);
+      const close = guard(await keyCell(ctx, cells.TASK_CLOSE, ['super+w']), `task ${sample}`);
       steps.push(row('task.close', sample, close));
       const ok = steps.length === 3 && steps.every(s => s.ok);
       const sum = key => round(steps.reduce((total, s) => total + (s[key] ?? 0), 0));

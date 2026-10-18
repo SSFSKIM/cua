@@ -93,6 +93,7 @@ placed helper against its pin) and no Codex CLI rows.
 - **Kernel exit status.** On cua's own host the kernel is Node itself, so a killed kernel reports Node's own exit
   (`signal=9`), not a launcher's.
 - Linux: the first cell of a session starts ~50–70 ms slower, the cost of the confined kernel
+- macOS vendor host: a cached session's first cell is ~60 ms slower, likely the launcher's Node startup
 
 **#138 (the time-zone hang) stays open, not reproduced.** The one grant that would address it,
 `(allow mach-lookup (global-name "com.apple.system.notification_center"))` in both macOS roles' profiles, is ready

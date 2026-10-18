@@ -75,5 +75,5 @@ These are not yet tickets unless noted.
 - **The secret store's path.** The shell guard refuses command text that names it, so paths to it were built in code.
 - **Shared-machine scheduling.** The mini's GUI groups ran only inside CI-opt holds and around MAWS's gates.
 - **Releasing the hold without the executor's report.** In group B the mini executor went quiet after parity. The hold was released once nothing of ours ran on the mini, and the executor reported afterwards.
-- **A closed Chrome window.** The owner's Chrome window closed during group B, and parity waited until the dispatching session reopened it.
+- **A closed Chrome window.** The owner's Chrome window had been closed before group B (15:31:52Z, by a click over Screen Sharing; #162), and parity waited until the dispatching session reopened it.
 - **MacBook load (load averages up to about 200).** It made some local timing tests flaky. Each was rerun alone, and CI ran the full suite.

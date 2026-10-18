@@ -110,8 +110,9 @@ The dispatching session ruled (2026-10-18): don't widen the M0 pairs' deviations
 | [39153110600](https://github.com/SSFSKIM/cua/actions/runs/39153110600) | 242f662 | GREEN 1m20s | |
 | [39153113713](https://github.com/SSFSKIM/cua/actions/runs/39153113713) | 242f662 | GREEN 1m46s | |
 | [39154681618](https://github.com/SSFSKIM/cua/actions/runs/39154681618) | afc659a | GREEN 1m23s | the review fixes: judged against the reduced baseline, public forms only in the artifact |
+| [39156236619](https://github.com/SSFSKIM/cua/actions/runs/39156236619) | 7f3a398 | GREEN 1m30s | the second review's fixes: judged against the baseline in the explicit public form; the gate's log is only step lines, `hosted-gate:` lines and own-sandbox's labels |
 
-**Flakiness.** Five of five runs with the baseline in place were green, three of them concurrent, and every step
+**Flakiness.** Seven of seven runs with the baseline in place were green, three of them concurrent, and every step
 passed in each. No result was intermittent. Each of the first three reds was deterministic, a harness or record
 problem, and each is fixed above. own-sandbox's 76 and 86 checks have no timing bound that a slower runner could miss:
 each takes 4 to 9 s.

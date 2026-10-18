@@ -323,6 +323,8 @@ Subcommands:
   - macOS: `/usr/bin/sandbox-exec` present, plus the compat executable and its Node for the vendor host;
   - Linux: the helper present and hash-correct; the existing `sandbox.userns` row stays.
 - **CODEX_HOME.** It stays only for the macOS vendor host, where node_repl writes `computer-use/sessions` approvals and `node_repl/active_execs`. The own host stops setting it.
+- **The macOS pin keeps its release id** (2026-10-18, Decision Log). The release id comes from the app version, platform and arch, and the archive is unchanged. An installed tree is never modified, so an existing install keeps the native helper at the same on-disk path and sees no new screen-capture prompt. Its tree keeps the now-unused CodexCLI.app (about 229 MB) until M4's cleanup. Once the pin drops CodexCLI.app, doctor and install verification stop checking it, so a user who deletes it by hand gets no failing check (M2 pins this with a test).
+- **CodexCLI.app removal (M4).** `cua install` removes it only under three conditions: by its exact name inside `$CUA_HOME/runtimes/<release>/`, only when the installed pin no longer lists it, and never while a session runs from that release. Each removal is logged by name.
 - **Cleanup.** The Codex CLI's leftovers in the owned CODEX_HOME are removed by `cua install` (and reported by doctor until then), by name, after #79 has removed their last user: `auth.json`, `installation_id`, `*.sqlite` with their `-wal`/`-shm`, `models_cache.json`, `cache/`, `plugins/`, `skills/`, `log/`, `tmp/arg0`, `browser/sessions`. Every name is logged without its content.
 
 ### #138: the time-zone hang
@@ -584,7 +586,7 @@ What exists at the end:
 
 **Touches:**
 - `src/sandbox/seatbelt.mjs` (the notification_center line);
-- `src/runtime/install.mjs` and `src/runtime/doctor.mjs` (cleanup and its report);
+- `src/runtime/install.mjs` and `src/runtime/doctor.mjs` (cleanup and its report, including the unused CodexCLI.app in installed darwin trees under the conditions in Design, "Removal, CODEX_HOME and the install");
 - `README.md`;
 - `docs/doperpowers/specs/2026-10-02-standalone-cua-design.md` and `docs/doperpowers/specs/2026-10-14-own-repl-host-design.md` (Decision Log entries; "Kernel and sandbox" revised to point here);
 - `.claude-plugin/plugin.json`, `package.json`;
@@ -904,6 +906,10 @@ Dependencies on other work: #79 merged before M2. #117 retires the compat execut
   Rejected: creating everywhere (the Design as first written), because on macOS it is a side effect with no purpose once `realish` handles the missing tail; and creating nothing on Linux, because the mask needs the path.
   Rationale: create only where the confinement needs it, and never outside what cua owns beyond a single leaf whose parent already exists.
   Date/Author: 2026-10-17, execution session (ruled by the dispatching session).
+
+- Decision: the darwin pin keeps its release id across M2's change (2026-10-18, accepted by the dispatching session). The native helper then stays at the same on-disk path on every machine that already has this release, and the owner sees no new screen-capture prompt. Existing trees keep the unused CodexCLI.app until M4 removes it under the conditions in the Design.
+  Rationale: a new helper copy path raises a one-time screen-capture prompt per machine (Surprises). Keeping the path avoids that cost for 229 MB of disk that M4 reclaims.
+  Date/Author: 2026-10-18, execution session.
 
 ## Outcomes & Retrospective
 

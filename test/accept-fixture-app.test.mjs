@@ -4,7 +4,7 @@
 // mid-run, is never touched, and the front goes back to the app that had it.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {captureLaunch, cleanUpFixtureApp, isSameLaunch, parseLaunch, quitOwned, restoreFront} from '../scripts/accept/fixture-app.mjs';
+import {awaitLaunch, captureLaunch, cleanUpFixtureApp, isSameLaunch, parseLaunch, quitOwned, restoreFront} from '../scripts/accept/fixture-app.mjs';
 
 test('ps lstart text (C locale, UTC) parses to epoch ms; anything else is null', () => {
   assert.equal(parseLaunch('Sun Oct 18 02:51:07 2026    \n'), Date.parse('2026-10-18T02:51:07Z'));
@@ -115,4 +115,17 @@ test('cleanup: an ambiguous launch records nothing, so nothing is quit', async (
   assert.equal(captured.launch, null);
   const {quitCalls} = await cleanup({launch: captured.launch, before: [], running: [42, 50], launches: {42: ours.at, 50: ours.at + 1000}});
   assert.deepEqual(quitCalls, []);
+});
+
+test('awaitLaunch: polls until the new pid is listed and times it; past the bound a miss; with an app running before, one reading', async () => {
+  let t = 0; const at = Date.UTC(2026, 9, 18, 10, 0, 6);
+  const listings = [[], [], [42]];
+  const r = await awaitLaunch({pids: () => listings.shift() ?? [42], before: [], startedAt: at - 500, launchOf: () => at, now: () => t, sleep: async ms => { t += ms; }, pollMs: 100});
+  assert.deepEqual({launch: r.launch, waitedMs: r.waitedMs, missed: r.missed}, {launch: {pid: 42, at}, waitedMs: 200, missed: false});
+  t = 0;
+  const miss = await awaitLaunch({pids: () => [], before: [], startedAt: at, launchOf: () => at, now: () => t, sleep: async ms => { t += ms; }, boundMs: 1000, pollMs: 100});
+  assert.deepEqual({launch: miss.launch, missed: miss.missed, waitedMs: miss.waitedMs}, {launch: null, missed: true, waitedMs: 1000});
+  let reads = 0;
+  const running = await awaitLaunch({pids: () => { reads++; return [7]; }, before: [7], startedAt: at, launchOf: () => at - 60_000, now: () => 0, sleep: async () => assert.fail('no poll')});
+  assert.deepEqual({launch: running.launch, missed: running.missed, reads}, {launch: null, missed: false, reads: 1});
 });

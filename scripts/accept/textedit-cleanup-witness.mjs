@@ -18,7 +18,7 @@ import {mkdtempSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {parseArgs} from 'node:util';
-import {captureLaunch, cleanUpFixtureApp, isSameLaunch, pidsOf, quitOwned, restoreFront} from './fixture-app.mjs';
+import {awaitLaunch, captureLaunch, cleanUpFixtureApp, isSameLaunch, pidsOf, quitOwned, restoreFront} from './fixture-app.mjs';
 import {localFrontmost} from './key-guard.mjs';
 import {TEXTEDIT_BUNDLE} from './lib.mjs';
 
@@ -56,9 +56,10 @@ try {
   await restoreFront(initialFront, {frontmost: localFrontmost, app: TEXTEDIT_BUNDLE});
   const b = {startedAt: Date.now(), before: textEdits(), front: localFrontmost()};
   open(file('run-1.txt'));
+  const capturedB = await awaitLaunch({pids: textEdits, before: b.before, startedAt: b.startedAt});
+  b.launch = capturedB.launch;
   await sleep(2000);
-  b.launch = captureLaunch({pids: textEdits(), before: b.before, startedAt: b.startedAt}).launch;
-  report.runningBefore = {preexisting, front: b.front, frontDuring: localFrontmost(), runningDuring: textEdits()};
+  report.runningBefore = {preexisting, front: b.front, frontDuring: localFrontmost(), runningDuring: textEdits(), capture: {waitedMs: capturedB.waitedMs, missed: capturedB.missed, candidates: capturedB.candidates}};
   const cleanB = await cleanUpFixtureApp({name: 'TextEdit', bundle: TEXTEDIT_BUNDLE, run: b, alone: ALONE, frontmost: localFrontmost});
   report.runningBefore.cleanup = cleanB;
   check('running before: the run\'s document went to that TextEdit (no new pid)', preexisting.length === 1 && report.runningBefore.runningDuring.join() === preexisting.join(), `before ${preexisting.join(', ')}; during ${report.runningBefore.runningDuring.join(', ')}`);
@@ -73,11 +74,14 @@ try {
   // 2. No TextEdit before the run: the run starts it, and its cleanup quits that pid and hands the front back.
   const a = {startedAt: Date.now(), before: textEdits(), front: localFrontmost()};
   open(file('run-2.txt'));
-  await waitFor(() => textEdits().length > 0); await sleep(1500);
-  const started = textEdits();
-  a.launch = captureLaunch({pids: started, before: a.before, startedAt: a.startedAt}).launch;
+  // The harness's capture: a bounded poll right after `open` returns, timed (how long the new pid took to be listed).
+  const capturedA = await awaitLaunch({pids: textEdits, before: a.before, startedAt: a.startedAt});
+  a.launch = capturedA.launch;
   if (a.launch) seen.push(a.launch);
-  report.startedByRun = {front: a.front, frontDuring: localFrontmost(), started, envShownByPsE: started.map(envShown)};
+  await sleep(1500);
+  const started = textEdits();
+  report.startedByRun = {front: a.front, frontDuring: localFrontmost(), started, capture: {waitedMs: capturedA.waitedMs, missed: capturedA.missed, candidates: capturedA.candidates}, envShownByPsE: started.map(envShown)};
+  check('started by the run: its pid was captured right after the open, within the bound', Boolean(a.launch) && !capturedA.missed, `${capturedA.missed ? 'missed' : `pid ${a.launch?.pid ?? 'none'}`} after ${capturedA.waitedMs} ms`);
   const cleanA = await cleanUpFixtureApp({name: 'TextEdit', bundle: TEXTEDIT_BUNDLE, run: a, alone: ALONE, frontmost: localFrontmost});
   report.startedByRun.cleanup = cleanA;
   check('started by the run: that TextEdit is the one owned', started.length === 1 && cleanA.launch?.pid === started[0], `started ${started.join(', ')}; launch recorded ${cleanA.launch?.pid ?? 'none'}`);

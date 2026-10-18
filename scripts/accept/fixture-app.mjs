@@ -46,6 +46,22 @@ export function captureLaunch({pids, before, startedAt, launchOf: launch = pid =
   return {launch: found.length === 1 ? found[0] : null, candidates: found.map(({pid}) => pid)};
 }
 
+// captureLaunch as a bounded poll right after the run's `open` returns (the new pid may not be listed yet). With an app
+// already running before (`before` non-empty) `open` hands it the document and no pid is expected: one reading. Else
+// it reads until a candidate appears or `boundMs` passes; past the bound it is a miss (`missed`), never a guess.
+// -> {launch, candidates, waitedMs, missed}.
+export async function awaitLaunch({pids, before, startedAt, launchOf: launch = pid => launchOf(pid), boundMs = 10_000, pollMs = 100,
+  now = Date.now, sleep = ms => new Promise(r => setTimeout(r, ms))}) {
+  const t0 = now();
+  for (;;) {
+    const r = captureLaunch({pids: pids(), before, startedAt, launchOf: launch});
+    const waitedMs = now() - t0;
+    if (r.candidates.length || before.length) return {...r, waitedMs, missed: false};
+    if (waitedMs >= boundMs) return {...r, waitedMs, missed: true};
+    await sleep(pollMs);
+  }
+}
+
 // Whether a recorded launch is still that process: its pid alive with the same launch time.
 export const isSameLaunch = (recorded, {launchOf: launch = pid => launchOf(pid)} = {}) => Boolean(recorded) && launch(recorded.pid) === recorded.at;
 

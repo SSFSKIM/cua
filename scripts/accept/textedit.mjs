@@ -40,7 +40,7 @@ import {socketHolders} from '../probe/lib.mjs';
 import {fingerprintable, fingerprints, textLeaks, UNFINGERPRINTABLE} from '../probe/leak-scan.mjs';
 import {isTextEditApproval, TEXTEDIT_BUNDLE} from './lib.mjs';
 import {localFrontmost, sendToPausedSession} from './key-guard.mjs';
-import {captureLaunch, cleanUpFixtureApp} from './fixture-app.mjs';
+import {awaitLaunch, cleanUpFixtureApp} from './fixture-app.mjs';
 import {openSession, resultText} from './mcp-session.mjs';
 import {pauseGate, pausing} from '../mini-pause.mjs';
 import {createStoreHome, generatedKey, isAccountHome, removeStoreHome, seedSecret} from './secret-seed.mjs';
@@ -241,14 +241,14 @@ export async function runTextEdit({home, secret = false, forbid = () => {}, step
     opened = true;
     await new Promise((resolve, reject) => execFile('/usr/bin/open', ['-a', 'TextEdit', doc], error => error ? reject(error) : resolve()));
     docOpen = true;
-    for (let i = 0; i < 50 && !textEditPids().length; i++) await sleep(100);
+    // The run's own TextEdit, if the open started one, is identified now (pid and launch time), never later: a bounded
+    // poll for the new pid, timed; past the bound a miss is recorded, never guessed.
+    launched = await awaitLaunch({pids: textEditPids, before: textEditBefore, startedAt: runStartedAt});
+    observations.textEdit.launch = {captured: Boolean(launched.launch), candidates: launched.candidates.length, waitedMs: launched.waitedMs, missed: launched.missed};
     await sleep(1000);  // let the document window come to the front
-    // The run's own TextEdit, if the open started one, is identified now (pid and launch time), never later.
-    launched = captureLaunch({pids: textEditPids(), before: textEditBefore, startedAt: runStartedAt});
-    observations.textEdit.launch = launched.launch ? {captured: true} : {captured: false, candidates: launched.candidates.length};
     record(STEP.open, textEditPids().length ? 'PASS' : 'FAIL', `a new empty file in a directory created for this run under $CUA_HOME opened in TextEdit${launched.launch ? ` (started by the open: pid ${launched.launch.pid})`
       : launched.candidates.length > 1 ? ` (TextEdit pids ${launched.candidates.join(', ')} all started since the run began; which is this run's is ambiguous, so none is recorded as its own)`
-        : textEditBefore.length ? ' (already running)' : ''}`);
+        : textEditBefore.length ? ' (already running)' : launched.missed ? ` (no new TextEdit pid within ${launched.waitedMs} ms of the open: a miss, so none is recorded as its own)` : ''}`);
 
     // Connection A: type the marker and observe it.
     const a = await connect('connection A');

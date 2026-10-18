@@ -9,8 +9,9 @@
 //     window (super+w; TextEdit autosaves a file-backed document into the temporary file, never a user location),
 //     counting the close as confirmed only when TextEdit then reports no window at all;
 //   - it removes its own directory (and a store it created) in `finally`, and ends every server it started.
-// It never touches another TextEdit window or document and never quits TextEdit (whether it was running before or
-// was started by the `open`). The vendor asks before CUA first uses an app; the fixture accepts that elicitation only
+// It never touches another TextEdit window or document. At the end it quits TextEdit only when this run started it (a
+// pid absent before the run and launched after it began, ./fixture-app.mjs; a TextEdit that was running before is left
+// as it is) and hands the front back to the application that was frontmost before the run (#157). The vendor asks before CUA first uses an app; the fixture accepts that elicitation only
 // when it is exactly the pinned request for com.apple.TextEdit (scripts/accept/lib.mjs isTextEditApproval), for the
 // session only (CUA_SHIM_PERSIST=session in this scratch home, never "always"), and declines every other request.
 // That auto-answer lives only in this test harness; `cua serve` forwards approvals to its client unchanged. Two
@@ -36,6 +37,7 @@ import {socketHolders} from '../probe/lib.mjs';
 import {fingerprintable, fingerprints, textLeaks, UNFINGERPRINTABLE} from '../probe/leak-scan.mjs';
 import {isTextEditApproval, TEXTEDIT_BUNDLE} from './lib.mjs';
 import {localFrontmost, sendToPausedSession} from './key-guard.mjs';
+import {cleanUpFixtureApp} from './fixture-app.mjs';
 import {openSession, resultText} from './mcp-session.mjs';
 import {pauseGate, pausing} from '../mini-pause.mjs';
 import {createStoreHome, generatedKey, isAccountHome, removeStoreHome, seedSecret} from './secret-seed.mjs';
@@ -57,12 +59,14 @@ export const STEP = {
   closeB: 'connection B: close',
   removeDoc: 'remove the fixture document',
   teardown: 'every server the fixture started has exited',
+  quitApp: 'quit the TextEdit this run started, and only it',
+  front: 'hand the front back to the application frontmost before the run',
   secretCreate: 'secret: the value in a fixture store',
   secretType: 'secret: type the reference',
   secretReadback: 'secret: the document holds exactly the stored value (compared by hash inside the cell)',
   secretCleanup: 'secret: cleanup',
 };
-export const OWN_STEPS = [STEP.preconditions, STEP.open, STEP.bindA, STEP.type, STEP.closeA, STEP.bindB, STEP.closeDoc, STEP.closeB, STEP.removeDoc, STEP.teardown];
+export const OWN_STEPS = [STEP.preconditions, STEP.open, STEP.bindA, STEP.type, STEP.closeA, STEP.bindB, STEP.closeDoc, STEP.closeB, STEP.teardown, STEP.quitApp, STEP.removeDoc, STEP.front];
 export const SECRET_STEPS = [STEP.secretCreate, STEP.secretType, STEP.secretReadback, STEP.secretCleanup];
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -186,7 +190,11 @@ export async function runTextEdit({home, secret = false, forbid = () => {}, step
     return record(step, 'PASS', `front window is the fixture's own document; the vendor asked for approval ${entry.approvalRequests} time(s) on this connection`);
   };
 
+  // What the cleanup needs (./fixture-app.mjs): when the run began, the TextEdit pids already running, the front app.
+  const runStartedAt = Date.now();
   const textEditBefore = textEditPids();
+  const frontBefore = (() => { try { return frontmost(); } catch { return null; } })();
+  let opened = false;  // `open` was called: a TextEdit may have been started by this run
   const helpersBefore = nativeHelpers();
   const sessionsBefore = sessionFiles(home);
   observations.textEdit = {runningBefore: textEditBefore.length > 0};
@@ -225,6 +233,7 @@ export async function runTextEdit({home, secret = false, forbid = () => {}, step
     docDir = mkdtempSync(join(home, 'accept-textedit-'));
     const doc = join(docDir, docName);
     writeFileSync(doc, '', {mode: 0o600, flag: 'wx'});
+    opened = true;
     await new Promise((resolve, reject) => execFile('/usr/bin/open', ['-a', 'TextEdit', doc], error => error ? reject(error) : resolve()));
     docOpen = true;
     for (let i = 0; i < 50 && !textEditPids().length; i++) await sleep(100);
@@ -312,6 +321,18 @@ ${out(`{ownStillFront: __after === ${JSON.stringify(docName)}, otherFront: __aft
       const stuck = exits.filter(e => e.exit.stuck);
       record(STEP.teardown, stuck.length ? 'FAIL' : 'PASS', `${exits.map(e => `${e.name}: ${e.exit.stuck ? 'still alive after SIGTERM, killed' : `exit ${e.exit.code ?? e.exit.signal}${e.exit.forced ? ' after SIGTERM' : ''}`}`).join('; ')}`);
     }
+    if (opened) {
+      const app = await cleanUpFixtureApp({name: 'TextEdit', bundle: TEXTEDIT_BUNDLE, run: {startedAt: runStartedAt, before: textEditBefore, front: frontBefore}, frontmost});
+      observations.textEdit.quitByFixture = app.quit.length > 0;
+      observations.front = {before: app.front.previous, atCleanup: app.front.before, after: app.front.after, restored: app.front.restored};
+      record(STEP.quitApp, app.remaining.length ? 'FAIL' : 'PASS', app.remaining.length
+        ? `TextEdit pid ${app.remaining.join(', ')}, started by this run, did not exit after SIGTERM; quit it by hand`
+        : app.quit.length ? `quit the TextEdit this run started (pid ${app.quit.join(', ')}, launched after the run began)${app.keptBefore.length ? `; pid ${app.keptBefore.join(', ')}, running before, left as it is` : ''}`
+          : textEditBefore.length ? `nothing to quit: TextEdit was running before the run (pid ${textEditBefore.join(', ')}) and is left as it is` : 'nothing to quit: no TextEdit started by this run is running');
+      record(STEP.front, app.front.restored ? 'PASS' : frontBefore ? 'FAIL' : 'BLOCKED', app.front.restored
+        ? `${app.front.previous} is frontmost${app.front.before === app.front.previous ? ' (it still was)' : ` again (it was ${app.front.before ?? 'unreadable'})`}`
+        : frontBefore ? `${frontBefore} was frontmost before the run; now ${app.front.after ?? 'unreadable'}` : 'the frontmost application before the run could not be read, so there is nothing to hand back to');
+    }
     if (docDir) {
       rmSync(docDir, {recursive: true, force: true});  // created exclusively by this invocation (mkdtemp)
       record(STEP.removeDoc, existsSync(docDir) ? 'FAIL' : 'PASS', docOpen ? 'the file and its directory are gone, but its window may still be open in TextEdit' : 'the temporary file and the directory created for it are gone');
@@ -334,7 +355,7 @@ ${out(`{ownStillFront: __after === ${JSON.stringify(docName)}, otherFront: __aft
   const textEditAfter = textEditPids();
   observations.textEdit.runningAfter = textEditAfter.length > 0;
   observations.textEdit.startedByFixture = !textEditBefore.length && textEditAfter.length > 0;
-  observations.textEdit.quitByFixture = false;
+  observations.textEdit.quitByFixture ??= false;
   observations.guiInputStopped = guiStopped;
   const after = sessionFiles(home);
   observations.sessionFiles = {before: sessionsBefore.length, after: after.length, addedByThisRun: after.filter(f => !sessionsBefore.includes(f)).length};

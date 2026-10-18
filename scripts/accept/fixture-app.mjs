@@ -1,0 +1,69 @@
+// The fixture app a live run opens, and its cleanup (#157): the run quits only the app process it caused to start and
+// then hands the front back to the application that was frontmost before it. Callers: scripts/accept/textedit.mjs
+// (accept-native's TextEdit fixture) and scripts/accept/textedit-cleanup-witness.mjs (the same path, without cua).
+//
+// Ownership is causal, by launch: a pid of the app that was not running when the run took its before-set, and that
+// started (ps's launch time) no earlier than the second the run began. A TextEdit that was running before the run is
+// never quit, whatever the run did to it (`open` hands the document to it rather than starting another). The process's
+// environment is not the witness here: ps -E shows nothing of a platform app's environment (Finder, Terminal, TextEdit
+// on macOS 26 and 27), so a marker passed through `open` could not be read back.
+import {execFileSync} from 'node:child_process';
+
+const run = (cmd, args) => execFileSync(cmd, args, {encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], env: {...process.env, LC_ALL: 'C'}, timeout: 10_000});
+
+// The running pids of an executable name (pgrep -x), or [] when none runs.
+export function pidsOf(name, {exec = run} = {}) {
+  try { return String(exec('/usr/bin/pgrep', ['-x', name])).split('\n').filter(Boolean).map(Number); } catch { return []; }
+}
+
+// `ps -o lstart=` text in the C locale ("Sun Oct 18 02:51:07 2026", local time) -> epoch ms, or null.
+export function parseLaunch(text) {
+  const t = String(text).trim().replace(/\s+/g, ' ');
+  const m = /^\w{3} (\w{3}) (\d{1,2}) (\d{2}):(\d{2}):(\d{2}) (\d{4})$/.exec(t);
+  if (!m) return null;
+  const month = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].indexOf(m[1]);
+  if (month < 0) return null;
+  return new Date(Number(m[6]), month, Number(m[2]), Number(m[3]), Number(m[4]), Number(m[5])).getTime();
+}
+
+// A pid's launch time (epoch ms, to the second), or null when it is gone or unreadable.
+export function launchOf(pid, {exec = run} = {}) {
+  try { return parseLaunch(exec('/bin/ps', ['-o', 'lstart=', '-p', String(pid)])); } catch { return null; }
+}
+
+// The run's own processes among `pids`: absent from `before`, launched no earlier than the second `startedAt` falls in
+// (ps reports whole seconds). A pid whose launch time cannot be read is not the run's.
+export function ownedLaunches({pids, before, startedAt, launchOf: launch}) {
+  const floor = Math.floor(startedAt / 1000) * 1000;
+  return pids.filter(pid => !before.includes(pid)).filter(pid => { const at = launch(pid); return at !== null && at >= floor; });
+}
+
+// SIGTERM to each owned pid, then up to `waitMs` for it to exit. -> {quit: [pid], remaining: [pid]}.
+export async function quitOwned(pids, {kill = (pid, signal) => process.kill(pid, signal), alive = pid => { try { process.kill(pid, 0); return true; } catch (error) { return error.code === 'EPERM'; } },
+  sleep = ms => new Promise(r => setTimeout(r, ms)), waitMs = 5000, pollMs = 100} = {}) {
+  for (const pid of pids) { try { kill(pid, 'SIGTERM'); } catch {} }
+  for (let waited = 0; pids.some(alive) && waited < waitMs; waited += pollMs) await sleep(pollMs);
+  return {quit: pids.filter(pid => !alive(pid)), remaining: pids.filter(alive)};
+}
+
+// Hands the front back to `previous` (a bundle id read before the run) when something else is frontmost now. An unknown
+// previous front, or one that is the fixture app itself, is left alone. -> {previous, before, after, restored}.
+export async function restoreFront(previous, {frontmost, activate = id => run('/usr/bin/open', ['-b', id]), app, sleep = ms => new Promise(r => setTimeout(r, ms)), waitMs = 3000, pollMs = 200}) {
+  const read = async () => { try { return (await frontmost()) ?? null; } catch { return null; } };
+  const before = await read();
+  if (!previous || previous === app || before === previous) return {previous, before, after: before, restored: before === previous};
+  try { activate(previous); } catch {}
+  let after = await read();
+  for (let waited = 0; after !== previous && waited < waitMs; waited += pollMs) { await sleep(pollMs); after = await read(); }
+  return {previous, before, after, restored: after === previous};
+}
+
+// The whole cleanup: the run's own launches of `name` quit, then the front handed back. `run` is what the start of the
+// run recorded: {startedAt, before (pids), front (bundle id or null)}.
+export async function cleanUpFixtureApp({name, bundle, run: started, pids = () => pidsOf(name), launchOf: launch = pid => launchOf(pid), quit = quitOwned, frontmost, activate, sleep}) {
+  const running = pids();
+  const owned = ownedLaunches({pids: running, before: started.before, startedAt: started.startedAt, launchOf: launch});
+  const {quit: quitPids, remaining} = owned.length ? await quit(owned) : {quit: [], remaining: []};
+  const front = await restoreFront(started.front, {frontmost, app: bundle, ...(activate ? {activate} : {}), ...(sleep ? {sleep} : {})});
+  return {owned, quit: quitPids, remaining, keptBefore: started.before.filter(pid => running.includes(pid)), front};
+}

@@ -367,6 +367,7 @@ test('tracked-file rules (#157): the home rule spares only the declared mini-lay
 });
 
 test('research-tree references: code lines count, citations in comments do not', () => {
-  const text = ['// see ~/codex-app-src/readable/x', ' * in /Users/x/codex-app-src/y', '# codex-app-src', "const dir = '/Users/x/codex-app-src';", "read(p); // codex-app-src cited", "run('codex-app-src') // here"].join('\n');
-  assert.deepEqual(researchTreeLines(text), [4, 6]);
+  const tree = ['codex', 'app', 'src'].join('-');  // assembled: this file is itself in the scan
+  const text = [`// see ~/${tree}/readable/x`, ` * in /Users/x/${tree}/y`, `# ${tree}`, `const dir = '/Users/x/${tree}';`, `read(p); // ${tree} cited`, `run('${tree}') // here`].join('\n');
+  assert.deepEqual(researchTreeLines(text, tree), [4, 6]);
 });

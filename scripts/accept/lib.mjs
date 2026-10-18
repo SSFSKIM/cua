@@ -215,9 +215,10 @@ export const MINI_LAYOUT_FILES = [
 // -> {home, token}: whether `text` (the tracked file `path`) breaks either rule.
 export const personalText = (path, text, home) => ({home: !MINI_LAYOUT_FILES.includes(path) && text.includes(home + '/'), token: tokenLike(text)});
 
-// Acceptance 10's "clean clone needs no research trees": a line of code that names a local research tree. A comment
-// that cites one (a `//` before the name, or a line opening with * or #) is a citation, not a dependency.
-export function researchTreeLines(text, pattern = 'codex-app-src') {
+// Acceptance 10's "clean clone needs no research trees": the lines of code that name `pattern`, a local research tree
+// (the pattern itself lives only in accept-native.mjs, which the check does not search). A comment that cites one (a
+// `//` before the name, or a line opening with * or #) is a citation, not a dependency.
+export function researchTreeLines(text, pattern) {
   return text.split('\n').map((line, index) => ({line: index + 1, text: line})).filter(({text: line}) => {
     const at = line.indexOf(pattern);
     return at >= 0 && !line.slice(0, at).includes('//') && !/^\s*[*#]/.test(line);

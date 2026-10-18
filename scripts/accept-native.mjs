@@ -471,7 +471,7 @@ async function item10() {
       // This runner holds the pattern itself, so it is not searched.
       // A comment that cites a research tree is not a dependency on one (researchTreeLines).
       const researchRefs = sh('git', ['-C', dir, 'grep', '-l', '-e', 'codex-app-src', '--', ':!docs', ':!*.md', ':!scripts/accept-native.mjs']).split('\n').filter(Boolean)
-        .flatMap(p => researchTreeLines(readFileSync(join(dir, p), 'utf8')).map(line => `${p}:${line}`));
+        .flatMap(p => researchTreeLines(readFileSync(join(dir, p), 'utf8'), 'codex-app-src').map(line => `${p}:${line}`));
       checks.push(check('clean clone needs no research trees', researchRefs.length ? 'FAIL' : 'PASS', researchRefs.length ? `code referring to research trees: ${researchRefs.join(', ')}` : 'no code or config outside docs refers to the local research trees (citations in comments aside)'));
     }
   } finally { rmSync(clone, {recursive: true, force: true}); }

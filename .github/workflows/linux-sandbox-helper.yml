@@ -119,7 +119,7 @@ jobs:
           bin="target/${TARGET}/release/codex-linux-sandbox"
           strip --strip-debug --strip-unneeded "$bin"
           file "$bin"
-          file "$bin" | grep -q 'statically linked'
+          file "$bin" | grep -Eq 'static(-pie|ally) linked'
           mkdir -p "${GITHUB_WORKSPACE}/dist"
           cp "$bin" "${GITHUB_WORKSPACE}/dist/codex-linux-sandbox-${TARGET}"
       - name: Smoke the binary

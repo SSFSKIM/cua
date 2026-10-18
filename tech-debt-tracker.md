@@ -2,6 +2,8 @@
 
 ## Open
 
+- **2026-10-18 — `scripts/probe-runtime.mjs` still names CodexCLI.app (minor, #115 M2).** That live probe, the one `cua doctor`'s `helper.permissions` row points to, builds its own vendor-host environment (`scripts/probe/lib.mjs` `runtimePaths`/`probeEnv`) with `CODEX_CLI_PATH` set to `runtimes/<release>/CodexCLI.app/Contents/MacOS/codex`, and refuses to start without that file. M2 dropped CodexCLI.app from the darwin pin, so the probe still works on a tree installed before M2 (the file is left in place) and refuses on a fresh install. Fix: build the launch through `buildLaunch`/`createLaunchDirs`, so it runs through cua's compat executable with the session's compat settings, or retire the probe in favour of `scripts/accept/compat-route.mjs`. Belongs with M4's cleanup of the leftover CodexCLI.app.
+
 - **2026-10-17 — Leftovers of the vendor browser service in the bind rule and the wrapper (minor, #79).** (a) `cua
   profiles bind`'s name branch (src/profiles/bind.mjs, "Name") and the labelling story in src/profiles/inventory.mjs's
   header rest on the vendor service's profile enrichment; cua's service labels only MAWS backends, which bind ignores,
@@ -280,3 +282,5 @@
   covers it and the live fixture records written-while-open / removed-after-close per connection. Evidence:
   `docs/evidence/m6-acceptance.md`.
 - **2026-10-02 — Explicit native surfaces setting in the launch contract (minor).** The standalone spec's environment enumeration did not explicitly list `CUA_REPL_ENABLED_SURFACES=computer`, although the pinned launcher requires the variable. Resolved in M2: `src/runtime/launch.mjs` sets it in the allowlisted launch environment, documents it in the module's environment contract alongside the other variables, and `test/runtime-launch.test.mjs` asserts it (and that no browser variable or `NODE_REPL_TRUSTED_SERVICES` default is configured for native-only launches). Source: pinned `@oai/cua-repl` `launch.js:16–29`; governing spec: `docs/doperpowers/specs/2026-10-02-standalone-cua-design.md`.
+
+- **Native harness: `ps -E` cannot separate an embedded ` NAME=` from the next environment entry** (#115 M2 PR #158 review, 2026-10-18). `envValues()` in `scripts/native-baseline/prepare.mjs` reads a value up to the next ` NAME=`, so a foreign process whose TMPDIR is literally `<our session temp> OTHER=value` would match our ownership witness, provided its executable is also the approved helper. That value would have to start with this run's random per-session temp path, which only a process already running as this uid could construct, and such a process can signal ours anyway. Fix when it becomes reachable: read the environment from an unambiguous source (`sysctl KERN_PROCARGS2`), or add a second ownership witness.

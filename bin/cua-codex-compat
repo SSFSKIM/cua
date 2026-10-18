@@ -1,0 +1,50 @@
+#!/bin/sh
+# cua's compatibility executable for the Codex CLI: CODEX_CLI_PATH for the macOS vendor host (#115; until #117 retires
+# that host). It runs src/sandbox/codex-compat.mjs, which does the work, on the vendor runtime's pinned Node (24.21.0,
+# which has process.execve), and finds that Node before any JSON can be parsed:
+#   app-server   CUA_COMPAT_NODE, which cua sets for vendor-host launches and which reaches the native helper's
+#                environment through `open` (the helper is shared across sessions, so it reads no session file)
+#   sandbox      the session's <home>/state/compat/<id>.node, written by cua for the launch: the session from TMPDIR
+#                (<home>/run/<id>/tmp) and the home from CODEX_HOME (<home>/state/<name>), since node_repl hands the
+#                kernel's launcher a filtered environment. codex-compat.mjs checks the same location and much more.
+# The Node must be an absolute path to an executable file; anything else, or any other subcommand, exits 1 with a
+# sentence on stderr, and nothing runs unconfined (node_repl on macOS refuses the cell when its launcher fails).
+set -u
+say() { printf 'cua-codex-compat: %s\n' "$*" >&2; }
+here=$(cd -P "$(dirname "$0")/.." 2>/dev/null && pwd) || { say "cannot find cua's checkout from $0"; exit 1; }
+
+case "${1-}" in
+app-server)
+  node=${CUA_COMPAT_NODE-}
+  what=CUA_COMPAT_NODE
+  ;;
+sandbox)
+  tmp=${TMPDIR-}
+  codex_home=${CODEX_HOME-}
+  case $tmp in
+  /*/run/*/tmp) ;;
+  *) say "TMPDIR (${tmp:-unset}) is not the session temp cua sets for a vendor-host session, <home>/run/<session id>/tmp, so the session's compat settings cannot be located"; exit 1 ;;
+  esac
+  session_dir=${tmp%/tmp}
+  id=${session_dir##*/}
+  home=${session_dir%/run/*}
+  if [ "$home/run/$id/tmp" != "$tmp" ] || [ -z "$id" ]; then say "TMPDIR $tmp is not the session temp cua sets for a vendor-host session, <home>/run/<session id>/tmp"; exit 1; fi
+  if [ "${codex_home%/*}" != "$home/state" ]; then say "CODEX_HOME (${codex_home:-unset}) and TMPDIR $tmp do not name the same cua home"; exit 1; fi
+  file=$home/state/compat/$id.node
+  if [ -L "$file" ] || [ ! -f "$file" ]; then say "the session's compat settings $file do not exist (cua writes them when it launches a vendor-host session)"; exit 1; fi
+  node=
+  IFS= read -r node < "$file" || [ -n "$node" ] || { say "the session's compat settings $file name no Node"; exit 1; }
+  what=$file
+  ;;
+*)
+  say "${1:-no subcommand}: cua's compatibility executable for the Codex CLI runs only \`sandbox\` (node_repl's children) and \`app-server --listen stdio://\` (the native helper's policy read)"
+  exit 1
+  ;;
+esac
+
+case $node in
+/*) ;;
+*) say "$what names no absolute Node path (${node:-empty}); cua sets the vendor runtime's pinned Node there"; exit 1 ;;
+esac
+if [ ! -f "$node" ] || [ ! -x "$node" ]; then say "$what names $node, which is not an executable file"; exit 1; fi
+exec "$node" --disable-warning=ExperimentalWarning "$here/src/sandbox/codex-compat.mjs" "$@"

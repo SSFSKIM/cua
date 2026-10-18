@@ -5,9 +5,17 @@
 // every deny-list location, the runtime's module tree, writes inside and outside their session, a hard link and a clone
 // of a denied file, and TCP and Unix-socket connects.
 //
-//   node scripts/accept/own-sandbox.mjs --home <installed CUA_HOME> [--modes scoped,default,disabled] [--node <Node 24+>] [--out <file>]
+//   node scripts/accept/own-sandbox.mjs --home <installed CUA_HOME> [--host cua|vendor] [--modes scoped,default,disabled] [--node <Node 24+>] [--out <file>]
 //
 // The own host runs on the Node `cua install` placed in the home, or `--node` (as CUA_NODE).
+//
+// --host vendor (#115 M2, acceptance 2 to 5 on the macOS vendor host): the same checks on a vendor-host computer
+// session (node_repl, its children launched by cua's compat executable), with no native call, so no helper starts and
+// the scratch HOME is enough. The kernel is then Node itself under seatbelt, node_repl's child, and its os.tmpdir() is
+// the session's own temp. Its script directory (node_repl's `.tmp*` with kernel.js, inside that temp) is readable but
+// not writable. And across sessions (scoped): while a vendor-host session runs, a cell of a concurrent own-host
+// session can neither write into nor read that session's script directory or run directory, and the victim's
+// trusted-worker.js is byte for byte what node_repl wrote.
 //
 // Everything secret is synthetic: the user HOME is a temporary directory this run makes and removes, holding a
 // generated sentinel in its own secret store (and, through a symlinked project tier, in a directory outside it) and in
@@ -24,7 +32,7 @@
 // process named codex runs. Exit 0 when every expectation holds, 1 otherwise.
 import {execFileSync} from 'node:child_process';
 import {randomBytes, randomUUID} from 'node:crypto';
-import {mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync, existsSync} from 'node:fs';
+import {mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync, existsSync} from 'node:fs';
 import {createServer} from 'node:net';
 import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
@@ -40,6 +48,17 @@ import {STORE_RELATIVE} from '../../src/secrets/store.mjs';
 const MODES = ['scoped', 'default', 'disabled'];
 const DENIED = new Set(['EPERM', 'EACCES']);
 
+// A cell's code in a block of its own: the vendor host's node_repl keeps a cell's top-level bindings for the next one
+// (a second top-level `const fs` is then a redeclaration), cua's own host gives each cell a fresh scope; a block holds on
+// both. Top-level await stays allowed inside it.
+export const cellCode = code => `{\n${code}\n}`;
+// A cell's JSON report among its texts: the last that parses as JSON (the bootstrap's first-call document, or a host's
+// warning, may come before or after it). Throws when none does.
+export function cellResult(texts) {
+  for (const text of [...texts].reverse()) { try { return JSON.parse(text); } catch { /* not the report */ } }
+  throw new Error(`the cell returned no JSON report (${texts.length} text(s): ${texts.map(t => t.slice(0, 120)).join(' | ')})`);
+}
+
 // One own-host connection -> {js(code), close()}. `env` is the connection's environment.
 async function connect({home, env}) {
   const input = new PassThrough(), output = new PassThrough();
@@ -49,18 +68,17 @@ async function connect({home, env}) {
   let id = 0;
   const request = (method, params) => new Promise(done => { const n = ++id; pending.set(n, done); input.write(`${JSON.stringify({jsonrpc: '2.0', id: n, method, params})}\n`); });
   await request('initialize', {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'own-sandbox-acceptance', version: '0'}});
-  // A cell's last text is its JSON report; the bootstrap's first-call document comes before it.
   const js = async code => {
-    const result = (await request('tools/call', {name: 'js', arguments: {code: `${code}`}})).result;
+    const result = (await request('tools/call', {name: 'js', arguments: {code: cellCode(code)}})).result;
     const texts = (result.content ?? []).filter(c => c.type === 'text').map(c => c.text);
     if (result.isError) throw new Error(`cell failed: ${texts[0]?.slice(0, 2000)}`);
-    return JSON.parse(texts.at(-1));
+    return cellResult(texts);
   };
   return {js, close: async () => { input.end(); return connection.closed; }};
 }
 
 // The cell that tries everything: `targets` {label: {path, read: 'file' | 'dir', expect?}} and the rest.
-const probeCell = ({targets, moduleDir, packageName, sentinel, writeOutside, tcpPort, socketPath}) => `
+export const probeCell = ({targets, moduleDir, packageName, sentinel, writeOutside, tcpPort, socketPath}) => `
 const fs = await import('node:fs'), os = await import('node:os'), path = await import('node:path'), net = await import('node:net');
 const {createRequire} = await import('node:module'), {execFileSync} = await import('node:child_process');
 // A cell has no \`process\`: what it is (its pid, its environment, its working directory) is read through a child it runs.
@@ -87,6 +105,25 @@ out.process = {pid: self.pid, sandbox: self.sandbox};
 nodeRepl.write(JSON.stringify(out));
 `;
 
+export const scriptDirCell = () => `
+const fs = await import('node:fs'), os = await import('node:os'), path = await import('node:path');
+const tmp = os.tmpdir();
+const dirs = fs.readdirSync(tmp).filter(n => n.startsWith('.tmp') && fs.existsSync(path.join(tmp, n, 'kernel.js')));
+const code = fn => { try { fn(); return {ok: true}; } catch (error) { return {ok: false, code: error.code ?? 'error'}; } };
+nodeRepl.write(JSON.stringify({count: dirs.length, read: dirs.length ? code(() => fs.readFileSync(path.join(tmp, dirs[0], 'kernel.js'))) : null,
+  write: dirs.length ? code(() => fs.writeFileSync(path.join(tmp, dirs[0], 'trusted-worker.js'), 'tampered', {flag: 'a'})) : null,
+  add: dirs.length ? code(() => fs.writeFileSync(path.join(tmp, dirs[0], 'planted.js'), 'x')) : null}));
+`;
+export const attackCell = ({scripts, run}) => `
+const fs = await import('node:fs'), path = await import('node:path');
+const code = fn => { try { fn(); return {ok: true}; } catch (error) { return {ok: false, code: error.code ?? 'error'}; } };
+nodeRepl.write(JSON.stringify({
+  writeScripts: code(() => fs.writeFileSync(path.join(${JSON.stringify(scripts)}, 'trusted-worker.js'), 'tampered', {flag: 'a'})),
+  readScripts: code(() => fs.readFileSync(path.join(${JSON.stringify(scripts)}, 'trusted-worker.js'))),
+  writeRun: code(() => fs.writeFileSync(path.join(${JSON.stringify(run)}, 'planted'), 'x')),
+  listRun: code(() => fs.readdirSync(${JSON.stringify(run)}))}));
+`;
+
 const commandOf = pid => { try { return execFileSync('ps', ['-ww', '-o', 'command=', '-p', String(pid)], {encoding: 'utf8'}).trim(); } catch { return null; } };
 const descendants = pid => {
   const rows = execFileSync('ps', ['-axo', 'pid=,ppid=,comm='], {encoding: 'utf8'}).trim().split('\n').map(l => l.trim().match(/^(\d+)\s+(\d+)\s+(.*)$/)).filter(Boolean).map(m => [Number(m[1]), Number(m[2]), m[3]]);
@@ -95,7 +132,8 @@ const descendants = pid => {
   return rows.filter(([p]) => p !== pid && owned.has(p));
 };
 
-export async function ownSandboxAcceptance({home, modes = MODES, node, log = () => {}}) {
+export async function ownSandboxAcceptance({home, host = 'cua', modes = MODES, node, log = () => {}}) {
+  const vendor = host === 'vendor';
   const real = realHome(home);
   const layout = homeLayout(real);
   const runtime = resolveRuntime({home: real});
@@ -115,7 +153,7 @@ export async function ownSandboxAcceptance({home, modes = MODES, node, log = () 
   await new Promise(done => tcp.listen(0, '127.0.0.1', done));
   await new Promise(done => unix.listen(socketPath, done));
   const sentinelIn = dir => { mkdirSync(dir, {recursive: true, mode: 0o700}); writeFileSync(join(dir, 'SENTINEL'), value, {mode: 0o600}); return join(dir, 'SENTINEL'); };
-  const report = {probe: 'own-sandbox', home: layout.home, packageName, modes: {}, checks: []};
+  const report = {probe: 'own-sandbox', host, home: layout.home, packageName, modes: {}, checks: []};
   const check = (label, pass, detail) => { report.checks.push({label, pass: Boolean(pass), ...(detail === undefined ? {} : {detail})}); log(`${pass ? 'PASS' : 'FAIL'} ${label}`); };
   try {
     const store = join(user, STORE_RELATIVE);
@@ -132,13 +170,15 @@ export async function ownSandboxAcceptance({home, modes = MODES, node, log = () 
     symlinkSync(join(scratch, 'elsewhere-tier'), join(store, 'projects', '-synthetic-linked-project'));
     const expectOf = label => (label === '$CUA_HOME/remote (enrolled device)' ? JSON.stringify({deviceId: 'synthetic', secret: value}) : value);
     const targets = Object.fromEntries(Object.entries(sentinels).flatMap(([label, path]) => [[label, {path, read: 'file', expect: expectOf(label)}], [`${label} (listing)`, {path: resolve(path, '..'), read: 'dir'}]]));
-    const env = mode => ({PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: user, LANG: 'C.UTF-8', CUA_REPL_HOST: 'cua', CUA_SHIM_SURFACES: 'browser', CUA_SHIM_SANDBOX: mode, CUA_RUNTIME_IDLE_MS: '0', ...(node ? {CUA_NODE: node} : {})});
+    const env = (mode, which = host) => ({PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: user, LANG: 'C.UTF-8', CUA_REPL_HOST: which, CUA_SHIM_SURFACES: which === 'vendor' ? 'computer' : 'browser',
+      CUA_SHIM_SANDBOX: mode, CUA_RUNTIME_IDLE_MS: '0', ...(node && which === 'cua' ? {CUA_NODE: node} : {})});
     const cell = probeCell({targets, moduleDir, packageName, sentinel: sentinels.store, writeOutside: join(scratch, 'outside-write'), tcpPort: tcp.address().port, socketPath});
     for (const mode of modes) {
       const connection = await connect({home: real, env: env(mode)});
-      let out;
+      let out, scripts = null;
       try {
         out = await connection.js(cell);
+        if (vendor && mode !== 'disabled') scripts = await connection.js(scriptDirCell());
         out.descendants = descendants(process.pid).map(([pid, ppid, comm]) => ({pid, ppid, comm}));
         const kernel = out.descendants.find(p => p.pid === out.process.pid);
         out.process.execPath = kernel?.comm ?? null;
@@ -146,7 +186,9 @@ export async function ownSandboxAcceptance({home, modes = MODES, node, log = () 
       } finally { await connection.close(); }
       report.modes[mode] = {reads: out.reads, moduleTree: out.moduleTree, writes: out.writes, link: out.link, clone: out.clone, tcp: out.tcp, unix: out.unix,
         tmpdir: {own: out.tmpdir.value === out.tmpdir.env && out.tmpdir.value === join(out.tmpdir.cwd, 'tmp') && out.tmpdir.cwd.startsWith(`${layout.run}/`)},
-        kernel: {execPathIsNode: /(^|\/)node$/.test(out.process.execPath ?? ''), parentIsSupervisor: /src\/repl-host\/supervisor\.mjs/.test(out.parentCommand ?? ''), sandbox: out.process.sandbox},
+        kernel: {execPathIsNode: /(^|\/)node$/.test(out.process.execPath ?? ''), parentIsSupervisor: /src\/repl-host\/supervisor\.mjs/.test(out.parentCommand ?? ''),
+          parentIsNodeRepl: /(^|\/)node_repl( |$)/.test(out.parentCommand ?? ''), sandbox: out.process.sandbox},
+        ...(scripts ? {scriptDirectory: scripts} : {}),
         codexProcesses: out.descendants.filter(p => /(^|\/)codex$/.test(p.comm)).length};
       const r = report.modes[mode];
       const confined = mode !== 'disabled';
@@ -162,10 +204,36 @@ export async function ownSandboxAcceptance({home, modes = MODES, node, log = () 
         check(`${mode}: a clone (cp -c) of the store sentinel fails`, !out.clone.ok, out.clone.code);
         check(`${mode}: a TCP connect fails`, !out.tcp.ok, out.tcp.code);
         check(`${mode}: an AF_UNIX connect fails`, !out.unix.ok, out.unix.code);
-        check(`${mode}: the kernel is Node itself, the supervisor's child, marked seatbelt`, r.kernel.execPathIsNode && r.kernel.parentIsSupervisor && r.kernel.sandbox === 'seatbelt');
+        if (vendor) {
+          check(`${mode}: the kernel is Node itself, node_repl's child, marked seatbelt (cua's compat executable exec'd it)`, r.kernel.execPathIsNode && r.kernel.parentIsNodeRepl && r.kernel.sandbox === 'seatbelt');
+          check(`${mode}: node_repl's script directory lies in the session temp`, scripts?.count === 1, scripts?.count);
+          check(`${mode}: the kernel reads its script directory`, scripts?.read?.ok === true, scripts?.read?.code);
+          check(`${mode}: the kernel cannot write into its script directory`, scripts?.write?.ok === false && scripts?.add?.ok === false, `${scripts?.write?.code}/${scripts?.add?.code}`);
+        } else check(`${mode}: the kernel is Node itself, the supervisor's child, marked seatbelt`, r.kernel.execPathIsNode && r.kernel.parentIsSupervisor && r.kernel.sandbox === 'seatbelt');
       }
       check(`${mode}: no process named codex`, r.codexProcesses === 0);
       rmSync(join(scratch, 'outside-write'), {force: true});
+    }
+    // Two concurrent sessions (vendor host only, scoped): an own-host kernel against this vendor-host session's script
+    // directory and run directory, while its worker's script waits for its first start.
+    if (vendor && modes.includes('scoped')) {
+      const victim = await connect({home: real, env: env('scoped')});
+      try {
+        const where = await victim.js(`const fs = await import('node:fs'), os = await import('node:os'), path = await import('node:path');
+const tmp = os.tmpdir(); const dir = fs.readdirSync(tmp).find(n => n.startsWith('.tmp') && fs.existsSync(path.join(tmp, n, 'trusted-worker.js')));
+nodeRepl.write(JSON.stringify({scripts: dir ? path.join(tmp, dir) : null, run: nodeRepl.cwd}));`);
+        if (!where.scripts) check('across sessions: the vendor-host session\'s script directory was found', false);
+        else {
+          const before = readFileSync(join(where.scripts, 'trusted-worker.js'));
+          const attacker = await connect({home: real, env: env('scoped', 'cua')});
+          let out;
+          try { out = await attacker.js(attackCell(where)); } finally { await attacker.close(); }
+          check('across sessions: an own-host kernel cannot write into a vendor-host session\'s script directory', !out.writeScripts.ok && DENIED.has(out.writeScripts.code), out.writeScripts.code);
+          check('across sessions: an own-host kernel cannot read a vendor-host session\'s trusted-worker.js', !out.readScripts.ok && DENIED.has(out.readScripts.code), out.readScripts.code);
+          check('across sessions: an own-host kernel cannot write into or list a vendor-host session\'s run directory', !out.writeRun.ok && !out.listRun.ok, `${out.writeRun.code}/${out.listRun.code}`);
+          check('across sessions: the vendor-host session\'s trusted-worker.js is what node_repl wrote', readFileSync(join(where.scripts, 'trusted-worker.js')).equals(before));
+        }
+      } finally { await victim.close(); }
     }
     // A store root missing at launch, created mid-session: macOS creates no deny target, so the kernel's profile denies
     // the missing path itself (its realish path), and seatbelt keeps it denied once it appears. Both with the scratch
@@ -203,11 +271,12 @@ nodeRepl.write(JSON.stringify({file: r(() => fs.readFileSync(${JSON.stringify(la
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const {values} = parseArgs({options: {home: {type: 'string'}, modes: {type: 'string', default: MODES.join(',')}, node: {type: 'string'}, out: {type: 'string'}}});
+  const {values} = parseArgs({options: {home: {type: 'string'}, host: {type: 'string', default: 'cua'}, modes: {type: 'string', default: MODES.join(',')}, node: {type: 'string'}, out: {type: 'string'}}});
   if (!values.home) { console.error('usage: own-sandbox.mjs --home <installed CUA_HOME> [--modes scoped,default,disabled] [--out <file>]'); process.exit(2); }
   const modes = values.modes.split(',');
   if (!modes.every(m => MODES.includes(m))) { console.error(`--modes takes ${MODES.join(', ')}`); process.exit(2); }
-  const report = await ownSandboxAcceptance({home: values.home, modes, node: values.node && resolve(values.node), log: line => console.error(line)});
+  if (!['cua', 'vendor'].includes(values.host)) { console.error('--host takes cua or vendor'); process.exit(2); }
+  const report = await ownSandboxAcceptance({home: values.home, host: values.host, modes, node: values.node && resolve(values.node), log: line => console.error(line)});
   if (values.out) writeFileSync(values.out, `${JSON.stringify(report, null, 2)}\n`);
   console.log(JSON.stringify({ok: report.ok, failed: report.checks.filter(c => !c.pass).map(c => c.label)}));
   process.exitCode = report.ok ? 0 : 1;

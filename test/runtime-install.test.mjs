@@ -33,7 +33,7 @@ test('install extracts only the pinned components, preserving modes, symlinks an
   assert.equal(result.root, root);
   assert.equal(result.changed, true);
   assert.deepEqual(Object.keys(result).sort(), ['changed', 'record', 'release', 'root'], 'no Chrome host component since #79');
-  assert.deepEqual(readdirSync(root).sort(), ['CodexCLI.app', 'cua_node', 'install.json']);
+  assert.deepEqual(readdirSync(root).sort(), ['cua_node', 'install.json'], 'no CodexCLI.app since #115 M2, though the archive carries it');
   assert.equal(existsSync(join(realpathSync(ctx.home), 'state', 'codex')), false, 'install creates no CODEX_HOME');
   assert.equal(pointer(ctx.home), ctx.pin.release);
   assert.equal(statSync(join(root, 'cua_node/bin/node')).mode & 0o777, 0o755);
@@ -53,7 +53,7 @@ test('installing a verified release again re-verifies it without touching its fi
   const ctx = setup(t);
   await install(ctx);
   const root = join(realpathSync(ctx.home), 'runtimes', ctx.pin.release);
-  const before = ['install.json', 'cua_node/bin/node', 'CodexCLI.app/Contents/MacOS/codex'].map(p => statSync(join(root, p)));
+  const before = ['install.json', 'cua_node/bin/node', 'cua_node/bin/node_repl'].map(p => statSync(join(root, p)));
   const pointerBefore = statSync(join(ctx.home, 'current.json'));
   let verified = 0;
   // The archive is gone: a second install must not need to read or extract it.
@@ -61,7 +61,7 @@ test('installing a verified release again re-verifies it without touching its fi
   const again = await install(ctx, {verifySignatures: async (...a) => { verified++; return acceptSignatures(...a); }});
   assert.equal(again.changed, false);
   assert.equal(verified, 1, 'the release alone');
-  const after = ['install.json', 'cua_node/bin/node', 'CodexCLI.app/Contents/MacOS/codex'].map(p => statSync(join(root, p)));
+  const after = ['install.json', 'cua_node/bin/node', 'cua_node/bin/node_repl'].map(p => statSync(join(root, p)));
   assert.deepEqual(after.map(s => [s.ino, s.mtimeMs]), before.map(s => [s.ino, s.mtimeMs]));
   assert.equal(statSync(join(ctx.home, 'current.json')).mtimeMs, pointerBefore.mtimeMs);
 });
@@ -78,7 +78,7 @@ test('resolving an installed release returns relocated paths under its own tree 
   assert.deepEqual(runtime.manifest, ctx.pin);
   assert.equal(runtime.paths.node, join(root, 'cua_node/bin/node'));
   assert.equal(runtime.paths.cuaRepl, join(root, 'cua_node/lib/node_modules/@oai/cua-repl/bin/cua-repl.mjs'));
-  assert.equal(runtime.paths.codexCli, join(root, 'CodexCLI.app/Contents/MacOS/codex'));
+  assert.equal(runtime.paths.codexCli, undefined, 'no Codex CLI in the darwin layout since #115 M2');
   for (const [key, path] of Object.entries(runtime.paths)) assert.ok(path.startsWith(root + '/'), `${key} escapes the release: ${path}`);
   // The scratch home sits below a symlinked temp directory on macOS; resolved paths are real paths.
   assert.equal(realpathSync(runtime.paths.node), runtime.paths.node);
@@ -290,4 +290,28 @@ test('install on an unsupported host refuses before touching the network or the 
     assert.equal(fetched, false);
     assert.equal(existsSync(join(s.dir, 'home')), false);
   } finally { s.cleanup(); }
+});
+
+// #115 M2: the darwin pin keeps its release id and drops CodexCLI.app, so a release installed before is still this
+// release: install and `cua runtime use` re-verify it without touching it (the native helper keeps its on-disk path),
+// and its CodexCLI.app, kept or deleted by hand, is neither checked nor signature-verified.
+test('a release installed with CodexCLI.app still verifies in place, kept or deleted by hand; CodexCLI.app is never verified', {skip: !darwin}, async t => {
+  const ctx = setup(t);
+  await install(ctx);
+  const root = join(realpathSync(ctx.home), 'runtimes', ctx.pin.release);
+  mkdirSync(join(root, 'CodexCLI.app', 'Contents', 'MacOS'), {recursive: true});
+  writeFileSync(join(root, 'CodexCLI.app', 'Contents', 'MacOS', 'codex'), 'placed by a cua before #115 M2');
+  const helper = statSync(join(root, 'cua_node/lib/node_modules/@oai/sky/Codex Computer Use.app/Contents/MacOS/SkyComputerUseService'));
+  const asked = [];
+  const recording = async (r, p) => { asked.push(...p.signing.components); return acceptSignatures(r, p); };
+  rmSync(ctx.archive.zip);
+  for (const label of ['kept', 'deleted by hand']) {
+    if (label === 'deleted by hand') rmSync(join(root, 'CodexCLI.app'), {recursive: true});
+    const again = await install(ctx, {verifySignatures: recording});
+    assert.equal(again.changed, false, label);
+    assert.deepEqual(await useRuntime({home: ctx.home, release: ctx.pin.release, pins: [ctx.pin], verifySignatures: recording, host: HOST}), {release: ctx.pin.release, root}, label);
+    assert.equal(existsSync(join(root, 'CodexCLI.app')), label === 'kept', `${label}: install never modifies a release tree`);
+  }
+  assert.equal(statSync(join(root, 'cua_node/lib/node_modules/@oai/sky/Codex Computer Use.app/Contents/MacOS/SkyComputerUseService')).ino, helper.ino, 'the helper is the same file');
+  assert.equal(asked.some(c => c.startsWith('CodexCLI.app')), false);
 });

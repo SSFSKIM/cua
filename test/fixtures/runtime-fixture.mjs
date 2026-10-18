@@ -143,7 +143,7 @@ export function forgeActiveRuntime(home, files = {}, {host} = {}) {
   }
   writeFileSync(join(root, 'install.json'), JSON.stringify({schema: 1, release: pin.release, archive: {sha256: pin.archive.sha256, length: pin.archive.length}}));
   writeFileSync(join(home, 'current.json'), JSON.stringify({schema: 1, release: pin.release}));
-  return {root, codexCli: join(root, pin.layout.codexCli)};
+  return {root, ...(pin.layout.codexCli ? {codexCli: join(root, pin.layout.codexCli)} : {})};
 }
 
 // ---- Linux: a harmless stand-in for the vendor's deb ----------------------------------------------------------------

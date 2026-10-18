@@ -6,6 +6,7 @@
 // scratch installation and clears any inherited override; its mode must survive a boundary's child launch.
 import {quote} from '../../scripts/browser-parity/topology.mjs';
 import {desktopSessionEnv} from '../../src/runtime/linux-desktop.mjs';
+import {join, posix} from 'node:path';
 
 export const explicitNode = ambient => ({...(ambient.CUA_PARITY_NODE_MODE?{CUA_PARITY_NODE_MODE:ambient.CUA_PARITY_NODE_MODE}:{}),...(ambient.CUA_PARITY_NODE_MODE!=='managed'&&ambient.CUA_NODE?{CUA_NODE:ambient.CUA_NODE}:{})});
 
@@ -13,6 +14,23 @@ export const explicitNode = ambient => ({...(ambient.CUA_PARITY_NODE_MODE?{CUA_P
 export function cellsServeEnv(ambient, {scratch, sandbox, host}) {
   return {...desktopSessionEnv(ambient), PATH: ambient.PATH, HOME: scratch.userHome, TMPDIR: ambient.TMPDIR,
     CUA_HOME: scratch.dir, CUA_SHIM_SANDBOX: sandbox, CUA_REPL_HOST: host, CUA_BROWSER_SERVICE: 'cua', CUA_SHIM_SURFACES: 'browser', CUA_SHIM_SECRETS: 'off', ...explicitNode(ambient)};
+}
+
+// Where a boundary probe in `dir` keeps its markers. On the macOS vendor host (#115 M2) cua's compat executable finds
+// the session's settings from TMPDIR's shape, <home>/run/<id>/tmp, and the renderer refuses a symlinked writable root,
+// so the markers' directory takes that shape under a home of the fixture's own (`dir/markers`), which serve-cells.mjs
+// makes the launch's session temp and compat home (markersLaunch); elsewhere it is `dir/tmp`, the launch's TMPDIR.
+export const boundaryMarkersDir = (dir, {host, platform = process.platform}) => (host === 'vendor' && platform === 'darwin' ? join(dir, 'markers', 'run', 'boundary', 'tmp') : join(dir, 'tmp'));
+
+// A vendor-host compat launch whose session temp is the markers' directory `tmp` (<X>/run/<id>/tmp): TMPDIR, the
+// recorded sessionTmp and the compat settings' home and session follow it, and CODEX_HOME is <X>/state/codex, so the
+// compat locates <X>/state/compat/<id>.json, which createLaunchDirs writes with the launch's own deny list. The markers
+// then sit in a real, writable session temp that outlives the connection's run directory.
+export function markersLaunch(launch, tmp) {
+  const sessionDir = posix.dirname(tmp), run = posix.dirname(sessionDir), home = posix.dirname(run);
+  if (posix.basename(tmp) !== 'tmp' || posix.basename(run) !== 'run') throw new Error(`a vendor-host boundary lane's markers must lie at <home>/run/<id>/tmp, not ${tmp}`);
+  return {...launch, sessionTmp: tmp, compat: {...launch.compat, home, sessionId: posix.basename(sessionDir)},
+    env: {...launch.env, TMPDIR: tmp, CODEX_HOME: posix.join(home, 'state', 'codex')}};
 }
 
 // A boundary probe's serve-cells child. `tmp` holds the probe's markers (counters, release and stale-side-effect files)

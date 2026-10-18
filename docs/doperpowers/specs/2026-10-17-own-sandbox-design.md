@@ -24,7 +24,7 @@ This is child 2 of the independence composite #114, after #113 (own browser serv
 - [x] (2026-10-17) M0 — Oracles, probes and baselines (tasks M0a, M0b, M0c reviewed clean; PR #153 reviewed at reviewer-high, its findings fixed). The residue's vendor, browser and tz runs completed 2026-10-17 15:05Z (branch feat/115-own-sandbox-m0-residue); its accept-native runs in M1's window. Verdicts: experiment A equal (promote), argv capture byte-equal, app-server replay accepted with no extra method, fingerprints equal, macOS nesting holds; Linux: app launch selects the supervisor-side launch, nesting selects the per-directory deny with `run/`. Baselines in: the GCE own-host computer triple, the GCE vendor parity control (492/493, the #135 defect recorded), the scratch-HOME tz control (0/160).
   - **M0 residue, held by the mini's native-run hold and run in the next cleared window, before M1's live acceptance and before M2 or M4 depend on them** (`node scripts/mini-rules.mjs <item>`, with the harness clone prepared at 90cbfe0, M0's merge, never a later main: these runs measure the pre-M1 launcher and TMPDIR; in order): `vendor` (the vendor computer triple, retaken whole with per-run TMPDIR), `browser` (the own-host browser-only triple), `tz-real-home` (the tz baseline under the real HOME), `accept` (accept-native at main 94366c1, only on the dispatching session's separate go).
 - [x] (2026-10-18) M1 — Policy model, deny list, seatbelt port; cua's own host on macOS (task 4 reviewed clean; PR #156 reviewed at reviewer-high, correct after one fix round; the mini's acceptance at code f8019bf: tier-check, oracles, own-sandbox 76/76, cfprefs, parity 479/479 with no undeclared difference, accept-native item 11 76/76, probe-secrets standalone).
-- [ ] M2 — Compatibility executable for the macOS vendor host; CodexCLI.app leaves the macOS pin.
+- [ ] M2 — Compatibility executable for the macOS vendor host; CodexCLI.app leaves the macOS pin (2026-10-18: task 5 reviewed clean; mini acceptance at code 249a2a9: env probe, helper check, parity 479/479 with no undeclared difference, vendor own-sandbox 86/86, accept-native items 11/12/13; PR review pending).
 - [ ] M3 — Linux helper (built, attested, released), cua's own host on Linux, confined Linux computer default, Linux vendor host retired; `codex` leaves the Linux pins.
 - [ ] M4 — #138 measured change, CODEX_HOME narrowing and cleanup, documentation, final acceptance and latency, plugin release.
 
@@ -323,6 +323,8 @@ Subcommands:
   - macOS: `/usr/bin/sandbox-exec` present, plus the compat executable and its Node for the vendor host;
   - Linux: the helper present and hash-correct; the existing `sandbox.userns` row stays.
 - **CODEX_HOME.** It stays only for the macOS vendor host, where node_repl writes `computer-use/sessions` approvals and `node_repl/active_execs`. The own host stops setting it.
+- **The macOS pin keeps its release id** (2026-10-18, Decision Log). The release id comes from the app version, platform and arch, and the archive is unchanged. An installed tree is never modified, so an existing install keeps the native helper at the same on-disk path and sees no new screen-capture prompt. Its tree keeps the now-unused CodexCLI.app (about 229 MB) until M4's cleanup. Once the pin drops CodexCLI.app, doctor and install verification stop checking it, so a user who deletes it by hand gets no failing check (M2 pins this with a test).
+- **CodexCLI.app removal (M4).** `cua install` removes it only under three conditions: by its exact name inside `$CUA_HOME/runtimes/<release>/`, only when the installed pin no longer lists it, and never while a session runs from that release. Each removal is logged by name.
 - **Cleanup.** The Codex CLI's leftovers in the owned CODEX_HOME are removed by `cua install` (and reported by doctor until then), by name, after #79 has removed their last user: `auth.json`, `installation_id`, `*.sqlite` with their `-wal`/`-shm`, `models_cache.json`, `cache/`, `plugins/`, `skills/`, `log/`, `tmp/arg0`, `browser/sessions`. Every name is logged without its content.
 
 ### #138: the time-zone hang
@@ -584,7 +586,7 @@ What exists at the end:
 
 **Touches:**
 - `src/sandbox/seatbelt.mjs` (the notification_center line);
-- `src/runtime/install.mjs` and `src/runtime/doctor.mjs` (cleanup and its report);
+- `src/runtime/install.mjs` and `src/runtime/doctor.mjs` (cleanup and its report, including the unused CodexCLI.app in installed darwin trees under the conditions in Design, "Removal, CODEX_HOME and the install");
 - `README.md`;
 - `docs/doperpowers/specs/2026-10-02-standalone-cua-design.md` and `docs/doperpowers/specs/2026-10-14-own-repl-host-design.md` (Decision Log entries; "Kernel and sandbox" revised to point here);
 - `.claude-plugin/plugin.json`, `package.json`;
@@ -790,6 +792,9 @@ Dependencies on other work: #79 merged before M2. #117 retires the compat execut
 - Observation: the cfprefs measurement on the mini (cells and services suites, 90cbfe0's profile against f8019bf's) found no preferences (cfprefsd) denial on either side, and every suite passes on both sides (cells 150/150, services 41/41). So the original's semantics are kept and the preferences policy is not added back. Two new mach-lookup denials appear on the after side: `com.apple.diagnosticd` ×391 and `com.apple.logd` ×194. The original grants these only in `seatbelt_read_only_platform_defaults.sbpl`, which `:minimal` alone includes, so the kernel's os_log messages are dropped. They are not granted: nothing fails without them, and a grant would be a widening deviation with no failure to justify it. M4's notification_center decision touches the same file and can revisit them with evidence. The judge's one undeclared cells difference (`cells/budget/suspend-resume`, warm) is an artefact of the harness pause, not of either profile. The before side was held 33.9 minutes for CI, past the runtime's 15-minute idle stop, so its response carries the runtime-restarted notice. The after side never paused. The value is equal on both sides. The result is accepted with this note, provisionally: parity's cua run covers the same cell under f8019bf's profile and closes the case if that cell runs unpaused and matches the vendor run. For M4's release notes, the logd and diagnosticd denials are a behaviour change: os_log output from kernel cells goes nowhere. A pause longer than the runtime's idle window changes a cell's output, not only its timing; this is recorded as harness debt.
   Evidence: docs/evidence/2026-10-17-own-sandbox/m1/cfprefs/ (feat/115-own-sandbox-m1-evidence f629160).
 
+- Observation: M2's opening probe confirms route (a). On the mini, under scoped and default, node_repl's kernel and worker `sandbox` calls carried TMPDIR and CODEX_HOME exactly as `buildLaunch` set them, with no unmatched call. Under `disabled`, node_repl does not call the launcher at all (zero invocations), so a vendor-host `disabled` session never reaches the compat executable.
+  Evidence: docs/evidence/2026-10-17-own-sandbox/m2/ (feat/115-own-sandbox-m2-evidence 2ea31a8), run at 475881a, 2026-10-18 05:20:25Z.
+
 ## Decision Log
 
 - Decision: verification for this spec and its branch. One independent spec review by `doperpowers:adversarial-reviewer` (the design is technical and security-sensitive), and in the same round a buildability review of the execution section by `doperpowers:adversarial-reviewer` (five milestones). Each milestone PR is reviewed at `doperpowers:reviewer-high` on its whole diff. A final whole-branch `doperpowers:reviewer-high` review covers the M4 PR with the acceptance evidence.
@@ -904,6 +909,18 @@ Dependencies on other work: #79 merged before M2. #117 retires the compat execut
   Rejected: creating everywhere (the Design as first written), because on macOS it is a side effect with no purpose once `realish` handles the missing tail; and creating nothing on Linux, because the mask needs the path.
   Rationale: create only where the confinement needs it, and never outside what cua owns beyond a single leaf whose parent already exists.
   Date/Author: 2026-10-17, execution session (ruled by the dispatching session).
+
+- Decision: the darwin pin keeps its release id across M2's change (2026-10-18, accepted by the dispatching session). The native helper then stays at the same on-disk path on every machine that already has this release, and the owner sees no new screen-capture prompt. Existing trees keep the unused CodexCLI.app until M4 removes it under the conditions in the Design.
+  Rationale: a new helper copy path raises a one-time screen-capture prompt per machine (Surprises). Keeping the path avoids that cost for 229 MB of disk that M4 reclaims.
+  Date/Author: 2026-10-18, execution session.
+
+- Decision: a failed `process.execve` in the compat aborts rather than exiting 1 (2026-10-18, M2). On the vendor's Node 24.21.0 a failed `process.execve` is not catchable: it prints "process.execve failed with error code …" with a native stack and dies by SIGABRT (exit 134). Node 26 throws instead. The compat checks that `/usr/bin/sandbox-exec` is executable before calling it, so the abort is reached only if that file vanishes between the check and the call. The exit is still nonzero, and node_repl refuses the cell on a launcher failure, so the launch fails closed. The Design's "exits 1 with a sentence" holds for every refusal before the call.
+  Rationale: the vendor's Node cannot report an execve failure any other way, and the pre-check makes the window negligible.
+  Date/Author: 2026-10-18, execution session.
+
+- Decision: M2's execution (2026-10-18, task 5). The compat executable takes its per-launch settings from `$CUA_HOME/state/compat/<sessionId>.{json,node}`, written and removed with the run directory by one shared module (`src/sandbox/compat-settings.mjs`). It accepts node_repl's template only in its exact order, with absolute `read` path entries, and turns node_repl's read entries into the policy's read paths (so the host read-root rule applies). The app-server echoes `jsonrpc` only when the request carried it, and sends no server notification, matching M0's capture. The compat executable's path is resolved at use, not at module load, so doctor reports a missing executable instead of failing to load. A helper counts as the run's own by its session TMPDIR, and teardown counts it stopped only once its pid is verified gone. The `kernel-exit-status` parity allowance is retired. The helper check showed the helper writes nothing under TMPDIR, so the vendor host's `sessionTmp` stays `run/<id>/tmp`.
+  Rationale: each follows the Design and closes a gap the task and live reviews found.
+  Date/Author: 2026-10-18, execution session.
 
 ## Outcomes & Retrospective
 

@@ -18,7 +18,20 @@ test('the checked-in pin names the official archive, its length and hash, and th
   assert.equal(pin.archive.sha256, '93bf16b32c80c567e46141f87317ab48489f5b9b6454060ba694f1eed5fbf857');
   assert.deepEqual(pin.runtime, {version: '0.0.27/20260927214556-b77d38801cca', node: '24.21.0-cua.1', ipc: 'CodexComputerUseIPC-5'});
   assert.equal(pin.signing.team, '2DC432GLL2');
-  assert.deepEqual(Object.values(pin.components), ['ChatGPT.app/Contents/Resources/cua_node', 'ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app']);
+  assert.deepEqual(Object.values(pin.components), ['ChatGPT.app/Contents/Resources/cua_node'], 'no CodexCLI.app since #115 M2');
+  assert.equal(Object.hasOwn(pin.layout, 'codexCli'), false);
+  assert.deepEqual(pin.signing.components, ['cua_node/bin/node', 'cua_node/bin/node_repl', 'cua_node/lib/node_modules/@oai/sky/Codex Computer Use.app']);
+});
+
+// #115 M2: the release id is the app version, platform and arch, so dropping CodexCLI.app keeps it, and every
+// installed tree of this release (with its native helper at the same path) stays this release.
+test('the darwin pin keeps its release id across M2, and a darwin layout naming codexCli is refused', () => {
+  const pin = parsePin(realPinJson());
+  assert.equal(pin.release, `${pin.appVersion}-${pin.platform}-${pin.arch}`);
+  assert.equal(pin.release, '26.928.40906-darwin-arm64');
+  const json = realPinJson();
+  json.layout.codexCli = 'cua_node/bin/codex';
+  assert.throws(() => parsePin(json), expectCode('invalid_pin'));
 });
 
 test('pin parsing rejects fields it does not know, at any level, rather than ignoring something that affects execution', () => {

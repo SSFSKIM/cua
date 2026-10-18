@@ -1,0 +1,70 @@
+{
+  "label": "m2-env-disabled",
+  "host": "vendor",
+  "mode": "disabled",
+  "cli": "/Users/new/cua-115/home/runtimes/26.928.40906-darwin-arm64/CodexCLI.app/Contents/MacOS/codex",
+  "appServer": "forward",
+  "native": false,
+  "envProbe": true,
+  "started": "2026-10-18T05:20:23.059Z",
+  "events": [
+    {
+      "at": "2026-10-18T05:20:23.624Z",
+      "what": "cell banner",
+      "ok": true,
+      "value": {
+        "ready": true
+      },
+      "ms": 0,
+      "wallMs": 174
+    }
+  ],
+  "serverInfo": {
+    "name": "rmcp",
+    "version": "1.5.0"
+  },
+  "serveExit": {
+    "code": 0,
+    "signal": null
+  },
+  "helpers": {
+    "started": 0,
+    "quitByThemselves": 0,
+    "quitByHarness": 0,
+    "foreignSeen": 0
+  },
+  "results": {
+    "banner": {
+      "ok": true,
+      "value": {
+        "ready": true
+      },
+      "ms": 0,
+      "wallMs": 174
+    }
+  },
+  "elicitations": [],
+  "slot": {
+    "invocations": []
+  },
+  "launches": [
+    {
+      "t": "2026-10-18T05:20:23.168Z",
+      "cwd": "/Users/new/cua-115/home/run/5869832c-8929-45af-8e79-3258adff4667",
+      "sessionTmp": "/Users/new/cua-115/home/run/5869832c-8929-45af-8e79-3258adff4667/tmp",
+      "TMPDIR": "/Users/new/cua-115/home/run/5869832c-8929-45af-8e79-3258adff4667/tmp",
+      "CODEX_HOME": "/Users/new/cua-115/home/state/codex"
+    }
+  ],
+  "launchEnv": {
+    "ok": false,
+    "roles": {
+      "kernel": null,
+      "worker": null
+    },
+    "unmatched": 0
+  },
+  "appServers": [],
+  "rawLogDir": "/Users/new/cua-115/scratch/m2-env-disabled-yuF1qg/slot",
+  "finished": "2026-10-18T05:20:23.708Z"
+}

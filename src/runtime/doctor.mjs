@@ -29,6 +29,11 @@
 // the runtime's CODEX_HOME, $CUA_HOME/node, $CUA_HOME/staging or what JavaScript cells may not read (the secret store,
 // ~/.config/cua and the cua home around run/): `cua serve` and the listing launch refuse such a launch.
 // Another mode is the user's choice and only described.
+// `sandbox.launcher` (macOS, #115): what confines the children instead of the Codex CLI, which no row names any more:
+// /usr/bin/sandbox-exec (cua's own host, and the compat executable's exec), bin/cua-codex-compat (the vendor host's
+// CODEX_CLI_PATH) and the vendor's pinned Node it runs on, each an executable file; `fail` names what is missing, since
+// cua serve then refuses a confined vendor-host launch (sandbox_unavailable). Linux launches through the Codex CLI
+// until #115 M3, whose row this becomes.
 // On Linux the release is trusted by its archive hash (runtime.signatures says so; no codesign runs), runtime.ipc does
 // not apply, the darwin helper.live and helper.permissions rows give way to display, accessibility.bus and
 // sandbox.userns (linux-desktop.mjs; the group-container socket, lsof and plutil are never consulted).
@@ -43,15 +48,16 @@
 // view of it (and whether linger keeps it past logout), and `agent.console` whether the agent's X display (the unit's
 // DISPLAY and XAUTHORITY, with the user's HOME as the manager gives it, so ~/.Xauthority is found; else doctor's own) answers with the extensions the helper needs; Linux has no portable
 // screen-lock signal, so the row says the lock is not read. Elsewhere all four are `skip`.
-import {existsSync, readFileSync, statSync} from 'node:fs';
+import {accessSync, constants, existsSync, readFileSync, statSync} from 'node:fs';
 import {execFile} from 'node:child_process';
 import {homedir} from 'node:os';
 import {dirname, join} from 'node:path';
 import {CuaError} from './errors.mjs';
 import {homeLayout, realHome} from './layout.mjs';
-import {BROWSER_SERVICE, BROWSER_SERVICE_IMPL_DIR, CUA_API_DIR, CUA_API_DOCS_DIR, REPL_HOST_DIR, SANDBOX_DIR, SERVICE_SUPPORT_DIRS, SKY_SERVICE, NODE_FLOOR, ownHostNode, replHostFor} from './launch.mjs';
+import {BROWSER_SERVICE, BROWSER_SERVICE_IMPL_DIR, COMPAT_EXECUTABLE, compatExecutable, CUA_API_DIR, CUA_API_DOCS_DIR, REPL_HOST_DIR, SANDBOX_DIR, SERVICE_SUPPORT_DIRS, SKY_SERVICE, NODE_FLOOR, ownHostNode, replHostFor} from './launch.mjs';
 import {SANDBOX_CONFLICT_HINT, assertDenyListShape, describeConflicts, protectedPaths, sandboxConflicts, sandboxModeFrom, scopedWriteRoots} from './sandbox.mjs';
 import {denyListFor} from '../sandbox/policy.mjs';
+import {SEATBELT_EXEC} from '../sandbox/seatbelt.mjs';
 import {loadPins, selectPin, locateRuntime, recoveryHint} from './manifest.mjs';
 import {checkLayout, checkVendorManifest, checkIpc, verifyCodeSignatures, ipcVersionsIn} from './checks.mjs';
 import {inspectSecretStore, classifyStore} from '../secrets/check.mjs';
@@ -72,7 +78,16 @@ const LIVE_PROBE = 'scripts/probe-runtime.mjs';
 
 const result = (name, status, detail) => ({name, status, detail});
 
-export async function inspectRuntime({home, env = process.env, live = false, pins, host = {platform: process.platform, arch: process.arch}, verifySignatures = verifyCodeSignatures, inspectHelper = inspectNativeHelper, inspectSecrets = inspectSecretStore, inspectLinux = linuxDesktopChecks, inspectChrome = defaultInspectChrome, inspectAgent = defaultInspectAgent, sweep = sweepRun, resolveOwnNode}) {
+const executableFile = path => { try { accessSync(path, constants.X_OK); return statSync(path).isFile(); } catch { return false; } };
+// sandbox.launcher on macOS: `node` is the installed release's vendor Node (absent without an installed release).
+function launcherCheck({sandboxExec, compat, node}) {
+  const parts = [['sandbox-exec', sandboxExec], ['cua\'s compat executable', compat], ...(node ? [['the vendor\'s pinned Node it runs on', node]] : [])];
+  const missing = parts.filter(([, path]) => !executableFile(path));
+  if (missing.length) return result('sandbox.launcher', 'fail', `missing or not executable: ${missing.map(([what, path]) => `${what} (${path})`).join(', ')}; cua serve refuses a confined vendor-host launch without them${missing.some(([, path]) => path === compat) ? '; restore cua\'s checkout' : ''}`);
+  return result('sandbox.launcher', 'pass', `cua's own sandbox confines the children: ${sandboxExec} for cua's own host, and on the vendor host ${compat}${node ? ` on ${node}` : ''}; no Codex CLI is launched`);
+}
+
+export async function inspectRuntime({home, env = process.env, live = false, pins, host = {platform: process.platform, arch: process.arch}, verifySignatures = verifyCodeSignatures, inspectHelper = inspectNativeHelper, inspectSecrets = inspectSecretStore, inspectLinux = linuxDesktopChecks, inspectChrome = defaultInspectChrome, inspectAgent = defaultInspectAgent, sweep = sweepRun, resolveOwnNode, launcher = {sandboxExec: SEATBELT_EXEC, compat: COMPAT_EXECUTABLE}}) {
   if (live) throw new Error(`inspectRuntime is passive; live probes are separate explicit scripts (${LIVE_PROBE})`);
   pins ??= loadPins();
   const checks = [];
@@ -117,6 +132,7 @@ export async function inspectRuntime({home, env = process.env, live = false, pin
   const linuxRows = host.platform === 'linux' ? await inspectLinux({env}) : null;
   const sandbox = sandboxCheck({home, env, runtime, platform: host.platform, userns: linuxRows?.find(row => row.name === 'sandbox.userns')});
   checks.push(sandbox.row);
+  if (host.platform === 'darwin') checks.push(launcherCheck({...launcher, compat: compatExecutable(launcher.compat), node: runtime?.paths.node}));
   checks.push(runSweepCheck(home, sweep));
 
   if (linuxRows) checks.push(...linuxRows.map(row => (row.name === 'sandbox.userns' ? usernsRow(row, {env, sandbox}) : row)));

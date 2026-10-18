@@ -30,8 +30,11 @@ test('an explicitly selected own host answers a real connection: handshake, cell
   const home = fakeInstalledHome(t);
   const runtime = resolveRuntime({home});
   const records = join(home, 'double');
-  copyFileSync(sandboxDouble(home, {records}), runtime.paths.codexCli);
-  chmodSync(runtime.paths.codexCli, 0o755);
+  // Linux's own host still launches through the Codex CLI (until #115 M3); the darwin layout names none since M2.
+  if (runtime.paths.codexCli) {
+    copyFileSync(sandboxDouble(home, {records}), runtime.paths.codexCli);
+    chmodSync(runtime.paths.codexCli, 0o755);
+  }
   const execDouble = sandboxDouble(home, {records, exec: true});
   // cua's own sandbox (macOS) runs sandbox-exec, which the double stands in for: the launch record's one seam.
   const prepareLaunch = launch => (launch.env.CUA_REPL_SANDBOX_EXEC ? {...launch, env: {...launch.env, CUA_REPL_SANDBOX_EXEC: execDouble}} : launch);

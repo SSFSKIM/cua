@@ -87,8 +87,20 @@ export function hasRunTmpdir(pid, tmpdir, {exec = execFileSync} = {}) {
     withEnvironment = String(exec('/bin/ps', ['-E', '-ww', '-o', 'command=', '-p', String(pid)], {encoding: 'utf8'})).replace(/\n$/, '');
   } catch { throw failed(); }
   if (!command || !withEnvironment.startsWith(command)) throw failed();
-  const values = withEnvironment.slice(command.length).split(' ').filter(word => word.startsWith('TMPDIR=')).map(word => word.slice('TMPDIR='.length));
+  const values = envValues(withEnvironment.slice(command.length), 'TMPDIR');
   return values.length === 1 && (typeof tmpdir === 'function' ? tmpdir(values[0]) === true : values[0] === tmpdir);
+}
+// The values of `name` in `ps -E`'s environment text (the part after the command: ` NAME=value` pairs joined by single
+// spaces). A value may itself hold spaces (a home under `Application Support`), so it runs to the next ` NAME=` (an
+// environment name followed by `=`) or the end, not to the next space. A value that itself holds ` NAME=` is cut short
+// there, which reads as not matching: never as a match.
+export function envValues(text, name) {
+  const values = [];
+  for (const match of text.matchAll(new RegExp(`(?:^| )${name}=`, 'g'))) {
+    const rest = text.slice(match.index + match[0].length), next = rest.search(/ [A-Za-z_][A-Za-z0-9_]*=/);
+    values.push(next === -1 ? rest : rest.slice(0, next));
+  }
+  return values;
 }
 // Whether `value` is a session temp of `home`'s run/ (src/runtime/launch.mjs: <real home>/run/<session id>/tmp).
 const SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9-]{0,127}$/;

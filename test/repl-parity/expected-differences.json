@@ -4670,23 +4670,5 @@
       }
     },
     "reason": "M4 selected-host identity only; version checked against the attested source commit. Native result, error and image fields remain compared."
-  },
-  {
-    "kind": "kernel-exit-status",
-    "id": "own-kernel-is-node",
-    "issue": "#115",
-    "platform": "darwin",
-    "case": "cells/lifecycle/child-exit-settles",
-    "cell": "interrupted",
-    "field": "node_repl diagnostics",
-    "vendor": {
-      "kernel_status": "exited(code=137)",
-      "kernelIsStderrNode": false
-    },
-    "cua": {
-      "kernel_status": "exited(signal=9)",
-      "kernelIsStderrNode": true
-    },
-    "reason": "the own host's kernel is Node itself (spec, 'The own host launches through it directly'); retired in M2 when the vendor host's children are also Node via the compat execve"
   }
 ]

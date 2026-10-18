@@ -6,7 +6,7 @@ import {fixtureServices as createFixtureServices} from './fixtures/service-home.
 import {executionFacts,assertPreparedFacts,attestedOutput} from '../../scripts/repl-parity/provenance.mjs';
 import {randomUUID} from 'node:crypto';
 import {pathToFileURL} from 'node:url';
-import {cellsServeEnv} from './fixture-launch.mjs';
+import {cellsServeEnv,markersLaunch} from './fixture-launch.mjs';
 import {openConnection} from '../../src/mcp/connection.mjs';
 import {prepareCapabilityHome} from '../../scripts/browser-parity/capability-home.mjs';
 import {assertManagedNode,nodeEnvironment,observeLaunchNode} from '../../scripts/repl-parity/node-provenance.mjs';
@@ -33,8 +33,9 @@ export function attestFixtureLaunch(launch,{facts,home,host,nodeMode=process.env
 
 export function noServicesLaunch(launch,{host='vendor',witness=false,brokenSandbox=false,fixtureServices,fixtureTmpdir}={}) {
   const env={...launch.env};
-  // A boundary lane's marker directory (fixture-launch.mjs boundaryServeEnv) in place of the session temp.
-  if(fixtureTmpdir)env.TMPDIR=fixtureTmpdir;
+  // A boundary lane's marker directory (fixture-launch.mjs boundaryServeEnv) in place of the session temp; on the macOS
+  // vendor host it becomes the launch's session temp itself (fixture-launch.mjs markersLaunch).
+  if(fixtureTmpdir){if(launch.compat){launch=markersLaunch(launch,fixtureTmpdir);Object.assign(env,{TMPDIR:launch.env.TMPDIR,CODEX_HOME:launch.env.CODEX_HOME});}else env.TMPDIR=fixtureTmpdir;}
   delete env[host==='vendor'?'NODE_REPL_TOOL_OVERRIDES':'CUA_REPL_TOOL_OVERRIDES'];
   // The broken launcher stands in for whichever sandbox launcher the launch names: cua's own (sandbox-exec, the macOS
   // own host since #115 M1) or the Codex CLI.

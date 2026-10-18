@@ -6,7 +6,7 @@ import {PassThrough} from 'node:stream';
 import {createInterface} from 'node:readline';
 import {randomUUID} from 'node:crypto';
 import {pathToFileURL} from 'node:url';
-import {buildLaunch, createLaunchDirs, replHostFor, ownHostNode, NODE_FLOOR, SKY_SERVICE, BROWSER_SERVICE, BROWSER_SERVICE_IMPL_DIR, CUA_API_DIR, CUA_API_DOCS_DIR, REPL_HOST_DIR, REPL_HOST_SUPERVISOR, SANDBOX_DIR, SERVICE_SUPPORT_DIRS} from '../src/runtime/launch.mjs';
+import {buildLaunch, createLaunchDirs, replHostFor, ownHostNode, NODE_FLOOR, SKY_SERVICE, BROWSER_SERVICE, BROWSER_SERVICE_IMPL_DIR, CUA_API_DIR, CUA_API_DOCS_DIR, REPL_HOST_DIR, REPL_HOST_SUPERVISOR, SANDBOX_DIR, SERVICE_SUPPORT_DIRS, BIN_DIR, COMPAT_EXECUTABLE} from '../src/runtime/launch.mjs';
 import {assertSandboxFits, assertTrustedServicesContained} from '../src/runtime/sandbox.mjs';
 import {writeCuaRecord, writeVendorRecord} from './fixtures/route-records.mjs';
 import {parsePin, resolveRuntime, runtimeFor} from '../src/runtime/manifest.mjs';
@@ -67,10 +67,11 @@ test('the launch environment is an allowlist: OS basics plus relocated settings,
     CUA_REPL_ENABLED_SURFACES: 'computer',
     NODE_REPL_NODE_PATH: p.node,
     NODE_REPL_NODE_MODULE_DIRS: p.moduleDir,
-    NODE_REPL_TRUSTED_CODE_PATHS: [p.moduleDir, SANDBOX_DIR].join(':'),
+    NODE_REPL_TRUSTED_CODE_PATHS: [p.moduleDir, SANDBOX_DIR, BIN_DIR].join(':'),
     NODE_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS: '1000',
     NODE_REPL_DISABLE_ANALYTICS: '1',
-    CODEX_CLI_PATH: p.codexCli,
+    CODEX_CLI_PATH: COMPAT_EXECUTABLE,
+    CUA_COMPAT_NODE: p.node,
     SKY_CUA_SERVICE_PATH: p.skyServiceApp,
     CUA_SKY_VENDOR_SERVICE: p.skyVendorService,
   });
@@ -93,7 +94,7 @@ test('a trusted sky wrapper is registered by real path; its directory and the ow
   symlinkSync(join(home, 'wrapper-src'), join(dir, 'linked'));
   const {env} = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, services: {sky: join(dir, 'linked', 'services', 'sky.mjs')}});
   assert.deepEqual(JSON.parse(env.NODE_REPL_TRUSTED_SERVICES), {sky: wrapper});
-  assert.deepEqual(env.NODE_REPL_TRUSTED_CODE_PATHS.split(':'), [runtime.paths.moduleDir, SANDBOX_DIR, dirname(wrapper), ...SERVICE_SUPPORT_DIRS]);
+  assert.deepEqual(env.NODE_REPL_TRUSTED_CODE_PATHS.split(':'), [runtime.paths.moduleDir, SANDBOX_DIR, BIN_DIR, dirname(wrapper), ...SERVICE_SUPPORT_DIRS]);
   assert.equal(env.CUA_SKY_VENDOR_SERVICE, runtime.paths.skyVendorService);
 });
 
@@ -155,7 +156,7 @@ test('trusted code is only the vendor modules and owned source, never a director
   const {env} = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, services: {sky: SKY_SERVICE}});
   const repo = realpathSync(new URL('..', import.meta.url).pathname);
   const trusted = env.NODE_REPL_TRUSTED_CODE_PATHS.split(':');
-  assert.deepEqual(trusted, [runtime.paths.moduleDir, join(repo, 'src', 'sandbox'), join(repo, 'src', 'services'), join(repo, 'src', 'secrets')]);
+  assert.deepEqual(trusted, [runtime.paths.moduleDir, join(repo, 'src', 'sandbox'), join(repo, 'bin'), join(repo, 'src', 'services'), join(repo, 'src', 'secrets')]);
   for (const root of trusted) {
     assert.ok(!(root + '/').startsWith(join(home, 'state') + '/') && !(root + '/').startsWith(join(home, 'run') + '/'), `${root} is runtime-writable state`);
   }
@@ -184,7 +185,7 @@ test('the browser surface registers the trusted browser wrapper and configures c
   // cua's sockets are always listed (none here), so the service looks nowhere else; no network or security override.
   assert.equal(env.BROWSER_USE_BACKEND_PATHS, '');
   assert.deepEqual(Object.keys(env).filter(k => /BROWSER/.test(k)).sort(), ['BROWSER_USE_AVAILABLE_BACKENDS', 'BROWSER_USE_BACKEND_PATHS']);
-  assert.deepEqual(env.NODE_REPL_TRUSTED_CODE_PATHS.split(':'), [runtime.paths.moduleDir, SANDBOX_DIR, dirname(BROWSER_SERVICE), ...SERVICE_SUPPORT_DIRS, BROWSER_SERVICE_IMPL_DIR]);
+  assert.deepEqual(env.NODE_REPL_TRUSTED_CODE_PATHS.split(':'), [runtime.paths.moduleDir, SANDBOX_DIR, BIN_DIR, dirname(BROWSER_SERVICE), ...SERVICE_SUPPORT_DIRS, BROWSER_SERVICE_IMPL_DIR]);
 });
 
 test('a browser-only launch has no computer-use service or native helper configuration', t => {
@@ -195,8 +196,8 @@ test('a browser-only launch has no computer-use service or native helper configu
     assert.deepEqual(JSON.parse(env[host === 'cua' ? 'CUA_REPL_TRUSTED_SERVICES' : 'NODE_REPL_TRUSTED_SERVICES']), {browser: BROWSER_SERVICE}, host);
     assert.equal(env.SKY_CUA_SERVICE_PATH, undefined, host);
     assert.equal(env.CUA_SKY_VENDOR_SERVICE, undefined, host);
-    // The vendor host keeps the Codex CLI's sandbox until #115 M2; cua's own host on macOS runs cua's own (sandbox-exec).
-    if (host === 'vendor') assert.equal(env.CODEX_CLI_PATH, runtime.paths.codexCli, `${host}: the runtime sandbox is kept whatever the surface`);
+    // The vendor host runs cua's compat executable since #115 M2; cua's own host on macOS runs cua's own (sandbox-exec).
+    if (host === 'vendor') assert.equal(env.CODEX_CLI_PATH, COMPAT_EXECUTABLE, `${host}: the runtime sandbox is kept whatever the surface`);
     else assert.deepEqual([env.CUA_REPL_SANDBOX_EXEC, env.CODEX_CLI_PATH, env.CODEX_HOME], ['/usr/bin/sandbox-exec', undefined, undefined], `${host}: cua's own sandbox, whatever the surface`);
   }
 });
@@ -219,7 +220,7 @@ test('every home runs cua\'s browser service with the browser surface: its direc
       assert.deepEqual(Object.keys(env).filter(k => /BROWSER/.test(k)).sort(), ['BROWSER_USE_AVAILABLE_BACKENDS', 'BROWSER_USE_BACKEND_PATHS'], label);
       assert.equal(env.BROWSER_USE_AVAILABLE_BACKENDS, 'chrome', label);
       assert.equal(env.BROWSER_USE_BACKEND_PATHS, '', `${label}: no socket of cua's is listed, and none of OpenAI's is looked for`);
-      assert.deepEqual(env.NODE_REPL_TRUSTED_CODE_PATHS.split(':'), [runtime.paths.moduleDir, SANDBOX_DIR, dirname(BROWSER_SERVICE), ...SERVICE_SUPPORT_DIRS, BROWSER_SERVICE_IMPL_DIR], label);
+      assert.deepEqual(env.NODE_REPL_TRUSTED_CODE_PATHS.split(':'), [runtime.paths.moduleDir, SANDBOX_DIR, BIN_DIR, dirname(BROWSER_SERVICE), ...SERVICE_SUPPORT_DIRS, BROWSER_SERVICE_IMPL_DIR], label);
       for (const wider of [repo, join(repo, 'src'), home]) assert.ok(!env.NODE_REPL_TRUSTED_CODE_PATHS.split(':').includes(wider), `${label}: ${wider}`);
       // The default host, cua's own for a browser-only session on macOS, trusts it too.
       const own = buildLaunch({runtime, home, sessionId: SESSION, ambient, resolveOwnNode: () => '/fixture/node24/bin/node', surfaces: ['browser'], services: {browser: BROWSER_SERVICE}});
@@ -471,7 +472,7 @@ test('the own host\'s environment: the same allowlist and surface, service and s
     CUA_REPL_TOOL_OVERRIDES: JSON.stringify(toolOverrides({platform: 'darwin', surfaces: ['browser']})),
     CUA_REPL_TRUSTED_SERVICES: JSON.stringify({browser: BROWSER_SERVICE}),
     CUA_REPL_TRUSTED_RPC_ENABLED: '1',
-    CUA_REPL_TRUSTED_CODE_PATHS: [REPL_HOST_DIR, CUA_API_DIR, CUA_API_DOCS_DIR, p.moduleDir, SANDBOX_DIR, dirname(BROWSER_SERVICE), ...SERVICE_SUPPORT_DIRS, BROWSER_SERVICE_IMPL_DIR].join(':'),
+    CUA_REPL_TRUSTED_CODE_PATHS: [REPL_HOST_DIR, CUA_API_DIR, CUA_API_DOCS_DIR, p.moduleDir, SANDBOX_DIR, BIN_DIR, dirname(BROWSER_SERVICE), ...SERVICE_SUPPORT_DIRS, BROWSER_SERVICE_IMPL_DIR].join(':'),
     CUA_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS: '1000',
     NODE_REPL_DISABLE_ANALYTICS: '1',
     CUA_REPL_SANDBOX_EXEC: '/usr/bin/sandbox-exec',
@@ -783,14 +784,14 @@ test('the deny list is resolved once, from the store directories and HOME the wo
   assert.deepEqual(on.denyRead.reexpose, [join(home, 'runtimes'), join(home, 'node'), join(home, 'run', SESSION), join(home, 'run', SESSION, 'tmp')]);
 });
 
-test('macOS: cua\'s own host runs cua\'s own sandbox (sandbox-exec), without the Codex CLI or CODEX_HOME; the vendor host keeps both', t => {
+test('macOS: cua\'s own host runs cua\'s own sandbox (sandbox-exec), without the Codex CLI or CODEX_HOME; the vendor host runs cua\'s compat executable with CODEX_HOME', t => {
   const {home, dir, runtime} = fixtureRuntime(t);
   const node = fakeNode(dir, 'n/node', '24.1.0');
   const own = buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, CUA_REPL_HOST: 'cua', CUA_NODE: node}, surfaces: BROWSER, services: {browser: BROWSER_SERVICE}});
   assert.deepEqual([own.env.CUA_REPL_SANDBOX_EXEC, own.env.CODEX_CLI_PATH, own.env.CODEX_HOME], ['/usr/bin/sandbox-exec', undefined, undefined]);
   assert.ok(own.env.CUA_REPL_TRUSTED_CODE_PATHS.split(':').includes(SANDBOX_DIR), 'src/sandbox is trusted code');
   const vendor = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT});
-  assert.deepEqual([vendor.env.CUA_REPL_SANDBOX_EXEC, vendor.env.CODEX_CLI_PATH, vendor.env.CODEX_HOME], [undefined, runtime.paths.codexCli, join(home, 'state', 'codex')]);
+  assert.deepEqual([vendor.env.CUA_REPL_SANDBOX_EXEC, vendor.env.CODEX_CLI_PATH, vendor.env.CODEX_HOME], [undefined, COMPAT_EXECUTABLE, join(home, 'state', 'codex')]);
   assert.ok(vendor.env.NODE_REPL_TRUSTED_CODE_PATHS.split(':').includes(SANDBOX_DIR));
 });
 

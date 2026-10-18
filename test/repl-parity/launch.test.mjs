@@ -26,3 +26,40 @@ test('a boundary lane\'s marker directory is its launch\'s TMPDIR on either host
   assert.equal(noServicesLaunch(launch,{host}).env.TMPDIR,'/run/s/tmp',host);
  }
 });
+
+// #115 M2: on the macOS vendor host the compat executable finds the session from TMPDIR's shape and the renderer refuses a
+// symlinked writable root, so a boundary lane's markers directory is shaped <X>/run/<id>/tmp and becomes the launch's
+// real session temp: the launch passes the preflight, the compat locates its settings and renders it writable, and the
+// markers outlive the connection's own run directory.
+test('on the macOS vendor host a boundary lane\'s markers directory is the launch\'s real session temp, through the preflight, the compat and the renderer',async t=>{
+ const {mkdtempSync,mkdirSync,rmSync,existsSync,writeFileSync,realpathSync,lstatSync}=await import('node:fs');
+ const {tmpdir}=await import('node:os');const {join}=await import('node:path');const {PassThrough}=await import('node:stream');
+ const {buildLaunch,createLaunchDirs,removeLaunchDirs}=await import('../../src/runtime/launch.mjs');
+ const {parsePin,runtimeFor}=await import('../../src/runtime/manifest.mjs');
+ const {assertSandboxFits,sandboxArgs,sandboxPolicy,sandboxState}=await import('../../src/runtime/sandbox.mjs');
+ const {main}=await import('../../src/sandbox/codex-compat.mjs');
+ const {fixturePin}=await import('../fixtures/runtime-fixture.mjs');
+ const {boundaryMarkersDir}=await import('./fixture-launch.mjs');
+ const root=realpathSync(mkdtempSync(join(tmpdir(),'cua-bounds-')));t.after(()=>rmSync(root,{recursive:true,force:true}));
+ const home=join(root,'cua'),user=join(root,'user');mkdirSync(user);
+ const runtime=runtimeFor({home,pin:parsePin(fixturePin({sha256:'a'.repeat(64),length:1})),record:null});
+ const markers=boundaryMarkersDir(join(root,'bounds'),{host:'vendor',platform:'darwin'});mkdirSync(markers,{recursive:true});
+ assert.equal(boundaryMarkersDir(join(root,'bounds'),{host:'cua',platform:'darwin'}),join(root,'bounds','tmp'));
+ const launch=buildLaunch({runtime,home,sessionId:'s1',ambient:{HOME:user,PATH:'/usr/bin:/bin'},sandbox:'scoped'});
+ const prepared=noServicesLaunch(launch,{host:'vendor',fixtureTmpdir:markers});
+ assert.equal(prepared.env.TMPDIR,markers);assert.equal(prepared.sessionTmp,markers);
+ assertSandboxFits('scoped',prepared);
+ createLaunchDirs(prepared);
+ assert.equal(lstatSync(markers).isDirectory(),true,'a real directory, never a link');
+ const scripts=join(markers,'.tmpAbC123');mkdirSync(scripts);
+ const argv=sandboxArgs(sandboxPolicy(sandboxState('scoped',prepared.cwd),{readPaths:[scripts]}),[runtime.paths.node,'--experimental-vm-modules',join(scripts,'kernel.js')]);
+ const execs=[];let stderr='';
+ const code=await main(argv,{HOME:user,PATH:'/usr/bin:/bin',TMPDIR:prepared.env.TMPDIR,CODEX_HOME:prepared.env.CODEX_HOME},{stdin:new PassThrough(),stdout:{write(){}},stderr:{write:x=>{stderr+=x;}},
+  cwd:()=>prepared.cwd,chdir(){},execve:(file,args)=>execs.push({file,args}),canExecute:()=>true});
+ assert.equal(code,undefined,stderr);
+ assert.equal(execs.length,1);
+ assert.ok(execs[0].args.some(a=>a.startsWith('-DWRITABLE_ROOT_')&&a.endsWith(`=${markers}`)),'the markers directory is a writable root');
+ writeFileSync(join(markers,'counter'),'x');
+ removeLaunchDirs(prepared);rmSync(launch.cwd,{recursive:true,force:true});
+ assert.ok(existsSync(join(markers,'counter'))&&!existsSync(launch.cwd),'the markers outlive the connection\'s run directory');
+});

@@ -21,12 +21,12 @@
 # outcomes, counts, booleans and the runner's scratch paths. Every secret is a generated synthetic value that the
 # checks keep inside their cells and scan their own reports for; the runtime is never copied out of the scratch root.
 # Every step runs and is reported even after an earlier one failed; the gate then exits 1 naming each failed step.
-# Reports land in $HOSTED_GATE_OUT (default <checkout>/.hosted-gate).
+# Reports land in $HOSTED_GATE_OUT (default <checkout>/hosted-gate-out; not a dotted name, which upload-artifact skips).
 set -eu
 [ "$(uname -s)" = Darwin ] || { echo "hosted-gate: refused: macOS only" >&2; exit 2; }
 R=$(cd "$(dirname "$0")/../.." && pwd -P)
 cd "$R"
-OUT=${HOSTED_GATE_OUT:-$R/.hosted-gate}
+OUT=${HOSTED_GATE_OUT:-$R/hosted-gate-out}
 rm -rf "$OUT"; mkdir -p "$OUT/oracles"
 # The scratch root by its real path (port-vs-capture relocates M0's captures under it, which needs no symbolic link on
 # the way: the runner's temp is /Users/runner/work/_temp; macOS's /tmp and /var are aliases).
@@ -67,7 +67,12 @@ doctor() {
 }
 build_fp() { xcrun clang -O2 -Wall -o "$S/cua-fp" scripts/sandbox-probe/fingerprint.c; }
 fingerprint() { scratch node scripts/sandbox-probe/oracle.mjs fingerprint --home "$H" --user-home "$U" --mode "$1" --launcher cua --role "$2" --fp "$S/cua-fp" --out "$OUT/oracles/fp-cua-$2-$1.json"; }
-judge() { node scripts/sandbox-probe/oracle.mjs compare-fingerprints "$1" "$2" --expect "$3" --out "$4" > /dev/null; }
+judge() {
+  code=0
+  node scripts/sandbox-probe/oracle.mjs compare-fingerprints "$1" "$2" --expect "$3" --out "$4" > /dev/null || code=$?
+  [ -f "$4" ] && node -e 'const {judgement: j} = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); if (!j.ok) console.error(`hosted-gate: undeclared: ${JSON.stringify({checks: j.undeclared.checks.map(c => `${c.op} ${c.label} ${c.left?.result ?? "-"}/${c.right?.result ?? "-"}`), env: j.undeclared.env, cwd: j.undeclared.cwd, sandboxed: j.undeclared.sandboxed})}`)' "$4"
+  return "$code"
+}
 port_vs_capture() { scratch node scripts/sandbox-probe/oracle.mjs port-vs-capture --capture "$M0/argv-capture/capture-signed-$1.json" --relocate "$M0_ROOT=$S/m0" --out "$OUT/oracles/port-vs-signed-$1.json"; }
 own_sandbox() { scratch node scripts/accept/own-sandbox.mjs --home "$H" --host "$1" --out "$OUT/own-sandbox-$1.json" > /dev/null; }
 probe_secrets() {
@@ -77,6 +82,7 @@ probe_secrets() {
   return "$code"
 }
 
+echo "hosted-gate: macOS $(sw_vers -productVersion) ($(sw_vers -buildVersion)), $(uname -m), Node $(node --version)" >&2
 step "install the pinned runtime" install
 step "no Codex CLI in the installed tree" no_codex
 step "doctor: sandbox.launcher pass, no Codex CLI row" doctor

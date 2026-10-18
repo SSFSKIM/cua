@@ -47,4 +47,4 @@ gates:
       - "scripts/probe/**"
       - "docs/evidence/2026-10-17-own-sandbox/m0/**"
       - ".github/ci-kit.yml"
-    artifacts: [".hosted-gate/**"]
+    artifacts: ["hosted-gate-out/**"]

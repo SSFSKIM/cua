@@ -129,3 +129,11 @@ test('awaitLaunch: polls until the new pid is listed and times it; past the boun
   const running = await awaitLaunch({pids: () => { reads++; return [7]; }, before: [7], startedAt: at, launchOf: () => at - 60_000, now: () => 0, sleep: async () => assert.fail('no poll')});
   assert.deepEqual({launch: running.launch, missed: running.missed, reads}, {launch: null, missed: false, reads: 1});
 });
+
+test('awaitLaunch: a late reading past the bound is a miss even when it lists the new pid', async () => {
+  let t = 0; const at = Date.UTC(2026, 9, 18, 10, 0, 6);
+  const listings = [[], [42]];
+  const late = await awaitLaunch({pids: () => listings.shift(), before: [], startedAt: at - 500, launchOf: () => at, now: () => t,
+    sleep: async () => { t = 12_000; }, boundMs: 10_000, pollMs: 100});
+  assert.deepEqual({launch: late.launch, missed: late.missed, waitedMs: late.waitedMs}, {launch: null, missed: true, waitedMs: 12_000});
+});

@@ -48,7 +48,7 @@ export function captureLaunch({pids, before, startedAt, launchOf: launch = pid =
 
 // captureLaunch as a bounded poll right after the run's `open` returns (the new pid may not be listed yet). With an app
 // already running before (`before` non-empty) `open` hands it the document and no pid is expected: one reading. Else
-// it reads until a candidate appears or `boundMs` passes; past the bound it is a miss (`missed`), never a guess.
+// it reads until a candidate appears or `boundMs` passes; a reading taken past the bound is a miss (`missed`), never accepted or guessed.
 // -> {launch, candidates, waitedMs, missed}.
 export async function awaitLaunch({pids, before, startedAt, launchOf: launch = pid => launchOf(pid), boundMs = 10_000, pollMs = 100,
   now = Date.now, sleep = ms => new Promise(r => setTimeout(r, ms))}) {
@@ -56,7 +56,9 @@ export async function awaitLaunch({pids, before, startedAt, launchOf: launch = p
   for (;;) {
     const r = captureLaunch({pids: pids(), before, startedAt, launchOf: launch});
     const waitedMs = now() - t0;
-    if (r.candidates.length || before.length) return {...r, waitedMs, missed: false};
+    if (before.length) return {...r, waitedMs, missed: false};
+    if (waitedMs > boundMs) return {launch: null, candidates: r.candidates, waitedMs, missed: true};
+    if (r.candidates.length) return {...r, waitedMs, missed: false};
     if (waitedMs >= boundMs) return {...r, waitedMs, missed: true};
     await sleep(pollMs);
   }

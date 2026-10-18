@@ -49,8 +49,9 @@ export function compatRouteChecks(result, {compat = COMPAT_EXECUTABLE} = {}) {
 }
 
 // Whether `result` proves the run's teardown: the experiment exited on its own and every helper it started is verified
-// gone (quit by itself, or gone after its pid was signalled), none left alive or of uncertain ownership.
-const helpersGone = h => Boolean(h) && Number.isInteger(h.started) && h.started === h.quitByThemselves + h.quitByHarness && h.stillAlive === 0 && h.uncertain === 0;
+// gone (quit by itself, or gone after its pid was signalled), none left alive or of uncertain ownership, and no helper
+// whose ownership could not be read still lives.
+const helpersGone = h => Boolean(h) && Number.isInteger(h.started) && h.started === h.quitByThemselves + h.quitByHarness && h.stillAlive === 0 && h.uncertain === 0 && h.unclassified === 0;
 const teardownProven = (exit, result) => exit.signal !== 'SIGKILL' && helpersGone(result?.helpers);
 
 // Runs the experiment and judges it -> {ok, checks, kept}. Past `timeoutMs` it is cancelled cooperatively (SIGTERM: the

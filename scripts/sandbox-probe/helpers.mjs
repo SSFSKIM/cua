@@ -9,7 +9,7 @@
 import {execFileSync} from 'node:child_process';
 import {realpathSync} from 'node:fs';
 import {join} from 'node:path';
-import {executableOf, hasRunTmpdir} from '../native-baseline/prepare.mjs';
+import {envValues, executableOf, hasRunTmpdir} from '../native-baseline/prepare.mjs';
 
 const run = (cmd, args) => execFileSync(cmd, args, {encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe']});
 
@@ -49,23 +49,27 @@ export function helperLauncherIs(pid, expected, {exec = execFileSync} = {}) {
     withEnvironment = String(exec('/bin/ps', ['-E', '-ww', '-o', 'command=', '-p', String(pid)], {encoding: 'utf8'})).replace(/\n$/, '');
   } catch { throw failed(); }
   if (!command || !withEnvironment.startsWith(command)) throw failed();
-  const values = withEnvironment.slice(command.length).split(' ').filter(word => word.startsWith('CODEX_CLI_PATH=')).map(word => word.slice('CODEX_CLI_PATH='.length));
+  const values = envValues(withEnvironment.slice(command.length), 'CODEX_CLI_PATH');
   return typeof expected === 'string' && values.length === 1 && values[0] === expected;
 }
 
 // `kill(pid, signal)` and `sleep(ms)` are the process boundary, doubled in tests.
 export function createHelperTracker({owns, list = helperPids, isAlive: alive = isAlive, kill = (pid, signal) => process.kill(pid, signal), sleep = ms => new Promise(r => setTimeout(r, ms))}) {
-  const owned = new Set(), foreign = new Set();
+  const owned = new Set(), foreign = new Set(), unclassified = new Set();
   return {
-    // Classifies every helper running now that has not been classified yet.
+    // Classifies every helper running now that has not been classified yet (one whose ownership could not be read is
+    // tried again).
     observe() {
       for (const pid of list()) {
         if (owned.has(pid) || foreign.has(pid)) continue;
         let mine;
         try { mine = owns(pid); } catch (error) {
           if (!alive(pid)) continue;
+          // Recorded before the run fails: its teardown is unproven while this pid lives, and it is never signalled.
+          unclassified.add(pid);
           throw new Error(`cannot read the ownership of helper ${pid}: ${error.message}`);
         }
+        unclassified.delete(pid);
         if (mine) owned.add(pid);
         else if (alive(pid)) foreign.add(pid);
       }
@@ -75,7 +79,8 @@ export function createHelperTracker({owns, list = helperPids, isAlive: alive = i
     // Stops this run's helpers that are still running, by pid, and verifies they are gone: SIGTERM, a bounded wait
     // (`waitMs`), then for each one still alive its ownership read again, and SIGKILL only for a pid still proven this
     // run's, and a second bounded wait. Never signals any other pid. -> {started, quitByThemselves, quitByHarness (gone
-    // after our signal), stillAlive (alive at the end), uncertain (alive, its ownership no longer proven: not escalated)}.
+    // after our signal), stillAlive (alive at the end), uncertain (alive, its ownership no longer proven: not escalated),
+    // unclassified (helpers whose ownership could never be read and that still live: never signalled)}.
     async stopLeft({waitMs = 10_000, pollMs = 100} = {}) {
       const left = [...owned].filter(pid => alive(pid));
       const waitGone = async pids => {
@@ -93,7 +98,8 @@ export function createHelperTracker({owns, list = helperPids, isAlive: alive = i
       for (const pid of escalate) kill(pid, 'SIGKILL');
       await waitGone(escalate);
       const stillAlive = left.filter(pid => alive(pid)).length;
-      return {started: owned.size, quitByThemselves: owned.size - left.length, quitByHarness: left.length - stillAlive, stillAlive, uncertain};
+      return {started: owned.size, quitByThemselves: owned.size - left.length, quitByHarness: left.length - stillAlive, stillAlive, uncertain,
+        unclassified: [...unclassified].filter(pid => alive(pid)).length};
     },
   };
 }

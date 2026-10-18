@@ -33,3 +33,4 @@
 2026-10-18T18:06:33.509Z idle before gated sh -c ssh -o BatchMode=yes mini bash -s < /tmp/cua-157/item1.sh > /tmp/cua-157/item1.out 2>&1
 2026-10-18T18:06:42.270Z gated sh -c ssh -o BatchMode=yes mini bash -s < /tmp/cua-157/item1.sh > /tmp/cua-157/item1.out 2>&1: exit 0
 2026-10-18T18:06:42.759Z front after gated sh -c ssh -o BatchMode=yes mini bash -s < /tmp/cua-157/item1.sh > /tmp/cua-157/item1.out 2>&1: com.apple.Terminal
+2026-10-18T18:08:36.875Z gated sh -c ssh -o BatchMode=yes mini bash -s < /tmp/cua-157/items-1-10.sh > /tmp/cua-157/items-1-10.out 2>&1: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.14 -> idle

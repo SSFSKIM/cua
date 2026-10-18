@@ -246,7 +246,13 @@ but the hold's gate requires Terminal in front, parity left Chrome in front, and
 
 Three extra vendor runs, planned to firm up the cold.hit row, were **not run**. A vendor computer run sends synthetic
 keys through the native helper (`super+n`, `typeText`, `super+w` ×10, `super+q`), and a `super+q` that reached Chrome
-would quit the owner's Chrome. The extra runs wait for the frontmost key guard (#162).
+would quit the owner's Chrome. The extra runs wait for the frontmost key guard (#162). *Correction (2026-10-18, after
+merge):* #162 found that the helper posts keys to the bound app's pid, so no key guard is needed for them.
+
+*Correction (2026-10-18, after merge; #162).* The window closed at 15:31:52.737Z, before group B, by a click on its close
+button arriving over Screen Sharing (the Default profile's window was closed the same way at 15:31:49.703Z). Chrome's
+session files, cua's host log and the mini's unified log agree. The 03:14:43Z closure was a click of the same kind. The
+notes below, written before that was known, place the closure wrongly.
 
 *The ssfs window's closure (tab log).* The coordinator saw the ssfs Profile 1 window's last tab closed between about
 15:43Z and 15:48Z; it was reopened at 15:52:25Z, with 1 tab at 15:52:45Z. From our logs, our runs did not close it:

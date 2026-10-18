@@ -5,8 +5,10 @@
 // --permission-profile <JSON> -- <command>`, from `$CUA_HOME/sandbox/<tag>/`, with cua's fixed PATH), on the profiles
 // cua itself renders for the kernel and the worker (src/sandbox/policy.mjs roleProfile with denyListFor's Linux list on
 // a scratch home), and each runs the same check: reads, listings and writes of every deny-list location, the module
-// tree, the run directory and session temp, hard links, and TCP and AF_UNIX connects. The vendor `codex` (0.159.2, the
-// pinned deb's) is the helper by its argv[0] name. Outcomes are errno codes; the verdict is equality per role and mode.
+// tree, the run directory and session temp, hard links, and TCP and AF_UNIX connects. Each runs where cua runs it: in
+// the session's run directory, but the kernel under default in its own directory outside run/. The vendor `codex`
+// (0.159.2, the pinned deb's) is the helper by its argv[0] name. Outcomes are errno codes; the verdict is equality per
+// role and mode.
 //
 //   node scripts/sandbox-probe/linux-helper-compare.mjs --home <CUA_HOME with an installed runtime and node/> \
 //       --vendor <path to the vendor codex> --cua <path to cua's helper> --out <file.json>
@@ -71,6 +73,8 @@ export async function compareHelpers({home, vendor, cua, scratch = fs.mkdtempSyn
     state: sentinel(join(home, 'state', 'compare')), remote: sentinel(join(home, 'remote', 'compare')), chrome: sentinel(join(home, 'chrome', 'compare')),
     'other run': sentinel(join(home, 'run', 'compare-other')), 'module tree': join(runtime.paths.moduleDir, fs.readdirSync(runtime.paths.moduleDir).find(n => !n.startsWith('.')))};
   fs.mkdirSync(sessionTmp, {recursive: true, mode: 0o700});
+  const kernelDir = join(home, 'kernel', session);
+  fs.mkdirSync(join(kernelDir, 'tmp'), {recursive: true, mode: 0o700});
   const tcp = createServer(s => s.destroy()), socketPath = join(scratch, 's.sock'), unix = createServer(s => s.destroy());
   await new Promise(r => tcp.listen(0, '127.0.0.1', r));
   await new Promise(r => unix.listen(socketPath, r));
@@ -86,13 +90,16 @@ export async function compareHelpers({home, vendor, cua, scratch = fs.mkdtempSyn
     }
     for (const mode of ['scoped', 'default']) {
       const state = mode === 'scoped' ? sandboxState('scoped', cwd) : undefined;
-      const deny = prepareDenyTargets(realDenyList(denyListFor({home, env: {HOME: userHome}, sessionId: session, sessionTmp, platform: 'linux', mode})), {platform: 'linux', home: userHome});
+      const deny = prepareDenyTargets(realDenyList(denyListFor({home, env: {HOME: userHome}, sessionId: session, sessionTmp, platform: 'linux'})), {platform: 'linux', home: userHome});
       for (const role of ['kernel', 'worker']) {
         const {profile} = roleProfile({state, role, readPaths: [join(node, '..')], denyRead: deny, network: 'restricted'});
-        const env = sandboxedEnv({PATH: FIXED_PATH, HOME: userHome, TMPDIR: sessionTmp}, {platform: 'linux', network: profile.network});
+        // As cua launches it (src/repl-host/supervisor.mjs kernelLaunch): the default-mode kernel works in its own
+        // directory outside run/, its TMPDIR that directory's tmp/.
+        const [where, tmp] = role === 'kernel' && mode === 'default' ? [kernelDir, join(kernelDir, 'tmp')] : [cwd, sessionTmp];
+        const env = sandboxedEnv({PATH: FIXED_PATH, HOME: userHome, TMPDIR: tmp}, {platform: 'linux', network: profile.network});
         const outcomes = {};
         for (const [name, helper] of Object.entries(report.helpers))
-          outcomes[name] = await runUnder({helper, profile, cwd, node, env, args: [targets, writes, links, tcp.address().port, socketPath]});
+          outcomes[name] = await runUnder({helper, profile, cwd: where, node, env, args: [targets, writes, links, tcp.address().port, socketPath]});
         for (const f of [...Object.values(writes), ...Object.values(links).map(([, to]) => to)]) fs.rmSync(f, {force: true});
         report.results[`${mode} ${role}`] = outcomes;
         report.equal[`${mode} ${role}`] = !!outcomes.vendor.outcomes && isDeepStrictEqual(outcomes.vendor.outcomes, outcomes.cua.outcomes);
@@ -101,7 +108,7 @@ export async function compareHelpers({home, vendor, cua, scratch = fs.mkdtempSyn
   } finally {
     tcp.close(); unix.close();
     for (const dir of ['state', 'remote', 'chrome'].map(d => join(home, d, 'compare'))) fs.rmSync(dir, {recursive: true, force: true});
-    for (const dir of [join(home, 'run', 'compare-other'), cwd, join(home, 'sandbox', 'compare-vendor'), join(home, 'sandbox', 'compare-cua')]) fs.rmSync(dir, {recursive: true, force: true});
+    for (const dir of [join(home, 'run', 'compare-other'), cwd, kernelDir, join(home, 'sandbox', 'compare-vendor'), join(home, 'sandbox', 'compare-cua')]) fs.rmSync(dir, {recursive: true, force: true});
     fs.rmSync(scratch, {recursive: true, force: true});
   }
   report.ok = Object.values(report.equal).every(Boolean);

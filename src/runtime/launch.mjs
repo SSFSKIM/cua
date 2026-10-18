@@ -98,7 +98,9 @@
 //   CUA_REPL_WORKER_NETWORK=enabled          Linux with the computer surface: the trusted worker's profile has the
 //                                            network, so sky_linux (its child) reaches the X display and the session
 //                                            bus; the kernel's never has
-//   CUA_REPL_NODE_PATH                       the resolved Node the kernel runs on
+//   CUA_REPL_KERNEL_DIR                      Linux under the default mode: the kernel's own directory outside run/,
+//                                            `kernelDir` (below)
+//   CUA_REPL_NODE_PATH                      the resolved Node the kernel runs on
 //   CUA_REPL_TRUSTED_CODE_PATHS              src/repl-host (the host's own code), src/cua-api and docs/cua-api (the cua
 //                                            facade the banner imports and the documents it reads), then what
 //                                            NODE_REPL_TRUSTED_CODE_PATHS lists for the vendor; the scoped preflight
@@ -133,6 +135,12 @@
 // and removes it when the connection ends. The launch record carries both (`cwd`, `sessionTmp`) and the deny list it
 // resolved (`denyRead`; null for a disabled connection, `sandbox`), which the scoped preflight protects except for those
 // two (src/runtime/sandbox.mjs).
+// On Linux under the default mode the record also carries `kernelDir`, <home>/kernel/<sessionId>, named to the host as
+// CUA_REPL_KERNEL_DIR: run/ is denied to the kernel whole there as under scoped, and since nothing is writable to it the
+// helper re-binds nothing of run/<sessionId> inside the denied run/ (it re-binds only writable roots, #115 M0c), so the
+// kernel works in that directory instead, with its tmp/ as its TMPDIR (src/repl-host/supervisor.mjs kernelLaunch). It
+// holds nothing but the kernel's lifeline while it runs; createLaunchDirs makes it, and it goes with the session
+// (removeLaunchDirs, src/runtime/run-dir.mjs). Null otherwise.
 import {accessSync, chmodSync, constants, mkdirSync, realpathSync, rmSync, statSync} from 'node:fs';
 import {dirname, isAbsolute, join} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
@@ -218,11 +226,12 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
   const compat = !own;
   const cwd = join(owned.run, sessionId);
   const sessionTmp = join(cwd, 'tmp');
+  const kernelDir = linux && sandbox === 'default' ? join(owned.kernel, sessionId) : null;
   // A disabled connection confines nothing, so it neither needs the deny list nor fails on discovering it (an unreadable
   // store refuses only confined launches). Its launch carries no list, and the supervisor refuses any confined call
   // without one, so it can never be confined later without its list.
   const denyRead = sandbox === 'disabled' ? null
-    : realDenyList(denyListFor({home: owned.home, env: ambient, secretsDir, secretsProjectDir, sessionId, sessionTmp, platform: runtime.manifest.platform, mode: sandbox}));
+    : realDenyList(denyListFor({home: owned.home, env: ambient, secretsDir, secretsProjectDir, sessionId, sessionTmp, platform: runtime.manifest.platform}));
 
   const env = {};
   for (const key of AMBIENT_ALLOWLIST) if (typeof ambient[key] === 'string') env[key] = ambient[key];
@@ -250,6 +259,7 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
     [names.pipeTimeout]: '1000',
     NODE_REPL_DISABLE_ANALYTICS: '1',
     ...(compat ? {CODEX_CLI_PATH: compatExecutable(), CUA_COMPAT_NODE: p.node} : linux ? linuxSandboxEnv(owned.home, runtime.manifest.arch, enabled) : {CUA_REPL_SANDBOX_EXEC: SEATBELT_EXEC}),
+    ...(kernelDir ? {CUA_REPL_KERNEL_DIR: kernelDir} : {}),
   });
   if (enabled.includes('computer')) Object.assign(env, linux ? {OAI_SKY_LINUX_BIN: p.skyLinuxBin} : {SKY_CUA_SERVICE_PATH: p.skyServiceApp}, {CUA_SKY_VENDOR_SERVICE: p.skyVendorService});
   if (enabled.includes('browser')) {
@@ -264,29 +274,31 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
     env[STORE_ENV.dir] = secretsDir;
     if (secretsProjectDir) env[STORE_ENV.projectDir] = secretsProjectDir;
   } else if (secretsUnavailable) env[STORE_ENV.unavailable] = secretsUnavailable;
-  const launch = {command: own ? ownNode : p.node, args: own ? ['--disable-sigusr1', REPL_HOST_SUPERVISOR] : [p.cuaRepl], env, cwd, sessionTmp, denyRead,
+  const launch = {command: own ? ownNode : p.node, args: own ? ['--disable-sigusr1', REPL_HOST_SUPERVISOR] : [p.cuaRepl], env, cwd, sessionTmp, kernelDir, denyRead,
     replHost: {host: replHost.host, reason: replHost.reason}, managedNodeRoot: owned.node, stagingRoot: owned.staging, sandboxHelperRoot: owned.sandbox,
     compat: compat ? {home: owned.home, sessionId, node: p.node} : null};
   if (own) assertTrustedServicesContained(launch);
   return launch;
 }
 
-// Creates `launch`'s working directory and its session temp, each mode 0700 (a directory left from an earlier launch of
-// the same session is reused and made private again), the runtime's CODEX_HOME where the launch has one, and a macOS
-// vendor-host launch's compat settings (rewritten for each launch of the session).
+// Creates `launch`'s working directory and its session temp, and a Linux default-mode launch's kernel directory and its
+// tmp/, each mode 0700 (a directory left from an earlier launch of the same session is reused and made private again),
+// the runtime's CODEX_HOME where the launch has one, and a macOS vendor-host launch's compat settings (rewritten for each
+// launch of the session).
 export function createLaunchDirs(launch) {
   if (launch.env.CODEX_HOME) mkdirSync(launch.env.CODEX_HOME, {recursive: true, mode: 0o700});
-  for (const dir of [launch.cwd, launch.sessionTmp]) {
+  for (const dir of [launch.cwd, launch.sessionTmp, ...(launch.kernelDir ? [launch.kernelDir, join(launch.kernelDir, 'tmp')] : [])]) {
     mkdirSync(dir, {recursive: true, mode: 0o700});
     chmodSync(dir, 0o700);
   }
   if (launch.compat) writeCompatSettings({...launch.compat, denyRead: launch.denyRead, sessionTmp: launch.sessionTmp});
 }
 
-// Removes what createLaunchDirs made for `launch` but CODEX_HOME: its run directory (with the session temp) and its
-// compat settings. Throws what the removal of the run directory throws.
+// Removes what createLaunchDirs made for `launch` but CODEX_HOME: its kernel directory, its run directory (with the
+// session temp) and its compat settings. Throws what the removal of either directory throws.
 export function removeLaunchDirs(launch) {
   if (launch.compat) removeCompatSettings(launch.compat);
+  if (launch.kernelDir) rmSync(launch.kernelDir, {recursive: true, force: true});
   rmSync(launch.cwd, {recursive: true, force: true});
 }
 

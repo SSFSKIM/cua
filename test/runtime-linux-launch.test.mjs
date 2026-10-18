@@ -4,9 +4,9 @@
 // macOS launch is unchanged by any of these variables.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {realpathSync} from 'node:fs';
+import {existsSync, realpathSync, statSync} from 'node:fs';
 import {join} from 'node:path';
-import {buildLaunch, SKY_SERVICE, BROWSER_SERVICE} from '../src/runtime/launch.mjs';
+import {buildLaunch, createLaunchDirs, removeLaunchDirs, SKY_SERVICE, BROWSER_SERVICE} from '../src/runtime/launch.mjs';
 import {parsePin, runtimeFor} from '../src/runtime/manifest.mjs';
 import {scratch, fixturePin, linuxFixturePin} from './fixtures/runtime-fixture.mjs';
 import {helperFor} from '../src/sandbox/linux.mjs';
@@ -56,9 +56,29 @@ test('a Linux computer-use launch runs cua\'s own host: the desktop session, the
   const {deny, reexpose} = JSON.parse(env.CUA_SANDBOX_DENY_READ);
   assert.deepEqual(deny.slice(-4), ['state', 'remote', 'chrome', 'run'].map(dir => join(home, dir)));
   assert.deepEqual(reexpose, [join(home, 'run', SESSION), join(home, 'run', SESSION, 'tmp')]);
-  // Under default nothing is writable, so nothing would be re-bound inside a denied run/: run/ is left out there.
-  const readOnly = JSON.parse(buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, services: {sky: SKY_SERVICE}, resolveOwnNode: ownNode, sandbox: 'default'}).env.CUA_SANDBOX_DENY_READ);
-  assert.deepEqual(readOnly.deny.slice(-3), ['state', 'remote', 'chrome'].map(dir => join(home, dir)));
+  assert.equal(launch.kernelDir, null, 'under scoped the kernel works in its run directory');
+});
+
+// #115 M3: under default run/ is denied to the Linux kernel whole, as under scoped; since nothing is writable to it and
+// bubblewrap re-binds only writable roots inside a denied directory, it works in its own directory outside run/
+// (<home>/kernel/<session>, its TMPDIR that directory's tmp/), which the launch names and createLaunchDirs makes.
+test('a Linux launch under default names the kernel\'s own directory outside run/, and run/ stays denied', t => {
+  const {home, runtime} = linux(t, 'arm64');
+  const launch = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, services: {sky: SKY_SERVICE}, resolveOwnNode: ownNode, sandbox: 'default'});
+  const kernelDir = join(home, 'kernel', SESSION);
+  assert.equal(launch.kernelDir, kernelDir);
+  assert.equal(launch.env.CUA_REPL_KERNEL_DIR, kernelDir);
+  assert.equal(launch.cwd, join(home, 'run', SESSION), 'the host and the worker keep the run directory');
+  const {deny} = JSON.parse(launch.env.CUA_SANDBOX_DENY_READ);
+  assert.deepEqual(deny.slice(-4), ['state', 'remote', 'chrome', 'run'].map(dir => join(home, dir)));
+  createLaunchDirs(launch);
+  for (const dir of [kernelDir, join(kernelDir, 'tmp')]) assert.equal(statSync(dir).mode & 0o777, 0o700, dir);
+  removeLaunchDirs(launch);
+  assert.equal(existsSync(kernelDir), false, 'removed with the run directory');
+  assert.equal(existsSync(launch.cwd), false);
+  const mac = buildLaunch({runtime: runtimeOf(t, fixturePin({sha256: 'a'.repeat(64), length: 1})).runtime, home, sessionId: SESSION, ambient: AMBIENT, resolveOwnNode: ownNode, sandbox: 'default'});
+  assert.equal(mac.kernelDir ?? null, null, 'macOS re-exposes the run directory inside its deny list, so nothing moves there');
+  assert.equal(mac.env.CUA_REPL_KERNEL_DIR, undefined);
 });
 
 test('the vendor host is refused on Linux (#135), explicitly or as a fallback: no Node 24 refuses the session', t => {

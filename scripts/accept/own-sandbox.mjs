@@ -34,8 +34,9 @@
 // On Linux (#115 M3, acceptance 1 to 5 for cua's own host there) the same connection runs its children under the
 // pinned helper (codex-linux-sandbox, bubblewrap and seccomp), so: there is no clone to try (`cp -c` is macOS's), the
 // kernel is Node under bubblewrap (an ancestor named bwrap, the pinned helper started it, no seatbelt marker), and under
-// default another session's run directory stays readable (the recorded per-directory fallback: bubblewrap re-binds
-// nothing read-only inside a denied run/, Decision Log, 2026-10-18). Deny targets are created there, so a store root
+// default the kernel works in its own directory outside run/ ($CUA_HOME/kernel/<id>, its TMPDIR that directory's tmp/:
+// bubblewrap re-binds nothing read-only inside the denied run/), so another session's run directory is as absent to it
+// as under scoped. Deny targets are created there, so a store root
 // missing at launch is created 0700 and stays denied. And the four creation cases run for real (Decision Log, "deny
 // targets are created on Linux only, and bounded there"): a missing fixed target created 0700 inside HOME, a dangling
 // tier target created leaf-only, a tier whose parent is missing refused, and a fixed target whose missing parent lies
@@ -211,6 +212,8 @@ export async function ownSandboxAcceptance({home, host = 'cua', modes = MODES, n
   const vendor = host === 'vendor';
   const real = realHome(home);
   const layout = homeLayout(real);
+  // Where the kernel works: its session's run directory, or on Linux under default its own directory outside run/.
+  const ownDir = mode => (linux && mode === 'default' ? layout.kernel : layout.run);
   const runtime = resolveRuntime({home: real});
   const moduleDir = runtime.paths.moduleDir;
   const packageName = readdirSync(moduleDir).filter(name => !name.startsWith('.')).flatMap(name => (name.startsWith('@') ? readdirSync(join(moduleDir, name)).map(sub => `${name}/${sub}`) : [name]))
@@ -268,7 +271,7 @@ export async function ownSandboxAcceptance({home, host = 'cua', modes = MODES, n
         out.ancestors = ancestors;
       } finally { await connection.close(); }
       report.modes[mode] = {reads: out.reads, moduleTree: out.moduleTree, writes: out.writes, link: out.link, clone: out.clone, tcp: out.tcp, unix: out.unix,
-        tmpdir: {own: out.tmpdir.value === out.tmpdir.env && out.tmpdir.value === join(out.tmpdir.cwd, 'tmp') && out.tmpdir.cwd.startsWith(`${layout.run}/`)},
+        tmpdir: {own: out.tmpdir.value === out.tmpdir.env && out.tmpdir.value === join(out.tmpdir.cwd, 'tmp') && out.tmpdir.cwd.startsWith(`${ownDir(mode)}/`)},
         kernel: {execPathIsNode: /(^|\/)node$/.test(out.process.execPath ?? ''), parentIsSupervisor: /src\/repl-host\/supervisor\.mjs/.test(out.parentCommand ?? ''),
           parentIsNodeRepl: /(^|\/)node_repl( |$)/.test(out.parentCommand ?? ''), sandbox: out.process.sandbox,
           ...(linux ? {underBwrap: out.ancestors.includes('bwrap'), underHelper: out.ancestors.some(comm => comm.startsWith('codex-linux-sa'))} : {})},
@@ -277,17 +280,17 @@ export async function ownSandboxAcceptance({home, host = 'cua', modes = MODES, n
       const r = report.modes[mode];
       const confined = mode !== 'disabled';
       for (const [label, result] of Object.entries(out.reads)) {
-        // Linux under default: the per-directory fallback leaves run/ undenied (the header). Under scoped run/ is masked
-        // as the ancestor of the session's own writable directory (an empty tmpfs that may only be traversed), so
-        // another session's directory is not even there: ENOENT, which reveals less than EACCES.
+        // On Linux run/ is masked (under scoped as the ancestor of the session's own writable directory, an empty tmpfs
+        // that may only be traversed), so another session's directory is not even there: ENOENT, which reveals less
+        // than EACCES.
         const otherRun = label.startsWith('another session\'s run directory');
-        const denied = confined && !(linux && mode === 'default' && otherRun);
+        const denied = confined;
         const refused = code => DENIED.has(code) || (linux && otherRun && code === 'ENOENT');
         check(`${mode}: ${denied ? 'denied' : 'readable'}: ${label}`, denied ? !result.ok && refused(result.code) : result.ok && result.value === true, result.ok ? undefined : result.code);
       }
       check(`${mode}: a package resolves and reads from the runtime's module tree`, out.moduleTree.ok && out.moduleTree.value === true, out.moduleTree.code);
-      check(`${mode}: TMPDIR is the session's own, under $CUA_HOME/run/<id>`, r.tmpdir.own);
-      check(`${mode}: the run directory is ${mode === 'default' ? 'not ' : ''}writable`, mode === 'default' ? !out.writes.runDirectory.ok : out.writes.runDirectory.ok, out.writes.runDirectory.code);
+      check(`${mode}: TMPDIR is the session's own, under ${ownDir(mode) === layout.run ? '$CUA_HOME/run/<id>' : '$CUA_HOME/kernel/<id>'}`, r.tmpdir.own);
+      check(`${mode}: the ${ownDir(mode) === layout.run ? 'run' : 'kernel\'s own'} directory is ${mode === 'default' ? 'not ' : ''}writable`, mode === 'default' ? !out.writes.runDirectory.ok : out.writes.runDirectory.ok, out.writes.runDirectory.code);
       check(`${mode}: TMPDIR is ${mode === 'default' ? 'not ' : ''}writable`, mode === 'default' ? !out.writes.tmpdir.ok : out.writes.tmpdir.ok, out.writes.tmpdir.code);
       check(`${mode}: a write outside the session ${confined ? 'fails' : 'succeeds'}`, confined ? !out.writes.outside.ok : out.writes.outside.ok, out.writes.outside.code);
       if (confined) {

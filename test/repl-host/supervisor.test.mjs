@@ -3,7 +3,8 @@
 // the M1 probes of 2026-10-14). Needs Node 24 or later for the kernel (CUA_NODE); skips visibly otherwise.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {existsSync, mkdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync} from 'node:fs';
+import {existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
 import {pathToFileURL} from 'node:url';
 import {dirname, join} from 'node:path';
 import {kernelNode} from './kernel-harness.mjs';
@@ -79,6 +80,25 @@ test('on the Linux route the kernel launches under the pinned helper with its ro
   assert.equal(refused.isError, true);
   assert.match(texts(refused)[0], /^js sandbox unavailable: cua's Linux sandbox helper .* has SHA-256 [0-9a-f]{64}, not the pinned [0-9a-f]{64}; it is not run/);
   assert.equal(launches(host.codexHome).length, 1, 'nothing more was launched');
+});
+
+// #115 M3: under default run/ is denied to the Linux kernel whole, and nothing in it is writable to the kernel, so the
+// launch names the kernel's own directory outside run/ (CUA_REPL_KERNEL_DIR): the kernel works there, its TMPDIR (and so
+// its lifeline) that directory's tmp/. The worker keeps the run directory, and scoped is unchanged.
+test('on the Linux route under default the kernel works in its own directory outside run/; scoped keeps the run directory', own, async t => {
+  const kernelDir = realpathSync(mkdtempSync(join(tmpdir(), 'cua-kernel-dir-')));
+  t.after(() => rmSync(kernelDir, {recursive: true, force: true}));
+  mkdirSync(join(kernelDir, 'tmp'), {mode: 0o700});
+  const host = await startHost(t, {node, launcher: 'helper', env: {CUA_REPL_KERNEL_DIR: kernelDir}});
+  const where = 'const os=await import("node:os");nodeRepl.write(os.tmpdir())';
+  assert.deepEqual(texts(await host.js(where, {mode: 'default'})), [join(kernelDir, 'tmp')]);
+  assert.deepEqual(texts(await host.js(where)), [host.tmp], 'scoped: the session temp');
+  const [readOnly, scoped] = launches(host.codexHome);
+  const command = launch => launch.argv.slice(launch.argv.indexOf('--') + 1);
+  assert.deepEqual(readOnly.argv.slice(0, 4), ['--sandbox-policy-cwd', kernelDir, '--command-cwd', kernelDir]);
+  assert.equal(command(readOnly).at(-1), kernelDir, '--working-dir');
+  assert.deepEqual(scoped.argv.slice(0, 4), ['--sandbox-policy-cwd', host.cwd, '--command-cwd', host.cwd]);
+  assert.equal(command(scoped).at(-1), host.cwd);
 });
 
 test('output assembly: named writes first, then unnamed output, then images; an error leads and drops images', own, async t => {

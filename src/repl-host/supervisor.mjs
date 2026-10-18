@@ -79,7 +79,7 @@
 // kernel's environment is only these and HOME, PATH, TMPDIR, TMP and LC_ALL, never the host's own; the worker, trusted
 // code, gets the host's whole (already allowlisted) environment, as the vendor's does.
 import {randomUUID} from 'node:crypto';
-import {delimiter, dirname, isAbsolute} from 'node:path';
+import {delimiter, dirname, isAbsolute, join} from 'node:path';
 import {createInterface} from 'node:readline';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {REPL_HOST_META_KEY, REPL_HOST_VERSION} from './identity.mjs';
@@ -154,7 +154,8 @@ export function hostSettings(env, {cwd}) {
   }
   const pipeTimeout = Number(env.CUA_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS);
   const workerEnv = Object.fromEntries(Object.entries(env).filter(([, value]) => typeof value === 'string'));
-  return {node, launcher, denyRead: parseDenyRead(env.CUA_SANDBOX_DENY_READ), workerNetwork: env.CUA_REPL_WORKER_NETWORK === 'enabled' ? 'enabled' : 'restricted', workingDir: cwd, kernelEnv, workerEnv,
+  return {node, launcher, denyRead: parseDenyRead(env.CUA_SANDBOX_DENY_READ), workerNetwork: env.CUA_REPL_WORKER_NETWORK === 'enabled' ? 'enabled' : 'restricted', workingDir: cwd,
+    kernelDir: absolute(env.CUA_REPL_KERNEL_DIR), kernelEnv, workerEnv,
     services: rpcEnabled && Object.keys(services).length > 0, toolOverrides: parseToolOverrides(env.CUA_REPL_TOOL_OVERRIDES),
     pipeConnectTimeoutMs: Number.isSafeInteger(pipeTimeout) && pipeTimeout > 0 ? pipeTimeout : DEFAULT_CONNECT_TIMEOUT_MS,
     readPaths: [dirname(node), dirname(KERNEL), ...CUA_API_READ_PATHS, ...moduleDirs], sessionId: randomUUID().replaceAll('-', '')};
@@ -179,8 +180,14 @@ function childLaunch(settings, policy, role, command, env) {
   }
 }
 
+// Under the default mode with a kernel directory (CUA_REPL_KERNEL_DIR, Linux: src/runtime/launch.mjs kernelDir) the
+// kernel works there, its TMPDIR (and so its lifeline) that directory's tmp/: run/ is denied to it whole, and the
+// helper re-binds nothing of the run directory inside it when nothing is writable. The worker keeps the run directory.
 export function kernelLaunch(settings, policy) {
-  return childLaunch(settings, policy, 'kernel', [settings.node, '--experimental-vm-modules', KERNEL, '--session-id', settings.sessionId, '--working-dir', settings.workingDir], settings.kernelEnv);
+  const own = policy.state === undefined && !policy.disabled ? settings.kernelDir : null;
+  const workingDir = own ?? settings.workingDir;
+  const env = own ? {...settings.kernelEnv, TMPDIR: join(own, 'tmp'), ...(settings.kernelEnv.TMP ? {TMP: join(own, 'tmp')} : {})} : settings.kernelEnv;
+  return childLaunch({...settings, workingDir}, policy, 'kernel', [settings.node, '--experimental-vm-modules', KERNEL, '--session-id', settings.sessionId, '--working-dir', workingDir], env);
 }
 
 export function workerLaunch(settings, policy) {

@@ -254,7 +254,7 @@ function sandboxRow({home, env, runtime, platform, surfaces, userns, mode}) {
   const session = join(owned.run, 'session');
   let deny;
   try {
-    const list = denyListFor({home: owned.home, env, sessionId: 'session', sessionTmp: join(session, 'tmp'), platform, mode});
+    const list = denyListFor({home: owned.home, env, sessionId: 'session', sessionTmp: join(session, 'tmp'), platform});
     assertDenyListShape(list);
     deny = list.deny;
   } catch (error) {

@@ -82,10 +82,9 @@ function linkedOutOf(home, reexposed) {
 //   other session's run/<id>, with runtimes/ and node/ (what the kernel's Node and packages load from), the launch's
 //   run/<sessionId> and its session temp re-exposed; on Linux the home's private directories and run/ one by one
 //   (state/, remote/, chrome/, run/), with run/<sessionId> and its session temp re-exposed: there the original does not
-//   re-bind a read entry inside a denied directory (#115 M0c), so runtimes/ and node/ are not denied at all. Under the
-//   `default` mode (`mode`) nothing is writable, so the original would re-bind nothing inside a denied run/, and the
-//   kernel could not even enter its own run directory (#115 M3): there Linux denies state/, remote/ and chrome/ only,
-//   the Design's per-directory fallback, and other sessions' run directories stay readable to a default-mode kernel;
+//   re-bind a read entry inside a denied directory (#115 M0c), so runtimes/ and node/ are not denied at all. The list
+//   is the same under `default`, where nothing is writable and so nothing would be re-bound inside run/: the
+//   default-mode kernel works in its own directory outside run/ instead (src/runtime/launch.mjs kernelDir, #115 M3);
 // - on macOS, the real target of every top-level entry of the home that is a symlink, but runtimes/ and node/ (re-exposed
 //   at their real paths): a symlinked state/, remote/, chrome/, run/... leads out of the denied home (linkedOutOf). On
 //   Linux the listed directories are denied at their real paths (realDenyList), which is the same rule there.
@@ -97,7 +96,7 @@ function linkedOutOf(home, reexposed) {
 // The store's family (the store, its tier targets, the project tier, ~/.config/cua) and the home are independent
 // targets: a layout that nests one inside another, or re-exposes a path that overlaps one of the family, is refused
 // (src/runtime/sandbox.mjs assertDenyListShape).
-export function denyListFor({home, env, secretsDir, secretsProjectDir, sessionId, sessionTmp, platform, mode = 'scoped'}) {
+export function denyListFor({home, env, secretsDir, secretsProjectDir, sessionId, sessionTmp, platform}) {
   const layout = homeLayout(home);
   const store = secretsDir ?? storeDir(env);
   const deny = [store];
@@ -120,7 +119,7 @@ export function denyListFor({home, env, secretsDir, secretsProjectDir, sessionId
   add(join(env.HOME || homedir(), '.config', 'cua'));
   const run = join(layout.run, sessionId);
   if (platform === 'linux') {
-    for (const dir of ['state', 'remote', 'chrome', ...(mode === 'default' ? [] : ['run'])]) add(join(layout.home, dir));
+    for (const dir of ['state', 'remote', 'chrome', 'run']) add(join(layout.home, dir));
     return {deny, reexpose: [run, sessionTmp], metadataOnly: [], tiers};
   }
   add(layout.home);

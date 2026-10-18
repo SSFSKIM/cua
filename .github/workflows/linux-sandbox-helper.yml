@@ -102,7 +102,18 @@ jobs:
           # Upstream's recipe sets no rustflags for Linux targets. The build paths are remapped so the binary names no
           # runner directory (panic locations of dependencies would otherwise carry the Cargo home's absolute path).
           export RUSTFLAGS="--remap-path-prefix=${CARGO_HOME}=/cargo --remap-path-prefix=${GITHUB_WORKSPACE}/upstream=/codex"
-          cargo build --locked --release -p codex-linux-sandbox --bin codex-linux-sandbox --target "$TARGET"
+          # A release tag's commit bumps the workspace version in Cargo.toml but leaves the workspace members at 0.0.0 in
+          # Cargo.lock (upstream's release builds without --locked). So the build may rewrite only those members'
+          # version lines; any other change to the lock (a dependency resolved anew) fails the build, which is what
+          # --locked would guard.
+          version="${UPSTREAM_TAG#rust-v}"
+          cargo build --release -p codex-linux-sandbox --bin codex-linux-sandbox --target "$TARGET"
+          changed="$(git diff -U0 -- Cargo.lock | grep -E '^[-+]' | grep -Ev '^(---|\+\+\+) ' || true)"
+          if printf '%s\n' "$changed" | grep -Ev "^(-version = \"0\.0\.0\"|\+version = \"${version//./\\.}\")$" | grep -q .; then
+            echo "the build changed Cargo.lock beyond the workspace members' version:" >&2; printf '%s\n' "$changed" >&2; exit 1
+          fi
+          [[ "$(printf '%s\n' "$changed" | grep -c '^-')" == "$(printf '%s\n' "$changed" | grep -c '^+')" ]]
+          echo "Cargo.lock: $(printf '%s\n' "$changed" | grep -c '^+') workspace member versions set to ${version}; nothing else changed"
           bin="target/${TARGET}/release/codex-linux-sandbox"
           strip --strip-debug --strip-unneeded "$bin"
           file "$bin"

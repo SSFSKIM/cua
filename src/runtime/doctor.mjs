@@ -44,9 +44,10 @@
 // changes: the leftovers of sessions whose owning cua process is gone are removed and named. It is cua's own
 // housekeeping, never runtime health: `pass`, or `fail` when a stale session could not be removed.
 // `runtime.leftovers` (src/runtime/codex-leftovers.mjs, #115 M4) names what the Codex CLI left in the runtime's
-// CODEX_HOME and the unused CLI component in installed release trees, by name and path only, until `cua install`
-// removes them: `warn` while any is there (and, for a release's CLI, which sessions the sweep left that hold it back),
-// else `pass`. They are dead weight, never a health failure.
+// CODEX_HOME and the unused CLI component in installed release trees, by name and path only, with the command that
+// removes them (`cua install --prune-leftovers`, once every cua using the home is updated): `warn` while any is there
+// (and, for a release's CLI, which sessions the sweep left that hold it back), else `pass`. They are dead weight to
+// this cua, never a health failure.
 // The `agent.*` rows describe remote control (src/remote): the launchd job (`agent.installed`, `agent.running`), the
 // device enrolment (`agent.enrolled`) and whether this user's session is on the console and unlocked (`agent.console`,
 // the state in which remote js does nothing and is refused as console_locked). On a Mac never enrolled, with no job

@@ -1,7 +1,8 @@
-// The Codex CLI's leftovers in a cua home (src/runtime/codex-leftovers.mjs, #115 M4): what `cua install` removes from
-// the runtime's CODEX_HOME by name, the release-tree CLI component it removes under the Design's three conditions, the
-// symbolic links it never follows, what node_repl still keeps there that it never touches, and doctor's report of
-// both until install removes them. Every tree here is a scratch one; nothing reads the user's home or a real runtime.
+// The Codex CLI's leftovers in a cua home (src/runtime/codex-leftovers.mjs, #115 M4): what `cua install
+// --prune-leftovers` removes from cua's own CODEX_HOME by name (never the environment's CODEX_HOME), the release-tree
+// CLI component it removes under the Design's three conditions, the symbolic links it never follows, what node_repl
+// still keeps there that it never touches, that a plain `cua install` removes nothing, and doctor's report of both with
+// the command that removes them. Every tree here is a scratch one; nothing reads the user's home or a real runtime.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, symlinkSync, writeFileSync} from 'node:fs';
@@ -10,7 +11,7 @@ import {CODEX_HOME_LEFTOVERS, findCodexLeftovers, removeCodexLeftovers} from '..
 import {inspectRuntime} from '../src/runtime/doctor.mjs';
 import {loadPins, parsePin} from '../src/runtime/manifest.mjs';
 import {sweepRun} from '../src/runtime/run-dir.mjs';
-import {main} from '../src/cli.mjs';
+import {main, usageFor} from '../src/cli.mjs';
 import {fixturePin, shortScratch} from './fixtures/runtime-fixture.mjs';
 
 // A value no output may carry: every leftover file holds it, and only names may be logged.
@@ -72,7 +73,7 @@ test('a home with no CODEX_HOME, or no home at all, has nothing to clean', t => 
   assert.deepEqual(removeCodexLeftovers({home: join(dir, 'absent'), pins: [], sweep: noSessions}), {codexHome: join(dir, 'absent', 'state', 'codex'), removed: [], deferred: [], failed: []});
 });
 
-test('symbolic links are never followed out of CODEX_HOME: a leftover that is a link goes as the link, a linked parent or CODEX_HOME is left alone', t => {
+test('symbolic links are never followed out of CODEX_HOME: a leftover that is a link is unlinked and its target kept; a linked parent, CODEX_HOME or state/ is skipped', t => {
   const {dir, home} = scratchHome(t);
   const outside = join(dir, 'outside');
   put(join(outside, 'cache', 'x.json'));
@@ -202,7 +203,7 @@ const passive = {host: DARWIN, inspectHelper: async () => ({socket: '/x', holder
   inspectAgent: async () => [], inspectChrome: async () => [], verifySignatures: async () => [], resolveOwnNode: () => process.execPath};
 const leftoverRow = report => report.checks.find(c => c.name === 'runtime.leftovers');
 
-test('doctor reports both kinds of leftover by name until install removes them, and passes once nothing is left', async t => {
+test('doctor reports both kinds of leftover by name, with the command that removes them, and passes once nothing is left', async t => {
   const {home} = scratchHome(t);
   const pin = darwinPin();
   const root = installedTree(home, pin);
@@ -214,7 +215,7 @@ test('doctor reports both kinds of leftover by name until install removes them, 
   assert.equal(before.status, 'warn');
   assert.ok(before.detail.includes(`${codexHomeOf(home)}: auth.json, cache`), before.detail);
   assert.ok(before.detail.includes(join(root, 'CodexCLI.app')), before.detail);
-  assert.match(before.detail, /`cua install` removes them/);
+  assert.match(before.detail, /once every cua using this home is updated \(an older one may still launch the Codex CLI\), `cua install --prune-leftovers` removes them/);
   assert.equal(before.detail.includes('config.toml') || before.detail.includes(SENTINEL), false);
 
   mkdirSync(join(home, 'run', 's1'), {recursive: true});
@@ -227,29 +228,80 @@ test('doctor reports both kinds of leftover by name until install removes them, 
   assert.equal(after.status, 'pass', after.detail);
 });
 
-test('cua install removes the leftovers after the runtime step and logs each by name, in text and JSON', async t => {
-  const {home} = scratchHome(t);
+// `cua install` through the CLI's own handler, the runtime installer stubbed (its archive is OpenAI's), with a home
+// holding a release tree of `pin` that still has its CodexCLI.app and CODEX_HOME leftovers.
+function cliHome(t) {
+  const {dir, home} = scratchHome(t);
   const host = {platform: process.platform, arch: process.arch};
   const runtimePin = {release: '0.0.1-fixture', platform: host.platform, arch: host.arch, appVersion: '0.0.1', archive: {url: 'https://example.invalid/runtime'}};
+  const pin = darwinPin();
+  const root = installedTree(home, pin);
   const deps = {home, platform: 'darwin', installRuntime: async () => ({release: '0.0.1-fixture', root: '/fixture/runtime', changed: false, record: {source: 'archive'}}),
-    pins: () => [runtimePin], nodePins: () => []};
+    pins: () => [runtimePin, pin], nodePins: () => []};
   const run = async args => {
     const out = [], write = process.stdout.write, err = process.stderr.write;
     process.stdout.write = chunk => { out.push(String(chunk)); return true; };
     process.stderr.write = () => true;
     try { return {status: await main(['install', '--no-node', ...args], deps), stdout: out.join('')}; } finally { process.stdout.write = write; process.stderr.write = err; }
   };
-  put(join(codexHomeOf(home), 'auth.json'));
-  put(join(codexHomeOf(home), 'models_cache.json'));
+  return {dir, home, root, run};
+}
+
+test('cua install alone removes nothing: the release\'s CodexCLI.app and CODEX_HOME\'s leftovers stay, and it says how to prune them', async t => {
+  const {home, root, run} = cliHome(t);
+  for (const rel of CLI_FILES) put(join(codexHomeOf(home), rel));
   const text = await run([]);
   assert.equal(text.status, 0);
+  assert.ok(existsSync(join(root, 'CodexCLI.app', 'Contents', 'MacOS', 'codex')), 'an older cua sharing the home may still launch it');
+  for (const rel of CLI_FILES) assert.equal(readFileSync(join(codexHomeOf(home), rel), 'utf8'), SENTINEL, rel);
+  assert.doesNotMatch(text.stdout, /^removed/m);
+  assert.match(text.stdout, /the Codex CLI's leftovers are still here .*once every cua using this home is updated, run `cua install --prune-leftovers`/);
+  const json = JSON.parse((await run(['--json'])).stdout);
+  assert.equal('codexLeftovers' in json, false, 'nothing was pruned');
+  assert.ok(existsSync(join(root, 'CodexCLI.app')));
+});
+
+test('cua install --prune-leftovers removes them after the runtime step and logs each by name, in text and JSON', async t => {
+  const {home, root, run} = cliHome(t);
+  put(join(codexHomeOf(home), 'auth.json'));
+  put(join(codexHomeOf(home), 'models_cache.json'));
+  const text = await run(['--prune-leftovers']);
+  assert.equal(text.status, 0);
   assert.ok(text.stdout.includes(`removed the Codex CLI's leftovers from ${codexHomeOf(home)}: auth.json, models_cache.json\n`), text.stdout);
+  assert.ok(text.stdout.includes(`removed the Codex CLI's unused ${join(root, 'CodexCLI.app')}\n`), text.stdout);
   assert.equal(text.stdout.includes(SENTINEL), false);
-  assert.equal(existsSync(join(codexHomeOf(home), 'auth.json')), false);
+  assert.equal(existsSync(join(codexHomeOf(home), 'auth.json')) || existsSync(join(root, 'CodexCLI.app')), false);
 
   put(join(codexHomeOf(home), 'installation_id'));
-  const json = JSON.parse((await run(['--json'])).stdout);
+  const json = JSON.parse((await run(['--prune-leftovers', '--json'])).stdout);
   assert.deepEqual(json.codexLeftovers, {codexHome: codexHomeOf(home), removed: [join(codexHomeOf(home), 'installation_id')], deferred: [], failed: []});
-  const quiet = await run([]);
+  const quiet = await run(['--prune-leftovers']);
   assert.doesNotMatch(quiet.stdout, /leftover/, 'nothing to say when nothing is left');
+});
+
+// The guard on whose CODEX_HOME is cleaned: only cua's own, $CUA_HOME/state/codex. The environment's CODEX_HOME (the
+// Codex CLI's own setting, which may name the user's real ~/.codex) is never read: a planted directory holding every
+// leftover name survives the prune, the plain install and the module, untouched.
+test('the environment\'s CODEX_HOME is never touched, by the prune, by install or by the module', async t => {
+  const {dir, home, run} = cliHome(t);
+  const planted = join(dir, 'users-real-codex');
+  for (const rel of CLI_FILES) put(join(planted, rel));
+  const saved = process.env.CODEX_HOME;
+  process.env.CODEX_HOME = planted;
+  t.after(() => { if (saved === undefined) delete process.env.CODEX_HOME; else process.env.CODEX_HOME = saved; });
+  assert.equal(findCodexLeftovers({home, pins: []}).codexHome, codexHomeOf(home));
+  assert.deepEqual(findCodexLeftovers({home, pins: []}).files, [], 'cua\'s own CODEX_HOME holds nothing');
+  removeCodexLeftovers({home, pins: [], sweep: noSessions});
+  assert.equal((await run([])).status, 0);
+  assert.equal((await run(['--prune-leftovers'])).status, 0);
+  for (const rel of CLI_FILES) assert.equal(readFileSync(join(planted, rel), 'utf8'), SENTINEL, rel);
+  // And with the environment's CODEX_HOME set to cua's own path's sibling spelling, only cua's own is cleaned.
+  put(join(codexHomeOf(home), 'auth.json'));
+  removeCodexLeftovers({home, pins: [], sweep: noSessions});
+  assert.equal(existsSync(join(codexHomeOf(home), 'auth.json')), false);
+  assert.equal(readFileSync(join(planted, 'auth.json'), 'utf8'), SENTINEL);
+});
+
+test('the usage names the prune and why it waits for every cua using the home', () => {
+  for (const platform of ['darwin', 'linux']) assert.match(usageFor(platform), /\[--prune-leftovers\][^]*an older cua sharing the home may still need it/, platform);
 });

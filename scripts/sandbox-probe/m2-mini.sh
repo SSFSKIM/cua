@@ -31,7 +31,8 @@
 #             (MAWS DL 58, a watcher of this item's own). The longest group: a long quiet window.
 # accept      the TextEdit sitting (the owner standing by): accept-native --live-secrets --live-textedit at <sha> in its
 #             own scratch clone ~/cua-115-accept-m2, serving the approved home through native-baseline's approved-runtime
-#             preparation and cleanup (from ~/cua-115/repo at <sha>), with the preparation's TMPDIR and XDG_CONFIG_HOME;
+#             preparation and cleanup, run from the prepared parity clone ~/Developer/GitHub/cua-parity as mini-rules.mjs's
+#             ACCEPT_REMOTE runs them (prepare refuses anywhere else), with the preparation's TMPDIR and XDG_CONFIG_HOME;
 #             CUA_PAUSE_FILE (mini-rules gated --pause --mirror) reaches it. Items 11 to 13 are #115's (13, the compat
 #             route, is acceptance 6: native calls through the compat executable's app-server). Report in
 #             $E/accept/acceptance.json; exits 1 unless accept-native and the cleanup both report (0 or 3) and 0.
@@ -126,7 +127,7 @@ parity)
   finish
   ;;
 accept)
-  sha=${2:?sha}; revision "$sha"; checkout "$sha"; mkdir -p "$E/accept"
+  sha=${2:?sha}; revision "$sha"; mkdir -p "$E/accept"
   if [ -e "$E/accept/acceptance.json" ]; then echo "m2-mini $item: refused: $E/accept/acceptance.json already exists; move it aside first" >&2; exit 2; fi
   pause=${CUA_PAUSE_FILE:-}
   case $pause in *[!A-Za-z0-9._/-]*) echo "m2-mini $item: refused: CUA_PAUSE_FILE is not a plain path" >&2; exit 2;; esac
@@ -136,7 +137,7 @@ C=$HOME/cua-115-accept-m2
 test -d "$C/.git" || git clone -q https://github.com/SSFSKIM/cua "$C" || exit 80
 cd "$C" && git fetch -q origin && git checkout -q --detach @SHA@ && test -z "$(git status --porcelain)" && npm ci --silent --no-audit --no-fund || exit 81
 OUT=$(mktemp -d /tmp/cua-115-accept-m2.XXXXXX) || exit 82
-cd "$HOME/cua-115/repo" || exit 83
+cd "$HOME/Developer/GitHub/cua-parity" || exit 83
 P=$(node scripts/native-baseline/prepare.mjs prepare '{"device":"mini","approvedHome":"/Users/new/cua-115/home"}') || exit 84
 CONFIG=$(node -e 'const p = JSON.parse(process.argv[1]); if (!p.configHome) process.exit(1); console.log(p.configHome)' "$P") || exit 85
 RUN_TMP=$(node -e 'const p = JSON.parse(process.argv[1]); if (!p.tmpdir) process.exit(1); console.log(p.tmpdir)' "$P") || exit 86
@@ -144,7 +145,7 @@ cd "$C"
 env -i PATH="$PATH" HOME="$HOME" USER="$USER" LOGNAME="$LOGNAME" TMPDIR="$RUN_TMP" LANG=C.UTF-8 XDG_CONFIG_HOME="$CONFIG" CUA_HOME=/Users/new/cua-115/home CUA_PAUSE_FILE="@PAUSE@" \
   node scripts/accept-native.mjs --live-secrets --live-textedit --report "$OUT/acceptance.json"
 ACCEPT=$?
-cd "$HOME/cua-115/repo" && node scripts/native-baseline/prepare.mjs cleanup "$P"
+cd "$HOME/Developer/GitHub/cua-parity" && node scripts/native-baseline/prepare.mjs cleanup "$P"
 CLEANUP=$?
 echo "ACCEPT $ACCEPT CLEANUP $CLEANUP OUT $OUT"
 REMOTE

@@ -1,0 +1,19 @@
+{
+  "device": "cua-gce",
+  "home": "/home/cua/.local/share/cua-native-baseline/run-gwFhgu",
+  "userHome": "/home/cua/.local/share/cua-native-baseline/run-gwFhgu.home",
+  "token": "2a538a37-4746-438c-b3d1-f1366cfa0d3c",
+  "xSession": {
+    "DISPLAY": ":0",
+    "XAUTHORITY": "/home/cua/.Xauthority",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1001/bus",
+    "XDG_RUNTIME_DIR": "/run/user/1001",
+    "XDG_DATA_DIRS": "/usr/share/openbox:/usr/local/share:/usr/share:/var/lib/snapd/desktop"
+  },
+  "nodeMode": "managed",
+  "nodeOverride": null,
+  "ownNode": {
+    "path": "/home/cua/.local/share/cua-native-baseline/run-gwFhgu/node/24.22.0/bin/node",
+    "version": "v24.22.0"
+  }
+}

@@ -1,0 +1,21 @@
+== live session record
+doctor runtime.leftovers: warn | the Codex CLI's leftovers, unused by this cua since it runs its own sandbox (#115): /tmp/cua-m4-prune-live.t2VQM8/state/codex: auth.json, installation_id, models_cache.json, cache, plugins, skills, log, tmp/arg0, browser/sessions, state_5.sqlite, state_5.sqlite-shm, state_5.sqlite-wal; /tmp/cua-m4-prune-live.t2VQM8/runtimes/26.928.40906-linux-arm64/codex; once every cua using this home is updated (an older one may still launch the Codex CLI), `cua install --prune-leftovers` removes them (the release's codex once no session runs from this home (now: session m4-live-session (pid 9841)))
+-- plain install
+26.928.40906-linux-arm64 is already installed and verified; active at /tmp/cua-m4-prune-live.t2VQM8/runtimes/26.928.40906-linux-arm64
+the Codex CLI's leftovers are still here (/tmp/cua-m4-prune-live.t2VQM8/state/codex: auth.json, installation_id, models_cache.json, cache, plugins, skills, log, tmp/arg0, browser/sessions, state_5.sqlite, state_5.sqlite-shm, state_5.sqlite-wal; /tmp/cua-m4-prune-live.t2VQM8/runtimes/26.928.40906-linux-arm64/codex); once every cua using this home is updated, run `cua install --prune-leftovers`
+installed cua's sandbox helper at /tmp/cua-m4-prune-live.t2VQM8/sandbox/rust-v0.163.0/codex-linux-sandbox
+skipped the pinned Node (--no-node): cua's own REPL host runs on CUA_NODE or your own Node 24 or later, else sessions are refused (Linux has no vendor host)
+codex after plain install: 1; state/codex files: 15
+-- prune
+26.928.40906-linux-arm64 is already installed and verified; active at /tmp/cua-m4-prune-live.t2VQM8/runtimes/26.928.40906-linux-arm64
+removed the Codex CLI's leftovers from /tmp/cua-m4-prune-live.t2VQM8/state/codex: auth.json, installation_id, models_cache.json, cache, plugins, skills, log, tmp/arg0, browser/sessions, state_5.sqlite, state_5.sqlite-shm, state_5.sqlite-wal
+left the Codex CLI's unused /tmp/cua-m4-prune-live.t2VQM8/runtimes/26.928.40906-linux-arm64/codex in place, since a session may be running from this home: session m4-live-session (pid 9841); run cua install --prune-leftovers again when none is
+cua's sandbox helper is already installed and verified at /tmp/cua-m4-prune-live.t2VQM8/sandbox/rust-v0.163.0/codex-linux-sandbox
+skipped the pinned Node (--no-node): cua's own REPL host runs on CUA_NODE or your own Node 24 or later, else sessions are refused (Linux has no vendor host)
+codex after prune: 1; state/codex left: ./computer-use/sessions/s.toml ./config.toml ./node_repl/active_execs/x 
+env CODEX_HOME intact: 15 files
+runtimes bytes: 452595987
+doctor runtime.leftovers: warn | the Codex CLI's leftovers, unused by this cua since it runs its own sandbox (#115): /tmp/cua-m4-prune-live.t2VQM8/runtimes/26.928.40906-linux-arm64/codex; once every cua using this home is updated (an older one may still launch the Codex CLI), `cua install --prune-leftovers` removes them (the release's codex once no session runs from this home (now: session m4-live-session (pid 9841)))
+removed the Codex CLI's unused /tmp/cua-m4-prune-live.t2VQM8/runtimes/26.928.40906-linux-arm64/codex
+cua's sandbox helper is already installed and verified at /tmp/cua-m4-prune-live.t2VQM8/sandbox/rust-v0.163.0/codex-linux-sandbox
+codex now: 0; run entries: 

@@ -1,0 +1,20 @@
+{
+  "ok": true,
+  "release": "26.928.40906-linux-arm64",
+  "root": "/tmp/cua-m4-home.30wq6j/runtimes/26.928.40906-linux-arm64",
+  "changed": true,
+  "source": "archive",
+  "sandboxHelper": {
+    "path": "/tmp/cua-m4-home.30wq6j/sandbox/rust-v0.163.0/codex-linux-sandbox",
+    "sha256": "807448d058065db9e50ed8f24a739ac42f6a738503083ad93ee3626655916088",
+    "changed": true
+  },
+  "node": {
+    "version": "24.22.0",
+    "root": "/tmp/cua-m4-home.30wq6j/node/24.22.0",
+    "node": "/tmp/cua-m4-home.30wq6j/node/24.22.0/bin/node",
+    "changed": true,
+    "activated": true,
+    "source": "download"
+  }
+}

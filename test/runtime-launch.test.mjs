@@ -719,7 +719,9 @@ test('doctor\'s repl.host row explains the M5 defaults, and warns with the remed
   assert.ok(browserOnly.detail.startsWith(`cua host (browser_only) on Node ${NODE24}: CUA_REPL_HOST is unset, and cua's own host is the default for a browser-only session;`), browserOnly.detail);
   assert.match(browserOnly.detail, /CUA_REPL_HOST=vendor/, 'names the rollback');
   const linux = await row(LINUX, {CUA_SHIM_SURFACES: 'computer', DISPLAY: ':0'}, withNode);
-  assert.ok(linux.detail.startsWith(`cua host (linux) on Node ${NODE24}: CUA_REPL_HOST is unset, and cua's own host is the default on Linux`), linux.detail);
+  assert.ok(linux.detail.startsWith(`cua host (linux) on Node ${NODE24}: CUA_REPL_HOST is unset, and cua's own host is the only one on Linux`), linux.detail);
+  assert.match(linux.detail, /the vendor host is retired there, #115/);
+  assert.doesNotMatch(linux.detail, /CUA_REPL_HOST=cua or vendor chooses/, 'no vendor rollback on Linux (#115 M3)');
   assert.ok(linux.detail.includes(`The profile listing (browser only): cua host (linux) on Node ${NODE24}`), linux.detail);
 
   // No Node 24: both the session and the listing keep the vendor host, and the row is a warning naming the remedies,

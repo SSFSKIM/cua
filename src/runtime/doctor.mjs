@@ -218,7 +218,7 @@ function replHostCheck(home, env, platform, resolveOwnNode) {
   const words = r => (r.code ? `refused (${r.code}): ${r.message}` : `${r.host} host (${r.reason})${r.node ? ` on Node ${r.node}` : ''}: ${REPL_HOST_REASONS[r.reason](r)}`);
   const status = session.code || listing.code ? 'fail' : [session, listing].some(r => r.reason === 'own_host_node_unavailable') ? 'warn' : 'pass';
   return result('repl.host', status,
-    `${words(session)}. The profile listing (browser only): ${words(listing)}. CUA_REPL_HOST=cua or vendor chooses`);
+    `${words(session)}. The profile listing (browser only): ${words(listing)}.${platform === 'linux' ? '' : ' CUA_REPL_HOST=cua or vendor chooses'}`);
 }
 
 // sandbox.userns as it bears on this setup: every scoped or default launch on Linux runs under cua's helper, which

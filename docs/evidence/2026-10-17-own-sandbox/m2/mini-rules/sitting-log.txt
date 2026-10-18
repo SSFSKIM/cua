@@ -255,3 +255,6 @@
 2026-10-18T06:28:19.891Z gated sh scripts/sandbox-probe/m2-mini.sh headless 249a2a9: hold reading: front=com.apple.Terminal busy=false workers=0 queued=0 (ignored in the hold) load=4.6 -> idle
 2026-10-18T06:28:30.886Z gated sh scripts/sandbox-probe/m2-mini.sh headless 249a2a9: exit 1
 2026-10-18T06:28:31.521Z front after gated sh scripts/sandbox-probe/m2-mini.sh headless 249a2a9: com.apple.Terminal
+2026-10-18T06:32:07.120Z gated sh scripts/sandbox-probe/m2-mini.sh parity 249a2a9 ssfs: hold reading: front=com.apple.Terminal busy=false workers=0 queued=0 (ignored in the hold) load=4.06 -> idle
+2026-10-18T07:02:19.527Z gated sh scripts/sandbox-probe/m2-mini.sh parity 249a2a9 ssfs: exit 0
+2026-10-18T07:02:20.092Z front after gated sh scripts/sandbox-probe/m2-mini.sh parity 249a2a9 ssfs: com.google.Chrome

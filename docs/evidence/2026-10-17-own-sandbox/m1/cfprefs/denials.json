@@ -1,0 +1,143 @@
+{
+  "before": [
+    {
+      "operation": "file-write-create",
+      "target": "<other>",
+      "count": 2
+    },
+    {
+      "operation": "file-write-create",
+      "target": "<run directory>",
+      "count": 1
+    },
+    {
+      "operation": "file-write-data",
+      "target": "<other>",
+      "count": 249
+    },
+    {
+      "operation": "mach-lookup",
+      "target": "com.apple.system.notification_center",
+      "count": 263
+    },
+    {
+      "operation": "network-outbound",
+      "target": "remote:*:65464",
+      "count": 1
+    },
+    {
+      "operation": "network-outbound",
+      "target": "remote:*:65467",
+      "count": 1
+    },
+    {
+      "operation": "sysctl-read",
+      "target": "kern.bootargs",
+      "count": 249
+    },
+    {
+      "operation": "sysctl-read",
+      "target": "kern.iossupportversion",
+      "count": 263
+    },
+    {
+      "operation": "sysctl-read",
+      "target": "security.mac.lockdown_mode_state",
+      "count": 249
+    }
+  ],
+  "after": [
+    {
+      "operation": "file-write-create",
+      "target": "<other>",
+      "count": 2
+    },
+    {
+      "operation": "file-write-create",
+      "target": "<run directory>",
+      "count": 1
+    },
+    {
+      "operation": "file-write-data",
+      "target": "<other>",
+      "count": 260
+    },
+    {
+      "operation": "mach-lookup",
+      "target": "com.apple.diagnosticd",
+      "count": 391
+    },
+    {
+      "operation": "mach-lookup",
+      "target": "com.apple.logd",
+      "count": 194
+    },
+    {
+      "operation": "mach-lookup",
+      "target": "com.apple.system.notification_center",
+      "count": 266
+    },
+    {
+      "operation": "network-outbound",
+      "target": "remote:*:50836",
+      "count": 1
+    },
+    {
+      "operation": "network-outbound",
+      "target": "remote:*:50838",
+      "count": 1
+    },
+    {
+      "operation": "sysctl-read",
+      "target": "kern.bootargs",
+      "count": 260
+    },
+    {
+      "operation": "sysctl-read",
+      "target": "kern.iossupportversion",
+      "count": 266
+    },
+    {
+      "operation": "sysctl-read",
+      "target": "security.mac.lockdown_mode_state",
+      "count": 257
+    }
+  ],
+  "comparison": {
+    "new": [
+      {
+        "operation": "mach-lookup",
+        "target": "com.apple.diagnosticd",
+        "count": 391
+      },
+      {
+        "operation": "mach-lookup",
+        "target": "com.apple.logd",
+        "count": 194
+      },
+      {
+        "operation": "network-outbound",
+        "target": "remote:*:50836",
+        "count": 1
+      },
+      {
+        "operation": "network-outbound",
+        "target": "remote:*:50838",
+        "count": 1
+      }
+    ],
+    "gone": [
+      {
+        "operation": "network-outbound",
+        "target": "remote:*:65464",
+        "count": 1
+      },
+      {
+        "operation": "network-outbound",
+        "target": "remote:*:65467",
+        "count": 1
+      }
+    ],
+    "preferences": []
+  }
+}

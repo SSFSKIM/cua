@@ -143,3 +143,237 @@
 2026-10-17T11:08:47Z waiting before tz-probe kernel (real HOME) (mini 1-min load 7.78)
 2026-10-17T11:09:49Z waiting before tz-probe kernel (real HOME) (mini 1-min load 6.65)
 2026-10-17T11:10:19Z tz-probe real HOME: never started (the mini stayed busy); waiter stopped, held as M0 residue
+2026-10-17T12:56:24.759Z vendor run-1: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.98 -> contention (load 2.98)
+2026-10-17T12:56:24.760Z waiting before vendor run-1
+2026-10-17T12:57:27.653Z vendor run-1: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=3.27 -> contention (load 3.27)
+2026-10-17T12:57:27.654Z waiting before vendor run-1
+2026-10-17T12:58:30.363Z vendor run-1: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.06 -> contention (load 2.06)
+2026-10-17T12:58:30.364Z waiting before vendor run-1
+2026-10-17T12:59:33.249Z vendor run-1: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.38 -> contention (load 2.38)
+2026-10-17T12:59:33.250Z waiting before vendor run-1
+2026-10-17T13:00:36.124Z vendor run-1: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.39 -> contention (load 4.39)
+2026-10-17T13:00:36.126Z waiting before vendor run-1
+2026-10-17T13:01:39.756Z vendor run-1: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=3.19 -> contention (load 3.19)
+2026-10-17T13:01:39.757Z waiting before vendor run-1
+2026-10-17T13:02:42.382Z vendor run-1: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=3.54 -> contention (load 3.54)
+2026-10-17T13:02:42.383Z waiting before vendor run-1
+2026-10-17T13:03:44.865Z vendor run-1: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=12.67 -> contention (load 12.67)
+2026-10-17T13:03:44.866Z waiting before vendor run-1
+2026-10-17T13:04:47.970Z vendor run-1: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=12.24 -> contention (load 12.24)
+2026-10-17T13:04:47.971Z waiting before vendor run-1
+2026-10-17T13:05:50.694Z vendor run-1: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=6.96 -> contention (load 6.96)
+2026-10-17T13:05:50.695Z waiting before vendor run-1
+2026-10-17T13:06:53.689Z vendor run-1: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.62 -> contention (load 4.62)
+2026-10-17T13:06:53.692Z waiting before vendor run-1
+2026-10-17T13:07:56.435Z vendor run-1: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.35 -> contention (load 2.35)
+2026-10-17T13:07:56.448Z waiting before vendor run-1
+2026-10-17T13:08:59.860Z vendor run-1: reading 1: front=com.apple.Terminal busy=true workers=1 queued=1 load=2.48 -> contention (runner busy, 1 Runner.Worker, 1 queued macOS job(s), load 2.48)
+2026-10-17T13:08:59.861Z waiting before vendor run-1
+2026-10-17T13:10:05.165Z vendor run-1: reading 1: front=com.apple.Terminal busy=true workers=1 queued=1 load=4.49 -> contention (runner busy, 1 Runner.Worker, 1 queued macOS job(s), load 4.49)
+2026-10-17T13:10:05.168Z waiting before vendor run-1
+2026-10-17T13:11:34.695Z vendor run-1: reading 1: front=com.apple.Terminal busy=true workers=1 queued=1 load=5.28 -> contention (runner busy, 1 Runner.Worker, 1 queued macOS job(s), load 5.28)
+2026-10-17T13:11:34.696Z waiting before vendor run-1
+2026-10-17T13:12:38.650Z vendor run-1: reading 1: front=com.apple.Terminal busy=true workers=1 queued=1 load=3.51 -> contention (runner busy, 1 Runner.Worker, 1 queued macOS job(s), load 3.51)
+2026-10-17T13:12:38.652Z waiting before vendor run-1
+2026-10-17T13:13:42.027Z vendor run-1: reading 1: front=com.apple.Terminal busy=true workers=1 queued=0 load=6.08 -> contention (runner busy, 1 Runner.Worker, load 6.08)
+2026-10-17T13:13:42.028Z waiting before vendor run-1
+2026-10-17T13:14:45.566Z vendor run-1: reading 1: front=com.apple.Terminal busy=true workers=1 queued=0 load=5.92 -> contention (runner busy, 1 Runner.Worker, load 5.92)
+2026-10-17T13:14:45.567Z waiting before vendor run-1
+2026-10-17T13:15:49.001Z vendor run-1: reading 1: front=com.apple.Terminal busy=true workers=1 queued=0 load=8.55 -> contention (runner busy, 1 Runner.Worker, load 8.55)
+2026-10-17T13:15:49.008Z waiting before vendor run-1
+2026-10-17T13:16:52.611Z vendor run-1: reading 1: front=com.apple.Terminal busy=true workers=1 queued=0 load=6.23 -> contention (runner busy, 1 Runner.Worker, load 6.23)
+2026-10-17T13:16:52.612Z waiting before vendor run-1
+2026-10-17T13:17:56.601Z vendor run-1: reading 1: front=com.apple.Terminal busy=true workers=1 queued=0 load=6.38 -> contention (runner busy, 1 Runner.Worker, load 6.38)
+2026-10-17T13:17:56.603Z waiting before vendor run-1
+2026-10-17T13:19:00.078Z vendor run-1: reading 1: front=com.apple.Terminal busy=true workers=1 queued=0 load=6.48 -> contention (runner busy, 1 Runner.Worker, load 6.48)
+2026-10-17T13:19:00.079Z waiting before vendor run-1
+2026-10-17T13:20:03.899Z vendor run-1: reading 1: front=com.apple.Terminal busy=true workers=1 queued=0 load=4.39 -> contention (runner busy, 1 Runner.Worker, load 4.39)
+2026-10-17T13:20:03.901Z waiting before vendor run-1
+2026-10-17T13:21:07.397Z vendor run-1: reading 1: front=com.apple.Terminal busy=true workers=1 queued=0 load=4.67 -> contention (runner busy, 1 Runner.Worker, load 4.67)
+2026-10-17T13:21:07.397Z waiting before vendor run-1
+2026-10-17T13:22:11.191Z vendor run-1: reading 1: front=com.apple.Terminal busy=true workers=1 queued=0 load=6.62 -> contention (runner busy, 1 Runner.Worker, load 6.62)
+2026-10-17T13:22:11.191Z waiting before vendor run-1
+2026-10-17T13:23:14.797Z vendor run-1: reading 1: front=com.apple.Terminal busy=true workers=1 queued=0 load=3.45 -> contention (runner busy, 1 Runner.Worker, load 3.45)
+2026-10-17T13:23:14.799Z waiting before vendor run-1
+2026-10-17T13:24:18.705Z vendor run-1: reading 1: front=com.apple.Terminal busy=true workers=1 queued=0 load=8.17 -> contention (runner busy, 1 Runner.Worker, load 8.17)
+2026-10-17T13:24:18.706Z waiting before vendor run-1
+2026-10-17T13:25:22.143Z vendor run-1: reading 1: front=com.google.Chrome busy=true workers=1 queued=0 load=8.57 -> stop (the frontmost application is com.google.Chrome, not Terminal)
+2026-10-17T13:25:22.144Z STOP: before vendor run-1: the frontmost application is com.google.Chrome, not Terminal
+2026-10-17T13:28:01.629Z vendor run-1: reading 1: front=com.google.Chrome busy=false workers=0 queued=0 load=5.51 -> stop (the frontmost application is com.google.Chrome, not Terminal, with the runner idle)
+2026-10-17T13:28:01.632Z STOP: before vendor run-1: the frontmost application is com.google.Chrome, not Terminal, with the runner idle
+2026-10-17T13:31:57.788Z vendor run-1: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.08 -> contention (load 4.08)
+2026-10-17T13:31:57.790Z waiting before vendor run-1
+2026-10-17T13:33:00.701Z vendor run-1: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.14 -> contention (load 2.14)
+2026-10-17T13:33:00.702Z waiting before vendor run-1
+2026-10-17T13:34:03.324Z vendor run-1: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.99 -> contention (load 4.99)
+2026-10-17T13:34:03.325Z waiting before vendor run-1
+2026-10-17T13:35:06.242Z vendor run-1: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=3.52 -> contention (load 3.52)
+2026-10-17T13:35:06.243Z waiting before vendor run-1
+2026-10-17T13:36:09.345Z vendor run-1: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=3.07 -> contention (load 3.07)
+2026-10-17T13:36:09.347Z waiting before vendor run-1
+2026-10-17T13:37:12.260Z vendor run-1: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=1.81 -> idle
+2026-10-17T13:37:59.814Z vendor run-1: reading 2: front=com.apple.Terminal busy=false workers=0 queued=0 load=1.85 -> idle
+2026-10-17T13:37:59.816Z idle before vendor run-1
+2026-10-17T13:39:19.477Z vendor run-1: exit 0
+2026-10-17T13:39:20.087Z front after vendor run-1: com.apple.Terminal
+2026-10-17T13:39:22.991Z vendor run-2: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.03 -> contention (load 2.03)
+2026-10-17T13:39:22.991Z waiting before vendor run-2
+2026-10-17T13:40:25.575Z vendor run-2: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=3.55 -> contention (load 3.55)
+2026-10-17T13:40:25.577Z waiting before vendor run-2
+2026-10-17T13:41:29.146Z vendor run-2: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=4 -> contention (load 4)
+2026-10-17T13:41:29.147Z waiting before vendor run-2
+2026-10-17T13:42:32.362Z vendor run-2: reading 1: front=com.google.Chrome busy=false workers=0 queued=0 load=5.81 -> stop (the frontmost application is com.google.Chrome, not Terminal, with the runner idle)
+2026-10-17T13:42:32.364Z STOP: before vendor run-2: the frontmost application is com.google.Chrome, not Terminal, with the runner idle
+2026-10-17T13:50:26.819Z vendor run-1: already complete, skipped
+2026-10-17T13:50:30.772Z vendor run-2: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=3.84 -> contention (load 3.84)
+2026-10-17T13:50:30.772Z waiting before vendor run-2
+2026-10-17T13:51:34.357Z vendor run-2: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=3.81 -> contention (load 3.81)
+2026-10-17T13:51:34.357Z waiting before vendor run-2
+2026-10-17T13:52:38.225Z vendor run-2: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.47 -> contention (load 2.47)
+2026-10-17T13:52:38.227Z waiting before vendor run-2
+2026-10-17T13:53:41.844Z vendor run-2: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.34 -> contention (load 2.34)
+2026-10-17T13:53:41.845Z waiting before vendor run-2
+2026-10-17T13:54:45.341Z vendor run-2: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.15 -> contention (load 2.15)
+2026-10-17T13:54:45.342Z waiting before vendor run-2
+2026-10-17T13:55:48.529Z vendor run-2: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.68 -> contention (load 2.68)
+2026-10-17T13:55:48.530Z waiting before vendor run-2
+2026-10-17T13:56:51.191Z vendor run-2: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.25 -> contention (load 2.25)
+2026-10-17T13:56:51.191Z waiting before vendor run-2
+2026-10-17T13:57:53.704Z vendor run-2: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.16 -> contention (load 2.16)
+2026-10-17T13:57:53.705Z waiting before vendor run-2
+2026-10-17T13:58:56.816Z vendor run-2: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=7.21 -> contention (load 7.21)
+2026-10-17T13:58:56.816Z waiting before vendor run-2
+2026-10-17T14:00:00.194Z vendor run-2: reading 1: front=com.apple.Terminal busy=true workers=1 queued=1 load=5.71 -> contention (runner busy, 1 Runner.Worker, 1 queued macOS job(s), load 5.71)
+2026-10-17T14:00:00.195Z waiting before vendor run-2
+2026-10-17T14:01:03.443Z vendor run-2: reading 1: front=com.apple.Terminal busy=true workers=1 queued=1 load=5.74 -> contention (runner busy, 1 Runner.Worker, 1 queued macOS job(s), load 5.74)
+2026-10-17T14:01:03.444Z waiting before vendor run-2
+2026-10-17T14:02:06.606Z vendor run-2: reading 1: front=com.apple.Terminal busy=true workers=1 queued=1 load=3.78 -> contention (runner busy, 1 Runner.Worker, 1 queued macOS job(s), load 3.78)
+2026-10-17T14:02:06.608Z waiting before vendor run-2
+2026-10-17T14:03:10.068Z vendor run-2: reading 1: front=com.apple.Terminal busy=true workers=1 queued=1 load=3.91 -> contention (runner busy, 1 Runner.Worker, 1 queued macOS job(s), load 3.91)
+2026-10-17T14:03:10.072Z waiting before vendor run-2
+2026-10-17T14:04:13.663Z vendor run-2: reading 1: front=com.apple.Terminal busy=true workers=1 queued=1 load=3.21 -> contention (runner busy, 1 Runner.Worker, 1 queued macOS job(s), load 3.21)
+2026-10-17T14:04:13.664Z waiting before vendor run-2
+2026-10-17T14:05:16.825Z vendor run-2: reading 1: front=com.apple.Terminal busy=true workers=1 queued=1 load=5.63 -> contention (runner busy, 1 Runner.Worker, 1 queued macOS job(s), load 5.63)
+2026-10-17T14:05:16.826Z waiting before vendor run-2
+2026-10-17T14:06:20.358Z vendor run-2: reading 1: front=com.apple.Terminal busy=true workers=1 queued=1 load=5.1 -> contention (runner busy, 1 Runner.Worker, 1 queued macOS job(s), load 5.1)
+2026-10-17T14:06:20.361Z waiting before vendor run-2
+2026-10-17T14:07:23.793Z vendor run-2: reading 1: front=com.apple.Terminal busy=true workers=1 queued=1 load=4.46 -> contention (runner busy, 1 Runner.Worker, 1 queued macOS job(s), load 4.46)
+2026-10-17T14:07:23.794Z waiting before vendor run-2
+2026-10-17T14:08:27.196Z vendor run-2: reading 1: front=com.apple.Terminal busy=true workers=1 queued=1 load=4.85 -> contention (runner busy, 1 Runner.Worker, 1 queued macOS job(s), load 4.85)
+2026-10-17T14:08:27.198Z waiting before vendor run-2
+2026-10-17T14:09:30.578Z vendor run-2: reading 1: front=com.apple.Terminal busy=true workers=1 queued=1 load=2.95 -> contention (runner busy, 1 Runner.Worker, 1 queued macOS job(s), load 2.95)
+2026-10-17T14:09:30.581Z waiting before vendor run-2
+2026-10-17T14:10:34.025Z vendor run-2: reading 1: front=com.apple.Terminal busy=true workers=1 queued=1 load=5.24 -> contention (runner busy, 1 Runner.Worker, 1 queued macOS job(s), load 5.24)
+2026-10-17T14:10:34.026Z waiting before vendor run-2
+2026-10-17T14:11:37.452Z vendor run-2: reading 1: front=com.apple.Terminal busy=true workers=1 queued=1 load=8.53 -> contention (runner busy, 1 Runner.Worker, 1 queued macOS job(s), load 8.53)
+2026-10-17T14:11:37.454Z waiting before vendor run-2
+2026-10-17T14:12:40.443Z vendor run-2: reading 1: front=com.apple.Terminal busy=true workers=1 queued=0 load=6.43 -> contention (runner busy, 1 Runner.Worker, load 6.43)
+2026-10-17T14:12:40.443Z waiting before vendor run-2
+2026-10-17T14:13:44.625Z vendor run-2: reading 1: front=com.apple.Terminal busy=true workers=1 queued=0 load=3.96 -> contention (runner busy, 1 Runner.Worker, load 3.96)
+2026-10-17T14:13:44.627Z waiting before vendor run-2
+2026-10-17T14:14:47.836Z vendor run-2: reading 1: front=com.apple.Terminal busy=true workers=1 queued=0 load=2.76 -> contention (runner busy, 1 Runner.Worker, load 2.76)
+2026-10-17T14:14:47.837Z waiting before vendor run-2
+2026-10-17T14:15:51.460Z vendor run-2: reading 1: front=com.apple.Terminal busy=true workers=1 queued=0 load=3.03 -> contention (runner busy, 1 Runner.Worker, load 3.03)
+2026-10-17T14:15:51.461Z waiting before vendor run-2
+2026-10-17T14:16:54.233Z vendor run-2: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.18 -> contention (load 2.18)
+2026-10-17T14:16:54.234Z waiting before vendor run-2
+2026-10-17T14:17:57.100Z vendor run-2: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.06 -> contention (load 2.06)
+2026-10-17T14:17:57.101Z waiting before vendor run-2
+2026-10-17T14:19:00.083Z vendor run-2: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=3.07 -> contention (load 3.07)
+2026-10-17T14:19:00.084Z waiting before vendor run-2
+2026-10-17T14:20:03.124Z vendor run-2: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.34 -> contention (load 2.34)
+2026-10-17T14:20:03.125Z waiting before vendor run-2
+2026-10-17T14:21:06.437Z vendor run-2: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.12 -> contention (load 2.12)
+2026-10-17T14:21:06.439Z waiting before vendor run-2
+2026-10-17T14:22:09.150Z vendor run-2: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=1.97 -> idle
+2026-10-17T14:22:57.186Z vendor run-2: reading 2: front=com.apple.Terminal busy=false workers=0 queued=0 load=3 -> contention (load 3)
+2026-10-17T14:22:57.187Z waiting before vendor run-2
+2026-10-17T14:24:00.298Z vendor run-2: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=1.96 -> idle
+2026-10-17T14:24:48.260Z vendor run-2: reading 2: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.07 -> contention (load 4.07)
+2026-10-17T14:24:48.261Z waiting before vendor run-2
+2026-10-17T14:25:51.064Z vendor run-2: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.97 -> contention (load 2.97)
+2026-10-17T14:25:51.065Z waiting before vendor run-2
+2026-10-17T14:26:53.915Z vendor run-2: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=3.79 -> contention (load 3.79)
+2026-10-17T14:26:53.916Z waiting before vendor run-2
+2026-10-17T14:27:56.791Z vendor run-2: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.59 -> contention (load 2.59)
+2026-10-17T14:27:56.794Z waiting before vendor run-2
+2026-10-17T14:28:59.552Z vendor run-2: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.59 -> contention (load 2.59)
+2026-10-17T14:28:59.552Z waiting before vendor run-2
+2026-10-17T14:30:02.358Z vendor run-2: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.3 -> contention (load 2.3)
+2026-10-17T14:30:02.358Z waiting before vendor run-2
+2026-10-17T14:31:05.406Z vendor run-2: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.16 -> contention (load 2.16)
+2026-10-17T14:31:05.407Z waiting before vendor run-2
+2026-10-17T14:32:08.191Z vendor run-2: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=3.44 -> contention (load 3.44)
+2026-10-17T14:32:08.191Z waiting before vendor run-2
+2026-10-17T14:33:11.193Z vendor run-2: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=3.44 -> contention (load 3.44)
+2026-10-17T14:33:11.193Z waiting before vendor run-2
+2026-10-17T14:34:14.539Z vendor run-2: reading 1: front=com.apple.Terminal busy=true workers=1 queued=0 load=5.13 -> contention (runner busy, 1 Runner.Worker, load 5.13)
+2026-10-17T14:34:14.539Z waiting before vendor run-2
+2026-10-17T14:35:18.592Z vendor run-2: reading 1: front=com.apple.Terminal busy=true workers=1 queued=0 load=4.61 -> contention (runner busy, 1 Runner.Worker, load 4.61)
+2026-10-17T14:35:18.592Z waiting before vendor run-2
+2026-10-17T14:36:22.277Z vendor run-2: reading 1: front=com.apple.Terminal busy=true workers=1 queued=0 load=3.08 -> contention (runner busy, 1 Runner.Worker, load 3.08)
+2026-10-17T14:36:22.278Z waiting before vendor run-2
+2026-10-17T14:37:24.991Z vendor run-2: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=3.22 -> contention (load 3.22)
+2026-10-17T14:37:24.992Z waiting before vendor run-2
+2026-10-17T14:38:28.143Z vendor run-2: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.34 -> contention (load 2.34)
+2026-10-17T14:38:28.145Z waiting before vendor run-2
+2026-10-17T14:39:31.486Z vendor run-2: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.43 -> contention (load 4.43)
+2026-10-17T14:39:31.487Z waiting before vendor run-2
+2026-10-17T14:40:34.460Z vendor run-2: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.88 -> contention (load 2.88)
+2026-10-17T14:40:34.464Z waiting before vendor run-2
+2026-10-17T14:41:37.566Z vendor run-2: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.91 -> contention (load 2.91)
+2026-10-17T14:41:37.569Z waiting before vendor run-2
+2026-10-17T14:42:41.102Z vendor run-2: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.36 -> contention (load 2.36)
+2026-10-17T14:42:41.103Z waiting before vendor run-2
+2026-10-17T14:43:44.779Z vendor run-2: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=3.16 -> contention (load 3.16)
+2026-10-17T14:43:44.780Z waiting before vendor run-2
+2026-10-17T14:44:48.283Z vendor run-2: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.89 -> contention (load 2.89)
+2026-10-17T14:44:48.284Z waiting before vendor run-2
+2026-10-17T14:45:52.807Z vendor run-2: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.34 -> contention (load 2.34)
+2026-10-17T14:45:52.807Z waiting before vendor run-2
+2026-10-17T14:46:54.970Z front at the stop: com.apple.Terminal
+2026-10-17T14:46:54.970Z STOP: missing observation: queued workflow runs (truncated: 0 of 1)
+2026-10-17T14:48:07.174Z vendor run-1: already complete, skipped
+2026-10-17T14:48:11.389Z vendor run-2: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.16 -> idle
+2026-10-17T14:48:59.972Z vendor run-2: reading 2: front=com.apple.Terminal busy=false workers=0 queued=0 load=1.66 -> idle
+2026-10-17T14:48:59.974Z idle before vendor run-2
+2026-10-17T14:50:22.428Z vendor run-2: exit 0
+2026-10-17T14:50:22.837Z front after vendor run-2: com.apple.Terminal
+2026-10-17T14:50:26.145Z vendor run-3: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=3.67 -> idle
+2026-10-17T14:51:14.914Z vendor run-3: reading 2: front=com.apple.Terminal busy=false workers=0 queued=0 load=3.11 -> idle
+2026-10-17T14:51:14.915Z idle before vendor run-3
+2026-10-17T14:52:33.295Z vendor run-3: exit 0
+2026-10-17T14:52:34.014Z front after vendor run-3: com.apple.Terminal
+2026-10-17T14:52:34.014Z sequence done: vendor
+2026-10-17T14:52:39.108Z browser run-1: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.2 -> idle
+2026-10-17T14:53:27.037Z browser run-1: reading 2: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.61 -> idle
+2026-10-17T14:53:27.037Z idle before browser run-1
+2026-10-17T14:54:03.429Z browser run-1: exit 0
+2026-10-17T14:54:04.141Z front after browser run-1: com.apple.Terminal
+2026-10-17T14:54:06.898Z browser run-2: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=3.11 -> idle
+2026-10-17T14:54:54.702Z browser run-2: reading 2: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.51 -> idle
+2026-10-17T14:54:54.703Z idle before browser run-2
+2026-10-17T14:55:30.990Z browser run-2: exit 0
+2026-10-17T14:55:31.700Z front after browser run-2: com.apple.Terminal
+2026-10-17T14:55:34.219Z browser run-3: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.62 -> idle
+2026-10-17T14:56:22.028Z browser run-3: reading 2: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.75 -> idle
+2026-10-17T14:56:22.028Z idle before browser run-3
+2026-10-17T14:56:58.045Z browser run-3: exit 0
+2026-10-17T14:56:58.607Z front after browser run-3: com.apple.Terminal
+2026-10-17T14:56:58.607Z sequence done: browser
+2026-10-17T14:57:02.293Z tz-real-home kernel: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=3.5 -> idle
+2026-10-17T14:57:50.004Z tz-real-home kernel: reading 2: front=com.apple.Terminal busy=false workers=0 queued=0 load=2.38 -> idle
+2026-10-17T14:57:50.008Z idle before tz-real-home kernel
+2026-10-17T15:01:18.345Z front after tz-real-home kernel: com.apple.Terminal
+2026-10-17T15:01:20.386Z tz-real-home kernel: archived /Users/new/Developer/GitHub/cua-wt-115-residue/docs/evidence/2026-10-17-own-sandbox/m0/tz-probe/real-home/kernel.json
+2026-10-17T15:01:23.429Z tz-real-home worker: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.27 -> idle
+2026-10-17T15:02:11.815Z tz-real-home worker: reading 2: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.05 -> idle
+2026-10-17T15:02:11.816Z idle before tz-real-home worker
+2026-10-17T15:05:40.289Z front after tz-real-home worker: com.apple.Terminal
+2026-10-17T15:05:43.100Z tz-real-home worker: archived /Users/new/Developer/GitHub/cua-wt-115-residue/docs/evidence/2026-10-17-own-sandbox/m0/tz-probe/real-home/worker.json
+2026-10-17T15:05:43.101Z sequence done: tz-real-home
+2026-10-17T15:22:58.818Z accept-native on main: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.72 -> idle
+2026-10-17T15:23:46.871Z accept-native on main: reading 2: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.38 -> idle
+2026-10-17T15:23:46.873Z idle before accept-native on main
+2026-10-17T15:25:44.557Z front after accept-native on main: com.apple.TextEdit
+2026-10-17T15:25:44.559Z STOP: after accept-native on main: the frontmost application is com.apple.TextEdit, not Terminal

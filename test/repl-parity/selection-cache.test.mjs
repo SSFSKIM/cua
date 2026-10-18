@@ -6,6 +6,7 @@ import {readFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {ordinaryCall} from '../../scripts/repl-parity/selection-device.mjs';
 import {fakeInstalledHome,installedHomeSupported} from '../fixtures/installed-home.mjs';
+import {scratchUserHome} from '../fixtures/runtime-fixture.mjs';
 import {handshakeRecords} from '../../src/mcp/lazy-runtime.mjs';
 import {homeLayout} from '../../src/runtime/layout.mjs';
 import {loadPins,selectPin} from '../../src/runtime/manifest.mjs';
@@ -13,7 +14,7 @@ import {hostIdentity} from '../../src/repl-host/identity.mjs';
 
 test('ordinary selection calls record a complete cold handshake and reuse it on the next call',{skip:!installedHomeSupported},async t=>{
  const home=fakeInstalledHome(t),release=selectPin(loadPins()).release;
- const env={PATH:process.env.PATH,HOME:home,CUA_HOME:home,CUA_PARITY_REMOTE:'1',CUA_SHIM_SECRETS:'off',CUA_SHIM_SURFACES:'computer',CUA_REPL_HOST:'vendor'};
+ const env={PATH:process.env.PATH,HOME:scratchUserHome(t),CUA_HOME:home,CUA_PARITY_REMOTE:'1',CUA_SHIM_SECRETS:'off',CUA_SHIM_SURFACES:'computer',CUA_REPL_HOST:'vendor'};
  const records=handshakeRecords({dir:join(homeLayout(home).handshake,release),surfaces:['computer'],host:hostIdentity({host:'vendor',release})});
  const version='2025-06-18';assert.equal(records.read(version),null);
  const cold=await ordinaryCall({home,env,node:process.execPath});

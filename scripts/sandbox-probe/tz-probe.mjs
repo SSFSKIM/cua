@@ -28,9 +28,13 @@
 //          sandboxPolicy/sandboxArgs, scoped: root read, the working directory and TMPDIR writable, no network, the
 //          child's Node directory read). That CLI renders one profile for both roles. --codex names it; by default it is
 //          the installed runtime's (CUA_HOME or the default home). It cannot carry the notification_center grant.
-//   cua    cua's own launcher, src/sandbox (M1): the role's profile, and with --notification-center allow the one
-//          `(allow mach-lookup (global-name "com.apple.system.notification_center"))` line M4 measures. M1 wires the slot
-//          (cuaLaunch); until then it is refused.
+//   cua    cua's own launcher, src/sandbox (M1): /usr/bin/sandbox-exec with the role's profile, for a scoped session laid
+//          out as cua lays one out (the child's working directory is run/<id> of a cua home inside the probe's scratch
+//          directory, its TMPDIR run/<id>/tmp), the kernel's with the deny list for that home and the probe's HOME. The
+//          deny targets are not created (the probe never writes into a real HOME): one that is missing is denied by its
+//          logical path. With --notification-center allow it adds the one
+//          `(allow mach-lookup (global-name "com.apple.system.notification_center"))` line M4 measures; until M4 adds it
+//          to src/sandbox, allow is refused.
 //
 // `verdict` applies acceptance 13 to one role's pair of results: the grant is kept only if the denying control hung at
 // least once and the grant's runs neither hung nor failed to launch; a control that did not hang is inconclusive. Only
@@ -38,13 +42,16 @@
 // The pair must differ only in the tested permission: a pair whose recorded conditions differ, or that does not record
 // them (schema 1 results), is refused.
 import {spawn, execFileSync} from 'node:child_process';
-import {mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync} from 'node:fs';
+import {mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync} from 'node:fs';
 import {arch, platform, tmpdir, userInfo} from 'node:os';
 import {dirname, join, resolve} from 'node:path';
 import {createHash, randomBytes} from 'node:crypto';
 import {isDeepStrictEqual, parseArgs} from 'node:util';
 import {fileURLToPath} from 'node:url';
-import {sandboxArgs, sandboxPolicy, sandboxState} from '../../src/runtime/sandbox.mjs';
+import {assertDenyListShape, sandboxArgs, sandboxPolicy, sandboxState} from '../../src/runtime/sandbox.mjs';
+import {denyListFor, realDenyList, roleProfile} from '../../src/sandbox/policy.mjs';
+import {SEATBELT_EXEC, seatbeltCommand} from '../../src/sandbox/seatbelt.mjs';
+import {sandboxedEnv} from '../../src/sandbox/env.mjs';
 
 export const MARKER = 'CUA_TZ_PROBE ';
 export const LAUNCHERS = ['codex', 'cua'];
@@ -76,17 +83,39 @@ export function codexLaunch({codex, node, script, tag, cwd, home, notificationCe
     profile: 'the Codex CLI\'s scoped profile (one profile for both roles)'};
 }
 
-// cua's own launcher: the slot M1 wires to src/sandbox (sandboxedLaunch with the role, and the notification_center
-// line for --notification-center allow from M4). Same parameters as codexLaunch, less `codex`; -> {command, args, env,
-// cwd, profile}.
-export function cuaLaunch() {
-  throw new Error('--launcher cua is cua\'s own launcher in src/sandbox, which M1 adds; until then the probe runs only --launcher codex');
+// cua's own launcher (src/sandbox): the role's profile under sandbox-exec (`sandboxExec`, /usr/bin/sandbox-exec but for
+// the probe's tests) for `node script tag` in a cua-shaped session inside the probe's scratch `cwd`. Same parameters as
+// codexLaunch, less `codex`; -> {command, args, env, cwd, profile}.
+export function cuaLaunch({node, script, tag, cwd, home, role, notificationCenter, sandboxExec = SEATBELT_EXEC}) {
+  if (notificationCenter !== 'deny') throw new Error('cua\'s profiles carry no notification_center grant until #115 M4 adds it to src/sandbox; --notification-center allow is M4\'s');
+  const cuaHome = join(cwd, 'cuahome'), run = join(cuaHome, 'run', 'probe'), sessionTmp = join(run, 'tmp');
+  mkdirSync(sessionTmp, {recursive: true});
+  const state = sandboxState('scoped', run);
+  const denyRead = realDenyList(denyListFor({home: cuaHome, env: {HOME: home}, sessionId: 'probe', sessionTmp, platform: 'darwin'}));
+  assertDenyListShape(denyRead);
+  const {profile} = roleProfile({state, role, readPaths: [dirname(node)], denyRead, network: 'restricted'});
+  const {args} = seatbeltCommand({profile, cwd: run, command: [node, script, tag], tmpdir: sessionTmp, metadataGrants: role === 'kernel' ? denyRead.metadataOnly : []});
+  return {command: sandboxExec, args, cwd: run, env: sandboxedEnv({HOME: home, PATH: '/usr/bin:/bin:/usr/sbin:/sbin', TMPDIR: sessionTmp}, {platform: 'darwin', network: 'restricted'}),
+    profile: `cua's ${role} profile (src/sandbox)`};
 }
 
-// What identifies the launcher a result ran under, compared by the verdict. M1 gives `cua` its identity (which
-// src/sandbox build rendered the profile) with cuaLaunch.
-export function launcherIdentity({launcher, codexPath}) {
-  if (launcher !== 'codex') return cuaLaunch();
+// The SHA-256 of src/sandbox (every file's path and bytes, in path order): which build of cua's launcher rendered the
+// profiles.
+export function sandboxSourceDigest(root = fileURLToPath(new URL('../../src/sandbox/', import.meta.url))) {
+  const hash = createHash('sha256');
+  const walk = dir => readdirSync(dir, {withFileTypes: true}).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)).forEach(entry => {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) return walk(path);
+    hash.update(`${path.slice(root.length)}\0`).update(readFileSync(path)).update('\0');
+  });
+  walk(root);
+  return hash.digest('hex');
+}
+
+// What identifies the launcher a result ran under, compared by the verdict: for `codex` the executable's path and
+// SHA-256; for `cua` the sandbox-exec it ran and the src/sandbox build that rendered the profile.
+export function launcherIdentity({launcher, codexPath, sandboxExec = SEATBELT_EXEC}) {
+  if (launcher === 'cua') return {launcher, sandboxExec, source: 'src/sandbox', sha256: sandboxSourceDigest()};
   return {launcher, path: codexPath, sha256: createHash('sha256').update(readFileSync(codexPath)).digest('hex')};
 }
 
@@ -136,13 +165,14 @@ async function installedCodex() {
 }
 
 // Runs `runs` children under the launcher and role. -> the result: what ran, every run's outcome and the counts.
-export async function probe({launcher, role, runs = 80, boundMs = 15_000, notificationCenter = 'deny', home = 'scratch', codex, node = process.execPath, out, targetMs = TARGET_MS, log = () => {}}) {
+// `sandboxExec` stands in for /usr/bin/sandbox-exec under --launcher cua (the probe's tests).
+export async function probe({launcher, role, runs = 80, boundMs = 15_000, notificationCenter = 'deny', home = 'scratch', codex, node = process.execPath, out, targetMs = TARGET_MS, log = () => {}, sandboxExec = SEATBELT_EXEC}) {
   if (!LAUNCHERS.includes(launcher)) throw new Error('--launcher must be codex or cua');
   if (!ROLES.includes(role)) throw new Error('--role must be kernel or worker');
   if (!NOTIFICATION_CENTER.includes(notificationCenter)) throw new Error('--notification-center must be deny or allow');
   if (!HOMES.includes(home)) throw new Error('--home must be real or scratch');
   for (const [name, value] of [['runs', runs], ['bound-ms', boundMs]]) if (!Number.isSafeInteger(value) || value < 1) throw new Error(`--${name} must be a positive integer`);
-  if (launcher === 'codex' && notificationCenter !== 'deny') codexLaunch({notificationCenter});
+  if (notificationCenter !== 'deny') (launcher === 'codex' ? codexLaunch : cuaLaunch)({notificationCenter});
   const launchOf = launcher === 'codex' ? codexLaunch : cuaLaunch;
   const codexPath = launcher === 'codex' ? resolve(codex ?? await installedCodex()) : null;
   const id = randomBytes(4).toString('hex'), tagOf = n => `cua-tz-probe-${id}-${n}`;
@@ -155,13 +185,13 @@ export async function probe({launcher, role, runs = 80, boundMs = 15_000, notifi
     tag: `cua-tz-probe-${id}`, scratch: dir, started: new Date().toISOString(), results: []};
   let finished = false;
   try {
-    result.launcherIdentity = launcherIdentity({launcher, codexPath});
+    result.launcherIdentity = launcherIdentity({launcher, codexPath, sandboxExec});
     const script = join(dir, 'tz-child.mjs');
     writeFileSync(script, childScript({targetMs}));
     for (const sub of ['tmp', 'codex-home']) mkdirSync(join(dir, sub));
     for (let n = 1; n <= runs; n++) {
       const tag = tagOf(n);
-      const launch = launchOf({codex: codexPath, node, script, tag, cwd: dir, home: homePath, role, notificationCenter});
+      const launch = launchOf({codex: codexPath, node, script, tag, cwd: dir, home: homePath, role, notificationCenter, sandboxExec});
       result.profile ??= launch.profile;
       const outcome = await runOnce(launch, {boundMs, tag});
       result.results.push({run: n, ...outcome});

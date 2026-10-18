@@ -15,9 +15,11 @@ export function cellsServeEnv(ambient, {scratch, sandbox, host}) {
     CUA_HOME: scratch.dir, CUA_SHIM_SANDBOX: sandbox, CUA_REPL_HOST: host, CUA_BROWSER_SERVICE: 'cua', CUA_SHIM_SURFACES: 'browser', CUA_SHIM_SECRETS: 'off', ...explicitNode(ambient)};
 }
 
-// A boundary probe's serve-cells child.
+// A boundary probe's serve-cells child. `tmp` holds the probe's markers (counters, release and stale-side-effect files)
+// that its cells write and a later connection reads; since #115 M1 a launch's TMPDIR is its session temp, removed with
+// the connection, so the child hands `tmp` on to the launch as its TMPDIR (CUA_PARITY_FIXTURE_TMPDIR, serve-cells.mjs).
 export function boundaryServeEnv(ambient, {tmp, home, host, facts, control, sandbox, witness, brokenSandbox}) {
-  return {...(ambient.CUA_PARITY_CAPTURE_CHROME==='1'?{CUA_PARITY_CAPTURE_CHROME:'1'}:{}),CUA_PARITY_SCRATCH_PREFIX:ambient.CUA_PARITY_SCRATCH_PREFIX,PATH: ambient.PATH, HOME: ambient.HOME, ...desktopSessionEnv(ambient), TMPDIR: tmp, CUA_HOME: home, CUA_REPL_HOST: host, CUA_PARITY_REMOTE: '1',
+  return {...(ambient.CUA_PARITY_CAPTURE_CHROME==='1'?{CUA_PARITY_CAPTURE_CHROME:'1'}:{}),CUA_PARITY_SCRATCH_PREFIX:ambient.CUA_PARITY_SCRATCH_PREFIX,PATH: ambient.PATH, HOME: ambient.HOME, ...desktopSessionEnv(ambient), TMPDIR: tmp, CUA_PARITY_FIXTURE_TMPDIR: tmp, CUA_HOME: home, CUA_REPL_HOST: host, CUA_PARITY_REMOTE: '1',
     CUA_PARITY_EXPECTED: JSON.stringify(facts), CUA_PARITY_CONTROL_DIR: control, CUA_PARITY_SANDBOX: sandbox, CUA_PARITY_BANNER_WITNESS: witness ? '1' : '0',
     CUA_PARITY_BROKEN_SANDBOX: brokenSandbox || '', ...explicitNode(ambient)};
 }

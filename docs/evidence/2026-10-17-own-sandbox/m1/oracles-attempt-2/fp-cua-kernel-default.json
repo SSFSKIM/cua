@@ -1,0 +1,1610 @@
+{
+  "input": {
+    "mode": "default",
+    "sessionId": "74e5eac3-f942-42b4-96a2-a1c55f8a3275",
+    "launcher": "cua",
+    "role": "kernel",
+    "cli": "/usr/bin/sandbox-exec",
+    "cwd": "/Users/new/cua-115/home/run/74e5eac3-f942-42b4-96a2-a1c55f8a3275",
+    "policy": {
+      "filesystem": [
+        [
+          "/Users/new/cua-115/home/node/24.22.0/bin",
+          "read"
+        ],
+        [
+          "/Users/new/cua-115/home/runtimes/26.928.40906-darwin-arm64/cua_node/lib/node_modules",
+          "read"
+        ],
+        [
+          "/Users/new/cua-115/repo/docs/cua-api",
+          "read"
+        ],
+        [
+          "/Users/new/cua-115/repo/src/cua-api",
+          "read"
+        ],
+        [
+          "/Users/new/cua-115/repo/src/repl-host",
+          "read"
+        ],
+        [
+          ":root",
+          "read"
+        ]
+      ],
+      "cwd": null
+    },
+    "env": {
+      "HOME": "/Users/new/cua-115/userhome",
+      "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+      "TMPDIR": "/Users/new/cua-115/home/run/74e5eac3-f942-42b4-96a2-a1c55f8a3275/tmp",
+      "CUA_REPL_NODE_MODULE_DIRS": "/Users/new/cua-115/home/runtimes/26.928.40906-darwin-arm64/cua_node/lib/node_modules",
+      "CODEX_SANDBOX": "seatbelt",
+      "CODEX_SANDBOX_NETWORK_DISABLED": "1"
+    },
+    "args": [
+      "-p",
+      "(version 1)\n\n; inspired by Chrome's sandbox policy:\n; https://source.chromium.org/chromium/chromium/src/+/main:sandbox/policy/mac/common.sb;l=273-319;drc=7b3962fe2e5fc9e2ee58000dc8fbf3429d84d3bd\n; https://source.chromium.org/chromium/chromium/src/+/main:sandbox/policy/mac/renderer.sb;l=64;drc=7b3962fe2e5fc9e2ee58000dc8fbf3429d84d3bd\n\n; start with closed-by-default\n(deny default)\n\n; child processes inherit the policy of their parent\n(allow process-exec)\n(allow process-fork)\n(allow signal (target same-sandbox))\n\n; process-info\n(allow process-info* (target same-sandbox))\n\n(allow file-write-data\n  (require-all\n    (path \"/dev/null\")\n    (vnode-type CHARACTER-DEVICE)))\n\n; sysctls permitted.\n(allow sysctl-read\n  (sysctl-name \"hw.activecpu\")\n  (sysctl-name \"hw.busfrequency_compat\")\n  (sysctl-name \"hw.byteorder\")\n  (sysctl-name \"hw.cacheconfig\")\n  (sysctl-name \"hw.cachelinesize_compat\")\n  (sysctl-name \"hw.cpufamily\")\n  (sysctl-name \"hw.cpufrequency_compat\")\n  (sysctl-name \"hw.cputype\")\n  (sysctl-name \"hw.l1dcachesize_compat\")\n  (sysctl-name \"hw.l1icachesize_compat\")\n  (sysctl-name \"hw.l2cachesize_compat\")\n  (sysctl-name \"hw.l3cachesize_compat\")\n  (sysctl-name \"hw.logicalcpu_max\")\n  (sysctl-name \"hw.machine\")\n  (sysctl-name \"hw.model\")\n  (sysctl-name \"hw.memsize\")\n  (sysctl-name \"hw.ncpu\")\n  (sysctl-name \"hw.nperflevels\")\n  ; Chrome locks these CPU feature detection down a bit more tightly,\n  ; but mostly for fingerprinting concerns which isn't an issue for codex.\n  (sysctl-name-prefix \"hw.optional.arm.\")\n  (sysctl-name-prefix \"hw.optional.armv8_\")\n  (sysctl-name \"hw.packages\")\n  (sysctl-name \"hw.pagesize_compat\")\n  (sysctl-name \"hw.pagesize\")\n  (sysctl-name \"hw.physicalcpu\")\n  (sysctl-name \"hw.physicalcpu_max\")\n  (sysctl-name \"hw.logicalcpu\")\n  (sysctl-name \"hw.cpufrequency\")\n  (sysctl-name \"hw.tbfrequency_compat\")\n  (sysctl-name \"hw.vectorunit\")\n  (sysctl-name \"machdep.cpu.brand_string\")\n  (sysctl-name \"kern.argmax\")\n  (sysctl-name \"kern.hostname\")\n  (sysctl-name \"kern.maxfilesperproc\")\n  (sysctl-name \"kern.maxproc\")\n  (sysctl-name \"kern.osproductversion\")\n  (sysctl-name \"kern.osrelease\")\n  (sysctl-name \"kern.ostype\")\n  (sysctl-name \"kern.osvariant_status\")\n  (sysctl-name \"kern.osversion\")\n  (sysctl-name \"kern.secure_kernel\")\n  ; Python's ProcessPoolExecutor queries this through sysconf(_SC_SEM_NSEMS_MAX).\n  (sysctl-name \"kern.sysv.semmns\")\n  (sysctl-name \"kern.usrstack64\")\n  (sysctl-name \"kern.version\")\n  (sysctl-name \"sysctl.proc_cputype\")\n  (sysctl-name \"vm.loadavg\")\n  (sysctl-name-prefix \"hw.perflevel\")\n  (sysctl-name-prefix \"kern.proc.pgrp.\")\n  (sysctl-name-prefix \"kern.proc.pid.\")\n  (sysctl-name-prefix \"net.routetable.\")\n)\n\n; Allow Java to read some CPU info. This is misclassified as a \"write\" because\n; userspace passes a memory buffer to the sysctl, but conceptually it is a read.\n(allow sysctl-write\n  (sysctl-name \"kern.grade_cputype\"))\n\n; IOKit\n(allow iokit-open\n  (iokit-registry-entry-class \"RootDomainUserClient\")\n)\n\n; needed to look up user info, see https://crbug.com/792228\n(allow mach-lookup\n  (global-name \"com.apple.system.opendirectoryd.libinfo\")\n)\n\n; Needed for python multiprocessing on MacOS for the SemLock\n(allow ipc-posix-sem)\n\n; Needed for PyTorch/libomp on macOS to register OpenMP runtimes.\n(allow ipc-posix-shm-read-data\n  ipc-posix-shm-write-create\n  ipc-posix-shm-write-unlink\n  (ipc-posix-name-regex #\"^/__KMP_REGISTERED_LIB_[0-9]+$\"))\n\n(allow mach-lookup\n  (global-name \"com.apple.PowerManagement.control\")\n)\n\n; allow openpty()\n(allow pseudo-tty)\n(allow file-read* file-write* file-ioctl (literal \"/dev/ptmx\"))\n(allow file-read* file-write*\n  (require-all\n    (regex #\"^/dev/ttys[0-9]+\")\n    (extension \"com.apple.sandbox.pty\")))\n; PTYs created before entering seatbelt may lack the extension; allow ioctl\n; on those slave ttys so interactive shells detect a TTY and remain functional.\n(allow file-ioctl (regex #\"^/dev/ttys[0-9]+\"))\n\n; allow read-only file operations\n(allow file-read*\n(subpath (param \"READABLE_ROOT_0\")) (subpath (param \"READABLE_ROOT_1\")) (subpath (param \"READABLE_ROOT_2\")) (subpath (param \"READABLE_ROOT_3\")) (subpath (param \"READABLE_ROOT_4\")) (subpath (param \"READABLE_ROOT_5\")) (subpath (param \"READABLE_ROOT_6\")) (subpath (param \"READABLE_ROOT_7\")) (subpath (param \"READABLE_ROOT_8\")) (require-all (subpath (param \"READABLE_ROOT_9\")) (require-not (literal (param \"READABLE_ROOT_9_EXCLUDED_0\"))) (require-not (subpath (param \"READABLE_ROOT_9_EXCLUDED_0\"))) (require-not (literal (param \"READABLE_ROOT_9_EXCLUDED_1\"))) (require-not (subpath (param \"READABLE_ROOT_9_EXCLUDED_1\"))) (require-not (literal (param \"READABLE_ROOT_9_EXCLUDED_2\"))) (require-not (subpath (param \"READABLE_ROOT_9_EXCLUDED_2\"))) )\n)\n\n\n(deny file-read* file-write* (literal \"/private/tmp/codex-daemon-501\") (subpath \"/private/tmp/codex-daemon-501\"))\n(deny network-outbound (remote unix-socket (subpath \"/private/tmp/codex-daemon-501\")))\n(deny file-write-unlink (require-all (vnode-type DIRECTORY) (literal \"/private/tmp\")))\n(deny file-write-unlink (require-all (vnode-type DIRECTORY) (literal \"/private\")))\n(deny file-write-unlink (require-all (vnode-type DIRECTORY) (literal \"/\")))\n(deny mach-lookup (xpc-service-name-prefix \"\"))\n\n(deny system-fcntl (fcntl-command 80 110))\n(deny file-ioctl (ioctl-command 2147578994))\n(allow file-read-metadata (literal (param \"REEXPOSED_ANCESTOR_0\")) (literal (param \"REEXPOSED_ANCESTOR_1\")))",
+      "-DREADABLE_ROOT_0=/Users/new/cua-115/home/node",
+      "-DREADABLE_ROOT_1=/Users/new/cua-115/home/node/24.22.0/bin",
+      "-DREADABLE_ROOT_2=/Users/new/cua-115/home/run/74e5eac3-f942-42b4-96a2-a1c55f8a3275",
+      "-DREADABLE_ROOT_3=/Users/new/cua-115/home/run/74e5eac3-f942-42b4-96a2-a1c55f8a3275/tmp",
+      "-DREADABLE_ROOT_4=/Users/new/cua-115/home/runtimes",
+      "-DREADABLE_ROOT_5=/Users/new/cua-115/home/runtimes/26.928.40906-darwin-arm64/cua_node/lib/node_modules",
+      "-DREADABLE_ROOT_6=/Users/new/cua-115/repo/docs/cua-api",
+      "-DREADABLE_ROOT_7=/Users/new/cua-115/repo/src/cua-api",
+      "-DREADABLE_ROOT_8=/Users/new/cua-115/repo/src/repl-host",
+      "-DREADABLE_ROOT_9=/",
+      "-DREADABLE_ROOT_9_EXCLUDED_0=/Users/new/cua-115/home",
+      "-DREADABLE_ROOT_9_EXCLUDED_1=/Users/new/cua-115/userhome/.config/claude-secrets",
+      "-DREADABLE_ROOT_9_EXCLUDED_2=/Users/new/cua-115/userhome/.config/cua",
+      "-DREEXPOSED_ANCESTOR_0=/Users/new/cua-115/home",
+      "-DREEXPOSED_ANCESTOR_1=/Users/new/cua-115/home/run",
+      "--",
+      "/Users/new/cua-115/bin-cua-fp",
+      "--path",
+      "cua-home=/Users/new/cua-115/home",
+      "--path",
+      "cua-home/run=/Users/new/cua-115/home/run",
+      "--path",
+      "cua-home/state=/Users/new/cua-115/home/state",
+      "--path",
+      "cua-home/runtimes=/Users/new/cua-115/home/runtimes",
+      "--path",
+      "cua-home/node=/Users/new/cua-115/home/node",
+      "--path",
+      "cua-home/run/other=/Users/new/cua-115/home/run/other-session",
+      "--path",
+      "config-cua=/Users/new/cua-115/userhome/.config/cua",
+      "--path",
+      "store=/Users/new/cua-115/userhome/.config/claude-secrets",
+      "--path",
+      "checkout=/Users/new/cua-115/repo",
+      "--link",
+      "store-sentinel=/Users/new/cua-115/userhome/.config/claude-secrets/CUA115_SENTINEL",
+      "--tcp",
+      "harness-tcp=127.0.0.1:60886",
+      "--unix",
+      "harness-unix=/var/folders/c1/l4z5k02n2779byvnymzxsvth0000gn/T/cuafp-13920.sock"
+    ]
+  },
+  "launcher": "cua-kernel",
+  "fingerprint": {
+    "pid": 13922,
+    "cwd": "/Users/new/cua-115/home/run/74e5eac3-f942-42b4-96a2-a1c55f8a3275",
+    "sandboxed": true,
+    "env": {
+      "HOME": "/Users/new/cua-115/userhome",
+      "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+      "TMPDIR": "/Users/new/cua-115/home/run/74e5eac3-f942-42b4-96a2-a1c55f8a3275/tmp",
+      "CUA_REPL_NODE_MODULE_DIRS": "/Users/new/cua-115/home/runtimes/26.928.40906-darwin-arm64/cua_node/lib/node_modules",
+      "CODEX_SANDBOX": "seatbelt",
+      "CODEX_SANDBOX_NETWORK_DISABLED": "1"
+    },
+    "checks": [
+      {
+        "op": "file-read-data",
+        "filter": "path",
+        "label": "cwd",
+        "target": "/Users/new/cua-115/home/run/74e5eac3-f942-42b4-96a2-a1c55f8a3275",
+        "result": "allow"
+      },
+      {
+        "op": "file-read-metadata",
+        "filter": "path",
+        "label": "cwd",
+        "target": "/Users/new/cua-115/home/run/74e5eac3-f942-42b4-96a2-a1c55f8a3275",
+        "result": "allow"
+      },
+      {
+        "op": "file-write-data",
+        "filter": "path",
+        "label": "cwd",
+        "target": "/Users/new/cua-115/home/run/74e5eac3-f942-42b4-96a2-a1c55f8a3275",
+        "result": "deny"
+      },
+      {
+        "op": "file-write-create",
+        "filter": "path",
+        "label": "cwd",
+        "target": "/Users/new/cua-115/home/run/74e5eac3-f942-42b4-96a2-a1c55f8a3275",
+        "result": "deny"
+      },
+      {
+        "op": "file-write-unlink",
+        "filter": "path",
+        "label": "cwd",
+        "target": "/Users/new/cua-115/home/run/74e5eac3-f942-42b4-96a2-a1c55f8a3275",
+        "result": "deny"
+      },
+      {
+        "op": "file-link",
+        "filter": "path",
+        "label": "cwd",
+        "target": "/Users/new/cua-115/home/run/74e5eac3-f942-42b4-96a2-a1c55f8a3275",
+        "result": "allow"
+      },
+      {
+        "op": "file-clone",
+        "filter": "path",
+        "label": "cwd",
+        "target": "/Users/new/cua-115/home/run/74e5eac3-f942-42b4-96a2-a1c55f8a3275",
+        "result": "allow"
+      },
+      {
+        "op": "file-read-data",
+        "filter": "path",
+        "label": "tmpdir",
+        "target": "/Users/new/cua-115/home/run/74e5eac3-f942-42b4-96a2-a1c55f8a3275/tmp",
+        "result": "allow"
+      },
+      {
+        "op": "file-read-metadata",
+        "filter": "path",
+        "label": "tmpdir",
+        "target": "/Users/new/cua-115/home/run/74e5eac3-f942-42b4-96a2-a1c55f8a3275/tmp",
+        "result": "allow"
+      },
+      {
+        "op": "file-write-data",
+        "filter": "path",
+        "label": "tmpdir",
+        "target": "/Users/new/cua-115/home/run/74e5eac3-f942-42b4-96a2-a1c55f8a3275/tmp",
+        "result": "deny"
+      },
+      {
+        "op": "file-write-create",
+        "filter": "path",
+        "label": "tmpdir",
+        "target": "/Users/new/cua-115/home/run/74e5eac3-f942-42b4-96a2-a1c55f8a3275/tmp",
+        "result": "deny"
+      },
+      {
+        "op": "file-write-unlink",
+        "filter": "path",
+        "label": "tmpdir",
+        "target": "/Users/new/cua-115/home/run/74e5eac3-f942-42b4-96a2-a1c55f8a3275/tmp",
+        "result": "deny"
+      },
+      {
+        "op": "file-link",
+        "filter": "path",
+        "label": "tmpdir",
+        "target": "/Users/new/cua-115/home/run/74e5eac3-f942-42b4-96a2-a1c55f8a3275/tmp",
+        "result": "allow"
+      },
+      {
+        "op": "file-clone",
+        "filter": "path",
+        "label": "tmpdir",
+        "target": "/Users/new/cua-115/home/run/74e5eac3-f942-42b4-96a2-a1c55f8a3275/tmp",
+        "result": "allow"
+      },
+      {
+        "op": "file-read-data",
+        "filter": "path",
+        "label": "home",
+        "target": "/Users/new/cua-115/userhome",
+        "result": "allow"
+      },
+      {
+        "op": "file-read-metadata",
+        "filter": "path",
+        "label": "home",
+        "target": "/Users/new/cua-115/userhome",
+        "result": "allow"
+      },
+      {
+        "op": "file-write-data",
+        "filter": "path",
+        "label": "home",
+        "target": "/Users/new/cua-115/userhome",
+        "result": "deny"
+      },
+      {
+        "op": "file-write-create",
+        "filter": "path",
+        "label": "home",
+        "target": "/Users/new/cua-115/userhome",
+        "result": "deny"
+      },
+      {
+        "op": "file-write-unlink",
+        "filter": "path",
+        "label": "home",
+        "target": "/Users/new/cua-115/userhome",
+        "result": "deny"
+      },
+      {
+        "op": "file-link",
+        "filter": "path",
+        "label": "home",
+        "target": "/Users/new/cua-115/userhome",
+        "result": "allow"
+      },
+      {
+        "op": "file-clone",
+        "filter": "path",
+        "label": "home",
+        "target": "/Users/new/cua-115/userhome",
+        "result": "allow"
+      },
+      {
+        "op": "file-read-data",
+        "filter": "path",
+        "label": "/private/tmp",
+        "target": "/private/tmp",
+        "result": "allow"
+      },
+      {
+        "op": "file-read-metadata",
+        "filter": "path",
+        "label": "/private/tmp",
+        "target": "/private/tmp",
+        "result": "allow"
+      },
+      {
+        "op": "file-write-data",
+        "filter": "path",
+        "label": "/private/tmp",
+        "target": "/private/tmp",
+        "result": "deny"
+      },
+      {
+        "op": "file-write-create",
+        "filter": "path",
+        "label": "/private/tmp",
+        "target": "/private/tmp",
+        "result": "deny"
+      },
+      {
+        "op": "file-write-unlink",
+        "filter": "path",
+        "label": "/private/tmp",
+        "target": "/private/tmp",
+        "result": "deny"
+      },
+      {
+        "op": "file-link",
+        "filter": "path",
+        "label": "/private/tmp",
+        "target": "/private/tmp",
+        "result": "allow"
+      },
+      {
+        "op": "file-clone",
+        "filter": "path",
+        "label": "/private/tmp",
+        "target": "/private/tmp",
+        "result": "allow"
+      },
+      {
+        "op": "file-read-data",
+        "filter": "path",
+        "label": "/private/var/tmp",
+        "target": "/private/var/tmp",
+        "result": "allow"
+      },
+      {
+        "op": "file-read-metadata",
+        "filter": "path",
+        "label": "/private/var/tmp",
+        "target": "/private/var/tmp",
+        "result": "allow"
+      },
+      {
+        "op": "file-write-data",
+        "filter": "path",
+        "label": "/private/var/tmp",
+        "target": "/private/var/tmp",
+        "result": "deny"
+      },
+      {
+        "op": "file-write-create",
+        "filter": "path",
+        "label": "/private/var/tmp",
+        "target": "/private/var/tmp",
+        "result": "deny"
+      },
+      {
+        "op": "file-write-unlink",
+        "filter": "path",
+        "label": "/private/var/tmp",
+        "target": "/private/var/tmp",
+        "result": "deny"
+      },
+      {
+        "op": "file-link",
+        "filter": "path",
+        "label": "/private/var/tmp",
+        "target": "/private/var/tmp",
+        "result": "allow"
+      },
+      {
+        "op": "file-clone",
+        "filter": "path",
+        "label": "/private/var/tmp",
+        "target": "/private/var/tmp",
+        "result": "allow"
+      },
+      {
+        "op": "file-read-data",
+        "filter": "path",
+        "label": "/usr/bin",
+        "target": "/usr/bin",
+        "result": "allow"
+      },
+      {
+        "op": "file-read-metadata",
+        "filter": "path",
+        "label": "/usr/bin",
+        "target": "/usr/bin",
+        "result": "allow"
+      },
+      {
+        "op": "file-write-data",
+        "filter": "path",
+        "label": "/usr/bin",
+        "target": "/usr/bin",
+        "result": "deny"
+      },
+      {
+        "op": "file-write-create",
+        "filter": "path",
+        "label": "/usr/bin",
+        "target": "/usr/bin",
+        "result": "deny"
+      },
+      {
+        "op": "file-write-unlink",
+        "filter": "path",
+        "label": "/usr/bin",
+        "target": "/usr/bin",
+        "result": "deny"
+      },
+      {
+        "op": "file-link",
+        "filter": "path",
+        "label": "/usr/bin",
+        "target": "/usr/bin",
+        "result": "deny"
+      },
+      {
+        "op": "file-clone",
+        "filter": "path",
+        "label": "/usr/bin",
+        "target": "/usr/bin",
+        "result": "allow"
+      },
+      {
+        "op": "file-read-data",
+        "filter": "path",
+        "label": "/System/Library",
+        "target": "/System/Library",
+        "result": "allow"
+      },
+      {
+        "op": "file-read-metadata",
+        "filter": "path",
+        "label": "/System/Library",
+        "target": "/System/Library",
+        "result": "allow"
+      },
+      {
+        "op": "file-write-data",
+        "filter": "path",
+        "label": "/System/Library",
+        "target": "/System/Library",
+        "result": "deny"
+      },
+      {
+        "op": "file-write-create",
+        "filter": "path",
+        "label": "/System/Library",
+        "target": "/System/Library",
+        "result": "deny"
+      },
+      {
+        "op": "file-write-unlink",
+        "filter": "path",
+        "label": "/System/Library",
+        "target": "/System/Library",
+        "result": "deny"
+      },
+      {
+        "op": "file-link",
+        "filter": "path",
+        "label": "/System/Library",
+        "target": "/System/Library",
+        "result": "deny"
+      },
+      {
+        "op": "file-clone",
+        "filter": "path",
+        "label": "/System/Library",
+        "target": "/System/Library",
+        "result": "allow"
+      },
+      {
+        "op": "file-read-data",
+        "filter": "path",
+        "label": "/Library/Preferences",
+        "target": "/Library/Preferences",
+        "result": "allow"
+      },
+      {
+        "op": "file-read-metadata",
+        "filter": "path",
+        "label": "/Library/Preferences",
+        "target": "/Library/Preferences",
+        "result": "allow"
+      },
+      {
+        "op": "file-write-data",
+        "filter": "path",
+        "label": "/Library/Preferences",
+        "target": "/Library/Preferences",
+        "result": "deny"
+      },
+      {
+        "op": "file-write-create",
+        "filter": "path",
+        "label": "/Library/Preferences",
+        "target": "/Library/Preferences",
+        "result": "deny"
+      },
+      {
+        "op": "file-write-unlink",
+        "filter": "path",
+        "label": "/Library/Preferences",
+        "target": "/Library/Preferences",
+        "result": "deny"
+      },
+      {
+        "op": "file-link",
+        "filter": "path",
+        "label": "/Library/Preferences",
+        "target": "/Library/Preferences",
+        "result": "deny"
+      },
+      {
+        "op": "file-clone",
+        "filter": "path",
+        "label": "/Library/Preferences",
+        "target": "/Library/Preferences",
+        "result": "allow"
+      },
+      {
+        "op": "file-read-data",
+        "filter": "path",
+        "label": "/Applications",
+        "target": "/Applications",
+        "result": "allow"
+      },
+      {
+        "op": "file-read-metadata",
+        "filter": "path",
+        "label": "/Applications",
+        "target": "/Applications",
+        "result": "allow"
+      },
+      {
+        "op": "file-write-data",
+        "filter": "path",
+        "label": "/Applications",
+        "target": "/Applications",
+        "result": "deny"
+      },
+      {
+        "op": "file-write-create",
+        "filter": "path",
+        "label": "/Applications",
+        "target": "/Applications",
+        "result": "deny"
+      },
+      {
+        "op": "file-write-unlink",
+        "filter": "path",
+        "label": "/Applications",
+        "target": "/Applications",
+        "result": "deny"
+      },
+      {
+        "op": "file-link",
+        "filter": "path",
+        "label": "/Applications",
+        "target": "/Applications",
+        "result": "deny"
+      },
+      {
+        "op": "file-clone",
+        "filter": "path",
+        "label": "/Applications",
+        "target": "/Applications",
+        "result": "allow"
+      },
+      {
+        "op": "file-read-data",
+        "filter": "path",
+        "label": "/private/etc/hosts",
+        "target": "/private/etc/hosts",
+        "result": "allow"
+      },
+      {
+        "op": "file-read-metadata",
+        "filter": "path",
+        "label": "/private/etc/hosts",
+        "target": "/private/etc/hosts",
+        "result": "allow"
+      },
+      {
+        "op": "file-write-data",
+        "filter": "path",
+        "label": "/private/etc/hosts",
+        "target": "/private/etc/hosts",
+        "result": "deny"
+      },
+      {
+        "op": "file-write-create",
+        "filter": "path",
+        "label": "/private/etc/hosts",
+        "target": "/private/etc/hosts",
+        "result": "deny"
+      },
+      {
+        "op": "file-write-unlink",
+        "filter": "path",
+        "label": "/private/etc/hosts",
+        "target": "/private/etc/hosts",
+        "result": "deny"
+      },
+      {
+        "op": "file-link",
+        "filter": "path",
+        "label": "/private/etc/hosts",
+        "target": "/private/etc/hosts",
+        "result": "allow"
+      },
+      {
+        "op": "file-clone",
+        "filter": "path",
+        "label": "/private/etc/hosts",
+        "target": "/private/etc/hosts",
+        "result": "allow"
+      },
+      {
+        "op": "file-read-data",
+        "filter": "path",
+        "label": "/private/var/db",
+        "target": "/private/var/db",
+        "result": "allow"
+      },
+      {
+        "op": "file-read-metadata",
+        "filter": "path",
+        "label": "/private/var/db",
+        "target": "/private/var/db",
+        "result": "allow"
+      },
+      {
+        "op": "file-write-data",
+        "filter": "path",
+        "label": "/private/var/db",
+        "target": "/private/var/db",
+        "result": "deny"
+      },
+      {
+        "op": "file-write-create",
+        "filter": "path",
+        "label": "/private/var/db",
+        "target": "/private/var/db",
+        "result": "deny"
+      },
+      {
+        "op": "file-write-unlink",
+        "filter": "path",
+        "label": "/private/var/db",
+        "target": "/private/var/db",
+        "result": "deny"
+      },
+      {
+        "op": "file-link",
+        "filter": "path",
+        "label": "/private/var/db",
+        "target": "/private/var/db",
+        "result": "deny"
+      },
+      {
+        "op": "file-clone",
+        "filter": "path",
+        "label": "/private/var/db",
+        "target": "/private/var/db",
+        "result": "allow"
+      },
+      {
+        "op": "file-read-data",
+        "filter": "path",
+        "label": "/dev/null",
+        "target": "/dev/null",
+        "result": "allow"
+      },
+      {
+        "op": "file-read-metadata",
+        "filter": "path",
+        "label": "/dev/null",
+        "target": "/dev/null",
+        "result": "allow"
+      },
+      {
+        "op": "file-write-data",
+        "filter": "path",
+        "label": "/dev/null",
+        "target": "/dev/null",
+        "result": "allow"
+      },
+      {
+        "op": "file-write-create",
+        "filter": "path",
+        "label": "/dev/null",
+        "target": "/dev/null",
+        "result": "deny"
+      },
+      {
+        "op": "file-write-unlink",
+        "filter": "path",
+        "label": "/dev/null",
+        "target": "/dev/null",
+        "result": "deny"
+      },
+      {
+        "op": "file-link",
+        "filter": "path",
+        "label": "/dev/null",
+        "target": "/dev/null",
+        "result": "allow"
+      },
+      {
+        "op": "file-clone",
+        "filter": "path",
+        "label": "/dev/null",
+        "target": "/dev/null",
+        "result": "allow"
+      },
+      {
+        "op": "file-read-data",
+        "filter": "path",
+        "label": "/Users",
+        "target": "/Users",
+        "result": "allow"
+      },
+      {
+        "op": "file-read-metadata",
+        "filter": "path",
+        "label": "/Users",
+        "target": "/Users",
+        "result": "allow"
+      },
+      {
+        "op": "file-write-data",
+        "filter": "path",
+        "label": "/Users",
+        "target": "/Users",
+        "result": "deny"
+      },
+      {
+        "op": "file-write-create",
+        "filter": "path",
+        "label": "/Users",
+        "target": "/Users",
+        "result": "deny"
+      },
+      {
+        "op": "file-write-unlink",
+        "filter": "path",
+        "label": "/Users",
+        "target": "/Users",
+        "result": "deny"
+      },
+      {
+        "op": "file-link",
+        "filter": "path",
+        "label": "/Users",
+        "target": "/Users",
+        "result": "deny"
+      },
+      {
+        "op": "file-clone",
+        "filter": "path",
+        "label": "/Users",
+        "target": "/Users",
+        "result": "allow"
+      },
+      {
+        "op": "file-read-data",
+        "filter": "path",
+        "label": "cua-home",
+        "target": "/Users/new/cua-115/home",
+        "result": "deny"
+      },
+      {
+        "op": "file-read-metadata",
+        "filter": "path",
+        "label": "cua-home",
+        "target": "/Users/new/cua-115/home",
+        "result": "allow"
+      },
+      {
+        "op": "file-write-data",
+        "filter": "path",
+        "label": "cua-home",
+        "target": "/Users/new/cua-115/home",
+        "result": "deny"
+      },
+      {
+        "op": "file-write-create",
+        "filter": "path",
+        "label": "cua-home",
+        "target": "/Users/new/cua-115/home",
+        "result": "deny"
+      },
+      {
+        "op": "file-write-unlink",
+        "filter": "path",
+        "label": "cua-home",
+        "target": "/Users/new/cua-115/home",
+        "result": "deny"
+      },
+      {
+        "op": "file-link",
+        "filter": "path",
+        "label": "cua-home",
+        "target": "/Users/new/cua-115/home",
+        "result": "allow"
+      },
+      {
+        "op": "file-clone",
+        "filter": "path",
+        "label": "cua-home",
+        "target": "/Users/new/cua-115/home",
+        "result": "allow"
+      },
+      {
+        "op": "file-read-data",
+        "filter": "path",
+        "label": "cua-home/run",
+        "target": "/Users/new/cua-115/home/run",
+        "result": "deny"
+      },
+      {
+        "op": "file-read-metadata",
+        "filter": "path",
+        "label": "cua-home/run",
+        "target": "/Users/new/cua-115/home/run",
+        "result": "allow"
+      },
+      {
+        "op": "file-write-data",
+        "filter": "path",
+        "label": "cua-home/run",
+        "target": "/Users/new/cua-115/home/run",
+        "result": "deny"
+      },
+      {
+        "op": "file-write-create",
+        "filter": "path",
+        "label": "cua-home/run",
+        "target": "/Users/new/cua-115/home/run",
+        "result": "deny"
+      },
+      {
+        "op": "file-write-unlink",
+        "filter": "path",
+        "label": "cua-home/run",
+        "target": "/Users/new/cua-115/home/run",
+        "result": "deny"
+      },
+      {
+        "op": "file-link",
+        "filter": "path",
+        "label": "cua-home/run",
+        "target": "/Users/new/cua-115/home/run",
+        "result": "allow"
+      },
+      {
+        "op": "file-clone",
+        "filter": "path",
+        "label": "cua-home/run",
+        "target": "/Users/new/cua-115/home/run",
+        "result": "allow"
+      },
+      {
+        "op": "file-read-data",
+        "filter": "path",
+        "label": "cua-home/state",
+        "target": "/Users/new/cua-115/home/state",
+        "result": "deny"
+      },
+      {
+        "op": "file-read-metadata",
+        "filter": "path",
+        "label": "cua-home/state",
+        "target": "/Users/new/cua-115/home/state",
+        "result": "deny"
+      },
+      {
+        "op": "file-write-data",
+        "filter": "path",
+        "label": "cua-home/state",
+        "target": "/Users/new/cua-115/home/state",
+        "result": "deny"
+      },
+      {
+        "op": "file-write-create",
+        "filter": "path",
+        "label": "cua-home/state",
+        "target": "/Users/new/cua-115/home/state",
+        "result": "deny"
+      },
+      {
+        "op": "file-write-unlink",
+        "filter": "path",
+        "label": "cua-home/state",
+        "target": "/Users/new/cua-115/home/state",
+        "result": "deny"
+      },
+      {
+        "op": "file-link",
+        "filter": "path",
+        "label": "cua-home/state",
+        "target": "/Users/new/cua-115/home/state",
+        "result": "allow"
+      },
+      {
+        "op": "file-clone",
+        "filter": "path",
+        "label": "cua-home/state",
+        "target": "/Users/new/cua-115/home/state",
+        "result": "allow"
+      },
+      {
+        "op": "file-read-data",
+        "filter": "path",
+        "label": "cua-home/runtimes",
+        "target": "/Users/new/cua-115/home/runtimes",
+        "result": "allow"
+      },
+      {
+        "op": "file-read-metadata",
+        "filter": "path",
+        "label": "cua-home/runtimes",
+        "target": "/Users/new/cua-115/home/runtimes",
+        "result": "allow"
+      },
+      {
+        "op": "file-write-data",
+        "filter": "path",
+        "label": "cua-home/runtimes",
+        "target": "/Users/new/cua-115/home/runtimes",
+        "result": "deny"
+      },
+      {
+        "op": "file-write-create",
+        "filter": "path",
+        "label": "cua-home/runtimes",
+        "target": "/Users/new/cua-115/home/runtimes",
+        "result": "deny"
+      },
+      {
+        "op": "file-write-unlink",
+        "filter": "path",
+        "label": "cua-home/runtimes",
+        "target": "/Users/new/cua-115/home/runtimes",
+        "result": "deny"
+      },
+      {
+        "op": "file-link",
+        "filter": "path",
+        "label": "cua-home/runtimes",
+        "target": "/Users/new/cua-115/home/runtimes",
+        "result": "allow"
+      },
+      {
+        "op": "file-clone",
+        "filter": "path",
+        "label": "cua-home/runtimes",
+        "target": "/Users/new/cua-115/home/runtimes",
+        "result": "allow"
+      },
+      {
+        "op": "file-read-data",
+        "filter": "path",
+        "label": "cua-home/node",
+        "target": "/Users/new/cua-115/home/node",
+        "result": "allow"
+      },
+      {
+        "op": "file-read-metadata",
+        "filter": "path",
+        "label": "cua-home/node",
+        "target": "/Users/new/cua-115/home/node",
+        "result": "allow"
+      },
+      {
+        "op": "file-write-data",
+        "filter": "path",
+        "label": "cua-home/node",
+        "target": "/Users/new/cua-115/home/node",
+        "result": "deny"
+      },
+      {
+        "op": "file-write-create",
+        "filter": "path",
+        "label": "cua-home/node",
+        "target": "/Users/new/cua-115/home/node",
+        "result": "deny"
+      },
+      {
+        "op": "file-write-unlink",
+        "filter": "path",
+        "label": "cua-home/node",
+        "target": "/Users/new/cua-115/home/node",
+        "result": "deny"
+      },
+      {
+        "op": "file-link",
+        "filter": "path",
+        "label": "cua-home/node",
+        "target": "/Users/new/cua-115/home/node",
+        "result": "allow"
+      },
+      {
+        "op": "file-clone",
+        "filter": "path",
+        "label": "cua-home/node",
+        "target": "/Users/new/cua-115/home/node",
+        "result": "allow"
+      },
+      {
+        "op": "file-read-data",
+        "filter": "path",
+        "label": "cua-home/run/other",
+        "target": "/Users/new/cua-115/home/run/other-session",
+        "result": "deny"
+      },
+      {
+        "op": "file-read-metadata",
+        "filter": "path",
+        "label": "cua-home/run/other",
+        "target": "/Users/new/cua-115/home/run/other-session",
+        "result": "deny"
+      },
+      {
+        "op": "file-write-data",
+        "filter": "path",
+        "label": "cua-home/run/other",
+        "target": "/Users/new/cua-115/home/run/other-session",
+        "result": "deny"
+      },
+      {
+        "op": "file-write-create",
+        "filter": "path",
+        "label": "cua-home/run/other",
+        "target": "/Users/new/cua-115/home/run/other-session",
+        "result": "deny"
+      },
+      {
+        "op": "file-write-unlink",
+        "filter": "path",
+        "label": "cua-home/run/other",
+        "target": "/Users/new/cua-115/home/run/other-session",
+        "result": "deny"
+      },
+      {
+        "op": "file-link",
+        "filter": "path",
+        "label": "cua-home/run/other",
+        "target": "/Users/new/cua-115/home/run/other-session",
+        "result": "allow"
+      },
+      {
+        "op": "file-clone",
+        "filter": "path",
+        "label": "cua-home/run/other",
+        "target": "/Users/new/cua-115/home/run/other-session",
+        "result": "allow"
+      },
+      {
+        "op": "file-read-data",
+        "filter": "path",
+        "label": "config-cua",
+        "target": "/Users/new/cua-115/userhome/.config/cua",
+        "result": "deny"
+      },
+      {
+        "op": "file-read-metadata",
+        "filter": "path",
+        "label": "config-cua",
+        "target": "/Users/new/cua-115/userhome/.config/cua",
+        "result": "deny"
+      },
+      {
+        "op": "file-write-data",
+        "filter": "path",
+        "label": "config-cua",
+        "target": "/Users/new/cua-115/userhome/.config/cua",
+        "result": "deny"
+      },
+      {
+        "op": "file-write-create",
+        "filter": "path",
+        "label": "config-cua",
+        "target": "/Users/new/cua-115/userhome/.config/cua",
+        "result": "deny"
+      },
+      {
+        "op": "file-write-unlink",
+        "filter": "path",
+        "label": "config-cua",
+        "target": "/Users/new/cua-115/userhome/.config/cua",
+        "result": "deny"
+      },
+      {
+        "op": "file-link",
+        "filter": "path",
+        "label": "config-cua",
+        "target": "/Users/new/cua-115/userhome/.config/cua",
+        "result": "allow"
+      },
+      {
+        "op": "file-clone",
+        "filter": "path",
+        "label": "config-cua",
+        "target": "/Users/new/cua-115/userhome/.config/cua",
+        "result": "allow"
+      },
+      {
+        "op": "file-read-data",
+        "filter": "path",
+        "label": "store",
+        "target": "/Users/new/cua-115/userhome/.config/claude-secrets",
+        "result": "deny"
+      },
+      {
+        "op": "file-read-metadata",
+        "filter": "path",
+        "label": "store",
+        "target": "/Users/new/cua-115/userhome/.config/claude-secrets",
+        "result": "deny"
+      },
+      {
+        "op": "file-write-data",
+        "filter": "path",
+        "label": "store",
+        "target": "/Users/new/cua-115/userhome/.config/claude-secrets",
+        "result": "deny"
+      },
+      {
+        "op": "file-write-create",
+        "filter": "path",
+        "label": "store",
+        "target": "/Users/new/cua-115/userhome/.config/claude-secrets",
+        "result": "deny"
+      },
+      {
+        "op": "file-write-unlink",
+        "filter": "path",
+        "label": "store",
+        "target": "/Users/new/cua-115/userhome/.config/claude-secrets",
+        "result": "deny"
+      },
+      {
+        "op": "file-link",
+        "filter": "path",
+        "label": "store",
+        "target": "/Users/new/cua-115/userhome/.config/claude-secrets",
+        "result": "allow"
+      },
+      {
+        "op": "file-clone",
+        "filter": "path",
+        "label": "store",
+        "target": "/Users/new/cua-115/userhome/.config/claude-secrets",
+        "result": "allow"
+      },
+      {
+        "op": "file-read-data",
+        "filter": "path",
+        "label": "checkout",
+        "target": "/Users/new/cua-115/repo",
+        "result": "allow"
+      },
+      {
+        "op": "file-read-metadata",
+        "filter": "path",
+        "label": "checkout",
+        "target": "/Users/new/cua-115/repo",
+        "result": "allow"
+      },
+      {
+        "op": "file-write-data",
+        "filter": "path",
+        "label": "checkout",
+        "target": "/Users/new/cua-115/repo",
+        "result": "deny"
+      },
+      {
+        "op": "file-write-create",
+        "filter": "path",
+        "label": "checkout",
+        "target": "/Users/new/cua-115/repo",
+        "result": "deny"
+      },
+      {
+        "op": "file-write-unlink",
+        "filter": "path",
+        "label": "checkout",
+        "target": "/Users/new/cua-115/repo",
+        "result": "deny"
+      },
+      {
+        "op": "file-link",
+        "filter": "path",
+        "label": "checkout",
+        "target": "/Users/new/cua-115/repo",
+        "result": "allow"
+      },
+      {
+        "op": "file-clone",
+        "filter": "path",
+        "label": "checkout",
+        "target": "/Users/new/cua-115/repo",
+        "result": "allow"
+      },
+      {
+        "op": "process-exec",
+        "filter": "attempt",
+        "label": "/usr/bin/true",
+        "target": "/usr/bin/true",
+        "result": "allow"
+      },
+      {
+        "op": "process-exec",
+        "filter": "attempt",
+        "label": "/bin/sh",
+        "target": "/bin/sh",
+        "result": "allow"
+      },
+      {
+        "op": "mach-lookup",
+        "filter": "global-name",
+        "label": "com.apple.cfprefsd.daemon",
+        "target": "com.apple.cfprefsd.daemon",
+        "result": "deny"
+      },
+      {
+        "op": "mach-lookup",
+        "filter": "global-name",
+        "label": "com.apple.cfprefsd.agent",
+        "target": "com.apple.cfprefsd.agent",
+        "result": "deny"
+      },
+      {
+        "op": "mach-lookup",
+        "filter": "global-name",
+        "label": "com.apple.system.notification_center",
+        "target": "com.apple.system.notification_center",
+        "result": "deny"
+      },
+      {
+        "op": "mach-lookup",
+        "filter": "global-name",
+        "label": "com.apple.system.opendirectoryd.libinfo",
+        "target": "com.apple.system.opendirectoryd.libinfo",
+        "result": "allow"
+      },
+      {
+        "op": "mach-lookup",
+        "filter": "global-name",
+        "label": "com.apple.system.opendirectoryd.membership",
+        "target": "com.apple.system.opendirectoryd.membership",
+        "result": "deny"
+      },
+      {
+        "op": "mach-lookup",
+        "filter": "global-name",
+        "label": "com.apple.trustd",
+        "target": "com.apple.trustd",
+        "result": "deny"
+      },
+      {
+        "op": "mach-lookup",
+        "filter": "global-name",
+        "label": "com.apple.trustd.agent",
+        "target": "com.apple.trustd.agent",
+        "result": "deny"
+      },
+      {
+        "op": "mach-lookup",
+        "filter": "global-name",
+        "label": "com.apple.SecurityServer",
+        "target": "com.apple.SecurityServer",
+        "result": "deny"
+      },
+      {
+        "op": "mach-lookup",
+        "filter": "global-name",
+        "label": "com.apple.PowerManagement.control",
+        "target": "com.apple.PowerManagement.control",
+        "result": "allow"
+      },
+      {
+        "op": "mach-lookup",
+        "filter": "global-name",
+        "label": "com.apple.system.logger",
+        "target": "com.apple.system.logger",
+        "result": "deny"
+      },
+      {
+        "op": "mach-lookup",
+        "filter": "global-name",
+        "label": "com.apple.logd",
+        "target": "com.apple.logd",
+        "result": "deny"
+      },
+      {
+        "op": "mach-lookup",
+        "filter": "global-name",
+        "label": "com.apple.diagnosticd",
+        "target": "com.apple.diagnosticd",
+        "result": "deny"
+      },
+      {
+        "op": "mach-lookup",
+        "filter": "global-name",
+        "label": "com.apple.analyticsd",
+        "target": "com.apple.analyticsd",
+        "result": "deny"
+      },
+      {
+        "op": "mach-lookup",
+        "filter": "global-name",
+        "label": "com.apple.coreservices.launchservicesd",
+        "target": "com.apple.coreservices.launchservicesd",
+        "result": "deny"
+      },
+      {
+        "op": "mach-lookup",
+        "filter": "global-name",
+        "label": "com.apple.lsd.mapdb",
+        "target": "com.apple.lsd.mapdb",
+        "result": "deny"
+      },
+      {
+        "op": "mach-lookup",
+        "filter": "global-name",
+        "label": "com.apple.windowserver.active",
+        "target": "com.apple.windowserver.active",
+        "result": "deny"
+      },
+      {
+        "op": "mach-lookup",
+        "filter": "global-name",
+        "label": "com.apple.dnssd.service",
+        "target": "com.apple.dnssd.service",
+        "result": "deny"
+      },
+      {
+        "op": "mach-lookup",
+        "filter": "global-name",
+        "label": "com.apple.networkd",
+        "target": "com.apple.networkd",
+        "result": "deny"
+      },
+      {
+        "op": "mach-lookup",
+        "filter": "global-name",
+        "label": "com.apple.SystemConfiguration.DNSConfiguration",
+        "target": "com.apple.SystemConfiguration.DNSConfiguration",
+        "result": "deny"
+      },
+      {
+        "op": "mach-lookup",
+        "filter": "global-name",
+        "label": "com.apple.SystemConfiguration.configd",
+        "target": "com.apple.SystemConfiguration.configd",
+        "result": "deny"
+      },
+      {
+        "op": "mach-lookup",
+        "filter": "global-name",
+        "label": "com.apple.system.DirectoryService.membership_v1",
+        "target": "com.apple.system.DirectoryService.membership_v1",
+        "result": "deny"
+      },
+      {
+        "op": "mach-lookup",
+        "filter": "global-name",
+        "label": "com.apple.bsd.dirhelper",
+        "target": "com.apple.bsd.dirhelper",
+        "result": "deny"
+      },
+      {
+        "op": "mach-lookup",
+        "filter": "global-name",
+        "label": "com.apple.ocspd",
+        "target": "com.apple.ocspd",
+        "result": "deny"
+      },
+      {
+        "op": "mach-lookup",
+        "filter": "global-name",
+        "label": "com.apple.distributed_notifications@Uv3",
+        "target": "com.apple.distributed_notifications@Uv3",
+        "result": "deny"
+      },
+      {
+        "op": "mach-lookup",
+        "filter": "global-name",
+        "label": "com.apple.pasteboard.1",
+        "target": "com.apple.pasteboard.1",
+        "result": "deny"
+      },
+      {
+        "op": "mach-lookup",
+        "filter": "global-name",
+        "label": "com.apple.tccd",
+        "target": "com.apple.tccd",
+        "result": "deny"
+      },
+      {
+        "op": "mach-lookup",
+        "filter": "global-name",
+        "label": "com.apple.tccd.system",
+        "target": "com.apple.tccd.system",
+        "result": "deny"
+      },
+      {
+        "op": "mach-lookup",
+        "filter": "global-name",
+        "label": "com.apple.audio.coreaudiod",
+        "target": "com.apple.audio.coreaudiod",
+        "result": "deny"
+      },
+      {
+        "op": "mach-lookup",
+        "filter": "global-name",
+        "label": "com.apple.FontObjectsServer",
+        "target": "com.apple.FontObjectsServer",
+        "result": "deny"
+      },
+      {
+        "op": "mach-lookup",
+        "filter": "global-name",
+        "label": "com.apple.fonts",
+        "target": "com.apple.fonts",
+        "result": "deny"
+      },
+      {
+        "op": "mach-lookup",
+        "filter": "global-name",
+        "label": "com.apple.CoreServices.coreservicesd",
+        "target": "com.apple.CoreServices.coreservicesd",
+        "result": "deny"
+      },
+      {
+        "op": "mach-lookup",
+        "filter": "global-name",
+        "label": "com.apple.TrustEvaluationAgent",
+        "target": "com.apple.TrustEvaluationAgent",
+        "result": "deny"
+      },
+      {
+        "op": "user-preference-read",
+        "filter": "preference-domain",
+        "label": ".GlobalPreferences",
+        "target": ".GlobalPreferences",
+        "result": "deny"
+      },
+      {
+        "op": "user-preference-read",
+        "filter": "preference-domain",
+        "label": "com.apple.Terminal",
+        "target": "com.apple.Terminal",
+        "result": "deny"
+      },
+      {
+        "op": "network-outbound",
+        "filter": "none",
+        "label": "network-outbound",
+        "target": null,
+        "result": "deny"
+      },
+      {
+        "op": "network-inbound",
+        "filter": "none",
+        "label": "network-inbound",
+        "target": null,
+        "result": "deny"
+      },
+      {
+        "op": "network-bind",
+        "filter": "none",
+        "label": "network-bind",
+        "target": null,
+        "result": "deny"
+      },
+      {
+        "op": "sysctl-read",
+        "filter": "none",
+        "label": "sysctl-read",
+        "target": null,
+        "result": "deny"
+      },
+      {
+        "op": "sysctl-write",
+        "filter": "none",
+        "label": "sysctl-write",
+        "target": null,
+        "result": "deny"
+      },
+      {
+        "op": "process-fork",
+        "filter": "none",
+        "label": "process-fork",
+        "target": null,
+        "result": "allow"
+      },
+      {
+        "op": "signal",
+        "filter": "none",
+        "label": "signal",
+        "target": null,
+        "result": "deny"
+      },
+      {
+        "op": "iokit-open-user-client",
+        "filter": "none",
+        "label": "iokit-open-user-client",
+        "target": null,
+        "result": "deny"
+      },
+      {
+        "op": "system-socket",
+        "filter": "none",
+        "label": "system-socket",
+        "target": null,
+        "result": "deny"
+      },
+      {
+        "op": "ipc-posix-shm-read-data",
+        "filter": "none",
+        "label": "ipc-posix-shm-read-data",
+        "target": null,
+        "result": "deny"
+      },
+      {
+        "op": "file-ioctl",
+        "filter": "none",
+        "label": "file-ioctl",
+        "target": null,
+        "result": "deny"
+      },
+      {
+        "op": "system-fcntl",
+        "filter": "none",
+        "label": "system-fcntl",
+        "target": null,
+        "result": "allow"
+      },
+      {
+        "op": "sysctl",
+        "filter": "attempt",
+        "label": "kern.ostype",
+        "target": "kern.ostype",
+        "result": "allow"
+      },
+      {
+        "op": "link",
+        "filter": "attempt",
+        "label": "store-sentinel",
+        "target": "/Users/new/cua-115/userhome/.config/claude-secrets/CUA115_SENTINEL",
+        "result": "deny",
+        "errno": 1
+      },
+      {
+        "op": "clonefile",
+        "filter": "attempt",
+        "label": "store-sentinel",
+        "target": "/Users/new/cua-115/userhome/.config/claude-secrets/CUA115_SENTINEL",
+        "result": "deny",
+        "errno": 1
+      },
+      {
+        "op": "connect-tcp",
+        "filter": "attempt",
+        "label": "harness-tcp",
+        "target": "127.0.0.1:60886",
+        "result": "deny",
+        "errno": 1
+      },
+      {
+        "op": "connect-unix",
+        "filter": "attempt",
+        "label": "mDNSResponder",
+        "target": "/private/var/run/mDNSResponder",
+        "result": "deny",
+        "errno": 1
+      },
+      {
+        "op": "connect-unix",
+        "filter": "attempt",
+        "label": "harness-unix",
+        "target": "/var/folders/c1/l4z5k02n2779byvnymzxsvth0000gn/T/cuafp-13920.sock",
+        "result": "deny",
+        "errno": 1
+      }
+    ]
+  },
+  "pins": {
+    "ok": true,
+    "rows": [
+      {
+        "label": "cua-home",
+        "op": "file-read-metadata",
+        "want": "allow",
+        "got": "allow"
+      },
+      {
+        "label": "cua-home",
+        "op": "file-read-data",
+        "want": "deny",
+        "got": "deny"
+      },
+      {
+        "label": "cua-home/run",
+        "op": "file-read-metadata",
+        "want": "allow",
+        "got": "allow"
+      },
+      {
+        "label": "cua-home/run",
+        "op": "file-read-data",
+        "want": "deny",
+        "got": "deny"
+      },
+      {
+        "label": "cua-home/run/other",
+        "op": "file-read-metadata",
+        "want": "deny",
+        "got": "deny"
+      },
+      {
+        "label": "cua-home/run/other",
+        "op": "file-read-data",
+        "want": "deny",
+        "got": "deny"
+      }
+    ]
+  }
+}

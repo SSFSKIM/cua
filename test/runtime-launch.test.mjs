@@ -1,19 +1,19 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {chmodSync, mkdirSync, writeFileSync, realpathSync, symlinkSync} from 'node:fs';
+import {chmodSync, existsSync, mkdirSync, statSync, writeFileSync, realpathSync, symlinkSync} from 'node:fs';
 import {join, dirname} from 'node:path';
 import {PassThrough} from 'node:stream';
 import {createInterface} from 'node:readline';
 import {randomUUID} from 'node:crypto';
 import {pathToFileURL} from 'node:url';
-import {buildLaunch, replHostFor, ownHostNode, NODE_FLOOR, SKY_SERVICE, BROWSER_SERVICE, BROWSER_SERVICE_IMPL_DIR, CUA_API_DIR, CUA_API_DOCS_DIR, REPL_HOST_DIR, REPL_HOST_SUPERVISOR, SERVICE_SUPPORT_DIRS} from '../src/runtime/launch.mjs';
+import {buildLaunch, createLaunchDirs, replHostFor, ownHostNode, NODE_FLOOR, SKY_SERVICE, BROWSER_SERVICE, BROWSER_SERVICE_IMPL_DIR, CUA_API_DIR, CUA_API_DOCS_DIR, REPL_HOST_DIR, REPL_HOST_SUPERVISOR, SANDBOX_DIR, SERVICE_SUPPORT_DIRS} from '../src/runtime/launch.mjs';
 import {assertSandboxFits, assertTrustedServicesContained} from '../src/runtime/sandbox.mjs';
 import {writeCuaRecord, writeVendorRecord} from './fixtures/route-records.mjs';
 import {parsePin, resolveRuntime, runtimeFor} from '../src/runtime/manifest.mjs';
-import {scratch, fixturePin} from './fixtures/runtime-fixture.mjs';
+import {scratch, scratchUserHome, fixturePin} from './fixtures/runtime-fixture.mjs';
 import {fakeInstalledHome} from './fixtures/installed-home.mjs';
 import {CuaError} from '../src/runtime/errors.mjs';
-import {connectionSecrets} from '../src/secrets/store.mjs';
+import {STORE_RELATIVE, connectionSecrets} from '../src/secrets/store.mjs';
 import {openConnection} from '../src/mcp/connection.mjs';
 import {listLiveBackends} from '../src/profiles/inventory.mjs';
 import {inspectRuntime, summarize} from '../src/runtime/doctor.mjs';
@@ -49,20 +49,25 @@ test('the launch runs the relocated vendor node on the relocated cua-repl entry,
   assert.equal(launch.cwd, join(home, 'run', SESSION));
 });
 
+// The deny list buildLaunch resolves for AMBIENT's HOME and `home` (src/sandbox/policy.mjs denyListFor), on macOS.
+const darwinDenyList = (home, session = SESSION) => ({deny: [join('/Users/someone', STORE_RELATIVE), '/Users/someone/.config/cua', home],
+  reexpose: [join(home, 'runtimes'), join(home, 'node'), join(home, 'run', session), join(home, 'run', session, 'tmp')], metadataOnly: [home, join(home, 'run')], tiers: []});
+
 test('the launch environment is an allowlist: OS basics plus relocated settings, nothing ambient that could redirect it', t => {
   const {home, runtime} = fixtureRuntime(t);
   const {env} = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT});
   const p = runtime.paths;
   assert.deepEqual(env, {
-    HOME: '/Users/someone', USER: 'someone', LOGNAME: 'someone', TMPDIR: '/var/folders/x/T/', LANG: 'en_US.UTF-8',
+    HOME: '/Users/someone', USER: 'someone', LOGNAME: 'someone', TMPDIR: join(home, 'run', SESSION, 'tmp'), LANG: 'en_US.UTF-8',
     __CF_USER_TEXT_ENCODING: '0x1F5:0x0:0x0',
     PATH: '/usr/bin:/bin:/usr/sbin:/sbin',
+    CUA_SANDBOX_DENY_READ: JSON.stringify(darwinDenyList(home)),
     CODEX_HOME: join(home, 'state', 'codex'),
     CUA_REPL_NODE_REPL_PATH: p.nodeRepl,
     CUA_REPL_ENABLED_SURFACES: 'computer',
     NODE_REPL_NODE_PATH: p.node,
     NODE_REPL_NODE_MODULE_DIRS: p.moduleDir,
-    NODE_REPL_TRUSTED_CODE_PATHS: p.moduleDir,
+    NODE_REPL_TRUSTED_CODE_PATHS: [p.moduleDir, SANDBOX_DIR].join(':'),
     NODE_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS: '1000',
     NODE_REPL_DISABLE_ANALYTICS: '1',
     CODEX_CLI_PATH: p.codexCli,
@@ -88,7 +93,7 @@ test('a trusted sky wrapper is registered by real path; its directory and the ow
   symlinkSync(join(home, 'wrapper-src'), join(dir, 'linked'));
   const {env} = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, services: {sky: join(dir, 'linked', 'services', 'sky.mjs')}});
   assert.deepEqual(JSON.parse(env.NODE_REPL_TRUSTED_SERVICES), {sky: wrapper});
-  assert.deepEqual(env.NODE_REPL_TRUSTED_CODE_PATHS.split(':'), [runtime.paths.moduleDir, dirname(wrapper), ...SERVICE_SUPPORT_DIRS]);
+  assert.deepEqual(env.NODE_REPL_TRUSTED_CODE_PATHS.split(':'), [runtime.paths.moduleDir, SANDBOX_DIR, dirname(wrapper), ...SERVICE_SUPPORT_DIRS]);
   assert.equal(env.CUA_SKY_VENDOR_SERVICE, runtime.paths.skyVendorService);
 });
 
@@ -150,7 +155,7 @@ test('trusted code is only the vendor modules and owned source, never a director
   const {env} = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, services: {sky: SKY_SERVICE}});
   const repo = realpathSync(new URL('..', import.meta.url).pathname);
   const trusted = env.NODE_REPL_TRUSTED_CODE_PATHS.split(':');
-  assert.deepEqual(trusted, [runtime.paths.moduleDir, join(repo, 'src', 'services'), join(repo, 'src', 'secrets')]);
+  assert.deepEqual(trusted, [runtime.paths.moduleDir, join(repo, 'src', 'sandbox'), join(repo, 'src', 'services'), join(repo, 'src', 'secrets')]);
   for (const root of trusted) {
     assert.ok(!(root + '/').startsWith(join(home, 'state') + '/') && !(root + '/').startsWith(join(home, 'run') + '/'), `${root} is runtime-writable state`);
   }
@@ -179,7 +184,7 @@ test('the browser surface registers the trusted browser wrapper and configures c
   // cua's sockets are always listed (none here), so the service looks nowhere else; no network or security override.
   assert.equal(env.BROWSER_USE_BACKEND_PATHS, '');
   assert.deepEqual(Object.keys(env).filter(k => /BROWSER/.test(k)).sort(), ['BROWSER_USE_AVAILABLE_BACKENDS', 'BROWSER_USE_BACKEND_PATHS']);
-  assert.deepEqual(env.NODE_REPL_TRUSTED_CODE_PATHS.split(':'), [runtime.paths.moduleDir, dirname(BROWSER_SERVICE), ...SERVICE_SUPPORT_DIRS, BROWSER_SERVICE_IMPL_DIR]);
+  assert.deepEqual(env.NODE_REPL_TRUSTED_CODE_PATHS.split(':'), [runtime.paths.moduleDir, SANDBOX_DIR, dirname(BROWSER_SERVICE), ...SERVICE_SUPPORT_DIRS, BROWSER_SERVICE_IMPL_DIR]);
 });
 
 test('a browser-only launch has no computer-use service or native helper configuration', t => {
@@ -190,7 +195,9 @@ test('a browser-only launch has no computer-use service or native helper configu
     assert.deepEqual(JSON.parse(env[host === 'cua' ? 'CUA_REPL_TRUSTED_SERVICES' : 'NODE_REPL_TRUSTED_SERVICES']), {browser: BROWSER_SERVICE}, host);
     assert.equal(env.SKY_CUA_SERVICE_PATH, undefined, host);
     assert.equal(env.CUA_SKY_VENDOR_SERVICE, undefined, host);
-    assert.equal(env.CODEX_CLI_PATH, runtime.paths.codexCli, `${host}: the runtime sandbox is kept whatever the surface`);
+    // The vendor host keeps the Codex CLI's sandbox until #115 M2; cua's own host on macOS runs cua's own (sandbox-exec).
+    if (host === 'vendor') assert.equal(env.CODEX_CLI_PATH, runtime.paths.codexCli, `${host}: the runtime sandbox is kept whatever the surface`);
+    else assert.deepEqual([env.CUA_REPL_SANDBOX_EXEC, env.CODEX_CLI_PATH, env.CODEX_HOME], ['/usr/bin/sandbox-exec', undefined, undefined], `${host}: cua's own sandbox, whatever the surface`);
   }
 });
 
@@ -212,7 +219,7 @@ test('every home runs cua\'s browser service with the browser surface: its direc
       assert.deepEqual(Object.keys(env).filter(k => /BROWSER/.test(k)).sort(), ['BROWSER_USE_AVAILABLE_BACKENDS', 'BROWSER_USE_BACKEND_PATHS'], label);
       assert.equal(env.BROWSER_USE_AVAILABLE_BACKENDS, 'chrome', label);
       assert.equal(env.BROWSER_USE_BACKEND_PATHS, '', `${label}: no socket of cua's is listed, and none of OpenAI's is looked for`);
-      assert.deepEqual(env.NODE_REPL_TRUSTED_CODE_PATHS.split(':'), [runtime.paths.moduleDir, dirname(BROWSER_SERVICE), ...SERVICE_SUPPORT_DIRS, BROWSER_SERVICE_IMPL_DIR], label);
+      assert.deepEqual(env.NODE_REPL_TRUSTED_CODE_PATHS.split(':'), [runtime.paths.moduleDir, SANDBOX_DIR, dirname(BROWSER_SERVICE), ...SERVICE_SUPPORT_DIRS, BROWSER_SERVICE_IMPL_DIR], label);
       for (const wider of [repo, join(repo, 'src'), home]) assert.ok(!env.NODE_REPL_TRUSTED_CODE_PATHS.split(':').includes(wider), `${label}: ${wider}`);
       // The default host, cua's own for a browser-only session on macOS, trusts it too.
       const own = buildLaunch({runtime, home, sessionId: SESSION, ambient, resolveOwnNode: () => '/fixture/node24/bin/node', surfaces: ['browser'], services: {browser: BROWSER_SERVICE}});
@@ -451,10 +458,10 @@ test('the own host\'s environment: the same allowlist and surface, service and s
   const p = runtime.paths;
   const {env} = buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, CUA_REPL_HOST: 'cua', CUA_NODE: node}, surfaces: BROWSER, services: {browser: BROWSER_SERVICE}, secretsUnavailable: 'secrets_disabled'});
   assert.deepEqual(env, {
-    HOME: '/Users/someone', USER: 'someone', LOGNAME: 'someone', TMPDIR: '/var/folders/x/T/', LANG: 'en_US.UTF-8',
+    HOME: '/Users/someone', USER: 'someone', LOGNAME: 'someone', TMPDIR: join(home, 'run', SESSION, 'tmp'), LANG: 'en_US.UTF-8',
     __CF_USER_TEXT_ENCODING: '0x1F5:0x0:0x0',
     PATH: '/usr/bin:/bin:/usr/sbin:/sbin',
-    CODEX_HOME: join(home, 'state', 'codex'),
+    CUA_SANDBOX_DENY_READ: JSON.stringify(darwinDenyList(home)),
     CUA_REPL_ENABLED_SURFACES: 'browser',
     CUA_REPL_NODE_PATH: node,
     CUA_REPL_OWNED_GROUP: '1',
@@ -464,10 +471,10 @@ test('the own host\'s environment: the same allowlist and surface, service and s
     CUA_REPL_TOOL_OVERRIDES: JSON.stringify(toolOverrides({platform: 'darwin', surfaces: ['browser']})),
     CUA_REPL_TRUSTED_SERVICES: JSON.stringify({browser: BROWSER_SERVICE}),
     CUA_REPL_TRUSTED_RPC_ENABLED: '1',
-    CUA_REPL_TRUSTED_CODE_PATHS: [REPL_HOST_DIR, CUA_API_DIR, CUA_API_DOCS_DIR, p.moduleDir, dirname(BROWSER_SERVICE), ...SERVICE_SUPPORT_DIRS, BROWSER_SERVICE_IMPL_DIR].join(':'),
+    CUA_REPL_TRUSTED_CODE_PATHS: [REPL_HOST_DIR, CUA_API_DIR, CUA_API_DOCS_DIR, p.moduleDir, SANDBOX_DIR, dirname(BROWSER_SERVICE), ...SERVICE_SUPPORT_DIRS, BROWSER_SERVICE_IMPL_DIR].join(':'),
     CUA_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS: '1000',
     NODE_REPL_DISABLE_ANALYTICS: '1',
-    CODEX_CLI_PATH: p.codexCli,
+    CUA_REPL_SANDBOX_EXEC: '/usr/bin/sandbox-exec',
     BROWSER_USE_AVAILABLE_BACKENDS: 'chrome',
     BROWSER_USE_BACKEND_PATHS: '',
     CUA_SECRETS_UNAVAILABLE: 'secrets_disabled',
@@ -485,6 +492,22 @@ test('the scoped preflight protects the own host\'s trusted roots, its own code 
   assert.equal(overlap.code, 'sandbox_conflict');
   assert.match(overlap.message, new RegExp(`the trusted code path ${REPL_HOST_DIR.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
   assertSandboxFits('scoped', {...launch, replHost: {host: 'vendor', reason: 'explicit'}, env: {...launch.env, TMPDIR: dirname(REPL_HOST_DIR), CUA_REPL_TRUSTED_CODE_PATHS: undefined}});
+});
+
+// #115 M1: the caller's TMPDIR is no longer a write root, so a conflicting write root now comes from the home itself: a
+// run directory that resolves into a trusted code path (repl-parity's confinement/trusted-write-root-overlap builds this).
+test('a home whose run directory resolves into the runtime\'s modules fails the scoped preflight on either host', t => {
+  const {home, dir, runtime} = fixtureRuntime(t);
+  const node = fakeNode(dir, 'n/node', '24.1.0');
+  mkdirSync(runtime.paths.moduleDir, {recursive: true});
+  symlinkSync(runtime.paths.moduleDir, join(home, 'run'));
+  for (const ambient of [AMBIENT, {...AMBIENT, CUA_REPL_HOST: 'cua', CUA_NODE: node}]) {
+    const launch = ambient === AMBIENT ? buildLaunch({runtime, home, sessionId: SESSION, ambient}) : buildLaunch({runtime, home, sessionId: SESSION, ambient, surfaces: BROWSER, services: {browser: BROWSER_SERVICE}});
+    const overlap = outcome(() => assertSandboxFits('scoped', launch));
+    assert.equal(overlap.code, 'sandbox_conflict', launch.replHost.host);
+    assert.match(overlap.message, /the trusted code path/);
+    assertSandboxFits('disabled', launch);
+  }
 });
 
 for (const [name, label, key] of [['node', 'the Node cua installed for its own REPL host', 'managedNodeRoot'], ['staging', 'cua install\'s staging directory', 'stagingRoot']]) {
@@ -718,4 +741,129 @@ test('doctor\'s repl.host row explains the M5 defaults, and warns with the remed
   // The summary names a warning without calling the setup unhealthy.
   const report = await inspectRuntime({home: s.dir, host: DARWIN, env: {CUA_SHIM_SURFACES: 'browser'}, resolveOwnNode: withoutNode, ...stubs});
   assert.match(summarize({...report, ok: true}), /warn: repl\.host/);
+});
+
+// ---- #115 M1: the per-session TMPDIR, the deny list, cua's own sandbox on macOS ----------------------------------
+
+test('every launch gets its session\'s own TMPDIR, never the caller\'s, on both hosts; createLaunchDirs makes the run directory and it private', t => {
+  const {home, dir, runtime} = fixtureRuntime(t);
+  const node = fakeNode(dir, 'n/node', '24.1.0');
+  for (const ambient of [AMBIENT, {...AMBIENT, CUA_REPL_HOST: 'cua', CUA_NODE: node}]) {
+    const launch = buildLaunch({runtime, home, sessionId: SESSION, ambient, ...(ambient.CUA_REPL_HOST ? {surfaces: ['browser'], services: {browser: BROWSER_SERVICE}} : {})});
+    assert.equal(launch.sessionTmp, join(home, 'run', SESSION, 'tmp'), launch.replHost.host);
+    assert.equal(launch.env.TMPDIR, launch.sessionTmp, launch.replHost.host);
+  }
+  const launch = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT});
+  assert.equal(existsSync(launch.cwd), false, 'buildLaunch creates nothing');
+  createLaunchDirs(launch);
+  for (const path of [launch.cwd, launch.sessionTmp, launch.env.CODEX_HOME]) assert.equal(statSync(path).mode & 0o777, 0o700, path);
+  chmodSync(launch.sessionTmp, 0o755);
+  createLaunchDirs(launch);
+  assert.equal(statSync(launch.sessionTmp).mode & 0o777, 0o700, 'a reused session temp is made private again');
+});
+
+test('the deny list is resolved once, from the store directories and HOME the worker gets: secrets on and off', t => {
+  const {home, dir, runtime} = fixtureRuntime(t);
+  const user = join(dir, 'user');
+  const store = join(user, STORE_RELATIVE);
+  mkdirSync(join(store, 'projects'), {recursive: true});
+  mkdirSync(join(dir, 'elsewhere', 'tier'), {recursive: true});
+  symlinkSync(join(dir, 'elsewhere', 'tier'), join(store, 'projects', '-linked'));
+  const ambient = {...AMBIENT, HOME: user};
+  const off = buildLaunch({runtime, home, sessionId: SESSION, ambient, secretsUnavailable: 'secrets_disabled'});
+  const real = path => realpathSync(path);
+  assert.deepEqual(JSON.parse(off.env.CUA_SANDBOX_DENY_READ), off.denyRead);
+  assert.deepEqual(off.denyRead.deny, [real(store), real(join(dir, 'elsewhere', 'tier')), join(real(user), '.config', 'cua'), home],
+    'secrets off: the default store for this HOME, which exists whatever the setting, with its symlinked tier\'s target');
+  const other = join(dir, 'other-store');
+  mkdirSync(other);
+  const on = buildLaunch({runtime, home, sessionId: SESSION, ambient, secretsDir: other});
+  assert.equal(on.env.CUA_SECRETS_DIR, other);
+  assert.deepEqual(on.denyRead.deny, [real(other), join(real(user), '.config', 'cua'), home], 'secrets on: the store the worker reads from');
+  assert.deepEqual(on.denyRead.reexpose, [join(home, 'runtimes'), join(home, 'node'), join(home, 'run', SESSION), join(home, 'run', SESSION, 'tmp')]);
+});
+
+test('macOS: cua\'s own host runs cua\'s own sandbox (sandbox-exec), without the Codex CLI or CODEX_HOME; the vendor host keeps both', t => {
+  const {home, dir, runtime} = fixtureRuntime(t);
+  const node = fakeNode(dir, 'n/node', '24.1.0');
+  const own = buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, CUA_REPL_HOST: 'cua', CUA_NODE: node}, surfaces: BROWSER, services: {browser: BROWSER_SERVICE}});
+  assert.deepEqual([own.env.CUA_REPL_SANDBOX_EXEC, own.env.CODEX_CLI_PATH, own.env.CODEX_HOME], ['/usr/bin/sandbox-exec', undefined, undefined]);
+  assert.ok(own.env.CUA_REPL_TRUSTED_CODE_PATHS.split(':').includes(SANDBOX_DIR), 'src/sandbox is trusted code');
+  const vendor = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT});
+  assert.deepEqual([vendor.env.CUA_REPL_SANDBOX_EXEC, vendor.env.CODEX_CLI_PATH, vendor.env.CODEX_HOME], [undefined, runtime.paths.codexCli, join(home, 'state', 'codex')]);
+  assert.ok(vendor.env.NODE_REPL_TRUSTED_CODE_PATHS.split(':').includes(SANDBOX_DIR));
+});
+
+test('the scoped preflight protects the deny list and src/sandbox; only the launch\'s own run directory and session temp may lie in a deny target', t => {
+  const {home, dir, runtime} = fixtureRuntime(t);
+  const node = fakeNode(dir, 'n/node', '24.1.0');
+  // The user's home beside the cua home, never inside it: a store or ~/.config/cua under the home is refused outright.
+  const elsewhere = scratch();
+  t.after(elsewhere.cleanup);
+  const user = join(realpathSync(elsewhere.dir), 'user');
+  const own = buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, HOME: user, CUA_REPL_HOST: 'cua', CUA_NODE: node}, surfaces: BROWSER, services: {browser: BROWSER_SERVICE}});
+  const vendor = buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, HOME: user}});
+  for (const launch of [own, vendor]) {
+    assertSandboxFits('scoped', launch);
+    for (const [tmpdir, what] of [[join(home, 'run', 'other-session'), 'what JavaScript cells may not read'], [join(user, '.config', 'cua', 'x'), 'what JavaScript cells may not read'],
+      [join(user, STORE_RELATIVE), 'what JavaScript cells may not read'], [SANDBOX_DIR, 'the trusted code path'], [dirname(SANDBOX_DIR), 'the trusted code path']]) {
+      const overlap = outcome(() => assertSandboxFits('scoped', {...launch, env: {...launch.env, TMPDIR: tmpdir}}));
+      assert.equal(overlap.code, 'sandbox_conflict', `${launch.replHost.host} ${tmpdir}`);
+      assert.ok(overlap.message.includes(what), overlap.message);
+    }
+  }
+});
+
+// Overlapping layouts (review finding, #115 M1): with the cua home under the store, the store under the home, or
+// ~/.config/cua under the home, the kernel's deny targets overlap. The connection refuses them before its handshake in
+// scoped and default alike, and the scoped exception for the run directory never covers the store.
+test('a layout whose deny targets overlap fails the preflight in scoped and default, on either host; disabled serves', t => {
+  const {dir, runtime} = fixtureRuntime(t);
+  const node = fakeNode(dir, 'n/node', '24.1.0');
+  const elsewhere = scratch();
+  t.after(elsewhere.cleanup);
+  const user = join(realpathSync(elsewhere.dir), 'user');
+  const store = join(user, STORE_RELATIVE);
+  mkdirSync(join(store, 'cua'), {recursive: true});
+  const layouts = {
+    'the cua home under the store': {home: join(store, 'cua'), ambient: {HOME: user}},
+    'the store under the cua home': {home: dir, ambient: {HOME: user}, secretsDir: join(dir, 'state', 'secrets')},
+    '~/.config/cua under the cua home': {home: dir, ambient: {HOME: join(dir, 'user')}},
+  };
+  for (const [label, {home, ambient, secretsDir}] of Object.entries(layouts)) {
+    for (const host of [{}, {CUA_REPL_HOST: 'cua', CUA_NODE: node}]) {
+      const launch = buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, ...ambient, ...host}, secretsDir, surfaces: BROWSER, services: {browser: BROWSER_SERVICE}});
+      for (const mode of ['scoped', 'default']) {
+        const refused = outcome(() => assertSandboxFits(mode, launch));
+        assert.equal(refused.code, 'sandbox_conflict', `${label}, ${launch.replHost.host}, ${mode}`);
+        assert.match(refused.message, /what JavaScript cells may not read overlaps/);
+      }
+      assertSandboxFits('disabled', launch);
+    }
+  }
+});
+
+// #115 M1 review round 2: the store's tiers are discovered strictly for a confined connection only. A disabled one
+// confines nothing, so an unreadable projects/ does not refuse it, and its launch carries no deny list.
+const asRoot = typeof process.getuid === 'function' && process.getuid() === 0;
+test('a projects/ whose tiers cannot be established (0111, 0000, 0444) refuses a confined launch; a disabled one is built without a deny list', {skip: asRoot && 'root lists any directory'}, t => {
+  const {home, runtime} = fixtureRuntime(t);
+  const user = scratchUserHome(t);
+  const projects = join(user, STORE_RELATIVE, 'projects');
+  mkdirSync(projects, {recursive: true});
+  // An external tier behind it: readable by its real path, so a projects/ that hides it refuses, whatever the mode.
+  mkdirSync(join(user, 'elsewhere-tier'));
+  symlinkSync(join(user, 'elsewhere-tier'), join(projects, '-a-project'));
+  const build = sandbox => buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, HOME: user}, sandbox});
+  let disabled;
+  for (const mode of [0o111, 0o000, 0o444]) {
+    chmodSync(projects, mode);
+    try {
+      for (const sandbox of ['scoped', 'default', undefined]) assert.equal(outcome(() => build(sandbox)).code, 'sandbox_state_invalid', `${mode.toString(8)} ${sandbox}`);
+      disabled = build('disabled');
+    } finally { chmodSync(projects, 0o700); }
+  }
+  assert.equal(disabled.denyRead, null);
+  assert.equal('CUA_SANDBOX_DENY_READ' in disabled.env, false, 'no list reaches the runtime');
+  assertSandboxFits('disabled', disabled);
 });

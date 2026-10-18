@@ -13,7 +13,8 @@
 // archive cache (scripts/repl-parity/archive-cache.mjs), never a download; legacy/local doubles keep the
 // cloned-runtime path in /tmp.
 import {execFileSync} from 'node:child_process';
-import {existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync} from 'node:fs';
+import {existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync} from 'node:fs';
+import {removeScratchHomes, userHomeBeside} from '../harness-home.mjs';
 import {userInfo} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -46,7 +47,7 @@ export function prepareCapabilityHome({source = defaultHome(), platform = proces
   const parent = managed ? (scratchRoot ?? join(userInfo().homedir, '.cp')) : '/tmp';
   if (managed) mkdirSync(parent, {recursive: true, mode: 0o700});
   const dir = realpathSync(mkdtempSync(join(parent,prefix)));
-  const userHome = join(dir, 'home');
+  const userHome = userHomeBeside(dir);   // never inside the cua home (../harness-home.mjs)
   let ownNode;
   try {
     mkdirSync(userHome, {mode: 0o700});
@@ -70,8 +71,8 @@ export function prepareCapabilityHome({source = defaultHome(), platform = proces
     mkdirSync(browserConfig, {recursive: true, mode: 0o700});
     writeFileSync(join(browserConfig, 'config.toml'), 'full_cdp_access_enabled = true\n', {mode: 0o600});
   } catch (error) {
-    rmSync(dir, {recursive: true, force: true});
+    removeScratchHomes(dir);
     throw error;
   }
-  return {dir, userHome, release, nodeMode: managed ? 'managed' : 'legacy', ...(managed ? {ownNode} : {}), cleanup() { rmSync(dir, {recursive: true, force: true}); }};
+  return {dir, userHome, release, nodeMode: managed ? 'managed' : 'legacy', ...(managed ? {ownNode} : {}), cleanup() { removeScratchHomes(dir); }};
 }

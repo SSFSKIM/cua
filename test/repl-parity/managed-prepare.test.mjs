@@ -33,7 +33,7 @@ function fixture(run,{managed=true}={}) {
 test('ordinary preparation installs a fresh managed home and aliases only the selected ready backend',()=>fixture(({source,owned,binding,registry,inspections,commands,deps})=>{
  const first=prepareDevice({device:'mini',profile:'ssfs',home:source},deps),second=prepareDevice({device:'mini'},deps);
  assert.notEqual(first.home,source);assert.notEqual(first.home,second.home);assert.ok(first.home.startsWith(owned+'/'));
- assert.equal(first.nodeMode,'managed');assert.equal(first.nodeOverride,null);assert.equal(first.fixturePort,48732);assert.equal(first.userHome,join(first.home,'home'));
+ assert.equal(first.nodeMode,'managed');assert.equal(first.nodeOverride,null);assert.equal(first.fixturePort,48732);assert.equal(first.userHome,`${first.home}.home`);
  assert.equal(first.ownNode.path,join(first.home,'node/24.18.0/bin/node'));
  assert.equal(first.ownedPreparation.home,first.home);assert.ok(first.ownedPreparation.token);assert.ok(first.ownedPreparation.experiment);
  assert.deepEqual(JSON.parse(readFileSync(join(first.home,'profiles.json'),'utf8')),{version:1,profiles:{ssfs:binding}});
@@ -64,7 +64,7 @@ test('unready or ambiguous discovery fails before installing anything',()=>fixtu
 
 test('the shared preparation controller journals ownership and cleanup never forwards a journal PID',()=>fixture(({journal,source,deps})=>{
  const prepared=prepareDevice({device:'mini',home:source},deps),calls=[];
- const execute=command=>{calls.push(command);return calls.length===1?'installer notice\n'+JSON.stringify(prepared)+'\n':JSON.stringify({removed:true});};
+ const execute=command=>{calls.push(command);return calls.length===1?'installer notice\n'+JSON.stringify(prepared)+'\n':JSON.stringify({removed:true})+'\n'+JSON.stringify({siblingRemoved:true});};
  const options={device:'mini',commit:'1234567890abcdef',profile:'ssfs',journal};
  assert.deepEqual(managePreparation('prepare',options,{execute}),prepared);assert.deepEqual(JSON.parse(readFileSync(journal,'utf8')),prepared);
  assert.throws(()=>managePreparation('prepare',options,{execute}),/cleanup-prepared/);assert.equal(calls.length,1);
@@ -101,4 +101,41 @@ test('preparation on a Linux device lists profiles through the own host, so it s
 test('preparation on the mini keeps the vendor host for its listing',()=>fixture(({source,commands,deps})=>{
  prepareDevice({device:'mini',profile:'ssfs',home:source},deps);
  assert.equal(commands.find(c=>c.file).env.CUA_REPL_HOST,'vendor');
+}));
+
+// #115 M1 harness review: cleanup must actually remove the sibling user HOME, and ownership must be journaled before a
+// layout migration, so a failed or uncertain move can still be cleaned. The remote script runs here under sh, with a
+// `node` double standing in for the side's own cleanup.
+test('cleanup removes the sibling HOME after the side\'s own cleanup, and confirms only then', async t => {
+  const {mkdtempSync,mkdirSync:mk,writeFileSync:write,chmodSync,existsSync:exists,rmSync:rm}=await import('node:fs');
+  const {tmpdir}=await import('node:os');const {execFileSync}=await import('node:child_process');
+  const root=mkdtempSync(join(tmpdir(),'cua-prep-cleanup-'));t.after(()=>rm(root,{recursive:true,force:true}));
+  const home=join(root,'parity-x'),checkout=join(root,'cua-parity'),bin=join(root,'bin');
+  for(const dir of [home,`${home}.home`,checkout,bin])mk(dir,{recursive:true});
+  write(join(bin,'node'),'#!/bin/sh\necho \'{"removed":true}\'\n');chmodSync(join(bin,'node'),0o755);
+  const journal=join(root,'journal.json');
+  write(journal,JSON.stringify({home,checkout,ownedPreparation:{device:'mini',home,experiment:'parity',token:'t'}}));
+  const execute=command=>execFileSync('/bin/sh',['-c',command.args.at(-1).replace(/^export PATH=[^\n]*\n/,'')],{encoding:'utf8',env:{PATH:`${bin}:/usr/bin:/bin`}});
+  const result=managePreparation('cleanup-prepared',{device:'mini',journal},{execute});
+  assert.deepEqual(result,{removed:true,siblingRemoved:true});
+  assert.equal(exists(`${home}.home`),false,'the sibling HOME is gone');
+  assert.equal(exists(journal),false);
+  // A cleanup whose output does not confirm the sibling's removal keeps the journal.
+  write(journal,JSON.stringify({home,checkout,ownedPreparation:{device:'mini',home,experiment:'parity',token:'t'}}));
+  assert.throws(()=>managePreparation('cleanup-prepared',{device:'mini',journal},{execute:()=>'{"removed":true}\n'}),/sibling|not confirmed/);
+  assert.equal(exists(journal),true);
+});
+
+test('ownership is journaled before a layout migration: a move that fails leaves a preparation cleanup can still remove', ()=>fixture(({journal,source,deps})=>{
+  const raw=prepareDevice({device:'mini',home:source},deps),nested={...raw,userHome:`${raw.ownedPreparation.home}/home`};
+  const calls=[];
+  const execute=command=>{calls.push(command);if(calls.length===1)return JSON.stringify(nested)+'\n';throw new Error('ssh: connection reset during the move');};
+  assert.throws(()=>managePreparation('prepare',{device:'mini',commit:'1234567890abcdef',journal},{execute}),/connection reset/);
+  const kept=JSON.parse(readFileSync(journal,'utf8'));
+  assert.deepEqual(kept.ownedPreparation,raw.ownedPreparation,'the ownership survives the failed move');
+  assert.deepEqual(kept.layoutMigration,{from:`${raw.ownedPreparation.home}/home`,to:`${raw.ownedPreparation.home}.home`,state:'pending'});
+  const cleanup=[];
+  const result=managePreparation('cleanup-prepared',{device:'mini',journal},{execute:command=>{cleanup.push(command.args.at(-1));return '{"removed":true}\n{"siblingRemoved":true}\n';}});
+  assert.equal(result.removed,true);
+  assert.match(cleanup[0],/rm -rf '[^']*\.home'/,'both layouts are cleaned: the home (with any nested HOME) and the sibling');
 }));

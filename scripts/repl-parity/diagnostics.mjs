@@ -14,3 +14,27 @@ export function normalizeHostDiagnostic(row){
   return {...item,text:match[1]+JSON.stringify(info)};
  })};
 }
+
+// A kernel-death diagnostic's exit facts, after normalizeHostDiagnostic: its status and whether the kernel is the Node
+// whose warning the stderr tail carries (`(node:<process:1>)`, the same label as kernel_pid). null when the row holds no
+// single such diagnostic.
+const DIED=/^(node_repl kernel exited unexpectedly\n\nnode_repl diagnostics: )(\{.*\})$/s;
+const STDERR_NODE=/^\(node:(<process:\d+>)\)/;
+function diagnostic(row){
+ if(row?.isError!==true||!Array.isArray(row.content)||row.content.length!==1||row.content[0].type!=='text')return null;
+ const match=row.content[0].text.match(DIED);if(!match)return null;
+ let info;try{info=JSON.parse(match[2]);}catch{return null;}
+ const node=typeof info.kernel_stderr_tail==='string'&&info.kernel_stderr_tail.match(STDERR_NODE);
+ if(typeof info.kernel_status!=='string'||!node)return null;
+ return {prefix:match[1],info,node:node[1]};
+}
+export function kernelExitFacts(row){
+ const d=diagnostic(row);
+ return d&&{kernel_status:d.info.kernel_status,kernelIsStderrNode:d.node===d.info.kernel_pid};
+}
+// The row with those two facts replaced by `placeholder`; every other field of the diagnostic and the row is kept.
+export function projectKernelExit(row,placeholder){
+ const d=diagnostic(row);
+ const info={...d.info,kernel_pid:placeholder,kernel_status:placeholder,kernel_stderr_tail:d.info.kernel_stderr_tail.replace(STDERR_NODE,`(node:${placeholder})`)};
+ return {...row,content:[{...row.content[0],text:d.prefix+JSON.stringify(info)}]};
+}

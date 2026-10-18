@@ -9,16 +9,19 @@
 // - Nobody else. Preparation refuses while the admission is held (which covers the harness serves registered under it),
 //   while any other process names the home on its command line, or while any process runs the approved helper's exact
 //   executable. No process's environment is scanned to find users.
-// - A TMPDIR of the run's own (`<scratch>/tmp`, 0700). Every serve of the run carries it, buildLaunch copies it into the
-//   runtime's environment, and `open` passes node_repl's environment to the helper: it is the witness of which run a
-//   helper belongs to.
+// - The TMPDIR witness. Since #115 M1, buildLaunch gives every launch its session's own TMPDIR,
+//   `<home>/run/<session>/tmp`, and `open` passes node_repl's environment to the helper, so a helper the run's sessions
+//   opened carries one of those. During the run the home's run/ is the run's own (the original is moved aside below,
+//   and the admission keeps everyone else out), and preparation refuses while any process runs the approved helper: a
+//   helper carrying a session temp of this home's run/ was opened by this run. Before M1 a launch copied the caller's
+//   TMPDIR, so the run's own (`<scratch>/tmp`, 0700, which every serve of the run still carries) is accepted too.
 // - State. The home's state/ and run/ are moved into the run's scratch directory and back. Every move is recorded in
 //   `recovery.json` as it happens; a failed preparation undoes only the moves that happened, and a failed undo or
 //   restoration deletes nothing, keeps the scratch directory and the admission, and names the recovery directory.
 //   Cleanup moves what the run wrote out of the home before moving the originals back, and is resumable.
 // - The helper. The native helper the run's native calls opened outlives the serve. Cleanup stops, by pid, only a helper
 //   proven to be the run's: its executable (read from the process, lsof's txt, never its command line) is exactly the
-//   approved helper's executable, and the TMPDIR in that pid's environment is exactly the run's. Only TMPDIR is
+//   approved helper's executable, and the TMPDIR in that pid's environment is the run's (above). Only TMPDIR is
 //   extracted from that environment, only for such candidate pids, and only compared; nothing else from it is kept,
 //   logged or reported. Anything not proven is never signalled, and nothing is restored while it remains.
 // HOME is the account's (native calls fail at the native pipe under a scratch HOME), and XDG_CONFIG_HOME is the run's
@@ -34,6 +37,7 @@ import {discoverDesktopEnvironment} from '../repl-parity/desktop.mjs';
 import {executionFacts} from '../repl-parity/provenance.mjs';
 import {assertManagedNode, nodeEnvironment} from '../repl-parity/node-provenance.mjs';
 import {loadPins, locateRuntime, selectPin} from '../../src/runtime/manifest.mjs';
+import {removeScratchHomes, userHomeBeside} from '../harness-home.mjs';
 
 export const REUSE_REASON = 'a new on-disk copy of the native helper raises a one-time screen-capture confirmation; the approved copy is reused';
 // The run-owned parts of a reused home, moved aside for the run and back at cleanup.
@@ -72,9 +76,9 @@ export function executableOf(pid, {exec = execFileSync} = {}) {
   if (!line) { if (!isAlive(pid)) return null; throw new Error(`could not read the executable of process ${pid}`); }
   return line.slice(1);
 }
-// Whether `pid`'s environment sets TMPDIR to exactly `tmpdir`. The environment is the part of `ps -E`'s line after the
-// process's own command; only TMPDIR is extracted, only compared, and nothing read leaves this function: a failure says
-// only that it failed.
+// Whether `pid`'s environment sets TMPDIR to exactly `tmpdir` (or to a value `tmpdir`, a predicate, accepts). The
+// environment is the part of `ps -E`'s line after the process's own command; only TMPDIR is extracted, only compared,
+// and nothing read leaves this function: a failure says only that it failed.
 export function hasRunTmpdir(pid, tmpdir, {exec = execFileSync} = {}) {
   const failed = () => new Error(`could not read TMPDIR of process ${pid}`);
   let command, withEnvironment;
@@ -84,18 +88,28 @@ export function hasRunTmpdir(pid, tmpdir, {exec = execFileSync} = {}) {
   } catch { throw failed(); }
   if (!command || !withEnvironment.startsWith(command)) throw failed();
   const values = withEnvironment.slice(command.length).split(' ').filter(word => word.startsWith('TMPDIR=')).map(word => word.slice('TMPDIR='.length));
-  return values.length === 1 && values[0] === tmpdir;
+  return values.length === 1 && (typeof tmpdir === 'function' ? tmpdir(values[0]) === true : values[0] === tmpdir);
+}
+// Whether `value` is a session temp of `home`'s run/ (src/runtime/launch.mjs: <real home>/run/<session id>/tmp).
+const SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9-]{0,127}$/;
+export function isSessionTmpOf(home, value) {
+  let real;
+  try { real = fs.realpathSync(home); } catch { return false; }
+  const prefix = join(real, 'run') + '/';
+  if (typeof value !== 'string' || !value.startsWith(prefix) || !value.endsWith('/tmp')) return false;
+  const id = value.slice(prefix.length, -'/tmp'.length);
+  return SESSION_ID.test(id) && join(prefix, id, 'tmp') === value;
 }
 // Every other process using `home`: whoever names it on the command line, and whoever runs the approved helper's exact
-// executable. A helper is the run's (`owned`) only when its environment's TMPDIR is the run's; the environment of any
-// other process is never read.
+// executable. A helper is the run's (`owned`) only when its environment's TMPDIR is the run's: `tmpdir`, or a session
+// temp of `home`'s run/ (the header); the environment of any other process is never read.
 export function homeUsers(home, {executable, tmpdir}, {exec = execFileSync, candidates = processesUsing} = {}) {
   return candidates(home).flatMap(pid => {
     const running = executableOf(pid, {exec});
     if (running === null) return [];   // gone
     const helper = running === executable;
     let owned = false, unreadable = false;
-    if (helper && tmpdir) { try { owned = hasRunTmpdir(pid, tmpdir, {exec}); } catch { unreadable = true; } }
+    if (helper && tmpdir) { try { owned = hasRunTmpdir(pid, value => value === tmpdir || isSessionTmpOf(home, value), {exec}); } catch { unreadable = true; } }
     return [{pid, helper, owned, ...(unreadable ? {unreadable: true} : {})}];
   });
 }
@@ -113,7 +127,7 @@ export function prepareNative({device, display, node, approvedHome}, {directoryR
   fs.mkdirSync(directoryRoot, {recursive: true, mode: 0o700});
   const parent = fs.realpathSync(directoryRoot);
   if (parent === tempRoot || parent.startsWith(tempRoot + '/')) throw new Error('Native scratch home must be outside TMPDIR');
-  const home = fs.mkdtempSync(join(parent, 'run-')), userHome = join(home, 'home'), token = randomUUID();
+  const home = fs.mkdtempSync(join(parent, 'run-')), userHome = userHomeBeside(home), token = randomUUID();
   fs.writeFileSync(join(home, 'native-owner.json'), JSON.stringify({device, token}), {mode: 0o600, flag: 'wx'});
   // On macOS a run's serves also get a TMPDIR of their own, as an approved-runtime run's do (one witness for every mini run).
   const runTmp = declaration.platform === 'darwin' ? join(home, 'harness-tmp') : undefined;
@@ -129,7 +143,7 @@ export function prepareNative({device, display, node, approvedHome}, {directoryR
     if (!node) assertManagedNode(facts);
     else if (!facts.ownNode?.version || facts.ownNode.path !== node) throw new Error('Diagnostic Node override did not resolve');
     return {...prepared, ownNode: facts.ownNode};
-  } catch (error) { fs.rmSync(home, {recursive: true, force: true}); throw error; }
+  } catch (error) { removeScratchHomes(home); throw error; }
 }
 const reuseSeams = ({locate = locateApproved, usersOf = homeUsers, rename = fs.renameSync, undo, kill = pid => process.kill(pid, 'SIGTERM'), alive = isAlive,
   wait = () => pause(200), now = Date.now, userHomeDir = homedir()} = {}) => ({locate, usersOf, rename, undo: undo ?? rename, kill, alive, wait, now, userHomeDir});
@@ -264,7 +278,7 @@ export function cleanupNative(prepared, {directoryRoot = base(), ...options} = {
     if (owner.approvedHome !== prepared.home) throw new Error('Native scratch ownership mismatch');
     return cleanupReused(prepared, options);
   }
-  fs.rmSync(scratch, {recursive: true, force: true});
+  removeScratchHomes(scratch);
   return {removed: true};
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

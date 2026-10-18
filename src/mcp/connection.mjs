@@ -35,14 +35,14 @@
 // model so in profiles_list's description. `project` (an absolute path, src/secrets/project.mjs) gives the connection
 // the project tier of the secret store: the stdio `serve` passes the project it was started in; the HTTP agent never
 // does, so a device's remote clients see the global tier only.
-import {chmodSync, mkdirSync, rmSync} from 'node:fs';
+import {rmSync} from 'node:fs';
 import {join} from 'node:path';
 import {createServer, settingsFrom} from './server.mjs';
 import {spawnUpstream} from './upstream.mjs';
 import {handshakeRecords, lazyRuntime} from './lazy-runtime.mjs';
 import {homeLayout, realHome} from '../runtime/layout.mjs';
 import {resolveRuntime} from '../runtime/manifest.mjs';
-import {buildLaunch, replHostFor, SKY_SERVICE, BROWSER_SERVICE} from '../runtime/launch.mjs';
+import {buildLaunch, createLaunchDirs, replHostFor, SKY_SERVICE, BROWSER_SERVICE} from '../runtime/launch.mjs';
 import {hostIdentity} from '../repl-host/identity.mjs';
 import {claimRunSession} from '../runtime/run-dir.mjs';
 import {connectionSecrets} from '../secrets/store.mjs';
@@ -78,7 +78,7 @@ export async function openConnection({home, env = process.env, sessionId, input,
         diagnostics(`${what} failed at close (${error.code ?? error.message}); left in place`);
       }
     };
-    if (launch) await step('removing the session\'s approval file', () => rmSync(join(launch.env.CODEX_HOME, 'computer-use', 'sessions', `${sessionId}.toml`), {force: true}));
+    if (launch?.env.CODEX_HOME) await step('removing the session\'s approval file', () => rmSync(join(launch.env.CODEX_HOME, 'computer-use', 'sessions', `${sessionId}.toml`), {force: true}));
     await step('removing the run entries', () => {
       const leftovers = claim.release();
       if (leftovers.length) diagnostics(`this connection's run entries could not all be removed (${leftovers.join(', ')}); the next cua serve or cua doctor sweeps them`);
@@ -99,7 +99,7 @@ export async function openConnection({home, env = process.env, sessionId, input,
     // so a Node installed meanwhile takes effect on the next connection.
     const replHost = replHostFor({platform: runtime.manifest.platform, surfaces: serverSettings.surfaces, ambient: env, home, resolveOwnNode});
     const launchFor = () => buildLaunch({
-      runtime, home, sessionId, ambient: env, replHost, surfaces: serverSettings.surfaces,
+      runtime, home, sessionId, ambient: env, replHost, surfaces: serverSettings.surfaces, sandbox,
       services: Object.assign({}, ...serverSettings.surfaces.map(s => SERVICES[s])),
       secretsDir: secrets.dir, secretsProjectDir: secrets.projectDir, secretsUnavailable: secrets.unavailable?.code,
       browserBackends: browserBackends && {hostPaths: browserBackends.hostPaths(), defaultInstance: browserBackends.defaultInstance()},
@@ -116,9 +116,7 @@ export async function openConnection({home, env = process.env, sessionId, input,
       if (signal.aborted) return null;
       launch = prepareLaunch(launchFor());
       assertSandboxFits(sandbox, launch);
-      mkdirSync(launch.env.CODEX_HOME, {recursive: true, mode: 0o700});
-      mkdirSync(launch.cwd, {recursive: true, mode: 0o700});
-      chmodSync(launch.cwd, 0o700);
+      createLaunchDirs(launch);
       return spawnUpstream(launch);
     };
     // An idle stop removes the runtime's working directory; if removal fails, the next launch reuses it.

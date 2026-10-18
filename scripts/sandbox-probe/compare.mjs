@@ -66,6 +66,30 @@ export function compareCapture({captured, golden}) {
   };
 }
 
+// cua's port (src/sandbox/seatbelt.mjs, M1) against the signed CLI's capture for the same input: `port` is {args,
+// env} from the port, its args in cua's numeric TIOCSTI form (a recorded deviation), read here in the tag's form. The
+// child environments may differ only by what the CLI adds and cua's launcher leaves out: its arg0 PATH entry and
+// CoreFoundation's __CF_USER_TEXT_ENCODING. -> compareCapture's result plus {tiocsti, cliOnlyEnv, equalButDeviations}.
+const TIOCSTI = {numeric: '(deny file-ioctl (ioctl-command 2147578994))', symbolic: '(deny file-ioctl (ioctl-command TIOCSTI))'};
+export function comparePortToCapture({captured, port}) {
+  const [flag, profile, ...rest] = port.args;
+  const numeric = profile.endsWith(`\n${TIOCSTI.numeric}`);
+  const asTag = numeric ? `${profile.slice(0, -TIOCSTI.numeric.length)}${TIOCSTI.symbolic}` : profile;
+  const result = compareCapture({captured, golden: {argsSymbolic: [flag, asTag, ...rest], env: port.env}});
+  if (!result.captured) return result;
+  const cliOnlyEnv = [];
+  const differing = result.env.differing.filter(({name, captured: c, golden: g}) => {
+    if (name === 'PATH' && /^[^:]*\/tmp\/arg0\/codex-arg0[A-Za-z0-9]+:/.test(c) && c.slice(c.indexOf(':') + 1) === g) { cliOnlyEnv.push('the CLI\'s arg0 PATH entry'); return false; }
+    return true;
+  });
+  const onlyCaptured = result.env.onlyCaptured.filter(name => {
+    if (name === '__CF_USER_TEXT_ENCODING') { cliOnlyEnv.push(name); return false; }
+    return true;
+  });
+  return {...result, tiocsti: numeric ? 'numeric' : 'symbolic', cliOnlyEnv,
+    equalButDeviations: result.argvEqual && !differing.length && !onlyCaptured.length && !result.env.onlyGolden.length};
+}
+
 // Named per run: the CLI's arg0 directory ($CODEX_HOME/tmp/arg0/codex-arg0<random>) and the session's run directory
 // (run/<uuid>, with its temp).
 const normalizeValue = value => value.replace(/codex-arg0[A-Za-z0-9]+/g, 'codex-arg0*')
@@ -87,6 +111,51 @@ export function compareFingerprints(left, right) {
   const cwdEqual = normalizeValue(left.cwd) === normalizeValue(right.cwd);
   const equal = checks.length === 0 && env.onlyLeft.length + env.onlyRight.length + env.differing.length === 0 && cwdEqual && left.sandboxed === right.sandboxed;
   return {equal, sandboxed: [left.sandboxed, right.sandboxed], cwdEqual, checks, env};
+}
+
+// #115 M1: what the port's one widening (src/sandbox/seatbelt.mjs header, the metadata of denied ancestors) may give, in
+// a kernel fingerprint under cua's launcher: the cua home and its run/ resolvable (metadata) but not listable (data), and
+// another session's run directory neither. -> {ok, rows: [{label, op, want, got}]}; a missing row is no pass.
+const GRANT_PINS = [['cua-home', 'allow', 'deny'], ['cua-home/run', 'allow', 'deny'], ['cua-home/run/other', 'deny', 'deny']];
+export function metadataGrantPins(fingerprint) {
+  const got = (label, op) => fingerprint.checks.find(row => row.filter === 'path' && row.label === label && row.op === op)?.result ?? null;
+  const rows = GRANT_PINS.flatMap(([label, metadata, data]) => [['file-read-metadata', metadata], ['file-read-data', data]]
+    .map(([op, want]) => ({label, op, want, got: got(label, op)})));
+  return {ok: rows.every(row => row.got === row.want), rows};
+}
+
+// #115 M1: a fingerprint comparison (compareFingerprints) judged against the deviations declared for its pair, as
+// `left/right`. Undeclared is any check that differs otherwise, any environment difference not named, a cwd that
+// differs or an unsandboxed side. -> {ok, pair, undeclared: {checks, env, cwd, sandboxed}}.
+//   golden-kernel/cua-kernel  M0's golden kernel (the original's rendering of the same deny list) against cua's kernel:
+//                             the metadata grant on the cua home (the port's one widening), the new cua-home/run
+//                             target, and CODEX_HOME, which only the Codex launch sets.
+//   signed/cua-worker         M0's signed-CLI kernel (no deny list) against cua's trusted worker: the new target; the
+//                             CLI's CODEX_HOME, CoreFoundation's __CF_USER_TEXT_ENCODING and its arg0 PATH entry; the
+//                             worker's own host settings, which it gets and a kernel never does.
+const NEW_TARGET = row => row.label === 'cua-home/run' && row.left === null;
+export const FINGERPRINT_DEVIATIONS = Object.freeze({
+  'golden-kernel/cua-kernel': {
+    check: row => NEW_TARGET(row) || (row.op === 'file-read-metadata' && row.label === 'cua-home' && row.left?.result === 'deny' && row.right?.result === 'allow'),
+    onlyLeft: ['CODEX_HOME'], onlyRight: [], differing: () => false,
+  },
+  'signed/cua-worker': {
+    check: NEW_TARGET,
+    onlyLeft: ['CODEX_HOME', '__CF_USER_TEXT_ENCODING'], onlyRight: ['CUA_REPL_NODE_PATH', 'CUA_REPL_SANDBOX_EXEC', 'CUA_SANDBOX_DENY_READ', 'LANG'],
+    differing: ({name, left, right}) => name === 'PATH' && left === `${/^[^:]*\/arg0\/codex-arg0[^:]*:/.exec(left)?.[0] ?? '\0'}${right}`,
+  },
+});
+export function judgeFingerprints(comparison, pair) {
+  const declared = FINGERPRINT_DEVIATIONS[pair];
+  if (!declared) throw new Error(`no declared deviations for ${pair}; known: ${Object.keys(FINGERPRINT_DEVIATIONS).join(', ')}`);
+  const undeclared = {
+    checks: comparison.checks.filter(row => !declared.check(row)),
+    env: {onlyLeft: comparison.env.onlyLeft.filter(name => !declared.onlyLeft.includes(name)), onlyRight: comparison.env.onlyRight.filter(name => !declared.onlyRight.includes(name)),
+      differing: comparison.env.differing.filter(d => !declared.differing(d))},
+    cwd: !comparison.cwdEqual, sandboxed: !comparison.sandboxed.every(Boolean),
+  };
+  const ok = !undeclared.checks.length && !undeclared.env.onlyLeft.length && !undeclared.env.onlyRight.length && !undeclared.env.differing.length && !undeclared.cwd && !undeclared.sandboxed;
+  return {ok, pair, undeclared};
 }
 
 // Two experiment.mjs runs: the confinement cell's outcomes key by key, and whether each cell succeeded (timings and

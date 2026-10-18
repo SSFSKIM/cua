@@ -123,7 +123,7 @@ test('assertSandboxFits refuses a scoped launch whose $TMPDIR covers a protected
     assert.match(error.message, /^CUA_SHIM_SANDBOX=scoped lets JavaScript cells write/);
     assert.ok(error.message.includes(`write $TMPDIR (${join(base, 'T')}), which contains the trusted code path ${join(base, 'T/cua/runtimes/r/modules')}, the runtime's configuration and approvals ${join(base, 'T/cua/state/codex')}. `), error.message);
     assert.match(error.message, /node_repl refuses to start a kernel over writable trusted code/);
-    assert.match(error.hint, /outside \$TMPDIR/);
+    assert.match(error.hint, /keep CUA_HOME outside cua's checkout, ~\/\.config\/cua and the secret store/);
     assert.match(error.hint, /CUA_SHIM_SANDBOX=disabled/);
     return true;
   });
@@ -185,4 +185,15 @@ test('a client\'s own sandbox entry is overridden by the server\'s, and dropped 
     assert.equal(SANDBOX_META_KEY in m, false);
     assert.equal(m.progressToken, 'p1');
   }
+});
+
+// #115 M1 review: the run directory's exception holds only for the deny target that is its home or the home's run/
+// (ownHolders), never for another target that happens to contain it, such as a store the home was placed in.
+test('the own run directory may lie in its home\'s deny target, and in no other target that contains it', () => {
+  const store = '/u/' + ['.config', 'claude-secrets'].join('/'), home = `${store}/cua`, cwd = `${home}/run/s`;
+  const guarded = protectedPaths({trustedCodePaths: [], denied: [store, home], ownRoots: [cwd, `${cwd}/tmp`], ownHolders: [home, `${home}/run`]});
+  const conflicts = sandboxConflicts({protectedPaths: guarded, writeRoots: scopedWriteRoots({cwd, tmpdir: `${cwd}/tmp`})});
+  assert.deepEqual(conflicts.map(c => [c.root.path, c.protected.path, c.inside]), [[cwd, store, 'root'], [`${cwd}/tmp`, store, 'root']]);
+  const apart = protectedPaths({trustedCodePaths: [], denied: [store, '/h/cua'], ownRoots: ['/h/cua/run/s'], ownHolders: ['/h/cua', '/h/cua/run']});
+  assert.deepEqual(sandboxConflicts({protectedPaths: apart, writeRoots: scopedWriteRoots({cwd: '/h/cua/run/s'})}), []);
 });

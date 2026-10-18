@@ -1,0 +1,759 @@
+{
+  "probe": "tz",
+  "schema": 2,
+  "launcher": "codex",
+  "role": "worker",
+  "notificationCenter": "deny",
+  "runs": 80,
+  "boundMs": 15000,
+  "contexts": 200,
+  "targetMs": 2500,
+  "platform": "darwin",
+  "arch": "arm64",
+  "node": {
+    "path": "/Users/new/cua-115/home/node/24.22.0/bin/node",
+    "version": "v24.22.0"
+  },
+  "codex": "/Users/new/cua-115/home/runtimes/26.928.40906-darwin-arm64/CodexCLI.app/Contents/MacOS/codex",
+  "home": {
+    "class": "real"
+  },
+  "tag": "cua-tz-probe-a229fc9c",
+  "scratch": "/private/tmp/cua-tz-probe-TGFlFB",
+  "started": "2026-10-17T15:02:12.492Z",
+  "results": [
+    {
+      "run": 1,
+      "outcome": "completed",
+      "localTimeAtMs": 2502.038375,
+      "ms": 2597,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 2,
+      "outcome": "completed",
+      "localTimeAtMs": 2501.630167,
+      "ms": 2584,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 3,
+      "outcome": "completed",
+      "localTimeAtMs": 2501.786167,
+      "ms": 2585,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 4,
+      "outcome": "completed",
+      "localTimeAtMs": 2501.789334,
+      "ms": 2583,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 5,
+      "outcome": "completed",
+      "localTimeAtMs": 2501.384292,
+      "ms": 2582,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 6,
+      "outcome": "completed",
+      "localTimeAtMs": 2502.059875,
+      "ms": 2583,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 7,
+      "outcome": "completed",
+      "localTimeAtMs": 2502.156209,
+      "ms": 2586,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 8,
+      "outcome": "completed",
+      "localTimeAtMs": 2501.61925,
+      "ms": 2584,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 9,
+      "outcome": "completed",
+      "localTimeAtMs": 2501.846458,
+      "ms": 2587,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 10,
+      "outcome": "completed",
+      "localTimeAtMs": 2502.267292,
+      "ms": 2589,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 11,
+      "outcome": "completed",
+      "localTimeAtMs": 2501.609125,
+      "ms": 2584,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 12,
+      "outcome": "completed",
+      "localTimeAtMs": 2501.748458,
+      "ms": 2584,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 13,
+      "outcome": "completed",
+      "localTimeAtMs": 2501.930375,
+      "ms": 2585,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 14,
+      "outcome": "completed",
+      "localTimeAtMs": 2502.046125,
+      "ms": 2586,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 15,
+      "outcome": "completed",
+      "localTimeAtMs": 2501.775584,
+      "ms": 2585,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 16,
+      "outcome": "completed",
+      "localTimeAtMs": 2501.7835,
+      "ms": 2585,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 17,
+      "outcome": "completed",
+      "localTimeAtMs": 2501.898125,
+      "ms": 2585,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 18,
+      "outcome": "completed",
+      "localTimeAtMs": 2501.850292,
+      "ms": 2585,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 19,
+      "outcome": "completed",
+      "localTimeAtMs": 2500.81575,
+      "ms": 2584,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 20,
+      "outcome": "completed",
+      "localTimeAtMs": 2501.74875,
+      "ms": 2589,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 21,
+      "outcome": "completed",
+      "localTimeAtMs": 2501.661083,
+      "ms": 2582,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 22,
+      "outcome": "completed",
+      "localTimeAtMs": 2501.5515,
+      "ms": 2583,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 23,
+      "outcome": "completed",
+      "localTimeAtMs": 2501.95925,
+      "ms": 2587,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 24,
+      "outcome": "completed",
+      "localTimeAtMs": 2501.688125,
+      "ms": 2596,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 25,
+      "outcome": "completed",
+      "localTimeAtMs": 2501.330166,
+      "ms": 2596,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 26,
+      "outcome": "completed",
+      "localTimeAtMs": 2500.918875,
+      "ms": 2582,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 27,
+      "outcome": "completed",
+      "localTimeAtMs": 2501.663708,
+      "ms": 2589,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 28,
+      "outcome": "completed",
+      "localTimeAtMs": 2502.173125,
+      "ms": 2583,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 29,
+      "outcome": "completed",
+      "localTimeAtMs": 2501.963125,
+      "ms": 2584,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 30,
+      "outcome": "completed",
+      "localTimeAtMs": 2501.945917,
+      "ms": 2583,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 31,
+      "outcome": "completed",
+      "localTimeAtMs": 2501.6745,
+      "ms": 2584,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 32,
+      "outcome": "completed",
+      "localTimeAtMs": 2501.702625,
+      "ms": 2585,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 33,
+      "outcome": "completed",
+      "localTimeAtMs": 2501.598417,
+      "ms": 2584,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 34,
+      "outcome": "completed",
+      "localTimeAtMs": 2502.340667,
+      "ms": 2595,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 35,
+      "outcome": "completed",
+      "localTimeAtMs": 2501.341125,
+      "ms": 2586,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 36,
+      "outcome": "completed",
+      "localTimeAtMs": 2501.329875,
+      "ms": 2584,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 37,
+      "outcome": "completed",
+      "localTimeAtMs": 2501.51125,
+      "ms": 2585,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 38,
+      "outcome": "completed",
+      "localTimeAtMs": 2501.940708,
+      "ms": 2588,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 39,
+      "outcome": "completed",
+      "localTimeAtMs": 2502.097667,
+      "ms": 2585,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 40,
+      "outcome": "completed",
+      "localTimeAtMs": 2500.68625,
+      "ms": 2587,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 41,
+      "outcome": "completed",
+      "localTimeAtMs": 2502.250208,
+      "ms": 2592,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 42,
+      "outcome": "completed",
+      "localTimeAtMs": 2502.151458,
+      "ms": 2605,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 43,
+      "outcome": "completed",
+      "localTimeAtMs": 2501.058334,
+      "ms": 2593,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 44,
+      "outcome": "completed",
+      "localTimeAtMs": 2501.689208,
+      "ms": 2597,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 45,
+      "outcome": "completed",
+      "localTimeAtMs": 2501.591125,
+      "ms": 2592,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 46,
+      "outcome": "completed",
+      "localTimeAtMs": 2502.298042,
+      "ms": 2585,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 47,
+      "outcome": "completed",
+      "localTimeAtMs": 2501.036542,
+      "ms": 2584,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 48,
+      "outcome": "completed",
+      "localTimeAtMs": 2502.209875,
+      "ms": 2598,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 49,
+      "outcome": "completed",
+      "localTimeAtMs": 2501.787834,
+      "ms": 2593,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 50,
+      "outcome": "completed",
+      "localTimeAtMs": 2501.985666,
+      "ms": 2587,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 51,
+      "outcome": "completed",
+      "localTimeAtMs": 2501.510875,
+      "ms": 2584,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 52,
+      "outcome": "completed",
+      "localTimeAtMs": 2501.603875,
+      "ms": 2590,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 53,
+      "outcome": "completed",
+      "localTimeAtMs": 2501.826541,
+      "ms": 2588,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 54,
+      "outcome": "completed",
+      "localTimeAtMs": 2500.9335,
+      "ms": 2589,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 55,
+      "outcome": "completed",
+      "localTimeAtMs": 2502.084167,
+      "ms": 2584,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 56,
+      "outcome": "completed",
+      "localTimeAtMs": 2501.778875,
+      "ms": 2588,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 57,
+      "outcome": "completed",
+      "localTimeAtMs": 2501.97125,
+      "ms": 2589,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 58,
+      "outcome": "completed",
+      "localTimeAtMs": 2501.521209,
+      "ms": 2583,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 59,
+      "outcome": "completed",
+      "localTimeAtMs": 2502.2205,
+      "ms": 2585,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 60,
+      "outcome": "completed",
+      "localTimeAtMs": 2501.449625,
+      "ms": 2584,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 61,
+      "outcome": "completed",
+      "localTimeAtMs": 2500.364667,
+      "ms": 2586,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 62,
+      "outcome": "completed",
+      "localTimeAtMs": 2501.980416,
+      "ms": 2585,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 63,
+      "outcome": "completed",
+      "localTimeAtMs": 2501.381791,
+      "ms": 2587,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 64,
+      "outcome": "completed",
+      "localTimeAtMs": 2502.298125,
+      "ms": 2585,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 65,
+      "outcome": "completed",
+      "localTimeAtMs": 2502.262125,
+      "ms": 2584,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 66,
+      "outcome": "completed",
+      "localTimeAtMs": 2502.29075,
+      "ms": 2584,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 67,
+      "outcome": "completed",
+      "localTimeAtMs": 2501.753959,
+      "ms": 2584,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 68,
+      "outcome": "completed",
+      "localTimeAtMs": 2502.085292,
+      "ms": 2584,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 69,
+      "outcome": "completed",
+      "localTimeAtMs": 2501.594333,
+      "ms": 2582,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 70,
+      "outcome": "completed",
+      "localTimeAtMs": 2502.217417,
+      "ms": 2583,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 71,
+      "outcome": "completed",
+      "localTimeAtMs": 2501.841292,
+      "ms": 2586,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 72,
+      "outcome": "completed",
+      "localTimeAtMs": 2500.2175,
+      "ms": 2593,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 73,
+      "outcome": "completed",
+      "localTimeAtMs": 2502.160334,
+      "ms": 2594,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 74,
+      "outcome": "completed",
+      "localTimeAtMs": 2501.467083,
+      "ms": 2586,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 75,
+      "outcome": "completed",
+      "localTimeAtMs": 2502.253417,
+      "ms": 2584,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 76,
+      "outcome": "completed",
+      "localTimeAtMs": 2502.247208,
+      "ms": 2585,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 77,
+      "outcome": "completed",
+      "localTimeAtMs": 2501.607625,
+      "ms": 2583,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 78,
+      "outcome": "completed",
+      "localTimeAtMs": 2502.167875,
+      "ms": 2583,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 79,
+      "outcome": "completed",
+      "localTimeAtMs": 2501.592542,
+      "ms": 2585,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    },
+    {
+      "run": 80,
+      "outcome": "completed",
+      "localTimeAtMs": 2502.155417,
+      "ms": 2582,
+      "code": 0,
+      "signal": null,
+      "leftover": 0
+    }
+  ],
+  "launcherIdentity": {
+    "launcher": "codex",
+    "path": "/Users/new/cua-115/home/runtimes/26.928.40906-darwin-arm64/CodexCLI.app/Contents/MacOS/codex",
+    "sha256": "50ac633af64851511f9bbc71032cdae7f1ba20b3234c189687d61ba846c354c5"
+  },
+  "profile": "the Codex CLI's scoped profile (one profile for both roles)",
+  "leftovers": 0,
+  "finished": "2026-10-17T15:05:39.605Z",
+  "counts": {
+    "completed": 80,
+    "hung": 0,
+    "launcherFailure": 0
+  }
+}

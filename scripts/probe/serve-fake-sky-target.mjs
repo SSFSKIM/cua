@@ -20,6 +20,12 @@ if (!target || !isAbsolute(target) || rest.length || !process.env.CUA_HOME || is
   process.exit(2);
 }
 const real = realpathSync(target);
+// A refused open is reported as `cua serve` reports it (src/cli.mjs): the message, its code and its hint.
+const refused = error => {
+  if (!error?.code) throw error;
+  process.stderr.write(`cua: ${error.message} [${error.code}]\n${error.hint ? `  ${error.hint}\n` : ''}`);
+  return 1;
+};
 const code = await serve({
   home: defaultHome(),
   prepareLaunch: launch => withAccountHome({
@@ -30,5 +36,8 @@ const code = await serve({
       NODE_REPL_TRUSTED_CODE_PATHS: `${launch.env.NODE_REPL_TRUSTED_CODE_PATHS}:${dirname(real)}`,
     },
   }),
-});
+}).catch(refused);
+// The exit status is set first: the timer below is unreferenced, so a process with nothing left to run exits
+// naturally before it fires, with this status (as bin/cua.mjs sets main's), never a default 0.
+process.exitCode = code;
 setTimeout(() => process.exit(code), 1000).unref();

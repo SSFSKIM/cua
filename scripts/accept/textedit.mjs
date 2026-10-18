@@ -36,6 +36,7 @@ import {socketHolders} from '../probe/lib.mjs';
 import {fingerprintable, fingerprints, textLeaks, UNFINGERPRINTABLE} from '../probe/leak-scan.mjs';
 import {isTextEditApproval, TEXTEDIT_BUNDLE} from './lib.mjs';
 import {openSession, resultText} from './mcp-session.mjs';
+import {pauseGate, pausing} from '../mini-pause.mjs';
 import {createStoreHome, generatedKey, isAccountHome, removeStoreHome, seedSecret} from './secret-seed.mjs';
 
 const CLI = fileURLToPath(new URL('../../bin/cua.mjs', import.meta.url));
@@ -91,11 +92,15 @@ ${action}
 }`;
 
 // `secret`: false, true (a generated key and value in a temporary $HOME), or {key, home} (the caller's stored key).
-export async function runTextEdit({home, secret = false, forbid = () => {}, stepMs = 60_000}) {
+// `pauseFile` (CUA_PAUSE_FILE, scripts/mini-pause.mjs): every cell waits at its boundary while the mini's CI runner is
+// busy, and never aborts, the owner standing by; each pause is in the observations.
+export async function runTextEdit({home, secret = false, forbid = () => {}, stepMs = 60_000, pauseFile = process.env.CUA_PAUSE_FILE}) {
   const callerKey = secret && typeof secret === 'object' ? secret : null;
   const steps = [];
   const record = (name, status, detail) => { steps.push({name, status, detail}); return status === 'PASS'; };
-  const observations = {elicitations: [], connections: []};
+  const observations = {elicitations: [], connections: [], pauses: []};
+  // A lost watcher keeps the sitting paused (onLost 'wait'), never aborts it: the owner is standing by.
+  const pause = pauseGate({file: pauseFile, record: p => observations.pauses.push(p), onLost: 'wait'});
   // Like the value below, one unbroken upper-case token: TextEdit's autocorrect otherwise offers to capitalize a
   // lower-case first word and applies it when typing continues, rewriting text that was already observed.
   const marker = `CUAMARKER${randomBytes(6).toString('hex').toUpperCase()}`;
@@ -136,10 +141,10 @@ export async function runTextEdit({home, secret = false, forbid = () => {}, step
   };
   const connect = async name => {
     connection(name);
-    const session = openSession({
+    const session = pausing(openSession({
       args: secret ? [SERVE_WITH_STORE] : [CLI, 'serve'], clientName: 'cua-accept-textedit', onServerRequest: onServerRequest(name),
       env: {...process.env, CUA_HOME: home, CUA_SHIM_PERSIST: 'session', CUA_SHIM_SECRETS: secret ? 'on' : 'off', ...(secret ? {HOME: storeHome} : {})},
-    });
+    }), pause, `the TextEdit sitting's ${name} cell`);
     sessions.push({name, session});
     await session.initialize();
     const ready = await session.js('nodeRepl.write("ready")', 120_000);  // the first cell also loads the vendor API

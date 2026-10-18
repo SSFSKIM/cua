@@ -1,0 +1,101 @@
+{
+  "before": [
+    {
+      "operation": "file-write-create",
+      "target": "<other>",
+      "count": 2
+    },
+    {
+      "operation": "file-write-create",
+      "target": "<run directory>",
+      "count": 1
+    },
+    {
+      "operation": "file-write-data",
+      "target": "<other>",
+      "count": 248
+    },
+    {
+      "operation": "mach-lookup",
+      "target": "com.apple.system.notification_center",
+      "count": 262
+    },
+    {
+      "operation": "network-outbound",
+      "target": "remote:*:55171",
+      "count": 1
+    },
+    {
+      "operation": "network-outbound",
+      "target": "remote:*:55175",
+      "count": 1
+    },
+    {
+      "operation": "sysctl-read",
+      "target": "kern.bootargs",
+      "count": 248
+    },
+    {
+      "operation": "sysctl-read",
+      "target": "kern.iossupportversion",
+      "count": 262
+    },
+    {
+      "operation": "sysctl-read",
+      "target": "security.mac.lockdown_mode_state",
+      "count": 248
+    }
+  ],
+  "after": [],
+  "comparison": {
+    "new": [],
+    "gone": [
+      {
+        "operation": "file-write-create",
+        "target": "<other>",
+        "count": 2
+      },
+      {
+        "operation": "file-write-create",
+        "target": "<run directory>",
+        "count": 1
+      },
+      {
+        "operation": "file-write-data",
+        "target": "<other>",
+        "count": 248
+      },
+      {
+        "operation": "mach-lookup",
+        "target": "com.apple.system.notification_center",
+        "count": 262
+      },
+      {
+        "operation": "network-outbound",
+        "target": "remote:*:55171",
+        "count": 1
+      },
+      {
+        "operation": "network-outbound",
+        "target": "remote:*:55175",
+        "count": 1
+      },
+      {
+        "operation": "sysctl-read",
+        "target": "kern.bootargs",
+        "count": 248
+      },
+      {
+        "operation": "sysctl-read",
+        "target": "kern.iossupportversion",
+        "count": 262
+      },
+      {
+        "operation": "sysctl-read",
+        "target": "security.mac.lockdown_mode_state",
+        "count": 248
+      }
+    ],
+    "preferences": []
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "device": "mini",
+  "home": "/Users/new/.local/share/cua-native-baseline/run-uhSXjc",
+  "userHome": "/Users/new/.local/share/cua-native-baseline/run-uhSXjc/home",
+  "token": "dbcf3d8b-51fd-4cbe-83a7-fda02fe7a2c7",
+  "xSession": {},
+  "tmpdir": "/Users/new/.local/share/cua-native-baseline/run-uhSXjc/harness-tmp",
+  "nodeMode": "managed",
+  "nodeOverride": null,
+  "ownNode": {
+    "path": "/Users/new/.local/share/cua-native-baseline/run-uhSXjc/node/24.22.0/bin/node",
+    "version": "v24.22.0"
+  }
+}

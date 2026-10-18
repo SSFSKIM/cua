@@ -4,7 +4,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
-import {mkdirSync, symlinkSync, utimesSync, writeFileSync} from 'node:fs';
+import {mkdirSync, readFileSync, symlinkSync, utimesSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {
@@ -332,4 +332,28 @@ test('a caller may make more doctor rows informational: reported, never gating, 
   assert.deepEqual(doctorHealth({code: 1, doctor: {ok: false, checks: rows}, informational: helper}),
     {healthy: true, detail: 'exit 1; ok false; informational, not gating: helper.live fail'});
   assert.equal(doctorHealth({code: 0, doctor: {ok: true, checks: rows}, informational: helper}).healthy, false, 'ok that contradicts its rows');
+});
+
+// #115 M1: an unreadable store refuses the confined launch, so probe-secrets records `store unreadable: the launch is
+// refused` in place of that connection's substitution failures and close. The steps here are made by the functions
+// probe-secrets records them with (scripts/probe/fail-closed.mjs), from a passing observation, and probe-secrets' own
+// source is checked to record through them.
+test('the fail-closed phase passes on the steps probe-secrets now records, and stays BLOCKED on the old inventory alone', async () => {
+  const {SECRETS_OFF, STORE_UNREADABLE, failClosedSteps, refusedLaunchResult} = await import('../scripts/probe/fail-closed.mjs');
+  const source = readFileSync(new URL('../scripts/probe-secrets.mjs', import.meta.url), 'utf8');
+  for (const call of ['record(failClosedStep(tag, method)', 'record(closeStep(tag)', 'refusedLaunchResult(tag, {', 'failClosedConnection(SECRETS_OFF,', 'refusedConnection(STORE_UNREADABLE,'])
+    assert.ok(source.includes(call), `probe-secrets records through ${call}`);
+  const phase = PROBE_SECRETS_PHASES.find(p => p.name.startsWith('live: fail closed before any input'));
+  assert.deepEqual(phase.items, [6, 7]);
+  const refused = refusedLaunchResult(STORE_UNREADABLE, {answered: false, exit: {code: 1}, stderr: 'cua: the secret store (secret store /h/s) could not be read (EACCES), ... [sandbox_state_invalid]\n',
+    delivered: 0, expected: 'sandbox_state_invalid', names: ['the secret store', '/h/s']});
+  assert.equal(refused.status, 'PASS', refused.detail);
+  const emitted = [...failClosedSteps(SECRETS_OFF).map(name => ({name, status: 'PASS', detail: ''})), refused];
+  assert.equal(inventoryCheck(phase.name, emitted, phase.steps).status, 'PASS');
+  // The pre-M1 steps for the unreadable store no longer satisfy the phase.
+  const old = [...failClosedSteps(SECRETS_OFF), ...failClosedSteps(STORE_UNREADABLE)].map(name => ({name, status: 'PASS', detail: ''}));
+  assert.equal(inventoryCheck(phase.name, old, phase.steps).status, 'BLOCKED');
+  // A launch that was not refused as declared fails the phase.
+  const answered = refusedLaunchResult(STORE_UNREADABLE, {answered: true, exit: {code: 0}, stderr: '', delivered: 0, expected: 'sandbox_state_invalid', names: []});
+  assert.equal(inventoryCheck(phase.name, [...emitted.slice(0, -1), answered], phase.steps).status, 'FAIL');
 });

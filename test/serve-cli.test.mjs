@@ -11,10 +11,10 @@ import {createInterface} from 'node:readline';
 import {loadPins, selectPin} from '../src/runtime/manifest.mjs';
 import {PassThrough} from 'node:stream';
 import {once} from 'node:events';
-import {REPO, scratch} from './fixtures/runtime-fixture.mjs';
+import {REPO, scratch, scratchUserHome} from './fixtures/runtime-fixture.mjs';
 import {fakeInstalledHome, installedHomeSupported, NO_SCOPED_LAUNCH} from './fixtures/installed-home.mjs';
 import {serve} from '../src/mcp/server.mjs';
-import {SKY_SERVICE, BROWSER_SERVICE, SERVICE_SUPPORT_DIRS} from '../src/runtime/launch.mjs';
+import {SKY_SERVICE, BROWSER_SERVICE, SERVICE_SUPPORT_DIRS, SANDBOX_DIR} from '../src/runtime/launch.mjs';
 import {chromeFacts, chromeUserData, CUA_EXTENSION_ID, PERMISSION_FIX} from '../src/profiles/chrome.mjs';
 import {LIVENESS_CELL} from '../src/profiles/inventory.mjs';
 import {socketNameFor, socketPathFor} from '../src/chrome/extension.mjs';
@@ -125,7 +125,8 @@ test('cua serve runs the resolved runtime with an allowlisted environment in an 
   assert.equal(start.env.AMBIENT_SECRET, undefined);
   assert.equal(start.env.CUA_SHIM_CODEX_HOME, undefined);
   assert.deepEqual(JSON.parse(start.env.NODE_REPL_TRUSTED_SERVICES), {sky: SKY_SERVICE}, 'the trusted sky wrapper is registered, never an ambient override');
-  assert.deepEqual(start.env.NODE_REPL_TRUSTED_CODE_PATHS.split(':').slice(1), [dirname(SKY_SERVICE), ...SERVICE_SUPPORT_DIRS]);
+  assert.deepEqual(start.env.NODE_REPL_TRUSTED_CODE_PATHS.split(':').slice(1), [SANDBOX_DIR, dirname(SKY_SERVICE), ...SERVICE_SUPPORT_DIRS]);
+  assert.equal(start.env.TMPDIR, join(sessionDir, 'tmp'), 'the session\'s own temp');
   assert.equal(start.env.PATH, '/usr/bin:/bin:/usr/sbin:/sbin');
   assert.deepEqual(Object.keys(start.env).filter(key => key.startsWith('CUA_SECRETS_')), ['CUA_SECRETS_UNAVAILABLE'], 'no store when secrets are off');
   assert.equal(start.env.CUA_SECRETS_UNAVAILABLE, 'secrets_disabled');
@@ -149,7 +150,7 @@ test('cua serve runs the resolved runtime with an allowlisted environment in an 
 
 test('with CUA_SHIM_SURFACES=computer,browser, serve registers both wrappers, configures cua\'s browser service and answers profiles_list from the registry', {skip: !supported}, async t => {
   const home = fakeInstalledHome(t);
-  const userHome = join(home, 'user');
+  const userHome = scratchUserHome(t);
   const chromeDir = join(chromeDataUnder(userHome), 'Default');
   mkdirSync(chromeDir, {recursive: true});
   writeFileSync(join(home, 'profiles.json'), JSON.stringify({version: 1, profiles: {personal: {chromeProfileDirectory: 'Default', extensionInstanceId: 'inst-a', boundAt: '2026-10-03T00:00:00.000Z', route: 'cua'}, school: {chromeProfileDirectory: 'Profile 6'}}}));
@@ -179,7 +180,7 @@ test('with CUA_SHIM_SURFACES=computer,browser, serve registers both wrappers, co
 
 test('profiles_list and cua profiles list check a bound profile against the live backends, one tab-free listing launch per request', {skip: !supported || NO_SCOPED_LAUNCH}, async t => {
   const home = fakeInstalledHome(t);
-  const userHome = join(home, 'user');
+  const userHome = scratchUserHome(t);
   const extension = join(chromeDataUnder(userHome), 'Default', 'Extensions', CUA_EXTENSION_ID, '1.0_0');
   mkdirSync(extension, {recursive: true});
   writeFileSync(join(extension, 'manifest.json'), '{}');
@@ -238,7 +239,7 @@ test('profiles_list and cua profiles list check a bound profile against the live
 // unique one binds automatically and marks the backend that decided it.
 test('cua profiles bind shows each candidate\'s label, binds a unique name automatically and nothing ambiguous', {skip: !supported || NO_SCOPED_LAUNCH}, async t => {
   const home = fakeInstalledHome(t);
-  const userHome = join(home, 'user');
+  const userHome = scratchUserHome(t);
   const userData = chromeDataUnder(userHome);
   const extension = join(userData, 'Default', 'Extensions', CUA_EXTENSION_ID, '1.0_0');
   mkdirSync(extension, {recursive: true});
@@ -300,7 +301,7 @@ test('cua profiles bind shows each candidate\'s profile directory, binds by dire
   const home = fakeInstalledHome(t);
   const pin = selectPin(loadPins());
   symlinkSync(join(CLASSIC_LEVEL_MODULES, 'classic-level'), join(home, 'runtimes', pin.release, pin.layout.moduleDir, 'classic-level'));
-  const userHome = join(home, 'user');
+  const userHome = scratchUserHome(t);
   const userData = chromeDataUnder(userHome);
   for (const [dir, id] of [['Default', 'inst-a'], ['Profile 12', 'inst-b']]) {
     const extension = join(userData, dir, 'Extensions', CUA_EXTENSION_ID, '1.0_0');
@@ -350,7 +351,7 @@ const UNCONFIRMED_TEARDOWN = `--import=data:text/javascript,${encodeURIComponent
 
 test('cua profiles list still shows the profiles but fails when its listing runtime was not confirmed stopped; an empty listing does not fail', {skip: !supported || NO_SCOPED_LAUNCH}, async t => {
   const home = fakeInstalledHome(t);
-  const userHome = join(home, 'user');
+  const userHome = scratchUserHome(t);
   const extension = join(chromeDataUnder(userHome), 'Default', 'Extensions', CUA_EXTENSION_ID, '1.0_0');
   mkdirSync(extension, {recursive: true});
   writeFileSync(join(extension, 'manifest.json'), '{}');
@@ -400,48 +401,27 @@ test('with CUA_SHIM_SANDBOX=default serve sends no sandbox state; an invalid val
   assert.equal(existsSync(join(other, 'state', 'codex', 'fake-upstream.jsonl')), false);
 });
 
-// Issue #36: under the scoped default a CUA_HOME below $TMPDIR puts the runtime's trusted modules inside a write root,
-// and node_repl would refuse every kernel. serve and the listing launch refuse first, naming the conflict; disabled
-// has no write roots to conflict with.
-test('under the scoped default a CUA_HOME below $TMPDIR fails serve and the listing classified, naming the conflict; disabled serves it', {skip: !supported}, async t => {
+// Issue #36 put the runtime's trusted modules inside a write root when CUA_HOME lay below the caller's $TMPDIR, and
+// node_repl then refused every kernel. Since #115 every launch's TMPDIR is its own session temp under $CUA_HOME/run, so
+// the caller's TMPDIR is no write root and such a home serves under the scoped default.
+test('under the scoped default a CUA_HOME below the caller\'s $TMPDIR serves: the launch\'s TMPDIR is its own session temp', {skip: !supported}, async t => {
   const home = fakeInstalledHome(t, {inTmpdir: true});
-  // The conflict is with $TMPDIR as the launch sees it, so it is set here: the home's own parent. A caller without a
-  // TMPDIR (stock Ubuntu exports none) would otherwise give the launch no temp root and nothing to conflict with.
   const tmpdir = dirname(home);
   // On Linux scoped is the default only without the computer surface (src/runtime/sandbox.mjs defaultSandboxMode).
   const server = launch(join(REPO, 'bin', 'cua.mjs'), home, ['serve'], {TMPDIR: tmpdir, ...(process.platform === 'linux' ? {CUA_SHIM_SURFACES: 'browser'} : {})});
+  await server.request('initialize', {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'e2e', version: '0'}});
+  await server.call('js', {code: 'hello'});
   server.child.stdin.end();
-  const {code, stderr} = await server.exit;
-  assert.equal(code, 1);
-  assert.match(stderr, /CUA_SHIM_SANDBOX=scoped lets JavaScript cells write \$TMPDIR \(.*\), which contains the trusted code path .*runtimes.*\[sandbox_conflict\]/);
-  assert.match(stderr, /outside \$TMPDIR.*CUA_SHIM_SANDBOX=disabled/);
-  assert.deepEqual(server.frames, []);
-  assert.equal(existsSync(join(home, 'state', 'codex', 'fake-upstream.jsonl')), false, 'nothing was launched');
-  assert.deepEqual(readdirSync(join(home, 'run')), []);
-
-  const userHome = join(home, 'user');
-  const extension = join(chromeDataUnder(userHome), 'Default', 'Extensions', CUA_EXTENSION_ID, '1.0_0');
-  mkdirSync(extension, {recursive: true});
-  writeFileSync(join(extension, 'manifest.json'), '{}');
-  writeFileSync(join(home, 'profiles.json'), JSON.stringify({version: 1, profiles: {personal: {chromeProfileDirectory: 'Default', extensionInstanceId: 'inst-a', boundAt: '2026-10-03T00:00:00.000Z', route: 'cua'}}}));
-  const list = args => spawnSync(process.execPath, [join(REPO, 'bin', 'cua.mjs'), 'profiles', 'list', ...args], {env: withoutConfigHomes({...process.env, CUA_HOME: home, HOME: userHome, TMPDIR: tmpdir}), encoding: 'utf8', timeout: 30_000});
-  const json = list(['--json']);
-  assert.equal(JSON.parse(json.stdout).listingError, 'sandbox_conflict', json.stderr);
-  assert.match(list([]).stderr, /sandbox_conflict: CUA_SHIM_SANDBOX=scoped lets JavaScript cells write \$TMPDIR/);
-  assert.equal(existsSync(join(home, 'state', 'codex', 'fake-upstream.jsonl')), false, 'no listing launch was made');
-
-  const disabled = launch(join(REPO, 'bin', 'cua.mjs'), home, ['serve'], {CUA_SHIM_SANDBOX: 'disabled', TMPDIR: tmpdir});
-  await disabled.request('initialize', {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'e2e', version: '0'}});
-  await disabled.call('js', {code: 'hello'});
-  disabled.child.stdin.end();
-  assert.equal((await disabled.exit).code, 0);
+  assert.equal((await server.exit).code, 0);
+  const [{start}] = records(home);
+  assert.equal(start.env.TMPDIR, join(start.cwd, 'tmp'), 'the session\'s own temp, never the caller\'s');
   const [js] = records(home).filter(r => r.received?.method === 'tools/call').map(r => r.received.params);
-  assert.deepEqual(js._meta['codex/sandbox-state-meta'].permissionProfile, {type: 'disabled'});
+  assert.equal(js._meta['codex/sandbox-state-meta'].permissionProfile.type, 'managed', 'scoped');
 });
 
 test('cua profiles list and bind reject an invalid CUA_SHIM_SANDBOX classified, before any listing launch', {skip: !supported}, async t => {
   const home = fakeInstalledHome(t);
-  const userHome = join(home, 'user');
+  const userHome = scratchUserHome(t);
   const extension = join(chromeDataUnder(userHome), 'Default', 'Extensions', CUA_EXTENSION_ID, '1.0_0');
   mkdirSync(extension, {recursive: true});
   writeFileSync(join(extension, 'manifest.json'), '{}');

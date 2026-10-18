@@ -5,9 +5,9 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {existsSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync} from 'node:fs';
-import {spawn, execFileSync as execFileSyncReal} from 'node:child_process';
+import {spawn, spawnSync, execFileSync as execFileSyncReal} from 'node:child_process';
 import {tmpdir} from 'node:os';
-import {join} from 'node:path';
+import {dirname, join} from 'node:path';
 import {prepareNative, cleanupNative, admitServe, ADMISSION, homeUsers, hasRunTmpdir, executableOf} from '../../scripts/native-baseline/prepare.mjs';
 import {nativeEnvironment} from '../../scripts/native-baseline/remote.mjs';
 
@@ -159,6 +159,19 @@ test('a helper that will not stop keeps the state stashed and the admission held
   assert.equal(existsSync(join(prepared.scratch, 'stash', 'state')), true);
 });
 
+// A copy of this Node at `executable` that runs there. A Node built against a shared libnode (Homebrew's: @rpath/
+// libnode.N.dylib, searched at @loader_path/../lib) cannot load it from a copy elsewhere, so that library is copied
+// beside the copy, where the copy looks for it. Whatever Node runs the suite (the official build, Homebrew's, a
+// runtime's), the stand-in starts or the test says why it cannot.
+function standalone(executable, libDir) {
+  const runs = () => spawnSync(executable, ['-e', '0'], {stdio: 'ignore', env: {PATH: '/usr/bin:/bin'}}).status === 0;
+  if (runs()) return;
+  const origin = join(dirname(realpathSync(process.execPath)), '..', 'lib');
+  mkdirSync(libDir, {recursive: true});
+  for (const name of readdirSync(origin).filter(n => /^libnode\.\d+\.dylib$/.test(n))) copyFileSync(join(origin, name), join(libDir, name));
+  assert.ok(runs(), `a copy of ${process.execPath} does not start at ${executable}, even with its libnode beside it`);
+}
+
 // The attribution itself, on real processes: a stand-in "helper" executable (a link to this Node at a bundle path), a
 // decoy that only names that path in its argv, and the same executable carrying another run's TMPDIR. Each carries a
 // secret-shaped variable that must never leave the ownership check.
@@ -169,6 +182,7 @@ test('ownership is the exact executable plus the run\'s TMPDIR; argv mentions an
   const executable = join(dir, 'Fake Helper.app', 'Contents', 'MacOS', 'Fake');
   mkdirSync(join(dir, 'Fake Helper.app', 'Contents', 'MacOS'), {recursive: true});
   copyFileSync(process.execPath, executable);   // a copy: lsof names a hard link by its first path
+  standalone(executable, join(dir, 'Fake Helper.app', 'Contents', 'lib'));
   const runTmp = join(dir, 'run-A', 'tmp'), otherTmp = join(dir, 'run-B', 'tmp'), sentinel = 'sentinel-6f1c2d';
   const start = (file, args, tmp) => { const child = spawn(file, args, {stdio: 'ignore', env: {PATH: '/usr/bin:/bin', TMPDIR: tmp, PLAYWRIGHT_MCP_EXTENSION_TOKEN: sentinel}}); children.push(child); return child.pid; };
   const keep = ['-e', 'setTimeout(() => {}, 30000)'];
@@ -191,6 +205,14 @@ test('ownership is the exact executable plus the run\'s TMPDIR; argv mentions an
     assert.equal(`${error.message} ${error.stack} ${JSON.stringify(error)} ${error.cause ?? ''}`.includes(sentinel), false);
     assert.match(error.message, /^could not read TMPDIR of process \d+$/);
   }
+  // Since #115 M1 a helper carries its session's own TMPDIR, <home>/run/<session>/tmp: one of this home's is the run's,
+  // anything else under run/ or another home's is not.
+  const session = start(executable, keep, join(dir, 'run', '6f1c2d3e-0000-4000-8000-000000000001', 'tmp'));
+  const deeper = start(executable, keep, join(dir, 'run', 'x', 'tmp', 'deeper'));
+  const elsewhere = start(executable, keep, join(dir, 'other-home', 'run', 's', 'tmp'));
+  await new Promise(r => setTimeout(r, 400));
+  assert.deepEqual(homeUsers(dir, {executable, tmpdir: runTmp}, {candidates: () => [session, deeper, elsewhere]}),
+    [{pid: session, helper: true, owned: true}, {pid: deeper, helper: true, owned: false}, {pid: elsewhere, helper: true, owned: false}]);
   // A failed read in homeUsers marks the helper unreadable, never owned, and carries nothing from the environment.
   const unreadable = homeUsers(dir, {executable, tmpdir: runTmp}, {candidates: () => [owned], exec: (cmd, args, options) => cmd === '/bin/ps' ? leaky(cmd, args) : execFileSyncReal(cmd, args, options)});
   assert.deepEqual(unreadable, [{pid: owned, helper: true, owned: false, unreadable: true}]);

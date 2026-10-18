@@ -19,12 +19,12 @@
 // initialize's serverInfo as it came and the cell result's `cua/replHost` marker (null when it carried none), nothing
 // of the inventory itself.
 import {randomUUID} from 'node:crypto';
-import {chmodSync, mkdirSync, rmSync} from 'node:fs';
+import {rmSync} from 'node:fs';
 import {join} from 'node:path';
 import {CuaError, fail} from '../runtime/errors.mjs';
 import {REPL_HOST_META_KEY} from '../repl-host/identity.mjs';
 import {isMawsInstance} from '../chrome/extension.mjs';
-import {buildLaunch, BROWSER_SERVICE} from '../runtime/launch.mjs';
+import {buildLaunch, createLaunchDirs, BROWSER_SERVICE} from '../runtime/launch.mjs';
 import {claimRunSession} from '../runtime/run-dir.mjs';
 import {spawnUpstream} from '../mcp/upstream.mjs';
 import {assertSandboxConfines, assertSandboxFits, sandboxModeFrom, sandboxState as sandboxStateFor, withSandbox} from '../runtime/sandbox.mjs';
@@ -144,17 +144,15 @@ export async function listLiveBackends({home, runtime, ambient = process.env, li
   const claim = claimRunSession(home, sessionId);
   let launch;
   try {
-    launch = buildLaunch({runtime, home, sessionId, ambient, surfaces: ['browser'], services: {browser: BROWSER_SERVICE}, secretsUnavailable: 'secrets_disabled', resolveOwnNode});
+    launch = buildLaunch({runtime, home, sessionId, ambient, surfaces: ['browser'], services: {browser: BROWSER_SERVICE}, secretsUnavailable: 'secrets_disabled', resolveOwnNode, sandbox});
     assertSandboxFits(sandbox, launch);
     await assertSandboxConfines(sandbox, {platform: runtime.manifest.platform, probe: probeUserns});
     launch = prepareLaunch(launch);
-    mkdirSync(launch.env.CODEX_HOME, {recursive: true, mode: 0o700});
-    mkdirSync(launch.cwd, {mode: 0o700});
-    chmodSync(launch.cwd, 0o700);
+    createLaunchDirs(launch);
     const result = await listBackendsWith(spawnUpstream(launch, {stderr: 'ignore'}), {limits, tabCounts, sandboxState: sandboxStateFor(sandbox, launch.cwd)});
     return {backends: result.backends, hostAttestation: result.hostAttestation, elicitationsDeclined: result.elicitationsDeclined, teardown: result.teardown};
   } finally {
     claim.release();
-    if (launch) rmSync(join(launch.env.CODEX_HOME, 'computer-use', 'sessions', `${sessionId}.toml`), {force: true});
+    if (launch?.env.CODEX_HOME) rmSync(join(launch.env.CODEX_HOME, 'computer-use', 'sessions', `${sessionId}.toml`), {force: true});
   }
 }

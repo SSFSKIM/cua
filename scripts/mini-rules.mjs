@@ -4,22 +4,30 @@
 // controller:
 //
 //   node scripts/mini-rules.mjs <item>...      items: vendor, browser, tz, tz-real-home, accept (in the order given)
+//   node scripts/mini-rules.mjs gated -- <command> [args...]
+//     any other mini run (M1 on): the gate below, then the command on the controller (which reaches the mini itself),
+//     then the frontmost-application check; exits with the command's status, or 4 when a rule stops it.
 //
 // Before each item, the gate: two readings about 45 s apart, each with every observation present (a request that fails
 // or an answer that does not parse stops the sequence; nothing missing is ever read as idle):
-//   - the frontmost application on the mini is Terminal; anything else (a dialog above all) stops at once, no retry;
+//   - the frontmost application: a system prompt (UserNotificationCenter, SecurityAgent, CoreServicesUIAgent) stops at
+//     once, no retry; while the runner is busy any other app in front is the CI job's window (contention, wait); once
+//     the runner reads idle, Terminal must be in front on both readings, and anything else stops;
 //   - the mac lane's runner `ci-kit-mac-mini` (SSFSKIM/MAWS) is not busy, no Runner.Worker runs on the mini, no MAWS job
-//     waits for a macOS runner, and the mini's 1-minute load is under 2; any of these is contention, which waits a
+//     waits for a macOS runner, and the mini's 1-minute load is under LOAD_LIMIT (5; it was 2 until 2026-10-17 14:10Z,
+//     a bar set for task 1's cargo builds at load 16); any of these is contention, which waits a
 //     minute and looks again (at most `maxWaits` times, then stops).
 // After each item, and before stopping for any reason, the frontmost application is read again; a non-Terminal one stops.
 // A failed item stops the sequence. A run directory is skipped only when it holds a complete run of this sitting whose
 // preparation was cleaned up; anything else already there stops. Evidence is archived only from a directory the item
 // created for itself, only after the copy is verified (parsed, complete, newer than the item's start), and the remote
 // copy is removed only after that. Every check and decision is appended to the sitting log.
-import {execFileSync, spawnSync} from 'node:child_process';
+import {execFileSync, spawn, spawnSync} from 'node:child_process';
 import {appendFileSync, existsSync, mkdirSync, readFileSync, rmSync} from 'node:fs';
-import {join, resolve} from 'node:path';
+import {basename, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {heartbeatOf, removePauseFiles, sshMirror} from './mini-pause.mjs';
+import {quote} from './browser-parity/topology.mjs';
 
 export const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
 export const EVIDENCE = join(ROOT, 'docs/evidence/2026-10-17-own-sandbox/m0');
@@ -32,6 +40,11 @@ const MAC_LABELS = ['macOS', 'ci-kit-mac'];
 const WAITING = ['queued', 'waiting', 'pending'];
 
 export class Stop extends Error {}
+// A reading of the CI or load side that could not be completed (a failed request, a truncated list, an unparseable
+// answer). It is never read as idle: the gate waits and reads again. The frontmost application is different: if it
+// cannot be read, nothing rules out a prompt, and the gate stops.
+export class Unread extends Stop {}
+export const LOAD_LIMIT = 5;
 const missing = (what, detail) => new Stop(`missing observation: ${what}${detail ? ` (${detail})` : ''}`);
 
 // Runs `cmd args` and returns its stdout; throws on a nonzero exit (the live boundary; tests pass a double).
@@ -47,7 +60,30 @@ export function frontmost({exec}) {
   return id;
 }
 
-export const WORKER_PROBE = 'p=$(pgrep -f actions-runner-maws/bin/Runner.Worker); s=$?; echo "pgrep_status=$s"; echo "workers=$(printf "%s" "$p" | grep -c .)"; uptime';
+// The mac lane runner's job process. A worker is a process whose executable is this file: pgrep -x matches the process
+// name, and its command must start with this path. Matching argv instead (pgrep -f) counted any concurrent reader's own
+// probe shell, whose argv names the path. Each worker is reported with its command (args only), its parent's pid and
+// command and its elapsed time; never its environment (no ps -E).
+export const RUNNER_WORKER = '/Users/new/actions-runner-maws/bin/Runner.Worker';
+// It runs as `sh -c '<script>'`: ssh hands it to the remote account's login shell, and zsh would not split $p by words.
+export const workerProbe = (executable = RUNNER_WORKER) => {
+  const exe = quote(executable);
+  return `sh -c ${quote(`p=$(pgrep -x ${quote(basename(executable))}); s=$?; echo "pgrep_status=$s"; n=0
+for pid in $p; do c=$(ps -o command= -p "$pid") || continue
+  case "$c" in ${exe}|${exe}' '*) n=$((n+1)); pp=$(ps -o ppid= -p "$pid" | tr -d ' ')
+    echo "worker_pid=$pid"; echo "worker_etime=$(ps -o etime= -p "$pid" | tr -d ' ')"; echo "worker_command=$c"; echo "worker_ppid=$pp"; echo "worker_parent=$(ps -o command= -p "$pp")";; esac
+done; echo "workers=$n"; uptime`)}`;
+};
+// The probe's worker lines -> [{pid, etime, command, ppid, parent}].
+function workersSeen(text) {
+  const seen = [];
+  for (const [, key, value] of text.matchAll(/^worker_(pid|etime|command|ppid|parent)=(.*)$/gm)) {
+    if (key === 'pid') seen.push({});
+    seen.at(-1)[key] = key === 'pid' || key === 'ppid' ? Number(value) : value;
+  }
+  return seen;
+}
+export const describeWorker = w => `Runner.Worker seen: pid ${w.pid} (elapsed ${w.etime}) ${w.command}; parent ${w.ppid} ${w.parent}`;
 const PAGE = 100;
 // Every record of a paginated GitHub list (`key` holds the records, `total_count` their number): pages are read until the
 // total is reached; a page that is short of it, a missing total or a total that changes is a failed observation.
@@ -69,6 +105,9 @@ function pages(exec, what, path, key) {
 // One reading of everything the gate needs; throws Stop when any part is missing.
 export function observe({exec}) {
   const front = frontmost({exec});
+  try { return {front, ...observeRunner({exec})}; } catch (error) { if (error instanceof Stop) throw new Unread(error.message); throw error; }
+}
+export function observeRunner({exec}) {
   const busy = call(exec, 'runner state', 'gh', ['api', `${REPO}/runners`, '--jq', '[.runners[] | select(.name == "ci-kit-mac-mini") | .busy] | first']).trim();
   if (busy !== 'true' && busy !== 'false') throw missing('runner state', `got ${JSON.stringify(busy)}`);
   let queued = 0;
@@ -78,21 +117,27 @@ export function observe({exec}) {
         .filter(job => WAITING.includes(job.status) && job.labels?.some(label => MAC_LABELS.includes(label))).length;
     }
   }
-  // pgrep's own status is kept: 0 found, 1 none; anything else is a failed observation, never zero workers.
-  const remote = call(exec, 'mini workers and load', 'ssh', ['-o', 'BatchMode=yes', 'mini', WORKER_PROBE]);
+  // pgrep's own status is kept: 0 found (the count may then be zero: a process named Runner.Worker that is not the
+  // runner's), 1 none; anything else is a failed observation, never zero workers.
+  const remote = call(exec, 'mini workers and load', 'ssh', ['-o', 'BatchMode=yes', 'mini', workerProbe()]);
   const status = /pgrep_status=(\d+)/.exec(remote)?.[1], found = /workers=(\d+)/.exec(remote)?.[1], load = /load averages?: ([0-9.]+)/.exec(remote)?.[1];
   if (status === undefined || found === undefined) throw missing('mini workers', 'no pgrep result');
   if (status !== '0' && status !== '1') throw missing('mini workers', `pgrep exited ${status}`);
-  if ((status === '1') !== (found === '0')) throw missing('mini workers', 'pgrep status and count disagree');
-  const workers = found;
+  if (status === '1' && found !== '0') throw missing('mini workers', 'pgrep status and count disagree');
   if (load === undefined) throw missing('mini load', 'no uptime');
-  return {front, busy: busy === 'true', workers: Number(workers), queued, load: Number(load)};
+  return {busy: busy === 'true', workers: Number(found), seen: workersSeen(remote), queued, load: Number(load)};
 }
 
 // stop (never retried), contention (wait and look again) or idle.
+// The frontmost application: a system prompt (UserNotificationCenter, SecurityAgent, CoreServicesUIAgent) stops at once,
+// whatever the runner does. While the runner is busy (its busy flag or a Runner.Worker), any other non-Terminal app is
+// the CI job's own window: contention, wait. Once the runner reads idle, Terminal must be in front; anything else stops.
+export const SYSTEM_PROMPTS = ['com.apple.UserNotificationCenter', 'com.apple.SecurityAgent', 'com.apple.coreservices.uiagent'];
 export function classify(o) {
-  if (o.front !== TERMINAL) return {state: 'stop', reason: `the frontmost application is ${o.front}, not Terminal`};
-  const contention = [o.busy && 'runner busy', o.workers > 0 && `${o.workers} Runner.Worker`, o.queued > 0 && `${o.queued} queued macOS job(s)`, !(o.load < 2) && `load ${o.load}`].filter(Boolean);
+  if (SYSTEM_PROMPTS.includes(o.front)) return {state: 'stop', reason: `the frontmost application is ${o.front}, a system prompt`};
+  const runnerBusy = o.busy || o.workers > 0;
+  if (o.front !== TERMINAL && !runnerBusy) return {state: 'stop', reason: `the frontmost application is ${o.front}, not Terminal, with the runner idle`};
+  const contention = [o.front !== TERMINAL && `${o.front} in front during the CI job`, o.busy && 'runner busy', o.workers > 0 && `${o.workers} Runner.Worker`, o.queued > 0 && `${o.queued} queued macOS job(s)`, !(o.load < LOAD_LIMIT) && `load ${o.load}`].filter(Boolean);
   return contention.length ? {state: 'contention', reason: contention.join(', ')} : {state: 'idle', reason: 'idle'};
 }
 
@@ -101,7 +146,15 @@ export async function gate(what, {exec, sleep, log, maxWaits = 240, apartMs = 45
     const readings = [];
     for (const n of [0, 1]) {
       if (n) await sleep(apartMs);
-      const o = observe({exec}), c = classify(o);
+      let o;
+      try { o = observe({exec}); } catch (error) {
+        if (!(error instanceof Unread)) throw error;
+        log(`${what}: reading ${n + 1}: unread (${error.message}) -> contention`);
+        readings.push({state: 'contention'});
+        break;
+      }
+      const c = classify(o);
+      for (const w of o.seen) log(`${what}: reading ${n + 1}: ${describeWorker(w)}`);
       log(`${what}: reading ${n + 1}: front=${o.front} busy=${o.busy} workers=${o.workers} queued=${o.queued} load=${o.load} -> ${c.state}${c.state === 'idle' ? '' : ` (${c.reason})`}`);
       if (c.state === 'stop') throw new Stop(`before ${what}: ${c.reason}`);
       readings.push(c);
@@ -267,10 +320,64 @@ export async function sequence(items, ctx) {
   }
 }
 
+// `command` ([file, ...args], run on the controller) between the gate and the frontmost-application check -> its status.
+export async function gated(command, ctx) {
+  if (!command.length) throw new Error('gated needs a command: node scripts/mini-rules.mjs gated -- <command> [args...]');
+  const what = `gated ${command.join(' ')}`;
+  await gate(what, ctx);
+  const code = ctx.run(command[0], command.slice(1));
+  ctx.log(`${what}: exit ${code}`);
+  frontAfter(what, ctx);
+  return code;
+}
+
+// gated with a pause watcher beside it (a GUI-bound group, MAWS DL 58): the watcher is started, the command runs only
+// once it beats, and it gets the pause file as CUA_PAUSE_FILE (`pausePath`, the mirror's path for a group on the mini).
+// When the gated promise settles (the command done, or the gate stopped it) the watcher is stopped and awaited, and only
+// then are the pause files removed: a watcher that failed meanwhile has left a pause in place for the group to see.
+// `startWatcher()` -> {beating(), stop(), exited: Promise}.
+export async function pausedGated(command, ctx, {startWatcher, pausePath, removeFiles, beatMs = 30_000}) {
+  const watcher = startWatcher();
+  try {
+    for (const end = Date.now() + beatMs; !watcher.beating();) {
+      if (Date.now() > end) throw new Stop('the pause watcher never started beating');
+      await ctx.sleep(100);
+    }
+    return await gated(command, {...ctx, run: (cmd, args) => ctx.run(cmd, args, {CUA_PAUSE_FILE: pausePath})});
+  } finally {
+    watcher.stop();
+    await watcher.exited;
+    removeFiles();
+  }
+}
+
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const logFile = join(EVIDENCE, 'mini-rules', 'sitting-log.txt');
+  // MINI_RULES_LOG_DIR: where the sitting log and the pause files go (tests point it at a scratch directory).
+  const logDir = process.env.MINI_RULES_LOG_DIR ?? join(EVIDENCE, 'mini-rules');
+  const logFile = join(logDir, 'sitting-log.txt');
   const log = line => { const text = `${new Date().toISOString()} ${line}`; console.log(text); appendFileSync(logFile, text + '\n'); };
   const ctx = {exec: liveExec, log, evidence: EVIDENCE, now: Date.now, sleep: ms => new Promise(r => setTimeout(r, ms)),
-    run: (cmd, args) => spawnSync(cmd, args, {cwd: ROOT, stdio: 'inherit'}).status ?? 1};
-  sequence(process.argv.slice(2), ctx).then(() => { process.exitCode = 0; }, error => { console.error(error.message); process.exitCode = error instanceof Stop ? 4 : 1; });
+    run: (cmd, args, env = {}) => spawnSync(cmd, args, {cwd: ROOT, stdio: 'inherit', env: {...process.env, ...env}}).status ?? 1,
+    ...(process.env.MINI_RULES_APART_MS ? {apartMs: Number(process.env.MINI_RULES_APART_MS)} : {})};
+  const [first, ...rest] = process.argv.slice(2);
+  // gated [--pause [--mirror <path on the mini>]] -- <command>: --pause is for a GUI-bound group (MAWS DL 58). A pause
+  // watcher (scripts/mini-pause.mjs) runs beside the command, which gets the pause file as CUA_PAUSE_FILE (the mirror's
+  // path, for a group that runs on the mini) and waits at its cell boundaries; the watcher ends with it.
+  const options = [];
+  while (rest[0] === '--pause' || rest[0] === '--mirror') options.push(...(rest[0] === '--mirror' ? rest.splice(0, 2) : rest.splice(0, 1)));
+  if (rest[0] === '--') rest.shift();
+  let work;
+  if (first === 'gated' && options.includes('--pause')) {
+    const file = join(logDir, `pause-${process.pid}.json`), mirrorPath = options.includes('--mirror') ? options[options.indexOf('--mirror') + 1] : null;
+    const mirror = mirrorPath ? sshMirror(mirrorPath, {exec: liveExec}) : null;
+    const startWatcher = () => {
+      const child = spawn(process.execPath, [join(ROOT, 'scripts/mini-pause.mjs'), 'watch', '--file', file, '--log', join(logDir, 'pauses.log'), ...(mirrorPath ? ['--mirror', mirrorPath] : [])],
+        {stdio: ['ignore', 'ignore', 'inherit']});
+      log(`pause watcher ${child.pid} for gated ${rest.join(' ')}`);
+      const exited = new Promise(done => child.once('exit', done));
+      return {beating: () => existsSync(heartbeatOf(file)), stop: () => child.kill('SIGTERM'), exited};
+    };
+    work = pausedGated(rest, ctx, {startWatcher, pausePath: mirrorPath ?? file, removeFiles: () => removePauseFiles(file, {mirror})});
+  } else work = first === 'gated' ? gated(rest, ctx) : sequence(process.argv.slice(2), ctx).then(() => 0);
+  work.then(code => { process.exitCode = code; }, error => { console.error(error.message); process.exitCode = error instanceof Stop ? 4 : 1; });
 }

@@ -35,6 +35,7 @@ test('the boundary probe passes an explicit CUA_NODE to its serve-cells children
   assert.equal(child.CUA_NODE, NODE);
   assert.equal(child.CUA_PARITY_REMOTE, '1');
   assert.equal(child.SECRET_TOKEN, undefined);
+  assert.deepEqual([child.TMPDIR, child.CUA_PARITY_FIXTURE_TMPDIR], ['/tmp/b/tmp', '/tmp/b/tmp'], 'the markers\' directory reaches the launch, not only the serve');
   const preflight = boundaryPreflightEnv(ambient, {scratch, tmp: '/tmp/b/tmp', host: 'cua'});
   assert.equal(preflight.CUA_NODE, NODE);
   assert.equal(preflight.CUA_SHIM_SANDBOX, 'scoped');

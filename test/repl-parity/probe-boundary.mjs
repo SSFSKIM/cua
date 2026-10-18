@@ -1,7 +1,7 @@
 // Remote-only process/sandbox probes against the real selected host. The control files and every signalled PID belong
 // to this process's serve-cells children. Negative preflights are identified as boundary observations, not MCP output.
 import assert from 'node:assert/strict';
-import {mkdtempSync,mkdirSync,readFileSync,writeFileSync,existsSync,rmSync,chmodSync} from 'node:fs';
+import {mkdtempSync,mkdirSync,readFileSync,writeFileSync,existsSync,rmSync,chmodSync,symlinkSync} from 'node:fs';
 import {tmpdir} from 'node:os';import {join} from 'node:path';import {fileURLToPath} from 'node:url';
 import {PassThrough} from 'node:stream';import {createServer} from 'node:net';import {randomUUID} from 'node:crypto';
 import {executionFacts,assertPreparedFacts} from '../../scripts/repl-parity/provenance.mjs';
@@ -11,6 +11,7 @@ import {createNormalizer} from '../../scripts/browser-parity/normalize.mjs';
 import {prepareCapabilityHome} from '../../scripts/browser-parity/capability-home.mjs';
 import {openConnection} from '../../src/mcp/connection.mjs';
 import {resolveRuntime} from '../../src/runtime/manifest.mjs';
+import {homeLayout} from '../../src/runtime/layout.mjs';
 import {boundaryPreflightEnv,boundaryServeEnv,failingSandboxScript} from './fixture-launch.mjs';
 import boundaryScenarios from './scenarios/boundaries.mjs';
 import {ownedProcesses,killOwnedKernel,alive} from '../../scripts/repl-parity/processes.mjs';
@@ -41,7 +42,9 @@ async function close(client){
 async function negativePreflight(kind){
  const scratch=prepareCapabilityHome({source:process.env.CUA_HOME});let launched=false;
  const env=boundaryPreflightEnv(process.env,{scratch,tmp:join(dir,'tmp'),host});
- if(kind==='trusted-write-root-overlap')env.TMPDIR=resolveRuntime({home:scratch.dir}).paths.moduleDir;
+ // The scratch home's run directory resolves into its own runtime copy's modules, so the session's write roots cover a
+ // trusted code path (since #115 M1 the caller's TMPDIR is no write root, so it can no longer stage the overlap).
+ if(kind==='trusted-write-root-overlap'){const run=homeLayout(scratch.dir).run;rmSync(run,{recursive:true,force:true});symlinkSync(resolveRuntime({home:scratch.dir}).paths.moduleDir,run);}
  let code;try{
   const connection=await openConnection({home:scratch.dir,env,sessionId:randomUUID(),input:new PassThrough(),output:new PassThrough(),chrome:{profiles:[]},listBackends:async()=>[],prepareLaunch:launch=>{launched=true;return launch;},...(kind==='linux-fail-closed'?{probeUserns:async()=>({status:'fail',detail:'harness-controlled unavailable namespace'})}:{})});
   await connection.close('unexpected preflight acceptance');

@@ -4,7 +4,8 @@ import {isDeepStrictEqual} from 'node:util';
 // those positions are each service's layout, not the error. The sentence, the frames and their names still compare.
 // Only a stack frame line (`    at <anonymous>:L:C` or `    at name (<anonymous>:L:C)`) is masked.
 const anonymousPositions = message => message.replace(/^(\s+at (?:[^\n]* \()?<anonymous>):\d+:\d+(\)?)$/gm, '$1$2');
-const semantic = r => Object.fromEntries(['ok','value','error','assertion','skip','content','isError','structuredContent','meta','vendorDefect','proof'].filter(k => k in r)
+// The fields a result row compares by (exported for comparators that judge one row the same way).
+export const semantic = r => Object.fromEntries(['ok','value','error','assertion','skip','content','isError','structuredContent','meta','vendorDefect','proof'].filter(k => k in r)
   .map(k => [k, k === 'error' && typeof r.error?.message === 'string' ? {...r.error, message: anonymousPositions(r.error.message)} : r[k]]));
 const polling = name => name === 'Runtime.callFunctionOn' || name.startsWith('DOM.') || name === 'Page.getLayoutMetrics';
 // Comparison-relevant trace union from src/chrome/trace.mjs: requests and notifications, with optional CDP tokens.

@@ -4,6 +4,7 @@
 import {lstatSync, readdirSync, readlinkSync} from 'node:fs';
 import {join} from 'node:path';
 import {SANDBOX_DISABLED_STEP, SANDBOX_SCOPED_STEP} from '../probe/trusted-roots.mjs';
+import {SECRETS_OFF, STORE_UNREADABLE, failClosedSteps, refusedLaunchStep} from '../probe/fail-closed.mjs';
 
 export const STATUSES = ['PASS', 'FAIL', 'BLOCKED'];
 // A row that records an accepted consequence rather than checking a guarantee (the trusted roots a cell can write
@@ -207,7 +208,6 @@ export const tokenLike = text => TOKEN_PATTERNS.some(pattern => pattern.test(tex
 // ran is BLOCKED (requested, not executed). The trusted-root guarantee is proven under the scoped default; what an
 // explicitly requested `disabled` lets a cell write is an informational row, the accepted consequence of #20.
 const FIRST = 'first value: ';
-const failClosed = tag => [...['type_text', 'paste', 'set_value'].map(m => `${tag}: ${m} reference fails closed`), `${tag}: close`];
 export const PROBE_SECRETS_PHASES = [
   {items: [6], name: 'live: preconditions and create (generated sentinel, cua secrets set at a pty, temporary $HOME)', steps: ['preconditions', 'create']},
   {items: [6, 7], name: 'live: first substitution through store file → trusted wrapper → controlled target', steps: ['paste', 'type_text', 'set_value'].map(m => `${FIRST}${m} substitution`)},
@@ -216,7 +216,8 @@ export const PROBE_SECRETS_PHASES = [
   {items: [6], name: 'live: failure output stays value-free (induced and real vendor failures)', steps: [`${FIRST}induced substituted-command failure`, `${FIRST}cell timeout during a substituted call`, 'real vendor: failure after substitution', 'real vendor: unknown label']},
   {items: [7], name: 'live: sandbox scoped (default): trusted roots unwritable, run directory and $TMPDIR writable', steps: [SANDBOX_SCOPED_STEP]},
   {items: [7], name: 'live (informational): sandbox disabled (CUA_SHIM_SANDBOX=disabled): trusted roots a cell could write, accepted under the trust model (#20)', steps: [SANDBOX_DISABLED_STEP]},
-  {items: [6, 7], name: 'live: fail closed before any input (secrets off, store unreadable)', steps: [...failClosed('secrets off'), ...failClosed('store unreadable')]},
+  // Since #115 M1 an unreadable store refuses the confined launch itself (scripts/probe/fail-closed.mjs).
+  {items: [6, 7], name: 'live: fail closed before any input (secrets off; store unreadable: the launch is refused)', steps: [...failClosedSteps(SECRETS_OFF), refusedLaunchStep(STORE_UNREADABLE)]},
   {items: [6], name: 'live: every connection closed cleanly', steps: [`${FIRST}close`, 'replaced value: close', 'real serve: close', 'real serve (sandbox disabled): close']},
   {items: [6], name: 'live: no value in any observed channel or report', steps: ['scanner self-check', 'sentinel scan']},
   {items: [6], name: 'live: finally cleanup of the scenario-owned key and temporary homes', steps: ['cleanup']},

@@ -10,7 +10,7 @@ import {dirname, join} from 'node:path';
 import {tmpdir, userInfo} from 'node:os';
 import {createHash} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
-import {childScript, classify, codexLaunch, MARKER, main, probe, tzVerdict} from '../../scripts/sandbox-probe/tz-probe.mjs';
+import {childScript, classify, codexLaunch, cuaLaunch, MARKER, main, probe, sandboxSourceDigest, tzVerdict} from '../../scripts/sandbox-probe/tz-probe.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../../scripts/sandbox-probe/tz-probe.mjs', import.meta.url));
 const scratch = t => { const dir = mkdtempSync(join(tmpdir(), 'cua-tz-test-')); t.after(() => rmSync(dir, {recursive: true, force: true})); return dir; };
@@ -92,8 +92,34 @@ test('a probe runs fresh children under the launcher, kills a hung one at the bo
   assert.equal(result.node.path, process.execPath);
 });
 
-test('the cua launcher is a slot M1 wires to src/sandbox; until then it is refused before any child starts', async () => {
-  await assert.rejects(probe({launcher: 'cua', role: 'kernel', runs: 1, boundMs: 15_000, notificationCenter: 'deny', node: process.execPath}), /src\/sandbox.*M1/);
+test('the cua launcher is cua\'s own: the role\'s profile under sandbox-exec, in a cua-shaped session, the kernel denied the home', t => {
+  const dir = realpathSync(scratch(t));
+  const launch = role => cuaLaunch({node: '/rt/node/bin/node', script: join(dir, 'child.mjs'), tag: 'cua-tz-probe-ab12-1', cwd: dir, home: join(dir, 'home'), role, notificationCenter: 'deny'});
+  const kernel = launch('kernel'), worker = launch('worker');
+  const run = join(dir, 'cuahome', 'run', 'probe');
+  for (const l of [kernel, worker]) {
+    assert.equal(l.command, '/usr/bin/sandbox-exec');
+    assert.equal(l.cwd, run);
+    assert.deepEqual(l.args.slice(l.args.indexOf('--') + 1), ['/rt/node/bin/node', join(dir, 'child.mjs'), 'cua-tz-probe-ab12-1']);
+    assert.deepEqual(l.env, {HOME: join(dir, 'home'), PATH: '/usr/bin:/bin:/usr/sbin:/sbin', TMPDIR: join(run, 'tmp'), CODEX_SANDBOX: 'seatbelt', CODEX_SANDBOX_NETWORK_DISABLED: '1'});
+  }
+  assert.ok(kernel.args.some(a => /^-DREADABLE_ROOT_\d+_EXCLUDED_\d+=/.test(a) && a.endsWith(`=${join(dir, 'cuahome')}`)), 'the kernel is denied the cua home');
+  assert.match(worker.args[1], /\n\(allow file-read\*\)\n/, 'the worker reads everywhere');
+  assert.equal(existsSync(join(dir, 'home')), false, 'no deny target is created: the probe never writes into a HOME');
+  assert.match(kernel.profile, /kernel profile/);
+  assert.throws(() => cuaLaunch({node: '/n', script: '/s', tag: 't', cwd: dir, home: '/h', role: 'kernel', notificationCenter: 'allow'}), /M4/);
+});
+
+test('a probe under the cua launcher runs its children through sandbox-exec and records which src/sandbox build rendered them', async t => {
+  const dir = scratch(t);
+  const exec = join(dir, 'sandbox-exec');
+  writeFileSync(exec, '#!/bin/sh\nwhile [ "$#" -gt 0 ] && [ "$1" != "--" ]; do shift; done\nshift\nexec "$@"\n');
+  chmodSync(exec, 0o755);
+  const result = await probe({launcher: 'cua', role: 'kernel', runs: 1, boundMs: 15_000, notificationCenter: 'deny', node: process.execPath, targetMs: 0, sandboxExec: exec});
+  assert.deepEqual(result.counts, {completed: 1, hung: 0, launcherFailure: 0});
+  assert.deepEqual(result.launcherIdentity, {launcher: 'cua', sandboxExec: exec, source: 'src/sandbox', sha256: sandboxSourceDigest()});
+  assert.match(result.launcherIdentity.sha256, /^[0-9a-f]{64}$/);
+  await assert.rejects(probe({launcher: 'cua', role: 'kernel', runs: 1, notificationCenter: 'allow', node: process.execPath, sandboxExec: exec}), /M4/);
 });
 
 test('the CLI accepts the documented options, writes its result and refuses anything else', async t => {

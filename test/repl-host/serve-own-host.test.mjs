@@ -1,16 +1,19 @@
 // A real cua connection (src/mcp/connection.mjs) on cua's own REPL host: the proxy, its anchor-owned process group,
 // the supervisor and kernel, the scoped sandbox state the proxy stamps, end_task's turn_ended completion and the
 // connection's teardown. The installed runtime is a forged home (test/fixtures/installed-home.mjs) whose sandbox
-// launcher is the recording double; no vendor process runs. The production banner imports cua's own facade
+// launcher is the recording double (on macOS in place of sandbox-exec, elsewhere of the Codex CLI); no vendor process
+// runs. The production banner imports cua's own facade
 // (src/cua-api/bootstrap.mjs), so the chain banner -> kernel -> host -> trusted worker -> cua's browser wrapper and
 // service runs for real and the first cell carries the first-call document. Needs Node 24 or later for the kernel
 // (CUA_NODE).
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {copyFileSync, chmodSync, readFileSync} from 'node:fs';
+import {copyFileSync, chmodSync, readFileSync, realpathSync} from 'node:fs';
+import {join} from 'node:path';
 import {PassThrough} from 'node:stream';
 import {createInterface} from 'node:readline';
 import {randomUUID} from 'node:crypto';
+import {scratchUserHome} from '../fixtures/runtime-fixture.mjs';
 import {fakeInstalledHome, installedHomeSupported, NO_SCOPED_LAUNCH} from '../fixtures/installed-home.mjs';
 import {resolveRuntime} from '../../src/runtime/manifest.mjs';
 import {openConnection} from '../../src/mcp/connection.mjs';
@@ -26,14 +29,18 @@ const skip = noNode || (!installedHomeSupported && 'no checked-in pin for this h
 test('an explicitly selected own host answers a real connection: handshake, cells, reset, end_task and an owned teardown', {skip}, async t => {
   const home = fakeInstalledHome(t);
   const runtime = resolveRuntime({home});
-  copyFileSync(sandboxDouble(home), runtime.paths.codexCli);
+  const records = join(home, 'double');
+  copyFileSync(sandboxDouble(home, {records}), runtime.paths.codexCli);
   chmodSync(runtime.paths.codexCli, 0o755);
-  const env = {PATH: '/usr/bin:/bin', HOME: home, TMPDIR: process.env.TMPDIR, CUA_REPL_HOST: 'cua', CUA_NODE: node,
+  const execDouble = sandboxDouble(home, {records, exec: true});
+  // cua's own sandbox (macOS) runs sandbox-exec, which the double stands in for: the launch record's one seam.
+  const prepareLaunch = launch => (launch.env.CUA_REPL_SANDBOX_EXEC ? {...launch, env: {...launch.env, CUA_REPL_SANDBOX_EXEC: execDouble}} : launch);
+  const env = {PATH: '/usr/bin:/bin', HOME: scratchUserHome(t), TMPDIR: process.env.TMPDIR, CUA_REPL_HOST: 'cua', CUA_NODE: node,
     CUA_SHIM_SURFACES: 'browser', CUA_SHIM_SECRETS: 'off', CUA_RUNTIME_IDLE_MS: '0'};
   const input = new PassThrough(), output = new PassThrough();
   const pending = new Map();
   createInterface({input: output}).on('line', line => { const msg = JSON.parse(line); pending.get(msg.id)?.(msg); });
-  const connection = await openConnection({home, env, sessionId: randomUUID(), input, output, diagnostics: () => {}, chrome: {profiles: []}, listBackends: async () => ({backends: []})});
+  const connection = await openConnection({home, env, sessionId: randomUUID(), input, output, diagnostics: () => {}, chrome: {profiles: []}, listBackends: async () => ({backends: []}), prepareLaunch});
   t.after(() => connection.close('test end'));
   let id = 0;
   const request = (method, params) => new Promise(resolve => { const n = ++id; pending.set(n, resolve); input.write(`${JSON.stringify({jsonrpc: '2.0', id: n, method, params})}\n`); });
@@ -59,10 +66,18 @@ test('an explicitly selected own host answers a real connection: handshake, cell
   assert.deepEqual(JSON.parse((await call('js', {code: 'nodeRepl.write(JSON.stringify([Object.keys(cua).sort(), typeof agent.browsers.list, await cua.listBrowsers({emit: false})]))'})).content[0].text),
     [['browsers', 'createBrowserTab', 'getBrowser', 'getState', 'getTab', 'initialize', 'listBrowsers', 'listTabs', 'rewriteDocumentation'], 'function', []],
     'the owned facade, set up through the trusted worker and cua\'s browser service (no backends here)');
-  const [launch, workerLaunch, ...more] = launches(homeLayout(home).codexHome);
+  const [launch, workerLaunch, ...more] = launches(records);
   assert.equal(more.length, 0, 'one kernel and one trusted worker');
-  for (const child of [launch, workerLaunch])
-    assert.match(child.argv[6], /":tmpdir" = "write", ":workspace_roots" = \{"\." = "write"\}\}, network = \{enabled = false\}\}$/, 'the scoped policy the proxy sent, for both children');
+  const run = join(homeLayout(realpathSync(home)).run);
+  for (const child of [launch, workerLaunch]) {
+    if (process.platform === 'darwin') assert.ok(child.argv.some(a => a.startsWith('-DWRITABLE_ROOT_1=') && a.startsWith(`-DWRITABLE_ROOT_1=${run}/`)), 'the scoped policy the proxy sent, for both children: the run directory writable');
+    else assert.match(child.argv[6], /":tmpdir" = "write", ":workspace_roots" = \{"\." = "write"\}\}, network = \{enabled = false\}\}$/, 'the scoped policy the proxy sent, for both children');
+  }
+  if (process.platform === 'darwin') {
+    const excluded = argv => argv.some(a => /^-DREADABLE_ROOT_\d+_EXCLUDED_\d+=/.test(a) && a.endsWith(`=${realpathSync(home)}`));
+    assert.ok(excluded(launch.argv), 'the kernel is denied the cua home');
+    assert.ok(!excluded(workerLaunch.argv), 'the worker is not');
+  }
   assert.match(workerLaunch.argv.at(-2), /src\/repl-host\/trusted-worker\.mjs$/);
   assert.equal((await call('js_reset')).content[0].text, 'js kernel reset');
   assert.deepEqual((await call('js', {code: 'nodeRepl.write(typeof kept)'})).content.map(item => item.text), [`${doc('core.md')}\n${doc('confirmations.md')}`, 'undefined'],

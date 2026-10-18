@@ -3,6 +3,7 @@
 // order, or none), which the selection must not depend on.
 import {execFileSync,spawnSync} from 'node:child_process';
 import {mkdtempSync,mkdirSync,realpathSync,writeFileSync,readFileSync,rmSync,symlinkSync,utimesSync,readdirSync,renameSync} from 'node:fs';
+import {removeScratchHomes,userHomeBeside} from '../harness-home.mjs';
 import {join,dirname,basename} from 'node:path';
 import {homedir} from 'node:os';
 import {pathToFileURL} from 'node:url';
@@ -76,7 +77,7 @@ export async function runSelection({prepared,node22}){
  assertPreparedFacts(prepared,executionFacts({source:prepared.home}));
  if(!/^v22\./.test(execFileSync(node22,['--version'],{encoding:'utf8'}).trim()))throw new Error('--node22 must name a real Node 22 executable');
  const parent=join(homedir(),'.local','share','cua-parity-selection');mkdirSync(parent,{recursive:true,mode:0o700});
- const home=realpathSync(mkdtempSync(join(parent,'m5-'))),userHome=join(home,'home'),nodeBin=join(home,'node22-bin');
+ const home=realpathSync(mkdtempSync(join(parent,'m5-'))),userHome=userHomeBeside(home),nodeBin=join(home,'node22-bin');
  const result={schema:1,commit:prepared.commit,platform:process.platform,load:execFileSync('uptime',[],{encoding:'utf8'}).trim(),complete:false,rows:[]};
  try{
   mkdirSync(userHome,{mode:0o700});mkdirSync(nodeBin,{mode:0o700});symlinkSync(node22,join(nodeBin,'node'));
@@ -128,7 +129,7 @@ export async function runSelection({prepared,node22}){
   };
   await evaluateSelection({cases,evaluateRow,checks,failures:result.failures,around:(row,run)=>row.managedNode?run():withManagedNodeUnavailable(home,run)});
   result.complete=true;
- }catch(error){result.error=error.message;}finally{rmSync(home,{recursive:true,force:true});}
+ }catch(error){result.error=error.message;}finally{removeScratchHomes(home);}
  return result;
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){if(process.env.CUA_PARITY_REMOTE!=='1')throw new Error('Selection live lane is remote-only');console.log(JSON.stringify(await runSelection(JSON.parse(process.argv[2]))));}

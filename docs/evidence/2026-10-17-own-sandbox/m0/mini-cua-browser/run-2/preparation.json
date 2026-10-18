@@ -1,0 +1,14 @@
+{
+  "device": "mini",
+  "home": "/Users/new/.local/share/cua-native-baseline/run-OVziAU",
+  "userHome": "/Users/new/.local/share/cua-native-baseline/run-OVziAU/home",
+  "token": "8669e58c-cc61-476e-8c6e-9f325d8d5e9f",
+  "xSession": {},
+  "tmpdir": "/Users/new/.local/share/cua-native-baseline/run-OVziAU/harness-tmp",
+  "nodeMode": "managed",
+  "nodeOverride": null,
+  "ownNode": {
+    "path": "/Users/new/.local/share/cua-native-baseline/run-OVziAU/node/24.22.0/bin/node",
+    "version": "v24.22.0"
+  }
+}

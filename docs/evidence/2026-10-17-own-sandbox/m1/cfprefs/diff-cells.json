@@ -1,0 +1,98 @@
+{
+  "ok": false,
+  "differences": [
+    {
+      "case": "cells/lifecycle/child-exit-settles",
+      "cell": "interrupted",
+      "kind": "semantic",
+      "a": {
+        "ok": true,
+        "content": [
+          {
+            "type": "text",
+            "text": "node_repl kernel exited unexpectedly\n\nnode_repl diagnostics: {\"kernel_pid\":\"<process:1>\",\"kernel_status\":\"exited(code=137)\",\"kernel_stderr_tail\":\"(node:<process:2>) ExperimentalWarning: VM Modules is an experimental feature and might change at any time | (Use `node --trace-warnings ...` to show where the warning was created)\",\"reason\":\"stdout_eof\",\"stream_error\":null}"
+          }
+        ],
+        "isError": true,
+        "meta": {
+          "cua/replHost": {
+            "host": "cua",
+            "version": "0.5.0"
+          },
+          "cua/taskId": "<task:1>"
+        }
+      },
+      "b": {
+        "ok": true,
+        "content": [
+          {
+            "type": "text",
+            "text": "node_repl kernel exited unexpectedly\n\nnode_repl diagnostics: {\"kernel_pid\":\"<process:1>\",\"kernel_status\":\"exited(signal=9)\",\"kernel_stderr_tail\":\"(node:<process:1>) ExperimentalWarning: VM Modules is an experimental feature and might change at any time | (Use `node --trace-warnings ...` to show where the warning was created)\",\"reason\":\"stdout_eof\",\"stream_error\":null}"
+          }
+        ],
+        "isError": true,
+        "meta": {
+          "cua/replHost": {
+            "host": "cua",
+            "version": "0.5.0"
+          },
+          "cua/taskId": "<task:1>"
+        }
+      }
+    },
+    {
+      "case": "cells/budget/suspend-resume",
+      "cell": "warm",
+      "kind": "semantic",
+      "a": {
+        "ok": true,
+        "content": [
+          {
+            "type": "text",
+            "text": "cua: the runtime was stopped after 15 min without a tool call and has restarted for this call. Its REPL state is gone (variables, app handles, browser tabs and anything bound to them): rebind what you need from the API document below."
+          },
+          {
+            "type": "text",
+            "text": "{\"meta\":null,\"value\":\"warm\"}"
+          }
+        ],
+        "isError": false,
+        "meta": {
+          "cua/replHost": {
+            "host": "cua",
+            "version": "0.5.0"
+          },
+          "cua/taskId": "<task:1>"
+        }
+      },
+      "b": {
+        "ok": true,
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"meta\":null,\"value\":\"warm\"}"
+          }
+        ],
+        "isError": false,
+        "meta": {
+          "cua/replHost": {
+            "host": "cua",
+            "version": "0.5.0"
+          },
+          "cua/taskId": "<task:1>"
+        }
+      }
+    }
+  ],
+  "expected": [],
+  "cases": 0,
+  "cells": 219,
+  "recordedCases": 0,
+  "vendorDefects": [],
+  "pendingCells": [],
+  "pendingObligations": [],
+  "pendingUnexpectedPasses": [],
+  "provisionalCells": [],
+  "allAssertionsPassed": false,
+  "doubleCases": 0
+}

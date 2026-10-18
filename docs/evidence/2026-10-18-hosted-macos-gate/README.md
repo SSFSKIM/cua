@@ -204,7 +204,8 @@ This list is also in `scripts/mini-rules.mjs`'s header and in `CLAUDE.md`'s work
 ## The browser gates: `sandbox-denials` and `parity-browser`
 
 Two more items left the mini, first proven by a spike (branch `spike/159-parity`, commits `bd34cb8..045e040`) and now
-two gates in `.github/ci-kit.yml`, lane `hosted-macos`, on pull requests, ci refs and dispatch. They are separate gates
+two gates in `.github/ci-kit.yml`, lane `hosted-macos`, on ci refs and dispatch, and `sandbox-denials` on pull requests
+too (`parity-browser` not yet, below). They are separate gates
 so they run on two runners at once. Both run `scripts/repl-parity/hosted/hosted.sh`, which refuses to run anywhere but
 a GitHub-hosted macOS runner (`RUNNER_ENVIRONMENT=github-hosted`): it edits `~/.ssh`, starts an sshd and registers a
 native host under the real `HOME`, which is acceptable only on a throwaway machine.
@@ -225,7 +226,11 @@ native host under the real `HOME`, which is acceptable only on a throwaway machi
   ed01b17 the wait ends at the first live backend, and all 8 jobs at ed01b17 then bound through the fallback.
 - **The runner as its own parity device.** A user-mode sshd on loopback port 2222, reached as the ssh alias
   `hosted-macos`, declared in `scripts/repl-parity/devices.mjs` (darwin). The device's `node` must be the job's.
-  `repl-parity prepare --device hosted-macos --profile harness`, and `cleanup-prepared` at the end.
+  `repl-parity prepare --device hosted-macos --profile harness`, and `cleanup-prepared` at the end. Prepare checks the
+  tested commit out in the device's parity clone (`$HOME/Developer/GitHub/cua-parity`), which it would clone from
+  GitHub and refresh with a plain `git fetch origin`; a pull request's merge commit is on no GitHub ref, so neither
+  would bring it. The step therefore makes that clone first from the job's own checkout, fetches the job's `HEAD` into
+  it and points its `origin` back at GitHub.
 
 **`sandbox-denials`** (the cfprefs check; timeout 60 minutes): cua's own host runs the `cells` (150 cases) and
 `services` (41 cases) suites under `sudo log stream --style ndjson --predicate 'sender == "Sandbox"'`. It passes when:
@@ -238,7 +243,13 @@ native host under the real `HOME`, which is acceptable only on a throwaway machi
   the declared set is #115 M1's accepted after side (`scripts/repl-parity/hosted/denials-declared.json`, judged by
   `denials-within.mjs`);
 - the stream stayed up until the suites ended and recorded at least one Sandbox event, so the judgement is never
-  vacuous.
+  vacuous;
+- every record parses. The stream is stopped with SIGINT, on which `log` exits 0, and the file is read only once it
+  has exited (after 30 s it is killed and the step fails). `log stream` writes each record whole, so a well-behaved
+  capture has no partial line: stopped by SIGTERM or SIGKILL mid-stream ten times on a Mac, it left none. The only other
+  lines it writes are its banner (`Filtering the log data using …`, first) and a blank line on SIGINT. A record that
+  does not parse, mid-stream or last, could be the denial that matters, so it fails the judgement and is reported only
+  as a count (`malformed records <n>`).
 
 In every green run of the spike and the gate the reduction held the same kinds, all declared, with no preferences
 denial: `file-write-create` (`<other>`, and in most runs `<run directory>`), `file-write-data <other>`, three mach lookups (`com.apple.diagnosticd`,
@@ -254,13 +265,22 @@ Each gate runs on a pull request only when a change can move what it catches (th
 
 - `sandbox-denials` (about 21 minutes): what the kernel and the worker can reach, `src/sandbox/**`, the launch code
   that builds the sandboxed launch (`src/runtime/sandbox.mjs`, `src/runtime/launch.mjs`, `src/runtime/run-dir.mjs`,
-  `src/repl-host/supervisor.mjs`) and `bin/cua-codex-compat`; the gate's own files (`scripts/repl-parity/hosted/**`)
-  and the reduction (`scripts/sandbox-probe/denials.mjs`); `.github/ci-kit.yml`.
-- `parity-browser` (about 9 minutes): the browser route (`src/chrome/**`, `src/browser-service/**`,
-  `src/services/browser.mjs`), cua's own REPL host (`src/repl-host/**`), the browser side of its API
-  (`src/cua-api/browser-api.mjs`, `browser-client.mjs`, `bind-tab.mjs`, and `documentation.mjs` with
-  `docs/cua-api/**`, which `docs-profiles` reads), `extension/**`, parity's harness and suites
-  (`scripts/repl-parity.mjs`, `scripts/repl-parity/**`, `test/repl-parity/**`); `.github/ci-kit.yml`.
+  `src/repl-host/supervisor.mjs`), the inputs of its profile (`src/runtime/layout.mjs`, the home's roots;
+  `src/secrets/store.mjs` and `src/secrets/label.mjs`, the store and projects folder it denies;
+  `src/runtime/managed-node.mjs`, the kernel's Node), the kernel child's spawn (`src/repl-host/kernel-child.mjs`), the
+  launches the supervisor brokers (`src/repl-host/launch-services.mjs`) and `bin/cua-codex-compat`; the gate's own files
+  (`scripts/repl-parity/hosted/**`) and the reduction (`scripts/sandbox-probe/denials.mjs`); `.github/ci-kit.yml`.
+- `parity-browser` (about 9 minutes; the filter selects it on a ci ref, not yet on a pull request): the browser route
+  (`src/chrome/**`, `src/browser-service/**`, `src/services/browser.mjs`), cua's own REPL host (`src/repl-host/**`),
+  the browser side of its API (`src/cua-api/browser-api.mjs`, `browser-client.mjs`, `bind-tab.mjs`, and
+  `documentation.mjs` with `docs/cua-api/**`, which `docs-profiles` reads), `extension/**`, parity's harness and suites
+  (`scripts/repl-parity.mjs`, `scripts/repl-parity/**`, `test/repl-parity/**`), and what they import: the browser
+  harness repl-parity runs on (`scripts/browser-parity/**`: its runner, comparator, topology and MCP client), the
+  browser scenarios and fixture server (`test/browser-parity/**`), the pause gate (`scripts/mini-pause.mjs`,
+  `scripts/mini-rules.mjs`, `scripts/accept/key-guard.mjs`), `scripts/harness-home.mjs`, and the server both hosts run
+  under (`test/repl-parity/serve-production.mjs`: `src/mcp/**`, `src/profiles/**`, `src/remote/**`, `src/runtime/**`,
+  `src/sandbox/**`, `src/secrets/**`, `src/services/secret-input.mjs`, `src/services/sky.mjs`); the pinned runtime
+  `cua install` fetches, the vendor host among it (`runtime/releases/**`); `.github/ci-kit.yml`.
 
 A change elsewhere that can still break the shared setup (`cua install`, `chrome register`, `profiles`) is caught by
 a dispatch or `ci-gate --gates`, not on its pull request.
@@ -273,7 +293,8 @@ a plain service, sysctl or domain name). Every command's stderr goes to the scra
 (<n> lines)` only. A run's free-text error is reported only as present. The raw `log stream` output is reduced and
 deleted as soon as it is judged, and the scratch root at exit. Neither gate uploads an artifact. Every step's failure
 fails the gate; a step that depends on a failed one is reported SKIP. `test/repl-parity/hosted.test.mjs` covers the
-judge on doubles (declared kinds pass; an undeclared kind or any preferences denial fails; an empty stream fails), the
+judge on doubles (declared kinds pass; an undeclared kind or any preferences denial fails; an empty stream fails; a
+truncated or otherwise malformed record fails, mid-stream or last, and its text is never printed), the
 readers withholding planted free text, and the refusal off a hosted runner.
 
 ### Runs (hosted macOS 26.6.2 (25G83), image macos26 20261013.0424.1, Node 24.21.0)
@@ -287,8 +308,13 @@ The spike, one job running both items in sequence:
 | [39154699163](https://github.com/SSFSKIM/cua/actions/runs/39154699163) | GREEN | 22m45s | cells 604 s, services 357 s; api 179 s vendor and 142 s cua, docs-profiles 13 s each |
 | [39154713120](https://github.com/SSFSKIM/cua/actions/runs/39154713120) | GREEN | 30m42s | concurrent with the run above |
 
-The gates: two concurrent runs of both at 1f3110d, two more after the review fixes at ed01b17, and two more of
-`parity-browser` alone at ed01b17 (the gate scripts are unchanged since ed01b17; later commits are documents only).
+The gates: two concurrent runs of both at 1f3110d, two more after the review fixes at ed01b17, two more of
+`parity-browser` alone at ed01b17, and after the second review's fixes at 4948394 (the parity clone made from the job's
+checkout, the malformed-record check, the SIGINT stop) one run of both and one of `parity-browser` on a probe commit.
+The probe (da59e03, never on a branch) differs from 4948394 only in `hosted.sh` committing an empty commit on the
+runner before prepare, so the tested `HEAD` was on no GitHub ref, as a pull request's merge commit is; prepare checked
+it out. Locally, against a scratch copy with such a commit, the harness's own clone-and-fetch failed (`unable to read
+tree`) and succeeded once the clone was made from the checkout.
 
 | Run | Commit | `sandbox-denials` | `parity-browser` |
 |---|---|---|---|
@@ -298,13 +324,16 @@ The gates: two concurrent runs of both at 1f3110d, two more after the review fix
 | [39159500411](https://github.com/SSFSKIM/cua/actions/runs/39159500411) | ed01b17 | GREEN 20m31s (cells 714 s, services 433 s) | GREEN 7m29s |
 | [39160825416](https://github.com/SSFSKIM/cua/actions/runs/39160825416) | ed01b17 | | GREEN 9m08s |
 | [39160839452](https://github.com/SSFSKIM/cua/actions/runs/39160839452) | ed01b17 | | RED 10m06s: the `waitfor` race |
+| [39163456859](https://github.com/SSFSKIM/cua/actions/runs/39163456859) | 4948394 | GREEN 22m03s (cells 781 s, services 447 s; 2,143 Sandbox events, 10 kinds, malformed records 0; `log` exited 0 on SIGINT) | GREEN 9m27s |
+| [39163467915](https://github.com/SSFSKIM/cua/actions/runs/39163467915) | da59e03 (probe) | | GREEN 8m37s (`HEAD` a runner-made commit; prepare 23 s) |
 
 Every `sandbox-denials` run passed: 9 or 10 node denial kinds, all declared, no preferences denial, from about 2,100
 to 2,200 Sandbox events per run. A run takes about 21 minutes, of which the setup is about 1.5 and the two suites 19.
 A `parity-browser` run takes 7.5 to 10 minutes: the setup about 1.5, each host's `api` suite 165 to 265 s, the
 `docs-profiles` pair under a minute.
 
-**`parity-browser` is intermittent: 3 of its 6 runs were red, each for a reason its harness does not control.**
+**`parity-browser` is intermittent: 3 of its first 6 runs were red, each for a reason its harness does not control**
+(the 2 runs since were green).
 
 - **The `waitfor` race (2 of 6).** One undeclared `semantic` difference in `api/browser-playwrightlocator/waitfor`,
   cell `locator-contract-diagnostics-no-matches`, with both hosts' assertions passing. The cell waits 100 ms for an
@@ -319,7 +348,7 @@ A `parity-browser` run takes 7.5 to 10 minutes: the setup about 1.5, each host's
   failing predicate is not in the log. The likely cause is timing: the drag cell waits only 1.5 s for the page's
   `ended` before reading it (`test/browser-parity/scenarios/input/coordinates.mjs`).
 
-`sandbox-denials` showed no intermittent result in 4 runs, and none in the spike's 3 green ones.
+`sandbox-denials` showed no intermittent result in 5 runs, and none in the spike's 3 green ones.
 
 **So `parity-browser` does not run on pull requests yet** (`on: [ci-ref, dispatch]`; ruled by this ticket's executor
 under the brief's rule that a flaky gate is worse than none, after the dispatching session had asked for both long gates

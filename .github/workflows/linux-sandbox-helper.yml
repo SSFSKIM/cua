@@ -100,8 +100,10 @@ jobs:
         run: |
           set -euo pipefail
           # Upstream's recipe sets no rustflags for Linux targets. The build paths are remapped so the binary names no
-          # runner directory (panic locations of dependencies would otherwise carry the Cargo home's absolute path).
-          export RUSTFLAGS="--remap-path-prefix=${CARGO_HOME}=/cargo --remap-path-prefix=${GITHUB_WORKSPACE}/upstream=/codex"
+          # runner directory (panic locations of dependencies and of inlined standard-library code would otherwise carry
+          # the Cargo home's and the toolchain's absolute paths).
+          sysroot="$(rustc --print sysroot)"
+          export RUSTFLAGS="--remap-path-prefix=${CARGO_HOME}=/cargo --remap-path-prefix=${GITHUB_WORKSPACE}/upstream=/codex --remap-path-prefix=${sysroot}=/rust"
           # A release tag's commit bumps the workspace version in Cargo.toml but leaves the workspace members at 0.0.0 in
           # Cargo.lock (upstream's release builds without --locked). So the build may rewrite only those members'
           # version lines; any other change to the lock (a dependency resolved anew) fails the build, which is what
@@ -171,7 +173,8 @@ jobs:
 
           cua made no modifications to the source. The build follows upstream's musl recipe
           (.github/scripts/install-musl-build-tools.sh at that commit) with one build flag added: --remap-path-prefix,
-          which replaces the build's absolute directories in the binary's embedded paths. The binaries are stripped.
+          which replaces the build's absolute directories (the Cargo home, the checkout, the Rust toolchain) in the
+          binary's embedded source paths. The binaries are stripped.
 
           Built by ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID} at ${GITHUB_SHA}.
           EOF

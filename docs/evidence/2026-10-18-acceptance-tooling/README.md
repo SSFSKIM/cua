@@ -46,8 +46,16 @@ approved helper**. The approved runtime copy, `~/cua-115/home`, was removed on 2
 new helper on disk, which raises a screen-capture confirmation only the owner can answer. The owner's resident home must
 not be touched.
 
-The witness ran the harness's own launch and cleanup path without cua, from 18:19:47Z to 18:19:54Z
-(`textedit-witness/witness.json`, PASS):
+The witness ran the harness's own launch and cleanup path without cua, twice, each inside its own CI-opt hold:
+- **At e9cdc1f**, from 18:19:47Z to 18:19:54Z (`textedit-witness/witness-e9cdc1f.json`): PASS, 10/10. This run used the
+  first rule.
+- **At c46afe6**, after review round 1, from about 18:49:45Z to 18:49:52Z (`textedit-witness/witness-c46afe6.json`):
+  PASS, 11/11. This run used the rule above. The new check is that the run's pid was captured right after `open`,
+  within the bound. The new pid was listed 16 ms after `open` returned. The running-before case's single reading took
+  26 ms and saw no candidate. Its pids were 1650 (running before, survived the harness cleanup, quit by the witness's
+  own teardown) and 1924 (started by the run, recorded and quit). Afterwards no TextEdit ran and Terminal was in front.
+
+The first run's details:
 - **Running before.** The witness started TextEdit with a plain `open -a TextEdit <file>` (pid 38131) and gave the front
   back. The harness path's document went to the same pid. The harness cleanup owned and quit nothing, 38131 survived,
   and the front went back to Terminal. Only then did the witness's own teardown quit 38131.
@@ -125,6 +133,17 @@ check last:
 - **accept-native `--items 1,10` at e92ec4e.** Item 1 PASS. Item 10 was BLOCKED only by the clean clone's
   package-gated skips, which led to the package entries.
 - **accept-native `--items 1,10` at 8318fe3.** Both PASS (above).
+
+## Review
+
+`doperpowers:reviewer-medium` reviewed the branch twice.
+- **Round 1** found two P1 and two P2 issues. All four were verified and fixed by a fix wave:
+  - Ownership was evaluated at cleanup over every new pid. It is now captured at launch.
+  - The run's own TextEdit could hold an owner's document. It is now quit only when confirmed alone.
+  - lstart parsing was ambiguous across DST. It is now read in UTC.
+  - Keep-warm did not reach the rebuilt connection envs (`cellsServeEnv`, `boundaryServeEnv`). It now does.
+- **Round 2** found one P2: a poll reading past the capture bound was still accepted. It is fixed with a test. One P2 in
+  a round is convergence, so there was no third round.
 
 ## Notes for whoever runs these next
 

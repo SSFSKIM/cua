@@ -66,7 +66,7 @@ import {socketHolders} from './probe/lib.mjs';
 import {fingerprints, textLeaks} from './probe/leak-scan.mjs';
 import {
   approvalObservation, diffSnapshots, doctorHealth, forbiddenPaths, inventoryCheck, missingFromPackage, PROBE_SECRETS_PHASES, probePhasesFor, rollup, scenarioVerdict,
-  snapshotTree, suiteVerdict, testReporterEnv, testSummary, personalText, researchTreeLines, MINI_LAYOUT_FILES,
+  snapshotTree, suiteVerdict, judgeSkips, skipReasons, testReporterEnv, testSummary, personalText, researchTreeLines, MINI_LAYOUT_FILES,
 } from './accept/lib.mjs';
 import {OWN_STEPS, runTextEdit, SECRET_STEPS} from './accept/textedit.mjs';
 import {createStoreHome, generatedKey, isAccountHome, removeStoreHome, seedSecret} from './accept/secret-seed.mjs';
@@ -158,7 +158,8 @@ async function suites(cwd, {label}) {
   const summary = testSummary(node.stdout);
   const {totals} = summary;
   const failed = [...node.stdout.matchAll(/^not ok \d+ - (.*)$/gm)].map(m => m[1]);
-  const verdict = suiteVerdict({code: node.code, ...summary});
+  // Skips declared not applicable on this host (lib.mjs DECLARED_SKIPS), judged against the suite's own environment.
+  const verdict = suiteVerdict({code: node.code, ...summary, skips: judgeSkips(skipReasons(node.stdout), {env: suiteEnv()})});
   out.push(check(`${label}npm test`, verdict.status,
     totals ? `${verdict.reason}; ${totals.fail} failed${failed.length ? ` (${failed.join('; ')})` : ''}, ${totals.skipped} skipped, ${totals.todo} TODO in ${seconds(node.ms)}${noisy(node.stdout + node.stderr) ? '; output has warnings' : ''}` : `${ended(node)}; ${verdict.reason}${failed.length ? ` (failed before that: ${failed.join('; ')})` : ''}`,
     {totals}));

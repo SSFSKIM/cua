@@ -9,7 +9,7 @@ import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {
   approvalObservation, doctorHealth, inventoryCheck, PROBE_SECRETS_PHASES, probePhasesFor, scenarioVerdict,
-  diffSnapshots, forbiddenPaths, isTextEditApproval, missingFromPackage, PACKAGE_REQUIRED, rollup, snapshotTree, suiteVerdict, testReporterEnv, testSummary, tokenLike, MINI_LAYOUT_FILES, personalText, researchTreeLines,
+  diffSnapshots, forbiddenPaths, isTextEditApproval, missingFromPackage, PACKAGE_REQUIRED, rollup, snapshotTree, suiteVerdict, testReporterEnv, testSummary, tokenLike, MINI_LAYOUT_FILES, DECLARED_SKIPS, judgeSkips, skipReasons, personalText, researchTreeLines,
 } from '../scripts/accept/lib.mjs';
 import {scratch} from './fixtures/runtime-fixture.mjs';
 import {agentChecks} from '../src/runtime/doctor.mjs';
@@ -370,4 +370,35 @@ test('research-tree references: code lines count, citations in comments do not',
   const tree = ['codex', 'app', 'src'].join('-');  // assembled: this file is itself in the scan
   const text = [`// see ~/${tree}/readable/x`, ` * in /Users/x/${tree}/y`, `# ${tree}`, `const dir = '/Users/x/${tree}';`, `read(p); // ${tree} cited`, `run('${tree}') // here`].join('\n');
   assert.deepEqual(researchTreeLines(text, tree), [4, 6]);
+});
+
+test('declared skips (#157): exact reasons, only while their gate is absent, listed with counts; any other skip blocks', () => {
+  const tap = [
+    'ok 1 - a', 'ok 2 - vendor differential: x # SKIP set CUA_VENDOR_CUA to the readable @oai/cua directory to compare with the vendor facade',
+    '    ok 1 - nested # SKIP set CUA_VENDOR_CUA to the readable @oai/cua directory to compare with the vendor facade',
+    'ok 3 - linux thing # SKIP non-UTF-8 file names exist only on Linux (APFS refuses them with EILSEQ)',
+  ].join('\n');
+  const tally = skipReasons(tap);
+  assert.deepEqual([...tally.values()], [2, 1]);
+  const totals = {tests: 5, pass: 2, fail: 0, cancelled: 0, skipped: 3, todo: 0};
+  const onMac = judgeSkips(tally, {env: {}, platform: 'darwin'});
+  assert.equal(onMac.other.length, 0);
+  const verdict = suiteVerdict({code: 0, totals, skips: onMac});
+  assert.equal(verdict.status, 'PASS');
+  assert.match(verdict.reason, /2 × "set CUA_VENDOR_CUA[^"]*"; 1 × "non-UTF-8/);
+  // The research tree present (its path exists): the differential should have run, so its skip blocks.
+  const treePresent = judgeSkips(tally, {env: {CUA_VENDOR_CUA: '/tree'}, platform: 'darwin', exists: path => path === '/tree'});
+  assert.equal(suiteVerdict({code: 0, totals, skips: treePresent}).status, 'BLOCKED');
+  // Named but missing: still absent.
+  assert.equal(judgeSkips(tally, {env: {CUA_VENDOR_CUA: '/nowhere'}, platform: 'darwin', exists: () => false}).other.length, 0);
+  // On the platform a platform-only skip names, it blocks.
+  assert.equal(suiteVerdict({code: 0, totals, skips: judgeSkips(tally, {env: {}, platform: 'linux'})}).status, 'BLOCKED');
+  // An undeclared reason, a skip count the reasons do not account for, or a TODO blocks.
+  const other = skipReasons('ok 1 - a # SKIP the own kernel needs Node 24 or later; set CUA_NODE (repl_host_node)');
+  const blocked = suiteVerdict({code: 0, totals: {...totals, skipped: 1, pass: 4}, skips: judgeSkips(other, {env: {}})});
+  assert.equal(blocked.status, 'BLOCKED');
+  assert.match(blocked.reason, /not declared: 1 × "the own kernel needs Node 24/);
+  assert.equal(suiteVerdict({code: 0, totals: {...totals, skipped: 4, pass: 1}, skips: onMac}).status, 'BLOCKED');
+  assert.equal(suiteVerdict({code: 0, totals: {...totals, todo: 1, pass: 1}, skips: onMac}).status, 'BLOCKED');
+  assert.ok(DECLARED_SKIPS.every(d => Boolean(d.researchTree) !== Boolean(d.onlyOn)));
 });

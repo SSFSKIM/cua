@@ -1,0 +1,3 @@
+./26.928.40906-darwin-arm64/CodexCLI.app
+./26.928.40906-darwin-arm64/cua_node
+./26.928.40906-darwin-arm64/install.json

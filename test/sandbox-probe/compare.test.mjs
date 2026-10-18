@@ -196,6 +196,10 @@ test('judgeFingerprints accepts exactly the declared deviations of each pair', (
   const arg0 = {name: 'PATH', left: '/h/state/codex/tmp/arg0/codex-arg0*:/usr/bin:/bin', right: '/usr/bin:/bin'};
   const worker = comparison([newTarget], {onlyLeft: ['CODEX_HOME', '__CF_USER_TEXT_ENCODING'], onlyRight: ['CUA_REPL_NODE_PATH', 'CUA_REPL_SANDBOX_EXEC', 'CUA_SANDBOX_DENY_READ', 'LANG'], differing: [arg0]});
   assert.equal(judgeFingerprints(worker, 'signed/cua-worker').ok, true);
+  // #159: the hosted gate's own baseline, cua's launcher on the same image: nothing may differ.
+  assert.equal(judgeFingerprints(comparison(), 'hosted-baseline/cua').ok, true);
+  for (const c of [comparison([grant]), comparison([newTarget]), comparison([], {onlyLeft: ['CODEX_HOME']}), comparison([], {differing: [arg0]}), comparison([], {}, {cwdEqual: false})])
+    assert.equal(judgeFingerprints(c, 'hosted-baseline/cua').ok, false, JSON.stringify(c));
   const rejected = [
     ['golden-kernel/cua-kernel', comparison([grant], {}, {cwdEqual: false})],
     ['golden-kernel/cua-kernel', comparison([{...grant, op: 'file-read-data'}])],

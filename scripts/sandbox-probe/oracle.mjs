@@ -185,7 +185,8 @@ async function fingerprint(values) {
     const other = join(layout.run, 'other-session');
     mkdirSync(other, {recursive: true, mode: 0o700});
     // sandbox_check reports a missing path as denied, so every target exists (the spec creates the deny targets too).
-    for (const dir of [join(userHome, '.config', 'cua'), join(userHome, STORE_RELATIVE)]) mkdirSync(dir, {recursive: true, mode: 0o700});
+    // A fresh install has no state/ yet (#159's hosted runs; the mini's home had task 1's), so it is created too.
+    for (const dir of [join(userHome, '.config', 'cua'), join(userHome, STORE_RELATIVE), join(layout.home, 'state')]) mkdirSync(dir, {recursive: true, mode: 0o700});
     const targets = {'cua-home': layout.home, 'cua-home/run': layout.run, 'cua-home/state': join(layout.home, 'state'), 'cua-home/runtimes': layout.runtimes, 'cua-home/node': layout.node,
       'cua-home/run/other': other, 'config-cua': join(userHome, '.config', 'cua'), store: join(userHome, STORE_RELATIVE),
       checkout: dirname(dirname(dirname(new URL(import.meta.url).pathname)))};

@@ -163,6 +163,7 @@ export function metadataGrantPins(fingerprint) {
 //   signed/cua-worker         M0's signed-CLI kernel (no deny list) against cua's trusted worker: the new target; the
 //                             CLI's CODEX_HOME, CoreFoundation's __CF_USER_TEXT_ENCODING and its arg0 PATH entry; the
 //                             worker's own host settings, which it gets and a kernel never does.
+//   hosted-baseline/cua       (#159) cua's launcher against itself on the hosted image: nothing.
 const NEW_TARGET = row => row.label === 'cua-home/run' && row.left === null;
 export const FINGERPRINT_DEVIATIONS = Object.freeze({
   'golden-kernel/cua-kernel': {
@@ -174,6 +175,11 @@ export const FINGERPRINT_DEVIATIONS = Object.freeze({
     onlyLeft: ['CODEX_HOME', '__CF_USER_TEXT_ENCODING'], onlyRight: ['CUA_REPL_NODE_PATH', 'CUA_REPL_SANDBOX_EXEC', 'CUA_SANDBOX_DENY_READ', 'LANG'],
     differing: ({name, left, right}) => name === 'PATH' && left === `${/^[^:]*\/arg0\/codex-arg0[^:]*:/.exec(left)?.[0] ?? '\0'}${right}`,
   },
+  // #159: the hosted gate's baseline (cua's launcher at a reviewed commit, recorded on the hosted image) against the
+  // change under test on that image: the same launcher, so nothing is declared. A different OS sees some checks
+  // differently (file-link on system paths: denied on the mini's macOS 27, allowed on the hosted macOS 26), which is
+  // why the hosted gate judges against its own image's baseline and M0's pairs stay with the mini.
+  'hosted-baseline/cua': {check: () => false, onlyLeft: [], onlyRight: [], differing: () => false},
 });
 export function judgeFingerprints(comparison, pair) {
   const declared = FINGERPRINT_DEVIATIONS[pair];

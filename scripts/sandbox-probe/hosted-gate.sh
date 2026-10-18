@@ -9,10 +9,15 @@
 #   install       `cua install` of the pinned runtime and Node into a scratch CUA_HOME, fetched at run time; the tree
 #                 holds no Codex CLI, and `cua doctor`'s sandbox.launcher passes with no row naming one (#115 item 1, 10).
 #   oracles       the fingerprint (scripts/sandbox-probe/fingerprint.c) under cua's own launcher, kernel and worker,
-#                 scoped and default, judged against M0's golden-kernel and signed-CLI fingerprints with their declared
-#                 deviations (each kernel run pins the metadata grant); and cua's port rendering M0's two signed-CLI
-#                 argv captures, relocated from the mini's scratch root to this one (oracle.mjs port-vs-capture). As
-#                 scripts/sandbox-probe/m1-mini.sh `oracles` ran them on the mini (#115 item 8).
+#                 scoped and default (each kernel run pins the metadata grant), judged equal to the hosted baseline:
+#                 the same fingerprints of a reviewed commit, recorded on the hosted image ($BASELINE, its image.json).
+#                 Not against M0's golden-kernel and signed-CLI fingerprints: those were taken on the mini's macOS 27,
+#                 and the hosted macOS 26 answers some checks differently under the same profile (file-link on system
+#                 paths), so that judgement stays the mini's (scripts/sandbox-probe/m1-mini.sh `oracles`). And cua's port
+#                 rendering M0's two signed-CLI argv captures, relocated from the mini's scratch root to this one
+#                 (oracle.mjs port-vs-capture): a rendering, not an OS answer, so it holds on any Mac (#115 item 8).
+#                 A change that moves a fingerprint on purpose records the new baseline in the same pull request: the
+#                 failing gate's artifact holds this run's fingerprints and image.json.
 #   own-sandbox   scripts/accept/own-sandbox.mjs on cua's own host and on the vendor host (#115 items 1 to 5).
 #   probe-secrets scripts/probe-secrets.mjs against its own synthetic store (#115 items 6 and 7's live roundtrip).
 # The golden fixtures and the fail-closed suites run in the unit suite (gate `test`).
@@ -36,6 +41,7 @@ trap 'rm -rf "$S"' EXIT
 H=$S/home U=$S/userhome
 mkdir -p "$U"
 M0=docs/evidence/2026-10-17-own-sandbox/m0
+BASELINE=docs/evidence/2026-10-18-hosted-macos-gate/baseline
 # The mini's scratch root in M0's records (oracle.mjs ran there with --home ~/cua-115/home --user-home ~/cua-115/userhome).
 M0_ROOT=/Users/new/cua-115
 # What every cua command here sees: the scratch homes, a fixed PATH with this Node.
@@ -82,15 +88,20 @@ probe_secrets() {
   return "$code"
 }
 
-echo "hosted-gate: macOS $(sw_vers -productVersion) ($(sw_vers -buildVersion)), $(uname -m), Node $(node --version)" >&2
+# The image this run is on, beside the fingerprints (a baseline is only good for the image it was recorded on).
+node -e 'const [productVersion, buildVersion, image, imageVersion] = process.argv.slice(1); require("fs").writeFileSync(process.argv.at(-1), JSON.stringify({productVersion, buildVersion, arch: process.arch, image: image || null, imageVersion: imageVersion || null}, null, 2) + "\n")' \
+  "$(sw_vers -productVersion)" "$(sw_vers -buildVersion)" "${ImageOS:-}" "${ImageVersion:-}" "$OUT/oracles/image.json"
+echo "hosted-gate: this run: $(tr -d '\n ' < "$OUT/oracles/image.json"); Node $(node --version)" >&2
+[ -f "$BASELINE/image.json" ] && echo "hosted-gate: the baseline's: $(tr -d '\n ' < "$BASELINE/image.json")" >&2
 step "install the pinned runtime" install
 step "no Codex CLI in the installed tree" no_codex
 step "doctor: sandbox.launcher pass, no Codex CLI row" doctor
 step "build the fingerprint probe" build_fp
 for mode in scoped default; do
-  for role in kernel worker; do step "oracles: fingerprint cua-$role $mode" fingerprint "$mode" "$role"; done
-  step "oracles: golden kernel vs cua kernel, $mode" judge "$M0/fingerprint/fp-golden-kernel-$mode.json" "$OUT/oracles/fp-cua-kernel-$mode.json" golden-kernel/cua-kernel "$OUT/oracles/fp-compare-golden-kernel-cua-kernel-$mode.json"
-  step "oracles: signed CLI vs cua worker, $mode" judge "$M0/fingerprint/fp-signed-$mode.json" "$OUT/oracles/fp-cua-worker-$mode.json" signed/cua-worker "$OUT/oracles/fp-compare-signed-cua-worker-$mode.json"
+  for role in kernel worker; do
+    step "oracles: fingerprint cua-$role $mode" fingerprint "$mode" "$role"
+    step "oracles: cua-$role $mode equals the hosted baseline" judge "$BASELINE/fp-cua-$role-$mode.json" "$OUT/oracles/fp-cua-$role-$mode.json" hosted-baseline/cua "$OUT/oracles/fp-compare-baseline-cua-$role-$mode.json"
+  done
   step "oracles: port vs signed capture, $mode" port_vs_capture "$mode"
 done
 step "own-sandbox, cua's own host" own_sandbox cua

@@ -56,3 +56,49 @@ gates:
       - "docs/evidence/2026-10-18-hosted-macos-gate/baseline/**"
       - ".github/ci-kit.yml"
     artifacts: ["hosted-gate-out/**"]
+  # #159: repl-parity's live checks that need a browser but no owner or TCC grant, on a harness Chrome (Chrome for
+  # Testing with cua's extension, a fresh profile) and the runner reaching itself as device `hosted-macos`
+  # (scripts/repl-parity/hosted/hosted.sh's header). Two gates so they run on two runners at once. Public log only:
+  # labels, outcomes, booleans and counts; no artifact.
+  - name: sandbox-denials
+    # cua's own host's cells and services suites under `log stream`: the assertions pass, no preferences (cfprefs)
+    # denial, every denial kind in #115 M1's declared set. About 22 to 28 minutes with the setup.
+    lane: hosted-macos
+    timeout: 60
+    run: sh scripts/repl-parity/hosted/hosted.sh denials
+    # Every input whose change can alter its result: the sandbox and the own REPL host, the parity harness and the
+    # suites it runs, the reduction and the judge, and this file.
+    paths:
+      - "src/sandbox/**"
+      - "src/repl-host/**"
+      - "src/runtime/**"
+      - "src/cua-api/**"
+      - "runtime/**"
+      - "scripts/repl-parity.mjs"
+      - "scripts/repl-parity/**"   # the harness, and hosted/ (this gate's script, judge and declared set)
+      - "test/repl-parity/**"      # the suites' scenarios and the expected differences
+      - "scripts/sandbox-probe/denials.mjs"
+      - ".github/ci-kit.yml"
+  - name: parity-browser
+    # The vendor host and cua's own host over suites api and docs-profiles, each pair diffed with the declared expected
+    # differences: none undeclared. About 12 minutes with the setup.
+    lane: hosted-macos
+    timeout: 40
+    run: sh scripts/repl-parity/hosted/hosted.sh browser
+    # sandbox-denials' inputs, and the browser path.
+    paths:
+      - "src/sandbox/**"
+      - "src/repl-host/**"
+      - "src/runtime/**"
+      - "src/cua-api/**"
+      - "runtime/**"
+      - "scripts/repl-parity.mjs"
+      - "scripts/repl-parity/**"   # the harness, and hosted/ (this gate's script, judge and declared set)
+      - "test/repl-parity/**"      # the suites' scenarios and the expected differences
+      - "scripts/sandbox-probe/denials.mjs"
+      - ".github/ci-kit.yml"
+      - "src/browser-service/**"
+      - "src/mcp/**"
+      - "src/chrome/**"
+      - "src/profiles/**"
+      - "extension/**"

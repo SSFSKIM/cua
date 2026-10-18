@@ -1,0 +1,45 @@
+{
+  "source": "#159: the after side of #115 M1 cfprefs at f8019bf (docs/evidence/2026-10-17-own-sandbox/m1/cfprefs/denials.json), network ports normalised; what cua's own host may be denied over repl-parity's cells and services suites (scripts/repl-parity/hosted/denials-within.mjs)",
+  "declared": [
+    {
+      "operation": "file-write-create",
+      "target": "<other>"
+    },
+    {
+      "operation": "file-write-create",
+      "target": "<run directory>"
+    },
+    {
+      "operation": "file-write-data",
+      "target": "<other>"
+    },
+    {
+      "operation": "mach-lookup",
+      "target": "com.apple.diagnosticd"
+    },
+    {
+      "operation": "mach-lookup",
+      "target": "com.apple.logd"
+    },
+    {
+      "operation": "mach-lookup",
+      "target": "com.apple.system.notification_center"
+    },
+    {
+      "operation": "network-outbound",
+      "target": "remote:*:<port>"
+    },
+    {
+      "operation": "sysctl-read",
+      "target": "kern.bootargs"
+    },
+    {
+      "operation": "sysctl-read",
+      "target": "kern.iossupportversion"
+    },
+    {
+      "operation": "sysctl-read",
+      "target": "security.mac.lockdown_mode_state"
+    }
+  ]
+}

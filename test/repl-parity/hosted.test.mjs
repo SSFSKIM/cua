@@ -56,6 +56,32 @@ test('any preferences denial fails, whether a cfprefsd lookup, a preference oper
   assert.equal(judgeDenials([...declaredStream, node(cfprefs.operation, cfprefs.target)].join('\n'), [...DECLARED, cfprefs]).ok, false);
 });
 
+// What `log stream --style ndjson --predicate …` writes before its records (on stdout), and the blank line it writes when
+// stopped by SIGINT.
+const BANNER = 'Filtering the log data using "sender == "Sandbox""';
+
+test('the stream\'s banner and blank lines are not records', () => {
+  const verdict = judgeDenials([BANNER, ...declaredStream.slice(0, 6), '', ...declaredStream.slice(6), ''].join('\n'), DECLARED);
+  assert.deepEqual([verdict.ok, verdict.events, verdict.malformed], [true, 12, 0]);
+});
+
+test('a record that does not parse fails the judgement, counted as malformed, whether mid-stream or the last', () => {
+  const cfprefs = node('mach-lookup', 'com.apple.cfprefsd.daemon');
+  const truncated = cfprefs.slice(0, Math.floor(cfprefs.length / 2));
+  for (const lines of [
+    [declaredStream[0], truncated, ...declaredStream.slice(1)],
+    [...declaredStream, truncated],
+    [...declaredStream, `${truncated}\n`],
+    [declaredStream[0], truncated],
+    [...declaredStream, BANNER],
+    [...declaredStream, '42'],
+  ]) {
+    const verdict = judgeDenials(lines.join('\n'), DECLARED);
+    assert.equal(verdict.ok, false, lines.at(-1));
+    assert.equal(verdict.malformed, 1, lines.at(-1));
+  }
+});
+
 test('a stream that recorded nothing fails: the check would be vacuous', () => {
   const verdict = judgeDenials('', DECLARED);
   assert.deepEqual([verdict.ok, verdict.events, verdict.kinds.length], [false, 0, 0]);
@@ -78,11 +104,17 @@ test('the judge\'s command prints kinds and counts and exits 1 on an undeclared 
     writeFileSync(log, `${declaredStream.join('\n')}\n`);
     const pass = spawnSync(process.execPath, [join(HOSTED, 'denials-within.mjs'), log, join(HOSTED, 'denials-declared.json')], {encoding: 'utf8'});
     assert.equal(pass.status, 0, pass.stderr);
-    assert.match(pass.stdout, /Sandbox events 12, node denial kinds 10, preferences 0, undeclared 0/);
+    assert.match(pass.stdout, /Sandbox events 12, node denial kinds 10, preferences 0, undeclared 0, malformed records 0/);
     writeFileSync(log, `${[...declaredStream, node('iokit-open', 'IOSurfaceRootUserClient')].join('\n')}\n`);
     const fail = spawnSync(process.execPath, [join(HOSTED, 'denials-within.mjs'), log, join(HOSTED, 'denials-declared.json')], {encoding: 'utf8'});
     assert.equal(fail.status, 1);
     assert.match(fail.stdout, /denial: iokit-open IOSurfaceRootUserClient x1 {2}\(undeclared\)/);
+    // A truncated record's text is never printed, only counted.
+    writeFileSync(log, `${[...declaredStream, `{"eventMessage":"Sandbox: node(501) deny(1) file-read-data /Users/runner/${PLANTED}`].join('\n')}`);
+    const malformed = spawnSync(process.execPath, [join(HOSTED, 'denials-within.mjs'), log, join(HOSTED, 'denials-declared.json')], {encoding: 'utf8'});
+    assert.equal(malformed.status, 1);
+    assert.match(malformed.stdout, /undeclared 0, malformed records 1\n$/);
+    assert.equal(`${malformed.stdout}${malformed.stderr}`.includes(PLANTED), false);
   } finally { rmSync(dir, {recursive: true, force: true}); }
 });
 

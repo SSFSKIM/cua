@@ -68,14 +68,22 @@ gates:
     lane: hosted-macos
     timeout: 60
     run: sh scripts/repl-parity/hosted/hosted.sh denials
-    # What the kernel and the worker can reach: the sandbox, the launch code that builds the sandboxed launch, the compat
-    # launcher; and the gate's own script, judge, declared set and the reduction it uses.
+    # What the kernel and the worker can reach: the sandbox, the launch code that builds the sandboxed launch and the
+    # inputs of its profile (the home's layout, the secret store and projects folder it denies, the kernel's Node), the
+    # kernel child's spawn, the launches the supervisor brokers, the compat launcher; and the gate's own script, judge,
+    # declared set and the reduction it uses.
     paths:
       - "src/sandbox/**"
       - "src/runtime/sandbox.mjs"
       - "src/runtime/launch.mjs"
       - "src/runtime/run-dir.mjs"
+      - "src/runtime/layout.mjs"
+      - "src/runtime/managed-node.mjs"
+      - "src/secrets/store.mjs"
+      - "src/secrets/label.mjs"
       - "src/repl-host/supervisor.mjs"
+      - "src/repl-host/kernel-child.mjs"
+      - "src/repl-host/launch-services.mjs"
       - "bin/cua-codex-compat"
       - "scripts/repl-parity/hosted/**"
       - "scripts/sandbox-probe/denials.mjs"
@@ -91,7 +99,11 @@ gates:
     timeout: 40
     run: sh scripts/repl-parity/hosted/hosted.sh browser
     # The browser route and cua's own REPL host, the browser side of its API (and the documents docs-profiles reads),
-    # the extension, and parity's own harness and suites (the gate's script among them).
+    # the extension, parity's own harness and suites (the gate's script among them), and what they import: the browser
+    # harness repl-parity runs on (runner, comparator, topology, MCP client) and its scenarios and fixture server, the
+    # pause gate, and the server both hosts are run under (test/repl-parity/serve-production.mjs: the MCP server, the
+    # profiles, the device directory, the runtime and the sandboxed launch, the secrets the browser service reads); and the
+    # pinned runtime `cua install` fetches, the vendor host among it.
     paths:
       - "src/chrome/**"
       - "src/browser-service/**"
@@ -106,4 +118,19 @@ gates:
       - "scripts/repl-parity.mjs"
       - "scripts/repl-parity/**"
       - "test/repl-parity/**"
+      - "scripts/browser-parity/**"
+      - "test/browser-parity/**"
+      - "scripts/mini-pause.mjs"
+      - "scripts/mini-rules.mjs"
+      - "scripts/accept/key-guard.mjs"
+      - "scripts/harness-home.mjs"
+      - "src/mcp/**"
+      - "src/profiles/**"
+      - "src/remote/**"
+      - "src/runtime/**"
+      - "src/sandbox/**"
+      - "src/secrets/**"
+      - "src/services/secret-input.mjs"
+      - "src/services/sky.mjs"
+      - "runtime/releases/**"
       - ".github/ci-kit.yml"

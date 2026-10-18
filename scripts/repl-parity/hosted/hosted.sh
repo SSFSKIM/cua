@@ -14,10 +14,12 @@
 #                   label has not reached the backend yet (2 of the spike's 3 green runs); the step then binds the one
 #                   live backend by its id, the pick a user makes.
 #   the device      the runner reaches itself as repl-parity's device `hosted-macos` (scripts/repl-parity/devices.mjs)
-#                   over a user-mode sshd on loopback, with the job's PATH; `repl-parity prepare` with profile harness.
+#                   over a user-mode sshd on loopback, with the job's PATH; `repl-parity prepare` with profile harness,
+#                   its parity clone made first from the job's checkout (a pull request's merge commit is on no ref).
 # Then the item:
 #   denials   cua's own host runs the `cells` and `services` suites under `sudo log stream --style ndjson --predicate
-#             'sender == "Sandbox"'`; the suites' assertions must pass, and the denials, reduced by
+#             'sender == "Sandbox"'`, stopped with SIGINT and read once it has exited; the suites' assertions must
+#             pass, no record may be malformed, and the denials, reduced by
 #             scripts/sandbox-probe/denials.mjs, must hold no preferences (cfprefs) denial and stay within the declared
 #             set, #115 M1's accepted after side (denials-within.mjs, denials-declared.json). One-sided: the Codex CLI's
 #             before profile is gone.
@@ -178,8 +180,23 @@ ssh_node() {
   remote=$(quiet ssh ssh -o BatchMode=yes "$DEVICE" 'node -v') || return
   [ "$remote" = "$(node -v)" ] || { say "the device's node is not the job's"; return 1; }
 }
+# repl-parity's prepare checks the tested commit out in the device's parity clone, which it clones from GitHub when
+# missing and refreshes with a plain `git fetch origin`; a pull request's merge commit is on no branch, so neither would
+# bring it. The clone is made here from this checkout, which holds the commit, and its origin pointed back at GitHub for
+# prepare's fetch; fresh, it is clean, as prepare requires.
+PARITY_CLONE=$HOME/Developer/GitHub/cua-parity
+parity_clone() {
+  if [ ! -d "$PARITY_CLONE/.git" ]; then
+    mkdir -p "$(dirname "$PARITY_CLONE")" && quiet clone git clone -q "$R" "$PARITY_CLONE" || return
+  fi
+  quiet clone-fetch git -C "$PARITY_CLONE" fetch -q "$R" HEAD || return
+  quiet clone-origin git -C "$PARITY_CLONE" remote set-url origin https://github.com/SSFSKIM/cua || return
+  git -C "$PARITY_CLONE" cat-file -e "$1^{commit}" 2> /dev/null || { say "the parity clone lacks the tested commit"; return 1; }
+}
 prepare() {
-  quiet prepare node scripts/repl-parity.mjs prepare --device "$DEVICE" --commit "$(git rev-parse HEAD)" --profile harness > "$S/prepare.json" || return
+  p_commit=$(git rev-parse HEAD) || return
+  parity_clone "$p_commit" || return
+  quiet prepare node scripts/repl-parity.mjs prepare --device "$DEVICE" --commit "$p_commit" --profile harness > "$S/prepare.json" || return
   prepared=yes
 }
 
@@ -216,14 +233,20 @@ stream_start() {
   sleep 2
   kill -0 "$LOGPID" 2> /dev/null || { say "log stream is not running"; return 1; }
 }
-# The stream must still be up when the suites end, or the judgement would read a truncated log.
+# The stream must still be up when the suites end, or the judgement would read a truncated log. It is stopped as a user
+# stops it, with SIGINT, on which `log` exits 0 (sudo passes its status on), and the file is read only after it has
+# exited, so no record is still being written. One that has not exited in 30 s is killed and the step fails.
 stream_stop() {
   s_alive=no
   kill -0 "$LOGPID" 2> /dev/null && s_alive=yes
-  sudo -n pkill -f "log stream --style ndjson" 2> /dev/null
-  wait "$LOGPID" 2> /dev/null
-  say "log stream up until the suites ended: $s_alive; $(wc -l < "$S/denials.ndjson" | tr -d ' ') lines recorded"
-  [ $s_alive = yes ]
+  ( sleep 30; sudo -n pkill -KILL -f "log stream --style ndjson" ) > /dev/null 2>&1 3>&- &
+  s_watchdog=$!
+  sudo -n pkill -INT -f "log stream --style ndjson" 2> /dev/null
+  s_status=0
+  wait "$LOGPID" 2> /dev/null || s_status=$?
+  kill "$s_watchdog" 2> /dev/null; wait "$s_watchdog" 2> /dev/null
+  say "log stream up until the suites ended: $s_alive; exited on SIGINT: $([ $s_status = 0 ] && echo yes || echo "no (status $s_status)"); $(wc -l < "$S/denials.ndjson" | tr -d ' ') lines recorded"
+  [ $s_alive = yes ] && [ $s_status = 0 ]
 }
 judge() {
   j_code=0

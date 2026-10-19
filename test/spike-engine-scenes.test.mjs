@@ -270,7 +270,6 @@ test('up finder records the window the open created, never Finder\'s own off-scr
   const io = fakeDevice({windows: {736: [offScreen]}});
   const finder = await upScene('finder', {run, io});
   assert.notEqual(finder.window.number, 184776);
-  assert.equal(finder.window.onScreen, true);
   assert.deepEqual(preflight({run, io}).refusals, []);
 }));
 

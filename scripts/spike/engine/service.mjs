@@ -1,6 +1,6 @@
 // The own native engine spike's service (docs/doperpowers/specs/2026-10-18-own-native-engine-design.md, M0 "Spike";
 // Design "The service"; the Decision Log's "M0 spike pre-flight"): the module src/services/sky.mjs (the trusted `sky`
-// wrapper) delegates to through CUA_SKY_VENDOR_SERVICE, in the vendor service's place. It exports handleRpc, as the
+// wrapper) delegates to through CUA_SKY_SERVICE, in the vendor service's place. It exports handleRpc, as the
 // vendor's does, and answers the facade (src/cua-api) unchanged:
 //   {type: 'setup'}                         → {target: 'mac', methods: the 11 names}
 //   {type: 'execute', method, args: [input]} → what the vendor's method returns

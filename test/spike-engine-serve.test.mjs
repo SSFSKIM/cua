@@ -34,7 +34,7 @@ test('the launch: cua\'s own host on the given Node, the real wrapper as `sky` d
   assert.equal(launch.sandbox, 'scoped');
   const e = launch.env;
   assert.deepEqual(JSON.parse(e.CUA_REPL_TRUSTED_SERVICES), {sky: realpathSync(SKY_SERVICE)});
-  assert.equal(e.CUA_SKY_VENDOR_SERVICE, SPIKE_SERVICE);
+  assert.equal(e.CUA_SKY_SERVICE, SPIKE_SERVICE);
   assert.equal(e.CUA_ENGINE_APP, '/opt/engines/cua Engine.app');
   const trusted = e.CUA_REPL_TRUSTED_CODE_PATHS.split(':');
   assert.ok(trusted.includes(SPIKE_DIR) && trusted.includes(REPL_HOST_DIR), 'the spike directory joins the own host\'s trusted code');

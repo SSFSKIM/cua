@@ -168,7 +168,7 @@ __kernel.netConnect = await (async () => { try { const net = await import("node:
 // Can untrusted code read the trusted worker's environment (where a broker capability could live)?
 __kernel.workerEnvViaPs = await (async () => { try { const cp = await import("node:child_process");
   const out = cp.execFileSync("/bin/ps", ["-E", "-ww", "-o", "command=", "-p", String(__probe.pid)], {encoding: "utf8"});
-  return {ok: true, sawWorkerOnlyVariable: out.includes("CUA_SKY_VENDOR_SERVICE=")}; }
+  return {ok: true, sawWorkerOnlyVariable: out.includes("CUA_SKY_SERVICE=")}; }
   catch (e) { return {ok: false, error: String(e?.code ?? e?.message ?? e).slice(0, 200)}; } })();
 nodeRepl.write("CUA_PROBE_RESULT " + JSON.stringify({probe: __probe, state: __state, delegatedAfterState: __after.delegated, kernel: __kernel}));`;
     const call = await client.request('tools/call', {name: 'js', arguments: {code, timeout_ms: 60_000}, _meta: meta(randomUUID())}, 120_000);

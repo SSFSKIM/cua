@@ -10,8 +10,9 @@ Executed 2026-10-18/19 by the plan-executor for maws-3f: built on the MacBook, m
 
 - **Speed, TextEdit, like for like** (iteration 2, same-sitting triples, 90/90 samples per row, equal 1220 × 1720 images): `getAXState` 43.1 ms against the vendor's 50.7, `getScreenshot` 45.8 against 53.4, the three-cell task 2,755 against 4,028.
 - **Background input**: route 3 carried click and pressKey to TextEdit and Finder with the frontmost application and the top window unchanged and no activation seen.
-- **Chrome is recorded per family**: undiagnosed, so route 4 and the owner's call before M1a.
-- **Concerns**: Finder, Chrome and Electron were not re-measured after the two tuning iterations; probe (d)(i)'s tap could not be created even with Input Monitoring granted; the paste route is not built, so `type_text` under the Korean source refuses; four residue items below.
+- **Chrome is recorded per family**: every guarded Chrome cell was refused by the harness's own check of the window title, on the vendor lane as on cua's, so nothing is known of either engine's background input there; route 4 applies until the diagnosis, and the owner's call before M1a.
+- **Not measured** (corrected 2026-10-19 from the outputs; spec Surprises, the records-reading entry): Electron's background key (every key into Electron in the first series reached the key-focus check and crashed the engine; its click went by route 1), probe (d)'s operator steps (every pass ran with `operator: false`), and whether the engine's own effects fire the intervention rule (`probe.d.noFire` is vacuous: the spike engine builds no intervention path and no tap was created). The promote rule's input half rests on TextEdit and Finder, as the rule is written, and stands.
+- **Concerns**: Finder, Chrome and Electron were not re-measured after the two tuning iterations; probe (d)(i)'s tap could not be created even with Input Monitoring granted, and the harness discarded the engine's answer; the paste route is not built, so `type_text` under the Korean source refuses; the residue below.
 ## What was built
 
 | Part | Paths | Commits | Review |
@@ -63,7 +64,7 @@ Executed 2026-10-18/19 by the plan-executor for maws-3f: built on the MacBook, m
   - TextEdit: getAXState 78 ms, getScreenshot 84 ms; task.total 4,360 ms.
   - Trees: TextEdit 94, Chrome 84, Electron 75, Finder 669 ms (14 valid samples).
   - Screenshots: Chrome 81, Electron 77 ms.
-  - The vendor exposed no web content on either Chromium scene: 45 and 12 elements, with the page containers empty. cua exposed both pages' controls. This is a finding-elements result; its cause is still unknown.
+  - The vendor exposed no web content on either Chromium scene: 45 and 12 elements, with the page containers empty. cua exposed both pages' controls. This is a finding-elements result; its cause is still unknown, and it is unconfirmed on the mini, where no Chrome tree was accepted on either lane (the harness's title check, below).
 - **Tuning findings.**
   - Resolution is not the cost: the engine takes 0.2–0.6 ms.
   - The in-cell gap is the service's relay round trips plus the render.
@@ -110,10 +111,11 @@ All of this is in the spec's Surprises & Discoveries.
 All outputs are under `docs/doperpowers/research/2026-10-18-own-native-engine/spike/`; each series has its `summary.md`.
 
 **First series** (build 2f0263b6, checkout 5bb0d13f; `approve`, `vendor`, `cua`, `probe-f`, `summary.md`):
-- **Approve.** The engine's requests raised no Accessibility or Screen Recording prompt; the owner added the bundle under Screen & System Audio Recording by hand, and Accessibility already read true. The capture confirmation then appeared once and the owner allowed it.
+- **Approve.** The engine's requests raised no Accessibility or Screen Recording prompt, and `approve.json`'s first request read both grants false; the owner added the bundle under Screen & System Audio Recording by hand, and Accessibility read true by the time the owner looked (whether the owner toggled it is unrecorded). The capture confirmation then appeared once and the owner allowed it.
 - **Vendor triple** (14:37–14:48Z) and **cua triple** (14:49–15:22Z), four scenes. Verdict DISCARD FORK on speed: TextEdit in-cell `getAXState` 98.2 against 56.0 ms, `getScreenshot` 99.8 against 55.3. Per-scene trees: Finder-200 293.1 against 458.8 (cua faster), TextEdit 120.5 / 62.9, Electron 86.7 / 57.4. The hierarchy route was slower than the public one everywhere. Settle at rest 267–456 ms, no notifications. The reduced read set saved nothing.
 - **The breakdown** on TextEdit: walk 55.9 ms, then the capture 49.7, in sequence; 7 ms above the engine.
-- **Input crashed the engine.** 27 crash reports, all SIGSEGV in `SLPSGetKeyFocusProcess` from `appBelievesItHasFocus`. The dispatching session found the cause, a one-argument declaration of a two-argument function, and fixed it (f62f3cc7, cherry-picked). Input that did not reach the check ran: TextEdit task cells 30/30, the action goldens on TextEdit and Electron, probes (a) and (b) on Electron, probe (d)'s no-fire case, Latin typing.
+- **Input crashed the engine.** 27 crash reports, all SIGSEGV in `SLPSGetKeyFocusProcess` from `appBelievesItHasFocus`. The dispatching session found the cause, a one-argument declaration of a two-argument function, and fixed it (f62f3cc7, cherry-picked). Input that did not reach the check ran: TextEdit task cells 30/30, the action goldens on TextEdit and Electron, probe (a)/(b)'s click on Electron (route 1, the fixture button's `AXPress`, frontmost and top window unchanged, 3/3), Latin typing. Electron's key reached the check and crashed in all three runs, so its background key is unmeasured. Probe (d)'s no-fire row passed vacuously: the spike engine builds no intervention path and no tap was created. Probe (d)'s operator steps (the Screen Sharing keystroke, the background click) did not run: every pass's `meta.json` records `operator: false`.
+- **Chrome:** every Chrome tree sample was invalid on both lanes, "the scene window was not the app's front window" (the harness's check of the rendered header's title against the page title, `cells.mjs`'s `__front`), and no Chrome golden or screenshot was accepted on either, so the lanes measured nothing of Chrome, and the MacBook's vendor-no-web-content finding is unconfirmed here.
 - **Probe (c)**: a plain `open -a` did not activate the engine; two copies at two paths each bound their own socket.
 - **Probe (f)**: f1, the running engine reads both its grants; f2, skipped in the series and answered by the two staged rebuilds below (each raised the capture confirmation); f3, a copy at a new path came up with both grants and captured with no confirmation (the owner's report).
 
@@ -121,7 +123,7 @@ All outputs are under `docs/doperpowers/research/2026-10-18-own-native-engine/sp
 - The capture runs on its own thread beside the walk and is joined after it. Engine total 113.3 → 48.7 ms (walk 43.0, capture 41.0, join 2.6).
 - TextEdit in-cell, vendor against cua: `getAXState` 51.3 / 42.2, `getScreenshot` 49.3 / 40.6. The render was unchanged; three captures viewed by hand were real, fresh images.
 - **Input, TextEdit and Finder:** probe (a) click and key with the frontmost application and the top window unchanged on both; probe (b) route 3 for both actions (38–52 ms activation guard), no activation seen; forced key routes 2 and 3 ok; forced click routes 1–3 an error result on both apps (a syntax error in the harness's cell, fixed later in the hold in 7e3e2a1e; see iteration 2); task cells 10/10; the action goldens; no crash.
-- **Chrome:** every guarded cell refused ("the scene window was not the app's front window"); a background Latin `type_text` by route 3 landed 0 of 8. Undiagnosed.
+- **Chrome:** every guarded cell refused by the harness's title check, as the first series had on both lanes; a background Latin `type_text` by route 3 landed 0 of 8 in a cell that does not apply that check. Undiagnosed; the harness and the fixture first.
 - **Found:** the vendor's images are at pixel size (1220 × 1720) and cua's were at points (610 × 860). Ruled: match the vendor.
 
 **Tuning iteration 2** (b1039a31, build e3547c25; `iter2`):
@@ -135,7 +137,7 @@ All outputs are under `docs/doperpowers/research/2026-10-18-own-native-engine/sp
   | Finder | refused: no AXPick or AXPress on the target | ok | ok | ok | ok | 3 |
 
   Every delivered action left the frontmost application and the top window unchanged, and the watcher saw no activation.
-- **Probe (d)(i)** (`iter2-d1`): with Input Monitoring granted by the owner and the engine launched fresh, the listen-only tap still could not be created; `probe.d.tap` and `probe.d.hidReset` both failed. Not troubleshot in the hold. probe (d)'s no-fire case passed again.
+- **Probe (d)(i)** (`iter2-d1`): with Input Monitoring granted by the owner and the engine launched fresh, the listen-only tap still could not be created; `probe.d.tap` and `probe.d.hidReset` both failed, and the harness discarded the engine's error (the JSON-RPC error object took the `else if (tap)` branch, `listenAccess: null`), so the listen preflight's state is unrecorded. Not troubleshot in the hold. probe (d)'s no-fire row passed again, vacuously.
 
 **Engine exits** (the mini's unified log, `subsystem == "io.github.ssfskim.cua.engine"`, readable unprivileged): 85 starts; 28 logged exits (27 shutdown requests, one quit request at approve's relaunch); 56 unlogged starts, all inside the two input crash windows (27 crash reports, the rest consistent with ReportCrash's throttling); one start (pid 45110, 14:49:47Z) with neither.
 
@@ -231,7 +233,9 @@ Expected length: about 3 hours of lane time, plus the owner's prompts. Run a sin
 ## Residue
 
 - **The design revision the promote rule requires.** The design sections on input, settle, intervention and install are revised from the sitting's measurements with a dated Decision Log entry, then the critique debate of entry 1 runs. This gates M1a.
-- **Chrome's background input.** Every guarded cell refused because the scene window was not Chrome's front window, and a route-3 `type_text` landed 0 of 8. The refusals may be the harness's (a second Chrome window or a bubble taking the front). Diagnose before the owner's route-4 call for Chrome.
+- **Chrome's background input.** Every guarded cell was refused by the harness's title check (`cells.mjs`'s `__front` against the page title), which failed identically on the vendor lane, and a route-3 `type_text` landed 0 of 8 in a cell without that check. Read the scene window's title through the harness (its own window), correct the check, re-run probes (a), (b) and (e) on Chrome; before the owner's route-4 call.
+- **Electron's background key**, unmeasured: every key into Electron in the first series crashed the engine (the key-focus declaration), and Electron was not run again after the fix. Probes (a) and (b) on Electron in the next input sitting.
+- **Probe (d)'s operator steps** never ran (`operator: false` in every pass, although the prepared command line carries `--operator`); and `probe.d.noFire` proves nothing, since the spike engine has no intervention path. Both belong to the next input sitting.
 - **The x/y click path** (screenshot pixels divided by the display scale) is unit-tested only; no live cell clicks by coordinates. One cell on a 2× display before M1a relies on it.
 - **pid 45110**, an engine start at 14:49:47Z with no exit line and no crash report: the one unexplained exit of the sitting.
 - **Probe (d)(i)**: the listen-only tap could not be created even with Input Monitoring granted and a fresh launch; the row's `listenAccess` came back null, so the harness should carry the engine's preflight answer. Diagnose before the next input sitting; it decides between the tap and the HID-idle fallback.

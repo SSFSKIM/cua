@@ -1,0 +1,3 @@
+The following is a diff from the previous accessibility tree for Window: "cua scene page - Chrome for Testing" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+~							25 체크박스 (collapsed, settable, integer) Scene option, Value: 1, Secondary Actions: Expand
+The focused UI element is 25 체크박스 (collapsed, settable, integer) Scene option, Value: 1, Secondary Actions: Expand

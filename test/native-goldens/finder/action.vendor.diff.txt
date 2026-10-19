@@ -1,0 +1,14 @@
+⟨204⟩
+~				78 row (selected)
+~					79 ⟨44⟩
+~						81 ⟨129⟩, Value: scene-file-005, Secondary Actions: ⟨12⟩
+~					82 ⟨12⟩
+~					84 ⟨12⟩
+~					86 ⟨12⟩
+~			225 ⟨36⟩, ID: ⟨13⟩
+~		235 ⟨18⟩, Help: ⟨13⟩, Secondary Actions: ⟨28⟩
+~		236 ⟨21⟩, Help: ⟨9⟩, Secondary Actions: ⟨28⟩
+Selected:
+	78 row (selected)
+
+Note: Pay special attention to the content selected by the user. If the user asks a question or refers to the content they are looking at on-screen, they might be referring to the selected content (but they might be referring to something else that's visible, too).

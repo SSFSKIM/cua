@@ -112,13 +112,15 @@ final class InvalidationMonitor: @unchecked Sendable {
 }
 
 /// What one process's monitor has seen since the observation began: a layout change, and the elements destroyed. A state
-/// made `invalidatedUntilReset` counts as a layout change until its first reset.
+/// made `invalidatedUntilReset` (a watch started after its process's elements were read) reports `startedAfterRead`
+/// until its first reset, which invalidates that process's elements and no other's.
 final class InvalidationState: @unchecked Sendable {
   private let lock = NSLock()
-  private var changed: Bool
+  private var changed = false
+  private var afterRead: Bool
   private var destroyedElements = Set<ElementKey>()
 
-  init(invalidatedUntilReset: Bool = false) { changed = invalidatedUntilReset }
+  init(invalidatedUntilReset: Bool = false) { afterRead = invalidatedUntilReset }
 
   func record(_ notification: ReceivedNotification) {
     lock.lock()
@@ -130,6 +132,7 @@ final class InvalidationState: @unchecked Sendable {
     lock.lock()
     defer { lock.unlock() }
     changed = false
+    afterRead = false
     destroyedElements = []
   }
 
@@ -137,6 +140,12 @@ final class InvalidationState: @unchecked Sendable {
     lock.lock()
     defer { lock.unlock() }
     return changed
+  }
+
+  var startedAfterRead: Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    return afterRead
   }
 
   func destroyed(_ element: AXUIElement) -> Bool {

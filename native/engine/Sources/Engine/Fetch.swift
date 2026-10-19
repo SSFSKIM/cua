@@ -46,13 +46,11 @@ struct ElementData {
   /// AXTextualContext (the vendor's Markdown predicate skips `AXTextualContextSourceCode`).
   var textualContext: String?
   var frame: CGRect?
-  /// AXChildren as fetched and the element's full child count (a source that caps the list it returns knows more).
+  /// AXChildren, in order.
   var children: [AXUIElement]
-  var childCount: Int
 
-  /// Decodes one element's attribute values, keyed by attribute name; `childCount` is the route's own count of the
-  /// children when it knows one beyond what it returned.
-  init(values: [String: CFTypeRef], childCount: Int? = nil) {
+  /// Decodes one element's attribute values, keyed by attribute name.
+  init(values: [String: CFTypeRef]) {
     func string(_ name: String) -> String? { values[name].flatMap(stringValue) }
     func flag(_ name: String) -> Bool? { bool(values[name]) }
     role = string("AXRole") ?? "AXUnknown"
@@ -82,7 +80,6 @@ struct ElementData {
     domClassList = values["AXDOMClassList"].flatMap { CFGetTypeID($0) == CFArrayGetTypeID() ? ($0 as! [AnyObject]).compactMap { $0 as? String }.map(bounded) : nil }
     frame = point(values["AXPosition"]).flatMap { origin in size(values["AXSize"]).map { CGRect(origin: origin, size: $0) } }
     children = elementList(values["AXChildren"])
-    self.childCount = max(childCount ?? 0, children.count)
   }
 }
 
@@ -131,7 +128,6 @@ final class FetchCosts {
 class ElementSource: @unchecked Sendable {
   let costs = FetchCosts()
   private var dataCache: [ElementKey: ElementData] = [:]
-  private var allChildrenCache: [ElementKey: [AXUIElement]] = [:]
   private var visibleCache: [ElementKey: [AXUIElement]?] = [:]
   private var frameCache: [ElementKey: CGRect?] = [:]
 
@@ -175,16 +171,7 @@ class ElementSource: @unchecked Sendable {
     }
   }
 
-  /// The width rule's inputs, read only for an element over the threshold (or whose route returned a short list).
-  final func allChildren(_ element: AXUIElement) -> [AXUIElement] {
-    let key = ElementKey(element: element)
-    if let known = allChildrenCache[key] { return known }
-    let read = readAllChildren(element)
-    allChildrenCache[key] = read
-    return read
-  }
-
-  /// The element's visible subset (AXVisibleChildren, else AXVisibleRows), nil when it offers none.
+  /// The width rule's visible subset, read only for an element over the threshold: the element's visible subset (AXVisibleChildren, else AXVisibleRows), nil when it offers none.
   final func visibleChildren(_ element: AXUIElement) -> [AXUIElement]? {
     let key = ElementKey(element: element)
     if let known = visibleCache[key] { return known }
@@ -204,10 +191,6 @@ class ElementSource: @unchecked Sendable {
   /// The Markdown rendering of a text element's value (the parameterized attributed-string read), timed.
   func markdown(_ element: AXUIElement, length: Int) -> String? {
     costs.time("markdown") { markdownRendering(of: element, length: length) }
-  }
-
-  func readAllChildren(_ element: AXUIElement) -> [AXUIElement] {
-    costs.time("width") { elementList(attribute(element, kAXChildrenAttribute)) }
   }
 
   func readVisibleChildren(_ element: AXUIElement) -> [AXUIElement]? {

@@ -57,14 +57,11 @@ func positionRanges(_ positions: [Int]) -> [[Int]] {
 /// AXVisibleRows); without one, none above 499, and below that the children whose frames meet `visibleFrame` (children
 /// with no frame kept; no frame to meet keeps them all). `shown` is set only when the rule left some out.
 func chooseChildren(of element: AXUIElement, data: ElementData, source: ElementSource, visibleFrame: CGRect?) -> (children: [AXUIElement], shown: Shown?) {
-  let total = data.childCount
-  if total <= widthThreshold {
-    return (data.children.count == total ? data.children : source.allChildren(element), nil)
-  }
+  let all = data.children
+  let total = all.count
+  if total <= widthThreshold { return (all, nil) }
   if let visible = source.visibleChildren(element), !visible.isEmpty {
     guard visible.count < total else { return (visible, nil) }
-    // Positions among all the children: the fetched list when it is whole, else a full read (a capped route).
-    let all = data.children.count == total ? data.children : source.allChildren(element)
     var positions: [ElementKey: Int] = [:]
     for (position, child) in all.enumerated() where positions[ElementKey(element: child)] == nil {
       positions[ElementKey(element: child)] = position
@@ -73,11 +70,10 @@ func chooseChildren(of element: AXUIElement, data: ElementData, source: ElementS
     return (visible, Shown(count: visible.count, of: total, subset: "visible", ranges: positionRanges(kept)))
   }
   if total > widthOmitAbove { return ([], Shown(count: 0, of: total, subset: "omitted", ranges: [])) }
-  let all = source.allChildren(element)
   guard let visibleFrame else { return (all, nil) }
   let kept = all.indices.filter { source.frame(all[$0]).map { $0.intersects(visibleFrame) } ?? true }
-  guard kept.count < all.count else { return (all, nil) }
-  return (kept.map { all[$0] }, Shown(count: kept.count, of: max(total, all.count), subset: "visible", ranges: positionRanges(kept)))
+  guard kept.count < total else { return (all, nil) }
+  return (kept.map { all[$0] }, Shown(count: kept.count, of: total, subset: "visible", ranges: positionRanges(kept)))
 }
 
 /// The bytes `value` takes in the engine's JSON (JSONSerialization, slashes unescaped, UTF-8 unescaped above 0x7F):
@@ -293,7 +289,7 @@ final class TreeWalk {
     if !pending.inMenu {
       if pending.depth < limits.depth {
         (children, shown) = chooseChildren(of: element, data: data, source: source, visibleFrame: visibleFrame)
-      } else if data.childCount > 0 {
+      } else if !data.children.isEmpty {
         depthHit = true
       }
     }

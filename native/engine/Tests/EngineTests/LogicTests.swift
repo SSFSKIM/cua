@@ -123,6 +123,17 @@ final class SettleTests: XCTestCase {
     XCTAssertEqual(walks, 0, "no busy walk starts once the deadline has passed")
   }
 
+  func testAThreadDescheduledBetweenClockReadsNeverSleepsANegativeTime() {
+    // Every read of this clock finds it 70 ms later, as if the thread lost the processor between any two reads.
+    var clock = 0.0
+    var sleeps: [Double] = []
+    let report = runSettle(sampleMs: settleSampleMs, deadlineMs: 100, now: { defer { clock += 70 }; return clock },
+                           sleep: { sleeps.append($0); clock += $0 }, drain: { [] }, ready: { true })
+    XCTAssertTrue(report.timedOut)
+    XCTAssertFalse(sleeps.isEmpty)
+    XCTAssertTrue(sleeps.allSatisfy { $0 >= 0 }, "\(sleeps)")
+  }
+
   func testADeadlineAlreadyPastCancelsBeforeTheFirstSample() {
     let report = run(FakeClock(), deadline: 0)
     XCTAssertTrue(report.timedOut)
@@ -205,7 +216,7 @@ final class FetchDecodeTests: XCTestCase {
       "AXRowIndexRange": AXValueCreate(.cfRange, &range)!, "AXDOMClassList": ["x", "y"] as CFArray,
       "AXChildren": [element(1), element(2)] as CFArray, "AXHelp": "help" as CFString,
     ]
-    let node = nodeWire(token: elementToken(7), depth: 0, pid: 1, data: ElementData(values: values, childCount: 140), actions: [],
+    let node = nodeWire(token: elementToken(7), depth: 0, pid: 1, data: ElementData(values: values), actions: [],
                         flags: (false, false, false), valueMarkdown: nil, children: 0, shown: nil)
     XCTAssertEqual(node["token"] as? String, "t7")
     XCTAssertNil(node["index"])

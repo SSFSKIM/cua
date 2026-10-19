@@ -124,7 +124,22 @@ final class ScreenshotSizeTests: XCTestCase {
 
   func testThisMacsScreensAnswerAPositiveScale() {
     let main = CGDisplayBounds(CGMainDisplayID())
-    XCTAssertGreaterThanOrEqual(screenshotScale(for: CGRect(x: main.midX, y: main.midY, width: 10, height: 10), screens: currentScreenScales()), 1)
+    XCTAssertGreaterThanOrEqual(screenshotScale(for: CGRect(x: main.midX, y: main.midY, width: 10, height: 10), screens: readScreenScales()), 1)
+  }
+
+  func testTheCaptureReadsTheScreensLastReadAndAScreenChangeRereadsThem() {
+    var reads = 0
+    var answer = [ScreenScale(frame: CGRect(x: 0, y: 0, width: 100, height: 100), backingScale: 2)]
+    let cache = ScreenScaleCache(read: { reads += 1; return answer })
+    XCTAssertEqual(cache.current, [], "nothing before start")
+    cache.start()
+    XCTAssertEqual(cache.current, answer)
+    XCTAssertEqual(cache.current, answer)
+    XCTAssertEqual(reads, 1, "a capture reads the cache, never the screens")
+    answer = [ScreenScale(frame: CGRect(x: 0, y: 0, width: 100, height: 100), backingScale: 1)]
+    NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
+    XCTAssertEqual(reads, 2)
+    XCTAssertEqual(cache.current, answer)
   }
 }
 
@@ -151,7 +166,7 @@ final class ObservedScreenshotTests: XCTestCase {
     // window moved, or a display changed, between the observation and the click).
     let main = CGDisplayBounds(CGMainDisplayID())
     let frame = CGRect(x: main.minX + 10, y: main.minY + 10, width: 610, height: 430)
-    let now = screenshotScale(for: frame, screens: currentScreenScales())
+    let now = screenshotScale(for: frame, screens: readScreenScales())
     let observed: CGFloat = now == 2 ? 1 : 2
     let size = screenshotPixelSize(frame, scale: observed)
     let (connection, _) = connection(CapturedScreenshot(url: "file:///x.jpg", width: size.width, height: size.height, frame: frame, scale: observed))

@@ -176,8 +176,8 @@ final class Lineage {
   // MARK: The invalidation watch
 
   /// Watches `pids` from now on, dropping the watches of every other process. A watch that starts after the walk read its
-  /// process's elements (`afterRead`) cannot vouch for the time between, so it invalidates until the next observation's
-  /// reset. A process whose monitor cannot be registered stays unwatched, which `invalidates` treats as invalidated.
+  /// process's elements (`afterRead`) cannot vouch for the time between, so it invalidates that process's elements, and
+  /// only those, until the next observation's reset. A process whose monitor cannot be registered stays unwatched, which `invalidates` treats as invalidated.
   func watch(_ pids: Set<pid_t>, afterRead: Bool) {
     for pid in watches.keys where !pids.contains(pid) { watches[pid] = nil }
     for pid in pids where watches[pid] == nil {
@@ -194,10 +194,10 @@ final class Lineage {
   func resetWatches() { for watch in watches.values { watch.state.reset() } }
 
   /// Whether an action on `element`, served by `owner`, needs a re-fetch: a layout change in any watched process, the
-  /// element's own destruction, or no watch over its process.
+  /// element's own destruction, a watch over its process that started after the read, or no watch over its process.
   func invalidates(_ element: AXUIElement, owner: pid_t) -> Bool {
     guard let own = watches[owner] else { return true }
-    return own.state.destroyed(element) || watches.values.contains { $0.state.layoutChanged }
+    return own.state.startedAfterRead || own.state.destroyed(element) || watches.values.contains { $0.state.layoutChanged }
   }
 
   var watched: Int { watches.count }

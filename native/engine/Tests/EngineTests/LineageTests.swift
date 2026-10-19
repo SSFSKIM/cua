@@ -208,11 +208,12 @@ final class InvalidationWatchTests: XCTestCase {
     XCTAssertFalse(lineage.invalidates(button, owner: 777))
   }
 
-  func testAWatchStartedAfterTheReadInvalidatesUntilTheNextObservation() {
-    let late = InvalidationState(invalidatedUntilReset: true)
+  func testAWatchStartedAfterTheReadInvalidatesItsOwnProcesssElementsUntilTheNextObservation() {
     let lineage = Lineage()
-    lineage.adoptWatch(pid: 777, late)
+    lineage.adoptWatch(pid: 100, InvalidationState())
+    lineage.adoptWatch(pid: 777, InvalidationState(invalidatedUntilReset: true))
     XCTAssertTrue(lineage.invalidates(Engine.element(2), owner: 777), "it cannot vouch for the time between the read and its start")
+    XCTAssertFalse(lineage.invalidates(Engine.element(1), owner: 100), "the app's own elements keep the AXRole validation")
     lineage.resetWatches()
     XCTAssertFalse(lineage.invalidates(Engine.element(2), owner: 777))
   }

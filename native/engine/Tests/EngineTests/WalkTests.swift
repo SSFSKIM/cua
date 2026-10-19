@@ -28,31 +28,24 @@ final class FakeTree {
 
 final class FakeSource: ElementSource, @unchecked Sendable {
   let tree: FakeTree
-  /// Children per read, as a prefetching route would cap them (nil: all).
-  let cap: Int?
   /// Uncached reads by id, and settability calls by attribute.
   var reads: [Int: Int] = [:]
   var settableCalls: [String: Int] = [:]
-  init(_ tree: FakeTree, cap: Int? = nil) {
-    self.tree = tree
-    self.cap = cap
-  }
+  init(_ tree: FakeTree) { self.tree = tree }
 
   override func read(_ element: AXUIElement) -> ElementData? {
     let id = tree.id(element)
     reads[id, default: 0] += 1
     if tree.unreadable.contains(id) { return nil }
-    let all = (tree.children[id] ?? []).map(Engine.element)
-    let returned = cap.map { Array(all.prefix($0)) } ?? all
     var values: [String: CFTypeRef] = ["AXRole": "AXGroup" as CFString, "AXTitle": "node \(id)" as CFString,
-                                       "AXChildren": returned as CFArray]
+                                       "AXChildren": (tree.children[id] ?? []).map(Engine.element) as CFArray]
     for (name, value) in tree.extra[id] ?? [:] { values[name] = value }
     if let frame = tree.frames[id] {
       var origin = frame.origin, extent = frame.size
       values["AXPosition"] = AXValueCreate(.cgPoint, &origin)!
       values["AXSize"] = AXValueCreate(.cgSize, &extent)!
     }
-    return ElementData(values: values, childCount: all.count)
+    return ElementData(values: values)
   }
 
   override func owner(_ element: AXUIElement) -> pid_t { tree.owners[tree.id(element)] ?? 4242 }
@@ -66,11 +59,6 @@ final class FakeSource: ElementSource, @unchecked Sendable {
     markdownCalls += 1
     return tree.markdown[tree.id(element)]
   }
-  var allChildrenReads = 0
-  override func readAllChildren(_ element: AXUIElement) -> [AXUIElement] {
-    allChildrenReads += 1
-    return (tree.children[tree.id(element)] ?? []).map(Engine.element)
-  }
   override func readVisibleChildren(_ element: AXUIElement) -> [AXUIElement]? { tree.visible[tree.id(element)].map { $0.map(Engine.element) } }
   override func readFrame(_ element: AXUIElement) -> CGRect? { tree.frames[tree.id(element)] }
 }
@@ -81,8 +69,8 @@ extension Engine {
 }
 
 func walk(_ tree: FakeTree, _ lineage: Lineage, window: Int = 0, menu: [Int] = [], limits: WalkLimits = WalkLimits(deadline: .infinity),
-                  cap: Int? = nil, visibleFrame: CGRect? = nil, source: FakeSource? = nil, interactionFlags: Bool = true) -> TreeWalk {
-  let walk = TreeWalk(source: source ?? FakeSource(tree, cap: cap), lineage: lineage, limits: limits, markdown: false,
+                  visibleFrame: CGRect? = nil, source: FakeSource? = nil, interactionFlags: Bool = true) -> TreeWalk {
+  let walk = TreeWalk(source: source ?? FakeSource(tree), lineage: lineage, limits: limits, markdown: false,
                       interactionFlags: interactionFlags, visibleFrame: visibleFrame)
   walk.run(window: element(window), menuItems: menu.map(element))
   lineage.commit(walk.revision)
@@ -255,22 +243,12 @@ final class WalkTests: XCTestCase {
     XCTAssertNil(walked.nodes[1]["shown"])
   }
 
-  func testWidthRuleKeepsUpToOneHundredAndReadsTheFullListWhenARouteCappedIt() {
+  func testWidthRuleKeepsUpToOneHundredChildrenWhole() {
     let tree = FakeTree()
     tree.children = [0: Array(1...100)]
-    let capped = walk(tree, Lineage(), cap: 60)
-    XCTAssertEqual(capped.nodes.count, 101)
-    XCTAssertNil(capped.nodes[0]["shown"])
-  }
-
-  func testTheTreeShapeIsTheSameWhicheverRouteReadIt() {
-    let tree = FakeTree()
-    tree.children = [0: Array(1...150), 3: [200, 201]]
-    tree.visible = [0: Array(1...12)]
-    let plain = walk(tree, Lineage())
-    let prefetched = walk(tree, Lineage(), cap: widthThreshold)
-    XCTAssertEqual(plain.nodes.count, prefetched.nodes.count)
-    for (a, b) in zip(plain.nodes, prefetched.nodes) { XCTAssertEqual(NSDictionary(dictionary: a), NSDictionary(dictionary: b)) }
+    let walked = walk(tree, Lineage())
+    XCTAssertEqual(walked.nodes.count, 101)
+    XCTAssertNil(walked.nodes[0]["shown"])
   }
 
   func testANodeCutKeepsTheMenuBar() {
@@ -358,17 +336,12 @@ final class WalkTests: XCTestCase {
     XCTAssertFalse(adoptsSettledTree(sameWindow: false, enabledNow: false, waited: false, loadedWebArea: false))
   }
 
-  func testShownRangesComeFromTheFetchedChildrenWhenTheyAreComplete() {
+  func testShownRangesArePositionsAmongTheChildrenTheAttributeReadReturned() {
     let tree = FakeTree()
     tree.children = [0: Array(1...150)]
-    tree.visible = [0: [3, 4]]
-    let source = FakeSource(tree)
-    _ = walk(tree, Lineage(), source: source)
-    XCTAssertEqual(source.allChildrenReads, 0, "the attribute read already holds all 150")
-    let capped = FakeSource(tree, cap: widthThreshold)
-    let walked = walk(tree, Lineage(), source: capped)
-    XCTAssertEqual(capped.allChildrenReads, 1, "a capped read needs the full list for positions")
-    XCTAssertEqual((walked.nodes[0]["shown"] as? [String: Any])?["ranges"] as? [[Int]], [[2, 4]])
+    tree.visible = [0: [3, 4, 9]]
+    let walked = walk(tree, Lineage())
+    XCTAssertEqual((walked.nodes[0]["shown"] as? [String: Any])?["ranges"] as? [[Int]], [[2, 4], [8, 9]])
   }
 
   func testAnUnreadableElementIsSkippedAndCounted() {

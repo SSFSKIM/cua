@@ -48,22 +48,24 @@ struct SettleReport {
 /// The vendor's loop (F §8.3) over injected time, notifications and readiness, so it can be tested on a fake clock.
 /// `ready` answers nil with no window (keep waiting), false when the tree is busy, true when it is quiet. `deadlineMs`,
 /// the request's deadline after the wait's start, cancels the wait once reached: the sleep that would cross it is cut
-/// there, and no busy walk starts after it.
+/// there, and no busy walk starts after it. Each decision reads the clock once, so a thread descheduled between two
+/// reads can never ask for a negative sleep.
 func runSettle(sampleMs: Double, quietMs: Double = settleQuietMs, capMs: Double = settleCapMs, deadlineMs: Double = .infinity,
                now: () -> Double, sleep: (Double) -> Void, drain: () -> [SettleEvent], ready: () -> Bool?) -> SettleReport {
   var report = SettleReport()
   let start = now()
   var last = start
   while true {
-    if now() - start >= deadlineMs {
+    let elapsed = now() - start
+    if elapsed >= deadlineMs {
       report.timedOut = true
       break
     }
-    if now() - start >= capMs {
+    if elapsed >= capMs {
       report.capped = true
       break
     }
-    sleep(min(sampleMs, deadlineMs - (now() - start)))
+    sleep(max(0, min(sampleMs, deadlineMs - elapsed)))
     if now() - start >= deadlineMs { continue }
     for event in drain() {
       report.counts[event.name, default: 0] += 1
@@ -104,7 +106,7 @@ extension Engine {
       sampleMs: webShaped ? settleWebSampleMs : settleSampleMs,
       deadlineMs: requestDeadline - started,
       now: monotonicMilliseconds,
-      sleep: { usleep(UInt32($0 * 1000)) },
+      sleep: { usleep(UInt32(max(0, $0) * 1000)) },
       drain: {
         (observer?.drain() ?? []).map { notification in
           guard notification.name == kAXTitleChangedNotification else { return SettleEvent(name: notification.name, at: notification.at, counts: true) }

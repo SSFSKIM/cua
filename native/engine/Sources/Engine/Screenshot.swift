@@ -121,16 +121,51 @@ func topLeftFrames(cocoa frames: [CGRect]) -> [CGRect] {
   return frames.map { CGRect(x: $0.minX, y: primary.maxY - $0.maxY, width: $0.width, height: $0.height) }
 }
 
-/// This Mac's screens now, read on the main thread, where AppKit keeps NSScreen.
-func currentScreenScales() -> [ScreenScale] {
-  let read: @Sendable () -> [ScreenScale] = {
-    MainActor.assumeIsolated {
-      let screens = NSScreen.screens
-      return zip(topLeftFrames(cocoa: screens.map(\.frame)), screens).map { ScreenScale(frame: $0, backingScale: $1.backingScaleFactor) }
+/// This Mac's screens now. AppKit keeps NSScreen on the main thread, so this is called there only.
+func readScreenScales() -> [ScreenScale] {
+  MainActor.assumeIsolated {
+    let screens = NSScreen.screens
+    return zip(topLeftFrames(cocoa: screens.map(\.frame)), screens).map { ScreenScale(frame: $0, backingScale: $1.backingScaleFactor) }
+  }
+}
+
+/// The screens as last read on the main thread: read at the engine's start and again on every
+/// `NSApplication.didChangeScreenParametersNotification` (a display added, removed, rearranged or rescaled), and read by
+/// a capture under a lock, so a capture never waits on the main thread.
+final class ScreenScaleCache: @unchecked Sendable {
+  private let lock = NSLock()
+  private var screens: [ScreenScale] = []
+  private let read: () -> [ScreenScale]
+  private var observer: NSObjectProtocol?
+
+  init(read: @escaping () -> [ScreenScale] = readScreenScales) { self.read = read }
+
+  /// Reads the screens now and on every change of the screen parameters; called on the main thread, where AppKit posts
+  /// the notification.
+  func start() {
+    refresh()
+    observer = NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: nil) {
+      [weak self] _ in self?.refresh()
     }
   }
-  return Thread.isMainThread ? read() : DispatchQueue.main.sync(execute: read)
+
+  private func refresh() {
+    let fresh = read()
+    lock.lock()
+    screens = fresh
+    lock.unlock()
+  }
+
+  var current: [ScreenScale] {
+    lock.lock()
+    defer { lock.unlock() }
+    return screens
+  }
+
+  deinit { observer.map(NotificationCenter.default.removeObserver) }
 }
+
+let screenScales = ScreenScaleCache()
 
 /// The capture's size in pixels for a window frame in points: each side times the scale, rounded up (the vendor's
 /// `frintp`, F §15).
@@ -201,7 +236,7 @@ extension Engine {
     var lookup = try shareableWindows.window(number, timings: &timings)
     guard var target = lookup.window else { throw EngineError(name: "noCapturableWindow", "No capturable window found: \(name)") }
     let configuration = SCStreamConfiguration()
-    let scale = screenshotScale(for: frame, screens: currentScreenScales())
+    let scale = screenshotScale(for: frame, screens: screenScales.current)
     let size = screenshotPixelSize(frame, scale: scale)
     configuration.width = size.width
     configuration.height = size.height

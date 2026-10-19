@@ -17,7 +17,7 @@
 import * as fs from 'node:fs';
 import {mkdtempSync} from 'node:fs';
 import {createHash} from 'node:crypto';
-import {tmpdir} from 'node:os';
+import {homedir, tmpdir} from 'node:os';
 import {dirname, join, resolve} from 'node:path';
 import {FIRST, LIST_APPS, AX_FULL, SCREENSHOT, SCRATCH_GUARD, TASK_NEW, TASK_TYPE, TASK_VERIFY, TASK_CLOSE, QUIT_TEXTEDIT, parseCell} from '../../../native-baseline/cells.mjs';
 import {prepareNative, cleanupNative, homeUsers} from '../../../native-baseline/prepare.mjs';
@@ -25,7 +25,9 @@ import {serveCommand, preparationScript, preflightScript, HELPER_SCRIPT, classif
 import {FRONTMOST_SCRIPT, parseFrontmost, sendIfFrontmost} from '../../../accept/key-guard.mjs';
 import {hostAttestationOf} from '../../../native-baseline.mjs';
 import {textOf} from '../../../browser-parity/mcp.mjs';
-import {quote} from '../../../browser-parity/topology.mjs';
+import {execute, quote, remoteCommand} from '../../../browser-parity/topology.mjs';
+import {executionFacts} from '../../../repl-parity/provenance.mjs';
+import {assertManagedNode} from '../../../repl-parity/node-provenance.mjs';
 import {SCENES, finderFolderFiles} from '../scenes.mjs';
 import {runningApps} from '../scene-processes.mjs';
 import {PAGE_TITLE} from '../fixtures/scene-page.mjs';
@@ -165,7 +167,12 @@ export async function runOnce(options, io) {
     meta.preparation = prepared;
     // Written at once, so a run that dies leaves what `measure.mjs cleanup --device <d> --preparation <file>` needs to
     // resume prepare.mjs's cleanup (which names its recovery directory when it cannot finish).
-    if (!prepared.local) fs.writeFileSync(join(dir, 'preparation.json'), JSON.stringify({device: d.device, prepared}, null, 2) + '\n', {mode: 0o600});
+    if (!prepared.local) {
+      const file = join(dir, 'preparation.json');
+      fs.writeFileSync(file, JSON.stringify({device: d.device, prepared}, null, 2) + '\n', {mode: 0o600});
+      log(`run ${options.run}: the approved home ${prepared.home} is held: start no cua session on this home until cleanup reports removed: true`);
+      log(`run ${options.run}: if this run dies, resume its cleanup with: node scripts/spike/engine/measure.mjs cleanup --device ${d.device} --preparation ${quote(file)}`);
+    }
     // The stop discipline inside the admission: no other run can start an engine between this stop and the run's launch.
     try { meta.engineStopAtStart = await stopEngine(ops); }
     catch (error) { if (error instanceof EngineRefusal) { refused = true; meta.refused = true; } throw error; }
@@ -202,6 +209,7 @@ export async function runOnce(options, io) {
     const spec = lane === 'vendor'
       ? onDevice(d, serveCommand({device: d.local ? 'local' : d.device, checkout: pre.checkout, home: pre.home, userHome: prepared.userHome, configHome: prepared.configHome, tmpdir: prepared.tmpdir, admission: prepared.admission, xSession: {}, host: 'vendor', platform: 'darwin', surface: 'computer'}))
       : cuaServeCommand(d, {home: prepared.home, userHome: prepared.userHome, configHome: prepared.configHome, tmpdir: prepared.tmpdir, engine, node});
+    meta.serveNode = (io.serveNode ?? serveNode)(d, {lane, checkout: pre.checkout});
     client = io.connect(spec, {
       answer: msg => (isSceneApproval(msg, bundleIds) ? {action: 'accept', content: {}} : {action: 'decline'}),
       onElicitation: (row, msg) => meta.elicitations.push({t: row.t, app: msg.params?._meta?.tool_params?.app ?? null, action: row.action}),
@@ -350,35 +358,68 @@ async function bind({lane, js, row, shell, records, meta, skipped}, scene) {
 // The vendor lane on this Mac: prepare.mjs's approved-home functions called in process, as the declared lane calls them
 // over ssh (the admission, state/ and run/ moved aside and back with recovery.json, the TMPDIR witness, the run's
 // helper stopped only when proven its own, the refusals). `seams` are prepare.mjs's own (the tests inject a device).
-// On this Mac the approved home is also the owner's live cua home, whose sessions name it nowhere on a command line, so
-// prepare.mjs's check for other users also counts the live sessions registered in its run/ (src/runtime/run-dir.mjs):
-// checked after the admission is taken, a live session refuses the preparation, and at cleanup it keeps the home aside.
+// Should the home be a live cua home (its sessions name it nowhere on a command line), prepare.mjs's check for other
+// users also counts the home's live sessions and agent (homeHolders): checked after the admission is taken, a holder
+// refuses the preparation and, at cleanup, keeps the home aside. The managed Node is checked before the admission and
+// any move, so a home without it refuses with the owner's state/ and run/ untouched.
 export const localPreparation = (seams = {}) => {
-  const {sessionsOf = liveSessions, ...rest} = seams;
-  const usersOf = (home, options) => [...(rest.usersOf ?? homeUsers)(home, options), ...sessionsOf(home)];
+  const {holdersOf = homeHolders, ...rest} = seams;
+  const usersOf = (home, options) => [...(rest.usersOf ?? homeUsers)(home, options), ...holdersOf(home)];
   return {
-    prepare: approvedHome => prepareNative({device: 'local', approvedHome}, {declared: () => ({platform: 'darwin'}), ...rest, usersOf}),
+    prepare: approvedHome => {
+      const home = fs.realpathSync(approvedHome);
+      assertManagedNode((rest.inspect ?? executionFacts)({source: home, ambient: {PATH: process.env.PATH, HOME: rest.userHomeDir ?? homedir(), CUA_HOME: home}}));
+      return prepareNative({device: 'local', approvedHome}, {declared: () => ({platform: 'darwin'}), ...rest, usersOf});
+    },
     cleanup: prepared => cleanupNative(prepared, {...rest, usersOf}),
   };
 };
 
-// The live cua sessions registered in `home`'s run/ (run/<session>.pid holding the claiming process's pid), as prepare.mjs
-// counts users: {pid, helper: false, owned: false}. Liveness is kill(pid, 0), which delivers no signal.
+const aliveByKill = pid => { try { process.kill(pid, 0); return true; } catch (error) { return error.code === 'EPERM'; } };
+// A record the check cannot read: a user of its own (never signalled: it is not the run's), so the run refuses.
+const unreadable = what => ({pid: `unreadable ${what}`, helper: false, owned: false, unreadable: true});
+
+// What holds `home` as prepare.mjs counts users ({pid, helper: false, owned: false}), liveness by kill(pid, 0), which
+// delivers no signal:
+//   the live sessions registered in run/ (src/runtime/run-dir.mjs: run/<session>.pid, the claiming process's pid);
+//   the live holder of state/agent.lock (src/remote/agent.mjs: {pid, token}).
+// Fail closed: a record or lock that is unreadable, empty or malformed is a user too; only an absent one is skipped.
 const SESSION_RECORD = /^[A-Za-z0-9-]{1,128}\.pid$/;
-export function liveSessions(home, {alive = pid => { try { process.kill(pid, 0); return true; } catch (error) { return error.code === 'EPERM'; } }} = {}) {
-  let names;
-  try { names = fs.readdirSync(join(home, 'run')); } catch (error) { if (error.code === 'ENOENT') return []; throw error; }
-  return names.filter(name => SESSION_RECORD.test(name)).flatMap(name => {
-    let pid;
-    try { pid = Number(fs.readFileSync(join(home, 'run', name), 'utf8').trim()); } catch { return []; }
-    return Number.isSafeInteger(pid) && pid > 0 && alive(pid) ? [{pid, helper: false, owned: false}] : [];
-  });
+export function homeHolders(home, {alive = aliveByKill} = {}) {
+  const holders = [];
+  let names = [];
+  try { names = fs.readdirSync(join(home, 'run')); } catch (error) { if (error.code !== 'ENOENT') holders.push(unreadable('run/')); }
+  for (const name of names.filter(n => n.endsWith('.pid'))) {
+    if (!SESSION_RECORD.test(name)) { holders.push(unreadable(`run/${name}`)); continue; }
+    let text;
+    try { text = fs.readFileSync(join(home, 'run', name), 'utf8'); } catch (error) { if (error.code !== 'ENOENT') holders.push(unreadable(`run/${name}`)); continue; }
+    const pid = /^\d+\n?$/.test(text) ? Number(text.trim()) : NaN;
+    if (!Number.isSafeInteger(pid) || pid <= 0) { holders.push(unreadable(`run/${name}`)); continue; }
+    if (alive(pid)) holders.push({pid, helper: false, owned: false});
+  }
+  let lock = null;
+  try { lock = fs.readFileSync(join(home, 'state', 'agent.lock'), 'utf8'); } catch (error) { if (error.code !== 'ENOENT') holders.push(unreadable('state/agent.lock')); }
+  if (lock !== null) {
+    let pid = NaN;
+    try { pid = JSON.parse(lock).pid; } catch {}
+    if (!Number.isSafeInteger(pid) || pid <= 0) holders.push(unreadable('state/agent.lock'));
+    else if (alive(pid)) holders.push({pid, helper: false, owned: false});
+  }
+  return holders;
 }
 
 // prepare.mjs's cleanup for a run's preparation: in process on this Mac, over ssh on a declared device. It is resumable:
 // a failure names the recovery directory, keeps the admission, and can be run again (`measure.mjs cleanup`).
 export function cleanupPreparation(d, shell, prepared, local = localPreparation()) {
   return d.local ? local.cleanup(prepared) : lastJson(shell(preparationScript('cleanup', prepared)));
+}
+
+// The Node the serve runs on (path and version), read through the serve's own transport and PATH: the vendor lane's
+// serve script runs `node` from the PATH ssh (or /bin/sh here) gives it, the cua lane's runs the device's node.
+function serveNode(d, {lane, checkout}) {
+  const probe = `cd ${quote(checkout)} && ${lane === 'vendor' ? 'node' : d.node} -e 'console.log(JSON.stringify({path: process.execPath, version: process.version}))'`;
+  try { return lastJson(execute(lane === 'vendor' ? onDevice(d, remoteCommand(d.local ? 'local' : d.device, probe)) : d.command(probe))); }
+  catch (error) { return {error: error.message.split('\n')[0].slice(0, 200)}; }
 }
 
 // The baseline's serve command is an ssh command; on this Mac the same script runs under /bin/sh.

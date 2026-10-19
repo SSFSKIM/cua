@@ -91,8 +91,9 @@ func jpegData(_ image: CGImage) -> Data? {
 }
 
 /// Pixels per point of the display under a window frame (global top-left coordinates, as AX reports them): the
-/// screenshot is captured at the display's pixel size, as the vendor's was on the mini's 2x scenes, and a coordinate
-/// click arrives in that space. 1 when no display is under the frame.
+/// screenshot is captured at the display's pixel size, as the vendor's was on the mini's 2x scenes. 1 when no display
+/// is under the frame. Read when capturing only: a coordinate click divides by the scale of the image the model was
+/// given (`ObservedScreenshot`), whatever the display's scale is by then.
 func pixelScale(of frame: CGRect) -> CGFloat {
   var display: CGDirectDisplayID = 0
   var count: UInt32 = 0
@@ -106,14 +107,59 @@ func screenshotPixelSize(_ frame: CGRect, scale: CGFloat) -> (width: Int, height
   (Int((frame.width * scale).rounded()), Int((frame.height * scale).rounded()))
 }
 
-/// A point given in screenshot pixels, as the window-local point in points.
-func windowPoint(fromScreenshot x: Double, _ y: Double, scale: CGFloat) -> CGPoint {
-  CGPoint(x: CGFloat(x) / scale, y: CGFloat(y) / scale)
+/// The screenshot's file name: the engine's pid, the revision its observation reports, and a random part.
+func screenshotFileName(revision: Int) -> String { "cua-engine-\(getpid())-\(revision)-\(UUID().uuidString.prefix(8)).jpg" }
+
+/// A screenshot as the capture returned it, with the window frame (in points) it was sized for.
+struct CapturedScreenshot {
+  let url: String
+  let width: Int
+  let height: Int
+  let frame: CGRect
+
+  var wire: [String: Any] { ["url": url, "width": width, "height": height] }
+}
+
+/// The screenshot coordinate clicks are placed in: the window it shows and its pixels per point on each axis, the
+/// returned image's size over the window's frame at the observation. A coordinate click arrives in that image's pixels
+/// and is divided by this scale, never by the scale of the display under the window when the click comes: after a
+/// display is unplugged or sleeps, or the window moves to another display, that scale can differ and the click would
+/// land at twice or half the offset. The vendor keeps its observation's scaling factor the same way
+/// (R/F-helper-logic.md §5.2).
+struct ObservedScreenshot {
+  let window: AXUIElement
+  let scaleX: CGFloat
+  let scaleY: CGFloat
+
+  init(window: AXUIElement, image: CapturedScreenshot) {
+    self.window = window
+    scaleX = CGFloat(image.width) / image.frame.width  // the capture refuses a frame under one point
+    scaleY = CGFloat(image.height) / image.frame.height
+  }
+
+  /// A point in the image's pixels as the window-local point in points.
+  func windowPoint(_ x: Double, _ y: Double) -> CGPoint { CGPoint(x: CGFloat(x) / scaleX, y: CGFloat(y) / scaleY) }
+}
+
+let noScreenshotForCoordinates = EngineError(name: "noScreenshotForCoordinates",
+  "There is no screenshot of the app's window to place the coordinates in. Try to get the on-screen content again and see if that resolves the issue.")
+
+extension ConnectionState {
+  /// A coordinate click's point in `window`, from its top-left corner in points: (x, y) in the pixels of the
+  /// screenshot the app's last observation on this connection returned, divided by that screenshot's scale. Refused,
+  /// before anything is posted, when there is no screenshot of `window` to place them in: no observation of the app
+  /// returned one yet, the request names a lineage that is not the app's current one (as for an element index), or the
+  /// app's primary window is no longer the window the screenshot shows.
+  func screenshotPoint(_ x: Double, _ y: Double, app: ResolvedApp, window: AXUIElement, lineage wanted: String?) throws -> CGPoint {
+    guard let lineage = lineages[app.key], wanted == nil || wanted == lineage.id,
+          let screenshot = lineage.screenshot, CFEqual(screenshot.window, window) else { throw noScreenshotForCoordinates }
+    return screenshot.windowPoint(x, y)
+  }
 }
 
 extension Engine {
-  /// The window's JPEG in `directory`: `{url, width, height}`.
-  func capture(window: AXUIElement, pid: pid_t, frame: CGRect?, into directory: String, name: String, revision: Int, timings: inout Timings) throws -> [String: Any] {
+  /// The window's JPEG in `directory`, its file named with `revision`, the revision its observation reports.
+  func capture(window: AXUIElement, pid: pid_t, frame: CGRect?, into directory: String, name: String, revision: Int, timings: inout Timings) throws -> CapturedScreenshot {
     try requireScreenRecording()
     guard let frame, frame.width >= 1, frame.height >= 1 else { throw EngineError(name: "noCapturableWindow", "No capturable window found: \(name)") }
     guard let number = timings.time("screenshotWindowNumber", { windowNumber(of: window, pid: pid, frame: frame) }) else {
@@ -138,9 +184,9 @@ extension Engine {
       image = try timings.time("screenshotCapture") { try captureImage(SCContentFilter(desktopIndependentWindow: target), configuration) }
     }
     guard let data = timings.time("screenshotEncode", { jpegData(image) }) else { throw screenCaptureFailed("The image could not be encoded.") }
-    let path = (directory as NSString).appendingPathComponent("cua-engine-\(getpid())-\(revision)-\(UUID().uuidString.prefix(8)).jpg")
+    let path = (directory as NSString).appendingPathComponent(screenshotFileName(revision: revision))
     try timings.time("screenshotWrite") { try writePrivately(data, to: path) }
-    return ["url": URL(fileURLWithPath: path).absoluteString, "width": image.width, "height": image.height]
+    return CapturedScreenshot(url: URL(fileURLWithPath: path).absoluteString, width: image.width, height: image.height, frame: frame)
   }
 }
 

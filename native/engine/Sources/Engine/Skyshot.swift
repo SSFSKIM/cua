@@ -46,12 +46,14 @@ struct Timings {
 }
 
 /// A capture started on its own thread; `wait()` joins it and hands back its result with the timings it recorded.
-final class PendingCapture: @unchecked Sendable {
+/// `result` and `timings` are written once on that thread before `done` is signalled and read only after `wait()` has
+/// taken the signal, which orders the two.
+final class PendingCapture<Value>: @unchecked Sendable {
   private let done = DispatchSemaphore(value: 0)
-  private var result: Result<[String: Any], Error> = .failure(EngineError(name: "screenCaptureFailed", "The capture did not run."))
+  private var result: Result<Value, Error> = .failure(EngineError(name: "screenCaptureFailed", "The capture did not run."))
   private var timings = Timings()
 
-  init(_ body: @escaping (inout Timings) throws -> [String: Any]) {
+  init(_ body: @escaping @Sendable (inout Timings) throws -> Value) {
     let thread = Thread { [self] in
       var recorded = Timings()
       let outcome = Result { try body(&recorded) }
@@ -63,7 +65,7 @@ final class PendingCapture: @unchecked Sendable {
     thread.start()
   }
 
-  func wait() -> (result: Result<[String: Any], Error>, timings: Timings) {
+  func wait() -> (result: Result<Value, Error>, timings: Timings) {
     done.wait()
     return (result, timings)
   }
@@ -192,10 +194,15 @@ extension Engine {
     let windowFrame = frame(of: window)
     // The window capture runs beside the tree walk (in-sitting tuning iteration 1): it needs only the window and its
     // frame, and the walk does not depend on it, so the observation costs the longer of the two, not their sum.
-    let captureRevision = lineage.revision, capturePid = pid(of: window)
-    let pendingCapture: PendingCapture? = includeScreenshot
+    // Its file is named with the revision this observation commits, which the Skyshot reports.
+    let captureRevision = lineage.nextRevision, capturePid = pid(of: window), displayName = app.displayName
+    // Sound though the SDK does not mark AXUIElement Sendable: the element is an immutable reference (its process and
+    // element token never change), and the capture thread only passes it to AX calls, which any thread may make, as
+    // the walk's own reads of the same window on this thread do.
+    nonisolated(unsafe) let captureWindow = window
+    let pendingCapture: PendingCapture<CapturedScreenshot>? = includeScreenshot
       ? PendingCapture { [self] timings in
-          try capture(window: window, pid: capturePid, frame: windowFrame, into: outputDirectory!, name: app.displayName,
+          try capture(window: captureWindow, pid: capturePid, frame: windowFrame, into: outputDirectory!, name: displayName,
                       revision: captureRevision, timings: &timings)
         }
       : nil
@@ -251,7 +258,9 @@ extension Engine {
     if let pendingCapture {
       let joined = timings.time("screenshotJoin") { pendingCapture.wait() }
       timings.merge(joined.timings)
-      screenshot = try joined.result.get()
+      let image = try joined.result.get()
+      screenshot = image.wire
+      lineage.screenshot = ObservedScreenshot(window: window, image: image)  // what this window's coordinate clicks divide by
     }
     timings.add("total", monotonicMilliseconds() - started)
 

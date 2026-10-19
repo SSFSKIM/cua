@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import XCTest
 @testable import Engine
 
@@ -51,7 +52,7 @@ final class ResolutionCacheTests: XCTestCase {
 final class ConcurrentCaptureTests: XCTestCase {
   func testTheCaptureRunsOffTheCallingThreadAndOverlapsTheWalk() {
     let started = DispatchSemaphore(value: 0), release = DispatchSemaphore(value: 0)
-    let pending = PendingCapture { timings in
+    let pending = PendingCapture<[String: Any]> { timings in
       XCTAssertFalse(Thread.isMainThread)
       started.signal()
       release.wait()
@@ -73,7 +74,7 @@ final class ConcurrentCaptureTests: XCTestCase {
   }
 
   func testACaptureFailureReachesTheJoin() {
-    let pending = PendingCapture { _ in throw EngineError(name: "screenCaptureFailed", "no window") }
+    let pending = PendingCapture<[String: Any]> { _ in throw EngineError(name: "screenCaptureFailed", "no window") }
     XCTAssertThrowsError(try pending.wait().result.get())
   }
 }
@@ -87,14 +88,78 @@ final class PixelScaleTests: XCTestCase {
     XCTAssertTrue(screenshotPixelSize(frame, scale: 1) == (610, 860))
   }
 
-  func testAScreenshotPointMapsBackToWindowPoints() {
-    XCTAssertEqual(windowPoint(fromScreenshot: 1220, 860, scale: 2), CGPoint(x: 610, y: 430))
-    XCTAssertEqual(windowPoint(fromScreenshot: 15, 7, scale: 1), CGPoint(x: 15, y: 7))
-  }
-
   func testTheScaleOfTheDisplayUnderAFrameIsAtLeastOne() {
     let main = CGDisplayBounds(CGMainDisplayID())
     XCTAssertGreaterThanOrEqual(pixelScale(of: CGRect(x: main.midX, y: main.midY, width: 10, height: 10)), 1)
     XCTAssertEqual(pixelScale(of: CGRect(x: -1e7, y: -1e7, width: 10, height: 10)), 1, "no display: points")
+  }
+}
+
+// The sitting's review: a coordinate click divides by the scale of the screenshot the model was given, and the
+// screenshot's file carries the revision its observation reports.
+
+final class ObservedScreenshotTests: XCTestCase {
+  private let app = ResolvedApp(appPath: "/Applications/Fake.app", bundleIdentifier: "com.example.fake", displayName: "Fake", running: nil)
+  private let window = AXUIElementCreateApplication(61_001)  // fake handles: nothing is sent to any process
+  private let otherWindow = AXUIElementCreateApplication(61_002)
+
+  /// A connection whose observation of the app returned `image` of `window`, or none.
+  private func connection(_ image: CapturedScreenshot?) -> (ConnectionState, Lineage) {
+    let connection = ConnectionState(id: 1, fd: -1)
+    let lineage = Lineage()
+    lineage.commit(Revision(route: .publicFetch))
+    if let image { lineage.screenshot = ObservedScreenshot(window: window, image: image) }
+    connection.lineages[app.key] = lineage
+    return (connection, lineage)
+  }
+
+  func testACoordinateClickDividesByTheObservedImagesScaleNotTheDisplaysNow() throws {
+    // The window sits on the main display, whose scale now differs from the one the observed image was taken at (the
+    // window moved, or a display changed, between the observation and the click).
+    let main = CGDisplayBounds(CGMainDisplayID())
+    let frame = CGRect(x: main.minX + 10, y: main.minY + 10, width: 610, height: 430)
+    let observed: CGFloat = pixelScale(of: frame) == 2 ? 1 : 2
+    let size = screenshotPixelSize(frame, scale: observed)
+    let (connection, _) = connection(CapturedScreenshot(url: "file:///x.jpg", width: size.width, height: size.height, frame: frame))
+    XCTAssertEqual(try connection.screenshotPoint(Double(305 * observed), Double(430 * observed), app: app, window: window, lineage: nil),
+                   CGPoint(x: 305, y: 430))
+  }
+
+  func testEachAxisDividesByItsOwnScale() throws {
+    // A frame whose pixel size rounded on one axis: each axis maps back by the image's own size over the frame's.
+    let frame = CGRect(x: 0, y: 0, width: 300.3, height: 200)
+    let size = screenshotPixelSize(frame, scale: 2)  // 601 × 400: x's scale is 601 / 300.3, y's exactly 2
+    let (connection, _) = connection(CapturedScreenshot(url: "file:///x.jpg", width: size.width, height: size.height, frame: frame))
+    let corner = try connection.screenshotPoint(Double(size.width), Double(size.height), app: app, window: window, lineage: nil)
+    XCTAssertEqual(corner.x, 300.3, accuracy: 1e-9)
+    XCTAssertEqual(corner.y, 200, accuracy: 1e-9)
+  }
+
+  func testWithoutAScreenshotOfTheWindowTheClickIsRefused() throws {
+    let image = CapturedScreenshot(url: "file:///x.jpg", width: 1220, height: 860, frame: CGRect(x: 0, y: 0, width: 610, height: 430))
+    let refused: [(String, ConnectionState, AXUIElement, String?)] = [
+      ("no observation of the app on this connection", ConnectionState(id: 1, fd: -1), window, nil),
+      ("observations, none with a screenshot", connection(nil).0, window, nil),
+      ("the app's primary window is another window now", connection(image).0, otherWindow, nil),
+      ("the request names another lineage", connection(image).0, window, "Lother"),
+    ]
+    for (reason, connection, window, lineage) in refused {
+      XCTAssertThrowsError(try connection.screenshotPoint(10, 10, app: app, window: window, lineage: lineage), reason) { error in
+        XCTAssertEqual((error as? EngineError)?.errorName, "noScreenshotForCoordinates", reason)
+        XCTAssertTrue((error as? EngineError)?.message.contains("get the on-screen content again") == true, reason)
+      }
+    }
+    let (named, lineage) = connection(image)
+    XCTAssertEqual(try named.screenshotPoint(20, 10, app: app, window: window, lineage: lineage.id), CGPoint(x: 10, y: 5), "the current lineage, named")
+  }
+
+  func testTheScreenshotIsNamedWithTheRevisionItsObservationReports() {
+    let lineage = Lineage()
+    lineage.commit(Revision(route: .publicFetch))  // an earlier observation
+    // As get_app_state orders it: the capture is named when it starts, before the walk commits the observation.
+    let name = screenshotFileName(revision: lineage.nextRevision)
+    lineage.commit(Revision(route: .publicFetch))
+    XCTAssertTrue(name.hasPrefix("cua-engine-\(getpid())-\(lineage.revision)-"), name)
+    XCTAssertEqual(lineage.revision, 2)
   }
 }

@@ -122,6 +122,9 @@ final class Lineage {
   private(set) var current: Revision?
   /// Watches for the layout changes and destroyed elements that make a re-fetch necessary (F §3.5).
   var monitor: InvalidationMonitor?
+  /// The screenshot of the lineage's last observation that returned one, which coordinate clicks are placed in
+  /// (Screenshot.swift). An observation without a screenshot leaves it: the model's coordinates still come from it.
+  var screenshot: ObservedScreenshot?
 
   init() { id = "L" + UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(12).lowercased() }
 
@@ -130,6 +133,10 @@ final class Lineage {
     defer { nextIndex += 1 }
     return nextIndex
   }
+
+  /// The revision the observation in progress commits as, and so what its Skyshot reports: its screenshot, captured
+  /// before the walk commits, is named with this.
+  var nextRevision: Int { revision + 1 }
 
   /// Ends an observation: `next` becomes the revision actions resolve against.
   func commit(_ next: Revision) {

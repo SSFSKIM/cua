@@ -1,21 +1,22 @@
 // measure.mjs (scripts/spike/engine/measure.mjs and ./measure/; the own native engine spec, M0 "Spike" and "Promote or
 // discard"): argument parsing, the approval matcher without `mode`, the not-run rows of the cua lane while its input
 // methods are not built, the summary's promote/discard table from fixture results, Finder's structural goldens, the
-// golden-file path check, the input source's save and restore, that every cell compiles, and a run that refuses before
-// anything is prepared when the checkout's build is not the approved one.
+// golden-file path check, the input source's save and restore, that every cell compiles, probe (d)'s tap rows carrying
+// the engine's answer, and a run that refuses before anything is prepared when the checkout's build is not the approved
+// one.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {parseCommand} from '../scripts/spike/engine/measure.mjs';
-import {renameGuard, probeC, ACTION_TARGET, sceneCliOf, keptFinderRecord, switchVerdict, SWITCHES, isSceneApproval, notRunRows, STRUCTURAL_ROWS, NOT_BUILT, CUA_INPUT_METHODS_BUILT, isSessionFile, withInputSource, runOnce, SCENE_ORDER, cuaServeCommand, UNICODE_STRINGS, keptFinderWindow, VENDOR_ONLY_ROWS} from '../scripts/spike/engine/measure/lane.mjs';
+import {renameGuard, probeC, ACTION_TARGET, sceneCliOf, keptFinderRecord, switchVerdict, SWITCHES, isSceneApproval, notRunRows, STRUCTURAL_ROWS, NOT_BUILT, CUA_INPUT_METHODS_BUILT, isSessionFile, withInputSource, runOnce, SCENE_ORDER, cuaServeCommand, UNICODE_STRINGS, keptFinderWindow, VENDOR_ONLY_ROWS, probeDTap, Stop} from '../scripts/spike/engine/measure/lane.mjs';
 import {summarize, renderSummary, median} from '../scripts/spike/engine/measure/summary.mjs';
 import {redactGolden} from '../scripts/spike/engine/measure/redact.mjs';
 import {NOTE} from '../scripts/spike/engine/render.mjs';
 import * as spikeCells from '../scripts/spike/engine/measure/cells.mjs';
 import {indexOfTarget, indexOfRowCell, finderEditing} from '../scripts/spike/engine/measure/cells.mjs';
-import {deviceOf, inCheckout} from '../scripts/spike/engine/measure/device.mjs';
+import {deviceOf, inCheckout, engineOps} from '../scripts/spike/engine/measure/device.mjs';
 import {parseCell, SCREENSHOT} from '../scripts/native-baseline/cells.mjs';
 
 const tempDir = t => { const dir = fs.mkdtempSync(join(tmpdir(), 'cua-measure-')); t.after(() => fs.rmSync(dir, {recursive: true, force: true})); return dir; };
@@ -465,6 +466,66 @@ test('probe (c) records a failed reading, never a verdict, when the front readin
   await probeC({d: {node: 'node'}, shell: () => '', ops, emit: row => rows.push(row), front, log: () => {}, meta: {problems: []}, opsFor: engineFake, timing: {sleep: async () => {}}});
   assert.deepEqual(rows.map(r => [r.op, r.ok, r.error]), [['probe.c.plainOpen', false, 'scenes.mjs front: swift failed'], ['probe.c.twoCopies', false, 'scenes.mjs front: swift failed']]);
   assert.ok(rows.every(r => !('activated' in r) && !('frontmostChanged' in r)), 'no verdict from a reading that failed');
+});
+
+// Probe (d)'s tap rows through the real engineOps, over a shell answering as engine-device.mjs prints on the device:
+// probe_tap's answer comes in the rpc envelope, {ok: true, result} or {ok: false, error: {code, errorName, message}}.
+async function tapRows(answers, {js = async () => ({cell: {ok: true, inCellMs: 12}, meta: {'cua/inputRoute': 3}}), sent = []} = {}) {
+  const rows = [];
+  const shell = script => {
+    const command = script.includes("'probe_tap'") ? `probe_tap ${JSON.parse(script.match(/'(\{.*\})'/)[1]).op}` : script.includes("'keystroke'") ? 'keystroke' : script;
+    sent.push(command);
+    if (!(command in answers)) throw new Error(`unexpected device command: ${command}`);
+    return `${JSON.stringify(answers[command])}\n`;
+  };
+  await probeDTap({js, emit: row => rows.push(row),
+    records: {textedit: {app: '/tmp/scene/TextEdit.app', pid: 501}}, front: () => ({frontmost: {pid: 501}, topWindow: {bounds: {x: 0, y: 0, width: 600, height: 400}}}),
+    activate: async () => {}, ops: engineOps({node: 'node'}, shell)});
+  return {rows, sent};
+}
+
+test('probe (d): an engine refusal of probe_tap reaches both tap rows with its name and sentence', async () => {
+  const refusal = {ok: false, error: {code: -10005, errorName: 'tapNotCreated', message: 'The listen-only event tap could not be created (the Input Monitoring listen grant is granted).'}};
+  const {rows, sent} = await tapRows({'probe_tap start': refusal});
+  assert.deepEqual(sent, ['probe_tap start', 'probe_tap start']);
+  assert.deepEqual(rows.map(r => [r.op, r.ok, r.errorName, r.error]), [
+    ['probe.d.tap', false, 'tapNotCreated', refusal.error.message],
+    ['probe.d.hidReset', false, 'tapNotCreated', refusal.error.message],
+  ], 'the engine\'s sentence says whether the listen grant was seen');
+});
+
+test('probe (d): a tap the engine created is read from the envelope\'s result, stopped, and counted', async () => {
+  const counts = {keyDown: {own: 2, driven: 0, other: 1}, keyUp: {own: 2, driven: 1, other: 0}};
+  const {rows, sent} = await tapRows({
+    'probe_tap start': {ok: true, result: {created: true, listenAccess: true, running: true, startedAt: 1, seconds: 180}},
+    'probe_tap stop': {ok: true, result: {counts, hidIdleMs: 40, listenAccess: true, ownTimes: [5], drivenTimes: [7], created: true}},
+    keystroke: {sent: true},
+  });
+  assert.deepEqual(sent, ['probe_tap start', 'probe_tap stop', 'probe_tap start', 'keystroke', 'probe_tap stop'], 'each tap started is stopped');
+  const [tap, hidReset] = rows;
+  assert.deepEqual([tap.op, tap.ok, tap.created, tap.listenAccess, tap.own, tap.driven, tap.other, tap.ownPostsReachTheTap, tap.hidIdleMsAfterOwnPosts, tap.route],
+    ['probe.d.tap', true, true, true, 4, 1, 1, true, 40, 3]);
+  assert.deepEqual([hidReset.op, hidReset.ok, hidReset.driven, hidReset.probe], ['probe.d.hidReset', true, 1, {sent: true}]);
+});
+
+test('probe (d): a refused stop is a failed row with the engine\'s name, not a crash of the input probes', async () => {
+  const notRunning = {ok: false, error: {code: -10005, errorName: 'tapNotRunning', message: 'No probe tap is running'}};
+  const {rows} = await tapRows({
+    'probe_tap start': {ok: true, result: {created: true, listenAccess: true, running: true}},
+    'probe_tap stop': notRunning,
+    keystroke: {sent: true},
+  });
+  assert.deepEqual(rows.map(r => [r.op, r.ok, r.errorName, r.error]), [
+    ['probe.d.tap', false, 'tapNotRunning', 'No probe tap is running'],
+    ['probe.d.hidReset', false, 'tapNotRunning', 'No probe tap is running'],
+  ]);
+});
+
+test('probe (d): a run stopped during the tap\'s key action sends nothing more, the keystroke probe included', async () => {
+  const sent = [];
+  const answers = {'probe_tap start': {ok: true, result: {created: true, listenAccess: true, running: true}}, keystroke: {sent: true}};
+  await assert.rejects(tapRows(answers, {js: async () => { throw new Stop('a cell timed out'); }, sent}), Stop);
+  assert.deepEqual(sent, ['probe_tap start'], 'no keystroke and no second tap after the stop');
 });
 
 // A Finder row as the MacBook window's vendor golden recorded it (structurally redacted; Korean role words replaced by

@@ -8,7 +8,7 @@ It consolidates three readings in this directory into one rule set: `A-contract.
 
 - **Source tags.** Every rule carries its source in square brackets.
   - `[F §n]` was read in the helper's code. `[E §n]` is what the binary's strings, symbols and types state. `[A §n]` is the JS side, cua's harnesses and observed behaviour.
-  - `[cua: Decision Log n]` is cua's own departure, recorded in that Decision Log entry. `[cua: Design, <paragraph>]` is a cua rule the Design states with no entry of its own.
+  - `[cua: Decision Log n]` is cua's own departure, recorded in that Decision Log entry. `[cua: Design, <paragraph>]` is a cua rule the Design states with no entry of its own. An entry added after this reading is cited by its date and subject (`[cua: Decision Log, 2026-10-19 screenshot-size ruling]`): later entries are inserted above the last one, so a number would shift.
   - `[undetermined: F §14.n]`: the vendor's rule is not known. The tag cites F §14's numbered item, or the section that leaves the rule open when §14 does not list it.
   - "inference" inside a tag means the source marks the point as inference.
 - **Precedence.** Where A, E and F disagree, F (read from the code) wins over E (strings and types), which wins over A (the JS side). Each such rule says so in the words "**F over E**", "**F over A**" or "**E over A**", so they can be found by searching.
@@ -41,9 +41,9 @@ It consolidates three readings in this directory into one rule set: `A-contract.
 | `type_text` | `app`, `text` | none |
 
 - The JS never sends a click's `duration` or held `key`, nor a pressKey `duration`. The hold, held-key and holdKey paths are therefore dormant on cua's path [E §1.3].
-- Coordinates are "in the app-window screenshot", which at the measured size is the window's points [A §3.7].
+- Coordinates are "in the app-window screenshot" [A §3.7], so in its pixels; on the mini's 2× display the screenshot is the window's pixel size, twice its points (§2, Screenshot) [cua: Decision Log, 2026-10-19 screenshot-size ruling].
   - vendor: coordinates are CGFloat on the wire and truncated to integers [E §1.3, inference]. They map to the screen as point × scaling factor + the visible rect's origin, and the factor's value is not visible [F §5.2; E §4.2].
-  - cua: coordinates are window points, the screenshot's own pixel space [cua: Design, Screenshot].
+  - cua: coordinates are in the screenshot's pixel space, as the vendor's are. A click divides them by the scale of the screenshot its observation returned (the image's pixels per window point), not by the scale of the display under the window when the click comes, to get the window point it lands on [cua: Design, Screenshot; Decision Log, 2026-10-19 screenshot-size ruling].
 - To the facade, `get_app_state` returns `{app, screenshot: {url} | null, text}`, where `app` is the bound identity (§3) [A §1.4, §7]. Every input method returns `undefined` [A §1.4].
 - vendor: every action's IPC answer is `{app, skyshot?}`; the skyshot is absent on the IPC path, and the JS discards the answer [E §1.2; F §8.6] / cua: input results carry only meta (`cua/inputRoute`, `cua/actionInterval`, `cua/receivedAt`, `cua/hidIdleMs`) [cua: Design, Result meta].
 - vendor: when the helper returns `appSpecificInstructions`, the JS prepends `<app_specific_instructions>\n…\n</app_specific_instructions>\n` to the text once per app per service process, never for Numbers. The helper ships seven `AppInstructions/*.md` files and a compiled-in `## Browser Computer Use` note [A §3.1; E §8, §6.5] / cua: no per-app instruction text [cua: Decision Log 12].
@@ -75,8 +75,8 @@ It consolidates three readings in this directory into one rule set: `A-contract.
   - the encoding is JPEG or PNG, with the quality not visible;
   - a classifier behind `feature/skyshotClassifier` can return no screenshot; its default is not visible.
   
-  The screenshot is returned as a `file://` URL. Measured: a 1172 × 976 JPEG of about 50 KB [A §3.7].
-- **Screenshot, cua.** A screenshot is captured only when the request asks (`includeScreenshot`). It uses `SCScreenshotManager` with a desktop-independent-window filter, is scaled to points, and is written as a JPEG at quality 0.8 with mode 0600 into `outputDirectory`, returned as a `file:` URL [cua: Design, Screenshot]. The tree is walked on every observation either way, so the diff baseline still advances (§9).
+  The screenshot is returned as a `file://` URL. Measured: a 1172 × 976 JPEG of about 50 KB [A §3.7]. On the mini's 2× display it was the window's pixel size: 1220 × 1720 for the TextEdit scene's 610 × 860-point window, 1840 × 872 for Finder's and 1440 × 1120 for Electron's. The MacBook baseline's 1172 × 976 was read as points, so the vendor's sizing rule, and when it downsizes, is open [cua: Decision Log, 2026-10-19 screenshot-size ruling].
+- **Screenshot, cua.** A screenshot is captured only when the request asks (`includeScreenshot`). It uses `SCScreenshotManager` with a desktop-independent-window filter, is captured at the display's pixel size (the window's frame times the pixels per point of the display under it), as the vendor's was on the mini, and is written as a JPEG at quality 0.8 with mode 0600 into `outputDirectory`, returned as a `file:` URL [cua: Design, Screenshot; Decision Log, 2026-10-19 screenshot-size ruling]. The tree is walked on every observation either way, so the diff baseline still advances (§9).
 
 ## 3. App resolution, launch and listing
 
@@ -744,7 +744,7 @@ The cua column follows the Design's kept list and its Paste paragraph [cua: Desi
 | debounce at request start | poll every 250 ms for ≤ 100 s, then refuse | refuse at once | [F §9.5; cua: Decision Log 9] |
 | "Wait 5 seconds and retry." | a literal 5 | same | [F §9.5] |
 | list_apps recency | 14 days (Spotlight) | the engine's usage store | [E §7; cua: Design, App resolution and launch] |
-| screenshot | JPEG or PNG, quality not visible; measured 1172 × 976, about 50 KB | JPEG 0.8, in points | [E §4.2; A §3.7; cua: Design, Screenshot] |
+| screenshot | JPEG or PNG, quality not visible; the window's pixel size on the mini's 2× display, 1172 × 976 at about 50 KB on the MacBook baseline; the sizing rule is open | JPEG 0.8, at the display's pixel size | [E §4.2; A §3.7; cua: Design, Screenshot; Decision Log, 2026-10-19 screenshot-size ruling] |
 
 ## 23. Open points for M1a and M2a
 

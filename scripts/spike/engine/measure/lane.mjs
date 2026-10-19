@@ -185,7 +185,7 @@ export async function withInputSource(ops, dir, fn) {
   }
 }
 
-class Stop extends Error {}
+export class Stop extends Error {}
 
 // One run of a lane. `io`: {shell, ops, connect(spec, handlers), confirm, log, sleep}. -> 0 when complete.
 export async function runOnce(options, io) {
@@ -693,6 +693,50 @@ export async function probeC({d, shell, ops, emit, front, log, meta, opsFor = bu
   }
 }
 
+// (d) The tap itself, around one key action on the TextEdit scene: created with Accessibility alone, and whether
+// the engine's own pid-posted HID-source events reach the tap or reset the HID idle counter — the two answers that
+// choose between the tap and the HID-idle fallback.
+export async function probeDTap({js, emit, records, front, activate, ops}) {
+  if (!records.textedit) return;
+  const sum = (counts, kind) => Object.values(counts ?? {}).reduce((t, per) => t + (per?.[kind] ?? 0), 0);
+  // ops.probeTap answers the engine's result and throws its refusal with the engine's name (tapNotCreated's sentence
+  // says whether the listen grant was seen), which the row keeps. A stopped run stops here too: nothing more is sent.
+  const failed = (op, error) => {
+    if (error instanceof Stop) throw error;
+    emit({op, scene: 'textedit', sample: 1, ok: false, errorName: error.errorName ?? null, error: error.message});
+  };
+  try {
+    await activate('textedit');
+    ops.probeTap('start', {app: records.textedit.app, seconds: 180});
+    const acted = await js(spike.ACT_KEY('textedit', KEY_PROBE.textedit));
+    const report = ops.probeTap('stop');
+    const counts = report.counts ?? {};
+    emit({op: 'probe.d.tap', scene: 'textedit', sample: 1, ok: true, created: true, listenAccess: report.listenAccess ?? null,
+      own: sum(counts, 'own'), driven: sum(counts, 'driven'), other: sum(counts, 'other'),
+      ownPostsReachTheTap: sum(counts, 'own') > 0, hidIdleMsAfterOwnPosts: report.hidIdleMs ?? null,
+      route: acted.meta?.['cua/inputRoute'] ?? null, inCellMs: acted.cell?.inCellMs ?? null,
+      ownTimes: report.ownTimes ?? [], drivenTimes: report.drivenTimes ?? []});
+  } catch (error) { failed('probe.d.tap', error); }
+  // (d) The keystroke probe as a stand-in user: an HID-tap-posted event, counted as the driven app's input when the
+  // tap attributes it, and its reset of the HID idle counter.
+  try {
+    await activate('textedit');
+    const seen = front();
+    const bounds = seen.topWindow?.bounds;
+    if (seen.frontmost?.pid !== records.textedit.pid || !bounds) {
+      emit({op: 'probe.d.hidReset', scene: 'textedit', sample: 1, ok: false, notRun: 'the scene window was not the front one for the keystroke probe'});
+      return;
+    }
+    ops.probeTap('start', {app: records.textedit.app, seconds: 120});
+    const sent = ops.keystroke(records.textedit.pid, `${bounds.x},${bounds.y},${bounds.width},${bounds.height}`, 'cua');
+    const report = ops.probeTap('stop');
+    const counts = report.counts ?? {};
+    emit({op: 'probe.d.hidReset', scene: 'textedit', sample: 1, ok: sum(counts, 'driven') > 0,
+      driven: sum(counts, 'driven'), other: sum(counts, 'other'), hidIdleMs: report.hidIdleMs ?? null,
+      probe: sent, drivenTimes: report.drivenTimes ?? []});
+  } catch (error) { failed('probe.d.hidReset', error); }
+}
+
 // Cua lane, input built: probes (a) and (b) on every scene with its paired user window in front — (b) also forces each
 // route through the spike-only spikeRoute with a watch-activations probe running, so what route 3 does to the user's
 // frontmost is seen from outside the engine; (d)'s cases, the tap and the keystroke probe through probe_tap and the
@@ -701,7 +745,6 @@ export async function probeC({d, shell, ops, emit, front, log, meta, opsFor = bu
 async function inputProbes(ctx) {
   const {js, row, emit, records, scenes, front, activate, operator, io, ops, dir, active, finderRenameGuard} = ctx;
   const renameCheck = (scene, action) => (scene === 'finder' && action === 'click' ? finderRenameGuard() : {});
-  const sum = (counts, kind) => Object.values(counts ?? {}).reduce((t, per) => t + (per?.[kind] ?? 0), 0);
   const watchLines = file => fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).map(line => { try { return JSON.parse(line); } catch { return null; } }).filter(Boolean) : [];
   for (const scene of active()) {
     const user = USER_WINDOW[scene];
@@ -756,49 +799,7 @@ async function inputProbes(ctx) {
   const fired = taskRows.filter(r => /userIntervened|The user changed|still interacting/.test(r.error ?? ''));
   emit({op: 'probe.d.noFire', scene: 'textedit', sample: 1, ok: taskRows.length > 0 && !fired.length, taskRows: taskRows.length, fired: fired.length,
     note: 'the engine\'s own super+n, typing, super+w and sheet click in the task rows; none may fail as userIntervened'});
-  // (d) The tap itself, around one key action on the TextEdit scene: created with Accessibility alone, and whether
-  // the engine's own pid-posted HID-source events reach the tap or reset the HID idle counter — the two answers that
-  // choose between the tap and the HID-idle fallback.
-  if (records.textedit) {
-    let tap = null;
-    try {
-      await activate('textedit');
-      tap = ops.probeTap('start', {app: records.textedit.app, seconds: 180});
-    } catch (error) { emit({op: 'probe.d.tap', scene: 'textedit', sample: 1, ok: false, error: error.message}); }
-    if (tap?.created) {
-      const acted = await js(spike.ACT_KEY('textedit', KEY_PROBE.textedit));
-      const report = ops.probeTap('stop');
-      const counts = report.counts ?? {};
-      emit({op: 'probe.d.tap', scene: 'textedit', sample: 1, ok: true, created: true, listenAccess: report.listenAccess ?? null,
-        own: sum(counts, 'own'), driven: sum(counts, 'driven'), other: sum(counts, 'other'),
-        ownPostsReachTheTap: sum(counts, 'own') > 0, hidIdleMsAfterOwnPosts: report.hidIdleMs ?? null,
-        route: acted.meta?.['cua/inputRoute'] ?? null, inCellMs: acted.cell?.inCellMs ?? null,
-        ownTimes: report.ownTimes ?? [], drivenTimes: report.drivenTimes ?? []});
-    } else if (tap) {
-      emit({op: 'probe.d.tap', scene: 'textedit', sample: 1, ok: false, error: 'the tap could not be created', listenAccess: tap.listenAccess ?? null});
-    }
-    // (d) The keystroke probe as a stand-in user: an HID-tap-posted event, counted as the driven app's input when the
-    // tap attributes it, and its reset of the HID idle counter.
-    try {
-      await activate('textedit');
-      const seen = front();
-      const bounds = seen.topWindow?.bounds;
-      if (seen.frontmost?.pid !== records.textedit.pid || !bounds) {
-        emit({op: 'probe.d.hidReset', scene: 'textedit', sample: 1, ok: false, notRun: 'the scene window was not the front one for the keystroke probe'});
-      } else {
-        const second = ops.probeTap('start', {app: records.textedit.app, seconds: 120});
-        if (!second?.created) { emit({op: 'probe.d.hidReset', scene: 'textedit', sample: 1, ok: false, error: 'the tap could not be created', listenAccess: second?.listenAccess ?? null}); }
-        else {
-          const sent = ops.keystroke(records.textedit.pid, `${bounds.x},${bounds.y},${bounds.width},${bounds.height}`, 'cua');
-          const report = ops.probeTap('stop');
-          const counts = report.counts ?? {};
-          emit({op: 'probe.d.hidReset', scene: 'textedit', sample: 1, ok: sum(counts, 'driven') > 0,
-            driven: sum(counts, 'driven'), other: sum(counts, 'other'), hidIdleMs: report.hidIdleMs ?? null,
-            probe: sent, drivenTimes: report.drivenTimes ?? []});
-        }
-      }
-    } catch (error) { emit({op: 'probe.d.hidReset', scene: 'textedit', sample: 1, ok: false, error: error.message}); }
-  }
+  await probeDTap(ctx);
   if (operator && records.textedit) {
     // The keystroke goes into the driven app while it is frontmost; the click into its window while the paired user
     // window is in front (the driven app in the background).

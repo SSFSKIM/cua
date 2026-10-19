@@ -52,8 +52,10 @@ extension Engine {
   /// AXPress) when a plain left click's action is advertised and the element is not a menu-bar item; every other
   /// element click synthesizes the events under route 3 (F §5.1: the vendor synthesizes inside a web view and for
   /// menu-bar items; cua takes route 3 for all synthesized element clicks, M0's measured default). A coordinate click
-  /// takes route 3 when the point is over web content, else route 2, whose events carry ⌘ when the target app is
-  /// inactive (the AppKit convention for a click an inactive window accepts, F §5.4).
+  /// is in the pixels of the last screenshot of the app's primary window on this connection, and is refused
+  /// (`noScreenshotForCoordinates`, nothing posted) when there is none; it takes route 3 when the point is over web
+  /// content, else route 2, whose events carry ⌘ when the target app is inactive (the AppKit convention for a click an
+  /// inactive window accepts, F §5.4).
   func click(_ args: [String: Any], _ context: ExecutionContext) throws -> Any {
     let hasIndex = (args["element_index"] as? NSNumber).map { CFGetTypeID($0) != CFBooleanGetTypeID() } ?? false
     let hasPoint = numberArg(args["x"]) != nil && numberArg(args["y"]) != nil
@@ -113,7 +115,8 @@ extension Engine {
         guard let window = primaryWindow(of: application), let windowFrame = frame(of: window) else {
           throw EngineError(name: "noWindowsAvailable", "noWindowsAvailable")
         }
-        let local = windowPoint(fromScreenshot: x, y, scale: pixelScale(of: windowFrame))  // screenshot pixels to points
+        // Screenshot pixels to points, by the scale of the screenshot the model was given (Screenshot.swift).
+        let local = try context.connection.screenshotPoint(x, y, app: app, window: window, lineage: context.lineage)
         let point = CGPoint(x: windowFrame.minX + local.x, y: windowFrame.minY + local.y)
         let hit = hitTest(window: window, at: point)
         let owner = hit.map { ownerPid(of: $0) } ?? appPid

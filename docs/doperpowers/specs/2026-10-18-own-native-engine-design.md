@@ -27,6 +27,10 @@ How to see it: on the mini, with the plugin at the release this work ships, run 
 - [x] (2026-10-18) Owner's acceptance of the peer exposure (the Decision Log's accepted entry) and of the scene decisions in Decision Log entry 3.
 - [x] (2026-10-18) M0 reading tier 2 done: `F-helper-logic.md` with the soft-link table fully recovered (SipHash-2-4, textbook key, 28 salts) and 27 divergences between the design and the vendor's code; the design sections revised from it (Decision Log entry 9). The mini's signing identity validated and pinned (M1b prerequisites); the partition-list step is still the owner's.
 - [ ] M0 — Measured spike (running; the MacBook grant allowed) and `sky-behaviour.md`.
+  - [x] (2026-10-18 23:05) Spike T1, the engine's observation core (`native/engine/`, `assemble.mjs`), reviewed clean after three fix rounds (c20d3305, build 52cf40cc); its input methods are notImplemented stubs pending the owner's `feat/117-input`.
+  - [x] (2026-10-18 22:20) Spike T2, the spike service and `serve.mjs`, reviewed clean (e9c79d5).
+  - [x] (2026-10-18 21:55) Spike T3, scenes and fixtures, reviewed clean (5741442).
+  - [x] (2026-10-18 21:55) MacBook development grants: the spike bundle approved at the approved location (Surprises).
   - [ ] (2026-10-18) Spike half started on the MacBook (plan-executor for maws-3f): four build tasks, the engine package with `assemble.mjs` (T1), the spike service and `serve.mjs` (T2), scenes and fixtures (T3), `measure.mjs` (T4); the mini sitting follows when the dispatching session arranges the hold and the owner.
 - [ ] Critique debate on the design as revised by M0 (Decision Log entry 1); gates M1a.
 - [ ] M1a — Engine core, basic input, policy; goldens on hosted CI.

@@ -199,8 +199,9 @@ final class TapProbe: @unchecked Sendable {
     countsPointer = nil
     tap = nil
     tapRunLoop = nil
+    let done = threadDone  // captured under the lock: a start racing in must not swap the semaphore being waited on
     lock.unlock()
-    _ = threadDone.wait(timeout: .now() + .seconds(2))  // the thread signals after CFRunLoopRun returns
+    _ = done.wait(timeout: .now() + .seconds(2))  // the thread signals after CFRunLoopRun returns
     Unmanaged<TapCounts>.fromOpaque(pointer).release()
     var report = counting.report
     report["created"] = created

@@ -32,7 +32,9 @@ const probe = (args, {exec = run} = {}) => JSON.parse(exec('/usr/bin/swift', [FR
 // FrontWindowProbe's frontmost application and top window. -> {at, frontmost: {bundleId, pid} | null, topWindow | null}.
 export const frontWindow = options => probe(['front'], options);
 // A process's layer-0 windows, front to back. -> [{ownerPid, number, bounds, onScreen}].
-export const appWindows = (pid, options) => probe(['windows', String(pid)], options).windows;
+export const appWindows = (pid, options) => appWindowState(pid, options).windows;
+// The same reading with whether the app is hidden (Cmd-H; null when LaunchServices does not know the pid). -> {windows, hidden}.
+export const appWindowState = (pid, options) => { const {windows, hidden} = probe(['windows', String(pid)], options); return {windows, hidden}; };
 
 // `open` through LaunchServices, so a GUI app comes up in the console's session even over ssh. `-g` keeps the launch
 // from activating anything; `-n` makes a new instance rather than handing the request to a running one.

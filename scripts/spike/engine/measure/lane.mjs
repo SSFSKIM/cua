@@ -40,6 +40,17 @@ export const NOT_BUILT = 'input methods not built';
 const REFUSED = 2;
 export const LANES = ['vendor', 'cua'];
 export const SCENE_ORDER = ['textedit', 'finder', 'chrome', 'electron'];
+
+// Whether the sitting's kept Finder scene (the record a previous run left up) is reused: only while its window is on
+// screen (preflight's finderWindows). A kept window that is minimized or on another Space (preflight's off-screen list)
+// is the operator's to bring back or close, with its own message rather than "did not come up".
+export function keptFinderWindow(kept, checked) {
+  if (!kept) return false;
+  const number = kept.window?.number;
+  if ((checked.finderWindows ?? []).includes(number)) return true;
+  if ((checked.finderOffScreenWindows ?? []).some(w => w.number === number)) throw new Error('the run\'s Finder window is not on screen; bring it back or close it');
+  return false;
+}
 const CELL_MS = 60_000, BIND_MS = 120_000;
 const round = ms => Math.round(ms * 1000) / 1000;
 
@@ -156,8 +167,10 @@ export async function runOnce(options, io) {
     // its view per folder, and the cua lane leaves its Finder window up for the next run).
     const checked = sceneCli(['preflight', '--run', sceneDir]);
     if (checked.refusals?.length) throw new Error(`the scenes refuse: ${checked.refusals.map(r => r.message).join('; ')}`);
+    // Finder's windows off screen do not refuse (the spec's Decision Log, 2026-10-19); the run keeps their record.
+    meta.finderOffScreenWindows = checked.finderOffScreenWindows ?? [];
     const kept = readSceneState(shell, sceneDir).scenes ?? {};
-    const finderKept = kept.finder && (checked.finderWindows ?? []).includes(kept.finder.window?.number);
+    const finderKept = keptFinderWindow(kept.finder, checked);
 
     if (lane === 'cua' && probes.includes('c')) await probeC({d, shell, ops, emit, front, log, meta});
     if (lane === 'cua') meta.engineLaunch = {via: 'open -n -g -a', ...pick(await launchEngine(ops), ['pid', 'build', 'accessibility', 'screenRecording', 'connections'])};

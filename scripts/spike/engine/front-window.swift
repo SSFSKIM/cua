@@ -5,13 +5,16 @@
 //                   frontmost from `lsappinfo front` then `lsappinfo info -only pid,bundleid`; topWindow is the frontmost
 //                   on-screen window at the normal level (layer 0) with a visible size and alpha, from
 //                   CGWindowListCopyWindowInfo, front to back.
-//   windows <pid>   {"at", "pid", "windows": [<window>]}: every layer-0 window of that process with a visible size, on
-//                   screen or not (a minimized or other-Space window counts), front to back.
+//   windows <pid>   {"at", "pid", "hidden", "windows": [<window>]}: every layer-0 window of that process with a visible
+//                   size, front to back, each with its `onScreen` (false for a minimized window, one on another Space, or
+//                   every window of a hidden app); `hidden` is NSRunningApplication's isHidden for the process (Cmd-H),
+//                   null when LaunchServices does not know the pid.
 //   <window>        {"ownerPid", "number", "bounds": {"x", "y", "width", "height"}, "onScreen"}
 //
 // It reads no window names and no owner names: only kCGWindowOwnerPID, kCGWindowNumber, kCGWindowBounds,
-// kCGWindowLayer, kCGWindowAlpha and kCGWindowIsOnscreen, none of which needs Screen Recording, so it never raises a
-// permission dialog. Exit 0 with the JSON; exit 2 with {"error"} on a usage error.
+// kCGWindowLayer, kCGWindowAlpha and kCGWindowIsOnscreen, none of which needs Screen Recording, and an app's isHidden, so
+// it never raises a permission dialog. Exit 0 with the JSON; exit 2 with {"error"} on a usage error.
+import AppKit
 import CoreGraphics
 import Foundation
 
@@ -77,7 +80,9 @@ case "front":
   emit(["at": now, "frontmost": frontmost() as Any? ?? NSNull(), "topWindow": top as Any? ?? NSNull()])
 case "windows":
   guard arguments.count == 2, let pid = Int(arguments[1]), pid > 0 else { emit(["error": "usage: windows <pid>"], status: 2) }
-  emit(["at": now, "pid": pid, "windows": windows([.optionAll, .excludeDesktopElements]).filter { ($0["ownerPid"] as? Int) == pid }])
+  let hidden = NSRunningApplication(processIdentifier: pid_t(pid))?.isHidden
+  emit(["at": now, "pid": pid, "hidden": hidden as Any? ?? NSNull(),
+        "windows": windows([.optionAll, .excludeDesktopElements]).filter { ($0["ownerPid"] as? Int) == pid }])
 default:
   emit(["error": "usage: front | windows <pid>"], status: 2)
 }

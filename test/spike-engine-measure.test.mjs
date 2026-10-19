@@ -9,7 +9,7 @@ import * as fs from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {parseCommand} from '../scripts/spike/engine/measure.mjs';
-import {switchVerdict, SWITCHES, isSceneApproval, notRunRows, STRUCTURAL_ROWS, NOT_BUILT, CUA_INPUT_METHODS_BUILT, isSessionFile, withInputSource, runOnce, SCENE_ORDER, cuaServeCommand, UNICODE_STRINGS} from '../scripts/spike/engine/measure/lane.mjs';
+import {switchVerdict, SWITCHES, isSceneApproval, notRunRows, STRUCTURAL_ROWS, NOT_BUILT, CUA_INPUT_METHODS_BUILT, isSessionFile, withInputSource, runOnce, SCENE_ORDER, cuaServeCommand, UNICODE_STRINGS, keptFinderWindow} from '../scripts/spike/engine/measure/lane.mjs';
 import {summarize, renderSummary, median} from '../scripts/spike/engine/measure/summary.mjs';
 import {redactGolden} from '../scripts/spike/engine/measure/redact.mjs';
 import {NOTE} from '../scripts/spike/engine/render.mjs';
@@ -323,4 +323,13 @@ test('every scene\'s getScreenshot sample is the baseline\'s own cell on that sc
   const code = spikeCells.SCENE_SCREENSHOT('chrome');
   assert.equal(code, SCREENSHOT.replace('await app.getScreenshot(', 'await globalThis.__apps["chrome"].getScreenshot('));
   assert.notEqual(code, SCREENSHOT);
+});
+
+test('a kept Finder scene is reused only while its window is on screen; kept but off screen has its own message', () => {
+  const kept = {window: {number: 77}};
+  assert.equal(keptFinderWindow(undefined, {finderWindows: [77]}), false);
+  assert.equal(keptFinderWindow(kept, {finderWindows: [77]}), true);
+  assert.throws(() => keptFinderWindow(kept, {finderWindows: [], finderOffScreenWindows: [{number: 77, bounds: {}}]}), /^Error: the run's Finder window is not on screen; bring it back or close it$/);
+  // Gone altogether (closed by someone): not reused; `up` then reports the scene as still recorded.
+  assert.equal(keptFinderWindow(kept, {finderWindows: [], finderOffScreenWindows: [{number: 5}]}), false);
 });

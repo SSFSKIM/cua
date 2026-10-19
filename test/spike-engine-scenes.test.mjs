@@ -176,6 +176,9 @@ test('the Finder refusal counts only windows on screen: Finder\'s own off-screen
   const offOnly = preflight({run: fs.mkdtempSync(join(tmpdir(), 'cua-scenes-pre-')), io});
   assert.deepEqual(offOnly.refusals, []);
   assert.deepEqual(offOnly.finderOffScreenWindows, [{number: 184776, bounds: windows[0].bounds}]);
+  assert.match(offOnly.finderOffScreenNote, /do not refuse/);
+  assert.equal(offOnly.note, undefined, 'the note is named for what it is about');
+  assert.equal(offOnly.finderHidden, false);
   const withOwner = preflight({run: fs.mkdtempSync(join(tmpdir(), 'cua-scenes-pre-')), io: fakeDevice({windows: {736: [windows[0], windows[1]]}})});
   assert.deepEqual(withOwner.refusals.map(r => [r.code, r.windows]), [['finder_window', [5]]]);
 });
@@ -191,20 +194,25 @@ test('describeScenes is plain data: the definitions, pairings and targets the dr
 // ---- Device side, on injected reads: what is launched, recorded and stopped -------------------------------------------
 
 // A device with the given running processes and windows; `open` starts a process of the launched app's bundle id.
-function fakeDevice({running = [], windows = {}, finderPid = 736} = {}) {
-  const calls = [], launches = {};
+function fakeDevice({running = [], windows = {}, finderPid = 736, finderHidden = false, finderOpens = [{onScreen: true}]} = {}) {
+  const calls = [], launches = {}, created = [];
   let nextPid = 500, clock = 1_000_000, nextWindow = 900;
   const io = {
-    calls, running, windows,
+    calls, running, windows, created,
     runningApps: id => running.filter(p => p.bundleId === id),
     appWindows: pid => windows[pid] ?? [],
+    appWindowState: pid => ({windows: windows[pid] ?? [], hidden: pid === finderPid ? finderHidden : false}),
     finderPid: () => finderPid,
     launchOf: pid => launches[pid] ?? null,
     now: () => clock,
     sleep: async ms => { clock += ms; },
     openApp: request => {
       calls.push(['open', request]);
-      if (request.app.endsWith('Finder.app')) { (windows[finderPid] ??= []).push({number: nextWindow++, bounds: {x: 0, y: 0, width: 800, height: 600}, onScreen: true}); return; }
+      // Finder's open shows the windows `finderOpens` describes (one on-screen window by default), recorded in `created`.
+      if (request.app.endsWith('Finder.app')) {
+        for (const {onScreen} of finderOpens) { const w = {number: nextWindow++, bounds: {x: 0, y: 0, width: 800, height: 600}, onScreen}; created.push(w); (windows[finderPid] ??= []).push(w); }
+        return;
+      }
       const bundleId = request.app.includes('Electron') ? FIXTURE_BUNDLE_ID : request.app.includes('TextEdit') ? TEXTEDIT : CFT;
       const pid = nextPid++;
       launches[pid] = clock;
@@ -273,8 +281,55 @@ test('up finder records the window the open created, never Finder\'s own off-scr
   const offScreen = {number: 184776, bounds: {x: 606, y: 52, width: 1067, height: 631}, onScreen: false};
   const io = fakeDevice({windows: {736: [offScreen]}});
   const finder = await upScene('finder', {run, io});
-  assert.notEqual(finder.window.number, 184776);
+  assert.equal(io.created.length, 1);
+  assert.deepEqual(finder.window, {number: io.created[0].number, bounds: io.created[0].bounds}, 'the window the open created');
   assert.deepEqual(preflight({run, io}).refusals, []);
+}));
+
+test('up finder accepts only an on-screen new window, and refuses to pick between several', async () => {
+  await withRun(async run => {
+    // The open's only new window is off screen: never the run's window; the wait runs out.
+    const io = fakeDevice({finderOpens: [{onScreen: false}]});
+    await assert.rejects(upScene('finder', {run, io}), /no new window/);
+    assert.deepEqual(readState(run), {scenes: {}});
+  });
+  await withRun(async run => {
+    // An off-screen window and an on-screen one appear: the on-screen one is the run's.
+    const io = fakeDevice({finderOpens: [{onScreen: false}, {onScreen: true}]});
+    const finder = await upScene('finder', {run, io});
+    assert.equal(finder.window.number, io.created[1].number);
+  });
+  await withRun(async run => {
+    // Two on-screen windows appear (someone opened one beside the run's): none is recorded.
+    const io = fakeDevice({finderOpens: [{onScreen: true}, {onScreen: true}]});
+    await assert.rejects(upScene('finder', {run, io}), /2 new windows/);
+    assert.deepEqual(readState(run), {scenes: {}});
+  });
+});
+
+test('a hidden Finder refuses: its windows read off screen until the run activates it', async () => {
+  assert.deepEqual(refusals({running: [], finderWindows: [], finderHidden: true, owned: {pids: new Set(), finderWindow: null}}).map(r => [r.code, r.message]),
+    [['finder_hidden', 'Finder is hidden; unhide it (click Finder in the Dock) and re-run']]);
+  assert.deepEqual(refusals({running: [], finderWindows: [], finderHidden: null, owned: {pids: new Set(), finderWindow: null}}), [], 'unknown is not hidden');
+  await withRun(async run => {
+    const io = fakeDevice({finderHidden: true, windows: {736: [{number: 5, bounds: {x: 100, y: 100, width: 800, height: 600}, onScreen: false}]}});
+    const checked = preflight({run, io});
+    assert.deepEqual(checked.refusals.map(r => r.code), ['finder_hidden']);
+    assert.equal(checked.finderHidden, true);
+    await assert.rejects(upScene('finder', {run, io}), error => error.refusals?.[0]?.code === 'finder_hidden');
+    assert.deepEqual(io.calls, [], 'nothing opened');
+  });
+});
+
+test('down keeps the Finder scene while the run\'s window exists, even off screen (minimized or on another Space)', async () => withRun(async run => {
+  const io = fakeDevice();
+  const finder = await upScene('finder', {run, io});
+  io.windows[736].find(w => w.number === finder.window.number).onScreen = false;
+  const down = await downScene('finder', {run, io});
+  assert.equal(down.down, false);
+  assert.equal(down.windowOpen, true);
+  assert.deepEqual(readState(run).scenes.finder, finder);
+  assert.equal(exitCodeFor(down), 1);
 }));
 
 test('down stops only what the run recorded; Finder is never signalled and stays up while the run\'s window is open', async () => withRun(async run => {

@@ -169,8 +169,10 @@ export const CONCURRENT_USE_SHEET = Object.freeze({user: 'electron', userTarget:
 // leaves out the menu-bar-sized, never-on-screen windows Finder keeps.
 export const documentWindows = windows => windows.filter(w => w.bounds.width >= 100 && w.bounds.height >= 100);
 // The document windows the Finder refusal counts: only those on screen. Finder itself holds an off-screen layer-0
-// window of document size that survives a relaunch (observed 2026-10-19; the spec's Decision Log), and an off-screen
-// window is never the focused or main window the engine observes, so it is reported as a note and does not refuse.
+// window of document size, which a relaunch recreates with a new window number (observed 2026-10-19; the spec's
+// Decision Log), and an off-screen window is never the focused or main window the engine observes, so it is reported
+// as a note and does not refuse. A hidden Finder (Cmd-H) is the exception: every one of its windows reads off screen
+// and comes back the moment the run activates Finder, so a hidden Finder refuses on its own (`finder_hidden`).
 export const refusingWindows = windows => windows.filter(w => w.onScreen === true);
 
 // The run's own processes and Finder window from its state: a recorded pid counts only while it is the same launch.
@@ -184,8 +186,9 @@ export function ownedProcesses(state, {launchOf: launch = launchOf} = {}) {
 }
 
 // The refusal preconditions. `running`: the processes of Chrome for Testing's, the fixture's and TextEdit's bundle ids;
-// `finderWindows`: Finder's document windows; `owned`: ownedProcesses(). -> [{code, message, pids | windows}].
-export function refusals({running, finderWindows, owned}) {
+// `finderWindows`: Finder's on-screen document windows; `finderHidden`: whether Finder is hidden; `owned`:
+// ownedProcesses(). -> [{code, message, pids? | windows?}].
+export function refusals({running, finderWindows, finderHidden = false, owned}) {
   const out = [];
   for (const bundleId of [CHROME_FOR_TESTING_BUNDLE_ID, FIXTURE_BUNDLE_ID]) {
     const pids = running.filter(p => p.bundleId === bundleId && !owned.pids.has(p.pid)).map(p => p.pid);
@@ -195,6 +198,7 @@ export function refusals({running, finderWindows, owned}) {
   if (textEdit.length) out.push({code: 'textedit_running', pids: textEdit, message: 'TextEdit is running and is not the run\'s: its windows may be the owner\'s; quit it and re-run'});
   const windows = finderWindows.filter(w => w.number !== owned.finderWindow).map(w => w.number);
   if (windows.length) out.push({code: 'finder_window', windows, message: 'Finder has a window that is not the run\'s; close it and re-run'});
+  if (finderHidden === true) out.push({code: 'finder_hidden', message: 'Finder is hidden; unhide it (click Finder in the Dock) and re-run'});
   return out;
 }
 
@@ -213,7 +217,7 @@ export function writeState(run, state) {
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 const defaultIo = () => ({
-  runningApps, appWindows, openApp, awaitOwnLaunch, stopRecorded, launchOf, now: Date.now, sleep,
+  runningApps, appWindows, appWindowState, openApp, awaitOwnLaunch, stopRecorded, launchOf, now: Date.now, sleep,
   finderPid: () => runningApps(FINDER_BUNDLE_ID)[0]?.pid ?? null,
   placeChrome: () => placeChromeForTesting(), buildElectron: () => buildElectronFixture(), spawnPage,
 });
@@ -222,19 +226,24 @@ const defaultIo = () => ({
 export function preflight({run, io = defaultIo()}) {
   const running = [CHROME_FOR_TESTING_BUNDLE_ID, FIXTURE_BUNDLE_ID, TEXTEDIT_BUNDLE_ID].flatMap(id => io.runningApps(id));
   const finder = io.finderPid();
-  const documents = finder ? documentWindows(io.appWindows(finder)) : [];
+  const {windows, hidden} = finder ? io.appWindowState(finder) : {windows: [], hidden: false};
+  const documents = documentWindows(windows);
   const finderWindows = refusingWindows(documents);
   const offScreen = documents.filter(w => !finderWindows.includes(w)).map(w => ({number: w.number, bounds: w.bounds}));
   const owned = ownedProcesses(readState(run), {launchOf: io.launchOf});
-  return {refusals: refusals({running, finderWindows, owned}), finderPid: finder, finderWindows: finderWindows.map(w => w.number),
-    ...(offScreen.length ? {finderOffScreenWindows: offScreen, note: 'Finder windows not on screen do not refuse: never the focused or main window'} : {})};
+  return {refusals: refusals({running, finderWindows, finderHidden: hidden, owned}), finderPid: finder, finderHidden: hidden,
+    finderWindows: finderWindows.map(w => w.number),
+    ...(offScreen.length ? {finderOffScreenWindows: offScreen, finderOffScreenNote: 'Finder windows not on screen do not refuse: never the focused or main window'} : {})};
 }
 class Refused extends Error { constructor(list) { super(list.map(r => r.message).join('; ')); this.refusals = list; } }
 
-// A new document window of `pid` (one not in `before`), polled for up to `boundMs`. -> {number, bounds}.
-async function awaitWindow(pid, {before = [], io, boundMs = 20_000}) {
+// A new document window of `pid` (one not in `before`), polled for up to `boundMs`. With `onScreenOnly` (Finder) only
+// an on-screen window counts and more than one is an error: the run's window must be the one its open showed, never
+// one of Finder's own off-screen windows nor a window someone opened beside it. -> {number, bounds}.
+async function awaitWindow(pid, {before = [], io, boundMs = 20_000, onScreenOnly = false}) {
   for (const t0 = io.now(); ;) {
-    const fresh = documentWindows(io.appWindows(pid)).filter(w => !before.includes(w.number));
+    const fresh = documentWindows(io.appWindows(pid)).filter(w => !before.includes(w.number) && (!onScreenOnly || w.onScreen === true));
+    if (onScreenOnly && fresh.length > 1) throw new Error(`${fresh.length} new windows of process ${pid} appeared (${fresh.map(w => w.number).join(', ')}); none is recorded as the run's`);
     if (fresh.length) return {number: fresh[0].number, bounds: fresh[0].bounds};
     if (io.now() - t0 >= boundMs) throw new Error(`no new window of process ${pid} within ${boundMs} ms`);
     await io.sleep(250);
@@ -276,8 +285,10 @@ export async function upScene(id, {run, chromeApp, electronApp, io = defaultIo()
     if (!pid) throw new Error('Finder is not running');
     fs.mkdirSync(folder, {recursive: true, mode: 0o700});
     for (const name of finderFolderFiles()) fs.writeFileSync(join(folder, name), `${name}\n`, {mode: 0o600});
+    // Every window Finder has right before the open, on screen or not, is not the run's.
+    const before = documentWindows(io.appWindows(pid)).map(w => w.number);
     io.openApp({app: scene.app, files: [folder]});
-    record = {app: scene.app, folder, pid, window: await awaitWindow(pid, {before: [...checked.finderWindows, ...(checked.finderOffScreenWindows ?? []).map(w => w.number)], io})};
+    record = {app: scene.app, folder, pid, window: await awaitWindow(pid, {before, io, onScreenOnly: true})};
   } else if (id === 'chrome') {
     const app = chromeApp ?? (await io.placeChrome()).appPath, userDataDir = join(run, 'chrome-user-data');
     fs.mkdirSync(userDataDir, {recursive: true, mode: 0o700});

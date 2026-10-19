@@ -56,6 +56,9 @@ struct InputMeta {
   var startedAt: Int64? = nil
   var endedAt: Int64? = nil
   var activationGuardMs: Double? = nil
+  /// A synthesized element click whose hit-test answered nothing or only a container of the element, so the point
+  /// could not be confirmed to reach it; reported as `pointUnconfirmed: true`.
+  var pointUnconfirmed = false
   let context: ExecutionContext
 
   init(_ context: ExecutionContext) { self.context = context }
@@ -69,6 +72,7 @@ struct InputMeta {
       "hidIdleMs": context.hidIdleMs,
     ]
     if let activationGuardMs { wire["activationGuardMs"] = activationGuardMs }
+    if pointUnconfirmed { wire["pointUnconfirmed"] = true }
     return wire
   }
 }
@@ -115,10 +119,11 @@ extension Engine {
   /// `click {app, element | x, y, mouse_button?, click_count?}`, `element` a token of the request's `lineage` (the
   /// service's translation of the facade's element_index). An element click takes route 1 (AXPick, else AXPress) for a
   /// plain left click on an element that advertises the action and whose clickable point does not land on a strict
-  /// descendant of it (the vendor's nested-content gate, applied to every element by cua), a menu-bar item included;
-  /// every other element click is synthesized by route 3 at the midpoint of the element's visible frame, refused as not
-  /// visible when nothing of it shows, its frame cannot be read now, or the hit-test there answers something that is
-  /// neither the element nor inside it. A coordinate click is in the pixels
+  /// descendant of it (the vendor's nested-content gate, applied to every element by cua); every other element click
+  /// is synthesized by route 3 at the midpoint of the element's visible frame, refused as not visible when nothing of it
+  /// shows, its frame cannot be read now, or the hit-test there answers something unrelated to it (something covers
+  /// it), and reported as `pointUnconfirmed` when the hit-test answers nothing or only a container. A click on a
+  /// menu-bar item is refused before anything is posted. A coordinate click is in the pixels
   /// of the last screenshot of the app's primary window on this connection, refused (`noScreenshotForCoordinates`,
   /// nothing posted) when there is none, and goes by route 3. The process serving the target receives the input, after the forbidden
   /// list has been checked against it.
@@ -156,19 +161,26 @@ extension Engine {
         let visible = visibleFrame(of: entry.element, frame: { frame(of: $0) }, role: { stringAttribute($0, kAXRoleAttribute) },
                                    parent: { elementAttribute($0, kAXParentAttribute) }, actions: actionNames(of:))
         let point = clickablePoint(frame: visible, visibleIn: ownWindowFrame)
-        let hit = point.map { hitTest(application: owner, at: $0) }  // taken once, for the gate and the reach check
-        let parent: (AXUIElement) -> AXUIElement? = { elementAttribute($0, kAXParentAttribute) }
+        // One hit-test and one classification of it, shared by the gate and the reach check, taken only when needed.
+        var relation: HitRelation?
+        func hitAtPoint() -> HitRelation {
+          if let relation { return relation }
+          let found = point.map { hitRelation(hitTest(application: owner, at: $0), to: entry.element,
+                                              parent: { elementAttribute($0, kAXParentAttribute) }, same: { CFEqual($0, $1) }) } ?? .none
+          relation = found
+          return found
+        }
         let plan = try elementClickPlan(forced: forced, button: button, count: count, role: entry.identity.role, actions: entry.actions) {
-          guard let hit else { return false }  // nothing to hit-test: the action needs no point
-          return landsOnStrictDescendant(hit, of: entry.element, parent: parent, same: { CFEqual($0, $1) })
+          hitAtPoint() == .descendant  // no point, or no answer: the action needs no point
         }
         switch plan {
         case .action(let action):
           try deliverAction(action, perform: { AXUIElementPerformAction(entry.element, $0 as CFString) }, meta: &meta)
         case .synthesized(let route):
-          guard let point, hitReachesElement(hit ?? nil, of: entry.element, parent: parent, same: { CFEqual($0, $1) }) else {
+          guard let point, !hitAtPoint().covered else {
             throw EngineError(name: "cannotClickOffscreenElement", "The element is not visible on screen.")
           }
+          meta.pointUnconfirmed = hitAtPoint().unconfirmed
           // Route 3's activation is for the element's window, else the app's primary window (a menu-bar item's).
           func activation() -> FakeActivation {
             if let ownWindow { return FakeActivation(pid: owner, appPid: appPid, window: ownWindow, windowFrame: ownWindowFrame, windowID: ownWindowID) }

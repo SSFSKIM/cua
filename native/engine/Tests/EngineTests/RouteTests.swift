@@ -38,24 +38,34 @@ final class ElementClickPlanTests: XCTestCase {
     XCTAssertEqual(try plan(button: .right, actions: ["AXPress", "AXShowMenu"], gateCalls: &calls), .synthesized(.activation))
     XCTAssertEqual(try plan(count: 2, actions: ["AXPress"], gateCalls: &calls), .synthesized(.activation))
     XCTAssertEqual(try plan(button: .middle, actions: ["AXPress"], gateCalls: &calls), .synthesized(.activation))
-    XCTAssertEqual(try plan(button: .right, role: "AXMenuBarItem", actions: ["AXPress"], gateCalls: &calls), .synthesized(.activation))
     XCTAssertEqual(calls, 0, "the hit-test is taken only for a click route 1 could carry")
     _ = try plan(actions: ["AXPress"], gateCalls: &calls)
     XCTAssertEqual(calls, 1)
   }
 
-  /// The decompiled click shows no role-gated activation before a menu-bar press: a menu-bar item is an element like any.
-  func testAMenuBarItemTakesPlainRouteOneOrRouteThreeLikeAnyElement() throws {
-    XCTAssertEqual(try plan(role: "AXMenuBarItem", actions: ["AXPress", "AXCancel"]), .action("AXPress"))
-    XCTAssertEqual(try plan(role: "AXMenuBarItem", actions: []), .synthesized(.activation))
-    XCTAssertEqual(try plan(role: "AXMenuBarItem", actions: ["AXPress"], descendant: true), .synthesized(.activation))
+  /// The vendor opens a menu-bar item by activating the app and recording its menu (FUN_100083904's role test), never by
+  /// a press or a synthesized click: every click on one is refused before anything is posted, whatever the button,
+  /// count or forced route, and the gate is never consulted.
+  func testEveryClickOnAMenuBarItemIsRefused() {
+    var calls = 0
+    for (forced, button, count) in [(InputRoute?.none, MouseButton.left, 1), (nil, .right, 1), (nil, .left, 2), (.action, .left, 1),
+                                    (.activation, .left, 1), (.plainPost, .left, 1)] {
+      XCTAssertThrowsError(try plan(forced: forced, button: button, count: count, role: "AXMenuBarItem", actions: ["AXPress", "AXCancel"],
+                                    gateCalls: &calls)) { error in
+        XCTAssertEqual((error as? EngineError)?.errorName, "menuBarItemUnsupported")
+        let message = (error as? EngineError)?.message ?? ""
+        XCTAssertTrue(message.contains("later engine release"), message)
+        XCTAssertFalse(message.contains("M2a"), "no milestone names in model-facing text")
+      }
+    }
+    XCTAssertEqual(calls, 0)
   }
 
   func testNoDefaultChoiceIsEverRouteTwoOrTwoPrime() throws {
     for button in [MouseButton.left, .right, .middle] {
       for count in [1, 2, 3] {
         for actions in [[], ["AXPress"], ["AXPick"], ["AXShowMenu"]] {
-          for role in ["AXButton", "AXMenuBarItem", "AXRow"] {
+          for role in ["AXButton", "AXMenuButton", "AXRow"] {
             for descendant in [false, true] {
               let chosen = try plan(button: button, count: count, role: role, actions: actions, descendant: descendant)
               XCTAssertNotEqual(chosen, .synthesized(.commandPost))
@@ -155,18 +165,41 @@ final class VisibleFrameTests: XCTestCase {
     XCTAssertNil(clickablePoint(frame: visible(5, in: finder), visibleIn: finder[1]!.frame))
   }
 
+  private func relation(_ hit: Int?, _ target: Int) -> HitRelation {
+    hitRelation(hit, to: target, parent: { self.finder[$0]?.parent }, same: { $0 == $1 })
+  }
+
   /// The header band lies inside the scroll area's frame, so the walk keeps a row scrolled under it; the hit-test at
   /// the chosen point, which answers the header, refuses it.
   func testARowUnderTheColumnHeaderIsRefusedByTheHitTest() {
     XCTAssertEqual(visible(7, in: finder), CGRect(x: 0, y: 105, width: 800, height: 20), "the frame walk cannot see the header")
-    let reaches = { (hit: Int?, target: Int) in
-      hitReachesElement(hit, of: target, parent: { self.finder[$0]?.parent }, same: { $0 == $1 })
+    XCTAssertEqual(relation(8, 7), .other)
+    XCTAssertTrue(relation(8, 7).covered, "the header answers: refused, never clicked through")
+  }
+
+  func testTheElementOrADescendantConfirmsThePoint() {
+    for (hit, expected) in [(4, HitRelation.element), (9, .descendant)] {
+      XCTAssertEqual(relation(hit, 4), expected)
+      XCTAssertFalse(relation(hit, 4).covered)
+      XCTAssertFalse(relation(hit, 4).unconfirmed)
     }
-    XCTAssertFalse(reaches(8, 7), "the header answers: refused, never clicked through")
-    XCTAssertTrue(reaches(4, 4), "the row itself")
-    XCTAssertTrue(reaches(9, 4), "a cell inside the row")
-    XCTAssertFalse(reaches(3, 4), "its outline, an ancestor")
-    XCTAssertFalse(reaches(nil, 4), "no answer")
+  }
+
+  /// No answer (a timeout, a busy app) or a container (coarse hit-testing answers the window or the app) cannot confirm a
+  /// cover, and the vendor has no such check: the click proceeds, reported as unconfirmed.
+  func testNoAnswerOrAnAncestorProceedsUnconfirmed() {
+    for (hit, expected) in [(Int?.none, HitRelation.none), (3, .ancestor), (1, .ancestor), (0, .ancestor)] {
+      XCTAssertEqual(relation(hit, 4), expected, "\(String(describing: hit))")
+      XCTAssertFalse(relation(hit, 4).covered)
+      XCTAssertTrue(relation(hit, 4).unconfirmed)
+    }
+  }
+
+  func testTheUnconfirmedPointIsReportedInTheMetaOnlyWhenSet() {
+    var meta = InputMeta(ExecutionContext(connection: ConnectionState(id: 1, fd: -1), receivedAt: 1, hidIdleMs: 0, deadline: 2, lineage: nil))
+    XCTAssertNil(meta.wire["pointUnconfirmed"])
+    meta.pointUnconfirmed = true
+    XCTAssertEqual(meta.wire["pointUnconfirmed"] as? Bool, true)
   }
 
   func testWebContentScrolledOutOfThePageIsNotVisible() {
@@ -457,7 +490,7 @@ final class ActionDeliveryTests: XCTestCase {
     var meta = meta()
     try deliverAction("AXPress", perform: { performed.append($0); return .success }, meta: &meta)
     XCTAssertEqual(performed, ["AXPress"])
-    XCTAssertEqual(meta.inputRoute, .action, "route 1, never 3, for a plain action (a menu-bar item's included)")
+    XCTAssertEqual(meta.inputRoute, .action, "route 1, never 3, for an element's own action")
     XCTAssertNil(meta.activationGuardMs)
     XCTAssertNotNil(meta.startedAt)
   }

@@ -7,9 +7,9 @@ import Foundation
 // the ladder 1 → 3: route 1, the element's own action, for a plain single left click on an element that advertises
 // AXPick or AXPress and whose clickable point does not land on a strict descendant of it, and route 3, the fake
 // activation then the plain post, for every synthesized click (an element without the action, any other button or
-// count, every coordinate click). A menu-bar item is no exception: the decompiled click shows no role-gated activation
-// before a menu-bar press, so it takes route 1 like any element that advertises the action (the vendor's open-menu
-// bookkeeping is a later question, M2a/M2b). Route 2, the ⌘ post, and a forced 2′ click are reachable only through the
+// count, every coordinate click). A click on a menu-bar item is refused: the vendor neither presses nor synthesizes one
+// but activates the app and records the item's menu for the next observation (FUN_100083904's role test), a path built
+// with that observation later. Route 2, the ⌘ post, and a forced 2′ click are reachable only through the
 // spike's `spikeRoute`. Route 4 is M2a's. Everything here is pure, so the choice is unit-tested.
 
 /// How an element click is carried.
@@ -18,11 +18,14 @@ enum ElementClickPlan: Equatable {
   case synthesized(InputRoute)  // route 3 by default; 2 or 2′ only when forced
 }
 
-/// The clicks' ladder for an element (F §5.1 for the action's choice and the gate). `landsOnDescendant` hit-tests the
-/// element's clickable point and is called only for a click route 1 could otherwise carry. A forced route (the spike's)
-/// skips the gate; a forced route 1 needs an advertised action.
+/// The clicks' ladder for an element (F §5.1 for the action's choice and the gate). `landsOnDescendant` answers whether
+/// the hit-test at the element's clickable point lands on a strict descendant of it (the gate); it is called only for a
+/// click route 1 could otherwise carry, and answers false when there is no point to hit-test. A menu-bar item is refused
+/// whatever the click or route, before anything is posted. A forced route (the spike's) skips the gate; a forced route 1
+/// needs an advertised action.
 func elementClickPlan(forced: InputRoute?, button: MouseButton, count: Int, role: String, actions: [String],
                       landsOnDescendant: () -> Bool) throws -> ElementClickPlan {
+  if role == "AXMenuBarItem" { throw menuBarItemUnsupported }
   let advertised = actions.first(where: { $0 == "AXPick" }) ?? actions.first(where: { $0 == "AXPress" })
   if let forced {
     guard forced == .action else { return .synthesized(forced) }
@@ -34,6 +37,12 @@ func elementClickPlan(forced: InputRoute?, button: MouseButton, count: Int, role
   if button == .left, count == 1, let advertised, !landsOnDescendant() { return .action(advertised) }
   return .synthesized(.activation)
 }
+
+/// The refusal of a click on a menu-bar item: the vendor opens a menu-bar item by activating the app and recording the
+/// item's menu for the next observation (FUN_100071538 → FUN_100083904 → FUN_100071790), which this engine does not do
+/// yet; pressing or synthesizing would open it a way the vendor never does. Nothing is posted.
+let menuBarItemUnsupported = EngineError(name: "menuBarItemUnsupported",
+  "Clicking a menu bar item is not supported by this engine yet; menu bar items open through a path that comes in a later engine release. Nothing was clicked.")
 
 /// A coordinate click's route: 3, unless the spike forces another.
 func coordinateClickRoute(forced: InputRoute?) -> InputRoute { forced ?? .activation }
@@ -57,14 +66,30 @@ func landsOnStrictDescendant<Element>(_ hit: Element?, of target: Element, paren
   return false
 }
 
-/// Whether a synthesized element click's point reaches the element: the hit-test there answers the element itself or one
-/// of its descendants. Anything else (a list's column header or a page's sticky header drawn over a row scrolled under
-/// it, which the frame walk cannot see, or no answer at all) refuses the click as not visible rather than clicking what
-/// covers the element.
-func hitReachesElement<Element>(_ hit: Element?, of target: Element, parent: (Element) -> Element?,
-                                same: (Element, Element) -> Bool) -> Bool {
-  guard let hit else { return false }
-  return same(hit, target) || landsOnStrictDescendant(hit, of: target, parent: parent, same: same)
+/// What the hit-test at an element's point answered, relative to the element: one ancestry classification serves both
+/// the gate (a strict descendant sends the click to synthesis) and the reach check of a synthesized click.
+enum HitRelation: Equatable {
+  case none        // no answer (a timeout, a busy app)
+  case element     // the element itself
+  case descendant  // inside the element
+  case ancestor    // a container of the element (coarse hit-testing: the window, the app)
+  case other       // something else covers the point (a list's column header, a sticky page header)
+
+  /// Whether a synthesized click at the point is refused: only when something else is known to cover it.
+  var covered: Bool { self == .other }
+  /// Whether the point was not confirmed to reach the element, which proceeds but is reported (meta `pointUnconfirmed`).
+  var unconfirmed: Bool { self == .none || self == .ancestor }
+}
+
+/// Classifies the hit against `target` by walking parents (each walk up to 300 levels): the hit's to find the target
+/// (descendant), and only if that fails the target's to find the hit (ancestor).
+func hitRelation<Element>(_ hit: Element?, to target: Element, parent: (Element) -> Element?,
+                          same: (Element, Element) -> Bool) -> HitRelation {
+  guard let hit else { return .none }
+  if same(hit, target) { return .element }
+  if landsOnStrictDescendant(hit, of: target, parent: parent, same: same) { return .descendant }
+  if landsOnStrictDescendant(target, of: hit, parent: parent, same: same) { return .ancestor }
+  return .other
 }
 
 /// The roles whose frame clips what of an element shows: the vendor's (FUN_10078e49c intersects the frames of the

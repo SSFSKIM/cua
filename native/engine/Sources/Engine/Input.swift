@@ -99,16 +99,10 @@ func deliverClick(_ target: ClickTarget, route: InputRoute, button: MouseButton,
   meta.endedAt = endedAt
 }
 
-/// An element's own action (route 1): after route 3's activation for a menu-bar item (`activation` given), whose
-/// failed guard throws before the action is performed; the activation is withdrawn afterwards. The meta reports route 3
-/// when the activation ran, since the app's activation hooks fired, else route 1.
-func deliverAction(_ action: String, activation: FakeActivation?, perform: (String) -> AXError, meta: inout InputMeta) throws {
-  meta.inputRoute = activation == nil ? .action : .activation
-  defer { activation?.deactivate() }
-  if let activation {
-    try activation.activate()
-    meta.activationGuardMs = activation.guardMs
-  }
+/// An element's own action, route 1: performed, and refused as actionFailed when the element does not accept it (no
+/// fall-through to a synthesized click, which could click twice after an action that took effect and still erred).
+func deliverAction(_ action: String, perform: (String) -> AXError, meta: inout InputMeta) throws {
+  meta.inputRoute = .action
   meta.startedAt = unixMilliseconds()
   let error = perform(action)
   meta.endedAt = unixMilliseconds()
@@ -121,9 +115,10 @@ extension Engine {
   /// `click {app, element | x, y, mouse_button?, click_count?}`, `element` a token of the request's `lineage` (the
   /// service's translation of the facade's element_index). An element click takes route 1 (AXPick, else AXPress) for a
   /// plain left click on an element that advertises the action and whose clickable point does not land on a strict
-  /// descendant of it (the vendor's nested-content gate, applied to every element by cua), a menu-bar item's after route
-  /// 3's activation; every other element click is synthesized by route 3 at the midpoint of the element's visible frame,
-  /// refused as not visible when nothing of it shows or its frame cannot be read now. A coordinate click is in the pixels
+  /// descendant of it (the vendor's nested-content gate, applied to every element by cua), a menu-bar item included;
+  /// every other element click is synthesized by route 3 at the midpoint of the element's visible frame, refused as not
+  /// visible when nothing of it shows, its frame cannot be read now, or the hit-test there answers something that is
+  /// neither the element nor inside it. A coordinate click is in the pixels
   /// of the last screenshot of the app's primary window on this connection, refused (`noScreenshotForCoordinates`,
   /// nothing posted) when there is none, and goes by route 3. The process serving the target receives the input, after the forbidden
   /// list has been checked against it.
@@ -161,23 +156,25 @@ extension Engine {
         let visible = visibleFrame(of: entry.element, frame: { frame(of: $0) }, role: { stringAttribute($0, kAXRoleAttribute) },
                                    parent: { elementAttribute($0, kAXParentAttribute) }, actions: actionNames(of:))
         let point = clickablePoint(frame: visible, visibleIn: ownWindowFrame)
+        let hit = point.map { hitTest(application: owner, at: $0) }  // taken once, for the gate and the reach check
+        let parent: (AXUIElement) -> AXUIElement? = { elementAttribute($0, kAXParentAttribute) }
         let plan = try elementClickPlan(forced: forced, button: button, count: count, role: entry.identity.role, actions: entry.actions) {
-          guard let point else { return false }  // nothing to hit-test: the action needs no point
-          return landsOnStrictDescendant(hitTest(application: owner, at: point), of: entry.element,
-                                         parent: { elementAttribute($0, kAXParentAttribute) }, same: { CFEqual($0, $1) })
-        }
-        // Route 3's activation is for the element's window, else the app's primary window (a menu-bar item's).
-        func activation() -> FakeActivation {
-          if let ownWindow { return FakeActivation(pid: owner, appPid: appPid, window: ownWindow, windowFrame: ownWindowFrame, windowID: ownWindowID) }
-          let application = prepare(AXUIElementCreateApplication(appPid))
-          return FakeActivation(pid: owner, appPid: appPid, window: primaryWindow(of: application) ?? application)
+          guard let hit else { return false }  // nothing to hit-test: the action needs no point
+          return landsOnStrictDescendant(hit, of: entry.element, parent: parent, same: { CFEqual($0, $1) })
         }
         switch plan {
-        case .action(let action, let activateFirst):
-          try deliverAction(action, activation: activateFirst ? activation() : nil,
-                            perform: { AXUIElementPerformAction(entry.element, $0 as CFString) }, meta: &meta)
+        case .action(let action):
+          try deliverAction(action, perform: { AXUIElementPerformAction(entry.element, $0 as CFString) }, meta: &meta)
         case .synthesized(let route):
-          guard let point else { throw EngineError(name: "cannotClickOffscreenElement", "The element is not visible on screen.") }
+          guard let point, hitReachesElement(hit ?? nil, of: entry.element, parent: parent, same: { CFEqual($0, $1) }) else {
+            throw EngineError(name: "cannotClickOffscreenElement", "The element is not visible on screen.")
+          }
+          // Route 3's activation is for the element's window, else the app's primary window (a menu-bar item's).
+          func activation() -> FakeActivation {
+            if let ownWindow { return FakeActivation(pid: owner, appPid: appPid, window: ownWindow, windowFrame: ownWindowFrame, windowID: ownWindowID) }
+            let application = prepare(AXUIElementCreateApplication(appPid))
+            return FakeActivation(pid: owner, appPid: appPid, window: primaryWindow(of: application) ?? application)
+          }
           let target = ClickTarget(point: point, windowFrame: ownWindowFrame, windowID: ownWindowID, pid: owner)
           try deliverClick(target, route: route, button: button, count: count, activation: route == .activation ? activation() : nil,
                            targetActive: { NSRunningApplication(processIdentifier: owner)?.isActive == true },

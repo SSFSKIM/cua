@@ -22,8 +22,8 @@ final class ElementClickPlanTests: XCTestCase {
   }
 
   func testAPlainClickOnAnAdvertisingElementTakesItsAction() throws {
-    XCTAssertEqual(try plan(actions: ["AXShowMenu", "AXPress"]), .action("AXPress", activateFirst: false))
-    XCTAssertEqual(try plan(actions: ["AXPress", "AXPick"]), .action("AXPick", activateFirst: false), "AXPick before AXPress (F §5.1)")
+    XCTAssertEqual(try plan(actions: ["AXShowMenu", "AXPress"]), .action("AXPress"))
+    XCTAssertEqual(try plan(actions: ["AXPress", "AXPick"]), .action("AXPick"), "AXPick before AXPress (F §5.1)")
   }
 
   func testTheGateSendsAClickWhosePointLandsOnADescendantToRouteThree() throws {
@@ -44,14 +44,11 @@ final class ElementClickPlanTests: XCTestCase {
     XCTAssertEqual(calls, 1)
   }
 
-  /// The vendor's menu-bar branch (FUN_100071f40 → FUN_10007151c, resumed at FUN_10007292c into UIElementProtocol.click):
-  /// route 3's activation, then the ordinary choice.
-  func testAPlainMenuBarItemClickActivatesThenTakesTheOrdinaryChoice() throws {
-    XCTAssertEqual(try plan(role: "AXMenuBarItem", actions: ["AXPress", "AXCancel"]), .action("AXPress", activateFirst: true))
-    XCTAssertEqual(try plan(role: "AXMenuBarItem", actions: []), .synthesized(.activation), "no action: route 3, which activates anyway")
+  /// The decompiled click shows no role-gated activation before a menu-bar press: a menu-bar item is an element like any.
+  func testAMenuBarItemTakesPlainRouteOneOrRouteThreeLikeAnyElement() throws {
+    XCTAssertEqual(try plan(role: "AXMenuBarItem", actions: ["AXPress", "AXCancel"]), .action("AXPress"))
+    XCTAssertEqual(try plan(role: "AXMenuBarItem", actions: []), .synthesized(.activation))
     XCTAssertEqual(try plan(role: "AXMenuBarItem", actions: ["AXPress"], descendant: true), .synthesized(.activation))
-    XCTAssertEqual(try plan(forced: .action, role: "AXMenuBarItem", actions: ["AXPress"]), .action("AXPress", activateFirst: false),
-                   "a forced route is the spike's, without the activation")
   }
 
   func testNoDefaultChoiceIsEverRouteTwoOrTwoPrime() throws {
@@ -76,7 +73,7 @@ final class ElementClickPlanTests: XCTestCase {
     XCTAssertEqual(try plan(forced: .commandPost, actions: ["AXPress"], gateCalls: &calls), .synthesized(.commandPost))
     XCTAssertEqual(try plan(forced: .plainPost, actions: ["AXPress"], gateCalls: &calls), .synthesized(.plainPost))
     XCTAssertEqual(try plan(forced: .activation, actions: ["AXPress"], gateCalls: &calls), .synthesized(.activation))
-    XCTAssertEqual(try plan(forced: .action, actions: ["AXPress"], descendant: true, gateCalls: &calls), .action("AXPress", activateFirst: false))
+    XCTAssertEqual(try plan(forced: .action, actions: ["AXPress"], descendant: true, gateCalls: &calls), .action("AXPress"))
     XCTAssertEqual(calls, 0)
     XCTAssertThrowsError(try plan(forced: .action, actions: ["AXShowMenu"])) { error in
       XCTAssertEqual((error as? EngineError)?.errorName, "invalidArguments")
@@ -135,22 +132,41 @@ final class VisibleFrameTests: XCTestCase {
                  actions: { nodes[$0]?.actions ?? [] })
   }
 
-  /// Finder's list: a window, a scroll area showing rows 100–400, a table, rows at their content positions.
+  /// Finder's list as the real tree has it (spike/iter1-input/cua/run-1/goldens/finder.action.after-diff.skyshot.json:
+  /// the AXScrollArea at y 313, the AXOutline's rows from y 340): a window, a scroll area whose frame includes the column
+  /// header's band (100–127 here), the header, the outline scrolled up, and rows at their content positions.
   private let finder: [Int: Node] = [
     0: Node(role: "AXApplication", frame: nil, parent: nil),
     1: Node(role: "AXWindow", frame: CGRect(x: 0, y: 0, width: 800, height: 600), parent: 0),
     2: Node(role: "AXScrollArea", frame: CGRect(x: 0, y: 100, width: 800, height: 300), parent: 1),
     3: Node(role: "AXOutline", frame: CGRect(x: 0, y: -900, width: 800, height: 4000), parent: 2),
     4: Node(role: "AXRow", frame: CGRect(x: 0, y: 200, width: 800, height: 20), parent: 3),
-    5: Node(role: "AXRow", frame: CGRect(x: 0, y: 60, width: 800, height: 20), parent: 3),     // above the scroll area, under the column header
+    5: Node(role: "AXRow", frame: CGRect(x: 0, y: 60, width: 800, height: 20), parent: 3),     // above the scroll area
     6: Node(role: "AXRow", frame: CGRect(x: 0, y: 390, width: 800, height: 20), parent: 3),    // half shown
+    7: Node(role: "AXRow", frame: CGRect(x: 0, y: 105, width: 800, height: 20), parent: 3),    // under the header, inside the scroll area
+    8: Node(role: "AXGroup", frame: CGRect(x: 0, y: 100, width: 800, height: 27), parent: 2),   // the column header
+    9: Node(role: "AXCell", frame: CGRect(x: 0, y: 200, width: 400, height: 20), parent: 4),
   ]
 
   func testARowScrolledOutOfItsListIsNotVisibleThoughItLiesInsideTheWindow() {
     XCTAssertEqual(visible(4, in: finder), CGRect(x: 0, y: 200, width: 800, height: 20))
-    XCTAssertNil(visible(5, in: finder), "the column header covers its content position: refused, not clicked through")
+    XCTAssertNil(visible(5, in: finder), "outside the scroll area: refused by the walk")
     XCTAssertEqual(visible(6, in: finder), CGRect(x: 0, y: 390, width: 800, height: 10))
     XCTAssertNil(clickablePoint(frame: visible(5, in: finder), visibleIn: finder[1]!.frame))
+  }
+
+  /// The header band lies inside the scroll area's frame, so the walk keeps a row scrolled under it; the hit-test at
+  /// the chosen point, which answers the header, refuses it.
+  func testARowUnderTheColumnHeaderIsRefusedByTheHitTest() {
+    XCTAssertEqual(visible(7, in: finder), CGRect(x: 0, y: 105, width: 800, height: 20), "the frame walk cannot see the header")
+    let reaches = { (hit: Int?, target: Int) in
+      hitReachesElement(hit, of: target, parent: { self.finder[$0]?.parent }, same: { $0 == $1 })
+    }
+    XCTAssertFalse(reaches(8, 7), "the header answers: refused, never clicked through")
+    XCTAssertTrue(reaches(4, 4), "the row itself")
+    XCTAssertTrue(reaches(9, 4), "a cell inside the row")
+    XCTAssertFalse(reaches(3, 4), "its outline, an ancestor")
+    XCTAssertFalse(reaches(nil, 4), "no answer")
   }
 
   func testWebContentScrolledOutOfThePageIsNotVisible() {
@@ -199,13 +215,25 @@ final class VisibleFrameTests: XCTestCase {
     XCTAssertEqual(clickablePoint(frame: visible(2, in: nodes), visibleIn: nil), CGPoint(x: 137, y: 15), "no window of its own to cut by")
   }
 
-  func testNoFrameNoPointAndAFramelessAncestorDoesNotClip() {
+  func testNoFrameNoPointAndOnlyAFramelessClippingAncestorRefuses() {
     XCTAssertNil(visible(9, in: [9: Node(role: "AXButton", frame: nil, parent: nil)]), "a frame that cannot be read now is refused")
-    let nodes: [Int: Node] = [
-      1: Node(role: "AXScrollArea", frame: nil, parent: nil),
+    for role in ["AXScrollArea", "AXWebArea", "AXWindow", "AXSheet", "AXMenu", "AXPopover"] {
+      let nodes: [Int: Node] = [
+        1: Node(role: role, frame: nil, parent: nil),
+        2: Node(role: "AXButton", frame: CGRect(x: 1, y: 1, width: 10, height: 10), parent: 1),
+      ]
+      XCTAssertNil(visible(2, in: nodes), "a \(role) whose frame cannot be read: nothing known to show (the vendor's nil)")
+    }
+    let scrolling: [Int: Node] = [
+      1: Node(role: "AXGroup", frame: nil, parent: nil, actions: ["AXScrollUpByPage"]),
       2: Node(role: "AXButton", frame: CGRect(x: 1, y: 1, width: 10, height: 10), parent: 1),
     ]
-    XCTAssertEqual(visible(2, in: nodes), CGRect(x: 1, y: 1, width: 10, height: 10))
+    XCTAssertNil(visible(2, in: scrolling), "a page-scrolling group clips, so its missing frame refuses too")
+    let plain: [Int: Node] = [
+      1: Node(role: "AXGroup", frame: nil, parent: nil),
+      2: Node(role: "AXButton", frame: CGRect(x: 1, y: 1, width: 10, height: 10), parent: 1),
+    ]
+    XCTAssertEqual(visible(2, in: plain), CGRect(x: 1, y: 1, width: 10, height: 10), "a non-clipping role without a frame does not clip")
   }
 }
 
@@ -420,52 +448,28 @@ final class ClickDeliveryTests: XCTestCase {
 // MARK: An element's action
 
 final class ActionDeliveryTests: XCTestCase {
-  private let target: pid_t = 990_001, user: pid_t = 990_002
-  private let frame = CGRect(x: 80, y: 60, width: 610, height: 860)
-
   private func meta() -> InputMeta {
     InputMeta(ExecutionContext(connection: ConnectionState(id: 1, fd: -1), receivedAt: 1, hidIdleMs: 0, deadline: 2, lineage: nil))
   }
 
-  func testAPlainActionIsRouteOneWithNoActivation() throws {
+  func testAnActionIsRouteOneAndNeverActivates() throws {
     var performed: [String] = []
     var meta = meta()
-    try deliverAction("AXPress", activation: nil, perform: { performed.append($0); return .success }, meta: &meta)
+    try deliverAction("AXPress", perform: { performed.append($0); return .success }, meta: &meta)
     XCTAssertEqual(performed, ["AXPress"])
-    XCTAssertEqual(meta.inputRoute, .action)
+    XCTAssertEqual(meta.inputRoute, .action, "route 1, never 3, for a plain action (a menu-bar item's included)")
+    XCTAssertNil(meta.activationGuardMs)
     XCTAssertNotNil(meta.startedAt)
-  }
-
-  func testAMenuBarItemsActionFollowsTheActivationAndIsWithdrawnAfter() throws {
-    let seam = GuardSeam(frontmost: user)
-    let activation = FakeActivation(pid: target, window: AXUIElementCreateApplication(target), windowFrame: frame, windowID: 41, system: seam.system)
-    var postsBeforeAction = -1
-    var meta = meta()
-    try deliverAction("AXPress", activation: activation, perform: { _ in postsBeforeAction = seam.posts.count; return .success }, meta: &meta)
-    XCTAssertEqual(postsBeforeAction, 1, "subtype 1 before the action")
-    XCTAssertEqual(seam.posts.map(\.kind), [.appKit(1), .appKit(2)])
-    XCTAssertEqual(meta.inputRoute, .activation, "the activation hooks fired")
-    XCTAssertNotNil(meta.activationGuardMs)
-  }
-
-  func testAFailedGuardNeverPerformsTheAction() {
-    let seam = GuardSeam(frontmost: user, frontmostAfterPost: target)
-    let activation = FakeActivation(pid: target, window: AXUIElementCreateApplication(target), windowFrame: frame, windowID: 41, system: seam.system)
-    var performed = 0
-    var meta = meta()
-    XCTAssertThrowsError(try deliverAction("AXPress", activation: activation, perform: { _ in performed += 1; return .success }, meta: &meta)) { error in
-      XCTAssertEqual((error as? EngineError)?.errorName, "activationFailed")
-    }
-    XCTAssertEqual(performed, 0)
-    XCTAssertEqual(meta.inputRoute, .activation)
-    XCTAssertNil(meta.startedAt)
   }
 
   func testARefusedActionIsActionFailedWithNoFallThrough() {
     var meta = meta()
-    XCTAssertThrowsError(try deliverAction("AXPress", activation: nil, perform: { _ in .cannotComplete }, meta: &meta)) { error in
+    var performed = 0
+    XCTAssertThrowsError(try deliverAction("AXPress", perform: { _ in performed += 1; return .cannotComplete }, meta: &meta)) { error in
       XCTAssertEqual((error as? EngineError)?.errorName, "actionFailed")
     }
+    XCTAssertEqual(performed, 1)
+    XCTAssertEqual(meta.inputRoute, .action)
   }
 }
 

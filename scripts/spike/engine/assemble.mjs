@@ -8,6 +8,9 @@
 // package's version (read from Version.swift) and `build`, the hash of the native/engine/ source tree plus this script,
 // which the engine's ping reports. Signed with hardened runtime and no entitlements, with the identity given (a common
 // name or SHA-1 from `security find-identity -v -p codesigning`, or `adhoc`). Prints the bundle's path.
+//
+// `--bundle-id <id>` (spike only, U7: an approve on a bundle id TCC has never seen) gives the bundle another id and the
+// display name "cua Engine probe", so the owner can tell it apart in System Settings; the program is the same.
 import {createHash} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
 import {chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync} from 'node:fs';
@@ -58,10 +61,13 @@ export function engineVersion(sourceRoot = ENGINE_SOURCE) {
 
 const xml = text => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-export function infoPlist({version, build}) {
+export const PROBE_NAME = 'cua Engine probe';
+
+export function infoPlist({version, build, bundleId = BUNDLE_ID}) {
+  const name = bundleId === BUNDLE_ID ? 'cua Engine' : PROBE_NAME;
   const strings = {
-    CFBundleDevelopmentRegion: 'en', CFBundleDisplayName: 'cua Engine', CFBundleExecutable: EXECUTABLE,
-    CFBundleIdentifier: BUNDLE_ID, CFBundleInfoDictionaryVersion: '6.0', CFBundleName: 'cua Engine',
+    CFBundleDevelopmentRegion: 'en', CFBundleDisplayName: name, CFBundleExecutable: EXECUTABLE,
+    CFBundleIdentifier: bundleId, CFBundleInfoDictionaryVersion: '6.0', CFBundleName: name,
     CFBundlePackageType: 'APPL', CFBundleShortVersionString: version, CFBundleVersion: version,
     CUAEngineBuild: build, LSMinimumSystemVersion: '14.0',
   };
@@ -83,15 +89,16 @@ function parseArgs(argv) {
   const options = {};
   for (let i = 0; i < argv.length; i += 2) {
     const flag = argv[i];
-    if (!['--build', '--identity', '--out'].includes(flag) || i + 1 >= argv.length) throw new Refusal(`usage: assemble.mjs --build <scratch> --identity <identity|adhoc> --out <dir> (at ${flag ?? 'end'})`);
+    if (!['--build', '--identity', '--out', '--bundle-id'].includes(flag) || i + 1 >= argv.length) throw new Refusal(`usage: assemble.mjs --build <scratch> --identity <identity|adhoc> --out <dir> (at ${flag ?? 'end'})`);
     options[flag.slice(2)] = argv[i + 1];
   }
   if (!options.identity) throw new Refusal('no signing identity: pass --identity "$CUA_SIGNING_IDENTITY" (an Apple Development identity from `security find-identity -v -p codesigning`) or --identity adhoc');
+  if (options['bundle-id'] !== undefined && !/^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/.test(options['bundle-id'])) throw new Refusal(`--bundle-id must be a reverse-DNS identifier: ${options['bundle-id']}`);
   if (!options.build || !options.out) throw new Refusal('usage: assemble.mjs --build <scratch> --identity <identity|adhoc> --out <dir>');
   return options;
 }
 
-export function assemble({build: scratch, identity, out}) {
+export function assemble({build: scratch, identity, out, 'bundle-id': bundleId = BUNDLE_ID}) {
   const binary = join(scratch, 'release', EXECUTABLE);
   if (!existsSync(binary)) throw new Refusal(`no release executable at ${binary}: run swift build -c release --package-path native/engine --scratch-path ${scratch}`);
   const builtAt = statSync(binary).mtimeMs;
@@ -102,7 +109,7 @@ export function assemble({build: scratch, identity, out}) {
   const bundle = join(out, BUNDLE_NAME);
   rmSync(bundle, {recursive: true, force: true});
   mkdirSync(join(bundle, 'Contents', 'MacOS'), {recursive: true});
-  writeFileSync(join(bundle, 'Contents', 'Info.plist'), infoPlist({version: engineVersion(), build}));
+  writeFileSync(join(bundle, 'Contents', 'Info.plist'), infoPlist({version: engineVersion(), build, bundleId}));
   writeFileSync(join(bundle, 'Contents', 'PkgInfo'), 'APPL????');
   copyFileSync(binary, join(bundle, 'Contents', 'MacOS', EXECUTABLE));
   chmodSync(join(bundle, 'Contents', 'MacOS', EXECUTABLE), 0o755);

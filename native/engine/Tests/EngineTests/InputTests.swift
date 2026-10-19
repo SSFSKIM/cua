@@ -326,19 +326,19 @@ final class TapFieldsTests: XCTestCase {
 /// round 1, P1: every forced-route cell failed while only numbers parsed).
 final class SpikeRouteArgTests: XCTestCase {
   func testBothSpellingsParse() throws {
-    XCTAssertEqual(try spikeRouteArg(["spikeRoute": "2"], usable: 2...3), 2)
-    XCTAssertEqual(try spikeRouteArg(["spikeRoute": "3"], usable: 2...3), 3)
-    XCTAssertEqual(try spikeRouteArg(["spikeRoute": NSNumber(value: 2)], usable: 2...3), 2)
-    XCTAssertNil(try spikeRouteArg([:], usable: 1...3))
+    XCTAssertEqual(try spikeRouteArg(["spikeRoute": "2"], usable: InputRoute.synthesized), .commandPost)
+    XCTAssertEqual(try spikeRouteArg(["spikeRoute": "3"], usable: InputRoute.synthesized), .activation)
+    XCTAssertEqual(try spikeRouteArg(["spikeRoute": NSNumber(value: 2)], usable: InputRoute.synthesized), .commandPost)
+    XCTAssertNil(try spikeRouteArg([:], usable: InputRoute.elementClick))
   }
 
   func testAnythingElseIsAnArgumentError() {
     for bad in ["9", "0", "two", "", NSNumber(value: 4), NSNumber(value: true)] as [Any] {
-      XCTAssertThrowsError(try spikeRouteArg(["spikeRoute": bad], usable: 1...3)) { error in
+      XCTAssertThrowsError(try spikeRouteArg(["spikeRoute": bad], usable: InputRoute.elementClick)) { error in
         XCTAssertEqual((error as? EngineError)?.errorName, "invalidArguments", "\(bad)")
       }
     }
-    XCTAssertThrowsError(try spikeRouteArg(["spikeRoute": "1"], usable: 2...3)) { error in
+    XCTAssertThrowsError(try spikeRouteArg(["spikeRoute": "1"], usable: InputRoute.synthesized)) { error in
       XCTAssertTrue((error as? EngineError)?.message.contains("cannot carry this action") == true)
     }
   }
@@ -486,14 +486,14 @@ final class FakeActivationTests: XCTestCase {
 }
 
 /// One event the seam was asked to post: its AppKit-defined subtype (-1 for any other event) and the pid.
-private struct Posted: Equatable {
+struct Posted: Equatable {
   let subtype: Int
   let pid: pid_t
 }
 
 /// Route 3's outside world, recorded: what was posted, held and re-activated, and the frontmost app and key focus it
 /// answers.
-private final class SeamStub {
+final class SeamStub {
   var posts: [Posted] = []
   var holds = 0
   var releases = 0

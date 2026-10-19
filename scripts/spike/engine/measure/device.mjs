@@ -45,6 +45,15 @@ export function engineOps(d, shell, {engine} = {}) {
     if (out?.error?.errorName === 'device') throw new Error(`engine-device ${args[0]}: ${out.error.message}`);
     return out;
   };
+  // A spike probe's result out of the rpc envelope; the engine's refusal thrown with its errorName, code and sentence,
+  // and its other members as `data` (probe_tap's mode and preflights, probe_spike activate's `probe` report); an
+  // unreachable engine with the reason.
+  const probe = (method, op, extra) => {
+    const answer = run('rpc', method, JSON.stringify({op, ...extra}));
+    if (answer.ok) return answer.result;
+    const {code = null, errorName = null, message, ...data} = answer.error ?? {};
+    throw Object.assign(new Error(message ?? `the engine is unreachable (${answer.unreachable})`), {errorName, code, data});
+  };
   return {
     rpc: (method, params) => run('rpc', method, ...(params ? [JSON.stringify(params)] : [])),
     bundle: () => run('bundle'),
@@ -53,13 +62,11 @@ export function engineOps(d, shell, {engine} = {}) {
     launch: ({plain = false} = {}) => run('launch', ...(plain ? ['--plain'] : [])),
     checkoutBuild: () => run('checkout-build'),
     inputSource: arg => run('input-source', arg),
-    // probe_tap's result out of the rpc envelope; the engine's refusal thrown with its errorName and sentence
-    // (tapNotCreated's says whether the listen grant was seen), an unreachable engine with the reason.
-    probeTap: (op, extra = {}) => {
-      const answer = run('rpc', 'probe_tap', JSON.stringify({op, ...extra}));
-      if (answer.ok) return answer.result;
-      throw Object.assign(new Error(answer.error?.message ?? `the engine is unreachable (${answer.unreachable})`), {errorName: answer.error?.errorName ?? null});
-    },
+    // probe_tap {op: start, app, seconds, mode: listen|active} | {op: stop}; a refusal's sentence and data carry the
+    // mode and both preflights (tapNotCreated's say which grant was missing).
+    probeTap: (op, extra = {}) => probe('probe_tap', op, extra),
+    // probe_spike {op: activationPoint|activate|selection, app, set?}.
+    probeSpike: (op, extra = {}) => probe('probe_spike', op, extra),
     keystroke: (pid, bounds, text) => run('keystroke', String(pid), bounds, text),
     watch: () => { watched = run('watch'); return watched; },
     watchStop: () => { if (!watched) throw new Error('no watch is running'); const answer = run('watch-stop', String(watched.pid), watched.dir); watched = null; return answer.lines ?? []; },

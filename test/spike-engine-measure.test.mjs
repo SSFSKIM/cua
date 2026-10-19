@@ -27,7 +27,11 @@ test('parseCommand: the engine commands, a lane run with its defaults, summary, 
   assert.equal(parseCommand(['status', '--device', 'mini', '--approved-engine', '/x/cua Engine.app']).engine, '/x/cua Engine.app');
   const run = parseCommand(['--device', 'mini', '--lane', 'cua', '--runs', '3', '--approved-runtime', '/Users/u/cua-home', '--out', '/tmp/spike/cua']);
   assert.deepEqual(run, {command: 'run', device: 'mini', lane: 'cua', runs: 3, approvedRuntime: '/Users/u/cua-home', out: '/tmp/spike/cua', samples: 30, tasks: 10,
-    scenes: SCENE_ORDER, probes: ['c'], operator: false, sceneDir: undefined, node: undefined, engine: undefined});
+    scenes: SCENE_ORDER, probes: ['c'], operator: false, sceneDir: undefined, node: undefined, engine: undefined,
+    groups: ['speed', 'ab', 'd', 'e'], tapModes: ['listen', 'active'], routeSamples: 3, operatorSeconds: 10});
+  const phased = parseCommand(['--device', 'mini', '--lane', 'cua', '--runs', '1', '--approved-runtime', '/h', '--out', '/o', '--groups', 'tap,routes', '--tap-modes', 'active', '--route-samples', '1']);
+  assert.deepEqual([phased.groups, phased.tapModes, phased.routeSamples], [['routes', 'tap'], ['active'], 1], 'groups run in their fixed order');
+  assert.equal(parseCommand(['--device', 'mini', '--lane', 'cua', '--runs', '1', '--approved-runtime', '/h', '--out', '/o', '--groups', 'd', '--operator', '--operator-seconds', '20']).operatorSeconds, 20);
   assert.deepEqual(parseCommand(['--device', 'mini', '--lane', 'vendor', '--runs', '1', '--approved-runtime', '/h', '--out', '/o', '--scenes', 'finder,textedit', '--probes', 'none']).scenes, ['textedit', 'finder']);
   assert.deepEqual(parseCommand(['summary', '/tmp/spike']), {command: 'summary', dir: '/tmp/spike'});
   const refused = [
@@ -40,6 +44,11 @@ test('parseCommand: the engine commands, a lane run with its defaults, summary, 
     [['--device', 'mini', '--lane', 'cua', '--runs', '1', '--approved-runtime', '/h', '--out', '/o', '--scenes', 'safari'], /--scenes/],
     [['--device', 'mini', '--lane', 'cua', '--runs', '1', '--approved-runtime', '/h', '--out', '/o', '--probes', 'a'], /--probes/],
     [['--device', 'mini', '--lane', 'vendor', '--runs', '1', '--approved-runtime', '/h', '--out', '/o', '--node', '/n'], /--node/],
+    [['--device', 'mini', '--lane', 'cua', '--runs', '1', '--approved-runtime', '/h', '--out', '/o', '--groups', 'speed,bogus'], /--groups is a list of speed, ab, routes/],
+    [['--device', 'mini', '--lane', 'cua', '--runs', '1', '--approved-runtime', '/h', '--out', '/o', '--groups', 'ab,ab'], /--groups/],
+    [['--device', 'mini', '--lane', 'cua', '--runs', '1', '--approved-runtime', '/h', '--out', '/o', '--tap-modes', 'passive'], /--tap-modes is a list of listen, active/],
+    [['--device', 'mini', '--lane', 'cua', '--runs', '1', '--approved-runtime', '/h', '--out', '/o', '--groups', 'tap', '--operator'], /--operator .* must name d/],
+    [['--device', 'mini', '--lane', 'cua', '--runs', '1', '--approved-runtime', '/h', '--out', '/o', '--route-samples', '0'], /--route-samples must be a positive integer/],
     [['status', '--device', 'mini', '--dry-run'], /--dry-run is for stop and approve/],
     [['probe-f', '--device', 'mini'], /--out/],
     [['summary'], /summary takes/],
@@ -233,7 +242,12 @@ test('every cell compiles as the body of an async function', () => {
     spikeCells.READBACK('finder'), spikeCells.TEXT_LANDED('chrome', '/a.app', '0101', '한글 테스트'), spikeCells.BOUND_PID('/a.app'), spikeCells.SCENE_GUARD('electron', 'cua Electron fixture'),
     spikeCells.SCENE_SCREENSHOT('finder'), spikeCells.READ_SET_EQUIVALENCE('/a.app', ['full', 'reduced']), spikeCells.FINDER_EDITING(),
     spikeCells.LOCATE('finder', 'cua-scene-finder', {rowCellOf: 'scene-file-005'}), spikeCells.ACTION_GOLDEN('finder', '/f.app', 'cua-scene-finder', {rowCellOf: 'scene-file-005'}, {raw: true}),
-    spikeCells.SPIKE_CLICK('/a.app', 1), spikeCells.SPIKE_INPUT('/a.app', 'press_key', {key: 'Down', spikeRoute: '2'})];
+    spikeCells.SPIKE_CLICK('/a.app', 1), spikeCells.SPIKE_INPUT('/a.app', 'press_key', {key: 'Down', spikeRoute: '2'}),
+    spikeCells.SPIKE_CLICK('/a.app', "2'"), spikeCells.SPIKE_INPUT('/a.app', 'click', {x: 120, y: 48, spikeRoute: "2'"}),
+    spikeCells.SCENE_WINDOW_TITLE('chrome', '/c.app', 'cua scene page', {raw: true}), spikeCells.SCENE_WINDOW_TITLE('chrome', '/c.app', 'cua scene page', {raw: false}),
+    spikeCells.GEOMETRY('textedit', '/t.app', 'cua-scene', 'cua scene document'), spikeCells.GEOMETRY('finder', '/f.app', 'cua-scene-finder', {rowCellOf: 'scene-file-005'}),
+    spikeCells.CLICK_AT('textedit', 48, 17), spikeCells.ADOPT_FRONT_DOCUMENT('cua-scene'),
+    spikeCells.OUTCOME('finder', '/f.app', []), spikeCells.OUTCOME('chrome', '/c.app', ['Scene option', 'Scene notes'])];
   for (const code of cells) assert.doesNotThrow(() => new AsyncFunction('cua', 'nodeRepl', code), code.slice(0, 120));
 });
 

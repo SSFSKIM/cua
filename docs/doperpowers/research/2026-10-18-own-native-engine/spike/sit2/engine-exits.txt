@@ -1,0 +1,54 @@
+2026-10-20 04:31:55.042 Df cua-engine[80714:812b47d] [io.github.ssfskim.cua.engine:lifecycle] started pid 80714 build b99ea9678bfd67d566e656d20ce2ade5e0c9c74627589af3e02af36374960676 socket <path> Support/cua/engine/engine.sock
+2026-10-20 04:32:03.913 Df cua-engine[80714:812b8d0] [io.github.ssfskim.cua.engine:lifecycle] exiting (status 0): shutdown requested
+2026-10-20 04:32:05.255 Df cua-engine[81111:812b930] [io.github.ssfskim.cua.engine:lifecycle] started pid 81111 build b99ea9678bfd67d566e656d20ce2ade5e0c9c74627589af3e02af36374960676 socket <path> Support/cua/engine/engine.sock
+2026-10-20 04:32:27.966 Df cua-engine[81111:812c280] [io.github.ssfskim.cua.engine:lifecycle] exiting (status 0): shutdown requested
+2026-10-20 04:32:33.048 Df cua-engine[82268:812c516] [io.github.ssfskim.cua.engine:lifecycle] started pid 82268 build b99ea9678bfd67d566e656d20ce2ade5e0c9c74627589af3e02af36374960676 socket <path> Support/cua/engine/engine.sock
+2026-10-20 04:34:48.597 Df cua-engine[82268:813077d] [io.github.ssfskim.cua.engine:lifecycle] exiting (status 0): shutdown requested
+2026-10-20 04:35:25.310 Df cua-engine[90101:813143e] [io.github.ssfskim.cua.engine:lifecycle] started pid 90101 build b99ea9678bfd67d566e656d20ce2ade5e0c9c74627589af3e02af36374960676 socket <path> Support/cua/engine/engine.sock
+2026-10-20 04:48:35.270 Df cua-engine[90101:81475a5] [io.github.ssfskim.cua.engine:lifecycle] exiting (status 0): shutdown requested
+2026-10-20 04:49:24.955 Df cua-engine[27828:814871f] [io.github.ssfskim.cua.engine:lifecycle] started pid 27828 build b99ea9678bfd67d566e656d20ce2ade5e0c9c74627589af3e02af36374960676 socket <path> Support/cua/engine/engine.sock
+2026-10-20 04:49:46.128 Df cua-engine[27828:81497b3] [io.github.ssfskim.cua.engine:lifecycle] exiting (status 0): shutdown requested
+2026-10-20 04:58:49.377 Df cua-engine[52656:8158636] [io.github.ssfskim.cua.engine:lifecycle] started pid 52656 build b99ea9678bfd67d566e656d20ce2ade5e0c9c74627589af3e02af36374960676 socket <path> Support/cua/engine/engine.sock
+2026-10-20 04:58:52.697 Df cua-engine[52656:8158743] [io.github.ssfskim.cua.engine:lifecycle] exiting (status 0): shutdown requested
+2026-10-20 04:58:56.704 Df cua-engine[52925:815891c] [io.github.ssfskim.cua.engine:lifecycle] started pid 52925 build b99ea9678bfd67d566e656d20ce2ade5e0c9c74627589af3e02af36374960676 socket <path> Support/cua/engine/engine.sock
+2026-10-20 04:58:59.781 Df cua-engine[53093:8158b01] [io.github.ssfskim.cua.engine:lifecycle] started pid 53093 build b99ea9678bfd67d566e656d20ce2ade5e0c9c74627589af3e02af36374960676 socket <path> Support/cua/engine-probe-c/engine.sock
+2026-10-20 04:59:02.401 Df cua-engine[53093:8158c30] [io.github.ssfskim.cua.engine:lifecycle] exiting (status 0): shutdown requested
+2026-10-20 04:59:04.188 Df cua-engine[52925:8158d83] [io.github.ssfskim.cua.engine:lifecycle] exiting (status 0): shutdown requested
+2026-10-20 04:59:06.880 Df cua-engine[53398:8158e71] [io.github.ssfskim.cua.engine:lifecycle] started pid 53398 build b99ea9678bfd67d566e656d20ce2ade5e0c9c74627589af3e02af36374960676 socket <path> Support/cua/engine/engine.sock
+2026-10-20 05:04:00.115 Df cua-engine[53398:8160a5d] [io.github.ssfskim.cua.engine:lifecycle] exiting (status 0): shutdown requested
+2026-10-20 05:04:10.530 Df cua-engine[67280:8160f48] [io.github.ssfskim.cua.engine:lifecycle] started pid 67280 build b99ea9678bfd67d566e656d20ce2ade5e0c9c74627589af3e02af36374960676 socket <path> Support/cua/engine/engine.sock
+2026-10-20 05:04:13.516 Df cua-engine[67280:81610c3] [io.github.ssfskim.cua.engine:lifecycle] exiting (status 0): shutdown requested
+2026-10-20 05:04:17.009 Df cua-engine[67580:816126f] [io.github.ssfskim.cua.engine:lifecycle] started pid 67580 build b99ea9678bfd67d566e656d20ce2ade5e0c9c74627589af3e02af36374960676 socket <path> Support/cua/engine/engine.sock
+2026-10-20 05:04:19.565 Df cua-engine[67717:8161425] [io.github.ssfskim.cua.engine:lifecycle] started pid 67717 build b99ea9678bfd67d566e656d20ce2ade5e0c9c74627589af3e02af36374960676 socket <path> Support/cua/engine-probe-c/engine.sock
+2026-10-20 05:04:22.420 Df cua-engine[67717:8161535] [io.github.ssfskim.cua.engine:lifecycle] exiting (status 0): shutdown requested
+2026-10-20 05:04:24.236 Df cua-engine[67580:81616bf] [io.github.ssfskim.cua.engine:lifecycle] exiting (status 0): shutdown requested
+2026-10-20 05:04:26.534 Df cua-engine[67986:8161736] [io.github.ssfskim.cua.engine:lifecycle] started pid 67986 build b99ea9678bfd67d566e656d20ce2ade5e0c9c74627589af3e02af36374960676 socket <path> Support/cua/engine/engine.sock
+2026-10-20 05:09:12.566 Df cua-engine[67986:816875c] [io.github.ssfskim.cua.engine:lifecycle] exiting (status 0): shutdown requested
+2026-10-20 05:09:23.288 Df cua-engine[80069:8168c3d] [io.github.ssfskim.cua.engine:lifecycle] started pid 80069 build b99ea9678bfd67d566e656d20ce2ade5e0c9c74627589af3e02af36374960676 socket <path> Support/cua/engine/engine.sock
+2026-10-20 05:09:25.879 Df cua-engine[80069:8168de9] [io.github.ssfskim.cua.engine:lifecycle] exiting (status 0): shutdown requested
+2026-10-20 05:09:30.109 Df cua-engine[80457:8168ffc] [io.github.ssfskim.cua.engine:lifecycle] started pid 80457 build b99ea9678bfd67d566e656d20ce2ade5e0c9c74627589af3e02af36374960676 socket <path> Support/cua/engine/engine.sock
+2026-10-20 05:09:32.273 Df cua-engine[80715:816925f] [io.github.ssfskim.cua.engine:lifecycle] started pid 80715 build b99ea9678bfd67d566e656d20ce2ade5e0c9c74627589af3e02af36374960676 socket <path> Support/cua/engine-probe-c/engine.sock
+2026-10-20 05:09:34.636 Df cua-engine[80715:8169656] [io.github.ssfskim.cua.engine:lifecycle] exiting (status 0): shutdown requested
+2026-10-20 05:09:36.192 Df cua-engine[80457:81696c6] [io.github.ssfskim.cua.engine:lifecycle] exiting (status 0): shutdown requested
+2026-10-20 05:09:38.921 Df cua-engine[81467:8169898] [io.github.ssfskim.cua.engine:lifecycle] started pid 81467 build b99ea9678bfd67d566e656d20ce2ade5e0c9c74627589af3e02af36374960676 socket <path> Support/cua/engine/engine.sock
+2026-10-20 05:14:14.106 Df cua-engine[81467:817034b] [io.github.ssfskim.cua.engine:lifecycle] exiting (status 0): shutdown requested
+2026-10-20 05:19:58.626 Df cua-engine[6304:8177ebd] [io.github.ssfskim.cua.engine:lifecycle] started pid 6304 build b99ea9678bfd67d566e656d20ce2ade5e0c9c74627589af3e02af36374960676 socket <path> Support/cua/engine/engine.sock
+2026-10-20 05:20:23.989 Df cua-engine[6304:8178cdf] [io.github.ssfskim.cua.engine:lifecycle] exiting (status 0): shutdown requested
+2026-10-20 05:21:37.971 Df cua-engine[10294:817a5e4] [io.github.ssfskim.cua.engine:lifecycle] started pid 10294 build b99ea9678bfd67d566e656d20ce2ade5e0c9c74627589af3e02af36374960676 socket <path> Support/cua/engine/engine.sock
+2026-10-20 05:22:02.813 Df cua-engine[10294:817b2d3] [io.github.ssfskim.cua.engine:lifecycle] exiting (status 0): shutdown requested
+2026-10-20 05:22:27.265 Df cua-engine[12510:817be8c] [io.github.ssfskim.cua.engine:lifecycle] started pid 12510 build b99ea9678bfd67d566e656d20ce2ade5e0c9c74627589af3e02af36374960676 socket <path> Support/cua/engine/engine.sock
+2026-10-20 05:27:03.852 Df cua-engine[12510:81825df] [io.github.ssfskim.cua.engine:lifecycle] exiting (status 0): shutdown requested
+2026-10-20 05:27:50.785 Df cua-engine[25708:818381c] [io.github.ssfskim.cua.engine:lifecycle] started pid 25708 build b99ea9678bfd67d566e656d20ce2ade5e0c9c74627589af3e02af36374960676 socket <path> Support/cua/engine-u7/engine.sock
+2026-10-20 05:38:27.421 Df cua-engine[25708:819102d] [io.github.ssfskim.cua.engine:lifecycle] exiting (status 0): shutdown requested
+2026-10-20 05:38:28.632 Df cua-engine[50081:8191181] [io.github.ssfskim.cua.engine:lifecycle] started pid 50081 build b99ea9678bfd67d566e656d20ce2ade5e0c9c74627589af3e02af36374960676 socket <path> Support/cua/engine-u7/engine.sock
+2026-10-20 05:38:44.003 Df cua-engine[50081:8191760] [io.github.ssfskim.cua.engine:lifecycle] exiting (status 0): shutdown requested
+2026-10-20 05:38:48.020 Df cua-engine[50746:81918df] [io.github.ssfskim.cua.engine:lifecycle] started pid 50746 build b99ea9678bfd67d566e656d20ce2ade5e0c9c74627589af3e02af36374960676 socket <path> Support/cua/engine/engine.sock
+2026-10-20 05:39:05.673 Df cua-engine[50746:8191f28] [io.github.ssfskim.cua.engine:lifecycle] exiting (status 0): shutdown requested
+2026-10-20 05:39:12.481 Df cua-engine[51728:819223c] [io.github.ssfskim.cua.engine:lifecycle] started pid 51728 build a25da09ae28d40d3f751dfee337bd4c1b6c07c69ea1af6dd646f67211d03a32c socket <path> Support/cua/engine/engine.sock
+2026-10-20 05:39:58.975 Df cua-engine[54147:8193799] [io.github.ssfskim.cua.engine:lifecycle] started pid 54147 build a25da09ae28d40d3f751dfee337bd4c1b6c07c69ea1af6dd646f67211d03a32c socket <path> Support/cua/engine-probe-f/engine.sock
+2026-10-20 05:40:26.063 Df cua-engine[54147:819412b] [io.github.ssfskim.cua.engine:lifecycle] exiting (status 0): shutdown requested
+2026-10-20 05:40:39.138 Df cua-engine[51728:8194698] [io.github.ssfskim.cua.engine:lifecycle] exiting (status 0): shutdown requested
+2026-10-20 05:40:44.583 Df cua-engine[55887:819492a] [io.github.ssfskim.cua.engine:lifecycle] started pid 55887 build b99ea9678bfd67d566e656d20ce2ade5e0c9c74627589af3e02af36374960676 socket <path> Support/cua/engine/engine.sock
+2026-10-20 05:40:54.213 Df cua-engine[55887:8194d34] [io.github.ssfskim.cua.engine:lifecycle] exiting (status 0): shutdown requested
+2026-10-20 05:40:55.423 Df cua-engine[56283:8194de3] [io.github.ssfskim.cua.engine:lifecycle] started pid 56283 build b99ea9678bfd67d566e656d20ce2ade5e0c9c74627589af3e02af36374960676 socket <path> Support/cua/engine/engine.sock
+2026-10-20 05:41:10.487 Df cua-engine[56283:81955b7] [io.github.ssfskim.cua.engine:lifecycle] exiting (status 0): shutdown requested

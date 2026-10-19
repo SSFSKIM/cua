@@ -14,6 +14,67 @@ import Foundation
 // counts, the times of the own and driven events and the HID idle time. The listen grant is checked with the
 // non-prompting preflight only: the design assumes the Input Monitoring grant is never held, and the request variant
 // would raise its prompt.
+//
+// The second sitting's `mode` on start: "listen" (the above, the default) or "active", an active filter tap
+// (kCGEventTapOptionDefault, the options the vendor's own taps use) at the same location and placement, whose callback
+// reads the same fields, counts the same way, returns every event unmodified, and re-enables the tap when the system
+// disables it (timeout or user input), counting the re-enables. Every reply and every refusal names the mode and both
+// non-prompting preflights (listen and post), the refusal in its data and in its sentence.
+
+/// Which tap `probe_tap start` creates.
+enum TapMode: String {
+  case listen, active
+
+  var options: CGEventTapOptions { self == .listen ? .listenOnly : .defaultTap }
+}
+
+/// `probe_tap start`'s arguments, validated before the app is resolved or anything is created.
+struct TapStart {
+  let mode: TapMode
+  let seconds: Int
+
+  init(_ params: [String: Any]) throws {
+    switch params["mode"] {
+    case nil, is NSNull: mode = .listen
+    case let name as String:
+      guard let parsed = TapMode(rawValue: name) else { throw EngineError.invalidArguments("mode must be \"listen\" or \"active\"") }
+      mode = parsed
+    default: throw EngineError.invalidArguments("mode must be \"listen\" or \"active\"")
+    }
+    seconds = (params["seconds"] as? NSNumber)?.intValue ?? 60
+    guard (1...600).contains(seconds) else { throw EngineError.invalidArguments("seconds must be between 1 and 600") }
+  }
+}
+
+/// The two event-access grants as the non-prompting preflights read them (never the Request variants, which prompt).
+struct TapPreflights {
+  let listen: Bool
+  let post: Bool
+
+  static func read() -> TapPreflights { TapPreflights(listen: CGPreflightListenEventAccess(), post: CGPreflightPostEventAccess()) }
+
+  var wire: [String: Any] { ["listenPreflight": listen, "postPreflight": post] }
+  var sentence: String { "listen preflight \(listen ? "granted" : "not granted"), post preflight \(post ? "granted" : "not granted")" }
+}
+
+extension EngineError {
+  /// The same refusal under a new sentence and data (Tap's refusals keep their code and name).
+  init(code: Int, errorName: String, message: String, extra: [String: Any]) {
+    self.code = code
+    self.errorName = errorName
+    self.message = message
+    self.extra = extra
+  }
+}
+
+/// A probe_tap refusal as the harness's row reads it: its code and name kept, the mode (null before it is known) and
+/// both preflights in its data, and the preflights in its sentence.
+func tapRefusal(_ error: EngineError, mode: TapMode?, preflights: TapPreflights) -> EngineError {
+  var extra = error.extra
+  extra["mode"] = mode?.rawValue ?? NSNull()
+  extra.merge(preflights.wire) { _, new in new }
+  return EngineError(code: error.code, errorName: error.errorName, message: "\(error.message) (\(preflights.sentence))", extra: extra)
+}
 
 /// The five event types the vendor's monitor taps (F §9.2): moves, drags, ups, key-up and flags-changed do not count.
 let tapEventMask = (1 << CGEventType.leftMouseDown.rawValue) | (1 << CGEventType.rightMouseDown.rawValue)
@@ -61,8 +122,28 @@ final class TapCounts: @unchecked Sendable {
   private var ownTimes: [Int64] = []
   private var drivenTimes: [Int64] = []
   private var windowOwners: [Int64: pid_t] = [:]
+  private var disabledBy: [String: Int] = ["timeout": 0, "userInput": 0]
+  private var port: CFMachPort?
 
   init(drivenPID: pid_t) { self.drivenPID = drivenPID }
+
+  /// The active tap's port, for its callback's re-enable; detached (nil) by stop before the tap is disabled. The
+  /// re-enable runs under the same lock, so once `attach(nil)` returns no callback can re-enable the tap: one that
+  /// read the port first has finished its re-enable, and one that comes after finds none.
+  func attach(_ port: CFMachPort?) {
+    lock.lock()
+    self.port = port
+    lock.unlock()
+  }
+
+  /// The system disabled the active tap (timeout or user input): counted, and the tap re-enabled while attached, the
+  /// lock held across the re-enable (`attach`).
+  func noteDisabled(_ type: CGEventType) {
+    lock.lock()
+    defer { lock.unlock() }
+    disabledBy[type == .tapDisabledByTimeout ? "timeout" : "userInput", default: 0] += 1
+    if let port { CGEvent.tapEnable(tap: port, enable: true) }
+  }
 
   /// The window's owner, from the window list, cached for the probe's duration.
   func windowOwner(_ windowID: Int64) -> pid_t? {
@@ -82,13 +163,14 @@ final class TapCounts: @unchecked Sendable {
     return found
   }
 
-  /// One event counted: its type name, its class, and its arrival time for the classes the report carries times for.
-  func record(_ fields: TapEventFields, enginePID: pid_t) {
+  /// One event counted: its type name, its class, and its arrival time (`at`, stamped by the callback when it defers
+  /// the count) for the classes the report carries times for.
+  func record(_ fields: TapEventFields, enginePID: pid_t, at arrival: Int64? = nil) {
     let eventClass = TapEventClass.of(fields, drivenPID: drivenPID, enginePID: enginePID, windowOwner: windowOwner)
     let name = TapProbe.typeNames[Int(fields.type.rawValue)] ?? "type\(fields.type.rawValue)"
     lock.lock()
     counts[name, default: [:]][eventClass.rawValue, default: 0] += 1
-    let time = unixMilliseconds()
+    let time = arrival ?? unixMilliseconds()
     if eventClass == .own, ownTimes.count < 1000 { ownTimes.append(time) }
     if eventClass == .driven, drivenTimes.count < 1000 { drivenTimes.append(time) }
     lock.unlock()
@@ -103,6 +185,8 @@ final class TapCounts: @unchecked Sendable {
       "drivenTimes": drivenTimes,
       "drivenPID": Int(drivenPID),
       "hidIdleMs": hidIdleMilliseconds(),
+      "reenables": disabledBy.values.reduce(0, +),
+      "disabledBy": disabledBy,
     ]
   }
 }
@@ -127,11 +211,19 @@ final class TapProbe: @unchecked Sendable {
   private var created = false
   private var listenAccess = false
   private var startedAt: Int64 = 0
+  private var runningMode: TapMode?
+
+  /// The mode of the tap running now, nil when none is.
+  var mode: TapMode? {
+    lock.lock()
+    defer { lock.unlock() }
+    return counts == nil ? nil : runningMode
+  }
 
   /// Starts the tap for the driven app. Answers {created, listenAccess, running, startedAt, seconds}; a tap already
   /// running is refused. When the tap cannot be created the answer says so with the listen grant's state, and nothing
   /// is left behind.
-  func start(drivenPID: pid_t, seconds: Int) throws -> [String: Any] {
+  func start(drivenPID: pid_t, seconds: Int, mode: TapMode = .listen) throws -> [String: Any] {
     lock.lock()
     defer { lock.unlock() }
     guard tap == nil && counts == nil else { throw EngineError(name: "tapBusy", "A probe tap is already running; stop it first") }
@@ -145,9 +237,12 @@ final class TapProbe: @unchecked Sendable {
     let threadDone = DispatchSemaphore(value: 0)
     self.threadDone = threadDone
     let thread = Thread {
-      let port = CGEvent.tapCreate(tap: .cgAnnotatedSessionEventTap, place: .tailAppendEventTap, options: .listenOnly,
-                                  eventsOfInterest: CGEventMask(tapEventMask), callback: TapProbe.callback, userInfo: pointer)
+      let port = CGEvent.tapCreate(tap: .cgAnnotatedSessionEventTap, place: .tailAppendEventTap, options: mode.options,
+                                  eventsOfInterest: CGEventMask(tapEventMask),
+                                  callback: mode == .listen ? TapProbe.callback : TapProbe.activeCallback, userInfo: pointer)
       if let port {
+        // Attached before the run loop runs, so the callback (on this thread's loop) always finds it.
+        if mode == .active { Unmanaged<TapCounts>.fromOpaque(pointer).takeUnretainedValue().attach(port) }
         if let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, port, 0) {
           CFRunLoopAddSource(CFRunLoopGetCurrent(), source, CFRunLoopMode.commonModes)
         }
@@ -167,6 +262,7 @@ final class TapProbe: @unchecked Sendable {
     created = box.value?.created ?? false
     startedAt = unixMilliseconds()
     if created {
+      runningMode = mode
       counts = counting
       countsPointer = pointer
       tap = box.value?.tap
@@ -174,7 +270,7 @@ final class TapProbe: @unchecked Sendable {
     } else {
       Unmanaged<TapCounts>.fromOpaque(pointer).release()
       throw EngineError(name: "tapNotCreated",
-                        "The listen-only event tap could not be created (the Input Monitoring listen grant is \(listenAccess ? "granted" : "not granted")).")
+                        "The \(mode == .listen ? "listen-only" : "active") event tap could not be created (the Input Monitoring listen grant is \(listenAccess ? "granted" : "not granted")).")
     }
     autoStop = AutoStop()
     autoStop?.arm(seconds: seconds) { [weak self] in _ = try? self?.stop() }
@@ -182,8 +278,8 @@ final class TapProbe: @unchecked Sendable {
   }
 
   /// Stops the tap and answers the report; nothing running is an error. The deadline's auto-stop is cancelled (it
-  /// would otherwise stop a later tap's run), and the counting state releases only after the tap thread has finished,
-  /// so a callback executing as this runs never reads a freed object.
+  /// would otherwise stop a later tap's run), and the counting state releases only once the tap thread is seen to have
+  /// finished (never on the join's timeout), so a callback executing as this runs never reads a freed object.
   func stop() throws -> [String: Any] {
     lock.lock()
     guard let counting = counts, let pointer = countsPointer else {
@@ -192,6 +288,7 @@ final class TapProbe: @unchecked Sendable {
     }
     autoStop?.cancel()
     autoStop = nil
+    counting.attach(nil)  // before the disable: the active callback re-enables only an attached tap
     if let tap, let runLoop = tapRunLoop {
       CGEvent.tapEnable(tap: tap, enable: false)
       CFRunLoopStop(runLoop)  // the tap's own loop ends below
@@ -203,10 +300,16 @@ final class TapProbe: @unchecked Sendable {
     tapRunLoop = nil
     let done = threadDone  // captured under the lock: a start racing in must not swap the semaphore being waited on
     lock.unlock()
-    _ = done.wait(timeout: .now() + .seconds(2))  // the thread signals after CFRunLoopRun returns
-    Unmanaged<TapCounts>.fromOpaque(pointer).release()
+    // The thread signals after CFRunLoopRun returns. Past the timeout its loop may still be running, and a callback could
+    // still read the counting object through the pointer, so that one object is leaked deliberately rather than freed
+    // under it.
+    if done.wait(timeout: .now() + .seconds(2)) == .success {
+      Unmanaged<TapCounts>.fromOpaque(pointer).release()
+    }
+    TapProbe.deferredCounts.sync {}  // the active tap's last deferred counts land before the report is read
     var report = counting.report
     report["created"] = created
+    report["mode"] = runningMode?.rawValue ?? NSNull()
     report["listenAccess"] = listenAccess
     report["startedAt"] = Int(startedAt)
     report["stoppedAt"] = Int(unixMilliseconds())
@@ -218,6 +321,31 @@ final class TapProbe: @unchecked Sendable {
     if let userInfo {
       let counting = Unmanaged<TapCounts>.fromOpaque(userInfo).takeUnretainedValue()
       counting.record(tapFields(event), enginePID: getpid())
+    }
+    return Unmanaged.passUnretained(event)
+  }
+
+  /// Where the active tap's counts are made, off the event path.
+  static let deferredCounts = DispatchQueue(label: "cua-engine-probe-tap-counts")
+
+  /// The active tap's callback: reads the same fields as the listen callback and returns every event unmodified, but
+  /// stamps the arrival and defers the count, since an active filter holds each event (the user's own input included)
+  /// until it returns and the classification may copy the window list. A disable notice is counted and the tap
+  /// re-enabled, never counted as an event.
+  private static let activeCallback: CGEventTapCallBack = { _, type, event, userInfo in
+    guard let userInfo else { return Unmanaged.passUnretained(event) }
+    return activeTapEvent(type, event, Unmanaged<TapCounts>.fromOpaque(userInfo).takeUnretainedValue())
+  }
+
+  /// The active callback's body, reachable from the unit tests: the event comes back as the same object, unmodified.
+  static func activeTapEvent(_ type: CGEventType, _ event: CGEvent, _ counting: TapCounts) -> Unmanaged<CGEvent> {
+    if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+      counting.noteDisabled(type)
+    } else {
+      let fields = tapFields(event)
+      let arrival = unixMilliseconds()
+      let enginePID = getpid()
+      deferredCounts.async { counting.record(fields, enginePID: enginePID, at: arrival) }  // holds `counting` until it runs
     }
     return Unmanaged.passUnretained(event)
   }
@@ -259,21 +387,31 @@ final class AutoStop: @unchecked Sendable {
 }
 
 extension Engine {
-  /// The spike-only `probe_tap` method: start {app | pid, seconds?} for the driven app, stop for the report.
+  /// The spike-only `probe_tap` method: start {app | pid, seconds?, mode?} for the driven app, stop for the report.
+  /// Every answer and every refusal carries the mode and both preflights (`tapRefusal`).
   func probeTap(_ params: [String: Any]) throws -> [String: Any] {
-    switch params["op"] as? String {
-    case "start":
-      let app = try resolveApp(params)
-      guard let pid = app.pid else { throw EngineError(.runningApplicationNotFound, "Running application not found: \(app.displayName)") }
-      let seconds = (params["seconds"] as? NSNumber)?.intValue ?? 60
-      guard (1...600).contains(seconds) else { throw EngineError.invalidArguments("seconds must be between 1 and 600") }
-      var answer = try TapProbe.shared.start(drivenPID: pid, seconds: seconds)
-      answer["app"] = app.appWire
+    var mode: TapMode? = nil
+    do {
+      var answer: [String: Any]
+      switch params["op"] as? String {
+      case "start":
+        let start = try TapStart(params)
+        mode = start.mode
+        let app = try resolveApp(params)
+        guard let pid = app.pid else { throw EngineError(.runningApplicationNotFound, "Running application not found: \(app.displayName)") }
+        answer = try TapProbe.shared.start(drivenPID: pid, seconds: start.seconds, mode: start.mode)
+        answer["app"] = app.appWire
+        answer["mode"] = start.mode.rawValue
+      case "stop":
+        mode = TapProbe.shared.mode
+        answer = try TapProbe.shared.stop()
+      default:
+        throw EngineError.invalidArguments("probe_tap needs op \"start\" or \"stop\"")
+      }
+      answer.merge(TapPreflights.read().wire) { _, new in new }
       return answer
-    case "stop":
-      return try TapProbe.shared.stop()
-    default:
-      throw EngineError.invalidArguments("probe_tap needs op \"start\" or \"stop\"")
+    } catch let error as EngineError {
+      throw tapRefusal(error, mode: mode, preflights: TapPreflights.read())
     }
   }
 }

@@ -56,7 +56,8 @@ test('status reports the engine\'s identity and grants, and counts the connectio
   assert.equal(status.socket, socket);
   assert.equal(status.pid, child.pid);
   assert.equal(typeof status.bundlePath, 'string');
-  for (const grant of ['accessibility', 'screenRecording', 'canPostHid']) assert.equal(typeof status[grant], 'boolean', grant);
+  for (const grant of ['accessibility', 'screenRecording', 'inputMonitoring', 'canPostHid']) assert.equal(typeof status[grant], 'boolean', grant);
+  for (const gone of ['listenPreflight', 'postPreflight']) assert.equal(status[gone], undefined, gone);
   assert.equal(status.connections, 0);
   const other = await Wire.connect(socket);
   const third = await Wire.connect(socket);
@@ -138,6 +139,8 @@ test('the input methods validate their arguments and resolve the app without pos
     ['click', {app: 'com.apple.finder', x: 1, y: 2, mouse_button: 'sideways'}, 'invalidArguments'],
     ['click', {app: 'com.apple.finder', x: 1, y: 2, click_count: 0}, 'invalidArguments'],
     ['click', {app: 'com.apple.finder', x: 1, y: 2, spikeRoute: '9'}, 'invalidArguments'],
+    ['click', {app: 'com.apple.finder', x: 1, y: 2, spikeRoute: '2p'}, 'invalidArguments'],  // route 2′ is spelled "2'"
+    ['click', {app: 'com.apple.finder', x: 1, y: 2, spikeRoute: '1'}, 'invalidArguments'],  // route 1 needs an element
     ['press_key', {app: 'com.apple.finder'}, 'invalidArguments'],
     ['press_key', {app: 'com.apple.finder', key: 'Ctrl'}, 'invalidKey'],  // the vendor's code has no such alias (F §6.4)
     ['type_text', {app: 'com.apple.finder'}, 'invalidArguments'],
@@ -150,6 +153,10 @@ test('the input methods validate their arguments and resolve the app without pos
   for (const [method, args] of [
     ['click', {...noSuch, x: 1, y: 2}],
     ['click', {...noSuch, x: 1, y: 2, spikeRoute: '3'}],
+    ['click', {...noSuch, x: 1, y: 2, spikeRoute: "2'"}],
+    ['click', {...noSuch, element_index: 0, spikeRoute: "2'"}],
+    ['press_key', {...noSuch, key: 'Return', spikeRoute: "2'"}],
+    ['type_text', {...noSuch, text: 'x', spikeRoute: "2'"}],
     ['press_key', {...noSuch, key: 'Return'}],
     ['press_key', {...noSuch, key: 'Return', spikeRoute: '2'}],
     ['type_text', {...noSuch, text: 'x'}],
@@ -174,6 +181,30 @@ test('probe_tap refuses a missing op, an unknown app and a stop with nothing run
   assert.equal(noApp.error.code, -10010);
   const noTap = await wire.call('probe_tap', {op: 'stop'});
   assert.equal(noTap.error.errorName, 'tapNotRunning');
+  // Every refusal names the mode (null before one is known) and both non-prompting preflights, in data and sentence.
+  const badMode = await wire.call('probe_tap', {op: 'start', app: 'com.apple.finder', mode: 'filter'});
+  assert.equal(badMode.error.errorName, 'invalidArguments');
+  for (const [refusal, mode] of [[noOp, null], [noApp, 'listen'], [noTap, null], [badMode, null]]) {
+    assert.equal(refusal.error.mode, mode);
+    for (const preflight of ['listenPreflight', 'postPreflight']) assert.equal(typeof refusal.error[preflight], 'boolean', preflight);
+    assert.match(refusal.error.message, /listen preflight (not )?granted, post preflight (not )?granted/);
+  }
+  const activeNoApp = await wire.call('probe_tap', {op: 'start', app: 'io.github.ssfskim.cua.engine-test.no-such-app', mode: 'active'});
+  assert.equal(activeNoApp.error.code, -10010);
+  assert.equal(activeNoApp.error.mode, 'active');
+});
+
+test('probe_spike refuses a missing op, a malformed range and an unknown app before reading anything', {skip}, async t => {
+  const {wire} = await engine(t);
+  const noOp = await wire.call('probe_spike', {app: 'com.apple.finder'});
+  assert.equal(noOp.error.errorName, 'invalidArguments');
+  const badRange = await wire.call('probe_spike', {op: 'selection', app: 'com.apple.finder', set: {location: -1, length: 0}});
+  assert.equal(badRange.error.errorName, 'invalidArguments');
+  for (const op of ['activationPoint', 'activate', 'selection']) {
+    const noApp = await wire.call('probe_spike', {op, app: 'io.github.ssfskim.cua.engine-test.no-such-app'});
+    assert.equal(noApp.error.code, -10010, op);
+    assert.equal(noApp.error.errorName, 'invalidApp', op);
+  }
 });
 
 test('every app-scoped execute refuses a forbidden app, by bundle id or by path, before its method runs', {skip}, async t => {

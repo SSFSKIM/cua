@@ -9,11 +9,11 @@ import {join} from 'node:path';
 import {
   SCENE_IDS, SCENES, PAIRS, BACKGROUND_PAIRINGS, CONCURRENT_USE, CONCURRENT_USE_SHEET, userWindowFor, refusals,
   ownedProcesses, documentWindows, refusingWindows, finderFolderFiles, textEditDocument, describeScenes, FINDER_TYPING_NAME, TEXTEDIT_STYLED_LINE, TEXTEDIT_MARKDOWN_CAP,
-  upScene, downScene, preflight, readState, chromeArgs, chromePreferences, electronArgs, sceneCommand, exitCodeFor,
+  upScene, downScene, preflight, readState, chromeArgs, chromeArgsProblems, chromePreferences, electronArgs, sceneCommand, exitCodeFor,
 } from '../scripts/spike/engine/scenes.mjs';
 import {parseAsns, parseAppInfo, stopRecorded} from '../scripts/spike/engine/scene-processes.mjs';
 import {FIXTURE_BUNDLE_ID, FIXTURE_CONTROLS} from '../scripts/spike/engine/fixtures/electron-fixture.mjs';
-import {PAGE_CONTROLS} from '../scripts/spike/engine/fixtures/scene-page.mjs';
+import {PAGE_CONTROLS, PAGE_HTML} from '../scripts/spike/engine/fixtures/scene-page.mjs';
 
 const CFT = 'com.google.chrome.for.testing', TEXTEDIT = 'com.apple.TextEdit';
 
@@ -270,12 +270,17 @@ test('up of each scene: TextEdit on the run\'s document in English, Chrome on th
   assert.deepEqual(io.calls[1][1].args, chromeArgs({userDataDir: join(run, 'chrome-user-data'), url: chrome.page.url}));
   assert.ok(io.calls[1][1].args.includes('--use-mock-keychain'));
   assert.ok(!io.calls[1][1].args.some(a => /accessibility/i.test(a)), 'Chrome is never told to turn accessibility on');
+  // Every argument but the URL is a switch: Chrome opens any other argument as a tab, as the first sitting's
+  // `-AppleLanguages (en-US)` pair did with `(en-US)` (U3).
+  const args = io.calls[1][1].args;
+  assert.equal(args.at(-1), chrome.page.url);
+  assert.deepEqual(chromeArgsProblems(args), []);
+  assert.deepEqual(chromeArgsProblems([...args.slice(0, -1), '-AppleLanguages', '(en-US)', args.at(-1)]), ['-AppleLanguages', '(en-US)'], 'the pair the first sitting passed');
   // The page is English and the Macs run in Korean: no translate bubble in the fixed state.
-  const args = io.calls[1][1].args, lang = args.indexOf('-AppleLanguages');
-  assert.deepEqual(args.slice(lang, lang + 2), ['-AppleLanguages', '(en-US)'], 'the per-process UI language, as TextEdit\'s');
-  assert.ok(lang < args.indexOf(chrome.page.url), 'before the URL');
-  assert.ok(!args.some(a => /^--(lang|accept-lang)=/.test(a)), 'no Chromium language switch: the profile is the bubble guard');
+  assert.ok(!args.some(a => /^--(lang|accept-lang)=/.test(a)), 'no Chromium language switch: the page and the profile are the bubble guard');
   assert.ok(args.some(a => /^--disable-features=.*\bTranslate\b/.test(a)));
+  assert.match(PAGE_HTML, /<html lang="en" translate="no">/);
+  assert.match(PAGE_HTML, /<meta name="google" content="notranslate">/);
   assert.deepEqual(JSON.parse(fs.readFileSync(join(run, 'chrome-user-data', 'Default', 'Preferences'), 'utf8')), chromePreferences());
   assert.equal(chromePreferences().translate.enabled, false);
   const finder = await upScene('finder', {run, io});

@@ -1,0 +1,10837 @@
+{
+ "app": {
+  "appPath": "/System/Library/CoreServices/Finder.app",
+  "bundleIdentifier": "com.apple.finder",
+  "displayName": "Finder",
+  "pid": 9975
+ },
+ "focused": 89,
+ "lineage": "L4b7c23aac8c0",
+ "menuBar": [
+  {
+   "actions": [
+    "AXCancel",
+    "AXPress",
+    "AXPick"
+   ],
+   "children": 0,
+   "columnIndexRange": [
+    0,
+    0
+   ],
+   "depth": 0,
+   "description": null,
+   "flags": {
+    "disclosable": true,
+    "enabled": true,
+    "expanded": false,
+    "focusable": false,
+    "focused": false,
+    "selectable": true,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 30,
+    "width": 34,
+    "x": 10,
+    "y": 0
+   },
+   "identifier": null,
+   "index": 301,
+   "numberOfCharacters": 0,
+   "pid": 9975,
+   "role": "AXMenuBarItem",
+   "roleDescription": "⟨8⟩",
+   "rowIndexRange": [
+    0,
+    0
+   ],
+   "subrole": null,
+   "title": "⟨5⟩",
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXCancel",
+    "AXPress",
+    "AXPick"
+   ],
+   "children": 0,
+   "columnIndexRange": [
+    0,
+    0
+   ],
+   "depth": 0,
+   "description": null,
+   "flags": {
+    "disclosable": true,
+    "enabled": true,
+    "expanded": false,
+    "focusable": false,
+    "focused": false,
+    "selectable": true,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 30,
+    "width": 62,
+    "x": 43,
+    "y": 0
+   },
+   "identifier": "⟨8⟩",
+   "index": 302,
+   "numberOfCharacters": 0,
+   "pid": 9975,
+   "role": "AXMenuBarItem",
+   "roleDescription": "⟨8⟩",
+   "rowIndexRange": [
+    0,
+    0
+   ],
+   "subrole": null,
+   "title": "⟨6⟩",
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXCancel",
+    "AXPress",
+    "AXPick"
+   ],
+   "children": 0,
+   "columnIndexRange": [
+    0,
+    0
+   ],
+   "depth": 0,
+   "description": null,
+   "flags": {
+    "disclosable": true,
+    "enabled": true,
+    "expanded": false,
+    "focusable": false,
+    "focused": false,
+    "selectable": true,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 30,
+    "width": 44,
+    "x": 104,
+    "y": 0
+   },
+   "identifier": "⟨8⟩",
+   "index": 303,
+   "numberOfCharacters": 0,
+   "pid": 9975,
+   "role": "AXMenuBarItem",
+   "roleDescription": "⟨8⟩",
+   "rowIndexRange": [
+    0,
+    0
+   ],
+   "subrole": null,
+   "title": "⟨2⟩",
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXCancel",
+    "AXPress",
+    "AXPick"
+   ],
+   "children": 0,
+   "columnIndexRange": [
+    0,
+    0
+   ],
+   "depth": 0,
+   "description": null,
+   "flags": {
+    "disclosable": true,
+    "enabled": true,
+    "expanded": false,
+    "focusable": false,
+    "focused": false,
+    "selectable": true,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 30,
+    "width": 43,
+    "x": 147,
+    "y": 0
+   },
+   "identifier": "⟨8⟩",
+   "index": 304,
+   "numberOfCharacters": 0,
+   "pid": 9975,
+   "role": "AXMenuBarItem",
+   "roleDescription": "⟨8⟩",
+   "rowIndexRange": [
+    0,
+    0
+   ],
+   "subrole": null,
+   "title": "⟨2⟩",
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXCancel",
+    "AXPress",
+    "AXPick"
+   ],
+   "children": 0,
+   "columnIndexRange": [
+    0,
+    0
+   ],
+   "depth": 0,
+   "description": null,
+   "flags": {
+    "disclosable": true,
+    "enabled": true,
+    "expanded": false,
+    "focusable": false,
+    "focused": false,
+    "selectable": true,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 30,
+    "width": 44,
+    "x": 189,
+    "y": 0
+   },
+   "identifier": "⟨8⟩",
+   "index": 305,
+   "numberOfCharacters": 0,
+   "pid": 9975,
+   "role": "AXMenuBarItem",
+   "roleDescription": "⟨8⟩",
+   "rowIndexRange": [
+    0,
+    0
+   ],
+   "subrole": null,
+   "title": "⟨2⟩",
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXCancel",
+    "AXPress",
+    "AXPick"
+   ],
+   "children": 0,
+   "columnIndexRange": [
+    0,
+    0
+   ],
+   "depth": 0,
+   "description": null,
+   "flags": {
+    "disclosable": true,
+    "enabled": true,
+    "expanded": false,
+    "focusable": false,
+    "focused": false,
+    "selectable": true,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 30,
+    "width": 43,
+    "x": 232,
+    "y": 0
+   },
+   "identifier": "⟨8⟩",
+   "index": 306,
+   "numberOfCharacters": 0,
+   "pid": 9975,
+   "role": "AXMenuBarItem",
+   "roleDescription": "⟨8⟩",
+   "rowIndexRange": [
+    0,
+    0
+   ],
+   "subrole": null,
+   "title": "⟨2⟩",
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXCancel",
+    "AXPress",
+    "AXPick"
+   ],
+   "children": 0,
+   "columnIndexRange": [
+    0,
+    0
+   ],
+   "depth": 0,
+   "description": null,
+   "flags": {
+    "disclosable": true,
+    "enabled": true,
+    "expanded": false,
+    "focusable": false,
+    "focused": false,
+    "selectable": true,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 30,
+    "width": 55,
+    "x": 274,
+    "y": 0
+   },
+   "identifier": "⟨8⟩",
+   "index": 307,
+   "numberOfCharacters": 0,
+   "pid": 9975,
+   "role": "AXMenuBarItem",
+   "roleDescription": "⟨8⟩",
+   "rowIndexRange": [
+    0,
+    0
+   ],
+   "subrole": null,
+   "title": "⟨3⟩",
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXCancel",
+    "AXPress",
+    "AXPick"
+   ],
+   "children": 0,
+   "columnIndexRange": [
+    0,
+    0
+   ],
+   "depth": 0,
+   "description": null,
+   "flags": {
+    "disclosable": true,
+    "enabled": true,
+    "expanded": false,
+    "focusable": false,
+    "focused": false,
+    "selectable": true,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 30,
+    "width": 55,
+    "x": 328,
+    "y": 0
+   },
+   "identifier": "⟨8⟩",
+   "index": 308,
+   "numberOfCharacters": 0,
+   "pid": 9975,
+   "role": "AXMenuBarItem",
+   "roleDescription": "⟨8⟩",
+   "rowIndexRange": [
+    0,
+    0
+   ],
+   "subrole": null,
+   "title": "⟨3⟩",
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  }
+ ],
+ "nodes": [
+  {
+   "actions": [
+    "AXRaise"
+   ],
+   "children": 6,
+   "depth": 0,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 436,
+    "width": 920,
+    "x": 820,
+    "y": 261
+   },
+   "identifier": "⟨12⟩",
+   "index": 0,
+   "pid": 9975,
+   "role": "AXWindow",
+   "roleDescription": "⟨6⟩",
+   "subrole": "AXStandardWindow",
+   "title": "cua-scene-finder",
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 3,
+   "depth": 1,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 436,
+    "width": 920,
+    "x": 820,
+    "y": 261
+   },
+   "identifier": null,
+   "index": 1,
+   "pid": 9975,
+   "role": "AXSplitGroup",
+   "roleDescription": "⟨6⟩",
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXScrollLeftByPage",
+    "AXScrollRightByPage",
+    "AXScrollUpByPage",
+    "AXScrollDownByPage"
+   ],
+   "children": 2,
+   "depth": 2,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 384,
+    "width": 177,
+    "x": 820,
+    "y": 313
+   },
+   "identifier": "⟨6⟩",
+   "index": 2,
+   "pid": 9975,
+   "role": "AXScrollArea",
+   "roleDescription": "⟨6⟩",
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXShowMenu"
+   ],
+   "children": 26,
+   "depth": 3,
+   "description": "⟨4⟩",
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 812,
+    "width": 179,
+    "x": 819,
+    "y": 312
+   },
+   "identifier": "⟨5⟩",
+   "index": 3,
+   "pid": 9975,
+   "role": "AXOutline",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXShowDefaultUI",
+    "AXShowAlternateUI"
+   ],
+   "children": 1,
+   "depth": 4,
+   "description": null,
+   "flags": {
+    "disclosable": true,
+    "enabled": true,
+    "expanded": false,
+    "focusable": false,
+    "focused": false,
+    "selectable": true,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 32,
+    "width": 177,
+    "x": 820,
+    "y": 313
+   },
+   "identifier": null,
+   "index": 4,
+   "pid": 9975,
+   "role": "AXRow",
+   "roleDescription": "⟨5⟩",
+   "subrole": "AXOutlineRow",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen"
+   ],
+   "children": 1,
+   "columnIndexRange": [
+    0,
+    1
+   ],
+   "depth": 5,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 32,
+    "width": 157,
+    "x": 830,
+    "y": 313
+   },
+   "identifier": null,
+   "index": 5,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    0,
+    1
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 115,
+    "x": 865,
+    "y": 320
+   },
+   "identifier": null,
+   "index": 6,
+   "numberOfCharacters": 5,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨5⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [
+    "AXShowDefaultUI",
+    "AXShowAlternateUI"
+   ],
+   "children": 1,
+   "depth": 4,
+   "description": null,
+   "flags": {
+    "disclosable": true,
+    "enabled": true,
+    "expanded": false,
+    "focusable": false,
+    "focused": false,
+    "selectable": true,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 32,
+    "width": 177,
+    "x": 820,
+    "y": 345
+   },
+   "identifier": null,
+   "index": 7,
+   "pid": 9975,
+   "role": "AXRow",
+   "roleDescription": "⟨5⟩",
+   "subrole": "AXOutlineRow",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen"
+   ],
+   "children": 1,
+   "columnIndexRange": [
+    0,
+    1
+   ],
+   "depth": 5,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 32,
+    "width": 157,
+    "x": 830,
+    "y": 345
+   },
+   "identifier": null,
+   "index": 8,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    1,
+    2
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 115,
+    "x": 865,
+    "y": 352
+   },
+   "identifier": null,
+   "index": 9,
+   "numberOfCharacters": 2,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨2⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [
+    "AXShowDefaultUI",
+    "AXShowAlternateUI"
+   ],
+   "children": 1,
+   "depth": 4,
+   "description": null,
+   "flags": {
+    "disclosable": true,
+    "enabled": true,
+    "expanded": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": true,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 19,
+    "width": 177,
+    "x": 820,
+    "y": 390
+   },
+   "identifier": null,
+   "index": 10,
+   "pid": 9975,
+   "role": "AXRow",
+   "roleDescription": "⟨5⟩",
+   "subrole": "AXOutlineRow",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    0,
+    1
+   ],
+   "depth": 5,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 19,
+    "width": 157,
+    "x": 830,
+    "y": 390
+   },
+   "identifier": null,
+   "index": 11,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    2,
+    3
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 21,
+    "width": 159,
+    "x": 835,
+    "y": 389
+   },
+   "identifier": "⟨14⟩",
+   "index": 12,
+   "numberOfCharacters": 2,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨2⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [
+    "AXShowDefaultUI",
+    "AXShowAlternateUI"
+   ],
+   "children": 1,
+   "depth": 4,
+   "description": null,
+   "flags": {
+    "disclosable": true,
+    "enabled": true,
+    "expanded": false,
+    "focusable": false,
+    "focused": false,
+    "selectable": true,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 32,
+    "width": 177,
+    "x": 820,
+    "y": 409
+   },
+   "identifier": null,
+   "index": 13,
+   "pid": 9975,
+   "role": "AXRow",
+   "roleDescription": "⟨5⟩",
+   "subrole": "AXOutlineRow",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen"
+   ],
+   "children": 1,
+   "columnIndexRange": [
+    0,
+    1
+   ],
+   "depth": 5,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 32,
+    "width": 157,
+    "x": 830,
+    "y": 409
+   },
+   "identifier": null,
+   "index": 14,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    3,
+    4
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 115,
+    "x": 865,
+    "y": 416
+   },
+   "identifier": null,
+   "index": 15,
+   "numberOfCharacters": 12,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨12⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [
+    "AXShowDefaultUI",
+    "AXShowAlternateUI"
+   ],
+   "children": 1,
+   "depth": 4,
+   "description": null,
+   "flags": {
+    "disclosable": true,
+    "enabled": true,
+    "expanded": false,
+    "focusable": false,
+    "focused": false,
+    "selectable": true,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 32,
+    "width": 177,
+    "x": 820,
+    "y": 441
+   },
+   "identifier": null,
+   "index": 16,
+   "pid": 9975,
+   "role": "AXRow",
+   "roleDescription": "⟨5⟩",
+   "subrole": "AXOutlineRow",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen"
+   ],
+   "children": 1,
+   "columnIndexRange": [
+    0,
+    1
+   ],
+   "depth": 5,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 32,
+    "width": 157,
+    "x": 830,
+    "y": 441
+   },
+   "identifier": null,
+   "index": 17,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    4,
+    5
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 115,
+    "x": 865,
+    "y": 448
+   },
+   "identifier": null,
+   "index": 18,
+   "numberOfCharacters": 12,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨12⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [
+    "AXShowDefaultUI",
+    "AXShowAlternateUI"
+   ],
+   "children": 1,
+   "depth": 4,
+   "description": null,
+   "flags": {
+    "disclosable": true,
+    "enabled": true,
+    "expanded": false,
+    "focusable": false,
+    "focused": false,
+    "selectable": true,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 32,
+    "width": 177,
+    "x": 820,
+    "y": 473
+   },
+   "identifier": null,
+   "index": 19,
+   "pid": 9975,
+   "role": "AXRow",
+   "roleDescription": "⟨5⟩",
+   "subrole": "AXOutlineRow",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen"
+   ],
+   "children": 1,
+   "columnIndexRange": [
+    0,
+    1
+   ],
+   "depth": 5,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 32,
+    "width": 157,
+    "x": 830,
+    "y": 473
+   },
+   "identifier": null,
+   "index": 20,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    5,
+    6
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 115,
+    "x": 865,
+    "y": 480
+   },
+   "identifier": null,
+   "index": 21,
+   "numberOfCharacters": 3,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨3⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [
+    "AXShowDefaultUI",
+    "AXShowAlternateUI"
+   ],
+   "children": 1,
+   "depth": 4,
+   "description": null,
+   "flags": {
+    "disclosable": true,
+    "enabled": true,
+    "expanded": false,
+    "focusable": false,
+    "focused": false,
+    "selectable": true,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 32,
+    "width": 177,
+    "x": 820,
+    "y": 505
+   },
+   "identifier": null,
+   "index": 22,
+   "pid": 9975,
+   "role": "AXRow",
+   "roleDescription": "⟨5⟩",
+   "subrole": "AXOutlineRow",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen"
+   ],
+   "children": 1,
+   "columnIndexRange": [
+    0,
+    1
+   ],
+   "depth": 5,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 32,
+    "width": 157,
+    "x": 830,
+    "y": 505
+   },
+   "identifier": null,
+   "index": 23,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    6,
+    7
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 115,
+    "x": 865,
+    "y": 512
+   },
+   "identifier": null,
+   "index": 24,
+   "numberOfCharacters": 12,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨12⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [
+    "AXShowDefaultUI",
+    "AXShowAlternateUI"
+   ],
+   "children": 1,
+   "depth": 4,
+   "description": null,
+   "flags": {
+    "disclosable": true,
+    "enabled": true,
+    "expanded": false,
+    "focusable": false,
+    "focused": false,
+    "selectable": true,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 32,
+    "width": 177,
+    "x": 820,
+    "y": 537
+   },
+   "identifier": null,
+   "index": 25,
+   "pid": 9975,
+   "role": "AXRow",
+   "roleDescription": "⟨5⟩",
+   "subrole": "AXOutlineRow",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen"
+   ],
+   "children": 1,
+   "columnIndexRange": [
+    0,
+    1
+   ],
+   "depth": 5,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 32,
+    "width": 157,
+    "x": 830,
+    "y": 537
+   },
+   "identifier": null,
+   "index": 26,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    7,
+    8
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 115,
+    "x": 865,
+    "y": 544
+   },
+   "identifier": null,
+   "index": 27,
+   "numberOfCharacters": 7,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨7⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [
+    "AXShowDefaultUI",
+    "AXShowAlternateUI"
+   ],
+   "children": 1,
+   "depth": 4,
+   "description": null,
+   "flags": {
+    "disclosable": true,
+    "enabled": true,
+    "expanded": false,
+    "focusable": false,
+    "focused": false,
+    "selectable": true,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 32,
+    "width": 177,
+    "x": 820,
+    "y": 569
+   },
+   "identifier": null,
+   "index": 28,
+   "pid": 9975,
+   "role": "AXRow",
+   "roleDescription": "⟨5⟩",
+   "subrole": "AXOutlineRow",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen"
+   ],
+   "children": 1,
+   "columnIndexRange": [
+    0,
+    1
+   ],
+   "depth": 5,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 32,
+    "width": 157,
+    "x": 830,
+    "y": 569
+   },
+   "identifier": null,
+   "index": 29,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    8,
+    9
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 115,
+    "x": 865,
+    "y": 576
+   },
+   "identifier": null,
+   "index": 30,
+   "numberOfCharacters": 4,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨4⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [
+    "AXShowDefaultUI",
+    "AXShowAlternateUI"
+   ],
+   "children": 1,
+   "depth": 4,
+   "description": null,
+   "flags": {
+    "disclosable": true,
+    "enabled": true,
+    "expanded": false,
+    "focusable": false,
+    "focused": false,
+    "selectable": true,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 32,
+    "width": 177,
+    "x": 820,
+    "y": 601
+   },
+   "identifier": null,
+   "index": 31,
+   "pid": 9975,
+   "role": "AXRow",
+   "roleDescription": "⟨5⟩",
+   "subrole": "AXOutlineRow",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen"
+   ],
+   "children": 1,
+   "columnIndexRange": [
+    0,
+    1
+   ],
+   "depth": 5,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 32,
+    "width": 157,
+    "x": 830,
+    "y": 601
+   },
+   "identifier": null,
+   "index": 32,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    9,
+    10
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 115,
+    "x": 865,
+    "y": 608
+   },
+   "identifier": null,
+   "index": 33,
+   "numberOfCharacters": 3,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨3⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [
+    "AXShowDefaultUI",
+    "AXShowAlternateUI"
+   ],
+   "children": 1,
+   "depth": 4,
+   "description": null,
+   "flags": {
+    "disclosable": true,
+    "enabled": true,
+    "expanded": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": true,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 19,
+    "width": 177,
+    "x": 820,
+    "y": 646
+   },
+   "identifier": null,
+   "index": 34,
+   "pid": 9975,
+   "role": "AXRow",
+   "roleDescription": "⟨5⟩",
+   "subrole": "AXOutlineRow",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    0,
+    1
+   ],
+   "depth": 5,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 19,
+    "width": 157,
+    "x": 830,
+    "y": 646
+   },
+   "identifier": null,
+   "index": 35,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    10,
+    11
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 21,
+    "width": 159,
+    "x": 835,
+    "y": 645
+   },
+   "identifier": "⟨14⟩",
+   "index": 36,
+   "numberOfCharacters": 4,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨4⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [
+    "AXShowDefaultUI",
+    "AXShowAlternateUI"
+   ],
+   "children": 1,
+   "depth": 4,
+   "description": null,
+   "flags": {
+    "disclosable": true,
+    "enabled": true,
+    "expanded": false,
+    "focusable": false,
+    "focused": false,
+    "selectable": true,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 32,
+    "width": 177,
+    "x": 820,
+    "y": 665
+   },
+   "identifier": null,
+   "index": 37,
+   "pid": 9975,
+   "role": "AXRow",
+   "roleDescription": "⟨5⟩",
+   "subrole": "AXOutlineRow",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen"
+   ],
+   "children": 1,
+   "columnIndexRange": [
+    0,
+    1
+   ],
+   "depth": 5,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 32,
+    "width": 157,
+    "x": 830,
+    "y": 665
+   },
+   "identifier": null,
+   "index": 38,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    11,
+    12
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 115,
+    "x": 865,
+    "y": 672
+   },
+   "identifier": null,
+   "index": 39,
+   "numberOfCharacters": 7,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨7⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [
+    "AXShowDefaultUI",
+    "AXShowAlternateUI"
+   ],
+   "children": 1,
+   "depth": 4,
+   "description": null,
+   "flags": {
+    "disclosable": true,
+    "enabled": true,
+    "expanded": false,
+    "focusable": false,
+    "focused": false,
+    "selectable": true,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 32,
+    "width": 177,
+    "x": 820,
+    "y": 697
+   },
+   "identifier": null,
+   "index": 40,
+   "pid": 9975,
+   "role": "AXRow",
+   "roleDescription": "⟨5⟩",
+   "subrole": "AXOutlineRow",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen"
+   ],
+   "children": 1,
+   "columnIndexRange": [
+    0,
+    1
+   ],
+   "depth": 5,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 32,
+    "width": 157,
+    "x": 830,
+    "y": 697
+   },
+   "identifier": null,
+   "index": 41,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    12,
+    13
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 115,
+    "x": 865,
+    "y": 704
+   },
+   "identifier": null,
+   "index": 42,
+   "numberOfCharacters": 4,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨4⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [
+    "AXShowDefaultUI",
+    "AXShowAlternateUI"
+   ],
+   "children": 1,
+   "depth": 4,
+   "description": null,
+   "flags": {
+    "disclosable": true,
+    "enabled": true,
+    "expanded": false,
+    "focusable": false,
+    "focused": false,
+    "selectable": true,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 32,
+    "width": 177,
+    "x": 820,
+    "y": 729
+   },
+   "identifier": null,
+   "index": 43,
+   "pid": 9975,
+   "role": "AXRow",
+   "roleDescription": "⟨5⟩",
+   "subrole": "AXOutlineRow",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen"
+   ],
+   "children": 1,
+   "columnIndexRange": [
+    0,
+    1
+   ],
+   "depth": 5,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 32,
+    "width": 157,
+    "x": 830,
+    "y": 729
+   },
+   "identifier": null,
+   "index": 44,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    13,
+    14
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 115,
+    "x": 865,
+    "y": 736
+   },
+   "identifier": null,
+   "index": 45,
+   "numberOfCharacters": 2,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨2⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [
+    "AXShowDefaultUI",
+    "AXShowAlternateUI"
+   ],
+   "children": 1,
+   "depth": 4,
+   "description": null,
+   "flags": {
+    "disclosable": true,
+    "enabled": true,
+    "expanded": false,
+    "focusable": false,
+    "focused": false,
+    "selectable": true,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 32,
+    "width": 177,
+    "x": 820,
+    "y": 761
+   },
+   "identifier": null,
+   "index": 46,
+   "pid": 9975,
+   "role": "AXRow",
+   "roleDescription": "⟨5⟩",
+   "subrole": "AXOutlineRow",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen"
+   ],
+   "children": 1,
+   "columnIndexRange": [
+    0,
+    1
+   ],
+   "depth": 5,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 32,
+    "width": 157,
+    "x": 830,
+    "y": 761
+   },
+   "identifier": null,
+   "index": 47,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    14,
+    15
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 115,
+    "x": 865,
+    "y": 768
+   },
+   "identifier": null,
+   "index": 48,
+   "numberOfCharacters": 9,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨9⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [
+    "AXShowDefaultUI",
+    "AXShowAlternateUI"
+   ],
+   "children": 1,
+   "depth": 4,
+   "description": null,
+   "flags": {
+    "disclosable": true,
+    "enabled": true,
+    "expanded": false,
+    "focusable": false,
+    "focused": false,
+    "selectable": true,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 32,
+    "width": 177,
+    "x": 820,
+    "y": 793
+   },
+   "identifier": null,
+   "index": 49,
+   "pid": 9975,
+   "role": "AXRow",
+   "roleDescription": "⟨5⟩",
+   "subrole": "AXOutlineRow",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen"
+   ],
+   "children": 1,
+   "columnIndexRange": [
+    0,
+    1
+   ],
+   "depth": 5,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 32,
+    "width": 157,
+    "x": 830,
+    "y": 793
+   },
+   "identifier": null,
+   "index": 50,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    15,
+    16
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 115,
+    "x": 865,
+    "y": 800
+   },
+   "identifier": null,
+   "index": 51,
+   "numberOfCharacters": 4,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨4⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [
+    "AXShowDefaultUI",
+    "AXShowAlternateUI"
+   ],
+   "children": 1,
+   "depth": 4,
+   "description": null,
+   "flags": {
+    "disclosable": true,
+    "enabled": true,
+    "expanded": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": true,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 19,
+    "width": 177,
+    "x": 820,
+    "y": 838
+   },
+   "identifier": null,
+   "index": 52,
+   "pid": 9975,
+   "role": "AXRow",
+   "roleDescription": "⟨5⟩",
+   "subrole": "AXOutlineRow",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    0,
+    1
+   ],
+   "depth": 5,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 19,
+    "width": 157,
+    "x": 830,
+    "y": 838
+   },
+   "identifier": null,
+   "index": 53,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    16,
+    17
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 21,
+    "width": 159,
+    "x": 835,
+    "y": 837
+   },
+   "identifier": "⟨14⟩",
+   "index": 54,
+   "numberOfCharacters": 2,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨2⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [
+    "AXShowDefaultUI",
+    "AXShowAlternateUI"
+   ],
+   "children": 1,
+   "depth": 4,
+   "description": null,
+   "flags": {
+    "disclosable": true,
+    "enabled": true,
+    "expanded": false,
+    "focusable": false,
+    "focused": false,
+    "selectable": true,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 32,
+    "width": 177,
+    "x": 820,
+    "y": 857
+   },
+   "identifier": null,
+   "index": 55,
+   "pid": 9975,
+   "role": "AXRow",
+   "roleDescription": "⟨5⟩",
+   "subrole": "AXOutlineRow",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen"
+   ],
+   "children": 1,
+   "columnIndexRange": [
+    0,
+    1
+   ],
+   "depth": 5,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 32,
+    "width": 157,
+    "x": 830,
+    "y": 857
+   },
+   "identifier": null,
+   "index": 56,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    17,
+    18
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 115,
+    "x": 865,
+    "y": 864
+   },
+   "identifier": null,
+   "index": 57,
+   "numberOfCharacters": 3,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨3⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [
+    "AXShowDefaultUI",
+    "AXShowAlternateUI"
+   ],
+   "children": 1,
+   "depth": 4,
+   "description": null,
+   "flags": {
+    "disclosable": true,
+    "enabled": true,
+    "expanded": false,
+    "focusable": false,
+    "focused": false,
+    "selectable": true,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 32,
+    "width": 177,
+    "x": 820,
+    "y": 889
+   },
+   "identifier": null,
+   "index": 58,
+   "pid": 9975,
+   "role": "AXRow",
+   "roleDescription": "⟨5⟩",
+   "subrole": "AXOutlineRow",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen"
+   ],
+   "children": 1,
+   "columnIndexRange": [
+    0,
+    1
+   ],
+   "depth": 5,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 32,
+    "width": 157,
+    "x": 830,
+    "y": 889
+   },
+   "identifier": null,
+   "index": 59,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    18,
+    19
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 115,
+    "x": 865,
+    "y": 896
+   },
+   "identifier": null,
+   "index": 60,
+   "numberOfCharacters": 3,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨3⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [
+    "AXShowDefaultUI",
+    "AXShowAlternateUI"
+   ],
+   "children": 1,
+   "depth": 4,
+   "description": null,
+   "flags": {
+    "disclosable": true,
+    "enabled": true,
+    "expanded": false,
+    "focusable": false,
+    "focused": false,
+    "selectable": true,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 32,
+    "width": 177,
+    "x": 820,
+    "y": 921
+   },
+   "identifier": null,
+   "index": 61,
+   "pid": 9975,
+   "role": "AXRow",
+   "roleDescription": "⟨5⟩",
+   "subrole": "AXOutlineRow",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen"
+   ],
+   "children": 1,
+   "columnIndexRange": [
+    0,
+    1
+   ],
+   "depth": 5,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 32,
+    "width": 157,
+    "x": 830,
+    "y": 921
+   },
+   "identifier": null,
+   "index": 62,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    19,
+    20
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 115,
+    "x": 865,
+    "y": 928
+   },
+   "identifier": null,
+   "index": 63,
+   "numberOfCharacters": 3,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨3⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [
+    "AXShowDefaultUI",
+    "AXShowAlternateUI"
+   ],
+   "children": 1,
+   "depth": 4,
+   "description": null,
+   "flags": {
+    "disclosable": true,
+    "enabled": true,
+    "expanded": false,
+    "focusable": false,
+    "focused": false,
+    "selectable": true,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 32,
+    "width": 177,
+    "x": 820,
+    "y": 953
+   },
+   "identifier": null,
+   "index": 64,
+   "pid": 9975,
+   "role": "AXRow",
+   "roleDescription": "⟨5⟩",
+   "subrole": "AXOutlineRow",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen"
+   ],
+   "children": 1,
+   "columnIndexRange": [
+    0,
+    1
+   ],
+   "depth": 5,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 32,
+    "width": 157,
+    "x": 830,
+    "y": 953
+   },
+   "identifier": null,
+   "index": 65,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    20,
+    21
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 115,
+    "x": 865,
+    "y": 960
+   },
+   "identifier": null,
+   "index": 66,
+   "numberOfCharacters": 3,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨3⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [
+    "AXShowDefaultUI",
+    "AXShowAlternateUI"
+   ],
+   "children": 1,
+   "depth": 4,
+   "description": null,
+   "flags": {
+    "disclosable": true,
+    "enabled": true,
+    "expanded": false,
+    "focusable": false,
+    "focused": false,
+    "selectable": true,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 32,
+    "width": 177,
+    "x": 820,
+    "y": 985
+   },
+   "identifier": null,
+   "index": 67,
+   "pid": 9975,
+   "role": "AXRow",
+   "roleDescription": "⟨5⟩",
+   "subrole": "AXOutlineRow",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen"
+   ],
+   "children": 1,
+   "columnIndexRange": [
+    0,
+    1
+   ],
+   "depth": 5,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 32,
+    "width": 157,
+    "x": 830,
+    "y": 985
+   },
+   "identifier": null,
+   "index": 68,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    21,
+    22
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 115,
+    "x": 865,
+    "y": 992
+   },
+   "identifier": null,
+   "index": 69,
+   "numberOfCharacters": 3,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨3⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [
+    "AXShowDefaultUI",
+    "AXShowAlternateUI"
+   ],
+   "children": 1,
+   "depth": 4,
+   "description": null,
+   "flags": {
+    "disclosable": true,
+    "enabled": true,
+    "expanded": false,
+    "focusable": false,
+    "focused": false,
+    "selectable": true,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 32,
+    "width": 177,
+    "x": 820,
+    "y": 1017
+   },
+   "identifier": null,
+   "index": 70,
+   "pid": 9975,
+   "role": "AXRow",
+   "roleDescription": "⟨5⟩",
+   "subrole": "AXOutlineRow",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen"
+   ],
+   "children": 1,
+   "columnIndexRange": [
+    0,
+    1
+   ],
+   "depth": 5,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 32,
+    "width": 157,
+    "x": 830,
+    "y": 1017
+   },
+   "identifier": null,
+   "index": 71,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    22,
+    23
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 115,
+    "x": 865,
+    "y": 1024
+   },
+   "identifier": null,
+   "index": 72,
+   "numberOfCharacters": 3,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨3⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [
+    "AXShowDefaultUI",
+    "AXShowAlternateUI"
+   ],
+   "children": 1,
+   "depth": 4,
+   "description": null,
+   "flags": {
+    "disclosable": true,
+    "enabled": true,
+    "expanded": false,
+    "focusable": false,
+    "focused": false,
+    "selectable": true,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 32,
+    "width": 177,
+    "x": 820,
+    "y": 1049
+   },
+   "identifier": null,
+   "index": 73,
+   "pid": 9975,
+   "role": "AXRow",
+   "roleDescription": "⟨5⟩",
+   "subrole": "AXOutlineRow",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen"
+   ],
+   "children": 1,
+   "columnIndexRange": [
+    0,
+    1
+   ],
+   "depth": 5,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 32,
+    "width": 157,
+    "x": 830,
+    "y": 1049
+   },
+   "identifier": null,
+   "index": 74,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    23,
+    24
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 115,
+    "x": 865,
+    "y": 1056
+   },
+   "identifier": null,
+   "index": 75,
+   "numberOfCharacters": 2,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨2⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [
+    "AXShowDefaultUI",
+    "AXShowAlternateUI"
+   ],
+   "children": 1,
+   "depth": 4,
+   "description": null,
+   "flags": {
+    "disclosable": true,
+    "enabled": true,
+    "expanded": false,
+    "focusable": false,
+    "focused": false,
+    "selectable": true,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 32,
+    "width": 177,
+    "x": 820,
+    "y": 1081
+   },
+   "identifier": null,
+   "index": 76,
+   "pid": 9975,
+   "role": "AXRow",
+   "roleDescription": "⟨5⟩",
+   "subrole": "AXOutlineRow",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen"
+   ],
+   "children": 1,
+   "columnIndexRange": [
+    0,
+    1
+   ],
+   "depth": 5,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 32,
+    "width": 157,
+    "x": 830,
+    "y": 1081
+   },
+   "identifier": null,
+   "index": 77,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    24,
+    25
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 115,
+    "x": 865,
+    "y": 1088
+   },
+   "identifier": null,
+   "index": 78,
+   "numberOfCharacters": 6,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨6⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 4,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 810,
+    "width": 157,
+    "x": 830,
+    "y": 313
+   },
+   "identifier": "⟨32⟩",
+   "index": 79,
+   "pid": 9975,
+   "role": "AXColumn",
+   "roleDescription": "⟨1⟩",
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 5,
+   "depth": 3,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": true,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": true
+   },
+   "frame": {
+    "height": 386,
+    "width": 19,
+    "x": 979,
+    "y": 312
+   },
+   "identifier": "⟨6⟩",
+   "index": 80,
+   "pid": 9975,
+   "role": "AXScrollBar",
+   "roleDescription": "⟨6⟩",
+   "subrole": null,
+   "title": null,
+   "value": 0,
+   "valueMarkdown": null,
+   "valueType": "number"
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 4,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": true
+   },
+   "frame": {
+    "height": 191,
+    "width": 6,
+    "x": 988,
+    "y": 316
+   },
+   "identifier": null,
+   "index": 81,
+   "pid": 9975,
+   "role": "AXValueIndicator",
+   "roleDescription": "⟨5⟩",
+   "subrole": null,
+   "title": null,
+   "value": 0,
+   "valueMarkdown": null,
+   "valueType": "number"
+  },
+  {
+   "actions": [
+    "AXPress"
+   ],
+   "children": 0,
+   "depth": 4,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 0,
+    "width": 0,
+    "x": 980,
+    "y": 313
+   },
+   "identifier": null,
+   "index": 82,
+   "pid": 9975,
+   "role": "AXButton",
+   "roleDescription": "⟨9⟩",
+   "subrole": "AXIncrementArrow",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXPress"
+   ],
+   "children": 0,
+   "depth": 4,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 0,
+    "width": 0,
+    "x": 980,
+    "y": 313
+   },
+   "identifier": null,
+   "index": 83,
+   "pid": 9975,
+   "role": "AXButton",
+   "roleDescription": "⟨9⟩",
+   "subrole": "AXDecrementArrow",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXPress"
+   ],
+   "children": 0,
+   "depth": 4,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 186.5,
+    "width": 6,
+    "x": 988,
+    "y": 507.5
+   },
+   "identifier": null,
+   "index": 84,
+   "pid": 9975,
+   "role": "AXButton",
+   "roleDescription": "⟨9⟩",
+   "subrole": "AXIncrementPage",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXPress"
+   ],
+   "children": 0,
+   "depth": 4,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 0,
+    "width": 6,
+    "x": 988,
+    "y": 316
+   },
+   "identifier": null,
+   "index": 85,
+   "pid": 9975,
+   "role": "AXButton",
+   "roleDescription": "⟨9⟩",
+   "subrole": "AXDecrementPage",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "columnIndexRange": [
+    0,
+    0
+   ],
+   "depth": 2,
+   "description": null,
+   "flags": {
+    "disclosable": true,
+    "enabled": false,
+    "expanded": false,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": true
+   },
+   "frame": {
+    "height": 384,
+    "width": 0.5,
+    "x": 997,
+    "y": 313
+   },
+   "identifier": null,
+   "index": 86,
+   "numberOfCharacters": 0,
+   "pid": 9975,
+   "role": "AXSplitter",
+   "roleDescription": "⟨6⟩",
+   "rowIndexRange": [
+    0,
+    0
+   ],
+   "subrole": null,
+   "title": null,
+   "value": 177,
+   "valueMarkdown": null,
+   "valueType": "number"
+  },
+  {
+   "actions": [],
+   "children": 2,
+   "depth": 2,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 436,
+    "width": 920,
+    "x": 820,
+    "y": 261
+   },
+   "identifier": null,
+   "index": 87,
+   "pid": 9975,
+   "role": "AXSplitGroup",
+   "roleDescription": "⟨6⟩",
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXScrollLeftByPage",
+    "AXScrollRightByPage",
+    "AXScrollUpByPage",
+    "AXScrollDownByPage"
+   ],
+   "children": 2,
+   "depth": 3,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": true,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 384,
+    "width": 743,
+    "x": 997,
+    "y": 313
+   },
+   "identifier": "⟨7⟩",
+   "index": 88,
+   "pid": 9975,
+   "role": "AXScrollArea",
+   "roleDescription": "⟨6⟩",
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXShowMenu"
+   ],
+   "children": 18,
+   "depth": 4,
+   "description": "⟨5⟩",
+   "flags": {
+    "enabled": true,
+    "focusable": true,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 4017,
+    "width": 745,
+    "x": 996,
+    "y": 340
+   },
+   "identifier": "⟨8⟩",
+   "index": 89,
+   "pid": 9975,
+   "role": "AXOutline",
+   "roleDescription": "⟨3⟩",
+   "shown": {
+    "count": 18,
+    "of": 205,
+    "ranges": [
+     [
+      0,
+      18
+     ]
+    ],
+    "subset": "visible"
+   },
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXShowDefaultUI",
+    "AXShowAlternateUI"
+   ],
+   "children": 4,
+   "depth": 5,
+   "description": null,
+   "flags": {
+    "disclosable": true,
+    "enabled": true,
+    "expanded": false,
+    "focusable": false,
+    "focused": false,
+    "selectable": true,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 743,
+    "x": 997,
+    "y": 346
+   },
+   "identifier": null,
+   "index": 90,
+   "pid": 9975,
+   "role": "AXRow",
+   "roleDescription": "⟨5⟩",
+   "subrole": "AXOutlineRow",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen"
+   ],
+   "children": 2,
+   "columnIndexRange": [
+    0,
+    1
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 308,
+    "x": 1023,
+    "y": 346
+   },
+   "identifier": null,
+   "index": 91,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    0,
+    1
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 16,
+    "width": 16,
+    "x": 1023,
+    "y": 348
+   },
+   "identifier": null,
+   "index": 92,
+   "pid": 9975,
+   "role": "AXImage",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen",
+    "AXShowMenu",
+    "AXConfirm"
+   ],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": true
+   },
+   "frame": {
+    "height": 18,
+    "width": 95,
+    "x": 1043,
+    "y": 347
+   },
+   "identifier": null,
+   "index": 93,
+   "numberOfCharacters": 14,
+   "pid": 9975,
+   "role": "AXTextField",
+   "roleDescription": "⟨6⟩",
+   "subrole": null,
+   "title": null,
+   "url": "⟨96⟩",
+   "value": "scene-file-001",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    1,
+    2
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 181,
+    "x": 1331,
+    "y": 346
+   },
+   "identifier": null,
+   "index": 94,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    0,
+    1
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 169,
+    "x": 1337,
+    "y": 347
+   },
+   "identifier": null,
+   "index": 95,
+   "numberOfCharacters": 10,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨10⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    2,
+    3
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 97,
+    "x": 1512,
+    "y": 346
+   },
+   "identifier": null,
+   "index": 96,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    0,
+    1
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 52,
+    "x": 1551,
+    "y": 347
+   },
+   "identifier": null,
+   "index": 97,
+   "numberOfCharacters": 5,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨5⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    3,
+    4
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 115,
+    "x": 1609,
+    "y": 346
+   },
+   "identifier": null,
+   "index": 98,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    0,
+    1
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 25,
+    "x": 1615,
+    "y": 347
+   },
+   "identifier": null,
+   "index": 99,
+   "numberOfCharacters": 2,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨2⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [
+    "AXShowDefaultUI",
+    "AXShowAlternateUI"
+   ],
+   "children": 4,
+   "depth": 5,
+   "description": null,
+   "flags": {
+    "disclosable": true,
+    "enabled": true,
+    "expanded": false,
+    "focusable": false,
+    "focused": false,
+    "selectable": true,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 743,
+    "x": 997,
+    "y": 366
+   },
+   "identifier": null,
+   "index": 100,
+   "pid": 9975,
+   "role": "AXRow",
+   "roleDescription": "⟨5⟩",
+   "subrole": "AXOutlineRow",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen"
+   ],
+   "children": 2,
+   "columnIndexRange": [
+    0,
+    1
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 308,
+    "x": 1023,
+    "y": 366
+   },
+   "identifier": null,
+   "index": 101,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    1,
+    2
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 16,
+    "width": 16,
+    "x": 1023,
+    "y": 368
+   },
+   "identifier": null,
+   "index": 102,
+   "pid": 9975,
+   "role": "AXImage",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen",
+    "AXShowMenu",
+    "AXConfirm"
+   ],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": true
+   },
+   "frame": {
+    "height": 18,
+    "width": 97,
+    "x": 1043,
+    "y": 367
+   },
+   "identifier": null,
+   "index": 103,
+   "numberOfCharacters": 14,
+   "pid": 9975,
+   "role": "AXTextField",
+   "roleDescription": "⟨6⟩",
+   "subrole": null,
+   "title": null,
+   "url": "⟨96⟩",
+   "value": "scene-file-002",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    1,
+    2
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 181,
+    "x": 1331,
+    "y": 366
+   },
+   "identifier": null,
+   "index": 104,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    1,
+    2
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 169,
+    "x": 1337,
+    "y": 367
+   },
+   "identifier": null,
+   "index": 105,
+   "numberOfCharacters": 10,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨10⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    2,
+    3
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 97,
+    "x": 1512,
+    "y": 366
+   },
+   "identifier": null,
+   "index": 106,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    1,
+    2
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 52,
+    "x": 1551,
+    "y": 367
+   },
+   "identifier": null,
+   "index": 107,
+   "numberOfCharacters": 5,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨5⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    3,
+    4
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 115,
+    "x": 1609,
+    "y": 366
+   },
+   "identifier": null,
+   "index": 108,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    1,
+    2
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 25,
+    "x": 1615,
+    "y": 367
+   },
+   "identifier": null,
+   "index": 109,
+   "numberOfCharacters": 2,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨2⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [
+    "AXShowDefaultUI",
+    "AXShowAlternateUI"
+   ],
+   "children": 4,
+   "depth": 5,
+   "description": null,
+   "flags": {
+    "disclosable": true,
+    "enabled": true,
+    "expanded": false,
+    "focusable": false,
+    "focused": false,
+    "selectable": true,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 743,
+    "x": 997,
+    "y": 386
+   },
+   "identifier": null,
+   "index": 110,
+   "pid": 9975,
+   "role": "AXRow",
+   "roleDescription": "⟨5⟩",
+   "subrole": "AXOutlineRow",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen"
+   ],
+   "children": 2,
+   "columnIndexRange": [
+    0,
+    1
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 308,
+    "x": 1023,
+    "y": 386
+   },
+   "identifier": null,
+   "index": 111,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    2,
+    3
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 16,
+    "width": 16,
+    "x": 1023,
+    "y": 388
+   },
+   "identifier": null,
+   "index": 112,
+   "pid": 9975,
+   "role": "AXImage",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen",
+    "AXShowMenu",
+    "AXConfirm"
+   ],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": true
+   },
+   "frame": {
+    "height": 18,
+    "width": 97,
+    "x": 1043,
+    "y": 387
+   },
+   "identifier": null,
+   "index": 113,
+   "numberOfCharacters": 14,
+   "pid": 9975,
+   "role": "AXTextField",
+   "roleDescription": "⟨6⟩",
+   "subrole": null,
+   "title": null,
+   "url": "⟨96⟩",
+   "value": "scene-file-003",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    1,
+    2
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 181,
+    "x": 1331,
+    "y": 386
+   },
+   "identifier": null,
+   "index": 114,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    2,
+    3
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 169,
+    "x": 1337,
+    "y": 387
+   },
+   "identifier": null,
+   "index": 115,
+   "numberOfCharacters": 10,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨10⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    2,
+    3
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 97,
+    "x": 1512,
+    "y": 386
+   },
+   "identifier": null,
+   "index": 116,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    2,
+    3
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 52,
+    "x": 1551,
+    "y": 387
+   },
+   "identifier": null,
+   "index": 117,
+   "numberOfCharacters": 5,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨5⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    3,
+    4
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 115,
+    "x": 1609,
+    "y": 386
+   },
+   "identifier": null,
+   "index": 118,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    2,
+    3
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 25,
+    "x": 1615,
+    "y": 387
+   },
+   "identifier": null,
+   "index": 119,
+   "numberOfCharacters": 2,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨2⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [
+    "AXShowDefaultUI",
+    "AXShowAlternateUI"
+   ],
+   "children": 4,
+   "depth": 5,
+   "description": null,
+   "flags": {
+    "disclosable": true,
+    "enabled": true,
+    "expanded": false,
+    "focusable": false,
+    "focused": false,
+    "selectable": true,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 743,
+    "x": 997,
+    "y": 406
+   },
+   "identifier": null,
+   "index": 120,
+   "pid": 9975,
+   "role": "AXRow",
+   "roleDescription": "⟨5⟩",
+   "subrole": "AXOutlineRow",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen"
+   ],
+   "children": 2,
+   "columnIndexRange": [
+    0,
+    1
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 308,
+    "x": 1023,
+    "y": 406
+   },
+   "identifier": null,
+   "index": 121,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    3,
+    4
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 16,
+    "width": 16,
+    "x": 1023,
+    "y": 408
+   },
+   "identifier": null,
+   "index": 122,
+   "pid": 9975,
+   "role": "AXImage",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen",
+    "AXShowMenu",
+    "AXConfirm"
+   ],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": true
+   },
+   "frame": {
+    "height": 18,
+    "width": 97,
+    "x": 1043,
+    "y": 407
+   },
+   "identifier": null,
+   "index": 123,
+   "numberOfCharacters": 14,
+   "pid": 9975,
+   "role": "AXTextField",
+   "roleDescription": "⟨6⟩",
+   "subrole": null,
+   "title": null,
+   "url": "⟨96⟩",
+   "value": "scene-file-004",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    1,
+    2
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 181,
+    "x": 1331,
+    "y": 406
+   },
+   "identifier": null,
+   "index": 124,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    3,
+    4
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 169,
+    "x": 1337,
+    "y": 407
+   },
+   "identifier": null,
+   "index": 125,
+   "numberOfCharacters": 10,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨10⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    2,
+    3
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 97,
+    "x": 1512,
+    "y": 406
+   },
+   "identifier": null,
+   "index": 126,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    3,
+    4
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 52,
+    "x": 1551,
+    "y": 407
+   },
+   "identifier": null,
+   "index": 127,
+   "numberOfCharacters": 5,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨5⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    3,
+    4
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 115,
+    "x": 1609,
+    "y": 406
+   },
+   "identifier": null,
+   "index": 128,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    3,
+    4
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 25,
+    "x": 1615,
+    "y": 407
+   },
+   "identifier": null,
+   "index": 129,
+   "numberOfCharacters": 2,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨2⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [
+    "AXShowDefaultUI",
+    "AXShowAlternateUI"
+   ],
+   "children": 4,
+   "depth": 5,
+   "description": null,
+   "flags": {
+    "disclosable": true,
+    "enabled": true,
+    "expanded": false,
+    "focusable": false,
+    "focused": false,
+    "selectable": true,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 743,
+    "x": 997,
+    "y": 426
+   },
+   "identifier": null,
+   "index": 130,
+   "pid": 9975,
+   "role": "AXRow",
+   "roleDescription": "⟨5⟩",
+   "subrole": "AXOutlineRow",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen"
+   ],
+   "children": 2,
+   "columnIndexRange": [
+    0,
+    1
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 308,
+    "x": 1023,
+    "y": 426
+   },
+   "identifier": null,
+   "index": 131,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    4,
+    5
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 16,
+    "width": 16,
+    "x": 1023,
+    "y": 428
+   },
+   "identifier": null,
+   "index": 132,
+   "pid": 9975,
+   "role": "AXImage",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen",
+    "AXShowMenu",
+    "AXConfirm"
+   ],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": true
+   },
+   "frame": {
+    "height": 18,
+    "width": 97,
+    "x": 1043,
+    "y": 427
+   },
+   "identifier": null,
+   "index": 133,
+   "numberOfCharacters": 14,
+   "pid": 9975,
+   "role": "AXTextField",
+   "roleDescription": "⟨6⟩",
+   "subrole": null,
+   "title": null,
+   "url": "⟨96⟩",
+   "value": "scene-file-005",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    1,
+    2
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 181,
+    "x": 1331,
+    "y": 426
+   },
+   "identifier": null,
+   "index": 134,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    4,
+    5
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 169,
+    "x": 1337,
+    "y": 427
+   },
+   "identifier": null,
+   "index": 135,
+   "numberOfCharacters": 10,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨10⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    2,
+    3
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 97,
+    "x": 1512,
+    "y": 426
+   },
+   "identifier": null,
+   "index": 136,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    4,
+    5
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 52,
+    "x": 1551,
+    "y": 427
+   },
+   "identifier": null,
+   "index": 137,
+   "numberOfCharacters": 5,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨5⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    3,
+    4
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 115,
+    "x": 1609,
+    "y": 426
+   },
+   "identifier": null,
+   "index": 138,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    4,
+    5
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 25,
+    "x": 1615,
+    "y": 427
+   },
+   "identifier": null,
+   "index": 139,
+   "numberOfCharacters": 2,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨2⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [
+    "AXShowDefaultUI",
+    "AXShowAlternateUI"
+   ],
+   "children": 4,
+   "depth": 5,
+   "description": null,
+   "flags": {
+    "disclosable": true,
+    "enabled": true,
+    "expanded": false,
+    "focusable": false,
+    "focused": false,
+    "selectable": true,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 743,
+    "x": 997,
+    "y": 446
+   },
+   "identifier": null,
+   "index": 140,
+   "pid": 9975,
+   "role": "AXRow",
+   "roleDescription": "⟨5⟩",
+   "subrole": "AXOutlineRow",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen"
+   ],
+   "children": 2,
+   "columnIndexRange": [
+    0,
+    1
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 308,
+    "x": 1023,
+    "y": 446
+   },
+   "identifier": null,
+   "index": 141,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    5,
+    6
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 16,
+    "width": 16,
+    "x": 1023,
+    "y": 448
+   },
+   "identifier": null,
+   "index": 142,
+   "pid": 9975,
+   "role": "AXImage",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen",
+    "AXShowMenu",
+    "AXConfirm"
+   ],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": true
+   },
+   "frame": {
+    "height": 18,
+    "width": 97,
+    "x": 1043,
+    "y": 447
+   },
+   "identifier": null,
+   "index": 143,
+   "numberOfCharacters": 14,
+   "pid": 9975,
+   "role": "AXTextField",
+   "roleDescription": "⟨6⟩",
+   "subrole": null,
+   "title": null,
+   "url": "⟨96⟩",
+   "value": "scene-file-006",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    1,
+    2
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 181,
+    "x": 1331,
+    "y": 446
+   },
+   "identifier": null,
+   "index": 144,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    5,
+    6
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 169,
+    "x": 1337,
+    "y": 447
+   },
+   "identifier": null,
+   "index": 145,
+   "numberOfCharacters": 10,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨10⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    2,
+    3
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 97,
+    "x": 1512,
+    "y": 446
+   },
+   "identifier": null,
+   "index": 146,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    5,
+    6
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 52,
+    "x": 1551,
+    "y": 447
+   },
+   "identifier": null,
+   "index": 147,
+   "numberOfCharacters": 5,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨5⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    3,
+    4
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 115,
+    "x": 1609,
+    "y": 446
+   },
+   "identifier": null,
+   "index": 148,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    5,
+    6
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 25,
+    "x": 1615,
+    "y": 447
+   },
+   "identifier": null,
+   "index": 149,
+   "numberOfCharacters": 2,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨2⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [
+    "AXShowDefaultUI",
+    "AXShowAlternateUI"
+   ],
+   "children": 4,
+   "depth": 5,
+   "description": null,
+   "flags": {
+    "disclosable": true,
+    "enabled": true,
+    "expanded": false,
+    "focusable": false,
+    "focused": false,
+    "selectable": true,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 743,
+    "x": 997,
+    "y": 466
+   },
+   "identifier": null,
+   "index": 150,
+   "pid": 9975,
+   "role": "AXRow",
+   "roleDescription": "⟨5⟩",
+   "subrole": "AXOutlineRow",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen"
+   ],
+   "children": 2,
+   "columnIndexRange": [
+    0,
+    1
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 308,
+    "x": 1023,
+    "y": 466
+   },
+   "identifier": null,
+   "index": 151,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    6,
+    7
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 16,
+    "width": 16,
+    "x": 1023,
+    "y": 468
+   },
+   "identifier": null,
+   "index": 152,
+   "pid": 9975,
+   "role": "AXImage",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen",
+    "AXShowMenu",
+    "AXConfirm"
+   ],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": true
+   },
+   "frame": {
+    "height": 18,
+    "width": 96,
+    "x": 1043,
+    "y": 467
+   },
+   "identifier": null,
+   "index": 153,
+   "numberOfCharacters": 14,
+   "pid": 9975,
+   "role": "AXTextField",
+   "roleDescription": "⟨6⟩",
+   "subrole": null,
+   "title": null,
+   "url": "⟨96⟩",
+   "value": "scene-file-007",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    1,
+    2
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 181,
+    "x": 1331,
+    "y": 466
+   },
+   "identifier": null,
+   "index": 154,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    6,
+    7
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 169,
+    "x": 1337,
+    "y": 467
+   },
+   "identifier": null,
+   "index": 155,
+   "numberOfCharacters": 10,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨10⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    2,
+    3
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 97,
+    "x": 1512,
+    "y": 466
+   },
+   "identifier": null,
+   "index": 156,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    6,
+    7
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 52,
+    "x": 1551,
+    "y": 467
+   },
+   "identifier": null,
+   "index": 157,
+   "numberOfCharacters": 5,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨5⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    3,
+    4
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 115,
+    "x": 1609,
+    "y": 466
+   },
+   "identifier": null,
+   "index": 158,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    6,
+    7
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 25,
+    "x": 1615,
+    "y": 467
+   },
+   "identifier": null,
+   "index": 159,
+   "numberOfCharacters": 2,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨2⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [
+    "AXShowDefaultUI",
+    "AXShowAlternateUI"
+   ],
+   "children": 4,
+   "depth": 5,
+   "description": null,
+   "flags": {
+    "disclosable": true,
+    "enabled": true,
+    "expanded": false,
+    "focusable": false,
+    "focused": false,
+    "selectable": true,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 743,
+    "x": 997,
+    "y": 486
+   },
+   "identifier": null,
+   "index": 160,
+   "pid": 9975,
+   "role": "AXRow",
+   "roleDescription": "⟨5⟩",
+   "subrole": "AXOutlineRow",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen"
+   ],
+   "children": 2,
+   "columnIndexRange": [
+    0,
+    1
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 308,
+    "x": 1023,
+    "y": 486
+   },
+   "identifier": null,
+   "index": 161,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    7,
+    8
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 16,
+    "width": 16,
+    "x": 1023,
+    "y": 488
+   },
+   "identifier": null,
+   "index": 162,
+   "pid": 9975,
+   "role": "AXImage",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen",
+    "AXShowMenu",
+    "AXConfirm"
+   ],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": true
+   },
+   "frame": {
+    "height": 18,
+    "width": 97,
+    "x": 1043,
+    "y": 487
+   },
+   "identifier": null,
+   "index": 163,
+   "numberOfCharacters": 14,
+   "pid": 9975,
+   "role": "AXTextField",
+   "roleDescription": "⟨6⟩",
+   "subrole": null,
+   "title": null,
+   "url": "⟨96⟩",
+   "value": "scene-file-008",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    1,
+    2
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 181,
+    "x": 1331,
+    "y": 486
+   },
+   "identifier": null,
+   "index": 164,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    7,
+    8
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 169,
+    "x": 1337,
+    "y": 487
+   },
+   "identifier": null,
+   "index": 165,
+   "numberOfCharacters": 10,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨10⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    2,
+    3
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 97,
+    "x": 1512,
+    "y": 486
+   },
+   "identifier": null,
+   "index": 166,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    7,
+    8
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 52,
+    "x": 1551,
+    "y": 487
+   },
+   "identifier": null,
+   "index": 167,
+   "numberOfCharacters": 5,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨5⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    3,
+    4
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 115,
+    "x": 1609,
+    "y": 486
+   },
+   "identifier": null,
+   "index": 168,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    7,
+    8
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 25,
+    "x": 1615,
+    "y": 487
+   },
+   "identifier": null,
+   "index": 169,
+   "numberOfCharacters": 2,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨2⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [
+    "AXShowDefaultUI",
+    "AXShowAlternateUI"
+   ],
+   "children": 4,
+   "depth": 5,
+   "description": null,
+   "flags": {
+    "disclosable": true,
+    "enabled": true,
+    "expanded": false,
+    "focusable": false,
+    "focused": false,
+    "selectable": true,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 743,
+    "x": 997,
+    "y": 506
+   },
+   "identifier": null,
+   "index": 170,
+   "pid": 9975,
+   "role": "AXRow",
+   "roleDescription": "⟨5⟩",
+   "subrole": "AXOutlineRow",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen"
+   ],
+   "children": 2,
+   "columnIndexRange": [
+    0,
+    1
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 308,
+    "x": 1023,
+    "y": 506
+   },
+   "identifier": null,
+   "index": 171,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    8,
+    9
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 16,
+    "width": 16,
+    "x": 1023,
+    "y": 508
+   },
+   "identifier": null,
+   "index": 172,
+   "pid": 9975,
+   "role": "AXImage",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen",
+    "AXShowMenu",
+    "AXConfirm"
+   ],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": true
+   },
+   "frame": {
+    "height": 18,
+    "width": 97,
+    "x": 1043,
+    "y": 507
+   },
+   "identifier": null,
+   "index": 173,
+   "numberOfCharacters": 14,
+   "pid": 9975,
+   "role": "AXTextField",
+   "roleDescription": "⟨6⟩",
+   "subrole": null,
+   "title": null,
+   "url": "⟨96⟩",
+   "value": "scene-file-009",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    1,
+    2
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 181,
+    "x": 1331,
+    "y": 506
+   },
+   "identifier": null,
+   "index": 174,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    8,
+    9
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 169,
+    "x": 1337,
+    "y": 507
+   },
+   "identifier": null,
+   "index": 175,
+   "numberOfCharacters": 10,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨10⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    2,
+    3
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 97,
+    "x": 1512,
+    "y": 506
+   },
+   "identifier": null,
+   "index": 176,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    8,
+    9
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 52,
+    "x": 1551,
+    "y": 507
+   },
+   "identifier": null,
+   "index": 177,
+   "numberOfCharacters": 5,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨5⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    3,
+    4
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 115,
+    "x": 1609,
+    "y": 506
+   },
+   "identifier": null,
+   "index": 178,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    8,
+    9
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 25,
+    "x": 1615,
+    "y": 507
+   },
+   "identifier": null,
+   "index": 179,
+   "numberOfCharacters": 2,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨2⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [
+    "AXShowDefaultUI",
+    "AXShowAlternateUI"
+   ],
+   "children": 4,
+   "depth": 5,
+   "description": null,
+   "flags": {
+    "disclosable": true,
+    "enabled": true,
+    "expanded": false,
+    "focusable": false,
+    "focused": false,
+    "selectable": true,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 743,
+    "x": 997,
+    "y": 526
+   },
+   "identifier": null,
+   "index": 180,
+   "pid": 9975,
+   "role": "AXRow",
+   "roleDescription": "⟨5⟩",
+   "subrole": "AXOutlineRow",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen"
+   ],
+   "children": 2,
+   "columnIndexRange": [
+    0,
+    1
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 308,
+    "x": 1023,
+    "y": 526
+   },
+   "identifier": null,
+   "index": 181,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    9,
+    10
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 16,
+    "width": 16,
+    "x": 1023,
+    "y": 528
+   },
+   "identifier": null,
+   "index": 182,
+   "pid": 9975,
+   "role": "AXImage",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen",
+    "AXShowMenu",
+    "AXConfirm"
+   ],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": true
+   },
+   "frame": {
+    "height": 18,
+    "width": 95,
+    "x": 1043,
+    "y": 527
+   },
+   "identifier": null,
+   "index": 183,
+   "numberOfCharacters": 14,
+   "pid": 9975,
+   "role": "AXTextField",
+   "roleDescription": "⟨6⟩",
+   "subrole": null,
+   "title": null,
+   "url": "⟨96⟩",
+   "value": "scene-file-010",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    1,
+    2
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 181,
+    "x": 1331,
+    "y": 526
+   },
+   "identifier": null,
+   "index": 184,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    9,
+    10
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 169,
+    "x": 1337,
+    "y": 527
+   },
+   "identifier": null,
+   "index": 185,
+   "numberOfCharacters": 10,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨10⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    2,
+    3
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 97,
+    "x": 1512,
+    "y": 526
+   },
+   "identifier": null,
+   "index": 186,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    9,
+    10
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 52,
+    "x": 1551,
+    "y": 527
+   },
+   "identifier": null,
+   "index": 187,
+   "numberOfCharacters": 5,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨5⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    3,
+    4
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 115,
+    "x": 1609,
+    "y": 526
+   },
+   "identifier": null,
+   "index": 188,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    9,
+    10
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 25,
+    "x": 1615,
+    "y": 527
+   },
+   "identifier": null,
+   "index": 189,
+   "numberOfCharacters": 2,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨2⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [
+    "AXShowDefaultUI",
+    "AXShowAlternateUI"
+   ],
+   "children": 4,
+   "depth": 5,
+   "description": null,
+   "flags": {
+    "disclosable": true,
+    "enabled": true,
+    "expanded": false,
+    "focusable": false,
+    "focused": false,
+    "selectable": true,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 743,
+    "x": 997,
+    "y": 546
+   },
+   "identifier": null,
+   "index": 190,
+   "pid": 9975,
+   "role": "AXRow",
+   "roleDescription": "⟨5⟩",
+   "subrole": "AXOutlineRow",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen"
+   ],
+   "children": 2,
+   "columnIndexRange": [
+    0,
+    1
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 308,
+    "x": 1023,
+    "y": 546
+   },
+   "identifier": null,
+   "index": 191,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    10,
+    11
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 16,
+    "width": 16,
+    "x": 1023,
+    "y": 548
+   },
+   "identifier": null,
+   "index": 192,
+   "pid": 9975,
+   "role": "AXImage",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen",
+    "AXShowMenu",
+    "AXConfirm"
+   ],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": true
+   },
+   "frame": {
+    "height": 18,
+    "width": 93,
+    "x": 1043,
+    "y": 547
+   },
+   "identifier": null,
+   "index": 193,
+   "numberOfCharacters": 14,
+   "pid": 9975,
+   "role": "AXTextField",
+   "roleDescription": "⟨6⟩",
+   "subrole": null,
+   "title": null,
+   "url": "⟨96⟩",
+   "value": "scene-file-011",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    1,
+    2
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 181,
+    "x": 1331,
+    "y": 546
+   },
+   "identifier": null,
+   "index": 194,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    10,
+    11
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 169,
+    "x": 1337,
+    "y": 547
+   },
+   "identifier": null,
+   "index": 195,
+   "numberOfCharacters": 10,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨10⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    2,
+    3
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 97,
+    "x": 1512,
+    "y": 546
+   },
+   "identifier": null,
+   "index": 196,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    10,
+    11
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 52,
+    "x": 1551,
+    "y": 547
+   },
+   "identifier": null,
+   "index": 197,
+   "numberOfCharacters": 5,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨5⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    3,
+    4
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 115,
+    "x": 1609,
+    "y": 546
+   },
+   "identifier": null,
+   "index": 198,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    10,
+    11
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 25,
+    "x": 1615,
+    "y": 547
+   },
+   "identifier": null,
+   "index": 199,
+   "numberOfCharacters": 2,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨2⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [
+    "AXShowDefaultUI",
+    "AXShowAlternateUI"
+   ],
+   "children": 4,
+   "depth": 5,
+   "description": null,
+   "flags": {
+    "disclosable": true,
+    "enabled": true,
+    "expanded": false,
+    "focusable": false,
+    "focused": false,
+    "selectable": true,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 743,
+    "x": 997,
+    "y": 566
+   },
+   "identifier": null,
+   "index": 200,
+   "pid": 9975,
+   "role": "AXRow",
+   "roleDescription": "⟨5⟩",
+   "subrole": "AXOutlineRow",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen"
+   ],
+   "children": 2,
+   "columnIndexRange": [
+    0,
+    1
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 308,
+    "x": 1023,
+    "y": 566
+   },
+   "identifier": null,
+   "index": 201,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    11,
+    12
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 16,
+    "width": 16,
+    "x": 1023,
+    "y": 568
+   },
+   "identifier": null,
+   "index": 202,
+   "pid": 9975,
+   "role": "AXImage",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen",
+    "AXShowMenu",
+    "AXConfirm"
+   ],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": true
+   },
+   "frame": {
+    "height": 18,
+    "width": 95,
+    "x": 1043,
+    "y": 567
+   },
+   "identifier": null,
+   "index": 203,
+   "numberOfCharacters": 14,
+   "pid": 9975,
+   "role": "AXTextField",
+   "roleDescription": "⟨6⟩",
+   "subrole": null,
+   "title": null,
+   "url": "⟨96⟩",
+   "value": "scene-file-012",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    1,
+    2
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 181,
+    "x": 1331,
+    "y": 566
+   },
+   "identifier": null,
+   "index": 204,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    11,
+    12
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 169,
+    "x": 1337,
+    "y": 567
+   },
+   "identifier": null,
+   "index": 205,
+   "numberOfCharacters": 10,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨10⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    2,
+    3
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 97,
+    "x": 1512,
+    "y": 566
+   },
+   "identifier": null,
+   "index": 206,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    11,
+    12
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 52,
+    "x": 1551,
+    "y": 567
+   },
+   "identifier": null,
+   "index": 207,
+   "numberOfCharacters": 5,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨5⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    3,
+    4
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 115,
+    "x": 1609,
+    "y": 566
+   },
+   "identifier": null,
+   "index": 208,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    11,
+    12
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 25,
+    "x": 1615,
+    "y": 567
+   },
+   "identifier": null,
+   "index": 209,
+   "numberOfCharacters": 2,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨2⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [
+    "AXShowDefaultUI",
+    "AXShowAlternateUI"
+   ],
+   "children": 4,
+   "depth": 5,
+   "description": null,
+   "flags": {
+    "disclosable": true,
+    "enabled": true,
+    "expanded": false,
+    "focusable": false,
+    "focused": false,
+    "selectable": true,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 743,
+    "x": 997,
+    "y": 586
+   },
+   "identifier": null,
+   "index": 210,
+   "pid": 9975,
+   "role": "AXRow",
+   "roleDescription": "⟨5⟩",
+   "subrole": "AXOutlineRow",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen"
+   ],
+   "children": 2,
+   "columnIndexRange": [
+    0,
+    1
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 308,
+    "x": 1023,
+    "y": 586
+   },
+   "identifier": null,
+   "index": 211,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    12,
+    13
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 16,
+    "width": 16,
+    "x": 1023,
+    "y": 588
+   },
+   "identifier": null,
+   "index": 212,
+   "pid": 9975,
+   "role": "AXImage",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen",
+    "AXShowMenu",
+    "AXConfirm"
+   ],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": true
+   },
+   "frame": {
+    "height": 18,
+    "width": 95,
+    "x": 1043,
+    "y": 587
+   },
+   "identifier": null,
+   "index": 213,
+   "numberOfCharacters": 14,
+   "pid": 9975,
+   "role": "AXTextField",
+   "roleDescription": "⟨6⟩",
+   "subrole": null,
+   "title": null,
+   "url": "⟨96⟩",
+   "value": "scene-file-013",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    1,
+    2
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 181,
+    "x": 1331,
+    "y": 586
+   },
+   "identifier": null,
+   "index": 214,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    12,
+    13
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 169,
+    "x": 1337,
+    "y": 587
+   },
+   "identifier": null,
+   "index": 215,
+   "numberOfCharacters": 10,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨10⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    2,
+    3
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 97,
+    "x": 1512,
+    "y": 586
+   },
+   "identifier": null,
+   "index": 216,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    12,
+    13
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 52,
+    "x": 1551,
+    "y": 587
+   },
+   "identifier": null,
+   "index": 217,
+   "numberOfCharacters": 5,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨5⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    3,
+    4
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 115,
+    "x": 1609,
+    "y": 586
+   },
+   "identifier": null,
+   "index": 218,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    12,
+    13
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 25,
+    "x": 1615,
+    "y": 587
+   },
+   "identifier": null,
+   "index": 219,
+   "numberOfCharacters": 2,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨2⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [
+    "AXShowDefaultUI",
+    "AXShowAlternateUI"
+   ],
+   "children": 4,
+   "depth": 5,
+   "description": null,
+   "flags": {
+    "disclosable": true,
+    "enabled": true,
+    "expanded": false,
+    "focusable": false,
+    "focused": false,
+    "selectable": true,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 743,
+    "x": 997,
+    "y": 606
+   },
+   "identifier": null,
+   "index": 220,
+   "pid": 9975,
+   "role": "AXRow",
+   "roleDescription": "⟨5⟩",
+   "subrole": "AXOutlineRow",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen"
+   ],
+   "children": 2,
+   "columnIndexRange": [
+    0,
+    1
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 308,
+    "x": 1023,
+    "y": 606
+   },
+   "identifier": null,
+   "index": 221,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    13,
+    14
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 16,
+    "width": 16,
+    "x": 1023,
+    "y": 608
+   },
+   "identifier": null,
+   "index": 222,
+   "pid": 9975,
+   "role": "AXImage",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen",
+    "AXShowMenu",
+    "AXConfirm"
+   ],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": true
+   },
+   "frame": {
+    "height": 18,
+    "width": 95,
+    "x": 1043,
+    "y": 607
+   },
+   "identifier": null,
+   "index": 223,
+   "numberOfCharacters": 14,
+   "pid": 9975,
+   "role": "AXTextField",
+   "roleDescription": "⟨6⟩",
+   "subrole": null,
+   "title": null,
+   "url": "⟨96⟩",
+   "value": "scene-file-014",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    1,
+    2
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 181,
+    "x": 1331,
+    "y": 606
+   },
+   "identifier": null,
+   "index": 224,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    13,
+    14
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 169,
+    "x": 1337,
+    "y": 607
+   },
+   "identifier": null,
+   "index": 225,
+   "numberOfCharacters": 10,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨10⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    2,
+    3
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 97,
+    "x": 1512,
+    "y": 606
+   },
+   "identifier": null,
+   "index": 226,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    13,
+    14
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 52,
+    "x": 1551,
+    "y": 607
+   },
+   "identifier": null,
+   "index": 227,
+   "numberOfCharacters": 5,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨5⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    3,
+    4
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 115,
+    "x": 1609,
+    "y": 606
+   },
+   "identifier": null,
+   "index": 228,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    13,
+    14
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 25,
+    "x": 1615,
+    "y": 607
+   },
+   "identifier": null,
+   "index": 229,
+   "numberOfCharacters": 2,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨2⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [
+    "AXShowDefaultUI",
+    "AXShowAlternateUI"
+   ],
+   "children": 4,
+   "depth": 5,
+   "description": null,
+   "flags": {
+    "disclosable": true,
+    "enabled": true,
+    "expanded": false,
+    "focusable": false,
+    "focused": false,
+    "selectable": true,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 743,
+    "x": 997,
+    "y": 626
+   },
+   "identifier": null,
+   "index": 230,
+   "pid": 9975,
+   "role": "AXRow",
+   "roleDescription": "⟨5⟩",
+   "subrole": "AXOutlineRow",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen"
+   ],
+   "children": 2,
+   "columnIndexRange": [
+    0,
+    1
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 308,
+    "x": 1023,
+    "y": 626
+   },
+   "identifier": null,
+   "index": 231,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    14,
+    15
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 16,
+    "width": 16,
+    "x": 1023,
+    "y": 628
+   },
+   "identifier": null,
+   "index": 232,
+   "pid": 9975,
+   "role": "AXImage",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen",
+    "AXShowMenu",
+    "AXConfirm"
+   ],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": true
+   },
+   "frame": {
+    "height": 18,
+    "width": 95,
+    "x": 1043,
+    "y": 627
+   },
+   "identifier": null,
+   "index": 233,
+   "numberOfCharacters": 14,
+   "pid": 9975,
+   "role": "AXTextField",
+   "roleDescription": "⟨6⟩",
+   "subrole": null,
+   "title": null,
+   "url": "⟨96⟩",
+   "value": "scene-file-015",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    1,
+    2
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 181,
+    "x": 1331,
+    "y": 626
+   },
+   "identifier": null,
+   "index": 234,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    14,
+    15
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 169,
+    "x": 1337,
+    "y": 627
+   },
+   "identifier": null,
+   "index": 235,
+   "numberOfCharacters": 10,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨10⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    2,
+    3
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 97,
+    "x": 1512,
+    "y": 626
+   },
+   "identifier": null,
+   "index": 236,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    14,
+    15
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 52,
+    "x": 1551,
+    "y": 627
+   },
+   "identifier": null,
+   "index": 237,
+   "numberOfCharacters": 5,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨5⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    3,
+    4
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 115,
+    "x": 1609,
+    "y": 626
+   },
+   "identifier": null,
+   "index": 238,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    14,
+    15
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 25,
+    "x": 1615,
+    "y": 627
+   },
+   "identifier": null,
+   "index": 239,
+   "numberOfCharacters": 2,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨2⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [
+    "AXShowDefaultUI",
+    "AXShowAlternateUI"
+   ],
+   "children": 4,
+   "depth": 5,
+   "description": null,
+   "flags": {
+    "disclosable": true,
+    "enabled": true,
+    "expanded": false,
+    "focusable": false,
+    "focused": false,
+    "selectable": true,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 743,
+    "x": 997,
+    "y": 646
+   },
+   "identifier": null,
+   "index": 240,
+   "pid": 9975,
+   "role": "AXRow",
+   "roleDescription": "⟨5⟩",
+   "subrole": "AXOutlineRow",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen"
+   ],
+   "children": 2,
+   "columnIndexRange": [
+    0,
+    1
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 308,
+    "x": 1023,
+    "y": 646
+   },
+   "identifier": null,
+   "index": 241,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    15,
+    16
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 16,
+    "width": 16,
+    "x": 1023,
+    "y": 648
+   },
+   "identifier": null,
+   "index": 242,
+   "pid": 9975,
+   "role": "AXImage",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen",
+    "AXShowMenu",
+    "AXConfirm"
+   ],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": true
+   },
+   "frame": {
+    "height": 18,
+    "width": 95,
+    "x": 1043,
+    "y": 647
+   },
+   "identifier": null,
+   "index": 243,
+   "numberOfCharacters": 14,
+   "pid": 9975,
+   "role": "AXTextField",
+   "roleDescription": "⟨6⟩",
+   "subrole": null,
+   "title": null,
+   "url": "⟨96⟩",
+   "value": "scene-file-016",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    1,
+    2
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 181,
+    "x": 1331,
+    "y": 646
+   },
+   "identifier": null,
+   "index": 244,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    15,
+    16
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 169,
+    "x": 1337,
+    "y": 647
+   },
+   "identifier": null,
+   "index": 245,
+   "numberOfCharacters": 10,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨10⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    2,
+    3
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 97,
+    "x": 1512,
+    "y": 646
+   },
+   "identifier": null,
+   "index": 246,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    15,
+    16
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 52,
+    "x": 1551,
+    "y": 647
+   },
+   "identifier": null,
+   "index": 247,
+   "numberOfCharacters": 5,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨5⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    3,
+    4
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 115,
+    "x": 1609,
+    "y": 646
+   },
+   "identifier": null,
+   "index": 248,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    15,
+    16
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 25,
+    "x": 1615,
+    "y": 647
+   },
+   "identifier": null,
+   "index": 249,
+   "numberOfCharacters": 2,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨2⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [
+    "AXShowDefaultUI",
+    "AXShowAlternateUI"
+   ],
+   "children": 4,
+   "depth": 5,
+   "description": null,
+   "flags": {
+    "disclosable": true,
+    "enabled": true,
+    "expanded": false,
+    "focusable": false,
+    "focused": false,
+    "selectable": true,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 743,
+    "x": 997,
+    "y": 666
+   },
+   "identifier": null,
+   "index": 250,
+   "pid": 9975,
+   "role": "AXRow",
+   "roleDescription": "⟨5⟩",
+   "subrole": "AXOutlineRow",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen"
+   ],
+   "children": 2,
+   "columnIndexRange": [
+    0,
+    1
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 308,
+    "x": 1023,
+    "y": 666
+   },
+   "identifier": null,
+   "index": 251,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    16,
+    17
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 16,
+    "width": 16,
+    "x": 1023,
+    "y": 668
+   },
+   "identifier": null,
+   "index": 252,
+   "pid": 9975,
+   "role": "AXImage",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen",
+    "AXShowMenu",
+    "AXConfirm"
+   ],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": true
+   },
+   "frame": {
+    "height": 18,
+    "width": 94,
+    "x": 1043,
+    "y": 667
+   },
+   "identifier": null,
+   "index": 253,
+   "numberOfCharacters": 14,
+   "pid": 9975,
+   "role": "AXTextField",
+   "roleDescription": "⟨6⟩",
+   "subrole": null,
+   "title": null,
+   "url": "⟨96⟩",
+   "value": "scene-file-017",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    1,
+    2
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 181,
+    "x": 1331,
+    "y": 666
+   },
+   "identifier": null,
+   "index": 254,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    16,
+    17
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 169,
+    "x": 1337,
+    "y": 667
+   },
+   "identifier": null,
+   "index": 255,
+   "numberOfCharacters": 10,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨10⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    2,
+    3
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 97,
+    "x": 1512,
+    "y": 666
+   },
+   "identifier": null,
+   "index": 256,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    16,
+    17
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 52,
+    "x": 1551,
+    "y": 667
+   },
+   "identifier": null,
+   "index": 257,
+   "numberOfCharacters": 5,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨5⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    3,
+    4
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 115,
+    "x": 1609,
+    "y": 666
+   },
+   "identifier": null,
+   "index": 258,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    16,
+    17
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 25,
+    "x": 1615,
+    "y": 667
+   },
+   "identifier": null,
+   "index": 259,
+   "numberOfCharacters": 2,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨2⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [
+    "AXShowDefaultUI",
+    "AXShowAlternateUI"
+   ],
+   "children": 4,
+   "depth": 5,
+   "description": null,
+   "flags": {
+    "disclosable": true,
+    "enabled": true,
+    "expanded": false,
+    "focusable": false,
+    "focused": false,
+    "selectable": true,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 743,
+    "x": 997,
+    "y": 686
+   },
+   "identifier": null,
+   "index": 260,
+   "pid": 9975,
+   "role": "AXRow",
+   "roleDescription": "⟨5⟩",
+   "subrole": "AXOutlineRow",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen"
+   ],
+   "children": 2,
+   "columnIndexRange": [
+    0,
+    1
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 308,
+    "x": 1023,
+    "y": 686
+   },
+   "identifier": null,
+   "index": 261,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    17,
+    18
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 16,
+    "width": 16,
+    "x": 1023,
+    "y": 688
+   },
+   "identifier": null,
+   "index": 262,
+   "pid": 9975,
+   "role": "AXImage",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXOpen",
+    "AXShowMenu",
+    "AXConfirm"
+   ],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": true
+   },
+   "frame": {
+    "height": 18,
+    "width": 95,
+    "x": 1043,
+    "y": 687
+   },
+   "identifier": null,
+   "index": 263,
+   "numberOfCharacters": 14,
+   "pid": 9975,
+   "role": "AXTextField",
+   "roleDescription": "⟨6⟩",
+   "subrole": null,
+   "title": null,
+   "url": "⟨96⟩",
+   "value": "scene-file-018",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    1,
+    2
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 181,
+    "x": 1331,
+    "y": 686
+   },
+   "identifier": null,
+   "index": 264,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    17,
+    18
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 169,
+    "x": 1337,
+    "y": 687
+   },
+   "identifier": null,
+   "index": 265,
+   "numberOfCharacters": 10,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨10⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    2,
+    3
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 97,
+    "x": 1512,
+    "y": 686
+   },
+   "identifier": null,
+   "index": 266,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    17,
+    18
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 52,
+    "x": 1551,
+    "y": 687
+   },
+   "identifier": null,
+   "index": 267,
+   "numberOfCharacters": 5,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨5⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "columnIndexRange": [
+    3,
+    4
+   ],
+   "depth": 6,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 20,
+    "width": 115,
+    "x": 1609,
+    "y": 686
+   },
+   "identifier": null,
+   "index": 268,
+   "pid": 9975,
+   "role": "AXCell",
+   "roleDescription": "⟨1⟩",
+   "rowIndexRange": [
+    17,
+    18
+   ],
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 7,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 18,
+    "width": 25,
+    "x": 1615,
+    "y": 687
+   },
+   "identifier": null,
+   "index": 269,
+   "numberOfCharacters": 2,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨2⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [],
+   "children": 5,
+   "depth": 4,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": true,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": true
+   },
+   "frame": {
+    "height": 350.5,
+    "width": 19,
+    "x": 1722,
+    "y": 340
+   },
+   "identifier": "⟨7⟩",
+   "index": 270,
+   "pid": 9975,
+   "role": "AXScrollBar",
+   "roleDescription": "⟨6⟩",
+   "subrole": null,
+   "title": null,
+   "value": 0,
+   "valueMarkdown": null,
+   "valueType": "number"
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 5,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": true
+   },
+   "frame": {
+    "height": 36,
+    "width": 6,
+    "x": 1731,
+    "y": 344
+   },
+   "identifier": null,
+   "index": 271,
+   "pid": 9975,
+   "role": "AXValueIndicator",
+   "roleDescription": "⟨5⟩",
+   "subrole": null,
+   "title": null,
+   "value": 0,
+   "valueMarkdown": null,
+   "valueType": "number"
+  },
+  {
+   "actions": [
+    "AXPress"
+   ],
+   "children": 0,
+   "depth": 5,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 0,
+    "width": 0,
+    "x": 1723,
+    "y": 341
+   },
+   "identifier": null,
+   "index": 272,
+   "pid": 9975,
+   "role": "AXButton",
+   "roleDescription": "⟨9⟩",
+   "subrole": "AXIncrementArrow",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXPress"
+   ],
+   "children": 0,
+   "depth": 5,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 0,
+    "width": 0,
+    "x": 1723,
+    "y": 341
+   },
+   "identifier": null,
+   "index": 273,
+   "pid": 9975,
+   "role": "AXButton",
+   "roleDescription": "⟨9⟩",
+   "subrole": "AXDecrementArrow",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXPress"
+   ],
+   "children": 0,
+   "depth": 5,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 306,
+    "width": 6,
+    "x": 1731,
+    "y": 380.5
+   },
+   "identifier": null,
+   "index": 274,
+   "pid": 9975,
+   "role": "AXButton",
+   "roleDescription": "⟨9⟩",
+   "subrole": "AXIncrementPage",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXPress"
+   ],
+   "children": 0,
+   "depth": 5,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 0,
+    "width": 6,
+    "x": 1731,
+    "y": 344
+   },
+   "identifier": null,
+   "index": 275,
+   "pid": 9975,
+   "role": "AXButton",
+   "roleDescription": "⟨9⟩",
+   "subrole": "AXDecrementPage",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "depth": 3,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 28,
+    "width": 743,
+    "x": 997,
+    "y": 697
+   },
+   "identifier": "⟨9⟩",
+   "index": 276,
+   "pid": 9975,
+   "role": "AXUnknown",
+   "roleDescription": "⟨6⟩",
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueDescription": "⟨5⟩",
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 4,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 16,
+    "width": 177,
+    "x": 1274,
+    "y": 703
+   },
+   "identifier": "⟨13⟩",
+   "index": 277,
+   "numberOfCharacters": 24,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "⟨24⟩",
+   "valueMarkdown": null,
+   "valueType": "string"
+  },
+  {
+   "actions": [
+    "AXShowMenu"
+   ],
+   "children": 7,
+   "depth": 1,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 52,
+    "width": 920,
+    "x": 820,
+    "y": 261
+   },
+   "identifier": null,
+   "index": 278,
+   "pid": 9975,
+   "role": "AXToolbar",
+   "roleDescription": "⟨5⟩",
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "⟨39⟩",
+    "⟨42⟩"
+   ],
+   "children": 1,
+   "depth": 2,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 52,
+    "width": 81,
+    "x": 1001,
+    "y": 261
+   },
+   "help": "⟨13⟩",
+   "identifier": null,
+   "index": 279,
+   "pid": 9975,
+   "role": "AXGroup",
+   "roleDescription": "⟨2⟩",
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 2,
+   "depth": 3,
+   "description": "⟨6⟩",
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 38,
+    "width": 75,
+    "x": 1004,
+    "y": 268
+   },
+   "identifier": "⟨6⟩",
+   "index": 280,
+   "pid": 9975,
+   "role": "AXGroup",
+   "roleDescription": "⟨2⟩",
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXPress",
+    "AXShowMenu"
+   ],
+   "children": 0,
+   "depth": 4,
+   "description": "⟨2⟩",
+   "flags": {
+    "enabled": false,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 36,
+    "width": 36,
+    "x": 1006,
+    "y": 270
+   },
+   "identifier": null,
+   "index": 281,
+   "pid": 9975,
+   "role": "AXButton",
+   "roleDescription": "⟨2⟩",
+   "subrole": "AXSegment",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXPress",
+    "AXShowMenu"
+   ],
+   "children": 0,
+   "depth": 4,
+   "description": "⟨3⟩",
+   "flags": {
+    "enabled": false,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 36,
+    "width": 37,
+    "x": 1042,
+    "y": 270
+   },
+   "identifier": null,
+   "index": 282,
+   "pid": 9975,
+   "role": "AXButton",
+   "roleDescription": "⟨2⟩",
+   "subrole": "AXSegment",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "⟨39⟩",
+    "⟨39⟩",
+    "⟨42⟩"
+   ],
+   "children": 1,
+   "depth": 2,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 52,
+    "width": 164,
+    "x": 1350,
+    "y": 261
+   },
+   "help": "⟨30⟩",
+   "identifier": null,
+   "index": 283,
+   "pid": 9975,
+   "role": "AXGroup",
+   "roleDescription": "⟨2⟩",
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 4,
+   "depth": 3,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 38,
+    "width": 162,
+    "x": 1353,
+    "y": 268
+   },
+   "identifier": null,
+   "index": 284,
+   "pid": 9975,
+   "role": "AXRadioGroup",
+   "roleDescription": "⟨6⟩",
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXPress"
+   ],
+   "children": 0,
+   "depth": 4,
+   "description": "⟨6⟩",
+   "flags": {
+    "enabled": true,
+    "focusable": true,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 36,
+    "width": 40.5,
+    "x": 1354,
+    "y": 270
+   },
+   "identifier": null,
+   "index": 285,
+   "pid": 9975,
+   "role": "AXRadioButton",
+   "roleDescription": "⟨6⟩",
+   "subrole": "AXSegment",
+   "title": null,
+   "value": 0,
+   "valueMarkdown": null,
+   "valueType": "number"
+  },
+  {
+   "actions": [
+    "AXPress"
+   ],
+   "children": 0,
+   "depth": 4,
+   "description": "⟨5⟩",
+   "flags": {
+    "enabled": true,
+    "focusable": true,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 36,
+    "width": 40.5,
+    "x": 1394.5,
+    "y": 270
+   },
+   "identifier": null,
+   "index": 286,
+   "pid": 9975,
+   "role": "AXRadioButton",
+   "roleDescription": "⟨6⟩",
+   "subrole": "AXSegment",
+   "title": null,
+   "value": 1,
+   "valueMarkdown": null,
+   "valueType": "number"
+  },
+  {
+   "actions": [
+    "AXPress"
+   ],
+   "children": 0,
+   "depth": 4,
+   "description": "⟨5⟩",
+   "flags": {
+    "enabled": true,
+    "focusable": true,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 36,
+    "width": 40.5,
+    "x": 1435,
+    "y": 270
+   },
+   "identifier": null,
+   "index": 287,
+   "pid": 9975,
+   "role": "AXRadioButton",
+   "roleDescription": "⟨6⟩",
+   "subrole": "AXSegment",
+   "title": null,
+   "value": 0,
+   "valueMarkdown": null,
+   "valueType": "number"
+  },
+  {
+   "actions": [
+    "AXPress"
+   ],
+   "children": 0,
+   "depth": 4,
+   "description": "⟨6⟩",
+   "flags": {
+    "enabled": true,
+    "focusable": true,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 36,
+    "width": 40.5,
+    "x": 1475.5,
+    "y": 270
+   },
+   "identifier": null,
+   "index": 288,
+   "pid": 9975,
+   "role": "AXRadioButton",
+   "roleDescription": "⟨6⟩",
+   "subrole": "AXSegment",
+   "title": null,
+   "value": 0,
+   "valueMarkdown": null,
+   "valueType": "number"
+  },
+  {
+   "actions": [
+    "AXShowMenu",
+    "AXPress",
+    "⟨39⟩",
+    "⟨39⟩",
+    "⟨42⟩"
+   ],
+   "children": 0,
+   "depth": 2,
+   "description": "⟨2⟩",
+   "flags": {
+    "enabled": true,
+    "focusable": true,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 52,
+    "width": 47,
+    "x": 1522,
+    "y": 261
+   },
+   "help": "⟨33⟩",
+   "identifier": null,
+   "index": 289,
+   "pid": 9975,
+   "role": "AXMenuButton",
+   "roleDescription": "⟨5⟩",
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXPress",
+    "⟨39⟩",
+    "⟨39⟩",
+    "⟨42⟩"
+   ],
+   "children": 0,
+   "depth": 2,
+   "description": "⟨2⟩",
+   "flags": {
+    "enabled": false,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 52,
+    "width": 36,
+    "x": 1577,
+    "y": 261
+   },
+   "help": "⟨13⟩",
+   "identifier": null,
+   "index": 290,
+   "pid": 9975,
+   "role": "AXButton",
+   "roleDescription": "⟨2⟩",
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXPress",
+    "⟨39⟩",
+    "⟨39⟩",
+    "⟨42⟩"
+   ],
+   "children": 0,
+   "depth": 2,
+   "description": "⟨5⟩",
+   "flags": {
+    "enabled": false,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 52,
+    "width": 38,
+    "x": 1613,
+    "y": 261
+   },
+   "help": "⟨9⟩",
+   "identifier": null,
+   "index": 291,
+   "pid": 9975,
+   "role": "AXButton",
+   "roleDescription": "⟨2⟩",
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXShowMenu",
+    "AXPress",
+    "⟨39⟩",
+    "⟨39⟩",
+    "⟨42⟩"
+   ],
+   "children": 0,
+   "depth": 2,
+   "description": "⟨2⟩",
+   "flags": {
+    "enabled": true,
+    "focusable": true,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 52,
+    "width": 37,
+    "x": 1651,
+    "y": 261
+   },
+   "help": "⟨18⟩",
+   "identifier": null,
+   "index": 292,
+   "pid": 9975,
+   "role": "AXMenuButton",
+   "roleDescription": "⟨5⟩",
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "⟨39⟩",
+    "⟨42⟩"
+   ],
+   "children": 1,
+   "depth": 2,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 52,
+    "width": 40,
+    "x": 1696,
+    "y": 261
+   },
+   "identifier": null,
+   "index": 293,
+   "pid": 9975,
+   "role": "AXGroup",
+   "roleDescription": "⟨2⟩",
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXPress"
+   ],
+   "children": 0,
+   "depth": 3,
+   "description": "⟨2⟩",
+   "flags": {
+    "enabled": true,
+    "focusable": true,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 38,
+    "width": 38,
+    "x": 1695,
+    "y": 268
+   },
+   "identifier": null,
+   "index": 294,
+   "pid": 9975,
+   "role": "AXButton",
+   "roleDescription": "⟨2⟩",
+   "subrole": "AXSearchField",
+   "title": "⟨0⟩",
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXPress"
+   ],
+   "children": 0,
+   "depth": 1,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 16,
+    "width": 16,
+    "x": 838,
+    "y": 279
+   },
+   "identifier": null,
+   "index": 295,
+   "pid": 9975,
+   "role": "AXButton",
+   "roleDescription": "⟨5⟩",
+   "subrole": "AXCloseButton",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXPress",
+    "AXZoomWindow",
+    "AXShowMenu"
+   ],
+   "children": 1,
+   "depth": 1,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 16,
+    "width": 16,
+    "x": 884,
+    "y": 279
+   },
+   "help": "⟨24⟩",
+   "identifier": null,
+   "index": 296,
+   "pid": 9975,
+   "role": "AXButton",
+   "roleDescription": "⟨8⟩",
+   "subrole": "AXFullScreenButton",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 1,
+   "depth": 2,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 14,
+    "width": 14,
+    "x": 885,
+    "y": 280
+   },
+   "identifier": null,
+   "index": 297,
+   "pid": 9975,
+   "role": "AXGroup",
+   "roleDescription": "⟨2⟩",
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [],
+   "children": 0,
+   "depth": 3,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 14,
+    "width": 14,
+    "x": 885,
+    "y": 280
+   },
+   "identifier": null,
+   "index": 298,
+   "pid": 9975,
+   "role": "AXGroup",
+   "roleDescription": "⟨2⟩",
+   "subrole": null,
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXPress"
+   ],
+   "children": 0,
+   "depth": 1,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 16,
+    "width": 16,
+    "x": 861,
+    "y": 279
+   },
+   "identifier": null,
+   "index": 299,
+   "pid": 9975,
+   "role": "AXButton",
+   "roleDescription": "⟨6⟩",
+   "subrole": "AXMinimizeButton",
+   "title": null,
+   "value": null,
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "actions": [
+    "AXPress"
+   ],
+   "children": 0,
+   "depth": 1,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 52,
+    "width": 268,
+    "x": 1082,
+    "y": 261
+   },
+   "identifier": null,
+   "index": 300,
+   "numberOfCharacters": 16,
+   "pid": 9975,
+   "role": "AXStaticText",
+   "roleDescription": "⟨3⟩",
+   "subrole": null,
+   "title": null,
+   "value": "cua-scene-finder",
+   "valueMarkdown": null,
+   "valueType": "string"
+  }
+ ],
+ "revision": 1,
+ "screenshot": {
+  "width": 1840,
+  "height": 872
+ },
+ "selectedElements": [],
+ "selectedText": null,
+ "timings": {
+  "actionsMs": 27.014,
+  "attributesMs": 92.416,
+  "droppedMarkdownReads": 0,
+  "droppedSettableReads": 0,
+  "estimatedBytes": 205528,
+  "fetchFailures": 0,
+  "focusMs": 0.104,
+  "focusableMs": 18.768,
+  "markdownFetches": 18,
+  "markdownMs": 1.793,
+  "menuBarMs": 0.315,
+  "monitorMs": 0.244,
+  "monitored": true,
+  "nodes": 309,
+  "readSet": "full",
+  "resolveMs": 0.017,
+  "route": "public",
+  "screenshotCaptureMs": 45.117,
+  "screenshotContentCached": true,
+  "screenshotEncodeMs": 9.764,
+  "screenshotJoinMs": 0.001,
+  "screenshotWindowListMs": 0.347,
+  "screenshotWindowNumberMs": 0.44,
+  "screenshotWriteMs": 0.298,
+  "selectableMs": 5.122,
+  "settableMs": 11.405,
+  "totalMs": 169.299,
+  "walkMs": 165.722,
+  "webShaped": false,
+  "widthMs": 0.118,
+  "windowMs": 0.184
+ },
+ "truncated": null,
+ "window": {
+  "title": "cua-scene-finder",
+  "frame": {
+   "height": 436,
+   "width": 920,
+   "x": 820,
+   "y": 261
+  },
+  "pid": 9975
+ }
+}

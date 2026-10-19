@@ -10,7 +10,7 @@ import {copyFileSync, mkdirSync, rmSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {REPO, scratch, shortScratch} from './fixtures/runtime-fixture.mjs';
 import {API_VERSION, Wire, debugEngine, engineSkip, engineVersionFromSource, startEngine} from './helpers/engine-wire.mjs';
-import {ASSEMBLE_SCRIPT, engineBuild} from '../scripts/spike/engine/assemble.mjs';
+import {ASSEMBLE_SCRIPT, BUNDLE_ID, PROBE_NAME, engineBuild, infoPlist} from '../scripts/spike/engine/assemble.mjs';
 
 const ASSEMBLE = join(REPO, 'scripts', 'spike', 'engine', 'assemble.mjs');
 
@@ -56,6 +56,19 @@ test('assemble refuses without a signing identity, naming CUA_SIGNING_IDENTITY',
   const result = spawnSync(process.execPath, [ASSEMBLE, '--build', out.dir, '--identity', '', '--out', out.dir], {encoding: 'utf8'});
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /CUA_SIGNING_IDENTITY/);
+});
+
+test('a --bundle-id bundle (U7) carries that id and the probe name; the default keeps the engine\'s; a malformed id is refused', t => {
+  const probe = infoPlist({version: '1', build: 'b', bundleId: 'io.github.ssfskim.cua.engine.u7'});
+  assert.match(probe, /<key>CFBundleIdentifier<\/key>\n\t<string>io\.github\.ssfskim\.cua\.engine\.u7<\/string>/);
+  assert.match(probe, new RegExp(`<key>CFBundleDisplayName</key>\\n\\t<string>${PROBE_NAME}</string>`));
+  const plain = infoPlist({version: '1', build: 'b'});
+  assert.ok(plain.includes(`<string>${BUNDLE_ID}</string>`) && plain.includes('<string>cua Engine</string>') && !plain.includes(PROBE_NAME));
+  const out = scratch('cua-engine-out-');
+  t.after(out.cleanup);
+  const result = spawnSync(process.execPath, [ASSEMBLE, '--build', out.dir, '--identity', 'adhoc', '--out', out.dir, '--bundle-id', 'not an id'], {encoding: 'utf8'});
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /reverse-DNS/);
 });
 
 let bin;

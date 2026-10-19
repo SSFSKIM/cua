@@ -276,3 +276,95 @@ const start = ${j(`#${id}#`)}, end = ${j(`#/${id}#`)}, expected = ${j(text)};
 const found = (shot?.nodes ?? []).map(n => typeof n.value === "string" ? n.value : "").find(v => v.includes(start) && v.includes(end, v.indexOf(start)));
 const between = found === undefined ? null : found.slice(found.indexOf(start) + start.length, found.indexOf(end, found.indexOf(start)));
 return {landed: between !== null, exact: between === expected, expected: await __hash(expected)};`);
+
+// ---- The second input sitting's cells (./groups.mjs: routes, effects, coord; U3's title log) -------------------------
+
+// U3: the scene window's title as the front-window checks see it (`__front` over the facade's text), whether the check
+// accepts it, and on the cua lane the raw Skyshot's window title and its tabs (Chrome's tab buttons, AXTabButton). Only
+// for scenes whose every window is the run's own process (Chrome for Testing on its own profile, the Electron fixture,
+// the run's TextEdit), never Finder, whose windows may be the owner's.
+export const SCENE_WINDOW_TITLE = (scene, app, prefix, {raw}) => {
+  if (scene === 'finder') throw new Error('Finder\'s windows are not all the run\'s: its titles are never logged');
+  return cell(`${HELPERS}
+${SKYSHOT}
+const ax = await __full(globalThis.__apps[${j(scene)}]);
+const frontTitle = __front(ax);
+const out = {frontTitle, accepted: typeof frontTitle === "string" && frontTitle.startsWith(${j(prefix)}), headerLine: ax.split("\\n")[0].slice(0, 200)};
+if (${j(raw)}) {
+  const shot = await __skyshot(${j(app)});
+  out.windowTitle = shot?.window?.title ?? null;
+  out.windows = (shot?.nodes ?? []).filter(n => n.role === "AXWindow").map(n => ({index: n.index, subrole: n.subrole ?? null, title: n.title ?? null}));
+  out.tabs = (shot?.nodes ?? []).filter(n => n.subrole === "AXTabButton").map(n => ({title: n.title ?? n.description ?? null, selected: n.flags?.selected ?? null, value: n.value ?? null}));
+}
+return out;`);
+};
+
+// The geometry of a scene's target from a screenshot-bearing observation through the facade (getAXStateAndScreenshot;
+// the spike service captures on every observation, so the engine's connection holds this screenshot for coordinate
+// clicks): the target's index, its node frame (screen points), the window's frame and the screenshot's pixel size from
+// the raw Skyshot of the same observation (cua lane). Numbers only.
+export const GEOMETRY = (scene, app, prefix, target) => cell(`${HELPERS}
+${SKYSHOT}
+const bound = globalThis.__apps[${j(scene)}];
+const both = await bound.getAXStateAndScreenshot({emit: false, disableDiffing: true});
+const front = __front(both.state);
+if (typeof front !== "string" || !front.startsWith(${j(prefix)})) throw new Error("the scene window was not the app's front window");
+const index = __indexOf(both.state, ${j(target)});
+if (index === null) throw new Error("the target is not in the scene's tree");
+const shot = await __skyshot(${j(app)});
+const node = (shot?.nodes ?? []).find(n => n.index === index);
+if (!node?.frame || !shot?.window?.frame || !shot?.screenshot) throw new Error("the observation carries no frame or screenshot for the target");
+return {index, role: node.role, frame: node.frame, window: {frame: shot.window.frame}, screenshot: {width: shot.screenshot.width, height: shot.screenshot.height}, screenshotBytes: both.screenshot?.length ?? 0};`);
+
+// A click by coordinates (screenshot pixels) through the facade, the cell's only call; an engine refusal is the
+// outcome, kept with its name when the error carries one.
+export const CLICK_AT = (scene, x, y) => cell(`try { await globalThis.__apps[${j(scene)}].click([${Number(x)}, ${Number(y)}]); return {actions: 1}; }
+catch (error) { return {actions: 0, failed: String(error?.message ?? error).slice(0, 300), errorName: error?.errorName ?? null}; }`);
+
+// The front document of the TextEdit scene, when it is not the scene document, kept as the baseline's task document so
+// TASK_CLOSE closes it (the coordinate refusal's new window).
+export const ADOPT_FRONT_DOCUMENT = prefix => cell(`${HELPERS}
+const front = __front(await __full(globalThis.app));
+if (typeof front !== "string" || front.startsWith(${j(prefix)})) throw new Error("no other document is TextEdit's front window");
+globalThis.__task = front;
+return {adopted: true};`);
+
+// A route sample's readable outcome from the raw Skyshot (embedded in OUTCOME by its source): Finder's selected rows of
+// the run's folder (their three-digit numbers; any other selected row only counted), the Chrome page's option checkbox
+// and its notes' length, the Electron fixture's press count and its text's length, and the focused element as its
+// index, role and, when it is one of the scene's own controls (`names`), its name.
+export function outcomeState(scene, shot, names) {
+  if (!shot) return {observed: false};
+  const nodes = shot.nodes ?? [];
+  const label = n => [n.title, n.description].find(t => typeof t === 'string' && names.includes(t)) ?? null;
+  const focusedNode = nodes.find(n => n.index === shot.focused) ?? null;
+  const focused = focusedNode ? {index: focusedNode.index, role: focusedNode.role, control: label(focusedNode)} : null;
+  const chars = name => { const n = nodes.find(m => (m.role === 'AXTextArea' || m.role === 'AXTextField') && label(m) === name); return n ? n.numberOfCharacters ?? (typeof n.value === 'string' ? n.value.length : null) : null; };
+  if (scene === 'finder') {
+    const selected = [];
+    let otherSelected = 0;
+    nodes.forEach((row, i) => {
+      if (row.role !== 'AXRow' || !row.flags?.selected) return;
+      let file = null;
+      for (let k = i + 1; k < nodes.length && nodes[k].depth > row.depth && file === null; k++)
+        for (const text of [nodes[k].value, nodes[k].title]) { const m = typeof text === 'string' ? /^scene-file-(\d{3})/.exec(text) : null; if (m) { file = m[1]; break; } }
+      if (file === null) otherSelected++; else selected.push(file);
+    });
+    return {observed: true, selected, otherSelected};
+  }
+  if (scene === 'chrome') {
+    const box = nodes.find(n => n.role === 'AXCheckBox' && label(n) === 'Scene option');
+    return {observed: true, option: box ? box.value ?? null : null, textChars: chars('Scene notes'), focused};
+  }
+  if (scene === 'electron') {
+    let presses = null;
+    for (const n of nodes) for (const text of [n.value, n.title]) { const m = typeof text === 'string' ? /^Pressed (\d+) times?$/.exec(text) : null; if (m && presses === null) presses = Number(m[1]); }
+    return {observed: true, presses, textChars: chars('Fixture text'), focused};
+  }
+  return {observed: true, focused};
+}
+export const OUTCOME = (scene, app, names) => cell(`${HELPERS}
+${SKYSHOT}
+${outcomeState.toString()}
+await __full(globalThis.__apps[${j(scene)}]);
+return outcomeState(${j(scene)}, await __skyshot(${j(app)}), ${j(names)});`);

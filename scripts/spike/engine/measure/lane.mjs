@@ -30,8 +30,10 @@ import {executionFacts} from '../../../repl-parity/provenance.mjs';
 import {assertManagedNode} from '../../../repl-parity/node-provenance.mjs';
 import {SCENES, finderFolderFiles} from '../scenes.mjs';
 import {runningApps} from '../scene-processes.mjs';
-import {PAGE_TITLE} from '../fixtures/scene-page.mjs';
 import * as spike from './cells.mjs';
+import {SCENE_WINDOW, ACTION_TARGET, KEY_PROBE, USER_WINDOW, TEXT_TARGET} from './targets.mjs';
+import {DEFAULT_GROUPS, TAP_MODES, laneTakes, groupNotRunRows} from './groups.mjs';
+import {Stop, routesGroup, effectsGroup, coordGroup, tapGroup, refusalFields, operatorTapFields} from './input-groups.mjs';
 import {stopEngine, assertApprovedBuild, launchEngine, EngineRefusal} from './engine-control.mjs';
 import {engineOps, inCheckout, lastJson} from './device.mjs';
 import {redactGolden} from './redact.mjs';
@@ -109,16 +111,17 @@ export function keptFinderRecord({kept, checked, sceneCli, sceneDir, log = () =>
 const CELL_MS = 60_000, BIND_MS = 120_000;
 const round = ms => Math.round(ms * 1000) / 1000;
 
-// What names each scene's window (a prefix of its title) and what each probe acts on.
-export const SCENE_WINDOW = Object.freeze({textedit: 'cua-scene', finder: SCENES.finder.fixedState.folder, chrome: PAGE_TITLE, electron: SCENES.electron.fixedState.title});
-// Finder's target is a cell of row 005 other than its name (indexOfRowCell): a click on a selected row's name renames it.
-export const ACTION_TARGET = Object.freeze({textedit: SCENES.textedit.fixedState.firstLine, finder: Object.freeze({rowCellOf: 'scene-file-005'}), chrome: 'Scene option', electron: 'Fixture button'});
-export const KEY_PROBE = Object.freeze({textedit: 'shift+Right', finder: 'Down', chrome: 'Tab', electron: 'Tab'});
-export const USER_WINDOW = Object.freeze({textedit: 'finder', finder: 'textedit', chrome: 'textedit', electron: 'finder'});
+// What names each scene's window and what each probe acts on (./targets.mjs).
+export {SCENE_WINDOW, ACTION_TARGET, KEY_PROBE, USER_WINDOW, Stop};
 // The scenes' profile directories under the scene directory (scenes.mjs), removed before each run brings them up.
 const USER_DATA = Object.freeze({chrome: 'chrome-user-data', electron: 'electron-user-data'});
-// Probe (d)'s typed text: long enough (about 3 s keyed) for a person's keystroke or click to land inside the action.
-export const INTERVENTION_TEXT = 'cua intervention probe. '.repeat(125);
+// Probe (d)'s typed text: long enough (`seconds` keyed, at about 1 ms a character) for a person's keystroke or click to
+// land inside the action; the operator's instructions are relayed (U6), so the default is 10 s, not the first 3 s.
+export const OPERATOR_SECONDS = 10;
+export const interventionText = (seconds = OPERATOR_SECONDS) => 'cua intervention probe. '.repeat(Math.ceil(seconds * 1000 / 24));
+// Probe (b)'s forced routes per action: route 1 (the AX action, clicks only), 2′ (the plain pid-post, U12), 2 (with ⌘
+// on a click into an inactive app) and 3 (the fake activation).
+export const FORCED_ROUTES = Object.freeze({click: [1, "2'", 2, 3], key: ["2'", 2, 3]});
 // Probe (e)'s strings (Verification system part 6) and the two input sources it runs under.
 export const UNICODE_STRINGS = Object.freeze(['The quick brown fox jumps over the lazy dog.', '한글 테스트', 'ㄱㄴㄷ', '가나다 abc 123', '😀 이모지', 'é', '日本語', '줄1\n줄2']);
 export const INPUT_SOURCES = Object.freeze({latin: 'com.apple.keylayout.ABC', korean: 'com.apple.inputmethod.Korean.2SetKorean'});
@@ -185,17 +188,17 @@ export async function withInputSource(ops, dir, fn) {
   }
 }
 
-export class Stop extends Error {}
-
 // One run of a lane. `io`: {shell, ops, connect(spec, handlers), confirm, log, sleep}. -> 0 when complete.
 export async function runOnce(options, io) {
-  const {lane, d, dir, approvedRuntime, engine, scenes, samples, tasks, node, sceneDir, probes = ['c'], operator = false, inputBuilt = lane === 'vendor' || CUA_INPUT_METHODS_BUILT} = options;
+  const {lane, d, dir, approvedRuntime, engine, scenes, samples, tasks, node, sceneDir, probes = ['c'], operator = false, inputBuilt = lane === 'vendor' || CUA_INPUT_METHODS_BUILT,
+    groups = DEFAULT_GROUPS, tapModes = TAP_MODES, routeSamples = 3, operatorSeconds = OPERATOR_SECONDS} = options;
+  const takes = group => groups.includes(group) && laneTakes(lane, group);
   const {shell, ops, log = console.log} = io;
   const sleep = io.sleep ?? (ms => new Promise(r => setTimeout(r, ms)));
   if (fs.existsSync(join(dir, 'results.jsonl')) || fs.existsSync(join(dir, 'meta.json'))) throw new Error(`${dir} already holds a run`);
   fs.mkdirSync(dir, {recursive: true});
   fs.writeFileSync(join(dir, 'results.jsonl'), '');
-  const meta = {schema: 'spike-measure-1', lane, run: options.run, device: d.device, sceneDir, started: new Date().toISOString(), plan: {samples, tasks, scenes, probes, operator, inputBuilt},
+  const meta = {schema: 'spike-measure-1', lane, run: options.run, device: d.device, sceneDir, started: new Date().toISOString(), plan: {samples, tasks, scenes, probes, operator, inputBuilt, groups, tapModes, routeSamples, operatorSeconds},
     elicitations: [], problems: [], complete: false};
   const emit = row => { const full = {lane, run: options.run, ...row}; fs.appendFileSync(join(dir, 'results.jsonl'), JSON.stringify(full) + '\n'); return full; };
   const write = () => fs.writeFileSync(join(dir, 'meta.json'), JSON.stringify(meta, null, 2) + '\n');
@@ -324,30 +327,49 @@ export async function runOnce(options, io) {
       return js(code);
     };
     const finderRenameGuard = renameGuard({lane, js, keyCell, emit, stop: message => { stopped = message; throw new Stop(message); }});
-    const ctx = {lane, d, dir, meta, emit, row, js, attest, records, scenes, samples, tasks, inputBuilt, operator, keyCell, finderKey, finderRenameGuard, activate, front, ops, shell, io, log, prepared, skipped, active};
+    const ctx = {lane, d, engine, dir, meta, emit, row, js, attest, records, scenes, samples, tasks, inputBuilt, operator, operatorSeconds, tapModes, keyCell, finderKey, finderRenameGuard, activate, front, ops, shell, io, log, prepared, skipped, active, sleep};
 
     const first = await js(FIRST, BIND_MS);
     if (!first.cell?.ok) throw new Error(`the first cell failed: ${first.failure ?? first.cell?.error}`);
-    for (let sample = 1; sample <= samples; sample++) row('warm.listApps', sample, attest(await js(LIST_APPS)));
+    if (takes('speed')) for (let sample = 1; sample <= samples; sample++) row('warm.listApps', sample, attest(await js(LIST_APPS)));
     for (const scene of scenes) await bind(ctx, scene);
-
-    for (const notRun of [...notRunRows({lane, scenes, inputBuilt}), ...STRUCTURAL_ROWS, ...(lane === 'vendor' ? VENDOR_ONLY_ROWS : [])]) emit(notRun);
-    if (active().includes('finder')) await finderSetup(ctx);
-    // The goldens on one fixed front application on both lanes (TextEdit, else the first scene).
-    if (active().length) await activate(active().includes('textedit') ? 'textedit' : active()[0]);
-    for (const scene of active()) await golden(ctx, scene, 'golden.fixed', spike.GOLDEN(scene, records[scene].app, SCENE_WINDOW[scene], {raw: lane === 'cua'}));
-    if (active().includes('textedit')) await textEditCells(ctx);
-    for (const scene of active()) await treeCells(ctx, scene);
-    for (const scene of active().filter(s => s !== 'textedit')) await screenshotCells(ctx, scene);
-    if (lane === 'cua') {
-      const passed = await preflightSwitches(ctx, active());
-      for (const scene of active()) await engineCells(ctx, scene, passed);
-      if (passed.has('readSet')) for (const scene of active()) await equivalenceCells(ctx, scene);
+    // The baseline's TextEdit cells (the task's close, the teardown's quit) name the scene document, whatever groups run.
+    if (active().includes('textedit')) {
+      const ready = await js(spike.USE_TEXTEDIT(SCENE_WINDOW.textedit));
+      if (!ready.cell?.ok) throw new Error(`the TextEdit scene is not ready: ${ready.cell?.error ?? ready.failure}`);
     }
-    if (inputBuilt) {
-      for (const scene of active()) await golden(ctx, scene, 'golden.action', spike.ACTION_GOLDEN(scene, records[scene].app, SCENE_WINDOW[scene], ACTION_TARGET[scene], {raw: lane === 'cua'}),
+    // U3: the Chrome scene window's title as the front-window checks see it (the run's own Chrome for Testing window).
+    if (active().includes('chrome')) {
+      const titled = await js(spike.SCENE_WINDOW_TITLE('chrome', records.chrome.app, SCENE_WINDOW.chrome, {raw: lane === 'cua'}));
+      row('check.sceneWindow', 1, titled, {scene: 'chrome', ...(titled.cell?.ok ? {ok: titled.cell.value.accepted === true} : {})});
+    }
+
+    for (const notRun of [...notRunRows({lane, scenes, inputBuilt}), ...(groups.includes('e') ? STRUCTURAL_ROWS : []), ...(lane === 'vendor' && groups.includes('d') ? VENDOR_ONLY_ROWS : []),
+      ...groupNotRunRows(lane, groups)]) emit(notRun);
+    if (active().includes('finder')) await finderSetup(ctx);
+    if (takes('speed')) {
+      // The goldens on one fixed front application on both lanes (TextEdit, else the first scene).
+      if (active().length) await activate(active().includes('textedit') ? 'textedit' : active()[0]);
+      for (const scene of active()) await golden(ctx, scene, 'golden.fixed', spike.GOLDEN(scene, records[scene].app, SCENE_WINDOW[scene], {raw: lane === 'cua'}));
+      if (active().includes('textedit')) await textEditCells(ctx);
+      for (const scene of active()) await treeCells(ctx, scene);
+      for (const scene of active().filter(s => s !== 'textedit')) await screenshotCells(ctx, scene);
+      if (lane === 'cua') {
+        const passed = await preflightSwitches(ctx, active());
+        for (const scene of active()) await engineCells(ctx, scene, passed);
+        if (passed.has('readSet')) for (const scene of active()) await equivalenceCells(ctx, scene);
+      }
+      if (inputBuilt) for (const scene of active()) await golden(ctx, scene, 'golden.action', spike.ACTION_GOLDEN(scene, records[scene].app, SCENE_WINDOW[scene], ACTION_TARGET[scene], {raw: lane === 'cua'}),
         scene === 'finder' ? {after: finderRenameGuard} : {});
-      if (lane === 'cua') await inputProbes(ctx);
+    }
+    if (lane === 'cua' && inputBuilt) {
+      if (takes('ab')) await probesAB(ctx);
+      if (takes('routes')) await routesGroup(ctx, {samples: routeSamples});
+      if (takes('effects')) await effectsGroup(ctx);
+      if (takes('coord')) await coordGroup(ctx);
+      if (takes('tap')) for (const mode of await tapGroup(ctx, tapModes)) await probeDTap(ctx, {mode});
+      if (takes('d')) await probeD(ctx, {tasksRan: takes('speed')});
+      if (takes('e')) await probeE(ctx);
     }
     // end_task is the MCP proxy's tool (src/mcp); the cua lane's serve.mjs runs the supervisor without the proxy, so
     // there it is a not-run row rather than a failure.
@@ -695,20 +717,24 @@ export async function probeC({d, shell, ops, emit, front, log, meta, opsFor = bu
 
 // (d) The tap itself, around one key action on the TextEdit scene: created with Accessibility alone, and whether
 // the engine's own pid-posted HID-source events reach the tap or reset the HID idle counter — the two answers that
-// choose between the tap and the HID-idle fallback.
-export async function probeDTap({js, emit, records, front, activate, ops}) {
+// choose between the tap and the HID-idle fallback. `mode` (listen | active, U5) is the tap's kind, sent to probe_tap
+// and kept on both rows; without it the engine's default.
+export async function probeDTap({js, emit, records, front, activate, ops}, {mode} = {}) {
   if (!records.textedit) return;
+  const tapMode = mode ? {mode} : {};
   const sum = (counts, kind) => Object.values(counts ?? {}).reduce((t, per) => t + (per?.[kind] ?? 0), 0);
   // ops.probeTap answers the engine's result and throws its refusal with the engine's name (tapNotCreated's sentence
   // says whether the listen grant was seen), which the row keeps. A stopped run stops here too: nothing more is sent.
   const failed = (op, error) => {
     if (error instanceof Stop) throw error;
-    emit({op, scene: 'textedit', sample: 1, ok: false, errorName: error.errorName ?? null, error: error.message});
+    const refused = refusalFields(error);
+    emit({op, scene: 'textedit', sample: 1, ...tapMode, ok: false, errorName: error.errorName ?? null, error: error.message,
+      listenPreflight: refused.listenPreflight, postPreflight: refused.postPreflight});
   };
   // A tap started is stopped whatever its action does, a stopped run included (stopping a tap sends no input); when
   // both fail, the action's error is the one reported. -> the action's result and the tap's report.
   const aroundTap = async (seconds, action) => {
-    ops.probeTap('start', {app: records.textedit.app, seconds});
+    ops.probeTap('start', {app: records.textedit.app, seconds, ...tapMode});
     let acted;
     try { acted = await action(); }
     catch (error) { try { ops.probeTap('stop'); } catch {} throw error; }
@@ -720,12 +746,12 @@ export async function probeDTap({js, emit, records, front, activate, ops}) {
     const counts = report.counts ?? {};
     // A key action that failed posted nothing to count: the row fails with its error and answers neither question.
     const posted = acted.cell?.ok === true;
-    emit({op: 'probe.d.tap', scene: 'textedit', sample: 1, ok: posted, ...(posted ? {} : {error: acted.cell?.error ?? acted.failure ?? 'failed'}),
+    emit({op: 'probe.d.tap', scene: 'textedit', sample: 1, ...tapMode, ok: posted, ...(posted ? {} : {error: acted.cell?.error ?? acted.failure ?? 'failed'}),
       created: true, listenAccess: report.listenAccess ?? null,
       own: sum(counts, 'own'), driven: sum(counts, 'driven'), other: sum(counts, 'other'),
       ownPostsReachTheTap: posted ? sum(counts, 'own') > 0 : null, hidIdleMsAfterOwnPosts: posted ? report.hidIdleMs ?? null : null,
       route: acted.meta?.['cua/inputRoute'] ?? null, inCellMs: acted.cell?.inCellMs ?? null,
-      ownTimes: report.ownTimes ?? [], drivenTimes: report.drivenTimes ?? []});
+      ownTimes: report.ownTimes ?? [], drivenTimes: report.drivenTimes ?? [], listenPreflight: report.listenPreflight ?? null, postPreflight: report.postPreflight ?? null});
   } catch (error) { failed('probe.d.tap', error); }
   // (d) The keystroke probe as a stand-in user: an HID-tap-posted event, counted as the driven app's input when the
   // tap attributes it, and its reset of the HID idle counter.
@@ -734,26 +760,23 @@ export async function probeDTap({js, emit, records, front, activate, ops}) {
     const seen = front();
     const bounds = seen.topWindow?.bounds;
     if (seen.frontmost?.pid !== records.textedit.pid || !bounds) {
-      emit({op: 'probe.d.hidReset', scene: 'textedit', sample: 1, ok: false, notRun: 'the scene window was not the front one for the keystroke probe'});
+      emit({op: 'probe.d.hidReset', scene: 'textedit', sample: 1, ...tapMode, ok: false, notRun: 'the scene window was not the front one for the keystroke probe'});
       return;
     }
     const {acted: sent, report} = await aroundTap(120, () => ops.keystroke(records.textedit.pid, `${bounds.x},${bounds.y},${bounds.width},${bounds.height}`, 'cua'));
     const counts = report.counts ?? {};
-    emit({op: 'probe.d.hidReset', scene: 'textedit', sample: 1, ok: sum(counts, 'driven') > 0,
+    emit({op: 'probe.d.hidReset', scene: 'textedit', sample: 1, ...tapMode, ok: sum(counts, 'driven') > 0,
       driven: sum(counts, 'driven'), other: sum(counts, 'other'), hidIdleMs: report.hidIdleMs ?? null,
       probe: sent, drivenTimes: report.drivenTimes ?? []});
   } catch (error) { failed('probe.d.hidReset', error); }
 }
 
-// Cua lane, input built: probes (a) and (b) on every scene with its paired user window in front — (b) also forces each
-// route through the spike-only spikeRoute with a watch-activations probe running, so what route 3 does to the user's
-// frontmost is seen from outside the engine; (d)'s cases, the tap and the keystroke probe through probe_tap and the
-// bundle's --probe; (e)'s matrix under both input sources with the owner's source saved and restored, plus the keyed
-// bypass of the paste routing (spikeKeyed) for the per-context question.
-async function inputProbes(ctx) {
-  const {js, row, emit, records, scenes, front, activate, operator, io, ops, dir, active, finderRenameGuard} = ctx;
+// Cua lane: probes (a) and (b) on every scene with its paired user window in front — (b) also forces each route
+// through the spike-only spikeRoute (FORCED_ROUTES, route 2′ included) with a watch-activations probe running, so what
+// route 3 does to the user's frontmost is seen from outside the engine.
+async function probesAB(ctx) {
+  const {js, row, emit, records, front, activate, ops, active, finderRenameGuard} = ctx;
   const renameCheck = (scene, action) => (scene === 'finder' && action === 'click' ? finderRenameGuard() : {});
-  const watchLines = file => fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).map(line => { try { return JSON.parse(line); } catch { return null; } }).filter(Boolean) : [];
   for (const scene of active()) {
     const user = USER_WINDOW[scene];
     if (!records[user]) { for (const action of ['click', 'key']) emit({op: `probe.a.${action}`, scene, user, sample: 1, ok: false, notRun: `the user window's scene (${user}) is not up`}); continue; }
@@ -777,7 +800,7 @@ async function inputProbes(ctx) {
         if (action === 'click' || action === 'key') {
           watch.started = ops.watch();
         }
-        for (const route of action === 'click' ? [1, 2, 3] : [2, 3]) {
+        for (const route of FORCED_ROUTES[action]) {
           const forced = await js(action === 'click'
             ? spike.SPIKE_CLICK(records[scene].app, route)
             : spike.SPIKE_INPUT(records[scene].app, 'press_key', {key: KEY_PROBE[scene], spikeRoute: String(route)}));
@@ -802,33 +825,71 @@ async function inputProbes(ctx) {
       }
     }
   }
-  // (d) The engine's own effects never fire it: the TextEdit task rows above must carry no userIntervened.
-  const taskRows = fs.readFileSync(join(dir, 'results.jsonl'), 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line)).filter(r => r.op?.startsWith('task.') && !r.notRun);
-  const fired = taskRows.filter(r => /userIntervened|The user changed|still interacting/.test(r.error ?? ''));
-  emit({op: 'probe.d.noFire', scene: 'textedit', sample: 1, ok: taskRows.length > 0 && !fired.length, taskRows: taskRows.length, fired: fired.length,
-    note: 'the engine\'s own super+n, typing, super+w and sheet click in the task rows; none may fail as userIntervened'});
+}
+
+// Cua lane, probe (d): the engine's own effects never fire the intervention check (over this run's task rows, which
+// the speed group makes), the tap and the keystroke probe through probe_tap and the bundle's --probe, and with
+// --operator the two operator steps (U6), each inside a tap when one can be created so the operator's input carries
+// its post times, which the row sets against the action's interval.
+async function probeD(ctx, {tasksRan}) {
+  const {js, emit, records, activate, operator, operatorSeconds = OPERATOR_SECONDS, tapModes = TAP_MODES, io, ops, dir} = ctx;
+  // (d) The engine's own effects never fire it: the TextEdit task rows of this run must carry no userIntervened.
+  if (!tasksRan) emit({op: 'probe.d.noFire', scene: 'textedit', sample: 1, ok: false, notRun: 'the task rows are the speed group\'s: run d with speed for this check'});
+  else {
+    const taskRows = fs.readFileSync(join(dir, 'results.jsonl'), 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line)).filter(r => r.op?.startsWith('task.') && !r.notRun);
+    const fired = taskRows.filter(r => /userIntervened|The user changed|still interacting/.test(r.error ?? ''));
+    emit({op: 'probe.d.noFire', scene: 'textedit', sample: 1, ok: taskRows.length > 0 && !fired.length, taskRows: taskRows.length, fired: fired.length,
+      note: 'the engine\'s own super+n, typing, super+w and sheet click in the task rows; none may fail as userIntervened'});
+  }
   await probeDTap(ctx);
-  if (operator && records.textedit) {
-    // The keystroke goes into the driven app while it is frontmost; the click into its window while the paired user
-    // window is in front (the driven app in the background).
-    for (const [op, front, instruction] of [['probe.d.operatorKeystroke', 'textedit', 'send ONE keystroke over Screen Sharing into the TextEdit scene document'],
-      ['probe.d.backgroundClick', USER_WINDOW.textedit, 'click ONCE into the TextEdit scene window, which is behind the user window']]) {
-      if (!records[front]) { emit({op, scene: 'textedit', sample: 1, ok: false, notRun: `the ${front} scene is not up`}); continue; }
-      await activate(front);
-      if (!await io.confirm(`Operator: press Enter, then, while the engine types (about 3 s), ${instruction} (n to skip): `)) { emit({op, scene: 'textedit', sample: 1, ok: false, notRun: 'skipped by the operator'}); continue; }
-      const r = await js(spike.ACT_TYPE('textedit', INTERVENTION_TEXT));
-      const intervened = /userIntervened|The user changed|still interacting/.test(r.cell?.error ?? '');
-      emit({op, scene: 'textedit', sample: 1, ok: intervened, inCellMs: r.cell?.inCellMs ?? null, actionInterval: r.meta?.['cua/actionInterval'] ?? null, receivedAt: r.meta?.['cua/receivedAt'] ?? null, hidIdleMs: r.meta?.['cua/hidIdleMs'] ?? null,
-        operatorConfirmedTiming: await io.confirm('Was your input made while the engine was typing? [Enter = yes, n = no] ')});
-      await js(spike.TREE('textedit', SCENE_WINDOW.textedit));   // the fresh observation the post-intervention lock asks for
+  if (!operator || !records.textedit) {
+    for (const op of ['probe.d.operatorKeystroke', 'probe.d.backgroundClick']) emit({op, scene: 'textedit', sample: 1, ok: false, notRun: operator ? 'the TextEdit scene is not up' : 'operator steps not requested (--operator)'});
+    return;
+  }
+  const text = interventionText(operatorSeconds);
+  // The keystroke goes into the driven app while it is frontmost; the click into its window while the paired user
+  // window is in front (the driven app in the background).
+  for (const [op, front, instruction] of [['probe.d.operatorKeystroke', 'textedit', 'press ONE key at the console; it goes into the TextEdit scene document'],
+    ['probe.d.backgroundClick', USER_WINDOW.textedit, 'click ONCE into the TextEdit scene window, which is behind the Finder window']]) {
+    if (!records[front]) { emit({op, scene: 'textedit', sample: 1, ok: false, notRun: `the ${front} scene is not up`}); continue; }
+    await activate(front);
+    if (!await io.confirm(`Operator: answer Enter to start; the engine then types for about ${operatorSeconds} s, and while it types ${instruction} (n to skip): `)) { emit({op, scene: 'textedit', sample: 1, ok: false, notRun: 'skipped by the operator'}); continue; }
+    // A tap around the typing, the first of the modes that creates one, so the operator's input carries its times.
+    let tap = null;
+    for (const mode of tapModes) {
+      try { ops.probeTap('start', {app: records.textedit.app, seconds: operatorSeconds + 60, mode}); tap = {mode, created: true}; break; }
+      catch (error) { if (error instanceof Stop) throw error; tap = {mode, created: false, ...refusalFields(error)}; }
     }
-  } else for (const op of ['probe.d.operatorKeystroke', 'probe.d.backgroundClick']) emit({op, scene: 'textedit', sample: 1, ok: false, notRun: 'operator steps not requested (--operator)'});
+    let r, report = null;
+    try { r = await js(spike.ACT_TYPE('textedit', text)); }
+    finally { if (tap?.created) { try { report = ops.probeTap('stop'); } catch (error) { tap.stopError = refusalFields(error); } } }
+    const intervened = /userIntervened|The user changed|still interacting/.test(r.cell?.error ?? '');
+    const interval = r.meta?.['cua/actionInterval'] ?? null;
+    emit({op, scene: 'textedit', sample: 1, ok: intervened, intervened, error: r.cell?.error ?? r.failure ?? null, inCellMs: r.cell?.inCellMs ?? null, actionInterval: interval,
+      receivedAt: r.meta?.['cua/receivedAt'] ?? null, hidIdleMs: r.meta?.['cua/hidIdleMs'] ?? null, typedSeconds: operatorSeconds, tap,
+      ...(report ? operatorTapFields(report, interval) : {}),
+      operatorConfirmedTiming: await io.confirm('Was your input made while the engine was typing? [Enter = yes, n = no] ')});
+    await js(spike.TREE('textedit', SCENE_WINDOW.textedit));   // the fresh observation the post-intervention lock asks for
+  }
+}
+
+// Cua lane, probe (e): Korean and Unicode under both sources, with the owner's source saved and restored, plus the keyed
+// bypass of the paste routing (spikeKeyed) for the per-context question. Chrome's notes field is focused first: the
+// probes before it move the page's focus (probe (b)'s Tab, the route matrix's clicks), and text typed with no field
+// focused lands nowhere (a space toggles a focused checkbox).
+async function probeE(ctx) {
+  const {js, row, emit, records, scenes, activate, ops, dir, active} = ctx;
   // (e) Korean and Unicode, under both sources; the owner's source restored whatever happens.
   await withInputSource(ops, dir, async () => {
     for (const [source, id] of Object.entries(INPUT_SOURCES)) {
       const switched = ops.inputSource(id);
       if (!switched?.selected) { emit({op: 'probe.e.typeText', source, sample: 1, ok: false, error: `the ${source} source ${id} could not be selected`}); continue; }
       for (const scene of ['textedit', 'chrome'].filter(s => active().includes(s))) {
+        if (scene === 'chrome') {
+          const located = await js(spike.LOCATE('chrome', SCENE_WINDOW.chrome, TEXT_TARGET.chrome));
+          const focused = located.cell?.ok ? await js(spike.ACT_CLICK('chrome')) : located;
+          row('probe.e.focus', 1, focused, {scene, source, target: TEXT_TARGET.chrome, route: focused.meta?.['cua/inputRoute'] ?? null});
+        }
         let sample = 0;
         for (const text of UNICODE_STRINGS) {
           sample++;

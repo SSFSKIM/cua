@@ -262,17 +262,28 @@ async function launchOwn({app, bundleId, files, args, io}) {
 }
 const placementArgs = ({x, y, width, height}) => [`--window-position=${x},${y}`, `--window-size=${width},${height}`];
 // Chrome for Testing's switches: its own profile, no first-run, sync, default-browser or keychain prompt, no network
-// beyond the loopback page (no component updates, no media-router discovery, which would ask for Local Network access).
+// beyond the loopback page (no component updates, no media-router discovery, which would ask for Local Network access),
+// no translation (the page also declares itself untranslatable, scene-page.mjs, and the profile turns the offer off,
+// chromePreferences), and no argument but the URL that is not a switch: Chrome opens every non-switch argument as a
+// tab (chromeArgsProblems).
+export const CHROME_DISABLED_FEATURES = Object.freeze(['MediaRouter', 'DialMediaRouteProvider', 'Translate', 'TranslateUI', 'OptimizationHints']);
 export const chromeArgs = ({userDataDir, url, placement = SCENES.chrome.placement}) => [
   `--user-data-dir=${userDataDir}`, '--no-first-run', '--no-default-browser-check', '--use-mock-keychain', '--password-store=basic',
   '--disable-sync', '--disable-background-networking', '--disable-component-update', '--disable-default-apps',
-  '--disable-features=MediaRouter,DialMediaRouteProvider,Translate,OptimizationHints', ...CHROME_LANGUAGE, ...placementArgs(placement), '--new-window', url];
+  `--disable-features=${CHROME_DISABLED_FEATURES.join(',')}`, ...placementArgs(placement), '--new-window', url];
+// The arguments of a Chrome launch that are not switches, other than the page's URL at the end. Chrome opens each as a
+// tab: the first sitting's `-AppleLanguages (en-US)` pair (the per-process UI language, 5bb0d13f) left `(en-US)` as
+// such an argument, the diagnosis of U3 read from the code and the records: a tab of that name opened beside the scene
+// page, the window's title became another tab's, and every guarded Chrome cell refused on both lanes alike ("the scene
+// window was not the app's front window"), while the MacBook's earlier Chrome trees, which passed, predate the pair.
+// The second sitting's check.sceneWindow row (the title and the tabs) confirms or refutes it. -> [argument].
+export const chromeArgsProblems = args => args.slice(0, -1).filter(a => !a.startsWith('--'));
 // The scene page is English and the sitting's Macs run in Korean, so Chrome for Testing would offer to translate it (a
-// bubble in the fixed state, seen in the MacBook window although Translate is disabled as a feature). The guard is the
-// profile: its translate preference off and its accepted languages English (chromePreferences, written before the
-// launch). The UI language follows the per-process AppleLanguages argument on macOS (Chromium's --lang does not set it
-// there), so Chrome's own UI, which the tree shows, is English too, as TextEdit's is.
-export const CHROME_LANGUAGE = Object.freeze(['-AppleLanguages', '(en-US)']);
+// bubble in the fixed state, seen in the MacBook window although Translate was disabled as a feature). The guards are
+// the page's notranslate declaration, the profile's translate preference off with English accepted, and the disabled
+// features. Chrome's own UI follows the system's language (Korean on the sitting's Macs): --lang does not set it on
+// macOS, and the per-process AppleLanguages pair cannot be passed without the stray tab above. The scene's targets are
+// the page's controls, whose names are the page's own, so no check depends on Chrome's UI language.
 export const chromePreferences = () => ({translate: {enabled: false}, intl: {accept_languages: 'en-US,en'}});
 export const electronArgs = ({userDataDir, placement = SCENES.electron.placement}) => [
   `--cua-fixture-user-data=${userDataDir}`, `--cua-fixture-bounds=${[placement.x, placement.y, placement.width, placement.height].join(',')}`];

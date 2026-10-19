@@ -11,9 +11,10 @@ import {join} from 'node:path';
 import {runOnce, localPreparation, cleanupPreparation, homeHolders} from '../scripts/spike/engine/measure/lane.mjs';
 import {parseCommand} from '../scripts/spike/engine/measure.mjs';
 import {ADMISSION} from '../scripts/native-baseline/prepare.mjs';
+import {MARKER} from '../scripts/native-baseline/cells.mjs';
 import {claimRunSession} from '../src/runtime/run-dir.mjs';
 
-function fixture(t, {rename = renameSync, inspect, usersOf = () => [], duringServe = () => {}, scenesPreflight, sceneUp} = {}) {
+function fixture(t, {rename = renameSync, inspect, usersOf = () => [], duringServe = () => {}, scenesPreflight, sceneUp, client} = {}) {
   const parent = realpathSync(mkdtempSync(join(tmpdir(), 'measure-local-vendor-')));
   t.after(() => rmSync(parent, {recursive: true, force: true}));
   const home = join(parent, 'cua'), root = join(parent, 'native-baseline');
@@ -43,6 +44,10 @@ function fixture(t, {rename = renameSync, inspect, usersOf = () => [], duringSer
     if (scene?.[1] === 'up') { order.push(`up ${scene[2]}`); if (sceneUp) return sceneUp(); return JSON.stringify({scene: scene[2], app: '/System/Applications/TextEdit.app', bundleId: 'com.apple.TextEdit', pid: 41, window: {number: 7}}); }
     if (scene?.[1] === 'down') { order.push(`down ${scene[2]}`); return JSON.stringify({scene: scene[2], down: true}); }
     if (script.startsWith('cat ')) return '{}';
+    if (client && script.includes("'find' 'bundleid=com.apple.TextEdit'")) return 'ASN:0x0-0x41\n';
+    if (client && script.includes("'info' '-only' 'pid,bundleid'")) return '"pid"=41 "CFBundleIdentifier"="com.apple.TextEdit"\n';
+    if (client && script.startsWith('/usr/bin/open -a ')) { order.push('open -a'); return ''; }
+    if (client && script.startsWith('lsappinfo info -only bundleid')) return '"CFBundleIdentifier"="com.apple.TextEdit"\n';
     throw new Error(`unexpected device step: ${script.slice(0, 80)}`);
   };
   // The serve: the connection is opened, then the run dies (the serve exits) before its first cell.
@@ -53,7 +58,7 @@ function fixture(t, {rename = renameSync, inspect, usersOf = () => [], duringSer
     assert.match(spec.args[1], /CUA_REPL_HOST=vendor/);
     assert.match(spec.args[1], /CUA_NATIVE_ADMISSION=/, 'the serve presents the admission token');
     duringServe();
-    return {initialize: async () => { throw new Error('the serve exited'); }, close: async () => {}};
+    return client ?? {initialize: async () => { throw new Error('the serve exited'); }, close: async () => {}};
   };
   const run = (n, extra = {}) => runOnce({lane: 'vendor', d: {device: 'local', local: true, node: 'node'}, dir: join(parent, `run-${n}`), run: n, approvedRuntime: home, scenes: ['textedit'], samples: 1, tasks: 1, sceneDir: join(parent, 'scenes'), ...extra},
     {shell, ops, connect, localPreparation: recorded, log: line => logged.push(line), sleep: async () => {}, serveNode: () => ({path: '/node/bin/node', version: 'v24.22.0'})});
@@ -212,3 +217,31 @@ test('measure.mjs cleanup takes the device and the preparation file', () => {
   assert.throws(() => parseCommand(['cleanup', '--device', 'local']), /--preparation/);
   assert.throws(() => parseCommand(['cleanup', '--device', 'local', '--preparation', 'relative.json']), /absolute/);
 });
+
+// A serve that answers: every cell succeeds with an empty value, its code kept, so the phases a run took are read off
+// what it sent.
+function answeringClient(cells) {
+  return {
+    initialize: async () => ({serverInfo: {name: 'fake'}}),
+    request: async (method, params) => {
+      if (method !== 'tools/call') return {};
+      cells.push(params.arguments.code);
+      return {content: [{type: 'text', text: `${MARKER}${JSON.stringify({ok: true, value: {}, inCellMs: 1})}`}]};
+    },
+    call: async () => ({isError: false}),
+    close: async () => {},
+  };
+}
+
+test('--groups on the vendor lane: the groups it does not take are one not-run row each, and no cell of the speed group runs without it', async t => {
+  const cells = [];
+  const f = fixture(t, {client: answeringClient(cells)});
+  assert.equal(await f.run(1, {groups: ['ab', 'e']}), 0);
+  const rows = readFileSync(join(f.parent, 'run-1', 'results.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line));
+  assert.deepEqual(rows.map(r => r.op), ['bind.getApp', 'probe.e.concealed', 'probe.e.perContext', 'group.ab', 'group.e', 'end_task']);
+  assert.ok(rows.filter(r => r.op.startsWith('group.')).every(r => r.ok === false && /vendor lane takes the observation cells only/.test(r.notRun)));
+  assert.ok(!cells.some(code => code.includes('listApps') || code.includes('getScreenshot')), 'no speed cell');
+  assert.ok(cells.some(code => code.includes('the scene document is not TextEdit\'s front window')), 'the scene document named for the teardown\'s quit');
+  assert.deepEqual(JSON.parse(readFileSync(join(f.parent, 'run-1', 'meta.json'), 'utf8')).plan.groups, ['ab', 'e']);
+});
+

@@ -26,6 +26,21 @@ gates:
       done
       claude plugin validate .
       npm run test:mods
+  # #117: cua's own native engine (native/engine/, a Swift package on Apple frameworks only) built in release, as
+  # `cua engine build` builds it, and its unit tests run, the build's scratch under the runner's temp, never in the
+  # checkout. The hosted runner holds no Accessibility or Screen Recording grant: the engine's untrusted paths run here,
+  # its live parts on the Mac mini. No Node, so no shared setup.
+  - name: engine-swift
+    lane: hosted-macos
+    timeout: 20
+    setup: false
+    run: |
+      swift --version
+      swift build -c release --package-path native/engine --scratch-path "$RUNNER_TEMP/cua-engine-build"
+      swift test --package-path native/engine --scratch-path "$RUNNER_TEMP/cua-engine-build"
+    paths:
+      - "native/engine/**"
+      - ".github/ci-kit.yml"
   # #159: cua's headless macOS live checks (the #115 oracles, own-sandbox on both hosts, probe-secrets) on a runtime
   # `cua install` fetches into a scratch home, so a sandbox change is proven with no time on the Mac mini. Public logs
   # and artifact: labels, outcomes, booleans and counts (and the fingerprints' scratch paths); the raw reports stay in

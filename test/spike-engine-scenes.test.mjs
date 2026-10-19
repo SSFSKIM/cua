@@ -8,7 +8,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {
   SCENE_IDS, SCENES, PAIRS, BACKGROUND_PAIRINGS, CONCURRENT_USE, CONCURRENT_USE_SHEET, userWindowFor, refusals,
-  ownedProcesses, documentWindows, finderFolderFiles, textEditDocument, describeScenes, FINDER_TYPING_NAME,
+  ownedProcesses, documentWindows, refusingWindows, finderFolderFiles, textEditDocument, describeScenes, FINDER_TYPING_NAME,
   upScene, downScene, preflight, readState, chromeArgs, electronArgs, sceneCommand, exitCodeFor,
 } from '../scripts/spike/engine/scenes.mjs';
 import {parseAsns, parseAppInfo, stopRecorded} from '../scripts/spike/engine/scene-processes.mjs';
@@ -161,6 +161,21 @@ test('document windows: Finder\'s menu-bar-sized phantom windows are not windows
   assert.deepEqual(documentWindows(windows).map(w => w.number), [1]);
 });
 
+test('the Finder refusal counts only windows on screen: Finder\'s own off-screen document-sized window is a note, not a refusal', () => {
+  const windows = [
+    {number: 184776, bounds: {x: 606, y: 52, width: 1067, height: 631}, onScreen: false},
+    {number: 5, bounds: {x: 100, y: 100, width: 800, height: 600}, onScreen: true},
+    {number: 6, bounds: {x: 100, y: 100, width: 800, height: 600}},
+  ];
+  assert.deepEqual(refusingWindows(documentWindows(windows)).map(w => w.number), [5], 'only an explicit onScreen counts');
+  const io = fakeDevice({windows: {736: [windows[0]]}});
+  const offOnly = preflight({run: fs.mkdtempSync(join(tmpdir(), 'cua-scenes-pre-')), io});
+  assert.deepEqual(offOnly.refusals, []);
+  assert.deepEqual(offOnly.finderOffScreenWindows, [{number: 184776, bounds: windows[0].bounds}]);
+  const withOwner = preflight({run: fs.mkdtempSync(join(tmpdir(), 'cua-scenes-pre-')), io: fakeDevice({windows: {736: [windows[0], windows[1]]}})});
+  assert.deepEqual(withOwner.refusals.map(r => [r.code, r.windows]), [['finder_window', [5]]]);
+});
+
 test('describeScenes is plain data: the definitions, pairings and targets the driver reads, nothing of the device', () => {
   const described = JSON.parse(JSON.stringify(describeScenes()));
   assert.deepEqual(Object.keys(described.scenes), SCENE_IDS);
@@ -185,7 +200,7 @@ function fakeDevice({running = [], windows = {}, finderPid = 736} = {}) {
     sleep: async ms => { clock += ms; },
     openApp: request => {
       calls.push(['open', request]);
-      if (request.app.endsWith('Finder.app')) { (windows[finderPid] ??= []).push({number: nextWindow++, bounds: {x: 0, y: 0, width: 800, height: 600}}); return; }
+      if (request.app.endsWith('Finder.app')) { (windows[finderPid] ??= []).push({number: nextWindow++, bounds: {x: 0, y: 0, width: 800, height: 600}, onScreen: true}); return; }
       const bundleId = request.app.includes('Electron') ? FIXTURE_BUNDLE_ID : request.app.includes('TextEdit') ? TEXTEDIT : CFT;
       const pid = nextPid++;
       launches[pid] = clock;

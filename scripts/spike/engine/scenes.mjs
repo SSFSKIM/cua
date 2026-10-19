@@ -163,6 +163,10 @@ export const CONCURRENT_USE_SHEET = Object.freeze({user: 'electron', userTarget:
 // The windows that are a person's: layer 0 (front-window.swift already filters) and at least 100 points each way, which
 // leaves out the menu-bar-sized, never-on-screen windows Finder keeps.
 export const documentWindows = windows => windows.filter(w => w.bounds.width >= 100 && w.bounds.height >= 100);
+// The document windows the Finder refusal counts: only those on screen. Finder itself holds an off-screen layer-0
+// window of document size that survives a relaunch (observed 2026-10-19; the spec's Decision Log), and an off-screen
+// window is never the focused or main window the engine observes, so it is reported as a note and does not refuse.
+export const refusingWindows = windows => windows.filter(w => w.onScreen === true);
 
 // The run's own processes and Finder window from its state: a recorded pid counts only while it is the same launch.
 export function ownedProcesses(state, {launchOf: launch = launchOf} = {}) {
@@ -213,9 +217,12 @@ const defaultIo = () => ({
 export function preflight({run, io = defaultIo()}) {
   const running = [CHROME_FOR_TESTING_BUNDLE_ID, FIXTURE_BUNDLE_ID, TEXTEDIT_BUNDLE_ID].flatMap(id => io.runningApps(id));
   const finder = io.finderPid();
-  const finderWindows = finder ? documentWindows(io.appWindows(finder)) : [];
+  const documents = finder ? documentWindows(io.appWindows(finder)) : [];
+  const finderWindows = refusingWindows(documents);
+  const offScreen = documents.filter(w => !finderWindows.includes(w)).map(w => ({number: w.number, bounds: w.bounds}));
   const owned = ownedProcesses(readState(run), {launchOf: io.launchOf});
-  return {refusals: refusals({running, finderWindows, owned}), finderPid: finder, finderWindows: finderWindows.map(w => w.number)};
+  return {refusals: refusals({running, finderWindows, owned}), finderPid: finder, finderWindows: finderWindows.map(w => w.number),
+    ...(offScreen.length ? {finderOffScreenWindows: offScreen, note: 'Finder windows not on screen do not refuse: never the focused or main window'} : {})};
 }
 class Refused extends Error { constructor(list) { super(list.map(r => r.message).join('; ')); this.refusals = list; } }
 

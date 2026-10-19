@@ -33,7 +33,7 @@ import {runningApps} from '../scene-processes.mjs';
 import * as spike from './cells.mjs';
 import {SCENE_WINDOW, ACTION_TARGET, KEY_PROBE, USER_WINDOW, TEXT_TARGET} from './targets.mjs';
 import {DEFAULT_GROUPS, TAP_MODES, laneTakes, groupNotRunRows} from './groups.mjs';
-import {Stop, routesGroup, effectsGroup, coordGroup, tapGroup, refusalFields, tapCounts, timesInside} from './input-groups.mjs';
+import {Stop, routesGroup, effectsGroup, coordGroup, tapGroup, refusalFields, operatorTapFields} from './input-groups.mjs';
 import {stopEngine, assertApprovedBuild, launchEngine, EngineRefusal} from './engine-control.mjs';
 import {engineOps, inCheckout, lastJson} from './device.mjs';
 import {redactGolden} from './redact.mjs';
@@ -867,8 +867,7 @@ async function probeD(ctx, {tasksRan}) {
     const interval = r.meta?.['cua/actionInterval'] ?? null;
     emit({op, scene: 'textedit', sample: 1, ok: intervened, intervened, error: r.cell?.error ?? r.failure ?? null, inCellMs: r.cell?.inCellMs ?? null, actionInterval: interval,
       receivedAt: r.meta?.['cua/receivedAt'] ?? null, hidIdleMs: r.meta?.['cua/hidIdleMs'] ?? null, typedSeconds: operatorSeconds, tap,
-      ...(report ? {tapCounts: tapCounts(report), drivenTimes: report.drivenTimes ?? [], otherTimes: report.otherTimes ?? [],
-        drivenInsideAction: timesInside(report.drivenTimes, interval), otherInsideAction: timesInside(report.otherTimes, interval)} : {}),
+      ...(report ? operatorTapFields(report, interval) : {}),
       operatorConfirmedTiming: await io.confirm('Was your input made while the engine was typing? [Enter = yes, n = no] ')});
     await js(spike.TREE('textedit', SCENE_WINDOW.textedit));   // the fresh observation the post-intervention lock asks for
   }

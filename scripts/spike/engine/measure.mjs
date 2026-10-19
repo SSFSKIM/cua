@@ -51,27 +51,35 @@
 //                       focused}; Electron {presses, textChars, focused}), outcomeHeld, counters (Electron: per counter
 //                       after − before)
 //   effects.activationPoint  probe_spike activationPoint's answer: listed, axError, point, relative, windowFrame, hit,
-//                       hitFrom
+//                       hitFrom; a refusal: error, errorName, code and its data's members
 //   effects.selection   user, set, key, role, setError, before, afterActivate, afterKey ({role, range, axError}),
-//                       preservedByActivate, preservedByKey, activate (probe_spike activate's answer), keyRoute,
-//                       keyFailed, frontmostUnchanged, topWindowUnchanged, activations, deactivations, watch, counters
-//                       {activate, key} (Electron)
-//   effects.counters    Electron: action (activate | key), forcedRoute, route, failed, counters, frontmostUnchanged,
-//                       topWindowUnchanged
-//   coord.click         line (aimed at, 0-based), pixel, local (points in the window), scale, route, failed, range,
-//                       landedLine, lineError, exact, lineHeight, lineHeightFrom, window, textView, screenshot,
-//                       screenshotBytes
+//                       preservedByActivate (null unless the activate report says activationRan), preservedByKey (null
+//                       when the key failed), invalid (which of the two did not run; the row then fails), activate
+//                       (probe_spike activate's answer, or its refusal {error, errorName, code, probe: the same report}),
+//                       keyRoute, keyFailed, frontmostUnchanged, topWindowUnchanged, activations, deactivations, watch,
+//                       counters {activate, key} (Electron)
+//   effects.counters    Electron: action (activate | key), forcedRoute, route, failed, activate (as effects.selection's),
+//                       counters, frontmostUnchanged, topWindowUnchanged
+//   coord.click         line (aimed at, 0-based), pixel, local (points in the window), scale, route, failed, start
+//                       {line, location} (the caret set COORD_PREPARE_GAP lines away before the click), prepared (the
+//                       range read back after it), preparedLine, moved, range, landedLine, lineError, exact, invalid
+//                       (the caret was not prepared), lineHeight, lineHeightFrom, window, textView, screenshot,
+//                       screenshotBytes; ok needs the caret moved off the prepared range to within a line of the target
 //   coord.refusal.noScreenshot  expected, refused, errorName, sentence (a fresh engine connection holding no screenshot)
-//   coord.moved         by, expected, refused, failed, route, range, landedLine, lineError (or notRun: the window could
-//                       not be moved: the shell is not trusted for Accessibility)
+//   coord.moved         by, expected, refused, failed, route, start, prepared, preparedLine, moved, range, landedLine,
+//                       lineError (ok on the target line exactly), or notRun: the window could not be moved (the shell
+//                       is not trusted for Accessibility)
 //   coord.refusal.replaced  expected, newWindow, refused, failed, closed
 //   tap.create          mode, created, listenPreflight, postPreflight, start, stop {own, driven, other, hidIdleMs,
 //                       listenPreflight, postPreflight}; a refusal: errorName, sentence, mode, listenPreflight,
 //                       postPreflight
 //   probe.d.tap, probe.d.hidReset  as before, plus mode (tap group) and listenPreflight, postPreflight
 //   probe.d.operatorKeystroke, probe.d.backgroundClick  intervened, error, actionInterval, receivedAt, hidIdleMs,
-//                       typedSeconds, tap {mode, created, errorName?, sentence?}, tapCounts, drivenTimes, otherTimes,
-//                       drivenInsideAction and otherInsideAction {count, inside}, operatorConfirmedTiming
+//                       typedSeconds, tap {mode, created, errorName?, sentence?}, tapCounts, drivenTimes,
+//                       drivenInsideAction {count, inside}, otherTimes and otherInsideAction (null: the engine's tap keeps
+//                       events of any other origin as counts only), operatorConfirmedTiming. U6 reads drivenInsideAction
+//                       with tapCounts.other: the owner's key and click in U6 target the driven app, so they count as
+//                       driven
 //   probe.e.focus       target, route
 //
 // The operator's answers (approve, probe-f, --operator) are read line by line from stdin for the whole command, so a

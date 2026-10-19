@@ -11,7 +11,8 @@ import {createRequire} from 'node:module';
 import {PassThrough} from 'node:stream';
 import {GROUPS, DEFAULT_GROUPS, parseGroups, parseTapModes, laneTakes, groupNotRunRows} from '../scripts/spike/engine/measure/groups.mjs';
 import {intersect, screenshotPoint, targetPixel, textEditPoints, lineOfLocation, outcomeHolds, counterDeltas, timesInside, refusalFields, tapCounts,
-  tapGroup, routesGroup, coordGroup, effectsGroup, readCounters, ROUTES, FAMILIES, TEXTEDIT_LINE_HEIGHT} from '../scripts/spike/engine/measure/input-groups.mjs';
+  operatorTapFields, selectionVerdict, coordStart, coordLanding, spikeAnswer, COORD_PREPARE_GAP,
+  tapGroup, routesGroup, coordGroup, effectsGroup, readCounters, ROUTES, FAMILIES, TEXTEDIT_LINE_HEIGHT, SELECTION} from '../scripts/spike/engine/measure/input-groups.mjs';
 import {outcomeState, SCENE_WINDOW_TITLE} from '../scripts/spike/engine/measure/cells.mjs';
 import {FIXTURE_COUNTERS_FILE} from '../scripts/spike/engine/fixtures/electron-fixture.mjs';
 import {operatorConsole} from '../scripts/spike/engine/measure.mjs';
@@ -116,6 +117,62 @@ test('counter deltas, times inside an action, a refusal\'s fields and a tap repo
   assert.deepEqual(refusalFields(refusal), {errorName: 'tapNotCreated', sentence: refusal.message, mode: 'listen', listenPreflight: false, postPreflight: true});
   assert.deepEqual(refusalFields(new Error('the engine is unreachable (ENOENT)')), {errorName: null, sentence: 'the engine is unreachable (ENOENT)', mode: null, listenPreflight: null, postPreflight: null});
   assert.deepEqual(tapCounts({counts: {keyDown: {own: 1, driven: 2, other: 0}, mouseDown: {own: 0, driven: 1, other: 3}}}), {own: 1, driven: 3, other: 3});
+});
+
+test('U6\'s tap fields: the engine keeps "other" events as counts only, so their times and inside-action counts are null, never derived', () => {
+  const report = {counts: {keyDown: {own: 0, driven: 3, other: 1}}, drivenTimes: [5, 15, 25]};
+  assert.deepEqual(operatorTapFields(report, {startedAt: 10, endedAt: 20}), {tapCounts: {own: 0, driven: 3, other: 1}, drivenTimes: [5, 15, 25],
+    otherTimes: null, drivenInsideAction: {count: 3, inside: 1}, otherInsideAction: null});
+  assert.deepEqual(operatorTapFields({counts: {}}, null), {tapCounts: {own: 0, driven: 0, other: 0}, drivenTimes: [], otherTimes: null, drivenInsideAction: null, otherInsideAction: null});
+});
+
+test('a probe_spike refusal reaches its row with its data (activate\'s report as `probe`)', () => {
+  const probe = {believedBefore: false, activationRan: true, deactivationPosted: true, activationGuardMs: 40, frontmostBefore: 20, frontmostAfter: 20};
+  const refused = spikeAnswer({probeSpike: () => { throw Object.assign(new Error('The app could not be prepared for input: the user\'s app did not stay frontmost.'), {errorName: 'activationFailed', code: -10010, data: {probe}}); }}, 'activate', {});
+  assert.deepEqual(refused, {error: 'The app could not be prepared for input: the user\'s app did not stay frontmost.', errorName: 'activationFailed', code: -10010, data: {probe}});
+  assert.deepEqual(spikeAnswer({probeSpike: () => { throw new Error('the engine is unreachable (ENOENT)'); }}, 'activate', {}), {error: 'the engine is unreachable (ENOENT)', errorName: null, code: null, data: null});
+});
+
+test('U13\'s selection verdict: a preservation counts only when its action ran; a run where either did not run does not pass', () => {
+  const at = range => ({range});
+  const kept = {before: at(SELECTION), afterActivate: at(SELECTION), afterKey: at(SELECTION)};
+  assert.deepEqual(selectionVerdict({...kept, activate: {activationRan: true}, keyFailed: null}), {ok: true, preservedByActivate: true, preservedByKey: true});
+  const moved = selectionVerdict({...kept, afterActivate: at({location: 0, length: 0}), activate: {activationRan: true}, keyFailed: null});
+  assert.deepEqual([moved.ok, moved.preservedByActivate, moved.preservedByKey, moved.invalid], [false, false, true, undefined]);
+  const notActivated = selectionVerdict({...kept, activate: {believedBefore: true, activationRan: false}, keyFailed: null});
+  assert.deepEqual([notActivated.ok, notActivated.preservedByActivate, notActivated.preservedByKey], [false, null, true]);
+  assert.match(notActivated.invalid, /the activation did not run/);
+  const refusedBeforeRunning = selectionVerdict({...kept, activate: {error: 'x', errorName: 'activationFailed', probe: {activationRan: false}}, keyFailed: null});
+  assert.deepEqual([refusedBeforeRunning.ok, refusedBeforeRunning.preservedByActivate], [false, null]);
+  const refusedAfterRunning = selectionVerdict({...kept, activate: {error: 'x', errorName: 'activationFailed', probe: {activationRan: true}}, keyFailed: null});
+  assert.equal(refusedAfterRunning.preservedByActivate, true, 'a guard refused after the activation ran: the report says it ran');
+  const unreachable = selectionVerdict({...kept, activate: {error: 'the engine is unreachable', errorName: null}, keyFailed: null});
+  assert.deepEqual([unreachable.ok, unreachable.preservedByActivate], [false, null]);
+  const keyFailed = selectionVerdict({...kept, activate: {activationRan: true}, keyFailed: 'The key could not be sent.'});
+  assert.deepEqual([keyFailed.ok, keyFailed.preservedByActivate, keyFailed.preservedByKey], [false, true, null]);
+  assert.match(keyFailed.invalid, /the key failed/);
+});
+
+test('U2\'s coordinate click: each sample starts away from its line, and a click that leaves the caret where it was prepared does not pass', () => {
+  const lines = textEditDocument().lines;
+  const lineStart = n => lines.slice(0, n).join('\n').length + (n ? 1 : 0);
+  assert.deepEqual(coordStart(0, {lines, visibleLines: 45}), {line: COORD_PREPARE_GAP, location: lineStart(COORD_PREPARE_GAP)});
+  assert.deepEqual(coordStart(44, {lines, visibleLines: 45}), {line: 44 - COORD_PREPARE_GAP, location: lineStart(44 - COORD_PREPARE_GAP)}, 'below the visible lines: above the target instead');
+  assert.equal(coordStart(0, {lines, visibleLines: 3}), null, 'no visible line far enough');
+  assert.ok(COORD_PREPARE_GAP > 1, 'farther than the landing\'s tolerance');
+  const point = {line: 0}, start = coordStart(0, {lines, visibleLines: 45});
+  const prepared = {location: start.location, length: 0};
+  const landed = coordLanding({point, start, prepared, range: {location: 2, length: 0}, lines, failed: null});
+  assert.deepEqual([landed.ok, landed.moved, landed.landedLine, landed.lineError, landed.exact, landed.preparedLine], [true, true, 0, 0, true, start.line]);
+  const noOp = coordLanding({point, start, prepared, range: {...prepared}, lines, failed: null});
+  assert.deepEqual([noOp.ok, noOp.moved], [false, false]);
+  // The caret already on the target line before the click (the preparation did not take): no landing can be told apart.
+  const unprepared = coordLanding({point, start, prepared: {location: 3, length: 0}, range: {location: 2, length: 0}, lines, failed: null});
+  assert.equal(unprepared.ok, false);
+  assert.match(unprepared.invalid, /not prepared/);
+  assert.equal(coordLanding({point, start, prepared, range: {location: 2, length: 0}, lines, failed: 'refused'}).ok, false);
+  assert.equal(coordLanding({point, start, prepared, range: {location: lineStart(1) + 1, length: 0}, lines, failed: null}).ok, true, 'one line off is within the tolerance');
+  assert.equal(coordLanding({point, start, prepared, range: {location: lineStart(1) + 1, length: 0}, lines, failed: null, tolerance: 0}).ok, false, 'the moved window takes no tolerance');
 });
 
 test('U3: the title log refuses Finder, whose windows may be the owner\'s', () => {
@@ -235,12 +292,12 @@ test('effects: the activation point per scene, and a missing probe_spike is each
   assert.match(rows[0].error, /no probeSpike/);
 });
 
-test('coord: the click lands on the line aimed at, a fresh connection is refused, an unmovable window is not run, and the replaced window refuses', async () => {
+// A TextEdit session for the coord group: `readBack(lastSet)` is the selection read after a click, given the location
+// last set; the window move is refused (an untrusted shell), the replaced window's click refused.
+async function coordSession(readBack) {
   const rows = [], sent = [];
   const lines = textEditDocument().lines;
-  const lineStart = n => lines.slice(0, n).join('\n').length + (n ? 1 : 0);
-  let next = [lineStart(0) + 2, lineStart(8) + 1, lineStart(0) + 3];
-  let topNumber = 5;
+  let topNumber = 5, lastSet = null;
   const js = async code => {
     if (code.includes('getAXStateAndScreenshot')) return {cell: {ok: true, value: {index: 2, frame: {x: 309, y: 180, width: 610, height: lines.length * 17}, ...MINI, screenshotBytes: 9}}};
     if (code.includes('.click([')) {
@@ -254,7 +311,11 @@ test('coord: the click lands on the line aimed at, a fresh connection is refused
     throw new Error(`unexpected cell: ${code.slice(0, 80)}`);
   };
   const ops = {
-    probeSpike: () => ({role: 'AXTextArea', range: {location: next.shift(), length: 0}}),
+    probeSpike: (op, extra) => {
+      assert.equal(op, 'selection');
+      if (extra.set) { sent.push(`set ${extra.set.location}`); lastSet = extra.set.location; return {role: 'AXTextArea', setError: 0, range: {...extra.set}}; }
+      return {role: 'AXTextArea', range: {location: readBack(lastSet), length: 0}};
+    },
   };
   const shell = script => {
     if (script.includes('fresh-click.mjs')) {
@@ -266,11 +327,72 @@ test('coord: the click lands on the line aimed at, a fresh connection is refused
   const front = () => ({frontmost: {pid: 41}, topWindow: {ownerPid: 41, number: topNumber, bounds: {x: 309, y: 103, width: 610, height: 860}}});
   await coordGroup({js, emit: row => rows.push(row), records: {textedit: {app: '/T.app', pid: 41}}, activate: async () => {}, ops, active: () => ['textedit'], shell, front, sleep: async () => {},
     d: {node: 'node'}, engine: '/E/cua Engine.app'});
+  return {rows, sent, lines};
+}
+
+test('coord: the click lands on the line aimed at, a fresh connection is refused, an unmovable window is not run, and the replaced window refuses', async () => {
+  const lines = textEditDocument().lines;
+  const lineStart = n => lines.slice(0, n).join('\n').length + (n ? 1 : 0);
+  const landings = [lineStart(0) + 2, lineStart(8) + 1];
+  const {rows, sent} = await coordSession(() => landings.shift());
   assert.deepEqual(rows.map(r => [r.op, r.ok]), [['coord.click', true], ['coord.click', true], ['coord.refusal.noScreenshot', true], ['coord.moved', false], ['coord.refusal.replaced', true]]);
-  assert.deepEqual(rows.slice(0, 2).map(r => [r.line, r.landedLine, r.exact, r.lineHeightFrom, r.pixel.y]), [[0, 0, true, 'frame', 171], [8, 8, true, 'frame', 443]]);
+  assert.deepEqual(rows.slice(0, 2).map(r => [r.line, r.landedLine, r.exact, r.moved, r.preparedLine, r.lineHeightFrom, r.pixel.y]),
+    [[0, 0, true, true, COORD_PREPARE_GAP, 'frame', 171], [8, 8, true, true, 8 + COORD_PREPARE_GAP, 'frame', 443]]);
   assert.match(rows[3].notRun, /not trusted for Accessibility/);
   assert.deepEqual([rows[4].newWindow, rows[4].refused, rows[4].closed], [true, true, true]);
-  assert.deepEqual(sent, ['click 48, 171', 'click 48, 443', 'fresh click', 'move', 'super+n', 'click 48, 171', 'adopt', 'close']);
+  assert.deepEqual(sent, [`set ${lineStart(COORD_PREPARE_GAP)}`, 'click 48, 171', `set ${lineStart(8 + COORD_PREPARE_GAP)}`, 'click 48, 443', 'fresh click', 'move', 'super+n', 'click 48, 171', 'adopt', 'close'],
+    'each coordinate click starts from a caret set away from its line');
+});
+
+test('coord: a click that leaves the caret where the sample put it does not pass', async () => {
+  const {rows} = await coordSession(lastSet => lastSet);
+  const clicks = rows.filter(r => r.op === 'coord.click');
+  assert.equal(clicks.length, 2);
+  for (const r of clicks) assert.deepEqual([r.ok, r.moved, r.failed], [false, false, null]);
+});
+
+// An effects session on TextEdit alone (Finder its user window, in front), the inert key's cell answering `keyCell`.
+async function selectionSession({activate, keyCell = {cell: {ok: true, value: {inCellMs: 2}}, meta: {'cua/inputRoute': 3}}}) {
+  const rows = [];
+  const ops = {
+    probeSpike: (op, extra) => {
+      if (op === 'activationPoint') return {op, listed: true, hitFrom: 'none'};
+      if (op === 'selection') return {role: 'AXTextArea', setError: extra.set ? 0 : undefined, range: {...SELECTION}};
+      return activate();
+    },
+    watch: () => {}, watchStop: () => [],
+  };
+  await effectsGroup({js: async () => keyCell, emit: row => rows.push(row), ops, active: () => ['textedit'], activate: async () => {},
+    records: {textedit: {app: '/T.app', pid: 41}, finder: {pid: 20}}, front: () => ({frontmost: {pid: 20}, topWindow: {ownerPid: 20, number: 3}}), shell: () => '', sleep: async () => {}});
+  return rows.find(r => r.op === 'effects.selection');
+}
+
+test('effects.selection: neither a refused activation that did not run nor a failed key passes, and the refusal\'s report is on the row', async () => {
+  const probe = {believedBefore: false, activationRan: false, deactivationPosted: false, activationGuardMs: null, frontmostBefore: 20, frontmostAfter: 20};
+  const refused = await selectionSession({activate: () => { throw Object.assign(new Error('The app could not be prepared for input: the user\'s app could not be made frontmost again.'), {errorName: 'activationFailed', code: -10010, data: {probe}}); }});
+  assert.deepEqual([refused.ok, refused.preservedByActivate, refused.preservedByKey], [false, null, true]);
+  assert.match(refused.invalid, /the activation did not run/);
+  assert.deepEqual(refused.activate, {error: 'The app could not be prepared for input: the user\'s app could not be made frontmost again.', errorName: 'activationFailed', code: -10010, probe});
+  const keyFailed = await selectionSession({activate: () => ({believedBefore: false, activationRan: true}), keyCell: {cell: {ok: true, value: {failed: 'The key could not be sent.'}}, meta: {}}});
+  assert.deepEqual([keyFailed.ok, keyFailed.preservedByActivate, keyFailed.preservedByKey, keyFailed.keyFailed], [false, true, null, 'The key could not be sent.']);
+  assert.match(keyFailed.invalid, /the key failed/);
+  const both = await selectionSession({activate: () => ({believedBefore: false, activationRan: true})});
+  assert.deepEqual([both.ok, both.preservedByActivate, both.preservedByKey, both.invalid], [true, true, true, undefined]);
+});
+
+test('effects.counters: a refused activation carries its report', async () => {
+  const rows = [];
+  const probe = {believedBefore: false, activationRan: true, activationGuardMs: 50};
+  const ops = {
+    probeSpike: op => { if (op === 'activationPoint') return {op, listed: true}; throw Object.assign(new Error('refused'), {errorName: 'activationFailed', code: -10010, data: {probe}}); },
+    watch: () => {}, watchStop: () => [],
+  };
+  let counter = 0;
+  const shell = () => JSON.stringify({seq: counter, counts: {windowFocus: counter++}});
+  await effectsGroup({js: async () => ({cell: {ok: true, value: {}}, meta: {'cua/inputRoute': 3}}), emit: row => rows.push(row), ops, active: () => ['electron'], activate: async () => {},
+    records: {electron: {app: '/E.app', pid: 30, userDataDir: '/u'}, finder: {pid: 20}}, front: () => ({frontmost: {pid: 20}, topWindow: {ownerPid: 20, number: 3}}), shell, sleep: async () => {}});
+  const activated = rows.find(r => r.op === 'effects.counters' && r.action === 'activate');
+  assert.deepEqual([activated.ok, activated.failed, activated.errorName, activated.activate], [false, 'refused', 'activationFailed', {error: 'refused', errorName: 'activationFailed', code: -10010, probe}]);
 });
 
 test('the fresh-connection click names the app by path and finite coordinates, with a deadline computed on the device', () => {

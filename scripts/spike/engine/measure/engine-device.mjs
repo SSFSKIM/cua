@@ -103,6 +103,54 @@ export function probeCopyDir(bundle, dir) {
   return dir;
 }
 
+// The approved bundle's `--probe keystroke --user-pid <pid> --user-bounds <x,y,w,h> <text>` as its own instance, run
+// to completion; -> the probe's JSON.
+export function keystroke(bundle, pid, bounds, text, {exec = execFileSync} = {}) {
+  if (!/^\d+$/.test(String(pid))) throw new Error('keystroke takes a pid number');
+  if (!/^-?\d+(\.\d+)?,-?\d+(\.\d+)?,\d+(\.\d+)?,\d+(\.\d)?$/.test(bounds)) throw new Error('keystroke bounds are x,y,w,h');
+  if (/[\n\0]/.test(text) || text.length > 200) throw new Error('keystroke text is one short line');
+  const scratch = fs.mkdtempSync(join(tmpdir(), 'cua-engine-probe-'));
+  try {
+    const out = join(scratch, 'out.json'), err = join(scratch, 'err.txt');
+    exec('/usr/bin/open', ['-n', '-g', '-W', '--stdout', out, '--stderr', err, '-a', bundle, '--args',
+      '--probe', 'keystroke', '--user-pid', String(pid), '--user-bounds', bounds, text], {stdio: 'ignore', timeout: 60_000});
+    return JSON.parse(fs.readFileSync(out, 'utf8').trim().split('\n').at(-1));
+  } finally { fs.rmSync(scratch, {recursive: true, force: true}); }
+}
+
+// The approved bundle's `--probe watch-activations` as its own resident instance: started without -W, its pid read from
+// the first line it prints; the scratch directory is kept for `watch-stop <pid> <dir>`, which kills it and answers its
+// printed lines.
+export function watch(bundle, {exec = execFileSync, wait = ms => setTimeoutSync(ms)} = {}) {
+  const scratch = join(tmpdir(), `cua-engine-watch-${Date.now()}`);
+  fs.mkdirSync(scratch, {mode: 0o700});
+  const out = join(scratch, 'out.json'), err = join(scratch, 'err.txt');
+  exec('/usr/bin/open', ['-n', '-g', '--stdout', out, '--stderr', err, '-a', bundle, '--args', '--probe', 'watch-activations'], {stdio: 'ignore', timeout: 30_000});
+  for (let i = 0; i < 50; i++) {
+    if (fs.existsSync(out)) {
+      const first = fs.readFileSync(out, 'utf8').trim().split('\n')[0];
+      const parsed = first ? JSON.parse(first) : null;
+      if (parsed?.pid) return {pid: parsed.pid, out, dir: scratch};
+    }
+    wait(100);
+  }
+  fs.rmSync(scratch, {recursive: true, force: true});
+  throw new Error('the watch-activations probe did not print its pid');
+}
+
+export function watchStop(pid, dir, {kill = process.kill} = {}) {
+  if (!/^\d+$/.test(String(pid)) || !/^\//.test(dir) || dirname(dir) !== tmpdir()) throw new Error("watch-stop takes the watch's pid and its directory");
+  try { kill(Number(pid), 'SIGTERM'); } catch {}
+  for (let i = 0; i < 20; i++) { try { process.kill(Number(pid), 0); setTimeoutSync(100); } catch { break; } }
+  const lines = fs.existsSync(join(dir, 'out.json'))
+    ? fs.readFileSync(join(dir, 'out.json'), 'utf8').split('\n').filter(Boolean).map(line => { try { return JSON.parse(line); } catch { return null; } }).filter(Boolean)
+    : [];
+  fs.rmSync(dir, {recursive: true, force: true});
+  return {stopped: true, lines};
+}
+
+function setTimeoutSync(ms) { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); }
+
 // The approved bundle's `--probe input-source <arg>` as its own instance; -> the probe's JSON.
 export function inputSource(bundle, arg, {exec = execFileSync} = {}) {
   if (!/^(current|[A-Za-z0-9._-]+)$/.test(arg)) throw new Error('input-source takes current or an input source id');
@@ -125,7 +173,7 @@ export async function main(argv) {
   switch (command) {
     case 'rpc': {
       const [method, params] = rest;
-      if (!['ping', 'status', 'approve', 'shutdown'].includes(method)) throw new Error('rpc takes ping, status, approve or shutdown');
+      if (!['ping', 'status', 'approve', 'shutdown', 'probe_tap'].includes(method)) throw new Error('rpc takes ping, status, approve, shutdown or probe_tap');
       return rpc(socketPathFor(engine), method, params ? JSON.parse(params) : (method === 'ping' ? {clientApiVersion: 'cua-engine-1'} : {}));
     }
     case 'bundle': return bundleFacts(engine);
@@ -136,6 +184,9 @@ export async function main(argv) {
       return {launched: true, plain: rest[0] === '--plain'};
     case 'checkout-build': return {build: engineBuild(), engineVersion: engineVersion()};
     case 'input-source': return inputSource(engine, rest[0] ?? 'current');
+    case 'keystroke': return keystroke(engine, rest[0], rest[1], rest[2]);
+    case 'watch': return watch(engine);
+    case 'watch-stop': return watchStop(rest[0], rest[1]);
     case 'copy': {
       const dir = probeCopyDir(engine, rest[0]);
       fs.mkdirSync(dir, {mode: 0o700});
@@ -147,7 +198,7 @@ export async function main(argv) {
       fs.rmSync(dir, {recursive: true, force: true});
       return {removed: dir};
     }
-    default: throw Object.assign(new Error('usage: engine-device.mjs rpc <method> [params] | bundle | approved | write-approved <json> | launch [--plain] | checkout-build | input-source <current|id> | copy <dir> | remove-copy <dir> [--engine <bundle>]'), {usage: true});
+    default: throw Object.assign(new Error('usage: engine-device.mjs rpc <method> [params] | bundle | approved | write-approved <json> | launch [--plain] | checkout-build | input-source <current|id> | keystroke <pid> <x,y,w,h> <text> | watch | watch-stop <pid> <dir> | copy <dir> | remove-copy <dir> [--engine <bundle>]'), {usage: true});
   }
 }
 

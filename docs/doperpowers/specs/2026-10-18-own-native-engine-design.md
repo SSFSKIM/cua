@@ -378,7 +378,8 @@ input results → {meta: {inputRoute: 1 | 2 | 3 | 4 | "paste", startedAt: number
                         receivedAt: number, hidIdleMs: number}}   (every input method; the four times are Unix ms from the engine's clock)
 input errors  → the error below plus the same meta (startedAt/endedAt null when nothing was posted), for userIntervened in both its
                 sentences (the pre-action "still interacting" refusal and the in-sequence "user changed"), concealedInputUnavailable
-                and inputSourceChanged
+                and inputSourceChanged; every error of an input method carries the meta, startedAt/endedAt null when
+                nothing was posted (an unresolvable or forbidden app refused at dispatch included)
 type_text/paste/set_value args may carry concealed: true (set by src/services/sky.mjs on a substituted request);
   a concealed request that would need the paste route fails with errorName "concealedInputUnavailable" before input
 error    {code: number (the vendor's codes where mapped; -10005 otherwise), message: string, errorName: string}

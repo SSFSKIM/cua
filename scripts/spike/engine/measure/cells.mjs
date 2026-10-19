@@ -180,6 +180,26 @@ return {index};`);
 export const ACT_CLICK = scene => cell(`await globalThis.__apps[${j(scene)}].click(globalThis.__probe.index); return {actions: 1};`);
 export const ACT_KEY = (scene, key) => cell(`await globalThis.__apps[${j(scene)}].pressKey(${j(key)}); return {actions: 1};`);
 export const ACT_TYPE = (scene, text) => cell(`await globalThis.__apps[${j(scene)}].typeText(${j(text)}); return {actions: 1};`);
+
+// One input method with the spike-only arguments the facade cannot carry (probe (b)'s forced route, probe (d)'s private
+// event source, probe (e)'s keyed bypass), straight through the service the facade uses. The response meta carries the
+// route, the interval and the guard's duration; an engine error lands in the row as the failure it is.
+export const SPIKE_INPUT = (app, method, extra) => cell(`const t0 = performance.now();
+const outcome = {inCellMs: performance.now() - t0};
+try {
+  await nodeRepl.rpc("sky", {type: "execute", method: ${j(method)}, args: [{app: ${j(app)}, ...${j(extra)}}]});
+} catch (error) { outcome.failed = String(error?.message ?? error).slice(0, 200); }
+outcome.inCellMs = performance.now() - t0;
+return outcome;`);
+
+// The forced-route click: the element index is the located one, read in the cell where LOCATE stashed it.
+export const SPIKE_CLICK = (app, route) => cell(`const t0 = performance.now();
+const outcome = {inCellMs: 0};
+try {
+  await nodeRepl.rpc("sky", {type: "execute", method: "click", args: [{app: ${j(app)}, element_index: globalThis.__probe.index, spikeRoute: ${j(String(route))}]});
+} catch (error) { outcome.failed = String(error?.message ?? error).slice(0, 200); }
+outcome.inCellMs = performance.now() - t0;
+return outcome;`);
 export const READBACK = scene => cell(`${HELPERS}
 const ax = await __full(globalThis.__apps[${j(scene)}]);
 return {treeChanged: (await __hash(ax)) !== globalThis.__probe?.before};`);

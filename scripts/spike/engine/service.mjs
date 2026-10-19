@@ -268,6 +268,7 @@ function inputMeta(meta) {
     'cua/actionInterval': {startedAt: meta.startedAt ?? null, endedAt: meta.endedAt ?? null},
     ...(meta.receivedAt !== undefined ? {'cua/receivedAt': meta.receivedAt} : {}),
     ...(meta.hidIdleMs !== undefined ? {'cua/hidIdleMs': meta.hidIdleMs} : {}),
+    ...(meta.activationGuardMs !== undefined ? {'cua/activationGuardMs': meta.activationGuardMs} : {}),
   };
 }
 

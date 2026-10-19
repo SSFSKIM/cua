@@ -9,7 +9,7 @@ import * as fs from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {parseCommand} from '../scripts/spike/engine/measure.mjs';
-import {switchVerdict, SWITCHES, isSceneApproval, notRunRows, STRUCTURAL_ROWS, NOT_BUILT, CUA_INPUT_METHODS_BUILT, isSessionFile, withInputSource, runOnce, SCENE_ORDER, cuaServeCommand, UNICODE_STRINGS, keptFinderWindow} from '../scripts/spike/engine/measure/lane.mjs';
+import {switchVerdict, SWITCHES, isSceneApproval, notRunRows, STRUCTURAL_ROWS, NOT_BUILT, CUA_INPUT_METHODS_BUILT, isSessionFile, withInputSource, runOnce, SCENE_ORDER, cuaServeCommand, UNICODE_STRINGS, keptFinderWindow, VENDOR_ONLY_ROWS} from '../scripts/spike/engine/measure/lane.mjs';
 import {summarize, renderSummary, median} from '../scripts/spike/engine/measure/summary.mjs';
 import {redactGolden} from '../scripts/spike/engine/measure/redact.mjs';
 import {NOTE} from '../scripts/spike/engine/render.mjs';
@@ -60,11 +60,11 @@ test('the approval matcher accepts a scene app\'s computer-use elicitation with 
   assert.equal(isSceneApproval(fields, ids), false, 'an elicitation asking for a field is not an approval');
 });
 
-test('while the cua engine\'s input is not built, every input cell of the cua lane is one not-run row; the vendor lane has none', () => {
-  assert.equal(CUA_INPUT_METHODS_BUILT, false, 'flip this when the engine answers click, press_key and type_text');
+test('the cua engine\'s input is built: the cua lane runs its input cells, and a lane without it still records every cell as one not-run row', () => {
+  assert.equal(CUA_INPUT_METHODS_BUILT, true, 'the input routes landed on feat/117-input; flip back only to record them as not run again');
   assert.deepEqual(notRunRows({lane: 'vendor', scenes: SCENE_ORDER}), []);
-  assert.deepEqual(notRunRows({lane: 'cua', scenes: SCENE_ORDER, inputBuilt: true}), []);
-  const rows = notRunRows({lane: 'cua', scenes: SCENE_ORDER});
+  assert.deepEqual(notRunRows({lane: 'cua', scenes: SCENE_ORDER}), [], 'the cua lane runs its input cells now');
+  const rows = notRunRows({lane: 'cua', scenes: SCENE_ORDER, inputBuilt: false});
   assert.ok(rows.every(r => r.notRun === NOT_BUILT && r.ok === false && r.sample === 1));
   const ops = new Set(rows.map(r => r.op));
   for (const op of ['task.act', 'task.verify', 'task.close', 'task.total', 'golden.action', 'probe.a.click', 'probe.a.key', 'probe.b.click', 'probe.b.key', 'probe.d.noFire', 'probe.d.operatorKeystroke', 'probe.e.typeText'])
@@ -74,6 +74,8 @@ test('while the cua engine\'s input is not built, every input cell of the cua la
   assert.deepEqual(rows.filter(r => r.op === 'probe.e.typeText').map(r => `${r.source}/${r.scene}`), ['latin/textedit', 'latin/chrome', 'korean/textedit', 'korean/chrome']);
   assert.ok(!notRunRows({lane: 'cua', scenes: ['finder']}).some(r => r.op.startsWith('task.')), 'the task is TextEdit\'s');
   assert.ok(STRUCTURAL_ROWS.every(r => r.notRun && !r.notRun.includes(NOT_BUILT)));
+  assert.ok(VENDOR_ONLY_ROWS.every(r => r.notRun && !r.notRun.includes(NOT_BUILT)), 'the tap and keystroke rows are the vendor lane\'s not-run, with their reasons');
+  assert.deepEqual(VENDOR_ONLY_ROWS.map(r => r.op), ['probe.d.tap', 'probe.d.hidReset']);
 });
 
 // Fixture results: two runs per lane, TextEdit observation samples, per-scene trees, routes and not-run rows.
@@ -101,7 +103,7 @@ test('summary: the promote/discard table from the in-cell medians, the per-scene
       {op: 'preflight.switch', switch: 'prefetch', scene: 'textedit', sample: 1, ok: true, forwarded: true},
       {op: 'preflight.switch', switch: 'settle', scene: 'textedit', sample: 1, ok: false, forwarded: false},
       {op: 'switch.settle', scene: 'textedit', sample: 1, ok: false, notRun: 'the service did not forward settle'},
-      ...notRunRows({lane: 'cua', scenes: SCENE_ORDER}), ...STRUCTURAL_ROWS]);
+      ...notRunRows({lane: 'cua', scenes: SCENE_ORDER, inputBuilt: false}), ...STRUCTURAL_ROWS]);
   }
   const s = summarize(dir);
   assert.deepEqual(s.speed.map(r => [r.vendor, r.cua, r.verdict]), [[51, 40, 'at or below'], [81, 74.5, 'at or below']]);

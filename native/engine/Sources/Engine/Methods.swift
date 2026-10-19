@@ -22,6 +22,8 @@ struct Outcome {
 
 /// The facade's methods this spike build does not implement yet (M2a adds them).
 private let laterMethods: Set<String> = ["drag", "paste", "perform_secondary_action", "scroll", "select_text", "set_value"]
+/// The input methods this build answers; every error they return carries the input meta (Interfaces, input errors).
+private let inputMethods: Set<String> = ["click", "press_key", "type_text"]
 
 final class Engine: @unchecked Sendable {
   let paths: ServerPaths
@@ -45,6 +47,7 @@ final class Engine: @unchecked Sendable {
         if others > 0 { throw EngineError(name: "busy", "busy", extra: ["connections": others]) }
         return Outcome(result: .success([String: Any]()), exitAfter: true)
       case "execute": return Outcome(result: .success(try execute(request.params, connection, receivedAt)))
+      case "probe_tap": return Outcome(result: .success(try probeTap(request.params)))  // spike-only, probe (d) (Tap.swift)
       default: throw EngineError(rpc: .methodNotFound, "Method not found: \(request.method.prefix(64))")
       }
     } catch let error as EngineError {
@@ -101,7 +104,12 @@ final class Engine: @unchecked Sendable {
     let context = ExecutionContext(connection: connection, receivedAt: receivedAt, hidIdleMs: hidIdleMilliseconds(),
                                    deadline: deadline, lineage: params["lineage"] as? String)
     // Every app-scoped method resolves first, so the forbidden list holds on every call whoever the client is.
-    if method != "list_apps" && method != "resolve_app" && (args["app"] != nil || args["pid"] != nil) { _ = try resolveApp(args) }
+    // An input method refused here carries the input meta like any other error of an input method (nothing posted).
+    if method != "list_apps" && method != "resolve_app" && (args["app"] != nil || args["pid"] != nil) {
+      do { _ = try resolveApp(args) } catch let error as EngineError where inputMethods.contains(method) {
+        throw withMeta(error, InputMeta(context))
+      }
+    }
     switch method {
     case "list_apps": return apps.list()
     case "resolve_app":

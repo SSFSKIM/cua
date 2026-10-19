@@ -263,19 +263,22 @@ final class TapFieldsTests: XCTestCase {
     return event
   }
 
-  /// The fields the callback touches, from a crafted event, and nothing else: type, timestamp, 41, 40 and 51.
+  /// The fields the callback touches, from a crafted event, and nothing else: type, 41, 40 and 51 (the spec's "User
+  /// intervention" pins this set; the Mirror asserts the struct carries no more, and a timestamped event proves the
+  /// timestamp is not among them).
   func testTheCallbackReadsExactlyThePinnedFields() {
     let down = event(.leftMouseDown)
     down.setIntegerValueField(eventField(41), value: 501)
     down.setIntegerValueField(eventField(40), value: 502)
     down.setIntegerValueField(eventField(51), value: 77)
+    down.timestamp = 12345  // an event field outside the pinned set: it must not surface
     let fields = tapFields(down)
     XCTAssertEqual(fields.type, .leftMouseDown)
     XCTAssertEqual(fields.sourcePID, 501)
     XCTAssertEqual(fields.targetPID, 502)
     XCTAssertEqual(fields.windowID, 77)
-    down.timestamp = 12345
-    XCTAssertEqual(tapFields(down).timestamp, 12345, "the timestamp is the one field besides the three pids and the type")
+    XCTAssertEqual(Mirror(reflecting: fields).children.compactMap(\.label), ["type", "sourcePID", "targetPID", "windowID"],
+                   "the pinned set is exactly the type and the three pids")
     // A key event the callback never inspects beyond its fields: a key code set on the event is not in the fields.
     let key = event(.keyDown)
     key.setIntegerValueField(.keyboardEventKeycode, value: 0x24)
@@ -288,27 +291,104 @@ final class TapFieldsTests: XCTestCase {
     let driven: pid_t = 200
     let owners: [Int64: pid_t] = [77: driven, 88: 300]
     let window: (Int64) -> pid_t? = { owners[$0] }
-    XCTAssertEqual(TapEventClass.of(TapEventFields(type: .keyDown, timestamp: 1, sourcePID: engine, targetPID: 0, windowID: 0),
+    XCTAssertEqual(TapEventClass.of(TapEventFields(type: .keyDown, sourcePID: engine, targetPID: 0, windowID: 0),
                                     drivenPID: driven, enginePID: engine, windowOwner: window), .own)
-    XCTAssertEqual(TapEventClass.of(TapEventFields(type: .leftMouseDown, timestamp: 1, sourcePID: 5, targetPID: 0, windowID: 77),
+    XCTAssertEqual(TapEventClass.of(TapEventFields(type: .leftMouseDown, sourcePID: 5, targetPID: 0, windowID: 77),
                                     drivenPID: driven, enginePID: engine, windowOwner: window), .driven)
-    XCTAssertEqual(TapEventClass.of(TapEventFields(type: .keyDown, timestamp: 1, sourcePID: 5, targetPID: driven, windowID: 0),
+    XCTAssertEqual(TapEventClass.of(TapEventFields(type: .keyDown, sourcePID: 5, targetPID: driven, windowID: 0),
                                     drivenPID: driven, enginePID: engine, windowOwner: window), .driven, "no window: the target pid decides")
-    XCTAssertEqual(TapEventClass.of(TapEventFields(type: .keyDown, timestamp: 1, sourcePID: 5, targetPID: 400, windowID: 88),
+    XCTAssertEqual(TapEventClass.of(TapEventFields(type: .leftMouseDown, sourcePID: 5, targetPID: driven, windowID: 99),
+                                    drivenPID: driven, enginePID: engine, windowOwner: window), .driven,
+                   "an unresolvable window id falls to the target pid (F §9.3), never to nothing")
+    XCTAssertEqual(TapEventClass.of(TapEventFields(type: .keyDown, sourcePID: 5, targetPID: 400, windowID: 88),
                                     drivenPID: driven, enginePID: engine, windowOwner: window), .other)
   }
 
   func testCountsRecordAndReport() {
     let counts = TapCounts(drivenPID: 200)
-    counts.record(TapEventFields(type: .leftMouseDown, timestamp: 1, sourcePID: 100, targetPID: 0, windowID: 0), enginePID: 100)
-    counts.record(TapEventFields(type: .keyDown, timestamp: 1, sourcePID: 5, targetPID: 200, windowID: 0), enginePID: 100)
-    counts.record(TapEventFields(type: .keyDown, timestamp: 1, sourcePID: 5, targetPID: 200, windowID: 0), enginePID: 100)
+    counts.record(TapEventFields(type: .leftMouseDown, sourcePID: 100, targetPID: 0, windowID: 0), enginePID: 100)
+    counts.record(TapEventFields(type: .keyDown, sourcePID: 5, targetPID: 200, windowID: 0), enginePID: 100)
+    counts.record(TapEventFields(type: .keyDown, sourcePID: 5, targetPID: 200, windowID: 0), enginePID: 100)
     let report = counts.report
     XCTAssertEqual((report["counts"] as? [String: [String: Int]])?["leftMouseDown"]?["own"], 1)
     XCTAssertEqual((report["counts"] as? [String: [String: Int]])?["keyDown"]?["driven"], 2)
     XCTAssertEqual((report["ownTimes"] as? [Int64])?.count, 1)
     XCTAssertEqual((report["drivenTimes"] as? [Int64])?.count, 2)
     XCTAssertEqual(report["drivenPID"] as? Int, 200)
+  }
+}
+
+// MARK: The review round's pins
+
+/// The spike-only route override parses the string the harness sends and the number the protocol tests send (review
+/// round 1, P1: every forced-route cell failed while only numbers parsed).
+final class SpikeRouteArgTests: XCTestCase {
+  func testBothSpellingsParse() throws {
+    XCTAssertEqual(try spikeRouteArg(["spikeRoute": "2"], usable: 2...3), 2)
+    XCTAssertEqual(try spikeRouteArg(["spikeRoute": "3"], usable: 2...3), 3)
+    XCTAssertEqual(try spikeRouteArg(["spikeRoute": NSNumber(value: 2)], usable: 2...3), 2)
+    XCTAssertNil(try spikeRouteArg([:], usable: 1...3))
+  }
+
+  func testAnythingElseIsAnArgumentError() {
+    for bad in ["9", "0", "two", "", NSNumber(value: 4), NSNumber(value: true)] as [Any] {
+      XCTAssertThrowsError(try spikeRouteArg(["spikeRoute": bad], usable: 1...3)) { error in
+        XCTAssertEqual((error as? EngineError)?.errorName, "invalidArguments", "\(bad)")
+      }
+    }
+    XCTAssertThrowsError(try spikeRouteArg(["spikeRoute": "1"], usable: 2...3)) { error in
+      XCTAssertTrue((error as? EngineError)?.message.contains("cannot carry this action") == true)
+    }
+  }
+}
+
+/// The keystroke probe's front window: the list's first layer-0 entry, not the list's head, which on a real session is
+/// the Window Server's overlay windows (review round 1, P1: the probe never found any named window).
+final class FrontWindowTests: XCTestCase {
+  private let layer = { (n: Int) in [kCGWindowLayer as String: NSNumber(value: n)] }
+
+  func testTheFirstLayer0WindowWinsOverTheListHead() {
+    let overlay = [kCGWindowLayer as String: NSNumber(value: 25), kCGWindowOwnerPID as String: NSNumber(value: 501)]
+    let document = [kCGWindowLayer as String: NSNumber(value: 0), kCGWindowOwnerPID as String: NSNumber(value: 502),
+                    kCGWindowBounds as String: ["X": 10, "Y": 20, "Width": 300, "Height": 400] as NSDictionary]
+    let second = [kCGWindowLayer as String: NSNumber(value: 0), kCGWindowOwnerPID as String: NSNumber(value: 503)]
+    XCTAssertEqual(Probe.frontLayer0Window([overlay, overlay, document, second]).map { $0[kCGWindowOwnerPID as String] as? Int },
+                   502)
+    XCTAssertNil(Probe.frontLayer0Window([overlay, overlay]), "no layer-0 window: no front window")
+    XCTAssertTrue(Probe.matchesFront(document, pid: 502, bounds: CGRect(x: 10, y: 20, width: 300, height: 400)))
+    XCTAssertFalse(Probe.matchesFront(document, pid: 503, bounds: CGRect(x: 10, y: 20, width: 300, height: 400)), "the owner decides")
+    XCTAssertFalse(Probe.matchesFront(document, pid: 502, bounds: CGRect(x: 40, y: 20, width: 300, height: 400)), "the bounds decide")
+  }
+}
+
+/// The tap's auto-stop: an early stop cancels the pending deadline, which would otherwise end a later tap's run
+/// (review round 1, the stale-timer finding).
+final class AutoStopTests: XCTestCase {
+  func testCancelStopsTheDeadlineFromFiring() {
+    let autoStop = AutoStop()
+    var fired = 0
+    autoStop.arm(seconds: 0) { fired += 1 }
+    autoStop.cancel()
+    Thread.sleep(forTimeInterval: 0.3)
+    XCTAssertEqual(fired, 0, "a cancelled deadline never stops anything")
+  }
+
+  func testAnUncancelledDeadlineFires() {
+    let autoStop = AutoStop()
+    let fired = Box<Int>()
+    let done = DispatchSemaphore(value: 0)
+    autoStop.arm(seconds: 0) { fired.value = (fired.value ?? 0) + 1; done.signal() }
+    XCTAssertEqual(done.wait(timeout: .now() + .seconds(2)), .success)
+    XCTAssertEqual(fired.value, 1)
+  }
+
+  func testASecondArmSupersedesTheFirst() {
+    let autoStop = AutoStop()
+    var fired = 0
+    autoStop.arm(seconds: 0) { fired += 10 }  // superseded: never runs
+    autoStop.arm(seconds: 0) { fired += 1 }   // current generation
+    Thread.sleep(forTimeInterval: 0.3)
+    XCTAssertEqual(fired, 1)
   }
 }
 

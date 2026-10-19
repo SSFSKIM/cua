@@ -19,10 +19,10 @@ import Foundation
 let tapEventMask = (1 << CGEventType.leftMouseDown.rawValue) | (1 << CGEventType.rightMouseDown.rawValue)
   | (1 << CGEventType.otherMouseDown.rawValue) | (1 << CGEventType.scrollWheel.rawValue) | (1 << CGEventType.keyDown.rawValue)
 
-/// Everything the tap's callback may read of one event, and nothing else (a unit test pins this set).
+/// Everything the tap's callback may read of one event, and nothing else (a unit test pins this set): the type and
+/// the three pids. Times in the report are stamped by the count itself, not read from the event.
 struct TapEventFields: Equatable {
   let type: CGEventType
-  let timestamp: Int64  // uptime nanoseconds
   let sourcePID: pid_t  // field 41
   let targetPID: pid_t  // field 40
   let windowID: Int64   // field 51, private
@@ -33,25 +33,23 @@ struct TapEventFields: Equatable {
 func tapFields(_ event: CGEvent) -> TapEventFields {
   TapEventFields(
     type: event.type,
-    timestamp: Int64(event.timestamp),
     sourcePID: pid_t(truncatingIfNeeded: event.getIntegerValueField(eventField(41))),
     targetPID: pid_t(truncatingIfNeeded: event.getIntegerValueField(eventField(40))),
     windowID: event.getIntegerValueField(eventField(51)))
 }
 
-/// Which class an event falls in, from its fields and the driven app's pid: the engine's own by source pid, the driven
-/// app's by window owner (or by target pid when no window is present), everything else as counts only.
+/// Which class an event falls in, from its fields and the driven app's pid, by the vendor's rule (F §9.3): the engine's
+/// own by source pid; else the driven app's by window owner when the window exists, else by target pid — an
+/// unresolvable window id falls to the target pid, never to nothing, so a background-window click still counts.
 enum TapEventClass: String {
   case own, driven, other
 
   static func of(_ fields: TapEventFields, drivenPID: pid_t, enginePID: pid_t, windowOwner: (Int64) -> pid_t?) -> TapEventClass {
     if fields.sourcePID == enginePID { return .own }
-    if fields.windowID != 0 {
-      if windowOwner(fields.windowID) == drivenPID { return .driven }
-    } else if fields.targetPID == drivenPID {
-      return .driven
+    if fields.windowID != 0, let owner = windowOwner(fields.windowID) {
+      return owner == drivenPID ? .driven : .other
     }
-    return .other
+    return fields.targetPID == drivenPID ? .driven : .other
   }
 }
 
@@ -124,6 +122,8 @@ final class TapProbe: @unchecked Sendable {
   private var countsPointer: UnsafeMutableRawPointer?
   private var tap: CFMachPort?
   private var tapRunLoop: CFRunLoop?
+  private var threadDone = DispatchSemaphore(value: 0)
+  private var autoStop: AutoStop?
   private var created = false
   private var listenAccess = false
   private var startedAt: Int64 = 0
@@ -140,6 +140,8 @@ final class TapProbe: @unchecked Sendable {
     let pointer = Unmanaged.passRetained(counting).toOpaque()
     let box = Box<(created: Bool, runLoop: CFRunLoop?, tap: CFMachPort?)>()
     let done = DispatchSemaphore(value: 0)
+    let threadDone = DispatchSemaphore(value: 0)
+    self.threadDone = threadDone
     let thread = Thread {
       let port = CGEvent.tapCreate(tap: .cgAnnotatedSessionEventTap, place: .tailAppendEventTap, options: .listenOnly,
                                   eventsOfInterest: CGEventMask(tapEventMask), callback: TapProbe.callback, userInfo: pointer)
@@ -155,6 +157,7 @@ final class TapProbe: @unchecked Sendable {
         box.value = (false, nil, nil)
         done.signal()
       }
+      threadDone.signal()  // the callback can no longer run: the counting state may release
     }
     thread.name = "cua-engine-probe-tap"
     thread.start()
@@ -171,24 +174,33 @@ final class TapProbe: @unchecked Sendable {
       throw EngineError(name: "tapNotCreated",
                         "The listen-only event tap could not be created (the Input Monitoring listen grant is \(listenAccess ? "granted" : "not granted")).")
     }
-    DispatchQueue.global().asyncAfter(deadline: .now() + .seconds(seconds)) { [weak self] in _ = try? self?.stop() }
+    autoStop = AutoStop()
+    autoStop?.arm(seconds: seconds) { [weak self] in _ = try? self?.stop() }
     return ["created": true, "listenAccess": listenAccess, "running": true, "startedAt": Int(startedAt), "seconds": seconds]
   }
 
-  /// Stops the tap and answers the report; nothing running is an error.
+  /// Stops the tap and answers the report; nothing running is an error. The deadline's auto-stop is cancelled (it
+  /// would otherwise stop a later tap's run), and the counting state releases only after the tap thread has finished,
+  /// so a callback executing as this runs never reads a freed object.
   func stop() throws -> [String: Any] {
     lock.lock()
-    defer { lock.unlock() }
-    guard let counting = counts, let pointer = countsPointer else { throw EngineError(name: "tapNotRunning", "No probe tap is running") }
+    guard let counting = counts, let pointer = countsPointer else {
+      lock.unlock()
+      throw EngineError(name: "tapNotRunning", "No probe tap is running")
+    }
+    autoStop?.cancel()
+    autoStop = nil
     if let tap, let runLoop = tapRunLoop {
       CGEvent.tapEnable(tap: tap, enable: false)
-      CFRunLoopStop(runLoop)  // the tap's own loop ends; the port and the counting state release below
+      CFRunLoopStop(runLoop)  // the tap's own loop ends below
       CFMachPortInvalidate(tap)
     }
     counts = nil
     countsPointer = nil
     tap = nil
     tapRunLoop = nil
+    lock.unlock()
+    _ = threadDone.wait(timeout: .now() + .seconds(2))  // the thread signals after CFRunLoopRun returns
     Unmanaged<TapCounts>.fromOpaque(pointer).release()
     var report = counting.report
     report["created"] = created
@@ -205,6 +217,41 @@ final class TapProbe: @unchecked Sendable {
       counting.record(tapFields(event), enginePID: getpid())
     }
     return Unmanaged.passUnretained(event)
+  }
+}
+
+/// The auto-stop of one tap: a work item that stops only the generation it was armed for, so an early `stop` cancels
+/// it and a second tap's run is never ended by the first tap's deadline.
+final class AutoStop: @unchecked Sendable {
+  private let lock = NSLock()
+  private var generation = 0
+  private var pending: DispatchWorkItem?
+
+  func arm(seconds: Int, stop: @escaping () -> Void) {
+    lock.lock()
+    defer { lock.unlock() }
+    generation += 1
+    let armed = generation
+    let item = DispatchWorkItem { [weak self] in
+      guard let self, self.isCurrent(armed) else { return }
+      stop()
+    }
+    pending = item
+    DispatchQueue.global().asyncAfter(deadline: .now() + .seconds(seconds), execute: item)
+  }
+
+  func cancel() {
+    lock.lock()
+    defer { lock.unlock() }
+    generation += 1
+    pending?.cancel()
+    pending = nil
+  }
+
+  func isCurrent(_ armed: Int) -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    return armed == generation
   }
 }
 

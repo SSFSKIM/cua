@@ -94,6 +94,9 @@ final class FakeActivation {
     if let connection { _ = SkyLight.disableUpdate?(connection) }
     defer { if let connection { _ = SkyLight.reenableUpdate?(connection) } }
     postActivation()
+    // A guard that fails after the activation pair was posted still leaves the app believing it is active: undo the
+    // activation before the error leaves this method (the deferred deactivate is idempotent).
+    defer { if !appBelievesItHasFocus(pid) { deactivate() } }
     let started = monotonicMilliseconds()
     defer { guardMs = ((monotonicMilliseconds() - started) * 1000).rounded() / 1000 }
     let deadline = started + 1_000

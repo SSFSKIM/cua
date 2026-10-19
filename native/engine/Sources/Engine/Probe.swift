@@ -101,13 +101,24 @@ enum Probe {
     return 0
   }
 
+  /// The frontmost on-screen window of the window list: the first entry at layer 0. The list's head on a real session
+  /// is the Window Server's overlays (Control Center sits at layer 25), so `list.first` is never a document window;
+  /// FrontWindowProbe filters the same way.
+  static func frontLayer0Window(_ list: [[String: Any]]) -> [String: Any]? {
+    list.first { ($0[kCGWindowLayer as String] as? NSNumber)?.intValue == 0 }
+  }
+
   /// Whether the frontmost on-screen window is the named one, by owner pid and bounds (no window name is read).
   private static func frontWindowIs(pid: pid_t, bounds: CGRect) -> Bool {
     guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]],
-          let front = list.first else { return false }
-    guard (front[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value == pid,
-          (front[kCGWindowLayer as String] as? NSNumber)?.intValue == 0,
-          let dictionary = front[kCGWindowBounds as String] as? NSDictionary,
+          let front = frontLayer0Window(list) else { return false }
+    return matchesFront(front, pid: pid, bounds: bounds)
+  }
+
+  /// One window-list entry against the named window: same owner, and bounds within a point.
+  static func matchesFront(_ entry: [String: Any], pid: pid_t, bounds: CGRect) -> Bool {
+    guard (entry[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value == pid,
+          let dictionary = entry[kCGWindowBounds as String] as? NSDictionary,
           let rect = CGRect(dictionaryRepresentation: dictionary) else { return false }
     return abs(rect.minX - bounds.minX) < 1 && abs(rect.minY - bounds.minY) < 1
       && abs(rect.width - bounds.width) < 1 && abs(rect.height - bounds.height) < 1

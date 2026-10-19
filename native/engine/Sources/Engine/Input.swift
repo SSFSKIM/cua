@@ -119,10 +119,12 @@ extension Engine {
         let target = ClickTarget(point: point, windowFrame: windowFrame, windowID: windowNumber(of: window, pid: appPid, frame: windowFrame), pid: owner)
         let web = hit.map(isWebContent) ?? false
         let chosen = route ?? (web ? 3 : 2)
-        meta.inputRoute = chosen
         if chosen == 3 {
-          try synthesizedClick(target, window: window, pid: owner, button: button, count: count, forced: 3, meta: &meta)
+          // `forced` stays nil for a default web click, so the route reported is the one that carried it (a plain
+          // pid-post when the app already believed it had focus), not the shape the route-3 branch was entered by.
+          try synthesizedClick(target, window: window, pid: owner, button: button, count: count, forced: route, meta: &meta)
         } else {
+          meta.inputRoute = 2
           let flags: CGEventFlags = NSRunningApplication(processIdentifier: owner)?.isActive == true ? [] : .maskCommand
           let events = clickEvents(target, button: button, count: count, flags: flags)
           guard !events.isEmpty else { throw EngineError(name: "eventCreationFailed", "The click events could not be created.") }
@@ -143,6 +145,7 @@ extension Engine {
   private func synthesizedClick(_ target: ClickTarget, window: AXUIElement, pid: pid_t, button: MouseButton, count: Int,
                                 forced: Int?, meta: inout InputMeta) throws {
     let activation = FakeActivation(pid: target.pid, window: window)
+    defer { activation.deactivate() }  // every path out of the click, error or success, undoes the activation
     let believedBefore = appBelievesItHasFocus(target.pid)
     if forced != 2 {
       if !believedBefore {
@@ -156,13 +159,11 @@ extension Engine {
     let flags: CGEventFlags = forced == 2 && NSRunningApplication(processIdentifier: target.pid)?.isActive != true ? .maskCommand : []
     let events = clickEvents(target, button: button, count: count, flags: flags)
     guard !events.isEmpty else {
-      activation.deactivate()
       throw EngineError(name: "eventCreationFailed", "The click events could not be created.")
     }
     let (startedAt, endedAt) = postToProcess(events, pid: target.pid)
     meta.startedAt = startedAt
     meta.endedAt = endedAt
-    activation.deactivate()
   }
 
   // MARK: press_key
@@ -181,21 +182,25 @@ extension Engine {
       guard let pid = app.pid else { throw EngineError(.runningApplicationNotFound, "Running application not found: \(app.displayName)") }
       try requireAccessibility()
       try refuseWhenLocked()
-      let window = primaryWindow(of: prepare(AXUIElementCreateApplication(pid))) ?? AXUIElementCreateApplication(pid)
+      let application = prepare(AXUIElementCreateApplication(pid))
+      let window = primaryWindow(of: application) ?? AXUIElementCreateApplication(pid)
       let activation = FakeActivation(pid: pid, window: window)
+      defer { activation.deactivate() }  // every path out of the posting, error or success, undoes the activation
       let believedBefore = appBelievesItHasFocus(pid)
       meta.inputRoute = route ?? (believedBefore ? 2 : 3)
       if route != 2 && !believedBefore {
         try activation.activate()
         meta.activationGuardMs = activation.guardMs
       }
-      let poster = EventPoster.toProcess(pid, sourceState: privateSourceArg(args) ? .privateState : .hidSystemState)
+      // Keys go to the process that owns the focused element (a sheet or an open panel is not the app's process,
+      // F §5.7's targetForKeyboardEvent), else to the app.
+      let target = keyboardTarget(application, fallback: pid)
+      let poster = EventPoster.toProcess(target, sourceState: privateSourceArg(args) ? .privateState : .hidSystemState)
       meta.startedAt = unixMilliseconds()
       for press in presses {
         for spec in keyPressEvents(press) { poster.post(spec) }
       }
       meta.endedAt = unixMilliseconds()
-      activation.deactivate()
       context.connection.markActed(app)
       return ["meta": meta.wire]
     } catch let error as EngineError {
@@ -239,15 +244,19 @@ extension Engine {
       guard let layout = KeyLayout.current() else {
         throw EngineError(name: "keyboardLayoutUnavailable", "Unable to get the current keyboard layout.")
       }
-      let window = primaryWindow(of: prepare(AXUIElementCreateApplication(pid))) ?? AXUIElementCreateApplication(pid)
+      let application = prepare(AXUIElementCreateApplication(pid))
+      let window = primaryWindow(of: application) ?? AXUIElementCreateApplication(pid)
       let activation = FakeActivation(pid: pid, window: window)
+      defer { activation.deactivate() }  // an inputSourceChanged mid-typing undoes the activation too
       let believedBefore = appBelievesItHasFocus(pid)
       meta.inputRoute = route ?? (believedBefore ? 2 : 3)
       if route != 2 && !believedBefore {
         try activation.activate()
         meta.activationGuardMs = activation.guardMs
       }
-      let poster = EventPoster.toProcess(pid, sourceState: privateSourceArg(args) ? .privateState : .hidSystemState)
+      // As press_key: the focused element's owning process receives the keys (F §5.7), else the app.
+      let target = keyboardTarget(application, fallback: pid)
+      let poster = EventPoster.toProcess(target, sourceState: privateSourceArg(args) ? .privateState : .hidSystemState)
       meta.startedAt = unixMilliseconds()
 
       let initialSource = currentInputSourceID()
@@ -264,12 +273,19 @@ extension Engine {
       }
       try checkInputSource(initialSource, entered: entered, total: total)
       meta.endedAt = unixMilliseconds()
-      activation.deactivate()
       context.connection.markActed(app)
       return ["meta": meta.wire]
     } catch let error as EngineError {
       throw withMeta(error, meta)
     }
+  }
+
+  /// The process keyboard events go to: the owner of the app's focused element, which for a sheet or an open panel is
+  /// not the app (F §5.7's targetForKeyboardEvent), else the app.
+  private func keyboardTarget(_ application: AXUIElement, fallback pid: pid_t) -> pid_t {
+    guard let focused = elementAttribute(application, kAXFocusedUIElementAttribute) else { return pid }
+    let owner = ownerPid(of: focused)
+    return owner > 0 ? owner : pid
   }
 
   /// The source check before every event and after the last (the spec's Design, "Text"): a switch mid-request stops it
@@ -290,16 +306,21 @@ func numberArg(_ value: Any?) -> Double? {
   return number.doubleValue
 }
 
-/// The spike-only route override: nil (the spec's rule decides) or 1–3; anything else is an argument error.
+/// The spike-only route override: nil (the spec's rule decides) or 1–3. The harness sends the digits as JSON strings
+/// ("1", "2", "3"), the protocol tests as numbers; both spellings parse, anything else is an argument error.
 func spikeRouteArg(_ args: [String: Any], usable: ClosedRange<Int>) throws -> Int? {
   guard let given = args["spikeRoute"] else { return nil }
-  guard let number = given as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(), (1...3).contains(number.intValue) else {
-    throw EngineError.invalidArguments("spikeRoute must be 1, 2 or 3")
+  let value: Int?
+  switch given {
+  case let number as NSNumber where CFGetTypeID(number) != CFBooleanGetTypeID(): value = number.intValue
+  case let text as String: value = Int(text)
+  default: value = nil
   }
-  guard usable.contains(number.intValue) else {
-    throw EngineError.invalidArguments("spikeRoute \(number.intValue) cannot carry this action (routes \(usable.lowerBound)–\(usable.upperBound) apply)")
+  guard let value, (1...3).contains(value) else { throw EngineError.invalidArguments("spikeRoute must be 1, 2 or 3") }
+  guard usable.contains(value) else {
+    throw EngineError.invalidArguments("spikeRoute \(value) cannot carry this action (routes \(usable.lowerBound)–\(usable.upperBound) apply)")
   }
-  return number.intValue
+  return value
 }
 
 /// The spike-only private event source for keys.

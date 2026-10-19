@@ -145,10 +145,13 @@ test('the input methods validate their arguments and resolve the app without pos
     const answer = await wire.execute(method, args);
     assert.equal(answer.error?.errorName, name, `${method} ${JSON.stringify(args)}`);
   }
-  // Well-formed requests resolve the app and fail on it; from there on every error carries the input meta.
+  // Well-formed requests resolve the app and fail on it; from there on every error carries the input meta. The
+  // forced route arrives as the JSON string the harness sends, so its parse is proven by reaching the app resolution.
   for (const [method, args] of [
     ['click', {...noSuch, x: 1, y: 2}],
+    ['click', {...noSuch, x: 1, y: 2, spikeRoute: '3'}],
     ['press_key', {...noSuch, key: 'Return'}],
+    ['press_key', {...noSuch, key: 'Return', spikeRoute: '2'}],
     ['type_text', {...noSuch, text: 'x'}],
   ]) {
     const answer = await wire.execute(method, args);

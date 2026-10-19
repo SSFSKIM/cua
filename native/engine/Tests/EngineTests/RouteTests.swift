@@ -22,8 +22,8 @@ final class ElementClickPlanTests: XCTestCase {
   }
 
   func testAPlainClickOnAnAdvertisingElementTakesItsAction() throws {
-    XCTAssertEqual(try plan(actions: ["AXShowMenu", "AXPress"]), .action("AXPress"))
-    XCTAssertEqual(try plan(actions: ["AXPress", "AXPick"]), .action("AXPick"), "AXPick before AXPress (F §5.1)")
+    XCTAssertEqual(try plan(actions: ["AXShowMenu", "AXPress"]), .action("AXPress", activateFirst: false))
+    XCTAssertEqual(try plan(actions: ["AXPress", "AXPick"]), .action("AXPick", activateFirst: false), "AXPick before AXPress (F §5.1)")
   }
 
   func testTheGateSendsAClickWhosePointLandsOnADescendantToRouteThree() throws {
@@ -38,11 +38,20 @@ final class ElementClickPlanTests: XCTestCase {
     XCTAssertEqual(try plan(button: .right, actions: ["AXPress", "AXShowMenu"], gateCalls: &calls), .synthesized(.activation))
     XCTAssertEqual(try plan(count: 2, actions: ["AXPress"], gateCalls: &calls), .synthesized(.activation))
     XCTAssertEqual(try plan(button: .middle, actions: ["AXPress"], gateCalls: &calls), .synthesized(.activation))
-    // A menu-bar item is synthesized, as the vendor's activation path for it (F §5.1).
-    XCTAssertEqual(try plan(role: "AXMenuBarItem", actions: ["AXPress"], gateCalls: &calls), .synthesized(.activation))
+    XCTAssertEqual(try plan(button: .right, role: "AXMenuBarItem", actions: ["AXPress"], gateCalls: &calls), .synthesized(.activation))
     XCTAssertEqual(calls, 0, "the hit-test is taken only for a click route 1 could carry")
     _ = try plan(actions: ["AXPress"], gateCalls: &calls)
     XCTAssertEqual(calls, 1)
+  }
+
+  /// The vendor's menu-bar branch (FUN_100071f40 → FUN_10007151c, resumed at FUN_10007292c into UIElementProtocol.click):
+  /// route 3's activation, then the ordinary choice.
+  func testAPlainMenuBarItemClickActivatesThenTakesTheOrdinaryChoice() throws {
+    XCTAssertEqual(try plan(role: "AXMenuBarItem", actions: ["AXPress", "AXCancel"]), .action("AXPress", activateFirst: true))
+    XCTAssertEqual(try plan(role: "AXMenuBarItem", actions: []), .synthesized(.activation), "no action: route 3, which activates anyway")
+    XCTAssertEqual(try plan(role: "AXMenuBarItem", actions: ["AXPress"], descendant: true), .synthesized(.activation))
+    XCTAssertEqual(try plan(forced: .action, role: "AXMenuBarItem", actions: ["AXPress"]), .action("AXPress", activateFirst: false),
+                   "a forced route is the spike's, without the activation")
   }
 
   func testNoDefaultChoiceIsEverRouteTwoOrTwoPrime() throws {
@@ -67,7 +76,7 @@ final class ElementClickPlanTests: XCTestCase {
     XCTAssertEqual(try plan(forced: .commandPost, actions: ["AXPress"], gateCalls: &calls), .synthesized(.commandPost))
     XCTAssertEqual(try plan(forced: .plainPost, actions: ["AXPress"], gateCalls: &calls), .synthesized(.plainPost))
     XCTAssertEqual(try plan(forced: .activation, actions: ["AXPress"], gateCalls: &calls), .synthesized(.activation))
-    XCTAssertEqual(try plan(forced: .action, actions: ["AXPress"], descendant: true, gateCalls: &calls), .action("AXPress"))
+    XCTAssertEqual(try plan(forced: .action, actions: ["AXPress"], descendant: true, gateCalls: &calls), .action("AXPress", activateFirst: false))
     XCTAssertEqual(calls, 0)
     XCTAssertThrowsError(try plan(forced: .action, actions: ["AXShowMenu"])) { error in
       XCTAssertEqual((error as? EngineError)?.errorName, "invalidArguments")
@@ -107,6 +116,96 @@ final class DescendantGateTests: XCTestCase {
     for level in 0..<400 { deep[level] = level + 1 }
     XCTAssertTrue(lands(0, on: 300, parents: deep))
     XCTAssertFalse(lands(0, on: 301, parents: deep))
+  }
+}
+
+// MARK: The visible frame
+
+final class VisibleFrameTests: XCTestCase {
+  /// A synthetic element: its role, frame, parent and actions.
+  private struct Node {
+    let role: String
+    let frame: CGRect?
+    let parent: Int?
+    var actions: [String] = []
+  }
+
+  private func visible(_ id: Int, in nodes: [Int: Node]) -> CGRect? {
+    visibleFrame(of: id, frame: { nodes[$0]?.frame }, role: { nodes[$0]?.role }, parent: { nodes[$0]?.parent },
+                 actions: { nodes[$0]?.actions ?? [] })
+  }
+
+  /// Finder's list: a window, a scroll area showing rows 100–400, a table, rows at their content positions.
+  private let finder: [Int: Node] = [
+    0: Node(role: "AXApplication", frame: nil, parent: nil),
+    1: Node(role: "AXWindow", frame: CGRect(x: 0, y: 0, width: 800, height: 600), parent: 0),
+    2: Node(role: "AXScrollArea", frame: CGRect(x: 0, y: 100, width: 800, height: 300), parent: 1),
+    3: Node(role: "AXOutline", frame: CGRect(x: 0, y: -900, width: 800, height: 4000), parent: 2),
+    4: Node(role: "AXRow", frame: CGRect(x: 0, y: 200, width: 800, height: 20), parent: 3),
+    5: Node(role: "AXRow", frame: CGRect(x: 0, y: 60, width: 800, height: 20), parent: 3),     // above the scroll area, under the column header
+    6: Node(role: "AXRow", frame: CGRect(x: 0, y: 390, width: 800, height: 20), parent: 3),    // half shown
+  ]
+
+  func testARowScrolledOutOfItsListIsNotVisibleThoughItLiesInsideTheWindow() {
+    XCTAssertEqual(visible(4, in: finder), CGRect(x: 0, y: 200, width: 800, height: 20))
+    XCTAssertNil(visible(5, in: finder), "the column header covers its content position: refused, not clicked through")
+    XCTAssertEqual(visible(6, in: finder), CGRect(x: 0, y: 390, width: 800, height: 10))
+    XCTAssertNil(clickablePoint(frame: visible(5, in: finder), visibleIn: finder[1]!.frame))
+  }
+
+  func testWebContentScrolledOutOfThePageIsNotVisible() {
+    // Chrome: the window, the web area's viewport below the tab strip, a link scrolled above it.
+    let chrome: [Int: Node] = [
+      1: Node(role: "AXWindow", frame: CGRect(x: 80, y: 60, width: 1000, height: 760), parent: nil),
+      2: Node(role: "AXGroup", frame: CGRect(x: 80, y: 60, width: 1000, height: 760), parent: 1),
+      3: Node(role: "AXWebArea", frame: CGRect(x: 80, y: 140, width: 1000, height: 680), parent: 2),
+      4: Node(role: "AXGroup", frame: CGRect(x: 80, y: -400, width: 1000, height: 3000), parent: 3),
+      5: Node(role: "AXLink", frame: CGRect(x: 100, y: 90, width: 60, height: 20), parent: 4),
+      6: Node(role: "AXLink", frame: CGRect(x: 100, y: 300, width: 60, height: 20), parent: 4),
+    ]
+    XCTAssertNil(visible(5, in: chrome), "inside the window, under the tab strip: not visible")
+    XCTAssertEqual(visible(6, in: chrome), CGRect(x: 100, y: 300, width: 60, height: 20))
+  }
+
+  func testAGroupClipsOnlyWhenItScrollsByThePage() {
+    var nodes: [Int: Node] = [
+      1: Node(role: "AXWindow", frame: CGRect(x: 0, y: 0, width: 800, height: 600), parent: nil),
+      2: Node(role: "AXGroup", frame: CGRect(x: 0, y: 0, width: 800, height: 100), parent: 1),
+      3: Node(role: "AXButton", frame: CGRect(x: 10, y: 200, width: 50, height: 20), parent: 2),
+    ]
+    XCTAssertEqual(visible(3, in: nodes), CGRect(x: 10, y: 200, width: 50, height: 20), "a plain group does not clip")
+    nodes[2]!.actions = ["AXScrollDownByPage"]
+    XCTAssertNil(visible(3, in: nodes), "a page-scrolling group does (the vendor's FUN_10078e9b8)")
+  }
+
+  func testTheWalkStopsAtTheWindowSheetMenuOrPopover() {
+    // A sheet over its window: the sheet clips and ends the walk, so the window's frame is never read.
+    let nodes: [Int: Node] = [
+      1: Node(role: "AXWindow", frame: CGRect(x: 0, y: 0, width: 10, height: 10), parent: nil),
+      2: Node(role: "AXSheet", frame: CGRect(x: 100, y: 100, width: 400, height: 300), parent: 1),
+      3: Node(role: "AXButton", frame: CGRect(x: 420, y: 360, width: 70, height: 30), parent: 2),
+    ]
+    XCTAssertEqual(visible(3, in: nodes), CGRect(x: 420, y: 360, width: 70, height: 30))
+  }
+
+  func testAMenuBarItemKeepsItsWholeFrame() {
+    // TextEdit's File item: its ancestors are the menu bar and the application, and its frame lies outside every window.
+    let nodes: [Int: Node] = [
+      0: Node(role: "AXApplication", frame: nil, parent: nil),
+      1: Node(role: "AXMenuBar", frame: CGRect(x: 0, y: 0, width: 1512, height: 30), parent: 0),
+      2: Node(role: "AXMenuBarItem", frame: CGRect(x: 116, y: 0, width: 42, height: 30), parent: 1),
+    ]
+    XCTAssertEqual(visible(2, in: nodes), CGRect(x: 116, y: 0, width: 42, height: 30))
+    XCTAssertEqual(clickablePoint(frame: visible(2, in: nodes), visibleIn: nil), CGPoint(x: 137, y: 15), "no window of its own to cut by")
+  }
+
+  func testNoFrameNoPointAndAFramelessAncestorDoesNotClip() {
+    XCTAssertNil(visible(9, in: [9: Node(role: "AXButton", frame: nil, parent: nil)]), "a frame that cannot be read now is refused")
+    let nodes: [Int: Node] = [
+      1: Node(role: "AXScrollArea", frame: nil, parent: nil),
+      2: Node(role: "AXButton", frame: CGRect(x: 1, y: 1, width: 10, height: 10), parent: 1),
+    ]
+    XCTAssertEqual(visible(2, in: nodes), CGRect(x: 1, y: 1, width: 10, height: 10))
   }
 }
 
@@ -169,9 +268,32 @@ final class ActivationGuardTests: XCTestCase {
     let subject = activation(seam)
     XCTAssertThrowsError(try subject.activate()) { error in
       XCTAssertEqual((error as? EngineError)?.errorName, "activationFailed")
+      XCTAssertTrue((error as? EngineError)?.message.contains("the frontmost app was restored") == true)
     }
     XCTAssertEqual(seam.reactivated, [user], "the engine undoes the activation it caused")
     XCTAssertEqual(seam.releases, 1)
+  }
+
+  func testThePanelsAppComingToTheFrontIsTheEnginesDoingToo() {
+    // The target is a panel's service (990_001); the bound app (990_004) is what comes to the front.
+    let app: pid_t = 990_004
+    let seam = GuardSeam(frontmost: user, frontmostAfterPost: app)
+    let subject = FakeActivation(pid: target, appPid: app, window: AXUIElementCreateApplication(target), windowFrame: frame, windowID: 41,
+                                 system: seam.system)
+    XCTAssertThrowsError(try subject.activate()) { error in
+      XCTAssertEqual((error as? EngineError)?.errorName, "activationFailed")
+    }
+    XCTAssertEqual(seam.reactivated, [user])
+  }
+
+  func testARestoreThatFailsIsNotReportedAsDone() {
+    let seam = GuardSeam(frontmost: user, frontmostAfterPost: target, reactivates: false)
+    XCTAssertThrowsError(try activation(seam).activate()) { error in
+      let message = (error as? EngineError)?.message ?? ""
+      XCTAssertTrue(message.contains("could not be restored"), message)
+      XCTAssertFalse(message.contains("was restored"), message)
+    }
+    XCTAssertEqual(seam.reactivated, [user])
   }
 
   func testAnotherAppComingToTheFrontIsRefusedWithoutTakingItBack() {
@@ -193,6 +315,7 @@ final class ActivationGuardTests: XCTestCase {
     XCTAssertGreaterThanOrEqual(seam.clock, 1_000)
     XCTAssertLessThan(seam.clock, 1_000 + 2 * seam.step)
     XCTAssertEqual(seam.releases, 1)
+    XCTAssertEqual(seam.releasedAt, 100)
   }
 
   func testTheScreenUpdateHoldIsReleasedWellBeforeASlowGuardEnds() throws {
@@ -202,9 +325,20 @@ final class ActivationGuardTests: XCTestCase {
     try subject.activate()
     XCTAssertEqual(seam.holds, 1)
     XCTAssertEqual(seam.releases, 1, "released once")
-    XCTAssertEqual(seam.releasedAt, 120, "at the first sample past the 100 ms cap")
+    XCTAssertEqual(seam.releasedAt, 100, "by the cap's timer, between samples")
     XCTAssertEqual(subject.guardMs, 320, "the guard itself ran on")
     XCTAssertLessThan(activationHoldCapMs, 1_000 / 4)
+  }
+
+  func testTheCapHoldsWhileTheGuardIsBlocked() {
+    // A raise blocked for 500 ms (an app slow to answer its AX request): the timer releases the hold at 100 ms all the
+    // same, while the guard goes on to settle.
+    let seam = GuardSeam(frontmost: user, step: 10, raiseCost: 500, targetInFront: { $0 == 1 })
+    let subject = activation(seam)
+    XCTAssertNoThrow(try subject.activate())
+    XCTAssertEqual(seam.releasedAt, 100)
+    XCTAssertEqual(seam.releases, 1)
+    XCTAssertEqual(subject.guardMs, 540)
   }
 
   func testAQuickGuardHoldsThroughToItsEnd() throws {
@@ -279,6 +413,58 @@ final class ClickDeliveryTests: XCTestCase {
       XCTAssertEqual(seam.posts.map(\.kind), [.mouse(.leftMouseDown), .mouse(.leftMouseUp)], "\(route)")
       XCTAssertEqual(seam.posts.compactMap(\.flags), [flags, flags], "\(route)")
       XCTAssertEqual(meta.inputRoute, route)
+    }
+  }
+}
+
+// MARK: An element's action
+
+final class ActionDeliveryTests: XCTestCase {
+  private let target: pid_t = 990_001, user: pid_t = 990_002
+  private let frame = CGRect(x: 80, y: 60, width: 610, height: 860)
+
+  private func meta() -> InputMeta {
+    InputMeta(ExecutionContext(connection: ConnectionState(id: 1, fd: -1), receivedAt: 1, hidIdleMs: 0, deadline: 2, lineage: nil))
+  }
+
+  func testAPlainActionIsRouteOneWithNoActivation() throws {
+    var performed: [String] = []
+    var meta = meta()
+    try deliverAction("AXPress", activation: nil, perform: { performed.append($0); return .success }, meta: &meta)
+    XCTAssertEqual(performed, ["AXPress"])
+    XCTAssertEqual(meta.inputRoute, .action)
+    XCTAssertNotNil(meta.startedAt)
+  }
+
+  func testAMenuBarItemsActionFollowsTheActivationAndIsWithdrawnAfter() throws {
+    let seam = GuardSeam(frontmost: user)
+    let activation = FakeActivation(pid: target, window: AXUIElementCreateApplication(target), windowFrame: frame, windowID: 41, system: seam.system)
+    var postsBeforeAction = -1
+    var meta = meta()
+    try deliverAction("AXPress", activation: activation, perform: { _ in postsBeforeAction = seam.posts.count; return .success }, meta: &meta)
+    XCTAssertEqual(postsBeforeAction, 1, "subtype 1 before the action")
+    XCTAssertEqual(seam.posts.map(\.kind), [.appKit(1), .appKit(2)])
+    XCTAssertEqual(meta.inputRoute, .activation, "the activation hooks fired")
+    XCTAssertNotNil(meta.activationGuardMs)
+  }
+
+  func testAFailedGuardNeverPerformsTheAction() {
+    let seam = GuardSeam(frontmost: user, frontmostAfterPost: target)
+    let activation = FakeActivation(pid: target, window: AXUIElementCreateApplication(target), windowFrame: frame, windowID: 41, system: seam.system)
+    var performed = 0
+    var meta = meta()
+    XCTAssertThrowsError(try deliverAction("AXPress", activation: activation, perform: { _ in performed += 1; return .success }, meta: &meta)) { error in
+      XCTAssertEqual((error as? EngineError)?.errorName, "activationFailed")
+    }
+    XCTAssertEqual(performed, 0)
+    XCTAssertEqual(meta.inputRoute, .activation)
+    XCTAssertNil(meta.startedAt)
+  }
+
+  func testARefusedActionIsActionFailedWithNoFallThrough() {
+    var meta = meta()
+    XCTAssertThrowsError(try deliverAction("AXPress", activation: nil, perform: { _ in .cannotComplete }, meta: &meta)) { error in
+      XCTAssertEqual((error as? EngineError)?.errorName, "actionFailed")
     }
   }
 }
@@ -384,16 +570,34 @@ final class GuardSeam {
   var raises = 0
   var clock: Double = 0
   let step: Double
+  let raiseCost: Double
   var frontmost: pid_t?
   let frontmostAfterPost: pid_t?
+  let reactivates: Bool
   var activationPoint: CGPoint?
   let targetInFront: (Int) -> Bool
+  /// Scheduled work by due time on the fake clock, run as the clock passes it.
+  private var timers: [(due: Double, work: () -> Void)] = []
 
-  init(frontmost: pid_t?, frontmostAfterPost: pid_t? = nil, step: Double = 10, targetInFront: @escaping (Int) -> Bool = { _ in false }) {
+  init(frontmost: pid_t?, frontmostAfterPost: pid_t? = nil, reactivates: Bool = true, step: Double = 10, raiseCost: Double = 0,
+       targetInFront: @escaping (Int) -> Bool = { _ in false }) {
     self.frontmost = frontmost
     self.frontmostAfterPost = frontmostAfterPost
+    self.reactivates = reactivates
     self.step = step
+    self.raiseCost = raiseCost
     self.targetInFront = targetInFront
+  }
+
+  /// Moves the fake clock on, running each timer at its own due time.
+  func advance(_ ms: Double) {
+    let end = clock + ms
+    while let next = timers.indices.min(by: { timers[$0].due < timers[$1].due }), timers[next].due <= end {
+      let timer = timers.remove(at: next)
+      clock = timer.due
+      timer.work()
+    }
+    clock = end
   }
 
   var system: ActivationSystem {
@@ -420,14 +624,15 @@ final class GuardSeam {
       self.holds += 1
       return { self.releases += 1; self.releasedAt = self.clock }
     }
-    system.reactivate = { pid in self.reactivated.append(pid); return true }
+    system.reactivate = { pid in self.reactivated.append(pid); return self.reactivates }
     system.userWindow = { _ in (AXUIElementCreateApplication(990_002), 42) }
     var samples = 0
     system.isInFront = { _, _ in samples += 1; return self.targetInFront(samples) }
-    system.raise = { _ in self.raises += 1 }
+    system.raise = { _ in self.raises += 1; self.advance(self.raiseCost) }
     system.activationPoint = { _ in self.activationPoint }
     system.now = { self.clock }
-    system.sleep = { _ in self.clock += self.step }
+    system.sleep = { _ in self.advance(self.step) }
+    system.schedule = { ms, work in self.timers.append((self.clock + ms, work)) }
     return system
   }
 }

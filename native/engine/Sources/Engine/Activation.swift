@@ -7,11 +7,13 @@ import Foundation
 // event of subtype 1 (application activated; flags 0xC0000, the window number) plus a left click at the window's
 // AXActivationPoint with route 2's recipe, the click skipped when that point lies outside the window's frame (cua's
 // declared difference, the second sitting's U13). Around it, when another app is frontmost: screen updates held with the
-// private SLSDisableUpdate/SLSReenableUpdate, released when the guard ends or at `activationHoldCapMs`, whichever is
-// first, so a slow guard never freezes the display for long; and a 10 ms poll for up to 1 s that answers the target's
+// private SLSDisableUpdate/SLSReenableUpdate, released when the guard ends or, by a timer, at `activationHoldCapMs`,
+// whichever is first, so a slow guard (a raise waiting out its AX timeout included) never freezes the display for long;
+// and a 10 ms poll for up to 1 s that answers the target's
 // window ordering above the user's focused window with AXRaise on the user's window. The guard fails, and the action is
 // refused as activationFailed with its own events never posted (never retried with ⌘), when the poll times out or the
-// user's app loses frontmost: when the target itself came to the front the user's app is made frontmost again first;
+// user's app loses frontmost: when the engine's own action brought the target to the front (the target's process, or
+// the bound app's when the target is a panel served by another process) the user's app is made frontmost again first;
 // when a third app did (most likely the user's own switch) the front is left alone. After the action's events, the
 // matching deactivation (subtype 2) unless the app has really become active.
 //
@@ -87,6 +89,10 @@ struct ActivationSystem {
   var activationPoint: (AXUIElement) -> CGPoint? = { point(attribute($0, "AXActivationPoint")) }
   var now: () -> Double = monotonicMilliseconds
   var sleep: (Double) -> Void = { usleep(UInt32(max(0, $0) * 1000)) }
+  /// Runs `work` after the given milliseconds on another thread (the hold's cap, kept while the guard is blocked).
+  var schedule: (Double, @escaping @Sendable () -> Void) -> Void = { ms, work in
+    DispatchQueue.global(qos: .userInteractive).asyncAfter(deadline: .now() + .microseconds(Int(ms * 1000)), execute: work)
+  }
 
   func believesItHasFocus(_ pid: pid_t) -> Bool { frontmost() == pid || keyFocus() == pid }
 }
@@ -107,19 +113,26 @@ func activationFailed(_ detail: String) -> EngineError {
   EngineError(name: "activationFailed", "The action was not performed: \(detail), so the app could not be prepared for input in the background. Nothing was clicked or typed; try again.")
 }
 
-/// A release that runs once, however many times it is asked for.
-private final class OnceRelease {
+/// A release that runs once, however many times and from whichever thread it is asked for (the guard's own end, or the
+/// cap's timer).
+private final class OnceRelease: @unchecked Sendable {
+  private let lock = NSLock()
   private var release: (() -> Void)?
   init(_ release: @escaping () -> Void) { self.release = release }
   func callAsFunction() {
-    release?()
+    lock.lock()
+    let pending = release
     release = nil
+    lock.unlock()
+    pending?()
   }
 }
 
 /// One action's fake activation of the app `pid` for its window.
 final class FakeActivation {
   let pid: pid_t
+  /// The bound app, which a panel's process (`pid`) serves; its coming to the front is the engine's doing too.
+  let appPid: pid_t
   let window: AXUIElement
   let windowFrame: CGRect?
   let windowID: CGWindowID?
@@ -128,8 +141,10 @@ final class FakeActivation {
   /// How long the guard held after the activation pair, for the result's meta; nil when no guard ran.
   private(set) var guardMs: Double?
 
-  init(pid: pid_t, window: AXUIElement, windowFrame: CGRect?, windowID: CGWindowID?, system: ActivationSystem = ActivationSystem()) {
+  init(pid: pid_t, appPid: pid_t? = nil, window: AXUIElement, windowFrame: CGRect?, windowID: CGWindowID?,
+       system: ActivationSystem = ActivationSystem()) {
     self.pid = pid
+    self.appPid = appPid ?? pid
     self.window = window
     self.windowFrame = windowFrame
     self.windowID = windowID
@@ -137,9 +152,10 @@ final class FakeActivation {
   }
 
   /// The window's frame and number read from the Accessibility API.
-  convenience init(pid: pid_t, window: AXUIElement, system: ActivationSystem = ActivationSystem()) {
+  convenience init(pid: pid_t, appPid: pid_t? = nil, window: AXUIElement, system: ActivationSystem = ActivationSystem()) {
     let windowFrame = frame(of: window)
-    self.init(pid: pid, window: window, windowFrame: windowFrame, windowID: windowNumber(of: window, pid: pid, frame: windowFrame), system: system)
+    self.init(pid: pid, appPid: appPid, window: window, windowFrame: windowFrame,
+              windowID: windowNumber(of: window, pid: pid, frame: windowFrame), system: system)
   }
 
   /// The vendor's safelyEnforceActiveState: nothing when the app believes it has focus; otherwise the activation pair,
@@ -155,6 +171,7 @@ final class FakeActivation {
     let userWindow = system.userWindow(user)
     let release = OnceRelease(system.holdScreenUpdates())
     defer { release() }
+    system.schedule(activationHoldCapMs) { release() }
     postActivation()
     let started = system.now()
     defer { guardMs = ((system.now() - started) * 1000).rounded() / 1000 }
@@ -162,12 +179,12 @@ final class FakeActivation {
     while stable < 3 {
       system.sleep(activationGuardSampleMs)
       let elapsed = system.now() - started
-      if elapsed >= activationHoldCapMs { release() }
       let front = system.frontmost()
       if front != user {
-        if front == pid {
-          _ = system.reactivate(user)
-          throw activationFailed("the app came to the front, and the frontmost app was restored")
+        if let front, front == pid || front == appPid {
+          throw activationFailed(system.reactivate(user)
+            ? "the app came to the front, and the frontmost app was restored"
+            : "the app came to the front, and the frontmost app could not be restored")
         }
         throw activationFailed("another app came to the front")
       }

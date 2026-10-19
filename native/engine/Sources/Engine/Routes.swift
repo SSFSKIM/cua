@@ -7,18 +7,22 @@ import Foundation
 // the ladder 1 → 3: route 1, the element's own action, for a plain single left click on an element that advertises
 // AXPick or AXPress and whose clickable point does not land on a strict descendant of it, and route 3, the fake
 // activation then the plain post, for every synthesized click (an element without the action, any other button or
-// count, a menu-bar item, every coordinate click). Route 2, the ⌘ post, and a forced 2′ click are reachable only
-// through the spike's `spikeRoute`. Route 4 is M2a's. Everything here is pure, so the choice is unit-tested.
+// count, every coordinate click). A plain click on a menu-bar item runs route 3's activation first and then the same
+// choice, as the vendor's click does (F §5.1; FUN_100071f40's menu-bar branch calls FUN_10007151c, the enforcer's
+// activation, whose resume FUN_1000728b8 continues at FUN_10007292c into UIElementProtocol.click). Route 2, the ⌘ post,
+// and a forced 2′ click are reachable only through the spike's `spikeRoute`. Route 4 is M2a's. Everything here is pure,
+// so the choice is unit-tested.
 
 /// How an element click is carried.
 enum ElementClickPlan: Equatable {
-  case action(String)           // route 1, with the action to perform
-  case synthesized(InputRoute)  // route 3 by default; 2 or 2′ only when forced
+  case action(String, activateFirst: Bool)  // route 1, with the action to perform; a menu-bar item's after route 3's activation
+  case synthesized(InputRoute)              // route 3 by default; 2 or 2′ only when forced
 }
 
 /// The clicks' ladder for an element (F §5.1 for the action's choice and the gate). `landsOnDescendant` hit-tests the
-/// element's clickable point and is called only for a click route 1 could otherwise carry. A forced route (the spike's)
-/// skips the gate; a forced route 1 needs an advertised action.
+/// element's clickable point and is called only for a click route 1 could otherwise carry. A plain click on a menu-bar
+/// item activates first, whichever way it is then carried (a synthesized one by route 3 activates anyway). A forced
+/// route (the spike's) skips the gate and the activation; a forced route 1 needs an advertised action.
 func elementClickPlan(forced: InputRoute?, button: MouseButton, count: Int, role: String, actions: [String],
                       landsOnDescendant: () -> Bool) throws -> ElementClickPlan {
   let advertised = actions.first(where: { $0 == "AXPick" }) ?? actions.first(where: { $0 == "AXPress" })
@@ -27,9 +31,11 @@ func elementClickPlan(forced: InputRoute?, button: MouseButton, count: Int, role
     guard let advertised else {
       throw EngineError.invalidArguments("spikeRoute 1 cannot carry this click: the element advertises neither AXPick nor AXPress")
     }
-    return .action(advertised)
+    return .action(advertised, activateFirst: false)
   }
-  if button == .left, count == 1, role != "AXMenuBarItem", let advertised, !landsOnDescendant() { return .action(advertised) }
+  if button == .left, count == 1, let advertised, !landsOnDescendant() {
+    return .action(advertised, activateFirst: role == "AXMenuBarItem")
+  }
   return .synthesized(.activation)
 }
 
@@ -55,9 +61,46 @@ func landsOnStrictDescendant<Element>(_ hit: Element?, of target: Element, paren
   return false
 }
 
-/// An element's clickable point: the midpoint of the part of its frame inside `bounds` (its window's frame), nil when
-/// no part of at least a point on each side shows. Scrolling the element into view first is not done here (M2a, with
-/// `scroll`); an element wholly outside its window is refused as not visible.
+/// The roles whose frame clips what of an element shows: the vendor's (FUN_10078e49c intersects the frames of the
+/// ancestors FUN_10078ed70 accepts: a scroll area, a group with a page-scroll action (FUN_10078e9b8), and the window,
+/// sheet, menu or popover FUN_10078eb38 names) plus AXWebArea, cua's, whose frame bounds the page's own scrolling where
+/// no scroll area encloses it.
+private let clippingRoles: Set<String> = ["AXScrollArea", "AXWebArea", "AXWindow", "AXSheet", "AXMenu", "AXPopover"]
+/// Where the walk ends after clipping (FUN_10078eb38), and where it ends without (the application).
+private let boundaryRoles: Set<String> = ["AXWindow", "AXSheet", "AXMenu", "AXPopover"]
+/// A group clips when it can scroll by the page (the vendor's `hasScrollAction`, not decompiled; read as the
+/// UIElementAction cases that scroll, E §5).
+private let pageScrollActions: Set<String> = ["AXScrollUpByPage", "AXScrollDownByPage", "AXScrollLeftByPage", "AXScrollRightByPage"]
+
+/// The part of an element that shows: its frame cut by the frame of every clipping ancestor up to its window, sheet,
+/// menu or popover (the vendor's visible-frame walk, FUN_10078e49c). Nil when the element has no frame or nothing of it
+/// shows, so a row scrolled out of its list or web content scrolled out of its page is not clicked through whatever
+/// covers its content position. An ancestor without a frame does not clip. A menu-bar item, whose ancestors are the
+/// menu bar and the application, keeps its whole frame. Scrolling into view first is M2a's, with `scroll`.
+func visibleFrame<Element>(of element: Element, frame: (Element) -> CGRect?, role: (Element) -> String?,
+                           parent: (Element) -> Element?, actions: (Element) -> [String]) -> CGRect? {
+  guard var visible = frame(element) else { return nil }
+  var current: Element? = element
+  var level = 0
+  while let node = current, level <= 300 {
+    let nodeRole = role(node) ?? ""
+    if nodeRole == "AXApplication" { break }
+    if level > 0 {
+      let clips = clippingRoles.contains(nodeRole) || (nodeRole == "AXGroup" && !pageScrollActions.isDisjoint(with: actions(node)))
+      if clips, let bounds = frame(node) {
+        visible = visible.intersection(bounds)
+        guard !visible.isNull, visible.width >= 1, visible.height >= 1 else { return nil }
+      }
+    }
+    if boundaryRoles.contains(nodeRole) { break }
+    current = parent(node)
+    level += 1
+  }
+  return visible
+}
+
+/// An element's clickable point: the midpoint of its visible frame, further cut by `bounds` (its own window's frame,
+/// when it has one); nil when no part of at least a point on each side shows.
 func clickablePoint(frame: CGRect?, visibleIn bounds: CGRect?) -> CGPoint? {
   guard let frame else { return nil }
   let visible = bounds.map { frame.intersection($0) } ?? frame

@@ -99,16 +99,33 @@ func deliverClick(_ target: ClickTarget, route: InputRoute, button: MouseButton,
   meta.endedAt = endedAt
 }
 
+/// An element's own action (route 1): after route 3's activation for a menu-bar item (`activation` given), whose
+/// failed guard throws before the action is performed; the activation is withdrawn afterwards. The meta reports route 3
+/// when the activation ran, since the app's activation hooks fired, else route 1.
+func deliverAction(_ action: String, activation: FakeActivation?, perform: (String) -> AXError, meta: inout InputMeta) throws {
+  meta.inputRoute = activation == nil ? .action : .activation
+  defer { activation?.deactivate() }
+  if let activation {
+    try activation.activate()
+    meta.activationGuardMs = activation.guardMs
+  }
+  meta.startedAt = unixMilliseconds()
+  let error = perform(action)
+  meta.endedAt = unixMilliseconds()
+  guard error == .success else { throw EngineError(name: "actionFailed", "The element did not accept the \(action) action.") }
+}
+
 extension Engine {
   // MARK: click
 
   /// `click {app, element | x, y, mouse_button?, click_count?}`, `element` a token of the request's `lineage` (the
   /// service's translation of the facade's element_index). An element click takes route 1 (AXPick, else AXPress) for a
-  /// plain left click on an element that advertises the action, is not a menu-bar item, and whose clickable point does
-  /// not land on a strict descendant of it (the vendor's nested-content gate, applied to every element by cua); every
-  /// other element click is synthesized at that point by route 3. A coordinate click is in the pixels of the last
-  /// screenshot of the app's primary window on this connection, refused (`noScreenshotForCoordinates`, nothing posted)
-  /// when there is none, and goes by route 3. The process serving the target receives the input, after the forbidden
+  /// plain left click on an element that advertises the action and whose clickable point does not land on a strict
+  /// descendant of it (the vendor's nested-content gate, applied to every element by cua), a menu-bar item's after route
+  /// 3's activation; every other element click is synthesized by route 3 at the midpoint of the element's visible frame,
+  /// refused as not visible when nothing of it shows or its frame cannot be read now. A coordinate click is in the pixels
+  /// of the last screenshot of the app's primary window on this connection, refused (`noScreenshotForCoordinates`,
+  /// nothing posted) when there is none, and goes by route 3. The process serving the target receives the input, after the forbidden
   /// list has been checked against it.
   func click(_ args: [String: Any], _ context: ExecutionContext) throws -> Any {
     let token = try elementTokenArg(args, lineage: context.lineage)
@@ -136,27 +153,35 @@ extension Engine {
         let entry = try context.connection.element(token, app: app, lineage: lineage) { ElementResolver.live($0, pid: appPid) }
         let owner = ownerPid(of: entry.element, fallback: appPid)  // a sheet or panel is served by another process
         try refuseForbiddenOwner(owner)
-        // The element's own window, which for a panel served by another process is that process's window.
-        let window = elementAttribute(entry.element, kAXWindowAttribute) ?? primaryWindow(of: prepare(AXUIElementCreateApplication(appPid)))
-        let windowFrame = window.flatMap { frame(of: $0) }
-        let point = clickablePoint(frame: frame(of: entry.element) ?? entry.frame, visibleIn: windowFrame)
+        // The element's own window, which for a panel served by another process is that process's window; a menu-bar
+        // item has none. The point is read live: a frame that cannot be read now is not replaced by the observed one.
+        let ownWindow = elementAttribute(entry.element, kAXWindowAttribute)
+        let ownWindowFrame = ownWindow.flatMap { frame(of: $0) }
+        let ownWindowID = ownWindow.flatMap { windowNumber(of: $0, pid: owner, frame: ownWindowFrame) }
+        let visible = visibleFrame(of: entry.element, frame: { frame(of: $0) }, role: { stringAttribute($0, kAXRoleAttribute) },
+                                   parent: { elementAttribute($0, kAXParentAttribute) }, actions: actionNames(of:))
+        let point = clickablePoint(frame: visible, visibleIn: ownWindowFrame)
         let plan = try elementClickPlan(forced: forced, button: button, count: count, role: entry.identity.role, actions: entry.actions) {
           guard let point else { return false }  // nothing to hit-test: the action needs no point
           return landsOnStrictDescendant(hitTest(application: owner, at: point), of: entry.element,
                                          parent: { elementAttribute($0, kAXParentAttribute) }, same: { CFEqual($0, $1) })
         }
+        // Route 3's activation is for the element's window, else the app's primary window (a menu-bar item's).
+        func activation() -> FakeActivation {
+          if let ownWindow { return FakeActivation(pid: owner, appPid: appPid, window: ownWindow, windowFrame: ownWindowFrame, windowID: ownWindowID) }
+          let application = prepare(AXUIElementCreateApplication(appPid))
+          return FakeActivation(pid: owner, appPid: appPid, window: primaryWindow(of: application) ?? application)
+        }
         switch plan {
-        case .action(let action):
-          meta.inputRoute = .action
-          meta.startedAt = unixMilliseconds()
-          let error = AXUIElementPerformAction(entry.element, action as CFString)
-          meta.endedAt = unixMilliseconds()
-          guard error == .success else { throw EngineError(name: "actionFailed", "The element did not accept the \(action) action.") }
+        case .action(let action, let activateFirst):
+          try deliverAction(action, activation: activateFirst ? activation() : nil,
+                            perform: { AXUIElementPerformAction(entry.element, $0 as CFString) }, meta: &meta)
         case .synthesized(let route):
           guard let point else { throw EngineError(name: "cannotClickOffscreenElement", "The element is not visible on screen.") }
-          let windowID = window.flatMap { windowNumber(of: $0, pid: owner, frame: windowFrame) }
-          let target = ClickTarget(point: point, windowFrame: windowFrame, windowID: windowID, pid: owner)
-          try synthesizedClick(target, window: window ?? entry.element, route: route, button: button, count: count, meta: &meta)
+          let target = ClickTarget(point: point, windowFrame: ownWindowFrame, windowID: ownWindowID, pid: owner)
+          try deliverClick(target, route: route, button: button, count: count, activation: route == .activation ? activation() : nil,
+                           targetActive: { NSRunningApplication(processIdentifier: owner)?.isActive == true },
+                           post: { $0.postToPid($1) }, meta: &meta)
         }
       } else {
         guard let x = numberArg(args["x"]), let y = numberArg(args["y"]), x.isFinite, y.isFinite else {
@@ -171,25 +196,20 @@ extension Engine {
         let point = CGPoint(x: windowFrame.minX + local.x, y: windowFrame.minY + local.y)
         let owner = hitTest(window: window, at: point).map { ownerPid(of: $0, fallback: appPid) } ?? appPid
         try refuseForbiddenOwner(owner)
-        let target = ClickTarget(point: point, windowFrame: windowFrame, windowID: windowNumber(of: window, pid: appPid, frame: windowFrame), pid: owner)
-        try synthesizedClick(target, window: window, route: coordinateClickRoute(forced: forced), button: button, count: count, meta: &meta)
+        let windowID = windowNumber(of: window, pid: appPid, frame: windowFrame)
+        let target = ClickTarget(point: point, windowFrame: windowFrame, windowID: windowID, pid: owner)
+        let route = coordinateClickRoute(forced: forced)
+        let activation = route == .activation
+          ? FakeActivation(pid: owner, appPid: appPid, window: window, windowFrame: windowFrame, windowID: windowID) : nil
+        try deliverClick(target, route: route, button: button, count: count, activation: activation,
+                         targetActive: { NSRunningApplication(processIdentifier: owner)?.isActive == true },
+                         post: { $0.postToPid($1) }, meta: &meta)
       }
       context.connection.markActed(app)
       return ["meta": meta.wire]
     } catch let error as EngineError {
       throw withMeta(error, meta)
     }
-  }
-
-  /// A synthesized click on the live system: route 3's activation for `window` (the target's window), or a forced
-  /// spike route's plain or ⌘ post.
-  private func synthesizedClick(_ target: ClickTarget, window: AXUIElement, route: InputRoute, button: MouseButton, count: Int,
-                                meta: inout InputMeta) throws {
-    let activation = route == .activation
-      ? FakeActivation(pid: target.pid, window: window, windowFrame: target.windowFrame, windowID: target.windowID) : nil
-    try deliverClick(target, route: route, button: button, count: count, activation: activation,
-                     targetActive: { NSRunningApplication(processIdentifier: target.pid)?.isActive == true },
-                     post: { $0.postToPid($1) }, meta: &meta)
   }
 
   // MARK: press_key
@@ -247,6 +267,10 @@ extension Engine {
       guard let pid = app.pid else { throw EngineError(.runningApplicationNotFound, "Running application not found: \(app.displayName)") }
       try requireAccessibility()
       try refuseWhenLocked()
+      // The forbidden list on the process the keys would reach comes before anything else is decided.
+      let application = prepare(AXUIElementCreateApplication(pid))
+      let target = keyboardTarget(application, fallback: pid)
+      try refuseForbiddenOwner(target)
 
       let source = currentInputSource()
       // macOS may hold a source per app; the session's reading then says nothing about a background app.
@@ -263,9 +287,6 @@ extension Engine {
       guard let layout = KeyLayout.current() else {
         throw EngineError(name: "keyboardLayoutUnavailable", "Unable to get the current keyboard layout.")
       }
-      let application = prepare(AXUIElementCreateApplication(pid))
-      let target = keyboardTarget(application, fallback: pid)
-      try refuseForbiddenOwner(target)
       meta.inputRoute = keyRoute(forced: forced)
       let activation = try forcedActivation(meta.inputRoute, pid: pid, application: application, meta: &meta)
       defer { activation?.deactivate() }  // an inputSourceChanged mid-typing undoes a forced activation too
@@ -381,6 +402,12 @@ func hitTest(window: AXUIElement, at point: CGPoint) -> AXUIElement? {
 /// deliver a click at the point to, whatever other apps' windows lie above it).
 func hitTest(application pid: pid_t, at point: CGPoint) -> AXUIElement? {
   hitTest(window: prepare(AXUIElementCreateApplication(pid)), at: point)
+}
+
+/// An element's advertised actions, read now.
+func actionNames(of element: AXUIElement) -> [String] {
+  var names: CFArray?
+  return AXUIElementCopyActionNames(element, &names) == .success ? (names as? [String] ?? []) : []
 }
 
 /// The process that serves an element; `fallback` when the Accessibility API cannot say.

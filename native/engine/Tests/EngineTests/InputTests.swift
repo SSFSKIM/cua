@@ -401,17 +401,18 @@ final class AutoStopTests: XCTestCase {
 final class FakeActivationTests: XCTestCase {
   /// The real key-focus read, with a window-server connection as the engine always has (the mini sitting's crash: the
   /// call was declared with one argument and faulted in SkyLight's SLPSGetKeyFocusProcess on every typeText).
+  @MainActor
   func testTheRealKeyFocusReadAnswersFromAnyThread() {
     _ = NSApplication.shared
     let main = ActivationSystem().keyFocus()
-    var background: pid_t?? = .none
+    let background = Box<pid_t?>()
     let done = expectation(description: "background read")
     Thread {
-      background = .some(ActivationSystem().keyFocus())
+      background.value = .some(ActivationSystem().keyFocus())
       done.fulfill()
     }.start()
     wait(for: [done], timeout: 5)
-    XCTAssertEqual(background, .some(main), "the read answers the same from a connection's thread as from the main one")
+    XCTAssertEqual(background.value, .some(main), "the read answers the same from a connection's thread as from the main one")
   }
 
   private let target: pid_t = 990_001, user: pid_t = 990_002, other: pid_t = 990_003
@@ -452,6 +453,16 @@ final class FakeActivationTests: XCTestCase {
 
     activation.deactivate()
     XCTAssertEqual(seam.posts.map(\.subtype), [1, 2])
+  }
+
+  func testTheRestoreIsReportedOnlyWhenItHappened() {
+    for (reactivates, phrase) in [(true, "the frontmost app was restored"), (false, "the frontmost app could not be restored")] {
+      let seam = SeamStub(frontmost: user, frontmostAfterPost: target, reactivates: reactivates)
+      XCTAssertThrowsError(try activation(seam).activate()) { error in
+        XCTAssertTrue((error as? EngineError)?.message.contains(phrase) == true, phrase)
+      }
+      XCTAssertEqual(seam.reactivated, [user])
+    }
   }
 
   func testNoDeactivationOnceTheAppReallyBecameActive() throws {
@@ -526,6 +537,7 @@ final class SeamStub {
     system.activationPoint = { _ in nil }
     system.now = { self.clock }
     system.sleep = { self.clock += $0 }
+    system.schedule = { _, _ in }  // the cap's timer never fires here: every guard ends first
     return system
   }
 }

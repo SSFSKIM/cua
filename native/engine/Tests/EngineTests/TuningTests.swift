@@ -45,3 +45,35 @@ final class ResolutionCacheTests: XCTestCase {
     XCTAssertNil(cache.lookup("self", isAlive: { _ in false }), "a terminated process misses even before the notification lands")
   }
 }
+
+// Tuning iteration 1 (the mini sitting): the window capture runs beside the tree walk and is joined after it.
+
+final class ConcurrentCaptureTests: XCTestCase {
+  func testTheCaptureRunsOffTheCallingThreadAndOverlapsTheWalk() {
+    let started = DispatchSemaphore(value: 0), release = DispatchSemaphore(value: 0)
+    let pending = PendingCapture { timings in
+      XCTAssertFalse(Thread.isMainThread)
+      started.signal()
+      release.wait()
+      timings.add("capture", 40)
+      timings.set("screenshotBytes", 1234)
+      return ["path": "/tmp/x.jpg"]
+    }
+    XCTAssertEqual(started.wait(timeout: .now() + 2), .success, "the capture began before the walk finished")
+    release.signal()
+    let joined = pending.wait()
+    XCTAssertEqual(try joined.result.get()["path"] as? String, "/tmp/x.jpg")
+    var timings = Timings()
+    timings.add("walk", 50)
+    timings.add("capture", 1)
+    timings.merge(joined.timings)
+    XCTAssertEqual(timings.wire["captureMs"] as? Double, 41)
+    XCTAssertEqual(timings.wire["walkMs"] as? Double, 50)
+    XCTAssertEqual(timings.wire["screenshotBytes"] as? Int, 1234)
+  }
+
+  func testACaptureFailureReachesTheJoin() {
+    let pending = PendingCapture { _ in throw EngineError(name: "screenCaptureFailed", "no window") }
+    XCTAssertThrowsError(try pending.wait().result.get())
+  }
+}

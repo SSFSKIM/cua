@@ -27,6 +27,12 @@ struct Timings {
     return try body()
   }
 
+  /// Adds another record's phases and takes its values (a concurrent part of the same observation).
+  mutating func merge(_ other: Timings) {
+    for (phase, ms) in other.phases { add(phase, ms) }
+    for (name, value) in other.values { values[name] = value }
+  }
+
   mutating func merge(_ costs: FetchCosts) {
     for (phase, ms) in costs.ms { add(phase, ms) }
     for (name, n) in costs.counts { count(name, n) }
@@ -36,6 +42,30 @@ struct Timings {
     var object = values
     for (phase, ms) in phases { object[phase + "Ms"] = (ms * 1000).rounded() / 1000 }
     return object
+  }
+}
+
+/// A capture started on its own thread; `wait()` joins it and hands back its result with the timings it recorded.
+final class PendingCapture: @unchecked Sendable {
+  private let done = DispatchSemaphore(value: 0)
+  private var result: Result<[String: Any], Error> = .failure(EngineError(name: "screenCaptureFailed", "The capture did not run."))
+  private var timings = Timings()
+
+  init(_ body: @escaping (inout Timings) throws -> [String: Any]) {
+    let thread = Thread { [self] in
+      var recorded = Timings()
+      let outcome = Result { try body(&recorded) }
+      timings = recorded
+      result = outcome
+      done.signal()
+    }
+    thread.name = "cua-engine capture"
+    thread.start()
+  }
+
+  func wait() -> (result: Result<[String: Any], Error>, timings: Timings) {
+    done.wait()
+    return (result, timings)
   }
 }
 
@@ -160,6 +190,15 @@ extension Engine {
 
     let menuItems = timings.time("menuBar") { elementAttribute(application, kAXMenuBarAttribute).map { elementList(attribute($0, kAXChildrenAttribute)) } ?? [] }
     let windowFrame = frame(of: window)
+    // The window capture runs beside the tree walk (in-sitting tuning iteration 1): it needs only the window and its
+    // frame, and the walk does not depend on it, so the observation costs the longer of the two, not their sum.
+    let captureRevision = lineage.revision, capturePid = pid(of: window)
+    let pendingCapture: PendingCapture? = includeScreenshot
+      ? PendingCapture { [self] timings in
+          try capture(window: window, pid: capturePid, frame: windowFrame, into: outputDirectory!, name: app.displayName,
+                      revision: captureRevision, timings: &timings)
+        }
+      : nil
     // The settle's reads stand for the tree only when nothing changed it since (adoptsSettledTree).
     let source: ElementSource
     if let settled, let reused = settled.source, let busyWindow = settled.window,
@@ -209,8 +248,10 @@ extension Engine {
     connection.requiresRequery.remove(app.key)
 
     var screenshot: Any = NSNull()
-    if includeScreenshot {
-      screenshot = try capture(window: window, pid: pid(of: window), frame: windowFrame, into: outputDirectory!, name: app.displayName, revision: lineage.revision, timings: &timings)
+    if let pendingCapture {
+      let joined = timings.time("screenshotJoin") { pendingCapture.wait() }
+      timings.merge(joined.timings)
+      screenshot = try joined.result.get()
     }
     timings.add("total", monotonicMilliseconds() - started)
 

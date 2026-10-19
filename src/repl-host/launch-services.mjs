@@ -4,8 +4,11 @@
 // `launch_services_action {id, exec_id, action: 'open_application', application_path?, bundle_identifier?}`; the
 // supervisor opens the application outside every sandbox and answers `privileged_result`.
 //
-// macOS: through LaunchServices (`/usr/bin/open -a <path>` or `-b <bundle id>`, the OS boundary, injectable). Kept
-// implemented and boundary-tested; native production use stays on the vendor host until #117. Sentences are the vendor
+// macOS: through LaunchServices (`/usr/bin/open -n -g -a <path>` or `-b <bundle id>`, the OS boundary, injectable). A
+// path opens as a new instance (`-n`: LaunchServices would otherwise hand the request to a running copy of the same
+// bundle id and launch nothing) in the background (`-g`: the launch never takes the user's focus), which is how cua's
+// native engine service starts the approved engine (#117, docs/doperpowers/specs/2026-10-18-own-native-engine-design.md,
+// "Process model"; the engine's lock makes the loser of two simultaneous launches exit). Sentences are the vendor
 // supervisor's (recovered, docs/doperpowers/research/2026-10-14-own-repl-host/node-repl-embedded-INDEX.md "Gaps" 5)
 // where they exist.
 //
@@ -104,7 +107,7 @@ export async function launchServicesAction(message, {platform = process.platform
   if (bundle !== null && (typeof bundle !== 'string' || !bundle)) throw new Error(EXACTLY_ONE_SENTENCE);
   if (platform !== 'darwin') throw new Error(MACOS_ONLY_SENTENCE);
   try {
-    await open(path !== null ? ['-a', path] : ['-b', bundle]);
+    await open(path !== null ? ['-n', '-g', '-a', path] : ['-b', bundle]);
   } catch (error) {
     throw new Error(`${DISPATCH_FAILED_PREFIX}${error.message}`);
   }

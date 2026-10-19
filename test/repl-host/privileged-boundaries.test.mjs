@@ -33,12 +33,14 @@ test('the client\'s answer: accept, decline and cancel with content and meta int
   assert.deepEqual(elicitationOutcome({error: {code: -1}}), {ok: false, error: UNEXPECTED_RESPONSE_SENTENCE});
 });
 
-test('LaunchServices opens exactly one target through the OS boundary, on macOS, and reports a dispatch failure', async () => {
+// An application path opens as a new instance in the background (`open -n -g -a`): the native engine's launch must never
+// take the user's focus, and a running copy of the same bundle id must not absorb it (#117, Design "Process model").
+test('LaunchServices opens exactly one target through the OS boundary, on macOS, a path as a new background instance, and reports a dispatch failure', async () => {
   const calls = [];
   const open = async args => { calls.push(args); };
   await launchServicesAction({action: 'open_application', application_path: '/Applications/Example.app'}, {platform: 'darwin', open});
   await launchServicesAction({action: 'open_application', bundle_identifier: 'com.example.app'}, {platform: 'darwin', open});
-  assert.deepEqual(calls, [['-a', '/Applications/Example.app'], ['-b', 'com.example.app']]);
+  assert.deepEqual(calls, [['-n', '-g', '-a', '/Applications/Example.app'], ['-b', 'com.example.app']]);
   const refused = async (message, platform = 'darwin', boundary = open) => {
     try { await launchServicesAction(message, {platform, open: boundary}); return null; } catch (error) { return error.message; }
   };

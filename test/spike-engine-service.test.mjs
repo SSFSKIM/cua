@@ -1,6 +1,8 @@
 // The own native engine spike's service (scripts/spike/engine/service.mjs; docs/doperpowers/specs/2026-10-18-own-native-
-// engine-design.md, M0 "Spike", Design "The service", and the Decision Log's "M0 spike pre-flight": resolve_app before
-// every app-scoped call, one elicitation per (connection, app) with repeats answered by the service). A fake nodeRepl
+// engine-design.md, M0 "Spike", Design "The service", and the Decision Log's pre-flight entry as revised on 2026-10-19:
+// resolve_app on the first app-scoped call per (connection, app string), the identity kept for the connection and
+// re-resolved only when a result's identity differs or the engine reports the app not running; one elicitation per
+// (connection, app) with repeats answered by the service). A fake nodeRepl
 // (elicitation, response meta, timeout suspension, nativePipe over node:net) and a fake engine; synthetic trees only.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
@@ -103,13 +105,14 @@ test('get_app_state resolves the app first, asks once, observes by path with a s
 
 test('get_app_state forwards the engine\'s spike switches a call names, and only those', async t => {
   const {execute, engine} = await setup(t);
-  await execute('get_app_state', {app: 'TextEdit', prefetch: 'hierarchy', valueMarkdown: false, focusableSelectable: false, webAreaWait: false, settle: true, other: 'dropped'});
+  await execute('get_app_state', {app: 'TextEdit', prefetch: 'hierarchy', valueMarkdown: false, focusableSelectable: false, webAreaWait: false, settle: true, readSet: 'full', other: 'dropped'});
   await execute('get_app_state', {app: 'TextEdit'});
   const [named, plain] = engine.executes().filter(p => p.method === 'get_app_state').map(p => p.args);
-  assert.deepEqual({prefetch: named.prefetch, valueMarkdown: named.valueMarkdown, focusableSelectable: named.focusableSelectable, webAreaWait: named.webAreaWait, settle: named.settle},
-    {prefetch: 'hierarchy', valueMarkdown: false, focusableSelectable: false, webAreaWait: false, settle: true});
+  const switches = ['prefetch', 'valueMarkdown', 'focusableSelectable', 'webAreaWait', 'settle', 'readSet'];
+  assert.deepEqual(Object.fromEntries(switches.map(name => [name, named[name]])),
+    {prefetch: 'hierarchy', valueMarkdown: false, focusableSelectable: false, webAreaWait: false, settle: true, readSet: 'full'});
   assert.equal('other' in named, false);
-  for (const name of ['prefetch', 'valueMarkdown', 'focusableSelectable', 'webAreaWait', 'settle']) assert.equal(name in plain, false, `${name} is absent unless named`);
+  for (const name of switches) assert.equal(name in plain, false, `${name} is absent unless named`);
 });
 
 test('the approval: the vendor\'s message and meta, which the harness matcher accepts; one per app per connection', async t => {
@@ -118,7 +121,8 @@ test('the approval: the vendor\'s message and meta, which the harness matcher ac
   await execute('get_app_state', {app: '/System/Applications/TextEdit.app'});
   await assert.rejects(execute('click', {app: '/System/Applications/TextEdit.app', element_index: 1}), /not implemented/);
   assert.equal(state.elicitations.length, 1, 'repeats for the same app are answered by the service');
-  assert.equal(engine.executes().filter(p => p.method === 'resolve_app').length, 3, 'resolve_app before every app-scoped call');
+  assert.deepEqual(engine.executes().filter(p => p.method === 'resolve_app').map(p => p.args.app), ['TextEdit', APPS.TextEdit.appPath],
+    'resolve_app once per app string in the connection');
   const [request] = state.elicitations;
   assert.deepEqual(request, {
     message: 'Allow Computer Use to use "TextEdit"?',
@@ -133,6 +137,65 @@ test('the approval: the vendor\'s message and meta, which the harness matcher ac
   await execute('get_app_state', {app: 'Finder'});
   assert.equal(state.elicitations.length, 2, 'another app asks again');
   assert.equal(state.elicitations[1].message, 'Allow Computer Use to use "Finder"?');
+});
+
+test('resolution is kept per (connection, app string): a second call makes no resolve_app, concurrent first calls share one', async t => {
+  const {execute, engine} = await setup(t);
+  await Promise.all([execute('get_app_state', {app: 'TextEdit'}), execute('get_app_state', {app: 'TextEdit'})]);
+  await execute('get_app_state', {app: 'TextEdit'});
+  await assert.rejects(execute('click', {app: 'TextEdit', element_index: 1}), /not implemented/);
+  assert.deepEqual(engine.executes().map(p => p.method), ['resolve_app', 'get_app_state', 'get_app_state', 'get_app_state', 'click']);
+});
+
+test('an observation whose pid differs from the kept identity drops it, and the next call resolves again', async t => {
+  let pid = 501;
+  const {execute, engine, state} = await setup(t, {handlers: {
+    'execute:resolve_app': ({args}) => ({...(APPS[args.app] ?? byPath[args.app]), pid}),
+    'execute:get_app_state': ({args}) => { const shot = skyshotFor(byPath[args.app]); return {...shot, app: {...shot.app, pid}}; },
+  }});
+  await execute('get_app_state', {app: 'TextEdit'});
+  pid = 777;   // the app relaunched: same bundle, same path, a new process
+  const result = await execute('get_app_state', {app: 'TextEdit'});
+  assert.equal(result.app, APPS.TextEdit.appPath, 'the observation itself stands: the approved bundle is the same');
+  await execute('get_app_state', {app: 'TextEdit'});
+  await execute('get_app_state', {app: 'TextEdit'});
+  assert.deepEqual(engine.executes().map(p => p.method), ['resolve_app', 'get_app_state', 'get_app_state', 'resolve_app', 'get_app_state', 'get_app_state']);
+  assert.equal(state.elicitations.length, 1, 'the approval memory is unchanged');
+});
+
+test('an observation of another bundle than the approved one is discarded: resolved, approved and observed again in the same call', async t => {
+  let impostor = true;
+  const {execute, engine, state} = await setup(t, {handlers: {
+    'execute:resolve_app': ({args}) => (impostor ? APPS.TextEdit : APPS.Finder),
+    'execute:get_app_state': () => {
+      const shot = skyshotFor(APPS.Finder);   // whatever the path names now is Finder
+      impostor = false;
+      return shot;
+    },
+  }});
+  const result = await execute('get_app_state', {app: 'Editor'});
+  assert.equal(result.app, APPS.Finder.appPath);
+  assert.ok(result.text.includes('App: Finder.'));
+  assert.deepEqual(engine.executes().map(p => p.method), ['resolve_app', 'get_app_state', 'resolve_app', 'get_app_state']);
+  assert.deepEqual(state.elicitations.map(e => e.meta.tool_params.app), ['com.apple.TextEdit', 'com.apple.finder'], 'the new bundle is asked about before its text is returned');
+  assert.equal((await execute('get_app_state', {app: 'Editor'})).app, APPS.Finder.appPath);
+  assert.equal(engine.executes().filter(p => p.method === 'resolve_app').length, 2, 'the new identity is kept');
+});
+
+test('an app the engine reports not running is resolved again on the next call', async t => {
+  let running = true;
+  const {execute, engine} = await setup(t, {handlers: {
+    'execute:click': () => {
+      if (!running) throw new EngineFailure(-10007, 'Running application not found: TextEdit', 'runningApplicationNotFound');
+      throw new EngineFailure(-10005, 'click is not implemented by this engine build', 'notImplemented');
+    },
+  }});
+  await execute('get_app_state', {app: 'TextEdit'});
+  running = false;
+  await assert.rejects(execute('click', {app: 'TextEdit', element_index: 1}), error => error.errorName === 'runningApplicationNotFound');
+  await execute('get_app_state', {app: 'TextEdit'});
+  await assert.rejects(execute('click', {app: 'TextEdit', element_index: 1}), error => error.errorName === 'runningApplicationNotFound');
+  assert.deepEqual(engine.executes().map(p => p.method), ['resolve_app', 'get_app_state', 'click', 'resolve_app', 'get_app_state', 'click']);
 });
 
 test('a decline is remembered for the connection; a cancel is not', async t => {

@@ -138,7 +138,8 @@ test('a session through serve.mjs: the facade in a kernel, one approval per app,
   assert.deepEqual(result._meta['codex/toolSurface'], {app: {appId: 'com.apple.TextEdit', kind: 'appId'}, kind: 'computerUse'});
 
   const executes = engine.executes();
-  assert.deepEqual(executes.map(p => p.method), ['list_apps', 'resolve_app', 'get_app_state', 'resolve_app', 'get_app_state', 'resolve_app', 'click']);
+  assert.deepEqual(executes.map(p => p.method), ['list_apps', 'resolve_app', 'get_app_state', 'resolve_app', 'get_app_state', 'click'],
+    'resolve_app once per app string: getApp\'s name, then the bound path the App calls with');
   const observe = executes.find(p => p.method === 'get_app_state').args;
   const run = join(realpathSync(home), 'run');
   assert.ok(observe.outputDirectory.startsWith(`${run}/`) && observe.outputDirectory.endsWith('/tmp/cua-engine-screenshots'), observe.outputDirectory);

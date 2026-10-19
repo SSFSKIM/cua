@@ -4,11 +4,16 @@
 // vendor's does, and answers the facade (src/cua-api) unchanged:
 //   {type: 'setup'}                         → {target: 'mac', methods: the 11 names}
 //   {type: 'execute', method, args: [input]} → what the vendor's method returns
-// by forwarding to cua's engine (./client.mjs) at the bundle CUA_ENGINE_APP names. Every app-scoped method first
-// resolves the app (`resolve_app`), refuses what the engine refuses (the forbidden list), then asks one elicitation per
-// (connection, app) with the vendor's message and meta (R/A-contract.md §2.6) and answers repeats itself, accepts and
-// declines alike, as the supervisor's approval memory will from M1a; the engine call runs under
-// `nodeRepl.withSuspendedTimeout` with the resolved path in place of `app`, as the vendor's policy wrapper does.
+// by forwarding to cua's engine (./client.mjs) at the bundle CUA_ENGINE_APP names. The first app-scoped call for an app
+// string resolves it (`resolve_app`) and the identity is kept for the connection (the Decision Log's pre-flight entry as
+// revised on 2026-10-19): it is resolved again only when an observation's `app` names another bundle id or pid than the
+// kept one, or the engine answers `runningApplicationNotFound`. The engine resolves for itself and enforces the
+// forbidden list on every request, so the kept identity skips nothing that guards. Each app is approved with one
+// elicitation per (connection, app) with the vendor's message and meta (R/A-contract.md §2.6), repeats answered by the
+// service, accepts and declines alike, as the supervisor's approval memory will from M1a; the engine call runs under
+// `nodeRepl.withSuspendedTimeout` with the resolved path in place of `app`, as the vendor's policy wrapper does. An
+// observation of another bundle than the approved one is discarded and the call is resolved, approved and observed
+// again, once, so no text of an unapproved app is returned.
 // `get_app_state` always asks for the screenshot, since the facade's getAXState and getScreenshot send the same request
 // and the vendor captures on every observation (F §4.8), and renders the Skyshot with the stand-in renderer
 // (./render.mjs); there is no diff in the spike, so the default mode returns the full text too.
@@ -53,8 +58,11 @@ const RISK_SUBTITLE = 'Allowing Computer Use to use this app introduces new risk
 const REMEMBERED = new Set(['accept', 'decline']);
 // The per-call keys, reset at the start of every call (see the header).
 // The engine's spike-only get_app_state switches (native/engine Skyshot.swift), forwarded when a call names them, so
-// measure.mjs can price the fetch routes, the Markdown fetch, the settability reads, the web-area wait and the settle.
-const SPIKE_SWITCHES = ['prefetch', 'valueMarkdown', 'focusableSelectable', 'webAreaWait', 'settle'];
+// measure.mjs can price the fetch routes, the Markdown fetch, the settability reads, the web-area wait, the settle and
+// the per-role read set.
+const SPIKE_SWITCHES = ['prefetch', 'valueMarkdown', 'focusableSelectable', 'webAreaWait', 'settle', 'readSet'];
+// An observation whose bundle is not the one the call approved (internal: the call is redone once).
+class IdentityChanged extends Error {}
 const PER_CALL = {'cua/engineMs': null, 'cua/settle': null, 'cua/inputRoute': null, 'cua/actionInterval': null, 'cua/receivedAt': null, 'cua/hidIdleMs': null};
 
 // The vendor policy's input check (S/targets/mac/computer-use-policy.js): an object whose `app` is a non-empty string
@@ -87,6 +95,7 @@ export function createService({nodeRepl, client = null}) {
   const approvals = new Map();      // approval key → Promise<action>
   const observations = new Map();   // app string or resolved path → {app, skyshot, text}
   const lineages = new Map();       // resolved path → the lineage of its last observation
+  const identities = new Map();     // app string → Promise of resolve_app's answer, kept for the connection
   let outputDirectory = null;
 
   const engine = () => {
@@ -132,6 +141,18 @@ export function createService({nodeRepl, client = null}) {
     }
   }
 
+  // The kept identity of `app`, resolving it on first use; concurrent first calls share the one request.
+  function identityFor(app) {
+    let pending = identities.get(app);
+    if (!pending) {
+      pending = resolve(app);
+      identities.set(app, pending);
+      pending.catch(() => forget(app, pending));
+    }
+    return pending;
+  }
+  const forget = (app, pending) => { if (identities.get(app) === pending) identities.delete(app); };
+
   async function ask(toolName, target, key) {
     const bundle = target.bundleIdentifier ?? target.appPath;
     const risk = HIGH_RISK.has(String(bundle).toLowerCase()) ? 'high' : 'low';
@@ -167,10 +188,15 @@ export function createService({nodeRepl, client = null}) {
     return (outputDirectory = dir);
   }
 
-  async function getAppState(given, target) {
+  async function getAppState(given, target, pending) {
     const switches = Object.fromEntries(SPIKE_SWITCHES.filter(name => given[name] !== undefined).map(name => [name, given[name]]));
     const args = {app: target.appPath, includeScreenshot: true, outputDirectory: screenshotDirectory(), ...(given.disableDiff !== undefined ? {disableDiff: given.disableDiff} : {}), ...switches};
     const skyshot = await call('get_app_state', args);
+    const seen = skyshot.app ?? {};
+    if ((seen.bundleIdentifier ?? null) !== (target.bundleIdentifier ?? null) || (seen.pid ?? null) !== (target.pid ?? null)) {
+      forget(given.app, pending);
+      if ((seen.bundleIdentifier ?? null) !== (target.bundleIdentifier ?? null)) throw new IdentityChanged();
+    }
     const text = render(skyshot);
     const observation = {app: target.appPath, skyshot, text};
     observations.set(given.app, observation);
@@ -189,14 +215,24 @@ export function createService({nodeRepl, client = null}) {
     return undefined;
   }
 
-  async function appScoped(method, raw) {
+  async function appScoped(method, raw, redo = false) {
     startCall();
     toolSurface(null);
     const given = checkedInput(raw);
-    const target = await resolve(given.app);
+    const pending = identityFor(given.app);
+    const target = await pending;
     toolSurface(target.bundleIdentifier);
     await approve(method, target);
-    return required(nodeRepl, 'withSuspendedTimeout')(() => (method === 'get_app_state' ? getAppState(given, target) : act(method, given, target)));
+    try {
+      return await required(nodeRepl, 'withSuspendedTimeout')(() => (method === 'get_app_state' ? getAppState(given, target, pending) : act(method, given, target)));
+    } catch (error) {
+      if (error instanceof IdentityChanged) {
+        if (!redo) return appScoped(method, raw, true);
+        throw new Error(`Computer Use could not observe ${given.app}: the app it names changed during the call; retry`);
+      }
+      if (error instanceof SkyComputerUseError && error.errorName === 'runningApplicationNotFound') forget(given.app, pending);
+      throw error;
+    }
   }
 
   async function listApps() {

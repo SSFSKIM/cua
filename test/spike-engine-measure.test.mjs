@@ -9,7 +9,7 @@ import * as fs from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {parseCommand} from '../scripts/spike/engine/measure.mjs';
-import {sceneCliOf, keptFinderRecord, switchVerdict, SWITCHES, isSceneApproval, notRunRows, STRUCTURAL_ROWS, NOT_BUILT, CUA_INPUT_METHODS_BUILT, isSessionFile, withInputSource, runOnce, SCENE_ORDER, cuaServeCommand, UNICODE_STRINGS, keptFinderWindow, VENDOR_ONLY_ROWS} from '../scripts/spike/engine/measure/lane.mjs';
+import {probeC, ACTION_TARGET, sceneCliOf, keptFinderRecord, switchVerdict, SWITCHES, isSceneApproval, notRunRows, STRUCTURAL_ROWS, NOT_BUILT, CUA_INPUT_METHODS_BUILT, isSessionFile, withInputSource, runOnce, SCENE_ORDER, cuaServeCommand, UNICODE_STRINGS, keptFinderWindow, VENDOR_ONLY_ROWS} from '../scripts/spike/engine/measure/lane.mjs';
 import {summarize, renderSummary, median} from '../scripts/spike/engine/measure/summary.mjs';
 import {redactGolden} from '../scripts/spike/engine/measure/redact.mjs';
 import {NOTE} from '../scripts/spike/engine/render.mjs';
@@ -393,13 +393,25 @@ test('the action target matcher names a whole part of an element line, whatever 
   assert.equal(indexOfTarget('~\t3 버튼 a.b(c)', 'a.b(c)'), 3, 'the name is matched literally');
 });
 
-test('the action golden reads three times a second apart, then fails naming the target as not exposed, clicking nothing', async () => {
+test('the action golden reads three times a second apart, then fails naming the target as not exposed, clicking nothing', async t => {
+  globalThis.__spikeRetryMs = 0;
+  t.after(() => { delete globalThis.__spikeRetryMs; });
   let reads = 0, clicks = 0;
   const apps = {chrome: {getAXState: async () => { reads++; return VENDOR_CHROME; }, click: async () => { clicks++; }}};
   const out = await runCell(spikeCells.ACTION_GOLDEN('chrome', '/cft.app', 'cua scene page', 'Scene option', {raw: false}), {apps, rpc: async () => null});
   assert.equal(out.ok, false);
   assert.match(out.error, /not exposed in the scene's tree \(11 elements after 3 observations a second apart\); nothing was clicked/);
   assert.deepEqual([reads, clicks], [3, 0]);
+  // A target that appears on the second read (a web area late after enablement) is clicked then.
+  const exposed = VENDOR_CHROME + '\n\t\t\t\t40 체크박스 (settable, boolean) Scene option, Value: off';
+  reads = 0;
+  const clicked = [];
+  const late = {chrome: {getAXState: async () => (++reads >= 2 ? exposed : VENDOR_CHROME), click: async index => { clicked.push(index); }}};
+  const out2 = await runCell(spikeCells.ACTION_GOLDEN('chrome', '/cft.app', 'cua scene page', 'Scene option', {raw: false}), {apps: late, rpc: async () => null});
+  assert.equal(out2.ok, true, out2.error);
+  assert.deepEqual(clicked, [40]);
+  assert.equal(reads, 4, 'two reads to find it, then the diff and the full read after the click');
+  for (const file of out2.value.files) fs.rmSync(file.path, {force: true});
 });
 
 test('a kept Finder record is reused while its window is on screen; a vanished window\'s record is cleared through down finder', () => {
@@ -414,16 +426,49 @@ test('a kept Finder record is reused while its window is on screen; a vanished w
   assert.deepEqual(meta.finderRecordCleared, {window: 77});
   assert.match(logged[0], /kept Finder window 77 is gone; its record was cleared/);
   assert.throws(() => keptFinderRecord({kept, checked: {finderWindows: []}, sceneCli: () => ({down: false, reason: 'still open'}), sceneDir: '/s'}), /could not be cleared: still open/);
+  const before = calls.length;
   assert.throws(() => keptFinderRecord({kept, checked: {finderWindows: [], finderOffScreenWindows: [{number: 77}]}, sceneCli, sceneDir: '/s'}), /not on screen/);
+  assert.equal(calls.length, before, 'an off-screen kept window is not cleared: no down');
 });
 
-test('scenes.mjs\'s answer is read on its exit 1 too (a refusal, a failed up, a scene still up); only a silent failure throws', () => {
+test('scenes.mjs on exit 1: a refusal or a scene still up is an answer; an {error} throws with its text; nothing else is read', () => {
   const d = {node: 'node'};
-  const failing = stdout => () => { throw Object.assign(new Error('Command failed: node scripts/spike/engine/scenes.mjs preflight'), {status: 1, stdout}); };
-  assert.deepEqual(sceneCliOf(d, failing('{"refusals":[{"code":"finder_window","message":"Finder has a window that is not the run\'s"}],"finderWindows":[3]}\n'))(['preflight', '--run', '/s']).refusals[0].code, 'finder_window');
-  assert.deepEqual(sceneCliOf(d, failing('{"error":"scene finder is already up in this run"}\n'))(['up', 'finder', '--run', '/s']), {error: 'scene finder is already up in this run'});
+  const failing = (stdout, status = 1) => () => { throw Object.assign(new Error('Command failed: node scripts/spike/engine/scenes.mjs'), {status, stdout}); };
+  assert.equal(sceneCliOf(d, failing('{"refusals":[{"code":"finder_window","message":"m"}],"finderWindows":[3]}\n'))(['preflight', '--run', '/s']).refusals[0].code, 'finder_window');
+  assert.deepEqual(sceneCliOf(d, failing('{"scene":"finder","down":false,"reason":"still open"}\n'))(['down', 'finder', '--run', '/s']), {scene: 'finder', down: false, reason: 'still open'});
+  assert.throws(() => sceneCliOf(d, failing('{"error":"scene finder is already up in this run"}\n'))(['up', 'finder', '--run', '/s']), /^Error: scenes\.mjs up: scene finder is already up in this run$/);
+  assert.throws(() => sceneCliOf(d, failing('{"error":"swift failed"}\n'))(['front']), /scenes\.mjs front: swift failed/);
+  assert.throws(() => sceneCliOf(d, failing('{"refusals":[{"code":"x"}]}\n', 2))(['preflight']), /Command failed/, 'another status is the command\'s own failure');
+  assert.throws(() => sceneCliOf(d, failing('{"down":true}\n'))(['down', 'chrome']), /Command failed/, 'an exit 1 without a failure-shaped answer is not read');
   assert.throws(() => sceneCliOf(d, failing(''))(['front']), /Command failed/);
+  assert.throws(() => sceneCliOf(d, () => '{"error":"odd"}\n')(['front']), /scenes\.mjs front: odd/, 'an {error} on exit 0 throws too');
   let seen = null;
   assert.deepEqual(sceneCliOf(d, script => { seen = script; return '{"down":true}\n'; })(['down', 'finder', '--run', '/a b']), {down: true});
   assert.equal(seen, "node scripts/spike/engine/scenes.mjs 'down' 'finder' '--run' '/a b'");
+});
+
+test('probe (c) records a failed reading, never a verdict, when the front reading fails', async () => {
+  const rows = [];
+  let fronts = 0, pid = null, next = 500;
+  const engineFake = bundle => ({
+    bundle: () => ({bundle, exists: true, build: 'b', identity: 'I'}),
+    launch: () => { pid = next++; return {launched: true}; },
+    rpc: method => (pid === null ? {ok: false, unreachable: 'ENOENT'} : method === 'status' ? {ok: true, result: {pid, build: 'b', bundlePath: bundle, socket: `${bundle}.sock`, connections: 0}} : (pid = null, {ok: true, result: {}})),
+    copy: () => ({}), removeCopy: () => ({}),
+  });
+  const ops = engineFake('/u/cua/engine/cua Engine.app');
+  const front = () => { if (++fronts > 1) throw new Error('scenes.mjs front: swift failed'); return {frontmost: {pid: 1, bundleId: 'x'}, topWindow: {number: 2}}; };
+  await probeC({d: {node: 'node'}, shell: () => '', ops, emit: row => rows.push(row), front, log: () => {}, meta: {problems: []}, opsFor: engineFake, timing: {sleep: async () => {}}});
+  assert.deepEqual(rows.map(r => [r.op, r.ok, r.error]), [['probe.c.plainOpen', false, 'scenes.mjs front: swift failed'], ['probe.c.twoCopies', false, 'scenes.mjs front: swift failed']]);
+  assert.ok(rows.every(r => !('activated' in r) && !('frontmostChanged' in r)), 'no verdict from a reading that failed');
+});
+
+test('the Finder action target is among the rows both engines show in the fixed state', () => {
+  // The recorded vendor golden's shape (the MacBook window, structurally redacted): rows 001-018 are shown, each name
+  // as its text field's value; rows further down are not in the text.
+  const shown = Array.from({length: 18}, (_, i) => `\t\t\t\t\t\t${43 + 10 * i} ⟨119⟩, Value: scene-file-${String(i + 1).padStart(3, '0')}, Secondary Actions: ⟨12⟩`);
+  const text = ['Window: "cua-scene-finder", App: ⟨6⟩.', '0 ⟨23⟩, ID: ⟨12⟩', ...shown].join('\n');
+  assert.equal(ACTION_TARGET.finder, 'scene-file-005');
+  assert.equal(indexOfTarget(text, ACTION_TARGET.finder), 83);
+  assert.equal(indexOfTarget(text, 'scene-file-050'), null, 'the earlier target was below the shown rows');
 });

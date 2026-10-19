@@ -266,7 +266,12 @@ const placementArgs = ({x, y, width, height}) => [`--window-position=${x},${y}`,
 export const chromeArgs = ({userDataDir, url, placement = SCENES.chrome.placement}) => [
   `--user-data-dir=${userDataDir}`, '--no-first-run', '--no-default-browser-check', '--use-mock-keychain', '--password-store=basic',
   '--disable-sync', '--disable-background-networking', '--disable-component-update', '--disable-default-apps',
-  '--disable-features=MediaRouter,DialMediaRouteProvider,Translate,OptimizationHints', ...placementArgs(placement), '--new-window', url];
+  '--disable-features=MediaRouter,DialMediaRouteProvider,Translate,OptimizationHints', ...CHROME_LANGUAGE, ...placementArgs(placement), '--new-window', url];
+// The scene page is English and the sitting's Macs run in Korean, so Chrome for Testing would offer to translate it (a
+// bubble in the fixed state, seen in the MacBook window although Translate is disabled as a feature): its UI and accepted
+// languages are English, and its profile's translate preference is off (chromePreferences, written before the launch).
+export const CHROME_LANGUAGE = Object.freeze(['--lang=en-US', '--accept-lang=en-US']);
+export const chromePreferences = () => ({translate: {enabled: false}, intl: {accept_languages: 'en-US,en'}});
 export const electronArgs = ({userDataDir, placement = SCENES.electron.placement}) => [
   `--cua-fixture-user-data=${userDataDir}`, `--cua-fixture-bounds=${[placement.x, placement.y, placement.width, placement.height].join(',')}`];
 
@@ -293,7 +298,9 @@ export async function upScene(id, {run, chromeApp, electronApp, io = defaultIo()
     record = {app: scene.app, folder, pid, window: await awaitWindow(pid, {before, io, onScreenOnly: true})};
   } else if (id === 'chrome') {
     const app = chromeApp ?? (await io.placeChrome()).appPath, userDataDir = join(run, 'chrome-user-data');
-    fs.mkdirSync(userDataDir, {recursive: true, mode: 0o700});
+    fs.mkdirSync(join(userDataDir, 'Default'), {recursive: true, mode: 0o700});
+    const preferences = join(userDataDir, 'Default', 'Preferences');
+    if (!fs.existsSync(preferences)) fs.writeFileSync(preferences, JSON.stringify(chromePreferences()), {mode: 0o600});
     const page = await io.spawnPage(run);
     try { record = {app, userDataDir, page, ...await launchOwn({app, bundleId: scene.bundleId, args: chromeArgs({userDataDir, url: page.url}), io})}; }
     catch (error) { await io.stopRecorded(page); throw error; }

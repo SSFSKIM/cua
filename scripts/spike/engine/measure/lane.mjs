@@ -55,17 +55,23 @@ export function keptFinderWindow(kept, checked) {
   if ((checked.finderOffScreenWindows ?? []).some(w => w.number === number)) throw new Error('the run\'s Finder window is not on screen; bring it back or close it');
   return false;
 }
-// scenes.mjs's CLI on the device. It exits 1 on a refusal, a failed `up` or a scene that stays up, and still prints its
-// one JSON line: that line is the answer (the reason the lane reports), not a failed command.
+// scenes.mjs's CLI on the device. Its contract: one JSON line; exit 1 with an answer the lane reads when a refusal holds
+// (`refusals`) or a scene stays up (`down: false`), and exit 1 with `{error}` when the command failed. So only the first
+// two are answers on exit 1; an `{error}` throws with its text, and anything else (no JSON, another status) throws as the
+// command's own failure: nothing is read as an answer it is not.
 export const sceneCliOf = (d, shell) => args => {
   const command = `${d.node} scripts/spike/engine/scenes.mjs ${args.map(quote).join(' ')}`;
-  try { return lastJson(shell(command)); }
+  let answer;
+  try { answer = lastJson(shell(command)); }
   catch (error) {
-    let answer = null;
-    try { answer = lastJson(error.stdout ?? ''); } catch {}
-    if (answer && typeof answer === 'object') return answer;
+    let out = null;
+    try { out = lastJson(error.stdout ?? ''); } catch {}
+    if (error.status === 1 && out && (out.refusals?.length || out.down === false)) return out;
+    if (out?.error) throw new Error(`scenes.mjs ${args[0]}: ${out.error}`);
     throw error;
   }
+  if (answer?.error) throw new Error(`scenes.mjs ${args[0]}: ${answer.error}`);
+  return answer;
 };
 
 // The sitting's kept Finder record, before the run's scenes come up: reused while its window is on screen; a record
@@ -85,7 +91,7 @@ const round = ms => Math.round(ms * 1000) / 1000;
 
 // What names each scene's window (a prefix of its title) and what each probe acts on.
 export const SCENE_WINDOW = Object.freeze({textedit: 'cua-scene', finder: SCENES.finder.fixedState.folder, chrome: PAGE_TITLE, electron: SCENES.electron.fixedState.title});
-export const ACTION_TARGET = Object.freeze({textedit: SCENES.textedit.fixedState.firstLine, finder: 'scene-file-050', chrome: 'Scene option', electron: 'Fixture button'});
+export const ACTION_TARGET = Object.freeze({textedit: SCENES.textedit.fixedState.firstLine, finder: 'scene-file-005', chrome: 'Scene option', electron: 'Fixture button'});
 export const KEY_PROBE = Object.freeze({textedit: 'shift+Right', finder: 'Down', chrome: 'Tab', electron: 'Tab'});
 export const USER_WINDOW = Object.freeze({textedit: 'finder', finder: 'textedit', chrome: 'textedit', electron: 'finder'});
 // The scenes' profile directories under the scene directory (scenes.mjs), removed before each run brings them up.
@@ -633,21 +639,21 @@ async function equivalenceCells({js, row, records, samples}, scene) {
 
 // Probe (c), on the cua lane with the engine stopped: does `open -a` without -g activate the engine; do two copies at
 // different paths both come up under `open -n -g -a` and bind their own sockets. Both stopped and the copy removed.
-async function probeC({d, shell, ops, emit, front, log, meta}) {
+export async function probeC({d, shell, ops, emit, front, log, meta, opsFor = bundle => engineOps(d, shell, {engine: bundle}), timing = {}}) {
   const before = front();
   try {
-    const status = await launchEngine(ops, {plain: true});
+    const status = await launchEngine(ops, {plain: true, ...timing});
     const after = front();
     emit({op: 'probe.c.plainOpen', sample: 1, ok: true, enginePid: status.pid, activated: after.frontmost?.pid === status.pid,
       frontmostChanged: before.frontmost?.pid !== after.frontmost?.pid, topWindowChanged: before.topWindow?.number !== after.topWindow?.number});
   } catch (error) { emit({op: 'probe.c.plainOpen', sample: 1, ok: false, error: error.message}); }
-  finally { await stopEngine(ops); }
+  finally { await stopEngine(ops, timing); }
   const bundle = ops.bundle().bundle, copyDir = join(dirname(dirname(bundle)), 'engine-probe-c');
-  const copy = engineOps(d, shell, {engine: join(copyDir, 'cua Engine.app')});
+  const copy = opsFor(join(copyDir, 'cua Engine.app'));
   try {
     ops.removeCopy(copyDir);
     ops.copy(copyDir);
-    const a = await launchEngine(ops), b = await launchEngine(copy);
+    const a = await launchEngine(ops, timing), b = await launchEngine(copy, timing);
     const after = front();
     emit({op: 'probe.c.twoCopies', sample: 1, ok: a.pid !== b.pid && a.socket !== b.socket, approved: pick(a, ['pid', 'socket', 'bundlePath']), copy: pick(b, ['pid', 'socket', 'bundlePath']),
       frontmostChanged: before.frontmost?.pid !== after.frontmost?.pid});
@@ -655,7 +661,7 @@ async function probeC({d, shell, ops, emit, front, log, meta}) {
   finally {
     let copyStopped = true;
     for (const [name, target] of [['copy', copy], ['approved', ops]]) {
-      try { await stopEngine(target); } catch (error) { if (name === 'copy') copyStopped = false; log(`probe (c): ${error.message}`); }
+      try { await stopEngine(target, timing); } catch (error) { if (name === 'copy') copyStopped = false; log(`probe (c): ${error.message}`); }
     }
     // A copy whose engine may still run is left in place (removing it would leave an engine serving a vanished bundle).
     if (copyStopped) ops.removeCopy(copyDir);
@@ -838,8 +844,11 @@ async function teardown({lane, shell, client, records, scenes, sceneCli, sceneDi
   for (const scene of [...scenes].reverse()) {
     if (!records[scene]) continue;
     if (scene === 'finder' && !out.finderClosed) { out.finderLeftOpen = true; continue; }
-    const result = sceneCli(['down', scene, '--run', sceneDir]);
-    down.push({scene, down: result.down ?? false, ...(result.reason ? {reason: result.reason} : {})});
+    // One scene's failed down does not keep the others up, and keeps its own error text.
+    try {
+      const result = sceneCli(['down', scene, '--run', sceneDir]);
+      down.push({scene, down: result.down ?? false, ...(result.reason ? {reason: result.reason} : {})});
+    } catch (error) { down.push({scene, down: false, error: error.message}); }
   }
   out.down = down;
   if (down.some(s => !s.down)) out.error = `scenes still up: ${down.filter(s => !s.down).map(s => s.scene).join(', ')}`;

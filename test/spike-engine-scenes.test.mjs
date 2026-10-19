@@ -9,7 +9,7 @@ import {join} from 'node:path';
 import {
   SCENE_IDS, SCENES, PAIRS, BACKGROUND_PAIRINGS, CONCURRENT_USE, CONCURRENT_USE_SHEET, userWindowFor, refusals,
   ownedProcesses, documentWindows, refusingWindows, finderFolderFiles, textEditDocument, describeScenes, FINDER_TYPING_NAME, TEXTEDIT_STYLED_LINE, TEXTEDIT_MARKDOWN_CAP,
-  upScene, downScene, preflight, readState, chromeArgs, electronArgs, sceneCommand, exitCodeFor,
+  upScene, downScene, preflight, readState, chromeArgs, chromePreferences, electronArgs, sceneCommand, exitCodeFor,
 } from '../scripts/spike/engine/scenes.mjs';
 import {parseAsns, parseAppInfo, stopRecorded} from '../scripts/spike/engine/scene-processes.mjs';
 import {FIXTURE_BUNDLE_ID, FIXTURE_CONTROLS} from '../scripts/spike/engine/fixtures/electron-fixture.mjs';
@@ -270,6 +270,12 @@ test('up of each scene: TextEdit on the run\'s document in English, Chrome on th
   assert.deepEqual(io.calls[1][1].args, chromeArgs({userDataDir: join(run, 'chrome-user-data'), url: chrome.page.url}));
   assert.ok(io.calls[1][1].args.includes('--use-mock-keychain'));
   assert.ok(!io.calls[1][1].args.some(a => /accessibility/i.test(a)), 'Chrome is never told to turn accessibility on');
+  // The page is English and the Macs run in Korean: no translate bubble in the fixed state.
+  for (const arg of ['--lang=en-US', '--accept-lang=en-US']) assert.ok(io.calls[1][1].args.includes(arg), arg);
+  assert.ok(io.calls[1][1].args.some(a => /^--disable-features=.*\bTranslate\b/.test(a)));
+  assert.ok(io.calls[1][1].args.indexOf('--lang=en-US') < io.calls[1][1].args.indexOf(chrome.page.url), 'switches before the URL');
+  assert.deepEqual(JSON.parse(fs.readFileSync(join(run, 'chrome-user-data', 'Default', 'Preferences'), 'utf8')), chromePreferences());
+  assert.equal(chromePreferences().translate.enabled, false);
   const finder = await upScene('finder', {run, io});
   assert.equal(finder.pid, 736);
   assert.deepEqual(fs.readdirSync(finder.folder).sort(), finderFolderFiles());

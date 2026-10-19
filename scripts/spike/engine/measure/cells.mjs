@@ -14,8 +14,10 @@ const j = JSON.stringify;
 // first element index whose line names `name`, and a SHA-256 prefix.
 // The index of the first element line that names `name` as a whole part of the grammar: the bare title, or a label's
 // text (`Value: <name>`), ended by the next part's comma or the line's end, whatever the role word (the vendor's are
-// localized). A longer name that begins with it ("Scene options") or a window title that contains it ("cua scene page -
-// Chrome for Testing") is not it. Embedded into the cells by its source, so the cells and the tests share one matcher.
+// localized). A longer name that begins with it ("Scene options") or a window title that only begins with it ("cua scene
+// page - Chrome for Testing") is not it. A longer bare title that ends with it ("My Scene option") can be: the role word
+// before a bare title is localized and multi-word, so its boundary is only a space. The first matching line wins, so
+// targets are names the scene owns. Embedded into the cells by its source, so the cells and the tests share it.
 export function indexOfTarget(ax, name) {
   const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const part = new RegExp('(?:^| |: )' + escaped + '(?:,|$)');
@@ -159,7 +161,7 @@ try {
   // The target may come late (a web area appears after enablement): up to three observations a second apart.
   let before = null, index = null;
   for (let attempt = 1; attempt <= 3 && index === null; attempt++) {
-    if (attempt > 1) await new Promise(resolve => setTimeout(resolve, 1000));
+    if (attempt > 1) await new Promise(resolve => setTimeout(resolve, globalThis.__spikeRetryMs ?? 1000));   // the tests shorten it
     before = await __full(bound);
     const front = __front(before);
     if (typeof front !== "string" || !front.startsWith(${j(prefix)})) throw new Error("the scene window was not the app's front window; nothing was clicked");

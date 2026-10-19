@@ -286,6 +286,17 @@ test('up finder records the window the open created, never Finder\'s own off-scr
   assert.deepEqual(preflight({run, io}).refusals, []);
 }));
 
+test('up finder\'s before-set includes off-screen windows: one the open brings on screen is not the run\'s window', async () => withRun(async run => {
+  const existing = {number: 184776, bounds: {x: 606, y: 52, width: 1067, height: 631}, onScreen: false};
+  const io = fakeDevice({windows: {736: [existing]}});
+  const open = io.openApp;
+  io.openApp = request => { existing.onScreen = true; open(request); };   // the open also shows Finder's own window
+  const finder = await upScene('finder', {run, io});
+  assert.equal(io.created.length, 1);
+  assert.equal(finder.window.number, io.created[0].number, 'the newly created window');
+  assert.notEqual(finder.window.number, existing.number, 'not the flipped one');
+}));
+
 test('up finder accepts only an on-screen new window, and refuses to pick between several', async () => {
   await withRun(async run => {
     // The open's only new window is off screen: never the run's window; the wait runs out.
@@ -310,7 +321,20 @@ test('up finder accepts only an on-screen new window, and refuses to pick betwee
 test('a hidden Finder refuses: its windows read off screen until the run activates it', async () => {
   assert.deepEqual(refusals({running: [], finderWindows: [], finderHidden: true, owned: {pids: new Set(), finderWindow: null}}).map(r => [r.code, r.message]),
     [['finder_hidden', 'Finder is hidden; unhide it (click Finder in the Dock) and re-run']]);
-  assert.deepEqual(refusals({running: [], finderWindows: [], finderHidden: null, owned: {pids: new Set(), finderWindow: null}}), [], 'unknown is not hidden');
+  // Unreadable while Finder runs: refused too, since a hidden Finder's windows would read as off screen.
+  assert.deepEqual(refusals({running: [], finderWindows: [], finderHidden: null, owned: {pids: new Set(), finderWindow: null}}).map(r => [r.code, r.message]),
+    [['finder_hidden_unknown', 'could not read whether Finder is hidden; re-run, and if it persists check front-window.swift\'s NSRunningApplication read over this session']]);
+  await withRun(async run => {
+    const io = fakeDevice({finderHidden: null});
+    assert.deepEqual(preflight({run, io}).refusals.map(r => r.code), ['finder_hidden_unknown']);
+    await assert.rejects(upScene('finder', {run, io}), error => error.refusals?.[0]?.code === 'finder_hidden_unknown');
+    assert.deepEqual(io.calls, [], 'nothing opened');
+  });
+  await withRun(async run => {
+    // No Finder process at all: nothing to read, no hidden refusal (up finder then fails on its own).
+    const io = fakeDevice({finderPid: null});
+    assert.deepEqual(preflight({run, io}).refusals, []);
+  });
   await withRun(async run => {
     const io = fakeDevice({finderHidden: true, windows: {736: [{number: 5, bounds: {x: 100, y: 100, width: 800, height: 600}, onScreen: false}]}});
     const checked = preflight({run, io});

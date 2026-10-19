@@ -169,8 +169,9 @@ export async function runOnce(options, io) {
     if (checked.refusals?.length) throw new Error(`the scenes refuse: ${checked.refusals.map(r => r.message).join('; ')}`);
     // Finder's windows off screen do not refuse (the spec's Decision Log, 2026-10-19); the run keeps their record.
     meta.finderOffScreenWindows = checked.finderOffScreenWindows ?? [];
+    meta.finderHidden = checked.finderHidden ?? null;
     const kept = readSceneState(shell, sceneDir).scenes ?? {};
-    const finderKept = keptFinderWindow(kept.finder, checked);
+    const finderKept = scenes.includes('finder') && keptFinderWindow(kept.finder, checked);
 
     if (lane === 'cua' && probes.includes('c')) await probeC({d, shell, ops, emit, front, log, meta});
     if (lane === 'cua') meta.engineLaunch = {via: 'open -n -g -a', ...pick(await launchEngine(ops), ['pid', 'build', 'accessibility', 'screenRecording', 'connections'])};

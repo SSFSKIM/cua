@@ -186,7 +186,8 @@ export function ownedProcesses(state, {launchOf: launch = launchOf} = {}) {
 }
 
 // The refusal preconditions. `running`: the processes of Chrome for Testing's, the fixture's and TextEdit's bundle ids;
-// `finderWindows`: Finder's on-screen document windows; `finderHidden`: whether Finder is hidden; `owned`:
+// `finderWindows`: Finder's on-screen document windows; `finderHidden`: whether Finder is hidden (null: Finder runs but
+// the reading failed, which refuses too, since a hidden Finder's windows would pass as off screen); `owned`:
 // ownedProcesses(). -> [{code, message, pids? | windows?}].
 export function refusals({running, finderWindows, finderHidden = false, owned}) {
   const out = [];
@@ -199,6 +200,7 @@ export function refusals({running, finderWindows, finderHidden = false, owned}) 
   const windows = finderWindows.filter(w => w.number !== owned.finderWindow).map(w => w.number);
   if (windows.length) out.push({code: 'finder_window', windows, message: 'Finder has a window that is not the run\'s; close it and re-run'});
   if (finderHidden === true) out.push({code: 'finder_hidden', message: 'Finder is hidden; unhide it (click Finder in the Dock) and re-run'});
+  if (finderHidden === null) out.push({code: 'finder_hidden_unknown', message: 'could not read whether Finder is hidden; re-run, and if it persists check front-window.swift\'s NSRunningApplication read over this session'});
   return out;
 }
 

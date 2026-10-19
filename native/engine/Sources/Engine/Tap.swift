@@ -137,7 +137,9 @@ final class TapProbe: @unchecked Sendable {
     guard tap == nil && counts == nil else { throw EngineError(name: "tapBusy", "A probe tap is already running; stop it first") }
     listenAccess = CGPreflightListenEventAccess()  // the non-prompting preflight only; the request variant would raise a prompt
     let counting = TapCounts(drivenPID: drivenPID)
-    let pointer = Unmanaged.passRetained(counting).toOpaque()
+    // The tap thread reads the counting state through this pointer until it signals threadDone; the state is released
+    // only after that (stop) or once the create has failed (below), so the unchecked capture is sound.
+    nonisolated(unsafe) let pointer = Unmanaged.passRetained(counting).toOpaque()
     let box = Box<(created: Bool, runLoop: CFRunLoop?, tap: CFMachPort?)>()
     let done = DispatchSemaphore(value: 0)
     let threadDone = DispatchSemaphore(value: 0)

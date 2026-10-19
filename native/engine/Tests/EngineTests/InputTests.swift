@@ -1,3 +1,4 @@
+import AppKit
 import Carbon
 import CoreGraphics
 import Foundation
@@ -6,7 +7,8 @@ import XCTest
 
 // The input half's pure logic (the spec's Design, "Keys", "Text" and "User intervention"; R/F-helper-logic.md §5–6, §9;
 // R/sky-behaviour.md §11, §13–14, §18): the vendor's exact key table and grammar, the four-event sequence, the typed
-// units' chunking, the US layout's reverse map, the mouse-event plan and the tap's pinned fields. Nothing here posts.
+// units' chunking, the US layout's reverse map, the mouse-event plan, the tap's pinned fields and route 3's sequencing
+// through its seam. Nothing here posts.
 
 // MARK: press_key's grammar and table
 
@@ -389,6 +391,124 @@ final class AutoStopTests: XCTestCase {
     autoStop.arm(seconds: 0) { fired += 1 }   // current generation
     Thread.sleep(forTimeInterval: 0.3)
     XCTAssertEqual(fired, 1)
+  }
+}
+
+/// Route 3's sequencing through its seam (review round 3's follow-up to round 2's P1): the posts, the screen-update hold
+/// and the user's re-activation are recorded instead of made. The window is the application handle of a pid above
+/// PID_MAX (99999), which no process can hold, so its AX reads answer nothing: no window id is known and the guard's
+/// window-order branch is not taken.
+/// Every read stays stubbed: the real CPSGetKeyFocusProcess segfaults inside the xctest host (SkyLight's
+/// SLPSGetKeyFocusProcess), though not in a plain process with a window-server connection, which the engine always has.
+final class FakeActivationTests: XCTestCase {
+  private let target: pid_t = 990_001, user: pid_t = 990_002, other: pid_t = 990_003
+
+  private func activation(_ seam: SeamStub) -> FakeActivation {
+    FakeActivation(pid: target, window: AXUIElementCreateApplication(target), system: seam.system)
+  }
+
+  func testASuccessfulActivationLeavesItInPlaceForTheCallersEvents() throws {
+    let seam = SeamStub(frontmost: user)
+    let activation = activation(seam)
+    try activation.activate()
+    XCTAssertEqual(seam.posts, [Posted(subtype: 1, pid: target)], "the pair's subtype 1, and no deactivation before the caller's events")
+    XCTAssertTrue(activation.activated)
+    XCTAssertEqual(seam.holds, 1)
+    XCTAssertEqual(seam.releases, 1)
+    XCTAssertEqual(seam.reactivated, [])
+    XCTAssertNotNil(activation.guardMs)
+
+    activation.deactivate()
+    activation.deactivate()
+    XCTAssertEqual(seam.posts, [Posted(subtype: 1, pid: target), Posted(subtype: 2, pid: target)], "one deactivation, once")
+    XCTAssertFalse(activation.activated)
+  }
+
+  func testAFailedGuardLeavesItInPlaceForTheCallersDeactivate() {
+    // Another app comes frontmost once the pair is posted, and the user's app cannot be made frontmost again.
+    let seam = SeamStub(frontmost: user, frontmostAfterPost: other, reactivates: false)
+    let activation = activation(seam)
+    XCTAssertThrowsError(try activation.activate()) { error in
+      XCTAssertEqual((error as? EngineError)?.errorName, "activationFailed")
+    }
+    XCTAssertEqual(seam.posts, [Posted(subtype: 1, pid: target)], "the throw posts no deactivation of its own")
+    XCTAssertTrue(activation.activated, "the caller's deferred deactivate undoes it")
+    XCTAssertEqual(seam.reactivated, [user])
+    XCTAssertEqual(seam.holds, 1)
+    XCTAssertEqual(seam.releases, 1, "the screen-update hold is released on the throw")
+
+    activation.deactivate()
+    XCTAssertEqual(seam.posts.map(\.subtype), [1, 2])
+  }
+
+  func testNoDeactivationOnceTheAppReallyBecameActive() throws {
+    let seam = SeamStub(frontmost: user)
+    let activation = activation(seam)
+    try activation.activate()
+    seam.frontmost = target
+    activation.deactivate()
+    XCTAssertEqual(seam.posts.map(\.subtype), [1])
+  }
+
+  func testTheTwoShortExits() throws {
+    // The app already believes it has focus: nothing is posted or held.
+    let focused = SeamStub(frontmost: user, keyFocus: target)
+    let unneeded = activation(focused)
+    try unneeded.activate()
+    unneeded.deactivate()
+    XCTAssertEqual(focused.posts, [])
+    XCTAssertFalse(unneeded.activated)
+    XCTAssertEqual(focused.holds, 0)
+    XCTAssertNil(unneeded.guardMs)
+
+    // No app is frontmost: the pair is posted without the hold or the guard.
+    let alone = SeamStub(frontmost: nil)
+    let unguarded = activation(alone)
+    try unguarded.activate()
+    XCTAssertEqual(alone.posts, [Posted(subtype: 1, pid: target)])
+    XCTAssertTrue(unguarded.activated)
+    XCTAssertEqual(alone.holds, 0)
+    XCTAssertNil(unguarded.guardMs)
+  }
+}
+
+/// One event the seam was asked to post: its AppKit-defined subtype (-1 for any other event) and the pid.
+private struct Posted: Equatable {
+  let subtype: Int
+  let pid: pid_t
+}
+
+/// Route 3's outside world, recorded: what was posted, held and re-activated, and the frontmost app and key focus it
+/// answers.
+private final class SeamStub {
+  var posts: [Posted] = []
+  var holds = 0
+  var releases = 0
+  var reactivated: [pid_t] = []
+  var frontmost: pid_t?
+  let frontmostAfterPost: pid_t?
+  let keyFocus: pid_t?
+  let reactivates: Bool
+
+  init(frontmost: pid_t?, frontmostAfterPost: pid_t? = nil, keyFocus: pid_t? = nil, reactivates: Bool = true) {
+    self.frontmost = frontmost
+    self.frontmostAfterPost = frontmostAfterPost
+    self.keyFocus = keyFocus
+    self.reactivates = reactivates
+  }
+
+  var system: ActivationSystem {
+    var system = ActivationSystem()
+    system.post = { event, pid in
+      let subtype = NSEvent(cgEvent: event).map { $0.type == .appKitDefined ? Int($0.subtype.rawValue) : -1 } ?? -1
+      self.posts.append(Posted(subtype: subtype, pid: pid))
+      if let after = self.frontmostAfterPost { self.frontmost = after }
+    }
+    system.frontmost = { self.frontmost }
+    system.keyFocus = { self.keyFocus }
+    system.holdScreenUpdates = { self.holds += 1; return { self.releases += 1 } }
+    system.reactivate = { pid in self.reactivated.append(pid); return self.reactivates }
+    return system
   }
 }
 

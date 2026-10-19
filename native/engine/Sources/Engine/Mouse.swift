@@ -129,13 +129,13 @@ func clickEvents(_ target: ClickTarget, button: MouseButton, count: Int, flags: 
   return events
 }
 
-/// Posts `events` to `pid` back to back, each stamped with the current time. Returns the Unix milliseconds of the first
-/// and last post.
-func postToProcess(_ events: [CGEvent], pid: pid_t) -> (startedAt: Int64, endedAt: Int64) {
+/// Posts `events` to `pid` back to back, each stamped with the current time, through `post` (route 3's seam passes its
+/// own). Returns the Unix milliseconds of the first and last post.
+func postToProcess(_ events: [CGEvent], pid: pid_t, post: (CGEvent, pid_t) -> Void = { $0.postToPid($1) }) -> (startedAt: Int64, endedAt: Int64) {
   let startedAt = unixMilliseconds()
   for event in events {
     event.timestamp = DispatchTime.now().uptimeNanoseconds
-    event.postToPid(pid)
+    post(event, pid)
   }
   return (startedAt, unixMilliseconds())
 }

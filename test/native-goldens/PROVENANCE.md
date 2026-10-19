@@ -69,6 +69,7 @@ its `fault`:
 - engine: the recorded Skyshot is wrong, or lacks what the vendor reads;
 - redaction: Finder's captures hide the content the rule reads;
 - scene state: the two lanes' actions left different states.
+- engine or renderer: undecided until M1b compares Finder by full text (the file rows' actions).
 
 A declaration does one of two things:
 - It applies a correction to the Skyshot before rendering.

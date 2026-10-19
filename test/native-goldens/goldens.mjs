@@ -53,10 +53,12 @@ export function compareDiff(scene, rules) {
 
 export const COMPARE = {full: compareFull, before: compareBefore, diff: compareDiff};
 
-// Part 3: a golden may add more than 10% of its lines only under a Decision Log entry, which the declaration names.
+// Part 3: a golden may add more than 10% of its lines only under a Decision Log entry, which the declaration cites by
+// the entry's dated opening, `- Decision (<YYYY-MM-DD>…`, as it begins a line of the spec's Decision Log.
 const SPEC = fs.readFileSync(join(DIR, '../../docs/doperpowers/specs/2026-10-18-own-native-engine-design.md'), 'utf8');
-const DECISION_LOG = SPEC.slice(SPEC.indexOf('## Decision Log'));
-export const allowsAddedLines = rules => rules.some(rule => rule.kind === 'addedOverTenPercent' && typeof rule.decisionLog === 'string' && rule.decisionLog.length > 0 && DECISION_LOG.includes(rule.decisionLog));
+const DECISION_LOG = SPEC.slice(SPEC.indexOf('## Decision Log')).split('\n');
+const citesEntry = cited => typeof cited === 'string' && /^- Decision \(\d{4}-\d{2}-\d{2}\b/.test(cited) && DECISION_LOG.some(line => line.startsWith(cited));
+export const allowsAddedLines = rules => rules.some(rule => rule.kind === 'addedOverTenPercent' && citesEntry(rule.decisionLog));
 
 // The pinned rendering: compared byte for byte, rewritten with UPDATE_GOLDENS=1.
 export function pinned(scene, name, text) {

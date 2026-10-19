@@ -52,5 +52,8 @@ test('more than 10% added lines needs a declaration naming a Decision Log entry 
   assert.equal(allowsAddedLines([]), false);
   assert.equal(allowsAddedLines([{kind: 'addedOverTenPercent'}]), false);
   assert.equal(allowsAddedLines([{kind: 'addedOverTenPercent', decisionLog: 'no such entry in the spec'}]), false);
-  assert.equal(allowsAddedLines([{kind: 'addedOverTenPercent', decisionLog: '## Decision Log'.slice(3)}]), true);
+  // Cited by an entry's dated opening; any other substring of the log, or an undated entry, is not a citation.
+  assert.equal(allowsAddedLines([{kind: 'addedOverTenPercent', decisionLog: 'Decision Log'}]), false);
+  assert.equal(allowsAddedLines([{kind: 'addedOverTenPercent', decisionLog: '- Decision (review round 1 folded)'}]), false);
+  assert.equal(allowsAddedLines([{kind: 'addedOverTenPercent', decisionLog: '- Decision (2026-10-18, verification call at authoring)'}]), true);
 });

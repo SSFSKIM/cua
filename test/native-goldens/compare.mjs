@@ -232,8 +232,9 @@ export const CORRECTIONS = {
   settableRoles: (node, {roles}) => (node.flags.settable && !roles.includes(node.role) && node.valueType !== 'boolean' ? {...node, flags: {...node.flags, settable: false}} : node),
   // A numeric value's type as the element's CFNumber carried it, by role.
   valueType: (node, {roles, valueType}) => (roles.includes(node.role) && node.valueType === 'number' ? {...node, valueType} : node),
-  // The identifiers the vendor drops by their `_`/`NS` prefix, which the redaction hid (each replaced by its length).
-  hiddenIdentifier: (node, {identifiers}) => (identifiers.includes(node.identifier) ? {...node, identifier: null} : node),
+  // The identifiers the vendor drops by their `_`/`NS` prefix, which the redaction hid (each replaced by its length):
+  // the elements named by token, per lineage.
+  hiddenIdentifier: (node, {tokens}, shot) => (tokens[shot.lineage]?.includes(node.token) ? {...node, identifier: null} : node),
   // The window element's URL (its document).
   windowUrl: (node, {url}) => (node.role === 'AXWindow' && node.depth === 0 ? {...node, url} : node),
 };
@@ -243,7 +244,7 @@ export function correct(shot, rules) {
   for (const rule of rules.filter(each => each.kind === 'skyshot')) {
     const fix = CORRECTIONS[rule.correction];
     if (!fix) throw new Error(`unknown correction ${rule.correction}`);
-    out = {...out, nodes: out.nodes.map(node => fix(node, rule)), menuBar: out.menuBar.map(node => fix(node, rule))};
+    out = {...out, nodes: out.nodes.map(node => fix(node, rule, shot)), menuBar: out.menuBar.map(node => fix(node, rule, shot))};
   }
   return out;
 }

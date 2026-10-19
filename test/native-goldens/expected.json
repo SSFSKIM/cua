@@ -1,5 +1,5 @@
 {
-  "about": "Every difference between cua's output and the vendor's on these goldens, each with its cause (PROVENANCE.md). `fault` names where it comes from: \"engine\" (the recorded Skyshot is wrong, or lacks what the vendor reads), \"redaction\" (Finder's captures hide the content the rule reads) or \"scene state\" (the two lanes' actions left different states). The engine corrections (`kind: \"skyshot\"`, fault \"engine\") and the engine differences expire: M1b re-records these goldens live from the fixed engine (task M1a.2b) and deletes every engine-fault declaration then; one still needed at that point is an engine defect, not a declaration. Kinds: `skyshot` (a correction applied to the Skyshot before rendering), `part` (inside a matched line, cua's `<label>: <cua>` is the vendor's `<label>: <vendor>`), `missing` and `added` (a whole line, by its matching key), `header` and `trailer` (both sides' exact text), `addedOverTenPercent` (names its Decision Log entry). `golden` is \"full\", \"before\" or \"diff\" (all three when absent); `count` is exact.",
+  "about": "Every difference between cua's output and the vendor's on these goldens, each with its cause (PROVENANCE.md). `fault` names where it comes from: \"engine\" (the recorded Skyshot is wrong, or lacks what the vendor reads), \"redaction\" (Finder's captures hide the content the rule reads) \"scene state\" (the two lanes' actions left different states) or \"engine or renderer\" (undecided until M1b compares Finder by full text). The engine corrections (`kind: \"skyshot\"`, fault \"engine\") and the engine differences expire: M1b re-records these goldens live from the fixed engine (task M1a.2b) and deletes every engine-fault declaration then; one still needed at that point is an engine defect, not a declaration. Kinds: `skyshot` (a correction applied to the Skyshot before rendering), `part` (inside a matched line, cua's `<label>: <cua>` is the vendor's `<label>: <vendor>`), `missing` and `added` (a whole line, by its matching key), `header` and `trailer` (both sides' exact text), `addedOverTenPercent` (`decisionLog` cites the entry by its dated opening, `- Decision (<YYYY-MM-DD>…`). `golden` is \"full\", \"before\" or \"diff\" (all three when absent); `count` is exact.",
   "declarations": [
     {
       "scene": "*",
@@ -73,12 +73,23 @@
       "kind": "skyshot",
       "correction": "hiddenIdentifier",
       "fault": "redaction",
-      "identifiers": [
-        "⟨5⟩",
-        "⟨6⟩",
-        "⟨7⟩"
-      ],
-      "cause": "Redaction, not rendering: the renderer drops an identifier that starts with `_` or `NS` [B §6], but the Finder captures replaced every identifier by its length, so the prefix is hidden and cua prints `ID: ⟨n⟩` where the vendor prints nothing. The 5-to-7-character identifiers (the two scroll areas, an outline and the two scroll bars; `_NS:<n>` by their length) are the ones whose vendor lines fit only without the part, each length needed; the longer identifiers print on both sides."
+      "cause": "Redaction, not rendering: the renderer drops an identifier that starts with `_` or `NS` [B §6], but the Finder captures replaced every identifier by its length, so the prefix is hidden and cua prints `ID: ⟨n⟩` where the vendor prints nothing. Five elements per lineage (the scene's skyshot.json, and the action pair's): the two scroll areas, an outline and the two scroll bars, whose 5-to-7-character identifiers fit `_NS:<n>`; each vendor line fits only without the part, and each token is needed. Every other identifier prints on both sides.",
+      "tokens": {
+        "L4b7c23aac8c0": [
+          "t2",
+          "t3",
+          "t80",
+          "t88",
+          "t270"
+        ],
+        "Lf3af0ea6c218": [
+          "t2",
+          "t3",
+          "t81",
+          "t89",
+          "t271"
+        ]
+      }
     },
     {
       "scene": "textedit",
@@ -157,12 +168,12 @@
         "before"
       ],
       "kind": "part",
-      "fault": "engine",
+      "fault": "engine or renderer",
       "label": "Secondary Actions",
       "cua": "Open, Confirm",
       "vendor": "⟨12⟩",
       "count": 18,
-      "cause": "Engine (action descriptions): the vendor prints the system's action description (AXUIElementCopyActionDescription), localized to the Mac's language (Korean on the mini, though TextEdit answers in English); the engine supplies no action descriptions until M1a.2b, so cua prints the AX name split into words. The file rows' AXOpen and AXConfirm print 12 characters, as long as the cells' AXOpen alone: which descriptions the vendor prints is hidden by the redaction."
+      "cause": "Engine or renderer, undecided until M1b's full-text Finder comparison: the file rows' AXOpen and AXConfirm print 12 characters in the vendor's line, as long as the cells' AXOpen alone. Either the vendor drops Confirm by a rule cua's renderer lacks, or both descriptions are the system's (the engine supplies no action descriptions until M1a.2b) and the lengths agree by chance; the redaction hides which."
     },
     {
       "scene": "finder",

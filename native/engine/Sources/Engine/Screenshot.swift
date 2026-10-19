@@ -5,7 +5,7 @@ import ScreenCaptureKit
 import UniformTypeIdentifiers
 
 // Screenshot (the spec's Design, "Screenshot"): a JPEG of the key window through ScreenCaptureKit
-// (SCContentFilter(desktopIndependentWindow:), SCScreenshotManager.captureImage), scaled to points, quality 0.8, written
+// (SCContentFilter(desktopIndependentWindow:), SCScreenshotManager.captureImage), at the display's pixel size (the vendor's size on the mini), quality 0.8, written
 // with mode 0600 into the request's outputDirectory and returned as a file: URL. CGWindowListCreateImage is deprecated
 // and not a fallback. Nothing here runs before a request asks for a capture.
 
@@ -90,6 +90,27 @@ func jpegData(_ image: CGImage) -> Data? {
   return CGImageDestinationFinalize(destination) ? data as Data : nil
 }
 
+/// Pixels per point of the display under a window frame (global top-left coordinates, as AX reports them): the
+/// screenshot is captured at the display's pixel size, as the vendor's was on the mini's 2x scenes, and a coordinate
+/// click arrives in that space. 1 when no display is under the frame.
+func pixelScale(of frame: CGRect) -> CGFloat {
+  var display: CGDirectDisplayID = 0
+  var count: UInt32 = 0
+  guard CGGetDisplaysWithPoint(CGPoint(x: frame.midX, y: frame.midY), 1, &display, &count) == .success, count > 0,
+        let mode = CGDisplayCopyDisplayMode(display), mode.width > 0, mode.pixelWidth > 0 else { return 1 }
+  return CGFloat(mode.pixelWidth) / CGFloat(mode.width)
+}
+
+/// The capture's size in pixels for a window frame in points.
+func screenshotPixelSize(_ frame: CGRect, scale: CGFloat) -> (width: Int, height: Int) {
+  (Int((frame.width * scale).rounded()), Int((frame.height * scale).rounded()))
+}
+
+/// A point given in screenshot pixels, as the window-local point in points.
+func windowPoint(fromScreenshot x: Double, _ y: Double, scale: CGFloat) -> CGPoint {
+  CGPoint(x: CGFloat(x) / scale, y: CGFloat(y) / scale)
+}
+
 extension Engine {
   /// The window's JPEG in `directory`: `{url, width, height}`.
   func capture(window: AXUIElement, pid: pid_t, frame: CGRect?, into directory: String, name: String, revision: Int, timings: inout Timings) throws -> [String: Any] {
@@ -101,8 +122,9 @@ extension Engine {
     var lookup = try shareableWindows.window(number, timings: &timings)
     guard var target = lookup.window else { throw EngineError(name: "noCapturableWindow", "No capturable window found: \(name)") }
     let configuration = SCStreamConfiguration()
-    configuration.width = Int(frame.width.rounded())
-    configuration.height = Int(frame.height.rounded())
+    let size = screenshotPixelSize(frame, scale: pixelScale(of: frame))
+    configuration.width = size.width
+    configuration.height = size.height
     configuration.showsCursor = false
     configuration.ignoreShadowsSingleWindow = true
     let image: CGImage

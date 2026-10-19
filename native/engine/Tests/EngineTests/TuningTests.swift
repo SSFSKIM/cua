@@ -77,3 +77,24 @@ final class ConcurrentCaptureTests: XCTestCase {
     XCTAssertThrowsError(try pending.wait().result.get())
   }
 }
+
+// Tuning iteration 2 (the mini sitting): the screenshot at the display's pixel size, and coordinate clicks mapped back.
+
+final class PixelScaleTests: XCTestCase {
+  func testTheCaptureIsTheFrameTimesTheScale() {
+    let frame = CGRect(x: 308, y: 102, width: 610, height: 860)
+    XCTAssertTrue(screenshotPixelSize(frame, scale: 2) == (1220, 1720), "the vendor's TextEdit size on the mini")
+    XCTAssertTrue(screenshotPixelSize(frame, scale: 1) == (610, 860))
+  }
+
+  func testAScreenshotPointMapsBackToWindowPoints() {
+    XCTAssertEqual(windowPoint(fromScreenshot: 1220, 860, scale: 2), CGPoint(x: 610, y: 430))
+    XCTAssertEqual(windowPoint(fromScreenshot: 15, 7, scale: 1), CGPoint(x: 15, y: 7))
+  }
+
+  func testTheScaleOfTheDisplayUnderAFrameIsAtLeastOne() {
+    let main = CGDisplayBounds(CGMainDisplayID())
+    XCTAssertGreaterThanOrEqual(pixelScale(of: CGRect(x: main.midX, y: main.midY, width: 10, height: 10)), 1)
+    XCTAssertEqual(pixelScale(of: CGRect(x: -1e7, y: -1e7, width: 10, height: 10)), 1, "no display: points")
+  }
+}

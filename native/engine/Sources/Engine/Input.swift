@@ -113,7 +113,8 @@ extension Engine {
         guard let window = primaryWindow(of: application), let windowFrame = frame(of: window) else {
           throw EngineError(name: "noWindowsAvailable", "noWindowsAvailable")
         }
-        let point = CGPoint(x: windowFrame.minX + CGFloat(x), y: windowFrame.minY + CGFloat(y))
+        let local = windowPoint(fromScreenshot: x, y, scale: pixelScale(of: windowFrame))  // screenshot pixels to points
+        let point = CGPoint(x: windowFrame.minX + local.x, y: windowFrame.minY + local.y)
         let hit = hitTest(window: window, at: point)
         let owner = hit.map { ownerPid(of: $0) } ?? appPid
         let target = ClickTarget(point: point, windowFrame: windowFrame, windowID: windowNumber(of: window, pid: appPid, frame: windowFrame), pid: owner)

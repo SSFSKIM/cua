@@ -10,9 +10,17 @@
 - Phase 8, U7: the grants for the fresh-id bundle ("cua Engine probe", io.github.ssfskim.cua.engine.u7) were switched on by the dispatching session through cua's remote device, on the owner's delegation, not by the owner's hand.
   - The dispatching session looked at the screen at about 20:31Z and saw no prompt window.
   - The TCC stream (`u78-tcc.jsonl`) shows what happened. The engine's Accessibility request was raised. Within about 40 ms (20:27:50.98Z), universalAccessAuthWarn set it to Denied (System Set), so no prompt stayed on screen.
-- Phase 8, U8: "no confirmation appeared" for f2 (the same-path rebuild a25da09a) and for f3 (the new-path copy).
-  - Sources: the on-screen window list at 20:39:39Z and 20:40:10Z, read by the dispatching session, and tccd, which logged no "Notifying for access" for either move.
-  - The owner's own answer was not received at the time of recording.
+- Phase 8, U7 capture (corrected the same day, from the owner and replayd's log on the mini):
+  - A "cua Engine probe" screen-recording confirmation did appear, for the fresh id's first capture after approve's relaunch (pid 50081, relaunched 20:38:29Z).
+  - replayd logged `+[SCAlert userAcknowledgementAlertWithBundleID:]` and `showAlertWithTitle:…requireReponse:` at 20:38:30.738Z, then `showAlertWithTitle:… user acknowledgement refused` at 20:38:41.787Z.
+  - The owner reports clicking Allow. replayd's line says refused. Both are recorded here and the discrepancy is left unresolved.
+  - The engine reported `captured: true` at 20:38:30Z, before the alert resolved, so that capture did not wait for the answer.
+  - The window-list checks at about 20:39Z and 20:40Z came after the alert had closed, so they do not contradict it.
+- Phase 8, U8: no confirmation for f2 (the same-path rebuild a25da09a, relaunched 20:39:12Z) or for f3 (the new-path copy, launched 20:39:56Z).
+  - Evidence: replayd logged no `SCAlert` line for either.
+  - The on-screen window list (20:39:39Z, 20:40:10Z) and tccd ("Notifying for access" absent) agree.
+  - replayd's `SCAlert` lines are the U8 signal from now on. The approvals plist carried no engine entry at any of its four reads.
+- U7/U8 summary row: a confirmation appeared for the fresh id's first capture (replayd's SCAlert user-acknowledgement alert), and none for the same-id rebuild or the new-path copy.
 - Phase 8: the conditional `tccutil reset` was not run. U7 showed that the fresh id's prompt is suppressed the same way, so the engine's own id is not in a special state.
 - Engine exits over the hold (`engine-exits.txt`): 27 starts and 27 logged exits, all "shutdown requested". No crash report was added.
 - The TCC streams (`u5-tcc.jsonl`, `u78-tcc.jsonl`) had the signing certificate's common name redacted on collection.

@@ -2,26 +2,29 @@ import AppKit
 import ApplicationServices
 import Foundation
 
-// Input methods (the spec's Design, "Input"; R/F-helper-logic.md §5–6, R/sky-behaviour.md §10–14): click, press_key and
-// type_text over routes 1–3. The engine never activates an app on its own (route 4 is not built), never moves the real
-// pointer, and posts to the process that owns the target element. Every result and every error raised after the
-// arguments validate carries the input meta (Interfaces, EngineProtocol): {inputRoute, startedAt, endedAt, receivedAt,
-// hidIdleMs}, startedAt/endedAt null while nothing was posted, inputRoute null until a route is chosen; the guard's
-// duration rides as activationGuardMs when route 3 ran one. The settle an action arms runs at the next get_app_state
-// (markActed). Spike-only arguments, which the facade never sends and the spike service forwards: `spikeRoute`
-// ("1"|"2'"|"2"|"3", force one route; "2'" is route 2′, the plain post: route 2's events with no ⌘ and no fake
-// activation, the second sitting's rung under measurement), `spikeEventSource` ("private", post keys from a private
-// event source instead of the HID-system one) and `spikeKeyed` (type_text: key through the layout regardless of the source routing, probe (e)'s
-// per-context case). A non-concealed type_text that routes to the paste route answers notImplemented naming it, with
-// inputRoute "paste"; the paste route itself is M2a.
+// Input methods (the spec's Design, "Input", "Keys" and "Text"; R/F-helper-logic.md §5–6, R/sky-behaviour.md §10–14):
+// click, press_key and type_text on M1a's route table (Routes.swift): keys and typed text by route 2′, the plain post
+// with no fake activation; clicks by route 1 where the element advertises the action and the hit-test gate passes,
+// else by route 3, whose failed guard is refused as activationFailed with the click's own events never posted. The
+// engine never activates an app on its own (route 4 is M2a's), never moves the real pointer, posts to the process that
+// owns the target element, and refuses a target served by a forbidden process before anything is posted
+// (OwnerPolicy.swift). Every result and every error raised after the arguments validate carries the input meta
+// (Interfaces, EngineProtocol): {inputRoute, startedAt, endedAt, receivedAt, hidIdleMs}, startedAt/endedAt null while
+// nothing was posted, inputRoute null until a route is chosen; the guard's duration rides as activationGuardMs when
+// route 3 ran one. The settle an action arms runs at the next get_app_state (markActed). Spike-only arguments, which the
+// facade never sends: `spikeRoute` ("1"|"2'"|"2"|"3", force one route; route 2, the ⌘ post, is reachable only this
+// way), `spikeEventSource` ("private", post keys from a private event source instead of the HID-system one) and
+// `spikeKeyed` (type_text: key through the layout regardless of the source routing, probe (e)'s per-context case;
+// never for a concealed request). A non-concealed type_text that routes to the paste route answers notImplemented
+// naming it, with inputRoute "paste"; the paste route itself is M2a's.
 
-/// A route that carried an input (the spec's Design, "Input": the ladder 1 → 2′ → 3 → 2 → 4; Interfaces, EngineProtocol's
-/// `inputRoute: 1 | "2'" | 2 | 3 | 4 | "paste"`). Route 4 is not built.
+/// A route that carried an input (the spec's Design, "Input"; Interfaces, EngineProtocol's
+/// `inputRoute: 1 | "2'" | 2 | 3 | 4 | "paste"`). Route 4 is M2a's.
 enum InputRoute: Equatable {
   case action       // 1: the element's accessibility action
   case plainPost    // 2′: the events posted to the owning pid, no ⌘ flag, no fake activation
-  case commandPost  // 2: the same post, ⌘ added for a click into an inactive app (the vendor's background click)
-  case activation   // 3: the fake activation, then the plain post
+  case commandPost  // 2: the same post, ⌘ added for a click into an inactive app (the vendor's background click); spike only
+  case activation   // 3: the fake activation (nothing when the app already believes it has focus), then the plain post
   case paste        // type_text's paste route
 
   /// The wire's spelling: the numbered routes as numbers, 2′ as the string "2'".
@@ -41,14 +44,10 @@ enum InputRoute: Equatable {
 }
 
 /// The flags of a synthesized click's events: ⌘ for route 2 into an app that is not active (the AppKit convention for a
-/// click an inactive window accepts, F §5.4); none for every other route, 2′'s plain post included.
-func clickFlags(_ route: InputRoute?, targetActive: Bool) -> CGEventFlags {
+/// click an inactive window accepts, F §5.4); none for every other route, 2′'s plain post and route 3's included.
+func clickFlags(_ route: InputRoute, targetActive: Bool) -> CGEventFlags {
   route == .commandPost && !targetActive ? .maskCommand : []
 }
-
-/// Whether a synthesized action runs route 3's fake activation (when the app does not believe it has focus): by default
-/// and when route 3 is forced; never under a forced 2 or 2′.
-func runsActivation(_ forced: InputRoute?) -> Bool { forced == nil || forced == .activation }
 
 /// The input meta of one request, whatever it answered. The route and the two times fill in as the action proceeds, so
 /// an error thrown midway carries the state reached then.
@@ -81,18 +80,36 @@ func withMeta(_ error: EngineError, _ meta: InputMeta) -> EngineError {
   return error
 }
 
+/// A synthesized click's delivery: under route 3 the fake activation first (nothing when the app already believes it has
+/// focus), then the click's events posted back to back to the target's process, then the activation withdrawn. A
+/// failed guard throws before any of the click's events is posted, and nothing is retried (never with ⌘). The meta
+/// carries the route from the start, so a refusal names the route that failed.
+func deliverClick(_ target: ClickTarget, route: InputRoute, button: MouseButton, count: Int, activation: FakeActivation?,
+                  targetActive: () -> Bool, post: (CGEvent, pid_t) -> Void, meta: inout InputMeta) throws {
+  meta.inputRoute = route
+  defer { activation?.deactivate() }  // every path out of the click, error or success, undoes the activation
+  if route == .activation, let activation {
+    try activation.activate()
+    meta.activationGuardMs = activation.guardMs
+  }
+  let events = clickEvents(target, button: button, count: count, flags: clickFlags(route, targetActive: targetActive()))
+  guard !events.isEmpty else { throw EngineError(name: "eventCreationFailed", "The click events could not be created.") }
+  let (startedAt, endedAt) = postToProcess(events, pid: target.pid, post: post)
+  meta.startedAt = startedAt
+  meta.endedAt = endedAt
+}
+
 extension Engine {
   // MARK: click
 
   /// `click {app, element | x, y, mouse_button?, click_count?}`, `element` a token of the request's `lineage` (the
-  /// service's translation of the facade's element_index). An element click takes route 1 (AXPick, else
-  /// AXPress) when a plain left click's action is advertised and the element is not a menu-bar item; every other
-  /// element click synthesizes the events under route 3 (F §5.1: the vendor synthesizes inside a web view and for
-  /// menu-bar items; cua takes route 3 for all synthesized element clicks, M0's measured default). A coordinate click
-  /// is in the pixels of the last screenshot of the app's primary window on this connection, and is refused
-  /// (`noScreenshotForCoordinates`, nothing posted) when there is none; it takes route 3 when the point is over web
-  /// content, else route 2, whose events carry ⌘ when the target app is inactive (the AppKit convention for a click an
-  /// inactive window accepts, F §5.4). A forced 2′ posts the same events with no ⌘ and no fake activation.
+  /// service's translation of the facade's element_index). An element click takes route 1 (AXPick, else AXPress) for a
+  /// plain left click on an element that advertises the action, is not a menu-bar item, and whose clickable point does
+  /// not land on a strict descendant of it (the vendor's nested-content gate, applied to every element by cua); every
+  /// other element click is synthesized at that point by route 3. A coordinate click is in the pixels of the last
+  /// screenshot of the app's primary window on this connection, refused (`noScreenshotForCoordinates`, nothing posted)
+  /// when there is none, and goes by route 3. The process serving the target receives the input, after the forbidden
+  /// list has been checked against it.
   func click(_ args: [String: Any], _ context: ExecutionContext) throws -> Any {
     let token = try elementTokenArg(args, lineage: context.lineage)
     let hasElement = token != nil
@@ -106,7 +123,7 @@ extension Engine {
     }
     let count = (args["click_count"] as? NSNumber)?.intValue ?? 1
     guard count >= 1 else { throw EngineError.invalidArguments("click_count must be at least 1") }
-    let route = try spikeRouteArg(args, usable: hasElement ? InputRoute.elementClick : InputRoute.synthesized)
+    let forced = try spikeRouteArg(args, usable: hasElement ? InputRoute.elementClick : InputRoute.synthesized)
 
     var meta = InputMeta(context)
     do {
@@ -117,29 +134,29 @@ extension Engine {
 
       if let token, let lineage = context.lineage {
         let entry = try context.connection.element(token, app: app, lineage: lineage) { ElementResolver.live($0, pid: appPid) }
-        let advertised = entry.actions.first(where: { $0 == "AXPick" }) ?? entry.actions.first(where: { $0 == "AXPress" })
-        let plain = button == .left && count == 1
-        let menuBar = entry.identity.role == "AXMenuBarItem"
-
-        if route == .action || (route == nil && plain && !menuBar), let action = advertised {
+        let owner = ownerPid(of: entry.element, fallback: appPid)  // a sheet or panel is served by another process
+        try refuseForbiddenOwner(owner)
+        // The element's own window, which for a panel served by another process is that process's window.
+        let window = elementAttribute(entry.element, kAXWindowAttribute) ?? primaryWindow(of: prepare(AXUIElementCreateApplication(appPid)))
+        let windowFrame = window.flatMap { frame(of: $0) }
+        let point = clickablePoint(frame: frame(of: entry.element) ?? entry.frame, visibleIn: windowFrame)
+        let plan = try elementClickPlan(forced: forced, button: button, count: count, role: entry.identity.role, actions: entry.actions) {
+          guard let point else { return false }  // nothing to hit-test: the action needs no point
+          return landsOnStrictDescendant(hitTest(application: owner, at: point), of: entry.element,
+                                         parent: { elementAttribute($0, kAXParentAttribute) }, same: { CFEqual($0, $1) })
+        }
+        switch plan {
+        case .action(let action):
           meta.inputRoute = .action
           meta.startedAt = unixMilliseconds()
           let error = AXUIElementPerformAction(entry.element, action as CFString)
           meta.endedAt = unixMilliseconds()
           guard error == .success else { throw EngineError(name: "actionFailed", "The element did not accept the \(action) action.") }
-        } else if route == .action {
-          throw EngineError.invalidArguments("spikeRoute 1 cannot carry this click: the element advertises neither AXPick nor AXPress")
-        } else {
-          guard let elementFrame = entry.frame, elementFrame.width >= 1, elementFrame.height >= 1 else {
-            throw EngineError(name: "cannotClickOffscreenElement", "The element is not visible on screen.")
-          }
-          let owner = ownerPid(of: entry.element)  // a sheet or panel is served by another process
-          let window = primaryWindow(of: prepare(AXUIElementCreateApplication(appPid)))
-          let windowFrame = window.flatMap { frame(of: $0) }
-          let target = ClickTarget(point: CGPoint(x: elementFrame.midX, y: elementFrame.midY), windowFrame: windowFrame,
-                                   windowID: window.flatMap { windowNumber(of: $0, pid: appPid, frame: windowFrame) }, pid: owner)
-          try synthesizedClick(target, window: window ?? entry.element, pid: owner, button: button, count: count,
-                              forced: route, meta: &meta)
+        case .synthesized(let route):
+          guard let point else { throw EngineError(name: "cannotClickOffscreenElement", "The element is not visible on screen.") }
+          let windowID = window.flatMap { windowNumber(of: $0, pid: owner, frame: windowFrame) }
+          let target = ClickTarget(point: point, windowFrame: windowFrame, windowID: windowID, pid: owner)
+          try synthesizedClick(target, window: window ?? entry.element, route: route, button: button, count: count, meta: &meta)
         }
       } else {
         guard let x = numberArg(args["x"]), let y = numberArg(args["y"]), x.isFinite, y.isFinite else {
@@ -152,24 +169,10 @@ extension Engine {
         // Screenshot pixels to points, by the scale of the screenshot the model was given (Screenshot.swift).
         let local = try context.connection.screenshotPoint(x, y, app: app, window: window, lineage: context.lineage)
         let point = CGPoint(x: windowFrame.minX + local.x, y: windowFrame.minY + local.y)
-        let hit = hitTest(window: window, at: point)
-        let owner = hit.map { ownerPid(of: $0) } ?? appPid
+        let owner = hitTest(window: window, at: point).map { ownerPid(of: $0, fallback: appPid) } ?? appPid
+        try refuseForbiddenOwner(owner)
         let target = ClickTarget(point: point, windowFrame: windowFrame, windowID: windowNumber(of: window, pid: appPid, frame: windowFrame), pid: owner)
-        let web = hit.map(isWebContent) ?? false
-        let chosen = route ?? (web ? .activation : .commandPost)
-        if chosen == .activation {
-          // `forced` stays nil for a default web click, so the route reported is the one that carried it (a plain
-          // pid-post when the app already believed it had focus), not the shape the route-3 branch was entered by.
-          try synthesizedClick(target, window: window, pid: owner, button: button, count: count, forced: route, meta: &meta)
-        } else {
-          meta.inputRoute = chosen
-          let flags = clickFlags(chosen, targetActive: NSRunningApplication(processIdentifier: owner)?.isActive == true)
-          let events = clickEvents(target, button: button, count: count, flags: flags)
-          guard !events.isEmpty else { throw EngineError(name: "eventCreationFailed", "The click events could not be created.") }
-          let (startedAt, endedAt) = postToProcess(events, pid: owner)
-          meta.startedAt = startedAt
-          meta.endedAt = endedAt
-        }
+        try synthesizedClick(target, window: window, route: coordinateClickRoute(forced: forced), button: button, count: count, meta: &meta)
       }
       context.connection.markActed(app)
       return ["meta": meta.wire]
@@ -178,42 +181,27 @@ extension Engine {
     }
   }
 
-  /// A synthesized click: forced route 2 posts straight to the owning pid (⌘ added when the target app is inactive),
-  /// forced 2′ the same with no ⌘; route 3 (the default for elements and web content) runs the fake activation first
-  /// and the deactivation after.
-  private func synthesizedClick(_ target: ClickTarget, window: AXUIElement, pid: pid_t, button: MouseButton, count: Int,
-                                forced: InputRoute?, meta: inout InputMeta) throws {
-    let activation = FakeActivation(pid: target.pid, window: window)
-    defer { activation.deactivate() }  // every path out of the click, error or success, undoes the activation
-    let believedBefore = appBelievesItHasFocus(target.pid)
-    if runsActivation(forced) {
-      if !believedBefore {
-        try activation.activate()
-        meta.activationGuardMs = activation.guardMs
-      }
-      meta.inputRoute = forced ?? (believedBefore ? .commandPost : .activation)
-    } else {
-      meta.inputRoute = forced
-    }
-    let flags = clickFlags(forced, targetActive: NSRunningApplication(processIdentifier: target.pid)?.isActive == true)
-    let events = clickEvents(target, button: button, count: count, flags: flags)
-    guard !events.isEmpty else {
-      throw EngineError(name: "eventCreationFailed", "The click events could not be created.")
-    }
-    let (startedAt, endedAt) = postToProcess(events, pid: target.pid)
-    meta.startedAt = startedAt
-    meta.endedAt = endedAt
+  /// A synthesized click on the live system: route 3's activation for `window` (the target's window), or a forced
+  /// spike route's plain or ⌘ post.
+  private func synthesizedClick(_ target: ClickTarget, window: AXUIElement, route: InputRoute, button: MouseButton, count: Int,
+                                meta: inout InputMeta) throws {
+    let activation = route == .activation
+      ? FakeActivation(pid: target.pid, window: window, windowFrame: target.windowFrame, windowID: target.windowID) : nil
+    try deliverClick(target, route: route, button: button, count: count, activation: activation,
+                     targetActive: { NSRunningApplication(processIdentifier: target.pid)?.isActive == true },
+                     post: { $0.postToPid($1) }, meta: &meta)
   }
 
   // MARK: press_key
 
-  /// `press_key {app, key}`: the vendor's grammar (Keyboard.swift), four events per press with no gap, posted to the
-  /// app's pid; every keyboard action into an app that does not believe it has focus runs route 3's activation first
-  /// (F §6.1).
+  /// `press_key {app, key}`: the vendor's grammar (Keyboard.swift), four events per press with no gap, posted by route
+  /// 2′ to the process that owns the app's focused element, with no fake activation (the second sitting: keys by 2′
+  /// delivered on every scene without firing the app's activation hooks). A spike cell may force route 3's activation
+  /// first, or label the post route 2.
   func pressKey(_ args: [String: Any], _ context: ExecutionContext) throws -> Any {
     guard let key = args["key"] as? String else { throw EngineError.invalidArguments("key is required") }
     let presses = try parseKeySequence(key)  // validated before anything is resolved, so an unknown name never posts
-    let route = try spikeRouteArg(args, usable: InputRoute.synthesized)
+    let forced = try spikeRouteArg(args, usable: InputRoute.synthesized)
 
     var meta = InputMeta(context)
     do {
@@ -222,18 +210,11 @@ extension Engine {
       try requireAccessibility()
       try refuseWhenLocked()
       let application = prepare(AXUIElementCreateApplication(pid))
-      let window = primaryWindow(of: application) ?? AXUIElementCreateApplication(pid)
-      let activation = FakeActivation(pid: pid, window: window)
-      defer { activation.deactivate() }  // every path out of the posting, error or success, undoes the activation
-      let believedBefore = appBelievesItHasFocus(pid)
-      meta.inputRoute = route ?? (believedBefore ? .commandPost : .activation)
-      if runsActivation(route) && !believedBefore {
-        try activation.activate()
-        meta.activationGuardMs = activation.guardMs
-      }
-      // Keys go to the process that owns the focused element (a sheet or an open panel is not the app's process,
-      // F §5.7's targetForKeyboardEvent), else to the app.
       let target = keyboardTarget(application, fallback: pid)
+      try refuseForbiddenOwner(target)
+      meta.inputRoute = keyRoute(forced: forced)
+      let activation = try forcedActivation(meta.inputRoute, pid: pid, application: application, meta: &meta)
+      defer { activation?.deactivate() }  // every path out of the posting, error or success, undoes a forced activation
       let poster = EventPoster.toProcess(target, sourceState: privateSourceArg(args) ? .privateState : .hidSystemState)
       meta.startedAt = unixMilliseconds()
       for press in presses {
@@ -250,15 +231,15 @@ extension Engine {
   // MARK: type_text
 
   /// `type_text {app, text, concealed?, spikeKeyed?}`: routed by the active input source (the spec's Design, "Text").
-  /// Under a Latin layout the text is keyed as the vendor keys it, with the source checked before every event and after
-  /// the last; anything else takes the paste route, which M0 does not build (notImplemented naming it) — unless
-  /// `spikeKeyed` bypasses the routing for probe (e). A concealed request never takes the paste route and never keys
-  /// under a reading it cannot trust: it fails closed before anything is entered.
+  /// Under a Latin layout whose reading is reliable the text is keyed as the vendor keys it, by route 2′ with no fake
+  /// activation, with the source checked before every event and after the last; anything else takes the paste route,
+  /// which M1a does not build (notImplemented naming it). A concealed request never takes the paste route and never keys
+  /// under a reading it cannot trust: it fails closed as concealedInputUnavailable before anything is entered.
   func typeText(_ args: [String: Any], _ context: ExecutionContext) throws -> Any {
     guard let text = args["text"] as? String else { throw EngineError(name: "invalidArguments", "Missing text to type") }
     let concealed = (args["concealed"] as? NSNumber)?.boolValue ?? false
     let spikeKeyed = (args["spikeKeyed"] as? NSNumber)?.boolValue ?? false
-    let route = try spikeRouteArg(args, usable: InputRoute.synthesized)
+    let forced = try spikeRouteArg(args, usable: InputRoute.synthesized)
 
     var meta = InputMeta(context)
     do {
@@ -268,33 +249,26 @@ extension Engine {
       try refuseWhenLocked()
 
       let source = currentInputSource()
-      let frontmost = frontmostPid() == pid
-      let unknown = perContextInputEnabled() && !frontmost  // macOS may hold a source per app; the session's reading says nothing then
-      let pasteRoute = !spikeKeyed && (!source.keyboardLayout || unknown)
-      if concealed && pasteRoute {
-        throw EngineError(name: "concealedInputUnavailable",
-                          "Nothing was entered: the active input source (\(source.id)) cannot key this text reliably. Use set_value on a settable element instead.")
-      }
-      if pasteRoute {
+      // macOS may hold a source per app; the session's reading then says nothing about a background app.
+      let perContextUnknown = perContextInputEnabled() && frontmostPid() != pid
+      switch textRoute(keyboardLayout: source.keyboardLayout, perContextUnknown: perContextUnknown, concealed: concealed, spikeKeyed: spikeKeyed) {
+      case .refusedConcealed:
+        throw concealedInputUnavailable(sourceID: source.id, perContext: source.keyboardLayout && perContextUnknown)
+      case .paste:
         meta.inputRoute = .paste
         throw EngineError(name: "notImplemented",
                           "type_text under this input source (\(source.id)) takes the paste route, which this engine build does not implement")
+      case .keyed: break
       }
       guard let layout = KeyLayout.current() else {
         throw EngineError(name: "keyboardLayoutUnavailable", "Unable to get the current keyboard layout.")
       }
       let application = prepare(AXUIElementCreateApplication(pid))
-      let window = primaryWindow(of: application) ?? AXUIElementCreateApplication(pid)
-      let activation = FakeActivation(pid: pid, window: window)
-      defer { activation.deactivate() }  // an inputSourceChanged mid-typing undoes the activation too
-      let believedBefore = appBelievesItHasFocus(pid)
-      meta.inputRoute = route ?? (believedBefore ? .commandPost : .activation)
-      if runsActivation(route) && !believedBefore {
-        try activation.activate()
-        meta.activationGuardMs = activation.guardMs
-      }
-      // As press_key: the focused element's owning process receives the keys (F §5.7), else the app.
       let target = keyboardTarget(application, fallback: pid)
+      try refuseForbiddenOwner(target)
+      meta.inputRoute = keyRoute(forced: forced)
+      let activation = try forcedActivation(meta.inputRoute, pid: pid, application: application, meta: &meta)
+      defer { activation?.deactivate() }  // an inputSourceChanged mid-typing undoes a forced activation too
       let poster = EventPoster.toProcess(target, sourceState: privateSourceArg(args) ? .privateState : .hidSystemState)
       meta.startedAt = unixMilliseconds()
 
@@ -319,12 +293,39 @@ extension Engine {
     }
   }
 
+  // MARK: paste
+
+  /// `paste {app, text, format, concealed?}`: the method is M2a's; a concealed paste is refused already, as the Text rule
+  /// requires (secrets never take the pasteboard), with nothing entered.
+  func paste(_ args: [String: Any], _ context: ExecutionContext) throws -> Any {
+    let meta = InputMeta(context)
+    if (args["concealed"] as? NSNumber)?.boolValue == true {
+      throw withMeta(EngineError(name: "concealedInputUnavailable",
+                                 "Nothing was entered: a concealed value is never pasted. Use set_value on a settable element instead."), meta)
+    }
+    throw withMeta(EngineError(name: "notImplemented", "paste is not implemented by this engine build"), meta)
+  }
+
+  /// A spike cell's forced route 3 for keys: the app's activation for its primary window, run before the keys. Nil for
+  /// every other route, the default 2′ included.
+  private func forcedActivation(_ route: InputRoute?, pid: pid_t, application: AXUIElement, meta: inout InputMeta) throws -> FakeActivation? {
+    guard route == .activation else { return nil }
+    let activation = FakeActivation(pid: pid, window: primaryWindow(of: application) ?? application)
+    do {
+      try activation.activate()
+    } catch {
+      activation.deactivate()
+      throw error
+    }
+    meta.activationGuardMs = activation.guardMs
+    return activation
+  }
+
   /// The process keyboard events go to: the owner of the app's focused element, which for a sheet or an open panel is
   /// not the app (F §5.7's targetForKeyboardEvent), else the app.
   private func keyboardTarget(_ application: AXUIElement, fallback pid: pid_t) -> pid_t {
     guard let focused = elementAttribute(application, kAXFocusedUIElementAttribute) else { return pid }
-    let owner = ownerPid(of: focused)
-    return owner > 0 ? owner : pid
+    return ownerPid(of: focused, fallback: pid)
   }
 
   /// The source check before every event and after the last (the spec's Design, "Text"): a switch mid-request stops it
@@ -376,22 +377,14 @@ func hitTest(window: AXUIElement, at point: CGPoint) -> AXUIElement? {
   return prepare(hit)
 }
 
-/// Web content (the spec's Design, "Input" route 3's web-view case): an AXWebArea at `element` or among its
-/// ancestors. The vendor's recovered gate (F §5.1's FUN_1007a1b9c, now decompiled) hit-tests the clickable point and
-/// walks the hit element's ancestors, capped at 300 levels, asking whether the clicked element is among them — true
-/// exactly when the point lands on a descendant of the target, the nested-content case; cua's M0 test is the simpler
-/// role form the design named.
-func isWebContent(_ element: AXUIElement) -> Bool {
-  var current: AXUIElement? = element
-  var depth = 0
-  while let element = current, depth < 300 {
-    if stringAttribute(element, kAXRoleAttribute) == "AXWebArea" { return true }
-    guard let parent = elementAttribute(element, kAXParentAttribute), !CFEqual(parent, element) else { return false }
-    current = parent
-    depth += 1
-  }
-  return false
+/// The element a process's application answers at a global screen point (the gate's hit-test: what that app would
+/// deliver a click at the point to, whatever other apps' windows lie above it).
+func hitTest(application pid: pid_t, at point: CGPoint) -> AXUIElement? {
+  hitTest(window: prepare(AXUIElementCreateApplication(pid)), at: point)
 }
 
-/// The process that serves an element (AX.swift's `pid(of:)` under a name click's local `appPid` cannot shadow).
-func ownerPid(of element: AXUIElement) -> pid_t { pid(of: element) }
+/// The process that serves an element; `fallback` when the Accessibility API cannot say.
+func ownerPid(of element: AXUIElement, fallback: pid_t) -> pid_t {
+  let owner = pid(of: element)
+  return owner > 0 ? owner : fallback
+}

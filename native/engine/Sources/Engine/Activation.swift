@@ -5,18 +5,28 @@ import Foundation
 // Route 3, fake activation (the spec's Design, "Input" route 3; R/F-helper-logic.md §5.4–5.5, R/sky-behaviour.md §12):
 // the app is made to believe it is active while the user's app stays frontmost. To the target pid: an AppKit-defined
 // event of subtype 1 (application activated; flags 0xC0000, the window number) plus a left click at the window's
-// AXActivationPoint with route 2's recipe. Around it, when another app is frontmost: screen updates held with the
-// private SLSDisableUpdate/SLSReenableUpdate, and a 10 ms poll for up to 1 s that answers the target's window ordering
-// above the user's focused window with AXRaise on the user's window, and the user's app losing frontmost with
-// `activate(options: [])` on it. After the action's events, the matching deactivation (subtype 2) unless the app has
-// really become active.
+// AXActivationPoint with route 2's recipe, the click skipped when that point lies outside the window's frame (cua's
+// declared difference, the second sitting's U13). Around it, when another app is frontmost: screen updates held with the
+// private SLSDisableUpdate/SLSReenableUpdate, released when the guard ends or at `activationHoldCapMs`, whichever is
+// first, so a slow guard never freezes the display for long; and a 10 ms poll for up to 1 s that answers the target's
+// window ordering above the user's focused window with AXRaise on the user's window. The guard fails, and the action is
+// refused as activationFailed with its own events never posted (never retried with ⌘), when the poll times out or the
+// user's app loses frontmost: when the target itself came to the front the user's app is made frontmost again first;
+// when a third app did (most likely the user's own switch) the front is left alone. After the action's events, the
+// matching deactivation (subtype 2) unless the app has really become active.
 //
-// M0 scope (a probe for keyboard actions into a background app and clicks inside a web view): stateless per action,
-// and only the target's pid and window are posted to; the vendor's per-process taps and its SystemFocusStealPreventer,
-// which tap the user's own app as well, are not built. The private calls are resolved with dlsym and skipped when
-// absent. F does not give the poll's exit test; here it is the user's app frontmost and the target window not above
-// the user's on three consecutive samples, and the user's app is re-activated as soon as it is seen to lose frontmost
-// rather than after the poll.
+// Stateless per action (the activation stays per action in M2a, the second sitting's ruling), and only the target's
+// pid and window are posted to; the vendor's per-process taps and its SystemFocusStealPreventer, which tap the user's
+// own app as well, are not built. The private calls are resolved with dlsym and skipped when absent. F does not give the
+// poll's exit test; here it is the user's app frontmost and the target window not above the user's on three
+// consecutive samples.
+
+/// How long the screen-update hold may last: well under the guard's 1 s poll, and above the guards the sittings
+/// measured (37–58 ms, a coordinate click into TextEdit 82), so a guard of the usual length holds as the vendor's does.
+let activationHoldCapMs: Double = 100
+/// The guard's poll: every 10 ms for up to 1 s (F §5.5).
+let activationGuardTimeoutMs: Double = 1_000
+let activationGuardSampleMs: Double = 10
 
 /// SkyLight's update hold (F §11, salts 16 and 17) and the connection it takes.
 private enum SkyLight {
@@ -56,24 +66,33 @@ private enum KeyFocus {
 
 func frontmostPid() -> pid_t? { NSWorkspace.shared.frontmostApplication?.processIdentifier }
 
-/// Whether the app believes it has focus: it is frontmost, or holds key focus.
-func appBelievesItHasFocus(_ pid: pid_t) -> Bool { ActivationSystem().believesItHasFocus(pid) }
-
-/// What route 3 reads and does outside its own state (the posting, the frontmost app, key focus, the screen-update hold
-/// and the user's re-activation) as replaceable calls, the real ones by default: a unit test runs the activation's
-/// sequencing through stubs, so nothing is posted, activated or held.
+/// What route 3 reads and does outside its own state (the posting, the frontmost app, key focus, the screen-update hold,
+/// the user's re-activation, the user's window and the window order, the activation point and the clock) as replaceable
+/// calls, the real ones by default: a unit test runs the activation's sequencing through stubs, so nothing is posted,
+/// activated, raised or held.
 struct ActivationSystem {
   var post: (CGEvent, pid_t) -> Void = { event, pid in event.postToPid(pid) }
   var frontmost: () -> pid_t? = frontmostPid
   var keyFocus: () -> pid_t? = { KeyFocus.pid() }
   var holdScreenUpdates: () -> () -> Void = { SkyLight.hold() }  // answers the release
   var reactivate: (pid_t) -> Bool = { NSRunningApplication(processIdentifier: $0)?.activate(options: []) ?? false }
+  /// The user's focused window and its window number, the one the target's window must stay behind.
+  var userWindow: (pid_t) -> (element: AXUIElement, id: CGWindowID)? = { user in
+    guard let window = elementAttribute(prepare(AXUIElementCreateApplication(user)), kAXFocusedWindowAttribute),
+          let id = windowNumber(of: window, pid: user, frame: frame(of: window)) else { return nil }
+    return (window, id)
+  }
+  var isInFront: (CGWindowID, CGWindowID) -> Bool = windowIsInFront
+  var raise: (AXUIElement) -> Void = { AXUIElementPerformAction($0, kAXRaiseAction as CFString) }
+  var activationPoint: (AXUIElement) -> CGPoint? = { point(attribute($0, "AXActivationPoint")) }
+  var now: () -> Double = monotonicMilliseconds
+  var sleep: (Double) -> Void = { usleep(UInt32(max(0, $0) * 1000)) }
 
   func believesItHasFocus(_ pid: pid_t) -> Bool { frontmost() == pid || keyFocus() == pid }
 }
 
 /// The on-screen order of two windows: true when `window` is in front of `other` (CGWindowList lists front to back).
-private func isInFront(_ window: CGWindowID, of other: CGWindowID) -> Bool {
+func windowIsInFront(_ window: CGWindowID, of other: CGWindowID) -> Bool {
   guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { return false }
   for info in list {
     guard let number = (info[kCGWindowNumber as String] as? Int).map({ CGWindowID($0) }) else { continue }
@@ -83,7 +102,20 @@ private func isInFront(_ window: CGWindowID, of other: CGWindowID) -> Bool {
   return false
 }
 
-func activationFailed(_ detail: String) -> EngineError { EngineError(name: "activationFailed", "The app could not be prepared for input: \(detail).") }
+/// Route 3's refusal (Interfaces, input errors): the action's own events were never posted.
+func activationFailed(_ detail: String) -> EngineError {
+  EngineError(name: "activationFailed", "The action was not performed: \(detail), so the app could not be prepared for input in the background. Nothing was clicked or typed; try again.")
+}
+
+/// A release that runs once, however many times it is asked for.
+private final class OnceRelease {
+  private var release: (() -> Void)?
+  init(_ release: @escaping () -> Void) { self.release = release }
+  func callAsFunction() {
+    release?()
+    release = nil
+  }
+}
 
 /// One action's fake activation of the app `pid` for its window.
 final class FakeActivation {
@@ -96,12 +128,18 @@ final class FakeActivation {
   /// How long the guard held after the activation pair, for the result's meta; nil when no guard ran.
   private(set) var guardMs: Double?
 
-  init(pid: pid_t, window: AXUIElement, system: ActivationSystem = ActivationSystem()) {
+  init(pid: pid_t, window: AXUIElement, windowFrame: CGRect?, windowID: CGWindowID?, system: ActivationSystem = ActivationSystem()) {
     self.pid = pid
     self.window = window
+    self.windowFrame = windowFrame
+    self.windowID = windowID
     self.system = system
-    windowFrame = frame(of: window)
-    windowID = windowNumber(of: window, pid: pid, frame: windowFrame)
+  }
+
+  /// The window's frame and number read from the Accessibility API.
+  convenience init(pid: pid_t, window: AXUIElement, system: ActivationSystem = ActivationSystem()) {
+    let windowFrame = frame(of: window)
+    self.init(pid: pid, window: window, windowFrame: windowFrame, windowID: windowNumber(of: window, pid: pid, frame: windowFrame), system: system)
   }
 
   /// The vendor's safelyEnforceActiveState: nothing when the app believes it has focus; otherwise the activation pair,
@@ -114,29 +152,34 @@ final class FakeActivation {
       postActivation()
       return
     }
-    let userApplication = prepare(AXUIElementCreateApplication(user))
-    let userWindow = elementAttribute(userApplication, kAXFocusedWindowAttribute)
-    let userWindowID = userWindow.flatMap { windowNumber(of: $0, pid: user, frame: frame(of: $0)) }
-    let release = system.holdScreenUpdates()
+    let userWindow = system.userWindow(user)
+    let release = OnceRelease(system.holdScreenUpdates())
     defer { release() }
     postActivation()
-    let started = monotonicMilliseconds()
-    defer { guardMs = ((monotonicMilliseconds() - started) * 1000).rounded() / 1000 }
-    let deadline = started + 1_000
+    let started = system.now()
+    defer { guardMs = ((system.now() - started) * 1000).rounded() / 1000 }
     var stable = 0
     while stable < 3 {
-      guard monotonicMilliseconds() < deadline else { throw activationFailed("the user's app did not stay frontmost") }
-      usleep(10_000)
-      var settled = true
-      if system.frontmost() != user {
-        settled = false
-        guard system.reactivate(user) else { throw activationFailed("the user's app could not be made frontmost again") }
+      system.sleep(activationGuardSampleMs)
+      let elapsed = system.now() - started
+      if elapsed >= activationHoldCapMs { release() }
+      let front = system.frontmost()
+      if front != user {
+        if front == pid {
+          _ = system.reactivate(user)
+          throw activationFailed("the app came to the front, and the frontmost app was restored")
+        }
+        throw activationFailed("another app came to the front")
       }
-      if let windowID, let userWindowID, let userWindow, isInFront(windowID, of: userWindowID) {
-        settled = false
-        AXUIElementPerformAction(userWindow, kAXRaiseAction as CFString)
+      if let windowID, let userWindow, system.isInFront(windowID, userWindow.id) {
+        stable = 0
+        system.raise(userWindow.element)
+      } else {
+        stable += 1
       }
-      stable = settled ? stable + 1 : 0
+      if stable < 3 && elapsed >= activationGuardTimeoutMs {
+        throw activationFailed("the app's window did not stay behind the frontmost window within 1 s")
+      }
     }
   }
 
@@ -148,11 +191,11 @@ final class FakeActivation {
   }
 
   /// The vendor's enforceActiveState for an app that does not believe it is active: subtype 1, then a left click at the
-  /// window's AXActivationPoint (when the window has one).
+  /// window's AXActivationPoint when that point lies inside the window's frame.
   private func postActivation() {
     post(subtype: NSEvent.EventSubtype.applicationActivated.rawValue)
     activated = true
-    guard let point = point(attribute(window, "AXActivationPoint")) else { return }
+    guard let point = activationClickPoint(system.activationPoint(window), windowFrame: windowFrame) else { return }
     let target = ClickTarget(point: point, windowFrame: windowFrame, windowID: windowID, pid: pid)
     _ = postToProcess(clickEvents(target, button: .left, count: 1, flags: []), pid: pid, post: system.post)
   }

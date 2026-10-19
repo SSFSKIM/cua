@@ -222,6 +222,20 @@ test('probe_spike refuses a missing op, a malformed range and an unknown app bef
   }
 });
 
+test('a concealed paste is refused as concealedInputUnavailable with the input meta, nothing posted', {skip: finderSkip}, async t => {
+  // paste's body posts nothing in this build and asks for no permission; Finder only has to resolve.
+  const {wire} = await engine(t);
+  const concealed = await wire.execute('paste', {app: 'com.apple.finder', text: 'x', format: 'text', concealed: true});
+  assert.equal(concealed.error?.errorName, 'concealedInputUnavailable');
+  assert.match(concealed.error.message, /^Nothing was entered/);
+  assert.doesNotMatch(concealed.error.message, /\bx\b/, 'never the value');
+  assert.equal(concealed.error.meta.inputRoute, null);
+  assert.equal(concealed.error.meta.startedAt, null);
+  const plain = await wire.execute('paste', {app: 'com.apple.finder', text: 'x', format: 'text'});
+  assert.equal(plain.error?.errorName, 'notImplemented');
+  assert.equal(typeof plain.error.meta.receivedAt, 'number');
+});
+
 test('every app-scoped execute refuses a forbidden app, by bundle id or by path, before its method runs', {skip}, async t => {
   // Only methods whose bodies post nothing in this build: a refusal that failed here could at worst answer
   // notImplemented. get_app_state takes the same dispatch path but would really observe, so it is not called.

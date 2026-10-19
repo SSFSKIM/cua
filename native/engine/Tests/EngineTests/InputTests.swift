@@ -396,8 +396,8 @@ final class AutoStopTests: XCTestCase {
 
 /// Route 3's sequencing through its seam (review round 3's follow-up to round 2's P1): the posts, the screen-update hold
 /// and the user's re-activation are recorded instead of made. The window is the application handle of a pid above
-/// PID_MAX (99999), which no process can hold, so its AX reads answer nothing: no window id is known and the guard's
-/// window-order branch is not taken.
+/// PID_MAX (99999), which no process can hold, and no window frame or number is given, so the guard's window-order branch
+/// and the activation click are not taken; the guard's rules on a fake clock are RouteTests.swift's.
 final class FakeActivationTests: XCTestCase {
   /// The real key-focus read, with a window-server connection as the engine always has (the mini sitting's crash: the
   /// call was declared with one argument and faulted in SkyLight's SLPSGetKeyFocusProcess on every typeText).
@@ -417,7 +417,7 @@ final class FakeActivationTests: XCTestCase {
   private let target: pid_t = 990_001, user: pid_t = 990_002, other: pid_t = 990_003
 
   private func activation(_ seam: SeamStub) -> FakeActivation {
-    FakeActivation(pid: target, window: AXUIElementCreateApplication(target), system: seam.system)
+    FakeActivation(pid: target, window: AXUIElementCreateApplication(target), windowFrame: nil, windowID: nil, system: seam.system)
   }
 
   func testASuccessfulActivationLeavesItInPlaceForTheCallersEvents() throws {
@@ -438,15 +438,15 @@ final class FakeActivationTests: XCTestCase {
   }
 
   func testAFailedGuardLeavesItInPlaceForTheCallersDeactivate() {
-    // Another app comes frontmost once the pair is posted, and the user's app cannot be made frontmost again.
-    let seam = SeamStub(frontmost: user, frontmostAfterPost: other, reactivates: false)
+    // Another app comes frontmost once the pair is posted: refused, and the front is left to whoever took it.
+    let seam = SeamStub(frontmost: user, frontmostAfterPost: other)
     let activation = activation(seam)
     XCTAssertThrowsError(try activation.activate()) { error in
       XCTAssertEqual((error as? EngineError)?.errorName, "activationFailed")
     }
     XCTAssertEqual(seam.posts, [Posted(subtype: 1, pid: target)], "the throw posts no deactivation of its own")
     XCTAssertTrue(activation.activated, "the caller's deferred deactivate undoes it")
-    XCTAssertEqual(seam.reactivated, [user])
+    XCTAssertEqual(seam.reactivated, [])
     XCTAssertEqual(seam.holds, 1)
     XCTAssertEqual(seam.releases, 1, "the screen-update hold is released on the throw")
 
@@ -492,13 +492,14 @@ struct Posted: Equatable {
 }
 
 /// Route 3's outside world, recorded: what was posted, held and re-activated, and the frontmost app and key focus it
-/// answers.
+/// answers; the clock is a fake one, so the guard takes no real time.
 final class SeamStub {
   var posts: [Posted] = []
   var holds = 0
   var releases = 0
   var reactivated: [pid_t] = []
   var frontmost: pid_t?
+  var clock: Double = 0
   let frontmostAfterPost: pid_t?
   let keyFocus: pid_t?
   let reactivates: Bool
@@ -521,6 +522,10 @@ final class SeamStub {
     system.keyFocus = { self.keyFocus }
     system.holdScreenUpdates = { self.holds += 1; return { self.releases += 1 } }
     system.reactivate = { pid in self.reactivated.append(pid); return self.reactivates }
+    system.userWindow = { _ in nil }
+    system.activationPoint = { _ in nil }
+    system.now = { self.clock }
+    system.sleep = { self.clock += $0 }
     return system
   }
 }

@@ -43,19 +43,14 @@ final class InputRouteTests: XCTestCase {
     }
   }
 
-  /// The rule that separates 2′ from 2: only route 2 adds ⌘, and only into an app that is not active; neither post runs
-  /// the fake activation, which only the default choice and route 3 do.
-  func testOnlyRouteTwoCarriesCommandAndOnlyRouteThreeActivates() {
+  /// The rule that separates 2′ from 2: only route 2 adds ⌘, and only into an app that is not active; route 3's click,
+  /// the default for every synthesized click, carries no flag.
+  func testOnlyRouteTwoCarriesCommand() {
     XCTAssertEqual(clickFlags(.commandPost, targetActive: false), .maskCommand)
     XCTAssertEqual(clickFlags(.commandPost, targetActive: true), [])
     for route in [InputRoute.plainPost, .activation, .action] {
       XCTAssertEqual(clickFlags(route, targetActive: false), [], "\(route)")
     }
-    XCTAssertEqual(clickFlags(nil, targetActive: false), [], "an unforced synthesized click carries no flag")
-    XCTAssertTrue(runsActivation(nil))
-    XCTAssertTrue(runsActivation(.activation))
-    XCTAssertFalse(runsActivation(.plainPost))
-    XCTAssertFalse(runsActivation(.commandPost))
   }
 }
 
@@ -144,7 +139,7 @@ final class ActivationProbeTests: XCTestCase {
     XCTAssertEqual(seam.posts, [])
     XCTAssertEqual(report["believedBefore"] as? Bool, true)
     XCTAssertEqual(report["activationRan"] as? Bool, false)
-    XCTAssertEqual(report["inputRoute"] as? Int, 2, "what a real action reports when it posts without the activation")
+    XCTAssertEqual(report["inputRoute"] as? Int, 3, "what a real synthesized click reports, with or without the activation")
     XCTAssertTrue(report["activationGuardMs"] is NSNull)
   }
 

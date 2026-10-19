@@ -84,7 +84,7 @@ extension Engine {
       return answer
     }
     let element = prepare(hit)
-    let owner = ownerPid(of: element)
+    let owner = pid(of: element)
     answer["hit"] = [
       "axError": Int(error.rawValue),
       "role": stringAttribute(element, kAXRoleAttribute) ?? NSNull(),
@@ -124,7 +124,7 @@ extension Engine {
 
 /// `activate`: route 3's activation of `pid` for `window` as a route-3 action runs it, with nothing posted between the
 /// activation and the deactivation. Answers {believedBefore, activationRan, deactivationPosted, inputRoute (what a real
-/// action would report: 3, or 2 when the app already believed it had focus), activationGuardMs (null when no guard
+/// action would report: 3, whether or not the app already believed it had focus), activationGuardMs (null when no guard
 /// ran), activateMs, startedAt, endedAt, frontmostBefore, frontmostAfter}; a failed guard refuses with
 /// `activationFailed` and the same report as the refusal's `probe`, after the deactivation, as the real path's defer runs it.
 func activationProbe(pid: pid_t, window: AXUIElement, system: ActivationSystem = ActivationSystem()) throws -> [String: Any] {
@@ -146,7 +146,7 @@ func activationProbe(pid: pid_t, window: AXUIElement, system: ActivationSystem =
   report["believedBefore"] = believedBefore
   report["activationRan"] = ran
   report["deactivationPosted"] = ran && !activation.activated
-  report["inputRoute"] = (believedBefore ? InputRoute.commandPost : .activation).wire
+  report["inputRoute"] = InputRoute.activation.wire
   report["activationGuardMs"] = activation.guardMs ?? NSNull()
   report["activateMs"] = activateMs
   report["startedAt"] = Int(startedAt)

@@ -20,10 +20,10 @@ struct Outcome {
   var exitAfter = false
 }
 
-/// The facade's methods this spike build does not implement yet (M2a adds them).
-private let laterMethods: Set<String> = ["drag", "paste", "perform_secondary_action", "scroll", "select_text", "set_value"]
+/// The facade's methods this build does not implement yet (M2a adds them; paste answers its concealed refusal already).
+private let laterMethods: Set<String> = ["drag", "perform_secondary_action", "scroll", "select_text", "set_value"]
 /// The input methods this build answers; every error they return carries the input meta (Interfaces, input errors).
-private let inputMethods: Set<String> = ["click", "press_key", "type_text"]
+private let inputMethods: Set<String> = ["click", "press_key", "type_text", "paste"]
 
 final class Engine: @unchecked Sendable {
   let paths: ServerPaths
@@ -124,6 +124,7 @@ final class Engine: @unchecked Sendable {
     case "click": return try click(args, context)
     case "press_key": return try pressKey(args, context)
     case "type_text": return try typeText(args, context)
+    case "paste": return try paste(args, context)
     case _ where laterMethods.contains(method):
       throw EngineError(name: "notImplemented", "\(method) is not implemented by this engine build")
     default:

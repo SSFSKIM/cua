@@ -108,21 +108,28 @@ refuses:
 **One guard per session.** When devcloud's own plugin is loaded beside cua,
 devcloud's guard decides every handle and every hook of cua's copy passes the
 event on untouched (`one-guard.tsx`): two guards in sequence would lose the
-encoding a handle names, the first collapsing `[secret:KEY~b64]`. devcloud
-sets `{ owner: "devcloud", version: 1 }` under
-`$.state.get({ plugin: 'devcloud', key: 'secrets-guard' })` when its session
-starts (its Interfaces I9), and cua reads it at hook time, so load order does
-not matter. Only that exact value stands cua down: no marker, any other value,
-or a read that fails leaves cua's guard acting. cua writes no marker of its own.
+encoding a handle names, the first collapsing `[secret:KEY~b64]`. devcloud's
+loaded module answers a read of its marker,
+`$.state.get({ plugin: 'devcloud', key: 'secrets-guard' })`, itself (its
+Interfaces I9): `{ owner: "devcloud", version: 1 }` at version 0, a value it
+never stores. cua reads it at hook time, on every event, so neither load
+order nor a mid-session change matters: from the first event after devcloud
+is disabled and the plugins reloaded, cua's guard acts. Only that exact answer
+stands cua down: no marker, any other value, the marker at another version
+(one the host kept from a devcloud before 0.5.0, which outlives that
+devcloud's module), or a read that fails leaves cua's guard acting. cua writes
+and answers no marker of its own.
 
-Known limits: if devcloud is disabled mid-session the engine may keep its
-marker (unverified), and cua then stays stood down for the rest of that
-session; a new session reads it afresh. The engine lets only devcloud write
-its marker, but any plugin with function hooks can answer `state.get` itself,
-and so stand cua's guard down; such a plugin already sees every tool result it
-hooks. The guard stops accidents, not intent: a command may still transform a
-value (a slice, its own encoding) or write it somewhere, since using it is what
-the store is for.
+Known limits: a pattern handle (`[redacted:…]`) is restored only by the guard
+instance that issued it, so the ones devcloud's guard issued before a switch
+to cua's (or cua's before devcloud was enabled) are named as not restored;
+stored and credential-file handles restore across it. With a devcloud before
+0.5.0, which stores its marker instead of answering it, both guards act until
+devcloud updates. Any plugin with function hooks can answer `state.get`
+itself, and so stand cua's guard down; such a plugin already sees every tool
+result it hooks. The guard stops accidents, not intent: a command may still
+transform a value (a slice, its own encoding) or write it somewhere, since
+using it is what the store is for.
 
 ## Developing
 

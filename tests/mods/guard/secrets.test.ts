@@ -1,5 +1,5 @@
-// Vendored from SSFSKIM/doperpowers devcloud/tests/mods/secrets.test.ts at ce6edfda3b641bfb0c5e4e0d4a566df13ed26ecb
-// (devcloud 0.1.0); the adaptations and the resync are in hooks/mods/guard/VENDORED.md.
+// Vendored from SSFSKIM/doperpowers devcloud/tests/mods/secrets.test.ts at 823f772f634003278886446940fe9fb6b679e254
+// (devcloud 0.5.0); the adaptations and the resync are in hooks/mods/guard/VENDORED.md.
 
 import { describe, expect, mock, test, tier } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
@@ -95,14 +95,30 @@ const tool = (on: On, answer: (e: Record<string, unknown>) => unknown) => {
 
 const bash = (stdout: string, extra: Record<string, unknown> = {}) => ({ stdout, stderr: '', interrupted: false, ...extra })
 
-// cua adaptation: devcloud's test pins the marker write; cua's copy pins that it writes no state at all.
-test("a started session writes no guard marker: devcloud's is devcloud's to set (Interfaces I9)", async ($, on) => {
+// cua adaptation: devcloud's tests pin its answer to the marker (Interfaces I9) and a
+// second guard standing down beside it. cua's copy neither answers nor writes the
+// marker, so another plugin's read of it reaches the host; cua's stand-down is
+// tests/mods/secrets.test.ts's.
+const markerReader = {
+  name: 'reader',
+  tier: 'prepend' as const,
+  register: (on: On) => {
+    on('tool.call', async ($, e, next) => {
+      await next(e)
+      return { result: (await $.state.get({ plugin: 'devcloud', key: 'secrets-guard' })) as never }
+    })
+  },
+}
+
+test("a started session neither answers nor writes devcloud's marker: it is devcloud's to answer (Interfaces I9)", { plugins: [markerReader] }, async ($, on) => {
   const set: unknown[] = []
   on('state.set', (_, e) => {
     set.push({ plugin: e.plugin, key: e.key, value: e.value })
     return { value: { isSet: true, version: 1 } }
   })
+  tool(on, () => bash(''))
   await start($, on, {})
+  expect((await $.tool.call({ tool: 'Bash', command: 'true' })).result).toEqual({ value: undefined, version: 0 })
   expect(set).toEqual([])
 })
 

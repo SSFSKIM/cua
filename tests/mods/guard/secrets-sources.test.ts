@@ -1,5 +1,5 @@
-// Vendored from SSFSKIM/doperpowers devcloud/tests/mods/secrets-sources.test.ts at ce6edfda3b641bfb0c5e4e0d4a566df13ed26ecb
-// (devcloud 0.1.0); the adaptations and the resync are in hooks/mods/guard/VENDORED.md.
+// Vendored from SSFSKIM/doperpowers devcloud/tests/mods/secrets-sources.test.ts at 823f772f634003278886446940fe9fb6b679e254
+// (devcloud 0.5.0); the adaptations and the resync are in hooks/mods/guard/VENDORED.md.
 
 import { describe, expect, test } from 'claude-code/testing'
 

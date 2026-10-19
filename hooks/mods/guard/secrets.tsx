@@ -1,5 +1,5 @@
-// Vendored from SSFSKIM/doperpowers devcloud/hooks/mods/secrets.tsx at ce6edfda3b641bfb0c5e4e0d4a566df13ed26ecb
-// (devcloud 0.1.0); the adaptations and the resync are in hooks/mods/guard/VENDORED.md.
+// Vendored from SSFSKIM/doperpowers devcloud/hooks/mods/secrets.tsx at 823f772f634003278886446940fe9fb6b679e254
+// (devcloud 0.5.0); the adaptations and the resync are in hooks/mods/guard/VENDORED.md.
 
 import type { EngineInterface, Hook, On } from 'claude-code'
 
@@ -268,19 +268,33 @@ const notQuoted = (unquotable: readonly string[]) =>
   )
 
 /**
- * Interfaces I9: from its start the session carries the guard marker in
- * `$.state`, under this plugin's name, and `cua`'s scrubbing stands down so
- * one guard decides every handle. Every plugin reads it; only devcloud writes
- * it; a child process (a `claude` a tool call starts) has its own session and
- * decides for itself. Its type is the plugin's contract (types/devcloud.d.ts).
- * Not a `globalThis` symbol: the engine evaluates each plugin's module in a
- * realm of its own (probed 2026-10-17, 2.1.302). Taken with both matchers: an
- * event is registered without one once per module.
+ * Interfaces I9: devcloud's guard is in the session's chain exactly while this
+ * module is loaded, and the guard marker says so. It is this module's answer
+ * to a read, through a `state.get` hook, and never a value the host stores:
+ * any plugin's `$.state.get({ plugin: 'devcloud', key: 'secrets-guard' })`
+ * resolves to the marker at version 0 (where the host holds nothing) while the
+ * module is loaded, and falls through to the host once it is gone (devcloud
+ * disabled and the plugins reloaded), which then answers `undefined`. A marker
+ * the host kept would outlive the module, and `cua`'s scrubbing, which stands
+ * down on it, would leave the session with no guard (board #101). The engine runs a
+ * `$` call through every hook on its event but the one that made the call,
+ * the calling plugin's other hooks included: the read reaches this hook
+ * whichever plugin sits outside the other, and a module that answered the
+ * marker would read its own answer, so a guard that reads it to stand down
+ * must never answer it. A child process (a
+ * `claude` a tool call starts) has its own session and decides for itself.
+ * Its type is the plugin's contract (types/devcloud.d.ts). Not a `globalThis`
+ * symbol: the engine evaluates each plugin's module in a realm of its own
+ * (probed 2026-10-17, 2.1.302).
  */
+// cua adaptation: devcloud's answer to its marker (MARKER_READ, and the
+// `state.get` hook registerSecrets takes it with) is removed. cua's copy only
+// reads the marker (../one-guard.tsx); answering it, cua would stand down to
+// itself.
+
+// Taken with both matchers: an event is registered without one once per module.
 const secretsStart: Hook<'session.start'> = async ($, e, next) => {
   if (await devcloudGuards($)) return next(e) // cua: one guard per session
-  // cua adaptation: devcloud's marker write is removed. cua's copy only reads
-  // the marker (../one-guard.tsx); writing it, cua would stand down to itself.
   project = undefined
   await projectOf($, e.cwd)
   await refresh($, true)

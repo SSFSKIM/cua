@@ -360,10 +360,9 @@ credential files (`gh`, `codex`, `gcloud`, `.netrc`, `.pgpass` and others) `[sec
 token-shaped strings anywhere `[redacted:<kind>#<id>]`. A handle written into a Write, Edit, MultiEdit or
 NotebookEdit call is restored to its exact bytes before the call runs, and in Bash where it stands as a plain value
 in a plain position. Until 0.14.0 cua had a stricter guard of its own, which refused any tool call naming the store.
-When devcloud's own plugin is enabled beside cua, cua's copy stands down and devcloud's guard decides every handle;
-only devcloud's exact marker stands it down, and anything else leaves cua's guard acting. Known limit: if devcloud is
-disabled mid-session its marker may outlive it, and cua's guard then stays stood down until the next session
-(`hooks/mods/README.md`).
+When devcloud's own plugin is loaded beside cua, cua's copy stands down and devcloud's guard decides every handle;
+only devcloud's loaded module's own answer to its marker stands it down, so from the first event after devcloud is
+disabled and the plugins reloaded cua's guard acts, and anything else leaves it acting (`hooks/mods/README.md`).
 
 `cua doctor`'s `secrets.store` row reports the store from metadata only: `blocked` while nothing is stored, `fail`
 for a directory open to others or a key file cua would refuse (named by key), `pass` with the number of keys.

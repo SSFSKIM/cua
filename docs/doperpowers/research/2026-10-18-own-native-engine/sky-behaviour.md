@@ -322,7 +322,7 @@ Note: Pay special attention to the content selected by the user. …
 - **AX action choice.** `AXPick` if advertised, else `AXPress`, else none [F §5.1].
 - **When to synthesize** instead [F §5.1]:
   - a click count above 1, no AX action, a button other than left, a hold, a held key, flags, or `alwaysSimulateClick`. That is the feature flag `computerUseAlwaysSimulateClick`, whose default is not read [undetermined: F §5.1];
-  - inside a web view, a gate that is not decompiled decides; true means synthesize [undetermined: F §14.1].
+  - inside a web view, `FUN_1007a1b9c` decides: it hit-tests the clickable point and walks the hit element's ancestor chain (up to 300 levels, CFEqual per ancestor) looking for the clicked element — true, so synthesize, exactly when the point lands on a strict descendant of the target; no AXWebArea role is read, so the "web view" case is really the nested-content case, native or web [F §5.1, decompiled 2026-10-18].
 - **Performing the action.** Otherwise the AX action is performed. In a Catalyst app, when the element has `clickingMayCauseSelection` or role `AXMenuButton` and the app does not believe it has focus, fake activation runs first [F §5.1]. What `clickingMayCauseSelection` is, F does not define (§23).
 - **Right clicks.** `AXShowMenu` is never used; right clicks are synthesized [F §5.1].
 - **No inter-click delay.** `humanClickInterval` (0.1 s) is dropped by the click thunk and never applies [F §5.1].

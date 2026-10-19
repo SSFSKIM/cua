@@ -13,6 +13,9 @@
 //                                                       its answers go to <dir>/approve.json (default
 //                                                       <OS temp dir>/measure-approve-<time>.json)
 //   measure.mjs probe-f --device <d> --out <dir>       probe (f), operator-guided (./measure/probe-f.mjs)
+//   measure.mjs cleanup --device <d> --preparation <run dir>/preparation.json
+//                                                       resumes prepare.mjs's cleanup of a run that died (the approved
+//                                                       home's state restored; a failure names the recovery directory)
 //   measure.mjs --device <d> --lane vendor|cua --runs N --approved-runtime <home> --out <dir>
 //         [--samples N] [--tasks N] [--scenes textedit,finder,chrome,electron] [--probes c|none] [--operator]
 //         [--scene-dir <device dir>] [--node <Node 24+ on the device, cua lane>] [--approved-engine <bundle>]
@@ -25,7 +28,7 @@
 // sitting's runs of both lanes: Finder keeps its view per folder, so the list view the vendor lane sets holds for the
 // cua lane, which cannot send keys until its input methods exist.
 import {parseArgs} from 'node:util';
-import {mkdirSync, writeFileSync} from 'node:fs';
+import {mkdirSync, readFileSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {createInterface} from 'node:readline';
 import {dirname, isAbsolute, join, resolve} from 'node:path';
@@ -33,17 +36,17 @@ import {fileURLToPath} from 'node:url';
 import {StdioClient} from '../../browser-parity/mcp.mjs';
 import {deviceOf, shellOf, engineOps} from './measure/device.mjs';
 import {approveEngine, stopEngine, engineStatus, EngineRefusal} from './measure/engine-control.mjs';
-import {measureLane, LANES, SCENE_ORDER} from './measure/lane.mjs';
+import {measureLane, cleanupPreparation, LANES, SCENE_ORDER} from './measure/lane.mjs';
 import {writeSummary} from './measure/summary.mjs';
 import {probeF} from './measure/probe-f.mjs';
 
-const ENGINE_COMMANDS = ['stop', 'status', 'approve', 'probe-f'];
-export const USAGE = 'usage: measure.mjs stop|status|approve|probe-f --device <alias|local> [--dry-run] [--approved-engine <bundle>] [--out <dir>] | measure.mjs --device <alias|local> --lane vendor|cua --runs N --approved-runtime <home> --out <dir> [--samples N] [--tasks N] [--scenes list] [--probes c|none] [--operator] [--scene-dir <dir>] [--node <path>] | measure.mjs summary <dir>';
+const ENGINE_COMMANDS = ['stop', 'status', 'approve', 'probe-f', 'cleanup'];
+export const USAGE = 'usage: measure.mjs stop|status|approve|probe-f --device <alias|local> [--dry-run] [--approved-engine <bundle>] [--out <dir>] | measure.mjs cleanup --device <alias|local> --preparation <file> | measure.mjs --device <alias|local> --lane vendor|cua --runs N --approved-runtime <home> --out <dir> [--samples N] [--tasks N] [--scenes list] [--probes c|none] [--operator] [--scene-dir <dir>] [--node <path>] | measure.mjs summary <dir>';
 const OPTIONS = {
   device: {type: 'string'}, lane: {type: 'string'}, runs: {type: 'string'}, 'approved-runtime': {type: 'string'}, out: {type: 'string'},
   samples: {type: 'string', default: '30'}, tasks: {type: 'string', default: '10'}, scenes: {type: 'string', default: SCENE_ORDER.join(',')},
   probes: {type: 'string', default: 'c'}, operator: {type: 'boolean', default: false}, 'scene-dir': {type: 'string'}, node: {type: 'string'},
-  'approved-engine': {type: 'string'}, 'dry-run': {type: 'boolean', default: false},
+  'approved-engine': {type: 'string'}, 'dry-run': {type: 'boolean', default: false}, preparation: {type: 'string'},
 };
 
 class UsageError extends Error {}
@@ -67,6 +70,7 @@ export function parseCommand(argv) {
     if (rest.length) fail(`${first} takes no positional arguments`);
     if (values['dry-run'] && !['stop', 'approve'].includes(first)) fail('--dry-run is for stop and approve');
     if (first === 'probe-f' && !values.out) fail('probe-f needs --out <dir>');
+    if (first === 'cleanup') return {command: first, device: values.device, preparation: absolute(values.preparation, 'preparation') ?? fail('cleanup needs --preparation <run dir>/preparation.json')};
     return {command: first, device: values.device, engine, dryRun: values['dry-run'], ...(values.out ? {out: resolve(values.out)} : {})};
   }
   if (first !== undefined) fail(`unknown command ${first}`);
@@ -104,6 +108,14 @@ export async function main(argv = process.argv.slice(2), {log = console.log, con
   const print = value => log(JSON.stringify(value, null, 2));
   switch (command.command) {
     case 'status': print(await engineStatus(ops)); return 0;
+    case 'cleanup': {
+      // Resumes prepare.mjs's cleanup of a run that died: moves the run's state/ and run/ out of the approved home and
+      // the owner's back, stopping only a helper proven the run's; a failure names the recovery directory again.
+      const {device, prepared} = JSON.parse(readFileSync(command.preparation, 'utf8'));
+      if (device !== command.device) throw new Error(`${command.preparation} is a preparation on ${device}, not ${command.device}`);
+      print(cleanupPreparation(d, shell, prepared));
+      return 0;
+    }
     case 'stop': print(await stopEngine(ops, {dryRun: command.dryRun})); return 0;
     case 'approve': {
       const out = await approveEngine(ops, {confirm, log, dryRun: command.dryRun});

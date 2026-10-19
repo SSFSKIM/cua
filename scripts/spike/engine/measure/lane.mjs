@@ -3,7 +3,8 @@
 // (scripts/spike/engine/scenes.mjs), through the real facade and a real REPL host:
 //   vendor  the approved vendor runtime served by `cua serve` on the vendor host, through prepare.mjs's approved-home
 //           path (admission, the home's state/ and run/ moved aside and back, the run's helper stopped at cleanup):
-//           scripts/native-baseline/{prepare,remote,serve}.mjs as the native baseline uses them.
+//           scripts/native-baseline/{prepare,remote,serve}.mjs as the native baseline uses them, over ssh on a declared
+//           device and in process on this Mac (localPreparation).
 //   cua     the spike's serve (scripts/spike/engine/serve.mjs, cua's own host with the spike service) from the harness
 //           checkout, on the same prepared home, after the approved engine is launched with `open -n -g -a` (the own
 //           host's relay still runs plain `open -a` until M1a, so no measured cell takes the relay's launch).
@@ -20,6 +21,7 @@ import {createHash} from 'node:crypto';
 import {tmpdir} from 'node:os';
 import {dirname, join, resolve} from 'node:path';
 import {FIRST, LIST_APPS, AX_FULL, SCREENSHOT, SCRATCH_GUARD, TASK_NEW, TASK_TYPE, TASK_VERIFY, TASK_CLOSE, QUIT_TEXTEDIT, parseCell} from '../../../native-baseline/cells.mjs';
+import {prepareNative, cleanupNative, homeUsers} from '../../../native-baseline/prepare.mjs';
 import {serveCommand, preparationScript, preflightScript, HELPER_SCRIPT, classifyHelpers} from '../../../native-baseline/remote.mjs';
 import {FRONTMOST_SCRIPT, parseFrontmost, sendIfFrontmost} from '../../../accept/key-guard.mjs';
 import {hostAttestationOf} from '../../../native-baseline.mjs';
@@ -153,8 +155,12 @@ export async function runOnce(options, io) {
   }
 
   try {
-    prepared = d.local ? localPrepared({approvedRuntime, lane}) : lastJson(shell(preparationScript('prepare', {device: d.device, approvedHome: approvedRuntime})));
+    prepared = d.local ? (lane === 'vendor' ? (io.localPreparation ?? localPreparation()).prepare(approvedRuntime) : localPrepared({approvedRuntime}))
+      : lastJson(shell(preparationScript('prepare', {device: d.device, approvedHome: approvedRuntime})));
     meta.preparation = prepared;
+    // Written at once, so a run that dies leaves what `measure.mjs cleanup --device <d> --preparation <file>` needs to
+    // resume prepare.mjs's cleanup (which names its recovery directory when it cannot finish).
+    if (!prepared.local) fs.writeFileSync(join(dir, 'preparation.json'), JSON.stringify({device: d.device, prepared}, null, 2) + '\n', {mode: 0o600});
     // The stop discipline inside the admission: no other run can start an engine between this stop and the run's launch.
     try { meta.engineStopAtStart = await stopEngine(ops); }
     catch (error) { if (error instanceof EngineRefusal) { refused = true; meta.refused = true; } throw error; }
@@ -189,7 +195,7 @@ export async function runOnce(options, io) {
 
     // The connection.
     const spec = lane === 'vendor'
-      ? serveCommand({device: d.device, checkout: pre.checkout, home: pre.home, userHome: prepared.userHome, configHome: prepared.configHome, tmpdir: prepared.tmpdir, admission: prepared.admission, xSession: {}, host: 'vendor', platform: 'darwin', surface: 'computer'})
+      ? onDevice(d, serveCommand({device: d.local ? 'local' : d.device, checkout: pre.checkout, home: pre.home, userHome: prepared.userHome, configHome: prepared.configHome, tmpdir: prepared.tmpdir, admission: prepared.admission, xSession: {}, host: 'vendor', platform: 'darwin', surface: 'computer'}))
       : cuaServeCommand(d, {home: prepared.home, userHome: prepared.userHome, configHome: prepared.configHome, tmpdir: prepared.tmpdir, engine, node});
     client = io.connect(spec, {
       answer: msg => (isSceneApproval(msg, bundleIds) ? {action: 'accept', content: {}} : {action: 'decline'}),
@@ -291,10 +297,11 @@ export async function runOnce(options, io) {
     if (stopped) { meta.stopped = stopped; meta.complete = false; }
     meta.teardown = await teardown({lane, shell, client, records, scenes, sceneCli, sceneDir, stopped, inputBuilt, sleep}).catch(error => ({error: error.message}));
     if (meta.teardown?.error) meta.complete = false;
-    try { meta.engineStopAtEnd = await stopEngine(ops); } catch (error) { meta.engineStopAtEnd = {error: error.message}; meta.complete = false; }
+    // The closing stop pairs with the opening one, inside the admission: a run refused before it stops nothing.
+    if (meta.engineStopAtStart !== undefined) { try { meta.engineStopAtEnd = await stopEngine(ops); } catch (error) { meta.engineStopAtEnd = {error: error.message}; meta.complete = false; } }
     try { meta.helpersAtEnd = classifyHelpers(shell(HELPER_SCRIPT), meta.preparation?.runtimeReuse?.runtimeRoot ?? null); } catch {}
-    if (prepared && !d.local) {
-      try { meta.preparationCleanup = lastJson(shell(preparationScript('cleanup', prepared))); }
+    if (prepared && !prepared.local) {
+      try { meta.preparationCleanup = cleanupPreparation(d, shell, prepared, io.localPreparation); }
       catch (error) { meta.preparationCleanup = {removed: false, error: error.message}; meta.complete = false; }
     }
     if (prepared?.local) for (const path of [prepared.configHome, prepared.tmpdir]) fs.rmSync(path, {recursive: true, force: true});
@@ -335,10 +342,46 @@ async function bind({lane, js, row, shell, records, meta, skipped}, scene) {
   }
 }
 
-// This Mac's run (--device local, cua lane only): no prepare.mjs admission (it serves declared devices); the given
-// home is served as it is, with the run's own XDG_CONFIG_HOME and TMPDIR.
-function localPrepared({approvedRuntime, lane}) {
-  if (lane !== 'cua') throw new Error('the vendor lane runs through prepare.mjs\'s approved-home admission, which serves declared devices only; on this Mac run the cua lane');
+// The vendor lane on this Mac: prepare.mjs's approved-home functions called in process, as the declared lane calls them
+// over ssh (the admission, state/ and run/ moved aside and back with recovery.json, the TMPDIR witness, the run's
+// helper stopped only when proven its own, the refusals). `seams` are prepare.mjs's own (the tests inject a device).
+// On this Mac the approved home is also the owner's live cua home, whose sessions name it nowhere on a command line, so
+// prepare.mjs's check for other users also counts the live sessions registered in its run/ (src/runtime/run-dir.mjs):
+// checked after the admission is taken, a live session refuses the preparation, and at cleanup it keeps the home aside.
+export const localPreparation = (seams = {}) => {
+  const {sessionsOf = liveSessions, ...rest} = seams;
+  const usersOf = (home, options) => [...(rest.usersOf ?? homeUsers)(home, options), ...sessionsOf(home)];
+  return {
+    prepare: approvedHome => prepareNative({device: 'local', approvedHome}, {declared: () => ({platform: 'darwin'}), ...rest, usersOf}),
+    cleanup: prepared => cleanupNative(prepared, {...rest, usersOf}),
+  };
+};
+
+// The live cua sessions registered in `home`'s run/ (run/<session>.pid holding the claiming process's pid), as prepare.mjs
+// counts users: {pid, helper: false, owned: false}. Liveness is kill(pid, 0), which delivers no signal.
+const SESSION_RECORD = /^[A-Za-z0-9-]{1,128}\.pid$/;
+export function liveSessions(home, {alive = pid => { try { process.kill(pid, 0); return true; } catch (error) { return error.code === 'EPERM'; } }} = {}) {
+  let names;
+  try { names = fs.readdirSync(join(home, 'run')); } catch (error) { if (error.code === 'ENOENT') return []; throw error; }
+  return names.filter(name => SESSION_RECORD.test(name)).flatMap(name => {
+    let pid;
+    try { pid = Number(fs.readFileSync(join(home, 'run', name), 'utf8').trim()); } catch { return []; }
+    return Number.isSafeInteger(pid) && pid > 0 && alive(pid) ? [{pid, helper: false, owned: false}] : [];
+  });
+}
+
+// prepare.mjs's cleanup for a run's preparation: in process on this Mac, over ssh on a declared device. It is resumable:
+// a failure names the recovery directory, keeps the admission, and can be run again (`measure.mjs cleanup`).
+export function cleanupPreparation(d, shell, prepared, local = localPreparation()) {
+  return d.local ? local.cleanup(prepared) : lastJson(shell(preparationScript('cleanup', prepared)));
+}
+
+// The baseline's serve command is an ssh command; on this Mac the same script runs under /bin/sh.
+const onDevice = (d, spec) => (d.local ? {command: '/bin/sh', args: ['-c', spec.args.at(-1)]} : spec);
+
+// The cua lane on this Mac: no prepare.mjs admission; the given home is served as it is, with the run's own
+// XDG_CONFIG_HOME and TMPDIR.
+function localPrepared({approvedRuntime}) {
   const scratch = mkdtempSync(join(tmpdir(), 'cua-spike-measure-'));
   const configHome = join(scratch, 'config'), tmp = join(scratch, 'tmp');
   fs.mkdirSync(configHome, {mode: 0o700}); fs.mkdirSync(tmp, {mode: 0o700});

@@ -130,9 +130,11 @@ const pause = ms => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0,
 export const ADMISSION = '.cua-native-admission';
 
 const base = () => join(homedir(), '.local/share/cua-native-baseline');
+// `declared` resolves the device's declaration (repl-parity/devices.mjs); a caller preparing this Mac itself (the spike's
+// `measure.mjs --device local --lane vendor`, which calls these functions in process) gives its own.
 export function prepareNative({device, display, node, approvedHome}, {directoryRoot = base(), tempRoot = fs.realpathSync(tmpdir()), ambient = process.env,
-  desktop = () => discoverDesktopEnvironment(fs), run = execFileSync, inspect = executionFacts, ...reuse} = {}) {
-  const declaration = declaredDevice(device);
+  desktop = () => discoverDesktopEnvironment(fs), run = execFileSync, inspect = executionFacts, declared = declaredDevice, ...reuse} = {}) {
+  const declaration = declared(device);
   if (approvedHome !== undefined) return prepareReused({device, node, approvedHome, declaration}, {directoryRoot, tempRoot, inspect, ...reuse});
   const xSession = declaration.platform === 'linux' ? sessionEnvironment(desktop()) : {};
   if (display !== undefined && display !== xSession.DISPLAY) throw new Error('--display does not match the discovered device X session');

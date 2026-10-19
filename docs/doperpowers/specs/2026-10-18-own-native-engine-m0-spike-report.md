@@ -121,6 +121,7 @@ All of this is in the spec's Surprises & Discoveries.
   - the Accessibility and Screen Recording prompts for "cua Engine";
   - a possible Screen Recording "Quit & Reopen";
   - the capture confirmation for the new bundle;
+  - the capture confirmation for the scratch vendor home's new helper copy, at the vendor lane's first observation;
   - a possible Input Monitoring prompt when probe (d)(i) first creates the tap;
   - probe (f)'s confirmations.
 - Send one keystroke over Screen Sharing when probe (d)'s operator step asks for it.
@@ -128,7 +129,15 @@ All of this is in the spec's Surprises & Discoveries.
 
 **Not needed for M0:** the mini's own certificate and the `security set-key-partition-list` step. The bundle is built and signed on the MacBook and copied.
 
-**Commands**, run from the MacBook in /Users/new/Developer/GitHub/cua-117. `<sha>` is the branch head pushed for the sitting; `<home>` is the mini's approved vendor runtime home (the native baseline's `--approved-runtime`).
+**Commands**, run from the MacBook in /Users/new/Developer/GitHub/cua-117. `<sha>` is 5bb0d13f, the branch head pushed for the sitting. `<home>` is the mini's scratch vendor home, `~/Library/Application Support/cua-spike-vendor` (runtime 26.928.40906, Node 24.22.0), installed in download mode over SSH. The mini's live home is left alone.
+
+**Prepared ahead (2026-10-19, over SSH with the runner idle, nothing raised):**
+- the harness checkout at 5bb0d13f;
+- the scratch vendor home;
+- `npm ci`;
+- Chrome for Testing placed;
+- the Electron fixture built;
+- the engine, build 2f0263b6, signed with the owner's identity (hardened runtime) and moved into `~/Library/Application Support/cua/engine/` in buildEngine's order. It is not approved yet, and steps 0–2 below are already done.
 
 ```
 # 0. MacBook: build and sign the sitting's engine (the identity's SHA-1 from security find-identity; never written to a file)

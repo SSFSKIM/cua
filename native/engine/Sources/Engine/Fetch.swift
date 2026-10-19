@@ -8,12 +8,14 @@ import Foundation
 // shape whichever route produced it; only the timings differ.
 
 /// The attributes read per element: the vendor's 20 in its order (F §1.2), then what the Interfaces' Node adds
-/// (AXSelectable, AXDOMClassList), then position, size and children.
+/// (AXSelectable, AXDOMClassList), the settle's busy signs (AXElementBusy, AXLoaded; F §8.4), position, size and
+/// children. One list for the settle's busy walk and the observation's walk, so the observation can read the tree the
+/// settle fetched.
 let observedAttributes: [String] = [
   "AXRole", "AXSubrole", "AXRoleDescription", "AXTitle", "AXDescription", "AXValue", "AXValueDescription",
   "AXPlaceholderValue", "AXNumberOfCharacters", "AXHelp", "AXIdentifier", "AXSelected", "AXFocused", "AXEnabled",
   "AXDisclosing", "AXURL", "AXTraits", "AXServesAsTitleForUIElements", "AXRowIndexRange", "AXColumnIndexRange",
-  "AXSelectable", "AXDOMClassList", "AXPosition", "AXSize", "AXChildren",
+  "AXSelectable", "AXDOMClassList", "AXElementBusy", "AXLoaded", "AXPosition", "AXSize", "AXChildren",
 ]
 
 enum FetchRoute: String {
@@ -36,7 +38,8 @@ struct ElementData {
   var identifier: String?
   var url: String?
   var traits: Int64?
-  var servesAsTitle: Bool?
+  /// The elements this one is the title of (AXServesAsTitleForUIElements); the walk maps them to emitted indexes.
+  var servesAsTitleFor: [AXUIElement]?
   var rowIndexRange: [Int]?
   var columnIndexRange: [Int]?
   var selected: Bool?
@@ -45,6 +48,8 @@ struct ElementData {
   var disclosing: Bool?
   var selectable: Bool?
   var domClassList: [String]?
+  var elementBusy: Bool?
+  var loaded: Bool?
   var frame: CGRect?
   /// AXChildren as fetched (the hierarchy route caps it at 100) and the element's full child count.
   var children: [AXUIElement]
@@ -68,7 +73,7 @@ struct ElementData {
     identifier = string("AXIdentifier")
     url = values["AXURL"].flatMap { CFGetTypeID($0) == CFURLGetTypeID() ? bounded(($0 as! URL).absoluteString) : stringValue($0) }
     traits = values["AXTraits"].flatMap { CFGetTypeID($0) == CFNumberGetTypeID() ? ($0 as! NSNumber).int64Value : nil }
-    servesAsTitle = values["AXServesAsTitleForUIElements"].map { CFGetTypeID($0) == CFArrayGetTypeID() ? CFArrayGetCount(($0 as! CFArray)) > 0 : false }
+    servesAsTitleFor = values["AXServesAsTitleForUIElements"].map(elementList)
     rowIndexRange = indexRange(values["AXRowIndexRange"])
     columnIndexRange = indexRange(values["AXColumnIndexRange"])
     selected = flag("AXSelected")
@@ -76,6 +81,8 @@ struct ElementData {
     enabled = flag("AXEnabled")
     disclosing = flag("AXDisclosing")
     selectable = flag("AXSelectable")
+    elementBusy = flag("AXElementBusy")
+    loaded = flag("AXLoaded")
     domClassList = values["AXDOMClassList"].flatMap { CFGetTypeID($0) == CFArrayGetTypeID() ? ($0 as! [AnyObject]).compactMap { $0 as? String }.map(bounded) : nil }
     frame = point(values["AXPosition"]).flatMap { origin in size(values["AXSize"]).map { CGRect(origin: origin, size: $0) } }
     children = elementList(values["AXChildren"])
@@ -110,18 +117,42 @@ final class FetchCosts {
   }
 
   func count(_ name: String, _ by: Int = 1) { counts[name, default: 0] += by }
+
+  func merge(_ other: FetchCosts) {
+    for (phase, value) in other.ms { ms[phase, default: 0] += value }
+    for (name, value) in other.counts { counts[name, default: 0] += value }
+  }
+
+  func reset() {
+    ms = [:]
+    counts = [:]
+  }
 }
 
-/// Where the walk reads elements from. Everything but `data` is the same public call on either route.
+/// Where a walk reads elements from, for one observation: what it read is kept, so the settle's busy walk and the
+/// observation's walk that follows it read each element once (F §8.5). Everything but `read` is the same public call
+/// on either route; the overridable `read…` methods are the uncached reads.
 class ElementSource: @unchecked Sendable {
   let costs = FetchCosts()
   var route: FetchRoute { .publicFetch }
+  private var dataCache: [ElementKey: ElementData] = [:]
+  private var allChildrenCache: [ElementKey: [AXUIElement]] = [:]
+  private var visibleCache: [ElementKey: [AXUIElement]?] = [:]
+  private var frameCache: [ElementKey: CGRect?] = [:]
 
   /// The element's attributes; `subtree: false` keeps a prefetching route from fetching the element's whole subtree
   /// for it (the menu bar's items, whose menus are never walked). Nil when the element cannot be read.
-  func data(_ element: AXUIElement, subtree: Bool = true) -> ElementData? { publicData(element) }
+  final func data(_ element: AXUIElement, subtree: Bool = true) -> ElementData? {
+    let key = ElementKey(element: element)
+    if let known = dataCache[key] { return known }
+    let read = read(element, subtree: subtree)
+    if let read { dataCache[key] = read }
+    return read
+  }
 
-  final func publicData(_ element: AXUIElement) -> ElementData? {
+  func read(_ element: AXUIElement, subtree: Bool) -> ElementData? { publicData(element) }
+
+  func publicData(_ element: AXUIElement) -> ElementData? {
     costs.time("attributes") {
       var values: CFArray?
       let error = AXUIElementCopyMultipleAttributeValues(prepare(element), observedAttributes as CFArray, AXCopyMultipleAttributeOptions(rawValue: 0), &values)
@@ -151,12 +182,36 @@ class ElementSource: @unchecked Sendable {
   }
 
   /// The width rule's inputs, read only for an element over the threshold (or whose route returned a short list).
-  func allChildren(_ element: AXUIElement) -> [AXUIElement] {
-    costs.time("width") { elementList(attribute(element, kAXChildrenAttribute)) }
+  final func allChildren(_ element: AXUIElement) -> [AXUIElement] {
+    let key = ElementKey(element: element)
+    if let known = allChildrenCache[key] { return known }
+    let read = readAllChildren(element)
+    allChildrenCache[key] = read
+    return read
   }
 
   /// The element's visible subset (AXVisibleChildren, else AXVisibleRows), nil when it offers none.
-  func visibleChildren(_ element: AXUIElement) -> [AXUIElement]? {
+  final func visibleChildren(_ element: AXUIElement) -> [AXUIElement]? {
+    let key = ElementKey(element: element)
+    if let known = visibleCache[key] { return known }
+    let read = readVisibleChildren(element)
+    visibleCache[key] = .some(read)
+    return read
+  }
+
+  final func frame(_ element: AXUIElement) -> CGRect? {
+    let key = ElementKey(element: element)
+    if let known = frameCache[key] { return known }
+    let read = readFrame(element)
+    frameCache[key] = .some(read)
+    return read
+  }
+
+  func readAllChildren(_ element: AXUIElement) -> [AXUIElement] {
+    costs.time("width") { elementList(attribute(element, kAXChildrenAttribute)) }
+  }
+
+  func readVisibleChildren(_ element: AXUIElement) -> [AXUIElement]? {
     costs.time("width") {
       for name in ["AXVisibleChildren", kAXVisibleRowsAttribute] {
         let list = elementList(attribute(element, name))
@@ -166,7 +221,7 @@ class ElementSource: @unchecked Sendable {
     }
   }
 
-  func frame(_ element: AXUIElement) -> CGRect? {
+  func readFrame(_ element: AXUIElement) -> CGRect? {
     costs.time("width") {
       var values: CFArray?
       guard AXUIElementCopyMultipleAttributeValues(prepare(element), [kAXPositionAttribute, kAXSizeAttribute] as CFArray, AXCopyMultipleAttributeOptions(rawValue: 0), &values) == .success,
@@ -182,7 +237,7 @@ final class PublicSource: ElementSource, @unchecked Sendable {}
 
 /// `AXUIElementCopyHierarchy`, the private batched fetch, with its option and result keys; nil when any is absent.
 struct HierarchySPI: @unchecked Sendable {
-  typealias Function = @convention(c) (AXUIElement, CFArray, CFDictionary?, UnsafeMutablePointer<Unmanaged<CFDictionary>?>) -> AXError
+  typealias Function = @convention(c) (AXUIElement, CFArray, CFDictionary?, UnsafeMutablePointer<Unmanaged<CFTypeRef>?>) -> AXError
   let call: Function
   let skipInspectionKey: String
   let arrayAttributesKey: String
@@ -243,17 +298,29 @@ struct HierarchySPI: @unchecked Sendable {
 }
 
 /// The hierarchy route: one SPI call per subtree, results kept by element; an element the results lack, or that the
-/// SPI marked incomplete, is fetched again by a call rooted at it (once), then by the public call.
-final class HierarchySource: ElementSource, @unchecked Sendable {
+/// SPI marked incomplete, is fetched again by a call rooted at it (once), then by the public call. A result that is
+/// not a dictionary is an error, never a crash.
+class HierarchySource: ElementSource, @unchecked Sendable {
+  /// One call rooted at an element: its status and its result.
+  typealias Copy = (AXUIElement) -> (error: AXError, result: CFTypeRef?)
   private let spi: HierarchySPI
+  private let copy: Copy
   private var entries: [ElementKey: [String: Any]] = [:]
   private var refetched: Set<ElementKey> = []
 
-  init(spi: HierarchySPI) { self.spi = spi }
+  /// `copy` replaces the SPI call (the unit tests inject results).
+  init(spi: HierarchySPI, copy: Copy? = nil) {
+    self.spi = spi
+    self.copy = copy ?? { element in
+      var out: Unmanaged<CFTypeRef>?
+      let error = spi.call(element, observedAttributes as CFArray, spi.options, &out)
+      return (error, out?.takeRetainedValue())
+    }
+  }
 
   override var route: FetchRoute { .hierarchy }
 
-  override func data(_ element: AXUIElement, subtree: Bool = true) -> ElementData? {
+  override func read(_ element: AXUIElement, subtree: Bool) -> ElementData? {
     let key = ElementKey(element: element)
     if let entry = entries[key] {
       let decoded = spi.decode(entry)
@@ -276,16 +343,13 @@ final class HierarchySource: ElementSource, @unchecked Sendable {
 
   private func prefetch(rootedAt element: AXUIElement) {
     costs.count("prefetchCalls")
-    let result: CFDictionary? = costs.time("prefetch") {
-      var out: Unmanaged<CFDictionary>?
-      let error = spi.call(prepare(element), observedAttributes as CFArray, spi.options, &out)
-      let dictionary = out?.takeRetainedValue()
-      if error != .success { costs.count("prefetchErrors"); return nil }
-      return dictionary
+    let (error, result) = costs.time("prefetch") { copy(prepare(element)) }
+    guard error == .success, let result, CFGetTypeID(result) == CFDictionaryGetTypeID() else {
+      costs.count("prefetchErrors")
+      return
     }
-    guard let result else { return }
     costs.time("prefetchDecode") {
-      (result as NSDictionary).forEach { key, value in
+      (result as! NSDictionary).forEach { key, value in
         let object = key as AnyObject
         guard CFGetTypeID(object) == AXUIElementGetTypeID(), let entry = value as? [String: Any] else { return }
         entries[ElementKey(element: object as! AXUIElement)] = entry

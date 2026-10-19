@@ -29,13 +29,24 @@ struct WalkLimits {
   var deadline: Double
 }
 
-/// `shown` on a node whose children the width rule cut.
+/// `shown` on a node whose children the width rule cut: how many it kept of how many, and the positions it kept among
+/// the element's children as half-open `[lower, upper]` runs (the vendor's `(showing lo-hi, … of N items)`).
 struct Shown {
   let count: Int
   let of: Int
   let subset: String  // "visible" | "omitted"
+  let ranges: [[Int]]
 
-  var wire: [String: Any] { ["count": count, "of": of, "subset": subset] }
+  var wire: [String: Any] { ["count": count, "of": of, "subset": subset, "ranges": ranges] }
+}
+
+/// Sorted positions as half-open runs: [0, 1, 2, 5] → [[0, 3], [5, 6]].
+func positionRanges(_ positions: [Int]) -> [[Int]] {
+  var runs: [[Int]] = []
+  for position in Set(positions).sorted() {
+    if let last = runs.last, last[1] == position { runs[runs.count - 1][1] = position + 1 } else { runs.append([position, position + 1]) }
+  }
+  return runs
 }
 
 /// The width rule (F §1.5): all children up to 100; above that the element's visible subset (AXVisibleChildren, else
@@ -47,13 +58,20 @@ func chooseChildren(of element: AXUIElement, data: ElementData, source: ElementS
     return (data.children.count == total ? data.children : source.allChildren(element), nil)
   }
   if let visible = source.visibleChildren(element), !visible.isEmpty {
-    return (visible, visible.count < total ? Shown(count: visible.count, of: total, subset: "visible") : nil)
+    guard visible.count < total else { return (visible, nil) }
+    var positions: [ElementKey: Int] = [:]
+    for (position, child) in source.allChildren(element).enumerated() where positions[ElementKey(element: child)] == nil {
+      positions[ElementKey(element: child)] = position
+    }
+    let kept = visible.compactMap { positions[ElementKey(element: $0)] }
+    return (visible, Shown(count: visible.count, of: total, subset: "visible", ranges: positionRanges(kept)))
   }
-  if total > widthOmitAbove { return ([], Shown(count: 0, of: total, subset: "omitted")) }
+  if total > widthOmitAbove { return ([], Shown(count: 0, of: total, subset: "omitted", ranges: [])) }
   let all = source.allChildren(element)
   guard let visibleFrame else { return (all, nil) }
-  let kept = all.filter { child in source.frame(child).map { $0.intersects(visibleFrame) } ?? true }
-  return (kept, kept.count < all.count ? Shown(count: kept.count, of: max(total, all.count), subset: "visible") : nil)
+  let kept = all.indices.filter { source.frame(all[$0]).map { $0.intersects(visibleFrame) } ?? true }
+  guard kept.count < all.count else { return (all, nil) }
+  return (kept.map { all[$0] }, Shown(count: kept.count, of: max(total, all.count), subset: "visible", ranges: positionRanges(kept)))
 }
 
 /// The bytes `value` takes in the engine's JSON (JSONSerialization, slashes unescaped, UTF-8 unescaped above 0x7F):
@@ -88,6 +106,8 @@ final class TreeWalk {
   let previous: Revision?
   let limits: WalkLimits
   let markdown: Bool
+  /// Whether `focusable` and `selectable` are read (one settability call each per element); the spike's switch.
+  let interactionFlags: Bool
   let visibleFrame: CGRect?
 
   private(set) var nodes: [[String: Any]] = []
@@ -104,6 +124,8 @@ final class TreeWalk {
   private(set) var nodeCapHit = false
   private(set) var failures = 0
   private(set) var markdownFetches = 0
+  /// Nodes whose element is a title, with the elements it serves, mapped to indexes once the walk is done.
+  private var titles: [(inMenu: Bool, position: Int, targets: [AXUIElement])] = []
 
   private struct Pending {
     let element: AXUIElement
@@ -113,41 +135,90 @@ final class TreeWalk {
     let inMenu: Bool
   }
 
-  init(source: ElementSource, lineage: Lineage, limits: WalkLimits, markdown: Bool, visibleFrame: CGRect?) {
+  /// One element read, not yet numbered.
+  private struct Read {
+    let element: AXUIElement
+    let data: ElementData
+    let owner: pid_t
+    let actions: [String]
+    let flags: (settable: Bool, focusable: Bool, selectable: Bool)
+    let valueMarkdown: String?
+    let children: [AXUIElement]
+    let shown: Shown?
+  }
+
+  private enum Outcome {
+    case read(Read)
+    case failed
+    case deadline
+  }
+
+  init(source: ElementSource, lineage: Lineage, limits: WalkLimits, markdown: Bool, interactionFlags: Bool = true, visibleFrame: CGRect?) {
     self.source = source
     self.lineage = lineage
     previous = lineage.current
     self.limits = limits
     self.markdown = markdown
+    self.interactionFlags = interactionFlags
     self.visibleFrame = visibleFrame
     revision = Revision(route: source.route)
   }
 
   /// Walks `window` then `menuItems`, numbering both in one lineage (the menu bar's items after the window's nodes).
+  /// The menu bar's items are read first and their nodes and bytes reserved, so a cut of the window's walk by the node
+  /// or byte budget never drops the menu bar.
   func run(window: AXUIElement, menuItems: [AXUIElement]) {
-    var stack: [Pending] = []
     let menuInherited = previous.map { matchSiblings(old: $0.siblings(of: nil, menu: true), new: menuItems) } ?? Array(repeating: nil, count: menuItems.count)
-    for (item, inherited) in zip(menuItems, menuInherited).reversed() {
-      stack.append(Pending(element: item, depth: 0, parent: nil, inherited: inherited, inMenu: true))
+    let menuPending = zip(menuItems, menuInherited).map { Pending(element: $0, depth: 0, parent: nil, inherited: $1, inMenu: true) }
+    var menuReads: [(Pending, Read)] = []
+    var menuUnread: [Pending] = []
+    var reservedBytes = 0
+    for (position, pending) in menuPending.enumerated() {
+      if monotonicMilliseconds() >= limits.deadline { menuUnread = Array(menuPending[position...]); break }
+      switch read(pending) {
+      case .read(let read):
+        menuReads.append((pending, read))
+        reservedBytes += jsonBytes(wire(read, index: 0, depth: 0)) + 1
+      case .failed: failures += 1
+      case .deadline:
+        menuUnread = Array(menuPending[position...])
+      }
+      if !menuUnread.isEmpty { break }
     }
-    let rootInherited = previous.flatMap { matchSiblings(old: $0.siblings(of: nil, menu: false), new: [window]).first ?? nil }
-    stack.append(Pending(element: window, depth: 0, parent: nil, inherited: rootInherited, inMenu: false))
 
+    let rootInherited = previous.flatMap { matchSiblings(old: $0.siblings(of: nil, menu: false), new: [window]).first ?? nil }
+    walkWindow(Pending(element: window, depth: 0, parent: nil, inherited: rootInherited, inMenu: false),
+               nodeLimit: limits.nodes - menuReads.count, byteLimit: limits.bytes - reservedBytes)
+
+    for (pending, read) in menuReads where seen[ElementKey(element: read.element)] == nil { emit(read, pending) }
+    if !menuUnread.isEmpty { cut(.deadline, remaining: menuUnread) }
+    resolveTitles()
+  }
+
+  private func walkWindow(_ root: Pending, nodeLimit: Int, byteLimit: Int) {
+    var stack = [root]
     while let next = stack.popLast() {
-      if let stop = stopReason() {
+      if let stop = stopReason(nodeLimit: nodeLimit, byteLimit: byteLimit) {
         cut(stop, remaining: [next] + stack.reversed())
         return
       }
-      let key = ElementKey(element: next.element)
-      if seen[key] != nil { continue }
-      switch visit(next, key: key) {
+      if seen[ElementKey(element: next.element)] != nil { continue }
+      switch read(next) {
       case .failed: failures += 1
       case .deadline:
         cut(.deadline, remaining: [next] + stack.reversed())
         return
-      case .emitted(let index, let children, let inheritedChildren):
-        for (child, inherited) in zip(children, inheritedChildren).reversed() {
-          stack.append(Pending(element: child, depth: next.depth + 1, parent: index, inherited: inherited, inMenu: false))
+      case .read(let read):
+        let index = emit(read, next)
+        // A node that kept its index has its children matched against the previous revision's; a new node's are new.
+        let inherited: [Int?]
+        if let previous, next.inherited != nil {
+          inherited = matchSiblings(old: previous.siblings(of: index, menu: false), new: read.children)
+        } else {
+          inherited = Array(repeating: nil, count: read.children.count)
+        }
+        for (child, childInherited) in zip(read.children, inherited).reversed() {
+          stack.append(Pending(element: child, depth: next.depth + 1, parent: index, inherited: childInherited, inMenu: false))
         }
       }
     }
@@ -155,9 +226,9 @@ final class TreeWalk {
 
   private enum Stop { case nodes, bytes, deadline }
 
-  private func stopReason() -> Stop? {
-    if bytes >= limits.bytes { return .bytes }
-    if nodes.count + menuBar.count >= limits.nodes { return .nodes }
+  private func stopReason(nodeLimit: Int, byteLimit: Int) -> Stop? {
+    if bytes >= byteLimit { return .bytes }
+    if nodes.count >= nodeLimit { return .nodes }
     if monotonicMilliseconds() >= limits.deadline { return .deadline }
     return nil
   }
@@ -184,25 +255,20 @@ final class TreeWalk {
     else { revision.root = index }
   }
 
-  private enum Visit {
-    case emitted(index: Int, children: [AXUIElement], inherited: [Int?])
-    case failed
-    case deadline
-  }
-
   private func pastDeadline() -> Bool { monotonicMilliseconds() >= limits.deadline }
 
-  private func visit(_ pending: Pending, key: ElementKey) -> Visit {
+  /// Reads one element: its attributes, owner, actions, flags, Markdown and the children the width rule keeps. The
+  /// deadline is checked between a node's calls, not only between nodes, so one slow element cannot overrun it.
+  private func read(_ pending: Pending) -> Outcome {
     let element = prepare(pending.element)
     guard let data = source.data(element, subtree: !pending.inMenu) else { return .failed }
-    // The deadline is checked between a node's calls, not only between nodes, so one slow element cannot overrun it.
     if pastDeadline() { return .deadline }
     let owner = source.owner(element)
     let actions = source.actions(element)
     if pastDeadline() { return .deadline }
     let settable = data.value != nil && source.isSettable(element, kAXValueAttribute, phase: "settable")
-    let focusable = data.focused != nil && source.isSettable(element, kAXFocusedAttribute, phase: "focusable")
-    let selectable = data.selectable ?? (data.selected != nil && source.isSettable(element, kAXSelectedAttribute, phase: "selectable"))
+    let focusable = interactionFlags && data.focused != nil && source.isSettable(element, kAXFocusedAttribute, phase: "focusable")
+    let selectable = data.selectable ?? (interactionFlags && data.selected != nil && source.isSettable(element, kAXSelectedAttribute, phase: "selectable"))
     if pastDeadline() { return .deadline }
     var valueMarkdown: String?
     if markdown, markdownRoles.contains(data.role), let text = data.value.flatMap({ CFGetTypeID($0) == CFStringGetTypeID() ? ($0 as! String) : nil }) {
@@ -212,7 +278,6 @@ final class TreeWalk {
         markdownFetches += 1
       }
     }
-
     var children: [AXUIElement] = []
     var shown: Shown?
     if !pending.inMenu {
@@ -223,24 +288,40 @@ final class TreeWalk {
       }
     }
     if pastDeadline() { return .deadline }
+    return .read(Read(element: element, data: data, owner: owner, actions: actions, flags: (settable, focusable, selectable),
+                      valueMarkdown: valueMarkdown, children: children, shown: shown))
+  }
 
+  private func wire(_ read: Read, index: Int, depth: Int) -> [String: Any] {
+    nodeWire(index: index, depth: depth, pid: read.owner, data: read.data, actions: read.actions, flags: read.flags,
+             valueMarkdown: read.valueMarkdown, children: read.children.count, shown: read.shown)
+  }
+
+  /// Numbers a read element (its inherited index, else the next unused) and adds its node and its table entry.
+  @discardableResult
+  private func emit(_ read: Read, _ pending: Pending) -> Int {
     let index = pending.inherited ?? lineage.allocate()
-    seen[key] = index
-    let node = nodeWire(index: index, depth: pending.depth, pid: owner, data: data, actions: actions,
-                        flags: (settable, focusable, selectable), valueMarkdown: valueMarkdown, children: children.count, shown: shown)
+    seen[ElementKey(element: read.element)] = index
+    let node = wire(read, index: index, depth: pending.depth)
     bytes += jsonBytes(node) + 1
-    if pending.inMenu { menuBar.append(node) } else { nodes.append(node) }
-    revision.entries[index] = LineageEntry(element: element, identity: ElementIdentity(data, pid: owner), actions: actions, frame: data.frame)
-    attach(index, pending)
-
-    // A node that kept its index has its children matched against the previous revision's; a new node's are all new.
-    let inherited: [Int?]
-    if let previous, pending.inherited != nil {
-      inherited = matchSiblings(old: previous.siblings(of: index, menu: false), new: children)
-    } else {
-      inherited = Array(repeating: nil, count: children.count)
+    if let targets = read.data.servesAsTitleFor, !targets.isEmpty {
+      titles.append((pending.inMenu, pending.inMenu ? menuBar.count : nodes.count, targets))
     }
-    return .emitted(index: index, children: children, inherited: inherited)
+    if pending.inMenu { menuBar.append(node) } else { nodes.append(node) }
+    revision.entries[index] = LineageEntry(element: read.element, identity: ElementIdentity(read.data, pid: read.owner), actions: read.actions, frame: read.data.frame)
+    attach(index, pending)
+    return index
+  }
+
+  /// `servesAsTitleFor`: the emitted indexes of the elements a title serves, known only once the walk is done (a title
+  /// often precedes what it names).
+  private func resolveTitles() {
+    for title in titles {
+      let indexes = title.targets.compactMap { seen[ElementKey(element: $0)] }
+      guard !indexes.isEmpty else { continue }
+      if title.inMenu { menuBar[title.position]["servesAsTitleFor"] = indexes } else { nodes[title.position]["servesAsTitleFor"] = indexes }
+      bytes += jsonBytes(indexes) + jsonStringBytes("servesAsTitleFor") + 2
+    }
   }
 }
 
@@ -274,7 +355,6 @@ func nodeWire(index: Int, depth: Int, pid: pid_t, data: ElementData, actions: [S
   if let help = data.help { node["help"] = help }
   if let url = data.url { node["url"] = url }
   if let traits = data.traits { node["traits"] = traits }
-  if let servesAsTitle = data.servesAsTitle { node["servesAsTitle"] = servesAsTitle }
   if let rows = data.rowIndexRange { node["rowIndexRange"] = rows }
   if let columns = data.columnIndexRange { node["columnIndexRange"] = columns }
   if let domClassList = data.domClassList { node["domClassList"] = domClassList }

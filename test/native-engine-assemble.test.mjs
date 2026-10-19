@@ -26,7 +26,7 @@ function fakeTree(t) {
   return {root: root.dir, script, write};
 }
 
-test('build is a stable hash of the source tree and the assembling script, blind to build products and Finder litter', t => {
+test('build is a stable hash of the source tree and the assembling script, blind to build products, Finder litter and the unit tests', t => {
   const {root, script, write} = fakeTree(t);
   const first = engineBuild({sourceRoot: root, script});
   assert.match(first, /^[0-9a-f]{64}$/);
@@ -35,6 +35,12 @@ test('build is a stable hash of the source tree and the assembling script, blind
   write('.swiftpm/state', 'state');
   write('Sources/.DS_Store', 'finder');
   assert.equal(engineBuild({sourceRoot: root, script}), first, 'build products and litter do not move it');
+  write('Tests/EngineTests/WalkTests.swift', 'final class T {}\n');
+  assert.equal(engineBuild({sourceRoot: root, script}), first, 'the unit tests are not the program');
+  write('Sources/Engine/Tests/Kept.swift', '');
+  const nested = engineBuild({sourceRoot: root, script});
+  assert.notEqual(nested, first, 'only the package\'s top-level Tests directory is left out');
+  rmSync(join(root, 'Sources', 'Engine', 'Tests'), {recursive: true});
   write('Sources/Engine/main.swift', 'print("b")\n');
   const edited = engineBuild({sourceRoot: root, script});
   assert.notEqual(edited, first, 'a source edit moves it');

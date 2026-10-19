@@ -49,8 +49,8 @@ func primaryWindow(of application: AXUIElement) -> AXUIElement? {
 extension Engine {
   /// `get_app_state {app, disableDiff?, includeScreenshot?, outputDirectory}` → Skyshot. The spike's switches:
   /// `prefetch: "public" | "hierarchy"` (the fetch route, default public), `valueMarkdown: false` (skip the Markdown
-  /// fetch), `webAreaWait: false` (skip the web-area wait), `settle: true | false` (force or skip the settle that an
-  /// earlier action otherwise arms).
+  /// fetch), `focusableSelectable: false` (skip the focusable and selectable settability reads), `webAreaWait: false`
+  /// (skip the web-area wait), `settle: true | false` (force or skip the settle that an earlier action otherwise arms).
   func getAppState(_ args: [String: Any], _ context: ExecutionContext) throws -> [String: Any] {
     var timings = Timings()
     let started = monotonicMilliseconds()
@@ -60,6 +60,7 @@ extension Engine {
     let outputDirectory = args["outputDirectory"] as? String
     if includeScreenshot { guard outputDirectory?.hasPrefix("/") == true else { throw EngineError.invalidArguments("outputDirectory must be an absolute path") } }
     let markdownEnabled = args["valueMarkdown"] as? Bool ?? true
+    let interactionFlags = args["focusableSelectable"] as? Bool ?? true
     let webAreaWaitEnabled = args["webAreaWait"] as? Bool ?? true
     let route: FetchRoute
     switch args["prefetch"] {
@@ -83,13 +84,18 @@ extension Engine {
     let webShaped = webAccessibility.isWebShaped(app.appPath)
     timings.set("webShaped", webShaped)
 
-    // The settle an earlier action armed (or the request forces) runs before anything is read.
+    // The settle an earlier action armed (or the request forces) runs before anything is read; its last busy walk's
+    // reads are handed to the observation.
     var settleMarker: Any?
-    let settleCosts = FetchCosts()
+    var settled: Settled?
     if args["settle"] as? Bool ?? connection.needsSettle.contains(app.key) {
-      let report = settle(application, pid: appPid, webShaped: webShaped, costs: settleCosts)
+      let settleCosts = FetchCosts()
+      let outcome = settle(application, pid: appPid, webShaped: webShaped, route: route, costs: settleCosts)
+      settled = outcome
+      let report = outcome.report
       timings.add("settle", report.ms)
-      timings.add("settleBusyWalk", settleCosts.ms["settleBusyWalk"] ?? 0)
+      for (phase, ms) in settleCosts.ms { timings.add(phase == "settleBusyWalk" ? phase : "settleBusyWalk" + phase.prefix(1).uppercased() + phase.dropFirst(), ms) }
+      for (name, n) in settleCosts.counts { timings.count("settleBusyWalk" + name.prefix(1).uppercased() + name.dropFirst(), n) }
       timings.set("settle", report.capped ? "capped" : "settled")
       timings.set("settleNotifications", report.total)
       timings.set("settleNotificationCounts", report.counts)
@@ -102,7 +108,8 @@ extension Engine {
     connection.needsSettle.remove(app.key)
 
     var enabledNow = false
-    if webShaped, let attribute = timings.time("enable", { webAccessibility.enable(application, pid: appPid) }) {
+    let eligible = enablementEligible(bundleIdentifier: app.bundleIdentifier, webShaped: webShaped)
+    if eligible, let attribute = timings.time("enable", { webAccessibility.enable(application, pid: appPid) }) {
       timings.set("enabled", attribute)
       enabledNow = true
     }
@@ -111,10 +118,14 @@ extension Engine {
     guard let window = try timings.time("window", { try awaitPrimaryWindow(of: application, until: windowDeadline, launched: launched) }) else {
       throw EngineError(name: "noWindowsAvailable", "noWindowsAvailable")
     }
+    var waited = false
     if webShaped {
       let chromium = timings.time("chromiumCheck") { isChromiumWindow(window) }
       timings.set("chromium", chromium)
-      if webAreaWaitEnabled && (enabledNow || chromium) { timings.set("webAreaFound", timings.time("webAreaWait") { waitForWebArea(under: window) }) }
+      if webAreaWaitEnabled && (enabledNow || chromium) {
+        timings.set("webAreaFound", timings.time("webAreaWait") { waitForWebArea(under: window) })
+        waited = true
+      }
     }
 
     if args["disableDiff"] as? Bool == true { connection.lineages[app.key] = nil }
@@ -129,10 +140,19 @@ extension Engine {
 
     let menuItems = timings.time("menuBar") { elementAttribute(application, kAXMenuBarAttribute).map { elementList(attribute($0, kAXChildrenAttribute)) } ?? [] }
     let windowFrame = frame(of: window)
-    let source = makeSource(route)
+    // The settle's reads stand for the tree only when nothing changed it since: same window, no enablement, no wait.
+    let source: ElementSource
+    if let settled, let reused = settled.source, let busyWindow = settled.window, CFEqual(busyWindow, window), !enabledNow, !waited {
+      source = reused
+      timings.set("settleTreeReused", true)
+    } else {
+      source = makeSource(route)
+      if settled != nil { timings.set("settleTreeReused", false) }
+    }
     timings.set("route", source.route.rawValue)
     let deadline = monotonicMilliseconds() + Double(min(observationDeadlineMs, max(0, context.deadline - unixMilliseconds())))
-    let walk = TreeWalk(source: source, lineage: lineage, limits: WalkLimits(deadline: deadline), markdown: markdownEnabled, visibleFrame: windowFrame)
+    let walk = TreeWalk(source: source, lineage: lineage, limits: WalkLimits(deadline: deadline), markdown: markdownEnabled,
+                        interactionFlags: interactionFlags, visibleFrame: windowFrame)
     timings.time("walk") { walk.run(window: window, menuItems: menuItems) }
     timings.merge(source.costs)
     timings.set("nodes", walk.nodes.count + walk.menuBar.count)

@@ -4,10 +4,11 @@ import Foundation
 // Enablement (the spec's Design, "Observation (skyshot)"; F §1.7, §1.9). An application element that lists
 // AXManualAccessibility gets it set (Electron, Chromium), else one that lists AXEnhancedUserInterface gets that, never
 // both, once per process; the first observation after enabling, and every observation of a Chromium window, waits
-// 100 ms and then up to 1 s for an AXWebArea to appear. cua's departure: enablement is set only on web-shaped apps
-// (F §1.7's detection), where the vendor sets AXEnhancedUserInterface on any app that lists it in its full-UI context;
-// that attribute changes how an AppKit app (the owner's Finder) behaves for as long as it stays set, and cua never
-// leaves it set on an app whose tree is complete without it.
+// 100 ms and then up to 1 s for an AXWebArea to appear. cua's departure (Decision Log, T1's re-review): enablement is
+// set only on web-shaped apps (F §1.7's detection) and the vendor's named bundles (`com.apple.iWork*`,
+// `com.spotify.client`), where the vendor sets AXEnhancedUserInterface on any app that lists it in its full-UI context;
+// that attribute changes how an AppKit app (the owner's Finder) behaves for as long as it stays set. The vendor's
+// Spotify fake activation before enabling is route 3's and is not done here.
 
 let webAreaLeadMs: UInt32 = 100
 let webAreaWaitMs = 1_000.0
@@ -20,6 +21,13 @@ func webShaped(info: [String: Any]) -> Bool {
   if let principal = info["NSPrincipalClass"] as? String, principal == "AtomApplication" || principal == "BrowserCrApplication" { return true }
   let types = info["CFBundleURLTypes"] as? [[String: Any]] ?? []
   return types.contains { ($0["CFBundleURLSchemes"] as? [String] ?? []).contains { $0.lowercased() == "http" } }
+}
+
+/// Whether an app is enabled at all: web-shaped, or one of the bundles the vendor enables by name (F §1.9).
+func enablementEligible(bundleIdentifier: String?, webShaped: Bool) -> Bool {
+  if webShaped { return true }
+  guard let id = bundleIdentifier?.lowercased() else { return false }
+  return id.hasPrefix("com.apple.iwork") || id == "com.spotify.client"
 }
 
 /// The attribute the vendor's rule sets on an application listing `names`: AXManualAccessibility when listed, else
@@ -46,7 +54,7 @@ final class WebAccessibility: @unchecked Sendable {
     return shaped
   }
 
-  /// Sets the one enablement attribute on a web-shaped process the first time it is observed; returns the attribute
+  /// Sets the one enablement attribute on an eligible process the first time it is observed; returns the attribute
   /// this call set (nil when none is listed, it was already true, or the process was considered before).
   func enable(_ application: AXUIElement, pid: pid_t) -> String? {
     lock.lock()

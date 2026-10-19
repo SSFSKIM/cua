@@ -141,6 +141,16 @@ final class EnablementTests: XCTestCase {
     XCTAssertFalse(webShaped(info: [:]))
   }
 
+  func testEligibleAppsAreTheWebShapedAndTheVendorsNamedBundles() {
+    XCTAssertTrue(enablementEligible(bundleIdentifier: "io.github.ssfskim.cua.fixture.electron", webShaped: true))
+    XCTAssertTrue(enablementEligible(bundleIdentifier: "com.apple.iWork.Pages", webShaped: false))
+    XCTAssertTrue(enablementEligible(bundleIdentifier: "com.apple.iWork.Keynote", webShaped: false))
+    XCTAssertTrue(enablementEligible(bundleIdentifier: "com.spotify.client", webShaped: false))
+    XCTAssertFalse(enablementEligible(bundleIdentifier: "com.apple.finder", webShaped: false))
+    XCTAssertFalse(enablementEligible(bundleIdentifier: "com.apple.TextEdit", webShaped: false))
+    XCTAssertFalse(enablementEligible(bundleIdentifier: nil, webShaped: false))
+  }
+
   func testOneAttributeNeverBoth() {
     XCTAssertEqual(enablementAttribute(listed: ["AXEnhancedUserInterface", "AXManualAccessibility"]), "AXManualAccessibility")
     XCTAssertEqual(enablementAttribute(listed: ["AXRole", "AXEnhancedUserInterface"]), "AXEnhancedUserInterface")
@@ -194,11 +204,113 @@ final class FetchDecodeTests: XCTestCase {
     XCTAssertTrue(spi.decode(["AXChildren": [spi.valueKey: [] as CFArray, spi.incompleteKey: true]]).incomplete)
   }
 
+  func testPositionRanges() {
+    XCTAssertEqual(positionRanges([0, 1, 2, 5, 7, 6]), [[0, 3], [5, 8]])
+    XCTAssertEqual(positionRanges([]), [])
+  }
+
   func testValueTypes() {
     XCTAssertEqual(valueType("a") as? String, "string")
     XCTAssertEqual(valueType(true) as? String, "boolean")
     XCTAssertEqual(valueType(Int64(3)) as? String, "number")
     XCTAssertEqual(valueType(2.5) as? String, "number")
     XCTAssertTrue(valueType(nil) is NSNull)
+  }
+}
+
+/// HierarchySource with injected results: the refetch of a missing or incomplete element, the fallback to the public
+/// read, and a malformed or failed result degrading to that fallback.
+final class HierarchySourceTests: XCTestCase {
+  /// Counts the public reads the hierarchy route falls back to, answering them itself.
+  final class Counting: HierarchySource, @unchecked Sendable {
+    var publicReads: [Int] = []
+    override func publicData(_ element: AXUIElement) -> ElementData? {
+      publicReads.append(Int(pid(of: element)) - 61_000)
+      return ElementData(values: ["AXRole": "AXPublic" as CFString])
+    }
+  }
+
+  private var spi: HierarchySPI { HierarchySPI.shared! }
+
+  /// A result dictionary keyed by element, as the SPI returns it.
+  private func result(_ entries: [Int: [String: Any]]) -> CFDictionary {
+    var keyCallbacks = kCFTypeDictionaryKeyCallBacks
+    var valueCallbacks = kCFTypeDictionaryValueCallBacks
+    let dictionary = CFDictionaryCreateMutable(nil, 0, &keyCallbacks, &valueCallbacks)!
+    for (id, entry) in entries {
+      let key = element(id)
+      let value = entry as NSDictionary
+      withExtendedLifetime((key, value)) {
+        CFDictionarySetValue(dictionary, Unmanaged.passUnretained(key).toOpaque(), Unmanaged.passUnretained(value).toOpaque())
+      }
+    }
+    return dictionary
+  }
+
+  private func entry(_ role: String, children: [Int] = [], incomplete: Bool = false) -> [String: Any] {
+    var entry: [String: Any] = ["AXRole": [spi.valueKey: role], "AXChildren": [spi.valueKey: children.map(element) as CFArray]]
+    if incomplete { entry[spi.incompleteKey] = true }
+    return entry
+  }
+
+  func testOneCallServesTheSubtree() throws {
+    _ = try XCTUnwrap(HierarchySPI.shared)
+    var calls: [Int] = []
+    let source = Counting(spi: spi) { root in
+      calls.append(Int(pid(of: root)) - 61_000)
+      return (.success, self.result([1: self.entry("AXWindow", children: [2]), 2: self.entry("AXButton")]))
+    }
+    XCTAssertEqual(source.data(element(1))?.role, "AXWindow")
+    XCTAssertEqual(source.data(element(2))?.role, "AXButton")
+    XCTAssertEqual(calls, [1])
+    XCTAssertEqual(source.publicReads, [])
+    XCTAssertEqual(source.costs.counts["prefetchCalls"], 1)
+  }
+
+  func testAMissingElementIsFetchedByACallRootedAtItThenByThePublicRead() throws {
+    _ = try XCTUnwrap(HierarchySPI.shared)
+    var calls: [Int] = []
+    let source = Counting(spi: spi) { root in
+      calls.append(Int(pid(of: root)) - 61_000)
+      return (.success, self.result(CFEqual(root, element(1)) ? [1: self.entry("AXWindow", children: [2, 3])] : [3: self.entry("AXRow")]))
+    }
+    _ = source.data(element(1))
+    XCTAssertEqual(source.data(element(3))?.role, "AXRow", "a call rooted at the missing element found it")
+    XCTAssertEqual(source.data(element(2))?.role, "AXPublic", "still missing after its own call: the public read")
+    XCTAssertEqual(calls, [1, 3, 2])
+    XCTAssertEqual(source.publicReads, [2])
+    XCTAssertEqual(source.costs.counts["fallbackFetches"], 1)
+  }
+
+  func testAnIncompleteChildIsFetchedAgainOnceByACallRootedAtIt() throws {
+    _ = try XCTUnwrap(HierarchySPI.shared)
+    var calls: [Int] = []
+    let source = Counting(spi: spi) { root in
+      calls.append(Int(pid(of: root)) - 61_000)
+      return (.success, self.result([1: self.entry("AXWindow", children: [2]), 2: self.entry("AXList", incomplete: true)]))
+    }
+    XCTAssertEqual(source.data(element(1))?.role, "AXWindow")
+    XCTAssertEqual(source.data(element(2))?.role, "AXList")
+    XCTAssertEqual(calls, [1, 2], "the window's call, then one rooted at the incomplete child; its answer is kept, still incomplete")
+    XCTAssertEqual(source.publicReads, [])
+  }
+
+  func testAMalformedOrFailedResultFallsBackWithoutCrashing() throws {
+    _ = try XCTUnwrap(HierarchySPI.shared)
+    for answer in [(AXError.success, ["not", "a", "dictionary"] as CFArray as CFTypeRef?), (AXError.success, nil), (AXError.cannotComplete, nil)] {
+      let source = Counting(spi: spi) { _ in answer }
+      XCTAssertEqual(source.data(element(1))?.role, "AXPublic")
+      XCTAssertEqual(source.costs.counts["prefetchErrors"], 1)
+      XCTAssertEqual(source.publicReads, [1])
+    }
+  }
+
+  func testAMenuItemIsReadAloneWithoutACall() throws {
+    _ = try XCTUnwrap(HierarchySPI.shared)
+    var calls = 0
+    let source = Counting(spi: spi) { _ in calls += 1; return (.success, self.result([:])) }
+    XCTAssertEqual(source.data(element(5), subtree: false)?.role, "AXPublic")
+    XCTAssertEqual(calls, 0)
+    XCTAssertEqual(source.costs.counts["singleFetches"], 1)
   }
 }

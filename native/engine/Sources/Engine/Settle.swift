@@ -66,12 +66,23 @@ func runSettle(sampleMs: Double, quietMs: Double = settleQuietMs, capMs: Double 
   return report
 }
 
+/// What the settle hands the observation: its report and, when it settled, the source its last busy walk read through,
+/// with that walk's window, so the observation reads the tree once (F §8.5).
+struct Settled {
+  var report: SettleReport
+  var source: ElementSource?
+  var window: AXUIElement?
+}
+
 extension Engine {
-  /// Waits for `application` to settle; `webShaped` chooses the 250 ms sampling.
-  func settle(_ application: AXUIElement, pid: pid_t, webShaped: Bool, costs: FetchCosts) -> SettleReport {
+  /// Waits for `application` to settle; `webShaped` chooses the 250 ms sampling, `route` the fetch route the busy walk
+  /// reads through. The busy walks' fetch costs accumulate in `costs`.
+  func settle(_ application: AXUIElement, pid: pid_t, webShaped: Bool, route: FetchRoute, costs: FetchCosts) -> Settled {
     let observer = NotificationObserver(pid: pid, names: settleNotifications, keep: true)
     defer { observer?.invalidate() }
     var titles: [ElementKey: String] = [:]
+    var last: (source: ElementSource, window: AXUIElement)?
+    let deadline = monotonicMilliseconds() + settleCapMs
     var report = runSettle(
       sampleMs: webShaped ? settleWebSampleMs : settleSampleMs,
       now: monotonicMilliseconds,
@@ -90,34 +101,37 @@ extension Engine {
       },
       ready: {
         guard let window = primaryWindow(of: application) else { return nil }
-        return costs.time("settleBusyWalk") { !isBusy(window) }
+        // Each busy walk reads afresh; the last one's reads are what the observation reuses.
+        let source = makeSource(route)
+        let busy = costs.time("settleBusyWalk") { isBusy(window, source: source, visibleFrame: frame(of: window), deadline: deadline) }
+        costs.merge(source.costs)
+        source.costs.reset()
+        last = (source, window)
+        return !busy
       })
     report.observed = observer != nil
-    return report
+    guard !report.capped, let last else { return Settled(report: report) }
+    return Settled(report: report, source: last.source, window: last.window)
   }
 }
 
-/// The busy walk (F §8.4): an `AXBusyIndicator`, an `AXWebArea` whose `AXLoaded` is false, `AXElementBusy` true, or the
-/// DOM class `macos-mac-parity-spinner` anywhere under the window (a progress indicator is not a sign). Bounded by the
-/// observation's depth and node caps, the first 100 children of each element as the vendor's prefetch caps them.
-func isBusy(_ window: AXUIElement) -> Bool {
-  let attributes = [kAXRoleAttribute, "AXElementBusy", "AXLoaded", "AXDOMClassList", kAXChildrenAttribute] as CFArray
-  var stack: [(AXUIElement, Int)] = [(window, 0)]
-  var visited = 0
-  while let (element, depth) = stack.popLast(), visited < maxObservedNodes {
-    visited += 1
-    var values: CFArray?
-    guard AXUIElementCopyMultipleAttributeValues(prepare(element), attributes, AXCopyMultipleAttributeOptions(rawValue: 0), &values) == .success,
-          let slots = values as? [Any], slots.count == 5 else { continue }
-    let role = present(slots[0]).flatMap { CFGetTypeID($0) == CFStringGetTypeID() ? ($0 as! String) : nil }
-    if role == "AXBusyIndicator" { return true }
-    if role == "AXWebArea", bool(present(slots[2])) == false { return true }
-    if bool(present(slots[1])) == true { return true }
-    if let classes = present(slots[3]), CFGetTypeID(classes) == CFArrayGetTypeID(), (classes as! [AnyObject]).contains(where: { ($0 as? String) == busyMarkerClass }) {
-      return true
-    }
+/// The busy walk (F §8.4) through the observation's fetch route: an `AXBusyIndicator`, an `AXWebArea` whose `AXLoaded`
+/// is false, `AXElementBusy` true, or the DOM class `macos-mac-parity-spinner` anywhere under the window (a progress
+/// indicator is not a sign). It walks what the observation would (the width rule, the depth and node caps), stopping at
+/// the first sign or at `deadline`.
+func isBusy(_ window: AXUIElement, source: ElementSource, visibleFrame: CGRect?, deadline: Double) -> Bool {
+  var stack: [(AXUIElement, Int)] = [(prepare(window), 0)]
+  var seen = Set<ElementKey>()
+  while let (element, depth) = stack.popLast(), seen.count < maxObservedNodes, monotonicMilliseconds() < deadline {
+    guard seen.insert(ElementKey(element: element)).inserted, let data = source.data(element) else { continue }
+    if data.role == "AXBusyIndicator" { return true }
+    if data.role == "AXWebArea", data.loaded == false { return true }
+    if data.elementBusy == true { return true }
+    if data.domClassList?.contains(busyMarkerClass) == true { return true }
     if depth < maxDepth {
-      for child in elementList(present(slots[4])).prefix(widthThreshold).reversed() { stack.append((child, depth + 1)) }
+      for child in chooseChildren(of: element, data: data, source: source, visibleFrame: visibleFrame).children.reversed() {
+        stack.append((prepare(child), depth + 1))
+      }
     }
   }
   return false

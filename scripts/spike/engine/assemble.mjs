@@ -20,13 +20,15 @@ export const BUNDLE_ID = 'io.github.ssfskim.cua.engine';
 export const BUNDLE_NAME = 'cua Engine.app';
 const EXECUTABLE = 'cua-engine';
 
-// Build products, SwiftPM state and Finder litter are not the program.
+// Build products, SwiftPM state and Finder litter are not the program; nor is the package's unit-test directory, which
+// the release executable does not contain.
 const IGNORED = new Set(['.build', '.swiftpm', '.DS_Store']);
+const IGNORED_AT_ROOT = new Set(['Tests']);
 
 function sourceFiles(root, dir = root) {
   const files = [];
   for (const entry of readdirSync(dir, {withFileTypes: true})) {
-    if (IGNORED.has(entry.name)) continue;
+    if (IGNORED.has(entry.name) || (dir === root && IGNORED_AT_ROOT.has(entry.name))) continue;
     const path = join(dir, entry.name);
     if (entry.isDirectory()) files.push(...sourceFiles(root, path));
     else if (entry.isFile()) files.push(relative(root, path).split(sep).join('/'));

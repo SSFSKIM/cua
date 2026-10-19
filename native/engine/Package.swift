@@ -20,6 +20,7 @@ let package = Package(
         .linkedFramework("ScreenCaptureKit"),
       ]
     ),
+    .testTarget(name: "EngineTests", dependencies: ["Engine"], path: "Tests/EngineTests"),
   ],
   swiftLanguageModes: [.v6]
 )

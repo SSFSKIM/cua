@@ -3,10 +3,12 @@
 // bound, ping, status, shutdown and its busy refusal, the lock and the socket directory, list_apps and resolve_app of
 // running apps, against a debug build the test makes itself and runs directly under CUA_ENGINE_SOCKET. Nothing here may
 // raise a permission dialog: no observation, capture, input, approve or keystroke probe, and no app is ever launched.
+// The engine's pure logic (the walk, numbering, width rule, settle loop, decoding) is the Swift suite native-engine-units.
 import {test, before} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawn, spawnSync} from 'node:child_process';
-import {existsSync, readFileSync, statSync} from 'node:fs';
+import {existsSync, mkdirSync, readFileSync, statSync} from 'node:fs';
+import {createServer} from 'node:net';
 import {join} from 'node:path';
 import {shortScratch} from './fixtures/runtime-fixture.mjs';
 import {
@@ -125,6 +127,20 @@ test('execute refuses an unknown method and a facade method the spike does not i
   assert.equal(late.error.errorName, 'deadlineExceeded');
 });
 
+test('the input methods this build leaves to the owner\'s branch answer notImplemented before anything is posted', {skip}, async t => {
+  const {wire} = await engine(t);
+  for (const [method, args] of [
+    ['click', {app: 'io.github.ssfskim.cua.engine-test.no-such-app', element_index: 0}],
+    ['press_key', {app: 'io.github.ssfskim.cua.engine-test.no-such-app', key: 'Return'}],
+    ['type_text', {app: 'io.github.ssfskim.cua.engine-test.no-such-app', text: 'x'}],
+  ]) {
+    const answer = await wire.execute(method, args);
+    assert.equal(answer.error?.code, -10005, method);
+    assert.equal(answer.error.errorName, 'notImplemented', method);
+    assert.equal(answer.error.message, `${method} is not implemented by this engine build`);
+  }
+});
+
 test('list_apps lists running regular apps in the facade\'s row shape; resolve_app finds Finder by bundle id, name, path and pid and records its use', {skip: finderSkip}, async t => {
   const {wire, socket} = await engine(t);
   const listed = (await wire.execute('list_apps')).result;
@@ -146,10 +162,13 @@ test('list_apps lists running regular apps in the facade\'s row shape; resolve_a
   assert.deepEqual((await wire.execute('resolve_app', {app: byId.appPath})).result, byId);
   assert.deepEqual((await wire.execute('resolve_app', {pid: byId.pid})).result, byId);
 
-  const usage = JSON.parse(readFileSync(join(socket, '..', 'usage.json'), 'utf8'));
-  assert.equal(usage.apps['com.apple.finder'].useCount, 4);
+  // A flake of this count was seen once in a full run (task-1 report); the message carries what it needs to diagnose one.
+  const usageText = readFileSync(join(socket, '..', 'usage.json'), 'utf8');
+  const usage = JSON.parse(usageText);
   const again = (await wire.execute('list_apps')).result.find(row => row.id === 'com.apple.finder');
-  assert.equal(again.useCount, 4);
+  const evidence = `usage.json ${usageText}; list_apps row ${JSON.stringify(again)}; socket ${socket}`;
+  assert.equal(usage.apps['com.apple.finder'].useCount, 4, evidence);
+  assert.equal(again.useCount, 4, evidence);
   assert.ok(!Number.isNaN(Date.parse(again.lastUsedDate)));
 });
 
@@ -190,6 +209,18 @@ test('a second engine on the same socket loses the lock and exits, leaving the f
   assert.equal(code, 75);
   assert.match(stderr, /engine\.lock/);
   assert.equal((await wire.result('ping', {clientApiVersion: API_VERSION})).serverApiVersion, API_VERSION);
+});
+
+test('an engine that finds another server answering at its socket exits rather than replacing it', {skip}, async t => {
+  const socket = scratchSocket(t, 'live');
+  mkdirSync(join(socket, '..'), {recursive: true, mode: 0o700});
+  const squatter = createServer(connection => connection.end());
+  await new Promise(resolve => squatter.listen(socket, resolve));
+  t.after(() => squatter.close());
+  const result = run([], {CUA_ENGINE_SOCKET: socket});
+  assert.equal(result.status, 75);
+  assert.match(result.stderr, /live socket found/);
+  assert.ok(statSync(socket).isSocket(), 'the other server\'s socket is left in place');
 });
 
 test('the engine creates its socket directory with mode 0700', {skip}, async t => {

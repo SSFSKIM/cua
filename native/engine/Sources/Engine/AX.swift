@@ -46,7 +46,7 @@ func present(_ value: Any?) -> CFTypeRef? {
 }
 
 /// The elements of an AXChildren value (an empty list for anything else).
-func children(_ value: CFTypeRef?) -> [AXUIElement] {
+func elementList(_ value: CFTypeRef?) -> [AXUIElement] {
   guard let value, CFGetTypeID(value) == CFArrayGetTypeID() else { return [] }
   return (value as! [AnyObject]).compactMap { CFGetTypeID($0) == AXUIElementGetTypeID() ? ($0 as! AXUIElement) : nil }
 }

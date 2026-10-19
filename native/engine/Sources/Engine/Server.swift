@@ -4,7 +4,9 @@ import Foundation
 // The socket server (the spec's Design, "Socket and peer check" and "Process model"): `engine.sock` beside the bundle
 // (from Bundle.main.bundlePath) or at CUA_ENGINE_SOCKET for a direct run, in a 0700 directory; `flock` on `engine.lock`
 // beside it before the socket is unlinked or bound, the loser exiting at once; every connection from another uid closed
-// on accept (getpeereid). One thread per connection, which reads its next request only after answering the last.
+// on accept (getpeereid). One thread per connection, which reads its next request only after answering the last. An
+// engine that finds another one already serving at the socket (connect succeeds) exits rather than replacing it.
+// Every exit is logged with its reason (Lifecycle.swift).
 
 struct ServerPaths {
   let socket: String
@@ -12,7 +14,7 @@ struct ServerPaths {
   let lock: String
   let usage: String
 
-  /// Exit status when no socket can be chosen (EX_USAGE) or the lock is held by another engine (EX_TEMPFAIL).
+  /// Exit status when no socket can be chosen (EX_USAGE), or the lock or a live socket shows another engine (EX_TEMPFAIL).
   static let usageExit: Int32 = 64
   static let lockHeldExit: Int32 = 75
 
@@ -33,7 +35,7 @@ struct ServerPaths {
 
 func fail(_ status: Int32, _ message: String) -> Never {
   FileHandle.standardError.write(Data("cua-engine: \(message)\n".utf8))
-  exit(status)
+  Lifecycle.exit(message, status: status)
 }
 
 final class Server: @unchecked Sendable {
@@ -44,6 +46,8 @@ final class Server: @unchecked Sendable {
   private let lock = NSLock()
   private var open: [Int: ConnectionState] = [:]
   private var nextConnection = 1
+  /// Set, with the listener closed, under `lock` once a shutdown is accepted: nothing is accepted after it.
+  private var shuttingDown = false
 
   init(paths: ServerPaths) {
     self.paths = paths
@@ -57,6 +61,7 @@ final class Server: @unchecked Sendable {
     takeLock()
     bindSocket()
     engine.server = self
+    Lifecycle.started(socket: paths.socket)
     let thread = Thread { [self] in acceptLoop() }
     thread.name = "cua-engine accept"
     thread.start()
@@ -69,7 +74,7 @@ final class Server: @unchecked Sendable {
     if mkdir(dir, 0o700) != 0 && errno != EEXIST { fail(1, "cannot create \(dir): \(String(cString: strerror(errno)))") }
     var info = stat()
     guard lstat(dir, &info) == 0, (info.st_mode & S_IFMT) == S_IFDIR else { fail(1, "\(dir) is not a directory") }
-    guard info.st_uid == getuid() else { fail(1, "\(dir) belongs to another user") }
+    guard info.st_uid == getuid() else { fail(1, "uid refusal: \(dir) belongs to another user") }
     if info.st_mode & 0o777 != 0o700 && chmod(dir, 0o700) != 0 { fail(1, "cannot make \(dir) private: \(String(cString: strerror(errno)))") }
   }
 
@@ -77,7 +82,7 @@ final class Server: @unchecked Sendable {
     lockFD = Darwin.open(paths.lock, O_RDWR | O_CREAT | O_CLOEXEC, 0o600)
     if lockFD < 0 { fail(1, "cannot open \(paths.lock): \(String(cString: strerror(errno)))") }
     if flock(lockFD, LOCK_EX | LOCK_NB) != 0 {
-      if errno == EWOULDBLOCK { fail(ServerPaths.lockHeldExit, "another engine holds \(paths.lock); exiting") }
+      if errno == EWOULDBLOCK { fail(ServerPaths.lockHeldExit, "lock loser: another engine holds \(paths.lock); exiting") }
       fail(1, "cannot lock \(paths.lock): \(String(cString: strerror(errno)))")
     }
   }
@@ -93,10 +98,12 @@ final class Server: @unchecked Sendable {
       raw[pathBytes.count] = 0
     }
     address.sun_len = UInt8(MemoryLayout<sockaddr_un>.size)
-    // Only a stale socket is replaced: anything else at the path is someone's file.
+    // Only a stale socket is replaced: anything else at the path is someone's file, and a socket that still accepts a
+    // connection is another engine's (one that predates the lock, or holds another lock file).
     var existing = stat()
     if lstat(paths.socket, &existing) == 0 {
       guard (existing.st_mode & S_IFMT) == S_IFSOCK else { fail(1, "\(paths.socket) exists and is not a socket") }
+      if isLive(&address) { fail(ServerPaths.lockHeldExit, "live socket found: another engine answers at \(paths.socket); exiting") }
       unlink(paths.socket)
     }
     listener = socket(AF_UNIX, SOCK_STREAM, 0)
@@ -108,6 +115,16 @@ final class Server: @unchecked Sendable {
     if bound != 0 { fail(1, "cannot bind \(paths.socket): \(String(cString: strerror(errno)))") }
     chmod(paths.socket, 0o600)
     if listen(listener, 16) != 0 { fail(1, "listen: \(String(cString: strerror(errno)))") }
+  }
+
+  private func isLive(_ address: inout sockaddr_un) -> Bool {
+    let probe = socket(AF_UNIX, SOCK_STREAM, 0)
+    guard probe >= 0 else { return false }
+    defer { close(probe) }
+    let connected = withUnsafePointer(to: &address) {
+      $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(probe, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
+    }
+    return connected == 0
   }
 
   private func acceptLoop() {
@@ -123,10 +140,11 @@ final class Server: @unchecked Sendable {
       var uid: uid_t = 0
       var gid: gid_t = 0
       guard getpeereid(fd, &uid, &gid) == 0, uid == getuid() else {
+        Lifecycle.refused("uid refusal: a connection from uid \(uid) closed")
         close(fd)
         continue
       }
-      let connection = register(fd)
+      guard let connection = register(fd) else { continue }
       let thread = Thread { [self] in serve(connection) }
       thread.name = "cua-engine connection \(connection.id)"
       thread.stackSize = 4 << 20
@@ -134,9 +152,14 @@ final class Server: @unchecked Sendable {
     }
   }
 
-  private func register(_ fd: Int32) -> ConnectionState {
+  /// Registers an accepted connection; nil (the connection closed) once a shutdown was accepted.
+  private func register(_ fd: Int32) -> ConnectionState? {
     lock.lock()
     defer { lock.unlock() }
+    if shuttingDown {
+      close(fd)
+      return nil
+    }
     let connection = ConnectionState(id: nextConnection, fd: fd)
     nextConnection += 1
     open[connection.id] = connection
@@ -148,6 +171,18 @@ final class Server: @unchecked Sendable {
     open[connection.id] = nil
     lock.unlock()
     close(connection.fd)
+  }
+
+  /// Accepts a shutdown atomically with accept: with no connection open but `connection`, closes the listener under the
+  /// lock, so no connection can arrive between the count and the exit, and answers 0; else the busy count.
+  func beginShutdown(_ connection: ConnectionState) -> Int {
+    lock.lock()
+    defer { lock.unlock() }
+    let others = open.keys.filter { $0 != connection.id }.count
+    guard others == 0 else { return others }
+    shuttingDown = true
+    close(listener)
+    return 0
   }
 
   /// Open connections other than `connection`: `status.connections` and shutdown's busy count.
@@ -174,18 +209,19 @@ final class Server: @unchecked Sendable {
           writeFrame(connection.fd, responseBody(id: failure.id, outcome: .failure(failure.error)))
         case .success(let request):
           let outcome = engine.handle(request, on: connection, receivedAt: receivedAt)
-          guard writeFrame(connection.fd, responseBody(id: request.id, outcome: outcome.result)) else { return }
+          let written = writeFrame(connection.fd, responseBody(id: request.id, outcome: outcome.result))
+          // An accepted shutdown has closed the listener: the engine exits whether or not the answer reached the client.
           if outcome.exitAfter { stopAndExit() }
+          guard written else { return }
         }
       }
     }
   }
 
-  /// After a successful shutdown: no further accepts, the socket removed, then exit (which releases the lock).
+  /// After an accepted shutdown (the listener already closed): the socket removed, then exit, which releases the lock.
   func stopAndExit() -> Never {
-    close(listener)
     unlink(paths.socket)
-    exit(0)
+    Lifecycle.exit("shutdown requested", status: 0)
   }
 }
 

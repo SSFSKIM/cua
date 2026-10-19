@@ -41,7 +41,7 @@ final class Engine: @unchecked Sendable {
       case "status": return Outcome(result: .success(status(connection)))
       case "approve": return Outcome(result: .success(approve()))
       case "shutdown":
-        let others = server?.others(than: connection) ?? 0
+        let others = server?.beginShutdown(connection) ?? 0
         if others > 0 { throw EngineError(name: "busy", "busy", extra: ["connections": others]) }
         return Outcome(result: .success([String: Any]()), exitAfter: true)
       case "execute": return Outcome(result: .success(try execute(request.params, connection, receivedAt)))

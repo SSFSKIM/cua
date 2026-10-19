@@ -5,6 +5,7 @@ import Foundation
 let arguments = Array(CommandLine.arguments.dropFirst())
 if arguments.first == "--probe" { exit(Probe.run(Array(arguments.dropFirst()))) }
 
+Lifecycle.install()
 let server = Server(paths: ServerPaths.resolve())
 server.start()
 let application = NSApplication.shared
@@ -12,3 +13,4 @@ let application = NSApplication.shared
 // kept from ever becoming a UI app.
 if !isBundled { application.setActivationPolicy(.prohibited) }
 application.run()
+Lifecycle.exit("the run loop ended", status: 0)

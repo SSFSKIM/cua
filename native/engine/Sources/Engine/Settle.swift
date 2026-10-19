@@ -72,6 +72,7 @@ struct Settled {
   var report: SettleReport
   var source: ElementSource?
   var window: AXUIElement?
+  var loadedWebArea = false
 }
 
 extension Engine {
@@ -81,7 +82,7 @@ extension Engine {
     let observer = NotificationObserver(pid: pid, names: settleNotifications, keep: true)
     defer { observer?.invalidate() }
     var titles: [ElementKey: String] = [:]
-    var last: (source: ElementSource, window: AXUIElement)?
+    var last: (source: ElementSource, window: AXUIElement, loadedWebArea: Bool)?
     let deadline = monotonicMilliseconds() + settleCapMs
     var report = runSettle(
       sampleMs: webShaped ? settleWebSampleMs : settleSampleMs,
@@ -103,36 +104,61 @@ extension Engine {
         guard let window = primaryWindow(of: application) else { return nil }
         // Each busy walk reads afresh; the last one's reads are what the observation reuses.
         let source = makeSource(route)
-        let busy = costs.time("settleBusyWalk") { isBusy(window, source: source, visibleFrame: frame(of: window), deadline: deadline) }
+        let reading = costs.time("settleBusyWalk") { busyWalk(window, source: source, visibleFrame: frame(of: window), deadline: deadline) }
         costs.merge(source.costs)
         source.costs.reset()
-        last = (source, window)
-        return !busy
+        last = (source, window, reading.loadedWebArea)
+        // A walk the deadline cut has no verdict: waiting on reaches the cap, which is reported.
+        return reading.busy.map { !$0 }
       })
     report.observed = observer != nil
     guard !report.capped, let last else { return Settled(report: report) }
-    return Settled(report: report, source: last.source, window: last.window)
+    return Settled(report: report, source: last.source, window: last.window, loadedWebArea: last.loadedWebArea)
   }
+}
+
+/// One busy walk's reading: `busy` true at the first sign, false when the window is quiet, nil when the walk was cut by
+/// the settle's deadline (no verdict: the settle waits on and reports "capped"); and whether it passed a loaded
+/// AXWebArea, after which the observation's web-area wait finds one at its first check and changes nothing.
+struct BusyReading {
+  var busy: Bool?
+  var loadedWebArea = false
 }
 
 /// The busy walk (F §8.4) through the observation's fetch route: an `AXBusyIndicator`, an `AXWebArea` whose `AXLoaded`
 /// is false, `AXElementBusy` true, or the DOM class `macos-mac-parity-spinner` anywhere under the window (a progress
 /// indicator is not a sign). It walks what the observation would (the width rule, the depth and node caps), stopping at
 /// the first sign or at `deadline`.
-func isBusy(_ window: AXUIElement, source: ElementSource, visibleFrame: CGRect?, deadline: Double) -> Bool {
+func busyWalk(_ window: AXUIElement, source: ElementSource, visibleFrame: CGRect?, deadline: Double) -> BusyReading {
+  var reading = BusyReading()
   var stack: [(AXUIElement, Int)] = [(prepare(window), 0)]
   var seen = Set<ElementKey>()
-  while let (element, depth) = stack.popLast(), seen.count < maxObservedNodes, monotonicMilliseconds() < deadline {
+  while let (element, depth) = stack.popLast(), seen.count < maxObservedNodes {
+    guard monotonicMilliseconds() < deadline else { return reading }
     guard seen.insert(ElementKey(element: element)).inserted, let data = source.data(element) else { continue }
-    if data.role == "AXBusyIndicator" { return true }
-    if data.role == "AXWebArea", data.loaded == false { return true }
-    if data.elementBusy == true { return true }
-    if data.domClassList?.contains(busyMarkerClass) == true { return true }
+    if data.role == "AXBusyIndicator" || data.elementBusy == true || data.domClassList?.contains(busyMarkerClass) == true {
+      reading.busy = true
+      return reading
+    }
+    if data.role == "AXWebArea" {
+      if data.loaded == false {
+        reading.busy = true
+        return reading
+      }
+      reading.loadedWebArea = true
+    }
     if depth < maxDepth {
       for child in chooseChildren(of: element, data: data, source: source, visibleFrame: visibleFrame).children.reversed() {
         stack.append((prepare(child), depth + 1))
       }
     }
   }
-  return false
+  reading.busy = false
+  return reading
+}
+
+/// Whether the observation reads the tree the settle's last busy walk fetched (F §8.5): only for the same window, with
+/// no enablement since, and no web-area wait unless that walk already passed a loaded web area.
+func adoptsSettledTree(sameWindow: Bool, enabledNow: Bool, waited: Bool, loadedWebArea: Bool) -> Bool {
+  sameWindow && !enabledNow && (!waited || loadedWebArea)
 }

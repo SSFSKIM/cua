@@ -118,14 +118,16 @@ extension Engine {
     guard let window = try timings.time("window", { try awaitPrimaryWindow(of: application, until: windowDeadline, launched: launched) }) else {
       throw EngineError(name: "noWindowsAvailable", "noWindowsAvailable")
     }
+    // The wait follows any enabling (the named bundles' too) and every Chromium window.
     var waited = false
+    var chromium = false
     if webShaped {
-      let chromium = timings.time("chromiumCheck") { isChromiumWindow(window) }
+      chromium = timings.time("chromiumCheck") { isChromiumWindow(window) }
       timings.set("chromium", chromium)
-      if webAreaWaitEnabled && (enabledNow || chromium) {
-        timings.set("webAreaFound", timings.time("webAreaWait") { waitForWebArea(under: window) })
-        waited = true
-      }
+    }
+    if webAreaWaitEnabled && (enabledNow || chromium) {
+      timings.set("webAreaFound", timings.time("webAreaWait") { waitForWebArea(under: window) })
+      waited = true
     }
 
     if args["disableDiff"] as? Bool == true { connection.lineages[app.key] = nil }
@@ -140,9 +142,10 @@ extension Engine {
 
     let menuItems = timings.time("menuBar") { elementAttribute(application, kAXMenuBarAttribute).map { elementList(attribute($0, kAXChildrenAttribute)) } ?? [] }
     let windowFrame = frame(of: window)
-    // The settle's reads stand for the tree only when nothing changed it since: same window, no enablement, no wait.
+    // The settle's reads stand for the tree only when nothing changed it since (adoptsSettledTree).
     let source: ElementSource
-    if let settled, let reused = settled.source, let busyWindow = settled.window, CFEqual(busyWindow, window), !enabledNow, !waited {
+    if let settled, let reused = settled.source, let busyWindow = settled.window,
+       adoptsSettledTree(sameWindow: CFEqual(busyWindow, window), enabledNow: enabledNow, waited: waited, loadedWebArea: settled.loadedWebArea) {
       source = reused
       timings.set("settleTreeReused", true)
     } else {

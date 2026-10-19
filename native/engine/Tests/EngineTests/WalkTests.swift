@@ -55,7 +55,11 @@ final class FakeSource: ElementSource, @unchecked Sendable {
     settableCalls[attribute, default: 0] += 1
     return false
   }
-  override func readAllChildren(_ element: AXUIElement) -> [AXUIElement] { (tree.children[tree.id(element)] ?? []).map(Engine.element) }
+  var allChildrenReads = 0
+  override func readAllChildren(_ element: AXUIElement) -> [AXUIElement] {
+    allChildrenReads += 1
+    return (tree.children[tree.id(element)] ?? []).map(Engine.element)
+  }
   override func readVisibleChildren(_ element: AXUIElement) -> [AXUIElement]? { tree.visible[tree.id(element)].map { $0.map(Engine.element) } }
   override func readFrame(_ element: AXUIElement) -> CGRect? { tree.frames[tree.id(element)] }
 }
@@ -289,7 +293,7 @@ final class WalkTests: XCTestCase {
     let tree = FakeTree()
     tree.children = [0: [1, 2], 2: [3]]
     let source = FakeSource(tree)
-    XCTAssertFalse(isBusy(element(0), source: source, visibleFrame: nil, deadline: .infinity))
+    XCTAssertEqual(busyWalk(element(0), source: source, visibleFrame: nil, deadline: .infinity).busy, false)
     let walked = walk(tree, Lineage(), source: source)
     XCTAssertEqual(walked.nodes.count, 4)
     XCTAssertEqual(source.reads, [0: 1, 1: 1, 2: 1, 3: 1], "each element read once across the busy walk and the observation")
@@ -299,10 +303,43 @@ final class WalkTests: XCTestCase {
                            (["AXRole": "AXBusyIndicator" as CFString], "busy indicator"),
                            (["AXDOMClassList": ["x", busyMarkerClass] as CFArray], "spinner class")] {
       tree.extra = [3: signs]
-      XCTAssertTrue(isBusy(element(0), source: FakeSource(tree), visibleFrame: nil, deadline: .infinity), label)
+      XCTAssertEqual(busyWalk(element(0), source: FakeSource(tree), visibleFrame: nil, deadline: .infinity).busy, true, label)
     }
     tree.extra = [3: ["AXRole": "AXProgressIndicator" as CFString]]
-    XCTAssertFalse(isBusy(element(0), source: FakeSource(tree), visibleFrame: nil, deadline: .infinity), "a progress indicator is not a sign")
+    XCTAssertEqual(busyWalk(element(0), source: FakeSource(tree), visibleFrame: nil, deadline: .infinity).busy, false, "a progress indicator is not a sign")
+  }
+
+  func testTheBusyWalkReportsALoadedWebAreaAndADeadlineCutIsNoVerdict() {
+    let tree = FakeTree()
+    tree.children = [0: [1, 2]]
+    tree.extra = [2: ["AXRole": "AXWebArea" as CFString, "AXLoaded": kCFBooleanTrue]]
+    let loaded = busyWalk(element(0), source: FakeSource(tree), visibleFrame: nil, deadline: .infinity)
+    XCTAssertEqual(loaded.busy, false)
+    XCTAssertTrue(loaded.loadedWebArea)
+    tree.extra = [:]
+    XCTAssertFalse(busyWalk(element(0), source: FakeSource(tree), visibleFrame: nil, deadline: .infinity).loadedWebArea)
+    XCTAssertNil(busyWalk(element(0), source: FakeSource(tree), visibleFrame: nil, deadline: 0).busy, "cut by the deadline: no verdict")
+  }
+
+  func testTheObservationAdoptsTheSettlesTreeOnlyWhenNothingChangedIt() {
+    XCTAssertTrue(adoptsSettledTree(sameWindow: true, enabledNow: false, waited: false, loadedWebArea: false))
+    XCTAssertTrue(adoptsSettledTree(sameWindow: true, enabledNow: false, waited: true, loadedWebArea: true), "the wait found the web area at once")
+    XCTAssertFalse(adoptsSettledTree(sameWindow: true, enabledNow: false, waited: true, loadedWebArea: false))
+    XCTAssertFalse(adoptsSettledTree(sameWindow: true, enabledNow: true, waited: false, loadedWebArea: true))
+    XCTAssertFalse(adoptsSettledTree(sameWindow: false, enabledNow: false, waited: false, loadedWebArea: false))
+  }
+
+  func testShownRangesComeFromTheFetchedChildrenWhenTheyAreComplete() {
+    let tree = FakeTree()
+    tree.children = [0: Array(1...150)]
+    tree.visible = [0: [3, 4]]
+    let source = FakeSource(tree)
+    _ = walk(tree, Lineage(), source: source)
+    XCTAssertEqual(source.allChildrenReads, 0, "the attribute read already holds all 150")
+    let capped = FakeSource(tree, cap: widthThreshold)
+    let walked = walk(tree, Lineage(), source: capped)
+    XCTAssertEqual(capped.allChildrenReads, 1, "a capped read needs the full list for positions")
+    XCTAssertEqual((walked.nodes[0]["shown"] as? [String: Any])?["ranges"] as? [[Int]], [[2, 4]])
   }
 
   func testAnUnreadableElementIsSkippedAndCounted() {

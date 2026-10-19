@@ -59,8 +59,10 @@ func chooseChildren(of element: AXUIElement, data: ElementData, source: ElementS
   }
   if let visible = source.visibleChildren(element), !visible.isEmpty {
     guard visible.count < total else { return (visible, nil) }
+    // Positions among all the children: the fetched list when it is whole, else a full read (a capped route).
+    let all = data.children.count == total ? data.children : source.allChildren(element)
     var positions: [ElementKey: Int] = [:]
-    for (position, child) in source.allChildren(element).enumerated() where positions[ElementKey(element: child)] == nil {
+    for (position, child) in all.enumerated() where positions[ElementKey(element: child)] == nil {
       positions[ElementKey(element: child)] = position
     }
     let kept = visible.compactMap { positions[ElementKey(element: $0)] }

@@ -67,7 +67,15 @@ export const textEditDocument = () => ({name: TEXTEDIT_DOCUMENT, lines: [...TEXT
 // Finder's run-owned folder: 200 files named without an extension, so the owner's show-extensions setting cannot change
 // what a row is called.
 const FINDER_FOLDER = 'cua-scene-finder';
-export const finderFolderFiles = () => Array.from({length: 200}, (_, i) => `scene-file-${String(i + 1).padStart(3, '0')}`);
+// File 150 is the typing target and carries a long fixed name (240 ASCII characters, well inside APFS's 255-byte limit,
+// still sorting between 149 and 151), so typing it is a long action: concurrent use needs the probe's post to fall
+// inside the action's interval.
+export const FINDER_TYPING_NAME = (() => {
+  const head = 'scene-file-150-', filler = 'the-quick-brown-fox-jumps-over-the-lazy-dog-';
+  return (head + filler.repeat(6)).slice(0, 240).replace(/-$/, 'x');
+})();
+const finderName = n => (n === 150 ? FINDER_TYPING_NAME : `scene-file-${String(n).padStart(3, '0')}`);
+export const finderFolderFiles = () => Array.from({length: 200}, (_, i) => finderName(i + 1));
 
 // A target is found by its `name` or `value` (compared as `match` says: `exact`, or `prefix` where the run cannot fix the
 // whole text), or, unnamed, by its `subrole` or `orientation`.
@@ -108,9 +116,12 @@ export const SCENES = Object.freeze({
     start: 'open -g -a Finder <the run\'s folder>; the new window\'s number recorded', stop: 'never signalled; the driver closes the run\'s window through the engine (its close button), and down checks it is gone',
     // Type-select on the run's list, not the toolbar search field: a search would fill the run's window with the
     // owner's file names (a Spotlight query), and the field may be collapsed to a button. Typing a row's name selects it.
-    typing: {target: 'file150', mode: 'type-select', text: 'scene-file-150', readBack: 'the selected AXRow\'s name equals the text sent'},
+    // At the keyed route's ~1 ms per character the typed name spans about 240 ms: too short to aim a manual keystroke
+    // at, so T4 schedules the probe's post for Finder with `keystroke --at` inside the expected interval.
+    typing: {target: 'file150', mode: 'type-select', text: FINDER_TYPING_NAME, readBack: 'the selected AXRow\'s name equals the text sent',
+      expectedIntervalMs: FINDER_TYPING_NAME.length, keystroke: 'probe keystroke --at, scheduled inside the expected interval'},
     targets: [
-      ...['001', '002', '050', '100', '125', '150', '199', '200'].map(n => ({id: `file${n}`, role: 'AXRow', name: `scene-file-${n}`, match: 'exact', source: 'run'})),
+      ...[1, 2, 50, 100, 125, 150, 199, 200].map(n => ({id: `file${String(n).padStart(3, '0')}`, role: 'AXRow', name: finderName(n), match: 'exact', source: 'run'})),
       {id: 'window', role: 'AXWindow', name: FINDER_FOLDER, match: 'exact', source: 'run'},
       windowButtons[0],
     ],

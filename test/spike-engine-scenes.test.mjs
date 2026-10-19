@@ -8,7 +8,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {
   SCENE_IDS, SCENES, PAIRS, BACKGROUND_PAIRINGS, CONCURRENT_USE, CONCURRENT_USE_SHEET, userWindowFor, refusals,
-  ownedProcesses, documentWindows, finderFolderFiles, textEditDocument, describeScenes,
+  ownedProcesses, documentWindows, finderFolderFiles, textEditDocument, describeScenes, FINDER_TYPING_NAME,
   upScene, downScene, preflight, readState, chromeArgs, electronArgs, sceneCommand, exitCodeFor,
 } from '../scripts/spike/engine/scenes.mjs';
 import {parseAsns, parseAppInfo, stopRecorded} from '../scripts/spike/engine/scene-processes.mjs';
@@ -76,6 +76,17 @@ test('each scene\'s typing lands on one of its targets; Finder types into its li
   const finder = SCENES.finder.typing;
   assert.equal(finder.mode, 'type-select');
   assert.equal(finder.text, SCENES.finder.targets.find(t => t.id === finder.target).name);
+  // A long typed name (the concurrent-use cell needs a long action), a file the scene writes, matched exactly.
+  assert.equal(finder.text, FINDER_TYPING_NAME);
+  assert.equal(finder.text.length, 240);
+  assert.ok(Buffer.byteLength(finder.text) < 255 && /^[a-z0-9-]+$/.test(finder.text), 'ASCII, no extension, inside APFS\'s name limit');
+  assert.ok(finderFolderFiles().includes(finder.text));
+  assert.equal(SCENES.finder.targets.find(t => t.id === finder.target).match, 'exact');
+  assert.equal(finder.expectedIntervalMs, 240);
+  assert.match(finder.keystroke, /--at/);
+  const files = finderFolderFiles();
+  assert.deepEqual([...files].sort(), files, 'the long name still sorts in place, between 149 and 151');
+  assert.equal(files.indexOf(finder.text), 149);
   assert.ok(!SCENES.finder.targets.some(t => t.subrole === 'AXSearchField' || /search/i.test(t.id)), 'no search field target');
   assert.equal(SCENES.finder.targets.filter(t => t.role === 'AXRow').length, 8);
 });

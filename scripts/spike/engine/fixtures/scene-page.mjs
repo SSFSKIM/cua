@@ -3,7 +3,8 @@
 // and nothing from the network. Its content is fixed (no per-run marker), so the two engines' texts of the same state
 // can be compared in one sitting. The controls are the finding-elements targets of the scene (PAGE_CONTROLS) and the
 // textarea is where the Korean and Unicode matrix types. The page never turns accessibility on itself: the engine's
-// AXManualAccessibility is what the scene proves.
+// AXManualAccessibility is what the scene proves. It declares itself untranslatable (`translate="no"` and Google's
+// notranslate meta), so Chrome never offers to translate it on a Mac whose language is not English.
 import {createServer} from 'node:http';
 import {createHash} from 'node:crypto';
 
@@ -30,7 +31,7 @@ const SCRIPT_HASH = createHash('sha256').update(SCRIPT).digest('base64');
 export const CSP = `default-src 'none'; script-src 'sha256-${SCRIPT_HASH}'; style-src 'none'; img-src 'none'; connect-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'`;
 
 export const PAGE_HTML = `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>${PAGE_TITLE}</title></head>
+<html lang="en" translate="no"><head><meta charset="utf-8"><meta name="google" content="notranslate"><title>${PAGE_TITLE}</title></head>
 <body><main>
 <h1>${PAGE_TITLE}</h1>
 <p><textarea id="notes" aria-label="Scene notes" rows="8" cols="60" autofocus autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea></p>

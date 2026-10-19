@@ -11,7 +11,7 @@ Executed 2026-10-18/19 by the plan-executor for maws-3f: built on the MacBook, m
 - **Speed, TextEdit, like for like** (iteration 2, same-sitting triples, 90/90 samples per row, equal 1220 × 1720 images): `getAXState` 43.1 ms against the vendor's 50.7, `getScreenshot` 45.8 against 53.4, the three-cell task 2,755 against 4,028.
 - **Background input**: route 3 carried click and pressKey to TextEdit and Finder with the frontmost application and the top window unchanged and no activation seen.
 - **Chrome is recorded per family**: undiagnosed, so route 4 and the owner's call before M1a.
-- **Concerns**: Finder, Chrome and Electron were not re-measured after the two tuning iterations; probe (d)(i) did not run (no Input Monitoring grant); the paste route is not built, so `type_text` under the Korean source refuses; four residue items below.
+- **Concerns**: Finder, Chrome and Electron were not re-measured after the two tuning iterations; probe (d)(i)'s tap could not be created even with Input Monitoring granted; the paste route is not built, so `type_text` under the Korean source refuses; four residue items below.
 ## What was built
 
 | Part | Paths | Commits | Review |
@@ -115,18 +115,27 @@ All outputs are under `docs/doperpowers/research/2026-10-18-own-native-engine/sp
 - **The breakdown** on TextEdit: walk 55.9 ms, then the capture 49.7, in sequence; 7 ms above the engine.
 - **Input crashed the engine.** 27 crash reports, all SIGSEGV in `SLPSGetKeyFocusProcess` from `appBelievesItHasFocus`. The dispatching session found the cause, a one-argument declaration of a two-argument function, and fixed it (f62f3cc7, cherry-picked). Input that did not reach the check ran: TextEdit task cells 30/30, the action goldens on TextEdit and Electron, probes (a) and (b) on Electron, probe (d)'s no-fire case, Latin typing.
 - **Probe (c)**: a plain `open -a` did not activate the engine; two copies at two paths each bound their own socket.
-- **Probe (f)**: f1, the running engine reads both its grants; f2, skipped in the series and answered later by the two staged rebuilds below; f3, a copy at a new path came up with both grants and captured with no confirmation.
+- **Probe (f)**: f1, the running engine reads both its grants; f2, skipped in the series and answered by the two staged rebuilds below (each raised the capture confirmation); f3, a copy at a new path came up with both grants and captured with no confirmation (the owner's report).
 
 **Tuning iteration 1** (2f1bf2cf with the fix, build 503399e2; `iter1`, `iter1-input`, `iter1-chrome`):
 - The capture runs on its own thread beside the walk and is joined after it. Engine total 113.3 → 48.7 ms (walk 43.0, capture 41.0, join 2.6).
 - TextEdit in-cell, vendor against cua: `getAXState` 51.3 / 42.2, `getScreenshot` 49.3 / 40.6. The render was unchanged; three captures viewed by hand were real, fresh images.
-- **Input, TextEdit and Finder:** probe (a) click and key with the frontmost application and the top window unchanged on both; probe (b) route 3 for both actions (38–52 ms activation guard), no activation seen; forced key routes 2 and 3 ok; forced click routes 1–3 an error result on both apps (a syntax error in the harness's cell, fixed after the sitting in 7e3e2a1e); task cells 10/10; the action goldens; no crash.
+- **Input, TextEdit and Finder:** probe (a) click and key with the frontmost application and the top window unchanged on both; probe (b) route 3 for both actions (38–52 ms activation guard), no activation seen; forced key routes 2 and 3 ok; forced click routes 1–3 an error result on both apps (a syntax error in the harness's cell, fixed later in the hold in 7e3e2a1e; see iteration 2); task cells 10/10; the action goldens; no crash.
 - **Chrome:** every guarded cell refused ("the scene window was not the app's front window"); a background Latin `type_text` by route 3 landed 0 of 8. Undiagnosed.
 - **Found:** the vendor's images are at pixel size (1220 × 1720) and cua's were at points (610 × 860). Ruled: match the vendor.
 
 **Tuning iteration 2** (b1039a31, build e3547c25; `iter2`):
 - The capture at the display's pixel size, and a coordinate click divided by the same scale. TextEdit in-cell, vendor against cua: `getAXState` 50.7 / 43.1, `getScreenshot` 53.4 / 45.8, task 4,028 / 2,755; images equal in size and within 0.2% in bytes.
-- Approve for both rebuilds raised nothing and captured on first launch (whether the console showed a confirmation is the owner's to say).
+- **Probe (f), f2:** each staged rebuild at the approved path (503399e2, then e3547c25, same identity) raised the capture confirmation at the console once, and the owner allowed both; `approve` read `captured: true` because the answer came in time. On the MacBook staged rebuilds raised nothing, and on the mini a copy at a new path (f3) raised nothing; that asymmetry is unexplained. Consequence: every engine update on a Mac needs the owner present for the confirmation, as the approve step assumes.
+- **Forced routes, live** (`iter2-input`, the harness cell fixed in 7e3e2a1e), background click and key with the other app's window in front:
+
+  | app | click by route 1 | click by route 2 | click by route 3 | key by route 2 | key by route 3 | natural route |
+  |---|---|---|---|---|---|---|
+  | TextEdit | refused: no AXPick or AXPress on the target | ok | ok | ok | ok | 3 |
+  | Finder | refused: no AXPick or AXPress on the target | ok | ok | ok | ok | 3 |
+
+  Every delivered action left the frontmost application and the top window unchanged, and the watcher saw no activation.
+- **Probe (d)(i)** (`iter2-d1`): with Input Monitoring granted by the owner and the engine launched fresh, the listen-only tap still could not be created; `probe.d.tap` and `probe.d.hidReset` both failed. Not troubleshot in the hold. probe (d)'s no-fire case passed again.
 
 **Engine exits** (the mini's unified log, `subsystem == "io.github.ssfskim.cua.engine"`, readable unprivileged): 85 starts; 28 logged exits (27 shutdown requests, one quit request at approve's relaunch); 56 unlogged starts, all inside the two input crash windows (27 crash reports, the rest consistent with ReportCrash's throttling); one start (pid 45110, 14:49:47Z) with neither.
 
@@ -223,10 +232,10 @@ Expected length: about 3 hours of lane time, plus the owner's prompts. Run a sin
 
 - **The design revision the promote rule requires.** The design sections on input, settle, intervention and install are revised from the sitting's measurements with a dated Decision Log entry, then the critique debate of entry 1 runs. This gates M1a.
 - **Chrome's background input.** Every guarded cell refused because the scene window was not Chrome's front window, and a route-3 `type_text` landed 0 of 8. The refusals may be the harness's (a second Chrome window or a bubble taking the front). Diagnose before the owner's route-4 call for Chrome.
-- **Forced click routes 1–3** returned an error result on TextEdit and Finder in the sitting. The cause was the harness: the forced-click cell never closed its argument object, a syntax error (fixed in 7e3e2a1e, now covered by the compile test). The forced-route rows still need a live run.
 - **The x/y click path** (screenshot pixels divided by the display scale) is unit-tested only; no live cell clicks by coordinates. One cell on a 2× display before M1a relies on it.
 - **pid 45110**, an engine start at 14:49:47Z with no exit line and no crash report: the one unexplained exit of the sitting.
-- **Probe (d)(i)** (the listen-only tap, the HID-idle reset) needs the engine granted Input Monitoring; the engine raised no prompt for it. Next input sitting.
+- **Probe (d)(i)**: the listen-only tap could not be created even with Input Monitoring granted and a fresh launch; the row's `listenAccess` came back null, so the harness should carry the engine's preflight answer. Diagnose before the next input sitting; it decides between the tap and the HID-idle fallback.
+- **The capture confirmation on staged rebuilds**: the mini re-raised it for a same-path rebuild and not for a new-path copy (f3), the reverse of what one would expect; one controlled re-check in a later sitting. Install and `buildEngine` plan for the owner answering it on every update.
 - **The paste route** for `type_text` under a non-Latin source, not built in the spike.
 - **Finder, Chrome and Electron speed after the iterations** were not re-measured; the first series had Finder faster and Electron slower than the vendor.
 - **The vendor's exact screenshot sizing rule** (pixel size on the mini against the MacBook baseline's 1172 × 976), to read from its capture path (`WindowServerSPI.captureWindowImagesInRect`), also a possible speed lever.

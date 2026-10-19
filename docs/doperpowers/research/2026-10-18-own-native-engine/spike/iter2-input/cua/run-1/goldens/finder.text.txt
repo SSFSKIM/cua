@@ -1,0 +1,312 @@
+Window: "cua-scene-finder", App: ⟨6⟩.
+0 ⟨23⟩, ID: ⟨12⟩, Secondary Actions: ⟨5⟩
+	1 ⟨6⟩
+		2 ⟨107⟩
+			3 ⟨8⟩
+				4 row (selectable, collapsed) Secondary Actions: ⟨34⟩
+					5 ⟨11⟩, Secondary Actions: ⟨4⟩
+						6 ⟨9⟩
+				7 row (selectable, collapsed) Secondary Actions: ⟨34⟩
+					8 ⟨11⟩, Columns: ⟨3⟩, Secondary Actions: ⟨4⟩
+						9 ⟨6⟩
+				10 row (selectable, expanded) Secondary Actions: ⟨34⟩
+					11 ⟨11⟩, Columns: ⟨3⟩
+						12 ⟨13⟩, ID: ⟨14⟩
+				13 row (selectable, collapsed) Secondary Actions: ⟨34⟩
+					14 ⟨11⟩, Columns: ⟨3⟩, Secondary Actions: ⟨4⟩
+						15 ⟨16⟩
+				16 row (selectable, collapsed) Secondary Actions: ⟨34⟩
+					17 ⟨11⟩, Columns: ⟨3⟩, Secondary Actions: ⟨4⟩
+						18 ⟨16⟩
+				19 row (selectable, collapsed) Secondary Actions: ⟨34⟩
+					20 ⟨11⟩, Columns: ⟨3⟩, Secondary Actions: ⟨4⟩
+						21 ⟨7⟩
+				22 row (selectable, collapsed) Secondary Actions: ⟨34⟩
+					23 ⟨11⟩, Columns: ⟨3⟩, Secondary Actions: ⟨4⟩
+						24 ⟨16⟩
+				25 row (selectable, collapsed) Secondary Actions: ⟨34⟩
+					26 ⟨11⟩, Columns: ⟨3⟩, Secondary Actions: ⟨4⟩
+						27 ⟨11⟩
+				28 row (selectable, collapsed) Secondary Actions: ⟨34⟩
+					29 ⟨11⟩, Columns: ⟨3⟩, Secondary Actions: ⟨4⟩
+						30 ⟨8⟩
+				31 row (selectable, collapsed) Secondary Actions: ⟨34⟩
+					32 ⟨12⟩, Columns: ⟨3⟩, Secondary Actions: ⟨4⟩
+						33 ⟨7⟩
+				34 row (selectable, expanded) Secondary Actions: ⟨34⟩
+					35 ⟨13⟩, Columns: ⟨3⟩
+						36 ⟨15⟩, ID: ⟨14⟩
+				37 row (selectable, collapsed) Secondary Actions: ⟨34⟩
+					38 ⟨13⟩, Columns: ⟨3⟩, Secondary Actions: ⟨4⟩
+						39 ⟨11⟩
+				40 row (selectable, collapsed) Secondary Actions: ⟨34⟩
+					41 ⟨13⟩, Columns: ⟨3⟩, Secondary Actions: ⟨4⟩
+						42 ⟨8⟩
+				43 row (selectable, collapsed) Secondary Actions: ⟨34⟩
+					44 ⟨13⟩, Columns: ⟨3⟩, Secondary Actions: ⟨4⟩
+						45 ⟨6⟩
+				46 row (selectable, collapsed) Secondary Actions: ⟨34⟩
+					47 ⟨13⟩, Columns: ⟨3⟩, Secondary Actions: ⟨4⟩
+						48 ⟨13⟩
+				49 row (selectable, collapsed) Secondary Actions: ⟨34⟩
+					50 ⟨13⟩, Columns: ⟨3⟩, Secondary Actions: ⟨4⟩
+						51 ⟨8⟩
+				52 row (selectable, expanded) Secondary Actions: ⟨34⟩
+					53 ⟨13⟩, Columns: ⟨3⟩
+						54 ⟨13⟩, ID: ⟨14⟩
+				55 row (selectable, collapsed) Secondary Actions: ⟨34⟩
+					56 ⟨13⟩, Columns: ⟨3⟩, Secondary Actions: ⟨4⟩
+						57 ⟨7⟩
+				58 row (selectable, collapsed) Secondary Actions: ⟨34⟩
+					59 ⟨13⟩, Columns: ⟨3⟩, Secondary Actions: ⟨4⟩
+						60 ⟨7⟩
+				61 row (selectable, collapsed) Secondary Actions: ⟨34⟩
+					62 ⟨13⟩, Columns: ⟨3⟩, Secondary Actions: ⟨4⟩
+						63 ⟨7⟩
+				64 row (selectable, collapsed) Secondary Actions: ⟨34⟩
+					65 ⟨13⟩, Columns: ⟨3⟩, Secondary Actions: ⟨4⟩
+						66 ⟨7⟩
+				67 row (selectable, collapsed) Secondary Actions: ⟨34⟩
+					68 ⟨13⟩, Columns: ⟨3⟩, Secondary Actions: ⟨4⟩
+						69 ⟨7⟩
+				70 row (selectable, collapsed) Secondary Actions: ⟨34⟩
+					71 ⟨13⟩, Columns: ⟨3⟩, Secondary Actions: ⟨4⟩
+						72 ⟨7⟩
+				73 row (selectable, collapsed) Secondary Actions: ⟨34⟩
+					74 ⟨13⟩, Columns: ⟨3⟩, Secondary Actions: ⟨4⟩
+						75 ⟨6⟩
+				76 row (selectable, collapsed) Secondary Actions: ⟨34⟩
+					77 ⟨13⟩, Columns: ⟨3⟩, Secondary Actions: ⟨4⟩
+						78 ⟨10⟩
+				79 ⟨34⟩
+			80 ⟨28⟩
+				81 ⟨27⟩
+				82 ⟨9⟩
+				83 ⟨9⟩
+				84 ⟨9⟩
+				85 ⟨9⟩
+		86 ⟨51⟩
+		87 ⟨6⟩
+			88 ⟨107⟩
+				89 ⟨22⟩, ID: ⟨8⟩ (showing 18 of 205 items)
+					90 row (selectable, collapsed) Secondary Actions: ⟨34⟩
+						91 ⟨11⟩, Secondary Actions: ⟨4⟩
+							92 ⟨3⟩
+							93 ⟨119⟩, Value: scene-file-001, Secondary Actions: ⟨13⟩
+						94 ⟨11⟩, Columns: ⟨3⟩
+							95 ⟨14⟩
+						96 ⟨11⟩, Columns: ⟨3⟩
+							97 ⟨9⟩
+						98 ⟨11⟩, Columns: ⟨3⟩
+							99 ⟨6⟩
+					100 row (selectable, collapsed) Secondary Actions: ⟨34⟩
+						101 ⟨11⟩, Columns: ⟨3⟩, Secondary Actions: ⟨4⟩
+							102 ⟨3⟩
+							103 ⟨119⟩, Value: scene-file-002, Secondary Actions: ⟨13⟩
+						104 ⟨5⟩
+							105 ⟨14⟩
+						106 ⟨11⟩, Columns: ⟨3⟩
+							107 ⟨9⟩
+						108 ⟨11⟩, Columns: ⟨3⟩
+							109 ⟨6⟩
+					110 row (selectable, collapsed) Secondary Actions: ⟨34⟩
+						111 ⟨11⟩, Columns: ⟨3⟩, Secondary Actions: ⟨4⟩
+							112 ⟨3⟩
+							113 ⟨119⟩, Value: scene-file-003, Secondary Actions: ⟨13⟩
+						114 ⟨11⟩, Columns: ⟨3⟩
+							115 ⟨14⟩
+						116 ⟨5⟩
+							117 ⟨9⟩
+						118 ⟨11⟩, Columns: ⟨3⟩
+							119 ⟨6⟩
+					120 row (selectable, collapsed) Secondary Actions: ⟨34⟩
+						121 ⟨11⟩, Columns: ⟨3⟩, Secondary Actions: ⟨4⟩
+							122 ⟨3⟩
+							123 ⟨119⟩, Value: scene-file-004, Secondary Actions: ⟨13⟩
+						124 ⟨11⟩, Columns: ⟨3⟩
+							125 ⟨14⟩
+						126 ⟨11⟩, Columns: ⟨3⟩
+							127 ⟨9⟩
+						128 ⟨5⟩
+							129 ⟨6⟩
+					130 row (selectable, collapsed) Secondary Actions: ⟨34⟩
+						131 ⟨11⟩, Columns: ⟨3⟩, Secondary Actions: ⟨4⟩
+							132 ⟨3⟩
+							133 ⟨119⟩, Value: scene-file-005, Secondary Actions: ⟨13⟩
+						134 ⟨11⟩, Columns: ⟨3⟩
+							135 ⟨14⟩
+						136 ⟨11⟩, Columns: ⟨3⟩
+							137 ⟨9⟩
+						138 ⟨11⟩, Columns: ⟨3⟩
+							139 ⟨6⟩
+					140 row (selectable, collapsed) Secondary Actions: ⟨34⟩
+						141 ⟨11⟩, Columns: ⟨3⟩, Secondary Actions: ⟨4⟩
+							142 ⟨3⟩
+							143 ⟨119⟩, Value: scene-file-006, Secondary Actions: ⟨13⟩
+						144 ⟨11⟩, Columns: ⟨3⟩
+							145 ⟨14⟩
+						146 ⟨11⟩, Columns: ⟨3⟩
+							147 ⟨9⟩
+						148 ⟨11⟩, Columns: ⟨3⟩
+							149 ⟨6⟩
+					150 row (selectable, collapsed) Secondary Actions: ⟨34⟩
+						151 ⟨11⟩, Columns: ⟨3⟩, Secondary Actions: ⟨4⟩
+							152 ⟨3⟩
+							153 ⟨119⟩, Value: scene-file-007, Secondary Actions: ⟨13⟩
+						154 ⟨11⟩, Columns: ⟨3⟩
+							155 ⟨14⟩
+						156 ⟨11⟩, Columns: ⟨3⟩
+							157 ⟨9⟩
+						158 ⟨11⟩, Columns: ⟨3⟩
+							159 ⟨6⟩
+					160 row (selectable, collapsed) Secondary Actions: ⟨34⟩
+						161 ⟨11⟩, Columns: ⟨3⟩, Secondary Actions: ⟨4⟩
+							162 ⟨3⟩
+							163 ⟨119⟩, Value: scene-file-008, Secondary Actions: ⟨13⟩
+						164 ⟨11⟩, Columns: ⟨3⟩
+							165 ⟨14⟩
+						166 ⟨11⟩, Columns: ⟨3⟩
+							167 ⟨9⟩
+						168 ⟨11⟩, Columns: ⟨3⟩
+							169 ⟨6⟩
+					170 row (selectable, collapsed) Secondary Actions: ⟨34⟩
+						171 ⟨11⟩, Columns: ⟨3⟩, Secondary Actions: ⟨4⟩
+							172 ⟨3⟩
+							173 ⟨119⟩, Value: scene-file-009, Secondary Actions: ⟨13⟩
+						174 ⟨11⟩, Columns: ⟨3⟩
+							175 ⟨14⟩
+						176 ⟨11⟩, Columns: ⟨3⟩
+							177 ⟨9⟩
+						178 ⟨11⟩, Columns: ⟨3⟩
+							179 ⟨6⟩
+					180 row (selectable, collapsed) Secondary Actions: ⟨34⟩
+						181 ⟨12⟩, Columns: ⟨3⟩, Secondary Actions: ⟨4⟩
+							182 ⟨3⟩
+							183 ⟨119⟩, Value: scene-file-010, Secondary Actions: ⟨13⟩
+						184 ⟨12⟩, Columns: ⟨3⟩
+							185 ⟨14⟩
+						186 ⟨12⟩, Columns: ⟨3⟩
+							187 ⟨9⟩
+						188 ⟨12⟩, Columns: ⟨3⟩
+							189 ⟨6⟩
+					190 row (selectable, collapsed) Secondary Actions: ⟨34⟩
+						191 ⟨13⟩, Columns: ⟨3⟩, Secondary Actions: ⟨4⟩
+							192 ⟨3⟩
+							193 ⟨119⟩, Value: scene-file-011, Secondary Actions: ⟨13⟩
+						194 ⟨13⟩, Columns: ⟨3⟩
+							195 ⟨14⟩
+						196 ⟨13⟩, Columns: ⟨3⟩
+							197 ⟨9⟩
+						198 ⟨13⟩, Columns: ⟨3⟩
+							199 ⟨6⟩
+					200 row (selectable, collapsed) Secondary Actions: ⟨34⟩
+						201 ⟨13⟩, Columns: ⟨3⟩, Secondary Actions: ⟨4⟩
+							202 ⟨3⟩
+							203 ⟨119⟩, Value: scene-file-012, Secondary Actions: ⟨13⟩
+						204 ⟨13⟩, Columns: ⟨3⟩
+							205 ⟨14⟩
+						206 ⟨13⟩, Columns: ⟨3⟩
+							207 ⟨9⟩
+						208 ⟨13⟩, Columns: ⟨3⟩
+							209 ⟨6⟩
+					210 row (selectable, collapsed) Secondary Actions: ⟨34⟩
+						211 ⟨13⟩, Columns: ⟨3⟩, Secondary Actions: ⟨4⟩
+							212 ⟨3⟩
+							213 ⟨119⟩, Value: scene-file-013, Secondary Actions: ⟨13⟩
+						214 ⟨13⟩, Columns: ⟨3⟩
+							215 ⟨14⟩
+						216 ⟨13⟩, Columns: ⟨3⟩
+							217 ⟨9⟩
+						218 ⟨13⟩, Columns: ⟨3⟩
+							219 ⟨6⟩
+					220 row (selectable, collapsed) Secondary Actions: ⟨34⟩
+						221 ⟨13⟩, Columns: ⟨3⟩, Secondary Actions: ⟨4⟩
+							222 ⟨3⟩
+							223 ⟨119⟩, Value: scene-file-014, Secondary Actions: ⟨13⟩
+						224 ⟨13⟩, Columns: ⟨3⟩
+							225 ⟨14⟩
+						226 ⟨13⟩, Columns: ⟨3⟩
+							227 ⟨9⟩
+						228 ⟨13⟩, Columns: ⟨3⟩
+							229 ⟨6⟩
+					230 row (selectable, collapsed) Secondary Actions: ⟨34⟩
+						231 ⟨13⟩, Columns: ⟨3⟩, Secondary Actions: ⟨4⟩
+							232 ⟨3⟩
+							233 ⟨119⟩, Value: scene-file-015, Secondary Actions: ⟨13⟩
+						234 ⟨13⟩, Columns: ⟨3⟩
+							235 ⟨14⟩
+						236 ⟨13⟩, Columns: ⟨3⟩
+							237 ⟨9⟩
+						238 ⟨13⟩, Columns: ⟨3⟩
+							239 ⟨6⟩
+					240 row (selectable, collapsed) Secondary Actions: ⟨34⟩
+						241 ⟨13⟩, Columns: ⟨3⟩, Secondary Actions: ⟨4⟩
+							242 ⟨3⟩
+							243 ⟨119⟩, Value: scene-file-016, Secondary Actions: ⟨13⟩
+						244 ⟨13⟩, Columns: ⟨3⟩
+							245 ⟨14⟩
+						246 ⟨13⟩, Columns: ⟨3⟩
+							247 ⟨9⟩
+						248 ⟨13⟩, Columns: ⟨3⟩
+							249 ⟨6⟩
+					250 row (selectable, collapsed) Secondary Actions: ⟨34⟩
+						251 ⟨13⟩, Columns: ⟨3⟩, Secondary Actions: ⟨4⟩
+							252 ⟨3⟩
+							253 ⟨119⟩, Value: scene-file-017, Secondary Actions: ⟨13⟩
+						254 ⟨13⟩, Columns: ⟨3⟩
+							255 ⟨14⟩
+						256 ⟨13⟩, Columns: ⟨3⟩
+							257 ⟨9⟩
+						258 ⟨13⟩, Columns: ⟨3⟩
+							259 ⟨6⟩
+					260 row (selectable, collapsed) Secondary Actions: ⟨34⟩
+						261 ⟨13⟩, Columns: ⟨3⟩, Secondary Actions: ⟨4⟩
+							262 ⟨3⟩
+							263 ⟨119⟩, Value: scene-file-018, Secondary Actions: ⟨13⟩
+						264 ⟨13⟩, Columns: ⟨3⟩
+							265 ⟨14⟩
+						266 ⟨13⟩, Columns: ⟨3⟩
+							267 ⟨9⟩
+						268 ⟨13⟩, Columns: ⟨3⟩
+							269 ⟨6⟩
+				270 ⟨28⟩
+					271 ⟨27⟩
+					272 ⟨9⟩
+					273 ⟨9⟩
+					274 ⟨9⟩
+					275 ⟨9⟩
+			276 element Details: ⟨5⟩, ID: ⟨9⟩
+				277 ⟨35⟩, ID: ⟨13⟩
+	278 ⟨5⟩
+		279 container Help: ⟨13⟩, Secondary Actions: ⟨19⟩
+			280 container ⟨6⟩
+				281 ⟨16⟩
+				282 ⟨17⟩
+		283 container Help: ⟨30⟩, Secondary Actions: ⟨28⟩
+			284 
+				285 ⟨26⟩, Value: ⟨1⟩
+				286 ⟨25⟩, Value: ⟨1⟩
+				287 ⟨25⟩, Value: ⟨1⟩
+				288 ⟨26⟩, Value: ⟨1⟩
+		289 ⟨21⟩, Help: ⟨33⟩, Secondary Actions: ⟨28⟩
+		290 ⟨29⟩, Help: ⟨13⟩, Secondary Actions: ⟨28⟩
+		291 ⟨32⟩, Help: ⟨9⟩, Secondary Actions: ⟨28⟩
+		292 ⟨21⟩, Help: ⟨18⟩, Secondary Actions: ⟨28⟩
+		293 container Secondary Actions: ⟨19⟩
+			294 ⟨5⟩
+	295 ⟨5⟩
+	296 ⟨39⟩, Secondary Actions: ⟨11⟩
+		297 container
+			298 container
+	299 ⟨6⟩
+	300 ⟨20⟩
+301 (selectable, collapsed) ⟨5⟩, Secondary Actions: ⟨6⟩
+302 (selectable, collapsed) ⟨6⟩, Secondary Actions: ⟨6⟩
+303 (selectable, collapsed) ⟨2⟩, Secondary Actions: ⟨6⟩
+304 (selectable, collapsed) ⟨2⟩, Secondary Actions: ⟨6⟩
+305 (selectable, collapsed) ⟨2⟩, Secondary Actions: ⟨6⟩
+306 (selectable, collapsed) ⟨2⟩, Secondary Actions: ⟨6⟩
+307 (selectable, collapsed) ⟨3⟩, Secondary Actions: ⟨6⟩
+308 (selectable, collapsed) ⟨3⟩, Secondary Actions: ⟨6⟩
+
+The focused UI element is 89 ⟨22⟩, ID: ⟨8⟩ (showing 18 of 205 items)

@@ -261,8 +261,13 @@ export async function runOnce(options, io) {
       for (const scene of active()) await golden(ctx, scene, 'golden.action', spike.ACTION_GOLDEN(scene, records[scene].app, SCENE_WINDOW[scene], ACTION_TARGET[scene], {raw: lane === 'cua'}));
       if (lane === 'cua') await inputProbes(ctx);
     }
-    const ended = await client.call('end_task');
-    emit({op: 'end_task', sample: 1, ok: ended.isError !== true});
+    // end_task is the MCP proxy's tool (src/mcp); the cua lane's serve.mjs runs the supervisor without the proxy, so
+    // there it is a not-run row rather than a failure.
+    if (lane === 'cua') emit({op: 'end_task', sample: 1, ok: false, notRun: 'the spike serve runs the REPL host without the MCP proxy, which provides end_task'});
+    else {
+      const ended = await client.call('end_task');
+      emit({op: 'end_task', sample: 1, ok: ended.isError !== true});
+    }
     meta.complete = true;
   } catch (error) {
     meta.error = error.message;

@@ -8,7 +8,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {
   SCENE_IDS, SCENES, PAIRS, BACKGROUND_PAIRINGS, CONCURRENT_USE, CONCURRENT_USE_SHEET, userWindowFor, refusals,
-  ownedProcesses, documentWindows, refusingWindows, finderFolderFiles, textEditDocument, describeScenes, FINDER_TYPING_NAME,
+  ownedProcesses, documentWindows, refusingWindows, finderFolderFiles, textEditDocument, describeScenes, FINDER_TYPING_NAME, TEXTEDIT_STYLED_LINE, TEXTEDIT_MARKDOWN_CAP,
   upScene, downScene, preflight, readState, chromeArgs, electronArgs, sceneCommand, exitCodeFor,
 } from '../scripts/spike/engine/scenes.mjs';
 import {parseAsns, parseAppInfo, stopRecorded} from '../scripts/spike/engine/scene-processes.mjs';
@@ -66,6 +66,10 @@ test('the Finder targets name run-owned files from the 200 the scene writes, and
   assert.ok(fileTargets.every(t => t.match === 'exact'));
   assert.ok(doc.lines.length >= 60, 'long enough to need the vertical scroll bar target');
   assert.ok(doc.rtf.includes(doc.lines.at(-1)));
+  // One bold line for valueMarkdown to render, and the whole text under the engine's Markdown cap, so the fetch happens.
+  assert.ok(doc.rtf.includes(`{\\b ${TEXTEDIT_STYLED_LINE}}`));
+  assert.equal(SCENES.textedit.fixedState.styledLine, TEXTEDIT_STYLED_LINE);
+  assert.ok(doc.lines.join('\n').length <= TEXTEDIT_MARKDOWN_CAP, `${doc.lines.join('\n').length} characters`);
 });
 
 test('each scene\'s typing lands on one of its targets; Finder types into its list (type-select), never the search field', () => {

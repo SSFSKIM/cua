@@ -57,12 +57,17 @@ const SCRIPT = fileURLToPath(import.meta.url);
 export const TEXTEDIT_BUNDLE_ID = 'com.apple.TextEdit';
 export const FINDER_BUNDLE_ID = 'com.apple.finder';
 
-// TextEdit's run-owned document: a title line and enough lines to need the vertical scroll bar.
+// TextEdit's run-owned document: a title line, one bold line (so the text area's attributed value has styling for the
+// engine's valueMarkdown to render), and enough short lines to need the vertical scroll bar. The whole plain text stays
+// under the engine's valueMarkdown cap (native/engine Walk.swift markdownMaxLength, 2,000 characters): the engine
+// fetches the Markdown only for a value at most that long, which measure.mjs's valueMarkdown preflight and series need.
 const TEXTEDIT_DOCUMENT = 'cua-scene.rtf';
-const TEXTEDIT_LINES = ['cua scene document',
-  ...Array.from({length: 60}, (_, i) => `Line ${String(i + 1).padStart(2, '0')}: The quick brown fox jumps over the lazy dog.`)];
+export const TEXTEDIT_STYLED_LINE = 'Bold scene line';
+export const TEXTEDIT_MARKDOWN_CAP = 2000;
+const TEXTEDIT_LINES = ['cua scene document', TEXTEDIT_STYLED_LINE, ...Array.from({length: 60}, (_, i) => `Line ${String(i + 1).padStart(2, '0')}`)];
+const rtfLine = line => (line === TEXTEDIT_STYLED_LINE ? `{\\b ${line}}` : line);
 export const textEditDocument = () => ({name: TEXTEDIT_DOCUMENT, lines: [...TEXTEDIT_LINES],
-  rtf: `{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0\\fswiss Helvetica;}}\\f0\\fs28 ${TEXTEDIT_LINES.join('\\par\n')}}\n`});
+  rtf: `{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0\\fswiss Helvetica;}}\\f0\\fs28 ${TEXTEDIT_LINES.map(rtfLine).join('\\par\n')}}\n`});
 
 // Finder's run-owned folder: 200 files named without an extension, so the owner's show-extensions setting cannot change
 // what a row is called.
@@ -91,7 +96,7 @@ const STOP = 'SIGTERM to the recorded pid while it is still that launch, then up
 export const SCENES = Object.freeze({
   textedit: {
     id: 'textedit', family: 'AppKit text', bundleId: TEXTEDIT_BUNDLE_ID, app: '/System/Applications/TextEdit.app', process: 'run',
-    fixedState: {document: TEXTEDIT_DOCUMENT, format: 'rtf', lines: TEXTEDIT_LINES.length, firstLine: TEXTEDIT_LINES[0], uiLanguage: 'en', windows: 1},
+    fixedState: {document: TEXTEDIT_DOCUMENT, format: 'rtf', lines: TEXTEDIT_LINES.length, firstLine: TEXTEDIT_LINES[0], styledLine: TEXTEDIT_STYLED_LINE, uiLanguage: 'en', windows: 1},
     placement: 'as TextEdit places a document window; recorded at up',
     launchArgs: ['-AppleLanguages', '(en)', '-ApplePersistenceIgnoreState', 'YES'],
     start: `${OPEN}, the run's document as the file`, stop: `${STOP}; the driver quits it through the engine first where it can (super+q, as the baseline does)`,

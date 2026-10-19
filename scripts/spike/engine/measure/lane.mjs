@@ -705,15 +705,25 @@ export async function probeDTap({js, emit, records, front, activate, ops}) {
     if (error instanceof Stop) throw error;
     emit({op, scene: 'textedit', sample: 1, ok: false, errorName: error.errorName ?? null, error: error.message});
   };
+  // A tap started is stopped whatever its action does, a stopped run included (stopping a tap sends no input); when
+  // both fail, the action's error is the one reported. -> the action's result and the tap's report.
+  const aroundTap = async (seconds, action) => {
+    ops.probeTap('start', {app: records.textedit.app, seconds});
+    let acted;
+    try { acted = await action(); }
+    catch (error) { try { ops.probeTap('stop'); } catch {} throw error; }
+    return {acted, report: ops.probeTap('stop')};
+  };
   try {
     await activate('textedit');
-    ops.probeTap('start', {app: records.textedit.app, seconds: 180});
-    const acted = await js(spike.ACT_KEY('textedit', KEY_PROBE.textedit));
-    const report = ops.probeTap('stop');
+    const {acted, report} = await aroundTap(180, () => js(spike.ACT_KEY('textedit', KEY_PROBE.textedit)));
     const counts = report.counts ?? {};
-    emit({op: 'probe.d.tap', scene: 'textedit', sample: 1, ok: true, created: true, listenAccess: report.listenAccess ?? null,
+    // A key action that failed posted nothing to count: the row fails with its error and answers neither question.
+    const posted = acted.cell?.ok === true;
+    emit({op: 'probe.d.tap', scene: 'textedit', sample: 1, ok: posted, ...(posted ? {} : {error: acted.cell?.error ?? acted.failure ?? 'failed'}),
+      created: true, listenAccess: report.listenAccess ?? null,
       own: sum(counts, 'own'), driven: sum(counts, 'driven'), other: sum(counts, 'other'),
-      ownPostsReachTheTap: sum(counts, 'own') > 0, hidIdleMsAfterOwnPosts: report.hidIdleMs ?? null,
+      ownPostsReachTheTap: posted ? sum(counts, 'own') > 0 : null, hidIdleMsAfterOwnPosts: posted ? report.hidIdleMs ?? null : null,
       route: acted.meta?.['cua/inputRoute'] ?? null, inCellMs: acted.cell?.inCellMs ?? null,
       ownTimes: report.ownTimes ?? [], drivenTimes: report.drivenTimes ?? []});
   } catch (error) { failed('probe.d.tap', error); }
@@ -727,9 +737,7 @@ export async function probeDTap({js, emit, records, front, activate, ops}) {
       emit({op: 'probe.d.hidReset', scene: 'textedit', sample: 1, ok: false, notRun: 'the scene window was not the front one for the keystroke probe'});
       return;
     }
-    ops.probeTap('start', {app: records.textedit.app, seconds: 120});
-    const sent = ops.keystroke(records.textedit.pid, `${bounds.x},${bounds.y},${bounds.width},${bounds.height}`, 'cua');
-    const report = ops.probeTap('stop');
+    const {acted: sent, report} = await aroundTap(120, () => ops.keystroke(records.textedit.pid, `${bounds.x},${bounds.y},${bounds.width},${bounds.height}`, 'cua'));
     const counts = report.counts ?? {};
     emit({op: 'probe.d.hidReset', scene: 'textedit', sample: 1, ok: sum(counts, 'driven') > 0,
       driven: sum(counts, 'driven'), other: sum(counts, 'other'), hidIdleMs: report.hidIdleMs ?? null,

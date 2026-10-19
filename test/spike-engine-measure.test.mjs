@@ -521,11 +521,36 @@ test('probe (d): a refused stop is a failed row with the engine\'s name, not a c
   ]);
 });
 
+test('probe (d): a key action that failed fails the tap row with its error and answers neither question', async () => {
+  const answers = {
+    'probe_tap start': {ok: true, result: {created: true, listenAccess: true, running: true}},
+    'probe_tap stop': {ok: true, result: {counts: {keyDown: {own: 0, driven: 0, other: 0}}, hidIdleMs: 900, listenAccess: true, created: true}},
+    keystroke: {sent: true},
+  };
+  for (const [acted, error] of [[{cell: {ok: false, error: 'pressKey: TextEdit is not running'}, meta: null}, 'pressKey: TextEdit is not running'],
+    [{cell: null, meta: null, failure: 'the cell printed no result marker'}, 'the cell printed no result marker']]) {
+    const {rows, sent} = await tapRows(answers, {js: async () => acted});
+    assert.deepEqual(sent, ['probe_tap start', 'probe_tap stop', 'probe_tap start', 'keystroke', 'probe_tap stop']);
+    const [tap] = rows;
+    assert.deepEqual([tap.op, tap.ok, tap.error, tap.own, tap.ownPostsReachTheTap, tap.hidIdleMsAfterOwnPosts],
+      ['probe.d.tap', false, error, 0, null, null], 'nothing posted: no answer about where the engine\'s posts go');
+  }
+});
+
+test('probe (d): a keystroke probe that throws stops its tap and fails its row', async () => {
+  const {rows, sent} = await tapRows({
+    'probe_tap start': {ok: true, result: {created: true, listenAccess: true, running: true}},
+    'probe_tap stop': {ok: true, result: {counts: {}, hidIdleMs: 40, listenAccess: true, created: true}},
+  });
+  assert.deepEqual(sent, ['probe_tap start', 'probe_tap stop', 'probe_tap start', 'keystroke', 'probe_tap stop'], 'the second tap stopped after the throw');
+  assert.deepEqual([rows[1].op, rows[1].ok, rows[1].error], ['probe.d.hidReset', false, 'unexpected device command: keystroke']);
+});
+
 test('probe (d): a run stopped during the tap\'s key action sends nothing more, the keystroke probe included', async () => {
   const sent = [];
-  const answers = {'probe_tap start': {ok: true, result: {created: true, listenAccess: true, running: true}}, keystroke: {sent: true}};
+  const answers = {'probe_tap start': {ok: true, result: {created: true, listenAccess: true, running: true}}, 'probe_tap stop': {ok: true, result: {counts: {}}}, keystroke: {sent: true}};
   await assert.rejects(tapRows(answers, {js: async () => { throw new Stop('a cell timed out'); }, sent}), Stop);
-  assert.deepEqual(sent, ['probe_tap start'], 'no keystroke and no second tap after the stop');
+  assert.deepEqual(sent, ['probe_tap start', 'probe_tap stop'], 'the tap stopped (no input); no keystroke and no second tap after the stop');
 });
 
 // A Finder row as the MacBook window's vendor golden recorded it (structurally redacted; Korean role words replaced by

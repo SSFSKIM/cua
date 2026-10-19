@@ -9,15 +9,51 @@ import Foundation
 // hidIdleMs}, startedAt/endedAt null while nothing was posted, inputRoute null until a route is chosen; the guard's
 // duration rides as activationGuardMs when route 3 ran one. The settle an action arms runs at the next get_app_state
 // (markActed). Spike-only arguments, which the facade never sends and the spike service forwards: `spikeRoute`
-// ("1"|"2"|"3", force one route), `spikeEventSource` ("private", post keys from a private event source instead of the
-// HID-system one) and `spikeKeyed` (type_text: key through the layout regardless of the source routing, probe (e)'s
+// ("1"|"2'"|"2"|"3", force one route; "2'" is route 2′, the plain post: route 2's events with no ⌘ and no fake
+// activation, the second sitting's rung under measurement), `spikeEventSource` ("private", post keys from a private
+// event source instead of the HID-system one) and `spikeKeyed` (type_text: key through the layout regardless of the source routing, probe (e)'s
 // per-context case). A non-concealed type_text that routes to the paste route answers notImplemented naming it, with
 // inputRoute "paste"; the paste route itself is M2a.
+
+/// A route that carried an input (the spec's Design, "Input": the ladder 1 → 2′ → 3 → 2 → 4; Interfaces, EngineProtocol's
+/// `inputRoute: 1 | "2'" | 2 | 3 | 4 | "paste"`). Route 4 is not built.
+enum InputRoute: Equatable {
+  case action       // 1: the element's accessibility action
+  case plainPost    // 2′: the events posted to the owning pid, no ⌘ flag, no fake activation
+  case commandPost  // 2: the same post, ⌘ added for a click into an inactive app (the vendor's background click)
+  case activation   // 3: the fake activation, then the plain post
+  case paste        // type_text's paste route
+
+  /// The wire's spelling: the numbered routes as numbers, 2′ as the string "2'".
+  var wire: Any {
+    switch self {
+    case .action: return 1
+    case .plainPost: return "2'"
+    case .commandPost: return 2
+    case .activation: return 3
+    case .paste: return "paste"
+    }
+  }
+
+  /// The routes `spikeRoute` may force: every synthesized one, and for an element click also route 1.
+  static let synthesized: [InputRoute] = [.plainPost, .commandPost, .activation]
+  static let elementClick: [InputRoute] = [.action] + synthesized
+}
+
+/// The flags of a synthesized click's events: ⌘ for route 2 into an app that is not active (the AppKit convention for a
+/// click an inactive window accepts, F §5.4); none for every other route, 2′'s plain post included.
+func clickFlags(_ route: InputRoute?, targetActive: Bool) -> CGEventFlags {
+  route == .commandPost && !targetActive ? .maskCommand : []
+}
+
+/// Whether a synthesized action runs route 3's fake activation (when the app does not believe it has focus): by default
+/// and when route 3 is forced; never under a forced 2 or 2′.
+func runsActivation(_ forced: InputRoute?) -> Bool { forced == nil || forced == .activation }
 
 /// The input meta of one request, whatever it answered. The route and the two times fill in as the action proceeds, so
 /// an error thrown midway carries the state reached then.
 struct InputMeta {
-  var inputRoute: Any? = nil  // Int, "paste", or null before a route is chosen
+  var inputRoute: InputRoute? = nil  // null before a route is chosen
   var startedAt: Int64? = nil
   var endedAt: Int64? = nil
   var activationGuardMs: Double? = nil
@@ -27,7 +63,7 @@ struct InputMeta {
 
   var wire: [String: Any] {
     var wire: [String: Any] = [
-      "inputRoute": inputRoute ?? NSNull(),
+      "inputRoute": inputRoute?.wire ?? NSNull(),
       "startedAt": startedAt.map { Int($0) } ?? NSNull(),
       "endedAt": endedAt.map { Int($0) } ?? NSNull(),
       "receivedAt": Int(context.receivedAt),
@@ -55,7 +91,7 @@ extension Engine {
   /// is in the pixels of the last screenshot of the app's primary window on this connection, and is refused
   /// (`noScreenshotForCoordinates`, nothing posted) when there is none; it takes route 3 when the point is over web
   /// content, else route 2, whose events carry ⌘ when the target app is inactive (the AppKit convention for a click an
-  /// inactive window accepts, F §5.4).
+  /// inactive window accepts, F §5.4). A forced 2′ posts the same events with no ⌘ and no fake activation.
   func click(_ args: [String: Any], _ context: ExecutionContext) throws -> Any {
     let hasIndex = (args["element_index"] as? NSNumber).map { CFGetTypeID($0) != CFBooleanGetTypeID() } ?? false
     let hasPoint = numberArg(args["x"]) != nil && numberArg(args["y"]) != nil
@@ -68,7 +104,7 @@ extension Engine {
     }
     let count = (args["click_count"] as? NSNumber)?.intValue ?? 1
     guard count >= 1 else { throw EngineError.invalidArguments("click_count must be at least 1") }
-    let route = try spikeRouteArg(args, usable: hasIndex ? 1...3 : 2...3)
+    let route = try spikeRouteArg(args, usable: hasIndex ? InputRoute.elementClick : InputRoute.synthesized)
 
     var meta = InputMeta(context)
     do {
@@ -87,13 +123,13 @@ extension Engine {
         let plain = button == .left && count == 1
         let menuBar = entry.identity.role == "AXMenuBarItem"
 
-        if route == 1 || (route == nil && plain && !menuBar), let action = advertised {
-          meta.inputRoute = 1
+        if route == .action || (route == nil && plain && !menuBar), let action = advertised {
+          meta.inputRoute = .action
           meta.startedAt = unixMilliseconds()
           let error = AXUIElementPerformAction(entry.element, action as CFString)
           meta.endedAt = unixMilliseconds()
           guard error == .success else { throw EngineError(name: "actionFailed", "The element did not accept the \(action) action.") }
-        } else if route == 1 {
+        } else if route == .action {
           throw EngineError.invalidArguments("spikeRoute 1 cannot carry this click: the element advertises neither AXPick nor AXPress")
         } else {
           guard let elementFrame = entry.frame, elementFrame.width >= 1, elementFrame.height >= 1 else {
@@ -122,14 +158,14 @@ extension Engine {
         let owner = hit.map { ownerPid(of: $0) } ?? appPid
         let target = ClickTarget(point: point, windowFrame: windowFrame, windowID: windowNumber(of: window, pid: appPid, frame: windowFrame), pid: owner)
         let web = hit.map(isWebContent) ?? false
-        let chosen = route ?? (web ? 3 : 2)
-        if chosen == 3 {
+        let chosen = route ?? (web ? .activation : .commandPost)
+        if chosen == .activation {
           // `forced` stays nil for a default web click, so the route reported is the one that carried it (a plain
           // pid-post when the app already believed it had focus), not the shape the route-3 branch was entered by.
           try synthesizedClick(target, window: window, pid: owner, button: button, count: count, forced: route, meta: &meta)
         } else {
-          meta.inputRoute = 2
-          let flags: CGEventFlags = NSRunningApplication(processIdentifier: owner)?.isActive == true ? [] : .maskCommand
+          meta.inputRoute = chosen
+          let flags = clickFlags(chosen, targetActive: NSRunningApplication(processIdentifier: owner)?.isActive == true)
           let events = clickEvents(target, button: button, count: count, flags: flags)
           guard !events.isEmpty else { throw EngineError(name: "eventCreationFailed", "The click events could not be created.") }
           let (startedAt, endedAt) = postToProcess(events, pid: owner)
@@ -144,23 +180,24 @@ extension Engine {
     }
   }
 
-  /// A synthesized click: forced route 2 posts straight to the owning pid (⌘ added when the target app is inactive);
-  /// route 3 (the default for elements and web content) runs the fake activation first and the deactivation after.
+  /// A synthesized click: forced route 2 posts straight to the owning pid (⌘ added when the target app is inactive),
+  /// forced 2′ the same with no ⌘; route 3 (the default for elements and web content) runs the fake activation first
+  /// and the deactivation after.
   private func synthesizedClick(_ target: ClickTarget, window: AXUIElement, pid: pid_t, button: MouseButton, count: Int,
-                                forced: Int?, meta: inout InputMeta) throws {
+                                forced: InputRoute?, meta: inout InputMeta) throws {
     let activation = FakeActivation(pid: target.pid, window: window)
     defer { activation.deactivate() }  // every path out of the click, error or success, undoes the activation
     let believedBefore = appBelievesItHasFocus(target.pid)
-    if forced != 2 {
+    if runsActivation(forced) {
       if !believedBefore {
         try activation.activate()
         meta.activationGuardMs = activation.guardMs
       }
-      meta.inputRoute = forced ?? (believedBefore ? 2 : 3)
+      meta.inputRoute = forced ?? (believedBefore ? .commandPost : .activation)
     } else {
-      meta.inputRoute = 2
+      meta.inputRoute = forced
     }
-    let flags: CGEventFlags = forced == 2 && NSRunningApplication(processIdentifier: target.pid)?.isActive != true ? .maskCommand : []
+    let flags = clickFlags(forced, targetActive: NSRunningApplication(processIdentifier: target.pid)?.isActive == true)
     let events = clickEvents(target, button: button, count: count, flags: flags)
     guard !events.isEmpty else {
       throw EngineError(name: "eventCreationFailed", "The click events could not be created.")
@@ -178,7 +215,7 @@ extension Engine {
   func pressKey(_ args: [String: Any], _ context: ExecutionContext) throws -> Any {
     guard let key = args["key"] as? String else { throw EngineError.invalidArguments("key is required") }
     let presses = try parseKeySequence(key)  // validated before anything is resolved, so an unknown name never posts
-    let route = try spikeRouteArg(args, usable: 2...3)
+    let route = try spikeRouteArg(args, usable: InputRoute.synthesized)
 
     var meta = InputMeta(context)
     do {
@@ -191,8 +228,8 @@ extension Engine {
       let activation = FakeActivation(pid: pid, window: window)
       defer { activation.deactivate() }  // every path out of the posting, error or success, undoes the activation
       let believedBefore = appBelievesItHasFocus(pid)
-      meta.inputRoute = route ?? (believedBefore ? 2 : 3)
-      if route != 2 && !believedBefore {
+      meta.inputRoute = route ?? (believedBefore ? .commandPost : .activation)
+      if runsActivation(route) && !believedBefore {
         try activation.activate()
         meta.activationGuardMs = activation.guardMs
       }
@@ -223,7 +260,7 @@ extension Engine {
     guard let text = args["text"] as? String else { throw EngineError(name: "invalidArguments", "Missing text to type") }
     let concealed = (args["concealed"] as? NSNumber)?.boolValue ?? false
     let spikeKeyed = (args["spikeKeyed"] as? NSNumber)?.boolValue ?? false
-    let route = try spikeRouteArg(args, usable: 2...3)
+    let route = try spikeRouteArg(args, usable: InputRoute.synthesized)
 
     var meta = InputMeta(context)
     do {
@@ -241,7 +278,7 @@ extension Engine {
                           "Nothing was entered: the active input source (\(source.id)) cannot key this text reliably. Use set_value on a settable element instead.")
       }
       if pasteRoute {
-        meta.inputRoute = "paste"
+        meta.inputRoute = .paste
         throw EngineError(name: "notImplemented",
                           "type_text under this input source (\(source.id)) takes the paste route, which this engine build does not implement")
       }
@@ -253,8 +290,8 @@ extension Engine {
       let activation = FakeActivation(pid: pid, window: window)
       defer { activation.deactivate() }  // an inputSourceChanged mid-typing undoes the activation too
       let believedBefore = appBelievesItHasFocus(pid)
-      meta.inputRoute = route ?? (believedBefore ? 2 : 3)
-      if route != 2 && !believedBefore {
+      meta.inputRoute = route ?? (believedBefore ? .commandPost : .activation)
+      if runsActivation(route) && !believedBefore {
         try activation.activate()
         meta.activationGuardMs = activation.guardMs
       }
@@ -310,21 +347,25 @@ func numberArg(_ value: Any?) -> Double? {
   return number.doubleValue
 }
 
-/// The spike-only route override: nil (the spec's rule decides) or 1–3. The harness sends the digits as JSON strings
-/// ("1", "2", "3"), the protocol tests as numbers; both spellings parse, anything else is an argument error.
-func spikeRouteArg(_ args: [String: Any], usable: ClosedRange<Int>) throws -> Int? {
+/// The spike-only route override: nil (the spec's rule decides) or one of `usable`. The harness sends the routes as JSON
+/// strings ("1", "2'", "2", "3"), the protocol tests the numbered ones as numbers; both spellings parse, anything else
+/// is an argument error. Route 2′ has only its string spelling, "2'" with an ASCII apostrophe.
+func spikeRouteArg(_ args: [String: Any], usable: [InputRoute]) throws -> InputRoute? {
   guard let given = args["spikeRoute"] else { return nil }
-  let value: Int?
+  let route: InputRoute?
   switch given {
-  case let number as NSNumber where CFGetTypeID(number) != CFBooleanGetTypeID(): value = number.intValue
-  case let text as String: value = Int(text)
-  default: value = nil
+  case let number as NSNumber where CFGetTypeID(number) != CFBooleanGetTypeID():
+    route = [1: InputRoute.action, 2: .commandPost, 3: .activation][number.doubleValue == number.doubleValue.rounded() ? number.intValue : 0]
+  case let text as String:
+    route = ["1": InputRoute.action, "2'": .plainPost, "2": .commandPost, "3": .activation][text]
+  default: route = nil
   }
-  guard let value, (1...3).contains(value) else { throw EngineError.invalidArguments("spikeRoute must be 1, 2 or 3") }
-  guard usable.contains(value) else {
-    throw EngineError.invalidArguments("spikeRoute \(value) cannot carry this action (routes \(usable.lowerBound)–\(usable.upperBound) apply)")
+  guard let route else { throw EngineError.invalidArguments("spikeRoute must be 1, 2', 2 or 3") }
+  guard usable.contains(route) else {
+    let names = usable.map { "\($0.wire)" }.joined(separator: ", ")
+    throw EngineError.invalidArguments("spikeRoute \(route.wire) cannot carry this action (routes \(names) apply)")
   }
-  return value
+  return route
 }
 
 /// The spike-only private event source for keys.

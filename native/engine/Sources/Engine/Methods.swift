@@ -48,6 +48,7 @@ final class Engine: @unchecked Sendable {
         return Outcome(result: .success([String: Any]()), exitAfter: true)
       case "execute": return Outcome(result: .success(try execute(request.params, connection, receivedAt)))
       case "probe_tap": return Outcome(result: .success(try probeTap(request.params)))  // spike-only, probe (d) (Tap.swift)
+      case "probe_spike": return Outcome(result: .success(try probeSpike(request.params, receivedAt: receivedAt)))  // spike-only (SpikeProbe.swift)
       default: throw EngineError(rpc: .methodNotFound, "Method not found: \(request.method.prefix(64))")
       }
     } catch let error as EngineError {
@@ -74,6 +75,8 @@ final class Engine: @unchecked Sendable {
       "accessibility": AXIsProcessTrusted(),
       "screenRecording": CGPreflightScreenCaptureAccess(),
       "canPostHid": CGPreflightPostEventAccess(),
+      "listenPreflight": CGPreflightListenEventAccess(),  // the event-access preflights by the names probe_tap reports them
+      "postPreflight": CGPreflightPostEventAccess(),
       "socket": paths.socket,
       "pid": Int(getpid()),
       "bundlePath": Bundle.main.bundlePath,

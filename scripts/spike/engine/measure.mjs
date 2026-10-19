@@ -11,7 +11,7 @@
 //                                                       shutdown, open -n -g -a, status, approve (the capture
 //                                                       confirmation), then approved.json {build, identity, approvedAt};
 //                                                       its answers go to <dir>/approve.json (default
-//                                                       ./measure-approve-<time>.json)
+//                                                       <OS temp dir>/measure-approve-<time>.json)
 //   measure.mjs probe-f --device <d> --out <dir>       probe (f), operator-guided (./measure/probe-f.mjs)
 //   measure.mjs --device <d> --lane vendor|cua --runs N --approved-runtime <home> --out <dir>
 //         [--samples N] [--tasks N] [--scenes textedit,finder,chrome,electron] [--probes c|none] [--operator]
@@ -26,6 +26,7 @@
 // cua lane, which cannot send keys until its input methods exist.
 import {parseArgs} from 'node:util';
 import {mkdirSync, writeFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
 import {createInterface} from 'node:readline';
 import {dirname, isAbsolute, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -110,7 +111,7 @@ export async function main(argv = process.argv.slice(2), {log = console.log, con
       // The loop's evidence, kept: the grants each approve reported and what the running engine saw before the
       // relaunch (probe (f)'s first question).
       if (!out.dryRun) {
-        const file = command.out ? join(command.out, 'approve.json') : resolve(`measure-approve-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
+        const file = join(command.out ?? tmpdir(), command.out ? 'approve.json' : `measure-approve-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
         mkdirSync(dirname(file), {recursive: true});
         writeFileSync(file, JSON.stringify({device: command.device, at: new Date().toISOString(), ...out}, null, 2) + '\n');
         log(`approve's answers: ${file}`);

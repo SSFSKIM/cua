@@ -196,7 +196,9 @@ export async function runOnce(options, io) {
       }
       meta.hostAttestation ??= hostAttestationOf(serverInfo, result);
       const text = textOf(result), parsed = parseCell(text);
-      return {wallMs: performance.now() - started, cell: parsed, meta: result?._meta ?? null, failure: parsed ? null : (text.split('\n').filter(Boolean).at(-1) ?? 'no output').slice(0, 300)};
+      // A cell without its marker failed outside the envelope; its output may hold a tree (getApp emits one), so the
+      // row records a fixed sentence, never the output.
+      return {wallMs: performance.now() - started, cell: parsed, meta: result?._meta ?? null, failure: parsed ? null : `the cell printed no result marker${result?.isError ? ' (an error result)' : ''}`};
     };
     const record = (op, sample, r, extra = {}) => {
       const value = r.cell?.ok ? r.cell.value ?? {} : null;
@@ -461,7 +463,7 @@ async function preflightSwitches({js, emit, records, meta}, scenes) {
     const verdict = switchVerdict(name, plain.get(scene), await observe(scene, {[name]: spec.value}));
     emit({op: 'preflight.switch', switch: name, scene, sample: 1, ok: verdict === true, forwarded: verdict});
     if (verdict === true) { passed.add(name); continue; }
-    const reason = verdict === null ? `undetermined: ${scene} shows no effect of ${name}` : `the service did not forward ${name}`;
+    const reason = verdict === null ? `undetermined: ${scene} shows no effect of ${name}` : `the engine did not apply ${name} (not forwarded, a fallback, or a failed observation)`;
     emit({op: `switch.${name}`, scene, sample: 1, ok: false, notRun: reason});
     if (verdict === false) meta.problems.push(`${name}: ${reason}; its series did not run`);
   }

@@ -88,21 +88,27 @@ return {observeMs, forwarded, ...facts};`);
 // A scene's fixed state as a golden: the text through the facade (the vendor's text on the vendor lane, the stand-in
 // renderer's on the cua lane) and, on the cua lane, the raw Skyshot of the same observation, each written to the
 // session's temp directory. -> {files: [{kind, path, bytes, sha256}]}.
-const WRITE = `const __write = async (name, text) => {
+// __written lists what the cell wrote, so a cell that throws deletes it before the error leaves (__discard).
+const WRITE = `const __written = [];
+const __discard = async () => { const fs = await import("node:fs"); for (const file of __written) { try { fs.rmSync(file, {force: true}); } catch {} } };
+const __write = async (name, text) => {
   const fs = await import("node:fs"), os = await import("node:os"), path = await import("node:path");
   const file = path.join(fs.realpathSync(os.tmpdir()), "cua-spike-golden-" + name);
+  __written.push(file);
   fs.writeFileSync(file, text, {mode: 0o600});
   return {path: file, bytes: Buffer.byteLength(text), sha256: (await import("node:crypto")).createHash("sha256").update(text).digest("hex")};
 };`;
 export const GOLDEN = (scene, app, prefix, {raw}) => cell(`${HELPERS}
 ${SKYSHOT}
 ${WRITE}
-const ax = await __full(globalThis.__apps[${j(scene)}]);
-const front = __front(ax);
-if (typeof front !== "string" || !front.startsWith(${j(prefix)})) throw new Error("the scene window was not the app's front window; no golden written");
-const files = [{kind: "text", ...await __write(${j(`${scene}.text.txt`)}, ax)}];
-if (${j(raw)}) { const shot = await __skyshot(${j(app)}); if (shot === null) throw new Error("no raw Skyshot for the observation"); files.push({kind: "skyshot", ...await __write(${j(`${scene}.skyshot.json`)}, JSON.stringify(shot, null, 1))}); }
-return {files};`);
+try {
+  const ax = await __full(globalThis.__apps[${j(scene)}]);
+  const front = __front(ax);
+  if (typeof front !== "string" || !front.startsWith(${j(prefix)})) throw new Error("the scene window was not the app's front window; no golden written");
+  const files = [{kind: "text", ...await __write(${j(`${scene}.text.txt`)}, ax)}];
+  if (${j(raw)}) { const shot = await __skyshot(${j(app)}); if (shot === null) throw new Error("no raw Skyshot for the observation"); files.push({kind: "skyshot", ...await __write(${j(`${scene}.skyshot.json`)}, JSON.stringify(shot, null, 1))}); }
+  return {files};
+} catch (error) { await __discard(); throw error; }`);
 
 // The action-sequence golden of a scene (input): the full text before (and the raw Skyshot), one click on the element
 // whose line names `target`, the next observation in the default mode (the vendor's diff text), then the full text after
@@ -110,22 +116,24 @@ return {files};`);
 export const ACTION_GOLDEN = (scene, app, prefix, target, {raw}) => cell(`${HELPERS}
 ${SKYSHOT}
 ${WRITE}
-const bound = globalThis.__apps[${j(scene)}];
-const files = [];
-const keep = async (name, text) => files.push({kind: name, ...await __write(${j(`${scene}.action.`)} + name, text)});
-const before = await __full(bound);
-const front = __front(before);
-if (typeof front !== "string" || !front.startsWith(${j(prefix)})) throw new Error("the scene window was not the app's front window; nothing was clicked");
-await keep("before.txt", before);
-if (${j(raw)}) await keep("before.skyshot.json", JSON.stringify(await __skyshot(${j(app)}), null, 1));
-const index = __indexOf(before, ${j(target)});
-if (index === null) throw new Error("the action's target is not in the scene's tree; nothing was clicked");
-await bound.click(index);
-await keep("diff.txt", await bound.getAXState({emit: false}));
-if (${j(raw)}) await keep("after-diff.skyshot.json", JSON.stringify(await __skyshot(${j(app)}), null, 1));
-await keep("after.txt", await __full(bound));
-if (${j(raw)}) await keep("after.skyshot.json", JSON.stringify(await __skyshot(${j(app)}), null, 1));
-return {actions: 1, observations: 3, files};`);
+try {
+  const bound = globalThis.__apps[${j(scene)}];
+  const files = [];
+  const keep = async (name, text) => files.push({kind: name, ...await __write(${j(`${scene}.action.`)} + name, text)});
+  const before = await __full(bound);
+  const front = __front(before);
+  if (typeof front !== "string" || !front.startsWith(${j(prefix)})) throw new Error("the scene window was not the app's front window; nothing was clicked");
+  await keep("before.txt", before);
+  if (${j(raw)}) await keep("before.skyshot.json", JSON.stringify(await __skyshot(${j(app)}), null, 1));
+  const index = __indexOf(before, ${j(target)});
+  if (index === null) throw new Error("the action's target is not in the scene's tree; nothing was clicked");
+  await bound.click(index);
+  await keep("diff.txt", await bound.getAXState({emit: false}));
+  if (${j(raw)}) await keep("after-diff.skyshot.json", JSON.stringify(await __skyshot(${j(app)}), null, 1));
+  await keep("after.txt", await __full(bound));
+  if (${j(raw)}) await keep("after.skyshot.json", JSON.stringify(await __skyshot(${j(app)}), null, 1));
+  return {actions: 1, observations: 3, files};
+} catch (error) { await __discard(); throw error; }`);
 
 // Whether Finder's run window shows list view: the vendor's (and the stand-in's) role word for AXRow is `row`.
 export const FINDER_VIEW = prefix => cell(`${HELPERS}

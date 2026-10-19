@@ -2,8 +2,8 @@
 // window could carry the user's content"). The run's Finder window is the harness's, but its sidebar lists the owner's
 // favourites, devices and tags. So a Finder golden keeps what the run owns (its folder and file names) and the
 // grammar's fixed structure, and fails closed: anything it does not recognise is replaced by its length, ⟨n⟩.
-//   skyshot  a keep-list: per node the structural fields (index, depth, pid, role, subrole, role description, flags,
-//            frame, counts, ranges, value type); the content fields (title, description, value, help, placeholder, url,
+//   skyshot  a keep-list: per node the structural fields (index, depth, pid, flags, frame, counts, ranges, value type;
+//            the role, subrole and role description only as AX constants or known role words); the content fields (title, description, value, help, placeholder, url,
 //            identifier, value description, Markdown) only when the run owns the string; AX-named actions only. At the
 //            top level the app, the window's frame and pid, the lineage, the indexes and the timings; every other field,
 //            and every unknown one, is replaced.
@@ -13,12 +13,15 @@
 //            run is replaced. Fixed lines are kept (blank lines, the selection note, `Selected:`, the selected-text fence
 //            lines, numeric `Removed element IDs:` lines, the truncation markers, the window header with its title and
 //            app name replaced unless owned); every other line is replaced whole, including selected-text bodies and
-//            multi-line value continuations. A part (the title, or a label's text) is kept only when it is exactly a
-//            run-owned string.
+//            multi-line value continuations. Lines split on every line terminator (\r, U+2028 and U+2029 too). In a
+//            full tree an element line keeps its index only in sequence. A part (the title, or a label's text) is kept
+//            only when it is exactly a run-owned string.
 import {NOTE} from '../render.mjs';
 
 const mark = text => `⟨${[...String(text)].length}⟩`;
-const markRun = text => (text.trim() ? text.replace(/\S(?:.*\S)?/, mark) : text);
+const markRun = text => (text.trim() ? text.replace(/\S(?:[\s\S]*\S)?/, mark) : text);
+// Every line terminator JS knows (`.` stops at \r, U+2028 and U+2029 too), so no text hides after one.
+const LINES = /\r\n|[\n\r\u2028\u2029]/;
 
 // ---- Skyshot ----
 const NODE_STRUCTURE = new Set(['index', 'depth', 'pid', 'role', 'subrole', 'roleDescription', 'valueType', 'flags', 'frame', 'children', 'shown',
@@ -30,8 +33,13 @@ const TOP_STRUCTURE = new Set(['app', 'lineage', 'revision', 'truncated', 'focus
 const replaced = value => (value === null || typeof value === 'number' || typeof value === 'boolean' ? value : typeof value === 'string' ? mark(value) : '⟨redacted⟩');
 const content = (value, allowed) => (typeof value === 'string' && allowed.has(value) ? value : replaced(value));
 
+// A role, subrole or role description is kept only as an AX constant or a known role word.
+const ROLE_NAMED = new Set(['role', 'subrole', 'roleDescription']);
+const knownRole = value => typeof value === 'string' && (/^AX[A-Za-z]+$/.test(value) || ROLE_WORDS.includes(value));
+
 function redactNode(node, allowed) {
   return Object.fromEntries(Object.entries(node).map(([key, value]) => {
+    if (ROLE_NAMED.has(key)) return [key, value === null || knownRole(value) ? value : replaced(value)];
     if (NODE_STRUCTURE.has(key)) return [key, value];
     if (NODE_CONTENT.has(key)) return [key, content(value, allowed)];
     if (key === 'actions' && Array.isArray(value)) return [key, value.map(action => (/^AX[A-Za-z]+$/.test(action) ? action : replaced(action)))];
@@ -79,22 +87,30 @@ export function redactParts(rest, allowed = new Set()) {
   return out + kept + owned(tail.slice(at)) + shown;
 }
 
-const ELEMENT = /^([~+-]?)(\t*)(\d+) (.*)$/;
+const ELEMENT = /^([~+-]?)(\t*)(\d+) ([\s\S]*)$/;
 const element = (line, allowed) => { const m = ELEMENT.exec(line); return m ? `${m[1]}${m[2]}${m[3]} ${redactParts(m[4], allowed)}` : null; };
 const FIXED = [/^$/, /^Selected:$/, /^```$/, /^Removed element IDs: [\d, –-]*$/, /^\[truncated: elements deeper than \d+ levels omitted\]$/, /^\[truncated: \d+ elements omitted\]$/];
 const FOCUSED = 'The focused UI element is ';
 const SELECTED_TEXT = 'Selected text: ```';
 
-export function redactText(text, allowed) {
-  let fenced = false;
-  return String(text).split('\n').map(line => {
+// `fullTree`: the text is a full tree (not a diff), whose element lines number the tree in order; there an element
+// line keeps its index only when it is the next one expected, and any other line that looks like one (a value's
+// continuation "42 Main St") is replaced whole. The trailer's lines name indexes out of order and are not checked.
+export function redactText(text, allowed, {fullTree = false} = {}) {
+  let fenced = false, trailer = false, expected = null;
+  return String(text).split(LINES).map(line => {
     // A selected-text body: everything between the fences is the selection itself, owned or not.
     if (fenced) { if (line === '```') { fenced = false; return line; } return markRun(line); }
-    if (line === SELECTED_TEXT) { fenced = true; return line; }
-    if (line === NOTE || FIXED.some(pattern => pattern.test(line))) return line;
-    const header = /^Window: "(.*)", App: (.*)\.$/.exec(line);
+    if (line === SELECTED_TEXT) { fenced = true; trailer = true; return line; }
+    if (line === NOTE || FIXED.some(pattern => pattern.test(line))) { if (line === 'Selected:') trailer = true; return line; }
+    const header = /^Window: "([\s\S]*)", App: ([\s\S]*)\.$/.exec(line);
     if (header) return `Window: "${allowed.has(header[1]) ? header[1] : mark(header[1])}", App: ${allowed.has(header[2]) ? header[2] : mark(header[2])}.`;
-    if (line.startsWith(FOCUSED)) return FOCUSED + (element(line.slice(FOCUSED.length), allowed) ?? markRun(line.slice(FOCUSED.length)));
+    if (line.startsWith(FOCUSED)) { trailer = true; return FOCUSED + (element(line.slice(FOCUSED.length), allowed) ?? markRun(line.slice(FOCUSED.length))); }
+    const index = ELEMENT.exec(line)?.[3];
+    if (index !== undefined && fullTree && !trailer) {
+      if (expected !== null && Number(index) !== expected) return markRun(line);
+      expected = Number(index) + 1;
+    }
     return element(line, allowed) ?? markRun(line);
   }).join('\n');
 }
@@ -103,5 +119,5 @@ export function redactText(text, allowed) {
 export function redactGolden(text, kind, allowedNames) {
   const allowed = new Set(allowedNames);
   if (/skyshot/.test(kind)) return JSON.stringify(redactSkyshot(JSON.parse(text), allowed), null, 1);
-  return redactText(text, allowed);
+  return redactText(text, allowed, {fullTree: !/diff/.test(kind)});
 }

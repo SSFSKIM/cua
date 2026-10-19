@@ -169,6 +169,14 @@ test('Finder goldens fail closed: owned names and the grammar\'s fixed structure
   // A multi-line value's continuation, and any other line, is replaced whole, whatever its shape.
   assert.deepEqual(lines('\t\t10 text Value: first line\nsecond line: with colon\nscene-file-001 and more\nThe following is a diff from the previous accessibility tree for Window: "Owner"'),
     ['\t\t10 text Value: ⟨10⟩', '⟨23⟩', '⟨23⟩', '⟨80⟩']);
+  // Every line terminator splits: no text hides after \r, U+2028 or U+2029 (JS `.` stops at each).
+  for (const terminator of ['\r', '\u2028', '\u2029'])
+    assert.deepEqual(lines(`\t5 row (selectable) Secret${terminator}Leak`), ['\t5 row (selectable) ⟨6⟩', '⟨4⟩'], JSON.stringify(terminator));
+  assert.deepEqual(lines('Window: "Own\rLeak", App: Finder.'), ['⟨12⟩', '⟨19⟩']);
+  // In a full tree an index is kept only in sequence: a continuation shaped like an element line is replaced whole.
+  assert.deepEqual(lines('\t0 window cua-scene-finder\n\t\t1 text Value: 12 Elm Rd\n42 Main St\n3 row (selected) Budget\n\t\t2 row scene-file-001'),
+    ['\t0 window cua-scene-finder', '\t\t1 text Value: ⟨9⟩', '⟨10⟩', '⟨23⟩', '\t\t2 row scene-file-001']);
+  assert.deepEqual(redactGolden('~\t\t7 row Owner\n+\t3 row scene-file-001', 'diff.txt', allowed).split('\n'), ['~\t\t7 row ⟨5⟩', '+\t3 row scene-file-001'], 'a diff names indexes out of order');
   const shot = {app: {bundleIdentifier: 'com.apple.finder'}, window: {title: 'Owner Folder', frame: {x: 0}, pid: 1, extra: 'x'}, selectedText: 'scene-file-001 notes', lineage: 'L', mystery: 'secret',
     screenshot: {url: 'file:///Users/u/run/x.jpg', width: 10, height: 5},
     nodes: [{index: 0, role: 'AXRow', roleDescription: 'row', title: 'Secret Project', value: 3, identifier: 'scene-file-001', actions: ['AXPress', 'Name:Open in Tab'], flags: {selected: false}, domClassList: ['owner'], unknown: 'x'}],
@@ -176,6 +184,8 @@ test('Finder goldens fail closed: owned names and the grammar\'s fixed structure
   const red = JSON.parse(redactGolden(JSON.stringify(shot), 'skyshot', allowed));
   assert.deepEqual(red.nodes[0], {index: 0, role: 'AXRow', roleDescription: 'row', title: '⟨14⟩', value: 3, identifier: 'scene-file-001', actions: ['AXPress', '⟨16⟩'], flags: {selected: false}, domClassList: '⟨redacted⟩', unknown: '⟨1⟩'});
   assert.equal(red.menuBar[0].title, '⟨4⟩');
+  const roles = JSON.parse(redactGolden(JSON.stringify({nodes: [{index: 0, role: 'AXRow', subrole: 'AXOutlineRow', roleDescription: 'outline'}, {index: 1, role: 'Owner Role', subrole: 'my tag', roleDescription: 'Tax files'}]}), 'skyshot', allowed));
+  assert.deepEqual(roles.nodes, [{index: 0, role: 'AXRow', subrole: 'AXOutlineRow', roleDescription: 'outline'}, {index: 1, role: '⟨10⟩', subrole: '⟨6⟩', roleDescription: '⟨9⟩'}]);
   assert.deepEqual(red.window, {title: '⟨12⟩', frame: {x: 0}, pid: 1});
   assert.deepEqual(red.screenshot, {width: 10, height: 5});
   assert.equal(red.selectedText, '⟨20⟩');
@@ -296,6 +306,17 @@ test('probe (e) reads back exactly the sample\'s own text between its markers', 
   assert.deepEqual([partial.value.landed, partial.value.exact], [true, false], 'a prefix of the sample is not an exact landing');
   const missing = await runCell(spikeCells.TEXT_LANDED('textedit', '/a.app', '0003', '한글'), {apps, rpc});
   assert.deepEqual([missing.value.landed, missing.value.exact], [false, false]);
+});
+
+test('a golden cell that throws deletes what it wrote before the error leaves', async () => {
+  const {tmpdir: osTmp} = await import('node:os');
+  const written = join(fs.realpathSync(osTmp()), 'cua-spike-golden-finder.text.txt');
+  fs.rmSync(written, {force: true});
+  const apps = {finder: {getAXState: async () => 'Window: "cua-scene-finder", App: Finder.\n0 window cua-scene-finder'}};
+  const out = await runCell(spikeCells.GOLDEN('finder', '/a.app', 'cua-scene-finder', {raw: true}), {apps, rpc: async () => null});
+  assert.equal(out.ok, false);
+  assert.match(out.error, /no raw Skyshot/);
+  assert.equal(fs.existsSync(written), false, 'the text written before the throw is gone');
 });
 
 test('every scene\'s getScreenshot sample is the baseline\'s own cell on that scene\'s bound app', () => {

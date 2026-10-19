@@ -1,0 +1,356 @@
+# Functions of the pinned SkyComputerUseService (bundle 26.924) decompiled for F-helper-logic.md.
+# Addresses from E-helper-catalogue.md §9 and the joined nm/demangled dump; `depth=N` also
+# decompiles callees within N edges (closures and redacted bodies live there).
+# Run: see DecompileListed.java. Output stays local (not committed).
+
+## 11. SoftLink (symbol resolution by salted SipHash)
+0x10023a380 depth=1
+0x10023d898
+0x10023e328 depth=1
+0x10023f750 depth=1
+0x10023fd9c
+0x100240eac
+0x100241d3c
+0x100238f48
+0x100238e18
+0x1002423ac
+0x10023b6e4 depth=1
+# callers of lookUpBatchSymbolPointers: the per-module request tables
+0x1001720ac depth=1
+0x10025c6ac depth=1
+0x100f43164 depth=1
+0x1002581ec depth=1
+0x10023a28c depth=1
+0x10023a12c depth=1
+# wrappers (each calls a redacted stub that holds the cached pointer)
+0x100249f24 depth=1
+0x100249f18 depth=1
+0x10025b924 depth=1
+0x100249be0 depth=1
+0x100249ea4 depth=1
+0x10024a200 depth=1
+0x10024a20c depth=1
+0x100248054 depth=1
+0x100247fcc depth=1
+0x100247fd8 depth=1
+0x10025c490 depth=1
+0x10025c498 depth=1
+0x10025c4f8 depth=1
+0x10025c54c depth=1
+0x10025bbf0 depth=1
+
+## 1. Tree walk and batching
+0x1007099d8 depth=1
+0x100225bc4 depth=1
+0x10022a214 depth=1
+0x10074ca70 depth=1
+0x10074b10c depth=1
+0x10075b408 depth=1
+0x1006ef938 depth=1
+0x100752fd4 depth=1
+0x1006ea050
+0x1007597ec depth=1
+0x100224960
+0x100224a9c depth=1
+0x10076db2c depth=1
+0x10070aa00
+
+## 2. Naming and pruning
+0x1006473d0 depth=1
+0x100754f88 depth=1
+0x100640b44 depth=1
+0x10074b118 depth=1
+0x100615504 depth=1
+0x10063eb80 depth=1
+0x1007478ac depth=1
+0x10064ee38 depth=1
+0x100747490 depth=1
+0x10062691c depth=1
+
+## 3. Index assignment and re-resolution
+0x10062d3d4 depth=1
+0x10062e368
+0x10062d660
+0x10062eb64 depth=1
+0x10064551c depth=1
+0x100645408
+0x100644f64
+0x100220a14 depth=1
+0x1002207b8 depth=1
+0x1002226f0 depth=1
+0x100223708 depth=1
+0x1002206e8 depth=1
+0x1002234d4
+
+## 4. Diffing
+0x100618ddc depth=1
+0x10062c428 depth=1
+0x10062ca78 depth=1
+0x10062c5fc depth=1
+0x10022ac8c depth=1
+0x10062d85c depth=1
+0x10062d698 depth=1
+0x10022f4f4
+0x10006bdf4 depth=1
+0x10006ea0c depth=1
+
+## 5. Click path
+0x100071d60 depth=1
+0x10007c4d8 depth=1
+0x10006fcf4 depth=1
+0x100070460 depth=1
+0x10079f2cc depth=1
+0x1006ebb14 depth=1
+0x1006f6668 depth=1
+0x10078cb90 depth=1
+0x10079f434 depth=1
+0x10079f890 depth=1
+0x10077ffdc depth=1
+0x100730214 depth=1
+0x100730ac0 depth=1
+0x10073501c depth=1
+0x100734950 depth=1
+0x100734c5c depth=1
+0x10072f8c8 depth=1
+0x10073a090 depth=1
+0x10073a098 depth=1
+0x10073a128 depth=1
+0x10006ee50 depth=1
+0x10006eef8 depth=1
+0x10006f3b8 depth=1
+0x1007738e4 depth=1
+0x1007432e0 depth=1
+0x1007428e4 depth=1
+0x100742f70 depth=1
+0x100744538 depth=1
+0x10074382c
+0x100721990 depth=1
+0x100721a3c depth=1
+0x10007ae24 depth=1
+
+## 6. typeText and keys
+0x100076f80 depth=1
+0x1007440cc depth=1
+0x100237730 depth=1
+0x100237690
+0x100743758 depth=1
+0x100742828 depth=1
+0x1006f645c depth=1
+0x10023470c
+0x100234f00
+0x100235800
+0x100236100
+0x100236654
+
+## 7. Paste
+0x10007da6c depth=1
+0x1001b57a0 depth=1
+0x1001b582c depth=1
+0x1001b58d4
+0x1001b5934
+0x100ef1f54 depth=1
+0x100ef2408 depth=1
+
+## 8. Settle
+0x1006f7408 depth=1
+0x1007084ac depth=1
+0x100075910 depth=1
+0x1000739a8 depth=1
+0x100078e4c depth=1
+
+## 9. User intervention
+0x1000a248c depth=1
+0x1000a22a8 depth=1
+0x1000a2e5c depth=1
+0x1000a1be0 depth=1
+0x1000a1bec depth=1
+0x1000a13fc depth=1
+0x1000a1598 depth=1
+0x1000a1cc0 depth=1
+0x10021f28c depth=1
+
+## 10. Peer authentication
+0x10017b764 depth=1
+0x10017981c depth=1
+0x100171668 depth=1
+0x100ef8a1c depth=1
+0x100ef8a7c depth=1
+0x100ef87c4 depth=1
+0x1001830f0 depth=1
+0x100047ad0 depth=1
+
+## Second batch: SPI once-initialisers and every SystemSoftware wrapper (slot mapping, §11)
+0x100247ed8 depth=1
+0x10025acdc depth=1
+0x100249218 depth=1
+0x1002582d8 depth=1
+0x100247820 depth=1
+0x100259e5c depth=1
+0x1002460d4 depth=1
+0x10023e500 depth=1
+0x1002462dc depth=1
+0x100245c10 depth=1
+0x100246240 depth=1
+0x1002468d8 depth=1
+0x100247fcc depth=1
+0x100247fd8 depth=1
+0x100248054 depth=1
+0x100249b8c depth=1
+0x100249be0 depth=1
+0x100249c58 depth=1
+0x100249ce8 depth=1
+0x100249cf4 depth=1
+0x100249d54 depth=1
+0x100249d60 depth=1
+0x100249dcc depth=1
+0x100249e20 depth=1
+0x100249e2c depth=1
+0x100249ea4 depth=1
+0x100249f18 depth=1
+0x100249f24 depth=1
+0x100249f94 depth=1
+0x100249fa0 depth=1
+0x10024a010 depth=1
+0x10024a07c depth=1
+0x10024a0f8 depth=1
+0x10024a158 depth=1
+0x10024a1ac depth=1
+0x10024a200 depth=1
+0x10024a20c depth=1
+0x10024a2b8 depth=1
+0x10024a31c depth=1
+0x10025a7b4 depth=1
+0x10025a7f4 depth=1
+0x10025a878 depth=1
+0x10025a8e8 depth=1
+0x10025b81c depth=1
+0x10025b838 depth=1
+0x10025b8a0 depth=1
+0x10025b8ac depth=1
+0x10025b924 depth=1
+0x10025b990 depth=1
+0x10025b9fc depth=1
+0x10025bbf0 depth=1
+0x10025bcf8 depth=1
+0x10025bf68 depth=1
+0x10025c490 depth=1
+0x10025c494 depth=1
+0x10025c498 depth=1
+0x10025c4f8 depth=1
+0x10025c54c depth=1
+0x10025c5bc depth=1
+
+## Third batch: async entry points with their resume partials (next=) (§3 to §9)
+0x100071d60 next=12 depth=1
+0x10007c4d8 next=12 depth=1
+0x10006fcf4 next=8 depth=1
+0x100070460 next=8 depth=1
+0x10079f2cc next=12 depth=1
+0x1006ebb14 next=16 depth=1
+0x100730214 next=10 depth=1
+0x100730ac0 next=6 depth=1
+0x100076f80 next=12 depth=1
+0x1007440cc next=6 depth=1
+0x100743758 next=6 depth=1
+0x1007428e4 next=6 depth=1
+0x1007432e0 next=4 depth=1
+0x10007da6c next=14 depth=1
+0x100ef1f54 next=8 depth=1
+0x1006f7408 next=12 depth=1
+0x1007084ac next=6 depth=1
+0x10006ea0c next=8 depth=1
+0x10006bdf4 next=10 depth=1
+0x100224a9c next=10 depth=1
+0x100225bc4 next=8 depth=1
+0x10022a214 next=8 depth=1
+0x1007099d8 next=6 depth=1
+0x10079f434 next=6 depth=1
+0x10079f890 next=6 depth=1
+0x10078cb90 next=6 depth=1
+0x1000a248c next=6 depth=1
+0x10017981c next=10 depth=1
+0x100075910 next=8 depth=1
+0x1000739a8 next=6 depth=1
+0x100078e4c next=8 depth=1
+0x10007ae24 next=6 depth=1
+0x10006eef8 next=6 depth=1
+0x10006f3b8 next=4 depth=1
+0x10021f28c next=6 depth=1
+
+## The section readers decompiled further ranges from their project copies; their lists are reproduced here
+# agent1-list.txt
+0x10064f45c
+# agent2-list1.txt
+0x10062e3bc depth=1
+0x100645c74 depth=1
+0x10075a248 depth=1
+0x10075a464
+0x10075a104 depth=1
+0x10075a13c
+0x100639018
+0x10062c474 depth=1
+0x10063b748
+0x10063f730 depth=1
+0x100630988 depth=1
+0x10062c9cc
+0x10062e780
+0x10062c950
+0x100630498
+0x100eb8e84 depth=1
+0x100eb8e90 depth=1
+0x100eb94dc
+0x100eb9518
+0x10036a870
+0x100eb7a5c
+0x100eb7ba4 depth=1
+0x100eb7f28
+0x100d58024
+0x10022a1dc
+0x1002204a0
+0x100644c80
+0x100644be0
+0x100646174
+0x1006466ec
+0x100646164
+0x100646f28
+0x100646108
+0x1006390a0
+# agent2-list2.txt
+0x10022cb30 depth=1
+0x100630190 depth=1
+0x100634bcc
+0x100627090 depth=1
+0x10063880c
+0x1006300f8
+0x100645944
+0x1006459f4
+0x1006460f0
+0x1006460d4
+0x10064678c
+0x1006442c0
+0x10062ef40
+# agent2-list3.txt
+0x100222294 depth=1
+0x100221838 depth=1
+0x1002244d8
+0x100220e9c
+0x10022441c
+0x100223958
+# agent3-list.txt
+0x1002338f8 next=2
+0x10078e8dc next=3
+0x100721d78
+0x10071fcb4
+# agent4-list.txt
+0x100175070
+0x10017ca40
+0x1006ff2f4 next=1
+# agent5-list.txt
+0x100179470 depth=1
+0x100189e3c depth=1
+0x100172ed4 depth=1
+0x100177ebc
+0x10016c820
+0x100176a48 depth=1
+# agent5b-list.txt
+0x10015da68 next=6

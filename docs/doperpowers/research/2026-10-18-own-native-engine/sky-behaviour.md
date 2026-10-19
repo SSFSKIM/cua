@@ -75,7 +75,7 @@ It consolidates three readings in this directory into one rule set: `A-contract.
   - the encoding is JPEG or PNG, with the quality not visible;
   - a classifier behind `feature/skyshotClassifier` can return no screenshot; its default is not visible.
   
-  The screenshot is returned as a `file://` URL. Measured: a 1172 × 976 JPEG of about 50 KB [A §3.7]. On the mini's 2× display it was the window's pixel size: 1220 × 1720 for the TextEdit scene's 610 × 860-point window, 1840 × 872 for Finder's and 1440 × 1120 for Electron's. The MacBook baseline's 1172 × 976 was read as points, so the vendor's sizing rule, and when it downsizes, is open [cua: Decision Log, 2026-10-19 screenshot-size ruling].
+  The screenshot is returned as a `file://` URL. The size is the window's WindowServer bounds in points times the backing scale factor of the screen the window sits on (2.0 when no screen matches), each side rounded up, with no cap; a downsizing fit (long side at most 2048, then short side at most 768) sits behind the server-side flag `should_use_legacy_screenshot_sizing` of Statsig config `406601636`, unset (false) in both Macs' caches on 2026-10-19. The image covers the window's bounds, stored as the observation's `visibleRect`. Measured, all on the mini's 2× display and all fitting the rule: 1220 × 1720 for the TextEdit scene's 610 × 860-point window, 1840 × 872 for Finder's, 1440 × 1120 for Electron's, and the 2026-10-14 baseline's 1172 × 976 JPEG of about 50 KB [A §3.7], which was taken on the mini, not the MacBook [cua: Decision Log, U1 resolved, 2026-10-19].
 - **Screenshot, cua.** A screenshot is captured only when the request asks (`includeScreenshot`). It uses `SCScreenshotManager` with a desktop-independent-window filter, is captured at the display's pixel size (the window's frame times the pixels per point of the display under it), as the vendor's was on the mini, and is written as a JPEG at quality 0.8 with mode 0600 into `outputDirectory`, returned as a `file:` URL [cua: Design, Screenshot; Decision Log, 2026-10-19 screenshot-size ruling]. The tree is walked on every observation either way, so the diff baseline still advances (§9).
 
 ## 3. App resolution, launch and listing
@@ -744,7 +744,7 @@ The cua column follows the Design's kept list and its Paste paragraph [cua: Desi
 | debounce at request start | poll every 250 ms for ≤ 100 s, then refuse | refuse at once | [F §9.5; cua: Decision Log 9] |
 | "Wait 5 seconds and retry." | a literal 5 | same | [F §9.5] |
 | list_apps recency | 14 days (Spotlight) | the engine's usage store | [E §7; cua: Design, App resolution and launch] |
-| screenshot | JPEG or PNG, quality not visible; the window's pixel size on the mini's 2× display, 1172 × 976 at about 50 KB on the MacBook baseline; the sizing rule is open | JPEG 0.8, at the display's pixel size | [E §4.2; A §3.7; cua: Design, Screenshot; Decision Log, 2026-10-19 screenshot-size ruling] |
+| screenshot | JPEG at 0.8 by the server config (PNG possible); the window's bounds × its screen's backing scale, rounded up, uncapped (a legacy 2048/768 fit is off server-side); 1172 × 976 at about 50 KB on the mini's 2026-10-14 baseline | JPEG 0.8, at the display's pixel size | [E §4.2; A §3.7; cua: Design, Screenshot; Decision Log, 2026-10-19 screenshot-size ruling] |
 
 ## 23. Open points for M1a and M2a
 

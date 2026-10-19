@@ -311,7 +311,7 @@ and (`:20`) `7 text field (settable) Value: <v>, ID: saveAsNameTextField`.
 
 - `skyshot.screenshot = {url, mimeType?}`. An empty or absent URL means `screenshot: null` (`window_result.js:10-30`, `client.d.ts:98-104`). The skill says the URL is "always `file://`" in that environment (`SKILL.md:116`); the docs type says data URL (`sky-window-api.md:111-113`). The facade accepts both: base64-decode or `readFile(fileURLToPath)` in the **cell** (`C/src/cua-api/display.mjs:31-37`).
 - **Inference:** a file URL must be readable from the kernel's sandbox.
-- **Measured:** a window JPEG of 1172 × 976, about 50 KB (`native-baseline/README.md:18`).
+- **Measured:** a window JPEG of 1172 × 976, about 50 KB (`native-baseline/README.md:18`), on the mini's 2× display (the run's `meta.json`: `"device": "mini"`); by the vendor's sizing rule, a 586 × 488-point window (corrected 2026-10-19; the spec's Decision Log, U1 resolved).
 - **Coordinates** are "in the app-window screenshot" (`sky-window-api.md:51-52`); host rule: "coordinates are screenshot pixels (apply the host's downscale)" (`surface.mjs:230`).
 - No JS resizing. cua's MCP layer only corrects MIME by magic bytes (`C/src/mcp/surface.mjs:287-291`).
 

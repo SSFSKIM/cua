@@ -295,3 +295,26 @@ Each item quotes the spec's "Design" and gives the section above that holds the 
 4. The "stable set" rule for reordered siblings (`FUN_100627090`/`FUN_10063880c`), the inputs of the controller's `isAXTreeDiffingEnabled` (`FUN_1001675c8`, `config[+0x98]`), whether lineages are per connection or per app (§3, §4).
 5. The RichText conversion route for `html` (whether `WebViewPasteboardProvider` is ever reached) and its timeout; the `com.apple.Music` busy check (`FUN_1006faacc`); the caller of `awaitingLaunchCompletion()` and where the observed ~5.5 s launch bound lives (§7, §8).
 6. The service idle timeout, `ioTimeout`, and the per-client exit-source wiring (§10).
+
+## 15. Screenshot sizing (U1, 2026-10-19)
+
+Read statically, decompile plus disassembly of the branches that matter, on the helper of the pinned runtime 26.928.40906-darwin-arm64. The design's ruling is the spec's Decision Log entry "U1 resolved, 2026-10-19".
+
+- `updateSkyshot(treeCache:disableAXDiffing:skipScreenshot:)` 0x10006bdf4, body partials 0x10006c064 and 0x10006c5b4 (the second after a window refetch). The partial reads Statsig dynamic config `"406601636"` (literal passed at 0x10006c418). It calls the size function only when no menu-bar item has focus and `skipScreenshot` is false (0x10006c430 to 0x10006c4c8).
+- Config reader `FUN_100212a18`:
+  - `should_use_legacy_screenshot_sizing` (default false);
+  - `should_normalize_screenshot_to_point_resolution` (default true);
+  - `should_use_jpeg` (default true);
+  - `jpeg_compression_quality` (default 0.8; nil outside (0, 1]).
+  - Key strings at 0x101111d40, 0x101111d70 and 0x101111da0.
+- `CGWindow.scale` 0x10024cf50: `NSScreen.bestScreen(for: bounds)?.backingScaleFactor`, else 2.0. The reducer that picks the screen (`FUN_100251b30`) was not read. **[inference]** It takes the largest intersection, comparing CG bounds (top-left origin) against Cocoa screen frames.
+- Size function `FUN_10006e7e8` (disassembly), size = `bounds` × `scale`, stored with `visibleRect = bounds` and `scalingFactor` = window points per image pixel. Under the legacy flag it instead fits:
+  - long side at most 2048 (constant), then short side at most 768, never enlarging;
+  - in points when normalization holds and the scale is above 1, else in pixels.
+- `FUN_10006cadc` builds the `SkyshotOperation` (opaque, no window shadow, the virtual cursor's window as an extra when that feature shows it) and calls `capture(…imageSize:)` 0x100224a9c. That goes through `captureScreenshot(imageSize:)` 0x100226da0 and `FUN_100226f40` to 0x100eaf10c, then `FUN_100eb38cc`.
+- On-screen window, `FUN_100eb3ed0` (branch at 0x100eb4438): the `SCStreamConfiguration` width and height come from `imageSize`, else frame × `pointPixelScale`. This is the only `setWidth:`/`setHeight:` site. `FUN_100eb37c4` converts each side to an integer by rounding up (`frintp`; Ghidra's C omits it) and rejects a non-finite or non-positive side (`invalidCaptureSize`).
+- Off-screen window: `FUN_100eadeac` captures via `captureWindowImagesInRect` (§11), then `FUN_100eb0d80` redraws it to `imageSize` truncated to an integer, returning the image unscaled if the redraw fails.
+- JPEG writer 0x100eaf220 → `ImageDestination.add(image:compressionQuality:)` 0x100f325d0 sets the quality only. No max-pixel-size scaler is called on this path; their only callers are SkyLens UI code.
+- `AppStartCapture` (`FUN_10015c7d8`) applies the same 2048/768 fit under the legacy flag, always in pixels. It is not on the `get_app_state` path.
+
+Not determined: which window supplies the bounds upstream of `updateSkyshot`; the multi-display screen choice above; any downsizing on the model API's side.

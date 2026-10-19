@@ -35,9 +35,11 @@ private enum SkyLight {
 }
 
 /// The process holding key focus, by the private CPSGetKeyFocusProcess and the Process Manager's GetProcessPID (both
-/// by dlsym; nil when either is absent or fails).
+/// by dlsym; nil when either is absent or fails). CPSGetKeyFocusProcess takes a second, out Boolean (F §11's
+/// `getKeyFocusProcess(_:flag:)`): called with one argument it answers 1003 while the process has no window-server
+/// connection and faults once it has one, which the engine always does.
 private enum KeyFocus {
-  typealias GetKeyFocusProcess = @convention(c) (UnsafeMutablePointer<ProcessSerialNumber>) -> Int32
+  typealias GetKeyFocusProcess = @convention(c) (UnsafeMutablePointer<ProcessSerialNumber>, UnsafeMutablePointer<DarwinBoolean>) -> Int32
   typealias GetProcessPID = @convention(c) (UnsafePointer<ProcessSerialNumber>, UnsafeMutablePointer<pid_t>) -> Int32
   static let getKeyFocusProcess: GetKeyFocusProcess? = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CPSGetKeyFocusProcess").map { unsafeBitCast($0, to: GetKeyFocusProcess.self) }
   static let getProcessPID: GetProcessPID? = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "GetProcessPID").map { unsafeBitCast($0, to: GetProcessPID.self) }
@@ -45,7 +47,8 @@ private enum KeyFocus {
   static func pid() -> pid_t? {
     guard let getKeyFocusProcess, let getProcessPID else { return nil }
     var process = ProcessSerialNumber()
-    guard getKeyFocusProcess(&process) == 0 else { return nil }
+    var flag = DarwinBoolean(false)
+    guard getKeyFocusProcess(&process, &flag) == 0 else { return nil }
     var pid: pid_t = 0
     return getProcessPID(&process, &pid) == 0 && pid > 0 ? pid : nil
   }

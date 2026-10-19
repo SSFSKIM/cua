@@ -398,9 +398,22 @@ final class AutoStopTests: XCTestCase {
 /// and the user's re-activation are recorded instead of made. The window is the application handle of a pid above
 /// PID_MAX (99999), which no process can hold, so its AX reads answer nothing: no window id is known and the guard's
 /// window-order branch is not taken.
-/// Every read stays stubbed: the real CPSGetKeyFocusProcess segfaults inside the xctest host (SkyLight's
-/// SLPSGetKeyFocusProcess), though not in a plain process with a window-server connection, which the engine always has.
 final class FakeActivationTests: XCTestCase {
+  /// The real key-focus read, with a window-server connection as the engine always has (the mini sitting's crash: the
+  /// call was declared with one argument and faulted in SkyLight's SLPSGetKeyFocusProcess on every typeText).
+  func testTheRealKeyFocusReadAnswersFromAnyThread() {
+    _ = NSApplication.shared
+    let main = ActivationSystem().keyFocus()
+    var background: pid_t?? = .none
+    let done = expectation(description: "background read")
+    Thread {
+      background = .some(ActivationSystem().keyFocus())
+      done.fulfill()
+    }.start()
+    wait(for: [done], timeout: 5)
+    XCTAssertEqual(background, .some(main), "the read answers the same from a connection's thread as from the main one")
+  }
+
   private let target: pid_t = 990_001, user: pid_t = 990_002, other: pid_t = 990_003
 
   private func activation(_ seam: SeamStub) -> FakeActivation {

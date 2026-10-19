@@ -37,6 +37,8 @@ export const shellOf = (d, {exec = execFileSync} = {}) => script => {
 export const lastJson = text => JSON.parse(String(text).trim().split('\n').at(-1));
 
 // engine-device.mjs on the device. `engine`: the bundle (default: the device's approved location).
+let watched = null;
+
 export function engineOps(d, shell, {engine} = {}) {
   const run = (...args) => {
     const out = lastJson(shell(`${d.node} scripts/spike/engine/measure/engine-device.mjs ${args.map(quote).join(' ')}${engine ? ` --engine ${quote(engine)}` : ''}`));
@@ -51,6 +53,10 @@ export function engineOps(d, shell, {engine} = {}) {
     launch: ({plain = false} = {}) => run('launch', ...(plain ? ['--plain'] : [])),
     checkoutBuild: () => run('checkout-build'),
     inputSource: arg => run('input-source', arg),
+    probeTap: (op, extra = {}) => run('rpc', 'probe_tap', JSON.stringify({op, ...extra})),
+    keystroke: (pid, bounds, text) => run('keystroke', String(pid), bounds, text),
+    watch: () => { watched = run('watch'); return watched; },
+    watchStop: () => { if (!watched) throw new Error('no watch is running'); const answer = run('watch-stop', String(watched.pid), watched.dir); watched = null; return answer.lines ?? []; },
     copy: dir => run('copy', dir),
     removeCopy: dir => run('remove-copy', dir),
   };

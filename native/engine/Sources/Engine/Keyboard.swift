@@ -2,9 +2,11 @@ import Carbon
 import CoreGraphics
 import Foundation
 
-// Keys and the keyboard layout (the spec's Design, "Keys" and "Text"): the active input source read directly with
-// TISCopyCurrentKeyboardInputSource; a reverse map from the produced text to (virtual key code, modifiers) built with
-// UCKeyTranslate over the layout's `uchr` data, once per layout; the xdotool-style key grammar of press_key.
+// Keys and the keyboard layout (the spec's Design, "Keys" and "Text"; R/F-helper-logic.md §6, R/sky-behaviour.md §13–14):
+// the active input source, read directly; the layout's reverse map from one UTF-16 unit to (virtual key code, Carbon
+// modifiers), built as the vendor builds it; press_key's grammar over the vendor's exact, case-sensitive key table; the
+// four events of one key press and the typed units of a text, as data; and the posting of those events. TIS calls are
+// made on the main thread (`onMain`), since the engine's requests run on connection threads.
 
 struct InputSourceInfo {
   let id: String
@@ -31,11 +33,16 @@ func inputSourceInfo(_ source: TISInputSource) -> InputSourceInfo {
     asciiCapable: property(source, kTISPropertyInputSourceIsASCIICapable, as: Bool.self) ?? false)
 }
 
-func currentInputSource() -> InputSourceInfo { inputSourceInfo(TISCopyCurrentKeyboardInputSource().takeRetainedValue()) }
+/// Runs `body` on the main thread (HIToolbox's input-source calls expect it); directly when already there.
+func onMain<T>(_ body: () -> T) -> T {
+  Thread.isMainThread ? body() : DispatchQueue.main.sync(execute: body)
+}
+
+func currentInputSource() -> InputSourceInfo { onMain { inputSourceInfo(TISCopyCurrentKeyboardInputSource().takeRetainedValue()) } }
 
 /// The id alone, for the check before every keyed event.
 func currentInputSourceID() -> String {
-  property(TISCopyCurrentKeyboardInputSource().takeRetainedValue(), kTISPropertyInputSourceID, as: String.self) ?? ""
+  onMain { property(TISCopyCurrentKeyboardInputSource().takeRetainedValue(), kTISPropertyInputSourceID, as: String.self) ?? "" }
 }
 
 /// Keyboard → Input Sources → "Automatically switch to a document's input source": macOS then holds a source per app,
@@ -45,243 +52,269 @@ func perContextInputEnabled() -> Bool {
   return (properties?["TextInputGlobalPropertyPerContextInput"] as? NSNumber)?.boolValue ?? false
 }
 
-struct KeyStroke {
-  let keyCode: CGKeyCode
-  let flags: CGEventFlags
+// MARK: Key presses
+
+/// Carbon modifier masks, as the vendor's key presses carry them (F §5's constants).
+struct CarbonModifiers: OptionSet, Hashable {
+  let rawValue: UInt32
+  static let command = CarbonModifiers(rawValue: 0x100)
+  static let shift = CarbonModifiers(rawValue: 0x200)
+  static let option = CarbonModifiers(rawValue: 0x800)
+  static let control = CarbonModifiers(rawValue: 0x1000)
+
+  var eventFlags: CGEventFlags {
+    var flags: CGEventFlags = []
+    if contains(.command) { flags.insert(.maskCommand) }
+    if contains(.shift) { flags.insert(.maskShift) }
+    if contains(.option) { flags.insert(.maskAlternate) }
+    if contains(.control) { flags.insert(.maskControl) }
+    return flags
+  }
 }
 
-/// The layout's reverse map: for every text one key produces (under no modifier, Shift, Option, Shift+Option), the
-/// key and modifiers that produce it, the fewest modifiers winning. Keypad keys are left out so digits key from the
-/// main row.
+/// One key press: a virtual key code under modifiers. `keyCode` nil is a combination of modifiers alone.
+struct KeyPress: Equatable {
+  let keyCode: CGKeyCode?
+  let modifiers: CarbonModifiers
+}
+
+let returnKeyCode: CGKeyCode = 0x24
+
+// MARK: The layout's reverse map
+
+/// The vendor's eight masks, searched in this order (F §6.2): shift, option, control and their combinations, never ⌘.
+let reverseMapMasks: [CarbonModifiers] = [0, 0x200, 0x800, 0xA00, 0x1000, 0x1200, 0x1800, 0x1A00].map(CarbonModifiers.init(rawValue:))
+
+/// The layout's reverse map, as the vendor builds it (F §6.2): for each mask in order, key codes 0–127, the text
+/// `UCKeyTranslate` displays for the key (kUCKeyActionDisplay, no dead-key state); a UTF-16 unit maps to the first key
+/// press that displays exactly it. Keypad keys are not excluded, so `*` and `+` key from the keypad, as the vendor's do.
+/// Rebuilt when the current layout's id differs from the one it was built for, which is when the selected-source
+/// notification would have rebuilt it.
 final class KeyLayout: @unchecked Sendable {
   let layoutID: String
-  private let strokes: [[UInt16]: KeyStroke]
+  private let presses: [UInt16: KeyPress]
 
-  private init(layoutID: String, strokes: [[UInt16]: KeyStroke]) {
+  init(layoutID: String, presses: [UInt16: KeyPress]) {
     self.layoutID = layoutID
-    self.strokes = strokes
+    self.presses = presses
   }
 
-  func stroke(for text: [UInt16]) -> KeyStroke? { strokes[text] }
+  /// The press for one UTF-16 unit; a newline is looked up as a carriage return, as the vendor does.
+  func press(for unit: UInt16) -> KeyPress? { presses[unit == 0x0A ? 0x0D : unit] }
 
   private static let lock = NSLock()
   nonisolated(unsafe) private static var cached: KeyLayout?
 
-  /// The current layout's map, rebuilt when the layout changed since the last build.
+  /// The current layout's map (TISCopyCurrentKeyboardLayoutInputSource: under an input method, its layout).
   static func current() -> KeyLayout? {
-    let source = TISCopyCurrentKeyboardLayoutInputSource().takeRetainedValue()
-    let id = property(source, kTISPropertyInputSourceID, as: String.self) ?? ""
+    guard let (id, data) = onMain({ layoutData(TISCopyCurrentKeyboardLayoutInputSource().takeRetainedValue()) }) else { return nil }
     lock.lock()
     defer { lock.unlock() }
     if let cached, cached.layoutID == id { return cached }
-    guard let data = property(source, kTISPropertyUnicodeKeyLayoutData, as: Data.self) else { return nil }
-    let built = KeyLayout(layoutID: id, strokes: build(data))
+    let built = KeyLayout(layoutID: id, presses: build(data))
     cached = built
     return built
   }
 
-  private static let keypad: Set<CGKeyCode> = [65, 67, 69, 71, 75, 76, 78, 81, 82, 83, 84, 85, 86, 87, 88, 89, 91, 92]
+  /// The map of an installed layout by its source id (the unit tests' US layout), without selecting it.
+  static func named(_ sourceID: String) -> KeyLayout? {
+    let filter = [kTISPropertyInputSourceID as String: sourceID] as CFDictionary
+    guard let list = TISCreateInputSourceList(filter, true)?.takeRetainedValue() as? [TISInputSource], let source = list.first,
+          let (id, data) = layoutData(source) else { return nil }
+    return KeyLayout(layoutID: id, presses: build(data))
+  }
 
-  private static func build(_ data: Data) -> [[UInt16]: KeyStroke] {
-    var strokes: [[UInt16]: KeyStroke] = [:]
-    // UCKeyTranslate's modifier state is the Carbon modifiers shifted right by 8: Shift 0x02, Option 0x08.
-    let combinations: [(state: UInt32, flags: CGEventFlags)] = [(0, []), (0x02, .maskShift), (0x08, .maskAlternate), (0x0A, [.maskShift, .maskAlternate])]
+  private static func layoutData(_ source: TISInputSource) -> (String, Data)? {
+    guard let data = property(source, kTISPropertyUnicodeKeyLayoutData, as: Data.self) else { return nil }
+    return (property(source, kTISPropertyInputSourceID, as: String.self) ?? "", data)
+  }
+
+  private static func build(_ data: Data) -> [UInt16: KeyPress] {
     data.withUnsafeBytes { raw in
       let layout = raw.baseAddress!.assumingMemoryBound(to: UCKeyboardLayout.self)
-      for combination in combinations {
-        for code in CGKeyCode(0)..<128 where !keypad.contains(code) {
-          var deadKeys: UInt32 = 0
-          var length = 0
-          var chars = [UniChar](repeating: 0, count: 8)
-          let status = UCKeyTranslate(layout, code, UInt16(kUCKeyActionDown), combination.state, UInt32(LMGetKbdType()),
-                                      OptionBits(kUCKeyTranslateNoDeadKeysMask), &deadKeys, chars.count, &length, &chars)
-          guard status == noErr, length > 0 else { continue }
-          let text = Array(chars[0..<length])
-          guard text.allSatisfy({ $0 >= 0x20 && $0 != 0x7F }), strokes[text] == nil else { continue }
-          strokes[text] = KeyStroke(keyCode: code, flags: combination.flags)
-        }
+      return reverseMap { code, mask in
+        var deadKeys: UInt32 = 0
+        var length = 0
+        var chars = [UniChar](repeating: 0, count: 4)
+        let status = UCKeyTranslate(layout, code, UInt16(kUCKeyActionDisplay), mask.rawValue >> 8, UInt32(LMGetKbdType()),
+                                    0, &deadKeys, chars.count, &length, &chars)
+        return status == noErr ? Array(chars[0..<length]) : []
       }
     }
-    return strokes
+  }
+
+  /// The search, over any key translation: the first exact single-unit match per unit, masks outermost.
+  static func reverseMap(_ translate: (CGKeyCode, CarbonModifiers) -> [UInt16]) -> [UInt16: KeyPress] {
+    var presses: [UInt16: KeyPress] = [:]
+    for mask in reverseMapMasks {
+      for code in CGKeyCode(0)..<128 {
+        let text = translate(code, mask)
+        if text.count == 1, presses[text[0]] == nil { presses[text[0]] = KeyPress(keyCode: code, modifiers: mask) }
+      }
+    }
+    return presses
   }
 }
 
 // MARK: press_key's grammar
 
-enum Modifier {
-  case command, shift, option, control
+/// The vendor's modifier names (F §6.4), exact and case-sensitive.
+private let modifierNames: [String: CarbonModifiers] = [
+  "Shift_L": .shift, "Shift_R": .shift, "shift": .shift,
+  "Control_L": .control, "Control_R": .control, "ctrl": .control,
+  "Alt_L": .option, "Alt_R": .option, "alt": .option,
+  "Meta_L": .command, "Meta_R": .command, "meta": .command, "Super_L": .command, "Super_R": .command, "super": .command,
+  "command": .command, "Command": .command, "cmd": .command,
+]
 
-  var flag: CGEventFlags {
-    switch self {
-    case .command: .maskCommand
-    case .shift: .maskShift
-    case .option: .maskAlternate
-    case .control: .maskControl
+/// The vendor's key table (F §6.4, R/sky-behaviour.md §13): fixed ANSI key codes, never the current layout; a name that
+/// types a shifted character carries the shift mask. `equal` is corrected to the unshifted key (the vendor's types `+`).
+let keyTable: [String: KeyPress] = {
+  var table: [String: KeyPress] = [:]
+  func add(_ names: [String], _ code: CGKeyCode, _ modifiers: CarbonModifiers = []) {
+    for name in names { table[name] = KeyPress(keyCode: code, modifiers: modifiers) }
+  }
+  add(["BackSpace"], 0x33); add(["Tab"], 0x30); add(["Linefeed", "Return"], 0x24); add(["Clear", "KP_Delete"], 0x47)
+  add(["Escape"], 0x35); add(["Delete"], 0x75); add(["space"], 0x31); add(["Help"], 0x72); add(["Menu"], 0x6E)
+  add(["Caps_Lock", "Shift_Lock"], 0x39); add(["Home", "Begin"], 0x73); add(["End"], 0x77)
+  add(["Left"], 0x7B); add(["Up"], 0x7E); add(["Right"], 0x7C); add(["Down"], 0x7D)
+  add(["Prior", "Page_Up"], 0x74); add(["Next", "Page_Down"], 0x79)
+  add(["KP_Enter"], 0x4C); add(["KP_Equal"], 0x51); add(["KP_Multiply"], 0x43); add(["KP_Add"], 0x45)
+  add(["KP_Subtract"], 0x4E); add(["KP_Decimal"], 0x41); add(["KP_Divide"], 0x4B)
+  for (digit, code) in zip(0...9, [0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5B, 0x5C] as [CGKeyCode]) { add(["KP_\(digit)"], code) }
+  let functionKeys: [CGKeyCode] = [0x7A, 0x78, 0x63, 0x76, 0x60, 0x61, 0x62, 0x64, 0x65, 0x6D, 0x67, 0x6F, 0x69, 0x6B, 0x71, 0x6A, 0x40, 0x4F, 0x50, 0x5A]
+  for (number, code) in zip(1...20, functionKeys) { add(["F\(number)"], code) }
+  for (digit, code) in zip(0...9, [0x1D, 0x12, 0x13, 0x14, 0x15, 0x17, 0x16, 0x1A, 0x1C, 0x19] as [CGKeyCode]) { add(["\(digit)"], code) }
+  let letters: [Character: CGKeyCode] = [
+    "a": 0x00, "b": 0x0B, "c": 0x08, "d": 0x02, "e": 0x0E, "f": 0x03, "g": 0x05, "h": 0x04, "i": 0x22, "j": 0x26,
+    "k": 0x28, "l": 0x25, "m": 0x2E, "n": 0x2D, "o": 0x1F, "p": 0x23, "q": 0x0C, "r": 0x0F, "s": 0x01, "t": 0x11,
+    "u": 0x20, "v": 0x09, "w": 0x0D, "x": 0x07, "y": 0x10, "z": 0x06,
+  ]
+  for (letter, code) in letters {
+    add([String(letter)], code)
+    add([letter.uppercased()], code, .shift)
+  }
+  add(["apostrophe"], 0x27); add(["comma"], 0x2B); add(["minus"], 0x1B); add(["period"], 0x2F); add(["slash"], 0x2C)
+  add(["semicolon"], 0x29); add(["bracketleft"], 0x21); add(["backslash"], 0x2A); add(["bracketright"], 0x1E)
+  add(["grave"], 0x32); add(["equal"], 0x18)
+  let shifted: [(String, CGKeyCode)] = [
+    ("exclam", 0x12), ("at", 0x13), ("numbersign", 0x14), ("dollar", 0x15), ("percent", 0x17), ("asciicircum", 0x16),
+    ("ampersand", 0x1A), ("asterisk", 0x1C), ("parenleft", 0x19), ("parenright", 0x1D), ("underscore", 0x1B),
+    ("plus", 0x18), ("colon", 0x29), ("quotedbl", 0x27), ("less", 0x2B), ("greater", 0x2F), ("question", 0x2C),
+    ("braceleft", 0x21), ("braceright", 0x1E), ("bar", 0x2A), ("asciitilde", 0x32),
+  ]
+  for (name, code) in shifted { add([name], code, .shift) }
+  return table
+}()
+
+/// An unknown key name: the token is named when it looks like a key name, never otherwise (a key string is the
+/// client's, and the message must not carry arbitrary client text).
+func invalidKey(_ token: String) -> EngineError {
+  let named = token.count <= 32 && token.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "_") }
+  return EngineError(name: "invalidKey", named ? "Unknown key name '\(token)' in the key combination" : "Unknown key name in the key combination")
+}
+
+/// press_key's grammar (F §6.3): split on spaces into sequential combinations, each split on `+`; every token matched
+/// exactly; a combination's modifiers OR-ed into one press. A combination of modifiers alone is a press without a key;
+/// two non-modifier keys in one combination are refused. cua's departure: the vendor drops empty tokens, so `ctrl++`
+/// silently presses ctrl alone and the model believes it zoomed; cua refuses an empty token and names `plus`.
+func parseKeySequence(_ text: String) throws -> [KeyPress] {
+  var presses: [KeyPress] = []
+  for combination in text.split(separator: " ") {
+    let tokens = combination.split(separator: "+", omittingEmptySubsequences: false).map(String.init)
+    guard !tokens.contains(where: \.isEmpty) else {
+      throw EngineError(name: "invalidKey", "A key combination has an empty key name; the + key is named 'plus'")
     }
-  }
-
-  var keyCode: CGKeyCode {
-    switch self {
-    case .command: 55
-    case .shift: 56
-    case .option: 58
-    case .control: 59
-    }
-  }
-}
-
-private let modifierNames: [String: Modifier] = [
-  "super": .command, "super_l": .command, "super_r": .command, "cmd": .command, "command": .command,
-  "meta": .command, "meta_l": .command, "meta_r": .command,
-  "ctrl": .control, "control": .control, "control_l": .control, "control_r": .control,
-  "alt": .option, "alt_l": .option, "alt_r": .option, "option": .option,
-  "shift": .shift, "shift_l": .shift, "shift_r": .shift,
-]
-
-/// Named keys that produce no text, by lowercased xdotool keysym (and the common aliases), to virtual key codes.
-private let namedKeys: [String: CGKeyCode] = [
-  "return": 36, "enter": 36, "linefeed": 36, "tab": 48, "space": 49, "backspace": 51, "escape": 53, "esc": 53,
-  "delete": 117, "home": 115, "end": 119, "prior": 116, "page_up": 116, "pageup": 116, "next": 121, "page_down": 121,
-  "pagedown": 121, "left": 123, "right": 124, "down": 125, "up": 126, "help": 114, "insert": 114, "caps_lock": 57,
-  "f1": 122, "f2": 120, "f3": 99, "f4": 118, "f5": 96, "f6": 97, "f7": 98, "f8": 100, "f9": 101, "f10": 109,
-  "f11": 103, "f12": 111, "f13": 105, "f14": 107, "f15": 113, "f16": 106, "f17": 64, "f18": 79, "f19": 80, "f20": 90,
-  "kp_0": 82, "kp_1": 83, "kp_2": 84, "kp_3": 85, "kp_4": 86, "kp_5": 87, "kp_6": 88, "kp_7": 89, "kp_8": 91, "kp_9": 92,
-  "kp_decimal": 65, "kp_multiply": 67, "kp_add": 69, "kp_clear": 71, "clear": 71, "num_lock": 71, "kp_divide": 75,
-  "kp_enter": 76, "kp_subtract": 78, "kp_equal": 81, "kp_home": 115, "kp_end": 119, "kp_prior": 116, "kp_page_up": 116,
-  "kp_next": 121, "kp_page_down": 121, "kp_left": 123, "kp_right": 124, "kp_up": 126, "kp_down": 125, "kp_tab": 48,
-  "kp_space": 49,
-]
-
-/// Keysyms that name a character, keyed through the layout like typed text.
-private let characterKeysyms: [String: String] = [
-  "exclam": "!", "quotedbl": "\"", "numbersign": "#", "dollar": "$", "percent": "%", "ampersand": "&",
-  "apostrophe": "'", "quoteright": "'", "parenleft": "(", "parenright": ")", "asterisk": "*", "plus": "+",
-  "comma": ",", "minus": "-", "period": ".", "slash": "/", "colon": ":", "semicolon": ";", "less": "<", "equal": "=",
-  "greater": ">", "question": "?", "at": "@", "bracketleft": "[", "backslash": "\\", "bracketright": "]",
-  "asciicircum": "^", "underscore": "_", "grave": "`", "quoteleft": "`", "braceleft": "{", "bar": "|",
-  "braceright": "}", "asciitilde": "~",
-]
-
-struct Chord {
-  let modifiers: [Modifier]
-  /// The main key; nil when the chord is modifiers alone (pressed and released).
-  let key: KeyStroke?
-}
-
-func invalidKey(_ name: String) -> EngineError {
-  EngineError(name: "invalidKey", "Unknown key name '\(name.prefix(32))' in the key combination")
-}
-
-/// Parses `super+n`, `ctrl+shift+Tab`, `Return`, `KP_0`, `a`, `A`, `exclam`, `ctrl++`.
-func parseChord(_ text: String, layout: KeyLayout?) throws -> Chord {
-  let trimmed = text.trimmingCharacters(in: .whitespaces)
-  guard !trimmed.isEmpty else { throw EngineError.invalidArguments("key is required") }
-  var parts: [String]
-  if trimmed == "+" { parts = ["+"] }
-  else if trimmed.hasSuffix("++") { parts = trimmed.dropLast(2).split(separator: "+").map(String.init) + ["+"] }
-  else { parts = trimmed.split(separator: "+", omittingEmptySubsequences: false).map(String.init) }
-  guard !parts.contains(where: \.isEmpty) else { throw invalidKey(trimmed) }
-  var modifiers: [Modifier] = []
-  for part in parts.dropLast() {
-    guard let modifier = modifierNames[part.lowercased()] else { throw invalidKey(part) }
-    if !modifiers.contains(modifier) { modifiers.append(modifier) }
-  }
-  let last = parts.last!
-  if let modifier = modifierNames[last.lowercased()] {
-    if !modifiers.contains(modifier) { modifiers.append(modifier) }
-    return Chord(modifiers: modifiers, key: nil)
-  }
-  if let code = namedKeys[last.lowercased()] { return Chord(modifiers: modifiers, key: KeyStroke(keyCode: code, flags: [])) }
-  let character = characterKeysyms[last.lowercased()] ?? (last.count == 1 ? last : nil)
-  guard let character, let stroke = layout?.stroke(for: Array(character.utf16)) ?? layout?.stroke(for: Array(character.lowercased().utf16)).map({
-    KeyStroke(keyCode: $0.keyCode, flags: $0.flags.union(character != character.lowercased() ? .maskShift : []))
-  }) else { throw invalidKey(last) }
-  return Chord(modifiers: modifiers, key: stroke)
-}
-
-// MARK: Posting
-
-/// Where key and mouse events go: to one process (the engine's route 2, from a private event source, so they never
-/// count as the user's input) or to the HID event tap (the probe, from an HID-state source, so they do).
-struct EventPoster {
-  let source: CGEventSource?
-  let deliver: (CGEvent) -> Void
-
-  static func toProcess(_ pid: pid_t) -> EventPoster {
-    EventPoster(source: CGEventSource(stateID: .privateState)) { $0.postToPid(pid) }
-  }
-
-  static func toHIDTap() -> EventPoster {
-    EventPoster(source: CGEventSource(stateID: .hidSystemState)) { $0.post(tap: .cghidEventTap) }
-  }
-
-  func key(_ code: CGKeyCode, down: Bool, flags: CGEventFlags, text: [UInt16]? = nil) {
-    guard let event = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: down) else { return }
-    event.flags = flags
-    if let text { event.keyboardSetUnicodeString(stringLength: text.count, unicodeString: text) }
-    deliver(event)
-  }
-
-  /// One chord: modifiers down in order, the key down and up, modifiers up in reverse; every held modifier released.
-  /// `check` runs before each event and may stop the chord by throwing.
-  func chord(_ chord: Chord, check: () throws -> Void) throws {
-    var held: CGEventFlags = []
-    var pressed: [Modifier] = []
-    defer {
-      for modifier in pressed.reversed() {
-        held.remove(modifier.flag)
-        key(modifier.keyCode, down: false, flags: held)
+    var modifiers: CarbonModifiers = []
+    var keyCode: CGKeyCode?
+    for token in tokens {
+      if let modifier = modifierNames[token] {
+        modifiers.formUnion(modifier)
+      } else if let key = keyTable[token] {
+        guard keyCode == nil else {
+          throw EngineError(name: "invalidKey", "A key combination names one key besides its modifiers")
+        }
+        keyCode = key.keyCode
+        modifiers.formUnion(key.modifiers)
+      } else {
+        throw invalidKey(token)
       }
     }
-    for modifier in chord.modifiers {
-      try check()
-      held.insert(modifier.flag)
-      key(modifier.keyCode, down: true, flags: held)
-      pressed.append(modifier)
-    }
-    if let stroke = chord.key {
-      try check()
-      let flags = held.union(stroke.flags)
-      key(stroke.keyCode, down: true, flags: flags)
-      key(stroke.keyCode, down: false, flags: flags)
-    }
+    presses.append(KeyPress(keyCode: keyCode, modifiers: modifiers))
   }
+  guard !presses.isEmpty else { throw EngineError.invalidArguments("key is required") }
+  return presses
 }
 
-/// A unit of typed text: one keyed character, one Return, or a run of characters the layout cannot key, sent as
-/// Unicode-string events of at most 20 UTF-16 units that never split a character.
-enum TypedUnit {
-  case keyed(KeyStroke, [UInt16])
-  case newline
-  case unicode([UInt16])
+// MARK: Events as data
 
-  var length: Int {
-    switch self {
-    case .keyed(_, let text): text.count
-    case .newline: 1
-    case .unicode(let text): text.count
-    }
-  }
+/// One event of a key press. `restore` is the flags-changed event that puts back the session's real modifier state,
+/// read when it is posted.
+struct KeyEvent: Equatable {
+  enum Kind: Equatable { case flags, down, up, restore }
+  let kind: Kind
+  let keyCode: CGKeyCode
+  let flags: CGEventFlags
+  /// The Unicode string a typed unit's key down and up carry (CGEventKeyboardSetUnicodeString); nil for press_key.
+  let text: [UInt16]?
 }
 
+/// The vendor's four events of one press (F §6.2): flags-changed with the mask, key down, key up (both with the mask),
+/// flags-changed restoring the real modifier state. A press of modifiers alone is its two flags-changed events.
+func keyPressEvents(_ press: KeyPress, text: [UInt16]? = nil) -> [KeyEvent] {
+  let flags = press.modifiers.eventFlags
+  guard let code = press.keyCode else {
+    return [KeyEvent(kind: .flags, keyCode: 0, flags: flags, text: nil), KeyEvent(kind: .restore, keyCode: 0, flags: [], text: nil)]
+  }
+  return [
+    KeyEvent(kind: .flags, keyCode: 0, flags: flags, text: nil),
+    KeyEvent(kind: .down, keyCode: code, flags: flags, text: text),
+    KeyEvent(kind: .up, keyCode: code, flags: flags, text: text),
+    KeyEvent(kind: .restore, keyCode: 0, flags: [], text: nil),
+  ]
+}
+
+/// One unit of typed text: a press the layout keys, with the character it types attached, or (`press` nil) a run of
+/// characters the layout cannot key, sent as one Unicode-string press with key code 0. `consumed` is how many UTF-16
+/// units of the request it accounts for, so a stopped request can say how much was entered.
+struct TypedUnit: Equatable {
+  let press: KeyPress?
+  let text: [UInt16]
+  let consumed: Int
+
+  var events: [KeyEvent] { keyPressEvents(press ?? KeyPress(keyCode: 0, modifiers: []), text: text) }
+}
+
+/// The most UTF-16 units one Unicode-string event carries (CGEventKeyboardSetUnicodeString's limit).
 let unicodeChunkLimit = 20
-let returnKeyCode: CGKeyCode = 36
 
-func typedUnits(_ text: String, layout: KeyLayout?) -> [TypedUnit] {
+/// A text as typed units (the spec's Design, "Text"): a newline is a Return press; a character of one UTF-16 unit the
+/// layout keys is that press; everything else (an emoji, CJK, a combining sequence) collects into Unicode-string runs
+/// of at most 20 units that never split a character, and a single character longer than that is cut only between
+/// its Unicode scalars, so no surrogate pair is ever split.
+func typedUnits(_ text: String, press: (UInt16) -> KeyPress?) -> [TypedUnit] {
   var units: [TypedUnit] = []
   var pending: [UInt16] = []
-  func flush() { if !pending.isEmpty { units.append(.unicode(pending)); pending = [] } }
+  func flush() {
+    if !pending.isEmpty { units.append(TypedUnit(press: nil, text: pending, consumed: pending.count)) }
+    pending = []
+  }
   for character in text {
     let utf16 = Array(character.utf16)
-    if character == "\n" || character == "\r" || character == "\r\n" {
+    if character.unicodeScalars.allSatisfy({ $0 == "\n" || $0 == "\r" }) {
       flush()
-      units.append(.newline)
-    } else if character == "\t" {
+      units.append(TypedUnit(press: press(0x0D) ?? KeyPress(keyCode: returnKeyCode, modifiers: []), text: [0x0D], consumed: utf16.count))
+    } else if utf16.count == 1, let keyed = press(utf16[0]) {
       flush()
-      units.append(.keyed(KeyStroke(keyCode: 48, flags: []), utf16))
-    } else if let stroke = layout?.stroke(for: utf16) {
+      units.append(TypedUnit(press: keyed, text: utf16, consumed: 1))
+    } else if utf16.count > unicodeChunkLimit {
       flush()
-      units.append(.keyed(stroke, utf16))
+      for scalar in character.unicodeScalars {
+        let scalarUnits = Array(String(scalar).utf16)
+        if pending.count + scalarUnits.count > unicodeChunkLimit { flush() }
+        pending.append(contentsOf: scalarUnits)
+      }
+      flush()
     } else {
       if pending.count + utf16.count > unicodeChunkLimit { flush() }
       pending.append(contentsOf: utf16)
@@ -291,18 +324,40 @@ func typedUnits(_ text: String, layout: KeyLayout?) -> [TypedUnit] {
   return units
 }
 
-extension EventPoster {
-  func type(_ unit: TypedUnit) {
-    switch unit {
-    case .keyed(let stroke, let text):
-      key(stroke.keyCode, down: true, flags: stroke.flags, text: text)
-      key(stroke.keyCode, down: false, flags: stroke.flags, text: text)
-    case .newline:
-      key(returnKeyCode, down: true, flags: [])
-      key(returnKeyCode, down: false, flags: [])
-    case .unicode(let text):
-      key(0, down: true, flags: [], text: text)
-      key(0, down: false, flags: [], text: text)
+// MARK: Posting
+
+/// Where key events go and from which source: to one process (input), or to the HID event tap (the keystroke probe,
+/// standing in for a user). The engine's keys come from an HID-system source as the vendor's do (F §6.2); a private
+/// source is probe (d)'s alternative.
+struct EventPoster {
+  let source: CGEventSource?
+  let deliver: (CGEvent) -> Void
+
+  static func toProcess(_ pid: pid_t, sourceState: CGEventSourceStateID = .hidSystemState) -> EventPoster {
+    EventPoster(source: CGEventSource(stateID: sourceState)) { $0.postToPid(pid) }
+  }
+
+  static func toHIDTap() -> EventPoster {
+    EventPoster(source: CGEventSource(stateID: .hidSystemState)) { $0.post(tap: .cghidEventTap) }
+  }
+
+  /// Makes, stamps and posts one key event; false when it could not be made.
+  @discardableResult
+  func post(_ spec: KeyEvent) -> Bool {
+    let event: CGEvent?
+    switch spec.kind {
+    case .flags, .restore:
+      event = CGEvent(source: source)
+      event?.type = .flagsChanged
+      event?.flags = spec.kind == .restore ? CGEventSource.flagsState(.combinedSessionState) : spec.flags
+    case .down, .up:
+      event = CGEvent(keyboardEventSource: source, virtualKey: spec.keyCode, keyDown: spec.kind == .down)
+      event?.flags = spec.flags
+      if let text = spec.text { event?.keyboardSetUnicodeString(stringLength: text.count, unicodeString: text) }
     }
+    guard let event else { return false }
+    event.timestamp = DispatchTime.now().uptimeNanoseconds
+    deliver(event)
+    return true
   }
 }

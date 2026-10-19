@@ -10,10 +10,9 @@
 // Every run begins and ends with the engine stop discipline (`shutdown`, refused while another connection is open),
 // and the cua lane refuses unless the checkout's build is approved.json's (./engine-control.mjs).
 //
-// Input: the cua engine answers click, press_key and type_text with notImplemented until its input routes are built
-// (written elsewhere), so on the cua lane every cell that needs input is recorded as a row `notRun: "input methods not
-// built"`, behind the one switch CUA_INPUT_METHODS_BUILT; the cells themselves are written and run as soon as it flips.
-// The vendor lane runs its input cells as the native baseline does, keys only through the #162 key guard.
+// Input: the engine's input routes landed (feat/117-input), so the cua lane runs its input cells; the switch stays as
+// the one place to record them as not run again. The vendor lane runs its input cells as the native baseline does,
+// keys only through the #162 key guard.
 import * as fs from 'node:fs';
 import {mkdtempSync} from 'node:fs';
 import {createHash} from 'node:crypto';
@@ -32,9 +31,10 @@ import {stopEngine, assertApprovedBuild, launchEngine, EngineRefusal} from './en
 import {engineOps, inCheckout, lastJson} from './device.mjs';
 import {redactGolden} from './redact.mjs';
 
-// THE switch: whether the cua engine answers click, press_key and type_text. While false, the cua lane records every
-// input cell as not run; flip it when the engine's input routes land.
-export const CUA_INPUT_METHODS_BUILT = false;
+// THE switch: whether the cua engine answers click, press_key and type_text. True since the input routes landed
+// (feat/117-input, routes 1–3 with the probes' spike arguments); while false the cua lane records every input cell as
+// not run, which is how a lane without the input build still runs.
+export const CUA_INPUT_METHODS_BUILT = true;
 export const NOT_BUILT = 'input methods not built';
 const REFUSED = 2;
 export const LANES = ['vendor', 'cua'];
@@ -77,10 +77,15 @@ export function notRunRows({lane, scenes, inputBuilt = lane === 'vendor' || CUA_
   ];
 }
 
+// Rows the vendor lane cannot have, each with its reason: the event tap and the keystroke probe are cua's engine
+// (probe (d)); the cua lane runs the real rows when its input is built.
+export const VENDOR_ONLY_ROWS = Object.freeze([
+  {op: 'probe.d.tap', sample: 1, ok: false, notRun: 'the listen-only event tap is cua\'s engine; the cua lane runs the real rows', scene: 'textedit'},
+  {op: 'probe.d.hidReset', sample: 1, ok: false, notRun: 'the keystroke probe is cua\'s engine; the cua lane runs the real rows', scene: 'textedit'},
+]);
+
 // Rows that do not depend on the input switch: what the spike cannot measure on either lane yet, each with its reason.
 export const STRUCTURAL_ROWS = Object.freeze([
-  {op: 'probe.d.tap', sample: 1, ok: false, notRun: 'the engine has no listen-only event tap yet (the input half)', scene: 'textedit'},
-  {op: 'probe.d.hidReset', sample: 1, ok: false, notRun: 'the engine has no --probe keystroke yet (the input half)', scene: 'textedit'},
   {op: 'probe.e.concealed', sample: 1, ok: false, notRun: 'a concealed type_text needs the secret store; the spike serve runs with secrets off', scene: 'textedit'},
   {op: 'probe.e.perContext', sample: 1, ok: false, notRun: 'the per-context input preference is the owner\'s; changing and restoring it is the matrix\'s (M2b)', scene: 'textedit'},
 ]);
@@ -236,7 +241,7 @@ export async function runOnce(options, io) {
     for (let sample = 1; sample <= samples; sample++) row('warm.listApps', sample, attest(await js(LIST_APPS)));
     for (const scene of scenes) row('bind.getApp', 1, await js(spike.BIND(scene, records[scene].app), BIND_MS), {scene});
 
-    for (const notRun of [...notRunRows({lane, scenes, inputBuilt}), ...STRUCTURAL_ROWS]) emit(notRun);
+    for (const notRun of [...notRunRows({lane, scenes, inputBuilt}), ...STRUCTURAL_ROWS, ...(lane === 'vendor' ? VENDOR_ONLY_ROWS : [])]) emit(notRun);
     if (scenes.includes('finder')) await finderSetup(ctx);
     for (const scene of scenes) await golden(ctx, scene, 'golden.fixed', spike.GOLDEN(scene, records[scene].app, SCENE_WINDOW[scene], {raw: lane === 'cua'}));
     if (scenes.includes('textedit')) await textEditCells(ctx);
@@ -408,10 +413,15 @@ async function probeC({d, shell, ops, emit, front, log}) {
   }
 }
 
-// Cua lane, input built: probes (a) and (b) on every scene with its paired user window in front; (d)'s cases; (e)'s
-// matrix under both input sources with the owner's source saved and restored.
+// Cua lane, input built: probes (a) and (b) on every scene with its paired user window in front — (b) also forces each
+// route through the spike-only spikeRoute with a watch-activations probe running, so what route 3 does to the user's
+// frontmost is seen from outside the engine; (d)'s cases, the tap and the keystroke probe through probe_tap and the
+// bundle's --probe; (e)'s matrix under both input sources with the owner's source saved and restored, plus the keyed
+// bypass of the paste routing (spikeKeyed) for the per-context question.
 async function inputProbes(ctx) {
   const {js, row, emit, records, scenes, front, activate, operator, io, ops, dir} = ctx;
+  const sum = (counts, kind) => Object.values(counts ?? {}).reduce((t, per) => t + (per?.[kind] ?? 0), 0);
+  const watchLines = file => fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).map(line => { try { return JSON.parse(line); } catch { return null; } }).filter(Boolean) : [];
   for (const scene of scenes) {
     const user = USER_WINDOW[scene];
     if (!records[user]) { for (const action of ['click', 'key']) emit({op: `probe.a.${action}`, scene, user, sample: 1, ok: false, notRun: `the user window's scene (${user}) is not up`}); continue; }
@@ -426,7 +436,35 @@ async function inputProbes(ctx) {
       const unchanged = after.frontmost?.pid === before.frontmost?.pid && after.topWindow?.number === before.topWindow?.number;
       row(`probe.a.${action}`, 1, acted, {scene, user, frontmostUnchanged: after.frontmost?.pid === before.frontmost?.pid, topWindowUnchanged: after.topWindow?.number === before.topWindow?.number, ...(acted.cell?.ok && !unchanged ? {ok: false, invalid: 'the front application or window changed'} : {})});
       const back = await js(spike.READBACK(scene));
-      row(`probe.b.${action}`, 1, acted, {scene, route: acted.meta?.['cua/inputRoute'] ?? null, treeChanged: back.cell?.value?.treeChanged ?? null});
+      row(`probe.b.${action}`, 1, acted, {scene, route: acted.meta?.['cua/inputRoute'] ?? null, activationGuardMs: acted.meta?.['cua/activationGuardMs'] ?? null, treeChanged: back.cell?.value?.treeChanged ?? null});
+      // (b) forced: each route the action allows, through the spike-only argument, with a watch-activations probe
+      // running around the ones that fake-activate, so an activation or a lost key focus is seen from outside.
+      const watch = {};
+      try {
+        if (action === 'click' || action === 'key') {
+          watch.started = ops.watch();
+        }
+        for (const route of action === 'click' ? [1, 2, 3] : [2, 3]) {
+          const forced = await js(action === 'click'
+            ? spike.SPIKE_CLICK(records[scene].app, route)
+            : spike.SPIKE_INPUT(records[scene].app, 'press_key', {key: KEY_PROBE[scene], spikeRoute: String(route)}));
+          const afterForced = front();
+          row(`probe.b.forced.${route}`, 1, forced, {scene, action, forcedRoute: route,
+            route: forced.meta?.['cua/inputRoute'] ?? null, activationGuardMs: forced.meta?.['cua/activationGuardMs'] ?? null,
+            failed: forced.cell?.value?.failed ?? null,
+            frontmostUnchanged: afterForced.frontmost?.pid === before.frontmost?.pid, topWindowUnchanged: afterForced.topWindow?.number === before.topWindow?.number,
+            ...(forced.cell?.value?.failed ? {ok: false, error: forced.cell.value.failed} : {}),
+            ...(forced.cell?.ok && afterForced.frontmost?.pid !== before.frontmost?.pid ? {ok: false, invalid: 'the forced route changed the front application'} : {})});
+        }
+      } catch (error) {
+        emit({op: 'probe.b.forced', scene, sample: 1, ok: false, error: error.message});
+      } finally {
+        if (watch.started) {
+          const lines = ops.watchStop();
+          emit({op: 'probe.b.watch', scene, sample: 1, ok: true, activations: lines.filter(l => l.kind === 'activated').length,
+            deactivations: lines.filter(l => l.kind === 'deactivated').length, lines: lines.slice(0, 20)});
+        }
+      }
     }
   }
   // (d) The engine's own effects never fire it: the TextEdit task rows above must carry no userIntervened.
@@ -434,6 +472,49 @@ async function inputProbes(ctx) {
   const fired = taskRows.filter(r => /userIntervened|The user changed|still interacting/.test(r.error ?? ''));
   emit({op: 'probe.d.noFire', scene: 'textedit', sample: 1, ok: taskRows.length > 0 && !fired.length, taskRows: taskRows.length, fired: fired.length,
     note: 'the engine\'s own super+n, typing, super+w and sheet click in the task rows; none may fail as userIntervened'});
+  // (d) The tap itself, around one key action on the TextEdit scene: created with Accessibility alone, and whether
+  // the engine's own pid-posted HID-source events reach the tap or reset the HID idle counter — the two answers that
+  // choose between the tap and the HID-idle fallback.
+  if (records.textedit) {
+    let tap = null;
+    try {
+      await activate('textedit');
+      tap = ops.probeTap('start', {app: records.textedit.app, seconds: 180});
+    } catch (error) { emit({op: 'probe.d.tap', scene: 'textedit', sample: 1, ok: false, error: error.message}); }
+    if (tap?.created) {
+      const acted = await js(spike.ACT_KEY('textedit', KEY_PROBE.textedit));
+      const report = ops.probeTap('stop');
+      const counts = report.counts ?? {};
+      emit({op: 'probe.d.tap', scene: 'textedit', sample: 1, ok: true, created: true, listenAccess: report.listenAccess ?? null,
+        own: sum(counts, 'own'), driven: sum(counts, 'driven'), other: sum(counts, 'other'),
+        ownPostsReachTheTap: sum(counts, 'own') > 0, hidIdleMsAfterOwnPosts: report.hidIdleMs ?? null,
+        route: acted.meta?.['cua/inputRoute'] ?? null, inCellMs: acted.cell?.inCellMs ?? null,
+        ownTimes: report.ownTimes ?? [], drivenTimes: report.drivenTimes ?? []});
+    } else if (tap) {
+      emit({op: 'probe.d.tap', scene: 'textedit', sample: 1, ok: false, error: 'the tap could not be created', listenAccess: tap.listenAccess ?? null});
+    }
+    // (d) The keystroke probe as a stand-in user: an HID-tap-posted event, counted as the driven app's input when the
+    // tap attributes it, and its reset of the HID idle counter.
+    try {
+      await activate('textedit');
+      const seen = front();
+      const bounds = seen.topWindow?.bounds;
+      if (seen.frontmost?.pid !== records.textedit.pid || !bounds) {
+        emit({op: 'probe.d.hidReset', scene: 'textedit', sample: 1, ok: false, notRun: 'the scene window was not the front one for the keystroke probe'});
+      } else {
+        const second = ops.probeTap('start', {app: records.textedit.app, seconds: 120});
+        if (!second?.created) { emit({op: 'probe.d.hidReset', scene: 'textedit', sample: 1, ok: false, error: 'the tap could not be created', listenAccess: second?.listenAccess ?? null}); }
+        else {
+          const sent = ops.keystroke(records.textedit.pid, `${bounds.x},${bounds.y},${bounds.width},${bounds.height}`, 'cua');
+          const report = ops.probeTap('stop');
+          const counts = report.counts ?? {};
+          emit({op: 'probe.d.hidReset', scene: 'textedit', sample: 1, ok: sum(counts, 'driven') > 0,
+            driven: sum(counts, 'driven'), other: sum(counts, 'other'), hidIdleMs: report.hidIdleMs ?? null,
+            probe: sent, drivenTimes: report.drivenTimes ?? []});
+        }
+      }
+    } catch (error) { emit({op: 'probe.d.hidReset', scene: 'textedit', sample: 1, ok: false, error: error.message}); }
+  }
   if (operator && records.textedit) {
     for (const [op, instruction] of [['probe.d.operatorKeystroke', 'send ONE keystroke over Screen Sharing into the TextEdit scene document'], ['probe.d.backgroundClick', 'click ONCE into the TextEdit scene window while it is behind another window']]) {
       await activate('textedit');
@@ -457,6 +538,17 @@ async function inputProbes(ctx) {
           const typed = await js(spike.ACT_TYPE(scene, text));
           const landed = await js(spike.TEXT_LANDED(scene, records[scene].app, text));
           row('probe.e.typeText', sample, typed, {scene, source, route: typed.meta?.['cua/inputRoute'] ?? null, landed: landed.cell?.value?.landed ?? null, expected: landed.cell?.value?.expected ?? null});
+        }
+        // The per-context question without touching the owner's preference: with this source active and the driven app
+        // in the background, keyed Latin through the spike-only bypass — does the Hangul input method compose it (the
+        // landed value shows jamo) or does the keyed form land as typed? The preference itself is M2b's.
+        if (source === 'korean' && USER_WINDOW[scene] && records[USER_WINDOW[scene]]) {
+          await activate(USER_WINDOW[scene]);
+          const typed = await js(spike.SPIKE_INPUT(records[scene].app, 'type_text', {text: UNICODE_STRINGS[0], spikeKeyed: true}));
+          const landed = await js(spike.TEXT_LANDED(scene, records[scene].app, UNICODE_STRINGS[0]));
+          row('probe.e.keyedLatin', 1, typed, {scene, source, route: typed.meta?.['cua/inputRoute'] ?? null,
+            landed: landed.cell?.value?.landed ?? null, expected: landed.cell?.value?.expected ?? null,
+            note: "spikeKeyed bypasses the paste routing; the per-context preference stays the matrix's (M2b)"});
         }
       }
     }

@@ -127,18 +127,50 @@ test('execute refuses an unknown method and a facade method the spike does not i
   assert.equal(late.error.errorName, 'deadlineExceeded');
 });
 
-test('the input methods this build leaves to the owner\'s branch answer notImplemented before anything is posted', {skip}, async t => {
+test('the input methods validate their arguments and resolve the app without posting anything', {skip}, async t => {
   const {wire} = await engine(t);
-  for (const [method, args] of [
-    ['click', {app: 'io.github.ssfskim.cua.engine-test.no-such-app', element_index: 0}],
-    ['press_key', {app: 'io.github.ssfskim.cua.engine-test.no-such-app', key: 'Return'}],
-    ['type_text', {app: 'io.github.ssfskim.cua.engine-test.no-such-app', text: 'x'}],
+  const noSuch = {app: 'io.github.ssfskim.cua.engine-test.no-such-app'};
+  // Malformed arguments are refused by name before the app is even resolved.
+  for (const [method, args, name] of [
+    ['click', {...noSuch}, 'invalidArguments'],
+    ['click', {...noSuch, x: 1}, 'invalidArguments'],
+    ['click', {...noSuch, element_index: 0, x: 1, y: 2}, 'invalidArguments'],
+    ['click', {...noSuch, x: 1, y: 2, mouse_button: 'sideways'}, 'invalidArguments'],
+    ['click', {...noSuch, x: 1, y: 2, click_count: 0}, 'invalidArguments'],
+    ['click', {...noSuch, x: 1, y: 2, spikeRoute: '9'}, 'invalidArguments'],
+    ['press_key', {...noSuch}, 'invalidArguments'],
+    ['press_key', {...noSuch, key: 'Ctrl'}, 'invalidKey'],  // the vendor's code has no such alias (F §6.4)
+    ['type_text', {...noSuch}, 'invalidArguments'],
   ]) {
     const answer = await wire.execute(method, args);
-    assert.equal(answer.error?.code, -10005, method);
-    assert.equal(answer.error.errorName, 'notImplemented', method);
-    assert.equal(answer.error.message, `${method} is not implemented by this engine build`);
+    assert.equal(answer.error?.errorName, name, `${method} ${JSON.stringify(args)}`);
   }
+  // Well-formed requests resolve the app and fail on it; from there on every error carries the input meta.
+  for (const [method, args] of [
+    ['click', {...noSuch, x: 1, y: 2}],
+    ['press_key', {...noSuch, key: 'Return'}],
+    ['type_text', {...noSuch, text: 'x'}],
+  ]) {
+    const answer = await wire.execute(method, args);
+    assert.equal(answer.error?.code, -10010, method);
+    assert.equal(answer.error.errorName, 'invalidApp', method);
+    const meta = answer.error.meta;
+    assert.equal(meta.inputRoute, null, method);
+    assert.equal(meta.startedAt, null, method);
+    assert.equal(meta.endedAt, null, method);
+    assert.equal(typeof meta.receivedAt, 'number', method);
+    assert.equal(typeof meta.hidIdleMs, 'number', method);
+  }
+});
+
+test('probe_tap refuses a missing op, an unknown app and a stop with nothing running, without creating a tap', {skip}, async t => {
+  const {wire} = await engine(t);
+  const noOp = await wire.call('probe_tap', {});
+  assert.equal(noOp.error.errorName, 'invalidArguments');
+  const noApp = await wire.call('probe_tap', {op: 'start', app: 'io.github.ssfskim.cua.engine-test.no-such-app'});
+  assert.equal(noApp.error.code, -10010);
+  const noTap = await wire.call('probe_tap', {op: 'stop'});
+  assert.equal(noTap.error.errorName, 'tapNotRunning');
 });
 
 test('list_apps lists running regular apps in the facade\'s row shape; resolve_app finds Finder by bundle id, name, path and pid and records its use', {skip: finderSkip}, async t => {

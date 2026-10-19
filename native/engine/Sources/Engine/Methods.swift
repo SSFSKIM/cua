@@ -45,6 +45,7 @@ final class Engine: @unchecked Sendable {
         if others > 0 { throw EngineError(name: "busy", "busy", extra: ["connections": others]) }
         return Outcome(result: .success([String: Any]()), exitAfter: true)
       case "execute": return Outcome(result: .success(try execute(request.params, connection, receivedAt)))
+      case "probe_tap": return Outcome(result: .success(try probeTap(request.params)))  // spike-only, probe (d) (Tap.swift)
       default: throw EngineError(rpc: .methodNotFound, "Method not found: \(request.method.prefix(64))")
       }
     } catch let error as EngineError {

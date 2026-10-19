@@ -354,3 +354,6 @@
 0x100176a48 depth=1
 # agent5b-list.txt
 0x10015da68 next=6
+
+## Route choice inside a web view (the click decision, F §5.1; asked at M0 spike input)
+0x1007a1b9c depth=1

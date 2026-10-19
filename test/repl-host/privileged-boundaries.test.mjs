@@ -2,7 +2,9 @@
 // (src/repl-host/elicitation.mjs) and LaunchServices through a mocked OS boundary (src/repl-host/launch-services.mjs).
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {FORM_UNSUPPORTED_SENTENCE, INVALID_SCHEMA_PREFIX, UNEXPECTED_RESPONSE_SENTENCE, elicitationOutcome, elicitationParams, formElicitationSupported} from '../../src/repl-host/elicitation.mjs';
+import {FORM_UNSUPPORTED_SENTENCE, INVALID_SCHEMA_PREFIX, PERSISTED_STATE_SOURCE, UNEXPECTED_RESPONSE_SENTENCE, approvalMemory, elicitationOutcome, elicitationParams,
+  formElicitationSupported} from '../../src/repl-host/elicitation.mjs';
+import {isTextEditApproval} from '../../scripts/accept/lib.mjs';
 import {DISPATCH_FAILED_PREFIX, EXACTLY_ONE_SENTENCE, MACOS_ONLY_SENTENCE, PATH_NOT_ABSOLUTE_SENTENCE, launchServicesAction} from '../../src/repl-host/launch-services.mjs';
 
 const SCHEMA = {type: 'object', properties: {ok: {type: 'boolean'}, n: {type: 'integer'}, s: {type: 'string', enum: ['a']}}, required: ['ok']};
@@ -14,13 +16,57 @@ test('form elicitation is offered by an elicitation capability that is empty or 
 });
 
 test('an elicit message becomes elicitation/create params, or the refusal that grants nothing', () => {
-  assert.deepEqual(elicitationParams({message: 'Allow?', requested_schema: SCHEMA, meta: {k: 1}}, {formSupported: true}), {params: {message: 'Allow?', requestedSchema: SCHEMA, _meta: {k: 1}}});
-  assert.deepEqual(elicitationParams({message: 'Allow?', requested_schema: SCHEMA, meta: null}, {formSupported: true}), {params: {message: 'Allow?', requestedSchema: SCHEMA}});
+  assert.deepEqual(elicitationParams({message: 'Allow?', requested_schema: SCHEMA, meta: {k: 1}}, {formSupported: true}), {params: {message: 'Allow?', requestedSchema: SCHEMA, mode: 'form', _meta: {k: 1}}});
+  assert.deepEqual(elicitationParams({message: 'Allow?', requested_schema: SCHEMA, meta: null}, {formSupported: true}), {params: {message: 'Allow?', requestedSchema: SCHEMA, mode: 'form'}});
   assert.deepEqual(elicitationParams({message: 'Allow?', requested_schema: SCHEMA}, {formSupported: false}), {error: FORM_UNSUPPORTED_SENTENCE});
   for (const [schema, problem] of [[null, 'expected an object schema'], [{type: 'array'}, 'expected type "object"'], [{type: 'object'}, 'expected properties to be an object'],
     [{type: 'object', properties: {x: {type: 'object'}}}, 'property "x" must be a string, number, integer or boolean schema'],
     [{type: 'object', properties: {}, required: 'x'}, 'expected required to be an array of property names']])
     assert.deepEqual(elicitationParams({message: 'm', requested_schema: schema}, {formSupported: true}), {error: `${INVALID_SCHEMA_PREFIX}${problem}`});
+});
+
+// The vendor's computer-use app approval exactly as its policy (and cua's, M1a.5) builds it (R/A-contract.md §2.6).
+const approval = (app, display, meta = {}) => ({message: `Allow Computer Use to use "${display}"?`, requested_schema: {type: 'object', properties: {}},
+  meta: {codex_approval_kind: 'mcp_tool_call', connector_id: 'computer-use', connector_name: 'Computer Use', persist: ['session'], riskLevel: 'low',
+    tool_name: 'get_app_state', tool_params: {app}, tool_params_display: [{name: 'app', display_name: 'App', value: display}], ...meta}});
+
+test('the app approval reaches the client in exactly the shape the acceptance harness matches (the vendor host\'s, form mode included)', () => {
+  const {params} = elicitationParams(approval('com.apple.TextEdit', 'TextEdit'), {formSupported: true});
+  assert.equal(isTextEditApproval({method: 'elicitation/create', params}), true);
+});
+
+test('approval memory: a connection\'s accept or decline of a computer-use app answers its repeats; cancel, other connectors and an unremembered accept ask again', () => {
+  const memory = approvalMemory();
+  const textEdit = approval('com.apple.TextEdit', 'TextEdit');
+  assert.equal(memory.recall(textEdit), null, 'nothing is known before the client answered');
+  memory.record(textEdit, {ok: true, action: 'accept', content: {}, _meta: {persist: 'session'}});
+  const remembered = {ok: true, action: 'accept', content: {source: PERSISTED_STATE_SOURCE}, _meta: null};
+  assert.deepEqual(memory.recall(textEdit), remembered);
+  assert.deepEqual(memory.recall(approval('com.apple.TextEdit', 'TextEdit', {tool_name: 'click', riskLevel: 'high'})), remembered, 'keyed by the app alone, whatever the tool');
+  assert.equal(memory.recall(approval('com.apple.finder', 'Finder')), null, 'another app asks');
+
+  memory.record(approval('com.apple.finder', 'Finder'), {ok: true, action: 'decline', content: null, _meta: null});
+  assert.deepEqual(memory.recall(approval('com.apple.finder', 'Finder')), {ok: true, action: 'decline', content: {source: PERSISTED_STATE_SOURCE}, _meta: null});
+
+  for (const [label, outcome] of [['cancel', {ok: true, action: 'cancel', content: null, _meta: null}], ['failed', {ok: false, error: 'client refused'}],
+    ['accept the client did not ask to remember (CUA_SHIM_PERSIST=none)', {ok: true, action: 'accept', content: {}, _meta: null}],
+    ['accept with an unknown persist', {ok: true, action: 'accept', content: {}, _meta: {persist: 'forever'}}]]) {
+    const app = approval('com.apple.Notes', 'Notes');
+    memory.record(app, outcome);
+    assert.equal(memory.recall(app), null, label);
+  }
+  for (const other of [
+    {...textEdit, meta: {...textEdit.meta, connector_id: 'browser-use'}},
+    {...textEdit, meta: {...textEdit.meta, tool_params: {}}},
+    {...textEdit, meta: {...textEdit.meta, tool_params: {app: ''}}},
+    {...textEdit, meta: {...textEdit.meta, tool_params: 'com.apple.TextEdit'}},
+    {...textEdit, meta: null},
+  ]) {
+    memory.record(other, {ok: true, action: 'decline', content: null, _meta: null});
+    assert.equal(memory.recall(other), null, JSON.stringify(other.meta));
+  }
+  assert.deepEqual(memory.recall(textEdit), remembered, 'none of those touched the remembered app');
+  assert.equal(approvalMemory().recall(textEdit), null, 'another connection\'s memory starts empty');
 });
 
 test('the client\'s answer: accept, decline and cancel with content and meta intact; anything else fails', () => {

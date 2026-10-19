@@ -46,6 +46,12 @@
 //   widening needs evidence. scripts/sandbox-probe/tz-probe.mjs renders the profiles with it and without it, so a
 //   reproduction can decide it by acceptance 13's rule. The own host's time-zone warm-up
 //   (src/repl-host/worker-runtime.mjs) stays either way.
+// - Socket directories the caller names (`socketDirectories`; src/sandbox/index.mjs names the native engine's,
+//   ENGINE_DIRECTORY_IN_HOME, for the kernel, #117) are denied exactly as the original denies its daemon directory:
+//   reads, writes and unix-socket connects under it, and the unlinking of every ancestor directory, so that no cell can
+//   reach the engine's socket or its files, or rename the directory out of the rule. By the real path of the nearest
+//   existing ancestor (the directory may not exist yet), placed beside the daemon directory's rule. Strictly tighter;
+//   none named renders the original's profile.
 import {lstatSync, readFileSync, realpathSync, statSync} from 'node:fs';
 import {posix} from 'node:path';
 import {SandboxStateError} from '../runtime/sandbox.mjs';
@@ -354,12 +360,28 @@ function scratchRoots({policy, entries, writableRoots, scratchPolicy}) {
   return {reads: scratch.map(root => ({root, excluded: unreadable})), writes};
 }
 
-// seatbelt_daemon.rs protection_policy for /private/tmp/codex-daemon-<euid> (/tmp's real path).
-function daemonProtection(ops, euid) {
-  const directory = `${ops.canonicalize('/tmp') ?? '/tmp'}/codex-daemon-${euid}`;
+// seatbelt_daemon.rs protection_policy for a socket directory (a real path): nothing under it read, written or connected
+// to, and none of its ancestors unlinked.
+function socketDirectoryProtection(directory) {
   const quoted = JSON.stringify(directory);
   return [`(deny file-read* file-write* (literal ${quoted}) (subpath ${quoted}))\n(deny network-outbound (remote unix-socket (subpath ${quoted})))`,
     ...ancestorsOf(directory).slice(1).map(a => `(deny file-write-unlink (require-all (vnode-type DIRECTORY) (literal ${JSON.stringify(a)})))`)].join('\n');
+}
+
+// The original's for /private/tmp/codex-daemon-<euid> (/tmp's real path).
+const daemonProtection = (ops, euid) => socketDirectoryProtection(`${ops.canonicalize('/tmp') ?? '/tmp'}/codex-daemon-${euid}`);
+
+// Where cua's native engine keeps its socket, lock and state under a home (#117: the approved engine's directory,
+// docs/doperpowers/specs/2026-10-18-own-native-engine-design.md, "Install, signing and permissions").
+export const ENGINE_DIRECTORY_IN_HOME = 'Library/Application Support/cua/engine';
+
+// `path` by the real path of its nearest existing ancestor, the rest as spelled.
+function realPathOfNearest(ops, path) {
+  for (const ancestor of ancestorsOf(path)) {
+    const real = ops.canonicalize(ancestor);
+    if (real !== null) return joinPath(real, suffixOf(path, ancestor));
+  }
+  return path;
 }
 
 // cua's deviation (header): the denied directories above each readable root that no readable root covers.
@@ -380,10 +402,11 @@ function reexposedAncestors(readRoots) {
 // realpath, readFile}; node:fs by default) and `euid` the user whose daemon directory is protected. `metadataGrants`:
 // the denied directories whose metadata the launch allows (the deny list's metadataOnly); a profile that would need the
 // grant anywhere else is refused, never rendered. `notificationCenter`: whether the profile ends with #138's line
-// (header; NOTIFICATION_CENTER_GRANT, off, unless the caller says).
+// (header; NOTIFICATION_CENTER_GRANT, off, unless the caller says). `socketDirectories`: absolute directories denied as
+// the daemon directory is (header; none by default).
 // -> {file: '/usr/bin/sandbox-exec', args}. Throws SandboxStateError for an input outside cua's set or one the original
 // refuses (a write root through a symlinked component).
-export function seatbeltCommand({profile, cwd, command, tmpdir, fs = NODE_FS, euid = process.geteuid(), metadataGrants = [], notificationCenter = NOTIFICATION_CENTER_GRANT}) {
+export function seatbeltCommand({profile, cwd, command, tmpdir, fs = NODE_FS, euid = process.geteuid(), metadataGrants = [], notificationCenter = NOTIFICATION_CENTER_GRANT, socketDirectories = []}) {
   if (typeof cwd !== 'string' || !cwd.startsWith('/')) throw new SandboxStateError(`the sandbox working directory ${JSON.stringify(cwd)} is not an absolute path`);
   if (tmpdir !== undefined && tmpdir !== '' && !String(tmpdir).startsWith('/')) throw new SandboxStateError(`TMPDIR ${tmpdir} is not an absolute path`);
   const ops = fsOps(fs);
@@ -430,7 +453,8 @@ export function seatbeltCommand({profile, cwd, command, tmpdir, fs = NODE_FS, eu
   const sections = [BASE_POLICY, read.policy, write.policy, networkPolicy];
   if (policy.fullRead) sections.push(PREFERENCES_POLICY);
   if (policy.platformDefaults) sections.push(PLATFORM_DEFAULTS, '(allow file-read* (subpath "/Applications"))');
-  sections.push(daemonProtection(ops, euid), '(deny mach-lookup (xpc-service-name-prefix ""))', '');
+  const sockets = [...new Set(socketDirectories.map(directory => realPathOfNearest(ops, absolutize(directory))))];
+  sections.push(daemonProtection(ops, euid), ...sockets.map(socketDirectoryProtection), '(deny mach-lookup (xpc-service-name-prefix ""))', '');
   sections.push(...ancestorParams.map(([key]) => `(deny file-write-unlink (require-all (vnode-type DIRECTORY) (literal (param "${key}"))))`));
   sections.push('(deny system-fcntl (fcntl-command 80 110))', TIOCSTI_LINE);
 

@@ -3,8 +3,10 @@
 // environment (./env.mjs), ready to spawn. On macOS that is /usr/bin/sandbox-exec, which applies the profile and execs
 // the command, so the child process is the command itself. On Linux it is the pinned helper (./linux.mjs), checked
 // against its pin before every launch, which runs the command inside bubblewrap and seccomp.
+import {userInfo} from 'node:os';
+import {join} from 'node:path';
 import {prepareDenyTargets, roleProfile, stateKey} from './policy.mjs';
-import {seatbeltCommand} from './seatbelt.mjs';
+import {ENGINE_DIRECTORY_IN_HOME, seatbeltCommand} from './seatbelt.mjs';
 import {linuxCommand, verifyHelper} from './linux.mjs';
 import {sandboxedEnv} from './env.mjs';
 
@@ -26,6 +28,9 @@ export function sandboxedLaunch({platform, state, role, command, env, cwd, readP
     const {file, args} = linuxCommand({profile: rendered.profile, cwd: launchCwd, command, helper: checked});
     return {command: file, args, env: childEnv, cwd: launchCwd};
   }
-  const {file, args} = seatbeltCommand({profile: rendered.profile, cwd: launchCwd, command, tmpdir: env.TMPDIR, metadataGrants: role === 'kernel' ? prepared?.metadataOnly ?? [] : [], ...(fs ? {fs} : {})});
+  // The kernel is denied cua's native engine's directory (#117: the engine's socket is the trusted worker's, through the
+  // supervisor's relay), under HOME and under the account's own home, where the approved engine is whatever HOME says.
+  const socketDirectories = role === 'kernel' ? [...new Set([env.HOME, userInfo().homedir].filter(home => typeof home === 'string' && home.startsWith('/')))].map(home => join(home, ENGINE_DIRECTORY_IN_HOME)) : [];
+  const {file, args} = seatbeltCommand({profile: rendered.profile, cwd: launchCwd, command, tmpdir: env.TMPDIR, metadataGrants: role === 'kernel' ? prepared?.metadataOnly ?? [] : [], socketDirectories, ...(fs ? {fs} : {})});
   return {command: file, args, env: childEnv, cwd: launchCwd};
 }

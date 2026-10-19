@@ -8,7 +8,7 @@ import {tmpdir, userInfo} from 'node:os';
 import {join} from 'node:path';
 import {SandboxStateError, sandboxState} from '../../src/runtime/sandbox.mjs';
 import {sandboxedLaunch} from '../../src/sandbox/index.mjs';
-import {ENGINE_DIRECTORY_IN_HOME} from '../../src/sandbox/seatbelt.mjs';
+import {ENGINE_DIRECTORY_IN_HOME} from '../../src/runtime/layout.mjs';
 
 function scratch(t) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'cua-launch-')));

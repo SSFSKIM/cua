@@ -47,11 +47,11 @@
 //   reproduction can decide it by acceptance 13's rule. The own host's time-zone warm-up
 //   (src/repl-host/worker-runtime.mjs) stays either way.
 // - Socket directories the caller names (`socketDirectories`; src/sandbox/index.mjs names the native engine's,
-//   ENGINE_DIRECTORY_IN_HOME, for the kernel, #117) are denied exactly as the original denies its daemon directory:
-//   reads, writes and unix-socket connects under it, and the unlinking of every ancestor directory, so that no cell can
-//   reach the engine's socket or its files, or rename the directory out of the rule. By the real path of the nearest
-//   existing ancestor (the directory may not exist yet), placed beside the daemon directory's rule. Strictly tighter;
-//   none named renders the original's profile.
+//   ENGINE_DIRECTORY_IN_HOME from src/runtime/layout.mjs, for the kernel, #117) are denied exactly as the original
+//   denies its daemon directory: reads, writes and unix-socket connects under it, and the unlinking of every ancestor
+//   directory, so that no cell can reach the engine's socket or its files, or rename the directory out of the rule. By
+//   the real path of the nearest existing ancestor (the directory may not exist yet), placed beside the daemon
+//   directory's rule. Strictly tighter; none named renders the original's profile.
 import {lstatSync, readFileSync, realpathSync, statSync} from 'node:fs';
 import {posix} from 'node:path';
 import {SandboxStateError} from '../runtime/sandbox.mjs';
@@ -370,10 +370,6 @@ function socketDirectoryProtection(directory) {
 
 // The original's for /private/tmp/codex-daemon-<euid> (/tmp's real path).
 const daemonProtection = (ops, euid) => socketDirectoryProtection(`${ops.canonicalize('/tmp') ?? '/tmp'}/codex-daemon-${euid}`);
-
-// Where cua's native engine keeps its socket, lock and state under a home (#117: the approved engine's directory,
-// docs/doperpowers/specs/2026-10-18-own-native-engine-design.md, "Install, signing and permissions").
-export const ENGINE_DIRECTORY_IN_HOME = 'Library/Application Support/cua/engine';
 
 // `path` by the real path of its nearest existing ancestor, the rest as spelled.
 function realPathOfNearest(ops, path) {

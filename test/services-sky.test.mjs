@@ -114,8 +114,15 @@ test('cua\'s engine-only error names are admitted value-free; concealedInputUnav
     assert.match(error.message, /\[concealed_input_unavailable\]$/);
     assert.match(error.message, /"WORK_PASSWORD"/);
     assert.match(error.message, /nothing was entered/);
-    assert.match(error.message, /input source/);
     assert.match(error.message, /setValue/);
+    if (request.method === 'paste') {
+      assert.match(error.message, /a secret is never pasted/);
+      assert.match(error.message, /typeText/, 'the keyed route is the paste\'s alternative');
+      assert.doesNotMatch(error.message, /input source/, 'a concealed paste is refused whatever the source');
+    } else {
+      assert.match(error.message, /active input source cannot type it reliably/);
+      assert.match(error.message, /switch to a Latin input source/);
+    }
     assert.doesNotMatch(error.message, /partly entered|withheld/, 'the engine refuses before anything is entered');
     assert.doesNotMatch(error.message, /Korean\.2SetKorean/, 'a fixed sentence: nothing of the engine\'s text');
     assert.equal(error.cause, undefined);

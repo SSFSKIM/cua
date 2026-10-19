@@ -131,7 +131,8 @@ test('a session through serve.mjs: the facade in a kernel, one approval per app,
 
   assert.equal(elicitations.length, 1, 'one approval for TextEdit in the connection');
   const [asked] = elicitations;
-  assert.ok(isTextEditApproval({...asked, params: {mode: 'form', ...asked.params}}), JSON.stringify(asked.params));
+  assert.equal(asked.params.mode, 'form', 'the own host asks in form mode, as the vendor host does');
+  assert.ok(isTextEditApproval(asked), JSON.stringify(asked.params));
   assert.match(asked.params._meta.tool_call_id, /^[0-9a-f-]{36}$/, 'the turn metadata\'s call id reaches the elicitation, as on the vendor lane');
   assert.deepEqual(result._meta['cua/nativeEngine'], {engine: 'cua', version: '0.1.0', build: 'b1'});
   assert.equal(result._meta[REPL_HOST_META_KEY].host, 'cua');

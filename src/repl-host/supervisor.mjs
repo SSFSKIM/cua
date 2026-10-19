@@ -219,7 +219,7 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
   const turns = new Map();    // JSON [session, turn] -> the acknowledgement promise
   let turnCounter = 0;
   let clientRequestCounter = 0;
-  const clientRequests = new Map();   // MCP id this host sent the client -> {worker, id, execution, message} (an elicitation)
+  const clientRequests = new Map();   // MCP id this host sent the client -> {worker, id, message, resume} (an elicitation)
   const approvals = approvalMemory();  // the connection's computer-use app approvals (./elicitation.mjs), whatever worker asks
   let resolveClosed;
   const closed = new Promise(resolve => { resolveClosed = resolve; });
@@ -437,7 +437,8 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
     self.pending.clear();
     for (const resolve of self.turns.values()) resolve();
     self.turns.clear();
-    for (const [id, request] of clientRequests) if (request.worker === self) { clientRequests.delete(id); request.execution.budget.resume(); }
+    // Its elicitations stay open at the client: the cell is back on its budget, and a late answer is still remembered.
+    for (const request of clientRequests.values()) if (request.worker === self) request.resume();
     // A withSuspendedTimeout it never closed ends with it: the cell that catches the failure is back on its budget.
     for (const [execution, depth] of self.suspensions) for (let i = 0; i < depth; i++) execution.budget.resume();
     self.suspensions.clear();
@@ -531,7 +532,9 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
     // The vendor host pauses the cell's budget while the client decides, as withSuspendedTimeout would (observed on the
     // pinned node_repl: a 650 ms answer succeeds under timeout_ms 300); it resumes when the answer arrives.
     current.budget.suspend();
-    clientRequests.set(id, {worker: self, id: message.id, execution: current, message});
+    let resumed = false;
+    const resume = () => { if (!resumed) { resumed = true; current.budget.resume(); } };
+    clientRequests.set(id, {worker: self, id: message.id, message, resume});
     write({jsonrpc: '2.0', id, method: 'elicitation/create', params: sortedJson(params)});
   }
 
@@ -539,7 +542,7 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
     const request = clientRequests.get(msg.id);
     if (!request) return;
     clientRequests.delete(msg.id);
-    request.execution.budget.resume();
+    request.resume();
     // The client's answer is the connection's, even when the worker that asked has been replaced since.
     const outcome = elicitationOutcome(msg);
     approvals.record(request.message, outcome);
@@ -733,7 +736,7 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
   function cancelClientRequests() {
     for (const [id, request] of clientRequests) {
       clientRequests.delete(id);
-      request.execution.budget.resume();
+      request.resume();
       write({jsonrpc: '2.0', method: 'notifications/cancelled', params: {requestId: id, reason: ELICITATION_CANCELLED_SENTENCE}});
       if (worker === request.worker) request.worker.child.send(sortedJson({type: 'elicitation_result', id: request.id, ok: false, error: ELICITATION_CANCELLED_SENTENCE}));
     }

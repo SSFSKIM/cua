@@ -6,9 +6,10 @@
 import {userInfo} from 'node:os';
 import {join} from 'node:path';
 import {prepareDenyTargets, roleProfile, stateKey} from './policy.mjs';
-import {ENGINE_DIRECTORY_IN_HOME, seatbeltCommand} from './seatbelt.mjs';
+import {seatbeltCommand} from './seatbelt.mjs';
 import {linuxCommand, verifyHelper} from './linux.mjs';
 import {sandboxedEnv} from './env.mjs';
+import {ENGINE_DIRECTORY_IN_HOME} from '../runtime/layout.mjs';
 
 // -> {command, args, env, cwd}. `state`: the call's sandbox state (undefined: the default mode); `role`: 'kernel' |
 // 'worker'; `command`: [file, ...args]; `env`: the child's environment before the sandbox's own rule; `cwd`: where it

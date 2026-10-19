@@ -8,7 +8,8 @@ import * as fs from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {approveEngine, stopEngine, engineStatus, buildProblems, assertApprovedBuild, EngineRefusal} from '../scripts/spike/engine/measure/engine-control.mjs';
-import {rpc, writeApproved, readApproved, probeCopyDir} from '../scripts/spike/engine/measure/engine-device.mjs';
+import {rpc, writeApproved, readApproved, probeCopyDir, main as engineDevice} from '../scripts/spike/engine/measure/engine-device.mjs';
+import {engineOps} from '../scripts/spike/engine/measure/device.mjs';
 import {startFakeEngine, EngineFailure} from './helpers/fake-engine.mjs';
 
 const BUNDLE = '/Users/u/Library/Application Support/cua/engine/cua Engine.app';
@@ -186,4 +187,72 @@ test('a probe copy may live only in an engine-probe-* directory beside the appro
   assert.equal(probeCopyDir(BUNDLE, '/Users/u/Library/Application Support/cua/engine-probe-c'), '/Users/u/Library/Application Support/cua/engine-probe-c');
   for (const bad of ['/Users/u/Library/Application Support/cua/engine', '/tmp/engine-probe-c', '/Users/u/Library/Application Support/cua/engine-probe-../x'])
     assert.throws(() => probeCopyDir(BUNDLE, bad), /engine-probe/);
+});
+
+test('engine-device rpc sends the two spike probes, probe_tap and probe_spike, and refuses an execute', async t => {
+  const dir = fs.mkdtempSync(join(tmpdir(), 'cua-measure-probe-'));
+  t.after(() => fs.rmSync(dir, {recursive: true, force: true}));
+  const bundle = join(dir, 'cua Engine.app');
+  const {received} = await startFakeEngine(t, join(dir, 'engine.sock'), {handlers: {
+    probe_spike: params => ({op: params.op, listed: false, axError: -25205}),
+    probe_tap: () => { throw new EngineFailure(-10005, 'The active event tap could not be created (listen preflight not granted, post preflight granted)', 'tapNotCreated', {mode: 'active', listenPreflight: false, postPreflight: true}); },
+  }});
+  assert.deepEqual(await engineDevice(['rpc', 'probe_spike', JSON.stringify({op: 'activationPoint', app: 'com.apple.TextEdit'}), '--engine', bundle]),
+    {ok: true, result: {op: 'activationPoint', listed: false, axError: -25205}});
+  const tap = await engineDevice(['rpc', 'probe_tap', JSON.stringify({op: 'start', app: 'com.apple.TextEdit', mode: 'active'}), '--engine', bundle]);
+  assert.equal(tap.ok, false);
+  assert.deepEqual([tap.error.errorName, tap.error.mode, tap.error.listenPreflight, tap.error.postPreflight], ['tapNotCreated', 'active', false, true]);
+  assert.deepEqual(received.map(r => [r.method, r.params]), [
+    ['probe_spike', {op: 'activationPoint', app: 'com.apple.TextEdit'}],
+    ['probe_tap', {op: 'start', app: 'com.apple.TextEdit', mode: 'active'}],
+  ]);
+  await assert.rejects(engineDevice(['rpc', 'execute', '{}', '--engine', bundle]), /rpc takes ping, status, approve, shutdown, probe_tap, probe_spike/);
+});
+
+// engineOps over a shell answering as engine-device.mjs prints on the device; -> {ops, sent: [[method, params]]}.
+function opsAnswering(answer) {
+  const sent = [];
+  const shell = script => {
+    const [, method, params] = script.match(/'rpc' '(\w+)' '(\{.*\})'/);
+    sent.push([method, JSON.parse(params)]);
+    return JSON.stringify(typeof answer === 'function' ? answer(method) : answer) + '\n';
+  };
+  return {ops: engineOps({node: 'node'}, shell), sent};
+}
+
+test('engineOps.probeSpike sends {op, ...extra} and answers the engine\'s result out of the envelope', () => {
+  const result = {op: 'selection', role: 'AXTextArea', range: {location: 3, length: 0}, axError: 0, setError: 0};
+  const {ops, sent} = opsAnswering({ok: true, result});
+  assert.deepEqual(ops.probeSpike('selection', {app: 'com.apple.TextEdit', set: {location: 3, length: 0}}), result);
+  assert.deepEqual(sent, [['probe_spike', {op: 'selection', app: 'com.apple.TextEdit', set: {location: 3, length: 0}}]]);
+});
+
+test('a probe refusal is thrown with its errorName, code and sentence and its other members as data; probeTap the same', () => {
+  const report = {believedBefore: false, activationRan: true, deactivationPosted: true};
+  const {ops} = opsAnswering(method => method === 'probe_spike'
+    ? {ok: false, error: {code: -10005, errorName: 'activationFailed', message: 'The app could not be prepared for input: x.', probe: report}}
+    : {ok: false, error: {code: -10005, errorName: 'tapNotCreated', message: 'The active event tap could not be created (listen preflight not granted, post preflight granted)', mode: 'active', listenPreflight: false, postPreflight: true}});
+  assert.throws(() => ops.probeSpike('activate', {app: 'a'}), error => {
+    assert.equal(error.errorName, 'activationFailed');
+    assert.equal(error.code, -10005);
+    assert.equal(error.message, 'The app could not be prepared for input: x.');
+    assert.deepEqual(error.data, {probe: report});
+    return true;
+  });
+  assert.throws(() => ops.probeTap('start', {app: 'a', seconds: 30, mode: 'active'}), error => {
+    assert.equal(error.errorName, 'tapNotCreated');
+    assert.match(error.message, /listen preflight not granted, post preflight granted/);
+    assert.deepEqual(error.data, {mode: 'active', listenPreflight: false, postPreflight: true});
+    return true;
+  });
+});
+
+test('an unreachable engine is thrown with the reason and no errorName', () => {
+  const {ops} = opsAnswering({ok: false, unreachable: 'ENOENT'});
+  assert.throws(() => ops.probeSpike('activationPoint', {app: 'a'}), error => {
+    assert.equal(error.message, 'the engine is unreachable (ENOENT)');
+    assert.equal(error.errorName, null);
+    assert.deepEqual(error.data, {});
+    return true;
+  });
 });

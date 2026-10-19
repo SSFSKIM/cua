@@ -5,7 +5,8 @@
 // command prints one JSON line and exits 0, a usage error exits 2.
 //
 //   node scripts/spike/engine/measure/engine-device.mjs <command> [--engine <bundle>]
-//     rpc <method> [<params JSON>]  one request on a fresh connection to engine.sock beside the bundle:
+//     rpc <method> [<params JSON>]  one request on a fresh connection to engine.sock beside the bundle (ping, status,
+//                                   approve, shutdown, probe_tap or probe_spike):
 //                                   {ok: true, result} | {ok: false, error: {code, message, errorName, ...}} |
 //                                   {ok: false, unreachable: <errno code>} when no engine listens
 //     bundle                        {bundle, exists, engineVersion, build, identity}: the Info.plist's version and build
@@ -35,6 +36,8 @@ import {engineBuild, engineVersion} from '../assemble.mjs';
 export const APPROVED_ENGINE = join(homedir(), 'Library', 'Application Support', 'cua', 'engine', 'cua Engine.app');
 const RPC_TIMEOUT_MS = {approve: 120_000};
 const DEFAULT_RPC_TIMEOUT_MS = 15_000;
+// The engine methods `rpc` sends: the protocol's own and the two spike-only probes (probe_tap, probe_spike).
+export const RPC_METHODS = ['ping', 'status', 'approve', 'shutdown', 'probe_tap', 'probe_spike'];
 
 // One JSON-RPC request on its own connection. -> {ok, result} | {ok: false, error} | {ok: false, unreachable}.
 export function rpc(socket, method, params = {}, {timeoutMs = RPC_TIMEOUT_MS[method] ?? DEFAULT_RPC_TIMEOUT_MS} = {}) {
@@ -173,7 +176,7 @@ export async function main(argv) {
   switch (command) {
     case 'rpc': {
       const [method, params] = rest;
-      if (!['ping', 'status', 'approve', 'shutdown', 'probe_tap'].includes(method)) throw new Error('rpc takes ping, status, approve, shutdown or probe_tap');
+      if (!RPC_METHODS.includes(method)) throw new Error(`rpc takes ${RPC_METHODS.join(', ')}`);
       return rpc(socketPathFor(engine), method, params ? JSON.parse(params) : (method === 'ping' ? {clientApiVersion: 'cua-engine-1'} : {}));
     }
     case 'bundle': return bundleFacts(engine);

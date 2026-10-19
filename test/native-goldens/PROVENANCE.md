@@ -70,4 +70,11 @@ The tests fail in either of two cases: an undeclared difference appears, or a de
 
 ## Vendor sizing config (Statsig 406601636)
 
-TODO: the controller fills this in just before the goldens merge (read time, newest fetch time, value).
+Read on the mini at 2026-10-19T21:45:21Z with `ssh mini 'bash -s' < scripts/native-baseline/read-sizing-config.sh`, which prints
+only that config from the vendor helper's cached Statsig store, one line per cached evaluation. The plist's mtime was
+2026-10-19T20:30:43Z. All 10 cached evaluations read rule `default` with `should_use_legacy_screenshot_sizing` absent
+(false), value `{"jpeg_compression_quality": 0.8, "should_normalize_screenshot_to_point_resolution": true,
+"should_use_jpeg": true}`. The newest fetch was 2026-10-19T20:30:09Z; the oldest was 15:38:03Z, before the second
+sitting's captures. The cache refreshes only while the vendor helper runs, so this read shows the last fetch, not a
+fresh one; the helper was not started to force one. So the legacy downsizing fit was off for every vendor capture these
+goldens pair with, and the sizes follow the rule in the spec's "Screenshot" (U1).

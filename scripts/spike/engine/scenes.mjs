@@ -272,7 +272,7 @@ export async function upScene(id, {run, chromeApp, electronApp, io = defaultIo()
     fs.mkdirSync(folder, {recursive: true, mode: 0o700});
     for (const name of finderFolderFiles()) fs.writeFileSync(join(folder, name), `${name}\n`, {mode: 0o600});
     io.openApp({app: scene.app, files: [folder]});
-    record = {app: scene.app, folder, pid, window: await awaitWindow(pid, {before: checked.finderWindows, io})};
+    record = {app: scene.app, folder, pid, window: await awaitWindow(pid, {before: [...checked.finderWindows, ...(checked.finderOffScreenWindows ?? []).map(w => w.number)], io})};
   } else if (id === 'chrome') {
     const app = chromeApp ?? (await io.placeChrome()).appPath, userDataDir = join(run, 'chrome-user-data');
     fs.mkdirSync(userDataDir, {recursive: true, mode: 0o700});

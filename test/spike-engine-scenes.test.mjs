@@ -265,6 +265,15 @@ test('up of each scene: TextEdit on the run\'s document in English, Chrome on th
   assert.deepEqual(preflight({run, io}).refusals, [], 'the run\'s own TextEdit, Chrome and Finder window');
 }));
 
+test('up finder records the window the open created, never Finder\'s own off-screen window', async () => withRun(async run => {
+  const offScreen = {number: 184776, bounds: {x: 606, y: 52, width: 1067, height: 631}, onScreen: false};
+  const io = fakeDevice({windows: {736: [offScreen]}});
+  const finder = await upScene('finder', {run, io});
+  assert.notEqual(finder.window.number, 184776);
+  assert.equal(finder.window.onScreen, true);
+  assert.deepEqual(preflight({run, io}).refusals, []);
+}));
+
 test('down stops only what the run recorded; Finder is never signalled and stays up while the run\'s window is open', async () => withRun(async run => {
   const io = fakeDevice();
   const chrome = await upScene('chrome', {run, io});

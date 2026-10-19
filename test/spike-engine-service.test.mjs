@@ -101,6 +101,17 @@ test('get_app_state resolves the app first, asks once, observes by path with a s
   assert.equal(state.elicitations.length, 1);
 });
 
+test('get_app_state forwards the engine\'s spike switches a call names, and only those', async t => {
+  const {execute, engine} = await setup(t);
+  await execute('get_app_state', {app: 'TextEdit', prefetch: 'hierarchy', valueMarkdown: false, focusableSelectable: false, webAreaWait: false, settle: true, other: 'dropped'});
+  await execute('get_app_state', {app: 'TextEdit'});
+  const [named, plain] = engine.executes().filter(p => p.method === 'get_app_state').map(p => p.args);
+  assert.deepEqual({prefetch: named.prefetch, valueMarkdown: named.valueMarkdown, focusableSelectable: named.focusableSelectable, webAreaWait: named.webAreaWait, settle: named.settle},
+    {prefetch: 'hierarchy', valueMarkdown: false, focusableSelectable: false, webAreaWait: false, settle: true});
+  assert.equal('other' in named, false);
+  for (const name of ['prefetch', 'valueMarkdown', 'focusableSelectable', 'webAreaWait', 'settle']) assert.equal(name in plain, false, `${name} is absent unless named`);
+});
+
 test('the approval: the vendor\'s message and meta, which the harness matcher accepts; one per app per connection', async t => {
   const {execute, engine, state} = await setup(t);
   await execute('get_app_state', {app: 'TextEdit'});

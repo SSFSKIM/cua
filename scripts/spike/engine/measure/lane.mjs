@@ -25,7 +25,8 @@ import {FRONTMOST_SCRIPT, parseFrontmost, sendIfFrontmost} from '../../../accept
 import {hostAttestationOf} from '../../../native-baseline.mjs';
 import {textOf} from '../../../browser-parity/mcp.mjs';
 import {quote} from '../../../browser-parity/topology.mjs';
-import {SCENES, FINDER_TYPING_NAME, finderFolderFiles} from '../scenes.mjs';
+import {SCENES, finderFolderFiles} from '../scenes.mjs';
+import {runningApps} from '../scene-processes.mjs';
 import {PAGE_TITLE} from '../fixtures/scene-page.mjs';
 import * as spike from './cells.mjs';
 import {stopEngine, assertApprovedBuild, launchEngine, EngineRefusal} from './engine-control.mjs';
@@ -47,6 +48,10 @@ export const SCENE_WINDOW = Object.freeze({textedit: 'cua-scene', finder: SCENES
 export const ACTION_TARGET = Object.freeze({textedit: SCENES.textedit.fixedState.firstLine, finder: 'scene-file-050', chrome: 'Scene option', electron: 'Fixture button'});
 export const KEY_PROBE = Object.freeze({textedit: 'shift+Right', finder: 'Down', chrome: 'Tab', electron: 'Tab'});
 export const USER_WINDOW = Object.freeze({textedit: 'finder', finder: 'textedit', chrome: 'textedit', electron: 'finder'});
+// The scenes' profile directories under the scene directory (scenes.mjs), removed before each run brings them up.
+const USER_DATA = Object.freeze({chrome: 'chrome-user-data', electron: 'electron-user-data'});
+// Probe (d)'s typed text: long enough (about 3 s keyed) for a person's keystroke or click to land inside the action.
+export const INTERVENTION_TEXT = 'cua intervention probe. '.repeat(125);
 // Probe (e)'s strings (Verification system part 6) and the two input sources it runs under.
 export const UNICODE_STRINGS = Object.freeze(['The quick brown fox jumps over the lazy dog.', '한글 테스트', 'ㄱㄴㄷ', '가나다 abc 123', '😀 이모지', 'é', '日本語', '줄1\n줄2']);
 export const INPUT_SOURCES = Object.freeze({latin: 'com.apple.keylayout.ABC', korean: 'com.apple.inputmethod.Korean.2SetKorean'});
@@ -124,14 +129,13 @@ export async function runOnce(options, io) {
   const write = () => fs.writeFileSync(join(dir, 'meta.json'), JSON.stringify(meta, null, 2) + '\n');
   const sceneCli = args => lastJson(shell(`${d.node} scripts/spike/engine/scenes.mjs ${args.map(quote).join(' ')}`));
   const front = () => sceneCli(['front']);
-  let prepared = null, client = null, stopped = null, records = {};
+  let prepared = null, client = null, stopped = null, refused = false, records = {};
+  const skipped = new Set();
+  const active = () => scenes.filter(scene => records[scene] && !skipped.has(scene));
 
-  // The stop discipline and the build gate come first: nothing is prepared or launched against an engine the run may
-  // not use or stop.
-  try {
-    meta.engineStopAtStart = await stopEngine(ops);
-    meta.engine = lane === 'cua' ? await assertApprovedBuild(ops) : {approved: ops.approved()};
-  } catch (error) {
+  // The build gate first (it reads only): nothing is prepared or launched for an engine the run may not use.
+  try { meta.engine = lane === 'cua' ? await assertApprovedBuild(ops) : {approved: ops.approved()}; }
+  catch (error) {
     meta.error = error.message; meta.refused = error instanceof EngineRefusal; write();
     log(`run ${options.run}: refused: ${error.message}`);
     return REFUSED;
@@ -140,6 +144,9 @@ export async function runOnce(options, io) {
   try {
     prepared = d.local ? localPrepared({approvedRuntime, lane}) : lastJson(shell(preparationScript('prepare', {device: d.device, approvedHome: approvedRuntime})));
     meta.preparation = prepared;
+    // The stop discipline inside the admission: no other run can start an engine between this stop and the run's launch.
+    try { meta.engineStopAtStart = await stopEngine(ops); }
+    catch (error) { if (error instanceof EngineRefusal) { refused = true; meta.refused = true; } throw error; }
     const pre = lastJson(shell(preflightScript({host: lane, prepared, surface: 'computer'})));
     Object.assign(meta, {commit: pre.commit, dirty: pre.dirty, checkout: pre.checkout, release: pre.release, sandbox: pre.sandbox, hardware: pre.hardware, os: pre.os, display: pre.display, ownNode: pre.ownNode});
     if (!d.local && pre.dirty) throw new Error('the harness checkout is dirty');
@@ -152,11 +159,13 @@ export async function runOnce(options, io) {
     const kept = readSceneState(shell, sceneDir).scenes ?? {};
     const finderKept = kept.finder && (checked.finderWindows ?? []).includes(kept.finder.window?.number);
 
-    if (lane === 'cua' && probes.includes('c')) await probeC({d, shell, ops, emit, front, log});
+    if (lane === 'cua' && probes.includes('c')) await probeC({d, shell, ops, emit, front, log, meta});
     if (lane === 'cua') meta.engineLaunch = {via: 'open -n -g -a', ...pick(await launchEngine(ops), ['pid', 'build', 'accessibility', 'screenRecording', 'connections'])};
 
     for (const scene of scenes) {
       if (scene === 'finder' && finderKept) { records.finder = kept.finder; meta.finderReused = true; continue; }
+      // Chrome's and the fixture's profiles are each run's own: only Finder's folder is shared by the sitting.
+      if (USER_DATA[scene]) shell(`rm -rf ${quote(join(sceneDir, USER_DATA[scene]))}`);
       const up = sceneCli(['up', scene, '--run', sceneDir]);
       if (up.error) throw new Error(`scene ${scene} did not come up: ${up.error}`);
       records[scene] = up;
@@ -213,10 +222,8 @@ export async function runOnce(options, io) {
       throw new Stop(stopped);
     };
     const activate = async scene => {
-      shell(`/usr/bin/open -a ${quote(records[scene].app)}`);
       const started = performance.now();
-      for (let i = 0; i < 20 && frontmost() !== records[scene].bundleId; i++) await sleep(250);
-      const ok = frontmost() === records[scene].bundleId;
+      const ok = await bringToFront({shell, sleep}, records[scene]);
       emit({op: 'setup.activate', scene, sample: 1, ok, wallMs: round(performance.now() - started), note: 'harness-owned, not judged: device-side open -a, checked with lsappinfo front'});
       if (!ok) throw new Error(`${scene} did not become the frontmost application`);
     };
@@ -229,21 +236,27 @@ export async function runOnce(options, io) {
       }
       return js(code);
     };
-    const ctx = {lane, d, dir, meta, emit, row, js, attest, records, scenes, samples, tasks, inputBuilt, operator, keyCell, finderKey, activate, front, ops, shell, io, log, prepared};
+    const ctx = {lane, d, dir, meta, emit, row, js, attest, records, scenes, samples, tasks, inputBuilt, operator, keyCell, finderKey, activate, front, ops, shell, io, log, prepared, skipped, active};
 
     const first = await js(FIRST, BIND_MS);
     if (!first.cell?.ok) throw new Error(`the first cell failed: ${first.failure ?? first.cell?.error}`);
     for (let sample = 1; sample <= samples; sample++) row('warm.listApps', sample, attest(await js(LIST_APPS)));
-    for (const scene of scenes) row('bind.getApp', 1, await js(spike.BIND(scene, records[scene].app), BIND_MS), {scene});
+    for (const scene of scenes) await bind(ctx, scene);
 
     for (const notRun of [...notRunRows({lane, scenes, inputBuilt}), ...STRUCTURAL_ROWS]) emit(notRun);
-    if (scenes.includes('finder')) await finderSetup(ctx);
-    for (const scene of scenes) await golden(ctx, scene, 'golden.fixed', spike.GOLDEN(scene, records[scene].app, SCENE_WINDOW[scene], {raw: lane === 'cua'}));
-    if (scenes.includes('textedit')) await textEditCells(ctx);
-    for (const scene of scenes) await treeCells(ctx, scene);
-    if (lane === 'cua') for (const scene of scenes) await engineCells(ctx, scene);
+    if (active().includes('finder')) await finderSetup(ctx);
+    // The goldens on one fixed front application on both lanes (TextEdit, else the first scene).
+    if (active().length) await activate(active().includes('textedit') ? 'textedit' : active()[0]);
+    for (const scene of active()) await golden(ctx, scene, 'golden.fixed', spike.GOLDEN(scene, records[scene].app, SCENE_WINDOW[scene], {raw: lane === 'cua'}));
+    if (active().includes('textedit')) await textEditCells(ctx);
+    for (const scene of active()) await treeCells(ctx, scene);
+    for (const scene of active().filter(s => s !== 'textedit')) await screenshotCells(ctx, scene);
+    if (lane === 'cua') {
+      const passed = await preflightSwitches(ctx, active());
+      for (const scene of active()) await engineCells(ctx, scene, passed);
+    }
     if (inputBuilt) {
-      for (const scene of scenes) await golden(ctx, scene, 'golden.action', spike.ACTION_GOLDEN(scene, records[scene].app, SCENE_WINDOW[scene], ACTION_TARGET[scene], {raw: lane === 'cua'}));
+      for (const scene of active()) await golden(ctx, scene, 'golden.action', spike.ACTION_GOLDEN(scene, records[scene].app, SCENE_WINDOW[scene], ACTION_TARGET[scene], {raw: lane === 'cua'}));
       if (lane === 'cua') await inputProbes(ctx);
     }
     const ended = await client.call('end_task');
@@ -267,14 +280,38 @@ export async function runOnce(options, io) {
     meta.finished = new Date().toISOString();
     write();
   }
-  log(`run ${options.run} (${lane}): ${meta.complete ? 'complete' : `INCOMPLETE: ${meta.stopped ?? meta.error ?? meta.problems.join('; ')}`}`);
-  return meta.complete ? 0 : 1;
+  log(`run ${options.run} (${lane}): ${meta.complete ? 'complete' : `${refused ? 'refused' : 'INCOMPLETE'}: ${meta.stopped ?? meta.error ?? meta.problems.join('; ')}`}`);
+  return refused ? REFUSED : meta.complete ? 0 : 1;
 }
 
 const pick = (object, keys) => Object.fromEntries(keys.filter(k => object?.[k] !== undefined).map(k => [k, object[k]]));
 const readSceneState = (shell, sceneDir) => {
   try { return JSON.parse(shell(`cat ${quote(join(sceneDir, 'scenes.json'))} 2>/dev/null || echo '{}'`)); } catch { return {}; }
 };
+
+// Puts a scene's app in front (device-side open -a) and polls lsappinfo for up to 5 s. -> whether it got there.
+async function bringToFront({shell, sleep}, record) {
+  shell(`/usr/bin/open -a ${quote(record.app)}`);
+  for (let i = 0; i < 20; i++) { if (parseFrontmost(shell(FRONTMOST_SCRIPT)) === record.bundleId) return true; await sleep(250); }
+  return parseFrontmost(shell(FRONTMOST_SCRIPT)) === record.bundleId;
+}
+
+// Binds a scene's app by its path and checks the path named exactly the run's process: on the device exactly one
+// process runs the scene's bundle id and it is the recorded one, and on the cua lane the bound observation's pid is it.
+// A scene whose binding names another process is skipped and is a run problem.
+async function bind({lane, js, row, shell, records, meta, skipped}, scene) {
+  const record = records[scene];
+  const r = await js(spike.BIND(scene, record.app), BIND_MS);
+  const exec = (command, args) => shell([command, ...args].map(quote).join(' '));
+  const runningPids = runningApps(record.bundleId, {exec}).map(app => app.pid);
+  const boundPid = lane === 'cua' && r.cell?.ok ? (await js(spike.BOUND_PID(record.app))).cell?.value?.pid ?? null : null;
+  const pidOk = runningPids.length === 1 && runningPids[0] === record.pid && (lane !== 'cua' || boundPid === record.pid);
+  const out = row('bind.getApp', 1, r, {scene, recordedPid: record.pid, runningPids, ...(lane === 'cua' ? {boundPid} : {}), pidOk, ...(r.cell?.ok && !pidOk ? {ok: false} : {})});
+  if (!out.ok) {
+    skipped.add(scene);
+    meta.problems.push(`${scene}: ${pidOk ? `the bind failed (${out.error})` : `the bound app is not exactly the run's process ${record.pid} (running ${runningPids.join(', ') || 'none'}${lane === 'cua' ? `, bound ${boundPid}` : ''})`}; its rows did not run`);
+  }
+}
 
 // This Mac's run (--device local, cua lane only): no prepare.mjs admission (it serves declared devices); the given
 // home is served as it is, with the run's own XDG_CONFIG_HOME and TMPDIR.
@@ -295,7 +332,7 @@ async function golden({js, row, shell, dir, records, prepared}, scene, op, code)
   const allowed = scene === 'finder' ? [SCENES.finder.fixedState.folder, ...finderFolderFiles()] : null;
   for (const file of files) {
     if (!isSessionFile(prepared, file.path)) { problems.push(`not read: ${file.kind} was written outside the session's temp directory`); continue; }
-    const text = shell(`cat ${quote(file.path)}`);
+    const text = shell(`cat ${quote(file.path)} && rm -f ${quote(file.path)}`);   // the device keeps no copy (Finder's is unredacted)
     if (createHash('sha256').update(text).digest('hex') !== file.sha256) { problems.push(`not kept: ${file.kind} changed between the cell and the copy`); continue; }
     const out = allowed ? redactGolden(text, file.kind, allowed) : text;
     fs.mkdirSync(join(dir, 'goldens'), {recursive: true});
@@ -321,7 +358,13 @@ async function finderSetup(ctx) {
   }
   const view = await js(spike.FINDER_VIEW(SCENE_WINDOW.finder));
   row('check.finderListView', 1, view, {scene: 'finder'});
-  if (view.cell?.ok && !view.cell.value.listView) emit({op: 'check.finderListView', scene: 'finder', sample: 2, ok: false, error: 'the run\'s Finder folder is not in list view: run the vendor lane first in this sitting, which sets it'});
+  // Finder's fixed state is list view; without it no Finder row is measured, and none is pooled.
+  if (!view.cell?.ok || !view.cell.value.listView) {
+    const reason = view.cell?.ok ? 'the run\'s Finder folder is not in list view (the vendor lane sets it: run it first in the sitting)' : `Finder's view could not be read: ${view.cell?.error ?? view.failure}`;
+    ctx.skipped.add('finder');
+    emit({op: 'scene.finder', scene: 'finder', sample: 1, ok: false, notRun: reason});
+    ctx.meta.problems.push(`finder: ${reason}; its rows did not run`);
+  }
 }
 
 // The baseline's TextEdit cells on the scene document: setup.activate, getAXState and getScreenshot (bracketed by
@@ -354,6 +397,18 @@ async function textEditCells(ctx) {
   }
 }
 
+// getScreenshot of a scene other than TextEdit (whose series the baseline's own cells take), as the baseline times it:
+// the series bracketed by a check that the scene's window is its app's front window, every sample invalid when it is
+// not in front afterwards.
+async function screenshotCells({js, row, samples}, scene) {
+  const guard = async n => { const r = row('guard.scene', n, await js(spike.SCENE_GUARD(scene, SCENE_WINDOW[scene])), {scene}); return r.ok && r.inFront === true; };
+  if (!await guard(1)) { row('warm.getScreenshot', 1, {wallMs: 0, cell: null, failure: 'the scene window was not in front before the series'}, {scene}); return; }
+  const shots = [];
+  for (let sample = 1; sample <= samples; sample++) shots.push({sample, r: await js(spike.SCENE_SCREENSHOT(scene))});
+  const still = await guard(2);
+  for (const {sample, r} of shots) row('warm.getScreenshot', sample, r, {scene, ...(still ? {} : {ok: false, invalid: 'the scene window was not in front after the series'})});
+}
+
 // The tree read of each scene through the facade, with the raw Skyshot's size and the engine's timings on the cua lane.
 async function treeCells({lane, js, row, attest, records, samples}, scene) {
   for (let sample = 1; sample <= samples; sample++) {
@@ -367,23 +422,67 @@ async function treeCells({lane, js, row, attest, records, samples}, scene) {
   }
 }
 
-// Cua lane, probe (c′) and valueMarkdown's cost: the two fetch routes alternated per sample, valueMarkdown on and off
-// alternated per sample, and the settle notification count at rest. A row whose switch the service did not forward is
-// not a measurement (its `forwarded` is false).
-async function engineCells({js, row, records, samples}, scene) {
-  const app = records[scene].app;
-  for (let sample = 1; sample <= samples; sample++) {
-    for (const prefetch of sample % 2 ? ['public', 'hierarchy'] : ['hierarchy', 'public'])
-      row(`probe.c'.route.${prefetch}`, sample, await js(spike.ENGINE_OBSERVE(app, {prefetch})), {scene});
-    for (const valueMarkdown of sample % 2 ? [true, false] : [false, true])
-      row(`valueMarkdown.${valueMarkdown ? 'on' : 'off'}`, sample, await js(spike.ENGINE_OBSERVE(app, {valueMarkdown})), {scene});
+// The engine's spike switches, each with the value its preflight and its series test, the scenes it applies to, and
+// the series' ops. A web-area wait happens only on a web-shaped scene.
+export const SWITCHES = Object.freeze({
+  prefetch: {value: 'hierarchy', scenes: null, series: [['probe.c\'.route.public', {prefetch: 'public'}], ['probe.c\'.route.hierarchy', {prefetch: 'hierarchy'}]]},
+  valueMarkdown: {value: false, scenes: null, series: [['valueMarkdown.on', {valueMarkdown: true}], ['valueMarkdown.off', {valueMarkdown: false}]]},
+  focusableSelectable: {value: false, scenes: null, series: [['focusableSelectable.on', {focusableSelectable: true}], ['focusableSelectable.off', {focusableSelectable: false}]]},
+  webAreaWait: {value: false, scenes: ['chrome', 'electron'], series: [['webAreaWait.on', {webAreaWait: true}], ['webAreaWait.off', {webAreaWait: false}]]},
+  settle: {value: true, scenes: null, series: [['probe.c\'.settle.rest', {settle: true}]]},
+});
+// Where a switch's preflight runs: the first of the run's scenes that can show it (TextEdit has the Markdown fetch).
+const PREFLIGHT_ORDER = ['textedit', 'finder', 'chrome', 'electron'];
+
+// Whether the engine saw a switch, from the timings of an observation without it (`plain`) and one with it
+// (`switched`, at SWITCHES[name].value): true, false, or null when this scene cannot show it.
+export function switchVerdict(name, plain, switched) {
+  if (!plain || !switched) return false;
+  switch (name) {
+    case 'prefetch': return switched.route === SWITCHES.prefetch.value;
+    case 'settle': return switched.settle !== undefined;
+    case 'valueMarkdown': return plain.markdownFetches > 0 ? !(switched.markdownFetches > 0) : null;
+    case 'focusableSelectable': return plain.focusableMs > 0 || plain.selectableMs > 0 ? !(switched.focusableMs > 0 || switched.selectableMs > 0) : null;
+    case 'webAreaWait': return plain.webAreaFound !== undefined ? switched.webAreaFound === undefined : null;
+    default: throw new Error(`unknown switch ${name}`);
   }
-  for (let sample = 1; sample <= Math.min(samples, 5); sample++) row('probe.c\'.settle.rest', sample, await js(spike.ENGINE_OBSERVE(app, {settle: true})), {scene});
+}
+
+// Cua lane, once per run: each switch's preflight on one scene (an observation without it and one with it). A switch
+// the service did not forward, or that no scene of the run can show, is one not-run row and skips its series; an
+// unforwarded one is also a run problem. -> the switches that passed.
+async function preflightSwitches({js, emit, records, meta}, scenes) {
+  const plain = new Map(), passed = new Set();
+  const observe = async (scene, switches) => (await js(spike.ENGINE_OBSERVE(records[scene].app, switches))).cell?.value?.timings ?? null;
+  for (const [name, spec] of Object.entries(SWITCHES)) {
+    const scene = PREFLIGHT_ORDER.find(s => scenes.includes(s) && (!spec.scenes || spec.scenes.includes(s)));
+    if (!scene) { emit({op: `switch.${name}`, sample: 1, ok: false, notRun: `no scene of this run can show ${name}`}); continue; }
+    if (!plain.has(scene)) plain.set(scene, await observe(scene, {}));
+    const verdict = switchVerdict(name, plain.get(scene), await observe(scene, {[name]: spec.value}));
+    emit({op: 'preflight.switch', switch: name, scene, sample: 1, ok: verdict === true, forwarded: verdict});
+    if (verdict === true) { passed.add(name); continue; }
+    const reason = verdict === null ? `undetermined: ${scene} shows no effect of ${name}` : `the service did not forward ${name}`;
+    emit({op: `switch.${name}`, scene, sample: 1, ok: false, notRun: reason});
+    if (verdict === false) meta.problems.push(`${name}: ${reason}; its series did not run`);
+  }
+  return passed;
+}
+
+// Cua lane, probe (c′) and the switches' costs: the two fetch routes and each on/off pair alternated per sample, and the
+// settle notification count at rest, for the switches that passed their preflight.
+async function engineCells({js, row, records, samples}, scene, passed) {
+  const app = records[scene].app;
+  const pairs = Object.entries(SWITCHES).filter(([name, spec]) => passed.has(name) && name !== 'settle' && (!spec.scenes || spec.scenes.includes(scene)));
+  for (let sample = 1; sample <= samples; sample++)
+    for (const [, {series}] of pairs)
+      for (const [op, switches] of sample % 2 ? series : [...series].reverse()) row(op, sample, await js(spike.ENGINE_OBSERVE(app, switches)), {scene});
+  if (passed.has('settle'))
+    for (let sample = 1; sample <= Math.min(samples, 5); sample++) row('probe.c\'.settle.rest', sample, await js(spike.ENGINE_OBSERVE(app, {settle: true})), {scene});
 }
 
 // Probe (c), on the cua lane with the engine stopped: does `open -a` without -g activate the engine; do two copies at
 // different paths both come up under `open -n -g -a` and bind their own sockets. Both stopped and the copy removed.
-async function probeC({d, shell, ops, emit, front, log}) {
+async function probeC({d, shell, ops, emit, front, log, meta}) {
   const before = front();
   try {
     const status = await launchEngine(ops, {plain: true});
@@ -403,16 +502,21 @@ async function probeC({d, shell, ops, emit, front, log}) {
       frontmostChanged: before.frontmost?.pid !== after.frontmost?.pid});
   } catch (error) { emit({op: 'probe.c.twoCopies', sample: 1, ok: false, error: error.message}); }
   finally {
-    for (const target of [copy, ops]) { try { await stopEngine(target); } catch (error) { log(`probe (c): ${error.message}`); } }
-    ops.removeCopy(copyDir);
+    let copyStopped = true;
+    for (const [name, target] of [['copy', copy], ['approved', ops]]) {
+      try { await stopEngine(target); } catch (error) { if (name === 'copy') copyStopped = false; log(`probe (c): ${error.message}`); }
+    }
+    // A copy whose engine may still run is left in place (removing it would leave an engine serving a vanished bundle).
+    if (copyStopped) ops.removeCopy(copyDir);
+    else { meta.problems.push(`probe (c): the copy's engine did not stop; ${copyDir} was left in place`); meta.probeCopyLeft = copyDir; }
   }
 }
 
 // Cua lane, input built: probes (a) and (b) on every scene with its paired user window in front; (d)'s cases; (e)'s
 // matrix under both input sources with the owner's source saved and restored.
 async function inputProbes(ctx) {
-  const {js, row, emit, records, scenes, front, activate, operator, io, ops, dir} = ctx;
-  for (const scene of scenes) {
+  const {js, row, emit, records, scenes, front, activate, operator, io, ops, dir, active} = ctx;
+  for (const scene of active()) {
     const user = USER_WINDOW[scene];
     if (!records[user]) { for (const action of ['click', 'key']) emit({op: `probe.a.${action}`, scene, user, sample: 1, ok: false, notRun: `the user window's scene (${user}) is not up`}); continue; }
     for (const action of ['click', 'key']) {
@@ -435,10 +539,14 @@ async function inputProbes(ctx) {
   emit({op: 'probe.d.noFire', scene: 'textedit', sample: 1, ok: taskRows.length > 0 && !fired.length, taskRows: taskRows.length, fired: fired.length,
     note: 'the engine\'s own super+n, typing, super+w and sheet click in the task rows; none may fail as userIntervened'});
   if (operator && records.textedit) {
-    for (const [op, instruction] of [['probe.d.operatorKeystroke', 'send ONE keystroke over Screen Sharing into the TextEdit scene document'], ['probe.d.backgroundClick', 'click ONCE into the TextEdit scene window while it is behind another window']]) {
-      await activate('textedit');
-      if (!await io.confirm(`Operator: press Enter, then within 2 s ${instruction} while the engine types (n to skip): `)) { emit({op, scene: 'textedit', sample: 1, ok: false, notRun: 'skipped by the operator'}); continue; }
-      const r = await js(spike.ACT_TYPE('textedit', FINDER_TYPING_NAME));
+    // The keystroke goes into the driven app while it is frontmost; the click into its window while the paired user
+    // window is in front (the driven app in the background).
+    for (const [op, front, instruction] of [['probe.d.operatorKeystroke', 'textedit', 'send ONE keystroke over Screen Sharing into the TextEdit scene document'],
+      ['probe.d.backgroundClick', USER_WINDOW.textedit, 'click ONCE into the TextEdit scene window, which is behind the user window']]) {
+      if (!records[front]) { emit({op, scene: 'textedit', sample: 1, ok: false, notRun: `the ${front} scene is not up`}); continue; }
+      await activate(front);
+      if (!await io.confirm(`Operator: press Enter, then, while the engine types (about 3 s), ${instruction} (n to skip): `)) { emit({op, scene: 'textedit', sample: 1, ok: false, notRun: 'skipped by the operator'}); continue; }
+      const r = await js(spike.ACT_TYPE('textedit', INTERVENTION_TEXT));
       const intervened = /userIntervened|The user changed|still interacting/.test(r.cell?.error ?? '');
       emit({op, scene: 'textedit', sample: 1, ok: intervened, inCellMs: r.cell?.inCellMs ?? null, actionInterval: r.meta?.['cua/actionInterval'] ?? null, receivedAt: r.meta?.['cua/receivedAt'] ?? null, hidIdleMs: r.meta?.['cua/hidIdleMs'] ?? null,
         operatorConfirmedTiming: await io.confirm('Was your input made while the engine was typing? [Enter = yes, n = no] ')});
@@ -450,13 +558,16 @@ async function inputProbes(ctx) {
     for (const [source, id] of Object.entries(INPUT_SOURCES)) {
       const switched = ops.inputSource(id);
       if (!switched?.selected) { emit({op: 'probe.e.typeText', source, sample: 1, ok: false, error: `the ${source} source ${id} could not be selected`}); continue; }
-      for (const scene of ['textedit', 'chrome'].filter(s => records[s])) {
+      for (const scene of ['textedit', 'chrome'].filter(s => active().includes(s))) {
         let sample = 0;
         for (const text of UNICODE_STRINGS) {
           sample++;
-          const typed = await js(spike.ACT_TYPE(scene, text));
-          const landed = await js(spike.TEXT_LANDED(scene, records[scene].app, text));
-          row('probe.e.typeText', sample, typed, {scene, source, route: typed.meta?.['cua/inputRoute'] ?? null, landed: landed.cell?.value?.landed ?? null, expected: landed.cell?.value?.expected ?? null});
+          // A marker of digits and # (no letters, which a Korean source would compose) unique to this sample brackets
+          // the text, so the readback compares exactly what this sample typed.
+          const id = `${Object.keys(INPUT_SOURCES).indexOf(source)}${scenes.indexOf(scene)}${String(sample).padStart(2, '0')}`;
+          const typed = await js(spike.ACT_TYPE(scene, `#${id}#${text}#/${id}#`));
+          const landed = await js(spike.TEXT_LANDED(scene, records[scene].app, id, text));
+          row('probe.e.typeText', sample, typed, {scene, source, route: typed.meta?.['cua/inputRoute'] ?? null, landed: landed.cell?.value?.landed ?? null, exact: landed.cell?.value?.exact ?? null, expected: landed.cell?.value?.expected ?? null});
         }
       }
     }
@@ -471,12 +582,7 @@ async function teardown({lane, shell, client, records, scenes, sceneCli, sceneDi
   const out = {};
   const canType = client && !stopped && (lane === 'vendor' || inputBuilt);
   const cell = code => client.request('tools/call', {name: 'js', arguments: {code, timeout_ms: CELL_MS}}, CELL_MS + 15_000);
-  // Puts a scene's app in front (device-side open -a) and says whether it got there.
-  const toFront = async scene => {
-    shell(`/usr/bin/open -a ${quote(records[scene].app)}`);
-    for (let i = 0; i < 20; i++) { if (parseFrontmost(shell(FRONTMOST_SCRIPT)) === records[scene].bundleId) return true; await sleep(250); }
-    return false;
-  };
+  const toFront = scene => bringToFront({shell, sleep}, records[scene]);
   if (canType) {
     try {
       if (records.finder && await toFront('finder')) {

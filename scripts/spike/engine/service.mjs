@@ -52,6 +52,9 @@ const RISK_SUBTITLE = 'Allowing Computer Use to use this app introduces new risk
 // Answers kept for the connection's lifetime (the vendor host stored allowed and denied); a cancel is asked again.
 const REMEMBERED = new Set(['accept', 'decline']);
 // The per-call keys, reset at the start of every call (see the header).
+// The engine's spike-only get_app_state switches (native/engine Skyshot.swift), forwarded when a call names them, so
+// measure.mjs can price the fetch routes, the Markdown fetch, the settability reads, the web-area wait and the settle.
+const SPIKE_SWITCHES = ['prefetch', 'valueMarkdown', 'focusableSelectable', 'webAreaWait', 'settle'];
 const PER_CALL = {'cua/engineMs': null, 'cua/settle': null, 'cua/inputRoute': null, 'cua/actionInterval': null, 'cua/receivedAt': null, 'cua/hidIdleMs': null};
 
 // The vendor policy's input check (S/targets/mac/computer-use-policy.js): an object whose `app` is a non-empty string
@@ -165,7 +168,8 @@ export function createService({nodeRepl, client = null}) {
   }
 
   async function getAppState(given, target) {
-    const args = {app: target.appPath, includeScreenshot: true, outputDirectory: screenshotDirectory(), ...(given.disableDiff !== undefined ? {disableDiff: given.disableDiff} : {})};
+    const switches = Object.fromEntries(SPIKE_SWITCHES.filter(name => given[name] !== undefined).map(name => [name, given[name]]));
+    const args = {app: target.appPath, includeScreenshot: true, outputDirectory: screenshotDirectory(), ...(given.disableDiff !== undefined ? {disableDiff: given.disableDiff} : {}), ...switches};
     const skyshot = await call('get_app_state', args);
     const text = render(skyshot);
     const observation = {app: target.appPath, skyshot, text};

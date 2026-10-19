@@ -41,8 +41,9 @@ export async function probeF({ops, copyOps, out, confirm, log = console.log, ...
       steps.push({step: 'f3', copy: launched.bundlePath, running: grants(launched), approve: answer.ok ? answer.result : {error: answer.error?.message},
         confirmationRaised: await confirm('f3: did the screen-capture confirmation appear on the console for the copy? [Enter = yes, n = no] ')});
     } finally {
-      try { await stopEngine(copyOps, timing); } catch (error) { log(`f3: ${error.message}`); }
-      ops.removeCopy(copyDir);
+      // A copy whose engine may still run stays in place, recorded, rather than leaving an engine on a vanished bundle.
+      try { await stopEngine(copyOps, timing); ops.removeCopy(copyDir); }
+      catch (error) { log(`f3: ${error.message}; ${copyDir} was left in place`); steps.push({step: 'f3-cleanup', copyLeft: copyDir, error: error.message}); }
     }
   } else steps.push({step: 'f3', skipped: true});
 

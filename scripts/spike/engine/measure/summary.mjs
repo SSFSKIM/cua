@@ -66,29 +66,38 @@ export function summarize(dir) {
     const tree = lane => okRows(lanes[lane], 'tree.getAXState', scene);
     const v = tree('vendor'), c = tree('cua');
     const timing = key => med(c, r => r.engine?.timings?.[key]);
-    return {scene, vendorMs: med(v, r => r.inCellMs), cuaMs: med(c, r => r.inCellMs), vendorElements: med(v, r => r.elements), cuaElements: med(c, r => r.elements),
+    const shot = lane => okRows(lanes[lane], 'warm.getScreenshot', scene);
+    return {scene, vendorMs: med(v, r => r.inCellMs), cuaMs: med(c, r => r.inCellMs), vendorShotMs: med(shot('vendor'), r => r.inCellMs), cuaShotMs: med(shot('cua'), r => r.inCellMs), vendorElements: med(v, r => r.elements), cuaElements: med(c, r => r.elements),
       vendorTextBytes: med(v, r => r.textBytes), cuaTextBytes: med(c, r => r.textBytes), skyshotBytes: med(c, r => r.engine?.skyshotBytes), nodes: med(c, r => r.engine?.nodes),
       engineTotalMs: timing('totalMs'), walkMs: timing('walkMs'), screenshotMs: med(c, r => ['screenshotContentMs', 'screenshotCaptureMs', 'screenshotEncodeMs', 'screenshotWriteMs', 'screenshotWindowListMs', 'screenshotWindowNumberMs'].reduce((t, k) => t + (r.engine?.timings?.[k] ?? 0), 0) || null),
       enabled: c.map(r => r.engine?.timings?.enabled).find(Boolean) ?? null, webAreaFound: c.map(r => r.engine?.timings?.webAreaFound).find(x => x !== undefined) ?? null};
-  }).filter(s => s.vendorMs !== null || s.cuaMs !== null);
+  }).filter(s => [s.vendorMs, s.cuaMs, s.vendorShotMs, s.cuaShotMs].some(v => v !== null));
 
   const forwardedRows = op => okRows(cua, op).filter(r => r.forwarded);
+  // A switch's series that did not run: the runs whose preflight found it unforwarded or undetermined, and the samples
+  // whose own timings disagreed with it.
+  const switchNotRun = name => rowsOf(cua, `switch.${name}`).filter(r => r.notRun).length;
+  const disagreed = (op, scene) => rowsOf(cua, op, scene).filter(r => r.ok && !r.forwarded).length;
   const routes = SCENE_ORDER.map(scene => {
     const of = route => forwardedRows(`probe.c'.route.${route}`).filter(r => r.scene === scene);
     const p = of('public'), h = of('hierarchy');
     return {scene, publicMs: med(p, r => r.observeMs), hierarchyMs: med(h, r => r.observeMs), publicWalkMs: med(p, r => r.timings?.walkMs), hierarchyWalkMs: med(h, r => r.timings?.walkMs),
-      publicNodes: med(p, r => r.nodes), hierarchyNodes: med(h, r => r.nodes), n: [p.length, h.length], dropped: rowsOf(cua, `probe.c'.route.public`, scene).concat(rowsOf(cua, `probe.c'.route.hierarchy`, scene)).filter(r => r.ok && !r.forwarded).length};
+      publicNodes: med(p, r => r.nodes), hierarchyNodes: med(h, r => r.nodes), n: [p.length, h.length], dropped: disagreed("probe.c'.route.public", scene) + disagreed("probe.c'.route.hierarchy", scene)};
   }).filter(r => r.n[0] + r.n[1] + r.dropped > 0);
-  const markdown = SCENE_ORDER.map(scene => {
-    const on = forwardedRows('valueMarkdown.on').filter(r => r.scene === scene), off = forwardedRows('valueMarkdown.off').filter(r => r.scene === scene);
-    return {scene, onMs: med(on, r => r.observeMs), offMs: med(off, r => r.observeMs), markdownMs: med(on, r => r.timings?.markdownMs), fetches: med(on, r => r.timings?.markdownFetches), n: [on.length, off.length],
-      dropped: [...rowsOf(cua, 'valueMarkdown.off', scene)].filter(r => r.ok && !r.forwarded).length};
-  }).filter(r => r.n[0] + r.n[1] + r.dropped > 0);
+  // The on/off switches: the observation's in-cell time either way and the engine's own cost of the switched phase.
+  const COSTS = {valueMarkdown: t => t?.markdownMs, focusableSelectable: t => (t?.focusableMs ?? 0) + (t?.selectableMs ?? 0) || null, webAreaWait: t => t?.webAreaWaitMs};
+  const switches = Object.entries(COSTS).flatMap(([name, cost]) => SCENE_ORDER.map(scene => {
+    const on = forwardedRows(`${name}.on`).filter(r => r.scene === scene), off = forwardedRows(`${name}.off`).filter(r => r.scene === scene);
+    return {name, scene, onMs: med(on, r => r.observeMs), offMs: med(off, r => r.observeMs), phaseMs: med(on, r => cost(r.timings)), n: [on.length, off.length], dropped: disagreed(`${name}.on`, scene) + disagreed(`${name}.off`, scene)};
+  }).filter(r => r.n[0] + r.n[1] + r.dropped > 0));
   const settle = SCENE_ORDER.map(scene => {
     const rows = forwardedRows('probe.c\'.settle.rest').filter(r => r.scene === scene);
     const rate = rows.map(r => (r.timings?.settleMs > 0 ? (r.timings.settleNotifications ?? 0) / (r.timings.settleMs / 1000) : null));
-    return {scene, notifications: med(rows, r => r.timings?.settleNotifications), settleMs: med(rows, r => r.timings?.settleMs), perSecond: median(rate), capped: rows.filter(r => r.timings?.settle === 'capped').length, n: rows.length};
-  }).filter(r => r.n > 0);
+    return {scene, notifications: med(rows, r => r.timings?.settleNotifications), settleMs: med(rows, r => r.timings?.settleMs), perSecond: median(rate), capped: rows.filter(r => r.timings?.settle === 'capped').length, n: rows.length,
+      dropped: disagreed('probe.c\'.settle.rest', scene)};
+  }).filter(r => r.n + r.dropped > 0);
+  const preflight = Object.fromEntries(['prefetch', 'valueMarkdown', 'focusableSelectable', 'webAreaWait', 'settle'].map(name => [name, {
+    forwarded: rowsOf(cua, 'preflight.switch').filter(r => r.switch === name && r.forwarded === true).length, notRun: switchNotRun(name)}]));
   const probeC = ['probe.c.plainOpen', 'probe.c.twoCopies'].map(op => ({op, rows: rowsOf(cua, op)})).filter(p => p.rows.length);
 
   // Not-run rows, one line per (lane, op, scene, source, reason), with the runs that recorded it.
@@ -102,7 +111,7 @@ export function summarize(dir) {
     ...(runs.length ? [] : [`${lane}: no runs under ${join(dir, lane)}`]),
     ...runs.filter(run => !run.meta?.complete).map(run => `${lane}/${run.name}: incomplete (${run.meta?.stopped ?? run.meta?.error ?? run.meta?.problems?.join('; ') ?? 'no meta.json'})`),
   ]);
-  return {verdict, speed, input, listApps, scenes, routes, markdown, settle, probeC, notRun: [...notRun.values()], problems,
+  return {verdict, speed, input, listApps, scenes, routes, switches, settle, preflight, probeC, notRun: [...notRun.values()], problems,
     runs: Object.fromEntries(Object.entries(lanes).map(([lane, runs]) => [lane, runs.length]))};
 }
 
@@ -116,17 +125,20 @@ export function renderSummary(s) {
     `| ${s.listApps.label} | ${fmt(s.listApps.vendor)} | ${fmt(s.listApps.cua)} | ${s.listApps.n.join('/')} | ${s.listApps.verdict} |`, '',
     'Approvals: the cua lane answers a repeat approval for the same app inside the spike service (one elicitation per connection and app), not through a supervisor hop as M1a\'s approval memory will, while the vendor lane\'s per-call policy round trip is the vendor\'s own; both lanes\' in-cell times carry what their service does per call.', '',
     '## Tree cost per scene', '',
-    '| scene | vendor ms | cua ms | elements v/c | text bytes v/c | Skyshot bytes | nodes | engine total ms | walk ms | capture ms | enabled | web area |', '|---|---|---|---|---|---|---|---|---|---|---|---|',
-    ...s.scenes.map(r => `| ${r.scene} | ${fmt(r.vendorMs)} | ${fmt(r.cuaMs)} | ${fmt(r.vendorElements)}/${fmt(r.cuaElements)} | ${fmt(r.vendorTextBytes)}/${fmt(r.cuaTextBytes)} | ${fmt(r.skyshotBytes)} | ${fmt(r.nodes)} | ${fmt(r.engineTotalMs)} | ${fmt(r.walkMs)} | ${fmt(r.screenshotMs)} | ${r.enabled ?? '—'} | ${r.webAreaFound ?? '—'} |`)];
-  if (s.routes.length) lines.push('', '## Probe (c′): fetch routes (cua lane, alternated per sample)', '',
+    '| scene | getAXState vendor ms | getAXState cua ms | getScreenshot vendor ms | getScreenshot cua ms | elements v/c | text bytes v/c | Skyshot bytes | nodes | engine total ms | walk ms | capture ms | enabled | web area |', '|---|---|---|---|---|---|---|---|---|---|---|---|---|---|',
+    ...s.scenes.map(r => `| ${r.scene} | ${fmt(r.vendorMs)} | ${fmt(r.cuaMs)} | ${fmt(r.vendorShotMs)} | ${fmt(r.cuaShotMs)} | ${fmt(r.vendorElements)}/${fmt(r.cuaElements)} | ${fmt(r.vendorTextBytes)}/${fmt(r.cuaTextBytes)} | ${fmt(r.skyshotBytes)} | ${fmt(r.nodes)} | ${fmt(r.engineTotalMs)} | ${fmt(r.walkMs)} | ${fmt(r.screenshotMs)} | ${r.enabled ?? '—'} | ${r.webAreaFound ?? '—'} |`)];
+  const runsNotRun = name => (s.preflight[name].notRun ? ` The ${name} switch did not run in ${s.preflight[name].notRun} run(s) (see Not run).` : '');
+  const anyCua = s.runs.cua > 0;
+  if (anyCua) lines.push('', '## Probe (c′): fetch routes (cua lane, alternated per sample)', '', `Preflight forwarded in ${s.preflight.prefetch.forwarded} run(s).${runsNotRun('prefetch')}`, '',
     '| scene | public ms | hierarchy ms | walk ms public/hierarchy | nodes public/hierarchy | samples | switch dropped |', '|---|---|---|---|---|---|---|',
     ...s.routes.map(r => `| ${r.scene} | ${fmt(r.publicMs)} | ${fmt(r.hierarchyMs)} | ${fmt(r.publicWalkMs)}/${fmt(r.hierarchyWalkMs)} | ${fmt(r.publicNodes)}/${fmt(r.hierarchyNodes)} | ${r.n.join('/')} | ${r.dropped} |`));
-  if (s.markdown.length) lines.push('', '## valueMarkdown (cua lane, on and off alternated per sample)', '',
-    '| scene | on ms | off ms | Markdown fetch ms | fetches | samples | switch dropped |', '|---|---|---|---|---|---|---|',
-    ...s.markdown.map(r => `| ${r.scene} | ${fmt(r.onMs)} | ${fmt(r.offMs)} | ${fmt(r.markdownMs)} | ${fmt(r.fetches)} | ${r.n.join('/')} | ${r.dropped} |`));
-  if (s.settle.length) lines.push('', '## Probe (c′): settle notifications at rest (cua lane)', '',
-    '| scene | notifications | settle ms | per second | capped | samples |', '|---|---|---|---|---|---|',
-    ...s.settle.map(r => `| ${r.scene} | ${fmt(r.notifications)} | ${fmt(r.settleMs)} | ${fmt(r.perSecond)} | ${r.capped} | ${r.n} |`));
+  if (anyCua) lines.push('', '## Switch costs (cua lane, on and off alternated per sample)', '',
+    ...['valueMarkdown', 'focusableSelectable', 'webAreaWait'].map(name => `- ${name}: preflight forwarded in ${s.preflight[name].forwarded} run(s).${runsNotRun(name)}`), '',
+    '| switch | scene | on ms | off ms | engine phase ms | samples on/off | switch dropped |', '|---|---|---|---|---|---|---|',
+    ...s.switches.map(r => `| ${r.name} | ${r.scene} | ${fmt(r.onMs)} | ${fmt(r.offMs)} | ${fmt(r.phaseMs)} | ${r.n.join('/')} | ${r.dropped} |`));
+  if (anyCua) lines.push('', '## Probe (c′): settle notifications at rest (cua lane)', '', `Preflight forwarded in ${s.preflight.settle.forwarded} run(s).${runsNotRun('settle')}`, '',
+    '| scene | notifications | settle ms | per second | capped | samples | switch dropped |', '|---|---|---|---|---|---|---|',
+    ...s.settle.map(r => `| ${r.scene} | ${fmt(r.notifications)} | ${fmt(r.settleMs)} | ${fmt(r.perSecond)} | ${r.capped} | ${r.n} | ${r.dropped} |`));
   if (s.probeC.length) lines.push('', '## Probe (c)', '', ...s.probeC.flatMap(p => p.rows.map(r => `- ${p.op} (run ${r.run}): ${r.ok ? 'ok' : 'failed'}${r.activated !== undefined ? `, activated ${r.activated}, frontmost changed ${r.frontmostChanged}` : ''}${r.copy ? `, pids ${r.approved?.pid}/${r.copy?.pid}, own sockets ${r.approved?.socket !== r.copy?.socket}` : ''}${r.error ? `: ${r.error}` : ''}`)));
   lines.push('', '## Not run', '', ...(s.notRun.length ? ['| lane | row | scene | source | reason | runs |', '|---|---|---|---|---|---|',
     ...s.notRun.map(r => `| ${r.lane} | ${r.op} | ${r.scene ?? '—'} | ${r.source ?? '—'} | ${r.reason} | ${r.runs} |`)] : ['Every planned row ran.']));

@@ -7,7 +7,7 @@
 //
 // Bound apps live in globalThis.__apps[<scene>]; the TextEdit cells of the baseline use globalThis.app, which
 // USE_TEXTEDIT points at the TextEdit scene, with globalThis.__scratch the scene document's title.
-import {cell} from '../../../native-baseline/cells.mjs';
+import {cell, SCREENSHOT} from '../../../native-baseline/cells.mjs';
 
 const j = JSON.stringify;
 // Shared helpers inside an observing cell: the front window's title (compared, never returned), element facts, the
@@ -41,15 +41,35 @@ const front = __front(ax);
 if (typeof front !== "string" || !front.startsWith(${j(prefix)})) return {invalid: "the scene window was not the app's front window"};
 return __facts(ax);`);
 
+// The pid of the process the bound app's last observation came from (cua lane): getApp observes as it binds.
+export const BOUND_PID = app => cell(`${SKYSHOT}
+const shot = await __skyshot(${j(app)});
+return {pid: shot?.app?.pid ?? null};`);
+
+// Whether a scene's window is its app's front window (the bracket around a screenshot series).
+export const SCENE_GUARD = (scene, prefix) => cell(`${HELPERS}
+const front = __front(await __full(globalThis.__apps[${j(scene)}]));
+return {inFront: typeof front === "string" && front.startsWith(${j(prefix)})};`);
+
+// The baseline's getScreenshot sample (its own body: the facade call, the image's format, size and hash) on a scene's
+// bound app instead of TextEdit's.
+export function SCENE_SCREENSHOT(scene) {
+  const code = SCREENSHOT.replace('await app.getScreenshot(', `await globalThis.__apps[${j(scene)}].getScreenshot(`);
+  if (code === SCREENSHOT) throw new Error('the baseline\'s SCREENSHOT cell no longer calls app.getScreenshot');
+  return code;
+}
+
 // The raw Skyshot behind the observation the previous cell made (cua lane): its size on the wire, node count and the
 // engine's per-phase timings. Not timed as a cell of its own (merged into the sample's row).
 export const SKYSHOT_FACTS = app => cell(`${SKYSHOT}
 return __shotFacts(await __skyshot(${j(app)}));`);
 
 // One observation straight through the service with the spike's request switches (cua lane): `prefetch` (public |
-// hierarchy, probe (c′)), `valueMarkdown` (false skips the Markdown fetch), `settle` (true forces the settle wait, for
-// the notification rate at rest). `forwarded` says whether the engine saw the switch (its timings carry the route, the
-// Markdown fetch count and the settle report): a service that drops a switch measures nothing.
+// hierarchy, probe (c′)), `valueMarkdown` and `focusableSelectable` (false skips the Markdown fetch, the settability
+// reads), `webAreaWait` (false skips the web-area wait), `settle` (true forces the settle wait, for the notification
+// rate at rest). `forwarded` says whether the engine's timings agree with the switches (the route, no Markdown fetch,
+// no settability read, no web-area wait, a settle report); the run's preflight (lane.mjs switchVerdict) is what proves
+// the service forwards each one.
 export const ENGINE_OBSERVE = (app, switches) => cell(`${SKYSHOT}
 const switches = ${j(switches)};
 const t0 = performance.now();
@@ -60,6 +80,8 @@ const facts = __shotFacts(shot);
 const t = facts.timings ?? {};
 const forwarded = (switches.prefetch === undefined || t.route === switches.prefetch)
   && (switches.valueMarkdown !== false || !(t.markdownFetches > 0))
+  && (switches.focusableSelectable !== false || !(t.focusableMs > 0 || t.selectableMs > 0))
+  && (switches.webAreaWait !== false || t.webAreaFound === undefined)
   && (switches.settle !== true || t.settle !== undefined);
 return {observeMs, forwarded, ...facts};`);
 
@@ -132,12 +154,13 @@ export const READBACK = scene => cell(`${HELPERS}
 const ax = await __full(globalThis.__apps[${j(scene)}]);
 return {treeChanged: (await __hash(ax)) !== globalThis.__probe?.before};`);
 
-// Probe (e): whether `text` landed exactly in a text element of the scene, from the raw Skyshot (cua lane): some node's
-// value contains it. Returns booleans and the expected text's hash only.
-export const TEXT_LANDED = (scene, app, text) => cell(`${HELPERS}
+// Probe (e): whether the sample's text landed exactly, from the raw Skyshot (cua lane): the text between the sample's
+// markers `#<id>#` and `#/<id>#` in some node's value equals what was typed. Returns booleans and a hash only.
+export const TEXT_LANDED = (scene, app, id, text) => cell(`${HELPERS}
 ${SKYSHOT}
 await __full(globalThis.__apps[${j(scene)}]);
 const shot = await __skyshot(${j(app)});
-const expected = ${j(text)};
-const landed = shot !== null && shot.nodes.some(n => typeof n.value === "string" && n.value.includes(expected));
-return {landed, expected: await __hash(expected)};`);
+const start = ${j(`#${id}#`)}, end = ${j(`#/${id}#`)}, expected = ${j(text)};
+const found = (shot?.nodes ?? []).map(n => typeof n.value === "string" ? n.value : "").find(v => v.includes(start) && v.includes(end, v.indexOf(start)));
+const between = found === undefined ? null : found.slice(found.indexOf(start) + start.length, found.indexOf(end, found.indexOf(start)));
+return {landed: between !== null, exact: between === expected, expected: await __hash(expected)};`);

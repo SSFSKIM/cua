@@ -17,8 +17,11 @@
 //
 // What it does of the proxy's work (src/mcp/connection.mjs): it claims a run session under CUA_HOME, creates the
 // launch's directories, runs the supervisor under spawnUpstream's anchor-owned process group, stamps every `js` call
-// with the connection's sandbox state (`codex/sandbox-state-meta`, which the supervisor confines each child by), and on
-// EOF or a signal tears the group down and removes the session. Everything else crosses unchanged: initialize, tools,
+// as the proxy's turnMeta does (src/mcp/server.mjs): the turn metadata (`callId`, `threadId`, `sessionId` and
+// `x-codex-turn-metadata` {session_id, thread_id, turn_id, call_id, model}, so an elicitation carries tool_call_id as on
+// the vendor lane; one task per connection, a fresh call id per call) over the client's own `_meta`, and the
+// connection's sandbox state (`codex/sandbox-state-meta`, which the supervisor confines each child by); and on EOF or a
+// signal it tears the group down and removes the session. Everything else crosses unchanged: initialize, tools,
 // results with their `_meta`, and elicitations both ways. The proxy's own tools, host notes and handshake records are
 // not reproduced: none of them is in a cell's timing, and the records are keyed by host, so an own-host handshake
 // recorded through a vendor-host connection would be replayed to the vendor lane.
@@ -73,6 +76,13 @@ function serve() {
     throw error;
   }
   const state = sandboxState(launch.sandbox, launch.cwd);
+  const taskId = randomUUID();
+  let model;
+  // The proxy's turnMeta (src/mcp/server.mjs), with one task for the connection and a fresh call id per call.
+  const turnMeta = (callId, clientMeta) => withSandbox({
+    ...clientMeta, callId, threadId: sessionId, sessionId,
+    'x-codex-turn-metadata': {session_id: sessionId, thread_id: sessionId, turn_id: taskId, call_id: callId, model: model ?? 'mcp-client'},
+  }, state);
   const diagnostics = line => process.stderr.write(`spike serve: ${line}\n`);
   const upstream = spawnUpstream(launch, {diagnostics});
   upstream.onMessage(msg => process.stdout.write(`${JSON.stringify(msg)}\n`));
@@ -96,7 +106,8 @@ function serve() {
     if (!line.trim()) return;
     let msg;
     try { msg = JSON.parse(line); } catch { return diagnostics(`dropped a non-JSON line (${line.length} characters)`); }
-    if (msg?.method === 'tools/call' && msg.params?.name === 'js') msg = {...msg, params: {...msg.params, _meta: withSandbox(msg.params._meta, state)}};
+    if (msg?.method === 'initialize') model ??= typeof msg.params?.clientInfo?.name === 'string' ? msg.params.clientInfo.name : undefined;
+    if (msg?.method === 'tools/call' && msg.params?.name === 'js') msg = {...msg, params: {...msg.params, _meta: turnMeta(randomUUID(), msg.params._meta)}};
     upstream.send(msg);
   }).on('close', () => close(0));
 }

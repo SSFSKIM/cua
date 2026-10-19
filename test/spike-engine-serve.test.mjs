@@ -113,7 +113,8 @@ test('a session through serve.mjs: the facade in a kernel, one approval per app,
     let clickError = null;
     try { await app.click(0); } catch (error) { clickError = error.message; }
     const raw = await nodeRepl.rpc('sky', {type: 'spike', op: 'last_observation', app: '/System/Applications/TextEdit.app'});
-    nodeRepl.write(JSON.stringify({apps, again, clickError, lineage: raw.skyshot.lineage, methods: Object.keys(cua.computer).sort()}));`;
+    const turn = nodeRepl.requestMeta['x-codex-turn-metadata'];
+    nodeRepl.write(JSON.stringify({apps, again, clickError, lineage: raw.skyshot.lineage, methods: Object.keys(cua.computer).sort(), turn, callId: nodeRepl.requestMeta.callId}));`;
   const result = (await request('tools/call', {name: 'js', arguments: {code}})).result;
   assert.equal(result.isError, false, `${JSON.stringify(result.content)}\n${stderr}`);
   const out = JSON.parse(result.content.at(-1).text);
@@ -121,12 +122,17 @@ test('a session through serve.mjs: the facade in a kernel, one approval per app,
   assert.equal(out.again, 'Window: "Untitled", App: TextEdit.\n0 standard window Untitled\n');
   assert.equal(out.clickError, 'Computer Use server error -10005: click is not implemented by this engine build');
   assert.equal(out.lineage, 'L1');
+  assert.deepEqual(Object.keys(out.turn).sort(), ['call_id', 'model', 'session_id', 'thread_id', 'turn_id']);
+  assert.equal(out.turn.call_id, out.callId);
+  assert.equal(out.turn.model, 'spike-serve-test');
+  assert.equal(out.turn.session_id, out.turn.thread_id);
   assert.deepEqual(out.methods, ['click', 'drag', 'get_app_state', 'list_apps', 'paste', 'perform_secondary_action', 'press_key', 'scroll', 'select_text', 'set_value', 'target', 'type_text']);
   assert.ok(result.content.some(item => item.text === out.again), 'getApp emitted the full text');
 
   assert.equal(elicitations.length, 1, 'one approval for TextEdit in the connection');
   const [asked] = elicitations;
   assert.ok(isTextEditApproval({...asked, params: {mode: 'form', ...asked.params}}), JSON.stringify(asked.params));
+  assert.match(asked.params._meta.tool_call_id, /^[0-9a-f-]{36}$/, 'the turn metadata\'s call id reaches the elicitation, as on the vendor lane');
   assert.deepEqual(result._meta['cua/nativeEngine'], {engine: 'cua', version: '0.1.0', build: 'b1'});
   assert.equal(result._meta[REPL_HOST_META_KEY].host, 'cua');
   assert.deepEqual(result._meta['codex/toolSurface'], {app: {appId: 'com.apple.TextEdit', kind: 'appId'}, kind: 'computerUse'});

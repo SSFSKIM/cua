@@ -6,13 +6,17 @@
 //   Window: "<title>", App: <name>.          (no App= line, F §2.6; title and name default to Unknown)
 //   <tabs × depth><index> <roleWord> (<flags>) <parts>
 //   [truncation markers]                     (cua's own: the engine's caps, which the vendor does not have)
-//   then one trailer: the selected text, else the focused element's line (F §2.6)
+//   then one trailer: the selected text, else the selected elements, else the focused element's line (F §2.6)
 //
-// What a stand-in leaves out, for M1a's renderer and its goldens: the vendor's nine plus four tree transformations
-// (every node the engine sends is printed, so a pruned group the vendor would drop still has its line), the selected
-// elements trailer (the Skyshot carries no selection list), URL compaction under the 4,000-character budget and the
-// `(showing … of N items)` subset text (the engine sends no subset). The point is the cost and the shape of rendering,
-// not its final text.
+// The Skyshot is the Interfaces shape (spec at 25fa9b1): the window's nodes, then `menuBar` (the top-level menu-bar items,
+// numbered after them in the same lineage, printed after the window's lines), `selectedElements` for the trailer, and per
+// node `valueType` (the `settable, <type>` flag), `flags.disclosable` (expanded/collapsed), `rowIndexRange` and
+// `columnIndexRange` (Rows/Columns), `shown` (the width rule's `(showing N of M items)`) and `domClassList` (`sent by
+// me`). What a stand-in leaves out, for M1a's renderer and its goldens: the vendor's nine plus four tree
+// transformations (every node the engine sends is printed, so a pruned group the vendor would drop still has its line),
+// URL compaction under the 4,000-character budget, and the vendor's ranged subset text (`(showing <lo-hi>, <lo-hi> of
+// N items)`; the Skyshot's `shown` carries a count, not ranges). The point is the cost and the shape of rendering, not
+// its final text.
 
 // The vendor's selection note (E §5.1, the first of its two variants).
 export const NOTE = 'Note: Pay special attention to the content selected by the user. If the user asks a question or refers to the content they are looking at on-screen, they might be referring to the selected content (but they might be referring to something else that\'s visible, too).';
@@ -31,7 +35,7 @@ const LONG = 100;
 export function render(skyshot) {
   const title = skyshot.window?.title ?? 'Unknown';
   const name = skyshot.app?.displayName ?? 'Unknown';
-  const lines = skyshot.nodes.map(elementLine);
+  const lines = [...skyshot.nodes, ...(skyshot.menuBar ?? [])].map(elementLine);
   if (skyshot.truncated?.depth != null) lines.push(`[truncated: elements deeper than ${skyshot.truncated.depth} levels omitted]`);
   if (skyshot.truncated?.count) lines.push(`[truncated: ${skyshot.truncated.count} elements omitted]`);
   return `Window: "${title}", App: ${name}.\n${lines.join('\n')}\n${trailer(skyshot)}`;
@@ -39,14 +43,19 @@ export function render(skyshot) {
 
 function trailer(skyshot) {
   if (skyshot.selectedText) return `\nSelected text: \`\`\`\n${skyshot.selectedText}\n\`\`\`\n\n${NOTE}`;
-  const focused = skyshot.focused == null ? null : skyshot.nodes.find(node => node.index === skyshot.focused);
+  const byIndex = new Map([...skyshot.nodes, ...(skyshot.menuBar ?? [])].map(node => [node.index, node]));
+  const selected = (skyshot.selectedElements ?? []).map(index => byIndex.get(index)).filter(Boolean);
+  if (selected.length) return `\nSelected:\n${selected.map(node => elementLine({...node, depth: 0})).join('\n')}\n\n${NOTE}`;
+  const focused = skyshot.focused == null ? null : byIndex.get(skyshot.focused);
   return focused ? `\nThe focused UI element is ${elementLine({...focused, depth: 0})}` : '';
 }
 
-// One element's line: indentation, index, then the non-empty pieces of [roleWord, flags, details] joined by a space.
+// One element's line: indentation, index, the non-empty pieces of [roleWord, flags, details] joined by a space, then
+// the width rule's detail text.
 export function elementLine(node) {
   const pieces = [roleWord(node), flagsOf(node), details(node)].filter(Boolean);
-  return `${'\t'.repeat(node.depth)}${node.index} ${pieces.join(' ')}`;
+  const shown = node.shown ? ` (showing ${node.shown.count} of ${node.shown.of} items)` : '';
+  return `${'\t'.repeat(node.depth)}${node.index} ${pieces.join(' ')}${shown}`;
 }
 
 function roleWord({role, subrole, roleDescription, description}) {
@@ -58,26 +67,30 @@ function roleWord({role, subrole, roleDescription, description}) {
   return role === 'AXMenu' ? 'menu' : role === 'AXMenuBar' ? 'menu bar' : 'unknown';
 }
 
-function flagsOf({role, value, flags = {}}) {
+function flagsOf({role, value, valueType: type, domClassList, flags = {}}) {
   const out = [];
   if (flags.selectable && !flags.selected) out.push('selectable');
   if (flags.selected) out.push('selected');
   if (flags.enabled === false && !NEVER_DISABLED.has(role)) out.push('disabled');
-  if (flags.expanded === true) out.push('expanded');
-  else if (flags.expanded === false) out.push('collapsed');
+  if (flags.disclosable) out.push(flags.expanded ? 'expanded' : 'collapsed');
   if (flags.settable) {
-    const type = valueType(value);
-    out.push(type === 'string' ? 'settable' : `settable, ${type}`);
+    const name = typeName(type, value);
+    out.push(name === 'string' ? 'settable' : `settable, ${name}`);
   }
+  if (domClassList?.includes('is-sender')) out.push('sent by me');
   return out.length ? `(${out.join(', ')})` : '';
 }
 
-// The vendor's value type names (E §5.2): boolean, integer, float, string; a missing value reads as a string.
-function valueType(value) {
-  if (typeof value === 'boolean') return 'boolean';
-  if (typeof value === 'number') return Number.isInteger(value) ? 'integer' : 'float';
+// The vendor's value type names (E §5.2): boolean, integer, float, string, from the node's valueType ("number" split by
+// the value); a node without one (or a null type) reads as a string.
+function typeName(type, value) {
+  if (type === 'boolean') return 'boolean';
+  if (type === 'number') return Number.isInteger(value) ? 'integer' : 'float';
   return 'string';
 }
+
+// `Rows: a-b` / `Columns: a-b`, only when lower < upper (F §2.4).
+const range = pair => (Array.isArray(pair) && pair[0] < pair[1] ? `${pair[0]}-${pair[1]}` : null);
 
 function details(node) {
   const parts = [];
@@ -88,6 +101,8 @@ function details(node) {
   };
   add(null, node.title);
   add('Description', node.description);
+  add('Rows', range(node.rowIndexRange));
+  add('Columns', range(node.columnIndexRange));
   add('URL', node.url == null ? null : shortUrl(node.url));
   add('Help', node.help);
   add('Value', node.valueMarkdown ?? node.value);

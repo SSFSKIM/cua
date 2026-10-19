@@ -13,10 +13,13 @@
 // and the vendor captures on every observation (F §4.8), and renders the Skyshot with the stand-in renderer
 // (./render.mjs); there is no diff in the spike, so the default mode returns the full text too.
 //
-// Result meta (Design "The service", Result meta): codex/toolSurface per call; cua/nativeEngine {engine, version, build}
-// and cua/engineMs (the client's time around the socket round trip of the method's own request) on every result; and on
-// input results and input errors the engine's meta as cua/inputRoute, cua/settle (when capped), cua/actionInterval
-// {startedAt, endedAt}, cua/receivedAt and cua/hidIdleMs.
+// Result meta (Design "The service", Result meta; spec at 25fa9b1): codex/toolSurface per call; cua/nativeEngine {engine,
+// version, build} and cua/engineMs (the client's time around the socket round trip of the method's own request) on
+// every result; on a get_app_state result cua/settle from the Skyshot's `settle` ("capped" when the settle that
+// preceded the observation hit its cap: the settle runs at the next observation, not inside the action); and on input
+// results and input errors the engine's meta as cua/inputRoute, cua/actionInterval {startedAt, endedAt}, cua/receivedAt
+// and cua/hidIdleMs. Response meta merges by key across an execution's calls, so every call first resets these
+// per-call keys to null and a call that does not set one leaves no earlier call's value standing as its own.
 //
 // Spike-only (not advertised by setup, so the facade and the model never see it; a cell reaches it through
 // `nodeRepl.rpc('sky', …)`, which the wrapper delegates untouched): {type: 'spike', op: 'last_observation', app} →
@@ -48,6 +51,8 @@ const HIGH_RISK = new Set([
 const RISK_SUBTITLE = 'Allowing Computer Use to use this app introduces new risks, including those related to prompt injection attacks, such as data theft or loss. Carefully monitor Computer Use while it uses this app.';
 // Answers kept for the connection's lifetime (the vendor host stored allowed and denied); a cancel is asked again.
 const REMEMBERED = new Set(['accept', 'decline']);
+// The per-call keys, reset at the start of every call (see the header).
+const PER_CALL = {'cua/engineMs': null, 'cua/settle': null, 'cua/inputRoute': null, 'cua/actionInterval': null, 'cua/receivedAt': null, 'cua/hidIdleMs': null};
 
 // The vendor policy's input check (S/targets/mac/computer-use-policy.js): an object whose `app` is a non-empty string
 // data property.
@@ -88,6 +93,7 @@ export function createService({nodeRepl, client = null}) {
     return (client = createEngineClient({nodeRepl, appPath}));
   };
   const setMeta = meta => nodeRepl.setResponseMeta?.(meta);
+  const startCall = () => setMeta(PER_CALL);
   const toolSurface = bundle => setMeta({[TOOL_SURFACE]: {app: bundle ? {appId: bundle, kind: 'appId'} : null, kind: 'computerUse'}, ...(bundle === CHROME ? {'codex/computerUseChrome': true} : {})});
 
   // The engine's identity, and any launch wait, under the suspended budget.
@@ -166,6 +172,7 @@ export function createService({nodeRepl, client = null}) {
     observations.set(given.app, observation);
     observations.set(target.appPath, observation);
     lineages.set(target.appPath, skyshot.lineage);
+    if (skyshot.settle) setMeta({'cua/settle': skyshot.settle});
     return {app: target.appPath, screenshot: skyshot.screenshot?.url ? {url: skyshot.screenshot.url} : null, text};
   }
 
@@ -179,6 +186,7 @@ export function createService({nodeRepl, client = null}) {
   }
 
   async function appScoped(method, raw) {
+    startCall();
     toolSurface(null);
     const given = checkedInput(raw);
     const target = await resolve(given.app);
@@ -188,6 +196,7 @@ export function createService({nodeRepl, client = null}) {
   }
 
   async function listApps() {
+    startCall();
     toolSurface(null);
     const rows = await call('list_apps', {});
     return rows.map(row => Object.fromEntries(Object.entries({id: row.id, displayName: row.displayName, isRunning: row.isRunning, lastUsedDate: row.lastUsedDate, useCount: row.useCount})
@@ -216,7 +225,6 @@ export function createService({nodeRepl, client = null}) {
 function inputMeta(meta) {
   return {
     ...(meta.inputRoute !== undefined ? {'cua/inputRoute': meta.inputRoute} : {}),
-    ...(meta.settle ? {'cua/settle': meta.settle} : {}),
     'cua/actionInterval': {startedAt: meta.startedAt ?? null, endedAt: meta.endedAt ?? null},
     ...(meta.receivedAt !== undefined ? {'cua/receivedAt': meta.receivedAt} : {}),
     ...(meta.hidIdleMs !== undefined ? {'cua/hidIdleMs': meta.hidIdleMs} : {}),

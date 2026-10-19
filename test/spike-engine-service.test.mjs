@@ -188,7 +188,7 @@ test('input methods forward the facade\'s arguments with the resolved path and t
 });
 
 test('an input result answers undefined and carries the engine\'s route and times as result meta; an input error carries them too', async t => {
-  const meta = {inputRoute: 2, settle: 'capped', startedAt: 1000, endedAt: 1010, receivedAt: 995, hidIdleMs: 7000};
+  const meta = {inputRoute: 2, startedAt: 1000, endedAt: 1010, receivedAt: 995, hidIdleMs: 7000};
   const refusal = {startedAt: null, endedAt: null, receivedAt: 2000, hidIdleMs: 150};
   const {execute, state} = await setup(t, {handlers: {
     'execute:press_key': () => ({meta}),
@@ -196,15 +196,35 @@ test('an input result answers undefined and carries the engine\'s route and time
   }});
   assert.equal(await execute('press_key', {app: 'TextEdit', key: 'Return'}), undefined);
   assert.equal(state.meta['cua/inputRoute'], 2);
-  assert.equal(state.meta['cua/settle'], 'capped');
+  assert.equal(state.meta['cua/settle'], null, 'settle belongs to the observation, never to an input result');
   assert.deepEqual(state.meta['cua/actionInterval'], {startedAt: 1000, endedAt: 1010});
   assert.equal(state.meta['cua/receivedAt'], 995);
   assert.equal(state.meta['cua/hidIdleMs'], 7000);
   await assert.rejects(execute('type_text', {app: 'TextEdit', text: 'x'}), error => error.errorName === 'userIntervened');
   assert.equal(state.meta['cua/engineMs'], null, 'a failed call does not keep resolve_app\'s round trip as its own');
+  assert.equal(state.meta['cua/inputRoute'], null, 'the refusal carried no route: the earlier one is not left standing');
   assert.deepEqual(state.meta['cua/actionInterval'], {startedAt: null, endedAt: null});
   assert.equal(state.meta['cua/receivedAt'], 2000);
   assert.equal(state.meta['cua/hidIdleMs'], 150);
+});
+
+test('cua/settle comes from the observation the settle preceded; every call resets the per-call keys, so none outlives its call', async t => {
+  let settle = 'capped';
+  const {execute, state} = await setup(t, {handlers: {
+    'execute:get_app_state': ({args}) => ({...skyshotFor(APPS.TextEdit), app: {...skyshotFor(APPS.TextEdit).app, appPath: args.app}, ...(settle ? {settle} : {})}),
+    'execute:press_key': () => ({meta: {inputRoute: 1, startedAt: 1, endedAt: 2, receivedAt: 1, hidIdleMs: 9}}),
+  }});
+  await execute('press_key', {app: 'TextEdit', key: 'Return'});
+  await execute('get_app_state', {app: 'TextEdit'});
+  assert.equal(state.meta['cua/settle'], 'capped');
+  for (const key of ['cua/inputRoute', 'cua/actionInterval', 'cua/receivedAt', 'cua/hidIdleMs'])
+    assert.equal(state.meta[key], null, `${key} from the earlier press_key is reset by the observation in the same cell`);
+  settle = null;
+  await execute('get_app_state', {app: 'TextEdit'});
+  assert.equal(state.meta['cua/settle'], null, 'an uncapped settle leaves no earlier capped one standing');
+  await execute('list_apps', undefined);
+  assert.equal(typeof state.meta['cua/engineMs'], 'number');
+  assert.equal(state.meta['cua/settle'], null);
 });
 
 test('list_apps is not app-scoped: no resolve, no approval, the vendor\'s row shape', async t => {

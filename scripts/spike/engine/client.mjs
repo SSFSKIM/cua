@@ -10,7 +10,8 @@
 // and is never retried, launched over or shut down: a service never replaces an engine it did not launch.
 //
 // Requests are chained, one in flight at a time, each with a deadline (120 s by default) sent as
-// deadlineUnixMilliseconds and kept by a timer here. A request past its deadline, an oversized or malformed frame, or a
+// deadlineUnixMilliseconds, computed when its frame is written (not when it is queued behind another request), and kept
+// by a timer here. A request past its deadline, an oversized or malformed frame, or a
 // closed socket fails what is in flight and drops the connection; the next request reconnects. Frames are a 4-byte
 // little-endian length then UTF-8 JSON, 8 MiB at most each way.
 //
@@ -255,12 +256,14 @@ export function createEngineClient({nodeRepl, appPath, socketPath = socketPathFo
     return connecting;
   }
 
-  // One request at a time, in call order: -> {result, engineMs}, engineMs the round trip on the socket.
+  // One request at a time, in call order: -> {result, engineMs}, engineMs the round trip on the socket. `params` may be
+  // a function, called just before the frame is written (execute's deadline is computed then).
   function call(method, params, timeoutMs = DEFAULT_DEADLINE_MS) {
     const run = async () => {
       await connect();
+      const body = typeof params === 'function' ? params() : params;
       const started = performance.now();
-      const result = await connection.call(method, params, timeoutMs);
+      const result = await connection.call(method, body, timeoutMs);
       return {result, engineMs: performance.now() - started};
     };
     const result = tail.then(run, run);
@@ -274,7 +277,7 @@ export function createEngineClient({nodeRepl, appPath, socketPath = socketPathFo
     connect,
     call,
     execute(method, args, {deadlineMs = DEFAULT_DEADLINE_MS, lineage} = {}) {
-      return call('execute', {method, args, deadlineUnixMilliseconds: Date.now() + deadlineMs, ...(lineage ? {lineage} : {})}, deadlineMs);
+      return call('execute', () => ({method, args, deadlineUnixMilliseconds: Date.now() + deadlineMs, ...(lineage ? {lineage} : {})}), deadlineMs);
     },
     close() { connection?.close(); },
   };

@@ -7,14 +7,14 @@ import {render, elementLine, NOTE} from '../scripts/spike/engine/render.mjs';
 
 const node = (index, depth, fields = {}) => ({
   index, depth, pid: 4242, role: 'AXButton', subrole: null, roleDescription: 'button', title: null, description: null,
-  value: null, valueMarkdown: null, identifier: null, flags: {enabled: true, focused: false, selected: false, settable: false},
+  value: null, valueType: null, valueMarkdown: null, identifier: null, flags: {enabled: true, focused: false, focusable: false, selected: false, selectable: false, settable: false},
   actions: [], frame: null, children: 0, ...fields,
 });
 
 const skyshot = (nodes, extra = {}) => ({
   app: {bundleIdentifier: 'io.example.fixture', displayName: 'Fixture', appPath: '/tmp/Fixture.app', pid: 4242},
   window: {title: 'Sample', frame: {x: 0, y: 0, width: 400, height: 300}, pid: 4242},
-  lineage: 'lineage-1', revision: 1, nodes, truncated: null, screenshot: null, focused: null, selectedText: null, ...extra,
+  lineage: 'lineage-1', revision: 1, nodes, truncated: null, screenshot: null, focused: null, selectedText: null, selectedElements: [], menuBar: [], ...extra,
 });
 
 test('the header has no App= line; one line per element, tabs per depth, the index first', () => {
@@ -51,21 +51,45 @@ test('the role word: localized description, with the vendor\'s overrides and fal
   assert.equal(word({role: 'AXTextArea', roleDescription: '텍스트 엔트리 영역'}), '7 텍스트 엔트리 영역 T', 'the description as localized');
 });
 
-test('flags in the vendor\'s order: selectable, selected, disabled, expanded or collapsed, settable with its type', () => {
+test('flags in the vendor\'s order: selectable, selected, disabled, expanded or collapsed when disclosable, settable with its valueType, sent by me', () => {
   const flags = (fields, flagSet) => elementLine({...node(1, 0, fields), flags: {enabled: true, focused: false, selected: false, settable: false, ...flagSet}});
   assert.equal(flags({}, {selectable: true}), '1 button (selectable)');
   assert.equal(flags({}, {selectable: true, selected: true}), '1 button (selected)', 'selectable only while not selected');
   assert.equal(flags({}, {enabled: false}), '1 button (disabled)');
   assert.equal(flags({role: 'AXGroup', roleDescription: 'group'}, {enabled: false}), '1 container', 'never disabled for a group');
   assert.equal(flags({role: 'AXStaticText', roleDescription: 'text'}, {enabled: false}), '1 text', 'never disabled for static text');
-  assert.equal(flags({role: 'AXOutline', roleDescription: 'outline'}, {expanded: true}), '1 outline (expanded)');
-  assert.equal(flags({role: 'AXOutline', roleDescription: 'outline'}, {expanded: false}), '1 outline (collapsed)');
-  assert.equal(flags({role: 'AXTextField', roleDescription: 'text field', value: 'x'}, {settable: true}), '1 text field (settable) x');
-  assert.equal(flags({role: 'AXSlider', roleDescription: 'slider', value: 3}, {settable: true}), '1 slider (settable, integer) 3');
-  assert.equal(flags({role: 'AXSlider', roleDescription: 'slider', value: 0.5}, {settable: true}), '1 slider (settable, float) 0.5');
-  assert.equal(flags({role: 'AXCheckBox', roleDescription: 'checkbox', value: true}, {settable: true}), '1 checkbox (settable, boolean) true');
+  assert.equal(flags({role: 'AXRow', roleDescription: 'row'}, {disclosable: true, expanded: true}), '1 row (expanded)');
+  assert.equal(flags({role: 'AXRow', roleDescription: 'row'}, {disclosable: true, expanded: false}), '1 row (collapsed)');
+  assert.equal(flags({role: 'AXRow', roleDescription: 'row'}, {disclosable: true}), '1 row (collapsed)');
+  assert.equal(flags({role: 'AXComboBox', roleDescription: 'combo box'}, {expanded: true}), '1 combo box', 'no disclosure flag without disclosable');
+  assert.equal(flags({role: 'AXTextField', roleDescription: 'text field', value: 'x', valueType: 'string'}, {settable: true}), '1 text field (settable) x');
+  assert.equal(flags({role: 'AXSlider', roleDescription: 'slider', value: 3, valueType: 'number'}, {settable: true}), '1 slider (settable, integer) 3');
+  assert.equal(flags({role: 'AXSlider', roleDescription: 'slider', value: 0.5, valueType: 'number'}, {settable: true}), '1 slider (settable, float) 0.5');
+  assert.equal(flags({role: 'AXCheckBox', roleDescription: 'checkbox', value: true, valueType: 'boolean'}, {settable: true}), '1 checkbox (settable, boolean) true');
+  assert.equal(flags({role: 'AXTextField', roleDescription: 'text field', valueType: null}, {settable: true}), '1 text field (settable)', 'no value type reads as a string');
   assert.equal(flags({role: 'AXTextField', roleDescription: 'text field'}, {selected: true, enabled: false, settable: true}),
     '1 text field (selected, disabled, settable)');
+  assert.equal(flags({role: 'AXGroup', roleDescription: 'group', domClassList: ['message', 'is-sender']}, {}), '1 container (sent by me)');
+});
+
+test('Rows and Columns from the index ranges, only when lower < upper, after Description', () => {
+  assert.equal(elementLine(node(4, 0, {role: 'AXCell', roleDescription: 'cell', description: 'Cell', rowIndexRange: [2, 4], columnIndexRange: [1, 1]})),
+    '4 cell Description: Cell, Rows: 2-4');
+  assert.equal(elementLine(node(4, 0, {role: 'AXCell', roleDescription: 'cell', title: 'C', rowIndexRange: [0, 1], columnIndexRange: [3, 5]})),
+    '4 cell C, Rows: 0-1, Columns: 3-5');
+});
+
+test('the width rule\'s detail text ends the line of a node whose children were cut', () => {
+  assert.equal(elementLine(node(5, 1, {role: 'AXList', roleDescription: 'list', title: 'Files', shown: {count: 37, of: 200, subset: 'visible'}})),
+    '\t5 list Files (showing 37 of 200 items)');
+  assert.equal(elementLine(node(5, 0, {role: 'AXList', roleDescription: 'list', shown: {count: 0, of: 600, subset: 'omitted'}})), '5 list (showing 0 of 600 items)');
+});
+
+test('the menu bar\'s top-level items follow the window\'s lines, numbered after them', () => {
+  const text = render(skyshot([node(0, 0, {role: 'AXWindow', roleDescription: 'standard window', title: 'Sample'})], {
+    menuBar: [node(1, 0, {role: 'AXMenuBarItem', roleDescription: 'menu bar item', title: 'Apple'}), node(2, 0, {role: 'AXMenuBarItem', roleDescription: 'menu bar item', title: 'File'})],
+  }));
+  assert.equal(text, 'Window: "Sample", App: Fixture.\n0 standard window Sample\n1 Apple\n2 File\n');
 });
 
 test('parts in the vendor\'s order: title bare, then labelled parts; a lone part prints without its label', () => {
@@ -107,13 +131,17 @@ test('secondary actions: press, pick, show-menu and scroll-to-visible are not se
   assert.equal(line(['Name:Copy Link\nTarget:0x0\nSelector:(null)', 'AXRaise']), '1 button A, Secondary Actions: Copy Link, Raise');
 });
 
-test('the trailer: selected text wins over the focused element', () => {
-  const nodes = [node(0, 0, {role: 'AXWindow', roleDescription: 'standard window', title: 'Sample'}), node(1, 1, {role: 'AXTextArea', roleDescription: 'text entry area', value: 'abc'})];
+test('the trailer: selected text, else selected elements, else the focused element', () => {
+  const nodes = [node(0, 0, {role: 'AXWindow', roleDescription: 'standard window', title: 'Sample'}), node(1, 1, {role: 'AXTextArea', roleDescription: 'text entry area', value: 'abc'}),
+    node(2, 1, {role: 'AXRow', roleDescription: 'row', title: 'a.txt'}), node(3, 1, {role: 'AXRow', roleDescription: 'row', title: 'b.txt'})];
+  const lines = '0 standard window Sample\n\t1 text entry area abc\n\t2 row a.txt\n\t3 row b.txt\n';
   const focused = render(skyshot(nodes, {focused: 1}));
-  assert.ok(focused.endsWith('\t1 text entry area abc\n\nThe focused UI element is 1 text entry area abc'), focused);
-  const selected = render(skyshot(nodes, {focused: 1, selectedText: 'bc'}));
-  assert.ok(selected.endsWith(`\t1 text entry area abc\n\nSelected text: \`\`\`\nbc\n\`\`\`\n\n${NOTE}`), selected);
-  assert.ok(!selected.includes('The focused UI element'), 'the focused line is omitted under a selection');
+  assert.ok(focused.endsWith(`${lines}\nThe focused UI element is 1 text entry area abc`), focused);
+  const selectedText = render(skyshot(nodes, {focused: 1, selectedText: 'bc', selectedElements: [2]}));
+  assert.ok(selectedText.endsWith(`${lines}\nSelected text: \`\`\`\nbc\n\`\`\`\n\n${NOTE}`), selectedText);
+  const selectedElements = render(skyshot(nodes, {focused: 1, selectedElements: [2, 3]}));
+  assert.ok(selectedElements.endsWith(`${lines}\nSelected:\n2 row a.txt\n3 row b.txt\n\n${NOTE}`), selectedElements);
+  for (const text of [selectedText, selectedElements]) assert.ok(!text.includes('The focused UI element'), 'the focused line is omitted under a selection');
   assert.ok(!render(skyshot(nodes, {focused: 99})).includes('The focused UI element'), 'a focused index with no line names nothing');
 });
 

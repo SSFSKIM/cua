@@ -78,7 +78,7 @@ node scripts/spike/engine/measure.mjs approve --device mini        # OWNER at th
 node scripts/spike/engine/measure.mjs status --device mini
 node scripts/native-baseline.mjs prepare --device mini --commit <sha>
 ssh mini 'cd ~/Developer/GitHub/cua-parity && npm ci && node scripts/spike/engine/scenes.mjs place-chrome && node scripts/spike/engine/scenes.mjs build-electron'
-ssh mini 'cd ~/Developer/GitHub/cua-parity && node scripts/spike/engine/scenes.mjs preflight --run "$(mktemp -d)"'
+ssh mini 'cd ~/Developer/GitHub/cua-parity && node scripts/spike/engine/scenes.mjs preflight --run "$(mktemp -d)"'   # refuses an owner Finder window on screen, a hidden Finder, a running TextEdit
 node scripts/spike/engine/measure.mjs --device mini --lane vendor --runs 3 --approved-runtime <home> --probes c --out docs/doperpowers/research/2026-10-18-own-native-engine/spike/vendor
 node scripts/spike/engine/measure.mjs --device mini --lane cua    --runs 3 --approved-runtime <home> --probes c --node /opt/homebrew/bin/node --out docs/doperpowers/research/2026-10-18-own-native-engine/spike/cua
 node scripts/spike/engine/measure.mjs probe-f --device mini --out docs/doperpowers/research/2026-10-18-own-native-engine/spike/probe-f
@@ -88,7 +88,7 @@ node scripts/spike/engine/measure.mjs summary docs/doperpowers/research/2026-10-
 These lines differ from the spec's original Concrete Steps as follows:
 
 - The fixtures need `npm ci` plus `place-chrome` and `build-electron` on the device. Electron 44 has no postinstall step, so its binary is fetched on the first build.
-- Preflight refuses any owner Finder window, including one that is minimized or on another Space, and any running TextEdit.
+- Preflight refuses any owner Finder window on screen (off-screen ones, including Finder's own document-sized window, are a note; Decision Log 2026-10-19), a hidden Finder, and any running TextEdit.
 - The vendor triple must run first. Its guarded `super+2` sets the shared scene folder's list view, which the cua lane only checks.
 - `--probes c` selects probe (c).
 - `--node` names the own host's Node.

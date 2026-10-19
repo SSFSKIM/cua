@@ -282,7 +282,7 @@ node scripts/spike/engine/measure.mjs approve --device mini     # OWNER at the c
 node scripts/spike/engine/measure.mjs status --device mini          # running, bundle build, approved.json, installed
 node scripts/native-baseline.mjs prepare --device mini --commit <sha>
 ssh mini 'cd ~/Developer/GitHub/cua-parity && npm ci && node scripts/spike/engine/scenes.mjs place-chrome && node scripts/spike/engine/scenes.mjs build-electron'   # the pinned Chrome for Testing and the fixture (electron 44 fetches its binary on first build)
-ssh mini 'cd ~/Developer/GitHub/cua-parity && node scripts/spike/engine/scenes.mjs preflight --run "$(mktemp -d)"'   # refuses while any owner Finder window (minimized or on another Space included) or TextEdit is open
+ssh mini 'cd ~/Developer/GitHub/cua-parity && node scripts/spike/engine/scenes.mjs preflight --run "$(mktemp -d)"'   # refuses an owner Finder window on screen, a hidden Finder, or a running TextEdit (off-screen Finder windows are a note)
 # vendor triple FIRST: its guarded super+2 sets the shared scene folder's Finder list view, which the cua lane only checks
 node scripts/spike/engine/measure.mjs --device mini --lane vendor --runs 3 --approved-runtime <home> --probes c --out docs/doperpowers/research/2026-10-18-own-native-engine/spike/vendor
 node scripts/spike/engine/measure.mjs --device mini --lane cua    --runs 3 --approved-runtime <home> --probes c --node /opt/homebrew/bin/node --out docs/doperpowers/research/2026-10-18-own-native-engine/spike/cua

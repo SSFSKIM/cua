@@ -55,6 +55,19 @@ export function keptFinderWindow(kept, checked) {
   if ((checked.finderOffScreenWindows ?? []).some(w => w.number === number)) throw new Error('the run\'s Finder window is not on screen; bring it back or close it');
   return false;
 }
+// scenes.mjs's CLI on the device. It exits 1 on a refusal, a failed `up` or a scene that stays up, and still prints its
+// one JSON line: that line is the answer (the reason the lane reports), not a failed command.
+export const sceneCliOf = (d, shell) => args => {
+  const command = `${d.node} scripts/spike/engine/scenes.mjs ${args.map(quote).join(' ')}`;
+  try { return lastJson(shell(command)); }
+  catch (error) {
+    let answer = null;
+    try { answer = lastJson(error.stdout ?? ''); } catch {}
+    if (answer && typeof answer === 'object') return answer;
+    throw error;
+  }
+};
+
 // The sitting's kept Finder record, before the run's scenes come up: reused while its window is on screen; a record
 // whose window is gone (a person closed it, or Finder quit, between runs) is cleared through `down finder`, which
 // succeeds once the window is gone, so `up finder` can open a new one rather than refuse "already up". -> reuse.
@@ -159,7 +172,7 @@ export async function runOnce(options, io) {
     elicitations: [], problems: [], complete: false};
   const emit = row => { const full = {lane, run: options.run, ...row}; fs.appendFileSync(join(dir, 'results.jsonl'), JSON.stringify(full) + '\n'); return full; };
   const write = () => fs.writeFileSync(join(dir, 'meta.json'), JSON.stringify(meta, null, 2) + '\n');
-  const sceneCli = args => lastJson(shell(`${d.node} scripts/spike/engine/scenes.mjs ${args.map(quote).join(' ')}`));
+  const sceneCli = sceneCliOf(d, shell);
   const front = () => sceneCli(['front']);
   let prepared = null, client = null, stopped = null, refused = false, records = {};
   const skipped = new Set();

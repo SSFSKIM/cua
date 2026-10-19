@@ -9,7 +9,7 @@ import * as fs from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {parseCommand} from '../scripts/spike/engine/measure.mjs';
-import {keptFinderRecord, switchVerdict, SWITCHES, isSceneApproval, notRunRows, STRUCTURAL_ROWS, NOT_BUILT, CUA_INPUT_METHODS_BUILT, isSessionFile, withInputSource, runOnce, SCENE_ORDER, cuaServeCommand, UNICODE_STRINGS, keptFinderWindow, VENDOR_ONLY_ROWS} from '../scripts/spike/engine/measure/lane.mjs';
+import {sceneCliOf, keptFinderRecord, switchVerdict, SWITCHES, isSceneApproval, notRunRows, STRUCTURAL_ROWS, NOT_BUILT, CUA_INPUT_METHODS_BUILT, isSessionFile, withInputSource, runOnce, SCENE_ORDER, cuaServeCommand, UNICODE_STRINGS, keptFinderWindow, VENDOR_ONLY_ROWS} from '../scripts/spike/engine/measure/lane.mjs';
 import {summarize, renderSummary, median} from '../scripts/spike/engine/measure/summary.mjs';
 import {redactGolden} from '../scripts/spike/engine/measure/redact.mjs';
 import {NOTE} from '../scripts/spike/engine/render.mjs';
@@ -415,4 +415,15 @@ test('a kept Finder record is reused while its window is on screen; a vanished w
   assert.match(logged[0], /kept Finder window 77 is gone; its record was cleared/);
   assert.throws(() => keptFinderRecord({kept, checked: {finderWindows: []}, sceneCli: () => ({down: false, reason: 'still open'}), sceneDir: '/s'}), /could not be cleared: still open/);
   assert.throws(() => keptFinderRecord({kept, checked: {finderWindows: [], finderOffScreenWindows: [{number: 77}]}, sceneCli, sceneDir: '/s'}), /not on screen/);
+});
+
+test('scenes.mjs\'s answer is read on its exit 1 too (a refusal, a failed up, a scene still up); only a silent failure throws', () => {
+  const d = {node: 'node'};
+  const failing = stdout => () => { throw Object.assign(new Error('Command failed: node scripts/spike/engine/scenes.mjs preflight'), {status: 1, stdout}); };
+  assert.deepEqual(sceneCliOf(d, failing('{"refusals":[{"code":"finder_window","message":"Finder has a window that is not the run\'s"}],"finderWindows":[3]}\n'))(['preflight', '--run', '/s']).refusals[0].code, 'finder_window');
+  assert.deepEqual(sceneCliOf(d, failing('{"error":"scene finder is already up in this run"}\n'))(['up', 'finder', '--run', '/s']), {error: 'scene finder is already up in this run'});
+  assert.throws(() => sceneCliOf(d, failing(''))(['front']), /Command failed/);
+  let seen = null;
+  assert.deepEqual(sceneCliOf(d, script => { seen = script; return '{"down":true}\n'; })(['down', 'finder', '--run', '/a b']), {down: true});
+  assert.equal(seen, "node scripts/spike/engine/scenes.mjs 'down' 'finder' '--run' '/a b'");
 });

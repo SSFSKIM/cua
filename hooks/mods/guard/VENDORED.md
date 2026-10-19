@@ -2,7 +2,7 @@
 
 This folder and `tests/mods/guard/` are devcloud's secrets guard, copied from
 [SSFSKIM/doperpowers](https://github.com/SSFSKIM/doperpowers) at
-`ca7869858bb4ee07aebc6ae3128db3928718389b` (devcloud 0.5.0: the bare Google
+`823f772f634003278886446940fe9fb6b679e254` (devcloud 0.5.0: the bare Google
 OAuth token rules of `9d593f70`, and the guard marker answered by devcloud's
 loaded module rather than stored, doperpowers board #101). It was first
 copied at `ce6edfda` (devcloud 0.1.0). The code is devcloud's: change it there
@@ -68,7 +68,7 @@ From this repository's root, with a doperpowers checkout at `$D` and the new
 commit in `$NEW`:
 
 ```sh
-OLD=ca7869858bb4ee07aebc6ae3128db3928718389b
+OLD=823f772f634003278886446940fe9fb6b679e254
 git -C "$D" diff "$OLD" "$NEW" --relative=devcloud/hooks/mods -- devcloud/hooks/mods \
   ':!devcloud/hooks/mods/register.tsx' ':!devcloud/hooks/mods/tsconfig.json' | git apply --reject --directory=hooks/mods/guard
 git -C "$D" diff "$OLD" "$NEW" --relative=devcloud/tests/mods -- devcloud/tests/mods \

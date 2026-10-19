@@ -1,4 +1,4 @@
-// Vendored from SSFSKIM/doperpowers devcloud/tests/mods/shell-exec.ts at ca7869858bb4ee07aebc6ae3128db3928718389b
+// Vendored from SSFSKIM/doperpowers devcloud/tests/mods/shell-exec.ts at 823f772f634003278886446940fe9fb6b679e254
 // (devcloud 0.5.0); the adaptations and the resync are in hooks/mods/guard/VENDORED.md.
 
 // The Bash restoration rule, proved by execution: each value × command shape

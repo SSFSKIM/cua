@@ -4,6 +4,7 @@ import type { On } from 'claude-code'
 
 import { isDevcloudMarker } from '../../hooks/mods/one-guard'
 import { MASK, maskEcho, maskEdit, projectSlug, readField, rootFromGit } from '../../hooks/mods/secrets'
+import { token } from './guard/fake'
 
 tier('user')
 
@@ -487,6 +488,15 @@ describe("one guard per session: cua's stands down only on devcloud's live answe
     const composed = await $.prompt.compose({ model: 'm', promptModel: 'm', surfaces: [], tools: [], outputStyle: null, traits: [] })
     expect(composed.sections.some((s) => s.id === 'cua:secrets-guard')).toBe(true)
     expect(set).toEqual([])
+  })
+
+  // #172: `gcloud auth print-access-token` prints a bare Google access token alone on its line.
+  test('cua alone: a bare Google access token printed alone on its line reaches the model as its handle', async ($, on) => {
+    const ALNUM_URL = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
+    printing(on, `${token(['ya', '29.', 'a0'], 160, 18, ALNUM_URL)}\n`)
+    await startWith($, on, {})
+    const call = await $.tool.call({ tool: 'Bash', command: 'gcloud auth print-access-token' })
+    expect((call.result as { stdout: string }).stdout).toMatch(/^\[redacted:google-access-token#[a-z2-7]{4}\.\d+\]\n$/)
   })
 
   for (const [tier, place] of [['prepend', 'outside'], ['append', 'inside']] as const) {

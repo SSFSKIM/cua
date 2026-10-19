@@ -13,7 +13,7 @@ import {parseCommand} from '../scripts/spike/engine/measure.mjs';
 import {ADMISSION} from '../scripts/native-baseline/prepare.mjs';
 import {claimRunSession} from '../src/runtime/run-dir.mjs';
 
-function fixture(t, {rename = renameSync, inspect, usersOf = () => [], duringServe = () => {}, scenesPreflight} = {}) {
+function fixture(t, {rename = renameSync, inspect, usersOf = () => [], duringServe = () => {}, scenesPreflight, sceneUp} = {}) {
   const parent = realpathSync(mkdtempSync(join(tmpdir(), 'measure-local-vendor-')));
   t.after(() => rmSync(parent, {recursive: true, force: true}));
   const home = join(parent, 'cua'), root = join(parent, 'native-baseline');
@@ -40,7 +40,7 @@ function fixture(t, {rename = renameSync, inspect, usersOf = () => [], duringSer
     if (script.includes('SkyComputerUseService')) return '';
     const scene = /scenes\.mjs '(\w+)'(?: '(\w+)')?/.exec(script);
     if (scene?.[1] === 'preflight') { order.push('scenes preflight'); if (scenesPreflight) return scenesPreflight(); return JSON.stringify({refusals: [], finderWindows: []}); }
-    if (scene?.[1] === 'up') { order.push(`up ${scene[2]}`); return JSON.stringify({scene: scene[2], app: '/System/Applications/TextEdit.app', bundleId: 'com.apple.TextEdit', pid: 41, window: {number: 7}}); }
+    if (scene?.[1] === 'up') { order.push(`up ${scene[2]}`); if (sceneUp) return sceneUp(); return JSON.stringify({scene: scene[2], app: '/System/Applications/TextEdit.app', bundleId: 'com.apple.TextEdit', pid: 41, window: {number: 7}}); }
     if (scene?.[1] === 'down') { order.push(`down ${scene[2]}`); return JSON.stringify({scene: scene[2], down: true}); }
     if (script.startsWith('cat ')) return '{}';
     throw new Error(`unexpected device step: ${script.slice(0, 80)}`);
@@ -199,6 +199,12 @@ test('a scenes preflight that fails with {error} stops the run before any scene,
   assert.deepEqual(f.order, ['prepare', 'engine status', 'preflight', 'scenes preflight', 'engine status', 'cleanup']);
   assert.match(JSON.parse(readFileSync(join(f.parent, 'run-1', 'meta.json'), 'utf8')).error, /^scenes\.mjs preflight: swift is not installed$/);
   assert.deepEqual(f.owner(), {state: 'owner state', run: 'owner run'});
+});
+
+test('a scene that does not come up names itself in the run\'s error', async t => {
+  const f = fixture(t, {sceneUp: () => { throw Object.assign(new Error('Command failed'), {status: 1, stdout: '{"error":"no new window of process 41 within 20000 ms"}\n'}); }});
+  assert.equal(await f.run(1), 1);
+  assert.match(JSON.parse(readFileSync(join(f.parent, 'run-1', 'meta.json'), 'utf8')).error, /^scene textedit did not come up: scenes\.mjs up: no new window of process 41 within 20000 ms$/);
 });
 
 test('measure.mjs cleanup takes the device and the preparation file', () => {

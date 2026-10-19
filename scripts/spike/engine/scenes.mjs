@@ -268,9 +268,11 @@ export const chromeArgs = ({userDataDir, url, placement = SCENES.chrome.placemen
   '--disable-sync', '--disable-background-networking', '--disable-component-update', '--disable-default-apps',
   '--disable-features=MediaRouter,DialMediaRouteProvider,Translate,OptimizationHints', ...CHROME_LANGUAGE, ...placementArgs(placement), '--new-window', url];
 // The scene page is English and the sitting's Macs run in Korean, so Chrome for Testing would offer to translate it (a
-// bubble in the fixed state, seen in the MacBook window although Translate is disabled as a feature): its UI and accepted
-// languages are English, and its profile's translate preference is off (chromePreferences, written before the launch).
-export const CHROME_LANGUAGE = Object.freeze(['--lang=en-US', '--accept-lang=en-US']);
+// bubble in the fixed state, seen in the MacBook window although Translate is disabled as a feature). The guard is the
+// profile: its translate preference off and its accepted languages English (chromePreferences, written before the
+// launch). The UI language follows the per-process AppleLanguages argument on macOS (Chromium's --lang does not set it
+// there), so Chrome's own UI, which the tree shows, is English too, as TextEdit's is.
+export const CHROME_LANGUAGE = Object.freeze(['-AppleLanguages', '(en-US)']);
 export const chromePreferences = () => ({translate: {enabled: false}, intl: {accept_languages: 'en-US,en'}});
 export const electronArgs = ({userDataDir, placement = SCENES.electron.placement}) => [
   `--cua-fixture-user-data=${userDataDir}`, `--cua-fixture-bounds=${[placement.x, placement.y, placement.width, placement.height].join(',')}`];

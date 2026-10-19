@@ -271,9 +271,11 @@ test('up of each scene: TextEdit on the run\'s document in English, Chrome on th
   assert.ok(io.calls[1][1].args.includes('--use-mock-keychain'));
   assert.ok(!io.calls[1][1].args.some(a => /accessibility/i.test(a)), 'Chrome is never told to turn accessibility on');
   // The page is English and the Macs run in Korean: no translate bubble in the fixed state.
-  for (const arg of ['--lang=en-US', '--accept-lang=en-US']) assert.ok(io.calls[1][1].args.includes(arg), arg);
-  assert.ok(io.calls[1][1].args.some(a => /^--disable-features=.*\bTranslate\b/.test(a)));
-  assert.ok(io.calls[1][1].args.indexOf('--lang=en-US') < io.calls[1][1].args.indexOf(chrome.page.url), 'switches before the URL');
+  const args = io.calls[1][1].args, lang = args.indexOf('-AppleLanguages');
+  assert.deepEqual(args.slice(lang, lang + 2), ['-AppleLanguages', '(en-US)'], 'the per-process UI language, as TextEdit\'s');
+  assert.ok(lang < args.indexOf(chrome.page.url), 'before the URL');
+  assert.ok(!args.some(a => /^--(lang|accept-lang)=/.test(a)), 'no Chromium language switch: the profile is the bubble guard');
+  assert.ok(args.some(a => /^--disable-features=.*\bTranslate\b/.test(a)));
   assert.deepEqual(JSON.parse(fs.readFileSync(join(run, 'chrome-user-data', 'Default', 'Preferences'), 'utf8')), chromePreferences());
   assert.equal(chromePreferences().translate.enabled, false);
   const finder = await upScene('finder', {run, io});

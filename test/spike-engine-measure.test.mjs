@@ -9,12 +9,12 @@ import * as fs from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {parseCommand} from '../scripts/spike/engine/measure.mjs';
-import {probeC, ACTION_TARGET, sceneCliOf, keptFinderRecord, switchVerdict, SWITCHES, isSceneApproval, notRunRows, STRUCTURAL_ROWS, NOT_BUILT, CUA_INPUT_METHODS_BUILT, isSessionFile, withInputSource, runOnce, SCENE_ORDER, cuaServeCommand, UNICODE_STRINGS, keptFinderWindow, VENDOR_ONLY_ROWS} from '../scripts/spike/engine/measure/lane.mjs';
+import {renameGuard, probeC, ACTION_TARGET, sceneCliOf, keptFinderRecord, switchVerdict, SWITCHES, isSceneApproval, notRunRows, STRUCTURAL_ROWS, NOT_BUILT, CUA_INPUT_METHODS_BUILT, isSessionFile, withInputSource, runOnce, SCENE_ORDER, cuaServeCommand, UNICODE_STRINGS, keptFinderWindow, VENDOR_ONLY_ROWS} from '../scripts/spike/engine/measure/lane.mjs';
 import {summarize, renderSummary, median} from '../scripts/spike/engine/measure/summary.mjs';
 import {redactGolden} from '../scripts/spike/engine/measure/redact.mjs';
 import {NOTE} from '../scripts/spike/engine/render.mjs';
 import * as spikeCells from '../scripts/spike/engine/measure/cells.mjs';
-import {indexOfTarget} from '../scripts/spike/engine/measure/cells.mjs';
+import {indexOfTarget, indexOfRowCell, finderEditing} from '../scripts/spike/engine/measure/cells.mjs';
 import {deviceOf, inCheckout} from '../scripts/spike/engine/measure/device.mjs';
 import {parseCell, SCREENSHOT} from '../scripts/native-baseline/cells.mjs';
 
@@ -230,7 +230,8 @@ test('every cell compiles as the body of an async function', () => {
     spikeCells.ACTION_GOLDEN('chrome', '/a.app', 'x', 'Scene option', {raw: false}), spikeCells.FINDER_VIEW('cua-scene-finder'), spikeCells.PRESS('finder', 'super+2'),
     spikeCells.LOCATE('textedit', 'cua-scene', 'doc'), spikeCells.ACT_CLICK('finder'), spikeCells.ACT_KEY('finder', 'Down'), spikeCells.ACT_TYPE('textedit', UNICODE_STRINGS.at(-1)),
     spikeCells.READBACK('finder'), spikeCells.TEXT_LANDED('chrome', '/a.app', '0101', '한글 테스트'), spikeCells.BOUND_PID('/a.app'), spikeCells.SCENE_GUARD('electron', 'cua Electron fixture'),
-    spikeCells.SCENE_SCREENSHOT('finder'), spikeCells.READ_SET_EQUIVALENCE('/a.app', ['full', 'reduced'])];
+    spikeCells.SCENE_SCREENSHOT('finder'), spikeCells.READ_SET_EQUIVALENCE('/a.app', ['full', 'reduced']), spikeCells.FINDER_EDITING(),
+    spikeCells.LOCATE('finder', 'cua-scene-finder', {rowCellOf: 'scene-file-005'}), spikeCells.ACTION_GOLDEN('finder', '/f.app', 'cua-scene-finder', {rowCellOf: 'scene-file-005'}, {raw: true})];
   for (const code of cells) assert.doesNotThrow(() => new AsyncFunction('cua', 'nodeRepl', code), code.slice(0, 120));
 });
 
@@ -425,7 +426,9 @@ test('a kept Finder record is reused while its window is on screen; a vanished w
   assert.deepEqual(calls, ['down finder --run /s']);
   assert.deepEqual(meta.finderRecordCleared, {window: 77});
   assert.match(logged[0], /kept Finder window 77 is gone; its record was cleared/);
-  assert.throws(() => keptFinderRecord({kept, checked: {finderWindows: []}, sceneCli: () => ({down: false, reason: 'still open'}), sceneDir: '/s'}), /could not be cleared: still open/);
+  assert.throws(() => keptFinderRecord({kept, checked: {finderWindows: []}, sceneCli: () => ({down: false, reason: 'still open'}), sceneDir: '/s'}), /^Error: the kept Finder record \(window 77\) could not be cleared: still open$/);
+  assert.throws(() => keptFinderRecord({kept, checked: {finderWindows: []}, sceneCli: () => { throw new Error('scenes.mjs down: swift failed'); }, sceneDir: '/s'}),
+    /^Error: the kept Finder record \(window 77\) could not be cleared: scenes\.mjs down: swift failed$/);
   const before = calls.length;
   assert.throws(() => keptFinderRecord({kept, checked: {finderWindows: [], finderOffScreenWindows: [{number: 77}]}, sceneCli, sceneDir: '/s'}), /not on screen/);
   assert.equal(calls.length, before, 'an off-screen kept window is not cleared: no down');
@@ -463,12 +466,68 @@ test('probe (c) records a failed reading, never a verdict, when the front readin
   assert.ok(rows.every(r => !('activated' in r) && !('frontmostChanged' in r)), 'no verdict from a reading that failed');
 });
 
+// A Finder row as the MacBook window's vendor golden recorded it (structurally redacted; Korean role words replaced by
+// their lengths): the row, then its cells, the first holding the icon and the name field, then date, size and kind.
+const FINDER_ROWS = n => Array.from({length: n}, (_, i) => {
+  const base = 40 + 10 * i;
+  return [`\t\t\t\t${base} row (selectable)`, `\t\t\t\t\t${base + 1} ⟨1⟩`, `\t\t\t\t\t\t${base + 2} ⟨3⟩`,
+    `\t\t\t\t\t\t${base + 3} ⟨119⟩, Value: scene-file-${String(i + 1).padStart(3, '0')}, Secondary Actions: ⟨12⟩`,
+    `\t\t\t\t\t${base + 4} ⟨1⟩`, `\t\t\t\t\t\t${base + 5} ⟨15⟩`, `\t\t\t\t\t${base + 6} ⟨1⟩`, `\t\t\t\t\t\t${base + 7} ⟨9⟩`,
+    `\t\t\t\t\t${base + 8} ⟨1⟩`, `\t\t\t\t\t\t${base + 9} ⟨6⟩`].join('\n');
+}).join('\n');
+
+test('Finder\'s click target is a cell of the row other than its name, chosen from the recorded row shape; never the name', () => {
+  const text = ['Window: "cua-scene-finder", App: ⟨6⟩.', '0 ⟨23⟩, ID: ⟨12⟩', '\t1 ⟨6⟩', '\t\t2 ⟨48⟩', '\t\t\t3 ⟨8⟩', FINDER_ROWS(18), '\t31 ⟨5⟩'].join('\n');
+  assert.deepEqual(ACTION_TARGET.finder, {rowCellOf: 'scene-file-005'});
+  assert.equal(indexOfTarget(text, 'scene-file-005'), 83, 'the name field');
+  assert.equal(indexOfRowCell(text, 'scene-file-005'), 85, 'the date cell\'s text, in the same row');
+  assert.equal(indexOfRowCell(text, 'scene-file-001'), 45);
+  assert.equal(indexOfRowCell(text, 'scene-file-050'), null, 'a row the text does not show');
+  const nameOnly = ['\t\t\t\t40 row (selectable)', '\t\t\t\t\t41 ⟨1⟩', '\t\t\t\t\t\t43 ⟨119⟩, Value: scene-file-005', '\t\t\t\t50 row (selectable)', '\t\t\t\t\t51 ⟨1⟩'].join('\n');
+  assert.equal(indexOfRowCell(nameOnly, 'scene-file-005'), null, 'a row with no other cell: no target, never the name or the next row');
+  const cellOnly = ['\t\t\t\t40 row (selectable)', '\t\t\t\t\t41 ⟨1⟩', '\t\t\t\t\t\t43 ⟨119⟩, Value: scene-file-005', '\t\t\t\t\t44 ⟨1⟩'].join('\n');
+  assert.equal(indexOfRowCell(cellOnly, 'scene-file-005'), 44, 'a cell without a child: the cell');
+});
+
+test('a rename in progress is seen from the selected-text or focused-element trailer; a selected row is not one', () => {
+  const tree = FINDER_ROWS(5);
+  assert.equal(finderEditing(`${tree}\n\nSelected:\n80 row (selectable, selected) ⟨10⟩\n\n${NOTE}`), false);
+  assert.equal(finderEditing(`${tree}\n\nSelected text: \`\`\`\nscene-file-005\n\`\`\`\n\n${NOTE}`), true);
+  assert.equal(finderEditing(`${tree}\nThe focused UI element is 83 ⟨119⟩ (settable), Value: scene-file-005`), true);
+  assert.equal(finderEditing(`${tree}\nThe focused UI element is 3 ⟨8⟩`), false);
+});
+
+test('the rename backstop: Escape ends a rename the click started and the sample is invalid; a rename that stays, or no reading, stops all input', async () => {
+  const replies = answers => { const queue = [...answers]; return async code => { calls.push(code.includes('pressKey("Escape")') ? 'escape' : 'check'); return queue.shift(); }; };
+  const editing = value => ({cell: {ok: true, value: {editing: value}}});
+  let calls = [];
+  const stop = message => { throw new Error(`STOP ${message}`); };
+  const rows = [];
+  // Nothing began: nothing pressed.
+  assert.deepEqual(await renameGuard({lane: 'cua', js: replies([editing(false)]), keyCell: () => assert.fail(), emit: r => rows.push(r), stop})(), {});
+  assert.deepEqual(calls, ['check']);
+  // cua lane: Escape posted to Finder, the sample invalid.
+  calls = [];
+  assert.deepEqual(await renameGuard({lane: 'cua', js: replies([editing(true), {cell: {ok: true, value: {actions: 1}}}, editing(false)]), keyCell: () => assert.fail('the cua lane posts to Finder\'s pid'), emit: r => rows.push(r), stop})(),
+    {ok: false, invalid: 'the click started a rename of the row; Escape ended it'});
+  assert.deepEqual(calls, ['check', 'escape', 'check']);
+  assert.deepEqual(rows.at(-1), {op: 'guard.finderRename', scene: 'finder', sample: 1, ok: true, editing: true, escaped: true});
+  // vendor lane: Escape through the key guard, for Finder.
+  calls = [];
+  const guarded = [];
+  await renameGuard({lane: 'vendor', js: replies([editing(true), editing(false)]), keyCell: async (bundle, code, keys) => { guarded.push([bundle, keys]); return {cell: {ok: true}}; }, emit: r => rows.push(r), stop})();
+  assert.deepEqual(guarded, [['com.apple.finder', ['Escape']]]);
+  // A rename that stays, or a state that cannot be read: stop, nothing typed after.
+  await assert.rejects(renameGuard({lane: 'cua', js: replies([editing(true), {cell: {ok: true}}, editing(true)]), keyCell: () => {}, emit: r => rows.push(r), stop})(), /STOP a Finder rename the click started did not end with Escape/);
+  assert.equal(rows.at(-1).escaped, false);
+  await assert.rejects(renameGuard({lane: 'cua', js: replies([{cell: null, failure: 'the cell printed no result marker'}]), keyCell: () => {}, emit: () => {}, stop})(), /STOP Finder's state after a click could not be read/);
+});
+
 test('the Finder action target is among the rows both engines show in the fixed state', () => {
   // The recorded vendor golden's shape (the MacBook window, structurally redacted): rows 001-018 are shown, each name
   // as its text field's value; rows further down are not in the text.
   const shown = Array.from({length: 18}, (_, i) => `\t\t\t\t\t\t${43 + 10 * i} ⟨119⟩, Value: scene-file-${String(i + 1).padStart(3, '0')}, Secondary Actions: ⟨12⟩`);
   const text = ['Window: "cua-scene-finder", App: ⟨6⟩.', '0 ⟨23⟩, ID: ⟨12⟩', ...shown].join('\n');
-  assert.equal(ACTION_TARGET.finder, 'scene-file-005');
-  assert.equal(indexOfTarget(text, ACTION_TARGET.finder), 83);
+  assert.equal(indexOfTarget(text, ACTION_TARGET.finder.rowCellOf), 83);
   assert.equal(indexOfTarget(text, 'scene-file-050'), null, 'the earlier target was below the shown rows');
 });

@@ -74,14 +74,34 @@ export const sceneCliOf = (d, shell) => args => {
   return answer;
 };
 
+// After every Finder click (the action golden, probe (a), probe (b)'s forced routes): a rename that the click started is
+// ended with Escape (through the #162 key guard on the vendor lane, posted to Finder on the cua lane) and the sample is
+// invalid; a rename that does not end, or a state that cannot be read, stops all input (`stop` throws), so no later key
+// or typing cell can rename a file of the shared folder. -> async () => extra row fields ({} when no rename began).
+export function renameGuard({lane, js, keyCell, emit, stop}) {
+  return async () => {
+    const seen = await js(spike.FINDER_EDITING());
+    if (!seen.cell?.ok) return stop(`Finder's state after a click could not be read (${seen.cell?.error ?? seen.failure}); no further input was sent`);
+    if (!seen.cell.value.editing) return {};
+    await (lane === 'vendor' ? keyCell('com.apple.finder', spike.PRESS('finder', 'Escape'), ['Escape']) : js(spike.PRESS('finder', 'Escape')));
+    const again = await js(spike.FINDER_EDITING());
+    const escaped = again.cell?.ok === true && again.cell.value.editing === false;
+    emit({op: 'guard.finderRename', scene: 'finder', sample: 1, ok: escaped, editing: true, escaped});
+    if (!escaped) return stop('a Finder rename the click started did not end with Escape; no further input was sent');
+    return {ok: false, invalid: 'the click started a rename of the row; Escape ended it'};
+  };
+}
+
 // The sitting's kept Finder record, before the run's scenes come up: reused while its window is on screen; a record
 // whose window is gone (a person closed it, or Finder quit, between runs) is cleared through `down finder`, which
 // succeeds once the window is gone, so `up finder` can open a new one rather than refuse "already up". -> reuse.
 export function keptFinderRecord({kept, checked, sceneCli, sceneDir, log = () => {}, meta = {}}) {
   if (keptFinderWindow(kept, checked)) return true;
   if (!kept) return false;
-  const down = sceneCli(['down', 'finder', '--run', sceneDir]);
-  if (down.down !== true) throw new Error(`the kept Finder record (window ${kept.window?.number}) could not be cleared: ${down.reason ?? down.error ?? 'down finder failed'}`);
+  const what = `the kept Finder record (window ${kept.window?.number})`;
+  let down;
+  try { down = sceneCli(['down', 'finder', '--run', sceneDir]); } catch (error) { throw new Error(`${what} could not be cleared: ${error.message}`); }
+  if (down.down !== true) throw new Error(`${what} could not be cleared: ${down.reason ?? 'down finder did not clear it'}`);
   meta.finderRecordCleared = {window: kept.window?.number ?? null};
   log(`the kept Finder window ${kept.window?.number} is gone; its record was cleared and the run opens a new one`);
   return false;
@@ -91,7 +111,8 @@ const round = ms => Math.round(ms * 1000) / 1000;
 
 // What names each scene's window (a prefix of its title) and what each probe acts on.
 export const SCENE_WINDOW = Object.freeze({textedit: 'cua-scene', finder: SCENES.finder.fixedState.folder, chrome: PAGE_TITLE, electron: SCENES.electron.fixedState.title});
-export const ACTION_TARGET = Object.freeze({textedit: SCENES.textedit.fixedState.firstLine, finder: 'scene-file-005', chrome: 'Scene option', electron: 'Fixture button'});
+// Finder's target is a cell of row 005 other than its name (indexOfRowCell): a click on a selected row's name renames it.
+export const ACTION_TARGET = Object.freeze({textedit: SCENES.textedit.fixedState.firstLine, finder: Object.freeze({rowCellOf: 'scene-file-005'}), chrome: 'Scene option', electron: 'Fixture button'});
 export const KEY_PROBE = Object.freeze({textedit: 'shift+Right', finder: 'Down', chrome: 'Tab', electron: 'Tab'});
 export const USER_WINDOW = Object.freeze({textedit: 'finder', finder: 'textedit', chrome: 'textedit', electron: 'finder'});
 // The scenes' profile directories under the scene directory (scenes.mjs), removed before each run brings them up.
@@ -229,8 +250,8 @@ export async function runOnce(options, io) {
       if (scene === 'finder' && finderKept) { records.finder = kept.finder; meta.finderReused = true; continue; }
       // Chrome's and the fixture's profiles are each run's own: only Finder's folder is shared by the sitting.
       if (USER_DATA[scene]) shell(`rm -rf ${quote(join(sceneDir, USER_DATA[scene]))}`);
-      const up = sceneCli(['up', scene, '--run', sceneDir]);
-      if (up.error) throw new Error(`scene ${scene} did not come up: ${up.error}`);
+      let up;
+      try { up = sceneCli(['up', scene, '--run', sceneDir]); } catch (error) { throw new Error(`scene ${scene} did not come up: ${error.message}`); }
       records[scene] = up;
     }
     meta.scenes = Object.fromEntries(Object.entries(records).map(([id, r]) => [id, {app: r.app, bundleId: r.bundleId, pid: r.pid, window: r.window?.number ?? null}]));
@@ -302,7 +323,8 @@ export async function runOnce(options, io) {
       }
       return js(code);
     };
-    const ctx = {lane, d, dir, meta, emit, row, js, attest, records, scenes, samples, tasks, inputBuilt, operator, keyCell, finderKey, activate, front, ops, shell, io, log, prepared, skipped, active};
+    const finderRenameGuard = renameGuard({lane, js, keyCell, emit, stop: message => { stopped = message; throw new Stop(message); }});
+    const ctx = {lane, d, dir, meta, emit, row, js, attest, records, scenes, samples, tasks, inputBuilt, operator, keyCell, finderKey, finderRenameGuard, activate, front, ops, shell, io, log, prepared, skipped, active};
 
     const first = await js(FIRST, BIND_MS);
     if (!first.cell?.ok) throw new Error(`the first cell failed: ${first.failure ?? first.cell?.error}`);
@@ -323,7 +345,8 @@ export async function runOnce(options, io) {
       if (passed.has('readSet')) for (const scene of active()) await equivalenceCells(ctx, scene);
     }
     if (inputBuilt) {
-      for (const scene of active()) await golden(ctx, scene, 'golden.action', spike.ACTION_GOLDEN(scene, records[scene].app, SCENE_WINDOW[scene], ACTION_TARGET[scene], {raw: lane === 'cua'}));
+      for (const scene of active()) await golden(ctx, scene, 'golden.action', spike.ACTION_GOLDEN(scene, records[scene].app, SCENE_WINDOW[scene], ACTION_TARGET[scene], {raw: lane === 'cua'}),
+        scene === 'finder' ? {after: finderRenameGuard} : {});
       if (lane === 'cua') await inputProbes(ctx);
     }
     // end_task is the MCP proxy's tool (src/mcp); the cua lane's serve.mjs runs the supervisor without the proxy, so
@@ -467,7 +490,7 @@ function localPrepared({approvedRuntime}) {
 
 // A golden: the cell writes its files into the session's temp directory; the harness copies them, checks their
 // hashes, redacts Finder's (the sidebar is the owner's) and writes them under <run>/goldens/.
-async function golden({js, row, shell, dir, records, prepared}, scene, op, code) {
+async function golden({js, row, shell, dir, records, prepared}, scene, op, code, {after} = {}) {
   const r = await js(code, BIND_MS);
   const files = r.cell?.ok ? r.cell.value.files : [];
   const kept = [], problems = [];
@@ -482,7 +505,8 @@ async function golden({js, row, shell, dir, records, prepared}, scene, op, code)
     fs.writeFileSync(join(dir, 'goldens', name), out, {mode: 0o644});
     kept.push({kind: file.kind, name, bytes: file.bytes, redacted: Boolean(allowed)});
   }
-  row(op, 1, r, {scene, files: kept, ...(problems.length ? {ok: false, error: problems.join('; ')} : {})});
+  const checked = after ? await after() : {};
+  row(op, 1, r, {scene, files: kept, ...(problems.length ? {ok: false, error: problems.join('; ')} : {}), ...checked});
 }
 // A golden file the harness may read: written by the cell into the session's temp directory, which is the session's
 // own under the served home's run/ (buildLaunch) or the run's TMPDIR.
@@ -675,7 +699,8 @@ export async function probeC({d, shell, ops, emit, front, log, meta, opsFor = bu
 // bundle's --probe; (e)'s matrix under both input sources with the owner's source saved and restored, plus the keyed
 // bypass of the paste routing (spikeKeyed) for the per-context question.
 async function inputProbes(ctx) {
-  const {js, row, emit, records, scenes, front, activate, operator, io, ops, dir, active} = ctx;
+  const {js, row, emit, records, scenes, front, activate, operator, io, ops, dir, active, finderRenameGuard} = ctx;
+  const renameCheck = (scene, action) => (scene === 'finder' && action === 'click' ? finderRenameGuard() : {});
   const sum = (counts, kind) => Object.values(counts ?? {}).reduce((t, per) => t + (per?.[kind] ?? 0), 0);
   const watchLines = file => fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).map(line => { try { return JSON.parse(line); } catch { return null; } }).filter(Boolean) : [];
   for (const scene of active()) {
@@ -690,7 +715,8 @@ async function inputProbes(ctx) {
       const acted = await js(action === 'click' ? spike.ACT_CLICK(scene) : spike.ACT_KEY(scene, KEY_PROBE[scene]));
       const after = front();
       const unchanged = after.frontmost?.pid === before.frontmost?.pid && after.topWindow?.number === before.topWindow?.number;
-      row(`probe.a.${action}`, 1, acted, {scene, user, frontmostUnchanged: after.frontmost?.pid === before.frontmost?.pid, topWindowUnchanged: after.topWindow?.number === before.topWindow?.number, ...(acted.cell?.ok && !unchanged ? {ok: false, invalid: 'the front application or window changed'} : {})});
+      const renamed = await renameCheck(scene, action);
+      row(`probe.a.${action}`, 1, acted, {scene, user, frontmostUnchanged: after.frontmost?.pid === before.frontmost?.pid, topWindowUnchanged: after.topWindow?.number === before.topWindow?.number, ...(acted.cell?.ok && !unchanged ? {ok: false, invalid: 'the front application or window changed'} : {}), ...renamed});
       const back = await js(spike.READBACK(scene));
       row(`probe.b.${action}`, 1, acted, {scene, route: acted.meta?.['cua/inputRoute'] ?? null, activationGuardMs: acted.meta?.['cua/activationGuardMs'] ?? null, treeChanged: back.cell?.value?.treeChanged ?? null});
       // (b) forced: each route the action allows, through the spike-only argument, with a watch-activations probe
@@ -705,7 +731,8 @@ async function inputProbes(ctx) {
             ? spike.SPIKE_CLICK(records[scene].app, route)
             : spike.SPIKE_INPUT(records[scene].app, 'press_key', {key: KEY_PROBE[scene], spikeRoute: String(route)}));
           const afterForced = front();
-          row(`probe.b.forced.${route}`, 1, forced, {scene, action, forcedRoute: route,
+          const renamedForced = await renameCheck(scene, action);
+          row(`probe.b.forced.${route}`, 1, forced, {scene, action, forcedRoute: route, ...renamedForced,
             route: forced.meta?.['cua/inputRoute'] ?? null, activationGuardMs: forced.meta?.['cua/activationGuardMs'] ?? null,
             failed: forced.cell?.value?.failed ?? null,
             frontmostUnchanged: afterForced.frontmost?.pid === before.frontmost?.pid, topWindowUnchanged: afterForced.topWindow?.number === before.topWindow?.number,
@@ -713,6 +740,7 @@ async function inputProbes(ctx) {
             ...(forced.cell?.ok && afterForced.frontmost?.pid !== before.frontmost?.pid ? {ok: false, invalid: 'the forced route changed the front application'} : {})});
         }
       } catch (error) {
+        if (error instanceof Stop) throw error;   // the rename guard stopped all input
         emit({op: 'probe.b.forced', scene, sample: 1, ok: false, error: error.message});
       } finally {
         if (watch.started) {

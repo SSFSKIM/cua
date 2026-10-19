@@ -28,9 +28,46 @@ export function indexOfTarget(ax, name) {
   return null;
 }
 
+// Finder's click target in a row: a click on a selected row's name starts a rename, so the Finder target is a cell of
+// the row that holds `name` other than the name's own (the first such cell, the date in list view's default columns):
+// the row is the line two levels above the name field, its cells the lines one level above, and the index is that
+// cell's first child (its text), else the cell. Null when the name has no row or the row no other cell: never the name.
+export function indexOfRowCell(ax, name) {
+  const lines = String(ax).split('\n').map(line => /^[~+-]?(\t*)(\d+) /.exec(line)).map(m => (m ? {depth: m[1].length, index: Number(m[2])} : null));
+  const at = indexOfTarget(ax, name);
+  const i = lines.findIndex(l => l && l.index === at);
+  if (i < 0) return null;
+  const depth = lines[i].depth;
+  for (let j = i + 1; j < lines.length; j++) {
+    const line = lines[j];
+    if (!line) continue;
+    if (line.depth <= depth - 2) return null;
+    if (line.depth === depth - 1) {
+      const child = lines[j + 1];
+      return child && child.depth === depth ? child.index : line.index;
+    }
+  }
+  return null;
+}
+
+// Whether Finder is renaming a row: its text is selected in a name field (the selected-text trailer holds a run file
+// name) or the focused element is a name field (the focused-element trailer shows one of the run's names as its value).
+export function finderEditing(ax) {
+  const lines = String(ax).split('\n');
+  const fence = lines.indexOf('Selected text: ```');
+  if (fence !== -1) {
+    const end = lines.indexOf('```', fence + 1);
+    if (lines.slice(fence + 1, end === -1 ? undefined : end).some(line => /scene-file-\d{3}/.test(line))) return true;
+  }
+  return lines.some(line => line.startsWith('The focused UI element is ') && /Value: scene-file-\d{3}/.test(line));
+}
+
 const HELPERS = `const __front = ax => ax?.match(/^Window: "([^"]*)"/m)?.[1] ?? null;
 const __facts = ax => ({chars: ax.length, textBytes: Buffer.byteLength(ax), lines: ax.split("\\n").length, elements: (ax.match(/^[\\t ]*\\d+ /gm) ?? []).length});
-const __indexOf = ${indexOfTarget.toString()};
+${indexOfTarget.toString()}
+${indexOfRowCell.toString()}
+${finderEditing.toString()}
+const __indexOf = (ax, target) => (typeof target === "string" ? indexOfTarget(ax, target) : indexOfRowCell(ax, target.rowCellOf));
 const __hash = async text => (await import("node:crypto")).createHash("sha256").update(text).digest("hex").slice(0, 16);
 const __full = app => app.getAXState({emit: false, disableDiffing: true});`;
 
@@ -184,6 +221,10 @@ const ax = await __full(globalThis.__apps.finder);
 const front = __front(ax);
 if (typeof front !== "string" || !front.startsWith(${j(prefix)})) throw new Error("the run's Finder window is not Finder's front window");
 return {listView: /^[\\t ]*\\d+ row\\b/m.test(ax), rows: (ax.match(/^[\\t ]*\\d+ row\\b/gm) ?? []).length};`);
+
+// Whether Finder is renaming one of the run's rows (finderEditing), read after every Finder click.
+export const FINDER_EDITING = () => cell(`${HELPERS}
+return {editing: finderEditing(await __full(globalThis.__apps.finder))};`);
 
 // One key to a scene's app, the cell's only call (so the result's meta is the key's). The harness guards it first.
 export const PRESS = (scene, key) => cell(`await globalThis.__apps[${j(scene)}].pressKey(${j(key)}); return {actions: 1};`);

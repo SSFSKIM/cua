@@ -127,17 +127,32 @@ test('execute refuses an unknown method and a facade method the spike does not i
   assert.equal(late.error.errorName, 'deadlineExceeded');
 });
 
-test('the input methods this build leaves to the owner\'s branch answer notImplemented before anything is posted', {skip}, async t => {
+test('the input methods this build leaves to the owner\'s branch answer notImplemented before anything is posted', {skip: finderSkip}, async t => {
   const {wire} = await engine(t);
   for (const [method, args] of [
-    ['click', {app: 'io.github.ssfskim.cua.engine-test.no-such-app', element_index: 0}],
-    ['press_key', {app: 'io.github.ssfskim.cua.engine-test.no-such-app', key: 'Return'}],
-    ['type_text', {app: 'io.github.ssfskim.cua.engine-test.no-such-app', text: 'x'}],
+    // A running app: the dispatch resolves before the method (an unknown app is invalidApp first).
+    ['click', {app: 'com.apple.finder', element_index: 0}],
+    ['press_key', {app: 'com.apple.finder', key: 'Return'}],
+    ['type_text', {app: 'com.apple.finder', text: 'x'}],
   ]) {
     const answer = await wire.execute(method, args);
     assert.equal(answer.error?.code, -10005, method);
     assert.equal(answer.error.errorName, 'notImplemented', method);
     assert.equal(answer.error.message, `${method} is not implemented by this engine build`);
+  }
+});
+
+test('every app-scoped execute refuses a forbidden app, by bundle id or by path, before its method runs', {skip}, async t => {
+  // Only methods whose bodies post nothing in this build: a refusal that failed here could at worst answer
+  // notImplemented. get_app_state takes the same dispatch path but would really observe, so it is not called.
+  const {wire} = await engine(t);
+  const keychainPath = ['/System/Library/CoreServices/Applications/Keychain Access.app', '/System/Applications/Utilities/Keychain Access.app'].find(existsSync);
+  for (const app of ['com.apple.keychainaccess', ...(keychainPath ? [keychainPath] : [])]) {
+    for (const [method, args] of [['click', {element_index: 0}], ['press_key', {key: 'Return'}], ['type_text', {text: 'x'}], ['scroll', {direction: 'down'}]]) {
+      const answer = await wire.execute(method, {app, ...args});
+      assert.equal(answer.error?.errorName, 'appNotAllowed', `${method} on ${app}: ${JSON.stringify(answer.error)}`);
+      assert.equal(answer.error.code, -10006);
+    }
   }
 });
 

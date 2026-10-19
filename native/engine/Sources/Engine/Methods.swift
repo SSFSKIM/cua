@@ -100,6 +100,8 @@ final class Engine: @unchecked Sendable {
     guard deadline > receivedAt else { throw EngineError(name: "deadlineExceeded", "Request deadline exceeded") }
     let context = ExecutionContext(connection: connection, receivedAt: receivedAt, hidIdleMs: hidIdleMilliseconds(),
                                    deadline: deadline, lineage: params["lineage"] as? String)
+    // Every app-scoped method resolves first, so the forbidden list holds on every call whoever the client is.
+    if method != "list_apps" && method != "resolve_app" && (args["app"] != nil || args["pid"] != nil) { _ = try resolveApp(args) }
     switch method {
     case "list_apps": return apps.list()
     case "resolve_app":

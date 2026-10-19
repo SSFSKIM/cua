@@ -56,7 +56,8 @@ test('status reports the engine\'s identity and grants, and counts the connectio
   assert.equal(status.socket, socket);
   assert.equal(status.pid, child.pid);
   assert.equal(typeof status.bundlePath, 'string');
-  for (const grant of ['accessibility', 'screenRecording', 'canPostHid']) assert.equal(typeof status[grant], 'boolean', grant);
+  for (const grant of ['accessibility', 'screenRecording', 'inputMonitoring', 'canPostHid']) assert.equal(typeof status[grant], 'boolean', grant);
+  for (const gone of ['listenPreflight', 'postPreflight']) assert.equal(status[gone], undefined, gone);
   assert.equal(status.connections, 0);
   const other = await Wire.connect(socket);
   const third = await Wire.connect(socket);
@@ -191,8 +192,6 @@ test('probe_tap refuses a missing op, an unknown app and a stop with nothing run
   const activeNoApp = await wire.call('probe_tap', {op: 'start', app: 'io.github.ssfskim.cua.engine-test.no-such-app', mode: 'active'});
   assert.equal(activeNoApp.error.code, -10010);
   assert.equal(activeNoApp.error.mode, 'active');
-  const status = await wire.result('status');
-  for (const preflight of ['listenPreflight', 'postPreflight']) assert.equal(typeof status[preflight], 'boolean', preflight);
 });
 
 test('probe_spike refuses a missing op, a malformed range and an unknown app before reading anything', {skip}, async t => {

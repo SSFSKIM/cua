@@ -74,9 +74,8 @@ final class Engine: @unchecked Sendable {
       "build": engineBuild,
       "accessibility": AXIsProcessTrusted(),
       "screenRecording": CGPreflightScreenCaptureAccess(),
+      "inputMonitoring": CGPreflightListenEventAccess(),  // the non-prompting listen preflight; the engine never requests it
       "canPostHid": CGPreflightPostEventAccess(),
-      "listenPreflight": CGPreflightListenEventAccess(),  // the event-access preflights by the names probe_tap reports them
-      "postPreflight": CGPreflightPostEventAccess(),
       "socket": paths.socket,
       "pid": Int(getpid()),
       "bundlePath": Bundle.main.bundlePath,

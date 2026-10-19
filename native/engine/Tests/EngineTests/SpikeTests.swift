@@ -225,6 +225,33 @@ final class TapProbeArgumentTests: XCTestCase {
     let report = counts.report
     XCTAssertEqual(report["reenables"] as? Int, 3)
     XCTAssertEqual(report["disabledBy"] as? [String: Int], ["timeout": 2, "userInput": 1])
-    XCTAssertNil(report["counts"].flatMap { ($0 as? [String: Any])?["type4294967294"] }, "a disable notice is not counted as an event")
+  }
+
+  /// The active callback's body passes an event on as the same object, unmodified, and counts it (deferred); a
+  /// disable notice goes to the disabled counts, never to the event counts. No tap is created: nothing is attached,
+  /// so the re-enable has no port to touch.
+  func testTheActiveCallbackReturnsTheEventUntouchedAndNeverCountsADisableNotice() throws {
+    let counting = TapCounts(drivenPID: 200)
+    let event = try XCTUnwrap(CGEvent(keyboardEventSource: nil, virtualKey: 0x0E, keyDown: true))
+    event.flags = [.maskShift, .maskCommand]
+    event.location = CGPoint(x: 123, y: 456)
+    event.setIntegerValueField(eventField(41), value: Int64(getpid()))
+    let before = (event.getIntegerValueField(.keyboardEventKeycode), event.flags, event.location, event.type)
+
+    let passed = TapProbe.activeTapEvent(.keyDown, event, counting).takeUnretainedValue()
+    XCTAssertTrue(passed === event, "the callback returns the event it was given")
+    XCTAssertEqual(passed.getIntegerValueField(.keyboardEventKeycode), before.0)
+    XCTAssertEqual(passed.flags, before.1)
+    XCTAssertEqual(passed.location, before.2)
+    XCTAssertEqual(passed.type, before.3)
+
+    for notice in [CGEventType.tapDisabledByTimeout, .tapDisabledByUserInput] {
+      XCTAssertTrue(TapProbe.activeTapEvent(notice, event, counting).takeUnretainedValue() === event)
+    }
+    TapProbe.deferredCounts.sync {}  // the deferred counts land before the report is read
+    let report = counting.report
+    XCTAssertEqual(report["counts"] as? [String: [String: Int]], ["keyDown": ["own": 1]])
+    XCTAssertEqual(report["disabledBy"] as? [String: Int], ["timeout": 1, "userInput": 1])
+    XCTAssertEqual(report["reenables"] as? Int, 2)
   }
 }

@@ -127,20 +127,21 @@ final class TapCounts: @unchecked Sendable {
 
   init(drivenPID: pid_t) { self.drivenPID = drivenPID }
 
-  /// The active tap's port, for its callback's re-enable; detached (nil) by stop before the tap is disabled, so a
-  /// callback in flight never re-enables a stopped tap.
+  /// The active tap's port, for its callback's re-enable; detached (nil) by stop before the tap is disabled. The
+  /// re-enable runs under the same lock, so once `attach(nil)` returns no callback can re-enable the tap: one that
+  /// read the port first has finished its re-enable, and one that comes after finds none.
   func attach(_ port: CFMachPort?) {
     lock.lock()
     self.port = port
     lock.unlock()
   }
 
-  /// The system disabled the active tap (timeout or user input): counted, and the tap re-enabled while attached.
+  /// The system disabled the active tap (timeout or user input): counted, and the tap re-enabled while attached, the
+  /// lock held across the re-enable (`attach`).
   func noteDisabled(_ type: CGEventType) {
     lock.lock()
+    defer { lock.unlock() }
     disabledBy[type == .tapDisabledByTimeout ? "timeout" : "userInput", default: 0] += 1
-    let port = self.port
-    lock.unlock()
     if let port { CGEvent.tapEnable(tap: port, enable: true) }
   }
 
@@ -329,7 +330,11 @@ final class TapProbe: @unchecked Sendable {
   /// re-enabled, never counted as an event.
   private static let activeCallback: CGEventTapCallBack = { _, type, event, userInfo in
     guard let userInfo else { return Unmanaged.passUnretained(event) }
-    let counting = Unmanaged<TapCounts>.fromOpaque(userInfo).takeUnretainedValue()
+    return activeTapEvent(type, event, Unmanaged<TapCounts>.fromOpaque(userInfo).takeUnretainedValue())
+  }
+
+  /// The active callback's body, reachable from the unit tests: the event comes back as the same object, unmodified.
+  static func activeTapEvent(_ type: CGEventType, _ event: CGEvent, _ counting: TapCounts) -> Unmanaged<CGEvent> {
     if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
       counting.noteDisabled(type)
     } else {

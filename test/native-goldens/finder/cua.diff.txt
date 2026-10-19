@@ -1,0 +1,13 @@
+The following is a diff from the previous accessibility tree for Window: "cua-scene-finder" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+~				78 row (selected, collapsed) Secondary Actions: Expand
+~					79 ⟨1⟩ (selected) Rows: 4-5, Columns: 0-1, Secondary Actions: Open
+~					82 ⟨1⟩ (selected) Rows: 4-5, Columns: 1-2
+~					84 ⟨1⟩ (selected) Rows: 4-5, Columns: 2-3
+~					86 ⟨1⟩ (selected) Rows: 4-5, Columns: 3-4
+~			225 ⟨3⟩ Value: ⟨25⟩, ID: ⟨13⟩
+~		235 ⟨2⟩ Description: ⟨2⟩, Help: ⟨13⟩, Secondary Actions: ⟨39⟩, ⟨39⟩, ⟨42⟩
+~		236 ⟨2⟩ Description: ⟨5⟩, Help: ⟨9⟩, Secondary Actions: ⟨39⟩, ⟨39⟩, ⟨42⟩
+Selected:
+	78 row (selected, collapsed) Secondary Actions: Expand
+
+Note: Pay special attention to the content selected by the user. If the user asks a question or refers to the content they are looking at on-screen, they might be referring to the selected content (but they might be referring to something else that's visible, too).

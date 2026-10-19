@@ -1,0 +1,3 @@
+The following is a diff from the previous accessibility tree for Window: "cua Electron fixture" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+Removed element IDs: 15
++						25 텍스트 (collapsed) Value: Pressed 1 time, Secondary Actions: Expand

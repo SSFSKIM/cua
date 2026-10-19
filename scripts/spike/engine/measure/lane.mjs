@@ -269,6 +269,7 @@ export async function runOnce(options, io) {
     if (lane === 'cua') {
       const passed = await preflightSwitches(ctx, active());
       for (const scene of active()) await engineCells(ctx, scene, passed);
+      if (passed.has('readSet')) for (const scene of active()) await equivalenceCells(ctx, scene);
     }
     if (inputBuilt) {
       for (const scene of active()) await golden(ctx, scene, 'golden.action', spike.ACTION_GOLDEN(scene, records[scene].app, SCENE_WINDOW[scene], ACTION_TARGET[scene], {raw: lane === 'cua'}));
@@ -450,6 +451,8 @@ export const SWITCHES = Object.freeze({
   focusableSelectable: {value: false, scenes: null, series: [['focusableSelectable.on', {focusableSelectable: true}], ['focusableSelectable.off', {focusableSelectable: false}]]},
   webAreaWait: {value: false, scenes: ['chrome', 'electron'], series: [['webAreaWait.on', {webAreaWait: true}], ['webAreaWait.off', {webAreaWait: false}]]},
   settle: {value: true, scenes: null, series: [['probe.c\'.settle.rest', {settle: true}]]},
+  // The per-role read set (Decision Log, 2026-10-19): its series is the rendering-equivalence cell (equivalenceCells).
+  readSet: {value: 'reduced', scenes: null, series: []},
 });
 // Where a switch's preflight runs: the first of the run's scenes that can show it (TextEdit has the Markdown fetch).
 const PREFLIGHT_ORDER = ['textedit', 'finder', 'chrome', 'electron'];
@@ -464,6 +467,8 @@ export function switchVerdict(name, plain, switched) {
     case 'valueMarkdown': return plain.markdownFetches > 0 ? !(switched.markdownFetches > 0) : null;
     case 'focusableSelectable': return plain.focusableMs > 0 || plain.selectableMs > 0 ? !(switched.focusableMs > 0 || switched.selectableMs > 0) : null;
     case 'webAreaWait': return plain.webAreaFound !== undefined ? switched.webAreaFound === undefined : null;
+    // The engine labels the read set it used in its timings, as it labels the fetch route.
+    case 'readSet': return switched.readSet === SWITCHES.readSet.value;
     default: throw new Error(`unknown switch ${name}`);
   }
 }
@@ -498,6 +503,17 @@ async function engineCells({js, row, records, samples}, scene, passed) {
       for (const [op, switches] of sample % 2 ? series : [...series].reverse()) row(op, sample, await js(spike.ENGINE_OBSERVE(app, switches)), {scene});
   if (passed.has('settle'))
     for (let sample = 1; sample <= Math.min(samples, 5); sample++) row('probe.c\'.settle.rest', sample, await js(spike.ENGINE_OBSERVE(app, {settle: true})), {scene});
+}
+
+// Cua lane: rendering equivalence of the per-role read set (Decision Log, 2026-10-19). Each sample observes the scene's
+// fixed state with the full and the reduced read set, in alternating order, and compares the stand-in renderer's texts
+// (equal, the two SHA-256s, the count of differing lines; never the text), timing each observation in-cell. Drift
+// between two observations is not a difference: summary judges a scene equal when any sample at rest is equal, and
+// different only when every sample differs.
+export const EQUIVALENCE_SAMPLES = 5;
+async function equivalenceCells({js, row, records, samples}, scene) {
+  for (let sample = 1; sample <= Math.min(samples, EQUIVALENCE_SAMPLES); sample++)
+    row('equivalence.readSet', sample, await js(spike.READ_SET_EQUIVALENCE(records[scene].app, sample % 2 ? ['full', 'reduced'] : ['reduced', 'full'])), {scene});
 }
 
 // Probe (c), on the cua lane with the engine stopped: does `open -a` without -g activate the engine; do two copies at

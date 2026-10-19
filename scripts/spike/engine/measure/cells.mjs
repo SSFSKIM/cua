@@ -82,8 +82,30 @@ const forwarded = (switches.prefetch === undefined || t.route === switches.prefe
   && (switches.valueMarkdown !== false || !(t.markdownFetches > 0))
   && (switches.focusableSelectable !== false || !(t.focusableMs > 0 || t.selectableMs > 0))
   && (switches.webAreaWait !== false || t.webAreaFound === undefined)
-  && (switches.settle !== true || t.settle !== undefined);
+  && (switches.settle !== true || t.settle !== undefined)
+  && (switches.readSet === undefined || t.readSet === switches.readSet);
 return {observeMs, forwarded, ...facts};`);
+
+// Rendering equivalence of the read sets (cua lane): the scene observed with each read set in `order`, each observation
+// timed in-cell and rendered by the service's stand-in renderer (the text the service returns). Returns whether the two
+// texts are equal, their SHA-256s, the count of differing lines on a mismatch, each observation's time, and whether the
+// engine labelled each with the read set asked for (`applied`); never the text.
+export const READ_SET_EQUIVALENCE = (app, order) => cell(`${SKYSHOT}
+const {createHash} = await import("node:crypto");
+const sha = text => createHash("sha256").update(text).digest("hex");
+const seen = {};
+for (const readSet of ${j(order)}) {
+  const t0 = performance.now();
+  const result = await nodeRepl.rpc("sky", {type: "execute", method: "get_app_state", args: [{app: ${j(app)}, disableDiff: true, readSet}]});
+  const ms = performance.now() - t0;
+  const shot = await __skyshot(${j(app)});
+  seen[readSet] = {text: String(result?.text ?? ""), ms, label: shot?.timings?.readSet ?? null};
+}
+const full = seen.full.text.split("\\n"), reduced = seen.reduced.text.split("\\n");
+let differingLines = Math.abs(full.length - reduced.length);
+for (let i = 0; i < Math.min(full.length, reduced.length); i++) if (full[i] !== reduced[i]) differingLines++;
+return {equal: seen.full.text === seen.reduced.text, fullSha256: sha(seen.full.text), reducedSha256: sha(seen.reduced.text), differingLines,
+  fullMs: seen.full.ms, reducedMs: seen.reduced.ms, applied: seen.full.label === "full" && seen.reduced.label === "reduced"};`);
 
 // A scene's fixed state as a golden: the text through the facade (the vendor's text on the vendor lane, the stand-in
 // renderer's on the cua lane) and, on the cua lane, the raw Skyshot of the same observation, each written to the

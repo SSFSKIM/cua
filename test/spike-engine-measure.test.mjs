@@ -227,7 +227,7 @@ test('every cell compiles as the body of an async function', () => {
     spikeCells.ACTION_GOLDEN('chrome', '/a.app', 'x', 'Scene option', {raw: false}), spikeCells.FINDER_VIEW('cua-scene-finder'), spikeCells.PRESS('finder', 'super+2'),
     spikeCells.LOCATE('textedit', 'cua-scene', 'doc'), spikeCells.ACT_CLICK('finder'), spikeCells.ACT_KEY('finder', 'Down'), spikeCells.ACT_TYPE('textedit', UNICODE_STRINGS.at(-1)),
     spikeCells.READBACK('finder'), spikeCells.TEXT_LANDED('chrome', '/a.app', '0101', '한글 테스트'), spikeCells.BOUND_PID('/a.app'), spikeCells.SCENE_GUARD('electron', 'cua Electron fixture'),
-    spikeCells.SCENE_SCREENSHOT('finder')];
+    spikeCells.SCENE_SCREENSHOT('finder'), spikeCells.READ_SET_EQUIVALENCE('/a.app', ['full', 'reduced'])];
   for (const code of cells) assert.doesNotThrow(() => new AsyncFunction('cua', 'nodeRepl', code), code.slice(0, 120));
 });
 
@@ -283,7 +283,9 @@ test('a switch\'s preflight verdict: forwarded, not forwarded, or undetermined w
   assert.equal(switchVerdict('webAreaWait', {webAreaFound: true}, {webAreaFound: true}), false);
   assert.equal(switchVerdict('webAreaWait', {}, {}), null);
   assert.equal(switchVerdict('prefetch', null, {route: 'hierarchy'}), false, 'no observation, no verdict of forwarding');
-  assert.deepEqual(Object.keys(SWITCHES), ['prefetch', 'valueMarkdown', 'focusableSelectable', 'webAreaWait', 'settle']);
+  assert.equal(switchVerdict('readSet', {readSet: 'full'}, {readSet: 'reduced'}), true);
+  assert.equal(switchVerdict('readSet', {}, {}), false, 'an engine that does not label its read set did not apply it');
+  assert.deepEqual(Object.keys(SWITCHES), ['prefetch', 'valueMarkdown', 'focusableSelectable', 'webAreaWait', 'settle', 'readSet']);
 });
 
 // Runs a cell's code against stand-ins for the kernel's globals; -> the parsed marker line.
@@ -317,6 +319,42 @@ test('a golden cell that throws deletes what it wrote before the error leaves', 
   assert.equal(out.ok, false);
   assert.match(out.error, /no raw Skyshot/);
   assert.equal(fs.existsSync(written), false, 'the text written before the throw is gone');
+});
+
+test('the read-set equivalence cell compares the two renderings by equality, hashes and a differing-line count, never returning the text', async () => {
+  const texts = {full: 'Window: "w", App: A.\n0 window w\n1 button OK', reduced: 'Window: "w", App: A.\n0 window w\n1 button OK'};
+  const asked = [];
+  let last = null;
+  const rpc = async (service, request) => {
+    if (request.type === 'execute') { const readSet = request.args[0].readSet; asked.push(readSet); last = readSet; return {text: texts[readSet]}; }
+    return {skyshot: {nodes: [], timings: {readSet: last}}};
+  };
+  const same = await runCell(spikeCells.READ_SET_EQUIVALENCE('/a.app', ['reduced', 'full']), {rpc});
+  assert.deepEqual(asked, ['reduced', 'full'], 'the order asked for');
+  assert.equal(same.ok, true);
+  assert.deepEqual([same.value.equal, same.value.differingLines, same.value.applied, same.value.fullSha256 === same.value.reducedSha256], [true, 0, true, true]);
+  assert.ok(Number.isFinite(same.value.fullMs) && Number.isFinite(same.value.reducedMs));
+  assert.ok(!JSON.stringify(same).includes('button OK'), 'no text leaves the cell');
+  texts.reduced = 'Window: "w", App: A.\n0 window w\n1 button\n2 extra';
+  const differ = await runCell(spikeCells.READ_SET_EQUIVALENCE('/a.app', ['full', 'reduced']), {rpc});
+  assert.deepEqual([differ.value.equal, differ.value.differingLines], [false, 2]);
+  const unlabelled = await runCell(spikeCells.READ_SET_EQUIVALENCE('/a.app', ['full', 'reduced']), {rpc: async (service, request) => (request.type === 'execute' ? {text: 'x'} : {skyshot: {nodes: [], timings: {}}})});
+  assert.equal(unlabelled.value.applied, false);
+});
+
+test('summary: rendering equivalence is equal when any applied sample is equal, different only when all differ, with the saving', t => {
+  const dir = tempDir(t);
+  const eq = (scene, sample, equal, extra = {}) => ({op: 'equivalence.readSet', scene, sample, ok: true, applied: true, equal, differingLines: equal ? 0 : 3, fullMs: 100, reducedMs: 60, ...extra});
+  writeRun(dir, 'vendor', 1, samples('warm.getAXState', 'textedit', [50]));
+  writeRun(dir, 'cua', 1, [eq('textedit', 1, false), eq('textedit', 2, true), eq('finder', 1, false), eq('finder', 2, false, {differingLines: 5}),
+    eq('chrome', 1, true, {applied: false}), {op: 'preflight.switch', switch: 'readSet', scene: 'textedit', sample: 1, ok: true, forwarded: true}]);
+  const s = summarize(dir);
+  assert.deepEqual(s.equivalence.map(r => [r.scene, r.verdict, r.n, r.notApplied]), [['textedit', 'equal', 2, 0], ['finder', 'different', 2, 0], ['chrome', 'NO VERDICT', 0, 1]]);
+  assert.equal(s.equivalence[1].differingLines, 4);
+  const md = renderSummary(s);
+  assert.match(md, /## Rendering equivalence: reduced read set against full \(cua lane\)/);
+  assert.match(md, /\| textedit \| equal \| 2 \| 100 \| 60 \| 40 \| 3 \| 0 \| 0 \|/);
+  assert.match(md, /\| finder \| different \| 2 \| 100 \| 60 \| 40 \| 4 \| 0 \| 0 \|/);
 });
 
 test('every scene\'s getScreenshot sample is the baseline\'s own cell on that scene\'s bound app', () => {

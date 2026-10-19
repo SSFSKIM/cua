@@ -96,7 +96,15 @@ export function summarize(dir) {
     return {scene, notifications: med(rows, r => r.timings?.settleNotifications), settleMs: med(rows, r => r.timings?.settleMs), perSecond: median(rate), capped: rows.filter(r => r.timings?.settle === 'capped').length, n: rows.length,
       dropped: disagreed('probe.c\'.settle.rest', scene)};
   }).filter(r => r.n + r.dropped > 0);
-  const preflight = Object.fromEntries(['prefetch', 'valueMarkdown', 'focusableSelectable', 'webAreaWait', 'settle'].map(name => [name, {
+  // Rendering equivalence of the read sets: per scene, over the samples whose read sets the engine applied, equal when
+  // any sample at rest was equal (drift is not a difference), different only when every one differed.
+  const equivalence = SCENE_ORDER.map(scene => {
+    const all = rowsOf(cua, 'equivalence.readSet', scene), rows = all.filter(r => r.ok && r.applied);
+    const verdict = !rows.length ? 'NO VERDICT' : rows.some(r => r.equal) ? 'equal' : 'different';
+    return {scene, verdict, n: rows.length, notApplied: all.filter(r => r.ok && !r.applied).length, failed: all.filter(r => !r.ok && !r.notRun).length,
+      fullMs: med(rows, r => r.fullMs), reducedMs: med(rows, r => r.reducedMs), differingLines: rows.every(r => r.equal) ? 0 : median(rows.filter(r => !r.equal).map(r => r.differingLines))};
+  }).filter(r => r.n + r.notApplied + r.failed > 0);
+  const preflight = Object.fromEntries(['prefetch', 'valueMarkdown', 'focusableSelectable', 'webAreaWait', 'settle', 'readSet'].map(name => [name, {
     forwarded: rowsOf(cua, 'preflight.switch').filter(r => r.switch === name && r.forwarded === true).length, notRun: switchNotRun(name)}]));
   const probeC = ['probe.c.plainOpen', 'probe.c.twoCopies'].map(op => ({op, rows: rowsOf(cua, op)})).filter(p => p.rows.length);
 
@@ -111,7 +119,7 @@ export function summarize(dir) {
     ...(runs.length ? [] : [`${lane}: no runs under ${join(dir, lane)}`]),
     ...runs.filter(run => !run.meta?.complete).map(run => `${lane}/${run.name}: incomplete (${run.meta?.stopped ?? run.meta?.error ?? run.meta?.problems?.join('; ') ?? 'no meta.json'})`),
   ]);
-  return {verdict, speed, input, listApps, scenes, routes, switches, settle, preflight, probeC, notRun: [...notRun.values()], problems,
+  return {verdict, speed, input, listApps, scenes, routes, switches, settle, equivalence, preflight, probeC, notRun: [...notRun.values()], problems,
     runs: Object.fromEntries(Object.entries(lanes).map(([lane, runs]) => [lane, runs.length]))};
 }
 
@@ -139,6 +147,10 @@ export function renderSummary(s) {
   if (anyCua) lines.push('', '## Probe (c′): settle notifications at rest (cua lane)', '', `Preflight forwarded in ${s.preflight.settle.forwarded} run(s).${runsNotRun('settle')}`, '',
     '| scene | notifications | settle ms | per second | capped | samples | switch dropped |', '|---|---|---|---|---|---|---|',
     ...s.settle.map(r => `| ${r.scene} | ${fmt(r.notifications)} | ${fmt(r.settleMs)} | ${fmt(r.perSecond)} | ${r.capped} | ${r.n} | ${r.dropped} |`));
+  if (anyCua) lines.push('', '## Rendering equivalence: reduced read set against full (cua lane)', '',
+    `Preflight forwarded in ${s.preflight.readSet.forwarded} run(s).${runsNotRun('readSet')} A scene is equal when any sample at rest rendered the same text from both read sets, different only when every sample differed.`, '',
+    '| scene | verdict | samples | full ms | reduced ms | saving ms | differing lines (median of mismatches) | not applied | failed |', '|---|---|---|---|---|---|---|---|---|',
+    ...s.equivalence.map(r => `| ${r.scene} | ${r.verdict} | ${r.n} | ${fmt(r.fullMs)} | ${fmt(r.reducedMs)} | ${r.fullMs !== null && r.reducedMs !== null ? fmt(r.fullMs - r.reducedMs) : '—'} | ${fmt(r.differingLines)} | ${r.notApplied} | ${r.failed} |`));
   if (s.probeC.length) lines.push('', '## Probe (c)', '', ...s.probeC.flatMap(p => p.rows.map(r => `- ${p.op} (run ${r.run}): ${r.ok ? 'ok' : 'failed'}${r.activated !== undefined ? `, activated ${r.activated}, frontmost changed ${r.frontmostChanged}` : ''}${r.copy ? `, pids ${r.approved?.pid}/${r.copy?.pid}, own sockets ${r.approved?.socket !== r.copy?.socket}` : ''}${r.error ? `: ${r.error}` : ''}`)));
   lines.push('', '## Not run', '', ...(s.notRun.length ? ['| lane | row | scene | source | reason | runs |', '|---|---|---|---|---|---|',
     ...s.notRun.map(r => `| ${r.lane} | ${r.op} | ${r.scene ?? '—'} | ${r.source ?? '—'} | ${r.reason} | ${r.runs} |`)] : ['Every planned row ran.']));

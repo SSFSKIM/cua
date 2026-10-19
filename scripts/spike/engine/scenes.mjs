@@ -48,7 +48,7 @@ import {fileURLToPath} from 'node:url';
 import {PAGE_CONTROLS, PAGE_INITIAL, PAGE_TITLE, startScenePage} from './fixtures/scene-page.mjs';
 import {FIXTURE_BUNDLE_ID, FIXTURE_CONTROLS, FIXTURE_INITIAL, buildElectronFixture} from './fixtures/electron-fixture.mjs';
 import {CHROME_FOR_TESTING_BUNDLE_ID, placeChromeForTesting} from './fixtures/chrome-for-testing.mjs';
-import {appWindows, awaitOwnLaunch, frontWindow, openApp, runningApps, stopRecorded} from './scene-processes.mjs';
+import {appWindows, appWindowState, awaitOwnLaunch, frontWindow, openApp, runningApps, stopRecorded} from './scene-processes.mjs';
 import {isSameLaunch, launchOf} from '../../accept/fixture-app.mjs';
 import {quote} from '../../browser-parity/topology.mjs';
 import {PARITY_CHECKOUT} from '../../native-baseline/remote.mjs';

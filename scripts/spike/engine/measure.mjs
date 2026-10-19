@@ -49,17 +49,23 @@
 //                       topWindowUnchanged, activations, deactivations, watch, before, after (TextEdit {range, role,
 //                       axError}; Finder {selected: [run row numbers], otherSelected}; Chrome {option, textChars,
 //                       focused}; Electron {presses, textChars, focused}), outcomeHeld, counters (Electron: per counter
-//                       after − before)
+//                       after − before); TextEdit's clicks also aimed (screen point), activationPoint (route 3, its own
+//                       click's point), targetLine, startLine, landedLine, lineError (the caret starts on line 0 and
+//                       holds within one line of targetLine), activationLine, invalid (the aim off the visible lines,
+//                       the start or route 3's activation click near the target line, the activation point unread; the
+//                       row then fails)
 //   effects.activationPoint  probe_spike activationPoint's answer: listed, axError, point, relative, windowFrame, hit,
 //                       hitFrom; a refusal: error, errorName, code and its data's members
 //   effects.selection   user, set, key, role, setError, before, afterActivate, afterKey ({role, range, axError}),
 //                       preservedByActivate (null unless the activate report says activationRan), preservedByKey (null
-//                       when the key failed), invalid (which of the two did not run; the row then fails), activate
+//                       when the key failed), invalid (the selection read back is not `set`, or which of the two did
+//                       not run; the row then fails), activate
 //                       (probe_spike activate's answer, or its refusal {error, errorName, code, probe: the same report}),
 //                       keyRoute, keyFailed, frontmostUnchanged, topWindowUnchanged, activations, deactivations, watch,
 //                       counters {activate, key} (Electron)
 //   effects.counters    Electron: action (activate | key), forcedRoute, route, failed, activate (as effects.selection's),
-//                       counters, frontmostUnchanged, topWindowUnchanged
+//                       counters, invalid (the activate row's activation did not run; the row then fails),
+//                       frontmostUnchanged, topWindowUnchanged
 //   coord.click         line (aimed at, 0-based), pixel, local (points in the window), scale, route, failed, start
 //                       {line, location} (the caret set COORD_PREPARE_GAP lines away before the click), prepared (the
 //                       range read back after it), preparedLine, moved, range, landedLine, lineError, exact, invalid

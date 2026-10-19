@@ -77,14 +77,42 @@ export function targetPixel(geometry) {
 export function textEditPoints(geometry, {lines = [0, 8], lineCount = textEditDocument().lines.length} = {}) {
   const frame = geometry.frame, visible = intersect(frame, geometry.window?.frame);
   if (!visible) return {lineHeight: null, lineHeightFrom: null, visibleLines: 0, points: []};
-  const fromFrame = frame.height > visible.height + 1 ? frame.height / lineCount : null;
-  const lineHeight = fromFrame && fromFrame >= 10 && fromFrame <= 30 ? fromFrame : TEXTEDIT_LINE_HEIGHT;
+  const {lineHeight, lineHeightFrom} = textEditLineHeight(frame, visible, lineCount);
   const points = lines.map(line => {
     const screen = {x: visible.x + 24, y: frame.y + (line + 0.5) * lineHeight};
     return {line, screen, ...(screenshotPoint(screen, geometry) ?? {x: null, y: null})};
   });
   const visibleLines = Math.floor((visible.y + visible.height - frame.y) / lineHeight);
-  return {lineHeight, lineHeightFrom: lineHeight === fromFrame ? 'frame' : 'estimate', visibleLines, points};
+  return {lineHeight, lineHeightFrom, visibleLines, points};
+}
+
+// textEditPoints' line height: the frame's height over the line count when the text view is taller than its visible
+// part, else the estimate. -> {lineHeight, lineHeightFrom: 'frame' | 'estimate'}.
+function textEditLineHeight(frame, visible, lineCount) {
+  const fromFrame = frame.height > visible.height + 1 ? frame.height / lineCount : null;
+  const lineHeight = fromFrame && fromFrame >= 10 && fromFrame <= 30 ? fromFrame : TEXTEDIT_LINE_HEIGHT;
+  return {lineHeight, lineHeightFrom: lineHeight === fromFrame ? 'frame' : 'estimate'};
+}
+
+// The 0-based line of the scene document under a screen point, by textEditPoints' line height (its inverse: a point it
+// aims at a line's middle is on that line). -> number | null when the point is outside the text view's visible part or
+// below the document's last line.
+export function textEditLineAt(geometry, screen, {lineCount = textEditDocument().lines.length} = {}) {
+  const frame = geometry?.frame, visible = intersect(frame, geometry?.window?.frame);
+  if (!visible || !screen) return null;
+  if (screen.x < visible.x || screen.y < visible.y || screen.x >= visible.x + visible.width || screen.y >= visible.y + visible.height) return null;
+  const line = Math.floor((screen.y - frame.y) / textEditLineHeight(frame, visible, lineCount).lineHeight);
+  return line < lineCount ? line : null;
+}
+
+// Where a route sample's TextEdit click is aimed and the line there: an element click at the text view's frame centre
+// (the engine's synthesized element click, Input.swift), a coordinate click at its visible part's centre (targetPixel).
+// -> {screen, line | null}.
+export function routeClickAim(geometry, family) {
+  const box = family === 'elementClick' ? geometry?.frame : intersect(geometry?.frame, geometry?.window?.frame);
+  if (!box) return {screen: null, line: null};
+  const screen = {x: box.x + box.width / 2, y: box.y + box.height / 2};
+  return {screen, line: textEditLineAt(geometry, screen)};
 }
 
 // The 0-based line of a caret location in a document of `lines` joined by newlines (a location past a line's end and
@@ -128,32 +156,71 @@ export function coordLanding({point, start, prepared, range, lines, failed, tole
     ok: !failed && !invalid && moved && lineError !== null && Math.abs(lineError) <= tolerance, ...(invalid ? {invalid} : {})};
 }
 
+// A route sample's TextEdit click outcome (U12), as coordLanding reads a landing: the caret starts at the document's
+// start (prepareSample) and holds when it lands within `tolerance` lines of the aimed line, so a move anywhere else does
+// not pass. Route 3 posts its own click at the window's activation point (`activation`: {point, line} read before the
+// action, or {error}; null on the other routes); that click landing near the aimed line, an unread activation point, a
+// start near the aimed line or an aim off the visible lines makes the sample `invalid`, since its landing could not be
+// told apart. -> {targetLine, startLine, landedLine, lineError, activationLine, held: boolean | null, invalid?}.
+export function textEditClickLanding({targetLine, activation, before, after, lines, tolerance = 1}) {
+  const startLine = before?.range ? lineOfLocation(before.range.location, lines) : null;
+  const landedLine = after?.range ? lineOfLocation(after.range.location, lines) : null;
+  const lineError = landedLine === null || targetLine === null ? null : landedLine - targetLine;
+  const near = line => Number.isInteger(line) && targetLine !== null && Math.abs(line - targetLine) <= tolerance;
+  const activationLine = activation?.line ?? null;
+  const invalid = [
+    targetLine === null ? 'the click\'s aim is not on a visible line of the text view' : null,
+    near(startLine) ? `the caret started within ${tolerance} line of the target line` : null,
+    activation?.error ? `the window's activation point could not be read (${activation.error})` : null,
+    near(activationLine) ? `route 3's activation click lands on line ${activationLine}, within ${tolerance} of the target line` : null,
+  ].filter(Boolean).join('; ');
+  const held = !before?.range || !after?.range || targetLine === null ? null : lineError !== null && Math.abs(lineError) <= tolerance;
+  return {targetLine, startLine, landedLine, lineError, activationLine, held, ...(invalid ? {invalid} : {})};
+}
+
+// Whether route 3's activation ran, from the activate report on its answer or on a refusal's `probe`.
+export const activationRan = report => (report?.activationRan ?? report?.probe?.activationRan) === true;
+
 // U13's selection across route 3's activation alone and the inert key: each preservation counts only when its action
 // ran (the activate report's activationRan, on its answer or on a refusal's `probe`; the key's cell not failed), and
-// the row passes only when both ran and both preserved it. -> {ok, preservedByActivate, preservedByKey, invalid?}.
-export function selectionVerdict({before, afterActivate, afterKey, activate, keyFailed}) {
+// the row passes only when the selection read back before the actions is the one `set` (a set that failed, or that the
+// field ignored, leaves nothing to preserve), both ran and both preserved it.
+// -> {ok, preservedByActivate, preservedByKey, invalid?}.
+export function selectionVerdict({set, before, afterActivate, afterKey, activate, keyFailed}) {
   const same = (a, b) => Boolean(a?.range && b?.range) && a.range.location === b.range.location && a.range.length === b.range.length;
-  const activationRan = (activate?.activationRan ?? activate?.probe?.activationRan) === true;
+  const wasSet = same({range: set}, before);
+  const ran = activationRan(activate);
   const keyRan = keyFailed === null;
-  const preservedByActivate = activationRan ? same(before, afterActivate) : null;
+  const preservedByActivate = ran ? same(before, afterActivate) : null;
   const preservedByKey = keyRan ? same(before, afterKey) : null;
-  const invalid = [activationRan ? null : 'the activation did not run', keyRan ? null : 'the key failed'].filter(Boolean).join('; ');
-  return {ok: preservedByActivate === true && preservedByKey === true, preservedByActivate, preservedByKey, ...(invalid ? {invalid} : {})};
+  const invalid = [wasSet ? null : 'the selection was not set', ran ? null : 'the activation did not run', keyRan ? null : 'the key failed'].filter(Boolean).join('; ');
+  return {ok: wasSet && preservedByActivate === true && preservedByKey === true, preservedByActivate, preservedByKey, ...(invalid ? {invalid} : {})};
+}
+
+// An effects.counters row's verdict: the counters read on both sides and the action done; the activate row's action
+// is done only when the activation ran (its answer's report, or a refusal's), since zero deltas around an activation
+// that did not run measure nothing. -> {ok, invalid?}.
+export function counterEffectVerdict({action, outcome, deltas}) {
+  if (action !== 'activate') return {ok: !outcome.failed && deltas !== null};
+  const ran = activationRan(outcome.activate);
+  return {ok: ran && !outcome.failed && deltas !== null, ...(ran ? {} : {invalid: 'the activation did not run'})};
 }
 
 const sameList = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((v, i) => v === b[i]);
 // Whether a route sample's outcome holds, from the scene's state before and after (outcomeState; TextEdit's is the
-// selection probe_spike reads). A click: TextEdit's caret moved off the baseline, Finder's selection is row 005 alone
-// (a ⌘-click would add it to row 003's, the plain click's outcome replacing it), Chrome's option toggled, Electron's
-// press count up by one. A key: TextEdit's selection one longer from the same start, Finder's selection one row down,
-// the web scenes' text field one character longer. -> true | false | null when either state is unreadable.
-export function outcomeHolds(scene, family, before, after) {
+// selection probe_spike reads). A click: TextEdit's caret on the aimed line (`aim`, textEditClickLanding), Finder's
+// selection is row 005 alone (a ⌘-click would add it to row 003's, the plain click's outcome replacing it), Chrome's
+// option toggled, Electron's press count up by one. A key: TextEdit's selection one longer from the same start, Finder's selection one row down,
+// the web scenes' text field one character longer. -> true | false | null when either state is unreadable (or, for a
+// TextEdit click, no line was aimed at).
+export function outcomeHolds(scene, family, before, after, aim = {}) {
   const click = family !== 'key';
   switch (scene) {
     case 'textedit': {
+      if (click) return textEditClickLanding({targetLine: aim.targetLine ?? null, activation: null, before, after, lines: textEditDocument().lines}).held;
       const b = before?.range, a = after?.range;
       if (!b || !a) return null;
-      return click ? a.location !== b.location || a.length !== b.length : a.location === b.location && a.length === b.length + 1;
+      return a.location === b.location && a.length === b.length + 1;
     }
     case 'finder': {
       if (!before?.observed || !after?.observed) return null;
@@ -233,6 +300,7 @@ const watchSummary = lines => ({activations: lines.filter(l => l.kind === 'activ
 const startWatch = ops => { try { ops.watch(); return {}; } catch (error) { return {error: `the activation watcher did not start: ${String(error.message).slice(0, 200)}`}; } };
 const stopWatch = ops => { try { return ops.watchStop(); } catch { return [{kind: 'unread', note: 'the activation watcher did not stop cleanly'}]; } };
 const cellError = r => r.cell?.error ?? r.failure ?? 'failed';
+const withoutHeld = ({held: _, ...fields}) => fields;  // a landing's verdict is the row's outcomeHeld
 const sleepOf = ctx => ctx.sleep ?? (ms => new Promise(resolve => setTimeout(resolve, ms)));
 
 // The scene's readable state for an outcome: TextEdit's selection (probe_spike), else the Skyshot's (outcomeState).
@@ -291,18 +359,30 @@ async function routeSample(ctx, {scene, user, family, route, sample}) {
   if (prepared.error) return emit({...base, ok: false, sent: false, error: `the sample's starting state: ${prepared.error}`});
   await activate(user);
   const before = await readOutcome(ctx, scene);
-  // The target last, so its index and the screenshot its pixels are in are the newest observation's.
-  let act, point = null;
+  // The geometry of a coordinate click's target, and of a TextEdit click's (its aimed line); the target last, so its
+  // index and the screenshot its pixels are in are the newest observation's.
+  let act, point = null, geometry = null;
+  if (family === 'coordinateClick' || (family === 'elementClick' && scene === 'textedit')) {
+    const read = await js(spike.GEOMETRY(scene, app, SCENE_WINDOW[scene], ACTION_TARGET[scene]));
+    if (!read.cell?.ok) return emit({...base, ok: false, sent: false, error: `geometry: ${cellError(read)}`, before});
+    geometry = read.cell.value;
+  }
   if (family === 'key') act = spike.SPIKE_INPUT(app, 'press_key', {key: ROUTE_KEY[scene], spikeRoute: route});
   else if (family === 'elementClick') {
     const located = await js(spike.LOCATE(scene, SCENE_WINDOW[scene], ACTION_TARGET[scene]));
     if (!located.cell?.ok) return emit({...base, ok: false, sent: false, error: `locate: ${cellError(located)}`, before});
     act = spike.SPIKE_CLICK(app, route);
   } else {
-    const geometry = await js(spike.GEOMETRY(scene, app, SCENE_WINDOW[scene], ACTION_TARGET[scene]));
-    point = geometry.cell?.ok ? targetPixel(geometry.cell.value) : null;
-    if (!point) return emit({...base, ok: false, sent: false, error: geometry.cell?.ok ? 'the target has no visible part in the window' : `geometry: ${cellError(geometry)}`, before});
+    point = targetPixel(geometry);
+    if (!point) return emit({...base, ok: false, sent: false, error: 'the target has no visible part in the window', before});
     act = spike.SPIKE_INPUT(app, 'click', {x: point.x, y: point.y, spikeRoute: route});
+  }
+  // A TextEdit click's aimed line, and on route 3 the line its own activation click lands on (read before the action).
+  const aim = geometry && scene === 'textedit' ? routeClickAim(geometry, family) : null;
+  let activation = null;
+  if (aim && route === '3') {
+    const answer = spikeAnswer(ops, 'activationPoint', {app});
+    activation = answer.result ? {point: answer.result.point ?? null, line: textEditLineAt(geometry, answer.result.point ?? null)} : {error: answer.error};
   }
   const seen = front();
   if (!userInFront(seen, records[user])) return emit({...base, ok: false, sent: false, error: 'the user window was not in front; nothing was sent', before});
@@ -316,12 +396,15 @@ async function routeSample(ctx, {scene, user, family, route, sample}) {
   let counters;
   if (scene === 'electron') { await sleepOf(ctx)(COUNTER_SETTLE_MS); counters = counterDeltas(countersBefore, readCounters(shell, records.electron)); }
   const after = await readOutcome(ctx, scene);
-  const held = outcomeHolds(scene, family, before, after);
+  const landing = aim ? textEditClickLanding({targetLine: aim.line, activation, before, after, lines: textEditDocument().lines}) : null;
+  const held = landing ? landing.held : outcomeHolds(scene, family, before, after);
   const failed = acted.cell?.ok ? acted.cell.value?.failed ?? null : cellError(acted);
-  emit({...base, ok: !failed && held === true, sent: true, route: acted.meta?.['cua/inputRoute'] ?? null, activationGuardMs: acted.meta?.['cua/activationGuardMs'] ?? null,
+  emit({...base, ok: !failed && held === true && !landing?.invalid, sent: true, route: acted.meta?.['cua/inputRoute'] ?? null, activationGuardMs: acted.meta?.['cua/activationGuardMs'] ?? null,
     inCellMs: acted.cell?.value?.inCellMs ?? null, failed, ...(point ? {point: {x: point.x, y: point.y, scale: point.scale}} : {}),
     frontmostUnchanged: afterFront.frontmost?.pid === seen.frontmost?.pid, topWindowUnchanged: afterFront.topWindow?.number === seen.topWindow?.number,
-    ...watchSummary(lines), before, after, outcomeHeld: held, ...(scene === 'electron' ? {counters} : {}), ...renamed});
+    ...watchSummary(lines), before, after, outcomeHeld: held,
+    ...(landing ? {aimed: aim.screen, ...(activation ? {activationPoint: activation.point ?? null} : {}), ...withoutHeld(landing)} : {}),
+    ...(scene === 'electron' ? {counters} : {}), ...renamed});
 }
 
 // ---- effects (U13) ------------------------------------------------------------------------------------------------
@@ -370,7 +453,7 @@ async function selectionEffect(ctx, scene) {
   } finally { lines = stopWatch(ops); }
   const afterFront = front();
   const activateReport = answerOrRefusal(activated), keyFailed = keyed.cell?.ok ? keyed.cell.value?.failed ?? null : cellError(keyed);
-  emit({...base, ...selectionVerdict({before, afterActivate, afterKey, activate: activateReport, keyFailed}), role: before.role ?? null,
+  emit({...base, ...selectionVerdict({set: SELECTION, before, afterActivate, afterKey, activate: activateReport, keyFailed}), role: before.role ?? null,
     setError: set.result?.setError ?? set.error ?? null, before, afterActivate, afterKey, activate: activateReport,
     keyRoute: keyed.meta?.['cua/inputRoute'] ?? null, keyFailed,
     frontmostUnchanged: afterFront.frontmost?.pid === seen.frontmost?.pid, topWindowUnchanged: afterFront.topWindow?.number === seen.topWindow?.number,
@@ -397,7 +480,7 @@ async function electronCounterEffects(ctx) {
     await sleepOf(ctx)(COUNTER_SETTLE_MS);
     const deltas = counterDeltas(before, readCounters(shell, records.electron));
     const afterFront = front();
-    emit({...base, ok: !outcome.failed && deltas !== null, sent: true, ...outcome, counters: deltas,
+    emit({...base, ...counterEffectVerdict({action, outcome, deltas}), sent: true, ...outcome, counters: deltas,
       frontmostUnchanged: afterFront.frontmost?.pid === seen.frontmost?.pid, topWindowUnchanged: afterFront.topWindow?.number === seen.topWindow?.number});
   }
 }

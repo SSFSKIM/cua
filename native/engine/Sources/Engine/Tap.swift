@@ -278,8 +278,8 @@ final class TapProbe: @unchecked Sendable {
   }
 
   /// Stops the tap and answers the report; nothing running is an error. The deadline's auto-stop is cancelled (it
-  /// would otherwise stop a later tap's run), and the counting state releases only after the tap thread has finished,
-  /// so a callback executing as this runs never reads a freed object.
+  /// would otherwise stop a later tap's run), and the counting state releases only once the tap thread is seen to have
+  /// finished (never on the join's timeout), so a callback executing as this runs never reads a freed object.
   func stop() throws -> [String: Any] {
     lock.lock()
     guard let counting = counts, let pointer = countsPointer else {
@@ -300,8 +300,12 @@ final class TapProbe: @unchecked Sendable {
     tapRunLoop = nil
     let done = threadDone  // captured under the lock: a start racing in must not swap the semaphore being waited on
     lock.unlock()
-    _ = done.wait(timeout: .now() + .seconds(2))  // the thread signals after CFRunLoopRun returns
-    Unmanaged<TapCounts>.fromOpaque(pointer).release()
+    // The thread signals after CFRunLoopRun returns. Past the timeout its loop may still be running, and a callback could
+    // still read the counting object through the pointer, so that one object is leaked deliberately rather than freed
+    // under it.
+    if done.wait(timeout: .now() + .seconds(2)) == .success {
+      Unmanaged<TapCounts>.fromOpaque(pointer).release()
+    }
     TapProbe.deferredCounts.sync {}  // the active tap's last deferred counts land before the report is read
     var report = counting.report
     report["created"] = created

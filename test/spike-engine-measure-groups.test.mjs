@@ -11,7 +11,8 @@ import {createRequire} from 'node:module';
 import {PassThrough} from 'node:stream';
 import {GROUPS, DEFAULT_GROUPS, parseGroups, parseTapModes, laneTakes, groupNotRunRows} from '../scripts/spike/engine/measure/groups.mjs';
 import {intersect, screenshotPoint, targetPixel, textEditPoints, lineOfLocation, outcomeHolds, counterDeltas, timesInside, refusalFields, tapCounts,
-  operatorTapFields, selectionVerdict, coordStart, coordLanding, spikeAnswer, COORD_PREPARE_GAP,
+  operatorTapFields, selectionVerdict, coordStart, coordLanding, spikeAnswer, COORD_PREPARE_GAP, textEditLineAt, routeClickAim, textEditClickLanding,
+  activationRan, counterEffectVerdict,
   tapGroup, routesGroup, coordGroup, effectsGroup, readCounters, ROUTES, FAMILIES, TEXTEDIT_LINE_HEIGHT, SELECTION} from '../scripts/spike/engine/measure/input-groups.mjs';
 import {outcomeState, SCENE_WINDOW_TITLE} from '../scripts/spike/engine/measure/cells.mjs';
 import {FIXTURE_COUNTERS_FILE} from '../scripts/spike/engine/fixtures/electron-fixture.mjs';
@@ -89,8 +90,11 @@ test('a route sample\'s outcome from the Skyshot: the run\'s own Finder rows by 
 
 test('the outcome predicates: a plain click\'s effect, the key\'s, and null when a state is unreadable', () => {
   const range = (location, length) => ({range: {location, length}});
-  assert.equal(outcomeHolds('textedit', 'elementClick', range(0, 0), range(412, 0)), true, 'the caret moved');
-  assert.equal(outcomeHolds('textedit', 'coordinateClick', range(0, 0), range(0, 0)), false);
+  const lines = textEditDocument().lines, lineStart = n => lines.slice(0, n).join('\n').length + (n ? 1 : 0);
+  assert.equal(outcomeHolds('textedit', 'elementClick', range(0, 0), range(lineStart(13) + 2, 0), {targetLine: 13}), true, 'the caret landed on the aimed line');
+  assert.equal(outcomeHolds('textedit', 'elementClick', range(0, 0), range(lineStart(5), 0), {targetLine: 13}), false, 'a move to another line is not the click\'s landing');
+  assert.equal(outcomeHolds('textedit', 'elementClick', range(0, 0), range(412, 0)), null, 'no aimed line: unreadable');
+  assert.equal(outcomeHolds('textedit', 'coordinateClick', range(0, 0), range(0, 0), {targetLine: 13}), false);
   assert.equal(outcomeHolds('textedit', 'key', range(0, 0), range(0, 1)), true, 'shift+Right extends by one');
   assert.equal(outcomeHolds('textedit', 'key', range(0, 0), range(1, 0)), false);
   assert.equal(outcomeHolds('textedit', 'key', {error: 'x'}, range(0, 1)), null);
@@ -135,8 +139,18 @@ test('a probe_spike refusal reaches its row with its data (activate\'s report as
 
 test('U13\'s selection verdict: a preservation counts only when its action ran; a run where either did not run does not pass', () => {
   const at = range => ({range});
-  const kept = {before: at(SELECTION), afterActivate: at(SELECTION), afterKey: at(SELECTION)};
+  const kept = {set: SELECTION, before: at(SELECTION), afterActivate: at(SELECTION), afterKey: at(SELECTION)};
   assert.deepEqual(selectionVerdict({...kept, activate: {activationRan: true}, keyFailed: null}), {ok: true, preservedByActivate: true, preservedByKey: true});
+  // The set did not take (a field that ignores it reads back a collapsed caret, kept by both actions): nothing was preserved.
+  const caret = at({location: SELECTION.location, length: 0});
+  const notSet = selectionVerdict({set: SELECTION, before: caret, afterActivate: caret, afterKey: caret, activate: {activationRan: true}, keyFailed: null});
+  assert.deepEqual([notSet.ok, notSet.invalid], [false, 'the selection was not set']);
+  const elsewhere = selectionVerdict({...kept, before: at({location: 0, length: SELECTION.length}), afterActivate: at({location: 0, length: SELECTION.length}), afterKey: at({location: 0, length: SELECTION.length}), activate: {activationRan: true}, keyFailed: null});
+  assert.equal(elsewhere.ok, false, 'the read-back\'s location differs from the set');
+  const unread = selectionVerdict({...kept, before: {error: 'x'}, activate: {activationRan: true}, keyFailed: null});
+  assert.deepEqual([unread.ok, unread.invalid], [false, 'the selection was not set']);
+  const notSetNorRun = selectionVerdict({set: SELECTION, before: caret, afterActivate: caret, afterKey: caret, activate: {activationRan: false}, keyFailed: null});
+  assert.equal(notSetNorRun.invalid, 'the selection was not set; the activation did not run', 'the reasons combine');
   const moved = selectionVerdict({...kept, afterActivate: at({location: 0, length: 0}), activate: {activationRan: true}, keyFailed: null});
   assert.deepEqual([moved.ok, moved.preservedByActivate, moved.preservedByKey, moved.invalid], [false, false, true, undefined]);
   const notActivated = selectionVerdict({...kept, activate: {believedBefore: true, activationRan: false}, keyFailed: null});
@@ -151,6 +165,55 @@ test('U13\'s selection verdict: a preservation counts only when its action ran; 
   const keyFailed = selectionVerdict({...kept, activate: {activationRan: true}, keyFailed: 'The key could not be sent.'});
   assert.deepEqual([keyFailed.ok, keyFailed.preservedByActivate, keyFailed.preservedByKey], [false, true, null]);
   assert.match(keyFailed.invalid, /the key failed/);
+});
+
+test('U13\'s activate counters: the row passes only when the activation ran (its answer, or a refusal\'s probe report)', () => {
+  assert.equal(activationRan({activationRan: true}), true);
+  assert.equal(activationRan({error: 'x', probe: {activationRan: true}}), true, 'a refusal\'s probe report');
+  assert.equal(activationRan({believedBefore: true, activationRan: false}), false);
+  assert.equal(activationRan({error: 'the engine is unreachable'}), false);
+  assert.equal(activationRan(undefined), false);
+  const zero = {windowFocus: 0, pageBlur: 0};
+  assert.deepEqual(counterEffectVerdict({action: 'activate', outcome: {activate: {activationRan: true}}, deltas: zero}), {ok: true});
+  assert.deepEqual(counterEffectVerdict({action: 'activate', outcome: {activate: {believedBefore: true, activationRan: false}}, deltas: zero}),
+    {ok: false, invalid: 'the activation did not run'}, 'zero deltas around an activation that did not run measure nothing');
+  assert.deepEqual(counterEffectVerdict({action: 'activate', outcome: {failed: 'refused', activate: {error: 'refused', probe: {activationRan: false}}}, deltas: zero}),
+    {ok: false, invalid: 'the activation did not run'});
+  assert.deepEqual(counterEffectVerdict({action: 'activate', outcome: {failed: 'refused', activate: {error: 'refused', probe: {activationRan: true}}}, deltas: zero}), {ok: false}, 'refused after it ran: failed, not invalid');
+  assert.deepEqual(counterEffectVerdict({action: 'activate', outcome: {activate: {activationRan: true}}, deltas: null}), {ok: false});
+  assert.deepEqual(counterEffectVerdict({action: 'key', outcome: {failed: null}, deltas: zero}), {ok: true});
+  assert.deepEqual(counterEffectVerdict({action: 'key', outcome: {failed: 'not sent'}, deltas: zero}), {ok: false});
+});
+
+test('U12\'s TextEdit click outcome: the caret, started at the document\'s start, lands on the aimed line; a move to any other line does not pass', () => {
+  const lines = textEditDocument().lines, lineStart = n => lines.slice(0, n).join('\n').length + (n ? 1 : 0);
+  // A text view holding every line (17 pt each) under a window that shows lines 0 to 26 of it.
+  const geometry = {window: {frame: {x: 0, y: 0, width: 600, height: 500}}, frame: {x: 0, y: 50, width: 600, height: lines.length * 17}};
+  assert.equal(textEditLineAt(geometry, {x: 24, y: 50 + 8.5 * 17}), 8, 'the inverse of textEditPoints\' aim');
+  assert.equal(textEditLineAt(geometry, {x: 24, y: 40}), null, 'above the text view');
+  assert.equal(textEditLineAt(geometry, {x: 24, y: 520}), null, 'below the window: not a visible line');
+  assert.deepEqual(routeClickAim(geometry, 'coordinateClick'), {screen: {x: 300, y: 275}, line: 13}, 'the visible part\'s centre (targetPixel)');
+  assert.deepEqual(routeClickAim(geometry, 'elementClick'), {screen: {x: 300, y: 50 + lines.length * 17 / 2}, line: null}, 'the frame\'s centre (the engine\'s element click), out of view here');
+  const short = {...geometry, frame: {x: 0, y: 50, width: 600, height: 400}};
+  assert.deepEqual(routeClickAim(short, 'elementClick'), {screen: {x: 300, y: 250}, line: Math.floor(200 / 17)}, 'a frame inside the window: the estimate\'s line height');
+  const at = (location, length = 0) => ({range: {location, length}});
+  const start = at(0);
+  const landed = textEditClickLanding({targetLine: 13, activation: null, before: start, after: at(lineStart(13) + 2), lines});
+  assert.deepEqual(landed, {targetLine: 13, startLine: 0, landedLine: 13, lineError: 0, activationLine: null, held: true});
+  const otherLine = textEditClickLanding({targetLine: 13, activation: null, before: start, after: at(lineStart(5)), lines});
+  assert.deepEqual([otherLine.held, otherLine.landedLine, otherLine.lineError, otherLine.invalid], [false, 5, -8, undefined], 'moved off the start, but not to the target');
+  assert.equal(textEditClickLanding({targetLine: 13, activation: null, before: start, after: start, lines}).held, false, 'did not move');
+  assert.equal(textEditClickLanding({targetLine: 13, activation: null, before: start, after: at(lineStart(14)), lines}).held, true, 'one line off is within the tolerance');
+  // Route 3's own activation click: away from the target it is told apart; on the target's line it could make the landing.
+  const away = textEditClickLanding({targetLine: 13, activation: {point: {x: 300, y: 30}, line: null}, before: start, after: at(lineStart(13)), lines});
+  assert.deepEqual([away.held, away.activationLine, away.invalid], [true, null, undefined]);
+  const onTarget = textEditClickLanding({targetLine: 13, activation: {point: {x: 300, y: 270}, line: 13}, before: start, after: at(lineStart(13)), lines});
+  assert.deepEqual([onTarget.held, onTarget.activationLine], [true, 13]);
+  assert.match(onTarget.invalid, /activation click lands on line 13/);
+  assert.match(textEditClickLanding({targetLine: 13, activation: {error: 'refused'}, before: start, after: at(lineStart(13)), lines}).invalid, /activation point could not be read/);
+  assert.match(textEditClickLanding({targetLine: 1, activation: null, before: start, after: at(lineStart(1)), lines}).invalid, /started within 1 line of the target/);
+  const noAim = textEditClickLanding({targetLine: null, activation: null, before: start, after: at(lineStart(13)), lines});
+  assert.deepEqual([noAim.held, noAim.invalid], [null, 'the click\'s aim is not on a visible line of the text view']);
 });
 
 test('U2\'s coordinate click: each sample starts away from its line, and a click that leaves the caret where it was prepared does not pass', () => {
@@ -280,6 +343,50 @@ test('routes: nothing is sent while the user window is not in front', async () =
   await routesGroup(ctx, {samples: 1});
   assert.ok(rows.every(r => r.sent === false && r.ok === false && /not in front; nothing was sent/.test(r.error)));
   assert.ok(!sent.some(s => s.startsWith('act') || s === 'watch'));
+});
+
+// A TextEdit route session (Finder its user window, in front): each click's read-back is `landing(sent)`, the
+// window's activation point `activationPoint`.
+async function textEditRouteSession({landing, activationPoint = {x: 300, y: 30}}) {
+  const rows = [], sent = [];
+  const lines = textEditDocument().lines;
+  const geometry = {index: 2, frame: {x: 0, y: 50, width: 600, height: lines.length * 17}, window: {frame: {x: 0, y: 0, width: 600, height: 500}}, screenshot: {width: 1200, height: 1000}};
+  let caret = 0;
+  const js = async code => {
+    if (code.includes('getAXStateAndScreenshot')) { sent.push('geometry'); return {cell: {ok: true, value: geometry}}; }
+    if (code.includes('globalThis.__probe = {index')) { sent.push('locate'); return {cell: {ok: true, value: {index: 2}}}; }
+    if (code.includes('spikeRoute')) { sent.push('act'); caret = landing(sent); return {cell: {ok: true, value: {inCellMs: 3}}, meta: {'cua/inputRoute': 3}}; }
+    throw new Error(`unexpected cell: ${code.slice(0, 80)}`);
+  };
+  const ops = {
+    probeSpike: (op, extra) => {
+      if (op === 'activationPoint') { sent.push('activationPoint'); return {op, listed: true, point: activationPoint}; }
+      if (extra.set) { caret = extra.set.location; return {role: 'AXTextArea', setError: 0, range: {...extra.set}}; }
+      return {role: 'AXTextArea', range: {location: caret, length: 0}};
+    },
+    watch: () => {}, watchStop: () => [],
+  };
+  await routesGroup({js, emit: row => rows.push(row), ops, records: {textedit: {app: '/T.app', pid: 41}, finder: {pid: 20}}, active: () => ['textedit'], activate: async () => {},
+    front: () => ({frontmost: {pid: 20}, topWindow: {ownerPid: 20, number: 3}}), shell: () => '', sleep: async () => {}, finderRenameGuard: async () => ({})}, {samples: 1});
+  return {rows: rows.filter(r => r.family !== 'key'), sent, lines};
+}
+
+test('routes on TextEdit: a click passes only on the aimed line, and route 3\'s activation point is read and kept', async () => {
+  const lines = textEditDocument().lines, lineStart = n => lines.slice(0, n).join('\n').length + (n ? 1 : 0);
+  const onTarget = await textEditRouteSession({landing: () => lineStart(13) + 1});
+  const coordinate = onTarget.rows.filter(r => r.family === 'coordinateClick');
+  assert.deepEqual(coordinate.map(r => [r.forcedRoute, r.ok, r.targetLine, r.landedLine, r.outcomeHeld]), [["2'", true, 13, 13, true], ['3', true, 13, 13, true], ['2', true, 13, 13, true]]);
+  assert.deepEqual(coordinate[1].activationPoint, {x: 300, y: 30});
+  assert.equal(coordinate[0].activationPoint, undefined, 'only route 3 posts the activation click');
+  const element = onTarget.rows.filter(r => r.family === 'elementClick');
+  assert.ok(element.every(r => r.ok === false && r.targetLine === null && /not on a visible line/.test(r.invalid)), 'the frame\'s centre is out of view');
+  assert.deepEqual(onTarget.sent.slice(0, 3), ['geometry', 'locate', 'act'], 'the element click\'s geometry first, its target located last');
+  const elsewhere = await textEditRouteSession({landing: () => lineStart(5)});
+  assert.ok(elsewhere.rows.filter(r => r.family === 'coordinateClick').every(r => r.ok === false && r.outcomeHeld === false && r.landedLine === 5), 'a move to another line does not pass');
+  const activationOnTarget = await textEditRouteSession({landing: () => lineStart(13), activationPoint: {x: 300, y: 50 + 13.5 * 17}});
+  const route3 = activationOnTarget.rows.find(r => r.family === 'coordinateClick' && r.forcedRoute === '3');
+  assert.deepEqual([route3.ok, route3.outcomeHeld, route3.activationLine], [false, true, 13]);
+  assert.match(route3.invalid, /activation click lands on line 13/);
 });
 
 test('effects: the activation point per scene, and a missing probe_spike is each row\'s error rather than a crash', async () => {

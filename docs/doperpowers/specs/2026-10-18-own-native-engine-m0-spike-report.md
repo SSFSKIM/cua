@@ -1,120 +1,192 @@
 # M0 spike half: executor report (#117)
 
-Spec: `docs/doperpowers/specs/2026-10-18-own-native-engine-design.md`. Branch `feat/117-own-native-engine`, commits 87065a2..1d8460d8 (this report's commit follows). Executed 2026-10-18/19 on the MacBook by the plan-executor for maws-3f. Nothing was run on the mini.
+Spec: `docs/doperpowers/specs/2026-10-18-own-native-engine-design.md`. Branch `feat/117-own-native-engine`. My commits run from 87065a2 to this report's commit. The range also carries the dispatching session's spec commits, the reading agent's research commits, and two merges of the owner's input branches (5bc152a0, 0e8cbd77).
+
+Executed 2026-10-18/19 on the MacBook by the plan-executor for maws-3f. Nothing has run on the mini.
 
 ## Status
 
-**DONE_WITH_CONCERNS.** The four build tasks are built and review-clean. The spike can prove the promote rule's speed half, probes (c), (c′) and (f), the goldens and the settle counts at the mini sitting. The engine's input half is **not built**: the owner is writing it by hand on `feat/117-input`.
+**DONE_WITH_CONCERNS: ready for the mini sitting.**
 
-Open item: the MacBook shakedown of the cua lane over the four scenes did not run. Every scene's preflight refused while one owner Finder window (number 183841) was open off screen, minimized or on another Space. Nothing launched.
+All build tasks are reviewed clean, and the owner's input half is merged. The sitting can now prove:
+- both halves of the promote rule;
+- every probe, (a) through (f);
+- the goldens, including the action sequences;
+- the settle counts.
+
+The MacBook windows ran the cua lane once without input (the shakedown) and the vendor lane once. They ended before the cua lane could run with input; the reason is under "MacBook windows" below.
 
 ## What was built
 
-| Task | Paths | Commits | Review |
+| Part | Paths | Commits | Review |
 |---|---|---|---|
-| T1 engine core (observation) | `native/engine/` (Swift 6, Apple frameworks only, SwiftPM test target), `scripts/spike/engine/assemble.mjs`, `test/native-engine*.test.mjs` | 0b7a1b9, fa6a80ac, cb3bfdf6, c20d3305 | clean after three fix rounds (opus reviewer; sol was at its usage limit until Oct 24) |
-| T2 spike service | `scripts/spike/engine/{client,render,service,serve}.mjs`, `test/spike-engine-{client,render,service,serve}.test.mjs` | f674385, e9c79d5 | clean |
-| T3 scenes and fixtures | `scripts/spike/engine/scenes.mjs`, `scene-processes.mjs`, `fixtures/` (Chrome for Testing 155.0.8059.84 pinned by SHA-256, the Electron fixture), `front-window.swift`, `electron` 44.9.0 dev dependency | 2c38a84..5741442 | clean |
-| T4 measure | `scripts/spike/engine/measure.mjs`, `measure/`, `test/spike-engine-measure*.test.mjs` | 4aee098, 4977e1d, fc6e3e35 | clean after two rounds |
+| Engine, observation half | `native/engine/` (Swift 6, Apple frameworks only, SwiftPM test target), `scripts/spike/engine/assemble.mjs`, `test/native-engine*.test.mjs` | 0b7a1b9, fa6a80ac, cb3bfdf6, c20d3305, 1ca14d9c, 558e7071, 8b30523f | clean after three rounds, then the tuning rounds |
+| Engine, input half (the owner's) | `Input.swift`, `Keyboard.swift`, `Mouse.swift`, `Activation.swift`, `Tap.swift`, `Probe.swift` | merged as 5bc152a0 and 0e8cbd77 | reviewed on the owner's branch |
+| Spike service | `scripts/spike/engine/{client,render,service,serve}.mjs` and their tests | f674385, e9c79d5, 0661048a | clean |
+| Scenes and fixtures | `scenes.mjs`, `scene-processes.mjs`, `fixtures/` (Chrome for Testing 155.0.8059.84 pinned by SHA-256, the Electron fixture), `front-window.swift`, the `electron` 44.9.0 dev dependency | 2c38a84..5741442, cdefe035, 7b5c0a50, 6cfb3cdc, b470b293, ccf1043c | clean |
+| Measure | `measure.mjs`, `measure/` (both lanes, local and over ssh; approve, stop, status, cleanup, probe-f, summary) | 4aee098 .. bc45ba85 | clean |
 
-**Engine (build 52cf40cc…).**
-
-Protocol and server:
-- Socket server with `flock`, the uid check and the 0700 directory.
-- 8 MiB framing, plus `ping`, `status`, `approve` and `shutdown` (atomic with accept).
-- `list_apps`, and `resolve_app` by id, name, path or pid.
-
-`get_app_state` returns the `Skyshot` of Interfaces (25fa9b1 and a8b0a931):
-- the 20 attributes plus the renderer-grammar fields;
-- the width rule with `shown.ranges`, depth 200, the node, value and 6 MiB budgets, menu-bar items;
-- the public per-element fetch and the private `_AXUIElementCopyHierarchy` route, switchable per request (`prefetch`);
-- one-attribute enablement, on web-shaped apps and the vendor's named bundles only;
-- the web-area wait;
-- lineage indexes: sibling-structural, never reused, a cut carries entries over, re-resolution gated by the monitor;
-- the deferred settle, whose busy walk hands its reads to the observation, with notification counts in `timings`;
-- the ScreenCaptureKit window capture with a cached shareable content;
-- an os_log line on every exit path.
-
-`click`, `press_key` and `type_text` answer `notImplemented`.
+**Engine (build b6d962fe at the window; rebuilt for the sitting).**
+- Protocol and server:
+  - the socket server with `flock`, the uid check and the 0700 directory;
+  - 8 MiB framing;
+  - `ping`, `status`, `approve`, and `shutdown` (atomic with accept);
+  - `list_apps`, and `resolve_app` with a resolution cache;
+  - the forbidden list enforced on every app-scoped `execute`.
+- `get_app_state`, returning the Interfaces `Skyshot`:
+  - the 20-attribute set plus the renderer-grammar fields;
+  - the width rule, depth 200, and the budgets;
+  - the menu bar;
+  - the public fetch and the private `_AXUIElementCopyHierarchy` route, each switchable;
+  - `readSet: full|reduced` with a census;
+  - one-attribute enablement for web-shaped apps and the vendor's named bundles, with the web-area wait run once per process;
+  - lineage indexes;
+  - the deferred settle, which reuses its tree and reports notification counts;
+  - the ScreenCaptureKit capture with cached shareable content.
+- Input (the owner's): routes 1–3, keys, the listen-only tap, and the keystroke probe. Every error from an input method carries the input meta.
+- An os_log line on every exit path.
 
 **Service and harness.**
-- `serve.mjs` runs cua's own host through the real `buildLaunch` and `spawnUpstream`. The spike service sits behind the real `src/services/sky.mjs`; `src/` is untouched.
-- `measure.mjs` provides `approve` (the full EngineInstall loop), `stop`, `status`, `probe-f`, the vendor and cua lanes, and `summary`.
-- Input cells sit behind `CUA_INPUT_METHODS_BUILT` and report "not run: input methods not built" until it is set.
+- `serve.mjs` runs cua's own host through the real `buildLaunch`, with the spike service behind the real `src/services/sky.mjs`; `src/` is untouched.
+- The service resolves once per (connection, app) and forwards the spike switches.
+- `measure.mjs` runs both lanes on a declared device and on this Mac. On this Mac, the vendor lane runs through prepare.mjs's approved-home functions in process, with guards for a live home.
+- Input cells and probes are on (`CUA_INPUT_METHODS_BUILT`).
 - The Finder redactor fails closed.
 
-## Live results on the MacBook (development grants, owner-approved)
+## Live results on the MacBook (development grants; direction only)
 
-- **Approval.** Accessibility was visible to the running process at once. Screen Recording was visible only after relaunch. The first capture raised the per-bundle confirmation, which the owner answered.
-- **Probe (f) on this Mac.** A staged rebuild at the same path with the same identity (b5b659bf, then 52cf40cc) kept both grants and raised no capture confirmation; the capture succeeded. A copy at a new path is still open for the mini.
-- **First timings** (direction only: the MacBook was loaded and the vendor's 51 ms is the mini's figure). A 47-node TextEdit tree plus a screenshot took 109–218 ms on the engine side with the public route and 149–231 ms with the hierarchy route. Capture was 22–51 ms once shareable content was cached. App resolution alone was 30–39 ms per call.
-- **Unexplained exit.** The engine exited once, between 21:55 and 21:57, after the capture confirmation was answered, with no crash report. Tests were ruled out, since all their paths are under scratch bundles. Exit logging now exists. Not reproduced since.
+- **Approval and probe (f).**
+  - Accessibility was visible to the running process at once; Screen Recording only after a relaunch.
+  - A new bundle copy raised the capture confirmation once.
+  - Staged rebuilds at the same path and identity re-raised nothing.
+  - The scratch home's vendor helper copy, at a new path, raised the confirmation once.
+- **Shakedown, cua lane before tuning** (in-cell medians):
+  - TextEdit: getAXState 156 ms, getScreenshot 126 ms.
+  - Trees: TextEdit 118, Finder-200 474, Chrome 264, Electron 205 ms.
+- **Vendor lane on the same Mac** (window 3): this is the same-machine baseline.
+  - TextEdit: getAXState 78 ms, getScreenshot 84 ms; task.total 4,360 ms.
+  - Trees: TextEdit 94, Chrome 84, Electron 75, Finder 669 ms (14 valid samples).
+  - Screenshots: Chrome 81, Electron 77 ms.
+  - The vendor exposed no web content on either Chromium scene: 45 and 12 elements, with the page containers empty. cua exposed both pages' controls. This is a finding-elements result; its cause is still unknown.
+- **Tuning findings.**
+  - Resolution is not the cost: the engine takes 0.2–0.6 ms.
+  - The in-cell gap is the service's relay round trips plus the render.
+  - Settle at rest gets to the vendor's quiet point; its extra time is tree reads.
+  - The web-area wait ran on every observation, about 145 ms each. It now runs once per process.
+  - The reduced read set saves about 22 ms on Finder-200. The big reads, actions and focusable, need a live census first.
+- **Taints** (in window 3's `taint.json`): the owner quit Finder mid-run, which voids Finder rows after 00:26:46 local and every input row from then on.
 
 All of this is in the spec's Surprises & Discoveries.
 
-## Decisions folded into the spec (Decision Log)
+## MacBook windows: what stopped them
 
-- **Pre-flight.** `resolve_app` runs per call and one elicitation is asked per app (the supervisor hop the designed service pays is noted for the verdict). Nothing prompts before the owner.
-- **Interfaces extended.** Skyshot gains `menuBar`, `selectedElements` and `settle`. Node gains the optional attributes, `valueType`, `domClassList`, `focusable`/`selectable`/`disclosable`, `servesAsTitleFor`, `shown` and `ranges`. Indexes are numbered over the nodes the engine emits.
-- **`cua/settle` placement.** It is set on the observation result.
-- **Labelled departures.** Enablement is scoped. A retired index answers "no longer valid". The settle reuses its busy walk.
-- **Open for critique** (Decision Log entry 1): the engine/service numbering split, `get_app_state` during the debounce, cross-connection paste, and enablement release.
-- **Scope without input.** What the sitting proves now, and what waits for the owner's branch.
+- The owner's terminal (cmux) brought itself to the front on terminal activity, including this run's own output. The harness's #162 key guard and front-window checks then refused, correctly.
+- **The general lesson** (recorded in Surprises): the Mac running a sitting must have no app at its console that activates on terminal activity, including whatever hosts the coordinating session. The mini is driven over SSH, with Terminal.app at its console, and meets this.
+- Harness bugs found and fixed through the windows:
+  - the missing `appWindowState` import;
+  - recovery of a stale Finder record;
+  - scenes.mjs's answer lost on exit 1, now fail-closed;
+  - the action-target matcher;
+  - a Finder action target that sat outside the visible rows;
+  - the Chrome translate bubble breaking the fixed state.
 
-## Environmental friction
+## Decisions folded into the spec (Decision Log, chronological)
 
-- **Input half withheld.** A model-side safety classifier withheld every agent asked to write the input half (posting, fake activation, the tap): three workers, plus the dispatching session. It also once withheld a worker whose context held that discussion. Per the dispatching session's rule, nothing was re-dispatched; the owner writes it.
-- **sol unavailable.** sol is at its usage limit until Oct 24, so task reviews ran on opus.
-- **Spec swept by the coordinator.** The coordinator's commit c9cdcb2 swept an uncommitted Surprises edit; the duplicate was removed. The coordinator now routes spec changes through me.
+- **Pre-flight**, then revised. Resolution is cached per (connection, app), and the engine enforces the forbidden list on every call. Folding resolution into get_app_state was rejected, because it would observe before approval.
+- **Interfaces extended** to the renderer's grammar. `cua/settle` moved onto the observation result. Every error from an input method carries the input meta.
+- **Labelled departures:**
+  - scoped enablement;
+  - "no longer valid" for a retired index;
+  - settle reuse;
+  - the web-area wait once per process;
+  - the per-role read set, proven by rendering equivalence.
+- **Scenes:** the Finder refusal counts on-screen windows only. A hidden Finder refuses, and so does an unreadable hidden state.
+- **Scope:** the owner wrote the input half. The agents' attempts were withheld by a safety classifier; see Surprises.
+- **Open for critique** (Decision Log entry 1):
+  - the engine/service numbering split;
+  - get_app_state during the debounce;
+  - cross-connection paste;
+  - enablement release;
+  - settle options (b) and (c).
 
-## Mini-sitting command list (the spec's Concrete Steps as corrected at 1d8460d8)
+## Mini sitting
+
+**Needs from the CI-opt hold.**
+- The mini's CI runner is paused and idle for the whole sitting, about 3½ hours with margin.
+- No other cua session or harness uses the mini's approved vendor home or its approved engine location during the sitting.
+- The console runs no app that activates on terminal activity.
+
+**Owner steps.**
+- Answer at the console over Screen Sharing:
+  - the Accessibility and Screen Recording prompts for "cua Engine";
+  - a possible Screen Recording "Quit & Reopen";
+  - the capture confirmation for the new bundle;
+  - a possible Input Monitoring prompt when probe (d)(i) first creates the tap;
+  - probe (f)'s confirmations.
+- Send one keystroke over Screen Sharing when probe (d)'s operator step asks for it.
+- Keep hands off the console whenever a lane runs.
+
+**Not needed for M0:** the mini's own certificate and the `security set-key-partition-list` step. The bundle is built and signed on the MacBook and copied.
+
+**Commands**, run from the MacBook in /Users/new/Developer/GitHub/cua-117. `<sha>` is the branch head pushed for the sitting; `<home>` is the mini's approved vendor runtime home (the native baseline's `--approved-runtime`).
 
 ```
+# 0. MacBook: build and sign the sitting's engine (the identity's SHA-1 from security find-identity; never written to a file)
+swift build -c release --package-path native/engine --scratch-path /tmp/cua-engine-build
+node scripts/spike/engine/assemble.mjs --build /tmp/cua-engine-build --identity "$CUA_SIGNING_IDENTITY" --out /tmp/cua-engine-spike
+# 1. Place the harness checkout at the sitting's commit (5 min)
+node scripts/native-baseline.mjs prepare --device mini --commit <sha>
+ssh mini 'cd ~/Developer/GitHub/cua-parity && npm ci && node scripts/spike/engine/scenes.mjs place-chrome && node scripts/spike/engine/scenes.mjs build-electron'
+# 2. Copy the engine to the approved location, in buildEngine's order (2 min)
 node scripts/spike/engine/measure.mjs stop --device mini
 ssh mini 'rm -rf "Library/Application Support/cua/engine/staging" && mkdir -p "Library/Application Support/cua/engine/staging"'
 tar -C /tmp/cua-engine-spike -cf - "cua Engine.app" | ssh mini 'tar -C "Library/Application Support/cua/engine/staging" -xf -'
 ssh mini 'cd "Library/Application Support/cua/engine" && rm -rf previous && { [ -d "cua Engine.app" ] && mv "cua Engine.app" previous || true; } && mv "staging/cua Engine.app" "cua Engine.app"'
-node scripts/spike/engine/measure.mjs approve --device mini        # OWNER at the console presses Enter once both grants are given, then answers the capture confirmation
+# 3. Approve (10 min). OWNER: the two grant prompts, then Enter (the operator relays it), then the capture confirmation
+node scripts/spike/engine/measure.mjs approve --device mini --out docs/doperpowers/research/2026-10-18-own-native-engine/spike/approve
 node scripts/spike/engine/measure.mjs status --device mini
-node scripts/native-baseline.mjs prepare --device mini --commit <sha>
-ssh mini 'cd ~/Developer/GitHub/cua-parity && npm ci && node scripts/spike/engine/scenes.mjs place-chrome && node scripts/spike/engine/scenes.mjs build-electron'
-ssh mini 'cd ~/Developer/GitHub/cua-parity && node scripts/spike/engine/scenes.mjs preflight --run "$(mktemp -d)"'   # refuses an owner Finder window on screen, a hidden Finder, a running TextEdit
+# 4. Preflight (refuses an owner Finder window on screen, a hidden Finder, an unreadable hidden state, a running TextEdit)
+ssh mini 'cd ~/Developer/GitHub/cua-parity && node scripts/spike/engine/scenes.mjs preflight --run "$HOME/Library/Caches/cua-harness/spike-scenes"'
+# 5. Vendor triple FIRST (about 45 min): its guarded super+2 sets the shared scene folder's list view
 node scripts/spike/engine/measure.mjs --device mini --lane vendor --runs 3 --approved-runtime <home> --probes c --out docs/doperpowers/research/2026-10-18-own-native-engine/spike/vendor
-node scripts/spike/engine/measure.mjs --device mini --lane cua    --runs 3 --approved-runtime <home> --probes c --node /opt/homebrew/bin/node --out docs/doperpowers/research/2026-10-18-own-native-engine/spike/cua
+# 6. cua triple with input (about 90 min). OWNER: a possible Input Monitoring prompt at (d)(i); one keystroke over Screen Sharing at (d)'s operator step
+node scripts/spike/engine/measure.mjs --device mini --lane cua --runs 3 --approved-runtime <home> --probes c --operator --node /opt/homebrew/bin/node --out docs/doperpowers/research/2026-10-18-own-native-engine/spike/cua
+# 7. Probe (f), operator-guided (15 min). OWNER: whether each step raised the capture confirmation
 node scripts/spike/engine/measure.mjs probe-f --device mini --out docs/doperpowers/research/2026-10-18-own-native-engine/spike/probe-f
+# 8. Summary and teardown (10 min)
 node scripts/spike/engine/measure.mjs summary docs/doperpowers/research/2026-10-18-own-native-engine/spike
+ssh mini 'cd ~/Developer/GitHub/cua-parity && node scripts/spike/engine/scenes.mjs down all --run "$HOME/Library/Caches/cua-harness/spike-scenes"'
+node scripts/spike/engine/measure.mjs stop --device mini
+# If a vendor run dies: node scripts/spike/engine/measure.mjs cleanup --device mini --preparation <run dir>/preparation.json (each run logs the exact line)
 ```
 
-These lines differ from the spec's original Concrete Steps as follows:
-
-- The fixtures need `npm ci` plus `place-chrome` and `build-electron` on the device. Electron 44 has no postinstall step, so its binary is fetched on the first build.
-- Preflight refuses any owner Finder window on screen (off-screen ones, including Finder's own document-sized window, are a note; Decision Log 2026-10-19), a hidden Finder, and any running TextEdit.
-- The vendor triple must run first. Its guarded `super+2` sets the shared scene folder's list view, which the cua lane only checks.
-- `--probes c` selects probe (c).
-- `--node` names the own host's Node.
-- `status` and `probe-f` are new commands.
-- The approve loop's Enter is the operator's confirmation. On the MacBook the executor pressed it on the owner's relayed confirmation.
-
-The mini's Node is v26.4.0 at `/opt/homebrew/bin/node`; that was read once at the start, with no GUI and no engine involved.
-
-## Not run / pending
-
-- **The MacBook cua-lane shakedown over the four scenes.** It needs owner Finder window 183841 closed. The Chrome for Testing and Electron fixture first launches, `open -g` on a folder, and the target roles are therefore unconfirmed live.
-- **Probes (a), (b), (d) and (e), the action-sequence goldens and the cua lane's TextEdit task cells.** These wait for `feat/117-input`.
-- **A full `npm test` at fc6e3e35.** It was interrupted to run `npm ci` for the window. The focused suites passed: native-engine 18/18 (Swift 52/52) and spike-engine 105/105.
+Expected length: about 3 hours of lane time, plus the owner's prompts. Run a single lane per run first (`--runs 1`) if the first vendor run shows a harness problem; the triple only counts once both lanes run clean.
 
 ## Unresolved review findings (deferred minors)
 
-- **Finder `useCount` flake** in `test/native-engine.test.mjs`. It was seen once and has not reproduced.
-- **Every result's `_meta` carries the per-call keys, mostly as `null`.** The own host's merge cannot delete a key, and measure.mjs reads `null` as absent.
-- **`cua/engineMs` after a declined approval** holds the `resolve_app` round trip. This is cosmetic.
-- **Rows/Columns bounds** are half-open in the engine. The renderer prints them only when lower < upper; whether the vendor's bounds are inclusive is for M1a's goldens.
-- **Localized (Korean) role words weaken the Finder goldens** on the mini. This is privacy-safe: those lines are replaced whole.
-- **The redactor's first element index sets the start** rather than assuming 0.
-- **Enablement is never released**, so it stays set while the app keeps running. This is open for critique.
+- **Finder `useCount` flake** in the engine test: seen once, not reproduced.
+- **`_meta` per-call keys** are carried as `null`; measure.mjs reads null as absent.
+- **`cua/engineMs` after a declined approval** holds the resolve round trip. Cosmetic.
+- **Rows/Columns** bounds are half-open in the engine; M1a's goldens settle whether the vendor's are inclusive.
+- **Localized role words** weaken the Finder goldens on the Korean mini. Privacy-safe.
+- **The redactor's first index** sets the start rather than assuming 0.
+- **Enablement is never released.** Open for critique.
+- **Local vendor lane:**
+  - the managed-Node test does not prove the check runs before any move;
+  - an unreadable session record's message carries a misleading parenthesis;
+  - a pre-existing crash window between prepare.mjs's restore rename and its recovery.json write.
+- **`indexOfTarget`** can still match a longer title that ends with the target name (comment corrected; the first matching line wins).
+
+## Environmental friction
+
+- **Safety classifier.** It withheld every agent asked to write the input half, and once a worker whose context held that discussion. The owner wrote the input half by hand.
+- **Reviewer model.** sol was at its usage limit until Oct 24, so the task reviews ran on opus.
+- **Shared spec.** The dispatching session once swept an uncommitted spec edit; since then spec changes come to me as messages.
+- **MacBook console.** cmux took the front on terminal activity (see "MacBook windows").
 
 ## Residue
 
-- **The input half** (`feat/117-input`, owner). After it merges, set `CUA_INPUT_METHODS_BUILT`. Then run probes (a), (b), (d) and (e) and the action-sequence goldens in a second mini sitting. The input branch's one integration duty is `connection.markActed(app)` after posting.
-- **The engine's unexplained exit** (2026-10-18 21:55–21:57). Exit logging now names every path. Reproduce the exit, or rule it out, before the sitting's cold rows count.
-- **Cache app resolution in the engine.** Resolution costs 30–39 ms per call on the MacBook. This is the next tuning iteration before the promote verdict.
+- **The mini sitting itself**, above. Its summary decides promote or discard.
+- **The engine's unexplained exit** on 2026-10-18 between 21:55 and 21:57. Exit logging names every path now. Watch the sitting's logs (`log show --predicate 'subsystem == "io.github.ssfskim.cua.engine"'`) before counting the cold rows.
+- **A live read census before any per-role drop** of actions or focusable reads, checked against M1a's renderer.
+- **The vendor's missing web content on the Chromium scenes.** Confirm it at the sitting; probe (c′) names the enablement rule.

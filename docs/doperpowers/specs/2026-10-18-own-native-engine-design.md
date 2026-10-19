@@ -32,6 +32,7 @@ How to see it: on the mini, with the plugin at the release this work ships, run 
   - [x] (2026-10-18 21:55) Spike T3, scenes and fixtures, reviewed clean (5741442).
   - [x] (2026-10-18 21:55) MacBook development grants: the spike bundle approved at the approved location (Surprises).
   - [x] (2026-10-19 06:25) Spike T4, `measure.mjs`, reviewed clean (fc6e3e35); the MacBook approve loop ran on build 52cf40cc (approved, no prompt); the MacBook four-scene shakedown waits on one owner Finder window off screen (preflight refuses it).
+  - [x] (2026-10-19) MacBook windows: the cua-lane shakedown and the same-machine vendor lane (Surprises); the owner's input half merged (5bc152a0, 0e8cbd77); harness and scene fixes through bc45ba85; the mini sitting prepared (spike report).
   - [ ] (2026-10-18) Spike half started on the MacBook (plan-executor for maws-3f): four build tasks, the engine package with `assemble.mjs` (T1), the spike service and `serve.mjs` (T2), scenes and fixtures (T3), `measure.mjs` (T4); the mini sitting follows when the dispatching session arranges the hold and the owner.
 - [ ] Critique debate on the design as revised by M0 (Decision Log entry 1); gates M1a.
 - [ ] M1a — Engine core, basic input, policy; goldens on hosted CI.
@@ -271,25 +272,26 @@ swift build -c release --package-path native/engine --scratch-path /tmp/cua-engi
 node scripts/spike/engine/assemble.mjs --build /tmp/cua-engine-build --identity "$CUA_SIGNING_IDENTITY" --out /tmp/cua-engine-spike
 # expected: "/tmp/cua-engine-spike/cua Engine.app"; `codesign -dv` shows the identity and flags=0x10000(runtime)
 
-# M0 spike on the mini (inside a CI-opt hold; the owner grants at the console: Accessibility, Screen Recording, then the approve step's capture confirmation)
+# M0 spike on the mini (inside a CI-opt hold, about 3 h; the full owner-step list and the hold's needs are in the spike report,
+# docs/doperpowers/specs/2026-10-18-own-native-engine-m0-spike-report.md, "Mini sitting"; <home> is the mini's approved vendor runtime)
+node scripts/native-baseline.mjs prepare --device mini --commit <sha>
+ssh mini 'cd ~/Developer/GitHub/cua-parity && npm ci && node scripts/spike/engine/scenes.mjs place-chrome && node scripts/spike/engine/scenes.mjs build-electron'
 node scripts/spike/engine/measure.mjs stop --device mini         # sends shutdown to a resident spike engine (busy → refuses, naming the connections); nothing on a first copy
 ssh mini 'rm -rf "Library/Application Support/cua/engine/staging" && mkdir -p "Library/Application Support/cua/engine/staging"'
 tar -C /tmp/cua-engine-spike -cf - "cua Engine.app" | ssh mini 'tar -C "Library/Application Support/cua/engine/staging" -xf -'
 ssh mini 'cd "Library/Application Support/cua/engine" && rm -rf previous && { [ -d "cua Engine.app" ] && mv "cua Engine.app" previous || true; } && mv "staging/cua Engine.app" "cua Engine.app"'
 # the same order buildEngine uses: stop, stage, move aside, move into place; repeated for every tuning iteration and probe (f)'s rebuild
-node scripts/spike/engine/measure.mjs approve --device mini     # OWNER at the console: the Accessibility and Screen Recording prompts, then the capture confirmation
-# expected: approved.json beside the bundle with the spike's build and identity; the engine's status shows both grants true; approve's answers (observedBeforeRelaunch for probe (f)) in <os tmpdir>/measure-approve-<time>.json unless --out
-node scripts/spike/engine/measure.mjs status --device mini          # running, bundle build, approved.json, installed
-node scripts/native-baseline.mjs prepare --device mini --commit <sha>
-ssh mini 'cd ~/Developer/GitHub/cua-parity && npm ci && node scripts/spike/engine/scenes.mjs place-chrome && node scripts/spike/engine/scenes.mjs build-electron'   # the pinned Chrome for Testing and the fixture (electron 44 fetches its binary on first build)
-ssh mini 'cd ~/Developer/GitHub/cua-parity && node scripts/spike/engine/scenes.mjs preflight --run "$(mktemp -d)"'   # refuses an owner Finder window on screen, a hidden Finder, or a running TextEdit (off-screen Finder windows are a note)
-# vendor triple FIRST: its guarded super+2 sets the shared scene folder's Finder list view, which the cua lane only checks
-node scripts/spike/engine/measure.mjs --device mini --lane vendor --runs 3 --approved-runtime <home> --probes c --out docs/doperpowers/research/2026-10-18-own-native-engine/spike/vendor
-node scripts/spike/engine/measure.mjs --device mini --lane cua    --runs 3 --approved-runtime <home> --probes c --node /opt/homebrew/bin/node --out docs/doperpowers/research/2026-10-18-own-native-engine/spike/cua
-node scripts/spike/engine/measure.mjs probe-f --device mini --out docs/doperpowers/research/2026-10-18-own-native-engine/spike/probe-f   # OWNER at the console: a copy at a new path
+node scripts/spike/engine/measure.mjs approve --device mini --out docs/doperpowers/research/2026-10-18-own-native-engine/spike/approve   # OWNER: grants, Enter, capture confirmation
+# expected: approved.json beside the bundle with the spike's build and identity; approve.json with observedBeforeRelaunch (probe (f))
+node scripts/spike/engine/measure.mjs status --device mini
+ssh mini 'cd ~/Developer/GitHub/cua-parity && node scripts/spike/engine/scenes.mjs preflight --run "$HOME/Library/Caches/cua-harness/spike-scenes"'   # refuses an owner Finder window on screen, a hidden Finder (or its hidden state unreadable), a running TextEdit
+node scripts/spike/engine/measure.mjs --device mini --lane vendor --runs 3 --approved-runtime <home> --probes c --out docs/doperpowers/research/2026-10-18-own-native-engine/spike/vendor   # FIRST: its guarded super+2 sets the shared folder's list view
+node scripts/spike/engine/measure.mjs --device mini --lane cua    --runs 3 --approved-runtime <home> --probes c --operator --node /opt/homebrew/bin/node --out docs/doperpowers/research/2026-10-18-own-native-engine/spike/cua   # OWNER: possible Input Monitoring prompt at (d)(i); one Screen Sharing keystroke at (d)'s operator step
+node scripts/spike/engine/measure.mjs probe-f --device mini --out docs/doperpowers/research/2026-10-18-own-native-engine/spike/probe-f   # OWNER: the console's answers
 node scripts/spike/engine/measure.mjs summary docs/doperpowers/research/2026-10-18-own-native-engine/spike
 # expected: per lane and run a results.jsonl with in-cell timings per cell on the four scenes, routes per action, the probe
 #           verdicts; a summary.md with the promote/discard table against the vendor lane
+# a vendor run that dies: node scripts/spike/engine/measure.mjs cleanup --device mini --preparation <run dir>/preparation.json
 
 # M1b: build and approve the engine on the mini (OWNER first: the certificate in the login keychain, signingIdentity in ~/.config/cua/engine.json, the partition-list command, the keychain unlocked; then the approve step at the console)
 ssh mini 'security find-identity -v -p codesigning && rm -f /tmp/sign-probe && touch /tmp/sign-probe && codesign -f -s "$(jq -r .signingIdentity ~/.config/cua/engine.json)" /tmp/sign-probe'

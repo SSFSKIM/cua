@@ -55,6 +55,18 @@ export function keptFinderWindow(kept, checked) {
   if ((checked.finderOffScreenWindows ?? []).some(w => w.number === number)) throw new Error('the run\'s Finder window is not on screen; bring it back or close it');
   return false;
 }
+// The sitting's kept Finder record, before the run's scenes come up: reused while its window is on screen; a record
+// whose window is gone (a person closed it, or Finder quit, between runs) is cleared through `down finder`, which
+// succeeds once the window is gone, so `up finder` can open a new one rather than refuse "already up". -> reuse.
+export function keptFinderRecord({kept, checked, sceneCli, sceneDir, log = () => {}, meta = {}}) {
+  if (keptFinderWindow(kept, checked)) return true;
+  if (!kept) return false;
+  const down = sceneCli(['down', 'finder', '--run', sceneDir]);
+  if (down.down !== true) throw new Error(`the kept Finder record (window ${kept.window?.number}) could not be cleared: ${down.reason ?? down.error ?? 'down finder failed'}`);
+  meta.finderRecordCleared = {window: kept.window?.number ?? null};
+  log(`the kept Finder window ${kept.window?.number} is gone; its record was cleared and the run opens a new one`);
+  return false;
+}
 const CELL_MS = 60_000, BIND_MS = 120_000;
 const round = ms => Math.round(ms * 1000) / 1000;
 
@@ -189,7 +201,7 @@ export async function runOnce(options, io) {
     meta.finderOffScreenWindows = checked.finderOffScreenWindows ?? [];
     meta.finderHidden = checked.finderHidden ?? null;
     const kept = readSceneState(shell, sceneDir).scenes ?? {};
-    const finderKept = scenes.includes('finder') && keptFinderWindow(kept.finder, checked);
+    const finderKept = scenes.includes('finder') && keptFinderRecord({kept: kept.finder, checked, sceneCli, sceneDir, log, meta});
 
     if (lane === 'cua' && probes.includes('c')) await probeC({d, shell, ops, emit, front, log, meta});
     if (lane === 'cua') meta.engineLaunch = {via: 'open -n -g -a', ...pick(await launchEngine(ops), ['pid', 'build', 'accessibility', 'screenRecording', 'connections'])};

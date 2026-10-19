@@ -9,11 +9,12 @@ import * as fs from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {parseCommand} from '../scripts/spike/engine/measure.mjs';
-import {switchVerdict, SWITCHES, isSceneApproval, notRunRows, STRUCTURAL_ROWS, NOT_BUILT, CUA_INPUT_METHODS_BUILT, isSessionFile, withInputSource, runOnce, SCENE_ORDER, cuaServeCommand, UNICODE_STRINGS, keptFinderWindow, VENDOR_ONLY_ROWS} from '../scripts/spike/engine/measure/lane.mjs';
+import {keptFinderRecord, switchVerdict, SWITCHES, isSceneApproval, notRunRows, STRUCTURAL_ROWS, NOT_BUILT, CUA_INPUT_METHODS_BUILT, isSessionFile, withInputSource, runOnce, SCENE_ORDER, cuaServeCommand, UNICODE_STRINGS, keptFinderWindow, VENDOR_ONLY_ROWS} from '../scripts/spike/engine/measure/lane.mjs';
 import {summarize, renderSummary, median} from '../scripts/spike/engine/measure/summary.mjs';
 import {redactGolden} from '../scripts/spike/engine/measure/redact.mjs';
 import {NOTE} from '../scripts/spike/engine/render.mjs';
 import * as spikeCells from '../scripts/spike/engine/measure/cells.mjs';
+import {indexOfTarget} from '../scripts/spike/engine/measure/cells.mjs';
 import {deviceOf, inCheckout} from '../scripts/spike/engine/measure/device.mjs';
 import {parseCell, SCREENSHOT} from '../scripts/native-baseline/cells.mjs';
 
@@ -372,4 +373,46 @@ test('a kept Finder scene is reused only while its window is on screen; kept but
   assert.throws(() => keptFinderWindow(kept, {finderWindows: [], finderOffScreenWindows: [{number: 77, bounds: {}}]}), /^Error: the run's Finder window is not on screen; bring it back or close it$/);
   // Gone altogether (closed by someone): not reused; `up` then reports the scene as still recorded.
   assert.equal(keptFinderWindow(kept, {finderWindows: [], finderOffScreenWindows: [{number: 5}]}), false);
+});
+
+// The vendor's text as the MacBook window recorded it (harness-owned scene windows; the vendor's role words are the
+// system's language): Chrome for Testing's page exposed no web content to the vendor, so no fixture control has a line.
+const VENDOR_CHROME = ['Window: "cua scene page", App: Google Chrome for Testing.',
+  '0 표준 윈도우 cua scene page - Chrome for Testing, URL: 127.0.0.1:50759/, Secondary Actions: Raise',
+  '\t1 container cua scene page - Chrome for Testing, URL: 127.0.0.1:50759/', '\t\t2 container', '\t\t\t3 도구 막대',
+  '\t\t11 container', '\t\t17 container', '\t\t\t18 탭 그룹', '\t\t\t\t19 탭 (selected, settable, boolean) cua scene page, Value: on', '\t31 닫기 버튼', '34 menu bar', '\t36 파일'].join('\n');
+
+test('the action target matcher names a whole part of an element line, whatever the role word; the vendor\'s page without web content has no target', () => {
+  assert.equal(indexOfTarget(VENDOR_CHROME, 'Scene option'), null, 'the recorded vendor text exposes no page control');
+  assert.equal(indexOfTarget(VENDOR_CHROME, 'cua scene page'), 19, 'a title that only begins the window\'s title is not it; the tab named exactly is');
+  const exposed = [...VENDOR_CHROME.split('\n').slice(0, 3), '\t\t\t4 웹 영역 cua scene page', '\t\t\t\t5 머리말 cua scene page', '\t\t\t\t6 체크박스 (settable, boolean) Scene options', '\t\t\t\t7 체크박스 (settable, boolean) Scene option, Value: off'].join('\n');
+  assert.equal(indexOfTarget(exposed, 'Scene option'), 7, 'a longer name that begins with it is not it');
+  const textedit = '\t\t2 text entry area (settable) ID: First Text View, Value: cua scene document\nBold scene line\n\nThe focused UI element is 2 text entry area (settable) ID: First Text View, Value: cua scene document';
+  assert.equal(indexOfTarget(textedit, 'cua scene document'), 2, 'a label\'s text; the trailer\'s line is not an element line');
+  assert.equal(indexOfTarget('\t\t9 버튼 Fixture button\n+\t\t3 button Fixture button', 'Fixture button'), 9);
+  assert.equal(indexOfTarget('~\t3 버튼 a.b(c)', 'a.b(c)'), 3, 'the name is matched literally');
+});
+
+test('the action golden reads three times a second apart, then fails naming the target as not exposed, clicking nothing', async () => {
+  let reads = 0, clicks = 0;
+  const apps = {chrome: {getAXState: async () => { reads++; return VENDOR_CHROME; }, click: async () => { clicks++; }}};
+  const out = await runCell(spikeCells.ACTION_GOLDEN('chrome', '/cft.app', 'cua scene page', 'Scene option', {raw: false}), {apps, rpc: async () => null});
+  assert.equal(out.ok, false);
+  assert.match(out.error, /not exposed in the scene's tree \(11 elements after 3 observations a second apart\); nothing was clicked/);
+  assert.deepEqual([reads, clicks], [3, 0]);
+});
+
+test('a kept Finder record is reused while its window is on screen; a vanished window\'s record is cleared through down finder', () => {
+  const kept = {scene: 'finder', pid: 600, window: {number: 77}};
+  const calls = [], logged = [], meta = {};
+  const sceneCli = args => { calls.push(args.join(' ')); return {scene: 'finder', down: true}; };
+  assert.equal(keptFinderRecord({kept, checked: {finderWindows: [77]}, sceneCli, sceneDir: '/s'}), true);
+  assert.deepEqual(calls, [], 'an on-screen kept window is reused, nothing cleared');
+  assert.equal(keptFinderRecord({kept: undefined, checked: {finderWindows: []}, sceneCli, sceneDir: '/s'}), false);
+  assert.equal(keptFinderRecord({kept, checked: {finderWindows: [12]}, sceneCli, sceneDir: '/s', log: line => logged.push(line), meta}), false);
+  assert.deepEqual(calls, ['down finder --run /s']);
+  assert.deepEqual(meta.finderRecordCleared, {window: 77});
+  assert.match(logged[0], /kept Finder window 77 is gone; its record was cleared/);
+  assert.throws(() => keptFinderRecord({kept, checked: {finderWindows: []}, sceneCli: () => ({down: false, reason: 'still open'}), sceneDir: '/s'}), /could not be cleared: still open/);
+  assert.throws(() => keptFinderRecord({kept, checked: {finderWindows: [], finderOffScreenWindows: [{number: 77}]}, sceneCli, sceneDir: '/s'}), /not on screen/);
 });

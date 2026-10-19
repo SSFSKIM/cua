@@ -12,9 +12,23 @@ import {cell, SCREENSHOT} from '../../../native-baseline/cells.mjs';
 const j = JSON.stringify;
 // Shared helpers inside an observing cell: the front window's title (compared, never returned), element facts, the
 // first element index whose line names `name`, and a SHA-256 prefix.
+// The index of the first element line that names `name` as a whole part of the grammar: the bare title, or a label's
+// text (`Value: <name>`), ended by the next part's comma or the line's end, whatever the role word (the vendor's are
+// localized). A longer name that begins with it ("Scene options") or a window title that contains it ("cua scene page -
+// Chrome for Testing") is not it. Embedded into the cells by its source, so the cells and the tests share one matcher.
+export function indexOfTarget(ax, name) {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const part = new RegExp('(?:^| |: )' + escaped + '(?:,|$)');
+  for (const line of String(ax).split('\n')) {
+    const element = /^[~+-]?[\t ]*(\d+) (.*)$/.exec(line);
+    if (element && part.test(element[2])) return Number(element[1]);
+  }
+  return null;
+}
+
 const HELPERS = `const __front = ax => ax?.match(/^Window: "([^"]*)"/m)?.[1] ?? null;
 const __facts = ax => ({chars: ax.length, textBytes: Buffer.byteLength(ax), lines: ax.split("\\n").length, elements: (ax.match(/^[\\t ]*\\d+ /gm) ?? []).length});
-const __indexOf = (ax, name) => { const line = ax.split("\\n").find(l => /^[\\t ]*\\d+ /.test(l) && l.includes(name)); return line ? Number(line.match(/^[\\t ]*(\\d+) /)[1]) : null; };
+const __indexOf = ${indexOfTarget.toString()};
 const __hash = async text => (await import("node:crypto")).createHash("sha256").update(text).digest("hex").slice(0, 16);
 const __full = app => app.getAXState({emit: false, disableDiffing: true});`;
 
@@ -142,13 +156,18 @@ try {
   const bound = globalThis.__apps[${j(scene)}];
   const files = [];
   const keep = async (name, text) => files.push({kind: name, ...await __write(${j(`${scene}.action.`)} + name, text)});
-  const before = await __full(bound);
-  const front = __front(before);
-  if (typeof front !== "string" || !front.startsWith(${j(prefix)})) throw new Error("the scene window was not the app's front window; nothing was clicked");
+  // The target may come late (a web area appears after enablement): up to three observations a second apart.
+  let before = null, index = null;
+  for (let attempt = 1; attempt <= 3 && index === null; attempt++) {
+    if (attempt > 1) await new Promise(resolve => setTimeout(resolve, 1000));
+    before = await __full(bound);
+    const front = __front(before);
+    if (typeof front !== "string" || !front.startsWith(${j(prefix)})) throw new Error("the scene window was not the app's front window; nothing was clicked");
+    index = __indexOf(before, ${j(target)});
+  }
+  if (index === null) throw new Error("the action's target is not exposed in the scene's tree (" + __facts(before).elements + " elements after 3 observations a second apart); nothing was clicked");
   await keep("before.txt", before);
   if (${j(raw)}) await keep("before.skyshot.json", JSON.stringify(await __skyshot(${j(app)}), null, 1));
-  const index = __indexOf(before, ${j(target)});
-  if (index === null) throw new Error("the action's target is not in the scene's tree; nothing was clicked");
   await bound.click(index);
   await keep("diff.txt", await bound.getAXState({emit: false}));
   if (${j(raw)}) await keep("after-diff.skyshot.json", JSON.stringify(await __skyshot(${j(app)}), null, 1));

@@ -49,6 +49,33 @@ final class DerivationTests: XCTestCase {
     XCTAssertFalse(isSelected(selected: nil, traits: nil))
   }
 
+  /// FUN_1007816a0 asks the system only when the fixed table (FUN_100783260, the statics at 0x1014033e8) and the
+  /// custom action's `Name:` (FUN_100783928) give nothing.
+  func testTheSystemIsAskedOnlyForActionsTheTableAndNameLeaveUndescribed() {
+    for action in ["AXPress", "AXPick", "AXIncrement", "AXDecrement", "AXConfirm", "AXCancel", "AXShowDefaultUI", "AXShowAlternateUI",
+                   "AXRaise", "AXShowMenu", "AXScrollToVisible", "AXScrollLeftByPage", "AXScrollRightByPage", "AXScrollUpByPage",
+                   "AXScrollDownByPage", "AXDelete", "SAIExpand", "SAICollapse"] {
+      XCTAssertFalse(asksSystemForDescription(action), action)
+    }
+    XCTAssertEqual(vendorActionWordNames.count, 18)
+    XCTAssertFalse(asksSystemForDescription("Name:Share\nTarget:0x0\nSelector:(null)"))
+    XCTAssertTrue(asksSystemForDescription("AXZoomWindow"))
+    XCTAssertTrue(asksSystemForDescription("AXOpen"))
+    XCTAssertTrue(asksSystemForDescription("Name:\n"), "a Name: with nothing before the newline gives no name")
+  }
+
+  /// FUN_100783928: `Name:` scanned off, then up to the newline, with NSScanner's default skipping of leading
+  /// whitespace and newlines.
+  func testACustomActionsNameIsTheTextAfterNameUpToTheNewline() {
+    XCTAssertEqual(customActionName("Name:Share\nTarget:0x0"), "Share")
+    XCTAssertEqual(customActionName("Name: Add tag\nTarget:0x0"), "Add tag")
+    XCTAssertEqual(customActionName("Name:Tags"), "Tags")
+    XCTAssertNil(customActionName("Name:"))
+    XCTAssertNil(customActionName("Name:\n"))
+    XCTAssertNil(customActionName("AXPress"))
+    XCTAssertNil(customActionName("name:Share"))
+  }
+
   func testMenuAndMenuBarItemsAreNeverSelectable() {
     XCTAssertFalse(selectableRole("AXMenuItem"))
     XCTAssertFalse(selectableRole("AXMenuBarItem"))

@@ -109,13 +109,14 @@ final class TokenResolutionTests: XCTestCase {
     tree.children = [0: [1]]
     tree.extra = [90: ["AXRole": "AXMenuBarItem" as CFString, "AXTitle": "File" as CFString]]
     let lineage = Lineage()
-    _ = walk(tree, lineage, menu: [90])
+    tree.extra[89] = ["AXRole": "AXMenuBar" as CFString]
+    _ = walk(tree, lineage, menuBar: 89, menu: [88, 90])   // the bar t2, File t3
     tree.unreadable = [90]
     tree.extra[91] = tree.extra[90]
     let fake = FakeResolution(tree)
     fake.invalidated = true
-    fake.menu = [91]
-    XCTAssertTrue(CFEqual(try lineage.resolve(elementToken(2), resolver: fake.resolver).element, Engine.element(91)))
+    fake.menu = [89, 88, 91]
+    XCTAssertTrue(CFEqual(try lineage.resolve(elementToken(3), resolver: fake.resolver).element, Engine.element(91)))
   }
 
   func testTheVendorsSentencesInTheVendorsOrder() {

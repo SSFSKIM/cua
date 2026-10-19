@@ -79,3 +79,28 @@ func windowServerName(of window: CGWindowID) -> (name: String?, desktopLevel: Bo
   let level = info[kCGWindowLayer as String] as? Int
   return ((info[kCGWindowName as String] as? String).map(bounded), level == Int(CGWindowLevelForKey(.desktopIconWindow)))
 }
+
+/// The actions FUN_100783260 describes with a fixed English word (its statics at 0x1014033e8–0x1014034f8), before any
+/// custom name or system description: FUN_1007816a0 skips `description(for:)` 0x1006e8bf8 whenever the table answers
+/// (`cbnz x1` at 0x10078177c). The words are the renderer's (render.mjs, ACTION_WORDS); the engine needs only the names,
+/// to leave the system unasked.
+let vendorActionWordNames: Set<String> = [
+  "AXPress", "AXPick", "AXIncrement", "AXDecrement", "AXConfirm", "AXCancel", "AXShowDefaultUI", "AXShowAlternateUI",
+  "AXRaise", "AXShowMenu", "AXScrollToVisible", "AXScrollLeftByPage", "AXScrollRightByPage", "AXScrollUpByPage",
+  "AXScrollDownByPage", "AXDelete", "SAIExpand", "SAICollapse",
+]
+
+/// A custom action's name, FUN_100783928: for an action starting `Name:`, an NSScanner scans `Name:` off and then up to
+/// the first newline (skipping leading whitespace and newlines, the scanner's default); nil when nothing is scanned.
+func customActionName(_ action: String) -> String? {
+  guard action.hasPrefix("Name:") else { return nil }
+  let scanner = Scanner(string: action)
+  guard scanner.scanString("Name:") != nil else { return nil }
+  return scanner.scanUpToString("\n")
+}
+
+/// Whether FUN_1007816a0 asks the system for an action's description: only when neither the table nor a custom name
+/// describes it.
+func asksSystemForDescription(_ action: String) -> Bool {
+  !vendorActionWordNames.contains(action) && customActionName(action) == nil
+}

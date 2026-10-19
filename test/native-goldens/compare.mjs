@@ -245,13 +245,13 @@ export const CORRECTIONS = {
 
 // Corrections of the Skyshot as a whole.
 export const SHOT_CORRECTIONS = {
-  // The menu bar's own node, which the recordings lack: the AXMenuBar element (no role description) leading the items,
-  // which sit one level under it.
+  // The menu bar as the engine now emits it, which the recordings lack: the AXMenuBar element (no role description)
+  // leading the items, which sit one level under it, the first (the Apple menu, never read into a node) left out.
   menuBarElement: (shot, {token}) => (shot.menuBar.length && shot.menuBar[0].role !== 'AXMenuBar'
     ? {...shot, menuBar: [{token, depth: 0, pid: shot.app.pid, role: 'AXMenuBar', subrole: null, roleDescription: null, title: null,
         description: null, value: null, valueType: null, valueMarkdown: null, identifier: null,
         flags: {enabled: true, focused: false, focusable: false, selected: false, selectable: false, settable: false},
-        actions: [], frame: null, children: shot.menuBar.length}, ...shot.menuBar.map(item => ({...item, depth: 1}))]}
+        actions: [], frame: null, children: shot.menuBar.length - 1}, ...shot.menuBar.slice(1).map(item => ({...item, depth: 1}))]}
     : shot),
 };
 

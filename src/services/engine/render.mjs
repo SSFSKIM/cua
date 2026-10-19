@@ -36,9 +36,9 @@
 //   const text = state && !disableDiff ? diff(state, {skyshot, numbering}) : render(skyshot, numbering);
 //   state = {skyshot, numbering};   // every observation advances the baseline [B §9]
 //
-// The menu bar: the Skyshot's `menuBar` carries the engine's AXMenuBar node and, under it, the top-level items; the
-// vendor prints that element after the window's tree, numbered like any other, with its items (the Apple menu and any
-// titled `Debug` excepted) as its children, their actions cleared (`addMenuBarWithImmediateItems` 0x1007569b8).
+// The menu bar: the Skyshot's `menuBar` carries the engine's AXMenuBar node and, under it, the top-level items the
+// vendor keeps (the engine leaves out the Apple menu and any titled `Debug`); the vendor prints that element after the
+// window's tree, numbered like any other, with its items' actions cleared (`addMenuBarWithImmediateItems` 0x1007569b8).
 
 // The vendor's selection note [E §5.1], the first of its two variants (they print identically).
 export const NOTE = 'Note: Pay special attention to the content selected by the user. If the user asks a question or refers to the content they are looking at on-screen, they might be referring to the selected content (but they might be referring to something else that\'s visible, too).';
@@ -199,15 +199,13 @@ function actionDescriptions(raw) {
 
 // The menu bar (`addMenuBarWithImmediateItems` 0x1007569b8): the engine's AXMenuBar node, printed by the ordinary line
 // (with no role description, the vendor's fallback word `menu bar` [B §6]; golden: all four scenes), whose children are
-// its top-level items but the first (the system's Apple menu, whatever its localized title: the vendor skips index 0)
-// and any whose title contains `Debug`, each with its actions cleared, so an item prints its title and flags. A
+// the items the engine emitted under it, each with its actions cleared, so an item prints its title and flags. A
 // Skyshot without the bar's node (M0's recordings) prints its items as top-level elements.
 function menuBar(nodes) {
   const roots = forest(nodes);
   for (const root of roots) {
     if (root.role !== 'AXMenuBar') continue;
-    root.children = root.children.slice(1).filter(item => !String(item.title ?? '').includes('Debug'))
-      .map(item => ({...item, actions: [], actionsCleared: true, children: []}));
+    root.children = root.children.map(item => ({...item, actions: [], actionsCleared: true, children: []}));
   }
   return roots;
 }
@@ -497,16 +495,17 @@ export function formatNumber(number) {
   return trim(number.toFixed(15 - exponent));
 }
 
-// The vendor prints each action's description: the system's (AXUIElementCopyActionDescription), localized to the
-// Mac's language (`zoom the window` in TextEdit, `윈도우 확대/축소` in Chrome on the Korean mini); the engine reads them
-// into the Skyshot's `actionDescriptions`, which print as they are. Where the system gives none the vendor carries the
-// action's name (FUN_1007515a8) yet prints a word (AXRaise prints `Raise` in every scene and language [golden; E §5.2]),
-// by a step not read; the engine carries null there, and a null, or a Skyshot without descriptions (M0's recordings),
-// prints these words: the ones the recordings showed, a custom action's name, else its AX name split into words
-// (`Zoom Window`, a declared difference in the goldens).
+// The vendor describes an action by the first of (FUN_1007816a0): a fixed English word (FUN_100783260, its statics at
+// 0x1014033e8; so AXRaise prints `Raise` on the Korean mini too [golden]), a custom action's `Name:` (FUN_100783928),
+// the system's description (AXUIElementCopyActionDescription, localized to the Mac's language: `zoom the window` in
+// TextEdit, `윈도우 확대/축소` in Chrome on the Korean mini), else the action's name (FUN_1007515a8). The engine asks the
+// system only past the first two and carries the answer in the Skyshot's `actionDescriptions`. A Skyshot without them
+// (M0's recordings) prints the AX name split into words instead (`Zoom Window`, a declared difference in the goldens).
 const ACTION_WORDS = {
-  AXRaise: 'Raise', AXDelete: 'Delete', AXConfirm: 'Confirm', AXCancel: 'Cancel', AXIncrement: 'Increment', AXDecrement: 'Decrement',
-  AXScrollLeftByPage: 'Scroll Left', AXScrollRightByPage: 'Scroll Right', AXScrollUpByPage: 'Scroll Up', AXScrollDownByPage: 'Scroll Down',
+  AXPress: 'Press', AXPick: 'Pick', AXIncrement: 'Increment', AXDecrement: 'Decrement', AXConfirm: 'Confirm', AXCancel: 'Cancel',
+  AXShowDefaultUI: 'Show Default UI', AXShowAlternateUI: 'Show Alternate UI', AXRaise: 'Raise', AXShowMenu: 'Show Menu',
+  AXScrollToVisible: 'Scroll to Visible', AXScrollLeftByPage: 'Scroll Left', AXScrollRightByPage: 'Scroll Right',
+  AXScrollUpByPage: 'Scroll Up', AXScrollDownByPage: 'Scroll Down', AXDelete: 'Delete', SAIExpand: 'Expand', SAICollapse: 'Collapse',
 };
 // Kinds press, showMenu and scrollToVisible are not secondary [B §6]; AXPick is the vendor's click action [B §10].
 const PRIMARY_ACTIONS = new Set(['AXPress', 'AXPick', 'AXShowMenu', 'AXScrollToVisible']);
@@ -516,16 +515,24 @@ const DROPPED_DESCRIPTIONS = new Set(['Add comment', 'Remove unused rows', 'Remo
 // [E §2.1; golden: Finder's expanded sidebar sections carry one 8-character secondary action].
 function secondaryActions(node) {
   if (node.actionsCleared) return [];
-  const describe = action => node.descriptions?.get(action) ?? actionDescription(action);
+  const describe = action => ACTION_WORDS[action] ?? customActionName(action) ?? node.descriptions?.get(action) ?? splitName(action);
   const names = node.actions.filter(action => !PRIMARY_ACTIONS.has(action)).map(describe).filter(name => name && !DROPPED_DESCRIPTIONS.has(name));
   if (node.flags.disclosable) names.push(node.flags.expanded ? 'Collapse' : 'Expand');
   return names;
 }
 
 export function actionDescription(action) {
-  if (ACTION_WORDS[action]) return ACTION_WORDS[action];
-  const custom = /^Name:([^\n]*)/.exec(action);
-  if (custom) return custom[1];
+  return ACTION_WORDS[action] ?? customActionName(action) ?? splitName(action);
+}
+
+// FUN_100783928: an NSScanner scans `Name:` off, skips whitespace and newlines (its default), and scans up to the next
+// newline; null when nothing is left.
+function customActionName(action) {
+  if (!action.startsWith('Name:')) return null;
+  return action.slice(5).replace(/^\s+/, '').split('\n')[0] || null;
+}
+
+function splitName(action) {
   return action.replace(/^AX/, '').replace(/([a-z])([A-Z])/g, '$1 $2');
 }
 

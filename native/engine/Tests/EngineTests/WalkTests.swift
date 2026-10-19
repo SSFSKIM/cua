@@ -112,22 +112,22 @@ final class WalkTests: XCTestCase {
   func testAFreshLineageTokensThePreorderWithTheMenuBarAfterTheWindowAndNoIndexOnTheWire() {
     let tree = FakeTree()
     tree.children = [0: [1, 4], 1: [2, 3], 90: [91]]
-    let first = walk(tree, Lineage(), menu: [90, 92])
+    let first = walk(tree, Lineage(), menuBar: 89, menu: [88, 90, 92])
     XCTAssertEqual(first.nodes.map { $0["title"] as! String }, ["node 0", "node 1", "node 2", "node 3", "node 4"])
     XCTAssertEqual(first.nodes.map { $0["token"] as! String }, [t(0), t(1), t(2), t(3), t(4)])
     XCTAssertTrue(first.nodes.allSatisfy { $0["index"] == nil }, "the engine numbers nothing for the model: the service does")
     XCTAssertEqual(first.nodes.map { $0["depth"] as! Int }, [0, 1, 2, 2, 1])
-    XCTAssertEqual(first.menuBar.map { $0["token"] as! String }, [t(5), t(6)])
-    XCTAssertEqual(first.menuBar.map { $0["children"] as! Int }, [0, 0], "menu-bar items are not walked into")
-    XCTAssertEqual(first.menuBar.map { $0["depth"] as! Int }, [0, 0])
+    XCTAssertEqual(first.menuBar.map { $0["token"] as! String }, [t(5), t(6), t(7)])
+    XCTAssertEqual(first.menuBar.map { $0["children"] as! Int }, [2, 0, 0], "menu-bar items are not walked into")
+    XCTAssertEqual(first.menuBar.map { $0["depth"] as! Int }, [0, 1, 1])
   }
 
   func testAnUnchangedTreeKeepsEveryToken() {
     let tree = FakeTree()
     tree.children = [0: [1, 4], 1: [2, 3]]
     let lineage = Lineage()
-    let first = tokens(walk(tree, lineage, menu: [90]))
-    XCTAssertEqual(tokens(walk(tree, lineage, menu: [90])), first)
+    let first = tokens(walk(tree, lineage, menuBar: 89, menu: [88, 90]))
+    XCTAssertEqual(tokens(walk(tree, lineage, menuBar: 89, menu: [88, 90])), first)
   }
 
   func testANewElementTakesANewTokenAndARetiredTokenIsNeverReissued() {
@@ -275,19 +275,19 @@ final class WalkTests: XCTestCase {
   func testANodeCutKeepsTheMenuBar() {
     let tree = FakeTree()
     tree.children = [0: Array(1...10)]
-    let cut = walk(tree, Lineage(), menu: [90, 91], limits: WalkLimits(nodes: 4, deadline: .infinity))
-    XCTAssertEqual(cut.nodes.count, 2, "the window's walk gets the budget less the menu bar's items")
-    XCTAssertEqual(cut.menuBar.count, 2)
-    XCTAssertEqual(cut.menuBar.map { $0["token"] as! String }, [t(2), t(3)], "still tokened after the window's nodes")
+    let cut = walk(tree, Lineage(), menuBar: 89, menu: [88, 90, 91], limits: WalkLimits(nodes: 5, deadline: .infinity))
+    XCTAssertEqual(cut.nodes.count, 2, "the window's walk gets the budget less the menu bar's nodes")
+    XCTAssertEqual(cut.menuBar.count, 3)
+    XCTAssertEqual(cut.menuBar.map { $0["token"] as! String }, [t(2), t(3), t(4)], "still tokened after the window's nodes")
     XCTAssertTrue(cut.nodeCapHit)
   }
 
   func testAByteCutKeepsTheMenuBar() {
     let tree = FakeTree()
     tree.children = [0: Array(1...30)]
-    let cut = walk(tree, Lineage(), menu: [90, 91, 92], limits: WalkLimits(bytes: 2_500, deadline: .infinity))
+    let cut = walk(tree, Lineage(), menuBar: 89, menu: [88, 90, 91, 92], limits: WalkLimits(bytes: 2_500, deadline: .infinity))
     XCTAssertTrue(cut.budgetHit)
-    XCTAssertEqual(cut.menuBar.count, 3)
+    XCTAssertEqual(cut.menuBar.count, 4)
     XCTAssertLessThan(cut.nodes.count, 31)
   }
 
@@ -412,12 +412,15 @@ final class WalkTests: XCTestCase {
   func testSelectedFallsBackToTheSelectedTraitAndMenuItemsAreNeverSelectable() {
     let tree = FakeTree()
     tree.children = [0: [1, 2]]
+    tree.children = [0: [1, 2, 3]]
     tree.extra = [1: ["AXTraits": selectedTrait as CFNumber],
-                  2: ["AXRole": "AXMenuItem" as CFString, "AXSelected": kCFBooleanFalse]]
+                  2: ["AXRole": "AXMenuItem" as CFString, "AXSelected": kCFBooleanFalse],
+                  3: ["AXSelectable": kCFBooleanTrue, "AXSelected": kCFBooleanFalse]]
     tree.settable = [2: [kAXSelectedAttribute]]
-    let nodes = walk(tree, Lineage(), menuBar: 90, menu: [91]).nodes
+    let nodes = walk(tree, Lineage()).nodes
     XCTAssertEqual(flags(nodes[1])["selected"] as? Bool, true, "a Catalyst element's selected trait")
     XCTAssertEqual(flags(nodes[2])["selectable"] as? Bool, false, "a menu item, though AXSelected is settable")
+    XCTAssertEqual(flags(nodes[3])["selectable"] as? Bool, false, "AXSelectable is not the vendor's: AXSelected is not settable")
   }
 
   func testAWindowWithoutAURLCarriesItsDocument() {
@@ -430,43 +433,64 @@ final class WalkTests: XCTestCase {
     XCTAssertEqual(nodes[1]["url"] as? String, "http://127.0.0.1:9/", "AXURL wins over the document")
   }
 
-  /// Each action's description is the system's (AXUIElementCopyActionDescription), null when it gives none (the vendor
-  /// carries the name there, FUN_1007515a8, and prints a word of its own; the renderer supplies that word). One call per
+  /// FUN_1007816a0: the fixed table's word (FUN_100783260) or a custom action's `Name:` (FUN_100783928) describes an
+  /// action without asking the system; those carry null, the renderer printing the word. Any other action is the
+  /// system's description (AXUIElementCopyActionDescription), else its name (FUN_1007515a8's pair). One system call per
   /// action name and process in a walk.
-  func testActionDescriptionsAreTheSystemsElseNull() {
+  func testActionDescriptionsAskTheSystemOnlyPastTheTableAndName() {
     let tree = FakeTree()
     tree.children = [0: [1, 2, 3]]
-    tree.actions = [1: ["AXPress", "AXZoomWindow"], 2: ["AXZoomWindow", "AXRaise"], 3: ["AXZoomWindow"]]
+    tree.actions = [1: ["AXPress", "AXZoomWindow"], 2: ["AXZoomWindow", "AXRaise", "AXOpen", "Name:Share\nTarget:0x0"], 3: ["AXZoomWindow"]]
     tree.owners = [3: 5151]
-    tree.descriptions = ["AXZoomWindow": "윈도우 확대/축소", "AXPress": "누르기"]
+    tree.descriptions = ["AXZoomWindow": "윈도우 확대/축소", "AXPress": "누르기", "AXRaise": "앞으로 가져오기"]
     let source = FakeSource(tree)
     let nodes = walk(tree, Lineage(), source: source).nodes
-    XCTAssertEqual(nodes[1]["actionDescriptions"] as? [String], ["누르기", "윈도우 확대/축소"])
-    let undescribed = nodes[2]["actionDescriptions"] as? [Any]
-    XCTAssertEqual(undescribed?.first as? String, "윈도우 확대/축소")
-    XCTAssertTrue(undescribed?.last is NSNull, "no description: null")
+    let first = nodes[1]["actionDescriptions"] as? [Any]
+    XCTAssertTrue(first?.first is NSNull, "a table word: the system is not asked")
+    XCTAssertEqual(first?.last as? String, "윈도우 확대/축소")
+    let second = try! XCTUnwrap(nodes[2]["actionDescriptions"] as? [Any])
+    XCTAssertEqual(second.count, 4)
+    XCTAssertEqual(second[0] as? String, "윈도우 확대/축소")
+    XCTAssertTrue(second[1] is NSNull, "AXRaise is the table's, whatever the system says")
+    XCTAssertEqual(second[2] as? String, "AXOpen", "no description from the system: the action's name")
+    XCTAssertTrue(second[3] is NSNull, "a custom action's Name:")
     XCTAssertEqual((nodes[0]["actionDescriptions"] as? [Any])?.count, 0)
-    XCTAssertEqual(source.descriptionCalls, ["AXPress": 1, "AXZoomWindow": 2, "AXRaise": 1], "cached per process and action")
+    XCTAssertEqual(source.descriptionCalls, ["AXZoomWindow": 2, "AXOpen": 1], "cached per process and action")
   }
 
   /// addMenuBarWithImmediateItems 0x1007569b8: the AXMenuBar element is a node of its own, its top-level items its
-  /// children; it lies outside the window's subtree, so it is read as the vendor reads such an element, through the
-  /// attributes it lists (FUN_1007542cc's fallback; F §1.3).
-  func testTheMenuBarIsANodeLeadingItsItems() {
+  /// children, except the first (the Apple menu) and any titled with `Debug`, which the vendor never reads into a node.
+  /// The bar and its items lie outside the window's subtree, so each is read as the vendor reads such an element,
+  /// through the attributes it lists (FUN_1007542cc's fallback; F §1.3).
+  func testTheMenuBarIsANodeLeadingItsItemsButTheAppleMenuAndDebug() {
     let tree = FakeTree()
-    tree.children = [0: [1], 90: [91, 92]]
+    tree.children = [0: [1], 90: [91, 92, 93, 94]]
     tree.extra = [90: ["AXRole": "AXMenuBar" as CFString, "AXRoleDescription": "메뉴 막대" as CFString],
-                  91: ["AXRole": "AXMenuBarItem" as CFString], 92: ["AXRole": "AXMenuBarItem" as CFString]]
+                  91: ["AXRole": "AXMenuBarItem" as CFString, "AXTitle": "Apple" as CFString],
+                  92: ["AXRole": "AXMenuBarItem" as CFString], 93: ["AXRole": "AXMenuBarItem" as CFString, "AXTitle": "Debug Menu" as CFString],
+                  94: ["AXRole": "AXMenuBarItem" as CFString]]
     tree.listed = [90: ["AXRole", "AXTitle", "AXChildren"]]
     let source = FakeSource(tree)
-    let walked = walk(tree, Lineage(), menuBar: 90, menu: [91, 92], source: source)
+    let walked = walk(tree, Lineage(), menuBar: 90, menu: [91, 92, 93, 94], source: source)
     XCTAssertEqual(walked.menuBar.map { $0["role"] as! String }, ["AXMenuBar", "AXMenuBarItem", "AXMenuBarItem"])
+    XCTAssertEqual(walked.menuBar.map { $0["title"] as? String }, ["node 90", "node 92", "node 94"])
     XCTAssertEqual(walked.menuBar.map { $0["depth"] as! Int }, [0, 1, 1])
     XCTAssertEqual(walked.menuBar.map { $0["token"] as! String }, [t(2), t(3), t(4)], "tokened after the window's nodes")
     XCTAssertTrue(walked.menuBar[0]["roleDescription"] is NSNull, "an attribute the bar does not list is not read")
     XCTAssertEqual(walked.menuBar[0]["children"] as? Int, 2)
-    XCTAssertEqual(source.listedReads, [90: 1])
+    XCTAssertEqual(source.listedReads, [90: 1, 92: 1, 93: 1, 94: 1], "every menu-bar element through its listed attributes; the Apple menu not at all")
+    XCTAssertNil(source.reads[91])
     XCTAssertNotNil(walked.token(of: element(90)), "the bar's node resolves like any other")
+  }
+
+  func testAMenuBarThatCannotBeReadEmitsNoMenuBar() {
+    let tree = FakeTree()
+    tree.children = [0: [1]]
+    tree.unreadable = [90]
+    tree.extra = [92: ["AXRole": "AXMenuBarItem" as CFString]]
+    let walked = walk(tree, Lineage(), menuBar: 90, menu: [91, 92])
+    XCTAssertTrue(walked.menuBar.isEmpty, "no items orphaned under a bar that is not there")
+    XCTAssertEqual(walked.nodes.count, 2)
   }
 
   func testAnAbsentRoleDescriptionIsNull() {

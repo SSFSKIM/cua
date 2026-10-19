@@ -54,7 +54,7 @@
       "correction": "menuBarElement",
       "token": "menuBar",
       "fault": "engine",
-      "cause": "Engine (the Skyshot shape): the recordings carry the menu bar's top-level items and not the AXMenuBar element, which the vendor reads as a node of its own and prints after the window's tree with the items under it (`addMenuBarWithImmediateItems` 0x1007569b8); the renderer no longer synthesizes it. Since M1a.2b the engine emits the element (with no role description when it lists none, the vendor's `menu bar`)."
+      "cause": "Engine (the Skyshot shape): the recordings carry the menu bar's top-level items and not the AXMenuBar element, which the vendor reads as a node of its own and prints after the window's tree with the items under it, the first (the Apple menu) and any titled `Debug` never read (`addMenuBarWithImmediateItems` 0x1007569b8); the renderer no longer synthesizes it. Since M1a.2b the engine emits the element and leaves the Apple menu out. The correction gives the element no role description, as the vendor's `menu bar` word implies (roleWord FUN_1006156c8 prints it only for a nil role description); that the bar, read through the attributes it lists (FUN_1007542cc), answers none is a hypothesis M1b's live text decides."
     },
     {
       "scene": "*",
@@ -132,7 +132,7 @@
       "cua": "Zoom Window",
       "vendor": "zoom the window",
       "count": 1,
-      "cause": "Engine (action descriptions): the vendor prints the system's action description (AXUIElementCopyActionDescription), localized to the Mac's language (Korean on the mini, though TextEdit answers in English); the recorded Skyshots carry none, so the renderer falls back to the AX name split into words. Since M1a.2b the engine carries them (`AXUIElementRef.description(for:)` 0x1006e8bf8, null where the system gives none) and the renderer prints them."
+      "cause": "Engine (action descriptions): the vendor describes an action by its fixed English word (FUN_100783260, the table at 0x1014033e8), else a custom action's `Name:` (FUN_100783928), else the system's description (AXUIElementCopyActionDescription, `AXUIElementRef.description(for:)` 0x1006e8bf8), localized to the Mac's language (Korean on the mini, though TextEdit answers in English), else the action's name (FUN_1007816a0, FUN_1007515a8). This action is in neither the table nor a `Name:`, so the vendor prints the system's description; the recorded Skyshots carry none, so the renderer splits the AX name into words. Since M1a.2b the engine carries the system's description and the renderer prints it."
     },
     {
       "scene": "chrome",
@@ -146,7 +146,7 @@
       "cua": "Zoom Window",
       "vendor": "윈도우 확대/축소",
       "count": 1,
-      "cause": "Engine (action descriptions): the vendor prints the system's action description (AXUIElementCopyActionDescription), localized to the Mac's language (Korean on the mini, though TextEdit answers in English); the recorded Skyshots carry none, so the renderer falls back to the AX name split into words. Since M1a.2b the engine carries them (`AXUIElementRef.description(for:)` 0x1006e8bf8, null where the system gives none) and the renderer prints them."
+      "cause": "Engine (action descriptions): the vendor describes an action by its fixed English word (FUN_100783260, the table at 0x1014033e8), else a custom action's `Name:` (FUN_100783928), else the system's description (AXUIElementCopyActionDescription, `AXUIElementRef.description(for:)` 0x1006e8bf8), localized to the Mac's language (Korean on the mini, though TextEdit answers in English), else the action's name (FUN_1007816a0, FUN_1007515a8). This action is in neither the table nor a `Name:`, so the vendor prints the system's description; the recorded Skyshots carry none, so the renderer splits the AX name into words. Since M1a.2b the engine carries the system's description and the renderer prints it."
     },
     {
       "scene": "electron",
@@ -160,7 +160,7 @@
       "cua": "Zoom Window",
       "vendor": "윈도우 확대/축소",
       "count": 1,
-      "cause": "Engine (action descriptions): the vendor prints the system's action description (AXUIElementCopyActionDescription), localized to the Mac's language (Korean on the mini, though TextEdit answers in English); the recorded Skyshots carry none, so the renderer falls back to the AX name split into words. Since M1a.2b the engine carries them (`AXUIElementRef.description(for:)` 0x1006e8bf8, null where the system gives none) and the renderer prints them."
+      "cause": "Engine (action descriptions): the vendor describes an action by its fixed English word (FUN_100783260, the table at 0x1014033e8), else a custom action's `Name:` (FUN_100783928), else the system's description (AXUIElementCopyActionDescription, `AXUIElementRef.description(for:)` 0x1006e8bf8), localized to the Mac's language (Korean on the mini, though TextEdit answers in English), else the action's name (FUN_1007816a0, FUN_1007515a8). This action is in neither the table nor a `Name:`, so the vendor prints the system's description; the recorded Skyshots carry none, so the renderer splits the AX name into words. Since M1a.2b the engine carries the system's description and the renderer prints it."
     },
     {
       "scene": "finder",
@@ -174,7 +174,7 @@
       "cua": "Zoom Window",
       "vendor": "⟨9⟩",
       "count": 1,
-      "cause": "Engine (action descriptions): the vendor prints the system's action description (AXUIElementCopyActionDescription), localized to the Mac's language (Korean on the mini, though TextEdit answers in English); the recorded Skyshots carry none, so the renderer falls back to the AX name split into words. Since M1a.2b the engine carries them (`AXUIElementRef.description(for:)` 0x1006e8bf8, null where the system gives none) and the renderer prints them. Redacted, the vendor's description is 9 characters, the length of Chrome's `윈도우 확대/축소`."
+      "cause": "Engine (action descriptions): the vendor describes an action by its fixed English word (FUN_100783260, the table at 0x1014033e8), else a custom action's `Name:` (FUN_100783928), else the system's description (AXUIElementCopyActionDescription, `AXUIElementRef.description(for:)` 0x1006e8bf8), localized to the Mac's language (Korean on the mini, though TextEdit answers in English), else the action's name (FUN_1007816a0, FUN_1007515a8). This action is in neither the table nor a `Name:`, so the vendor prints the system's description; the recorded Skyshots carry none, so the renderer splits the AX name into words. Since M1a.2b the engine carries the system's description and the renderer prints it. Redacted, the vendor's description is 9 characters, the length of Chrome's `윈도우 확대/축소`."
     },
     {
       "scene": "finder",
@@ -183,12 +183,12 @@
         "before"
       ],
       "kind": "part",
-      "fault": "engine",
+      "fault": "engine or renderer",
       "label": "Secondary Actions",
       "cua": "Scroll Left, Scroll Right, Scroll Up, Scroll Down",
       "vendor": "⟨22⟩",
       "count": 2,
-      "cause": "Engine (action descriptions): the vendor prints the system's action description (AXUIElementCopyActionDescription), localized to the Mac's language (Korean on the mini, though TextEdit answers in English); the recorded Skyshots carry none, so the renderer falls back to the AX name split into words. Since M1a.2b the engine carries them (`AXUIElementRef.description(for:)` 0x1006e8bf8, null where the system gives none) and the renderer prints them. The two scroll areas' four page-scroll descriptions are 22 characters in all (each line's length without its hidden `_NS` identifier); the English fallbacks would be 49."
+      "cause": "Engine or renderer (the action list, not its descriptions), undecided until M1b's full-text Finder comparison; it does not expire with the action descriptions. The four page-scroll actions are table words (FUN_100783260: `Scroll Left`, `Scroll Right`, `Scroll Up`, `Scroll Down`, 49 characters together, the same in any language), and the vendor's line holds 22, exactly `Scroll Up, Scroll Down` (each line's length without its hidden `_NS` identifier). So the vendor printed only the vertical page scrolls on the two scroll areas, where the cua lane's recordings list all four. Each of Finder's scroll areas has a vertical scroll bar only, while TextEdit's has both and the vendor prints all four there. Either the vendor's filterActions drops a page scroll along an axis with no scroll bar (its predicate is not read, sky-behaviour.md filterActions; then a renderer rule cua lacks), or the scroll areas listed only the vertical actions to the vendor (then the engine's action read); M1b's live Finder text decides it."
     },
     {
       "scene": "finder",
@@ -202,7 +202,7 @@
       "cua": "Open, Confirm",
       "vendor": "⟨12⟩",
       "count": 18,
-      "cause": "Engine or renderer, undecided until M1b's full-text Finder comparison: the file rows' AXOpen and AXConfirm print 12 characters in the vendor's line, as long as the cells' AXOpen alone. Either the vendor drops Confirm by a rule cua's renderer lacks, or both descriptions are the system's (the recordings carry none; the engine reads them since M1a.2b) and the lengths agree by chance; the redaction hides which."
+      "cause": "Engine or renderer (the action list, not its descriptions), undecided until M1b's full-text Finder comparison; it does not expire with the action descriptions. The file rows' line prints 12 characters where cua's carries AXOpen and AXConfirm. AXConfirm is a table word (FUN_100783260: `Confirm`, 7 characters in any language), so with it the vendor's line would hold `, Confirm` (9) beside AXOpen's description, and the cells' AXOpen alone prints 12 (the same app's description of the same action name). So the vendor's row line carries AXOpen only: either the vendor's filterActions drops AXConfirm there (its predicate is not read; then a renderer rule cua lacks), or the rows listed no AXConfirm to the vendor (then the engine's action read)."
     },
     {
       "scene": "finder",
@@ -216,7 +216,7 @@
       "cua": "Open",
       "vendor": "⟨12⟩",
       "count": 18,
-      "cause": "Engine (action descriptions): the vendor prints the system's action description (AXUIElementCopyActionDescription), localized to the Mac's language (Korean on the mini, though TextEdit answers in English); the recorded Skyshots carry none, so the renderer falls back to the AX name split into words. Since M1a.2b the engine carries them (`AXUIElementRef.description(for:)` 0x1006e8bf8, null where the system gives none) and the renderer prints them. The cells' AXOpen, 12 characters."
+      "cause": "Engine (action descriptions): the vendor describes an action by its fixed English word (FUN_100783260, the table at 0x1014033e8), else a custom action's `Name:` (FUN_100783928), else the system's description (AXUIElementCopyActionDescription, `AXUIElementRef.description(for:)` 0x1006e8bf8), localized to the Mac's language (Korean on the mini, though TextEdit answers in English), else the action's name (FUN_1007816a0, FUN_1007515a8). This action is in neither the table nor a `Name:`, so the vendor prints the system's description; the recorded Skyshots carry none, so the renderer splits the AX name into words. Since M1a.2b the engine carries the system's description and the renderer prints it. The cells' AXOpen, 12 characters."
     },
     {
       "scene": "finder",
@@ -285,7 +285,7 @@
       "fault": "engine",
       "vendor": "The focused UI element is 3 HTML 콘텐츠 cua Electron fixture, URL: file:///Users/new/Library/Caches/cua-harness/electron-fixture/44.9.0-012125d3c853/cua%20Electron%20Fixture.app/Contents/Resources/app/index.html",
       "cua": null,
-      "cause": "Engine (the focused element), cause a hypothesis: the recordings' Skyshot.focused is null in every Electron capture of the cua lane, so cua's text has no trailer, where the vendor names the web area (before the click) and the clicked button (after it). The vendor's read is the engine's: the application's AXFocusedUIElement and nothing else, an absent value tolerated (`focusedUIElementContext` 0x100774a9c), so the read set does not explain it. The hypothesis: the lanes' activation histories differ, the vendor's clicks activating the app (#162) and an Electron app that was never active answering no application-level focus; the recordings' own AXFocused flags are set, on the text area before the click and on the clicked button after it. Since M1a.2b the engine records why the read came back empty (timings.focusRead); M1b's live re-recording decides it."
+      "cause": "Engine (the focused element), cause a hypothesis: the recordings' Skyshot.focused is null in every Electron capture of the cua lane, so cua's text has no trailer, where the vendor names the web area (before the click) and the clicked button (after it). The vendor's read is the engine's: the application's AXFocusedUIElement and nothing else, an absent value tolerated (`focusedUIElementContext` 0x100774a9c). The recording does not say which of two things happened: the app-level read answered nothing, or it answered an element the walk had not tokened (the recording engine left `focused` null in both cases). If the read answered nothing, the hypothesis is that the lanes' activation histories differ, the vendor's clicks activating the app (#162) and an Electron app that was never active answering no application-level focus; the recordings' own AXFocused flags are set, on the text area before the click and on the clicked button after it. If it answered an element outside the walk, the gap is the engine's: the vendor adds the focused element's branch to its tree (focusTree 0x100755388), which the engine does not. Since M1a.2b the engine records which (timings.focusRead: an AXError or `notAnElement`, else `outsideTheWalk`); M1b's live re-recording decides it."
     },
     {
       "scene": "electron",
@@ -294,7 +294,7 @@
       "fault": "engine",
       "vendor": "The focused UI element is 13 버튼 Fixture button",
       "cua": null,
-      "cause": "Engine (the focused element), cause a hypothesis: the recordings' Skyshot.focused is null in every Electron capture of the cua lane, so cua's text has no trailer, where the vendor names the web area (before the click) and the clicked button (after it). The vendor's read is the engine's: the application's AXFocusedUIElement and nothing else, an absent value tolerated (`focusedUIElementContext` 0x100774a9c), so the read set does not explain it. The hypothesis: the lanes' activation histories differ, the vendor's clicks activating the app (#162) and an Electron app that was never active answering no application-level focus; the recordings' own AXFocused flags are set, on the text area before the click and on the clicked button after it. Since M1a.2b the engine records why the read came back empty (timings.focusRead); M1b's live re-recording decides it."
+      "cause": "Engine (the focused element), cause a hypothesis: the recordings' Skyshot.focused is null in every Electron capture of the cua lane, so cua's text has no trailer, where the vendor names the web area (before the click) and the clicked button (after it). The vendor's read is the engine's: the application's AXFocusedUIElement and nothing else, an absent value tolerated (`focusedUIElementContext` 0x100774a9c). The recording does not say which of two things happened: the app-level read answered nothing, or it answered an element the walk had not tokened (the recording engine left `focused` null in both cases). If the read answered nothing, the hypothesis is that the lanes' activation histories differ, the vendor's clicks activating the app (#162) and an Electron app that was never active answering no application-level focus; the recordings' own AXFocused flags are set, on the text area before the click and on the clicked button after it. If it answered an element outside the walk, the gap is the engine's: the vendor adds the focused element's branch to its tree (focusTree 0x100755388), which the engine does not. Since M1a.2b the engine records which (timings.focusRead: an AXError or `notAnElement`, else `outsideTheWalk`); M1b's live re-recording decides it."
     },
     {
       "scene": "textedit",

@@ -20,12 +20,13 @@ enum ElementClickPlan: Equatable {
 
 /// The clicks' ladder for an element (F §5.1 for the action's choice and the gate). `landsOnDescendant` answers whether
 /// the hit-test at the element's clickable point lands on a strict descendant of it (the gate); it is called only for a
-/// click route 1 could otherwise carry, and answers false when there is no point to hit-test. A menu-bar item is refused
-/// whatever the click or route, before anything is posted. A forced route (the spike's) skips the gate; a forced route 1
+/// click route 1 could otherwise carry, and answers false when there is no point to hit-test. A menu-bar item, and the
+/// menu bar itself (a synthesized click at its midpoint lands on an item), is refused whatever the click or route,
+/// before anything is posted. A forced route (the spike's) skips the gate; a forced route 1
 /// needs an advertised action.
 func elementClickPlan(forced: InputRoute?, button: MouseButton, count: Int, role: String, actions: [String],
                       landsOnDescendant: () -> Bool) throws -> ElementClickPlan {
-  if role == "AXMenuBarItem" { throw menuBarItemUnsupported }
+  if role == "AXMenuBarItem" || role == "AXMenuBar" { throw menuBarItemUnsupported }
   let advertised = actions.first(where: { $0 == "AXPick" }) ?? actions.first(where: { $0 == "AXPress" })
   if let forced {
     guard forced == .action else { return .synthesized(forced) }
@@ -42,7 +43,7 @@ func elementClickPlan(forced: InputRoute?, button: MouseButton, count: Int, role
 /// item's menu for the next observation (FUN_100071538 → FUN_100083904 → FUN_100071790), which this engine does not do
 /// yet; pressing or synthesizing would open it a way the vendor never does. Nothing is posted.
 let menuBarItemUnsupported = EngineError(name: "menuBarItemUnsupported",
-  "Clicking a menu bar item is not supported by this engine yet; menu bar items open through a path that comes in a later engine release. Nothing was clicked. Use the app's keyboard shortcut for the command with pressKey instead.")
+  "Clicking the menu bar or a menu bar item is not supported by this engine yet; menu bar items open through a path that comes in a later engine release. Nothing was clicked. Use the app's keyboard shortcut for the command with pressKey instead.")
 
 /// A coordinate click's route: 3, unless the spike forces another.
 func coordinateClickRoute(forced: InputRoute?) -> InputRoute { forced ?? .activation }

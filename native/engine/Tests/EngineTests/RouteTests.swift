@@ -45,12 +45,14 @@ final class ElementClickPlanTests: XCTestCase {
 
   /// The vendor opens a menu-bar item by activating the app and recording its menu (FUN_100083904's role test), never by
   /// a press or a synthesized click: every click on one is refused before anything is posted, whatever the button,
-  /// count or forced route, and the gate is never consulted.
-  func testEveryClickOnAMenuBarItemIsRefused() {
+  /// count or forced route, and the gate is never consulted. The menu bar's own node is refused the same way: a
+  /// synthesized click at its midpoint would land on one of its items.
+  func testEveryClickOnAMenuBarItemOrTheMenuBarIsRefused() {
     var calls = 0
+    for role in ["AXMenuBarItem", "AXMenuBar"] {
     for (forced, button, count) in [(InputRoute?.none, MouseButton.left, 1), (nil, .right, 1), (nil, .left, 2), (.action, .left, 1),
                                     (.activation, .left, 1), (.plainPost, .left, 1)] {
-      XCTAssertThrowsError(try plan(forced: forced, button: button, count: count, role: "AXMenuBarItem", actions: ["AXPress", "AXCancel"],
+      XCTAssertThrowsError(try plan(forced: forced, button: button, count: count, role: role, actions: ["AXPress", "AXCancel"],
                                     gateCalls: &calls)) { error in
         XCTAssertEqual((error as? EngineError)?.errorName, "menuBarItemUnsupported")
         let message = (error as? EngineError)?.message ?? ""
@@ -58,6 +60,7 @@ final class ElementClickPlanTests: XCTestCase {
         XCTAssertTrue(message.contains("keyboard shortcut") && message.contains("pressKey"), "the sentence names the alternative: \(message)")
         XCTAssertFalse(message.contains("M2a"), "no milestone names in model-facing text")
       }
+    }
     }
     XCTAssertEqual(calls, 0)
   }

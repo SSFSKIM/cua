@@ -174,17 +174,19 @@ test('actions: the vendor\'s words for the actions it names, a custom action\'s 
   assert.deepEqual(lines(shot).slice(1), ['\t1 scroll area Secondary Actions: Scroll Left, Scroll Up, Zoom Window', '\t2 Open, Secondary Actions: Confirm']);
 });
 
-test('actions print the descriptions the Skyshot carries, the system\'s, in place of the fallback words', () => {
+test('an action prints the vendor\'s table word, else its custom name, else the description the Skyshot carries', () => {
   const shot = skyshot(win([node('s', 1, 'AXScrollArea', {roleDescription: 'scroll area',
-    actions: ['AXScrollLeftByPage', 'AXZoomWindow', 'AXShowDefaultUI', 'AXPress', 'AXRemoveComment'],
-    actionDescriptions: ['왼쪽으로 스크롤', '윈도우 확대/축소', 'show default UI', '누르기', 'Add comment']})]));
-  assert.equal(lines(shot)[1], '\t1 scroll area Secondary Actions: 왼쪽으로 스크롤, 윈도우 확대/축소');
+    actions: ['AXScrollLeftByPage', 'AXZoomWindow', 'AXShowDefaultUI', 'AXShowAlternateUI', 'AXPress', 'AXRemoveComment', 'AXOpen', 'Name: Share\nTarget:0x0'],
+    actionDescriptions: [null, '윈도우 확대/축소', null, null, null, 'Add comment', 'AXOpen', null]})]));
+  assert.equal(lines(shot)[1], '\t1 scroll area Secondary Actions: Scroll Left, 윈도우 확대/축소, AXOpen, Share');
+  const contrary = skyshot(win([node('s', 1, 'AXScrollArea', {roleDescription: 'scroll area', actions: ['AXScrollLeftByPage', 'AXRaise'],
+    actionDescriptions: ['왼쪽으로 스크롤', '앞으로 가져오기']})]));
+  assert.equal(lines(contrary)[1], '\t1 scroll area Secondary Actions: Scroll Left, Raise', 'the table comes before any description');
 });
 
-test('an action the system gives no description (null) prints the fallback word', () => {
-  const shot = skyshot(win([node('s', 1, 'AXScrollArea', {roleDescription: 'scroll area',
-    actions: ['AXRaise', 'AXZoomWindow'], actionDescriptions: [null, '윈도우 확대/축소']})]));
-  assert.equal(lines(shot)[1], '\t1 scroll area Secondary Actions: Raise, 윈도우 확대/축소');
+test('a custom action\'s Name: is scanned as the vendor\'s NSScanner does: leading whitespace skipped, up to the newline', () => {
+  const shot = skyshot(win([node('s', 1, 'AXScrollArea', {roleDescription: 'scroll area', actions: ['Name:\n Tags\nTarget:0x0', 'Name: Add tag\nTarget:0x0']})]));
+  assert.equal(lines(shot)[1], '\t1 scroll area Secondary Actions: Tags, Add tag');
 });
 
 test('the value type the engine names: float, integer, boolean, date and unknown print; a string prints plain settable', () => {
@@ -207,20 +209,19 @@ test('the width rule\'s partial children: (showing <ranges> of <count> items)', 
   assert.equal(lines(omitted)[1], '\t1 outline O');
 });
 
-test('the menu bar: the engine\'s AXMenuBar node after the window\'s tree, its items after the Apple menu, none titled Debug, with no actions', () => {
+test('the menu bar: the engine\'s AXMenuBar node after the window\'s tree with the items the engine emitted under it, with no actions', () => {
   const item = (token, title, fields = {}) => node(token, 1, 'AXMenuBarItem', {roleDescription: 'menu bar item', title, actions: ['AXCancel', 'AXPress', 'AXPick', 'AXRaise'],
     actionDescriptions: ['cancel', 'press', 'pick', 'raise'], ...fields});
   const bar = node('mb', 0, 'AXMenuBar', {roleDescription: null});
-  const items = [item('m0', 'Apple'), item('m1', 'Example'), item('m2', 'Debug Tools'), item('m3', 'File', {flags: {enabled: false}})];
+  const items = [item('m1', 'Example'), item('m3', 'File', {flags: {enabled: false}})];
   const shot = skyshot(win([button('a', 1, 'A')]), {menuBar: [bar, ...items]});
   const numbering = advanceNumbering(null, shot);
   assert.deepEqual(lines(shot), ['0 standard window W, Secondary Actions: Raise', '\t1 button A', '2 menu bar', '\t3 Example', '\t4 (disabled) File']);
   assert.deepEqual(indexState(numbering, 2), {state: 'live', token: 'mb'}, 'the bar is the engine\'s element, resolvable like any other');
-  assert.ok(!numbering.indexes.has('m0') && !numbering.indexes.has('m2'));
   const described = skyshot(win(), {menuBar: [node('mb', 0, 'AXMenuBar', {roleDescription: '메뉴 막대'}), ...items]});
   assert.equal(lines(described)[1], '1 메뉴 막대', 'a role description the bar carries is its role word');
   const recorded = skyshot(win(), {menuBar: items.map(each => ({...each, depth: 0, actions: ['AXCancel', 'AXPress', 'AXPick'], actionDescriptions: undefined}))});
-  assert.deepEqual(lines(recorded).slice(1, 3), ['1 Apple', '2 Example'], 'items without their bar (M0\'s recordings) print as top-level elements');
+  assert.deepEqual(lines(recorded).slice(1, 3), ['1 Example', '2 (disabled) File'], 'items without their bar (M0\'s recordings) print as top-level elements');
 });
 
 test('the trailer: selected text, else selected elements (one tab), else the focused element', () => {

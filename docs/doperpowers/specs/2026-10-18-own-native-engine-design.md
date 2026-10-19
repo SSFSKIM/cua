@@ -383,9 +383,10 @@ Skyshot  {app: {bundleIdentifier, displayName, appPath, pid}, window: {title: st
           AXTitle, "Desktop" for an untitled Finder window at the desktop-icon level, null when there is none (the renderer
           prints `Unknown`); without Screen Recording the window server gives no name and the AX title stands (M1a.2b).
           menuBar: the AXMenuBar element at depth 0 (roleDescription null when it lists none, printed `menu bar`), then its
-          top-level items at depth 1, tokens in the same lineage after the window's nodes (`addMenuBarWithImmediateItems`
-          0x1007569b8); the renderer prints the items after the Apple menu, minus any titled `Debug`, through the ordinary line
-          with their actions cleared, as the vendor does, and synthesizes no bar of its own (M1a.2b); their order in
+          top-level items at depth 1 but the first (the Apple menu) and any titled `Debug`, each read through the attributes
+          it lists, tokens in the same lineage after the window's nodes (`addMenuBarWithImmediateItems` 0x1007569b8); empty
+          when the bar itself cannot be read. The renderer prints the items through the ordinary line with their actions
+          cleared, as the vendor does, and synthesizes no bar of its own (M1a.2b); their order in
           the text is the renderer's, from sky-behaviour.md. focused and selectedElements: the tokens the focused/selected-text
           trailer names. settle: "capped" when the settle that preceded this observation hit the 5 s cap — on the
           observation result, since the settle runs at the next get_app_state, not inside the action, R/sky-behaviour.md §23.
@@ -414,11 +415,13 @@ Node     {token: string, depth: number, pid: number, role: string, subrole: stri
           shape. The grammar never prints `checked`, so the flag is dropped. The derivations are the vendor's (FUN_10074cb90 in
           get_app_state's fullUIContext; `Derivations.swift`, M1a.2b): valueType is `valueTypeName` FUN_10074a794 (the CFNumber's
           own float or integer type; boolean for a switch or toggle checkbox), null without a value; actionDescriptions runs
-          parallel to actions, the system's description (AXUIElementCopyActionDescription), null where it gives none (the
-          vendor carries the name there and prints a word the renderer supplies, `Raise` for AXRaise); url is
+          parallel to actions, the vendor's description past its fixed table and a custom action's `Name:` (FUN_1007816a0):
+          null for an action either describes (the renderer prints the table's English word or the name, in every language;
+          the system is not asked), else the system's description (AXUIElementCopyActionDescription), else the action's
+          name; url is
           AXURL, or for a window without one its AXDocument parsed as a URL; flags.disclosable is AXDisclosing settable;
-          flags.selected is AXSelected, else the selected trait of AXTraits; flags.selectable is never set on a menu or menu-bar
-          item; flags.settable is read only for a node with a value and, in a Chromium window, only for AXComboBox,
+          flags.selected is AXSelected, else the selected trait of AXTraits; flags.selectable is AXSelected settable, never on a menu
+          or menu-bar item (FUN_10077d1e4; AXSelectable is not read); flags.settable is read only for a node with a value and, in a Chromium window, only for AXComboBox,
           AXIncrementor (not a date or time field's), AXTextArea, AXTextField and a tab, FUN_100751614; roleDescription is null
           when the element lists none)
 input results → {meta: {inputRoute: 1 | "2'" | 2 | 3 | 4 | "paste", startedAt: number, endedAt: number,
@@ -441,7 +444,7 @@ type_text/paste/set_value args may carry concealed: true (set by src/services/sk
 error    {code: number (the vendor's codes where mapped; -10005 otherwise), message: string, errorName: string}
   engine-only errorNames the wrapper admits: concealedInputUnavailable, inputSourceChanged, noScreenshotForCoordinates, activationFailed (all value-free)
   engine-only errorNames the wrapper does not admit (no secret is substituted into a click): menuBarItemUnsupported (a click on a menu-bar
-    item, refused before anything is posted until M2a's activate-and-record path; M1a.2; its sentence names the app's keyboard
+    item or on the menu bar's own node, refused before anything is posted until M2a's activate-and-record path; M1a.2; its sentence names the app's keyboard
     shortcut through pressKey as the alternative, M1a.2b)
   activationGuardMs: route 3's guard time, present only when a guard ran; pointUnconfirmed: true when the hit-test at a synthesized element
     point answered nothing or only a container (M1a.2)

@@ -6,14 +6,14 @@ import Foundation
 // `_AXUIElementCopyHierarchy` the vendor prefetches with lost to it on every scene in M0 and is not resolved.
 
 /// The attributes read per element: the vendor's 20 in its order (F §1.2), then what the Interfaces' Node adds
-/// (AXSelectable, AXDOMClassList), the settle's busy signs (AXElementBusy, AXLoaded; F §8.4), position, size and
+/// (AXDOMClassList), the settle's busy signs (AXElementBusy, AXLoaded; F §8.4), position, size and
 /// children. One list for the settle's busy walk and the observation's walk, so the observation can read the tree the
 /// settle fetched.
 let observedAttributes: [String] = [
   "AXRole", "AXSubrole", "AXRoleDescription", "AXTitle", "AXDescription", "AXValue", "AXValueDescription",
   "AXPlaceholderValue", "AXNumberOfCharacters", "AXHelp", "AXIdentifier", "AXSelected", "AXFocused", "AXEnabled",
   "AXDisclosing", "AXURL", "AXTraits", "AXServesAsTitleForUIElements", "AXRowIndexRange", "AXColumnIndexRange",
-  "AXSelectable", "AXDOMClassList", "AXElementBusy", "AXLoaded", "AXTextualContext", "AXPosition", "AXSize", "AXChildren",
+  "AXDOMClassList", "AXElementBusy", "AXLoaded", "AXTextualContext", "AXPosition", "AXSize", "AXChildren",
 ]
 
 /// What the walk knows of one element. Every optional is nil when the element does not carry the attribute.
@@ -39,7 +39,6 @@ struct ElementData {
   var focused: Bool?
   var enabled: Bool?
   var disclosing: Bool?
-  var selectable: Bool?
   var domClassList: [String]?
   var elementBusy: Bool?
   var loaded: Bool?
@@ -73,7 +72,6 @@ struct ElementData {
     focused = flag("AXFocused")
     enabled = flag("AXEnabled")
     disclosing = flag("AXDisclosing")
-    selectable = flag("AXSelectable")
     textualContext = string("AXTextualContext")
     elementBusy = flag("AXElementBusy")
     loaded = flag("AXLoaded")

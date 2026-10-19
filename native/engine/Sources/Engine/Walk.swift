@@ -142,9 +142,9 @@ final class TreeWalk {
   private(set) var markdownFetches = 0
   /// Nodes whose element is a title, with the elements it serves, mapped to tokens once the walk is done.
   private var titles: [(inMenu: Bool, position: Int, targets: [AXUIElement])] = []
-  /// The system's action descriptions met in this walk, by process and action name (nil: it gave none): one
-  /// description call each.
-  private var descriptions: [String: String?] = [:]
+  /// The action descriptions the system was asked for in this walk (its answer, else the action's name), by process
+  /// and action name: one description call each.
+  private var descriptions: [String: String] = [:]
 
   private struct Pending {
     let element: AXUIElement
@@ -153,8 +153,8 @@ final class TreeWalk {
     let inherited: Int?
     let inMenu: Bool
     var parentRole: String? = nil
-    /// The AXMenuBar element itself, read through the attributes it lists.
-    var menuBarElement = false
+    /// Read through the attributes it lists (the menu bar and its items).
+    var listedRead = false
   }
 
   /// One element read, not yet numbered.
@@ -193,33 +193,36 @@ final class TreeWalk {
   /// The token of an element this walk emitted; nil for one it did not.
   func token(of element: AXUIElement) -> String? { seen[ElementKey(element: element)].map(elementToken) }
 
-  /// Walks `window` then the menu bar, numbering both in one lineage (the menu bar after the window's nodes): the
-  /// AXMenuBar element at depth 0 and its top-level items at depth 1 under it, as the vendor's
-  /// `addMenuBarWithImmediateItems` 0x1007569b8 adds them (without a menu-bar element, the items at depth 0). The menu
-  /// bar is read first and its nodes and bytes reserved, so a cut of the window's walk by the node or byte budget never
-  /// drops it.
+  /// Walks `window` then the menu bar, numbering both in one lineage (the menu bar after the window's nodes), as the
+  /// vendor's `addMenuBarWithImmediateItems` 0x1007569b8 adds it: the AXMenuBar element at depth 0 and, at depth 1
+  /// under it, its top-level items (`menuItems`, its AXChildren) but the first, the system's Apple menu, and any whose
+  /// title contains `Debug`; each read through the attributes it lists (FUN_1007542cc's fallback; F §1.3). A bar that
+  /// cannot be read gives no menu-bar nodes at all. The menu bar is read first and its nodes and bytes reserved, so a
+  /// cut of the window's walk by the node or byte budget never drops it.
   func run(window: AXUIElement, menuBar: AXUIElement?, menuItems: [AXUIElement]) {
-    let menuElements = (menuBar.map { [$0] } ?? []) + menuItems
+    let menuElements = menuBar.map { [$0] + menuItems.dropFirst() } ?? []
     let menuInherited = previous.map { matchSiblings(old: $0.siblings(of: nil, menu: true), new: menuElements) } ?? Array(repeating: nil, count: menuElements.count)
     let menuPending = zip(menuElements, menuInherited).enumerated().map { position, pair in
-      let isBar = menuBar != nil && position == 0
-      return Pending(element: pair.0, depth: menuBar != nil && !isBar ? 1 : 0, parent: nil, inherited: pair.1, inMenu: true,
-                     parentRole: isBar ? nil : (menuBar != nil ? kAXMenuBarRole : nil), menuBarElement: isBar)
+      Pending(element: pair.0, depth: position == 0 ? 0 : 1, parent: nil, inherited: pair.1, inMenu: true,
+              parentRole: position == 0 ? nil : kAXMenuBarRole, listedRead: true)
     }
     var menuReads: [(Pending, Read)] = []
     var menuUnread: [Pending] = []
     var reservedBytes = 0
-    for (position, pending) in menuPending.enumerated() {
+    reading: for (position, pending) in menuPending.enumerated() {
       if monotonicMilliseconds() >= limits.deadline { menuUnread = Array(menuPending[position...]); break }
       switch read(pending) {
       case .read(let read):
+        if position > 0, read.data.title?.contains("Debug") == true { continue }
         menuReads.append((pending, read))
         reservedBytes += jsonBytes(wire(read, number: lineage.nextNumber, depth: pending.depth)) + 1
-      case .failed: failures += 1
+      case .failed:
+        failures += 1
+        if position == 0 { break reading }
       case .deadline:
         menuUnread = Array(menuPending[position...])
+        break reading
       }
-      if !menuUnread.isEmpty { break }
     }
 
     let rootInherited = previous.flatMap { matchSiblings(old: $0.siblings(of: nil, menu: false), new: [window]).first ?? nil }
@@ -228,9 +231,7 @@ final class TreeWalk {
 
     for (pending, read) in menuReads where seen[ElementKey(element: read.element)] == nil { emit(read, pending) }
     // The menu bar's node counts the items emitted under it (the walk reads them beside it, not through AXChildren).
-    if menuReads.first?.0.menuBarElement == true, self.menuBar.first?["role"] as? String == kAXMenuBarRole {
-      self.menuBar[0]["children"] = self.menuBar.count - 1
-    }
+    if !self.menuBar.isEmpty { self.menuBar[0]["children"] = self.menuBar.count - 1 }
     if !menuUnread.isEmpty { cut(.deadline, remaining: menuUnread) }
     resolveTitles()
   }
@@ -302,7 +303,7 @@ final class TreeWalk {
   /// deadline is checked between a node's calls, not only between nodes, so one slow element cannot overrun it.
   private func read(_ pending: Pending) -> Outcome {
     let element = prepare(pending.element)
-    guard let data = pending.menuBarElement ? source.listedData(element) : source.data(element) else { return .failed }
+    guard let data = pending.listedRead ? source.listedData(element) : source.data(element) else { return .failed }
     if pastDeadline() { return .deadline }
     let owner = source.owner(element)
     let actions = source.actions(element)
@@ -313,8 +314,8 @@ final class TreeWalk {
     flags.settable = readsValueSettable(data, parentRole: pending.parentRole, chromium: chromium)
       && source.isSettable(element, kAXValueAttribute, phase: "settable")
     flags.focusable = interactionFlags && data.focused != nil && source.isSettable(element, kAXFocusedAttribute, phase: "focusable")
-    flags.selectable = selectableRole(data.role)
-      && (data.selectable ?? (interactionFlags && data.selected != nil && source.isSettable(element, kAXSelectedAttribute, phase: "selectable")))
+    flags.selectable = selectableRole(data.role) && interactionFlags && data.selected != nil
+      && source.isSettable(element, kAXSelectedAttribute, phase: "selectable")
     flags.selected = isSelected(selected: data.selected, traits: data.traits)
     if data.disclosing != nil { flags.disclosable = source.isSettable(element, kAXDisclosingAttribute, phase: "disclosable") }
     let url = nodeURL(role: data.role, url: data.url) { source.document(element) }
@@ -342,14 +343,15 @@ final class TreeWalk {
                       url: url, valueMarkdown: valueMarkdown, children: children, shown: shown))
   }
 
-  /// An action's description: the system's, nil when it gives none. The vendor's pair (FUN_1007515a8) carries the
-  /// action's name in that case and prints a word of its own for it (`Raise` for AXRaise, in every scene and language),
-  /// by a step not read; the Skyshot carries null so the renderer can print its word. Descriptions are the app's per
-  /// action name, so a walk asks once per process and name (cua's; the vendor asks per element).
+  /// An action's description, FUN_1007816a0 as FUN_1007515a8 pairs it: nil for an action the fixed table or a custom
+  /// `Name:` describes (Derivations.swift; the renderer prints those words, and the system is not asked), else the
+  /// system's description, else the action's name. Descriptions are the app's per action name, so a walk asks once per
+  /// process and name (cua's; the vendor asks per element).
   private func describe(action: String, of element: AXUIElement, owner: pid_t) -> String? {
+    guard asksSystemForDescription(action) else { return nil }
     let key = "\(owner)\u{0}\(action)"
     if let known = descriptions[key] { return known }
-    let description = source.actionDescription(element, action)
+    let description = source.actionDescription(element, action) ?? action
     descriptions[key] = description
     return description
   }

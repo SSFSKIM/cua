@@ -2,11 +2,13 @@
 
 This folder and `tests/mods/guard/` are devcloud's secrets guard, copied from
 [SSFSKIM/doperpowers](https://github.com/SSFSKIM/doperpowers) at
-`ce6edfda3b641bfb0c5e4e0d4a566df13ed26ecb` (the merge of doperpowers#220,
-devcloud 0.1.0, which carries every guard fix through `be1ea25a`). The code is
-devcloud's: change it there and resync, rather than editing it here. cua's
-part is `/secret` (`../secrets.tsx`), which stays cua's own, and the
-stand-down (`../one-guard.tsx`).
+`ca7869858bb4ee07aebc6ae3128db3928718389b` (devcloud 0.5.0: the bare Google
+OAuth token rules of `9d593f70`, and the guard marker answered by devcloud's
+loaded module rather than stored, doperpowers board #101). It was first
+copied at `ce6edfda` (devcloud 0.1.0). The code is devcloud's: change it there
+and resync, rather than editing it here. cua's part is `/secret`
+(`../secrets.tsx`), which stays cua's own, and the stand-down
+(`../one-guard.tsx`).
 
 | here | devcloud |
 |---|---|
@@ -19,28 +21,38 @@ stand-down (`../one-guard.tsx`).
 Every vendored file starts with a two-line header naming its source path and
 commit. Beyond that, and the paths in the table:
 
-1. **No marker write.** devcloud's `secretsStart` opens with
-   `$.state.set({ plugin: 'devcloud', key: 'secrets-guard' }, …)` (line 277 of
-   `devcloud/hooks/mods/secrets.tsx` at the commit above). cua's copy drops it,
-   deliberately: cua reads that marker to stand down, so writing it would make
-   cua stand down to itself and leave the session with no guard, and the engine
-   refuses one plugin's write to another's state anyway. A resync must not
-   bring it back; `grep -n 'state\.set' hooks/mods/guard/*.tsx` stays empty, and two
-   tests pin it (the first in `tests/mods/guard/secrets.test.ts`, "cua alone"
-   in `tests/mods/secrets.test.ts`).
+1. **No marker answer.** devcloud answers its own guard marker (Interfaces I9):
+   `MARKER_READ`, and the `state.get` hook `registerSecrets` registers with it
+   (`on('state.get', { plugin: 'devcloud', key: 'secrets-guard' }, …)`, in
+   `devcloud/hooks/mods/secrets.tsx` at the commit above). cua's copy drops
+   both, deliberately: cua reads that marker to stand down, so answering it
+   would make cua stand down to itself and leave the session with no guard. A
+   resync must bring back neither that hook nor a write of the marker (devcloud
+   before 0.5.0 stored it; the engine refuses one plugin's write to another's
+   state anyway): `grep -n "state\.set\|'state\.get'" hooks/mods/guard/*.tsx`
+   stays empty, and two tests pin it (the first in
+   `tests/mods/guard/secrets.test.ts`, "cua alone" in
+   `tests/mods/secrets.test.ts`).
 2. **One guard per session.** Each hook `registerSecrets` registers
    (`session.start`, `tool.call`, `session.append`, `session.compact`,
    `prompt.compose`, `prompt.context`, `prompt.attachment`) and `tool.call`'s
-   `.catch` handler first pass the event on untouched while devcloud's marker is
-   set (`devcloudGuards`, imported from `../one-guard`). Each such line ends in
+   `.catch` handler first pass the event on untouched while devcloud's guard is
+   in the session's chain: while a read of devcloud's marker resolves to the
+   exact marker at version 0, its loaded module's own answer (`devcloudGuards`,
+   imported from `../one-guard`). A marker at any other version is one the host
+   kept from a devcloud before 0.5.0, which outlives that devcloud's module
+   (doperpowers board #101), and cua's guard acts on it. Each such line ends in
    `// cua: one guard per session`.
 3. **Section id.** The system-prompt section is `cua:secrets-guard`, not
    `devcloud:secrets`.
 4. **Tests.** Imports reach `../../../hooks/mods/guard/`. In
    `tests/mods/guard/secrets.test.ts`, `start()` also answers
    `command.register` (cua's `/secret` registers itself at session start in the
-   same hooks module), the marker test pins that no state is written, and the
-   section id is cua's.
+   same hooks module), the section id is cua's, and devcloud's Interfaces I9
+   tests (its answer to the marker, and a second guard standing down beside
+   devcloud in either order) are replaced by one that pins that cua's copy
+   neither answers nor writes the marker: cua's stand-down is
+   `tests/mods/secrets.test.ts`'s, which loads a devcloud outside and inside cua.
 5. **Not vendored.** devcloud's `register.tsx`, `hooks.json`, `tsconfig.json`
    and `tests/mods/run.sh`. The engine takes one hooks module per plugin, so
    cua's `hooks/mods/register.tsx` calls this folder's `registerSecrets` beside
@@ -56,7 +68,7 @@ From this repository's root, with a doperpowers checkout at `$D` and the new
 commit in `$NEW`:
 
 ```sh
-OLD=ce6edfda3b641bfb0c5e4e0d4a566df13ed26ecb
+OLD=ca7869858bb4ee07aebc6ae3128db3928718389b
 git -C "$D" diff "$OLD" "$NEW" --relative=devcloud/hooks/mods -- devcloud/hooks/mods \
   ':!devcloud/hooks/mods/register.tsx' ':!devcloud/hooks/mods/tsconfig.json' | git apply --reject --directory=hooks/mods/guard
 git -C "$D" diff "$OLD" "$NEW" --relative=devcloud/tests/mods -- devcloud/tests/mods \

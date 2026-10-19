@@ -1,5 +1,5 @@
-// Vendored from SSFSKIM/doperpowers devcloud/hooks/mods/secrets-sources.tsx at ce6edfda3b641bfb0c5e4e0d4a566df13ed26ecb
-// (devcloud 0.1.0); the adaptations and the resync are in hooks/mods/guard/VENDORED.md.
+// Vendored from SSFSKIM/doperpowers devcloud/hooks/mods/secrets-sources.tsx at ca7869858bb4ee07aebc6ae3128db3928718389b
+// (devcloud 0.5.0); the adaptations and the resync are in hooks/mods/guard/VENDORED.md.
 
 /**
  * Where known values come from, read without `$`: the secret store's layout

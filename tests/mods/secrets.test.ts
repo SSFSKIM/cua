@@ -407,18 +407,72 @@ describe('redact, never refuse', () => {
   })
 })
 
-// devcloud's marker (Interfaces I9) as `$.state.get` answers it: `undefined`
-// leaves it unset; a function makes the read throw.
-const marker = (on: On, value: unknown) => {
+// A read of devcloud's marker (Interfaces I9), answered beneath every plugin:
+// `{ value, version }` as it resolves (version 0 is a hook's answer, as
+// devcloud's loaded module gives it; 1 a value the host stores), or a function,
+// which makes the read throw.
+const markerRead = (on: On, read: { value: unknown; version: number } | (() => never)) => {
   on('state.get', (_, e) => {
     if (e.plugin !== 'devcloud' || e.key !== 'secrets-guard') return { value: { value: undefined, version: 0 } } as never
-    if (typeof value === 'function') throw new Error('state.get failed')
-    return { value: { value, version: value === undefined ? 0 : 1 } } as never
+    if (typeof read === 'function') read()
+    return { value: read } as never
   })
 }
 
-describe("one guard per session: cua's stands down to devcloud's exact marker only", () => {
+/**
+ * devcloud's plugin loaded beside cua, as devcloud 0.5.0 behaves toward it:
+ * its module answers the marker's read at version 0, and its guard scrubs the
+ * stored value to `{devcloud}` in a tool's result, a kept row and the system
+ * prompt (a stand-in, so what each guard did can be told apart). In the
+ * prepend tier it sits outside cua, in append inside it. An inline plugin runs
+ * in a module of its own, so its source spells the value it scrubs.
+ */
+const devcloudLoaded = (tier: 'prepend' | 'append') => ({
+  name: 'devcloud',
+  tier,
+  register: (on: On) => {
+    on('state.get', { plugin: 'devcloud', key: 'secrets-guard' }, () => ({ value: { value: { owner: 'devcloud', version: 1 }, version: 0 } }))
+    on('tool.call', async (_, e, next) => {
+      const ran = await next(e)
+      return 'result' in ran ? { result: JSON.parse(JSON.stringify(ran.result).replaceAll('sk-live-0123456789', '{devcloud}')) } : ran
+    })
+    on('session.append', (_, e, next) => next(JSON.parse(JSON.stringify(e).replaceAll('sk-live-0123456789', '{devcloud}'))))
+    on('prompt.compose', async (_, e, next) => {
+      const composed = await next(e)
+      return { sections: composed.sections.map((s) => ({ ...s, text: s.text.replaceAll('sk-live-0123456789', '{devcloud}') })) }
+    })
+  },
+})
+
+describe("one guard per session: cua's stands down only on devcloud's live answer (Interfaces I9)", () => {
   const exact = { owner: 'devcloud', version: 1 }
+  // A tool result, a write through a handle, a kept row and the system prompt,
+  // each where one guard's work shows: `{devcloud}` is devcloud's scrub,
+  // `[secret:API_KEY]` cua's, a restored write and a `cua:secrets-guard`
+  // section cua's alone.
+  const session = async ($: Engine, on: On) => {
+    const ran = printing(on, STORED)
+    let kept: unknown
+    on('session.append', (_, e, next) => {
+      kept = e.message.content[0]?.content
+      return next(e)
+    })
+    on('prompt.compose', () => ({ sections: [{ id: 'other:notes', text: `use ${STORED}`, scope: 'session' as const }] }))
+    await startWith($, on, { API_KEY: STORED })
+    const result = (await $.tool.call({ tool: 'Bash', command: 'env' })).result
+    await $.tool.call({ tool: 'Write', file_path: '/work/repo/f', content: '[secret:API_KEY]' } as never)
+    await $.session
+      .append({
+        message: { type: 'user', role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: `Bearer ${STORED}` }] },
+        door: 'tool-result',
+        origin: { kind: 'tool', tool: 'Bash' },
+        uuid: 'row-1',
+      })
+      .catch(() => undefined)
+    const composed = await $.prompt.compose({ model: 'm', promptModel: 'm', surfaces: [], tools: [], outputStyle: null, traits: [] })
+    // `cua:secrets`, /secret's list of the stored keys, is cua's own whichever guard acts.
+    return { result, written: ran[1]?.content, kept, sections: composed.sections.filter((s) => s.id !== 'cua:secrets').map((s) => [s.id, s.text]) }
+  }
 
   test('cua alone, from session start: it writes no marker and redacts a stored value', async ($, on) => {
     const set: unknown[] = []
@@ -435,50 +489,43 @@ describe("one guard per session: cua's stands down to devcloud's exact marker on
     expect(set).toEqual([])
   })
 
-  test('the marker absent: the guard redacts', async ($, on) => {
-    marker(on, undefined)
-    printing(on, STORED)
-    await startWith($, on, { API_KEY: STORED })
-    expect((await $.tool.call({ tool: 'Bash', command: 'env' })).result).toEqual(bash('[secret:API_KEY]'))
-  })
-
-  test("devcloud's exact marker: each of the guard's hooks passes through, an encoded spelling left for devcloud", async ($, on) => {
-    marker(on, exact)
-    const ran = printing(on, `${STORED} ${btoa(STORED)}`)
-    let kept: unknown
-    on('session.append', (_, e, next) => {
-      kept = e.message.content[0]?.content
-      return next(e)
-    })
-    on('prompt.compose', () => ({ sections: [{ id: 'other:notes', text: `use ${STORED}`, scope: 'session' as const }] }))
-    await startWith($, on, { API_KEY: STORED })
-    expect((await $.tool.call({ tool: 'Bash', command: 'env' })).result).toEqual(bash(`${STORED} ${btoa(STORED)}`))
-    // A handle in a write is devcloud's to restore, not cua's.
-    await $.tool.call({ tool: 'Write', file_path: '/work/repo/f', content: '[secret:API_KEY]' } as never)
-    expect(ran[1]?.content).toBe('[secret:API_KEY]')
-    await $.session
-      .append({
-        message: { type: 'user', role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: `Bearer ${STORED}` }] },
-        door: 'tool-result',
-        origin: { kind: 'tool', tool: 'Bash' },
-        uuid: 'row-1',
+  for (const [tier, place] of [['prepend', 'outside'], ['append', 'inside']] as const) {
+    test(`devcloud loaded ${place} cua: each of cua's guard's hooks passes the event on, and devcloud's guard alone scrubs`, { plugins: [devcloudLoaded(tier)] }, async ($, on) => {
+      expect(await session($, on)).toEqual({
+        result: bash('{devcloud}'),
+        written: '[secret:API_KEY]',
+        kept: 'Bearer {devcloud}',
+        sections: [['other:notes', 'use {devcloud}']],
       })
-      .catch(() => undefined)
-    expect(kept).toBe(`Bearer ${STORED}`)
-    const composed = await $.prompt.compose({ model: 'm', promptModel: 'm', surfaces: [], tools: [], outputStyle: null, traits: [] })
-    expect(composed.sections[0]?.text).toBe(`use ${STORED}`)
-    expect(composed.sections.some((s) => s.id === 'cua:secrets-guard')).toBe(false)
+    })
+  }
+
+  // doperpowers board #101: the host keeps a plugin's state after its module unloads, so a
+  // devcloud before 0.5.0, disabled mid-session and reloaded away, leaves the
+  // marker it stored at its start, at version 1, and no guard of its own.
+  test("devcloud gone after a reload, the marker an older devcloud stored still held: cua's guard acts", async ($, on) => {
+    markerRead(on, { value: exact, version: 1 })
+    expect(await session($, on)).toEqual({
+      result: bash('[secret:API_KEY]'),
+      written: STORED,
+      kept: 'Bearer [secret:API_KEY]',
+      sections: [
+        ['other:notes', 'use [secret:API_KEY]'],
+        ['cua:secrets-guard', expect.stringContaining('[secret:KEY]')],
+      ],
+    })
   })
 
-  for (const [name, value] of [
-    ['a malformed marker', 'devcloud'],
-    ['another owner', { owner: 'other', version: 1 }],
-    ['an unknown version', { owner: 'devcloud', version: 2 }],
-    ['an extra field', { owner: 'devcloud', version: 1, extra: true }],
-    ['a read that throws', () => undefined],
+  for (const [name, read] of [
+    ['nothing stored', { value: undefined, version: 0 }],
+    ['a malformed marker', { value: 'devcloud', version: 0 }],
+    ['another owner', { value: { owner: 'other', version: 1 }, version: 0 }],
+    ['an unknown version', { value: { owner: 'devcloud', version: 2 }, version: 0 }],
+    ['an extra field', { value: { owner: 'devcloud', version: 1, extra: true }, version: 0 }],
+    ['a read that throws', () => { throw new Error('state.get failed') }],
   ] as const) {
     test(`${name}: the guard redacts`, async ($, on) => {
-      marker(on, value)
+      markerRead(on, read)
       printing(on, STORED)
       await startWith($, on, { API_KEY: STORED })
       expect((await $.tool.call({ tool: 'Bash', command: 'env' })).result).toEqual(bash('[secret:API_KEY]'))
@@ -541,8 +588,8 @@ describe("a /secret echo a tool reads back is masked, whichever guard holds the 
     expect(fileOf(call)).toBe(`${masked}\n[secret:API_KEY~b64]`)
   })
 
-  test("with devcloud's marker set, the echo is still masked and the rest left to devcloud", async ($, on) => {
-    marker(on, { owner: 'devcloud', version: 1 })
+  test("with devcloud's guard loaded, the echo is still masked and the rest left to devcloud", async ($, on) => {
+    markerRead(on, { value: { owner: 'devcloud', version: 1 }, version: 0 })
     read(on)
     await startWith($, on, { API_KEY: STORED })
     const call = await $.tool.call({ tool: 'Read', file_path: '/work/repo/history.jsonl' } as never)

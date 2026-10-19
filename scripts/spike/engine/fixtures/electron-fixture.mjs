@@ -34,6 +34,8 @@ export const FIXTURE_CONTROLS = Object.freeze([
   {id: 'button', role: 'AXButton', name: 'Fixture button'},
   {id: 'status', role: 'AXGroup', name: 'Fixture status'},
 ].map(Object.freeze));
+// The side-effect counters' file in the fixture's user-data directory (./electron/counters.js), read by measure.mjs.
+export const FIXTURE_COUNTERS_FILE = 'cua-fixture-counters.json';
 // The fixed state's values, which the method matrix reads back against.
 export const FIXTURE_INITIAL = Object.freeze({text: '', selected: null, status: 'Pressed 0 times'});
 

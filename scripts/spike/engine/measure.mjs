@@ -18,8 +18,65 @@
 //                                                       home's state restored; a failure names the recovery directory)
 //   measure.mjs --device <d> --lane vendor|cua --runs N --approved-runtime <home> --out <dir>
 //         [--samples N] [--tasks N] [--scenes textedit,finder,chrome,electron] [--probes c|none] [--operator]
+//         [--groups <list>] [--tap-modes listen,active] [--route-samples N] [--operator-seconds N]
 //         [--scene-dir <device dir>] [--node <Node 24+ on the device, cua lane>] [--approved-engine <bundle>]
 //     <dir>/run-<n>/results.jsonl, meta.json and goldens/ per run (./measure/lane.mjs)
+//
+// Phases (`--groups`, ./measure/groups.mjs; a comma list, run in this order whatever order it names them; default
+// speed,ab,d,e, everything a run took before the groups existed):
+//   speed    warm.listApps, golden.fixed and golden.action, the TextEdit series and task, tree.getAXState,
+//            warm.getScreenshot, the switches (preflight.switch, probe c′) and equivalence.readSet (U9 on both lanes)
+//   ab       probe.a.{click,key}, probe.b.{click,key}, probe.b.forced.<route> for routes 1, 2', 2, 3 (keys 2', 2, 3),
+//            probe.b.watch
+//   routes   routes.{elementClick,coordinateClick,key}, --route-samples per scene, family and route 2', 3, 2 (U12, U10)
+//   effects  effects.activationPoint, effects.selection, effects.counters (U13)
+//   coord    coord.click, coord.refusal.noScreenshot, coord.moved, coord.refusal.replaced (U2)
+//   tap      tap.create per --tap-modes mode (default listen,active), then probe.d.tap and probe.d.hidReset for each
+//            mode whose tap was created (U5; HID idle last)
+//   d        probe.d.noFire (with speed), probe.d.tap, probe.d.hidReset, and with --operator probe.d.operatorKeystroke and
+//            probe.d.backgroundClick (U6): the engine types for --operator-seconds (default 10) while the owner acts
+//   e        probe.e.focus (Chrome), probe.e.typeText, probe.e.keyedLatin
+// The vendor lane takes speed only; each other group named is one group.<name> not-run row. Every run of either lane
+// also records check.sceneWindow for Chrome: its window's title as the front-window checks see it (U3).
+//
+// Every row is {lane, run, op, scene?, sample, ok, ...}; the new rows' fields:
+//   check.sceneWindow   frontTitle, accepted, headerLine; cua lane windowTitle, windows [{index, subrole, title}],
+//                       tabs [{title, selected, value}]
+//   probe.b.forced.2'   as the other forced routes: action, forcedRoute "2'", route, activationGuardMs, failed,
+//                       frontmostUnchanged, topWindowUnchanged
+//   routes.<family>     user, family, forcedRoute, sent, route (the meta's cua/inputRoute), activationGuardMs, failed,
+//                       point {x, y, scale} (coordinate clicks, screenshot pixels), frontmostUnchanged,
+//                       topWindowUnchanged, activations, deactivations, watch, before, after (TextEdit {range, role,
+//                       axError}; Finder {selected: [run row numbers], otherSelected}; Chrome {option, textChars,
+//                       focused}; Electron {presses, textChars, focused}), outcomeHeld, counters (Electron: per counter
+//                       after − before)
+//   effects.activationPoint  probe_spike activationPoint's answer: listed, axError, point, relative, windowFrame, hit,
+//                       hitFrom
+//   effects.selection   user, set, key, role, setError, before, afterActivate, afterKey ({role, range, axError}),
+//                       preservedByActivate, preservedByKey, activate (probe_spike activate's answer), keyRoute,
+//                       keyFailed, frontmostUnchanged, topWindowUnchanged, activations, deactivations, watch, counters
+//                       {activate, key} (Electron)
+//   effects.counters    Electron: action (activate | key), forcedRoute, route, failed, counters, frontmostUnchanged,
+//                       topWindowUnchanged
+//   coord.click         line (aimed at, 0-based), pixel, local (points in the window), scale, route, failed, range,
+//                       landedLine, lineError, exact, lineHeight, lineHeightFrom, window, textView, screenshot,
+//                       screenshotBytes
+//   coord.refusal.noScreenshot  expected, refused, errorName, sentence (a fresh engine connection holding no screenshot)
+//   coord.moved         by, expected, refused, failed, route, range, landedLine, lineError (or notRun: the window could
+//                       not be moved: the shell is not trusted for Accessibility)
+//   coord.refusal.replaced  expected, newWindow, refused, failed, closed
+//   tap.create          mode, created, listenPreflight, postPreflight, start, stop {own, driven, other, hidIdleMs,
+//                       listenPreflight, postPreflight}; a refusal: errorName, sentence, mode, listenPreflight,
+//                       postPreflight
+//   probe.d.tap, probe.d.hidReset  as before, plus mode (tap group) and listenPreflight, postPreflight
+//   probe.d.operatorKeystroke, probe.d.backgroundClick  intervened, error, actionInterval, receivedAt, hidIdleMs,
+//                       typedSeconds, tap {mode, created, errorName?, sentence?}, tapCounts, drivenTimes, otherTimes,
+//                       drivenInsideAction and otherInsideAction {count, inside}, operatorConfirmedTiming
+//   probe.e.focus       target, route
+//
+// The operator's answers (approve, probe-f, --operator) are read line by line from stdin for the whole command, so a
+// coordinator can relay them through a fifo it holds open (`exec 3<>fifo; node measure.mjs ... --operator <fifo`):
+// a line starting with n is no, any other line yes, the end of input no.
 //   measure.mjs summary <dir>                          <dir>/summary.md from <dir>/vendor and <dir>/cua
 //     (./measure/summary.mjs)
 //
@@ -36,17 +93,20 @@ import {fileURLToPath} from 'node:url';
 import {StdioClient} from '../../browser-parity/mcp.mjs';
 import {deviceOf, shellOf, engineOps} from './measure/device.mjs';
 import {approveEngine, stopEngine, engineStatus, EngineRefusal} from './measure/engine-control.mjs';
-import {measureLane, cleanupPreparation, LANES, SCENE_ORDER} from './measure/lane.mjs';
+import {measureLane, cleanupPreparation, LANES, SCENE_ORDER, OPERATOR_SECONDS} from './measure/lane.mjs';
+import {DEFAULT_GROUPS, TAP_MODES, parseGroups, parseTapModes} from './measure/groups.mjs';
 import {writeSummary} from './measure/summary.mjs';
 import {probeF} from './measure/probe-f.mjs';
 
 const ENGINE_COMMANDS = ['stop', 'status', 'approve', 'probe-f', 'cleanup'];
-export const USAGE = 'usage: measure.mjs stop|status|approve|probe-f --device <alias|local> [--dry-run] [--approved-engine <bundle>] [--out <dir>] | measure.mjs cleanup --device <alias|local> --preparation <file> | measure.mjs --device <alias|local> --lane vendor|cua --runs N --approved-runtime <home> --out <dir> [--samples N] [--tasks N] [--scenes list] [--probes c|none] [--operator] [--scene-dir <dir>] [--node <path>] | measure.mjs summary <dir>';
+export const USAGE = 'usage: measure.mjs stop|status|approve|probe-f --device <alias|local> [--dry-run] [--approved-engine <bundle>] [--out <dir>] | measure.mjs cleanup --device <alias|local> --preparation <file> | measure.mjs --device <alias|local> --lane vendor|cua --runs N --approved-runtime <home> --out <dir> [--samples N] [--tasks N] [--scenes list] [--probes c|none] [--operator] [--groups list] [--tap-modes list] [--route-samples N] [--operator-seconds N] [--scene-dir <dir>] [--node <path>] | measure.mjs summary <dir>';
 const OPTIONS = {
   device: {type: 'string'}, lane: {type: 'string'}, runs: {type: 'string'}, 'approved-runtime': {type: 'string'}, out: {type: 'string'},
   samples: {type: 'string', default: '30'}, tasks: {type: 'string', default: '10'}, scenes: {type: 'string', default: SCENE_ORDER.join(',')},
   probes: {type: 'string', default: 'c'}, operator: {type: 'boolean', default: false}, 'scene-dir': {type: 'string'}, node: {type: 'string'},
   'approved-engine': {type: 'string'}, 'dry-run': {type: 'boolean', default: false}, preparation: {type: 'string'},
+  groups: {type: 'string', default: DEFAULT_GROUPS.join(',')}, 'tap-modes': {type: 'string', default: TAP_MODES.join(',')},
+  'route-samples': {type: 'string', default: '3'}, 'operator-seconds': {type: 'string', default: String(OPERATOR_SECONDS)},
 };
 
 class UsageError extends Error {}
@@ -81,23 +141,50 @@ export function parseCommand(argv) {
   const probes = values.probes === 'none' ? [] : values.probes.split(',');
   if (probes.some(p => p !== 'c')) fail('--probes is c or none (the other probes need input or the operator)');
   if (values.node !== undefined && values.lane !== 'cua') fail('--node names the own host\'s Node; the vendor lane uses its pinned one');
+  let groups, tapModes;
+  try { groups = parseGroups(values.groups); tapModes = parseTapModes(values['tap-modes']); } catch (error) { fail(error.message); }
+  if (values.operator && !groups.includes('d')) fail('--operator runs probe (d)\'s operator steps: --groups must name d');
   return {command: 'run', device: values.device, lane: values.lane, runs: count(values.runs, 'runs'), approvedRuntime: absolute(values['approved-runtime'], 'approved-runtime') ?? fail('--approved-runtime is required'),
     out: resolve(values.out), samples: count(values.samples, 'samples'), tasks: count(values.tasks, 'tasks'), scenes: SCENE_ORDER.filter(s => scenes.includes(s)), probes,
-    operator: values.operator, sceneDir: absolute(values['scene-dir'], 'scene-dir'), node: absolute(values.node, 'node'), engine};
+    operator: values.operator, sceneDir: absolute(values['scene-dir'], 'scene-dir'), node: absolute(values.node, 'node'), engine,
+    groups, tapModes, routeSamples: count(values['route-samples'], 'route-samples'), operatorSeconds: count(values['operator-seconds'], 'operator-seconds')};
 }
 
-// The operator's console answer: Enter (or anything but n) is yes; end of input is no.
-export function consoleConfirm(message) {
-  return new Promise(done => {
-    const rl = createInterface({input: process.stdin, output: process.stderr});
-    let answered = false;
-    rl.question(message, answer => { answered = true; rl.close(); done(!/^\s*n/i.test(answer)); });
-    rl.on('close', () => { if (!answered) done(false); });
-  });
+// The operator's answers, one line each from `input` (stdin, a terminal or a fifo a coordinator relays into) over the
+// whole command: one reader, so lines that arrive together are each an answer rather than lost with a closed reader.
+// Enter (or any line but one starting with n) is yes; the end of input is no for this and every later question.
+// -> {confirm(message) -> Promise<boolean>, close()}.
+export function operatorConsole({input = process.stdin, output = process.stderr} = {}) {
+  let rl = null, ended = false;
+  const lines = [], waiting = [];
+  const open = () => {
+    if (rl || ended) return;
+    rl = createInterface({input, terminal: false});
+    rl.on('line', line => { const next = waiting.shift(); if (next) next(line); else lines.push(line); });
+    rl.on('close', () => { ended = true; for (const next of waiting.splice(0)) next(null); });
+  };
+  return {
+    confirm(message) {
+      output.write(message);
+      open();
+      if (lines.length) return Promise.resolve(!/^\s*n/i.test(lines.shift()));
+      if (ended) return Promise.resolve(false);
+      return new Promise(done => waiting.push(line => done(line !== null && !/^\s*n/i.test(line))));
+    },
+    // Releases stdin so the command can exit while a coordinator still holds the fifo open.
+    close() { if (rl) { rl.close(); if (input === process.stdin) input.destroy(); } rl = null; ended = true; },
+  };
 }
 
-export async function main(argv = process.argv.slice(2), {log = console.log, confirm = consoleConfirm} = {}) {
+export async function main(argv = process.argv.slice(2), {log = console.log, confirm} = {}) {
   const command = parseCommand(argv);
+  if (confirm) return run(command, {log, confirm});
+  const operator = operatorConsole();
+  try { return await run(command, {log, confirm: message => operator.confirm(message)}); }
+  finally { operator.close(); }
+}
+
+async function run(command, {log, confirm}) {
   if (command.command === 'summary') {
     const s = writeSummary(command.dir);
     log(`${join(command.dir, 'summary.md')}: ${s.verdict}`);

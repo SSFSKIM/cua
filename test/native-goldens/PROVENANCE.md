@@ -49,24 +49,43 @@ ones. The script's header lists each change. All of them are mechanical:
 - The spike's diagnostic `timings` are dropped.
 - Finder's redaction marker for the empty string, `⟨0⟩`, becomes `''` again.
 
-The render test checks that each `skyshot.json` equals `rekey` applied to the recorded capture.
+The render test checks every file above against its source: each Skyshot equals `rekey` of the recorded capture, and
+each vendor text equals the recorded bytes.
 
 ## Finder is structural
 
 Finder's window lists the owner's sidebar places, which the harness does not own. M0's capture already replaced every
 string that the run does not own with its length (`⟨n⟩`). For that reason no golden here carries that content, and
-Finder is compared against the vendor by structure (`compare.mjs`'s structural mode): depth, role and flags are
-compared, and strings only by shape.
+Finder is compared against the vendor by structure (`compare.mjs`'s structural mode). Lines are matched by depth, the
+English role word where the redaction kept one, and the flags group. Each matched pair is then compared by its length,
+with every `⟨n⟩` counted as n characters. The redaction folds a localized role word, the flags and the title into one
+`⟨n⟩` on most Finder lines, so the length is what such a line still tells. The other three scenes are compared by full
+text, values included, with only the loopback page's port normalized.
 
 ## Expected differences
 
-`expected.json` declares every difference between cua's output and the vendor's, each with its cause. A declaration
-does one of two things:
-- It applies an engine-side correction to the Skyshot before rendering. These record M1a.1 derivations that the
-  vendor's text refutes.
-- It names a difference in a line, the header, the trailer or the state.
+`expected.json` declares every difference between cua's output and the vendor's. Each declaration gives its cause and
+its `fault`:
+- engine: the recorded Skyshot is wrong, or lacks what the vendor reads;
+- redaction: Finder's captures hide the content the rule reads;
+- scene state: the two lanes' actions left different states.
 
-The tests fail in either of two cases: an undeclared difference appears, or a declaration changes nothing.
+A declaration does one of two things:
+- It applies a correction to the Skyshot before rendering.
+- It pins a difference to its exact value or count: a part inside a line, a whole line, the header or the trailer.
+
+The tests fail in either of two cases: a difference appears that no declaration pins, or a declaration changes nothing
+or is used fewer times than its count.
+
+**The engine-fault declarations expire.** M1b re-records these goldens live from the fixed engine (task M1a.2b) and
+deletes every engine-fault declaration at that point. A declaration still needed after the re-recording is an engine
+defect, not a declaration. A fixed derivation alone removes nothing: the recorded Skyshots do not change until the
+goldens are re-recorded.
+
+**Action descriptions are per locale.** The vendor prints the system's action descriptions, localized to the Mac's
+language, and the mini is Korean (`윈도우 확대/축소` in Chrome and Electron; TextEdit answers in English,
+`zoom the window`). A re-recording on another locale differs in these descriptions and nowhere else. Until M1a.2b the
+engine supplies no action descriptions, so each such difference is declared with that cause.
 
 ## Vendor sizing config (Statsig 406601636)
 

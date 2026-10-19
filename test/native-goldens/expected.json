@@ -1,67 +1,296 @@
-[
-  {
-    "scene": "*",
-    "kind": "skyshot",
-    "correction": "disclosableWhenExpanded",
-    "cause": "Engine (the flag's derivation; M1a.1's Walk.swift sets flags.disclosable whenever AXDisclosing is present). No vendor line in any capture prints `collapsed`: every web element of Chrome and Electron carries AXDisclosing false, and so do Finder's leaf rows, where the vendor prints neither flag nor an Expand action; the vendor prints `expanded` (and one 8-character secondary action, by its length SAICollapse's `Collapse`) on Finder's expanded sidebar sections. The vendor's own disclosable derivation is not read (sky-behaviour.md §23 item 2); the hypothesis the captures fit is AXDisclosing being settable. Applied to every scene: without it the renderer prints `(collapsed)` and `Secondary Actions: Expand` on 40 Chrome, 15 Electron and 40 Finder lines."
-  },
-  {
-    "scene": "chrome",
-    "kind": "skyshot",
-    "correction": "settableRoles",
-    "roles": ["AXTextField", "AXTextArea", "AXComboBox", "AXScrollBar", "AXValueIndicator", "AXRulerMarker"],
-    "cause": "Engine (the flag's derivation; flags.settable is AXUIElementIsAttributeSettable(AXValue), which Chromium answers true for every native view and web control). The vendor prints `settable` on the text field, the text area and the tab (a Boolean value) and on none of the groups, toolbars, buttons, pop-up buttons, links, static texts, the tab group, the checkbox or the radio buttons; across all four scenes it prints it only on text fields and areas, a combo box, scroll bars, value indicators, ruler markers and Boolean values (the roles kept here). Its derivation is not read (sky-behaviour.md §23 item 2)."
-  },
-  {
-    "scene": "electron",
-    "kind": "skyshot",
-    "correction": "settableRoles",
-    "roles": ["AXTextField", "AXTextArea", "AXComboBox", "AXScrollBar", "AXValueIndicator", "AXRulerMarker"],
-    "cause": "Engine, as Chrome's entry: Electron's native views (the window's nested groups) and the list box read settable; the vendor prints it on the text area only."
-  },
-  {
-    "scene": "textedit",
-    "kind": "skyshot",
-    "correction": "valueType",
-    "role": "AXRulerMarker",
-    "valueType": "float",
-    "cause": "Engine (the Skyshot shape): valueType is \"number\" for every CFNumber, so a float whose value is integral (two ruler markers at 0) renders `settable, integer` where the vendor prints `settable, float` from the CFNumber's type. The renderer takes \"integer\" or \"float\" when the engine names them; the Skyshot should carry the CFNumber's type."
-  },
-  {
-    "scene": "textedit",
-    "kind": "skyshot",
-    "correction": "windowUrl",
-    "url": "file:///Users/new/Library/Caches/cua-harness/spike-scenes/textedit/cua-scene.rtf",
-    "cause": "Engine (the read set): the vendor prints the window's document as `URL: file:///…/cua-scene.rtf`; the engine's window node has no url (AXURL is read, AXDocument is not)."
-  },
-  {
-    "scene": "chrome",
-    "kind": "skyshot",
-    "correction": "windowUrl",
-    "url": "http://127.0.0.1:55902/",
-    "cause": "Engine (the read set), as TextEdit's entry: the vendor prints the window's `URL: 127.0.0.1:<port>/`. The URL set here is the cua run's page (the browser root view's url in the same Skyshot); the two lanes served the page on different ports."
-  },
-  {
-    "scene": "chrome",
-    "kind": "header",
-    "cause": "Engine (the window title): the vendor's header names the window \"cua scene page\" (the page's title) while the engine's Skyshot.window.title, and the window element's AXTitle in both lanes, is \"cua scene page - Chrome for Testing\". Where the vendor takes the header's title from is not read (likely the CGWindow's name); the renderer prints Skyshot.window.title."
-  },
-  {
-    "scene": "electron",
-    "kind": "trailer",
-    "cause": "Engine (the focused element): the vendor names the web area (before the click) and the button (after it) as focused; the engine's Skyshot.focused is null in every Electron capture of the cua lane, so cua's text has no trailer."
-  },
-  {
-    "scene": "textedit",
-    "golden": "diff",
-    "kind": "state",
-    "cause": "Scene state, not rendering: the vendor's click on the document's first line scrolled the document to its end (the vertical scroll bar and its indicator 0.02 → 1, its only two changes), while cua's click left the tree unchanged (the before and after Skyshots differ in no node), so cua answers the no-change sentence. The vendor activates TextEdit on a click (#162); cua does not."
-  },
-  {
-    "scene": "finder",
-    "golden": "diff",
-    "kind": "missing",
-    "head": "6:~⟨⟩ | ",
-    "cause": "Engine (an attribute not reported): after the click the vendor's line for row 005's name field grows by exactly the 10 characters of `selected, ` (`(settable)` → `(selected, settable)`), the field reading AXSelected true; the engine's after-Skyshot reports the row and its four cells selected and the field not."
-  }
-]
+{
+  "about": "Every difference between cua's output and the vendor's on these goldens, each with its cause (PROVENANCE.md). `fault` names where it comes from: \"engine\" (the recorded Skyshot is wrong, or lacks what the vendor reads), \"redaction\" (Finder's captures hide the content the rule reads) or \"scene state\" (the two lanes' actions left different states). The engine corrections (`kind: \"skyshot\"`, fault \"engine\") and the engine differences expire: M1b re-records these goldens live from the fixed engine (task M1a.2b) and deletes every engine-fault declaration then; one still needed at that point is an engine defect, not a declaration. Kinds: `skyshot` (a correction applied to the Skyshot before rendering), `part` (inside a matched line, cua's `<label>: <cua>` is the vendor's `<label>: <vendor>`), `missing` and `added` (a whole line, by its matching key), `header` and `trailer` (both sides' exact text), `addedOverTenPercent` (names its Decision Log entry). `golden` is \"full\", \"before\" or \"diff\" (all three when absent); `count` is exact.",
+  "declarations": [
+    {
+      "scene": "*",
+      "kind": "skyshot",
+      "correction": "disclosableWhenExpanded",
+      "cause": "Engine (the flag's derivation; M1a.1's Walk.swift sets flags.disclosable whenever AXDisclosing is present). No vendor line in any capture prints `collapsed`: every web element of Chrome and Electron carries AXDisclosing false, and so do Finder's leaf rows, where the vendor prints neither flag nor an Expand action; the vendor prints `expanded` (and one 8-character secondary action, by its length SAICollapse's `Collapse`) on Finder's expanded sidebar sections. The vendor's own disclosable derivation is not read (sky-behaviour.md §23 item 2); the hypothesis the captures fit is AXDisclosing being settable. Applied to every scene: without it the renderer prints `(collapsed)` and `Secondary Actions: Expand` on 40 Chrome, 15 Electron and 40 Finder lines.",
+      "fault": "engine"
+    },
+    {
+      "scene": "chrome",
+      "kind": "skyshot",
+      "correction": "settableRoles",
+      "roles": [
+        "AXTextField",
+        "AXTextArea",
+        "AXComboBox",
+        "AXScrollBar",
+        "AXValueIndicator",
+        "AXRulerMarker"
+      ],
+      "cause": "Engine (the flag's derivation; flags.settable is AXUIElementIsAttributeSettable(AXValue), which Chromium answers true for every native view and web control). The vendor prints `settable` on the text field, the text area and the tab (a Boolean value) and on none of the groups, toolbars, buttons, pop-up buttons, links, static texts, the tab group, the checkbox or the radio buttons; across all four scenes it prints it only on text fields and areas, a combo box, scroll bars, value indicators, ruler markers and Boolean values (the roles kept here). Its derivation is not read (sky-behaviour.md §23 item 2).",
+      "fault": "engine"
+    },
+    {
+      "scene": "electron",
+      "kind": "skyshot",
+      "correction": "settableRoles",
+      "roles": [
+        "AXTextField",
+        "AXTextArea",
+        "AXComboBox",
+        "AXScrollBar",
+        "AXValueIndicator",
+        "AXRulerMarker"
+      ],
+      "cause": "Engine, as Chrome's entry: Electron's native views (the window's nested groups) and the list box read settable; the vendor prints it on the text area only.",
+      "fault": "engine"
+    },
+    {
+      "scene": "*",
+      "kind": "skyshot",
+      "correction": "valueType",
+      "valueType": "float",
+      "cause": "Engine (the Skyshot shape): valueType is \"number\" for every CFNumber, so a float whose value is integral renders `settable, integer` where the vendor prints `settable, float` from the CFNumber's type: TextEdit's two ruler markers at 0, Finder's scroll bars and value indicators at 0 and its splitter at 177 (each Finder line's length fits `float`, not `integer`). The roles are the ones the captures show; the fault is one, and the Skyshot should carry the CFNumber's type. The renderer takes \"integer\" or \"float\" when the engine names them.",
+      "roles": [
+        "AXRulerMarker",
+        "AXScrollBar",
+        "AXValueIndicator",
+        "AXSplitter"
+      ],
+      "fault": "engine"
+    },
+    {
+      "scene": "textedit",
+      "kind": "skyshot",
+      "correction": "windowUrl",
+      "url": "file:///Users/new/Library/Caches/cua-harness/spike-scenes/textedit/cua-scene.rtf",
+      "cause": "Engine (the read set): the vendor prints the window's document as `URL: file:///…/cua-scene.rtf`; the engine's window node has no url (AXURL is read, AXDocument is not).",
+      "fault": "engine"
+    },
+    {
+      "scene": "chrome",
+      "kind": "skyshot",
+      "correction": "windowUrl",
+      "url": "http://127.0.0.1:55902/",
+      "cause": "Engine (the read set), as TextEdit's entry: the vendor prints the window's `URL: 127.0.0.1:<port>/`. The URL set here is the cua run's page (the browser root view's url in the same Skyshot); the two lanes served the page on different ports.",
+      "fault": "engine"
+    },
+    {
+      "scene": "finder",
+      "kind": "skyshot",
+      "correction": "hiddenIdentifier",
+      "fault": "redaction",
+      "identifiers": [
+        "⟨5⟩",
+        "⟨6⟩",
+        "⟨7⟩"
+      ],
+      "cause": "Redaction, not rendering: the renderer drops an identifier that starts with `_` or `NS` [B §6], but the Finder captures replaced every identifier by its length, so the prefix is hidden and cua prints `ID: ⟨n⟩` where the vendor prints nothing. The 5-to-7-character identifiers (the two scroll areas, an outline and the two scroll bars; `_NS:<n>` by their length) are the ones whose vendor lines fit only without the part, each length needed; the longer identifiers print on both sides."
+    },
+    {
+      "scene": "textedit",
+      "golden": [
+        "full",
+        "before"
+      ],
+      "kind": "part",
+      "fault": "engine",
+      "label": "Secondary Actions",
+      "cua": "Zoom Window",
+      "vendor": "zoom the window",
+      "count": 1,
+      "cause": "Engine (action descriptions): the vendor prints the system's action description (AXUIElementCopyActionDescription), localized to the Mac's language (Korean on the mini, though TextEdit answers in English); the engine supplies no action descriptions until M1a.2b, so cua prints the AX name split into words."
+    },
+    {
+      "scene": "chrome",
+      "golden": [
+        "full",
+        "before"
+      ],
+      "kind": "part",
+      "fault": "engine",
+      "label": "Secondary Actions",
+      "cua": "Zoom Window",
+      "vendor": "윈도우 확대/축소",
+      "count": 1,
+      "cause": "Engine (action descriptions): the vendor prints the system's action description (AXUIElementCopyActionDescription), localized to the Mac's language (Korean on the mini, though TextEdit answers in English); the engine supplies no action descriptions until M1a.2b, so cua prints the AX name split into words."
+    },
+    {
+      "scene": "electron",
+      "golden": [
+        "full",
+        "before"
+      ],
+      "kind": "part",
+      "fault": "engine",
+      "label": "Secondary Actions",
+      "cua": "Zoom Window",
+      "vendor": "윈도우 확대/축소",
+      "count": 1,
+      "cause": "Engine (action descriptions): the vendor prints the system's action description (AXUIElementCopyActionDescription), localized to the Mac's language (Korean on the mini, though TextEdit answers in English); the engine supplies no action descriptions until M1a.2b, so cua prints the AX name split into words."
+    },
+    {
+      "scene": "finder",
+      "golden": [
+        "full",
+        "before"
+      ],
+      "kind": "part",
+      "fault": "engine",
+      "label": "Secondary Actions",
+      "cua": "Zoom Window",
+      "vendor": "⟨9⟩",
+      "count": 1,
+      "cause": "Engine (action descriptions): the vendor prints the system's action description (AXUIElementCopyActionDescription), localized to the Mac's language (Korean on the mini, though TextEdit answers in English); the engine supplies no action descriptions until M1a.2b, so cua prints the AX name split into words. Redacted, the vendor's description is 9 characters, the length of Chrome's `윈도우 확대/축소`."
+    },
+    {
+      "scene": "finder",
+      "golden": [
+        "full",
+        "before"
+      ],
+      "kind": "part",
+      "fault": "engine",
+      "label": "Secondary Actions",
+      "cua": "Scroll Left, Scroll Right, Scroll Up, Scroll Down",
+      "vendor": "⟨22⟩",
+      "count": 2,
+      "cause": "Engine (action descriptions): the vendor prints the system's action description (AXUIElementCopyActionDescription), localized to the Mac's language (Korean on the mini, though TextEdit answers in English); the engine supplies no action descriptions until M1a.2b, so cua prints the AX name split into words. The two scroll areas' four page-scroll descriptions are 22 characters in all (each line's length without its hidden `_NS` identifier); the English fallbacks would be 49."
+    },
+    {
+      "scene": "finder",
+      "golden": [
+        "full",
+        "before"
+      ],
+      "kind": "part",
+      "fault": "engine",
+      "label": "Secondary Actions",
+      "cua": "Open, Confirm",
+      "vendor": "⟨12⟩",
+      "count": 18,
+      "cause": "Engine (action descriptions): the vendor prints the system's action description (AXUIElementCopyActionDescription), localized to the Mac's language (Korean on the mini, though TextEdit answers in English); the engine supplies no action descriptions until M1a.2b, so cua prints the AX name split into words. The file rows' AXOpen and AXConfirm print 12 characters, as long as the cells' AXOpen alone: which descriptions the vendor prints is hidden by the redaction."
+    },
+    {
+      "scene": "finder",
+      "golden": [
+        "full",
+        "before"
+      ],
+      "kind": "part",
+      "fault": "engine",
+      "label": "Secondary Actions",
+      "cua": "Open",
+      "vendor": "⟨12⟩",
+      "count": 18,
+      "cause": "Engine (action descriptions): the vendor prints the system's action description (AXUIElementCopyActionDescription), localized to the Mac's language (Korean on the mini, though TextEdit answers in English); the engine supplies no action descriptions until M1a.2b, so cua prints the AX name split into words. The cells' AXOpen, 12 characters."
+    },
+    {
+      "scene": "finder",
+      "golden": "diff",
+      "kind": "part",
+      "fault": "engine",
+      "label": "Secondary Actions",
+      "cua": "Open",
+      "vendor": "⟨12⟩",
+      "count": 1,
+      "cause": "As the full tree's cells: the clicked row's name cell, now selected."
+    },
+    {
+      "scene": "finder",
+      "golden": [
+        "full",
+        "before"
+      ],
+      "kind": "part",
+      "fault": "redaction",
+      "label": "Secondary Actions",
+      "cua": "⟨39⟩, ⟨39⟩, ⟨42⟩",
+      "vendor": "⟨28⟩",
+      "count": 4,
+      "cause": "Redaction, not rendering: the toolbar items' custom actions (`Name:<name>\\nTarget:…\\nSelector:…`) were replaced whole by their length in the Skyshot, so the renderer cannot read the `Name:` line and prints the redaction marks; the vendor prints the three names, 28 characters in all."
+    },
+    {
+      "scene": "finder",
+      "golden": "diff",
+      "kind": "part",
+      "fault": "redaction",
+      "label": "Secondary Actions",
+      "cua": "⟨39⟩, ⟨39⟩, ⟨42⟩",
+      "vendor": "⟨28⟩",
+      "count": 2,
+      "cause": "Redaction, not rendering: the toolbar items' custom actions (`Name:<name>\\nTarget:…\\nSelector:…`) were replaced whole by their length in the Skyshot, so the renderer cannot read the `Name:` line and prints the redaction marks; the vendor prints the three names, 28 characters in all. The two items the click enabled."
+    },
+    {
+      "scene": "chrome",
+      "golden": [
+        "full",
+        "before"
+      ],
+      "kind": "header",
+      "fault": "engine",
+      "vendor": "Window: \"cua scene page\", App: Google Chrome for Testing.",
+      "cua": "Window: \"cua scene page - Chrome for Testing\", App: Google Chrome for Testing.",
+      "cause": "Engine (the window title): the vendor's header names the window \"cua scene page\" (the page's title) while the engine's Skyshot.window.title, and the window element's AXTitle in both lanes, is \"cua scene page - Chrome for Testing\". Where the vendor takes the header's title from is not read (likely the CGWindow's name); the renderer prints Skyshot.window.title."
+    },
+    {
+      "scene": "chrome",
+      "golden": "diff",
+      "kind": "header",
+      "fault": "engine",
+      "vendor": "The following is a diff from the previous accessibility tree for Window: \"cua scene page\" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.",
+      "cua": "The following is a diff from the previous accessibility tree for Window: \"cua scene page - Chrome for Testing\" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.",
+      "cause": "Engine (the window title): the vendor's header names the window \"cua scene page\" (the page's title) while the engine's Skyshot.window.title, and the window element's AXTitle in both lanes, is \"cua scene page - Chrome for Testing\". Where the vendor takes the header's title from is not read (likely the CGWindow's name); the renderer prints Skyshot.window.title."
+    },
+    {
+      "scene": "electron",
+      "golden": [
+        "full",
+        "before"
+      ],
+      "kind": "trailer",
+      "fault": "engine",
+      "vendor": "The focused UI element is 3 HTML 콘텐츠 cua Electron fixture, URL: file:///Users/new/Library/Caches/cua-harness/electron-fixture/44.9.0-012125d3c853/cua%20Electron%20Fixture.app/Contents/Resources/app/index.html",
+      "cua": null,
+      "cause": "Engine (the focused element): the engine's Skyshot.focused is null in every Electron capture of the cua lane, so cua's text has no trailer, where the vendor names the web area (before the click) and the clicked button (after it)."
+    },
+    {
+      "scene": "electron",
+      "golden": "diff",
+      "kind": "trailer",
+      "fault": "engine",
+      "vendor": "The focused UI element is 13 버튼 Fixture button",
+      "cua": null,
+      "cause": "Engine (the focused element): the engine's Skyshot.focused is null in every Electron capture of the cua lane, so cua's text has no trailer, where the vendor names the web area (before the click) and the clicked button (after it)."
+    },
+    {
+      "scene": "textedit",
+      "golden": "diff",
+      "kind": "header",
+      "fault": "scene state",
+      "vendor": "The following is a diff from the previous accessibility tree for Window: \"cua-scene.rtf\" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.",
+      "cua": "There has been no change in the accessibility tree for Window: \"cua-scene.rtf\".",
+      "cause": "Scene state, not rendering: the vendor's click on the document's first line scrolled the document to its end (the vertical scroll bar and its indicator 0.02 → 1, its diff's only two lines), while cua's click left the tree unchanged (its before and after Skyshots differ in no node), so cua answers the no-change sentence. The vendor activates TextEdit on a click (#162); cua does not."
+    },
+    {
+      "scene": "textedit",
+      "golden": "diff",
+      "kind": "missing",
+      "fault": "scene state",
+      "head": "~scroll bar (settable, float) 1 | ",
+      "count": 1,
+      "cause": "Scene state, not rendering: the vendor's click on the document's first line scrolled the document to its end (the vertical scroll bar and its indicator 0.02 → 1, its diff's only two lines), while cua's click left the tree unchanged (its before and after Skyshots differ in no node), so cua answers the no-change sentence. The vendor activates TextEdit on a click (#162); cua does not."
+    },
+    {
+      "scene": "textedit",
+      "golden": "diff",
+      "kind": "missing",
+      "fault": "scene state",
+      "head": "~value indicator (settable, float) 1 | ",
+      "count": 1,
+      "cause": "Scene state, not rendering: the vendor's click on the document's first line scrolled the document to its end (the vertical scroll bar and its indicator 0.02 → 1, its diff's only two lines), while cua's click left the tree unchanged (its before and after Skyshots differ in no node), so cua answers the no-change sentence. The vendor activates TextEdit on a click (#162); cua does not."
+    },
+    {
+      "scene": "finder",
+      "golden": "diff",
+      "kind": "missing",
+      "head": "6:~⟨⟩ | ",
+      "cause": "Engine (an attribute not reported): after the click the vendor's line for row 005's name field grows by exactly the 10 characters of `selected, ` (`(settable)` → `(selected, settable)`), the field reading AXSelected true; the engine's after-Skyshot reports the row and its four cells selected and the field not.",
+      "fault": "engine",
+      "count": 1
+    }
+  ]
+}

@@ -111,6 +111,7 @@ test('numbers print as NSNumber describes them (%.16g); Booleans as on and off',
 });
 
 test('the parts: title bare, then labels in order; a repeated value skipped; long parts last; a lone part bare', () => {
+  // The index ranges are the CFRange's half-open bounds: [1, 3] spans rows 1 and 2; [2, 2] is empty.
   const full = {
     title: 'T', description: 'T', rowIndexRange: [1, 3], columnIndexRange: [2, 2], url: 'https://www.example.com/a', help: 'H', value: 'V',
     valueType: 'string', valueDescription: 'D', placeholder: 'P', identifier: 'ident', actions: ['AXPress', 'AXIncrement', 'AXShowMenu', 'AXScrollToVisible', 'Name:Copy link\nTarget:0x1\nSelector:(null)'],
@@ -125,12 +126,18 @@ test('the parts: title bare, then labels in order; a repeated value skipped; lon
     node('f', 1, 'AXCell', {roleDescription: 'cell', identifier: 'NSWindow', title: 'Y'}),
   ]));
   assert.equal(render(shot, advanceNumbering(null, shot)), ['Window: "W", App: Example.', '0 standard window W, Secondary Actions: Raise',
-    '\t1 cell T, Rows: 1-3, URL: example.com/a, Help: H, Value: V, Details: D, Placeholder: P, ID: ident, Secondary Actions: Increment, Copy link',
+    '\t1 cell T, Rows: 1-2, URL: example.com/a, Help: H, Value: V, Details: D, Placeholder: P, ID: ident, Secondary Actions: Increment, Copy link',
     `\t2 cell T, Value: V, Description: ${long}, Help: line 1\nline 2`,
     '\t3 cell only',
     '\t4 cell Secondary Actions: Raise',
     '\t5 cell X',
     '\t6 cell Y', ''].join('\n'));
+});
+
+test('Rows and Columns print the closed range, and only when it spans more than one', () => {
+  const cell = (token, rowIndexRange, columnIndexRange) => node(token, 1, 'AXCell', {roleDescription: 'cell', title: token, rowIndexRange, columnIndexRange});
+  const shot = skyshot(win([cell('a', [4, 5], [0, 1]), cell('b', [4, 7], [2, 4]), cell('c', [3, 3], [1, 2])]));
+  assert.deepEqual(lines(shot).slice(1), ['\t1 cell a', '\t2 cell b, Rows: 4-6, Columns: 2-3', '\t3 cell c']);
 });
 
 test('a text area prints its Markdown value; other roles their plain value', () => {

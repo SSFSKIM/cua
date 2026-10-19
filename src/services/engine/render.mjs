@@ -118,7 +118,10 @@ function truncationMarkers(skyshot) {
 }
 
 // The trailer's precedence: selected text, else selected elements, else the focused element [B §6]. Selected element
-// lines carry one tab [golden: Finder]; a blank line then the note follows a selection [golden: Finder].
+// lines carry one tab [golden: Finder]; a blank line then the note follows selected elements [golden: Finder]. The same
+// blank line before the note after selected text is an inference: no golden has selected text, F §2.6 reads both
+// branches ending "then the note" in the one function, and the one branch pinned shows the blank line (B §6's block,
+// without it, is labelled a reading for the goldens to pin).
 function trailer(presented, lineOf) {
   if (presented.selectedText) return `\nSelected text: \`\`\`\n${presented.selectedText}\n\`\`\`\n\n${NOTE}`;
   if (presented.selected.length) return `\nSelected:\n${presented.selected.map(node => `\t${lineOf(node)}`).join('\n')}\n\n${NOTE}`;
@@ -262,7 +265,9 @@ function associateTitleUIElements(node) {
 
 // (1) A selectable, unfocused node (not a table or table row) with no settable or selectable descendant takes its
 // subtree's titles, descriptions and string values, and keeps only its toggle descendants as children. The join is not
-// read [B §5]; one space.
+// read [B §5]; one space. The vendor's flattened role words (`radio button` / `radio buttons`, `outline row` / `rows`,
+// E §5.2's "<target> <separator> <container>" reading) are not applied: B §5 and E leave their use an inference and no
+// golden prints one, so the node keeps its own role word.
 function flattenIntoSelectableAncestor(node) {
   if (!node.flags.selectable || node.flags.focused || node.role === 'AXTable' || node.subrole === 'AXTableRow') return;
   const below = descendants(node);
@@ -451,8 +456,11 @@ function parts(node, urls) {
   return ordered.map(part => (part.label ? `${part.label}: ${part.text}` : part.text)).join(', ');
 }
 
-// `a-b`, only when lower < upper [B §6].
-const range = pair => (Array.isArray(pair) && pair.length === 2 && pair[0] < pair[1] ? `${pair[0]}-${pair[1]}` : null);
+// `a-b`, only when lower < upper [B §6], over the closed range the vendor holds: the Skyshot carries the CFRange's
+// half-open bounds [location, location + length] (M1a.1's Fetch.swift), so a span of one row or column (a plain table
+// cell) prints nothing [golden: Finder's cells, none of which prints Rows or Columns] and a span of n > 1 prints
+// `location-(location + n - 1)`.
+const range = pair => (Array.isArray(pair) && pair.length === 2 && pair[1] - pair[0] > 1 ? `${pair[0]}-${pair[1] - 1}` : null);
 
 // A value as the vendor prints it: a number as NSNumber describes it (%.16g) [golden: TextEdit's ruler markers], a
 // Boolean as on/off [golden: Chrome's tab, "on"], a link's URL shortened, merged text with its links as Markdown.
@@ -483,11 +491,13 @@ export function formatNumber(number) {
   return trim(number.toFixed(15 - exponent));
 }
 
-// The descriptions the vendor prints for the actions it names itself [golden: TextEdit; E §5.2]; any other action
-// prints the name a custom action carries, else its AX name split into words.
+// The vendor prints the system's action descriptions (AXUIElementCopyActionDescription), localized to the Mac's
+// language (`zoom the window` in TextEdit, `윈도우 확대/축소` in Chrome on the Korean mini), and its English fallbacks
+// where the system gives none: AXRaise prints `Raise` in every scene [golden; E §5.2]. The Skyshot carries no
+// descriptions until M1a.2b, so these are the fallbacks; any other action prints the name a custom action carries,
+// else its AX name split into words (`Zoom Window`, a declared difference in the goldens).
 const ACTION_WORDS = {
   AXRaise: 'Raise', AXDelete: 'Delete', AXConfirm: 'Confirm', AXCancel: 'Cancel', AXIncrement: 'Increment', AXDecrement: 'Decrement',
-  AXShowDefaultUI: 'Show Default UI', AXShowAlternateUI: 'Show Alternate UI',
   AXScrollLeftByPage: 'Scroll Left', AXScrollRightByPage: 'Scroll Right', AXScrollUpByPage: 'Scroll Up', AXScrollDownByPage: 'Scroll Down',
 };
 // Kinds press, showMenu and scrollToVisible are not secondary [B §6]; AXPick is the vendor's click action [B §10].

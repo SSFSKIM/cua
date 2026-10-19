@@ -38,6 +38,7 @@ const FILES = {
   'action.vendor.before.txt': ['vendor', 'action.before.txt'],
   'action.vendor.diff.txt': ['vendor', 'action.diff.txt'],
 };
+export const SOURCED = Object.keys(FILES);
 
 export function rekey(shot) {
   const token = index => `t${index}`;
@@ -60,15 +61,18 @@ export function rekey(shot) {
   };
 }
 
+// The content of one golden file as its source capture gives it (the tests guard each file against this).
+export function fromSource(scene, name) {
+  const [lane, file] = FILES[name];
+  const run = lane === 'cua' ? CUA_RUN : VENDOR_RUN[scene];
+  const text = fs.readFileSync(join(SOURCE, lane, run, 'goldens', `${scene}.${file}`), 'utf8');
+  return name.endsWith('.json') ? `${JSON.stringify(rekey(JSON.parse(text)), null, 1)}\n` : text;
+}
+
 function main() {
   for (const scene of SCENES) {
     fs.mkdirSync(join(HERE, scene), {recursive: true});
-    for (const [name, [lane, file]] of Object.entries(FILES)) {
-      const run = lane === 'cua' ? CUA_RUN : VENDOR_RUN[scene];
-      const text = fs.readFileSync(join(SOURCE, lane, run, 'goldens', `${scene}.${file}`), 'utf8');
-      const out = name.endsWith('.json') ? `${JSON.stringify(rekey(JSON.parse(text)), null, 1)}\n` : text;
-      fs.writeFileSync(join(HERE, scene, name), out);
-    }
+    for (const name of SOURCED) fs.writeFileSync(join(HERE, scene, name), fromSource(scene, name));
   }
 }
 

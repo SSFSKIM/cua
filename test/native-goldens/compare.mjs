@@ -1,23 +1,22 @@
 // The comparison the renderer's goldens are judged by (docs/doperpowers/specs/2026-10-18-own-native-engine-design.md,
 // Verification system, part 3): the vendor's text and cua's, recorded on the same scene state, compared **modulo index
-// renumbering**. Indexes never take part in a line's comparison; an index the trailer names is followed through the
-// matched lines, and a diff's removed IDs are compared by count. Each element line is normalized to its role word,
-// flags and title (the line's head, up to its first labelled part) and the labels of its parts (their values are not
-// compared), and the vendor's normalized lines must appear in cua's text in the same order. cua's other lines are added
-// lines, allowed only when declared by their head; a vendor line cua lacks is a difference unless declared. Every
-// difference is declared in ./expected.json with its cause, never absorbed silently.
-//
-// Matched lines must also sit at the same depth (a `depth` difference otherwise).
+// renumbering**. Lines are matched in order (a longest common subsequence) by their head (role word, flags and title, up
+// to the first labelled part) and the labels of their parts; a vendor line cua lacks is `missing`, a cua line the vendor
+// lacks is `added`. Each matched pair is then compared whole: its depth, and its full text, values included, with only
+// what genuinely drifts between the two lanes normalized (the loopback page's port, DRIFT). Indexes never take part in
+// a line's text; they are followed through the matched pairs instead: the trailer must name the matched element, and a
+// diff's removed IDs and `~` lines must name, through the matched lines of the two `before` texts (`indexMap`), the same
+// elements. Every difference is declared in ./expected.json with its cause and its exact value or count, never absorbed.
 //
 // `structural`: the scene window can carry content the harness does not own (Finder's sidebar), so both captures were
-// redacted (every string not run-owned replaced by its length, ⟨n⟩; scripts/spike/engine/measure/redact.mjs) and are
-// compared by structure: an element line is its diff mark, its depth, its role word when the redaction kept one (the
-// English vocabulary) and the flags group after it; titles and parts are not compared, since the redaction kept or
-// merged labels by their position on the line and hid the identifiers' `_`/`NS` prefix the ID rule reads.
+// redacted (every string not run-owned replaced by its length, ⟨n⟩; scripts/spike/engine/measure/redact.mjs). There an
+// element line is matched by its diff mark, its depth, its role word when the redaction kept one (the English
+// vocabulary) and the flags group after it, and a matched pair's text is compared by its length with each ⟨n⟩ counted
+// as n characters: the redaction folds a localized role word, the flags and the title into one ⟨n⟩, so the length is
+// what the redacted line still tells.
 
 export const LABELS = ['Secondary Actions', 'Description', 'Placeholder', 'Columns', 'Details', 'Value', 'Rows', 'Help', 'URL', 'ID'];
 const LABEL_ANYWHERE = new RegExp(`(?:^|, | )(${LABELS.join('|')}): `, 'g');
-const LABEL_LISTED = new RegExp(`(?:^ ?|, )(${LABELS.join('|')}): `, 'g');
 const FLAG_WORDS = new Set(['selectable', 'selected', 'disabled', 'expanded', 'collapsed', 'settable', 'boolean', 'integer', 'float', 'string', 'sent by me']);
 // The redaction's English role words (scripts/spike/engine/measure/redact.mjs), longest first.
 const ROLE_WORDS = ['full screen button', 'disclosure triangle', 'search text field', 'minimize button', 'menu bar item', 'pop up button',
@@ -25,45 +24,58 @@ const ROLE_WORDS = ['full screen button', 'disclosure triangle', 'search text fi
   'text field', 'tab group', 'container', 'checkbox', 'splitter', 'element', 'toolbar', 'outline', 'heading', 'button', 'column', 'window',
   'slider', 'image', 'group', 'table', 'list', 'link', 'cell', 'text', 'row'];
 const TRAILER = /^(The focused UI element is |Selected:$|Selected text: ```$)/;
+// What differs between the lanes without being a rendering: each lane served the Chrome scene's page on its own port.
+const DRIFT = [[/127\.0\.0\.1:\d+/g, '127.0.0.1:⟨port⟩']];
 
-// A text as {header, items: [{mark, index, rest}], trailer: {kind, items}, removed: number | null}.
+// A text as {header, items: [{mark, depth, index, rest}], trailer: {kind, items, text} | null, removed: [id] | null}.
+// An item's `rest` is its line after the index, with any continuation lines of a multi-line value.
 export function parse(text, {kind}) {
-  const lines = text.split('\n');
+  const lines = text.replace(/\n$/, '').split('\n');
   const header = lines.shift();
   const items = [];
   const out = {header, items, trailer: null, removed: null};
   let expected = 0;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    if (TRAILER.test(line) && (i === 0 || lines[i - 1] === '' || kind === 'diff')) { out.trailer = parseTrailer(lines.slice(i)); break; }
+    if (TRAILER.test(line) && (i === 0 || lines[i - 1] === '' || kind === 'diff')) {
+      const last = items.at(-1);
+      if (last && lines[i - 1] === '') last.rest = last.rest.replace(/\n$/, '');
+      out.trailer = parseTrailer(lines.slice(i));
+      break;
+    }
     const removed = /^Removed element IDs: (.*)$/.exec(line);
-    if (removed && kind === 'diff') { out.removed = countRanges(removed[1]); continue; }
+    if (removed && kind === 'diff') { out.removed = expandRanges(removed[1]); continue; }
     const match = (kind === 'diff' ? /^([~+])(\t*)(\d+) (.*)$/ : /^()(\t*)(\d+) (.*)$/).exec(line);
     if (match && (kind === 'diff' || Number(match[3]) === expected)) {
       expected = Number(match[3]) + 1;
       items.push({mark: match[1], depth: match[2].length, index: Number(match[3]), rest: match[4]});
+    } else if (items.length) {
+      items.at(-1).rest += `\n${line}`;   // a multi-line value's continuation
     }
-    // Anything else continues the previous line's value (a multi-line value), or is a blank line before the trailer.
   }
   return out;
 }
 
 function parseTrailer(lines) {
+  const text = lines.join('\n');
   if (lines[0].startsWith('The focused UI element is ')) {
     const match = /^(\d+) (.*)$/.exec(lines[0].slice('The focused UI element is '.length));
-    return {kind: 'focused', items: match ? [{index: Number(match[1]), rest: match[2]}] : []};
+    return {kind: 'focused', items: match ? [{index: Number(match[1]), rest: match[2]}] : [], text};
   }
   if (lines[0] === 'Selected:') {
     const items = [];
     for (const line of lines.slice(1)) { const match = /^\t(\d+) (.*)$/.exec(line); if (!match) break; items.push({index: Number(match[1]), rest: match[2]}); }
-    return {kind: 'selected', items};
+    return {kind: 'selected', items, text};
   }
-  return {kind: 'selectedText', items: []};
+  return {kind: 'selectedText', items: [], text};
 }
 
-const countRanges = text => text.split(', ').reduce((sum, part) => { const [lo, hi] = part.split('-').map(Number); return sum + (hi === undefined ? 1 : hi - lo + 1); }, 0);
+const expandRanges = text => text.split(', ').flatMap(part => {
+  const [lo, hi = lo] = part.split('-').map(Number);
+  return Array.from({length: hi - lo + 1}, (_, n) => lo + n);
+});
 
-// An element line's comparable form: {head, role, flags, title, labels}.
+// An element line's matching form: {role, flags, title, labels}.
 export function normalize(rest, {structural = false} = {}) {
   const first = rest.split('\n')[0];
   if (structural) return normalizeStructurally(first);
@@ -86,15 +98,14 @@ function normalizeStructurally(first) {
   return {role: role ?? '⟨⟩', flags, title: '', labels: []};
 }
 
-// The comparable key of a normalized line under the declared flag and label exceptions of its scene.
-function key(line, mark, exceptions) {
-  const roleOf = line.role ?? line.title;
-  const applies = rule => !rule.roles || rule.roles.some(role => roleOf === role || roleOf.startsWith(`${role} `));
-  const ignoredFlags = new Set(exceptions.filter(rule => rule.kind === 'flag' && applies(rule)).map(rule => rule.flag));
-  const ignoredLabels = new Set(exceptions.filter(rule => rule.kind === 'label' && applies(rule)).map(rule => rule.label));
-  const flags = line.flags.filter(flag => !ignoredFlags.has(flag) && !(ignoredFlags.has('settable') && ['boolean', 'integer', 'float'].includes(flag)));
-  const head = line.role === null ? line.title : [line.role, flags.length ? `(${flags.join(', ')})` : '', line.title].filter(Boolean).join(' ');
-  return `${mark}${head} | ${line.labels.filter(label => !ignoredLabels.has(label)).join(', ')}`;
+const drift = text => DRIFT.reduce((out, [pattern, replacement]) => out.replace(pattern, replacement), text);
+const textOf = (rest, structural) => (structural ? rest : drift(rest));
+const lengthOf = text => [...text.replace(/⟨(\d+)⟩/g, (_, n) => 'x'.repeat(Number(n)))].length;
+
+function matchKey(item, structural) {
+  const line = normalize(item.rest, {structural});
+  const head = line.role === null ? line.title : [line.role, line.flags.length ? `(${line.flags.join(', ')})` : '', line.title].filter(Boolean).join(' ');
+  return `${structural ? `${item.depth}:` : ''}${item.mark}${drift(head)} | ${line.labels.join(', ')}`;
 }
 
 // The longest common subsequence of two key lists, as pairs of positions.
@@ -110,64 +121,104 @@ function matchInOrder(a, b) {
   return pairs;
 }
 
-// → {differences: [{kind, …}], added: number, lines: number}. `declared`: the scene's entries of ./expected.json for
-// this golden (`flag` and `label` exceptions, `added` and `missing` lines by head, `header`, `trailer`, `removed`).
-export function compare(vendorText, cuaText, {kind = 'full', structural = false, declared: rules = []} = {}) {
-  const declared = rules.map(rule => ({...rule}));
+// A declared part difference applied to cua's line: `<label>: <cua>` becomes `<label>: <vendor>`, or goes (with its
+// separator) when `vendor` is null.
+function applyPart(text, {label, cua, vendor}) {
+  const part = `${label}: ${cua}`;
+  if (!text.includes(part)) return null;
+  if (vendor !== null) return text.replace(part, `${label}: ${vendor}`);
+  return text.includes(`, ${part}`) ? text.replace(`, ${part}`, '') : text.replace(part, '').replace(/, $/, '');
+}
+
+// → {differences: [{kind, …}], added, lines, indexMap}. `declared`: the entries of ./expected.json for this golden:
+// `missing` and `added` lines by matching key, `part` differences inside a matched line, the `header` and the `trailer`
+// (each pinned to both sides' exact text), each `count` times exactly (default 1). `indexMap` (a diff only): the vendor
+// index → cua index of the matched lines of the two `before` texts. The result's `indexMap` is this comparison's.
+export function compare(vendorText, cuaText, {kind = 'full', structural = false, declared: rules = [], indexMap = null} = {}) {
+  const declared = rules.map(rule => ({...rule, left: rule.count ?? 1}));
   const vendor = parse(vendorText, {kind}), cua = parse(cuaText, {kind});
-  const exceptions = declared.filter(rule => rule.kind === 'flag' || rule.kind === 'label');
-  const keys = side => side.items.map(item => `${structural ? `${item.depth}:` : ''}${key(normalize(item.rest, {structural}), item.mark, exceptions)}`);
-  const vendorKeys = keys(vendor), cuaKeys = keys(cua);
+  const vendorKeys = vendor.items.map(item => matchKey(item, structural)), cuaKeys = cua.items.map(item => matchKey(item, structural));
   const pairs = matchInOrder(vendorKeys, cuaKeys);
   const differences = [];
-  const allowance = (kindName, head) => declared.find(rule => rule.kind === kindName && rule.head === head && (rule.left = (rule.left ?? rule.count ?? 1)) > 0);
-  const take = rule => { rule.left--; return true; };
+  const allow = (kindName, test) => {
+    const rule = declared.find(each => each.kind === kindName && each.left > 0 && test(each));
+    if (rule) rule.left--;
+    return Boolean(rule);
+  };
 
   const matchedVendor = new Set(pairs.map(([i]) => i)), matchedCua = new Set(pairs.map(([, j]) => j));
   vendorKeys.forEach((head, i) => {
-    if (matchedVendor.has(i)) return;
-    const rule = allowance('missing', head);
-    if (!(rule && take(rule))) differences.push({kind: 'missing', head, line: vendor.items[i].rest.split('\n')[0]});
+    if (!matchedVendor.has(i) && !allow('missing', rule => rule.head === head)) differences.push({kind: 'missing', head, line: vendor.items[i].rest});
   });
   let added = 0;
   cuaKeys.forEach((head, j) => {
     if (matchedCua.has(j)) return;
     added++;
-    const rule = allowance('added', head);
-    if (!(rule && take(rule))) differences.push({kind: 'added', head, line: cua.items[j].rest.split('\n')[0]});
+    if (!allow('added', rule => rule.head === head)) differences.push({kind: 'added', head, line: cua.items[j].rest});
   });
 
+  const parts = declared.filter(rule => rule.kind === 'part');
   for (const [i, j] of pairs) {
-    if (vendor.items[i].depth !== cua.items[j].depth && !declared.some(rule => rule.kind === 'depth')) {
-      differences.push({kind: 'depth', line: vendor.items[i].rest.split('\n')[0], vendor: vendor.items[i].depth, cua: cua.items[j].depth});
+    const v = vendor.items[i], c = cua.items[j];
+    if (v.depth !== c.depth) differences.push({kind: 'depth', line: v.rest, vendor: v.depth, cua: c.depth});
+    const same = (a, b) => (structural ? lengthOf(a) === lengthOf(b) : a === b);
+    const vendorLine = textOf(v.rest, structural);
+    let cuaLine = textOf(c.rest, structural);
+    if (same(vendorLine, cuaLine)) continue;
+    const applied = [];
+    for (const rule of parts) {
+      const next = rule.left > 0 ? applyPart(cuaLine, rule) : null;
+      if (next !== null) { cuaLine = next; applied.push(rule); }
     }
+    if (applied.length && same(vendorLine, cuaLine)) for (const rule of applied) rule.left--;
+    else differences.push({kind: 'text', vendor: v.rest, cua: c.rest});
   }
 
   // A header the redaction replaced whole is compared by its length.
   const redactedWhole = /^⟨(\d+)⟩$/.exec(vendor.header);
   const headerOf = text => (structural ? text.replace(/App: .*\.$/, 'App: ⟨⟩.').replace(/⟨\d+⟩/g, '⟨⟩') : text);
   const sameHeader = structural && redactedWhole ? Number(redactedWhole[1]) === [...cua.header].length : headerOf(vendor.header) === headerOf(cua.header);
-  if (!sameHeader && !declared.some(rule => rule.kind === 'header')) {
+  if (!sameHeader && !allow('header', rule => rule.vendor === vendor.header && rule.cua === cua.header)) {
     differences.push({kind: 'header', vendor: vendor.header, cua: cua.header});
   }
 
   // The trailer: the same kind, naming the matched elements.
-  const cuaIndexOf = new Map(pairs.map(([i, j]) => [vendor.items[i].index, cua.items[j].index]));
+  const map = new Map(pairs.map(([i, j]) => [vendor.items[i].index, cua.items[j].index]));
   const sameTrailer = () => {
     if (!vendor.trailer || !cua.trailer) return vendor.trailer === cua.trailer;
     if (vendor.trailer.kind !== cua.trailer.kind || vendor.trailer.items.length !== cua.trailer.items.length) return false;
     return vendor.trailer.items.every((item, n) => {
-      const mapped = cuaIndexOf.get(item.index);
       const other = cua.trailer.items[n];
-      // A trailer element outside the tree (or a diff, which prints only changed lines) is compared by its line.
-      return mapped === undefined ? key(normalize(item.rest, {structural}), '', exceptions) === key(normalize(other.rest, {structural}), '', exceptions) : mapped === other.index;
+      const mapped = kind === 'full' ? map.get(item.index) : undefined;
+      // A trailer element the tree does not print (or a diff, which prints only changed lines) is compared by its line.
+      return mapped === undefined ? textOf(item.rest, structural) === textOf(other.rest, structural) : mapped === other.index;
     });
   };
-  if (!sameTrailer() && !declared.some(rule => rule.kind === 'trailer')) differences.push({kind: 'trailer', vendor: vendor.trailer, cua: cua.trailer});
-  if (kind === 'diff' && vendor.removed !== cua.removed && !declared.some(rule => rule.kind === 'removed')) {
-    differences.push({kind: 'removed', vendor: vendor.removed, cua: cua.removed});
+  if (!sameTrailer() && !allow('trailer', rule => rule.vendor === (vendor.trailer?.text ?? null) && rule.cua === (cua.trailer?.text ?? null))) {
+    differences.push({kind: 'trailer', vendor: vendor.trailer?.text ?? null, cua: cua.trailer?.text ?? null});
   }
-  return {differences, added, lines: cua.items.length};
+
+  if (kind === 'diff') {
+    // The removed IDs and the `~` lines name elements of the previous tree: the same ones, through the before texts.
+    const toCua = id => indexMap?.get(id);
+    const vendorRemoved = (vendor.removed ?? []).map(toCua), cuaRemoved = cua.removed ?? [];
+    const sorted = list => [...list].sort((a, b) => (a ?? -1) - (b ?? -1));
+    if (JSON.stringify(sorted(vendorRemoved)) !== JSON.stringify(sorted(cuaRemoved))) {
+      differences.push({kind: 'removed', vendor: vendor.removed, mapped: vendorRemoved, cua: cua.removed});
+    }
+    for (const [i, j] of pairs) {
+      if (vendor.items[i].mark === '~' && toCua(vendor.items[i].index) !== cua.items[j].index) {
+        differences.push({kind: 'changedIndex', line: vendor.items[i].rest, vendor: vendor.items[i].index, cua: cua.items[j].index});
+      }
+    }
+  }
+
+  for (const rule of declared) {
+    if (['missing', 'added', 'part', 'header', 'trailer'].includes(rule.kind) && rule.left !== 0) {
+      differences.push({kind: 'overdeclared', rule: rule.kind, head: rule.head ?? rule.label ?? null, left: rule.left});
+    }
+  }
+  return {differences, added, lines: cua.items.length, indexMap: map};
 }
 
 // The engine-side differences a golden declares (./expected.json, `kind: "skyshot"`), applied to a copy of cua's
@@ -179,8 +230,10 @@ export const CORRECTIONS = {
   disclosableWhenExpanded: node => (node.flags.disclosable && !node.flags.expanded ? {...node, flags: {...node.flags, disclosable: false}} : node),
   // flags.settable only on the roles a rule names, and on Boolean values.
   settableRoles: (node, {roles}) => (node.flags.settable && !roles.includes(node.role) && node.valueType !== 'boolean' ? {...node, flags: {...node.flags, settable: false}} : node),
-  // A numeric value's type as the element's CFNumber carried it.
-  valueType: (node, {role, valueType}) => (node.role === role && node.valueType === 'number' ? {...node, valueType} : node),
+  // A numeric value's type as the element's CFNumber carried it, by role.
+  valueType: (node, {roles, valueType}) => (roles.includes(node.role) && node.valueType === 'number' ? {...node, valueType} : node),
+  // The identifiers the vendor drops by their `_`/`NS` prefix, which the redaction hid (each replaced by its length).
+  hiddenIdentifier: (node, {identifiers}) => (identifiers.includes(node.identifier) ? {...node, identifier: null} : node),
   // The window element's URL (its document).
   windowUrl: (node, {url}) => (node.role === 'AXWindow' && node.depth === 0 ? {...node, url} : node),
 };

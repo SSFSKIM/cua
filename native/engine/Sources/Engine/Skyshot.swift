@@ -103,6 +103,8 @@ extension Engine {
       timings.set("settleBusyWalks", report.busyWalks)
       timings.set("settleBusyVetoes", report.busyVetoes)
       timings.set("settleObserved", report.observed)
+      timings.add("settleObserver", report.observerMs)
+      if let quietAt = report.quietAtMs { timings.set("settleQuietAtMs", (quietAt * 1000).rounded() / 1000) }
       if report.capped { settleMarker = "capped" }
     }
     connection.needsSettle.remove(app.key)
@@ -125,8 +127,13 @@ extension Engine {
       chromium = timings.time("chromiumCheck") { isChromiumWindow(window) }
       timings.set("chromium", chromium)
     }
-    if webAreaWaitEnabled && (enabledNow || chromium) {
-      timings.set("webAreaFound", timings.time("webAreaWait") { waitForWebArea(under: window) })
+    let launchDate = app.running?.launchDate
+    let seenBefore = webAccessibility.hasSeenWebArea(pid: appPid, launched: launchDate)
+    if seenBefore { timings.set("webAreaSeen", true) }
+    if webAreaWaitNeeded(switchOn: webAreaWaitEnabled, enabledNow: enabledNow, chromium: chromium, seen: seenBefore) {
+      let found = timings.time("webAreaWait") { waitForWebArea(under: window) }
+      timings.set("webAreaFound", found)
+      if found { webAccessibility.noteWebArea(pid: appPid, launched: launchDate) }
       waited = true
     }
 
@@ -162,6 +169,10 @@ extension Engine {
     timings.set("markdownFetches", walk.markdownFetches)
     timings.set("estimatedBytes", walk.bytes)
     timings.set("fetchFailures", walk.failures)
+    // A web area the walk itself emitted counts as seen too, so a process whose page was already exposed never waits.
+    if webShaped, walk.nodes.contains(where: { $0["role"] as? String == "AXWebArea" }) {
+      webAccessibility.noteWebArea(pid: appPid, launched: launchDate)
+    }
     if walk.deadlineHit { timings.set("deadlineHit", true) }
     if walk.budgetHit { timings.set("budgetHit", true) }
     if walk.nodeCapHit { timings.set("nodeCapHit", true) }

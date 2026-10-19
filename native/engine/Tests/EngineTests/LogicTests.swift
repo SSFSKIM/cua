@@ -69,6 +69,7 @@ final class SettleTests: XCTestCase {
     XCTAssertFalse(report.capped)
     XCTAssertEqual(report.ms, 300)
     XCTAssertEqual(report.busyWalks, 1)
+    XCTAssertEqual(report.quietAtMs, 300, "the third sample is the first at which 250 ms of quiet have passed")
   }
 
   func testAWebShapedAppSamplesEvery250Ms() {

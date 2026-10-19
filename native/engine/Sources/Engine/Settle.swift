@@ -35,6 +35,10 @@ struct SettleReport {
   var busyWalks = 0
   var busyVetoes = 0
   var observed = true
+  /// When the quiet period was first reached (the first busy walk began), ms after the wait began.
+  var quietAtMs: Double?
+  /// Creating and registering the observer, and removing it (before and after the wait proper).
+  var observerMs = 0.0
 
   var total: Int { counts.values.reduce(0, +) }
 }
@@ -57,6 +61,7 @@ func runSettle(sampleMs: Double, quietMs: Double = settleQuietMs, capMs: Double 
       if event.counts { last = max(last, event.at) } else { report.ignoredTitleChanges += 1 }
     }
     guard now() - last >= quietMs else { continue }
+    if report.quietAtMs == nil { report.quietAtMs = now() - start }
     report.busyWalks += 1
     let answer = ready()
     if answer == true { break }
@@ -79,8 +84,9 @@ extension Engine {
   /// Waits for `application` to settle; `webShaped` chooses the 250 ms sampling, `route` the fetch route the busy walk
   /// reads through. The busy walks' fetch costs accumulate in `costs`.
   func settle(_ application: AXUIElement, pid: pid_t, webShaped: Bool, route: FetchRoute, costs: FetchCosts) -> Settled {
+    let setupStart = monotonicMilliseconds()
     let observer = NotificationObserver(pid: pid, names: settleNotifications, keep: true)
-    defer { observer?.invalidate() }
+    let setupMs = monotonicMilliseconds() - setupStart
     var titles: [ElementKey: String] = [:]
     var last: (source: ElementSource, window: AXUIElement, loadedWebArea: Bool)?
     let deadline = monotonicMilliseconds() + settleCapMs
@@ -112,6 +118,9 @@ extension Engine {
         return reading.busy.map { !$0 }
       })
     report.observed = observer != nil
+    let teardownStart = monotonicMilliseconds()
+    observer?.invalidate()
+    report.observerMs = setupMs + monotonicMilliseconds() - teardownStart
     guard !report.capped, let last else { return Settled(report: report) }
     return Settled(report: report, source: last.source, window: last.window, loadedWebArea: last.loadedWebArea)
   }

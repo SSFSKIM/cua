@@ -38,11 +38,35 @@ func enablementAttribute(listed names: [String]) -> String? {
   return nil
 }
 
-/// Per engine: which bundles are web-shaped, and which processes were already considered for enablement.
+/// Whether an observation waits for a web area (the spec's Observation paragraph): after enabling, or on a Chromium
+/// window, until a web area has been seen in the process. cua's departure: the vendor waits on every Chromium
+/// observation (about 145 ms each on the MacBook shakedown); a window whose web area went away is the settle's busy
+/// veto's case (an unloaded AXWebArea).
+func webAreaWaitNeeded(switchOn: Bool, enabledNow: Bool, chromium: Bool, seen: Bool) -> Bool {
+  switchOn && (enabledNow || chromium) && !seen
+}
+
+/// Per engine: which bundles are web-shaped, which processes were already considered for enablement, and in which
+/// processes a web area has been seen (by pid and launch date, so a relaunch that reuses a pid starts over).
 final class WebAccessibility: @unchecked Sendable {
   private let lock = NSLock()
   private var webShapedByPath: [String: Bool] = [:]
   private var considered: Set<pid_t> = []
+  private var webAreaSeen: Set<String> = []
+
+  private static func process(_ pid: pid_t, _ launched: Date?) -> String { "\(pid)@\(launched?.timeIntervalSince1970 ?? 0)" }
+
+  func hasSeenWebArea(pid: pid_t, launched: Date?) -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    return webAreaSeen.contains(Self.process(pid, launched))
+  }
+
+  func noteWebArea(pid: pid_t, launched: Date?) {
+    lock.lock()
+    defer { lock.unlock() }
+    webAreaSeen.insert(Self.process(pid, launched))
+  }
 
   func isWebShaped(_ appPath: String) -> Bool {
     lock.lock()

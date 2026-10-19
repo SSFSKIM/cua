@@ -174,13 +174,16 @@ test('list_apps lists running regular apps in the facade\'s row shape; resolve_a
 
 test('resolve_app refuses an unknown app as invalidApp, a forbidden one as appNotAllowed, an unknown pid as runningApplicationNotFound, without launching anything', {skip}, async t => {
   const {wire} = await engine(t);
-  const unknown = await wire.execute('resolve_app', {app: 'io.github.ssfskim.cua.engine-test.no-such-app'});
-  assert.equal(unknown.error.code, -10010);
-  assert.equal(unknown.error.errorName, 'invalidApp');
-  const forbidden = await wire.execute('resolve_app', {app: 'com.apple.keychainaccess'});
-  assert.equal(forbidden.error.code, -10006);
-  assert.equal(forbidden.error.errorName, 'appNotAllowed');
-  assert.equal(forbidden.error.message, "Computer Use is not allowed to use the app 'com.apple.keychainaccess' for safety reasons.");
+  // Twice each: the engine caches resolutions, and a refusal must answer the same the second time.
+  for (const round of [1, 2]) {
+    const unknown = await wire.execute('resolve_app', {app: 'io.github.ssfskim.cua.engine-test.no-such-app'});
+    assert.equal(unknown.error.code, -10010, `round ${round}`);
+    assert.equal(unknown.error.errorName, 'invalidApp');
+    const forbidden = await wire.execute('resolve_app', {app: 'com.apple.keychainaccess'});
+    assert.equal(forbidden.error.code, -10006, `round ${round}`);
+    assert.equal(forbidden.error.errorName, 'appNotAllowed');
+    assert.equal(forbidden.error.message, "Computer Use is not allowed to use the app 'com.apple.keychainaccess' for safety reasons.");
+  }
   const gone = await wire.execute('resolve_app', {pid: 999_999});
   assert.equal(gone.error.code, -10007);
   assert.equal(gone.error.errorName, 'runningApplicationNotFound');

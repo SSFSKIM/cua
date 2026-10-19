@@ -34,10 +34,58 @@ struct ResolvedApp {
   }
 }
 
+/// Resolutions by the request's own string (or `pid:<n>`), served until any app launches or terminates (NSWorkspace's
+/// notifications clear it) or the cached process has ended. Only successes are kept, so an ambiguous or unknown app is
+/// resolved afresh every time, and the forbidden list is checked on every hit.
+final class ResolutionCache: @unchecked Sendable {
+  private let lock = NSLock()
+  private var entries: [String: ResolvedApp] = [:]
+
+  /// Whether the cached process still exists (`kill(pid, 0)`, no signal sent); an app resolved while not running has
+  /// no process to outlive. A relaunch that reuses the pid is caught by the launch notification.
+  static func alive(_ app: ResolvedApp) -> Bool {
+    guard let pid = app.pid else { return true }
+    return kill(pid, 0) == 0 || errno == EPERM
+  }
+
+  func lookup(_ key: String, isAlive: (ResolvedApp) -> Bool = ResolutionCache.alive) -> ResolvedApp? {
+    lock.lock()
+    defer { lock.unlock() }
+    guard let app = entries[key] else { return nil }
+    guard isAlive(app) else {
+      entries[key] = nil
+      return nil
+    }
+    return app
+  }
+
+  func store(_ key: String, _ app: ResolvedApp) {
+    lock.lock()
+    defer { lock.unlock() }
+    entries[key] = app
+  }
+
+  func invalidate() {
+    lock.lock()
+    defer { lock.unlock() }
+    entries = [:]
+  }
+}
+
 final class AppDirectory: @unchecked Sendable {
   private let usage: UsageStore
+  let cache = ResolutionCache()
+  private var observers: [NSObjectProtocol] = []
 
-  init(usagePath: String) { usage = UsageStore(path: usagePath) }
+  init(usagePath: String) {
+    usage = UsageStore(path: usagePath)
+    // Any launch or termination can change what a string names (a second instance makes it ambiguous, a relaunch gives
+    // a new process); the notifications arrive on the main run loop, which NSApplication.run keeps turning.
+    let center = NSWorkspace.shared.notificationCenter
+    for name in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification] {
+      observers.append(center.addObserver(forName: name, object: nil, queue: nil) { [cache] _ in cache.invalidate() })
+    }
+  }
 
   /// The folders a name is looked up in when no running app carries it.
   private static let folders: [String] = [
@@ -80,18 +128,28 @@ final class AppDirectory: @unchecked Sendable {
     let app = app.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !app.isEmpty else { throw EngineError.invalidArguments("app is required") }
     try Policy.check(app)
+    if let cached = cache.lookup(app) {
+      try Policy.check(cached.bundleIdentifier)
+      return cached
+    }
     let resolved = try find(app)
     try Policy.check(resolved.bundleIdentifier)
+    cache.store(app, resolved)
     return resolved
   }
 
   /// `resolve_app {pid}`: the running app with that process id.
   func resolve(pid: pid_t) throws -> ResolvedApp {
+    if let cached = cache.lookup("pid:\(pid)") {
+      try Policy.check(cached.bundleIdentifier)
+      return cached
+    }
     guard let app = NSRunningApplication(processIdentifier: pid), !app.isTerminated, app.bundleURL != nil else {
       throw EngineError(.runningApplicationNotFound, "Running application not found: \(pid)")
     }
     let resolved = Self.resolved(app)
     try Policy.check(resolved.bundleIdentifier)
+    cache.store("pid:\(pid)", resolved)
     return resolved
   }
 

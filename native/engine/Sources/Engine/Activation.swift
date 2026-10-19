@@ -25,6 +25,13 @@ private enum SkyLight {
   static let mainConnectionID: ConnectionID? = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "SLSMainConnectionID").map { unsafeBitCast($0, to: ConnectionID.self) }
   static let disableUpdate: Update? = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "SLSDisableUpdate").map { unsafeBitCast($0, to: Update.self) }
   static let reenableUpdate: Update? = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "SLSReenableUpdate").map { unsafeBitCast($0, to: Update.self) }
+
+  /// Holds screen updates on the main connection and answers the release (nothing to release when the calls are absent).
+  static func hold() -> () -> Void {
+    guard let connection = mainConnectionID?() else { return {} }
+    _ = disableUpdate?(connection)
+    return { _ = reenableUpdate?(connection) }
+  }
 }
 
 /// The process holding key focus, by the private CPSGetKeyFocusProcess and the Process Manager's GetProcessPID (both
@@ -47,7 +54,20 @@ private enum KeyFocus {
 func frontmostPid() -> pid_t? { NSWorkspace.shared.frontmostApplication?.processIdentifier }
 
 /// Whether the app believes it has focus: it is frontmost, or holds key focus.
-func appBelievesItHasFocus(_ pid: pid_t) -> Bool { frontmostPid() == pid || KeyFocus.pid() == pid }
+func appBelievesItHasFocus(_ pid: pid_t) -> Bool { ActivationSystem().believesItHasFocus(pid) }
+
+/// What route 3 reads and does outside its own state (the posting, the frontmost app, key focus, the screen-update hold
+/// and the user's re-activation) as replaceable calls, the real ones by default: a unit test runs the activation's
+/// sequencing through stubs, so nothing is posted, activated or held.
+struct ActivationSystem {
+  var post: (CGEvent, pid_t) -> Void = { event, pid in event.postToPid(pid) }
+  var frontmost: () -> pid_t? = frontmostPid
+  var keyFocus: () -> pid_t? = { KeyFocus.pid() }
+  var holdScreenUpdates: () -> () -> Void = { SkyLight.hold() }  // answers the release
+  var reactivate: (pid_t) -> Bool = { NSRunningApplication(processIdentifier: $0)?.activate(options: []) ?? false }
+
+  func believesItHasFocus(_ pid: pid_t) -> Bool { frontmost() == pid || keyFocus() == pid }
+}
 
 /// The on-screen order of two windows: true when `window` is in front of `other` (CGWindowList lists front to back).
 private func isInFront(_ window: CGWindowID, of other: CGWindowID) -> Bool {
@@ -68,13 +88,15 @@ final class FakeActivation {
   let window: AXUIElement
   let windowFrame: CGRect?
   let windowID: CGWindowID?
+  private let system: ActivationSystem
   private(set) var activated = false
   /// How long the guard held after the activation pair, for the result's meta; nil when no guard ran.
   private(set) var guardMs: Double?
 
-  init(pid: pid_t, window: AXUIElement) {
+  init(pid: pid_t, window: AXUIElement, system: ActivationSystem = ActivationSystem()) {
     self.pid = pid
     self.window = window
+    self.system = system
     windowFrame = frame(of: window)
     windowID = windowNumber(of: window, pid: pid, frame: windowFrame)
   }
@@ -84,17 +106,16 @@ final class FakeActivation {
   /// leaves the activation in place — every caller's `defer { deactivate() }` undoes it on all of its own paths, so
   /// nothing here may undo it too, or a successful pair is undone before the caller's events are posted.
   func activate() throws {
-    guard !appBelievesItHasFocus(pid) else { return }
-    guard let user = NSWorkspace.shared.frontmostApplication, user.processIdentifier != pid else {
+    guard !system.believesItHasFocus(pid) else { return }
+    guard let user = system.frontmost(), user != pid else {
       postActivation()
       return
     }
-    let userApplication = prepare(AXUIElementCreateApplication(user.processIdentifier))
+    let userApplication = prepare(AXUIElementCreateApplication(user))
     let userWindow = elementAttribute(userApplication, kAXFocusedWindowAttribute)
-    let userWindowID = userWindow.flatMap { windowNumber(of: $0, pid: user.processIdentifier, frame: frame(of: $0)) }
-    let connection = SkyLight.mainConnectionID?()
-    if let connection { _ = SkyLight.disableUpdate?(connection) }
-    defer { if let connection { _ = SkyLight.reenableUpdate?(connection) } }
+    let userWindowID = userWindow.flatMap { windowNumber(of: $0, pid: user, frame: frame(of: $0)) }
+    let release = system.holdScreenUpdates()
+    defer { release() }
     postActivation()
     let started = monotonicMilliseconds()
     defer { guardMs = ((monotonicMilliseconds() - started) * 1000).rounded() / 1000 }
@@ -104,9 +125,9 @@ final class FakeActivation {
       guard monotonicMilliseconds() < deadline else { throw activationFailed("the user's app did not stay frontmost") }
       usleep(10_000)
       var settled = true
-      if frontmostPid() != user.processIdentifier {
+      if system.frontmost() != user {
         settled = false
-        guard user.activate(options: []) else { throw activationFailed("the user's app could not be made frontmost again") }
+        guard system.reactivate(user) else { throw activationFailed("the user's app could not be made frontmost again") }
       }
       if let windowID, let userWindowID, let userWindow, isInFront(windowID, of: userWindowID) {
         settled = false
@@ -118,7 +139,7 @@ final class FakeActivation {
 
   /// After the action's events: the deactivation subtype, unless the app really is active now.
   func deactivate() {
-    guard activated, frontmostPid() != pid else { return }
+    guard activated, system.frontmost() != pid else { return }
     post(subtype: NSEvent.EventSubtype.applicationDeactivated.rawValue)
     activated = false
   }
@@ -130,7 +151,7 @@ final class FakeActivation {
     activated = true
     guard let point = point(attribute(window, "AXActivationPoint")) else { return }
     let target = ClickTarget(point: point, windowFrame: windowFrame, windowID: windowID, pid: pid)
-    _ = postToProcess(clickEvents(target, button: .left, count: 1, flags: []), pid: pid)
+    _ = postToProcess(clickEvents(target, button: .left, count: 1, flags: []), pid: pid, post: system.post)
   }
 
   private func post(subtype: Int16) {
@@ -138,6 +159,6 @@ final class FakeActivation {
                                          timestamp: 0, windowNumber: Int(windowID ?? 0), context: nil, subtype: subtype, data1: 0, data2: 0)?.cgEvent
     else { return }
     event.timestamp = DispatchTime.now().uptimeNanoseconds
-    event.postToPid(pid)
+    system.post(event, pid)
   }
 }

@@ -1,0 +1,8 @@
+{
+  "name": "cua-electron-fixture",
+  "productName": "cua Electron Fixture",
+  "version": "1.0.0",
+  "private": true,
+  "description": "The own native engine spike's Electron scene: a text field, a list and a button.",
+  "main": "main.js"
+}

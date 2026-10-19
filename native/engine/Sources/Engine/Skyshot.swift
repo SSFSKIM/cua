@@ -49,7 +49,9 @@ func primaryWindow(of application: AXUIElement) -> AXUIElement? {
 extension Engine {
   /// `get_app_state {app, disableDiff?, includeScreenshot?, outputDirectory}` → Skyshot. The spike's switches:
   /// `prefetch: "public" | "hierarchy"` (the fetch route, default public), `valueMarkdown: false` (skip the Markdown
-  /// fetch), `focusableSelectable: false` (skip the focusable and selectable settability reads), `webAreaWait: false`
+  /// fetch), `focusableSelectable: false` (skip the focusable and selectable settability reads), `readSet: "full" |
+  /// "reduced"` (the per-role read set, default full), `readCensus: true` (per-role counts of what the reads returned,
+  /// in timings), `webAreaWait: false`
   /// (skip the web-area wait), `settle: true | false` (force or skip the settle that an earlier action otherwise arms).
   func getAppState(_ args: [String: Any], _ context: ExecutionContext) throws -> [String: Any] {
     var timings = Timings()
@@ -61,6 +63,15 @@ extension Engine {
     if includeScreenshot { guard outputDirectory?.hasPrefix("/") == true else { throw EngineError.invalidArguments("outputDirectory must be an absolute path") } }
     let markdownEnabled = args["valueMarkdown"] as? Bool ?? true
     let interactionFlags = args["focusableSelectable"] as? Bool ?? true
+    let readSet: ReadSet
+    switch args["readSet"] {
+    case nil, is NSNull: readSet = .full
+    case let name as String:
+      guard let chosen = ReadSet(rawValue: name) else { throw EngineError.invalidArguments("readSet must be \"full\" or \"reduced\"") }
+      readSet = chosen
+    default: throw EngineError.invalidArguments("readSet must be \"full\" or \"reduced\"")
+    }
+    let census = args["readCensus"] as? Bool == true ? ReadCensus() : nil
     let webAreaWaitEnabled = args["webAreaWait"] as? Bool ?? true
     let route: FetchRoute
     switch args["prefetch"] {
@@ -162,13 +173,17 @@ extension Engine {
     timings.set("route", source.route.rawValue)
     let deadline = monotonicMilliseconds() + Double(min(observationDeadlineMs, max(0, context.deadline - unixMilliseconds())))
     let walk = TreeWalk(source: source, lineage: lineage, limits: WalkLimits(deadline: deadline), markdown: markdownEnabled,
-                        interactionFlags: interactionFlags, visibleFrame: windowFrame)
+                        interactionFlags: interactionFlags, readSet: readSet, census: census, visibleFrame: windowFrame)
     timings.time("walk") { walk.run(window: window, menuItems: menuItems) }
     timings.merge(source.costs)
     timings.set("nodes", walk.nodes.count + walk.menuBar.count)
     timings.set("markdownFetches", walk.markdownFetches)
     timings.set("estimatedBytes", walk.bytes)
     timings.set("fetchFailures", walk.failures)
+    timings.set("readSet", readSet.rawValue)
+    timings.set("droppedSettableReads", walk.droppedSettable)
+    timings.set("droppedMarkdownReads", walk.droppedMarkdown)
+    if let census { timings.set("readCensus", census.wire) }
     // A web area the walk itself emitted counts as seen too, so a process whose page was already exposed never waits.
     if webShaped, walk.nodes.contains(where: { $0["role"] as? String == "AXWebArea" }) {
       webAccessibility.noteWebArea(pid: appPid, launched: launchDate)

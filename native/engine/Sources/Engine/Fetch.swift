@@ -15,7 +15,7 @@ let observedAttributes: [String] = [
   "AXRole", "AXSubrole", "AXRoleDescription", "AXTitle", "AXDescription", "AXValue", "AXValueDescription",
   "AXPlaceholderValue", "AXNumberOfCharacters", "AXHelp", "AXIdentifier", "AXSelected", "AXFocused", "AXEnabled",
   "AXDisclosing", "AXURL", "AXTraits", "AXServesAsTitleForUIElements", "AXRowIndexRange", "AXColumnIndexRange",
-  "AXSelectable", "AXDOMClassList", "AXElementBusy", "AXLoaded", "AXPosition", "AXSize", "AXChildren",
+  "AXSelectable", "AXDOMClassList", "AXElementBusy", "AXLoaded", "AXTextualContext", "AXPosition", "AXSize", "AXChildren",
 ]
 
 enum FetchRoute: String {
@@ -50,6 +50,8 @@ struct ElementData {
   var domClassList: [String]?
   var elementBusy: Bool?
   var loaded: Bool?
+  /// AXTextualContext (the vendor's Markdown predicate skips `AXTextualContextSourceCode`).
+  var textualContext: String?
   var frame: CGRect?
   /// AXChildren as fetched (the hierarchy route caps it at 100) and the element's full child count.
   var children: [AXUIElement]
@@ -81,6 +83,7 @@ struct ElementData {
     enabled = flag("AXEnabled")
     disclosing = flag("AXDisclosing")
     selectable = flag("AXSelectable")
+    textualContext = string("AXTextualContext")
     elementBusy = flag("AXElementBusy")
     loaded = flag("AXLoaded")
     domClassList = values["AXDOMClassList"].flatMap { CFGetTypeID($0) == CFArrayGetTypeID() ? ($0 as! [AnyObject]).compactMap { $0 as? String }.map(bounded) : nil }
@@ -205,6 +208,11 @@ class ElementSource: @unchecked Sendable {
     let read = readFrame(element)
     frameCache[key] = .some(read)
     return read
+  }
+
+  /// The Markdown rendering of a text element's value (the parameterized attributed-string read), timed.
+  func markdown(_ element: AXUIElement, length: Int) -> String? {
+    costs.time("markdown") { markdownRendering(of: element, length: length) }
   }
 
   func readAllChildren(_ element: AXUIElement) -> [AXUIElement] {

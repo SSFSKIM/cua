@@ -21,6 +21,38 @@ let widthOmitAbove = 499
 let markdownMaxLength = 2_000
 private let markdownRoles: Set<String> = [kAXTextAreaRole, kAXTextFieldRole]
 
+/// Which per-element reads beyond the attribute batch a walk makes (`get_app_state {readSet}`). `full` reads them for
+/// every element that carries the attribute; `reduced` drops the reads whose result cannot reach the text, the
+/// vendor's transformations or input routing (Decision Log 2026-10-19), and a dropped read leaves its field false or
+/// null, never inferred:
+/// - `valueMarkdown` only under the vendor's predicate, an AXTextArea outside a source-code context (F §2.3), not for
+///   AXTextField;
+/// - value settability not read for the roles whose AXValue is display-only (`displayOnlyRoles`).
+/// Actions (the secondary actions printed, the interesting actions the transformations keep nodes by, and route 1's
+/// AXPick/AXPress) and focusable and selectable (the transformations' predicates, the `selectable` flag) are read in
+/// both.
+enum ReadSet: String {
+  case full, reduced
+}
+
+/// Roles whose AXValue is shown, never edited, so `settable` cannot apply: a label, an image, a heading, a progress
+/// or busy indicator. An editable field is AXTextField or AXTextArea; a slider or scroll bar's value is settable and
+/// stays read.
+let displayOnlyRoles: Set<String> = [kAXStaticTextRole, kAXImageRole, "AXHeading", kAXProgressIndicatorRole, kAXBusyIndicatorRole]
+
+/// Whether a walk under `readSet` fetches `valueMarkdown` for an element (its plain value's length aside).
+func readsMarkdown(_ data: ElementData, readSet: ReadSet) -> Bool {
+  switch readSet {
+  case .full: return markdownRoles.contains(data.role)
+  case .reduced: return data.role == kAXTextAreaRole && data.textualContext != "AXTextualContextSourceCode"
+  }
+}
+
+/// Whether a walk under `readSet` reads an element's value settability.
+func readsValueSettable(_ data: ElementData, readSet: ReadSet) -> Bool {
+  data.value != nil && (readSet == .full || !displayOnlyRoles.contains(data.role))
+}
+
 struct WalkLimits {
   var depth = maxDepth
   var nodes = maxObservedNodes
@@ -110,6 +142,12 @@ final class TreeWalk {
   let markdown: Bool
   /// Whether `focusable` and `selectable` are read (one settability call each per element); the spike's switch.
   let interactionFlags: Bool
+  let readSet: ReadSet
+  /// Per role, what the per-element reads returned (`get_app_state {readCensus: true}`): the evidence for which reads a
+  /// role can do without.
+  let census: ReadCensus?
+  private(set) var droppedSettable = 0
+  private(set) var droppedMarkdown = 0
   let visibleFrame: CGRect?
 
   private(set) var nodes: [[String: Any]] = []
@@ -155,7 +193,10 @@ final class TreeWalk {
     case deadline
   }
 
-  init(source: ElementSource, lineage: Lineage, limits: WalkLimits, markdown: Bool, interactionFlags: Bool = true, visibleFrame: CGRect?) {
+  init(source: ElementSource, lineage: Lineage, limits: WalkLimits, markdown: Bool, interactionFlags: Bool = true, readSet: ReadSet = .full,
+       census: ReadCensus? = nil, visibleFrame: CGRect?) {
+    self.readSet = readSet
+    self.census = census
     self.source = source
     self.lineage = lineage
     previous = lineage.current
@@ -268,18 +309,25 @@ final class TreeWalk {
     let owner = source.owner(element)
     let actions = source.actions(element)
     if pastDeadline() { return .deadline }
-    let settable = data.value != nil && source.isSettable(element, kAXValueAttribute, phase: "settable")
+    if data.value != nil && !readsValueSettable(data, readSet: readSet) { droppedSettable += 1 }
+    let settable = readsValueSettable(data, readSet: readSet) && source.isSettable(element, kAXValueAttribute, phase: "settable")
     let focusable = interactionFlags && data.focused != nil && source.isSettable(element, kAXFocusedAttribute, phase: "focusable")
     let selectable = data.selectable ?? (interactionFlags && data.selected != nil && source.isSettable(element, kAXSelectedAttribute, phase: "selectable"))
     if pastDeadline() { return .deadline }
     var valueMarkdown: String?
-    if markdown, markdownRoles.contains(data.role), let text = data.value.flatMap({ CFGetTypeID($0) == CFStringGetTypeID() ? ($0 as! String) : nil }) {
+    if markdown, markdownRoles.contains(data.role) || readsMarkdown(data, readSet: readSet),
+       let text = data.value.flatMap({ CFGetTypeID($0) == CFStringGetTypeID() ? ($0 as! String) : nil }) {
       let length = text.utf16.count
       if length > 0 && length <= markdownMaxLength {
-        valueMarkdown = source.costs.time("markdown") { markdownRendering(of: element, length: length) }
-        markdownFetches += 1
+        if readsMarkdown(data, readSet: readSet) {
+          valueMarkdown = source.markdown(element, length: length)
+          markdownFetches += 1
+        } else {
+          droppedMarkdown += 1
+        }
       }
     }
+    census?.record(role: data.role, actions: actions, settable: settable, focusable: focusable, selectable: selectable, markdown: valueMarkdown != nil)
     var children: [AXUIElement] = []
     var shown: Shown?
     if !pending.inMenu {
@@ -325,6 +373,31 @@ final class TreeWalk {
       bytes += jsonBytes(indexes) + jsonStringBytes("servesAsTitleFor") + 2
     }
   }
+}
+
+/// Per role: how many elements, and how many of them had any action, a secondary action (one the grammar prints), an
+/// interesting action (one the transformations keep a node by), a settable value, focusable, selectable, a Markdown
+/// value.
+final class ReadCensus {
+  private var byRole: [String: [String: Int]] = [:]
+  private static let secondaryExcluded: Set<String> = ["AXPress", "AXPick", "AXShowMenu", "AXScrollToVisible"]
+  private static let uninteresting: Set<String> = ["AXShowMenu", "AXScrollToVisible"]
+
+  func record(role: String, actions: [String], settable: Bool, focusable: Bool, selectable: Bool, markdown: Bool) {
+    var row = byRole[role] ?? [:]
+    func bump(_ key: String, _ when: Bool) { if when { row[key, default: 0] += 1 } }
+    bump("nodes", true)
+    bump("actions", !actions.isEmpty)
+    bump("secondaryActions", actions.contains { !Self.secondaryExcluded.contains($0) })
+    bump("interestingActions", actions.contains { !Self.uninteresting.contains($0) })
+    bump("settable", settable)
+    bump("focusable", focusable)
+    bump("selectable", selectable)
+    bump("markdown", markdown)
+    byRole[role] = row
+  }
+
+  var wire: [String: Any] { byRole }
 }
 
 /// A Skyshot node (Interfaces, Node): the optional attributes present only when the element carries them, so a tree

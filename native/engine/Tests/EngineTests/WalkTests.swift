@@ -16,6 +16,10 @@ final class FakeTree {
   var unreadable: Set<Int> = []
   /// Attributes beyond role, title and children, by id.
   var extra: [Int: [String: CFTypeRef]] = [:]
+  /// What the per-element reads answer, by id: the settable attributes, the actions, the Markdown value.
+  var settable: [Int: Set<String>] = [:]
+  var actions: [Int: [String]] = [:]
+  var markdown: [Int: String] = [:]
 
   func id(_ element: AXUIElement) -> Int { Int(pid(of: element)) - 60_000 }
 }
@@ -50,10 +54,15 @@ final class FakeSource: ElementSource, @unchecked Sendable {
   }
 
   override func owner(_ element: AXUIElement) -> pid_t { 4242 }
-  override func actions(_ element: AXUIElement) -> [String] { [] }
+  var markdownCalls = 0
+  override func actions(_ element: AXUIElement) -> [String] { tree.actions[tree.id(element)] ?? [] }
   override func isSettable(_ element: AXUIElement, _ attribute: String, phase: String) -> Bool {
     settableCalls[attribute, default: 0] += 1
-    return false
+    return tree.settable[tree.id(element)]?.contains(attribute) ?? false
+  }
+  override func markdown(_ element: AXUIElement, length: Int) -> String? {
+    markdownCalls += 1
+    return tree.markdown[tree.id(element)]
   }
   var allChildrenReads = 0
   override func readAllChildren(_ element: AXUIElement) -> [AXUIElement] {

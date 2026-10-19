@@ -10,7 +10,7 @@
 // (sandbox-exec), the kernel's deny list and the trusted code paths are what a `cua serve` connection on the own host
 // gets; only the selection is given rather than resolved, which is how replHostFor's macOS refusal is bypassed without
 // touching src/. Then: the real trusted wrapper (src/services/sky.mjs) stays the `sky` service and delegates to the
-// spike's service (./service.mjs) through CUA_SKY_VENDOR_SERVICE, whose directory joins the trusted code; CUA_ENGINE_APP
+// spike's service (./service.mjs) through CUA_SKY_SERVICE, whose directory joins the trusted code; CUA_ENGINE_APP
 // names the engine bundle (default: the approved location, ~/Library/Application Support/cua/engine/cua Engine.app);
 // the vendor helper's path is dropped; secrets are off (the spike sends no {{secret:…}} reference). CUA_SHIM_SANDBOX
 // chooses the mode as for `cua serve` (scoped by default).
@@ -54,7 +54,7 @@ export function spikeLaunch({home, env, sessionId, runtime = resolveRuntime({hom
   const {SKY_CUA_SERVICE_PATH: _vendorHelper, ...kept} = launch.env;
   return {...launch, sandbox, env: {
     ...kept,
-    CUA_SKY_VENDOR_SERVICE: SPIKE_SERVICE,
+    CUA_SKY_SERVICE: SPIKE_SERVICE,
     CUA_ENGINE_APP: engineApp,
     CUA_REPL_TRUSTED_CODE_PATHS: `${kept.CUA_REPL_TRUSTED_CODE_PATHS}:${SPIKE_DIR}`,
   }};

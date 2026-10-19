@@ -4,10 +4,11 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync} from 'node:fs';
-import {tmpdir} from 'node:os';
+import {tmpdir, userInfo} from 'node:os';
 import {join} from 'node:path';
 import {SandboxStateError, sandboxState} from '../../src/runtime/sandbox.mjs';
 import {sandboxedLaunch} from '../../src/sandbox/index.mjs';
+import {ENGINE_DIRECTORY_IN_HOME} from '../../src/runtime/layout.mjs';
 
 function scratch(t) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'cua-launch-')));
@@ -34,6 +35,23 @@ test('macOS: sandbox-exec runs the command itself under the role\'s profile, wit
   const worker = sandboxedLaunch({platform: 'darwin', state: sandboxState('scoped', cwd), role: 'worker', command: COMMAND, env, cwd, readPaths: ['/fixture'], denyRead});
   assert.ok(!worker.args.some(a => a.startsWith('-DREADABLE_ROOT') || a.startsWith('-DREEXPOSED')), 'the worker\'s profile denies nothing');
   assert.match(worker.args[1], /\(allow file-read\*\)/, 'full read');
+});
+
+// The native engine's directory (#117, Design "Socket and peer check"): the kernel's profile denies it to cells under
+// the launch's HOME and under the account's own home, where the approved engine lives whatever HOME a harness sets; the
+// worker reaches the engine only through the supervisor's relay, outside every sandbox, and is not given the rule.
+test('macOS: the kernel\'s profile denies the native engine\'s directory under HOME and the account\'s home; the worker\'s does not', t => {
+  const {root, cwd, denyRead} = scratch(t);
+  const env = {HOME: join(root, 'home'), TMPDIR: join(cwd, 'tmp'), PATH: '/usr/bin:/bin'};
+  const rule = home => `(deny network-outbound (remote unix-socket (subpath ${JSON.stringify(join(realpathSync(home), ENGINE_DIRECTORY_IN_HOME))})))`;
+  mkdirSync(env.HOME);
+  const kernel = sandboxedLaunch({platform: 'darwin', state: sandboxState('scoped', cwd), role: 'kernel', command: COMMAND, env, cwd, readPaths: ['/fixture'], denyRead});
+  assert.ok(kernel.args[1].includes(rule(env.HOME)), 'under the launch\'s HOME');
+  assert.ok(kernel.args[1].includes(rule(userInfo().homedir)), 'under the account\'s home');
+  const worker = sandboxedLaunch({platform: 'darwin', state: sandboxState('scoped', cwd), role: 'worker', command: COMMAND, env, cwd, readPaths: ['/fixture'], denyRead});
+  assert.ok(!worker.args[1].includes(ENGINE_DIRECTORY_IN_HOME));
+  const defaultMode = sandboxedLaunch({platform: 'darwin', state: undefined, role: 'kernel', command: COMMAND, env, cwd, readPaths: ['/fixture'], denyRead});
+  assert.ok(defaultMode.args[1].includes(rule(env.HOME)), 'under the default mode too');
 });
 
 test('disabled runs the command as it is, in the given working directory, with the environment untouched', t => {

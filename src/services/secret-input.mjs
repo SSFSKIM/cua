@@ -75,6 +75,16 @@ export function readFailure(error, label) {
 // After the value was read and handed to the vendor: a fixed classification of what went wrong, never its text.
 export const inputFailed = (what, label, kind) => new SecretInputError('secret_input_failed', `${what} with secret "${label}" failed (${kind}) after the secret was read; it may have been partly entered. The runtime's error is withheld because it can contain the secret`);
 
+// cua's native engine refused a concealed request before entering anything (its concealedInputUnavailable): a secret is
+// never pasted, so a concealed paste is refused whatever the input source, and a concealed type_text is keyed only under
+// an input source whose reading the engine trusts. A fixed sentence per method, not the engine's, as every diagnostic
+// after the value was read is.
+const CONCEALED_REASON = {
+  paste: 'a secret is never pasted. Use typeText, which keys it, or setValue on a settable field, which needs no keystrokes or clipboard',
+  type_text: 'a secret is never pasted, and the active input source cannot type it reliably (a non-Latin source, or the app\'s own source while it is in the background). Use setValue on a settable field, which needs no keystrokes or clipboard, or switch to a Latin input source',
+};
+export const concealedInputUnavailable = (what, label) => new SecretInputError('concealed_input_unavailable', `${what} with secret "${label}" was refused and ${NOTHING_ENTERED}: ${CONCEALED_REASON[what] ?? CONCEALED_REASON.type_text}`);
+
 // The store reader and the launch's reason there is none, as the trusted worker's environment configures them. With a
 // project directory too, a key is read from the project's store first and from the global one when the project has none.
 export function secretsFromEnv(env) {

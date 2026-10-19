@@ -1,7 +1,8 @@
 // The trusted "sky" service: node_repl's trusted worker loads this module (NODE_REPL_TRUSTED_SERVICES, registered by
-// `cua serve` through buildLaunch) in place of the vendor's @oai/sky/service, and every request is delegated to that
-// vendor module, named by the launcher in CUA_SKY_VENDOR_SERVICE (never by agent input). The vendor sky service
-// exports only handleRpc and registers no lifecycle hooks, so delegating handleRpc keeps everything it does.
+// `cua serve` through buildLaunch) in place of the vendor's @oai/sky/service, and every request is delegated to the sky
+// service the launcher names in CUA_SKY_SERVICE (never agent input): the vendor's @oai/sky/service, or on macOS cua's own
+// (src/services/engine/, #117), which raises the vendor's error classes and names. Either exports only handleRpc and
+// registers no lifecycle hooks, so delegating handleRpc keeps everything it does.
 //
 // Secret substitution. Exactly these pinned commands (@oai/sky 0.7.5, as the cua API sends them through
 // nodeRepl.rpc("sky", …)) are eligible, and only when the eligible field is entirely `{{secret:<label>}}`. macOS:
@@ -15,8 +16,12 @@
 // with a string method and string app/text/value: since the vendor looks methods up by coerced property key, a
 // reference in a request that only coerces to one of these (e.g. method ["paste"]) fails closed too.
 // The stored value is read from the connection's secret store (src/secrets/store.mjs, the directory the launcher
-// names) and placed in a copy of the request handed to the vendor. Everything else is delegated untouched: other methods,
-// other fields, text that merely contains a marker, and arbitrary JavaScript, which is never scanned.
+// names) and placed in a copy of the request handed to the vendor. On macOS that copy also carries `concealed: true`,
+// which tells cua's engine the text is a secret: it is never pasted, and is keyed only under an input source the engine
+// reads reliably, else refused before anything is entered (concealedInputUnavailable); the vendor's service reads only
+// the fields it names and ignores the mark. sky_linux gets exactly its pinned shape. Everything else is delegated
+// untouched: other methods, other fields, text that merely contains a marker, and arbitrary JavaScript, which is never
+// scanned.
 //
 // Failing closed: a reference with an invalid label, a reserved one (a device credential: secret_reserved) or an unknown
 // one, a store file that is unsafe or unreadable, secrets turned off or unavailable, or a reference in any other shape
@@ -39,7 +44,8 @@ import {isAbsolute, join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {parseReference} from '../secrets/reference.mjs';
 import {
-  SecretInputError, NOTHING_ENTERED, isPlainObject, propertyKey, matchesShape, refuseUnusable, unavailable, readFailure, inputFailed, secretsFromEnv,
+  SecretInputError, NOTHING_ENTERED, isPlainObject, propertyKey, matchesShape, refuseUnusable, unavailable, readFailure, inputFailed, concealedInputUnavailable,
+  secretsFromEnv,
 } from './secret-input.mjs';
 
 export {SecretInputError};
@@ -52,9 +58,9 @@ const isPrimitive = value => value === null || ['string', 'number', 'boolean'].i
 const isLinuxWindow = value => isPlainObject(value) && Number.isSafeInteger(value.id) && value.id > 0 && Object.values(value).every(isPrimitive);
 const ELIGIBLE_BY_PLATFORM = {
   darwin: {
-    paste: {field: 'text', fields: {app: isString, text: isString, format: value => value === 'text'}, optional: ['format']},
-    type_text: {field: 'text', fields: {app: isString, text: isString}, optional: []},
-    set_value: {field: 'value', fields: {app: isString, element_index: Number.isInteger, value: isString}, optional: []},
+    paste: {field: 'text', fields: {app: isString, text: isString, format: value => value === 'text'}, optional: ['format'], conceal: true},
+    type_text: {field: 'text', fields: {app: isString, text: isString}, optional: [], conceal: true},
+    set_value: {field: 'value', fields: {app: isString, element_index: Number.isInteger, value: isString}, optional: [], conceal: true},
   },
   linux: {
     type_text: {field: 'text', fields: {window: isLinuxWindow, text: isString}, optional: []},
@@ -66,14 +72,16 @@ const ALL_METHODS = new Set(Object.values(ELIGIBLE_BY_PLATFORM).flatMap(rules =>
 const FIELD_OF = {paste: 'text', type_text: 'text', set_value: 'value'};
 const REQUEST_KEYS = ['type', 'method', 'args'];
 
-// Error names of the pinned vendor SkyComputerUseError (ServerErrorCode in @oai/sky errors.js). Only these fixed
-// names are repeated in a diagnostic; anything else from the vendor is withheld.
-const VENDOR_ERROR_NAMES = new Set([
+// Error names a SkyComputerUseError may carry that a diagnostic repeats: the pinned vendor's (ServerErrorCode in @oai/sky
+// errors.js), and the four cua's engine raises that the vendor has no name for (the native engine spec's Interfaces,
+// all value-free). Anything else from the service is withheld.
+const ADMITTED_ERROR_NAMES = new Set([
   'senderProcessNotAuthenticated', 'couldNotGetRequestData', 'couldNotGetRequestTypeName', 'couldNotResolveRequestType',
   'unhandledEvent', 'unknownError', 'appNotAllowed', 'runningApplicationNotFound', 'accessibilityError',
   'permissionsNotGranted', 'invalidApp', 'noActiveSession', 'userStoppedSession', 'incompatibleClientVersion',
   'permissionsPending', 'blockedURL', 'userIntervened', 'couldNotGetSenderPID', 'ambiguousApp',
   'couldNotGetBootstrapPort', 'screenLocked', 'jsonRPCError',
+  'concealedInputUnavailable', 'inputSourceChanged', 'noScreenshotForCoordinates', 'activationFailed',
 ]);
 
 // The substitution a request asks for: null to delegate it untouched, or {method, rule, input, reference, request}.
@@ -105,7 +113,7 @@ function checkShape({method, rule, field, input, request}) {
 // A fixed classification of a vendor failure, never its text.
 function vendorFailureKind(error) {
   if (error instanceof Error) {
-    if (error.name === 'SkyComputerUseError' && VENDOR_ERROR_NAMES.has(error.errorName)) return error.errorName;
+    if (error.name === 'SkyComputerUseError' && ADMITTED_ERROR_NAMES.has(error.errorName)) return error.errorName;
     if (error.name === 'SkyComputerUseTransportError') return 'transport';
     if (/^Computer Use was not approved to use /.test(error.message)) return 'not_approved';
     if (/^Computer Use is (blocked from using|not allowed to use) the app /.test(error.message)) return 'app_blocked';
@@ -168,7 +176,7 @@ export function createSkyService({loadVendor, secrets, secretsUnavailable = null
     const plan = substitutionFor(request, eligible);
     if (!plan) return (await vendorService()).handleRpc(request);
 
-    const {method, field, input, reference} = plan;
+    const {method, rule, field, input, reference} = plan;
     refuseUnusable(reference);
     checkShape(plan);
     if (secretsUnavailable) throw unavailable(secretsUnavailable);
@@ -177,9 +185,12 @@ export function createSkyService({loadVendor, secrets, secretsUnavailable = null
     try { value = await secrets.read(reference.label); } catch (error) { throw readFailure(error, reference.label); }
 
     try {
-      return await service.handleRpc({type: 'execute', method, args: [{...input, [field]: value}]});
+      return await service.handleRpc({type: 'execute', method, args: [{...input, [field]: value, ...(rule.conceal ? {concealed: true} : {})}]});
     } catch (error) {
-      throw inputFailed(method, reference.label, vendorFailureKind(error));
+      const kind = vendorFailureKind(error);
+      // cua's engine refused the concealed request before entering anything: no keyed route it trusts, and no paste.
+      if (kind === 'concealedInputUnavailable') throw concealedInputUnavailable(method, reference.label);
+      throw inputFailed(method, reference.label, kind);
     }
   }
   return {handleRpc};
@@ -187,11 +198,11 @@ export function createSkyService({loadVendor, secrets, secretsUnavailable = null
 
 // The service as the trusted worker runs it, configured by the launch environment.
 export function skyServiceFromEnv(env = process.env) {
-  const vendorPath = env.CUA_SKY_VENDOR_SERVICE;
+  const servicePath = env.CUA_SKY_SERVICE;
   return createSkyService({
     loadVendor: async () => {
-      if (!vendorPath) throw new Error('cua: the vendor sky service is not configured for this runtime [sky_not_configured]');
-      return import(pathToFileURL(vendorPath).href);
+      if (!servicePath) throw new Error('cua: the sky service is not configured for this runtime (CUA_SKY_SERVICE) [sky_not_configured]');
+      return import(pathToFileURL(servicePath).href);
     },
     ...secretsFromEnv(env),
     env,

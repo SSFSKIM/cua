@@ -34,7 +34,7 @@ test('the launch: cua\'s own host on the given Node, the real wrapper as `sky` d
   assert.equal(launch.sandbox, 'scoped');
   const e = launch.env;
   assert.deepEqual(JSON.parse(e.CUA_REPL_TRUSTED_SERVICES), {sky: realpathSync(SKY_SERVICE)});
-  assert.equal(e.CUA_SKY_VENDOR_SERVICE, SPIKE_SERVICE);
+  assert.equal(e.CUA_SKY_SERVICE, SPIKE_SERVICE);
   assert.equal(e.CUA_ENGINE_APP, '/opt/engines/cua Engine.app');
   const trusted = e.CUA_REPL_TRUSTED_CODE_PATHS.split(':');
   assert.ok(trusted.includes(SPIKE_DIR) && trusted.includes(REPL_HOST_DIR), 'the spike directory joins the own host\'s trusted code');
@@ -131,7 +131,8 @@ test('a session through serve.mjs: the facade in a kernel, one approval per app,
 
   assert.equal(elicitations.length, 1, 'one approval for TextEdit in the connection');
   const [asked] = elicitations;
-  assert.ok(isTextEditApproval({...asked, params: {mode: 'form', ...asked.params}}), JSON.stringify(asked.params));
+  assert.equal(asked.params.mode, 'form', 'the own host asks in form mode, as the vendor host does');
+  assert.ok(isTextEditApproval(asked), JSON.stringify(asked.params));
   assert.match(asked.params._meta.tool_call_id, /^[0-9a-f-]{36}$/, 'the turn metadata\'s call id reaches the elicitation, as on the vendor lane');
   assert.deepEqual(result._meta['cua/nativeEngine'], {engine: 'cua', version: '0.1.0', build: 'b1'});
   assert.equal(result._meta[REPL_HOST_META_KEY].host, 'cua');

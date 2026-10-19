@@ -30,7 +30,9 @@
 //   NODE_REPL_NODE_PATH, NODE_REPL_NODE_MODULE_DIRS    relocated vendor node and its module tree
 //   NODE_REPL_TRUSTED_CODE_PATHS             the vendor module tree, src/sandbox and bin/ (cua's sandbox and its compat
 //                                            executable, which run outside every sandbox) and, with services registered, each service's
-//                                            directory and the owned modules services import (src/secrets), and with the
+//                                            directory and the owned modules services import (src/secrets), on macOS
+//                                            with the sky wrapper src/services/engine, cua's own native engine service,
+//                                            which CUA_SKY_SERVICE may name (#117; it may not exist yet), and with the
 //                                            browser surface src/browser-service, cua's own browser service, which the
 //                                            trusted browser wrapper (src/services/browser.mjs) delegates to (the
 //                                            vendor's @oai/browser-desktop service is never selected: #79). Never
@@ -55,7 +57,8 @@
 //                                            LaunchServices
 //   OAI_SKY_LINUX_BIN                        computer surface, linux: the relocated sky_linux helper, which the vendor
 //                                            spawns as a child over stdio (pinned rather than resolved by the vendor)
-//   CUA_SKY_VENDOR_SERVICE                   computer surface: vendor sky service module, for the trusted wrapper
+//   CUA_SKY_SERVICE                          computer surface: the sky service module the trusted wrapper delegates to;
+//                                            the vendor's (@oai/sky/service) until #117's selection (M1b) can name cua's
 //   BROWSER_USE_AVAILABLE_BACKENDS=chrome    browser surface: the service considers Chrome backends only (no
 //                                            BROWSER_USE_DISABLE_AMBIENT_NETWORK or BROWSER_USE_SECURITY_MODE)
 //   BROWSER_USE_BACKEND_PATHS                browser surface: cua's host sockets (src/chrome/discovery.mjs), an empty
@@ -174,6 +177,10 @@ const ownedPath = relative => realpathSync(fileURLToPath(new URL(relative, impor
 export const SKY_SERVICE = ownedPath('../services/sky.mjs');
 export const BROWSER_SERVICE = ownedPath('../services/browser.mjs');
 export const SERVICE_SUPPORT_DIRS = [ownedPath('../secrets')];
+// cua's own native engine service (#117), which the sky wrapper delegates to when CUA_SKY_SERVICE names it, on either
+// host; trusted with the wrapper on macOS. By its spelled path under the real src/services: it may not exist yet, and a
+// trusted root that does not exist is ignored (src/runtime/sandbox.mjs assertTrustedServicesContained, the worker).
+export const ENGINE_SERVICE_DIR = join(ownedPath('../services'), 'engine');
 // cua's own browser service (docs/doperpowers/specs/2026-10-13-own-browser-service-design.md), trusted with the browser
 // surface.
 export const BROWSER_SERVICE_IMPL_DIR = ownedPath('../browser-service');
@@ -253,6 +260,7 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
     env[names.services] = JSON.stringify(registered);
     if (own) env.CUA_REPL_TRUSTED_RPC_ENABLED = '1';
     for (const dir of [...Object.values(registered).map(module => dirname(module)), ...SERVICE_SUPPORT_DIRS]) if (!trustedCodePaths.includes(dir)) trustedCodePaths.push(dir);
+    if (registered.sky && !linux) trustedCodePaths.push(ENGINE_SERVICE_DIR);
   }
   if (enabled.includes('browser') && !trustedCodePaths.includes(BROWSER_SERVICE_IMPL_DIR)) trustedCodePaths.push(BROWSER_SERVICE_IMPL_DIR);
   Object.assign(env, {
@@ -262,7 +270,7 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
     ...(compat ? {CODEX_CLI_PATH: compatExecutable(), CUA_COMPAT_NODE: p.node} : linux ? linuxSandboxEnv(owned.home, runtime.manifest.arch, enabled) : {CUA_REPL_SANDBOX_EXEC: SEATBELT_EXEC}),
     ...(kernelDir ? {CUA_REPL_KERNEL_DIR: kernelDir} : {}),
   });
-  if (enabled.includes('computer')) Object.assign(env, linux ? {OAI_SKY_LINUX_BIN: p.skyLinuxBin} : {SKY_CUA_SERVICE_PATH: p.skyServiceApp}, {CUA_SKY_VENDOR_SERVICE: p.skyVendorService});
+  if (enabled.includes('computer')) Object.assign(env, linux ? {OAI_SKY_LINUX_BIN: p.skyLinuxBin} : {SKY_CUA_SERVICE_PATH: p.skyServiceApp}, {CUA_SKY_SERVICE: p.skyVendorService});
   if (enabled.includes('browser')) {
     env.BROWSER_USE_AVAILABLE_BACKENDS = 'chrome';
     env.BROWSER_USE_BACKEND_PATHS = launchBackendPaths(home, {clientHosts: browserBackends?.hostPaths ?? null}).join(':');

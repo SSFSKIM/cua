@@ -1,12 +1,12 @@
 // Probe-only trusted "sky" service for scripts/probe-runtime.mjs. node_repl's trusted worker loads it through
 // NODE_REPL_TRUSTED_SERVICES in place of @oai/sky/service. Every vendor request is delegated unchanged to the vendor
-// module named by CUA_SKY_VENDOR_SERVICE (launcher configuration, never agent input). One extra request type,
+// module named by CUA_SKY_SERVICE (launcher configuration, never agent input). One extra request type,
 // `cua_probe`, reports what the wrapper saw and whether this sandboxed worker can reach a probe-owned unix socket,
 // directly and through nodeRepl.nativePipe. It carries no secrets and is not the production wrapper (M5).
 import net from 'node:net';
 import {pathToFileURL} from 'node:url';
 
-const vendor = await import(pathToFileURL(process.env.CUA_SKY_VENDOR_SERVICE).href);
+const vendor = await import(pathToFileURL(process.env.CUA_SKY_SERVICE).href);
 const delegated = [];
 
 export async function handleRpc(request) {

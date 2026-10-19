@@ -4,7 +4,10 @@
 // scripts/probe-secrets.mjs (opt-in). The macOS shapes are tested with platform darwin, the Linux one with linux.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {createSkyService} from '../src/services/sky.mjs';
+import {mkdtempSync, rmSync, writeFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {createSkyService, skyServiceFromEnv} from '../src/services/sky.mjs';
 import {SecretStoreError} from '../src/secrets/store.mjs';
 
 const VALUES = {'WORK_PASSWORD': 'sentinel-Value-1f9c', 'OTHER_LABEL': 'sentinel-Other-77ab'};
@@ -69,10 +72,67 @@ test('an exact reference in each native text field is replaced by the stored val
     assert.equal(await service.handleRpc(request), undefined);
     const delivered = received.at(-1);
     assert.equal(field(delivered), VALUES['WORK_PASSWORD']);
-    assert.deepEqual({...delivered, args: [{...delivered.args[0], text: undefined, value: undefined}]}, {...before, args: [{...before.args[0], text: undefined, value: undefined}]}, 'only the eligible field changes');
+    assert.deepEqual({...delivered, args: [{...delivered.args[0], text: undefined, value: undefined}]}, {...before, args: [{...before.args[0], text: undefined, value: undefined, concealed: true}]},
+      'only the eligible field changes, and the copy is marked concealed');
     assert.deepEqual(request, before, "the caller's request is not modified");
   }
   assert.deepEqual(reads, ['WORK_PASSWORD', 'WORK_PASSWORD', 'WORK_PASSWORD']);
+});
+
+test('the concealed mark rides only on the copy a secret was substituted into: never on ordinary input, never on Linux', async () => {
+  const {service, received} = harness();
+  for (const request of [paste('hello'), typeText('plain'), setValue('42'), paste('x{{secret:WORK_PASSWORD}}')]) {
+    await service.handleRpc(request);
+    assert.equal(Object.hasOwn(received.at(-1).args[0], 'concealed'), false, JSON.stringify(request));
+  }
+  for (const request of [paste(REF('WORK_PASSWORD')), typeText(REF('WORK_PASSWORD')), setValue(REF('WORK_PASSWORD'))]) {
+    await service.handleRpc(request);
+    assert.equal(received.at(-1).args[0].concealed, true, request.method);
+  }
+  // sky_linux, the Linux engine until #171, is handed exactly the shape it pins (the Linux tests below).
+});
+
+// A failure of the native engine raised under one of these names, after substitution: what the wrapper says instead.
+class EngineError extends Error {
+  constructor(errorName, message) { super(message); this.name = 'SkyComputerUseError'; this.errorName = errorName; this.code = -10005; }
+}
+
+test('cua\'s engine-only error names are admitted value-free; concealedInputUnavailable gets its own sentence, saying nothing was entered', async () => {
+  const value = VALUES['WORK_PASSWORD'];
+  for (const name of ['inputSourceChanged', 'noScreenshotForCoordinates', 'activationFailed']) {
+    const {service} = harness({answer: () => { throw new EngineError(name, `stopped after typing ${value}`); }});
+    const error = await rejection(service.handleRpc(typeText(REF('WORK_PASSWORD'))));
+    assert.equal(error.code, 'secret_input_failed', name);
+    assert.match(error.message, new RegExp(`\\(${name}\\)`), `${name} is named`);
+    assert.match(error.message, /may have been partly entered/, `${name}: anything but the fail-closed refusal may have entered part of it`);
+    assertValueFree(error);
+  }
+  for (const request of [typeText(REF('WORK_PASSWORD')), paste(REF('WORK_PASSWORD'))]) {
+    const {service} = harness({answer: () => { throw new EngineError('concealedInputUnavailable', `the source (com.apple.inputmethod.Korean.2SetKorean) cannot key ${value}`); }});
+    const error = await rejection(service.handleRpc(request));
+    assert.equal(error.code, 'concealed_input_unavailable', request.method);
+    assert.match(error.message, /\[concealed_input_unavailable\]$/);
+    assert.match(error.message, /"WORK_PASSWORD"/);
+    assert.match(error.message, /nothing was entered/);
+    assert.match(error.message, /setValue/);
+    if (request.method === 'paste') {
+      assert.match(error.message, /a secret is never pasted/);
+      assert.match(error.message, /typeText/, 'the keyed route is the paste\'s alternative');
+      assert.doesNotMatch(error.message, /input source/, 'a concealed paste is refused whatever the source');
+    } else {
+      assert.match(error.message, /active input source cannot type it reliably/);
+      assert.match(error.message, /switch to a Latin input source/);
+    }
+    assert.doesNotMatch(error.message, /partly entered|withheld/, 'the engine refuses before anything is entered');
+    assert.doesNotMatch(error.message, /Korean\.2SetKorean/, 'a fixed sentence: nothing of the engine\'s text');
+    assert.equal(error.cause, undefined);
+    assert.ok(error.message.length <= 400, `${error.message.length} chars`);
+    assertValueFree(error);
+  }
+  // A name the wrapper does not admit is still withheld.
+  const unknown = await rejection(harness({answer: () => { throw new EngineError('somethingNew', value); }}).service.handleRpc(typeText(REF('WORK_PASSWORD'))));
+  assert.match(unknown.message, /\(failed\)/);
+  assertValueFree(unknown);
 });
 
 test('paste without a format, the shape the cua API omits nothing from, is still eligible', async () => {
@@ -338,4 +398,15 @@ test('a reserved key in lower or mixed case is refused too: the store\'s file sy
     assert.deepEqual(received, []);
     assert.deepEqual(reads, []);
   }
+});
+
+test('the launch names the service the wrapper delegates to in CUA_SKY_SERVICE, the one slot; without it a request fails sky_not_configured', async t => {
+  const dir = mkdtempSync(join(tmpdir(), 'cua-sky-slot-'));
+  t.after(() => rmSync(dir, {recursive: true, force: true}));
+  const module = join(dir, 'service.mjs');
+  writeFileSync(module, 'export async function handleRpc(request) { return {served: request.type}; }\n');
+  const env = {CUA_SECRETS_UNAVAILABLE: 'secrets_disabled'};
+  assert.deepEqual(await skyServiceFromEnv({...env, CUA_SKY_SERVICE: module}).handleRpc({type: 'setup'}), {served: 'setup'});
+  const unset = await rejection(skyServiceFromEnv({...env, CUA_SKY_VENDOR_SERVICE: module}).handleRpc({type: 'setup'}));
+  assert.equal(unset.message, 'cua: the sky service is not configured for this runtime (CUA_SKY_SERVICE) [sky_not_configured]', 'the retired name is not read');
 });

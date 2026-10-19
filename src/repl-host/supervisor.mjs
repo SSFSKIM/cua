@@ -30,6 +30,8 @@
 //   kernel that asked, by request id, and never to a later kernel generation.
 // - running + suspend_timeout / resume_timeout from the worker, or an elicitation awaiting the client: the budget pauses
 //   and resumes (nested). A worker's open levels end with it, so a cell that catches its exit is back on its budget.
+// - running + elicit for a computer-use app the connection already accepted or declined: answered at once from the
+//   connection's approval memory (./elicitation.mjs approvalMemory), which outlives every worker; the client is not asked.
 // - running + submitted_code_complete: the submitted code and its tracked background work have drained; the budget
 //   ends there, and the after-code hooks run under their own per-hook deadlines (the worker's), on success and error.
 // - running + exec_result: the result is assembled once, with the response meta trusted code set, merged across the
@@ -88,7 +90,7 @@ import {assembleResult, imageFromDataUrl, sentenceResult} from './results.mjs';
 import {ownedGroupReaper, startKernelChild} from './kernel-child.mjs';
 import {executionBudget, timer} from './budget.mjs';
 import {DEFAULT_CONNECT_TIMEOUT_MS, nativePipeRelay} from './native-pipe.mjs';
-import {ELICITATION_CANCELLED_SENTENCE, elicitationOutcome, elicitationParams, formElicitationSupported} from './elicitation.mjs';
+import {ELICITATION_CANCELLED_SENTENCE, approvalMemory, elicitationOutcome, elicitationParams, formElicitationSupported} from './elicitation.mjs';
 import {launchServicesAction} from './launch-services.mjs';
 import {SANDBOX_META_KEY, SandboxStateError} from '../runtime/sandbox.mjs';
 import {parseDenyRead, policyTable, tableKey as launchKey, writeRootsOf} from '../sandbox/policy.mjs';
@@ -217,7 +219,8 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
   const turns = new Map();    // JSON [session, turn] -> the acknowledgement promise
   let turnCounter = 0;
   let clientRequestCounter = 0;
-  const clientRequests = new Map();   // MCP id this host sent the client -> {worker, id} (an elicitation)
+  const clientRequests = new Map();   // MCP id this host sent the client -> {worker, id, message, resume} (an elicitation)
+  const approvals = approvalMemory();  // the connection's computer-use app approvals (./elicitation.mjs), whatever worker asks
   let resolveClosed;
   const closed = new Promise(resolve => { resolveClosed = resolve; });
 
@@ -434,7 +437,8 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
     self.pending.clear();
     for (const resolve of self.turns.values()) resolve();
     self.turns.clear();
-    for (const [id, request] of clientRequests) if (request.worker === self) { clientRequests.delete(id); request.execution.budget.resume(); }
+    // Its elicitations stay open at the client: the cell is back on its budget, and a late answer is still remembered.
+    for (const request of clientRequests.values()) if (request.worker === self) request.resume();
     // A withSuspendedTimeout it never closed ends with it: the cell that catches the failure is back on its budget.
     for (const [execution, depth] of self.suspensions) for (let i = 0; i < depth; i++) execution.budget.resume();
     self.suspensions.clear();
@@ -514,18 +518,23 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
   }
 
   // nodeRepl.createElicitation: asked of the client through cua's proxy; the answer goes back to the worker that asked.
+  // A computer-use app approval the connection already answered is answered from its memory instead, asking no one.
   function elicit(self, current, message) {
     const answer = fields => self.child.send(sortedJson({type: 'elicitation_result', id: message.id, ...fields}));
     if (!current) return answer({ok: false, error: EXEC_CONTEXT_NOT_FOUND});
     const {params, error} = elicitationParams(message, {formSupported});
     if (error) return answer({ok: false, error});
+    const remembered = approvals.recall(message);
+    if (remembered) return answer(remembered);
     // The client is gone (the EOF drain): nobody can answer it.
     if (closing) return answer({ok: false, error: ELICITATION_CANCELLED_SENTENCE});
     const id = clientRequestCounter++;
     // The vendor host pauses the cell's budget while the client decides, as withSuspendedTimeout would (observed on the
     // pinned node_repl: a 650 ms answer succeeds under timeout_ms 300); it resumes when the answer arrives.
     current.budget.suspend();
-    clientRequests.set(id, {worker: self, id: message.id, execution: current});
+    let resumed = false;
+    const resume = () => { if (!resumed) { resumed = true; current.budget.resume(); } };
+    clientRequests.set(id, {worker: self, id: message.id, message, resume});
     write({jsonrpc: '2.0', id, method: 'elicitation/create', params: sortedJson(params)});
   }
 
@@ -533,9 +542,12 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
     const request = clientRequests.get(msg.id);
     if (!request) return;
     clientRequests.delete(msg.id);
-    request.execution.budget.resume();
+    request.resume();
+    // The client's answer is the connection's, even when the worker that asked has been replaced since.
+    const outcome = elicitationOutcome(msg);
+    approvals.record(request.message, outcome);
     if (worker !== request.worker) return;
-    request.worker.child.send(sortedJson({type: 'elicitation_result', id: request.id, ...elicitationOutcome(msg)}));
+    request.worker.child.send(sortedJson({type: 'elicitation_result', id: request.id, ...outcome}));
   }
 
   // ---- tool calls ----
@@ -724,7 +736,7 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
   function cancelClientRequests() {
     for (const [id, request] of clientRequests) {
       clientRequests.delete(id);
-      request.execution.budget.resume();
+      request.resume();
       write({jsonrpc: '2.0', method: 'notifications/cancelled', params: {requestId: id, reason: ELICITATION_CANCELLED_SENTENCE}});
       if (worker === request.worker) request.worker.child.send(sortedJson({type: 'elicitation_result', id: request.id, ok: false, error: ELICITATION_CANCELLED_SENTENCE}));
     }

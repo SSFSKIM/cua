@@ -14,7 +14,7 @@ import {once} from 'node:events';
 import {REPO, scratch, scratchUserHome} from './fixtures/runtime-fixture.mjs';
 import {fakeInstalledHome, installedHomeSupported, NO_SCOPED_LAUNCH} from './fixtures/installed-home.mjs';
 import {serve} from '../src/mcp/server.mjs';
-import {SKY_SERVICE, BROWSER_SERVICE, SERVICE_SUPPORT_DIRS, SANDBOX_DIR, BIN_DIR} from '../src/runtime/launch.mjs';
+import {SKY_SERVICE, BROWSER_SERVICE, SERVICE_SUPPORT_DIRS, ENGINE_SERVICE_DIR, SANDBOX_DIR, BIN_DIR} from '../src/runtime/launch.mjs';
 import {chromeFacts, chromeUserData, CUA_EXTENSION_ID, PERMISSION_FIX} from '../src/profiles/chrome.mjs';
 import {LIVENESS_CELL} from '../src/profiles/inventory.mjs';
 import {socketNameFor, socketPathFor} from '../src/chrome/extension.mjs';
@@ -125,7 +125,7 @@ test('cua serve runs the resolved runtime with an allowlisted environment in an 
   assert.equal(start.env.AMBIENT_SECRET, undefined);
   assert.equal(start.env.CUA_SHIM_CODEX_HOME, undefined);
   assert.deepEqual(JSON.parse(start.env.NODE_REPL_TRUSTED_SERVICES), {sky: SKY_SERVICE}, 'the trusted sky wrapper is registered, never an ambient override');
-  assert.deepEqual(start.env.NODE_REPL_TRUSTED_CODE_PATHS.split(':').slice(1), [SANDBOX_DIR, BIN_DIR, dirname(SKY_SERVICE), ...SERVICE_SUPPORT_DIRS]);
+  assert.deepEqual(start.env.NODE_REPL_TRUSTED_CODE_PATHS.split(':').slice(1), [SANDBOX_DIR, BIN_DIR, dirname(SKY_SERVICE), ...SERVICE_SUPPORT_DIRS, ENGINE_SERVICE_DIR]);
   assert.equal(start.env.TMPDIR, join(sessionDir, 'tmp'), 'the session\'s own temp');
   assert.equal(start.env.PATH, '/usr/bin:/bin:/usr/sbin:/sbin');
   assert.deepEqual(Object.keys(start.env).filter(key => key.startsWith('CUA_SECRETS_')), ['CUA_SECRETS_UNAVAILABLE'], 'no store when secrets are off');

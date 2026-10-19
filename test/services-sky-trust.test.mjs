@@ -86,7 +86,7 @@ const ownAsVendorNames = env => ({...env, NODE_REPL_TRUSTED_SERVICES: env.CUA_RE
 test('the production sky service and everything it imports load under exactly the launch\'s trusted paths', {skip: typeof registerHooks !== 'function'}, async t => {
   const {env} = launchWithFakeVendor(t, {secretsUnavailable: 'secrets_disabled'});
   const [setup, reference] = await runWorker(env);
-  assert.deepEqual(setup, {vendor: 'setup'}, 'delegated to the vendor module named by CUA_SKY_VENDOR_SERVICE');
+  assert.deepEqual(setup, {vendor: 'setup'}, 'delegated to the service module named by CUA_SKY_SERVICE');
   assert.match(reference.error, /\[secrets_disabled\]$/, 'a reference fails closed with the launch\'s reason');
 });
 

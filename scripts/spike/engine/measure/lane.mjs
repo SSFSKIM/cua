@@ -126,9 +126,9 @@ export const FORCED_ROUTES = Object.freeze({click: [1, "2'", 2, 3], key: ["2'", 
 export const UNICODE_STRINGS = Object.freeze(['The quick brown fox jumps over the lazy dog.', '한글 테스트', 'ㄱㄴㄷ', '가나다 abc 123', '😀 이모지', 'é', '日本語', '줄1\n줄2']);
 export const INPUT_SOURCES = Object.freeze({latin: 'com.apple.keylayout.ABC', korean: 'com.apple.inputmethod.Korean.2SetKorean'});
 
-// The approval the harness answers: a computer-use elicitation for one of the run's scene apps. The own host's
-// elicitation carries no `mode: 'form'` (src/repl-host/elicitation.mjs), so, unlike scripts/accept/lib.mjs's
-// isTextEditApproval, the mode is not required.
+// The approval the harness answers: a computer-use elicitation for one of the run's scene apps. Both hosts send it as
+// `mode: 'form'` (the own host since #117, src/repl-host/elicitation.mjs); unlike scripts/accept/lib.mjs's
+// isTextEditApproval, this matcher does not check the mode, only the connector and the app.
 export function isSceneApproval(msg, bundleIds) {
   if (msg?.method !== 'elicitation/create') return false;
   const params = msg.params ?? {}, meta = params._meta ?? {}, schema = params.requestedSchema, tool = meta.tool_params;

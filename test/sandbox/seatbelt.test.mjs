@@ -4,11 +4,13 @@
 // again on the real filesystem, as the generator ran it.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync} from 'node:fs';
+import {existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync} from 'node:fs';
+import {createServer} from 'node:net';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {execFileSync} from 'node:child_process';
 import {SandboxStateError} from '../../src/runtime/sandbox.mjs';
+import {ENGINE_DIRECTORY_IN_HOME} from '../../src/runtime/layout.mjs';
 import {NOTIFICATION_CENTER_GRANT, NOTIFICATION_CENTER_LINE, SEATBELT_EXEC, seatbeltCommand} from '../../src/sandbox/seatbelt.mjs';
 import {sandboxedEnv} from '../../src/sandbox/env.mjs';
 import {assertFixtureRoot, materialize, placehold, substitute} from '../../scripts/sandbox-golden/fixtures.mjs';
@@ -154,6 +156,53 @@ test('the daemon directory follows /tmp\'s real path and the effective uid', () 
   const {args} = seatbeltCommand({profile, cwd: `${VIRTUAL_ROOT}/run`, command: ['/bin/true'], fs, euid: 777});
   assert.match(args[1], /\(deny file-read\* file-write\* \(literal "\/private\/tmp\/codex-daemon-777"\) \(subpath "\/private\/tmp\/codex-daemon-777"\)\)/);
   assert.deepEqual(args.slice(2), ['--', '/bin/true'], 'full read and no write root: no parameters at all');
+});
+
+// cua's deviation (#117): the native engine's directory, its socket among its files, is denied as the daemon directory
+// is, by its real path: what cannot be read or connected to there, and no ancestor renamed to move it out of the rule.
+test('a socket directory the caller names is denied like the daemon directory, by the real path of its nearest existing ancestor', () => {
+  assert.equal(ENGINE_DIRECTORY_IN_HOME, 'Library/Application Support/cua/engine');
+  const fs = virtualFs({root: VIRTUAL_ROOT, setup: [{dir: 'run'}, {dir: 'realhome/Library/Application Support'}, {symlink: 'home', target: 'realhome'}]});
+  const profile = {type: 'managed', network: 'restricted', file_system: {type: 'restricted', entries: [{path: {type: 'special', value: {kind: 'root'}}, access: 'read'}]}};
+  const render = socketDirectories => seatbeltCommand({profile, cwd: `${VIRTUAL_ROOT}/run`, command: ['/bin/true'], fs, euid: EUID, socketDirectories})[`args`];
+  const engine = `${VIRTUAL_ROOT}/realhome/${ENGINE_DIRECTORY_IN_HOME}`;
+  const [, policy, ...rest] = render([`${VIRTUAL_ROOT}/home/${ENGINE_DIRECTORY_IN_HOME}`]);
+  const quoted = JSON.stringify(engine);
+  const lines = [`(deny file-read* file-write* (literal ${quoted}) (subpath ${quoted}))`, `(deny network-outbound (remote unix-socket (subpath ${quoted})))`,
+    ...[`${VIRTUAL_ROOT}/realhome/Library/Application Support/cua`, `${VIRTUAL_ROOT}/realhome/Library/Application Support`, `${VIRTUAL_ROOT}/realhome/Library`, `${VIRTUAL_ROOT}/realhome`]
+      .map(path => `(deny file-write-unlink (require-all (vnode-type DIRECTORY) (literal ${JSON.stringify(path)})))`)];
+  for (const line of lines) assert.ok(policy.split('\n').includes(line), line);
+  assert.ok(!policy.includes(`${VIRTUAL_ROOT}/home/`), 'never the symlinked spelling, which seatbelt would not match');
+  assert.ok(policy.indexOf(lines[0]) > policy.indexOf('codex-daemon-501') && policy.indexOf(lines[0]) < policy.indexOf('(deny mach-lookup (xpc-service-name-prefix ""))'), 'beside the daemon directory\'s rule');
+  assert.deepEqual(rest, ['--', '/bin/true'], 'no parameter');
+  assert.equal(render([engine, engine])[1].split(lines[0]).length, 2, 'a directory named twice is rendered once');
+  assert.equal(render([])[1], render(undefined)[1], 'none named: the original\'s rendering (the goldens above)');
+  assert.ok(!render([])[1].includes('cua/engine'));
+});
+
+// The rule as sandbox-exec applies it, with the network on so that the base policy's own default does not decide:
+// a socket and a file in the named directory are out of reach, the same beside it are not.
+test('on a Mac, sandbox-exec refuses a connect to a socket in a named socket directory and a read there, and allows both beside it', {skip: (process.platform !== 'darwin' || !existsSync(SEATBELT_EXEC)) && 'needs macOS sandbox-exec'}, async t => {
+  const root = realpathSync(mkdtempSync('/tmp/cua-sock-'));   // short: a socket path is at most 104 bytes
+  t.after(() => rmSync(root, {recursive: true, force: true}));
+  const engine = join(root, 'engine'), beside = join(root, 'beside'), cwd = join(root, 'run');
+  for (const dir of [engine, beside, cwd]) mkdirSync(dir);
+  const servers = [];
+  for (const dir of [engine, beside]) {
+    writeFileSync(join(dir, 'state.json'), '{}');
+    const server = createServer(c => c.end()).listen(join(dir, 's.sock'));
+    await new Promise(resolve => server.once('listening', resolve));
+    servers.push(server);
+  }
+  t.after(() => servers.forEach(server => server.close()));
+  const probe = `const net = require('node:net'), fs = require('node:fs'); const out = {};
+    const reach = p => new Promise(r => net.connect(p).on('connect', function () { this.destroy(); r('allow'); }).on('error', e => r('deny:' + e.code)));
+    (async () => { for (const d of process.argv.slice(1)) { out[d] = {connect: await reach(d + '/s.sock'), read: (() => { try { fs.readFileSync(d + '/state.json'); return 'allow'; } catch (e) { return 'deny:' + e.code; } })()}; }
+      process.stdout.write(JSON.stringify(out)); })();`;
+  const profile = {type: 'managed', network: 'enabled', file_system: {type: 'restricted', entries: [{path: {type: 'special', value: {kind: 'root'}}, access: 'read'}]}};
+  const {file, args} = seatbeltCommand({profile, cwd, command: [process.execPath, '-e', probe, engine, beside], socketDirectories: [engine]});
+  const seen = JSON.parse(execFileSync(file, args, {cwd, encoding: 'utf8'}));
+  assert.deepEqual(seen, {[engine]: {connect: 'deny:EPERM', read: 'deny:EPERM'}, [beside]: {connect: 'allow', read: 'allow'}});
 });
 
 test('a denied path whose ancestors a readable root covers needs no metadata grant', () => {

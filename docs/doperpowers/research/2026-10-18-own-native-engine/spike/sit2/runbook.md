@@ -245,16 +245,18 @@ node scripts/spike/engine/measure.mjs probe-f --device mini --out $OUT/u8
 - **OWNER**: whether the capture confirmation appeared for the rebuild (Allow it).
 - Before answering f3's prompt, the controller reads `capture-approvals` into `$OUT/u8-approvals-2.json`.
 - **OWNER**: whether the confirmation appeared for the new-path copy (Allow it).
-- After f3: `capture-approvals` into `$OUT/u8-approvals-3.json`, then stop the stream:
-```
-ssh mini 'kill $(head -1 /tmp/cua-sit2-tcc-u78.pid | sed "s/.*\"pid\":\([0-9]*\).*/\1/"); sleep 1; cat /tmp/cua-sit2-tcc-u78.jsonl' > $OUT/u78-tcc.jsonl
-```
+- After f3: `capture-approvals` into `$OUT/u8-approvals-3.json`. The stream keeps running through the reset step and the Restore below, the moments the reset asks about.
 
 **Only if U7 showed a prompt for the fresh id**, one more step, last of all because it removes the Accessibility grant every earlier phase relied on. It tells whether the engine's own id is in a state that suppresses the prompt:
 - **OWNER** runs, at the console: `tccutil reset Accessibility io.github.ssfskim.cua.engine`.
 - The Restore below then raises (or does not raise) the Accessibility prompt for "cua Engine". The owner reports whether it appeared, then grants Accessibility again, by the prompt or by hand (Privacy & Security → Accessibility → "+" → `~/Library/Application Support/cua/engine/cua Engine.app`). The controller records it in `$OUT/u7-reset.txt`.
 
 **Restore** the sitting build (another same-path move, so the confirmation is expected; **OWNER**: Allow). Use phase 1's stop, stage and move lines with `/tmp/cua-sit2-spike`, then `measure.mjs approve --device mini --out $OUT/approve-final`. Then remove the U7 bundle: `ssh mini 'rm -rf "Library/Application Support/cua/engine-u7"'`.
+
+Then, with Restore's approve done, stop the stream and collect it:
+```
+ssh mini 'kill $(head -1 /tmp/cua-sit2-tcc-u78.pid | sed "s/.*\"pid\":\([0-9]*\).*/\1/"); sleep 1; cat /tmp/cua-sit2-tcc-u78.jsonl' > $OUT/u78-tcc.jsonl
+```
 
 **OWNER**: the "cua Engine probe" entries stay in System Settings' lists. The owner may remove them with "−" (optional; nothing depends on them).
 

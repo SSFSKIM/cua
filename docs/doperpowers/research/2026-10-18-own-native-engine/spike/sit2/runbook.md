@@ -282,6 +282,7 @@ Commit `$OUT` with explicit paths. Only the sitting's own outputs go in: the row
 - Whether the "first text element" `probe_spike selection` finds is the scene's own field:
   - On Chrome it may be the address bar's. The row records `role`, and `effects.selection` types its probe text into the page's field first.
   - If it is the address bar, the Chrome selection rows say nothing about the page.
+- The route matrix's TextEdit clicks: they aim at the text view's centre (element click) or its visible part's centre (coordinate click) and must land on that line. If the text view's frame holds the whole document and its centre falls below the visible part, every element-click row is `invalid` ("aim is not on a visible line"). That is the aim, not delivery. On route 3 a row is also `invalid` when the window's activation point sits within a line of the target.
 - The coordinate rows: TextEdit's line height (taken from the frame, else a 17 pt estimate, ±1 line tolerated), and `coord.moved` needing an Accessibility-trusted ssh shell.
 - The Electron rows: whether its focus reads in the background (the Tab outcome may be null), and the counters' 500 ms settle.
 - The fifo relay of the operator prompts end to end, and the 10 s operator text length.

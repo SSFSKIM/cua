@@ -2,26 +2,22 @@
 
 Spec: `docs/doperpowers/specs/2026-10-18-own-native-engine-design.md`. Branch `feat/117-own-native-engine`. My commits run from 87065a2 to this report's commit. The range also carries the dispatching session's spec commits, the reading agent's research commits, and two merges of the owner's input branches (5bc152a0, 0e8cbd77).
 
-Executed 2026-10-18/19 on the MacBook by the plan-executor for maws-3f. Nothing has run on the mini.
+Executed 2026-10-18/19 by the plan-executor for maws-3f: built on the MacBook, measured on the mini in the sitting of 2026-10-19 (CI-opt hold from 13:56:17Z, the owner at the console for the prompts).
 
 ## Status
 
-**DONE_WITH_CONCERNS: ready for the mini sitting.**
+**DONE_WITH_CONCERNS: the mini sitting ran; the verdict is PROMOTE** (the dispatching session's reading of the promote rule, spec Decision Log).
 
-All build tasks are reviewed clean, and the owner's input half is merged. The sitting can now prove:
-- both halves of the promote rule;
-- every probe, (a) through (f);
-- the goldens, including the action sequences;
-- the settle counts.
-
-The MacBook windows ran the cua lane once without input (the shakedown) and the vendor lane once. They ended before the cua lane could run with input; the reason is under "MacBook windows" below.
-
+- **Speed, TextEdit, like for like** (iteration 2, same-sitting triples, 90/90 samples per row, equal 1220 × 1720 images): `getAXState` 43.1 ms against the vendor's 50.7, `getScreenshot` 45.8 against 53.4, the three-cell task 2,755 against 4,028.
+- **Background input**: route 3 carried click and pressKey to TextEdit and Finder with the frontmost application and the top window unchanged and no activation seen.
+- **Chrome is recorded per family**: undiagnosed, so route 4 and the owner's call before M1a.
+- **Concerns**: Finder, Chrome and Electron were not re-measured after the two tuning iterations; probe (d)(i) did not run (no Input Monitoring grant); the paste route is not built, so `type_text` under the Korean source refuses; four residue items below.
 ## What was built
 
 | Part | Paths | Commits | Review |
 |---|---|---|---|
-| Engine, observation half | `native/engine/` (Swift 6, Apple frameworks only, SwiftPM test target), `scripts/spike/engine/assemble.mjs`, `test/native-engine*.test.mjs` | 0b7a1b9, fa6a80ac, cb3bfdf6, c20d3305, 1ca14d9c, 558e7071, 8b30523f | clean after three rounds, then the tuning rounds |
-| Engine, input half (the owner's) | `Input.swift`, `Keyboard.swift`, `Mouse.swift`, `Activation.swift`, `Tap.swift`, `Probe.swift` | merged as 5bc152a0 and 0e8cbd77 | reviewed on the owner's branch |
+| Engine, observation half | `native/engine/` (Swift 6, Apple frameworks only, SwiftPM test target), `scripts/spike/engine/assemble.mjs`, `test/native-engine*.test.mjs` | 0b7a1b9, fa6a80ac, cb3bfdf6, c20d3305, 1ca14d9c, 558e7071, 8b30523f; the sitting's tuning iterations 2f1bf2cf and b1039a31 | clean after three rounds, then the tuning rounds; the sitting's iterations unit-tested, not reviewed |
+| Engine, input half (the owner's) | `Input.swift`, `Keyboard.swift`, `Mouse.swift`, `Activation.swift`, `Tap.swift`, `Probe.swift` | merged as 5bc152a0 and 0e8cbd77; the key-focus fix f62f3cc7 (the dispatching session's) | reviewed on the owner's branch |
 | Spike service | `scripts/spike/engine/{client,render,service,serve}.mjs` and their tests | f674385, e9c79d5, 0661048a | clean |
 | Scenes and fixtures | `scenes.mjs`, `scene-processes.mjs`, `fixtures/` (Chrome for Testing 155.0.8059.84 pinned by SHA-256, the Electron fixture), `front-window.swift`, the `electron` 44.9.0 dev dependency | 2c38a84..5741442, cdefe035, 7b5c0a50, 6cfb3cdc, b470b293, ccf1043c | clean |
 | Measure | `measure.mjs`, `measure/` (both lanes, local and over ssh; approve, stop, status, cleanup, probe-f, summary) | 4aee098 .. bc45ba85 | clean |
@@ -109,7 +105,34 @@ All of this is in the spec's Surprises & Discoveries.
   - enablement release;
   - settle options (b) and (c).
 
-## Mini sitting
+## Mini sitting results (2026-10-19)
+
+All outputs are under `docs/doperpowers/research/2026-10-18-own-native-engine/spike/`; each series has its `summary.md`.
+
+**First series** (build 2f0263b6, checkout 5bb0d13f; `approve`, `vendor`, `cua`, `probe-f`, `summary.md`):
+- **Approve.** The engine's requests raised no Accessibility or Screen Recording prompt; the owner added the bundle under Screen & System Audio Recording by hand, and Accessibility already read true. The capture confirmation then appeared once and the owner allowed it.
+- **Vendor triple** (14:37–14:48Z) and **cua triple** (14:49–15:22Z), four scenes. Verdict DISCARD FORK on speed: TextEdit in-cell `getAXState` 98.2 against 56.0 ms, `getScreenshot` 99.8 against 55.3. Per-scene trees: Finder-200 293.1 against 458.8 (cua faster), TextEdit 120.5 / 62.9, Electron 86.7 / 57.4. The hierarchy route was slower than the public one everywhere. Settle at rest 267–456 ms, no notifications. The reduced read set saved nothing.
+- **The breakdown** on TextEdit: walk 55.9 ms, then the capture 49.7, in sequence; 7 ms above the engine.
+- **Input crashed the engine.** 27 crash reports, all SIGSEGV in `SLPSGetKeyFocusProcess` from `appBelievesItHasFocus`. The dispatching session found the cause, a one-argument declaration of a two-argument function, and fixed it (f62f3cc7, cherry-picked). Input that did not reach the check ran: TextEdit task cells 30/30, the action goldens on TextEdit and Electron, probes (a) and (b) on Electron, probe (d)'s no-fire case, Latin typing.
+- **Probe (c)**: a plain `open -a` did not activate the engine; two copies at two paths each bound their own socket.
+- **Probe (f)**: f1, the running engine reads both its grants; f2, skipped in the series and answered later by the two staged rebuilds below; f3, a copy at a new path came up with both grants and captured with no confirmation.
+
+**Tuning iteration 1** (2f1bf2cf with the fix, build 503399e2; `iter1`, `iter1-input`, `iter1-chrome`):
+- The capture runs on its own thread beside the walk and is joined after it. Engine total 113.3 → 48.7 ms (walk 43.0, capture 41.0, join 2.6).
+- TextEdit in-cell, vendor against cua: `getAXState` 51.3 / 42.2, `getScreenshot` 49.3 / 40.6. The render was unchanged; three captures viewed by hand were real, fresh images.
+- **Input, TextEdit and Finder:** probe (a) click and key with the frontmost application and the top window unchanged on both; probe (b) route 3 for both actions (38–52 ms activation guard), no activation seen; forced key routes 2 and 3 ok; forced click routes 1–3 an error result on both apps with no error text; task cells 10/10; the action goldens; no crash.
+- **Chrome:** every guarded cell refused ("the scene window was not the app's front window"); a background Latin `type_text` by route 3 landed 0 of 8. Undiagnosed.
+- **Found:** the vendor's images are at pixel size (1220 × 1720) and cua's were at points (610 × 860). Ruled: match the vendor.
+
+**Tuning iteration 2** (b1039a31, build e3547c25; `iter2`):
+- The capture at the display's pixel size, and a coordinate click divided by the same scale. TextEdit in-cell, vendor against cua: `getAXState` 50.7 / 43.1, `getScreenshot` 53.4 / 45.8, task 4,028 / 2,755; images equal in size and within 0.2% in bytes.
+- Approve for both rebuilds raised nothing and captured on first launch (whether the console showed a confirmation is the owner's to say).
+
+**Engine exits** (the mini's unified log, `subsystem == "io.github.ssfskim.cua.engine"`, readable unprivileged): 85 starts; 28 logged exits (27 shutdown requests, one quit request at approve's relaunch); 56 unlogged starts, all inside the two input crash windows (27 crash reports, the rest consistent with ReportCrash's throttling); one start (pid 45110, 14:49:47Z) with neither.
+
+**The owner's state after the sitting:** input source ABC (restored after the first series; the later runs restored it themselves); scenes down; the engine stopped at the approved location, build e3547c25 approved; the scratch vendor home in place; the live home untouched.
+
+## Mini sitting (as prepared)
 
 **Needs from the CI-opt hold.**
 - The mini's CI runner is paused and idle for the whole sitting, about 3½ hours with margin.
@@ -192,10 +215,19 @@ Expected length: about 3 hours of lane time, plus the owner's prompts. Run a sin
 - **Reviewer model.** sol was at its usage limit until Oct 24, so the task reviews ran on opus.
 - **Shared spec.** The dispatching session once swept an uncommitted spec edit; since then spec changes come to me as messages.
 - **MacBook console.** cmux took the front on terminal activity (see "MacBook windows").
+- **Approve's grant prompts** did not appear on the mini; the owner added the bundle by hand.
+- **The harness's `approve` and `probe-f` processes** stayed alive after writing their answers while the operator fifo was held open; stopped by hand.
+- **The coordinator's input fix** came from a separate branch (fix/117-keyfocus-signature, f86b5435) and was cherry-picked as f62f3cc7.
 
 ## Residue
 
-- **The mini sitting itself**, above. Its summary decides promote or discard.
-- **The engine's unexplained exit** on 2026-10-18 between 21:55 and 21:57. Exit logging names every path now. Watch the sitting's logs (`log show --predicate 'subsystem == "io.github.ssfskim.cua.engine"'`) before counting the cold rows.
+- **The design revision the promote rule requires.** The design sections on input, settle, intervention and install are revised from the sitting's measurements with a dated Decision Log entry, then the critique debate of entry 1 runs. This gates M1a.
+- **Chrome's background input.** Every guarded cell refused because the scene window was not Chrome's front window, and a route-3 `type_text` landed 0 of 8. The refusals may be the harness's (a second Chrome window or a bubble taking the front). Diagnose before the owner's route-4 call for Chrome.
+- **Forced click routes 1–3** returned an error result on TextEdit and Finder with no error text in the row, while the natural click took route 3 cleanly. The cell's error text needs to reach the row, then the cause.
+- **The x/y click path** (screenshot pixels divided by the display scale) is unit-tested only; no live cell clicks by coordinates. One cell on a 2× display before M1a relies on it.
+- **pid 45110**, an engine start at 14:49:47Z with no exit line and no crash report: the one unexplained exit of the sitting.
+- **Probe (d)(i)** (the listen-only tap, the HID-idle reset) needs the engine granted Input Monitoring; the engine raised no prompt for it. Next input sitting.
+- **The paste route** for `type_text` under a non-Latin source, not built in the spike.
+- **Finder, Chrome and Electron speed after the iterations** were not re-measured; the first series had Finder faster and Electron slower than the vendor.
+- **The vendor's exact screenshot sizing rule** (pixel size on the mini against the MacBook baseline's 1172 × 976), to read from its capture path (`WindowServerSPI.captureWindowImagesInRect`), also a possible speed lever.
 - **A live read census before any per-role drop** of actions or focusable reads, checked against M1a's renderer.
-- **The vendor's missing web content on the Chromium scenes.** Confirm it at the sitting; probe (c′) names the enablement rule.

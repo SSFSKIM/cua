@@ -1,0 +1,25 @@
+{
+  "device": "mini",
+  "at": "2026-10-19T16:00:20.397Z",
+  "approved": true,
+  "record": {
+    "build": "e3547c2563c7a844474c01f72e634cac90046e73aeb09637825d832e3cd87e7e",
+    "identity": "1AAFD20666E9358859B39E8F447572FBE39F52B0",
+    "approvedAt": "2026-10-19T16:00:19.885Z"
+  },
+  "first": {
+    "accessibility": true,
+    "screenRecording": true,
+    "captured": true
+  },
+  "observedBeforeRelaunch": {
+    "accessibility": true,
+    "screenRecording": true
+  },
+  "second": {
+    "accessibility": true,
+    "captured": true,
+    "screenRecording": true
+  },
+  "relaunchedPid": 24466
+}

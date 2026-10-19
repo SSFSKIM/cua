@@ -1,0 +1,257 @@
+Window: "cua-scene-finder", App: ⟨6⟩.
+0 ⟨23⟩, ID: ⟨12⟩, Secondary Actions: ⟨5⟩
+	1 ⟨6⟩
+		2 ⟨48⟩
+			3 ⟨8⟩
+				4 row (selectable) ⟨5⟩
+				5 row (selectable) ⟨2⟩
+				6 row (selectable, expanded) Value: ⟨2⟩, Secondary Actions: ⟨8⟩
+				7 row (selectable) ⟨12⟩
+				8 row (selectable) ⟨12⟩
+				9 row (selectable) ⟨3⟩
+				10 row (selectable) ⟨12⟩
+				11 row (selectable) ⟨7⟩
+				12 row (selectable) ⟨4⟩
+				13 row (selectable) ⟨3⟩
+				14 row (selectable, expanded) Value: ⟨4⟩, Secondary Actions: ⟨8⟩
+				15 row (selectable) ⟨7⟩
+				16 row (selectable) ⟨4⟩
+				17 row (selectable) ⟨2⟩
+				18 row (selectable) ⟨9⟩
+				19 row (selectable) ⟨4⟩
+				20 row (selectable, expanded) Value: ⟨2⟩, Secondary Actions: ⟨8⟩
+				21 row (selectable) ⟨3⟩
+				22 row (selectable) ⟨3⟩
+				23 row (selectable) ⟨3⟩
+				24 row (selectable) ⟨3⟩
+				25 row (selectable) ⟨3⟩
+				26 row (selectable) ⟨3⟩
+				27 row (selectable) ⟨2⟩
+				28 row (selectable) ⟨6⟩
+			29 ⟨26⟩
+				30 ⟨25⟩
+				31 ⟨9⟩
+				32 ⟨9⟩
+				33 ⟨9⟩
+				34 ⟨9⟩
+		35 ⟨38⟩
+		36 ⟨48⟩
+			37 ⟨22⟩, ID: ⟨36⟩
+				38 row (selectable)
+					39 ⟨33⟩
+						40 ⟨3⟩
+						41 ⟨119⟩, Value: scene-file-001, Secondary Actions: ⟨12⟩
+					42 ⟨1⟩
+						43 ⟨15⟩
+					44 ⟨1⟩
+						45 ⟨9⟩
+					46 ⟨1⟩
+						47 ⟨6⟩
+				48 row (selectable)
+					49 ⟨33⟩
+						50 ⟨3⟩
+						51 ⟨119⟩, Value: scene-file-002, Secondary Actions: ⟨12⟩
+					52 ⟨1⟩
+						53 ⟨15⟩
+					54 ⟨1⟩
+						55 ⟨9⟩
+					56 ⟨1⟩
+						57 ⟨6⟩
+				58 row (selectable)
+					59 ⟨33⟩
+						60 ⟨3⟩
+						61 ⟨119⟩, Value: scene-file-003, Secondary Actions: ⟨12⟩
+					62 ⟨1⟩
+						63 ⟨15⟩
+					64 ⟨1⟩
+						65 ⟨9⟩
+					66 ⟨1⟩
+						67 ⟨6⟩
+				68 row (selectable)
+					69 ⟨33⟩
+						70 ⟨3⟩
+						71 ⟨119⟩, Value: scene-file-004, Secondary Actions: ⟨12⟩
+					72 ⟨1⟩
+						73 ⟨15⟩
+					74 ⟨1⟩
+						75 ⟨9⟩
+					76 ⟨1⟩
+						77 ⟨6⟩
+				78 row (selected)
+					79 ⟨44⟩
+						80 ⟨3⟩
+						81 ⟨119⟩, Value: scene-file-005, Secondary Actions: ⟨12⟩
+					82 ⟨12⟩
+						83 ⟨15⟩
+					84 ⟨12⟩
+						85 ⟨9⟩
+					86 ⟨12⟩
+						87 ⟨6⟩
+				88 row (selectable)
+					89 ⟨33⟩
+						90 ⟨3⟩
+						91 ⟨119⟩, Value: scene-file-006, Secondary Actions: ⟨12⟩
+					92 ⟨1⟩
+						93 ⟨15⟩
+					94 ⟨1⟩
+						95 ⟨9⟩
+					96 ⟨1⟩
+						97 ⟨6⟩
+				98 row (selectable)
+					99 ⟨33⟩
+						100 ⟨3⟩
+						101 ⟨119⟩, Value: scene-file-007, Secondary Actions: ⟨12⟩
+					102 ⟨1⟩
+						103 ⟨15⟩
+					104 ⟨1⟩
+						105 ⟨9⟩
+					106 ⟨1⟩
+						107 ⟨6⟩
+				108 row (selectable)
+					109 ⟨33⟩
+						110 ⟨3⟩
+						111 ⟨119⟩, Value: scene-file-008, Secondary Actions: ⟨12⟩
+					112 ⟨1⟩
+						113 ⟨15⟩
+					114 ⟨1⟩
+						115 ⟨9⟩
+					116 ⟨1⟩
+						117 ⟨6⟩
+				118 row (selectable)
+					119 ⟨33⟩
+						120 ⟨3⟩
+						121 ⟨119⟩, Value: scene-file-009, Secondary Actions: ⟨12⟩
+					122 ⟨1⟩
+						123 ⟨15⟩
+					124 ⟨1⟩
+						125 ⟨9⟩
+					126 ⟨1⟩
+						127 ⟨6⟩
+				128 row (selectable)
+					129 ⟨33⟩
+						130 ⟨3⟩
+						131 ⟨119⟩, Value: scene-file-010, Secondary Actions: ⟨12⟩
+					132 ⟨1⟩
+						133 ⟨15⟩
+					134 ⟨1⟩
+						135 ⟨9⟩
+					136 ⟨1⟩
+						137 ⟨6⟩
+				138 row (selectable)
+					139 ⟨33⟩
+						140 ⟨3⟩
+						141 ⟨119⟩, Value: scene-file-011, Secondary Actions: ⟨12⟩
+					142 ⟨1⟩
+						143 ⟨15⟩
+					144 ⟨1⟩
+						145 ⟨9⟩
+					146 ⟨1⟩
+						147 ⟨6⟩
+				148 row (selectable)
+					149 ⟨33⟩
+						150 ⟨3⟩
+						151 ⟨119⟩, Value: scene-file-012, Secondary Actions: ⟨12⟩
+					152 ⟨1⟩
+						153 ⟨15⟩
+					154 ⟨1⟩
+						155 ⟨9⟩
+					156 ⟨1⟩
+						157 ⟨6⟩
+				158 row (selectable)
+					159 ⟨33⟩
+						160 ⟨3⟩
+						161 ⟨119⟩, Value: scene-file-013, Secondary Actions: ⟨12⟩
+					162 ⟨1⟩
+						163 ⟨15⟩
+					164 ⟨1⟩
+						165 ⟨9⟩
+					166 ⟨1⟩
+						167 ⟨6⟩
+				168 row (selectable)
+					169 ⟨33⟩
+						170 ⟨3⟩
+						171 ⟨119⟩, Value: scene-file-014, Secondary Actions: ⟨12⟩
+					172 ⟨1⟩
+						173 ⟨15⟩
+					174 ⟨1⟩
+						175 ⟨9⟩
+					176 ⟨1⟩
+						177 ⟨6⟩
+				178 row (selectable)
+					179 ⟨33⟩
+						180 ⟨3⟩
+						181 ⟨119⟩, Value: scene-file-015, Secondary Actions: ⟨12⟩
+					182 ⟨1⟩
+						183 ⟨15⟩
+					184 ⟨1⟩
+						185 ⟨9⟩
+					186 ⟨1⟩
+						187 ⟨6⟩
+				188 row (selectable)
+					189 ⟨33⟩
+						190 ⟨3⟩
+						191 ⟨119⟩, Value: scene-file-016, Secondary Actions: ⟨12⟩
+					192 ⟨1⟩
+						193 ⟨15⟩
+					194 ⟨1⟩
+						195 ⟨9⟩
+					196 ⟨1⟩
+						197 ⟨6⟩
+				198 row (selectable)
+					199 ⟨33⟩
+						200 ⟨3⟩
+						201 ⟨119⟩, Value: scene-file-017, Secondary Actions: ⟨12⟩
+					202 ⟨1⟩
+						203 ⟨15⟩
+					204 ⟨1⟩
+						205 ⟨9⟩
+					206 ⟨1⟩
+						207 ⟨6⟩
+				208 row (selectable)
+					209 ⟨33⟩
+						210 ⟨3⟩
+						211 ⟨119⟩, Value: scene-file-018, Secondary Actions: ⟨12⟩
+					212 ⟨1⟩
+						213 ⟨15⟩
+					214 ⟨1⟩
+						215 ⟨9⟩
+					216 ⟨1⟩
+						217 ⟨6⟩
+			218 ⟨26⟩
+				219 ⟨25⟩
+				220 ⟨9⟩
+				221 ⟨9⟩
+				222 ⟨9⟩
+				223 ⟨9⟩
+		224 ⟨21⟩, ID: ⟨9⟩
+			225 ⟨36⟩, ID: ⟨13⟩
+	226 ⟨5⟩
+		227 container ⟨6⟩
+			228 ⟨16⟩
+			229 ⟨17⟩
+		230 ⟨26⟩, Value: ⟨1⟩
+		231 ⟨25⟩, Value: ⟨1⟩
+		232 ⟨25⟩, Value: ⟨1⟩
+		233 ⟨26⟩, Value: ⟨1⟩
+		234 ⟨21⟩, Help: ⟨33⟩, Secondary Actions: ⟨28⟩
+		235 ⟨18⟩, Help: ⟨13⟩, Secondary Actions: ⟨28⟩
+		236 ⟨21⟩, Help: ⟨9⟩, Secondary Actions: ⟨28⟩
+		237 ⟨21⟩, Help: ⟨18⟩, Secondary Actions: ⟨28⟩
+		238 ⟨5⟩
+	239 ⟨5⟩
+	240 ⟨39⟩, Secondary Actions: ⟨9⟩
+	241 ⟨6⟩
+	242 ⟨20⟩
+243 ⟨8⟩
+	244 ⟨6⟩
+	245 ⟨2⟩
+	246 ⟨2⟩
+	247 ⟨2⟩
+	248 ⟨2⟩
+	249 ⟨3⟩
+	250 ⟨3⟩
+
+Selected:
+	78 row (selected)
+
+Note: Pay special attention to the content selected by the user. If the user asks a question or refers to the content they are looking at on-screen, they might be referring to the selected content (but they might be referring to something else that's visible, too).

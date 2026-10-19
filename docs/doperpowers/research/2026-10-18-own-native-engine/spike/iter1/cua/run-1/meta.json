@@ -1,0 +1,152 @@
+{
+  "schema": "spike-measure-1",
+  "lane": "cua",
+  "run": 1,
+  "device": "mini",
+  "sceneDir": "/Users/new/Library/Caches/cua-harness/spike-scenes",
+  "started": "2026-10-19T15:43:06.328Z",
+  "plan": {
+    "samples": 30,
+    "tasks": 10,
+    "scenes": [
+      "textedit"
+    ],
+    "probes": [],
+    "operator": false,
+    "inputBuilt": true
+  },
+  "elicitations": [
+    {
+      "t": "2026-10-19T15:43:17.163Z",
+      "app": "com.apple.TextEdit",
+      "action": "accept"
+    }
+  ],
+  "problems": [],
+  "complete": true,
+  "engine": {
+    "build": "503399e26732f8d53cdb32f4dd939c38cba59e2559b9316c28eae21393e715d3",
+    "identity": "1AAFD20666E9358859B39E8F447572FBE39F52B0",
+    "approvedAt": "2026-10-19T15:37:59.869Z",
+    "engineVersion": "0.1.0"
+  },
+  "preparation": {
+    "device": "mini",
+    "home": "/Users/new/Library/Application Support/cua-spike-vendor",
+    "userHome": "/Users/new",
+    "configHome": "/Users/new/.local/share/cua-native-baseline/run-FC6qZX/config",
+    "tmpdir": "/Users/new/.local/share/cua-native-baseline/run-FC6qZX/tmp",
+    "scratch": "/Users/new/.local/share/cua-native-baseline/run-FC6qZX",
+    "token": "7fd0e99f-4818-41cb-8617-35d43d960ba9",
+    "admission": "7fd0e99f-4818-41cb-8617-35d43d960ba9",
+    "xSession": {},
+    "nodeMode": "managed",
+    "nodeOverride": null,
+    "runtimeReuse": {
+      "approvedHome": "/Users/new/Library/Application Support/cua-spike-vendor",
+      "release": "26.928.40906-darwin-arm64",
+      "runtimeRoot": "/Users/new/Library/Application Support/cua-spike-vendor/runtimes/26.928.40906-darwin-arm64",
+      "helper": "/Users/new/Library/Application Support/cua-spike-vendor/runtimes/26.928.40906-darwin-arm64/cua_node/lib/node_modules/@oai/sky/Codex Computer Use.app",
+      "executable": "/Users/new/Library/Application Support/cua-spike-vendor/runtimes/26.928.40906-darwin-arm64/cua_node/lib/node_modules/@oai/sky/Codex Computer Use.app/Contents/MacOS/SkyComputerUseService",
+      "reason": "a new on-disk copy of the native helper raises a one-time screen-capture confirmation; the approved copy is reused"
+    },
+    "stashed": [],
+    "ownNode": {
+      "path": "/Users/new/Library/Application Support/cua-spike-vendor/node/24.22.0/bin/node",
+      "version": "v24.22.0"
+    }
+  },
+  "engineStopAtStart": {
+    "wasRunning": false
+  },
+  "commit": "f62f3cc77abd1135a62203cc12bfa5af7add402b",
+  "dirty": false,
+  "checkout": "/Users/new/Developer/GitHub/cua-parity",
+  "release": "26.928.40906-darwin-arm64",
+  "sandbox": {
+    "mode": "scoped",
+    "explicit": false
+  },
+  "hardware": {
+    "model": "Mac14,12",
+    "chip": "Apple M2 Pro",
+    "memoryBytes": 17179869184
+  },
+  "os": {
+    "name": "macOS",
+    "version": "27.0",
+    "build": "26A428"
+  },
+  "display": {
+    "pixels": "5120 x 2880",
+    "resolution": "2560 x 1440",
+    "scale": 2,
+    "virtual": true
+  },
+  "ownNode": {
+    "path": "/Users/new/Library/Application Support/cua-spike-vendor/node/24.22.0/bin/node",
+    "version": "v24.22.0"
+  },
+  "helpersAtStart": [],
+  "finderOffScreenWindows": [],
+  "finderHidden": false,
+  "engineLaunch": {
+    "via": "open -n -g -a",
+    "pid": 77598,
+    "build": "503399e26732f8d53cdb32f4dd939c38cba59e2559b9316c28eae21393e715d3",
+    "accessibility": true,
+    "screenRecording": true,
+    "connections": 0
+  },
+  "scenes": {
+    "textedit": {
+      "app": "/System/Applications/TextEdit.app",
+      "bundleId": "com.apple.TextEdit",
+      "pid": 77618,
+      "window": 185425
+    }
+  },
+  "serveNode": {
+    "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+    "version": "v24.18.0"
+  },
+  "hostAttestation": {
+    "host": "cua",
+    "serverInfo": {
+      "name": "cua-repl-host",
+      "version": "0.5.0"
+    },
+    "_meta": {
+      "codex/nodeReplExecutionDurationMs": 89,
+      "cua/replHost": {
+        "host": "cua",
+        "version": "0.5.0"
+      }
+    }
+  },
+  "nativeEngine": {
+    "build": "503399e26732f8d53cdb32f4dd939c38cba59e2559b9316c28eae21393e715d3",
+    "engine": "cua",
+    "version": "0.1.0"
+  },
+  "teardown": {
+    "textEditQuit": true,
+    "down": [
+      {
+        "scene": "textedit",
+        "down": true
+      }
+    ]
+  },
+  "engineStopAtEnd": {
+    "wasRunning": true,
+    "pid": 77598
+  },
+  "helpersAtEnd": [],
+  "preparationCleanup": {
+    "removed": true,
+    "restored": [],
+    "helpersStopped": []
+  },
+  "finished": "2026-10-19T15:45:07.465Z"
+}

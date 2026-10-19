@@ -1,0 +1,184 @@
+Window: "cua-scene.rtf", App: TextEdit.
+0 standard window cua-scene.rtf, URL: file:///Users/new/Library/Caches/cua-harness/spike-scenes/textedit/cua-scene.rtf, Secondary Actions: Raise
+	1 scroll area Secondary Actions: Scroll Left, Scroll Right, Scroll Up, Scroll Down
+		2 text entry area (settable) ID: First Text View, Value: cua scene document
+**Bold scene line**
+Line 01
+Line 02
+Line 03
+Line 04
+Line 05
+Line 06
+Line 07
+Line 08
+Line 09
+Line 10
+Line 11
+Line 12
+Line 13
+Line 14
+Line 15
+Line 16
+Line 17
+Line 18
+Line 19
+Line 20
+Line 21
+Line 22
+Line 23
+Line 24
+Line 25
+Line 26
+Line 27
+Line 28
+Line 29
+Line 30
+Line 31
+Line 32
+Line 33
+Line 34
+Line 35
+Line 36
+Line 37
+Line 38
+Line 39
+Line 40
+Line 41
+Line 42
+Line 43
+Line 44
+Line 45
+Line 46
+Line 47
+Line 48
+Line 49
+Line 50
+Line 51
+Line 52
+Line 53
+Line 54
+Line 55
+Line 56
+Line 57
+Line 58
+Line 59
+Line 60
+		3 scroll bar (disabled, settable, float) 0.1851851791143417
+		4 scroll bar (settable, float) 1
+			5 value indicator (settable, float) 1
+			6 increment arrow button
+			7 decrement arrow button
+			8 increment page button
+			9 decrement page button
+		10 ruler
+			11 ruler marker (settable, float) Value: 0, Secondary Actions: Delete
+			12 ruler marker (settable, float) Value: 21.16402116402116, Secondary Actions: Delete
+			13 ruler marker (settable, float) Value: 0, Secondary Actions: Delete
+			14 ruler marker (settable, float) Value: 1.26984126984127, Secondary Actions: Delete
+			15 ruler marker (settable, float) Value: 2.53968253968254, Secondary Actions: Delete
+			16 ruler marker (settable, float) Value: 3.809523809523809, Secondary Actions: Delete
+			17 ruler marker (settable, float) Value: 5.079365079365079, Secondary Actions: Delete
+			18 ruler marker (settable, float) Value: 6.349206349206349, Secondary Actions: Delete
+			19 ruler marker (settable, float) Value: 7.619047619047619, Secondary Actions: Delete
+			20 ruler marker (settable, float) Value: 8.888888888888889, Secondary Actions: Delete
+			21 ruler marker (settable, float) Value: 10.15873015873016, Secondary Actions: Delete
+			22 ruler marker (settable, float) Value: 11.42857142857143, Secondary Actions: Delete
+			23 ruler marker (settable, float) Value: 12.6984126984127, Secondary Actions: Delete
+			24 ruler marker (settable, float) Value: 13.96825396825397, Secondary Actions: Delete
+			25 ruler marker (settable, float) Value: 15.23809523809524, Secondary Actions: Delete
+	26 container Formatting
+		27 container
+			28 checkbox Description: bold, Help: Bold text, Value: 0
+			29 checkbox Description: italic, Help: Italicize text, Value: 0
+			30 checkbox Description: underline, Help: Underline text, Value: 0
+			31 checkbox Description: strikethrough, Help: Strikethrough text, Value: 0
+		32 button Description: text color, Help: Click to choose the text color, Value: Clear, Secondary Actions: Show color panel
+		33 button Description: text background color, Help: Click to choose the text background color, Value: Clear, Secondary Actions: Show color panel
+		34 pop up button Description: typeface, Help: Choose the typeface, Value: Helvetica
+		35 pop up button Description: style, Help: Choose the style, Value: Regular
+		36 combo box (settable) Description: font size, Help: Set the font size, Value: 14, Secondary Actions: Confirm
+			37 button font size
+		38 container
+			39 checkbox Description: align left, Help: Align text to left, Value: 0
+			40 checkbox Description: align center, Help: Center text, Value: 0
+			41 checkbox Description: align right, Help: Align text to right, Value: 0
+			42 checkbox Description: fully justify, Help: Justify text, Value: 0
+		43 menu button Description: list style, Help: List bullets and numbering
+		44 pop up button Description: line spacing, Help: Line and paragraph spacing, Value: 1.0
+	45 close button
+	46 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	47 minimize button
+	48 menu button (disabled) document actions
+	49 image cua-scene.rtf
+	50 text cua-scene.rtf
+51 menu bar
+	52 TextEdit
+	53 File
+	54 Edit
+	55 Format
+	56 View
+	57 Window
+	58 Help
+
+The focused UI element is 2 text entry area (settable) ID: First Text View, Value: cua scene document
+**Bold scene line**
+Line 01
+Line 02
+Line 03
+Line 04
+Line 05
+Line 06
+Line 07
+Line 08
+Line 09
+Line 10
+Line 11
+Line 12
+Line 13
+Line 14
+Line 15
+Line 16
+Line 17
+Line 18
+Line 19
+Line 20
+Line 21
+Line 22
+Line 23
+Line 24
+Line 25
+Line 26
+Line 27
+Line 28
+Line 29
+Line 30
+Line 31
+Line 32
+Line 33
+Line 34
+Line 35
+Line 36
+Line 37
+Line 38
+Line 39
+Line 40
+Line 41
+Line 42
+Line 43
+Line 44
+Line 45
+Line 46
+Line 47
+Line 48
+Line 49
+Line 50
+Line 51
+Line 52
+Line 53
+Line 54
+Line 55
+Line 56
+Line 57
+Line 58
+Line 59
+Line 60

@@ -120,7 +120,7 @@ All outputs are under `docs/doperpowers/research/2026-10-18-own-native-engine/sp
 **Tuning iteration 1** (2f1bf2cf with the fix, build 503399e2; `iter1`, `iter1-input`, `iter1-chrome`):
 - The capture runs on its own thread beside the walk and is joined after it. Engine total 113.3 → 48.7 ms (walk 43.0, capture 41.0, join 2.6).
 - TextEdit in-cell, vendor against cua: `getAXState` 51.3 / 42.2, `getScreenshot` 49.3 / 40.6. The render was unchanged; three captures viewed by hand were real, fresh images.
-- **Input, TextEdit and Finder:** probe (a) click and key with the frontmost application and the top window unchanged on both; probe (b) route 3 for both actions (38–52 ms activation guard), no activation seen; forced key routes 2 and 3 ok; forced click routes 1–3 an error result on both apps with no error text; task cells 10/10; the action goldens; no crash.
+- **Input, TextEdit and Finder:** probe (a) click and key with the frontmost application and the top window unchanged on both; probe (b) route 3 for both actions (38–52 ms activation guard), no activation seen; forced key routes 2 and 3 ok; forced click routes 1–3 an error result on both apps (a syntax error in the harness's cell, fixed after the sitting in 7e3e2a1e); task cells 10/10; the action goldens; no crash.
 - **Chrome:** every guarded cell refused ("the scene window was not the app's front window"); a background Latin `type_text` by route 3 landed 0 of 8. Undiagnosed.
 - **Found:** the vendor's images are at pixel size (1220 × 1720) and cua's were at points (610 × 860). Ruled: match the vendor.
 
@@ -223,7 +223,7 @@ Expected length: about 3 hours of lane time, plus the owner's prompts. Run a sin
 
 - **The design revision the promote rule requires.** The design sections on input, settle, intervention and install are revised from the sitting's measurements with a dated Decision Log entry, then the critique debate of entry 1 runs. This gates M1a.
 - **Chrome's background input.** Every guarded cell refused because the scene window was not Chrome's front window, and a route-3 `type_text` landed 0 of 8. The refusals may be the harness's (a second Chrome window or a bubble taking the front). Diagnose before the owner's route-4 call for Chrome.
-- **Forced click routes 1–3** returned an error result on TextEdit and Finder with no error text in the row, while the natural click took route 3 cleanly. The cell's error text needs to reach the row, then the cause.
+- **Forced click routes 1–3** returned an error result on TextEdit and Finder in the sitting. The cause was the harness: the forced-click cell never closed its argument object, a syntax error (fixed in 7e3e2a1e, now covered by the compile test). The forced-route rows still need a live run.
 - **The x/y click path** (screenshot pixels divided by the display scale) is unit-tested only; no live cell clicks by coordinates. One cell on a 2× display before M1a relies on it.
 - **pid 45110**, an engine start at 14:49:47Z with no exit line and no crash report: the one unexplained exit of the sitting.
 - **Probe (d)(i)** (the listen-only tap, the HID-idle reset) needs the engine granted Input Monitoring; the engine raised no prompt for it. Next input sitting.

@@ -53,7 +53,13 @@ export function engineOps(d, shell, {engine} = {}) {
     launch: ({plain = false} = {}) => run('launch', ...(plain ? ['--plain'] : [])),
     checkoutBuild: () => run('checkout-build'),
     inputSource: arg => run('input-source', arg),
-    probeTap: (op, extra = {}) => run('rpc', 'probe_tap', JSON.stringify({op, ...extra})),
+    // probe_tap's result out of the rpc envelope; the engine's refusal thrown with its errorName and sentence
+    // (tapNotCreated's says whether the listen grant was seen), an unreachable engine with the reason.
+    probeTap: (op, extra = {}) => {
+      const answer = run('rpc', 'probe_tap', JSON.stringify({op, ...extra}));
+      if (answer.ok) return answer.result;
+      throw Object.assign(new Error(answer.error?.message ?? `the engine is unreachable (${answer.unreachable})`), {errorName: answer.error?.errorName ?? null});
+    },
     keystroke: (pid, bounds, text) => run('keystroke', String(pid), bounds, text),
     watch: () => { watched = run('watch'); return watched; },
     watchStop: () => { if (!watched) throw new Error('no watch is running'); const answer = run('watch-stop', String(watched.pid), watched.dir); watched = null; return answer.lines ?? []; },

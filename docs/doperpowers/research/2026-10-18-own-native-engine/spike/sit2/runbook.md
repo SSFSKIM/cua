@@ -20,8 +20,8 @@ mkdir -p /tmp/cua-sit2 && mkfifo /tmp/cua-sit2/ctl.fifo
 ```
 
 **Expected length:**
-- phases 0–7: about 2 h 40 min, plus the owner's prompts;
-- phase 8, if taken: about 40 min more;
+- phases 0–7 and the teardown (phase 9): about 2 h 45 min, plus the owner's prompts;
+- phase 8, if taken: about 40 min more. Start it only with at least 50 minutes left in the hold (its 40 minutes, then the teardown's 5 and a margin); otherwise go straight to phase 9;
 - hold to ask for: 3 h 30 min.
 
 ---
@@ -45,8 +45,10 @@ If the owner sees a keychain dialog at the console during this check, they press
 
 ## Phase 1: place the build (about 15 min; OWNER once)
 
-On the MacBook, build, sign and push (`ID` is the identity's SHA-1, as above):
+On the MacBook, build and sign. The bundle must be signed with the identity the first sitting's approval names, so `ID` is taken from the mini's `approved.json` and checked against this Mac's keychain (a SHA-1, never written to a file):
 ```
+ID=$(ssh mini 'cat "Library/Application Support/cua/engine/approved.json"' | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>process.stdout.write(JSON.parse(s).identity))')
+security find-identity -v -p codesigning | grep -q "$ID" && echo "identity present" || echo "STOP: the approved identity is not in this Mac's keychain"
 swift build -c release --package-path native/engine --scratch-path /tmp/cua-sit2-build
 node scripts/spike/engine/assemble.mjs --build /tmp/cua-sit2-build --identity "$ID" --out /tmp/cua-sit2-spike
 ```
@@ -171,6 +173,8 @@ The modes run in order, listen then active (`--tap-modes listen,active`, the def
 
 For each mode that created a tap, (d)'s first checks follow (`probe.d.tap`, `probe.d.hidReset`): whether the engine's own posts reach the tap or reset HID idle, and whether the probe's HID-tap post is seen.
 
+If the sitting has to stop after step A, before step B: the owner turns the "cua Engine" switch under Input Monitoring back **on** before the hold ends, so the Mac is left as it was before the sitting.
+
 **OWNER, step B (Input Monitoring on).**
 - The owner turns the "cua Engine" switch under Input Monitoring back **on**.
 - If "Quit & Reopen" is offered, they choose **Later**.
@@ -189,13 +193,18 @@ The phase ends with Input Monitoring on, the owner's state before the sitting, s
 node scripts/spike/engine/measure.mjs --device mini --lane cua --runs 1 --scenes textedit,finder --groups d --operator --operator-seconds 10 \
   --probes none --approved-runtime "$HOME_V" --node $NODE --out $OUT/u6/cua
 ```
-Run it through the fifo. The harness prints each operator step and waits. The controller relays each step to the owner and answers Enter when the owner reports done:
+Run it through the fifo. The harness prints each operator step and waits for Enter. The controller relays each step to the owner and answers Enter when the owner is ready. Then it answers the harness's last question ("was your input made while the engine was typing?") with the owner's report:
 
-1. **Concurrent keystroke.** A long `type_text` runs into the driven app (about 3 s of typing). As soon as the coordinator says "now", the owner presses one letter key on the mini's keyboard, with the user window in front. The owner sees text appearing in the driven window and types nothing else.
-2. **Click into the background window.** The owner clicks once anywhere inside the driven app's window, which is behind the user window, while the driven action runs. The owner sees that window come forward; that is expected.
-3. **The sheet variant**, if the harness asks for it: the same single keystroke while the driven app's document shows a "Save changes?" sheet. The owner does not click the sheet.
+1. **Keystroke into the driven app.** The TextEdit scene document is in front. After Enter, the engine types into it for about 10 s. Once text starts appearing, the owner presses **one letter key** on the mini's keyboard and nothing else. The key goes into that same TextEdit document.
+2. **Click into the driven app's background window.** The Finder scene window is in front and the TextEdit scene window is behind it. After Enter, the engine types into TextEdit for about 10 s. While text is appearing, the owner clicks **once** anywhere inside the TextEdit window. That window coming forward is expected.
 
-The operator steps use the first tap mode that phase 6 found creatable. The harness records the post times against each action's interval (`drivenInsideAction`, `otherInsideAction`). `probe.d.noFire` is a not-run row here; it needs the speed group in the same invocation and was answered in phase 5. A step whose keystroke or click falls outside the interval is invalid, not a failure, and may be repeated once if time allows.
+The sheet variant is not in this harness.
+
+Both inputs target the driven app, so the tap counts them as driven. U6 reads `drivenInsideAction` (the driven events' times against the action's interval) and `tapCounts.other`. The engine keeps other apps' events as counts only, so `otherTimes` and `otherInsideAction` are null. The steps use the first tap mode that phase 6 found creatable.
+
+A step whose input fell outside the interval is invalid, not a failure. Repeat it once, if time allows, with a fresh `--out` (e.g. `$OUT/u6-repeat/cua`), so the first attempt's rows stay as recorded.
+
+`probe.d.noFire` stays open this sitting. It is a not-run row in this group, and it was vacuous with M0's engine in any case. The d group is not added to phase 5's timed runs, because its typing would distort their timings.
 
 ## Phase 8 (optional, only if the owner has time): U7 and U8 (about 40 min; OWNER throughout)
 
@@ -224,11 +233,6 @@ This bundle shows as "cua Engine probe".
 
 The controller records the owner's answers in `$OUT/u7/owner.txt`. The prompts are raised by the engine itself; nothing is clicked or scripted.
 
-Only if U7 shows a prompt for the fresh id: one more step tells whether the engine's own id is in a state that suppresses it.
-- **OWNER** runs, at the console: `tccutil reset Accessibility io.github.ssfskim.cua.engine`.
-- The controller then runs `measure.mjs approve --device mini --out $OUT/u7-reset`, and the owner reports whether the prompt appeared, then grants Accessibility again by the prompt or by hand.
-- This comes last of all because it removes the grant every earlier phase relied on.
-
 **U8, the capture-confirmation asymmetry.** It uses probe-f: f2 is a same-path rebuild and f3 a copy at a new path. The approvals are read before and after each move. The rebuild needs a different binary: assemble one from a scratch worktree with a one-line comment change in `Version.swift`. It is never committed; the mismatch with the checkout is only probe-f's concern:
 ```
 git worktree add /tmp/cua-sit2-u8src <sha> && echo '// u8' >> /tmp/cua-sit2-u8src/native/engine/Sources/Engine/Version.swift
@@ -246,6 +250,10 @@ node scripts/spike/engine/measure.mjs probe-f --device mini --out $OUT/u8
 ssh mini 'kill $(head -1 /tmp/cua-sit2-tcc-u78.pid | sed "s/.*\"pid\":\([0-9]*\).*/\1/"); sleep 1; cat /tmp/cua-sit2-tcc-u78.jsonl' > $OUT/u78-tcc.jsonl
 ```
 
+**Only if U7 showed a prompt for the fresh id**, one more step, last of all because it removes the Accessibility grant every earlier phase relied on. It tells whether the engine's own id is in a state that suppresses the prompt:
+- **OWNER** runs, at the console: `tccutil reset Accessibility io.github.ssfskim.cua.engine`.
+- The Restore below then raises (or does not raise) the Accessibility prompt for "cua Engine". The owner reports whether it appeared, then grants Accessibility again, by the prompt or by hand (Privacy & Security → Accessibility → "+" → `~/Library/Application Support/cua/engine/cua Engine.app`). The controller records it in `$OUT/u7-reset.txt`.
+
 **Restore** the sitting build (another same-path move, so the confirmation is expected; **OWNER**: Allow). Use phase 1's stop, stage and move lines with `/tmp/cua-sit2-spike`, then `measure.mjs approve --device mini --out $OUT/approve-final`. Then remove the U7 bundle: `ssh mini 'rm -rf "Library/Application Support/cua/engine-u7"'`.
 
 **OWNER**: the "cua Engine probe" entries stay in System Settings' lists. The owner may remove them with "−" (optional; nothing depends on them).
@@ -255,7 +263,8 @@ ssh mini 'kill $(head -1 /tmp/cua-sit2-tcc-u78.pid | sed "s/.*\"pid\":\([0-9]*\)
 ```
 ssh mini 'cd ~/Developer/GitHub/cua-parity && node scripts/spike/engine/scenes.mjs down all --run "$HOME/Library/Caches/cua-harness/spike-scenes"'
 node scripts/spike/engine/measure.mjs stop --device mini
-ssh mini 'defaults read com.apple.HIToolbox AppleSelectedInputSources | grep "KeyboardLayout Name"; pgrep -lf "cua-engine|TextEdit|Chrome for Testing|cua Electron" || echo none-running'
+ssh mini 'pkill -f "grants-watch.mjs tcc-stream" || true'   # a stream left by a phase that stopped early (the harness's own process)
+ssh mini 'defaults read com.apple.HIToolbox AppleSelectedInputSources | grep "KeyboardLayout Name"; pgrep -lf "cua-engine|TextEdit|Chrome for Testing|cua Electron|grants-watch.mjs" || echo none-running'
 ssh mini 'log show --start "<hold start, local>" --predicate "subsystem == \"io.github.ssfskim.cua.engine\"" --style compact' | grep -E "started pid|exiting" > $OUT/engine-exits.txt
 ssh mini 'ls -l ~/Library/Logs/DiagnosticReports | grep cua-engine'
 ```

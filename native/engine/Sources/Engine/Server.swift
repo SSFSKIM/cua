@@ -3,9 +3,10 @@ import Foundation
 
 // The socket server (the spec's Design, "Socket and peer check" and "Process model"): `engine.sock` beside the bundle
 // (from Bundle.main.bundlePath) or at CUA_ENGINE_SOCKET for a direct run, in a 0700 directory; `flock` on `engine.lock`
-// beside it before the socket is unlinked or bound, the loser exiting at once; every connection from another uid closed
-// on accept (getpeereid). One thread per connection, which reads its next request only after answering the last. An
-// engine that finds another one already serving at the socket (connect succeeds) exits rather than replacing it.
+// beside it before the socket is unlinked or bound, the loser exiting at once; every connection the peer policy does not
+// admit closed on accept (Config.swift: `peerPolicy`, whose one value is "uid", getpeereid's uid against the engine's).
+// One thread per connection, which reads its next request only after answering the last. An engine that finds another
+// one already serving at the socket (connect succeeds) exits rather than replacing it.
 // Every exit is logged with its reason (Lifecycle.swift).
 
 struct ServerPaths {
@@ -14,9 +15,11 @@ struct ServerPaths {
   let lock: String
   let usage: String
 
-  /// Exit status when no socket can be chosen (EX_USAGE), or the lock or a live socket shows another engine (EX_TEMPFAIL).
+  /// Exit status when no socket can be chosen (EX_USAGE), the lock or a live socket shows another engine (EX_TEMPFAIL),
+  /// or the settings name a peer policy this engine does not have (EX_CONFIG).
   static let usageExit: Int32 = 64
   static let lockHeldExit: Int32 = 75
+  static let configExit: Int32 = 78
 
   static func resolve(environment: [String: String] = ProcessInfo.processInfo.environment) -> ServerPaths {
     let socket: String
@@ -40,6 +43,7 @@ func fail(_ status: Int32, _ message: String) -> Never {
 
 final class Server: @unchecked Sendable {
   let paths: ServerPaths
+  let peerPolicy: PeerPolicy
   let engine: Engine
   private var listener: Int32 = -1
   private var lockFD: Int32 = -1
@@ -49,8 +53,9 @@ final class Server: @unchecked Sendable {
   /// Set, with the listener closed, under `lock` once a shutdown is accepted: nothing is accepted after it.
   private var shuttingDown = false
 
-  init(paths: ServerPaths) {
+  init(paths: ServerPaths, peerPolicy: PeerPolicy) {
     self.paths = paths
+    self.peerPolicy = peerPolicy
     self.engine = Engine(paths: paths)
   }
 
@@ -139,8 +144,8 @@ final class Server: @unchecked Sendable {
       setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
       var uid: uid_t = 0
       var gid: gid_t = 0
-      guard getpeereid(fd, &uid, &gid) == 0, uid == getuid() else {
-        Lifecycle.refused("uid refusal: a connection from uid \(uid) closed")
+      guard getpeereid(fd, &uid, &gid) == 0, peerPolicy.admits(peerUid: uid) else {
+        Lifecycle.refused("peer refusal (\(peerPolicy.rawValue) policy): a connection from uid \(uid) closed")
         close(fd)
         continue
       }

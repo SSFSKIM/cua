@@ -79,12 +79,11 @@ func primaryWindow(of application: AXUIElement) -> AXUIElement? {
 }
 
 extension Engine {
-  /// `get_app_state {app, disableDiff?, includeScreenshot?, outputDirectory}` → Skyshot. The spike's switches:
-  /// `prefetch: "public" | "hierarchy"` (the fetch route, default public), `valueMarkdown: false` (skip the Markdown
-  /// fetch), `focusableSelectable: false` (skip the focusable and selectable settability reads), `readSet: "full" |
-  /// "reduced"` (the per-role read set, default full), `readCensus: true` (per-role counts of what the reads returned,
-  /// in timings), `webAreaWait: false`
-  /// (skip the web-area wait), `settle: true | false` (force or skip the settle that an earlier action otherwise arms).
+  /// `get_app_state {app, disableDiff?, includeScreenshot?, outputDirectory}` → Skyshot. The M0 spike's measuring
+  /// switches the facade never sends: `valueMarkdown: false` (skip the Markdown fetch), `focusableSelectable: false`
+  /// (skip the focusable and selectable settability reads), `webAreaWait: false` (skip the web-area wait), `settle:
+  /// true | false` (force or skip the settle that an earlier action otherwise arms). The request's deadline cancels a
+  /// settle or a launch wait still running when it passes, as `timeoutReached`.
   func getAppState(_ args: [String: Any], _ context: ExecutionContext) throws -> [String: Any] {
     var timings = Timings()
     let started = monotonicMilliseconds()
@@ -95,24 +94,7 @@ extension Engine {
     if includeScreenshot { guard outputDirectory?.hasPrefix("/") == true else { throw EngineError.invalidArguments("outputDirectory must be an absolute path") } }
     let markdownEnabled = args["valueMarkdown"] as? Bool ?? true
     let interactionFlags = args["focusableSelectable"] as? Bool ?? true
-    let readSet: ReadSet
-    switch args["readSet"] {
-    case nil, is NSNull: readSet = .full
-    case let name as String:
-      guard let chosen = ReadSet(rawValue: name) else { throw EngineError.invalidArguments("readSet must be \"full\" or \"reduced\"") }
-      readSet = chosen
-    default: throw EngineError.invalidArguments("readSet must be \"full\" or \"reduced\"")
-    }
-    let census = args["readCensus"] as? Bool == true ? ReadCensus() : nil
     let webAreaWaitEnabled = args["webAreaWait"] as? Bool ?? true
-    let route: FetchRoute
-    switch args["prefetch"] {
-    case nil, is NSNull: route = .publicFetch
-    case let name as String:
-      guard let chosen = FetchRoute(rawValue: name) else { throw EngineError.invalidArguments("prefetch must be \"public\" or \"hierarchy\"") }
-      route = chosen
-    default: throw EngineError.invalidArguments("prefetch must be \"public\" or \"hierarchy\"")
-    }
 
     var app = try timings.time("resolve") { try resolveApp(args) }
     var launched = false
@@ -133,9 +115,12 @@ extension Engine {
     var settled: Settled?
     if args["settle"] as? Bool ?? connection.needsSettle.contains(app.key) {
       let settleCosts = FetchCosts()
-      let outcome = settle(application, pid: appPid, webShaped: webShaped, route: route, costs: settleCosts)
+      let requestDeadline = monotonicMilliseconds() + Double(context.deadline - unixMilliseconds())
+      let outcome = settle(application, pid: appPid, webShaped: webShaped, deadline: requestDeadline, costs: settleCosts)
       settled = outcome
       let report = outcome.report
+      // The action's settle stays armed: the next observation settles again.
+      if report.timedOut { throw EngineError(name: "timeoutReached", "timeoutReached") }
       timings.add("settle", report.ms)
       for (phase, ms) in settleCosts.ms { timings.add(phase == "settleBusyWalk" ? phase : "settleBusyWalk" + phase.prefix(1).uppercased() + phase.dropFirst(), ms) }
       for (name, n) in settleCosts.counts { timings.count("settleBusyWalk" + name.prefix(1).uppercased() + name.dropFirst(), n) }
@@ -184,11 +169,11 @@ extension Engine {
     for key in connection.lineages.keys where key.hasPrefix(app.appPath + "#") && key != app.key { connection.lineages[key] = nil }
     let lineage = connection.lineages[app.key] ?? Lineage()
     connection.lineages[app.key] = lineage
+    // The watch starts before the walk reads: the app's process and every process whose elements the last revision held.
     timings.time("monitor") {
-      if lineage.monitor == nil { lineage.monitor = InvalidationMonitor(pid: appPid) }
-      lineage.monitor?.reset()
+      lineage.watch(Set([appPid]).union(lineage.current?.owners ?? []), afterRead: false)
+      lineage.resetWatches()
     }
-    timings.set("monitored", lineage.monitor != nil)
 
     let menuItems = timings.time("menuBar") { elementAttribute(application, kAXMenuBarAttribute).map { elementList(attribute($0, kAXChildrenAttribute)) } ?? [] }
     let windowFrame = frame(of: window)
@@ -213,23 +198,18 @@ extension Engine {
       source = reused
       timings.set("settleTreeReused", true)
     } else {
-      source = makeSource(route)
+      source = ElementSource()
       if settled != nil { timings.set("settleTreeReused", false) }
     }
-    timings.set("route", source.route.rawValue)
     let deadline = monotonicMilliseconds() + Double(min(observationDeadlineMs, max(0, context.deadline - unixMilliseconds())))
     let walk = TreeWalk(source: source, lineage: lineage, limits: WalkLimits(deadline: deadline), markdown: markdownEnabled,
-                        interactionFlags: interactionFlags, readSet: readSet, census: census, visibleFrame: windowFrame)
+                        interactionFlags: interactionFlags, visibleFrame: windowFrame)
     timings.time("walk") { walk.run(window: window, menuItems: menuItems) }
     timings.merge(source.costs)
     timings.set("nodes", walk.nodes.count + walk.menuBar.count)
     timings.set("markdownFetches", walk.markdownFetches)
     timings.set("estimatedBytes", walk.bytes)
     timings.set("fetchFailures", walk.failures)
-    timings.set("readSet", readSet.rawValue)
-    timings.set("droppedSettableReads", walk.droppedSettable)
-    timings.set("droppedMarkdownReads", walk.droppedMarkdown)
-    if let census { timings.set("readCensus", census.wire) }
     // A web area the walk itself emitted counts as seen too, so a process whose page was already exposed never waits.
     if webShaped, walk.nodes.contains(where: { $0["role"] as? String == "AXWebArea" }) {
       webAccessibility.noteWebArea(pid: appPid, launched: launchDate)
@@ -240,18 +220,22 @@ extension Engine {
 
     var focused: Any = NSNull()
     var selectedText: Any = NSNull()
-    var selectedElements: [Int] = []
+    var selectedElements: [String] = []
     timings.time("focus") {
       guard let element = elementAttribute(application, kAXFocusedUIElementAttribute) else { return }
-      if let index = walk.seen[ElementKey(element: element)] { focused = index }
+      if let token = walk.token(of: element) { focused = token }
       if let text = stringAttribute(element, kAXSelectedTextAttribute), !text.isEmpty { selectedText = bounded(text) }
       // The selected elements the trailer names: the focused element's selected children, else its selected rows.
       for name in [kAXSelectedChildrenAttribute, kAXSelectedRowsAttribute] {
-        let selected = elementList(attribute(element, name)).compactMap { walk.seen[ElementKey(element: $0)] }
+        let selected = elementList(attribute(element, name)).compactMap { walk.token(of: $0) }
         if !selected.isEmpty { selectedElements = selected; break }
       }
     }
     lineage.commit(walk.revision)
+    // A process the walk met for the first time (a panel's service) is watched from now on; it cannot vouch for the time
+    // since its elements were read, so it invalidates until the next observation.
+    timings.time("monitor") { lineage.watch(Set([appPid]).union(walk.revision.owners), afterRead: true) }
+    timings.set("watchedProcesses", lineage.watched)
     connection.requiresRequery.remove(app.key)
 
     var screenshot: Any = NSNull()

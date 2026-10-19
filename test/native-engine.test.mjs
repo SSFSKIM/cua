@@ -1,13 +1,14 @@
-// cua's native engine, the M0 spike's unit cases (docs/doperpowers/specs/2026-10-18-own-native-engine-design.md, Plan of
-// Work M0 "Spike" and the Decision Log's "M0 spike pre-flight"; Interfaces, EngineProtocol): the framing and its 8 MiB
-// bound, ping, status, shutdown and its busy refusal, the lock and the socket directory, list_apps and resolve_app of
-// running apps, against a debug build the test makes itself and runs directly under CUA_ENGINE_SOCKET. Nothing here may
-// raise a permission dialog: no observation, capture, input, approve or keystroke probe, and no app is ever launched.
-// The engine's pure logic (the walk, numbering, width rule, settle loop, decoding) is the Swift suite native-engine-units.
+// cua's native engine over its wire (docs/doperpowers/specs/2026-10-18-own-native-engine-design.md, M0's spike and M1a;
+// Interfaces, EngineProtocol): the framing and its 8 MiB bound, ping, status, the deadline on receipt, shutdown and its
+// busy refusal, the lock, the socket directory and the peer-policy setting, the element-token arguments, list_apps and
+// resolve_app of running apps, against a debug build the test makes itself and runs directly under CUA_ENGINE_SOCKET.
+// Nothing here may raise a permission dialog: no observation, capture, input, approve or keystroke probe, no request
+// that reaches the Accessibility check, and no app is ever launched. The engine's pure logic (the walk, tokens and their
+// re-fetch, width rule, settle loop, screenshot size, settings) is the Swift suite native-engine-units.
 import {test, before} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawn, spawnSync} from 'node:child_process';
-import {existsSync, mkdirSync, readFileSync, statSync} from 'node:fs';
+import {existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync} from 'node:fs';
 import {createServer} from 'node:net';
 import {join} from 'node:path';
 import {shortScratch} from './fixtures/runtime-fixture.mjs';
@@ -124,18 +125,30 @@ test('execute refuses an unknown method and a facade method the spike does not i
   const noApp = await wire.execute('resolve_app', {});
   assert.equal(noApp.error.code, -10005);
   assert.equal(noApp.error.errorName, 'invalidArguments');
-  const late = await wire.call('execute', {method: 'list_apps', args: {}, deadlineUnixMilliseconds: Date.now() - 1});
-  assert.equal(late.error.errorName, 'deadlineExceeded');
+});
+
+test('an execute whose deadline has already passed on receipt is refused with the vendor\'s -32001 before dispatch', {skip}, async t => {
+  const {wire} = await engine(t);
+  for (const params of [{method: 'list_apps', args: {}}, {method: 'no_such_method'}, {}]) {
+    const late = await wire.call('execute', {...params, deadlineUnixMilliseconds: Date.now() - 1});
+    assert.equal(late.error.code, -32001, JSON.stringify(params));
+    assert.equal(late.error.errorName, 'deadlineExceeded');
+    assert.equal(late.error.message, 'Request deadline exceeded');
+  }
+  assert.ok(Array.isArray((await wire.call('execute', {method: 'list_apps', args: {}, deadlineUnixMilliseconds: Date.now() + 60_000})).result));
 });
 
 test('the input methods validate their arguments and resolve the app without posting anything', {skip}, async t => {
   const {wire} = await engine(t);
   const noSuch = {app: 'io.github.ssfskim.cua.engine-test.no-such-app'};
   // The app is resolved and checked first (every app-scoped method), then malformed arguments are refused by name.
-  for (const [method, args, name] of [
+  for (const [method, args, name, lineage] of [
     ['click', {app: 'com.apple.finder'}, 'invalidArguments'],
     ['click', {app: 'com.apple.finder', x: 1}, 'invalidArguments'],
-    ['click', {app: 'com.apple.finder', element_index: 0, x: 1, y: 2}, 'invalidArguments'],
+    ['click', {app: 'com.apple.finder', element_index: 0}, 'invalidArguments'],  // the facade's index never reaches the engine
+    ['click', {app: 'com.apple.finder', element: 't0'}, 'invalidArguments'],  // a token without its lineage
+    ['click', {app: 'com.apple.finder', element: 0}, 'invalidArguments'],  // not a token
+    ['click', {app: 'com.apple.finder', element: '0'}, 'invalidArguments'],
     ['click', {app: 'com.apple.finder', x: 1, y: 2, mouse_button: 'sideways'}, 'invalidArguments'],
     ['click', {app: 'com.apple.finder', x: 1, y: 2, click_count: 0}, 'invalidArguments'],
     ['click', {app: 'com.apple.finder', x: 1, y: 2, spikeRoute: '9'}, 'invalidArguments'],
@@ -144,24 +157,26 @@ test('the input methods validate their arguments and resolve the app without pos
     ['press_key', {app: 'com.apple.finder'}, 'invalidArguments'],
     ['press_key', {app: 'com.apple.finder', key: 'Ctrl'}, 'invalidKey'],  // the vendor's code has no such alias (F §6.4)
     ['type_text', {app: 'com.apple.finder'}, 'invalidArguments'],
+    ['click', {app: 'com.apple.finder', element: 't0', x: 1, y: 2}, 'invalidArguments', 'Labc'],
+    ['click', {app: 'com.apple.finder', element: 't0'}, 'invalidArguments', ''],
   ]) {
-    const answer = await wire.execute(method, args);
-    assert.equal(answer.error?.errorName, name, `${method} ${JSON.stringify(args)}`);
+    const answer = await wire.call('execute', {method, args, deadlineUnixMilliseconds: Date.now() + 120_000, ...(lineage === undefined ? {} : {lineage})});
+    assert.equal(answer.error?.errorName, name, `${method} ${JSON.stringify(args)} ${lineage}`);
   }
   // Well-formed requests resolve the app and fail on it; from there on every error carries the input meta. The
   // forced route arrives as the JSON string the harness sends, so its parse is proven by reaching the app resolution.
-  for (const [method, args] of [
+  for (const [method, args, lineage] of [
     ['click', {...noSuch, x: 1, y: 2}],
     ['click', {...noSuch, x: 1, y: 2, spikeRoute: '3'}],
     ['click', {...noSuch, x: 1, y: 2, spikeRoute: "2'"}],
-    ['click', {...noSuch, element_index: 0, spikeRoute: "2'"}],
+    ['click', {...noSuch, element: 't0', spikeRoute: "2'"}, 'Labc'],
     ['press_key', {...noSuch, key: 'Return', spikeRoute: "2'"}],
     ['type_text', {...noSuch, text: 'x', spikeRoute: "2'"}],
     ['press_key', {...noSuch, key: 'Return'}],
     ['press_key', {...noSuch, key: 'Return', spikeRoute: '2'}],
     ['type_text', {...noSuch, text: 'x'}],
   ]) {
-    const answer = await wire.execute(method, args);
+    const answer = await wire.call('execute', {method, args, deadlineUnixMilliseconds: Date.now() + 120_000, ...(lineage ? {lineage} : {})});
     assert.equal(answer.error?.code, -10010, method);
     assert.equal(answer.error.errorName, 'invalidApp', method);
     const meta = answer.error.meta;
@@ -213,7 +228,7 @@ test('every app-scoped execute refuses a forbidden app, by bundle id or by path,
   const {wire} = await engine(t);
   const keychainPath = ['/System/Library/CoreServices/Applications/Keychain Access.app', '/System/Applications/Utilities/Keychain Access.app'].find(existsSync);
   for (const app of ['com.apple.keychainaccess', ...(keychainPath ? [keychainPath] : [])]) {
-    for (const [method, args] of [['click', {element_index: 0}], ['press_key', {key: 'Return'}], ['type_text', {text: 'x'}], ['scroll', {direction: 'down'}]]) {
+    for (const [method, args] of [['click', {element: 't0'}], ['press_key', {key: 'Return'}], ['type_text', {text: 'x'}], ['scroll', {direction: 'down'}]]) {
       const answer = await wire.execute(method, {app, ...args});
       assert.equal(answer.error?.errorName, 'appNotAllowed', `${method} on ${app}: ${JSON.stringify(answer.error)}`);
       assert.equal(answer.error.code, -10006);
@@ -310,6 +325,32 @@ test('the engine creates its socket directory with mode 0700', {skip}, async t =
   const {socket} = await engine(t, 'engine-dir');
   assert.equal(statSync(join(socket, '..')).mode & 0o777, 0o700);
   assert.ok(statSync(socket).isSocket());
+});
+
+test('the peerPolicy setting: absent or "uid" serves, any other value or an unreadable settings file stops the engine at start, naming it', {skip}, async t => {
+  const home = shortScratch('cua-eng-home-');
+  t.after(home.cleanup);
+  const settings = join(home.dir, '.config', 'cua', 'engine.json');
+  mkdirSync(join(settings, '..'), {recursive: true});
+  for (const [content, serves] of [[null, true], ['{"signingIdentity": "X", "routes": {}}', true], ['{"peerPolicy": "uid"}', true],
+    ['{"peerPolicy": "ancestor"}', false], ['{"peerPolicy": 1}', false], ['not json', false]]) {
+    if (content === null) rmSync(settings, {force: true}); else writeFileSync(settings, content);
+    const socket = scratchSocket(t, 'policy');
+    if (serves) {
+      const {child} = await startEngine(t, bin, {socket, env: {HOME: home.dir}});
+      const wire = await Wire.connect(socket);
+      assert.equal((await wire.result('ping', {clientApiVersion: API_VERSION})).serverApiVersion, API_VERSION, String(content));
+      wire.close();
+      child.kill('SIGTERM');
+      await new Promise(resolve => child.once('exit', resolve));
+    } else {
+      const result = run([], {CUA_ENGINE_SOCKET: socket, HOME: home.dir});
+      assert.equal(result.status, 78, `${content}: ${result.stderr}`);
+      assert.match(result.stderr, content === 'not json' ? /engine\.json is not a JSON object/ : /peerPolicy in .*engine\.json must be "uid"/);
+      assert.equal(existsSync(socket), false, 'nothing bound');
+      assert.equal(existsSync(join(socket, '..', 'engine.lock')), false, 'the lock never taken');
+    }
+  }
 });
 
 test('unbundled without CUA_ENGINE_SOCKET the engine refuses to choose a socket and exits 64', {skip}, () => {

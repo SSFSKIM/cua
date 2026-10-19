@@ -5,9 +5,9 @@ import Foundation
 // Depth-first preorder, the order the text prints. Caps, each with its marker: the vendor's 200 levels (cua marks the
 // cut, `truncated.depth`); the vendor's width rule (100 children, then the visible subset, children omitted above 499,
 // carried on the node as `shown`); and cua's own node budget (4,000), per-value cut (10,000 characters, AX.swift), a
-// 6 MiB budget for the serialized tree and a traversal deadline, the last three counted in `truncated.count`. Numbering
-// is the lineage's (Lineage.swift): inherited sibling-structurally from the previous revision, new elements taking the
-// next unused index.
+// 6 MiB budget for the serialized tree and a traversal deadline, the last three counted in `truncated.count`. Each node
+// carries the lineage's token for its element (Lineage.swift): inherited sibling-structurally from the previous
+// revision, a new element taking a new token. The engine numbers nothing for the model; the service does.
 
 let maxDepth = 200
 let maxObservedNodes = 4_000
@@ -21,37 +21,9 @@ let widthOmitAbove = 499
 let markdownMaxLength = 2_000
 private let markdownRoles: Set<String> = [kAXTextAreaRole, kAXTextFieldRole]
 
-/// Which per-element reads beyond the attribute batch a walk makes (`get_app_state {readSet}`). `full` reads them for
-/// every element that carries the attribute; `reduced` drops the reads whose result cannot reach the text, the
-/// vendor's transformations or input routing (Decision Log 2026-10-19), and a dropped read leaves its field false or
-/// null, never inferred:
-/// - `valueMarkdown` only under the vendor's predicate, an AXTextArea outside a source-code context (F §2.3), not for
-///   AXTextField;
-/// - value settability not read for the roles whose AXValue is display-only (`displayOnlyRoles`).
-/// Actions (the secondary actions printed, the interesting actions the transformations keep nodes by, and route 1's
-/// AXPick/AXPress) and focusable and selectable (the transformations' predicates, the `selectable` flag) are read in
-/// both.
-enum ReadSet: String {
-  case full, reduced
-}
-
-/// Roles whose AXValue is shown, never edited, so `settable` cannot apply: a label, an image, a heading, a progress
-/// or busy indicator. An editable field is AXTextField or AXTextArea; a slider or scroll bar's value is settable and
-/// stays read.
-let displayOnlyRoles: Set<String> = [kAXStaticTextRole, kAXImageRole, "AXHeading", kAXProgressIndicatorRole, kAXBusyIndicatorRole]
-
-/// Whether a walk under `readSet` fetches `valueMarkdown` for an element (its plain value's length aside).
-func readsMarkdown(_ data: ElementData, readSet: ReadSet) -> Bool {
-  switch readSet {
-  case .full: return markdownRoles.contains(data.role)
-  case .reduced: return data.role == kAXTextAreaRole && data.textualContext != "AXTextualContextSourceCode"
-  }
-}
-
-/// Whether a walk under `readSet` reads an element's value settability.
-func readsValueSettable(_ data: ElementData, readSet: ReadSet) -> Bool {
-  data.value != nil && (readSet == .full || !displayOnlyRoles.contains(data.role))
-}
+/// Whether a walk reads an element's value settability: whenever it has a value (the full read set; M0's per-role
+/// reduction saved nothing and is withdrawn).
+func readsValueSettable(_ data: ElementData) -> Bool { data.value != nil }
 
 struct WalkLimits {
   var depth = maxDepth
@@ -142,18 +114,12 @@ final class TreeWalk {
   let markdown: Bool
   /// Whether `focusable` and `selectable` are read (one settability call each per element); the spike's switch.
   let interactionFlags: Bool
-  let readSet: ReadSet
-  /// Per role, what the per-element reads returned (`get_app_state {readCensus: true}`): the evidence for which reads a
-  /// role can do without.
-  let census: ReadCensus?
-  private(set) var droppedSettable = 0
-  private(set) var droppedMarkdown = 0
   let visibleFrame: CGRect?
 
   private(set) var nodes: [[String: Any]] = []
   private(set) var menuBar: [[String: Any]] = []
   private(set) var revision: Revision
-  /// Every element the walk emitted, by handle, to its index.
+  /// Every element the walk emitted, by handle, to its allocation number in the lineage.
   private(set) var seen: [ElementKey: Int] = [:]
   private(set) var bytes = 0
   /// Elements left unwalked by the node or byte budget or the deadline.
@@ -164,7 +130,7 @@ final class TreeWalk {
   private(set) var nodeCapHit = false
   private(set) var failures = 0
   private(set) var markdownFetches = 0
-  /// Nodes whose element is a title, with the elements it serves, mapped to indexes once the walk is done.
+  /// Nodes whose element is a title, with the elements it serves, mapped to tokens once the walk is done.
   private var titles: [(inMenu: Bool, position: Int, targets: [AXUIElement])] = []
 
   private struct Pending {
@@ -193,10 +159,7 @@ final class TreeWalk {
     case deadline
   }
 
-  init(source: ElementSource, lineage: Lineage, limits: WalkLimits, markdown: Bool, interactionFlags: Bool = true, readSet: ReadSet = .full,
-       census: ReadCensus? = nil, visibleFrame: CGRect?) {
-    self.readSet = readSet
-    self.census = census
+  init(source: ElementSource, lineage: Lineage, limits: WalkLimits, markdown: Bool, interactionFlags: Bool = true, visibleFrame: CGRect?) {
     self.source = source
     self.lineage = lineage
     previous = lineage.current
@@ -204,8 +167,11 @@ final class TreeWalk {
     self.markdown = markdown
     self.interactionFlags = interactionFlags
     self.visibleFrame = visibleFrame
-    revision = Revision(route: source.route)
+    revision = Revision()
   }
+
+  /// The token of an element this walk emitted; nil for one it did not.
+  func token(of element: AXUIElement) -> String? { seen[ElementKey(element: element)].map(elementToken) }
 
   /// Walks `window` then `menuItems`, numbering both in one lineage (the menu bar's items after the window's nodes).
   /// The menu bar's items are read first and their nodes and bytes reserved, so a cut of the window's walk by the node
@@ -221,7 +187,7 @@ final class TreeWalk {
       switch read(pending) {
       case .read(let read):
         menuReads.append((pending, read))
-        reservedBytes += jsonBytes(wire(read, index: 0, depth: 0)) + 1
+        reservedBytes += jsonBytes(wire(read, number: lineage.nextNumber, depth: 0)) + 1
       case .failed: failures += 1
       case .deadline:
         menuUnread = Array(menuPending[position...])
@@ -252,16 +218,16 @@ final class TreeWalk {
         cut(.deadline, remaining: [next] + stack.reversed())
         return
       case .read(let read):
-        let index = emit(read, next)
-        // A node that kept its index has its children matched against the previous revision's; a new node's are new.
+        let number = emit(read, next)
+        // A node that kept its token has its children matched against the previous revision's; a new node's are new.
         let inherited: [Int?]
         if let previous, next.inherited != nil {
-          inherited = matchSiblings(old: previous.siblings(of: index, menu: false), new: read.children)
+          inherited = matchSiblings(old: previous.siblings(of: number, menu: false), new: read.children)
         } else {
           inherited = Array(repeating: nil, count: read.children.count)
         }
         for (child, childInherited) in zip(read.children, inherited).reversed() {
-          stack.append(Pending(element: child, depth: next.depth + 1, parent: index, inherited: childInherited, inMenu: false))
+          stack.append(Pending(element: child, depth: next.depth + 1, parent: number, inherited: childInherited, inMenu: false))
         }
       }
     }
@@ -276,7 +242,7 @@ final class TreeWalk {
     return nil
   }
 
-  /// The walk stops: what is left is counted, and the previous revision's entries for it are carried over, so an index
+  /// The walk stops: what is left is counted, and the previous revision's entries for it are carried over, so a token
   /// past the cut stays resolvable and is not retired.
   private func cut(_ reason: Stop, remaining: [Pending]) {
     switch reason {
@@ -292,10 +258,10 @@ final class TreeWalk {
     }
   }
 
-  private func attach(_ index: Int, _ pending: Pending) {
-    if pending.inMenu { revision.menu.append(index) }
-    else if let parent = pending.parent { revision.children[parent, default: []].append(index) }
-    else { revision.root = index }
+  private func attach(_ number: Int, _ pending: Pending) {
+    if pending.inMenu { revision.menu.append(number) }
+    else if let parent = pending.parent { revision.children[parent, default: []].append(number) }
+    else { revision.root = number }
   }
 
   private func pastDeadline() -> Bool { monotonicMilliseconds() >= limits.deadline }
@@ -304,30 +270,24 @@ final class TreeWalk {
   /// deadline is checked between a node's calls, not only between nodes, so one slow element cannot overrun it.
   private func read(_ pending: Pending) -> Outcome {
     let element = prepare(pending.element)
-    guard let data = source.data(element, subtree: !pending.inMenu) else { return .failed }
+    guard let data = source.data(element) else { return .failed }
     if pastDeadline() { return .deadline }
     let owner = source.owner(element)
     let actions = source.actions(element)
     if pastDeadline() { return .deadline }
-    if data.value != nil && !readsValueSettable(data, readSet: readSet) { droppedSettable += 1 }
-    let settable = readsValueSettable(data, readSet: readSet) && source.isSettable(element, kAXValueAttribute, phase: "settable")
+    let settable = readsValueSettable(data) && source.isSettable(element, kAXValueAttribute, phase: "settable")
     let focusable = interactionFlags && data.focused != nil && source.isSettable(element, kAXFocusedAttribute, phase: "focusable")
     let selectable = data.selectable ?? (interactionFlags && data.selected != nil && source.isSettable(element, kAXSelectedAttribute, phase: "selectable"))
     if pastDeadline() { return .deadline }
     var valueMarkdown: String?
-    if markdown, markdownRoles.contains(data.role) || readsMarkdown(data, readSet: readSet),
+    if markdown, markdownRoles.contains(data.role),
        let text = data.value.flatMap({ CFGetTypeID($0) == CFStringGetTypeID() ? ($0 as! String) : nil }) {
       let length = text.utf16.count
       if length > 0 && length <= markdownMaxLength {
-        if readsMarkdown(data, readSet: readSet) {
-          valueMarkdown = source.markdown(element, length: length)
-          markdownFetches += 1
-        } else {
-          droppedMarkdown += 1
-        }
+        valueMarkdown = source.markdown(element, length: length)
+        markdownFetches += 1
       }
     }
-    census?.record(role: data.role, actions: actions, settable: settable, focusable: focusable, selectable: selectable, markdown: valueMarkdown != nil)
     var children: [AXUIElement] = []
     var shown: Shown?
     if !pending.inMenu {
@@ -342,67 +302,41 @@ final class TreeWalk {
                       valueMarkdown: valueMarkdown, children: children, shown: shown))
   }
 
-  private func wire(_ read: Read, index: Int, depth: Int) -> [String: Any] {
-    nodeWire(index: index, depth: depth, pid: read.owner, data: read.data, actions: read.actions, flags: read.flags,
+  private func wire(_ read: Read, number: Int, depth: Int) -> [String: Any] {
+    nodeWire(token: elementToken(number), depth: depth, pid: read.owner, data: read.data, actions: read.actions, flags: read.flags,
              valueMarkdown: read.valueMarkdown, children: read.children.count, shown: read.shown)
   }
 
-  /// Numbers a read element (its inherited index, else the next unused) and adds its node and its table entry.
+  /// Tokens a read element (its inherited token, else a new one) and adds its node and its table entry.
   @discardableResult
   private func emit(_ read: Read, _ pending: Pending) -> Int {
-    let index = pending.inherited ?? lineage.allocate()
-    seen[ElementKey(element: read.element)] = index
-    let node = wire(read, index: index, depth: pending.depth)
+    let number = pending.inherited ?? lineage.allocate()
+    seen[ElementKey(element: read.element)] = number
+    let node = wire(read, number: number, depth: pending.depth)
     bytes += jsonBytes(node) + 1
     if let targets = read.data.servesAsTitleFor, !targets.isEmpty {
       titles.append((pending.inMenu, pending.inMenu ? menuBar.count : nodes.count, targets))
     }
     if pending.inMenu { menuBar.append(node) } else { nodes.append(node) }
-    revision.entries[index] = LineageEntry(element: read.element, identity: ElementIdentity(read.data, pid: read.owner), actions: read.actions, frame: read.data.frame)
-    attach(index, pending)
-    return index
+    revision.entries[number] = LineageEntry(element: read.element, identity: ElementIdentity(read.data, pid: read.owner), actions: read.actions, frame: read.data.frame)
+    attach(number, pending)
+    return number
   }
 
-  /// `servesAsTitleFor`: the emitted indexes of the elements a title serves, known only once the walk is done (a title
+  /// `servesAsTitleFor`: the tokens of the emitted elements a title serves, known only once the walk is done (a title
   /// often precedes what it names).
   private func resolveTitles() {
     for title in titles {
-      let indexes = title.targets.compactMap { seen[ElementKey(element: $0)] }
-      guard !indexes.isEmpty else { continue }
-      if title.inMenu { menuBar[title.position]["servesAsTitleFor"] = indexes } else { nodes[title.position]["servesAsTitleFor"] = indexes }
-      bytes += jsonBytes(indexes) + jsonStringBytes("servesAsTitleFor") + 2
+      let tokens = title.targets.compactMap { token(of: $0) }
+      guard !tokens.isEmpty else { continue }
+      if title.inMenu { menuBar[title.position]["servesAsTitleFor"] = tokens } else { nodes[title.position]["servesAsTitleFor"] = tokens }
+      bytes += jsonBytes(tokens) + jsonStringBytes("servesAsTitleFor") + 2
     }
   }
 }
 
-/// Per role: how many elements, and how many of them had any action, a secondary action (one the grammar prints), an
-/// interesting action (one the transformations keep a node by), a settable value, focusable, selectable, a Markdown
-/// value.
-final class ReadCensus {
-  private var byRole: [String: [String: Int]] = [:]
-  private static let secondaryExcluded: Set<String> = ["AXPress", "AXPick", "AXShowMenu", "AXScrollToVisible"]
-  private static let uninteresting: Set<String> = ["AXShowMenu", "AXScrollToVisible"]
-
-  func record(role: String, actions: [String], settable: Bool, focusable: Bool, selectable: Bool, markdown: Bool) {
-    var row = byRole[role] ?? [:]
-    func bump(_ key: String, _ when: Bool) { if when { row[key, default: 0] += 1 } }
-    bump("nodes", true)
-    bump("actions", !actions.isEmpty)
-    bump("secondaryActions", actions.contains { !Self.secondaryExcluded.contains($0) })
-    bump("interestingActions", actions.contains { !Self.uninteresting.contains($0) })
-    bump("settable", settable)
-    bump("focusable", focusable)
-    bump("selectable", selectable)
-    bump("markdown", markdown)
-    byRole[role] = row
-  }
-
-  var wire: [String: Any] { byRole }
-}
-
-/// A Skyshot node (Interfaces, Node): the optional attributes present only when the element carries them, so a tree
-/// from either fetch route has the same shape.
-func nodeWire(index: Int, depth: Int, pid: pid_t, data: ElementData, actions: [String], flags: (settable: Bool, focusable: Bool, selectable: Bool),
+/// A Skyshot node (Interfaces, Node): the optional attributes present only when the element carries them.
+func nodeWire(token: String, depth: Int, pid: pid_t, data: ElementData, actions: [String], flags: (settable: Bool, focusable: Bool, selectable: Bool),
               valueMarkdown: String?, children: Int, shown: Shown?) -> [String: Any] {
   let value = scalar(data.value)
   var flagsWire: [String: Any] = [
@@ -418,7 +352,7 @@ func nodeWire(index: Int, depth: Int, pid: pid_t, data: ElementData, actions: [S
     flagsWire["expanded"] = disclosing
   }
   var node: [String: Any] = [
-    "index": index, "depth": depth, "pid": Int(pid), "role": data.role, "subrole": data.subrole ?? NSNull(),
+    "token": token, "depth": depth, "pid": Int(pid), "role": data.role, "subrole": data.subrole ?? NSNull(),
     "roleDescription": data.roleDescription ?? "", "title": data.title ?? NSNull(), "description": data.description ?? NSNull(),
     "value": value ?? NSNull(), "valueType": valueType(value), "valueMarkdown": valueMarkdown ?? NSNull(),
     "identifier": data.identifier ?? NSNull(), "flags": flagsWire, "actions": actions, "frame": rectWire(data.frame),

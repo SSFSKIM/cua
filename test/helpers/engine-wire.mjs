@@ -13,8 +13,10 @@ export const PACKAGE = join(REPO, 'native', 'engine');
 export const MAX_FRAME = 8 * 1024 * 1024;
 export const API_VERSION = 'cua-engine-1';
 
-// A fixed scratch path outside the package, so a second run (and the second test file) builds incrementally.
-const SCRATCH = join(tmpdir(), 'cua-engine-test-build');
+// A fixed scratch path outside the package, so a second run (and the second test file) builds incrementally;
+// CUA_ENGINE_SCRATCH names another (one build directory for every engine test, where disk is short).
+export const SCRATCH = process.env.CUA_ENGINE_SCRATCH || join(tmpdir(), 'cua-engine-test-build');
+export const UNIT_SCRATCH = process.env.CUA_ENGINE_SCRATCH || join(tmpdir(), 'cua-engine-unit-build');
 
 const hasSwift = () => process.platform === 'darwin' && spawnSync('swift', ['--version'], {stdio: 'ignore'}).status === 0;
 export const engineSkip = process.platform !== 'darwin' ? 'cua-engine is macOS only'
@@ -45,8 +47,8 @@ export function engineEnv(extra = {}) {
 
 // Starts `bin` (the debug executable or a bundle's) and resolves once its socket answers a connect; registers a kill on
 // the test's end. `socket` null runs it without CUA_ENGINE_SOCKET, `expect` the path it should bind then.
-export async function startEngine(t, bin, {socket, expect = socket} = {}) {
-  const env = socket === null ? engineEnv() : engineEnv({CUA_ENGINE_SOCKET: socket});
+export async function startEngine(t, bin, {socket, expect = socket, env: extra = {}} = {}) {
+  const env = socket === null ? engineEnv(extra) : engineEnv({...extra, CUA_ENGINE_SOCKET: socket});
   const child = spawn(bin, [], {env, stdio: ['ignore', 'pipe', 'pipe']});
   let stderr = '';
   child.stderr.on('data', chunk => { stderr += chunk; });

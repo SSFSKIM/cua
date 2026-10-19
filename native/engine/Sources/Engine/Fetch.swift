@@ -1,11 +1,9 @@
 import ApplicationServices
 import Foundation
 
-// The two attribute-fetch routes the M0 spike prices against each other (the spec's Design, "Observation (skyshot)";
-// R/F-helper-logic.md §1.1–1.3, §11): the public `AXUIElementCopyMultipleAttributeValues` per element, and the private
-// `AXUIElementCopyHierarchy` the vendor prefetches a whole subtree with (resolved with dlsym and feature-detected, the
-// public route its fallback). Both routes decode through `ElementData(values:childCount:)`, so a tree has the same
-// shape whichever route produced it; only the timings differ.
+// The attribute fetch (the spec's Design, "Observation (skyshot)"; R/F-helper-logic.md §1.1–1.3): the public
+// `AXUIElementCopyMultipleAttributeValues` per element, then `AXUIElementCopyActionNames`. The private batched
+// `_AXUIElementCopyHierarchy` the vendor prefetches with lost to it on every scene in M0 and is not resolved.
 
 /// The attributes read per element: the vendor's 20 in its order (F §1.2), then what the Interfaces' Node adds
 /// (AXSelectable, AXDOMClassList), the settle's busy signs (AXElementBusy, AXLoaded; F §8.4), position, size and
@@ -17,11 +15,6 @@ let observedAttributes: [String] = [
   "AXDisclosing", "AXURL", "AXTraits", "AXServesAsTitleForUIElements", "AXRowIndexRange", "AXColumnIndexRange",
   "AXSelectable", "AXDOMClassList", "AXElementBusy", "AXLoaded", "AXTextualContext", "AXPosition", "AXSize", "AXChildren",
 ]
-
-enum FetchRoute: String {
-  case publicFetch = "public"
-  case hierarchy = "hierarchy"
-}
 
 /// What the walk knows of one element. Every optional is nil when the element does not carry the attribute.
 struct ElementData {
@@ -53,7 +46,7 @@ struct ElementData {
   /// AXTextualContext (the vendor's Markdown predicate skips `AXTextualContextSourceCode`).
   var textualContext: String?
   var frame: CGRect?
-  /// AXChildren as fetched (the hierarchy route caps it at 100) and the element's full child count.
+  /// AXChildren as fetched and the element's full child count (a source that caps the list it returns knows more).
   var children: [AXUIElement]
   var childCount: Int
 
@@ -133,27 +126,25 @@ final class FetchCosts {
 }
 
 /// Where a walk reads elements from, for one observation: what it read is kept, so the settle's busy walk and the
-/// observation's walk that follows it read each element once (F §8.5). Everything but `read` is the same public call
-/// on either route; the overridable `read…` methods are the uncached reads.
+/// observation's walk that follows it read each element once (F §8.5). The overridable `read…` methods are the uncached
+/// reads (the unit tests' fake tree overrides them).
 class ElementSource: @unchecked Sendable {
   let costs = FetchCosts()
-  var route: FetchRoute { .publicFetch }
   private var dataCache: [ElementKey: ElementData] = [:]
   private var allChildrenCache: [ElementKey: [AXUIElement]] = [:]
   private var visibleCache: [ElementKey: [AXUIElement]?] = [:]
   private var frameCache: [ElementKey: CGRect?] = [:]
 
-  /// The element's attributes; `subtree: false` keeps a prefetching route from fetching the element's whole subtree
-  /// for it (the menu bar's items, whose menus are never walked). Nil when the element cannot be read.
-  final func data(_ element: AXUIElement, subtree: Bool = true) -> ElementData? {
+  /// The element's attributes; nil when the element cannot be read.
+  final func data(_ element: AXUIElement) -> ElementData? {
     let key = ElementKey(element: element)
     if let known = dataCache[key] { return known }
-    let read = read(element, subtree: subtree)
+    let read = read(element)
     if let read { dataCache[key] = read }
     return read
   }
 
-  func read(_ element: AXUIElement, subtree: Bool) -> ElementData? { publicData(element) }
+  func read(_ element: AXUIElement) -> ElementData? { publicData(element) }
 
   func publicData(_ element: AXUIElement) -> ElementData? {
     costs.time("attributes") {
@@ -238,136 +229,4 @@ class ElementSource: @unchecked Sendable {
       return CGRect(origin: origin, size: extent)
     }
   }
-}
-
-/// The public route: one `AXUIElementCopyMultipleAttributeValues` per element.
-final class PublicSource: ElementSource, @unchecked Sendable {}
-
-/// `AXUIElementCopyHierarchy`, the private batched fetch, with its option and result keys; nil when any is absent.
-struct HierarchySPI: @unchecked Sendable {
-  typealias Function = @convention(c) (AXUIElement, CFArray, CFDictionary?, UnsafeMutablePointer<Unmanaged<CFTypeRef>?>) -> AXError
-  let call: Function
-  let skipInspectionKey: String
-  let arrayAttributesKey: String
-  let truncateStringsKey: String
-  let maxArrayCountKey: String
-  let valueKey: String
-  let countKey: String
-  let errorKey: String
-  let incompleteKey: String
-
-  static let shared: HierarchySPI? = {
-    let handle = UnsafeMutableRawPointer(bitPattern: -2) // RTLD_DEFAULT: ApplicationServices is linked
-    guard let symbol = dlsym(handle, "AXUIElementCopyHierarchy") else { return nil }
-    func key(_ name: String) -> String? {
-      guard let pointer = dlsym(handle, name) else { return nil }
-      return pointer.assumingMemoryBound(to: CFString?.self).pointee as String?
-    }
-    guard let skip = key("kAXUIElementCopyHierarchySkipInspectionForAttributesKey"),
-          let arrays = key("kAXUIElementCopyHierarchyArrayAttributesKey"),
-          let truncate = key("kAXUIElementCopyHierarchyTruncateStringsKey"),
-          let maxCount = key("kAXUIElementCopyHierarchyMaxArrayCountKey"),
-          let value = key("kAXUIElementCopyHierarchyResultValueKey"),
-          let count = key("kAXUIElementCopyHierarchyResultCountKey"),
-          let error = key("kAXUIElementCopyHierarchyResultErrorKey"),
-          let incomplete = key("kAXUIElementCopyHierarchyIncompleteResultKey") else { return nil }
-    return HierarchySPI(call: unsafeBitCast(symbol, to: Function.self), skipInspectionKey: skip, arrayAttributesKey: arrays,
-                        truncateStringsKey: truncate, maxArrayCountKey: maxCount, valueKey: value, countKey: count,
-                        errorKey: error, incompleteKey: incomplete)
-  }()
-
-  /// The vendor's four options (F §1.1): the attribute list uninspected, AXChildren as the array attribute, strings
-  /// truncated at the SPI's own length, arrays capped at 100.
-  var options: CFDictionary {
-    [skipInspectionKey: observedAttributes, arrayAttributesKey: [kAXChildrenAttribute], truncateStringsKey: true,
-     maxArrayCountKey: widthThreshold] as CFDictionary
-  }
-
-  /// One element's entry of a result: its attribute values, the children's full count, and whether the SPI marked
-  /// the element or its children incomplete.
-  func decode(_ entry: [String: Any]) -> (values: [String: CFTypeRef], childCount: Int?, incomplete: Bool) {
-    var values: [String: CFTypeRef] = [:]
-    var childCount: Int?
-    var incomplete = (entry[incompleteKey] as? Bool) == true
-    for name in observedAttributes {
-      guard let slot = entry[name] else { continue }
-      if let wrapped = slot as? [String: Any], wrapped[valueKey] != nil || wrapped[errorKey] != nil || wrapped[countKey] != nil || wrapped[incompleteKey] != nil {
-        if let value = present(wrapped[valueKey]) { values[name] = value }
-        if name == kAXChildrenAttribute {
-          childCount = (wrapped[countKey] as? NSNumber)?.intValue
-          if (wrapped[incompleteKey] as? Bool) == true { incomplete = true }
-        }
-      } else if let value = present(slot) {
-        values[name] = value
-      }
-    }
-    return (values, childCount, incomplete)
-  }
-}
-
-/// The hierarchy route: one SPI call per subtree, results kept by element; an element the results lack, or that the
-/// SPI marked incomplete, is fetched again by a call rooted at it (once), then by the public call. A result that is
-/// not a dictionary is an error, never a crash.
-class HierarchySource: ElementSource, @unchecked Sendable {
-  /// One call rooted at an element: its status and its result.
-  typealias Copy = (AXUIElement) -> (error: AXError, result: CFTypeRef?)
-  private let spi: HierarchySPI
-  private let copy: Copy
-  private var entries: [ElementKey: [String: Any]] = [:]
-  private var refetched: Set<ElementKey> = []
-
-  /// `copy` replaces the SPI call (the unit tests inject results).
-  init(spi: HierarchySPI, copy: Copy? = nil) {
-    self.spi = spi
-    self.copy = copy ?? { element in
-      var out: Unmanaged<CFTypeRef>?
-      let error = spi.call(element, observedAttributes as CFArray, spi.options, &out)
-      return (error, out?.takeRetainedValue())
-    }
-  }
-
-  override var route: FetchRoute { .hierarchy }
-
-  override func read(_ element: AXUIElement, subtree: Bool) -> ElementData? {
-    let key = ElementKey(element: element)
-    if let entry = entries[key] {
-      let decoded = spi.decode(entry)
-      if !decoded.incomplete || !subtree || refetched.contains(key) { return ElementData(values: decoded.values, childCount: decoded.childCount) }
-    }
-    guard subtree, !refetched.contains(key) else {
-      // A menu-bar item (never walked into) is read alone by design; anything else here is a fallback.
-      costs.count(subtree ? "fallbackFetches" : "singleFetches")
-      return publicData(element)
-    }
-    refetched.insert(key)
-    prefetch(rootedAt: element)
-    guard let entry = entries[key] else {
-      costs.count("fallbackFetches")
-      return publicData(element)
-    }
-    let decoded = spi.decode(entry)
-    return ElementData(values: decoded.values, childCount: decoded.childCount)
-  }
-
-  private func prefetch(rootedAt element: AXUIElement) {
-    costs.count("prefetchCalls")
-    let (error, result) = costs.time("prefetch") { copy(prepare(element)) }
-    guard error == .success, let result, CFGetTypeID(result) == CFDictionaryGetTypeID() else {
-      costs.count("prefetchErrors")
-      return
-    }
-    costs.time("prefetchDecode") {
-      (result as! NSDictionary).forEach { key, value in
-        let object = key as AnyObject
-        guard CFGetTypeID(object) == AXUIElementGetTypeID(), let entry = value as? [String: Any] else { return }
-        entries[ElementKey(element: object as! AXUIElement)] = entry
-      }
-    }
-  }
-}
-
-/// The source for `route`, falling back to the public route where the SPI is absent.
-func makeSource(_ route: FetchRoute) -> ElementSource {
-  if route == .hierarchy, let spi = HierarchySPI.shared { return HierarchySource(spi: spi) }
-  return PublicSource()
 }

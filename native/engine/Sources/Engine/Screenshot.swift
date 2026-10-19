@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 import Foundation
 import ImageIO
@@ -5,9 +6,11 @@ import ScreenCaptureKit
 import UniformTypeIdentifiers
 
 // Screenshot (the spec's Design, "Screenshot"): a JPEG of the key window through ScreenCaptureKit
-// (SCContentFilter(desktopIndependentWindow:), SCScreenshotManager.captureImage), at the display's pixel size (the vendor's size on the mini), quality 0.8, written
-// with mode 0600 into the request's outputDirectory and returned as a file: URL. CGWindowListCreateImage is deprecated
-// and not a fallback. Nothing here runs before a request asks for a capture.
+// (SCContentFilter(desktopIndependentWindow:), SCScreenshotManager.captureImage), at the vendor's size (U1; R/F-helper-
+// logic.md §15): the window's bounds times the backing scale factor of the screen that best matches them, 2.0 when none
+// does, each side rounded up; quality 0.8, written with mode 0600 into the request's outputDirectory and returned as a
+// file: URL. CGWindowListCreateImage is deprecated and not a fallback. Nothing here runs before a request asks for a
+// capture.
 
 let jpegQuality = 0.8
 private let captureTimeoutSeconds = 10
@@ -90,34 +93,64 @@ func jpegData(_ image: CGImage) -> Data? {
   return CGImageDestinationFinalize(destination) ? data as Data : nil
 }
 
-/// Pixels per point of the display under a window frame (global top-left coordinates, as AX reports them): the
-/// screenshot is captured at the display's pixel size, as the vendor's was on the mini's 2x scenes. 1 when no display
-/// is under the frame. Read when capturing only: a coordinate click divides by the scale of the image the model was
-/// given (`ObservedScreenshot`), whatever the display's scale is by then.
-func pixelScale(of frame: CGRect) -> CGFloat {
-  var display: CGDirectDisplayID = 0
-  var count: UInt32 = 0
-  guard CGGetDisplaysWithPoint(CGPoint(x: frame.midX, y: frame.midY), 1, &display, &count) == .success, count > 0,
-        let mode = CGDisplayCopyDisplayMode(display), mode.width > 0, mode.pixelWidth > 0 else { return 1 }
-  return CGFloat(mode.pixelWidth) / CGFloat(mode.width)
+/// A screen as the size rule reads it: its frame in CoreGraphics' global space (top-left origin, as AX reports window
+/// frames) and its backing scale factor.
+struct ScreenScale: Equatable {
+  let frame: CGRect
+  let backingScale: CGFloat
 }
 
-/// The capture's size in pixels for a window frame in points.
+/// The vendor's scale for a window frame (F §15, `CGWindow.scale`): the backing scale factor of the best-matching
+/// screen, 2.0 when none matches. Best matching is read as the largest intersection with the frame (F §15 marks the
+/// reducer unread and infers this), the first screen winning a tie. Read when capturing only: a coordinate click divides
+/// by the scale of the image the model was given (`ObservedScreenshot`), whatever the screens say by then.
+func screenshotScale(for frame: CGRect, screens: [ScreenScale]) -> CGFloat {
+  var best: (area: CGFloat, scale: CGFloat)?
+  for screen in screens {
+    let overlap = screen.frame.intersection(frame)
+    guard !overlap.isNull, overlap.width > 0, overlap.height > 0 else { continue }
+    let area = overlap.width * overlap.height
+    if best == nil || area > best!.area { best = (area, screen.backingScale) }
+  }
+  return best?.scale ?? 2.0
+}
+
+/// Cocoa screen frames (bottom-left origin at the primary screen, the first) as CoreGraphics' top-left global frames.
+func topLeftFrames(cocoa frames: [CGRect]) -> [CGRect] {
+  guard let primary = frames.first else { return [] }
+  return frames.map { CGRect(x: $0.minX, y: primary.maxY - $0.maxY, width: $0.width, height: $0.height) }
+}
+
+/// This Mac's screens now, read on the main thread, where AppKit keeps NSScreen.
+func currentScreenScales() -> [ScreenScale] {
+  let read: @Sendable () -> [ScreenScale] = {
+    MainActor.assumeIsolated {
+      let screens = NSScreen.screens
+      return zip(topLeftFrames(cocoa: screens.map(\.frame)), screens).map { ScreenScale(frame: $0, backingScale: $1.backingScaleFactor) }
+    }
+  }
+  return Thread.isMainThread ? read() : DispatchQueue.main.sync(execute: read)
+}
+
+/// The capture's size in pixels for a window frame in points: each side times the scale, rounded up (the vendor's
+/// `frintp`, F §15).
 func screenshotPixelSize(_ frame: CGRect, scale: CGFloat) -> (width: Int, height: Int) {
-  (Int((frame.width * scale).rounded()), Int((frame.height * scale).rounded()))
+  (Int((frame.width * scale).rounded(.up)), Int((frame.height * scale).rounded(.up)))
 }
 
 /// The screenshot's file name: the engine's pid, the revision its observation reports, and a random part.
 func screenshotFileName(revision: Int) -> String { "cua-engine-\(getpid())-\(revision)-\(UUID().uuidString.prefix(8)).jpg" }
 
-/// A screenshot as the capture returned it, with the window frame (in points) it was sized for.
+/// A screenshot as the capture returned it, with the window frame (in points) it was sized for and the screen's scale
+/// it was sized by.
 struct CapturedScreenshot {
   let url: String
   let width: Int
   let height: Int
   let frame: CGRect
+  let scale: CGFloat
 
-  var wire: [String: Any] { ["url": url, "width": width, "height": height] }
+  var wire: [String: Any] { ["url": url, "width": width, "height": height, "scale": Double(scale)] }
 }
 
 /// The screenshot coordinate clicks are placed in: the window it shows and its pixels per point on each axis, the
@@ -142,7 +175,7 @@ struct ObservedScreenshot {
 }
 
 let noScreenshotForCoordinates = EngineError(name: "noScreenshotForCoordinates",
-  "There is no screenshot of the app's window to place the coordinates in. Try to get the on-screen content again and see if that resolves the issue.")
+  "There is no screenshot of the app's current window to place the coordinates in. Call getScreenshot to get one, then give coordinates in its pixels.")
 
 extension ConnectionState {
   /// A coordinate click's point in `window`, from its top-left corner in points: (x, y) in the pixels of the
@@ -168,7 +201,8 @@ extension Engine {
     var lookup = try shareableWindows.window(number, timings: &timings)
     guard var target = lookup.window else { throw EngineError(name: "noCapturableWindow", "No capturable window found: \(name)") }
     let configuration = SCStreamConfiguration()
-    let size = screenshotPixelSize(frame, scale: pixelScale(of: frame))
+    let scale = screenshotScale(for: frame, screens: currentScreenScales())
+    let size = screenshotPixelSize(frame, scale: scale)
     configuration.width = size.width
     configuration.height = size.height
     configuration.showsCursor = false
@@ -186,7 +220,7 @@ extension Engine {
     guard let data = timings.time("screenshotEncode", { jpegData(image) }) else { throw screenCaptureFailed("The image could not be encoded.") }
     let path = (directory as NSString).appendingPathComponent(screenshotFileName(revision: revision))
     try timings.time("screenshotWrite") { try writePrivately(data, to: path) }
-    return CapturedScreenshot(url: URL(fileURLWithPath: path).absoluteString, width: image.width, height: image.height, frame: frame)
+    return CapturedScreenshot(url: URL(fileURLWithPath: path).absoluteString, width: image.width, height: image.height, frame: frame, scale: scale)
   }
 }
 

@@ -84,7 +84,8 @@ func withMeta(_ error: EngineError, _ meta: InputMeta) -> EngineError {
 extension Engine {
   // MARK: click
 
-  /// `click {app, element_index | x, y, mouse_button?, click_count?}`. An element click takes route 1 (AXPick, else
+  /// `click {app, element | x, y, mouse_button?, click_count?}`, `element` a token of the request's `lineage` (the
+  /// service's translation of the facade's element_index). An element click takes route 1 (AXPick, else
   /// AXPress) when a plain left click's action is advertised and the element is not a menu-bar item; every other
   /// element click synthesizes the events under route 3 (F §5.1: the vendor synthesizes inside a web view and for
   /// menu-bar items; cua takes route 3 for all synthesized element clicks, M0's measured default). A coordinate click
@@ -93,18 +94,19 @@ extension Engine {
   /// content, else route 2, whose events carry ⌘ when the target app is inactive (the AppKit convention for a click an
   /// inactive window accepts, F §5.4). A forced 2′ posts the same events with no ⌘ and no fake activation.
   func click(_ args: [String: Any], _ context: ExecutionContext) throws -> Any {
-    let hasIndex = (args["element_index"] as? NSNumber).map { CFGetTypeID($0) != CFBooleanGetTypeID() } ?? false
+    let token = try elementTokenArg(args, lineage: context.lineage)
+    let hasElement = token != nil
     let hasPoint = numberArg(args["x"]) != nil && numberArg(args["y"]) != nil
-    guard hasIndex != hasPoint else {
-      throw EngineError.invalidArguments(hasIndex ? "click takes either element_index or coordinates, not both"
-                                                  : "click needs element_index or x and y coordinates")
+    guard hasElement != hasPoint else {
+      throw EngineError.invalidArguments(hasElement ? "click takes either element or coordinates, not both"
+                                                  : "click needs element or x and y coordinates")
     }
     guard let button = MouseButton(wire: args["mouse_button"]) else {
       throw EngineError.invalidArguments("mouseButton must be left, right, middle, l, r, m, 0, 1, or 2")
     }
     let count = (args["click_count"] as? NSNumber)?.intValue ?? 1
     guard count >= 1 else { throw EngineError.invalidArguments("click_count must be at least 1") }
-    let route = try spikeRouteArg(args, usable: hasIndex ? InputRoute.elementClick : InputRoute.synthesized)
+    let route = try spikeRouteArg(args, usable: hasElement ? InputRoute.elementClick : InputRoute.synthesized)
 
     var meta = InputMeta(context)
     do {
@@ -113,12 +115,8 @@ extension Engine {
       try requireAccessibility()
       try refuseWhenLocked()
 
-      if hasIndex {
-        let index = (args["element_index"] as! NSNumber).intValue
-        guard index >= 0 else { throw EngineError.invalidArguments("element_index must be an integer") }
-        let entry = try context.connection.element(index, app: app, lineage: context.lineage) {
-          primaryWindow(of: prepare(AXUIElementCreateApplication(appPid)))
-        }
+      if let token, let lineage = context.lineage {
+        let entry = try context.connection.element(token, app: app, lineage: lineage) { ElementResolver.live($0, pid: appPid) }
         let advertised = entry.actions.first(where: { $0 == "AXPick" }) ?? entry.actions.first(where: { $0 == "AXPress" })
         let plain = button == .left && count == 1
         let menuBar = entry.identity.role == "AXMenuBarItem"

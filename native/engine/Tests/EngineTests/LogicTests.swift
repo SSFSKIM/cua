@@ -3,7 +3,7 @@ import XCTest
 @testable import Engine
 
 // The engine's pure rules: sibling matching, the re-fetch verdict, the settle loop on a fake clock, the byte estimate,
-// web-shaped detection and the one enablement attribute, the hierarchy route's decoding, the value type.
+// web-shaped detection and the one enablement attribute, the node's wire shape and tokens, the value type.
 
 private func element(_ id: Int) -> AXUIElement { AXUIElementCreateApplication(pid_t(61_000 + id)) }
 private func old(_ ids: [Int]) -> [(index: Int, element: AXUIElement)] { ids.map { ($0 * 10, element($0)) } }
@@ -60,8 +60,9 @@ private final class FakeClock {
 }
 
 final class SettleTests: XCTestCase {
-  private func run(_ clock: FakeClock, sample: Double = settleSampleMs, ready: @escaping () -> Bool? = { true }) -> SettleReport {
-    runSettle(sampleMs: sample, now: { clock.now }, sleep: { clock.now += $0 }, drain: clock.drain, ready: ready)
+  private func run(_ clock: FakeClock, sample: Double = settleSampleMs, deadline: Double = .infinity,
+                   ready: @escaping () -> Bool? = { true }) -> SettleReport {
+    runSettle(sampleMs: sample, deadlineMs: deadline, now: { clock.now }, sleep: { clock.now += $0 }, drain: clock.drain, ready: ready)
   }
 
   func testAQuietNativeAppSettlesAtTheThirdSample() {
@@ -111,6 +112,36 @@ final class SettleTests: XCTestCase {
     XCTAssertEqual(report.ms, 600)
   }
 
+  func testARequestDeadlineThatPassesMidSettleCancelsItAsTimedOutNotCapped() {
+    let clock = FakeClock()
+    clock.pending = stride(from: 50.0, through: 6_000, by: 100).map { SettleEvent(name: kAXLayoutChangedNotification, at: $0, counts: true) }
+    var walks = 0
+    let report = run(clock, deadline: 1_234) { walks += 1; return true }
+    XCTAssertTrue(report.timedOut)
+    XCTAssertFalse(report.capped, "the request's deadline, not the 5 s cap, ended it")
+    XCTAssertEqual(report.ms, 1_234, "the last sleep is cut at the deadline, not run to the next tick")
+    XCTAssertEqual(walks, 0, "no busy walk starts once the deadline has passed")
+  }
+
+  func testADeadlineAlreadyPastCancelsBeforeTheFirstSample() {
+    let report = run(FakeClock(), deadline: 0)
+    XCTAssertTrue(report.timedOut)
+    XCTAssertEqual(report.ms, 0)
+    XCTAssertEqual(report.busyWalks, 0)
+  }
+
+  func testADeadlineAfterTheQuietPointOrTheCapChangesNothing() {
+    let quiet = run(FakeClock(), deadline: 350)
+    XCTAssertFalse(quiet.timedOut, "quiet at 300 ms, before the deadline")
+    XCTAssertEqual(quiet.ms, 300)
+    let clock = FakeClock()
+    clock.pending = stride(from: 50.0, through: 6_000, by: 100).map { SettleEvent(name: kAXLayoutChangedNotification, at: $0, counts: true) }
+    let capped = run(clock, deadline: 60_000)
+    XCTAssertTrue(capped.capped)
+    XCTAssertFalse(capped.timedOut)
+    XCTAssertEqual(capped.ms, settleCapMs)
+  }
+
   func testTheTenNotifications() {
     XCTAssertEqual(settleNotifications.count, 10)
     XCTAssertFalse(settleNotifications.contains(kAXValueChangedNotification))
@@ -127,7 +158,7 @@ final class ByteEstimateTests: XCTestCase {
   }
 
   func testANodeIsNeverUnderestimated() {
-    let node: [String: Any] = ["index": 12, "title": "Say \"hi\"\n", "value": NSNull(), "flags": ["enabled": true], "frame": ["x": 1.5, "y": -2.25],
+    let node: [String: Any] = ["token": "t12", "title": "Say \"hi\"\n", "value": NSNull(), "flags": ["enabled": true], "frame": ["x": 1.5, "y": -2.25],
                                "actions": ["AXPress", "AXShowMenu"], "domClassList": ["a", "b"]]
     XCTAssertGreaterThanOrEqual(jsonBytes(node), actual(node))
   }
@@ -167,42 +198,29 @@ final class EnablementTests: XCTestCase {
 }
 
 final class FetchDecodeTests: XCTestCase {
-  func testTheHierarchyRouteDecodesToTheSameElementDataAsThePublicRoute() throws {
-    let spi = try XCTUnwrap(HierarchySPI.shared, "AXUIElementCopyHierarchy and its keys resolve on this macOS")
+  func testTheNodeCarriesWhatTheElementCarriesAndATokenNotAnIndex() {
     var range = CFRange(location: 3, length: 2)
-    let children = [element(1), element(2)] as CFArray
     let values: [String: CFTypeRef] = [
       "AXRole": "AXRow" as CFString, "AXTitle": "Row" as CFString, "AXValue": 7 as CFNumber, "AXDisclosing": kCFBooleanTrue,
-      "AXRowIndexRange": AXValueCreate(.cfRange, &range)!, "AXDOMClassList": ["x", "y"] as CFArray, "AXChildren": children,
-      "AXHelp": "help" as CFString,
+      "AXRowIndexRange": AXValueCreate(.cfRange, &range)!, "AXDOMClassList": ["x", "y"] as CFArray,
+      "AXChildren": [element(1), element(2)] as CFArray, "AXHelp": "help" as CFString,
     ]
-    var entry: [String: Any] = [:]
-    for (name, value) in values { entry[name] = [spi.valueKey: value] }
-    entry["AXChildren"] = [spi.valueKey: children, spi.countKey: 140]
-    var unsupported = AXError.attributeUnsupported
-    entry["AXSubrole"] = [spi.errorKey: AXValueCreate(.axError, &unsupported)!]
-
-    let decoded = spi.decode(entry)
-    XCTAssertFalse(decoded.incomplete)
-    XCTAssertEqual(decoded.childCount, 140)
-    let viaHierarchy = ElementData(values: decoded.values, childCount: decoded.childCount)
-    let viaPublic = ElementData(values: values, childCount: 140)
-    let a = nodeWire(index: 0, depth: 0, pid: 1, data: viaHierarchy, actions: [], flags: (false, false, false), valueMarkdown: nil, children: 0, shown: nil)
-    let b = nodeWire(index: 0, depth: 0, pid: 1, data: viaPublic, actions: [], flags: (false, false, false), valueMarkdown: nil, children: 0, shown: nil)
-    XCTAssertEqual(NSDictionary(dictionary: a), NSDictionary(dictionary: b))
-    XCTAssertEqual(a["rowIndexRange"] as? [Int], [3, 5])
-    XCTAssertEqual(a["domClassList"] as? [String], ["x", "y"])
-    XCTAssertEqual(a["valueType"] as? String, "number")
-    XCTAssertEqual((a["flags"] as? [String: Any])?["expanded"] as? Bool, true)
-    XCTAssertEqual((a["flags"] as? [String: Any])?["disclosable"] as? Bool, true)
-    XCTAssertNil(a["placeholder"], "an attribute the element does not carry is absent")
-    XCTAssertTrue(a["subrole"] is NSNull)
+    let node = nodeWire(token: elementToken(7), depth: 0, pid: 1, data: ElementData(values: values, childCount: 140), actions: [],
+                        flags: (false, false, false), valueMarkdown: nil, children: 0, shown: nil)
+    XCTAssertEqual(node["token"] as? String, "t7")
+    XCTAssertNil(node["index"])
+    XCTAssertEqual(node["rowIndexRange"] as? [Int], [3, 5])
+    XCTAssertEqual(node["domClassList"] as? [String], ["x", "y"])
+    XCTAssertEqual(node["valueType"] as? String, "number")
+    XCTAssertEqual((node["flags"] as? [String: Any])?["expanded"] as? Bool, true)
+    XCTAssertEqual((node["flags"] as? [String: Any])?["disclosable"] as? Bool, true)
+    XCTAssertNil(node["placeholder"], "an attribute the element does not carry is absent")
+    XCTAssertTrue(node["subrole"] is NSNull)
   }
 
-  func testAnIncompleteMarkIsSeen() throws {
-    let spi = try XCTUnwrap(HierarchySPI.shared)
-    XCTAssertTrue(spi.decode([spi.incompleteKey: true]).incomplete)
-    XCTAssertTrue(spi.decode(["AXChildren": [spi.valueKey: [] as CFArray, spi.incompleteKey: true]]).incomplete)
+  func testTokensRoundTripAndNothingElseParsesAsOne() {
+    for number in [0, 1, 42, 4_000] { XCTAssertEqual(tokenNumber(elementToken(number)), number) }
+    for malformed in ["", "t", "7", "t-1", "t01", "T7", "t7 ", "x7", "t1.5"] { XCTAssertNil(tokenNumber(malformed), malformed) }
   }
 
   func testPositionRanges() {
@@ -216,102 +234,5 @@ final class FetchDecodeTests: XCTestCase {
     XCTAssertEqual(valueType(Int64(3)) as? String, "number")
     XCTAssertEqual(valueType(2.5) as? String, "number")
     XCTAssertTrue(valueType(nil) is NSNull)
-  }
-}
-
-/// HierarchySource with injected results: the refetch of a missing or incomplete element, the fallback to the public
-/// read, and a malformed or failed result degrading to that fallback.
-final class HierarchySourceTests: XCTestCase {
-  /// Counts the public reads the hierarchy route falls back to, answering them itself.
-  final class Counting: HierarchySource, @unchecked Sendable {
-    var publicReads: [Int] = []
-    override func publicData(_ element: AXUIElement) -> ElementData? {
-      publicReads.append(Int(pid(of: element)) - 61_000)
-      return ElementData(values: ["AXRole": "AXPublic" as CFString])
-    }
-  }
-
-  private var spi: HierarchySPI { HierarchySPI.shared! }
-
-  /// A result dictionary keyed by element, as the SPI returns it.
-  private func result(_ entries: [Int: [String: Any]]) -> CFDictionary {
-    var keyCallbacks = kCFTypeDictionaryKeyCallBacks
-    var valueCallbacks = kCFTypeDictionaryValueCallBacks
-    let dictionary = CFDictionaryCreateMutable(nil, 0, &keyCallbacks, &valueCallbacks)!
-    for (id, entry) in entries {
-      let key = element(id)
-      let value = entry as NSDictionary
-      withExtendedLifetime((key, value)) {
-        CFDictionarySetValue(dictionary, Unmanaged.passUnretained(key).toOpaque(), Unmanaged.passUnretained(value).toOpaque())
-      }
-    }
-    return dictionary
-  }
-
-  private func entry(_ role: String, children: [Int] = [], incomplete: Bool = false) -> [String: Any] {
-    var entry: [String: Any] = ["AXRole": [spi.valueKey: role], "AXChildren": [spi.valueKey: children.map(element) as CFArray]]
-    if incomplete { entry[spi.incompleteKey] = true }
-    return entry
-  }
-
-  func testOneCallServesTheSubtree() throws {
-    _ = try XCTUnwrap(HierarchySPI.shared)
-    var calls: [Int] = []
-    let source = Counting(spi: spi) { root in
-      calls.append(Int(pid(of: root)) - 61_000)
-      return (.success, self.result([1: self.entry("AXWindow", children: [2]), 2: self.entry("AXButton")]))
-    }
-    XCTAssertEqual(source.data(element(1))?.role, "AXWindow")
-    XCTAssertEqual(source.data(element(2))?.role, "AXButton")
-    XCTAssertEqual(calls, [1])
-    XCTAssertEqual(source.publicReads, [])
-    XCTAssertEqual(source.costs.counts["prefetchCalls"], 1)
-  }
-
-  func testAMissingElementIsFetchedByACallRootedAtItThenByThePublicRead() throws {
-    _ = try XCTUnwrap(HierarchySPI.shared)
-    var calls: [Int] = []
-    let source = Counting(spi: spi) { root in
-      calls.append(Int(pid(of: root)) - 61_000)
-      return (.success, self.result(CFEqual(root, element(1)) ? [1: self.entry("AXWindow", children: [2, 3])] : [3: self.entry("AXRow")]))
-    }
-    _ = source.data(element(1))
-    XCTAssertEqual(source.data(element(3))?.role, "AXRow", "a call rooted at the missing element found it")
-    XCTAssertEqual(source.data(element(2))?.role, "AXPublic", "still missing after its own call: the public read")
-    XCTAssertEqual(calls, [1, 3, 2])
-    XCTAssertEqual(source.publicReads, [2])
-    XCTAssertEqual(source.costs.counts["fallbackFetches"], 1)
-  }
-
-  func testAnIncompleteChildIsFetchedAgainOnceByACallRootedAtIt() throws {
-    _ = try XCTUnwrap(HierarchySPI.shared)
-    var calls: [Int] = []
-    let source = Counting(spi: spi) { root in
-      calls.append(Int(pid(of: root)) - 61_000)
-      return (.success, self.result([1: self.entry("AXWindow", children: [2]), 2: self.entry("AXList", incomplete: true)]))
-    }
-    XCTAssertEqual(source.data(element(1))?.role, "AXWindow")
-    XCTAssertEqual(source.data(element(2))?.role, "AXList")
-    XCTAssertEqual(calls, [1, 2], "the window's call, then one rooted at the incomplete child; its answer is kept, still incomplete")
-    XCTAssertEqual(source.publicReads, [])
-  }
-
-  func testAMalformedOrFailedResultFallsBackWithoutCrashing() throws {
-    _ = try XCTUnwrap(HierarchySPI.shared)
-    for answer in [(AXError.success, ["not", "a", "dictionary"] as CFArray as CFTypeRef?), (AXError.success, nil), (AXError.cannotComplete, nil)] {
-      let source = Counting(spi: spi) { _ in answer }
-      XCTAssertEqual(source.data(element(1))?.role, "AXPublic")
-      XCTAssertEqual(source.costs.counts["prefetchErrors"], 1)
-      XCTAssertEqual(source.publicReads, [1])
-    }
-  }
-
-  func testAMenuItemIsReadAloneWithoutACall() throws {
-    _ = try XCTUnwrap(HierarchySPI.shared)
-    var calls = 0
-    let source = Counting(spi: spi) { _ in calls += 1; return (.success, self.result([:])) }
-    XCTAssertEqual(source.data(element(5), subtree: false)?.role, "AXPublic")
-    XCTAssertEqual(calls, 0)
-    XCTAssertEqual(source.costs.counts["singleFetches"], 1)
   }
 }

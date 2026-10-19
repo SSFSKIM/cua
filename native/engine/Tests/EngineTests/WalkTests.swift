@@ -6,7 +6,7 @@ import XCTest
 // pids no process uses: AXUIElementCreateApplication, CFEqual and CFHash are local, so no message reaches any process,
 // and the fake source answers every attribute itself.
 
-private func element(_ id: Int) -> AXUIElement { AXUIElementCreateApplication(pid_t(60_000 + id)) }
+private func element(_ id: Int) -> AXUIElement { Engine.element(id) }
 
 /// A tree by id: each node's children and, optionally, a visible subset and a frame.
 final class FakeTree {
@@ -20,6 +20,8 @@ final class FakeTree {
   var settable: [Int: Set<String>] = [:]
   var actions: [Int: [String]] = [:]
   var markdown: [Int: String] = [:]
+  /// The process serving each element, by id (4242 when unset): a panel's elements are another process's.
+  var owners: [Int: pid_t] = [:]
 
   func id(_ element: AXUIElement) -> Int { Int(pid(of: element)) - 60_000 }
 }
@@ -36,7 +38,7 @@ final class FakeSource: ElementSource, @unchecked Sendable {
     self.cap = cap
   }
 
-  override func read(_ element: AXUIElement, subtree: Bool) -> ElementData? {
+  override func read(_ element: AXUIElement) -> ElementData? {
     let id = tree.id(element)
     reads[id, default: 0] += 1
     if tree.unreadable.contains(id) { return nil }
@@ -53,7 +55,7 @@ final class FakeSource: ElementSource, @unchecked Sendable {
     return ElementData(values: values, childCount: all.count)
   }
 
-  override func owner(_ element: AXUIElement) -> pid_t { 4242 }
+  override func owner(_ element: AXUIElement) -> pid_t { tree.owners[tree.id(element)] ?? 4242 }
   var markdownCalls = 0
   override func actions(_ element: AXUIElement) -> [String] { tree.actions[tree.id(element)] ?? [] }
   override func isSettable(_ element: AXUIElement, _ attribute: String, phase: String) -> Bool {
@@ -78,7 +80,7 @@ extension Engine {
   static func element(_ id: Int) -> AXUIElement { AXUIElementCreateApplication(pid_t(60_000 + id)) }
 }
 
-private func walk(_ tree: FakeTree, _ lineage: Lineage, window: Int = 0, menu: [Int] = [], limits: WalkLimits = WalkLimits(deadline: .infinity),
+func walk(_ tree: FakeTree, _ lineage: Lineage, window: Int = 0, menu: [Int] = [], limits: WalkLimits = WalkLimits(deadline: .infinity),
                   cap: Int? = nil, visibleFrame: CGRect? = nil, source: FakeSource? = nil, interactionFlags: Bool = true) -> TreeWalk {
   let walk = TreeWalk(source: source ?? FakeSource(tree, cap: cap), lineage: lineage, limits: limits, markdown: false,
                       interactionFlags: interactionFlags, visibleFrame: visibleFrame)
@@ -87,73 +89,91 @@ private func walk(_ tree: FakeTree, _ lineage: Lineage, window: Int = 0, menu: [
   return walk
 }
 
-/// Index by fake id for the nodes a walk emitted.
-private func indexes(_ walk: TreeWalk) -> [Int: Int] {
-  var map: [Int: Int] = [:]
-  for node in walk.nodes + walk.menuBar { map[Int((node["title"] as! String).dropFirst(5))!] = node["index"] as? Int }
+/// Token by fake id for the nodes a walk emitted.
+private func tokens(_ walk: TreeWalk) -> [Int: String] {
+  var map: [Int: String] = [:]
+  for node in walk.nodes + walk.menuBar { map[Int((node["title"] as! String).dropFirst(5))!] = node["token"] as? String }
   return map
 }
 
+/// The token of a lineage's `n`th allocation, as the engine spells it.
+private func t(_ n: Int) -> String { elementToken(n) }
+
 final class WalkTests: XCTestCase {
-  func testAFreshLineageNumbersFromZeroInPreorderWithTheMenuBarAfterTheWindow() {
+  func testAFreshLineageTokensThePreorderWithTheMenuBarAfterTheWindowAndNoIndexOnTheWire() {
     let tree = FakeTree()
     tree.children = [0: [1, 4], 1: [2, 3], 90: [91]]
     let first = walk(tree, Lineage(), menu: [90, 92])
     XCTAssertEqual(first.nodes.map { $0["title"] as! String }, ["node 0", "node 1", "node 2", "node 3", "node 4"])
-    XCTAssertEqual(first.nodes.map { $0["index"] as! Int }, [0, 1, 2, 3, 4])
+    XCTAssertEqual(first.nodes.map { $0["token"] as! String }, [t(0), t(1), t(2), t(3), t(4)])
+    XCTAssertTrue(first.nodes.allSatisfy { $0["index"] == nil }, "the engine numbers nothing for the model: the service does")
     XCTAssertEqual(first.nodes.map { $0["depth"] as! Int }, [0, 1, 2, 2, 1])
-    XCTAssertEqual(first.menuBar.map { $0["index"] as! Int }, [5, 6])
+    XCTAssertEqual(first.menuBar.map { $0["token"] as! String }, [t(5), t(6)])
     XCTAssertEqual(first.menuBar.map { $0["children"] as! Int }, [0, 0], "menu-bar items are not walked into")
     XCTAssertEqual(first.menuBar.map { $0["depth"] as! Int }, [0, 0])
   }
 
-  func testAnUnchangedTreeKeepsEveryIndex() {
+  func testAnUnchangedTreeKeepsEveryToken() {
     let tree = FakeTree()
     tree.children = [0: [1, 4], 1: [2, 3]]
     let lineage = Lineage()
-    let first = indexes(walk(tree, lineage, menu: [90]))
-    XCTAssertEqual(indexes(walk(tree, lineage, menu: [90])), first)
+    let first = tokens(walk(tree, lineage, menu: [90]))
+    XCTAssertEqual(tokens(walk(tree, lineage, menu: [90])), first)
   }
 
-  func testANewElementTakesTheNextUnusedIndexAndARetiredIndexIsNeverReused() {
+  func testANewElementTakesANewTokenAndARetiredTokenIsNeverReissued() {
     let tree = FakeTree()
     tree.children = [0: [1, 2, 3]]
     let lineage = Lineage()
-    _ = walk(tree, lineage)                       // 0..3
-    tree.children = [0: [1, 2]]                   // 3 vanishes: index 3 retired
-    let second = indexes(walk(tree, lineage))
-    XCTAssertEqual(second, [0: 0, 1: 1, 2: 2])
-    XCTAssertNil(lineage.entry(3), "the vanished element's index is retired")
+    _ = walk(tree, lineage)                       // t0..t3
+    tree.children = [0: [1, 2]]                   // 3 vanishes: t3 retired
+    let second = tokens(walk(tree, lineage))
+    XCTAssertEqual(second, [0: t(0), 1: t(1), 2: t(2)])
+    XCTAssertNil(lineage.entry(3), "the vanished element's token is retired")
     tree.children = [0: [1, 2, 5]]                // a new element after the retired one
-    XCTAssertEqual(indexes(walk(tree, lineage))[5], 4, "the next unused index, never the retired 3")
+    XCTAssertEqual(tokens(walk(tree, lineage))[5], t(4), "a new token, never the retired t3")
   }
 
-  func testAReorderedElementOutsideTheStableRunTakesANewIndex() {
+  func testAnElementAbsentFromOneRevisionReturnsWithANewToken() {
+    let tree = FakeTree()
+    tree.children = [0: [1, 2]]
+    let lineage = Lineage()
+    XCTAssertEqual(tokens(walk(tree, lineage))[2], t(2))
+    tree.children = [0: [1]]                      // absent from one revision: retired there (N = 1)
+    _ = walk(tree, lineage)
+    tree.children = [0: [1, 2]]                   // the same handle returns
+    let back = tokens(walk(tree, lineage))
+    XCTAssertEqual(back[1], t(1))
+    XCTAssertEqual(back[2], t(3), "the returning element is new to the lineage; t2 stays retired")
+    XCTAssertNil(lineage.entry(2))
+  }
+
+  func testAReorderedElementOutsideTheStableRunTakesANewToken() {
     let tree = FakeTree()
     tree.children = [0: [1, 2, 3, 4]]
     let lineage = Lineage()
-    _ = walk(tree, lineage)                       // 1→1, 2→2, 3→3, 4→4
+    _ = walk(tree, lineage)                       // 1→t1, 2→t2, 3→t3, 4→t4
     tree.children = [0: [1, 3, 4, 2]]             // 2 moved last: 3, 4 stay in order
-    let after = indexes(walk(tree, lineage))
-    XCTAssertEqual(after[1], 1)
-    XCTAssertEqual(after[3], 3)
-    XCTAssertEqual(after[4], 4)
-    XCTAssertEqual(after[2], 5, "the moved element is new to the lineage")
+    let after = tokens(walk(tree, lineage))
+    XCTAssertEqual(after[1], t(1))
+    XCTAssertEqual(after[3], t(3))
+    XCTAssertEqual(after[4], t(4))
+    XCTAssertEqual(after[2], t(5), "the moved element is new to the lineage")
   }
 
-  func testAnElementUnderAnotherParentTakesANewIndex() {
+  func testAnElementUnderAnotherParentTakesANewToken() {
     let tree = FakeTree()
     tree.children = [0: [1, 2], 1: [3]]
     let lineage = Lineage()
-    _ = walk(tree, lineage)                       // 0, 1, 3→2, 2→3
+    _ = walk(tree, lineage)                       // 0→t0, 1→t1, 3→t2, 2→t3
     tree.children = [0: [1, 2], 2: [3]]
-    let after = indexes(walk(tree, lineage))
-    XCTAssertEqual(after[1], 1)
-    XCTAssertEqual(after[2], 3)
-    XCTAssertEqual(after[3], 4)
+    let after = tokens(walk(tree, lineage))
+    XCTAssertEqual(after[1], t(1))
+    XCTAssertEqual(after[2], t(3))
+    XCTAssertEqual(after[3], t(4))
   }
 
-  func testDisableDiffsFreshLineageRenumbersFromZero() {
+  func testDisableDiffsFreshLineageStartsItsTokensAfresh() {
     let tree = FakeTree()
     tree.children = [0: [1, 2, 3]]
     let old = Lineage()
@@ -161,7 +181,7 @@ final class WalkTests: XCTestCase {
     tree.children = [0: [3]]
     _ = walk(tree, old)
     let fresh = Lineage()                         // what disableDiff gives the observation
-    XCTAssertEqual(indexes(walk(tree, fresh)), [0: 0, 3: 1])
+    XCTAssertEqual(tokens(walk(tree, fresh)), [0: t(0), 3: t(1)])
     XCTAssertNotEqual(fresh.id, old.id)
   }
 
@@ -174,8 +194,8 @@ final class WalkTests: XCTestCase {
     XCTAssertEqual(cut.nodes.count, 2)
     XCTAssertTrue(cut.nodeCapHit)
     XCTAssertEqual(cut.omitted, 2, "elements 2 and 3 were left on the stack")
-    for index in 0...4 { XCTAssertNotNil(lineage.entry(index), "index \(index) stays resolvable") }
-    XCTAssertEqual(indexes(walk(tree, lineage)), [0: 0, 1: 1, 2: 2, 3: 3, 4: 4], "a full walk afterwards still inherits them")
+    for number in 0...4 { XCTAssertNotNil(lineage.entry(number), "\(t(number)) stays resolvable") }
+    XCTAssertEqual(tokens(walk(tree, lineage)), [0: t(0), 1: t(1), 2: t(2), 3: t(3), 4: t(4)], "a full walk afterwards still inherits them")
   }
 
   func testAWalkPastItsDeadlineStopsAndCarriesOver() {
@@ -259,7 +279,7 @@ final class WalkTests: XCTestCase {
     let cut = walk(tree, Lineage(), menu: [90, 91], limits: WalkLimits(nodes: 4, deadline: .infinity))
     XCTAssertEqual(cut.nodes.count, 2, "the window's walk gets the budget less the menu bar's items")
     XCTAssertEqual(cut.menuBar.count, 2)
-    XCTAssertEqual(cut.menuBar.map { $0["index"] as! Int }, [2, 3], "still numbered after the window's nodes")
+    XCTAssertEqual(cut.menuBar.map { $0["token"] as! String }, [t(2), t(3)], "still tokened after the window's nodes")
     XCTAssertTrue(cut.nodeCapHit)
   }
 
@@ -272,13 +292,13 @@ final class WalkTests: XCTestCase {
     XCTAssertLessThan(cut.nodes.count, 31)
   }
 
-  func testATitleNamesTheIndexesItServesOnceTheWalkIsDone() {
+  func testATitleNamesTheTokensItServesOnceTheWalkIsDone() {
     let tree = FakeTree()
     tree.children = [0: [1, 2, 3]]
     tree.extra = [1: ["AXServesAsTitleForUIElements": [Engine.element(3), Engine.element(77)] as CFArray],
                   2: ["AXServesAsTitleForUIElements": [Engine.element(77)] as CFArray]]
     let walked = walk(tree, Lineage())
-    XCTAssertEqual(walked.nodes[1]["servesAsTitleFor"] as? [Int], [3], "only emitted elements, by index")
+    XCTAssertEqual(walked.nodes[1]["servesAsTitleFor"] as? [String], [t(3)], "only emitted elements, by token")
     XCTAssertNil(walked.nodes[2]["servesAsTitleFor"], "absent when it serves nothing emitted")
     XCTAssertNil(walked.nodes[3]["servesAsTitleFor"])
   }

@@ -5,8 +5,8 @@ import Foundation
 // app waits for quiet first (the vendor's deferred settle): an AXObserver on the application for ten notifications,
 // sampled every 100 ms (250 ms for a web-shaped app), returning once 250 ms have passed since the last notification (or
 // since the wait began), unless the primary window's tree shows a busy sign; at 5 s it gives up, which cua reports as
-// "capped" where the vendor is silent. The counts of what arrived go into `timings`, so probe (c') reads notification
-// rates from the engine.
+// "capped" where the vendor is silent. The request's deadline ends it sooner, as `timeoutReached` (cua's addition: the
+// vendor checks the deadline on receipt only, F §8.9). The counts of what arrived go into `timings`.
 
 /// The ten notifications (F §8.2); `AXValueChanged` is not one.
 let settleNotifications: [String] = [
@@ -29,6 +29,8 @@ struct SettleEvent {
 
 struct SettleReport {
   var capped = false
+  /// The request's deadline passed before the app settled or the cap was reached.
+  var timedOut = false
   var ms = 0.0
   var counts: [String: Int] = [:]
   var ignoredTitleChanges = 0
@@ -44,18 +46,25 @@ struct SettleReport {
 }
 
 /// The vendor's loop (F §8.3) over injected time, notifications and readiness, so it can be tested on a fake clock.
-/// `ready` answers nil with no window (keep waiting), false when the tree is busy, true when it is quiet.
-func runSettle(sampleMs: Double, quietMs: Double = settleQuietMs, capMs: Double = settleCapMs, now: () -> Double,
-               sleep: (Double) -> Void, drain: () -> [SettleEvent], ready: () -> Bool?) -> SettleReport {
+/// `ready` answers nil with no window (keep waiting), false when the tree is busy, true when it is quiet. `deadlineMs`,
+/// the request's deadline after the wait's start, cancels the wait once reached: the sleep that would cross it is cut
+/// there, and no busy walk starts after it.
+func runSettle(sampleMs: Double, quietMs: Double = settleQuietMs, capMs: Double = settleCapMs, deadlineMs: Double = .infinity,
+               now: () -> Double, sleep: (Double) -> Void, drain: () -> [SettleEvent], ready: () -> Bool?) -> SettleReport {
   var report = SettleReport()
   let start = now()
   var last = start
   while true {
+    if now() - start >= deadlineMs {
+      report.timedOut = true
+      break
+    }
     if now() - start >= capMs {
       report.capped = true
       break
     }
-    sleep(sampleMs)
+    sleep(min(sampleMs, deadlineMs - (now() - start)))
+    if now() - start >= deadlineMs { continue }
     for event in drain() {
       report.counts[event.name, default: 0] += 1
       if event.counts { last = max(last, event.at) } else { report.ignoredTitleChanges += 1 }
@@ -81,17 +90,19 @@ struct Settled {
 }
 
 extension Engine {
-  /// Waits for `application` to settle; `webShaped` chooses the 250 ms sampling, `route` the fetch route the busy walk
-  /// reads through. The busy walks' fetch costs accumulate in `costs`.
-  func settle(_ application: AXUIElement, pid: pid_t, webShaped: Bool, route: FetchRoute, costs: FetchCosts) -> Settled {
+  /// Waits for `application` to settle; `webShaped` chooses the 250 ms sampling; `deadline` (monotonic ms) is the
+  /// request's, which cancels the wait (`report.timedOut`). The busy walks' fetch costs accumulate in `costs`.
+  func settle(_ application: AXUIElement, pid: pid_t, webShaped: Bool, deadline requestDeadline: Double, costs: FetchCosts) -> Settled {
     let setupStart = monotonicMilliseconds()
     let observer = NotificationObserver(pid: pid, names: settleNotifications, keep: true)
     let setupMs = monotonicMilliseconds() - setupStart
     var titles: [ElementKey: String] = [:]
     var last: (source: ElementSource, window: AXUIElement, loadedWebArea: Bool)?
-    let deadline = monotonicMilliseconds() + settleCapMs
+    let started = monotonicMilliseconds()
+    let deadline = min(started + settleCapMs, requestDeadline)
     var report = runSettle(
       sampleMs: webShaped ? settleWebSampleMs : settleSampleMs,
+      deadlineMs: requestDeadline - started,
       now: monotonicMilliseconds,
       sleep: { usleep(UInt32($0 * 1000)) },
       drain: {
@@ -109,7 +120,7 @@ extension Engine {
       ready: {
         guard let window = primaryWindow(of: application) else { return nil }
         // Each busy walk reads afresh; the last one's reads are what the observation reuses.
-        let source = makeSource(route)
+        let source = ElementSource()
         let reading = costs.time("settleBusyWalk") { busyWalk(window, source: source, visibleFrame: frame(of: window), deadline: deadline) }
         costs.merge(source.costs)
         source.costs.reset()
@@ -121,7 +132,7 @@ extension Engine {
     let teardownStart = monotonicMilliseconds()
     observer?.invalidate()
     report.observerMs = setupMs + monotonicMilliseconds() - teardownStart
-    guard !report.capped, let last else { return Settled(report: report) }
+    guard !report.capped, !report.timedOut, let last else { return Settled(report: report) }
     return Settled(report: report, source: last.source, window: last.window, loadedWebArea: last.loadedWebArea)
   }
 }
@@ -134,7 +145,7 @@ struct BusyReading {
   var loadedWebArea = false
 }
 
-/// The busy walk (F §8.4) through the observation's fetch route: an `AXBusyIndicator`, an `AXWebArea` whose `AXLoaded`
+/// The busy walk (F §8.4) through the observation's element source: an `AXBusyIndicator`, an `AXWebArea` whose `AXLoaded`
 /// is false, `AXElementBusy` true, or the DOM class `macos-mac-parity-spinner` anywhere under the window (a progress
 /// indicator is not a sign). It walks what the observation would (the width rule, the depth and node caps), stopping at
 /// the first sign or at `deadline`.

@@ -97,49 +97,51 @@ private struct Registration: @unchecked Sendable {
   }
 }
 
-/// The vendor's invalidation monitor (F §3.5): `AXLayoutChanged` and `AXUIElementDestroyed` on the application since
-/// the observation began. An element needs a re-fetch after any layout change or its own destruction.
+/// The vendor's invalidation monitor (F §3.5): `AXLayoutChanged` and `AXUIElementDestroyed` on one process's application
+/// element, recorded into `state`.
 final class InvalidationMonitor: @unchecked Sendable {
   private let observer: NotificationObserver
-  private let state: InvalidationState
 
-  init?(pid: pid_t) {
-    let state = InvalidationState()
+  init?(pid: pid_t, state: InvalidationState) {
     guard let observer = NotificationObserver(pid: pid, names: [kAXLayoutChangedNotification, kAXUIElementDestroyedNotification], keep: false,
                                               onReceive: { state.record($0) }) else { return nil }
     self.observer = observer
-    self.state = state
   }
-
-  /// Starts a new observation's watch: what happened before it no longer matters.
-  func reset() { state.reset() }
-
-  func invalidates(_ element: AXUIElement) -> Bool { state.invalidates(element) }
 
   deinit { observer.invalidate() }
 }
 
-private final class InvalidationState: @unchecked Sendable {
+/// What one process's monitor has seen since the observation began: a layout change, and the elements destroyed. A state
+/// made `invalidatedUntilReset` counts as a layout change until its first reset.
+final class InvalidationState: @unchecked Sendable {
   private let lock = NSLock()
-  private var layoutChanged = false
-  private var destroyed = Set<ElementKey>()
+  private var changed: Bool
+  private var destroyedElements = Set<ElementKey>()
+
+  init(invalidatedUntilReset: Bool = false) { changed = invalidatedUntilReset }
 
   func record(_ notification: ReceivedNotification) {
     lock.lock()
     defer { lock.unlock() }
-    if notification.name == kAXLayoutChangedNotification { layoutChanged = true } else { destroyed.insert(ElementKey(element: notification.element)) }
+    if notification.name == kAXLayoutChangedNotification { changed = true } else { destroyedElements.insert(ElementKey(element: notification.element)) }
   }
 
   func reset() {
     lock.lock()
     defer { lock.unlock() }
-    layoutChanged = false
-    destroyed = []
+    changed = false
+    destroyedElements = []
   }
 
-  func invalidates(_ element: AXUIElement) -> Bool {
+  var layoutChanged: Bool {
     lock.lock()
     defer { lock.unlock() }
-    return layoutChanged || destroyed.contains(ElementKey(element: element))
+    return changed
+  }
+
+  func destroyed(_ element: AXUIElement) -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    return destroyedElements.contains(ElementKey(element: element))
   }
 }

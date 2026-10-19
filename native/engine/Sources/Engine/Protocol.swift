@@ -22,12 +22,14 @@ enum VendorCode: Int {
   case screenLocked = -10020
 }
 
-/// JSON-RPC's own codes, for faults of the envelope rather than of a method.
+/// JSON-RPC's own codes, for faults of the envelope rather than of a method, and the vendor's one server-error code in
+/// that range: an execute whose `deadlineUnixMilliseconds` has already passed on receipt (F §8.9).
 enum RPCCode: Int {
   case parseError = -32700
   case invalidRequest = -32600
   case methodNotFound = -32601
   case invalidParams = -32602
+  case deadlineExceeded = -32001
 }
 
 /// A failed request: `{code, message, errorName}` on the wire, plus `extra` members (shutdown's `connections`, an input

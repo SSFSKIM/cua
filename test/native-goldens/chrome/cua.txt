@@ -49,16 +49,16 @@ Window: "cua scene page - Chrome for Testing", App: Google Chrome for Testing.
 	47 닫기 버튼
 	48 전체 화면 버튼 Help: 이 버튼을 누르면 윈도우를 확대/축소합니다., Secondary Actions: Zoom Window
 	49 최소화 버튼
-50 menu bar
-	51 Google Chrome for Testing
-	52 파일
-	53 수정
-	54 보기
-	55 방문 기록
-	56 북마크
-	57 프로필
-	58 탭
-	59 창
-	60 도움말
+50 (selectable, collapsed) Apple, Secondary Actions: Expand
+51 (selectable, collapsed) Google Chrome for Testing, Secondary Actions: Expand
+52 (selectable, collapsed) 파일, Secondary Actions: Expand
+53 (selectable, collapsed) 수정, Secondary Actions: Expand
+54 (selectable, collapsed) 보기, Secondary Actions: Expand
+55 (selectable, collapsed) 방문 기록, Secondary Actions: Expand
+56 (selectable, collapsed) 북마크, Secondary Actions: Expand
+57 (selectable, collapsed) 프로필, Secondary Actions: Expand
+58 (selectable, collapsed) 탭, Secondary Actions: Expand
+59 (selectable, collapsed) 창, Secondary Actions: Expand
+60 (selectable, collapsed) 도움말, Secondary Actions: Expand
 
 The focused UI element is 22 텍스트 엔트리 영역 (collapsed, settable) Scene notes, Secondary Actions: Expand

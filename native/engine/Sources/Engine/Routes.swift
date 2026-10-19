@@ -42,7 +42,7 @@ func elementClickPlan(forced: InputRoute?, button: MouseButton, count: Int, role
 /// item's menu for the next observation (FUN_100071538 → FUN_100083904 → FUN_100071790), which this engine does not do
 /// yet; pressing or synthesizing would open it a way the vendor never does. Nothing is posted.
 let menuBarItemUnsupported = EngineError(name: "menuBarItemUnsupported",
-  "Clicking a menu bar item is not supported by this engine yet; menu bar items open through a path that comes in a later engine release. Nothing was clicked.")
+  "Clicking a menu bar item is not supported by this engine yet; menu bar items open through a path that comes in a later engine release. Nothing was clicked. Use the app's keyboard shortcut for the command with pressKey instead.")
 
 /// A coordinate click's route: 3, unless the spike forces another.
 func coordinateClickRoute(forced: InputRoute?) -> InputRoute { forced ?? .activation }
@@ -69,7 +69,7 @@ func landsOnStrictDescendant<Element>(_ hit: Element?, of target: Element, paren
 /// What the hit-test at an element's point answered, relative to the element: one ancestry classification serves both
 /// the gate (a strict descendant sends the click to synthesis) and the reach check of a synthesized click.
 enum HitRelation: Equatable {
-  case none        // no answer (a timeout, a busy app)
+  case noAnswer    // no answer (a timeout, a busy app)
   case element     // the element itself
   case descendant  // inside the element
   case ancestor    // a container of the element (coarse hit-testing: the window, the app)
@@ -78,14 +78,14 @@ enum HitRelation: Equatable {
   /// Whether a synthesized click at the point is refused: only when something else is known to cover it.
   var covered: Bool { self == .other }
   /// Whether the point was not confirmed to reach the element, which proceeds but is reported (meta `pointUnconfirmed`).
-  var unconfirmed: Bool { self == .none || self == .ancestor }
+  var unconfirmed: Bool { self == .noAnswer || self == .ancestor }
 }
 
 /// Classifies the hit against `target` by walking parents (each walk up to 300 levels): the hit's to find the target
 /// (descendant), and only if that fails the target's to find the hit (ancestor).
 func hitRelation<Element>(_ hit: Element?, to target: Element, parent: (Element) -> Element?,
                           same: (Element, Element) -> Bool) -> HitRelation {
-  guard let hit else { return .none }
+  guard let hit else { return .noAnswer }
   if same(hit, target) { return .element }
   if landsOnStrictDescendant(hit, of: target, parent: parent, same: same) { return .descendant }
   if landsOnStrictDescendant(target, of: hit, parent: parent, same: same) { return .ancestor }

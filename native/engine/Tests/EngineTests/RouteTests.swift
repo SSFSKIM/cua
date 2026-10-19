@@ -55,6 +55,7 @@ final class ElementClickPlanTests: XCTestCase {
         XCTAssertEqual((error as? EngineError)?.errorName, "menuBarItemUnsupported")
         let message = (error as? EngineError)?.message ?? ""
         XCTAssertTrue(message.contains("later engine release"), message)
+        XCTAssertTrue(message.contains("keyboard shortcut") && message.contains("pressKey"), "the sentence names the alternative: \(message)")
         XCTAssertFalse(message.contains("M2a"), "no milestone names in model-facing text")
       }
     }
@@ -188,7 +189,7 @@ final class VisibleFrameTests: XCTestCase {
   /// No answer (a timeout, a busy app) or a container (coarse hit-testing answers the window or the app) cannot confirm a
   /// cover, and the vendor has no such check: the click proceeds, reported as unconfirmed.
   func testNoAnswerOrAnAncestorProceedsUnconfirmed() {
-    for (hit, expected) in [(Int?.none, HitRelation.none), (3, .ancestor), (1, .ancestor), (0, .ancestor)] {
+    for (hit, expected) in [(Int?.none, HitRelation.noAnswer), (3, .ancestor), (1, .ancestor), (0, .ancestor)] {
       XCTAssertEqual(relation(hit, 4), expected, "\(String(describing: hit))")
       XCTAssertFalse(relation(hit, 4).covered)
       XCTAssertTrue(relation(hit, 4).unconfirmed)

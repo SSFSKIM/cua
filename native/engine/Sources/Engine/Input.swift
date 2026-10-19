@@ -166,7 +166,7 @@ extension Engine {
         func hitAtPoint() -> HitRelation {
           if let relation { return relation }
           let found = point.map { hitRelation(hitTest(application: owner, at: $0), to: entry.element,
-                                              parent: { elementAttribute($0, kAXParentAttribute) }, same: { CFEqual($0, $1) }) } ?? .none
+                                              parent: { elementAttribute($0, kAXParentAttribute) }, same: { CFEqual($0, $1) }) } ?? .noAnswer
           relation = found
           return found
         }

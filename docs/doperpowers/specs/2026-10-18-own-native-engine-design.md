@@ -375,17 +375,26 @@ methods: list_apps, get_app_state, click, drag, paste, perform_secondary_action,
 
 resolve_app → {appPath: string, bundleIdentifier: string, displayName: string, isRunning: boolean, pid: number | null}
 get_app_state {app, disableDiff?: boolean, includeScreenshot?: boolean, outputDirectory: string} → Skyshot
-Skyshot  {app: {bundleIdentifier, displayName, appPath, pid}, window: {title: string, frame: Rect, pid: number},
+Skyshot  {app: {bundleIdentifier, displayName, appPath, pid}, window: {title: string | null, frame: Rect, pid: number},
           lineage: string, revision: number, nodes: Node[], truncated: {depth?: number, count?: number} | null,
           screenshot: {url: string, width: number, height: number, scale: number} | null, focused: string | null,
           selectedText: string | null, selectedElements: string[], menuBar: Node[], settle?: "capped"}
-          (menuBar: the top-level menu-bar items, tokens in the same lineage after the window's nodes; their order in
+          (window.title: the vendor's `ApplicationWindow.title` 0x10076e174, the window server's name for the window, else its
+          AXTitle, "Desktop" for an untitled Finder window at the desktop-icon level, null when there is none (the renderer
+          prints `Unknown`); without Screen Recording the window server gives no name and the AX title stands (M1a.2b).
+          menuBar: the AXMenuBar element at depth 0 (roleDescription null when it lists none, printed `menu bar`), then its
+          top-level items at depth 1, tokens in the same lineage after the window's nodes (`addMenuBarWithImmediateItems`
+          0x1007569b8); the renderer prints the items after the Apple menu, minus any titled `Debug`, through the ordinary line
+          with their actions cleared, as the vendor does, and synthesizes no bar of its own (M1a.2b); their order in
           the text is the renderer's, from sky-behaviour.md. focused and selectedElements: the tokens the focused/selected-text
           trailer names. settle: "capped" when the settle that preceded this observation hit the 5 s cap — on the
-          observation result, since the settle runs at the next get_app_state, not inside the action, R/sky-behaviour.md §23)
-Node     {token: string, depth: number, pid: number, role: string, subrole: string | null, roleDescription: string,
+          observation result, since the settle runs at the next get_app_state, not inside the action, R/sky-behaviour.md §23.
+          timings, the engine's diagnostics, carries focusRead when the focus read named no node: the AXError, "notAnElement"
+          or "outsideTheWalk"; M1a.2b)
+Node     {token: string, depth: number, pid: number, role: string, subrole: string | null, roleDescription: string | null,
           title: string | null, description: string | null, value: string | number | boolean | null,
-          valueType: "string" | "number" | "boolean" | null, valueMarkdown: string | null, identifier: string | null,
+          valueType: "float" | "integer" | "boolean" | "string" | "date" | "unknown" | null, valueMarkdown: string | null,
+          identifier: string | null, actionDescriptions: (string | null)[],
           valueDescription?: string, placeholder?: string, numberOfCharacters?: number, help?: string, url?: string,
           traits?: number, servesAsTitleFor?: string[], rowIndexRange?: [number, number], columnIndexRange?: [number, number],
           domClassList?: string[],
@@ -402,7 +411,16 @@ Node     {token: string, depth: number, pid: number, role: string, subrole: stri
           `(showing lo-hi, … of N)`), valueType backs the `settable, <type>` flag, domClassList
           backs the DOM-origin markers, disclosable/disclosing pairs with expanded for outline rows; the optional
           attributes are present only when the element carries them, so a tree from either fetch route has the same
-          shape. The grammar never prints `checked`, so the flag is dropped)
+          shape. The grammar never prints `checked`, so the flag is dropped. The derivations are the vendor's (FUN_10074cb90 in
+          get_app_state's fullUIContext; `Derivations.swift`, M1a.2b): valueType is `valueTypeName` FUN_10074a794 (the CFNumber's
+          own float or integer type; boolean for a switch or toggle checkbox), null without a value; actionDescriptions runs
+          parallel to actions, the system's description (AXUIElementCopyActionDescription), null where it gives none (the
+          vendor carries the name there and prints a word the renderer supplies, `Raise` for AXRaise); url is
+          AXURL, or for a window without one its AXDocument parsed as a URL; flags.disclosable is AXDisclosing settable;
+          flags.selected is AXSelected, else the selected trait of AXTraits; flags.selectable is never set on a menu or menu-bar
+          item; flags.settable is read only for a node with a value and, in a Chromium window, only for AXComboBox,
+          AXIncrementor (not a date or time field's), AXTextArea, AXTextField and a tab, FUN_100751614; roleDescription is null
+          when the element lists none)
 input results → {meta: {inputRoute: 1 | "2'" | 2 | 3 | 4 | "paste", startedAt: number, endedAt: number,
                         receivedAt: number, hidIdleMs: number, entered?: number, routeAdvice?: string, intervention?: "off",
                         activationGuardMs?: number, pointUnconfirmed?: true}}
@@ -423,7 +441,8 @@ type_text/paste/set_value args may carry concealed: true (set by src/services/sk
 error    {code: number (the vendor's codes where mapped; -10005 otherwise), message: string, errorName: string}
   engine-only errorNames the wrapper admits: concealedInputUnavailable, inputSourceChanged, noScreenshotForCoordinates, activationFailed (all value-free)
   engine-only errorNames the wrapper does not admit (no secret is substituted into a click): menuBarItemUnsupported (a click on a menu-bar
-    item, refused before anything is posted until M2a's activate-and-record path; M1a.2)
+    item, refused before anything is posted until M2a's activate-and-record path; M1a.2; its sentence names the app's keyboard
+    shortcut through pressKey as the alternative, M1a.2b)
   activationGuardMs: route 3's guard time, present only when a guard ran; pointUnconfirmed: true when the hit-test at a synthesized element
     point answered nothing or only a container (M1a.2)
   noScreenshotForCoordinates: a coordinate click, drag or scroll with no usable screenshot on the connection ("Screenshot"); nothing

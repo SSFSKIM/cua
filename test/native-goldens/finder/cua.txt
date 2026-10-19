@@ -242,13 +242,13 @@ Window: "cua-scene-finder", App: Finder.
 	240 ⟨8⟩ Help: ⟨24⟩, Secondary Actions: Zoom Window
 	241 ⟨6⟩
 	242 ⟨3⟩ cua-scene-finder
-243 menu bar
-	244 ⟨6⟩
-	245 ⟨2⟩
-	246 ⟨2⟩
-	247 ⟨2⟩
-	248 ⟨2⟩
-	249 ⟨3⟩
-	250 ⟨3⟩
+243 (selectable, collapsed) ⟨5⟩, Secondary Actions: Expand
+244 (selectable, collapsed) ⟨6⟩, ID: ⟨8⟩, Secondary Actions: Expand
+245 (selectable, collapsed) ⟨2⟩, ID: ⟨8⟩, Secondary Actions: Expand
+246 (selectable, collapsed) ⟨2⟩, ID: ⟨8⟩, Secondary Actions: Expand
+247 (selectable, collapsed) ⟨2⟩, ID: ⟨8⟩, Secondary Actions: Expand
+248 (selectable, collapsed) ⟨2⟩, ID: ⟨8⟩, Secondary Actions: Expand
+249 (selectable, collapsed) ⟨3⟩, ID: ⟨8⟩, Secondary Actions: Expand
+250 (selectable, collapsed) ⟨3⟩, ID: ⟨8⟩, Secondary Actions: Expand
 
 The focused UI element is 37 ⟨3⟩ Description: ⟨5⟩, ID: ⟨8⟩ (showing 0-18 of 205 items)

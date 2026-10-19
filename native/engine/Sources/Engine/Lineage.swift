@@ -256,7 +256,8 @@ struct ElementResolver {
       source: { ElementSource() },
       tree: {
         let application = prepare(AXUIElementCreateApplication(pid))
-        let menuItems = elementAttribute(application, kAXMenuBarAttribute).map { elementList(attribute($0, kAXChildrenAttribute)) } ?? []
+        // The menu bar's element and its top-level items, as the observation emits them.
+        let menuItems = elementAttribute(application, kAXMenuBarAttribute).map { [$0] + elementList(attribute($0, kAXChildrenAttribute)) } ?? []
         return (primaryWindow(of: application), menuItems)
       })
   }

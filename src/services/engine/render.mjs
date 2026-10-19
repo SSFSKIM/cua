@@ -36,15 +36,12 @@
 //   const text = state && !disableDiff ? diff(state, {skyshot, numbering}) : render(skyshot, numbering);
 //   state = {skyshot, numbering};   // every observation advances the baseline [B §9]
 //
-// The menu bar: the vendor prints a `menu bar` element after the window's tree, numbered like any other, with the
-// top-level items (the Apple menu excepted) as its children, each printed by its title alone [golden: all four scenes].
-// The Skyshot carries the items, not the menu-bar element, so the renderer adds that element under MENU_BAR_TOKEN, a
-// token no engine lineage issues; an action naming its index has no element to resolve.
+// The menu bar: the Skyshot's `menuBar` carries the engine's AXMenuBar node and, under it, the top-level items; the
+// vendor prints that element after the window's tree, numbered like any other, with its items (the Apple menu and any
+// titled `Debug` excepted) as its children, their actions cleared (`addMenuBarWithImmediateItems` 0x1007569b8).
 
 // The vendor's selection note [E §5.1], the first of its two variants (they print identically).
 export const NOTE = 'Note: Pay special attention to the content selected by the user. If the user asks a question or refers to the content they are looking at on-screen, they might be referring to the selected content (but they might be referring to something else that\'s visible, too).';
-
-export const MENU_BAR_TOKEN = '#menuBar';
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Numbering.
@@ -144,8 +141,7 @@ export function present(skyshot) {
 function presentUncached(skyshot) {
   const context = {bundleIdentifier: skyshot.app?.bundleIdentifier ?? null};
   const roots = forest(skyshot.nodes ?? []).flatMap(root => transform(root, context));
-  const bar = menuBar(skyshot.menuBar ?? []);
-  if (bar) roots.push(bar);
+  roots.push(...menuBar(skyshot.menuBar ?? []));
   const inTree = new Map();
   (function visit(nodes) { for (const node of nodes) { if (!inTree.has(node.token)) inTree.set(node.token, node); visit(node.children); } })(roots);
   const raw = new Map([...(skyshot.nodes ?? []), ...(skyshot.menuBar ?? [])].map(node => [node.token, node]));
@@ -181,7 +177,7 @@ function forest(nodes) {
 }
 
 // A working copy of one Skyshot node. A text area's value is its Markdown rendering when the engine fetched one
-// (retrieveAttributedTextFromTextAreas [B §5]); actions pass filterActions.
+// (retrieveAttributedTextFromTextAreas [B §5]); actions pass filterActions and keep the descriptions the engine read.
 function element(raw) {
   const markdown = raw.role === 'AXTextArea' && typeof raw.valueMarkdown === 'string' ? raw.valueMarkdown : null;
   return {
@@ -191,19 +187,29 @@ function element(raw) {
     valueDescription: raw.valueDescription ?? null, placeholder: raw.placeholder ?? null, help: raw.help ?? null,
     url: raw.url ?? null, rowIndexRange: raw.rowIndexRange ?? null, columnIndexRange: raw.columnIndexRange ?? null,
     domClassList: raw.domClassList ?? null, servesAsTitleFor: raw.servesAsTitleFor ?? null, shown: raw.shown ?? null,
-    flags: {...raw.flags}, actions: filterActions(raw), children: [],
+    flags: {...raw.flags}, actions: filterActions(raw), descriptions: actionDescriptions(raw), children: [],
   };
 }
 
-// The menu bar [golden]: a `menu bar` element (no role description, so the vendor's fallback word [B §6]) whose
-// children are the top-level items after the Apple menu (the first), each printed by its title alone.
-function menuBar(items) {
-  if (!items.length) return null;
-  const shown = items.slice(1);   // the first item is always the system's Apple menu, whatever its localized title
-  return {
-    ...element({token: MENU_BAR_TOKEN, role: 'AXMenuBar', flags: {enabled: true}}),
-    children: shown.map(item => ({...element({token: item.token, role: 'AXMenuBarItem', title: item.title, flags: {enabled: true}}), titleOnly: true})),
-  };
+// The engine's description of each action, by name, when the Skyshot carries them (M0's recordings carry none).
+function actionDescriptions(raw) {
+  if (!Array.isArray(raw.actionDescriptions)) return null;
+  return new Map((raw.actions ?? []).map((action, i) => [action, raw.actionDescriptions[i]]));
+}
+
+// The menu bar (`addMenuBarWithImmediateItems` 0x1007569b8): the engine's AXMenuBar node, printed by the ordinary line
+// (with no role description, the vendor's fallback word `menu bar` [B §6]; golden: all four scenes), whose children are
+// its top-level items but the first (the system's Apple menu, whatever its localized title: the vendor skips index 0)
+// and any whose title contains `Debug`, each with its actions cleared, so an item prints its title and flags. A
+// Skyshot without the bar's node (M0's recordings) prints its items as top-level elements.
+function menuBar(nodes) {
+  const roots = forest(nodes);
+  for (const root of roots) {
+    if (root.role !== 'AXMenuBar') continue;
+    root.children = root.children.slice(1).filter(item => !String(item.title ?? '').includes('Debug'))
+      .map(item => ({...item, actions: [], actionsCleared: true, children: []}));
+  }
+  return roots;
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -375,7 +381,6 @@ function filterActions(raw) {
 
 // `text`: the non-empty pieces of [role word, flags, parts], joined by one space.
 function lineText(node, urls) {
-  if (node.titleOnly) return node.title ?? '';
   return [roleWord(node), flagsOf(node), parts(node, urls)].filter(Boolean).join(' ');
 }
 
@@ -421,11 +426,12 @@ function flagsOf(node) {
   return out.length ? `(${out.join(', ')})` : '';
 }
 
-// boolean, integer, float or string [E §5.2]. The Skyshot's "number" is split by the value; a type the engine names
-// ("integer", "float") is taken as given.
+// The vendor's six type names, float, integer, boolean, string, date or unknown (valueTypeName, FUN_10074a794), as the
+// engine names them. M0's recordings name a CFNumber "number", which is split by the value.
+const VALUE_TYPES = new Set(['float', 'integer', 'boolean', 'string', 'date', 'unknown']);
 function valueTypeName({valueType, value}) {
-  if (valueType === 'boolean' || typeof value === 'boolean') return 'boolean';
-  if (valueType === 'integer' || valueType === 'float') return valueType;
+  if (VALUE_TYPES.has(valueType)) return valueType;
+  if (typeof value === 'boolean') return 'boolean';
   if (valueType === 'number' || typeof value === 'number') return Number.isInteger(value) ? 'integer' : 'float';
   return 'string';
 }
@@ -491,11 +497,13 @@ export function formatNumber(number) {
   return trim(number.toFixed(15 - exponent));
 }
 
-// The vendor prints the system's action descriptions (AXUIElementCopyActionDescription), localized to the Mac's
-// language (`zoom the window` in TextEdit, `윈도우 확대/축소` in Chrome on the Korean mini), and its English fallbacks
-// where the system gives none: AXRaise prints `Raise` in every scene [golden; E §5.2]. The Skyshot carries no
-// descriptions until M1a.2b, so these are the fallbacks; any other action prints the name a custom action carries,
-// else its AX name split into words (`Zoom Window`, a declared difference in the goldens).
+// The vendor prints each action's description: the system's (AXUIElementCopyActionDescription), localized to the
+// Mac's language (`zoom the window` in TextEdit, `윈도우 확대/축소` in Chrome on the Korean mini); the engine reads them
+// into the Skyshot's `actionDescriptions`, which print as they are. Where the system gives none the vendor carries the
+// action's name (FUN_1007515a8) yet prints a word (AXRaise prints `Raise` in every scene and language [golden; E §5.2]),
+// by a step not read; the engine carries null there, and a null, or a Skyshot without descriptions (M0's recordings),
+// prints these words: the ones the recordings showed, a custom action's name, else its AX name split into words
+// (`Zoom Window`, a declared difference in the goldens).
 const ACTION_WORDS = {
   AXRaise: 'Raise', AXDelete: 'Delete', AXConfirm: 'Confirm', AXCancel: 'Cancel', AXIncrement: 'Increment', AXDecrement: 'Decrement',
   AXScrollLeftByPage: 'Scroll Left', AXScrollRightByPage: 'Scroll Right', AXScrollUpByPage: 'Scroll Up', AXScrollDownByPage: 'Scroll Down',
@@ -507,7 +515,9 @@ const DROPPED_DESCRIPTIONS = new Set(['Add comment', 'Remove unused rows', 'Remo
 // The pseudo-actions SAIExpand and SAICollapse follow a disclosable element's state, last in the vendor's action order
 // [E §2.1; golden: Finder's expanded sidebar sections carry one 8-character secondary action].
 function secondaryActions(node) {
-  const names = node.actions.filter(action => !PRIMARY_ACTIONS.has(action)).map(actionDescription).filter(name => name && !DROPPED_DESCRIPTIONS.has(name));
+  if (node.actionsCleared) return [];
+  const describe = action => node.descriptions?.get(action) ?? actionDescription(action);
+  const names = node.actions.filter(action => !PRIMARY_ACTIONS.has(action)).map(describe).filter(name => name && !DROPPED_DESCRIPTIONS.has(name));
   if (node.flags.disclosable) names.push(node.flags.expanded ? 'Collapse' : 'Expand');
   return names;
 }

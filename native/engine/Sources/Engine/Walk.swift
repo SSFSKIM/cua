@@ -21,9 +21,21 @@ let widthOmitAbove = 499
 let markdownMaxLength = 2_000
 private let markdownRoles: Set<String> = [kAXTextAreaRole, kAXTextFieldRole]
 
-/// Whether a walk reads an element's value settability: whenever it has a value (the full read set; M0's per-role
-/// reduction saved nothing and is withdrawn).
-func readsValueSettable(_ data: ElementData) -> Bool { data.value != nil }
+/// Whether a walk reads an element's value settability: whenever it has a value (the vendor's value branch of
+/// FUN_10074cb90 runs only for a value it holds) and the role's settability counts in the window (Derivations.swift).
+func readsValueSettable(_ data: ElementData, parentRole: String?, chromium: Bool) -> Bool {
+  data.value != nil && readsValueSettability(role: data.role, subrole: data.subrole, parentRole: parentRole, chromium: chromium)
+}
+
+/// A node's flags as the walk derives them (FUN_10074cb90; Derivations.swift).
+struct NodeFlags {
+  var settable = false
+  var focusable = false
+  var selectable = false
+  var selected = false
+  /// AXDisclosing listed and settable; nil when the element does not carry AXDisclosing.
+  var disclosable: Bool?
+}
 
 struct WalkLimits {
   var depth = maxDepth
@@ -110,6 +122,8 @@ final class TreeWalk {
   let markdown: Bool
   /// Whether `focusable` and `selectable` are read (one settability call each per element); the spike's switch.
   let interactionFlags: Bool
+  /// Whether the window is Chromium's (`isChromium`, F §1.7), where value settability counts only for some roles.
+  let chromium: Bool
   let visibleFrame: CGRect?
 
   private(set) var nodes: [[String: Any]] = []
@@ -128,6 +142,9 @@ final class TreeWalk {
   private(set) var markdownFetches = 0
   /// Nodes whose element is a title, with the elements it serves, mapped to tokens once the walk is done.
   private var titles: [(inMenu: Bool, position: Int, targets: [AXUIElement])] = []
+  /// The system's action descriptions met in this walk, by process and action name (nil: it gave none): one
+  /// description call each.
+  private var descriptions: [String: String?] = [:]
 
   private struct Pending {
     let element: AXUIElement
@@ -135,6 +152,9 @@ final class TreeWalk {
     let parent: Int?
     let inherited: Int?
     let inMenu: Bool
+    var parentRole: String? = nil
+    /// The AXMenuBar element itself, read through the attributes it lists.
+    var menuBarElement = false
   }
 
   /// One element read, not yet numbered.
@@ -143,7 +163,9 @@ final class TreeWalk {
     let data: ElementData
     let owner: pid_t
     let actions: [String]
-    let flags: (settable: Bool, focusable: Bool, selectable: Bool)
+    let actionDescriptions: [String?]
+    let flags: NodeFlags
+    let url: String?
     let valueMarkdown: String?
     let children: [AXUIElement]
     let shown: Shown?
@@ -155,13 +177,15 @@ final class TreeWalk {
     case deadline
   }
 
-  init(source: ElementSource, lineage: Lineage, limits: WalkLimits, markdown: Bool, interactionFlags: Bool = true, visibleFrame: CGRect?) {
+  init(source: ElementSource, lineage: Lineage, limits: WalkLimits, markdown: Bool, interactionFlags: Bool = true, chromium: Bool = false,
+       visibleFrame: CGRect?) {
     self.source = source
     self.lineage = lineage
     previous = lineage.current
     self.limits = limits
     self.markdown = markdown
     self.interactionFlags = interactionFlags
+    self.chromium = chromium
     self.visibleFrame = visibleFrame
     revision = Revision()
   }
@@ -169,12 +193,19 @@ final class TreeWalk {
   /// The token of an element this walk emitted; nil for one it did not.
   func token(of element: AXUIElement) -> String? { seen[ElementKey(element: element)].map(elementToken) }
 
-  /// Walks `window` then `menuItems`, numbering both in one lineage (the menu bar's items after the window's nodes).
-  /// The menu bar's items are read first and their nodes and bytes reserved, so a cut of the window's walk by the node
-  /// or byte budget never drops the menu bar.
-  func run(window: AXUIElement, menuItems: [AXUIElement]) {
-    let menuInherited = previous.map { matchSiblings(old: $0.siblings(of: nil, menu: true), new: menuItems) } ?? Array(repeating: nil, count: menuItems.count)
-    let menuPending = zip(menuItems, menuInherited).map { Pending(element: $0, depth: 0, parent: nil, inherited: $1, inMenu: true) }
+  /// Walks `window` then the menu bar, numbering both in one lineage (the menu bar after the window's nodes): the
+  /// AXMenuBar element at depth 0 and its top-level items at depth 1 under it, as the vendor's
+  /// `addMenuBarWithImmediateItems` 0x1007569b8 adds them (without a menu-bar element, the items at depth 0). The menu
+  /// bar is read first and its nodes and bytes reserved, so a cut of the window's walk by the node or byte budget never
+  /// drops it.
+  func run(window: AXUIElement, menuBar: AXUIElement?, menuItems: [AXUIElement]) {
+    let menuElements = (menuBar.map { [$0] } ?? []) + menuItems
+    let menuInherited = previous.map { matchSiblings(old: $0.siblings(of: nil, menu: true), new: menuElements) } ?? Array(repeating: nil, count: menuElements.count)
+    let menuPending = zip(menuElements, menuInherited).enumerated().map { position, pair in
+      let isBar = menuBar != nil && position == 0
+      return Pending(element: pair.0, depth: menuBar != nil && !isBar ? 1 : 0, parent: nil, inherited: pair.1, inMenu: true,
+                     parentRole: isBar ? nil : (menuBar != nil ? kAXMenuBarRole : nil), menuBarElement: isBar)
+    }
     var menuReads: [(Pending, Read)] = []
     var menuUnread: [Pending] = []
     var reservedBytes = 0
@@ -183,7 +214,7 @@ final class TreeWalk {
       switch read(pending) {
       case .read(let read):
         menuReads.append((pending, read))
-        reservedBytes += jsonBytes(wire(read, number: lineage.nextNumber, depth: 0)) + 1
+        reservedBytes += jsonBytes(wire(read, number: lineage.nextNumber, depth: pending.depth)) + 1
       case .failed: failures += 1
       case .deadline:
         menuUnread = Array(menuPending[position...])
@@ -196,6 +227,10 @@ final class TreeWalk {
                nodeLimit: limits.nodes - menuReads.count, byteLimit: limits.bytes - reservedBytes)
 
     for (pending, read) in menuReads where seen[ElementKey(element: read.element)] == nil { emit(read, pending) }
+    // The menu bar's node counts the items emitted under it (the walk reads them beside it, not through AXChildren).
+    if menuReads.first?.0.menuBarElement == true, self.menuBar.first?["role"] as? String == kAXMenuBarRole {
+      self.menuBar[0]["children"] = self.menuBar.count - 1
+    }
     if !menuUnread.isEmpty { cut(.deadline, remaining: menuUnread) }
     resolveTitles()
   }
@@ -223,7 +258,8 @@ final class TreeWalk {
           inherited = Array(repeating: nil, count: read.children.count)
         }
         for (child, childInherited) in zip(read.children, inherited).reversed() {
-          stack.append(Pending(element: child, depth: next.depth + 1, parent: number, inherited: childInherited, inMenu: false))
+          stack.append(Pending(element: child, depth: next.depth + 1, parent: number, inherited: childInherited, inMenu: false,
+                               parentRole: read.data.role))
         }
       }
     }
@@ -266,14 +302,22 @@ final class TreeWalk {
   /// deadline is checked between a node's calls, not only between nodes, so one slow element cannot overrun it.
   private func read(_ pending: Pending) -> Outcome {
     let element = prepare(pending.element)
-    guard let data = source.data(element) else { return .failed }
+    guard let data = pending.menuBarElement ? source.listedData(element) : source.data(element) else { return .failed }
     if pastDeadline() { return .deadline }
     let owner = source.owner(element)
     let actions = source.actions(element)
+    let actionDescriptions = actions.map { describe(action: $0, of: element, owner: owner) }
     if pastDeadline() { return .deadline }
-    let settable = readsValueSettable(data) && source.isSettable(element, kAXValueAttribute, phase: "settable")
-    let focusable = interactionFlags && data.focused != nil && source.isSettable(element, kAXFocusedAttribute, phase: "focusable")
-    let selectable = data.selectable ?? (interactionFlags && data.selected != nil && source.isSettable(element, kAXSelectedAttribute, phase: "selectable"))
+    // FUN_10074cb90's full-UI-context flags (Derivations.swift).
+    var flags = NodeFlags()
+    flags.settable = readsValueSettable(data, parentRole: pending.parentRole, chromium: chromium)
+      && source.isSettable(element, kAXValueAttribute, phase: "settable")
+    flags.focusable = interactionFlags && data.focused != nil && source.isSettable(element, kAXFocusedAttribute, phase: "focusable")
+    flags.selectable = selectableRole(data.role)
+      && (data.selectable ?? (interactionFlags && data.selected != nil && source.isSettable(element, kAXSelectedAttribute, phase: "selectable")))
+    flags.selected = isSelected(selected: data.selected, traits: data.traits)
+    if data.disclosing != nil { flags.disclosable = source.isSettable(element, kAXDisclosingAttribute, phase: "disclosable") }
+    let url = nodeURL(role: data.role, url: data.url) { source.document(element) }
     if pastDeadline() { return .deadline }
     var valueMarkdown: String?
     if markdown, markdownRoles.contains(data.role),
@@ -294,13 +338,28 @@ final class TreeWalk {
       }
     }
     if pastDeadline() { return .deadline }
-    return .read(Read(element: element, data: data, owner: owner, actions: actions, flags: (settable, focusable, selectable),
-                      valueMarkdown: valueMarkdown, children: children, shown: shown))
+    return .read(Read(element: element, data: data, owner: owner, actions: actions, actionDescriptions: actionDescriptions, flags: flags,
+                      url: url, valueMarkdown: valueMarkdown, children: children, shown: shown))
+  }
+
+  /// An action's description: the system's, nil when it gives none. The vendor's pair (FUN_1007515a8) carries the
+  /// action's name in that case and prints a word of its own for it (`Raise` for AXRaise, in every scene and language),
+  /// by a step not read; the Skyshot carries null so the renderer can print its word. Descriptions are the app's per
+  /// action name, so a walk asks once per process and name (cua's; the vendor asks per element).
+  private func describe(action: String, of element: AXUIElement, owner: pid_t) -> String? {
+    let key = "\(owner)\u{0}\(action)"
+    if let known = descriptions[key] { return known }
+    let description = source.actionDescription(element, action)
+    descriptions[key] = description
+    return description
   }
 
   private func wire(_ read: Read, number: Int, depth: Int) -> [String: Any] {
-    nodeWire(token: elementToken(number), depth: depth, pid: read.owner, data: read.data, actions: read.actions, flags: read.flags,
-             valueMarkdown: read.valueMarkdown, children: read.children.count, shown: read.shown)
+    var node = nodeWire(token: elementToken(number), depth: depth, pid: read.owner, data: read.data, actions: read.actions, flags: read.flags,
+                        valueMarkdown: read.valueMarkdown, children: read.children.count, shown: read.shown)
+    node["actionDescriptions"] = read.actionDescriptions.map { $0 ?? NSNull() as Any }
+    if let url = read.url { node["url"] = url }
+    return node
   }
 
   /// Tokens a read element (its inherited token, else a new one) and adds its node and its table entry.
@@ -332,25 +391,26 @@ final class TreeWalk {
 }
 
 /// A Skyshot node (Interfaces, Node): the optional attributes present only when the element carries them.
-func nodeWire(token: String, depth: Int, pid: pid_t, data: ElementData, actions: [String], flags: (settable: Bool, focusable: Bool, selectable: Bool),
+func nodeWire(token: String, depth: Int, pid: pid_t, data: ElementData, actions: [String], flags: NodeFlags,
               valueMarkdown: String?, children: Int, shown: Shown?) -> [String: Any] {
-  let value = scalar(data.value)
   var flagsWire: [String: Any] = [
     "enabled": data.enabled ?? true,
     "focused": data.focused ?? false,
     "focusable": flags.focusable,
-    "selected": data.selected ?? false,
+    "selected": flags.selected,
     "selectable": flags.selectable,
     "settable": flags.settable,
   ]
   if let disclosing = data.disclosing {
-    flagsWire["disclosable"] = true
+    flagsWire["disclosable"] = flags.disclosable ?? false
     flagsWire["expanded"] = disclosing
   }
   var node: [String: Any] = [
     "token": token, "depth": depth, "pid": Int(pid), "role": data.role, "subrole": data.subrole ?? NSNull(),
-    "roleDescription": data.roleDescription ?? "", "title": data.title ?? NSNull(), "description": data.description ?? NSNull(),
-    "value": value ?? NSNull(), "valueType": valueType(value), "valueMarkdown": valueMarkdown ?? NSNull(),
+    "roleDescription": data.roleDescription ?? NSNull(), "title": data.title ?? NSNull(), "description": data.description ?? NSNull(),
+    "value": scalar(data.value) ?? NSNull(),
+    "valueType": data.value.map { valueTypeName(of: $0, role: data.role, subrole: data.subrole) } ?? NSNull(),
+    "valueMarkdown": valueMarkdown ?? NSNull(),
     "identifier": data.identifier ?? NSNull(), "flags": flagsWire, "actions": actions, "frame": rectWire(data.frame),
     "children": children,
   ]
@@ -365,17 +425,6 @@ func nodeWire(token: String, depth: Int, pid: pid_t, data: ElementData, actions:
   if let domClassList = data.domClassList { node["domClassList"] = domClassList }
   if let shown { node["shown"] = shown.wire }
   return node
-}
-
-/// The value's type as the grammar's `settable, <type>` names it: "string", "number", "boolean", or null.
-func valueType(_ value: Any?) -> Any {
-  switch value {
-  case nil: return NSNull()
-  case is String: return "string"
-  case is Bool: return "boolean"
-  case is Int64, is Double: return "number"
-  default: return NSNull()
-  }
 }
 
 private let monospaceFamilies = ["menlo", "monaco", "courier", "sf mono", "sfmono", "andale mono", "consolas", "source code"]

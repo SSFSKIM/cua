@@ -142,14 +142,51 @@ class ElementSource: @unchecked Sendable {
 
   func read(_ element: AXUIElement) -> ElementData? { publicData(element) }
 
-  func publicData(_ element: AXUIElement) -> ElementData? {
+  /// The element's attributes read through only those it lists, the vendor's read of an element outside the subtree
+  /// its prefetch covered (FUN_1007542cc: AXUIElementCopyAttributeNames intersected with the attribute set, then one
+  /// AXUIElementCopyMultipleAttributeValues; F §1.3): the menu bar's. Cached with the other reads.
+  final func listedData(_ element: AXUIElement) -> ElementData? {
+    let key = ElementKey(element: element)
+    if let known = dataCache[key] { return known }
+    let read = readListed(element)
+    if let read { dataCache[key] = read }
+    return read
+  }
+
+  func readListed(_ element: AXUIElement) -> ElementData? {
+    let listed: [String]? = costs.time("attributes") {
+      var names: CFArray?
+      guard AXUIElementCopyAttributeNames(prepare(element), &names) == .success else { return nil }
+      return names as? [String]
+    }
+    guard let listed else { return nil }
+    let names = Set(listed)
+    return publicData(element, attributes: observedAttributes.filter(names.contains))
+  }
+
+  func publicData(_ element: AXUIElement, attributes: [String] = observedAttributes) -> ElementData? {
     costs.time("attributes") {
       var values: CFArray?
-      let error = AXUIElementCopyMultipleAttributeValues(prepare(element), observedAttributes as CFArray, AXCopyMultipleAttributeOptions(rawValue: 0), &values)
-      guard error == .success, let slots = values as? [Any], slots.count == observedAttributes.count else { return nil }
+      let error = AXUIElementCopyMultipleAttributeValues(prepare(element), attributes as CFArray, AXCopyMultipleAttributeOptions(rawValue: 0), &values)
+      guard error == .success, let slots = values as? [Any], slots.count == attributes.count else { return nil }
       var decoded: [String: CFTypeRef] = [:]
-      for (name, slot) in zip(observedAttributes, slots) { if let value = present(slot) { decoded[name] = value } }
+      for (name, slot) in zip(attributes, slots) { if let value = present(slot) { decoded[name] = value } }
       return ElementData(values: decoded)
+    }
+  }
+
+  /// A window's AXDocument, read only for a window without an AXURL (nodeURL).
+  func document(_ element: AXUIElement) -> String? {
+    costs.time("attributes") { stringAttribute(element, kAXDocumentAttribute) }
+  }
+
+  /// The system's description of one of the element's actions (AXUIElementCopyActionDescription, the vendor's
+  /// `AXUIElementRef.description(for:)` 0x1006e8bf8), localized to the app's language; nil when it gives none.
+  func actionDescription(_ element: AXUIElement, _ action: String) -> String? {
+    costs.time("actionDescriptions") {
+      var description: CFString?
+      guard AXUIElementCopyActionDescription(element, action as CFString, &description) == .success, let description else { return nil }
+      return bounded(description as String)
     }
   }
 

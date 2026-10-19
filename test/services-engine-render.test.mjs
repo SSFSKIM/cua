@@ -3,7 +3,7 @@
 // item 3; the rules are sky-behaviour.md §5–§8). The scenes' recorded captures are test/services-engine-render-goldens.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {advanceNumbering, indexState, render, formatNumber, shortenUrl, MENU_BAR_TOKEN, NOTE} from '../src/services/engine/render.mjs';
+import {advanceNumbering, indexState, render, formatNumber, shortenUrl, NOTE} from '../src/services/engine/render.mjs';
 import {node, skyshot} from './native-goldens/builder.mjs';
 
 const win = (children = []) => [node('w', 0, 'AXWindow', {roleDescription: 'standard window', title: 'W', actions: ['AXRaise']}), ...children];
@@ -174,6 +174,31 @@ test('actions: the vendor\'s words for the actions it names, a custom action\'s 
   assert.deepEqual(lines(shot).slice(1), ['\t1 scroll area Secondary Actions: Scroll Left, Scroll Up, Zoom Window', '\t2 Open, Secondary Actions: Confirm']);
 });
 
+test('actions print the descriptions the Skyshot carries, the system\'s, in place of the fallback words', () => {
+  const shot = skyshot(win([node('s', 1, 'AXScrollArea', {roleDescription: 'scroll area',
+    actions: ['AXScrollLeftByPage', 'AXZoomWindow', 'AXShowDefaultUI', 'AXPress', 'AXRemoveComment'],
+    actionDescriptions: ['왼쪽으로 스크롤', '윈도우 확대/축소', 'show default UI', '누르기', 'Add comment']})]));
+  assert.equal(lines(shot)[1], '\t1 scroll area Secondary Actions: 왼쪽으로 스크롤, 윈도우 확대/축소');
+});
+
+test('an action the system gives no description (null) prints the fallback word', () => {
+  const shot = skyshot(win([node('s', 1, 'AXScrollArea', {roleDescription: 'scroll area',
+    actions: ['AXRaise', 'AXZoomWindow'], actionDescriptions: [null, '윈도우 확대/축소']})]));
+  assert.equal(lines(shot)[1], '\t1 scroll area Secondary Actions: Raise, 윈도우 확대/축소');
+});
+
+test('the value type the engine names: float, integer, boolean, date and unknown print; a string prints plain settable', () => {
+  const typed = (valueType, value) => node('v', 1, 'AXValueIndicator', {roleDescription: 'value indicator', title: 'V', value, valueType, flags: {settable: true}});
+  const shot = skyshot(win([typed('float', 0), typed('integer', 3), typed('date', null), typed('unknown', null), typed('string', 's')].map((each, i) => ({...each, token: `v${i}`}))));
+  assert.deepEqual(lines(shot).slice(1), ['\t1 value indicator (settable, float) V, Value: 0', '\t2 value indicator (settable, integer) V, Value: 3',
+    '\t3 value indicator (settable, date) V', '\t4 value indicator (settable, unknown) V', '\t5 value indicator (settable) V, Value: s']);
+});
+
+test('a window with no title prints Unknown, as the vendor\'s llmDescription defaults it', () => {
+  const shot = skyshot(win(), {window: {title: null, frame: null, pid: 1}});
+  assert.ok(render(shot, advanceNumbering(null, shot)).startsWith('Window: "Unknown", App: Example.\n'));
+});
+
 test('the width rule\'s partial children: (showing <ranges> of <count> items)', () => {
   const shot = skyshot(win([node('o', 1, 'AXOutline', {roleDescription: 'outline', title: 'O', flags: {focusable: true},
     shown: {count: 18, of: 205, subset: 'visible', ranges: [[0, 9], [12, 20]]}})]));
@@ -182,13 +207,20 @@ test('the width rule\'s partial children: (showing <ranges> of <count> items)', 
   assert.equal(lines(omitted)[1], '\t1 outline O');
 });
 
-test('the menu bar: an element after the window\'s tree, its items after the Apple menu by title alone', () => {
-  const item = (token, title) => node(token, 0, 'AXMenuBarItem', {roleDescription: 'menu bar item', title, actions: ['AXCancel', 'AXPress', 'AXPick'], flags: {selectable: true, disclosable: true}});
-  const shot = skyshot(win([button('a', 1, 'A')]), {menuBar: [item('m0', 'Apple'), item('m1', 'Example'), item('m2', 'File')]});
+test('the menu bar: the engine\'s AXMenuBar node after the window\'s tree, its items after the Apple menu, none titled Debug, with no actions', () => {
+  const item = (token, title, fields = {}) => node(token, 1, 'AXMenuBarItem', {roleDescription: 'menu bar item', title, actions: ['AXCancel', 'AXPress', 'AXPick', 'AXRaise'],
+    actionDescriptions: ['cancel', 'press', 'pick', 'raise'], ...fields});
+  const bar = node('mb', 0, 'AXMenuBar', {roleDescription: null});
+  const items = [item('m0', 'Apple'), item('m1', 'Example'), item('m2', 'Debug Tools'), item('m3', 'File', {flags: {enabled: false}})];
+  const shot = skyshot(win([button('a', 1, 'A')]), {menuBar: [bar, ...items]});
   const numbering = advanceNumbering(null, shot);
-  assert.deepEqual(lines(shot), ['0 standard window W, Secondary Actions: Raise', '\t1 button A', '2 menu bar', '\t3 Example', '\t4 File']);
-  assert.deepEqual(indexState(numbering, 2), {state: 'live', token: MENU_BAR_TOKEN});
-  assert.ok(!numbering.indexes.has('m0'));
+  assert.deepEqual(lines(shot), ['0 standard window W, Secondary Actions: Raise', '\t1 button A', '2 menu bar', '\t3 Example', '\t4 (disabled) File']);
+  assert.deepEqual(indexState(numbering, 2), {state: 'live', token: 'mb'}, 'the bar is the engine\'s element, resolvable like any other');
+  assert.ok(!numbering.indexes.has('m0') && !numbering.indexes.has('m2'));
+  const described = skyshot(win(), {menuBar: [node('mb', 0, 'AXMenuBar', {roleDescription: '메뉴 막대'}), ...items]});
+  assert.equal(lines(described)[1], '1 메뉴 막대', 'a role description the bar carries is its role word');
+  const recorded = skyshot(win(), {menuBar: items.map(each => ({...each, depth: 0, actions: ['AXCancel', 'AXPress', 'AXPick'], actionDescriptions: undefined}))});
+  assert.deepEqual(lines(recorded).slice(1, 3), ['1 Apple', '2 Example'], 'items without their bar (M0\'s recordings) print as top-level elements');
 });
 
 test('the trailer: selected text, else selected elements (one tab), else the focused element', () => {

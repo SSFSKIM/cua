@@ -217,12 +217,12 @@ final class FetchDecodeTests: XCTestCase {
       "AXChildren": [element(1), element(2)] as CFArray, "AXHelp": "help" as CFString,
     ]
     let node = nodeWire(token: elementToken(7), depth: 0, pid: 1, data: ElementData(values: values), actions: [],
-                        flags: (false, false, false), valueMarkdown: nil, children: 0, shown: nil)
+                        flags: NodeFlags(disclosable: true), valueMarkdown: nil, children: 0, shown: nil)
     XCTAssertEqual(node["token"] as? String, "t7")
     XCTAssertNil(node["index"])
     XCTAssertEqual(node["rowIndexRange"] as? [Int], [3, 5])
     XCTAssertEqual(node["domClassList"] as? [String], ["x", "y"])
-    XCTAssertEqual(node["valueType"] as? String, "number")
+    XCTAssertEqual(node["valueType"] as? String, "integer")
     XCTAssertEqual((node["flags"] as? [String: Any])?["expanded"] as? Bool, true)
     XCTAssertEqual((node["flags"] as? [String: Any])?["disclosable"] as? Bool, true)
     XCTAssertNil(node["placeholder"], "an attribute the element does not carry is absent")
@@ -237,13 +237,5 @@ final class FetchDecodeTests: XCTestCase {
   func testPositionRanges() {
     XCTAssertEqual(positionRanges([0, 1, 2, 5, 7, 6]), [[0, 3], [5, 8]])
     XCTAssertEqual(positionRanges([]), [])
-  }
-
-  func testValueTypes() {
-    XCTAssertEqual(valueType("a") as? String, "string")
-    XCTAssertEqual(valueType(true) as? String, "boolean")
-    XCTAssertEqual(valueType(Int64(3)) as? String, "number")
-    XCTAssertEqual(valueType(2.5) as? String, "number")
-    XCTAssertTrue(valueType(nil) is NSNull)
   }
 }

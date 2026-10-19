@@ -175,7 +175,8 @@ extension Engine {
       lineage.resetWatches()
     }
 
-    let menuItems = timings.time("menuBar") { elementAttribute(application, kAXMenuBarAttribute).map { elementList(attribute($0, kAXChildrenAttribute)) } ?? [] }
+    let menuBarElement = timings.time("menuBar") { elementAttribute(application, kAXMenuBarAttribute) }
+    let menuItems = timings.time("menuBar") { menuBarElement.map { elementList(attribute($0, kAXChildrenAttribute)) } ?? [] }
     let windowFrame = frame(of: window)
     // The window capture runs beside the tree walk (in-sitting tuning iteration 1): it needs only the window and its
     // frame, and the walk does not depend on it, so the observation costs the longer of the two, not their sum.
@@ -203,8 +204,8 @@ extension Engine {
     }
     let deadline = monotonicMilliseconds() + Double(min(observationDeadlineMs, max(0, context.deadline - unixMilliseconds())))
     let walk = TreeWalk(source: source, lineage: lineage, limits: WalkLimits(deadline: deadline), markdown: markdownEnabled,
-                        interactionFlags: interactionFlags, visibleFrame: windowFrame)
-    timings.time("walk") { walk.run(window: window, menuItems: menuItems) }
+                        interactionFlags: interactionFlags, chromium: chromium, visibleFrame: windowFrame)
+    timings.time("walk") { walk.run(window: window, menuBar: menuBarElement, menuItems: menuItems) }
     timings.merge(source.costs)
     timings.set("nodes", walk.nodes.count + walk.menuBar.count)
     timings.set("markdownFetches", walk.markdownFetches)
@@ -221,9 +222,19 @@ extension Engine {
     var focused: Any = NSNull()
     var selectedText: Any = NSNull()
     var selectedElements: [String] = []
+    var focusRead: String?
     timings.time("focus") {
-      guard let element = elementAttribute(application, kAXFocusedUIElementAttribute) else { return }
-      if let token = walk.token(of: element) { focused = token }
+      // The vendor's focus is the application's AXFocusedUIElement (ApplicationUIElement.focusedUIElementContext()
+      // 0x100774a9c, tolerating no value and an unsupported attribute; F §1.7), with no fallback. Why a read answered
+      // nothing is kept in the timings, so a live comparison can tell an app that answered no focus from one whose
+      // focused element the walk did not reach.
+      let read = copyAttribute(application, kAXFocusedUIElementAttribute)
+      guard let value = read.value, CFGetTypeID(value) == AXUIElementGetTypeID() else {
+        focusRead = read.error == .success ? "notAnElement" : "AXError \(read.error.rawValue)"
+        return
+      }
+      let element = prepare(value as! AXUIElement)
+      if let token = walk.token(of: element) { focused = token } else { focusRead = "outsideTheWalk" }
       if let text = stringAttribute(element, kAXSelectedTextAttribute), !text.isEmpty { selectedText = bounded(text) }
       // The selected elements the trailer names: the focused element's selected children, else its selected rows.
       for name in [kAXSelectedChildrenAttribute, kAXSelectedRowsAttribute] {
@@ -231,6 +242,7 @@ extension Engine {
         if !selected.isEmpty { selectedElements = selected; break }
       }
     }
+    if let focusRead { timings.set("focusRead", focusRead) }
     lineage.commit(walk.revision)
     // A process the walk met for the first time (a panel's service) is watched from now on; it cannot vouch for the time
     // since its elements were read, so it invalidates until the next observation.
@@ -253,7 +265,7 @@ extension Engine {
     if walk.omitted > 0 { truncated["count"] = walk.omitted }
     var skyshot: [String: Any] = [
       "app": app.appWire,
-      "window": ["title": stringAttribute(window, kAXTitleAttribute).map(bounded) ?? "", "frame": rectWire(windowFrame), "pid": Int(pid(of: window))],
+      "window": ["title": windowTitle(window, pid: pid(of: window), frame: windowFrame) ?? NSNull(), "frame": rectWire(windowFrame), "pid": Int(pid(of: window))],
       "lineage": lineage.id,
       "revision": lineage.revision,
       "nodes": walk.nodes,
@@ -267,6 +279,15 @@ extension Engine {
     ]
     if let settleMarker { skyshot["settle"] = settleMarker }
     return skyshot
+  }
+
+  /// The header's title for the observed window (Derivations.swift, `headerTitle`): the window server's name for it,
+  /// else its AXTitle; nil when it has neither.
+  func windowTitle(_ window: AXUIElement, pid owner: pid_t, frame: CGRect?) -> String? {
+    let server = windowNumber(of: window, pid: owner, frame: frame).map(windowServerName) ?? (name: nil, desktopLevel: false)
+    let ownerIsFinder = server.desktopLevel && NSRunningApplication(processIdentifier: owner)?.bundleIdentifier == "com.apple.finder"
+    return headerTitle(windowName: server.name, axTitle: stringAttribute(window, kAXTitleAttribute).map(bounded),
+                       desktopLevel: server.desktopLevel, ownerIsFinder: ownerIsFinder)
   }
 
   /// The app's primary window; for an app just launched, polled until `deadline`.

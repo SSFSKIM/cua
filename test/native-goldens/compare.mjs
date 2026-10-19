@@ -228,8 +228,10 @@ export function compare(vendorText, cuaText, {kind = 'full', structural = false,
 export const CORRECTIONS = {
   // flags.disclosable only where the element is expanded (no vendor line prints `collapsed`).
   disclosableWhenExpanded: node => (node.flags.disclosable && !node.flags.expanded ? {...node, flags: {...node.flags, disclosable: false}} : node),
-  // flags.settable only on the roles a rule names, and on Boolean values.
-  settableRoles: (node, {roles}) => (node.flags.settable && !roles.includes(node.role) && node.valueType !== 'boolean' ? {...node, flags: {...node.flags, settable: false}} : node),
+  // flags.settable in a Chromium window only where the vendor reads it (FUN_100751614; the engine's
+  // readsValueSettability): the roles a rule names, and a tab (AXRadioButton, subrole AXTabButton).
+  chromiumSettable: (node, {roles}) => (node.flags.settable && !roles.includes(node.role) && !(node.role === 'AXRadioButton' && node.subrole === 'AXTabButton')
+    ? {...node, flags: {...node.flags, settable: false}} : node),
   // A numeric value's type as the element's CFNumber carried it, by role.
   valueType: (node, {roles, valueType}) => (roles.includes(node.role) && node.valueType === 'number' ? {...node, valueType} : node),
   // The identifiers the vendor drops by their `_`/`NS` prefix, which the redaction hid (each replaced by its length):
@@ -237,11 +239,26 @@ export const CORRECTIONS = {
   hiddenIdentifier: (node, {tokens}, shot) => (tokens[shot.lineage]?.includes(node.token) ? {...node, identifier: null} : node),
   // The window element's URL (its document).
   windowUrl: (node, {url}) => (node.role === 'AXWindow' && node.depth === 0 ? {...node, url} : node),
+  // flags.selectable never on the roles a rule names (menu and menu-bar items).
+  notSelectableRoles: (node, {roles}) => (node.flags.selectable && roles.includes(node.role) ? {...node, flags: {...node.flags, selectable: false}} : node),
+};
+
+// Corrections of the Skyshot as a whole.
+export const SHOT_CORRECTIONS = {
+  // The menu bar's own node, which the recordings lack: the AXMenuBar element (no role description) leading the items,
+  // which sit one level under it.
+  menuBarElement: (shot, {token}) => (shot.menuBar.length && shot.menuBar[0].role !== 'AXMenuBar'
+    ? {...shot, menuBar: [{token, depth: 0, pid: shot.app.pid, role: 'AXMenuBar', subrole: null, roleDescription: null, title: null,
+        description: null, value: null, valueType: null, valueMarkdown: null, identifier: null,
+        flags: {enabled: true, focused: false, focusable: false, selected: false, selectable: false, settable: false},
+        actions: [], frame: null, children: shot.menuBar.length}, ...shot.menuBar.map(item => ({...item, depth: 1}))]}
+    : shot),
 };
 
 export function correct(shot, rules) {
   let out = shot;
   for (const rule of rules.filter(each => each.kind === 'skyshot')) {
+    if (SHOT_CORRECTIONS[rule.correction]) { out = SHOT_CORRECTIONS[rule.correction](out, rule); continue; }
     const fix = CORRECTIONS[rule.correction];
     if (!fix) throw new Error(`unknown correction ${rule.correction}`);
     out = {...out, nodes: out.nodes.map(node => fix(node, rule, shot)), menuBar: out.menuBar.map(node => fix(node, rule, shot))};

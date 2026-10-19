@@ -22,6 +22,11 @@ final class FakeTree {
   var markdown: [Int: String] = [:]
   /// The process serving each element, by id (4242 when unset): a panel's elements are another process's.
   var owners: [Int: pid_t] = [:]
+  /// What AXDocument answers, by id; the system's action descriptions, by action name (absent: none).
+  var documents: [Int: String] = [:]
+  var descriptions: [String: String] = [:]
+  /// The attributes an element lists (AXUIElementCopyAttributeNames), by id; unset lists everything it carries.
+  var listed: [Int: Set<String>] = [:]
 
   func id(_ element: AXUIElement) -> Int { Int(pid(of: element)) - 60_000 }
 }
@@ -31,6 +36,9 @@ final class FakeSource: ElementSource, @unchecked Sendable {
   /// Uncached reads by id, and settability calls by attribute.
   var reads: [Int: Int] = [:]
   var settableCalls: [String: Int] = [:]
+  /// Reads through the listed attributes only (the menu bar's), by id; action-description calls by action name.
+  var listedReads: [Int: Int] = [:]
+  var descriptionCalls: [String: Int] = [:]
   init(_ tree: FakeTree) { self.tree = tree }
 
   override func read(_ element: AXUIElement) -> ElementData? {
@@ -59,6 +67,18 @@ final class FakeSource: ElementSource, @unchecked Sendable {
     markdownCalls += 1
     return tree.markdown[tree.id(element)]
   }
+  override func document(_ element: AXUIElement) -> String? { tree.documents[tree.id(element)] }
+  override func actionDescription(_ element: AXUIElement, _ action: String) -> String? {
+    descriptionCalls[action, default: 0] += 1
+    return tree.descriptions[action]
+  }
+  override func readListed(_ element: AXUIElement) -> ElementData? {
+    let id = tree.id(element)
+    listedReads[id, default: 0] += 1
+    guard var data = read(element) else { return nil }
+    if let listed = tree.listed[id], !listed.contains("AXRoleDescription") { data.roleDescription = nil }
+    return data
+  }
   override func readVisibleChildren(_ element: AXUIElement) -> [AXUIElement]? { tree.visible[tree.id(element)].map { $0.map(Engine.element) } }
   override func readFrame(_ element: AXUIElement) -> CGRect? { tree.frames[tree.id(element)] }
 }
@@ -68,11 +88,12 @@ extension Engine {
   static func element(_ id: Int) -> AXUIElement { AXUIElementCreateApplication(pid_t(60_000 + id)) }
 }
 
-func walk(_ tree: FakeTree, _ lineage: Lineage, window: Int = 0, menu: [Int] = [], limits: WalkLimits = WalkLimits(deadline: .infinity),
-                  visibleFrame: CGRect? = nil, source: FakeSource? = nil, interactionFlags: Bool = true) -> TreeWalk {
+func walk(_ tree: FakeTree, _ lineage: Lineage, window: Int = 0, menuBar: Int? = nil, menu: [Int] = [],
+          limits: WalkLimits = WalkLimits(deadline: .infinity), visibleFrame: CGRect? = nil, source: FakeSource? = nil,
+          interactionFlags: Bool = true, chromium: Bool = false) -> TreeWalk {
   let walk = TreeWalk(source: source ?? FakeSource(tree), lineage: lineage, limits: limits, markdown: false,
-                      interactionFlags: interactionFlags, visibleFrame: visibleFrame)
-  walk.run(window: element(window), menuItems: menu.map(element))
+                      interactionFlags: interactionFlags, chromium: chromium, visibleFrame: visibleFrame)
+  walk.run(window: element(window), menuBar: menuBar.map(element), menuItems: menu.map(element))
   lineage.commit(walk.revision)
   return walk
 }
@@ -342,6 +363,116 @@ final class WalkTests: XCTestCase {
     tree.visible = [0: [3, 4, 9]]
     let walked = walk(tree, Lineage())
     XCTAssertEqual((walked.nodes[0]["shown"] as? [String: Any])?["ranges"] as? [[Int]], [[2, 4], [8, 9]])
+  }
+
+  private func flags(_ node: [String: Any]) -> [String: Any] { node["flags"] as! [String: Any] }
+
+  /// isDisclosable (FUN_10074cb90): AXDisclosing listed and settable; isDisclosing, its value, is `expanded`.
+  func testDisclosableIsAXDisclosingSettableAndExpandedItsValue() {
+    let tree = FakeTree()
+    tree.children = [0: [1, 2, 3]]
+    tree.extra = [1: ["AXDisclosing": kCFBooleanFalse], 2: ["AXDisclosing": kCFBooleanTrue], 3: ["AXDisclosing": kCFBooleanFalse]]
+    tree.settable = [2: [kAXDisclosingAttribute], 3: [kAXDisclosingAttribute]]
+    let nodes = walk(tree, Lineage()).nodes
+    XCTAssertEqual(flags(nodes[1])["disclosable"] as? Bool, false, "a web element reporting AXDisclosing false is not disclosable")
+    XCTAssertEqual(flags(nodes[1])["expanded"] as? Bool, false)
+    XCTAssertEqual(flags(nodes[2])["disclosable"] as? Bool, true)
+    XCTAssertEqual(flags(nodes[2])["expanded"] as? Bool, true)
+    XCTAssertEqual(flags(nodes[3])["disclosable"] as? Bool, true)
+    XCTAssertEqual(flags(nodes[3])["expanded"] as? Bool, false)
+    XCTAssertNil(flags(nodes[0])["disclosable"], "absent when the element does not carry AXDisclosing")
+  }
+
+  /// isValueSettable in a Chromium window (FUN_100751614): only text fields and areas, combo boxes, incrementors and tabs
+  /// read their settability; elsewhere every element with a value does.
+  func testAChromiumWindowReadsValueSettabilityOnlyForTheVendorsRoles() {
+    let tree = FakeTree()
+    tree.children = [0: [1, 2, 3, 4, 5], 5: [6]]
+    let value = "" as CFString
+    tree.extra = [1: ["AXRole": "AXGroup" as CFString, "AXValue": value], 2: ["AXRole": "AXTextField" as CFString, "AXValue": value],
+                  3: ["AXRole": "AXRadioButton" as CFString, "AXSubrole": "AXTabButton" as CFString, "AXValue": kCFBooleanTrue],
+                  4: ["AXRole": "AXButton" as CFString, "AXValue": value],
+                  5: ["AXRole": "AXDateField" as CFString], 6: ["AXRole": "AXIncrementor" as CFString, "AXValue": 1 as CFNumber]]
+    for id in 1...6 { tree.settable[id] = [kAXValueAttribute] }
+    let settable = { (nodes: [[String: Any]]) in nodes.map { self.flags($0)["settable"] as! Bool } }
+    XCTAssertEqual(settable(walk(tree, Lineage(), chromium: true).nodes), [false, false, true, true, false, false, false])
+    XCTAssertEqual(settable(walk(tree, Lineage(), chromium: false).nodes), [false, true, true, true, true, false, true])
+  }
+
+  func testTheValueTypeIsTheCFNumbersAndASwitchIsBoolean() {
+    let tree = FakeTree()
+    tree.children = [0: [1, 2, 3]]
+    tree.extra = [1: ["AXRole": "AXRulerMarker" as CFString, "AXValue": 0.0 as CFNumber], 2: ["AXRole": "AXSlider" as CFString, "AXValue": 4 as CFNumber],
+                  3: ["AXRole": "AXCheckBox" as CFString, "AXSubrole": "AXSwitch" as CFString, "AXValue": 1 as CFNumber]]
+    let nodes = walk(tree, Lineage()).nodes
+    XCTAssertEqual(nodes.map { $0["valueType"] as? String }, [nil, "float", "integer", "boolean"])
+    XCTAssertEqual(nodes[1]["value"] as? Double, 0)
+  }
+
+  func testSelectedFallsBackToTheSelectedTraitAndMenuItemsAreNeverSelectable() {
+    let tree = FakeTree()
+    tree.children = [0: [1, 2]]
+    tree.extra = [1: ["AXTraits": selectedTrait as CFNumber],
+                  2: ["AXRole": "AXMenuItem" as CFString, "AXSelected": kCFBooleanFalse]]
+    tree.settable = [2: [kAXSelectedAttribute]]
+    let nodes = walk(tree, Lineage(), menuBar: 90, menu: [91]).nodes
+    XCTAssertEqual(flags(nodes[1])["selected"] as? Bool, true, "a Catalyst element's selected trait")
+    XCTAssertEqual(flags(nodes[2])["selectable"] as? Bool, false, "a menu item, though AXSelected is settable")
+  }
+
+  func testAWindowWithoutAURLCarriesItsDocument() {
+    let tree = FakeTree()
+    tree.children = [0: [1]]
+    tree.extra = [0: ["AXRole": "AXWindow" as CFString], 1: ["AXRole": "AXWindow" as CFString, "AXURL": URL(string: "http://127.0.0.1:9/")! as CFURL]]
+    tree.documents = [0: "file:///tmp/cua-scene.rtf", 1: "file:///ignored"]
+    let nodes = walk(tree, Lineage()).nodes
+    XCTAssertEqual(nodes[0]["url"] as? String, "file:///tmp/cua-scene.rtf")
+    XCTAssertEqual(nodes[1]["url"] as? String, "http://127.0.0.1:9/", "AXURL wins over the document")
+  }
+
+  /// Each action's description is the system's (AXUIElementCopyActionDescription), null when it gives none (the vendor
+  /// carries the name there, FUN_1007515a8, and prints a word of its own; the renderer supplies that word). One call per
+  /// action name and process in a walk.
+  func testActionDescriptionsAreTheSystemsElseNull() {
+    let tree = FakeTree()
+    tree.children = [0: [1, 2, 3]]
+    tree.actions = [1: ["AXPress", "AXZoomWindow"], 2: ["AXZoomWindow", "AXRaise"], 3: ["AXZoomWindow"]]
+    tree.owners = [3: 5151]
+    tree.descriptions = ["AXZoomWindow": "윈도우 확대/축소", "AXPress": "누르기"]
+    let source = FakeSource(tree)
+    let nodes = walk(tree, Lineage(), source: source).nodes
+    XCTAssertEqual(nodes[1]["actionDescriptions"] as? [String], ["누르기", "윈도우 확대/축소"])
+    let undescribed = nodes[2]["actionDescriptions"] as? [Any]
+    XCTAssertEqual(undescribed?.first as? String, "윈도우 확대/축소")
+    XCTAssertTrue(undescribed?.last is NSNull, "no description: null")
+    XCTAssertEqual((nodes[0]["actionDescriptions"] as? [Any])?.count, 0)
+    XCTAssertEqual(source.descriptionCalls, ["AXPress": 1, "AXZoomWindow": 2, "AXRaise": 1], "cached per process and action")
+  }
+
+  /// addMenuBarWithImmediateItems 0x1007569b8: the AXMenuBar element is a node of its own, its top-level items its
+  /// children; it lies outside the window's subtree, so it is read as the vendor reads such an element, through the
+  /// attributes it lists (FUN_1007542cc's fallback; F §1.3).
+  func testTheMenuBarIsANodeLeadingItsItems() {
+    let tree = FakeTree()
+    tree.children = [0: [1], 90: [91, 92]]
+    tree.extra = [90: ["AXRole": "AXMenuBar" as CFString, "AXRoleDescription": "메뉴 막대" as CFString],
+                  91: ["AXRole": "AXMenuBarItem" as CFString], 92: ["AXRole": "AXMenuBarItem" as CFString]]
+    tree.listed = [90: ["AXRole", "AXTitle", "AXChildren"]]
+    let source = FakeSource(tree)
+    let walked = walk(tree, Lineage(), menuBar: 90, menu: [91, 92], source: source)
+    XCTAssertEqual(walked.menuBar.map { $0["role"] as! String }, ["AXMenuBar", "AXMenuBarItem", "AXMenuBarItem"])
+    XCTAssertEqual(walked.menuBar.map { $0["depth"] as! Int }, [0, 1, 1])
+    XCTAssertEqual(walked.menuBar.map { $0["token"] as! String }, [t(2), t(3), t(4)], "tokened after the window's nodes")
+    XCTAssertTrue(walked.menuBar[0]["roleDescription"] is NSNull, "an attribute the bar does not list is not read")
+    XCTAssertEqual(walked.menuBar[0]["children"] as? Int, 2)
+    XCTAssertEqual(source.listedReads, [90: 1])
+    XCTAssertNotNil(walked.token(of: element(90)), "the bar's node resolves like any other")
+  }
+
+  func testAnAbsentRoleDescriptionIsNull() {
+    let tree = FakeTree()
+    let nodes = walk(tree, Lineage()).nodes
+    XCTAssertTrue(nodes[0]["roleDescription"] is NSNull)
   }
 
   func testAnUnreadableElementIsSkippedAndCounted() {

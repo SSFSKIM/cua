@@ -45,8 +45,8 @@ How to see it: on the mini, with the plugin at the release this work ships, run 
   - [x] (2026-10-19 21:36Z) M1a.1 — Engine core (41de5400, review fixes f04664ac; reviewed clean): lineage tokens and re-resolution, the `Skyshot` token shape, the screenshot's sizing rule, the protocol's deadline and peer-policy setting, the withdrawn spike switches removed.
   - [ ] M1a.2 — Engine input: keys by route 2′, clicks 1 → 3 with `activationFailed` and the activation-point skip, the owning-pid forbidden check, `concealed`.
   - [ ] M1a.2b — Engine derivations the goldens refuted (disclosable, settable, the value type, the window's document URL, the header title, focus and selection reads, action descriptions, the menu-bar node, an absent title as null); after M1a.2, before M1a.5.
-  - [x] (2026-10-19 22:55Z) M1a.3 — Renderer, diff and goldens (`src/services/engine/render.mjs`, `diff.mjs`, `test/native-goldens/`).
-  - [x] (2026-10-19 22:40Z) M1a.4 — `src/` integration (38425feb..146b6db8, review fixes cd773dae; reviewed clean; merged 59a43ae0): approval memory, `concealed` and the admitted error names in the wrapper, the `CUA_SKY_SERVICE` rename, the relay's `-n -g`, the seatbelt deny, the ci-kit Swift gate.
+  - [x] (2026-10-19 22:38Z) M1a.3 — Renderer, diff and goldens (`src/services/engine/render.mjs`, `diff.mjs`, `test/native-goldens/`).
+  - [x] (2026-10-19 22:13Z) M1a.4 — `src/` integration (38425feb..146b6db8, review fixes cd773dae; reviewed clean; merged 59a43ae0): approval memory, `concealed` and the admitted error names in the wrapper, the `CUA_SKY_SERVICE` rename, the relay's `-n -g`, the seatbelt deny, the ci-kit Swift gate.
   - [ ] M1a.5 — The service: protocol, client, policy and its generated Swift copy, the numbering over tokens, result meta, the untrusted-engine path.
 - [ ] M1b — Build and approved location, selection and host switch, attestation, comparisons, scenes; live on the mini.
 - [ ] M2a — The full method set, settle, intervention.

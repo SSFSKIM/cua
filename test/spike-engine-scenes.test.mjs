@@ -3,13 +3,17 @@
 // non-interference and concurrent-use cells, and the refusal preconditions, judged on injected process and window lists.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
+import * as fs from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import {
   SCENE_IDS, SCENES, PAIRS, BACKGROUND_PAIRINGS, CONCURRENT_USE, CONCURRENT_USE_SHEET, userWindowFor, refusals,
   ownedProcesses, documentWindows, finderFolderFiles, textEditDocument, describeScenes,
+  upScene, downScene, preflight, readState, chromeArgs, electronArgs, sceneCommand, exitCodeFor,
 } from '../scripts/spike/engine/scenes.mjs';
-import {FIXTURE_BUNDLE_ID} from '../scripts/spike/engine/fixtures/electron-fixture.mjs';
+import {parseAsns, parseAppInfo, stopRecorded} from '../scripts/spike/engine/scene-processes.mjs';
+import {FIXTURE_BUNDLE_ID, FIXTURE_CONTROLS} from '../scripts/spike/engine/fixtures/electron-fixture.mjs';
 import {PAGE_CONTROLS} from '../scripts/spike/engine/fixtures/scene-page.mjs';
-import {FIXTURE_CONTROLS} from '../scripts/spike/engine/fixtures/electron-fixture.mjs';
 
 const CFT = 'com.google.chrome.for.testing', TEXTEDIT = 'com.apple.TextEdit';
 
@@ -22,14 +26,16 @@ test('four scenes, one per family, each with its own bundle id and a process the
   assert.equal(new Set(SCENE_IDS.map(id => SCENES[id].family)).size, 4);
 });
 
-test('every scene has exactly ten targets with distinct ids, each findable by a name, a subrole, a value or an orientation', () => {
+test('every scene has exactly ten targets with distinct ids, each findable by a name or value with its match mode, a subrole or an orientation', () => {
   for (const id of SCENE_IDS) {
     const {targets} = SCENES[id];
     assert.equal(targets.length, 10, id);
     assert.equal(new Set(targets.map(t => t.id)).size, 10, `${id}: target ids are distinct`);
     for (const t of targets) {
       assert.match(t.role, /^AX[A-Z]/, `${id}.${t.id} role`);
-      assert.ok(t.name || t.subrole || t.valuePrefix || t.orientation, `${id}.${t.id} has something to be found by`);
+      assert.ok(t.name || t.value || t.subrole || t.orientation, `${id}.${t.id} has something to be found by`);
+      if (t.name || t.value) assert.ok(['exact', 'prefix'].includes(t.match), `${id}.${t.id} declares how its text is matched`);
+      else assert.equal(t.match, undefined, `${id}.${t.id} has no text to match`);
       assert.ok(['run', 'fixture', 'app-ui', 'system-ui'].includes(t.source), `${id}.${t.id} source`);
     }
   }
@@ -53,13 +59,25 @@ test('the Finder targets name run-owned files from the 200 the scene writes, and
   const doc = textEditDocument();
   assert.match(doc.rtf, /^\{\\rtf1/);
   const document = SCENES.textedit.targets.find(t => t.id === 'document');
-  assert.equal(document.valuePrefix, doc.lines[0]);
+  assert.equal(document.value, doc.lines[0]);
+  assert.equal(document.match, 'prefix');
+  // The window title may or may not show `.rtf` (the owner's setting): a prefix. Finder's rows are whole names: exact.
+  assert.deepEqual(SCENES.textedit.targets.find(t => t.id === 'window'), {id: 'window', role: 'AXWindow', name: 'cua-scene', match: 'prefix', source: 'run'});
+  assert.ok(fileTargets.every(t => t.match === 'exact'));
   assert.ok(doc.lines.length >= 60, 'long enough to need the vertical scroll bar target');
   assert.ok(doc.rtf.includes(doc.lines.at(-1)));
 });
 
-test('each scene\'s typing target is one of its targets', () => {
-  for (const id of SCENE_IDS) assert.ok(SCENES[id].targets.some(t => t.id === SCENES[id].typingTarget), id);
+test('each scene\'s typing lands on one of its targets; Finder types into its list (type-select), never the search field', () => {
+  for (const id of SCENE_IDS) {
+    assert.ok(SCENES[id].targets.some(t => t.id === SCENES[id].typing.target), id);
+    assert.match(SCENES[id].typing.readBack, /\S/, id);
+  }
+  const finder = SCENES.finder.typing;
+  assert.equal(finder.mode, 'type-select');
+  assert.equal(finder.text, SCENES.finder.targets.find(t => t.id === finder.target).name);
+  assert.ok(!SCENES.finder.targets.some(t => t.subrole === 'AXSearchField' || /search/i.test(t.id)), 'no search field target');
+  assert.equal(SCENES.finder.targets.filter(t => t.role === 'AXRow').length, 8);
 });
 
 test('pairings: the three named pairs in both directions, never a scene with itself, every scene driven in background', () => {
@@ -80,8 +98,14 @@ test('concurrent use: TextEdit is the user window for Finder and Chrome; the she
   assert.deepEqual(CONCURRENT_USE.driven, ['finder', 'chrome']);
   assert.equal(CONCURRENT_USE_SHEET.driven, 'textedit');
   assert.equal(CONCURRENT_USE_SHEET.user, 'electron');
-  assert.equal(CONCURRENT_USE_SHEET.userTarget, SCENES.electron.typingTarget);
-  assert.deepEqual(CONCURRENT_USE_SHEET.keys.at(-1), 'super+w');
+  assert.equal(CONCURRENT_USE_SHEET.userTarget, SCENES.electron.typing.target);
+  assert.equal(CONCURRENT_USE.userTarget, SCENES.textedit.typing.target);
+  // Ordered steps: the user window in front, then a new document, dirtied, then super+w with the keystroke posted during it.
+  assert.deepEqual(CONCURRENT_USE_SHEET.setup, [{activate: 'electron'}]);
+  assert.deepEqual(CONCURRENT_USE_SHEET.steps.map(step => Object.keys(step)[0]), ['pressKey', 'typeText', 'pressKey']);
+  assert.deepEqual([CONCURRENT_USE_SHEET.steps[0].pressKey, CONCURRENT_USE_SHEET.steps[2].pressKey], ['super+n', 'super+w']);
+  assert.match(CONCURRENT_USE_SHEET.steps[1].typeText, /\S/);
+  assert.deepEqual(CONCURRENT_USE_SHEET.steps.map(step => step.keystrokeDuring === true), [false, false, true]);
   for (const cell of [CONCURRENT_USE, CONCURRENT_USE_SHEET]) for (const d of [cell.driven].flat()) assert.notEqual(d, cell.user);
 });
 
@@ -135,11 +159,6 @@ test('describeScenes is plain data: the definitions, pairings and targets the dr
 });
 
 // ---- Device side, on injected reads: what is launched, recorded and stopped -------------------------------------------
-import * as fs from 'node:fs';
-import {tmpdir} from 'node:os';
-import {join} from 'node:path';
-import {upScene, downScene, preflight, readState, chromeArgs, electronArgs} from '../scripts/spike/engine/scenes.mjs';
-import {parseAsns, parseAppInfo, stopRecorded} from '../scripts/spike/engine/scene-processes.mjs';
 
 // A device with the given running processes and windows; `open` starts a process of the launched app's bundle id.
 function fakeDevice({running = [], windows = {}, finderPid = 736} = {}) {
@@ -247,8 +266,7 @@ test('stopRecorded signals only a pid that is still the recorded launch', async 
   assert.deepEqual(await stopRecorded({pid: 5, at: 1}, {sameLaunch: () => true, quit: q}), {stopped: [5], remaining: []});
 });
 
-test('the device command runs the CLI in the harness checkout with every argument quoted', async () => {
-  const {sceneCommand} = await import('../scripts/spike/engine/scenes.mjs');
+test('the device command runs the CLI in the harness checkout with every argument quoted', () => {
   assert.equal(sceneCommand(['up', 'chrome', '--run', '/tmp/run dir'], {checkout: '/c'}), "cd /c && node scripts/spike/engine/scenes.mjs 'up' 'chrome' '--run' '/tmp/run dir'");
   assert.match(sceneCommand(['describe']), /^cd \$HOME\/Developer\/GitHub\/cua-parity && node scripts\/spike\/engine\/scenes\.mjs 'describe'$/);
 });
@@ -261,3 +279,12 @@ test('a launch whose window never comes is stopped again and nothing is recorded
   assert.deepEqual(io.calls.filter(c => c[0] === 'stop').map(c => c[1]), [io.running[0].pid]);
   assert.deepEqual(readState(run), {scenes: {}});
 }));
+
+test('the CLI exits 1 on a refusal and when down leaves a scene up', () => {
+  assert.equal(exitCodeFor({refusals: [{code: 'finder_window'}]}), 1);
+  assert.equal(exitCodeFor({refusals: []}), 0);
+  assert.equal(exitCodeFor({scene: 'finder', down: false, windowOpen: true}), 1);
+  assert.equal(exitCodeFor({down: false, scenes: []}), 1);
+  assert.equal(exitCodeFor({scene: 'chrome', down: true}), 0);
+  assert.equal(exitCodeFor(undefined), 0);
+});

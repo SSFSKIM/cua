@@ -30,10 +30,12 @@ fs.mkdirSync(userData, {recursive: true, mode: 0o700});
 app.setPath('userData', userData);
 
 app.whenReady().then(() => {
+  // Shown without activation, so bringing the scene up never takes the focus (the harness activates it when a cell needs it).
   const window = new BrowserWindow({
-    ...bounds(), title: 'cua Electron fixture', show: true,
+    ...bounds(), title: 'cua Electron fixture', show: false,
     webPreferences: {contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: false},
   });
+  window.once('ready-to-show', () => window.showInactive());
   window.loadFile(path.join(__dirname, 'index.html'));
 });
 app.on('window-all-closed', () => app.quit());

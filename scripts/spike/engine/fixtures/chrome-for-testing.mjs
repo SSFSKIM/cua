@@ -10,8 +10,9 @@
 // Chrome for Testing endpoint (`source`), which publishes no hashes; the SHA-256 is of the archive downloaded once at
 // pinning, and it is the whole integrity check: Chrome for Testing's mac-arm64 builds carry no Developer ID signature,
 // only the linker's ad-hoc one (codesign -dv: flags=0x20002(adhoc,linker-signed), no sealed resources), so a codesign
-// verification proves nothing about where the bundle came from. Nothing sets a quarantine attribute on the download,
-// so Gatekeeper does not assess it at launch.
+// verification proves nothing about where the bundle came from. The download carries no quarantine attribute (only
+// com.apple.provenance, seen on the MacBook), so Gatekeeper is expected not to assess it at launch; the sitting's first
+// launch confirms that.
 import * as fs from 'node:fs';
 import {homedir} from 'node:os';
 import {join, isAbsolute, normalize} from 'node:path';

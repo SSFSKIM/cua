@@ -8,6 +8,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createHash} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
+import {request} from 'node:http';
 import {loadPin, validatePin, verifyArchive, placeChromeForTesting, placedAppPath, PIN_PATH} from '../scripts/spike/engine/fixtures/chrome-for-testing.mjs';
 import {FIXTURE_BUNDLE_ID, FIXTURE_NAME, FIXTURE_CONTROLS, rewriteBundle, fixtureSourceHash, fixtureAppPath} from '../scripts/spike/engine/fixtures/electron-fixture.mjs';
 import {startScenePage, PAGE_CONTROLS, PAGE_TITLE} from '../scripts/spike/engine/fixtures/scene-page.mjs';
@@ -118,7 +119,7 @@ function fakeElectronApp(root) {
     fs.writeFileSync(file, '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict>'
       + Object.entries(entries).map(([k, v]) => `<key>${k}</key><string>${v}</string>`).join('') + '</dict></plist>\n');
   };
-  write(join(contents, 'Info.plist'), {CFBundleIdentifier: 'com.github.Electron', CFBundleName: 'Electron', CFBundleDisplayName: 'Electron', CFBundleExecutable: 'Electron'});
+  write(join(contents, 'Info.plist'), {CFBundleIdentifier: 'com.github.Electron', CFBundleName: 'Electron', CFBundleDisplayName: 'Electron', CFBundleExecutable: 'Electron', NSPrincipalClass: 'AtomApplication'});
   for (const helper of ['Electron Helper', 'Electron Helper (GPU)', 'Electron Helper (Plugin)', 'Electron Helper (Renderer)'])
     write(join(contents, 'Frameworks', `${helper}.app`, 'Contents', 'Info.plist'), {CFBundleIdentifier: 'com.github.Electron.helper', CFBundleName: helper});
   return app;
@@ -134,6 +135,7 @@ test('the fixture builder rewrites the copy\'s Info.plist: its own bundle id, na
     assert.equal(plist(info, 'CFBundleName'), FIXTURE_NAME);
     assert.equal(plist(info, 'CFBundleDisplayName'), FIXTURE_NAME);
     assert.equal(plist(info, 'CFBundleExecutable'), FIXTURE_NAME);
+    assert.equal(plist(info, 'NSPrincipalClass'), 'AtomApplication', 'Electron\'s application class is left as shipped');
     assert.ok(fs.existsSync(join(app, 'Contents', 'MacOS', FIXTURE_NAME)));
     assert.equal(fs.existsSync(join(app, 'Contents', 'MacOS', 'Electron')), false);
     for (const helper of fs.readdirSync(join(app, 'Contents', 'Frameworks')))
@@ -154,6 +156,10 @@ test('the fixture source declares a text field, a list and a button, and never e
   assert.equal(new Set(names).size, names.length);
   const code = fs.readFileSync(new URL('../scripts/spike/engine/fixtures/electron/main.js', import.meta.url), 'utf8').replace(/^\s*\/\/.*$/gm, '');
   assert.doesNotMatch(code, /setAccessibilitySupportEnabled|force-renderer-accessibility|accessibility/i);
+  // Shown without activation: bringing the scene up never takes the focus.
+  assert.match(code, /show: false/);
+  assert.match(code, /once\('ready-to-show', \(\) => window\.showInactive\(\)\)/);
+  assert.doesNotMatch(code, /show: true|\.show\(\)|\.focus\(\)/);
   const html = fs.readFileSync(new URL('../scripts/spike/engine/fixtures/electron/index.html', import.meta.url), 'utf8');
   for (const name of names) assert.ok(html.includes(name), name);
 });
@@ -174,7 +180,7 @@ test('the scene page: served on its exact loopback Host only, every control pres
     assert.equal((await fetch(new URL('/other', page.url))).status, 404);
     const port = new URL(page.url).port;
     const misdirected = await new Promise((resolve, reject) => {
-      import('node:http').then(({request}) => request({host: '127.0.0.1', port, path: '/', headers: {host: `localhost:${port}`}}, res => { res.resume(); resolve(res.statusCode); }).on('error', reject).end());
+      request({host: '127.0.0.1', port, path: '/', headers: {host: `localhost:${port}`}}, res => { res.resume(); resolve(res.statusCode); }).on('error', reject).end();
     });
     assert.equal(misdirected, 421);
   } finally { await page.close(); }

@@ -27,8 +27,9 @@
 // Targets: per scene, ten finding-elements targets fixed from the fixtures' ground truth before either engine's text is
 // seen: every control the harness put into the page and the fixture, and for TextEdit and Finder the run's own content
 // (document, folder, file names) plus window controls found by subrole and the format bar's controls by the English names
-// AppKit's NSTextRulerAccessory nib carries. Each names its AX role and what finds it (name, subrole, value prefix or
-// orientation); `source` says where the name comes from.
+// AppKit's NSTextRulerAccessory nib carries. Each names its AX role and what finds it (a name or value with its `match`
+// mode, a subrole or an orientation); `source` says where the name comes from. Each scene's `typing` says where text
+// typed into it lands and how that is read back.
 //
 // Device-side CLI, run from the harness checkout on the Mac that shows the scenes (over ssh); one JSON line on stdout,
 // exit 1 on an error or refusal:
@@ -37,7 +38,7 @@
 //   node scripts/spike/engine/scenes.mjs place-chrome [--cache <root>]  place the pinned Chrome for Testing
 //   node scripts/spike/engine/scenes.mjs build-electron [--cache <root>] build the Electron fixture app
 //   node scripts/spike/engine/scenes.mjs up <scene> --run <dir> [--chrome-app <app>] [--electron-app <app>]
-//   node scripts/spike/engine/scenes.mjs down <scene|all> --run <dir>
+//   node scripts/spike/engine/scenes.mjs down <scene|all> --run <dir>  (exit 1 when something stays up)
 //   node scripts/spike/engine/scenes.mjs front                          FrontWindowProbe's reading
 // `<dir>` is the run directory (absolute; created 0700); the run's scene state is `<dir>/scenes.json`.
 import * as fs from 'node:fs';
@@ -68,7 +69,9 @@ export const textEditDocument = () => ({name: TEXTEDIT_DOCUMENT, lines: [...TEXT
 const FINDER_FOLDER = 'cua-scene-finder';
 export const finderFolderFiles = () => Array.from({length: 200}, (_, i) => `scene-file-${String(i + 1).padStart(3, '0')}`);
 
-const control = source => ({id, role, name}) => ({id, role, name, source});
+// A target is found by its `name` or `value` (compared as `match` says: `exact`, or `prefix` where the run cannot fix the
+// whole text), or, unnamed, by its `subrole` or `orientation`.
+const control = source => ({id, role, name}) => ({id, role, name, match: 'exact', source});
 const windowButtons = [
   {id: 'close', role: 'AXButton', subrole: 'AXCloseButton', source: 'system-ui'},
   {id: 'minimize', role: 'AXButton', subrole: 'AXMinimizeButton', source: 'system-ui'},
@@ -84,14 +87,15 @@ export const SCENES = Object.freeze({
     placement: 'as TextEdit places a document window; recorded at up',
     launchArgs: ['-AppleLanguages', '(en)', '-ApplePersistenceIgnoreState', 'YES'],
     start: `${OPEN}, the run's document as the file`, stop: `${STOP}; the driver quits it through the engine first where it can (super+q, as the baseline does)`,
-    typingTarget: 'document',
+    typing: {target: 'document', mode: 'text', readBack: 'the document\'s AXValue contains the text sent'},
     targets: [
-      {id: 'document', role: 'AXTextArea', valuePrefix: TEXTEDIT_LINES[0], source: 'run'},
-      {id: 'window', role: 'AXWindow', name: 'cua-scene', source: 'run'},   // the title, with or without the extension the owner's setting shows
-      {id: 'styles', role: 'AXPopUpButton', name: 'Styles', source: 'app-ui'},
-      {id: 'alignment', role: 'AXRadioGroup', name: 'Alignment', source: 'app-ui'},
-      {id: 'spacing', role: 'AXPopUpButton', name: 'Spacing', source: 'app-ui'},
-      {id: 'lists', role: 'AXPopUpButton', name: 'Lists', source: 'app-ui'},
+      {id: 'document', role: 'AXTextArea', value: TEXTEDIT_LINES[0], match: 'prefix', source: 'run'},
+      // The title, with or without the `.rtf` the owner's show-extensions setting decides: a prefix.
+      {id: 'window', role: 'AXWindow', name: 'cua-scene', match: 'prefix', source: 'run'},
+      {id: 'styles', role: 'AXPopUpButton', name: 'Styles', match: 'exact', source: 'app-ui'},
+      {id: 'alignment', role: 'AXRadioGroup', name: 'Alignment', match: 'exact', source: 'app-ui'},
+      {id: 'spacing', role: 'AXPopUpButton', name: 'Spacing', match: 'exact', source: 'app-ui'},
+      {id: 'lists', role: 'AXPopUpButton', name: 'Lists', match: 'exact', source: 'app-ui'},
       ...windowButtons,
       {id: 'scrollBar', role: 'AXScrollBar', orientation: 'AXVerticalOrientation', source: 'system-ui'},
     ],
@@ -102,11 +106,12 @@ export const SCENES = Object.freeze({
     setup: [{activate: 'finder'}, {pressKey: 'super+2'}],   // list view, sent by the driver while the run's window is in front
     placement: 'as Finder places a folder window; recorded at up',
     start: 'open -g -a Finder <the run\'s folder>; the new window\'s number recorded', stop: 'never signalled; the driver closes the run\'s window through the engine (its close button), and down checks it is gone',
-    typingTarget: 'search',
+    // Type-select on the run's list, not the toolbar search field: a search would fill the run's window with the
+    // owner's file names (a Spotlight query), and the field may be collapsed to a button. Typing a row's name selects it.
+    typing: {target: 'file150', mode: 'type-select', text: 'scene-file-150', readBack: 'the selected AXRow\'s name equals the text sent'},
     targets: [
-      ...['001', '002', '050', '100', '150', '199', '200'].map(n => ({id: `file${n}`, role: 'AXRow', name: `scene-file-${n}`, source: 'run'})),
-      {id: 'window', role: 'AXWindow', name: FINDER_FOLDER, source: 'run'},
-      {id: 'search', role: 'AXTextField', subrole: 'AXSearchField', source: 'system-ui'},
+      ...['001', '002', '050', '100', '125', '150', '199', '200'].map(n => ({id: `file${n}`, role: 'AXRow', name: `scene-file-${n}`, match: 'exact', source: 'run'})),
+      {id: 'window', role: 'AXWindow', name: FINDER_FOLDER, match: 'exact', source: 'run'},
       windowButtons[0],
     ],
   },
@@ -115,7 +120,7 @@ export const SCENES = Object.freeze({
     fixedState: {title: PAGE_TITLE, page: PAGE_INITIAL, windows: 1},
     placement: {x: 80, y: 60, width: 1000, height: 760},
     start: `${OPEN}; the page served first by a detached process of the run`, stop: `${STOP}; the page server likewise`,
-    typingTarget: 'notes',
+    typing: {target: 'notes', mode: 'text', readBack: 'the textarea\'s AXValue contains the text sent'},
     targets: PAGE_CONTROLS.map(control('fixture')),
   },
   electron: {
@@ -123,7 +128,7 @@ export const SCENES = Object.freeze({
     fixedState: {title: 'cua Electron fixture', fixture: FIXTURE_INITIAL, windows: 1},
     placement: {x: 140, y: 100, width: 720, height: 560},
     start: OPEN, stop: STOP,
-    typingTarget: 'text',
+    typing: {target: 'text', mode: 'text', readBack: 'the text field\'s AXValue contains the text sent'},
     targets: FIXTURE_CONTROLS.map(control('fixture')),
   },
 });
@@ -135,11 +140,14 @@ export const PAIRS = Object.freeze([['textedit', 'finder'], ['chrome', 'textedit
 export const BACKGROUND_PAIRINGS = Object.freeze(PAIRS.flatMap(([a, b]) => [{driven: a, user: b}, {driven: b, user: a}]));
 export const userWindowFor = driven => { sceneOf(driven); return BACKGROUND_PAIRINGS.find(p => p.driven === driven).user; };
 // Concurrent use: a long typeText into each driven scene's typing target while a keystroke lands in TextEdit's document.
-export const CONCURRENT_USE = Object.freeze({user: 'textedit', userTarget: SCENES.textedit.typingTarget, driven: ['finder', 'chrome']});
+export const CONCURRENT_USE = Object.freeze({user: 'textedit', userTarget: SCENES.textedit.typing.target, driven: ['finder', 'chrome']});
 // Its sheet variant: TextEdit opens the keep-or-delete sheet on super+w over a dirty untitled document (the run's saved
-// document autosaves and closes without one), while the keystroke lands in the Electron fixture's text field.
-export const CONCURRENT_USE_SHEET = Object.freeze({user: 'electron', userTarget: SCENES.electron.typingTarget, driven: 'textedit',
-  document: 'untitled', keys: ['super+n', 'super+w']});
+// document autosaves and closes without one), while the keystroke lands in the Electron fixture's text field. The
+// driver runs `setup` then `steps` in order, every step on the driven TextEdit; the keystroke is posted during the last.
+export const CONCURRENT_USE_SHEET = Object.freeze({user: 'electron', userTarget: SCENES.electron.typing.target, driven: 'textedit',
+  document: 'untitled',
+  setup: [{activate: 'electron'}],
+  steps: [{pressKey: 'super+n'}, {typeText: 'cua sheet variant'}, {pressKey: 'super+w', expect: 'sheet', keystrokeDuring: true}]});
 
 // The windows that are a person's: layer 0 (front-window.swift already filters) and at least 100 points each way, which
 // leaves out the menu-bar-sized, never-on-screen windows Finder keeps.
@@ -309,6 +317,9 @@ async function servePage(run) {
 // The shell command that runs this CLI in the device's harness checkout (for topology.mjs's remoteCommand).
 export const sceneCommand = (args, {checkout = PARITY_CHECKOUT} = {}) => `cd ${checkout} && node scripts/spike/engine/scenes.mjs ${args.map(quote).join(' ')}`;
 
+// A command's exit status: 1 when a refusal holds or a scene stays up after down, else 0.
+export const exitCodeFor = out => (out?.refusals?.length || out?.down === false ? 1 : 0);
+
 // ---- CLI --------------------------------------------------------------------------------------------------------------
 
 function parse(argv) {
@@ -348,6 +359,6 @@ export async function main(argv) {
 
 if (process.argv[1] && SCRIPT === fs.realpathSync(process.argv[1])) {
   main(process.argv.slice(2)).then(
-    out => { if (out !== undefined) process.stdout.write(JSON.stringify(out) + '\n'); if (out?.refusals?.length) process.exitCode = 1; },
+    out => { if (out !== undefined) process.stdout.write(JSON.stringify(out) + '\n'); process.exitCode = exitCodeFor(out); },
     error => { process.stdout.write(JSON.stringify({error: error.message, ...(error.refusals ? {refusals: error.refusals} : {})}) + '\n'); process.exitCode = 1; });
 }

@@ -231,7 +231,8 @@ test('every cell compiles as the body of an async function', () => {
     spikeCells.LOCATE('textedit', 'cua-scene', 'doc'), spikeCells.ACT_CLICK('finder'), spikeCells.ACT_KEY('finder', 'Down'), spikeCells.ACT_TYPE('textedit', UNICODE_STRINGS.at(-1)),
     spikeCells.READBACK('finder'), spikeCells.TEXT_LANDED('chrome', '/a.app', '0101', '한글 테스트'), spikeCells.BOUND_PID('/a.app'), spikeCells.SCENE_GUARD('electron', 'cua Electron fixture'),
     spikeCells.SCENE_SCREENSHOT('finder'), spikeCells.READ_SET_EQUIVALENCE('/a.app', ['full', 'reduced']), spikeCells.FINDER_EDITING(),
-    spikeCells.LOCATE('finder', 'cua-scene-finder', {rowCellOf: 'scene-file-005'}), spikeCells.ACTION_GOLDEN('finder', '/f.app', 'cua-scene-finder', {rowCellOf: 'scene-file-005'}, {raw: true})];
+    spikeCells.LOCATE('finder', 'cua-scene-finder', {rowCellOf: 'scene-file-005'}), spikeCells.ACTION_GOLDEN('finder', '/f.app', 'cua-scene-finder', {rowCellOf: 'scene-file-005'}, {raw: true}),
+    spikeCells.SPIKE_CLICK('/a.app', 1), spikeCells.SPIKE_INPUT('/a.app', 'press_key', {key: 'Down', spikeRoute: '2'})];
   for (const code of cells) assert.doesNotThrow(() => new AsyncFunction('cua', 'nodeRepl', code), code.slice(0, 120));
 });
 

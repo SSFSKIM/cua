@@ -258,7 +258,7 @@ return outcome;`);
 export const SPIKE_CLICK = (app, route) => cell(`const t0 = performance.now();
 const outcome = {inCellMs: 0};
 try {
-  await nodeRepl.rpc("sky", {type: "execute", method: "click", args: [{app: ${j(app)}, element_index: globalThis.__probe.index, spikeRoute: ${j(String(route))}]});
+  await nodeRepl.rpc("sky", {type: "execute", method: "click", args: [{app: ${j(app)}, element_index: globalThis.__probe.index, spikeRoute: ${j(String(route))}}]});
 } catch (error) { outcome.failed = String(error?.message ?? error).slice(0, 200); }
 outcome.inCellMs = performance.now() - t0;
 return outcome;`);

@@ -1,0 +1,1 @@
+Phase 1 approve (2026-10-19 19:32Z): the owner reports no 'cua Engine' screen-recording confirmation appeared for this same-path replacement (build b99ea967 over sitting 1's e3547c25).

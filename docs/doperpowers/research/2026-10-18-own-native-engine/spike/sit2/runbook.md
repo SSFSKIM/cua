@@ -237,7 +237,7 @@ The controller records the owner's answers in `$OUT/u7/owner.txt`. The prompts a
 ```
 git worktree add /tmp/cua-sit2-u8src <sha> && echo '// u8' >> /tmp/cua-sit2-u8src/native/engine/Sources/Engine/Version.swift
 swift build -c release --package-path /tmp/cua-sit2-u8src/native/engine --scratch-path /tmp/cua-sit2-u8build
-node /tmp/cua-sit2-u8src/scripts/spike/engine/assemble.mjs --build /tmp/cua-sit2-u8build --identity "$ID" --out /tmp/cua-sit2-u8
+node /private/tmp/cua-sit2-u8src/scripts/spike/engine/assemble.mjs --build /tmp/cua-sit2-u8build --identity "$ID" --out /tmp/cua-sit2-u8
 node scripts/spike/engine/measure.mjs stop --device mini --approved-engine "/Users/new/Library/Application Support/cua/engine-u7/cua Engine.app"   # U7's engine; probe-f launches the sitting's
 node scripts/spike/engine/measure.mjs probe-f --device mini --out $OUT/u8
 ```
@@ -272,7 +272,7 @@ ssh mini 'ls -l ~/Library/Logs/DiagnosticReports | grep cua-engine'
 ```
 Count every engine start against a logged exit or a crash report; match crash reports by the pid inside, not by file time.
 
-Commit `$OUT` with explicit paths. Only the sitting's own outputs go in: the rows carry no text of windows the harness does not own, and the Finder goldens are redacted.
+Commit `$OUT` with explicit paths. Redact the signing certificate's common name from the TCC streams before committing (tccd's code-requirement lines carry it). Only the sitting's own outputs go in: the rows carry no text of windows the harness does not own, and the Finder goldens are redacted.
 
 ## What stays unverified until the sitting
 

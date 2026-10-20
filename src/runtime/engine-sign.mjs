@@ -26,6 +26,7 @@ import {escapeXml} from '../remote/plist.mjs';
 
 export const SIGN_JOB_SCRIPT = fileURLToPath(import.meta.url);
 export const SIGN_JOB_TIMEOUT_MS = 45_000;
+export const SIGN_WAIT_MAX_MS = 30 * 60_000;
 const CODESIGN = '/usr/bin/codesign';
 const LAUNCHCTL = '/bin/launchctl';
 const JOB_LABEL_PREFIX = 'io.github.ssfskim.cua.engine.sign';
@@ -81,6 +82,20 @@ export function redact(text, identity) {
   let out = String(text);
   if (identity) out = out.replace(new RegExp(identity.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '<signing identity>');
   return out.replace(/\b[0-9a-f]{40}\b/gi, '<signing identity>').replace(CERTIFICATE_NAME, '<signing identity>');
+}
+
+// How long a build waits for the GUI-session sign job, in ms: `flag` (`cua engine build --sign-wait`) when given, else
+// CUA_SIGN_WAIT_MS when set, else 45 s. A Mac's first sign is answered at the console while codesign still waits (an
+// orphaned prompt may leave the key's access unchanged), so an attended build asks for longer. A whole number of ms from
+// 1 to 30 minutes; anything else is refused naming the setting it came from.
+export function signWaitMs({flag, env = process.env} = {}) {
+  const [value, setting] = flag !== undefined ? [flag, '--sign-wait'] : [env.CUA_SIGN_WAIT_MS || undefined, 'CUA_SIGN_WAIT_MS'];
+  if (value === undefined) return SIGN_JOB_TIMEOUT_MS;
+  const ms = /^[1-9][0-9]*$/.test(value) ? Number(value) : NaN;
+  if (!(ms <= SIGN_WAIT_MAX_MS))
+    fail('engine_sign_wait_invalid', `${setting} must be a whole number of milliseconds from 1 to ${SIGN_WAIT_MAX_MS} (30 min); got ${JSON.stringify(value)}`,
+      {hint: 'for the attended first sign, 600000 (10 min) leaves time to answer codesign\'s keychain prompt at the console'});
+  return ms;
 }
 
 // ---- reading a signature ----
@@ -211,8 +226,9 @@ async function signInGuiSession(bundle, {identity, source}, {env, run, uid, node
         fail('engine_sign_failed', `the signing job in the GUI session ${ended} without signing: ${redact(lastLines(jobLog), identity)}`);
       }
       if (now() - started >= timeoutMs)
-        fail('engine_sign_prompt_waiting', `codesign did not finish within ${Math.round(timeoutMs / 1000)} s in this Mac's GUI session: a keychain prompt from codesign is most likely waiting on the console for the owner`,
-          {hint: 'at the console, answer the prompt with the login password and Always Allow (it stays on screen after this build gave up), then run cua engine build again; it signs with no prompt from then on'});
+        fail('engine_sign_prompt_waiting', `codesign did not finish within ${+(timeoutMs / 1000).toFixed(3)} s in this Mac's GUI session: a keychain prompt from codesign is most likely waiting on the console for the owner`,
+          {hint: 'at the console, answer the prompt with the login password and Always Allow (it stays on screen after this build gave up), then run cua engine build again; it signs with no prompt from then on. '
+            + 'If the next build prompts again, run it as cua engine build --sign-wait 600000 (or set CUA_SIGN_WAIT_MS) and answer the prompt while codesign still waits'});
       await sleep(POLL_MS);
     }
     answer = JSON.parse(readFileSync(result, 'utf8'));

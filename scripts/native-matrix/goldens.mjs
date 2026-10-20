@@ -23,7 +23,9 @@
 //     the device), reads the vendor's sizing config (again after the scenes), prepares the approved vendor runtime as
 //     prepare.mjs's approved-home path does (admission, state/ and run/ moved aside and back, the run's helper stopped
 //     at cleanup), stops the approved engine with `shutdown` at the start and the end, and refuses a dirty harness
-//     checkout or a scene refusal (scripts/repl-parity/scenes-mac.mjs preflight).
+//     checkout or a scene refusal (scripts/repl-parity/scenes-mac.mjs preflight). The vendor serve runs the vendor host
+//     with CUA_NATIVE_ENGINE=vendor, and the lane stops before any scene unless its first result attests the vendor
+//     engine at the serve's runtime release (vendorEngineProblem).
 //   - Per scene, one at a time, with the scene's app frontmost for every capture: up and its setup steps (Finder's
 //     list view, no selection, its sidebar, status bar and path bar hidden, sent through the engine under the key guard);
 //     the vendor's bind; the fixed state, as cua's observation, the vendor's full text, cua's observation again, kept
@@ -48,6 +50,7 @@ import {parseArgs} from 'node:util';
 import {StdioClient, textOf} from '../browser-parity/mcp.mjs';
 import {quote, remoteCommand} from '../browser-parity/topology.mjs';
 import {FIRST, parseCell} from '../native-baseline/cells.mjs';
+import {attestedBuild} from '../native-baseline/engine.mjs';
 import {PARITY_CHECKOUT, preflightScript, preparationScript, serveCommand} from '../native-baseline/remote.mjs';
 import {hostAttestationOf} from '../native-baseline.mjs';
 import {declaredDevice} from '../repl-parity/devices.mjs';
@@ -101,13 +104,15 @@ export function deviceOps(device, {exec = execFileSync} = {}) {
     scenes: args => cli('scripts/repl-parity/scenes-mac.mjs', args, {answersOnFailure: true}),
     prepare: approvedHome => lastJson(ssh(preparationScript('prepare', {device, approvedHome}))),
     cleanup: prepared => lastJson(ssh(preparationScript('cleanup', prepared))),
-    preflight: prepared => lastJson(ssh(preflightScript({host: 'vendor', prepared, surface: 'computer'}))),
+    // The vendor lane names its engine as the native baseline's lanes do (CUA_NATIVE_ENGINE, scripts/native-baseline/
+    // engine.mjs), so the account's ~/.config/cua/engine.json, under the account's HOME here, never chooses it.
+    preflight: prepared => lastJson(ssh(preflightScript({host: 'vendor', engine: 'vendor', prepared, surface: 'computer'}))),
     home: () => ssh('printf %s "$HOME"').trim(),
     sizingConfig: () => inCheckout('bash scripts/native-baseline/read-sizing-config.sh'),
     take: path => ssh(`cat ${quote(path)} && rm -f ${quote(path)}`),
     discard: path => { ssh(`rm -f ${quote(path)}`); },
     serveSpec: ({pre, prepared}) => serveCommand({device, checkout: pre.checkout, home: pre.home, userHome: prepared.userHome, configHome: prepared.configHome,
-      tmpdir: prepared.tmpdir, admission: prepared.admission, xSession: {}, host: 'vendor', platform: 'darwin', surface: 'computer'}),
+      tmpdir: prepared.tmpdir, admission: prepared.admission, xSession: {}, host: 'vendor', engine: 'vendor', platform: 'darwin', surface: 'computer'}),
   };
 }
 
@@ -118,6 +123,17 @@ export function isSceneApproval(msg, bundleIds) {
   if (msg?.method !== 'elicitation/create') return false;
   const meta = msg.params?._meta ?? {}, tool = meta.tool_params;
   return meta.connector_id === 'computer-use' && tool !== null && typeof tool === 'object' && Object.keys(tool).length === 1 && bundleIds.includes(tool.app);
+}
+
+// The engine attestation of the vendor lane's first js result (the proxy's launch attestation, `_meta['cua/nativeEngine']`)
+// against the vendor engine at the serve's runtime release, as scripts/native-baseline/engine.mjs engineProblem judges a
+// vendor-engine run: anything else would record cua's own rendering as the vendor's goldens. -> the problem, or null.
+export function vendorEngineProblem(result, release) {
+  const attested = result?._meta?.['cua/nativeEngine'];
+  if (!attested || typeof attested !== 'object') return 'the vendor lane\'s first result carries no cua/nativeEngine attestation: the serve\'s engine is unknown';
+  if (attested.engine !== 'vendor') return `the ${attested.engine} engine answered the vendor lane, not the vendor engine (is CUA_NATIVE_ENGINE or ~/.config/cua/engine.json selecting another?)`;
+  if (attested.build !== release) return `the vendor engine attests the runtime ${attestedBuild(attested.build)}, not the prepared ${release}`;
+  return null;
 }
 
 const renderedText = shot => render(shot, advanceNumbering(null, shot));
@@ -199,6 +215,9 @@ export async function record(options, io) {
       if (!meta.vendor.hostAttestation) {
         meta.vendor.hostAttestation = hostAttestationOf(serverInfo, result);
         if (meta.vendor.hostAttestation.host !== 'vendor') throw new Error(`the vendor lane was answered by the ${meta.vendor.hostAttestation.host} host`);
+        const problem = vendorEngineProblem(result, pre.release);
+        meta.vendor.engineAttestation = result?._meta?.['cua/nativeEngine'] ?? null;
+        if (problem) throw new Error(problem);
       }
       const parsed = parseCell(textOf(result));
       if (!parsed) throw new SceneProblem(`a vendor cell printed no result marker${result?.isError ? ' (an error result)' : ''}`);

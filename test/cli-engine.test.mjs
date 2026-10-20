@@ -11,11 +11,12 @@ import {engineStatusLines} from '../src/cli.mjs';
 const CLI = join(REPO, 'bin', 'cua.mjs');
 const onMac = {skip: process.platform !== 'darwin' && 'the engine commands are macOS only'};
 
-function cua(t, args) {
+function cua(t, args, extraEnv = {}) {
   const home = shortScratch('cua-cli-eng-');
   t.after(home.cleanup);
-  const env = {...process.env, HOME: home.dir, CUA_HOME: join(home.dir, 'cua-home')};
+  const env = {...process.env, HOME: home.dir, CUA_HOME: join(home.dir, 'cua-home'), ...extraEnv};
   delete env.CUA_SIGNING_IDENTITY;
+  if (!('CUA_SIGN_WAIT_MS' in extraEnv)) delete env.CUA_SIGN_WAIT_MS;
   return {home: home.dir, ...spawnSync(process.execPath, [CLI, ...args], {env, encoding: 'utf8', timeout: 60_000})};
 }
 
@@ -51,6 +52,19 @@ test('engine build without an identity refuses before building, naming the setti
   const answer = JSON.parse(r.stdout);
   assert.equal(answer.error.code, 'engine_identity_missing');
   assert.match(answer.error.message, /signingIdentity/);
+});
+
+test('engine build refuses a sign wait that is not a whole number of ms up to 30 min before anything else, naming the setting; the flag wins over the variable', onMac, t => {
+  const flag = cua(t, ['engine', 'build', '--sign-wait', '45s', '--json']);
+  assert.equal(flag.status, 1);
+  assert.equal(JSON.parse(flag.stdout).error.code, 'engine_sign_wait_invalid');
+  assert.match(JSON.parse(flag.stdout).error.message, /--sign-wait/);
+  const variable = cua(t, ['engine', 'build', '--json'], {CUA_SIGN_WAIT_MS: '3600000'});
+  assert.equal(variable.status, 1);
+  assert.equal(JSON.parse(variable.stdout).error.code, 'engine_sign_wait_invalid');
+  assert.match(JSON.parse(variable.stdout).error.message, /CUA_SIGN_WAIT_MS/);
+  const overridden = cua(t, ['engine', 'build', '--sign-wait', '600000', '--json'], {CUA_SIGN_WAIT_MS: '3600000'});
+  assert.equal(JSON.parse(overridden.stdout).error.code, 'engine_identity_missing', 'the flag\'s valid wait is used; the build goes on to the identity');
 });
 
 test('engine approve with no bundle refuses, naming cua engine build', onMac, t => {

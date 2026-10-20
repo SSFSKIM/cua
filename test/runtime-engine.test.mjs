@@ -15,6 +15,7 @@ import {EngineFailure, startFakeEngine} from './helpers/fake-engine.mjs';
 import {CERT_SHA1, NAME, fakeCodesignRead, markSigned} from './helpers/fake-codesign.mjs';
 import {BUNDLE_NAME, engineBuild, infoPlist} from '../src/runtime/engine-bundle.mjs';
 import {approveEngine, buildEngine, engineStatus, installedEngine, lineReader, stopEngine, watchCaptureAlerts} from '../src/runtime/engine.mjs';
+import {main} from '../src/cli.mjs';
 
 const OLD_BUILD = 'b'.repeat(64);
 
@@ -197,6 +198,33 @@ test('the same build under a signature that is not the configured identity is re
   const result = await buildEngine(w.deps);
   assert.equal(result.changed, true);
   assert.deepEqual(result.signature, {kind: 'identity', identityMatches: true});
+});
+
+test('cua engine build waits for the GUI-session sign as long as --sign-wait or CUA_SIGN_WAIT_MS says (the flag first), 45 s by default', {skip: process.platform !== 'darwin' && 'the engine commands are macOS only'}, async t => {
+  // Over SSH (launchd's manager is not Aqua) with a job that never answers: the refusal names the bound the wait used.
+  const waited = async (args, env = {}) => {
+    const w = world(t);
+    const run = async (file, rest) => {
+      if (file !== '/bin/launchctl') return w.deps.run(file, rest);
+      w.calls.push([file, ...rest]);
+      return {code: 0, stdout: rest[0] === 'managername' ? 'Background\n' : '', stderr: ''};
+    };
+    // The command's own lines are strings; the test runner's reports, which share these streams, pass through.
+    const out = [];
+    const keep = (stream, into) => { const write = stream.write.bind(stream); t.mock.method(stream, 'write', (chunk, ...rest) => (typeof chunk === 'string' ? (into?.push(chunk), true) : write(chunk, ...rest))); };
+    keep(process.stdout, out);
+    keep(process.stderr);
+    const code = await main(['engine', 'build', ...args, '--json'], {...w.deps, run, env: {...w.deps.env, ...env}, signOptions: {tmp: w.home}});
+    t.mock.restoreAll();
+    assert.equal(code, 1);
+    const {error} = JSON.parse(out.join(''));
+    assert.equal(error.code, 'engine_sign_prompt_waiting');
+    assert.ok(w.calls.some(c => c[0] === '/bin/launchctl' && c[1] === 'bootout'), 'the job is booted out');
+    return /within (\d+) s/.exec(error.message)[1];
+  };
+  assert.equal(await waited([]), '45');
+  assert.equal(await waited([], {CUA_SIGN_WAIT_MS: '90000'}), '90');
+  assert.equal(await waited(['--sign-wait', '120000'], {CUA_SIGN_WAIT_MS: '90000'}), '120');
 });
 
 test('--sign adhoc needs no identity, signs with "-", and records adhoc', async t => {

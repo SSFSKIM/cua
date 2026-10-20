@@ -12,6 +12,7 @@ import {installRuntime, installSandboxHelper, useRuntime} from './runtime/instal
 import {describeLeftovers, describeRemoval, findCodexLeftovers, removeCodexLeftovers} from './runtime/codex-leftovers.mjs';
 import {installNode} from './runtime/node-install.mjs';
 import {approveEngine, buildEngine, engineStatus, lineReader, shortBuild, stopEngine} from './runtime/engine.mjs';
+import {signWaitMs} from './runtime/engine-sign.mjs';
 import {loadNodePins, nodeDistName, selectNodePin} from './runtime/managed-node.mjs';
 import {inspectRuntime, summarize} from './runtime/doctor.mjs';
 import {resolveRuntime} from './runtime/manifest.mjs';
@@ -70,10 +71,13 @@ ${darwin ? '' : `          [--sandbox-helper <file>]                            
                                                                only once every cua using this home is updated, since
                                                                an older cua sharing the home may still need it
   doctor [--json]                                              passive runtime health; exit 1 when a check fails
-${darwin ? `  engine build [--sign adhoc] [--json]                         build, sign and install cua's native engine at its one place
+${darwin ? `  engine build [--sign adhoc] [--sign-wait <ms>] [--json]      build, sign and install cua's native engine at its one place
                                                                on this Mac (~/Library/Application Support/cua/engine), pending
                                                                until approved; signed with signingIdentity in
-                                                               ~/.config/cua/engine.json or CUA_SIGNING_IDENTITY (ad hoc: CI only)
+                                                               ~/.config/cua/engine.json or CUA_SIGNING_IDENTITY (ad hoc: CI only);
+                                                               over SSH the sign waits 45 s for the console's keychain prompt
+                                                               (--sign-wait or CUA_SIGN_WAIT_MS, up to 1800000: the attended
+                                                               first sign on a Mac, e.g. 600000)
   engine approve [--json]                                      approve the built engine: its grants (the owner at the console
                                                                when one is missing), a relaunch and one capture, then approved
   engine status [--json]                                       the engine's bundle, signature, approval and running grants
@@ -792,7 +796,7 @@ export function engineStatusLines(status) {
 async function engine(args, deps = {}, {platform = process.platform} = {}) {
   const [command, ...rest] = args;
   if (!ENGINE_COMMANDS.includes(command)) throw new UsageError(`engine takes ${ENGINE_COMMANDS.join(', ')}`);
-  const {values} = parse(rest, command === 'build' ? {sign: {type: 'string'}} : {});
+  const {values} = parse(rest, command === 'build' ? {sign: {type: 'string'}, 'sign-wait': {type: 'string'}} : {});
   if (values.sign !== undefined && values.sign !== 'adhoc') throw new UsageError('engine build takes --sign adhoc or no --sign (the configured identity)');
   if (platform !== 'darwin') fail('engine_macos_only', 'cua\'s native engine is macOS only', {hint: 'on Linux the computer surface keeps sky_linux until #171'});
   const log = line => process.stderr.write(`${line}\n`);
@@ -807,7 +811,8 @@ async function engine(args, deps = {}, {platform = process.platform} = {}) {
     return 0;
   }
   if (command === 'build') {
-    const built = await buildEngine({...deps, ...(values.sign ? {identity: 'adhoc'} : {}), log});
+    const timeoutMs = signWaitMs({flag: values['sign-wait'], env: deps.env ?? process.env});
+    const built = await buildEngine({...deps, ...(values.sign ? {identity: 'adhoc'} : {}), signOptions: {...deps.signOptions, timeoutMs}, log});
     print(values.json ? {ok: true, ...built} : built.changed
       ? `built cua's engine ${shortBuild(built.build)} at ${built.bundlePath}, signed with ${signatureText(built.signature)}; pending until cua engine approve`
       : `cua's engine ${shortBuild(built.build)} at ${built.bundlePath} is already this build, signed with ${signatureText(built.signature)}`);

@@ -13,7 +13,7 @@ import {scratch} from './fixtures/runtime-fixture.mjs';
 import {CERT_SHA1, NAME, fakeCodesignRead, markSigned} from './helpers/fake-codesign.mjs';
 import {parsePlist} from '../src/remote/plist.mjs';
 import {
-  SIGN_JOB_SCRIPT, identityMatches, readSignature, recordedIdentity, resolveSigningIdentity, runSignJob, signBundle,
+  SIGN_JOB_SCRIPT, SIGN_JOB_TIMEOUT_MS, identityMatches, readSignature, recordedIdentity, resolveSigningIdentity, runSignJob, signBundle, signWaitMs,
 } from '../src/runtime/engine-sign.mjs';
 
 const SHA1 = 'ABCDEF0123456789ABCDEF0123456789ABCDEF01';
@@ -205,6 +205,30 @@ test('a job that does not finish in time is booted out, and the refusal says a k
   assert.equal(launchctl.at(-1), 'bootout');
   assert.ok(launchctl.filter(a => a === 'print').length > 2, 'the job\'s state is read while waiting');
   assert.equal(w.calls.filter(c => c.file === '/usr/bin/codesign').length, 0);
+});
+
+test('a longer wait names the bound it used, and the hint says how to answer the prompt while codesign is still alive', async t => {
+  const w = sshWorld(t, {job: 'hangs'});
+  await assert.rejects(signBundle(join(w.dir, 'b.app'), {...w.options, timeoutMs: 600_000}), error => {
+    assert.equal(error.code, 'engine_sign_prompt_waiting');
+    assert.match(error.message, /within 600 s /);
+    assert.match(error.hint, /--sign-wait/);
+    return true;
+  });
+});
+
+test('the sign wait: 45 s by default, CUA_SIGN_WAIT_MS when set, --sign-wait over both; anything but a whole number of ms up to 30 min is refused naming its setting', () => {
+  assert.equal(SIGN_JOB_TIMEOUT_MS, 45_000);
+  assert.equal(signWaitMs({env: {}}), 45_000);
+  assert.equal(signWaitMs({env: {CUA_SIGN_WAIT_MS: ''}}), 45_000, 'an empty variable reads as unset');
+  assert.equal(signWaitMs({env: {CUA_SIGN_WAIT_MS: '600000'}}), 600_000);
+  assert.equal(signWaitMs({flag: '120000', env: {CUA_SIGN_WAIT_MS: '600000'}}), 120_000);
+  assert.equal(signWaitMs({flag: '120000', env: {CUA_SIGN_WAIT_MS: 'nonsense'}}), 120_000, 'the flag wins; the variable is not read');
+  assert.equal(signWaitMs({flag: '1800000', env: {}}), 1_800_000);
+  for (const bad of ['0', '-5', '1.5', '1e6', 'abc', ' 600000', '1800001', '']) {
+    assert.throws(() => signWaitMs({flag: bad, env: {}}), error => error.code === 'engine_sign_wait_invalid' && /--sign-wait/.test(error.message) && /30 min/.test(error.message), `--sign-wait ${JSON.stringify(bad)}`);
+    if (bad) assert.throws(() => signWaitMs({env: {CUA_SIGN_WAIT_MS: bad}}), error => error.code === 'engine_sign_wait_invalid' && /CUA_SIGN_WAIT_MS/.test(error.message), `CUA_SIGN_WAIT_MS ${JSON.stringify(bad)}`);
+  }
 });
 
 test('a job that exits without a result fails at once with the redacted tail of its log, not the keychain-prompt sentence', async t => {

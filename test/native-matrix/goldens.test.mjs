@@ -82,9 +82,11 @@ function fakeDevice({observe = () => null, action = () => null, up = () => null,
 }
 
 // A vendor host double: answers each cell by its tag, writing the vendor's recorded text into the device's files.
-function fakeVendor(device, {fixedPath = scene => `/h/run/s1/tmp/cua-goldens-${scene}.vendor.txt`, actionKinds = ['action.vendor.before.txt', 'action.vendor.diff.txt']} = {}) {
+// `engine` is the launcher's attestation every js result carries (the vendor engine at the runtime release by default).
+const VENDOR_ENGINE = {engine: 'vendor', version: '1.0.744', build: '26.928.40906-darwin-arm64'};
+function fakeVendor(device, {fixedPath = scene => `/h/run/s1/tmp/cua-goldens-${scene}.vendor.txt`, actionKinds = ['action.vendor.before.txt', 'action.vendor.diff.txt'], engine = VENDOR_ENGINE} = {}) {
   const cells = [], elicitations = [];
-  const answer = value => ({content: [{type: 'text', text: `${MARKER}${JSON.stringify({ok: true, value, inCellMs: 1})}`}]});
+  const answer = value => ({content: [{type: 'text', text: `${MARKER}${JSON.stringify({ok: true, value, inCellMs: 1})}`}], ...(engine ? {_meta: {'cua/nativeEngine': engine}} : {})});
   const file = (kind, path, text) => { device.files.set(path, text); return {kind, path, bytes: Buffer.byteLength(text), sha256: sha(text)}; };
   let closed = false, handlers;
   const client = {
@@ -332,6 +334,32 @@ test('the vendor serve is refused as the native baseline refuses it: no runtime,
     assert.equal(device.calls.some(c => c[1] === 'up'), false);
     assert.ok(device.calls.some(c => c[0] === 'cleanup'), 'the approved home is cleaned up');
   }
+});
+
+test('the vendor lane is refused unless the vendor engine at the runtime release answered it: never cua\'s engine in the vendor host', async () => {
+  for (const [engine, pattern] of [[{...VENDOR_ENGINE, engine: 'cua', build: BUILD}, /the cua engine answered the vendor lane/],
+    [{...VENDOR_ENGINE, build: '26.900.1-darwin-arm64'}, /attests the runtime 26\.900\.1-darwin-arm64, not the prepared 26\.928\.40906-darwin-arm64/],
+    [null, /carries no cua\/nativeEngine attestation/]]) {
+    const device = fakeDevice();
+    const out = await run({device, vendor: fakeVendor(device, {engine})});
+    assert.equal(out.code, 1);
+    assert.match(out.meta.error, pattern);
+    assert.equal(device.calls.some(c => c[1] === 'up'), false, 'no scene comes up');
+    assert.equal(fs.existsSync(join(out.dir, 'goldens', 'finder', 'vendor.txt')), false);
+    assert.ok(device.calls.some(c => c[0] === 'cleanup'), 'the approved home is cleaned up');
+  }
+  const out = await run();
+  assert.equal(out.code, 0);
+  assert.deepEqual(out.meta.vendor.engineAttestation, VENDOR_ENGINE);
+});
+
+test('the vendor serve and its preflight select the vendor engine explicitly, so the account\'s engine.json never chooses it', () => {
+  const scripts = [];
+  const ops = deviceOps('mini', {exec: (command, args) => { scripts.push(args.join(' ')); return '{"commit":"c"}\n'; }});
+  ops.preflight(PREPARED);
+  assert.match(scripts[0], /CUA_REPL_HOST=vendor CUA_NATIVE_ENGINE=vendor /);
+  const serve = ops.serveSpec({pre: {checkout: '/Users/u/Developer/GitHub/cua-parity', home: '/h'}, prepared: PREPARED});
+  assert.match(serve.args.join(' '), /CUA_REPL_HOST=vendor CUA_NATIVE_ENGINE=vendor /);
 });
 
 test('a recording directory already used is refused with the way on; a dead recording\'s cleanup undoes each step in order', async () => {

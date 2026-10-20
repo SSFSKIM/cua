@@ -30,6 +30,9 @@
 // - Control traffic is never queued behind JavaScript: cancellations and elicitation answers go straight upstream.
 // - js/js_reset results get their image MIME types corrected and token-bearing URLs redacted (surface.mjs); requests
 //   and error replies pass unchanged. Accepted app approvals get `_meta.persist`.
+// - With `nativeEngine` (the launch's engine attestation, a macOS computer session's: src/runtime/launch.mjs), every
+//   js/js_reset result carries `_meta['cua/nativeEngine']`: the service's own when it set one (cua's engine, as its
+//   ping answered), else the launch's, which is how the vendor engine is attested (#117, EngineAttestation).
 // - The idle stop (issue #107): with an upstream that can stop its runtime (src/mcp/lazy-runtime.mjs) and
 //   `runtimeIdleMs` > 0, a running runtime is stopped once no tool call of this machine's (js, js_reset, end_task,
 //   profiles_list's live check) has run for that long: the timer arms when the last such call completes (or the
@@ -81,7 +84,7 @@ export function createServer({
   input, output, upstream, sessionId = randomUUID(), secrets = NOT_CONFIGURED, surfaces = ['computer'], profiles = NO_PROFILES,
   platform = process.platform, devices = null, persist = 'session', hostNotes = hostNotesFor(surfaces, {platform, devices: devices !== null}),
   model, sandboxState = null, completionDeadlineMs = 5000, teardownBudgetMs = 5000, newId = randomUUID, inAppBrowser = false,
-  diagnostics = line => process.stderr.write(`cua serve: ${line}\n`), onWithdrawn = () => {}, runtimeIdleMs = 0, idleTimer = realTimer,
+  diagnostics = line => process.stderr.write(`cua serve: ${line}\n`), onWithdrawn = () => {}, runtimeIdleMs = 0, idleTimer = realTimer, nativeEngine = null,
 }) {
   let nextUpstreamId = 0;
   let clientModel = model;
@@ -225,7 +228,9 @@ export function createServer({
       const result = redactTokens(correctImages(reply.result ?? {}));
       if (restarted) result.content = [{type: 'text', text: restartNotice(idleMs)}, ...(result.content ?? [])];
       restarted = false;
-      respond(msg.id, {...result, _meta: {...(result._meta ?? {}), 'cua/taskId': taskId}});
+      // The engine attestation (#117): the launch's, unless the service set its own (cua's engine, from its ping).
+      const engine = nativeEngine && !Object.hasOwn(result._meta ?? {}, 'cua/nativeEngine') ? {'cua/nativeEngine': nativeEngine} : {};
+      respond(msg.id, {...result, _meta: {...(result._meta ?? {}), ...engine, 'cua/taskId': taskId}});
     }, error => {
       if (queuedWork.get(key) === ticket) queuedWork.delete(key);
       if (error.code !== 'cancelled') respond(msg.id, rejectionResult(error));

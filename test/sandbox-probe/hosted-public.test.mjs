@@ -127,6 +127,7 @@ test('own-sandbox\'s public form keeps labels, passes and only codes that look l
   assert.deepEqual(out, {ok: false, checks: [{label: 'scoped: denied: store', pass: true, code: 'EPERM'}, {label: 'scoped: a TCP connect fails', pass: false},
     {label: 'scoped: exit', pass: false, code: '13'}, {label: 'scoped: TMPDIR is the session\'s own', pass: true}, {label: 'linux', pass: false}]});
   assert.equal(leaks(out), false);
+  assert.deepEqual(PUBLIC_FORMS['engine-lane'](report), out, 'the engine lane publishes its checks the same way');
 });
 
 test('probe-secrets\' and doctor\'s public forms are statuses by name, without details or stderr excerpts', () => {

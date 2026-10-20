@@ -1,5 +1,6 @@
 // The parity harnesses' test-only vendor oracle (vendor-oracle.mjs) against production launches (buildLaunch over a
 // fixture runtime, nothing spawned), and the capability host's serve command for each lane (topology.mjs).
+import '../helpers/scratch-home.mjs'; // first: the native engine's selection must not read the account's own settings
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {fileURLToPath} from 'node:url';

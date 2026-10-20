@@ -53,12 +53,17 @@
 //                                            `app-server` runs on; it reaches the native helper through `open`. Its
 //                                            `sandbox` takes the same Node from the session's compat settings (below),
 //                                            since node_repl hands the kernel's launcher a filtered environment
-//   SKY_CUA_SERVICE_PATH                     computer surface, darwin: relocated helper app, opened by the vendor through
-//                                            LaunchServices
+//   SKY_CUA_SERVICE_PATH                     computer surface, darwin, the vendor engine selected: relocated helper app,
+//                                            opened by the vendor through LaunchServices (never with cua's engine, so
+//                                            nothing may open the vendor helper)
 //   OAI_SKY_LINUX_BIN                        computer surface, linux: the relocated sky_linux helper, which the vendor
 //                                            spawns as a child over stdio (pinned rather than resolved by the vendor)
-//   CUA_SKY_SERVICE                          computer surface: the sky service module the trusted wrapper delegates to;
-//                                            the vendor's (@oai/sky/service) until #117's selection (M1b) can name cua's
+//   CUA_SKY_SERVICE                          computer surface: the sky service module the trusted wrapper delegates to:
+//                                            the vendor's (@oai/sky/service), or on macOS with cua's engine selected
+//                                            (nativeEngineFor) cua's own, src/services/engine/service.mjs, on either host
+//   CUA_ENGINE_APP                           computer surface, darwin, cua's engine selected: the approved engine bundle
+//                                            (src/runtime/engine.mjs installedEngine), which cua's service connects to at
+//                                            the engine.sock beside it and launches when nothing answers there
 //   CUA_ENGINE_SCREENSHOTS                   computer surface, darwin: where cua's own engine writes screenshots, under
 //                                            the session's run directory, which the kernel may read; the engine creates
 //                                            it (outside every sandbox, never through a symbolic link), since the
@@ -84,8 +89,11 @@
 //   CUA_SECRETS_UNAVAILABLE                  otherwise: why (e.g. secrets_disabled), so the trusted services fail a
 //                                            {{secret:…}} reference with that reason
 // The selection (spec docs/doperpowers/specs/2026-10-14-own-repl-host-design.md, "Selection is a connection fact"): the
-// launch record also carries `replHost` ({host, reason}, replHostFor), the REPL host it runs. CUA_REPL_HOST and CUA_NODE
-// are read by the proxy only and never reach the runtime's environment. Deliberately never set:
+// launch record also carries `replHost` ({host, reason}, replHostFor), the REPL host it runs, and `nativeEngine`, the
+// engine attestation the proxy puts on every js result of a macOS computer session ({engine, version, build}: cua's
+// engine's version and build from its approved bundle, the vendor's helper bundle version and runtime release; null
+// elsewhere; docs/doperpowers/specs/2026-10-18-own-native-engine-design.md, EngineAttestation). CUA_REPL_HOST, CUA_NODE
+// and CUA_NATIVE_ENGINE are read by the proxy only and never reach the runtime's environment. Deliberately never set:
 // NODE_REPL_SANDBOX_ALLOWED_UNIX_SOCKETS, NODE_REPL_UNTRUSTED_ENV_ALLOWLIST (cells see only what the vendor launcher
 // adds), SKY_CUA_SERVICE_NATIVE_PIPE_PATH, NODE_REPL_HOST_SERVICES_PIPE_PATH, NODE_REPL_WORKER_WRAPPER,
 // NODE_REPL_DENIED_PATHS.
@@ -149,7 +157,8 @@
 // kernel works in that directory instead, with its tmp/ as its TMPDIR (src/repl-host/supervisor.mjs kernelLaunch). It
 // holds nothing but the kernel's lifeline while it runs; createLaunchDirs makes it, and it goes with the session
 // (removeLaunchDirs, src/runtime/run-dir.mjs). Null otherwise.
-import {accessSync, chmodSync, constants, mkdirSync, realpathSync, rmSync, statSync} from 'node:fs';
+import {accessSync, chmodSync, constants, mkdirSync, readFileSync, realpathSync, rmSync, statSync} from 'node:fs';
+import {homedir} from 'node:os';
 import {dirname, isAbsolute, join} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {CuaError, fail} from './errors.mjs';
@@ -165,6 +174,9 @@ import {denyListFor, realDenyList} from '../sandbox/policy.mjs';
 import {SEATBELT_EXEC} from '../sandbox/seatbelt.mjs';
 import {helperFor} from '../sandbox/linux.mjs';
 import {removeCompatSettings, SESSION_ID, writeCompatSettings} from '../sandbox/compat-settings.mjs';
+import {engineDirectory, enginePaths, installedEngine} from './engine.mjs';
+import {engineSettingsPath, readEngineSettings} from './engine-sign.mjs';
+import {plistString} from '../services/engine/client.mjs';
 
 export {NODE_FLOOR};
 
@@ -185,6 +197,8 @@ export const SERVICE_SUPPORT_DIRS = [ownedPath('../secrets')];
 // host; trusted with the wrapper on macOS. By its spelled path under the real src/services: it may not exist yet, and a
 // trusted root that does not exist is ignored (src/runtime/sandbox.mjs assertTrustedServicesContained, the worker).
 export const ENGINE_SERVICE_DIR = join(ownedPath('../services'), 'engine');
+// The module CUA_SKY_SERVICE names when cua's engine is selected (nativeEngineFor).
+export const ENGINE_SERVICE = join(ENGINE_SERVICE_DIR, 'service.mjs');
 // cua's own browser service (docs/doperpowers/specs/2026-10-13-own-browser-service-design.md), trusted with the browser
 // surface.
 export const BROWSER_SERVICE_IMPL_DIR = ownedPath('../browser-service');
@@ -274,9 +288,15 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
     ...(compat ? {CODEX_CLI_PATH: compatExecutable(), CUA_COMPAT_NODE: p.node} : linux ? linuxSandboxEnv(owned.home, runtime.manifest.arch, enabled) : {CUA_REPL_SANDBOX_EXEC: SEATBELT_EXEC}),
     ...(kernelDir ? {CUA_REPL_KERNEL_DIR: kernelDir} : {}),
   });
+  // The engine a macOS computer session drives (nativeEngineFor): cua's own service and the approved bundle, on either
+  // host, or the vendor's service and helper (a selection that names no engine is the vendor's: today's path).
+  const cuaEngine = !linux && enabled.includes('computer') && replHost.engine?.engine === 'cua' ? replHost.engine.app : null;
   if (enabled.includes('computer')) {
-    Object.assign(env, linux ? {OAI_SKY_LINUX_BIN: p.skyLinuxBin} : {SKY_CUA_SERVICE_PATH: p.skyServiceApp}, {CUA_SKY_SERVICE: p.skyVendorService});
-    if (!linux) env.CUA_ENGINE_SCREENSHOTS = join(cwd, 'screenshots');
+    if (linux) Object.assign(env, {OAI_SKY_LINUX_BIN: p.skyLinuxBin, CUA_SKY_SERVICE: p.skyVendorService});
+    else {
+      Object.assign(env, cuaEngine ? {CUA_SKY_SERVICE: ENGINE_SERVICE, CUA_ENGINE_APP: cuaEngine.bundlePath} : {SKY_CUA_SERVICE_PATH: p.skyServiceApp, CUA_SKY_SERVICE: p.skyVendorService});
+      env.CUA_ENGINE_SCREENSHOTS = join(cwd, 'screenshots');
+    }
   }
   if (enabled.includes('browser')) {
     env.BROWSER_USE_AVAILABLE_BACKENDS = 'chrome';
@@ -292,6 +312,8 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
   } else if (secretsUnavailable) env[STORE_ENV.unavailable] = secretsUnavailable;
   const launch = {command: own ? ownNode : p.node, args: own ? ['--disable-sigusr1', REPL_HOST_SUPERVISOR] : [p.cuaRepl], env, cwd, sessionTmp, kernelDir, denyRead,
     replHost: {host: replHost.host, reason: replHost.reason}, managedNodeRoot: owned.node, stagingRoot: owned.staging, sandboxHelperRoot: owned.sandbox,
+    nativeEngine: linux || !enabled.includes('computer') ? null : cuaEngine ? {engine: 'cua', version: cuaEngine.engineVersion, build: cuaEngine.build}
+      : {engine: 'vendor', version: bundleVersion(p.skyServiceApp), build: runtime.release},
     compat: compat ? {home: owned.home, sessionId, node: p.node} : null};
   if (own) assertTrustedServicesContained(launch);
   return launch;
@@ -327,43 +349,39 @@ function linuxSandboxEnv(home, arch, surfaces) {
 }
 
 // The REPL host a launch with `surfaces` on `platform` runs, and why -> {host: 'cua' | 'vendor', reason}, plus, for
-// `cua`, `node`: the Node it runs on, and for `own_host_node_unavailable`, `nodeTried`: the candidates ownHostNode tried.
+// `cua`, `node`: the Node it runs on, for `own_host_node_unavailable`, `nodeTried`: the candidates ownHostNode tried, and
+// for the computer surface on macOS, `engine`: the native engine the session drives (nativeEngineFor's, below).
 // On Linux it is always cua's own host (#115 M3, which closes #135): the vendor host there is retired, because its
 // node_repl ran JavaScript unconfined when its launcher failed at run time, and cua's sandbox does not serve it.
 // `resolveOwnNode` resolves the own host's Node (ownHostNode from `ambient` and `home` by default), asked at most once
 // and only when the selection would be cua's own host: a connection resolves its selection once, so its Node too.
-// Either host runs cua's browser service with the browser surface. CUA_REPL_HOST in `ambient`, the caller's original
-// environment:
+// `engine` reaches nativeEngineFor (its `config`, `installed` and `defaultEngine`, for tests); it too is asked only
+// for the computer surface on macOS, once. Either host runs cua's browser service with the browser surface.
+// CUA_REPL_HOST in `ambient`, the caller's original environment:
 //   vendor   the vendor host (`explicit`): the macOS rollback; Node is never asked for. Refused on Linux
 //            (repl_host_refused, naming why), never downgraded.
-//   cua      cua's own host (`explicit`) where it can run, else refused before launch (repl_host_refused), never
-//            downgraded: with the computer surface on macOS, whose native helper accepts only the vendor host's
-//            node_repl as a peer until #117. Where it can run but no Node 24 or later resolves, refused too
-//            (repl_host_node).
-//   unset or empty   the vendor host with `macos_native_peer_requires_vendor` for the computer surface on macOS (MAWS
-//            client mode does not change that); else cua's own host, the default since #116's last stage (M5):
-//            `linux` on Linux, `browser_only` for a macOS session with only the browser surface. That default needs a
-//            Node 24 or later: on macOS, where none resolves, the vendor host with `own_host_node_unavailable`, never a
-//            refused session (cua itself runs on Node 22); on Linux, which has no vendor host to fall back to, the
-//            session is refused (repl_host_node) with the remedy (`cua install` places the pinned Node 24).
-// Any other CUA_REPL_HOST is refused (invalid_repl_host), as is a CUA_NODE that is not an absolute path wherever Node is
-// asked for (invalid_setting).
-export function replHostFor({platform, surfaces, ambient, home, resolveOwnNode = () => ownHostNode({ambient, home})}) {
+//   cua      cua's own host (`explicit`) where it can run, else refused before launch, never downgraded: with the
+//            computer surface on macOS where the vendor engine is selected, whose helper accepts only the vendor host's
+//            node_repl as a peer (repl_host_refused); where no Node 24 or later resolves (repl_host_node).
+//   unset or empty   for the computer surface on macOS, the host the engine needs: the vendor host for the vendor
+//            engine (`macos_native_peer_requires_vendor`; MAWS client mode does not change that), cua's own for cua's
+//            (`cua_engine`); else cua's own host, the default since #116's last stage (M5): `linux` on Linux,
+//            `browser_only` for a macOS session with only the browser surface. That default needs a Node 24 or later:
+//            on macOS, where none resolves, the vendor host with `own_host_node_unavailable`, never a refused session
+//            (cua itself runs on Node 22); on Linux, which has no vendor host to fall back to, the session is refused
+//            (repl_host_node) with the remedy (`cua install` places the pinned Node 24).
+// The computer surface on macOS follows the engine × host table of the native engine's spec ("Engine selection, host
+// switch and retirement"; macosComputerHost below). Any other CUA_REPL_HOST is refused (invalid_repl_host), as is a
+// CUA_NODE that is not an absolute path wherever Node is asked for (invalid_setting).
+export function replHostFor({platform, surfaces, ambient, home, resolveOwnNode = () => ownHostNode({ambient, home}), engine = {}}) {
   const value = ambient.CUA_REPL_HOST;
   const requested = value === undefined || value === '' ? null : value;
   if (requested !== null && !REPL_HOSTS.includes(requested)) fail('invalid_repl_host', `CUA_REPL_HOST must be ${REPL_HOSTS.join(' or ')}`);
-  if (requested === 'vendor') {
-    if (platform === 'linux')
-      fail('repl_host_refused', 'CUA_REPL_HOST=vendor is not supported on Linux: the vendor host there is retired (#115), because its node_repl ran JavaScript cells unconfined when its sandbox launcher failed (#135), and cua\'s own sandbox does not serve it. Unset CUA_REPL_HOST (or use CUA_REPL_HOST=cua) for cua\'s own host');
-    return {host: 'vendor', reason: 'explicit'};
-  }
-  const macosComputer = platform === 'darwin' && surfaces.includes('computer');
-  if (requested === 'cua') {
-    if (macosComputer)
-      fail('repl_host_refused', 'CUA_REPL_HOST=cua is not supported with the computer surface on macOS: its computer-use helper accepts only the vendor host\'s node_repl as a peer until #117 replaces it. Use CUA_SHIM_SURFACES=browser for cua\'s own host, or unset CUA_REPL_HOST (or use CUA_REPL_HOST=vendor)');
-    return {host: 'cua', reason: 'explicit', node: resolveOwnNode()};
-  }
-  if (macosComputer) return {host: 'vendor', reason: 'macos_native_peer_requires_vendor'};
+  if (requested === 'vendor' && platform === 'linux')
+    fail('repl_host_refused', 'CUA_REPL_HOST=vendor is not supported on Linux: the vendor host there is retired (#115), because its node_repl ran JavaScript cells unconfined when its sandbox launcher failed (#135), and cua\'s own sandbox does not serve it. Unset CUA_REPL_HOST (or use CUA_REPL_HOST=cua) for cua\'s own host');
+  if (platform === 'darwin' && surfaces.includes('computer')) return macosComputerHost({requested, ambient, resolveOwnNode, engine});
+  if (requested === 'vendor') return {host: 'vendor', reason: 'explicit'};
+  if (requested === 'cua') return {host: 'cua', reason: 'explicit', node: resolveOwnNode()};
   const reason = platform === 'linux' ? 'linux' : 'browser_only';
   try {
     return {host: 'cua', reason, node: resolveOwnNode()};
@@ -371,6 +389,91 @@ export function replHostFor({platform, surfaces, ambient, home, resolveOwnNode =
     if (error?.code !== 'repl_host_node' || platform === 'linux') throw error;
     return {host: 'vendor', reason: 'own_host_node_unavailable', nodeTried: error.tried};
   }
+}
+
+// The computer surface on macOS: the engine first (nativeEngineFor applies the refusals for an unknown value, the host
+// setting and the approved engine, in that order), then the host it needs, Node last. cua's engine runs on cua's own
+// host (`cua_engine`, or `explicit` with CUA_REPL_HOST=cua), or on the vendor host with CUA_REPL_HOST=vendor, cua's
+// service loaded in the vendor trusted worker (comparison A's lane). With no Node 24 an explicit cua engine is refused
+// (repl_host_node, naming CUA_REPL_HOST=vendor), never moved to the vendor engine; a default one keeps the vendor host
+// and engine with a warning until M6 (`own_host_node_unavailable`), as does a default with no approved engine
+// (`engine_not_installed`, nativeEngineFor's).
+function macosComputerHost({requested, ambient, resolveOwnNode, engine}) {
+  const selected = nativeEngineFor({env: ambient, requestedHost: requested, ...engine});
+  if (selected.engine === 'vendor') {
+    const reason = selected.reason === 'engine_not_installed' ? 'engine_not_installed' : requested === 'vendor' ? 'explicit' : 'macos_native_peer_requires_vendor';
+    return {host: 'vendor', reason, engine: selected};
+  }
+  if (requested === 'vendor') return {host: 'vendor', reason: 'explicit', engine: selected};
+  let node;
+  try { node = resolveOwnNode(); } catch (error) {
+    if (error?.code !== 'repl_host_node') throw error;
+    if (selected.reason !== 'default' || requested === 'cua')
+      throw Object.assign(new CuaError('repl_host_node', `${engineSource(selected.reason, 'cua')} selects cua's engine, which runs on cua's own REPL host: ${error.message}; or set CUA_REPL_HOST=vendor to run cua's engine on the vendor host`), {tried: error.tried});
+    return {host: 'vendor', reason: 'own_host_node_unavailable', nodeTried: error.tried, engine: {engine: 'vendor', reason: 'own_host_node_unavailable', status: 'warn'}};
+  }
+  return {host: 'cua', reason: requested === 'cua' ? 'explicit' : 'cua_engine', node, engine: selected};
+}
+
+// ---- EngineSelection (#117; the native engine's spec, Interfaces) ----
+
+// The engine a macOS computer session drives when nothing selects one: the vendor's until M5 flips it to cua's.
+export const DEFAULT_NATIVE_ENGINE = 'vendor';
+const NATIVE_ENGINES = ['vendor', 'cua'];
+const engineSource = (reason, value) => (reason === 'settings' ? `"engine": "${value}" in ~/.config/cua/engine.json` : reason === 'default' ? `the default engine (${value})` : `CUA_NATIVE_ENGINE=${value}`);
+
+// The native engine of a macOS computer session -> {engine: 'vendor' | 'cua', reason, status, app?}. The setting is
+// CUA_NATIVE_ENGINE in `env` (unset or empty: not set), else `engine` in ~/.config/cua/engine.json (`config`, read only
+// then), else `defaultEngine`; reason `explicit`, `settings` or `default`. An unknown value is refused
+// (invalid_setting, one sentence naming the two values), as is an engine.json that cannot be read. The vendor engine
+// with `requestedHost` cua is refused (repl_host_refused, naming CUA_NATIVE_ENGINE=cua): its helper accepts only the
+// vendor host. cua's engine needs an approved engine on this Mac (`installed`, asked only here and once:
+// installedEngine reads the bundle's signature with codesign) and carries it as `app` {bundlePath, engineVersion,
+// build}; without one an explicit setting, or CUA_REPL_HOST=cua, is refused (engine_not_installed, naming `cua install
+// --engine`), while the default keeps the vendor engine (reason `engine_not_installed`, status `warn`) until M6, so a
+// plugin update never breaks a session before the engine is installed. Status is `pass` otherwise. `env.HOME` locates
+// engine.json and the approved engine, as `cua engine` places them.
+export function nativeEngineFor({env, requestedHost = null, defaultEngine = DEFAULT_NATIVE_ENGINE,
+  config = () => readEngineSettings({env}), installed = () => installedEngine({dir: engineDirectory(env.HOME || homedir())})}) {
+  const setting = engineSetting(env, config, defaultEngine);
+  if (setting.engine === 'vendor') {
+    if (requestedHost === 'cua')
+      fail('repl_host_refused', `CUA_REPL_HOST=cua is not supported with the computer surface on macOS and the vendor engine (${engineSource(setting.reason, 'vendor')}): the vendor's computer-use helper accepts only the vendor host's node_repl as a peer. Set CUA_NATIVE_ENGINE=cua to run the computer surface on cua's own host with cua's engine, use CUA_SHIM_SURFACES=browser for a browser-only session there, or unset CUA_REPL_HOST (or use CUA_REPL_HOST=vendor) to keep the vendor engine`);
+    return {engine: 'vendor', reason: setting.reason, status: 'pass'};
+  }
+  const app = installed();
+  if (!app) {
+    if (setting.reason !== 'default' || requestedHost === 'cua') {
+      const bundle = enginePaths(engineDirectory(env.HOME || homedir())).bundle;
+      fail('engine_not_installed', `${engineSource(setting.reason, 'cua')} selects cua's own engine, and no approved engine is installed on this Mac (${bundle}, approved by \`cua engine approve\`): install it with \`cua install --engine\` (or \`cua engine build\`, then \`cua engine approve\` with the owner at the console), or set CUA_NATIVE_ENGINE=vendor for the vendor engine`);
+    }
+    return {engine: 'vendor', reason: 'engine_not_installed', status: 'warn'};
+  }
+  return {engine: 'cua', reason: setting.reason, status: 'pass', app: {bundlePath: app.bundlePath, engineVersion: app.engineVersion, build: app.build}};
+}
+
+// -> {engine, reason: 'explicit' | 'settings' | 'default'}.
+function engineSetting(env, config, defaultEngine) {
+  const value = env.CUA_NATIVE_ENGINE;
+  if (value !== undefined && value !== '') {
+    if (!NATIVE_ENGINES.includes(value)) fail('invalid_setting', `CUA_NATIVE_ENGINE must be ${NATIVE_ENGINES.join(' or ')}`);
+    return {engine: value, reason: 'explicit'};
+  }
+  let settings;
+  try { settings = config(); } catch (error) {
+    if (error instanceof CuaError) fail('invalid_setting', error.message);
+    throw error;
+  }
+  if (settings?.engine === undefined) return {engine: defaultEngine, reason: 'default'};
+  if (!NATIVE_ENGINES.includes(settings.engine)) fail('invalid_setting', `"engine" in ${engineSettingsPath(env)} must be ${NATIVE_ENGINES.join(' or ')}`);
+  return {engine: settings.engine, reason: 'settings'};
+}
+
+// A bundle's CFBundleShortVersionString from its XML Info.plist, or null (the vendor engine's attestation).
+function bundleVersion(appPath) {
+  try {
+    return plistString(readFileSync(join(appPath, 'Contents', 'Info.plist'), 'utf8'), 'CFBundleShortVersionString');
+  } catch { return null; }
 }
 
 // The Node cua's own REPL host runs on: the first of an explicit CUA_NODE (an absolute path), the Node `cua install`

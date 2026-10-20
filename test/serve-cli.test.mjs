@@ -1,6 +1,7 @@
 // `cua serve` and the plugin's `cua-shim.mjs` end to end, as real processes, against a scratch CUA_HOME whose
 // "installed" release runs a fake upstream in place of the vendor runtime. This proves the server consumes the actual
 // resolver and launcher: allowlisted environment, owned per-connection working directory, and cleanup at close.
+import './helpers/scratch-home.mjs'; // first: the native engine's selection must not read the account's own settings
 import {test, after} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawn, spawnSync} from 'node:child_process';

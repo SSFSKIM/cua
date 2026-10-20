@@ -1,3 +1,4 @@
+import './helpers/scratch-home.mjs'; // first: the native engine's selection must not read the account's own settings
 import {createAgentState} from '../src/remote/health.mjs';
 import {test} from 'node:test';
 import {loadHelperPin} from '../src/sandbox/linux.mjs';

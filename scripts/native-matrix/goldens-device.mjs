@@ -6,7 +6,7 @@
 //   node scripts/native-matrix/goldens-device.mjs engine-stop         `shutdown` to the approved engine (refused while
 //                                                                     another connection is open)
 //   node scripts/native-matrix/goldens-device.mjs observe <scene> --run <dir>
-//   node scripts/native-matrix/goldens-device.mjs action  <scene> --run <dir>
+//   node scripts/native-matrix/goldens-device.mjs action  <scene> --run <dir> --expect <digest>
 //   node scripts/native-matrix/goldens-device.mjs steps   <scene> --run <dir> --phase setup|reset|teardown
 //
 // cua's lane is the raw Skyshot straight from the approved engine's socket (src/services/engine/client.mjs and its
@@ -21,9 +21,13 @@
 // `action` is the scene's one action sequence, on one connection, so the two observations share a lineage: a full
 // observation, the scene's action target found in cua's own rendering (the service's numbering, ./observations.mjs) and
 // clicked by its token, then the next observation in the default mode, the base and the subject of the diff golden.
+// It clicks only once the observation before is the scene's fixed state (`--expect`, stateDigest of the fixed-state
+// Skyshot the controller kept): a restarted page still loading, or a selection the reset left, is observed again, then
+// refused with nothing clicked.
 // `steps` sends a scene's setup, reset or teardown keys through the engine, each only while the key guard finds its
 // target in front (scripts/accept/key-guard.mjs, by pid and, for Finder, the run's window).
 import {execFileSync} from 'node:child_process';
+import {createHash} from 'node:crypto';
 import * as fs from 'node:fs';
 import {createConnection} from 'node:net';
 import {isAbsolute, join} from 'node:path';
@@ -32,7 +36,10 @@ import {createEngineClient} from '../../src/services/engine/client.mjs';
 import {createObservations} from '../../src/services/engine/observations.mjs';
 import {installedEngine, shortBuild, stopEngine} from '../../src/runtime/engine.mjs';
 import {engineBuild, engineVersion} from '../../src/runtime/engine-bundle.mjs';
-import {SCENES, activateScene, fixedStateProblems, readState, teardownFor} from '../repl-parity/scenes-mac.mjs';
+import {configuredIdentity, identityMatches, readSignature} from '../../src/runtime/engine-sign.mjs';
+import {advanceNumbering, render} from '../../src/services/engine/render.mjs';
+import {normalizeDrift} from '../../test/native-goldens/compare.mjs';
+import {SCENES, activateScene, fixedStateProblems, guardOf, readState, teardownFor} from '../repl-parity/scenes-mac.mjs';
 import {DESELECT_ALL_KEY} from '../repl-parity/scenes-mac-finder.mjs';
 import {actionIndex} from '../repl-parity/scenes-mac-text.mjs';
 import {frontWindow} from '../repl-parity/scenes-mac-device.mjs';
@@ -40,21 +47,29 @@ import {frontmostFromProbe, sendIfFrontmost} from '../accept/key-guard.mjs';
 
 const SCRIPT = fileURLToPath(import.meta.url);
 export const SCREENSHOT_DIR = 'goldens-screenshots';
-// The action's target may appear late (a web area after enablement): up to three observations this far apart.
-const TARGET_ATTEMPTS = 3, TARGET_RETRY_MS = 1000;
+// The action's target may appear late (a web area after enablement), and a restarted scene may not yet show its fixed
+// state (a page still loading): up to five observations this far apart.
+const TARGET_ATTEMPTS = 5, TARGET_RETRY_MS = 1000;
 // After a key step, the time Finder takes to apply a toggle before the next one.
 const STEP_SETTLE_MS = 500;
 const sleepFor = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 // Whether the approved engine may be recorded from this checkout: it must exist and its build must be the checkout's
-// (src/runtime/engine-bundle.mjs computes it). -> {ok, engine, checkout, problems: [sentence]}.
-export function engineCheck({installed, checkout}) {
+// (src/runtime/engine-bundle.mjs computes it). `signature` is the bundle's as readSignature reads it and `configured` the
+// configured signing identity: only the signature's kind and whether it matches leave (the spec's pre-flight item 2),
+// never the identity. -> {ok, engine: {..., signature: {kind, identityMatches}}, checkout, problems: [sentence]}.
+export function engineCheck({installed, checkout, signature = null, configured = null}) {
   const problems = [];
   if (!installed) problems.push('no approved engine on this Mac: build and approve it first (cua engine build, cua engine approve)');
   else if (installed.build !== checkout.build) problems.push(`the approved engine's build ${shortBuild(installed.build)} is not this checkout's ${shortBuild(checkout.build)}: build and approve this checkout's engine first`);
-  const engine = installed ? {bundlePath: installed.bundlePath, build: installed.build, engineVersion: installed.engineVersion, approvedAt: installed.approvedAt} : null;
+  const engine = installed ? {bundlePath: installed.bundlePath, build: installed.build, engineVersion: installed.engineVersion, approvedAt: installed.approvedAt,
+    signature: {kind: signature?.kind ?? null, identityMatches: signature ? identityMatches(signature, configured) : null}} : null;
   return {ok: problems.length === 0, engine, checkout, problems};
 }
+
+// The scene's state as cua renders it, the lanes' drift (the loopback page's port, compare.mjs) normalized: what the
+// controller and `act` compare to tell that an action starts from the kept fixed state.
+export const stateDigest = shot => createHash('sha256').update(normalizeDrift(render(shot, advanceNumbering(null, shot)))).digest('hex');
 
 // The Skyshot as a golden keeps it: the engine's answer without its diagnostics.
 export const goldenForm = shot => { const {timings, ...rest} = shot; void timings; return rest; };
@@ -88,19 +103,23 @@ export async function observe({id, record, client, screenshots}) {
   return {scene: id, build: client.identity?.build ?? null, skyshot: goldenForm(shot), timings: shot.timings ?? null, frame: shot.window?.frame ?? null, problems: []};
 }
 
-// The scene's action sequence on one connection. -> {scene, build, before, after, click: {index, route}, timings,
-// frames, problems}; before and after null when anything refused.
-export async function act({id, record, client, screenshots, retryMs = TARGET_RETRY_MS, sleep = sleepFor}) {
+// The scene's action sequence on one connection, from the state whose stateDigest is `expect`. -> {scene, build, before,
+// after, click: {index, route}, timings, frames, problems}; before and after null when anything refused.
+export async function act({id, record, client, screenshots, expect, retryMs = TARGET_RETRY_MS, sleep = sleepFor}) {
   const refused = problems => ({scene: id, build: client.identity?.build ?? null, before: null, after: null, click: null, timings: null, frames: null, problems});
   const observations = createObservations();
-  let before = null, index = null;
+  if (typeof expect !== 'string' || !/^[0-9a-f]{64}$/.test(expect)) throw new Error('action needs --expect <the fixed state\'s digest>');
+  let before = null, index = null, fixed = false;
   for (let attempt = 1; attempt <= TARGET_ATTEMPTS && index === null; attempt++) {
     if (attempt > 1) await sleep(retryMs);
     before = await getState(client, record, screenshots, {disableDiff: true});
     const problems = sceneProblems(id, before, record);
     if (problems.length) return refused(problems);
-    index = actionIndex(observations.observe(record.app, before, {disableDiff: true}), SCENES[id].action);
+    const text = observations.observe(record.app, before, {disableDiff: true});
+    fixed = stateDigest(goldenForm(before)) === expect;
+    if (fixed) index = actionIndex(text, SCENES[id].action);
   }
+  if (!fixed) return refused([{code: 'start_state', message: `cua's observation is not the scene's fixed state after ${TARGET_ATTEMPTS} observations; nothing was clicked`}]);
   if (index === null) return refused([{code: 'target_missing', message: `the action's target is not in cua's rendering after ${TARGET_ATTEMPTS} observations; nothing was clicked`}]);
   const {token, lineage} = observations.element(record.app, index);
   let clicked;
@@ -120,7 +139,7 @@ export async function act({id, record, client, screenshots, retryMs = TARGET_RET
 // own, scenes-mac.mjs teardownFor).
 function stepsOf(id, phase, {record, run, io}) {
   if (phase === 'setup') return record.setup ?? [];
-  if (phase === 'reset') return id === 'finder' ? [{activate: 'finder'}, {pressKey: DESELECT_ALL_KEY, guard: {pid: record.pid, bundleId: record.bundleId, window: record.window.number}}] : [];
+  if (phase === 'reset') return id === 'finder' ? [{activate: 'finder'}, {pressKey: DESELECT_ALL_KEY, guard: guardOf(id, record)}] : [];
   if (phase === 'teardown') return io.teardown(id, run);
   throw new Error(`unknown phase ${phase}: setup, reset or teardown`);
 }
@@ -148,8 +167,12 @@ export async function runSteps({id, phase, run, record, client, io}) {
 
 // An EngineClient on this Mac without a REPL host: the socket opened directly, the bundle launched with `open -n -g -a`
 // when nothing answers (as the own host's relay does), no cell budget to suspend.
-export function engineClientFor(appPath, {connect = createConnection, open = app => execFileSync('/usr/bin/open', ['-n', '-g', '-a', app])} = {}) {
-  const nodeRepl = {
+export const engineClientFor = (appPath, seams) => createEngineClient({nodeRepl: engineNodeRepl(seams), appPath});
+
+// The trusted worker's part the client needs (src/services/engine/client.mjs): the socket, the bundle's launch, and no
+// cell budget.
+export function engineNodeRepl({connect = createConnection, open = app => execFileSync('/usr/bin/open', ['-n', '-g', '-a', app])} = {}) {
+  return {
     nativePipe: {createConnection: path => new Promise((resolve, reject) => {
       const socket = connect(path);
       socket.once('error', reject);
@@ -158,11 +181,11 @@ export function engineClientFor(appPath, {connect = createConnection, open = app
     launchServices: {openApplication: async ({applicationPath}) => { open(applicationPath); }},
     withSuspendedTimeout: fn => fn(),
   };
-  return createEngineClient({nodeRepl, appPath});
 }
 
 const defaultIo = () => ({
   installed: () => installedEngine(),
+  signature: bundlePath => ({signature: readSignature(bundlePath), configured: configuredIdentity()}),
   checkout: () => ({build: engineBuild(), engineVersion: engineVersion()}),
   stop: () => stopEngine(),
   client: appPath => engineClientFor(appPath),
@@ -183,9 +206,12 @@ function parse(argv) {
 export async function main(argv, {io: given = {}} = {}) {
   const io = {...defaultIo(), ...given};
   const {command, scene, flags} = parse(argv);
-  if (command === 'engine-check') return engineCheck({installed: io.installed(), checkout: io.checkout()});
+  if (command === 'engine-check') {
+    const installed = io.installed();
+    return engineCheck({installed, checkout: io.checkout(), ...(installed ? io.signature(installed.bundlePath) : {})});
+  }
   if (command === 'engine-stop') return io.stop();
-  if (!['observe', 'action', 'steps'].includes(command)) throw new Error('usage: goldens-device.mjs engine-check | engine-stop | observe <scene> --run <dir> | action <scene> --run <dir> | steps <scene> --run <dir> --phase setup|reset|teardown');
+  if (!['observe', 'action', 'steps'].includes(command)) throw new Error('usage: goldens-device.mjs engine-check | engine-stop | observe <scene> --run <dir> | action <scene> --run <dir> --expect <digest> | steps <scene> --run <dir> --phase setup|reset|teardown');
   if (!Object.hasOwn(SCENES, scene ?? '')) throw new Error(`unknown scene ${scene}`);
   if (!flags.run || !isAbsolute(flags.run)) throw new Error('--run <absolute directory> is required');
   const run = fs.realpathSync(flags.run);
@@ -197,7 +223,7 @@ export async function main(argv, {io: given = {}} = {}) {
   const screenshots = join(run, SCREENSHOT_DIR);
   try {
     if (command === 'observe') return await observe({id: scene, record, client, screenshots});
-    if (command === 'action') return await act({id: scene, record, client, screenshots, sleep: io.sleep});
+    if (command === 'action') return await act({id: scene, record, client, screenshots, expect: flags.expect, sleep: io.sleep});
     return await runSteps({id: scene, phase: flags.phase, run, record, client, io});
   } finally { client.close(); }
 }

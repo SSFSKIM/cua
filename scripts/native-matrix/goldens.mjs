@@ -13,7 +13,8 @@
 //                                      what each declaration is needed for, and what is left once the expiring
 //                                      declarations are deleted; exit 1 while anything is left to act on
 //   goldens.mjs cleanup --device <alias> --preparation <dir>/preparation.json
-//                                      resume the cleanup of a recording that died (prepare.mjs's approved home)
+//                                      finish what a recording that died left: Finder's teardown steps, every scene
+//                                      down, the approved engine stopped, the approved home's cleanup (prepare.mjs)
 //
 // `record`, in one sitting and one run directory on the device (default ~/Library/Caches/cua-harness/native-goldens):
 //   - Refuses before anything is prepared unless the approved engine exists and its build is the harness checkout's
@@ -40,6 +41,7 @@
 import {execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import * as fs from 'node:fs';
+import {tmpdir} from 'node:os';
 import {isAbsolute, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
@@ -54,13 +56,15 @@ import {engineBuild, engineVersion} from '../../src/runtime/engine-bundle.mjs';
 import {shortBuild} from '../../src/runtime/engine.mjs';
 import {advanceNumbering, render} from '../../src/services/engine/render.mjs';
 import {ACTION, BIND, FIXED, isSessionFile} from './goldens-cells.mjs';
+import {stateDigest} from './goldens-device.mjs';
 import {GOLDENS_DIR, REPO_ROOT, SCENE_ORDER, install} from './goldens-install.mjs';
 
 export {SCENE_ORDER};
 const SCRIPT = fileURLToPath(import.meta.url);
 const REFUSED = 2;
 const CELL_MS = 60_000, BIND_MS = 120_000;
-const FIXED_ATTEMPTS = 3, RETRY_MS = 1000;
+const FIXED_ATTEMPTS = 3, RETRY_MS = 1000, START_ATTEMPTS = 3;
+const VENDOR_ACTION_FILES = ['action.vendor.before.txt', 'action.vendor.diff.txt'];
 export const DEFAULT_RUN = 'Library/Caches/cua-harness/native-goldens';
 const sha = text => createHash('sha256').update(text).digest('hex');
 const lastJson = text => JSON.parse(String(text).trim().split('\n').at(-1));
@@ -125,7 +129,7 @@ export async function record(options, io) {
   const {ops, log = console.log} = io;
   const sleep = io.sleep ?? (ms => new Promise(done => setTimeout(done, ms)));
   const dir = resolve(out);
-  if (fs.existsSync(join(dir, 'meta.json'))) throw new Error(`${dir} already holds a recording`);
+  if (fs.existsSync(join(dir, 'meta.json'))) throw new Error(`${dir} already holds a recording (complete, incomplete or refused): choose a new --out`);
   fs.mkdirSync(join(dir, 'goldens'), {recursive: true});
   const meta = {schema: 'native-goldens-1', device, started: new Date().toISOString(), plan: {scenes}, problems: [], complete: false, scenes: {}, elicitations: []};
   const write = () => fs.writeFileSync(join(dir, 'meta.json'), `${JSON.stringify(meta, null, 2)}\n`);
@@ -150,20 +154,27 @@ export async function record(options, io) {
   try {
     meta.fixtures = {chrome: ops.scenes(['place-chrome']), electron: ops.scenes(['build-electron'])};
     readSizingConfig(ctx, 'before');
+    ctx.run = options.run ?? `${ops.home()}/${DEFAULT_RUN}`;
+    meta.runDir = ctx.run;
 
     ctx.prepared = ops.prepare(approvedRuntime);
-    fs.writeFileSync(join(dir, 'preparation.json'), `${JSON.stringify({device, prepared: ctx.prepared}, null, 2)}\n`, {mode: 0o600});
-    log(`the approved home ${ctx.prepared.home} is held; if this recording dies, resume its cleanup with: node scripts/native-matrix/goldens.mjs cleanup --device ${device} --preparation ${quote(join(dir, 'preparation.json'))}`);
-    meta.vendor = {home: ctx.prepared.home, release: ctx.prepared.runtimeReuse?.release ?? null};
+    fs.writeFileSync(join(dir, 'preparation.json'), `${JSON.stringify({device, prepared: ctx.prepared, run: ctx.run}, null, 2)}\n`, {mode: 0o600});
+    log(`the approved home ${ctx.prepared.home} is held; if this recording dies, run: node scripts/native-matrix/goldens.mjs cleanup --device ${device} --preparation ${quote(join(dir, 'preparation.json'))} (${CLEANUP_STEPS})`);
+    meta.vendor = {home: ctx.prepared.home};
     meta.engineStopAtStart = ops.goldens(['engine-stop']);
     stopped = true;
     const pre = ops.preflight(ctx.prepared);
     Object.assign(meta.checkout, {commit: pre.commit, dirty: pre.dirty});
     Object.assign(meta, {hardware: pre.hardware, os: pre.os, display: pre.display});
+    Object.assign(meta.vendor, {release: pre.release ?? null, runtimeRoot: pre.runtimeRoot ?? null});
+    // The native baseline's refusals for a vendor serve (scripts/native-baseline.mjs runBaseline).
     if (pre.dirty) throw new Error('the harness checkout is dirty');
+    if (!pre.release) throw new Error('no runtime installed in the approved home');
+    if (pre.serves) throw new Error('a serve of the harness checkout is already running on the device');
+    const reuse = ctx.prepared.runtimeReuse ?? null;
+    if (!reuse || pre.home !== reuse.approvedHome || pre.runtimeRoot !== reuse.runtimeRoot)
+      throw new Error(`the serve resolves the runtime ${pre.runtimeRoot}, not the approved ${reuse?.runtimeRoot ?? '(none prepared)'}; refusing rather than serving another copy`);
 
-    ctx.run = options.run ?? `${ops.home()}/${DEFAULT_RUN}`;
-    meta.runDir = ctx.run;
     const preflight = ops.scenes(['preflight', '--run', ctx.run]);
     if (preflight.refusals?.length) throw new Error(`the scenes refuse: ${preflight.refusals.map(r => r.message).join('; ')}`);
 
@@ -171,7 +182,8 @@ export async function record(options, io) {
     client = io.connect(ops.serveSpec({pre, prepared: ctx.prepared}), {
       answer: msg => (isSceneApproval(msg, bundleIds) ? {action: 'accept', content: {}} : {action: 'decline'}),
       onElicitation: (row, msg) => meta.elicitations.push({t: row.t, app: msg.params?._meta?.tool_params?.app ?? null, action: row.action}),
-      stderrFile: join(dir, 'serve-stderr.txt'),
+      // Outside the recording, which is committed: the serve's stderr is a diagnostic, not evidence.
+      stderrFile: meta.serveStderr = join(fs.mkdtempSync(join(tmpdir(), 'cua-goldens-serve-')), 'serve-stderr.txt'),
     });
     const serverInfo = (await client.initialize())?.serverInfo ?? null;
     await client.request('tools/list');
@@ -260,15 +272,17 @@ async function recordScene(ctx, id) {
     if (first.problems.length) { last = describeProblems(first.problems); continue; }
     const vendor = await ctx.js(FIXED(id, SCENES[id].window.title));
     if (!vendor.ok) throw new SceneProblem(`the vendor's fixed text failed: ${vendor.error}`);
+    const [text] = filesOf(ctx, vendor.value, ['vendor.txt']);
     const second = observe();
     const drift = !second.problems.length && renderedText(first.skyshot) !== renderedText(second.skyshot);
     if (second.problems.length || drift) {
-      discard(ctx, vendor.value.files);
+      discard(ctx, [text]);
       last = second.problems.length ? describeProblems(second.problems) : 'the state moved between cua\'s two observations';
       continue;
     }
-    writeGolden(ctx, id, 'vendor.txt', take(ctx, vendor.value.files[0]));
+    writeGolden(ctx, id, 'vendor.txt', take(ctx, text));
     writeGolden(ctx, id, 'skyshot.json', `${JSON.stringify(second.skyshot, null, 1)}\n`);
+    scene.fixedDigest = stateDigest(second.skyshot);
     capture('fixed.cua', first.frame, {timings: first.timings});
     capture('fixed.cua', second.frame, {timings: second.timings, kept: true});
     kept = true;
@@ -279,20 +293,31 @@ async function recordScene(ctx, id) {
   activate(ctx, id);
   const action = await ctx.js(ACTION(id, SCENES[id].window.title, SCENES[id].action));
   if (!action.ok) throw new SceneProblem(`the vendor's action failed: ${action.error}`);
+  const actionFiles = filesOf(ctx, action.value, VENDOR_ACTION_FILES);
   const after = observe();
   if (after.problems.length) {
-    discard(ctx, action.value.files);
+    discard(ctx, actionFiles);
     throw new SceneProblem(`the state after the vendor's action is not the scene's (${describeProblems(after.problems)}); its texts were removed unread`);
   }
-  for (const file of action.value.files) writeGolden(ctx, id, file.kind, take(ctx, file));
+  for (const file of actionFiles) writeGolden(ctx, id, file.kind, take(ctx, file));
   capture('action.vendor', after.frame, {index: action.value.index, timings: after.timings});
 
-  // Back to the fixed state, then cua's action on one engine connection.
-  if (id === 'finder') steps(ctx, id, 'reset');
-  else { takeDown(ctx, id, {strict: true}); record = bringUp(ctx, id); scene.restarted = {pid: record.pid, window: record.window}; }
-  activate(ctx, id);
-  const acted = checkBuild(ops.goldens(['action', id, '--run', run]));
-  if (acted.problems.length) throw new SceneProblem(`cua's action did not record: ${describeProblems(acted.problems)}`);
+  // Back to the fixed state, then cua's action on one engine connection, from the kept fixed state: the device clicks
+  // only once its observation renders as the kept Skyshot does, and the controller checks the same of what it returns.
+  // A start that is not the fixed state (a selection the reset left, a restarted page still loading) is reset again.
+  let acted = null, why = null;
+  for (let attempt = 1; attempt <= START_ATTEMPTS && !acted; attempt++) {
+    scene.startAttempts = attempt;
+    if (id === 'finder') steps(ctx, id, 'reset');
+    else { takeDown(ctx, id, {strict: true}); record = bringUp(ctx, id); scene.restarted = {pid: record.pid, window: record.window}; }
+    activate(ctx, id);
+    const answer = checkBuild(ops.goldens(['action', id, '--run', run, '--expect', scene.fixedDigest]));
+    if (answer.problems.length && !answer.problems.every(p => p.code === 'start_state')) throw new SceneProblem(`cua's action did not record: ${describeProblems(answer.problems)}`);
+    if (answer.problems.length) why = describeProblems(answer.problems);
+    else if (stateDigest(answer.before) !== scene.fixedDigest) why = 'cua\'s observation before its click is not the kept fixed state';
+    else acted = answer;
+  }
+  if (!acted) throw new SceneProblem(`cua's action could not start from the fixed state in ${START_ATTEMPTS} resets (${why}); nothing of it was recorded`);
   writeGolden(ctx, id, 'action.before.skyshot.json', `${JSON.stringify(acted.before, null, 1)}\n`);
   writeGolden(ctx, id, 'action.after.skyshot.json', `${JSON.stringify(acted.after, null, 1)}\n`);
   capture('action.cua.before', acted.frames?.[0], {click: acted.click, timings: acted.timings?.before ?? null});
@@ -307,8 +332,9 @@ async function recordScene(ctx, id) {
 function bringUp(ctx, id) {
   const {ops, meta, run} = ctx;
   const extra = id === 'chrome' ? ['--chrome-app', meta.fixtures.chrome.appPath] : id === 'electron' ? ['--electron-app', meta.fixtures.electron.appPath] : [];
-  const record = ops.scenes(['up', id, '--run', run, ...extra]);
-  if (record.refusals?.length) throw new SceneProblem(`the scene refuses: ${record.refusals.map(r => r.message).join('; ')}`);
+  // A refusal arrives as `up`'s {error, refusals}, which ops.scenes throws with its text.
+  let record;
+  try { record = ops.scenes(['up', id, '--run', run, ...extra]); } catch (error) { throw new SceneProblem(`it did not come up: ${error.message}`); }
   ctx.up.add(id);
   steps(ctx, id, 'setup');
   return record;
@@ -347,12 +373,35 @@ function take(ctx, file) {
   if (sha(text) !== file.sha256) throw new SceneProblem(`${file.kind} changed between the cell and the copy; it was not kept`);
   return text;
 }
+// The files a vendor cell names, exactly `kinds` in that order (a kind becomes a golden's file name); anything else is
+// removed on the device unread.
+function filesOf(ctx, value, kinds) {
+  const files = Array.isArray(value?.files) ? value.files : [];
+  if (files.length === kinds.length && files.every((file, i) => file?.kind === kinds[i])) return files;
+  discard(ctx, files);
+  throw new SceneProblem(`a vendor cell named the files ${JSON.stringify(files.map(file => file?.kind ?? null))}, not ${kinds.join(', ')}; none was read`);
+}
 function discard(ctx, files) {
   for (const file of files) if (isSessionFile(ctx.prepared, file.path)) ctx.ops.discard(file.path);
 }
 function writeGolden(ctx, id, name, text) {
   fs.mkdirSync(join(ctx.dir, 'goldens', id), {recursive: true});
   fs.writeFileSync(join(ctx.dir, 'goldens', id, name), text, {mode: 0o644});
+}
+
+// What a dead recording leaves and `cleanup` undoes, in order.
+const CLEANUP_STEPS = 'Finder\'s teardown steps (goldens-device.mjs steps finder --phase teardown), scenes-mac.mjs down all --run <run>, goldens-device.mjs engine-stop, then the approved home\'s cleanup';
+
+// The cleanup of a recording that died, from its preparation.json ({device, prepared, run}): each step tried whatever the
+// one before answered. -> {finderTeardown, scenesDown, engineStop, preparationCleanup}.
+export function cleanupRecording({prepared, run}, ops) {
+  const tried = fn => { try { return fn(); } catch (error) { return {error: error.message}; } };
+  return {
+    finderTeardown: tried(() => ops.goldens(['steps', 'finder', '--run', run, '--phase', 'teardown'])),
+    scenesDown: tried(() => ops.scenes(['down', 'all', '--run', run])),
+    engineStop: tried(() => ops.goldens(['engine-stop'])),
+    preparationCleanup: tried(() => ops.cleanup(prepared)),
+  };
 }
 
 // ---- the CLI ------------------------------------------------------------------------------------------------------
@@ -377,6 +426,7 @@ export function parseCommand(argv) {
   if (!values.out) fail('--out is required');
   const scenes = values.scenes ? values.scenes.split(',') : [...SCENE_ORDER];
   if (!scenes.length || scenes.some(s => !SCENE_ORDER.includes(s))) fail(`--scenes is a list of ${SCENE_ORDER.join(', ')}`);
+  if (!values['no-install'] && SCENE_ORDER.some(s => !scenes.includes(s))) fail('a recording of some scenes cannot be installed (install takes all four): add --no-install');
   return {command, device: values.device, approvedRuntime, out: resolve(values.out), run: absolute(values.run, 'run'), scenes: SCENE_ORDER.filter(s => scenes.includes(s)), install: !values['no-install']};
 }
 
@@ -397,9 +447,12 @@ export async function main(argv = process.argv.slice(2), {log = console.log} = {
   }
   const ops = deviceOps(command.device);
   if (command.command === 'cleanup') {
-    const {device, prepared} = JSON.parse(fs.readFileSync(command.preparation, 'utf8'));
-    if (device !== command.device) throw new Error(`${command.preparation} is a preparation on ${device}, not ${command.device}`);
-    log(JSON.stringify(ops.cleanup(prepared), null, 2));
+    const preparation = JSON.parse(fs.readFileSync(command.preparation, 'utf8'));
+    if (preparation.device !== command.device) throw new Error(`${command.preparation} is a preparation on ${preparation.device}, not ${command.device}`);
+    const out = cleanupRecording(preparation, ops);
+    log(JSON.stringify(out, null, 2));
+    if (out.preparationCleanup?.error) return 1;
+    fs.rmSync(command.preparation, {force: true});
     return 0;
   }
   return record(command, {ops, log, connect: (spec, handlers) => new StdioClient({...spec, clientName: 'cua-native-goldens', ...handlers}),

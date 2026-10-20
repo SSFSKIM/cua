@@ -10,7 +10,8 @@ import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {SkyComputerUseError} from '../../src/services/engine/protocol.mjs';
 import {DESELECT_ALL_KEY} from '../../scripts/repl-parity/scenes-mac-finder.mjs';
-import {SCREENSHOT_DIR, act, engineCheck, main, observe, runSteps} from '../../scripts/native-matrix/goldens-device.mjs';
+import {EventEmitter} from 'node:events';
+import {SCREENSHOT_DIR, act, engineCheck, engineNodeRepl, goldenForm, main, observe, runSteps, stateDigest} from '../../scripts/native-matrix/goldens-device.mjs';
 
 const GOLDENS = new URL('../native-goldens/', import.meta.url);
 const shot = (scene, name) => JSON.parse(fs.readFileSync(new URL(`${scene}/${name}`, GOLDENS), 'utf8'));
@@ -30,6 +31,7 @@ function fakeClient(answers, {build = 'b'.repeat(64)} = {}) {
     },
     close() { this.closed = true; }};
 }
+const digestOf = shot => stateDigest(goldenForm(shot));
 const recordOf = (scene, pid, extra = {}) => ({scene, app: `/Applications/${scene}.app`, bundleId: `test.${scene}`, pid, window: {number: 7, bounds: {x: 0, y: 0, width: 100, height: 100}}, ...extra});
 
 test('engineCheck: refuses without an approved engine and when the approved build is not the checkout\'s', () => {
@@ -40,7 +42,32 @@ test('engineCheck: refuses without an approved engine and when the approved buil
   assert.equal(other.ok, false);
   assert.match(other.problems[0], /aaaaaaaaaaaa.*cccccccccccc|cccccccccccc.*aaaaaaaaaaaa/);
   const same = engineCheck({installed: {bundlePath: '/e/cua Engine.app', build: checkout.build, engineVersion: '0.1.0', approvedAt: 't'}, checkout});
-  assert.deepEqual(same, {ok: true, engine: {bundlePath: '/e/cua Engine.app', build: checkout.build, engineVersion: '0.1.0', approvedAt: 't'}, checkout, problems: []});
+  assert.deepEqual(same, {ok: true, engine: {bundlePath: '/e/cua Engine.app', build: checkout.build, engineVersion: '0.1.0', approvedAt: 't', signature: {kind: null, identityMatches: null}}, checkout, problems: []});
+});
+
+test('engineCheck: the signature leaves as its kind and whether it matches, never the identity', () => {
+  const sha1 = 'A1B2C3D4E5F60718293A4B5C6D7E8F9012345678';
+  const installed = {bundlePath: '/e/cua Engine.app', build: 'c'.repeat(64), engineVersion: '0.1.0', approvedAt: 't', identity: sha1};
+  const signature = {kind: 'identity', sha1, authority: 'Apple Development: Someone (TEAM123456)'};
+  const out = engineCheck({installed, checkout: {build: 'c'.repeat(64)}, signature, configured: sha1});
+  assert.deepEqual(out.engine.signature, {kind: 'identity', identityMatches: true});
+  assert.doesNotMatch(JSON.stringify(out), new RegExp(`${sha1}|Someone|TEAM123456`, 'i'));
+  assert.equal(engineCheck({installed, checkout: {build: 'c'.repeat(64)}, signature, configured: 'B'.repeat(40)}).engine.signature.identityMatches, false);
+});
+
+test('engineNodeRepl: the socket resolves once connected and rejects on its error; the launch opens the bundle', async () => {
+  const sockets = [], opened = [];
+  const repl = engineNodeRepl({connect: path => { const socket = Object.assign(new EventEmitter(), {path}); sockets.push(socket); return socket; }, open: app => opened.push(app)});
+  const connecting = repl.nativePipe.createConnection('/e/engine.sock');
+  sockets[0].emit('connect');
+  assert.equal((await connecting).path, '/e/engine.sock');
+  assert.equal(sockets[0].listenerCount('error'), 0);
+  const failing = repl.nativePipe.createConnection('/e/engine.sock');
+  sockets[1].emit('error', Object.assign(new Error('connect ENOENT'), {code: 'ENOENT'}));
+  await assert.rejects(failing, /ENOENT/);
+  await repl.launchServices.openApplication({applicationPath: '/e/cua Engine.app'});
+  assert.deepEqual(opened, ['/e/cua Engine.app']);
+  assert.equal(repl.withSuspendedTimeout(() => 7), 7);
 });
 
 test('observe: one full observation with the screenshot, the image removed, the diagnostics kept apart from the Skyshot', async () => {
@@ -93,7 +120,7 @@ test('observe: another process or another window of the app is refused', async (
 test('act: the target found in cua\'s own rendering, clicked by its token in the lineage, then the next observation in that lineage', async () => {
   const before = shot('textedit', 'action.before.skyshot.json'), after = shot('textedit', 'action.after.skyshot.json');
   const client = fakeClient([before, {meta: {inputRoute: 3}}, after]);
-  const out = await act({id: 'textedit', record: recordOf('textedit', before.app.pid), client, screenshots: '/s'});
+  const out = await act({id: 'textedit', record: recordOf('textedit', before.app.pid), client, screenshots: '/s', expect: digestOf(before)});
   assert.deepEqual(out.problems, []);
   assert.deepEqual(client.calls.map(c => c.method), ['get_app_state', 'click', 'get_app_state']);
   assert.equal(client.calls[0].args.disableDiff, true);
@@ -106,12 +133,12 @@ test('act: the target found in cua\'s own rendering, clicked by its token in the
   assert.equal(out.before.lineage, out.after.lineage);
 });
 
-test('act: a target the tree does not expose after three observations is not clicked', async () => {
+test('act: a target the tree does not expose after five observations is not clicked', async () => {
   const before = shot('electron', 'action.before.skyshot.json');
   const without = {...before, nodes: before.nodes.filter(n => n.title !== 'Fixture button' && n.description !== 'Fixture button')};
-  const client = fakeClient([without, without, without]);
-  const out = await act({id: 'electron', record: recordOf('electron', before.app.pid), client, screenshots: '/s', retryMs: 0});
-  assert.deepEqual(client.calls.map(c => c.method), ['get_app_state', 'get_app_state', 'get_app_state']);
+  const client = fakeClient([without, without, without, without, without]);
+  const out = await act({id: 'electron', record: recordOf('electron', before.app.pid), client, screenshots: '/s', expect: digestOf(without), retryMs: 0});
+  assert.deepEqual(client.calls.map(c => c.method), Array(5).fill('get_app_state'));
   assert.deepEqual(out.problems.map(p => p.code), ['target_missing']);
   assert.equal(out.before, null);
 });
@@ -119,10 +146,10 @@ test('act: a target the tree does not expose after three observations is not cli
 test('act: a click the engine refuses, or an after observation in another lineage, records nothing', async () => {
   const before = shot('textedit', 'action.before.skyshot.json'), after = shot('textedit', 'action.after.skyshot.json');
   const refused = new SkyComputerUseError({code: -10005, reason: 'the activation guard failed', errorName: 'activationFailed'});
-  const failed = await act({id: 'textedit', record: recordOf('textedit', before.app.pid), client: fakeClient([before, refused]), screenshots: '/s'});
+  const failed = await act({id: 'textedit', record: recordOf('textedit', before.app.pid), client: fakeClient([before, refused]), screenshots: '/s', expect: digestOf(before)});
   assert.deepEqual(failed.problems.map(p => p.code), ['click_failed']);
   assert.match(failed.problems[0].message, /activationFailed/);
-  const moved = await act({id: 'textedit', record: recordOf('textedit', before.app.pid), client: fakeClient([before, {meta: {}}, {...after, lineage: 'Lother'}]), screenshots: '/s'});
+  const moved = await act({id: 'textedit', record: recordOf('textedit', before.app.pid), client: fakeClient([before, {meta: {}}, {...after, lineage: 'Lother'}]), screenshots: '/s', expect: digestOf(before)});
   assert.deepEqual(moved.problems.map(p => p.code), ['lineage_changed']);
   assert.equal(moved.after, null);
 });
@@ -130,9 +157,27 @@ test('act: a click the engine refuses, or an after observation in another lineag
 test('act: a Finder state that shows what the run does not own clicks nothing', async () => {
   const before = shot('finder', 'action.before.skyshot.json');
   const client = fakeClient([before]);
-  const out = await act({id: 'finder', record: recordOf('finder', before.app.pid, {folder: '/run/finder/cua-scene-finder'}), client, screenshots: '/s'});
+  const out = await act({id: 'finder', record: recordOf('finder', before.app.pid, {folder: '/run/finder/cua-scene-finder'}), client, screenshots: '/s', expect: digestOf(before)});
   assert.deepEqual(client.calls.map(c => c.method), ['get_app_state']);
   assert.ok(out.problems.length > 0);
+});
+
+test('act: clicks only once the observation is the kept fixed state, port drift aside; never when it does not come back', async () => {
+  const fixed = shot('chrome', 'skyshot.json');
+  const record = recordOf('chrome', fixed.app.pid);
+  const loading = {...fixed, nodes: fixed.nodes.slice(0, 3)};
+  // A restart serves the page on another port: the same state.
+  const moved = JSON.parse(JSON.stringify(fixed).replace(/127\.0\.0\.1:\d+/g, '127.0.0.1:1'));
+  assert.notEqual(JSON.stringify(moved), JSON.stringify(fixed));
+  const client = fakeClient([loading, moved, {meta: {inputRoute: 3}}, moved]);
+  const out = await act({id: 'chrome', record, client, screenshots: '/s', expect: digestOf(fixed), retryMs: 0});
+  assert.deepEqual(out.problems, []);
+  assert.deepEqual(client.calls.map(c => c.method), ['get_app_state', 'get_app_state', 'click', 'get_app_state']);
+  const never = fakeClient(Array(5).fill(loading));
+  const refused = await act({id: 'chrome', record, client: never, screenshots: '/s', expect: digestOf(fixed), retryMs: 0});
+  assert.deepEqual(refused.problems.map(p => p.code), ['start_state']);
+  assert.equal(never.calls.some(c => c.method === 'click'), false);
+  await assert.rejects(act({id: 'chrome', record, client: fakeClient([fixed]), screenshots: '/s'}), /--expect/);
 });
 
 test('steps: activations and keys in order, each key through the engine only while its guard is in front', async () => {

@@ -40,7 +40,7 @@ observations that rendered alike, and every vendor text was read only after cua'
 | | cua lane | vendor lane |
 |---|---|---|
 | Path | the approved engine's socket, the raw \`Skyshot\` (\`scripts/native-matrix/goldens-device.mjs\`) | \`cua serve\` on the vendor host, the approved vendor runtime (\`prepare.mjs\`'s approved-home path) |
-| Build | engine ${code(e.build)}, version ${e.engineVersion ?? 'unknown'}, approved ${e.approvedAt ?? 'unknown'} | Codex Computer Use runtime ${code(meta.vendor?.release)} (\`SkyComputerUseService\`) |
+| Build | engine ${code(e.build)}, version ${e.engineVersion ?? 'unknown'}, approved ${e.approvedAt ?? 'unknown'}, signature ${e.signature?.kind ?? 'unknown'} (identity matches: ${e.signature?.identityMatches ?? 'unknown'}) | Codex Computer Use runtime ${code(meta.vendor?.release)} (\`SkyComputerUseService\`) |
 
 Both lanes share the following:
 - the recording, ${meta.started} to ${meta.finished}, on device ${code(meta.device)} (${meta.hardware?.model ?? 'unknown'}), ${os.name ?? 'macOS'} ${os.version ?? ''} (${os.build ?? 'unknown'}), display scale ${meta.display?.scale ?? 'unknown'};
@@ -69,7 +69,8 @@ ${frames.join('\n')}
 \`source.json\` names the recording, and the render test checks every file above against it. The engine's
 per-observation diagnostics (\`timings\`, such as \`focusRead\`) are in \`meta.json\`, not in the Skyshots. Each lane's
 action started from the fixed state: Finder's selection was cleared in the same window between the two actions, and
-the other scenes were restarted.
+the other scenes were restarted; cua's action clicked only once its observation rendered as the kept fixed-state
+Skyshot does (the loopback page's port aside), and \`meta.json\` gives each scene's \`startAttempts\`.
 
 ## Finder is full text
 

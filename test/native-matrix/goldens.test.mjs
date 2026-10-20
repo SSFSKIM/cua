@@ -8,11 +8,13 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import {createHash} from 'node:crypto';
 import {tmpdir} from 'node:os';
-import {join} from 'node:path';
+import {dirname, join} from 'node:path';
 import {MARKER, parseCell} from '../../scripts/native-baseline/cells.mjs';
 import {SCENES} from '../../scripts/repl-parity/scenes-mac.mjs';
 import {ACTION, BIND, FIXED, isSessionFile} from '../../scripts/native-matrix/goldens-cells.mjs';
-import {SCENE_ORDER, deviceOps, main, parseCommand, record} from '../../scripts/native-matrix/goldens.mjs';
+import {SCENE_ORDER, cleanupRecording, deviceOps, main, parseCommand, record} from '../../scripts/native-matrix/goldens.mjs';
+import {stateDigest} from '../../scripts/native-matrix/goldens-device.mjs';
+import {audit, auditClean, rerender} from '../native-goldens/audit.mjs';
 import {install} from '../../scripts/native-matrix/goldens-install.mjs';
 
 const GOLDENS = new URL('../native-goldens/', import.meta.url);
@@ -23,10 +25,10 @@ const scratches = [];
 const scratch = () => { const dir = fs.realpathSync(fs.mkdtempSync(join(tmpdir(), 'cua-goldens-'))); scratches.push(dir); return dir; };
 after(() => { for (const dir of scratches) fs.rmSync(dir, {recursive: true, force: true}); });
 const BUILD = 'b'.repeat(64);
-const PREPARED = {device: 'mini', home: '/h', userHome: '/Users/u', configHome: '/s/config', tmpdir: '/s/tmp', token: 'secret-token', admission: 'secret-token', runtimeReuse: {release: '26.928.40906-darwin-arm64'}};
+const PREPARED = {device: 'mini', home: '/h', userHome: '/Users/u', configHome: '/s/config', tmpdir: '/s/tmp', token: 'secret-token', admission: 'secret-token', runtimeReuse: {approvedHome: '/h', release: '26.928.40906-darwin-arm64', runtimeRoot: '/h/runtimes/26.928.40906-darwin-arm64'}};
 
 // A device double: the scenes' CLI, the device side of the recorder, preparation and the files the vendor cells wrote.
-function fakeDevice({observe = () => null, engineProblems = [], approvedBuild = BUILD} = {}) {
+function fakeDevice({observe = () => null, action = () => null, up = () => null, preflight = {}, engineProblems = [], approvedBuild = BUILD} = {}) {
   const calls = [], files = new Map(), taken = [], discarded = [];
   const records = {};
   let pid = 100;
@@ -46,7 +48,11 @@ function fakeDevice({observe = () => null, engineProblems = [], approvedBuild = 
         return {scene, build: BUILD, skyshot, timings: {focusRead: null}, frame: skyshot.window.frame, problems: []};
       }
       if (command === 'action') {
-        const before = shot(scene, 'action.before.skyshot.json'), after = shot(scene, 'action.after.skyshot.json');
+        const n = calls.filter(c => c[1] === 'action' && c[2] === scene).length;
+        const given = action(scene, n, args);
+        if (given) return given;
+        // By default cua's action starts from the fixed state the fixed sandwich kept.
+        const before = shot(scene, 'skyshot.json'), after = shot(scene, 'action.after.skyshot.json');
         return {scene, build: BUILD, before, after, click: {index: 2, route: 3}, timings: {before: null, after: null}, frames: [before.window.frame, after.window.frame], problems: []};
       }
       throw new Error(`unexpected ${command}`);
@@ -57,7 +63,7 @@ function fakeDevice({observe = () => null, engineProblems = [], approvedBuild = 
       if (command === 'place-chrome') return {appPath: '/c/Chrome for Testing.app', version: '155.0.0.0', reused: true};
       if (command === 'build-electron') return {appPath: '/f/cua Electron Fixture.app', electronVersion: '44.9.0', sourceHash: 'abc', reused: false};
       if (command === 'preflight') return {refusals: []};
-      if (command === 'up') { records[scene] = recordFor(scene); return records[scene]; }
+      if (command === 'up') { up(scene); records[scene] = recordFor(scene); return records[scene]; }
       if (command === 'activate') return {scene, ok: true};
       if (command === 'down') return {scene, down: true};
       throw new Error(`unexpected scenes ${command}`);
@@ -65,7 +71,7 @@ function fakeDevice({observe = () => null, engineProblems = [], approvedBuild = 
     prepare: home => { calls.push(['prepare', home]); return PREPARED; },
     cleanup: prepared => { calls.push(['cleanup', prepared.home]); return {removed: true}; },
     preflight: () => ({commit: 'c'.repeat(40), dirty: false, checkout: '/Users/u/Developer/GitHub/cua-parity', home: '/h', release: '26.928.40906-darwin-arm64',
-      hardware: {model: 'Mac14,12'}, os: {name: 'macOS', version: '27.0', build: '26A428'}, display: {scale: 2}}),
+      runtimeRoot: '/h/runtimes/26.928.40906-darwin-arm64', serves: false, hardware: {model: 'Mac14,12'}, os: {name: 'macOS', version: '27.0', build: '26A428'}, display: {scale: 2}, ...preflight}),
     home: () => '/Users/u',
     sizingConfig: () => 'plist mtime 2026-10-19T20:30:43Z\n0 fetched 2026-10-19T20:30:09Z rule default legacy absent (false) value {}\n',
     take: path => { taken.push(path); const text = files.get(path); files.delete(path); return text; },
@@ -76,7 +82,7 @@ function fakeDevice({observe = () => null, engineProblems = [], approvedBuild = 
 }
 
 // A vendor host double: answers each cell by its tag, writing the vendor's recorded text into the device's files.
-function fakeVendor(device, {fixedPath = scene => `/h/run/s1/tmp/cua-goldens-${scene}.vendor.txt`} = {}) {
+function fakeVendor(device, {fixedPath = scene => `/h/run/s1/tmp/cua-goldens-${scene}.vendor.txt`, actionKinds = ['action.vendor.before.txt', 'action.vendor.diff.txt']} = {}) {
   const cells = [], elicitations = [];
   const answer = value => ({content: [{type: 'text', text: `${MARKER}${JSON.stringify({ok: true, value, inCellMs: 1})}`}]});
   const file = (kind, path, text) => { device.files.set(path, text); return {kind, path, bytes: Buffer.byteLength(text), sha256: sha(text)}; };
@@ -94,8 +100,8 @@ function fakeVendor(device, {fixedPath = scene => `/h/run/s1/tmp/cua-goldens-${s
         return answer({bound: true});
       }
       if (kind === 'fixed') return answer({files: [file('vendor.txt', fixedPath(scene), read(scene, 'vendor.txt'))]});
-      if (kind === 'action') return answer({index: 2, files: [file('action.vendor.before.txt', `/s/tmp/cua-goldens-${scene}.action.vendor.before.txt`, read(scene, 'action.vendor.before.txt')),
-        file('action.vendor.diff.txt', `/s/tmp/cua-goldens-${scene}.action.vendor.diff.txt`, read(scene, 'action.vendor.diff.txt'))]});
+      if (kind === 'action') return answer({index: 2, files: [file(actionKinds[0], `/s/tmp/cua-goldens-${scene}.action.vendor.before.txt`, read(scene, 'action.vendor.before.txt')),
+        file(actionKinds[1], `/s/tmp/cua-goldens-${scene}.action.vendor.diff.txt`, read(scene, 'action.vendor.diff.txt'))]});
       return answer({ready: true});
     },
     async call(name) { cells.push(name); return {}; },
@@ -117,6 +123,7 @@ const run = async ({device = fakeDevice(), vendor = fakeVendor(device), repo = f
   const code = await record({device: 'mini', approvedRuntime: '/h', out: dir, goldensDir: repo.goldens, repoRoot: repo.root, ...options},
     {ops: device.ops, connect: vendor.connect, controllerBuild: () => ({build: controllerBuild, engineVersion: '0.1.0'}), controllerCommit: () => 'd'.repeat(40), log: () => {}, sleep: async () => {}});
   const meta = JSON.parse(fs.readFileSync(join(dir, 'meta.json'), 'utf8'));
+  if (meta.serveStderr) scratches.push(dirname(meta.serveStderr));
   return {code, meta, dir, device, vendor, repo};
 };
 
@@ -127,6 +134,9 @@ test('parseCommand: record needs a declared device, the approved runtime and an 
   assert.throws(() => parseCommand(['record', '--device', 'mini', '--approved-runtime', 'h', '--out', 'x']), /absolute/);
   assert.deepEqual(parseCommand(['check', '--write']), {command: 'check', write: true, json: false});
   assert.equal(parseCommand(['install', 'docs/x']).command, 'install');
+  // A recording of some scenes cannot be installed, so it is refused before the sitting unless it says --no-install.
+  assert.throws(() => parseCommand(['record', '--device', 'mini', '--approved-runtime', '/h', '--out', 'x', '--scenes', 'finder']), /--no-install/);
+  assert.deepEqual(parseCommand(['record', '--device', 'mini', '--approved-runtime', '/h', '--out', 'x', '--scenes', 'finder', '--no-install']).scenes, ['finder']);
 });
 
 test('refuses before anything is prepared when the approved engine is not the checkout\'s build', async () => {
@@ -166,6 +176,10 @@ test('one sitting: both lanes per scene on the same state, in PROVENANCE\'s layo
   assert.deepEqual(textedit, ['scenes up', 'goldens steps setup', 'scenes activate', 'goldens observe', 'goldens observe', 'scenes activate', 'goldens observe',
     'goldens steps teardown', 'scenes down', 'scenes up', 'goldens steps setup', 'scenes activate', 'goldens action', 'goldens steps teardown', 'scenes down']);
   assert.deepEqual(out.device.calls.filter(c => c.includes('finder') && c[1] === 'steps').map(c => c.at(-1)), ['setup', 'reset', 'teardown']);
+  // cua's action is asked to start from the kept fixed state, by its digest.
+  const actionCall = out.device.calls.find(c => c[1] === 'action' && c[2] === 'finder');
+  assert.equal(actionCall.at(-1), stateDigest(shot('finder', 'skyshot.json')));
+  assert.equal(out.meta.scenes.finder.startAttempts, 1);
   assert.deepEqual(out.vendor.cells.filter(c => c.endsWith('textedit')), ['bind textedit', 'fixed textedit', 'action textedit']);
   assert.deepEqual(out.vendor.elicitations.map(e => e.action), ['accept', 'accept', 'accept', 'accept']);
   // The stop discipline around the run, the preparation cleaned up, its record gone, the vendor connection closed.
@@ -178,6 +192,10 @@ test('one sitting: both lanes per scene on the same state, in PROVENANCE\'s layo
   assert.equal(out.meta.scenes.finder.frames.same, true);
   assert.deepEqual([out.meta.sizingConfig.before.lines.length, out.meta.sizingConfig.after.lines.length], [2, 2]);
   assert.doesNotMatch(JSON.stringify(out.meta), /secret-token/);
+  // The vendor's runtime as the device resolved it; the serve's stderr kept out of the committed recording.
+  assert.equal(out.meta.vendor.release, '26.928.40906-darwin-arm64');
+  assert.equal(fs.existsSync(join(out.dir, 'serve-stderr.txt')), false);
+  assert.equal(out.meta.serveStderr.startsWith(out.dir), false);
   // The install: the goldens' source is the recording, compared as full text, and PROVENANCE names it.
   const source = JSON.parse(fs.readFileSync(join(out.repo.goldens, 'source.json'), 'utf8'));
   assert.deepEqual({kind: source.kind, dir: source.dir, redacted: source.redacted}, {kind: 'live', dir: 'docs/goldens-run/goldens', redacted: []});
@@ -219,6 +237,79 @@ test('a file the vendor cell names outside the session\'s temp directory is neve
   assert.equal(out.code, 1);
   assert.equal(device.taken.some(p => p.includes('elsewhere')), false);
   assert.match(out.meta.problems.join(' '), /outside the session's temp directory/);
+});
+
+test('cua\'s action from a start that is not the kept fixed state is not kept: the scene is reset and the action taken again', async () => {
+  const elsewhere = shot('textedit', 'skyshot.json');
+  elsewhere.nodes = elsewhere.nodes.slice(0, -1);
+  const moved = (scene, n) => (n === 1 ? {scene, build: BUILD, before: elsewhere, after: elsewhere, click: {index: 2, route: 3}, timings: {}, frames: [null, null], problems: []} : null);
+  const startState = (scene, n) => (n === 1 ? {scene, build: BUILD, before: null, after: null, click: null, timings: null, frames: null, problems: [{code: 'start_state', message: 'not the fixed state'}]} : null);
+  const device = fakeDevice({action: (scene, n) => (scene === 'textedit' ? moved(scene, n) : scene === 'finder' ? startState(scene, n) : null)});
+  const out = await run({device});
+  assert.equal(out.code, 0, JSON.stringify(out.meta.problems ?? out.meta.error));
+  assert.deepEqual([out.meta.scenes.textedit.startAttempts, out.meta.scenes.finder.startAttempts, out.meta.scenes.chrome.startAttempts], [2, 2, 1]);
+  // TextEdit restarted once per attempt; Finder reset twice in its one window.
+  assert.equal(device.calls.filter(c => c[0] === 'scenes' && c[1] === 'up' && c[2] === 'textedit').length, 3);
+  assert.deepEqual(device.calls.filter(c => c[1] === 'steps' && c[2] === 'finder').map(c => c.at(-1)), ['setup', 'reset', 'reset', 'teardown']);
+  assert.deepEqual(JSON.parse(fs.readFileSync(join(out.dir, 'goldens', 'textedit', 'action.before.skyshot.json'), 'utf8')), shot('textedit', 'skyshot.json'));
+
+  // A start that never comes back to the fixed state leaves the scene unrecorded.
+  const stuck = fakeDevice({action: (scene, n) => (scene === 'electron' ? moved(scene, 1) : null)});
+  const failed = await run({device: stuck});
+  assert.equal(failed.code, 1);
+  assert.match(failed.meta.problems.join(' '), /electron: cua's action could not start from the fixed state in 3 resets/);
+  assert.equal(fs.existsSync(join(failed.dir, 'goldens', 'electron', 'action.before.skyshot.json')), false);
+});
+
+test('the vendor\'s action texts are removed unread when the state after its click is not the scene\'s', async () => {
+  // Observations 1-2 are the fixed sandwich; the third is the check after the vendor's action.
+  const device = fakeDevice({observe: (scene, n) => (scene === 'finder' && n === 3 ? {scene, build: BUILD, skyshot: null, problems: [{code: 'finder_sidebar', message: 'x'}]} : null)});
+  const out = await run({device});
+  assert.equal(out.code, 1);
+  assert.deepEqual(device.discarded.filter(p => p.includes('finder')).map(p => p.split('cua-goldens-')[1]), ['finder.action.vendor.before.txt', 'finder.action.vendor.diff.txt']);
+  assert.equal(device.taken.some(p => p.includes('finder.action')), false);
+  assert.match(out.meta.problems.join(' '), /finder: the state after the vendor's action is not the scene's .*finder_sidebar.*removed unread/);
+  assert.equal(device.calls.some(c => c[1] === 'action' && c[2] === 'finder'), false);
+});
+
+test('a vendor file named as anything but the expected golden is removed unread', async () => {
+  const device = fakeDevice();
+  const out = await run({device, vendor: fakeVendor(device, {actionKinds: ['../../escape.txt', 'action.vendor.diff.txt']})});
+  assert.equal(out.code, 1);
+  assert.equal(device.taken.some(p => p.includes('.action.')), false);
+  assert.equal(device.discarded.filter(p => p.includes('.action.')).length, 8);
+  assert.match(out.meta.problems.join(' '), /named the files \["\.\.\/\.\.\/escape\.txt","action\.vendor\.diff\.txt"\]/);
+});
+
+test('a scene that does not come up is the scene\'s problem; the others are recorded', async () => {
+  const device = fakeDevice({up: scene => { if (scene === 'chrome') throw new Error('scenes-mac.mjs up chrome: Chrome for Testing is already running'); }});
+  const out = await run({device});
+  assert.equal(out.code, 1);
+  assert.match(out.meta.problems.join(' '), /chrome: it did not come up: .*already running/);
+  assert.ok(fs.existsSync(join(out.dir, 'goldens', 'electron', 'action.vendor.diff.txt')));
+});
+
+test('the vendor serve is refused as the native baseline refuses it: no runtime, a serve already running, another runtime root', async () => {
+  for (const [preflight, pattern] of [[{release: null}, /no runtime installed/], [{serves: true}, /already running/], [{runtimeRoot: '/elsewhere/runtime'}, /resolves the runtime \/elsewhere\/runtime, not the approved/]]) {
+    const device = fakeDevice({preflight});
+    const out = await run({device});
+    assert.equal(out.code, 1);
+    assert.match(out.meta.error, pattern);
+    assert.equal(device.calls.some(c => c[1] === 'up'), false);
+    assert.ok(device.calls.some(c => c[0] === 'cleanup'), 'the approved home is cleaned up');
+  }
+});
+
+test('a recording directory already used is refused with the way on; a dead recording\'s cleanup undoes each step in order', async () => {
+  const first = await run({device: fakeDevice({engineProblems: ['no approved engine']})});
+  await assert.rejects(run({out: first.dir, repo: first.repo}), /already holds a recording .*choose a new --out/);
+  const calls = [];
+  const ops = {goldens: args => { calls.push(args.join(' ')); if (args[0] === 'steps') throw new Error('scene finder is not up'); return {ok: true}; },
+    scenes: args => { calls.push(args.join(' ')); return {down: true}; }, cleanup: prepared => { calls.push(`cleanup ${prepared.home}`); return {removed: true}; }};
+  const out = cleanupRecording({device: 'mini', prepared: PREPARED, run: '/r'}, ops);
+  assert.deepEqual(calls, ['steps finder --run /r --phase teardown', 'down all --run /r', 'engine-stop', 'cleanup /h']);
+  assert.match(out.finderTeardown.error, /not up/);
+  assert.deepEqual(out.preparationCleanup, {removed: true});
 });
 
 test('install refuses an incomplete recording, a missing file, and a recording outside the repository', () => {
@@ -287,9 +378,11 @@ test('the device steps run in the harness checkout over ssh; a scene CLI\'s exit
   assert.throws(() => deviceOps('cua-gce'), /not a macOS device/);
 });
 
-test('check on the committed goldens: nothing pinned changed, every declaration needed, the audit printed', async () => {
+test('check prints the pinned renderings and the audit, and exits 0 only when the audit leaves nothing to act on', async () => {
   const lines = [];
-  assert.equal(await main(['check'], {log: line => lines.push(line)}), 0);
-  assert.match(lines.join('\n'), /Pinned renderings: none changed/);
-  assert.match(lines.join('\n'), /Goldens audit/);
+  const pending = rerender({write: false}).filter(r => r.changed);
+  const code = await main(['check'], {log: line => lines.push(line)});
+  assert.equal(code, auditClean(audit()) && !pending.length ? 0 : 1);
+  assert.match(lines.join('\n'), pending.length ? /--write rewrites them/ : /Pinned renderings: none changed/);
+  assert.match(lines.join('\n'), /Goldens audit \(test\/native-goldens, source (m0|live)\)/);
 });

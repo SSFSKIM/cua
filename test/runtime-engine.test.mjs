@@ -50,7 +50,7 @@ function world(t, {identity = CERT_SHA1, engineAnswers = {}} = {}) {
     const fake = await startFakeEngine(t, socket, {identity: {engineVersion: '9.9.9', build}, handlers: {
       status: () => { state.onStatus?.(state); return {engineVersion: '9.9.9', build, accessibility: state.accessibility, screenRecording: state.screenRecording,
         inputMonitoring: state.inputMonitoring, canPostHid: true, socket, pid, bundlePath: state.bundlePath ?? bundle, connections: state.connections}; },
-      approve: () => { state.onApprove?.(state, engine); return {accessibility: state.accessibility, screenRecording: state.screenRecording, captured: state.accessibility && state.screenRecording && state.captured}; },
+      approve: () => { order.push('approve'); state.onApprove?.(state, engine); return {accessibility: state.accessibility, screenRecording: state.screenRecording, captured: state.accessibility && state.screenRecording && state.captured}; },
       shutdown: () => {
         if (state.connections > 0 || state.busyOnShutdown) throw new EngineFailure(-10005, 'busy', 'busy', {connections: state.connections || 1});
         setImmediate(() => { engine.stopped = true; fake.stop(); });
@@ -84,10 +84,14 @@ function world(t, {identity = CERT_SHA1, engineAnswers = {}} = {}) {
 
   // The operator at the terminal: answers from `state.lines` (a line, or null for no terminal), counting the questions.
   const operator = {asked: 0, next() { operator.asked++; const lines = state.lines ?? []; return Promise.resolve(lines.length ? lines.shift() : null); }};
-  const watcher = {started: 0, alerts: 0, ready: true};
+  // The capture watch: `alerts` lists, per watch in order, the SCAlert lines it sees; `order` records every watch start
+  // and stop and every approve the engine answers, so a test can check that each approve falls inside a watch.
+  const order = [];
+  const watcher = {started: 0, alerts: [], ready: true, intact: true};
   const watchCaptureAlerts = () => {
-    watcher.started++;
-    return {ready: Promise.resolve(watcher.ready), stop: async () => watcher.alerts};
+    const index = watcher.started++;
+    order.push('watch');
+    return {ready: Promise.resolve(watcher.ready), stop: async () => { order.push('stop'); return {alerts: watcher.alerts[index] ?? 0, intact: watcher.intact}; }};
   };
 
   const deps = {dir, env: {HOME: home}, sourceRoot: source, run, runSync: fakeCodesignRead, log: line => logs.push(line), operator, watchCaptureAlerts,
@@ -103,7 +107,7 @@ function world(t, {identity = CERT_SHA1, engineAnswers = {}} = {}) {
   const checkoutBuild = () => engineBuild({sourceRoot: source});
   const json = name => JSON.parse(readFileSync(join(dir, name), 'utf8'));
   const plistBuild = () => /<key>CUAEngineBuild<\/key>\s*<string>([^<]*)</.exec(readFileSync(join(bundle, 'Contents', 'Info.plist'), 'utf8'))[1];
-  return {home, dir, bundle, socket, deps, state, calls, logs, engines, operator, watcher, startEngine, placeBundle, checkoutBuild, json, plistBuild};
+  return {home, dir, bundle, socket, deps, state, calls, logs, engines, operator, watcher, order, startEngine, placeBundle, checkoutBuild, json, plistBuild};
 }
 
 const noIdentity = (value, label) => {
@@ -284,7 +288,7 @@ test('the ordinary approve after a same-identity rebuild needs no one: grants re
   assert.equal(approves(w.engines[0]), 1);
   assert.equal(w.engines[0].stopped, true, 'stopped with shutdown before the relaunch');
   assert.equal(approves(w.engines[1]), 1, 'the capture on the relaunched engine');
-  assert.equal(w.watcher.started, 1);
+  assert.deepEqual(w.order, ['watch', 'approve', 'stop', 'watch', 'approve', 'stop'], 'each approve, the first one\'s capture too, inside a watch');
   assert.equal(w.operator.asked, 0, 'no question for the operator');
   const approved = w.json('approved.json');
   assert.deepEqual(Object.keys(approved).sort(), ['approvedAt', 'build', 'identity']);
@@ -347,6 +351,7 @@ test('the operator\'s Enter confirms a grant the running engine cannot see, "n" 
   gone.state.lines = [null];
   gone.placeBundle();
   await assert.rejects(approveEngine(gone.deps), error => (assert.equal(error.code, 'engine_grant_pending'), assert.match(error.message, /Accessibility/), assert.match(error.hint, /console/), true));
+  assert.ok(gone.deps.now() < 60_000, 'at once, not after the 15-minute bound');
   assert.ok(!existsSync(join(gone.dir, 'approved.json')));
 });
 
@@ -361,7 +366,7 @@ test('a capture that reports false after the relaunch is no approval', async t =
 
 test('a capture confirmation seen in replayd\'s log waits for the operator\'s word; with no terminal the approve fails naming the console', async t => {
   const w = world(t);
-  w.watcher.alerts = 1;
+  w.watcher.alerts = [0, 1];
   w.state.lines = [''];
   w.placeBundle();
   const result = await approveEngine(w.deps);
@@ -371,36 +376,53 @@ test('a capture confirmation seen in replayd\'s log waits for the operator\'s wo
   assert.match(w.logs.join('\n'), /capture confirmation/);
 
   const none = world(t);
-  none.watcher.alerts = 2;
+  none.watcher.alerts = [0, 2];
   none.state.lines = [null];
   none.placeBundle();
   await assert.rejects(approveEngine(none.deps), error => (assert.equal(error.code, 'engine_capture_confirmation'), assert.match(error.message, /console/), true));
   assert.ok(!existsSync(join(none.dir, 'approved.json')));
 });
 
-test('when replayd\'s log cannot be watched, the approve asks the operator as if a confirmation had appeared', async t => {
+test('the first approve\'s capture after a same-identity rebuild is watched: a confirmation it raises waits for the operator', async t => {
   const w = world(t);
-  w.watcher.ready = false;
-  w.state.lines = [''];
+  w.watcher.alerts = [1, 0];
   w.placeBundle();
-  const result = await approveEngine(w.deps);
-  assert.equal(result.approved, true);
-  assert.equal(result.captureConfirmation, 'unwatched');
-  assert.equal(w.operator.asked, 1);
+  w.state.lines = [null];
+  await assert.rejects(approveEngine(w.deps), {code: 'engine_capture_confirmation'});
+  assert.ok(!existsSync(join(w.dir, 'approved.json')));
 });
+
+for (const [why, set] of [['cannot start', watcher => { watcher.ready = false; }], ['ends on its own after starting', watcher => { watcher.intact = false; }]]) {
+  test(`when replayd's log stream ${why}, the approve asks the operator as if a confirmation had appeared`, async t => {
+    const w = world(t);
+    set(w.watcher);
+    w.state.lines = [''];
+    w.placeBundle();
+    const result = await approveEngine(w.deps);
+    assert.equal(result.approved, true);
+    assert.equal(result.captureConfirmation, 'unwatched');
+    assert.equal(w.operator.asked, 1);
+  });
+}
 
 // ---- the operator's lines and replayd's log ----
 
-test('the line reader answers one line per question and null once its input has ended', async () => {
+test('the line reader answers one question per line, discards lines typed before a question, and answers null once its input has ended', async () => {
   const input = new PassThrough();
   const reader = lineReader(input);
+  input.write('typed ahead\n');
+  await new Promise(resolve => setImmediate(resolve));
   const first = reader.next();
-  assert.equal(reader.next(), first, 'an unanswered question is the same question');
   input.write('\n');
-  assert.equal(await first, '');
-  input.write('n\nlater\n');
-  assert.equal(await reader.next(), 'n');
-  assert.equal(await reader.next(), 'later');
+  assert.equal(await first, '', 'the line typed before the question is not its answer');
+  const abandoned = reader.next();
+  const second = reader.next();
+  input.write('n\n');
+  assert.equal(await second, 'n', 'a new question replaces one left unanswered');
+  let settled = false;
+  abandoned.then(() => { settled = true; });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(settled, false);
   input.end();
   assert.equal(await reader.next(), null);
   reader.close();
@@ -416,13 +438,20 @@ test('the capture watch counts replayd\'s SCAlert lines once its stream is up, k
   ])});
   assert.equal(await watch.ready, true);
   await new Promise(resolve => setTimeout(resolve, 200));
-  assert.equal(await watch.stop(), 1);
+  assert.deepEqual(await watch.stop(), {alerts: 1, intact: true});
+});
+
+test('a capture watch whose stream ends after it started is not intact', async () => {
+  const watch = watchCaptureAlerts({spawnLog: () => spawn(process.execPath, ['-e', 'process.stdout.write("Filtering the log data using ...\\n")'], {stdio: ['ignore', 'pipe', 'ignore']})});
+  assert.equal(await watch.ready, true);
+  await new Promise(resolve => setTimeout(resolve, 300));
+  assert.deepEqual(await watch.stop(), {alerts: 0, intact: false});
 });
 
 test('a capture watch whose stream cannot start is not ready', async () => {
   const broken = watchCaptureAlerts({spawnLog: () => spawn(process.execPath, ['-e', 'process.exit(1)'], {stdio: ['ignore', 'pipe', 'ignore']})});
   assert.equal(await broken.ready, false);
-  assert.equal(await broken.stop(), 0);
+  assert.deepEqual(await broken.stop(), {alerts: 0, intact: false});
   const missing = watchCaptureAlerts({spawnLog: () => { throw new Error('no log'); }});
   assert.equal(await missing.ready, false);
 });

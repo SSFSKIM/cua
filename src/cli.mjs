@@ -11,7 +11,7 @@ import {loadPins, selectPin, findPin} from './runtime/manifest.mjs';
 import {installRuntime, installSandboxHelper, useRuntime} from './runtime/install.mjs';
 import {describeLeftovers, describeRemoval, findCodexLeftovers, removeCodexLeftovers} from './runtime/codex-leftovers.mjs';
 import {installNode} from './runtime/node-install.mjs';
-import {approveEngine, buildEngine, engineStatus, lineReader, stopEngine} from './runtime/engine.mjs';
+import {approveEngine, buildEngine, engineStatus, lineReader, shortBuild, stopEngine} from './runtime/engine.mjs';
 import {loadNodePins, nodeDistName, selectNodePin} from './runtime/managed-node.mjs';
 import {inspectRuntime, summarize} from './runtime/doctor.mjs';
 import {resolveRuntime} from './runtime/manifest.mjs';
@@ -775,7 +775,6 @@ export function cuaUnregisterLines(result) {
 // printed. approve reads the operator's answers from stdin, so over SSH the controller types them (no tty needed); with
 // stdin at its end, approve proceeds only where no answer is needed. `deps` reaches src/runtime/engine.mjs as its seam.
 const ENGINE_COMMANDS = ['build', 'approve', 'status', 'stop'];
-const shortBuild = build => String(build ?? 'none').slice(0, 12);
 const signatureText = ({kind, identityMatches}) => (kind === null ? 'unsigned' : kind === 'adhoc' ? 'ad hoc' : identityMatches === null ? 'an identity (none is configured)'
   : identityMatches ? 'the configured identity' : 'an identity that is not the configured one');
 

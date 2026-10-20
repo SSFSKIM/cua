@@ -8,6 +8,7 @@ import {createHash} from 'node:crypto';
 import {chmodSync, copyFileSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import {dirname, join, relative, sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {escapeXml} from '../remote/plist.mjs';
 
 export const ASSEMBLER = fileURLToPath(import.meta.url);
 export const ENGINE_SOURCE = join(dirname(ASSEMBLER), '..', '..', 'native', 'engine');
@@ -53,8 +54,6 @@ export function engineVersion(sourceRoot = ENGINE_SOURCE) {
   return match[1];
 }
 
-const xml = text => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-
 export function infoPlist({version, build}) {
   const strings = {
     CFBundleDevelopmentRegion: 'en', CFBundleDisplayName: 'cua Engine', CFBundleExecutable: EXECUTABLE,
@@ -62,7 +61,7 @@ export function infoPlist({version, build}) {
     CFBundlePackageType: 'APPL', CFBundleShortVersionString: version, CFBundleVersion: version,
     [BUILD_KEY]: build, LSMinimumSystemVersion: '14.0',
   };
-  const body = Object.entries(strings).map(([key, value]) => `\t<key>${key}</key>\n\t<string>${xml(value)}</string>`)
+  const body = Object.entries(strings).map(([key, value]) => `\t<key>${key}</key>\n\t<string>${escapeXml(value)}</string>`)
     .concat('\t<key>LSUIElement</key>\n\t<true/>').join('\n');
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

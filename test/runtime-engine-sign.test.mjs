@@ -125,6 +125,14 @@ function sshWorld(t, {settings = {signingIdentity: SHA1}, env = {}, job = 'runs'
   const {run, calls} = recorder({
     '/bin/launchctl': async args => {
       if (args[0] === 'managername') return ok('Background\n');
+      if (args[0] === 'print' && args[1] !== 'gui/501') {
+        const plist = jobs.at(-1).plist;
+        if (job === 'dies') {
+          writeFileSync(plist.StandardErrorPath, `node: cannot open ${SHA1}\nfor signer ${NAME}\nError: Cannot find module\n`);
+          return ok(`${plist.Label} = {\n\tstate = not running\n\tlast exit code = 1\n}\n`);
+        }
+        return ok(`${plist.Label} = {\n\tstate = running\n\tlast exit code = (never exited)\n}\n`);
+      }
       if (args[0] === 'print') return gui ? ok('gui/501 = {\n}\n') : {code: 113, stdout: '', stderr: 'Could not find domain for port identifier: gui/501\n'};
       if (args[0] === 'bootstrap') {
         const text = readFileSync(args[2], 'utf8');
@@ -192,8 +200,22 @@ test('a job that does not finish in time is booted out, and the refusal says a k
     return true;
   });
   const launchctl = w.calls.filter(c => c.file === '/bin/launchctl').map(c => c.args[0]);
-  assert.deepEqual(launchctl, ['managername', 'print', 'bootstrap', 'bootout']);
+  assert.deepEqual([...new Set(launchctl)], ['managername', 'print', 'bootstrap', 'bootout']);
+  assert.equal(launchctl.at(-1), 'bootout');
+  assert.ok(launchctl.filter(a => a === 'print').length > 2, 'the job\'s state is read while waiting');
   assert.equal(w.calls.filter(c => c.file === '/usr/bin/codesign').length, 0);
+});
+
+test('a job that exits without a result fails at once with the redacted tail of its log, not the keychain-prompt sentence', async t => {
+  const w = sshWorld(t, {job: 'dies'});
+  await assert.rejects(signBundle(join(w.dir, 'b.app'), w.options), error => {
+    assert.equal(error.code, 'engine_sign_failed');
+    assert.match(error.message, /exited \(1\) without signing/);
+    assert.match(error.message, /Cannot find module/);
+    assert.ok(!error.message.includes(SHA1) && !error.message.includes(NAME), 'both forms redacted');
+    return true;
+  });
+  assert.equal(w.calls.filter(c => c.file === '/bin/launchctl').at(-1).args[0], 'bootout');
 });
 
 test('with no GUI login the SSH sign refuses, naming the console login, and bootstraps nothing', async t => {
@@ -204,6 +226,23 @@ test('with no GUI login the SSH sign refuses, naming the console login, and boot
     return true;
   });
   assert.equal(w.jobs.length, 0);
+});
+
+test('with a SHA-1 configured, codesign\'s chain warning that names the certificate by its common name is redacted too', async t => {
+  const dir = home(t, {signingIdentity: SHA1});
+  const {run} = recorder({'/bin/launchctl': () => ok('Aqua\n'), '/usr/bin/codesign': () => ({code: 1, stdout: '',
+    stderr: `Warning: unable to build chain to self-signed root for signer "${NAME}"\nb.app: errSecInternalComponent\n`})});
+  await assert.rejects(signBundle(join(dir, 'b.app'), {run, env: {HOME: dir}}), error => {
+    assert.equal(error.code, 'engine_sign_failed');
+    assert.match(error.message, /errSecInternalComponent/);
+    assert.match(error.message, /for signer "<signing identity>"/);
+    assert.ok(!error.message.includes(NAME) && !error.message.includes('TEAM123456'));
+    return true;
+  });
+  // And the other way round: a common name configured, codesign naming a SHA-1.
+  const named = home(t, {signingIdentity: NAME});
+  const other = recorder({'/bin/launchctl': () => ok('Aqua\n'), '/usr/bin/codesign': () => ({code: 1, stdout: '', stderr: `${CERT_SHA1.toLowerCase()}: no identity found\n`})});
+  await assert.rejects(signBundle(join(named, 'b.app'), {run: other.run, env: {HOME: named}}), error => !error.message.toUpperCase().includes(CERT_SHA1));
 });
 
 test('the job\'s codesign failure comes back as a refusal with the identity redacted', async t => {

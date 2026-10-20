@@ -74,6 +74,8 @@ export function readFailure(error, label) {
 
 // After the value was read and handed to the vendor: a fixed classification of what went wrong, never its text.
 export const inputFailed = (what, label, kind) => new SecretInputError('secret_input_failed', `${what} with secret "${label}" failed (${kind}) after the secret was read; it may have been partly entered. The runtime's error is withheld because it can contain the secret`);
+// The same failure when the runtime reports nothing posted (cua's engine: the error's input meta with startedAt null).
+export const inputFailedUnentered = (what, label, kind) => new SecretInputError('secret_input_failed', `${what} with secret "${label}" failed (${kind}) after the secret was read, and ${NOTHING_ENTERED}. The runtime's error is withheld because it can contain the secret`);
 
 // cua's native engine refused a concealed request before entering anything (its concealedInputUnavailable): a secret is
 // never pasted, so a concealed paste is refused whatever the input source, and a concealed type_text is keyed only under

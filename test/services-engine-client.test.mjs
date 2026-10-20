@@ -68,6 +68,19 @@ test('connect pings with cua-engine-1, accepts an engine whose version and build
   assert.equal(engine.received.length, 1, 'a live connection is reused');
 });
 
+test('a connection opened late in the first window gets its own full ping wait, so a slow ping to a healthy engine launches nothing', async t => {
+  const socket = join(scratchDir(t), 'engine.sock');
+  const engine = await startFakeEngine(t, socket, {handlers: {ping: async () => { await new Promise(resolve => setTimeout(resolve, 80)); return {serverApiVersion: 'cua-engine-1', ...IDENTITY}; }}});
+  const {client, launches, nodeRepl} = clientFor(socket);
+  t.after(() => client.close());
+  // The relay opens the socket only 130 ms into the 150 ms window, leaving the ping 20 ms of it.
+  const open = nodeRepl.nativePipe.createConnection.bind(nodeRepl.nativePipe);
+  nodeRepl.nativePipe.createConnection = async path => { await new Promise(resolve => setTimeout(resolve, 130)); return open(path); };
+  assert.deepEqual(await client.connect(), {serverApiVersion: 'cua-engine-1', ...IDENTITY});
+  assert.equal(launches.length, 0, 'the healthy engine is not launched over');
+  assert.deepEqual(engine.received.map(r => r.method), ['ping']);
+});
+
 test('a build or version mismatch fails at once with the diagnostic naming cua install --engine, never launching, retrying or stopping that engine', async t => {
   for (const identity of [{engineVersion: '0.1.0', build: 'other'}, {engineVersion: '9.9.9', build: 'b1'}]) {
     const socket = join(scratchDir(t), 'engine.sock');

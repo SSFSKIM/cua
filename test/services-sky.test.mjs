@@ -94,8 +94,37 @@ test('the concealed mark rides only on the copy a secret was substituted into: n
 
 // A failure of the native engine raised under one of these names, after substitution: what the wrapper says instead.
 class EngineError extends Error {
-  constructor(errorName, message) { super(message); this.name = 'SkyComputerUseError'; this.errorName = errorName; this.code = -10005; }
+  constructor(errorName, message, meta = null) { super(message); this.name = 'SkyComputerUseError'; this.errorName = errorName; this.code = -10005; this.meta = meta; }
 }
+
+// cua's engine's input meta on an error: startedAt null while nothing was posted.
+const NOTHING_POSTED = {inputRoute: null, startedAt: null, endedAt: null, receivedAt: 990, hidIdleMs: 31000};
+
+test('an input error whose meta says nothing was posted answers that nothing was entered, whatever its name; any other keeps "may have been partly entered"', async () => {
+  const value = VALUES['WORK_PASSWORD'];
+  const cases = [
+    [setValue(REF('WORK_PASSWORD')), 'notImplemented'],
+    [typeText(REF('WORK_PASSWORD')), 'keyboardLayoutUnavailable'],
+    [typeText(REF('WORK_PASSWORD')), 'eventCreationFailed'],
+    [typeText(REF('WORK_PASSWORD')), 'invalidArguments'],
+    [typeText(REF('WORK_PASSWORD')), 'activationFailed'],
+  ];
+  for (const [request, name] of cases) {
+    const {service} = harness({answer: () => { throw new EngineError(name, `refused ${value}`, NOTHING_POSTED); }});
+    const error = await rejection(service.handleRpc(request));
+    assert.equal(error.code, 'secret_input_failed', name);
+    assert.match(error.message, /"WORK_PASSWORD"/, name);
+    assert.match(error.message, /nothing was entered/, name);
+    assert.doesNotMatch(error.message, /partly entered/, name);
+    assertValueFree(error);
+  }
+  for (const meta of [{...NOTHING_POSTED, startedAt: 1000, endedAt: 1042}, null]) {
+    const {service} = harness({answer: () => { throw new EngineError('eventCreationFailed', `refused ${value}`, meta); }});
+    const error = await rejection(service.handleRpc(typeText(REF('WORK_PASSWORD'))));
+    assert.match(error.message, /may have been partly entered/, meta ? 'posted' : 'no meta: not known');
+    assertValueFree(error);
+  }
+});
 
 test('cua\'s engine-only error names are admitted value-free; concealedInputUnavailable gets its own sentence, saying nothing was entered', async () => {
   const value = VALUES['WORK_PASSWORD'];

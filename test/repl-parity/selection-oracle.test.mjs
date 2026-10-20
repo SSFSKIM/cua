@@ -127,10 +127,15 @@ test('every selectable row passes on doctor\'s actual row, whatever the registra
 // #117: the engine × host table, mirrored independently, and graded against doctor's actual row with each row's engine
 // inputs injected exactly as the live lane places them (CUA_NATIVE_ENGINE, engine.json, an approved engine).
 const engineInputs=row=>({config:()=>(row.engineFrom==='settings'?{engine:row.engine}:{}),installed:()=>(row.installed?{bundlePath:'/scratch.home/Library/Application Support/cua/engine/cua Engine.app',engineVersion:'0.0.0-selection',build:'f'.repeat(64)}:null)});
-const engineEnv=row=>(row.engine&&row.engine!=='unset'&&row.engineFrom!=='settings'?{CUA_NATIVE_ENGINE:row.engine}:{});
+const engineEnv=row=>(row.engine&&row.engine!=='unset'&&row.engineFrom!=='settings'?{CUA_NATIVE_ENGINE:row.engine==='empty'?'':row.engine}:{});
 test('the oracle\'s engine table: today\'s path, the target, comparison A, the refusals in order and the default cua\'s until-M6 rows',()=>{
  const row=fields=>expectedSelection({platform:'darwin',registration:'cua',maws:false,surfaces:['computer'],lane:'ordinary',override:'unset',node24:true,managedNode:true,engine:'unset',installed:false,...fields});
  assert.deepEqual(row({}),{host:'vendor',reason:'macos_native_peer_requires_vendor',engine:'vendor',status:'pass'});
+ // An empty CUA_NATIVE_ENGINE is unset; an unknown engine in engine.json is refused as one in the environment is.
+ assert.deepEqual(row({engine:'empty',installed:true}),row({installed:true}));
+ assert.deepEqual(row({engine:'invalid',engineFrom:'settings'}),{error:'invalid_setting'});
+ const live=selectionCases('darwin').filter(r=>r.engine);
+ assert.ok(live.some(r=>r.engine==='empty')&&live.some(r=>r.engine==='invalid'&&r.engineFrom==='settings'),'the live oracle has both rows');
  assert.deepEqual(row({engine:'cua',installed:true}),{host:'cua',reason:'cua_engine',engine:'cua',status:'pass'});
  assert.deepEqual(row({engine:'cua',installed:true,override:'cua'}),{host:'cua',reason:'explicit',engine:'cua',status:'pass'});
  assert.deepEqual(row({engine:'cua',installed:true,override:'vendor',node24:false,managedNode:false}),{host:'vendor',reason:'explicit',engine:'cua',status:'pass'});

@@ -98,14 +98,16 @@ function normalizeStructurally(first) {
   return {role: role ?? '⟨⟩', flags, title: '', labels: []};
 }
 
-const drift = text => DRIFT.reduce((out, [pattern, replacement]) => out.replace(pattern, replacement), text);
-const textOf = (rest, structural) => (structural ? rest : drift(rest));
+// Exported for the goldens recorder (scripts/native-matrix/goldens-device.mjs), which compares two of cua's own
+// renderings of the scene's fixed state across a restart, where the page's port drifts the same way.
+export const normalizeDrift = text => DRIFT.reduce((out, [pattern, replacement]) => out.replace(pattern, replacement), text);
+const textOf = (rest, structural) => (structural ? rest : normalizeDrift(rest));
 const lengthOf = text => [...text.replace(/⟨(\d+)⟩/g, (_, n) => 'x'.repeat(Number(n)))].length;
 
 function matchKey(item, structural) {
   const line = normalize(item.rest, {structural});
   const head = line.role === null ? line.title : [line.role, line.flags.length ? `(${line.flags.join(', ')})` : '', line.title].filter(Boolean).join(' ');
-  return `${structural ? `${item.depth}:` : ''}${item.mark}${drift(head)} | ${line.labels.join(', ')}`;
+  return `${structural ? `${item.depth}:` : ''}${item.mark}${normalizeDrift(head)} | ${line.labels.join(', ')}`;
 }
 
 // The longest common subsequence of two key lists, as pairs of positions.

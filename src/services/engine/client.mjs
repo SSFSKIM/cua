@@ -41,18 +41,20 @@ const UNIFIED_LOG = 'log show --last 10m --info --predicate \'subsystem == "io.g
 
 export const socketPathFor = appPath => join(dirname(appPath), 'engine.sock');
 
+// The string value of `key` in the text of an XML Info.plist, its entities unescaped, or null.
+export function plistString(text, key) {
+  const match = new RegExp(`<key>${key}</key>\\s*<string>([^<]*)</string>`).exec(text);
+  return match ? match[1].replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&') : null;
+}
+
 // The bundle's {engineVersion, build}, from its Info.plist (CFBundleShortVersionString, CUAEngineBuild), as the
 // assembling script writes them.
 export function bundleIdentity(appPath) {
   const path = join(appPath, 'Contents', 'Info.plist');
   let text;
   try { text = readFileSync(path, 'utf8'); } catch (error) { throw new Error(`cua engine: cannot read the bundle's Info.plist at ${path} (${error.code ?? error.message})`); }
-  const value = key => {
-    const match = new RegExp(`<key>${key}</key>\\s*<string>([^<]*)</string>`).exec(text);
-    return match ? match[1].replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&') : null;
-  };
-  const engineVersion = value('CFBundleShortVersionString');
-  const build = value('CUAEngineBuild');
+  const engineVersion = plistString(text, 'CFBundleShortVersionString');
+  const build = plistString(text, 'CUAEngineBuild');
   if (!engineVersion || !build) throw new Error(`cua engine: the bundle's Info.plist at ${path} names no CFBundleShortVersionString or CUAEngineBuild`);
   return {engineVersion, build};
 }

@@ -1,3 +1,4 @@
+import './helpers/scratch-home.mjs'; // first: the native engine's selection must not read the account's own settings
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {chmodSync, existsSync, mkdirSync, statSync, writeFileSync, realpathSync, symlinkSync} from 'node:fs';
@@ -397,11 +398,11 @@ test('an explicit CUA_REPL_HOST=cua is honoured where the own host can run, and 
   for (const [platform, surfaces] of [['linux', COMPUTER], ['darwin', BROWSER]])
     assert.deepEqual(hostFor(platform, surfaces, 'cua', withoutNode), {code: 'repl_host_node', message: 'cua\'s own REPL host needs Node 24 or later, and none was found'});
 
-  // macOS computer: the native helper's peer rule, the only refusal left.
+  // macOS computer with the vendor engine: the vendor helper's peer rule, the only refusal left.
   for (const surfaces of [COMPUTER, BOTH]) for (const extra of IGNORED) {
     const result = hostFor('darwin', surfaces, 'cua', withNode, extra);
     assert.equal(result.code, 'repl_host_refused', `${surfaces}: ${JSON.stringify(result)}`);
-    for (const pattern of [/macOS/, /#117/, /CUA_SHIM_SURFACES=browser/]) assert.match(result.message, pattern);
+    for (const pattern of [/macOS/, /CUA_NATIVE_ENGINE=cua/, /CUA_SHIM_SURFACES=browser/]) assert.match(result.message, pattern);
   }
 
   // Whatever the inputs: no override selects cua exactly where an explicit cua is honoured and a Node 24 resolves,
@@ -1016,10 +1017,13 @@ test('the three engine_not_installed refusals and the refusal precedence: unknow
     assert.match(refused.message, /must be vendor or cua/);
   }
   assert.equal(refusal('CUA_NATIVE_ENGINE=Cua', undefined, true, true).message, 'CUA_NATIVE_ENGINE must be vendor or cua');
-  // The host setting before the approved engine and Node: the vendor engine with CUA_REPL_HOST=cua, today's sentence.
+  // The host setting before the approved engine and Node: the vendor engine with CUA_REPL_HOST=cua, whose sentence
+  // names the setting that selected the vendor engine and CUA_NATIVE_ENGINE=cua as the way to cua's own host.
   const host = refusal('CUA_NATIVE_ENGINE=vendor', 'cua', false, false);
   assert.equal(host.code, 'repl_host_refused');
-  for (const pattern of [/macOS/, /#117/, /CUA_SHIM_SURFACES=browser/]) assert.match(host.message, pattern);
+  for (const pattern of [/on macOS and the vendor engine \(CUA_NATIVE_ENGINE=vendor\)/, /only the vendor host's node_repl/, /Set CUA_NATIVE_ENGINE=cua/, /CUA_REPL_HOST=vendor/]) assert.match(host.message, pattern);
+  assert.doesNotMatch(host.message, /#117/);
+  assert.match(refusal('unset', 'cua', true, true).message, /vendor engine \(the default engine \(vendor\)\)/);
   // Node last: it names Node 24 and CUA_REPL_HOST=vendor as the way to run cua's engine on the vendor host.
   const node = refusal('CUA_NATIVE_ENGINE=cua', undefined, false, true);
   assert.equal(node.code, 'repl_host_node');

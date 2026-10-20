@@ -20,8 +20,9 @@
 #                 failing gate's artifact holds this run's fingerprints (the baseline's form) and image.json.
 #   own-sandbox   scripts/accept/own-sandbox.mjs on cua's own host and on the vendor host (#115 items 1 to 5).
 #   probe-secrets scripts/probe-secrets.mjs against its own synthetic store (#115 items 6 and 7's live roundtrip).
-#   engine-lane   scripts/probe-engine-lane.mjs: comparison A's lane (#117), cua's engine service in the vendor trusted
-#                 worker, against a fixture approved engine and a fake engine at its socket; nothing is launched.
+#   engine-lane   scripts/probe-engine-lane.mjs (#117), cua's engine service on cua's own host (the target row) and in the
+#                 vendor trusted worker (comparison A's lane), against a fixture approved engine and a fake engine at its
+#                 socket; nothing is launched.
 # The golden fixtures and the fail-closed suites run in the unit suite (gate `test`).
 #
 # Public output (the repo is public). The runner's log carries only: each step's PASS/FAIL line and the summary; the
@@ -39,7 +40,7 @@
 # errno?}]}, pins?: {ok, rows: [{label, op, want, got}]}}: cwd and the values of the launcher's own variables relative
 # to the run's roots, `<cua-home>/…`, `<home>/…`, `<checkout>/…`, `<session>`; any other variable by name, its value
 # `<withheld>`; no check target; the baseline's form, and what the judgement compares), oracles/image.json,
-# oracles/port-vs-signed-*.json the comparison's booleans and counts, own-sandbox-*.json and engine-lane.json check labels,
+# oracles/port-vs-signed-*.json the comparison's booleans and counts, own-sandbox-*.json and engine-lane-*.json check labels,
 # passes and error codes, probe-secrets.json and doctor.json statuses by name; nothing of install's. Every secret is a generated
 # synthetic value that the checks keep inside their cells and scan their own reports for; the runtime is never copied
 # out of the scratch root. Every step runs and is reported even after an earlier one failed, and a step whose report
@@ -153,10 +154,10 @@ probe_secrets() {
 }
 engine_lane() {
   code=0
-  # A short user home: the fake engine's socket sits beside the fixture bundle under it, and a socket path holds at most
-  # 104 bytes. Its stderr's `PASS <label>` and `FAIL <label>` lines are the checks' labels, the rest withheld.
-  quiet engine-lane '^(PASS|FAIL) ' scratch node scripts/probe-engine-lane.mjs --home "$H" --user-home "$S/e" --report "$RAW/engine-lane.json" || code=$?
-  publish engine-lane "$RAW/engine-lane.json" "$OUT/engine-lane.json" || [ "$code" != 0 ] || code=1
+  # A short user home per host: the fake engine's socket sits beside the fixture bundle under it, and a socket path
+  # holds at most 104 bytes. Its stderr's `PASS <label>` and `FAIL <label>` lines are the checks' labels, the rest withheld.
+  quiet "engine-lane-$1" '^(PASS|FAIL) ' scratch node scripts/probe-engine-lane.mjs --home "$H" --user-home "$S/e$1" --host "$1" --report "$RAW/engine-lane-$1.json" || code=$?
+  publish engine-lane "$RAW/engine-lane-$1.json" "$OUT/engine-lane-$1.json" || [ "$code" != 0 ] || code=1
   return "$code"
 }
 
@@ -179,7 +180,8 @@ done
 step "own-sandbox, cua's own host" own_sandbox cua
 step "own-sandbox, vendor host" own_sandbox vendor
 step "probe-secrets, synthetic store" probe_secrets
-step "engine lane: cua's service in the vendor trusted worker" engine_lane
+step "engine lane: cua's engine on cua's own host" engine_lane cua
+step "engine lane: cua's service in the vendor trusted worker" engine_lane vendor
 
 printf '\nhosted-gate summary\n%s' "$results" >&2
 if [ "$failed" -gt 0 ]; then

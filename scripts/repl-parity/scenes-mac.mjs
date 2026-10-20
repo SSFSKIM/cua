@@ -254,7 +254,7 @@ export const isSceneWindow = (text, id) => windowTitleOf(text)?.startsWith(scene
 
 // The key guard's target for a key into a scene: its process by pid, and for Finder (the system's process, which also
 // holds the owner's windows) the run's window on top.
-const guardOf = (id, record) => ({pid: record.pid, bundleId: sceneOf(id).bundleId, ...(id === 'finder' ? {window: record.window.number} : {})});
+export const guardOf = (id, record) => ({pid: record.pid, bundleId: sceneOf(id).bundleId, ...(id === 'finder' ? {window: record.window.number} : {})});
 
 // The steps that take a scene from up to its fixed state, in order: `{activate: <scene>}` (the `activate` command) and
 // `{pressKey, guard}` (through the engine, sent only while the key guard finds `guard` in front). Finder: in front, list

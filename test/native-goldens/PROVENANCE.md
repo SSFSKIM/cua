@@ -2,12 +2,13 @@
 
 The goldens of the renderer and of the diff (`src/services/engine/render.mjs`, `src/services/engine/diff.mjs`). They
 are verified by `test/services-engine-render-goldens.test.mjs` and `test/services-engine-diff-goldens.test.mjs`, under
-the rules of `docs/doperpowers/specs/2026-10-18-own-native-engine-design.md` (Verification system, parts 3 and 7). The
-M1a pre-flight Decision Log entry (2026-10-19), item 5, says M0's goldens are re-keyed, not re-recorded.
+the rules of `docs/doperpowers/specs/2026-10-18-own-native-engine-design.md` (Verification system, parts 3 and 7).
 
+<!-- source: written by scripts/native-matrix/goldens.mjs install from a live recording -->
 ## Source captures
 
-These are M0's second sitting, unit 9, committed at
+The M1a pre-flight Decision Log entry (2026-10-19), item 5, says M0's goldens are re-keyed, not re-recorded. These are
+M0's second sitting, unit 9, committed at
 `docs/doperpowers/research/2026-10-18-own-native-engine/spike/sit2/u9/` (each run's `goldens/`, `meta.json` and
 `preparation.json`).
 
@@ -62,6 +63,8 @@ with every `⟨n⟩` counted as n characters. The redaction folds a localized ro
 `⟨n⟩` on most Finder lines, so the length is what such a line still tells. The other three scenes are compared by full
 text, values included, with only the loopback page's port normalized.
 
+<!-- /source -->
+
 ## Expected differences
 
 `expected.json` declares every difference between cua's output and the vendor's. Each declaration gives its cause and
@@ -88,6 +91,7 @@ language, and the mini is Korean (`윈도우 확대/축소` in Chrome and Electr
 `zoom the window`). A re-recording on another locale differs in these descriptions and nowhere else. Until M1a.2b the
 engine supplies no action descriptions, so each such difference is declared with that cause.
 
+<!-- sizing: written by scripts/native-matrix/goldens.mjs install from a live recording -->
 ## Vendor sizing config (Statsig 406601636)
 
 Read on the mini at 2026-10-19T21:45:21Z with `ssh mini 'bash -s' < scripts/native-baseline/read-sizing-config.sh`, which prints
@@ -98,3 +102,4 @@ only that config from the vendor helper's cached Statsig store, one line per cac
 sitting's captures. The cache refreshes only while the vendor helper runs, so this read shows the last fetch, not a
 fresh one; the helper was not started to force one. So the legacy downsizing fit was off for every vendor capture these
 goldens pair with, and the sizes follow the rule in the spec's "Screenshot" (U1).
+<!-- /sizing -->

@@ -42,7 +42,7 @@ export function applyEngineRow(userHome,row,{place=placeFixtureEngine}={}){
  if(engine!=='unset'&&row.engineFrom==='settings'){mkdirSync(dirname(settings),{recursive:true,mode:0o700});writeFileSync(settings,JSON.stringify({engine}),{mode:0o600});}
  if(row.installed){if(!existsSync(paths.approved))place(userHome);}
  else rmSync(paths.approved,{force:true});
- return engine!=='unset'&&row.engineFrom!=='settings'?{CUA_NATIVE_ENGINE:engine}:{};
+ return engine!=='unset'&&row.engineFrom!=='settings'?{CUA_NATIVE_ENGINE:engine==='empty'?'':engine}:{};
 }
 // A refused call as {code, message}: the listing's refusal as it reported it, serve's start-time refusal from the
 // observation frame (selection-serve.mjs), or a selection code the real server named in its error message. Anything

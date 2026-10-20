@@ -65,6 +65,7 @@ import {execFile} from 'node:child_process';
 import {homedir} from 'node:os';
 import {dirname, join} from 'node:path';
 import {CuaError} from './errors.mjs';
+import {shortBuild} from './engine.mjs';
 import {homeLayout, realHome} from './layout.mjs';
 import {BROWSER_SERVICE, BROWSER_SERVICE_IMPL_DIR, COMPAT_EXECUTABLE, compatExecutable, CUA_API_DIR, CUA_API_DOCS_DIR, REPL_HOST_DIR, SANDBOX_DIR, SERVICE_SUPPORT_DIRS, SKY_SERVICE, NODE_FLOOR, ownHostNode, replHostFor} from './launch.mjs';
 import {SANDBOX_CONFLICT_HINT, assertDenyListShape, describeConflicts, protectedPaths, sandboxConflicts, sandboxModeFrom, scopedWriteRoots} from './sandbox.mjs';
@@ -205,7 +206,7 @@ const ENGINE_REASONS = {
 };
 function engineWords({engine, reason, app}) {
   const why = ENGINE_REASONS[reason];
-  if (engine === 'cua') return `native engine cua (${reason}): ${why()}cua; the approved cua Engine.app at ${app.bundlePath} (version ${app.engineVersion}, build ${String(app.build).slice(0, 12)})`;
+  if (engine === 'cua') return `native engine cua (${reason}): ${why()}cua; the approved cua Engine.app at ${app.bundlePath} (version ${app.engineVersion}, build ${shortBuild(app.build)})`;
   if (why) return `native engine vendor (${reason}): ${why()}vendor; the vendor's Codex Computer Use helper${reason === 'default' ? ' (CUA_NATIVE_ENGINE=cua selects cua\'s own)' : ''}`;
   return `native engine vendor (${reason}): the default cua engine is not available here, so the vendor's Codex Computer Use helper serves this session`;
 }

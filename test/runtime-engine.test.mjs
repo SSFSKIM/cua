@@ -14,7 +14,7 @@ import {shortScratch} from './fixtures/runtime-fixture.mjs';
 import {EngineFailure, startFakeEngine} from './helpers/fake-engine.mjs';
 import {CERT_SHA1, NAME, fakeCodesignRead, markSigned} from './helpers/fake-codesign.mjs';
 import {BUNDLE_NAME, engineBuild, infoPlist} from '../src/runtime/engine-bundle.mjs';
-import {approveEngine, buildEngine, engineStatus, installedEngine, lineReader, stopEngine, watchCaptureAlerts} from '../src/runtime/engine.mjs';
+import {approveEngine, buildEngine, CAPTURE_ALERT_PREDICATE, engineStatus, installedEngine, lineReader, stopEngine, watchCaptureAlerts} from '../src/runtime/engine.mjs';
 import {main} from '../src/cli.mjs';
 
 const OLD_BUILD = 'b'.repeat(64);
@@ -467,6 +467,20 @@ test('the capture watch counts replayd\'s SCAlert lines once its stream is up, k
   assert.equal(await watch.ready, true);
   await new Promise(resolve => setTimeout(resolve, 200));
   assert.deepEqual(await watch.stop(), {alerts: 1, intact: true});
+});
+
+// replayd's lines at a capture stream's start with no alert shown (the mini, 2026-10-20 22:15:50Z, M1b.5).
+test('the capture watch does not count SCAlertStatsManager\'s bookkeeping lines', async () => {
+  const watch = watchCaptureAlerts({spawnLog: fakeLog([
+    '-[SCAlertStatsManager approveOnStreamStartWithCanonicalBundleID:auditToken:streamID:methodType:]:118',
+    '-[SCAlertStatsManager requireAlertWithCanonicalBundleID:auditToken:]:161',
+    '-[SCAlertStatsManager updateClientWithIdentifier:lastUsedDate:lastAlertedDate:]:262',
+    '-[SCAlertStatsManager requirePrivacyHintWithCanonicalBundleID:auditToken:]:205',
+  ].map(eventMessage => ({eventMessage: `[INFO] ${eventMessage}`, processImagePath: '/usr/libexec/replayd'})))});
+  assert.equal(await watch.ready, true);
+  await new Promise(resolve => setTimeout(resolve, 200));
+  assert.deepEqual(await watch.stop(), {alerts: 0, intact: true});
+  assert.equal(CAPTURE_ALERT_PREDICATE, 'process == "replayd" AND eventMessage CONTAINS "[SCAlert "');
 });
 
 test('a capture watch whose stream ends after it started is not intact', async () => {

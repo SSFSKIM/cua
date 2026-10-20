@@ -404,10 +404,14 @@ export function lineReader(input = process.stdin) {
   };
 }
 
-export const CAPTURE_ALERT_PREDICATE = 'process == "replayd" AND eventMessage CONTAINS "SCAlert"';
+// The SCAlert class's own lines (`+[SCAlert userAcknowledgementAlertWithBundleID:]`, the capture confirmation being
+// shown, U8), not SCAlertStatsManager's bookkeeping, which replayd logs at every capture stream's start whether or
+// not an alert follows (M1b.5, 2026-10-20).
+const CAPTURE_ALERT_MARK = '[SCAlert ';
+export const CAPTURE_ALERT_PREDICATE = `process == "replayd" AND eventMessage CONTAINS "${CAPTURE_ALERT_MARK}"`;
 
-// Streams replayd's unified log for SCAlert lines (its user-acknowledgement alert, the capture confirmation's signal,
-// U8). Only a count leaves this function, never a line, so no other app's alert text is kept. `ready` resolves false
+// Streams replayd's unified log for the SCAlert class's lines (its user-acknowledgement alert, the capture
+// confirmation's signal, U8). Only a count leaves this function, never a line, so no other app's alert text is kept. `ready` resolves false
 // when the stream cannot start; stop() answers {alerts, intact}, intact false when the stream ended on its own before
 // it was stopped (a gap in the watch).
 export function watchCaptureAlerts({spawnLog = () => spawn('/usr/bin/log', ['stream', '--style', 'ndjson', '--level', 'info', '--predicate', CAPTURE_ALERT_PREDICATE], {stdio: ['ignore', 'pipe', 'ignore']}), readyMs = 5_000} = {}) {
@@ -430,7 +434,7 @@ export function watchCaptureAlerts({spawnLog = () => spawn('/usr/bin/log', ['str
     for (const line of lines) {
       let event;
       try { event = JSON.parse(line); } catch { continue; }
-      if (typeof event?.eventMessage === 'string' && event.eventMessage.includes('SCAlert')) alerts++;
+      if (typeof event?.eventMessage === 'string' && event.eventMessage.includes(CAPTURE_ALERT_MARK)) alerts++;
     }
   });
   return {

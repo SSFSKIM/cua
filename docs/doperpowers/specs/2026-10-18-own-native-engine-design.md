@@ -161,7 +161,7 @@ The service replaces `@oai/sky`'s macOS target behind `src/services/sky.mjs`. On
 | engine (how) | `CUA_REPL_HOST` | Node 24+ | installed | result |
 |---|---|---|---|---|
 | vendor (any) | unset or vendor | any | any | vendor host through cua's compatibility executable, vendor service (today's path, reason `macos_native_peer_requires_vendor`) |
-| vendor (any) | cua | any | any | refused, `repl_host_refused`, today's sentence |
+| vendor (any) | cua | any | any | refused, `repl_host_refused`: the vendor engine accepts only the vendor host's `node_repl` as a peer, and the sentence names `CUA_NATIVE_ENGINE=cua` as the way to run the computer surface on cua's own host (revised 2026-10-20 from M1b.3's review: today's sentence says "until #117", which this row is) |
 | cua (explicit) | unset or cua | yes | yes | cua's own host, cua's service (the target) |
 | cua (explicit) | unset or cua | no | yes | refused, `repl_host_node`: the sentence names Node 24 and `CUA_REPL_HOST=vendor` as the way to run cua's engine on the vendor host; never a silent fallback |
 | cua (explicit) | any | any | no | refused, `engine_not_installed`, the sentence names `cua install --engine` |

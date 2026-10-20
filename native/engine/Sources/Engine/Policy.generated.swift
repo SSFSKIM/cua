@@ -14,7 +14,7 @@ enum Policy {
     "com.apple.securityagent",
   ]
 
-  /// Password managers, the keychain and iPhone Mirroring.
+  /// Password managers and the keychain.
   static let forbidden: Set<String> = [
     "com.apple.keychainaccess",
     "com.apple.passwords",
@@ -26,7 +26,6 @@ enum Policy {
     "com.nordsec.nordpass",
     "me.proton.pass.electron",
     "me.proton.pass.catalyst",
-    "com.apple.screencontinuity",
   ]
 
   /// Throws `appNotAllowed` when `bundleIdentifier` is on either list (bundle ids compare without case).

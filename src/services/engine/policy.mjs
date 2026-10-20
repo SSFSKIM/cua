@@ -13,19 +13,18 @@
 //      from: src/repl-host/elicitation.mjs), and anything but accept fails `Computer Use was not approved to use <app>`;
 //   7. the action runs on a frozen copy of the input whose `app` is the resolved path, the bound identity.
 //
-// The lists are data, below: the forbidden list (password managers, the keychain and iPhone Mirroring; system security
-// processes) and the risk table (terminals and browsers high, with the subtitle). The engine refuses the same forbidden
+// The lists are data, below: the forbidden list (password managers and the keychain; system security processes) and the risk table (terminals and browsers high, with the subtitle). The engine refuses the same forbidden
 // list on resolve_app, on every app-scoped request and on the process an input reaches, from its own copy:
 // native/engine/Sources/Engine/Policy.generated.swift, generated from this module by scripts/generate-engine-policy.mjs
 // (so an edit to the list changes the engine's build), which test/services-engine-policy.test.mjs regenerates and
 // compares.
 
-// Password managers, the keychain and iPhone Mirroring (R/E-helper-catalogue.md §6.1; membership read from the binary's
-// string order, an inference, plus iPhone Mirroring, which the engine refused from M0 on).
+// Password managers and the keychain: the vendor's list (R/E-helper-catalogue.md §6.1; membership read from the binary's
+// string order, an inference). iPhone Mirroring (com.apple.ScreenContinuity) is not on it: the vendor drives that app (its
+// own bundle-id constant, an AppInstructions file, a typing gap; R/F-helper-logic.md §6.2), so it is approved as any other.
 export const FORBIDDEN = [
   'com.apple.keychainaccess', 'com.apple.Passwords', 'com.1password.1password', 'com.1password.safari', 'com.bitwarden.desktop',
   'com.dashlane.dashlanephonefinal', 'com.lastpass.LastPass', 'com.nordsec.nordpass', 'me.proton.pass.electron', 'me.proton.pass.catalyst',
-  'com.apple.ScreenContinuity',
 ];
 // System security processes (R/E-helper-catalogue.md §6.1), refused with the helper's own sentence.
 export const SYSTEM_SECURITY = ['com.apple.UserNotificationCenter', 'com.apple.LocalAuthenticationRemoteService', 'com.apple.SecurityAgent'];
@@ -177,7 +176,7 @@ enum Policy {
   static let systemSecurity: Set<String> = [
 ${set(SYSTEM_SECURITY)}  ]
 
-  /// Password managers, the keychain and iPhone Mirroring.
+  /// Password managers and the keychain.
   static let forbidden: Set<String> = [
 ${set(FORBIDDEN)}  ]
 

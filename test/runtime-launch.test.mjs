@@ -74,6 +74,7 @@ test('the launch environment is an allowlist: OS basics plus relocated settings,
     CUA_COMPAT_NODE: p.node,
     SKY_CUA_SERVICE_PATH: p.skyServiceApp,
     CUA_SKY_SERVICE: p.skyVendorService,
+    CUA_ENGINE_SCREENSHOTS: join(home, 'run', SESSION, 'screenshots'),
   });
 });
 
@@ -213,6 +214,7 @@ test('a browser-only launch has no computer-use service or native helper configu
     assert.deepEqual(JSON.parse(env[host === 'cua' ? 'CUA_REPL_TRUSTED_SERVICES' : 'NODE_REPL_TRUSTED_SERVICES']), {browser: BROWSER_SERVICE}, host);
     assert.equal(env.SKY_CUA_SERVICE_PATH, undefined, host);
     assert.equal(env.CUA_SKY_SERVICE, undefined, host);
+    assert.equal(env.CUA_ENGINE_SCREENSHOTS, undefined, host);
     // The vendor host runs cua's compat executable since #115 M2; cua's own host on macOS runs cua's own (sandbox-exec).
     if (host === 'vendor') assert.equal(env.CODEX_CLI_PATH, COMPAT_EXECUTABLE, `${host}: the runtime sandbox is kept whatever the surface`);
     else assert.deepEqual([env.CUA_REPL_SANDBOX_EXEC, env.CODEX_CLI_PATH, env.CODEX_HOME], ['/usr/bin/sandbox-exec', undefined, undefined], `${host}: cua's own sandbox, whatever the surface`);

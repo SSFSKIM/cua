@@ -17,20 +17,20 @@
 //   there, so the kept identity skips nothing that guards. An observation of another bundle than the approved one is
 //   discarded and the call redone once (resolved, approved, observed), so no text of an unapproved app is returned.
 // - Observation: get_app_state always asks for the screenshot, since the facade's getAXState and getScreenshot send the
-//   same request and the vendor captures on every observation; the image goes to a 0700 directory under the session's
-//   temp, which the kernel may read. The Skyshot becomes the model's text through ./observations.mjs: the numbering
-//   over the engine's tokens, the renderer, and the diff per (connection, app).
+//   same request and the vendor captures on every observation. The image goes to the directory the launcher names in
+//   CUA_ENGINE_SCREENSHOTS, under the session's run directory, which the kernel may read; the engine creates it, outside
+//   every sandbox and never through a symbolic link, since the worker writes nothing in the default mode. The Skyshot
+//   becomes the model's text through ./observations.mjs: the numbering over the engine's tokens, the renderer, and the
+//   diff per (connection, app).
 // - Index translation: an element_index becomes `element`, the token the app's latest observation numbered so, and every
 //   execute carries the lineage of that observation (coordinates and keys too), which the engine checks.
 // - Result meta, per call (response meta merges by key across an execution's calls, so each call resets its keys and
 //   one that does not set a key leaves no earlier call's value standing as its own): codex/toolSurface (the policy's);
 //   cua/nativeEngine {engine, version, build} on every result; cua/engineMs, the client's time around the socket round
-//   trip of the method's own request; cua/settle on an observation whose settle hit its cap; on input results and input
-//   errors the engine's meta as cua/inputRoute, cua/actionInterval {startedAt, endedAt}, cua/receivedAt, cua/hidIdleMs,
-//   and cua/activationGuardMs and cua/pointUnconfirmed when the engine sends them. (cua/serviceMs is the wrapper's, M2a.)
-import {chmodSync, mkdirSync} from 'node:fs';
-import {tmpdir} from 'node:os';
-import {join} from 'node:path';
+//   trip of the method's own request, null when it never reached the engine (a decline, an index the service refused);
+//   cua/settle on an observation whose settle hit its cap; on input results and input errors the engine's meta as
+//   cua/inputRoute, cua/actionInterval {startedAt, endedAt}, cua/receivedAt, cua/hidIdleMs, and cua/activationGuardMs
+//   and cua/pointUnconfirmed when the engine sends them. (cua/serviceMs is the wrapper's, M2a.)
 import {createEngineClient} from './client.mjs';
 import {createObservations} from './observations.mjs';
 import {createPolicy, toolSurface} from './policy.mjs';
@@ -63,7 +63,6 @@ function inputMeta(meta) {
 export function createService({nodeRepl, client = null}) {
   const identities = new Map();   // app string -> Promise of resolve_app's answer, kept for the connection
   const observations = createObservations();
-  let outputDirectory = null;
 
   const setMeta = meta => nodeRepl?.setResponseMeta?.(meta);
   const engine = () => {
@@ -76,15 +75,16 @@ export function createService({nodeRepl, client = null}) {
   };
   const nativeEngine = identity => ({engine: 'cua', version: identity.engineVersion, build: identity.build});
 
-  // One engine request; its round trip and the engine's identity go into the result meta, an input error's meta too.
-  async function call(method, args, options) {
+  // One engine request; the engine's identity goes into the result meta, an input error's meta too, and the round trip
+  // unless `own` is false (the policy's resolve_app, whose round trip is not the method's).
+  async function call(method, args, options, {own = true} = {}) {
     const c = engine();
     try {
       const {result, engineMs} = await c.execute(method, args, options);
-      setMeta({'cua/nativeEngine': nativeEngine(c.identity), 'cua/engineMs': Math.round(engineMs * 1000) / 1000});
+      setMeta({'cua/nativeEngine': nativeEngine(c.identity), ...(own ? {'cua/engineMs': Math.round(engineMs * 1000) / 1000} : {})});
       return result;
     } catch (error) {
-      setMeta({...(c.identity ? {'cua/nativeEngine': nativeEngine(c.identity)} : {}), 'cua/engineMs': null});
+      setMeta({...(c.identity ? {'cua/nativeEngine': nativeEngine(c.identity)} : {}), ...(own ? {'cua/engineMs': null} : {})});
       if (error?.name === 'SkyComputerUseError' && error.meta) setMeta(inputMeta(error.meta));
       throw error;
     }
@@ -94,7 +94,7 @@ export function createService({nodeRepl, client = null}) {
   function identityFor(app) {
     let pending = identities.get(app);
     if (!pending) {
-      pending = call('resolve_app', {app}, {suspend: false});
+      pending = call('resolve_app', {app}, {suspend: false}, {own: false});
       identities.set(app, pending);
       pending.catch(() => forget(app, pending));
     }
@@ -104,16 +104,17 @@ export function createService({nodeRepl, client = null}) {
 
   const policy = createPolicy({nodeRepl, resolve: identityFor});
 
+  // The launcher's screenshot directory (src/runtime/launch.mjs), passed on for the engine to create: nothing here writes.
   function screenshotDirectory() {
-    if (outputDirectory) return outputDirectory;
-    const dir = join(nodeRepl?.env?.TMPDIR || tmpdir(), 'cua-engine-screenshots');
-    mkdirSync(dir, {recursive: true, mode: 0o700});
-    chmodSync(dir, 0o700);
-    return (outputDirectory = dir);
+    const dir = nodeRepl?.env?.CUA_ENGINE_SCREENSHOTS;
+    if (typeof dir !== 'string' || !dir.startsWith('/')) {
+      throw new Error('cua: the engine\'s screenshot directory is not configured for this runtime: CUA_ENGINE_SCREENSHOTS must name it by absolute path [engine_not_configured]');
+    }
+    return dir;
   }
 
-  async function getAppState(given, input, target) {
-    const args = {app: target.appPath, includeScreenshot: true, outputDirectory: screenshotDirectory(), ...(input.disableDiff !== undefined ? {disableDiff: input.disableDiff} : {})};
+  async function getAppState(given, input, target, outputDirectory) {
+    const args = {app: target.appPath, includeScreenshot: true, outputDirectory, ...(input.disableDiff !== undefined ? {disableDiff: input.disableDiff} : {})};
     const skyshot = await call('get_app_state', args);
     const seen = skyshot.app ?? {};
     if ((seen.bundleIdentifier ?? null) !== (target.bundleIdentifier ?? null) || (seen.pid ?? null) !== (target.pid ?? null)) {
@@ -142,11 +143,12 @@ export function createService({nodeRepl, client = null}) {
 
   async function appScoped(method, raw, redo = false) {
     setMeta(PER_CALL);
+    const outputDirectory = method === 'get_app_state' ? screenshotDirectory() : null;
     let given = null;
     try {
       return await policy.withPolicy(method, raw, (input, target) => {
         given = raw.app;
-        return method === 'get_app_state' ? getAppState(given, input, target) : act(method, input, target);
+        return method === 'get_app_state' ? getAppState(given, input, target, outputDirectory) : act(method, input, target);
       });
     } catch (error) {
       if (error instanceof IdentityChanged) {

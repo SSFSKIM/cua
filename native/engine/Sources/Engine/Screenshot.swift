@@ -8,8 +8,8 @@ import UniformTypeIdentifiers
 // Screenshot (the spec's Design, "Screenshot"): a JPEG of the key window through ScreenCaptureKit
 // (SCContentFilter(desktopIndependentWindow:), SCScreenshotManager.captureImage), at the vendor's size (U1; R/F-helper-
 // logic.md §15): the window's bounds times the backing scale factor of the screen that best matches them, 2.0 when none
-// does, each side rounded up; quality 0.8, written with mode 0600 into the request's outputDirectory and returned as a
-// file: URL. CGWindowListCreateImage is deprecated and not a fallback. Nothing here runs before a request asks for a
+// does, each side rounded up; quality 0.8, written with mode 0600 into the request's outputDirectory (the engine creates
+// it, never through a symbolic link: writePrivately) and returned as a file: URL. CGWindowListCreateImage is deprecated and not a fallback. Nothing here runs before a request asks for a
 // capture.
 
 let jpegQuality = 0.8
@@ -253,16 +253,24 @@ extension Engine {
       image = try timings.time("screenshotCapture") { try captureImage(SCContentFilter(desktopIndependentWindow: target), configuration) }
     }
     guard let data = timings.time("screenshotEncode", { jpegData(image) }) else { throw screenCaptureFailed("The image could not be encoded.") }
-    let path = (directory as NSString).appendingPathComponent(screenshotFileName(revision: revision))
-    try timings.time("screenshotWrite") { try writePrivately(data, to: path) }
+    let path = try timings.time("screenshotWrite") { try writePrivately(data, into: directory, name: screenshotFileName(revision: revision)) }
     return CapturedScreenshot(url: URL(fileURLWithPath: path).absoluteString, width: image.width, height: image.height, frame: frame, scale: scale)
   }
 }
 
-/// Writes `data` to a new file created with mode 0600 (never replacing one).
-func writePrivately(_ data: Data, to path: String) throws {
-  let fd = open(path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0o600)
-  guard fd >= 0 else { throw screenCaptureFailed("The image file could not be created: \(String(cString: strerror(errno))).") }
+/// Writes `data` to a new file `name` created with mode 0600 in `directory` (never replacing one) -> the file's path.
+/// The directory is the session's (the service names it under the session's run directory): created here with mode 0700
+/// when missing, since the sandboxed worker writes nothing in the default mode, and never followed when it is a symbolic
+/// link, since under the scoped sandbox the kernel may write in the run directory and a link put in the directory's
+/// place would steer this write out of the session. Its parent is the launcher's, which no cell can replace.
+func writePrivately(_ data: Data, into directory: String, name: String) throws -> String {
+  let failure = { (what: String) in screenCaptureFailed("\(what): \(String(cString: strerror(errno))).") }
+  if mkdir(directory, 0o700) != 0 && errno != EEXIST { throw failure("The screenshot directory \(directory) could not be created") }
+  let dir = open(directory, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+  guard dir >= 0 else { throw failure("The screenshot directory \(directory) could not be opened (a symbolic link is refused)") }
+  defer { close(dir) }
+  let fd = openat(dir, name, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0o600)
+  guard fd >= 0 else { throw failure("The image file could not be created") }
   defer { close(fd) }
   var done = 0
   while done < data.count {
@@ -271,4 +279,5 @@ func writePrivately(_ data: Data, to path: String) throws {
     if n < 0 && errno == EINTR { continue }
     throw screenCaptureFailed("The image file could not be written: \(String(cString: strerror(errno))).")
   }
+  return (directory as NSString).appendingPathComponent(name)
 }

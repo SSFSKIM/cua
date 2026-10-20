@@ -6,8 +6,10 @@
 // Nothing here may raise a permission prompt on a Mac someone works at: the cases that run everywhere stop before the
 // engine's Accessibility check (list_apps, a forbidden or unknown app refused at resolution, a declined approval), and no
 // app is launched, observed or driven. The one case that reaches the check, the untrusted engine's permissionsPending,
-// calls the prompting request, so it runs only on the hosted CI runner (GITHUB_ACTIONS=true), which has no console and,
-// by the spec, no grants; test/services-engine-service.test.mjs covers the same path everywhere with a fake engine.
+// calls the prompting request, so it runs only on a GitHub-hosted runner (RUNNER_ENVIRONMENT=github-hosted; a
+// self-hosted runner such as the mini sets GITHUB_ACTIONS too, and has an owner's console), which has no console; the
+// hosted macOS runner grants the engine Accessibility, so there it skips (the spec's Decision Log, M1a.5), and
+// test/services-engine-service.test.mjs covers the same path everywhere with a fake engine.
 import {test, before} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
@@ -23,7 +25,7 @@ import {createService} from '../src/services/engine/service.mjs';
 const finderRunning = !engineSkip && spawnSync('pgrep', ['-x', 'Finder'], {stdio: 'ignore'}).status === 0;
 const finderSkip = engineSkip || (!finderRunning && 'Finder is not running in this session');
 // The hosted runner only: the request prompts for Accessibility where a console could show it.
-const untrustedSkip = finderSkip || (process.env.GITHUB_ACTIONS !== 'true' && 'calls the prompting Accessibility request: hosted CI runner only (GITHUB_ACTIONS=true)');
+const untrustedSkip = finderSkip || (process.env.RUNNER_ENVIRONMENT !== 'github-hosted' && 'calls the prompting Accessibility request: GitHub-hosted runners only (RUNNER_ENVIRONMENT=github-hosted)');
 
 let bin;
 let buildFailure = null;
@@ -43,7 +45,7 @@ async function session(t, {answer = () => ({action: 'decline', content: null, _m
   const asked = [];
   const memory = approvalMemory();
   const nodeRepl = {
-    env: {CUA_ENGINE_APP: join(s.dir, 'cua Engine.app'), TMPDIR: s.dir},
+    env: {CUA_ENGINE_APP: join(s.dir, 'cua Engine.app'), TMPDIR: s.dir, CUA_ENGINE_SCREENSHOTS: join(s.dir, 'screenshots')},
     requestMeta: null,
     nativePipe: nativePipe(),
     launchServices: {openApplication: async () => { await startEngine(t, bin, {socket}); }},

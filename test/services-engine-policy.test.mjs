@@ -58,9 +58,11 @@ function policyFor(options = {}, resolve = async app => { const target = byStrin
 
 test('the forbidden list and the risk table are data: the vendor\'s ids, compared without case', () => {
   for (const id of ['com.apple.keychainaccess', 'com.apple.Passwords', 'com.1password.1password', 'com.1password.safari', 'com.bitwarden.desktop',
-    'com.dashlane.dashlanephonefinal', 'com.lastpass.LastPass', 'com.nordsec.nordpass', 'me.proton.pass.electron', 'me.proton.pass.catalyst', 'com.apple.ScreenContinuity']) {
+    'com.dashlane.dashlanephonefinal', 'com.lastpass.LastPass', 'com.nordsec.nordpass', 'me.proton.pass.electron', 'me.proton.pass.catalyst']) {
     assert.ok(FORBIDDEN.includes(id), id);
   }
+  assert.equal(FORBIDDEN.length, 10, 'the vendor\'s list and nothing of cua\'s');
+  assert.equal(refusal('com.apple.ScreenContinuity'), null, 'iPhone Mirroring is the vendor\'s to drive (its own bundle-id constant and AppInstructions)');
   assert.deepEqual(SYSTEM_SECURITY, ['com.apple.UserNotificationCenter', 'com.apple.LocalAuthenticationRemoteService', 'com.apple.SecurityAgent']);
   assert.equal(refusal('com.apple.passwords'), 'Computer Use is not allowed to use the app \'com.apple.passwords\' for safety reasons.');
   assert.equal(refusal('com.apple.SecurityAgent'), 'Computer use actions are not allowed for system security process: com.apple.SecurityAgent');

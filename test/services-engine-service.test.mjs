@@ -7,7 +7,7 @@
 // host does. Synthetic trees only; no app is observed or driven.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {statSync, writeFileSync} from 'node:fs';
+import {existsSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {shortScratch} from './fixtures/runtime-fixture.mjs';
@@ -26,6 +26,7 @@ const APPS = {
 };
 const byPath = Object.fromEntries(Object.values(APPS).map(app => [app.appPath, app]));
 const NO_LONGER_VALID = 'The element ID is no longer valid. Try to get the on-screen content again and see if that resolves the issue.';
+const ENGINE_MS = {resolve_app: 999};
 const INPUT_META = {inputRoute: 3, startedAt: 1000, endedAt: 1042, receivedAt: 990, hidIdleMs: 31000, activationGuardMs: 41.5, pointUnconfirmed: true};
 
 const win = title => node('t0', 0, 'AXWindow', {roleDescription: 'standard window', title, actions: ['AXRaise']});
@@ -46,7 +47,7 @@ let facadeInstance = 0;
 
 // A session: the fake engine, the worker's nodeRepl, the service behind the real wrapper, and the facade over it.
 // `handlers` override the engine's; `answer(request)` is the client's answer to an approval (accept for the session).
-async function session(t, {handlers = {}, answer = () => ({action: 'accept', content: null, _meta: {persist: 'session'}}), secrets = {}} = {}) {
+async function session(t, {handlers = {}, answer = () => ({action: 'accept', content: null, _meta: {persist: 'session'}}), secrets = {}, env = {}} = {}) {
   const s = shortScratch('cua-esv-');
   t.after(s.cleanup);
   const socket = join(s.dir, 'engine.sock');
@@ -72,7 +73,7 @@ async function session(t, {handlers = {}, answer = () => ({action: 'accept', con
   const memory = approvalMemory();
   const meta = {};
   const nodeRepl = {
-    env: {CUA_ENGINE_APP: join(s.dir, 'cua Engine.app'), TMPDIR: s.dir},
+    env: {CUA_ENGINE_APP: join(s.dir, 'cua Engine.app'), TMPDIR: join(s.dir, 'tmp'), CUA_ENGINE_SCREENSHOTS: join(s.dir, 'screenshots'), ...env},
     requestMeta: {'x-codex-turn-metadata': {call_id: 'call-7'}},
     nativePipe: nativePipe(),
     launchServices: {openApplication: async () => assert.fail('the engine is running; nothing launches it')},
@@ -93,7 +94,10 @@ async function session(t, {handlers = {}, answer = () => ({action: 'accept', con
   };
   const client = createEngineClient({nodeRepl, appPath: nodeRepl.env.CUA_ENGINE_APP, socketPath: socket, expected: {engineVersion: '0.1.0', build: 'b1'}});
   t.after(() => client.close());
-  const service = createService({nodeRepl, client});
+  // The client's round trips, fixed per method: the policy's resolve_app slower than any method's, so a result meta
+  // that took its time would show.
+  const timed = {get identity() { return client.identity; }, execute: async (method, args, options) => ({...await client.execute(method, args, options), engineMs: ENGINE_MS[method] ?? 7.25})};
+  const service = createService({nodeRepl, client: timed});
   const wrapper = createSkyService({loadVendor: async () => service, secrets: {read: async label => secrets[label]}, platform: 'darwin'});
   const saved = globalThis.nodeRepl;
   globalThis.nodeRepl = {rpc: async (name, request) => { assert.equal(name, 'sky'); return wrapper.handleRpc(request); }};
@@ -128,16 +132,24 @@ test('getApp: resolved once, approved, observed by path with a screenshot, rende
   assert.match(state.screenshot.url, /^file:/);
   const [resolve, observe] = engine.executes();
   assert.deepEqual([resolve.method, resolve.args, 'lineage' in resolve], ['resolve_app', {app: 'TextEdit'}, false]);
-  assert.deepEqual(observe.args, {app: APPS.TextEdit.appPath, includeScreenshot: true, outputDirectory: join(dir, 'cua-engine-screenshots'), disableDiff: true});
-  assert.equal(statSync(observe.args.outputDirectory).mode & 0o777, 0o700);
+  assert.deepEqual(observe.args, {app: APPS.TextEdit.appPath, includeScreenshot: true, outputDirectory: join(dir, 'screenshots'), disableDiff: true});
+  assert.equal(existsSync(observe.args.outputDirectory), false, 'the directory the launcher names is the engine\'s to create: the worker writes nothing');
   assert.deepEqual(record.suspendedAt, {resolve_app: [false], get_app_state: [true]}, 'the observation, its settle and any launch wait run under the suspended budget; the policy round trip does not');
   assert.equal(record.asked.length, 1);
   assert.equal(record.asked[0].message, 'Allow Computer Use to use "TextEdit"?');
   assert.deepEqual(record.asked[0].meta.tool_params, {app: 'com.apple.TextEdit'}, 'the supervisor\'s memory keys on the resolved bundle id');
   assert.deepEqual(meta['codex/toolSurface'], {app: {appId: 'com.apple.TextEdit', kind: 'appId'}, kind: 'computerUse'});
   assert.deepEqual(meta['cua/nativeEngine'], {engine: 'cua', version: '0.1.0', build: 'b1'});
-  assert.equal(typeof meta['cua/engineMs'], 'number');
+  assert.equal(meta['cua/engineMs'], 7.25, 'the observation\'s own round trip, not the policy\'s');
   assert.equal(meta['cua/settle'], null);
+});
+
+test('an observation without the launcher\'s screenshot directory fails with its configuration sentence before anything is asked', async t => {
+  for (const value of [undefined, 'relative/screenshots']) {
+    const {getApp, engine, record} = await session(t, {env: {CUA_ENGINE_SCREENSHOTS: value}});
+    await assert.rejects(getApp('TextEdit'), {message: 'cua: the engine\'s screenshot directory is not configured for this runtime: CUA_ENGINE_SCREENSHOTS must name it by absolute path [engine_not_configured]'});
+    assert.deepEqual([engine.executes().length, record.elicitations.length], [0, 0], String(value));
+  }
 });
 
 test('every call asks; the host\'s memory answers the repeats; resolution is kept per app string, concurrent first calls sharing one', async t => {
@@ -210,12 +222,13 @@ test('an index never issued answers "<n> is an invalid element ID", a retired on
 });
 
 test('an app not yet observed on the connection: an index is no longer valid, a coordinate click goes without a lineage for the engine to refuse', async t => {
-  const {sky, call, engine} = await session(t, {handlers: {'execute:click': ({args, lineage}) => {
+  const {sky, call, engine, meta} = await session(t, {handlers: {'execute:click': ({args, lineage}) => {
     assert.equal(lineage, undefined);
     throw new EngineFailure(-10005, 'There is no screenshot of the app\'s window to place the coordinates in. Use getScreenshot to get one.', 'noScreenshotForCoordinates', {meta: {...INPUT_META, startedAt: null, endedAt: null}});
   }}});
   const app = bind_mac_app(sky, APPS.Finder.appPath);
   await assert.rejects(call(() => app.click(0)), {message: `Computer Use server error -10005: ${NO_LONGER_VALID}`});
+  assert.equal(meta['cua/engineMs'], null, 'refused in the service after the policy resolved the app: the click never reached the engine');
   await assert.rejects(call(() => app.click([1, 2])), /noScreenshot|getScreenshot/);
   assert.equal(engine.executes().filter(p => p.method === 'click').length, 1);
 });
@@ -247,6 +260,7 @@ test('cua/settle rides on the observation whose settle hit its cap, and on no ot
 test('a declined app fails "Computer Use was not approved to use <app>" with nothing observed; a forbidden one the vendor\'s sentence with nothing asked', async t => {
   const declined = await session(t, {answer: () => ({action: 'decline', content: null, _meta: null})});
   await assert.rejects(declined.getApp('TextEdit'), {message: 'Computer Use was not approved to use TextEdit'});
+  assert.equal(declined.meta['cua/engineMs'], null, 'the policy\'s resolve_app is not the declined call\'s round trip');
   await assert.rejects(declined.getApp('TextEdit'), {message: 'Computer Use was not approved to use TextEdit'});
   assert.deepEqual(declined.engine.executes().map(p => p.method), ['resolve_app'], 'nothing past the policy');
   assert.equal(declined.record.asked.length, 1, 'the decline is remembered for the connection');

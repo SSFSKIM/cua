@@ -59,6 +59,10 @@
 //                                            spawns as a child over stdio (pinned rather than resolved by the vendor)
 //   CUA_SKY_SERVICE                          computer surface: the sky service module the trusted wrapper delegates to;
 //                                            the vendor's (@oai/sky/service) until #117's selection (M1b) can name cua's
+//   CUA_ENGINE_SCREENSHOTS                   computer surface, darwin: where cua's own engine writes screenshots, under
+//                                            the session's run directory, which the kernel may read; the engine creates
+//                                            it (outside every sandbox, never through a symbolic link), since the
+//                                            worker writes nothing in the default mode (#117)
 //   BROWSER_USE_AVAILABLE_BACKENDS=chrome    browser surface: the service considers Chrome backends only (no
 //                                            BROWSER_USE_DISABLE_AMBIENT_NETWORK or BROWSER_USE_SECURITY_MODE)
 //   BROWSER_USE_BACKEND_PATHS                browser surface: cua's host sockets (src/chrome/discovery.mjs), an empty
@@ -270,7 +274,10 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
     ...(compat ? {CODEX_CLI_PATH: compatExecutable(), CUA_COMPAT_NODE: p.node} : linux ? linuxSandboxEnv(owned.home, runtime.manifest.arch, enabled) : {CUA_REPL_SANDBOX_EXEC: SEATBELT_EXEC}),
     ...(kernelDir ? {CUA_REPL_KERNEL_DIR: kernelDir} : {}),
   });
-  if (enabled.includes('computer')) Object.assign(env, linux ? {OAI_SKY_LINUX_BIN: p.skyLinuxBin} : {SKY_CUA_SERVICE_PATH: p.skyServiceApp}, {CUA_SKY_SERVICE: p.skyVendorService});
+  if (enabled.includes('computer')) {
+    Object.assign(env, linux ? {OAI_SKY_LINUX_BIN: p.skyLinuxBin} : {SKY_CUA_SERVICE_PATH: p.skyServiceApp}, {CUA_SKY_SERVICE: p.skyVendorService});
+    if (!linux) env.CUA_ENGINE_SCREENSHOTS = join(cwd, 'screenshots');
+  }
   if (enabled.includes('browser')) {
     env.BROWSER_USE_AVAILABLE_BACKENDS = 'chrome';
     env.BROWSER_USE_BACKEND_PATHS = launchBackendPaths(home, {clientHosts: browserBackends?.hostPaths ?? null}).join(':');

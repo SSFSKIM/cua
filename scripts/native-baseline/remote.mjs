@@ -2,9 +2,11 @@
 // requested REPL host, and the shell scripts the harness runs over ssh around the measurements (attestation, the
 // handshake record, the helper, the processes left). Every script goes through topology.mjs's ssh form (BatchMode, the
 // pinned node on PATH). The macOS-only scripts are here (HELPER_SCRIPT, leftoverScript); the Linux ones are in
-// ./linux.mjs.
+// ./linux.mjs. A macOS computer run also names its native engine (CUA_NATIVE_ENGINE, #117), and its preflight reads the
+// approved engine and the checkout's build on the device (./engine.mjs).
 import {remoteCommand, quote} from '../browser-parity/topology.mjs';
 import {SESSION_KEYS, sessionEnvironment} from '../repl-parity/devices.mjs';
+import {ENGINES} from './engine.mjs';
 
 export const PARITY_CHECKOUT = '$HOME/Developer/GitHub/cua-parity';
 // The MCP protocol version the harness asks for; the handshake record is kept per surface set and this version.
@@ -17,6 +19,7 @@ export const assertSurface = surface => { if (!SURFACES.includes(surface)) throw
 // Locale is part of the measured desktop environment, never an SSH-login preference.
 export const NATIVE_LOCALE = Object.freeze({LANG: 'C.UTF-8'});
 const assertHost = host => { if (!HOSTS.includes(host)) throw new Error('host must be vendor or cua'); };
+const assertEngine = engine => { if (engine !== undefined && !ENGINES.includes(engine)) throw new Error('engine must be vendor or cua'); };
 // An X display name (:0, :1.0, localhost:10.0), nothing a shell could read otherwise.
 // The own host's Node: an absolute path a shell cannot read otherwise, and only for the cua host (the vendor host runs on
 // its pinned Node, so naming one there would change nothing but the baseline's recorded environment).
@@ -42,14 +45,16 @@ export const assertDisplay = display => { if (!/^[A-Za-z0-9.-]*:\d+(\.\d+)?$/.te
 // XDG_CONFIG_HOME; otherwise it is the scratch HOME's .config. `admission` (the same run) is the token the serve presents
 // to the approved home's admission (prepare.mjs admitServe). `tmpdir` (a macOS run's own, prepare.mjs) is its TMPDIR:
 // buildLaunch copies it into the runtime, and the native helper inherits it, which is how cleanup knows the run's helper.
-export function nativeEnvironment({home, userHome, configHome, tmpdir, admission, host, display, platform, xSession, node, surface = 'computer'}) {
-  assertHost(host); assertOwnNode(host, node); assertSurface(surface);
+// `engine` (a macOS computer run's, ./engine.mjs) is CUA_NATIVE_ENGINE, explicit like the host, so the selection never
+// moves under the run; with HOME the account's, the serve's selection finds the approved engine there.
+export function nativeEnvironment({home, userHome, configHome, tmpdir, admission, host, engine, display, platform, xSession, node, surface = 'computer'}) {
+  assertHost(host); assertEngine(engine); assertOwnNode(host, node); assertSurface(surface);
   if (platform === 'linux') assertDisplay(xSession?.DISPLAY ?? display);
   const x = xSession === undefined ? (platform === 'linux' ? ` DISPLAY=${quote(display)} XAUTHORITY="$HOME/.Xauthority"` : '')
     : Object.entries(sessionEnvironment(xSession)).map(([key,value]) => ` ${key}=${quote(value)}`).join('');
   const clean = userHome ? `-i PATH="$PATH" LANG=${NATIVE_LOCALE.LANG} HOME=${quote(userHome)} XDG_CONFIG_HOME=${quote(configHome ?? userHome + '/.config')} ${tmpdir ? `TMPDIR=${quote(tmpdir)} ` : ''}`
     : '-u CUA_NODE ' + SESSION_KEYS.filter(key => xSession && !Object.hasOwn(xSession,key)).map(key => `-u ${key} `).join('');
-  return `${clean}CUA_HOME=${quote(home)} CUA_REPL_HOST=${host}${node === undefined ? '' : ` CUA_NODE=${quote(node)}`} CUA_SHIM_SURFACES=${surface} CUA_SHIM_PERSIST=session CUA_SHIM_SECRETS=off${admission ? ` CUA_NATIVE_ADMISSION=${quote(admission)}` : ''}${x}`;
+  return `${clean}CUA_HOME=${quote(home)} CUA_REPL_HOST=${host}${engine === undefined ? '' : ` CUA_NATIVE_ENGINE=${engine}`}${node === undefined ? '' : ` CUA_NODE=${quote(node)}`} CUA_SHIM_SURFACES=${surface} CUA_SHIM_PERSIST=session CUA_SHIM_SECRETS=off${admission ? ` CUA_NATIVE_ADMISSION=${quote(admission)}` : ''}${x}`;
 }
 export function serveCommand(options) {
   const {device, checkout, userHome, node} = options;
@@ -91,10 +96,13 @@ export function xDisplayFacts(text) {
 // (src/repl-host/identity.mjs hostIdentity, as src/mcp/lazy-runtime.mjs handshakeRecords keys it), the sandbox policy
 // the serve resolves in this environment (src/runtime/sandbox.mjs sandboxModeFrom, the measured surface), the machine and what
 // is running that the run must know about (a cua-116-spike process, serves of the clone, the scratch app). macOS: model,
-// chip, memory, macOS, main display, TextEdit. Linux: CPU and memory, distribution and kernel, the X display (DISPLAY
-// `display`, the cookie in the account's home; checked with xdpyinfo, only its size kept), the session bus, gedit.
-export function preflightScript({host, display = ':0', node: ownNode, prepared, surface = 'computer'}) {
+// chip, memory, macOS, main display, TextEdit, and for the computer surface `engine`, the approved engine as the serve
+// will resolve it and the checkout's build (./engine.mjs approvedEngineFacts, read in the serve's environment; its error
+// when it cannot be read). Linux: CPU and memory, distribution and kernel, the X display (DISPLAY `display`, the cookie
+// in the account's home; checked with xdpyinfo, only its size kept), the session bus, gedit.
+export function preflightScript({host, engine, approvedEngine, display = ':0', node: ownNode, prepared, surface = 'computer'}) {
   assertHost(host);
+  assertEngine(engine);
   assertSurface(surface);
   assertOwnNode(host, ownNode);
   assertDisplay(display);
@@ -146,10 +154,11 @@ if (process.platform === 'linux') {
     os: {name: sh('/usr/bin/sw_vers', ['-productName']), version: sh('/usr/bin/sw_vers', ['-productVersion']), build: sh('/usr/bin/sw_vers', ['-buildVersion'])},
     display: main ? {pixels: main._spdisplays_pixels ?? null, resolution: points ? points.join(' x ') : null, scale: pixels && points ? pixels[0] / points[0] : null, virtual: /virtual|가상/i.test(main._name ?? '')} : null,
     textEditRunning: sh('/usr/bin/pgrep', ['-x', 'TextEdit']) !== '',
+    ${surface === 'computer' ? `engine: await (async () => { try { const {approvedEngineFacts} = await import('./scripts/native-baseline/engine.mjs'); return approvedEngineFacts({approvedEngine: ${JSON.stringify(approvedEngine ?? null)}}); } catch (e) { return {error: String(e?.message ?? e)}; } })(),` : ''}
   };
 }
 console.log(JSON.stringify({...common, ...own}));`;
-  return `cd ${PARITY_CHECKOUT} && ${prepared ? `env ${nativeEnvironment({...prepared, host, node: ownNode, platform: prepared.xSession?.DISPLAY ? 'linux' : 'darwin', display, surface})} ` : ''}node --input-type=module -e ${quote(node)}`;
+  return `cd ${PARITY_CHECKOUT} && ${prepared ? `env ${nativeEnvironment({...prepared, host, engine, node: ownNode, platform: prepared.xSession?.DISPLAY ? 'linux' : 'darwin', display, surface})} ` : ''}node --input-type=module -e ${quote(node)}`;
 }
 
 // Clears (when asked) and then reports the measured surface's handshake record of the selected host (the record of
@@ -161,24 +170,28 @@ export function handshakeScript({record, clear}) {
   return `${clear ? `rm -f ${quote(record)} && ` : ''}if [ -f ${quote(record)} ]; then echo present; else echo absent; fi`;
 }
 
-// The running computer-use helpers, one per line: elapsed time ([[dd-]hh:]mm:ss) and executable path.
-export const HELPER_SCRIPT = `/bin/ps -axo etime=,comm= | /usr/bin/grep '/SkyComputerUseService$' || true`;
+// The running native engines' processes, one per line: elapsed time ([[dd-]hh:]mm:ss) and executable path; the vendor's
+// computer-use helper (SkyComputerUseService) and cua's engine (cua-engine, #117).
+export const HELPER_SCRIPT = `/bin/ps -axo etime=,comm= | /usr/bin/grep -E '/(SkyComputerUseService|cua-engine)$' || true`;
 // What the run may have left: serves of the clone (servePattern) and TextEdit, as two counts.
 export const leftoverScript = checkout => `printf '%s %s\\n' "$(/usr/bin/pgrep -f ${quote(servePattern(checkout))} | wc -l | tr -d ' ')" "$(/usr/bin/pgrep -x TextEdit | wc -l | tr -d ' ')"`;
 // The one cua-116-spike check the run waits on.
 export const SPIKE_SCRIPT = `/usr/bin/pgrep -f 'cua-116-[s]pike' >/dev/null && echo running || echo idle`;
 
-// The helpers classified against the pinned runtime (the vendor's sky from the runtime this host pins, or another
-// installation's, which the vendor client would reuse), each with its age in seconds.
+// The helpers classified by `kind` (the vendor's SkyComputerUseService or cua's cua-engine) and origin, each with its age
+// in seconds: the vendor's against the pinned runtime (its sky from the runtime this host pins, or another installation's,
+// which the vendor client would reuse), cua's against the approved engine bundle `engineBundle` (or another engine copy).
 const seconds = etime => {
   const [days, clock] = etime.includes('-') ? etime.split('-') : ['0', etime];
   return Number(days) * 86400 + clock.split(':').map(Number).reduce((total, part) => total * 60 + part, 0);
 };
-export function classifyHelpers(output, runtimeRoot) {
+export function classifyHelpers(output, runtimeRoot, engineBundle = null) {
   return String(output).split('\n').map(l => l.trim()).filter(Boolean).map(line => {
     const [, etime, path] = line.match(/^(\S+)\s+(.*)$/) ?? [null, null, line];
     const age = etime ? seconds(etime) : NaN;
-    return {path: path.replace(/^\/Users\/[^/]+/, '~'), origin: runtimeRoot && path.startsWith(`${runtimeRoot}/`) ? 'pinned runtime' : 'another installation',
-      ageSeconds: Number.isFinite(age) ? age : null};
+    const kind = path.endsWith('/cua-engine') ? 'cua' : 'vendor';
+    const origin = kind === 'cua' ? (engineBundle && path === `${engineBundle}/Contents/MacOS/cua-engine` ? 'approved engine' : 'another engine copy')
+      : runtimeRoot && path.startsWith(`${runtimeRoot}/`) ? 'pinned runtime' : 'another installation';
+    return {path: path.replace(/^\/Users\/[^/]+/, '~'), kind, origin, ageSeconds: Number.isFinite(age) ? age : null};
   });
 }

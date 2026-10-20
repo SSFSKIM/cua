@@ -1,14 +1,46 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
-import {classifyHelpers, handshakeScript, leftoverScript, osReleaseFacts, preflightScript, servePattern, serveCommand, xDisplayFacts} from '../../scripts/native-baseline/remote.mjs';
+import {classifyHelpers, HELPER_SCRIPT, handshakeScript, leftoverScript, osReleaseFacts, preflightScript, servePattern, serveCommand, xDisplayFacts} from '../../scripts/native-baseline/remote.mjs';
 
 test('helpers are classified against the pinned runtime, with their age', () => {
   assert.deepEqual(classifyHelpers('   01:02:03 /Users/someone/rt/sky/SkyComputerUseService\n2-00:00:10 /Applications/Other.app/SkyComputerUseService\n', '/Users/someone/rt'), [
-    {path: '~/rt/sky/SkyComputerUseService', origin: 'pinned runtime', ageSeconds: 3723},
-    {path: '/Applications/Other.app/SkyComputerUseService', origin: 'another installation', ageSeconds: 172810},
+    {path: '~/rt/sky/SkyComputerUseService', kind: 'vendor', origin: 'pinned runtime', ageSeconds: 3723},
+    {path: '/Applications/Other.app/SkyComputerUseService', kind: 'vendor', origin: 'another installation', ageSeconds: 172810},
   ]);
   assert.deepEqual(classifyHelpers('', '/x'), []);
+});
+
+// #117: the helper attestation covers both engines' processes (the own native engine spec, Verification system part 1).
+test('both engines\' processes are classified: the vendor helper against the pinned runtime, cua-engine against the approved engine', () => {
+  const engine = '/Users/someone/Library/Application Support/cua/engine/cua Engine.app';
+  const ps = ['      00:07 /Users/someone/rt/sky/SkyComputerUseService', `      00:04 ${engine}/Contents/MacOS/cua-engine`,
+    '   01:00:00 /tmp/cua-m1b4-copy/cua Engine.app/Contents/MacOS/cua-engine'].join('\n');
+  assert.deepEqual(classifyHelpers(ps, '/Users/someone/rt', engine), [
+    {path: '~/rt/sky/SkyComputerUseService', kind: 'vendor', origin: 'pinned runtime', ageSeconds: 7},
+    {path: '~/Library/Application Support/cua/engine/cua Engine.app/Contents/MacOS/cua-engine', kind: 'cua', origin: 'approved engine', ageSeconds: 4},
+    {path: '/tmp/cua-m1b4-copy/cua Engine.app/Contents/MacOS/cua-engine', kind: 'cua', origin: 'another engine copy', ageSeconds: 3600},
+  ]);
+  assert.equal(classifyHelpers(`00:04 ${engine}/Contents/MacOS/cua-engine`, '/x', null)[0].origin, 'another engine copy', 'no approved engine known: no copy is it');
+  // The script lists both processes and nothing else: a process whose path only contains the name is not one.
+  const listed = execFileSync('/bin/sh', ['-c', `printf '%s\\n' '00:01 /a/SkyComputerUseService' '00:02 /b/cua Engine.app/Contents/MacOS/cua-engine' '00:03 /c/cua-engine-helper' '00:04 /d/SkyComputerUseService.log' | ${HELPER_SCRIPT.replace(/^.*?\| /, '')}`], {encoding: 'utf8'});
+  assert.deepEqual(listed.trim().split('\n'), ['00:01 /a/SkyComputerUseService', '00:02 /b/cua Engine.app/Contents/MacOS/cua-engine']);
+});
+
+test('a macOS computer serve and its preflight name the requested native engine; the preflight reads the approved engine on the device', () => {
+  const at = {device: 'mini', checkout: '/Users/someone/cua-parity', home: '/Users/someone/cua-home', userHome: '/Users/someone', configHome: '/c', host: 'vendor', platform: 'darwin'};
+  assert.match(serveCommand({...at, engine: 'cua'}).args[3], /CUA_REPL_HOST=vendor CUA_NATIVE_ENGINE=cua CUA_SHIM_SURFACES=computer /);
+  assert.doesNotMatch(serveCommand(at).args[3], /CUA_NATIVE_ENGINE/);
+  assert.throws(() => serveCommand({...at, engine: 'sky'}), /engine must be vendor or cua/);
+  const bundle = '/Users/someone/Library/Application Support/cua/engine/cua Engine.app';
+  const prepared = {home: at.home, userHome: at.userHome, configHome: '/c', xSession: {}};
+  const script = preflightScript({host: 'vendor', engine: 'cua', approvedEngine: bundle, prepared});
+  assert.match(script, /HOME='\/Users\/someone' /);
+  assert.match(script, /CUA_NATIVE_ENGINE=cua/);
+  assert.match(script, /scripts\/native-baseline\/engine\.mjs/);
+  assert.match(script, /approvedEngineFacts/);
+  assert.ok(script.includes(JSON.stringify(bundle).replace(/'/g, "'\\''")));
+  assert.doesNotMatch(preflightScript({host: 'cua', display: ':0', surface: 'browser'}), /approvedEngineFacts\(\{/, 'a browser-surface run reads no engine');
 });
 
 test('the handshake script touches only a native handshake record of the selected host (vendor or cua)', () => {

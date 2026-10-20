@@ -1,38 +1,81 @@
 // The native baseline on macOS: TextEdit, driven by the vendor's computer-use helper (SkyComputerUseService), as the
 // 2026-10-14 Mac baseline recorded it (docs/evidence/2026-10-14-native-baseline). The run loop in
 // scripts/native-baseline.mjs calls this adapter for what is TextEdit's: the first getApp (approval and launch, with
-// one retry on the launch's timeoutReached), a scratch document, the guarded observation series, the
-// new-document -> typeText -> verify -> delete task, and quitting the TextEdit it launched. Every cell guards the window
-// it acts on (./cells.mjs).
+// one retry on the launch's timeoutReached), bringing the TextEdit it launched to the front (setup.activate), a scratch
+// document, the guarded observation series, the new-document -> typeText -> verify -> delete task, and quitting the
+// TextEdit it launched. Every cell guards the window it acts on (./cells.mjs). The engine is the run's (--engine,
+// ./engine.mjs): the vendor's helper or cua's engine; the service attestation names the one that answered and both
+// engines' processes.
 import {isTextEditApproval, TEXTEDIT_BUNDLE} from '../accept/lib.mjs';
-import {FRONTMOST_SCRIPT, parseFrontmost, sendIfFrontmost} from '../accept/key-guard.mjs';
+import {FRONTMOST_PROCESS_SCRIPT, parseFrontmostProcess, sendIfFrontmost} from '../accept/key-guard.mjs';
 import * as cells from './cells.mjs';
 import {classifyHelpers, HELPER_SCRIPT, leftoverScript} from './remote.mjs';
 
 const BIND_MS = 120_000;
+// How long setup.activate waits for TextEdit to be the frontmost application after `open -a TextEdit`, and how often it
+// reads it meanwhile.
+const ACTIVATE_MS = 5_000;
+const ACTIVATE_POLL_MS = 250;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const round = ms => Math.round(ms * 1000) / 1000;
 
-export function macosDevice(remote, {checkout, runtimeRoot}) {
+// `engineBundle`: the approved cua engine the run serves, whose process the helper attestation names as its own.
+export function macosDevice(remote, {checkout, runtimeRoot, engineBundle = null}) {
   return {
-    helpers: () => classifyHelpers(remote(HELPER_SCRIPT), runtimeRoot),
+    helpers: () => classifyHelpers(remote(HELPER_SCRIPT), runtimeRoot, engineBundle),
     leftovers() { const [serves, textEdit] = remote(leftoverScript(checkout)).split(' ').map(Number); return {serves, textEditRunning: textEdit > 0}; },
-    frontmost: () => parseFrontmost(remote(FRONTMOST_SCRIPT)),
+    // The frontmost application's process, {pid, bundleId} or null (scripts/accept/key-guard.mjs).
+    frontmost: () => parseFrontmostProcess(remote(FRONTMOST_PROCESS_SCRIPT)),
+    // The run's TextEdit: the one TextEdit process (the run refuses to start while TextEdit runs, so it is the one the
+    // bind launched).
+    textEditPid() {
+      const pids = remote('/usr/bin/pgrep -x TextEdit || true').split('\n').filter(Boolean).map(Number);
+      if (pids.length !== 1 || !Number.isSafeInteger(pids[0])) throw new Error(`expected the run's one TextEdit process, found ${pids.length}`);
+      return pids[0];
+    },
+    // Brings TextEdit to the front from the device side (LaunchServices activates the running instance).
+    activate: () => remote('/usr/bin/open -a TextEdit'),
   };
 }
 
-// A cell that sends keys to TextEdit runs only while TextEdit is the device's frontmost application (#162,
-// scripts/accept/key-guard.mjs); otherwise it is not sent, the skip is recorded (meta.keySkipped and a key.skipped row),
-// and the run stops with no further input. The scratch document's click on the Open panel's New Document button (a
-// fresh launch; the panel is served out of process, so it may be what is frontmost then, and a click sends no modifier)
-// is not guarded; its super+n path is, as its own cell (NEW_DOCUMENT_KEYS). A task's new document and its typing are
-// separate cells, each checked right before it is sent, since the first waits up to TRANSITION_MS for the document.
+const describeFront = front => (front && typeof front === 'object' ? `${front.bundleId ?? 'an app with no bundle id'} (pid ${front.pid})` : 'unreadable');
+
+// A cell that sends keys to TextEdit runs only while the run's TextEdit process is the device's frontmost application
+// (#162, scripts/accept/key-guard.mjs, by pid since M1b: another TextEdit process is not the target); otherwise it is not
+// sent, the skip is recorded (meta.keySkipped and a key.skipped row), and the run stops with no further input. The
+// scratch document's click on the Open panel's New Document button (a fresh launch; the panel is served out of process,
+// so it may be what is frontmost then, and a click sends no modifier) is not guarded; its super+n path is, as its own
+// cell (NEW_DOCUMENT_KEYS). A task's new document and its typing are separate cells, each checked right before it is
+// sent, since the first waits up to TRANSITION_MS for the document.
 async function keyCell(ctx, code, keys) {
-  const out = await sendIfFrontmost({target: TEXTEDIT_BUNDLE, keys, frontmost: () => ctx.device.frontmost(), send: () => ctx.js(code)});
+  const target = {pid: ctx.meta.textEdit?.pid, bundleId: TEXTEDIT_BUNDLE};
+  const out = await sendIfFrontmost({target, keys, frontmost: () => ctx.device.frontmost(), send: () => ctx.js(code)});
   if (out.sent) return out.result;
   (ctx.meta.keySkipped ??= []).push(out.skipped);
   ctx.emit({op: 'key.skipped', sample: ctx.meta.keySkipped.length, ok: false, ...out.skipped});
-  return ctx.stop(`${out.skipped.event}: ${keys.join(', ')} not sent, the frontmost application is ${out.skipped.frontmost}, not TextEdit (#162)`);
+  return ctx.stop(`${out.skipped.event}: ${keys.join(', ')} not sent, the frontmost application is ${describeFront(out.skipped.frontmost)}, not the run's TextEdit (pid ${target.pid}) (#162)`);
+}
+
+// setup.activate (the own native engine spec, Verification system part 1): the run's TextEdit brought to the front from
+// the device (`open -a TextEdit`) right after the bind, verified by its pid as the frontmost application. The vendor's
+// launch and click paths activate TextEdit and cua's engine never does, so without it the key guard would stop cua's
+// lane at its first key: the baseline measures the driven-app-frontmost regime on both engines. Not judged (setup.*);
+// a TextEdit that does not come to the front stops the run before any key or click.
+async function activate(ctx) {
+  const {meta, device, emit} = ctx, pid = meta.textEdit.pid, limit = ctx.activateMs ?? ACTIVATE_MS;
+  const started = performance.now();
+  device.activate();
+  let front = null, attempts = 0;
+  for (;;) {
+    try { front = await device.frontmost(); } catch { front = null; }
+    attempts++;
+    if (front?.pid === pid || performance.now() - started >= limit) break;
+    await sleep(ACTIVATE_POLL_MS);
+  }
+  const ok = front?.pid === pid;
+  emit({op: 'setup.activate', sample: 1, ok, wallMs: round(performance.now() - started), attempts, frontmost: front ?? 'unreadable',
+    note: 'open -a TextEdit from the device, then the frontmost application read until it is the run\'s TextEdit; harness setup, not judged'});
+  if (!ok) throw new Error(`setup.activate: TextEdit (pid ${pid}) is not the frontmost application after open -a TextEdit; the frontmost is ${describeFront(front)}`);
 }
 
 // TextEdit this run launched is quit from its scratch document (the cell refuses when that is not in front).
@@ -58,7 +101,7 @@ function joined(first, second) {
 export const macosAdapter = {
   platform: 'darwin',
   target: 'TextEdit',
-  device: (remote, {pre}) => macosDevice(remote, {checkout: pre.checkout, runtimeRoot: pre.runtimeRoot}),
+  device: (remote, {pre}) => macosDevice(remote, {checkout: pre.checkout, runtimeRoot: pre.runtimeRoot, engineBundle: pre.engine?.installed?.bundlePath ?? null}),
   answer: msg => (isTextEditApproval(msg) ? {action: 'accept', content: {}} : {action: 'decline'}),
   refuse: pre => (pre.textEditRunning ? 'TextEdit is running on the device: its windows may be the owner\'s; quit it (or wait) and re-run' : null),
   start(meta, pre) { meta.textEdit = {runningBefore: pre.textEditRunning}; },
@@ -79,8 +122,12 @@ export const macosAdapter = {
       bound = guard(await js(cells.BIND, BIND_MS), 'cua.getApp(TextEdit), retried');
       row('bind.getApp.retry', 1, bound, {approvals: ctx.elicited().length});
     }
-    meta.service = {surface: 'computer', engine: 'sky', answered: 'vendor', ...ctx.helperAttestation()};
+    // The engine requested and the one the results attested so far (every one must agree, ./engine.mjs engineProblem),
+    // with both engines' processes running now.
+    meta.service = {surface: 'computer', engine: meta.nativeEngine?.requested ?? 'vendor', answered: meta.nativeEngine?.attested?.[0]?.engine ?? 'vendor', ...ctx.helperAttestation()};
     if (!bound.cell?.ok) throw new Error(`cua.getApp(TextEdit) failed: ${bound.cell?.error ?? bound.failure}`);
+    meta.textEdit.pid = device.textEditPid();
+    await activate(ctx);
 
     let scratch = guard(await js(cells.NEW_DOCUMENT), 'the scratch document');
     if (scratch.cell?.ok && scratch.cell.value?.needsKeys) scratch = guard(await keyCell(ctx, cells.NEW_DOCUMENT_KEYS, ['super+n']), 'the scratch document');

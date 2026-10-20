@@ -4,7 +4,7 @@
 // must be the one that answered, and that the run's own gedit processes are ended whatever happens.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync, readFileSync, rmSync} from 'node:fs';
+import {existsSync, mkdtempSync, readFileSync, rmSync} from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {run} from '../../scripts/native-baseline.mjs';
@@ -85,7 +85,7 @@ function fakeClient(options, cua, state) {
       const written = [];
       Object.assign(globalThis, {cua, nodeRepl: {write: text => written.push(text)}});
       try { await new AsyncFunction(params.arguments.code)(); } finally { delete globalThis.cua; delete globalThis.nodeRepl; }
-      return {content: [{type: 'text', text: `# Native apps\n${written.join('\n')}`}], _meta: meta};
+      return {content: [{type: 'text', text: `# Native apps\n${written.join('\n')}`}], _meta: {...meta, ...(state.nativeEngine ? {'cua/nativeEngine': state.nativeEngine()} : {})}};
     },
     async call(name) { assert.equal(name, 'end_task'); return {content: [], structuredContent: {status: 'ended'}}; },
     async close() {},
@@ -181,17 +181,29 @@ test('a cell that times out stops all further input, and the run still ends its 
 
 // The macOS path through the same loop: TextEdit's approval (accepted only for that exact request), its launch panel,
 // the scratch document, the guarded series, the delete-without-saving task and quitting the TextEdit the run launched.
-// The mini's native runs serve the approved runtime copy in place (prepare.mjs): the double prepares one.
+// The mini's native runs serve the approved runtime copy in place (prepare.mjs): the double prepares one. Since #117 a
+// run names its engine and the approved engine; the device reports that engine's facts, both preparation steps report
+// their engine stop, every js result carries the engine attestation, and the helpers include the engine's process.
 const reuseOf = home => ({approvedHome: home, release: '26.928.40906-darwin-arm64', runtimeRoot: `${home}/runtimes/26.928.40906-darwin-arm64`,
   helper: `${home}/runtimes/26.928.40906-darwin-arm64/SkyComputerUseService.app`, reason: 'reused'});
-// One macOS vendor-host run against the doubles; `frontmost(app)` is the device's frontmost-application reader (#162).
-async function macRun(t, {frontmost = () => 'com.apple.TextEdit', app = textEdit()} = {}) {
-  const state = {record: true, scripts: [], answeringHost: 'vendor'};
+const TEXTEDIT_PID = 4242;
+const BUILD = 'c'.repeat(64);
+const ENGINE_BUNDLE = '/Users/someone/Library/Application Support/cua/engine/cua Engine.app';
+const engineFacts = (extra = {}) => ({checkoutBuild: BUILD, installed: {bundlePath: ENGINE_BUNDLE, engineVersion: '0.1.0', build: BUILD}, installedReal: ENGINE_BUNDLE,
+  approvedEngineReal: ENGINE_BUNDLE, approvedRecordBuild: BUILD, bundleBuild: BUILD, home: '/Users/someone', ...extra});
+const attestationOf = engine => (engine === 'cua' ? {engine: 'cua', version: '0.1.0', build: BUILD} : {engine: 'vendor', version: '26.924.1001281', build: '26.928.40906-darwin-arm64'});
+const helperOf = engine => (engine === 'cua' ? {path: '~/Library/Application Support/cua/engine/cua Engine.app/Contents/MacOS/cua-engine', kind: 'cua', origin: 'approved engine', ageSeconds: 0}
+  : {path: '~/Library/Application Support/cua/runtimes/26.928.40906-darwin-arm64/SkyComputerUseService', kind: 'vendor', origin: 'pinned runtime', ageSeconds: 0});
+// One macOS run against the doubles; `frontmost(app)` is the device's frontmost-application reader (#162): a bundle id
+// (TextEdit's is the run's TextEdit, pid TEXTEDIT_PID) or a {pid, bundleId} reading as it is.
+async function macRun(t, {frontmost = () => 'com.apple.TextEdit', app = textEdit(), host = 'vendor', engine = 'vendor', facts = engineFacts(), attestation = () => attestationOf(engine),
+  helpers = () => [helperOf(engine)], startStop = {wasRunning: false}, endStop = {wasRunning: true, pid: 5151}, getState, activateMs = 300} = {}) {
+  const state = {record: true, scripts: [], answeringHost: host, nativeEngine: attestation};
   const approval = {method: 'elicitation/create', params: {message: 'Allow Computer Use to use "TextEdit"?', mode: 'form', requestedSchema: {type: 'object', properties: {}},
     _meta: {connector_id: 'computer-use', codex_approval_kind: 'mcp_tool_call', tool_params: {app: 'com.apple.TextEdit'}}}};
   let launched = false;
   const cua = {
-    async getState() { return {apps: [{}], browsers: [], errors: []}; },
+    async getState() { if (getState) return getState(); return {apps: [{}], browsers: [], errors: []}; },
     async listApps() { return [{isRunning: true}]; },
     async getApp(bundle) {
       const answer = state.options.answer(approval);
@@ -203,27 +215,35 @@ async function macRun(t, {frontmost = () => 'com.apple.TextEdit', app = textEdit
   };
   const release = '26.928.40906-darwin-arm64', home = '/Users/someone/Library/Application Support/cua';
   const ownNode = {path: `${home}/node/24.22.0/bin/node`, version: 'v24.22.0'};
+  if (host === 'cua') state.answeringNode = ownNode;
   const pre = {ownNode,arch:'arm64',hostname:'mini',cpu:{model:'Apple',count:10},uptime:'device before',platform: 'darwin', node: 'v24.18.0', commit: 'c0ffee1', dirty: false, checkout: '/Users/someone/Developer/GitHub/cua-parity', home, release,
-    handshakeRecord: `${home}/state/handshake/${release}/vendor@${release}/computer@2025-06-18.json`, runtimeRoot: `${home}/runtimes/${release}`, spikeRunning: false, serves: 0,
+    handshakeRecord: host === 'cua' ? `${home}/state/handshake/${release}/cua@0.1.0/computer@2025-06-18.json` : `${home}/state/handshake/${release}/vendor@${release}/computer@2025-06-18.json`, runtimeRoot: `${home}/runtimes/${release}`, spikeRunning: false, serves: 0,
     hardware: {model: 'Mac14,12', chip: 'Apple M2 Pro', memoryBytes: 17179869184}, os: {name: 'macOS', version: '27.0', build: '26A428'},
-    display: {pixels: '5120 x 2880', resolution: '2560 x 1440', scale: 2, virtual: true}, textEditRunning: false, sandbox: {mode: 'scoped', explicit: false}};
+    display: {pixels: '5120 x 2880', resolution: '2560 x 1440', scale: 2, virtual: true}, textEditRunning: false, sandbox: {mode: 'scoped', explicit: false}, engine: facts};
   const remote = script => {
+    state.scripts.push(script);
     if (script === 'uptime') return 'device after';
-    if (/prepare.mjs prepare/.test(script)) { state.prepareScript = script; return JSON.stringify({...prepared,device:'mini',xSession:{},home,ownNode,userHome:'/Users/someone',configHome:'/Users/someone/.local/share/cua-native-baseline/run-1/config',scratch:'/Users/someone/.local/share/cua-native-baseline/run-1',runtimeReuse:reuseOf(home),stashed:['state']}); }
-    if (/prepare.mjs cleanup/.test(script)) return JSON.stringify({removed:true,restored:['state']});
+    if (/prepare.mjs prepare/.test(script)) { state.prepareScript = script; return JSON.stringify({...prepared,device:'mini',xSession:{},home,ownNode,userHome:'/Users/someone',configHome:'/Users/someone/.local/share/cua-native-baseline/run-1/config',scratch:'/Users/someone/.local/share/cua-native-baseline/run-1',runtimeReuse:reuseOf(home),stashed:['state'],...(startStop ? {engineStop: startStop} : {})}); }
+    if (/prepare.mjs cleanup/.test(script)) { state.cleanups = (state.cleanups ?? 0) + 1; return JSON.stringify({removed:true,restored:['state'],...(endStop ? {engineStop: endStop} : {})}); }
     if (script === 'true') return '';
-    if (/hostIdentity/.test(script)) return JSON.stringify(pre);
+    if (/hostIdentity/.test(script)) { state.preflightScript = script; return JSON.stringify(pre); }
     if (/cua-116-\[s\]pike/.test(script)) return 'idle';
     if (script.startsWith('rm -f')) state.record = false;
     return state.record ? 'present' : 'absent';
   };
   const frontmosts = [];
-  const device = {helpers: () => [], leftovers: () => ({serves: 0, textEditRunning: launched && !app.quit}),
-    frontmost: () => { const id = frontmost(app); frontmosts.push(id); return id; }};
+  let activations = 0;
+  const device = {helpers: () => (launched ? helpers() : []), leftovers: () => ({serves: 0, textEditRunning: launched && !app.quit}),
+    frontmost: () => { const id = frontmost(app); frontmosts.push(id); return id === null || typeof id === 'object' ? id : {pid: id === 'com.apple.TextEdit' ? TEXTEDIT_PID : 777, bundleId: id}; },
+    textEditPid: () => TEXTEDIT_PID, activate: () => { activations++; }};
   const out = outDir(t);
-  const code = await run({device: 'mini', out, host: 'vendor', approvedRuntime: home, ...plan, io: {remote, controllerLoad:()=> 'controller load', device: () => device, connect: options => fakeClient(options, cua, state)}});
-  const meta = metaOf(out), rows = results(out);
-  return {code, meta, rows, app, state, frontmosts, home};
+  let code, refusal = null;
+  try {
+    code = await run({device: 'mini', out, host, engine, approvedEngine: ENGINE_BUNDLE, approvedRuntime: home, activateMs, ...plan,
+      io: {remote, controllerLoad:()=> 'controller load', device: () => device, connect: options => fakeClient(options, cua, state)}});
+  } catch (error) { refusal = error; }
+  const meta = existsSync(join(out, 'meta.json')) ? metaOf(out) : null, rows = existsSync(join(out, 'results.jsonl')) ? results(out) : [];
+  return {code, refusal, meta, rows, app, state, frontmosts, home, activations: () => activations};
 }
 
 test('a macOS vendor-host run keeps the TextEdit baseline\'s sequence and attests its host', async t => {
@@ -233,16 +253,19 @@ test('a macOS vendor-host run keeps the TextEdit baseline\'s sequence and attest
   assert.equal(meta.measurement.freshInstall, false);
   assert.deepEqual(meta.runtimeReuse, reuseOf(home));
   assert.equal(state.options.args.at(-1).includes("XDG_CONFIG_HOME='/Users/someone/.local/share/cua-native-baseline/run-1/config'"), true);
-  assert.deepEqual(meta.preparationCleanup, {removed: true, restored: ['state']});
+  assert.deepEqual(meta.preparationCleanup, {removed: true, restored: ['state'], engineStop: {wasRunning: true, pid: 5151}});
   assert.deepEqual([...new Set(rows.map(r => r.op))], ['ssh.roundtrip', 'cold.miss.initialize', 'cold.miss.tools_list', 'cold.miss.first_js', 'cold.miss.total', 'cold.hit.initialize', 'cold.hit.tools_list', 'cold.hit.first_js', 'cold.hit.total',
-    'warm.noop', 'warm.getState', 'warm.listApps', 'bind.getApp', 'approval.elicitation', 'setup.newDocument', 'warm.getAXState', 'guard.scratch', 'warm.getScreenshot', 'task.act', 'task.verify', 'task.close', 'task.total', 'end_task']);
+    'warm.noop', 'warm.getState', 'warm.listApps', 'bind.getApp', 'approval.elicitation', 'setup.activate', 'setup.newDocument', 'warm.getAXState', 'guard.scratch', 'warm.getScreenshot', 'task.act', 'task.verify', 'task.close', 'task.total', 'end_task']);
   assert.ok(rows.every(r => r.ok), JSON.stringify(rows.filter(r => !r.ok)));
-  assert.deepEqual(meta.textEdit, {runningBefore: false, launchedByRun: true, quitByRun: true});
+  assert.deepEqual(meta.textEdit, {runningBefore: false, launchedByRun: true, pid: TEXTEDIT_PID, quitByRun: true});
   assert.deepEqual(meta.leftovers, {serves: 0, textEditRunning: false});
-  assert.deepEqual(meta.environment, {CUA_REPL_HOST: 'vendor', CUA_SHIM_SURFACES: 'computer', CUA_SHIM_PERSIST: 'session', CUA_SHIM_SECRETS: 'off'});
+  assert.deepEqual(meta.environment, {CUA_REPL_HOST: 'vendor', CUA_NATIVE_ENGINE: 'vendor', CUA_SHIM_SURFACES: 'computer', CUA_SHIM_PERSIST: 'session', CUA_SHIM_SECRETS: 'off'});
   assert.equal(meta.hostAttestations.length, 3);
   assert.equal(app.windows.length, 1);
-  assert.equal(frontmosts.length, plan.tasks * 3 + 1, 'the frontmost app is read before every key-sending cell: each task\'s new document, typing and close, and the quit');
+  assert.equal(frontmosts.length, plan.tasks * 3 + 2, 'the frontmost app is read by setup.activate and before every key-sending cell: each task\'s new document, typing and close, and the quit');
+  assert.deepEqual(meta.nativeEngine, {requested: 'vendor', approved: {bundlePath: ENGINE_BUNDLE, engineVersion: '0.1.0', build: BUILD}, checkoutBuild: BUILD,
+    attested: [attestationOf('vendor')], unattested: 0});
+  assert.equal(meta.service.answered, 'vendor');
 });
 
 // #162: a super+w or super+q (and the task's super+n and typing) is sent only while TextEdit, which the run launched, is
@@ -251,12 +274,13 @@ test('a macOS vendor-host run keeps the TextEdit baseline\'s sequence and attest
 test('a macOS run whose target is not frontmost sends no key, records key_skipped_not_frontmost and fails', async t => {
   let reads = 0;
   // TextEdit is frontmost for the first task's new document and typing, then Chrome is before its close.
-  const {code, meta, rows, app} = await macRun(t, {frontmost: () => (++reads <= 2 ? 'com.apple.TextEdit' : 'com.google.Chrome')});
+  // setup.activate reads it first.
+  const {code, meta, rows, app} = await macRun(t, {frontmost: () => (++reads <= 3 ? 'com.apple.TextEdit' : 'com.google.Chrome')});
   assert.equal(code, 1);
   assert.ok(!app.keys.includes('super+w') && !app.keys.includes('super+q'), JSON.stringify(app.keys));
-  assert.deepEqual(meta.keySkipped, [{event: 'key_skipped_not_frontmost', keys: ['super+w'], target: 'com.apple.TextEdit', frontmost: 'com.google.Chrome'}]);
+  assert.deepEqual(meta.keySkipped, [{event: 'key_skipped_not_frontmost', keys: ['super+w'], target: {pid: TEXTEDIT_PID, bundleId: 'com.apple.TextEdit'}, frontmost: {pid: 777, bundleId: 'com.google.Chrome'}}]);
   assert.match(meta.stopped, /key_skipped_not_frontmost.*com\.google\.Chrome/);
-  assert.ok(rows.some(r => r.op === 'key.skipped' && r.ok === false && r.frontmost === 'com.google.Chrome'));
+  assert.ok(rows.some(r => r.op === 'key.skipped' && r.ok === false && r.frontmost?.bundleId === 'com.google.Chrome'));
   assert.equal(meta.complete, false);
 });
 
@@ -346,7 +370,7 @@ test('a refusal before connecting still removes the run-owned fresh installation
 test('a macOS computer run refuses to start without the approved runtime, and one whose serve resolves another runtime', async t => {
   const scripts = [];
   const remote = script => { scripts.push(script); throw new Error('no device'); };
-  await assert.rejects(run({device: 'mini', out: outDir(t), host: 'vendor', experiment: 'x', ...plan, io: {remote, controllerLoad: () => 'l', connect: () => { throw new Error('no'); }}}),
+  await assert.rejects(run({device: 'mini', out: outDir(t), host: 'vendor', engine: 'vendor', approvedEngine: ENGINE_BUNDLE, experiment: 'x', ...plan, io: {remote, controllerLoad: () => 'l', connect: () => { throw new Error('no'); }}}),
     /--approved-runtime/);
   assert.equal(scripts.length, 0, 'nothing ran on the device');
   const home = '/Users/someone/cua-115/home', release = '26.928.40906-darwin-arm64';
@@ -360,7 +384,7 @@ test('a macOS computer run refuses to start without the approved runtime, and on
     if (/cua-116-\[s\]pike/.test(script)) return 'idle';
     throw new Error(`unexpected script: ${script.slice(0, 60)}`);
   };
-  await assert.rejects(run({device: 'mini', out: outDir(t), host: 'vendor', approvedRuntime: home, experiment: 'x', ...plan, io: {remote: remote2, controllerLoad: () => 'l', connect: () => { throw new Error('no'); }}}),
+  await assert.rejects(run({device: 'mini', out: outDir(t), host: 'vendor', engine: 'vendor', approvedEngine: ENGINE_BUNDLE, approvedRuntime: home, experiment: 'x', ...plan, io: {remote: remote2, controllerLoad: () => 'l', connect: () => { throw new Error('no'); }}}),
     /resolves the runtime \/elsewhere\/runtimes\/26\.928\.40906-darwin-arm64, not the approved/);
   assert.equal(cleaned.length, 1, 'the stash is restored');
 });
@@ -369,11 +393,11 @@ test('a macOS computer run refuses to start without the approved runtime, and on
 // that wait stops the run before anything is typed.
 test('a macOS run whose focus moves while the task document opens types nothing and fails', async t => {
   let reads = 0;
-  const {code, meta, app} = await macRun(t, {frontmost: () => (++reads === 1 ? 'com.apple.TextEdit' : 'com.google.Chrome')});
+  const {code, meta, app} = await macRun(t, {frontmost: () => (++reads <= 2 ? 'com.apple.TextEdit' : 'com.google.Chrome')});
   assert.equal(code, 1);
   assert.deepEqual(app.keys, ['super+n'], 'the task document opened, nothing else was sent');
   assert.ok(app.windows.every(w => w.text === ''), 'nothing was typed');
-  assert.deepEqual(meta.keySkipped, [{event: 'key_skipped_not_frontmost', keys: ['typeText'], target: 'com.apple.TextEdit', frontmost: 'com.google.Chrome'}]);
+  assert.deepEqual(meta.keySkipped, [{event: 'key_skipped_not_frontmost', keys: ['typeText'], target: {pid: TEXTEDIT_PID, bundleId: 'com.apple.TextEdit'}, frontmost: {pid: 777, bundleId: 'com.google.Chrome'}}]);
 });
 
 // The scratch document's keyboard path (TextEdit already shows a window, so there is no Open panel button) is guarded
@@ -381,8 +405,148 @@ test('a macOS run whose focus moves while the task document opens types nothing 
 test('a macOS run whose scratch document needs super+n sends it only with TextEdit frontmost', async t => {
   const app = textEdit();
   await app.click(74);   // TextEdit already shows a window of its own
-  const {code, meta} = await macRun(t, {app, frontmost: () => 'com.google.Chrome'});
+  let reads = 0;
+  const {code, meta} = await macRun(t, {app, frontmost: () => (++reads === 1 ? 'com.apple.TextEdit' : 'com.google.Chrome')});
   assert.equal(code, 1);
   assert.deepEqual(app.keys, []);
-  assert.deepEqual(meta.keySkipped, [{event: 'key_skipped_not_frontmost', keys: ['super+n'], target: 'com.apple.TextEdit', frontmost: 'com.google.Chrome'}]);
+  assert.deepEqual(meta.keySkipped, [{event: 'key_skipped_not_frontmost', keys: ['super+n'], target: {pid: TEXTEDIT_PID, bundleId: 'com.apple.TextEdit'}, frontmost: {pid: 777, bundleId: 'com.google.Chrome'}}]);
+});
+
+// ---- #117: the native engine (the own native engine spec, Verification system part 1) ----
+
+test('a macOS computer run names its engine and the approved engine; --host cua --engine vendor is refused before anything runs', async t => {
+  const scripts = [];
+  const io = {remote: script => { scripts.push(script); throw new Error('no device'); }, controllerLoad: () => 'l', connect: () => { throw new Error('no'); }};
+  const at = {device: 'mini', out: outDir(t), approvedRuntime: '/Users/someone/home', ...plan, io};
+  await assert.rejects(run({...at, host: 'vendor', approvedEngine: ENGINE_BUNDLE}), /needs --engine vendor\|cua/);
+  await assert.rejects(run({...at, host: 'vendor', engine: 'cua'}), /needs --approved-engine/);
+  await assert.rejects(run({...at, host: 'cua', engine: 'vendor', approvedEngine: ENGINE_BUNDLE}), /--host cua --engine vendor cannot run/);
+  await assert.rejects(run({device: 'cua-linux', out: outDir(t), host: 'cua', engine: 'cua', ...plan, io}), /a linux computer run has none/);
+  assert.equal(scripts.length, 0, 'nothing ran on the device');
+});
+
+test('comparison A\'s candidate lane (vendor host, cua\'s engine): the engine named in every serve, attested on every result, its stops and its process recorded', async t => {
+  const {code, meta, rows, state} = await macRun(t, {host: 'vendor', engine: 'cua'});
+  assert.equal(code, 0, meta.error);
+  assert.equal(meta.complete, true);
+  assert.ok(state.options.args.at(-1).includes('CUA_REPL_HOST=vendor CUA_NATIVE_ENGINE=cua '), state.options.args.at(-1));
+  assert.match(state.preflightScript, /CUA_NATIVE_ENGINE=cua/);
+  assert.ok(state.preflightScript.includes(JSON.stringify(ENGINE_BUNDLE)), 'the preflight reads the approved engine the run names');
+  assert.equal(meta.environment.CUA_NATIVE_ENGINE, 'cua');
+  assert.deepEqual(meta.nativeEngine, {requested: 'cua', approved: {bundlePath: ENGINE_BUNDLE, engineVersion: '0.1.0', build: BUILD}, checkoutBuild: BUILD, attested: [attestationOf('cua')], unattested: 0});
+  assert.deepEqual(meta.engineStop, {start: {wasRunning: false}, end: {wasRunning: true, pid: 5151}});
+  assert.equal(meta.service.engine, 'cua');
+  assert.equal(meta.service.answered, 'cua');
+  assert.equal(meta.service.helper, 'approved engine');
+  assert.equal(meta.service.helpers[0].startedDuringRun, true);
+  assert.ok(rows.every(r => r.ok), JSON.stringify(rows.filter(r => !r.ok)));
+});
+
+test('the own-host lane (cua host, cua\'s engine) runs and attests both', async t => {
+  const {code, meta} = await macRun(t, {host: 'cua', engine: 'cua'});
+  assert.equal(code, 0, meta.error);
+  assert.equal(meta.host, 'cua');
+  assert.equal(meta.nativeEngine.requested, 'cua');
+});
+
+test('a run refuses an approved engine that is not the checkout\'s build, not the one named, or not approved; the preparation is cleaned up', async t => {
+  for (const [facts, pattern] of [
+    [engineFacts({checkoutBuild: 'd'.repeat(64)}), /the checkout's engine build dddddddddddd is not the approved build cccccccccccc/],
+    [engineFacts({approvedEngineReal: '/elsewhere'}), /is not the approved engine the serve resolves/],
+    [engineFacts({installed: null, installedReal: null, bundleBuild: 'd'.repeat(64)}), /no approved engine on the device under HOME \/Users\/someone: the bundle's build dddddddddddd is pending/],
+  ]) {
+    const {refusal, meta, state} = await macRun(t, {engine: 'cua', facts});
+    assert.match(refusal?.message ?? '', pattern);
+    assert.equal(meta, null, 'nothing was measured');
+    assert.equal(state.options, undefined, 'no serve started');
+    assert.equal(state.cleanups, 1, 'the approved home was restored');
+  }
+});
+
+test('a run whose preparation did not stop the engine is refused', async t => {
+  const {refusal, state} = await macRun(t, {engine: 'cua', startStop: null});
+  assert.match(refusal?.message ?? '', /the device's preparation did not stop cua's engine/);
+  assert.equal(state.options, undefined);
+  assert.equal(state.cleanups, 1);
+});
+
+test('a run whose results attest another build or another engine, or none, is not complete', async t => {
+  for (const [attestation, pattern] of [
+    [() => ({...attestationOf('cua'), build: 'e'.repeat(64)}), /attested build eeeeeeeeeeee is not the checkout's and approved build cccccccccccc/],
+    [() => attestationOf('vendor'), /the vendor engine answered, not the requested cua/],
+    [(() => { let n = 0; return () => (n++ === 4 ? undefined : attestationOf('cua')); })(), /1 js results carry no cua\/nativeEngine attestation/],
+  ]) {
+    const {code, meta} = await macRun(t, {engine: 'cua', attestation});
+    assert.equal(code, 1);
+    assert.equal(meta.complete, false);
+    assert.match(meta.engineAttestationProblem, pattern);
+  }
+});
+
+test('a cua-engine run in which the pinned vendor helper started, or no approved engine process did, is not complete', async t => {
+  const vendorToo = await macRun(t, {engine: 'cua', helpers: () => [helperOf('cua'), helperOf('vendor')]});
+  assert.equal(vendorToo.meta.complete, false);
+  assert.match(vendorToo.meta.engineAttestationProblem, /the pinned runtime's helper \(SkyComputerUseService\) started during a cua-engine run/);
+  const none = await macRun(t, {engine: 'cua', helpers: () => []});
+  assert.match(none.meta.engineAttestationProblem, /no approved engine process \(cua-engine\) started during the run/);
+});
+
+// The M1b.3 review: the first call into cua's engine on the A lane is its first launch through the vendor relay. A
+// launch that fails there is that failure, recorded as such, not a timing row; nothing further is sent.
+test('cua\'s engine failing to launch through the vendor host\'s relay is the run\'s own failure, not a timing row', async t => {
+  const sentence = 'cua engine did not start: nothing answered at /Users/someone/Library/Application Support/cua/engine/engine.sock within 5000 ms of launching it';
+  const {code, meta, rows, app} = await macRun(t, {engine: 'cua', getState: () => { throw new Error(sentence); }});
+  assert.equal(code, 1);
+  assert.equal(meta.complete, false);
+  assert.deepEqual(meta.engineLaunch, {ok: false, op: 'warm.getState', sample: 1, via: 'the vendor host\'s relay (open -a)', error: sentence});
+  assert.match(meta.error, /^cua's engine did not launch: warm\.getState sample 1, the run's first call into it, failed launching it through the vendor host's relay \(open -a\): cua engine did not start/);
+  assert.match(meta.stopped, /cua's engine did not launch/);
+  assert.equal(rows.filter(r => r.op === 'warm.getState').length, 0, 'no timing row for it');
+  assert.equal(rows.some(r => r.op === 'warm.listApps' || r.op === 'bind.getApp'), false, 'nothing further was sent');
+  assert.deepEqual(app.keys, []);
+  // The vendor engine's lane has no such classification: its failures are rows as before.
+  const vendor = await macRun(t, {engine: 'vendor', getState: () => { throw new Error(sentence); }});
+  assert.equal(vendor.meta.engineLaunch, undefined);
+  assert.equal(vendor.rows.filter(r => r.op === 'warm.getState' && !r.ok).length, plan.samples);
+});
+
+test('an engine that will not stop when the run ends fails the run; the state is restored all the same', async t => {
+  const {code, meta} = await macRun(t, {engine: 'cua', endStop: {error: 'the engine (pid 5151) has 1 other connection open'}});
+  assert.equal(code, 1);
+  assert.equal(meta.complete, false);
+  assert.deepEqual(meta.engineStop.end, {error: 'the engine (pid 5151) has 1 other connection open'});
+  assert.match(meta.error, /cua's engine did not stop when the run ended: the engine \(pid 5151\) has 1 other connection open/);
+  assert.equal(meta.preparationCleanup.removed, true);
+});
+
+// setup.activate (Verification system part 1): the baseline measures the driven-app-frontmost regime on both engines, so
+// TextEdit is brought to the front right after the bind, by the device (open -a TextEdit), and checked by pid.
+test('setup.activate brings the run\'s TextEdit to the front right after the bind, before the scratch document', async t => {
+  const {meta, rows, activations} = await macRun(t, {engine: 'cua'});
+  const ops = rows.map(r => r.op);
+  assert.equal(ops.indexOf('setup.activate'), ops.indexOf('approval.elicitation') + 1);
+  assert.ok(ops.indexOf('setup.activate') < ops.indexOf('setup.newDocument'));
+  const row = rows.find(r => r.op === 'setup.activate');
+  assert.deepEqual({ok: row.ok, attempts: row.attempts, frontmost: row.frontmost}, {ok: true, attempts: 1, frontmost: {pid: TEXTEDIT_PID, bundleId: 'com.apple.TextEdit'}});
+  assert.equal(activations(), 1);
+  assert.equal(meta.textEdit.pid, TEXTEDIT_PID);
+});
+
+test('a TextEdit that does not come to the front stops the run before any key or click', async t => {
+  const {code, meta, rows, app} = await macRun(t, {engine: 'cua', frontmost: () => 'com.google.Chrome', activateMs: 50});
+  assert.equal(code, 1);
+  const row = rows.find(r => r.op === 'setup.activate');
+  assert.equal(row.ok, false);
+  assert.deepEqual(row.frontmost, {pid: 777, bundleId: 'com.google.Chrome'});
+  assert.match(meta.error, /setup\.activate: TextEdit \(pid 4242\) is not the frontmost application after open -a TextEdit; the frontmost is com\.google\.Chrome \(pid 777\)/);
+  assert.equal(rows.some(r => r.op === 'setup.newDocument'), false);
+  assert.deepEqual([app.keys, app.clicks], [[], []]);
+});
+
+test('the key guard compares by pid: another TextEdit process in front is not the run\'s', async t => {
+  let reads = 0;
+  const {code, meta, app} = await macRun(t, {engine: 'cua', frontmost: () => (++reads === 1 ? 'com.apple.TextEdit' : {pid: 9999, bundleId: 'com.apple.TextEdit'})});
+  assert.equal(code, 1);
+  assert.deepEqual(app.keys, []);
+  assert.deepEqual(meta.keySkipped[0].frontmost, {pid: 9999, bundleId: 'com.apple.TextEdit'});
 });

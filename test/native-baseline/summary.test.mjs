@@ -69,7 +69,7 @@ test('summarize pools every run per operation: latency over successful samples, 
   assert.equal(op('task.total').ok, 27);
   assert.deepEqual(op('task.total').details, {actions: {median: 4, min: 4, max: 4}});
   // A run recorded before host attestation (the 2026-10-14 Mac baseline) has no requested host and no sample plan here.
-  assert.deepEqual(summary.attestation, {device: 'mini', commit: 'abc1234', host: null, release: '26.928.40906-darwin-arm64', hardware: 'Mac14,12, Apple M2 Pro, 16 GiB', os: 'macOS 27.0 (26A428)', display: '2560 x 1440 points at scale 2 (5120 x 2880 pixels)', service: 'computer surface, answered by vendor (helper: pinned runtime)', sandbox: null, plan: null});
+  assert.deepEqual(summary.attestation, {device: 'mini', commit: 'abc1234', host: null, engine: null, approvedEngine: null, release: '26.928.40906-darwin-arm64', hardware: 'Mac14,12, Apple M2 Pro, 16 GiB', os: 'macOS 27.0 (26A428)', display: '2560 x 1440 points at scale 2 (5120 x 2880 pixels)', service: 'computer surface, answered by vendor (helper: pinned runtime)', sandbox: null, plan: null});
 });
 
 test('a run that requests a host must attest it on every connection it opened', t => {
@@ -130,4 +130,25 @@ test('a run answers as one host identity, and every pooled run as the same one',
   assert.deepEqual(hostProblems([meta(1, run([attest('1'), attest('1')])), meta(2, run([attest('1')]))]), []);
   assert.ok(hostProblems([meta(1, run([attest('1'), attest('2')]))]).some(p => /^run-1: host attestation .*mixed host identities \(node_repl 1, node_repl 2\)/.test(p)));
   assert.ok(hostProblems([meta(1, run([attest('1')])), meta(2, run([attest('2')]))]).some(p => /run-2 differs in host/.test(p)));
+});
+
+// #117: a macOS computer run names its native engine; the summary attests it, holds the run to its setup.activate row and
+// reports an unsound engine attestation (scripts/native-baseline/engine.mjs engineProblem).
+test('a run that records its native engine attests it, covers setup.activate and must have one sound attestation', t => {
+  const build = 'c'.repeat(64);
+  const engine = (extra = {}) => ({nativeEngine: {requested: 'cua', approved: {bundlePath: '/A/cua Engine.app', engineVersion: '0.1.0', build}, checkoutBuild: build,
+    attested: [{engine: 'cua', version: '0.1.0', build}], unattested: 0, ...extra},
+    service: {surface: 'computer', engine: 'cua', answered: 'cua', helper: 'approved engine', helpers: [{path: '/A/cua-engine', kind: 'cua', origin: 'approved engine', ageSeconds: 4, startedDuringRun: true}]}});
+  const summary = summarize(readRuns(fixture(t, [meta(1, engine()), meta(2, engine())])));
+  assert.equal(summary.attestation.engine, 'cua (attested: cua 0.1.0, build cccccccccccc)');
+  assert.equal(summary.attestation.approvedEngine, 'cccccccccccc (cua 0.1.0, /A/cua Engine.app)');
+  assert.deepEqual(summary.problems, [], 'a legacy-schema run (no requested host) is not held to its plan');
+  assert.match(renderMarkdown(summary), /\| Engine \| cua \(attested: cua 0\.1\.0, build cccccccccccc\) \|\n\| Approved engine \| cccccccccccc/);
+  const mixed = summarize(readRuns(fixture(t, [meta(1, engine()), meta(2, engine({attested: [{engine: 'vendor', version: '1', build: 'r'}]}))]))).problems;
+  assert.ok(mixed.includes('run-2: the vendor engine answered, not the requested cua'), mixed.join(' | '));
+  assert.ok(mixed.some(p => /^run-2 differs in engine/.test(p)), mixed.join(' | '));
+  const attested = {host: 'vendor', connections: 1, plan: {samples: 30, cold: 5, tasks: 10}, sandbox: {mode: 'scoped', explicit: false}, hostAttestations: [{host: 'vendor', serverInfo: {name: 'rmcp', version: '1'}, _meta: null}]};
+  const coverage = summarize(readRuns(fixture(t, [meta(1, {...attested, ...engine()})]))).problems;
+  assert.ok(coverage.includes('run-1 covers 0 setup.activate samples, the plan 1'), coverage.join(' | '));
+  assert.ok(!summarize(readRuns(fixture(t, [meta(1, attested)]))).problems.some(p => /setup\.activate/.test(p)), 'a run before engine attestation has no setup.activate');
 });

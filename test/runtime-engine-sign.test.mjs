@@ -127,9 +127,10 @@ function sshWorld(t, {settings = {signingIdentity: SHA1}, env = {}, job = 'runs'
       if (args[0] === 'managername') return ok('Background\n');
       if (args[0] === 'print' && args[1] !== 'gui/501') {
         const plist = jobs.at(-1).plist;
-        if (job === 'dies') {
+        if (job === 'dies' || job === 'killed') {
           writeFileSync(plist.StandardErrorPath, `node: cannot open ${SHA1}\nfor signer ${NAME}\nError: Cannot find module\n`);
-          return ok(`${plist.Label} = {\n\tstate = not running\n\tlast exit code = 1\n}\n`);
+          // A job a signal killed shows its terminating signal and may show no exit code.
+          return ok(`${plist.Label} = {\n\tstate = not running\n${job === 'killed' ? '\tlast terminating signal = Killed: 9' : '\tlast exit code = 1'}\n}\n`);
         }
         return ok(`${plist.Label} = {\n\tstate = running\n\tlast exit code = (never exited)\n}\n`);
       }
@@ -215,6 +216,19 @@ test('a job that exits without a result fails at once with the redacted tail of 
     assert.ok(!error.message.includes(SHA1) && !error.message.includes(NAME), 'both forms redacted');
     return true;
   });
+  assert.equal(w.calls.filter(c => c.file === '/bin/launchctl').at(-1).args[0], 'bootout');
+});
+
+test('a job that a signal killed (no exit code, only a terminating signal) fails at once with its log tail too', async t => {
+  const w = sshWorld(t, {job: 'killed'});
+  await assert.rejects(signBundle(join(w.dir, 'b.app'), w.options), error => {
+    assert.equal(error.code, 'engine_sign_failed');
+    assert.match(error.message, /was terminated \(Killed: 9\) without signing/);
+    assert.match(error.message, /Cannot find module/);
+    assert.ok(!error.message.includes(SHA1) && !error.message.includes(NAME), 'both forms redacted');
+    return true;
+  });
+  assert.equal(w.calls.filter(c => c.file === '/bin/launchctl').filter(c => c.args[0] === 'print').length, 2, 'one print for the domain, one for the job: no waiting out the timeout');
   assert.equal(w.calls.filter(c => c.file === '/bin/launchctl').at(-1).args[0], 'bootout');
 });
 

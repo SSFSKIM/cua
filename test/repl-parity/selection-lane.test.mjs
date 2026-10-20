@@ -75,7 +75,7 @@ test('the profiles-listing invalid row accepts only invalid_repl_host with the e
 test('other refusals are read from the row\'s own doctor lane too',()=>{
  const row={platform:'darwin',registration:'cua',maws:false,surfaces:['computer'],lane:'ordinary',override:'cua',node24:true,managedNode:true};
  assert.equal(expectedSelection(row).error,'repl_host_refused');
- const refused='refused (repl_host_refused): CUA_REPL_HOST=cua is not supported with the computer surface on macOS and the vendor engine (the default engine (vendor)): the vendor\'s computer-use helper accepts only the vendor host\'s node_repl as a peer';
+ const refused='refused (repl_host_refused): CUA_REPL_HOST=cua is not supported with the computer surface on macOS and the default vendor engine: the vendor\'s computer-use helper accepts only the vendor host\'s node_repl as a peer';
  const own='cua host (explicit): CUA_REPL_HOST=cua, on Node /node';
  const detail=(ordinary,listing)=>`${ordinary}. Browser route: none, no browser surface. The profile listing (browser only): ${listing}. CUA_REPL_HOST=cua or vendor chooses`;
  assert.doesNotThrow(()=>assertSelection(row,{doctor:{status:'fail',detail:detail(refused,own)},error:'repl_host_refused',errorMessage:'cua: repl_host_refused'}));

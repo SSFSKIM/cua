@@ -1023,7 +1023,7 @@ test('the three engine_not_installed refusals and the refusal precedence: unknow
   assert.equal(host.code, 'repl_host_refused');
   for (const pattern of [/on macOS and the vendor engine \(CUA_NATIVE_ENGINE=vendor\)/, /only the vendor host's node_repl/, /Set CUA_NATIVE_ENGINE=cua/, /CUA_REPL_HOST=vendor/]) assert.match(host.message, pattern);
   assert.doesNotMatch(host.message, /#117/);
-  assert.match(refusal('unset', 'cua', true, true).message, /vendor engine \(the default engine \(vendor\)\)/);
+  assert.match(refusal('unset', 'cua', true, true).message, /on macOS and the default vendor engine: the vendor's/);
   // Node last: it names Node 24 and CUA_REPL_HOST=vendor as the way to run cua's engine on the vendor host.
   const node = refusal('CUA_NATIVE_ENGINE=cua', undefined, false, true);
   assert.equal(node.code, 'repl_host_node');

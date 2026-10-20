@@ -438,7 +438,7 @@ export function nativeEngineFor({env, requestedHost = null, defaultEngine = DEFA
   const setting = engineSetting(env, config, defaultEngine);
   if (setting.engine === 'vendor') {
     if (requestedHost === 'cua')
-      fail('repl_host_refused', `CUA_REPL_HOST=cua is not supported with the computer surface on macOS and the vendor engine (${engineSource(setting.reason, 'vendor')}): the vendor's computer-use helper accepts only the vendor host's node_repl as a peer. Set CUA_NATIVE_ENGINE=cua to run the computer surface on cua's own host with cua's engine, use CUA_SHIM_SURFACES=browser for a browser-only session there, or unset CUA_REPL_HOST (or use CUA_REPL_HOST=vendor) to keep the vendor engine`);
+      fail('repl_host_refused', `CUA_REPL_HOST=cua is not supported with the computer surface on macOS and ${setting.reason === 'default' ? 'the default vendor engine' : `the vendor engine (${engineSource(setting.reason, 'vendor')})`}: the vendor's computer-use helper accepts only the vendor host's node_repl as a peer. Set CUA_NATIVE_ENGINE=cua to run the computer surface on cua's own host with cua's engine, use CUA_SHIM_SURFACES=browser for a browser-only session there, or unset CUA_REPL_HOST (or use CUA_REPL_HOST=vendor) to keep the vendor engine`);
     return {engine: 'vendor', reason: setting.reason, status: 'pass'};
   }
   const app = installed();

@@ -201,11 +201,14 @@ async function signInGuiSession(bundle, {identity, source}, {env, run, uid, node
       const job = await run(LAUNCHCTL, ['print', `${domain}/${label}`]);
       // (`launchctl print`'s own line for the job, one tab deep; src/remote/launchd.mjs reads the same, but importing it
       // would load the agent's modules into this job.)
+      // A job that a signal killed may show only `last terminating signal` and no `last exit code`: that ended it too.
       const lastExitCode = job.code === 0 ? /^\tlast exit code = (.*)$/m.exec(job.stdout)?.[1] : undefined;
-      if (lastExitCode !== undefined && !/never/i.test(lastExitCode) && !existsSync(result)) {
+      const lastSignal = job.code === 0 ? /^\tlast terminating signal = (.*)$/m.exec(job.stdout)?.[1] : undefined;
+      const ended = lastExitCode !== undefined && !/never/i.test(lastExitCode) ? `exited (${lastExitCode})` : lastSignal !== undefined ? `was terminated (${lastSignal})` : undefined;
+      if (ended !== undefined && !existsSync(result)) {
         let jobLog = '';
         try { jobLog = readFileSync(join(dir, 'job.log'), 'utf8'); } catch {}
-        fail('engine_sign_failed', `the signing job in the GUI session exited (${lastExitCode}) without signing: ${redact(lastLines(jobLog), identity)}`);
+        fail('engine_sign_failed', `the signing job in the GUI session ${ended} without signing: ${redact(lastLines(jobLog), identity)}`);
       }
       if (now() - started >= timeoutMs)
         fail('engine_sign_prompt_waiting', `codesign did not finish within ${Math.round(timeoutMs / 1000)} s in this Mac's GUI session: a keychain prompt from codesign is most likely waiting on the console for the owner`,

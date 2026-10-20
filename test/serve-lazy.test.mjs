@@ -3,6 +3,7 @@
 // never start one, and a connection that never launched closes clean. Served in process with a counting
 // `prepareLaunch` (one call per launch) against a scratch CUA_HOME whose "installed" release runs the fake upstream
 // (test/fixtures/installed-home.mjs), and as real `cua serve` processes for the signal paths.
+import './helpers/scratch-home.mjs'; // first: the native engine's selection must not read the account's own settings
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';

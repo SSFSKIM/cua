@@ -72,11 +72,15 @@ export function configuredIdentity({env = process.env} = {}) {
   }
 }
 
-// Text with every occurrence of the identity replaced, so no refusal or log line carries it.
+// Text with every signing identity in it masked, whichever form is configured: the configured string itself, any run of
+// 40 hex digits (a certificate's SHA-1), and any Apple certificate name ("Apple Development: Name (TEAMID)" and the other
+// kinds), since codesign names the certificate by its subject even when a SHA-1 selected it (its chain warning's
+// "… for signer <name>").
+const CERTIFICATE_NAME = /\b(?:Apple|Developer ID|Mac|iPhone|3rd Party)[A-Za-z ]{0,40}: [^\n"]*?\([A-Z0-9]{10}\)/g;
 export function redact(text, identity) {
-  if (!identity) return text;
-  const escaped = identity.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return String(text).replace(new RegExp(escaped, 'gi'), '<signing identity>');
+  let out = String(text);
+  if (identity) out = out.replace(new RegExp(identity.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '<signing identity>');
+  return out.replace(/\b[0-9a-f]{40}\b/gi, '<signing identity>').replace(CERTIFICATE_NAME, '<signing identity>');
 }
 
 // ---- reading a signature ----
@@ -124,8 +128,9 @@ export const runCommand = (file, args, {timeout = 60_000, cwd, env} = {}) => new
 });
 
 const codesignArgs = (identity, bundle) => ['--force', '--sign', identity, '--options', 'runtime', '--timestamp=none', bundle];
-const lastLines = text => String(text).trim().split('\n').slice(-5).join(' / ') || 'no detail';
-const sleepFor = ms => new Promise(resolve => setTimeout(resolve, ms));
+// The last `count` lines of a command's output, joined with `separator`.
+export const lastLines = (text, {count = 5, separator = ' / '} = {}) => String(text ?? '').trim().split('\n').slice(-count).join(separator) || 'no detail';
+export const sleepFor = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 // Signs `bundle` with hardened runtime and no entitlements, then verifies it. `identity`: 'adhoc', an identity string
 // (treated as coming from the environment), or undefined for the configured one.
@@ -133,7 +138,7 @@ export async function signBundle(bundle, {identity, env = process.env, run = run
   tmp = tmpdir(), timeoutMs = SIGN_JOB_TIMEOUT_MS, sleep = sleepFor, now = Date.now} = {}) {
   if (identity === 'adhoc') {
     const signed = await run(CODESIGN, codesignArgs('-', bundle));
-    if (signed.code !== 0) fail('engine_sign_failed', `codesign (ad hoc) failed: ${lastLines(signed.stderr)}`);
+    if (signed.code !== 0) fail('engine_sign_failed', `codesign (ad hoc) failed: ${redact(lastLines(signed.stderr))}`);
   } else {
     const resolved = identity ? {identity, source: 'env'} : resolveSigningIdentity({env});
     const manager = await run(LAUNCHCTL, ['managername']);
@@ -145,7 +150,7 @@ export async function signBundle(bundle, {identity, env = process.env, run = run
     }
   }
   const verified = await run(CODESIGN, ['--verify', '--strict', bundle]);
-  if (verified.code !== 0) fail('engine_sign_failed', `the signed bundle does not verify: ${lastLines(verified.stderr)}`);
+  if (verified.code !== 0) fail('engine_sign_failed', `the signed bundle does not verify: ${redact(lastLines(verified.stderr), identity)}`);
 }
 
 function jobPlist({label, programArguments, environment, log}) {
@@ -191,6 +196,17 @@ async function signInGuiSession(bundle, {identity, source}, {env, run, uid, node
     const loaded = await run(LAUNCHCTL, ['bootstrap', domain, plist]);
     if (loaded.code !== 0) fail('engine_sign_failed', `launchctl bootstrap ${domain} failed (exit ${loaded.code}): ${lastLines(loaded.stderr)}`);
     for (const started = now(); !existsSync(result);) {
+      // A job that exited without a result died before codesign could answer (its node failed to start, say): its log
+      // says why, so that is the refusal, not the keychain prompt's sentence.
+      const job = await run(LAUNCHCTL, ['print', `${domain}/${label}`]);
+      // (`launchctl print`'s own line for the job, one tab deep; src/remote/launchd.mjs reads the same, but importing it
+      // would load the agent's modules into this job.)
+      const lastExitCode = job.code === 0 ? /^\tlast exit code = (.*)$/m.exec(job.stdout)?.[1] : undefined;
+      if (lastExitCode !== undefined && !/never/i.test(lastExitCode) && !existsSync(result)) {
+        let jobLog = '';
+        try { jobLog = readFileSync(join(dir, 'job.log'), 'utf8'); } catch {}
+        fail('engine_sign_failed', `the signing job in the GUI session exited (${lastExitCode}) without signing: ${redact(lastLines(jobLog), identity)}`);
+      }
       if (now() - started >= timeoutMs)
         fail('engine_sign_prompt_waiting', `codesign did not finish within ${Math.round(timeoutMs / 1000)} s in this Mac's GUI session: a keychain prompt from codesign is most likely waiting on the console for the owner`,
           {hint: 'at the console, answer the prompt with the login password and Always Allow (it stays on screen after this build gave up), then run cua engine build again; it signs with no prompt from then on'});

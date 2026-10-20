@@ -15,7 +15,7 @@ import {intersect, screenshotPoint, targetPixel, textEditPoints, lineOfLocation,
   activationRan, counterEffectVerdict,
   tapGroup, routesGroup, coordGroup, effectsGroup, readCounters, ROUTES, FAMILIES, TEXTEDIT_LINE_HEIGHT, SELECTION} from '../scripts/spike/engine/measure/input-groups.mjs';
 import {outcomeState, SCENE_WINDOW_TITLE} from '../scripts/spike/engine/measure/cells.mjs';
-import {FIXTURE_COUNTERS_FILE} from '../scripts/spike/engine/fixtures/electron-fixture.mjs';
+import {FIXTURE_COUNTERS_FILE} from '../scripts/native-matrix/fixtures/electron-fixture.mjs';
 import {operatorConsole} from '../scripts/spike/engine/measure.mjs';
 import {freshClickParams} from '../scripts/spike/engine/measure/fresh-click.mjs';
 import {textEditDocument} from '../scripts/spike/engine/scenes.mjs';
@@ -243,7 +243,7 @@ test('U3: the title log refuses Finder, whose windows may be the owner\'s', () =
 });
 
 test('the Electron fixture\'s counters: each named event counted, the file rewritten whole by rename, anything else ignored', t => {
-  const {createCounters, COUNTERS, PAGE_EVENTS} = require('../scripts/spike/engine/fixtures/electron/counters.js');
+  const {createCounters, COUNTERS, PAGE_EVENTS} = require('../scripts/native-matrix/fixtures/electron/counters.js');
   const dir = tempDir(t), file = join(dir, FIXTURE_COUNTERS_FILE);
   const renames = [];
   const fsSpy = {...fs, renameSync: (from, to) => { renames.push([from, to]); fs.renameSync(from, to); }};

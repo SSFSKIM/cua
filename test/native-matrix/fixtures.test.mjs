@@ -1,6 +1,6 @@
-// The M0 spike's fixtures (scripts/spike/engine/fixtures/): the Chrome for Testing pin and its placement with hash
-// verification, the Electron fixture builder's Info.plist rewrite (on a scratch copy of a fake bundle, never the
-// dependency's), and the loopback scene page. Nothing here launches an app or downloads anything.
+// The macOS scenes' fixtures (scripts/native-matrix/fixtures/, moved there in M1b from the M0 spike): the Chrome for
+// Testing pin and its placement with hash verification, the Electron fixture builder's Info.plist rewrite (on a scratch
+// copy of a fake bundle, never the dependency's), and the loopback scene page. Nothing here launches an app or downloads.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
@@ -9,11 +9,11 @@ import {join} from 'node:path';
 import {createHash} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {request} from 'node:http';
-import {loadPin, validatePin, verifyArchive, placeChromeForTesting, placedAppPath, PIN_PATH} from '../scripts/spike/engine/fixtures/chrome-for-testing.mjs';
-import {FIXTURE_BUNDLE_ID, FIXTURE_NAME, FIXTURE_CONTROLS, rewriteBundle, fixtureSourceHash, fixtureAppPath} from '../scripts/spike/engine/fixtures/electron-fixture.mjs';
-import {startScenePage, PAGE_CONTROLS, PAGE_TITLE} from '../scripts/spike/engine/fixtures/scene-page.mjs';
+import {loadPin, validatePin, verifyArchive, placeChromeForTesting, placedAppPath, PIN_PATH} from '../../scripts/native-matrix/fixtures/chrome-for-testing.mjs';
+import {FIXTURE_BUNDLE_ID, FIXTURE_NAME, FIXTURE_CONTROLS, REPO_ROOT, SOURCE_DIR, rewriteBundle, fixtureSourceHash, fixtureAppPath} from '../../scripts/native-matrix/fixtures/electron-fixture.mjs';
+import {startScenePage, PAGE_CONTROLS, PAGE_TITLE} from '../../scripts/native-matrix/fixtures/scene-page.mjs';
 
-const scratch = () => fs.mkdtempSync(join(tmpdir(), 'spike-fixtures-'));
+const scratch = () => fs.mkdtempSync(join(tmpdir(), 'cua-native-fixtures-'));
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const pinFor = bytes => ({...loadPin(), size: bytes.length, sha256: sha(bytes)});
 
@@ -144,6 +144,13 @@ test('the fixture builder rewrites the copy\'s Info.plist: its own bundle id, na
   } finally { fs.rmSync(root, {recursive: true, force: true}); }
 });
 
+test('the builder reads the electron dependency from this repository\'s root, and hashes the promoted source', () => {
+  const root = fs.realpathSync(new URL('../../', import.meta.url));
+  assert.equal(fs.realpathSync(REPO_ROOT), root);
+  assert.ok(fs.existsSync(join(REPO_ROOT, 'package.json')));
+  assert.equal(fs.realpathSync(SOURCE_DIR), join(root, 'scripts/native-matrix/fixtures/electron'));
+});
+
 test('the fixture app path names the Electron version and the fixture source, so a source change is a new bundle', () => {
   const hash = fixtureSourceHash();
   assert.match(hash, /^[0-9a-f]{12}$/);
@@ -154,13 +161,13 @@ test('the fixture source declares a text field, a list and a button, and never e
   const names = FIXTURE_CONTROLS.map(c => c.name);
   for (const role of ['AXTextArea', 'AXList', 'AXButton']) assert.ok(FIXTURE_CONTROLS.some(c => c.role === role), role);
   assert.equal(new Set(names).size, names.length);
-  const code = fs.readFileSync(new URL('../scripts/spike/engine/fixtures/electron/main.js', import.meta.url), 'utf8').replace(/^\s*\/\/.*$/gm, '');
+  const code = fs.readFileSync(new URL('../../scripts/native-matrix/fixtures/electron/main.js', import.meta.url), 'utf8').replace(/^\s*\/\/.*$/gm, '');
   assert.doesNotMatch(code, /setAccessibilitySupportEnabled|force-renderer-accessibility|accessibility/i);
   // Shown without activation: bringing the scene up never takes the focus.
   assert.match(code, /show: false/);
   assert.match(code, /once\('ready-to-show', \(\) => window\.showInactive\(\)\)/);
   assert.doesNotMatch(code, /show: true|\.show\(\)|\.focus\(\)/);
-  const html = fs.readFileSync(new URL('../scripts/spike/engine/fixtures/electron/index.html', import.meta.url), 'utf8');
+  const html = fs.readFileSync(new URL('../../scripts/native-matrix/fixtures/electron/index.html', import.meta.url), 'utf8');
   for (const name of names) assert.ok(html.includes(name), name);
 });
 

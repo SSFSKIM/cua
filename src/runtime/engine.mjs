@@ -22,7 +22,7 @@ import {createInterface} from 'node:readline';
 import {fail} from './errors.mjs';
 import {ENGINE_DIRECTORY_IN_HOME} from './layout.mjs';
 import {BUNDLE_NAME, ENGINE_SOURCE, EXECUTABLE, assembleBundle, engineBuild, engineVersion} from './engine-bundle.mjs';
-import {configuredIdentity, identityMatches, readSignature, recordedIdentity, resolveSigningIdentity, runCommand, signBundle} from './engine-sign.mjs';
+import {configuredIdentity, identityMatches, lastLines, readSignature, recordedIdentity, resolveSigningIdentity, runCommand, signBundle, sleepFor} from './engine-sign.mjs';
 import {FrameDecoder, encodeFrame} from '../services/engine/protocol.mjs';
 import {bundleIdentity} from '../services/engine/client.mjs';
 
@@ -50,9 +50,10 @@ export function enginePaths(dir = engineDirectory()) {
   };
 }
 
-const sleepFor = ms => new Promise(resolve => setTimeout(resolve, ms));
 const others = n => `${n} other connection${n === 1 ? '' : 's'}`;
-const short = build => String(build ?? 'none').slice(0, 12);
+export const shortBuild = build => String(build ?? 'none').slice(0, 12);
+// An operator's answer that aborts ("n" or "no"); any other line, Enter included, confirms.
+const isAbort = line => /^\s*no?\s*$/i.test(line);
 
 // ---- the engine's wire ----
 
@@ -185,7 +186,7 @@ export async function engineStatus(deps) {
 
 // ---- buildEngine ----
 
-const tail = text => String(text ?? '').trim().split('\n').slice(-12).join('\n');
+const tail = text => lastLines(text, {count: 12, separator: '\n'});
 
 // Builds, assembles and signs the engine in staging, then replaces the approved bundle: the running engine is stopped
 // with `shutdown` first (a `busy` answer fails the build with the bundle, approved.json and the engine untouched and the
@@ -206,14 +207,14 @@ export async function buildEngine({identity, scratchPath, sourceRoot = ENGINE_SO
   const current = bundleOnDisk(paths.bundle, ctx.runSync);
   const signedAsAsked = signature => (adhoc ? signature?.kind === 'adhoc' : identityMatches(signature, wanted) === true);
   if (current.exists && current.build === build && signedAsAsked(current.signature)) {
-    log(`cua's engine build ${short(build)} is already at ${paths.bundle}; nothing to do`);
+    log(`cua's engine build ${shortBuild(build)} is already at ${paths.bundle}; nothing to do`);
     return {bundlePath: paths.bundle, engineVersion: current.engineVersion, build, signature: publicSignature(current.signature, configured), changed: false, stopped: null};
   }
 
   mkdirSync(paths.dir, {recursive: true, mode: 0o700});
   chmodSync(paths.dir, 0o700);
   const scratch = scratchPath ?? paths.scratch;
-  log(`building cua's engine ${short(build)} (swift build -c release; the first build takes a few minutes)`);
+  log(`building cua's engine ${shortBuild(build)} (swift build -c release; the first build takes a few minutes)`);
   const compiled = await ctx.run('swift', ['build', '-c', 'release', '--package-path', sourceRoot, '--scratch-path', scratch], {timeout: BUILD_TIMEOUT_MS});
   if (compiled.code !== 0) {
     if (compiled.error === 'ENOENT') fail('engine_build_failed', 'swift is not installed, so cua\'s engine cannot be built', {hint: 'install Xcode (or its command line tools: xcode-select --install), then run cua engine build again'});
@@ -246,7 +247,7 @@ export async function buildEngine({identity, scratchPath, sourceRoot = ENGINE_SO
   }
   rmSync(paths.staging, {recursive: true, force: true});
   writeRecord(paths.pending, {build, identity: recordedIdentity(signature), builtAt: new Date(ctx.now()).toISOString()});
-  log(`installed cua's engine ${short(build)} at ${paths.bundle}, pending approval (cua engine approve)`);
+  log(`installed cua's engine ${shortBuild(build)} at ${paths.bundle}, pending approval (cua engine approve)`);
   return {bundlePath: paths.bundle, engineVersion: version, build, signature: publicSignature(signature, configured), changed: true, stopped: stopped.wasRunning ? {pid: stopped.pid} : null};
 }
 
@@ -266,7 +267,7 @@ function sameEngine(status, bundle, onDisk) {
   if (real(status.bundlePath) !== real(bundle))
     fail('engine_mismatch', `the engine answering beside ${bundle} runs from another copy (${status.bundlePath})`, {hint: 'stop it with cua engine stop, then approve again'});
   if (status.build !== onDisk.build)
-    fail('engine_mismatch', `the running engine's build ${short(status.build)} is not the bundle's ${short(onDisk.build)}`, {hint: 'stop it with cua engine stop, then approve again'});
+    fail('engine_mismatch', `the running engine's build ${shortBuild(status.build)} is not the bundle's ${shortBuild(onDisk.build)}`, {hint: 'stop it with cua engine stop, then approve again'});
 }
 
 async function launch(ctx, {notPid = null} = {}) {
@@ -279,29 +280,47 @@ async function launch(ctx, {notPid = null} = {}) {
 }
 
 // Waits until every grant in `missing` reads true in the engine's status, or the operator answers at the terminal
-// (Enter confirms, "n" aborts); bounded. -> 'status' | 'operator' | 'aborted'.
+// (Enter confirms, "n" aborts); bounded. With no terminal (end of input) no one can confirm, so it fails at once.
+// -> 'status' | 'operator' | 'aborted'.
 async function awaitGrants(ctx, missing) {
   let answer;
   let answered = false;
   const asked = ctx.operator.next().then(line => { answered = true; answer = line; });
+  const pending = () => fail('engine_grant_pending', `${missing.map(grant => grant.pane).join(', ')} still reads false for cua Engine, and no one at this terminal confirmed it`,
+    {hint: 'with the owner at the console, grant it by hand as the steps above say, then run cua engine approve again from a terminal'});
   for (const started = ctx.now(); ;) {
     const status = await statusOf(ctx);
     if (status && missing.every(grant => status[grant.key] === true)) return 'status';
-    if (answered && answer !== null) return /^\s*n(o)?\s*$/i.test(answer) ? 'aborted' : 'operator';
-    if (ctx.now() - started >= GRANT_WAIT_MS)
-      fail('engine_grant_pending', `${missing.map(grant => grant.pane).join(', ')} still reads false for cua Engine, and no one confirmed it at this terminal within ${GRANT_WAIT_MS / 60_000} minutes`,
-        {hint: 'with the owner at the console, grant it by hand as the steps above say, then run cua engine approve again from a terminal'});
-    // With no terminal left (EOF), only the engine's status can end the wait.
-    await (answered ? ctx.sleep(POLL_MS) : Promise.race([ctx.sleep(POLL_MS), asked]));
+    if (answered) return answer === null ? pending() : isAbort(answer) ? 'aborted' : 'operator';
+    if (ctx.now() - started >= GRANT_WAIT_MS) pending();
+    await Promise.race([ctx.sleep(POLL_MS), asked]);
   }
+}
+
+// One `approve` with replayd's log watched from before the request until a grace after its answer, since any approve
+// whose grants read true takes the discarded capture (the first one too, after a same-identity rebuild). The watch never
+// outlives this. -> {answer, alerts, unwatched}: unwatched when the request captured and the watch was not up for all of it.
+async function watchedApprove(ctx) {
+  const watch = ctx.watchCaptureAlerts();
+  let ready = false;
+  let answer;
+  let stopped = {alerts: 0, intact: false};
+  try {
+    ready = await watch.ready;
+    answer = await ctx.rpc('approve');
+    if (ready) await ctx.sleep(CAPTURE_ALERT_GRACE_MS);
+  } finally { stopped = await watch.stop(); }
+  const captured = answer.ok && answer.result?.captured === true;
+  return {answer, alerts: stopped.alerts, unwatched: captured && !(ready && stopped.intact)};
 }
 
 // The approve loop: refuses while another connection is open; `approve` (the grant requests, whose prompts may not
 // appear for this engine); for each grant that reads false, the by-hand steps, then status polled until it reads true
-// or the operator confirms at the terminal; `shutdown`, a relaunch with `open -n -g -a`, and `approve` again, whose one
-// discarded capture raises a capture confirmation on a copy macOS has not seen, with replayd's log watched around it
-// (an SCAlert line means the console holds a confirmation, so approved.json waits for the operator's word, and with no
-// terminal the approve fails naming the console); on `captured: true`, approved.json {build, identity, approvedAt}.
+// or the operator confirms at the terminal; `shutdown`, a relaunch with `open -n -g -a`, and `approve` again for the
+// capture. Each approve whose grants read true takes one discarded capture, which raises a capture confirmation on a copy
+// macOS has not seen, so replayd's log is watched around both (an SCAlert line, or a capture the watch missed, means the
+// console may hold a confirmation: approved.json waits for the operator's word, and with no terminal the approve fails
+// naming the console); on the relaunched engine's `captured: true`, approved.json {build, identity, approvedAt}.
 // With every grant true and no confirmation it needs no one at the Mac. -> {approved, reason?, grants, build, approvedAt?, captureConfirmation}.
 export async function approveEngine(deps) {
   const ctx = context({operator: {next: () => Promise.resolve(null)}, watchCaptureAlerts, ...deps});
@@ -319,7 +338,8 @@ export async function approveEngine(deps) {
   sameEngine(status, paths.bundle, onDisk);
   if (status.connections > 0) fail('engine_busy', `the engine (pid ${status.pid}) has ${others(status.connections)} open; approve runs with no other client`, {hint: 'run it again once no session uses the engine'});
 
-  const first = await ctx.rpc('approve');
+  const watched = [await watchedApprove(ctx)];
+  const first = watched[0].answer;
   if (!first.ok) fail('engine_approve_failed', `approve failed: ${first.error?.message ?? first.unreachable}`);
   const afterRequest = await statusOf(ctx) ?? {};
   const grants = {accessibility: first.result.accessibility === true, screenRecording: first.result.screenRecording === true, inputMonitoring: afterRequest.inputMonitoring === true};
@@ -336,16 +356,8 @@ export async function approveEngine(deps) {
   const relaunched = await launch(ctx, {notPid: stopped.pid ?? null});
   sameEngine(relaunched, paths.bundle, onDisk);
 
-  // replayd's log is watched from before the capture until a grace after its answer; the watch never outlives this.
-  const watch = ctx.watchCaptureAlerts();
-  let watching = false;
-  let second;
-  let alerts;
-  try {
-    watching = await watch.ready;
-    second = await ctx.rpc('approve');
-    if (watching) await ctx.sleep(CAPTURE_ALERT_GRACE_MS);
-  } finally { alerts = await watch.stop(); }
+  watched.push(await watchedApprove(ctx));
+  const second = watched[1].answer;
   if (!second.ok) fail('engine_approve_failed', `approve after the relaunch failed: ${second.error?.message ?? second.unreachable}`);
   const final = {accessibility: second.result.accessibility === true, screenRecording: second.result.screenRecording === true, inputMonitoring: relaunched.inputMonitoring === true};
   if (second.result.captured !== true) {
@@ -353,41 +365,40 @@ export async function approveEngine(deps) {
     return {approved: false, reason: 'the relaunched engine did not report captured: true (a grant still reads false after the relaunch)', grants: final, build: onDisk.build};
   }
 
+  const alerts = watched.reduce((sum, w) => sum + w.alerts, 0);
+  const unwatched = watched.some(w => w.unwatched);
   let captureConfirmation = 'none';
-  if (!watching || alerts > 0) {
-    captureConfirmation = watching ? 'answered' : 'unwatched';
-    log(watching ? 'replayd shows a screen capture confirmation for cua Engine on the console: the owner answers it (Allow).'
-      : 'replayd\'s log could not be watched, so a screen capture confirmation may be on the console: the owner checks and answers it (Allow).');
+  if (alerts > 0 || unwatched) {
+    captureConfirmation = alerts > 0 ? 'answered' : 'unwatched';
+    log(alerts > 0 ? 'replayd shows a screen capture confirmation for cua Engine on the console: the owner answers it (Allow).'
+      : 'replayd\'s log could not be watched through a capture, so a screen capture confirmation may be on the console: the owner checks and answers it (Allow).');
     log('Press Enter here once it is answered (n to abort).');
     const line = await ctx.operator.next();
     if (line === null) fail('engine_capture_confirmation', 'a screen capture confirmation for cua Engine may be waiting on this Mac\'s console, and no one at this terminal confirmed it was answered',
       {hint: 'with the owner at the console, run cua engine approve again from a terminal; approved.json was not written'});
-    if (/^\s*n(o)?\s*$/i.test(line)) return {approved: false, reason: 'aborted at the terminal', grants: final, build: onDisk.build, captureConfirmation};
+    if (isAbort(line)) return {approved: false, reason: 'aborted at the terminal', grants: final, build: onDisk.build, captureConfirmation};
   }
   const approvedAt = new Date(ctx.now()).toISOString();
   writeRecord(paths.approved, {build: onDisk.build, identity, approvedAt});
-  log(`approved cua's engine ${short(onDisk.build)} (approved.json written)`);
+  log(`approved cua's engine ${shortBuild(onDisk.build)} (approved.json written)`);
   return {approved: true, grants: final, build: onDisk.build, approvedAt, captureConfirmation};
 }
 
 // ---- the operator and replayd's log ----
 
-// Lines typed at `input` (stdin), one per question; null once it has ended (no terminal, or EOF).
+// Lines typed at `input` (stdin), one per question; null once it has ended (no terminal, or EOF). Each question
+// discards lines typed before it and replaces a question left unanswered, so a stray Enter never answers a question
+// no one has seen yet.
 export function lineReader(input = process.stdin) {
-  const lines = [];
   let ended = false;
   let waiting = null;
   const reader = createInterface({input, terminal: false});
-  reader.on('line', line => { if (waiting) { const w = waiting; waiting = null; w(line); } else lines.push(line); });
+  reader.on('line', line => { if (waiting) { const w = waiting; waiting = null; w(line); } });
   reader.on('close', () => { ended = true; if (waiting) { const w = waiting; waiting = null; w(null); } });
-  let pending = null;
   return {
     next() {
-      if (pending) return pending;
-      if (lines.length) return Promise.resolve(lines.shift());
       if (ended) return Promise.resolve(null);
-      pending = new Promise(resolve => { waiting = line => { pending = null; resolve(line); }; });
-      return pending;
+      return new Promise(resolve => { waiting = resolve; });
     },
     close() { reader.close(); },
   };
@@ -396,18 +407,21 @@ export function lineReader(input = process.stdin) {
 export const CAPTURE_ALERT_PREDICATE = 'process == "replayd" AND eventMessage CONTAINS "SCAlert"';
 
 // Streams replayd's unified log for SCAlert lines (its user-acknowledgement alert, the capture confirmation's signal,
-// U8). Only a count leaves this function, never a line, so no other app's alert text is kept. ready resolves false when
-// the stream cannot start.
+// U8). Only a count leaves this function, never a line, so no other app's alert text is kept. `ready` resolves false
+// when the stream cannot start; stop() answers {alerts, intact}, intact false when the stream ended on its own before
+// it was stopped (a gap in the watch).
 export function watchCaptureAlerts({spawnLog = () => spawn('/usr/bin/log', ['stream', '--style', 'ndjson', '--level', 'info', '--predicate', CAPTURE_ALERT_PREDICATE], {stdio: ['ignore', 'pipe', 'ignore']}), readyMs = 5_000} = {}) {
   let child;
-  try { child = spawnLog(); } catch { return {ready: Promise.resolve(false), stop: async () => 0}; }
+  try { child = spawnLog(); } catch { return {ready: Promise.resolve(false), stop: async () => ({alerts: 0, intact: false})}; }
   let alerts = 0;
   let rest = '';
+  let stopping = false;
+  let intact = true;
   let resolveReady;
   const ready = new Promise(resolve => { resolveReady = resolve; });
   const timer = setTimeout(() => resolveReady(false), readyMs);
-  child.on('error', () => { clearTimeout(timer); resolveReady(false); });
-  child.on('exit', () => { clearTimeout(timer); resolveReady(false); });
+  child.on('error', () => { intact = false; clearTimeout(timer); resolveReady(false); });
+  child.on('exit', () => { if (!stopping) intact = false; clearTimeout(timer); resolveReady(false); });
   child.stdout.setEncoding('utf8').on('data', chunk => {
     clearTimeout(timer);
     resolveReady(true);
@@ -423,10 +437,10 @@ export function watchCaptureAlerts({spawnLog = () => spawn('/usr/bin/log', ['str
     ready,
     stop: () => new Promise(resolve => {
       clearTimeout(timer);
-      if (child.exitCode !== null || child.signalCode !== null) { resolve(alerts); return; }
-      child.once('exit', () => resolve(alerts));
+      stopping = true;
+      if (child.exitCode !== null || child.signalCode !== null) { resolve({alerts, intact}); return; }
+      child.once('exit', () => resolve({alerts, intact}));
       child.kill('SIGTERM');
     }),
   };
 }
-

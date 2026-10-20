@@ -13,7 +13,7 @@ import {scratch} from './fixtures/runtime-fixture.mjs';
 import {CERT_SHA1, NAME, fakeCodesignRead, markSigned} from './helpers/fake-codesign.mjs';
 import {parsePlist} from '../src/remote/plist.mjs';
 import {
-  SIGN_JOB_SCRIPT, SIGN_JOB_TIMEOUT_MS, identityMatches, readSignature, recordedIdentity, resolveSigningIdentity, runSignJob, signBundle, signWaitMs,
+  SIGN_JOB_SCRIPT, SIGN_JOB_TIMEOUT_MS, identityMatches, jobCodesignMs, readSignature, recordedIdentity, resolveSigningIdentity, runSignJob, signBundle, signWaitMs,
 } from '../src/runtime/engine-sign.mjs';
 
 const SHA1 = 'ABCDEF0123456789ABCDEF0123456789ABCDEF01';
@@ -143,7 +143,7 @@ function sshWorld(t, {settings = {signingIdentity: SHA1}, env = {}, job = 'runs'
           const [, script, flag, bundle, result] = plist.ProgramArguments;
           assert.equal(script, SIGN_JOB_SCRIPT);
           assert.equal(flag, '--job');
-          runSignJob({bundle, resultPath: result, env: plist.EnvironmentVariables, runSync: (file, a) => { jobs.at(-1).codesign = [file, ...a]; return codesign(file, a); }});
+          runSignJob({bundle, resultPath: result, env: plist.EnvironmentVariables, runSync: (file, a, o) => { Object.assign(jobs.at(-1), {codesign: [file, ...a], codesignOptions: o}); return codesign(file, a, o); }});
         }
         return ok();
       }
@@ -167,7 +167,7 @@ test('over SSH the identity signs through a one-shot job in gui/<uid>: no comman
   assert.deepEqual(plist.ProgramArguments.slice(0, 4), ['/opt/node/bin/node', SIGN_JOB_SCRIPT, '--job', bundle]);
   assert.equal(plist.RunAtLoad, true);
   assert.equal(plist.KeepAlive, undefined);
-  assert.deepEqual(plist.EnvironmentVariables, {HOME: w.dir}, 'the job reads the identity from the setting itself');
+  assert.deepEqual(plist.EnvironmentVariables, {HOME: w.dir, CUA_SIGN_CODESIGN_MS: String(jobCodesignMs(SIGN_JOB_TIMEOUT_MS))}, 'the job reads the identity from the setting itself');
   assert.ok(!text.includes(SHA1), 'the plist does not carry the identity');
   assert.deepEqual(w.jobs[0].codesign, ['/usr/bin/codesign', '--force', '--sign', SHA1, '--options', 'runtime', '--timestamp=none', bundle]);
   const launchctl = w.calls.filter(c => c.file === '/bin/launchctl').map(c => c.args);
@@ -184,7 +184,7 @@ test('an identity from CUA_SIGNING_IDENTITY reaches the job through its environm
   const w = sshWorld(t, {settings: undefined, env: {CUA_SIGNING_IDENTITY: NAME}});
   await signBundle(join(w.dir, 'b.app'), w.options);
   const [{plist}] = w.jobs;
-  assert.deepEqual(plist.EnvironmentVariables, {HOME: w.dir, CUA_SIGNING_IDENTITY: NAME});
+  assert.deepEqual(plist.EnvironmentVariables, {HOME: w.dir, CUA_SIGNING_IDENTITY: NAME, CUA_SIGN_CODESIGN_MS: String(jobCodesignMs(SIGN_JOB_TIMEOUT_MS))});
   assert.ok(!plist.ProgramArguments.join(' ').includes(NAME));
   assert.equal(w.jobs[0].codesign[3], NAME);
 });
@@ -215,6 +215,54 @@ test('a longer wait names the bound it used, and the hint says how to answer the
     assert.match(error.hint, /--sign-wait/);
     return true;
   });
+});
+
+test('the job\'s codesign waits as long as the sign wait, a little less than the build\'s own wait, so the build sees the job\'s answer first', () => {
+  assert.equal(jobCodesignMs(45_000), 40_000, 'the default: 45 s for the build, 40 s for codesign');
+  assert.equal(jobCodesignMs(600_000), 595_000);
+  for (const wait of [2, 3_000, 9_999, 10_000, 45_000, 600_000, 1_800_000]) {
+    const inner = jobCodesignMs(wait);
+    assert.ok(Number.isInteger(inner) && inner >= 1 && inner < wait, `${wait} ms: codesign ${inner} ms, positive and inside the build's wait`);
+    assert.ok(inner >= wait / 2, `${wait} ms: codesign still gets at least half`);
+  }
+  assert.equal(jobCodesignMs(1), 1, 'the shortest wait still gives codesign a bound, never 0 (spawnSync reads 0 as none)');
+});
+
+test('the plist built for a sign wait carries the job\'s codesign bound, and the job hands it to codesign', async t => {
+  for (const timeoutMs of [45_000, 600_000]) {
+    const w = sshWorld(t);
+    await signBundle(join(w.dir, 'b.app'), {...w.options, timeoutMs});
+    const [{plist, codesignOptions}] = w.jobs;
+    assert.equal(plist.EnvironmentVariables.CUA_SIGN_CODESIGN_MS, String(jobCodesignMs(timeoutMs)));
+    assert.ok(!plist.ProgramArguments.join(' ').includes(String(jobCodesignMs(timeoutMs))), 'through the environment, as the identity source is');
+    assert.equal(codesignOptions?.timeout, jobCodesignMs(timeoutMs), `${timeoutMs} ms: the job's codesign is bounded by it, not a fixed 60 s`);
+  }
+});
+
+test('a job run without the bound (by hand) bounds codesign as the default sign wait does', t => {
+  const s = scratch('cua-sign-job-bound-');
+  t.after(s.cleanup);
+  let options;
+  runSignJob({bundle: join(s.dir, 'b.app'), resultPath: join(s.dir, 'r.json'), env: {HOME: s.dir, CUA_SIGNING_IDENTITY: NAME}, runSync: (file, a, o) => { options = o; return {status: 0, stderr: ''}; }});
+  assert.equal(options?.timeout, jobCodesignMs(SIGN_JOB_TIMEOUT_MS));
+});
+
+test('the job\'s codesign killed at its bound reads as the keychain prompt waiting, not as a codesign failure', async t => {
+  const w = sshWorld(t, {codesign: () => ({status: null, signal: 'SIGTERM', stdout: '', stderr: '', error: Object.assign(new Error('spawnSync /usr/bin/codesign ETIMEDOUT'), {code: 'ETIMEDOUT'})})});
+  await assert.rejects(signBundle(join(w.dir, 'b.app'), {...w.options, timeoutMs: 600_000}), error => {
+    assert.equal(error.code, 'engine_sign_prompt_waiting');
+    assert.match(error.message, /within 600 s /);
+    assert.match(error.hint, /Always Allow/);
+    return true;
+  });
+  assert.equal(w.calls.filter(c => c.file === '/bin/launchctl').at(-1).args[0], 'bootout');
+});
+
+test('in the GUI session codesign is bounded by the sign wait too', async t => {
+  const dir = home(t, {signingIdentity: SHA1});
+  const {run, calls} = recorder({'/bin/launchctl': () => ok('Aqua\n'), '/usr/bin/codesign': () => ok()});
+  await signBundle(join(dir, 'b.app'), {run, env: {HOME: dir}, timeoutMs: 600_000});
+  assert.equal(calls.find(c => c.args[0] === '--force').options.timeout, 600_000);
 });
 
 test('the sign wait: 45 s by default, CUA_SIGN_WAIT_MS when set, --sign-wait over both; anything but a whole number of ms up to 30 min is refused naming its setting', () => {

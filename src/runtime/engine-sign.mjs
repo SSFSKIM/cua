@@ -12,9 +12,11 @@
 // GUI session (`launchctl managername` is not Aqua), the codesign step runs as a one-shot launchd job bootstrapped into
 // gui/<uid>: this file run as `--job <bundle> <result file>`, which resolves the identity from the setting itself, so no
 // command line launchd or ps shows carries it (an identity that came from CUA_SIGNING_IDENTITY reaches the job through
-// its plist's environment). The wait for the job is bounded; a job that does not finish is booted out and the build fails
-// saying a keychain prompt from codesign is waiting on the console: the owner's one-time step is answering it with the
-// login password and Always Allow, and the prompt outlives the job (Surprises, 2026-10-19T21:03Z).
+// its plist's environment). The wait for the job is bounded, and so is the job's codesign, by a little less (the plist's
+// CUA_SIGN_CODESIGN_MS; jobCodesignMs), so the build reads the job's own answer before its own bound; codesign killed at
+// its bound, or a job that does not finish, fails the build saying a keychain prompt from codesign is waiting on the
+// console, and the job is booted out: the owner's one-time step is answering it with the login password and Always
+// Allow, and the prompt outlives the job (Surprises, 2026-10-19T21:03Z).
 import {execFile, spawnSync} from 'node:child_process';
 import {createHash, randomUUID} from 'node:crypto';
 import {existsSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync} from 'node:fs';
@@ -27,6 +29,9 @@ import {escapeXml} from '../remote/plist.mjs';
 export const SIGN_JOB_SCRIPT = fileURLToPath(import.meta.url);
 export const SIGN_JOB_TIMEOUT_MS = 45_000;
 export const SIGN_WAIT_MAX_MS = 30 * 60_000;
+// What the build's wait keeps beyond the job's codesign: launchd starting the job and node loading this file before
+// codesign starts (under a second, a few on a loaded Mac), then the result's write and one poll after codesign is killed.
+const SIGN_JOB_MARGIN_MS = 5_000;
 const CODESIGN = '/usr/bin/codesign';
 const LAUNCHCTL = '/bin/launchctl';
 const JOB_LABEL_PREFIX = 'io.github.ssfskim.cua.engine.sign';
@@ -98,9 +103,13 @@ export function signWaitMs({flag, env = process.env} = {}) {
   return ms;
 }
 
+// How long the GUI-session job lets codesign run, for a build that waits `waitMs` for the job: the wait less the margin
+// (at most half of it, so a short wait still leaves codesign a positive bound; spawnSync reads 0 as none).
+export const jobCodesignMs = waitMs => waitMs - Math.min(SIGN_JOB_MARGIN_MS, Math.floor(waitMs / 2));
+
 // ---- reading a signature ----
 
-const defaultRunSync = (file, args) => spawnSync(file, args, {encoding: 'utf8', timeout: 60_000});
+const defaultRunSync = (file, args, {timeout = 60_000} = {}) => spawnSync(file, args, {encoding: 'utf8', timeout});
 
 // The bundle's signature as codesign reports it: {kind: 'identity', sha1, authority} (the leaf certificate's SHA-1, the
 // form `security find-identity` lists, and its subject, codesign's first Authority line), {kind: 'adhoc'}, or null when
@@ -158,7 +167,7 @@ export async function signBundle(bundle, {identity, env = process.env, run = run
     const resolved = identity ? {identity, source: 'env'} : resolveSigningIdentity({env});
     const manager = await run(LAUNCHCTL, ['managername']);
     if (manager.code === 0 && manager.stdout.trim() === 'Aqua') {
-      const signed = await run(CODESIGN, codesignArgs(resolved.identity, bundle));
+      const signed = await run(CODESIGN, codesignArgs(resolved.identity, bundle), {timeout: timeoutMs});
       if (signed.code !== 0) fail('engine_sign_failed', `codesign failed: ${redact(lastLines(signed.stderr), resolved.identity)}`, {hint: 'check the identity with `security find-identity -v -p codesigning`'});
     } else {
       await signInGuiSession(bundle, resolved, {env, run, uid, node, tmp, timeoutMs, sleep, now});
@@ -194,6 +203,12 @@ ${env}\t</dict>
 `;
 }
 
+function promptWaiting(timeoutMs) {
+  fail('engine_sign_prompt_waiting', `codesign did not finish within ${+(timeoutMs / 1000).toFixed(3)} s in this Mac's GUI session: a keychain prompt from codesign is most likely waiting on the console for the owner`,
+    {hint: 'at the console, answer the prompt with the login password and Always Allow (it stays on screen after this build gave up), then run cua engine build again; it signs with no prompt from then on. '
+      + 'If the next build prompts again, run it as cua engine build --sign-wait 600000 (or set CUA_SIGN_WAIT_MS) and answer the prompt while codesign still waits'});
+}
+
 async function signInGuiSession(bundle, {identity, source}, {env, run, uid, node, tmp, timeoutMs, sleep, now}) {
   const domain = `gui/${uid}`;
   const printed = await run(LAUNCHCTL, ['print', domain]);
@@ -204,7 +219,7 @@ async function signInGuiSession(bundle, {identity, source}, {env, run, uid, node
   const label = `${JOB_LABEL_PREFIX}.${randomUUID()}`;
   const result = join(dir, 'result.json');
   const plist = join(dir, 'job.plist');
-  const environment = {HOME: env.HOME || homedir(), ...(source === 'env' ? {CUA_SIGNING_IDENTITY: identity} : {})};
+  const environment = {HOME: env.HOME || homedir(), ...(source === 'env' ? {CUA_SIGNING_IDENTITY: identity} : {}), CUA_SIGN_CODESIGN_MS: String(jobCodesignMs(timeoutMs))};
   writeFileSync(plist, jobPlist({label, programArguments: [node, SIGN_JOB_SCRIPT, '--job', bundle, result], environment, log: join(dir, 'job.log')}), {mode: 0o600});
   let answer;
   try {
@@ -225,10 +240,7 @@ async function signInGuiSession(bundle, {identity, source}, {env, run, uid, node
         try { jobLog = readFileSync(join(dir, 'job.log'), 'utf8'); } catch {}
         fail('engine_sign_failed', `the signing job in the GUI session ${ended} without signing: ${redact(lastLines(jobLog), identity)}`);
       }
-      if (now() - started >= timeoutMs)
-        fail('engine_sign_prompt_waiting', `codesign did not finish within ${+(timeoutMs / 1000).toFixed(3)} s in this Mac's GUI session: a keychain prompt from codesign is most likely waiting on the console for the owner`,
-          {hint: 'at the console, answer the prompt with the login password and Always Allow (it stays on screen after this build gave up), then run cua engine build again; it signs with no prompt from then on. '
-            + 'If the next build prompts again, run it as cua engine build --sign-wait 600000 (or set CUA_SIGN_WAIT_MS) and answer the prompt while codesign still waits'});
+      if (now() - started >= timeoutMs) promptWaiting(timeoutMs);
       await sleep(POLL_MS);
     }
     answer = JSON.parse(readFileSync(result, 'utf8'));
@@ -238,17 +250,21 @@ async function signInGuiSession(bundle, {identity, source}, {env, run, uid, node
   }
   if (answer.code === 'engine_identity_missing' || answer.code === 'engine_settings_invalid')
     fail(answer.code, `the signing job in the GUI session found no usable identity: ${redact(answer.message, identity)}`, {hint: IDENTITY_HINT});
+  if (answer.timedOut) promptWaiting(timeoutMs);
   if (answer.code !== 0) fail('engine_sign_failed', `codesign failed in the GUI session: ${redact(lastLines(answer.stderr), identity)}`, {hint: 'check the identity with `security find-identity -v -p codesigning`'});
 }
 
-// The job's side: resolves the identity from its environment and the setting, runs codesign once, and writes
-// {code, stderr} (the identity redacted) to `resultPath` by write-then-rename, so the waiting build never reads half.
+// The job's side: resolves the identity from its environment and the setting, runs codesign once within
+// CUA_SIGN_CODESIGN_MS (the default sign wait's bound when absent, as when run by hand), and writes {code, stderr, timedOut?}
+// (the identity redacted) to `resultPath` by write-then-rename, so the waiting build never reads half.
 export function runSignJob({bundle, resultPath, env = process.env, runSync = defaultRunSync}) {
   let answer;
   try {
     const {identity} = resolveSigningIdentity({env});
-    const signed = runSync(CODESIGN, codesignArgs(identity, bundle));
-    answer = {code: signed.status ?? -1, stderr: redact(`${signed.stderr ?? ''}${signed.error ? ` ${signed.error.message}` : ''}`, identity)};
+    const bound = /^[1-9][0-9]*$/.test(env.CUA_SIGN_CODESIGN_MS ?? '') ? Number(env.CUA_SIGN_CODESIGN_MS) : jobCodesignMs(SIGN_JOB_TIMEOUT_MS);
+    const signed = runSync(CODESIGN, codesignArgs(identity, bundle), {timeout: bound});
+    answer = {code: signed.status ?? -1, stderr: redact(`${signed.stderr ?? ''}${signed.error ? ` ${signed.error.message}` : ''}`, identity),
+      ...(signed.error?.code === 'ETIMEDOUT' ? {timedOut: true} : {})};
   } catch (error) {
     answer = error instanceof CuaError ? {code: error.code, message: error.message} : {code: -1, stderr: String(error?.message ?? error)};
   }

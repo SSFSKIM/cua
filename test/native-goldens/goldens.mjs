@@ -6,11 +6,13 @@ import {fileURLToPath} from 'node:url';
 import {advanceNumbering, render} from '../../src/services/engine/render.mjs';
 import {diff} from '../../src/services/engine/diff.mjs';
 import {compare, correct} from './compare.mjs';
+import {STRUCTURAL} from './source.mjs';
 
 export const DIR = dirname(fileURLToPath(import.meta.url));
 export const SCENES = ['textedit', 'finder', 'chrome', 'electron'];
-// Finder's captures were redacted (its sidebar lists the owner's places), so it is compared by structure.
-export const STRUCTURAL = new Set(['finder']);
+// The scenes whose captures were redacted (M0's Finder: its sidebar listed the owner's places) are compared by structure
+// (./source.json); a live recording's Finder carries nothing the run does not own and is compared as full text.
+export {STRUCTURAL};
 
 export const read = (scene, name) => fs.readFileSync(join(DIR, scene, name), 'utf8');
 export const shot = (scene, name) => JSON.parse(read(scene, name));
@@ -19,7 +21,7 @@ export const EXPECTED = JSON.parse(fs.readFileSync(join(DIR, 'expected.json'), '
 // The declared differences of one golden: 'full' (the scene's state), 'before' (the action's first observation) or
 // 'diff' (the action's diff). A declaration without `golden` applies to all three.
 export const GOLDENS = ['full', 'before', 'diff'];
-export const declared = (scene, golden) => EXPECTED.filter(rule => (rule.scene === scene || rule.scene === '*') && (!rule.golden || [rule.golden].flat().includes(golden)));
+export const declared = (scene, golden, expected = EXPECTED) => expected.filter(rule => (rule.scene === scene || rule.scene === '*') && (!rule.golden || [rule.golden].flat().includes(golden)));
 
 export function renderFull(scene, rules = []) {
   const skyshot = correct(shot(scene, 'skyshot.json'), rules);
@@ -46,8 +48,9 @@ export function compareBefore(scene, rules) {
   return compare(read(scene, 'action.vendor.before.txt'), render(before, advanceNumbering(null, before)), {structural: STRUCTURAL.has(scene), declared: rules});
 }
 
-export function compareDiff(scene, rules) {
-  const {indexMap} = compareBefore(scene, declared(scene, 'before'));
+// `beforeRules`: the declarations of the action's first observation that the index map is read under.
+export function compareDiff(scene, rules, beforeRules = declared(scene, 'before')) {
+  const {indexMap} = compareBefore(scene, beforeRules);
   return compare(read(scene, 'action.vendor.diff.txt'), renderDiff(scene, rules), {kind: 'diff', structural: STRUCTURAL.has(scene), declared: rules, indexMap});
 }
 

@@ -6,7 +6,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {SCENES, declared, read, renderFull, pinned, compareFull, compareBefore, allowsAddedLines} from './native-goldens/goldens.mjs';
-import {SOURCED, fromSource} from './native-goldens/rekey.mjs';
+import {SOURCED, fromSource} from './native-goldens/source.mjs';
 
 for (const scene of SCENES) {
   test(`${scene}: the rendering of the recorded Skyshot is pinned`, () => {

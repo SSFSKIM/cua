@@ -70,6 +70,8 @@ export function fromSource(scene, name) {
 }
 
 function main() {
+  const source = JSON.parse(fs.readFileSync(join(HERE, 'source.json'), 'utf8'));
+  if (source.kind !== 'm0') throw new Error(`the goldens come from a ${source.kind} recording (source.json), not M0's captures; rekey.mjs would overwrite them`);
   for (const scene of SCENES) {
     fs.mkdirSync(join(HERE, scene), {recursive: true});
     for (const name of SOURCED) fs.writeFileSync(join(HERE, scene, name), fromSource(scene, name));

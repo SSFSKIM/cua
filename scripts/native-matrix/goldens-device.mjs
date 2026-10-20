@@ -103,23 +103,29 @@ export async function observe({id, record, client, screenshots}) {
   return {scene: id, build: client.identity?.build ?? null, skyshot: goldenForm(shot), timings: shot.timings ?? null, frame: shot.window?.frame ?? null, problems: []};
 }
 
-// The scene's action sequence on one connection, from the state whose stateDigest is `expect`. -> {scene, build, before,
-// after, click: {index, route}, timings, frames, problems}; before and after null when anything refused.
+// The scene's action sequence on one connection, from the state whose stateDigest is `expect`. A window of the run's
+// process whose title is not yet the scene's (a restarted page still loading) is observed again like a state that is not
+// yet the fixed one. -> {scene, build, before, after, click: {index, route}, timings, frames, problems}; before and
+// after null when anything refused; on `start_state`, `observed` is the last observation (it passed the scene's checks),
+// for the controller's diagnostic.
 export async function act({id, record, client, screenshots, expect, retryMs = TARGET_RETRY_MS, sleep = sleepFor}) {
   const refused = problems => ({scene: id, build: client.identity?.build ?? null, before: null, after: null, click: null, timings: null, frames: null, problems});
   const observations = createObservations();
   if (typeof expect !== 'string' || !/^[0-9a-f]{64}$/.test(expect)) throw new Error('action needs --expect <the fixed state\'s digest>');
-  let before = null, index = null, fixed = false;
+  let before = null, index = null, fixed = false, pending = [];
   for (let attempt = 1; attempt <= TARGET_ATTEMPTS && index === null; attempt++) {
     if (attempt > 1) await sleep(retryMs);
     before = await getState(client, record, screenshots, {disableDiff: true});
     const problems = sceneProblems(id, before, record);
+    pending = problems;
+    if (problems.length && problems.every(p => p.code === 'other_window')) { fixed = false; continue; }
     if (problems.length) return refused(problems);
     const text = observations.observe(record.app, before, {disableDiff: true});
     fixed = stateDigest(goldenForm(before)) === expect;
     if (fixed) index = actionIndex(text, SCENES[id].action);
   }
-  if (!fixed) return refused([{code: 'start_state', message: `cua's observation is not the scene's fixed state after ${TARGET_ATTEMPTS} observations; nothing was clicked`}]);
+  if (pending.length) return refused(pending);
+  if (!fixed) return {...refused([{code: 'start_state', message: `cua's observation is not the scene's fixed state after ${TARGET_ATTEMPTS} observations; nothing was clicked`}]), observed: goldenForm(before)};
   if (index === null) return refused([{code: 'target_missing', message: `the action's target is not in cua's rendering after ${TARGET_ATTEMPTS} observations; nothing was clicked`}]);
   const {token, lineage} = observations.element(record.app, index);
   let clicked;

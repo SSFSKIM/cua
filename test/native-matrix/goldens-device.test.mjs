@@ -178,6 +178,29 @@ test('act: clicks only once the observation is the kept fixed state, port drift 
   assert.deepEqual(refused.problems.map(p => p.code), ['start_state']);
   assert.equal(never.calls.some(c => c.method === 'click'), false);
   await assert.rejects(act({id: 'chrome', record, client: fakeClient([fixed]), screenshots: '/s'}), /--expect/);
+  // A refused start carries its last observation, which passed the scene's checks, for the controller's diagnostic.
+  assert.deepEqual(refused.observed, goldenForm(loading));
+});
+
+test('act: a window of the run\'s process still showing a temporary title is observed again; one that keeps it is refused', async () => {
+  const fixed = shot('electron', 'skyshot.json');
+  const record = recordOf('electron', fixed.app.pid);
+  const untitled = structuredClone(fixed);
+  untitled.window.title = 'Electron';
+  const client = fakeClient([untitled, fixed, {meta: {inputRoute: 3}}, fixed]);
+  const out = await act({id: 'electron', record, client, screenshots: '/s', expect: digestOf(fixed), retryMs: 0});
+  assert.deepEqual(out.problems, []);
+  assert.deepEqual(client.calls.map(c => c.method), ['get_app_state', 'get_app_state', 'click', 'get_app_state']);
+  const stays = fakeClient(Array(5).fill(untitled));
+  const refused = await act({id: 'electron', record, client: stays, screenshots: '/s', expect: digestOf(fixed), retryMs: 0});
+  assert.deepEqual(refused.problems.map(p => p.code), ['other_window']);
+  assert.equal(stays.calls.length, 5);
+  assert.equal('observed' in refused, false);
+  // Another process is refused at once.
+  const other = fakeClient([{...fixed, app: {...fixed.app, pid: fixed.app.pid + 1}}]);
+  const gone = await act({id: 'electron', record, client: other, screenshots: '/s', expect: digestOf(fixed), retryMs: 0});
+  assert.equal(other.calls.length, 1);
+  assert.ok(gone.problems.some(p => p.code === 'other_process'));
 });
 
 test('steps: activations and keys in order, each key through the engine only while its guard is in front', async () => {

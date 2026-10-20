@@ -12,7 +12,7 @@ import {dirname, join} from 'node:path';
 import {MARKER, parseCell} from '../../scripts/native-baseline/cells.mjs';
 import {SCENES} from '../../scripts/repl-parity/scenes-mac.mjs';
 import {ACTION, BIND, FIXED, isSessionFile} from '../../scripts/native-matrix/goldens-cells.mjs';
-import {SCENE_ORDER, cleanupRecording, deviceOps, main, parseCommand, record} from '../../scripts/native-matrix/goldens.mjs';
+import {SCENE_ORDER, cleanupRecording, controllerCheckout, deviceOps, main, parseCommand, record, startDiagnostic} from '../../scripts/native-matrix/goldens.mjs';
 import {stateDigest} from '../../scripts/native-matrix/goldens-device.mjs';
 import {audit, auditClean, rerender} from '../native-goldens/audit.mjs';
 import {install} from '../../scripts/native-matrix/goldens-install.mjs';
@@ -118,12 +118,11 @@ function fakeRepo() {
   return {root, goldens};
 }
 
-const run = async ({device = fakeDevice(), vendor = fakeVendor(device), repo = fakeRepo(), controllerBuild = BUILD, out, ...options} = {}) => {
+const run = async ({device = fakeDevice(), vendor = fakeVendor(device), repo = fakeRepo(), controllerBuild = BUILD, controllerCheckout = {commit: 'c'.repeat(40), dirty: false}, out, ...options} = {}) => {
   const dir = out ?? join(repo.root, 'docs', 'goldens-run');
   const code = await record({device: 'mini', approvedRuntime: '/h', out: dir, goldensDir: repo.goldens, repoRoot: repo.root, ...options},
-    {ops: device.ops, connect: vendor.connect, controllerBuild: () => ({build: controllerBuild, engineVersion: '0.1.0'}), controllerCommit: () => 'd'.repeat(40), log: () => {}, sleep: async () => {}});
+    {ops: device.ops, connect: vendor.connect, controllerBuild: () => ({build: controllerBuild, engineVersion: '0.1.0'}), controllerCheckout: () => controllerCheckout, log: () => {}, sleep: async () => {}});
   const meta = JSON.parse(fs.readFileSync(join(dir, 'meta.json'), 'utf8'));
-  if (meta.serveStderr) scratches.push(dirname(meta.serveStderr));
   return {code, meta, dir, device, vendor, repo};
 };
 
@@ -145,6 +144,32 @@ test('refuses before anything is prepared when the approved engine is not the ch
   assert.equal(out.code, 2);
   assert.deepEqual(device.calls.map(c => c[1]), ['engine-check']);
   assert.match(out.meta.refused.join(' '), /not this checkout's/);
+});
+
+test('refuses a dirty controller checkout before anything is prepared, and a harness checkout on another commit after its preflight', async () => {
+  const dirty = fakeDevice();
+  const refused = await run({device: dirty, controllerCheckout: {commit: 'c'.repeat(40), dirty: true}});
+  assert.equal(refused.code, 2);
+  assert.equal(dirty.calls.some(c => c[0] === 'prepare'), false);
+  assert.match(refused.meta.refused.join(' '), /uncommitted changes to tracked files: the start-state digest/);
+  const other = fakeDevice();
+  const stopped = await run({device: other, controllerCheckout: {commit: 'd'.repeat(40), dirty: false}});
+  assert.equal(stopped.code, 1);
+  assert.match(stopped.meta.error, /harness checkout is at c{40}, this checkout at d{40}: the start-state digest needs both on one commit/);
+  assert.equal(other.calls.some(c => c[1] === 'up'), false);
+  assert.ok(other.calls.some(c => c[0] === 'cleanup'));
+});
+
+test('controllerCheckout: the commit, and dirty only for tracked changes', () => {
+  const answers = {'rev-parse': 'abc\n', status: ''};
+  const exec = (_, args) => answers[args[0]];
+  assert.deepEqual(controllerCheckout('/r', {exec}), {commit: 'abc', dirty: false});
+  answers.status = ' M src/services/engine/render.mjs\n';
+  assert.deepEqual(controllerCheckout('/r', {exec}), {commit: 'abc', dirty: true});
+  const calls = [];
+  controllerCheckout('/r', {exec: (cmd, args) => { calls.push(args.join(' ')); return ''; }});
+  assert.deepEqual(calls, ['rev-parse HEAD', 'status --porcelain --untracked-files=no']);
+  assert.deepEqual(controllerCheckout('/r', {exec: () => { throw new Error('not a git repository'); }}), {commit: null, dirty: true});
 });
 
 test('refuses when the controller\'s checkout builds another engine than the approved one', async () => {
@@ -195,7 +220,8 @@ test('one sitting: both lanes per scene on the same state, in PROVENANCE\'s layo
   // The vendor's runtime as the device resolved it; the serve's stderr kept out of the committed recording.
   assert.equal(out.meta.vendor.release, '26.928.40906-darwin-arm64');
   assert.equal(fs.existsSync(join(out.dir, 'serve-stderr.txt')), false);
-  assert.equal(out.meta.serveStderr.startsWith(out.dir), false);
+  assert.equal('serveStderr' in out.meta, false);
+  assert.deepEqual(out.meta.controller, {build: BUILD, commit: 'c'.repeat(40), dirty: false});
   // The install: the goldens' source is the recording, compared as full text, and PROVENANCE names it.
   const source = JSON.parse(fs.readFileSync(join(out.repo.goldens, 'source.json'), 'utf8'));
   assert.deepEqual({kind: source.kind, dir: source.dir, redacted: source.redacted}, {kind: 'live', dir: 'docs/goldens-run/goldens', redacted: []});
@@ -243,7 +269,7 @@ test('cua\'s action from a start that is not the kept fixed state is not kept: t
   const elsewhere = shot('textedit', 'skyshot.json');
   elsewhere.nodes = elsewhere.nodes.slice(0, -1);
   const moved = (scene, n) => (n === 1 ? {scene, build: BUILD, before: elsewhere, after: elsewhere, click: {index: 2, route: 3}, timings: {}, frames: [null, null], problems: []} : null);
-  const startState = (scene, n) => (n === 1 ? {scene, build: BUILD, before: null, after: null, click: null, timings: null, frames: null, problems: [{code: 'start_state', message: 'not the fixed state'}]} : null);
+  const startState = (scene, n) => (n === 1 ? {scene, build: BUILD, before: null, after: null, click: null, timings: null, frames: null, problems: [{code: 'start_state', message: 'not the fixed state'}], observed: elsewhere} : null);
   const device = fakeDevice({action: (scene, n) => (scene === 'textedit' ? moved(scene, n) : scene === 'finder' ? startState(scene, n) : null)});
   const out = await run({device});
   assert.equal(out.code, 0, JSON.stringify(out.meta.problems ?? out.meta.error));
@@ -252,6 +278,14 @@ test('cua\'s action from a start that is not the kept fixed state is not kept: t
   assert.equal(device.calls.filter(c => c[0] === 'scenes' && c[1] === 'up' && c[2] === 'textedit').length, 3);
   assert.deepEqual(device.calls.filter(c => c[1] === 'steps' && c[2] === 'finder').map(c => c.at(-1)), ['setup', 'reset', 'reset', 'teardown']);
   assert.deepEqual(JSON.parse(fs.readFileSync(join(out.dir, 'goldens', 'textedit', 'action.before.skyshot.json'), 'utf8')), shot('textedit', 'skyshot.json'));
+  // Each failed start leaves a bounded diagnostic in meta.json: how many rendered lines differ and the first pair.
+  const [diagnostic] = out.meta.scenes.textedit.startMismatches;
+  assert.equal(diagnostic.attempt, 1);
+  assert.ok(diagnostic.differingLines >= 1);
+  assert.ok(diagnostic.lines.kept > diagnostic.lines.observed);
+  assert.notEqual(diagnostic.first.kept, diagnostic.first.observed);
+  assert.equal(out.meta.scenes.finder.startMismatches.length, 1);
+  assert.ok(out.meta.scenes.finder.startMismatches[0].first.kept.length <= 200);
 
   // A start that never comes back to the fixed state leaves the scene unrecorded.
   const stuck = fakeDevice({action: (scene, n) => (scene === 'electron' ? moved(scene, 1) : null)});
@@ -385,4 +419,23 @@ test('check prints the pinned renderings and the audit, and exits 0 only when th
   assert.equal(code, auditClean(audit()) && !pending.length ? 0 : 1);
   assert.match(lines.join('\n'), pending.length ? /--write rewrites them/ : /Pinned renderings: none changed/);
   assert.match(lines.join('\n'), /Goldens audit \(test\/native-goldens, source (m0|live)\)/);
+});
+
+test('startDiagnostic: the count of differing lines, port drift aside, and the first pair clipped', () => {
+  const kept = shot('chrome', 'skyshot.json');
+  const moved = JSON.parse(JSON.stringify(kept).replace(/127\.0\.0\.1:\d+/g, '127.0.0.1:1'));
+  assert.deepEqual(startDiagnostic(kept, moved), {differingLines: 0, lines: {kept: startDiagnostic(kept, kept).lines.kept, observed: startDiagnostic(kept, kept).lines.kept}, first: null});
+  const renamed = structuredClone(kept);
+  renamed.window.title = `${'x'.repeat(400)}`;
+  const out = startDiagnostic(kept, renamed);
+  assert.ok(out.differingLines >= 1);
+  assert.equal(out.first.line, 1);
+  assert.equal(out.first.observed.length, 200);
+});
+
+test('a recording leaves no empty serve stderr directory behind', async () => {
+  const listing = () => fs.readdirSync(tmpdir()).filter(name => name.startsWith('cua-goldens-serve-')).sort();
+  const before = listing();
+  await run();
+  assert.deepEqual(listing(), before);
 });

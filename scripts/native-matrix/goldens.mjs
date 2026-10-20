@@ -42,7 +42,7 @@ import {execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import * as fs from 'node:fs';
 import {tmpdir} from 'node:os';
-import {isAbsolute, join, resolve} from 'node:path';
+import {dirname, isAbsolute, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
 import {StdioClient, textOf} from '../browser-parity/mcp.mjs';
@@ -57,6 +57,7 @@ import {shortBuild} from '../../src/runtime/engine.mjs';
 import {advanceNumbering, render} from '../../src/services/engine/render.mjs';
 import {ACTION, BIND, FIXED, isSessionFile} from './goldens-cells.mjs';
 import {stateDigest} from './goldens-device.mjs';
+import {normalizeDrift} from '../../test/native-goldens/compare.mjs';
 import {GOLDENS_DIR, REPO_ROOT, SCENE_ORDER, install} from './goldens-install.mjs';
 
 export {SCENE_ORDER};
@@ -123,7 +124,7 @@ const renderedText = shot => render(shot, advanceNumbering(null, shot));
 const sameFrame = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 
 // io: {ops (deviceOps), connect(spec, handlers) -> MCP client, controllerBuild() -> {build, engineVersion},
-// controllerCommit(), log, sleep}. -> 0 complete, 1 incomplete, 2 refused before anything was prepared.
+// controllerCheckout() -> {commit, dirty}, log, sleep}. -> 0 complete, 1 incomplete, 2 refused before anything was prepared.
 export async function record(options, io) {
   const {device, approvedRuntime, out, scenes = SCENE_ORDER, install: installing = true, goldensDir = GOLDENS_DIR, repoRoot = REPO_ROOT} = options;
   const {ops, log = console.log} = io;
@@ -139,8 +140,13 @@ export async function record(options, io) {
   const controller = io.controllerBuild();
   meta.engine = checked.engine;
   meta.checkout = {build: checked.checkout?.build ?? null};
-  meta.controller = {build: controller.build, commit: io.controllerCommit?.() ?? null};
+  // The start-state check compares the controller's rendering with the device's (stateDigest on both sides), so both
+  // must run one renderer: a clean controller checkout here, the device's commit equal to it after its preflight.
+  const checkout = io.controllerCheckout();
+  meta.controller = {build: controller.build, commit: checkout.commit, dirty: checkout.dirty};
   const refusals = [...checked.problems];
+  if (!checkout.commit) refusals.push('this checkout\'s commit could not be read: the start-state digest needs the controller and the device on one commit');
+  if (checkout.dirty) refusals.push('this checkout has uncommitted changes to tracked files: the start-state digest needs the controller to render as the device\'s commit does; commit or stash them');
   if (checked.engine && controller.build !== checked.engine.build) refusals.push(`this checkout's engine build ${shortBuild(controller.build)} is not the approved ${shortBuild(checked.engine.build)}: record from the checkout the approved engine was built from`);
   if (refusals.length) {
     meta.refused = refusals; meta.finished = new Date().toISOString(); write();
@@ -169,6 +175,7 @@ export async function record(options, io) {
     Object.assign(meta.vendor, {release: pre.release ?? null, runtimeRoot: pre.runtimeRoot ?? null});
     // The native baseline's refusals for a vendor serve (scripts/native-baseline.mjs runBaseline).
     if (pre.dirty) throw new Error('the harness checkout is dirty');
+    if (pre.commit !== checkout.commit) throw new Error(`the harness checkout is at ${pre.commit}, this checkout at ${checkout.commit}: the start-state digest needs both on one commit (one renderer); place the harness checkout at this commit`);
     if (!pre.release) throw new Error('no runtime installed in the approved home');
     if (pre.serves) throw new Error('a serve of the harness checkout is already running on the device');
     const reuse = ctx.prepared.runtimeReuse ?? null;
@@ -183,7 +190,7 @@ export async function record(options, io) {
       answer: msg => (isSceneApproval(msg, bundleIds) ? {action: 'accept', content: {}} : {action: 'decline'}),
       onElicitation: (row, msg) => meta.elicitations.push({t: row.t, app: msg.params?._meta?.tool_params?.app ?? null, action: row.action}),
       // Outside the recording, which is committed: the serve's stderr is a diagnostic, not evidence.
-      stderrFile: meta.serveStderr = join(fs.mkdtempSync(join(tmpdir(), 'cua-goldens-serve-')), 'serve-stderr.txt'),
+      stderrFile: ctx.serveStderr = join(fs.mkdtempSync(join(tmpdir(), 'cua-goldens-serve-')), 'serve-stderr.txt'),
     });
     const serverInfo = (await client.initialize())?.serverInfo ?? null;
     await client.request('tools/list');
@@ -233,6 +240,11 @@ export async function record(options, io) {
     if (meta.problems.length || meta.error) meta.complete = false;
     meta.finished = new Date().toISOString();
     write();
+    // The serve's stderr: removed when it holds nothing, else left where it is and named on the console only.
+    if (ctx.serveStderr) {
+      if (fs.existsSync(ctx.serveStderr) && fs.statSync(ctx.serveStderr).size > 0) log(`the vendor serve's stderr: ${ctx.serveStderr}`);
+      else fs.rmSync(dirname(ctx.serveStderr), {recursive: true, force: true});
+    }
   }
   if (meta.complete && installing) {
     meta.installed = install(dir, {goldensDir, repoRoot});
@@ -264,7 +276,7 @@ async function recordScene(ctx, id) {
   if (!bound.ok) throw new SceneProblem(`the vendor could not bind the scene: ${bound.error}`);
 
   // The fixed state: the vendor's text between two of cua's observations that pass the checks and render alike.
-  let kept = false, last = null;
+  let kept = false, last = null, fixedShot = null;
   for (let attempt = 1; attempt <= FIXED_ATTEMPTS && !kept; attempt++) {
     if (attempt > 1) await ctx.sleep(RETRY_MS);
     scene.fixedAttempts = attempt;
@@ -283,6 +295,7 @@ async function recordScene(ctx, id) {
     writeGolden(ctx, id, 'vendor.txt', take(ctx, text));
     writeGolden(ctx, id, 'skyshot.json', `${JSON.stringify(second.skyshot, null, 1)}\n`);
     scene.fixedDigest = stateDigest(second.skyshot);
+    fixedShot = second.skyshot;
     capture('fixed.cua', first.frame, {timings: first.timings});
     capture('fixed.cua', second.frame, {timings: second.timings, kept: true});
     kept = true;
@@ -306,6 +319,7 @@ async function recordScene(ctx, id) {
   // only once its observation renders as the kept Skyshot does, and the controller checks the same of what it returns.
   // A start that is not the fixed state (a selection the reset left, a restarted page still loading) is reset again.
   let acted = null, why = null;
+  const mismatch = (attempt, observed) => (scene.startMismatches ??= []).push({attempt, ...startDiagnostic(fixedShot, observed)});
   for (let attempt = 1; attempt <= START_ATTEMPTS && !acted; attempt++) {
     scene.startAttempts = attempt;
     if (id === 'finder') steps(ctx, id, 'reset');
@@ -313,8 +327,8 @@ async function recordScene(ctx, id) {
     activate(ctx, id);
     const answer = checkBuild(ops.goldens(['action', id, '--run', run, '--expect', scene.fixedDigest]));
     if (answer.problems.length && !answer.problems.every(p => p.code === 'start_state')) throw new SceneProblem(`cua's action did not record: ${describeProblems(answer.problems)}`);
-    if (answer.problems.length) why = describeProblems(answer.problems);
-    else if (stateDigest(answer.before) !== scene.fixedDigest) why = 'cua\'s observation before its click is not the kept fixed state';
+    if (answer.problems.length) { why = describeProblems(answer.problems); if (answer.observed) mismatch(attempt, answer.observed); }
+    else if (stateDigest(answer.before) !== scene.fixedDigest) { why = 'cua\'s observation before its click is not the kept fixed state'; mismatch(attempt, answer.before); }
     else acted = answer;
   }
   if (!acted) throw new SceneProblem(`cua's action could not start from the fixed state in ${START_ATTEMPTS} resets (${why}); nothing of it was recorded`);
@@ -373,6 +387,19 @@ function take(ctx, file) {
   if (sha(text) !== file.sha256) throw new SceneProblem(`${file.kind} changed between the cell and the copy; it was not kept`);
   return text;
 }
+// Why a start was not the kept fixed state, bounded for meta.json (never a golden): how many rendered lines differ,
+// the drift normalized, and the first differing pair, clipped. Both renderings passed the scene's owner-content checks.
+const DIAGNOSTIC_CHARS = 200;
+export function startDiagnostic(kept, observed) {
+  const lines = shot => normalizeDrift(renderedText(shot)).split('\n');
+  const a = lines(kept), b = lines(observed);
+  const differing = Array.from({length: Math.max(a.length, b.length)}, (_, i) => i).filter(i => a[i] !== b[i]);
+  const clip = line => (line === undefined ? null : line.length > DIAGNOSTIC_CHARS ? `${line.slice(0, DIAGNOSTIC_CHARS - 3)}...` : line);
+  const first = differing[0];
+  return {differingLines: differing.length, lines: {kept: a.length, observed: b.length},
+    first: first === undefined ? null : {line: first + 1, kept: clip(a[first]), observed: clip(b[first])}};
+}
+
 // The files a vendor cell names, exactly `kinds` in that order (a kind becomes a golden's file name); anything else is
 // removed on the device unread.
 function filesOf(ctx, value, kinds) {
@@ -457,7 +484,17 @@ export async function main(argv = process.argv.slice(2), {log = console.log} = {
   }
   return record(command, {ops, log, connect: (spec, handlers) => new StdioClient({...spec, clientName: 'cua-native-goldens', ...handlers}),
     controllerBuild: () => ({build: engineBuild(), engineVersion: engineVersion()}),
-    controllerCommit: () => { try { return execFileSync('git', ['rev-parse', 'HEAD'], {cwd: REPO_ROOT, encoding: 'utf8'}).trim(); } catch { return null; } }});
+    controllerCheckout: () => controllerCheckout(REPO_ROOT)});
+}
+
+// This checkout's commit and whether a tracked file differs from it (untracked files, such as earlier recordings'
+// directories, are not the renderer). -> {commit | null, dirty}.
+export function controllerCheckout(cwd, {exec = execFileSync} = {}) {
+  try {
+    const commit = exec('git', ['rev-parse', 'HEAD'], {cwd, encoding: 'utf8'}).trim();
+    const dirty = exec('git', ['status', '--porcelain', '--untracked-files=no'], {cwd, encoding: 'utf8'}).trim() !== '';
+    return {commit, dirty};
+  } catch { return {commit: null, dirty: true}; }
 }
 
 if (process.argv[1] && SCRIPT === fs.realpathSync(process.argv[1])) {

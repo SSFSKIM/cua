@@ -96,7 +96,8 @@ const subtreeEnd = (nodes, i) => { let j = i + 1; while (j < nodes.length && nod
 //   not_list_view  no outline holds the run's files: another view, or another folder
 //   sidebar_shown  an outline besides the run's list (the sidebar's source list)
 //   unowned_text   outside the run's list, a content field that is neither empty nor the run's (the status bar, the path
-//                  bar, the sidebar's places, a title that is not the folder's, a selection that is not a run file)
+//                  bar, the sidebar's places, a title that is not the folder's, a selection that is not a run file);
+//                  a placeholder inside the toolbar is Finder's own (its search field's)
 //   toolbar_items  the toolbar's items are not Finder's default set
 export function finderWindowProblems(shot, {folder, folderPath, files}) {
   if (!shot || !Array.isArray(shot.nodes)) return [{code: 'no_observation', message: 'no Skyshot of the run\'s Finder window to check'}];
@@ -118,13 +119,19 @@ export function finderWindowProblems(shot, {folder, folderPath, files}) {
   const found = [];
   if (unowned(shot.window?.title)) found.push({token: null, role: 'window', field: 'title'});
   if (unowned(shot.selectedText)) found.push({token: null, role: 'selection', field: 'selectedText'});
+  // Inside the toolbar, whose items are pinned to Finder's default set below, a placeholder is Finder's own (the search
+  // field shows one once a wider window expands it into a field); every other content field is still checked there.
+  const toolbar = nodes.findIndex(node => node.role === 'AXToolbar');
+  const inToolbar = toolbar < 0 ? () => false : (end => i => i > toolbar && i < end)(subtreeEnd(nodes, toolbar));
   nodes.forEach((node, i) => {
     if (inList(i)) return;
-    for (const field of CONTENT_FIELDS) if (unowned(node[field])) found.push({token: node.token, role: node.role, field});
+    for (const field of CONTENT_FIELDS) {
+      if (field === 'placeholder' && inToolbar(i)) continue;
+      if (unowned(node[field])) found.push({token: node.token, role: node.role, field});
+    }
   });
   if (found.length) problems.push({code: 'unowned_text', nodes: found, message: 'the window carries text the run does not own outside its list (the status bar, the path bar, the sidebar, or a title): hide them and observe again; nothing of this observation may be recorded'});
 
-  const toolbar = nodes.findIndex(node => node.role === 'AXToolbar');
   const items = toolbar < 0 ? [] : nodes.slice(toolbar + 1, subtreeEnd(nodes, toolbar)).filter(node => node.depth === nodes[toolbar].depth + 1).map(node => [node.role, node.subrole ?? null]);
   if (JSON.stringify(items) !== JSON.stringify(FINDER_DEFAULT_TOOLBAR))
     problems.push({code: 'toolbar_items', expected: FINDER_DEFAULT_TOOLBAR, got: items, message: 'the window\'s toolbar is not Finder\'s default set; an added item may carry a name that is not the run\'s (View → Customize Toolbar, then drag the default set back)'});

@@ -1,5 +1,5 @@
 // The Chrome scene's page (scripts/repl-parity/scenes-mac.mjs; the own native engine spec, Verification system parts 2, 5
-// and 6; promoted in M1b from the M0 spike's copy, scripts/spike/engine/fixtures/): one static document served
+// and 6; moved in M1b from scripts/spike/engine/fixtures/, the spike importing it from here): one static document served
 // on 127.0.0.1 at an ephemeral port, answering only `/` on its exact Host, under a CSP that allows its one inline script
 // and nothing from the network. Its content is fixed (no per-run marker), so the two engines' texts of the same state
 // can be compared in one sitting. The controls are the finding-elements targets of the scene (PAGE_CONTROLS) and the

@@ -41,7 +41,8 @@
 // AppKit's NSTextRulerAccessory nib carries. Each names its AX role and what finds it (a name or value with its `match`
 // mode, a subrole or an orientation); `source` says where the name comes from. Each scene's `typing` says where text
 // typed into it lands and how that is read back, its `window` the title prefix its window's header carries, and its
-// `action` the element the action-sequence golden clicks (actionIndex resolves it on an observation's text).
+// `action` the element the action-sequence golden clicks (./scenes-mac-text.mjs's actionIndex resolves it on an
+// observation's text).
 //
 // Device-side CLI, run from the harness checkout on the Mac that shows the scenes (over ssh); one JSON line on stdout,
 // exit 1 on an error or refusal:
@@ -71,6 +72,7 @@ import {
   CLOSE_WINDOW_KEY, DESELECT_ALL_KEY, LIST_VIEW_KEY, SAVED_PREFERENCES, clearSavedPreferences, finderWindowProblems, hideSteps, preferenceWrites,
   readSavedPreferences, restoreSteps, saveOriginalPreferences,
 } from './scenes-mac-finder.mjs';
+import {windowTitleOf} from './scenes-mac-text.mjs';
 import {isSameLaunch, launchOf} from '../accept/fixture-app.mjs';
 import {quote} from '../browser-parity/topology.mjs';
 import {PARITY_CHECKOUT} from '../native-baseline/remote.mjs';
@@ -102,6 +104,10 @@ export const FINDER_TYPING_NAME = (() => {
   return (head + filler.repeat(6)).slice(0, 240).replace(/-$/, 'x');
 })();
 const finderName = n => (n === 150 ? FINDER_TYPING_NAME : `scene-file-${String(n).padStart(3, '0')}`);
+// Every file's modification and access time, set at up: a fixed date long past, so Finder's Date Modified column (whose
+// cell is also the action's target) prints the same absolute date in every recording, never "Today" and the minute
+// the run wrote the file.
+export const FINDER_FILES_MODIFIED = '2026-01-15T12:00:00.000Z';
 export const finderFolderFiles = () => Array.from({length: 200}, (_, i) => finderName(i + 1));
 
 // A target is found by its `name` or `value` (compared as `match` says: `exact`, or `prefix` where the run cannot fix the
@@ -140,7 +146,7 @@ export const SCENES = Object.freeze({
   },
   finder: {
     id: 'finder', family: 'AppKit lists', bundleId: FINDER_BUNDLE_ID, app: '/System/Library/CoreServices/Finder.app', process: 'system',
-    fixedState: {folder: FINDER_FOLDER, files: 200, view: 'list', selection: null, chrome: {sidebar: false, statusBar: false, pathBar: false}, windows: 1},
+    fixedState: {folder: FINDER_FOLDER, files: 200, modified: FINDER_FILES_MODIFIED, view: 'list', selection: null, chrome: {sidebar: false, statusBar: false, pathBar: false}, windows: 1},
     window: {title: FINDER_FOLDER},
     // A cell of row 005 other than its name: a click on a selected row's name starts a rename.
     action: {click: {rowCellOf: finderName(5)}},
@@ -238,52 +244,11 @@ export function refusals({running, finderWindows, finderHidden = false, owned}) 
 // Plain data for the driver: the definitions, pairings and targets.
 export const describeScenes = () => ({scenes: SCENES, pairs: PAIRS, pairings: BACKGROUND_PAIRINGS, concurrentUse: CONCURRENT_USE, concurrentUseSheet: CONCURRENT_USE_SHEET});
 
-// ---- On an observation's text: the scene window and the action's element ---------------------------------------------
+// ---- On an observation's text: the scene window --------------------------------------------------------------------
 
-// The header's window title (`Window: "<title>", App: …`), or null.
-export const windowTitleOf = text => /^Window: "([^"]*)"/m.exec(String(text))?.[1] ?? null;
-// Whether an observation's text is of the scene's window: its title begins with the scene's `window.title`.
+// Whether an observation's text is of the scene's window: its header's title begins with the scene's `window.title`.
+// The action's element is resolved by ./scenes-mac-text.mjs's actionIndex.
 export const isSceneWindow = (text, id) => windowTitleOf(text)?.startsWith(sceneOf(id).window.title) ?? false;
-
-// The index of the first element line that names `name` as a whole part of the grammar: the bare title, or a label's
-// text (`Value: <name>`), ended by the next part's comma or the line's end, whatever the role word (the vendor's are
-// localized). A longer name that begins with it ("Scene options") or a window title that only begins with it ("cua scene
-// page - Chrome for Testing") is not it. A longer bare title that ends with it ("My Scene option") can be: the role word
-// before a bare title is localized and multi-word, so its boundary is only a space. The first matching line wins, so
-// targets are names the scene owns. Self-contained, so a driver can embed it into a cell by its source, as M0's did.
-export function indexOfTarget(ax, name) {
-  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const part = new RegExp('(?:^| |: )' + escaped + '(?:,|$)');
-  for (const line of String(ax).split('\n')) {
-    const element = /^[~+-]?[\t ]*(\d+) (.*)$/.exec(line);
-    if (element && part.test(element[2])) return Number(element[1]);
-  }
-  return null;
-}
-// Finder's click target in a row: a click on a selected row's name starts a rename, so the target is a cell of the row
-// that holds `name` other than the name's own (the first such cell, the date in list view's default columns): the row
-// is the line two levels above the name field, its cells the lines one level above, and the index is that cell's first
-// child (its text), else the cell. Null when the name has no row or the row no other cell: never the name. It calls
-// indexOfTarget, so a cell that embeds it embeds both.
-export function indexOfRowCell(ax, name) {
-  const lines = String(ax).split('\n').map(line => /^[~+-]?(\t*)(\d+) /.exec(line)).map(m => (m ? {depth: m[1].length, index: Number(m[2])} : null));
-  const at = indexOfTarget(ax, name);
-  const i = lines.findIndex(l => l && l.index === at);
-  if (i < 0) return null;
-  const depth = lines[i].depth;
-  for (let j = i + 1; j < lines.length; j++) {
-    const line = lines[j];
-    if (!line) continue;
-    if (line.depth <= depth - 2) return null;
-    if (line.depth === depth - 1) {
-      const child = lines[j + 1];
-      return child && child.depth === depth ? child.index : line.index;
-    }
-  }
-  return null;
-}
-// The element index a scene's `action` clicks in an observation's text, or null when it is not exposed there.
-export const actionIndex = (ax, {click}) => (typeof click === 'string' ? indexOfTarget(ax, click) : indexOfRowCell(ax, click.rowCellOf));
 
 // ---- The driver's steps around a scene ----------------------------------------------------------------------------------
 
@@ -416,14 +381,20 @@ export async function upScene(id, {run, chromeApp, electronApp, io = defaultIo()
     const folder = join(run, 'finder', FINDER_FOLDER), pid = checked.finderPid;
     if (!pid) throw new Error('Finder is not running');
     fs.mkdirSync(folder, {recursive: true, mode: 0o700});
-    for (const name of finderFolderFiles()) fs.writeFileSync(join(folder, name), `${name}\n`, {mode: 0o600});
-    // Read before the window opens, which is when Finder applies them; saved before any toggle of the run.
+    const modified = new Date(FINDER_FILES_MODIFIED);
+    for (const name of finderFolderFiles()) {
+      fs.writeFileSync(join(folder, name), `${name}\n`, {mode: 0o600});
+      fs.utimesSync(join(folder, name), modified, modified);
+    }
+    // Read before the window opens, which is when Finder applies them.
     const preferences = io.finderPreferences();
-    const {savedAt, kept} = saveOriginalPreferences(io.savedPreferencesFile, preferences);
     // Every window Finder has right before the open, on screen or not, is not the run's.
     const before = documentWindows(io.appWindows(pid)).map(w => w.number);
     io.openApp({app: scene.app, files: [folder]});
-    record = {app: scene.app, folder, pid, window: await awaitWindow(pid, {before, io, onScreenOnly: true}), preferences, savedPreferences: {savedAt, kept}};
+    const window = await awaitWindow(pid, {before, io, onScreenOnly: true});
+    // Saved once the run owns its window (no toggle can follow a failed up), from the reading taken before the open.
+    const {savedAt, kept} = saveOriginalPreferences(io.savedPreferencesFile, preferences);
+    record = {app: scene.app, folder, pid, window, preferences, savedPreferences: {savedAt, kept}};
   } else if (id === 'chrome') {
     const app = chromeApp ?? (await io.placeChrome()).appPath, userDataDir = join(run, 'chrome-user-data');
     fs.mkdirSync(join(userDataDir, 'Default'), {recursive: true, mode: 0o700});
@@ -479,7 +450,8 @@ export function teardownFor(id, {run, io = defaultIo()}) {
 }
 
 // Writes back each Finder chrome key that still differs from the owner's saved value, reads them again, and ends the
-// saved record once all match. -> {preferences: {restored, wrote, remaining}} (with `saved: false` when nothing was saved).
+// saved record once all match. -> {preferences: {restored, wrote, remaining, savedAt}} (`saved: false` instead of
+// `savedAt` when nothing was saved), so the output says which run's record it restored.
 export async function restoreFinder({io = defaultIo()} = {}) {
   const record = readSavedPreferences(io.savedPreferencesFile);
   if (!record) return {preferences: {restored: true, wrote: [], remaining: [], saved: false}};
@@ -487,7 +459,7 @@ export async function restoreFinder({io = defaultIo()} = {}) {
   for (const {key, value} of writes) io.writeFinderPreference(key, value);
   const remaining = preferenceWrites(io.finderPreferences(), record.saved).map(w => w.key);
   if (!remaining.length) clearSavedPreferences(io.savedPreferencesFile);
-  return {preferences: {restored: !remaining.length, wrote: writes.map(w => w.key), remaining}};
+  return {preferences: {restored: !remaining.length, wrote: writes.map(w => w.key), remaining, savedAt: record.savedAt}};
 }
 
 // Brings one scene down: stops only what the run recorded at its launch. Finder: checks the run's window is gone, then

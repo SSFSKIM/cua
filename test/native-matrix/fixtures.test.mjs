@@ -1,4 +1,4 @@
-// The macOS scenes' fixtures (scripts/native-matrix/fixtures/, promoted in M1b from the M0 spike's copy): the Chrome for
+// The macOS scenes' fixtures (scripts/native-matrix/fixtures/, moved there in M1b from the M0 spike): the Chrome for
 // Testing pin and its placement with hash verification, the Electron fixture builder's Info.plist rewrite (on a scratch
 // copy of a fake bundle, never the dependency's), and the loopback scene page. Nothing here launches an app or downloads.
 import {test} from 'node:test';

@@ -12,9 +12,9 @@ import {
   SCENE_IDS, SCENES, PAIRS, BACKGROUND_PAIRINGS, CONCURRENT_USE, CONCURRENT_USE_SHEET, userWindowFor, refusals,
   ownedProcesses, documentWindows, refusingWindows, finderFolderFiles, textEditDocument, describeScenes, FINDER_TYPING_NAME, TEXTEDIT_STYLED_LINE, TEXTEDIT_MARKDOWN_CAP,
   upScene, downScene, preflight, readState, chromeArgs, chromeArgsProblems, chromePreferences, electronArgs, sceneCommand, exitCodeFor,
-  setupSteps, teardownSteps, teardownFor, activateScene, restoreFinder, fixedStateProblems, finderOwned,
-  indexOfTarget, indexOfRowCell, actionIndex, windowTitleOf, isSceneWindow,
+  setupSteps, teardownSteps, teardownFor, activateScene, restoreFinder, fixedStateProblems, finderOwned, isSceneWindow, FINDER_FILES_MODIFIED,
 } from '../../scripts/repl-parity/scenes-mac.mjs';
+import {indexOfTarget, indexOfRowCell, actionIndex, windowTitleOf} from '../../scripts/repl-parity/scenes-mac-text.mjs';
 import {parseAsns, parseAppInfo, stopRecorded, readFinderPreferences, writeFinderPreference, openApp, activateApp} from '../../scripts/repl-parity/scenes-mac-device.mjs';
 import {readSavedPreferences} from '../../scripts/repl-parity/scenes-mac-finder.mjs';
 import {FIXTURE_BUNDLE_ID, FIXTURE_CONTROLS} from '../../scripts/native-matrix/fixtures/electron-fixture.mjs';
@@ -348,6 +348,7 @@ test('up finder accepts only an on-screen new window, and refuses to pick betwee
     const io = fakeDevice({finderOpens: [{onScreen: false}]});
     await assert.rejects(upScene('finder', {run, io}), /no new window/);
     assert.deepEqual(readState(run), {scenes: {}});
+    assert.equal(readSavedPreferences(io.savedPreferencesFile), null, 'a failed up leaves no saved record: no toggle can follow it');
   });
   await withRun(async run => {
     // An off-screen window and an on-screen one appear: the on-screen one is the run's.
@@ -461,9 +462,24 @@ test('the CLI exits 1 on a refusal and when down leaves a scene up', () => {
 const golden = scene => fs.readFileSync(new URL(`../native-goldens/${scene}/vendor.txt`, import.meta.url), 'utf8');
 const FINDER = 'com.apple.finder';
 
-test('Finder\'s fixed state: list view, no row selected, and none of the chrome that shows what the run does not own', () => {
-  assert.deepEqual(SCENES.finder.fixedState, {folder: 'cua-scene-finder', files: 200, view: 'list', selection: null, chrome: {sidebar: false, statusBar: false, pathBar: false}, windows: 1});
+test('Finder\'s fixed state: list view, no row selected, every file\'s date fixed, and none of the chrome that shows what the run does not own', () => {
+  assert.deepEqual(SCENES.finder.fixedState, {folder: 'cua-scene-finder', files: 200, modified: FINDER_FILES_MODIFIED, view: 'list', selection: null, chrome: {sidebar: false, statusBar: false, pathBar: false}, windows: 1});
+  // Far enough in the past that Finder prints an absolute date, never "Today" or "Yesterday" and a time of the sitting.
+  assert.ok(Date.parse(FINDER_FILES_MODIFIED) < Date.parse('2026-10-01T00:00:00Z'));
 });
+
+test('up finder gives every file of the run\'s folder the fixed modification and access time, so the date column is the same in every recording', async () => withRun(async run => {
+  const io = fakeDevice();
+  const record = await upScene('finder', {run, io});
+  const names = fs.readdirSync(record.folder);
+  assert.equal(names.length, 200);
+  const expected = Date.parse(FINDER_FILES_MODIFIED);
+  for (const name of names) {
+    const {mtimeMs, atimeMs} = fs.statSync(join(record.folder, name));
+    assert.equal(mtimeMs, expected, name);
+    assert.equal(atimeMs, expected, name);
+  }
+}));
 
 test('each scene names its window by a title prefix, as the front-window checks compare the header, and the committed goldens\' headers match', () => {
   for (const id of SCENE_IDS) {
@@ -554,7 +570,8 @@ test('down finder, once the run\'s window is gone, writes back each key that sti
   io.windows[736] = io.windows[736].filter(w => w.number !== record.window.number);
   const down = await downScene('finder', {run, io});
   assert.equal(down.down, true);
-  assert.deepEqual(down.preferences, {restored: true, wrote: ['ShowSidebar'], remaining: []});
+  assert.deepEqual(down.preferences, {restored: true, wrote: ['ShowSidebar'], remaining: [], savedAt: record.savedPreferences.savedAt});
+  assert.match(record.savedPreferences.savedAt, /^\d{4}-\d\d-\d\dT/);
   assert.deepEqual(io.writes, [['ShowSidebar', null]]);
   assert.deepEqual(io.preferences, {ShowSidebar: null, ShowStatusBar: true, ShowPathbar: null});
   assert.equal(readSavedPreferences(io.savedPreferencesFile), null);
@@ -563,17 +580,17 @@ test('down finder, once the run\'s window is gone, writes back each key that sti
 
 test('a key Finder will not take back keeps the scene down false and the saved record, so a later down or restore finishes it', async () => withRun(async run => {
   const io = fakeDevice({preferences: {ShowSidebar: true, ShowStatusBar: null, ShowPathbar: null}, stuck: ['ShowSidebar']});
-  await upScene('finder', {run, io});
+  const {savedPreferences: {savedAt}} = await upScene('finder', {run, io});
   io.preferences.ShowSidebar = false;
   io.windows[736] = [];
   const down = await downScene('finder', {run, io});
   assert.equal(down.down, false);
-  assert.deepEqual(down.preferences, {restored: false, wrote: ['ShowSidebar'], remaining: ['ShowSidebar']});
+  assert.deepEqual(down.preferences, {restored: false, wrote: ['ShowSidebar'], remaining: ['ShowSidebar'], savedAt});
   assert.match(down.reason, /ShowSidebar/);
   assert.ok(readSavedPreferences(io.savedPreferencesFile));
   assert.equal(exitCodeFor(down), 1);
   io.preferences.ShowSidebar = true;   // the owner, or Finder, put it back
-  assert.deepEqual((await restoreFinder({io})).preferences, {restored: true, wrote: [], remaining: []});
+  assert.deepEqual((await restoreFinder({io})).preferences, {restored: true, wrote: [], remaining: [], savedAt});
   assert.equal(readSavedPreferences(io.savedPreferencesFile), null);
 }));
 
@@ -583,7 +600,7 @@ test('down finder and restore-finder with no Finder record still restore what an
   fs.mkdirSync(join(io.savedPreferencesFile, '..'), {recursive: true});
   fs.writeFileSync(io.savedPreferencesFile, JSON.stringify({saved: {ShowSidebar: true, ShowStatusBar: null, ShowPathbar: null}, savedAt: 'T0'}));
   const down = await downScene('finder', {run, io});
-  assert.deepEqual(down, {scene: 'finder', down: true, wasUp: false, preferences: {restored: true, wrote: ['ShowSidebar'], remaining: []}});
+  assert.deepEqual(down, {scene: 'finder', down: true, wasUp: false, preferences: {restored: true, wrote: ['ShowSidebar'], remaining: [], savedAt: 'T0'}});
   assert.equal(io.preferences.ShowSidebar, true);
   assert.equal(readSavedPreferences(io.savedPreferencesFile), null);
 }));

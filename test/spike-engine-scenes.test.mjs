@@ -12,8 +12,8 @@ import {
   upScene, downScene, preflight, readState, chromeArgs, chromeArgsProblems, chromePreferences, electronArgs, sceneCommand, exitCodeFor,
 } from '../scripts/spike/engine/scenes.mjs';
 import {parseAsns, parseAppInfo, stopRecorded} from '../scripts/spike/engine/scene-processes.mjs';
-import {FIXTURE_BUNDLE_ID, FIXTURE_CONTROLS} from '../scripts/spike/engine/fixtures/electron-fixture.mjs';
-import {PAGE_CONTROLS, PAGE_HTML} from '../scripts/spike/engine/fixtures/scene-page.mjs';
+import {FIXTURE_BUNDLE_ID, FIXTURE_CONTROLS} from '../scripts/native-matrix/fixtures/electron-fixture.mjs';
+import {PAGE_CONTROLS, PAGE_HTML} from '../scripts/native-matrix/fixtures/scene-page.mjs';
 
 const CFT = 'com.google.chrome.for.testing', TEXTEDIT = 'com.apple.TextEdit';
 

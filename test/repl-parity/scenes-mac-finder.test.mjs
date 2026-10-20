@@ -134,6 +134,18 @@ test('a text outside the list that the run does not own fails, in any content fi
   assert.deepEqual(finderWindowProblems({...shot, selectedText: 'something else'}, owned).map(p => p.nodes), [[{token: null, role: 'selection', field: 'selectedText'}]]);
 });
 
+test('Finder\'s own search field may carry its placeholder (a wider window expands it into a field); a placeholder outside the toolbar may not', () => {
+  const shot = fixedState();
+  const search = shot.nodes.findIndex(n => n.subrole === 'AXSearchField');
+  const expanded = shot.nodes.map((n, i) => (i === search ? {...n, role: 'AXTextField', subrole: 'AXSearchField', placeholder: 'Search', value: ''} : n));
+  assert.deepEqual(finderWindowProblems({...shot, nodes: expanded}, owned), []);
+  const outside = shot.nodes.map((n, i) => (n.token === 't300' ? {...n, placeholder: 'Owner hint'} : n));
+  assert.deepEqual(finderWindowProblems({...shot, nodes: outside}, owned).map(p => p.nodes), [[{token: 't300', role: 'AXStaticText', field: 'placeholder'}]]);
+  // A title or value inside the toolbar is still checked: an item showing a name that is not the run's refuses.
+  const titled = shot.nodes.map((n, i) => (i === search ? {...n, value: 'owner query'} : n));
+  assert.deepEqual(finderWindowProblems({...shot, nodes: titled}, owned).map(p => p.code), ['unowned_text']);
+});
+
 test('the toolbar must be Finder\'s default set: an item the owner added could carry a name of theirs in its description', () => {
   assert.deepEqual(FINDER_DEFAULT_TOOLBAR, [['AXGroup', null], ['AXGroup', null], ['AXMenuButton', null], ['AXButton', null], ['AXButton', null], ['AXMenuButton', null], ['AXGroup', null]]);
   const shot = fixedState();

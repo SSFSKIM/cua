@@ -1,5 +1,5 @@
 // Chrome for Testing for the Chrome scene of the macOS scenes (scripts/repl-parity/scenes-mac.mjs; the own native engine
-// spec, Verification system part 2), promoted in M1b from the M0 spike's copy (scripts/spike/engine/fixtures/): one stable
+// spec, Verification system part 2), moved in M1b from scripts/spike/engine/fixtures/ (the spike imports it from here): one stable
 // mac-arm64 build pinned in ./chrome-for-testing.json by version, URL and SHA-256, downloaded on the device and unzipped
 // under ~/Library/Caches/cua-harness/chrome-for-testing/<version>/. Its bundle id, com.google.chrome.for.testing, is not
 // the owner's Chrome's, and nothing here touches the owner's Chrome or its data.

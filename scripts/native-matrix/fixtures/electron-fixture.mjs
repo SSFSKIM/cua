@@ -1,5 +1,5 @@
 // The Electron fixture app for the Electron scene of the macOS scenes (scripts/repl-parity/scenes-mac.mjs; the own native
-// engine spec, Verification system part 2), promoted in M1b from the M0 spike's copy (scripts/spike/engine/fixtures/): a
+// engine spec, Verification system part 2), moved in M1b from scripts/spike/engine/fixtures/ (the spike imports it from here): a
 // copy of the pinned `electron` dev dependency's Electron.app whose Info.plist names its own bundle id
 // (io.github.ssfskim.cua.fixture.electron), name and executable, carrying the source in ./electron/ as its app, and
 // re-signed ad hoc, since the rewrite invalidates the shipped signature. So the Electron accessibility path is proven on

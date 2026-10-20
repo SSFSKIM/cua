@@ -68,7 +68,9 @@ gates:
       - "scripts/accept/secret-seed.mjs"
       - "scripts/accept/serve-with-store.mjs"
       - "scripts/probe-secrets.mjs"
+      - "scripts/probe-engine-lane.mjs"
       - "scripts/probe/**"
+      - "test/helpers/fake-engine.mjs"   # the engine lane's fake engine
       - "docs/evidence/2026-10-17-own-sandbox/m0/**"
       - "docs/evidence/2026-10-18-hosted-macos-gate/baseline/**"
       - ".github/ci-kit.yml"

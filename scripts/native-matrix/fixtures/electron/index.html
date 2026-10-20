@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'">
+<title>cua Electron fixture</title>
+<link rel="stylesheet" href="fixture.css"></head>
+<body><main>
+<textarea id="text" aria-label="Fixture text" rows="6" autofocus autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
+<select id="list" size="6" aria-label="Fixture list">
+<option>Alpha</option><option>Bravo</option><option>Charlie</option><option>Delta</option><option>Echo</option><option>Foxtrot</option>
+</select>
+<button id="button" type="button">Fixture button</button>
+<p id="status" role="status" aria-label="Fixture status">Pressed 0 times</p>
+</main><script src="renderer.js"></script></body></html>

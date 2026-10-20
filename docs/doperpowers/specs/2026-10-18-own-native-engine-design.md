@@ -52,7 +52,8 @@ How to see it: on the mini, with the plugin at the release this work ships, run 
   - [ ] M1b.1 — Engine install and its commands: `src/runtime/engine.mjs` (`buildEngine` with the GUI-domain sign, `approveEngine`, `engineStatus`, `stopEngine`, `installedEngine`), `cua engine build|approve|status|stop`.
   - [x] (2026-10-20 02:50Z) M1b.2 — Scenes and device probes promoted (21d120c8, 547fc6d2, review fixes a1ab94e7; reviewed clean; merged 1483e715): `scripts/repl-parity/scenes-mac.mjs`, `scripts/native-matrix/fixtures/`, `scripts/accept/front-window.swift`, the key guard by pid, Finder's full-text fixed state.
   - [ ] M1b.3 — Selection, host switch and attestation: `CUA_NATIVE_ENGINE` per the table in `src/runtime/launch.mjs` and its mirror, the own-host rows end to end, `_meta['cua/nativeEngine']` in the proxy, comparison A's lane (cua's service in the vendor trusted worker).
-  - [ ] M1b.4 — The harnesses: `scripts/native-baseline.mjs`'s `--host`/`--engine`/`--approved-engine`, the build check, `setup.activate`, the engine-aware helper attestation, the three compare modes, `prepare.mjs`'s engine stop; the live goldens recorder.
+  - [ ] M1b.4 — The baseline harness: `scripts/native-baseline.mjs`'s `--host`/`--engine`/`--approved-engine`, the build check, `setup.activate`, the engine-aware helper attestation, the three compare modes, `prepare.mjs`'s engine stop.
+  - [ ] M1b.4b — The live goldens recorder, `scripts/native-matrix/goldens.mjs` (pre-flight item 5), split from M1b.4 because it consumes only the scenes and the approved engine's socket, so it runs beside M1b.3.
   - [ ] M1b.5 — The live sitting on the mini: build and approve, the goldens re-recorded and every engine-fault correction deleted, comparison A, the selection table live.
 - [ ] M2a — The full method set, settle, intervention.
 - [ ] M2b — The matrix, oracles and the `native-mac` suite.

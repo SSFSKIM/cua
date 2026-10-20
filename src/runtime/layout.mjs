@@ -28,9 +28,9 @@ export function defaultHome(env = process.env, host = {platform: process.platfor
   return join(env.HOME || homedir(), 'Library', 'Application Support', 'cua');
 }
 
-// Where cua's native engine keeps its socket, lock and state under a home: beside the default macOS CUA_HOME, and not
-// moved by CUA_HOME (#117: the approved engine's directory, docs/doperpowers/specs/2026-10-18-own-native-engine-design.md,
-// "Install, signing and permissions"). The kernel's sandbox denies it (src/sandbox/index.mjs).
+// Where cua's native engine keeps its socket, lock and state under a home: inside the default macOS CUA_HOME, at a fixed
+// place that CUA_HOME does not move (#117: the approved engine's directory, docs/doperpowers/specs/2026-10-18-own-
+// native-engine-design.md, "Install, signing and permissions"). The kernel's sandbox denies it (src/sandbox/index.mjs).
 export const ENGINE_DIRECTORY_IN_HOME = 'Library/Application Support/cua/engine';
 
 export function homeLayout(home) {

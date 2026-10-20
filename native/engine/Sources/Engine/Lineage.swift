@@ -177,7 +177,8 @@ final class Lineage {
 
   /// Watches `pids` from now on, dropping the watches of every other process. A watch that starts after the walk read its
   /// process's elements (`afterRead`) cannot vouch for the time between, so it invalidates that process's elements, and
-  /// only those, until the next observation's reset. A process whose monitor cannot be registered stays unwatched, which `invalidates` treats as invalidated.
+  /// only those, until the next observation's reset. A process whose monitor cannot be registered stays unwatched, which
+  /// `invalidates` treats as invalidated.
   func watch(_ pids: Set<pid_t>, afterRead: Bool) {
     for pid in watches.keys where !pids.contains(pid) { watches[pid] = nil }
     for pid in pids where watches[pid] == nil {

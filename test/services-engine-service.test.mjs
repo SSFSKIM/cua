@@ -208,6 +208,36 @@ test('an element index becomes the lineage\'s token, every execute carrying its 
   assert.equal(engine.executes().at(-1).args.element, undefined);
 });
 
+test('model code reaches the raw methods, but only the vendor\'s fields reach the engine: no spike switch, no stray key', async t => {
+  const handlers = Object.fromEntries(METHODS.filter(m => !['list_apps', 'get_app_state'].includes(m)).map(m => [`execute:${m}`, () => ({meta: INPUT_META})]));
+  const {getApp, call, sky, engine} = await session(t, {handlers});
+  await getApp('TextEdit');
+  const app = APPS.TextEdit.appPath;
+  const spike = {spikeRoute: 3, spikeKeyed: true, spikeEventSource: 1, pid: 9, settle: false, extra: 'x'};
+  const sent = [
+    ['click', {app, x: 1, y: 2, mouse_button: 'left', click_count: 1}],
+    ['click', {app, element_index: 1}],
+    ['drag', {app, from_x: 1, from_y: 2, to_x: 3, to_y: 4}],
+    ['paste', {app, text: 'a', format: 'text'}],
+    ['perform_secondary_action', {app, element_index: 0, action: 'AXRaise'}],
+    ['press_key', {app, key: 'Return'}],
+    ['scroll', {app, direction: 'down', x: 1, y: 2, pages: 0.5}],
+    ['select_text', {app, element_index: 1, text: 'a', prefix: 'b', suffix: 'c', selection_type: 'cursorAfter'}],
+    ['set_value', {app, element_index: 1, value: 'v'}],
+    ['type_text', {app, text: 'a'}],
+  ];
+  for (const [method, input] of sent) {
+    await call(() => sky[method]({...input, ...spike}));
+    const {element_index: index, ...expected} = input;
+    if (index !== undefined) expected.element = `t${index}`;
+    assert.deepEqual(engine.executes().at(-1).args, expected, method);
+  }
+  await call(() => sky.type_text({app, text: 'a', concealed: true, spikeKeyed: true}));
+  assert.deepEqual(engine.executes().at(-1).args, {app, text: 'a', concealed: true}, 'concealed, on the methods the wrapper conceals');
+  await call(() => sky.press_key({app, key: 'a', concealed: true}));
+  assert.deepEqual(engine.executes().at(-1).args, {app, key: 'a'}, 'and on no other');
+});
+
 test('an index never issued answers "<n> is an invalid element ID", a retired one the "no longer valid" sentence, before the engine is asked', async t => {
   const {getApp, call, engine, trees} = await session(t);
   const {app} = await getApp('TextEdit');

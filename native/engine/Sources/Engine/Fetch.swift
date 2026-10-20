@@ -6,14 +6,14 @@ import Foundation
 // `_AXUIElementCopyHierarchy` the vendor prefetches with lost to it on every scene in M0 and is not resolved.
 
 /// The attributes read per element: the vendor's 20 in its order (F §1.2), then what the Interfaces' Node adds
-/// (AXDOMClassList), the scroll bars filterActions consults (AXHorizontalScrollBar, AXVerticalScrollBar), the settle's busy signs (AXElementBusy, AXLoaded; F §8.4), position, size and
+/// (AXDOMClassList), the settle's busy signs (AXElementBusy, AXLoaded; F §8.4), the text's context, position, size and
 /// children. One list for the settle's busy walk and the observation's walk, so the observation can read the tree the
-/// settle fetched.
+/// settle fetched. The scroll bars are not on it: they are read only for an element with a page scroll (scrollBars).
 let observedAttributes: [String] = [
   "AXRole", "AXSubrole", "AXRoleDescription", "AXTitle", "AXDescription", "AXValue", "AXValueDescription",
   "AXPlaceholderValue", "AXNumberOfCharacters", "AXHelp", "AXIdentifier", "AXSelected", "AXFocused", "AXEnabled",
   "AXDisclosing", "AXURL", "AXTraits", "AXServesAsTitleForUIElements", "AXRowIndexRange", "AXColumnIndexRange",
-  "AXDOMClassList", "AXHorizontalScrollBar", "AXVerticalScrollBar", "AXElementBusy", "AXLoaded", "AXTextualContext", "AXPosition", "AXSize", "AXChildren",
+  "AXDOMClassList", "AXElementBusy", "AXLoaded", "AXTextualContext", "AXPosition", "AXSize", "AXChildren",
 ]
 
 /// What the walk knows of one element. Every optional is nil when the element does not carry the attribute.
@@ -40,9 +40,6 @@ struct ElementData {
   var enabled: Bool?
   var disclosing: Bool?
   var domClassList: [String]?
-  /// Whether the element answers AXHorizontalScrollBar, AXVerticalScrollBar (any value).
-  var horizontalScrollBar: Bool
-  var verticalScrollBar: Bool
   var elementBusy: Bool?
   var loaded: Bool?
   /// AXTextualContext (the vendor's Markdown predicate skips `AXTextualContextSourceCode`).
@@ -76,8 +73,6 @@ struct ElementData {
     enabled = flag("AXEnabled")
     disclosing = flag("AXDisclosing")
     textualContext = string("AXTextualContext")
-    horizontalScrollBar = values["AXHorizontalScrollBar"] != nil
-    verticalScrollBar = values["AXVerticalScrollBar"] != nil
     elementBusy = flag("AXElementBusy")
     loaded = flag("AXLoaded")
     domClassList = values["AXDOMClassList"].flatMap { CFGetTypeID($0) == CFArrayGetTypeID() ? ($0 as! [AnyObject]).compactMap { $0 as? String }.map(bounded) : nil }
@@ -178,6 +173,19 @@ class ElementSource: @unchecked Sendable {
     }
   }
 
+  /// Which scroll bars the element answers (AXHorizontalScrollBar, AXVerticalScrollBar, any value), read only for an
+  /// element with a page-scroll action, as the vendor's filterActions (FUN_100782c24) reads them; uncached, since an
+  /// element is emitted once per walk.
+  func scrollBars(_ element: AXUIElement) -> (horizontal: Bool, vertical: Bool) {
+    costs.time("attributes") {
+      let names = ["AXHorizontalScrollBar", "AXVerticalScrollBar"]
+      var values: CFArray?
+      let error = AXUIElementCopyMultipleAttributeValues(prepare(element), names as CFArray, AXCopyMultipleAttributeOptions(rawValue: 0), &values)
+      guard error == .success, let slots = values as? [Any], slots.count == names.count else { return (false, false) }
+      return (present(slots[0]) != nil, present(slots[1]) != nil)
+    }
+  }
+
   /// A window's AXDocument, read only for a window without an AXURL (nodeURL).
   func document(_ element: AXUIElement) -> String? {
     costs.time("attributes") { stringAttribute(element, kAXDocumentAttribute) }
@@ -211,7 +219,8 @@ class ElementSource: @unchecked Sendable {
     }
   }
 
-  /// The width rule's visible subset, read only for an element over the threshold: the element's visible subset (AXVisibleChildren, else AXVisibleRows), nil when it offers none.
+  /// The width rule's visible subset (AXVisibleChildren, else AXVisibleRows), read only for an element over the
+  /// threshold; nil when it offers none.
   final func visibleChildren(_ element: AXUIElement) -> [AXUIElement]? {
     let key = ElementKey(element: element)
     if let known = visibleCache[key] { return known }

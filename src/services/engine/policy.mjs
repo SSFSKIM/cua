@@ -13,8 +13,9 @@
 //      from: src/repl-host/elicitation.mjs), and anything but accept fails `Computer Use was not approved to use <app>`;
 //   7. the action runs on a frozen copy of the input whose `app` is the resolved path, the bound identity.
 //
-// The lists are data, below: the forbidden list (password managers and the keychain; system security processes) and the risk table (terminals and browsers high, with the subtitle). The engine refuses the same forbidden
-// list on resolve_app, on every app-scoped request and on the process an input reaches, from its own copy:
+// The lists are data, below: the forbidden list (password managers and the keychain; system security processes) and
+// the risk table (terminals and browsers high, with the subtitle). The engine refuses the same forbidden list on
+// resolve_app, on every app-scoped request and on the process an input reaches, from its own copy:
 // native/engine/Sources/Engine/Policy.generated.swift, generated from this module by scripts/generate-engine-policy.mjs
 // (so an edit to the list changes the engine's build), which test/services-engine-policy.test.mjs regenerates and
 // compares.

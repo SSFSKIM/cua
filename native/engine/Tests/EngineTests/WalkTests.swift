@@ -39,6 +39,8 @@ final class FakeSource: ElementSource, @unchecked Sendable {
   /// Reads through the listed attributes only (the menu bar's), by id; action-description calls by action name.
   var listedReads: [Int: Int] = [:]
   var descriptionCalls: [String: Int] = [:]
+  /// Scroll-bar reads by id.
+  var scrollBarReads: [Int: Int] = [:]
   init(_ tree: FakeTree) { self.tree = tree }
 
   override func read(_ element: AXUIElement) -> ElementData? {
@@ -81,6 +83,12 @@ final class FakeSource: ElementSource, @unchecked Sendable {
   }
   override func readVisibleChildren(_ element: AXUIElement) -> [AXUIElement]? { tree.visible[tree.id(element)].map { $0.map(Engine.element) } }
   override func readFrame(_ element: AXUIElement) -> CGRect? { tree.frames[tree.id(element)] }
+  override func scrollBars(_ element: AXUIElement) -> (horizontal: Bool, vertical: Bool) {
+    let id = tree.id(element)
+    scrollBarReads[id, default: 0] += 1
+    let extra = tree.extra[id] ?? [:]
+    return (extra["AXHorizontalScrollBar"] != nil, extra["AXVerticalScrollBar"] != nil)
+  }
 }
 
 extension Engine {
@@ -423,14 +431,19 @@ final class WalkTests: XCTestCase {
   }
 
   /// filterActions (FUN_100782c24) keeps a page scroll only along an axis whose scroll bar the element answers
-  /// (AXHorizontalScrollBar, AXVerticalScrollBar): a node with a page-scroll action carries which it has.
+  /// (AXHorizontalScrollBar, AXVerticalScrollBar): a node with a page-scroll action carries which it has. They are read
+  /// for that node only, as the vendor reads them when filterActions meets a page scroll, never in the batched read the
+  /// settle's walk shares.
   func testANodeWithPageScrollsCarriesItsScrollBars() {
     let tree = FakeTree()
     tree.children = [0: [1, 2, 3]]
     tree.actions = [1: ["AXScrollLeftByPage", "AXScrollUpByPage"], 2: ["AXScrollDownByPage"], 3: ["AXPress"]]
     tree.extra = [1: ["AXVerticalScrollBar": Engine.element(50)], 2: ["AXHorizontalScrollBar": Engine.element(51), "AXVerticalScrollBar": Engine.element(52)],
                   3: ["AXVerticalScrollBar": Engine.element(53)]]
-    let nodes = walk(tree, Lineage()).nodes
+    let source = FakeSource(tree)
+    let nodes = walk(tree, Lineage(), source: source).nodes
+    XCTAssertEqual(source.scrollBarReads, [1: 1, 2: 1])
+    XCTAssertFalse(observedAttributes.contains("AXHorizontalScrollBar") || observedAttributes.contains("AXVerticalScrollBar"))
     XCTAssertEqual(nodes[1]["scrollBars"] as? [String: Bool], ["horizontal": false, "vertical": true])
     XCTAssertEqual(nodes[2]["scrollBars"] as? [String: Bool], ["horizontal": true, "vertical": true])
     XCTAssertNil(nodes[3]["scrollBars"], "only a node with a page-scroll action carries them")

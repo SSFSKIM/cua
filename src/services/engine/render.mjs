@@ -368,12 +368,14 @@ function removeElementsUnderCalendarEvents(node, {bundleIdentifier}) {
 }
 
 // filterActions [B §5]: the vendor's predicate FUN_100782c24, per action (true keeps it). AXShowDefaultUI and
-// AXShowAlternateUI never show; AXCancel not in a Catalyst app (the context's isCatalyst, ApplicationUIElement.
-// isCatalystApp 0x100704c88: `_AXExhibitsMacCatalystBehavior`, the engine's app.catalyst) nor on the menu bar or a menu
-// item; AXPick not on a menu item; AXConfirm not on a text field; a horizontal page scroll only on an element with an
-// AXHorizontalScrollBar, a vertical one only with an AXVerticalScrollBar (the engine's `scrollBars`; a Skyshot without
-// it, M0's recordings, keeps them); AXIncrement and AXDecrement not on an element whose value is settable (the
-// AccessibilityNode witness at +0xb8, TransformedUIElement's isValueSettable, 0x100750ffc).
+// AXShowAlternateUI never show; AXCancel not in a Catalyst app (the engine's app.catalyst: ApplicationUIElement.
+// isCatalystApp 0x100704c88 reads `exhibitsMacCatalystBehavior` and the transformation context's init 0x100747490 calls
+// it; that the context's field is the param_2 filterActions reads is an inference) nor on the menu bar or a menu item;
+// AXPick not on a menu item; AXConfirm not on a text field; a horizontal page scroll only on an element with an
+// AXHorizontalScrollBar, a vertical one only with an AXVerticalScrollBar (the engine's `scrollBars`, read only for an
+// element with a page scroll; a Skyshot without it, M0's recordings, keeps them); AXIncrement and AXDecrement not on an
+// element whose value is settable (the AccessibilityNode witness at +0xb8, TransformedUIElement's isValueSettable,
+// 0x100750ffc).
 function keepsAction(action, raw, {catalyst}) {
   switch (action) {
     case 'AXShowDefaultUI': case 'AXShowAlternateUI': return false;

@@ -361,6 +361,11 @@ final class TreeWalk {
                         valueMarkdown: read.valueMarkdown, children: read.children.count, shown: read.shown)
     node["actionDescriptions"] = read.actionDescriptions.map { $0 ?? NSNull() as Any }
     if let url = read.url { node["url"] = url }
+    // The facts filterActions keeps a page scroll by (FUN_100782c24), read only for a node that has one.
+    if read.actions.contains(where: { pageScrolls.contains($0) }) {
+      let bars = source.scrollBars(read.element)
+      node["scrollBars"] = ["horizontal": bars.horizontal, "vertical": bars.vertical]
+    }
     return node
   }
 
@@ -401,8 +406,7 @@ func menuBarElements(bar: AXUIElement?, items: [AXUIElement]) -> [AXUIElement] {
 /// A menu-bar item the vendor leaves out by its title (0x1007569b8).
 func isDebugMenuItem(_ data: ElementData) -> Bool { data.title?.contains("Debug") == true }
 
-private let horizontalPageScrolls: Set<String> = ["AXScrollLeftByPage", "AXScrollRightByPage"]
-private let verticalPageScrolls: Set<String> = ["AXScrollUpByPage", "AXScrollDownByPage"]
+private let pageScrolls: Set<String> = ["AXScrollLeftByPage", "AXScrollRightByPage", "AXScrollUpByPage", "AXScrollDownByPage"]
 
 /// A Skyshot node (Interfaces, Node): the optional attributes present only when the element carries them.
 func nodeWire(token: String, depth: Int, pid: pid_t, data: ElementData, actions: [String], flags: NodeFlags,
@@ -438,10 +442,6 @@ func nodeWire(token: String, depth: Int, pid: pid_t, data: ElementData, actions:
   if let columns = data.columnIndexRange { node["columnIndexRange"] = columns }
   if let domClassList = data.domClassList { node["domClassList"] = domClassList }
   if let shown { node["shown"] = shown.wire }
-  // The facts filterActions keeps a page scroll by (FUN_100782c24), for a node that has one.
-  if actions.contains(where: { horizontalPageScrolls.contains($0) || verticalPageScrolls.contains($0) }) {
-    node["scrollBars"] = ["horizontal": data.horizontalScrollBar, "vertical": data.verticalScrollBar]
-  }
   return node
 }
 

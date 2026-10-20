@@ -530,10 +530,12 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
     if (closing) return answer({ok: false, error: ELICITATION_CANCELLED_SENTENCE});
     const id = clientRequestCounter++;
     // The vendor host pauses the cell's budget while the client decides, as withSuspendedTimeout would (observed on the
-    // pinned node_repl: a 650 ms answer succeeds under timeout_ms 300); it resumes when the answer arrives.
-    current.budget.suspend();
+    // pinned node_repl: a 650 ms answer succeeds under timeout_ms 300); it resumes when the answer arrives. The entry
+    // holds the budget alone, not the execution, since a dead worker's entry may wait unanswered for the connection.
+    const {budget} = current;
+    budget.suspend();
     let resumed = false;
-    const resume = () => { if (!resumed) { resumed = true; current.budget.resume(); } };
+    const resume = () => { if (!resumed) { resumed = true; budget.resume(); } };
     clientRequests.set(id, {worker: self, id: message.id, message, resume});
     write({jsonrpc: '2.0', id, method: 'elicitation/create', params: sortedJson(params)});
   }

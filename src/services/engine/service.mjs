@@ -37,6 +37,20 @@ import {createPolicy, toolSurface} from './policy.mjs';
 
 export const METHODS = ['list_apps', 'get_app_state', 'click', 'drag', 'paste', 'perform_secondary_action', 'press_key', 'scroll', 'select_text', 'set_value', 'type_text'];
 const APP_SCOPED = new Set(METHODS.filter(method => method !== 'list_apps'));
+// The vendor's input fields per input method beyond `app` and `element_index` (R/sky-behaviour.md §1, R/A-contract.md
+// §1.4), plus `concealed` on the methods the wrapper conceals (src/services/sky.mjs): all a request forwards. Model code
+// can call the raw methods with any keys, and the engine reads its spike switches from the same args.
+const FIELDS = {
+  click: ['x', 'y', 'mouse_button', 'click_count'],
+  drag: ['from_x', 'from_y', 'to_x', 'to_y'],
+  paste: ['text', 'format', 'concealed'],
+  perform_secondary_action: ['action'],
+  press_key: ['key'],
+  scroll: ['direction', 'x', 'y', 'pages'],
+  select_text: ['text', 'prefix', 'suffix', 'selection_type'],
+  set_value: ['value', 'concealed'],
+  type_text: ['text', 'concealed'],
+};
 // The keys a call sets only sometimes, reset at its start.
 const PER_CALL = {
   'cua/engineMs': null, 'cua/settle': null, 'cua/inputRoute': null, 'cua/actionInterval': null, 'cua/receivedAt': null, 'cua/hidIdleMs': null,
@@ -126,10 +140,12 @@ export function createService({nodeRepl, client = null}) {
     return {app: target.appPath, screenshot: skyshot.screenshot?.url ? {url: skyshot.screenshot.url} : null, text};
   }
 
-  // Every other app-scoped method: forwarded in the facade's shape with the resolved path, the element token for an
-  // element_index, and the lineage of the app's latest observation.
+  // Every other app-scoped method: forwarded in the facade's shape (the vendor's fields only) with the resolved path, the
+  // element token for an element_index, and the lineage of the app's latest observation.
   async function act(method, input, target) {
-    const {element_index: index, ...args} = input;
+    const index = input.element_index;
+    const args = {app: input.app};
+    for (const field of FIELDS[method]) if (Object.hasOwn(input, field)) args[field] = input[field];
     let lineage = observations.lineage(target.appPath);
     if (index !== undefined) {
       const element = observations.element(target.appPath, index);

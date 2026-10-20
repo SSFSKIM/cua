@@ -9,8 +9,8 @@ import UniformTypeIdentifiers
 // (SCContentFilter(desktopIndependentWindow:), SCScreenshotManager.captureImage), at the vendor's size (U1; R/F-helper-
 // logic.md §15): the window's bounds times the backing scale factor of the screen that best matches them, 2.0 when none
 // does, each side rounded up; quality 0.8, written with mode 0600 into the request's outputDirectory (the engine creates
-// it, never through a symbolic link: writePrivately) and returned as a file: URL. CGWindowListCreateImage is deprecated and not a fallback. Nothing here runs before a request asks for a
-// capture.
+// it, never through a symbolic link: writePrivately) and returned as a file: URL. CGWindowListCreateImage is deprecated
+// and not a fallback. Nothing here runs before a request asks for a capture.
 
 let jpegQuality = 0.8
 private let captureTimeoutSeconds = 10

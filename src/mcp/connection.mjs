@@ -139,7 +139,8 @@ export async function openConnection({home, env = process.env, sessionId, input,
       return [...(browserBackends?.entries() ?? []), ...list];
     }};
     server = createServer({input, output, sessionId, upstream, secrets, profiles, diagnostics,
-      sandboxState: sandboxStateFor(sandbox, planned.cwd), onWithdrawn, devices, inAppBrowser: Boolean(browserBackends), ...(idleTimer ? {idleTimer} : {}), ...serverSettings});
+      sandboxState: sandboxStateFor(sandbox, planned.cwd), onWithdrawn, devices, inAppBrowser: Boolean(browserBackends), nativeEngine: planned.nativeEngine,
+      ...(idleTimer ? {idleTimer} : {}), ...serverSettings});
   } catch (error) {
     await release();
     throw error;

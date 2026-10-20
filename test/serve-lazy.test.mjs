@@ -631,3 +631,25 @@ test('a close during the idle stop refuses the call it held and confirms; an unc
   assert.equal(closed.code, 1);
   assert.ok(h.diagnostics.some(line => /^idle runtime teardown unconfirmed after eof, SIGTERM, SIGKILL: group still lists 1 process/.test(line)), h.diagnostics.join('\n'));
 });
+
+// #117's engine attestation through a real connection: a macOS computer session on the vendor engine gets the launch's
+// attestation on every js result (the fake runtime sets none), and an explicit cua engine with no approved engine under
+// the session's HOME is refused at the open, before anything launches (engine_not_installed).
+test('a macOS computer session attests its engine on js results; CUA_NATIVE_ENGINE=cua without an approved engine is refused at the open', {skip: (!supported || process.platform !== 'darwin') && 'macOS computer sessions only'}, async t => {
+  const home = fakeInstalledHome(t);
+  const vendor = served(t, home, {env: {CUA_SHIM_SURFACES: 'computer'}});
+  await vendor.request('initialize', INIT);
+  const result = await vendor.call('js', {code: 'hello'});
+  assert.deepEqual(result.result._meta['cua/nativeEngine'], {engine: 'vendor', version: null, build: release()});
+  assert.equal(vendor.launches[0].nativeEngine.engine, 'vendor');
+  assert.equal(await vendor.end(), 0, vendor.diagnostics.join('\n'));
+
+  const user = scratch();
+  t.after(user.cleanup);
+  const launches = [];
+  const input = new PassThrough();
+  input.end();
+  await assert.rejects(serve({home, env: {...process.env, HOME: user.dir, CUA_SHIM_SURFACES: 'computer', CUA_NATIVE_ENGINE: 'cua'}, input, output: new PassThrough(),
+    prepareLaunch: launch => { launches.push(launch); return launch; }, diagnostics: () => {}}), {code: 'engine_not_installed', message: /cua install --engine/});
+  assert.equal(launches.length, 0);
+});

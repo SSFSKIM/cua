@@ -148,3 +148,28 @@ test('the lane verdict fails on any failing row or check, an unfinished lane, or
  assert.deepEqual(selectionVerdict({complete:false,error:'install failed',planned:3,rows:[],failures:[]}),{ok:false,lines:['lane stopped before finishing: install failed']});
  assert.equal(selectionVerdict({complete:true,planned:3,rows:rows(2),failures:[]}).ok,false);
 });
+
+// #117's engine rows on the device: the row's setting reaches the environment or the scratch HOME's engine.json, and the
+// fixture approved engine reads as installed exactly on the rows that say so (a real ad hoc codesign of a scratch copy;
+// nothing is launched).
+import {applyEngineRow} from '../../scripts/repl-parity/selection-device.mjs';
+import {placeFixtureEngine,FIXTURE_ENGINE} from '../../scripts/probe/fixture-engine.mjs';
+import {engineDirectory,installedEngine} from '../../src/runtime/engine.mjs';
+import {existsSync} from 'node:fs';
+test('engine rows set CUA_NATIVE_ENGINE or engine.json, and approve the fixture engine only where the row is installed',{skip:process.platform!=='darwin'&&'the fixture engine is signed with macOS codesign'},t=>{
+ const s=scratch('cua-sel-engine-');t.after(s.cleanup);const user=realpathSync(s.dir),dir=engineDirectory(user),settings=join(user,'.config','cua','engine.json');
+ let placed=0;const place=home=>{placed++;return placeFixtureEngine(home);};
+ assert.deepEqual(applyEngineRow(user,{engine:'cua',installed:true},{place}),{CUA_NATIVE_ENGINE:'cua'});
+ assert.deepEqual(installedEngine({dir}),{bundlePath:join(dir,'cua Engine.app'),engineVersion:FIXTURE_ENGINE.version,build:FIXTURE_ENGINE.build,approvedAt:installedEngine({dir}).approvedAt});
+ assert.equal(existsSync(settings),false);
+ assert.deepEqual(applyEngineRow(user,{engine:'cua',engineFrom:'settings',installed:true},{place}),{});
+ assert.deepEqual(JSON.parse(readFileSync(settings,'utf8')),{engine:'cua'});
+ assert.equal(placed,1,'the fixture is signed once and kept');
+ assert.deepEqual(applyEngineRow(user,{engine:'invalid',installed:false},{place}),{CUA_NATIVE_ENGINE:'invalid'});
+ assert.equal(installedEngine({dir}),null,'not installed: approved.json is gone');
+ assert.equal(existsSync(settings),false);
+ assert.deepEqual(applyEngineRow(user,{engine:'unset',installed:true},{place}),{});
+ assert.equal(installedEngine({dir}).build,FIXTURE_ENGINE.build);
+ assert.deepEqual(applyEngineRow(user,{},{place}),{},'a row with no engine fields is today\'s');
+ assert.equal(installedEngine({dir}),null);
+});

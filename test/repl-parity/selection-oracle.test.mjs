@@ -106,13 +106,73 @@ test('selection verdict rejects mismatched real host markers under doctor\'s act
 // backend path to be in play.
 const liveEnv=row=>({...envFor(row),...(row.maws?{CUA_BROWSER_BACKENDS:'/maws-fixture.sock'}:{})});
 const doctorAs=(t,row,registration=row.registration)=>doctorReplHost(t,{platform:row.platform,env:liveEnv(row),node:MANAGED,registration});
-const observationFor=(row,commit)=>expectedSelection(row).host==='cua'?ownObservation(commit):{host:'vendor',serverInfo:{name:'rmcp',version:'1.5.0'},_meta:null};
+// The real call's result on a macOS computer session carries the proxy's engine attestation (#117).
+const attestation=engine=>engine?{'cua/nativeEngine':engine==='cua'?{engine,version:'0.0.0-selection',build:'f'.repeat(64)}:{engine,version:'26.924.1001281',build:'26.928.40906-darwin-arm64'}}:{};
+const observationFor=(row,commit)=>{
+ const expected=expectedSelection(row),engine=attestation(expected.engine);
+ if(expected.host==='cua'){const own=ownObservation(commit);return {...own,_meta:{...own._meta,...engine}};}
+ return {host:'vendor',serverInfo:{name:'rmcp',version:'1.5.0'},_meta:expected.engine?engine:null};
+};
 test('every selectable row passes on doctor\'s actual row, whatever the registration ordering or MAWS',async t=>{
  const reviewed=reviewedSource(t);
- const rows=selectionCases('darwin').filter(r=>r.node24&&!r.managedNode&&!expectedSelection(r).error).map(r=>({...r,managedNode:true}));
+ // The engine rows (#117) carry their own inputs: graded by the engine test below.
+ const rows=selectionCases('darwin').filter(r=>!r.engine&&r.node24&&!r.managedNode&&!expectedSelection(r).error).map(r=>({...r,managedNode:true}));
  for(const registration of ['none','chatgpt','cua','cua-then-chatgpt','chatgpt-then-cua'])for(const maws of [false,true])assert.ok(rows.some(r=>r.registration===registration&&r.maws===maws),`${registration}${maws?' with MAWS':''}`);
  for(const row of rows){
   const doctor=await doctorAs(t,row);
   assert.doesNotThrow(()=>assertSelection(row,{doctor,observation:observationFor(row,reviewed.reviewedCommit)},reviewed),JSON.stringify(row));
  }
+});
+
+// #117: the engine × host table, mirrored independently, and graded against doctor's actual row with each row's engine
+// inputs injected exactly as the live lane places them (CUA_NATIVE_ENGINE, engine.json, an approved engine).
+const engineInputs=row=>({config:()=>(row.engineFrom==='settings'?{engine:row.engine}:{}),installed:()=>(row.installed?{bundlePath:'/scratch.home/Library/Application Support/cua/engine/cua Engine.app',engineVersion:'0.0.0-selection',build:'f'.repeat(64)}:null)});
+const engineEnv=row=>(row.engine&&row.engine!=='unset'&&row.engineFrom!=='settings'?{CUA_NATIVE_ENGINE:row.engine}:{});
+test('the oracle\'s engine table: today\'s path, the target, comparison A, the refusals in order and the default cua\'s until-M6 rows',()=>{
+ const row=fields=>expectedSelection({platform:'darwin',registration:'cua',maws:false,surfaces:['computer'],lane:'ordinary',override:'unset',node24:true,managedNode:true,engine:'unset',installed:false,...fields});
+ assert.deepEqual(row({}),{host:'vendor',reason:'macos_native_peer_requires_vendor',engine:'vendor',status:'pass'});
+ assert.deepEqual(row({engine:'cua',installed:true}),{host:'cua',reason:'cua_engine',engine:'cua',status:'pass'});
+ assert.deepEqual(row({engine:'cua',installed:true,override:'cua'}),{host:'cua',reason:'explicit',engine:'cua',status:'pass'});
+ assert.deepEqual(row({engine:'cua',installed:true,override:'vendor',node24:false,managedNode:false}),{host:'vendor',reason:'explicit',engine:'cua',status:'pass'});
+ for(const override of ['unset','vendor','cua'])for(const node24 of [true,false])assert.deepEqual(row({engine:'cua',override,node24,managedNode:node24}),{error:'engine_not_installed'},`${override} ${node24}`);
+ assert.deepEqual(row({engine:'cua',installed:true,node24:false,managedNode:false}),{error:'repl_host_node'});
+ assert.deepEqual(row({engine:'vendor',override:'cua',installed:true}),{error:'repl_host_refused'});
+ assert.deepEqual(row({engine:'invalid',override:'cua',node24:false,managedNode:false}),{error:'invalid_setting',sentence:'CUA_NATIVE_ENGINE must be vendor or cua'});
+ assert.deepEqual(row({engine:'cua',engineFrom:'settings',installed:true}),{host:'cua',reason:'cua_engine',engine:'cua',status:'pass'});
+ // The default cua (M5 on), until M6.
+ assert.deepEqual(row({defaultEngine:'cua',installed:true}),{host:'cua',reason:'cua_engine',engine:'cua',status:'pass'});
+ assert.deepEqual(row({defaultEngine:'cua'}),{host:'vendor',reason:'engine_not_installed',engine:'vendor',status:'warn'});
+ assert.deepEqual(row({defaultEngine:'cua',override:'vendor'}),{host:'vendor',reason:'engine_not_installed',engine:'vendor',status:'warn'});
+ assert.deepEqual(row({defaultEngine:'cua',installed:true,node24:false,managedNode:false}),{host:'vendor',reason:'own_host_node_unavailable',engine:'vendor',status:'warn'});
+ assert.deepEqual(row({defaultEngine:'cua',override:'cua'}),{error:'engine_not_installed'});
+ // Linux and browser-only rows ignore the setting.
+ assert.deepEqual(expectedSelection({platform:'linux',surfaces:['computer'],lane:'ordinary',override:'unset',node24:true,engine:'invalid'}),{host:'cua',reason:'linux',status:'pass'});
+ assert.deepEqual(expectedSelection({platform:'darwin',surfaces:['computer'],lane:'profiles',override:'unset',node24:true,engine:'cua'}),{host:'cua',reason:'browser_only',status:'pass'});
+ const rows=selectionCases('darwin').filter(r=>r.engine);
+ for(const engine of ['unset','vendor','cua','invalid'])for(const override of ['unset','vendor','cua'])for(const node24 of [true,false])for(const installed of [false,true])
+  assert.ok(rows.some(r=>r.engine===engine&&r.override===override&&r.node24===node24&&r.installed===installed),`${engine} ${override} ${node24} ${installed}`);
+ assert.ok(rows.some(r=>r.engineFrom==='settings'));assert.equal(selectionCases('linux').filter(r=>r.engine).length,2);
+});
+test('every engine row agrees with doctor\'s actual row and the real call\'s attestation; a wrong engine anywhere fails',async t=>{
+ const reviewed=reviewedSource(t);
+ const rows=selectionCases('darwin').filter(r=>r.engine).map(r=>({...r,managedNode:r.node24}));
+ for(const row of rows)await t.test(JSON.stringify(row),async t=>{
+  const expected=expectedSelection(row);
+  const doctor=await doctorReplHost(t,{platform:row.platform,env:{...envFor(row),...engineEnv(row)},node:row.node24?MANAGED:null,engine:engineInputs(row)});
+  if(expected.error){
+   assert.doesNotThrow(()=>assertSelection(row,{doctor,error:expected.error,errorMessage:expected.sentence??'refused'},reviewed));
+   return;
+  }
+  const observation=observationFor(row,reviewed.reviewedCommit);
+  assert.doesNotThrow(()=>assertSelection(row,{doctor,observation},reviewed));
+  const other=expected.engine==='cua'?'vendor':'cua';
+  assert.throws(()=>assertSelection(row,{doctor,observation:{...observation,_meta:{...observation._meta,...attestation(other)}}},reviewed),/attests engine/,'another attested engine');
+  assert.throws(()=>assertSelection(row,{doctor,observation:{...observation,_meta:{...observation._meta,'cua/nativeEngine':undefined}}},reviewed),/attests engine/,'no attestation');
+  assert.throws(()=>assertSelection(row,{doctor:{...doctor,detail:doctor.detail.replace(`native engine ${expected.engine} (`,`native engine ${other} (`)},observation},reviewed),/Doctor engine/,'another engine in doctor\'s row');
+ });
+});
+test('rows outside the macOS computer surface must attest no engine, and doctor names none',async t=>{
+ const reviewed=reviewedSource(t),row=ownRows[0],doctor=await doctorFor(t,row),observation=ownObservation(reviewed.reviewedCommit);
+ assert.doesNotThrow(()=>assertSelection(row,{doctor,observation},reviewed));
+ assert.throws(()=>assertSelection(row,{doctor,observation:{...observation,_meta:{...observation._meta,...attestation('vendor')}}},reviewed),/attests engine/);
 });

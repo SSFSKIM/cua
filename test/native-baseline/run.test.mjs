@@ -85,7 +85,8 @@ function fakeClient(options, cua, state) {
       const written = [];
       Object.assign(globalThis, {cua, nodeRepl: {write: text => written.push(text)}});
       try { await new AsyncFunction(params.arguments.code)(); } finally { delete globalThis.cua; delete globalThis.nodeRepl; }
-      return {content: [{type: 'text', text: `# Native apps\n${written.join('\n')}`}], _meta: {...meta, ...(state.nativeEngine ? {'cua/nativeEngine': state.nativeEngine()} : {})}};
+      return {content: [{type: 'text', text: `# Native apps\n${written.join('\n')}`}], _meta: {...meta, ...(state.nativeEngine ? {'cua/nativeEngine': state.nativeEngine()} : {}),
+        ...(state.engineMs ? {'cua/engineMs': state.engineMs(params.arguments.code)} : {})}};
     },
     async call(name) { assert.equal(name, 'end_task'); return {content: [], structuredContent: {status: 'ended'}}; },
     async close() {},
@@ -197,8 +198,8 @@ const helperOf = engine => (engine === 'cua' ? {path: '~/Library/Application Sup
 // One macOS run against the doubles; `frontmost(app)` is the device's frontmost-application reader (#162): a bundle id
 // (TextEdit's is the run's TextEdit, pid TEXTEDIT_PID) or a {pid, bundleId} reading as it is.
 async function macRun(t, {frontmost = () => 'com.apple.TextEdit', app = textEdit(), host = 'vendor', engine = 'vendor', facts = engineFacts(), attestation = () => attestationOf(engine),
-  helpers = () => [helperOf(engine)], startStop = {wasRunning: false}, endStop = {wasRunning: true, pid: 5151}, getState, activateMs = 300} = {}) {
-  const state = {record: true, scripts: [], answeringHost: host, nativeEngine: attestation};
+  helpers = () => [helperOf(engine)], startStop = {wasRunning: false}, endStop = {wasRunning: true, pid: 5151}, getState, activateMs = 300, bindError, engineMs} = {}) {
+  const state = {record: true, scripts: [], answeringHost: host, nativeEngine: attestation, engineMs, terminated: []};
   const approval = {method: 'elicitation/create', params: {message: 'Allow Computer Use to use "TextEdit"?', mode: 'form', requestedSchema: {type: 'object', properties: {}},
     _meta: {connector_id: 'computer-use', codex_approval_kind: 'mcp_tool_call', tool_params: {app: 'com.apple.TextEdit'}}}};
   let launched = false;
@@ -210,6 +211,7 @@ async function macRun(t, {frontmost = () => 'com.apple.TextEdit', app = textEdit
       state.options.onElicitation({t: new Date().toISOString(), method: approval.method, action: answer.action}, approval);
       if (answer.action !== 'accept' || bundle !== 'com.apple.TextEdit') throw new Error('declined');
       launched = true;
+      if (bindError) throw new Error(bindError);
       return app;
     },
   };
@@ -232,10 +234,11 @@ async function macRun(t, {frontmost = () => 'com.apple.TextEdit', app = textEdit
     return state.record ? 'present' : 'absent';
   };
   const frontmosts = [];
-  let activations = 0;
-  const device = {helpers: () => (launched ? helpers() : []), leftovers: () => ({serves: 0, textEditRunning: launched && !app.quit}),
+  let activations = 0, terminatedApp = false;
+  const device = {helpers: () => (launched ? helpers() : []), leftovers: () => ({serves: 0, textEditRunning: launched && !app.quit && !terminatedApp}),
     frontmost: () => { const id = frontmost(app); frontmosts.push(id); return id === null || typeof id === 'object' ? id : {pid: id === 'com.apple.TextEdit' ? TEXTEDIT_PID : 777, bundleId: id}; },
-    textEditPid: () => TEXTEDIT_PID, activate: () => { activations++; }};
+    textEditPid: () => TEXTEDIT_PID, activate: () => { activations++; },
+    terminateTextEdit: pid => { state.terminated.push(pid); terminatedApp = true; }};
   const out = outDir(t);
   let code, refusal = null;
   try {
@@ -257,7 +260,7 @@ test('a macOS vendor-host run keeps the TextEdit baseline\'s sequence and attest
   assert.deepEqual([...new Set(rows.map(r => r.op))], ['ssh.roundtrip', 'cold.miss.initialize', 'cold.miss.tools_list', 'cold.miss.first_js', 'cold.miss.total', 'cold.hit.initialize', 'cold.hit.tools_list', 'cold.hit.first_js', 'cold.hit.total',
     'warm.noop', 'warm.getState', 'warm.listApps', 'bind.getApp', 'approval.elicitation', 'setup.activate', 'setup.newDocument', 'warm.getAXState', 'guard.scratch', 'warm.getScreenshot', 'task.act', 'task.verify', 'task.close', 'task.total', 'end_task']);
   assert.ok(rows.every(r => r.ok), JSON.stringify(rows.filter(r => !r.ok)));
-  assert.deepEqual(meta.textEdit, {runningBefore: false, launchedByRun: true, pid: TEXTEDIT_PID, quitByRun: true});
+  assert.deepEqual(meta.textEdit, {runningBefore: false, launchedByRun: true, pid: TEXTEDIT_PID, scratchDocument: true, quitByRun: true});
   assert.deepEqual(meta.leftovers, {serves: 0, textEditRunning: false});
   assert.deepEqual(meta.environment, {CUA_REPL_HOST: 'vendor', CUA_NATIVE_ENGINE: 'vendor', CUA_SHIM_SURFACES: 'computer', CUA_SHIM_PERSIST: 'session', CUA_SHIM_SECRETS: 'off'});
   assert.equal(meta.hostAttestations.length, 3);
@@ -481,6 +484,9 @@ test('a run whose results attest another build or another engine, or none, is no
     assert.equal(meta.complete, false);
     assert.match(meta.engineAttestationProblem, pattern);
   }
+  // No result attested an engine: the service names none, not the vendor.
+  const none = await macRun(t, {engine: 'cua', attestation: () => undefined});
+  assert.equal(none.meta.service.answered, 'unattested');
 });
 
 test('a cua-engine run in which the pinned vendor helper started, or no approved engine process did, is not complete', async t => {
@@ -541,6 +547,50 @@ test('a TextEdit that does not come to the front stops the run before any key or
   assert.match(meta.error, /setup\.activate: TextEdit \(pid 4242\) is not the frontmost application after open -a TextEdit; the frontmost is com\.google\.Chrome \(pid 777\)/);
   assert.equal(rows.some(r => r.op === 'setup.newDocument'), false);
   assert.deepEqual([app.keys, app.clicks], [[], []]);
+});
+
+// The M1b.4 review: a run that fails before its scratch document exists (a failed bind, a failed activation) still ends
+// the TextEdit it launched, by the pid it read when it saw TextEdit come up, so the sitting's next run is not refused.
+// The quit cell cannot do it (it quits only from the scratch document), and there is no document of anyone's in it.
+test('a run that fails before its scratch document ends the TextEdit it launched, by its pid', async t => {
+  const bind = await macRun(t, {engine: 'cua', bindError: 'Computer Use server error: AX not ready'});
+  assert.equal(bind.code, 1);
+  assert.match(bind.meta.error, /cua\.getApp\(TextEdit\) failed: .*AX not ready/);
+  assert.deepEqual(bind.state.terminated, [TEXTEDIT_PID]);
+  assert.deepEqual(bind.meta.textEdit, {runningBefore: false, launchedByRun: true, pid: TEXTEDIT_PID, quitByRun: true, quitHow: 'SIGTERM to the pid the run launched: no scratch document existed'});
+  const front = await macRun(t, {engine: 'cua', frontmost: () => 'com.google.Chrome', activateMs: 50});
+  assert.deepEqual(front.state.terminated, [TEXTEDIT_PID]);
+  assert.equal(front.meta.textEdit.quitByRun, true);
+  assert.equal(front.meta.leftovers.textEditRunning, false);
+  // A complete run quits from its scratch document as before, and signals nothing.
+  const complete = await macRun(t, {engine: 'cua'});
+  assert.deepEqual(complete.state.terminated, []);
+  assert.equal(complete.meta.textEdit.quitHow, undefined);
+});
+
+// The sitting's first open question: TextEdit fresh from its launch may have only its out-of-process Open panel, and the
+// frontmost reader may then name the panel's service. setup.activate says so rather than stopping opaquely.
+test('setup.activate names the Open panel\'s service when it is what the frontmost reader sees', async t => {
+  const panel = {pid: 888, bundleId: 'com.apple.appkit.xpc.openAndSavePanelService'};
+  const {meta, rows} = await macRun(t, {engine: 'cua', frontmost: () => panel, activateMs: 50});
+  const row = rows.find(r => r.op === 'setup.activate');
+  assert.deepEqual(row.seen, [panel]);
+  assert.match(meta.error, /the frontmost is com\.apple\.appkit\.xpc\.openAndSavePanelService \(pid 888\): TextEdit's Open panel, served out of process, is in front/);
+});
+
+test('each row records cua/engineMs where its result carried one, not judged', async t => {
+  const {meta, rows} = await macRun(t, {engine: 'cua', engineMs: code => (/getState/.test(code) ? 12.5 : null)});
+  assert.equal(meta.complete, true, meta.error);
+  assert.ok(rows.filter(r => r.op === 'warm.getState').every(r => r.engineMs === 12.5));
+  assert.ok(rows.filter(r => r.op === 'warm.noop').every(r => !('engineMs' in r)), 'a null engineMs is not recorded');
+  const vendor = await macRun(t, {engine: 'vendor'});
+  assert.ok(vendor.rows.every(r => !('engineMs' in r)));
+});
+
+test('the approved engine\'s signature is recorded as its kind and whether it matches, never the identity', async t => {
+  const signature = {kind: 'identity', identityMatches: true};
+  const {meta} = await macRun(t, {engine: 'cua', facts: engineFacts({installed: {bundlePath: ENGINE_BUNDLE, engineVersion: '0.1.0', build: BUILD, signature}})});
+  assert.deepEqual(meta.nativeEngine.approved.signature, signature);
 });
 
 test('the key guard compares by pid: another TextEdit process in front is not the run\'s', async t => {

@@ -262,7 +262,8 @@ async function runPrepared({device, out, host, engine, approvedEngine, node, exp
     }
     const text = textOf(result), cell = cells.parseCell(text);
     const timedOut = !cell && /timed? ?out|timeout/i.test(text);
-    return {wallMs: performance.now() - started, started, text, cell, isError: result.isError === true, timedOut,
+    const engineMs = result?._meta?.['cua/engineMs'];
+    return {wallMs: performance.now() - started, started, text, cell, isError: result.isError === true, timedOut, ...(Number.isFinite(engineMs) ? {engineMs} : {}),
       failure: cell ? null : (text.split('\n').filter(Boolean).at(-1) ?? 'no output').slice(0, 300)};
   };
   // On cua's engine, a cell that failed because the engine did not come up is the engine's launch failure: the run stops
@@ -283,8 +284,10 @@ async function runPrepared({device, out, host, engine, approvedEngine, node, exp
     }
     const value = r.cell?.ok ? r.cell.value ?? {} : null;
     const ok = Boolean(value) && !value.invalid;
+    // engineMs: cua's service's cua/engineMs, the socket round trip of the cell's last engine call (results merge it by
+    // key), kept to attribute a row's time between the engine and the rest; recorded, never judged.
     return {op, sample, ok, wallMs: round(r.wallMs), ...(r.cell?.inCellMs !== undefined ? {inCellMs: round(r.cell.inCellMs)} : {}),
-      ...(value ?? {error: r.cell?.error ?? r.failure ?? 'failed'}), ...extra};
+      ...(r.engineMs !== undefined ? {engineMs: round(r.engineMs)} : {}), ...(value ?? {error: r.cell?.error ?? r.failure ?? 'failed'}), ...extra};
   };
   const row = (op, sample, r, extra = {}) => emit(record(op, sample, r, extra));
   const stop = reason => { stopped = reason; throw new Stop(reason); };

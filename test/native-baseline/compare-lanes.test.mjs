@@ -179,3 +179,32 @@ test('the committed triple is a valid source of rows: copied and summarised as i
   assert.equal(summary.status, 0, summary.stderr);
   assert.match(readFileSync(join(copy, 'summary.md'), 'utf8'), /\| Engine \| – \|/);
 });
+
+// The M1b.4 review: the vendor's first getApp of a TextEdit it launches can hit timeoutReached and bind on a retry
+// (macos.mjs). A side's retry is part of its bind's cost: bind.getApp is judged as the first attempt plus the retry, on
+// whichever side retried, and the retry row stays reported (not judged), never dropped.
+const retried = (firstMs, retryMs) => (m, rows) => {
+  const i = rows.findIndex(r => r.op === 'bind.getApp');
+  rows[i] = {...rows[i], ok: false, wallMs: firstMs, inCellMs: firstMs - 10, error: 'Computer Use server error -10005: timeoutReached'};
+  rows.splice(i + 1, 0, {op: 'bind.getApp.retry', sample: 1, ok: true, wallMs: retryMs, inCellMs: retryMs - 10});
+};
+test('a bind retried on one side is judged as the first attempt plus the retry, its retry row reported', t => {
+  const vendorRetry = judge(t, 'engines', triple(VV, {edit: retried(5200, 700)}), triple(VC));
+  assert.deepEqual(vendorRetry.problems, []);
+  assert.equal(vendorRetry.verdict, 'PASS');
+  const bind = op(vendorRetry, 'bind.getApp');
+  assert.equal(bind.verdict, 'pass');
+  assert.equal(bind.baseline.ok, 3, 'the retried bind succeeded');
+  assert.equal(bind.baseline.wall.median, 5900);
+  const retry = op(vendorRetry, 'bind.getApp.retry');
+  assert.equal(retry.verdict, 'not judged');
+  assert.match(retry.reasons.join(), /counted in bind\.getApp, the first attempt plus the retry/);
+  assert.match(renderComparison(vendorRetry), /\| bind\.getApp\.retry \|/);
+  // The same retry on the candidate is its cost: well beyond the baseline's bind, it fails the bind.
+  const candidateRetry = judge(t, 'engines', triple(VV), triple(VC, {edit: retried(5200, 700)}));
+  assert.equal(op(candidateRetry, 'bind.getApp').verdict, 'fail');
+  assert.equal(op(candidateRetry, 'bind.getApp.retry').verdict, 'not judged');
+  // A retry that failed too is a failed bind.
+  const failed = judge(t, 'engines', triple(VV), triple(VC, {edit: (m, rows) => { retried(5200, 700)(m, rows); rows.find(r => r.op === 'bind.getApp.retry').ok = false; }}));
+  assert.match(op(failed, 'bind.getApp').reasons.join(), /0\/3 succeeded, the baseline 3\/3/);
+});

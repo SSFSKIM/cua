@@ -23,6 +23,7 @@ import {readFileSync, realpathSync} from 'node:fs';
 import {homedir} from 'node:os';
 import {engineDirectory, enginePaths, installedEngine} from '../../src/runtime/engine.mjs';
 import {engineBuild} from '../../src/runtime/engine-bundle.mjs';
+import {configuredIdentity, identityMatches, readSignature} from '../../src/runtime/engine-sign.mjs';
 import {bundleIdentity} from '../../src/services/engine/client.mjs';
 
 export const ENGINES = Object.freeze(['vendor', 'cua']);
@@ -30,8 +31,9 @@ export const ENGINES = Object.freeze(['vendor', 'cua']);
 const OWN = Object.freeze({vendor: {origin: 'pinned runtime', process: 'SkyComputerUseService', who: 'the pinned runtime\'s helper'},
   cua: {origin: 'approved engine', process: 'cua-engine', who: 'the approved engine\'s process'}});
 
-// A cua engine build is a 64-hex hash, shown by its first 12; anything else (the vendor's runtime release) as it is.
-export const shortBuild = build => (typeof build === 'string' && /^[0-9a-f]{64}$/.test(build) ? build.slice(0, 12) : String(build ?? 'none'));
+// A build as an attestation shows it: a cua engine build (a 64-hex hash) by its first 12, anything else (the vendor's
+// runtime release) as it is. (src/runtime/engine.mjs shortBuild shortens only cua's.)
+export const attestedBuild = build => (typeof build === 'string' && /^[0-9a-f]{64}$/.test(build) ? build.slice(0, 12) : String(build ?? 'none'));
 
 // The run's options against its platform and surface: --engine and --approved-engine belong to a macOS computer run,
 // which needs both, on one of the three lanes.
@@ -46,20 +48,32 @@ export function assertEngineOptions({platform, surface, host, engine, approvedEn
   if (!/^\/[^\0\n]*$/.test(approvedEngine)) throw new Error('--approved-engine needs an absolute path');
 }
 
+// The approved bundle's signature as evidence may carry it (the spec's M1b pre-flight item 2): its kind and whether it
+// matches the configured signing identity, never the identity itself (approvedEngineFacts keeps only these two keys, and
+// {kind: null, identityMatches: null} when the signature cannot be read).
+function publicSignature(bundle, env) {
+  const signature = readSignature(bundle);
+  return {kind: signature?.kind ?? null, identityMatches: signature ? identityMatches(signature, configuredIdentity({env})) : null};
+}
+
 // Device side, run by the preflight in the serve's environment: the checkout's build, the approved engine as the serve's
-// selection resolves it (null when none is approved), and what explains a missing one (approved.json's build, the
-// bundle's own build); the bundle --approved-engine names and the approved one, each by its real path.
-export function approvedEngineFacts({approvedEngine, env = process.env, installed, checkoutBuild = () => engineBuild()}) {
+// selection resolves it (null when none is approved) with its signature (publicSignature), and what explains a missing
+// one (approved.json's build, the bundle's own build); the bundle --approved-engine names and the approved one, each by
+// its real path. `installed`, `checkoutBuild` and `signatureOf` are seams for the tests.
+export function approvedEngineFacts({approvedEngine, env = process.env, installed, checkoutBuild = () => engineBuild(), signatureOf = bundle => publicSignature(bundle, env)}) {
   const dir = engineDirectory(env.HOME || homedir());
   const real = path => { try { return realpathSync(path); } catch { return null; } };
   const app = (installed ?? (() => installedEngine({dir})))();
   const paths = enginePaths(dir);
+  const signatureOfApproved = bundle => {
+    try { const {kind = null, identityMatches: matches = null} = signatureOf(bundle) ?? {}; return {kind, identityMatches: matches}; } catch { return {kind: null, identityMatches: null}; }
+  };
   let approvedRecordBuild = null, bundleBuild = null;
   try { approvedRecordBuild = JSON.parse(readFileSync(paths.approved, 'utf8'))?.build ?? null; } catch {}
   try { bundleBuild = bundleIdentity(paths.bundle).build; } catch {}
   return {
     checkoutBuild: checkoutBuild(),
-    installed: app ? {bundlePath: app.bundlePath, engineVersion: app.engineVersion, build: app.build} : null,
+    installed: app ? {bundlePath: app.bundlePath, engineVersion: app.engineVersion, build: app.build, signature: signatureOfApproved(app.bundlePath)} : null,
     installedReal: app ? real(app.bundlePath) : null,
     approvedEngineReal: approvedEngine ? real(approvedEngine) : null,
     approvedRecordBuild, bundleBuild, home: env.HOME ?? null,
@@ -75,14 +89,14 @@ export function checkApprovedEngine(facts, approvedEngine) {
   if (!facts.installed) {
     const why = facts.bundleBuild === null ? 'there is no engine bundle at the approved location'
       : facts.approvedRecordBuild === null ? 'the bundle has no approved.json beside it'
-      : facts.bundleBuild !== facts.approvedRecordBuild ? `the bundle's build ${shortBuild(facts.bundleBuild)} is pending: approved.json names ${shortBuild(facts.approvedRecordBuild)}`
+      : facts.bundleBuild !== facts.approvedRecordBuild ? `the bundle's build ${attestedBuild(facts.bundleBuild)} is pending: approved.json names ${attestedBuild(facts.approvedRecordBuild)}`
       : 'the bundle\'s signature is not approved.json\'s';
     throw new Error(`no approved engine on the device under HOME ${facts.home ?? '?'}: ${why}; ${remedy}`);
   }
   if (!facts.approvedEngineReal || facts.approvedEngineReal !== facts.installedReal)
     throw new Error(`--approved-engine ${approvedEngine} is not the approved engine the serve resolves (${facts.installed.bundlePath})`);
   if (facts.installed.build !== facts.checkoutBuild)
-    throw new Error(`the checkout's engine build ${shortBuild(facts.checkoutBuild)} is not the approved build ${shortBuild(facts.installed.build)}: ${remedy}`);
+    throw new Error(`the checkout's engine build ${attestedBuild(facts.checkoutBuild)} is not the approved build ${attestedBuild(facts.installed.build)}: ${remedy}`);
   return {approved: facts.installed, checkoutBuild: facts.checkoutBuild};
 }
 
@@ -102,13 +116,13 @@ export function engineProblem(meta, name) {
   if (!record) return null;
   const {requested, approved, checkoutBuild} = record;
   if (!approved?.build || !checkoutBuild) return `${name}: records no approved engine or checkout build`;
-  if (approved.build !== checkoutBuild) return `${name}: the checkout's build ${shortBuild(checkoutBuild)} is not the approved build ${shortBuild(approved.build)}`;
+  if (approved.build !== checkoutBuild) return `${name}: the checkout's build ${attestedBuild(checkoutBuild)} is not the approved build ${attestedBuild(approved.build)}`;
   if (record.unattested > 0) return `${name}: ${record.unattested} js results carry no cua/nativeEngine attestation`;
   if (record.attested?.length !== 1) return `${name}: ${record.attested?.length ?? 0} distinct engine attestations (${JSON.stringify(record.attested ?? [])}); one engine must answer every result`;
   const [answered] = record.attested;
   if (answered.engine !== requested) return `${name}: the ${answered.engine} engine answered, not the requested ${requested}`;
   if (requested === 'cua') {
-    if (answered.build !== checkoutBuild) return `${name}: the attested build ${shortBuild(answered.build)} is not the checkout's and approved build ${shortBuild(checkoutBuild)}`;
+    if (answered.build !== checkoutBuild) return `${name}: the attested build ${attestedBuild(answered.build)} is not the checkout's and approved build ${attestedBuild(checkoutBuild)}`;
     if (answered.version !== approved.engineVersion) return `${name}: the attested version ${answered.version} is not the approved engine's ${approved.engineVersion}`;
   } else if (answered.build !== meta.runtime?.release) return `${name}: the vendor engine attests the runtime ${answered.build}, not the run's ${meta.runtime?.release}`;
   return helperProblem(meta, name, requested);
@@ -127,7 +141,7 @@ function helperProblem(meta, name, requested) {
 // The engine's launch failure in one cell's result ({cell, failure}, the run loop's), as its text; null for any other
 // outcome. These are cua's service's sentences for an engine that did not come up or is not the bundle's
 // (src/services/engine/client.mjs establish and check, bundleIdentity).
-const LAUNCH_FAILURE = /cua engine (did not start|launch request failed|API version mismatch|mismatch|native pipe is unavailable)|cua engine: cannot read the bundle/;
+const LAUNCH_FAILURE = /cua engine (did not start|launch request failed|API version mismatch|mismatch|native pipe is unavailable)|cua engine: (cannot read the bundle's Info\.plist|the bundle's Info\.plist at .* names no CFBundleShortVersionString or CUAEngineBuild)/;
 export function launchFailureOf(r) {
   const text = r?.cell ? (r.cell.ok ? null : r.cell.error) : r?.failure;
   return typeof text === 'string' && LAUNCH_FAILURE.test(text) ? text : null;

@@ -35,10 +35,15 @@ export function macosDevice(remote, {checkout, runtimeRoot, engineBundle = null}
     },
     // Brings TextEdit to the front from the device side (LaunchServices activates the running instance).
     activate: () => remote('/usr/bin/open -a TextEdit'),
+    // Ends the TextEdit the run launched, by its pid, when it has no document (no scratch document was ever made).
+    terminateTextEdit: pid => remote(`/bin/kill -TERM ${Number(pid)}`),
   };
 }
 
-const describeFront = front => (front && typeof front === 'object' ? `${front.bundleId ?? 'an app with no bundle id'} (pid ${front.pid})` : 'unreadable');
+// The Open and Save panels are served out of process: a TextEdit fresh from its launch may show only that panel, and
+// the frontmost reader may then name the panel's service rather than TextEdit.
+const PANEL_SERVICE = /^com\.apple\.appkit\.xpc\.openAndSavePanelService\b/;
+const describeFront = front => (front && typeof front === 'object' ? `${front.bundleId ?? 'an app with no bundle id'} (pid ${front.pid})${PANEL_SERVICE.test(front.bundleId ?? '') ? ': TextEdit\'s Open panel, served out of process, is in front' : ''}` : 'unreadable');
 
 // A cell that sends keys to TextEdit runs only while the run's TextEdit process is the device's frontmost application
 // (#162, scripts/accept/key-guard.mjs, by pid since M1b: another TextEdit process is not the target); otherwise it is not
@@ -66,20 +71,37 @@ async function activate(ctx) {
   const started = performance.now();
   device.activate();
   let front = null, attempts = 0;
+  const seen = [];
   for (;;) {
     try { front = await device.frontmost(); } catch { front = null; }
     attempts++;
+    if (!seen.some(s => JSON.stringify(s) === JSON.stringify(front ?? 'unreadable'))) seen.push(front ?? 'unreadable');
     if (front?.pid === pid || performance.now() - started >= limit) break;
     await sleep(ACTIVATE_POLL_MS);
   }
   const ok = front?.pid === pid;
-  emit({op: 'setup.activate', sample: 1, ok, wallMs: round(performance.now() - started), attempts, frontmost: front ?? 'unreadable',
+  emit({op: 'setup.activate', sample: 1, ok, wallMs: round(performance.now() - started), attempts, frontmost: front ?? 'unreadable', seen,
     note: 'open -a TextEdit from the device, then the frontmost application read until it is the run\'s TextEdit; harness setup, not judged'});
   if (!ok) throw new Error(`setup.activate: TextEdit (pid ${pid}) is not the frontmost application after open -a TextEdit; the frontmost is ${describeFront(front)}`);
 }
 
-// TextEdit this run launched is quit from its scratch document (the cell refuses when that is not in front).
+// TextEdit this run launched is quit from its scratch document (the cell refuses when that is not in front). A run that
+// failed before it made one (a failed bind or activation) has no window it can quit from, and nobody's document in that
+// TextEdit: it is ended by the pid the run read when it saw it come up, so the sitting's next run is not refused.
 async function quitTextEdit(ctx) {
+  const {meta, device} = ctx;
+  if (meta.textEdit?.launchedByRun && !meta.textEdit.scratchDocument && !meta.textEdit.quitByRun && Number.isSafeInteger(meta.textEdit.pid)) {
+    device.terminateTextEdit(meta.textEdit.pid);
+    let running = true;
+    for (let i = 0; i < 10 && running; i++) { await sleep(500); running = device.leftovers().textEditRunning; }
+    meta.textEdit.quitByRun = !running;
+    meta.textEdit.quitHow = 'SIGTERM to the pid the run launched: no scratch document existed';
+    if (running) meta.textEdit.quitError = `TextEdit (pid ${meta.textEdit.pid}) still running after SIGTERM`;
+    return;
+  }
+  return quitFromScratch(ctx);
+}
+async function quitFromScratch(ctx) {
   const {meta, device} = ctx;
   if (!meta.textEdit?.launchedByRun || meta.textEdit.quitByRun || !ctx.warmOpen()) return;
   const quit = await keyCell(ctx, cells.QUIT_TEXTEDIT, ['super+q']);
@@ -116,23 +138,27 @@ export const macosAdapter = {
     row('bind.getApp', 1, bind, {approvals: approvals.length, textEditLaunched: !pre.textEditRunning});
     approvals.forEach((a, i) => emit({op: 'approval.elicitation', sample: i + 1, ok: a.action === 'accept', wallMs: round(a.at - bind.started), app: a.app, action: a.action,
       note: 'wallMs: from the start of the getApp call to the approval request; the harness answers at once'}));
-    meta.textEdit.launchedByRun = !pre.textEditRunning && device.leftovers().textEditRunning;
     let bound = bind;
     if (!bind.cell?.ok && /timeoutReached/.test(bind.cell?.error ?? '')) {
       bound = guard(await js(cells.BIND, BIND_MS), 'cua.getApp(TextEdit), retried');
       row('bind.getApp.retry', 1, bound, {approvals: ctx.elicited().length});
     }
-    // The engine requested and the one the results attested so far (every one must agree, ./engine.mjs engineProblem),
-    // with both engines' processes running now.
-    meta.service = {surface: 'computer', engine: meta.nativeEngine?.requested ?? 'vendor', answered: meta.nativeEngine?.attested?.[0]?.engine ?? 'vendor', ...ctx.helperAttestation()};
+    // Whether the bind launched TextEdit, and its pid whenever it did, bound or not: the key guard's target and, should
+    // the run fail before its scratch document, what cleanup ends.
+    meta.textEdit.launchedByRun = !pre.textEditRunning && device.leftovers().textEditRunning;
+    if (meta.textEdit.launchedByRun) meta.textEdit.pid = device.textEditPid();
+    // The engine requested and the one the results attested so far (every one must agree, ./engine.mjs engineProblem;
+    // 'unattested' before any did), with both engines' processes running now.
+    meta.service = {surface: 'computer', engine: meta.nativeEngine?.requested ?? 'vendor', answered: meta.nativeEngine ? meta.nativeEngine.attested[0]?.engine ?? 'unattested' : 'vendor', ...ctx.helperAttestation()};
     if (!bound.cell?.ok) throw new Error(`cua.getApp(TextEdit) failed: ${bound.cell?.error ?? bound.failure}`);
-    meta.textEdit.pid = device.textEditPid();
+    meta.textEdit.pid ??= device.textEditPid();
     await activate(ctx);
 
     let scratch = guard(await js(cells.NEW_DOCUMENT), 'the scratch document');
     if (scratch.cell?.ok && scratch.cell.value?.needsKeys) scratch = guard(await keyCell(ctx, cells.NEW_DOCUMENT_KEYS, ['super+n']), 'the scratch document');
     row('setup.newDocument', 1, scratch);
     if (!scratch.cell?.ok) throw new Error(`no scratch document: ${scratch.cell?.error ?? scratch.failure}`);
+    meta.textEdit.scratchDocument = true;
     // The scratch document in front, checked between series (op guard.scratch, not charged to any sample).
     const scratchGuard = async sample => {
       const r = row('guard.scratch', sample, guard(await js(cells.SCRATCH_GUARD), 'the scratch guard'));

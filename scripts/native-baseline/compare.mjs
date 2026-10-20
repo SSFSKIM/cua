@@ -43,13 +43,32 @@ const NOT_JUDGED = /^(ssh|approval|guard|setup)\./;
 const NET_OF_SSH = new Set(['cold.miss.initialize', 'cold.miss.total', 'cold.hit.initialize', 'cold.hit.total']);
 const COMPARABLE = {device: 'device', engine: 'native engine', approvedEngine: 'approved engine', release: 'runtime release', hardware: 'hardware', os: 'OS', display: 'display', service: 'native service', sandbox: 'sandbox', plan: 'sample plan'};
 const RUNS = 3;
+// A row that is part of another's cost: macOS's bind retry (macos.mjs: the vendor's first getApp of a TextEdit it launches
+// can hit timeoutReached, and the retry binds). Each side's bind.getApp is judged as the first attempt plus the retry,
+// whichever side retried; the retry row stays in the report, not judged.
+const FOLDED = {'bind.getApp.retry': 'bind.getApp'};
+function foldRetries(runs) {
+  return runs.map(run => {
+    const rows = run.rows.map(row => ({...row}));
+    for (const [retryOp, op] of Object.entries(FOLDED)) for (const retry of rows.filter(r => r.op === retryOp)) {
+      const first = rows.find(r => r.op === op && r.sample === retry.sample);
+      if (!first) continue;
+      const add = key => (first[key] === undefined && retry[key] === undefined ? undefined : (first[key] ?? 0) + (retry[key] ?? 0));
+      Object.assign(first, {ok: retry.ok, wallMs: add('wallMs'), inCellMs: add('inCellMs'), retried: true, firstError: first.error ?? null});
+      if (retry.ok === true) delete first.error; else first.error = retry.error ?? 'the retry failed';
+      if (first.inCellMs === undefined) delete first.inCellMs;
+    }
+    return {...run, rows};
+  });
+}
 const round = ms => (ms === null || ms === undefined ? null : Math.round(ms * 10) / 10);
 
 // What one side's runs are: their pooled summary, their requested host (when every run agrees on one) and its problems.
-function sideOf(label, runs, expectedHost, usage = 'compare <vendor-dir> <cua-dir>') {
+function sideOf(label, recorded, expectedHost, usage = 'compare <vendor-dir> <cua-dir>', judgedBy = 'acceptance 8') {
+  const runs = foldRetries(recorded);
   const summary = summarize(runs);
   const problems = summary.problems.map(p => `${label}: ${p}`);
-  if (runs.length !== RUNS) problems.push(`${label}: ${runs.length} run${runs.length === 1 ? '' : 's'}, acceptance 8 needs three`);
+  if (runs.length !== RUNS) problems.push(`${label}: ${runs.length} run${runs.length === 1 ? '' : 's'}, ${judgedBy} needs three`);
   const hosts = [...new Set(runs.map(r => r.meta.host))];
   for (const run of runs) if (run.meta.host === undefined) problems.push(`${label}: ${run.name} has no requested host (recorded before host attestation; remeasure it)`);
   const host = hosts.length === 1 ? hosts[0] ?? null : null;
@@ -77,6 +96,7 @@ function judgeOperation(op, baseline, candidate) {
   const c = figures(candidate.summary.operations.find(o => o.op === op), candidate, net);
   const basis = net ? (baseline.ssh !== null && candidate.ssh !== null ? 'wall median net of ssh.roundtrip median' : 'wall median (no ssh.roundtrip to net out)') : 'wall median';
   const base = {op, kind: 'latency', basis, baseline: b, candidate: c, limitMs: null};
+  if (FOLDED[op]) return {...base, basis: null, verdict: 'not judged', reasons: [`counted in ${FOLDED[op]}, the first attempt plus the retry`]};
   // A row the runner writes only on failure (a cold connection's end_task) has no baseline counterpart on a clean
   // baseline: an operation only the candidate has fails when any of its samples failed, and is reported otherwise.
   if (!b) {
@@ -245,7 +265,7 @@ export function compareLanes(mode, baselineRuns, candidateRuns) {
   if (!lane) throw new Error(`no lane comparison ${mode}; the modes are ${Object.keys(LANE_MODES).join(', ')}`);
   const usage = `compare ${lane.flag} ${lane.usage}`;
   const sides = [['baseline', baselineRuns, lane.baseline], ['candidate', candidateRuns, lane.candidate]].map(([label, runs, expected]) => {
-    const side = sideOf(label, runs, expected.host, usage);
+    const side = sideOf(label, runs, expected.host, usage, `comparison ${lane.id}`);
     for (const run of runs) if (!run.meta.nativeEngine) side.problems.push(`${label}: ${run.name} has no requested engine (recorded before engine attestation; remeasure it)`);
     const engines = [...new Set(runs.map(r => r.meta.nativeEngine?.requested).filter(Boolean))];
     if (engines.length > 1) side.problems.push(`${label}: its runs requested ${engines.join(' and ')} engines`);

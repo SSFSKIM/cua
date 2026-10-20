@@ -10,7 +10,7 @@ import {mkdtempSync, realpathSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {approvedEngineFacts, assertEngineOptions, attestEngine, checkApprovedEngine, engineProblem, launchFailureOf} from '../../scripts/native-baseline/engine.mjs';
+import {approvedEngineFacts, assertEngineOptions, attestedBuild, attestEngine, checkApprovedEngine, engineProblem, launchFailureOf} from '../../scripts/native-baseline/engine.mjs';
 import {nativeEnvironment} from '../../scripts/native-baseline/remote.mjs';
 
 const BUILD = 'a'.repeat(64), OTHER = 'b'.repeat(64);
@@ -108,6 +108,7 @@ test('a launch failure of cua\'s engine is told apart from any other failure of 
     'cua engine mismatch: the engine answering /x/engine.sock is version 0.1.0 build b, but /x is version 0.1.0 build a',
     'cua engine native pipe is unavailable: the trusted nodeRepl has no nativePipe',
     "cua engine: cannot read the bundle's Info.plist at /x/Contents/Info.plist (ENOENT)",
+    "cua engine: the bundle's Info.plist at /x/Contents/Info.plist names no CFBundleShortVersionString or CUAEngineBuild",
   ]) assert.equal(launchFailureOf(failure(text)), text, text);
   assert.equal(launchFailureOf({failure: 'cua engine did not start: nothing answered'}), 'cua engine did not start: nothing answered');
   for (const other of [failure('Computer Use server error -10005: timeoutReached'), failure('Computer Use was not approved to use TextEdit'), {cell: {ok: true, value: {}}}, {failure: 'MCP request timed out'}, {}])
@@ -135,13 +136,15 @@ test('the approved engine the harness reads is the one the serve\'s selection re
   const file = join(scratch, 'probe.mjs');
   writeFileSync(file, script);
   const out = JSON.parse(execFileSync('/bin/sh', ['-c', `exec env ${env} ${JSON.stringify(process.execPath)} ${JSON.stringify(file)}`], {encoding: 'utf8', env: {PATH: process.env.PATH, HOME: '/nonexistent-ambient-home'}}));
-  assert.deepEqual(out.facts.installed, {bundlePath: installed.bundlePath, engineVersion: installed.engineVersion, build: installed.build});
+  // The fixture is signed ad hoc, and the scratch HOME configures no identity to match: the signature as evidence carries it.
+  assert.deepEqual(out.facts.installed, {bundlePath: installed.bundlePath, engineVersion: installed.engineVersion, build: installed.build, signature: {kind: 'adhoc', identityMatches: null}});
   assert.equal(out.facts.installedReal, realpathSync(installed.bundlePath));
   assert.equal(out.facts.approvedEngineReal, realpathSync(installed.bundlePath));
   assert.equal(out.facts.home, scratch);
   assert.equal(out.selected.engine, 'cua');
   assert.deepEqual(out.selected.app, {bundlePath: installed.bundlePath, engineVersion: installed.engineVersion, build: installed.build});
-  assert.deepEqual(checkApprovedEngine({...out.facts, checkoutBuild: installed.build}, installed.bundlePath).approved, out.selected.app);
+  const {signature: _signature, ...approved} = checkApprovedEngine({...out.facts, checkoutBuild: installed.build}, installed.bundlePath).approved;
+  assert.deepEqual(approved, out.selected.app);
 });
 
 test('the checkout\'s build is the one src/runtime/engine-bundle.mjs computes', async () => {
@@ -150,4 +153,18 @@ test('the checkout\'s build is the one src/runtime/engine-bundle.mjs computes', 
   assert.equal(facts.checkoutBuild, engineBuild());
   assert.equal(facts.installed, null);
   assert.equal(facts.approvedEngineReal, null);
+});
+
+// The approved engine's signature is recorded as the spec's pre-flight item 2 allows: its kind and whether it matches the
+// configured identity, never the identity (no name, no hash).
+test('the approved engine\'s facts carry its signature as {kind, identityMatches} only', () => {
+  const installed = () => ({bundlePath: '/A/cua Engine.app', engineVersion: '0.1.0', build: BUILD});
+  const read = approvedEngineFacts({approvedEngine: '/A/cua Engine.app', env: {HOME: '/nowhere'}, installed, checkoutBuild: () => BUILD,
+    signatureOf: bundle => (assert.equal(bundle, '/A/cua Engine.app'), {kind: 'identity', identityMatches: true, sha1: 'F'.repeat(40), authority: 'Apple Development: Someone (TEAMID)'})});
+  assert.deepEqual(read.installed, {bundlePath: '/A/cua Engine.app', engineVersion: '0.1.0', build: BUILD, signature: {kind: 'identity', identityMatches: true}});
+  assert.doesNotMatch(JSON.stringify(read), /FFFFFFFF|Apple Development|TEAMID/);
+  const unreadable = approvedEngineFacts({approvedEngine: '/A/cua Engine.app', env: {HOME: '/nowhere'}, installed, checkoutBuild: () => BUILD, signatureOf: () => { throw new Error('codesign failed'); }});
+  assert.deepEqual(unreadable.installed.signature, {kind: null, identityMatches: null});
+  assert.equal(attestedBuild(BUILD), BUILD.slice(0, 12));
+  assert.equal(attestedBuild('26.928.40906-darwin-arm64'), '26.928.40906-darwin-arm64');
 });

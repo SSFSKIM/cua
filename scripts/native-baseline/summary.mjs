@@ -16,7 +16,7 @@ import {readFileSync, readdirSync, existsSync} from 'node:fs';
 import {join} from 'node:path';
 import {validateHostAttestations} from '../bench-summary.mjs';
 import {METHOD_CASES} from './linux-cells.mjs';
-import {engineProblem, shortBuild} from './engine.mjs';
+import {engineProblem, attestedBuild} from './engine.mjs';
 
 // The order operations are reported in; anything else follows alphabetically.
 export const OPERATION_ORDER = [
@@ -74,10 +74,10 @@ function hostAttested(meta) {
 function engineAttested(meta) {
   const record = meta.nativeEngine;
   if (!record) return null;
-  const answered = (record.attested ?? []).map(a => `${a.engine} ${a.version}, build ${shortBuild(a.build)}`);
+  const answered = (record.attested ?? []).map(a => `${a.engine} ${a.version}, build ${attestedBuild(a.build)}`);
   return `${record.requested} (attested: ${answered.join('; ') || 'none'}${record.unattested ? `; ${record.unattested} unattested` : ''})`;
 }
-const approvedAttested = approved => (approved?.build ? `${shortBuild(approved.build)} (cua ${approved.engineVersion ?? '?'}, ${approved.bundlePath ?? '?'})` : null);
+const approvedAttested = approved => (approved?.build ? `${attestedBuild(approved.build)} (cua ${approved.engineVersion ?? '?'}, ${approved.bundlePath ?? '?'})` : null);
 // The facts a run attests, as the strings the summary compares and prints.
 export function attestation(meta) {
   const hw = meta.hardware ?? {}, os = meta.os ?? {}, display = meta.display ?? {}, service = meta.service ?? {}, plan = meta.plan ?? {};

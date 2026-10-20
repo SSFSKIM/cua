@@ -176,6 +176,7 @@ import {helperFor} from '../sandbox/linux.mjs';
 import {removeCompatSettings, SESSION_ID, writeCompatSettings} from '../sandbox/compat-settings.mjs';
 import {engineDirectory, enginePaths, installedEngine} from './engine.mjs';
 import {engineSettingsPath, readEngineSettings} from './engine-sign.mjs';
+import {plistString} from '../services/engine/client.mjs';
 
 export {NODE_FLOOR};
 
@@ -423,21 +424,21 @@ const engineSource = (reason, value) => (reason === 'settings' ? `"engine": "${v
 
 // The native engine of a macOS computer session -> {engine: 'vendor' | 'cua', reason, status, app?}. The setting is
 // CUA_NATIVE_ENGINE in `env` (unset or empty: not set), else `engine` in ~/.config/cua/engine.json (`config`, read only
-// then), else `defaultEngine`; reason `explicit`, `settings` or `default`. An unknown value is refused (invalid_setting,
-// one sentence naming the two values), as is an engine.json that cannot be read. The vendor engine with
-// `requestedHost` cua is refused (repl_host_refused, today's sentence): its helper accepts only the vendor host. cua's
-// engine needs an approved engine on this Mac (`installed`, asked only here and once: installedEngine reads the bundle's
-// signature with codesign) and carries it as `app` {bundlePath, engineVersion, build}; without one an explicit setting,
-// or CUA_REPL_HOST=cua, is refused (engine_not_installed, naming `cua install --engine`), while the default keeps the
-// vendor engine (reason `engine_not_installed`, status `warn`) until M6, so a plugin update never breaks a session
-// before the engine is installed. Status is `pass` otherwise. `env.HOME` locates engine.json and the approved engine,
-// as `cua engine` places them.
+// then), else `defaultEngine`; reason `explicit`, `settings` or `default`. An unknown value is refused
+// (invalid_setting, one sentence naming the two values), as is an engine.json that cannot be read. The vendor engine
+// with `requestedHost` cua is refused (repl_host_refused, naming CUA_NATIVE_ENGINE=cua): its helper accepts only the
+// vendor host. cua's engine needs an approved engine on this Mac (`installed`, asked only here and once:
+// installedEngine reads the bundle's signature with codesign) and carries it as `app` {bundlePath, engineVersion,
+// build}; without one an explicit setting, or CUA_REPL_HOST=cua, is refused (engine_not_installed, naming `cua install
+// --engine`), while the default keeps the vendor engine (reason `engine_not_installed`, status `warn`) until M6, so a
+// plugin update never breaks a session before the engine is installed. Status is `pass` otherwise. `env.HOME` locates
+// engine.json and the approved engine, as `cua engine` places them.
 export function nativeEngineFor({env, requestedHost = null, defaultEngine = DEFAULT_NATIVE_ENGINE,
   config = () => readEngineSettings({env}), installed = () => installedEngine({dir: engineDirectory(env.HOME || homedir())})}) {
   const setting = engineSetting(env, config, defaultEngine);
   if (setting.engine === 'vendor') {
     if (requestedHost === 'cua')
-      fail('repl_host_refused', 'CUA_REPL_HOST=cua is not supported with the computer surface on macOS: its computer-use helper accepts only the vendor host\'s node_repl as a peer until #117 replaces it. Use CUA_SHIM_SURFACES=browser for cua\'s own host, or unset CUA_REPL_HOST (or use CUA_REPL_HOST=vendor)');
+      fail('repl_host_refused', `CUA_REPL_HOST=cua is not supported with the computer surface on macOS and the vendor engine (${engineSource(setting.reason, 'vendor')}): the vendor's computer-use helper accepts only the vendor host's node_repl as a peer. Set CUA_NATIVE_ENGINE=cua to run the computer surface on cua's own host with cua's engine, use CUA_SHIM_SURFACES=browser for a browser-only session there, or unset CUA_REPL_HOST (or use CUA_REPL_HOST=vendor) to keep the vendor engine`);
     return {engine: 'vendor', reason: setting.reason, status: 'pass'};
   }
   const app = installed();
@@ -471,8 +472,7 @@ function engineSetting(env, config, defaultEngine) {
 // A bundle's CFBundleShortVersionString from its XML Info.plist, or null (the vendor engine's attestation).
 function bundleVersion(appPath) {
   try {
-    const match = /<key>CFBundleShortVersionString<\/key>\s*<string>([^<]*)<\/string>/.exec(readFileSync(join(appPath, 'Contents', 'Info.plist'), 'utf8'));
-    return match ? match[1] : null;
+    return plistString(readFileSync(join(appPath, 'Contents', 'Info.plist'), 'utf8'), 'CFBundleShortVersionString');
   } catch { return null; }
 }
 

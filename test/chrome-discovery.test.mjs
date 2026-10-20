@@ -2,6 +2,7 @@
 // BROWSER_USE_BACKEND_PATHS to the socket of every profile bound on the cua route plus every socket present in
 // $CUA_HOME/chrome/b, so a Chrome opened after the launch is found at its pre-listed path. The variable is always set,
 // an empty list included, so the service never scans anywhere else.
+import './helpers/scratch-home.mjs'; // first: the native engine's selection must not read the account's own settings
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdirSync, realpathSync, writeFileSync} from 'node:fs';

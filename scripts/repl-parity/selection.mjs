@@ -18,8 +18,9 @@ export const ORACLE_DEFAULT_ENGINE='vendor';
 // browser service, so a home whose registration is the ChatGPT route's (`chatgpt`, `cua-then-chatgpt`) selects as any
 // other. The rows keep every registration ordering and MAWS to show exactly that.
 // The computer surface on macOS follows #117's engine × host table instead (macosComputer below): a row's `engine` is
-// CUA_NATIVE_ENGINE (`unset`, `vendor`, `cua`, or `invalid`), from `engineFrom` `env` or `settings` (~/.config/cua/
-// engine.json), `installed` whether the home has an approved engine, and `defaultEngine` the default under test.
+// CUA_NATIVE_ENGINE (`unset`; `empty`, the empty string, which reads as unset; `vendor`, `cua`, or `invalid`), from
+// `engineFrom` `env` or `settings` (~/.config/cua/engine.json), `installed` whether the home has an approved engine,
+// and `defaultEngine` the default under test.
 export function expectedSelection(row){
  const {platform,override,node24=true,lane='ordinary'}=row;
  const surfaces=lane==='profiles'?['browser']:row.surfaces;
@@ -36,8 +37,8 @@ export function expectedSelection(row){
 // #117's table, its refusals in their order: an unknown engine, the host setting, the approved engine, Node. An explicit
 // engine (or CUA_REPL_HOST=cua) refuses where a default cua engine keeps the vendor host and engine with a warning.
 function engineTable({override,engine='unset',engineFrom='env',installed=false,defaultEngine=ORACLE_DEFAULT_ENGINE},availableNode){
- if(!['unset','vendor','cua'].includes(engine))return {error:'invalid_setting',...(engineFrom==='env'?{sentence:INVALID_ENGINE}:{})};
- const selected=engine==='unset'?defaultEngine:engine,explicit=engine!=='unset'||override==='cua';
+ if(!['unset','empty','vendor','cua'].includes(engine))return {error:'invalid_setting',...(engineFrom==='env'?{sentence:INVALID_ENGINE}:{})};
+ const set=engine!=='unset'&&engine!=='empty',selected=set?engine:defaultEngine,explicit=set||override==='cua';
  if(selected==='vendor')return override==='cua'?{error:'repl_host_refused'}:{host:'vendor',reason:override==='vendor'?'explicit':'macos_native_peer_requires_vendor',engine:'vendor',status:'pass'};
  if(!installed)return explicit?{error:'engine_not_installed'}:{host:'vendor',reason:'engine_not_installed',engine:'vendor',status:'warn'};
  if(override==='vendor')return {host:'vendor',reason:'explicit',engine:'cua',status:'pass'};
@@ -54,7 +55,8 @@ export function selectionCases(platform){
  const engineRow=fields=>({platform,registration:'cua',maws:false,surfaces:['computer'],lane:'ordinary',...fields});
  if(platform==='darwin'){
   for(const engine of ['unset','vendor','cua','invalid'])for(const override of ['unset','vendor','cua'])for(const node24 of [true,false])for(const installed of [false,true])rows.push(engineRow({override,node24,engine,installed}));
-  for(const [engine,installed] of [['cua',true],['cua',false],['vendor',true]])rows.push(engineRow({override:'unset',node24:true,engine,engineFrom:'settings',installed}));
+  for(const [engine,installed] of [['cua',true],['cua',false],['vendor',true],['invalid',true]])rows.push(engineRow({override:'unset',node24:true,engine,engineFrom:'settings',installed}));
+  for(const installed of [false,true])rows.push(engineRow({override:'unset',node24:true,engine:'empty',installed}));
   rows.push(engineRow({surfaces:['computer','browser'],override:'unset',node24:true,engine:'cua',installed:true}));
  }else for(const engine of ['cua','invalid'])rows.push(engineRow({override:'unset',node24:true,engine,installed:false}));
  return rows;

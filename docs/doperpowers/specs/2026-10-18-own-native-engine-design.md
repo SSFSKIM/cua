@@ -41,7 +41,7 @@ How to see it: on the mini, with the plugin at the release this work ships, run 
   - [x] (2026-10-19) The sitting review's fix wave merged (1be26dd1): coordinate clicks placed by the stored screenshot's scale and the current window origin with the `noScreenshotForCoordinates` refusal, the probe (d) harness reading the engine's replies; the spec updated (Decision Log, the post-fix-wave entry), probe (d)'s tap rows restated as uninformative.
 - [x] (2026-10-19) Critique debate on the design as revised by M0 (Decision Log entry 1): converged; every ruling folded in place (Decision Log, "critique of the revised design"). A2, the peer policy and install under distribution, was answered by the owner on 2026-10-20: cua stays internal, distribution is follow-up #174, and the design must not foreclose it (Decision Log). M1a is no longer gated by the critique.
 - [x] (2026-10-20) Second mini input sitting (2026-10-19, 19:17–20:42Z; merged as f3b2ae8e; outputs and notes under `spike/sit2/`): U2, U3, U4, U6, U7, U8, U9, U10, U12 and U13 closed, U5 decided by the owner (Input Monitoring required, the listen-only tap); M2a's route table measured (keys by route 2′, synthesized clicks by route 3); the spec revised (Decision Log, "second input sitting"). M1a's gates (U1, U2, U3) are cleared: M1a is next.
-- [ ] M1a — Engine core, basic input, policy; goldens on hosted CI.
+- [x] (2026-10-20 02:05Z) M1a — Engine core, basic input, policy; goldens on hosted CI (a807827a..b2ccdc3b; whole-branch review correct, its Minors fixed in 6f110605 or tracked; hosted CI GREEN on b2ccdc3b, run 39354209946, every default gate; report `docs/doperpowers/specs/2026-10-18-own-native-engine-m1a-report.md`).
   - [x] (2026-10-19 21:36Z) M1a.1 — Engine core (41de5400, review fixes f04664ac; reviewed clean): lineage tokens and re-resolution, the `Skyshot` token shape, the screenshot's sizing rule, the protocol's deadline and peer-policy setting, the withdrawn spike switches removed.
   - [x] (2026-10-19 22:54Z) M1a.2 — Engine input (7354c39c, review fixes 8e695c51, 7329cc35, 2050558a; reviewed clean): keys by route 2′, clicks 1 → 3 with `activationFailed` and the activation-point skip, the owning-pid forbidden check, `concealed`.
   - [x] (2026-10-20 00:13Z) M1a.2b — Engine derivations the goldens refuted (disclosable, settable, the value type, the window's document URL, the header title, focus and selection reads, action descriptions, the menu-bar node, an absent title as null); after M1a.2, before M1a.5.
@@ -744,4 +744,15 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
 
 ## Outcomes & Retrospective
 
-Pending — written at finish.
+Pending for the initiative — written at finish. M1a's interim account (2026-10-20) follows; the full record is `docs/doperpowers/specs/2026-10-18-own-native-engine-m1a-report.md`.
+
+**M1a (a807827a..b2ccdc3b, nothing run live).** The engine core, basic input and the service landed as six tasks, each executor-built and reviewed to clean: M1a.1 (core), M1a.2 (input), M1a.2b (derivations the goldens refuted, added mid-milestone), M1a.3 (renderer, diff, goldens), M1a.4 (`src/` integration and the ci-kit Swift gate), M1a.5 (protocol, client, policy, numbering, result meta, the untrusted path). The whole-branch review (reviewer-high, a807827a..bd1136f1) found the branch correct with three Minor findings: two fixed (6f110605), one a tech-debt row. Hosted CI carries `engine-swift` (Swift build and unit tests) beside `test`.
+
+What went as designed: the per-lineage token model, the routes the second sitting measured, and the renderer's goldens comparison modulo renumbering held through every review; the seams (synthetic AX trees, recorded fixtures, a fake engine) let every derivation and input decision be tested without a GUI.
+
+What the milestone taught:
+- The goldens are the strongest evidence M1a has, and they refuted the engine more than the renderer: M1a.3's first run showed derivations ported by reading the vendor's output rather than its code. M1a.2b re-took each predicate from the decompiled function that produces it, with its address, and the remaining mismatches are declared engine-fault corrections that expire when M1b re-records the goldens live. Rule: port a derivation from the code that produces it, never fit it to recorded output.
+- The hosted runner grants the engine Accessibility, against this spec's assumption; the untrusted real-engine path runs nowhere, and the fake engine carries it. Live AX observation on a hosted runner is a follow-up.
+- A gate whose path filter the milestone touched only late ran only at the end: `sandbox-live`'s probe-secrets still compared a substituted request against the bare input after M1a.4 added the `concealed` mark, and failed on bd1136f1 (fixed in b2ccdc3b). A change to a wire shape should run every gate whose `paths` it matches before the frontier review, not after.
+
+Left for M1b: re-record the goldens live from the M1a.2b engine and delete every correction; Finder compared as full text; the live checks listed in the M1a report's "Unverified".

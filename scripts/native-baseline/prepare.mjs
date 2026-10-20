@@ -24,8 +24,15 @@
 //   approved helper's executable, and the TMPDIR in that pid's environment is the run's (above). Only TMPDIR is
 //   extracted from that environment, only for such candidate pids, and only compared; nothing else from it is kept,
 //   logged or reported. Anything not proven is never signalled, and nothing is restored while it remains.
-// HOME is the account's (native calls fail at the native pipe under a scratch HOME), and XDG_CONFIG_HOME is the run's
-// scratch directory, so nothing under the account's configuration is read or written.
+// - cua's engine (#117; docs/doperpowers/specs/2026-10-18-own-native-engine-design.md, Verification system): every live
+//   run begins and ends with `cua engine stop` (src/runtime/engine.mjs stopEngine: the `shutdown` request, never a
+//   signal) under the admission, so a cold row is the engine's first launch by this run. At preparation an engine with
+//   other connections (or a `busy` answer) refuses the run, naming them, and the preparation is undone; at cleanup, once
+//   the run's serves are gone and before the state is restored, a refusal is recorded in the result (`engineStop`) for
+//   the run to fail on, and the state is restored all the same (prepareRun, cleanupRun; the CLI below).
+// HOME is the account's (native calls fail at the native pipe under a scratch HOME; the approved engine is found under
+// it, as the serve's selection finds it), and XDG_CONFIG_HOME is the run's scratch directory, so nothing under the
+// account's configuration is read or written.
 import * as fs from 'node:fs';
 import {execFileSync} from 'node:child_process';
 import {homedir, tmpdir} from 'node:os';
@@ -38,6 +45,7 @@ import {executionFacts} from '../repl-parity/provenance.mjs';
 import {assertManagedNode, nodeEnvironment} from '../repl-parity/node-provenance.mjs';
 import {loadPins, locateRuntime, selectPin} from '../../src/runtime/manifest.mjs';
 import {removeScratchHomes, userHomeBeside} from '../harness-home.mjs';
+import {stopEngine} from '../../src/runtime/engine.mjs';
 
 export const REUSE_REASON = 'a new on-disk copy of the native helper raises a one-time screen-capture confirmation; the approved copy is reused';
 // The run-owned parts of a reused home, moved aside for the run and back at cleanup.
@@ -238,15 +246,21 @@ export function admitServe({home, token, pid = process.pid}) {
   return () => { fs.rmSync(entry, {force: true}); };
 }
 
-// After the run: stop the run's own helpers, then move what the run wrote out and the originals back.
-function cleanupReused(prepared, options) {
-  const {usersOf, rename, kill, alive, wait} = reuseSeams(options);
+// The approved home's admission is this run's, and none of its serves still runs.
+function assertCleanupAdmitted(prepared, alive) {
   const {home, scratch, token} = prepared, admission = join(home, ADMISSION);
   let owner;
   try { owner = JSON.parse(fs.readFileSync(join(admission, 'owner.json'), 'utf8')); } catch { owner = null; }
   if (owner?.token !== token || owner.scratch !== scratch) throw new Error('Native scratch ownership mismatch (the approved home\'s admission is not this run\'s)');
   const serving = fs.readdirSync(join(admission, 'serves')).map(Number).filter(pid => alive(pid));
   if (serving.length) throw new Error(`${serving.length} admitted serve(s) still running on the approved home; nothing was restored`);
+}
+
+// After the run: stop the run's own helpers, then move what the run wrote out and the originals back.
+function cleanupReused(prepared, options) {
+  const {usersOf, rename, kill, alive, wait} = reuseSeams(options);
+  const {home, scratch} = prepared, admission = join(home, ADMISSION);
+  assertCleanupAdmitted(prepared, alive);
   // Only a helper proven to be this run's is signalled: the approved helper's exact executable carrying this run's
   // TMPDIR. Anything else using the home (or a helper whose TMPDIR could not be read) stops the cleanup unsignalled.
   const users = usersOf(home, {executable: prepared.runtimeReuse.executable, tmpdir: prepared.tmpdir});
@@ -282,24 +296,61 @@ function cleanupReused(prepared, options) {
   return {removed: true, restored: [...recovery.restored], helpersStopped};
 }
 
-export function cleanupNative(prepared, {directoryRoot = base(), ...options} = {}) {
+// The run's scratch directory, once its owner record proves the run's: the scratch home (fresh), or the approved home's
+// stash (reused).
+function ownedScratch(prepared, directoryRoot) {
   const {device, token} = prepared;
   const scratch = prepared.runtimeReuse ? prepared.scratch : prepared.home;
   if (dirname(scratch) !== fs.realpathSync(directoryRoot) || !/^run-[A-Za-z0-9]+$/.test(basename(scratch))) throw new Error('Native scratch ownership mismatch');
   const owner = JSON.parse(fs.readFileSync(join(scratch, 'native-owner.json'), 'utf8'));
   if (!token || owner.token !== token || owner.device !== device) throw new Error('Native scratch ownership mismatch');
-  if (prepared.runtimeReuse) {
-    if (owner.approvedHome !== prepared.home) throw new Error('Native scratch ownership mismatch');
-    return cleanupReused(prepared, options);
-  }
+  if (prepared.runtimeReuse && owner.approvedHome !== prepared.home) throw new Error('Native scratch ownership mismatch');
+  return scratch;
+}
+
+export function cleanupNative(prepared, {directoryRoot = base(), ...options} = {}) {
+  const scratch = ownedScratch(prepared, directoryRoot);
+  if (prepared.runtimeReuse) return cleanupReused(prepared, options);
   removeScratchHomes(scratch);
   return {removed: true};
 }
+
+// A CuaError's message with its hint, which says what to do.
+const described = error => `${error.message}${error.hint ? ` (${error.hint})` : ''}`;
+
+// prepareNative, then (an approved-runtime run) `cua engine stop` under the admission just taken -> the preparation with
+// `engineStop` ({wasRunning, pid?}). An engine that will not stop (another connection, a busy answer, no exit) refuses
+// the run: the preparation is undone and the refusal names why. `stop` is src/runtime/engine.mjs stopEngine (tests pass
+// a double); the other options reach prepareNative and, on a refusal, cleanupNative.
+export async function prepareRun(options, {stop = () => stopEngine(), ...seams} = {}) {
+  const prepared = prepareNative(options, seams);
+  if (!prepared.runtimeReuse) return prepared;
+  let engineStop;
+  try { engineStop = await stop(); } catch (error) {
+    const refusal = `refusing the run: cua's engine could not be stopped at preparation: ${described(error)}`;
+    try { cleanupNative(prepared, seams); } catch (undo) { throw new Error(`${refusal}; undoing the preparation failed too: ${undo.message}`); }
+    throw new Error(refusal);
+  }
+  return {...prepared, engineStop};
+}
+
+// cleanupNative, after (an approved-runtime run whose admission and stash are proven its own and whose serves are gone)
+// `cua engine stop` -> the cleanup's result with `engineStop`: the stop's answer, or {error} when the engine would not
+// stop, which does not keep the state from being restored (the run fails on it, scripts/native-baseline.mjs).
+export async function cleanupRun(prepared, {stop = () => stopEngine(), ...seams} = {}) {
+  if (!prepared.runtimeReuse) return cleanupNative(prepared, seams);
+  ownedScratch(prepared, seams.directoryRoot ?? base());
+  assertCleanupAdmitted(prepared, reuseSeams(seams).alive);
+  let engineStop;
+  try { engineStop = await stop(); } catch (error) { engineStop = {error: described(error)}; }
+  return {...cleanupNative(prepared, seams), engineStop};
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
     if (basename(process.cwd()) !== 'cua-parity') throw new Error('Native preparation requires the prepared parity clone');
     const [action, json] = process.argv.slice(2);
     if (!['prepare', 'cleanup'].includes(action)) throw new Error('Unknown native preparation operation');
-    console.log(JSON.stringify((action === 'prepare' ? prepareNative : cleanupNative)(JSON.parse(json))));
+    console.log(JSON.stringify(await (action === 'prepare' ? prepareRun : cleanupRun)(JSON.parse(json))));
   } catch (error) { console.error(error.message); process.exitCode = 1; }
 }

@@ -8,7 +8,8 @@ import {existsSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirS
 import {spawn, spawnSync, execFileSync as execFileSyncReal} from 'node:child_process';
 import {tmpdir} from 'node:os';
 import {dirname, join} from 'node:path';
-import {prepareNative, cleanupNative, admitServe, ADMISSION, homeUsers, hasRunTmpdir, executableOf} from '../../scripts/native-baseline/prepare.mjs';
+import {prepareNative, cleanupNative, prepareRun, cleanupRun, admitServe, ADMISSION, homeUsers, hasRunTmpdir, executableOf} from '../../scripts/native-baseline/prepare.mjs';
+import {CuaError} from '../../src/runtime/errors.mjs';
 import {nativeEnvironment} from '../../scripts/native-baseline/remote.mjs';
 
 function fixture(t) {
@@ -157,6 +158,72 @@ test('a helper that will not stop keeps the state stashed and the admission held
   assert.throws(() => cleanupNative(prepared, {...options, kill: () => {}, alive: () => true}), /helper 960 did not stop/);
   assert.equal(existsSync(join(home, ADMISSION)), true);
   assert.equal(existsSync(join(prepared.scratch, 'stash', 'state')), true);
+});
+
+// #117: every live run begins and ends with `cua engine stop` (the `shutdown` request, never a signal) under the
+// admission lock; a busy engine, or one with other connections at preparation, refuses the run naming them (the own
+// native engine spec, Verification system).
+const busy = n => new CuaError('engine_busy', `the engine (pid 4321) has ${n} other connections open`, {hint: 'it is serving a session; run this again once nothing uses it'});
+
+test('an approved-runtime run stops cua\'s engine at preparation, under the admission it holds', async t => {
+  const {home, options} = fixture(t);
+  const seen = [];
+  const stop = async () => { seen.push({admitted: existsSync(join(home, ADMISSION, 'owner.json'))}); return {wasRunning: true, pid: 4321}; };
+  const prepared = await prepareRun({device: 'mini', approvedHome: home}, {...options, stop});
+  assert.deepEqual(seen, [{admitted: true}]);
+  assert.deepEqual(prepared.engineStop, {wasRunning: true, pid: 4321});
+  await cleanupRun(prepared, {...options, stop: async () => ({wasRunning: false})});
+});
+
+test('an engine with other connections refuses the run at preparation, naming them, and the preparation is undone', async t => {
+  const {home, options, original} = fixture(t);
+  await assert.rejects(prepareRun({device: 'mini', approvedHome: home}, {...options, stop: async () => { throw busy(2); }}),
+    /refusing the run: cua's engine could not be stopped at preparation: the engine \(pid 4321\) has 2 other connections open \(it is serving a session/);
+  assert.equal(existsSync(join(home, ADMISSION)), false, 'the admission is released');
+  assert.deepEqual(original(), {state: 'task 1 state', run: 'task 1 run'});
+  assert.deepEqual(readdirSync(options.directoryRoot), []);
+});
+
+test('cleanup stops the engine before it restores the state, and a refusal there is recorded, not a reason to keep the state', async t => {
+  const {home, options, original} = fixture(t);
+  const prepared = await prepareRun({device: 'mini', approvedHome: home}, {...options, stop: async () => ({wasRunning: false})});
+  mkdirSync(join(home, 'state', 'handshake'), {recursive: true});   // what the run wrote
+  const seen = [];
+  const stop = async () => { seen.push({admitted: existsSync(join(home, ADMISSION, 'owner.json')), restored: existsSync(join(home, 'state', 'codex', 'kept'))}); return {wasRunning: true, pid: 77}; };
+  assert.deepEqual(await cleanupRun(prepared, {...options, stop}), {removed: true, restored: ['state', 'run'], helpersStopped: [], engineStop: {wasRunning: true, pid: 77}});
+  assert.deepEqual(seen, [{admitted: true, restored: false}]);
+  const again = await prepareRun({device: 'mini', approvedHome: home}, {...options, stop: async () => ({wasRunning: false})});
+  const result = await cleanupRun(again, {...options, stop: async () => { throw busy(1); }});
+  assert.deepEqual(result.engineStop, {error: 'the engine (pid 4321) has 1 other connections open (it is serving a session; run this again once nothing uses it)'});
+  assert.equal(result.removed, true);
+  assert.deepEqual(original(), {state: 'task 1 state', run: 'task 1 run'});
+});
+
+test('cleanup stops no engine before it has checked the run\'s ownership and that its serves are gone', async t => {
+  const {home, options} = fixture(t);
+  const prepared = await prepareRun({device: 'mini', approvedHome: home}, {...options, stop: async () => ({wasRunning: false})});
+  let stops = 0;
+  const stop = async () => { stops++; return {wasRunning: false}; };
+  await assert.rejects(cleanupRun({...prepared, token: 'another'}, {...options, stop}), /ownership/);
+  const release = admitServe({home, token: prepared.token, pid: process.pid});
+  await assert.rejects(cleanupRun(prepared, {...options, stop}), /1 admitted serve\(s\) still running/);
+  assert.equal(stops, 0);
+  release();
+  await cleanupRun(prepared, {...options, stop});
+  assert.equal(stops, 1);
+});
+
+test('a fresh-install preparation (no approved runtime: Linux, or a browser-surface run) stops no engine', async t => {
+  const parent = mkdtempSync(join(tmpdir(), 'native-prepare-test-'));
+  t.after(() => rmSync(parent, {recursive: true, force: true}));
+  let stops = 0;
+  const stop = async () => { stops++; return {wasRunning: false}; };
+  const xSession = {DISPLAY: ':7'};
+  const prepared = await prepareRun({device: 'cua-bench'}, {directoryRoot: parent, tempRoot: '/different-tmp', desktop: () => xSession, run: () => '', stop,
+    inspect: ({source}) => ({home: source, ownNode: {path: join(source, 'node/24.22.0/bin/node'), version: 'v24.22.0'}})});
+  assert.equal(prepared.engineStop, undefined);
+  assert.equal((await cleanupRun(prepared, {directoryRoot: parent, stop})).engineStop, undefined);
+  assert.equal(stops, 0);
 });
 
 // A copy of this Node at `executable` that runs there. A Node built against a shared libnode (Homebrew's: @rpath/

@@ -1,42 +1,124 @@
 // The native baseline on macOS: TextEdit, driven by the vendor's computer-use helper (SkyComputerUseService), as the
 // 2026-10-14 Mac baseline recorded it (docs/evidence/2026-10-14-native-baseline). The run loop in
 // scripts/native-baseline.mjs calls this adapter for what is TextEdit's: the first getApp (approval and launch, with
-// one retry on the launch's timeoutReached), a scratch document, the guarded observation series, the
-// new-document -> typeText -> verify -> delete task, and quitting the TextEdit it launched. Every cell guards the window
-// it acts on (./cells.mjs).
+// one retry on the launch's timeoutReached), bringing the TextEdit it launched to the front (setup.activate), a scratch
+// document, the guarded observation series, the new-document -> typeText -> verify -> delete task, and quitting the
+// TextEdit it launched. Every cell guards the window it acts on (./cells.mjs). The engine is the run's (--engine,
+// ./engine.mjs): the vendor's helper or cua's engine; the service attestation names the one that answered and both
+// engines' processes.
 import {isTextEditApproval, TEXTEDIT_BUNDLE} from '../accept/lib.mjs';
-import {FRONTMOST_SCRIPT, parseFrontmost, sendIfFrontmost} from '../accept/key-guard.mjs';
+import {FRONTMOST_PROCESS_SCRIPT, parseFrontmostProcess, sendIfFrontmost} from '../accept/key-guard.mjs';
 import * as cells from './cells.mjs';
-import {classifyHelpers, HELPER_SCRIPT, leftoverScript} from './remote.mjs';
+import {classifyHelpers, etimeSeconds, HELPER_SCRIPT, leftoverScript} from './remote.mjs';
 
 const BIND_MS = 120_000;
+// How long setup.activate waits for TextEdit to be the frontmost application after `open -a TextEdit`, and how often it
+// reads it meanwhile.
+const ACTIVATE_MS = 5_000;
+const ACTIVATE_POLL_MS = 250;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const round = ms => Math.round(ms * 1000) / 1000;
 
-export function macosDevice(remote, {checkout, runtimeRoot}) {
+// `engineBundle`: the approved cua engine the run serves, whose process the helper attestation names as its own.
+// One process as `LC_ALL=C ps -o etime=,lstart=,comm=` prints it -> {ageSeconds, started (its lstart), path}, or null for
+// no output (no such process) or a line that is not that.
+export function parseProcess(output) {
+  const match = /^\s*(\d+-)?(\d+(?::\d+){1,2})\s+([A-Z][a-z]{2} [A-Z][a-z]{2} [ \d]\d \d{2}:\d{2}:\d{2} \d{4})\s+(\S.*?)\s*$/.exec(String(output).split('\n')[0] ?? '');
+  return match ? {ageSeconds: etimeSeconds(`${match[1] ?? ''}${match[2]}`), started: match[3], path: match[4]} : null;
+}
+const isTextEdit = process => process !== null && /\/TextEdit$/.test(process.path);
+
+export function macosDevice(remote, {checkout, runtimeRoot, engineBundle = null}) {
   return {
-    helpers: () => classifyHelpers(remote(HELPER_SCRIPT), runtimeRoot),
+    helpers: () => classifyHelpers(remote(HELPER_SCRIPT), runtimeRoot, engineBundle),
     leftovers() { const [serves, textEdit] = remote(leftoverScript(checkout)).split(' ').map(Number); return {serves, textEditRunning: textEdit > 0}; },
-    frontmost: () => parseFrontmost(remote(FRONTMOST_SCRIPT)),
+    // The frontmost application's process, {pid, bundleId} or null (scripts/accept/key-guard.mjs).
+    frontmost: () => parseFrontmostProcess(remote(FRONTMOST_PROCESS_SCRIPT)),
+    // The run's TextEdit: the one TextEdit process (the run refuses to start while TextEdit runs, so it is the one the
+    // bind launched).
+    textEditPid() {
+      const pids = remote('/usr/bin/pgrep -x TextEdit || true').split('\n').filter(Boolean).map(Number);
+      if (pids.length !== 1 || !Number.isSafeInteger(pids[0])) throw new Error(`expected the run's one TextEdit process, found ${pids.length}`);
+      return pids[0];
+    },
+    // Brings TextEdit to the front from the device side (LaunchServices activates the running instance).
+    activate: () => remote('/usr/bin/open -a TextEdit'),
+    // A process's age, start time and executable (parseProcess), or null when it is not running.
+    processOf: pid => parseProcess(remote(`LC_ALL=C /bin/ps -o etime=,lstart=,comm= -p ${Number(pid)} || true`)),
+    // Ends the TextEdit the run launched, by its pid, when it has no document (no scratch document was ever made).
+    terminateTextEdit: pid => remote(`/bin/kill -TERM ${Number(pid)}`),
   };
 }
 
-// A cell that sends keys to TextEdit runs only while TextEdit is the device's frontmost application (#162,
-// scripts/accept/key-guard.mjs); otherwise it is not sent, the skip is recorded (meta.keySkipped and a key.skipped row),
-// and the run stops with no further input. The scratch document's click on the Open panel's New Document button (a
-// fresh launch; the panel is served out of process, so it may be what is frontmost then, and a click sends no modifier)
-// is not guarded; its super+n path is, as its own cell (NEW_DOCUMENT_KEYS). A task's new document and its typing are
-// separate cells, each checked right before it is sent, since the first waits up to TRANSITION_MS for the document.
+// The Open and Save panels are served out of process: a TextEdit fresh from its launch may show only that panel, and
+// the frontmost reader may then name the panel's service rather than TextEdit.
+const PANEL_SERVICE = /^com\.apple\.appkit\.xpc\.openAndSavePanelService\b/;
+const describeFront = front => (front && typeof front === 'object' ? `${front.bundleId ?? 'an app with no bundle id'} (pid ${front.pid})${PANEL_SERVICE.test(front.bundleId ?? '') ? ': TextEdit\'s Open panel, served out of process, is in front' : ''}` : 'unreadable');
+
+// A cell that sends keys to TextEdit runs only while the run's TextEdit process is the device's frontmost application
+// (#162, scripts/accept/key-guard.mjs, by pid since M1b: another TextEdit process is not the target); otherwise it is not
+// sent, the skip is recorded (meta.keySkipped and a key.skipped row), and the run stops with no further input. The
+// scratch document's click on the Open panel's New Document button (a fresh launch; the panel is served out of process,
+// so it may be what is frontmost then, and a click sends no modifier) is not guarded; its super+n path is, as its own
+// cell (NEW_DOCUMENT_KEYS). A task's new document and its typing are separate cells, each checked right before it is
+// sent, since the first waits up to TRANSITION_MS for the document.
 async function keyCell(ctx, code, keys) {
-  const out = await sendIfFrontmost({target: TEXTEDIT_BUNDLE, keys, frontmost: () => ctx.device.frontmost(), send: () => ctx.js(code)});
+  const target = {pid: ctx.meta.textEdit?.pid, bundleId: TEXTEDIT_BUNDLE};
+  const out = await sendIfFrontmost({target, keys, frontmost: () => ctx.device.frontmost(), send: () => ctx.js(code)});
   if (out.sent) return out.result;
   (ctx.meta.keySkipped ??= []).push(out.skipped);
   ctx.emit({op: 'key.skipped', sample: ctx.meta.keySkipped.length, ok: false, ...out.skipped});
-  return ctx.stop(`${out.skipped.event}: ${keys.join(', ')} not sent, the frontmost application is ${out.skipped.frontmost}, not TextEdit (#162)`);
+  return ctx.stop(`${out.skipped.event}: ${keys.join(', ')} not sent, the frontmost application is ${describeFront(out.skipped.frontmost)}, not the run's TextEdit (pid ${target.pid}) (#162)`);
 }
 
-// TextEdit this run launched is quit from its scratch document (the cell refuses when that is not in front).
+// setup.activate (the own native engine spec, Verification system part 1): the run's TextEdit brought to the front from
+// the device (`open -a TextEdit`) right after the bind, verified by its pid as the frontmost application. The vendor's
+// launch and click paths activate TextEdit and cua's engine never does, so without it the key guard would stop cua's
+// lane at its first key: the baseline measures the driven-app-frontmost regime on both engines. Not judged (setup.*);
+// a TextEdit that does not come to the front stops the run before any key or click.
+async function activate(ctx) {
+  const {meta, device, emit} = ctx, pid = meta.textEdit.pid, limit = ctx.activateMs ?? ACTIVATE_MS;
+  const started = performance.now();
+  device.activate();
+  let front = null, attempts = 0;
+  const seen = [];
+  for (;;) {
+    try { front = await device.frontmost(); } catch { front = null; }
+    attempts++;
+    if (!seen.some(s => JSON.stringify(s) === JSON.stringify(front ?? 'unreadable'))) seen.push(front ?? 'unreadable');
+    if (front?.pid === pid || performance.now() - started >= limit) break;
+    await sleep(ACTIVATE_POLL_MS);
+  }
+  const ok = front?.pid === pid;
+  emit({op: 'setup.activate', sample: 1, ok, wallMs: round(performance.now() - started), attempts, frontmost: front ?? 'unreadable', seen,
+    note: 'open -a TextEdit from the device, then the frontmost application read until it is the run\'s TextEdit; harness setup, not judged'});
+  if (!ok) throw new Error(`setup.activate: TextEdit (pid ${pid}) is not the frontmost application after open -a TextEdit; the frontmost is ${describeFront(front)}`);
+}
+
+// TextEdit this run launched is quit from its scratch document (the cell refuses when that is not in front). A run that
+// failed before it made one (a failed bind or activation) has no window it can quit from, and nobody's document in that
+// TextEdit: it is ended by the pid the run read when it saw it come up, so the sitting's next run is not refused. Only a
+// process the run started is signalled: the pid was accepted as the run's only when it started after the bind began
+// (gui), and right before the signal it must still be TextEdit with that start time; otherwise nothing is signalled and
+// quitError says why.
 async function quitTextEdit(ctx) {
+  const {meta, device} = ctx;
+  if (meta.textEdit?.launchedByRun && !meta.textEdit.scratchDocument && !meta.textEdit.quitByRun && Number.isSafeInteger(meta.textEdit.pid)) {
+    const {pid, started} = meta.textEdit, now = device.processOf(pid);
+    meta.textEdit.quitByRun = false;
+    if (!now) { meta.textEdit.quitError = `not signalled: pid ${pid} is no longer running`; return; }
+    if (!isTextEdit(now) || now.started !== started) { meta.textEdit.quitError = `not signalled: pid ${pid} is now ${now.path} started ${now.started}, not the run's TextEdit (started ${started})`; return; }
+    try { device.terminateTextEdit(pid); } catch (error) { meta.textEdit.quitError = `SIGTERM to TextEdit (pid ${pid}) failed: ${error.message}`; return; }
+    let running = true;
+    for (let i = 0; i < 10 && running; i++) { await sleep(500); running = device.leftovers().textEditRunning; }
+    meta.textEdit.quitByRun = !running;
+    meta.textEdit.quitHow = 'SIGTERM to the pid the run launched: no scratch document existed';
+    if (running) meta.textEdit.quitError = `TextEdit (pid ${meta.textEdit.pid}) still running after SIGTERM`;
+    return;
+  }
+  return quitFromScratch(ctx);
+}
+async function quitFromScratch(ctx) {
   const {meta, device} = ctx;
   if (!meta.textEdit?.launchedByRun || meta.textEdit.quitByRun || !ctx.warmOpen()) return;
   const quit = await keyCell(ctx, cells.QUIT_TEXTEDIT, ['super+q']);
@@ -58,7 +140,7 @@ function joined(first, second) {
 export const macosAdapter = {
   platform: 'darwin',
   target: 'TextEdit',
-  device: (remote, {pre}) => macosDevice(remote, {checkout: pre.checkout, runtimeRoot: pre.runtimeRoot}),
+  device: (remote, {pre}) => macosDevice(remote, {checkout: pre.checkout, runtimeRoot: pre.runtimeRoot, engineBundle: pre.engine?.installed?.bundlePath ?? null}),
   answer: msg => (isTextEditApproval(msg) ? {action: 'accept', content: {}} : {action: 'decline'}),
   refuse: pre => (pre.textEditRunning ? 'TextEdit is running on the device: its windows may be the owner\'s; quit it (or wait) and re-run' : null),
   start(meta, pre) { meta.textEdit = {runningBefore: pre.textEditRunning}; },
@@ -68,24 +150,41 @@ export const macosAdapter = {
     // The first getApp of a TextEdit that is not running launches it; on the mini that call fails with timeoutReached
     // after about 5 s (TextEdit comes up with only its out-of-process Open panel) and the next one binds. Both are
     // recorded: the first as bind.getApp, the retry as bind.getApp.retry.
+    const bindStarted = Date.now();
     const bind = guard(await js(cells.BIND, BIND_MS), 'cua.getApp(TextEdit)');
     const approvals = ctx.elicited();
     row('bind.getApp', 1, bind, {approvals: approvals.length, textEditLaunched: !pre.textEditRunning});
     approvals.forEach((a, i) => emit({op: 'approval.elicitation', sample: i + 1, ok: a.action === 'accept', wallMs: round(a.at - bind.started), app: a.app, action: a.action,
       note: 'wallMs: from the start of the getApp call to the approval request; the harness answers at once'}));
-    meta.textEdit.launchedByRun = !pre.textEditRunning && device.leftovers().textEditRunning;
     let bound = bind;
     if (!bind.cell?.ok && /timeoutReached/.test(bind.cell?.error ?? '')) {
       bound = guard(await js(cells.BIND, BIND_MS), 'cua.getApp(TextEdit), retried');
       row('bind.getApp.retry', 1, bound, {approvals: ctx.elicited().length});
     }
-    meta.service = {surface: 'computer', engine: 'sky', answered: 'vendor', ...ctx.helperAttestation()};
+    // The engine requested and the one the results attested so far (every one must agree, ./engine.mjs engineProblem;
+    // 'unattested' before any did), with both engines' processes running now.
+    meta.service = {surface: 'computer', engine: meta.nativeEngine?.requested ?? 'vendor', answered: meta.nativeEngine ? meta.nativeEngine.attested[0]?.engine ?? 'unattested' : 'vendor', ...ctx.helperAttestation()};
+    // Whether the bind launched TextEdit, and its pid whenever it did, bound or not: the key guard's target and, should
+    // the run fail before its scratch document, what cleanup ends. A TextEdit is the run's only when it started after the
+    // bind began (ps, as helperAttestation's startedDuringRun reads its helpers; etime is whole seconds, floored, so a process
+    // that started during the bind is never older than the bind); one that started
+    // earlier came up between the preflight and the bind, someone else's, and the run refuses to drive it.
+    meta.textEdit.launchedByRun = false;
+    if (!pre.textEditRunning && device.leftovers().textEditRunning) {
+      const pid = device.textEditPid(), process = device.processOf(pid);
+      if (!isTextEdit(process)) throw new Error(`TextEdit (pid ${pid}) could not be read as TextEdit by ps (${process ? process.path : 'no such process'}); refusing to drive it`);
+      if (!(process.ageSeconds * 1000 <= Date.now() - bindStarted)) throw new Error(`TextEdit (pid ${pid}) started before this run's bind (${process.ageSeconds} s ago): it is not the run's; refusing to drive it`);
+      Object.assign(meta.textEdit, {launchedByRun: true, pid, started: process.started});
+    }
     if (!bound.cell?.ok) throw new Error(`cua.getApp(TextEdit) failed: ${bound.cell?.error ?? bound.failure}`);
+    meta.textEdit.pid ??= device.textEditPid();
+    await activate(ctx);
 
     let scratch = guard(await js(cells.NEW_DOCUMENT), 'the scratch document');
     if (scratch.cell?.ok && scratch.cell.value?.needsKeys) scratch = guard(await keyCell(ctx, cells.NEW_DOCUMENT_KEYS, ['super+n']), 'the scratch document');
     row('setup.newDocument', 1, scratch);
     if (!scratch.cell?.ok) throw new Error(`no scratch document: ${scratch.cell?.error ?? scratch.failure}`);
+    meta.textEdit.scratchDocument = true;
     // The scratch document in front, checked between series (op guard.scratch, not charged to any sample).
     const scratchGuard = async sample => {
       const r = row('guard.scratch', sample, guard(await js(cells.SCRATCH_GUARD), 'the scratch guard'));
@@ -123,7 +222,7 @@ export const macosAdapter = {
   // After a failure TextEdit is quit only from the scratch document, never from a window the run cannot vouch for, and
   // not at all after a stop (a prompt may be waiting).
   async cleanup(ctx) {
-    if (!ctx.stopped() && !ctx.meta.complete) { try { await quitTextEdit(ctx); } catch {} }
+    if (!ctx.stopped() && !ctx.meta.complete) { try { await quitTextEdit(ctx); } catch (error) { if (ctx.meta.textEdit) ctx.meta.textEdit.quitError ??= error.message; } }
   },
   leftovers: device => device.leftovers(),
   leftBehind: (leftovers, pre) => leftovers.serves > 0 || (leftovers.textEditRunning && !pre.textEditRunning),

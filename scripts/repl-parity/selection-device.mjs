@@ -2,7 +2,7 @@
 // row writes its registration fixture (installRoutes: cua's record, the removed ChatGPT route's record, both in either
 // order, or none), which the selection must not depend on.
 import {execFileSync,spawnSync} from 'node:child_process';
-import {mkdtempSync,mkdirSync,realpathSync,writeFileSync,readFileSync,rmSync,symlinkSync,utimesSync,readdirSync,renameSync} from 'node:fs';
+import {existsSync,mkdtempSync,mkdirSync,realpathSync,writeFileSync,readFileSync,rmSync,symlinkSync,utimesSync,readdirSync,renameSync} from 'node:fs';
 import {removeScratchHomes,userHomeBeside} from '../harness-home.mjs';
 import {join,dirname,basename} from 'node:path';
 import {homedir} from 'node:os';
@@ -16,6 +16,9 @@ import {assertManagedNode,nodeEnvironment} from './node-provenance.mjs';
 import {checkScratchJob} from './selection-job.mjs';
 import {cuaRecordFile,vendorRecordFile} from '../../src/chrome/route.mjs';
 import {socketPathFor,socketNameFor,backendDir} from '../../src/chrome/extension.mjs';
+import {engineDirectory,enginePaths} from '../../src/runtime/engine.mjs';
+import {placeFixtureEngine} from '../probe/fixture-engine.mjs';
+import {engineSettingsPath} from '../../src/runtime/engine-sign.mjs';
 export function installRoutes(home,registration){
  for(const file of [cuaRecordFile(home),vendorRecordFile(home)])rmSync(file,{force:true});
  const order={none:[],chatgpt:['vendor'],cua:['cua'],'cua-then-chatgpt':['cua','vendor'],'chatgpt-then-cua':['vendor','cua']}[registration];
@@ -28,6 +31,19 @@ export function installRoutes(home,registration){
  }
 }
 const files=dir=>readdirSync(dir,{withFileTypes:true}).flatMap(e=>e.isDirectory()?files(join(dir,e.name)):[join(dir,e.name)]);
+// #117's engine rows: the fixture approved engine (scripts/probe/fixture-engine.mjs) under the row's scratch user HOME.
+// Nothing launches it: the lane's calls (initialize, tools/list, js_reset) never reach the sky service.
+// The row's engine setting: CUA_NATIVE_ENGINE in the returned environment, or `engine` in the HOME's engine.json; and
+// the fixture engine approved (approved.json present) exactly when the row says it is installed.
+export function applyEngineRow(userHome,row,{place=placeFixtureEngine}={}){
+ const settings=engineSettingsPath({HOME:userHome}),paths=enginePaths(engineDirectory(userHome));
+ rmSync(settings,{force:true});
+ const engine=row.engine??'unset';
+ if(engine!=='unset'&&row.engineFrom==='settings'){mkdirSync(dirname(settings),{recursive:true,mode:0o700});writeFileSync(settings,JSON.stringify({engine}),{mode:0o600});}
+ if(row.installed){if(!existsSync(paths.approved))place(userHome);}
+ else rmSync(paths.approved,{force:true});
+ return engine!=='unset'&&row.engineFrom!=='settings'?{CUA_NATIVE_ENGINE:engine}:{};
+}
 // A refused call as {code, message}: the listing's refusal as it reported it, serve's start-time refusal from the
 // observation frame (selection-serve.mjs), or a selection code the real server named in its error message. Anything
 // else is unexpected_error with its message kept, so a harness or environment failure stays visible in the evidence.
@@ -36,7 +52,7 @@ export function refusalOf(error){
  const message=String(error?.message??error);
  const early=/^serve refused before launch \(([a-z_]+)\): (.*)$/s.exec(message);
  if(early)return {code:early[1],message:early[2]};
- return {code:['invalid_repl_host','repl_host_refused','repl_host_node'].find(code=>message.includes(code))??'unexpected_error',message};
+ return {code:['invalid_repl_host','repl_host_refused','repl_host_node','engine_not_installed','invalid_setting'].find(code=>message.includes(code))??'unexpected_error',message};
 }
 export function listingOutcome(stdout){
  let parsed;try{parsed=JSON.parse(stdout);}catch{throw new Error(`Selection listing printed no JSON: ${JSON.stringify(stdout.slice(0,200))}`);}
@@ -91,8 +107,9 @@ export async function runSelection({prepared,node22}){
   result.planned=cases.length;result.failures=[];
   const evaluateRow=async row=>{
    installRoutes(home,row.registration);
+   const engineEnv=applyEngineRow(userHome,row);
    const node=row.node24?ownNode.path:node22;
-   const env={...base,CUA_SHIM_SURFACES:row.surfaces.join(','),...(row.override==='unset'?{}:{CUA_REPL_HOST:row.override}),...(row.maws?{CUA_BROWSER_BACKENDS:join(home,'maws-fixture.sock')}:{})};
+   const env={...base,CUA_SHIM_SURFACES:row.surfaces.join(','),...(row.override==='unset'?{}:{CUA_REPL_HOST:row.override}),...(row.maws?{CUA_BROWSER_BACKENDS:join(home,'maws-fixture.sock')}:{}),...engineEnv};
    if(!row.node24)env.PATH=nodeBin+':/usr/bin:/bin';
    const doc=spawnSync(node,['bin/cua.mjs','doctor','--json'],{env,encoding:'utf8',timeout:120000,maxBuffer:4*1024*1024});
    let doctor;try{doctor=JSON.parse(doc.stdout).checks.find(c=>c.name==='repl.host');}catch{}

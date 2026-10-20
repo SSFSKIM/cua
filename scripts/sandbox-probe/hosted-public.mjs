@@ -26,6 +26,10 @@ const LAUNCHER_ENV = new Set(['HOME', 'PATH', 'TMPDIR', 'LANG', 'CODEX_SANDBOX',
   'CUA_REPL_NODE_PATH', 'CUA_REPL_NODE_MODULE_DIRS', 'CUA_REPL_SANDBOX_EXEC', 'CUA_SANDBOX_DENY_READ']);
 export const WITHHELD = '<withheld>';
 
+// A checks report ({ok, checks: [{label, pass, detail?}]}): each check's label and pass, and its detail only when that
+// is a code.
+const checkList = ({ok, checks}) => ({ok, checks: checks.map(({label, pass, detail}) => ({label, pass, ...(CODE.test(String(detail ?? '')) ? {code: detail} : {})}))});
+
 export const PUBLIC_FORMS = Object.freeze({
   // oracle.mjs fingerprint: without `input` (the launch's args, env and policy), the pid and the checks' targets.
   fingerprint: ({launcher, fingerprint, pins}) => {
@@ -42,8 +46,9 @@ export const PUBLIC_FORMS = Object.freeze({
     ...(c.firstProfileDifference ? {firstProfileDifferenceLine: c.firstProfileDifference.line} : {}), paramsDiffering: c.paramsDiffering.length,
     commandEqual: c.commandEqual, env: {onlyCaptured: names(c.env.onlyCaptured), onlyGolden: names(c.env.onlyGolden), differing: names(c.env.differing)},
     tiocsti: c.tiocsti, cliOnlyEnv: c.cliOnlyEnv, equalButDeviations: c.equalButDeviations}),
-  // scripts/accept/own-sandbox.mjs: each check's label and pass, and its detail only when that is a code.
-  'own-sandbox': ({ok, checks}) => ({ok, checks: checks.map(({label, pass, detail}) => ({label, pass, ...(CODE.test(String(detail ?? '')) ? {code: detail} : {})}))}),
+  // scripts/accept/own-sandbox.mjs and scripts/probe-engine-lane.mjs: their checks.
+  'own-sandbox': checkList,
+  'engine-lane': checkList,
   // scripts/probe-secrets.mjs: the steps' names and statuses, without their details.
   'probe-secrets': ({status, steps}) => ({status, steps: steps.map(({name, status: step}) => ({name, status: step}))}),
   // cua doctor --json: the checks' names and statuses.

@@ -326,3 +326,32 @@ test('a request before initialize (Claude Code\'s server/discover probe) is refu
   assert.equal(init.result.serverInfo.name, 'rmcp');
   assert.equal(h.upstream.sent.filter(m => m.method === 'server/discover').length, 0);
 });
+
+// EngineAttestation (#117, docs/doperpowers/specs/2026-10-18-own-native-engine-design.md; the Decision Log's "M1b
+// pre-flight" item 4): every js and js_reset result of a macOS computer session carries `cua/nativeEngine`. The launch's
+// attestation fills it in; a value the service set (cua's engine's, from its ping) passes through untouched, so a
+// harness sees a service that disagrees with the selection rather than a silent label.
+test('js and js_reset results carry the connection\'s engine attestation; the service\'s own passes through', async () => {
+  const launched = {engine: 'vendor', version: '26.924.1001281', build: '26.928.40906-darwin-arm64'};
+  const h = harness({server: {nativeEngine: launched}});
+  await initialized(h);
+  const plain = h.client.call('js', {code: 'a'});
+  h.upstream.reply(await h.upstream.nextCall('js'), {content: [{type: 'text', text: 'a'}], isError: false, _meta: {'codex/toolSurface': 'x'}});
+  const plainMeta = (await plain.response).result._meta;
+  assert.deepEqual(plainMeta['cua/nativeEngine'], launched);
+  assert.equal(plainMeta['codex/toolSurface'], 'x');
+  const service = {engine: 'cua', version: '0.2.0', build: 'b2'};
+  const after = h.upstream.sent.length;
+  const served = h.client.call('js', {code: 'b'});
+  h.upstream.reply(await h.upstream.nextCall('js', {after}), {content: [{type: 'text', text: 'b'}], isError: false, _meta: {'cua/nativeEngine': service}});
+  assert.deepEqual((await served.response).result._meta['cua/nativeEngine'], service);
+  const reset = h.client.call('js_reset');
+  h.upstream.reply(await h.upstream.nextCall('js_reset'), {content: [{type: 'text', text: 'js kernel reset'}], isError: false});
+  assert.deepEqual((await reset.response).result._meta['cua/nativeEngine'], launched);
+  // Without one (no computer surface on macOS), nothing is added.
+  const none = harness();
+  await initialized(none);
+  const call = none.client.call('js', {code: 'c'});
+  none.upstream.reply(await none.upstream.nextCall('js'), {content: [{type: 'text', text: 'c'}], isError: false});
+  assert.equal(Object.hasOwn((await call.response).result._meta, 'cua/nativeEngine'), false);
+});

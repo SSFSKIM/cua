@@ -10,6 +10,7 @@ import {tmpdir} from 'node:os';
 import {run} from '../../scripts/native-baseline.mjs';
 import {geditDesktop} from './gedit-double.mjs';
 import {textEdit} from './textedit-double.mjs';
+import {parseProcess} from '../../scripts/native-baseline/macos.mjs';
 
 const AsyncFunction = (async () => {}).constructor;
 const RELEASE = '26.928.40906-linux-arm64';
@@ -188,6 +189,8 @@ test('a cell that times out stops all further input, and the run still ends its 
 const reuseOf = home => ({approvedHome: home, release: '26.928.40906-darwin-arm64', runtimeRoot: `${home}/runtimes/26.928.40906-darwin-arm64`,
   helper: `${home}/runtimes/26.928.40906-darwin-arm64/SkyComputerUseService.app`, reason: 'reused'});
 const TEXTEDIT_PID = 4242;
+// The run's TextEdit as `ps` reads it on the device: started during the run (an age of seconds), TextEdit's executable.
+const TEXTEDIT_PROCESS = {ageSeconds: 0, started: 'Mon Oct 19 22:38:02 2026', path: '/System/Applications/TextEdit.app/Contents/MacOS/TextEdit'};
 const BUILD = 'c'.repeat(64);
 const ENGINE_BUNDLE = '/Users/someone/Library/Application Support/cua/engine/cua Engine.app';
 const engineFacts = (extra = {}) => ({checkoutBuild: BUILD, installed: {bundlePath: ENGINE_BUNDLE, engineVersion: '0.1.0', build: BUILD}, installedReal: ENGINE_BUNDLE,
@@ -198,7 +201,8 @@ const helperOf = engine => (engine === 'cua' ? {path: '~/Library/Application Sup
 // One macOS run against the doubles; `frontmost(app)` is the device's frontmost-application reader (#162): a bundle id
 // (TextEdit's is the run's TextEdit, pid TEXTEDIT_PID) or a {pid, bundleId} reading as it is.
 async function macRun(t, {frontmost = () => 'com.apple.TextEdit', app = textEdit(), host = 'vendor', engine = 'vendor', facts = engineFacts(), attestation = () => attestationOf(engine),
-  helpers = () => [helperOf(engine)], startStop = {wasRunning: false}, endStop = {wasRunning: true, pid: 5151}, getState, activateMs = 300, bindError, engineMs} = {}) {
+  helpers = () => [helperOf(engine)], startStop = {wasRunning: false}, endStop = {wasRunning: true, pid: 5151}, getState, activateMs = 300, bindError, engineMs,
+  textEditProcess = () => TEXTEDIT_PROCESS, terminate} = {}) {
   const state = {record: true, scripts: [], answeringHost: host, nativeEngine: attestation, engineMs, terminated: []};
   const approval = {method: 'elicitation/create', params: {message: 'Allow Computer Use to use "TextEdit"?', mode: 'form', requestedSchema: {type: 'object', properties: {}},
     _meta: {connector_id: 'computer-use', codex_approval_kind: 'mcp_tool_call', tool_params: {app: 'com.apple.TextEdit'}}}};
@@ -238,7 +242,8 @@ async function macRun(t, {frontmost = () => 'com.apple.TextEdit', app = textEdit
   const device = {helpers: () => (launched ? helpers() : []), leftovers: () => ({serves: 0, textEditRunning: launched && !app.quit && !terminatedApp}),
     frontmost: () => { const id = frontmost(app); frontmosts.push(id); return id === null || typeof id === 'object' ? id : {pid: id === 'com.apple.TextEdit' ? TEXTEDIT_PID : 777, bundleId: id}; },
     textEditPid: () => TEXTEDIT_PID, activate: () => { activations++; },
-    terminateTextEdit: pid => { state.terminated.push(pid); terminatedApp = true; }};
+    processOf: pid => { state.processReads = [...(state.processReads ?? []), pid]; return textEditProcess(state.processReads.length); },
+    terminateTextEdit: pid => { if (terminate) terminate(pid); state.terminated.push(pid); terminatedApp = true; }};
   const out = outDir(t);
   let code, refusal = null;
   try {
@@ -260,7 +265,7 @@ test('a macOS vendor-host run keeps the TextEdit baseline\'s sequence and attest
   assert.deepEqual([...new Set(rows.map(r => r.op))], ['ssh.roundtrip', 'cold.miss.initialize', 'cold.miss.tools_list', 'cold.miss.first_js', 'cold.miss.total', 'cold.hit.initialize', 'cold.hit.tools_list', 'cold.hit.first_js', 'cold.hit.total',
     'warm.noop', 'warm.getState', 'warm.listApps', 'bind.getApp', 'approval.elicitation', 'setup.activate', 'setup.newDocument', 'warm.getAXState', 'guard.scratch', 'warm.getScreenshot', 'task.act', 'task.verify', 'task.close', 'task.total', 'end_task']);
   assert.ok(rows.every(r => r.ok), JSON.stringify(rows.filter(r => !r.ok)));
-  assert.deepEqual(meta.textEdit, {runningBefore: false, launchedByRun: true, pid: TEXTEDIT_PID, scratchDocument: true, quitByRun: true});
+  assert.deepEqual(meta.textEdit, {runningBefore: false, launchedByRun: true, pid: TEXTEDIT_PID, started: TEXTEDIT_PROCESS.started, scratchDocument: true, quitByRun: true});
   assert.deepEqual(meta.leftovers, {serves: 0, textEditRunning: false});
   assert.deepEqual(meta.environment, {CUA_REPL_HOST: 'vendor', CUA_NATIVE_ENGINE: 'vendor', CUA_SHIM_SURFACES: 'computer', CUA_SHIM_PERSIST: 'session', CUA_SHIM_SECRETS: 'off'});
   assert.equal(meta.hostAttestations.length, 3);
@@ -557,7 +562,7 @@ test('a run that fails before its scratch document ends the TextEdit it launched
   assert.equal(bind.code, 1);
   assert.match(bind.meta.error, /cua\.getApp\(TextEdit\) failed: .*AX not ready/);
   assert.deepEqual(bind.state.terminated, [TEXTEDIT_PID]);
-  assert.deepEqual(bind.meta.textEdit, {runningBefore: false, launchedByRun: true, pid: TEXTEDIT_PID, quitByRun: true, quitHow: 'SIGTERM to the pid the run launched: no scratch document existed'});
+  assert.deepEqual(bind.meta.textEdit, {runningBefore: false, launchedByRun: true, pid: TEXTEDIT_PID, started: TEXTEDIT_PROCESS.started, quitByRun: true, quitHow: 'SIGTERM to the pid the run launched: no scratch document existed'});
   const front = await macRun(t, {engine: 'cua', frontmost: () => 'com.google.Chrome', activateMs: 50});
   assert.deepEqual(front.state.terminated, [TEXTEDIT_PID]);
   assert.equal(front.meta.textEdit.quitByRun, true);
@@ -599,4 +604,43 @@ test('the key guard compares by pid: another TextEdit process in front is not th
   assert.equal(code, 1);
   assert.deepEqual(app.keys, []);
   assert.deepEqual(meta.keySkipped[0].frontmost, {pid: 9999, bundleId: 'com.apple.TextEdit'});
+});
+
+// The M1b.4 re-review: the run signals only a process it started. The TextEdit pid counts as the run's only when ps shows
+// it started after the bind began (as helperAttestation's startedDuringRun), and at the kill the pid must still be that
+// TextEdit, same executable and start time; otherwise nothing is signalled and why is recorded.
+test('ps reads a process\'s age, start time and executable', () => {
+  assert.deepEqual(parseProcess('   01:02 Mon Oct 19 22:38:02 2026     /System/Applications/TextEdit.app/Contents/MacOS/TextEdit\n'),
+    {ageSeconds: 62, started: 'Mon Oct 19 22:38:02 2026', path: '/System/Applications/TextEdit.app/Contents/MacOS/TextEdit'});
+  assert.deepEqual(parseProcess('1-02:00:05 Sun Oct  4 01:02:03 2026 /x/TextEdit').ageSeconds, 93605);
+  assert.equal(parseProcess(''), null);
+  assert.equal(parseProcess('garbage'), null);
+});
+
+test('a TextEdit that started before the run\'s bind is not the run\'s: the run refuses it and signals nothing', async t => {
+  const {code, meta, state, app} = await macRun(t, {engine: 'cua', textEditProcess: () => ({...TEXTEDIT_PROCESS, ageSeconds: 3600})});
+  assert.equal(code, 1);
+  assert.match(meta.error, /TextEdit \(pid 4242\) started before this run's bind \(3600 s ago\): it is not the run's; refusing to drive it/);
+  assert.equal(meta.textEdit.launchedByRun, false);
+  assert.deepEqual(state.terminated, []);
+  assert.deepEqual([app.keys, app.clicks], [[], []]);
+});
+
+test('at the kill, a pid that is no longer the run\'s TextEdit is not signalled; the reason is recorded', async t => {
+  for (const [reused, why] of [
+    [{...TEXTEDIT_PROCESS, path: '/usr/libexec/somethingelse'}, /not signalled: pid 4242 is now \/usr\/libexec\/somethingelse started Mon Oct 19 22:38:02 2026, not the run's TextEdit/],
+    [{...TEXTEDIT_PROCESS, started: 'Mon Oct 19 22:40:00 2026'}, /not signalled: pid 4242 is now .*TextEdit started Mon Oct 19 22:40:00 2026, not the run's TextEdit \(started Mon Oct 19 22:38:02 2026\)/],
+    [null, /not signalled: pid 4242 is no longer running/],
+  ]) {
+    const {meta, state} = await macRun(t, {engine: 'cua', bindError: 'AX not ready', textEditProcess: n => (n === 1 ? TEXTEDIT_PROCESS : reused)});
+    assert.deepEqual(state.terminated, []);
+    assert.equal(meta.textEdit.quitByRun, false);
+    assert.match(meta.textEdit.quitError, why);
+  }
+});
+
+test('a kill that fails is recorded in the TextEdit record, not swallowed', async t => {
+  const {meta} = await macRun(t, {engine: 'cua', bindError: 'AX not ready', terminate: () => { throw new Error('kill: 4242: Operation not permitted'); }});
+  assert.equal(meta.textEdit.quitByRun, false);
+  assert.match(meta.textEdit.quitError, /kill: 4242: Operation not permitted/);
 });

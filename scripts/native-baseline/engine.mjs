@@ -32,7 +32,8 @@ const OWN = Object.freeze({vendor: {origin: 'pinned runtime', process: 'SkyCompu
   cua: {origin: 'approved engine', process: 'cua-engine', who: 'the approved engine\'s process'}});
 
 // A build as an attestation shows it: a cua engine build (a 64-hex hash) by its first 12, anything else (the vendor's
-// runtime release) as it is. (src/runtime/engine.mjs shortBuild shortens only cua's.)
+// runtime release) whole. src/runtime/engine.mjs shortBuild cuts every build to 12 characters, which would truncate
+// the vendor's release (26.928.40906-darwin-arm64 to 26.928.40906), hence this one.
 export const attestedBuild = build => (typeof build === 'string' && /^[0-9a-f]{64}$/.test(build) ? build.slice(0, 12) : String(build ?? 'none'));
 
 // The run's options against its platform and surface: --engine and --approved-engine belong to a macOS computer run,

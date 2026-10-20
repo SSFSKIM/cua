@@ -9,7 +9,7 @@
 import {isTextEditApproval, TEXTEDIT_BUNDLE} from '../accept/lib.mjs';
 import {FRONTMOST_PROCESS_SCRIPT, parseFrontmostProcess, sendIfFrontmost} from '../accept/key-guard.mjs';
 import * as cells from './cells.mjs';
-import {classifyHelpers, HELPER_SCRIPT, leftoverScript} from './remote.mjs';
+import {classifyHelpers, etimeSeconds, HELPER_SCRIPT, leftoverScript} from './remote.mjs';
 
 const BIND_MS = 120_000;
 // How long setup.activate waits for TextEdit to be the frontmost application after `open -a TextEdit`, and how often it
@@ -20,6 +20,14 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 const round = ms => Math.round(ms * 1000) / 1000;
 
 // `engineBundle`: the approved cua engine the run serves, whose process the helper attestation names as its own.
+// One process as `LC_ALL=C ps -o etime=,lstart=,comm=` prints it -> {ageSeconds, started (its lstart), path}, or null for
+// no output (no such process) or a line that is not that.
+export function parseProcess(output) {
+  const match = /^\s*(\d+-)?(\d+(?::\d+){1,2})\s+([A-Z][a-z]{2} [A-Z][a-z]{2} [ \d]\d \d{2}:\d{2}:\d{2} \d{4})\s+(\S.*?)\s*$/.exec(String(output).split('\n')[0] ?? '');
+  return match ? {ageSeconds: etimeSeconds(`${match[1] ?? ''}${match[2]}`), started: match[3], path: match[4]} : null;
+}
+const isTextEdit = process => process !== null && /\/TextEdit$/.test(process.path);
+
 export function macosDevice(remote, {checkout, runtimeRoot, engineBundle = null}) {
   return {
     helpers: () => classifyHelpers(remote(HELPER_SCRIPT), runtimeRoot, engineBundle),
@@ -35,6 +43,8 @@ export function macosDevice(remote, {checkout, runtimeRoot, engineBundle = null}
     },
     // Brings TextEdit to the front from the device side (LaunchServices activates the running instance).
     activate: () => remote('/usr/bin/open -a TextEdit'),
+    // A process's age, start time and executable (parseProcess), or null when it is not running.
+    processOf: pid => parseProcess(remote(`LC_ALL=C /bin/ps -o etime=,lstart=,comm= -p ${Number(pid)} || true`)),
     // Ends the TextEdit the run launched, by its pid, when it has no document (no scratch document was ever made).
     terminateTextEdit: pid => remote(`/bin/kill -TERM ${Number(pid)}`),
   };
@@ -87,11 +97,18 @@ async function activate(ctx) {
 
 // TextEdit this run launched is quit from its scratch document (the cell refuses when that is not in front). A run that
 // failed before it made one (a failed bind or activation) has no window it can quit from, and nobody's document in that
-// TextEdit: it is ended by the pid the run read when it saw it come up, so the sitting's next run is not refused.
+// TextEdit: it is ended by the pid the run read when it saw it come up, so the sitting's next run is not refused. Only a
+// process the run started is signalled: the pid was accepted as the run's only when it started after the bind began
+// (gui), and right before the signal it must still be TextEdit with that start time; otherwise nothing is signalled and
+// quitError says why.
 async function quitTextEdit(ctx) {
   const {meta, device} = ctx;
   if (meta.textEdit?.launchedByRun && !meta.textEdit.scratchDocument && !meta.textEdit.quitByRun && Number.isSafeInteger(meta.textEdit.pid)) {
-    device.terminateTextEdit(meta.textEdit.pid);
+    const {pid, started} = meta.textEdit, now = device.processOf(pid);
+    meta.textEdit.quitByRun = false;
+    if (!now) { meta.textEdit.quitError = `not signalled: pid ${pid} is no longer running`; return; }
+    if (!isTextEdit(now) || now.started !== started) { meta.textEdit.quitError = `not signalled: pid ${pid} is now ${now.path} started ${now.started}, not the run's TextEdit (started ${started})`; return; }
+    try { device.terminateTextEdit(pid); } catch (error) { meta.textEdit.quitError = `SIGTERM to TextEdit (pid ${pid}) failed: ${error.message}`; return; }
     let running = true;
     for (let i = 0; i < 10 && running; i++) { await sleep(500); running = device.leftovers().textEditRunning; }
     meta.textEdit.quitByRun = !running;
@@ -133,6 +150,7 @@ export const macosAdapter = {
     // The first getApp of a TextEdit that is not running launches it; on the mini that call fails with timeoutReached
     // after about 5 s (TextEdit comes up with only its out-of-process Open panel) and the next one binds. Both are
     // recorded: the first as bind.getApp, the retry as bind.getApp.retry.
+    const bindStarted = Date.now();
     const bind = guard(await js(cells.BIND, BIND_MS), 'cua.getApp(TextEdit)');
     const approvals = ctx.elicited();
     row('bind.getApp', 1, bind, {approvals: approvals.length, textEditLaunched: !pre.textEditRunning});
@@ -143,13 +161,21 @@ export const macosAdapter = {
       bound = guard(await js(cells.BIND, BIND_MS), 'cua.getApp(TextEdit), retried');
       row('bind.getApp.retry', 1, bound, {approvals: ctx.elicited().length});
     }
-    // Whether the bind launched TextEdit, and its pid whenever it did, bound or not: the key guard's target and, should
-    // the run fail before its scratch document, what cleanup ends.
-    meta.textEdit.launchedByRun = !pre.textEditRunning && device.leftovers().textEditRunning;
-    if (meta.textEdit.launchedByRun) meta.textEdit.pid = device.textEditPid();
     // The engine requested and the one the results attested so far (every one must agree, ./engine.mjs engineProblem;
     // 'unattested' before any did), with both engines' processes running now.
     meta.service = {surface: 'computer', engine: meta.nativeEngine?.requested ?? 'vendor', answered: meta.nativeEngine ? meta.nativeEngine.attested[0]?.engine ?? 'unattested' : 'vendor', ...ctx.helperAttestation()};
+    // Whether the bind launched TextEdit, and its pid whenever it did, bound or not: the key guard's target and, should
+    // the run fail before its scratch document, what cleanup ends. A TextEdit is the run's only when it started after the
+    // bind began (ps, as helperAttestation's startedDuringRun reads its helpers; etime is whole seconds, floored, so a process
+    // that started during the bind is never older than the bind); one that started
+    // earlier came up between the preflight and the bind, someone else's, and the run refuses to drive it.
+    meta.textEdit.launchedByRun = false;
+    if (!pre.textEditRunning && device.leftovers().textEditRunning) {
+      const pid = device.textEditPid(), process = device.processOf(pid);
+      if (!isTextEdit(process)) throw new Error(`TextEdit (pid ${pid}) could not be read as TextEdit by ps (${process ? process.path : 'no such process'}); refusing to drive it`);
+      if (!(process.ageSeconds * 1000 <= Date.now() - bindStarted)) throw new Error(`TextEdit (pid ${pid}) started before this run's bind (${process.ageSeconds} s ago): it is not the run's; refusing to drive it`);
+      Object.assign(meta.textEdit, {launchedByRun: true, pid, started: process.started});
+    }
     if (!bound.cell?.ok) throw new Error(`cua.getApp(TextEdit) failed: ${bound.cell?.error ?? bound.failure}`);
     meta.textEdit.pid ??= device.textEditPid();
     await activate(ctx);
@@ -196,7 +222,7 @@ export const macosAdapter = {
   // After a failure TextEdit is quit only from the scratch document, never from a window the run cannot vouch for, and
   // not at all after a stop (a prompt may be waiting).
   async cleanup(ctx) {
-    if (!ctx.stopped() && !ctx.meta.complete) { try { await quitTextEdit(ctx); } catch {} }
+    if (!ctx.stopped() && !ctx.meta.complete) { try { await quitTextEdit(ctx); } catch (error) { if (ctx.meta.textEdit) ctx.meta.textEdit.quitError ??= error.message; } }
   },
   leftovers: device => device.leftovers(),
   leftBehind: (leftovers, pre) => leftovers.serves > 0 || (leftovers.textEditRunning && !pre.textEditRunning),

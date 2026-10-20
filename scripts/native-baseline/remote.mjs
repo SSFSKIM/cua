@@ -181,14 +181,14 @@ export const SPIKE_SCRIPT = `/usr/bin/pgrep -f 'cua-116-[s]pike' >/dev/null && e
 // The helpers classified by `kind` (the vendor's SkyComputerUseService or cua's cua-engine) and origin, each with its age
 // in seconds: the vendor's against the pinned runtime (its sky from the runtime this host pins, or another installation's,
 // which the vendor client would reuse), cua's against the approved engine bundle `engineBundle` (or another engine copy).
-const seconds = etime => {
+export const etimeSeconds = etime => {
   const [days, clock] = etime.includes('-') ? etime.split('-') : ['0', etime];
   return Number(days) * 86400 + clock.split(':').map(Number).reduce((total, part) => total * 60 + part, 0);
 };
 export function classifyHelpers(output, runtimeRoot, engineBundle = null) {
   return String(output).split('\n').map(l => l.trim()).filter(Boolean).map(line => {
     const [, etime, path] = line.match(/^(\S+)\s+(.*)$/) ?? [null, null, line];
-    const age = etime ? seconds(etime) : NaN;
+    const age = etime ? etimeSeconds(etime) : NaN;
     const kind = path.endsWith('/cua-engine') ? 'cua' : 'vendor';
     const origin = kind === 'cua' ? (engineBundle && path === `${engineBundle}/Contents/MacOS/cua-engine` ? 'approved engine' : 'another engine copy')
       : runtimeRoot && path.startsWith(`${runtimeRoot}/`) ? 'pinned runtime' : 'another installation';

@@ -1,4 +1,5 @@
-// The Electron fixture app for the spike's Electron scene (the own native engine spec, Verification system part 2): a
+// The Electron fixture app for the Electron scene of the macOS scenes (scripts/repl-parity/scenes-mac.mjs; the own native
+// engine spec, Verification system part 2), moved in M1b from scripts/spike/engine/fixtures/ (the spike imports it from here): a
 // copy of the pinned `electron` dev dependency's Electron.app whose Info.plist names its own bundle id
 // (io.github.ssfskim.cua.fixture.electron), name and executable, carrying the source in ./electron/ as its app, and
 // re-signed ad hoc, since the rewrite invalidates the shipped signature. So the Electron accessibility path is proven on
@@ -22,7 +23,7 @@ export const FIXTURE_NAME = 'cua Electron Fixture';
 export const STOCK_BUNDLE_ID = 'com.github.Electron';
 export const SOURCE_DIR = fileURLToPath(new URL('./electron/', import.meta.url));
 export const CACHE_ROOT = join(homedir(), 'Library/Caches/cua-harness/electron-fixture');
-const REPO_ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
+export const REPO_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const BUILDER = fileURLToPath(import.meta.url);
 const MARKER = 'built.json';
 
@@ -34,7 +35,7 @@ export const FIXTURE_CONTROLS = Object.freeze([
   {id: 'button', role: 'AXButton', name: 'Fixture button'},
   {id: 'status', role: 'AXGroup', name: 'Fixture status'},
 ].map(Object.freeze));
-// The side-effect counters' file in the fixture's user-data directory (./electron/counters.js), read by measure.mjs.
+// The side-effect counters' file in the fixture's user-data directory (./electron/counters.js), read by the harness.
 export const FIXTURE_COUNTERS_FILE = 'cua-fixture-counters.json';
 // The fixed state's values, which the method matrix reads back against.
 export const FIXTURE_INITIAL = Object.freeze({text: '', selected: null, status: 'Pressed 0 times'});
@@ -117,7 +118,7 @@ export function buildElectronFixture({root = REPO_ROOT, cacheRoot = CACHE_ROOT, 
   } finally { fs.rmSync(staging, {recursive: true, force: true}); }
 }
 
-// `node scripts/spike/engine/fixtures/electron-fixture.mjs [--cache <root>]`: builds the fixture; prints the JSON.
+// `node scripts/native-matrix/fixtures/electron-fixture.mjs [--cache <root>]`: builds the fixture; prints the JSON.
 if (process.argv[1] && BUILDER === fs.realpathSync(process.argv[1])) {
   const at = process.argv.indexOf('--cache');
   try { process.stdout.write(JSON.stringify(buildElectronFixture(at > 0 ? {cacheRoot: process.argv[at + 1]} : {})) + '\n'); }

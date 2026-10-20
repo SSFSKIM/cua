@@ -1,7 +1,7 @@
 // What names each scene's window and what the probes act on (measure.mjs; the scenes are ../scenes.mjs). Shared by
 // ./lane.mjs and ./input-groups.mjs.
 import {SCENES} from '../scenes.mjs';
-import {PAGE_TITLE} from '../fixtures/scene-page.mjs';
+import {PAGE_TITLE} from '../../../native-matrix/fixtures/scene-page.mjs';
 
 // A prefix of each scene window's title, as the front-window checks compare it.
 export const SCENE_WINDOW = Object.freeze({textedit: 'cua-scene', finder: SCENES.finder.fixedState.folder, chrome: PAGE_TITLE, electron: SCENES.electron.fixedState.title});

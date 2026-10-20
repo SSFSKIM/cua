@@ -8,10 +8,10 @@
 //   finder    AppKit lists. Finder's process is the system's and is never the run's; only its window on a run-owned
 //             folder of 200 files is. Its fixed state is list view, which the driver sets (`setup`) with the window in
 //             front, since nothing outside an engine may script Finder without an Automation prompt.
-//   chrome    Chrome for Testing at the pinned version (./fixtures/chrome-for-testing.json), placed in the harness cache,
-//             with its own --user-data-dir under the run directory and the loopback scene page (./fixtures/scene-page.mjs)
+//   chrome    Chrome for Testing at the pinned version (scripts/native-matrix/fixtures/chrome-for-testing.json since M1b), placed in the harness cache,
+//             with its own --user-data-dir under the run directory and the loopback scene page (scripts/native-matrix/fixtures/scene-page.mjs)
 //             served by a detached process of the run.
-//   electron  The Electron fixture app (./fixtures/electron-fixture.mjs) with its own bundle id and a scratch user-data
+//   electron  The Electron fixture app (scripts/native-matrix/fixtures/electron-fixture.mjs) with its own bundle id and a scratch user-data
 //             directory under the run directory.
 //
 // Refusals (`refusals`): the harness does not start, and no scene comes up, while a process runs Chrome for Testing's or
@@ -45,9 +45,9 @@ import * as fs from 'node:fs';
 import {join, isAbsolute} from 'node:path';
 import {spawn} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
-import {PAGE_CONTROLS, PAGE_INITIAL, PAGE_TITLE, startScenePage} from './fixtures/scene-page.mjs';
-import {FIXTURE_BUNDLE_ID, FIXTURE_CONTROLS, FIXTURE_INITIAL, buildElectronFixture} from './fixtures/electron-fixture.mjs';
-import {CHROME_FOR_TESTING_BUNDLE_ID, placeChromeForTesting} from './fixtures/chrome-for-testing.mjs';
+import {PAGE_CONTROLS, PAGE_INITIAL, PAGE_TITLE, startScenePage} from '../../native-matrix/fixtures/scene-page.mjs';
+import {FIXTURE_BUNDLE_ID, FIXTURE_CONTROLS, FIXTURE_INITIAL, buildElectronFixture} from '../../native-matrix/fixtures/electron-fixture.mjs';
+import {CHROME_FOR_TESTING_BUNDLE_ID, placeChromeForTesting} from '../../native-matrix/fixtures/chrome-for-testing.mjs';
 import {appWindows, appWindowState, awaitOwnLaunch, frontWindow, openApp, runningApps, stopRecorded} from './scene-processes.mjs';
 import {isSameLaunch, launchOf} from '../../accept/fixture-app.mjs';
 import {quote} from '../../browser-parity/topology.mjs';

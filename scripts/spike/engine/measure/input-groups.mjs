@@ -15,8 +15,8 @@
 import {join} from 'node:path';
 import {quote} from '../../../browser-parity/topology.mjs';
 import {textEditDocument} from '../scenes.mjs';
-import {FIXTURE_CONTROLS, FIXTURE_COUNTERS_FILE} from '../fixtures/electron-fixture.mjs';
-import {PAGE_CONTROLS} from '../fixtures/scene-page.mjs';
+import {FIXTURE_CONTROLS, FIXTURE_COUNTERS_FILE} from '../../../native-matrix/fixtures/electron-fixture.mjs';
+import {PAGE_CONTROLS} from '../../../native-matrix/fixtures/scene-page.mjs';
 import * as spike from './cells.mjs';
 import {SCENE_WINDOW, ACTION_TARGET, USER_WINDOW, TEXT_TARGET} from './targets.mjs';
 import {TASK_CLOSE} from '../../../native-baseline/cells.mjs';

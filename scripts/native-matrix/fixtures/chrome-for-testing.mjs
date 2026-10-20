@@ -1,4 +1,5 @@
-// Chrome for Testing for the spike's Chrome scene (the own native engine spec, Verification system part 2): one stable
+// Chrome for Testing for the Chrome scene of the macOS scenes (scripts/repl-parity/scenes-mac.mjs; the own native engine
+// spec, Verification system part 2), moved in M1b from scripts/spike/engine/fixtures/ (the spike imports it from here): one stable
 // mac-arm64 build pinned in ./chrome-for-testing.json by version, URL and SHA-256, downloaded on the device and unzipped
 // under ~/Library/Caches/cua-harness/chrome-for-testing/<version>/. Its bundle id, com.google.chrome.for.testing, is not
 // the owner's Chrome's, and nothing here touches the owner's Chrome or its data.
@@ -96,7 +97,7 @@ export async function placeChromeForTesting({pin = loadPin(), cacheRoot = CACHE_
   } finally { fs.rmSync(staging, {recursive: true, force: true}); }
 }
 
-// `node scripts/spike/engine/fixtures/chrome-for-testing.mjs [--cache <root>]`: places the pinned build; prints the JSON.
+// `node scripts/native-matrix/fixtures/chrome-for-testing.mjs [--cache <root>]`: places the pinned build; prints the JSON.
 if (process.argv[1] && fileURLToPath(import.meta.url) === fs.realpathSync(process.argv[1])) {
   const at = process.argv.indexOf('--cache');
   placeChromeForTesting(at > 0 ? {cacheRoot: process.argv[at + 1]} : {}).then(

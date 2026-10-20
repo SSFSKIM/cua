@@ -205,10 +205,12 @@ async function targetConnection(tag, value, recorder, targetModule, {full}) {
     const name = `${tag}: ${method} substitution`;
     const got = recorder.received.length === before + 1 ? lastReceived() : null;
     const others = object => JSON.stringify(Object.entries(object).filter(([key]) => key !== 'text' && key !== 'value').sort());
-    const exact = got && field(got) === value && others(got.args[0]) === others(input);
+    // On macOS the wrapper marks a substituted request `concealed: true` for cua's engine (src/services/sky.mjs, #117).
+    const expected = process.platform === 'darwin' ? {...input, concealed: true} : input;
+    const exact = got && field(got) === value && others(got.args[0]) === others(expected);
     record(name, out.ok && exact ? 'PASS' : 'FAIL', out.ok && exact
       ? 'the fake target received exactly the stored value in the eligible field; the cell got no value back'
-      : `cell ${out.ok ? 'succeeded' : `failed (${errorCode(out) ?? 'no code'})`}; target ${got ? (field(got) === value ? `got the value with other fields changed (${others(got.args[0])} vs ${others(input)})` : 'did not get the value') : 'received nothing'}`);
+      : `cell ${out.ok ? 'succeeded' : `failed (${errorCode(out) ?? 'no code'})`}; target ${got ? (field(got) === value ? `got the value with other fields changed (${others(got.args[0])} vs ${others(expected)})` : 'did not get the value') : 'received nothing'}`);
   }
   if (!full) return c;
 

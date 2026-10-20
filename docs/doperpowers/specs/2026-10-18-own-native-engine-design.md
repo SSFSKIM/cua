@@ -375,11 +375,13 @@ methods: list_apps, get_app_state, click, drag, paste, perform_secondary_action,
 
 resolve_app → {appPath: string, bundleIdentifier: string, displayName: string, isRunning: boolean, pid: number | null}
 get_app_state {app, disableDiff?: boolean, includeScreenshot?: boolean, outputDirectory: string} → Skyshot
-Skyshot  {app: {bundleIdentifier, displayName, appPath, pid}, window: {title: string | null, frame: Rect, pid: number},
+Skyshot  {app: {bundleIdentifier, displayName, appPath, pid, catalyst: boolean}, window: {title: string | null, frame: Rect, pid: number},
           lineage: string, revision: number, nodes: Node[], truncated: {depth?: number, count?: number} | null,
           screenshot: {url: string, width: number, height: number, scale: number} | null, focused: string | null,
           selectedText: string | null, selectedElements: string[], menuBar: Node[], settle?: "capped"}
-          (window.title: the vendor's `ApplicationWindow.title` 0x10076e174, the window server's name for the window, else its
+          (app.catalyst: the vendor's ApplicationUIElement.isCatalystApp 0x100704c88, the application's
+          `_AXExhibitsMacCatalystBehavior`, false when absent; filterActions drops AXCancel in such an app (M1a.2b).
+          window.title: the vendor's `ApplicationWindow.title` 0x10076e174, the window server's name for the window, else its
           AXTitle, "Desktop" for an untitled Finder window at the desktop-icon level, null when there is none (the renderer
           prints `Unknown`); without Screen Recording the window server gives no name and the AX title stands (M1a.2b).
           menuBar: the AXMenuBar element at depth 0 (roleDescription null when it lists none, printed `menu bar`), then its
@@ -398,7 +400,7 @@ Node     {token: string, depth: number, pid: number, role: string, subrole: stri
           identifier: string | null, actionDescriptions: (string | null)[],
           valueDescription?: string, placeholder?: string, numberOfCharacters?: number, help?: string, url?: string,
           traits?: number, servesAsTitleFor?: string[], rowIndexRange?: [number, number], columnIndexRange?: [number, number],
-          domClassList?: string[],
+          domClassList?: string[], scrollBars?: {horizontal: boolean, vertical: boolean},
           flags: {enabled: boolean, focused: boolean, focusable: boolean, selected: boolean, selectable: boolean,
                   settable: boolean, expanded?: boolean, disclosable?: boolean},
           actions: string[], frame: Rect | null, children: number,
@@ -423,7 +425,9 @@ Node     {token: string, depth: number, pid: number, role: string, subrole: stri
           flags.selected is AXSelected, else the selected trait of AXTraits; flags.selectable is AXSelected settable, never on a menu
           or menu-bar item (FUN_10077d1e4; AXSelectable is not read); flags.settable is read only for a node with a value and, in a Chromium window, only for AXComboBox,
           AXIncrementor (not a date or time field's), AXTextArea, AXTextField and a tab, FUN_100751614; roleDescription is null
-          when the element lists none)
+          when the element lists none; scrollBars, present on a node with a page-scroll action, says whether it answers
+          AXHorizontalScrollBar and AXVerticalScrollBar. `actions` are the element's own; the renderer applies the vendor's
+          filterActions, FUN_100782c24, to what it prints)
 input results → {meta: {inputRoute: 1 | "2'" | 2 | 3 | 4 | "paste", startedAt: number, endedAt: number,
                         receivedAt: number, hidIdleMs: number, entered?: number, routeAdvice?: string, intervention?: "off",
                         activationGuardMs?: number, pointUnconfirmed?: true}}

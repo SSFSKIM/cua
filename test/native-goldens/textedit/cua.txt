@@ -111,14 +111,14 @@ Line 60
 	48 menu button (disabled) document actions
 	49 image cua-scene.rtf
 	50 text cua-scene.rtf
-51 (selectable, collapsed) Apple, Secondary Actions: Expand
-52 (selectable, collapsed) TextEdit, Secondary Actions: Expand
-53 (selectable, collapsed) File, Secondary Actions: Expand
-54 (selectable, collapsed) Edit, Secondary Actions: Expand
-55 (selectable, collapsed) Format, Secondary Actions: Expand
-56 (selectable, collapsed) View, Secondary Actions: Expand
-57 (selectable, collapsed) Window, Secondary Actions: Expand
-58 (selectable, collapsed) Help, Secondary Actions: Expand
+51 (selectable, collapsed) Apple, Secondary Actions: Cancel, Expand
+52 (selectable, collapsed) TextEdit, Secondary Actions: Cancel, Expand
+53 (selectable, collapsed) File, Secondary Actions: Cancel, Expand
+54 (selectable, collapsed) Edit, Secondary Actions: Cancel, Expand
+55 (selectable, collapsed) Format, Secondary Actions: Cancel, Expand
+56 (selectable, collapsed) View, Secondary Actions: Cancel, Expand
+57 (selectable, collapsed) Window, Secondary Actions: Cancel, Expand
+58 (selectable, collapsed) Help, Secondary Actions: Cancel, Expand
 
 The focused UI element is 2 text entry area (settable) ID: First Text View, Value: cua scene document
 **Bold scene line**

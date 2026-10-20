@@ -159,6 +159,33 @@ test('role words: row for rows, container for groups, nothing for menu items, th
   assert.deepEqual(lines(shot).slice(1), ['\t1 row R', '\t2 container G', '\t3 Open', '\t4 체크박스 K', '\t5 unknown U']);
 });
 
+test('filterActions (FUN_100782c24): each action\'s rule by role, value settability, scroll bars and a Catalyst app', () => {
+  const area = (token, scrollBars) => node(token, 1, 'AXScrollArea', {roleDescription: 'scroll area', title: token,
+    actions: ['AXScrollLeftByPage', 'AXScrollRightByPage', 'AXScrollUpByPage', 'AXScrollDownByPage', 'AXShowDefaultUI', 'AXShowAlternateUI'],
+    ...(scrollBars ? {scrollBars} : {})});
+  const shot = skyshot(win([
+    area('both', {horizontal: true, vertical: true}), area('vertical', {horizontal: false, vertical: true}), area('unknown'),
+    node('f', 1, 'AXTextField', {roleDescription: 'text field', title: 'F', actions: ['AXConfirm', 'AXCancel', 'AXPick']}),
+    node('mi', 1, 'AXMenuItem', {roleDescription: 'menu item', title: 'Open', actions: ['AXConfirm', 'AXCancel', 'AXPick']}),
+    node('mb', 1, 'AXMenuBar', {roleDescription: 'menu bar', title: 'MB', actions: ['AXCancel', 'AXPick']}),
+    node('s1', 1, 'AXSlider', {roleDescription: 'slider', title: 'Settable', flags: {settable: true}, actions: ['AXIncrement', 'AXDecrement']}),
+    node('s2', 1, 'AXSlider', {roleDescription: 'slider', title: 'Fixed', actions: ['AXIncrement', 'AXDecrement']}),
+  ]));
+  assert.deepEqual(lines(shot).slice(1), [
+    '\t1 scroll area both, Secondary Actions: Scroll Left, Scroll Right, Scroll Up, Scroll Down',
+    '\t2 scroll area vertical, Secondary Actions: Scroll Up, Scroll Down',
+    '\t3 scroll area unknown, Secondary Actions: Scroll Left, Scroll Right, Scroll Up, Scroll Down',
+    '\t4 text field F, Secondary Actions: Cancel',
+    '\t5 Open, Secondary Actions: Confirm',
+    '\t6 menu bar MB',
+    '\t7 slider (settable) Settable',
+    '\t8 slider Fixed, Secondary Actions: Increment, Decrement',
+  ]);
+  const catalyst = skyshot(win([node('f', 1, 'AXTextField', {roleDescription: 'text field', title: 'F', actions: ['AXCancel', 'AXDelete']})]),
+    {app: {bundleIdentifier: 'com.example.app', displayName: 'Example', appPath: '/Applications/Example.app', pid: 1, catalyst: true}});
+  assert.equal(lines(catalyst)[1], '\t1 text field F, Secondary Actions: Delete', 'AXCancel never in a Catalyst app');
+});
+
 test('an element whose line is empty is not printed; its children take its place', () => {
   const shot = skyshot(win([node('rg', 1, 'AXRadioGroup', {roleDescription: 'radio group'}),
     node('r1', 2, 'AXRadioButton', {roleDescription: 'radio button', title: 'One', value: 1, valueType: 'number', actions: ['AXPress']}),
@@ -221,7 +248,8 @@ test('the menu bar: the engine\'s AXMenuBar node after the window\'s tree with t
   const described = skyshot(win(), {menuBar: [node('mb', 0, 'AXMenuBar', {roleDescription: '메뉴 막대'}), ...items]});
   assert.equal(lines(described)[1], '1 메뉴 막대', 'a role description the bar carries is its role word');
   const recorded = skyshot(win(), {menuBar: items.map(each => ({...each, depth: 0, actions: ['AXCancel', 'AXPress', 'AXPick'], actionDescriptions: undefined}))});
-  assert.deepEqual(lines(recorded).slice(1, 3), ['1 Example', '2 (disabled) File'], 'items without their bar (M0\'s recordings) print as top-level elements');
+  assert.deepEqual(lines(recorded).slice(1, 3), ['1 Example, Secondary Actions: Cancel', '2 (disabled) File, Secondary Actions: Cancel'],
+    'items without their bar (M0\'s recordings) print as top-level elements, their actions filtered as any element\'s');
 });
 
 test('the trailer: selected text, else selected elements (one tab), else the focused element', () => {

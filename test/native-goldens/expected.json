@@ -183,26 +183,12 @@
         "before"
       ],
       "kind": "part",
-      "fault": "engine or renderer",
+      "fault": "engine",
       "label": "Secondary Actions",
       "cua": "Scroll Left, Scroll Right, Scroll Up, Scroll Down",
       "vendor": "⟨22⟩",
       "count": 2,
-      "cause": "Engine or renderer (the action list, not its descriptions), undecided until M1b's full-text Finder comparison; it does not expire with the action descriptions. The four page-scroll actions are table words (FUN_100783260: `Scroll Left`, `Scroll Right`, `Scroll Up`, `Scroll Down`, 49 characters together, the same in any language), and the vendor's line holds 22, exactly `Scroll Up, Scroll Down` (each line's length without its hidden `_NS` identifier). So the vendor printed only the vertical page scrolls on the two scroll areas, where the cua lane's recordings list all four. Each of Finder's scroll areas has a vertical scroll bar only, while TextEdit's has both and the vendor prints all four there. Either the vendor's filterActions drops a page scroll along an axis with no scroll bar (its predicate is not read, sky-behaviour.md filterActions; then a renderer rule cua lacks), or the scroll areas listed only the vertical actions to the vendor (then the engine's action read); M1b's live Finder text decides it."
-    },
-    {
-      "scene": "finder",
-      "golden": [
-        "full",
-        "before"
-      ],
-      "kind": "part",
-      "fault": "engine or renderer",
-      "label": "Secondary Actions",
-      "cua": "Open, Confirm",
-      "vendor": "⟨12⟩",
-      "count": 18,
-      "cause": "Engine or renderer (the action list, not its descriptions), undecided until M1b's full-text Finder comparison; it does not expire with the action descriptions. The file rows' line prints 12 characters where cua's carries AXOpen and AXConfirm. AXConfirm is a table word (FUN_100783260: `Confirm`, 7 characters in any language), so with it the vendor's line would hold `, Confirm` (9) beside AXOpen's description, and the cells' AXOpen alone prints 12 (the same app's description of the same action name). So the vendor's row line carries AXOpen only: either the vendor's filterActions drops AXConfirm there (its predicate is not read; then a renderer rule cua lacks), or the rows listed no AXConfirm to the vendor (then the engine's action read)."
+      "cause": "Engine (the Skyshot shape): the vendor's filterActions (FUN_100782c24) keeps AXScrollLeftByPage and AXScrollRightByPage only on an element that answers AXHorizontalScrollBar, and AXScrollUpByPage and AXScrollDownByPage only on one that answers AXVerticalScrollBar. Each of Finder's two scroll areas has a vertical scroll bar only, so the vendor prints `Scroll Up, Scroll Down`, 22 characters (the table's words, FUN_100783260, the same in any language; each line's length without its hidden `_NS` identifier); TextEdit's has both and the vendor prints all four there. The recordings do not carry which scroll bars an element has, so the renderer keeps all four. Since M1a.2b the engine carries them (Node.scrollBars) and the renderer applies the rule."
     },
     {
       "scene": "finder",
@@ -215,8 +201,8 @@
       "label": "Secondary Actions",
       "cua": "Open",
       "vendor": "⟨12⟩",
-      "count": 18,
-      "cause": "Engine (action descriptions): the vendor describes an action by its fixed English word (FUN_100783260, the table at 0x1014033e8), else a custom action's `Name:` (FUN_100783928), else the system's description (AXUIElementCopyActionDescription, `AXUIElementRef.description(for:)` 0x1006e8bf8), localized to the Mac's language (Korean on the mini, though TextEdit answers in English), else the action's name (FUN_1007816a0, FUN_1007515a8). This action is in neither the table nor a `Name:`, so the vendor prints the system's description; the recorded Skyshots carry none, so the renderer splits the AX name into words. Since M1a.2b the engine carries the system's description and the renderer prints it. The cells' AXOpen, 12 characters."
+      "count": 36,
+      "cause": "Engine (action descriptions): the vendor describes an action by its fixed English word (FUN_100783260, the table at 0x1014033e8), else a custom action's `Name:` (FUN_100783928), else the system's description (AXUIElementCopyActionDescription, `AXUIElementRef.description(for:)` 0x1006e8bf8), localized to the Mac's language (Korean on the mini, though TextEdit answers in English), else the action's name (FUN_1007816a0, FUN_1007515a8). This action is in neither the table nor a `Name:`, so the vendor prints the system's description; the recorded Skyshots carry none, so the renderer splits the AX name into words. Since M1a.2b the engine carries the system's description and the renderer prints it. AXOpen, 12 characters, on the file rows' name cells and on their name fields; the fields' AXConfirm is filterActions' to drop (FUN_100782c24 drops AXConfirm on a text field), so it prints on neither side."
     },
     {
       "scene": "finder",

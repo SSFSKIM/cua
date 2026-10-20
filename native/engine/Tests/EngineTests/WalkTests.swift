@@ -411,7 +411,6 @@ final class WalkTests: XCTestCase {
 
   func testSelectedFallsBackToTheSelectedTraitAndMenuItemsAreNeverSelectable() {
     let tree = FakeTree()
-    tree.children = [0: [1, 2]]
     tree.children = [0: [1, 2, 3]]
     tree.extra = [1: ["AXTraits": selectedTrait as CFNumber],
                   2: ["AXRole": "AXMenuItem" as CFString, "AXSelected": kCFBooleanFalse],
@@ -421,6 +420,21 @@ final class WalkTests: XCTestCase {
     XCTAssertEqual(flags(nodes[1])["selected"] as? Bool, true, "a Catalyst element's selected trait")
     XCTAssertEqual(flags(nodes[2])["selectable"] as? Bool, false, "a menu item, though AXSelected is settable")
     XCTAssertEqual(flags(nodes[3])["selectable"] as? Bool, false, "AXSelectable is not the vendor's: AXSelected is not settable")
+  }
+
+  /// filterActions (FUN_100782c24) keeps a page scroll only along an axis whose scroll bar the element answers
+  /// (AXHorizontalScrollBar, AXVerticalScrollBar): a node with a page-scroll action carries which it has.
+  func testANodeWithPageScrollsCarriesItsScrollBars() {
+    let tree = FakeTree()
+    tree.children = [0: [1, 2, 3]]
+    tree.actions = [1: ["AXScrollLeftByPage", "AXScrollUpByPage"], 2: ["AXScrollDownByPage"], 3: ["AXPress"]]
+    tree.extra = [1: ["AXVerticalScrollBar": Engine.element(50)], 2: ["AXHorizontalScrollBar": Engine.element(51), "AXVerticalScrollBar": Engine.element(52)],
+                  3: ["AXVerticalScrollBar": Engine.element(53)]]
+    let nodes = walk(tree, Lineage()).nodes
+    XCTAssertEqual(nodes[1]["scrollBars"] as? [String: Bool], ["horizontal": false, "vertical": true])
+    XCTAssertEqual(nodes[2]["scrollBars"] as? [String: Bool], ["horizontal": true, "vertical": true])
+    XCTAssertNil(nodes[3]["scrollBars"], "only a node with a page-scroll action carries them")
+    XCTAssertNil(nodes[0]["scrollBars"])
   }
 
   func testAWindowWithoutAURLCarriesItsDocument() {

@@ -6,14 +6,14 @@ import Foundation
 // `_AXUIElementCopyHierarchy` the vendor prefetches with lost to it on every scene in M0 and is not resolved.
 
 /// The attributes read per element: the vendor's 20 in its order (F §1.2), then what the Interfaces' Node adds
-/// (AXDOMClassList), the settle's busy signs (AXElementBusy, AXLoaded; F §8.4), position, size and
+/// (AXDOMClassList), the scroll bars filterActions consults (AXHorizontalScrollBar, AXVerticalScrollBar), the settle's busy signs (AXElementBusy, AXLoaded; F §8.4), position, size and
 /// children. One list for the settle's busy walk and the observation's walk, so the observation can read the tree the
 /// settle fetched.
 let observedAttributes: [String] = [
   "AXRole", "AXSubrole", "AXRoleDescription", "AXTitle", "AXDescription", "AXValue", "AXValueDescription",
   "AXPlaceholderValue", "AXNumberOfCharacters", "AXHelp", "AXIdentifier", "AXSelected", "AXFocused", "AXEnabled",
   "AXDisclosing", "AXURL", "AXTraits", "AXServesAsTitleForUIElements", "AXRowIndexRange", "AXColumnIndexRange",
-  "AXDOMClassList", "AXElementBusy", "AXLoaded", "AXTextualContext", "AXPosition", "AXSize", "AXChildren",
+  "AXDOMClassList", "AXHorizontalScrollBar", "AXVerticalScrollBar", "AXElementBusy", "AXLoaded", "AXTextualContext", "AXPosition", "AXSize", "AXChildren",
 ]
 
 /// What the walk knows of one element. Every optional is nil when the element does not carry the attribute.
@@ -40,6 +40,9 @@ struct ElementData {
   var enabled: Bool?
   var disclosing: Bool?
   var domClassList: [String]?
+  /// Whether the element answers AXHorizontalScrollBar, AXVerticalScrollBar (any value).
+  var horizontalScrollBar: Bool
+  var verticalScrollBar: Bool
   var elementBusy: Bool?
   var loaded: Bool?
   /// AXTextualContext (the vendor's Markdown predicate skips `AXTextualContextSourceCode`).
@@ -73,6 +76,8 @@ struct ElementData {
     enabled = flag("AXEnabled")
     disclosing = flag("AXDisclosing")
     textualContext = string("AXTextualContext")
+    horizontalScrollBar = values["AXHorizontalScrollBar"] != nil
+    verticalScrollBar = values["AXVerticalScrollBar"] != nil
     elementBusy = flag("AXElementBusy")
     loaded = flag("AXLoaded")
     domClassList = values["AXDOMClassList"].flatMap { CFGetTypeID($0) == CFArrayGetTypeID() ? ($0 as! [AnyObject]).compactMap { $0 as? String }.map(bounded) : nil }

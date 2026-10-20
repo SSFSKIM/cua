@@ -217,7 +217,10 @@ final class Lineage {
       return entry
     }
     let source = resolver.source()
-    if let live = source.data(entry.element), ElementIdentity(live, pid: entry.identity.pid).matches(entry.identity) {
+    // A menu-bar entry's identity was recorded through the attributes the element lists; it is read the same way.
+    let inMenu = observed.menu.contains(number)
+    let live = inMenu ? source.listedData(entry.element) : source.data(entry.element)
+    if let live, ElementIdentity(live, pid: entry.identity.pid).matches(entry.identity) {
       return entry
     }
     let before = observed.entries.values.filter { $0.identity.matches(entry.identity) }.count
@@ -245,7 +248,8 @@ struct ElementResolver {
   var stillValid: (AXUIElement) -> Bool
   /// A fresh source for the re-read and the re-fetch's walk.
   var source: () -> ElementSource
-  /// What a re-fetch walks: the app's primary window now and the menu bar's items.
+  /// What a re-fetch walks: the app's primary window now and the menu-bar elements an observation reads (the bar, then
+  /// its items but the Apple menu; `menuBarElements`).
   var tree: () -> (window: AXUIElement?, menuItems: [AXUIElement])
 
   /// The engine's: `lineage`'s watches, the live handle, and `pid`'s application element.
@@ -256,8 +260,9 @@ struct ElementResolver {
       source: { ElementSource() },
       tree: {
         let application = prepare(AXUIElementCreateApplication(pid))
-        // The menu bar's element and its top-level items, as the observation emits them.
-        let menuItems = elementAttribute(application, kAXMenuBarAttribute).map { [$0] + elementList(attribute($0, kAXChildrenAttribute)) } ?? []
+        // The menu-bar elements as the observation reads them.
+        let bar = elementAttribute(application, kAXMenuBarAttribute)
+        let menuItems = menuBarElements(bar: bar, items: bar.map { elementList(attribute($0, kAXChildrenAttribute)) } ?? [])
         return (primaryWindow(of: application), menuItems)
       })
   }
@@ -357,10 +362,11 @@ extension ConnectionState {
 }
 
 /// The elements an observation would emit now (the window's tree, preorder, within its depth, width and node caps and
-/// its deadline, then the menu bar's items) whose eleven attributes equal the identity's, whichever process serves them.
+/// its deadline, then the menu-bar elements, read through the attributes they list and without a Debug item, as the
+/// walk reads them) whose eleven attributes equal the identity's, whichever process serves them.
 private func matching(_ identity: ElementIdentity, window: AXUIElement?, menuItems: [AXUIElement], source: ElementSource) -> [AXUIElement] {
   var found: [AXUIElement] = []
-  // (element, depth, descend): menu-bar items are matched but never walked into, as the observation does.
+  // (element, depth, descend): menu-bar elements are matched but never walked into, as the observation does.
   var stack: [(AXUIElement, Int, Bool)] = menuItems.reversed().map { (prepare($0), 0, false) }
   if let window { stack.append((prepare(window), 0, true)) }
   let windowFrame = window.flatMap { source.frame($0) }
@@ -368,7 +374,9 @@ private func matching(_ identity: ElementIdentity, window: AXUIElement?, menuIte
   var seen = Set<ElementKey>()
   let deadline = monotonicMilliseconds() + Double(observationDeadlineMs)
   while let (element, depth, descend) = stack.popLast(), visited < maxObservedNodes, monotonicMilliseconds() < deadline {
-    guard seen.insert(ElementKey(element: element)).inserted, let data = source.data(element) else { continue }
+    guard seen.insert(ElementKey(element: element)).inserted,
+          let data = descend ? source.data(element) : source.listedData(element) else { continue }
+    if !descend, data.role != kAXMenuBarRole, isDebugMenuItem(data) { continue }
     visited += 1
     if ElementIdentity(data, pid: identity.pid).matches(identity) { found.append(element) }
     if descend && depth < maxDepth {

@@ -200,7 +200,7 @@ final class TreeWalk {
   /// cannot be read gives no menu-bar nodes at all. The menu bar is read first and its nodes and bytes reserved, so a
   /// cut of the window's walk by the node or byte budget never drops it.
   func run(window: AXUIElement, menuBar: AXUIElement?, menuItems: [AXUIElement]) {
-    let menuElements = menuBar.map { [$0] + menuItems.dropFirst() } ?? []
+    let menuElements = menuBarElements(bar: menuBar, items: menuItems)
     let menuInherited = previous.map { matchSiblings(old: $0.siblings(of: nil, menu: true), new: menuElements) } ?? Array(repeating: nil, count: menuElements.count)
     let menuPending = zip(menuElements, menuInherited).enumerated().map { position, pair in
       Pending(element: pair.0, depth: position == 0 ? 0 : 1, parent: nil, inherited: pair.1, inMenu: true,
@@ -213,7 +213,7 @@ final class TreeWalk {
       if monotonicMilliseconds() >= limits.deadline { menuUnread = Array(menuPending[position...]); break }
       switch read(pending) {
       case .read(let read):
-        if position > 0, read.data.title?.contains("Debug") == true { continue }
+        if position > 0, isDebugMenuItem(read.data) { continue }
         menuReads.append((pending, read))
         reservedBytes += jsonBytes(wire(read, number: lineage.nextNumber, depth: pending.depth)) + 1
       case .failed:
@@ -392,6 +392,18 @@ final class TreeWalk {
   }
 }
 
+/// The menu-bar elements an observation reads, in order (`addMenuBarWithImmediateItems` 0x1007569b8): the AXMenuBar
+/// element, then its top-level items but the first, the system's Apple menu; none without a bar.
+func menuBarElements(bar: AXUIElement?, items: [AXUIElement]) -> [AXUIElement] {
+  bar.map { [$0] + items.dropFirst() } ?? []
+}
+
+/// A menu-bar item the vendor leaves out by its title (0x1007569b8).
+func isDebugMenuItem(_ data: ElementData) -> Bool { data.title?.contains("Debug") == true }
+
+private let horizontalPageScrolls: Set<String> = ["AXScrollLeftByPage", "AXScrollRightByPage"]
+private let verticalPageScrolls: Set<String> = ["AXScrollUpByPage", "AXScrollDownByPage"]
+
 /// A Skyshot node (Interfaces, Node): the optional attributes present only when the element carries them.
 func nodeWire(token: String, depth: Int, pid: pid_t, data: ElementData, actions: [String], flags: NodeFlags,
               valueMarkdown: String?, children: Int, shown: Shown?) -> [String: Any] {
@@ -426,6 +438,10 @@ func nodeWire(token: String, depth: Int, pid: pid_t, data: ElementData, actions:
   if let columns = data.columnIndexRange { node["columnIndexRange"] = columns }
   if let domClassList = data.domClassList { node["domClassList"] = domClassList }
   if let shown { node["shown"] = shown.wire }
+  // The facts filterActions keeps a page scroll by (FUN_100782c24), for a node that has one.
+  if actions.contains(where: { horizontalPageScrolls.contains($0) || verticalPageScrolls.contains($0) }) {
+    node["scrollBars"] = ["horizontal": data.horizontalScrollBar, "vertical": data.verticalScrollBar]
+  }
   return node
 }
 

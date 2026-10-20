@@ -139,15 +139,15 @@ export function present(skyshot) {
 }
 
 function presentUncached(skyshot) {
-  const context = {bundleIdentifier: skyshot.app?.bundleIdentifier ?? null};
-  const roots = forest(skyshot.nodes ?? []).flatMap(root => transform(root, context));
-  roots.push(...menuBar(skyshot.menuBar ?? []));
+  const context = {bundleIdentifier: skyshot.app?.bundleIdentifier ?? null, catalyst: skyshot.app?.catalyst === true};
+  const roots = forest(skyshot.nodes ?? [], context).flatMap(root => transform(root, context));
+  roots.push(...menuBar(skyshot.menuBar ?? [], context));
   const inTree = new Map();
   (function visit(nodes) { for (const node of nodes) { if (!inTree.has(node.token)) inTree.set(node.token, node); visit(node.children); } })(roots);
   const raw = new Map([...(skyshot.nodes ?? []), ...(skyshot.menuBar ?? [])].map(node => [node.token, node]));
   // A trailer element the tree does not print (pruned, or merged away) is rendered from its own attributes [B §6,
   // focus-only node].
-  const resolve = token => inTree.get(token) ?? (raw.has(token) ? {...element(raw.get(token)), children: []} : null);
+  const resolve = token => inTree.get(token) ?? (raw.has(token) ? {...element(raw.get(token), context), children: []} : null);
   const selected = (skyshot.selectedElements ?? []).map(resolve).filter(Boolean);
   return {
     title: skyshot.window?.title ?? 'Unknown', appName: skyshot.app?.displayName ?? 'Unknown', roots,
@@ -165,10 +165,10 @@ function presentedTokens(presented) {
 }
 
 // The Skyshot's preorder node list (each with its depth) as a tree.
-function forest(nodes) {
+function forest(nodes, context) {
   const roots = [], open = [];
   for (const raw of nodes) {
-    const node = element(raw);
+    const node = element(raw, context);
     while (open.length && open.at(-1).depth >= raw.depth) open.pop();
     (open.length ? open.at(-1).node.children : roots).push(node);
     open.push({depth: raw.depth, node});
@@ -178,7 +178,7 @@ function forest(nodes) {
 
 // A working copy of one Skyshot node. A text area's value is its Markdown rendering when the engine fetched one
 // (retrieveAttributedTextFromTextAreas [B §5]); actions pass filterActions and keep the descriptions the engine read.
-function element(raw) {
+function element(raw, context) {
   const markdown = raw.role === 'AXTextArea' && typeof raw.valueMarkdown === 'string' ? raw.valueMarkdown : null;
   return {
     token: raw.token, role: raw.role, subrole: raw.subrole ?? null, roleDescription: raw.roleDescription ?? null,
@@ -187,7 +187,7 @@ function element(raw) {
     valueDescription: raw.valueDescription ?? null, placeholder: raw.placeholder ?? null, help: raw.help ?? null,
     url: raw.url ?? null, rowIndexRange: raw.rowIndexRange ?? null, columnIndexRange: raw.columnIndexRange ?? null,
     domClassList: raw.domClassList ?? null, servesAsTitleFor: raw.servesAsTitleFor ?? null, shown: raw.shown ?? null,
-    flags: {...raw.flags}, actions: filterActions(raw), descriptions: actionDescriptions(raw), children: [],
+    flags: {...raw.flags}, actions: filterActions(raw, context), descriptions: actionDescriptions(raw), children: [],
   };
 }
 
@@ -201,8 +201,8 @@ function actionDescriptions(raw) {
 // (with no role description, the vendor's fallback word `menu bar` [B §6]; golden: all four scenes), whose children are
 // the items the engine emitted under it, each with its actions cleared, so an item prints its title and flags. A
 // Skyshot without the bar's node (M0's recordings) prints its items as top-level elements.
-function menuBar(nodes) {
-  const roots = forest(nodes);
+function menuBar(nodes, context) {
+  const roots = forest(nodes, context);
   for (const root of roots) {
     if (root.role !== 'AXMenuBar') continue;
     root.children = root.children.map(item => ({...item, actions: [], actionsCleared: true, children: []}));
@@ -367,11 +367,27 @@ function removeElementsUnderCalendarEvents(node, {bundleIdentifier}) {
     && node.children.length === 1 && node.children[0].role === 'AXStaticText') node.children = [];
 }
 
-// filterActions [B §5]: the vendor's predicate is not read. The goldens show it hides AXShowDefaultUI and
-// AXShowAlternateUI (every Finder row) and a menu item's AXCancel (Chrome's popup item) [golden].
-const HIDDEN_ACTIONS = new Set(['AXShowDefaultUI', 'AXShowAlternateUI']);
-function filterActions(raw) {
-  return (raw.actions ?? []).filter(action => !HIDDEN_ACTIONS.has(action) && !(action === 'AXCancel' && (raw.role === 'AXMenuItem' || raw.role === 'AXMenuBarItem')));
+// filterActions [B §5]: the vendor's predicate FUN_100782c24, per action (true keeps it). AXShowDefaultUI and
+// AXShowAlternateUI never show; AXCancel not in a Catalyst app (the context's isCatalyst, ApplicationUIElement.
+// isCatalystApp 0x100704c88: `_AXExhibitsMacCatalystBehavior`, the engine's app.catalyst) nor on the menu bar or a menu
+// item; AXPick not on a menu item; AXConfirm not on a text field; a horizontal page scroll only on an element with an
+// AXHorizontalScrollBar, a vertical one only with an AXVerticalScrollBar (the engine's `scrollBars`; a Skyshot without
+// it, M0's recordings, keeps them); AXIncrement and AXDecrement not on an element whose value is settable (the
+// AccessibilityNode witness at +0xb8, TransformedUIElement's isValueSettable, 0x100750ffc).
+function keepsAction(action, raw, {catalyst}) {
+  switch (action) {
+    case 'AXShowDefaultUI': case 'AXShowAlternateUI': return false;
+    case 'AXCancel': return !catalyst && raw.role !== 'AXMenuBar' && raw.role !== 'AXMenuItem';
+    case 'AXPick': return raw.role !== 'AXMenuItem';
+    case 'AXScrollLeftByPage': case 'AXScrollRightByPage': return raw.scrollBars?.horizontal ?? true;
+    case 'AXScrollUpByPage': case 'AXScrollDownByPage': return raw.scrollBars?.vertical ?? true;
+    case 'AXConfirm': return raw.role !== 'AXTextField';
+    case 'AXIncrement': case 'AXDecrement': return !raw.flags?.settable;
+    default: return true;
+  }
+}
+function filterActions(raw, context) {
+  return (raw.actions ?? []).filter(action => keepsAction(action, raw, context));
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -519,10 +535,6 @@ function secondaryActions(node) {
   const names = node.actions.filter(action => !PRIMARY_ACTIONS.has(action)).map(describe).filter(name => name && !DROPPED_DESCRIPTIONS.has(name));
   if (node.flags.disclosable) names.push(node.flags.expanded ? 'Collapse' : 'Expand');
   return names;
-}
-
-export function actionDescription(action) {
-  return ACTION_WORDS[action] ?? customActionName(action) ?? splitName(action);
 }
 
 // FUN_100783928: an NSScanner scans `Name:` off, skips whitespace and newlines (its default), and scans up to the next

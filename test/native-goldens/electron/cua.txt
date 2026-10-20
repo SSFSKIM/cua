@@ -18,9 +18,9 @@ Window: "cua Electron fixture", App: cua Electron Fixture.
 	16 닫기 버튼
 	17 전체 화면 버튼 Help: 이 버튼을 누르면 윈도우를 확대/축소합니다., Secondary Actions: Zoom Window
 	18 최소화 버튼
-19 (selectable, collapsed) Apple, Secondary Actions: Expand
-20 (selectable, collapsed) cua Electron Fixture, Secondary Actions: Expand
-21 (selectable, collapsed) File, Secondary Actions: Expand
-22 (selectable, collapsed) Edit, Secondary Actions: Expand
-23 (selectable, collapsed) View, Secondary Actions: Expand
-24 (selectable, collapsed) Window, Secondary Actions: Expand
+19 (selectable, collapsed) Apple, Secondary Actions: Cancel, Expand
+20 (selectable, collapsed) cua Electron Fixture, Secondary Actions: Cancel, Expand
+21 (selectable, collapsed) File, Secondary Actions: Cancel, Expand
+22 (selectable, collapsed) Edit, Secondary Actions: Cancel, Expand
+23 (selectable, collapsed) View, Secondary Actions: Cancel, Expand
+24 (selectable, collapsed) Window, Secondary Actions: Cancel, Expand

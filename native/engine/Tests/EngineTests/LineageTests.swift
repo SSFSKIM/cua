@@ -119,6 +119,28 @@ final class TokenResolutionTests: XCTestCase {
     XCTAssertTrue(CFEqual(try lineage.resolve(elementToken(3), resolver: fake.resolver).element, Engine.element(91)))
   }
 
+  /// A menu-bar token's identity was recorded through the attributes the element lists, so it is checked and re-fetched
+  /// through the same read: a bar that answers an AXRoleDescription it does not list still resolves.
+  func testAMenuBarTokenReResolvesThroughItsListedRead() throws {
+    let tree = FakeTree()
+    tree.children = [0: [1]]
+    tree.extra = [89: ["AXRole": "AXMenuBar" as CFString, "AXTitle": "" as CFString, "AXRoleDescription": "menu bar" as CFString],
+                  90: ["AXRole": "AXMenuBarItem" as CFString, "AXTitle": "File" as CFString]]
+    tree.listed = [89: ["AXRole", "AXTitle", "AXChildren"]]
+    let lineage = Lineage()
+    _ = walk(tree, lineage, menuBar: 89, menu: [88, 90])   // the bar t2, File t3
+    let fake = FakeResolution(tree)
+    fake.invalidated = true
+    fake.menu = [89, 88, 90]
+    XCTAssertTrue(CFEqual(try lineage.resolve(elementToken(2), resolver: fake.resolver).element, Engine.element(89)), "the live check")
+    XCTAssertEqual(fake.treeReads, 0)
+    tree.unreadable = [89]
+    tree.extra[87] = tree.extra[89]
+    tree.listed[87] = tree.listed[89]
+    fake.menu = [87, 88, 90]
+    XCTAssertTrue(CFEqual(try lineage.resolve(elementToken(2), resolver: fake.resolver).element, Engine.element(87)), "the re-fetch")
+  }
+
   func testTheVendorsSentencesInTheVendorsOrder() {
     let (tree, lineage) = observed()
     let fake = FakeResolution(tree)

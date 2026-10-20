@@ -263,8 +263,13 @@ extension Engine {
     var truncated: [String: Any] = [:]
     if walk.depthHit { truncated["depth"] = maxDepth }
     if walk.omitted > 0 { truncated["count"] = walk.omitted }
+    // Whether the app is a Catalyst app, which filterActions consults (FUN_100782c24; the renderer's): the vendor's
+    // ApplicationUIElement.isCatalystApp 0x100704c88, the application's `_AXExhibitsMacCatalystBehavior`, false when it
+    // answers none [inference: the transformation context's isCatalyst is the app's].
+    var appWire = app.appWire
+    appWire["catalyst"] = bool(attribute(application, "_AXExhibitsMacCatalystBehavior")) ?? false
     var skyshot: [String: Any] = [
-      "app": app.appWire,
+      "app": appWire,
       "window": ["title": windowTitle(window, pid: pid(of: window), frame: windowFrame) ?? NSNull(), "frame": rectWire(windowFrame), "pid": Int(pid(of: window))],
       "lineage": lineage.id,
       "revision": lineage.revision,

@@ -33,6 +33,19 @@ func readPrimaryWindow(_ read: (String) -> (value: CFTypeRef?, error: AXError)) 
   return failure.map { .failed($0) } ?? .absent
 }
 
+/// One attribute read bounded by the request's deadline: each read gets the time left (at most the usual 1 s, at least
+/// 50 ms) as its messaging timeout, and once the deadline has passed no read is sent (it answers as a failed read,
+/// which the preparation turns into `timeoutReached`).
+func deadlineBounded(deadline: Int64, now: @escaping () -> Int64, setTimeout: @escaping (Float) -> Void,
+                     copy: @escaping (String) -> (value: CFTypeRef?, error: AXError)) -> (String) -> (value: CFTypeRef?, error: AXError) {
+  { name in
+    let left = deadline - now()
+    guard left > 0 else { return (nil, .cannotComplete) }
+    setTimeout(Float(max(0.05, min(Double(elementMessagingTimeout), Double(left) / 1000))))
+    return copy(name)
+  }
+}
+
 /// The observation's preparation, the vendor's (0x10014c494 → 0x10014c4f0, its open helper 0x100164860 →
 /// 0x1001648c4): an app that is not running is launched; a running app whose primary window reads as absent gets a
 /// non-activating open (a reopen), which some apps (TextEdit, Finder) answer by opening a window. Two declared
@@ -154,10 +167,10 @@ extension Engine {
     let target = try timings.time("prepare") {
       try prepareTarget(pid: app.pid, deadline: context.deadline, now: unixMilliseconds, sleep: { usleep(50_000) },
                         read: { pid in
-                          // Each attribute read is bounded by the time the request has left (at most the usual 1 s).
                           let element = AXUIElementCreateApplication(pid)
-                          AXUIElementSetMessagingTimeout(element, Float(max(0.05, min(Double(elementMessagingTimeout), Double(context.deadline - unixMilliseconds()) / 1000))))
-                          return readPrimaryWindow { copyAttribute(element, $0) }
+                          return readPrimaryWindow(deadlineBounded(deadline: context.deadline, now: unixMilliseconds,
+                                                                   setTimeout: { AXUIElementSetMessagingTimeout(element, $0) },
+                                                                   copy: { copyAttribute(element, $0) }))
                         },
                         open: { deadline in let running = try apps.launch(app, deadline: deadline); return (running, running.processIdentifier) })
     }

@@ -329,6 +329,18 @@ final class PreparationTests: XCTestCase {
     XCTAssertEqual(outcome.opens, [])
   }
 
+  func testEachAttributeReadGetsWhatIsLeftAndNoneIsSentPastTheDeadline() {
+    let clock = Clock()  // 1_000
+    var timeouts: [Float] = [], copies: [String] = []
+    let read = deadlineBounded(deadline: 2_300, now: { clock.now }, setTimeout: { timeouts.append($0) },
+                               copy: { name in copies.append(name); clock.now += 1_000; return (nil, .cannotComplete) })
+    guard case .failed = readPrimaryWindow(read) else { return XCTFail() }
+    XCTAssertEqual(copies, [kAXFocusedWindowAttribute, kAXMainWindowAttribute])  // the third read would start past 2_300
+    XCTAssertEqual(timeouts.count, 2)
+    XCTAssertEqual(timeouts[0], 1.0, accuracy: 0.001)
+    XCTAssertEqual(timeouts[1], 0.3, accuracy: 0.001)
+  }
+
   func testASleepThatCrossesTheDeadlineStartsNoFurtherRead() {
     let outcome = run(pid: 7, deadline: 1_050, reads: [.failed(.cannotComplete), .window(AXUIElementCreateApplication(7))])
     XCTAssertTrue(isTimeout(outcome.result))

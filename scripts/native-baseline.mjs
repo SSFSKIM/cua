@@ -45,7 +45,8 @@
 //     sitting, every row the default compare judges, and only the attested fields its mode names allowed to differ
 //     (compare.mjs compareLanes).
 //
-// A run writes results.jsonl (one row per sample: op, sample, ok, wallMs, inCellMs and the sample's counts) and
+// A run writes results.jsonl (one row per sample: op, sample, ok, wallMs, inCellMs, the service's cua/serviceMs and cua's
+// engine's cua/engineMs where the result carried them, and the sample's counts) and
 // meta.json (what it ran against: platform, commit, Node, runtime release, sandbox policy, hardware, OS, display, the
 // requested host and
 // what answered each connection (hostAttestations: initialize's serverInfo and the first js result's _meta), the helper,
@@ -262,8 +263,9 @@ async function runPrepared({device, out, host, engine, approvedEngine, node, exp
     }
     const text = textOf(result), cell = cells.parseCell(text);
     const timedOut = !cell && /timed? ?out|timeout/i.test(text);
-    const engineMs = result?._meta?.['cua/engineMs'];
+    const engineMs = result?._meta?.['cua/engineMs'], serviceMs = result?._meta?.['cua/serviceMs'];
     return {wallMs: performance.now() - started, started, text, cell, isError: result.isError === true, timedOut, ...(Number.isFinite(engineMs) ? {engineMs} : {}),
+      ...(Number.isFinite(serviceMs) ? {serviceMs} : {}),
       failure: cell ? null : (text.split('\n').filter(Boolean).at(-1) ?? 'no output').slice(0, 300)};
   };
   // On cua's engine, a cell that failed because the engine did not come up is the engine's launch failure: the run stops
@@ -285,9 +287,13 @@ async function runPrepared({device, out, host, engine, approvedEngine, node, exp
     const value = r.cell?.ok ? r.cell.value ?? {} : null;
     const ok = Boolean(value) && !value.invalid;
     // engineMs: cua's service's cua/engineMs, the socket round trip of the cell's last engine call (results merge it by
-    // key), kept to attribute a row's time between the engine and the rest; recorded, never judged.
+    // key), kept to attribute a row's time between the engine and the rest; recorded, never judged. serviceMs: the
+    // wrapper's cua/serviceMs (src/services/sky.mjs), its time around the service on either engine's lane, which
+    // separates the host's transport from everything below it on a single-call row (comparison A); recorded, never
+    // judged, and on a multi-call cell its last call's.
     return {op, sample, ok, wallMs: round(r.wallMs), ...(r.cell?.inCellMs !== undefined ? {inCellMs: round(r.cell.inCellMs)} : {}),
-      ...(r.engineMs !== undefined ? {engineMs: round(r.engineMs)} : {}), ...(value ?? {error: r.cell?.error ?? r.failure ?? 'failed'}), ...extra};
+      ...(r.engineMs !== undefined ? {engineMs: round(r.engineMs)} : {}), ...(r.serviceMs !== undefined ? {serviceMs: round(r.serviceMs)} : {}),
+      ...(value ?? {error: r.cell?.error ?? r.failure ?? 'failed'}), ...extra};
   };
   const row = (op, sample, r, extra = {}) => emit(record(op, sample, r, extra));
   const stop = reason => { stopped = reason; throw new Stop(reason); };

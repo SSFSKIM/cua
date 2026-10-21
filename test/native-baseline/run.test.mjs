@@ -87,7 +87,8 @@ function fakeClient(options, cua, state) {
       Object.assign(globalThis, {cua, nodeRepl: {write: text => written.push(text)}});
       try { await new AsyncFunction(params.arguments.code)(); } finally { delete globalThis.cua; delete globalThis.nodeRepl; }
       return {content: [{type: 'text', text: `# Native apps\n${written.join('\n')}`}], _meta: {...meta, ...(state.nativeEngine ? {'cua/nativeEngine': state.nativeEngine()} : {}),
-        ...(state.engineMs ? {'cua/engineMs': state.engineMs(params.arguments.code)} : {})}};
+        ...(state.engineMs ? {'cua/engineMs': state.engineMs(params.arguments.code)} : {}),
+        ...(state.serviceMs ? {'cua/serviceMs': state.serviceMs(params.arguments.code)} : {})}};
     },
     async call(name) { assert.equal(name, 'end_task'); return {content: [], structuredContent: {status: 'ended'}}; },
     async close() {},
@@ -201,9 +202,9 @@ const helperOf = engine => (engine === 'cua' ? {path: '~/Library/Application Sup
 // One macOS run against the doubles; `frontmost(app)` is the device's frontmost-application reader (#162): a bundle id
 // (TextEdit's is the run's TextEdit, pid TEXTEDIT_PID) or a {pid, bundleId} reading as it is.
 async function macRun(t, {frontmost = () => 'com.apple.TextEdit', app = textEdit(), host = 'vendor', engine = 'vendor', facts = engineFacts(), attestation = () => attestationOf(engine),
-  helpers = () => [helperOf(engine)], startStop = {wasRunning: false}, endStop = {wasRunning: true, pid: 5151}, getState, activateMs = 300, bindError, engineMs,
+  helpers = () => [helperOf(engine)], startStop = {wasRunning: false}, endStop = {wasRunning: true, pid: 5151}, getState, activateMs = 300, bindError, engineMs, serviceMs,
   textEditProcess = () => TEXTEDIT_PROCESS, terminate, textEditBeforeBind = false} = {}) {
-  const state = {record: true, scripts: [], answeringHost: host, nativeEngine: attestation, engineMs, terminated: [], binds: 0};
+  const state = {record: true, scripts: [], answeringHost: host, nativeEngine: attestation, engineMs, serviceMs, terminated: [], binds: 0};
   const approval = {method: 'elicitation/create', params: {message: 'Allow Computer Use to use "TextEdit"?', mode: 'form', requestedSchema: {type: 'object', properties: {}},
     _meta: {connector_id: 'computer-use', codex_approval_kind: 'mcp_tool_call', tool_params: {app: 'com.apple.TextEdit'}}}};
   let launched = false;
@@ -591,6 +592,18 @@ test('each row records cua/engineMs where its result carried one, not judged', a
   assert.ok(rows.filter(r => r.op === 'warm.noop').every(r => !('engineMs' in r)), 'a null engineMs is not recorded');
   const vendor = await macRun(t, {engine: 'vendor'});
   assert.ok(vendor.rows.every(r => !('engineMs' in r)));
+});
+
+test('each row records cua/serviceMs beside cua/engineMs on both lanes, not judged (comparison A\'s transport separation)', async t => {
+  const timed = code => (/getState/.test(code) ? 20.25 : null);
+  const cua = await macRun(t, {engine: 'cua', engineMs: code => (/getState/.test(code) ? 12.5 : null), serviceMs: timed});
+  assert.equal(cua.meta.complete, true, cua.meta.error);
+  assert.ok(cua.rows.filter(r => r.op === 'warm.getState').every(r => r.serviceMs === 20.25 && r.engineMs === 12.5));
+  assert.ok(cua.rows.filter(r => r.op === 'warm.noop').every(r => !('serviceMs' in r)), 'a null serviceMs is not recorded');
+  // The wrapper times the vendor's service too: the vendor lane records it, with no engineMs beside it.
+  const vendor = await macRun(t, {engine: 'vendor', serviceMs: timed});
+  assert.equal(vendor.meta.complete, true, vendor.meta.error);
+  assert.ok(vendor.rows.filter(r => r.op === 'warm.getState').every(r => r.serviceMs === 20.25 && !('engineMs' in r)));
 });
 
 test('the approved engine\'s signature is recorded as its kind and whether it matches, never the identity', async t => {

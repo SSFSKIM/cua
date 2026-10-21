@@ -9,25 +9,35 @@
 //      again), the serve's preflight for --host and --engine, the approved engine checked against --approved-engine and
 //      this checkout's build
 //   3. the plan's scenes up (scripts/repl-parity/scenes-mac.mjs) with Finder's setup steps, then the engine those steps
-//      used stopped, so the lane's engine is the one its first call launches
-//   4. the activation watcher started (`watch start`), the lane connected (./lane.mjs), every scene bound by path
-//   5. the frontmost regime: each target's app activated (setup.activate, not judged), its speed cells (getAXState,
-//      getScreenshot, listApps; --samples each) and finding-elements cell, then its method cases (./plan.mjs)
+//      used stopped, so the lane's engine is the one its first call launches; the window readers compiled once into the
+//      run directory, and the screen's windows kept as the paste rows' alert baseline (./matrix-device.mjs)
+//   4. the activation watcher started (`watch start`, its pid kept), the lane connected (./lane.mjs), every scene bound
+//      by path with its window brought to the front first, so the bind's text (getApp emits it) is the run's own window
+//   5. the frontmost regime: each target's app activated (a harness step), its speed cells (getAXState, getScreenshot,
+//      listApps; --samples each) and finding-elements cell, then its method cases (./plan.mjs)
 //   6. the background regime: per pairing the user scene activated, its window read as the user window, and each case
 //      of the driven target run with the oracle's reading before and after the act (./matrix-device.mjs read, the focus
-//      probe after); keys only through the key guard's user-window case
-//   7. the launch path (TextEdit, the Electron fixture): the scene down, the user window in front, the app resolved by
-//      its path, the oracle read, the launched app brought down
-//   8. end_task; the watcher stopped and its activations charged to the rows (./oracle.mjs); the lane closed; the live
-//      hold's `recover` (the put-back: Finder's chrome and keys, every scene down, the input source and per-context
-//      preference, the engine stopped, the apps and Finder checked, the owner's front app by activation alone); the
-//      approved home's cleanup (the engine stopped again); the engine and helper attestations judged
+//      probe after); keys only through the key guard's user-window case; a paste or typeText act only between two alert
+//      checks; the windowless app (the "app with no window" refusal) brought up for its pairing and quit after it
+//   7. the launch path (TextEdit, the Electron fixture): the scene down, the user window in front, the app observed by
+//      its path through the engine's own call (its text never leaves the cell), the launched process journaled at once
+//      by pid and start time, the oracle read, the run's own state put in place (TextEdit: the run's document opened
+//      into it), the outcome read, and the launched process quit in a `finally`
+//   8. end_task; the watcher's liveness read once more, the watcher stopped and every activation it saw accounted for
+//      against the steps' device-clock windows (./oracle.mjs accountActivations); the lane closed; every journaled
+//      launch quit; the live hold's `recover` (the put-back: Finder's chrome and keys, every scene down, the input source
+//      and per-context preference, the engine stopped, the apps and Finder checked, the owner's front app by activation
+//      alone); the approved home's cleanup (the engine stopped again); the engine and helper attestations judged
+//
+// Coverage is proven, never assumed: every step that can activate an app answers its device-clock window (`at`; a js
+// cell's from ./lane.mjs), the watcher's liveness is read with every oracle reading and once before it is stopped, and an
+// activation no step accounts for, a watcher gone or a record lost leaves the run incomplete (its judged rows invalid).
 //
 // Nothing of a window the run does not own leaves the device: cells return judgments and counts, the device reads
 // return the run's own pids and other apps' bundle ids. The owner's Chrome and Claude Desktop are never touched: the
 // scenes are Chrome for Testing and the run's own fixture, the put-back restores the front app by activation alone.
 // A key is sent only under scripts/accept/key-guard.mjs; a skip whose front is not one of the run's windows (the owner
-// at the Mac) stops the run.
+// at the Mac) stops the run. A possible system alert around a paste stops the run without touching it.
 import * as fs from 'node:fs';
 import {mkdtempSync} from 'node:fs';
 import {tmpdir} from 'node:os';
@@ -43,29 +53,35 @@ import {checkVendorPreflight} from './goldens.mjs';
 import {BIND} from './goldens-cells.mjs';
 import {BIND_MS, connectLane, helpersOf} from './lane.mjs';
 import {caseCells, CLOSE_PANEL, findingCell, launchCell, launchCheckCell, OPEN_PANEL, selectCell} from './matrix-cells.mjs';
-import {attributeActivations, judgeInterference, userWindowOf} from './oracle.mjs';
-import {CASES, caseId, SCENE_OF} from './plan.mjs';
+import {accountActivations, judgeInterference, userWindowOf} from './oracle.mjs';
+import {CASES, caseId, SCENE_OF, WINDOWLESS_BUNDLE_ID} from './plan.mjs';
 
 export const DEFAULT_RUN = 'Library/Caches/cua-harness/native-matrix';
 export const DEFAULT_RUNS = 3;
 export const DEFAULT_SAMPLES = 10;
 export const REFUSED = 2;
 const SCENE_ORDER = ['textedit', 'finder', 'chrome', 'electron'];
+// The acts that may paste (type_text's paste route included): each sent only between two alert checks.
+export const PASTING = Object.freeze(['paste', 'typeText']);
 
-// The whole matrix, and what each registry cell runs of it (./registry.mjs).
+// The whole matrix, and what each registry cell runs of it (./registry.mjs). `id` names the plan in every result
+// (meta.planId); only a 'full' plan's results count toward the verdict (./summary.mjs).
 export const FULL_PLAN = Object.freeze({
-  frontmost: ['textedit', 'openPanel', 'finder', 'chrome', 'electron'], speed: true, finding: true,
-  background: [...BACKGROUND_PAIRINGS, {driven: 'openPanel', user: 'finder'}],
+  id: 'full', frontmost: ['textedit', 'openPanel', 'finder', 'chrome', 'electron'], speed: true, finding: true,
+  background: [...BACKGROUND_PAIRINGS, {driven: 'openPanel', user: 'finder'}, {driven: 'windowless', user: 'finder'}],
   launch: [{scene: 'textedit', user: 'finder'}, {scene: 'electron', user: 'finder'}],
 });
 const EMPTY_PLAN = {frontmost: [], speed: false, finding: false, background: [], launch: []};
-// A plan narrowed to one scene (and for the background, one user): the registry's `cell <name> --scene --user`.
+const NARROWABLE = [...FULL_PLAN.frontmost, 'windowless'];
+// A plan narrowed to one target (and for the background, one user): the registry's `cell <name> --scene --user`. Its id
+// is 'full' only for the whole matrix.
 export function planOf(kind, {scene = null, user = null} = {}) {
-  if (scene !== null && !FULL_PLAN.frontmost.includes(scene)) throw new Error(`--scene is one of ${FULL_PLAN.frontmost.join(', ')}`);
+  if (scene !== null && !NARROWABLE.includes(scene)) throw new Error(`--scene is one of ${NARROWABLE.join(', ')}`);
   if (user !== null && !SCENE_ORDER.includes(user)) throw new Error(`--user is one of ${SCENE_ORDER.join(', ')}`);
   const plan = narrowed(kind, {scene, user});
   if (!plan.frontmost.length && !plan.background.length && !plan.launch.length) throw new Error(`the ${kind} cell has nothing to run for${scene ? ` --scene ${scene}` : ''}${user ? ` --user ${user}` : ''}`);
-  return plan;
+  const id = kind === 'matrix' && scene === null && user === null ? 'full' : `${kind}${scene ? `:${scene}` : ''}${user ? `@${user}` : ''}`;
+  return {...plan, id};
 }
 function narrowed(kind, {scene, user}) {
   // --scene names a target exactly: textedit is the document, openPanel its Open panel.
@@ -87,17 +103,18 @@ export const scenesOf = plan => SCENE_ORDER.filter(id => plan.frontmost.some(t =
 
 class Stop extends Error {}
 
-// options: {device, host, engine, approvedRuntime, approvedEngine, out, runs, samples, run (the device directory),
-// plan, cell (the registry name the results answer)}; io: {ops (./lane.mjs matrixOps), connect, controllerCheckout(),
-// log, dryRun, interrupt: {signal}, now}. -> 0 every run complete and passed, 1 otherwise, 2 refused before anything
-// on the device changed; 130/143 on an interrupt (the put-back has run).
+// options: {device, host, engine, approvedRuntime, approvedEngine, out, runs, samples, run (the device directory), plan
+// (planOf's), cell (the registry name the results answer), sitting (the sitting's id, in every result)}; io: {ops
+// (./lane.mjs matrixOps), connect, controllerCheckout(), log, dryRun, interrupt: {signal}, now}. -> 0 every run complete
+// and passed, 1 otherwise, 2 refused before anything on the device changed; 130/143 on an interrupt (the put-back ran).
 export async function runMatrix(options, io) {
-  const {host, engine, approvedRuntime, approvedEngine, out, runs = DEFAULT_RUNS, samples = DEFAULT_SAMPLES} = options;
+  const {host, engine, approvedRuntime, approvedEngine, out, runs = DEFAULT_RUNS, samples = DEFAULT_SAMPLES, sitting} = options;
   if (!HOSTS.includes(host)) throw new Error('run needs --host vendor|cua');
   assertEngineOptions({platform: 'darwin', surface: 'computer', host, engine, approvedEngine});
   if (!/^\/[^\0\n]*$/.test(approvedRuntime ?? '')) throw new Error('run needs --approved-runtime <the approved CUA_HOME, an absolute path>');
   if (!Number.isSafeInteger(runs) || runs < 1) throw new Error('--runs needs a positive integer');
   if (!Number.isSafeInteger(samples) || samples < 1) throw new Error('--samples needs a positive integer');
+  if (!/^[\w.-]+$/.test(sitting ?? '')) throw new Error('run needs --sitting <id> (letters, digits, dot, dash, underscore): every lane of one sitting names the same');
   if (!out) throw new Error('run needs --out <dir>');
   const base = resolve(out);
   const dirs = Array.from({length: runs}, (_, i) => join(base, `run-${i + 1}`));
@@ -113,13 +130,14 @@ export async function runMatrix(options, io) {
 }
 
 async function runOnce(options, io) {
-  const {device, host, engine, approvedRuntime, approvedEngine, n, dir, samples, plan = FULL_PLAN, cell: cellName = 'matrix'} = options;
+  const {device, host, engine, approvedRuntime, approvedEngine, n, dir, samples, sitting, plan = FULL_PLAN, cell: cellName = 'matrix'} = options;
   const {ops, log = console.log, dryRun = false} = io;
   const now = io.now ?? Date.now;
   const interrupt = io.interrupt ?? {signal: null};
   const started = new Date().toISOString();
-  const rows = [], problems = [], pending = [];
-  const meta = {run: n, host, engine, samples, plan: {frontmost: plan.frontmost, background: plan.background, launch: plan.launch, speed: plan.speed, finding: plan.finding},
+  const rows = [], problems = [];
+  const meta = {run: n, host, engine, samples, sitting, planId: plan.id ?? 'full',
+    plan: {frontmost: plan.frontmost, background: plan.background, launch: plan.launch, speed: plan.speed, finding: plan.finding},
     elicitations: [], keySkipped: []};
   let refused = false, complete = false, putBack, lanes = [{host, engine, build: null, version: null}];
   const write = () => {
@@ -161,8 +179,9 @@ async function runOnce(options, io) {
     await new Promise(done => setImmediate(done));
     if (interrupt.signal) throw new Stop(`interrupted by ${interrupt.signal}`);
   };
-  const ctx = {ops, run, rows, pending, problems, meta, samples, n, engine, records: {}, lane: null, checkpoint, log, now};
-  let prepared = null, pre = null, watching = false, laneStarted = null;
+  // windows: every step's device-clock window [{kind, key, at}]; judged: the rows whose activations are charged, by key.
+  const ctx = {ops, run, rows, problems, meta, samples, n, engine, records: {}, lane: null, checkpoint, log, now, watcher: null, windows: [], judged: new Map()};
+  let prepared = null, pre = null, laneStarted = null;
   const helpers = [];
   const snapshot = () => {
     const at = now();
@@ -201,13 +220,19 @@ async function runOnce(options, io) {
     }
     // Finder's setup steps drove cua's engine socket: stopped, so the lane's engine is the one the lane launches.
     meta.engineStopAfterSetup = ops.goldens(['engine-stop']);
+    ops.matrix(['compile', '--run', run]);
+    ops.matrix(['alerts', 'baseline', '--run', run]);
     laneStarted = now();
-    ops.live(['watch', 'start', '--run', run]);
-    watching = true;
+    const watch = ops.live(['watch', 'start', '--run', run]);
+    if (!Number.isSafeInteger(watch?.pid)) throw new Error('the activation watcher did not report its pid: no row could prove its coverage');
+    ctx.watcher = watch.pid;
     const stderrFile = dryRun ? undefined : join(mkdtempSync(join(tmpdir(), 'cua-matrix-serve-')), 'serve-stderr.txt');
-    ctx.lane = await connectLane({ops, pre, prepared, host, engine, connect: io.connect, bundleIds: SCENE_ORDER.map(id => SCENES[id].bundleId), meta, stderrFile});
+    ctx.lane = await connectLane({ops, pre, prepared, host, engine, connect: io.connect, bundleIds: [...SCENE_ORDER.map(id => SCENES[id].bundleId), WINDOWLESS_BUNDLE_ID], meta, stderrFile});
     for (const id of scenes) {
-      const bound = await ctx.lane.js(BIND(id, ctx.records[id].app), BIND_MS);
+      // getApp emits its text: the scene's own window in front first, so that text is the run's.
+      const front = activate(ctx, id);
+      if (!front?.ok) throw new Error(`${id} did not come to the front before its bind (${front?.reason ?? 'no answer'})`);
+      const bound = await js(ctx, 'setup', `bind:${id}`, BIND(id, ctx.records[id].app), BIND_MS);
       if (!bound.ok) throw new Error(`${id} could not be bound: ${bound.error}`);
     }
     snapshot();
@@ -221,12 +246,9 @@ async function runOnce(options, io) {
     problems.push(error instanceof Stop ? `stopped: ${error.message}` : error.message);
     log(`run ${n} stopped: ${error.message}`);
   } finally {
-    if (watching) {
-      let activations = null;
-      try { activations = ops.live(['watch', 'stop', '--run', run]).activations ?? null; } catch (error) { problems.push(`the activation watcher could not be read: ${error.message}`); }
-      finalize(ctx, activations);
-    }
+    if (ctx.watcher !== null) finishWatch(ctx);
     if (ctx.lane) { try { await ctx.lane.client.close(); } catch {} }
+    quitLaunched(ctx);
     putBack = recover(ops, run, problems);
     try {
       const front = ops.scenes(['frontmost']);
@@ -266,35 +288,75 @@ function recover(ops, run, problems) {
   } catch (error) { problems.push(`the put-back failed: ${error.message}`); return {ok: false, error: error.message}; }
 }
 
-// The watcher's activations charged to the background rows and each row's oracle judged; without the watcher's record
-// no row can pass the oracle, so each is invalid.
-function finalize(ctx, activations) {
-  if (activations === null) {
-    for (const p of ctx.pending) p.row.invalid ??= 'the activation watcher\'s record was lost';
-    return;
-  }
-  const {byRow, unattributed} = attributeActivations(activations, ctx.pending.map((p, key) => ({key, at: p.at})));
-  ctx.pending.forEach((p, key) => {
-    p.row.interference = judgeInterference({before: p.before, after: p.after, activations: byRow[key], inputRoute: p.inputRoute, scene: p.scene,
-      launched: p.launched ?? null, focus: p.focus ?? null, userPid: p.userPid});
-  });
-  ctx.meta.unattributedActivations = unattributed.map(e => ({bundleId: e.bundleId ?? null, at: e.at ?? null}));
+// Every launch the run journaled quit while it is still the same process (./matrix-device.mjs launched quit). -> the
+// answer, or null when it failed (recorded as a problem).
+function quitLaunched(ctx) {
+  try {
+    const quit = ctx.ops.matrix(['launched', 'quit', '--run', ctx.run]);
+    if (quit?.remaining) ctx.problems.push(`${quit.remaining} app(s) the run launched did not quit`);
+    return quit;
+  } catch (error) { ctx.problems.push(`the run's launched apps could not be quit: ${error.message}`); return null; }
 }
 
-// ---- the regimes --------------------------------------------------------------------------------------------------------
+// The watcher's end: its liveness read once more (alive now and the same pid running the probe: alive throughout),
+// then stopped, and every activation it saw accounted for. A dead watcher or a lost record leaves every judged row
+// invalid and the run incomplete; an activation no step accounts for leaves the run incomplete.
+function finishWatch(ctx) {
+  let alive = false, activations = null;
+  try { alive = read(ctx).watcher === true; } catch (error) { ctx.problems.push(`the activation watcher's liveness could not be read: ${error.message}`); }
+  try { activations = ctx.ops.live(['watch', 'stop', '--run', ctx.run]).activations ?? null; } catch (error) { ctx.problems.push(`the activation watcher could not be read: ${error.message}`); }
+  if (!alive || !Array.isArray(activations)) {
+    ctx.problems.push(!alive ? 'the activation watcher was not running at the end: its coverage of the run is not proven' : 'the activation watcher\'s record was lost');
+    for (const {row} of ctx.judged.values()) row.invalid ??= 'the activation watcher\'s coverage was not proven';
+    return;
+  }
+  const {byRow, accounted, unaccounted} = accountActivations(activations, ctx.windows);
+  for (const [key, judged] of ctx.judged) {
+    const seen = byRow[key] ?? [];
+    if (judged.oracle) judged.row.interference = judgeInterference({...judged.oracle, activations: seen});
+    else judged.row.activations = seen.length;
+  }
+  ctx.meta.activations = {accounted, unaccounted: unaccounted.map(e => ({bundleId: e.bundleId ?? null, at: e.at ?? null}))};
+  if (unaccounted.length) ctx.problems.push(`${unaccounted.length} activation(s) fell in no step of the run: not accounted for`);
+}
+
+// ---- the steps and their windows ------------------------------------------------------------------------------------
 
 const push = (ctx, row) => { ctx.rows.push(row); return row; };
-const read = (ctx, focus = null) => ctx.ops.matrix(['read', '--run', ctx.run, ...(focus ? ['--focus', focus] : [])]);
+const mark = (ctx, kind, key, at) => { if (Array.isArray(at) && at.length === 2 && at.every(Number.isFinite)) ctx.windows.push({kind, key, at}); };
+// A js cell, its device-clock window kept under `kind`.
+async function js(ctx, kind, key, code, timeoutMs) {
+  const r = await ctx.lane.js(code, timeoutMs);
+  mark(ctx, kind, key, r.at);
+  return r;
+}
+// A scenes command (activate, down) through ./matrix-device.mjs step, its window the harness's. -> the command's answer.
+function step(ctx, args) {
+  const {answer, at} = ctx.ops.matrix(['step', ...args, '--run', ctx.run]) ?? {};
+  mark(ctx, 'harness', args.join(':'), at);
+  return answer;
+}
+const activate = (ctx, scene) => step(ctx, ['activate', scene]);
+const read = (ctx, focus = null) => ctx.ops.matrix(['read', '--run', ctx.run, ...(ctx.watcher !== null ? ['--watcher', String(ctx.watcher)] : []), ...(focus ? ['--focus', focus] : [])]);
 const focusOf = w => `${w.pid},${w.bounds.x},${w.bounds.y},${w.bounds.width},${w.bounds.height}`;
-const activate = (ctx, scene) => ctx.ops.scenes(['activate', scene, '--run', ctx.run]);
 const sameWindow = (a, b) => Boolean(a && b) && a.pid === b.pid && ['x', 'y', 'width', 'height'].every(k => a.bounds[k] === b.bounds[k]);
+
+// The paste rows' system-alert watch (./matrix-device.mjs alerts check, the live paste check's): a possible alert stops
+// the run untouched; only its sanitized export is kept.
+function alertCheck(ctx, when) {
+  const check = ctx.ops.matrix(['alerts', 'check', '--run', ctx.run]);
+  if (check?.abort !== false) {
+    ctx.meta.alert = {when, ...(check?.export ?? {})};
+    throw new Stop(`a possible system alert appeared ${when}; the run stopped without touching it`);
+  }
+}
 
 // A key cell sent only under the key guard: the driven scene's process in front, or (given `userWindow`) the run's
 // user window. A skip with one of the run's windows in front leaves the row invalid; any other front (the owner at the
 // Mac, an alert) stops the run. -> the cell's answer, or null when it was not sent.
-async function sendKeys(ctx, code, keys, {scene, front, userWindow}) {
+async function sendKeys(ctx, code, keys, {scene, front, userWindow, kind = 'harness', key = `keys:${keys.join('+')}`}) {
   const target = guardOf(scene, ctx.records[scene]);
-  const out = await sendIfFrontmost({target, keys, frontmost: () => frontmostFromProbe((front ?? read(ctx)).reading), send: () => ctx.lane.js(code),
+  const out = await sendIfFrontmost({target, keys, frontmost: () => frontmostFromProbe((front ?? read(ctx)).reading), send: () => js(ctx, kind, key, code),
     ...(userWindow ? {userWindow} : {})});
   if (out.sent) return out.result;
   const seen = out.skipped.frontmost;
@@ -312,35 +374,46 @@ async function userFront(ctx, user, userWindow) {
   return sameWindow(userWindowOf(r.reading, userWindow.pid), userWindow) ? r : null;
 }
 
-// One case: prepare, act (one facade call), check; in the background regime the oracle's readings around the act.
+// ---- the regimes --------------------------------------------------------------------------------------------------------
+
+// One case: prepare, act (one facade call), check; in the background regime the oracle's readings around the act, each
+// with the watcher alive. The row's window runs from its prepare's start to its check's end; the activations in it are
+// the row's (the frontmost regime records their count, the background regime's oracle judges them).
 async function caseRow(ctx, target, regime, c, {user = null, userWindow = null, speed = false} = {}) {
   await ctx.checkpoint();
   const scene = SCENE_OF[target];
+  const key = `row:${ctx.rows.length}`;
   const row = {section: 'method', id: caseId(target, regime, c, user), engine: ctx.engine, sample: ctx.n, ok: false, scene, target, regime, method: c.method, case: c.case, expect: c.expect,
     ...(user ? {user} : {})};
   const cells = caseCells(target, c);
-  const prepared = await ctx.lane.js(cells.prepare);
-  if (!prepared.ok) return push(ctx, {...row, invalid: 'the prepare cell failed', error: prepared.error});
-  if (!prepared.value?.ready) return push(ctx, {...row, invalid: `not prepared: ${prepared.value?.reason ?? 'no reason'}`});
+  let from = null, to = null;
+  const span = r => { from ??= r?.at?.[0] ?? null; to = r?.at?.[1] ?? to; return r; };
+  const done = extra => { if (from !== null) mark(ctx, 'row', key, [from, to]); return push(ctx, {...row, ...extra}); };
+  const prepared = span(await ctx.lane.js(cells.prepare));
+  if (!prepared.ok) return done({invalid: 'the prepare cell failed', error: prepared.error});
+  if (!prepared.value?.ready) return done({invalid: `not prepared: ${prepared.value?.reason ?? 'no reason'}`});
   let before = null;
   if (regime === 'background') {
     before = await userFront(ctx, user, userWindow);
-    if (!before) return push(ctx, {...row, invalid: 'the user window was not in front before the action'});
+    if (!before) return done({invalid: 'the user window was not in front before the action'});
+    if (before.watcher !== true) return done({invalid: 'the activation watcher was not running before the action'});
   }
-  const act = c.keys ? await sendKeys(ctx, cells.act, c.keys, {scene, front: before, userWindow}) : await ctx.lane.js(cells.act);
-  if (act === null) return push(ctx, {...row, invalid: 'the key guard did not send the action\'s keys'});
-  if (!act.ok) return push(ctx, {...row, invalid: 'the act cell failed', error: act.error});
+  if (PASTING.includes(c.method)) alertCheck(ctx, `before ${row.id}`);
+  const act = span(c.keys ? await sendKeys(ctx, cells.act, c.keys, {scene, front: before, userWindow, kind: 'row', key}) : await ctx.lane.js(cells.act));
+  if (act === null) return done({invalid: 'the key guard did not send the action\'s keys'});
+  if (PASTING.includes(c.method)) alertCheck(ctx, `after ${row.id}`);
+  if (!act.ok) return done({invalid: 'the act cell failed', error: act.error});
   Object.assign(row, {inCellMs: act.value.actMs, wallMs: act.wallMs, inputRoute: act.route});
   const after = regime === 'background' ? read(ctx, focusOf(userWindow)) : null;
-  const check = c.checkKeys ? await sendKeys(ctx, cells.check, c.checkKeys, {scene, front: after, userWindow}) : await ctx.lane.js(cells.check);
-  if (check === null) return push(ctx, {...row, invalid: 'the key guard did not send the check\'s keys'});
-  if (!check.ok) return push(ctx, {...row, invalid: 'the check cell failed', error: check.error});
-  if (check.value?.invalid) return push(ctx, {...row, invalid: check.value.invalid});
-  Object.assign(row, {ok: check.value?.ok === true, outcome: check.value?.outcome ?? {}});
-  push(ctx, row);
-  if (regime === 'background') ctx.pending.push({row, before: before.reading, after: after.reading, focus: after.focus ?? null, at: act.value.at, inputRoute: act.route, scene, userPid: userWindow.pid});
+  const check = span(await ctx.lane.js(cells.check));
+  if (!check.ok) return done({invalid: 'the check cell failed', error: check.error});
+  if (check.value?.invalid) return done({invalid: check.value.invalid});
+  if (after && after.watcher !== true) return done({invalid: 'the activation watcher was not running after the action'});
+  const pushed = done({ok: check.value?.ok === true, outcome: check.value?.outcome ?? {}});
+  ctx.judged.set(key, {row: pushed, oracle: regime === 'background'
+    ? {before: before.reading, after: after.reading, focus: after.focus ?? null, inputRoute: act.route, scene, userPid: userWindow.pid} : null});
   if (speed) push(ctx, {section: 'speed', id: `${scene}/method.${target === 'openPanel' ? 'panel.' : ''}${c.method}.${c.case}`, engine: ctx.engine, sample: ctx.n, ok: true, inCellMs: act.value.actMs, wallMs: act.wallMs});
-  return row;
+  return pushed;
 }
 
 // Every case of a target left invalid for one reason (its precondition could not be set up).
@@ -375,7 +448,7 @@ async function frontmostTarget(ctx, target, plan) {
 }
 
 async function closePanel(ctx) {
-  const closed = await ctx.lane.js(CLOSE_PANEL);
+  const closed = await js(ctx, 'harness', 'close-panel', CLOSE_PANEL);
   if (!closed.ok || !closed.value?.closed) throw new Stop('TextEdit\'s Open panel stayed open after its cases');
 }
 
@@ -384,18 +457,27 @@ async function backgroundPairing(ctx, {driven, user}) {
     const problem = await openPanel(ctx);
     if (problem) return invalidCases(ctx, driven, 'background', problem, user);
   }
-  const front = activate(ctx, user);
-  const r0 = front?.ok ? read(ctx) : null;
-  const userWindow = r0 ? userWindowOf(r0.reading, ctx.records[user].pid) : null;
-  if (!userWindow) invalidCases(ctx, driven, 'background', `the user window (${user}) did not come to the front`, user);
-  else for (const c of CASES[driven]) await caseRow(ctx, driven, 'background', c, {user, userWindow});
+  try {
+    if (driven === 'windowless') {
+      const up = ctx.ops.matrix(['windowless', 'up', '--run', ctx.run]);
+      mark(ctx, 'harness', 'windowless-up', up?.at);
+      if (!Number.isSafeInteger(up?.answer?.pid)) return invalidCases(ctx, driven, 'background', 'the windowless app did not come up', user);
+    }
+    const front = activate(ctx, user);
+    const r0 = front?.ok ? read(ctx) : null;
+    const userWindow = r0 ? userWindowOf(r0.reading, ctx.records[user].pid) : null;
+    if (!userWindow) invalidCases(ctx, driven, 'background', `the user window (${user}) did not come to the front`, user);
+    else for (const c of CASES[driven]) await caseRow(ctx, driven, 'background', c, {user, userWindow});
+  } finally {
+    if (driven === 'windowless') quitLaunched(ctx);
+  }
   if (driven === 'openPanel') await closePanel(ctx);
 }
 
 // The speed cells of one scene: the baseline's own observation cells on the scene's app, --samples each, the
 // screenshot series bracketed by the scene-in-front guard as the baseline brackets it.
 async function speedCells(ctx, scene) {
-  const selected = await ctx.lane.js(selectCell(scene));
+  const selected = await js(ctx, 'measure', `select:${scene}`, selectCell(scene));
   const reason = !selected.ok ? `the selection failed: ${selected.error}` : !selected.value?.inFront ? 'the scene window was not the app\'s front window' : null;
   for (const [op, code] of [['getAXState', AX_FULL], ['getScreenshot', SCREENSHOT], ['listApps', LIST_APPS]]) {
     const series = [];
@@ -403,12 +485,12 @@ async function speedCells(ctx, scene) {
       const row = {section: 'speed', id: `${scene}/${op}`, engine: ctx.engine, sample: (ctx.n - 1) * ctx.samples + i, ok: false, scene};
       if (reason) { push(ctx, {...row, invalid: reason}); continue; }
       await ctx.checkpoint();
-      const r = await ctx.lane.js(code);
+      const r = await js(ctx, 'measure', `${scene}/${op}`, code);
       series.push(push(ctx, {...row, ok: r.ok && !r.value?.invalid, inCellMs: r.inCellMs, wallMs: r.wallMs, ...(r.value?.invalid ? {invalid: r.value.invalid} : {}),
         ...(r.ok ? {} : {error: r.error})}));
     }
     if (op === 'getScreenshot' && !reason) {
-      const guard = await ctx.lane.js(SCRATCH_GUARD);
+      const guard = await js(ctx, 'measure', `${scene}/scratch-guard`, SCRATCH_GUARD);
       if (!guard.ok || !guard.value?.scratchInFront) for (const row of series) row.invalid ??= 'the scene window left the front during the series';
     }
   }
@@ -417,7 +499,7 @@ async function speedCells(ctx, scene) {
 // The finding-elements cell of one scene: one row per target, the line measures and the ID count.
 async function findingRows(ctx, scene) {
   await ctx.checkpoint();
-  const r = await ctx.lane.js(findingCell(scene));
+  const r = await js(ctx, 'measure', `${scene}/finding`, findingCell(scene));
   const base = {section: 'finding', engine: ctx.engine, sample: ctx.n, scene};
   if (!r.ok || r.value?.invalid) {
     push(ctx, {...base, id: `${scene}/lines`, ok: false, invalid: r.value?.invalid ?? 'the finding cell failed', ...(r.ok ? {} : {error: r.error})});
@@ -428,38 +510,62 @@ async function findingRows(ctx, scene) {
   push(ctx, {...base, id: `${scene}/ids`, ok: true, outcome: {ids: r.value.ids}});
 }
 
-// The launch path of one scene (part 4): the scene down, the user window in front, the app resolved by its path while
-// it is not running, the oracle read, then the app the engine launched brought down (the scene stays down).
+// The launch path of one scene (part 4): the scene down, the user window in front, the app observed by its path while
+// it is not running (launchCell: the text stays in the cell), the process the engine launched journaled at once (pid
+// and start time, any process of the bundle started since the reading before the act), the oracle read, the run's own
+// state put in place (TextEdit opens its Open panel on a launch without a document, and the panel lists the owner's
+// files: the run's document is opened into it, and only the scene's own window in front passes), the outcome read; the
+// launched process quit in a `finally`, whatever failed. The row's outcome (the launch worked) is its `ok`, judged apart
+// from its interference (the oracle).
 async function launchRow(ctx, {scene, user}) {
   await ctx.checkpoint();
+  const key = `row:${ctx.rows.length}`;
   const row = {section: 'launch', id: `${scene}/background/launch@${user}`, engine: ctx.engine, sample: ctx.n, ok: false, scene, user, regime: 'background', method: 'getApp', case: 'launch'};
   const app = ctx.records[scene]?.app;
-  const down = ctx.ops.scenes(['down', scene, '--run', ctx.run]);
+  const down = step(ctx, ['down', scene]);
   if (!down?.down) return push(ctx, {...row, invalid: `the scene could not be brought down first (${down?.reason ?? 'no answer'})`});
   const front = activate(ctx, user);
   const before = front?.ok ? read(ctx) : null;
   const userWindow = before ? userWindowOf(before.reading, ctx.records[user].pid) : null;
   if (!userWindow) return push(ctx, {...row, invalid: `the user window (${user}) did not come to the front`});
-  const act = await ctx.lane.js(launchCell(scene, app));
-  if (!act.ok) return push(ctx, {...row, invalid: 'the launch cell failed', error: act.error});
-  Object.assign(row, {inCellMs: act.value.actMs, wallMs: act.wallMs, inputRoute: act.route, ...(act.value.error ? {error: act.value.error} : {})});
-  const after = read(ctx, focusOf(userWindow));
-  const check = await ctx.lane.js(launchCheckCell(scene));
-  const quit = ctx.ops.matrix(['launched', scene, '--run', ctx.run, '--since', String(act.value.at[0])]);
-  if (quit.remaining) ctx.problems.push(`${scene}: the app the launch path brought up did not quit`);
-  Object.assign(row, {ok: check.ok && check.value?.ok === true && !act.value.threw, outcome: {...(check.value?.outcome ?? {}), threw: act.value.threw, quit: quit.quit}});
-  push(ctx, row);
-  ctx.pending.push({row, before: before.reading, after: after.reading, focus: after.focus ?? null, at: act.value.at, inputRoute: act.route, scene, userPid: userWindow.pid, launched: SCENES[scene].bundleId});
-  return row;
+  if (before.watcher !== true) return push(ctx, {...row, invalid: 'the activation watcher was not running before the launch'});
+  const record = () => ctx.ops.matrix(['launched', 'record', scene, '--run', ctx.run, '--since', String(before.at[0])]);
+  let from = null, to = null, recorded = null;
+  try {
+    const act = await ctx.lane.js(launchCell(scene, app)).finally(() => { recorded = record(); });
+    [from, to] = act.at ?? [null, null];
+    if (!act.ok) return push(ctx, {...row, invalid: 'the launch cell failed', error: act.error});
+    Object.assign(row, {inCellMs: act.value.actMs, wallMs: act.wallMs, inputRoute: act.route, ...(act.value.error ? {error: act.value.error} : {})});
+    const after = read(ctx, focusOf(userWindow));
+    if (scene === 'textedit' && recorded?.recorded) {
+      const opened = ctx.ops.matrix(['open-document', '--run', ctx.run]);
+      mark(ctx, 'harness', 'open-document', opened?.at);
+    }
+    const check = await ctx.lane.js(launchCheckCell(scene, app));
+    to = check.at?.[1] ?? to;
+    const outcome = {...(check.value?.outcome ?? {}), threw: act.value.threw, launched: recorded?.recorded === true};
+    Object.assign(row, {ok: check.ok && check.value?.ok === true && !act.value.threw && recorded?.recorded === true, outcome, ...(check.ok ? {} : {error: check.error})});
+    if (after.watcher !== true) return push(ctx, {...row, ok: false, invalid: 'the activation watcher was not running after the launch'});
+    push(ctx, row);
+    ctx.judged.set(key, {row, oracle: {before: before.reading, after: after.reading, focus: after.focus ?? null, inputRoute: act.route, scene, userPid: userWindow.pid,
+      launched: SCENES[scene].bundleId}});
+    return row;
+  } finally {
+    if (from !== null) mark(ctx, 'row', key, [from, to ?? from]);
+    const quit = quitLaunched(ctx);
+    if (quit) row.outcome = {...(row.outcome ?? {}), quit: quit.quit};
+  }
 }
 
-// The cleanup of a run that died (`native-matrix.mjs cleanup`): the live hold's recovery and put-back, then the
-// approved home's cleanup from the run's preparation.json when there is one. -> 0 when both held, else 1.
+// The cleanup of a run that died (`native-matrix.mjs cleanup`): every launch the run journaled quit (while still the
+// same process), the live hold's recovery and put-back, then the approved home's cleanup from the run's
+// preparation.json when there is one. -> 0 when all held, else 1.
 export function cleanupMatrix({device, run, preparation}, io) {
   const {ops, log = console.log} = io;
   const problems = [];
   const dirRun = run ?? `${ops.home()}/${DEFAULT_RUN}`;
   ops.journalTo?.(dirRun);
+  quitLaunched({ops, run: dirRun, problems});
   const putBack = recover(ops, dirRun, problems);
   if (preparation) {
     const saved = JSON.parse(fs.readFileSync(preparation, 'utf8'));

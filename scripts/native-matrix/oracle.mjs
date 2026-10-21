@@ -56,19 +56,36 @@ export function sameFront(before, after) {
   return {frontmost, topWindow};
 }
 
-// The watcher's activations charged to each row: an `activated` event whose time falls in a row's action interval
-// [from, to + marginMs]; events of `probePids` (the probe instances, when the event carries a pid) are not counted.
-// `rows`: [{key, at: [from, to]}] (the act cell's device clock). -> {byRow: {key: [event]}, unattributed: [event]}.
-export function attributeActivations(activations, rows, {marginMs = ACTIVATION_MARGIN_MS, probePids = []} = {}) {
+// Every activation the watcher saw, accounted for (part 5: "recorded no activation of any app" during each judged cell,
+// and nothing the run cannot explain). `windows`: every step of the judged phase on the device clock, [{key, kind, at:
+// [from, to]}], kind 'harness' (the harness's own activations and keys: activating a scene, opening the Open panel),
+// 'row' (a matrix row, from its first cell's start to its check's end), 'measure' (speed and finding cells) or 'setup'
+// (binds). An `activated` event inside a harness window (to its end plus `marginMs`, the notification's delivery) is the
+// harness's; else inside a row's, that row's; else inside a measure or setup window, that step's; before the first
+// window or after the last, the phase around the judged one's; anything else is unaccounted, which leaves the run
+// incomplete. Events of `probePids` (when the event carries a pid) are the harness's probes.
+// -> {byRow: {key: [event]}, accounted: [{kind, key, bundleId, at}], unaccounted: [event]}.
+export function accountActivations(activations, windows, {marginMs = ACTIVATION_MARGIN_MS, probePids = []} = {}) {
   const excluded = new Set(probePids);
-  const byRow = Object.fromEntries(rows.map(r => [r.key, []]));
-  const unattributed = [];
+  const inside = (w, at) => at >= w.at[0] && at <= w.at[1] + marginMs;
+  const byRow = Object.fromEntries(windows.filter(w => w.kind === 'row').map(w => [w.key, []]));
+  const accounted = [], unaccounted = [];
+  const first = Math.min(...windows.map(w => w.at[0])), last = Math.max(...windows.map(w => w.at[1])) + marginMs;
   for (const event of activations ?? []) {
     if (event?.kind !== 'activated' || (event.pid !== undefined && excluded.has(event.pid))) continue;
-    const row = Number.isFinite(event.at) ? rows.find(r => Array.isArray(r.at) && event.at >= r.at[0] && event.at <= r.at[1] + marginMs) : undefined;
-    if (row) byRow[row.key].push(event); else unattributed.push(event);
+    const at = event.at;
+    const keep = (kind, key = null) => accounted.push({kind, key, bundleId: event.bundleId ?? null, at});
+    if (!Number.isFinite(at)) { unaccounted.push(event); continue; }
+    const harness = windows.find(w => w.kind === 'harness' && inside(w, at));
+    if (harness) { keep('harness', harness.key); continue; }
+    const row = windows.find(w => w.kind === 'row' && inside(w, at));
+    if (row) { byRow[row.key].push(event); continue; }
+    const step = windows.find(w => (w.kind === 'measure' || w.kind === 'setup') && inside(w, at));
+    if (step) { keep(step.kind, step.key); continue; }
+    if (!windows.length || at < first || at > last) { keep('outside'); continue; }
+    unaccounted.push(event);
   }
-  return {byRow, unattributed};
+  return {byRow, accounted, unaccounted};
 }
 
 // One row's oracle. `scene`: the driven scene (its family decides route 4's acceptance); `launched`: the bundle id a

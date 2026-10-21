@@ -19,6 +19,20 @@ const LIVE_DEVICE = 'scripts/native-matrix/live-device.mjs';
 const MATRIX_DEVICE = 'scripts/native-matrix/matrix-device.mjs';
 const lastJson = text => JSON.parse(String(text).trim().split('\n').at(-1));
 
+// Every lane call's device-clock window: the code wrapped so the REPL prints, after the cell's own marker, the device's
+// Date.now() before and after it, which the run lays beside the activation watcher's times (./oracle.mjs
+// accountActivations). The cell envelope (scripts/native-baseline/cells.mjs cell) catches the cell's errors, so the
+// line follows every cell that ran. -> the wrapped code.
+export const AT_MARKER = 'CUA_MATRIX_AT ';
+export const timedCode = code => `{const __matrixAt0 = Date.now();\n${code}\nnodeRepl.write("\\n" + ${JSON.stringify(AT_MARKER)} + JSON.stringify([__matrixAt0, Date.now()]));}`;
+// -> [from, to] from a result's text, or null when the line is missing.
+export function atOf(text) {
+  const line = String(text).split('\n').reverse().find(l => l.startsWith(AT_MARKER));
+  if (!line) return null;
+  const at = JSON.parse(line.slice(AT_MARKER.length));
+  return Array.isArray(at) && at.length === 2 && at.every(Number.isFinite) ? at : null;
+}
+
 // Both engines' processes with their ages, the approved bundle's `--probe` instances left out: the matrix's own
 // watcher and focus probes run the approved bundle on either engine's lane, and are not its engine.
 export const MATRIX_HELPER_SCRIPT = `/bin/ps -axo etime=,args= | /usr/bin/grep -E '/(SkyComputerUseService|cua-engine)( |$)' | /usr/bin/grep -v -e ' --probe ' || true`;
@@ -56,7 +70,7 @@ export function matrixOps(device, {exec = execFileSync} = {}) {
 // approval of one of the scenes' apps (recorded in meta.elicitations), and its first cell. Every js result's engine
 // attestation is collected (meta.nativeEngine, ./native-baseline/engine.mjs attestEngine) and one naming another engine
 // stops the lane at once; the first result attests the host. -> {client, js(code, timeoutMs) -> {ok, value|error,
-// inCellMs, wallMs, route}}.
+// inCellMs, wallMs, route, at}} (`at`: the device-clock window around the call, timedCode).
 export async function connectLane({ops, pre, prepared, host, engine, connect, bundleIds, meta, stderrFile, now = () => performance.now()}) {
   const client = connect({...ops.serveSpec({pre, prepared, host, engine}), clientName: 'cua-native-matrix',
     answer: msg => (isSceneApproval(msg, bundleIds) ? {action: 'accept', content: {}} : {action: 'decline'}),
@@ -67,7 +81,7 @@ export async function connectLane({ops, pre, prepared, host, engine, connect, bu
   await client.request('tools/list').catch(closing);
   const js = async (code, timeoutMs = CELL_MS) => {
     const t0 = now();
-    const result = await client.request('tools/call', {name: 'js', arguments: {code, timeout_ms: timeoutMs}}, timeoutMs + 15_000);
+    const result = await client.request('tools/call', {name: 'js', arguments: {code: timedCode(code), timeout_ms: timeoutMs}}, timeoutMs + 15_000);
     const wallMs = now() - t0;
     attestEngine(meta.nativeEngine, result);
     const attested = result?._meta?.['cua/nativeEngine'];
@@ -76,10 +90,13 @@ export async function connectLane({ops, pre, prepared, host, engine, connect, bu
       meta.hostAttestation = hostAttestationOf(serverInfo, result);
       if (meta.hostAttestation.host !== host) throw new Error(`the ${meta.hostAttestation.host} host answered a --host ${host} lane`);
     }
-    const parsed = parseCell(textOf(result));
+    const text = textOf(result);
+    const parsed = parseCell(text);
     if (!parsed) throw new Error(`a cell printed no result marker${result?.isError ? ' (an error result)' : ''}`);
+    const at = atOf(text);
+    if (!at) throw new Error('a cell printed no device-clock window: its activations could not be accounted for; the lane stopped');
     const route = result?._meta?.['cua/inputRoute'];
-    return {...parsed, wallMs, route: route === undefined ? null : route};
+    return {...parsed, wallMs, route: route === undefined ? null : route, at};
   };
   const first = await js(FIRST, BIND_MS).catch(closing);
   if (!first.ok) await closing(new Error(`the lane's first cell failed: ${first.error}`));
@@ -89,8 +106,8 @@ export async function connectLane({ops, pre, prepared, host, engine, connect, bu
 // ---- the dry run ------------------------------------------------------------------------------------------------------
 
 // What a dry run's device answers: made up, each consistent with the step that asks, so the whole run's sequence is
-// exercised (and logged) with nothing sent anywhere.
-export function dryOps({log, engine, approvedEngine = '/Users/owner/Library/Application Support/cua/engine/cua Engine.app', commit}) {
+// exercised (and logged) with nothing sent anywhere. `clock` is the made-up device clock of every `at`.
+export function dryOps({log, engine, approvedEngine = '/Users/owner/Library/Application Support/cua/engine/cua Engine.app', commit, clock = Date.now}) {
   const build = 'd'.repeat(64);
   let pid = 500, home = '/Users/owner/cua-home';
   const step = (name, answer) => (...args) => { log(`dry: ${name} ${JSON.stringify(args.length === 1 ? args[0] : args)}`); return typeof answer === 'function' ? answer(...args) : answer; };
@@ -117,8 +134,21 @@ export function dryOps({log, engine, approvedEngine = '/Users/owner/Library/Appl
     goldens: step('goldens', {steps: [], stopped: true}),
     live: step('live', args => ({begin: {refusals: [], frontmost: {bundleId: 'com.example.owner'}, engineStop: {stopped: true}}, watch: args[1] === 'start' ? {watching: true, pid: 1} : {activations: []},
       recover: {ok: true, putBack: {ok: true, steps: []}}})[args[0]] ?? {}),
-    matrix: step('matrix', args => (args[0] === 'read' ? {reading: reading(), ...(args.includes('--focus') ? {focus: {appOwned: true, appPid: front?.pid ?? null, named: true}} : {})}
-      : {found: 1, quit: 1, remaining: 0})),
+    matrix: step('matrix', args => {
+      const at = [clock(), clock()];
+      switch (args[0]) {
+        case 'compile': return {front: 'front-window-dry', windows: 'system-windows-dry'};
+        case 'read': return {reading: reading(), watcher: args.includes('--watcher'), at, ...(args.includes('--focus') ? {focus: {appOwned: true, appPid: front?.pid ?? null, named: true}} : {})};
+        case 'step':
+          if (args[1] === 'activate') front = records[args[2]] ?? front;
+          return {answer: args[1] === 'down' ? {down: true} : {scene: args[2], ok: true}, at};
+        case 'alerts': return args[1] === 'baseline' ? {baseline: 0} : {abort: false, export: {alerts: [], keywords: [], unknown: {count: 0, windows: []}}, at};
+        case 'launched': return args[1] === 'record' ? {recorded: true, pid: ++pid, candidates: 1} : {quit: 1, remaining: 0, gone: 0};
+        case 'open-document': return {answer: {opened: true}, at};
+        case 'windowless': return {answer: {pid: ++pid, app: '/tmp/windowless.app'}, at};
+        default: return {};
+      }
+    }),
     prepare: step('prepare', approvedHome => ({home: (home = approvedHome), userHome: '/Users/owner', configHome: '/tmp/config', tmpdir: '/tmp/session', admission: 'dry', engineStop: {stopped: true},
       runtimeReuse: {approvedHome: home, runtimeRoot: `${home}/runtime`}})),
     cleanup: step('cleanup', {removed: true, engineStop: {stopped: true}}),
@@ -132,9 +162,9 @@ export function dryOps({log, engine, approvedEngine = '/Users/owner/Library/Appl
 }
 // A dry client: every cell answers one made-up value carrying every field a matrix cell reads, attested as the
 // requested engine; the vendor's helper path is made up to match dryOps' runtime root.
-export function dryConnect({log, engine, host}) {
+export function dryConnect({log, engine, host, clock = Date.now}) {
   return () => {
-    const value = {ready: true, ok: true, inFront: true, scratchInFront: true, opened: true, closed: true, panel: false, documentInFront: true, bound: true, actMs: 1, at: [Date.now(), Date.now()], threw: false,
+    const value = {ready: true, ok: true, inFront: true, scratchInFront: true, opened: true, closed: true, panel: false, documentInFront: true, bound: true, actMs: 1, threw: false,
       targets: [], lines: 1, named: 1, unclassified: 0, ids: 0, outcome: {}};
     const meta = {'cua/nativeEngine': {engine, version: '0.0.0', build: engine === 'cua' ? 'd'.repeat(64) : '26.0-dry'}, ...(host === 'cua' ? {'cua/replHost': {host: 'cua'}} : {})};
     return {
@@ -142,7 +172,7 @@ export function dryConnect({log, engine, host}) {
       request: async (method, params) => {
         if (method !== 'tools/call') return {};
         log(`dry: js ${String(params.arguments.code).slice(0, 60).replace(/\s+/g, ' ')}…`);
-        return {content: [{type: 'text', text: `CUA_NATIVE_BASELINE ${JSON.stringify({ok: true, value, inCellMs: 1})}`}], _meta: meta};
+        return {content: [{type: 'text', text: `CUA_NATIVE_BASELINE ${JSON.stringify({ok: true, value, inCellMs: 1})}\n${AT_MARKER}${JSON.stringify([clock(), clock()])}`}], _meta: meta};
       },
       call: async () => ({}),
       close: async () => {},

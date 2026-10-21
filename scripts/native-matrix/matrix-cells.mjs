@@ -22,22 +22,27 @@ const j = JSON.stringify;
 export const NO_SUCH_ACTION = 'cua-matrix-no-such-action';
 export const NOT_AN_ACTION = /is not a valid secondary action/i;
 
-// What every matrix cell defines over the bound scene `scene`:
+// What every matrix cell defines over the bound scene `scene` (null: no scene, the windowless app's case):
 //   __app        the scene's app; observe() its full tree
 //   inFront(ax)  the scene's window is the app's front window (its header's title begins with the scene's)
 //   panel(ax)    the front window is TextEdit's Open panel (its window element carries ID open-panel)
 //   count, plain the occurrences of a string; a value without the grammar's bold markers
 //   jpegSize     a screenshot's dimensions from its JPEG SOF or PNG IHDR (the bytes never leave the cell)
+//   nonce()      a fresh token, so a value a case writes was never there before
+//   refusedAs(s) the act threw, and its message carries the sentence `s` (a regular expression's source)
 //   __m          the case's state, from prepare to check
-const prelude = scene => `${EMBEDDED}
-const indexOfRowCell = ${indexOfRowCell.toString()};
-const __app = globalThis.__apps?.[${j(scene)}];
+const sceneHead = scene => (scene === null ? '' : `const __app = globalThis.__apps?.[${j(scene)}];
 if (!__app) throw new Error(${j(`the ${scene} scene is not bound`)});
 const observe = () => __app.getAXState({emit: false, disableDiffing: true});
-const inFront = ax => (windowTitleOf(ax) ?? "").startsWith(${j(SCENES[scene].window.title)});
+const inFront = ax => (windowTitleOf(ax) ?? "").startsWith(${j(SCENES[scene].window.title)});`);
+const prelude = scene => `${EMBEDDED}
+const indexOfRowCell = ${indexOfRowCell.toString()};
+${sceneHead(scene)}
 const panel = ax => /ID: open-panel\\b/.test(lineOfIndex(ax, 0) ?? "");
 const count = (text, part) => String(text ?? "").split(part).length - 1;
 const plain = text => String(text ?? "").replace(/\\*\\*/g, "");
+const nonce = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+const refusedAs = sentence => typeof globalThis.__m?.threw === "string" && new RegExp(sentence).test(globalThis.__m.threw);
 const jpegSize = shot => {
   if (shot?.[0] === 0x89 && shot[1] === 0x50) { const v = new DataView(shot.buffer, shot.byteOffset, shot.byteLength); return {width: v.getUint32(16), height: v.getUint32(20)}; }
   if (shot?.[0] !== 0xff || shot[1] !== 0xd8) return null;
@@ -50,7 +55,7 @@ const jpegSize = shot => {
   return null;
 };`;
 
-// The three cells of a case on the target `target` (a scene or 'openPanel'). -> {prepare, act, check}.
+// The three cells of a case on the target `target` (a scene, 'openPanel' or 'windowless'). -> {prepare, act, check}.
 export function caseCells(target, c) {
   const head = prelude(SCENE_OF[target]);
   return {
@@ -64,13 +69,17 @@ const __m = globalThis.__m;
 if (!__m?.ready) throw new Error("the case was not prepared; nothing was sent");
 __m.threw = null;
 const __from = Date.now(), __t = performance.now();
-try {${c.act}\n} catch (e) { __m.threw = String(e?.message ?? e).slice(0, 300); }
+__m.errorName = null;
+try {${c.act}\n} catch (e) { __m.threw = String(e?.message ?? e).slice(0, 300); __m.errorName = String(e?.errorName ?? e?.name ?? "").slice(0, 80) || null; }
 const actMs = performance.now() - __t;
 return {actMs, at: [__from, Date.now()], threw: __m.threw !== null};`),
     check: cell(`${head}
 const __m = globalThis.__m;
 if (!__m?.ready) return {invalid: "the case was not prepared"};
-return await (async () => {${c.check}\n})();`),
+const __r = await (async () => {${c.check}\n})();
+${c.expect === 'outcome' ? `// An outcome case whose action threw fails, whatever the state reads.
+if (__m.threw !== null) return {ok: false, outcome: {...(__r?.outcome ?? {}), threw: __m.threw, errorName: __m.errorName}};` : ''}
+return __r;`),
   };
 }
 
@@ -130,15 +139,32 @@ if (index !== null) await __app.click(index);
 for (const end = Date.now() + 5000; panel(ax) && Date.now() < end;) ax = await observe();
 return {closed: !panel(ax)};`);
 
-// The launch path's act (part 4): the scene's app, not running, resolved by its path, which must bring it up without
-// the engine activating it; the device clock around the call, as an act cell's. -> {actMs, at, threw}.
-export const launchCell = (scene, app) => cell(`globalThis.__apps ??= {};
+// The launch path's act (part 4): the scene's app, not running, observed by its path through the engine's own call
+// (`cua.computer.get_app_state`, what getApp makes, without getApp's emission of the text), which must bring it up
+// without the engine activating it. A freshly launched TextEdit opens its Open panel, which lists the owner's files:
+// its text stays in this cell, and only booleans leave it (the state came back, whether the panel or the scene's own
+// window is in front). -> {actMs, at, threw, error?, state, panel, scene}.
+export const launchCell = (scene, app) => cell(`${EMBEDDED}
 const __from = Date.now(), __t = performance.now();
-let threw = null;
-try { globalThis.__apps[${j(scene)}] = await cua.getApp(${j(app)}); } catch (e) { threw = String(e?.message ?? e).slice(0, 300); }
-return {actMs: performance.now() - __t, at: [__from, Date.now()], threw: threw !== null, ...(threw === null ? {} : {error: threw})};`);
+let threw = null, text = "";
+try { text = String((await cua.computer.get_app_state({app: ${j(app)}, disableDiff: true}))?.text ?? ""); } catch (e) { threw = String(e?.message ?? e).slice(0, 300); }
+const actMs = performance.now() - __t, at = [__from, Date.now()];
+const facts = {state: text.length > 0, panel: /ID: open-panel\\b/.test(lineOfIndex(text, 0) ?? ""), scene: (windowTitleOf(text) ?? "").startsWith(${j(SCENES[scene].window.title)})};
+text = "";
+return {actMs, at, threw: threw !== null, ...(threw === null ? {} : {error: threw}), ...facts};`);
 
-// The launch path's outcome: the app listed as running. -> {ok, outcome: {listed, running}}.
-export const launchCheckCell = scene => cell(`const apps = await cua.listApps({emit: false});
+// The launch path's outcome, once the harness has put the run's own state in place (TextEdit: the run's document opened
+// into the launched process): the app listed as running and its front window the scene's own, never the Open panel. The
+// observation again stays in the cell. -> {ok, outcome: {listed, running, scene, panel}}.
+export const launchCheckCell = (scene, app) => cell(`${EMBEDDED}
+const apps = await cua.listApps({emit: false});
 const hit = (Array.isArray(apps) ? apps : []).find(a => [a?.id, a?.bundleId, a?.bundleIdentifier].includes(${j(SCENES[scene].bundleId)}));
-return {ok: Boolean(hit) && hit.isRunning !== false, outcome: {listed: Boolean(hit), running: hit ? hit.isRunning !== false : null}};`);
+let text = "";
+for (const end = Date.now() + 10000; Date.now() < end;) {
+  try { text = String((await cua.computer.get_app_state({app: ${j(app)}, disableDiff: true}))?.text ?? ""); } catch { text = ""; }
+  if ((windowTitleOf(text) ?? "").startsWith(${j(SCENES[scene].window.title)})) break;
+}
+const own = (windowTitleOf(text) ?? "").startsWith(${j(SCENES[scene].window.title)}), panel = /ID: open-panel\\b/.test(lineOfIndex(text, 0) ?? "");
+text = "";
+const running = Boolean(hit) && hit.isRunning !== false;
+return {ok: running && own && !panel, outcome: {listed: Boolean(hit), running, scene: own, panel}};`);

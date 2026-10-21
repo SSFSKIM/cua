@@ -27,6 +27,10 @@
 //       every journaled launch that is still the same process (pid and start time) sent SIGTERM and awaited; the journal
 //       keeps what did not quit -> {quit, remaining, gone}. The run calls it after each launch row and before the put-back;
 //       `native-matrix.mjs cleanup` before the live hold's recovery, so a run that died never strands one.
+//   open-document --run <dir>
+//       the TextEdit launch row's run-owned state: the run's document (the scene's own, written afresh under the run
+//       directory) opened in the background into the TextEdit the row launched, only while that journaled process is the
+//       one TextEdit running -> {answer: {opened, reason?}, at}
 //   windowless up --run <dir>
 //       the windowless app of the "app with no window" refusal: a stay-open AppleScript applet with no window and no
 //       reopen handler (built once, ad hoc signed, its own bundle id), launched in the background and journaled as a
@@ -42,7 +46,7 @@ import {basename, isAbsolute, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {launchOf, quitOwned} from '../accept/fixture-app.mjs';
 import {FRONT_WINDOW_SCRIPT} from '../accept/key-guard.mjs';
-import {main as scenesMain, readState, SCENES} from '../repl-parity/scenes-mac.mjs';
+import {main as scenesMain, readState, SCENES, textEditDocument} from '../repl-parity/scenes-mac.mjs';
 import {alertWatch} from './live-checks.mjs';
 import {defaultIo, processTable} from './live-device.mjs';
 import {ownedReading} from './oracle.mjs';
@@ -135,6 +139,20 @@ export async function quitLaunched(io) {
   return {quit: quit.length, remaining: remaining.length, gone};
 }
 
+// The run's document opened into the TextEdit a launch row brought up (TextEdit opens its Open panel when launched
+// without one, and that panel lists the owner's files). io: {launched(), runningApps(bundleId), writeDocument() -> path,
+// openDocument(path)}. -> {opened, reason?}.
+export function openDocument(io) {
+  const bundleId = SCENES.textedit.bundleId;
+  const journaled = io.launched().filter(l => l.scene === 'textedit').map(l => l.pid);
+  const running = io.runningApps(bundleId).map(p => p.pid);
+  if (journaled.length !== 1 || running.length !== 1 || running[0] !== journaled[0]) {
+    return {opened: false, reason: 'the TextEdit the row launched is not the one TextEdit running: nothing opened'};
+  }
+  io.openDocument(io.writeDocument());
+  return {opened: true};
+}
+
 // The windowless applet, built once per source (its bundle id rewritten, then signed ad hoc). -> its path.
 export function windowlessApp({cache = WINDOWLESS_CACHE, exec = run} = {}) {
   const hash = createHash('sha256').update(JSON.stringify({WINDOWLESS, WINDOWLESS_SOURCE})).digest('hex').slice(0, 12);
@@ -194,7 +212,7 @@ function parse(argv) {
   }
   return {command, positional, flags};
 }
-const USAGE = 'usage: matrix-device.mjs compile|read|alerts|launched|windowless --run <dir> … | step <scenes-mac.mjs arguments>';
+const USAGE = 'usage: matrix-device.mjs compile|read|alerts|launched|open-document|windowless --run <dir> … | step <scenes-mac.mjs arguments>';
 const sleep = ms => new Promise(done => setTimeout(done, ms));
 
 export async function main(argv, {io: given = {}} = {}) {
@@ -209,6 +227,13 @@ export async function main(argv, {io: given = {}} = {}) {
     windows: () => JSON.parse(run(compiled(SYSTEM_WINDOWS_SCRIPT, dir), [])).windows,
     watcherRuns: pid => isWatcher(processTable(), pid),
     probe: live.probe, runningApps: live.runningApps, launchOf: pid => launchOf(pid), quit: pids => quitOwned(pids, {waitMs: LAUNCH_QUIT_MS}),
+    writeDocument: () => {
+      const folder = join(dir, 'matrix-launch'), doc = textEditDocument(), file = join(folder, doc.name);
+      fs.mkdirSync(folder, {recursive: true, mode: 0o700});
+      fs.writeFileSync(file, doc.rtf, {mode: 0o600});
+      return file;
+    },
+    openDocument: file => run('/usr/bin/open', ['-g', '-b', SCENES.textedit.bundleId, file]),
     app: () => windowlessApp(), open: app => run('/usr/bin/open', ['-n', '-g', '-a', app]), sleep, now: Date.now,
     ...given,
   };
@@ -221,6 +246,7 @@ export async function main(argv, {io: given = {}} = {}) {
       if (positional[0] === 'record') return recordLaunch({scene: positional[1], since: Number(flags.since)}, io);
       if (positional[0] === 'quit') return quitLaunched(io);
       throw new Error(USAGE);
+    case 'open-document': return timed(async () => openDocument(io));
     case 'windowless':
       if (positional[0] === 'up') return timed(() => windowlessUp(io));
       throw new Error(USAGE);

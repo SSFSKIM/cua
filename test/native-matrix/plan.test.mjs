@@ -84,44 +84,160 @@ test('the tree case passes on both engines\' goldens of every scene, and returns
   }
 });
 
-test('an action\'s outcome is read back: TextEdit\'s align center, the Electron button, Finder\'s row', async () => {
+// The Electron fixture's text field as a small model rendered in the vendor's grammar: its value, the focus and the
+// selection, changed by the fake's actions as the app would (or, for an inert engine, not).
+function electronField({value = '', inert = false, insertAtStart = false} = {}) {
+  const lines = golden('electron', 'vendor.txt').split('\n\nThe focused UI element')[0].split('\n');
+  const state = {value, focused: 5, selected: null};
+  const render = () => {
+    const tree = lines.map(line => (/^\t+5 /.test(line) ? `${line}${state.value ? `, Value: ${state.value}` : ''}` : line)).join('\n');
+    const focused = lines.find(l => new RegExp(`^\\t*${state.focused} `).test(l))?.trim() ?? '';
+    return `${tree}\n\nThe focused UI element is ${focused}${state.selected ? `\n\nSelected text: \`\`\`\n${state.selected}\n\`\`\`` : ''}`;
+  };
+  const write = text => {
+    if (inert) return;
+    state.value = insertAtStart ? text + state.value : state.selected ? state.value.replace(state.selected, text) : state.value + text;
+    state.selected = null;
+  };
+  const app = fakeApp('', {
+    click: (_, index) => { if (Number.isInteger(index)) state.focused = index; state.selected = null; },
+    setValue: (_, index, v) => { if (index === 5) state.value = v; },
+    selectText: (_, index, word) => { if (index === 5 && state.value.includes(word)) state.selected = word; },
+    typeText: (_, text) => write(text), paste: (_, text) => write(text),
+  });
+  Object.defineProperty(app, 'ax', {get: render, set: () => {}});
+  return {app, state};
+}
+
+test('an action\'s outcome is read back: TextEdit\'s align center, the Electron button, Finder\'s row from another row', async () => {
   // align center: a click on it sets its value; on the golden it is unchecked.
   const align = fakeApp(golden('textedit', 'vendor.txt'), {click: (app, index) => { if (index === 40) app.ax = app.ax.replace(/(\t40 [^\n]*Value: )0/, '$11'); }});
   const control = await runCase('textedit', 'textedit', align, 'click', 'control');
   assert.equal(control.check.value.ok, true, JSON.stringify(control));
   assert.deepEqual(align.calls, [['click', 40]]);
-  // An engine whose click does nothing fails the case.
   const inert = await runCase('textedit', 'textedit', fakeApp(golden('textedit', 'cua.txt')), 'click', 'control');
   assert.equal(inert.check.value.ok, false);
+  // The right state with an error from the action is a failure.
+  const throwing = fakeApp(golden('textedit', 'vendor.txt'), {click: app => { app.ax = app.ax.replace(/(\t40 [^\n]*Value: )0/, '$11'); throw new Error('Computer Use server error -10005: actionFailed'); }});
+  const threw = await runCase('textedit', 'textedit', throwing, 'click', 'control');
+  assert.equal(threw.check.value.ok, false);
+  assert.match(threw.check.value.outcome.threw, /actionFailed/);
 
   const press = fakeApp(golden('electron', 'vendor.txt'), {click: (app, index) => { if (index === 13) app.ax = app.ax.replace('Pressed 0 times', 'Pressed 1 time'); }});
-  const button = await runCase('electron', 'electron', press, 'click', 'button');
-  assert.equal(button.check.value.ok, true, JSON.stringify(button));
+  assert.equal((await runCase('electron', 'electron', press, 'click', 'button')).check.value.ok, true);
 
-  // Finder: the click lands on a cell of row 005 other than its name; the row is then the only selected element.
+  // Finder: the list starts on row 001 (a harness click on its cell), the click lands on a cell of row 005 other than
+  // its name, and row 005 is then the only selected element.
+  const text = await import('../../scripts/native-matrix/matrix-text.mjs');
+  const {indexOfRowCell} = await import('../../scripts/repl-parity/scenes-mac-text.mjs');
   const finder = golden('finder', 'vendor.txt');
-  const row5 = (await import('../../scripts/native-matrix/matrix-text.mjs')).rowIndexOfName(finder, 'scene-file-005');
-  const select = fakeApp(finder, {click: app => { app.ax = app.ax.replace(/\n\nThe focused UI element/, `\n\nSelected:\n\t${row5} row (selected)\n\nThe focused UI element`); }});
+  const names = ['scene-file-001', 'scene-file-005'];
+  const select = fakeApp(finder, {click: (app, index) => {
+    const name = names.find(n => indexOfRowCell(finder, n) === index);
+    if (name) app.ax = finder.replace(/\n\nThe focused UI element/, `\n\nSelected:\n\t${text.rowIndexOfName(finder, name)} row (selected)\n\nThe focused UI element`);
+  }});
   const row = await runCase('finder', 'finder', select, 'click', 'row');
   assert.equal(row.prepare.value.ready, true, JSON.stringify(row.prepare));
-  assert.notEqual(select.calls[0][1], row5, 'the click is on a cell, not the row');
+  assert.deepEqual(select.calls.map(c => c[1]), [indexOfRowCell(finder, 'scene-file-001'), indexOfRowCell(finder, 'scene-file-005')]);
   assert.equal(row.check.value.ok, true, JSON.stringify(row.check));
 });
 
-test('a refused case passes on a sentence with nothing changed, and fails when the engine acts instead', async () => {
-  const refuse = fakeApp(golden('chrome', 'vendor.txt'), {setValue: () => { throw new Error('element 24 is not settable'); }});
-  const refused = await runCase('chrome', 'chrome', refuse, 'setValue', 'notSettable');
-  assert.deepEqual(refused.check.value, {ok: true, outcome: {refused: true, unchanged: true, message: 'element 24 is not settable'}});
+test('an insertion is the selected word replaced by the text, exactly; an engine that inserts elsewhere or not at all fails', async () => {
+  const exact = electronField();
+  const typed = await runCase('electron', 'electron', exact.app, 'typeText', 'replace');
+  assert.equal(typed.prepare.value.ready, true, JSON.stringify(typed.prepare));
+  assert.equal(typed.check.value.ok, true, JSON.stringify(typed.check));
+  assert.match(exact.state.value, /^alpha one\nbravo two\nThe quick brown fox jumps over the lazy dog\. three\ndelta four\n/);
+  // One more occurrence of the text, but not where the selection was: a count of occurrences passed this, the exact
+  // post-state does not.
+  const elsewhere = electronField({insertAtStart: true});
+  const wrong = await runCase('electron', 'electron', elsewhere.app, 'paste', 'replace');
+  assert.equal(wrong.check.value.outcome.inserted, 1);
+  assert.equal(wrong.check.value.ok, false);
+  assert.equal((await runCase('electron', 'electron', electronField({inert: true}).app, 'typeText', 'replace')).check.value.ok, false);
+});
+
+test('a fresh value: setValue writes a value no earlier row wrote, so an inert engine never passes on a repeat', async () => {
+  const field = electronField();
+  const first = await runCase('electron', 'electron', field.app, 'setValue', 'text');
+  assert.equal(first.check.value.ok, true, JSON.stringify(first));
+  const inert = electronField({value: field.state.value});
+  inert.app.setValue = async () => {};
+  assert.equal((await runCase('electron', 'electron', inert.app, 'setValue', 'text')).check.value.ok, false);
+});
+
+test('Chrome\'s Apply needs the fresh name in the status; a status an earlier row left does not pass', async () => {
+  const page = golden('chrome', 'vendor.txt');
+  const withName = (ax, v) => ax.replace(/(\t23 [^\n]*Scene name)(, Value: [^\n]*)?/, `$1, Value: ${v}`);
+  let name = '';
+  const stale = fakeApp(page.replace('텍스트 Ready', '텍스트 Applied: cua apply old'), {setValue: (app, index, v) => { if (index === 23) app.ax = withName(app.ax, v); }});
+  const r = await runCase('chrome', 'chrome', stale, 'click', 'apply');
+  assert.equal(r.prepare.value.ready, true, JSON.stringify(r.prepare));
+  assert.equal(r.check.value.ok, false);
+  const live = fakeApp(page, {setValue: (app, index, v) => { if (index === 23) { name = v; app.ax = withName(app.ax, v); } },
+    click: (app, index) => { if (index === 24) app.ax = app.ax.replace(/텍스트 (Ready|Applied: [^\n]*)/, `텍스트 Applied: ${name}`); }});
+  assert.equal((await runCase('chrome', 'chrome', live, 'click', 'apply')).check.value.ok, true);
+});
+
+test('the caret click must collapse a selection it did not make; the drag must select across lines from no selection', async () => {
+  const doc = golden('textedit', 'vendor.txt');
+  const trailer = sel => doc.replace(/\n\nThe focused UI element/, `\n\nSelected text: \`\`\`\n${sel}\n\`\`\`\n\nThe focused UI element`);
+  const collapsing = fakeApp(doc, {selectText: (app, _, word) => { app.ax = trailer(word); }, click: app => { app.ax = doc; }});
+  assert.equal((await runCase('textedit', 'textedit', collapsing, 'click', 'element')).check.value.ok, true);
+  const inert = fakeApp(doc, {selectText: (app, _, word) => { app.ax = trailer(word); }});
+  assert.equal((await runCase('textedit', 'textedit', inert, 'click', 'element')).check.value.ok, false, 'the line selected first is still selected');
+
+  const field = electronField({value: 'alpha one\nbravo two\ncharlie three\ndelta four\necho five\nfoxtrot six\ngolf seven\nhotel eight'});
+  // A JPEG's SOF0 header for 1440 x 1120: the 720 x 560 window at scale 2.
+  const jpeg = (w, h) => Uint8Array.from([0xff, 0xd8, 0xff, 0xc0, 0x00, 0x11, 0x08, h >> 8, h & 255, w >> 8, w & 255, 0, 0, 0, 0, 0, 0]);
+  field.app.getScreenshot = async () => jpeg(1440, 1120);
+  field.app.drag = async () => { field.state.selected = 'two\ncharlie three\ndelta'; };
+  const drag = await runCase('electron', 'electron', field.app, 'drag', 'select');
+  assert.equal(drag.prepare.value.ready, true, JSON.stringify(drag.prepare));
+  assert.equal(drag.check.value.ok, true, JSON.stringify(drag.check));
+  const points = field.app.calls.filter(c => c[0] === 'click').map(c => c[1]);
+  assert.deepEqual(points, [[600, 198], [60, 138]], 'each end of the drag clicked first, grounded in the fixture\'s layout');
+  field.app.drag = async () => {};
+  assert.equal((await runCase('electron', 'electron', field.app, 'drag', 'select')).check.value.ok, false);
+  const squashed = electronField();
+  squashed.app.getScreenshot = async () => jpeg(1440, 512);
+  assert.match((await runCase('electron', 'electron', squashed.app, 'drag', 'select')).prepare.value.reason, /shape/);
+});
+
+test('a refused case passes only on the vendor\'s sentence with nothing changed', async () => {
+  const refuse = sentence => fakeApp(golden('chrome', 'vendor.txt'), {setValue: () => { throw Object.assign(new Error(`Computer Use server error -10005: ${sentence}`), {errorName: 'valueNotSettable'}); }});
+  const refused = await runCase('chrome', 'chrome', refuse('Cannot set a value for an element that is not settable'), 'setValue', 'notSettable');
+  assert.equal(refused.check.value.ok, true, JSON.stringify(refused.check));
+  assert.equal(refused.check.value.outcome.errorName, 'valueNotSettable');
+  const transport = await runCase('chrome', 'chrome', fakeApp(golden('chrome', 'vendor.txt'), {setValue: () => { throw new Error('transport unavailable'); }}), 'setValue', 'notSettable');
+  assert.equal(transport.check.value.ok, false, 'any other error is not the refusal');
   const accepts = await runCase('chrome', 'chrome', fakeApp(golden('chrome', 'vendor.txt')), 'setValue', 'notSettable');
   assert.equal(accepts.check.value.ok, false);
-  const invalid = fakeApp(golden('textedit', 'vendor.txt'), {click: () => { throw new Error('invalid element ID 99999'); }});
+  // The sentence, but the state moved: not a refusal.
+  const moved = fakeApp(golden('textedit', 'vendor.txt'), {selectText: app => { app.ax = app.ax.replace('Line 10', 'Line 1O'); throw new Error('Cannot select text for an element that does not support a settable selected text range'); }});
+  assert.equal((await runCase('textedit', 'textedit', moved, 'selectText', 'notText')).check.value.ok, false);
+  const invalid = fakeApp(golden('textedit', 'vendor.txt'), {click: () => { throw new Error('Computer Use server error -10005: 99999 is an invalid element ID'); }});
   assert.equal((await runCase('textedit', 'textedit', invalid, 'click', 'invalidIndex')).check.value.ok, true);
+});
+
+test('the app with no window: its bind refused with the vendor\'s sentence, nothing bound', async () => {
+  const cells = caseCells('windowless', casesOf('windowless', 'getAXState', 'noWindow'));
+  const once = async getApp => {
+    const cua = {getApp};
+    await run(cells.prepare, {cua}); await run(cells.act, {cua});
+    const check = await run(cells.check, {cua});
+    delete globalThis.__m;
+    return check.value;
+  };
+  assert.equal((await once(async () => { throw new Error('Computer Use server error -10005: noWindowsAvailable'); })).ok, true);
+  assert.equal((await once(async () => { throw new Error('approval declined'); })).ok, false);
+  assert.equal((await once(async () => ({bound: true}))).ok, false);
 });
 
 test('a case whose precondition does not hold sends nothing and its row is invalid', async () => {
   // Electron's typeText needs the text field focused: a click that does not move the focus leaves the case unprepared.
   const app = fakeApp(golden('electron', 'vendor.txt').replace('The focused UI element is 5 ', 'The focused UI element is 13 '));
-  const {prepare, act, check} = await runCase('electron', 'electron', app, 'typeText', 'text');
+  const {prepare, act, check} = await runCase('electron', 'electron', app, 'typeText', 'replace');
   assert.equal(prepare.value.ready, false);
   assert.match(prepare.value.reason, /focus/);
   assert.equal(act.ok, false);
@@ -177,14 +293,23 @@ test('the Open panel: opened by ⌘O only from the scene document, closed by a c
   assert.deepEqual(elsewhere.calls, [], 'nothing is sent from another window');
 });
 
-test('the launch path: the app resolved by its path, timed on the device clock, and found running', async () => {
+test('the launch path: the app observed through the engine\'s call, its text kept in the cell; the Open panel never counts', async () => {
   const {launchCell, launchCheckCell} = await import('../../scripts/native-matrix/matrix-cells.mjs');
+  const panelText = 'Window: "Open", App: TextEdit.\n0 standard window ID: open-panel\n\t1 row owner-secret-file.pages\n';
   const asked = [];
-  const cua = {getApp: async app => { asked.push(app); return {launched: true}; }, listApps: async () => [{id: 'com.apple.TextEdit', isRunning: true}]};
+  let text = panelText;
+  const cua = {computer: {get_app_state: async request => { asked.push(request); return {text}; }}, listApps: async () => [{id: 'com.apple.TextEdit', isRunning: true}],
+    getApp: async () => { throw new Error('getApp emits the text; the launch path must not call it'); }};
   const act = await run(launchCell('textedit', '/System/Applications/TextEdit.app'), {cua});
-  assert.equal(act.value.threw, false);
-  assert.deepEqual(asked, ['/System/Applications/TextEdit.app']);
-  assert.deepEqual((await run(launchCheckCell('textedit'), {cua})).value, {ok: true, outcome: {listed: true, running: true}});
-  const failing = await run(launchCell('electron', '/x.app'), {cua: {getApp: async () => { throw new Error('appNotFound'); }}});
+  assert.deepEqual([act.value.threw, act.value.state, act.value.panel, act.value.scene], [false, true, true, false]);
+  assert.deepEqual(asked[0], {app: '/System/Applications/TextEdit.app', disableDiff: true});
+  assert.doesNotMatch(JSON.stringify(act), /owner-secret-file/);
+  // With the panel still in front, the launch has not reached the run's state.
+  const stuck = await run(launchCheckCell('textedit', '/System/Applications/TextEdit.app').replace('Date.now() + 10000', 'Date.now() + 50'), {cua});
+  assert.equal(stuck.value.ok, false);
+  assert.doesNotMatch(JSON.stringify(stuck), /owner-secret-file/);
+  text = golden('textedit', 'vendor.txt');
+  assert.deepEqual((await run(launchCheckCell('textedit', '/System/Applications/TextEdit.app'), {cua})).value, {ok: true, outcome: {listed: true, running: true, scene: true, panel: false}});
+  const failing = await run(launchCell('electron', '/x.app'), {cua: {computer: {get_app_state: async () => { throw new Error('appNotFound'); }}}});
   assert.deepEqual([failing.value.threw, failing.value.error], [true, 'appNotFound']);
 });

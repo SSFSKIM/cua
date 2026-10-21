@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {alerts, compiled, isWatcher, ownedFocus, quitLaunched, read, recordLaunch, WINDOWLESS, windowlessUp} from '../../scripts/native-matrix/matrix-device.mjs';
+import {alerts, compiled, isWatcher, openDocument, ownedFocus, quitLaunched, read, recordLaunch, WINDOWLESS, windowlessUp} from '../../scripts/native-matrix/matrix-device.mjs';
 
 const state = {scenes: {textedit: {pid: 11}, finder: {pid: 7}}};
 const bounds = {x: 0, y: 25, width: 900, height: 700};
@@ -72,6 +72,19 @@ test('a launch is identified and journaled at once, and quit only while it is th
   assert.deepEqual(await quitLaunched(io), {quit: 1, remaining: 0, gone: 0});
   assert.deepEqual(quitting, [40]);
   assert.deepEqual(j.list, []);
+});
+
+test('the run\'s document is opened only into the TextEdit the row launched, and only while it is the one running', () => {
+  const opened = [];
+  const io = (journal, running) => ({launched: () => journal, runningApps: () => running.map(pid => ({pid})), writeDocument: () => '/run/matrix-launch/cua-scene.rtf',
+    openDocument: file => opened.push(file)});
+  const ours = [{scene: 'textedit', bundleId: 'com.apple.TextEdit', pid: 40, at: 1}];
+  assert.deepEqual(openDocument(io(ours, [40])), {opened: true});
+  assert.deepEqual(opened, ['/run/matrix-launch/cua-scene.rtf']);
+  assert.equal(openDocument(io(ours, [40, 41])).opened, false, 'another TextEdit runs: open would reach either');
+  assert.equal(openDocument(io([], [40])).opened, false, 'nothing journaled: not the run\'s launch');
+  assert.equal(openDocument(io(ours, [41])).opened, false);
+  assert.equal(opened.length, 1);
 });
 
 test('the windowless fixture comes up in the background and is journaled; one already running refuses', async () => {

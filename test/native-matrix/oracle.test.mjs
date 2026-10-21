@@ -2,7 +2,7 @@
 // window found for the key guard, activations charged to the row whose action they fall in, and each row judged.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {ACTIVATION_MARGIN_MS, attributeActivations, judgeInterference, ownedReading, sameFront, userWindowOf} from '../../scripts/native-matrix/oracle.mjs';
+import {ACTIVATION_MARGIN_MS, accountActivations, judgeInterference, ownedReading, sameFront, userWindowOf} from '../../scripts/native-matrix/oracle.mjs';
 
 const bounds = {x: 10, y: 20, width: 800, height: 600};
 const raw = (pid, ownerPid = pid, b = bounds) => ({at: 1, frontmost: {pid, bundleId: pid === 7 ? 'com.apple.finder' : 'com.example.owner'}, topWindow: {ownerPid, number: 42, bounds: b, onScreen: true}});
@@ -32,17 +32,20 @@ test('the front compares pid, bundle id, window number and bounds', () => {
   assert.deepEqual(sameFront(finder, null), {frontmost: false, topWindow: false}, 'an unread front never passes');
 });
 
-test('activations are charged to the row whose action they fall in, with the margin after its end', () => {
-  const rows = [{key: 'a', at: [1000, 1100]}, {key: 'b', at: [5000, 5050]}];
+test('every activation is accounted for: the harness\'s, a row\'s, a measure\'s, the phases around; anything else is not', () => {
+  const windows = [{key: 'setup', kind: 'setup', at: [500, 600]}, {key: 'a', kind: 'row', at: [1000, 1100]}, {key: 'h', kind: 'harness', at: [1040, 1060]},
+    {key: 'b', kind: 'row', at: [5000, 5050]}, {key: 'm', kind: 'measure', at: [8000, 8100]}];
   const events = [
-    {kind: 'activated', bundleId: 'x', at: 1050}, {kind: 'activated', bundleId: 'y', at: 1100 + ACTIVATION_MARGIN_MS},
-    {kind: 'deactivated', bundleId: 'z', at: 1050}, {kind: 'activated', bundleId: 'w', at: 3000},
-    {kind: 'activated', bundleId: 'probe', pid: 55, at: 5010}, {kind: 'activated', bundleId: 'v', at: 900},
+    {kind: 'activated', bundleId: 'x', at: 1020}, {kind: 'activated', bundleId: 'user', at: 1050}, {kind: 'activated', bundleId: 'y', at: 1100 + ACTIVATION_MARGIN_MS},
+    {kind: 'deactivated', bundleId: 'z', at: 1050}, {kind: 'activated', bundleId: 'gap', at: 3000},
+    {kind: 'activated', bundleId: 'probe', pid: 55, at: 5010}, {kind: 'activated', bundleId: 'before', at: 100},
+    {kind: 'activated', bundleId: 'measured', at: 8050}, {kind: 'activated', bundleId: 'after', at: 20_000}, {kind: 'activated', bundleId: 'untimed'},
   ];
-  const {byRow, unattributed} = attributeActivations(events, rows, {probePids: [55]});
+  const {byRow, accounted, unaccounted} = accountActivations(events, windows, {probePids: [55]});
   assert.deepEqual(byRow.a.map(e => e.bundleId), ['x', 'y']);
   assert.deepEqual(byRow.b, []);
-  assert.deepEqual(unattributed.map(e => e.bundleId), ['w', 'v']);
+  assert.deepEqual(accounted.map(a => [a.kind, a.bundleId]), [['harness', 'user'], ['outside', 'before'], ['measure', 'measured'], ['outside', 'after']]);
+  assert.deepEqual(unaccounted.map(e => e.bundleId), ['gap', 'untimed']);
 });
 
 test('a row passes only with the front unchanged, no activation and no route 4 outside an accepted family', () => {

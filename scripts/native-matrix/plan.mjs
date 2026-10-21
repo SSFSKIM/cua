@@ -369,5 +369,6 @@ export const NOT_APPLICABLE = Object.freeze({
     .map(method => [method, 'the Open panel is observed and its Cancel clicked; it lists the owner\'s files, so nothing is typed, selected or scrolled in it'])),
 });
 
-// A row's id: `<target>/<regime>/<method>.<case>`.
-export const caseId = (target, regime, c) => `${target}/${regime}/${c.method}.${c.case}`;
+// A row's id: `<target>/<regime>/<method>.<case>`, and in the background regime `@<user>` after it (TextEdit and Finder
+// are each driven behind two user windows).
+export const caseId = (target, regime, c, user = null) => `${target}/${regime}/${c.method}.${c.case}${user ? `@${user}` : ''}`;

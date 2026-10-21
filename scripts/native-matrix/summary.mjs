@@ -46,18 +46,19 @@ const groupBy = (items, key) => { const out = new Map(); for (const item of item
 export function judgeMethod(regime, vendorRows, cuaRows) {
   const valid = rows => rows.filter(r => !r.invalid);
   const v = valid(vendorRows), c = valid(cuaRows);
-  const count = rows => ({ok: rows.filter(r => r.ok).length, valid: rows.length, invalid: 0});
+  const passes = r => r.ok === true || r.declared !== undefined;
+  const count = rows => ({ok: rows.filter(passes).length, valid: rows.length, invalid: 0});
   const vendor = {...count(v), invalid: vendorRows.length - v.length}, cua = {...count(c), invalid: cuaRows.length - c.length};
   const routes = {vendor: [...new Set(v.map(r => r.inputRoute ?? null))], cua: [...new Set(c.map(r => r.inputRoute ?? null))]};
   if (!c.length) return {verdict: 'no-verdict', vendor, cua, routes};
-  if (regime === 'background') return {verdict: c.every(r => r.ok) ? (v.length && v.some(r => !r.ok) ? 'better' : 'equal') : 'worse', vendor, cua, routes};
+  if (regime === 'background') return {verdict: c.every(passes) ? (v.length && v.some(r => !passes(r)) ? 'better' : 'equal') : 'worse', vendor, cua, routes};
   const bySample = new Map(v.map(r => [r.sample ?? 1, r]));
   let worse = false, better = false;
   for (const row of c) {
     const reference = bySample.get(row.sample ?? 1);
-    if (!reference) { if (!row.ok) worse = true; continue; }
-    if (reference.ok && !row.ok) worse = true;
-    if (!reference.ok && row.ok) better = true;
+    if (!reference) { if (!passes(row)) worse = true; continue; }
+    if (passes(reference) && !passes(row)) worse = true;
+    if (!passes(reference) && passes(row)) better = true;
   }
   return {verdict: worse ? 'worse' : better ? 'better' : 'equal', vendor, cua, routes};
 }
@@ -127,9 +128,11 @@ export function judge(results, problems = []) {
   const judged = engine => rows.filter(r => r.engine === engine && !r.invalid && r.interference && ((r.section === 'method' && r.regime === 'background') || r.section === 'launch'));
   const interference = Object.fromEntries(['vendor', 'cua'].map(engine => {
     const list = judged(engine);
-    return [engine, {rows: list.length, ok: list.filter(r => r.interference.ok).length, route4: list.filter(r => r.interference.route4 && r.declared?.kind !== 'route4-accepted').length,
-      declared: list.filter(r => !r.interference.ok && r.declared).map(r => ({id: r.id, ...r.declared})),
-      failed: list.filter(r => !r.interference.ok && !r.declared).map(r => ({id: r.id, frontmost: r.interference.frontmost, topWindow: r.interference.topWindow, activations: r.interference.activations, route4: r.interference.route4}))}];
+    const declared = r => r.interference.declared;
+    return [engine, {rows: list.length, ok: list.filter(r => r.interference.ok).length, route4: list.filter(r => r.interference.route4 && declared(r)?.kind !== 'route4-accepted').length,
+      declared: list.filter(r => !r.interference.ok && declared(r)).map(r => ({id: r.id, ...declared(r)})),
+      failed: list.filter(r => !r.interference.ok && !declared(r)).map(r => ({id: r.id, frontmost: r.interference.frontmost, topWindow: r.interference.topWindow, focus: r.interference.focus ?? null,
+        activations: r.interference.activations, route4: r.interference.route4}))}];
   }));
   const launches = rows.filter(r => r.section === 'launch');
 
@@ -147,7 +150,10 @@ export function judge(results, problems = []) {
   const interferencePass = interference.cua.rows > 0 && interference.cua.failed.length === 0 && interference.cua.declared.length === 0;
   const speedMisses = speed.filter(s => s.beat === false);
   const speedUnmeasured = speed.filter(s => s.beat === null);
+  // Rows not ok with a declared cause (./cell-result.mjs counts): never silent, each the owner's to read.
+  const declaredRows = rows.filter(r => !r.invalid && r.ok !== true && r.declared);
   const owner = [
+    ...declaredRows.map(r => `declared: ${r.section} ${r.id} on ${r.engine}: ${r.declared.kind}: ${r.declared.cause}`),
     ...speedMisses.map(s => `speed: ${s.id} missed the 10% beat (cua ${round(s.cua.median)} ms against ${round(s.vendor.median)} ms, p95 ${round(s.cua.p95)} against ${round(s.vendor.p95)})`),
     ...(findingVerdict === 'parity' ? ['finding elements: parity on the resolved sum (the owner decides)'] : []),
     ...interference.cua.declared.map(d => `not interfering: ${d.id}: ${d.cause}`),
@@ -227,7 +233,7 @@ export function renderSummary(j, {title = 'Native matrix summary'} = {}) {
   out.push('## Not interfering', '');
   for (const engine of ['cua', 'vendor']) {
     const i = j.interference[engine];
-    out.push(`- ${engine}: ${share(engine)}${i.failed.length ? `; failed: ${i.failed.map(f => `${f.id} (${[!f.frontmost && 'frontmost changed', !f.topWindow && 'top window changed', f.activations && `${f.activations} activation(s)`, f.route4 && 'route 4'].filter(Boolean).join(', ')})`).join('; ')}` : ''}${i.declared.length ? `; declared: ${i.declared.map(d => `${d.id} (${d.kind})`).join('; ')}` : ''}`);
+    out.push(`- ${engine}: ${share(engine)}${i.failed.length ? `; failed: ${i.failed.map(f => `${f.id} (${[!f.frontmost && 'frontmost changed', !f.topWindow && 'top window changed', f.focus === false && 'focus left the user window', f.activations && `${f.activations} activation(s)`, f.route4 && 'route 4'].filter(Boolean).join(', ')})`).join('; ')}` : ''}${i.declared.length ? `; declared: ${i.declared.map(d => `${d.id} (${d.kind})`).join('; ')}` : ''}`);
   }
   out.push('');
   if (j.others.length) {

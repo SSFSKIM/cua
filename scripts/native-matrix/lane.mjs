@@ -1,0 +1,138 @@
+// The native matrix's device steps and its lane (scripts/native-matrix.mjs; docs/doperpowers/specs/2026-10-18-own-native-
+// engine-design.md, Verification system part 4): the device CLIs over ssh in the harness checkout (the scenes, the
+// goldens' Finder steps and engine stop, the live hold's begin, watch and recover, the matrix's own reads), the
+// preparation of the approved home, and the serve of the requested host and engine (CUA_NATIVE_ENGINE pinned to
+// --engine, as the native baseline's lanes are) with its MCP client. Reused, not copied: the native baseline's remote
+// scripts and engine attestation, the goldens' checkout CLI and approval matcher, the live hold's bounded, journaled ssh.
+import {execFileSync} from 'node:child_process';
+import {textOf} from '../browser-parity/mcp.mjs';
+import {FIRST, parseCell} from '../native-baseline/cells.mjs';
+import {attestEngine} from '../native-baseline/engine.mjs';
+import {classifyHelpers, preflightScript, serveCommand} from '../native-baseline/remote.mjs';
+import {hostAttestationOf} from '../native-baseline.mjs';
+import {checkoutCli, deviceOps, isSceneApproval} from './goldens.mjs';
+import {boundedExec, journaledScript, SSH_OPTIONS} from './live.mjs';
+
+export const CELL_MS = 60_000, BIND_MS = 120_000;
+const LIVE_DEVICE = 'scripts/native-matrix/live-device.mjs';
+const MATRIX_DEVICE = 'scripts/native-matrix/matrix-device.mjs';
+const lastJson = text => JSON.parse(String(text).trim().split('\n').at(-1));
+
+// Both engines' processes with their ages, the approved bundle's `--probe` instances left out: the matrix's own
+// watcher and focus probes run the approved bundle on either engine's lane, and are not its engine.
+export const MATRIX_HELPER_SCRIPT = `/bin/ps -axo etime=,args= | /usr/bin/grep -E '/(SkyComputerUseService|cua-engine)( |$)' | /usr/bin/grep -v -e ' --probe ' || true`;
+// MATRIX_HELPER_SCRIPT's lines as the native baseline's helper attestation classifies them (remote.mjs classifyHelpers):
+// each executable's path cut from its arguments. -> [{path, kind, origin, ageSeconds}].
+export function helpersOf(output, runtimeRoot, engineBundle) {
+  const lines = String(output).split('\n').map(line => /^\s*(\S+)\s+(.*?\/(?:SkyComputerUseService|cua-engine))(?: .*)?$/.exec(line)).filter(Boolean)
+    .filter(m => !/ --probe /.test(m.input)).map(m => `${m[1]} ${m[2]}`);
+  return classifyHelpers(lines.join('\n'), runtimeRoot, engineBundle);
+}
+
+// The device steps, each a bounded ssh whose node launch is journaled in the run's journal once `journalTo(run)` named
+// it (./live.mjs boundedExec). -> {home, scenes, goldens, live, matrix, prepare, cleanup, preflight, serveSpec, helpers, journalTo}.
+export function matrixOps(device, {exec = execFileSync} = {}) {
+  const journal = {run: null};
+  const bounded = boundedExec(exec, journal);
+  const base = deviceOps(device, {exec: bounded});
+  const {ssh, cli} = checkoutCli(device, {exec: bounded});
+  return {
+    home: base.home, scenes: base.scenes, goldens: base.goldens, prepare: base.prepare, cleanup: base.cleanup,
+    live: args => cli(LIVE_DEVICE, args, {answersOnFailure: true}),
+    matrix: args => cli(MATRIX_DEVICE, args),
+    preflight: ({host, engine, approvedEngine, prepared}) => lastJson(ssh(preflightScript({host, engine, approvedEngine, prepared, surface: 'computer'}))),
+    serveSpec: ({pre, prepared, host, engine}) => {
+      const serve = serveCommand({device, checkout: pre.checkout, home: pre.home, userHome: prepared.userHome, configHome: prepared.configHome, tmpdir: prepared.tmpdir,
+        admission: prepared.admission, xSession: {}, host, engine, platform: 'darwin', surface: 'computer'});
+      return serve.command === 'ssh' ? {...serve, args: [...SSH_OPTIONS, ...serve.args.slice(0, -1), journaledScript(serve.args.at(-1), journal.run)]} : serve;
+    },
+    helpers: () => ssh(MATRIX_HELPER_SCRIPT),
+    journalTo: run => { journal.run = run; },
+  };
+}
+
+// The lane: the serve of `host` and `engine` on the prepared home, an MCP client that accepts only the computer-use
+// approval of one of the scenes' apps (recorded in meta.elicitations), and its first cell. Every js result's engine
+// attestation is collected (meta.nativeEngine, ./native-baseline/engine.mjs attestEngine) and one naming another engine
+// stops the lane at once; the first result attests the host. -> {client, js(code, timeoutMs) -> {ok, value|error,
+// inCellMs, wallMs, route}}.
+export async function connectLane({ops, pre, prepared, host, engine, connect, bundleIds, meta, stderrFile, now = () => performance.now()}) {
+  const client = connect({...ops.serveSpec({pre, prepared, host, engine}), clientName: 'cua-native-matrix',
+    answer: msg => (isSceneApproval(msg, bundleIds) ? {action: 'accept', content: {}} : {action: 'decline'}),
+    onElicitation: (row, msg) => meta.elicitations.push({t: row.t, app: msg.params?._meta?.tool_params?.app ?? null, action: row.action}),
+    stderrFile});
+  const closing = async error => { try { await client.close(); } catch {} throw error; };
+  const serverInfo = await client.initialize().then(answer => answer?.serverInfo ?? null, closing);
+  await client.request('tools/list').catch(closing);
+  const js = async (code, timeoutMs = CELL_MS) => {
+    const t0 = now();
+    const result = await client.request('tools/call', {name: 'js', arguments: {code, timeout_ms: timeoutMs}}, timeoutMs + 15_000);
+    const wallMs = now() - t0;
+    attestEngine(meta.nativeEngine, result);
+    const attested = result?._meta?.['cua/nativeEngine'];
+    if (attested?.engine !== engine) throw new Error(`a result attested ${attested?.engine ? `the ${attested.engine} engine` : 'no engine'}, not the requested ${engine}: the lane stopped`);
+    if (!meta.hostAttestation) {
+      meta.hostAttestation = hostAttestationOf(serverInfo, result);
+      if (meta.hostAttestation.host !== host) throw new Error(`the ${meta.hostAttestation.host} host answered a --host ${host} lane`);
+    }
+    const parsed = parseCell(textOf(result));
+    if (!parsed) throw new Error(`a cell printed no result marker${result?.isError ? ' (an error result)' : ''}`);
+    const route = result?._meta?.['cua/inputRoute'];
+    return {...parsed, wallMs, route: route === undefined ? null : route};
+  };
+  const first = await js(FIRST, BIND_MS).catch(closing);
+  if (!first.ok) await closing(new Error(`the lane's first cell failed: ${first.error}`));
+  return {client, js};
+}
+
+// ---- the dry run ------------------------------------------------------------------------------------------------------
+
+// What a dry run's device answers: made up, each consistent with the step that asks, so the whole run's sequence is
+// exercised (and logged) with nothing sent anywhere.
+export function dryOps({log, engine, approvedEngine = '/Users/owner/Library/Application Support/cua/engine/cua Engine.app', commit}) {
+  const build = 'd'.repeat(64);
+  let pid = 500, home = '/Users/owner/cua-home';
+  const step = (name, answer) => (...args) => { log(`dry: ${name} ${JSON.stringify(args.length === 1 ? args[0] : args)}`); return typeof answer === 'function' ? answer(...args) : answer; };
+  const bounds = {x: 100, y: 100, width: 800, height: 600};
+  return {
+    home: step('home', '/Users/owner'),
+    scenes: step('scenes', args => ({
+      'place-chrome': {appPath: '/tmp/chrome.app'}, 'build-electron': {appPath: '/tmp/fixture.app'}, preflight: {refusals: []},
+      up: {scene: args[1], pid: ++pid, app: `/Applications/${args[1]}.app`, window: {number: pid, bounds}}, activate: {scene: args[1], ok: true},
+      down: {down: true}, frontmost: {bundleId: 'com.example.owner'},
+    })[args[0]] ?? {}),
+    goldens: step('goldens', {steps: [], stopped: true}),
+    live: step('live', args => ({begin: {refusals: [], frontmost: {bundleId: 'com.example.owner'}, engineStop: {stopped: true}}, watch: args[1] === 'start' ? {watching: true, pid: 1} : {activations: []},
+      recover: {ok: true, putBack: {ok: true, steps: []}}})[args[0]] ?? {}),
+    matrix: step('matrix', args => (args[0] === 'read' ? {reading: {at: 0, frontmost: {pid: 0, bundleId: 'dry', owned: true}, topWindow: {ownerPid: 0, number: 0, bounds, owned: true}}, focus: {appOwned: true, appPid: 0, named: true}}
+      : {found: 1, quit: 1, remaining: 0})),
+    prepare: step('prepare', approvedHome => ({home: (home = approvedHome), userHome: '/Users/owner', configHome: '/tmp/config', tmpdir: '/tmp/session', admission: 'dry', engineStop: {stopped: true},
+      runtimeReuse: {approvedHome: home, runtimeRoot: `${home}/runtime`}})),
+    cleanup: step('cleanup', {removed: true, engineStop: {stopped: true}}),
+    preflight: step('preflight', ({prepared}) => ({checkout: '/Users/owner/Developer/GitHub/cua-parity', home: prepared.home, runtimeRoot: prepared.runtimeReuse.runtimeRoot, commit, dirty: false,
+      release: '26.0-dry', serves: 0, engine: {checkoutBuild: build, installed: {bundlePath: approvedEngine, engineVersion: '0.0.0', build}, installedReal: approvedEngine, approvedEngineReal: approvedEngine}})),
+    serveSpec: step('serve', {command: 'ssh', args: ['dry']}),
+    helpers: step('helpers', () => (engine === 'cua' ? `00:01 ${approvedEngine}/Contents/MacOS/cua-engine --probe watch-activations\n00:01 ${approvedEngine}/Contents/MacOS/cua-engine`
+      : `00:01 ${home}/runtime/SkyComputerUseService`)),
+    journalTo: () => {},
+  };
+}
+// A dry client: every cell answers one made-up value carrying every field a matrix cell reads, attested as the
+// requested engine; the vendor's helper path is made up to match dryOps' runtime root.
+export function dryConnect({log, engine, host}) {
+  return () => {
+    const value = {ready: true, ok: true, inFront: true, opened: true, closed: true, panel: false, documentInFront: true, bound: true, actMs: 1, at: [Date.now(), Date.now()], threw: false,
+      targets: [], lines: 1, named: 1, unclassified: 0, ids: 0, outcome: {}};
+    const meta = {'cua/nativeEngine': {engine, version: '0.0.0', build: engine === 'cua' ? 'd'.repeat(64) : '26.0-dry'}, ...(host === 'cua' ? {'cua/replHost': {host: 'cua'}} : {})};
+    return {
+      initialize: async () => ({serverInfo: {name: host === 'cua' ? 'cua-repl-host' : 'dry'}}),
+      request: async (method, params) => {
+        if (method !== 'tools/call') return {};
+        log(`dry: js ${String(params.arguments.code).slice(0, 60).replace(/\s+/g, ' ')}…`);
+        return {content: [{type: 'text', text: `CUA_NATIVE_BASELINE ${JSON.stringify({ok: true, value, inCellMs: 1})}`}], _meta: meta};
+      },
+      call: async () => ({}),
+      close: async () => {},
+    };
+  };
+}

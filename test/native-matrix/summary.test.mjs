@@ -100,3 +100,18 @@ test('an incomplete result is a blocking problem, and a result that does not con
     assert.equal(j.verdict, 'FAIL');
   } finally { fs.rmSync(dir, {recursive: true, force: true}); }
 });
+
+test('a declared row passes its comparison and is listed for the owner; an oracle declaration is the owner\'s too', () => {
+  const declaredVendor = m('vendor', 1, false, {declared: {kind: 'vendor-defect', cause: 'the vendor caps the count'}});
+  assert.equal(judgeMethod('frontmost', [declaredVendor], [m('cua', 1, true)]).verdict, 'equal', 'a declared vendor row is the reference as passing');
+  const vendor = lane('vendor'), cua = lane('cua', {resolved: 9});
+  cua.rows[1] = {...cua.rows[1], interference: {...cua.rows[1].interference, ok: false, declared: {kind: 'self-activating', cause: 'TextEdit activated at its launch'}}};
+  cua.verdict = 'pass';
+  vendor.rows[0] = declaredVendor;
+  vendor.verdict = 'pass';
+  const j = judged(vendor, cua);
+  assert.deepEqual(j.blocking, []);
+  assert.ok(j.owner.some(o => /declared: method textedit\/frontmost\/click.control on vendor: vendor-defect/.test(o)));
+  assert.ok(j.owner.some(o => /not interfering: textedit\/background\/click.control: TextEdit activated/.test(o)));
+  assert.equal(j.verdict, 'OWNER');
+});

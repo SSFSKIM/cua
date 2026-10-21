@@ -25,15 +25,23 @@ struct PasteboardWrite: Equatable {
   let written: Bool
 }
 
+/// The pasteboard's contents and the change count they were read at, in one main-thread read.
+struct PasteboardState {
+  let items: PasteboardSnapshot?
+  let changeCount: Int
+}
+
 protocol PasteboardAccess: AnyObject {
   var changeCount: Int { get }
   /// Every type of every item, its data materialised now, so a previous owner's promise becomes plain data (the vendor's
-  /// FUN_10021fd0c); nil when the pasteboard is empty.
-  func snapshot() -> PasteboardSnapshot?
+  /// FUN_10021fd0c), nil items when the pasteboard is empty, with the change count read in the same operation.
+  func snapshot() -> PasteboardState
   /// Takes the pasteboard for new contents kept to this Mac (`NSPasteboardContentsCurrentHostOnly`, off Universal
-  /// Clipboard), which clears it, and writes `item`. The own change count is answered whether or not the item was
-  /// written, since the previous contents are gone either way and must be restored.
-  func write(_ item: NSPasteboardItem) -> PasteboardWrite
+  /// Clipboard), which clears it, and writes `item`, only while the change count is still `expected` (checked in the
+  /// same main-thread operation, immediately before the take); nil, nothing taken, when it moved: someone else wrote the
+  /// pasteboard since. The own change count is answered whether or not the item was then written, since the previous
+  /// contents are gone either way and must be restored.
+  func write(_ item: NSPasteboardItem, expecting expected: Int) -> PasteboardWrite?
   /// Clears the pasteboard and, unless the snapshot was empty, writes its items back.
   func restore(_ snapshot: PasteboardSnapshot?)
 }
@@ -48,17 +56,19 @@ final class SystemPasteboard: PasteboardAccess, @unchecked Sendable {
 
   var changeCount: Int { onMain { pasteboard.changeCount } }
 
-  func snapshot() -> PasteboardSnapshot? {
+  func snapshot() -> PasteboardState {
     onMain {
+      let count = pasteboard.changeCount
       let items = (pasteboard.pasteboardItems ?? []).map { item in
         item.types.compactMap { type in item.data(forType: type).map { PasteRepresentation(type: type, data: $0) } }
       }
-      return items.isEmpty ? nil : items
+      return PasteboardState(items: items.isEmpty ? nil : items, changeCount: count)
     }
   }
 
-  func write(_ item: NSPasteboardItem) -> PasteboardWrite {
+  func write(_ item: NSPasteboardItem, expecting expected: Int) -> PasteboardWrite? {
     onMain {
+      guard pasteboard.changeCount == expected else { return nil }
       let own = pasteboard.prepareForNewContents(with: .currentHostOnly)
       return PasteboardWrite(own: own, written: pasteboard.writeObjects([item]))
     }

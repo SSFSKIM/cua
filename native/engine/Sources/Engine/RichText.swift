@@ -43,35 +43,55 @@ func pasteRepresentations(_ text: String, format: PasteFormat) throws -> [PasteR
   }
 }
 
-/// How long AppKit's HTML import may wait for what the HTML still loads (a stylesheet, a frame): the import runs on the
-/// main thread, whose run loop serves the engine's observers and the pasteboard's provider, so a slow resource must not
-/// hold it.
+/// A bound on AppKit's HTML import, which runs on the main thread, whose run loop serves the engine's observers and the
+/// pasteboard's provider; the HTML it is given loads nothing (`htmlForImport`), so this is a backstop.
 private let htmlImportTimeoutSeconds = 5.0
 
-private let imageTag = try! NSRegularExpression(pattern: #"<img\b[^>]*>"#, options: [.caseInsensitive])
-private let altAttribute = try! NSRegularExpression(pattern: #"\balt\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))"#, options: [.caseInsensitive])
+/// Elements that load a resource (or redirect, or carry CSS), removed with their content; `img` is replaced by its alt
+/// text instead.
+private let loadingElements: Set<String> = ["link", "iframe", "frame", "frameset", "object", "embed", "applet", "script", "style",
+                                            "video", "audio", "source", "track", "picture", "svg", "meta", "base"]
+/// Attributes that load a resource or carry CSS (where a `url()` can hide), dropped from every element.
+private let loadingAttributes: Set<String> = ["src", "srcset", "lowsrc", "dynsrc", "background", "poster", "data", "codebase",
+                                              "archive", "classid", "style", "manifest", "longdesc", "usemap", "action", "formaction",
+                                              "xlink:href", "ping"]
 
-/// The HTML AppKit's import is given for the RTF and the rendered text: every `img` replaced by its alt text (nothing
-/// without one), so the engine never fetches an image's URL; RTF carries no images anyway. public.html keeps the source.
-func htmlForImport(_ html: String) -> String {
-  let source = html as NSString
-  var result = ""
-  var last = 0
-  for match in imageTag.matches(in: html, range: NSRange(location: 0, length: source.length)) {
-    result += source.substring(with: NSRange(location: last, length: match.range.location - last))
-    let tag = source.substring(with: match.range) as NSString
-    if let alt = altAttribute.firstMatch(in: tag as String, range: NSRange(location: 0, length: tag.length)) {
-      for group in 1...3 where alt.range(at: group).location != NSNotFound { result += tag.substring(with: alt.range(at: group)) }
+/// The HTML AppKit's import is given for the RTF and the rendered text, so the engine fetches nothing at all: the
+/// source parsed structurally (`XMLDocument` with HTML tidying, inside a body so text without markup parses too), every
+/// `img` replaced by an escaped text node of its alt text, every resource-loading element removed with its content,
+/// every loading or CSS-carrying attribute, every event handler and every `href` outside `a` dropped, then serialized.
+/// public.html keeps the source as given. HTML the parser refuses is the write failure: nothing is touched.
+func htmlForImport(_ html: String) throws -> String {
+  guard let document = try? XMLDocument(xmlString: "<html><body>" + html + "</body></html>", options: [.documentTidyHTML]),
+        let root = document.rootElement() else { throw clipboardWriteFailed }
+  strip(root)
+  return root.xmlString
+}
+
+private func strip(_ element: XMLElement) {
+  for attribute in element.attributes ?? [] {
+    let name = (attribute.name ?? "").lowercased()
+    if loadingAttributes.contains(name) || name.hasPrefix("on") || (name == "href" && element.localName?.lowercased() != "a") {
+      element.removeAttribute(forName: attribute.name ?? "")
     }
-    last = match.range.location + match.range.length
   }
-  return result + source.substring(from: last)
+  for (index, child) in (element.children ?? []).enumerated().reversed() {
+    guard let child = child as? XMLElement else { continue }
+    let name = (child.localName ?? "").lowercased()
+    if name == "img" {
+      element.replaceChild(at: index, with: XMLNode.text(withStringValue: child.attribute(forName: "alt")?.stringValue ?? "") as! XMLNode)
+    } else if loadingElements.contains(name) || (name == "input" && child.attribute(forName: "type")?.stringValue?.lowercased() == "image") {
+      element.removeChild(at: index)
+    } else {
+      strip(child)
+    }
+  }
 }
 
 /// HTML as the vendor declares it: the source, then RTF and the rendered text of its attributed string; both are
 /// required (a failed import is the write failure).
 private func htmlRepresentations(_ html: String) throws -> [PasteRepresentation] {
-  let imported = htmlForImport(html)
+  let imported = try htmlForImport(html)
   let converted: (rtf: Data, text: String)? = onMain {
     guard let attributed = try? NSAttributedString(
       data: Data(imported.utf8),

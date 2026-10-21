@@ -12,8 +12,9 @@ import Foundation
 // (FUN_1001b3cfc); the change count checked against the engine's own, then up to 2 s, every 25 ms, for an effect
 // (FUN_1001b493c); and the previous contents restored on every path once the pasteboard was taken (taking it clears it,
 // so a write that then fails restores too), only while the change count is still the engine's own, so a human's newer
-// clipboard is never overwritten (FUN_1001b5030, FUN_100220174). A multi-line type_text checks the count again before
-// each later line's write and stops as the conflict once the human has copied, never taking the pasteboard back.
+// clipboard is never overwritten (FUN_1001b5030, FUN_100220174). Every write takes the pasteboard only while its count
+// is still the one the engine last saw (the snapshot's, then its own), checked in the same main-thread operation as the
+// take, so a human copy before any line's write stops the paste as the conflict and is never overwritten.
 // The sentences are the vendor's. The settle runs at the next observation (markActed), as every action's.
 //
 // type_text's paste route is the same operation over its text's lines: each line pasted, each newline a Return press
@@ -140,19 +141,21 @@ final class PasteEffect: @unchecked Sendable {
 func runPaste(_ parts: [PastePart], pasteboard: PasteboardAccess, effect: PasteEffect, readTimeoutMs: Double = pasteReadTimeoutMs,
               checkInFlight: () throws -> Void, postPaste: () -> Bool, postReturn: () -> Bool,
               entered: inout Int, meta: inout InputMeta) throws {
-  let snapshot = pasteboard.snapshot()
+  let state = pasteboard.snapshot()
+  let snapshot = state.items
   var own: Int?
   do {
     for part in parts {
       switch part {
       case .content(let representations, let units):
-        // A later line never takes back a pasteboard the human has written since the last one: the paste stops as the
-        // conflict, and the restore below leaves their contents alone.
-        if let own, pasteboard.changeCount != own { throw clipboardConflict }
         let provider = LazyPasteProvider(representations) { effect.providerRead() }
         effect.begin()
         guard let item = provider.item() else { throw clipboardWriteFailed }
-        let write = pasteboard.write(item)
+        // The write takes the pasteboard only while it still holds what the engine last saw there (the snapshot's count
+        // for the first line, its own write's for a later one), checked at the take itself: a human copy at any moment
+        // before it, the baseline's reads included, stops the paste as the conflict, and the restore below, guarded by
+        // the same count, leaves their contents alone.
+        guard let write = pasteboard.write(item, expecting: own ?? state.changeCount) else { throw clipboardConflict }
         // Taking the pasteboard cleared it: the restore is armed from here, whether or not the item was written.
         own = write.own
         guard write.written else { throw clipboardWriteFailed }

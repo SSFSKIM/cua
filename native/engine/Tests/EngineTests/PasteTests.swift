@@ -51,8 +51,9 @@ private final class ClearThenFail: PasteboardAccess {
   }
 
   var changeCount: Int { inner.changeCount }
-  func snapshot() -> PasteboardSnapshot? { inner.snapshot() }
-  func write(_ item: NSPasteboardItem) -> PasteboardWrite {
+  func snapshot() -> PasteboardState { inner.snapshot() }
+  func write(_ item: NSPasteboardItem, expecting expected: Int) -> PasteboardWrite? {
+    guard board.changeCount == expected else { return nil }
     cleared = true
     return PasteboardWrite(own: board.prepareForNewContents(with: .currentHostOnly), written: false)
   }
@@ -98,15 +99,66 @@ final class PasteFormatTests: XCTestCase {
 }
 
 final class ImportedHTMLTests: XCTestCase {
-  /// What AppKit's import sees has every image replaced by its alt text, so the engine never fetches an image's URL;
-  /// public.html keeps the source as given (review finding 3).
-  func testImagesBecomeTheirAltTextForTheImportOnly() throws {
-    XCTAssertEqual(htmlForImport(#"<p>a <img src="https://example.com/x.png" alt="the cat"> b <IMG SRC='y.png' ALT='dog'/> c <img src=z.png> d</p>"#),
-                   "<p>a the cat b dog c  d</p>")
-    let source = #"<p>Hi <img src="http://127.0.0.1:9/never" alt="pic"></p>"#
-    let representations = try pasteRepresentations(source, format: .html)
-    XCTAssertEqual(String(data: representations[0].data, encoding: .utf8), source, "the source as given")
-    XCTAssertEqual(String(data: representations[2].data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines), "Hi pic")
+  /// The import's HTML as a string, failing the test when it cannot be made.
+  private func imported(_ html: String) throws -> String { try XCTUnwrap(try? htmlForImport(html)) }
+
+  /// The text AppKit renders from the import's HTML.
+  private func rendered(_ html: String) throws -> String {
+    let representations = try pasteRepresentations(html, format: .html)
+    XCTAssertEqual(String(data: representations[0].data, encoding: .utf8), html, "public.html is the source as given")
+    return (String(data: representations[2].data, encoding: .utf8) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  /// An image becomes its alt text, escaped, so the engine never fetches its URL (review finding 3, round 2).
+  func testAnImageBecomesItsAltText() throws {
+    XCTAssertEqual(try rendered(#"<p>Hi <img src="http://127.0.0.1:9/never" alt="pic"></p>"#), "Hi pic")
+    XCTAssertEqual(try rendered(#"<p>a <IMG SRC='y.png' ALT='dog'/> b <img src=z.png> c</p>"#), "a dog b c", "an image without alt leaves nothing")
+  }
+
+  /// A `>` inside a quoted attribute does not end the tag.
+  func testAQuotedGreaterThanStaysInsideTheTag() throws {
+    XCTAssertEqual(try rendered(#"<p>a <img alt="1 > 0" src=x.png> b</p>"#), "a 1 > 0 b")
+  }
+
+  /// Alt text that looks like markup stays text: no element comes out of it.
+  func testMarkupLookingAltTextStaysText() throws {
+    let html = #"<p><img alt="<img src='http://127.0.0.1:9/never'" title=">">x</p>"#
+    let result = try imported(html)
+    XCTAssertFalse(result.lowercased().contains("<img"), result)
+    XCTAssertTrue(result.contains("&lt;img"), result)
+    XCTAssertEqual(try rendered(html), "<img src='http://127.0.0.1:9/never'x")
+  }
+
+  /// Every element that loads a resource is removed, and no attribute that loads one or carries CSS survives.
+  func testEveryResourceLoaderIsRemoved() throws {
+    let html = """
+      <html><head><link rel="stylesheet" href="http://127.0.0.1:9/s.css"><style>p { background: url(http://127.0.0.1:9/b) }</style>
+      <script src="http://127.0.0.1:9/s.js"></script><meta http-equiv="refresh" content="0;url=http://127.0.0.1:9/"><base href="http://127.0.0.1:9/"></head>
+      <body style="background: url(http://127.0.0.1:9/body)" background="http://127.0.0.1:9/bg">
+      <p style="color: red">kept <a href="https://example.com/">link</a></p>
+      <iframe src="http://127.0.0.1:9/f"></iframe><object data="http://127.0.0.1:9/o"></object><embed src="http://127.0.0.1:9/e">
+      <video poster="http://127.0.0.1:9/p" src="http://127.0.0.1:9/v"><source src="http://127.0.0.1:9/s"></video>
+      <audio src="http://127.0.0.1:9/a"></audio><table background="http://127.0.0.1:9/t"><tr><td>cell</td></tr></table>
+      <input type="image" src="http://127.0.0.1:9/i"><frameset><frame src="http://127.0.0.1:9/fr"></frameset>
+      </body></html>
+      """
+    let result = try imported(html).lowercased()
+    for name in ["img", "link", "iframe", "frame", "frameset", "object", "embed", "script", "style", "video", "audio", "source", "meta", "base"] {
+      XCTAssertFalse(result.contains("<\(name) ") || result.contains("<\(name)>") || result.contains("<\(name)/"), "\(name): \(result)")
+    }
+    for attribute in ["style=", "src=", "background=", "poster=", "data=", "url("] {
+      XCTAssertFalse(result.contains(attribute), "\(attribute): \(result)")
+    }
+    XCTAssertFalse(result.contains("127.0.0.1"), result)
+    XCTAssertTrue(result.contains("https://example.com/"), "a link's href loads nothing and is kept")
+    let text = try rendered(html)
+    XCTAssertTrue(text.contains("kept link") && text.contains("cell"), text)
+  }
+
+  /// Text with no markup at all, and the empty string, still import.
+  func testPlainTextAndEmptyImport() throws {
+    XCTAssertEqual(try rendered("just text & more"), "just text & more")
+    XCTAssertEqual(try rendered(""), "")
   }
 }
 
@@ -203,7 +255,7 @@ final class PasteboardTests: XCTestCase {
     let representations = try pasteRepresentations("<p>x</p>", format: .html)
     let provider = LazyPasteProvider(representations)
     let item = try XCTUnwrap(provider.item())
-    let write = pasteboard.access.write(item)
+    let write = try XCTUnwrap(pasteboard.access.write(item, expecting: pasteboard.access.changeCount))
     XCTAssertTrue(write.written)
     XCTAssertEqual(pasteboard.access.changeCount, write.own)
     XCTAssertEqual(Set(pasteboard.board.types?.map(\.rawValue) ?? []).isSuperset(of: ["public.html", "public.rtf", "public.utf8-plain-text",
@@ -223,7 +275,9 @@ final class PasteboardTests: XCTestCase {
     second.setString("two", forType: .string)
     pasteboard.board.clearContents()
     pasteboard.board.writeObjects([first, second])
-    let snapshot = try XCTUnwrap(pasteboard.access.snapshot())
+    let state = pasteboard.access.snapshot()
+    XCTAssertEqual(state.changeCount, pasteboard.board.changeCount)
+    let snapshot = try XCTUnwrap(state.items)
     XCTAssertEqual(snapshot.count, 2)
     XCTAssertEqual(snapshot[0].first { $0.type == .html }?.data, Data("<i>one</i>".utf8))
 
@@ -236,7 +290,7 @@ final class PasteboardTests: XCTestCase {
   func testAnEmptyPasteboardSnapshotsAsNilAndRestoresEmpty() {
     let pasteboard = TestPasteboard()
     pasteboard.board.clearContents()
-    XCTAssertNil(pasteboard.access.snapshot())
+    XCTAssertNil(pasteboard.access.snapshot().items)
     pasteboard.userCopies("ours")
     pasteboard.access.restore(nil)
     XCTAssertEqual(pasteboard.board.pasteboardItems?.count ?? 0, 0)
@@ -382,6 +436,59 @@ final class PasteOperationTests: XCTestCase {
     XCTAssertEqual(log, ["paste a", "Return"], "line b was never written")
     XCTAssertEqual(pasteboard.strings(), ["newer human copy"])
     XCTAssertEqual(entered, 2)
+  }
+
+  /// A human copy while the second line's baseline is read: the write refuses at its own boundary, before taking the
+  /// pasteboard, and the human's copy is kept (review finding 1, round 2).
+  func testAHumanCopyDuringALaterBaselineIsNeverOverwritten() {
+    let pasteboard = TestPasteboard()
+    pasteboard.userCopies("older")
+    var log: [String] = []
+    var characters = 0
+    var afterReturn = false
+    var copied = false
+    var entered = 0
+    var meta = meta()
+    let reading = {
+      if afterReturn && !copied {  // line b's baseline, read in effect.begin() just before its write
+        copied = true
+        pasteboard.userCopies("newer human copy")
+      }
+      return EffectReading(range: nil, characters: characters)
+    }
+    XCTAssertThrowsError(try run(pasteParts(typing: "a\nb"), pasteboard, effect: effect(reading: reading), postPaste: {
+      log.append("paste " + (pasteboard.appReads() ?? "nil"))
+      characters += 1
+      return true
+    }, postReturn: { afterReturn = true; log.append("Return"); return true }, entered: &entered, meta: &meta)) {
+      XCTAssertEqual(($0 as? EngineError)?.errorName, "clipboardConflict")
+    }
+    XCTAssertTrue(copied)
+    XCTAssertEqual(log, ["paste a", "Return"])
+    XCTAssertEqual(pasteboard.strings(), ["newer human copy"])
+  }
+
+  /// A human copy between the snapshot and the first write: the first write refuses too, so the stale snapshot is
+  /// never restored over the human's copy.
+  func testAHumanCopyBeforeTheFirstWriteIsNeverOverwritten() {
+    let pasteboard = TestPasteboard()
+    pasteboard.userCopies("older")
+    var posted = false
+    var entered = 0
+    var meta = meta()
+    var reads = 0
+    let reading = {
+      reads += 1
+      if reads == 1 { pasteboard.userCopies("newer human copy") }  // the first line's baseline, after the snapshot
+      return EffectReading(range: nil, characters: 0)
+    }
+    XCTAssertThrowsError(try run([.content(plain("x"), units: 1)], pasteboard, effect: effect(reading: reading),
+                                 postPaste: { posted = true; return true }, entered: &entered, meta: &meta)) {
+      XCTAssertEqual(($0 as? EngineError)?.errorName, "clipboardConflict")
+    }
+    XCTAssertFalse(posted)
+    XCTAssertNil(meta.startedAt)
+    XCTAssertEqual(pasteboard.strings(), ["newer human copy"])
   }
 
   /// No read within the wait: the vendor's sentence, the previous contents restored, the interval kept (⌘V was posted).

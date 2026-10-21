@@ -154,13 +154,23 @@ final class HeldActivations: @unchecked Sendable {
     return held[pid]?.holders ?? 0
   }
 
-  /// Acquires `pid`'s held activation: when no span holds it, `make()`'s activation runs (its guard time into `meta`, a
+  /// Whether the registry's lock is held now (the unit tests' view: the intervention check runs under it).
+  var isLocked: Bool {
+    guard lock.try() else { return true }
+    lock.unlock()
+    return false
+  }
+
+  /// Acquires `pid`'s held activation. `beforeActivating` (the in-flight intervention check) runs once the lock is held,
+  /// so a user event that lands while the request waits behind another connection's activation still stops it before
+  /// anything is run, shared or recorded. When no span holds the activation, `make()`'s runs (its guard time into `meta`, a
   /// failed guard's too; a failed guard throws with the activation undone and nothing held); otherwise the running one
   /// is shared. Answers the release, which runs once and deactivates when the last holder releases; it answers false
   /// only when that deactivation could not post.
-  func acquire(pid: pid_t, make: () -> FakeActivation, meta: inout InputMeta) throws -> () -> Bool {
+  func acquire(pid: pid_t, beforeActivating: () throws -> Void, make: () -> FakeActivation, meta: inout InputMeta) throws -> () -> Bool {
     lock.lock()
     defer { lock.unlock() }
+    try beforeActivating()
     if let shared = held[pid] {
       held[pid] = (shared.activation, shared.holders + 1)
     } else {
@@ -225,13 +235,13 @@ func menuSpanStep(method: String, app: String?, heldApp: String?, inRecordedMenu
   }
 }
 
-/// The menu-bar record with its held activation: the in-flight intervention check, the app's held activation acquired
-/// (run by the first span to hold it, its guard time into the meta, a failed guard's too), then the record holding the
-/// span. A failed guard refuses the record as activationFailed with the activation undone and nothing recorded.
+/// The menu-bar record with its held activation: the app's held activation acquired, the in-flight intervention check
+/// run under the registry's lock first (run by the first span to hold it, its guard time into the meta, a failed guard's
+/// too), then the record holding the span. A user event refuses the record with nothing activated or recorded; a failed
+/// guard refuses it as activationFailed with the activation undone and nothing recorded.
 func recordHeldMenu(_ item: AXUIElement, app key: String, pid: pid_t, connection: ConnectionState, activations: HeldActivations,
                     activation: () -> FakeActivation, beforeActivating: () throws -> Void, meta: inout InputMeta) throws {
-  try beforeActivating()
-  let release = try activations.acquire(pid: pid, make: activation, meta: &meta)
+  let release = try activations.acquire(pid: pid, beforeActivating: beforeActivating, make: activation, meta: &meta)
   connection.recordMenu(item, app: key, release: release)
 }
 

@@ -928,6 +928,32 @@ final class MenuSpanTests: XCTestCase {
     XCTAssertNil(connection.menuRecords["a"])
   }
 
+  /// The intervention check runs under the registry's lock, after any wait behind another connection's activation: a
+  /// user event marked by then refuses the record with nothing activated, shared or recorded, and the lock is free after.
+  func testTheInterventionCheckRunsUnderTheRegistrysLockAndStopsTheRecordThere() {
+    let seam = GuardSeam(frontmost: user)
+    let other = ConnectionState(id: 2, fd: -1, menuSpan: Clock().span())
+    var held = meta()
+    XCTAssertNoThrow(try recordHeldMenu(el(90), app: "a", pid: target, connection: other, activations: activations,
+                                        activation: { self.activation(seam) }, beforeActivating: {}, meta: &held))
+    let posted = seam.posts.count
+    let connection = ConnectionState(id: 1, fd: -1, menuSpan: Clock().span())
+    var meta = meta()
+    var checkedUnderLock: Bool?
+    XCTAssertThrowsError(try recordHeldMenu(el(95), app: "a", pid: target, connection: connection, activations: activations,
+                                            activation: { self.activation(seam) }, beforeActivating: {
+      checkedUnderLock = self.activations.isLocked
+      throw EngineError(name: "userIntervened", "The user changed the app.")
+    }, meta: &meta)) { error in
+      XCTAssertEqual((error as? EngineError)?.errorName, "userIntervened")
+    }
+    XCTAssertEqual(checkedUnderLock, true, "checked once the lock is held")
+    XCTAssertEqual(activations.holders(target), 1, "not shared")
+    XCTAssertEqual(seam.posts.count, posted, "nothing posted")
+    XCTAssertNil(connection.menuRecords["a"], "nothing recorded")
+    XCTAssertFalse(activations.isLocked, "the lock is released")
+  }
+
   /// The guard keeps the user's window on top by re-activating the user's app, never by AXRaise on its window.
   func testTheMenuActivationRestoresTheUsersWindowByActivationOnly() throws {
     let seam = GuardSeam(frontmost: user, targetInFront: { $0 == 1 })  // the target's window rose once

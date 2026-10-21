@@ -37,8 +37,8 @@ for (const scene of SCENES) {
 }
 
 test('each declaration for every scene is needed in some scene', () => {
+  // None may remain once the live recording's audit has deleted the expired ones; any that does must be needed.
   const universal = declared(SCENES[0], 'full').filter(rule => rule.scene === '*');
-  assert.ok(universal.length > 0);
   for (const rule of universal) {
     const needed = SCENES.some(scene => ['full', 'before'].some(golden => {
       const judge = golden === 'full' ? compareFull : compareBefore;

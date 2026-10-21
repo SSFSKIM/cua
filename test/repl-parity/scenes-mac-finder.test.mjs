@@ -2,7 +2,8 @@
 // "Finder's golden is compared as full text"): the window chrome that can carry what the run does not own (the sidebar,
 // the status bar, the path bar) is hidden by toggles chosen from Finder's preferences, restored from the preferences
 // saved before the first toggle, and the fixed state is checked on the engine's Skyshot before anything is recorded.
-// The Skyshot fixtures are M0's real Finder capture (test/native-goldens/finder/skyshot.json, sidebar and status bar
+// The Skyshot fixtures are M0's real Finder capture (frozen in test/repl-parity/fixtures/finder-m0/ from the goldens it
+// was, test/native-goldens/finder/skyshot.json before the live recording replaced them; sidebar and status bar
 // showing, owner strings already replaced by their length) and the same capture with those two parts taken out.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
@@ -15,7 +16,7 @@ import {
   finderWindowProblems, readSavedPreferences, saveOriginalPreferences, clearSavedPreferences, finderChromeShown, toggleUntil,
 } from '../../scripts/repl-parity/scenes-mac-finder.mjs';
 
-const capture = () => JSON.parse(fs.readFileSync(new URL('../native-goldens/finder/skyshot.json', import.meta.url), 'utf8'));
+const capture = () => JSON.parse(fs.readFileSync(new URL('./fixtures/finder-m0/skyshot.json', import.meta.url), 'utf8'));
 const FOLDER = 'cua-scene-finder';
 const FILES = Array.from({length: 200}, (_, i) => `scene-file-${String(i + 1).padStart(3, '0')}`);
 const owned = {folder: FOLDER, folderPath: `/run/finder/${FOLDER}`, files: FILES};

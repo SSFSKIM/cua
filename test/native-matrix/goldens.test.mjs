@@ -246,9 +246,9 @@ test('the vendor\'s text is removed unread when cua\'s check of the state right 
   assert.equal(device.taken.some(p => p.includes('chrome')), false);
   assert.equal(fs.existsSync(join(out.dir, 'goldens', 'chrome', 'vendor.txt')), false);
   assert.match(out.meta.problems.join(' '), /chrome: .*other_window/);
-  // The other scenes recorded; nothing installed.
+  // The other scenes recorded; nothing installed: the repository's source record is the one it had.
   assert.ok(fs.existsSync(join(out.dir, 'goldens', 'electron', 'vendor.txt')));
-  assert.equal(JSON.parse(fs.readFileSync(join(out.repo.goldens, 'source.json'), 'utf8')).kind, 'm0');
+  assert.equal(fs.readFileSync(join(out.repo.goldens, 'source.json'), 'utf8'), fs.readFileSync(new URL('source.json', GOLDENS), 'utf8'));
 });
 
 test('a state that moved between cua\'s two observations is taken again', async () => {

@@ -687,9 +687,12 @@ test('each scene names its window by a title prefix, as the front-window checks 
 test('the action targets resolve on the vendor\'s own text of each fixed state; Finder\'s is a cell of row 005, never its name', () => {
   assert.deepEqual(Object.fromEntries(SCENE_IDS.map(id => [id, SCENES[id].action.click])),
     {textedit: 'cua scene document', finder: {rowCellOf: 'scene-file-005'}, chrome: 'Scene option', electron: 'Fixture button'});
-  assert.deepEqual(Object.fromEntries(SCENE_IDS.map(id => [id, actionIndex(golden(id), SCENES[id].action)])), {textedit: 2, finder: 83, chrome: 25, electron: 13});
-  // The name field of row 005 is 81: a click there on a selected row would start a rename.
-  assert.equal(indexOfTarget(golden('finder'), 'scene-file-005'), 81);
+  for (const id of SCENE_IDS) assert.notEqual(actionIndex(golden(id), SCENES[id].action), null, id);
+  // Finder's is another cell of row 005 than its name field, after it: a click on the name of a selected row would start
+  // a rename. (The indexes are the committed recording's, so they are compared, not pinned.)
+  const nameField = indexOfTarget(golden('finder'), 'scene-file-005');
+  assert.notEqual(nameField, null);
+  assert.ok(actionIndex(golden('finder'), SCENES.finder.action) > nameField);
   assert.equal(indexOfRowCell(golden('finder'), 'scene-file-404'), null);
   // A part is matched whole: a longer name that begins with the target is not it.
   assert.equal(indexOfTarget('0 checkbox Scene options\n1 checkbox Scene option, Value: 0', 'Scene option'), 1);
@@ -857,7 +860,7 @@ test('activate gives up after its bound when the process never comes to the fron
 test('the fixed-state check: Finder\'s on its Skyshot with what the run owns, TextEdit\'s and Electron\'s processes are wholly the run\'s', () => {
   const record = {folder: '/run/finder/cua-scene-finder', window: {number: 1}};
   assert.deepEqual(finderOwned(record), {folder: 'cua-scene-finder', folderPath: '/run/finder/cua-scene-finder', files: finderFolderFiles()});
-  const shot = JSON.parse(fs.readFileSync(new URL('../native-goldens/finder/skyshot.json', import.meta.url), 'utf8'));
+  const shot = JSON.parse(fs.readFileSync(new URL('./fixtures/finder-m0/skyshot.json', import.meta.url), 'utf8'));
   assert.deepEqual(fixedStateProblems('finder', shot, record).map(p => p.code), ['sidebar_shown', 'unowned_text'], 'M0\'s capture showed the sidebar and the status bar');
   for (const id of ['textedit', 'electron']) assert.deepEqual(fixedStateProblems(id, {nodes: []}, {}), []);
 });

@@ -16,6 +16,8 @@ import {RESET_MAY_CLEAR, SCREENSHOT_DIR, SETTLE_BOUND_MS, SETTLE_INTERVAL_MS, ac
 
 const GOLDENS = new URL('../native-goldens/', import.meta.url);
 const shot = (scene, name) => JSON.parse(fs.readFileSync(new URL(`${scene}/${name}`, GOLDENS), 'utf8'));
+// M0's Finder captures, sidebar and status bar showing, frozen where the live recording's goldens cannot replace them.
+const m0Finder = name => JSON.parse(fs.readFileSync(new URL(`../repl-parity/fixtures/finder-m0/${name}`, import.meta.url), 'utf8'));
 const scratches = [];
 const scratch = () => { const dir = fs.realpathSync(fs.mkdtempSync(join(tmpdir(), 'cua-goldens-device-'))); scratches.push(dir); return dir; };
 after(() => { for (const dir of scratches) fs.rmSync(dir, {recursive: true, force: true}); });
@@ -104,7 +106,7 @@ test('observe: an image outside the run\'s screenshot directory is never removed
 
 test('observe: a Finder window showing what the run does not own is refused and its Skyshot never leaves', async () => {
   // M0's Finder capture still shows the sidebar (a second outline) and the owner's strings, redacted to their length.
-  const recorded = shot('finder', 'skyshot.json');
+  const recorded = m0Finder('skyshot.json');
   const record = recordOf('finder', recorded.app.pid, {folder: '/run/finder/cua-scene-finder'});
   const client = fakeClient([recorded]);
   const out = await observe({id: 'finder', record, client, screenshots: '/run/s', ...fakeClock()});
@@ -193,7 +195,7 @@ test('act: a click the engine refuses, or an after observation in another lineag
 });
 
 test('act: a Finder state that shows what the run does not own clicks nothing', async () => {
-  const before = shot('finder', 'action.before.skyshot.json');
+  const before = m0Finder('action.before.skyshot.json');
   const client = fakeClient([before]);
   const out = await act({id: 'finder', record: recordOf('finder', before.app.pid, {folder: '/run/finder/cua-scene-finder'}), client, screenshots: '/s', expect: digestOf(before), ...fakeClock()});
   assert.deepEqual(client.calls.map(c => c.method), ['get_app_state']);
@@ -388,7 +390,7 @@ test('steps: Finder\'s reset deselects all in the run\'s window; the teardown st
 // bar's identifiers restored) with the drawn parts in it.
 const FINDER_FOLDER = '/run/finder/cua-scene-finder';
 function finderSkyshot(drawn, pid) {
-  const shot = shot_('finder', 'skyshot.json');
+  const shot = m0Finder('skyshot.json');
   for (const [token, id] of [['t276', 'statusBar'], ['t277', 'statusBarText']]) shot.nodes.find(n => n.token === token).identifier = id;
   const drop = new Set(), subtree = token => { const i = shot.nodes.findIndex(n => n.token === token); drop.add(i); for (let j = i + 1; j < shot.nodes.length && shot.nodes[j].depth > shot.nodes[i].depth; j++) drop.add(j); };
   if (!drawn.sidebar) { subtree('t2'); subtree('t86'); }
@@ -403,7 +405,6 @@ function finderSkyshot(drawn, pid) {
   }
   return {...shot, app: {...shot.app, pid}, nodes};
 }
-const shot_ = shot;
 function finderEngine({state, drawn, keys = {}, stuck = [], pid = 402}) {
   const finder = {state: {...state}, drawn: {...drawn}, keys: {...keys}, pressed: []};
   finder.client = {identity: {build: 'b'.repeat(64)}, calls: [],

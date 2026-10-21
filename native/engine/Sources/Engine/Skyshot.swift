@@ -325,16 +325,18 @@ extension Engine {
     // since its elements were read, so it invalidates until the next observation.
     timings.time("monitor") { lineage.watch(Set([appPid]).union(walk.revision.owners), afterRead: true) }
     timings.set("watchedProcesses", lineage.watched)
-    // The re-query flag clears only when the debounce has expired by now (Intervention.swift; R/sky-behaviour.md §23.4).
-    observationCompleted(app, pid: appPid, connection: connection)
+    // The re-query flag's clearing, taken at the read and applied only once the observation answers (Intervention.swift;
+    // R/sky-behaviour.md §23.4); the processes the walk met count as the app's from now on (a panel's service).
+    let clearing = observationRead(app, owners: walk.revision.owners, connection: connection)
 
-    var screenshot: Any = NSNull()
-    if let pendingCapture {
+    // The screenshot's join is the observation's last step that can fail; nothing after it throws.
+    let screenshot: Any = try observationAnswered(clearing, connection: connection) {
+      guard let pendingCapture else { return NSNull() }
       let joined = timings.time("screenshotJoin") { pendingCapture.wait() }
       timings.merge(joined.timings)
       let image = try joined.result.get()
-      screenshot = image.wire
       lineage.screenshot = ObservedScreenshot(window: window, image: image)  // what this window's coordinate clicks divide by
+      return image.wire
     }
     timings.add("total", monotonicMilliseconds() - started)
 

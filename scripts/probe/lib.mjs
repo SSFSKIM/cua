@@ -190,25 +190,59 @@ export function classifyOwnHostTree(tree, {cuaNodes, systemSandbox = [], vendorR
   };
 }
 
-// The holders of the approved engine's socket ([{pid, executable}], lsof's pids with their executables): the approved
-// bundle's engine, once, and clients `mayConnect` admits (cua's Node; on the vendor host, its node_repl relay). Another
-// engine at the socket (a copy from elsewhere) or any other holder is a problem; with `requireEngine` (an app was bound)
-// the approved engine must be there. lsof may list a pid once per descriptor. -> {engine: pids, clients: pids, problems}.
-export function engineSocketHolders(holders, {engineExecutable, mayConnect, requireEngine}) {
-  const engine = new Set();
-  const clients = new Set();
-  const problems = [];
-  const seen = new Set();
-  for (const {pid, executable} of holders) {
-    if (seen.has(pid)) continue;
-    seen.add(pid);
-    if (executable === engineExecutable) engine.add(pid);
-    else if (mayConnect(executable)) clients.add(pid);
-    else problems.push(`pid ${pid} ${executable} holds the engine socket, which only the approved engine and cua's Node may`);
+// `lsof -U -F pcfdn` text (every Unix socket lsof can see) -> [{pid, command, fd, device, name}], one per descriptor.
+// On macOS `device` is the socket's kernel address and `name` the path it is bound at, or `->0x…`, its peer's address.
+export function unixSockets(lsofText) {
+  const out = [];
+  let process = null;
+  for (const line of lsofText.split('\n')) {
+    const field = line[0];
+    const value = line.slice(1);
+    if (field === 'p') process = {pid: Number(value), command: ''};
+    else if (field === 'c' && process) process.command = value;
+    else if (field === 'f' && process) out.push({pid: process.pid, command: process.command, fd: value, device: null, name: null});
+    else if (field === 'd' && out.length) out.at(-1).device = value;
+    else if (field === 'n' && out.length) out.at(-1).name = value;
   }
+  return out;
+}
+
+// The ends of the Unix socket at `path` among `sockets` (unixSockets'). `bound`: the descriptors named by the path, the
+// listener and every connection it accepted (macOS names an accepted socket by the listener's path). `clients`: every
+// descriptor whose peer (`->address`) is one of those, matched by address, since a client's own end is unbound and a
+// listing filtered by the path never shows it. `unseen`: accepted connections whose client is not in `sockets` (a bound
+// end no client points to, beyond the one listener), so a listing that cannot show every client never reads as clean.
+export function unixSocketEnds(sockets, path) {
+  const bound = sockets.filter(s => s.name === path);
+  const addresses = new Set(bound.map(s => s.device));
+  const clients = sockets.filter(s => s.name?.startsWith('->') && addresses.has(s.name.slice(2)));
+  const answered = new Set(clients.map(s => s.name.slice(2)));
+  return {bound, clients, unseen: Math.max(0, bound.filter(s => !answered.has(s.device)).length - 1)};
+}
+
+// The approved engine's socket judged from its ends (unixSocketEnds'): only the approved bundle's engine
+// (`engineExecutable`), one process, may hold its address; only clients `mayConnect` admits (cua's Node; on the vendor
+// host, its relay) may be connected; and every connection's client must be seen, or the clients are unproven.
+// `executableOf(pid)`: a process's executable. With `requireEngine` (an app was bound) the engine must be there.
+// -> {engine: pids, clients: pids, problems}.
+export function engineSocketPeers({bound, clients, unseen}, {engineExecutable, mayConnect, executableOf, requireEngine}) {
+  const engine = new Set();
+  const connected = new Set();
+  const problems = [];
+  for (const pid of new Set(bound.map(s => s.pid))) {
+    const executable = executableOf(pid);
+    if (executable === engineExecutable) engine.add(pid);
+    else problems.push(`pid ${pid} ${executable} holds the engine socket's address, which only the approved engine may`);
+  }
+  for (const pid of new Set(clients.map(s => s.pid))) {
+    const executable = executableOf(pid);
+    if (mayConnect(executable)) connected.add(pid);
+    else problems.push(`pid ${pid} ${executable} is connected to the engine socket, which only cua's Node may`);
+  }
+  if (unseen > 0) problems.push(`${unseen} connection${unseen === 1 ? '' : 's'} to the engine socket whose client${unseen === 1 ? '' : 's'} lsof does not show: the clients are unproven`);
   if (engine.size > 1) problems.push(`${engine.size} engine processes (${[...engine].join(', ')}) hold the engine socket`);
   if (requireEngine && engine.size === 0) problems.push('no approved engine holds the engine socket');
-  return {engine: [...engine], clients: [...clients], problems};
+  return {engine: [...engine], clients: [...connected], problems};
 }
 
 // The processes a session started from cua's own roots (`roots`: the home, the approved engine's directory): `during`
@@ -244,5 +278,9 @@ export function leftoverProcesses({observed, isAlive, psText, runtimeRoot}) {
 export const boundedError = (text, max = 200) => String(text ?? '').split('\n')[0]
   .replace(/"[^"]*"/g, '"…"').replace(/'[^']*'/g, '\'…\'').replace(/“[^”]*”/g, '“…”').slice(0, max);
 
-// `lsappinfo info -only pid -app <bundle id>` text -> the running app's pid, or null when it is not running.
-export const runningPid = text => Number(/"pid"\s*=\s*(\d+)/.exec(text ?? '')?.[1]) || null;
+// lsappinfo's pid (`info -only pid …`, or a full info line) -> the pid, or null when there is none (an app that is not
+// running prints nothing). macOS 26 prints `"pid"=736`, others `pid = 736`; a longer key ending in pid is not it.
+export const lsappinfoPid = text => {
+  const pid = Number(/(?:^|[\s,{])"?pid"?\s*=\s*(\d+)/m.exec(text ?? '')?.[1]);
+  return Number.isSafeInteger(pid) && pid > 0 ? pid : null;
+};

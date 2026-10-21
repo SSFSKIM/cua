@@ -4,8 +4,8 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  approvalsByBehaviour, attestationProblem, boundedError, classifyOwnHostTree, cuaRootProcesses, descendants, engineSocketHolders,
-  isAppApproval, leftoverProcesses, pinnedEngine, psRows, runningPid,
+  approvalsByBehaviour, attestationProblem, boundedError, classifyOwnHostTree, cuaRootProcesses, descendants, engineSocketPeers,
+  isAppApproval, leftoverProcesses, lsappinfoPid, pinnedEngine, psRows, unixSocketEnds, unixSockets,
 } from '../scripts/probe/lib.mjs';
 
 const HOME = '/Users/u';
@@ -121,26 +121,72 @@ test('the own host\'s tree runs only cua\'s Node and the system sandbox launcher
     'a tree of nothing but the launcher is no host');
 });
 
-test('the approved engine\'s socket is held by that engine and by cua\'s Node, nothing else', () => {
-  const lsofHolders = [{pid: 700, executable: ENGINE_EXE}, {pid: 1005, executable: OWN_NODE}];
-  const mayConnect = executable => [HOST_NODE, OWN_NODE].includes(executable);
-  const ok = engineSocketHolders(lsofHolders, {engineExecutable: ENGINE_EXE, mayConnect, requireEngine: true});
-  assert.deepEqual(ok, {engine: [700], clients: [1005], problems: []});
+// `lsof -U -F pcfdn` as macOS prints it, read off a real listener and a connected child (2026-10-21): the listener and
+// the connection it accepted are both named by the socket's path, and the client's end is unbound, named only by its
+// peer, `->` the accepted end's address. A listing filtered by the path therefore shows the server alone.
+const SOCKET = `${ENGINE_DIR}/engine.sock`;
+const LSOF_U = [
+  'p700', 'ccua-engine',
+  'f3', 'd0x4eb20eed28506f1e', `n${SOCKET}`,
+  'f7', 'd0xfe6fd7ee79b7b265', `n${SOCKET}`,
+  'f9', 'd0x1111111111111111', `n${SOCKET}`,
+  'f11', 'd0xe47543d1e1de5cd8', 'n->0xce367bd1c7749fc0',
+  'p1005', 'cnode',
+  'f12', 'd0x2b5e2aae92763c34', 'n->0xfe6fd7ee79b7b265',
+  'p4242', 'cnc',
+  'f5', 'd0x3333333333333333', 'n->0x1111111111111111',
+  'p77', 'cother',
+  'f4', 'd0x5555555555555555', 'n/tmp/elsewhere.sock',
+].join('\n');
 
-  const foreign = engineSocketHolders([{pid: 701, executable: '/tmp/elsewhere/cua Engine.app/Contents/MacOS/cua-engine'}, {pid: 9, executable: '/usr/bin/nc'}],
-    {engineExecutable: ENGINE_EXE, mayConnect, requireEngine: true});
-  assert.deepEqual(foreign.engine, []);
+test('unix sockets are read from lsof\'s field output, one entry per descriptor', () => {
+  const sockets = unixSockets(LSOF_U);
+  assert.equal(sockets.length, 7);
+  assert.deepEqual(sockets[0], {pid: 700, command: 'cua-engine', fd: '3', device: '0x4eb20eed28506f1e', name: SOCKET});
+  assert.deepEqual(sockets[4], {pid: 1005, command: 'node', fd: '12', device: '0x2b5e2aae92763c34', name: '->0xfe6fd7ee79b7b265'});
+});
+
+test('a socket\'s ends: what is bound at its path, and every client whose peer is one of those, matched by address', () => {
+  const ends = unixSocketEnds(unixSockets(LSOF_U), SOCKET);
+  assert.deepEqual(ends.bound.map(e => [e.pid, e.fd]), [[700, '3'], [700, '7'], [700, '9']]);
+  assert.deepEqual(ends.clients.map(e => [e.pid, e.fd]), [[1005, '12'], [4242, '5']]);
+  assert.equal(ends.unseen, 0, 'every accepted end has its client; the one left is the listener');
+  // The path-filtered listing (the bound ends only) cannot prove there is no other client: two accepted ends with no
+  // visible client are two connections whose clients are unseen.
+  const pathOnly = unixSockets(LSOF_U).filter(s => s.name === SOCKET);
+  assert.equal(unixSocketEnds(pathOnly, SOCKET).unseen, 2);
+  assert.deepEqual(unixSocketEnds([], SOCKET), {bound: [], clients: [], unseen: 0});
+});
+
+test('the approved engine\'s socket: bound by that engine alone, connected to by cua\'s Node alone, every client seen', () => {
+  const executables = new Map([[700, ENGINE_EXE], [1005, OWN_NODE], [4242, '/usr/bin/nc']]);
+  const mayConnect = executable => [HOST_NODE, OWN_NODE].includes(executable);
+  const options = {engineExecutable: ENGINE_EXE, mayConnect, executableOf: pid => executables.get(pid), requireEngine: true};
+  const sockets = unixSockets(LSOF_U);
+
+  const allowed = engineSocketPeers(unixSocketEnds(sockets.filter(s => s.pid !== 4242 && s.device !== '0x1111111111111111'), SOCKET), options);
+  assert.deepEqual(allowed, {engine: [700], clients: [1005], problems: []});
+
+  // A deliberately disallowed client: nc connected to the engine.
+  const disallowed = engineSocketPeers(unixSocketEnds(sockets, SOCKET), options);
+  assert.deepEqual(disallowed.clients, [1005]);
+  assert.deepEqual(disallowed.problems, ['pid 4242 /usr/bin/nc is connected to the engine socket, which only cua\'s Node may']);
+
+  // The same session seen through the path alone is never clean: its clients are unproven.
+  const pathOnly = engineSocketPeers(unixSocketEnds(sockets.filter(s => s.name === SOCKET), SOCKET), options);
+  assert.deepEqual(pathOnly.problems, ['2 connections to the engine socket whose clients lsof does not show: the clients are unproven']);
+
+  const foreign = engineSocketPeers({bound: [{pid: 701, fd: '3'}, {pid: 9, fd: '4'}], clients: [], unseen: 0},
+    {...options, executableOf: pid => ({701: '/tmp/elsewhere/cua Engine.app/Contents/MacOS/cua-engine', 9: '/usr/bin/nc'})[pid]});
   assert.deepEqual(foreign.problems, [
-    'pid 701 /tmp/elsewhere/cua Engine.app/Contents/MacOS/cua-engine holds the engine socket, which only the approved engine and cua\'s Node may',
-    'pid 9 /usr/bin/nc holds the engine socket, which only the approved engine and cua\'s Node may',
+    'pid 701 /tmp/elsewhere/cua Engine.app/Contents/MacOS/cua-engine holds the engine socket\'s address, which only the approved engine may',
+    'pid 9 /usr/bin/nc holds the engine socket\'s address, which only the approved engine may',
     'no approved engine holds the engine socket',
   ]);
-  assert.deepEqual(engineSocketHolders([], {engineExecutable: ENGINE_EXE, mayConnect, requireEngine: false}), {engine: [], clients: [], problems: []},
+  assert.deepEqual(engineSocketPeers({bound: [], clients: [], unseen: 0}, {...options, requireEngine: false}), {engine: [], clients: [], problems: []},
     'with nothing bound the engine need not be running');
-  assert.match(engineSocketHolders([{pid: 700, executable: ENGINE_EXE}, {pid: 702, executable: ENGINE_EXE}], {engineExecutable: ENGINE_EXE, mayConnect, requireEngine: true}).problems[0],
+  assert.match(engineSocketPeers({bound: [{pid: 700, fd: '3'}, {pid: 702, fd: '3'}], clients: [], unseen: 0}, {...options, executableOf: () => ENGINE_EXE}).problems[0],
     /2 engine processes \(700, 702\) hold the engine socket/);
-  // lsof lists a pid once per descriptor: one engine holding the listener and an accepted connection is one engine.
-  assert.deepEqual(engineSocketHolders([{pid: 700, executable: ENGINE_EXE}, {pid: 700, executable: ENGINE_EXE}], {engineExecutable: ENGINE_EXE, mayConnect, requireEngine: true}).problems, []);
 });
 
 test('processes started from cua\'s roots during a session are cua-engine and cua\'s Node only; earlier ones and other installations\' are not counted', () => {
@@ -182,8 +228,11 @@ test('an error sentence is reported bounded, first line only, quoted names elide
   assert.equal(boundedError(undefined), '');
 });
 
-test('a running app\'s pid is read from lsappinfo; nothing means not running', () => {
-  assert.equal(runningPid('"pid"=24364\n'), 24364);
-  assert.equal(runningPid(''), null);
-  assert.equal(runningPid('"pid"=0'), null);
+test('a running app\'s pid is read from lsappinfo in either of its forms; nothing means not running', () => {
+  assert.equal(lsappinfoPid('"pid"=24364\n'), 24364, 'macOS 26');
+  assert.equal(lsappinfoPid('pid = 736\n'), 736, 'the unquoted form');
+  assert.equal(lsappinfoPid('"LSDisplayName"="Finder" ASN:0x0-0x15ed6ec1: pid = 736 type="Foreground"'), 736, 'inside a full info line');
+  assert.equal(lsappinfoPid('"parentpid"=1 '), null, 'another key ending in pid is not the pid');
+  assert.equal(lsappinfoPid(''), null);
+  assert.equal(lsappinfoPid('"pid"=0'), null);
 });

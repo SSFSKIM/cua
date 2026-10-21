@@ -20,6 +20,7 @@
 // other window a key may be sent under (sendIfFrontmost): the background-regime cells of the native matrix.
 import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
+import {lsappinfoPid} from '../probe/lib.mjs';
 
 export const KEY_SKIPPED = 'key_skipped_not_frontmost';
 // The frontmost application's bundle id, as scripts/mini-rules.mjs reads it.
@@ -30,10 +31,11 @@ export const parseFrontmost = text => /(?:bundleID|"CFBundleIdentifier")="([^"]+
 
 // The frontmost application's process, pid and bundle id (FrontWindowProbe's frontmost() reads the same way).
 export const FRONTMOST_PROCESS_SCRIPT = 'lsappinfo info -only pid,bundleid "$(lsappinfo front)"';
-// lsappinfo prints `"pid"=736` (macOS 26) or `pid = 736`; -> {pid, bundleId} (the id null when absent), or null without a pid.
+// lsappinfo prints `"pid"=736` (macOS 26) or `pid = 736` (lsappinfoPid reads both); -> {pid, bundleId} (the id null
+// when absent), or null without a pid.
 export function parseFrontmostProcess(text) {
-  const pid = Number(/"?pid"?\s*=\s*(\d+)/.exec(text)?.[1]);
-  return Number.isSafeInteger(pid) && pid > 0 ? {pid, bundleId: parseFrontmost(text)} : null;
+  const pid = lsappinfoPid(text);
+  return pid === null ? null : {pid, bundleId: parseFrontmost(text)};
 }
 // FrontWindowProbe, the device-side oracle of what is in front (`swift <this file> front`, one JSON line).
 export const FRONT_WINDOW_SCRIPT = fileURLToPath(new URL('./front-window.swift', import.meta.url));

@@ -25,10 +25,12 @@
 // account's ~/.config/cua/engine.json never chooses it: --engine, else CUA_NATIVE_ENGINE, else the launcher's default;
 // it predicts the host and engine as the launcher selects them (replHostFor), refuses before serving when the launcher
 // would, and checks every js result's `_meta['cua/nativeEngine']` against the pinned engine (cua's: the approved
-// bundle's version and build; the vendor's: its helper's version and the runtime release), stopping at the first
-// mismatch. On macOS the runtime tree is judged by its host: the vendor host's runs from the installed release, cua's own
-// host's runs cua's Node (and sandbox-exec, which execs it), never node_repl or the vendor's Node. With cua's engine the
-// approved engine's socket must be held only by that bundle's cua-engine and cua's Node, and nothing may start from
+// bundle's version and build; the vendor's: its helper's version and the runtime release): any mismatch stops the run,
+// sending nothing more. On macOS the runtime tree is judged by its host: the vendor host's runs from the installed
+// release, cua's own host's runs cua's Node (and sandbox-exec, which execs it), never node_repl or the vendor's Node.
+// With cua's engine the approved engine's socket must be bound only by that bundle's cua-engine and connected to only by
+// cua's Node, its clients found by their peer address among every Unix socket lsof shows (a connection whose client is
+// not seen leaves the clients unproven, a problem), and nothing may start from
 // cua's roots (the home, the engine directory) during the session but cua-engine and cua's Node: the pinned runtime's
 // SkyComputerUseService or node_repl started then is a problem, while other installations' helpers (the ChatGPT app's)
 // lie outside those roots and are only reported.
@@ -54,8 +56,8 @@ import {resolveRuntime} from './src/runtime/manifest.mjs';
 import {REPL_HOST_META_KEY} from './src/repl-host/identity.mjs';
 import {SEATBELT_EXEC} from './src/sandbox/seatbelt.mjs';
 import {
-  approvalsByBehaviour, attestationProblem, boundedError, classifyOwnHostTree, classifyProcesses, cuaRootProcesses, descendants, engineSocketHolders,
-  isAppApproval, nativeSocketStep, outsideAnchorGroup, procTable, psRows, runningPid, socketHolders, survivors,
+  approvalsByBehaviour, attestationProblem, boundedError, classifyOwnHostTree, classifyProcesses, cuaRootProcesses, descendants, engineSocketPeers,
+  isAppApproval, lsappinfoPid, nativeSocketStep, outsideAnchorGroup, procTable, psRows, socketHolders, survivors, unixSocketEnds, unixSockets,
 } from './scripts/probe/lib.mjs';
 import {approvedEngineFacts, cuaNodes as cuaNodesOf, LaneUsageError, pinLane, selectLane} from './scripts/probe/pinned-engine.mjs';
 import {settingsFrom} from './src/mcp/server.mjs';
@@ -116,14 +118,13 @@ try { lane = selectLane({pin, serveEnv, home, runtime, surfaces}); } catch (erro
 const {selection, expected} = lane;
 const engineFacts = expected?.engine === 'cua' ? approvedEngineFacts(selection) : null;
 if (pin) report.engine = {engine: pin.engine, pinnedBy: pin.pinnedBy, host: selection.host, expected, attested: 0, ...(engineFacts ? {bundle: engineFacts.bundlePath.replace(homedir(), '~')} : {})};
-// Every js result attests the pinned engine; the first mismatch stops the run (`refuse`), so nothing is bound on an
-// engine the lane did not mean.
-const attest = (result, {refuse = false} = {}) => {
+// Every js result attests the pinned engine. Any mismatch stops the run: nothing more is sent (no bind is approved on an
+// engine the lane did not mean), the serve is closed through the cleanup below, and the report says why.
+const attest = result => {
   if (!expected) return;
   report.engine.attested++;
   const problem = attestationProblem(result?._meta, expected);
-  if (problem && refuse) throw new Error(`refused on the attestation: ${problem}`);
-  check(!problem, problem);
+  if (problem) throw new Error(`refused on the attestation: ${problem}`);
 };
 const psBefore = darwin ? psRows(sh('ps', ['-axo', 'pid=,ppid=,comm='])) : [];
 const runDir = join(runtime.home, 'run');
@@ -213,7 +214,7 @@ try {
     : ['unavailable', 'error'].includes(secrets?.status) && typeof secrets.code === 'string', `secrets_list returned ${JSON.stringify(report.secretsList)}`);
 
   const first = await call('js', {code: 'nodeRepl.write("cua-verify")', title: 'cua verify'}, 120_000);
-  attest(first, {refuse: true});
+  attest(first);
   const second = await call('js', {code: 'nodeRepl.write("cua-verify again")', title: 'cua verify'}, 60_000);
   attest(second);
   check(!first.isError && !second.isError, 'a trivial js cell returned an error');
@@ -227,7 +228,7 @@ try {
 
   // --bind: the app twice in this connection, observed by behaviour (the first bind asks once, the second nothing).
   if (options.bind) {
-    const pid = runningPid(sh('/usr/bin/lsappinfo', ['info', '-only', 'pid', '-app', options.bind]));
+    const pid = lsappinfoPid(sh('/usr/bin/lsappinfo', ['info', '-only', 'pid', '-app', options.bind]));
     const binds = [];
     report.bind = {app: options.bind, running: pid !== null, binds};
     if (pid === null) throw new Error(`${options.bind} is not running: verify binds only an app that is already running, so the engine never launches it`);
@@ -280,16 +281,23 @@ try {
   // cua's engine: who holds the approved engine's socket, and what this session started from cua's roots.
   if (engineFacts) {
     const {executable: engineExecutable, socket, directory} = engineFacts;
-    const executableOf = new Map(psRows(psText).map(p => [p.pid, p.executable]));
-    const holders = (existsSync(socket) ? socketHolders(sh('lsof', ['-F', 'pc', socket])) : [])
-      .map(h => ({pid: h.pid, executable: executableOf.get(h.pid) ?? sh('ps', ['-o', 'comm=', '-p', String(h.pid)]).trim()}));
+    const executables = new Map(psRows(psText).map(p => [p.pid, p.executable]));
+    const executableOf = pid => executables.get(pid) ?? sh('ps', ['-o', 'comm=', '-p', String(pid)]).trim();
+    // Every Unix socket lsof can see, so the clients are found by their peer address: a client's end is unbound, and a
+    // listing filtered by the socket's path shows the engine alone.
+    const ends = unixSocketEnds(unixSockets(sh('/usr/sbin/lsof', ['-U', '-F', 'pcfdn'])), socket);
     // On the vendor host (comparison A's lane) the relay that connects is the runtime's own Node or node_repl.
     const vendorRelay = ownHost ? [] : [runtime.paths.node, runtime.paths.nodeRepl];
-    const sockets = engineSocketHolders(holders, {engineExecutable, mayConnect: executable => cuaNodes.includes(executable) || vendorRelay.includes(executable), requireEngine: Boolean(options.bind)});
+    const sockets = engineSocketPeers(ends, {engineExecutable, executableOf, requireEngine: Boolean(options.bind),
+      mayConnect: executable => cuaNodes.includes(executable) || vendorRelay.includes(executable)});
     const roots = cuaRootProcesses({before: psBefore, during: psRows(psText), roots: [runtime.home, directory], allowed: [engineExecutable, ...cuaNodes, ...vendorRelay]});
     const show = p => ({pid: p.pid, executable: label(p.executable)});
     Object.assign(report.engine, {
-      socket: {holders: holders.map(h => ({...show(h), role: sockets.engine.includes(h.pid) ? 'engine' : sockets.clients.includes(h.pid) ? 'client' : 'unexpected'}))},
+      socket: {
+        bound: [...new Set(ends.bound.map(e => e.pid))].map(pid => ({...show({pid, executable: executableOf(pid)}), role: sockets.engine.includes(pid) ? 'engine' : 'unexpected'})),
+        clients: [...new Set(ends.clients.map(e => e.pid))].map(pid => ({...show({pid, executable: executableOf(pid)}), role: sockets.clients.includes(pid) ? 'client' : 'unexpected'})),
+        unseenClients: ends.unseen,
+      },
       startedFromCuaRoots: roots.started.map(show),
       runningBefore: roots.preExisting.map(show),
     });

@@ -9,11 +9,13 @@
 // does, and how long close takes.
 // On macOS with the computer surface the engine is pinned as verify.mjs pins it (scripts/probe/pinned-engine.mjs:
 // --engine, else CUA_NATIVE_ENGINE, else the launcher's default), so the account's engine.json never chooses it, and
-// every connection's first result must attest it: a mismatch prints the report with `refused` and exits 1 before any
-// scenario's verdict counts. What a closed connection leaves running is judged for either host: the processes of its
+// every js result must attest it: any mismatch sends nothing more, closes that connection's serve, prints the report
+// with `refused` and exits 1. What a closed connection leaves running is judged for either host: the processes of its
 // tree seen while it was open that are still alive, and anything running from the vendor runtime's root
 // (`runtimeProcessesAfterExit` counts both, `leftAfterExit` names them); the resident engine outlives connections by
-// design and is not counted, but with cua's engine no process of the closed connection may still hold its socket.
+// design and is not counted, but with cua's engine no process of the closed connection may still hold its socket
+// (`engineSocketHeldAfterExit`, found by peer address among every Unix socket lsof shows; `engineSocketClientsUnseen`
+// counts connections whose client lsof could not show, which leave that reading unproven).
 // Exit 2: a usage error.
 import {spawn, spawnSync} from 'node:child_process';
 import {existsSync, realpathSync} from 'node:fs';
@@ -24,7 +26,7 @@ import {parseArgs} from 'node:util';
 import {defaultHome} from '../src/runtime/layout.mjs';
 import {resolveRuntime} from '../src/runtime/manifest.mjs';
 import {settingsFrom} from '../src/mcp/server.mjs';
-import {attestationProblem, descendants, leftoverProcesses, socketHolders} from './probe/lib.mjs';
+import {attestationProblem, descendants, leftoverProcesses, unixSocketEnds, unixSockets} from './probe/lib.mjs';
 import {approvedEngineFacts, LaneUsageError, pinLane, selectLane} from './probe/pinned-engine.mjs';
 
 const CLI = fileURLToPath(new URL('../bin/cua.mjs', import.meta.url));
@@ -62,17 +64,27 @@ function connect() {
   let declined = 0;
   // The processes below the server seen while the connection was open, by pid (`observe` adds to them).
   const observed = new Map();
-  const send = msg => server.stdin.write(JSON.stringify(msg) + '\n');
+  // The ids of this connection's js calls, whose every result must attest the pinned engine.
+  const jsCalls = new Set();
+  // Once refused, nothing more is sent on any connection.
+  const send = msg => { if (!refused) server.stdin.write(JSON.stringify(msg) + '\n'); };
   createInterface({input: server.stdout}).on('line', line => {
+    if (refused) return;
     const msg = JSON.parse(line);
     if (msg.method !== undefined && msg.id !== undefined) {
       if (msg.method === 'elicitation/create') declined++;
       return send({jsonrpc: '2.0', id: msg.id, result: {action: 'decline'}});
     }
+    if (jsCalls.has(msg.id) && msg.result) {
+      report.engine && report.engine.attested++;
+      const problem = expected && attestationProblem(msg.result._meta, expected);
+      if (problem) return refuse(problem, {server, exited});
+    }
     waiters.get(msg.id)?.(msg);
   });
   const request = (method, params = {}) => {
     const id = ++nextId;
+    if (method === 'tools/call' && params.name === 'js') jsCalls.add(id);
     send({jsonrpc: '2.0', id, method, params});
     return {id, reply: new Promise(resolve => waiters.set(id, msg => resolve({...msg, atMs: at()})))};
   };
@@ -87,11 +99,16 @@ function connect() {
       await new Promise(resolve => setTimeout(resolve, 250));
       left = leftoverProcesses({observed: [...observed.values()], isAlive, psText: psText(), runtimeRoot: runtime.root});
     }
-    const holders = engineSocket && existsSync(engineSocket) ? socketHolders(sh('lsof', ['-F', 'pc', engineSocket])) : [];
+    // Every Unix socket lsof shows: the connection's own client end is unbound and found only by its peer address.
+    const ends = engineSocket && existsSync(engineSocket) ? unixSocketEnds(unixSockets(sh('/usr/sbin/lsof', ['-U', '-F', 'pcfdn'])), engineSocket) : null;
     return {
       runtimeProcessesAfterExit: left.length,
       leftAfterExit: left.map(p => ({pid: p.pid, executable: label(p.executable)})),
-      ...(engineSocket ? {engineSocketHeldAfterExit: [...new Set(holders.filter(h => observed.has(h.pid)).map(h => h.pid))]} : {}),
+      ...(engineSocket ? {
+        engineSocketHeldAfterExit: [...new Set([...(ends?.bound ?? []), ...(ends?.clients ?? [])].filter(e => observed.has(e.pid)).map(e => e.pid))],
+        // Connections to the engine whose client lsof did not show: while any remain, the release above is unproven.
+        engineSocketClientsUnseen: ends?.unseen ?? 0,
+      } : {}),
     };
   };
   return {
@@ -99,9 +116,8 @@ function connect() {
     async open() {
       await request('initialize', {protocolVersion: '2025-06-18', capabilities: {elicitation: {}}, clientInfo: {name: 'cua-probe-lifecycle', version: '0'}}).reply;
       send({jsonrpc: '2.0', method: 'notifications/initialized'});
-      const ready = await call('js', {code: 'nodeRepl.write("ready")'}).reply;
+      await call('js', {code: 'nodeRepl.write("ready")'}).reply;
       observe();
-      attest(ready.result);
     },
     async close() { const closeAt = at(); observe(); server.stdin.end(); const exit = await exited; return {...exit, closeMs: exit.atMs - closeAt, elicitationsDeclined: declined, ...await leftovers()}; },
   };
@@ -109,20 +125,19 @@ function connect() {
 
 const sleepCell = (ms, label) => `globalThis.__probe = "${label}:started"; await new Promise(r => setTimeout(r, ${ms})); globalThis.__probe = "${label}:finished"; nodeRepl.write(globalThis.__probe)`;
 const report = {release: runtime.release, at: new Date().toISOString(),
-  ...(pinned.pin ? {engine: {engine: pinned.pin.engine, pinnedBy: pinned.pin.pinnedBy, host: selection.host, expected, attested: 0, problems: []}} : {})};
-// Every connection's first result attests the pinned engine. The first connection's mismatch refuses the run before any
-// scenario; a later one is recorded in engine.problems.
-let refusing = true;
-function attest(result) {
-  if (!expected) return;
-  report.engine.attested++;
-  const problem = attestationProblem(result?._meta, expected);
-  if (problem && refusing) {
-    report.refused = `refused on the attestation: ${problem}`;
-    console.log(JSON.stringify(report, null, 1));
-    process.exit(1);
-  }
-  if (problem) report.engine.problems.push(problem);
+  ...(pinned.pin ? {engine: {engine: pinned.pin.engine, pinnedBy: pinned.pin.pinnedBy, host: selection.host, expected, attested: 0}} : {})};
+// Every js result attests the pinned engine. Any mismatch refuses the run at once: nothing more is sent, the connection's
+// serve is closed (EOF, then SIGTERM after 15 s), and the report is printed with `refused`; exit 1.
+let refused = false;
+async function refuse(problem, {server, exited}) {
+  refused = true;
+  report.refused = `refused on the attestation: ${problem}`;
+  server.stdin.end();
+  const exit = await Promise.race([exited, new Promise(resolve => setTimeout(() => resolve(null), 15_000))]);
+  if (!exit) server.kill('SIGTERM');
+  report.refusedServeExit = exit ?? await exited;
+  console.log(JSON.stringify(report, null, 1));
+  process.exit(1);
 }
 
 // 1. Does notifications/cancelled stop a running cell?
@@ -137,7 +152,6 @@ function attest(result) {
   const after = c.summary(await c.call('js', {code: 'nodeRepl.write(String(globalThis.__probe))'}).reply);
   const end = c.summary(await c.call('end_task').reply);
   report.cancelDuringJs = {cancelAtMs: cancelAt, reply: reply && c.summary(reply), stateSeenByNextCell: after.text, endTask: end.structured, close: await c.close()};
-  refusing = false;
 }
 
 // 2. end_task while a cell is running: completion waits for it, then ends.

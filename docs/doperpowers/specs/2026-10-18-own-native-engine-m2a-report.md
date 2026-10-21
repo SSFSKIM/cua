@@ -71,7 +71,7 @@ M2a ran as parallel lanes, each in its own worktree and Swift scratch path, and 
 - It also read the put-back baseline:
   - macOS 27.0;
   - Finder: ShowSidebar=1, ShowStatusBar and ShowPathbar unset;
-  - input source ABC, per-context preference 0;
+  - input source ABC, per-context preference 0 (read by `defaults read com.apple.HIToolbox AppleGlobalTextInputProperties`, which lists `TextInputGlobalPropertyPerContextInput = 0` explicitly; the coordinator's own read of the bare key found it absent, which is the same default);
   - front app Terminal;
   - no TextEdit, no Chrome for Testing, no engine running.
 
@@ -102,7 +102,7 @@ Load was 3.5 to 3.8 throughout. A Python process that belonged to neither CI nor
   - cua with the switch on: both have no effect (route 1, guard 36 and 54 ms).
   - Per-action activation is not enough, so the switch is removed. The route for background menus is a fork brought to maws-3f.
 - **input-source.** PASS.
-- **enablement.** Not released: the prior read "false" first and "true" second.
+- **enablement.** The prior read "false" first and "true" second. That reading cannot verify the release on Chromium (see residue).
 - **paste and hidComposition.** Not run. A SecurityAgent prompt was on screen from 12:34:35Z, during vv run 3. The coordinator traced it in the log to the owner's ClaudeUsage menubar app, after another Claude CLI's keychain reads. It was not the hold's. The paste section's alert watch aborted at its first read, untouched, with put-back ok. No word came by the 13:22Z cutoff, so the rerun was skipped.
 
 **Phase 4 (13:21:41Z).** Everything matched phase 0:
@@ -128,8 +128,8 @@ Each item is work left for its own ticket or for M2b.
 - **Route 4's live check.** Per maws-3f, route 4 stayed out of the M2a hold, and the owner's `~/.config/cua/engine.json` was never written on the mini. RouteFourTests gives unit coverage. The live check belongs to M2b's matrix route cells.
 - **paste and hidComposition, live.** Not run in this hold because of an unrelated SecurityAgent prompt. Both are ready in the harness for M2b's first hold. hidComposition is MAWS P4-B2's question.
 - **select_text in a minimized window.** It answers ok, but the selection did not read back. Whether the write or the read failed is open. A second live read in M2b decides between refusing it and verifying the write after the fact.
-- **Enablement release on Chromium.** After the engine wrote it back, the attribute read "true" on the next connection (research pending). The release is a declared difference beyond the vendor, which never unsets.
-- **Menu items in a background app.** The route is the coordinator's fork; see the Decision Log, M2a.5 hold item 3.
+- **Verifying enablement's release on Chromium.** After the engine wrote the attribute back, it read "true" on the next connection. Chromium 155's source shows the readback is AppKit's, not Chromium's accessibility mode, so the reading cannot verify the release either way. M2b should verify it by Chromium's own mode (the web tree's size, or a CDP accessibility query). The release is a declared difference beyond the vendor, which never unsets.
+- **Held menu activation, live.** Adopted after the hold (Decision Log, "menu activation held from the record") and unit-tested. M2b's matrix checks it live against the vendor on Select All and Bold.
 - **No `menuClosed` clearing (vendor parity; tech-debt-tracker.md).** The vendor clears its recorded menu root when the menu closes. cua keeps the record until the next observation replaces it.
 - **No AXPress for a menu item under a coordinate (vendor parity; tech-debt-tracker.md).** The vendor presses the AX menu item under the point. cua posts the pointer events instead.
 - **A key-code-only variant of `--probe keystroke`.** It would settle hidComposition's caveat: the events carry `CGEventKeyboardSetUnicodeString`. It is a later probe change.

@@ -639,6 +639,8 @@ final class MenuActivationTests: XCTestCase {
     }
     XCTAssertEqual(presses, 0)
     XCTAssertNil(meta.startedAt, "nothing was pressed")
+    XCTAssertNil(meta.endedAt)
+    XCTAssertNotNil(meta.activationGuardMs, "the failed guard's duration is kept for the diagnosis")
     XCTAssertEqual(meta.inputRoute, .action)
   }
 

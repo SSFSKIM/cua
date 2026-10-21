@@ -211,13 +211,16 @@ func deliverAction(_ action: String, perform: (String) -> AXError, meta: inout I
 /// command goes through the key window's responder chain, which a background app may not offer. Per action, as cua's
 /// activation always is: the activation for the app's primary window (subtype 1, and the click at its AXActivationPoint
 /// when that lies inside the frame), the in-flight check, the press, then the deactivation on every path. The route stays
-/// 1, the guard's time rides in the meta, and a guard failure refuses as activationFailed with nothing pressed.
+/// 1, the guard's time rides in the meta (a failed guard's too), and a guard failure refuses as activationFailed with
+/// nothing pressed.
 func deliverActivatedAction(_ action: String, activation: FakeActivation, beforePressing: () throws -> Void = {},
                             perform: (String) -> AXError, meta: inout InputMeta) throws {
   meta.inputRoute = .action
   defer { activation.deactivate() }
-  try activation.activate()
-  meta.activationGuardMs = activation.guardMs
+  do {
+    defer { meta.activationGuardMs = activation.guardMs }  // a guard that failed still says how long it held
+    try activation.activate()
+  }
   try beforePressing()
   try deliverAction(action, perform: perform, meta: &meta)
 }

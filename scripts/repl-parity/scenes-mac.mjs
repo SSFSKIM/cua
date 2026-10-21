@@ -98,9 +98,11 @@ export const TEXTEDIT_MARKDOWN_CAP = 2000;
 const TEXTEDIT_LINES = ['cua scene document', TEXTEDIT_STYLED_LINE, ...Array.from({length: 60}, (_, i) => `Line ${String(i + 1).padStart(2, '0')}`)];
 const rtfLine = line => (line === TEXTEDIT_STYLED_LINE ? `{\\b ${line}}` : line);
 // The layouts the document can open in: TextEdit's default (wrapped to the window), or `wide-page` (M2b.1b's horizontal
-// scroll cell): page layout (`\\viewkind1`, TextEdit's Wrap to Page) on a page 1440 points wide (`\\paperw28800`, in
-// twips), wider than the scene window, so its scroll area has horizontally scrollable content.
-export const TEXTEDIT_LAYOUTS = Object.freeze({default: '', 'wide-page': '\\paperw28800\\paperh15840\\viewkind1'});
+// scroll cell): page layout (`\\viewkind1`, TextEdit's Wrap to Page) zoomed to 200% (`\\viewscale200`), so the page
+// is wider than the scene window and its scroll area has horizontally scrollable content. The zoom is what does it:
+// TextEdit ignores the paper width (`\\paperw28800`, 1440 points in twips) for the page view and lays the page out on
+// its own paper size, which fits the window, its horizontal bar disabled (hold 1, 2026-10-21).
+export const TEXTEDIT_LAYOUTS = Object.freeze({default: '', 'wide-page': '\\paperw28800\\paperh15840\\viewkind1\\viewscale200'});
 export const textEditDocument = ({layout = 'default'} = {}) => {
   if (!Object.hasOwn(TEXTEDIT_LAYOUTS, layout)) throw new Error(`unknown TextEdit layout ${layout}; one of ${Object.keys(TEXTEDIT_LAYOUTS).join(', ')}`);
   return {name: TEXTEDIT_DOCUMENT, lines: [...TEXTEDIT_LINES],

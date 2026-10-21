@@ -298,13 +298,13 @@ test('up records the run\'s own launch with its window; a second up of the same 
   assert.deepEqual(preflight({run, io}).refusals, []);
 }));
 
-test('up textedit --layout wide-page: the same document in page layout on a page wider than the window; any other layout or scene refuses', async () => withRun(async run => {
+test('up textedit --layout wide-page: the same document in page layout, zoomed to 200% so the page is wider than the window; any other layout or scene refuses', async () => withRun(async run => {
   const io = fakeDevice();
   const wide = await upScene('textedit', {run, io, layout: 'wide-page'});
   const rtf = fs.readFileSync(wide.document, 'utf8');
   assert.equal(wide.layout, 'wide-page');
-  assert.match(rtf, /\\paperw28800\\paperh15840\\viewkind1\\f0/);
-  assert.equal(rtf.replace('\\paperw28800\\paperh15840\\viewkind1', ''), textEditDocument().rtf, 'only the layout differs');
+  assert.match(rtf, /\\paperw28800\\paperh15840\\viewkind1\\viewscale200\\f0/, 'TextEdit ignores the paper width for the page view: only the zoom makes it scroll');
+  assert.equal(rtf.replace('\\paperw28800\\paperh15840\\viewkind1\\viewscale200', ''), textEditDocument().rtf, 'only the layout differs');
   assert.equal(textEditDocument({layout: 'default'}).rtf, textEditDocument().rtf);
   assert.throws(() => textEditDocument({layout: 'narrow'}), /unknown TextEdit layout/);
   await assert.rejects(upScene('finder', {run, io, layout: 'wide-page'}), /textedit scene only/);

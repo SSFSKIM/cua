@@ -1,8 +1,9 @@
 import ApplicationServices
 import Foundation
 
-// Settle (the spec's Design, "Settle"; F §8), minimal for the M0 spike. After an action, the next get_app_state on that
-// app waits for quiet first (the vendor's deferred settle): an AXObserver on the application for ten notifications,
+// Settle (the spec's Design, "Settle"; F §8). After an action, the next get_app_state on that app waits for quiet first
+// (the vendor's deferred settle), and so does an observation whose preparation launched or reopened the app (sampled
+// every 50 ms, its tree discarded); no other observation settles: an AXObserver on the application for ten notifications,
 // sampled every 100 ms (250 ms for a web-shaped app), returning once 250 ms have passed since the last notification (or
 // since the wait began), unless the primary window's tree shows a busy sign; at 5 s it gives up, which cua reports as
 // "capped" where the vendor is silent. The request's deadline ends it sooner, as `timeoutReached` (cua's addition: the
@@ -16,9 +17,38 @@ let settleNotifications: [String] = [
 ]
 let settleQuietMs = 250.0
 let settleCapMs = 5_000.0
-let settleSampleMs = 100.0
+let nativeSettleSampleMs = 100.0
 let settleWebSampleMs = 250.0
+let openSettleSampleMs = 50.0
 let busyMarkerClass = "macos-mac-parity-spinner"
+
+/// The settles that can precede an observation (the Settle paragraph; F §8.6, §8.10–8.11).
+enum ObservationSettle: Equatable {
+  /// After the engine's own launch or reopen of the app, once its window is there: the vendor's open helper settles
+  /// with a 50 ms sampling delay and the 250 ms quiet period (0x100164c08) and destroys the tree (0x100164c0c).
+  case afterOpen
+  /// After an action on the app since its last observation (the vendor's deferred settle): sampled by the app's shape,
+  /// its last busy walk's tree handed to the observation.
+  case afterAction
+
+  var reusesTree: Bool { self == .afterAction }
+}
+
+/// Which settles run before an observation, in the vendor's order (the preparation's, then the deferred one): after the
+/// engine opened the app, and after an action armed one (or a spike cell's `settle` switch forces or skips that one).
+/// Nothing else settles: a first observation of a running app whose window is there captures at once, web-shaped or
+/// not, and nothing waits for web content to fill (Decision Log, "M2a vendor reading" item 1).
+func observationSettles(opened: Bool, armed: Bool, forced: Bool?) -> [ObservationSettle] {
+  (opened ? [.afterOpen] : []) + ((forced ?? armed) ? [.afterAction] : [])
+}
+
+/// A settle's sampling interval: the open's 50 ms as given; an action's by the app's shape (F §8.1).
+func settleSampleMs(_ kind: ObservationSettle, webShaped: Bool) -> Double {
+  switch kind {
+  case .afterOpen: return openSettleSampleMs
+  case .afterAction: return webShaped ? settleWebSampleMs : nativeSettleSampleMs
+  }
+}
 
 /// One notification as the settle weighs it: `counts` false for a title change that changed nothing.
 struct SettleEvent {
@@ -92,9 +122,9 @@ struct Settled {
 }
 
 extension Engine {
-  /// Waits for `application` to settle; `webShaped` chooses the 250 ms sampling; `deadline` (monotonic ms) is the
+  /// Waits for `application` to settle, sampling every `sampleMs` (`settleSampleMs`); `deadline` (monotonic ms) is the
   /// request's, which cancels the wait (`report.timedOut`). The busy walks' fetch costs accumulate in `costs`.
-  func settle(_ application: AXUIElement, pid: pid_t, webShaped: Bool, deadline requestDeadline: Double, costs: FetchCosts) -> Settled {
+  func settle(_ application: AXUIElement, pid: pid_t, sampleMs: Double, deadline requestDeadline: Double, costs: FetchCosts) -> Settled {
     let setupStart = monotonicMilliseconds()
     let observer = NotificationObserver(pid: pid, names: settleNotifications, keep: true)
     let setupMs = monotonicMilliseconds() - setupStart
@@ -103,7 +133,7 @@ extension Engine {
     let started = monotonicMilliseconds()
     let deadline = min(started + settleCapMs, requestDeadline)
     var report = runSettle(
-      sampleMs: webShaped ? settleWebSampleMs : settleSampleMs,
+      sampleMs: sampleMs,
       deadlineMs: requestDeadline - started,
       now: monotonicMilliseconds,
       sleep: { usleep(UInt32(max(0, $0) * 1000)) },

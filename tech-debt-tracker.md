@@ -2,6 +2,10 @@
 
 ## Open
 
+- **2026-10-21 — The recorded menu root is not cleared when the menu closes (vendor parity, #117 M2a).** The vendor clears its recorded menu-bar root on the menu's close. cua keeps the record until the next observation replaces it, so an observation taken after the owner closes the menu can still be rooted at the menu-bar item. M2a scoped this out; the coordinator accepted it as residue. Fix: clear the record on the menu's close notification, as the vendor does, when M2b's menu cells exercise it.
+
+- **2026-10-21 — A coordinate click or drag onto an open menu item is posted, not pressed (vendor parity, #117 M2a).** The vendor presses the AX menu item under the point (AXPress). cua posts the pointer events, and a background app's open menu may not take them. M2a scoped this out; the coordinator accepted it as residue. Fix: hit-test the point and, for an AXMenuItem, press it by route 1, when M2b's menu cells measure it.
+
 - **2026-10-21 — goldens' empty-stderr case failed once under full-suite load (minor, #117 M2a integration).** `test/native-matrix/goldens.test.mjs` "a recording leaves no empty serve stderr directory behind" failed in one local `npm test` on ca2aa113, passed 29/29 three times alone and on the full re-run. Likely the same scheduler-latency shape as the rows below: the case reads the directory before the serve's teardown has removed it. Fix: await the serve's exit before asserting, rather than a fixed delay.
 
 - **2026-10-21 — Route 4's restore does not check that the previous app's key window came back (minor, #117 M2a.1).** After a route-4 synthesized click, the engine re-activates the previous app and raises its key window best-effort; it checks the activation, not the raise (`ForegroundAssist.swift`). A window that refuses the raise leaves the owner's app front with a different key window. Route 4 is opt-in per app and has no live check yet (M2b's route cells). Fix: read the key window after the raise and report it in the meta, when M2b measures route 4 live.

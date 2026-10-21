@@ -322,6 +322,7 @@ extension Engine {
       let target = keyboardTarget(application, fallback: pid)
       try refuseForbiddenOwner(target)
       actionTargets(target, app: app, connection: context.connection)
+      try refuseMinimizedKeyboardInput(application: application, app: app.displayName, ax: .live)  // keys land nowhere (Minimized.swift)
       meta.inputRoute = keyRoute(forced: forced)
       let activation = try forcedActivation(meta.inputRoute, pid: pid, application: application, meta: &meta)
       defer { activation?.deactivate() }  // every path out of the posting, error or success, undoes a forced activation
@@ -361,6 +362,8 @@ extension Engine {
       let target = keyboardTarget(application, fallback: pid)
       try refuseForbiddenOwner(target)
       actionTargets(target, app: app, connection: context.connection)
+      // Neither route reaches a minimized window (Minimized.swift); a concealed request is refused the same way.
+      try refuseMinimizedKeyboardInput(application: application, app: app.displayName, ax: .live)
 
       let source = currentInputSource()
       // macOS may hold a source per app; the session's reading then says nothing about a background app.

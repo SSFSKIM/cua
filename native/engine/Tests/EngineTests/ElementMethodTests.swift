@@ -736,3 +736,51 @@ final class MinimizedElementInputTests: XCTestCase {
     XCTAssertEqual(clicks, 1, "on screen the fallback click runs")
   }
 }
+
+// MARK: Keyboard input into a minimized primary window (the M2a.5 hold: keys reported entered, the value unchanged)
+
+final class MinimizedKeyboardInputTests: XCTestCase {
+  /// An application (0) whose windows are a document window (1) and, when `focused`, its focused window too.
+  private func app(minimized: Bool, focused: Bool = false, main: Bool = false) -> FakeAX {
+    let ax = FakeAX()
+    ax.roles = [1: kAXWindowRole]
+    var application: [String: CFTypeRef] = [kAXWindowsAttribute: [el(1)] as CFArray]
+    if focused { application[kAXFocusedWindowAttribute] = el(1) }
+    if main { application[kAXMainWindowAttribute] = el(1) }
+    ax.values = [0: application, 1: [kAXMinimizedAttribute: minimized ? kCFBooleanTrue : kCFBooleanFalse]]
+    return ax
+  }
+
+  private func refusal(_ ax: FakeAX, method: String) -> EngineError? {
+    do { try refuseMinimizedKeyboardInput(application: el(0), app: "TextEdit", ax: ax.ops); return nil } catch { return error as? EngineError }
+  }
+
+  func testPressKeyTypeTextAndPasteIntoAMinimizedPrimaryWindowAreRefusedNamingSetValue() {
+    for method in ["press_key", "type_text", "paste"] {
+      let error = refusal(app(minimized: true), method: method)
+      XCTAssertEqual(error?.errorName, "windowMinimized", method)
+      XCTAssertEqual(error?.code, -10005)
+      XCTAssertEqual(error?.message, "The TextEdit window is minimized, so keys, typed text and pastes do not reach it. Ask the user to restore the window, or use setValue, which acts without it.")
+    }
+  }
+
+  func testAWindowOnScreenStillTakesKeysTextAndPastes() {
+    XCTAssertNil(refusal(app(minimized: false), method: "press_key"))
+    XCTAssertNil(refusal(app(minimized: false, focused: true), method: "type_text"))
+    XCTAssertNil(refusal(app(minimized: false, main: true), method: "paste"))
+  }
+
+  func testThePrimaryWindowIsTheVendorsThreeStepPick() {
+    // The focused window decides over a minimized last window, as the observation's primary window does.
+    let ax = app(minimized: true)
+    ax.roles[2] = kAXWindowRole
+    ax.values[2] = [kAXMinimizedAttribute: kCFBooleanFalse]
+    ax.values[0]?[kAXFocusedWindowAttribute] = el(2)
+    XCTAssertNil(refusal(ax, method: "type_text"))
+  }
+
+  func testAnAppWithNoWindowIsNotTheRulesCase() {
+    let ax = FakeAX()  // a menu key equivalent with no window at all is the app's to answer
+    XCTAssertNil(refusal(ax, method: "press_key"))
+  }
+}

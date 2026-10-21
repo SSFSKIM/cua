@@ -11,8 +11,10 @@ import Foundation
 // is refused. Input that needs the window on screen, a click, drag or scroll at a point (a synthesized element click, a
 // coordinate), is refused before anything is posted, while what reaches the element through Accessibility still acts:
 // an advertised action (a route-1 click, a secondary action), set_value and select_text, whose focusing click is
-// skipped in a minimized window rather than refused (ElementInput.swift's focusField). Keys and typed text are not
-// refused: they go to the process, whose menu key equivalents work with no window on screen. An off-stage Stage
+// skipped in a minimized window rather than refused (ElementInput.swift's focusField). Keys, typed text and pastes into
+// an app whose primary window is minimized are refused too, before anything is posted or the pasteboard touched: the
+// M2a.5 hold measured them landing nowhere (type_text by route 2' reported 6 units entered with the window's value
+// unchanged, and ⌘A did nothing; m2a/live/minimized/result.json), which overturned the earlier exemption. An off-stage Stage
 // Manager window that reads minimized falls under the same rule. Declared differences from the vendor: its reopen of a
 // minimized app and its Stage Manager writes.
 
@@ -71,4 +73,16 @@ func elementScrollPlacement<T>(_ element: AXUIElement, app: String, ax: AXOps, _
 func focusFallbackClick(_ element: AXUIElement, ax: AXOps, _ click: () throws -> Void) rethrows {
   guard !elementWindowMinimized(element, ax: ax) else { return }
   try click()
+}
+
+/// Refuses keyboard input (press_key, type_text by either route, paste) into an app whose primary window, picked as the
+/// observation picks it (AXFocusedWindow, else AXMainWindow, else the last of AXWindows), reads minimized: keys posted
+/// to it land nowhere. An app with no window is not the rule's case. Called after the intervention guard and the
+/// forbidden check, before anything is posted, the pasteboard included, so the refusal carries the meta with a null
+/// interval and names nothing of the request's text.
+func refuseMinimizedKeyboardInput(application: AXUIElement, app: String, ax: AXOps) throws {
+  let window = ax.element(application, kAXFocusedWindowAttribute) ?? ax.element(application, kAXMainWindowAttribute)
+    ?? elementList(ax.read(application, kAXWindowsAttribute)).last
+  guard let window, bool(ax.read(window, kAXMinimizedAttribute)) == true else { return }
+  throw EngineError(name: windowMinimizedReason, "The \(app) window is minimized, so keys, typed text and pastes do not reach it. Ask the user to restore the window, or use setValue, which acts without it.")
 }

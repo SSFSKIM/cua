@@ -224,6 +224,8 @@ extension Engine {
       let keyboard = keyboardTarget(application, fallback: pid)
       try refuseForbiddenOwner(keyboard)
       actionTargets(keyboard, app: app, connection: context.connection)
+      // A minimized window takes no ⌘V (Minimized.swift): refused before the pasteboard is snapshotted or written.
+      try refuseMinimizedKeyboardInput(application: application, app: app.displayName, ax: .live)
       // Converted before the app or the pasteboard is touched, so a conversion that fails changes nothing.
       let representations = try pasteRepresentations(text, format: format)
       var entered = 0

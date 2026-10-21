@@ -20,29 +20,76 @@
 // is the one executable allowed outside the release, its subtree may leave the anchor's process group, and every
 // runtime process seen must be gone shortly after the close.
 //
+// The native engine (#117; docs/doperpowers/specs/2026-10-18-own-native-engine-design.md, acceptance 2 and 9, the
+// Decision Log's "M3 pre-flight"). On macOS with the computer surface verify pins the engine the session drives, so the
+// account's ~/.config/cua/engine.json never chooses it: --engine, else CUA_NATIVE_ENGINE, else the launcher's default;
+// it predicts the host and engine as the launcher selects them (replHostFor), refuses before serving when the launcher
+// would, and checks every js result's `_meta['cua/nativeEngine']` against the pinned engine (cua's: the approved
+// bundle's version and build; the vendor's: its helper's version and the runtime release): any mismatch stops the run,
+// sending nothing more. On macOS the runtime tree is judged by its host: the vendor host's runs from the installed
+// release, cua's own host's runs cua's Node (and sandbox-exec, which execs it), never node_repl or the vendor's Node.
+// With cua's engine the approved engine's socket must be bound only by that bundle's cua-engine and connected to only by
+// cua's Node, its clients found by their peer address among every Unix socket lsof shows (a connection whose client is
+// not seen leaves the clients unproven, a problem), and nothing may start from
+// cua's roots (the home, the engine directory) during the session but cua-engine and cua's Node: the pinned runtime's
+// SkyComputerUseService or node_repl started then is a problem, while other installations' helpers (the ChatGPT app's)
+// lie outside those roots and are only reported.
+// --bind <bundle id> binds that app, which must already be running (verify never has the engine launch it), twice in
+// the connection, accepting only the policy's approval for that bundle (session persistence pinned) and declining
+// everything else: the first bind must ask once, the second nothing. The report carries counts, process and socket
+// identities and the attestation; never the tree's text, a title or a screenshot.
+//
 //   node verify.mjs                                       exit 0 when every check passes; prints a JSON report
 //   CUA_SHIM_SURFACES=computer,browser node verify.mjs   the same with the browser surface
+//   node verify.mjs --engine cua --bind com.apple.TextEdit   acceptance 2: cua's engine on cua's host, one approval
+//   CUA_NATIVE_ENGINE=vendor node verify.mjs             acceptance 9: the vendor engine and host, attested as such
+// Exit 2: a usage error (--engine or --bind where they do not apply, an unknown engine, a --bind that is no bundle id).
 import {spawn, spawnSync} from 'node:child_process';
 import {existsSync, lstatSync, readFileSync, readdirSync, readlinkSync, realpathSync} from 'node:fs';
 import {homedir} from 'node:os';
 import {join} from 'node:path';
 import {createInterface} from 'node:readline';
 import {fileURLToPath} from 'node:url';
+import {parseArgs} from 'node:util';
 import {defaultHome} from './src/runtime/layout.mjs';
 import {resolveRuntime} from './src/runtime/manifest.mjs';
-import {descendants, classifyProcesses, socketHolders, nativeSocketStep, procTable, outsideAnchorGroup, survivors} from './scripts/probe/lib.mjs';
+import {REPL_HOST_META_KEY} from './src/repl-host/identity.mjs';
+import {SEATBELT_EXEC} from './src/sandbox/seatbelt.mjs';
+import {
+  approvalsByBehaviour, attestationProblem, boundedError, classifyOwnHostTree, classifyProcesses, cuaRootProcesses, descendants, engineSocketPeers,
+  isAppApproval, lsappinfoPid, nativeSocketStep, outsideAnchorGroup, procTable, psRows, socketHolders, survivors, unixSocketEnds, unixSockets,
+} from './scripts/probe/lib.mjs';
+import {approvedEngineFacts, cuaNodes as cuaNodesOf, LaneUsageError, pinLane, selectLane} from './scripts/probe/pinned-engine.mjs';
 import {settingsFrom} from './src/mcp/server.mjs';
 
 const CLI = fileURLToPath(new URL('./bin/cua.mjs', import.meta.url));
 const NATIVE_SOCKET = join(homedir(), 'Library/Group Containers/2DC432GLL2.com.openai.sky.CUAService/IPC/computeruse.sock');
+const BUNDLE_ID = /^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/;
+const usage = message => { console.error(`verify: ${message}`); process.exit(2); };
+let options;
+try {
+  ({values: options} = parseArgs({options: {engine: {type: 'string'}, bind: {type: 'string'}}, strict: true}));
+} catch (error) { usage(error.message); }
 const home = defaultHome();
 const problems = [];
 const {surfaces} = settingsFrom(process.env);
 const browser = surfaces.includes('browser');
+const darwin = process.platform === 'darwin';
+if (options.bind !== undefined && !(darwin && surfaces.includes('computer'))) usage('--bind applies only to the computer surface on macOS');
+if (options.bind !== undefined && !BUNDLE_ID.test(options.bind)) usage('--bind takes the bundle id of a running app, such as com.apple.TextEdit');
+let pinned;
+try { pinned = pinLane({flag: options.engine, env: process.env, home, surfaces}); } catch (error) {
+  if (error instanceof LaneUsageError) usage(error.message);
+  throw error;
+}
+const {pin} = pinned;
+// With --bind, session-long approvals (CUA_SHIM_PERSIST=none would ask on every bind, not the behaviour observed here).
+const serveEnv = {...pinned.serveEnv, ...(options.bind ? {CUA_SHIM_PERSIST: 'session'} : {})};
 const MODEL_TOOLS = ['js', 'js_reset', 'end_task', 'secrets_list', ...(browser ? ['profiles_list'] : []), 'devices_list', 'devices_use'];
 const report = {home, surfaces, problems};
 const check = (ok, problem) => { if (!ok) problems.push(problem); return ok; };
 const sh = (cmd, args) => spawnSync(cmd, args, {encoding: 'utf8'}).stdout ?? '';
+const finish = () => { console.log(JSON.stringify(report, null, 1)); process.exitCode = problems.length ? 1 : 0; };
 const exeOf = pid => readlinkSync(`/proc/${pid}/exe`);
 // `pid ppid executable` for every process (descendants reads it).
 const processTable = () => process.platform === 'linux' ? procTable(sh('ps', ['-eo', 'pid=,ppid=']), exeOf) : sh('ps', ['-axo', 'pid=,ppid=,comm=']);
@@ -59,6 +106,27 @@ try {
   console.error(`verify: ${error.message}${error.hint ? `\n  ${error.hint}` : ''}`);
   process.exit(1);
 }
+// The pinned engine and, on macOS, the host and engine the launcher selects for it, as cua serve's connection does
+// (src/mcp/connection.mjs): a selection the launcher refuses (an engine not installed, a host that cannot run) is
+// refused here before anything is served.
+let lane;
+try { lane = selectLane({pin, serveEnv, home, runtime, surfaces}); } catch (error) {
+  problems.push(`the launcher refuses this selection: [${error.code ?? 'error'}] ${error.message}`);
+  finish();
+  process.exit();
+}
+const {selection, expected} = lane;
+const engineFacts = expected?.engine === 'cua' ? approvedEngineFacts(selection) : null;
+if (pin) report.engine = {engine: pin.engine, pinnedBy: pin.pinnedBy, host: selection.host, expected, attested: 0, ...(engineFacts ? {bundle: engineFacts.bundlePath.replace(homedir(), '~')} : {})};
+// Every js result attests the pinned engine. Any mismatch stops the run: nothing more is sent (no bind is approved on an
+// engine the lane did not mean), the serve is closed through the cleanup below, and the report says why.
+const attest = result => {
+  if (!expected) return;
+  report.engine.attested++;
+  const problem = attestationProblem(result?._meta, expected);
+  if (problem) throw new Error(`refused on the attestation: ${problem}`);
+};
+const psBefore = darwin ? psRows(sh('ps', ['-axo', 'pid=,ppid=,comm='])) : [];
 const runDir = join(runtime.home, 'run');
 const runEntries = () => existsSync(runDir) ? readdirSync(runDir) : [];
 const runBefore = runEntries();
@@ -71,7 +139,7 @@ const sessionsOf = pid => runEntries().flatMap(name => {
 const present = path => { try { lstatSync(path); return true; } catch { return false; } };
 const sessionEntries = session => [`${session}.pid`, session, `${session}.sock`];
 
-const server = spawn(process.execPath, [CLI, 'serve'], {stdio: ['pipe', 'pipe', 'inherit'], env: {...process.env, CUA_HOME: home}});
+const server = spawn(process.execPath, [CLI, 'serve'], {stdio: ['pipe', 'pipe', 'inherit'], env: serveEnv});
 const exited = new Promise(resolve => server.on('exit', (code, signal) => resolve({code, signal})));
 const pending = new Map();
 // A server that has gone (a refused open, say) answers nothing more: fail what waits instead of waiting out its timeout.
@@ -79,10 +147,20 @@ const pending = new Map();
 server.on('close', (code, signal) => { for (const waiter of pending.values()) waiter.reject(new Error(`cua serve exited (${JSON.stringify({code, signal})}) before answering`)); pending.clear(); });
 let nextId = 0;
 report.elicitationsDeclined = 0;
+// The bind in flight ({asked, accepted, error}): only it may be approved, and only for --bind's app.
+let binding = null;
 const send = msg => server.stdin.write(JSON.stringify(msg) + '\n');
 createInterface({input: server.stdout}).on('line', line => {
   const msg = JSON.parse(line);
-  if (msg.method === 'elicitation/create' && msg.id !== undefined) { report.elicitationsDeclined++; return send({jsonrpc: '2.0', id: msg.id, result: {action: 'decline'}}); }
+  if (msg.method === 'elicitation/create' && msg.id !== undefined) {
+    if (binding && isAppApproval(msg, options.bind)) {
+      binding.asked++;
+      binding.accepted++;
+      return send({jsonrpc: '2.0', id: msg.id, result: {action: 'accept', content: {}}});
+    }
+    report.elicitationsDeclined++;
+    return send({jsonrpc: '2.0', id: msg.id, result: {action: 'decline'}});
+  }
   if (msg.method !== undefined && msg.id !== undefined) return send({jsonrpc: '2.0', id: msg.id, error: {code: -32601, message: 'not supported by verify'}});
   const waiter = pending.get(msg.id);
   if (!waiter) return;
@@ -136,33 +214,95 @@ try {
     : ['unavailable', 'error'].includes(secrets?.status) && typeof secrets.code === 'string', `secrets_list returned ${JSON.stringify(report.secretsList)}`);
 
   const first = await call('js', {code: 'nodeRepl.write("cua-verify")', title: 'cua verify'}, 120_000);
+  attest(first);
   const second = await call('js', {code: 'nodeRepl.write("cua-verify again")', title: 'cua verify'}, 60_000);
+  attest(second);
   check(!first.isError && !second.isError, 'a trivial js cell returned an error');
   const taskId = taskOf(first);
   report.task = {first: taskId, sameTaskAcrossCalls: taskId !== null && taskOf(second) === taskId};
   check(report.task.sameTaskAcrossCalls, 'two js calls in one task carried different task IDs');
+  if (selection) {
+    report.host = first?._meta?.[REPL_HOST_META_KEY]?.host ?? 'vendor';
+    check(report.host === selection.host, `the session ran on the ${report.host} host where the launcher selects the ${selection.host} host`);
+  }
 
-  // Below the server: its group-lifetime anchor (this Node, running src/mcp/anchor.mjs), then the relocated runtime.
-  const tree = descendants(processTable(), server.pid).filter(p => p.pid !== server.pid);
+  // --bind: the app twice in this connection, observed by behaviour (the first bind asks once, the second nothing).
+  if (options.bind) {
+    const pid = lsappinfoPid(sh('/usr/bin/lsappinfo', ['info', '-only', 'pid', '-app', options.bind]));
+    const binds = [];
+    report.bind = {app: options.bind, running: pid !== null, binds};
+    if (pid === null) throw new Error(`${options.bind} is not running: verify binds only an app that is already running, so the engine never launches it`);
+    for (const timeoutMs of [120_000, 60_000]) {
+      binding = {asked: 0, accepted: 0, error: false};
+      try {
+        const result = await call('js', {code: `await cua.getApp(${JSON.stringify(options.bind)}); nodeRepl.write("bound")`, title: 'cua verify bind'}, timeoutMs);
+        attest(result);
+        // The result's text is the app's tree: only whether it failed, and a bounded first line when it did, is kept.
+        if (result.isError) Object.assign(binding, {error: true, message: boundedError(result.content?.find(c => c.type === 'text')?.text)});
+      } finally { binds.push(binding); binding = null; }
+    }
+    const observed = approvalsByBehaviour([{name: 'connection', binds, declined: report.elicitationsDeclined}]);
+    report.bind.approvals = observed.detail;
+    for (const problem of observed.problems) check(false, `--bind ${options.bind}: ${problem}`);
+  }
+
+  // Below the server: its group-lifetime anchor (this Node, running src/mcp/anchor.mjs), then the runtime: the
+  // relocated vendor host, or cua's own host on cua's Node.
+  const psText = processTable();
+  const tree = descendants(psText, server.pid).filter(p => p.pid !== server.pid);
   const hostNode = realpathSync(process.execPath);
   const anchor = tree.find(p => p.ppid === server.pid);
   runtimeTree = tree.filter(p => p !== anchor);
   const pgid = pid => Number(sh('ps', ['-o', 'pgid=', '-p', String(pid)]).trim());
   const label = executable => executable.replace(runtime.root, '$RUNTIME').replace(hostNode, '<host node>').replace(homedir(), '~');
+  const ownHost = selection?.host === 'cua';
+  const cuaNodes = cuaNodesOf({hostNode, selection});
   const classification = classifyProcesses(runtimeTree, {relocatedRoot: runtime.root, systemSandbox: SYSTEM_SANDBOX});
+  const ownTree = ownHost ? classifyOwnHostTree(runtimeTree, {cuaNodes, systemSandbox: [SEATBELT_EXEC], vendorRoot: runtime.root}) : null;
   report.processes = {
+    ...(selection ? {host: selection.host} : {}),
     ancestry: [{pid: server.pid, ppid: process.pid, pgid: pgid(server.pid), executable: '<host node> bin/cua.mjs serve'},
       ...tree.map(p => ({pid: p.pid, ppid: p.ppid, pgid: pgid(p.pid), executable: label(p.executable)}))],
-    allExecutablesRelocated: classification.allExecutablesRelocated,
+    // The vendor host's rule (every runtime process runs from the installed release); cua's own host runs none from it.
+    allExecutablesRelocated: ownHost ? null : classification.allExecutablesRelocated,
+    // The rule of the host that served: the vendor host's above, or cua's own host's (cua's Node and sandbox-exec only).
+    allExecutablesExpected: ownHost ? ownTree.allExecutablesExpected : classification.allExecutablesRelocated,
     desktopRuntimePaths: classification.desktopRuntimePaths.map(p => p.executable),
   };
   check(anchor?.executable === hostNode && runtimeTree.every(p => p.ppid !== server.pid), 'the runtime is not started under the server\'s anchor');
   check(anchor && outsideAnchorGroup(tree, {anchorPid: anchor.pid, pgidOf: pgid, systemSandbox: SYSTEM_SANDBOX}).length === 0, 'a runtime process is outside the anchor\'s process group');
   check(classification.desktopRuntimePaths.length === 0, 'an installed-desktop runtime path served this connection');
-  check(classification.allExecutablesRelocated, `not every runtime process runs from the installed release: ${runtimeTree.filter(p => !p.executable.startsWith(runtime.root + '/') && !SYSTEM_SANDBOX.includes(p.executable)).map(p => `pid ${p.pid} ${label(p.executable)}`).join(', ') || 'no runtime process found'}`);
+  if (ownHost) check(ownTree.allExecutablesExpected, `not every process of cua's own host runs cua's Node: ${ownTree.unexpected.map(p => `pid ${p.pid} ${label(p.executable)}`).join(', ') || 'no runtime process found'}${ownTree.vendorRuntime.length ? ` (node_repl or the vendor's Node from the installed release: ${ownTree.vendorRuntime.map(p => p.pid).join(', ')})` : ''}`);
+  else check(classification.allExecutablesRelocated, `not every runtime process runs from the installed release: ${runtimeTree.filter(p => !p.executable.startsWith(runtime.root + '/') && !SYSTEM_SANDBOX.includes(p.executable)).map(p => `pid ${p.pid} ${label(p.executable)}`).join(', ') || 'no runtime process found'}`);
   report.nativeHelper = nativeSocketStep(process.platform) ?? (existsSync(NATIVE_SOCKET) ? socketHolders(sh('lsof', ['-F', 'pc', NATIVE_SOCKET])) : [])
     .map(h => ({pid: h.pid, executable: sh('ps', ['-o', 'comm=', '-p', String(h.pid)]).trim()}))
     .map(h => ({pid: h.pid, executable: h.executable.replace(homedir(), '~'), origin: h.executable.startsWith(runtime.root) ? 'pinned runtime' : 'another installation (not started or stopped by cua)'}));
+
+  // cua's engine: who holds the approved engine's socket, and what this session started from cua's roots.
+  if (engineFacts) {
+    const {executable: engineExecutable, socket, directory} = engineFacts;
+    const executables = new Map(psRows(psText).map(p => [p.pid, p.executable]));
+    const executableOf = pid => executables.get(pid) ?? sh('ps', ['-o', 'comm=', '-p', String(pid)]).trim();
+    // Every Unix socket lsof can see, so the clients are found by their peer address: a client's end is unbound, and a
+    // listing filtered by the socket's path shows the engine alone.
+    const ends = unixSocketEnds(unixSockets(sh('/usr/sbin/lsof', ['-U', '-F', 'pcfdn'])), socket);
+    // On the vendor host (comparison A's lane) the relay that connects is the runtime's own Node or node_repl.
+    const vendorRelay = ownHost ? [] : [runtime.paths.node, runtime.paths.nodeRepl];
+    const sockets = engineSocketPeers(ends, {engineExecutable, executableOf, requireEngine: Boolean(options.bind),
+      mayConnect: executable => cuaNodes.includes(executable) || vendorRelay.includes(executable)});
+    const roots = cuaRootProcesses({before: psBefore, during: psRows(psText), roots: [runtime.home, directory], allowed: [engineExecutable, ...cuaNodes, ...vendorRelay]});
+    const show = p => ({pid: p.pid, executable: label(p.executable)});
+    Object.assign(report.engine, {
+      socket: {
+        bound: [...new Set(ends.bound.map(e => e.pid))].map(pid => ({...show({pid, executable: executableOf(pid)}), role: sockets.engine.includes(pid) ? 'engine' : 'unexpected'})),
+        clients: [...new Set(ends.clients.map(e => e.pid))].map(pid => ({...show({pid, executable: executableOf(pid)}), role: sockets.clients.includes(pid) ? 'client' : 'unexpected'})),
+        unseenClients: ends.unseen,
+      },
+      startedFromCuaRoots: roots.started.map(show),
+      runningBefore: roots.preExisting.map(show),
+    });
+    for (const problem of [...sockets.problems, ...roots.problems]) check(false, problem.replace(runtime.root, '$RUNTIME').replace(homedir(), '~'));
+  }
 
   const ended = await call('end_task');
   report.task.end = ended.structuredContent;
@@ -170,6 +310,7 @@ try {
   report.task.repeatEnd = (await call('end_task')).structuredContent?.status;
   check(report.task.repeatEnd === 'noop', 'a repeated end_task after success was not a no-op');
   const next = await call('js', {code: 'nodeRepl.write("cua-verify next task")', title: 'cua verify'}, 60_000);
+  attest(next);
   report.task.nextTaskDiffers = taskOf(next) !== null && taskOf(next) !== taskId;
   check(report.task.nextTaskDiffers, 'work after end_task did not start a new task');
   check((await call('end_task')).structuredContent?.status === 'ended', 'the second task did not end');
@@ -198,5 +339,4 @@ try {
   if (others.length) report.runNote = `${others.length} other entr${others.length === 1 ? 'y' : 'ies'} appeared under ${runDir} while verify ran (another cua serve or listing in this home; not counted): ${others.join(', ')}`;
 }
 
-console.log(JSON.stringify(report, null, 1));
-process.exitCode = problems.length ? 1 : 0;
+finish();

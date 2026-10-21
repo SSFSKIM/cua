@@ -48,7 +48,8 @@
 //                 text recorded; the owner's source and preference restored (the put-back verifies them) and the
 //                 owner's clipboard's type list unchanged. Inside the Korean window, the HID composition row (MAWS
 //                 P4-B2, a measurement): with the run's TextEdit frontmost and key, r then k posted at the HID tap by
-//                 `--probe keystroke`, once with each key's string and once `--key-codes-only`, each variant from an
+//                 `--probe keystroke`, once with each key's string, once `--key-codes-only` (the layout's key codes)
+//                 and once `--ansi-keys` (the fixed physical keys, as the vendor's pressKey), each variant from an
 //                 emptied document, its value read back and classified (가, rk, ㄱㅏ or other), its probe JSON, source
 //                 and layout recorded; the log names each variant's reading (compositionSummary).
 //   input-source  `--probe input-source` through the approved bundle: the owner's source and per-context preference
@@ -377,8 +378,8 @@ export const DRY_ANSWERS = Object.freeze({
     click: {ok: true, route: 1, posted: true}, effect: true}])), activations: []},
   'live-device.mjs paste': {steps: {pasteAlert: false, precondition: {selected: true, readBack: 'com.apple.inputmethod.Korean.2SetKorean', perContextOff: true, met: true},
     inputSource: {perContext: {read: true, setOff: true, restored: true}, restored: true}, clipboard: {typesUnchanged: true},
-    hidComposition: {variants: Object.fromEntries(['unicode', 'keyCodesOnly'].map(variant => [variant, {emptied: true, activated: true, source: 'com.apple.inputmethod.Korean.2SetKorean',
-      layout: {inputSourceId: 'com.apple.inputmethod.Korean.2SetKorean', keyboardLayoutId: '(the layout)'}, keys: {exitStatus: 0, output: {keyCodesOnly: variant === 'keyCodesOnly'}},
+    hidComposition: {variants: Object.fromEntries(['unicode', 'keyCodesOnly', 'ansiKeys'].map(variant => [variant, {emptied: true, activated: true, source: 'com.apple.inputmethod.Korean.2SetKorean',
+      layout: {inputSourceId: 'com.apple.inputmethod.Korean.2SetKorean', keyboardLayoutId: '(the layout)'}, keys: {exitStatus: 0, output: {mode: variant === 'unicode' ? 'typed' : variant}},
       keysUnmodified: true, reading: {reading: '(a reading)'}}]))}}, verdict: {pass: true, typeText: 'measured', finding: null}},
   'live-device.mjs enablement': {verdict: {released: true}},
   'live-device.mjs input-source': {verdict: {pass: true}},

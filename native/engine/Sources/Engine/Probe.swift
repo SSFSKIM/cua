@@ -7,9 +7,9 @@ import Foundation
 // `watch-activations`, which is resident until killed. The commands: `input-source current` (the active source, read
 // only), `input-source <id>` (selects that source, a keyboard layout or an input mode such as Korean 2-Set, and reads it
 // back; the harness saves and restores the owner's), `keystroke` (the stand-in user: HID-state events posted at the HID
-// event tap, only while the named window is frontmost, with each character's string or key codes alone;
-// KeystrokeProbe.swift), `focus` (the focused app and window, and the named window's focused value as a hash;
-// FocusProbe.swift) and `watch-activations` (every NSWorkspace activation and deactivation with its time, the probe's
+// event tap, only while the named window is frontmost, with each character's string, the layout's key codes alone or
+// the fixed ANSI keys; KeystrokeProbe.swift), `focus` (the focused app and window, and the named window's focused value
+// as a hash; FocusProbe.swift) and `watch-activations` (every NSWorkspace activation and deactivation with its time, the probe's
 // own pid printed first, so the harness can stop it and the oracles can exclude probe instances).
 enum Probe {
   static func run(_ arguments: [String]) -> Int32 {
@@ -24,7 +24,7 @@ enum Probe {
     case "watch-activations":
       return watchActivations()
     default:
-      return emit(["error": "usage: --probe input-source current|<id> | keystroke --user-pid <n> --user-bounds <x,y,w,h> [--at <unix ms>] [--key-codes-only] <text> | focus [--window <pid,x,y,w,h>] | watch-activations"],
+      return emit(["error": "usage: --probe input-source current|<id> | keystroke --user-pid <n> --user-bounds <x,y,w,h> [--at <unix ms>] [--key-codes-only|--ansi-keys] <text> | focus [--window <pid,x,y,w,h>] | watch-activations"],
                   status: 64)
     }
   }

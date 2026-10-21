@@ -12,7 +12,7 @@
 //                                      each menu item's press with M2a.2's spikeMenuActivation switch off (the default) or on
 //   paste --run <dir>                  the paste check: a plain and a Markdown paste and type_text under Korean 2-Set into
 //                                      the run's TextEdit behind the run's Finder window, then the HID composition row in
-//                                      its two variants with that TextEdit in front; the owner's clipboard compared
+//                                      its three variants with that TextEdit in front; the owner's clipboard compared
 //                                      before and after here (only whether it is the same leaves)
 //   enablement --run <dir>             two connections, one after the other, observing the run's Chrome for Testing
 //   input-source                       the owner's source and per-context preference saved, Korean 2-Set selected
@@ -299,10 +299,12 @@ const ALERT_READ_DEADLINE_MS = 5_000;
 const ALERT_TEXT_CHARS = 500;
 // The composition row's keys (MAWS P4-B2): r then k, which Korean 2-Set composes to 가; then a Return to commit.
 export const COMPOSITION_KEYS = 'rk';
-// The row's two variants, in order: each key down and up carrying its character's string (the probe's default, as
-// type_text keys), then the same key codes and flags with no string (`--key-codes-only`), whose reading comes from the
-// key codes through the input method alone.
-export const COMPOSITION_VARIANTS = Object.freeze(['unicode', 'keyCodesOnly']);
+// The row's three variants, in order: each key down and up carrying its character's string (the probe's default, as
+// type_text keys); the current layout's same key codes and flags with no string (`--key-codes-only`); and the physical
+// keys, press_key's fixed ANSI codes (r 15, k 40) with no flag and no string (`--ansi-keys`), what the vendor's pressKey
+// posted in MAWS P4-B2. The last two read what the key codes alone make through the input method.
+export const COMPOSITION_VARIANTS = Object.freeze(['unicode', 'keyCodesOnly', 'ansiKeys']);
+const VARIANT_FLAGS = Object.freeze({unicode: [], keyCodesOnly: ['--key-codes-only'], ansiKeys: ['--ansi-keys']});
 
 // Thrown to stop the paste section once something the harness must not act past is seen (an alert, a step that
 // outlived its bound); the steps so far are kept.
@@ -423,9 +425,9 @@ async function pasteSteps({record, user, client, io, screenshots, steps, userInF
 // the scene window (compositionGuard); failing it, nothing is posted. The probe re-checks the front window before
 // every key (status 4 when it is not the named one). The value is read back through the engine on the run's TextEdit
 // only, before and after a commit Return posted the same guarded way in the same variant. The probe's JSON is kept as
-// it printed it (the layout it keyed through, each press's key code, flags and string); `keysUnmodified` says whether
+// it printed it (the current layout, the mode, each press's key code, flags and string); `keysUnmodified` says whether
 // every press went without a modifier, since a layout that keys r and k only under one (the 2-Set Hangul layout's
-// Option layer) is not the plain keys the vendor's pressKey posts.
+// Option layer) is not the plain keys the vendor's pressKey posts, which the ANSI variant posts whatever the layout.
 async function hidComposition({record, client, io, observe, watchAlerts}) {
   const variants = {};
   for (const variant of COMPOSITION_VARIANTS) variants[variant] = await compositionVariant({variant, record, client, io, observe, watchAlerts});
@@ -443,7 +445,7 @@ async function compositionVariant({variant, record, client, io, observe, watchAl
   await watchAlerts(`before hidComposition ${variant}`);
   row.source = io.probe(['input-source', 'current'])?.id ?? null;
   row.layout = io.keyboardLayout();
-  const flags = variant === 'keyCodesOnly' ? ['--key-codes-only'] : [];
+  const flags = VARIANT_FLAGS[variant];
   const post = async text => {
     const observed = (await observe()).window;
     const top = io.frontWindow()?.topWindow ?? null;
@@ -469,10 +471,10 @@ async function compositionVariant({variant, record, client, io, observe, watchAl
   return row;
 }
 // The keystroke probe's exit status as its JSON shows it (open -W does not pass the probe's status through):
-// Probe.swift's keystroke exits 4 when the front window is not the named one (before or between keys), 5 when no layout
-// or event could be made, 64 on a usage error, 0 when every key was posted.
+// KeystrokeProbe.swift's keystroke exits 4 when the front window is not the named one (before or between keys), 5 when
+// no layout or event could be made or the variant cannot key the text, 64 on a usage error, 0 when every key was posted.
 const probeStatus = output => (output?.aborted || /front window is not the named one/.test(output?.error ?? '') ? 4
-  : /layout|could not be created/.test(output?.error ?? '') ? 5 : output?.error ? 64 : Number.isInteger(output?.units) ? 0 : null);
+  : /layout|cannot key|could not be created/.test(output?.error ?? '') ? 5 : output?.error ? 64 : Number.isInteger(output?.units) ? 0 : null);
 
 // An alert's text, read through the engine's observation of a system-alert process (alertWatch's `readable`; never any
 // other owner): no screenshot, no input, a short deadline; the static texts' and buttons' strings, joined and capped.

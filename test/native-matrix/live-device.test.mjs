@@ -768,9 +768,9 @@ function pasteDevice({clipboardAfter = null, selectKorean = true, perContext = f
     if (args[0] !== 'keystroke') return inputIo.probe(args);
     probes.push(args);
     if (screen.front !== TEXTEDIT) return {error: 'the front window is not the named one; nothing was sent'};
-    const text = args.at(-1), keyCodesOnly = args.includes('--key-codes-only');
-    client.state.value += text === '\n' ? '\n' : compose(text, {keyCodesOnly});
-    return {pid: 31, layout: 'com.apple.keylayout.2SetHangul', keyCodesOnly, presses: [...text].map(c => ({keyCode: c.charCodeAt(0), flags: pressFlags, unicode: keyCodesOnly ? null : c})),
+    const text = args.at(-1), mode = args.includes('--key-codes-only') ? 'keyCodesOnly' : args.includes('--ansi-keys') ? 'ansiKeys' : 'typed';
+    client.state.value += text === '\n' ? '\n' : compose(text, {mode});
+    return {pid: 31, layout: 'com.apple.keylayout.2SetHangul', mode, presses: [...text].map(c => ({keyCode: c.charCodeAt(0), flags: mode === 'ansiKeys' ? 0 : pressFlags, unicode: mode === 'typed' ? c : null})),
       postedAt: 1, units: [...text].length, chars: text.length};
   };
   const io = deviceIo({...inputIo, probe, savedInputSource: file, clipboard: () => clipboard, windows: () => structuredClone(screen.windows),
@@ -815,27 +815,29 @@ test('pasteCheck: plain and Markdown pastes behind the user window, type_text pa
   assert.doesNotMatch(JSON.stringify(out), /Line 0|owner digest|private subject|Mail|com\.apple\.mail/, 'no document text, no clipboard content, nothing of the owner\'s windows');
 });
 
-// Unicode strings first (today's keys), then key codes alone; each variant's reading its own.
-const KEYED = (keys, {keyCodesOnly}) => (keys !== 'rk' ? keys : keyCodesOnly ? 'rk' : '가');
+// Unicode strings first (today's keys), then the layout's key codes alone, then the fixed ANSI keys; each variant's
+// reading its own.
+const KEYED = (keys, {mode}) => (keys !== 'rk' ? keys : {typed: '가', keyCodesOnly: 'rk', ansiKeys: 'ㄱㅏ'}[mode]);
 
-test('hidComposition: inside the Korean window, two variants, each from an emptied document with TextEdit in front, r and k posted under the guard, read back before and after the commit', async () => {
+test('hidComposition: inside the Korean window, three variants, each from an emptied document with TextEdit in front, r and k posted under the guard, read back before and after the commit', async () => {
   const device = pasteDevice({compose: KEYED});
   const {hidComposition: row} = (await pasteRun(device)).steps;
   assert.deepEqual(Object.keys(row.variants), [...COMPOSITION_VARIANTS]);
-  assert.deepEqual(COMPOSITION_VARIANTS, ['unicode', 'keyCodesOnly']);
+  assert.deepEqual(COMPOSITION_VARIANTS, ['unicode', 'keyCodesOnly', 'ansiKeys']);
   const b = TEXTEDIT.window.bounds, named = ['--user-pid', String(TEXTEDIT.pid), '--user-bounds', `${b.x},${b.y},${b.width},${b.height}`];
   assert.deepEqual(device.probes, [['keystroke', ...named, 'rk'], ['keystroke', ...named, '\n'],
-    ['keystroke', '--key-codes-only', ...named, 'rk'], ['keystroke', '--key-codes-only', ...named, '\n']]);
+    ['keystroke', '--key-codes-only', ...named, 'rk'], ['keystroke', '--key-codes-only', ...named, '\n'],
+    ['keystroke', '--ansi-keys', ...named, 'rk'], ['keystroke', '--ansi-keys', ...named, '\n']]);
   const empties = device.client.calls.filter(c => c.method === 'set_value');
-  assert.deepEqual(empties.map(c => c.args.value), ['', ''], 'the document emptied before each variant');
-  for (const [variant, flag, composed] of [['unicode', '', '가'], ['keyCodesOnly', '--key-codes-only ', 'rk']]) {
+  assert.deepEqual(empties.map(c => c.args.value), ['', '', ''], 'the document emptied before each variant');
+  for (const [variant, flag, mode, composed] of [['unicode', '', 'typed', '가'], ['keyCodesOnly', '--key-codes-only ', 'keyCodesOnly', 'rk'], ['ansiKeys', '--ansi-keys ', 'ansiKeys', 'ㄱㅏ']]) {
     const one = row.variants[variant];
     assert.equal(one.emptied, true, variant);
     assert.equal(one.activated, true, variant);
     assert.equal(one.source, KOREAN_2SET, variant);
     assert.deepEqual(one.layout, {inputSourceId: KOREAN_2SET, keyboardLayoutId: 'com.apple.keylayout.2SetHangul'}, variant);
     assert.equal(one.keys.invocation, `cua-engine --probe keystroke ${flag}--user-pid ${TEXTEDIT.pid} --user-bounds ${b.x},${b.y},${b.width},${b.height} rk`);
-    assert.equal(one.keys.output.keyCodesOnly, variant === 'keyCodesOnly', 'the probe\'s JSON as it printed it');
+    assert.equal(one.keys.output.mode, mode, 'the probe\'s JSON as it printed it');
     assert.equal(one.keys.output.layout, 'com.apple.keylayout.2SetHangul');
     assert.equal(one.keys.exitStatus, 0);
     assert.equal(one.keys.frontChangedAfter, false);
@@ -852,9 +854,9 @@ test('hidComposition: inside the Korean window, two variants, each from an empti
   }
 });
 
-test('hidComposition: keys the layout put under a modifier read as not unmodified', async () => {
+test('hidComposition: keys the layout put under a modifier read as not unmodified; the fixed ANSI keys never are', async () => {
   const {variants} = (await pasteRun(pasteDevice({pressFlags: 524288}))).steps.hidComposition;
-  for (const variant of COMPOSITION_VARIANTS) assert.equal(variants[variant].keysUnmodified, false, variant);
+  assert.deepEqual(COMPOSITION_VARIANTS.map(variant => variants[variant].keysUnmodified), [false, false, true]);
 });
 
 test('hidComposition: a variant whose document could not be emptied posts nothing and says so; the other still reads', async () => {
@@ -868,7 +870,8 @@ test('hidComposition: a variant whose document could not be emptied posts nothin
   assert.deepEqual(variants.unicode.reading, {reading: '가'});
   assert.equal(variants.keyCodesOnly.emptied, false);
   assert.equal(variants.keyCodesOnly.skipped, 'the scene document could not be emptied');
-  assert.equal(device.probes.length, 2, 'no key-codes-only key on a document that was not empty');
+  assert.deepEqual(device.probes.map(args => args[1]), ['--user-pid', '--user-pid', '--ansi-keys', '--ansi-keys'], 'no key-codes-only key on a document that was not empty');
+  assert.deepEqual(variants.ansiKeys.reading, {reading: 'ㄱㅏ'}, 'the next variant empties its own document and reads');
 });
 
 test('hidComposition: with TextEdit not in front nothing is posted, each variant says why', async () => {

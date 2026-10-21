@@ -10,6 +10,7 @@ import {FIRST, parseCell} from '../native-baseline/cells.mjs';
 import {attestEngine} from '../native-baseline/engine.mjs';
 import {classifyHelpers, preflightScript, serveCommand} from '../native-baseline/remote.mjs';
 import {hostAttestationOf} from '../native-baseline.mjs';
+import {SCENES} from '../repl-parity/scenes-mac.mjs';
 import {checkoutCli, deviceOps, isSceneApproval} from './goldens.mjs';
 import {boundedExec, journaledScript, SSH_OPTIONS} from './live.mjs';
 
@@ -94,17 +95,29 @@ export function dryOps({log, engine, approvedEngine = '/Users/owner/Library/Appl
   let pid = 500, home = '/Users/owner/cua-home';
   const step = (name, answer) => (...args) => { log(`dry: ${name} ${JSON.stringify(args.length === 1 ? args[0] : args)}`); return typeof answer === 'function' ? answer(...args) : answer; };
   const bounds = {x: 100, y: 100, width: 800, height: 600};
+  // The scenes as up made them, and the last one activated in front: what the dry reads and key guard see.
+  const records = {};
+  let front = null;
+  const reading = () => ({at: 0, frontmost: front ? {pid: front.pid, bundleId: front.bundleId, owned: true} : null,
+    topWindow: front ? {ownerPid: front.pid, number: front.window.number, bounds, owned: true} : null});
   return {
     home: step('home', '/Users/owner'),
-    scenes: step('scenes', args => ({
-      'place-chrome': {appPath: '/tmp/chrome.app'}, 'build-electron': {appPath: '/tmp/fixture.app'}, preflight: {refusals: []},
-      up: {scene: args[1], pid: ++pid, app: `/Applications/${args[1]}.app`, window: {number: pid, bounds}}, activate: {scene: args[1], ok: true},
-      down: {down: true}, frontmost: {bundleId: 'com.example.owner'},
-    })[args[0]] ?? {}),
+    scenes: step('scenes', args => {
+      switch (args[0]) {
+        case 'place-chrome': return {appPath: '/tmp/chrome.app'};
+        case 'build-electron': return {appPath: '/tmp/fixture.app'};
+        case 'preflight': return {refusals: []};
+        case 'up': return (records[args[1]] = {scene: args[1], pid: ++pid, bundleId: SCENES[args[1]].bundleId, app: `/Applications/${args[1]}.app`, window: {number: pid, bounds}});
+        case 'activate': front = records[args[1]] ?? front; return {scene: args[1], ok: true};
+        case 'down': return {down: true};
+        case 'frontmost': return {bundleId: 'com.example.owner'};
+        default: return {};
+      }
+    }),
     goldens: step('goldens', {steps: [], stopped: true}),
     live: step('live', args => ({begin: {refusals: [], frontmost: {bundleId: 'com.example.owner'}, engineStop: {stopped: true}}, watch: args[1] === 'start' ? {watching: true, pid: 1} : {activations: []},
       recover: {ok: true, putBack: {ok: true, steps: []}}})[args[0]] ?? {}),
-    matrix: step('matrix', args => (args[0] === 'read' ? {reading: {at: 0, frontmost: {pid: 0, bundleId: 'dry', owned: true}, topWindow: {ownerPid: 0, number: 0, bounds, owned: true}}, focus: {appOwned: true, appPid: 0, named: true}}
+    matrix: step('matrix', args => (args[0] === 'read' ? {reading: reading(), ...(args.includes('--focus') ? {focus: {appOwned: true, appPid: front?.pid ?? null, named: true}} : {})}
       : {found: 1, quit: 1, remaining: 0})),
     prepare: step('prepare', approvedHome => ({home: (home = approvedHome), userHome: '/Users/owner', configHome: '/tmp/config', tmpdir: '/tmp/session', admission: 'dry', engineStop: {stopped: true},
       runtimeReuse: {approvedHome: home, runtimeRoot: `${home}/runtime`}})),

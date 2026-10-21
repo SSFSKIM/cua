@@ -428,19 +428,37 @@ async function pasteSteps({record, user, client, io, screenshots, steps, userInF
 // it printed it (the current layout, the mode, each press's key code, flags and string); `keysUnmodified` says whether
 // every press went without a modifier, since a layout that keys r and k only under one (the 2-Set Hangul layout's
 // Option layer) is not the plain keys the vendor's pressKey posts, which the ANSI variant posts whatever the layout.
+//
+// The probe's keys are a user's to the engine (another process's HID events, attributed to TextEdit), so each variant's
+// posts start the engine's 5 s intervention debounce on TextEdit, during which the next variant's reset (set_value) is
+// refused and an observation does not clear the re-query flag (the spec's "User intervention"). Before every reset after
+// the first post, the row therefore waits out the debounce from the last post (COMPOSITION_QUIET_MS, bounded), then
+// takes a fresh observation, which clears the flag, and only then resets; intervention detection stays on throughout.
 async function hidComposition({record, client, io, observe, watchAlerts}) {
   const variants = {};
-  for (const variant of COMPOSITION_VARIANTS) variants[variant] = await compositionVariant({variant, record, client, io, observe, watchAlerts});
+  const posts = {lastAt: null};
+  for (const variant of COMPOSITION_VARIANTS) variants[variant] = await compositionVariant({variant, record, client, io, observe, watchAlerts, posts});
   return {variants, markedText: 'not readable: the engine\'s observation carries no AXMarkedTextRange'};
 }
+// The engine's intervention debounce (Intervention.swift interventionDebounceMs) and the margin past it the composition
+// row waits before resetting the document after a probe's keys.
+export const INTERVENTION_DEBOUNCE_MS = 5_000;
+export const COMPOSITION_QUIET_MS = INTERVENTION_DEBOUNCE_MS + 750;
 
-async function compositionVariant({variant, record, client, io, observe, watchAlerts}) {
+async function compositionVariant({variant, record, client, io, observe, watchAlerts, posts = {lastAt: null}}) {
   const app = record.app, row = {};
+  if (posts.lastAt !== null) {
+    const wait = Math.max(0, posts.lastAt + COMPOSITION_QUIET_MS - io.now());
+    if (wait > 0) await io.sleep(wait);
+    row.debounceWaitMs = wait;
+  }
   let shot = await observe();
   const emptied = await attempt(() => client.execute('set_value', {app, element: textArea(shot).token, value: ''}, {lineage: shot.lineage}));
   shot = await observe();
   row.emptied = emptied.ok && textArea(shot)?.value === '';
-  if (!row.emptied) return {...row, skipped: 'the scene document could not be emptied'};
+  if (!row.emptied) {
+    return {...row, skipped: 'the scene document could not be emptied', ...(emptied.ok ? {} : {emptyError: {errorName: emptied.errorName, message: emptied.message}})};
+  }
   row.activated = (await io.activate('textedit'))?.ok === true;
   await watchAlerts(`before hidComposition ${variant}`);
   row.source = io.probe(['input-source', 'current'])?.id ?? null;
@@ -454,7 +472,8 @@ async function compositionVariant({variant, record, client, io, observe, watchAl
     if (!guard.post) return {skipped: guard.reason, guard};
     const b = top.bounds;
     const args = ['keystroke', ...flags, '--user-pid', String(record.pid), '--user-bounds', `${b.x},${b.y},${b.width},${b.height}`, text];
-    const output = io.probe(args);
+    let output;
+    try { output = io.probe(args); } finally { posts.lastAt = io.now(); }
     const after = io.frontmost();
     const topAfter = io.frontWindow()?.topWindow ?? null;
     return {invocation: `cua-engine --probe ${args.map(a => (a === '\n' ? '"\\n"' : a)).join(' ')}`, output, exitStatus: probeStatus(output),
@@ -468,6 +487,8 @@ async function compositionVariant({variant, record, client, io, observe, watchAl
   row.commit = await post('\n');
   row.valueAfterCommit = row.commit.skipped ? null : textArea(await observe())?.value ?? null;
   row.reading = compositionReading(row.valueAfterCommit ?? row.valueBeforeCommit);
+  // Complete only when both posts went through whole: a reading of a run whose keys or commit did not is kept, labelled.
+  row.complete = row.keys.exitStatus === 0 && !row.commit.skipped && row.commit.exitStatus === 0;
   return row;
 }
 // The keystroke probe's exit status as its JSON shows it (open -W does not pass the probe's status through):

@@ -268,8 +268,10 @@ export function compositionSummary(check) {
   const row = check?.steps?.hidComposition;
   if (!row) return null;
   if (!row.variants) return `hidComposition: skipped (${row.skipped ?? 'no variants'})`;
-  const one = (name, v) => (v?.skipped ? `${name} skipped (${v.skipped})`
-    : `${name} ${v?.reading?.reading ?? 'unread'} (${v?.source ?? 'source unread'}, layout ${v?.layout?.keyboardLayoutId ?? 'unread'}, keys ${v?.keysUnmodified === true ? 'unmodified' : v?.keysUnmodified === false ? 'under a modifier' : 'unreported'})`);
+  const status = post => (!post ? 'not sent' : post.skipped ? `skipped: ${post.skipped}` : `exit ${post.exitStatus ?? 'unknown'}`);
+  const incomplete = v => (v?.complete === true ? '' : ` INCOMPLETE (keys ${status(v?.keys)}, commit ${status(v?.commit)})`);
+  const one = (name, v) => (v?.skipped ? `${name} skipped (${v.skipped}${v.emptyError ? `: ${v.emptyError.errorName ?? v.emptyError.message}` : ''})`
+    : `${name} ${v?.reading?.reading ?? 'unread'}${incomplete(v)} (${v?.source ?? 'source unread'}, layout ${v?.layout?.keyboardLayoutId ?? 'unread'}, keys ${v?.keysUnmodified === true ? 'unmodified' : v?.keysUnmodified === false ? 'under a modifier' : 'unreported'})`);
   return `hidComposition: ${Object.entries(row.variants).map(([name, v]) => one(name, v)).join('; ')}`;
 }
 
@@ -379,7 +381,7 @@ export const DRY_ANSWERS = Object.freeze({
   'live-device.mjs paste': {steps: {pasteAlert: false, precondition: {selected: true, readBack: 'com.apple.inputmethod.Korean.2SetKorean', perContextOff: true, met: true},
     inputSource: {perContext: {read: true, setOff: true, restored: true}, restored: true}, clipboard: {typesUnchanged: true},
     hidComposition: {variants: Object.fromEntries(['unicode', 'keyCodesOnly', 'ansiKeys'].map(variant => [variant, {emptied: true, activated: true, source: 'com.apple.inputmethod.Korean.2SetKorean',
-      layout: {inputSourceId: 'com.apple.inputmethod.Korean.2SetKorean', keyboardLayoutId: '(the layout)'}, keys: {exitStatus: 0, output: {mode: variant === 'unicode' ? 'typed' : variant}},
+      layout: {inputSourceId: 'com.apple.inputmethod.Korean.2SetKorean', keyboardLayoutId: '(the layout)'}, keys: {exitStatus: 0, output: {mode: variant === 'unicode' ? 'typed' : variant}}, commit: {exitStatus: 0}, complete: true,
       keysUnmodified: true, reading: {reading: '(a reading)'}}]))}}, verdict: {pass: true, typeText: 'measured', finding: null}},
   'live-device.mjs enablement': {verdict: {released: true}},
   'live-device.mjs input-source': {verdict: {pass: true}},

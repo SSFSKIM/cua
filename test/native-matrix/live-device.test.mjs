@@ -10,7 +10,7 @@ import {join} from 'node:path';
 import {SkyComputerUseError} from '../../src/services/engine/protocol.mjs';
 import {ABC, FIRST_LINE, JOURNAL_FILE, KOREAN_2SET, PASTE_TARGETS, RECOVERY_BOUNDS, parseJournal} from '../../scripts/native-matrix/live-checks.mjs';
 import {
-  COMPOSITION_VARIANTS, PASTE, PASTE_DEADLINE_MS, begin, childHandle, enablementCheck, inputSourceCheck, menuCheck, minimizedCheck, pasteCheck, putBack, recover, restoreInputSource, runProbe,
+  COMPOSITION_QUIET_MS, COMPOSITION_VARIANTS, INTERVENTION_DEBOUNCE_MS, PASTE, PASTE_DEADLINE_MS, begin, childHandle, enablementCheck, inputSourceCheck, menuCheck, minimizedCheck, pasteCheck, putBack, recover, restoreInputSource, runProbe,
   saveFrontmost, saveInputSource,
 } from '../../scripts/native-matrix/live-device.mjs';
 
@@ -852,6 +852,69 @@ test('hidComposition: inside the Korean window, three variants, each from an emp
     const {variants} = (await pasteRun(pasteDevice({compose: () => composed}))).steps.hidComposition;
     for (const variant of COMPOSITION_VARIANTS) assert.deepEqual(variants[variant].reading, reading, variant);
   }
+});
+
+// The engine's intervention rule as it meets the row: the probe's keys are a user's, so each post starts a 5 s debounce
+// on TextEdit; set_value inside it is refused (still interacting), and after it only once an observation taken past it
+// has cleared the re-query flag (user changed).
+test('hidComposition: each reset after a variant\'s keys waits out the engine\'s debounce, observes, then empties; every variant reads', async () => {
+  const device = pasteDevice({compose: KEYED});
+  let t = 0, lastPost = null, flag = false;
+  const resets = [];
+  device.io.now = () => t;
+  device.io.sleep = async ms => { t += ms; };
+  const probe = device.io.probe;
+  device.io.probe = args => { const out = probe(args); if (args[0] === 'keystroke') { lastPost = t; flag = true; } t += 50; return out; };
+  device.client.execute = (inner => async (method, args, options) => {
+    t += 10;
+    if (method === 'get_app_state' && lastPost !== null && t >= lastPost + INTERVENTION_DEBOUNCE_MS) flag = false;
+    if (method === 'set_value' && lastPost !== null) {
+      resets.push({sinceLastPost: t - lastPost});
+      if (t < lastPost + INTERVENTION_DEBOUNCE_MS) throw engineError('userIntervened', "The user is still interacting with 'TextEdit'. Wait 5 seconds and retry.");
+      if (flag) throw engineError('userIntervened', "The user changed 'TextEdit'. Get the app's state again.");
+    }
+    return inner(method, args, options);
+  })(device.client.execute);
+  const {variants} = (await pasteRun(device)).steps.hidComposition;
+  for (const [variant, composed] of [['unicode', '가'], ['keyCodesOnly', 'rk'], ['ansiKeys', 'ㄱㅏ']]) {
+    assert.equal(variants[variant].emptied, true, variant);
+    assert.deepEqual(variants[variant].reading, {reading: composed}, variant);
+    assert.equal(variants[variant].complete, true, variant);
+  }
+  assert.equal(variants.unicode.debounceWaitMs, undefined, 'nothing to wait for before the first post');
+  assert.ok(variants.keyCodesOnly.debounceWaitMs > 0 && variants.ansiKeys.debounceWaitMs > 0);
+  assert.equal(resets.length, 2);
+  assert.ok(resets.every(r => r.sinceLastPost >= INTERVENTION_DEBOUNCE_MS), JSON.stringify(resets));
+  assert.ok(COMPOSITION_QUIET_MS > INTERVENTION_DEBOUNCE_MS);
+});
+
+test('hidComposition: a reset the engine still refuses is kept as the variant\'s error, and nothing is posted on that document', async () => {
+  const device = pasteDevice({compose: KEYED});
+  let posted = false;
+  const probe = device.io.probe;
+  device.io.probe = args => { if (args[0] === 'keystroke') posted = true; return probe(args); };
+  device.client.execute = (inner => async (method, args, options) => {
+    if (method === 'set_value' && posted) throw engineError('userIntervened', "The user is still interacting with 'TextEdit'. Wait 5 seconds and retry.");
+    return inner(method, args, options);
+  })(device.client.execute);
+  const {variants} = (await pasteRun(device)).steps.hidComposition;
+  assert.equal(variants.unicode.complete, true);
+  for (const variant of ['keyCodesOnly', 'ansiKeys']) {
+    assert.equal(variants[variant].skipped, 'the scene document could not be emptied', variant);
+    assert.equal(variants[variant].emptyError.errorName, 'userIntervened', variant);
+  }
+  assert.equal(device.probes.length, 2, 'only the first variant\'s keys and commit');
+});
+
+test('hidComposition: a commit that was not posted leaves the variant incomplete, its reading the value before the commit', async () => {
+  const device = pasteDevice({compose: KEYED});
+  device.io.probe = (inner => args => (args[0] === 'keystroke' && args.at(-1) === '\n' ? {error: 'the front window is not the named one; nothing was sent'} : inner(args)))(device.io.probe);
+  const {variants} = (await pasteRun(device)).steps.hidComposition;
+  for (const variant of COMPOSITION_VARIANTS) {
+    assert.equal(variants[variant].complete, false, variant);
+    assert.equal(variants[variant].commit.exitStatus, 4, variant);
+  }
+  assert.deepEqual(variants.unicode.reading, {reading: '가'});
 });
 
 test('hidComposition: keys the layout put under a modifier read as not unmodified; the fixed ANSI keys never are', async () => {

@@ -223,6 +223,7 @@ const variantRow = (mode, value) => ({emptied: true, activated: true, source: 'c
   layout: {inputSourceId: 'com.apple.inputmethod.Korean.2SetKorean', keyboardLayoutId: 'com.apple.keylayout.ABC'},
   keys: {invocation: `cua-engine --probe keystroke ${{typed: '', keyCodesOnly: '--key-codes-only ', ansiKeys: '--ansi-keys '}[mode]}… rk`, exitStatus: 0, frontChangedAfter: false,
     output: {pid: 31, layout: 'com.apple.keylayout.ABC', mode, presses: [{keyCode: 15, flags: 0, unicode: mode === 'typed' ? 'r' : null}, {keyCode: 40, flags: 0, unicode: mode === 'typed' ? 'k' : null}], postedAt: 1, units: 2, chars: 2}},
+  commit: {exitStatus: 0, frontChangedAfter: false}, complete: true,
   keysUnmodified: true, valueBeforeCommit: value, valueAfterCommit: `${value}\n`, reading: {reading: value}});
 const COMPOSED = {steps: {hidComposition: {variants: {unicode: variantRow('typed', '가'), keyCodesOnly: variantRow('keyCodesOnly', 'rk'), ansiKeys: variantRow('ansiKeys', '가')}}}, verdict: {pass: true}};
 
@@ -242,6 +243,17 @@ test('compositionSummary: each variant\'s reading or why it did not read; nothin
   'hidComposition: unicode skipped (front app not the scene); keyCodesOnly other (com.apple.inputmethod.Korean.2SetKorean, layout com.apple.keylayout.ABC, keys under a modifier)');
   assert.equal(compositionSummary({steps: {}}), null);
   assert.equal(compositionSummary(undefined), null);
+});
+
+test('compositionSummary: a variant whose keys or commit did not go through whole is labelled incomplete, with each post\'s status; a skip names the reset\'s error', () => {
+  const keysFailed = {...variantRow('ansiKeys', 'ㄱ'), keys: {...variantRow('ansiKeys', 'ㄱ').keys, exitStatus: 4}, reading: {reading: 'other', verbatim: 'ㄱ\n'}, complete: false};
+  const commitSkipped = {...variantRow('keyCodesOnly', 'rk'), commit: {skipped: 'front app not the scene'}, valueAfterCommit: null, complete: false};
+  const line = compositionSummary({steps: {hidComposition: {variants: {unicode: variantRow('typed', '가'), keyCodesOnly: commitSkipped, ansiKeys: keysFailed}}}});
+  assert.match(line, /unicode 가 \(/, 'a complete variant reads as before');
+  assert.match(line, /keyCodesOnly rk INCOMPLETE \(keys exit 0, commit skipped: front app not the scene\)/);
+  assert.match(line, /ansiKeys other INCOMPLETE \(keys exit 4, commit exit 0\) \(/);
+  const unemptied = compositionSummary({steps: {hidComposition: {variants: {unicode: {emptied: false, skipped: 'the scene document could not be emptied', emptyError: {errorName: 'userIntervened', message: 'x'}}}}}});
+  assert.equal(unemptied, 'hidComposition: unicode skipped (the scene document could not be emptied: userIntervened)');
 });
 
 test('menu: a vendor lane that fails still closes its serve, cleans the vendor home and puts back', async () => {

@@ -58,3 +58,10 @@ test('a numeric line inside a value is never renumbered away', () => {
   const tabbed = n => `Window: "w", App: A.\n0 standard window w\n\t1 text area, Value: doc\n\t${n} apples\n\t3 button After\n`;
   assert.notDeepEqual(kinds(compare(tabbed(200), tabbed(201))), []);
 });
+
+test('an index is its digits as printed: leading zeros and numbers beyond the safe integers are never coerced alike', () => {
+  const doc = first => `Window: "w", App: A.\n0 standard window w\n\t1 text area, Value: doc\n${first}\n\t3 button After\n`;
+  assert.notDeepEqual(kinds(compare(doc('200 apples'), doc('0200 apples'))), []);
+  assert.notDeepEqual(kinds(compare(doc('9007199254740992 apples'), doc('9007199254740993 apples'))), []);
+  assert.deepEqual(kinds(compare(doc('9007199254740993 apples'), doc('9007199254740993 apples'))), []);
+});

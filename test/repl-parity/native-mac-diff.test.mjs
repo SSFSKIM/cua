@@ -150,6 +150,11 @@ test('numeric lines inside a multi-line value are compared with their numbers, n
   assert.notEqual(changed.summary, '0 unexpected differences');
   assert.ok(changed.differences.every(d => d.scene === 'textedit' && d.golden === 'full'));
   assert.equal(judge(document(laneTexts('vendor'), '200 apples', '999 oranges'), document(laneTexts('cua'), '200 apples', '999 oranges')).summary, '0 unexpected differences');
+  // The digits as printed: a leading zero, or a number beyond the safe integers, is another text.
+  for (const [vendorLine, cuaLine] of [['200 apples', '0200 apples'], ['9007199254740992 apples', '9007199254740993 apples']]) {
+    const report = judge(document(laneTexts('vendor'), vendorLine, '999 oranges'), document(laneTexts('cua'), cuaLine, '999 oranges'));
+    assert.notEqual(report.summary, '0 unexpected differences', `${vendorLine} against ${cuaLine}`);
+  }
   // A declared added control shifting the later indexes by one, the value's number one more on cua's side: never equal.
   const added = {scene: 'textedit', golden: 'full', kind: 'added', fault: 'departure', head: 'button Extra control | ', decisionLog: '- Decision (2026-10-18, verification call at authoring)', cause: 'test'};
   const cua = laneTexts('cua');

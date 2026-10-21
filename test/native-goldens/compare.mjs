@@ -36,7 +36,8 @@ const DRIFT = [[/127\.0\.0\.1:\d+/g, '127.0.0.1:⟨port⟩']];
 
 // A text as {header, items: [{mark, depth, index, rest}], trailer: {kind, text} | null, removed: string | null,
 // unparsed: [line]}. Every line shaped as an element line (`<tabs><index> `, in a diff `~` or `+` first) opens an item;
-// any other line continues the last item's (`rest`: its line after the index, then its continuation lines). `unparsed`
+// any other line continues the last item's (`rest`: its line after the index, then its continuation lines; `index`: the
+// index's digits as printed, compared as text, never as a number, which would make `0200` and `200` alike). `unparsed`
 // holds the lines before the first item that are none of the text's kind (a full tree read as a diff, say), which a
 // comparison reports rather than drops. The trailer runs to the end and is kept whole.
 export function parse(text, {kind}) {
@@ -55,7 +56,7 @@ export function parse(text, {kind}) {
     const removed = /^Removed element IDs: (.*)$/.exec(line);
     if (removed && kind === 'diff' && !items.length && out.removed === null) { out.removed = removed[1]; continue; }
     const match = (kind === 'diff' ? /^([~+])(\t*)(\d+) (.*)$/ : /^()(\t*)(\d+) (.*)$/).exec(line);
-    if (match) items.push({mark: match[1], depth: match[2].length, index: Number(match[3]), rest: match[4]});
+    if (match) items.push({mark: match[1], depth: match[2].length, index: match[3], rest: match[4]});
     else if (items.length) items.at(-1).rest += `\n${line}`;   // a multi-line value's continuation
     else out.unparsed.push(line);
   }

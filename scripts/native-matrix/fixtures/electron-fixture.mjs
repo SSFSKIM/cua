@@ -37,6 +37,9 @@ export const FIXTURE_CONTROLS = Object.freeze([
 ].map(Object.freeze));
 // The side-effect counters' file in the fixture's user-data directory (./electron/counters.js), read by the harness.
 export const FIXTURE_COUNTERS_FILE = 'cua-fixture-counters.json';
+// The fixture's record of Chromium's accessibility mode in its user-data directory (./electron/main.js): JSON lines
+// {at, enabled, source}, read by the enablement cell.
+export const FIXTURE_ACCESSIBILITY_FILE = 'cua-fixture-accessibility.jsonl';
 // The fixed state's values, which the method matrix reads back against.
 export const FIXTURE_INITIAL = Object.freeze({text: '', selected: null, status: 'Pressed 0 times'});
 

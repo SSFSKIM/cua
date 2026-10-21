@@ -6,11 +6,14 @@
 // (./goldens.mjs, whose device CLI wrapper and vendor lane this reuses). Comparison A is not here: it is
 // scripts/native-baseline.mjs run/compare, whose rows now carry cua/serviceMs beside cua/engineMs.
 //
-//   live.mjs minimized    --device <alias> --out <dir> [--run <device dir>] [--dry-run]
-//   live.mjs menu         --device <alias> --approved-runtime <home> --out <dir> [--run <device dir>] [--dry-run]
-//   live.mjs paste        --device <alias> --out <dir> [--run <device dir>] [--dry-run]
-//   live.mjs input-source --device <alias> --out <dir> [--run <device dir>] [--dry-run]
-//   live.mjs enablement   --device <alias> --out <dir> [--run <device dir>] [--dry-run]
+//   live.mjs minimized        --device <alias> --out <dir> [--run <device dir>] [--dry-run]
+//   live.mjs paste            --device <alias> --out <dir> [--run <device dir>] [--dry-run]
+//   live.mjs input-source     --device <alias> --out <dir> [--run <device dir>] [--dry-run]
+//   live.mjs route4           --device <alias> --out <dir> [--run <device dir>] [--dry-run]
+//   live.mjs minimized-select --device <alias> --out <dir> [--run <device dir>] [--dry-run]
+//   live.mjs enablement       --device <alias> --out <dir> [--run <device dir>] [--dry-run]
+//   live.mjs menu             --device <alias> --approved-runtime <home> --out <dir> [--run <device dir>] [--dry-run]
+//   live.mjs hscroll          --device <alias> --approved-runtime <home> --out <dir> [--run <device dir>] [--dry-run]
 //   live.mjs cleanup      --device <alias> [--run <device dir>] [--preparation <dir>/preparation.json] [--out <dir>] [--dry-run]
 //
 // Every command but cleanup:
@@ -34,13 +37,12 @@
 //                 reason), a refused synthesized click and element scroll, set_value and select_text acting with no
 //                 click posted, then type_text and ⌘A recorded (did the value change, did the selection become the
 //                 whole value), each outcome's consequence stated apart, the window restored.
-//   menu          the run's TextEdit behind the run's Finder window: Edit > Select All, and Format > Font > Bold with the
-//                 first line selected, each through the menu-bar click (the record) and an observation (its enabled
-//                 state), an element click, and an observation (its effect); on cua's engine twice, M2a.2's
-//                 spikeMenuActivation off then on (each item's route and activationGuardMs recorded), then on the
-//                 vendor's, each lane on a fresh TextEdit in the same state, the frontmost process read after each
-//                 vendor action and an activation watcher around every lane; the setting verdict names which switch
-//                 setting works, so the default is set from the result.
+//   menu          (a residue cell) the run's TextEdit behind the run's Finder window: Edit > Select All, and Format >
+//                 Font > Bold with the first line selected, each through the menu-bar click (the record, under which
+//                 the engine holds route 3's fake activation) and an observation (its enabled state), an element click,
+//                 and an observation (its effect); on cua's engine as built, then on the vendor's on a fresh TextEdit
+//                 in the same state, the frontmost process read after each vendor action and an activation watcher
+//                 around both lanes; judged by enabled state and effect, compared item by item.
 //   paste         M2a.3 on the run's TextEdit behind the run's Finder window: a plain and a Markdown paste, each over a
 //                 selected line, and type_text under Korean 2-Set (the paste route; the per-context input preference
 //                 turned off for it when it read on), each read back; the user window in front throughout; a system
@@ -54,9 +56,19 @@
 //                 and layout recorded; the log names each variant's reading (compositionSummary).
 //   input-source  `--probe input-source` through the approved bundle: the owner's source and per-context preference
 //                 saved, Korean 2-Set selected, read back by a second probe, both restored (and again by put-back).
-//   enablement    the run's Chrome for Testing observed by one connection, which closes, then by a second: released when
-//                 each connection's first observation reads the attribute false (timings.enablementPrior) and the
-//                 first sets it.
+//   enablement    (a residue cell) the run's Electron fixture observed by one connection, which closes, then by a
+//                 second: released when the fixture's own record of Chromium's mode (app.isAccessibilitySupportEnabled)
+//                 turns on after each observation and off after each close; Chrome for Testing not judged (the reason
+//                 is in the result).
+//   route4        (a residue cell) the approved engine launched under a prepared home whose engine.json gives TextEdit
+//                 route 4 (the owner's file never written); a synthesized click into the run's TextEdit behind the
+//                 run's Finder window, judged by outcome, route 4, Finder and its key window back in front.
+//   minimized-select (a residue cell) select_text into the run's minimized TextEdit, the write (the text area's
+//                 AXSelectedTextRange by `--probe text-view`) told from the read (the engine's observation).
+//   hscroll       (a residue cell) the run's TextEdit on a page wider than its window behind the run's Finder window,
+//                 scrolled right one page by cua's engine, then by the vendor's on a fresh TextEdit, each read back by
+//                 the horizontal scroll bar's value.
+//   A residue cell's result.json is the native matrix's CellResult (./cell-result.mjs) with the fields below kept.
 //   cleanup       the put-back alone (and the vendor home's cleanup from a preparation.json), for a command that died.
 import {execFileSync} from 'node:child_process';
 import * as fs from 'node:fs';
@@ -70,15 +82,17 @@ import {MARKER} from '../native-baseline/cells.mjs';
 import {checkoutCli, checkVendorPreflight, connectVendorLane, controllerCheckout, deviceOps} from './goldens.mjs';
 import {BIND} from './goldens-cells.mjs';
 import {REPO_ROOT} from './goldens-install.mjs';
-import {EFFECT, MENU_BAR, MENU_ITEM, SELECT_FIRST_LINE} from './live-cells.mjs';
-import {JOURNAL_FILE, MENU_ITEMS, menuComparison, menuSettingVerdict, putBackBoundMs, recoverBoundMs} from './live-checks.mjs';
+import {EFFECT, MENU_BAR, MENU_ITEM, SCROLL_RIGHT, SELECT_FIRST_LINE} from './live-cells.mjs';
+import {JOURNAL_FILE, MENU_ITEMS, menuComparison, putBackBoundMs, recoverBoundMs} from './live-checks.mjs';
+import {CHROME_NOT_JUDGED, RESIDUE_CELLS, asCellResult, hscrollVerdict, isResidueCell, residueRows} from './residue-checks.mjs';
 import {SCENES} from '../repl-parity/scenes-mac.mjs';
 
 const SCRIPT = fileURLToPath(import.meta.url);
 const REFUSED = 2;
 export const DEFAULT_RUN = 'Library/Caches/cua-harness/native-live';
-export const COMMANDS = Object.freeze(['minimized', 'menu', 'paste', 'input-source', 'enablement', 'cleanup']);
-const MENU_ACTIVATION = Object.freeze(['off', 'on']);
+export const COMMANDS = Object.freeze(['minimized', 'paste', 'input-source', ...RESIDUE_CELLS, 'cleanup']);
+// The commands with a vendor lane (they need --approved-runtime).
+const VENDOR_LANE = Object.freeze(['menu', 'hscroll']);
 const LIVE_DEVICE = 'scripts/native-matrix/live-device.mjs';
 
 // ---- the device ---------------------------------------------------------------------------------------------------
@@ -93,7 +107,8 @@ export const SSH_OPTIONS = Object.freeze(['-o', 'ConnectTimeout=15', '-o', 'Serv
 const BOUND_MARGIN_MS = 60_000;
 const STEP_TIMEOUTS = Object.freeze({
   'live-device.mjs begin': 120_000, 'live-device.mjs minimized': 240_000, 'live-device.mjs menu': 240_000, 'live-device.mjs paste': 420_000,
-  'live-device.mjs enablement': 180_000, 'live-device.mjs input-source': 180_000, 'live-device.mjs watch': 60_000, 'live-device.mjs putback': putBackBoundMs() + BOUND_MARGIN_MS,
+  'live-device.mjs enablement': 180_000, 'live-device.mjs input-source': 180_000, 'live-device.mjs route4': 240_000,
+  'live-device.mjs minimized-select': 240_000, 'live-device.mjs hscroll': 180_000, 'live-device.mjs hscroll-read': 120_000, 'live-device.mjs watch': 60_000, 'live-device.mjs putback': putBackBoundMs() + BOUND_MARGIN_MS,
   'live-device.mjs recover': recoverBoundMs() + BOUND_MARGIN_MS, 'scenes-mac.mjs up': 180_000, 'scenes-mac.mjs down': 180_000, 'scenes-mac.mjs activate': 60_000,
   'scenes-mac.mjs frontmost': 60_000, 'prepare.mjs prepare': 300_000, 'prepare.mjs cleanup': 300_000,
 });
@@ -153,10 +168,12 @@ export async function runLive(options, io) {
   const dir = out ? resolve(out) : null;
   if (!dryRun && dir && fs.existsSync(join(dir, 'result.json'))) throw new Error(`${dir} already holds a result: choose a new --out`);
   const result = {schema: 'native-live-1', command, device, started: new Date().toISOString(), problems: [], complete: false, pass: false};
+  // A residue cell's result.json is the matrix's CellResult (./residue-checks.mjs asCellResult, the one adapter); the
+  // other checks keep native-live-1.
   const write = () => {
     if (dryRun || !dir) return;
     fs.mkdirSync(dir, {recursive: true});
-    fs.writeFileSync(join(dir, 'result.json'), `${JSON.stringify(result, null, 2)}\n`);
+    fs.writeFileSync(join(dir, 'result.json'), `${JSON.stringify(isResidueCell(command) ? asCellResult(command, result) : result, null, 2)}\n`);
   };
   const controller = io.controllerCheckout();
   result.controller = controller;
@@ -205,17 +222,19 @@ export async function runLive(options, io) {
   }
   Object.assign(result, {frontmost: begun.frontmost, engineStopAtStart: begun.engineStop});
   write();
-  log(`${command}: the owner's front app (${begun.frontmost?.bundleId ?? 'none'}) is saved on the device and the engine stopped; if this command dies, run: node scripts/native-matrix/live.mjs cleanup --device ${device} --run ${quote(run)}${command === 'menu' && dir ? ` --preparation ${quote(join(dir, 'preparation.json'))}` : ''}`);
+  log(`${command}: the owner's front app (${begun.frontmost?.bundleId ?? 'none'}) is saved on the device and the engine stopped; if this command dies, run: node scripts/native-matrix/live.mjs cleanup --device ${device} --run ${quote(run)}${VENDOR_LANE.includes(command) && dir ? ` --preparation ${quote(join(dir, 'preparation.json'))}` : ''}`);
 
   // A step boundary: a macrotask turn (so a signal's handler has run), then stop if one came.
   const checkpoint = async () => {
     await new Promise(resolve => setImmediate(resolve));
     if (interrupt.signal) throw new Error(`interrupted by ${interrupt.signal}`);
   };
-  const ctx = {ops, io, run, result, dir, dryRun, log, approvedRuntime, device, controller, checkpoint};
+  const ctx = {command, ops, io, run, result, dir, dryRun, log, approvedRuntime, device, controller, checkpoint};
   try {
     await checkpoint();
     result.check = await CHECKS[command](ctx);
+    // A residue cell's lane that stopped (cua's on the device, the vendor's through its serve) leaves the cell unfinished.
+    if (isResidueCell(command)) for (const lane of ['cua', 'vendor']) if (result.check?.[lane]?.problem) result.problems.push(`the ${lane} lane stopped: ${result.check[lane].problem}`);
     result.pass = checkPassed(command, result.check);
     const composition = command === 'paste' ? compositionSummary(result.check) : null;
     if (composition) log(`paste ${composition}`);
@@ -253,13 +272,21 @@ function finish(result, ops, run, saved) {
 export function checkPassed(command, check) {
   if (!check || check.problem) return false;
   if (command === 'minimized' || command === 'input-source') return check.verdict?.pass === true;
-  if (command === 'enablement') return check.verdict?.released === true;
   if (command === 'paste') return check.verdict?.pass === true;
-  if (command === 'menu') {
-    return MENU_ACTIVATION.every(setting => check.cua?.[setting] && !check.cua[setting].problem) && !check.vendor?.problem
-      && ['off', 'on', 'neither'].includes(check.setting?.setting);
+  // A residue cell passes when its rows do (./residue-checks.mjs; the CellResult's verdict rule, ./cell-result.mjs).
+  if (isResidueCell(command)) {
+    const rows = residueRows(command, check), valid = rows.filter(row => !row.invalid);
+    return valid.length > 0 && valid.every(row => row.ok);
   }
   return false;
+}
+
+// The residue cells' one implementation, by registry name (./residue-checks.mjs RESIDUE_CELLS), for
+// `native-matrix.mjs cell <name>`: the live command of that name, which writes the CellResult into `out`.
+// -> the command's exit code.
+export function runCell(name, options, io) {
+  if (!isResidueCell(name)) throw new Error(`${name} is not a residue cell; one of ${RESIDUE_CELLS.join(', ')}`);
+  return runLive({...options, command: name}, io);
 }
 
 // The composition row in one line: each variant's reading, the source and layout it was keyed under and whether its
@@ -275,8 +302,8 @@ export function compositionSummary(check) {
   return `hidComposition: ${Object.entries(row.variants).map(([name, v]) => one(name, v)).join('; ')}`;
 }
 
-const up = (ctx, id) => {
-  const record = ctx.ops.scenes(['up', id, '--run', ctx.run]);
+const up = (ctx, id, args = []) => {
+  const record = ctx.ops.scenes(['up', id, '--run', ctx.run, ...args]);
   if (record?.error || record?.refusals?.length) throw new Error(`${id} did not come up: ${record.error ?? record.refusals.map(r => r.message).join('; ')}`);
   return record;
 };
@@ -285,59 +312,83 @@ const activate = (ctx, id) => {
   if (!front?.ok) throw new Error(`${id} did not come to the front (${front?.reason ?? 'no answer'})`);
 };
 
+// A cell on the run's TextEdit behind the run's Finder window, run on the device as `command`.
+const behindFinder = command => async ctx => {
+  up(ctx, 'textedit'); await ctx.checkpoint(); up(ctx, 'finder'); activate(ctx, 'finder'); await ctx.checkpoint();
+  return ctx.ops.live([command, '--run', ctx.run]);
+};
+
 export const CHECKS = {
   minimized: async ctx => { up(ctx, 'textedit'); await ctx.checkpoint(); return ctx.ops.live(['minimized', '--run', ctx.run]); },
-  paste: async ctx => {
-    up(ctx, 'textedit'); await ctx.checkpoint(); up(ctx, 'finder'); activate(ctx, 'finder'); await ctx.checkpoint();
-    return ctx.ops.live(['paste', '--run', ctx.run]);
-  },
+  'minimized-select': async ctx => { up(ctx, 'textedit'); await ctx.checkpoint(); return ctx.ops.live(['minimized-select', '--run', ctx.run]); },
+  route4: behindFinder('route4'),
+  hscroll: hscrollCheck,
+  paste: behindFinder('paste'),
   'input-source': async ctx => ctx.ops.live(['input-source', '--run', ctx.run]),
-  enablement: async ctx => { up(ctx, 'chrome'); await ctx.checkpoint(); return ctx.ops.live(['enablement', '--run', ctx.run]); },
+  enablement: async ctx => {
+    up(ctx, 'electron'); await ctx.checkpoint();
+    return {...ctx.ops.live(['enablement', '--run', ctx.run]), chrome: {judged: false, reason: CHROME_NOT_JUDGED}};
+  },
   menu: menuCheck,
 };
 
-// The menu check: the vendor home prepared and its serve checked first (so a refusal comes before any scene), cua's
-// lane on the device, then the vendor's on a fresh TextEdit with the run's Finder window in front again.
-async function menuCheck(ctx) {
-  const {ops, io, run, result, dir, dryRun, controller} = ctx;
-  if (!ctx.approvedRuntime) throw new Error('menu needs --approved-runtime <home> for the vendor lane');
+// A cell with a vendor lane (menu, hscroll): the vendor home prepared and its serve checked first (so a refusal comes
+// before any scene), then `body({lane, scenes})` with `lane()` connecting the vendor serve once and binding the run's
+// TextEdit (-> js), and the serve and the vendor home cleaned up whatever happened.
+async function withVendorLane(ctx, body) {
+  const {ops, io, result, dir, dryRun, controller} = ctx;
+  if (!ctx.approvedRuntime) throw new Error(`${ctx.command} needs --approved-runtime <home> for the vendor lane`);
   const prepared = ops.prepare(ctx.approvedRuntime);
-  if (!dryRun && dir) fs.writeFileSync(join(dir, 'preparation.json'), `${JSON.stringify({device: ctx.device, prepared, run}, null, 2)}\n`, {mode: 0o600});
-  const vendor = {};
+  if (!dryRun && dir) fs.writeFileSync(join(dir, 'preparation.json'), `${JSON.stringify({device: ctx.device, prepared, run: ctx.run}, null, 2)}\n`, {mode: 0o600});
   let client = null;
   try {
     const pre = ops.preflight(prepared);
     checkVendorPreflight(pre, prepared, {commit: controller.commit, why: 'the hold runs one reviewed commit on both sides'});
     result.vendor = {home: prepared.home, release: pre.release ?? null};
-    let textedit = up(ctx, 'textedit');
-    const finder = up(ctx, 'finder');
-    // A fresh TextEdit (the run's document rewritten) before each lane after the first, so every lane starts alike.
-    const fresh = why => {
-      const down = ops.scenes(['down', 'textedit', '--run', run]);
-      if (!down?.down) throw new Error(`the run's TextEdit did not come down for ${why}`);
-      textedit = up(ctx, 'textedit');
+    const lane = async textedit => {
+      const stderrFile = join(fs.mkdtempSync(join(tmpdir(), 'cua-live-serve-')), 'serve-stderr.txt');
+      let js;
+      ({client, js} = await connectVendorLane({ops, pre, prepared, connect: io.connect, bundleIds: [SCENES.textedit.bundleId], meta: result, stderrFile}));
+      const bound = await js(BIND('textedit', textedit.app));
+      if (!bound.ok) throw new Error(`the vendor could not bind the run's TextEdit: ${bound.error}`);
+      return js;
     };
-    // cua's lane twice: M2a.2's spikeMenuActivation off (the default), then on.
-    const cua = {};
-    for (const setting of MENU_ACTIVATION) {
-      await ctx.checkpoint();
-      if (setting !== MENU_ACTIVATION[0]) fresh(`cua's lane with the switch ${setting}`);
-      activate(ctx, 'finder');
-      cua[setting] = ops.live(['menu', '--run', run, '--menu-activation', setting]);
+    return await body(lane);
+  } finally {
+    if (client) {
+      try { await client.call('end_task'); } catch {}
+      try { await client.close(); } catch {}
     }
+    try { result.preparationCleanup = ops.cleanup(prepared); if (!dryRun && dir) fs.rmSync(join(dir, 'preparation.json'), {force: true}); }
+    catch (error) { result.preparationCleanup = {removed: false, error: error.message}; result.problems.push(`the vendor home's cleanup failed: ${error.message}`); }
+  }
+}
+// The run's TextEdit brought down and up again (its document rewritten), so the vendor's lane starts as cua's did.
+const freshTextEdit = (ctx, why, args = []) => {
+  const down = ctx.ops.scenes(['down', 'textedit', '--run', ctx.run]);
+  if (!down?.down) throw new Error(`the run's TextEdit did not come down for ${why}`);
+  return up(ctx, 'textedit', args);
+};
 
-    // The vendor's lane on the same scene state, Finder in front.
+// The menu cell: cua's lane (the held activation, on the device), then the vendor's on a fresh TextEdit in the same
+// state, the run's Finder window in front for both; the vendor's frontmost process read after each of its actions and
+// the activation watcher around its lane.
+async function menuCheck(ctx) {
+  const {ops, run} = ctx;
+  return withVendorLane(ctx, async lane => {
+    up(ctx, 'textedit');
+    const finder = up(ctx, 'finder');
     await ctx.checkpoint();
-    fresh('the vendor lane');
-    const stderrFile = join(fs.mkdtempSync(join(tmpdir(), 'cua-live-serve-')), 'serve-stderr.txt');
-    let js;
-    ({client, js} = await connectVendorLane({ops, pre, prepared, connect: io.connect, bundleIds: [SCENES.textedit.bundleId], meta: result, stderrFile}));
-    const bound = await js(BIND('textedit', textedit.app));
-    if (!bound.ok) throw new Error(`the vendor could not bind the run's TextEdit: ${bound.error}`);
+    activate(ctx, 'finder');
+    const cua = ops.live(['menu', '--run', run]);
+    await ctx.checkpoint();
+    const textedit = freshTextEdit(ctx, 'the vendor lane');
+    const js = await lane(textedit);
     const front = () => {
       const now = ops.scenes(['frontmost']);
       return {bundleId: now?.bundleId ?? null, user: now?.pid === finder.pid, textedit: now?.pid === textedit.pid};
     };
+    const vendor = {};
     ops.live(['watch', 'start', '--run', run]);
     try {
       vendor.items = {};
@@ -357,16 +408,38 @@ async function menuCheck(ctx) {
       }
     } catch (error) { vendor.problem = error.message; }
     finally { vendor.activations = ops.live(['watch', 'stop', '--run', run]).activations ?? []; }
-    return {cua, vendor, comparison: Object.fromEntries(MENU_ACTIVATION.map(setting => [setting, menuComparison(cua[setting]?.items, vendor.items, {setting})])),
-      setting: menuSettingVerdict(cua.off?.items, cua.on?.items, vendor.problem ? null : vendor.items)};
-  } finally {
-    if (client) {
-      try { await client.call('end_task'); } catch {}
-      try { await client.close(); } catch {}
-    }
-    try { result.preparationCleanup = ops.cleanup(prepared); if (!dryRun && dir) fs.rmSync(join(dir, 'preparation.json'), {force: true}); }
-    catch (error) { result.preparationCleanup = {removed: false, error: error.message}; result.problems.push(`the vendor home's cleanup failed: ${error.message}`); }
-  }
+    return {cua, vendor, comparison: menuComparison(cua?.problem ? null : cua?.items, vendor.problem ? null : vendor.items)};
+  });
+}
+
+// The hscroll cell (the M2a vendor reading's item 6): the run's TextEdit opened on a page wider than its window
+// (scenes-mac.mjs's `wide-page` layout), behind the run's Finder window; cua's lane scrolls its text area right by one
+// page on the device, then on a fresh TextEdit the vendor's lane does through its facade, each read back by position
+// (the horizontal scroll bar's value, `--probe text-view`) before and after.
+async function hscrollCheck(ctx) {
+  const {ops, run} = ctx;
+  const wide = ['--layout', 'wide-page'];
+  return withVendorLane(ctx, async lane => {
+    up(ctx, 'textedit', wide);
+    const finder = up(ctx, 'finder');
+    await ctx.checkpoint();
+    activate(ctx, 'finder');
+    const cua = ops.live(['hscroll', '--run', run]);
+    await ctx.checkpoint();
+    const textedit = freshTextEdit(ctx, 'the vendor lane', wide);
+    const js = await lane(textedit);
+    activate(ctx, 'finder');
+    const vendor = {before: ops.live(['hscroll-read', '--run', run])};
+    try {
+      const out = await js(SCROLL_RIGHT);
+      if (!out.ok) throw new Error(`the vendor's scroll cell failed: ${out.error}`);
+      vendor.scroll = out.value;
+      vendor.after = ops.live(['hscroll-read', '--run', run, '--settle-ms', '1000']);
+      const now = ops.scenes(['frontmost']);
+      vendor.userInFront = now?.pid === finder.pid;
+    } catch (error) { vendor.problem = error.message; }
+    return {cua, vendor, verdict: hscrollVerdict(cua, vendor).verdict};
+  });
 }
 
 // ---- the dry run ---------------------------------------------------------------------------------------------------
@@ -376,14 +449,22 @@ const DRY_RELEASE = '26.928.40906-darwin-arm64';
 export const DRY_ANSWERS = Object.freeze({
   'live-device.mjs begin': {refusals: [], checkout: {dirty: false}, engine: {build: '(the approved build)'}, frontmost: {bundleId: 'com.apple.Terminal'}, engineStop: {wasRunning: false}},
   'live-device.mjs minimized': {steps: {}, verdict: {pass: true}},
-  'live-device.mjs menu': {menuActivation: false, items: Object.fromEntries(['selectAll', 'bold'].map(id => [id, {found: true, enabled: true, valid: true, clicked: true,
+  'live-device.mjs menu': {items: Object.fromEntries(['selectAll', 'bold'].map(id => [id, {found: true, enabled: true, valid: true, clicked: true,
     click: {ok: true, route: 1, posted: true}, effect: true}])), activations: []},
+  'live-device.mjs route4': {steps: {override: {read: true, routes: 1}, prepared: true, userInFrontBefore: true, topBeforeIsUser: true,
+    click: {ok: true, route: 4, posted: true, keyWindowRestored: true}, after: {frontRestored: true, topWindowRestored: true}, landed: true, activations: []}},
+  'live-device.mjs minimized-select': {steps: {expected: {before: {location: 34, length: 7}, minimized: {location: 106, length: 7}},
+    prior: {ok: true, range: {location: 34, length: 7}}, minimize: {ok: true, minimized: true},
+    select: {ok: true, route: 1, minimizedBefore: true, minimizedAfter: true}, probeMinimized: {range: {location: 106, length: 7}, minimizedBefore: true, minimizedAfter: true},
+    engineMinimized: {selectedText: 'Line 10', minimizedBefore: true, minimizedAfter: true}, restore: {ok: true, onScreen: true}, restored: {range: {location: 106, length: 7}, selectedText: 'Line 10'}}},
+  'live-device.mjs hscroll': {before: {horizontal: 0, vertical: 0}, scroll: {ok: true, route: "2'", posted: true}, after: {horizontal: 0.4, vertical: 0}, userInFront: true},
+  'live-device.mjs hscroll-read': {horizontal: 0.4, vertical: 0},
   'live-device.mjs paste': {steps: {pasteAlert: false, precondition: {selected: true, readBack: 'com.apple.inputmethod.Korean.2SetKorean', perContextOff: true, met: true},
     inputSource: {perContext: {read: true, setOff: true, restored: true}, restored: true}, clipboard: {typesUnchanged: true},
     hidComposition: {variants: Object.fromEntries(['unicode', 'keyCodesOnly', 'ansiKeys'].map(variant => [variant, {emptied: true, activated: true, source: 'com.apple.inputmethod.Korean.2SetKorean',
       layout: {inputSourceId: 'com.apple.inputmethod.Korean.2SetKorean', keyboardLayoutId: '(the layout)'}, keys: {exitStatus: 0, output: {mode: variant === 'unicode' ? 'typed' : variant}}, commit: {exitStatus: 0}, complete: true,
       keysUnmodified: true, reading: {reading: '(a reading)'}}]))}}, verdict: {pass: true, typeText: 'measured', finding: null}},
-  'live-device.mjs enablement': {verdict: {released: true}},
+  'live-device.mjs enablement': {steps: {initial: false, cycles: [1, 2].map(i => ({engine: {prior: 'false', set: true}, enabledAt: i * 1000 + 10, closedAt: i * 1000 + 20, releasedAt: i * 1000 + 30}))}},
   'live-device.mjs input-source': {verdict: {pass: true}},
   'live-device.mjs putback': {plan: [], steps: {}, ok: true},
   'live-device.mjs recover': {killed: [], survivors: [], awaited: [], probeWait: null, untouched: [], putBack: {plan: ['scenes-down', 'engine-stop', 'apps-check', 'finder-check', 'front-app'], steps: {}, ok: true}, ok: true},
@@ -412,8 +493,8 @@ export function dryExec({log, commit}) {
     const match = /(live-device\.mjs|scenes-mac\.mjs|prepare\.mjs) '?([\w-]+)'?/.exec(script);
     let answer = match ? DRY_ANSWERS[`${match[1]} ${match[2]}`] : null;
     if (!answer) throw new Error(`the dry run has no answer for: ${script.slice(0, 200)}`);
-    // The menu lane's setting is the one its flags asked for.
-    if (match[1] === 'live-device.mjs' && match[2] === 'menu') answer = {...answer, menuActivation: /'--menu-activation'\W+'on'/.test(script)};
+    // The vendor's hscroll reads: before its scroll (no settle) the bar at the start, after it moved.
+    if (match[2] === 'hscroll-read' && !/'--settle-ms'/.test(script)) answer = {...answer, horizontal: 0};
     return `${JSON.stringify(answer)}\n`;
   };
 }
@@ -440,7 +521,7 @@ export function dryConnect({log}) {
 
 // ---- the CLI ------------------------------------------------------------------------------------------------------
 
-export const USAGE = 'usage: live.mjs minimized|paste|input-source|enablement --device <alias> --out <dir> [--run <device dir>] [--dry-run] | live.mjs menu --device <alias> --approved-runtime <home> --out <dir> [--run <device dir>] [--dry-run] | live.mjs cleanup --device <alias> [--run <device dir>] [--preparation <file>] [--out <dir>] [--dry-run]';
+export const USAGE = 'usage: live.mjs minimized|paste|input-source|enablement|route4|minimized-select --device <alias> --out <dir> [--run <device dir>] [--dry-run] | live.mjs menu|hscroll --device <alias> --approved-runtime <home> --out <dir> [--run <device dir>] [--dry-run] | live.mjs cleanup --device <alias> [--run <device dir>] [--preparation <file>] [--out <dir>] [--dry-run]';
 const OPTIONS = {device: {type: 'string'}, out: {type: 'string'}, run: {type: 'string'}, 'approved-runtime': {type: 'string'}, preparation: {type: 'string'},
   'dry-run': {type: 'boolean', default: false}};
 const fail = message => { throw new Error(`${message}\n${USAGE}`); };
@@ -455,7 +536,7 @@ export function parseCommand(argv) {
   if (!values.device) fail('--device is required');
   const dryRun = values['dry-run'];
   if (command !== 'cleanup' && !values.out && !dryRun) fail('--out is required');
-  if (command === 'menu' && !values['approved-runtime']) fail('menu needs --approved-runtime <the approved vendor home> for the vendor lane');
+  if (VENDOR_LANE.includes(command) && !values['approved-runtime']) fail(`${command} needs --approved-runtime <the approved vendor home> for the vendor lane`);
   return {command, device: values.device, out: values.out ? resolve(values.out) : null, run: absolute(values.run, 'run'),
     approvedRuntime: absolute(values['approved-runtime'], 'approved-runtime'), preparation: absolute(values.preparation, 'preparation'), dryRun};
 }

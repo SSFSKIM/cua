@@ -7,14 +7,20 @@
 //   begin --run <dir> --commit <sha>   the refusals (./live-checks.mjs liveRefusals); with none, the owner's front app
 //                                      saved in the run directory (its pid stays here) and the approved engine stopped
 //   minimized --run <dir>              the minimized-window check on the run's TextEdit (cua's engine only)
-//   menu --run <dir> [--menu-activation off|on]
-//                                      cua's lane of the menu check: the run's TextEdit behind the run's Finder window,
-//                                      each menu item's press with M2a.2's spikeMenuActivation switch off (the default) or on
+//   menu --run <dir>                   cua's lane of the menu cell: the run's TextEdit behind the run's Finder window,
+//                                      each menu item through the held activation (./residue-checks.mjs)
 //   paste --run <dir>                  the paste check: a plain and a Markdown paste and type_text under Korean 2-Set into
 //                                      the run's TextEdit behind the run's Finder window, then the HID composition row in
 //                                      its three variants with that TextEdit in front; the owner's clipboard compared
 //                                      before and after here (only whether it is the same leaves)
-//   enablement --run <dir>             two connections, one after the other, observing the run's Chrome for Testing
+//   enablement --run <dir>             two connections, one after the other, observing the run's Electron fixture,
+//                                      judged by the fixture's own record of Chromium's mode (./residue-device.mjs)
+//   route4 --run <dir>                 the approved engine under a prepared home giving TextEdit route 4; a synthesized
+//                                      click into the run's TextEdit behind the run's Finder window
+//   minimized-select --run <dir>       select_text into the run's minimized TextEdit, the write and the read told apart
+//   hscroll --run <dir>                cua's lane of the horizontal scroll on the run's wide-page TextEdit
+//   hscroll-read --run <dir> [--settle-ms <n>]
+//                                      the run's TextEdit's scroll-bar values by --probe text-view (both lanes' reading)
 //   input-source                       the owner's source and per-context preference saved, Korean 2-Set selected
 //                                      through the approved bundle's probe, read back, the saved ones restored
 //   input-source-restore               the saved source and preference restored (what put-back runs)
@@ -49,10 +55,11 @@ import {engineCheck, engineClientFor, main as goldensDeviceMain, ownershipProble
 import {controllerCheckout} from './goldens.mjs';
 import {REPO_ROOT} from './goldens-install.mjs';
 import {
-  FIRST_LINE, KOREAN_2SET, alertWatch, finderCheck, compositionGuard, compositionReading, MENU_ITEMS, PASTE_TARGETS, allSelected, enablementOf, enablementVerdict, failureOf, firstLineBold, frontAppAction, inputSourceVerdict, liveRefusals,
+  FIRST_LINE, KOREAN_2SET, alertWatch, finderCheck, compositionGuard, compositionReading, MENU_ITEMS, PASTE_TARGETS, allSelected, failureOf, firstLineBold, frontAppAction, inputSourceVerdict, liveRefusals,
   menuBarItem, menuItemAt, minimizeButton, minimizedVerdict, parsePerContext, pasteVerdict, perContextRestore, putBackPlan, restoreTarget, textArea,
   JOURNAL_FILE, RECOVERY_BOUNDS, isBundleProbe, parseJournal, parseProcessTable, recoveryPlan,
 } from './live-checks.mjs';
+import {HSCROLL_SETTLE_MS, enablementCheck, hscrollCheck, hscrollRead, minimizedSelectCheck, route4Check, stripRestoredText} from './residue-device.mjs';
 
 const SCRIPT = fileURLToPath(import.meta.url);
 export const SCREENSHOT_DIR = 'live-screenshots';
@@ -64,8 +71,6 @@ const WATCH_FILE = 'live-watch.json';
 export const SAVED_INPUT_SOURCE = join(homedir(), 'Library/Caches/cua-harness/input-source.json');
 // How long a window takes to minimize or come back (the Dock's animation), polled.
 const WINDOW_MS = 5_000, WINDOW_POLL_MS = 250;
-// Between the enablement check's two connections: the engine releases when it sees the first one close.
-export const RELEASE_WAIT_MS = 1_000;
 // What the minimized check writes and selects in the run's document.
 const SET_VALUE = 'cua minimized set value check';
 const SELECT_TEXT = 'minimized';
@@ -75,7 +80,7 @@ const sleepFor = ms => new Promise(resolve => setTimeout(resolve, ms));
 // ---- Engine calls ----------------------------------------------------------------------------------------------------
 
 // One get_app_state as cua's service sends it (always with the screenshot), the image removed once the answer is in.
-async function getState(client, app, screenshots) {
+export async function getState(client, app, screenshots) {
   const {result} = await client.execute('get_app_state', {app, includeScreenshot: true, outputDirectory: screenshots});
   const url = result?.screenshot?.url;
   if (typeof url === 'string' && url.startsWith('file:')) {
@@ -85,16 +90,17 @@ async function getState(client, app, screenshots) {
   return result;
 }
 // An action as a result keeps it: {ok, route, posted, activationGuardMs?, entered?} or failureOf's fields.
-async function attempt(fn) {
+export async function attempt(fn) {
   try {
     const {result} = await fn();
     const meta = result?.meta;
     return {ok: true, route: meta?.inputRoute ?? null, posted: meta?.startedAt != null,
-      ...(meta?.activationGuardMs != null ? {activationGuardMs: meta.activationGuardMs} : {}), ...(meta?.entered != null ? {entered: meta.entered} : {})};
+      ...(meta?.activationGuardMs != null ? {activationGuardMs: meta.activationGuardMs} : {}), ...(meta?.entered != null ? {entered: meta.entered} : {}),
+      ...(typeof meta?.keyWindowRestored === 'boolean' ? {keyWindowRestored: meta.keyWindowRestored} : {})};
   } catch (error) { return {ok: false, ...failureOf(error)}; }
 }
 // Polls `test()` until it holds or `boundMs` pass. -> whether it held.
-async function until(test, io, boundMs = WINDOW_MS) {
+export async function until(test, io, boundMs = WINDOW_MS) {
   for (const t0 = io.now(); ;) {
     if (await test()) return true;
     if (io.now() - t0 >= boundMs) return false;
@@ -206,17 +212,15 @@ async function minimizedSteps({record, client, io, screenshots, steps, touch}) {
 
 // ---- The menu path, cua's lane ---------------------------------------------------------------------------------------
 
-// The vendor reading's item 10 on cua's engine: the run's TextEdit in the background behind the run's Finder window.
-// Per item: the menu-bar click (the record, nothing posted), the rooted observation and the item's enabled state, the
-// item's element click, the effect read back through an observation; Bold after the document's first line is
-// selected. `menuActivation` sends M2a.2's engine-only `spikeMenuActivation: true` with each item's press (route 3's
-// activation around the route-1 press; never with the menu-bar record's click), so the hold runs the lane with it off
-// and on and the result sets the default. Off, an item read disabled is not pressed (its reading is the evidence); on,
-// it is pressed all the same, so the switch is exercised. The background condition is read after every action (the
-// user window still in front) and the approved bundle's activation watcher runs throughout: an item during or after
-// which the user window left the front, or an activation was recorded, is invalid, and the lane sends nothing more
-// once the user window left. -> {menuActivation, items: {<id>: {..., valid, attempted?}}, activations, lostAt?}.
-export async function menuCheck({record, user, client, io, screenshots, menuActivation = false}) {
+// The menu cell's cua lane (the Decision Log's "menu activation held from the record"): the run's TextEdit in the
+// background behind the run's Finder window. Per item: the menu-bar click (the record, under which the engine holds
+// route 3's fake activation), the rooted observation and the item's enabled state, the item's element click unless it
+// reads disabled (the vendor's cell does the same), the effect read back through an observation; Bold after the
+// document's first line is selected. The background condition is read after every action (the user window still in
+// front) and the approved bundle's activation watcher runs throughout: an item during or after which the user window
+// left the front, or an activation was recorded, is invalid, and the lane sends nothing more once the user window left.
+// -> {items: {<id>: {..., valid, attempted?}}, activations, lostAt?}.
+export async function menuCheck({record, user, client, io, screenshots}) {
   const userInFront = () => io.frontmost()?.pid === user.pid;
   if (!userInFront()) return {problem: 'the user window (the run\'s Finder) is not in front; nothing was sent'};
   const watch = io.watch.start();
@@ -226,7 +230,7 @@ export async function menuCheck({record, user, client, io, screenshots, menuActi
     for (const id of Object.keys(MENU_ITEMS)) {
       if (lostAt) { items[id] = {found: true, attempted: false, valid: false, reason: 'the lane lost the background condition before it'}; continue; }
       const startedAt = io.now();
-      items[id] = await menuItem({id, record, client, io, screenshots, userInFront, menuActivation});
+      items[id] = await menuItem({id, record, client, io, screenshots, userInFront});
       items[id].window = {startedAt, endedAt: io.now()};
       if (items[id].userInFront?.includes(false)) { items[id].valid = false; lostAt = id; }
     }
@@ -244,10 +248,10 @@ export async function menuCheck({record, user, client, io, screenshots, menuActi
     else if (items[id].valid !== false) items[id].valid = true;
     delete items[id].window;
   }
-  return {...(problem ? {problem} : {}), menuActivation, items, activations, ...(lostAt ? {lostAt} : {}), ...(invalidFrom ? {invalidFrom} : {})};
+  return {...(problem ? {problem} : {}), items, activations, ...(lostAt ? {lostAt} : {}), ...(invalidFrom ? {invalidFrom} : {})};
 }
 
-async function menuItem({id, record, client, io, screenshots, userInFront, menuActivation}) {
+async function menuItem({id, record, client, io, screenshots, userInFront}) {
   const {menu, path} = MENU_ITEMS[id], app = record.app, observe = () => getState(client, app, screenshots);
   const out = {};
   let shot = await observe();
@@ -269,8 +273,8 @@ async function menuItem({id, record, client, io, screenshots, userInFront, menuA
   if (!item) return {...out, found: false};
   out.found = true;
   out.enabled = item.flags?.enabled !== false;
-  if (out.enabled || menuActivation) {
-    out.click = await attempt(() => client.execute('click', {app, element: item.token, ...(menuActivation ? {spikeMenuActivation: true} : {})}, {lineage: shot.lineage}));
+  if (out.enabled) {
+    out.click = await attempt(() => client.execute('click', {app, element: item.token}, {lineage: shot.lineage}));
     out.clicked = out.click.ok;
     out.userInFront.push(userInFront());
   } else out.clicked = false;
@@ -508,25 +512,6 @@ async function alertText(client, readable, screenshots) {
       .map(n => n.value ?? n.title ?? n.description).filter(v => typeof v === 'string' && v.length > 0);
     return strings.join(' | ').slice(0, ALERT_TEXT_CHARS) || null;
   } catch (error) { return `(unread: ${String(error.errorName ?? error.message).slice(0, 120)})`; }
-}
-
-// ---- Enablement released ---------------------------------------------------------------------------------------------
-
-// M2a.4's item 3 on the run's Chrome for Testing: a first connection observes and closes; after the engine has seen it
-// close, a second connection observes. The engine's enablement diagnostics say what each observation found and did.
-export async function enablementCheck({record, io, screenshots}) {
-  const read = async () => {
-    const client = io.client();
-    try {
-      const shot = await getState(client, record.app, screenshots);
-      if (shot?.app?.pid !== record.pid) throw new Error('the observation is not of the run\'s Chrome for Testing');
-      return enablementOf(shot.timings);
-    } finally { await client.close(); }
-  };
-  const first = await read();
-  await io.sleep(RELEASE_WAIT_MS);
-  const second = await read();
-  return {verdict: enablementVerdict({first, second})};
 }
 
 // ---- The input source ------------------------------------------------------------------------------------------------
@@ -945,6 +930,12 @@ export const defaultIo = run => {
   let stuckProbe = null;
   return {
   client: () => engineClientFor(approvedBundle()),
+  // The route4 cell's client: the approved bundle, launched (when nothing answers) under a prepared home, which
+  // LaunchServices passes to it (`open --env`); the engine reads its settings from $HOME (Config.swift).
+  clientUnderHome: home => engineClientFor(approvedBundle(), {open: app => execFileSync('/usr/bin/open', ['-n', '-g', '--env', `HOME=${home}`, '-a', app], {stdio: 'ignore', timeout: 15_000})}),
+  // The owner's engine settings, read only (the route4 cell copies peerPolicy and routes into its prepared home).
+  ownerEngineSettings: () => { const file = join(homedir(), '.config/cua/engine.json'); try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; } },
+  readFile: file => { try { return fs.readFileSync(file, 'utf8'); } catch (error) { if (error.code === 'ENOENT') return ''; throw error; } },
   frontmost: () => frontmostProcess(),
   windowOnScreen: (pid, number) => appWindows(pid).find(w => w.number === number)?.onScreen ?? null,
   activate: id => activateScene(id, {run}),
@@ -998,7 +989,7 @@ function parse(argv) {
   }
   return {command, positional, flags};
 }
-const USAGE = 'usage: live-device.mjs begin --run <dir> --commit <sha> | minimized|enablement|paste|putback|recover --run <dir> | putback-step <step> --run <dir> | menu --run <dir> [--menu-activation off|on] | watch start|stop --run <dir> | input-source [--run <dir>] | input-source-restore';
+const USAGE = 'usage: live-device.mjs begin --run <dir> --commit <sha> | minimized|enablement|paste|route4|minimized-select|hscroll|menu|putback|recover --run <dir> | hscroll-read --run <dir> [--settle-ms <n>] | putback-step <step> --run <dir> | watch start|stop --run <dir> | input-source [--run <dir>] | input-source-restore';
 const runDir = flags => {
   if (!flags.run || !isAbsolute(flags.run)) throw new Error('--run <absolute directory> is required');
   fs.mkdirSync(flags.run, {recursive: true, mode: 0o700});
@@ -1016,8 +1007,7 @@ export async function main(argv, {io: given = {}} = {}) {
     const io = {...defaultIo(flags.run ? runDir(flags) : null), ...given};
     return command === 'input-source' ? inputSourceCheck({io}) : restoreInputSource({io});
   }
-  if (!['begin', 'minimized', 'menu', 'paste', 'enablement', 'putback', 'putback-step', 'recover', 'watch'].includes(command)) throw new Error(USAGE);
-  if (command === 'menu' && flags['menu-activation'] !== undefined && !['off', 'on'].includes(flags['menu-activation'])) throw new Error(USAGE);
+  if (!['begin', 'minimized', 'menu', 'paste', 'enablement', 'route4', 'minimized-select', 'hscroll', 'hscroll-read', 'putback', 'putback-step', 'recover', 'watch'].includes(command)) throw new Error(USAGE);
   const run = runDir(flags), io = {...defaultIo(run), ...given};
   const screenshots = join(run, SCREENSHOT_DIR);
   if (command === 'begin') {
@@ -1039,13 +1029,21 @@ export async function main(argv, {io: given = {}} = {}) {
     fs.rmSync(file, {force: true});
     return {activations: activationsOf(lines, watch)};
   }
-  if (command === 'enablement') return enablementCheck({record: sceneRecord(run, 'chrome'), io, screenshots});
+  if (command === 'enablement') return enablementCheck({record: sceneRecord(run, 'electron'), io, screenshots});
   const record = sceneRecord(run, 'textedit');
+  if (command === 'route4') return route4Check({record, user: sceneRecord(run, 'finder'), io, run, screenshots});
+  if (command === 'hscroll-read') {
+    const settleMs = flags['settle-ms'] === undefined ? 0 : Number(flags['settle-ms']);
+    if (!Number.isInteger(settleMs) || settleMs < 0 || settleMs > 10 * HSCROLL_SETTLE_MS) throw new Error(USAGE);
+    return hscrollRead({record, io, settleMs});
+  }
   const client = io.client();
   try {
     if (command === 'minimized') return await minimizedCheck({record, client, io, screenshots});
+    if (command === 'minimized-select') return stripRestoredText(await minimizedSelectCheck({record, client, io, screenshots}));
+    if (command === 'hscroll') return await hscrollCheck({record, user: sceneRecord(run, 'finder'), client, io, screenshots});
     if (command === 'paste') return await pasteCheck({record, user: sceneRecord(run, 'finder'), client, io, screenshots});
-    return await menuCheck({record, user: sceneRecord(run, 'finder'), client, io, screenshots, menuActivation: flags['menu-activation'] === 'on'});
+    return await menuCheck({record, user: sceneRecord(run, 'finder'), client, io, screenshots});
   } finally { await client.close(); }
 }
 

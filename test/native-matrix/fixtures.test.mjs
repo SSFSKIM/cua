@@ -157,12 +157,17 @@ test('the fixture app path names the Electron version and the fixture source, so
   assert.equal(fixtureAppPath({cacheRoot: '/c', electronVersion: '44.9.0', sourceHash: hash}), `/c/44.9.0-${hash}/${FIXTURE_NAME}.app`);
 });
 
-test('the fixture source declares a text field, a list and a button, and never enables accessibility itself', () => {
+test('the fixture source declares a text field, a list and a button, records Chromium\'s accessibility mode and never enables it itself', () => {
   const names = FIXTURE_CONTROLS.map(c => c.name);
   for (const role of ['AXTextArea', 'AXList', 'AXButton']) assert.ok(FIXTURE_CONTROLS.some(c => c.role === role), role);
   assert.equal(new Set(names).size, names.length);
   const code = fs.readFileSync(new URL('../../scripts/native-matrix/fixtures/electron/main.js', import.meta.url), 'utf8').replace(/^\s*\/\/.*$/gm, '');
-  assert.doesNotMatch(code, /setAccessibilitySupportEnabled|force-renderer-accessibility|accessibility/i);
+  // Chromium's mode is read and recorded (the enablement cell's signal), never set: with the reads taken out, no
+  // accessibility word is left.
+  assert.match(code, /app\.isAccessibilitySupportEnabled\(\)/);
+  assert.match(code, /app\.on\('accessibility-support-changed'/);
+  const reads = /app\.isAccessibilitySupportEnabled\(\)|'accessibility-support-changed'|recordAccessibility|ACCESSIBILITY_POLL_MS|cua-fixture-accessibility\.jsonl/g;
+  assert.doesNotMatch(code.replace(reads, ''), /setAccessibilitySupportEnabled|force-renderer-accessibility|accessibility/i);
   // Shown without activation: bringing the scene up never takes the focus.
   assert.match(code, /show: false/);
   assert.match(code, /once\('ready-to-show', \(\) => window\.showInactive\(\)\)/);

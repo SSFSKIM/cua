@@ -10,7 +10,7 @@ import {join} from 'node:path';
 import {SkyComputerUseError} from '../../src/services/engine/protocol.mjs';
 import {ABC, FIRST_LINE, JOURNAL_FILE, KOREAN_2SET, PASTE_TARGETS, RECOVERY_BOUNDS, parseJournal} from '../../scripts/native-matrix/live-checks.mjs';
 import {
-  COMPOSITION_QUIET_MS, COMPOSITION_VARIANTS, INTERVENTION_DEBOUNCE_MS, PASTE, PASTE_DEADLINE_MS, begin, childHandle, enablementCheck, inputSourceCheck, menuCheck, minimizedCheck, pasteCheck, putBack, recover, restoreInputSource, runProbe,
+  COMPOSITION_QUIET_MS, COMPOSITION_VARIANTS, INTERVENTION_DEBOUNCE_MS, PASTE, PASTE_DEADLINE_MS, begin, childHandle, inputSourceCheck, menuCheck, minimizedCheck, pasteCheck, putBack, recover, restoreInputSource, runProbe,
   saveFrontmost, saveInputSource,
 } from '../../scripts/native-matrix/live-device.mjs';
 
@@ -67,15 +67,12 @@ function fakeEngine({minimized = false, script = () => undefined, menus = {}, me
         const item = Object.values(menus).flat().find(n => n.token === args.element);
         if (item) {
           state.rooted = null;
-          const activated = args.spikeMenuActivation === true;
-          // A background app's responder chain answers only under route 3's activation when the fake says so.
-          if (!menuNeedsActivation || activated) {
+          // A background app's responder chain that does not answer (the M2a.5 hold's per-action activation) when the fake says so.
+          if (!menuNeedsActivation) {
             if (item.title === 'Select All') state.selected = state.value;
             if (item.title === 'Bold') state.markdown = state.markdown.replace(FIRST_LINE, `**${FIRST_LINE}**`);
           }
-          const result = route(1);
-          if (activated) result.meta.activationGuardMs = 18.5;
-          return {result, engineMs: 1};
+          return {result: route(1), engineMs: 1};
         }
         if (args.element === area().token && state.minimized) throw engineError('windowMinimized', 'The TextEdit window is minimized, so nothing can be clicked, dragged or scrolled at a point in it.');
         return {result: route(3), engineMs: 1};
@@ -244,34 +241,17 @@ test('menuCheck: each item through the menu-bar record and a rooted observation,
   const io = deviceIo({watch: {start: () => { watched.push('start'); return {pid: 9}; }, stop: () => { watched.push('stop'); return [{kind: 'deactivated', bundleId: 'com.apple.mail', pid: 50, at: 1}]; }}});
   const out = await menuCheck({record: TEXTEDIT, user: FINDER, client, io, screenshots: join(scratch(), 'shots')});
   assert.deepEqual(watched, ['start', 'stop']);
-  assert.equal(out.menuActivation, false);
   assert.deepEqual(out.items.selectAll, {found: true, rooted: true, enabled: true, record: {ok: true, route: 1, posted: false}, clicked: true, click: {ok: true, route: 1, posted: true},
     effect: true, userInFront: [true, true], valid: true});
   assert.equal(out.items.bold.prepared, true, 'the first line was selected before Format');
   assert.equal(out.items.bold.effect, true);
   assert.equal(out.items.bold.valid, true);
-  assert.ok(client.calls.filter(c => c.method === 'click').every(c => !('spikeMenuActivation' in c.args)), 'off sends no switch at all');
+  assert.ok(client.calls.filter(c => c.method === 'click').every(c => !('spikeMenuActivation' in c.args)), 'no engine switch is sent: the held activation is the engine\'s own');
   assert.equal(client.calls.find(c => c.method === 'select_text').args.text, FIRST_LINE);
   assert.doesNotMatch(JSON.stringify(out), /Line 0/);
 });
 
-test('menuCheck with the switch on: only the item\'s press carries it, a disabled item is pressed all the same, its route and guard time recorded', async () => {
-  const off = await menuCheck({record: TEXTEDIT, user: FINDER, client: fakeEngine({menus: MENUS, menuNeedsActivation: true}), io: deviceIo({watch: quietWatch()}),
-    screenshots: join(scratch(), 'shots')});
-  assert.deepEqual([off.items.selectAll.effect, off.items.bold.effect], [false, false], 'the fake\'s background responder chain needs the activation');
-  const menus = structuredClone(MENUS);
-  menus.Edit[3].flags.enabled = false;
-  const client = fakeEngine({menus, menuNeedsActivation: true});
-  const on = await menuCheck({record: TEXTEDIT, user: FINDER, client, io: deviceIo({watch: quietWatch()}), screenshots: join(scratch(), 'shots'), menuActivation: true});
-  assert.equal(on.menuActivation, true);
-  assert.equal(on.items.selectAll.enabled, false);
-  assert.equal(on.items.selectAll.clicked, true, 'read disabled, pressed under the switch');
-  assert.deepEqual([on.items.selectAll.effect, on.items.bold.effect], [true, true]);
-  assert.deepEqual(on.items.selectAll.click, {ok: true, route: 1, posted: true, activationGuardMs: 18.5});
-  assert.deepEqual(client.calls.filter(c => c.method === 'click').map(c => c.args.spikeMenuActivation === true), [false, true, false, true], 'the menu-bar record clicks carry no switch');
-});
-
-test('menuCheck off: an item read disabled is not pressed; a submenu not exposed is recorded as not found', async () => {
+test('menuCheck: an item read disabled is not pressed; a submenu not exposed is recorded as not found', async () => {
   const menus = structuredClone(MENUS);
   menus.Edit[3].flags.enabled = false;
   menus.Format = menus.Format.slice(0, 3);
@@ -314,26 +294,6 @@ test('menuCheck: refuses to send anything unless the user window is in front', a
     screenshots: join(scratch(), 'shots')});
   assert.match(out.problem, /user window/);
   assert.deepEqual(client.calls, []);
-});
-
-test('enablementCheck: two connections one after the other, each observing once, the first closed before the second opens', async () => {
-  const order = [];
-  const answers = [{enable: 0.3, enablementPrior: 'false', enabled: 'AXManualAccessibility', webShaped: true, chromium: true, webAreaWait: 150, webAreaFound: true},
-    {enable: 0.2, enablementPrior: 'false', enabled: 'AXManualAccessibility', webShaped: true, chromium: true, webAreaWait: 140, webAreaFound: true}];
-  const record = {scene: 'chrome', app: '/c/Chrome for Testing.app', pid: 800, window: {number: 3}};
-  const io = deviceIo({client: () => {
-    const n = order.filter(e => e.startsWith('open')).length + 1;
-    order.push(`open ${n}`);
-    return {async execute(method, args) {
-      order.push(`${method} ${n}`);
-      return {result: {app: {pid: 800}, window: {title: 'cua scene page'}, nodes: [{role: 'AXWebArea'}], screenshot: null, timings: answers[n - 1]}};
-    }, close() { order.push(`close ${n}`); }};
-  }});
-  const out = await enablementCheck({record, io, screenshots: join(scratch(), 'shots')});
-  assert.deepEqual(order, ['open 1', 'get_app_state 1', 'close 1', 'open 2', 'get_app_state 2', 'close 2']);
-  assert.equal(out.verdict.released, true);
-  assert.equal(out.verdict.first.set, 'AXManualAccessibility');
-  assert.deepEqual(out.verdict.priors, {first: 'false', second: 'false'});
 });
 
 // A fake probe and HIToolbox: the source the probe selects is the current one until another is selected.

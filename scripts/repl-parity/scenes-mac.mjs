@@ -97,8 +97,15 @@ export const TEXTEDIT_STYLED_LINE = 'Bold scene line';
 export const TEXTEDIT_MARKDOWN_CAP = 2000;
 const TEXTEDIT_LINES = ['cua scene document', TEXTEDIT_STYLED_LINE, ...Array.from({length: 60}, (_, i) => `Line ${String(i + 1).padStart(2, '0')}`)];
 const rtfLine = line => (line === TEXTEDIT_STYLED_LINE ? `{\\b ${line}}` : line);
-export const textEditDocument = () => ({name: TEXTEDIT_DOCUMENT, lines: [...TEXTEDIT_LINES],
-  rtf: `{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0\\fswiss Helvetica;}}\\f0\\fs28 ${TEXTEDIT_LINES.map(rtfLine).join('\\par\n')}}\n`});
+// The layouts the document can open in: TextEdit's default (wrapped to the window), or `wide-page` (M2b.1b's horizontal
+// scroll cell): page layout (`\\viewkind1`, TextEdit's Wrap to Page) on a page 1440 points wide (`\\paperw28800`, in
+// twips), wider than the scene window, so its scroll area has horizontally scrollable content.
+export const TEXTEDIT_LAYOUTS = Object.freeze({default: '', 'wide-page': '\\paperw28800\\paperh15840\\viewkind1'});
+export const textEditDocument = ({layout = 'default'} = {}) => {
+  if (!Object.hasOwn(TEXTEDIT_LAYOUTS, layout)) throw new Error(`unknown TextEdit layout ${layout}; one of ${Object.keys(TEXTEDIT_LAYOUTS).join(', ')}`);
+  return {name: TEXTEDIT_DOCUMENT, lines: [...TEXTEDIT_LINES],
+    rtf: `{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0\\fswiss Helvetica;}}${TEXTEDIT_LAYOUTS[layout]}\\f0\\fs28 ${TEXTEDIT_LINES.map(rtfLine).join('\\par\n')}}\n`};
+};
 
 // Finder's run-owned folder: 200 files named without an extension, so the owner's show-extensions setting cannot change
 // what a row is called.
@@ -434,17 +441,18 @@ export const electronArgs = ({userDataDir, placement = SCENES.electron.placement
 // the driver's steps to the fixed state (setupSteps). Finder's also carries the chrome `preferences` read before its
 // window opened, and `savedPreferences` says when the owner's values were saved and whether that record was `kept`
 // from earlier (this run's earlier up, or a run that died before restoring them).
-export async function upScene(id, {run, chromeApp, electronApp, io = defaultIo()}) {
+export async function upScene(id, {run, chromeApp, electronApp, layout, io = defaultIo()}) {
   const scene = sceneOf(id), state = readState(run);
   if (state.scenes[id]) throw new Error(`scene ${id} is already up in this run; bring it down first`);
+  if (layout !== undefined && id !== 'textedit') throw new Error('--layout applies to the textedit scene only');
   const checked = preflight({run, io});
   if (checked.refusals.length) throw new Refused(checked.refusals);
   let record;
   if (id === 'textedit') {
-    const doc = textEditDocument(), dir = join(run, 'textedit'), file = join(dir, doc.name);
+    const doc = textEditDocument({layout}), dir = join(run, 'textedit'), file = join(dir, doc.name);
     fs.mkdirSync(dir, {recursive: true, mode: 0o700});
     fs.writeFileSync(file, doc.rtf, {mode: 0o600});
-    record = {app: scene.app, document: file, ...await launchOwn({app: scene.app, bundleId: scene.bundleId, files: [file], args: scene.launchArgs, io})};
+    record = {app: scene.app, document: file, ...(layout && layout !== 'default' ? {layout} : {}), ...await launchOwn({app: scene.app, bundleId: scene.bundleId, files: [file], args: scene.launchArgs, io})};
   } else if (id === 'finder') {
     const folder = join(run, 'finder', FINDER_FOLDER), pid = checked.finderPid;
     if (!pid) throw new Error('Finder is not running');
@@ -679,7 +687,7 @@ export async function main(argv) {
     case 'front': return frontWindow();
     case 'frontmost': return frontmostProcess();
     case 'reactivate': return reactivateApp({bundleId: flags['bundle-id'], pid: Number(flags.pid)});
-    case 'up': return upScene(target, {run: runDir(flags), chromeApp: flags['chrome-app'], electronApp: flags['electron-app']});
+    case 'up': return upScene(target, {run: runDir(flags), chromeApp: flags['chrome-app'], electronApp: flags['electron-app'], layout: flags.layout});
     case 'activate': return activateScene(target, {run: runDir(flags)});
     case 'teardown-steps': return {scene: target, steps: teardownFor(target, {run: runDir(flags)})};
     case 'restore-finder': return restoreFinder();

@@ -11,6 +11,12 @@
 // The side-effect counters (./counters.js) live in the user-data directory as cua-fixture-counters.json: the app's
 // activation events and the window's focus events counted here, the page's and the text field's reported by the
 // renderer through the preload bridge.
+//
+// The accessibility record (cua-fixture-accessibility.jsonl, beside the counters): Chromium's own accessibility mode as
+// this app sees it, one JSON line per reading {at, enabled, source}: once at ready ("start"), on every
+// `accessibility-support-changed` ("event"), and from a poll of app.isAccessibilitySupportEnabled() every 100 ms that
+// writes a line only when the answer changes ("poll"). Both are reads (the getter and the event): nothing here turns
+// accessibility on. The harness's enablement cell judges the engine's release by it, never by the attribute's readback.
 const {app, BrowserWindow, ipcMain} = require('electron');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -38,7 +44,20 @@ app.on('did-become-active', () => counters.bump('appDidBecomeActive'));
 app.on('did-resign-active', () => counters.bump('appDidResignActive'));
 ipcMain.on('cua-fixture:count', (_event, name) => { if (Object.hasOwn(PAGE_EVENTS, name)) counters.bump(PAGE_EVENTS[name]); });
 
+const ACCESSIBILITY_POLL_MS = 100;
+function recordAccessibility(file) {
+  let last = null;
+  const write = (enabled, source) => {
+    last = enabled;
+    fs.appendFileSync(file, `${JSON.stringify({at: Date.now(), enabled, source})}\n`, {mode: 0o600});
+  };
+  write(app.isAccessibilitySupportEnabled(), 'start');
+  app.on('accessibility-support-changed', (_event, enabled) => write(enabled, 'event'));
+  setInterval(() => { const now = app.isAccessibilitySupportEnabled(); if (now !== last) write(now, 'poll'); }, ACCESSIBILITY_POLL_MS).unref();
+}
+
 app.whenReady().then(() => {
+  recordAccessibility(path.join(userData, 'cua-fixture-accessibility.jsonl'));
   // Shown without activation, so bringing the scene up never takes the focus (the harness activates it when a cell needs it).
   const window = new BrowserWindow({
     ...bounds(), title: 'cua Electron fixture', show: false,

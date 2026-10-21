@@ -67,7 +67,8 @@ export function failureOf(error) {
   const meta = error?.meta ?? null;
   return {errorName: error?.errorName ?? null, message: String(error?.message ?? error).slice(0, MESSAGE_CHARS),
     ...(meta?.inputRoute !== undefined ? {route: meta.inputRoute} : {}), posted: meta?.startedAt != null,
-    ...(meta?.activationGuardMs != null ? {activationGuardMs: meta.activationGuardMs} : {})};
+    ...(meta?.activationGuardMs != null ? {activationGuardMs: meta.activationGuardMs} : {}),
+    ...(typeof meta?.keyWindowRestored === 'boolean' ? {keyWindowRestored: meta.keyWindowRestored} : {})};
 }
 
 // ---- System alerts (the paste check) -------------------------------------------------------------------------------
@@ -236,7 +237,7 @@ export function minimizedVerdict(steps) {
 
 // One menu item's result as a label: `not found`; `invalid` (the lane lost the background condition before or during
 // it: the user window left the front, or an activation was recorded); `unattempted` (the lane stopped before it); `read
-// disabled` (read disabled and not pressed, in the off lane: valid evidence, not an attempt); `inconclusive` (the press
+// disabled` (read disabled and not pressed: valid evidence, not an attempt); `inconclusive` (the press
 // answered an error); `acts` or `no effect` (pressed, valid, the effect read back).
 export function menuItemLabel(item) {
   if (!item || item.found !== true) return 'not found';
@@ -250,65 +251,27 @@ export function menuItemLabel(item) {
 // The vendor lane's item as a label (it has no lanes nor validity of its own): not found, acts, read disabled, no effect.
 const vendorItemLabel = v => (v.found !== true ? 'not found' : v.effect === true ? 'acts' : v.enabled === false ? 'read disabled' : 'no effect');
 
-// The menu path (the vendor reading's item 10): per item, cua's lane (run with the switch `setting`) and the vendor's
-// labels side by side, and what the pair decides. Only valid, conclusive cua items decide, and only an item shown to
-// act decides anything: cua's falling short where the vendor's acts, or every cua item acting. An item that acts on
-// neither lane (both read disabled, say) shows nothing either way: inconclusive.
-export function menuComparison(cua, vendor, {setting = 'off'} = {}) {
+// The menu path (the Decision Log's "menu activation held from the record"): per item, cua's lane (the held activation
+// as built) and the vendor's labels side by side on the same scene state, and what the pair decides. Only valid,
+// conclusive cua items decide, and only an item shown to act decides anything: cua's falling short where the vendor's
+// acts, or cua acting on every item the vendor's does. An item that acts on neither lane shows nothing: inconclusive.
+// -> {items: {<id>: {cua, vendor, same, cuaBetter, cuaWorse}}, conclusive, decision}.
+export function menuComparison(cua, vendor) {
   const items = {}, ids = Object.keys(MENU_ITEMS);
   for (const id of ids) {
     const c = cua?.[id] ?? null, v = vendor?.[id] ?? null;
     const cl = c ? menuItemLabel(c) : null, vl = v ? vendorItemLabel(v) : null;
-    items[id] = {cua: c && {label: cl, enabled: c.enabled ?? null, effect: c.effect ?? null},
+    items[id] = {cua: c && {label: cl, enabled: c.enabled ?? null, effect: c.effect ?? null, route: c.click?.route ?? null, activationGuardMs: c.click?.activationGuardMs ?? null},
       vendor: v && {label: vl, enabled: v.enabled ?? null, effect: v.effect ?? null},
       same: cl !== null && cl === vl, cuaBetter: cl === 'acts' && vl !== 'acts', cuaWorse: vl === 'acts' && ['no effect', 'read disabled'].includes(cl)};
   }
   const conclusive = ids.every(id => ['acts', 'no effect', 'read disabled'].includes(items[id].cua?.label) && items[id].vendor && items[id].vendor.label !== 'not found');
   const short = ids.filter(id => items[id]?.cuaWorse), unshown = ids.filter(id => items[id].cua?.label !== 'acts' && items[id].vendor?.label !== 'acts');
   const decision = !conclusive ? 'undecided: an item was not exposed, a cua item is not valid or conclusive, or a lane is missing'
-    : short.length ? (setting === 'off' ? `the menu path takes activation: cua reads ${short.join(', ')} disabled or it does nothing where the vendor's works`
-      : `route 3's activation is not enough: cua's ${short.join(', ')} does nothing where the vendor's works`)
-      : unshown.length ? `inconclusive: no demonstrated success for ${unshown.join(', ')}: neither cua's ${setting} lane nor the vendor's item acts`
-        : setting === 'off' ? 'no activation: cua reads the responder-chain items enabled and they act without it'
-          : 'with activation: cua\'s items act with route 3\'s activation around the press';
-  return {items, decision};
-}
-
-// The menu activation switch (M2a.2's `spikeMenuActivation`, off by default, for the hold to decide): cua's lane run
-// with it off and with it on. Only valid items count: "acts without activation" comes from off-lane items pressed or
-// read under the background condition, "activation is not enough" from on-lane items pressed under it, and only for
-// an item shown to act somewhere (the vendor's lane acting): an item no lane acts on demonstrates nothing, so the
-// setting is undecided, as menuComparison calls it inconclusive. -> {setting:
-// off|on|neither|undecided, line, labels: {off, on}, items: {off, on}: per item {label, effect, route,
-// activationGuardMs}}.
-export function menuSettingVerdict(off, on, vendor = null) {
-  const ids = Object.keys(MENU_ITEMS);
-  const labels = lane => (lane ? Object.fromEntries(ids.map(id => [id, menuItemLabel(lane[id])])) : null);
-  const summary = lane => Object.fromEntries(ids.map(id => [id, {label: lane ? menuItemLabel(lane[id]) : null, effect: lane?.[id]?.effect ?? null,
-    route: lane?.[id]?.click?.route ?? null, activationGuardMs: lane?.[id]?.click?.activationGuardMs ?? null}]));
-  const offL = labels(off), onL = labels(on);
-  const unsettled = (name, l, allowed) => {
-    if (!l) return `${name} lane missing`;
-    const bad = ids.filter(id => !allowed.includes(l[id]));
-    return bad.length ? bad.map(id => `${name} lane ${id} ${l[id]}`).join(', ') : null;
-  };
-  let setting, line;
-  const offReason = unsettled('off', offL, ['acts', 'no effect', 'read disabled']);
-  if (offReason) [setting, line] = ['undecided', `undecided: ${offReason}`];
-  else if (ids.every(id => offL[id] === 'acts')) [setting, line] = ['off', 'keep off: every item acts without activation (spikeMenuActivation stays off by default)'];
-  else {
-    const onReason = unsettled('on', onL, ['acts', 'no effect']);
-    if (onReason) [setting, line] = ['undecided', `undecided: ${onReason}`];
-    else if (ids.every(id => onL[id] === 'acts')) [setting, line] = ['on', 'set on: every item acts only with route 3\'s activation around its press (spikeMenuActivation on by default)'];
-    else {
-      // An item acting on either of cua's lanes or the vendor's is shown to act; one acting nowhere shows nothing.
-      const offFailing = ids.filter(id => offL[id] !== 'acts'), onFailing = ids.filter(id => onL[id] !== 'acts');
-      const unshown = onFailing.filter(id => offL[id] !== 'acts' && (!vendor?.[id] || vendorItemLabel(vendor[id]) !== 'acts'));
-      [setting, line] = unshown.length ? ['undecided', `undecided: no demonstrated success for ${unshown.join(', ')}: no lane acts, cua's or the vendor's`]
-        : ['neither', `neither: no one setting acts for every item: off leaves ${offFailing.join(', ')} not acting, on leaves ${onFailing.join(', ')} not acting`];
-    }
-  }
-  return {setting, line, labels: {off: offL, on: onL}, items: {off: summary(off), on: summary(on)}};
+    : short.length ? `the held activation falls short: cua reads ${short.join(', ')} disabled or it does nothing where the vendor's works`
+      : unshown.length ? `inconclusive: no demonstrated success for ${unshown.join(', ')}: neither lane's item acts`
+        : 'parity: cua\'s held activation acts on every item the vendor\'s does';
+  return {items, conclusive, decision};
 }
 
 // The paste check (M2a.3 live): a plain and a Markdown paste into the run's TextEdit behind the run's Finder window,
@@ -342,16 +305,10 @@ export function pasteVerdict(steps) {
 // The engine's enablement diagnostics on one observation (its `timings`, M2a.4): `enablementPrior` what the attribute
 // read before the observation touched it ("true", "false" or "unreadable"; absent when the app lists neither), `enabled`
 // the attribute it set, which the engine does only when it read false; `webAreaSeen` that an earlier observation of the
-// process found the web area, which a release forgets.
+// process found the web area, which a release forgets. Kept beside the enablement cell's verdict, never judged: the
+// attribute's readback is not Chromium's mode (./residue-checks.mjs enablementVerdict).
 export const enablementOf = timings => ({prior: timings?.enablementPrior ?? null, set: timings?.enabled ?? null, webShaped: timings?.webShaped ?? null,
   chromium: timings?.chromium ?? null, webAreaSeen: timings?.webAreaSeen === true, webAreaFound: timings?.webAreaFound ?? null});
-// Enablement released (the critique's A3, M2a.4 item 3): the first connection's first observation reads the attribute
-// false and the engine sets it; after that connection closes, a new connection's first observation reads it false
-// again. -> {released, priors, first, second}.
-export function enablementVerdict({first, second}) {
-  const released = first?.prior === 'false' && Boolean(first?.set) && second?.prior === 'false';
-  return {released, priors: {first: first?.prior ?? null, second: second?.prior ?? null}, first, second};
-}
 
 // --probe input-source (the pre-flight entry's item 4): Korean 2-Set selected and read back by a second probe, then the
 // owner's source and per-context preference restored.

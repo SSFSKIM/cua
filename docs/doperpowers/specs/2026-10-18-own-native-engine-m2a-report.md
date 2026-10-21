@@ -10,7 +10,7 @@ Where the rest of the record lives:
 
 ## Status
 
-**Done 2026-10-21.** M2a.1–M2a.5 and M2a are ticked. The hold ran from 12:28Z to 13:22Z. The post-hold fixes have been reviewed; their final gate is in the PR's Validation Evidence.
+**Done 2026-10-21.** M2a.1–M2a.5 and M2a are ticked. The hold ran from 12:28Z to 13:22Z. The post-hold fixes have been reviewed; their final gate is GREEN (39614444743, head 2f15c023). PR: https://github.com/SSFSKIM/cua/pull/178.
 
 | Task | State |
 |---|---|
@@ -133,6 +133,7 @@ Each item is work left for its own ticket or for M2b.
 - **Held menu activation, live.** Adopted after the hold (Decision Log, "menu activation held from the record") and unit-tested. M2b's matrix checks it live against the vendor on Select All and Bold.
 - **No `menuClosed` clearing (vendor parity; tech-debt-tracker.md).** The vendor clears its recorded menu root when the menu closes. cua keeps the record until the next observation replaces it.
 - **No AXPress for a menu item under a coordinate (vendor parity; tech-debt-tracker.md).** The vendor presses the AX menu item under the point. cua posts the pointer events instead.
+- **The hold harness's menu check still runs a switch-on lane** that the engine no longer has (9c58dd0e). M2b's harness should replace it with the held activation compared against the vendor.
 - **A key-code-only variant of `--probe keystroke`.** It would settle hidComposition's caveat: the events carry `CGEventKeyboardSetUnicodeString`. It is a later probe change.
 
 ## Validation

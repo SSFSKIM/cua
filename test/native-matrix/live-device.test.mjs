@@ -10,7 +10,7 @@ import {join} from 'node:path';
 import {SkyComputerUseError} from '../../src/services/engine/protocol.mjs';
 import {ABC, FIRST_LINE, JOURNAL_FILE, KOREAN_2SET, PASTE_TARGETS, RECOVERY_BOUNDS, parseJournal} from '../../scripts/native-matrix/live-checks.mjs';
 import {
-  COMPOSITION_QUIET_MS, COMPOSITION_VARIANTS, INTERVENTION_DEBOUNCE_MS, PASTE, PASTE_DEADLINE_MS, begin, childHandle, inputSourceCheck, menuCheck, minimizedCheck, pasteCheck, putBack, recover, restoreInputSource, runProbe,
+  COMPOSITION_QUIET_MS, COMPOSITION_VARIANTS, INTERVENTION_DEBOUNCE_MS, PASTE, PASTE_DEADLINE_MS, begin, childHandle, inputSourceCheck, menuCheck, minimizedCheck, pasteCheck, putBack, recover, restoreInputSource, runProbe, launchProbe, awaitProbe,
   saveFrontmost, saveInputSource,
 } from '../../scripts/native-matrix/live-device.mjs';
 
@@ -690,6 +690,23 @@ test('runProbe: journaled pending before its open, launched without -W, resolved
     runProbe(BUNDLE, ['input-source', 'current'], {...probeDevice(options).options, run: unresolved});
     assert.deepEqual(journalOf(unresolved).map(e => e.pid), [null, null], JSON.stringify(options));
   }
+});
+
+test('launchProbe and awaitProbe: the launch returns a handle another process can await (a JSON round trip), the answer read and the scratch removed', () => {
+  const run = scratch(), device = probeDevice();
+  const handle = JSON.parse(JSON.stringify(launchProbe(BUNDLE, ['input-source', 'com.apple.keylayout.ABC', '--at', '1700000000000'], {...device.options, run})));
+  assert.equal(handle.pid, 900);
+  assert.equal(handle.command, 'input-source');
+  assert.ok(fs.existsSync(handle.scratch), 'the output stays until the probe is awaited');
+  assert.deepEqual(device.launched[0].slice(-5), ['--probe', 'input-source', 'com.apple.keylayout.ABC', '--at', '1700000000000']);
+  assert.deepEqual(awaitProbe(handle, device.options), {id: 'com.apple.keylayout.ABC'});
+  assert.ok(!fs.existsSync(handle.scratch));
+  assert.deepEqual(journalOf(run).map(e => e.pid), [null, 900]);
+  // A probe past its bound when awaited is killed as runProbe kills it.
+  const hung = probeDevice({exits: false});
+  const late = launchProbe(BUNDLE, ['input-source', 'current'], hung.options);
+  assert.throws(() => awaitProbe(late, hung.options), /did not finish within 60 s; its process was stopped/);
+  assert.deepEqual(hung.killed, ['SIGKILL 900']);
 });
 
 test('runProbe: a probe past its bound is killed and its exit confirmed before the error; one that will not exit is reported stuck', () => {

@@ -792,46 +792,58 @@ export function childHandle(command, args) {
 // launched without -W so its own process is known. The launch is journaled `pending` before the open, then resolved:
 // its pid is taken only when exactly one new probe process of the bundle (of any name) appears after this open, and it
 // is this probe; none or several leave it unresolved (`-`): nothing is signaled, the recovery and the put-back wait on
-// the bundle's probes instead. Awaited to its exit
-// (PROBE_MS); past that it is killed and its exit confirmed before the error, so nothing restores behind it; one that
-// will not exit throws marked `stuck`. -> its last JSON line.
+// the bundle's probes instead. Awaited to its exit (PROBE_MS from its launch); past that it is killed and its exit
+// confirmed before the error, so nothing restores behind it; one that will not exit throws marked `stuck`.
+// runProbe launches and awaits in one call; the native matrix's scheduled probes (`keystroke --at`, `input-source --at`)
+// launch in one device command and are awaited in another, while the action they fall inside runs (./matrix-device.mjs
+// probe), so the launch answers a handle that survives a JSON round trip. -> the probe's last JSON line.
 export const PROBE_MS = 60_000;
 const PROBE_IDENTIFY_MS = 5_000, PROBE_POLL_MS = 50;
 const syncSleep = ms => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 const lastLine = file => { try { return JSON.parse(fs.readFileSync(file, 'utf8').trim().split('\n').at(-1)); } catch { return undefined; } };
-export function runProbe(bundle, args, {exec = execFileSync, run = null, table = () => processTable(), alive = processRuns, kill = (pid, signal) => process.kill(pid, signal),
-  sleep = syncSleep, now = Date.now, killMs = RECOVERY_BOUNDS.killMs} = {}) {
+export const runProbe = (bundle, args, options = {}) => awaitProbe(launchProbe(bundle, args, options), options);
+
+// The launch, journaled and identified. -> {command, label, pid (null when unresolved), start, scratch, out, launchedAt}.
+export function launchProbe(bundle, args, {exec = execFileSync, run = null, table = () => processTable(), sleep = syncSleep, now = Date.now} = {}) {
   if (!args.every(a => /^[A-Za-z0-9._,-]+$/.test(a) || a === '\n')) throw new Error('a probe argument is a name, a number list, an input-source id or a Return');
-  const uid = process.getuid(), launch = `${args[0]}#${randomBytes(4).toString('hex')}`;
+  const uid = process.getuid(), label = `${args[0]}#${randomBytes(4).toString('hex')}`;
   const probes = () => table().filter(p => p.uid === uid && isBundleProbe(p.command, bundle));
   const before = new Set(probes().map(p => p.pid));
   const scratch = fs.mkdtempSync(join(tmpdir(), 'cua-live-probe-'));
   try {
     const out = join(scratch, 'out.json'), err = join(scratch, 'err.txt');
-    if (run) journalProcess(run, {kind: 'probe', pending: true, label: launch});
+    if (run) journalProcess(run, {kind: 'probe', pending: true, label});
     exec('/usr/bin/open', ['-n', '-g', '--stdout', out, '--stderr', err, '-a', bundle, '--args', '--probe', ...args], {stdio: 'ignore', timeout: 15_000});
-    const t0 = now();
+    const launchedAt = now();
     let fresh = [];
-    while (now() - t0 < PROBE_IDENTIFY_MS) {
+    while (now() - launchedAt < PROBE_IDENTIFY_MS) {
       fresh = probes().filter(p => !before.has(p.pid));
       if (fresh.length || lastLine(out) !== undefined) break;
       sleep(PROBE_POLL_MS);
     }
     const probe = fresh.length === 1 && fresh[0].command.includes(` --probe ${args[0]}`) ? fresh[0] : null;
-    if (run) journalProcess(run, {kind: 'probe', pid: probe?.pid ?? null, start: probe?.start ?? null, label: launch});
-    const done = () => (probe ? !alive(probe.pid) : lastLine(out) !== undefined);
-    while (!done() && now() - t0 < PROBE_MS) sleep(PROBE_POLL_MS);
+    if (run) journalProcess(run, {kind: 'probe', pid: probe?.pid ?? null, start: probe?.start ?? null, label});
+    return {command: args[0], label, pid: probe?.pid ?? null, start: probe?.start ?? null, scratch, out, launchedAt};
+  } catch (error) { fs.rmSync(scratch, {recursive: true, force: true}); throw error; }
+}
+
+// A launched probe awaited to its exit, its scratch removed whatever happened. -> its last JSON line.
+export function awaitProbe(handle, {alive = processRuns, kill = (pid, signal) => process.kill(pid, signal), sleep = syncSleep, now = Date.now, killMs = RECOVERY_BOUNDS.killMs} = {}) {
+  const {command, pid, out} = handle;
+  try {
+    const done = () => (pid ? !alive(pid) : lastLine(out) !== undefined);
+    while (!done() && now() - handle.launchedAt < PROBE_MS) sleep(PROBE_POLL_MS);
     if (!done()) {
-      if (!probe) throw Object.assign(new Error(`the ${args[0]} probe did not finish within ${PROBE_MS / 1000} s and its process was never identified`), {stuck: true});
-      try { kill(probe.pid, 'SIGKILL'); } catch {}
-      for (const k0 = now(); alive(probe.pid) && now() - k0 < killMs;) sleep(PROBE_POLL_MS);
-      if (alive(probe.pid)) throw Object.assign(new Error(`the ${args[0]} probe (pid ${probe.pid}) did not exit after SIGKILL`), {stuck: true});
-      throw new Error(`the ${args[0]} probe did not finish within ${PROBE_MS / 1000} s; its process was stopped`);
+      if (!pid) throw Object.assign(new Error(`the ${command} probe did not finish within ${PROBE_MS / 1000} s and its process was never identified`), {stuck: true});
+      try { kill(pid, 'SIGKILL'); } catch {}
+      for (const k0 = now(); alive(pid) && now() - k0 < killMs;) sleep(PROBE_POLL_MS);
+      if (alive(pid)) throw Object.assign(new Error(`the ${command} probe (pid ${pid}) did not exit after SIGKILL`), {stuck: true});
+      throw new Error(`the ${command} probe did not finish within ${PROBE_MS / 1000} s; its process was stopped`);
     }
     const answer = lastLine(out);
-    if (answer === undefined) throw new Error(`the ${args[0]} probe printed no answer`);
+    if (answer === undefined) throw new Error(`the ${command} probe printed no answer`);
     return answer;
-  } finally { fs.rmSync(scratch, {recursive: true, force: true}); }
+  } finally { fs.rmSync(handle.scratch, {recursive: true, force: true}); }
 }
 
 // The resident `--probe watch-activations` (started without -W, its pid read from its first line), recorded in the run

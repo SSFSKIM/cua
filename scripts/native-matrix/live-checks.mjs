@@ -187,13 +187,17 @@ export function vendorTextAreaIndex(ax, firstLine) {
 
 // The minimized window (the pre-flight entry's item 2, M2a.4's item 2): the observation keeps its tree and drops its
 // screenshot with the reason; a synthesized element click and an element scroll are refused naming the minimized
-// window with nothing posted; set_value and select_text act and post nothing (the focus click is skipped); then typing
+// window with nothing posted; set_value and select_text act with no click (the focus click is skipped); then typing
 // and ⌘A, each a policy: plain typing decides type_text and press_key without ⌘, ⌘A decides ⌘ chords and paste
 // (maws-3f's correction: paste's ⌘V is a menu key equivalent to the first responder). Every measurement is taken with
 // the window read minimized before and after it: one that is not makes the section invalid. A key request that answers
 // an error is inconclusive, never policy evidence. -> {status: valid|invalid|inconclusive, pass, failed, recorded,
 // decision: {plainKeys, commandChordsAndPaste} | null, reason?}.
 const MEASURED = ['observe', 'click', 'scroll', 'setValue', 'selectText', 'typeText', 'selectAll'];
+// Whether a step shows no click: nothing posted, or a route other than the pointer route (3). An Accessibility write
+// (route 1) has its own action interval, so `posted` alone is no click; the engine records no pointer post apart from
+// route 3. A posted step whose route is unknown shows nothing either way.
+const NOT_A_CLICK = step => step?.posted === false || (step?.route != null && step.route !== 3);
 export function minimizedVerdict(steps) {
   const {minimize, observe, click, scroll, setValue, selectText, typeText, selectAll, restore} = steps ?? {};
   const recorded = {typeTextValueChanged: typeText?.ok === true ? typeText.valueChanged ?? null : null, superAEffect: selectAll?.ok === true ? selectAll.effect ?? null : null};
@@ -211,9 +215,9 @@ export function minimizedVerdict(steps) {
     clickRefusedNothingPosted: click?.refused === true && click?.posted === false,
     scrollRefused: scroll?.refused === true && scroll?.errorName === 'windowMinimized' && scroll?.posted === false,
     setValueActs: setValue?.ok === true && setValue?.valueMatches === true,
-    setValueNoClick: setValue?.posted === false,
+    setValueNoClick: NOT_A_CLICK(setValue),
     selectTextActs: selectText?.ok === true && selectText?.selectionMatches === true,
-    selectTextNoClick: selectText?.posted === false,
+    selectTextNoClick: NOT_A_CLICK(selectText),
     restored: restore?.onScreen === true,
   };
   const failed = Object.keys(expectations).filter(key => !expectations[key]);

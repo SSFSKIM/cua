@@ -63,7 +63,7 @@ test('one pairing of the background regime: the hold in order, a conforming resu
   assert.equal(result.cell, 'non-interference');
   const order = names(steps).filter(s => !/^(matrix read|matrix step|matrix alerts|helpers)/.test(s));
   assert.deepEqual(order, ['home', 'live begin', 'prepare', 'preflight', 'scenes preflight', 'scenes up', 'goldens steps', 'scenes up', 'goldens steps', 'goldens engine-stop',
-    'matrix compile', 'live watch', 'serve', 'live watch', 'matrix launched', 'live recover', 'scenes frontmost', 'cleanup']);
+    'matrix compile', 'live watch', 'serve', 'live watch', 'matrix launched', 'live recover', 'matrix launched', 'scenes frontmost', 'cleanup']);
   assert.deepEqual(matrixSteps(steps, 'alerts')[0], ['alerts', 'baseline', '--run', result.meta.runDir], 'the alert baseline is kept before the lane');
   const method = result.rows.filter(r => r.section === 'method');
   assert.ok(method.length > 10 && method.every(r => r.regime === 'background' && r.user === 'finder' && r.id.endsWith('@finder')));
@@ -186,7 +186,7 @@ test('a paste or typeText act is sent only between two alert checks; an alert be
 
 test('the windowless pairing: the app brought up by the harness, its refusal case run behind the user window, then quit', async () => {
   const {steps, result} = await runWith({plan: planOf('background', {scene: 'windowless', user: 'finder'})});
-  assert.deepEqual(names(steps).filter(s => /^matrix (windowless|launched)/.test(s)), ['matrix windowless', 'matrix launched', 'matrix launched']);
+  assert.deepEqual(names(steps).filter(s => /^matrix (windowless|launched)/.test(s)), ['matrix windowless', 'matrix launched', 'matrix launched', 'matrix launched']);
   assert.deepEqual(result.rows.map(r => r.id), ['windowless/background/getAXState.noWindow@finder']);
   assert.ok(result.rows[0].interference, 'judged by the oracle');
 });
@@ -196,8 +196,8 @@ test('the launch path: the intent journaled before the act, the identity after i
   const order = [];
   const {steps, result} = await runWith({plan, lane: code => { if (code.includes('cua.computer.get_app_state') && !code.includes('cua.listApps')) order.push('act'); },
     ops: {matrix: (base, a) => { if (a[0] === 'launched') order.push(a[1]); return base(a); }}});
-  // electron: intent, act, record, quit; then the run's own quit before the put-back.
-  assert.deepEqual(order, ['intent', 'act', 'record', 'quit', 'quit']);
+  // electron: intent, act, record, quit; then the run's own quit before the put-back, and the settle after it.
+  assert.deepEqual(order, ['intent', 'act', 'record', 'quit', 'quit', 'settle']);
   const recordArgs = matrixSteps(steps, 'launched').find(a => a[1] === 'record');
   assert.equal(recordArgs[2], 'electron');
   assert.ok(Number.isSafeInteger(Number(recordArgs[recordArgs.indexOf('--since') + 1])));
@@ -233,9 +233,24 @@ test('a key skipped with one of the run\'s windows in front leaves the row inval
   assert.ok(names(foreign.steps).includes('live recover'));
 });
 
-test('the cleanup of a run that died quits the run\'s journaled launches before the put-back', () => {
+test('the cleanup of a run that died: the journaled launches quit, the recovery, then the intents settled', () => {
   const steps = [];
   const ops = dryOps({log: line => steps.push(line.replace(/^dry: /, '')), engine: 'cua', approvedEngine: BUNDLE, commit: 'c'});
   assert.equal(cleanupMatrix({device: 'mini', run: '/r'}, {ops, log: () => {}, dryRun: true}), 0);
-  assert.deepEqual(names(steps).filter(s => /^(matrix|live)/.test(s)), ['matrix launched', 'live recover']);
+  assert.deepEqual(steps.filter(s => /^(matrix|live)/.test(s)).map(s => `${s.replace(/ .*$/, '')} ${args(s).slice(0, 2).join(' ')}`),
+    ['matrix launched quit', 'live recover --run', 'matrix launched settle']);
+});
+
+test('the intents settle only after a recovery that stopped the work; an app the settle quit makes the put-back run again', async () => {
+  // The recovery's kill phase left a survivor (no put-back ran): the intents are kept and said so.
+  const unstopped = await runWith({plan: planOf('launch'), ops: {
+    live: (base, a) => (a[0] === 'recover' ? {ok: false, putBack: null, manual: 'nothing was restored: serve outlived SIGKILL'} : base(a))}});
+  assert.ok(!matrixSteps(unstopped.steps, 'launched').some(a => a[1] === 'settle'));
+  assert.ok(unstopped.result.problems.some(p => /launch intents are kept/.test(p)));
+  // The in-flight launch appeared after the run's quit: the settle quits it, and the put-back runs once more.
+  const late = await runWith({plan: planOf('launch'), ops: {
+    matrix: (base, a) => (a[0] === 'launched' && a[1] === 'settle' ? {quit: 1, remaining: 0, pending: 0, waitedMs: 3_000} : base(a))}});
+  assert.equal(names(late.steps).filter(s => s === 'live recover').length, 2);
+  assert.ok(late.result.problems.some(p => /appeared only after the run's quit/.test(p)));
+  assert.equal(late.result.complete, false);
 });

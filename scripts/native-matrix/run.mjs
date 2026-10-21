@@ -25,9 +25,11 @@
 //      time, the oracle read, the outcome read, and the launched process quit in a `finally`
 //   8. end_task; the watcher's liveness read once more, the watcher stopped and every activation it saw accounted for
 //      against the steps' device-clock windows (./oracle.mjs accountActivations); the lane closed; every journaled
-//      launch quit; the live hold's `recover` (the put-back: Finder's chrome and keys, every scene down, the input source
+//      launch quit (an intent kept); the live hold's `recover` (the put-back: Finder's chrome and keys, every scene down, the input source
 //      and per-context preference, the engine stopped, the apps and Finder checked, the owner's front app by activation
-//      alone); the approved home's cleanup (the engine stopped again); the engine and helper attestations judged
+//      alone); the launch intents settled once the recovery stopped the serve and the engine (the put-back again when
+//      that quit an app); the approved home's cleanup (the engine stopped again); the engine and helper attestations
+//      judged
 //
 // Coverage is proven, never assumed: every step that can activate an app answers its device-clock window (`at`; a js
 // cell's from ./lane.mjs), the watcher's liveness is read with every oracle reading and once before it is stopped, and an
@@ -252,7 +254,7 @@ async function runOnce(options, io) {
     if (ctx.watcher !== null) finishWatch(ctx);
     if (ctx.lane) { try { await ctx.lane.client.close(); } catch {} }
     quitLaunched(ctx);
-    putBack = recover(ops, run, problems);
+    putBack = settleLaunches(ctx, recover(ops, run, problems));
     try {
       const front = ops.scenes(['frontmost']);
       meta.frontApp.now = front?.bundleId ?? null;
@@ -282,13 +284,34 @@ async function runOnce(options, io) {
   }
 }
 
-// The live hold's recovery and put-back (./live-device.mjs recover). -> its answer, a failure recorded as a problem.
+// The live hold's recovery and put-back (./live-device.mjs recover). `stopped`: the work that could still launch an app
+// is shown stopped (the run's serve and CLIs stopped, so the put-back ran, and its engine-stop step held). -> its answer,
+// a failure recorded as a problem.
 function recover(ops, run, problems) {
   try {
     const answer = ops.live(['recover', '--run', run]);
     if (answer?.ok !== true) problems.push(`the put-back did not hold${answer?.manual ? `: ${answer.manual}` : ''}`);
-    return {ok: answer?.ok === true, ...(answer?.putBack ? {steps: answer.putBack.steps ?? null} : {}), ...(answer?.manual ? {manual: answer.manual} : {})};
-  } catch (error) { problems.push(`the put-back failed: ${error.message}`); return {ok: false, error: error.message}; }
+    const stopped = Boolean(answer?.putBack) && answer.putBack.steps?.['engine-stop']?.ok === true;
+    return {ok: answer?.ok === true, stopped, ...(answer?.putBack ? {steps: answer.putBack.steps ?? null} : {}), ...(answer?.manual ? {manual: answer.manual} : {})};
+  } catch (error) { problems.push(`the put-back failed: ${error.message}`); return {ok: false, stopped: false, error: error.message}; }
+}
+
+// The launches' end, after the recovery (./matrix-device.mjs launched settle): only once the work that could still
+// launch is shown stopped are the intents reconciled and cleared, so a request in flight when the run (or its
+// controller) died cannot launch an app after its intent is gone. What the settle had to quit was running through the
+// put-back's apps check, so the put-back runs once more. `ctx`: {ops, run, problems}. -> the put-back's answer.
+function settleLaunches(ctx, recovered) {
+  if (!recovered.stopped) {
+    ctx.problems.push('the launch intents are kept: the recovery did not show the serve and the engine stopped; run cleanup again once it has');
+    return recovered;
+  }
+  let settled;
+  try { settled = ctx.ops.matrix(['launched', 'settle', '--run', ctx.run]); } catch (error) { ctx.problems.push(`the launch intents could not be settled: ${error.message}`); return recovered; }
+  if (settled?.pending) ctx.problems.push(`${settled.pending} launch intent(s) kept: an app still appeared after the engine stopped; run cleanup again`);
+  if (settled?.remaining) ctx.problems.push(`${settled.remaining} app(s) a launch left did not quit`);
+  if (!settled?.quit) return recovered;
+  ctx.problems.push(`${settled.quit} app(s) a launch left appeared only after the run's quit, and were quit after the recovery`);
+  return recover(ctx.ops, ctx.run, ctx.problems);
 }
 
 // Every launch the run journaled quit while it is still the same process (./matrix-device.mjs launched quit). -> the
@@ -569,7 +592,8 @@ async function launchRow(ctx, {scene, user}) {
 }
 
 // The cleanup of a run that died (`native-matrix.mjs cleanup`): every launch the run journaled quit (while still the
-// same process), the live hold's recovery and put-back, then the approved home's cleanup from the run's
+// same process), the live hold's recovery and put-back, the launch intents settled once the recovery stopped what could
+// still launch (and the put-back again when that quit an app), then the approved home's cleanup from the run's
 // preparation.json when there is one. -> 0 when all held, else 1.
 export function cleanupMatrix({device, run, preparation}, io) {
   const {ops, log = console.log} = io;
@@ -577,7 +601,7 @@ export function cleanupMatrix({device, run, preparation}, io) {
   const dirRun = run ?? `${ops.home()}/${DEFAULT_RUN}`;
   ops.journalTo?.(dirRun);
   quitLaunched({ops, run: dirRun, problems});
-  const putBack = recover(ops, dirRun, problems);
+  const putBack = settleLaunches({ops, run: dirRun, problems}, recover(ops, dirRun, problems));
   if (preparation) {
     const saved = JSON.parse(fs.readFileSync(preparation, 'utf8'));
     if (saved.device !== device) throw new Error(`${preparation} is a preparation on ${saved.device}, not ${device}`);

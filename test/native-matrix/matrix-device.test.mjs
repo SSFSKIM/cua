@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {alerts, compiled, isWatcher, launchIntent, ownedFocus, quitLaunched, read, recordLaunch, WINDOWLESS, windowlessUp} from '../../scripts/native-matrix/matrix-device.mjs';
+import {alerts, compiled, isWatcher, launchIntent, ownedFocus, quitLaunched, read, recordLaunch, settleLaunches, WINDOWLESS, windowlessUp} from '../../scripts/native-matrix/matrix-device.mjs';
 
 const state = {scenes: {textedit: {pid: 11}, finder: {pid: 7}}};
 const bounds = {x: 0, y: 25, width: 900, height: 700};
@@ -64,12 +64,12 @@ test('a launch is identified and journaled at once, and quit only while it is th
   assert.throws(() => recordLaunch({scene: 'textedit', since: 1}, io), /not textedit/);
   // The pid now runs another process (another start time): never signalled.
   starts[40] = 20_000;
-  assert.deepEqual(await quitLaunched(io), {quit: 0, remaining: 0, gone: 1});
+  assert.deepEqual(await quitLaunched(io), {quit: 0, remaining: 0, gone: 1, pending: 0});
   assert.deepEqual(quitting, []);
   assert.deepEqual(j.list, []);
   starts[40] = 10_000;
   j.writeLaunched([{scene: 'electron', bundleId: 'io.github.ssfskim.cua.fixture.electron', pid: 40, at: 10_000}]);
-  assert.deepEqual(await quitLaunched(io), {quit: 1, remaining: 0, gone: 0});
+  assert.deepEqual(await quitLaunched(io), {quit: 1, remaining: 0, gone: 0, pending: 0});
   assert.deepEqual(quitting, [40]);
   assert.deepEqual(j.list, []);
 });
@@ -86,11 +86,12 @@ test('a launch\'s intent is journaled before the act; a controller that died aft
   assert.deepEqual(launchIntent({scene: 'electron'}, io), {at: 9_500, pids: [30]});
   assert.deepEqual(j.list, [{intent: true, scene: 'electron', bundleId: 'io.github.ssfskim.cua.fixture.electron', at: 9_500, pids: [30]}]);
   assert.throws(() => launchIntent({scene: 'textedit'}, io), /not textedit/);
-  // The controller died: no record. The engine had launched 40.
+  // The controller died: no record. The engine had launched 40. The intent stays until the settle.
   running = [{pid: 30}, {pid: 40}, {pid: 41}];
-  assert.deepEqual(await quitLaunched(io), {quit: 1, remaining: 0, gone: 0});
+  assert.deepEqual(await quitLaunched(io), {quit: 1, remaining: 0, gone: 0, pending: 1});
   assert.deepEqual(quitting, [40]);
-  assert.deepEqual(j.list, []);
+  assert.deepEqual(j.list.map(l => l.intent === true), [true]);
+  j.writeLaunched([]);
   // The controller survived: the record replaces the intent with the precise identity.
   quitting.length = 0;
   running = [{pid: 30}];
@@ -98,8 +99,52 @@ test('a launch\'s intent is journaled before the act; a controller that died aft
   running = [{pid: 30}, {pid: 40}];
   assert.deepEqual(recordLaunch({scene: 'electron', since: 9_500}, io), {recorded: true, pid: 40, candidates: 1});
   assert.deepEqual(j.list, [{scene: 'electron', bundleId: 'io.github.ssfskim.cua.fixture.electron', pid: 40, at: 10_000}]);
-  assert.deepEqual(await quitLaunched(io), {quit: 1, remaining: 0, gone: 0});
+  assert.deepEqual(await quitLaunched(io), {quit: 1, remaining: 0, gone: 0, pending: 0});
   assert.deepEqual(quitting, [40]);
+});
+
+test('a controller that died before the launched app appeared: the intent outlives every quit until the work is stopped and settled', async () => {
+  const j = journal();
+  const quitting = [];
+  let running = [{pid: 30}];
+  let t = 9_500;
+  const starts = {30: 1_000, 40: 10_000};
+  const io = {state: () => ({scenes: {}}), ...j, runningApps: () => running, launchOf: pid => starts[pid] ?? null, now: () => t, sleep: async ms => { t += ms; },
+    quit: async pids => { quitting.push(...pids); running = running.filter(p => !pids.includes(p.pid)); return {quit: pids, remaining: []}; }};
+  launchIntent({scene: 'electron'}, io);
+  // Before the recovery: nothing launched yet, and the intent stays.
+  assert.deepEqual(await quitLaunched(io), {quit: 0, remaining: 0, gone: 0, pending: 1});
+  assert.equal(j.list.filter(l => l.intent).length, 1);
+  // The in-flight request launches it afterwards; the next quit (or the settle) still finds it.
+  running = [{pid: 30}, {pid: 40}];
+  assert.deepEqual(await quitLaunched(io), {quit: 1, remaining: 0, gone: 0, pending: 1});
+  assert.deepEqual(quitting, [40]);
+  // With the work stopped, the settle waits for quiet and only then clears the intent.
+  assert.deepEqual(await settleLaunches({quietMs: 2_000, maxMs: 10_000}, io), {quit: 0, remaining: 0, pending: 0, waitedMs: 2_000});
+  assert.deepEqual(j.list, []);
+});
+
+test('the settle quits what appears while it waits, and keeps an intent it could not see settle within its bound', async () => {
+  const j = journal();
+  let running = [], appeared = false;
+  let t = 9_500;
+  // The in-flight launch appears once, a second into the settle.
+  const io = {state: () => ({scenes: {}}), ...j, runningApps: () => running, launchOf: pid => (pid === 41 ? t : ({40: 10_000})[pid] ?? null), now: () => t,
+    sleep: async ms => { t += ms; if (t >= 10_500 && !appeared) { appeared = true; running = [{pid: 40}]; } },
+    quit: async pids => { running = running.filter(p => !pids.includes(p.pid)); return {quit: pids, remaining: []}; }};
+  launchIntent({scene: 'electron'}, io);
+  const settled = await settleLaunches({quietMs: 2_000, maxMs: 10_000}, io);
+  assert.equal(settled.quit, 1, 'the late launch was quit');
+  assert.equal(settled.pending, 0);
+  // A launch that keeps reappearing (each time a new process) never reaches quiet: the intent stays for the next cleanup.
+  launchIntent({scene: 'electron'}, io);
+  io.sleep = async ms => { t += ms; running = [{pid: 41}]; };
+  const busy = await settleLaunches({quietMs: 2_000, maxMs: 3_000}, io);
+  assert.equal(busy.pending, 1);
+  assert.equal(j.list.filter(l => l.intent).length, 1);
+  // Nothing journaled: nothing to wait for.
+  const empty = journal();
+  assert.deepEqual(await settleLaunches({}, {...io, ...empty}), {quit: 0, remaining: 0, pending: 0, waitedMs: 0});
 });
 
 test('the windowless fixture comes up in the background and is journaled; one already running refuses', async () => {

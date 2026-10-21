@@ -29,10 +29,14 @@
 //       scenes do not record, launched at or after --since; exactly one) and journaled with its start time in the run
 //       directory (LAUNCHED_FILE), replacing the scene's intent -> {recorded, pid, candidates}
 //   launched quit --run <dir>
-//       every journaled launch that is still the same process (pid and start time), and every process an intent left
-//       names, sent SIGTERM and awaited; the journal keeps what did not quit -> {quit, remaining, gone}. The run calls it
-//       after each launch row and before the put-back; `native-matrix.mjs cleanup` before the live hold's recovery, so a
-//       run that died never strands one.
+//       every journaled launch that is still the same process (pid and start time), and every process an intent names
+//       now, sent SIGTERM and awaited; the journal keeps what did not quit and every intent (its request may still be in
+//       flight) -> {quit, remaining, gone, pending}. The run calls it after each launch row and before the put-back.
+//   launched settle --run <dir>
+//       once the live hold's recovery has stopped the serve and the engine (the work that could still launch): what the
+//       journal names quit as it appears until none has appeared for 3 s, then the intents cleared; one still appearing
+//       after 20 s keeps its intent -> {quit, remaining, pending, waitedMs}. The run and `native-matrix.mjs cleanup`
+//       call it after the recovery, so a controller that died before the launched app appeared never strands it.
 //   windowless up --run <dir>
 //       the windowless app of the "app with no window" refusal: a stay-open AppleScript applet with no window and no
 //       reopen handler (built once, ad hoc signed, its own bundle id), launched in the background and journaled as a
@@ -63,6 +67,8 @@ export const LAUNCHABLE = Object.freeze(['electron']);
 export const LAUNCHED_FILE = 'matrix-launched.json';
 const ALERT_BASELINE_FILE = 'matrix-alert-baseline.json';
 const LAUNCH_QUIT_MS = 5_000;
+// The settle's quiet period, its bound and its poll: a launch the stopped engine had in flight appears within seconds.
+const SETTLE_QUIET_MS = 3_000, SETTLE_MAX_MS = 20_000, SETTLE_POLL_MS = 250;
 // The windowless app: a stay-open applet, its own bundle id, built under the harness's cache.
 export const WINDOWLESS = Object.freeze({bundleId: 'io.github.ssfskim.cua.fixture.windowless', name: 'cua Windowless Fixture'});
 const WINDOWLESS_SOURCE = ['on idle', 'return 3600', 'end idle'];
@@ -157,12 +163,40 @@ function journaledProcesses(journal, io) {
   return {processes: [...same, ...fromIntents], gone: records.length - same.length};
 }
 
+// Quits every process the journal names now. An intent is kept whatever it found: the request it covers may still be in
+// flight (a controller that died before the app appeared), so only settleLaunches clears it, once the work that could
+// launch is stopped. -> {quit, remaining, gone, pending (the intents kept)}.
 export async function quitLaunched(io) {
-  const {processes, gone} = journaledProcesses(io.launched(), io);
-  if (!processes.length) { io.writeLaunched([]); return {quit: 0, remaining: 0, gone}; }
+  const journal = io.launched(), intents = journal.filter(l => l.intent);
+  const {processes, gone} = journaledProcesses(journal, io);
+  if (!processes.length) { io.writeLaunched(intents); return {quit: 0, remaining: 0, gone, pending: intents.length}; }
   const {quit, remaining} = await io.quit(processes.map(l => l.pid));
-  io.writeLaunched(processes.filter(l => remaining.includes(l.pid)).map(({scene, bundleId, pid, at}) => ({scene, bundleId, pid, at})));
-  return {quit: quit.length, remaining: remaining.length, gone};
+  io.writeLaunched([...intents, ...processes.filter(l => remaining.includes(l.pid)).map(({scene, bundleId, pid, at}) => ({scene, bundleId, pid, at}))]);
+  return {quit: quit.length, remaining: remaining.length, gone, pending: intents.length};
+}
+
+// The intents' end, called once the work that could still launch (the serve, the engine) is stopped: the journal's
+// processes quit as they appear, until none has appeared for `quietMs`; then the intents are cleared. A launch still
+// appearing at `maxMs` keeps its intent for the next cleanup. io: quitLaunched's, now(), sleep(ms).
+// -> {quit, remaining, pending, waitedMs}.
+export async function settleLaunches({quietMs = SETTLE_QUIET_MS, maxMs = SETTLE_MAX_MS} = {}, io) {
+  const t0 = io.now();
+  let quit = 0, remaining = 0, lastSeen = t0;
+  if (!io.launched().some(l => l.intent)) {
+    const out = await quitLaunched(io);
+    return {quit: out.quit, remaining: out.remaining, pending: 0, waitedMs: 0};
+  }
+  for (;;) {
+    const out = await quitLaunched(io);
+    quit += out.quit; remaining = out.remaining;
+    if (out.quit || out.remaining) lastSeen = io.now();
+    if (!out.remaining && io.now() - lastSeen >= quietMs) {
+      io.writeLaunched(io.launched().filter(l => !l.intent));
+      return {quit, remaining, pending: 0, waitedMs: io.now() - t0};
+    }
+    if (io.now() - t0 >= maxMs) return {quit, remaining, pending: io.launched().filter(l => l.intent).length, waitedMs: io.now() - t0};
+    await io.sleep(SETTLE_POLL_MS);
+  }
 }
 
 // The windowless applet, built once per source (its bundle id rewritten, then signed ad hoc). -> its path.
@@ -251,6 +285,7 @@ export async function main(argv, {io: given = {}} = {}) {
       if (positional[0] === 'intent') return launchIntent({scene: positional[1]}, io);
       if (positional[0] === 'record') return recordLaunch({scene: positional[1], since: Number(flags.since)}, io);
       if (positional[0] === 'quit') return quitLaunched(io);
+      if (positional[0] === 'settle') return settleLaunches({}, io);
       throw new Error(USAGE);
     case 'windowless':
       if (positional[0] === 'up') return timed(() => windowlessUp(io));

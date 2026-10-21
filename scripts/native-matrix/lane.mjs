@@ -133,7 +133,7 @@ export function dryOps({log, engine, approvedEngine = '/Users/owner/Library/Appl
     }),
     goldens: step('goldens', {steps: [], stopped: true}),
     live: step('live', args => ({begin: {refusals: [], frontmost: {bundleId: 'com.example.owner'}, engineStop: {stopped: true}}, watch: args[1] === 'start' ? {watching: true, pid: 1} : {activations: []},
-      recover: {ok: true, putBack: {ok: true, steps: []}}})[args[0]] ?? {}),
+      recover: {ok: true, putBack: {ok: true, steps: {'engine-stop': {ok: true}}}}})[args[0]] ?? {}),
     matrix: step('matrix', args => {
       const at = [clock(), clock()];
       switch (args[0]) {
@@ -143,7 +143,10 @@ export function dryOps({log, engine, approvedEngine = '/Users/owner/Library/Appl
           if (args[1] === 'activate') front = records[args[2]] ?? front;
           return {answer: args[1] === 'down' ? {down: true} : {scene: args[2], ok: true}, at};
         case 'alerts': return args[1] === 'baseline' ? {baseline: 0} : {abort: false, export: {alerts: [], keywords: [], unknown: {count: 0, windows: []}}, at};
-        case 'launched': return args[1] === 'intent' ? {at: clock(), pids: []} : args[1] === 'record' ? {recorded: true, pid: ++pid, candidates: 1} : {quit: 1, remaining: 0, gone: 0};
+        case 'launched':
+          if (args[1] === 'intent') return {at: clock(), pids: []};
+          if (args[1] === 'record') return {recorded: true, pid: ++pid, candidates: 1};
+          return args[1] === 'settle' ? {quit: 0, remaining: 0, pending: 0, waitedMs: 0} : {quit: 1, remaining: 0, gone: 0, pending: 0};
         case 'windowless': return {answer: {pid: ++pid, app: '/tmp/windowless.app'}, at};
         default: return {};
       }

@@ -28,7 +28,7 @@ const BUILD = 'b'.repeat(64);
 const PREPARED = {device: 'mini', home: '/h', userHome: '/Users/u', configHome: '/s/config', tmpdir: '/s/tmp', token: 'secret-token', admission: 'secret-token', runtimeReuse: {approvedHome: '/h', release: '26.928.40906-darwin-arm64', runtimeRoot: '/h/runtimes/26.928.40906-darwin-arm64'}};
 
 // A device double: the scenes' CLI, the device side of the recorder, preparation and the files the vendor cells wrote.
-function fakeDevice({observe = () => null, action = () => null, up = () => null, preflight = {}, engineProblems = [], approvedBuild = BUILD} = {}) {
+function fakeDevice({observe = () => null, action = () => null, up = () => null, steps = () => [], preflight = {}, engineProblems = [], approvedBuild = BUILD} = {}) {
   const calls = [], files = new Map(), taken = [], discarded = [];
   const records = {};
   let pid = 100;
@@ -39,7 +39,7 @@ function fakeDevice({observe = () => null, action = () => null, up = () => null,
       const [command, scene] = args;
       if (command === 'engine-check') return {ok: !engineProblems.length, engine: {bundlePath: '/e/cua Engine.app', build: approvedBuild, engineVersion: '0.1.0', approvedAt: '2026-10-20T00:00:00Z'}, checkout: {build: approvedBuild, engineVersion: '0.1.0'}, problems: engineProblems};
       if (command === 'engine-stop') return {wasRunning: false};
-      if (command === 'steps') return {scene, phase: args.at(-1), steps: []};
+      if (command === 'steps') return {scene, phase: args.at(-1), steps: steps(scene, args.at(-1))};
       // `observe` (the settled read) and `verify` (the same, guarding captures already written) count as one sequence.
       if (command === 'observe' || command === 'verify') {
         const n = calls.filter(c => (c[1] === 'observe' || c[1] === 'verify') && c[2] === scene).length;
@@ -235,6 +235,22 @@ test('one sitting: both lanes per scene on the same state, in PROVENANCE\'s layo
   assert.doesNotMatch(provenance, /sit2\/u9/);
   assert.match(provenance, /## Expected differences/);
   assert.match(provenance, /2026-10-19T20:30:09Z/);
+});
+
+test('Finder\'s chrome is recorded in meta.json from the device\'s steps: the owner\'s visible state, each phase\'s toggles and whether it was restored', async () => {
+  const visible = {sidebar: true, statusBar: true, pathBar: false};
+  const chrome = (shown, counts) => Object.entries(counts).map(([part, toggles]) => ({chrome: part, part, shown, toggles}));
+  const device = fakeDevice({steps: (scene, phase) => (scene !== 'finder' ? [] : phase === 'setup'
+    ? [{activate: 'finder'}, {pressKey: 'super+2', route: 3}, {visibleState: 'record', visible, kept: false}, ...chrome(false, {sidebar: 1, statusBar: 2, pathBar: 0})]
+    : phase === 'teardown' ? [{activate: 'finder'}, ...chrome(true, {sidebar: 1, statusBar: 1, pathBar: 0}), {visibleState: 'restored'}, {pressKey: 'super+w', route: 3}] : [])});
+  const out = await run({device});
+  assert.equal(out.code, 0, JSON.stringify(out.meta.problems ?? out.meta.error));
+  assert.deepEqual(out.meta.scenes.finder.chrome, {visible, setupToggles: {sidebar: 1, statusBar: 2, pathBar: 0}, teardownToggles: {sidebar: 1, statusBar: 1, pathBar: 0}, restored: true});
+  for (const id of ['textedit', 'chrome', 'electron']) assert.equal('chrome' in out.meta.scenes[id], false, id);
+  // A teardown that did not restore the visible state says so.
+  const unrestored = fakeDevice({steps: (scene, phase) => (scene === 'finder' && phase === 'setup' ? [{visibleState: 'record', visible, kept: true}, ...chrome(false, {sidebar: 1, statusBar: 0, pathBar: 0})] : [])});
+  const again = await run({device: unrestored});
+  assert.deepEqual(again.meta.scenes.finder.chrome, {visible, setupToggles: {sidebar: 1, statusBar: 0, pathBar: 0}, teardownToggles: {}, restored: false});
 });
 
 test('the vendor\'s text is removed unread when cua\'s check of the state right after it fails; three failures leave the scene unrecorded', async () => {

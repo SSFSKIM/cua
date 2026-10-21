@@ -37,7 +37,7 @@
 //     to the fixed state (Finder: its selection cleared in the same window; the others restarted); cua's action sequence
 //     on one engine connection (./goldens-device.mjs act); then the teardown steps and down.
 //   - Writes <out>/goldens/<scene>/<file> in PROVENANCE's layout, <out>/meta.json (builds, device, fixtures, sizing
-//     config, each capture's window frame and the engine's diagnostics; never a token, a signing identity or any
+//     config, each capture's window frame and the engine's diagnostics, Finder's chrome record (recordChrome); never a token, a signing identity or any
 //     accessibility text) and, when complete, installs it (--no-install leaves that to `install`).
 // Nothing it writes carries content of a window the run does not own: cua's Skyshots are checked on the device before
 // they leave it, and a vendor text is copied off the device only after cua's check of the same state passed; otherwise
@@ -384,7 +384,24 @@ function bringUp(ctx, id) {
 
 // A phase of the scene's steps on the device (./goldens-device.mjs runSteps); a step that cannot be sent stops the scene.
 function steps(ctx, id, phase) {
-  try { return ctx.ops.goldens(['steps', id, '--run', ctx.run, '--phase', phase]); } catch (error) { throw new SceneProblem(`its ${phase} steps stopped: ${error.message}`); }
+  let out;
+  try { out = ctx.ops.goldens(['steps', id, '--run', ctx.run, '--phase', phase]); } catch (error) { throw new SceneProblem(`its ${phase} steps stopped: ${error.message}`); }
+  recordChrome(ctx.meta.scenes[id], phase, out?.steps ?? []);
+  return out;
+}
+
+// Finder's chrome as its setup and teardown steps report it, into the scene's meta: the owner's visible state the setup
+// observed, the toggles each phase sent per part, and whether the teardown brought the window back to that state. Only
+// booleans and counts: the device's steps carry nothing else.
+function recordChrome(scene, phase, done) {
+  const parts = done.filter(step => step.chrome);
+  const recorded = done.find(step => step.visibleState === 'record');
+  if (!scene || (!parts.length && !recorded)) return;
+  const chrome = scene.chrome ??= {visible: null, setupToggles: {}, teardownToggles: {}, restored: false};
+  if (recorded) chrome.visible = Object.fromEntries(Object.entries(recorded.visible ?? {}).map(([part, shown]) => [part, shown === true]));
+  const toggles = Object.fromEntries(parts.map(step => [step.chrome, Number(step.toggles) || 0]));
+  if (phase === 'setup') chrome.setupToggles = toggles;
+  if (phase === 'teardown') { chrome.teardownToggles = toggles; chrome.restored = done.some(step => step.visibleState === 'restored'); }
 }
 
 // The scene's teardown steps, then down. A failure is the run's problem; `strict` (a restart) stops the scene too.

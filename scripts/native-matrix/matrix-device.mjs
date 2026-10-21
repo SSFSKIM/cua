@@ -19,18 +19,20 @@
 //       the paste rows' system-alert watch (./live-checks.mjs alertWatch, the live paste check's): the screen's windows
 //       at the baseline kept in the run directory (numbers and owners only), then each check against it -> {abort, export}
 //       (sanitized: alert processes' bundle ids and layers, title keywords, counts); no alert's text is ever read
+//   launched intent <scene> --run <dir>
+//       journaled before a launch row's act is sent: the scene's bundle id, the device's time and the pids of that
+//       bundle running at that moment -> {at, pids}. A controller that dies during or after the act leaves this, and
+//       `launched quit` takes any process of the bundle started at or after that time and not in the snapshot as the
+//       run's (the scenes' preflight refuses a foreign instance of the fixture, so such a process is the run's)
 //   launched record <scene> --run <dir> --since <unix ms>
 //       the app a launch row's engine brought up, identified at once (a process of the scene's bundle id the run's
 //       scenes do not record, launched at or after --since; exactly one) and journaled with its start time in the run
-//       directory (LAUNCHED_FILE) before anything else can fail -> {recorded, pid, candidates}
+//       directory (LAUNCHED_FILE), replacing the scene's intent -> {recorded, pid, candidates}
 //   launched quit --run <dir>
-//       every journaled launch that is still the same process (pid and start time) sent SIGTERM and awaited; the journal
-//       keeps what did not quit -> {quit, remaining, gone}. The run calls it after each launch row and before the put-back;
-//       `native-matrix.mjs cleanup` before the live hold's recovery, so a run that died never strands one.
-//   open-document --run <dir>
-//       the TextEdit launch row's run-owned state: the run's document (the scene's own, written afresh under the run
-//       directory) opened in the background into the TextEdit the row launched, only while that journaled process is the
-//       one TextEdit running -> {answer: {opened, reason?}, at}
+//       every journaled launch that is still the same process (pid and start time), and every process an intent left
+//       names, sent SIGTERM and awaited; the journal keeps what did not quit -> {quit, remaining, gone}. The run calls it
+//       after each launch row and before the put-back; `native-matrix.mjs cleanup` before the live hold's recovery, so a
+//       run that died never strands one.
 //   windowless up --run <dir>
 //       the windowless app of the "app with no window" refusal: a stay-open AppleScript applet with no window and no
 //       reopen handler (built once, ad hoc signed, its own bundle id), launched in the background and journaled as a
@@ -46,7 +48,7 @@ import {basename, isAbsolute, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {launchOf, quitOwned} from '../accept/fixture-app.mjs';
 import {FRONT_WINDOW_SCRIPT} from '../accept/key-guard.mjs';
-import {main as scenesMain, readState, SCENES, textEditDocument} from '../repl-parity/scenes-mac.mjs';
+import {main as scenesMain, readState, SCENES} from '../repl-parity/scenes-mac.mjs';
 import {alertWatch} from './live-checks.mjs';
 import {defaultIo, processTable} from './live-device.mjs';
 import {ownedReading} from './oracle.mjs';
@@ -54,7 +56,10 @@ import {ownedReading} from './oracle.mjs';
 const SCRIPT = fileURLToPath(import.meta.url);
 const SYSTEM_WINDOWS_SCRIPT = fileURLToPath(new URL('./system-windows.swift', import.meta.url));
 // The scenes the launch path covers (part 4: the engine can launch them into their fixed state).
-export const LAUNCHABLE = Object.freeze(['textedit', 'electron']);
+// The scenes whose launch path the matrix runs: the Electron fixture alone. TextEdit's is not run on a shared Mac (the
+// spec's Decision Log, M2b.2 review): its first observation would capture the owner's restored windows or its iCloud
+// Open panel, and isolating it would mean changing the owner's TextEdit state.
+export const LAUNCHABLE = Object.freeze(['electron']);
 export const LAUNCHED_FILE = 'matrix-launched.json';
 const ALERT_BASELINE_FILE = 'matrix-alert-baseline.json';
 const LAUNCH_QUIT_MS = 5_000;
@@ -117,40 +122,47 @@ export function alerts(action, io) {
 
 // ---- launches ------------------------------------------------------------------------------------------------------------
 
-// io: {state(), launched(), writeLaunched(list), runningApps(bundleId), launchOf(pid), quit(pids)}.
+const launchable = scene => { if (!LAUNCHABLE.includes(scene)) throw new Error(`launched covers ${LAUNCHABLE.join(' and ')}, not ${scene}`); return SCENES[scene].bundleId; };
+// lsappinfo's launch time is to the second: a process started in the same second as `at` counts as after it.
+const floorSecond = at => Math.floor(at / 1000) * 1000;
+
+// io: {state(), launched(), writeLaunched(list), runningApps(bundleId), now()}. -> {at, pids}.
+export function launchIntent({scene}, io) {
+  const bundleId = launchable(scene);
+  const at = io.now(), pids = io.runningApps(bundleId).map(p => p.pid);
+  io.writeLaunched([...io.launched().filter(l => !(l.intent && l.scene === scene)), {intent: true, scene, bundleId, at, pids}]);
+  return {at, pids};
+}
+
+// io: {state(), launched(), writeLaunched(list), runningApps(bundleId), launchOf(pid)}.
 export function recordLaunch({scene, since}, io) {
-  if (!LAUNCHABLE.includes(scene)) throw new Error(`launched covers ${LAUNCHABLE.join(' and ')}, not ${scene}`);
+  const bundleId = launchable(scene);
   if (!Number.isSafeInteger(since)) throw new Error('--since needs a unix time in ms');
   const journal = io.launched(), recorded = new Set(ownedPids(io.state(), journal));
-  const floor = Math.floor(since / 1000) * 1000;
-  const bundleId = SCENES[scene].bundleId;
-  const found = io.runningApps(bundleId).map(p => ({pid: p.pid, at: io.launchOf(p.pid)})).filter(p => !recorded.has(p.pid) && p.at !== null && p.at >= floor);
+  const found = io.runningApps(bundleId).map(p => ({pid: p.pid, at: io.launchOf(p.pid)})).filter(p => !recorded.has(p.pid) && p.at !== null && p.at >= floorSecond(since));
   if (found.length !== 1) return {recorded: false, pid: null, candidates: found.length};
-  io.writeLaunched([...journal, {scene, bundleId, pid: found[0].pid, at: found[0].at}]);
+  io.writeLaunched([...journal.filter(l => !(l.intent && l.scene === scene)), {scene, bundleId, pid: found[0].pid, at: found[0].at}]);
   return {recorded: true, pid: found[0].pid, candidates: 1};
 }
 
-export async function quitLaunched(io) {
-  const journal = io.launched();
-  const same = journal.filter(l => io.launchOf(l.pid) === l.at), gone = journal.length - same.length;
-  if (!same.length) { io.writeLaunched([]); return {quit: 0, remaining: 0, gone}; }
-  const {quit, remaining} = await io.quit(same.map(l => l.pid));
-  io.writeLaunched(same.filter(l => remaining.includes(l.pid)));
-  return {quit: quit.length, remaining: remaining.length, gone};
+// The journal's launches still the same process, and the processes its intents left name: of the intent's bundle,
+// started at or after the intent, not in its snapshot, not one of the run's recorded processes. Each process with the
+// start time it had when found, so the quit signals only that process.
+function journaledProcesses(journal, io) {
+  const records = journal.filter(l => !l.intent), intents = journal.filter(l => l.intent);
+  const same = records.filter(l => io.launchOf(l.pid) === l.at);
+  const known = new Set([...ownedPids(io.state(), records), ...intents.flatMap(i => i.pids)]);
+  const fromIntents = intents.flatMap(i => io.runningApps(i.bundleId).map(p => ({scene: i.scene, bundleId: i.bundleId, pid: p.pid, at: io.launchOf(p.pid)}))
+    .filter(p => !known.has(p.pid) && p.at !== null && p.at >= floorSecond(i.at)));
+  return {processes: [...same, ...fromIntents], gone: records.length - same.length};
 }
 
-// The run's document opened into the TextEdit a launch row brought up (TextEdit opens its Open panel when launched
-// without one, and that panel lists the owner's files). io: {launched(), runningApps(bundleId), writeDocument() -> path,
-// openDocument(path)}. -> {opened, reason?}.
-export function openDocument(io) {
-  const bundleId = SCENES.textedit.bundleId;
-  const journaled = io.launched().filter(l => l.scene === 'textedit').map(l => l.pid);
-  const running = io.runningApps(bundleId).map(p => p.pid);
-  if (journaled.length !== 1 || running.length !== 1 || running[0] !== journaled[0]) {
-    return {opened: false, reason: 'the TextEdit the row launched is not the one TextEdit running: nothing opened'};
-  }
-  io.openDocument(io.writeDocument());
-  return {opened: true};
+export async function quitLaunched(io) {
+  const {processes, gone} = journaledProcesses(io.launched(), io);
+  if (!processes.length) { io.writeLaunched([]); return {quit: 0, remaining: 0, gone}; }
+  const {quit, remaining} = await io.quit(processes.map(l => l.pid));
+  io.writeLaunched(processes.filter(l => remaining.includes(l.pid)).map(({scene, bundleId, pid, at}) => ({scene, bundleId, pid, at})));
+  return {quit: quit.length, remaining: remaining.length, gone};
 }
 
 // The windowless applet, built once per source (its bundle id rewritten, then signed ad hoc). -> its path.
@@ -212,7 +224,7 @@ function parse(argv) {
   }
   return {command, positional, flags};
 }
-const USAGE = 'usage: matrix-device.mjs compile|read|alerts|launched|open-document|windowless --run <dir> … | step <scenes-mac.mjs arguments>';
+const USAGE = 'usage: matrix-device.mjs compile|read|alerts|launched|windowless --run <dir> … | step <scenes-mac.mjs arguments>';
 const sleep = ms => new Promise(done => setTimeout(done, ms));
 
 export async function main(argv, {io: given = {}} = {}) {
@@ -227,13 +239,6 @@ export async function main(argv, {io: given = {}} = {}) {
     windows: () => JSON.parse(run(compiled(SYSTEM_WINDOWS_SCRIPT, dir), [])).windows,
     watcherRuns: pid => isWatcher(processTable(), pid),
     probe: live.probe, runningApps: live.runningApps, launchOf: pid => launchOf(pid), quit: pids => quitOwned(pids, {waitMs: LAUNCH_QUIT_MS}),
-    writeDocument: () => {
-      const folder = join(dir, 'matrix-launch'), doc = textEditDocument(), file = join(folder, doc.name);
-      fs.mkdirSync(folder, {recursive: true, mode: 0o700});
-      fs.writeFileSync(file, doc.rtf, {mode: 0o600});
-      return file;
-    },
-    openDocument: file => run('/usr/bin/open', ['-g', '-b', SCENES.textedit.bundleId, file]),
     app: () => windowlessApp(), open: app => run('/usr/bin/open', ['-n', '-g', '-a', app]), sleep, now: Date.now,
     ...given,
   };
@@ -243,10 +248,10 @@ export async function main(argv, {io: given = {}} = {}) {
     case 'step': return timed(() => (io.scenes ?? scenesMain)(argv.slice(1)));
     case 'alerts': return {...alerts(positional[0], io), at: [Date.now(), Date.now()]};
     case 'launched':
+      if (positional[0] === 'intent') return launchIntent({scene: positional[1]}, io);
       if (positional[0] === 'record') return recordLaunch({scene: positional[1], since: Number(flags.since)}, io);
       if (positional[0] === 'quit') return quitLaunched(io);
       throw new Error(USAGE);
-    case 'open-document': return timed(async () => openDocument(io));
     case 'windowless':
       if (positional[0] === 'up') return timed(() => windowlessUp(io));
       throw new Error(USAGE);

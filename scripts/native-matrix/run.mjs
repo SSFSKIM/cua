@@ -19,10 +19,10 @@
 //      of the driven target run with the oracle's reading before and after the act (./matrix-device.mjs read, the focus
 //      probe after); keys only through the key guard's user-window case; a paste or typeText act only between two alert
 //      checks; the windowless app (the "app with no window" refusal) brought up for its pairing and quit after it
-//   7. the launch path (TextEdit, the Electron fixture): the scene down, the user window in front, the app observed by
-//      its path through the engine's own call (its text never leaves the cell), the launched process journaled at once
-//      by pid and start time, the oracle read, the run's own state put in place (TextEdit: the run's document opened
-//      into it), the outcome read, and the launched process quit in a `finally`
+//   7. the launch path (the Electron fixture; TextEdit's is an owner option, ./plan.mjs OWNER_OPTIONS): the user
+//      window in front, the scene down, the launch's intent journaled on the device, the app observed by its path
+//      through the engine's own call (its text never leaves the cell), the launched process journaled by pid and start
+//      time, the oracle read, the outcome read, and the launched process quit in a `finally`
 //   8. end_task; the watcher's liveness read once more, the watcher stopped and every activation it saw accounted for
 //      against the steps' device-clock windows (./oracle.mjs accountActivations); the lane closed; every journaled
 //      launch quit; the live hold's `recover` (the put-back: Finder's chrome and keys, every scene down, the input source
@@ -54,7 +54,7 @@ import {BIND} from './goldens-cells.mjs';
 import {BIND_MS, connectLane, helpersOf} from './lane.mjs';
 import {caseCells, CLOSE_PANEL, findingCell, launchCell, launchCheckCell, OPEN_PANEL, selectCell} from './matrix-cells.mjs';
 import {accountActivations, judgeInterference, userWindowOf} from './oracle.mjs';
-import {CASES, caseId, SCENE_OF, WINDOWLESS_BUNDLE_ID} from './plan.mjs';
+import {CASES, caseId, OWNER_OPTIONS, SCENE_OF, WINDOWLESS_BUNDLE_ID} from './plan.mjs';
 
 export const DEFAULT_RUN = 'Library/Caches/cua-harness/native-matrix';
 export const DEFAULT_RUNS = 3;
@@ -69,7 +69,7 @@ export const PASTING = Object.freeze(['paste', 'typeText']);
 export const FULL_PLAN = Object.freeze({
   id: 'full', frontmost: ['textedit', 'openPanel', 'finder', 'chrome', 'electron'], speed: true, finding: true,
   background: [...BACKGROUND_PAIRINGS, {driven: 'openPanel', user: 'finder'}, {driven: 'windowless', user: 'finder'}],
-  launch: [{scene: 'textedit', user: 'finder'}, {scene: 'electron', user: 'finder'}],
+  launch: [{scene: 'electron', user: 'finder'}],
 });
 const EMPTY_PLAN = {frontmost: [], speed: false, finding: false, background: [], launch: []};
 const NARROWABLE = [...FULL_PLAN.frontmost, 'windowless'];
@@ -79,7 +79,10 @@ export function planOf(kind, {scene = null, user = null} = {}) {
   if (scene !== null && !NARROWABLE.includes(scene)) throw new Error(`--scene is one of ${NARROWABLE.join(', ')}`);
   if (user !== null && !SCENE_ORDER.includes(user)) throw new Error(`--user is one of ${SCENE_ORDER.join(', ')}`);
   const plan = narrowed(kind, {scene, user});
-  if (!plan.frontmost.length && !plan.background.length && !plan.launch.length) throw new Error(`the ${kind} cell has nothing to run for${scene ? ` --scene ${scene}` : ''}${user ? ` --user ${user}` : ''}`);
+  if (!plan.frontmost.length && !plan.background.length && !plan.launch.length) {
+    const option = OWNER_OPTIONS.find(o => kind === 'launch' && o.section === 'launch' && o.id.startsWith(`${scene}/`));
+    throw new Error(`the ${kind} cell has nothing to run for${scene ? ` --scene ${scene}` : ''}${user ? ` --user ${user}` : ''}${option ? `: ${option.option} (${option.reason})` : ''}`);
+  }
   const id = kind === 'matrix' && scene === null && user === null ? 'full' : `${kind}${scene ? `:${scene}` : ''}${user ? `@${user}` : ''}`;
   return {...plan, id};
 }
@@ -232,7 +235,7 @@ async function runOnce(options, io) {
       // getApp emits its text: the scene's own window in front first, so that text is the run's.
       const front = activate(ctx, id);
       if (!front?.ok) throw new Error(`${id} did not come to the front before its bind (${front?.reason ?? 'no answer'})`);
-      const bound = await js(ctx, 'setup', `bind:${id}`, BIND(id, ctx.records[id].app), BIND_MS);
+      const bound = await js(ctx, 'setup', `bind:${id}`, BIND(id, ctx.records[id].app), {timeoutMs: BIND_MS});
       if (!bound.ok) throw new Error(`${id} could not be bound: ${bound.error}`);
     }
     snapshot();
@@ -326,17 +329,23 @@ function finishWatch(ctx) {
 // ---- the steps and their windows ------------------------------------------------------------------------------------
 
 const push = (ctx, row) => { ctx.rows.push(row); return row; };
-const mark = (ctx, kind, key, at) => { if (Array.isArray(at) && at.length === 2 && at.every(Number.isFinite)) ctx.windows.push({kind, key, at}); };
+// A step's device-clock window; a harness step names the apps it intends to activate (`apps`), the only activations
+// it excuses (./oracle.mjs accountActivations).
+const mark = (ctx, kind, key, at, apps = []) => {
+  if (Array.isArray(at) && at.length === 2 && at.every(Number.isFinite)) ctx.windows.push({kind, key, at, ...(kind === 'harness' ? {apps} : {})});
+};
 // A js cell, its device-clock window kept under `kind`.
-async function js(ctx, kind, key, code, timeoutMs) {
+async function js(ctx, kind, key, code, {timeoutMs, apps} = {}) {
   const r = await ctx.lane.js(code, timeoutMs);
-  mark(ctx, kind, key, r.at);
+  mark(ctx, kind, key, r.at, apps);
   return r;
 }
-// A scenes command (activate, down) through ./matrix-device.mjs step, its window the harness's. -> the command's answer.
+const TEXTEDIT = [SCENES.textedit.bundleId];
+// A scenes command through ./matrix-device.mjs step, its window the harness's: `activate` intends its scene's app,
+// `down` (of a scene not in front) intends none. -> the command's answer.
 function step(ctx, args) {
   const {answer, at} = ctx.ops.matrix(['step', ...args, '--run', ctx.run]) ?? {};
-  mark(ctx, 'harness', args.join(':'), at);
+  mark(ctx, 'harness', args.join(':'), at, args[0] === 'activate' ? [SCENES[args[1]].bundleId] : []);
   return answer;
 }
 const activate = (ctx, scene) => step(ctx, ['activate', scene]);
@@ -359,7 +368,8 @@ function alertCheck(ctx, when) {
 // Mac, an alert) stops the run. -> the cell's answer, or null when it was not sent.
 async function sendKeys(ctx, code, keys, {scene, front, userWindow, kind = 'harness', key = `keys:${keys.join('+')}`}) {
   const target = guardOf(scene, ctx.records[scene]);
-  const out = await sendIfFrontmost({target, keys, frontmost: () => frontmostFromProbe((front ?? read(ctx)).reading), send: () => js(ctx, kind, key, code),
+  const out = await sendIfFrontmost({target, keys, frontmost: () => frontmostFromProbe((front ?? read(ctx)).reading),
+    send: () => js(ctx, kind, key, code, {apps: [SCENES[scene].bundleId]}),
     ...(userWindow ? {userWindow} : {})});
   if (out.sent) return out.result;
   const seen = out.skipped.frontmost;
@@ -451,7 +461,7 @@ async function frontmostTarget(ctx, target, plan) {
 }
 
 async function closePanel(ctx) {
-  const closed = await js(ctx, 'harness', 'close-panel', CLOSE_PANEL);
+  const closed = await js(ctx, 'harness', 'close-panel', CLOSE_PANEL, {apps: TEXTEDIT});
   if (!closed.ok || !closed.value?.closed) throw new Stop('TextEdit\'s Open panel stayed open after its cases');
 }
 
@@ -463,7 +473,7 @@ async function backgroundPairing(ctx, {driven, user}) {
   try {
     if (driven === 'windowless') {
       const up = ctx.ops.matrix(['windowless', 'up', '--run', ctx.run]);
-      mark(ctx, 'harness', 'windowless-up', up?.at);
+      mark(ctx, 'harness', 'windowless-up', up?.at, []);
       if (!Number.isSafeInteger(up?.answer?.pid)) return invalidCases(ctx, driven, 'background', 'the windowless app did not come up', user);
     }
     const front = activate(ctx, user);
@@ -513,37 +523,35 @@ async function findingRows(ctx, scene) {
   push(ctx, {...base, id: `${scene}/ids`, ok: true, outcome: {ids: r.value.ids}});
 }
 
-// The launch path of one scene (part 4): the scene down, the user window in front, the app observed by its path while
-// it is not running (launchCell: the text stays in the cell), the process the engine launched journaled at once (pid
-// and start time, any process of the bundle started since the reading before the act), the oracle read, the run's own
-// state put in place (TextEdit opens its Open panel on a launch without a document, and the panel lists the owner's
-// files: the run's document is opened into it, and only the scene's own window in front passes), the outcome read; the
-// launched process quit in a `finally`, whatever failed. The row's outcome (the launch worked) is its `ok`, judged apart
-// from its interference (the oracle).
+// The launch path of one scene (part 4): the user window in front, then the scene down (not in front, so its quit hands
+// the front to nothing), the launch's intent journaled on the device before the act is sent (so a controller that dies
+// during or after the act leaves recovery the process to quit), the app observed by its path while it is not running
+// (launchCell: the text stays in the cell), the process the engine launched journaled precisely (pid and start time),
+// the oracle read, the outcome read; the launched process quit in a `finally`, whatever failed. The row's outcome (the
+// launch reached the scene's own window) is its `ok`, judged apart from its interference (the oracle).
 async function launchRow(ctx, {scene, user}) {
   await ctx.checkpoint();
   const key = `row:${ctx.rows.length}`;
   const row = {section: 'launch', id: `${scene}/background/launch@${user}`, engine: ctx.engine, sample: ctx.n, ok: false, scene, user, regime: 'background', method: 'getApp', case: 'launch'};
   const app = ctx.records[scene]?.app;
+  const front = activate(ctx, user);
+  if (!front?.ok) return push(ctx, {...row, invalid: `the user window (${user}) did not come to the front`});
   const down = step(ctx, ['down', scene]);
   if (!down?.down) return push(ctx, {...row, invalid: `the scene could not be brought down first (${down?.reason ?? 'no answer'})`});
-  const front = activate(ctx, user);
-  const before = front?.ok ? read(ctx) : null;
-  const userWindow = before ? userWindowOf(before.reading, ctx.records[user].pid) : null;
-  if (!userWindow) return push(ctx, {...row, invalid: `the user window (${user}) did not come to the front`});
+  const before = read(ctx);
+  const userWindow = userWindowOf(before.reading, ctx.records[user].pid);
+  if (!userWindow) return push(ctx, {...row, invalid: `the user window (${user}) was not in front before the launch`});
   if (before.watcher !== true) return push(ctx, {...row, invalid: 'the activation watcher was not running before the launch'});
-  const record = () => ctx.ops.matrix(['launched', 'record', scene, '--run', ctx.run, '--since', String(before.at[0])]);
   let from = null, to = null, recorded = null;
   try {
+    const intent = ctx.ops.matrix(['launched', 'intent', scene, '--run', ctx.run]);
+    if (!Number.isSafeInteger(intent?.at)) return push(ctx, {...row, invalid: 'the launch\'s intent could not be journaled: nothing was sent'});
+    const record = () => ctx.ops.matrix(['launched', 'record', scene, '--run', ctx.run, '--since', String(intent.at)]);
     const act = await ctx.lane.js(launchCell(scene, app)).finally(() => { recorded = record(); });
     [from, to] = act.at ?? [null, null];
     if (!act.ok) return push(ctx, {...row, invalid: 'the launch cell failed', error: act.error});
     Object.assign(row, {inCellMs: act.value.actMs, wallMs: act.wallMs, inputRoute: act.route, ...(act.value.error ? {error: act.value.error} : {})});
     const after = read(ctx, focusOf(userWindow));
-    if (scene === 'textedit' && recorded?.recorded) {
-      const opened = ctx.ops.matrix(['open-document', '--run', ctx.run]);
-      mark(ctx, 'harness', 'open-document', opened?.at);
-    }
     const check = await ctx.lane.js(launchCheckCell(scene, app));
     to = check.at?.[1] ?? to;
     const outcome = {...(check.value?.outcome ?? {}), threw: act.value.threw, launched: recorded?.recorded === true};

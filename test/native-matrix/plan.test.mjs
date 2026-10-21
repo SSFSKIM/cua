@@ -8,8 +8,19 @@ import {fileURLToPath} from 'node:url';
 import {parseCell} from '../../scripts/native-baseline/cells.mjs';
 import {CASES, METHODS, NOT_APPLICABLE, TARGETS, caseId} from '../../scripts/native-matrix/plan.mjs';
 import {NO_SUCH_ACTION, caseCells, findingCell, panelCell, selectCell} from '../../scripts/native-matrix/matrix-cells.mjs';
+import {focusedIndexOf, selectedTextOf} from '../../scripts/native-matrix/matrix-text.mjs';
+import {NOTE} from '../../src/services/engine/render.mjs';
 
 const golden = (scene, file) => readFileSync(fileURLToPath(new URL(`../native-goldens/${scene}/${file}`, import.meta.url)), 'utf8');
+// A text's trailer replaced as src/services/engine/render.mjs trailer() writes one: selected text, else selected elements,
+// else the focused element, never two of them. `focused` is the focused element's line (without its tabs).
+function withTrailer(ax, {selectedText = null, selected = [], focused = null}) {
+  const tree = String(ax).split(/\n\n(?:The focused UI element is |Selected text: |Selected:\n)/)[0];
+  if (selectedText !== null) return `${tree}\n\nSelected text: \`\`\`\n${selectedText}\n\`\`\`\n\n${NOTE}`;
+  if (selected.length) return `${tree}\n\nSelected:\n${selected.map(line => `\t${line}`).join('\n')}\n\n${NOTE}`;
+  return focused === null ? tree : `${tree}\n\nThe focused UI element is ${focused}`;
+}
+const focusedLine = ax => /^The focused UI element is (.*)$/m.exec(ax)?.[1] ?? null;
 const AsyncFunction = (async () => {}).constructor;
 
 // Runs a cell's text as the REPL would, with `cua` and the scenes bound. -> the cell's {ok, value|error, inCellMs}.
@@ -92,7 +103,7 @@ function electronField({value = '', inert = false, insertAtStart = false} = {}) 
   const render = () => {
     const tree = lines.map(line => (/^\t+5 /.test(line) ? `${line}${state.value ? `, Value: ${state.value}` : ''}` : line)).join('\n');
     const focused = lines.find(l => new RegExp(`^\\t*${state.focused} `).test(l))?.trim() ?? '';
-    return `${tree}\n\nThe focused UI element is ${focused}${state.selected ? `\n\nSelected text: \`\`\`\n${state.selected}\n\`\`\`` : ''}`;
+    return withTrailer(tree, state.selected ? {selectedText: state.selected} : {focused});
   };
   const write = text => {
     if (inert) return;
@@ -108,6 +119,28 @@ function electronField({value = '', inert = false, insertAtStart = false} = {}) 
   Object.defineProperty(app, 'ax', {get: render, set: () => {}});
   return {app, state};
 }
+
+test('the doubles write the renderer\'s trailer: a selection replaces the focused element, so no text carries both', async () => {
+  const {app} = electronField({value: 'alpha one\nbravo two'});
+  assert.equal(focusedIndexOf(app.ax), 5);
+  await app.selectText(5, 'bravo');
+  assert.deepEqual([selectedTextOf(app.ax), focusedIndexOf(app.ax)], ['bravo', null]);
+  assert.ok(app.ax.endsWith(NOTE));
+  // TextEdit's three selection preparations (typeText, select-all, paste) reach ready on that grammar: the focus is read
+  // before the word is selected, and the selection after it.
+  const doc = golden('textedit', 'vendor.txt');
+  const lineOf = index => new RegExp(`^\\t*(${index} .*)$`, 'm').exec(doc)[1];
+  for (const [method, kase] of [['typeText', 'replace'], ['pressKey', 'selectAll'], ['paste', 'replace']]) {
+    const text = fakeApp(withTrailer(doc, {focused: focusedLine(doc)}), {
+      click: (app, index) => { app.ax = withTrailer(doc, {focused: lineOf(index)}); },
+      selectText: (app, _, word) => { app.ax = withTrailer(doc, {selectedText: word}); },
+    });
+    const cells = caseCells('textedit', casesOf('textedit', method, kase));
+    const prepared = await run(cells.prepare, {apps: {textedit: text}});
+    delete globalThis.__m;
+    assert.equal(prepared.value.ready, true, `${method}.${kase}: ${JSON.stringify(prepared.value)}`);
+  }
+});
 
 test('an action\'s outcome is read back: TextEdit\'s align center, the Electron button, Finder\'s row from another row', async () => {
   // align center: a click on it sets its value; on the golden it is unchecked.
@@ -134,7 +167,7 @@ test('an action\'s outcome is read back: TextEdit\'s align center, the Electron 
   const names = ['scene-file-001', 'scene-file-005'];
   const select = fakeApp(finder, {click: (app, index) => {
     const name = names.find(n => indexOfRowCell(finder, n) === index);
-    if (name) app.ax = finder.replace(/\n\nThe focused UI element/, `\n\nSelected:\n\t${text.rowIndexOfName(finder, name)} row (selected)\n\nThe focused UI element`);
+    if (name) app.ax = withTrailer(finder, {selected: [`${text.rowIndexOfName(finder, name)} row (selected)`]});
   }});
   const row = await runCase('finder', 'finder', select, 'click', 'row');
   assert.equal(row.prepare.value.ready, true, JSON.stringify(row.prepare));
@@ -186,7 +219,7 @@ test('Chrome\'s Apply needs the fresh name in the status; a status an earlier ro
 
 test('the caret click must collapse a selection it did not make; the drag must select across lines from no selection', async () => {
   const doc = golden('textedit', 'vendor.txt');
-  const trailer = sel => doc.replace(/\n\nThe focused UI element/, `\n\nSelected text: \`\`\`\n${sel}\n\`\`\`\n\nThe focused UI element`);
+  const trailer = sel => withTrailer(doc, {selectedText: sel});
   const collapsing = fakeApp(doc, {selectText: (app, _, word) => { app.ax = trailer(word); }, click: app => { app.ax = doc; }});
   assert.equal((await runCase('textedit', 'textedit', collapsing, 'click', 'element')).check.value.ok, true);
   const inert = fakeApp(doc, {selectText: (app, _, word) => { app.ax = trailer(word); }});

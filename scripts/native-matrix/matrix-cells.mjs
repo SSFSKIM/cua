@@ -141,9 +141,8 @@ return {closed: !panel(ax)};`);
 
 // The launch path's act (part 4): the scene's app, not running, observed by its path through the engine's own call
 // (`cua.computer.get_app_state`, what getApp makes, without getApp's emission of the text), which must bring it up
-// without the engine activating it. A freshly launched TextEdit opens its Open panel, which lists the owner's files:
-// its text stays in this cell, and only booleans leave it (the state came back, whether the panel or the scene's own
-// window is in front). -> {actMs, at, threw, error?, state, panel, scene}.
+// without the engine activating it. Its text stays in this cell, and only booleans leave it (the state came back,
+// whether an Open panel or the scene's own window is in front). -> {actMs, at, threw, error?, state, panel, scene}.
 export const launchCell = (scene, app) => cell(`${EMBEDDED}
 const __from = Date.now(), __t = performance.now();
 let threw = null, text = "";
@@ -153,9 +152,8 @@ const facts = {state: text.length > 0, panel: /ID: open-panel\\b/.test(lineOfInd
 text = "";
 return {actMs, at, threw: threw !== null, ...(threw === null ? {} : {error: threw}), ...facts};`);
 
-// The launch path's outcome, once the harness has put the run's own state in place (TextEdit: the run's document opened
-// into the launched process): the app listed as running and its front window the scene's own, never the Open panel. The
-// observation again stays in the cell. -> {ok, outcome: {listed, running, scene, panel}}.
+// The launch path's outcome: the app listed as running and its front window the scene's own (awaited up to 10 s), never
+// an Open panel. The observation again stays in the cell. -> {ok, outcome: {listed, running, scene, panel}}.
 export const launchCheckCell = (scene, app) => cell(`${EMBEDDED}
 const apps = await cua.listApps({emit: false});
 const hit = (Array.isArray(apps) ? apps : []).find(a => [a?.id, a?.bundleId, a?.bundleIdentifier].includes(${j(SCENES[scene].bundleId)}));

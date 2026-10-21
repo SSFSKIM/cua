@@ -143,8 +143,7 @@ export function dryOps({log, engine, approvedEngine = '/Users/owner/Library/Appl
           if (args[1] === 'activate') front = records[args[2]] ?? front;
           return {answer: args[1] === 'down' ? {down: true} : {scene: args[2], ok: true}, at};
         case 'alerts': return args[1] === 'baseline' ? {baseline: 0} : {abort: false, export: {alerts: [], keywords: [], unknown: {count: 0, windows: []}}, at};
-        case 'launched': return args[1] === 'record' ? {recorded: true, pid: ++pid, candidates: 1} : {quit: 1, remaining: 0, gone: 0};
-        case 'open-document': return {answer: {opened: true}, at};
+        case 'launched': return args[1] === 'intent' ? {at: clock(), pids: []} : args[1] === 'record' ? {recorded: true, pid: ++pid, candidates: 1} : {quit: 1, remaining: 0, gone: 0};
         case 'windowless': return {answer: {pid: ++pid, app: '/tmp/windowless.app'}, at};
         default: return {};
       }

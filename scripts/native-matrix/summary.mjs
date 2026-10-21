@@ -27,14 +27,17 @@
 // narrowed matrix cell (`cell method --scene …`) is listed and not counted. The full runs must form one sitting: at
 // least RUNS_PER_SIDE complete, attested runs per engine, one device, one meta.sitting, one commit, one OS, one host and
 // one engine build per engine, no (section, id, engine, sample) twice, and every row of the manifest (manifestOf) in
-// every run. Whatever is missing is NO VERDICT, which blocks M5 as a failure does but is not one.
+// every run, built only from a run whose own metadata says what it holds (a positive meta.run and meta.samples, an
+// attested lane naming its host and engine); every valid background or launch row carries its oracle reading. Whatever
+// is missing is NO VERDICT, which blocks M5 as a failure does but is not one. What the matrix does not run on a shared
+// Mac (./plan.mjs OWNER_OPTIONS) is listed as the owner's option, outside the verdict.
 //
 // The verdict: FAIL when something was judged worse, lower or interfering; else NO VERDICT when proof is missing; else
 // OWNER when only the owner's calls remain; else PASS.
 import {stats} from '../native-baseline/summary.mjs';
 import {SCENES} from '../repl-parity/scenes-mac.mjs';
 import {readCellResults} from './cell-result.mjs';
-import {CASES, caseId, ENGINE_METHOD, METHODS, NOT_APPLICABLE, SCENE_OF, TARGETS} from './plan.mjs';
+import {CASES, caseId, ENGINE_METHOD, METHODS, NOT_APPLICABLE, OWNER_OPTIONS, SCENE_OF, TARGETS} from './plan.mjs';
 import {MATRIX_CELLS} from './registry.mjs';
 import {FULL_PLAN} from './run.mjs';
 
@@ -71,6 +74,19 @@ export function manifestOf({run, samples}, plan = FULL_PLAN) {
   return out;
 }
 
+// What a full run's own metadata must say before its manifest can be built. -> [sentence].
+function metadataProblems(result) {
+  const out = [];
+  const positive = n => Number.isSafeInteger(n) && n > 0;
+  if (!positive(result.meta?.run)) out.push('meta.run is not a positive run number');
+  if (!positive(result.meta?.samples)) out.push('meta.samples is not a positive sample count');
+  const lane = result.lanes?.[0];
+  if (result.lanes?.length !== 1) out.push('a full run measures exactly one lane');
+  if (!['vendor', 'cua'].includes(lane?.host)) out.push('its lane names no host');
+  if (typeof lane?.build !== 'string' || !lane.build || typeof lane?.version !== 'string' || !lane.version) out.push('its lane carries no attested build and version');
+  return out;
+}
+
 // Whether the full runs are one sitting's proof (the module's header). -> [missing proof, each a sentence].
 export function proofProblems(full) {
   const missing = [];
@@ -92,6 +108,8 @@ export function proofProblems(full) {
     const twice = runs.filter((n, i) => runs.indexOf(n) !== i);
     if (twice.length) missing.push(`the ${engine} engine's full runs repeat run number(s) ${[...new Set(twice)].join(', ')}: two lanes' runs cannot be told apart sample for sample`);
     for (const {path, result} of mine) {
+      const unusable = metadataProblems(result);
+      if (unusable.length) { missing.push(`${path}: ${unusable.join('; ')}: its rows cannot be checked against the manifest`); continue; }
       const have = new Set(result.rows.map(r => `${r.section} ${r.id} ${r.sample}`));
       const absent = manifestOf({run: result.meta?.run, samples: result.meta?.samples}).filter(e => !have.has(`${e.section} ${e.id} ${e.sample}`));
       if (absent.length) missing.push(`${path}: ${absent.length} row(s) of the manifest missing (${absent.slice(0, 3).map(e => `${e.section} ${e.id}#${e.sample}`).join(', ')}${absent.length > 3 ? ', …' : ''})`);
@@ -189,8 +207,13 @@ export function judge(results, problems = []) {
   const sum = engine => measured.reduce((n, f) => n + f[engine].resolved, 0);
   const findingVerdict = !measured.length || measured.length < finding.length ? 'no-verdict' : lower.length ? 'fail' : sum('cua') > sum('vendor') ? 'pass' : 'parity';
 
-  // Interference: background method rows and launch rows.
-  const judged = engine => rows.filter(r => r.engine === engine && !r.invalid && r.interference && ((r.section === 'method' && r.regime === 'background') || r.section === 'launch'));
+  // Interference: background method rows and launch rows; a valid one without its reading is missing proof.
+  const applicable = r => !r.invalid && ((r.section === 'method' && r.regime === 'background') || r.section === 'launch');
+  for (const engine of ['vendor', 'cua']) {
+    const unread = rows.filter(r => r.engine === engine && applicable(r) && !r.interference).length;
+    if (unread) missingProof.push(`not interfering: ${unread} valid background or launch row(s) on ${engine} carry no oracle reading`);
+  }
+  const judged = engine => rows.filter(r => r.engine === engine && applicable(r) && r.interference);
   const interference = Object.fromEntries(['vendor', 'cua'].map(engine => {
     const list = judged(engine);
     const declared = r => r.interference.declared;
@@ -245,7 +268,8 @@ export function judge(results, problems = []) {
     ...others.filter(o => o.engine === 'cua' && o.verdict !== 'pass' && o.verdict !== 'fail').map(o => `${o.cell}: ${o.verdict} on cua`),
   ];
   const verdict = blocking.length ? 'FAIL' : missing.length ? 'NO VERDICT' : owner.length ? 'OWNER' : 'PASS';
-  return {problems: missingProof, runs, narrowed, methods, launch, speed, finding, findingVerdict, interference, interferencePass, others, owner, blocking, missing, verdict};
+  return {problems: missingProof, runs, narrowed, methods, launch, speed, finding, findingVerdict, interference, interferencePass, others, owner, blocking, missing,
+    options: OWNER_OPTIONS.map(o => ({...o})), verdict};
 }
 
 // ---- the report ---------------------------------------------------------------------------------------------------------
@@ -279,6 +303,7 @@ export function renderSummary(j, {title = 'Native matrix summary'} = {}) {
     `Full matrix runs: ${j.runs.vendor} vendor, ${j.runs.cua} cua (${RUNS_PER_SIDE} per side are the rule).`, ''];
   if (j.blocking.length) out.push('## Blocking', '', ...j.blocking.map(b => `- ${b}`), '');
   if (j.missing.length) out.push('## Missing proof (no verdict)', '', ...j.missing.map(b => `- ${b}`), '');
+  if (j.options.length) out.push('## Owner options (not run; not part of the verdict)', '', ...j.options.map(o => `- ${o.option} (${o.section} ${o.id}): ${o.reason}`), '');
   if (j.owner.length) out.push('## For the owner', '', ...j.owner.map(o => `- ${o}`), '');
 
   out.push('## The three points', '');

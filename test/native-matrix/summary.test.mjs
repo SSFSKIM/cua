@@ -35,7 +35,7 @@ test('the speed beat: cua\'s median at most 90% of the vendor\'s and its p95 not
 
 // One full matrix run of one engine, every manifest row present and passing; `tweak(rows)` edits the rows, `meta` and
 // `lane` the result's.
-const CLICK = 'textedit/frontmost/click.control', BACK = 'textedit/background/click.control@finder', LAUNCH = 'textedit/background/launch@finder';
+const CLICK = 'textedit/frontmost/click.control', BACK = 'textedit/background/click.control@finder', LAUNCH = 'electron/background/launch@finder';
 function fullRun(engine, run, {axMs = 40, resolved = 10, tweak = rows => rows, meta = {}, lane = {}, complete = true} = {}) {
   const samples = 2;
   const rows = manifestOf({run, samples}).map(({section, id, sample}) => {
@@ -113,6 +113,34 @@ test('missing proof is NO VERDICT, never a pass: fewer than three runs, a missin
   const invalid = judged({vendor: {resolved: 9}, cua: {tweak: set(CLICK, {invalid: 'not in front'})}});
   assert.deepEqual([invalid.verdict, invalid.blocking], ['NO VERDICT', []]);
   assert.ok(invalid.missing.includes(`method: ${CLICK} has no valid cua sample`));
+});
+
+test('the manifest needs its metadata, and an applicable row without its oracle reading is missing proof, not left out', () => {
+  // meta.samples absent: no speed manifest could be built, so nothing is proven about speed.
+  const noSamples = judged({vendor: {resolved: 9, axMs: 50}, cua: {meta: {samples: undefined}}});
+  assert.equal(noSamples.verdict, 'NO VERDICT');
+  assert.ok(noSamples.missing.some(p => /meta\.samples/.test(p)));
+  const noRun = judged({vendor: {resolved: 9, axMs: 50}, cua: {meta: {run: undefined}}});
+  assert.equal(noRun.verdict, 'NO VERDICT');
+  assert.ok(noRun.missing.some(p => /meta\.run/.test(p)));
+  const noHost = judged({vendor: {resolved: 9, axMs: 50}, cua: {lane: {host: undefined}}});
+  assert.equal(noHost.verdict, 'NO VERDICT');
+  // A background row and a launch row with no interference reading: missing proof on that engine.
+  const unread = judged({vendor: {resolved: 9, axMs: 50}, cua: {tweak: rows => rows.map(r => (r.id === BACK || r.id === LAUNCH ? (({interference, ...rest}) => rest)(r) : r))}});
+  assert.equal(unread.verdict, 'NO VERDICT');
+  assert.ok(unread.missing.some(p => /6 valid background or launch row\(s\) on cua carry no oracle reading/.test(p)), unread.missing.join('\n'));
+});
+
+test('TextEdit\'s launch is an owner option: absent from the manifest, listed apart, never missing proof', () => {
+  assert.ok(!manifestOf({run: 1, samples: 2}).some(e => e.id.startsWith('textedit/background/launch')));
+  const j = judged({vendor: {resolved: 9, axMs: 50}});
+  assert.equal(j.verdict, 'PASS');
+  assert.deepEqual(j.options.map(o => o.id), ['textedit/background/launch@finder']);
+  const text = renderSummary(j);
+  assert.match(text, /## Owner options \(not run; not part of the verdict\)/);
+  assert.match(text, /TextEdit launch under the engine: provable in a scratch macOS user if wanted/);
+  assert.match(text, /restored TextEdit windows/);
+  assert.match(text, /iCloud Open panel/);
 });
 
 test('a narrowed matrix cell is listed and not counted; it never stands in for a full run', () => {

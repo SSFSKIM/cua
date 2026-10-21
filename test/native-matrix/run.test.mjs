@@ -109,8 +109,9 @@ test('an activation inside a row fails that row\'s oracle only; one inside a har
   const calls = [];
   const r = await runWith({calls, ops: stopWith(() => {
     const during = calls.find(c => c.code.includes(scroll)).at[0] + 1;
-    // The second bind's activate (Finder's) is a harness step: its window is the two clock readings before that bind's.
-    const harness = calls[1].at[0] - 3_000;
+    // calls[0] is the lane's first cell, [1] TextEdit's bind, [2] Finder's: the activate before Finder's bind is a harness
+    // step intending Finder, its window the two clock readings before that bind's.
+    const harness = calls[2].at[0] - 3_000;
     return {activations: [{kind: 'activated', bundleId: 'com.apple.TextEdit', scene: true, at: during}, {kind: 'activated', bundleId: 'com.apple.finder', at: harness}]};
   })});
   const failed = r.result.rows.filter(row => row.interference && !row.interference.ok);
@@ -118,7 +119,7 @@ test('an activation inside a row fails that row\'s oracle only; one inside a har
   assert.equal(failed[0].interference.activations, 1);
   assert.equal(r.result.complete, true, JSON.stringify(r.result.problems));
   assert.deepEqual(r.result.meta.activations.unaccounted, []);
-  assert.deepEqual(r.result.meta.activations.accounted.map(a => a.kind), ['harness']);
+  assert.deepEqual(r.result.meta.activations.accounted.map(a => [a.kind, a.key]), [['harness', 'activate:finder']]);
   assert.equal(r.result.verdict, 'pass', 'the outcome verdict is the rows\' ok; the oracle is judged by summary');
 });
 
@@ -190,25 +191,32 @@ test('the windowless pairing: the app brought up by the harness, its refusal cas
   assert.ok(result.rows[0].interference, 'judged by the oracle');
 });
 
-test('the launch path: identity journaled whatever the act did, the run\'s document only into TextEdit, the launch quit even when the check fails', async () => {
+test('the launch path: the intent journaled before the act, the identity after it, the launch quit even when the lane fails', async () => {
   const plan = planOf('launch');
-  const {steps, result} = await runWith({plan});
-  const launched = matrixSteps(steps, 'launched');
-  // textedit: record, quit; electron: record, quit; then the run's own quit before the put-back.
-  assert.deepEqual(launched.map(a => a[1]), ['record', 'quit', 'record', 'quit', 'quit']);
-  assert.ok(launched.filter(a => a[1] === 'record').every(a => Number.isSafeInteger(Number(a[a.indexOf('--since') + 1]))));
-  assert.equal(matrixSteps(steps, 'open-document').length, 1);
-  assert.deepEqual(result.rows.map(r => [r.id, r.ok]), [['textedit/background/launch@finder', true], ['electron/background/launch@finder', true]]);
+  const order = [];
+  const {steps, result} = await runWith({plan, lane: code => { if (code.includes('cua.computer.get_app_state') && !code.includes('cua.listApps')) order.push('act'); },
+    ops: {matrix: (base, a) => { if (a[0] === 'launched') order.push(a[1]); return base(a); }}});
+  // electron: intent, act, record, quit; then the run's own quit before the put-back.
+  assert.deepEqual(order, ['intent', 'act', 'record', 'quit', 'quit']);
+  const recordArgs = matrixSteps(steps, 'launched').find(a => a[1] === 'record');
+  assert.equal(recordArgs[2], 'electron');
+  assert.ok(Number.isSafeInteger(Number(recordArgs[recordArgs.indexOf('--since') + 1])));
+  assert.deepEqual(result.rows.map(r => [r.id, r.ok]), [['electron/background/launch@finder', true]]);
   assert.ok(result.rows.every(r => r.interference && r.outcome.launched === true));
+  // The user window comes to the front before the scene goes down, so the quit hands the front to nothing.
+  const sceneSteps = matrixSteps(steps, 'step').map(a => a.slice(1, 3).join(' '));
+  assert.ok(sceneSteps.indexOf('down electron') > sceneSteps.lastIndexOf('activate finder'));
 
-  // The lane fails during the act: the launch is still journaled and quit, and the run stops.
+  // The lane fails during the act (a controller that loses it): the intent was journaled first, and the quit still runs.
   const failing = await runWith({plan, lane: code => { if (code.includes('cua.computer.get_app_state') && !code.includes('cua.listApps')) throw new Error('transport closed'); }});
-  assert.deepEqual(matrixSteps(failing.steps, 'launched').map(a => a[1]).slice(0, 2), ['record', 'quit']);
+  assert.deepEqual(matrixSteps(failing.steps, 'launched').map(a => a[1]).slice(0, 3), ['intent', 'record', 'quit']);
   assert.equal(failing.result.complete, false);
 
   // The launch row's outcome is its own: the scene's window never came to the front.
   const stuck = await runWith({plan, cell: code => (code.includes('cua.listApps({emit: false})') ? {ok: false, outcome: {listed: true, running: true, scene: false, panel: true}} : null)});
   assert.ok(stuck.result.rows.every(r => r.ok === false && r.outcome.panel === true));
+  // TextEdit's launch is an owner option, not a cell to run.
+  assert.throws(() => planOf('launch', {scene: 'textedit'}), /TextEdit launch under the engine: provable in a scratch macOS user if wanted/);
 });
 
 test('a key skipped with one of the run\'s windows in front leaves the row invalid; with another app in front the run stops', async () => {

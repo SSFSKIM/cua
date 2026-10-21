@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {alerts, compiled, isWatcher, openDocument, ownedFocus, quitLaunched, read, recordLaunch, WINDOWLESS, windowlessUp} from '../../scripts/native-matrix/matrix-device.mjs';
+import {alerts, compiled, isWatcher, launchIntent, ownedFocus, quitLaunched, read, recordLaunch, WINDOWLESS, windowlessUp} from '../../scripts/native-matrix/matrix-device.mjs';
 
 const state = {scenes: {textedit: {pid: 11}, finder: {pid: 7}}};
 const bounds = {x: 0, y: 25, width: 900, height: 700};
@@ -58,33 +58,48 @@ test('a launch is identified and journaled at once, and quit only while it is th
   const starts = {11: 2_000, 40: 10_000, 41: 1_000};
   const io = {state: () => state, ...j, runningApps: () => [{pid: 11}, {pid: 40}, {pid: 41}], launchOf: pid => starts[pid] ?? null,
     quit: async pids => { quitting.push(...pids); return {quit: pids, remaining: []}; }};
-  assert.deepEqual(recordLaunch({scene: 'textedit', since: 9_500}, io), {recorded: true, pid: 40, candidates: 1});
-  assert.deepEqual(j.list, [{scene: 'textedit', bundleId: 'com.apple.TextEdit', pid: 40, at: 10_000}]);
-  assert.deepEqual(recordLaunch({scene: 'textedit', since: 9_500}, io), {recorded: false, pid: null, candidates: 0}, 'the journaled one is not new');
-  assert.throws(() => recordLaunch({scene: 'chrome', since: 1}, io), /not chrome/);
+  assert.deepEqual(recordLaunch({scene: 'electron', since: 9_500}, io), {recorded: true, pid: 40, candidates: 1});
+  assert.deepEqual(j.list, [{scene: 'electron', bundleId: 'io.github.ssfskim.cua.fixture.electron', pid: 40, at: 10_000}]);
+  assert.deepEqual(recordLaunch({scene: 'electron', since: 9_500}, io), {recorded: false, pid: null, candidates: 0}, 'the journaled one is not new');
+  assert.throws(() => recordLaunch({scene: 'textedit', since: 1}, io), /not textedit/);
   // The pid now runs another process (another start time): never signalled.
   starts[40] = 20_000;
   assert.deepEqual(await quitLaunched(io), {quit: 0, remaining: 0, gone: 1});
   assert.deepEqual(quitting, []);
   assert.deepEqual(j.list, []);
   starts[40] = 10_000;
-  j.writeLaunched([{scene: 'textedit', bundleId: 'com.apple.TextEdit', pid: 40, at: 10_000}]);
+  j.writeLaunched([{scene: 'electron', bundleId: 'io.github.ssfskim.cua.fixture.electron', pid: 40, at: 10_000}]);
   assert.deepEqual(await quitLaunched(io), {quit: 1, remaining: 0, gone: 0});
   assert.deepEqual(quitting, [40]);
   assert.deepEqual(j.list, []);
 });
 
-test('the run\'s document is opened only into the TextEdit the row launched, and only while it is the one running', () => {
-  const opened = [];
-  const io = (journal, running) => ({launched: () => journal, runningApps: () => running.map(pid => ({pid})), writeDocument: () => '/run/matrix-launch/cua-scene.rtf',
-    openDocument: file => opened.push(file)});
-  const ours = [{scene: 'textedit', bundleId: 'com.apple.TextEdit', pid: 40, at: 1}];
-  assert.deepEqual(openDocument(io(ours, [40])), {opened: true});
-  assert.deepEqual(opened, ['/run/matrix-launch/cua-scene.rtf']);
-  assert.equal(openDocument(io(ours, [40, 41])).opened, false, 'another TextEdit runs: open would reach either');
-  assert.equal(openDocument(io([], [40])).opened, false, 'nothing journaled: not the run\'s launch');
-  assert.equal(openDocument(io(ours, [41])).opened, false);
-  assert.equal(opened.length, 1);
+test('a launch\'s intent is journaled before the act; a controller that died after it leaves recovery the new process only', async () => {
+  const j = journal();
+  const quitting = [];
+  // The fixture's instances: 30 (before the intent, the snapshot), then 40 (started after it), and 41 started before it
+  // that the snapshot missed (never the run's).
+  let running = [{pid: 30}];
+  const starts = {30: 1_000, 40: 10_000, 41: 8_000};
+  const io = {state: () => ({scenes: {}}), ...j, runningApps: () => running, launchOf: pid => starts[pid] ?? null, now: () => 9_500,
+    quit: async pids => { quitting.push(...pids); return {quit: pids, remaining: []}; }};
+  assert.deepEqual(launchIntent({scene: 'electron'}, io), {at: 9_500, pids: [30]});
+  assert.deepEqual(j.list, [{intent: true, scene: 'electron', bundleId: 'io.github.ssfskim.cua.fixture.electron', at: 9_500, pids: [30]}]);
+  assert.throws(() => launchIntent({scene: 'textedit'}, io), /not textedit/);
+  // The controller died: no record. The engine had launched 40.
+  running = [{pid: 30}, {pid: 40}, {pid: 41}];
+  assert.deepEqual(await quitLaunched(io), {quit: 1, remaining: 0, gone: 0});
+  assert.deepEqual(quitting, [40]);
+  assert.deepEqual(j.list, []);
+  // The controller survived: the record replaces the intent with the precise identity.
+  quitting.length = 0;
+  running = [{pid: 30}];
+  launchIntent({scene: 'electron'}, io);
+  running = [{pid: 30}, {pid: 40}];
+  assert.deepEqual(recordLaunch({scene: 'electron', since: 9_500}, io), {recorded: true, pid: 40, candidates: 1});
+  assert.deepEqual(j.list, [{scene: 'electron', bundleId: 'io.github.ssfskim.cua.fixture.electron', pid: 40, at: 10_000}]);
+  assert.deepEqual(await quitLaunched(io), {quit: 1, remaining: 0, gone: 0});
+  assert.deepEqual(quitting, [40]);
 });
 
 test('the windowless fixture comes up in the background and is journaled; one already running refuses', async () => {

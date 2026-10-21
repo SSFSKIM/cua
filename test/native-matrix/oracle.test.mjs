@@ -33,7 +33,7 @@ test('the front compares pid, bundle id, window number and bounds', () => {
 });
 
 test('every activation is accounted for: the harness\'s, a row\'s, a measure\'s, the phases around; anything else is not', () => {
-  const windows = [{key: 'setup', kind: 'setup', at: [500, 600]}, {key: 'a', kind: 'row', at: [1000, 1100]}, {key: 'h', kind: 'harness', at: [1040, 1060]},
+  const windows = [{key: 'setup', kind: 'setup', at: [500, 600]}, {key: 'a', kind: 'row', at: [1000, 1100]}, {key: 'h', kind: 'harness', at: [1040, 1060], apps: ['user']},
     {key: 'b', kind: 'row', at: [5000, 5050]}, {key: 'm', kind: 'measure', at: [8000, 8100]}];
   const events = [
     {kind: 'activated', bundleId: 'x', at: 1020}, {kind: 'activated', bundleId: 'user', at: 1050}, {kind: 'activated', bundleId: 'y', at: 1100 + ACTIVATION_MARGIN_MS},
@@ -46,6 +46,20 @@ test('every activation is accounted for: the harness\'s, a row\'s, a measure\'s,
   assert.deepEqual(byRow.b, []);
   assert.deepEqual(accounted.map(a => [a.kind, a.bundleId]), [['harness', 'user'], ['outside', 'before'], ['measure', 'measured'], ['outside', 'after']]);
   assert.deepEqual(unaccounted.map(e => e.bundleId), ['gap', 'untimed']);
+});
+
+test('a harness step excuses only the activation it intended: another app\'s, in a row that overlaps its margin, is the row\'s', () => {
+  // activate(user) at [1000, 1100]; the row starts at 1150, inside the step's margin; TextEdit activates at 1400.
+  const windows = [{key: 'activate:finder', kind: 'harness', at: [1000, 1100], apps: ['com.apple.finder']}, {key: 'r', kind: 'row', at: [1150, 1800]}];
+  const events = [{kind: 'activated', bundleId: 'com.apple.finder', at: 1090}, {kind: 'activated', bundleId: 'com.apple.TextEdit', at: 1400}];
+  const {byRow, accounted, unaccounted} = accountActivations(events, windows);
+  assert.deepEqual(byRow.r.map(e => e.bundleId), ['com.apple.TextEdit']);
+  assert.deepEqual(accounted.map(a => [a.kind, a.bundleId]), [['harness', 'com.apple.finder']]);
+  assert.deepEqual(unaccounted, []);
+  // A harness step that intends no activation (a background open, a quit) excuses none; outside a row it is unaccounted.
+  const quiet = accountActivations([{kind: 'activated', bundleId: 'com.example.other', at: 3010}],
+    [{key: 'r', kind: 'row', at: [1000, 1100]}, {key: 'open', kind: 'harness', at: [3000, 3020], apps: []}, {key: 'r2', kind: 'row', at: [6000, 6100]}]);
+  assert.deepEqual(quiet.unaccounted.map(e => e.bundleId), ['com.example.other']);
 });
 
 test('a row passes only with the front unchanged, no activation and no route 4 outside an accepted family', () => {

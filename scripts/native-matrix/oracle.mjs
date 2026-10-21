@@ -58,10 +58,11 @@ export function sameFront(before, after) {
 
 // Every activation the watcher saw, accounted for (part 5: "recorded no activation of any app" during each judged cell,
 // and nothing the run cannot explain). `windows`: every step of the judged phase on the device clock, [{key, kind, at:
-// [from, to]}], kind 'harness' (the harness's own activations and keys: activating a scene, opening the Open panel),
-// 'row' (a matrix row, from its first cell's start to its check's end), 'measure' (speed and finding cells) or 'setup'
-// (binds). An `activated` event inside a harness window (to its end plus `marginMs`, the notification's delivery) is the
-// harness's; else inside a row's, that row's; else inside a measure or setup window, that step's; before the first
+// [from, to], apps?}], kind 'harness' (the harness's own steps: activating a scene, opening the Open panel; `apps` the
+// bundle ids the step intends to activate, none for a step that intends none), 'row' (a matrix row, from its first
+// cell's start to its check's end), 'measure' (speed and finding cells) or 'setup' (binds). An `activated` event of an
+// app a harness step intended, inside that step's window (to its end plus `marginMs`, the notification's delivery), is
+// the harness's; any other app's activation is never excused by a harness step: inside a row's window it is that row's; else inside a measure or setup window, that step's; before the first
 // window or after the last, the phase around the judged one's; anything else is unaccounted, which leaves the run
 // incomplete. Events of `probePids` (when the event carries a pid) are the harness's probes.
 // -> {byRow: {key: [event]}, accounted: [{kind, key, bundleId, at}], unaccounted: [event]}.
@@ -76,7 +77,7 @@ export function accountActivations(activations, windows, {marginMs = ACTIVATION_
     const at = event.at;
     const keep = (kind, key = null) => accounted.push({kind, key, bundleId: event.bundleId ?? null, at});
     if (!Number.isFinite(at)) { unaccounted.push(event); continue; }
-    const harness = windows.find(w => w.kind === 'harness' && inside(w, at));
+    const harness = windows.find(w => w.kind === 'harness' && (w.apps ?? []).includes(event.bundleId) && inside(w, at));
     if (harness) { keep('harness', harness.key); continue; }
     const row = windows.find(w => w.kind === 'row' && inside(w, at));
     if (row) { byRow[row.key].push(event); continue; }

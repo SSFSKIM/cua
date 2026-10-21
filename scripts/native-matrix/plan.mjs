@@ -83,7 +83,9 @@ const unchanged = JSON.stringify(${watch}) === __m.before;
 return {ok: refusedAs(${j(sentence)}) && unchanged, outcome: {refused: __m.threw !== null, expected: refusedAs(${j(sentence)}), unchanged, errorName: __m.errorName, message: __m.threw}};`,
 });
 // A text field put into a known pre-state: focused, holding `value` (when given), with `word` (once in it) selected.
-// -> the prepare body's lines, leaving `now` (the observation) and `index` (the field).
+// The focus is read before the selection and the selection after it: the renderer's trailer shows selected text instead
+// of the focused element (src/services/engine/render.mjs trailer), so no one observation shows both. The value must be
+// unchanged by the selection. -> the prepare body's lines, leaving `now` (the observation) and `index` (the field).
 const selectedIn = ({find, value = null, word, focus = true}) => `${observed}
 let now = ax, index = ${find};
 if (index === null) return {ready: false, reason: "the field is not in the text"};
@@ -91,9 +93,11 @@ ${focus ? `if (focusedIndexOf(now) !== index) { await __app.click(index); now = 
 if (focusedIndexOf(now) !== index) return {ready: false, reason: "the field could not be given the focus"};` : ''}
 ${value === null ? '' : `if (plain(valueOfIndex(now, index)) !== ${value}) { await __app.setValue(index, ${value}); now = await observe(); }`}
 if (count(plain(valueOfIndex(now, index)), ${word}) !== 1) return {ready: false, reason: "the word to replace is not in the field once"};
+const unselected = plain(valueOfIndex(now, index));
 await __app.selectText(index, ${word}); now = await observe();
-if (selectedTextOf(now) !== ${word}${focus ? ' || focusedIndexOf(now) !== index' : ''}) return {ready: false, reason: "the word could not be selected in the focused field"};
-__m.index = index; __m.word = ${word}; __m.before = plain(valueOfIndex(now, index));`;
+if (selectedTextOf(now) !== ${word}) return {ready: false, reason: "the word could not be selected in the field"};
+if (plain(valueOfIndex(now, index)) !== unselected) return {ready: false, reason: "the field's value changed when the word was selected"};
+__m.index = index; __m.word = ${word}; __m.before = unselected;`;
 // The exact post-state of an insertion over a selection: the pre-state with the selected word replaced by the text.
 const replaced = (find, text) => `const ax = await observe();
 const after = plain(valueOfIndex(ax, ${find}));
@@ -448,6 +452,17 @@ export const NOT_APPLICABLE = Object.freeze({
   windowless: Object.fromEntries(METHODS.filter(m => m !== 'getAXState')
     .map(method => [method, 'an app with no window refuses its observation, so no element exists for any other method'])),
 });
+
+// What the matrix does not run on a shared Mac, offered to the owner as an option: never missing proof and never a
+// blocker (./summary.mjs lists them apart from the verdict). TextEdit's launch: the engine launches it with no
+// arguments, so its first observation, whose screenshot the engine captures, would show either the owner's windows
+// restored from saved state or, with nothing to restore, TextEdit's iCloud Open panel listing the owner's files; an
+// isolated launch needs TextEdit's state changed, which the run does not do. The launch path is app-agnostic, and the
+// Electron fixture's launch row (its own scratch user-data path) proves it.
+export const OWNER_OPTIONS = Object.freeze([
+  {section: 'launch', id: 'textedit/background/launch@finder', option: 'TextEdit launch under the engine: provable in a scratch macOS user if wanted',
+    reason: 'on the shared Mac its first observation\'s screenshot would capture the owner\'s restored TextEdit windows or, with none to restore, TextEdit\'s iCloud Open panel; isolating it would change the owner\'s TextEdit state'},
+]);
 
 // A row's id: `<target>/<regime>/<method>.<case>`, and in the background regime `@<user>` after it (TextEdit and Finder
 // are each driven behind two user windows).

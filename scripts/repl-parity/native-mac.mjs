@@ -35,8 +35,9 @@
 //     preparation.json in place, so `goldens.mjs cleanup --preparation` restores it all in order (Finder's teardown,
 //     every scene down, the engine stopped, the home given back): the run's journal goes only once nothing is left.
 // It writes <out>/meta.json (the sitting's facts, the attestations, each scene's account; never a token, an identity or
-// any accessibility text), <out>/results.jsonl (one row per scene and cell: bind, fixed, action, settle) and
-// <out>/texts/<scene>/<kind>.txt (full, before, diff, later). Exit 0 complete, 1 incomplete, 2 refused.
+// any accessibility text), <out>/results.jsonl (one row per scene and cell: bind, fixed, action, settle),
+// <out>/texts/<scene>/<kind>.txt (full, before, diff, later) and <out>/result.json, the settle rows as the native
+// matrix's settle cell (scripts/native-matrix/settle-cell.mjs), which its summary reads. Exit 0 complete, 1 incomplete, 2 refused.
 import * as fs from 'node:fs';
 import {createHash} from 'node:crypto';
 import {tmpdir} from 'node:os';
@@ -46,11 +47,13 @@ import {FIRST, parseCell} from '../native-baseline/cells.mjs';
 import {attestEngine, attestedBuild, checkApprovedEngine} from '../native-baseline/engine.mjs';
 import {preflightScript} from '../native-baseline/remote.mjs';
 import {hostAttestationOf} from '../native-baseline.mjs';
+import {writeCellResult} from '../native-matrix/cell-result.mjs';
 import {checkVendorPreflight, checkoutCli, controllerCheckout, deviceOps, isSceneApproval} from '../native-matrix/goldens.mjs';
 import {isSessionFile} from '../native-matrix/goldens-cells.mjs';
 import {REPO_ROOT} from '../native-matrix/goldens-install.mjs';
+import {settleResult} from '../native-matrix/settle-cell.mjs';
 import {ACTION, BIND, FIXED, PRIME} from '../../test/repl-parity/scenarios/native-mac.mjs';
-import {isSettled} from './native-mac-diff.mjs';
+import {EXPECTED_FILE, isSettled, validateDeclarations} from './native-mac-diff.mjs';
 import {nativeMacCommand} from './native.mjs';
 import {SCENES, SCENE_IDS} from './scenes-mac.mjs';
 
@@ -107,11 +110,16 @@ export async function runNativeMac(options, io) {
   const meta = {schema: 'native-mac-1', suite: 'native-mac', device, platform: 'darwin', host, engine, commit, approvedRuntime, approvedEngine,
     started: new Date().toISOString(), plan: {scenes: [...SCENE_IDS]}, problems: [], scenes: {}, elicitations: [], complete: false};
   const write = () => fs.writeFileSync(join(dir, 'meta.json'), `${JSON.stringify(meta, null, 2)}\n`);
+  // The lane's settle rows as the matrix's settle cell (scripts/native-matrix/settle-cell.mjs), beside meta.json.
+  const writeSettle = () => {
+    const rows = fs.existsSync(join(dir, 'results.jsonl')) ? fs.readFileSync(join(dir, 'results.jsonl'), 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line)) : [];
+    writeCellResult(dir, settleResult({meta, rows, declarations: validateDeclarations(JSON.parse(fs.readFileSync(EXPECTED_FILE, 'utf8')))}));
+  };
   const controller = io.controllerCheckout();
   meta.harness = {commit: controller.commit, dirty: controller.dirty};
   if (!controller.commit || controller.dirty) {
     meta.refused = [controller.commit ? 'this checkout has uncommitted changes to tracked files: the cells come from it, and both lanes must run one commit\'s cells; commit or stash them' : 'this checkout\'s commit could not be read'];
-    meta.finished = new Date().toISOString(); write();
+    meta.finished = new Date().toISOString(); write(); writeSettle();
     log(`refused: ${meta.refused.join('; ')}`);
     return REFUSED;
   }
@@ -218,6 +226,7 @@ export async function runNativeMac(options, io) {
     if (meta.problems.length || meta.error) meta.complete = false;
     meta.finished = new Date().toISOString();
     write();
+    writeSettle();
     if (ctx.serveStderr) {
       if (fs.existsSync(ctx.serveStderr) && fs.statSync(ctx.serveStderr).size > 0) log(`the serve's stderr: ${ctx.serveStderr}`);
       else fs.rmSync(dirname(ctx.serveStderr), {recursive: true, force: true});

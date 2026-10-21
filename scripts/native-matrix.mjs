@@ -14,8 +14,9 @@
 //   node scripts/native-matrix.mjs cell <name> [the run's options] [--scene <id>] [--user <id>]
 //   node scripts/native-matrix.mjs cell --list
 //     One registered cell (./native-matrix/registry.mjs): the matrix's own (a part of the run, narrowed by --scene and
-//     --user, e.g. `cell non-interference --scene textedit --user finder`), one implemented on another harness (M2a's
-//     residue on the live harness), or one still planned (M2b.3's), which is named and refused.
+//     --user, e.g. `cell non-interference --scene textedit --user finder`, `cell korean --scene textedit`, the probe
+//     cells `concurrent-use`, `concurrent-use-sheet`, `intervention-fires`, `pre-action-refusal`), or one implemented on
+//     another harness (M2a's residue on the live harness; `settle`, the native-mac suite's lane).
 //   node scripts/native-matrix.mjs compare <vendor-dir> <cua-dir> [--out comparison.md]
 //     Every result under the two directories judged (./native-matrix/summary.mjs; only full matrix runs count, three
 //     complete attested runs per side of one sitting, every manifest row present): VERDICT PASS (exit 0), OWNER (exit 3:
@@ -125,7 +126,7 @@ export async function main(argv = process.argv.slice(2), {log = console.log, io:
     return VERDICT_CODE[judged.verdict];
   }
   if (options.command === 'cell' && options.list) {
-    for (const c of await listCells()) log(`${c.name.padEnd(22)} ${c.kind.padEnd(8)} ${c.section.padEnd(12)} ${c.describe}${c.by ? ` (${c.by})` : ''}${c.module ? ` (${c.module})` : ''}`);
+    for (const c of await listCells()) log(`${c.name.padEnd(22)} ${c.kind.padEnd(8)} ${c.section.padEnd(12)} ${c.describe}${c.module ? ` (${c.module})` : ''}`);
     return 0;
   }
 
@@ -140,14 +141,13 @@ export async function main(argv = process.argv.slice(2), {log = console.log, io:
   process.on('SIGTERM', onSignal);
   const io = given ?? (options.dryRun
     ? {ops: dryOps({log, engine: options.engine, approvedEngine: options.approvedEngine, commit: checkout.commit}), connect: dryConnect({log, engine: options.engine, host: options.host}),
-      controllerCheckout: () => checkout, log, dryRun: true, interrupt}
+      controllerCheckout: () => checkout, log, dryRun: true, interrupt, sleep: async () => {}}
     : {ops: matrixOps(options.device), connect: spec => new StdioClient(spec), controllerCheckout: () => checkout, log, interrupt});
   if (options.dryRun) log(`# dry run of native-matrix.mjs ${options.command}${options.name ? ` ${options.name}` : ''} on ${options.device}: every device step in order, none run`);
   try {
     if (options.command === 'cleanup') return cleanupMatrix(options, io);
     if (options.command === 'run') return await runMatrix({...options, cell: 'matrix', plan: planOf('matrix')}, io);
     const resolved = await resolveCell(options.name);
-    if (resolved.kind === 'planned') { log(`${options.name} is not built yet: ${resolved.describe} (${resolved.by})`); return 2; }
     if (resolved.kind === 'external') return await runExternal(options.name, resolved, options, {log, interrupt, dryRun: options.dryRun});
     return await runMatrix({...options, cell: options.name, plan: planOf(resolved.plan, {scene: options.scene, user: options.user})}, io);
   } finally { process.off('SIGINT', onSignal); process.off('SIGTERM', onSignal); }

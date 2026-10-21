@@ -10,6 +10,7 @@ import * as fs from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {MARKER, parseCell} from '../../scripts/native-baseline/cells.mjs';
+import {validateCellResult} from '../../scripts/native-matrix/cell-result.mjs';
 import {SCENES, SCENE_IDS} from '../../scripts/repl-parity/scenes-mac.mjs';
 import {laneAttestationProblem, nativeMacOps, runNativeMac} from '../../scripts/repl-parity/native-mac.mjs';
 import {diffNativeMac, loadNativeMacRun, validateDeclarations, EXPECTED_FILE} from '../../scripts/repl-parity/native-mac-diff.mjs';
@@ -148,6 +149,18 @@ test('a lane through the facade on the four scenes: texts kept only after cua\'s
   assert.deepEqual(cua.device.calls.find(c => c[0] === 'serve'), ['serve', 'cua', 'cua']);
   const report = diffNativeMac(loadNativeMacRun(vendor.out), loadNativeMacRun(cua.out), {declarations: validateDeclarations(JSON.parse(fs.readFileSync(EXPECTED_FILE, 'utf8')))});
   assert.equal(report.summary, '0 unexpected differences', JSON.stringify(report.differences));
+});
+
+test('every lane writes its settle rows as the matrix\'s settle cell (result.json), the one shape summary reads; a refused lane a refused one', async () => {
+  const run = await runLane({engine: 'cua'});
+  const result = JSON.parse(fs.readFileSync(join(run.out, 'result.json'), 'utf8'));
+  assert.deepEqual(validateCellResult(result), []);
+  assert.deepEqual([result.cell, result.verdict, result.complete], ['settle', 'pass', true]);
+  assert.deepEqual(result.rows.map(r => [r.id, r.engine, r.ok]), SCENE_IDS.map(scene => [`${scene}/settle`, 'cua', true]));
+  assert.deepEqual(result.lanes, [{host: 'cua', engine: 'cua', build: BUILD, version: '0.1.0'}]);
+  const refused = await runLane({engine: 'cua', controller: {commit: 'd'.repeat(40), dirty: true}});
+  assert.equal(refused.code, 2);
+  assert.equal(JSON.parse(fs.readFileSync(join(refused.out, 'result.json'), 'utf8')).verdict, 'refused');
 });
 
 test('comparison A\'s lane: cua\'s service in the vendor host is judged by the attestation, cua\'s engine at the approved build', async () => {

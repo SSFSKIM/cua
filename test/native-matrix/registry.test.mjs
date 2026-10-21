@@ -1,5 +1,6 @@
-// The matrix's cell registry (scripts/native-matrix/registry.mjs): its own cells by plan, an external harness's cells
-// called through that harness's runCell and cellIo with its result read back and checked, the planned ones named.
+// The matrix's cell registry (scripts/native-matrix/registry.mjs): its own cells by plan (the probe cells and the Korean
+// matrix among them), an external harness's cells (M2a's residue, the settle cell) called through that harness's runCell
+// and cellIo with its result read back and checked.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
@@ -18,19 +19,42 @@ function harness({write = (name, out) => writeCellResult(out, residue(name)), dr
   const modules = {
     './residue-checks.mjs': {RESIDUE_CELLS: [...EXPECTED_RESIDUE]},
     './live.mjs': {cellIo: (options, base) => ({built: true, base}), runCell: async (name, options, io) => { calls.push({name, options, io}); write(name, options.out); return 0; }},
+    './settle-cell.mjs': {SETTLE_CELLS: ['settle'], cellIo: () => ({}), runCell: async () => 0},
   };
   for (const spec of drop) delete modules[spec];
   return {calls, loaded, modules, load: async spec => { loaded.push(spec); if (!modules[spec]) throw Object.assign(new Error('missing'), {code: 'ERR_MODULE_NOT_FOUND'}); return modules[spec]; }};
 }
 
-test('the matrix\'s own cells resolve to plans; a planned one names the task that builds it; an unknown one lists the cells', async () => {
+test('the matrix\'s own cells resolve to plans, the probe cells and the Korean matrix among them; an unknown one lists the cells', async () => {
   const {load} = harness();
   assert.deepEqual(await resolveCell('non-interference', {load}), {kind: 'matrix', section: 'method', plan: 'background',
     describe: 'the background regime\'s cells under the oracle: --scene <driven> [--user <user window\'s scene>]'});
-  assert.equal((await resolveCell('concurrent-use', {load})).by, 'M2b.3');
-  await assert.rejects(resolveCell('nope', {load}), /no cell nope; the cells: matrix, method, speed, finding, non-interference, launch, route4, minimized-select, enablement, menu, hscroll, concurrent-use/);
+  for (const [name, section] of [['concurrent-use', 'concurrent'], ['concurrent-use-sheet', 'concurrent'], ['intervention-fires', 'intervention'], ['pre-action-refusal', 'intervention'],
+    ['korean', 'unicode']]) {
+    const resolved = await resolveCell(name, {load});
+    assert.deepEqual([resolved.kind, resolved.section, resolved.plan], ['matrix', section, name]);
+    assert.doesNotThrow(() => planOf(resolved.plan), name);
+  }
+  assert.deepEqual(await resolveCell('settle', {load}).then(c => [c.kind, c.section, c.module]), ['external', 'settle', './settle-cell.mjs']);
+  await assert.rejects(resolveCell('nope', {load}), /no cell nope; the cells: matrix, method, speed, finding, non-interference, launch, concurrent-use, concurrent-use-sheet, intervention-fires, pre-action-refusal, korean, route4, minimized-select, enablement, menu, hscroll, settle$/);
   const listed = await listCells({load});
-  assert.deepEqual(listed.filter(c => c.kind === 'external').map(c => [c.name, c.section, c.module]), EXPECTED_RESIDUE.map(name => [name, 'residue', './live.mjs']));
+  assert.deepEqual(listed.filter(c => c.kind === 'external').map(c => [c.name, c.section, c.module]),
+    [...EXPECTED_RESIDUE.map(name => [name, 'residue', './live.mjs']), ['settle', 'settle', './settle-cell.mjs']]);
+  assert.deepEqual([...new Set(listed.map(c => c.kind))], ['matrix', 'external'], 'nothing is left planned');
+});
+
+test('the probe cells and the Korean matrix narrow as M5\'s steps name them', () => {
+  assert.deepEqual(planOf('concurrent-use', {scene: 'finder'}).concurrent, ['finder']);
+  assert.deepEqual(scenesOf(planOf('concurrent-use', {scene: 'finder'})), ['textedit', 'finder']);
+  assert.throws(() => planOf('concurrent-use', {scene: 'electron'}), /nothing to run/);
+  assert.deepEqual(scenesOf(planOf('concurrent-use-sheet')), ['textedit', 'electron']);
+  assert.deepEqual(scenesOf(planOf('intervention-fires')), ['textedit']);
+  assert.deepEqual(planOf('pre-action-refusal').intervention, ['preAction']);
+  // Concrete Steps, M5: `cell korean --scene textedit`, with its background conditions' user window.
+  const korean = planOf('korean', {scene: 'textedit'});
+  assert.deepEqual(korean.unicode.fields, ['textedit']);
+  assert.deepEqual(scenesOf(korean), ['textedit', 'electron']);
+  assert.throws(() => planOf('korean', {scene: 'finder'}), /nothing to run/);
 });
 
 test('M5\'s cell non-interference --scene textedit --user finder is one pairing of the background regime', () => {
@@ -58,15 +82,15 @@ test('an external cell runs through its harness\'s own io, and its result is rea
   } finally { fs.rmSync(dir, {recursive: true, force: true}); }
 });
 
-test('an expected source that is missing, lists other cells or has no runCell and cellIo fails loudly; own and planned names never load it', async () => {
+test('an expected source that is missing, lists other cells or has no runCell and cellIo fails loudly; own names never load it', async () => {
   assert.deepEqual(EXPECTED_RESIDUE, ['route4', 'minimized-select', 'enablement', 'menu', 'hscroll']);
   const gone = harness({drop: ['./residue-checks.mjs']});
   await assert.rejects(externalCells({load: gone.load}), /route4, minimized-select, enablement, menu, hscroll are expected from \.\/residue-checks\.mjs, which is not on this checkout/);
   await assert.rejects(listCells({load: gone.load}), /not on this checkout/);
   await assert.rejects(resolveCell('route4', {load: gone.load}), /not on this checkout/);
-  // A matrix cell or a planned one resolves without the external sources.
+  // A matrix cell resolves without the external sources.
   assert.equal((await resolveCell('matrix', {load: gone.load})).kind, 'matrix');
-  assert.equal((await resolveCell('settle', {load: gone.load})).kind, 'planned');
+  assert.equal((await resolveCell('korean', {load: gone.load})).kind, 'matrix');
   assert.equal(gone.loaded.length, 3, 'only the three calls above loaded it');
   const short = harness();
   short.modules['./residue-checks.mjs'] = {RESIDUE_CELLS: ['route4', 'hscroll']};

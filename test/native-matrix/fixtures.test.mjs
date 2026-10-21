@@ -11,7 +11,7 @@ import {execFileSync} from 'node:child_process';
 import {request} from 'node:http';
 import {loadPin, validatePin, verifyArchive, placeChromeForTesting, placedAppPath, PIN_PATH} from '../../scripts/native-matrix/fixtures/chrome-for-testing.mjs';
 import {FIXTURE_BUNDLE_ID, FIXTURE_NAME, FIXTURE_CONTROLS, REPO_ROOT, SOURCE_DIR, rewriteBundle, fixtureSourceHash, fixtureAppPath} from '../../scripts/native-matrix/fixtures/electron-fixture.mjs';
-import {startScenePage, PAGE_CONTROLS, PAGE_TITLE} from '../../scripts/native-matrix/fixtures/scene-page.mjs';
+import {startScenePage, PAGE_CONTROLS, PAGE_HTML, PAGE_TITLE, READY_PATH} from '../../scripts/native-matrix/fixtures/scene-page.mjs';
 
 const scratch = () => fs.mkdtempSync(join(tmpdir(), 'cua-native-fixtures-'));
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -171,7 +171,7 @@ test('the fixture source declares a text field, a list and a button, and never e
   for (const name of names) assert.ok(html.includes(name), name);
 });
 
-test('the scene page: served on its exact loopback Host only, every control present, under a CSP that allows no network', async () => {
+test('the scene page: served on its exact loopback Host only, every control present, under a CSP that allows nothing beyond its own origin', async () => {
   const page = await startScenePage();
   try {
     assert.match(page.url, /^http:\/\/127\.0\.0\.1:\d+\/$/);
@@ -179,8 +179,12 @@ test('the scene page: served on its exact loopback Host only, every control pres
     assert.equal(response.status, 200);
     const csp = response.headers.get('content-security-policy');
     assert.match(csp, /default-src 'none'/);
-    assert.match(csp, /connect-src 'none'/);
+    assert.match(csp, /connect-src 'self';/, 'its one beacon, to its own loopback origin');
     const html = await response.text();
+    // The inline script runs only under the hash the CSP names: a mismatch would block it, and the beacon with it.
+    const [, script] = /<script>([\s\S]*)<\/script>/.exec(html);
+    assert.ok(csp.includes(`'sha256-${createHash('sha256').update(script).digest('base64')}'`));
+    assert.match(script, /addEventListener\('load', \(\) => navigator\.sendBeacon\('\/ready'\)\)/);
     assert.ok(html.includes(`<title>${PAGE_TITLE}</title>`));
     for (const control of PAGE_CONTROLS) assert.ok(html.includes(control.name), control.name);
     assert.ok(html.includes('<textarea'), 'the textarea the Korean matrix types into');
@@ -190,5 +194,24 @@ test('the scene page: served on its exact loopback Host only, every control pres
       request({host: '127.0.0.1', port, path: '/', headers: {host: `localhost:${port}`}}, res => { res.resume(); resolve(res.statusCode); }).on('error', reject).end();
     });
     assert.equal(misdirected, 421);
+  } finally { await page.close(); }
+});
+
+test('the scene page reports its load once, by a beacon POST to its own server on its exact Host; nothing else counts', async () => {
+  const ready = [];
+  const page = await startScenePage({onReady: () => ready.push('ready')});
+  try {
+    const port = new URL(page.url).port;
+    const send = ({method = 'POST', path = READY_PATH, host = `127.0.0.1:${port}`} = {}) => new Promise((resolve, reject) => {
+      request({host: '127.0.0.1', port, method, path, headers: {host}}, res => { res.resume(); resolve(res.statusCode); }).on('error', reject).end();
+    });
+    assert.equal(await send({method: 'GET'}), 404, 'a GET is not the beacon');
+    assert.equal(await send({host: `localhost:${port}`}), 421, 'another Host is not the page');
+    assert.equal(await send({path: '/ready/x'}), 404);
+    assert.deepEqual(ready, []);
+    assert.equal(await send(), 204);
+    assert.equal(await send(), 204);
+    assert.deepEqual(ready, ['ready'], 'reported once');
+    assert.ok(PAGE_HTML.includes(`sendBeacon('${READY_PATH}')`));
   } finally { await page.close(); }
 });

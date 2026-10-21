@@ -28,9 +28,10 @@
 //     engine at the serve's runtime release (vendorEngineProblem).
 //   - Per scene, one at a time, with the scene's app frontmost for every capture: up and its setup steps (Finder's
 //     list view, no selection, its sidebar, status bar and path bar hidden, sent through the engine under the key guard);
-//     the vendor's bind; the fixed state, as cua's observation, the vendor's full text, cua's observation again, kept
-//     only when both of cua's pass the scene's fixed-state checks (fixedStateProblems, the run's process and window)
-//     and render alike, else taken again (three attempts); the vendor's action sequence (its full text, the click on
+//     the vendor's bind; the fixed state, as cua's settled observation (read until two consecutive reads render alike,
+//     ./goldens-device.mjs settledState), the vendor's full text, cua's settled observation again, kept only when both
+//     of cua's pass the scene's fixed-state checks (fixedStateProblems, the run's process and window) and render alike,
+//     else taken again (three attempts); the vendor's action sequence (its full text, the click on
 //     the scene's action target, its diff), kept only when cua's check of the state right after passes; the scene back
 //     to the fixed state (Finder: its selection cleared in the same window; the others restarted); cua's action sequence
 //     on one engine connection (./goldens-device.mjs act); then the teardown steps and down.
@@ -59,7 +60,7 @@ import {engineBuild, engineVersion} from '../../src/runtime/engine-bundle.mjs';
 import {shortBuild} from '../../src/runtime/engine.mjs';
 import {advanceNumbering, render} from '../../src/services/engine/render.mjs';
 import {ACTION, BIND, FIXED, isSessionFile} from './goldens-cells.mjs';
-import {stateDigest} from './goldens-device.mjs';
+import {RESET_MAY_CLEAR, stateDigest} from './goldens-device.mjs';
 import {normalizeDrift} from '../../test/native-goldens/compare.mjs';
 import {GOLDENS_DIR, REPO_ROOT, SCENE_ORDER, install} from './goldens-install.mjs';
 
@@ -315,8 +316,8 @@ async function recordScene(ctx, id) {
     writeGolden(ctx, id, 'skyshot.json', `${JSON.stringify(second.skyshot, null, 1)}\n`);
     scene.fixedDigest = stateDigest(second.skyshot);
     fixedShot = second.skyshot;
-    capture('fixed.cua', first.frame, {timings: first.timings});
-    capture('fixed.cua', second.frame, {timings: second.timings, kept: true});
+    capture('fixed.cua', first.frame, {timings: first.timings, settle: first.settle ?? null});
+    capture('fixed.cua', second.frame, {timings: second.timings, settle: second.settle ?? null, kept: true});
     kept = true;
   }
   if (!kept) throw new SceneProblem(`the fixed state did not hold in ${FIXED_ATTEMPTS} attempts (${last}); nothing of it was recorded`);
@@ -335,8 +336,8 @@ async function recordScene(ctx, id) {
   capture('action.vendor', after.frame, {index: action.value.index, timings: after.timings});
 
   // Back to the fixed state, then cua's action on one engine connection, from the kept fixed state: the device clicks
-  // only once its observation renders as the kept Skyshot does, and the controller checks the same of what it returns.
-  // A start that is not the fixed state (a selection the reset left, a restarted page still loading) is reset again.
+  // only once its settled observation renders as the kept Skyshot does, and the controller checks the same of what it
+  // returns. A start a reset may clear (a selection the reset left, a page that did not fill or settle) is reset again.
   let acted = null, why = null;
   const mismatch = (attempt, observed) => (scene.startMismatches ??= []).push({attempt, ...startDiagnostic(fixedShot, observed)});
   for (let attempt = 1; attempt <= START_ATTEMPTS && !acted; attempt++) {
@@ -345,7 +346,7 @@ async function recordScene(ctx, id) {
     else { takeDown(ctx, id, {strict: true}); record = bringUp(ctx, id); scene.restarted = {pid: record.pid, window: record.window}; }
     activate(ctx, id);
     const answer = checkBuild(ops.goldens(['action', id, '--run', run, '--expect', scene.fixedDigest]));
-    if (answer.problems.length && !answer.problems.every(p => p.code === 'start_state')) throw new SceneProblem(`cua's action did not record: ${describeProblems(answer.problems)}`);
+    if (answer.problems.length && !answer.problems.every(p => RESET_MAY_CLEAR.includes(p.code))) throw new SceneProblem(`cua's action did not record: ${describeProblems(answer.problems)}`);
     if (answer.problems.length) { why = describeProblems(answer.problems); if (answer.observed) mismatch(attempt, answer.observed); }
     else if (stateDigest(answer.before) !== scene.fixedDigest) { why = 'cua\'s observation before its click is not the kept fixed state'; mismatch(attempt, answer.before); }
     else acted = answer;
@@ -353,7 +354,7 @@ async function recordScene(ctx, id) {
   if (!acted) throw new SceneProblem(`cua's action could not start from the fixed state in ${START_ATTEMPTS} resets (${why}); nothing of it was recorded`);
   writeGolden(ctx, id, 'action.before.skyshot.json', `${JSON.stringify(acted.before, null, 1)}\n`);
   writeGolden(ctx, id, 'action.after.skyshot.json', `${JSON.stringify(acted.after, null, 1)}\n`);
-  capture('action.cua.before', acted.frames?.[0], {click: acted.click, timings: acted.timings?.before ?? null});
+  capture('action.cua.before', acted.frames?.[0], {click: acted.click, timings: acted.timings?.before ?? null, settle: acted.settle ?? null});
   capture('action.cua.after', acted.frames?.[1], {timings: acted.timings?.after ?? null});
 
   // Finder's one window holds every capture, so its frame must not have moved; the others' are recorded as they were.

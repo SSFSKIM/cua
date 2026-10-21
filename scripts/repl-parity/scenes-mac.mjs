@@ -15,7 +15,10 @@
 //   chrome    Chrome for Testing at the pinned version (scripts/native-matrix/fixtures/chrome-for-testing.json), placed in
 //             the harness cache, with a fresh --user-data-dir per launch under the run directory (removed by down, so a
 //             restart is a first run like the first launch) and the loopback scene page
-//             (scripts/native-matrix/fixtures/scene-page.mjs) served by a detached process of the run.
+//             (scripts/native-matrix/fixtures/scene-page.mjs) served by a detached process of the run. `up` returns once
+//             the page has reported its load to that server (a beacon after `load`; no DevTools port is opened), and
+//             its fixed state is the page with its tree filled (chromePageProblems), which the driver reads until it
+//             holds (scripts/native-matrix/goldens-device.mjs settledState).
 //   electron  The Electron fixture app (scripts/native-matrix/fixtures/electron-fixture.mjs) with its own bundle id and a
 //             scratch user-data directory under the run directory.
 //
@@ -275,11 +278,36 @@ export function teardownSteps(id, record, {current = {}, saved = null, macosMajo
   return [{activate: 'finder'}, ...(saved ? restoreSteps(current, saved, macosMajor) : []).map(step => ({...step, guard})), {pressKey: CLOSE_WINDOW_KEY, closes: 'window', guard}];
 }
 
+// The page's controls whose value Chromium exposes only once its accessibility tree has filled: the heading's level, the
+// checkbox's and the radio buttons' states. The M1b.5 sitting kept a fixed state taken before they had filled (each
+// carried an empty value; seconds later they read `Value: 1`, `0`, `1`, `0`), so every restart, observed later, differed
+// from it in exactly those lines. Neither engine waits for a web area's contents (Enablement waits for the web area
+// itself, as the vendor does), so the scene defines its fixed state as the filled page and the driver reads until it is.
+const PAGE_VALUED = PAGE_CONTROLS.filter(c => ['AXHeading', 'AXCheckBox', 'AXRadioButton'].includes(c.role));
+const subtreeEnd = (nodes, i) => { let j = i + 1; while (j < nodes.length && nodes[j].depth > nodes[i].depth) j++; return j; };
+// What keeps a Skyshot of the Chrome scene from showing the filled page. -> [] or [{code: 'page_filling', controls, message}].
+export function chromePageProblems(shot) {
+  const nodes = Array.isArray(shot?.nodes) ? shot.nodes : [];
+  const area = nodes.findIndex(n => n.role === 'AXWebArea' && n.title === PAGE_TITLE);
+  const inside = area < 0 ? [] : nodes.slice(area + 1, subtreeEnd(nodes, area));
+  const filled = control => inside.some(n => n.role === control.role && n.title === control.name && n.value !== '' && n.value !== null && n.value !== undefined);
+  const missing = area < 0 ? PAGE_VALUED.map(c => c.id) : PAGE_VALUED.filter(c => !filled(c)).map(c => c.id);
+  if (!missing.length) return [];
+  return [{code: 'page_filling', controls: missing, message: area < 0 ? 'the scene page\'s web area is not in the window yet; observe again'
+    : 'the scene page\'s controls do not carry their values yet (Chromium is still filling its tree); observe again'}];
+}
+
 // What the run owns in its Finder window, from the scene's record.
 export const finderOwned = record => ({folder: basename(record.folder), folderPath: record.folder, files: finderFolderFiles()});
 // What keeps an engine's Skyshot of the scene window from being the scene's fixed state, checked before anything of it
-// is recorded: Finder's window by ./scenes-mac-finder.mjs; the others' processes are wholly the run's. -> [{code, message}].
-export const fixedStateProblems = (id, skyshot, record) => (sceneOf(id).id === 'finder' ? finderWindowProblems(skyshot, finderOwned(record)) : []);
+// is recorded: Finder's window by ./scenes-mac-finder.mjs; Chrome's page filled (chromePageProblems); TextEdit's and
+// Electron's processes are wholly the run's. -> [{code, message}].
+export function fixedStateProblems(id, skyshot, record) {
+  const scene = sceneOf(id).id;
+  if (scene === 'finder') return finderWindowProblems(skyshot, finderOwned(record));
+  if (scene === 'chrome') return chromePageProblems(skyshot);
+  return [];
+}
 
 // ---- Device side ----------------------------------------------------------------------------------------------------
 
@@ -297,7 +325,7 @@ const defaultIo = () => ({
   frontmostProcess: () => frontmostProcess(), frontWindow: () => frontWindow(),
   finderPid: () => runningApps(FINDER_BUNDLE_ID)[0]?.pid ?? null,
   finderPreferences: () => readFinderPreferences(), macosMajor: () => readMacosMajor(), writeFinderPreference: (key, value) => writeFinderPreference(key, value), savedPreferencesFile: SAVED_PREFERENCES,
-  placeChrome: () => placeChromeForTesting(), buildElectron: () => buildElectronFixture(), spawnPage,
+  placeChrome: () => placeChromeForTesting(), buildElectron: () => buildElectronFixture(), spawnPage, pageLoaded: run => readPageLoaded(run),
 });
 
 // What the refusal check reads on the device.
@@ -339,6 +367,19 @@ async function launchOwn({io, ...options}) {
   const launch = await startOwn({...options, io});
   try { return {...launch, window: await awaitWindow(launch.pid, {io})}; }
   catch (error) { await io.stopRecorded(launch); throw error; }
+}
+// How long `up chrome` waits, once Chrome's window is there, for the page to report its load (scene-page.mjs's beacon):
+// a loopback page loads in well under a second, so the bound only catches a page that never loads (a blocked script, a
+// crashed renderer, a tab that is not the page).
+export const PAGE_LOAD_MS = 15_000;
+async function awaitPageLoad(run, page, {io, boundMs = PAGE_LOAD_MS, pollMs = 100}) {
+  for (const t0 = io.now(); ;) {
+    const loaded = io.pageLoaded(run);
+    // Only this launch's server's report: spawnPage removed any earlier one, and the port names the server.
+    if (loaded?.port === page.port) return loaded;
+    if (io.now() - t0 >= boundMs) throw new Error(`the scene page did not report its load within ${boundMs} ms (no beacon from ${page.url}); Chrome and the page are stopped`);
+    await io.sleep(pollMs);
+  }
 }
 const placementArgs = ({x, y, width, height}) => [`--window-position=${x},${y}`, `--window-size=${width},${height}`];
 // Chrome for Testing's switches: its own profile, no first-run, sync, default-browser or keychain prompt, no network
@@ -425,6 +466,8 @@ export async function upScene(id, {run, chromeApp, electronApp, io = defaultIo()
       record.launchAttempted = true;
       Object.assign(record, await startOwn({app, bundleId: scene.bundleId, args: chromeArgs({userDataDir, url: record.page.url}), io}));
       record.window = await awaitWindow(record.pid, {io});
+      // Up returns once the page has loaded, not when the window appears: the window comes before the page's document.
+      record.page.loadedAt = (await awaitPageLoad(run, record.page, {io})).at;
     } catch (error) {
       // Use down's cleanup even before up completed: remove the profile only after both processes stop, or keep their
       // launch identities and the profile in state so a later down can finish (including when stopping itself throws).
@@ -531,10 +574,14 @@ export async function downScene(id, {run, io = defaultIo()}) {
 const unrestored = ({remaining}) => `Finder's ${remaining.join(', ')} did not take the owner's saved value back; run restore-finder again, and if it persists set it in Finder's View menu`;
 
 // The page server, detached from the command that starts it so it outlives the ssh session; it writes {url, port} into
-// the run directory once it listens, and stops on SIGTERM.
+// the run directory once it listens, {port, at} once the page's load beacon arrives (PAGE_LOADED, read by
+// readPageLoaded), and stops on SIGTERM.
+const PAGE_LOADED = 'chrome-page-loaded.json';
+export const readPageLoaded = run => { try { return JSON.parse(fs.readFileSync(join(run, PAGE_LOADED), 'utf8')); } catch (error) { if (error.code === 'ENOENT') return null; throw error; } };
 export async function spawnPage(run, {boundMs = 10_000} = {}) {
   const ready = join(run, 'chrome-page.json');
   fs.rmSync(ready, {force: true});
+  fs.rmSync(join(run, PAGE_LOADED), {force: true});
   const child = spawn(process.execPath, [SCRIPT, 'serve-page', '--run', run], {detached: true, stdio: 'ignore'});
   child.unref();
   for (const t0 = Date.now(); Date.now() - t0 < boundMs; await sleep(100)) {
@@ -545,11 +592,16 @@ export async function spawnPage(run, {boundMs = 10_000} = {}) {
   try { process.kill(child.pid, 'SIGTERM'); } catch {}
   throw new Error(`the scene page did not start within ${boundMs} ms`);
 }
+const writeAtomically = (file, value) => {
+  const temporary = `${file}.${process.pid}`;
+  fs.writeFileSync(temporary, JSON.stringify(value) + '\n', {mode: 0o600});
+  fs.renameSync(temporary, file);
+};
 async function servePage(run) {
-  const page = await startScenePage();
-  const ready = join(run, 'chrome-page.json'), temporary = `${ready}.${process.pid}`;
-  fs.writeFileSync(temporary, JSON.stringify({url: page.url, port: page.port}) + '\n', {mode: 0o600});
-  fs.renameSync(temporary, ready);
+  let port = null;
+  const page = await startScenePage({onReady: () => writeAtomically(join(run, PAGE_LOADED), {port, at: Date.now()})});
+  port = page.port;
+  writeAtomically(join(run, 'chrome-page.json'), {url: page.url, port: page.port});
   process.once('SIGTERM', () => page.close().then(() => process.exit(0)));
 }
 

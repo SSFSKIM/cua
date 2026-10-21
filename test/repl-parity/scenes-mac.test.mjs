@@ -12,7 +12,7 @@ import {
   SCENE_IDS, SCENES, PAIRS, BACKGROUND_PAIRINGS, CONCURRENT_USE, CONCURRENT_USE_SHEET, userWindowFor, refusals,
   ownedProcesses, documentWindows, refusingWindows, finderFolderFiles, textEditDocument, describeScenes, FINDER_TYPING_NAME, TEXTEDIT_STYLED_LINE, TEXTEDIT_MARKDOWN_CAP,
   upScene, downScene, preflight, readState, chromeArgs, chromeArgsProblems, chromePreferences, electronArgs, sceneCommand, exitCodeFor,
-  setupSteps, teardownSteps, teardownFor, activateScene, restoreFinder, fixedStateProblems, finderOwned, isSceneWindow, FINDER_FILES_MODIFIED,
+  setupSteps, teardownSteps, teardownFor, activateScene, restoreFinder, fixedStateProblems, finderOwned, isSceneWindow, FINDER_FILES_MODIFIED, readPageLoaded,
 } from '../../scripts/repl-parity/scenes-mac.mjs';
 import {indexOfTarget, indexOfRowCell, actionIndex, windowTitleOf} from '../../scripts/repl-parity/scenes-mac-text.mjs';
 import {parseAsns, parseAppInfo, awaitOwnLaunch, stopRecorded, readFinderPreferences, writeFinderPreference, openApp, activateApp, parseMacosMajor, readMacosMajor} from '../../scripts/repl-parity/scenes-mac-device.mjs';
@@ -260,6 +260,8 @@ function fakeDevice({running = [], windows = {}, finderPid = 736, finderHidden =
       return {stopped: [record.pid], remaining: []};
     },
     spawnPage: async () => { const pid = nextPid++; launches[pid] = clock; return {pid, at: clock, url: 'http://127.0.0.1:4000/', port: 4000}; },
+    // The scene page's load beacon as the page server records it: its port and when it came (null: not yet).
+    pageLoaded: () => ({port: 4000, at: clock}),
     placeChrome: async () => ({appPath: '/cache/chrome-mac-arm64/Google Chrome for Testing.app'}),
     buildElectron: () => ({appPath: '/cache/44.9.0-abc/cua Electron Fixture.app'}),
   };
@@ -545,6 +547,72 @@ for (const capture of ['ambiguous', 'unreadable']) {
   }));
 }
 
+test('up chrome returns only once the page has reported its load to its own server, and records when', async () => withRun(async run => {
+  const io = fakeDevice(), polls = [];
+  // The beacon comes 1.5 s after the window: a stale report of an earlier page (another port) does not count.
+  let windowAt = null;
+  io.pageLoaded = () => {
+    windowAt ??= io.now();
+    polls.push(io.now());
+    if (io.now() - windowAt < 1500) return io.now() - windowAt < 500 ? null : {port: 3999, at: 1};
+    return {port: 4000, at: io.now()};
+  };
+  const record = await upScene('chrome', {run, io});
+  assert.ok(polls.length > 2, 'polled until the report came');
+  assert.ok(polls.at(-1) - polls[0] >= 1500, 'not before the beacon');
+  assert.equal(record.page.loadedAt, polls.at(-1));
+  assert.ok(record.window, 'the window was there first');
+  assert.ok(readState(run).scenes.chrome, 'the scene is up once the page has loaded');
+}));
+
+test('up chrome refuses when the page never reports its load within the bound, stopping Chrome and the page before removing the profile', async () => withRun(async run => {
+  const io = fakeDevice(), stop = io.stopRecorded;
+  let first = null;
+  io.pageLoaded = () => { first ??= io.now(); return null; };
+  io.stopRecorded = async record => {
+    assert.equal(fs.readdirSync(run).filter(name => name.startsWith('chrome-user-data-')).length, 1, 'keep the profile until both processes stop');
+    return stop(record);
+  };
+  await assert.rejects(upScene('chrome', {run, io}), /scene page did not report its load within 15000 ms/);
+  assert.ok(io.now() - first >= 15_000 && io.now() - first < 16_000, 'bounded');
+  const chrome = io.running.find(p => p.bundleId === CFT);
+  assert.deepEqual(io.calls.filter(c => c[0] === 'stop').map(c => c[1]), [chrome.pid, 500], 'Chrome and its page were stopped');
+  assert.deepEqual(fs.readdirSync(run).filter(name => name.startsWith('chrome-user-data-')), []);
+  assert.deepEqual(readState(run), {scenes: {}});
+  // A Chrome that will not stop keeps its record and profile for down, as any failed up does.
+  const io2 = fakeDevice();
+  io2.pageLoaded = () => null;
+  io2.stopRecorded = async record => ({stopped: [], remaining: [record.pid]});
+  await withRun(async run2 => {
+    await assert.rejects(upScene('chrome', {run: run2, io: io2}), /did not report its load/);
+    const kept = readState(run2).scenes.chrome;
+    assert.ok(kept && fs.existsSync(kept.userDataDir));
+  });
+}));
+
+test('the scene page\'s load report is read from the run directory, matched to its server\'s port', () => withRun(async run => {
+  assert.equal(readPageLoaded(run), null);
+  fs.writeFileSync(join(run, 'chrome-page-loaded.json'), JSON.stringify({port: 4000, at: 5}));
+  assert.deepEqual(readPageLoaded(run), {port: 4000, at: 5});
+}));
+
+test('Chrome\'s fixed state needs the page\'s tree filled: the sitting\'s first capture (no control values yet) is refused, the filled one passes', () => {
+  // The M1b.5 sitting kept a fixed state whose heading, checkbox and radio buttons had no value yet (they filled seconds
+  // later, so every restart differed from it in exactly those lines).
+  const early = JSON.parse(fs.readFileSync(new URL('../../docs/doperpowers/research/2026-10-18-own-native-engine/m1b/goldens-run/goldens/chrome/skyshot.json', import.meta.url), 'utf8'));
+  const filled = JSON.parse(fs.readFileSync(new URL('../native-goldens/chrome/skyshot.json', import.meta.url), 'utf8'));
+  const problems = fixedStateProblems('chrome', early, {});
+  assert.deepEqual(problems.map(p => p.code), ['page_filling']);
+  assert.deepEqual(problems[0].controls, ['heading', 'option', 'modeA', 'modeB']);
+  assert.deepEqual(fixedStateProblems('chrome', filled, {}), []);
+  // No web area of the page yet (Chrome's own UI only) is the same problem.
+  assert.deepEqual(fixedStateProblems('chrome', {...filled, nodes: filled.nodes.filter(n => n.role !== 'AXWebArea')}, {}).map(p => p.code), ['page_filling']);
+  assert.deepEqual(fixedStateProblems('chrome', {nodes: []}, {}).map(p => p.code), ['page_filling']);
+  // A clicked checkbox still carries a value: the state after an action passes.
+  const clicked = {...filled, nodes: filled.nodes.map(n => (n.role === 'AXCheckBox' ? {...n, value: 1} : n))};
+  assert.deepEqual(fixedStateProblems('chrome', clicked, {}), []);
+});
+
 test('stopRecorded signals only a pid that is still the recorded launch', async () => {
   const quit = [];
   const q = async pids => { quit.push(...pids); return {quit: pids, remaining: []}; };
@@ -767,12 +835,12 @@ test('activate gives up after its bound when the process never comes to the fron
   assert.ok(io.calls.filter(c => c[0] === 'activate').length === 1, 'one activation, then the poll');
 }));
 
-test('the fixed-state check: Finder\'s on its Skyshot with what the run owns, the others\' processes are wholly the run\'s', () => {
+test('the fixed-state check: Finder\'s on its Skyshot with what the run owns, TextEdit\'s and Electron\'s processes are wholly the run\'s', () => {
   const record = {folder: '/run/finder/cua-scene-finder', window: {number: 1}};
   assert.deepEqual(finderOwned(record), {folder: 'cua-scene-finder', folderPath: '/run/finder/cua-scene-finder', files: finderFolderFiles()});
   const shot = JSON.parse(fs.readFileSync(new URL('../native-goldens/finder/skyshot.json', import.meta.url), 'utf8'));
   assert.deepEqual(fixedStateProblems('finder', shot, record).map(p => p.code), ['sidebar_shown', 'unowned_text'], 'M0\'s capture showed the sidebar and the status bar');
-  for (const id of ['textedit', 'chrome', 'electron']) assert.deepEqual(fixedStateProblems(id, {nodes: []}, {}), []);
+  for (const id of ['textedit', 'electron']) assert.deepEqual(fixedStateProblems(id, {nodes: []}, {}), []);
 });
 
 test('device reads: Finder\'s preference keys through defaults, an unset key as null, any other failure thrown', () => {

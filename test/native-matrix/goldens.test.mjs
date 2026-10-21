@@ -297,6 +297,23 @@ test('cua\'s action from a start that is not the kept fixed state is not kept: t
   assert.equal(fs.existsSync(join(failed.dir, 'goldens', 'electron', 'action.before.skyshot.json')), false);
 });
 
+test('cua\'s action that found the page still filling or never settled is reset and taken again; any other refusal ends the scene', async () => {
+  const refusal = (scene, code, extra = {}) => ({scene, build: BUILD, before: null, after: null, click: null, timings: null, frames: null, problems: [{code, message: code}], ...extra});
+  const elsewhere = shot('chrome', 'skyshot.json');
+  elsewhere.nodes = elsewhere.nodes.slice(0, -1);
+  const device = fakeDevice({action: (scene, n) => (scene !== 'chrome' ? null : n === 1 ? refusal(scene, 'page_filling') : n === 2 ? refusal(scene, 'unstable', {observed: elsewhere}) : null)});
+  const out = await run({device});
+  assert.equal(out.code, 0, JSON.stringify(out.meta.problems ?? out.meta.error));
+  assert.equal(out.meta.scenes.chrome.startAttempts, 3);
+  assert.equal(device.calls.filter(c => c[0] === 'scenes' && c[1] === 'up' && c[2] === 'chrome').length, 4, 'the first up, then a restart before each attempt');
+  assert.deepEqual(out.meta.scenes.chrome.startMismatches.map(m => m.attempt), [2], 'the unsettled start\'s last read is diagnosed');
+  const other = fakeDevice({action: (scene, n) => (scene === 'chrome' && n === 1 ? refusal(scene, 'other_process') : null)});
+  const failed = await run({device: other});
+  assert.equal(failed.code, 1);
+  assert.match(failed.meta.problems.join(' '), /chrome: cua's action did not record: other_process/);
+  assert.equal(other.calls.filter(c => c[1] === 'action' && c[2] === 'chrome').length, 1);
+});
+
 test('the vendor\'s action texts are removed unread when the state after its click is not the scene\'s', async () => {
   // Observations 1-2 are the fixed sandwich; the third is the check after the vendor's action.
   const device = fakeDevice({observe: (scene, n) => (scene === 'finder' && n === 3 ? {scene, build: BUILD, skyshot: null, problems: [{code: 'finder_sidebar', message: 'x'}]} : null)});

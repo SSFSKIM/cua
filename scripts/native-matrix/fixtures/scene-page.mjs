@@ -1,7 +1,7 @@
 // The Chrome scene's page (scripts/repl-parity/scenes-mac.mjs; the own native engine spec, Verification system parts 2, 5
 // and 6; moved in M1b from scripts/spike/engine/fixtures/, the spike importing it from here): one static document served
-// on 127.0.0.1 at an ephemeral port, answering only `/` on its exact Host, under a CSP that allows its one inline script
-// and nothing from the network. Its content is fixed (no per-run marker), so the two engines' texts of the same state
+// on 127.0.0.1 at an ephemeral port, answering only `/` and the page's load beacon on its exact Host, under a CSP that
+// allows its one inline script and no network beyond that beacon to its own origin. Its content is fixed (no per-run marker), so the two engines' texts of the same state
 // can be compared in one sitting. The controls are the finding-elements targets of the scene (PAGE_CONTROLS) and the
 // textarea is where the Korean and Unicode matrix types. The page never turns accessibility on itself: the engine's
 // AXManualAccessibility is what the scene proves. It declares itself untranslatable (`translate="no"` and Google's
@@ -26,10 +26,16 @@ export const PAGE_CONTROLS = Object.freeze([
 // The fixed state's values, which the method matrix reads back against.
 export const PAGE_INITIAL = Object.freeze({notes: '', name: '', option: false, mode: 'A', choice: 'One', status: 'Ready'});
 
-// Apply writes what it saw into the status line, so a click's outcome is readable from the tree.
-export const SCRIPT = "document.getElementById('apply').addEventListener('click', () => { document.getElementById('status').textContent = 'Applied: ' + document.getElementById('name').value; });";
+// Apply writes what it saw into the status line, so a click's outcome is readable from the tree. Once the document has
+// loaded (its script has run, so everything the page sets up is in place), the page posts one beacon to its own server
+// (READY_PATH), which is how `scenes-mac.mjs up chrome` learns the page is there without a DevTools port: a CDP port
+// would be one more endpoint any local process could drive Chrome through, the beacon reaches only the run's own
+// loopback server.
+export const READY_PATH = '/ready';
+export const SCRIPT = "document.getElementById('apply').addEventListener('click', () => { document.getElementById('status').textContent = 'Applied: ' + document.getElementById('name').value; });"
+  + ` addEventListener('load', () => navigator.sendBeacon('${READY_PATH}'));`;
 const SCRIPT_HASH = createHash('sha256').update(SCRIPT).digest('base64');
-export const CSP = `default-src 'none'; script-src 'sha256-${SCRIPT_HASH}'; style-src 'none'; img-src 'none'; connect-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'`;
+export const CSP = `default-src 'none'; script-src 'sha256-${SCRIPT_HASH}'; style-src 'none'; img-src 'none'; connect-src 'self'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'`;
 
 export const PAGE_HTML = `<!doctype html>
 <html lang="en" translate="no"><head><meta charset="utf-8"><meta name="google" content="notranslate"><title>${PAGE_TITLE}</title></head>
@@ -51,11 +57,17 @@ export const PAGE_HTML = `<!doctype html>
 
 const HEADERS = {'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'referrer-policy': 'no-referrer', 'content-security-policy': CSP};
 
-// Serves the page. -> {url, port, close()}.
-export async function startScenePage({port = 0} = {}) {
-  let expectedHost;
+// Serves the page; `onReady` is called once, on the page's first load beacon. -> {url, port, close()}.
+export async function startScenePage({port = 0, onReady = null} = {}) {
+  let expectedHost, reported = false;
   const server = createServer((req, res) => {
     if (req.headers.host !== expectedHost) { res.writeHead(421, {'content-type': 'text/plain'}).end('misdirected\n'); return; }
+    if (req.method === 'POST' && req.url === READY_PATH) {
+      req.resume();
+      res.writeHead(204).end();
+      if (!reported) { reported = true; onReady?.(); }
+      return;
+    }
     if (req.method !== 'GET' || req.url !== '/') { res.writeHead(404, {'content-type': 'text/plain'}).end('not found\n'); return; }
     res.writeHead(200, HEADERS).end(PAGE_HTML);
   });

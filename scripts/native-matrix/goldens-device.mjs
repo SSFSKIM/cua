@@ -18,12 +18,19 @@
 // roles and fields, never text) are printed, so nothing of a window the run does not own reaches the controller.
 // The engine's per-observation diagnostics (`timings`, e.g. focusRead) are printed beside the Skyshot, not in it.
 //
-// `action` is the scene's one action sequence, on one connection, so the two observations share a lineage: a full
+// Every fixed state is a settled one (settledState): the scene is read until two consecutive full observations, an
+// interval apart, render alike, within a bound. Neither engine waits for a web area's contents (both wait only for the
+// web area itself), and a scene's tree can still be filling when its window is there (the M1b.5 sitting's Chrome page
+// filled its controls' values seconds after the first reads), so one observation is a sample of a moving state and two
+// launches of the same scene sampled at different moments differ. `observe` returns the settled observation, `action`
+// starts from one.
+//
+// `action` is the scene's one action sequence, on one connection, so the observations share a lineage: the settled full
 // observation, the scene's action target found in cua's own rendering (the service's numbering, ./observations.mjs) and
-// clicked by its token, then the next observation in the default mode, the base and the subject of the diff golden.
-// It clicks only once the observation before is the scene's fixed state (`--expect`, stateDigest of the fixed-state
-// Skyshot the controller kept): a restarted page still loading, or a selection the reset left, is observed again, then
-// refused with nothing clicked.
+// clicked by its token, then the next observation in the default mode, the base and the subject of the diff golden (a
+// single read: a second would be a diff against the first). It clicks only once the settled observation is the scene's
+// fixed state (`--expect`, stateDigest of the fixed-state Skyshot the controller kept); otherwise it is refused with
+// nothing clicked, and the controller resets the scene for the problems a reset may clear (RESET_MAY_CLEAR).
 // `steps` sends a scene's setup, reset or teardown keys through the engine, each only while the key guard finds its
 // target in front (scripts/accept/key-guard.mjs, by pid and, for Finder, the run's window).
 import {execFileSync} from 'node:child_process';
@@ -47,9 +54,16 @@ import {frontmostFromProbe, sendIfFrontmost} from '../accept/key-guard.mjs';
 
 const SCRIPT = fileURLToPath(import.meta.url);
 export const SCREENSHOT_DIR = 'goldens-screenshots';
-// The action's target may appear late (a web area after enablement), and a restarted scene may not yet show its fixed
-// state (a page still loading): up to five observations this far apart.
-const TARGET_ATTEMPTS = 5, TARGET_RETRY_MS = 1000;
+// The stability read's spacing and bound: two reads this far apart must render alike, within this long of the first.
+// The sitting's Chrome page filled within about five seconds of its launch.
+export const SETTLE_INTERVAL_MS = 500, SETTLE_BOUND_MS = 10_000;
+// Problems waiting can clear, so the stability read reads on through them: a window of the run's process whose title is
+// not yet the scene's (a page or document still loading), a page whose tree is still filling (scenes-mac.mjs
+// chromePageProblems). Any other problem (another process, owner text in Finder's window) is refused at once.
+const TRANSIENT = new Set(['other_window', 'page_filling']);
+// The refusals of `action` the controller answers by resetting the scene (a restart, or Finder's deselect) and trying
+// again: a settled state that is not the kept one, a state that never settled, a page that never filled.
+export const RESET_MAY_CLEAR = Object.freeze(['start_state', 'unstable', 'page_filling']);
 // After a key step, the time Finder takes to apply a toggle before the next one.
 const STEP_SETTLE_MS = 500;
 const sleepFor = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -95,38 +109,53 @@ async function getState(client, record, screenshots, extra) {
   return result;
 }
 
-// The fixed state's observation. -> {scene, build, skyshot | null, timings, frame, problems}.
-export async function observe({id, record, client, screenshots}) {
-  const shot = await getState(client, record, screenshots, {disableDiff: true});
-  const problems = sceneProblems(id, shot, record);
-  if (problems.length) return {scene: id, build: client.identity?.build ?? null, skyshot: null, timings: null, frame: null, problems};
-  return {scene: id, build: client.identity?.build ?? null, skyshot: goldenForm(shot), timings: shot.timings ?? null, frame: shot.window?.frame ?? null, problems: []};
+// The scene read until it has settled: full observations `intervalMs` apart until two consecutive ones pass the scene's
+// checks and render alike (stateDigest), for at most `boundMs` from the first. -> {shot, problems: [], settle} with the
+// later of the two; or {shot: null, problems, settle}: a problem waiting cannot clear at once, the transient problems of
+// the last read at the bound, or `unstable` (with `observed`, the last read, which passed the checks) when the reads
+// passed but never twice alike. `settle` is {reads, ms} for the record.
+export async function settledState({id, record, client, screenshots, sleep = sleepFor, now = Date.now, boundMs = SETTLE_BOUND_MS, intervalMs = SETTLE_INTERVAL_MS}) {
+  const t0 = now();
+  let reads = 0, previous = null, shot = null, problems = [];
+  const settle = () => ({reads, ms: now() - t0});
+  for (;;) {
+    if (reads) await sleep(intervalMs);
+    shot = await getState(client, record, screenshots, {disableDiff: true});
+    reads++;
+    problems = sceneProblems(id, shot, record);
+    if (problems.some(p => !TRANSIENT.has(p.code))) return {shot: null, problems, settle: settle()};
+    const digest = problems.length ? null : stateDigest(goldenForm(shot));
+    if (digest !== null && digest === previous) return {shot, problems: [], settle: settle()};
+    previous = digest;
+    if (now() - t0 >= boundMs) break;
+  }
+  if (problems.length) return {shot: null, problems, settle: settle()};
+  return {shot: null, problems: [{code: 'unstable', message: `cua's observation did not render alike in two consecutive reads ${intervalMs} ms apart within ${boundMs} ms`}],
+    observed: goldenForm(shot), settle: settle()};
 }
 
-// The scene's action sequence on one connection, from the state whose stateDigest is `expect`. A window of the run's
-// process whose title is not yet the scene's (a restarted page still loading) is observed again like a state that is not
-// yet the fixed one. -> {scene, build, before, after, click: {index, route}, timings, frames, problems}; before and
-// after null when anything refused; on `start_state`, `observed` is the last observation (it passed the scene's checks),
+// The fixed state's observation, settled. -> {scene, build, skyshot | null, timings, frame, settle, problems}.
+export async function observe({id, record, client, screenshots, sleep, now}) {
+  const {shot, problems, settle} = await settledState({id, record, client, screenshots, sleep, now});
+  if (problems.length) return {scene: id, build: client.identity?.build ?? null, skyshot: null, timings: null, frame: null, settle, problems};
+  return {scene: id, build: client.identity?.build ?? null, skyshot: goldenForm(shot), timings: shot.timings ?? null, frame: shot.window?.frame ?? null, settle, problems: []};
+}
+
+// The scene's action sequence on one connection, from the settled state whose stateDigest is `expect`.
+// -> {scene, build, before, after, click: {index, route}, timings, frames, settle, problems}; before and after null when
+// anything refused; on `start_state` and `unstable`, `observed` is the last observation (it passed the scene's checks),
 // for the controller's diagnostic.
-export async function act({id, record, client, screenshots, expect, retryMs = TARGET_RETRY_MS, sleep = sleepFor}) {
-  const refused = problems => ({scene: id, build: client.identity?.build ?? null, before: null, after: null, click: null, timings: null, frames: null, problems});
+export async function act({id, record, client, screenshots, expect, sleep, now}) {
+  const refused = (problems, extra = {}) => ({scene: id, build: client.identity?.build ?? null, before: null, after: null, click: null, timings: null, frames: null, ...extra, problems});
   const observations = createObservations();
   if (typeof expect !== 'string' || !/^[0-9a-f]{64}$/.test(expect)) throw new Error('action needs --expect <the fixed state\'s digest>');
-  let before = null, index = null, fixed = false, pending = [];
-  for (let attempt = 1; attempt <= TARGET_ATTEMPTS && index === null; attempt++) {
-    if (attempt > 1) await sleep(retryMs);
-    before = await getState(client, record, screenshots, {disableDiff: true});
-    const problems = sceneProblems(id, before, record);
-    pending = problems;
-    if (problems.length && problems.every(p => p.code === 'other_window')) { fixed = false; continue; }
-    if (problems.length) return refused(problems);
-    const text = observations.observe(record.app, before, {disableDiff: true});
-    fixed = stateDigest(goldenForm(before)) === expect;
-    if (fixed) index = actionIndex(text, SCENES[id].action);
-  }
-  if (pending.length) return refused(pending);
-  if (!fixed) return {...refused([{code: 'start_state', message: `cua's observation is not the scene's fixed state after ${TARGET_ATTEMPTS} observations; nothing was clicked`}]), observed: goldenForm(before)};
-  if (index === null) return refused([{code: 'target_missing', message: `the action's target is not in cua's rendering after ${TARGET_ATTEMPTS} observations; nothing was clicked`}]);
+  const settled = await settledState({id, record, client, screenshots, sleep, now});
+  const {shot: before, settle} = settled;
+  if (settled.problems.length) return refused(settled.problems, {settle, ...(settled.observed ? {observed: settled.observed} : {})});
+  if (stateDigest(goldenForm(before)) !== expect)
+    return refused([{code: 'start_state', message: 'cua\'s settled observation is not the scene\'s kept fixed state; nothing was clicked'}], {settle, observed: goldenForm(before)});
+  const index = actionIndex(observations.observe(record.app, before, {disableDiff: true}), SCENES[id].action);
+  if (index === null) return refused([{code: 'target_missing', message: 'the action\'s target is not in cua\'s rendering of the settled fixed state; nothing was clicked'}], {settle});
   const {token, lineage} = observations.element(record.app, index);
   let clicked;
   try { clicked = await client.execute('click', {app: record.app, element: token}, {lineage}); } catch (error) {
@@ -137,7 +166,7 @@ export async function act({id, record, client, screenshots, expect, retryMs = TA
   if (after?.lineage !== before.lineage) problems.push({code: 'lineage_changed', message: 'the observation after the click is of another lineage (the engine or the connection restarted)'});
   if (problems.length) return refused(problems);
   return {scene: id, build: client.identity?.build ?? null, before: goldenForm(before), after: goldenForm(after), click: {index, route: clicked.result?.meta?.inputRoute ?? null},
-    timings: {before: before.timings ?? null, after: after.timings ?? null}, frames: [before.window?.frame ?? null, after.window?.frame ?? null], problems: []};
+    timings: {before: before.timings ?? null, after: after.timings ?? null}, frames: [before.window?.frame ?? null, after.window?.frame ?? null], settle, problems: []};
 }
 
 // The steps of a phase: setup (the scene's record, from `up`), reset (Finder back to no selection, in the same window,
@@ -199,6 +228,7 @@ const defaultIo = () => ({
   frontmost: () => frontmostFromProbe(frontWindow()),
   teardown: (id, run) => teardownFor(id, {run}),
   sleep: sleepFor,
+  now: Date.now,
 });
 
 function parse(argv) {
@@ -228,8 +258,8 @@ export async function main(argv, {io: given = {}} = {}) {
   const client = io.client(installed.bundlePath);
   const screenshots = join(run, SCREENSHOT_DIR);
   try {
-    if (command === 'observe') return await observe({id: scene, record, client, screenshots});
-    if (command === 'action') return await act({id: scene, record, client, screenshots, expect: flags.expect, sleep: io.sleep});
+    if (command === 'observe') return await observe({id: scene, record, client, screenshots, sleep: io.sleep, now: io.now});
+    if (command === 'action') return await act({id: scene, record, client, screenshots, expect: flags.expect, sleep: io.sleep, now: io.now});
     return await runSteps({id: scene, phase: flags.phase, run, record, client, io});
   } finally { client.close(); }
 }

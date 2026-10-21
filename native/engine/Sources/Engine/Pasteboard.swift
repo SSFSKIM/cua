@@ -18,14 +18,22 @@ let pasteMarkerTypes: [NSPasteboard.PasteboardType] = [
   NSPasteboard.PasteboardType("org.nspasteboard.TransientType"),
 ]
 
+/// A write's outcome: the change count that is the engine's own from the moment it took the pasteboard (taking it clears
+/// it), and whether the item was then written.
+struct PasteboardWrite: Equatable {
+  let own: Int
+  let written: Bool
+}
+
 protocol PasteboardAccess: AnyObject {
   var changeCount: Int { get }
   /// Every type of every item, its data materialised now, so a previous owner's promise becomes plain data (the vendor's
   /// FUN_10021fd0c); nil when the pasteboard is empty.
   func snapshot() -> PasteboardSnapshot?
   /// Takes the pasteboard for new contents kept to this Mac (`NSPasteboardContentsCurrentHostOnly`, off Universal
-  /// Clipboard) and writes `item`; answers the change count that is the engine's own, nil when the write failed.
-  func write(_ item: NSPasteboardItem) -> Int?
+  /// Clipboard), which clears it, and writes `item`. The own change count is answered whether or not the item was
+  /// written, since the previous contents are gone either way and must be restored.
+  func write(_ item: NSPasteboardItem) -> PasteboardWrite
   /// Clears the pasteboard and, unless the snapshot was empty, writes its items back.
   func restore(_ snapshot: PasteboardSnapshot?)
 }
@@ -49,10 +57,10 @@ final class SystemPasteboard: PasteboardAccess, @unchecked Sendable {
     }
   }
 
-  func write(_ item: NSPasteboardItem) -> Int? {
+  func write(_ item: NSPasteboardItem) -> PasteboardWrite {
     onMain {
       let own = pasteboard.prepareForNewContents(with: .currentHostOnly)
-      return pasteboard.writeObjects([item]) ? own : nil
+      return PasteboardWrite(own: own, written: pasteboard.writeObjects([item]))
     }
   }
 

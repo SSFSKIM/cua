@@ -10,8 +10,10 @@ import Foundation
 // pasteboard snapshotted, then the item written through the lazy provider (FUN_1001b76e0); ⌘V posted to the process
 // that owns the focused element, with no gap (FUN_1001b382c); up to 2 s for the app to be handed the data
 // (FUN_1001b3cfc); the change count checked against the engine's own, then up to 2 s, every 25 ms, for an effect
-// (FUN_1001b493c); and the previous contents restored on every path once anything was written, only while the change
-// count is still the engine's own, so a human's newer clipboard is never overwritten (FUN_1001b5030, FUN_100220174).
+// (FUN_1001b493c); and the previous contents restored on every path once the pasteboard was taken (taking it clears it,
+// so a write that then fails restores too), only while the change count is still the engine's own, so a human's newer
+// clipboard is never overwritten (FUN_1001b5030, FUN_100220174). A multi-line type_text checks the count again before
+// each later line's write and stops as the conflict once the human has copied, never taking the pasteboard back.
 // The sentences are the vendor's. The settle runs at the next observation (markActed), as every action's.
 //
 // type_text's paste route is the same operation over its text's lines: each line pasted, each newline a Return press
@@ -144,10 +146,17 @@ func runPaste(_ parts: [PastePart], pasteboard: PasteboardAccess, effect: PasteE
     for part in parts {
       switch part {
       case .content(let representations, let units):
+        // A later line never takes back a pasteboard the human has written since the last one: the paste stops as the
+        // conflict, and the restore below leaves their contents alone.
+        if let own, pasteboard.changeCount != own { throw clipboardConflict }
         let provider = LazyPasteProvider(representations) { effect.providerRead() }
         effect.begin()
-        guard let item = provider.item(), let written = pasteboard.write(item) else { throw clipboardWriteFailed }
-        own = written
+        guard let item = provider.item() else { throw clipboardWriteFailed }
+        let write = pasteboard.write(item)
+        // Taking the pasteboard cleared it: the restore is armed from here, whether or not the item was written.
+        own = write.own
+        guard write.written else { throw clipboardWriteFailed }
+        let written = write.own
         try checkInFlight()
         effect.pasteStarted()
         guard meta.posting(postPaste) else { throw EngineError(name: "eventCreationFailed", "The paste key events could not be created.") }

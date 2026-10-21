@@ -168,7 +168,8 @@ async function runOnce(options, io) {
     elicitations: [], keySkipped: []};
   let refused = false, complete = false, putBack, lanes = [{host, engine, build: null, version: null}];
   const write = () => {
-    const result = cellResult({cell: cellName, device, started, lanes, complete, refused, problems, rows, putBack, meta});
+    // A narrowed cell is judged on its own (summary counts only the whole matrix's runs): its verdict judges the oracle.
+    const result = cellResult({cell: cellName, device, started, lanes, complete, refused, problems, rows, putBack, meta, judgesInterference: plan.id !== 'full'});
     if (dryRun) { const bad = validateCellResult(result); log(`dry: the result ${bad.length ? `does not conform: ${bad.join('; ')}` : `conforms (${rows.length} rows, verdict ${result.verdict})`}`); return result; }
     writeCellResult(dir, result);
     return result;

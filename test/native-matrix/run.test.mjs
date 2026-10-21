@@ -92,7 +92,8 @@ test('an activation inside a row fails that row\'s oracle only; one inside a har
   assert.equal(r.result.complete, true, JSON.stringify(r.result.problems));
   assert.deepEqual(r.result.meta.activations.unaccounted, []);
   assert.deepEqual(r.result.meta.activations.accounted.map(a => [a.kind, a.key]), [['harness', 'activate:finder']]);
-  assert.equal(r.result.verdict, 'pass', 'the outcome verdict is the rows\' ok; the oracle is judged by summary');
+  // A standalone cell (`cell non-interference`, never counted as a full run) judges the oracle too: it fails, exit 1.
+  assert.deepEqual([r.result.judgesInterference, r.result.verdict, r.code], [true, 'fail', 1]);
 });
 
 test('an activation the run cannot place makes the run incomplete, never clean', async () => {
@@ -225,4 +226,13 @@ test('the intents settle only after a recovery that stopped the work; an app the
   assert.equal(names(late.steps).filter(s => s === 'live recover').length, 2);
   assert.ok(late.result.problems.some(p => /appeared only after the run's quit/.test(p)));
   assert.equal(late.result.complete, false);
+});
+
+test('the whole matrix\'s verdict stays its outcomes, the oracle summary\'s to judge', async () => {
+  const scroll = cellsOf('textedit', 'scroll', 'down').act;
+  const calls = [];
+  const full = {...planOf('background', {scene: 'textedit', user: 'finder'}), id: 'full'};
+  const r = await runWith({calls, plan: full, cellName: 'matrix', ops: stopWith(() => ({activations: [{kind: 'activated', bundleId: 'com.apple.TextEdit', scene: true, at: calls.find(c => c.code.includes(scroll)).at[0] + 1}]}))});
+  assert.ok(r.result.rows.some(row => row.interference?.ok === false));
+  assert.deepEqual([r.result.judgesInterference, r.result.verdict], [undefined, 'pass']);
 });

@@ -81,3 +81,18 @@ test('results are written only when they conform, and read back from any depth, 
     assert.equal(read[1].result.rows[0].section, 'residue');
   } finally { fs.rmSync(dir, {recursive: true, force: true}); }
 });
+
+test('a standalone cell judges its rows\' oracle too: interference not held fails the row unless the oracle declared it; the flag is part of the result', () => {
+  const steal = {ok: false, frontmost: false, topWindow: true, activations: 1, route4: false};
+  const rows = [row({interference: {ok: true, frontmost: true, topWindow: true, activations: 0, route4: false}}), row({id: 'b', interference: steal})];
+  assert.equal(verdictOf({complete: true, rows}), 'pass', 'a full run\'s verdict is its outcomes; summary judges its oracle');
+  assert.equal(verdictOf({complete: true, rows, judgesInterference: true}), 'fail');
+  const declared = [row({interference: {...steal, declared: {kind: 'route4-accepted', cause: 'route 4 on a family the owner accepted'}}})];
+  assert.equal(verdictOf({complete: true, rows: declared, judgesInterference: true}), 'pass', 'an oracle declaration is the owner\'s, not a failure');
+  const result = base({cell: 'non-interference', rows, judgesInterference: true});
+  assert.deepEqual([result.verdict, result.judgesInterference], ['fail', true]);
+  assert.deepEqual(validateCellResult(result), []);
+  assert.match(validateCellResult({...result, verdict: 'pass'}).join(' '), /does not follow/);
+  assert.equal(base({rows}).judgesInterference, undefined);
+  assert.match(validateCellResult({...result, judgesInterference: 'yes'}).join(' '), /judgesInterference/);
+});

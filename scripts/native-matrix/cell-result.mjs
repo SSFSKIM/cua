@@ -16,7 +16,10 @@
 //              that is not complete is no-verdict
 //   verdict    'pass' | 'fail' | 'no-verdict' | 'refused' (verdictOf: refused before anything on the device changed;
 //              no-verdict when no row is valid or the result is not complete (missing evidence: never a pass, never a
-//              plain fail); fail when any valid row is neither ok nor declared; else pass)
+//              plain fail); fail when any valid row is neither ok nor declared, or, in a result that judges
+//              interference, any valid row whose oracle reading did not hold and was not declared; else pass)
+//   judgesInterference   optional, true: the verdict also judges each row's oracle reading (a standalone cell, e.g.
+//              `cell non-interference`, which no summary judges; the whole matrix's runs leave it to summary)
 //   problems   [string]: why it is not complete, each a bounded sentence
 //   rows       [Row]
 //   putBack    optional, the put-back's answer ({ok, ...})
@@ -72,18 +75,22 @@ const bounded = text => String(text).slice(0, ERROR_CHARS);
 // not complete (its evidence is missing: a cell with missing samples is NO VERDICT, which blocks); fail on any valid
 // row that is neither ok nor declared (a declared row is not ok and says why); else pass.
 export const counts = row => row.ok === true || row.declared !== undefined;
-export function verdictOf({refused = false, complete, rows}) {
+// The row's oracle reading held, or the oracle declared why not (an owner-accepted route 4, a self-activating family).
+const interferenceHolds = row => row.interference === undefined || row.interference.ok === true || row.interference.declared !== undefined;
+export function verdictOf({refused = false, complete, rows, judgesInterference = false}) {
   if (refused) return 'refused';
   const valid = rows.filter(row => !row.invalid);
   if (!valid.length || !complete) return 'no-verdict';
-  return valid.every(counts) ? 'pass' : 'fail';
+  return valid.every(row => counts(row) && (!judgesInterference || interferenceHolds(row))) ? 'pass' : 'fail';
 }
 
 // A CellResult from its parts, the verdict computed and the errors bounded. -> CellResult.
-export function cellResult({cell, device = null, started, finished = new Date().toISOString(), lanes = [], complete, refused = false, problems = [], rows = [], putBack, meta}) {
+export function cellResult({cell, device = null, started, finished = new Date().toISOString(), lanes = [], complete, refused = false, problems = [], rows = [], putBack, meta,
+  judgesInterference = false}) {
   const kept = rows.map(row => (row.error === undefined ? row : {...row, error: bounded(row.error)}));
   return {schema: CELL_RESULT_SCHEMA, cell, device, started, finished, lanes, complete: Boolean(complete) && !refused,
-    verdict: verdictOf({refused, complete: Boolean(complete), rows: kept}), problems: problems.map(bounded), rows: kept,
+    verdict: verdictOf({refused, complete: Boolean(complete), rows: kept, judgesInterference}), ...(judgesInterference ? {judgesInterference: true} : {}),
+    problems: problems.map(bounded), rows: kept,
     ...(putBack === undefined ? {} : {putBack}), ...(meta === undefined ? {} : {meta})};
 }
 
@@ -119,11 +126,12 @@ export function validateCellResult(result) {
   if (typeof result.complete !== 'boolean') out.push('complete is not a boolean');
   if (!VERDICTS.includes(result.verdict)) out.push(`verdict is not one of ${VERDICTS.join(', ')}`);
   if (!Array.isArray(result.problems) || result.problems.some(p => typeof p !== 'string')) out.push('problems is not a list of sentences');
+  if (result.judgesInterference !== undefined && result.judgesInterference !== true) out.push('judgesInterference is true or absent');
   if (!Array.isArray(result.rows)) return [...out, 'rows is not a list'];
   result.rows.forEach((row, i) => out.push(...rowProblems(row, `rows[${i}]`)));
   if (result.complete === false && ['pass', 'fail'].includes(result.verdict)) out.push(`an incomplete result cannot ${result.verdict === 'pass' ? 'pass' : 'fail'}: it is no-verdict`);
   if (Array.isArray(result.rows) && VERDICTS.includes(result.verdict) && result.verdict !== 'refused') {
-    const expected = verdictOf({complete: result.complete === true, rows: result.rows});
+    const expected = verdictOf({complete: result.complete === true, rows: result.rows, judgesInterference: result.judgesInterference === true});
     if (expected !== result.verdict) out.push(`verdict ${result.verdict} does not follow from the rows and complete (${expected})`);
   }
   const seen = new Set();

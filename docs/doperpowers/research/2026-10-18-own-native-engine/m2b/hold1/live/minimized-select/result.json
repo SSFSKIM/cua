@@ -1,0 +1,197 @@
+{
+  "schema": "native-matrix-cell-1",
+  "command": "minimized-select",
+  "device": "mini",
+  "started": "2026-10-21T20:34:09.102Z",
+  "problems": [],
+  "complete": true,
+  "pass": false,
+  "controller": {
+    "commit": "3e39d8189451d66bf890055d9439e1f904e21ad1",
+    "dirty": false
+  },
+  "runDir": "/Users/new/Library/Caches/cua-harness/native-live",
+  "checkout": {
+    "commit": "3e39d8189451d66bf890055d9439e1f904e21ad1",
+    "dirty": false
+  },
+  "engine": {
+    "bundlePath": "/Users/new/Library/Application Support/cua/engine/cua Engine.app",
+    "build": "b74949b3c7f985c05495d95485a1fb210cf8ab02a575abd7213bba88d96a4875",
+    "engineVersion": "0.1.0",
+    "approvedAt": "2026-10-21T20:28:58.005Z",
+    "signature": {
+      "kind": "identity",
+      "identityMatches": true
+    }
+  },
+  "frontmost": {
+    "bundleId": "com.apple.Terminal"
+  },
+  "engineStopAtStart": {
+    "wasRunning": false
+  },
+  "check": {
+    "steps": {
+      "expected": {
+        "before": {
+          "location": 35,
+          "length": 7
+        },
+        "minimized": {
+          "location": 107,
+          "length": 7
+        }
+      },
+      "prior": {
+        "ok": true,
+        "route": 1,
+        "posted": true,
+        "range": {
+          "length": 7,
+          "location": 35
+        }
+      },
+      "minimize": {
+        "ok": true,
+        "route": 1,
+        "posted": true,
+        "minimized": true
+      },
+      "select": {
+        "ok": true,
+        "route": 1,
+        "posted": true,
+        "minimizedBefore": true,
+        "minimizedAfter": true
+      },
+      "probeMinimized": {
+        "range": {
+          "length": 7,
+          "location": 107
+        },
+        "probeMinimized": true,
+        "focusedIsTextArea": false,
+        "minimizedBefore": true,
+        "minimizedAfter": true
+      },
+      "engineMinimized": {
+        "selectedText": null,
+        "engineSaysMinimized": true,
+        "focusRead": "AXError -25212",
+        "minimizedBefore": true,
+        "minimizedAfter": true
+      },
+      "restore": {
+        "ok": true,
+        "onScreen": true
+      },
+      "restored": {
+        "range": {
+          "length": 7,
+          "location": 107
+        },
+        "selectedText": "Line 10"
+      }
+    }
+  },
+  "recovery": {
+    "ok": true,
+    "killed": [],
+    "survivors": [],
+    "awaited": [],
+    "probeWait": null,
+    "untouched": []
+  },
+  "putBack": {
+    "plan": [
+      "scenes-down",
+      "engine-stop",
+      "apps-check",
+      "finder-check",
+      "front-app"
+    ],
+    "steps": {
+      "scenes-down": {
+        "ok": true,
+        "down": true
+      },
+      "engine-stop": {
+        "ok": true,
+        "wasRunning": true,
+        "pid": 36810
+      },
+      "apps-check": {
+        "ok": true,
+        "running": {
+          "textedit": 0,
+          "chromeForTesting": 0,
+          "electronFixture": 0
+        }
+      },
+      "finder-check": {
+        "ok": true,
+        "runWindowGone": true,
+        "windowsAsAtBegin": true,
+        "keysAsSaved": true
+      },
+      "front-app": {
+        "ok": true,
+        "bundleId": "com.apple.Terminal",
+        "reactivated": true,
+        "inFront": true
+      }
+    },
+    "ok": true
+  },
+  "frontApp": {
+    "saved": "com.apple.Terminal",
+    "now": "com.apple.Terminal",
+    "same": true
+  },
+  "finished": "2026-10-21T20:34:21.982Z",
+  "cell": "minimized-select",
+  "lanes": [
+    {
+      "host": null,
+      "engine": "cua",
+      "build": "b74949b3c7f985c05495d95485a1fb210cf8ab02a575abd7213bba88d96a4875",
+      "version": "0.1.0"
+    }
+  ],
+  "verdict": "fail",
+  "rows": [
+    {
+      "section": "residue",
+      "id": "minimized-select/textedit/write",
+      "engine": "cua",
+      "sample": 1,
+      "ok": true,
+      "scene": "textedit",
+      "method": "select_text",
+      "case": "minimized window",
+      "inputRoute": 1,
+      "outcome": {
+        "write": "landed"
+      }
+    },
+    {
+      "section": "residue",
+      "id": "minimized-select/textedit/read",
+      "engine": "cua",
+      "sample": 1,
+      "ok": false,
+      "scene": "textedit",
+      "method": "select_text",
+      "case": "minimized window",
+      "inputRoute": 1,
+      "outcome": {
+        "read": "missed it",
+        "restored": {
+          "probe": true,
+          "engine": true
+        }
+      }
+    }
+  ]
+}

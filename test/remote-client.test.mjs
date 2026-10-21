@@ -168,11 +168,12 @@ test('a server request reaches onMessage with the device\'s id and is answered t
   upstream.emit(elicit);
   upstream.emit({jsonrpc: '2.0', method: 'notifications/message', params: {level: 'info', data: 'hello'}});
   await until(() => messages.length === 2, 'both messages');
-  assert.deepEqual(messages, [elicit, {jsonrpc: '2.0', method: 'notifications/message', params: {level: 'info', data: 'hello'}}]);
-  await session.respond('e1', {result: {action: 'accept', content: {}}});
+  // The device's connection hands the client its own elicitation id (src/mcp/server.mjs) and translates the answer back.
+  assert.deepEqual(messages, [{...elicit, id: 'cua-elicitation-1'}, {jsonrpc: '2.0', method: 'notifications/message', params: {level: 'info', data: 'hello'}}]);
+  await session.respond('cua-elicitation-1', {result: {action: 'accept', content: {}}});
   const answer = await upstream.next(m => m.id === 'e1' && m.method === undefined, {label: 'the answer upstream'});
   assert.equal(answer.result.action, 'accept');
-  const posted = d.requests.find(r => r.message?.id === 'e1');
+  const posted = d.requests.find(r => r.message?.id === 'cua-elicitation-1');
   assert.equal(posted.res.statusCode, 202);
   upstream.text(js, 'approved');
   assert.equal((await ran).result.content[0].text, 'approved');

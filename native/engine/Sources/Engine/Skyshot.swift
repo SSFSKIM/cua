@@ -53,12 +53,14 @@ func prepareTarget<Running>(pid: pid_t?, deadline: Int64, now: () -> Int64, slee
   guard now() < deadline else { throw timeout }
   guard let pid else { return try openNow() }
   while true {
-    switch read(pid) {
+    let found = read(pid)
+    guard now() < deadline else { throw timeout }  // a read that ends past the deadline is not accepted
+    switch found {
     case .window: return (false, nil, pid)
     case .absent: return try openNow()
     case .failed:
-      guard now() < deadline else { throw timeout }
       sleep()
+      guard now() < deadline else { throw timeout }
     }
   }
 }
@@ -151,7 +153,12 @@ extension Engine {
     var app = try timings.time("resolve") { try resolveApp(args) }
     let target = try timings.time("prepare") {
       try prepareTarget(pid: app.pid, deadline: context.deadline, now: unixMilliseconds, sleep: { usleep(50_000) },
-                        read: { pid in let element = prepare(AXUIElementCreateApplication(pid)); return readPrimaryWindow { copyAttribute(element, $0) } },
+                        read: { pid in
+                          // Each attribute read is bounded by the time the request has left (at most the usual 1 s).
+                          let element = AXUIElementCreateApplication(pid)
+                          AXUIElementSetMessagingTimeout(element, Float(max(0.05, min(Double(elementMessagingTimeout), Double(context.deadline - unixMilliseconds()) / 1000))))
+                          return readPrimaryWindow { copyAttribute(element, $0) }
+                        },
                         open: { deadline in let running = try apps.launch(app, deadline: deadline); return (running, running.processIdentifier) })
     }
     if let running = target.running {

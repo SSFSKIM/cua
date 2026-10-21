@@ -329,6 +329,17 @@ final class PreparationTests: XCTestCase {
     XCTAssertEqual(outcome.opens, [])
   }
 
+  func testASleepThatCrossesTheDeadlineStartsNoFurtherRead() {
+    let outcome = run(pid: 7, deadline: 1_050, reads: [.failed(.cannotComplete), .window(AXUIElementCreateApplication(7))])
+    XCTAssertTrue(isTimeout(outcome.result))
+    XCTAssertEqual(outcome.readsDone, 1)
+  }
+
+  func testAWindowReadThatEndsPastTheDeadlineIsNotAccepted() {
+    let outcome = run(pid: 7, deadline: 1_050, reads: [.window(AXUIElementCreateApplication(7))], readMs: 60)
+    XCTAssertTrue(isTimeout(outcome.result))
+  }
+
   func testAPassedDeadlineReadsAndOpensNothing() {
     let outcome = run(pid: 7, deadline: 1_000, reads: [.absent])
     XCTAssertTrue(isTimeout(outcome.result))

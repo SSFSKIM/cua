@@ -152,6 +152,12 @@ export const macosAdapter = {
     // The first getApp of a TextEdit that is not running launches it; on the mini that call fails with timeoutReached
     // after about 5 s (TextEdit comes up with only its out-of-process Open panel) and the next one binds. Both are
     // recorded: the first as bind.getApp, the retry as bind.getApp.retry.
+    // Preflight may be stale: never bind or claim a TextEdit the owner opened since then, even within ps's rounding.
+    meta.textEdit.launchedByRun = false;
+    if (device.leftovers().textEditRunning) {
+      const pid = device.textEditPid();
+      throw new Error(`TextEdit (pid ${pid}) started before this run's bind: it is not the run's; refusing to drive it`);
+    }
     const bindStarted = Date.now();
     const bind = guard(await js(cells.BIND, BIND_MS), 'cua.getApp(TextEdit)');
     const approvals = ctx.elicited();
@@ -167,12 +173,9 @@ export const macosAdapter = {
     // 'unattested' before any did), with both engines' processes running now.
     meta.service = {surface: 'computer', engine: meta.nativeEngine?.requested ?? 'vendor', answered: meta.nativeEngine ? meta.nativeEngine.attested[0]?.engine ?? 'unattested' : 'vendor', ...ctx.helperAttestation()};
     // Whether the bind launched TextEdit, and its pid whenever it did, bound or not: the key guard's target and, should
-    // the run fail before its scratch document, what cleanup ends. A TextEdit is the run's only when it started after the
-    // bind began (ps, as helperAttestation's startedDuringRun reads its helpers). etime subtracts whole seconds, now's and
-    // the start's each truncated, so it can read up to 1 s more than the process's age (the mini, 2026-10-21: a run
-    // refused the TextEdit its own bind launched); a process up to ETIME_SLACK_MS older than the bind is the run's. One
-    // that started earlier came up between the preflight and the bind, someone else's, and the run refuses to drive it.
-    meta.textEdit.launchedByRun = false;
+    // the run fail before its scratch document, what cleanup ends. TextEdit must appear only after the pre-bind read
+    // above. Its age is a secondary guard: etime subtracts whole seconds, so it can read up to 1 s more than the
+    // process's age (the mini, 2026-10-21: a run refused the TextEdit its own bind launched).
     if (!pre.textEditRunning && device.leftovers().textEditRunning) {
       const pid = device.textEditPid(), process = device.processOf(pid);
       if (!isTextEdit(process)) throw new Error(`TextEdit (pid ${pid}) could not be read as TextEdit by ps (${process ? process.path : 'no such process'}); refusing to drive it`);

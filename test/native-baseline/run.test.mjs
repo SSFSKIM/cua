@@ -202,8 +202,8 @@ const helperOf = engine => (engine === 'cua' ? {path: '~/Library/Application Sup
 // (TextEdit's is the run's TextEdit, pid TEXTEDIT_PID) or a {pid, bundleId} reading as it is.
 async function macRun(t, {frontmost = () => 'com.apple.TextEdit', app = textEdit(), host = 'vendor', engine = 'vendor', facts = engineFacts(), attestation = () => attestationOf(engine),
   helpers = () => [helperOf(engine)], startStop = {wasRunning: false}, endStop = {wasRunning: true, pid: 5151}, getState, activateMs = 300, bindError, engineMs,
-  textEditProcess = () => TEXTEDIT_PROCESS, terminate} = {}) {
-  const state = {record: true, scripts: [], answeringHost: host, nativeEngine: attestation, engineMs, terminated: []};
+  textEditProcess = () => TEXTEDIT_PROCESS, terminate, textEditBeforeBind = false} = {}) {
+  const state = {record: true, scripts: [], answeringHost: host, nativeEngine: attestation, engineMs, terminated: [], binds: 0};
   const approval = {method: 'elicitation/create', params: {message: 'Allow Computer Use to use "TextEdit"?', mode: 'form', requestedSchema: {type: 'object', properties: {}},
     _meta: {connector_id: 'computer-use', codex_approval_kind: 'mcp_tool_call', tool_params: {app: 'com.apple.TextEdit'}}}};
   let launched = false;
@@ -211,6 +211,7 @@ async function macRun(t, {frontmost = () => 'com.apple.TextEdit', app = textEdit
     async getState() { if (getState) return getState(); return {apps: [{}], browsers: [], errors: []}; },
     async listApps() { return [{isRunning: true}]; },
     async getApp(bundle) {
+      state.binds++;
       const answer = state.options.answer(approval);
       state.options.onElicitation({t: new Date().toISOString(), method: approval.method, action: answer.action}, approval);
       if (answer.action !== 'accept' || bundle !== 'com.apple.TextEdit') throw new Error('declined');
@@ -239,7 +240,7 @@ async function macRun(t, {frontmost = () => 'com.apple.TextEdit', app = textEdit
   };
   const frontmosts = [];
   let activations = 0, terminatedApp = false;
-  const device = {helpers: () => (launched ? helpers() : []), leftovers: () => ({serves: 0, textEditRunning: launched && !app.quit && !terminatedApp}),
+  const device = {helpers: () => (launched ? helpers() : []), leftovers: () => ({serves: 0, textEditRunning: (textEditBeforeBind || launched) && !app.quit && !terminatedApp}),
     frontmost: () => { const id = frontmost(app); frontmosts.push(id); return id === null || typeof id === 'object' ? id : {pid: id === 'com.apple.TextEdit' ? TEXTEDIT_PID : 777, bundleId: id}; },
     textEditPid: () => TEXTEDIT_PID, activate: () => { activations++; },
     processOf: pid => { state.processReads = [...(state.processReads ?? []), pid]; return textEditProcess(state.processReads.length); },
@@ -625,6 +626,21 @@ test('a TextEdit that started before the run\'s bind is not the run\'s: the run 
   assert.deepEqual(state.terminated, []);
   assert.deepEqual([app.keys, app.clicks], [[], []]);
 });
+
+for (const ageSeconds of [0, 1]) {
+  test(`an owner's TextEdit present just before the bind is refused and never signalled even with etime ${ageSeconds} s`, async t => {
+    // Preflight saw no TextEdit, but the owner opened it before the bind. A failed bind would otherwise signal it.
+    const {code, meta, state, app, activations} = await macRun(t, {engine: 'cua', textEditBeforeBind: true,
+      textEditProcess: () => ({...TEXTEDIT_PROCESS, ageSeconds}), bindError: 'AX not ready'});
+    assert.deepEqual(state.terminated, [], 'the owner\'s TextEdit must never be signalled');
+    assert.equal(code, 1);
+    assert.match(meta.error, /TextEdit \(pid 4242\) started before this run's bind.*it is not the run's; refusing to drive it/);
+    assert.equal(meta.textEdit.launchedByRun, false);
+    assert.equal(state.binds, 0, 'refuse before the engine can bind or launch TextEdit');
+    assert.equal(activations(), 0);
+    assert.deepEqual([app.keys, app.clicks], [[], []]);
+  });
+}
 
 // ps's etime subtracts whole seconds (now's and the start's, each truncated), so it can read up to 1 s more than the
 // process's age: the mini's comparison A run 2 (2026-10-21 00:13Z) refused the TextEdit its own bind launched.

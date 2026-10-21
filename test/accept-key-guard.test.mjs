@@ -113,3 +113,43 @@ test('FrontWindowProbe\'s reading becomes the guard\'s frontmost process with it
   assert.equal(frontmostFromProbe(null), null);
   assert.match(FRONT_WINDOW_SCRIPT, /scripts\/accept\/front-window\.swift$/);
 });
+
+// From M2b (the own native engine spec, Verification system part 5): the background-regime cells drive a scene while the
+// harness's own user window of this run is in front, so the guard gains one allowed case: the frontmost process is the
+// user window's and its top window is that window, by owner pid and bounds. Every other window keeps today's rule.
+test('the harness\'s own user window in front, by owner pid and bounds, lets a key reach the background target', async () => {
+  const target = {pid: 501, bundleId: TEXTEDIT};
+  const userWindow = {pid: 736, bounds: {x: 10, y: 20, width: 800, height: 600}};
+  const front = (pid, topWindow) => ({pid, bundleId: 'com.apple.finder', topWindow});
+  const top = (ownerPid, bounds) => ({ownerPid, number: 4242, bounds, onScreen: true});
+  let sent = 0;
+  const send = () => { sent++; return 'typed'; };
+  const ok = await sendIfFrontmost({target, userWindow, keys: ['typeText'], frontmost: () => front(736, top(736, {x: 10, y: 20, width: 800, height: 600})), send});
+  assert.deepEqual(ok, {sent: true, result: 'typed', via: 'user-window'});
+  // The target itself in front is still allowed, and says nothing about a user window.
+  assert.deepEqual(await sendIfFrontmost({target, userWindow, keys: ['typeText'], frontmost: () => ({pid: 501, bundleId: TEXTEDIT}), send}), {sent: true, result: 'typed'});
+  // Anything but exactly that window is refused as strictly as before: another window of the same process, the same
+  // bounds in another process, a moved or resized window, a top window of another process over the user's, no reading.
+  for (const [reading, why] of [
+    [front(736, top(736, {x: 10, y: 20, width: 800, height: 601})), 'resized'],
+    [front(736, top(736, {x: 11, y: 20, width: 800, height: 600})), 'moved'],
+    [front(737, top(737, {x: 10, y: 20, width: 800, height: 600})), 'another process with the same bounds'],
+    [front(736, top(99, {x: 10, y: 20, width: 800, height: 600})), 'another process\'s window on top'],
+    [front(736, null), 'no top window'],
+    [{pid: 736, bundleId: 'com.apple.finder'}, 'a reading without the top window'],
+    [null, 'unreadable'],
+  ]) {
+    const out = await sendIfFrontmost({target, userWindow, keys: ['typeText'], frontmost: () => reading, send});
+    assert.equal(out.sent, false, why);
+    assert.equal(out.skipped.event, KEY_SKIPPED, why);
+    assert.deepEqual(out.skipped.userWindow, userWindow, why);
+  }
+  assert.equal(sent, 2);
+});
+
+test('a user window must name a process and four finite bounds, and only a process target takes one', async () => {
+  const target = {pid: 501, bundleId: TEXTEDIT};
+  for (const bad of [{pid: 0, bounds: {x: 0, y: 0, width: 1, height: 1}}, {pid: 736}, {pid: 736, bounds: {x: 0, y: 0, width: 1}}, {pid: 736, bounds: {x: 0, y: 0, width: 1, height: NaN}}])
+    await assert.rejects(sendIfFrontmost({target, userWindow: bad, keys: ['x'], frontmost: () => null, send: () => {}}), /user window/, JSON.stringify(bad));
+  await assert.rejects(sendIfFrontmost({target: TEXTEDIT, userWindow: {pid: 736, bounds: {x: 0, y: 0, width: 1, height: 1}}, keys: ['x'], frontmost: () => null, send: () => {}}), /process target/);
+});

@@ -505,6 +505,12 @@ function putBackFrontmost(ops, front) {
   }
 }
 
+// Whether the front app's put-back (scenes-mac.mjs reactivateApp's answer) held: back in front, or nothing to put back.
+export const frontPutBackHeld = answer => answer?.inFront === true || answer?.required === false;
+// Why it did not, for the run's problems. -> a sentence.
+export const frontPutBackProblem = answer => `the owner's front app was not put back in front (${answer?.error ?? (answer?.reactivated ? 'it was activated but is not in front'
+  : answer?.reason ?? 'no answer')})`;
+
 // What a dead recording leaves and `cleanup` undoes, in order.
 const CLEANUP_STEPS = 'Finder\'s teardown steps (goldens-device.mjs steps finder --phase teardown), scenes-mac.mjs down all --run <run>, goldens-device.mjs engine-stop, the approved home\'s cleanup, then the owner\'s front app put back';
 
@@ -514,6 +520,8 @@ const CLEANUP_STEPS = 'Finder\'s teardown steps (goldens-device.mjs steps finder
 // until then they stay held, the journal with them, so the cleanup can be run again. The home's cleanup restores it
 // even when its own stop fails (prepare.mjs cleanupRun), so a cleanup that gave it back without the engine stopped is
 // not done either: `preparationCleaned` tells the next one to stop the engine only.
+// The owner's front app put back last; one not back in front (frontPutBackHeld) is not restored either, so the journal
+// stays for the next cleanup to try it again.
 // -> {finderTeardown, scenesDown, engineStop, preparationCleanup, frontmost?, preparationCleaned, restored}.
 export function cleanupRecording({prepared, run, frontmost = null, preparationCleaned = false}, ops) {
   const tried = fn => { try { return fn(); } catch (error) { return {error: error.message}; } };
@@ -525,8 +533,9 @@ export function cleanupRecording({prepared, run, frontmost = null, preparationCl
   const preparationCleanup = preparationCleaned ? {removed: true, earlier: true}
     : stopped ? tried(() => ops.cleanup(prepared)) : down ? {deferred: 'the engine did not stop; run the cleanup again once it does'} : notDown;
   const cleaned = preparationCleanup?.removed === true;
-  return {finderTeardown, scenesDown, engineStop, preparationCleanup, ...(frontmost?.bundleId ? {frontmost: putBackFrontmost(ops, frontmost)} : {}),
-    preparationCleaned: cleaned, restored: stopped && cleaned && !preparationCleanup.engineStop?.error};
+  const front = frontmost?.bundleId ? putBackFrontmost(ops, frontmost) : null;
+  return {finderTeardown, scenesDown, engineStop, preparationCleanup, ...(front ? {frontmost: front} : {}),
+    preparationCleaned: cleaned, restored: stopped && cleaned && !preparationCleanup.engineStop?.error && (front === null || frontPutBackHeld(front))};
 }
 
 // The journal after a cleanup: removed once restored (exit 0); otherwise kept, recording a home already given back

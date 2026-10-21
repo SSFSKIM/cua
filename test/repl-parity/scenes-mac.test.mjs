@@ -1021,15 +1021,20 @@ test('reactivate puts the owner\'s app back in front only while it runs as the s
   for (const [front, reason] of [[{bundleId: 'com.apple.Terminal', pid: 999}, /no longer running/], [{bundleId: 'com.apple.Notes', pid: 5}, /no longer running/],
     [{bundleId: 'com.apple.finder', pid: 736}, /scene app/], [{bundleId: CFT, pid: 7}, /scene app/], [null, /nothing/]]) {
     const out = await reactivateApp(front, {io});
-    assert.equal(out.reactivated, false, JSON.stringify(front));
+    assert.deepEqual([out.reactivated, out.required], [false, false], JSON.stringify(front));
     assert.match(out.reason, reason);
   }
   assert.equal(activated.length, 1);
   // The process gone between the check and the activation: the activator, which addresses the pid, refuses; nothing is
   // launched in its place and nothing else is tried.
-  io.activateProcess = () => ({activated: false, reason: 'the process is no longer running as com.apple.Terminal'});
+  const gone = () => io.running.splice(io.running.findIndex(p => p.pid === 321), 1);
+  io.activateProcess = () => { gone(); return {activated: false, reason: 'the process is no longer running as com.apple.Terminal'}; };
   io.front = {pid: 77, bundleId: 'com.apple.Notes'};
-  assert.deepEqual(await reactivateApp({bundleId: 'com.apple.Terminal', pid: 321}, {io}), {reactivated: false, reason: 'the process is no longer running as com.apple.Terminal'});
+  assert.deepEqual(await reactivateApp({bundleId: 'com.apple.Terminal', pid: 321}, {io}), {reactivated: false, required: false, reason: 'the process is no longer running as com.apple.Terminal'});
+  // An activation refused while the process still runs: the put-back was required and did not happen.
+  io.running.push({pid: 321, bundleId: 'com.apple.Terminal'});
+  io.activateProcess = () => ({activated: false, reason: 'the activation was refused'});
+  assert.deepEqual(await reactivateApp({bundleId: 'com.apple.Terminal', pid: 321}, {io}), {reactivated: false, reason: 'the activation was refused'});
   assert.equal(io.calls.some(c => c[0] === 'open'), false);
 });
 

@@ -430,6 +430,12 @@ test('a dead recording\'s cleanup keeps the approved home and its journal until 
   assert.equal(calls.some(c => c.startsWith('cleanup')), false);
   assert.equal(cleanupRecording({device: 'mini', prepared: PREPARED, run: '/r'}, ops({down: true, scenes: []})).restored, true);
   assert.deepEqual(calls.slice(-2), ['engine-stop', 'cleanup /h']);
+  // The owner's front app not back in front is not restored either: the journal stays for the next cleanup.
+  const front = {bundleId: 'com.apple.Terminal', pid: 321};
+  const notFront = {...ops({down: true, scenes: []}), scenes: args => (args[0] === 'down' ? {down: true, scenes: []} : {reactivated: true, inFront: false})};
+  assert.equal(cleanupRecording({device: 'mini', prepared: PREPARED, run: '/r', frontmost: front}, notFront).restored, false);
+  const quit = {...ops({down: true, scenes: []}), scenes: args => (args[0] === 'down' ? {down: true, scenes: []} : {reactivated: false, required: false, reason: 'the app quit'})};
+  assert.equal(cleanupRecording({device: 'mini', prepared: PREPARED, run: '/r', frontmost: front}, quit).restored, true);
 });
 
 test('a dead recording\'s cleanup gives the approved home back only with the engine stopped, and keeps the journal until it is', () => {

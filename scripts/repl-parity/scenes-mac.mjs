@@ -534,17 +534,20 @@ export async function activateScene(id, {run, io = defaultIo(), boundMs = 5000, 
 // Puts the app the owner had in front before a driver's run back in front at its end (every scene activates its own
 // app, so the run otherwise leaves a scene app or Finder where the owner had, say, Terminal): only while that app still
 // runs as the same process, and never a scene app, whose windows may be the run's or which the run has stopped.
-// `front` is the frontmost reading taken before the run ({pid, bundleId} or null). -> {reactivated, inFront?, reason?}.
+// `front` is the frontmost reading taken before the run ({pid, bundleId} or null). -> {reactivated, inFront?, required?,
+// reason?}: `required: false` when there is nothing to put back (nothing recorded, a scene app, the process gone), so
+// a put-back that did not hold is anything else (activated but not in front, an activation refused while it runs).
 export const SCENE_BUNDLE_IDS = Object.freeze(SCENE_IDS.map(id => SCENES[id].bundleId));
 const REACTIVATE_WAIT_MS = 2000;
 export async function reactivateApp(front, {io = defaultIo()} = {}) {
-  if (!front?.bundleId) return {reactivated: false, reason: 'nothing was recorded in front'};
-  if (SCENE_BUNDLE_IDS.includes(front.bundleId)) return {reactivated: false, reason: 'the app in front was a scene app; it is not brought back'};
-  if (!io.runningApps(front.bundleId).some(p => p.pid === front.pid)) return {reactivated: false, reason: 'the app is no longer running as the process that was in front'};
+  if (!front?.bundleId) return {reactivated: false, required: false, reason: 'nothing was recorded in front'};
+  if (SCENE_BUNDLE_IDS.includes(front.bundleId)) return {reactivated: false, required: false, reason: 'the app in front was a scene app; it is not brought back'};
+  const runs = () => io.runningApps(front.bundleId).some(p => p.pid === front.pid);
+  if (!runs()) return {reactivated: false, required: false, reason: 'the app is no longer running as the process that was in front'};
   // By pid, so another instance of the app is never the one activated and an exit after the check above launches
   // nothing (the activator refuses); then a bounded wait, since the activation completes asynchronously.
   const out = io.activateProcess({bundleId: front.bundleId, pid: front.pid});
-  if (!out.activated) return {reactivated: false, reason: out.reason};
+  if (!out.activated) return {reactivated: false, ...(runs() ? {} : {required: false}), reason: out.reason};
   for (const t0 = io.now(); ;) {
     if (io.frontmostProcess()?.pid === front.pid) return {reactivated: true, inFront: true};
     if (io.now() - t0 >= REACTIVATE_WAIT_MS) return {reactivated: true, inFront: false};

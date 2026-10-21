@@ -34,6 +34,8 @@
 //     a scene that stayed up is tried once more at the end. One still up then leaves the approved home held and
 //     preparation.json in place, so `goldens.mjs cleanup --preparation` restores it all in order (Finder's teardown,
 //     every scene down, the engine stopped, the home given back): the run's journal goes only once nothing is left.
+//     The owner's front app is put back last and checked: one that was to be put back and is not in front leaves the run
+//     incomplete and the journal in place, the home recorded as given back, so the same cleanup tries the app again.
 // It writes <out>/meta.json (the sitting's facts, the attestations, each scene's account; never a token, an identity or
 // any accessibility text), <out>/results.jsonl (one row per scene and cell: bind, fixed, action, settle),
 // <out>/texts/<scene>/<kind>.txt (full, before, diff, later) and <out>/result.json, the settle rows as the native
@@ -48,7 +50,7 @@ import {attestEngine, attestedBuild, checkApprovedEngine} from '../native-baseli
 import {preflightScript} from '../native-baseline/remote.mjs';
 import {hostAttestationOf} from '../native-baseline.mjs';
 import {writeCellResult} from '../native-matrix/cell-result.mjs';
-import {checkVendorPreflight, checkoutCli, controllerCheckout, deviceOps, isSceneApproval} from '../native-matrix/goldens.mjs';
+import {checkVendorPreflight, checkoutCli, controllerCheckout, deviceOps, frontPutBackHeld, frontPutBackProblem, isSceneApproval} from '../native-matrix/goldens.mjs';
 import {isSessionFile} from '../native-matrix/goldens-cells.mjs';
 import {REPO_ROOT} from '../native-matrix/goldens-install.mjs';
 import {settleResult} from '../native-matrix/settle-cell.mjs';
@@ -128,7 +130,7 @@ export async function runNativeMac(options, io) {
   fs.writeFileSync(join(dir, 'results.jsonl'), '');
   const emit = row => fs.appendFileSync(join(dir, 'results.jsonl'), `${JSON.stringify(row)}\n`);
   const ctx = {ops, meta, dir, emit, log, up: new Set(), prepared: null, js: null, run: null, fixtures: null};
-  let client = null, frontmost = null;
+  let client = null, frontmost = null, released = false;
   write();
   try {
     frontmost = ops.scenes(['frontmost']) ?? null;
@@ -208,23 +210,32 @@ export async function runNativeMac(options, io) {
       meta.preparationCleanup = {deferred: `the scenes ${outstanding.join(', ')} are still up`};
       log(`${outstanding.join(', ')} still up: the approved home stays held and ${join(dir, 'preparation.json')} kept; restore it all with node scripts/native-matrix/goldens.mjs cleanup --device ${device} --preparation ${join(dir, 'preparation.json')}`);
     } else if (ctx.prepared) {
+      const file = join(dir, 'preparation.json');
       try {
         const cleanup = ops.cleanup(ctx.prepared);
         meta.preparationCleanup = {removed: cleanup.removed === true};
         if (cleanup.engineStop !== undefined) meta.engineStop = {...meta.engineStop, end: cleanup.engineStop};
         if (cleanup.removed !== true) throw new Error('the approved home\'s cleanup was not confirmed');
+        // The home is given back (prepare.mjs cleanupRun gives it back even when its engine stop fails): the journal
+        // says so, and goes only once the engine stopped and the owner's front app is back.
+        fs.writeFileSync(file, `${JSON.stringify({...JSON.parse(fs.readFileSync(file, 'utf8')), preparationCleaned: true}, null, 2)}\n`, {mode: 0o600});
         if (cleanup.engineStop?.error) {
-          // The home is given back all the same (prepare.mjs cleanupRun); the journal stays, saying so, until a cleanup
-          // stops the engine.
-          const file = join(dir, 'preparation.json');
-          fs.writeFileSync(file, `${JSON.stringify({...JSON.parse(fs.readFileSync(file, 'utf8')), preparationCleaned: true}, null, 2)}\n`, {mode: 0o600});
           log(`cua's engine did not stop: once it can, node scripts/native-matrix/goldens.mjs cleanup --device ${device} --preparation ${file}`);
           throw new Error(`cua's engine did not stop when the run ended: ${cleanup.engineStop.error}`);
         }
-        fs.rmSync(join(dir, 'preparation.json'), {force: true});
+        released = true;
       } catch (error) { meta.preparationCleanup = {...meta.preparationCleanup, error: error.message}; meta.error ??= error.message; }
     }
-    if (frontmost?.bundleId) meta.frontmost.putBack = putBackFrontmost(ops, frontmost);
+    // The owner's front app, last: one that was to be put back and is not in front leaves the run incomplete, and the
+    // journal (the home recorded as given back) lets goldens.mjs cleanup try it again.
+    let frontHeld = true;
+    if (frontmost?.bundleId) {
+      meta.frontmost.putBack = putBackFrontmost(ops, frontmost);
+      frontHeld = frontPutBackHeld(meta.frontmost.putBack);
+      if (!frontHeld) meta.problems.push(frontPutBackProblem(meta.frontmost.putBack));
+    }
+    if (released && frontHeld) fs.rmSync(join(dir, 'preparation.json'), {force: true});
+    else if (released) log(`the owner's front app is not back in front: node scripts/native-matrix/goldens.mjs cleanup --device ${device} --preparation ${join(dir, 'preparation.json')} tries again`);
     if (meta.problems.length || meta.error) meta.complete = false;
     meta.finished = new Date().toISOString();
     write();

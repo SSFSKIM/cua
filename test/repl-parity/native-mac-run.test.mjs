@@ -246,6 +246,27 @@ test('a lane names its hold, or it is not run', async () => {
   await assert.rejects(runLane({engine: 'cua', sitting: ''}), /needs the hold it belongs to/);
 });
 
+test('the owner\'s front app not put back in front leaves the run incomplete, with a recovery record noting the home is already given back', async () => {
+  for (const [answer, why] of [[{reactivated: true, inFront: false}, /activated but is not in front/], [new Error('ssh: connection reset'), /put-back of the front app failed/],
+    [{reactivated: false, reason: 'the activation was refused'}, /the activation was refused/]]) {
+    const device = fakeDevice();
+    const scenes = device.ops.scenes;
+    device.ops.scenes = args => { if (args[0] !== 'reactivate') return scenes(args); device.calls.push(['scenes', ...args]); if (answer instanceof Error) throw answer; return answer; };
+    const run = await runLane({engine: 'cua', device});
+    assert.equal(run.code, 1);
+    assert.equal(run.meta.complete, false);
+    assert.ok(run.meta.problems.some(p => /the owner's front app was not put back in front/.test(p) && why.test(p)), run.meta.problems.join('\n'));
+    const journal = JSON.parse(fs.readFileSync(join(run.out, 'preparation.json'), 'utf8'));
+    assert.deepEqual([journal.preparationCleaned, journal.frontmost.bundleId], [true, 'com.apple.Terminal'], 'the cleanup retries the front app, the home already given back');
+  }
+  // A put-back that was not required (the app quit, a scene app): complete, the journal gone.
+  const device = fakeDevice();
+  const scenes = device.ops.scenes;
+  device.ops.scenes = args => (args[0] === 'reactivate' ? {reactivated: false, required: false, reason: 'the app is no longer running as the process that was in front'} : scenes(args));
+  const quit = await runLane({engine: 'cua', device});
+  assert.deepEqual([quit.code, quit.meta.complete, fs.existsSync(join(quit.out, 'preparation.json'))], [0, true, false]);
+});
+
 test('a scene whose up failed part way is still brought down', async () => {
   const device = fakeDevice();
   const scenes = device.ops.scenes;

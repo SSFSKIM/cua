@@ -61,6 +61,8 @@
 //   node scripts/repl-parity/scenes-mac.mjs down <scene|all> --run <dir>   (exit 1 when something stays up or changed)
 //   node scripts/repl-parity/scenes-mac.mjs restore-finder                  Finder's saved preferences written back
 //   node scripts/repl-parity/scenes-mac.mjs front                           FrontWindowProbe's reading
+//   node scripts/repl-parity/scenes-mac.mjs frontmost                       the frontmost app's {pid, bundleId} (lsappinfo)
+//   node scripts/repl-parity/scenes-mac.mjs reactivate --bundle-id <id> --pid <n>   that app back in front (reactivateApp)
 // `<dir>` is the run directory (absolute; created 0700); the run's scene state is `<dir>/scenes.json`.
 import * as fs from 'node:fs';
 import {basename, join, isAbsolute} from 'node:path';
@@ -70,7 +72,7 @@ import {PAGE_CONTROLS, PAGE_INITIAL, PAGE_TITLE, startScenePage} from '../native
 import {FIXTURE_BUNDLE_ID, FIXTURE_CONTROLS, FIXTURE_INITIAL, buildElectronFixture} from '../native-matrix/fixtures/electron-fixture.mjs';
 import {CHROME_FOR_TESTING_BUNDLE_ID, placeChromeForTesting} from '../native-matrix/fixtures/chrome-for-testing.mjs';
 import {
-  activateApp, appWindows, appWindowState, awaitOwnLaunch, frontmostProcess, frontWindow, openApp, readFinderPreferences, runningApps,
+  activateApp, activateBundle, appWindows, appWindowState, awaitOwnLaunch, frontmostProcess, frontWindow, openApp, readFinderPreferences, runningApps,
   stopRecorded, writeFinderPreference,
 } from './scenes-mac-device.mjs';
 import {
@@ -327,7 +329,7 @@ export function writeState(run, state) {
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 const defaultIo = () => ({
-  runningApps, appWindows, appWindowState, openApp, activateApp, awaitOwnLaunch, stopRecorded, launchOf, now: Date.now, sleep,
+  runningApps, appWindows, appWindowState, openApp, activateApp, activateBundle, awaitOwnLaunch, stopRecorded, launchOf, now: Date.now, sleep,
   frontmostProcess: () => frontmostProcess(), frontWindow: () => frontWindow(),
   finderPid: () => runningApps(FINDER_BUNDLE_ID)[0]?.pid ?? null,
   finderPreferences: () => readFinderPreferences(), writeFinderPreference: (key, value) => writeFinderPreference(key, value), savedPreferencesFile: SAVED_PREFERENCES,
@@ -521,6 +523,19 @@ export async function activateScene(id, {run, io = defaultIo(), boundMs = 5000, 
   return {scene: id, ok: false, frontmost, ...(finder ? {topWindow} : {}), reason};
 }
 
+// Puts the app the owner had in front before a driver's run back in front at its end (every scene activates its own
+// app, so the run otherwise leaves a scene app or Finder where the owner had, say, Terminal): only while that app still
+// runs as the same process, and never a scene app, whose windows may be the run's or which the run has stopped.
+// `front` is the frontmost reading taken before the run ({pid, bundleId} or null). -> {reactivated, inFront?, reason?}.
+export const SCENE_BUNDLE_IDS = Object.freeze(SCENE_IDS.map(id => SCENES[id].bundleId));
+export async function reactivateApp(front, {io = defaultIo()} = {}) {
+  if (!front?.bundleId) return {reactivated: false, reason: 'nothing was recorded in front'};
+  if (SCENE_BUNDLE_IDS.includes(front.bundleId)) return {reactivated: false, reason: 'the app in front was a scene app; it is not brought back'};
+  if (!io.runningApps(front.bundleId).some(p => p.pid === front.pid)) return {reactivated: false, reason: 'the app is no longer running as the process that was in front'};
+  io.activateBundle(front.bundleId);
+  return {reactivated: true, inFront: io.frontmostProcess()?.pid === front.pid};
+}
+
 // The driver's steps before `down` (teardownSteps), from the run's record and, for Finder, the owner's saved visible
 // chrome. -> [step].
 export function teardownFor(id, {run, io = defaultIo()}) {
@@ -654,6 +669,8 @@ export async function main(argv) {
     case 'place-chrome': return placeChromeForTesting(flags.cache ? {cacheRoot: flags.cache} : {});
     case 'build-electron': return buildElectronFixture(flags.cache ? {cacheRoot: flags.cache} : {});
     case 'front': return frontWindow();
+    case 'frontmost': return frontmostProcess();
+    case 'reactivate': return reactivateApp({bundleId: flags['bundle-id'], pid: Number(flags.pid)});
     case 'up': return upScene(target, {run: runDir(flags), chromeApp: flags['chrome-app'], electronApp: flags['electron-app']});
     case 'activate': return activateScene(target, {run: runDir(flags)});
     case 'teardown-steps': return {scene: target, steps: teardownFor(target, {run: runDir(flags)})};

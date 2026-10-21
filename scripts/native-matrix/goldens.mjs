@@ -175,17 +175,21 @@ export async function record(options, io) {
     return REFUSED;
   }
 
-  const ctx = {ops, meta, dir, sleep, log, up: new Set(), prepared: null, js: null};
+  const ctx = {ops, meta, dir, sleep, log, up: new Set(), prepared: null, js: null, frontmost: null};
   let client = null, stopped = false;
   write();
   try {
+    // The app the owner has in front, read before anything is prepared and put back at the very end (putBackFrontmost);
+    // its pid stays out of meta.json, in preparation.json only, for a cleanup to put it back too.
+    ctx.frontmost = ops.scenes(['frontmost']) ?? null;
+    meta.frontmost = {bundleId: ctx.frontmost?.bundleId ?? null};
     meta.fixtures = {chrome: ops.scenes(['place-chrome']), electron: ops.scenes(['build-electron'])};
     readSizingConfig(ctx, 'before');
     ctx.run = options.run ?? `${ops.home()}/${DEFAULT_RUN}`;
     meta.runDir = ctx.run;
 
     ctx.prepared = ops.prepare(approvedRuntime);
-    fs.writeFileSync(join(dir, 'preparation.json'), `${JSON.stringify({device, prepared: ctx.prepared, run: ctx.run}, null, 2)}\n`, {mode: 0o600});
+    fs.writeFileSync(join(dir, 'preparation.json'), `${JSON.stringify({device, prepared: ctx.prepared, run: ctx.run, frontmost: ctx.frontmost}, null, 2)}\n`, {mode: 0o600});
     log(`the approved home ${ctx.prepared.home} is held; if this recording dies, run: node scripts/native-matrix/goldens.mjs cleanup --device ${device} --preparation ${quote(join(dir, 'preparation.json'))} (${CLEANUP_STEPS})`);
     meta.vendor = {home: ctx.prepared.home};
     meta.engineStopAtStart = ops.goldens(['engine-stop']);
@@ -261,6 +265,7 @@ export async function record(options, io) {
       try { meta.preparationCleanup = ops.cleanup(ctx.prepared); fs.rmSync(join(dir, 'preparation.json'), {force: true}); }
       catch (error) { meta.preparationCleanup = {removed: false, error: error.message}; meta.complete = false; }
     }
+    if (ctx.frontmost?.bundleId) meta.frontmost.putBack = putBackFrontmost(ops, ctx.frontmost);
     if (meta.problems.length || meta.error) meta.complete = false;
     meta.finished = new Date().toISOString();
     write();
@@ -461,18 +466,25 @@ function writeGolden(ctx, id, name, text) {
   fs.writeFileSync(join(ctx.dir, 'goldens', id, name), text, {mode: 0o644});
 }
 
-// What a dead recording leaves and `cleanup` undoes, in order.
-const CLEANUP_STEPS = 'Finder\'s teardown steps (goldens-device.mjs steps finder --phase teardown), scenes-mac.mjs down all --run <run>, goldens-device.mjs engine-stop, then the approved home\'s cleanup';
+// The owner's front app back in front (scripts/repl-parity/scenes-mac.mjs reactivateApp decides on the device whether it
+// may be). -> {reactivated, inFront?, reason?} or {error}; never the pid.
+function putBackFrontmost(ops, front) {
+  try { return ops.scenes(['reactivate', '--bundle-id', front.bundleId, '--pid', String(front.pid)]); } catch (error) { return {error: error.message}; }
+}
 
-// The cleanup of a recording that died, from its preparation.json ({device, prepared, run}): each step tried whatever the
-// one before answered. -> {finderTeardown, scenesDown, engineStop, preparationCleanup}.
-export function cleanupRecording({prepared, run}, ops) {
+// What a dead recording leaves and `cleanup` undoes, in order.
+const CLEANUP_STEPS = 'Finder\'s teardown steps (goldens-device.mjs steps finder --phase teardown), scenes-mac.mjs down all --run <run>, goldens-device.mjs engine-stop, the approved home\'s cleanup, then the owner\'s front app put back';
+
+// The cleanup of a recording that died, from its preparation.json ({device, prepared, run, frontmost?}): each step tried
+// whatever the one before answered. -> {finderTeardown, scenesDown, engineStop, preparationCleanup, frontmost?}.
+export function cleanupRecording({prepared, run, frontmost = null}, ops) {
   const tried = fn => { try { return fn(); } catch (error) { return {error: error.message}; } };
   return {
     finderTeardown: tried(() => ops.goldens(['steps', 'finder', '--run', run, '--phase', 'teardown'])),
     scenesDown: tried(() => ops.scenes(['down', 'all', '--run', run])),
     engineStop: tried(() => ops.goldens(['engine-stop'])),
     preparationCleanup: tried(() => ops.cleanup(prepared)),
+    ...(frontmost?.bundleId ? {frontmost: putBackFrontmost(ops, frontmost)} : {}),
   };
 }
 

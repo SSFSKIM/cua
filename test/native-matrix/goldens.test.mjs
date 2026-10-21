@@ -28,7 +28,8 @@ const BUILD = 'b'.repeat(64);
 const PREPARED = {device: 'mini', home: '/h', userHome: '/Users/u', configHome: '/s/config', tmpdir: '/s/tmp', token: 'secret-token', admission: 'secret-token', runtimeReuse: {approvedHome: '/h', release: '26.928.40906-darwin-arm64', runtimeRoot: '/h/runtimes/26.928.40906-darwin-arm64'}};
 
 // A device double: the scenes' CLI, the device side of the recorder, preparation and the files the vendor cells wrote.
-function fakeDevice({observe = () => null, action = () => null, up = () => null, steps = () => [], preflight = {}, engineProblems = [], approvedBuild = BUILD} = {}) {
+function fakeDevice({observe = () => null, action = () => null, up = () => null, steps = () => [], preflight = {}, engineProblems = [], approvedBuild = BUILD,
+  frontmost = {pid: 321, bundleId: 'com.apple.Terminal'}} = {}) {
   const calls = [], files = new Map(), taken = [], discarded = [];
   const records = {};
   let pid = 100;
@@ -67,6 +68,8 @@ function fakeDevice({observe = () => null, action = () => null, up = () => null,
       if (command === 'up') { up(scene); records[scene] = recordFor(scene); return records[scene]; }
       if (command === 'activate') return {scene, ok: true};
       if (command === 'down') return {scene, down: true};
+      if (command === 'frontmost') return frontmost;
+      if (command === 'reactivate') return {reactivated: true, inFront: true};
       throw new Error(`unexpected scenes ${command}`);
     },
     prepare: home => { calls.push(['prepare', home]); return PREPARED; },
@@ -509,4 +512,39 @@ test('a frame is the same frame whatever order its keys come in, and a moved or 
   assert.equal(sameFrame({x: 820, y: 261, width: 920, height: 464}, {x: 821, y: 261, width: 920, height: 464}), false);
   assert.equal(sameFrame({x: 820, y: 261, width: 920, height: 464}, null), false);
   assert.equal(sameFrame(null, null), true);
+});
+
+test('the app the owner had in front is read before anything is prepared and put back last, its pid kept out of meta.json; cleanup does the same', async () => {
+  const out = await run();
+  assert.equal(out.code, 0, JSON.stringify(out.meta.problems ?? out.meta.error));
+  const calls = out.device.calls.map(c => `${c[0]} ${c[1]}`);
+  assert.ok(calls.indexOf('scenes frontmost') < calls.indexOf('scenes place-chrome') && calls.indexOf('scenes frontmost') < calls.indexOf('prepare /h'), 'read before anything is prepared');
+  const last = out.device.calls.at(-1);
+  assert.deepEqual(last, ['scenes', 'reactivate', '--bundle-id', 'com.apple.Terminal', '--pid', '321'], 'put back after the scenes are down and the engine stopped');
+  assert.ok(calls.lastIndexOf('goldens engine-stop') < calls.length - 1);
+  assert.ok(calls.lastIndexOf('scenes down') < calls.length - 1);
+  assert.deepEqual(out.meta.frontmost, {bundleId: 'com.apple.Terminal', putBack: {reactivated: true, inFront: true}});
+  assert.doesNotMatch(JSON.stringify(out.meta), /\b321\b/, 'no pid in the committed meta');
+  // A recording that is refused prepares nothing and reads nothing.
+  const refused = await run({device: fakeDevice({engineProblems: ['no approved engine']})});
+  assert.equal(refused.device.calls.some(c => c[1] === 'frontmost' || c[1] === 'reactivate'), false);
+  // Nothing in front: nothing is put back.
+  const none = await run({device: fakeDevice({frontmost: null})});
+  assert.deepEqual(none.meta.frontmost, {bundleId: null});
+  assert.equal(none.device.calls.some(c => c[1] === 'reactivate'), false);
+  // A dead recording's preparation.json carries it, and cleanup puts it back as its last step.
+  const device = fakeDevice();
+  const cleaned = cleanupRecording({device: 'mini', prepared: PREPARED, run: '/r', frontmost: {bundleId: 'com.apple.Terminal', pid: 321}}, device.ops);
+  assert.deepEqual(cleaned.frontmost, {reactivated: true, inFront: true});
+  assert.deepEqual(device.calls.at(-1), ['scenes', 'reactivate', '--bundle-id', 'com.apple.Terminal', '--pid', '321']);
+  assert.equal('frontmost' in cleanupRecording({device: 'mini', prepared: PREPARED, run: '/r'}, fakeDevice().ops), false);
+});
+
+test('preparation.json holds the frontmost app for cleanup while the recording runs', async () => {
+  const device = fakeDevice(), repo = fakeRepo(), dir = join(repo.root, 'docs', 'goldens-run');
+  let preparation = null;
+  const preflight = device.ops.preflight;
+  device.ops.preflight = prepared => { preparation = JSON.parse(fs.readFileSync(join(dir, 'preparation.json'), 'utf8')); return preflight(prepared); };
+  await run({device, repo, out: dir});
+  assert.deepEqual(preparation.frontmost, {bundleId: 'com.apple.Terminal', pid: 321});
 });

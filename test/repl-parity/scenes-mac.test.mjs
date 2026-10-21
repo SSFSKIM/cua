@@ -11,11 +11,11 @@ import {join} from 'node:path';
 import {
   SCENE_IDS, SCENES, PAIRS, BACKGROUND_PAIRINGS, CONCURRENT_USE, CONCURRENT_USE_SHEET, userWindowFor, refusals,
   ownedProcesses, documentWindows, refusingWindows, finderFolderFiles, textEditDocument, describeScenes, FINDER_TYPING_NAME, TEXTEDIT_STYLED_LINE, TEXTEDIT_MARKDOWN_CAP,
-  upScene, downScene, preflight, readState, chromeArgs, chromeArgsProblems, chromePreferences, electronArgs, sceneCommand, exitCodeFor,
+  upScene, downScene, preflight, readState, reactivateApp, chromeArgs, chromeArgsProblems, chromePreferences, electronArgs, sceneCommand, exitCodeFor,
   setupSteps, teardownSteps, teardownFor, activateScene, restoreFinder, fixedStateProblems, finderOwned, isSceneWindow, FINDER_FILES_MODIFIED, readPageLoaded,
 } from '../../scripts/repl-parity/scenes-mac.mjs';
 import {indexOfTarget, indexOfRowCell, actionIndex, windowTitleOf} from '../../scripts/repl-parity/scenes-mac-text.mjs';
-import {parseAsns, parseAppInfo, awaitOwnLaunch, stopRecorded, readFinderPreferences, writeFinderPreference, openApp, activateApp} from '../../scripts/repl-parity/scenes-mac-device.mjs';
+import {parseAsns, parseAppInfo, awaitOwnLaunch, stopRecorded, readFinderPreferences, writeFinderPreference, openApp, activateApp, activateBundle} from '../../scripts/repl-parity/scenes-mac-device.mjs';
 import {isSameLaunch} from '../../scripts/accept/fixture-app.mjs';
 import {FINDER_RECORD_SCHEMA, markVisibleRestored, readSavedPreferences, recordVisibleState} from '../../scripts/repl-parity/scenes-mac-finder.mjs';
 import {FIXTURE_BUNDLE_ID, FIXTURE_CONTROLS} from '../../scripts/native-matrix/fixtures/electron-fixture.mjs';
@@ -977,4 +977,26 @@ test('a record with this schema but no visible state is trusted while its keys a
     if (trusted) assert.equal((await up).savedPreferences.kept, true);
     else await assert.rejects(up, /restore-finder/);
   });
+});
+
+test('reactivate puts the owner\'s app back in front only while it runs as the same process and is not a scene app', async () => {
+  const io = fakeDevice({running: [{pid: 321, bundleId: 'com.apple.Terminal'}]});
+  const activated = [];
+  io.activateBundle = bundleId => { activated.push(bundleId); io.front = {pid: 321, bundleId}; };
+  assert.deepEqual(await reactivateApp({bundleId: 'com.apple.Terminal', pid: 321}, {io}), {reactivated: true, inFront: true});
+  assert.deepEqual(activated, ['com.apple.Terminal']);
+  // The same app relaunched (another pid), quit, a scene app, or nothing recorded: nothing is activated.
+  for (const [front, reason] of [[{bundleId: 'com.apple.Terminal', pid: 999}, /no longer running/], [{bundleId: 'com.apple.Notes', pid: 5}, /no longer running/],
+    [{bundleId: 'com.apple.finder', pid: 736}, /scene app/], [{bundleId: CFT, pid: 7}, /scene app/], [null, /nothing/]]) {
+    const out = await reactivateApp(front, {io});
+    assert.equal(out.reactivated, false, JSON.stringify(front));
+    assert.match(out.reason, reason);
+  }
+  assert.deepEqual(activated, ['com.apple.Terminal']);
+});
+
+test('device activation by bundle id: open -b, which activates the running instance and never starts a new one', () => {
+  const calls = [];
+  activateBundle('com.apple.Terminal', {exec: (cmd, args) => { calls.push([cmd, ...args]); return ''; }});
+  assert.deepEqual(calls, [['/usr/bin/open', '-b', 'com.apple.Terminal']]);
 });

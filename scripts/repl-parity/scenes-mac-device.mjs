@@ -45,6 +45,8 @@ export function openApp({app, files = [], args = [], newInstance = false}, {exec
 }
 // Activates the running app at `app` (no -g: bringing it to the front is the point; no -n: the running instance).
 export function activateApp(app, {exec = run} = {}) { exec('/usr/bin/open', ['-a', app]); }
+// The same by bundle id, for an app the run knows only by its id (the owner's front app, put back at the end).
+export function activateBundle(bundleId, {exec = run} = {}) { exec('/usr/bin/open', ['-b', bundleId]); }
 
 // The one process of `bundleId` this run's `open` started (none running before, launched no earlier than the second
 // the open began), polled for up to `boundMs`. -> {pid, at}; throws when none or several appeared.

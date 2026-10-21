@@ -6,6 +6,7 @@
 //   node scripts/native-matrix/goldens-device.mjs engine-stop         `shutdown` to the approved engine (refused while
 //                                                                     another connection is open)
 //   node scripts/native-matrix/goldens-device.mjs observe <scene> --run <dir>
+//   node scripts/native-matrix/goldens-device.mjs verify  <scene> --run <dir>
 //   node scripts/native-matrix/goldens-device.mjs action  <scene> --run <dir> --expect <digest>
 //   node scripts/native-matrix/goldens-device.mjs steps   <scene> --run <dir> --phase setup|reset|teardown
 //
@@ -23,7 +24,10 @@
 // web area itself), and a scene's tree can still be filling when its window is there (the M1b.5 sitting's Chrome page
 // filled its controls' values seconds after the first reads), so one observation is a sample of a moving state and two
 // launches of the same scene sampled at different moments differ. `observe` returns the settled observation, `action`
-// starts from one.
+// starts from one. Reading through a wrong window or a filling page is waiting for a scene still loading, which is right
+// only while nothing has been captured from it: `verify` is the settled read that guards a vendor capture already
+// written (the vendor's fixed text, its action's texts), and refuses on any problem of any read, so a window the owner
+// put in front while the vendor captured invalidates that capture even if the scene is back by the next read.
 //
 // `action` is the scene's one action sequence, on one connection, so the observations share a lineage: the settled full
 // observation, the scene's action target found in cua's own rendering (the service's numbering, ./observations.mjs) and
@@ -114,7 +118,8 @@ async function getState(client, record, screenshots, extra) {
 // later of the two; or {shot: null, problems, settle}: a problem waiting cannot clear at once, the transient problems of
 // the last read at the bound, or `unstable` (with `observed`, the last read, which passed the checks) when the reads
 // passed but never twice alike. `settle` is {reads, ms} for the record.
-export async function settledState({id, record, client, screenshots, sleep = sleepFor, now = Date.now, boundMs = SETTLE_BOUND_MS, intervalMs = SETTLE_INTERVAL_MS}) {
+// With `strict`, no problem is read through: every one refuses at once (verify).
+export async function settledState({id, record, client, screenshots, sleep = sleepFor, now = Date.now, boundMs = SETTLE_BOUND_MS, intervalMs = SETTLE_INTERVAL_MS, strict = false}) {
   const t0 = now();
   let reads = 0, previous = null, shot = null, problems = [];
   const settle = () => ({reads, ms: now() - t0});
@@ -123,7 +128,7 @@ export async function settledState({id, record, client, screenshots, sleep = sle
     shot = await getState(client, record, screenshots, {disableDiff: true});
     reads++;
     problems = sceneProblems(id, shot, record);
-    if (problems.some(p => !TRANSIENT.has(p.code))) return {shot: null, problems, settle: settle()};
+    if (problems.some(p => strict || !TRANSIENT.has(p.code))) return {shot: null, problems, settle: settle()};
     const digest = problems.length ? null : stateDigest(goldenForm(shot));
     if (digest !== null && digest === previous) return {shot, problems: [], settle: settle()};
     previous = digest;
@@ -134,12 +139,16 @@ export async function settledState({id, record, client, screenshots, sleep = sle
     observed: goldenForm(shot), settle: settle()};
 }
 
-// The fixed state's observation, settled. -> {scene, build, skyshot | null, timings, frame, settle, problems}.
-export async function observe({id, record, client, screenshots, sleep, now}) {
-  const {shot, problems, settle} = await settledState({id, record, client, screenshots, sleep, now});
+// The fixed state's observation, settled; `strict` for verify. -> {scene, build, skyshot | null, timings, frame, settle,
+// problems}.
+export async function observe({id, record, client, screenshots, sleep, now, strict = false}) {
+  const {shot, problems, settle} = await settledState({id, record, client, screenshots, sleep, now, strict});
   if (problems.length) return {scene: id, build: client.identity?.build ?? null, skyshot: null, timings: null, frame: null, settle, problems};
   return {scene: id, build: client.identity?.build ?? null, skyshot: goldenForm(shot), timings: shot.timings ?? null, frame: shot.window?.frame ?? null, settle, problems: []};
 }
+
+// The settled observation that guards a vendor capture already written: any problem of any read refuses it.
+export const verify = options => observe({...options, strict: true});
 
 // The scene's action sequence on one connection, from the settled state whose stateDigest is `expect`.
 // -> {scene, build, before, after, click: {index, route}, timings, frames, settle, problems}; before and after null when
@@ -247,7 +256,7 @@ export async function main(argv, {io: given = {}} = {}) {
     return engineCheck({installed, checkout: io.checkout(), ...(installed ? io.signature(installed.bundlePath) : {})});
   }
   if (command === 'engine-stop') return io.stop();
-  if (!['observe', 'action', 'steps'].includes(command)) throw new Error('usage: goldens-device.mjs engine-check | engine-stop | observe <scene> --run <dir> | action <scene> --run <dir> --expect <digest> | steps <scene> --run <dir> --phase setup|reset|teardown');
+  if (!['observe', 'verify', 'action', 'steps'].includes(command)) throw new Error('usage: goldens-device.mjs engine-check | engine-stop | observe|verify <scene> --run <dir> | action <scene> --run <dir> --expect <digest> | steps <scene> --run <dir> --phase setup|reset|teardown');
   if (!Object.hasOwn(SCENES, scene ?? '')) throw new Error(`unknown scene ${scene}`);
   if (!flags.run || !isAbsolute(flags.run)) throw new Error('--run <absolute directory> is required');
   const run = fs.realpathSync(flags.run);
@@ -258,7 +267,7 @@ export async function main(argv, {io: given = {}} = {}) {
   const client = io.client(installed.bundlePath);
   const screenshots = join(run, SCREENSHOT_DIR);
   try {
-    if (command === 'observe') return await observe({id: scene, record, client, screenshots, sleep: io.sleep, now: io.now});
+    if (command === 'observe' || command === 'verify') return await observe({id: scene, record, client, screenshots, sleep: io.sleep, now: io.now, strict: command === 'verify'});
     if (command === 'action') return await act({id: scene, record, client, screenshots, expect: flags.expect, sleep: io.sleep, now: io.now});
     return await runSteps({id: scene, phase: flags.phase, run, record, client, io});
   } finally { client.close(); }

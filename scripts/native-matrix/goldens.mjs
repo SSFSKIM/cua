@@ -29,7 +29,8 @@
 //   - Per scene, one at a time, with the scene's app frontmost for every capture: up and its setup steps (Finder's
 //     list view, no selection, its sidebar, status bar and path bar hidden, sent through the engine under the key guard);
 //     the vendor's bind; the fixed state, as cua's settled observation (read until two consecutive reads render alike,
-//     ./goldens-device.mjs settledState), the vendor's full text, cua's settled observation again, kept only when both
+//     ./goldens-device.mjs settledState), the vendor's full text, cua's settled observation again (verify: no problem
+//     read through, as it guards the vendor's text already written), kept only when both
 //     of cua's pass the scene's fixed-state checks (fixedStateProblems, the run's process and window) and render alike,
 //     else taken again (three attempts); the vendor's action sequence (its full text, the click on
 //     the scene's action target, its diff), kept only when cua's check of the state right after passes; the scene back
@@ -289,7 +290,11 @@ async function recordScene(ctx, id) {
   Object.assign(scene, {app: record.app, pid: record.pid, window: record.window});
   const capture = (name, frame, extra = {}) => scene.captures.push({name, at: new Date().toISOString(), frame: frame ?? null, ...extra});
   const checkBuild = answer => { if (answer.build !== meta.engine.build) throw new SceneProblem(`the engine that answered (build ${shortBuild(answer.build)}) is not the approved one`); return answer; };
+  // A read before anything of the state is captured may wait out a scene still loading (observe); a read guarding a
+  // vendor capture already written refuses on any problem (verify), so an owner window put in front while the vendor
+  // captured is never waited out and its texts are removed unread.
   const observe = () => checkBuild(ops.goldens(['observe', id, '--run', run]));
+  const verify = () => checkBuild(ops.goldens(['verify', id, '--run', run]));
 
   activate(ctx, id);
   const bound = await ctx.js(BIND(id, record.app), BIND_MS);
@@ -305,7 +310,7 @@ async function recordScene(ctx, id) {
     const vendor = await ctx.js(FIXED(id, SCENES[id].window.title));
     if (!vendor.ok) throw new SceneProblem(`the vendor's fixed text failed: ${vendor.error}`);
     const [text] = filesOf(ctx, vendor.value, ['vendor.txt']);
-    const second = observe();
+    const second = verify();
     const drift = !second.problems.length && renderedText(first.skyshot) !== renderedText(second.skyshot);
     if (second.problems.length || drift) {
       discard(ctx, [text]);
@@ -327,7 +332,7 @@ async function recordScene(ctx, id) {
   const action = await ctx.js(ACTION(id, SCENES[id].window.title, SCENES[id].action));
   if (!action.ok) throw new SceneProblem(`the vendor's action failed: ${action.error}`);
   const actionFiles = filesOf(ctx, action.value, VENDOR_ACTION_FILES);
-  const after = observe();
+  const after = verify();
   if (after.problems.length) {
     discard(ctx, actionFiles);
     throw new SceneProblem(`the state after the vendor's action is not the scene's (${describeProblems(after.problems)}); its texts were removed unread`);

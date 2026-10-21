@@ -11,7 +11,7 @@ import {pathToFileURL} from 'node:url';
 import {SkyComputerUseError} from '../../src/services/engine/protocol.mjs';
 import {DESELECT_ALL_KEY} from '../../scripts/repl-parity/scenes-mac-finder.mjs';
 import {EventEmitter} from 'node:events';
-import {RESET_MAY_CLEAR, SCREENSHOT_DIR, SETTLE_BOUND_MS, SETTLE_INTERVAL_MS, act, engineCheck, engineNodeRepl, goldenForm, main, observe, runSteps, settledState, stateDigest} from '../../scripts/native-matrix/goldens-device.mjs';
+import {RESET_MAY_CLEAR, SCREENSHOT_DIR, SETTLE_BOUND_MS, SETTLE_INTERVAL_MS, act, engineCheck, engineNodeRepl, goldenForm, main, observe, runSteps, settledState, stateDigest, verify} from '../../scripts/native-matrix/goldens-device.mjs';
 
 const GOLDENS = new URL('../native-goldens/', import.meta.url);
 const shot = (scene, name) => JSON.parse(fs.readFileSync(new URL(`${scene}/${name}`, GOLDENS), 'utf8'));
@@ -126,6 +126,31 @@ test('observe: another process or another window of the app is refused', async (
   assert.equal(clock.now(), SETTLE_BOUND_MS);
   assert.equal(otherWindow.skyshot, null);
   assert.doesNotMatch(JSON.stringify(otherWindow.problems), /Untitled/);
+});
+
+test('verify: a check guarding captures already written refuses a wrong window at once, never reading through it to a refocused scene', async () => {
+  // The owner opens a document of theirs in the run's TextEdit before the check after the vendor's action; the scene
+  // is in front again a second later. The vendor's capture was of the owner's document: the check must refuse it.
+  const fixed = shot('textedit', 'skyshot.json');
+  const record = recordOf('textedit', fixed.app.pid);
+  const owners = {...fixed, window: {...fixed.window, title: 'Personal notes'}};
+  const client = fakeClient([owners, fixed, fixed]);
+  const out = await verify({id: 'textedit', record, client, screenshots: '/s', ...fakeClock()});
+  assert.deepEqual(out.problems.map(p => p.code), ['other_window']);
+  assert.equal(out.skyshot, null);
+  assert.equal(client.calls.length, 1, 'refused on the first read');
+  assert.doesNotMatch(JSON.stringify(out), /Personal notes/);
+  // A page still filling is refused alike: the captured state was not the scene's fixed state either.
+  const early = JSON.parse(fs.readFileSync(new URL('../../docs/doperpowers/research/2026-10-18-own-native-engine/m1b/goldens-run/goldens/chrome/skyshot.json', import.meta.url), 'utf8'));
+  const page = await verify({id: 'chrome', record: recordOf('chrome', early.app.pid), client: fakeClient([early, early]), screenshots: '/s', ...fakeClock()});
+  assert.deepEqual(page.problems.map(p => p.code), ['page_filling']);
+  // A state that passes every read still has to settle, as observe's does.
+  const settled = await verify({id: 'textedit', record, client: fakeClient([fixed, fixed]), screenshots: '/s', ...fakeClock()});
+  assert.deepEqual(settled.problems, []);
+  assert.deepEqual(settled.skyshot, goldenForm(fixed));
+  // observe, which guards nothing captured yet, reads through the same wrong window to the scene.
+  const loading = await observe({id: 'textedit', record, client: fakeClient([owners, fixed, fixed]), screenshots: '/s', ...fakeClock()});
+  assert.deepEqual(loading.problems, []);
 });
 
 test('act: the target found in cua\'s own rendering, clicked by its token in the lineage, then the next observation in that lineage', async () => {
@@ -316,4 +341,8 @@ test('main: a scene command needs the approved engine, and the client is closed 
   await assert.rejects(main(['observe', 'textedit', '--run', run], {io: {installed: () => ({bundlePath: '/e/cua Engine.app'}), client: () => client}}), /socket closed/);
   assert.equal(client.closed, true);
   await assert.rejects(main(['observe', 'finder', '--run', run], {io: {installed: () => ({bundlePath: '/e'}), client: () => fakeClient([])}}), /finder is not up/);
+  const fixed = shot('textedit', 'skyshot.json');
+  fs.writeFileSync(join(run, 'scenes.json'), JSON.stringify({scenes: {textedit: recordOf('textedit', fixed.app.pid)}}));
+  const verified = await main(['verify', 'textedit', '--run', run], {io: {installed: () => ({bundlePath: '/e'}), client: () => fakeClient([fixed, fixed]), ...fakeClock()}});
+  assert.deepEqual(verified.problems, []);
 });

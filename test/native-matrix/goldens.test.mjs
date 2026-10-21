@@ -40,9 +40,10 @@ function fakeDevice({observe = () => null, action = () => null, up = () => null,
       if (command === 'engine-check') return {ok: !engineProblems.length, engine: {bundlePath: '/e/cua Engine.app', build: approvedBuild, engineVersion: '0.1.0', approvedAt: '2026-10-20T00:00:00Z'}, checkout: {build: approvedBuild, engineVersion: '0.1.0'}, problems: engineProblems};
       if (command === 'engine-stop') return {wasRunning: false};
       if (command === 'steps') return {scene, phase: args.at(-1), steps: []};
-      if (command === 'observe') {
-        const n = calls.filter(c => c[1] === 'observe' && c[2] === scene).length;
-        const given = observe(scene, n);
+      // `observe` (the settled read) and `verify` (the same, guarding captures already written) count as one sequence.
+      if (command === 'observe' || command === 'verify') {
+        const n = calls.filter(c => (c[1] === 'observe' || c[1] === 'verify') && c[2] === scene).length;
+        const given = observe(scene, n, command);
         if (given) return given;
         const skyshot = shot(scene, 'skyshot.json');
         return {scene, build: BUILD, skyshot, timings: {focusRead: null}, frame: skyshot.window.frame, problems: []};
@@ -200,7 +201,8 @@ test('one sitting: both lanes per scene on the same state, in PROVENANCE\'s layo
   assert.equal(out.device.files.size, 0);
   // Each scene: up, setup, front, bind, cua around the vendor's fixed text, the vendor's action, the reset, cua's action.
   const textedit = out.device.calls.filter(c => c.includes('textedit')).map(c => `${c[0]} ${c[1]}${c[1] === 'steps' ? ` ${c.at(-1)}` : ''}`);
-  assert.deepEqual(textedit, ['scenes up', 'goldens steps setup', 'scenes activate', 'goldens observe', 'goldens observe', 'scenes activate', 'goldens observe',
+  // The reads after a vendor capture are `verify`: a wrong window there refuses what was captured, never waited out.
+  assert.deepEqual(textedit, ['scenes up', 'goldens steps setup', 'scenes activate', 'goldens observe', 'goldens verify', 'scenes activate', 'goldens verify',
     'goldens steps teardown', 'scenes down', 'scenes up', 'goldens steps setup', 'scenes activate', 'goldens action', 'goldens steps teardown', 'scenes down']);
   assert.deepEqual(out.device.calls.filter(c => c.includes('finder') && c[1] === 'steps').map(c => c.at(-1)), ['setup', 'reset', 'teardown']);
   // cua's action is asked to start from the kept fixed state, by its digest.

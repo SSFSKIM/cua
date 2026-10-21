@@ -12,7 +12,7 @@ import {dirname, join} from 'node:path';
 import {MARKER, parseCell} from '../../scripts/native-baseline/cells.mjs';
 import {SCENES} from '../../scripts/repl-parity/scenes-mac.mjs';
 import {ACTION, BIND, FIXED, isSessionFile} from '../../scripts/native-matrix/goldens-cells.mjs';
-import {SCENE_ORDER, cleanupRecording, controllerCheckout, deviceOps, main, parseCommand, record, startDiagnostic} from '../../scripts/native-matrix/goldens.mjs';
+import {SCENE_ORDER, cleanupRecording, settleCleanupJournal, controllerCheckout, deviceOps, main, parseCommand, record, startDiagnostic} from '../../scripts/native-matrix/goldens.mjs';
 import {stateDigest} from '../../scripts/native-matrix/goldens-device.mjs';
 import {audit, auditClean, rerender} from '../native-goldens/audit.mjs';
 import {install} from '../../scripts/native-matrix/goldens-install.mjs';
@@ -430,6 +430,47 @@ test('a dead recording\'s cleanup keeps the approved home and its journal until 
   assert.equal(calls.some(c => c.startsWith('cleanup')), false);
   assert.equal(cleanupRecording({device: 'mini', prepared: PREPARED, run: '/r'}, ops({down: true, scenes: []})).restored, true);
   assert.deepEqual(calls.slice(-2), ['engine-stop', 'cleanup /h']);
+});
+
+test('a dead recording\'s cleanup gives the approved home back only with the engine stopped, and keeps the journal until it is', () => {
+  const calls = [];
+  const ops = ({stop = () => ({wasRunning: true, pid: 9}), cleanup = () => ({removed: true, engineStop: {wasRunning: false}})} = {}) => ({
+    goldens: args => { calls.push(args.join(' ')); if (args[0] === 'engine-stop') return stop(); return {ok: true}; },
+    scenes: args => { calls.push(args.join(' ')); return {down: true, scenes: []}; },
+    cleanup: prepared => { calls.push(`cleanup ${prepared.home}`); return cleanup(); }});
+  const busy = () => { throw new Error('goldens-device.mjs engine-stop: busy: connections 1'); };
+  const dir = fs.mkdtempSync(join(tmpdir(), 'goldens-cleanup-')), file = join(dir, 'preparation.json');
+  const journal = {device: 'mini', prepared: PREPARED, run: '/r'};
+  fs.writeFileSync(file, JSON.stringify(journal));
+  // The engine refuses shutdown: the approved home stays held, the journal stays, exit 1.
+  const refused = cleanupRecording(journal, ops({stop: busy}));
+  assert.match(refused.engineStop.error, /busy/);
+  assert.match(refused.preparationCleanup.deferred, /engine/);
+  assert.equal(calls.some(c => c.startsWith('cleanup')), false);
+  assert.equal(refused.restored, false);
+  assert.equal(settleCleanupJournal(file, journal, refused), 1);
+  assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), journal);
+  // The retry, the engine stopped: the home given back, the journal removed.
+  calls.length = 0;
+  const retried = cleanupRecording(journal, ops());
+  assert.deepEqual(calls.slice(-2), ['engine-stop', 'cleanup /h']);
+  assert.equal(retried.restored, true);
+  assert.equal(settleCleanupJournal(file, journal, retried), 0);
+  assert.equal(fs.existsSync(file), false);
+  // The cleanup's own stop failing (the engine back between the two): the home is given back by prepare.mjs all the
+  // same, so the journal records that, and the retry only has to stop the engine.
+  fs.writeFileSync(file, JSON.stringify(journal));
+  const late = cleanupRecording(journal, ops({cleanup: () => ({removed: true, engineStop: {error: 'busy: connections 1'}})}));
+  assert.equal(late.restored, false);
+  assert.equal(settleCleanupJournal(file, journal, late), 1);
+  const kept = JSON.parse(fs.readFileSync(file, 'utf8'));
+  assert.equal(kept.preparationCleaned, true);
+  calls.length = 0;
+  const finished = cleanupRecording(kept, ops());
+  assert.deepEqual(calls.slice(-1), ['engine-stop']);
+  assert.equal(finished.restored, true);
+  assert.equal(settleCleanupJournal(file, kept, finished), 0);
+  fs.rmSync(dir, {recursive: true, force: true});
 });
 
 test('install refuses an incomplete recording, a missing file, and a recording outside the repository', () => {

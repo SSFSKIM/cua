@@ -30,7 +30,7 @@
 // input-source ids, bundle ids of apps that activated. No observation's text, title or value, no screenshot (each is
 // removed as soon as its answer is in), no pid of an app the run does not own.
 import {execFileSync, spawn} from 'node:child_process';
-import {createHash} from 'node:crypto';
+import {createHash, randomBytes} from 'node:crypto';
 import * as fs from 'node:fs';
 import {homedir, tmpdir} from 'node:os';
 import {dirname, isAbsolute, join} from 'node:path';
@@ -614,19 +614,30 @@ const settlesWithin = (promise, ms) => {
   return Promise.race([promise.then(() => true, () => true), new Promise(resolve => { timer = setTimeout(resolve, ms, false); })]).finally(() => clearTimeout(timer));
 };
 // A step run in this process: past its bound it cannot be stopped (its promise runs on), so it ends the put-back.
-const inProcessStep = fn => { const result = Promise.resolve().then(fn); return {result, exited: result.then(() => {}, () => {}), kill: () => {}}; };
-// Stops a step's process: SIGTERM, then SIGKILL, each awaited stepKillMs. -> whether it exited.
+const inProcessStep = fn => {
+  let settled = false;
+  const result = Promise.resolve().then(fn).finally(() => { settled = true; });
+  return {result, running: () => !settled, kill: () => {}};
+};
+// Waits up to `ms` (a real clock) while `test()` holds. -> whether it stopped holding.
+async function whileHoldsFor(test, ms) {
+  for (const t0 = Date.now(); test();) { if (Date.now() - t0 >= ms) return !test(); await sleepFor(10); }
+  return true;
+}
+// Stops a step's process group: SIGTERM to the group, then SIGKILL, each followed by a wait (stepKillMs) for the group
+// to be empty, its leader and every process it started. -> whether the group is empty.
 async function stopStep(handle, bounds) {
   handle.kill('SIGTERM');
-  if (await settlesWithin(handle.exited, bounds.stepKillMs)) return true;
+  if (await whileHoldsFor(() => handle.running(), bounds.stepKillMs)) return true;
   handle.kill('SIGKILL');
-  return settlesWithin(handle.exited, bounds.stepKillMs);
+  return whileHoldsFor(() => handle.running(), bounds.stepKillMs);
 }
 
-// The put-back: each planned step in its own process (io.startStep: live-device.mjs putback-step, its own process group),
-// bounded by stepMs. A step past its bound is stopped, its exit awaited, and the probes the run journaled stopped,
-// before the next step runs; a step that cannot be stopped ends the put-back there (ok false, a line for the owner):
-// no later step, the front app's above all, runs behind an action that may still land. -> {plan, steps, ok, manual?}.
+// The put-back: each planned step in its own process group (io.startStep: live-device.mjs putback-step), bounded by
+// stepMs. After a step that overran or failed, the next runs only once its group is empty (SIGTERM, then SIGKILL), the
+// probes the run journaled are stopped, and a probe launch never resolved has been waited for (bounded), as the
+// recovery does; anything still running ends the put-back there (ok false, a line for the owner): no later step, the
+// front app's above all, runs behind an action that may still land. -> {plan, steps, ok, manual?}.
 export async function putBack({run, io, bounds = RECOVERY_BOUNDS}) {
   const {plan, stepFns} = putBackSteps(run, io);
   const steps = {};
@@ -634,17 +645,24 @@ export async function putBack({run, io, bounds = RECOVERY_BOUNDS}) {
   for (const step of plan) {
     if (manual) { steps[step] = {ok: false, skipped: `not run: ${manual}`}; continue; }
     const handle = io.startStep ? io.startStep(step) : inProcessStep(stepFns[step]);
-    // The probes a step that failed or overran left running are stopped too before the next step.
-    const probesStopped = async () => (await stopProcesses(ownedNow(run, io).stop.filter(e => e.kind === 'probe'), io, bounds)).length === 0;
+    // The probes a step that failed or overran left: the journaled ones stopped, an unresolved launch waited for.
+    const probesSettled = async () => {
+      const left = await stopProcesses(ownedNow(run, io).stop.filter(e => e.kind === 'probe'), io, bounds);
+      const probeWait = await awaitUnresolvedProbes(run, io, bounds);
+      if (probeWait) steps[step].probeWait = probeWait;
+      return left.length === 0 && !probeWait?.remaining;
+    };
+    const probeLine = `a probe the put-back's ${step} step launched did not exit and may still act: check the Mac by hand (input source, front app), then run cleanup again`;
     if (await settlesWithin(handle.result, bounds.stepMs)) {
       steps[step] = await handle.result.then(out => (out?.error && out.ok === undefined ? {ok: false, error: out.error} : out),
         error => ({ok: false, error: String(error.message).slice(0, 300)}));
-      if (steps[step].error && !await probesStopped()) manual = `a probe the put-back's ${step} step launched did not exit and may still act: check the Mac by hand (input source, front app), then run cleanup again`;
+      if (steps[step].error && !await probesSettled()) manual = probeLine;
       continue;
     }
-    const stopped = await stopStep(handle, bounds) && await probesStopped();
-    steps[step] = {ok: false, error: `${step} did not finish within ${bounds.stepMs / 1000} s; ${stopped ? 'its process was stopped' : 'its process could not be stopped'}`};
+    const stopped = await stopStep(handle, bounds);
+    steps[step] = {ok: false, error: `${step} did not finish within ${bounds.stepMs / 1000} s; ${stopped ? 'its process group was stopped' : 'its process group could not be stopped'}`};
     if (!stopped) manual = `the put-back's ${step} step could not be stopped and may still act: check the Mac by hand (scenes, input source, front app), then run cleanup again`;
+    else if (!await probesSettled()) manual = probeLine;
   }
   return {plan, steps, ok: plan.every(step => steps[step].ok === true), ...(manual ? {manual} : {})};
 }
@@ -655,6 +673,17 @@ const ownedNow = (run, io) => recoveryPlan(io.journal(), io.processes(), {...io.
 async function whileHolds(test, io, ms) {
   for (const t0 = io.now(); test();) { if (io.now() - t0 >= ms) return !test(); await io.sleep(100); }
   return true;
+}
+// A probe launch the journal holds pending or unresolved (no pid): nothing to signal, so any probe of the bundle (the
+// watcher aside) is waited for, bounded by probeWaitMs. -> {unresolved, waited, remaining}, or null with none.
+async function awaitUnresolvedProbes(run, io, bounds) {
+  const unresolved = ownedNow(run, io).unresolvedProbes;
+  if (!unresolved) return null;
+  const {bundle, uid} = io.identity(), watchPid = readSaved(join(run, WATCH_FILE))?.pid;
+  const probes = () => io.processes().filter(p => p.uid === uid && p.pid !== watchPid && isBundleProbe(p.command, bundle));
+  const waited = probes().length > 0;
+  await whileHolds(() => probes().length > 0, io, bounds.probeWaitMs);
+  return {unresolved, waited, remaining: probes().length};
 }
 // SIGTERM, then SIGKILL, each awaited killMs. -> the ones still running.
 async function stopProcesses(list, io, bounds) {
@@ -683,14 +712,7 @@ export async function recover({run, io, bounds = RECOVERY_BOUNDS}) {
   const second = ownedNow(run, io), handled = new Set(first.stop.map(p => p.pid));
   const late = second.stop.filter(p => !handled.has(p.pid));
   survivors.push(...await stopProcesses(late, io, bounds));
-  let probeWait = null;
-  if (second.unresolvedProbes) {
-    const {bundle, uid} = io.identity(), watchPid = readSaved(join(run, WATCH_FILE))?.pid;
-    const probes = () => io.processes().filter(p => p.uid === uid && p.pid !== watchPid && isBundleProbe(p.command, bundle));
-    const waited = probes().length > 0;
-    await whileHolds(() => probes().length > 0, io, bounds.probeWaitMs);
-    probeWait = {unresolved: second.unresolvedProbes, waited, remaining: probes().length};
-  }
+  const probeWait = await awaitUnresolvedProbes(run, io, bounds);
   const result = {killed: [...first.stop, ...late].map(p => p.label), survivors: survivors.map(p => p.label), awaited, probeWait, untouched: second.untouched};
   const blocking = [
     ...result.survivors.map(label => `${label} outlived SIGKILL`),
@@ -711,14 +733,15 @@ const processStart = pid => {
   try { return execFileSync('/bin/ps', ['-o', 'lstart=', '-p', String(pid)], {encoding: 'utf8', env: {...process.env, LC_ALL: 'C'}, timeout: DEVICE_READ_MS}).trim() || null; }
   catch { return null; }
 };
-export function journalProcess(run, {kind, pid, start, label}) {
+export function journalProcess(run, {kind, pid, start, label, pending = false}) {
   const at = pid ? (start ?? processStart(pid)) : null;
-  fs.appendFileSync(join(run, JOURNAL_FILE), `${kind}\t${pid ?? '-'}\t${at ?? '-'}\t${label}\n`, {mode: 0o600});
+  fs.appendFileSync(join(run, JOURNAL_FILE), `${kind}\t${pending ? 'pending' : (pid ?? '-')}\t${at ?? '-'}\t${label}\n`, {mode: 0o600});
 }
 const readJournal = run => { try { return parseJournal(fs.readFileSync(join(run, JOURNAL_FILE), 'utf8')); } catch (error) { if (error.code === 'ENOENT') return []; throw error; } };
 
-// A child process in its own process group, so a stop reaches what it runs (its reads and writes); its answer is its
-// last JSON line. -> {pid, result, exited, kill(signal)}.
+// A child process leading its own process group (detached), so a stop reaches everything it runs, and `running()` says
+// whether any process is left in that group (signal 0 to it); its answer is its last JSON line.
+// -> {pid, result, exited, running(), kill(signal)}.
 export function childHandle(command, args) {
   const child = spawn(command, args, {stdio: ['ignore', 'pipe', 'ignore'], detached: true});
   let out = '';
@@ -730,14 +753,17 @@ export function childHandle(command, args) {
       try { resolve(JSON.parse(out.trim().split('\n').at(-1))); } catch { reject(new Error(`the step process ended (${signal ?? code}) without an answer`)); }
     });
   });
-  return {pid: child.pid, result, exited, kill: signal => { try { process.kill(-child.pid, signal); } catch {} }};
+  const running = () => { try { process.kill(-child.pid, 0); return true; } catch (error) { return error.code === 'EPERM'; } };
+  return {pid: child.pid, result, exited, running, kill: signal => { try { process.kill(-child.pid, signal); } catch {} }};
 }
 
 // ---- The probe -------------------------------------------------------------------------------------------------------
 
 // The approved bundle's `--probe <args>` as its own instance (UserProbe's `open -n -g --stdout <file> --stderr <file>`),
-// launched without -W so its own process is known: its pid is the bundle's one new probe of that name after the launch,
-// journaled with its start time (or `-` when it could not be resolved) so the recovery can stop it. Awaited to its exit
+// launched without -W so its own process is known. The launch is journaled `pending` before the open, then resolved:
+// its pid is taken only when exactly one new probe process of the bundle (of any name) appears after this open, and it
+// is this probe; none or several leave it unresolved (`-`): nothing is signaled, the recovery and the put-back wait on
+// the bundle's probes instead. Awaited to its exit
 // (PROBE_MS); past that it is killed and its exit confirmed before the error, so nothing restores behind it; one that
 // will not exit throws marked `stuck`. -> its last JSON line.
 export const PROBE_MS = 60_000;
@@ -747,20 +773,23 @@ const lastLine = file => { try { return JSON.parse(fs.readFileSync(file, 'utf8')
 export function runProbe(bundle, args, {exec = execFileSync, run = null, table = () => processTable(), alive = processRuns, kill = (pid, signal) => process.kill(pid, signal),
   sleep = syncSleep, now = Date.now, killMs = RECOVERY_BOUNDS.killMs} = {}) {
   if (!args.every(a => /^[A-Za-z0-9._,-]+$/.test(a) || a === '\n')) throw new Error('a probe argument is a name, a number list, an input-source id or a Return');
-  const uid = process.getuid();
-  const probes = () => table().filter(p => p.uid === uid && isBundleProbe(p.command, bundle) && p.command.includes(` --probe ${args[0]}`));
+  const uid = process.getuid(), launch = `${args[0]}#${randomBytes(4).toString('hex')}`;
+  const probes = () => table().filter(p => p.uid === uid && isBundleProbe(p.command, bundle));
   const before = new Set(probes().map(p => p.pid));
   const scratch = fs.mkdtempSync(join(tmpdir(), 'cua-live-probe-'));
   try {
     const out = join(scratch, 'out.json'), err = join(scratch, 'err.txt');
+    if (run) journalProcess(run, {kind: 'probe', pending: true, label: launch});
     exec('/usr/bin/open', ['-n', '-g', '--stdout', out, '--stderr', err, '-a', bundle, '--args', '--probe', ...args], {stdio: 'ignore', timeout: 15_000});
     const t0 = now();
-    let probe = null;
-    while (!probe && now() - t0 < PROBE_IDENTIFY_MS) {
-      probe = probes().find(p => !before.has(p.pid)) ?? null;
-      if (!probe) { if (lastLine(out) !== undefined) break; sleep(PROBE_POLL_MS); }
+    let fresh = [];
+    while (now() - t0 < PROBE_IDENTIFY_MS) {
+      fresh = probes().filter(p => !before.has(p.pid));
+      if (fresh.length || lastLine(out) !== undefined) break;
+      sleep(PROBE_POLL_MS);
     }
-    if (run) journalProcess(run, {kind: 'probe', pid: probe?.pid ?? null, start: probe?.start ?? null, label: args[0]});
+    const probe = fresh.length === 1 && fresh[0].command.includes(` --probe ${args[0]}`) ? fresh[0] : null;
+    if (run) journalProcess(run, {kind: 'probe', pid: probe?.pid ?? null, start: probe?.start ?? null, label: launch});
     const done = () => (probe ? !alive(probe.pid) : lastLine(out) !== undefined);
     while (!done() && now() - t0 < PROBE_MS) sleep(PROBE_POLL_MS);
     if (!done()) {

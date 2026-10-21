@@ -519,14 +519,13 @@ test('putBack: a step past its bound is stopped (SIGTERM, then SIGKILL) and its 
   const timeline = [];
   const stepIo = dies => putBackIo(run, {startStep: step => {
     timeline.push(`start ${step}`);
-    if (step !== 'scenes-down') return {result: Promise.resolve({ok: true}), exited: Promise.resolve(), kill: () => {}};
-    let exit;
-    const exited = new Promise(resolve => { exit = resolve; });
-    return {result: new Promise(() => {}), exited, kill: signal => { timeline.push(signal); if (signal === dies) setTimeout(() => { timeline.push('exited'); exit(); }, 5); }};
+    if (step !== 'scenes-down') return {result: Promise.resolve({ok: true}), running: () => false, kill: () => {}};
+    let gone = false;
+    return {result: new Promise(() => {}), running: () => !gone, kill: signal => { timeline.push(signal); if (signal === dies) setTimeout(() => { timeline.push('exited'); gone = true; }, 5); }};
   }});
   const out = await putBack({run, io: stepIo('SIGKILL'), bounds: SCALED});
   assert.deepEqual(timeline, ['start scenes-down', 'SIGTERM', 'SIGKILL', 'exited', 'start engine-stop', 'start apps-check', 'start front-app']);
-  assert.match(out.steps['scenes-down'].error, /did not finish within 0\.03 s; its process was stopped/);
+  assert.match(out.steps['scenes-down'].error, /did not finish within 0\.03 s; its process group was stopped/);
   assert.equal(out.ok, false);
   // One that cannot be stopped ends the put-back there: no later step, the front app above all, runs after it.
   timeline.length = 0;
@@ -572,17 +571,57 @@ test('putBack: a step that failed with a probe of the run still running stops th
   assert.ok(!stays.io.order.includes('reactivate com.apple.Terminal'), 'the front app waits on the probe');
 });
 
-test('childHandle: a real step process that ignores SIGTERM is stopped by SIGKILL; its answer is its last JSON line', async () => {
+test('childHandle: a step process\'s answer is its last JSON line', async () => {
   const done = childHandle(process.execPath, ['-e', 'console.log("noise"); console.log(JSON.stringify({ok: true, n: 1}))']);
   assert.deepEqual(await done.result, {ok: true, n: 1});
-  const stubborn = childHandle(process.execPath, ['-e', 'process.on("SIGTERM", () => {}); setInterval(() => {}, 1000); console.log("ready")']);
-  await new Promise(resolve => setTimeout(resolve, 300));
-  stubborn.kill('SIGTERM');
-  const after = await Promise.race([stubborn.exited.then(() => 'exited'), new Promise(resolve => setTimeout(resolve, 300, 'running'))]);
-  assert.equal(after, 'running');
-  stubborn.kill('SIGKILL');
-  await stubborn.exited;
-  await assert.rejects(stubborn.result);
+  await done.exited;
+});
+
+test('putBack, real processes: a leader that exits on SIGTERM while a descendant ignores it is stopped only once its group is empty', async () => {
+  const run = scratch();
+  fs.writeFileSync(join(run, 'scenes.json'), JSON.stringify({scenes: {textedit: TEXTEDIT}}));
+  saveFrontmost(run, {pid: 77, bundleId: 'com.apple.Terminal'});
+  const descendant = 'process.on("SIGTERM", () => {}); setInterval(() => {}, 1000)';
+  const leader = `require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(descendant)}], {stdio: 'ignore'}); setInterval(() => {}, 1000)`;
+  const signals = [];
+  let handle;
+  const io = putBackIo(run, {startStep: step => {
+    if (step !== 'scenes-down') return {result: Promise.resolve({ok: true}), running: () => false, kill: () => {}};
+    handle = childHandle(process.execPath, ['-e', leader]);
+    return {...handle, kill: signal => { signals.push(signal); handle.kill(signal); }};
+  }});
+  const out = await putBack({run, io, bounds: {...SCALED, stepMs: 1_000, stepKillMs: 1_500}});
+  assert.deepEqual(signals, ['SIGTERM', 'SIGKILL'], 'the leader exited on SIGTERM, the descendant kept the group alive');
+  assert.equal(await Promise.race([handle.exited.then(() => 'exited'), new Promise(resolve => setTimeout(resolve, 1_000, 'running'))]), 'exited');
+  assert.equal(handle.running(), false, 'no process left in the group');
+  assert.match(out.steps['scenes-down'].error, /its process group was stopped/);
+  assert.equal(out.steps['front-app'].ok, true, 'the next steps ran only after the group was empty');
+});
+
+test('putBack: after a failed step, a probe launch never resolved is waited for (bounded); one still running blocks every later step', async () => {
+  const probe = {pid: 920, ppid: 1, uid: 501, start: T, command: `${BUNDLE}/Contents/MacOS/cua-engine --probe input-source ${ABC}`};
+  const make = exitsAfter => {
+    const run = scratch();
+    saveFrontmost(run, {pid: 77, bundleId: 'com.apple.Terminal'});
+    fs.writeFileSync(join(run, 'input.json'), JSON.stringify({savedAt: 't0', source: {id: ABC}, perContext: false}));
+    let polls = 0;
+    const signals = [];
+    const io = putBackIo(run, {savedInputSource: join(run, 'input.json'), probe: () => { throw new Error('the input-source probe did not finish within 60 s'); },
+      journal: () => [{kind: 'probe', pid: null, start: null, label: 'input-source#1'}], processes: () => (++polls > exitsAfter ? [] : [probe]),
+      signal: (pid, signal) => signals.push(signal)});
+    return {io, signals, run};
+  };
+  const exits = make(3);
+  const out = await putBack({run: exits.run, io: exits.io, bounds: SCALED});
+  assert.deepEqual(exits.signals, [], 'a probe never identified is not signaled');
+  assert.deepEqual(out.steps['input-source'].probeWait, {unresolved: 1, waited: true, remaining: 0});
+  assert.ok(exits.io.order.includes('reactivate com.apple.Terminal'));
+  const stays = make(Infinity);
+  const blocked = await putBack({run: stays.run, io: stays.io, bounds: SCALED});
+  assert.equal(blocked.steps['input-source'].probeWait.remaining, 1);
+  assert.match(blocked.manual, /probe/);
+  assert.match(blocked.steps['front-app'].skipped, /not run/);
+  assert.ok(!stays.io.order.includes('reactivate com.apple.Terminal'));
 });
 
 // A recovery device: processes by pid with their start times, the journal as the run left it, signals recorded.
@@ -645,7 +684,7 @@ test('recover: a probe whose pid was never resolved is waited for (any probe of 
   const probe = row(320, `${BUNDLE}/Contents/MacOS/cua-engine --probe input-source com.apple.keylayout.ABC`);
   let polls = 0;
   const {io, signals} = recoveryIo(run, {rows: [probe], journal: [{kind: 'probe', pid: null, start: null, label: 'input-source'}],
-    extra: {processes: () => (++polls > 3 ? [] : [probe])}});
+    extra: {processes: () => (++polls > 5 ? [] : [probe])}});
   const out = await recover({run, io, bounds: SCALED});
   assert.deepEqual(signals, [], 'a probe never identified is not signaled');
   assert.equal(out.probeWait.waited, true);
@@ -659,28 +698,38 @@ test('recover: a probe whose pid was never resolved is waited for (any probe of 
 });
 
 // A probe device: the process table the probe appears in once launched, its output file written at the launch.
-function probeDevice({identified = true, exits = true, killable = true} = {}) {
-  const launched = [], killed = [];
+function probeDevice({identified = true, exits = true, killable = true, alongside = [], journalAtLaunch = null} = {}) {
+  const launched = [], killed = [], atLaunch = [];
   let running = false, polls = 0;
   const probeRow = {pid: 900, ppid: 1, uid: process.getuid(), start: T, command: `${BUNDLE}/Contents/MacOS/cua-engine --probe input-source current`};
   const older = {...probeRow, pid: 800};
-  return {launched, killed, options: {
-    exec: (command, args) => { launched.push(args); running = true; fs.writeFileSync(args[args.indexOf('--stdout') + 1], '{"id":"com.apple.keylayout.ABC"}\n'); return ''; },
-    table: () => [older, ...(running && identified ? [probeRow] : [])],
+  return {launched, killed, atLaunch, options: {
+    exec: (command, args) => {
+      if (journalAtLaunch) atLaunch.push(fs.readFileSync(join(journalAtLaunch, JOURNAL_FILE), 'utf8'));
+      launched.push(args); running = true; fs.writeFileSync(args[args.indexOf('--stdout') + 1], '{"id":"com.apple.keylayout.ABC"}\n'); return '';
+    },
+    table: () => [older, ...(running && identified ? [probeRow] : []), ...(running ? alongside : [])],
     alive: pid => pid === 900 && running && !(exits && ++polls > 2),
     kill: (pid, signal) => { killed.push(`${signal} ${pid}`); if (killable) running = false; },
     sleep: () => {}, now: (() => { let t = 0; return () => (t += 1_000); })()}};
 }
 
-test('runProbe: launched without -W, its pid found among the bundle\'s new probes and journaled with its start time, awaited to its exit', () => {
-  const run = scratch(), device = probeDevice();
+const journalOf = run => parseJournal(fs.readFileSync(join(run, JOURNAL_FILE), 'utf8'));
+test('runProbe: journaled pending before its open, launched without -W, resolved to the one new probe of the bundle and awaited to its exit', () => {
+  const run = scratch(), device = probeDevice({journalAtLaunch: run});
   assert.deepEqual(runProbe(BUNDLE, ['input-source', 'current'], {...device.options, run}), {id: 'com.apple.keylayout.ABC'});
   assert.ok(!device.launched[0].includes('-W'));
   assert.deepEqual(device.launched[0].slice(0, 2), ['-n', '-g']);
-  assert.deepEqual(parseJournal(fs.readFileSync(join(run, JOURNAL_FILE), 'utf8')), [{kind: 'probe', pid: 900, start: T, label: 'input-source'}], 'the older probe is not this one');
-  const unresolved = scratch();
-  runProbe(BUNDLE, ['input-source', 'current'], {...probeDevice({identified: false}).options, run: unresolved});
-  assert.deepEqual(parseJournal(fs.readFileSync(join(unresolved, JOURNAL_FILE), 'utf8')), [{kind: 'probe', pid: null, start: null, label: 'input-source'}]);
+  assert.match(device.atLaunch[0], /^probe\tpending\t-\tinput-source#[0-9a-f]+\n$/, 'the launch is in the journal before open runs');
+  const [pending, resolved] = journalOf(run);
+  assert.equal(resolved.label, pending.label, 'one launch, one label');
+  assert.deepEqual({pid: resolved.pid, start: resolved.start}, {pid: 900, start: T}, 'the older probe is not this one');
+  // No new probe, or more than one new probe of the bundle (whatever their names): unresolved, nothing to signal.
+  for (const options of [{identified: false}, {alongside: [{pid: 901, ppid: 1, uid: process.getuid(), start: T, command: `${BUNDLE}/Contents/MacOS/cua-engine --probe keystroke rk`}]}]) {
+    const unresolved = scratch();
+    runProbe(BUNDLE, ['input-source', 'current'], {...probeDevice(options).options, run: unresolved});
+    assert.deepEqual(journalOf(unresolved).map(e => e.pid), [null, null], JSON.stringify(options));
+  }
 });
 
 test('runProbe: a probe past its bound is killed and its exit confirmed before the error; one that will not exit is reported stuck', () => {

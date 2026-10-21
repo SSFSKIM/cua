@@ -46,7 +46,9 @@ function fullRun(engine, run, {axMs = 40, resolved = 10, tweak = rows => rows, m
       Object.assign(row, {target, regime, method: mc.slice(0, mc.indexOf('.')), case: mc.slice(mc.indexOf('.') + 1), inputRoute: engine === 'cua' ? 3 : null, ...(user ? {user} : {})});
       if (regime === 'background') row.interference = {ok: true, frontmost: true, topWindow: true, focus: true, activations: 0, route4: false};
     }
-    if (section === 'launch') row.interference = {ok: true, frontmost: true, topWindow: true, focus: true, activations: 0, route4: false};
+    if (section === 'launch' || section === 'concurrent' || (section === 'unicode' && id.split('/')[1].includes('@'))) {
+      row.interference = {ok: true, frontmost: true, topWindow: true, focus: true, activations: 0, route4: false};
+    }
     if (section === 'speed') row.inCellMs = axMs;
     if (section === 'finding') {
       const target = /\/target\./.test(id) ? manifestOf({run, samples}).filter(e => e.id.startsWith(id.slice(0, id.indexOf('/') + 1)) && /\/target\./.test(e.id)).findIndex(e => e.id === id) : -1;
@@ -227,4 +229,14 @@ test('the probe cells and the Korean matrix are in every full run\'s manifest, j
   for (const part of ['## Concurrent use and intervention', `| ${CONCURRENT} | equal |`, '## Korean and Unicode', '### korean', '| typeText.acceptance4 |',
     '**Concurrent use and intervention**: 5 of 5 rows pass on cua'])
     assert.ok(text.includes(part), part);
+});
+
+test('the probe cells\' and the Korean matrix\'s background rows are judged by the oracle too: the sheet variant\'s interference fails it, a reading missing is missing proof', () => {
+  const SHEET = 'textedit/concurrent.sheet@electron', COMPOSING = 'chrome/composing@textedit/typeText.hangul';
+  const stolen = judged({vendor: {axMs: 50, resolved: 9}, cua: {axMs: 40, tweak: set(SHEET, {interference: {ok: false, frontmost: true, topWindow: true, focus: true, activations: 1, route4: false}})}});
+  assert.equal(stolen.verdict, 'FAIL');
+  assert.ok(stolen.blocking.includes(`not interfering: ${SHEET} failed on cua`), stolen.blocking.join('\n'));
+  const unread = judged({vendor: {axMs: 50, resolved: 9}, cua: {axMs: 40, tweak: rows => rows.map(r => (r.id === SHEET || r.id === COMPOSING ? (({interference, ...rest}) => rest)(r) : r))}});
+  assert.equal(unread.verdict, 'NO VERDICT');
+  assert.ok(unread.missing.some(p => /6 valid background or launch row\(s\) on cua carry no oracle reading/.test(p)), unread.missing.join('\n'));
 });

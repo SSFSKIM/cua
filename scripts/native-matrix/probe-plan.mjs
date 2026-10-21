@@ -158,11 +158,12 @@ const row = rowIndexOfName(ax, ${j(FINDER_TYPING_NAME)}), selected = selectedInd
 const only = row !== null && selected.length === 1 && selected[0] === row;
 return {ok: only, outcome: {rowFound: row !== null, selected: selected.length}};`) : fieldCheckCell(driven, CONCURRENT_TYPING[driven], 'concurrent.check'));
 
-// The sheet variant's steps on TextEdit (scripts/repl-parity/scenes-mac.mjs CONCURRENT_USE_SHEET), each sent under the
+// The sheet variant's steps on TextEdit (scripts/repl-parity/scenes-mac.mjs CONCURRENT_USE_SHEET), the keys sent under the
 // key guard with the user window in front. super+n: a new untitled document in front of the scene's (its title kept in
-// the cell); its text typed; then super+w at the cell's time, the keep-or-delete sheet awaited, and the follow-up, a
-// click on the sheet's Delete button (ID DontSaveButton), sent no earlier than `followAt`, after the probe's post:
-// the action the intervention rule must not refuse. The click's own result meta (receivedAt) is the response's.
+// the cell); its text typed; then the opening action, super+w at the cell's time, alone in its call so the call's
+// result meta (its interval, route and receipt) is that action's own; then the follow-up in a call of its own: the
+// keep-or-delete sheet awaited and a click on its Delete button (ID DontSaveButton), sent no earlier than `followAt`,
+// after the probe's post, the action the intervention rule must not refuse, last in its call so the meta is the click's.
 const keepOrDelete = `const __sheet = ax => /ID: save-panel\\b/.test(lineOfIndex(ax, 0) ?? "") && /ID: DontSaveButton\\b/.test(ax) && typeof globalThis.__sheetDoc === "string" && ax.includes(globalThis.__sheetDoc);
 const __deleteButton = ax => { const m = /^[~+-]?\\t*(\\d+) [^\\n]*ID: DontSaveButton\\b/m.exec(ax); return m ? Number(m[1]) : null; };`;
 export const NEW_DOCUMENT_CELL = cell(`${prelude('textedit')}
@@ -182,23 +183,20 @@ if (windowTitleOf(ax) !== globalThis.__sheetDoc) return {typed: false, reason: "
 await __app.typeText(${j(SHEET_TYPED)});
 ax = await observe();
 return {typed: plain(valueOfIndex(ax, ${TEXT_FIELDS.textedit}) ?? "") === ${j(SHEET_TYPED)}};`);
-export const sheetActCell = ({at, followAt}) => cell(`${prelude('textedit')}
-// cua-matrix-cell: sheet.act
+export const sheetOpenCell = ({at}) => scheduledActCell('textedit', {at, act: 'await __app.pressKey("super+w");', tag: 'sheet.open'});
+export const sheetFollowCell = ({followAt}) => cell(`${prelude('textedit')}
+// cua-matrix-cell: sheet.follow
 ${keepOrDelete}
 const __m = globalThis.__m = {threw: null, errorName: null};
-const __at = ${Number(at)}, __followAt = ${Number(followAt)};
-while (Date.now() < __at - 30) await new Promise(done => setTimeout(done, 10));
-while (Date.now() < __at) {}
-const callAt = Date.now();
-await __app.pressKey("super+w");
 let ax = await observe();
 for (const end = Date.now() + 5000; !__sheet(ax) && Date.now() < end;) ax = await observe();
 const opened = __sheet(ax), button = opened ? __deleteButton(ax) : null;
+const __followAt = ${Number(followAt)};
 while (Date.now() < __followAt) await new Promise(done => setTimeout(done, 10));
 const clickAt = Date.now();
 if (button !== null) { try { await __app.click(button); } catch (e) { __m.threw = String(e?.message ?? e).slice(0, 300); __m.errorName = String(e?.errorName ?? e?.name ?? "").slice(0, 80) || null; } }
 const endAt = Date.now();
-return {opened, clicked: button !== null, callAt, clickAt, endAt, threw: __m.threw !== null, errorName: __m.errorName, message: __m.threw};`);
+return {opened, clicked: button !== null, clickAt, endAt, threw: __m.threw !== null, errorName: __m.errorName, message: __m.threw};`);
 // After the follow-up: the sheet gone and the scene's document TextEdit's front window again. With `close`, a sheet still
 // up is closed by its Delete button first (the cleanup of a refused follow-up). -> {closed, sceneInFront}.
 export const sheetCheckCell = ({close = false} = {}) => cell(`${prelude('textedit')}

@@ -16,7 +16,7 @@ import {userWindowOf} from './oracle.mjs';
 import {
   CLOSE_UNTITLED_CELL, CONCURRENT_TYPING, concurrentCheckCell, concurrentPrepareCell, EMPTY_HASH, emptyFieldCell, endsWithCell, intervalOf, LONG_TEXT, NEW_DOCUMENT_CELL,
   nextPreMs, postValidity, PRE_ACTION_DELAY_MS, PRE_MS, PROBE_ATTEMPTS, PROBE_LEAD_MS, PROBE_TEXT, probeProblem, receiptValidity, scheduledActCell, SHEET_FOLLOW_MS,
-  SHEET_PRE_MS, SHEET_TYPE_CELL, sheetActCell, sheetCheckCell, STILL_INTERACTING, USER_CHANGED,
+  SHEET_PRE_MS, SHEET_TYPE_CELL, sheetCheckCell, sheetFollowCell, sheetOpenCell, STILL_INTERACTING, USER_CHANGED,
 } from './probe-plan.mjs';
 import {requeryCell} from './matrix-cells.mjs';
 import {activate, alertCheck, device, focusOf, js, mark, push, quiet, read, sendKeys, Stop, userFront, waitQuiet} from './steps.mjs';
@@ -149,6 +149,11 @@ const timing = (interval, postedAt, act) => ({intervalSource: interval?.source ?
 
 // ---- the sheet variant ----------------------------------------------------------------------------------------------
 
+// The opening action (super+w) is the driven action the post must fall inside, by its own call's interval as concurrent
+// use's typing is; the follow-up's receipt must come after the post and within the debounce, so that a follow-up the
+// intervention rule refused would show it. The row is judged by the oracle as concurrent use's is: the user window's
+// readings before the opening and after the follow-up, the watcher's liveness, every activation in the attempt and the
+// routes of all its driven actions (super+n, the typing, the opening and the follow-up).
 async function sheetAttempt(ctx, {lead, id, key}) {
   const driven = 'textedit', user = 'electron';
   const span = spanOf(ctx, key);
@@ -174,15 +179,22 @@ async function sheetAttempt(ctx, {lead, id, key}) {
     return span.end({invalid: `the untitled document's text was not typed (${typed?.error ?? typed?.value?.reason ?? 'not sent'})`});
   }
   const preMs = lead ?? SHEET_PRE_MS;
-  const probe = await withKeystroke(ctx, {window: userWindow, scene: user},
-    scheduled => keys(sheetActCell({at: scheduled - preMs, followAt: scheduled + SHEET_FOLLOW_MS}), ['super+w']));
-  const act = probe.result;
-  if (!act?.ok) {
+  let before = null, opening = null;
+  const probe = await withKeystroke(ctx, {window: userWindow, scene: user}, async scheduled => {
+    before = await userFront(ctx, user, userWindow);
+    if (!before) return null;
+    opening = span.add(await sendKeys(ctx, sheetOpenCell({at: scheduled - preMs}), ['super+w'], {scene: driven, front: before, userWindow, kind: 'row', key}));
+    // A click, not a key: sent without the key guard, whose reading would sit between the two actions.
+    return opening?.ok ? span.add(await ctx.lane.js(sheetFollowCell({followAt: scheduled + SHEET_FOLLOW_MS}))) : null;
+  });
+  const follow = probe.result;
+  if (!opening?.ok || !follow?.ok) {
     await closeUntitled(ctx, keys);
-    return span.end({invalid: act ? 'the act cell failed' : 'the key guard did not send super+w', ...(act?.error ? {error: act.error} : {})});
+    const what = !before ? 'the user window was not in front before super+w' : !opening ? 'the key guard did not send super+w' : !opening.ok ? 'the opening cell failed' : 'the follow-up cell failed';
+    return span.end({invalid: what, ...((opening?.error ?? follow?.error) ? {error: opening?.error ?? follow?.error} : {})});
   }
   const after = read(ctx, focusOf(userWindow));
-  let check = span.add(await ctx.lane.js(sheetCheckCell()));
+  const check = span.add(await ctx.lane.js(sheetCheckCell()));
   if (!check.ok || check.value?.closed !== true || check.value?.sceneInFront !== true) {
     // A refused follow-up leaves the sheet up: once the debounce it may have started is out, closed again.
     ctx.posted[driven] = ctx.posted[user];
@@ -190,18 +202,20 @@ async function sheetAttempt(ctx, {lead, id, key}) {
     const closed = span.add(await ctx.lane.js(sheetCheckCell({close: true})));
     if (!closed.ok || closed.value?.sceneInFront !== true) throw new Stop('the sheet variant\'s untitled document could not be closed: TextEdit\'s scene document is not in front');
   }
-  const {value} = act, postedAt = probe.answer?.postedAt;
+  const postedAt = probe.answer?.postedAt, interval = intervalOf(ctx.engine, opening), {value} = follow;
+  const receivedAt = ctx.engine === 'cua' ? follow.engine?.receivedAt : value.clickAt;
   const userLanded = after.focus?.named === true && after.focus.valueHash === USER_HASH;
-  const ok = value.opened === true && value.clicked === true && !value.threw && check.value?.closed === true && check.value?.sceneInFront === true && userLanded;
-  const row = {ok, inputRoute: act.route, wallMs: act.wallMs,
-    outcome: {sheetOpened: value.opened === true, followUpRefused: refusedWith(value, STILL_INTERACTING) || refusedWith(value, USER_CHANGED), followUpThrew: value.threw,
-      errorName: value.errorName, sheetClosed: check.value?.closed === true, userLanded, receiptAfterPostMs: Number.isFinite(postedAt) ? (act.engine?.receivedAt ?? value.clickAt) - postedAt : null}};
-  const why = probeProblem(probe.answer) ?? detectionOff(act)
-    ?? (Number.isFinite(postedAt) && postedAt < value.callAt ? `the probe posted ${value.callAt - postedAt} ms before super+w was sent` : null)
-    ?? (Number.isFinite(postedAt) && postedAt > value.clickAt ? `the probe posted ${postedAt - value.clickAt} ms after the follow-up was sent` : null)
-    ?? receiptValidity({engine: ctx.engine, postedAt, receivedAt: act.engine?.receivedAt, callAt: value.clickAt});
-  if (why) return span.end({...row, ok: false, invalid: why}, {retry: true, lead: preMs});
-  return span.end(row);
+  const ok = !opening.value.threw && value.opened === true && value.clicked === true && !value.threw && check.value?.closed === true && check.value?.sceneInFront === true && userLanded;
+  const row = {ok, inputRoute: opening.route, inputRoutes: {opening: opening.route, followUp: follow.route}, inCellMs: opening.value.actMs, wallMs: opening.wallMs,
+    outcome: {sheetOpened: value.opened === true, openingThrew: opening.value.threw, followUpRefused: refusedWith(value, STILL_INTERACTING) || refusedWith(value, USER_CHANGED),
+      followUpThrew: value.threw, errorName: value.errorName, sheetClosed: check.value?.closed === true, userLanded, ...timing(interval, postedAt, opening),
+      receiptAfterPostMs: Number.isFinite(postedAt) && Number.isFinite(receivedAt) ? receivedAt - postedAt : null}};
+  const why = probeProblem(probe.answer) ?? detectionOff(opening) ?? detectionOff(follow) ?? postValidity(postedAt, interval)
+    ?? receiptValidity({engine: ctx.engine, postedAt, receivedAt: follow.engine?.receivedAt, callAt: value.clickAt});
+  if (why) return span.end({...row, ok: false, invalid: why}, {retry: true, lead: nextPreMs({callAt: opening.value.callAt, interval, postedAt, scheduled: probe.scheduled, preMs})});
+  if (after.watcher !== true) return span.end({...row, ok: false, invalid: 'the activation watcher was not running after the action'});
+  const routes = [opened.route, typed.route, opening.route, follow.route];
+  return span.end(row, {oracle: {before: before.reading, after: after.reading, focus: after.focus ?? null, inputRoute: routes, scene: driven, userPid: userWindow.pid}});
 }
 // The untitled document closed after a variant that stopped part-way; a scene document not back in front stops the run.
 async function closeUntitled(ctx, keys) {

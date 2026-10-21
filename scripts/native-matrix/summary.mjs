@@ -15,9 +15,9 @@
 // - Finding rows (section 'finding', ok meaning measured): per scene the targets resolved (in every valid sample), the
 //   titled share and the ID count (medians); cua not lower on any measure and its resolved sum higher passes; not lower
 //   with the sum equal is parity, the owner's call; lower on any measure fails.
-// - Interference (the `interference` of background method rows and launch rows): cua at 100%, a row with a declared
-//   cause (a self-activating family, an accepted route 4) listed for the owner rather than passed; the vendor's score
-//   recorded beside it.
+// - Interference (the `interference` of background method rows, launch rows, concurrent-use rows and the Unicode
+//   matrix's rows behind a user window): cua at 100%, a row with a declared cause (a self-activating family, an
+//   accepted route 4) listed for the owner rather than passed; the vendor's score recorded beside it.
 // - Launch rows (section 'launch'): the launch worked (`ok`) judged as a background method row is, apart from their
 //   interference: a valid cua sample that did not launch is worse, none valid is no verdict.
 // - The probe cells (sections 'concurrent' and 'intervention', ./probe-run.mjs) and the Korean and Unicode matrix
@@ -218,8 +218,11 @@ export function judge(results, problems = []) {
   const sum = engine => measured.reduce((n, f) => n + f[engine].resolved, 0);
   const findingVerdict = !measured.length || measured.length < finding.length ? 'no-verdict' : lower.length ? 'fail' : sum('cua') > sum('vendor') ? 'pass' : 'parity';
 
-  // Interference: background method rows and launch rows; a valid one without its reading is missing proof.
-  const applicable = r => !r.invalid && ((r.section === 'method' && r.regime === 'background') || r.section === 'launch');
+  // Interference: background method rows, launch rows, the probe cells' concurrent-use rows (the user window in front,
+  // the sheet variant's among them) and the Unicode matrix's rows behind a user window (`<field>/<condition>@<user>/…`);
+  // a valid one without its reading is missing proof.
+  const applicable = r => !r.invalid && ((r.section === 'method' && r.regime === 'background') || r.section === 'launch' || r.section === 'concurrent'
+    || (r.section === 'unicode' && r.id.split('/')[1]?.includes('@')));
   for (const engine of ['vendor', 'cua']) {
     const unread = rows.filter(r => r.engine === engine && applicable(r) && !r.interference).length;
     if (unread) missingProof.push(`not interfering: ${unread} valid background or launch row(s) on ${engine} carry no oracle reading`);

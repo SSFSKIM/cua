@@ -99,7 +99,8 @@ export function judgeInterference({before, after, activations = [], inputRoute =
   const focusKept = focus === null ? null : focus.appOwned === true && focus.appPid === userPid && focus.named === true;
   const frontmost = same.frontmost, topWindow = same.topWindow && focusKept !== false;
   const family = SCENES[scene]?.family ?? null;
-  const route4 = inputRoute === 4;
+  // One action's route, or every route of a row made of several actions (the sheet variant's).
+  const route4 = (Array.isArray(inputRoute) ? inputRoute : [inputRoute]).includes(4);
   const route4Accepted = route4 && accepted.route4.includes(family);
   const own = launched ? activations.filter(e => e.bundleId === launched) : [];
   const others = activations.filter(e => !own.includes(e));

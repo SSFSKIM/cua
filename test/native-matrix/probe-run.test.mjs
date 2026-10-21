@@ -9,7 +9,7 @@ import {validateCellResult} from '../../scripts/native-matrix/cell-result.mjs';
 import {sha256Hex} from '../../scripts/native-matrix/matrix-text.mjs';
 import {PRE_ACTION_DELAY_MS, PRE_MS, PROBE_ATTEMPTS, STILL_INTERACTING, USER_CHANGED} from '../../scripts/native-matrix/probe-plan.mjs';
 import {planOf} from '../../scripts/native-matrix/run.mjs';
-import {matrixSteps, names, runWith} from './run-doubles.mjs';
+import {matrixSteps, names, runWith, stopWith} from './run-doubles.mjs';
 
 const tagOf = code => /cua-matrix-cell: ([\w.]+)/.exec(code)?.[1] ?? null;
 const atOf = code => Number(/const __at = (\d+)/.exec(code)?.[1]);
@@ -112,22 +112,63 @@ test('the pre-action refusal: valid only when the engine received the request af
   assert.equal(late.result.verdict, 'no-verdict');
 });
 
-test('the sheet variant: super+w on TextEdit\'s dirty untitled document, the keystroke into the Electron field, the follow-up on the sheet not refused', async () => {
-  const sheet = (c, over = {}) => ({opened: true, clicked: true, callAt: atOf(c), clickAt: followOf(c), endAt: followOf(c) + 50, threw: false, errorName: null, message: null,
-    _meta: {'cua/receivedAt': followOf(c) + 10}, ...over});
-  const {result, steps} = await runWith({plan: planOf('concurrent-use-sheet'), cellName: 'concurrent-use-sheet', cell: c => (tagOf(c) === 'sheet.act' ? sheet(c) : null)});
-  const row = rowOf(result, 'textedit/concurrent.sheet@electron');
-  assert.deepEqual([row.ok, row.outcome.sheetOpened, row.outcome.followUpRefused, row.outcome.userLanded], [true, true, false, true]);
-  const window = matrixSteps(steps, 'probe')[0];
-  assert.ok(window.includes('keystroke'));
-  // A refused follow-up fails the row, and the sheet is closed again before the run goes on.
+// The sheet variant's two acts, each its own call with its own meta: super+w at `at` (its interval `[from, to]` relative
+// to `at`), then the follow-up click on the sheet at `followAt` (received `receipt` ms after it).
+const opening = (c, {interval = [50, 150], route = "2'", over = {}} = {}) => ({...acted(c, {interval}), actMs: 120, endAt: atOf(c) + 200,
+  _meta: {...acted(c, {interval})._meta, 'cua/inputRoute': route}, ...over});
+const followUp = (c, {receipt = 10, route = "2'", over = {}} = {}) => ({opened: true, clicked: true, clickAt: followOf(c), endAt: followOf(c) + 50, threw: false, errorName: null, message: null,
+  _meta: {'cua/receivedAt': followOf(c) + receipt, 'cua/inputRoute': route}, ...over});
+const sheetCells = ({open = opening, follow = followUp} = {}) => c => (tagOf(c) === 'sheet.open' ? open(c) : tagOf(c) === 'sheet.follow' ? follow(c) : null);
+const SHEET = 'textedit/concurrent.sheet@electron';
+
+test('the sheet variant: super+w on TextEdit\'s dirty untitled document as its own action, the keystroke into the Electron field inside its interval, the follow-up not refused, the oracle judging the row', async () => {
   const calls = [];
-  const refused = await runWith({plan: planOf('concurrent-use-sheet'), cellName: 'concurrent-use-sheet', calls,
-    cell: c => (tagOf(c) === 'sheet.act' ? sheet(c, {threw: true, errorName: 'userIntervened', message: `${STILL_INTERACTING}/x'.`})
-      : tagOf(c) === 'sheet.check' ? {closed: false, sceneInFront: false} : null)});
-  const failed = rowOf(refused.result, 'textedit/concurrent.sheet@electron');
+  const {result, steps} = await runWith({plan: planOf('concurrent-use-sheet'), cellName: 'concurrent-use-sheet', calls, cell: sheetCells()});
+  const row = rowOf(result, SHEET);
+  assert.deepEqual([row.ok, row.invalid, row.attempts, row.outcome.sheetOpened, row.outcome.followUpRefused, row.outcome.userLanded], [true, undefined, 1, true, false, true]);
+  assert.deepEqual([row.outcome.intervalSource, row.outcome.postOffsetMs], ['engine', 100 - 50]);
+  assert.equal(row.interference.ok, true, 'the oracle judged the row');
+  assert.deepEqual(row.inputRoutes, {opening: "2'", followUp: "2'"});
+  const open = calls.find(c => tagOf(c.code) === 'sheet.open'), follow = calls.find(c => tagOf(c.code) === 'sheet.follow');
+  assert.match(open.code, /__app\.pressKey\("super\+w"\)/);
+  assert.doesNotMatch(open.code, /click/, 'the opening call holds only the opening action, so its meta is its own');
+  assert.ok(follow.at[0] >= open.at[1], 'the follow-up is its own call, after');
+  assert.ok(matrixSteps(steps, 'probe')[0].includes('keystroke'));
+  // A refused follow-up fails the row, and the sheet is closed again before the run goes on.
+  const refusedCalls = [];
+  const refused = await runWith({plan: planOf('concurrent-use-sheet'), cellName: 'concurrent-use-sheet', calls: refusedCalls,
+    cell: c => (tagOf(c) === 'sheet.follow' ? followUp(c, {over: {threw: true, errorName: 'userIntervened', message: `${STILL_INTERACTING}/x'.`}})
+      : tagOf(c) === 'sheet.check' ? {closed: false, sceneInFront: false} : sheetCells()(c))});
+  const failed = rowOf(refused.result, SHEET);
   assert.deepEqual([failed.ok, failed.outcome.followUpRefused], [false, true]);
-  assert.ok(calls.some(c => tagOf(c.code) === 'sheet.close'));
+  assert.ok(refusedCalls.some(c => tagOf(c.code) === 'sheet.close'));
+});
+
+test('the sheet variant: a post outside the opening action\'s own interval is retried at its middle; none measured is no verdict; a follow-up received past the debounce is invalid', async () => {
+  // super+w posted 0..50 ms after its time, the post at 100: outside, then aimed at 25.
+  const narrow = await runWith({plan: planOf('concurrent-use-sheet'), cellName: 'concurrent-use-sheet', cell: sheetCells({open: c => opening(c, {interval: [0, 50]})})});
+  const row = rowOf(narrow.result, SHEET);
+  assert.deepEqual([row.attempts, row.ok, row.invalid], [2, true, undefined]);
+  assert.match(row.outcome.retries[0], /after the action's interval/);
+  const none = await runWith({plan: planOf('concurrent-use-sheet'), cellName: 'concurrent-use-sheet', cell: sheetCells({open: c => opening(c, {interval: null})})});
+  const invalid = rowOf(none.result, SHEET);
+  assert.equal(invalid.attempts, PROBE_ATTEMPTS);
+  assert.match(invalid.invalid, /reported no interval/);
+  assert.equal(none.result.verdict, 'no-verdict');
+  const late = await runWith({plan: planOf('concurrent-use-sheet'), cellName: 'concurrent-use-sheet', cell: sheetCells({follow: c => followUp(c, {receipt: 6_000})})});
+  assert.match(rowOf(late.result, SHEET).invalid, /past the 5000 ms debounce/);
+});
+
+test('the sheet variant\'s oracle: a transient focus steal during the opening action, or an unaccepted route 4 on either action, fails its interference', async () => {
+  const calls = [];
+  const stolen = await runWith({plan: planOf('concurrent-use-sheet'), cellName: 'concurrent-use-sheet', calls, cell: sheetCells(),
+    ops: stopWith(() => ({activations: [{kind: 'activated', bundleId: 'com.apple.TextEdit', scene: true, at: calls.find(c => tagOf(c.code) === 'sheet.open').at[0] + 1}]}))});
+  const row = rowOf(stolen.result, SHEET);
+  assert.deepEqual([row.ok, row.interference.ok, row.interference.activations], [true, false, 1]);
+  const route4 = await runWith({plan: planOf('concurrent-use-sheet'), cellName: 'concurrent-use-sheet', cell: sheetCells({follow: c => followUp(c, {route: 4})})});
+  const r4 = rowOf(route4.result, SHEET);
+  assert.deepEqual([r4.interference.ok, r4.interference.route4], [false, true]);
+  assert.deepEqual(r4.inputRoutes, {opening: "2'", followUp: 4});
 });
 
 test('without the Latin source read back, the probe cells are invalid and nothing is posted; the source is restored all the same', async () => {

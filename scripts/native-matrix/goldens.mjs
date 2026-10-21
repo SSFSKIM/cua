@@ -14,7 +14,9 @@
 //                                      declarations are deleted; exit 1 while anything is left to act on
 //   goldens.mjs cleanup --device <alias> --preparation <dir>/preparation.json
 //                                      finish what a recording that died left: Finder's teardown steps, every scene
-//                                      down, the approved engine stopped, the approved home's cleanup (prepare.mjs)
+//                                      down, the approved engine stopped, the approved home's cleanup (prepare.mjs);
+//                                      the last two only once every scene is confirmed down, exit 1 and the file kept
+//                                      until then
 //
 // `record`, in one sitting and one run directory on the device (default ~/Library/Caches/cua-harness/native-goldens):
 //   - Refuses before anything is prepared unless the approved engine exists and its build is the harness checkout's
@@ -507,16 +509,18 @@ function putBackFrontmost(ops, front) {
 const CLEANUP_STEPS = 'Finder\'s teardown steps (goldens-device.mjs steps finder --phase teardown), scenes-mac.mjs down all --run <run>, goldens-device.mjs engine-stop, the approved home\'s cleanup, then the owner\'s front app put back';
 
 // The cleanup of a recording that died, from its preparation.json ({device, prepared, run, frontmost?}): each step tried
-// whatever the one before answered. -> {finderTeardown, scenesDown, engineStop, preparationCleanup, frontmost?}.
+// whatever the one before answered, except that the engine and the approved home are given back only once every scene
+// is confirmed down; until then they stay held, the journal with them, so the cleanup can be run again.
+// -> {finderTeardown, scenesDown, engineStop, preparationCleanup, frontmost?, restored}.
 export function cleanupRecording({prepared, run, frontmost = null}, ops) {
   const tried = fn => { try { return fn(); } catch (error) { return {error: error.message}; } };
-  return {
-    finderTeardown: tried(() => ops.goldens(['steps', 'finder', '--run', run, '--phase', 'teardown'])),
-    scenesDown: tried(() => ops.scenes(['down', 'all', '--run', run])),
-    engineStop: tried(() => ops.goldens(['engine-stop'])),
-    preparationCleanup: tried(() => ops.cleanup(prepared)),
-    ...(frontmost?.bundleId ? {frontmost: putBackFrontmost(ops, frontmost)} : {}),
-  };
+  const finderTeardown = tried(() => ops.goldens(['steps', 'finder', '--run', run, '--phase', 'teardown']));
+  const scenesDown = tried(() => ops.scenes(['down', 'all', '--run', run]));
+  const down = scenesDown?.down === true, deferred = {deferred: 'a scene is not confirmed down; run the cleanup again once it is'};
+  const engineStop = down ? tried(() => ops.goldens(['engine-stop'])) : deferred;
+  const preparationCleanup = down ? tried(() => ops.cleanup(prepared)) : deferred;
+  return {finderTeardown, scenesDown, engineStop, preparationCleanup, ...(frontmost?.bundleId ? {frontmost: putBackFrontmost(ops, frontmost)} : {}),
+    restored: down && preparationCleanup?.removed === true};
 }
 
 // ---- the CLI ------------------------------------------------------------------------------------------------------
@@ -566,7 +570,7 @@ export async function main(argv = process.argv.slice(2), {log = console.log} = {
     if (preparation.device !== command.device) throw new Error(`${command.preparation} is a preparation on ${preparation.device}, not ${command.device}`);
     const out = cleanupRecording(preparation, ops);
     log(JSON.stringify(out, null, 2));
-    if (out.preparationCleanup?.error) return 1;
+    if (!out.restored) return 1;
     fs.rmSync(command.preparation, {force: true});
     return 0;
   }

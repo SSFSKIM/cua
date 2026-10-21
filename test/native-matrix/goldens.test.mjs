@@ -412,6 +412,26 @@ test('a recording directory already used is refused with the way on; a dead reco
   assert.deepEqual(out.preparationCleanup, {removed: true});
 });
 
+test('a dead recording\'s cleanup keeps the approved home and its journal until every scene is confirmed down', () => {
+  const calls = [];
+  const ops = down => ({goldens: args => { calls.push(args.join(' ')); if (args[0] === 'steps') throw new Error('the key guard found another window in front'); return {ok: true}; },
+    scenes: args => { calls.push(args.join(' ')); return args[0] === 'down' ? down : {reactivated: true, inFront: true}; },
+    cleanup: prepared => { calls.push(`cleanup ${prepared.home}`); return {removed: true}; }});
+  const stuck = cleanupRecording({device: 'mini', prepared: PREPARED, run: '/r', frontmost: {bundleId: 'com.apple.Terminal', pid: 321}},
+    ops({down: false, scenes: [{scene: 'finder', down: false, windowOpen: true, reason: 'the run\'s Finder window is still open'}]}));
+  assert.deepEqual(calls.slice(0, 2), ['steps finder --run /r --phase teardown', 'down all --run /r']);
+  assert.equal(calls.some(c => c === 'engine-stop' || c.startsWith('cleanup')), false, 'the engine and the approved home stay as the recording left them');
+  assert.match(stuck.preparationCleanup.deferred, /not confirmed down/);
+  assert.equal(stuck.restored, false);
+  assert.deepEqual(stuck.frontmost, {reactivated: true, inFront: true});
+  // A down that fails outright is not a confirmation either; once down, the rest follows.
+  calls.length = 0;
+  assert.equal(cleanupRecording({device: 'mini', prepared: PREPARED, run: '/r'}, {...ops(null), scenes: () => { throw new Error('ssh: connect to host mini'); }}).restored, false);
+  assert.equal(calls.some(c => c.startsWith('cleanup')), false);
+  assert.equal(cleanupRecording({device: 'mini', prepared: PREPARED, run: '/r'}, ops({down: true, scenes: []})).restored, true);
+  assert.deepEqual(calls.slice(-2), ['engine-stop', 'cleanup /h']);
+});
+
 test('install refuses an incomplete recording, a missing file, and a recording outside the repository', () => {
   const repo = fakeRepo(), dir = join(repo.root, 'docs', 'r');
   fs.mkdirSync(join(dir, 'goldens'), {recursive: true});

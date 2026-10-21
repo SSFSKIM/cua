@@ -2,10 +2,11 @@
 // scenes; promoted in M1b from the M0 spike's scripts/spike/engine/scene-processes.mjs. Which processes run a bundle id
 // and which is frontmost (lsappinfo, which answers over ssh as it does at the console), a process's windows and the
 // front window (FrontWindowProbe, scripts/accept/front-window.swift: pids, window numbers and bounds, never a name),
-// `open` through LaunchServices, the stop of a process the run launched, and Finder's three window-chrome preference
-// keys (./scenes-mac-finder.mjs). Nothing here reads a window title, an accessibility value, a process's environment or
+// `open` through LaunchServices, one recorded process put back in front (./activate-process.swift), the stop of a
+// process the run launched, and Finder's three window-chrome preference keys (./scenes-mac-finder.mjs). Nothing here reads a window title, an accessibility value, a process's environment or
 // any preference but those three keys, and nothing signals a process the run did not record at its launch.
 import {execFileSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
 import {awaitLaunch, isSameLaunch, launchOf, quitOwned} from '../accept/fixture-app.mjs';
 import {FRONT_WINDOW_SCRIPT, FRONTMOST_PROCESS_SCRIPT, parseFrontmostProcess} from '../accept/key-guard.mjs';
 import {FINDER_DOMAIN, FINDER_KEYS, parsePreference} from './scenes-mac-finder.mjs';
@@ -45,8 +46,13 @@ export function openApp({app, files = [], args = [], newInstance = false}, {exec
 }
 // Activates the running app at `app` (no -g: bringing it to the front is the point; no -n: the running instance).
 export function activateApp(app, {exec = run} = {}) { exec('/usr/bin/open', ['-a', app]); }
-// The same by bundle id, for an app the run knows only by its id (the owner's front app, put back at the end).
-export function activateBundle(bundleId, {exec = run} = {}) { exec('/usr/bin/open', ['-b', bundleId]); }
+// The owner's front app put back at the end, addressed by the process recorded in front (./activate-process.swift):
+// `open -b` would take the bundle id alone, so it could pick another instance of the app or launch one when the
+// recorded process has exited. -> {activated, reason?}.
+export const ACTIVATE_PROCESS_SCRIPT = fileURLToPath(new URL('./activate-process.swift', import.meta.url));
+export function activateProcess({pid, bundleId}, {exec = run} = {}) {
+  return JSON.parse(exec('/usr/bin/swift', [ACTIVATE_PROCESS_SCRIPT, String(pid), bundleId], {timeout: 120_000}));
+}
 
 // The one process of `bundleId` this run's `open` started (none running before, launched no earlier than the second
 // the open began), polled for up to `boundMs`. -> {pid, at}; throws when none or several appeared.

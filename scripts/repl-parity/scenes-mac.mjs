@@ -72,7 +72,7 @@ import {PAGE_CONTROLS, PAGE_INITIAL, PAGE_TITLE, startScenePage} from '../native
 import {FIXTURE_BUNDLE_ID, FIXTURE_CONTROLS, FIXTURE_INITIAL, buildElectronFixture} from '../native-matrix/fixtures/electron-fixture.mjs';
 import {CHROME_FOR_TESTING_BUNDLE_ID, placeChromeForTesting} from '../native-matrix/fixtures/chrome-for-testing.mjs';
 import {
-  activateApp, activateBundle, appWindows, appWindowState, awaitOwnLaunch, frontmostProcess, frontWindow, openApp, readFinderPreferences, runningApps,
+  activateApp, activateProcess, appWindows, appWindowState, awaitOwnLaunch, frontmostProcess, frontWindow, openApp, readFinderPreferences, runningApps,
   stopRecorded, writeFinderPreference,
 } from './scenes-mac-device.mjs';
 import {
@@ -329,7 +329,7 @@ export function writeState(run, state) {
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 const defaultIo = () => ({
-  runningApps, appWindows, appWindowState, openApp, activateApp, activateBundle, awaitOwnLaunch, stopRecorded, launchOf, now: Date.now, sleep,
+  runningApps, appWindows, appWindowState, openApp, activateApp, activateProcess, awaitOwnLaunch, stopRecorded, launchOf, now: Date.now, sleep,
   frontmostProcess: () => frontmostProcess(), frontWindow: () => frontWindow(),
   finderPid: () => runningApps(FINDER_BUNDLE_ID)[0]?.pid ?? null,
   finderPreferences: () => readFinderPreferences(), writeFinderPreference: (key, value) => writeFinderPreference(key, value), savedPreferencesFile: SAVED_PREFERENCES,
@@ -528,12 +528,20 @@ export async function activateScene(id, {run, io = defaultIo(), boundMs = 5000, 
 // runs as the same process, and never a scene app, whose windows may be the run's or which the run has stopped.
 // `front` is the frontmost reading taken before the run ({pid, bundleId} or null). -> {reactivated, inFront?, reason?}.
 export const SCENE_BUNDLE_IDS = Object.freeze(SCENE_IDS.map(id => SCENES[id].bundleId));
+const REACTIVATE_WAIT_MS = 2000;
 export async function reactivateApp(front, {io = defaultIo()} = {}) {
   if (!front?.bundleId) return {reactivated: false, reason: 'nothing was recorded in front'};
   if (SCENE_BUNDLE_IDS.includes(front.bundleId)) return {reactivated: false, reason: 'the app in front was a scene app; it is not brought back'};
   if (!io.runningApps(front.bundleId).some(p => p.pid === front.pid)) return {reactivated: false, reason: 'the app is no longer running as the process that was in front'};
-  io.activateBundle(front.bundleId);
-  return {reactivated: true, inFront: io.frontmostProcess()?.pid === front.pid};
+  // By pid, so another instance of the app is never the one activated and an exit after the check above launches
+  // nothing (the activator refuses); then a bounded wait, since the activation completes asynchronously.
+  const out = io.activateProcess({bundleId: front.bundleId, pid: front.pid});
+  if (!out.activated) return {reactivated: false, reason: out.reason};
+  for (const t0 = io.now(); ;) {
+    if (io.frontmostProcess()?.pid === front.pid) return {reactivated: true, inFront: true};
+    if (io.now() - t0 >= REACTIVATE_WAIT_MS) return {reactivated: true, inFront: false};
+    await io.sleep(100);
+  }
 }
 
 // The driver's steps before `down` (teardownSteps), from the run's record and, for Finder, the owner's saved visible

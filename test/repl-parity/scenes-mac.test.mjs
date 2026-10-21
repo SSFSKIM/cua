@@ -15,7 +15,7 @@ import {
   setupSteps, teardownSteps, teardownFor, activateScene, restoreFinder, fixedStateProblems, finderOwned, isSceneWindow, FINDER_FILES_MODIFIED, readPageLoaded,
 } from '../../scripts/repl-parity/scenes-mac.mjs';
 import {indexOfTarget, indexOfRowCell, actionIndex, windowTitleOf} from '../../scripts/repl-parity/scenes-mac-text.mjs';
-import {parseAsns, parseAppInfo, awaitOwnLaunch, stopRecorded, readFinderPreferences, writeFinderPreference, openApp, activateApp, activateBundle} from '../../scripts/repl-parity/scenes-mac-device.mjs';
+import {parseAsns, parseAppInfo, awaitOwnLaunch, stopRecorded, readFinderPreferences, writeFinderPreference, openApp, activateApp, activateProcess, ACTIVATE_PROCESS_SCRIPT} from '../../scripts/repl-parity/scenes-mac-device.mjs';
 import {isSameLaunch} from '../../scripts/accept/fixture-app.mjs';
 import {FINDER_RECORD_SCHEMA, markVisibleRestored, readSavedPreferences, recordVisibleState} from '../../scripts/repl-parity/scenes-mac-finder.mjs';
 import {FIXTURE_BUNDLE_ID, FIXTURE_CONTROLS} from '../../scripts/native-matrix/fixtures/electron-fixture.mjs';
@@ -980,11 +980,12 @@ test('a record with this schema but no visible state is trusted while its keys a
 });
 
 test('reactivate puts the owner\'s app back in front only while it runs as the same process and is not a scene app', async () => {
-  const io = fakeDevice({running: [{pid: 321, bundleId: 'com.apple.Terminal'}]});
+  // Two Terminals: the one recorded in front (321) is the one activated, addressed by its pid, never by the bundle id.
+  const io = fakeDevice({running: [{pid: 654, bundleId: 'com.apple.Terminal'}, {pid: 321, bundleId: 'com.apple.Terminal'}]});
   const activated = [];
-  io.activateBundle = bundleId => { activated.push(bundleId); io.front = {pid: 321, bundleId}; };
+  io.activateProcess = front => { activated.push(front); io.front = {pid: front.pid, bundleId: front.bundleId}; return {activated: true}; };
   assert.deepEqual(await reactivateApp({bundleId: 'com.apple.Terminal', pid: 321}, {io}), {reactivated: true, inFront: true});
-  assert.deepEqual(activated, ['com.apple.Terminal']);
+  assert.deepEqual(activated, [{bundleId: 'com.apple.Terminal', pid: 321}]);
   // The same app relaunched (another pid), quit, a scene app, or nothing recorded: nothing is activated.
   for (const [front, reason] of [[{bundleId: 'com.apple.Terminal', pid: 999}, /no longer running/], [{bundleId: 'com.apple.Notes', pid: 5}, /no longer running/],
     [{bundleId: 'com.apple.finder', pid: 736}, /scene app/], [{bundleId: CFT, pid: 7}, /scene app/], [null, /nothing/]]) {
@@ -992,11 +993,37 @@ test('reactivate puts the owner\'s app back in front only while it runs as the s
     assert.equal(out.reactivated, false, JSON.stringify(front));
     assert.match(out.reason, reason);
   }
-  assert.deepEqual(activated, ['com.apple.Terminal']);
+  assert.equal(activated.length, 1);
+  // The process gone between the check and the activation: the activator, which addresses the pid, refuses; nothing is
+  // launched in its place and nothing else is tried.
+  io.activateProcess = () => ({activated: false, reason: 'the process is no longer running as com.apple.Terminal'});
+  io.front = {pid: 77, bundleId: 'com.apple.Notes'};
+  assert.deepEqual(await reactivateApp({bundleId: 'com.apple.Terminal', pid: 321}, {io}), {reactivated: false, reason: 'the process is no longer running as com.apple.Terminal'});
+  assert.equal(io.calls.some(c => c[0] === 'open'), false);
 });
 
-test('device activation by bundle id: open -b, which activates the running instance and never starts a new one', () => {
+test('reactivate waits a bounded while for the activation, which LaunchServices completes asynchronously', async () => {
+  const io = fakeDevice({running: [{pid: 321, bundleId: 'com.apple.Terminal'}]});
+  let reads = 0;
+  io.front = {pid: 77, bundleId: 'com.apple.Notes'};
+  io.activateProcess = () => ({activated: true});
+  io.frontmostProcess = () => (++reads >= 3 ? {pid: 321, bundleId: 'com.apple.Terminal'} : io.front);
+  assert.deepEqual(await reactivateApp({bundleId: 'com.apple.Terminal', pid: 321}, {io}), {reactivated: true, inFront: true});
+  io.frontmostProcess = () => ({pid: 77, bundleId: 'com.apple.Notes'});
+  const t0 = io.now();
+  assert.deepEqual(await reactivateApp({bundleId: 'com.apple.Terminal', pid: 321}, {io}), {reactivated: true, inFront: false});
+  assert.ok(io.now() - t0 <= 2000, 'bounded');
+});
+
+test('device activation addresses the process: the activator script with the pid and bundle id, which never launches', () => {
   const calls = [];
-  activateBundle('com.apple.Terminal', {exec: (cmd, args) => { calls.push([cmd, ...args]); return ''; }});
-  assert.deepEqual(calls, [['/usr/bin/open', '-b', 'com.apple.Terminal']]);
+  const out = activateProcess({bundleId: 'com.apple.Terminal', pid: 321}, {exec: (cmd, args) => { calls.push([cmd, ...args]); return '{"activated":true}\n'; }});
+  assert.deepEqual(out, {activated: true});
+  assert.deepEqual(calls, [['/usr/bin/swift', ACTIVATE_PROCESS_SCRIPT, '321', 'com.apple.Terminal']]);
+  // The script itself: NSRunningApplication by pid, the bundle id re-checked, no LaunchServices open or launch call.
+  const source = fs.readFileSync(ACTIVATE_PROCESS_SCRIPT, 'utf8');
+  assert.match(source, /NSRunningApplication\(processIdentifier:/);
+  assert.match(source, /bundleIdentifier/);
+  assert.doesNotMatch(source, /openApplication|launchApplication|\/usr\/bin\/open|NSWorkspace\.shared\.open/);
+  assert.doesNotMatch(source, /"reason": "[^"]*\\\(pid\)/, 'no pid in a reason, which reaches meta.json');
 });

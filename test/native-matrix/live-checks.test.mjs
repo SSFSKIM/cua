@@ -223,7 +223,7 @@ test('menuSettingVerdict: the setting to make the default, decided only by attem
   assert.deepEqual(on.items.on.selectAll, {label: 'acts', effect: true, route: 1, activationGuardMs: 18.5});
   const neither = v(lane(none, acts), lane({...guarded, effect: false}, guarded));
   assert.equal(neither.setting, 'neither');
-  assert.equal(neither.line, 'neither: route 3\'s activation around the press is not enough for selectAll');
+  assert.equal(neither.line, 'neither: no one setting acts for every item: off leaves selectAll not acting, on leaves selectAll not acting');
   // Undecided, with the reason, whenever an item that matters is not found, inconclusive, unattempted or invalid.
   const lost = v(lane(none, acts), lane(guarded, {...guarded, valid: false}));
   assert.equal(lost.setting, 'undecided');
@@ -240,6 +240,10 @@ test('menuSettingVerdict: the setting to make the default, decided only by attem
   assert.equal(v(lane(acts, disabled), lane(guarded, {...guarded, effect: false}), null).line, 'undecided: no demonstrated success for bold: no lane acts, cua\'s or the vendor\'s',
     'without the vendor\'s lane nothing shows the item can act');
   assert.equal(v(lane(acts, disabled), lane(guarded, guarded), null).setting, 'on', 'the on lane acting is its own demonstration');
+  // Mixed lanes: selectAll acts only off, bold only on. Each lane's success counts, and the line names what each lane left.
+  const mixed = v(lane(acts, disabled), lane({...guarded, effect: false}, guarded), null);
+  assert.equal(mixed.setting, 'neither');
+  assert.equal(mixed.line, 'neither: no one setting acts for every item: off leaves bold not acting, on leaves selectAll not acting');
 });
 
 test('pasteVerdict: the pastes land behind the user window, type_text takes the paste route under a met Korean precondition, the clipboard\'s types unchanged', () => {
@@ -412,9 +416,10 @@ test('parseProcessTable and parseJournal: ps\'s lstart and the journal\'s rows r
   assert.deepEqual(table, [
     {pid: 100, ppid: 1, uid: 501, start: 'Tue Oct 21 10:00:00 2026', command: 'node scripts/native-matrix/live-device.mjs paste --run /r'},
     {pid: 101, ppid: 100, uid: 501, start: 'Wed Oct 1 09:05:07 2026', command: '/usr/bin/swift x.swift'}]);
-  assert.deepEqual(parseJournal('cli\t100\tTue Oct 21 10:00:00 2026\tlive-device.mjs paste\nprobe\t-\t-\tkeystroke\n\nbad\n'), [
+  assert.deepEqual(parseJournal('cli\t100\tTue Oct 21 10:00:00 2026\tlive-device.mjs paste\nprobe\t-\t-\tkeystroke\n\nbad\nprobe\tpending\t-\tinput-source#a1\n'), [
     {kind: 'cli', pid: 100, start: 'Tue Oct 21 10:00:00 2026', label: 'live-device.mjs paste'},
-    {kind: 'probe', pid: null, start: null, label: 'keystroke'}]);
+    {kind: 'probe', pid: null, start: null, label: 'keystroke'},
+    {kind: 'probe', pid: null, start: null, label: 'input-source#a1'}]);
 });
 
 test('recoveryPlan: only journaled pids whose start time still matches are stopped; an in-flight scene up is awaited; anything else is listed, untouched', () => {
@@ -453,6 +458,14 @@ test('recoveryPlan: only journaled pids whose start time still matches are stopp
   assert.deepEqual(plan.untouched.map(p => p.pid), [103, 104, 106], 'another run\'s CLI and a probe nobody journaled are listed only');
   assert.equal(plan.untouched[0].command, 'node scripts/native-matrix/live-device.mjs');
   assert.deepEqual(recoveryPlan([], table, {self: 200, ancestors: [], uid: 501, checkout, bundle: null}).stop, [], 'nothing journaled, nothing signaled');
+  // A probe launch is journaled pending before its open, then resolved to its pid or left unresolved: a launch with no
+  // pid row is unresolved, pending or not.
+  const launches = [{kind: 'probe', pid: null, start: null, label: 'keystroke#1'}, {kind: 'probe', pid: 105, start: T, label: 'keystroke#1'},
+    {kind: 'probe', pid: null, start: null, label: 'input-source#2'},
+    {kind: 'probe', pid: null, start: null, label: 'input-source#3'}, {kind: 'probe', pid: null, start: null, label: 'input-source#3'}];
+  const resolved = recoveryPlan(launches, table, {self: 200, ancestors: [], uid: 501, checkout, bundle});
+  assert.equal(resolved.unresolvedProbes, 2, 'one still pending, one resolved to nothing');
+  assert.deepEqual(resolved.stop, [{pid: 105, kind: 'probe', label: 'keystroke#1'}]);
 });
 
 test('the recovery\'s bound covers its waits and every put-back step with the stop after it', () => {

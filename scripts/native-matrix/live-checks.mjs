@@ -297,9 +297,11 @@ export function menuSettingVerdict(off, on, vendor = null) {
     if (onReason) [setting, line] = ['undecided', `undecided: ${onReason}`];
     else if (ids.every(id => onL[id] === 'acts')) [setting, line] = ['on', 'set on: every item acts only with route 3\'s activation around its press (spikeMenuActivation on by default)'];
     else {
-      const failing = ids.filter(id => onL[id] !== 'acts'), unshown = failing.filter(id => !vendor?.[id] || vendorItemLabel(vendor[id]) !== 'acts');
+      // An item acting on either of cua's lanes or the vendor's is shown to act; one acting nowhere shows nothing.
+      const offFailing = ids.filter(id => offL[id] !== 'acts'), onFailing = ids.filter(id => onL[id] !== 'acts');
+      const unshown = onFailing.filter(id => offL[id] !== 'acts' && (!vendor?.[id] || vendorItemLabel(vendor[id]) !== 'acts'));
       [setting, line] = unshown.length ? ['undecided', `undecided: no demonstrated success for ${unshown.join(', ')}: no lane acts, cua's or the vendor's`]
-        : ['neither', `neither: route 3's activation around the press is not enough for ${failing.join(', ')}`];
+        : ['neither', `neither: no one setting acts for every item: off leaves ${offFailing.join(', ')} not acting, on leaves ${onFailing.join(', ')} not acting`];
     }
   }
   return {setting, line, labels: {off: offL, on: onL}, items: {off: summary(off), on: summary(on)}};
@@ -425,11 +427,11 @@ export function finderCheck(baseline, now, {runWindow}) {
 // The run's journal (in its run directory): one row per device process the run started, `kind\tpid\tstart\tlabel`,
 // where start is ps's lstart (C locale): the device CLIs and the vendor serve (each journaled by the remote shell that
 // execs it, live.mjs journaledScript), each probe the CLIs launch and each put-back step's process (live-device.mjs).
-// A probe whose pid could not be resolved is journaled with `-` for pid and start.
+// A probe launch is journaled `pending` before its open, then its pid, or `-` when it could not be resolved.
 export const JOURNAL_FILE = 'live-journal.tsv';
 const startOf = text => String(text).trim().split(/\s+/).join(' ');
 export const parseJournal = text => String(text).split('\n').map(line => line.split('\t')).filter(f => f.length === 4 && ['cli', 'probe'].includes(f[0]))
-  .map(([kind, pid, start, label]) => ({kind, pid: pid === '-' ? null : Number(pid), start: start === '-' ? null : startOf(start), label}));
+  .map(([kind, pid, start, label]) => ({kind, pid: pid === '-' || pid === 'pending' ? null : Number(pid), start: start === '-' ? null : startOf(start), label}));
 // `ps -axo pid=,ppid=,uid=,lstart=,command=` under the C locale. -> [{pid, ppid, uid, start, command}].
 export const parseProcessTable = text => String(text).split('\n')
   .map(line => /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\w{3}\s+\w{3}\s+\d+\s+[\d:]+\s+\d{4})\s+(.*)$/.exec(line)).filter(Boolean)
@@ -442,6 +444,12 @@ const HARNESS_COMMANDS = /^node scripts\/(native-matrix\/(live-device|goldens-de
 const looksLikeHarness = (command, {checkout, bundle}) => HARNESS_COMMANDS.test(command) || isBundleProbe(command, bundle)
   || command.startsWith(`node ${checkout}/bin/cua.mjs serve`) || command.startsWith(`node ${checkout}/scripts/native-baseline/serve.mjs`);
 export const SCENE_UP = 'scenes-mac.mjs up';
+// Probe launches with no pid row: each launch (its label, unique per launch) is journaled `pending` before its open and
+// then resolved to its pid or to `-`; pending and unresolved alike count.
+const unresolvedLaunches = journal => {
+  const probes = journal.filter(e => e.kind === 'probe');
+  return new Set(probes.map(e => e.label).filter(label => !probes.some(e => e.label === label && e.pid !== null))).size;
+};
 
 // The recovery's targets: the journaled processes still running as this user with the start time the journal holds
 // (a pid reused since, or another run's process, never matches), never the recovery itself or its ancestors. A scene
@@ -460,7 +468,7 @@ export function recoveryPlan(journal, table, {self, ancestors = [], uid, checkou
   return {
     stop: [...mine.values()].filter(e => e.label !== SCENE_UP),
     await: [...mine.values()].filter(e => e.label === SCENE_UP),
-    unresolvedProbes: journal.filter(e => e.kind === 'probe' && e.pid === null).length,
+    unresolvedProbes: unresolvedLaunches(journal),
     untouched: [...running.values()].filter(p => !owned.has(p.pid) && looksLikeHarness(p.command, {checkout, bundle}))
       .map(p => ({pid: p.pid, command: p.command.split(' ').slice(0, 2).join(' ')})),
   };

@@ -963,3 +963,24 @@ What the milestone taught:
 - A harness that decides from a reading of the device's state (a preference key, an OS default) must check the state it acts on, not the reading: Finder's keys predicted neither what its window drew nor what its toggle would do, and the fix was to observe the window before and after each toggle and to restore what the owner saw, not what the keys said.
 - An audit's rule needs its negative direction tested: the expiry audit counted a correction that created a difference as needed, and labelled an expired correction an engine defect.
 - Parity with the vendor's text is not the goal where the vendor's text is wrong: its item count is capped by a prefetch limit, and cua keeps the true count with the line declared as the vendor's defect.
+
+**M2a (5941e988..HEAD on feat/117-m2a; hold 2026-10-21 12:28–13:22Z).** The full method set, settle and intervention landed as four engine lanes and a hold harness. Each lane was reviewed to clean (M2a.3 took four rounds, the harness six), then integrated. A whole-milestone reviewer-high round found three Important and one Minor finding, all fixed and re-reviewed correct. The hold ran on build 1ec58faab897:
+- comparison A passed, with cua's task rows at or below the vendor's (`task.total` 3126 against 4384 ms);
+- the minimized, menu, input-source and enablement checks ran;
+- paste and the HID composition row did not run, because an unrelated console prompt was present.
+The full record is `docs/doperpowers/specs/2026-10-18-own-native-engine-m2a-report.md`.
+
+What the milestone taught:
+- **A live comparison against the vendor settles questions that reading its code leaves open.** The decompile said the vendor's only menu difference was "held activation". It took the hold to show that this difference decides whether a background menu works at all: the menu works out enablement before an activation at the press arrives.
+- **A per-call report of what was sent is not evidence that it landed.** type_text into a minimized window reported every unit entered while the value did not change. Checks that decide policy have to read the effect, which is what the hold's checks did.
+- **A harness that touches the owner's machine needs its abort path reviewed as hard as its measurements.** The first harness review found a Critical: window titles and text could leave the device. Three rounds then went to recovery ownership. The convergence rule that ended the loop was "abort-path gaps go to tech debt once the hold is attended and an independent put-back check backs it". Agree on that rule before the first review round, not after the fourth.
+- **The device is shared, and its other tenants surface as the harness's own failures.** The owner's menubar app raised a keychain prompt, which aborted the paste section and hung codesign. The hung codesign then made `cua engine status` report a false negative. Status code that reads the environment has to distinguish "could not read" from "read no".
+- **An attribute's readback is not the state it controls.** On Chrome, AppKit answers the enablement attribute's readback, not Chromium's mode, so verifying the release needs Chromium's own signal.
+
+Left for M2b:
+- the paste and HID composition rows;
+- route 4's live cells;
+- the held menu activation, checked live against the vendor;
+- select_text in a minimized window;
+- verifying enablement's release by Chromium's mode;
+- the vendor-parity menu items logged in tech-debt-tracker.md.

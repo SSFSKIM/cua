@@ -2,6 +2,8 @@
 
 ## Open
 
+- **2026-10-21 — The hold harness's recovery doesn't wait for a probe whose launch is still pending (minor, #117 M2a.5a; abort path only).** A probe launch is journaled as pending before `open` runs (`scripts/native-matrix/live-device.mjs:782`). But recovery's wait for unresolved probes only lasts while a probe is visible (`:683–686`). If recovery interrupts the launcher before its probe process appears, it can restore the input source and the front app, and a probe that appears later can change them again. This happens only when a command dies or is interrupted during a probe's launch. In an attended hold the runbook covers it: after any recovery, phase 4 reads the input source and the front app again. Fix: while a pending entry exists, wait the launch bound (about 5 s) for its probe to appear and exit before restoring.
+
 - **2026-10-21 — The recorded menu root is not cleared when the menu closes (vendor parity, #117 M2a).** The vendor clears its recorded menu-bar root on the menu's close. cua keeps the record until the next observation replaces it, so an observation taken after the owner closes the menu can still be rooted at the menu-bar item. M2a scoped this out; the coordinator accepted it as residue. Fix: clear the record on the menu's close notification, as the vendor does, when M2b's menu cells exercise it.
 
 - **2026-10-21 — A coordinate click or drag onto an open menu item is posted, not pressed (vendor parity, #117 M2a).** The vendor presses the AX menu item under the point (AXPress). cua posts the pointer events, and a background app's open menu may not take them. M2a scoped this out; the coordinator accepted it as residue. Fix: hit-test the point and, for an AXMenuItem, press it by route 1, when M2b's menu cells measure it.

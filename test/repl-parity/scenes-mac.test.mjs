@@ -684,15 +684,34 @@ test('each scene names its window by a title prefix, as the front-window checks 
   assert.equal(isSceneWindow(golden('chrome'), 'electron'), false);
 });
 
+// An observation text's tree, read off its tab depths: the element `levels` above `index`, and an element with its
+// descendants (the lines after it deeper than it).
+const treeLines = ax => String(ax).split('\n').map(line => /^(\t*)(\d+) /.exec(line)).filter(Boolean).map(m => ({depth: m[1].length, index: Number(m[2])}));
+function ancestorOf(ax, index, levels) {
+  const lines = treeLines(ax), i = lines.findIndex(l => l.index === index), depth = lines[i].depth - levels;
+  for (let j = i - 1; j >= 0; j--) if (lines[j].depth === depth) return lines[j].index;
+  return null;
+}
+function subtreeOf(ax, index) {
+  const lines = treeLines(ax), i = lines.findIndex(l => l.index === index), out = new Set([index]);
+  for (let j = i + 1; j < lines.length && lines[j].depth > lines[i].depth; j++) out.add(lines[j].index);
+  return out;
+}
+
 test('the action targets resolve on the vendor\'s own text of each fixed state; Finder\'s is a cell of row 005, never its name', () => {
   assert.deepEqual(Object.fromEntries(SCENE_IDS.map(id => [id, SCENES[id].action.click])),
     {textedit: 'cua scene document', finder: {rowCellOf: 'scene-file-005'}, chrome: 'Scene option', electron: 'Fixture button'});
   for (const id of SCENE_IDS) assert.notEqual(actionIndex(golden(id), SCENES[id].action), null, id);
-  // Finder's is another cell of row 005 than its name field, after it: a click on the name of a selected row would start
-  // a rename. (The indexes are the committed recording's, so they are compared, not pinned.)
-  const nameField = indexOfTarget(golden('finder'), 'scene-file-005');
+  // Finder's lies inside row 005 (the line two levels above its name field) and outside the cell that holds the name: a
+  // click on the name of a selected row would start a rename. (The indexes are the committed recording's, so they are
+  // located through the tree, not pinned.)
+  const finder = golden('finder'), nameField = indexOfTarget(finder, 'scene-file-005');
   assert.notEqual(nameField, null);
-  assert.ok(actionIndex(golden('finder'), SCENES.finder.action) > nameField);
+  const row = subtreeOf(finder, ancestorOf(finder, nameField, 2)), nameCell = subtreeOf(finder, ancestorOf(finder, nameField, 1));
+  const target = actionIndex(finder, SCENES.finder.action);
+  assert.ok(row.has(target) && !nameCell.has(target), `target ${target}`);
+  // Which the check tells apart: row 006's cell, after row 005's name as well, is not in row 005.
+  assert.equal(row.has(indexOfRowCell(finder, 'scene-file-006')), false);
   assert.equal(indexOfRowCell(golden('finder'), 'scene-file-404'), null);
   // A part is matched whole: a longer name that begins with the target is not it.
   assert.equal(indexOfTarget('0 checkbox Scene options\n1 checkbox Scene option, Value: 0', 'Scene option'), 1);

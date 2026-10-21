@@ -66,11 +66,56 @@ M2a ran as parallel lanes, each in its own worktree and Swift scratch path, and 
 
 ## The live hold (M2a.5)
 
-_Pending._
+**Window.** CI-opt held the mini from 12:28Z to 13:43Z. The runner was disabled and the quiet flag was up throughout.
+- Phase 0 (12:28–12:29Z) brought the mini's checkout to e57aa75c, clean, with the lock unchanged, and built the release engine in 27 s.
+- It also read the put-back baseline:
+  - macOS 27.0;
+  - Finder: ShowSidebar=1, ShowStatusBar and ShowPathbar unset;
+  - input source ABC, per-context preference 0;
+  - front app Terminal;
+  - no TextEdit, no Chrome for Testing, no engine running.
+
+**Build and approve (12:29Z).** Build 1ec58faab897 was signed silently and approved at 12:29:33Z without an Enter. The engine holds all three grants.
+
+**Comparison A (12:29–12:42Z).** Three vv and three vc runs, all complete with no leftovers. `compare --engines` gave VERDICT: PASS (`m2a/comparison-a/comparison.md`).
+
+| Row | vv judged | vc judged | Verdict |
+|---|---|---|---|
+| task.act | 1160.2 | 926.3 | pass |
+| task.verify | 523.2 | 504.8 | pass |
+| task.close | 2704.5 | 1634.9 | pass |
+| task.total | 4384.0 | 3126.0 | pass |
+
+Load was 3.5 to 3.8 throughout. A Python process that belonged to neither CI nor CI-opt used about 22% CPU. The verdict holds under that load, so nothing was re-run.
+
+**Live checks (12:42–12:54Z).** Every command's put-back was ok and left the front app as it was.
+
+- **minimized.** No screenshot was taken (`screenshotOmitted: windowMinimized`). Click and scroll were refused as `windowMinimized`.
+  - set_value landed by route 1.
+  - select_text answered ok, but the selection did not read back.
+  - type_text reported `entered: 6`, but the window's value did not change.
+  - ⌘A had no effect.
+  - The harness's `setValueNoClick` and `selectTextNoClick` failures are a misreading. It took a route-1 write's interval for a click; that is fixed at 08eb2d17. The decision: refuse plain keys, ⌘ chords and paste.
+- **menu.** Run against a background TextEdit.
+  - The vendor's Select All and Bold act and read enabled.
+  - cua with the switch off: Select All reads disabled, and Bold is not found.
+  - cua with the switch on: both have no effect (route 1, guard 36 and 54 ms).
+  - Per-action activation is not enough, so the switch is removed. The route for background menus is a fork brought to maws-3f.
+- **input-source.** PASS.
+- **enablement.** Not released: the prior read "false" first and "true" second.
+- **paste and hidComposition.** Not run. A SecurityAgent prompt was on screen from 12:34:35Z, during vv run 3. The coordinator traced it in the log to the owner's ClaudeUsage menubar app, after another Claude CLI's keychain reads. It was not the hold's. The paste section's alert watch aborted at its first read, untouched, with put-back ok. No word came by the 13:22Z cutoff, so the rerun was skipped.
+
+**Phase 4 (13:21:41Z).** Everything matched phase 0:
+- the engine was stopped;
+- no TextEdit or Chrome for Testing was running (the only Electron process was the owner's Claude Desktop crashpad helper);
+- Finder's keys, ABC with per-context 0, and the front app Terminal were all as before;
+- the mini's checkout was clean.
+
+The readings went to the coordinator at 13:22Z.
 
 ## HID-tap keys and the input method
 
-_Pending the hold._ The question, asked for MAWS P4-B2: do keys posted at the HID tap by the engine's `--probe keystroke` (EventPoster.toHIDTap) go through the Korean 2-Set input method? The row types r then k into the scene's TextEdit and reads whether it got 가, rk or ㄱㅏ. It runs only when the scene's TextEdit is frontmost.
+**Not run in the M2a hold.** The paste section, which hosts this row, aborted on an unrelated SecurityAgent prompt (see the hold above). The row is ready for M2b's first hold. The question, asked for MAWS P4-B2: do keys posted at the HID tap by the engine's `--probe keystroke` (EventPoster.toHIDTap) go through the Korean 2-Set input method? The row types r then k into the scene's TextEdit and reads whether it got 가, rk or ㄱㅏ. It runs only when the scene's TextEdit is frontmost.
 
 The invocation is `cua-engine --probe keystroke --user-pid <pid> --user-bounds <x,y,w,h> rk` (Probe.swift:54). The probe re-checks the front window before each unit and aborts with status 4 if it is not the named one.
 
@@ -78,10 +123,16 @@ Caveat for reading the result: each event also carries `CGEventKeyboardSetUnicod
 
 ## Residue
 
-- **Route 4's live check.** Per maws-3f, route 4 stays out of the M2a hold, and the owner's `~/.config/cua/engine.json` is never written on the mini. Unit coverage exists (RouteFourTests). The live check belongs to M2b's matrix route cells.
-- **`menuClosed` clearing is not built.** The vendor clears its recorded menu root when the menu closes. cua keeps the record until the next observation replaces it.
-- **No AXPress for a menu under a coordinate.** A coordinate click or drag that lands on an open menu item is posted as a pointer event. The vendor's AXPress of the item under the point is not built.
-- _Hold outcomes: pending._
+Each item is work left for its own ticket or for M2b.
+
+- **Route 4's live check.** Per maws-3f, route 4 stayed out of the M2a hold, and the owner's `~/.config/cua/engine.json` was never written on the mini. RouteFourTests gives unit coverage. The live check belongs to M2b's matrix route cells.
+- **paste and hidComposition, live.** Not run in this hold because of an unrelated SecurityAgent prompt. Both are ready in the harness for M2b's first hold. hidComposition is MAWS P4-B2's question.
+- **select_text in a minimized window.** It answers ok, but the selection did not read back. Whether the write or the read failed is open. A second live read in M2b decides between refusing it and verifying the write after the fact.
+- **Enablement release on Chromium.** After the engine wrote it back, the attribute read "true" on the next connection (research pending). The release is a declared difference beyond the vendor, which never unsets.
+- **Menu items in a background app.** The route is the coordinator's fork; see the Decision Log, M2a.5 hold item 3.
+- **No `menuClosed` clearing (vendor parity; tech-debt-tracker.md).** The vendor clears its recorded menu root when the menu closes. cua keeps the record until the next observation replaces it.
+- **No AXPress for a menu item under a coordinate (vendor parity; tech-debt-tracker.md).** The vendor presses the AX menu item under the point. cua posts the pointer events instead.
+- **A key-code-only variant of `--probe keystroke`.** It would settle hidComposition's caveat: the events carry `CGEventKeyboardSetUnicodeString`. It is a later probe change.
 
 ## Validation
 

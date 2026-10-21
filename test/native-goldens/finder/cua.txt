@@ -247,4 +247,4 @@ Window: "cua-scene-finder", App: Finder.
 	245 윈도우
 	246 도움말
 
-The focused UI element is 4 윤곽체 Description: 목록 보기, ID: ListView (showing 0-21 of 205 items)
+The focused UI element is 4 윤곽체 Description: 목록 보기, ID: ListView

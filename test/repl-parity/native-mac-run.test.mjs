@@ -217,6 +217,16 @@ test('a scene that would not come down: its down is tried whatever its teardown 
   assert.deepEqual(stuck.device.calls.at(-1).slice(0, 2), ['scenes', 'reactivate']);
 });
 
+test('an engine that will not stop when the run ends: the run is incomplete and its journal stays, the home recorded as given back', async () => {
+  const device = fakeDevice();
+  device.ops.cleanup = prepared => { device.calls.push(['cleanup', prepared.home]); return {removed: true, engineStop: {error: 'busy: connections 1'}}; };
+  const run = await runLane({engine: 'vendor', device});
+  assert.equal(run.code, 1);
+  assert.match(run.meta.error, /did not stop when the run ended: busy/);
+  const journal = JSON.parse(fs.readFileSync(join(run.out, 'preparation.json'), 'utf8'));
+  assert.deepEqual([journal.device, journal.prepared.home, journal.preparationCleaned], ['mini', '/h', true]);
+});
+
 test('a scene whose up failed part way is still brought down', async () => {
   const device = fakeDevice();
   const scenes = device.ops.scenes;

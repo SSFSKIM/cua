@@ -203,7 +203,14 @@ export async function runNativeMac(options, io) {
         meta.preparationCleanup = {removed: cleanup.removed === true};
         if (cleanup.engineStop !== undefined) meta.engineStop = {...meta.engineStop, end: cleanup.engineStop};
         if (cleanup.removed !== true) throw new Error('the approved home\'s cleanup was not confirmed');
-        if (cleanup.engineStop?.error) throw new Error(`cua's engine did not stop when the run ended: ${cleanup.engineStop.error}`);
+        if (cleanup.engineStop?.error) {
+          // The home is given back all the same (prepare.mjs cleanupRun); the journal stays, saying so, until a cleanup
+          // stops the engine.
+          const file = join(dir, 'preparation.json');
+          fs.writeFileSync(file, `${JSON.stringify({...JSON.parse(fs.readFileSync(file, 'utf8')), preparationCleaned: true}, null, 2)}\n`, {mode: 0o600});
+          log(`cua's engine did not stop: once it can, node scripts/native-matrix/goldens.mjs cleanup --device ${device} --preparation ${file}`);
+          throw new Error(`cua's engine did not stop when the run ended: ${cleanup.engineStop.error}`);
+        }
         fs.rmSync(join(dir, 'preparation.json'), {force: true});
       } catch (error) { meta.preparationCleanup = {...meta.preparationCleanup, error: error.message}; meta.error ??= error.message; }
     }

@@ -886,6 +886,13 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   6. **The unknown-secondary-action sentence** is finished by the service with the model's index (`<action>` bounded to 256 characters); the engine's own text ends "for the element".
   7. Not built, as M1a left the coordinate click: the vendor's `AXPress` on a menu found under a coordinate click's or drag's point.
   Date/Author: 2026-10-21, plan-executor for maws-3f.
+- Decision (M2a.3, paste and `type_text`'s paste route, 2026-10-21; 04b462fc on `m2a/paste`): the gaps the task settled.
+  1. **The engine-wide FIFO paste lock** covers route 3's activation as well as snapshot through restore, as the vendor's serial queue does; waiting for it is bounded by the request's deadline (`timeoutReached`), and the in-flight intervention check runs as soon as it is taken.
+  2. **The interval** covers only the ⌘V and Return posts (through `InputMeta.posting`): a paste stopped before ⌘V keeps both times null. The activation goes to the app's process and primary window, ⌘V to the process owning the focused element (the vendor's split); a paste's activation failures do not count toward `routeAdvice`.
+  3. **`type_text` by paste** pastes each line and presses Return for each newline under one snapshot and one restore, reports `entered`, and checks no source between lines; `paste` carries no `entered`. Every ⌘V and Return press posts all four of its events, so modifiers are always restored.
+  4. **New error names**, each with the vendor's sentence verbatim: `clipboardWriteFailed`, `clipboardReadTimedOut`, `clipboardConflict`.
+  5. **Formats with Apple frameworks only**: Markdown to HTML through Foundation's Markdown parser and its presentation intents; HTML to RTF and plain text through AppKit's import on the main thread, bounded at 5 s, converted before the pasteboard is touched. Every pasteboard call runs on the main thread. Recorded costs: the HTML import may fetch an `<img>` URL inside the bound, and the first `html` or `md` paste after an engine launch takes about 4 s while the import warms up.
+  Date/Author: 2026-10-21, plan-executor for maws-3f.
 - Decision: no cursor overlay, no per-app instruction texts, no cross-connection approval persistence, no audio, no lock-screen unlock in this work.
   Rationale: none is reachable by cua's facade today or wanted by the owner; MAWS synthesizes its own agent cursor.
   Date/Author: 2026-10-18, maws-3f.

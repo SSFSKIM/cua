@@ -577,8 +577,10 @@ final class ScrollAndDragTests: XCTestCase {
   func testTheWheelsAndTheirSigns() {
     XCTAssertTrue(scrollWheels(.up, delta: 5) == (1, 5, 0))
     XCTAssertTrue(scrollWheels(.down, delta: 5) == (1, -5, 0))
-    XCTAssertTrue(scrollWheels(.left, delta: 5) == (2, 0, -5), "two wheels, so the horizontal delta is read")
-    XCTAssertTrue(scrollWheels(.right, delta: 5) == (2, 0, 5))
+    // The second wheel's sign runs as the first's: a positive delta scrolls up and, on the second wheel, left (read on
+    // TextEdit on 2026-10-21: a +delta on wheel 2 moved the horizontal bar 0.5 → 0).
+    XCTAssertTrue(scrollWheels(.left, delta: 5) == (2, 0, 5), "two wheels, so the horizontal delta is read")
+    XCTAssertTrue(scrollWheels(.right, delta: 5) == (2, 0, -5))
   }
 
   func testTheScrollEventIsAimedAtItsWindow() throws {
@@ -587,7 +589,7 @@ final class ScrollAndDragTests: XCTestCase {
     XCTAssertEqual(event.type, .scrollWheel)
     XCTAssertEqual(event.location, CGPoint(x: 300, y: 400))
     XCTAssertEqual(event.getIntegerValueField(.scrollWheelEventIsContinuous), 1, "pixel units")
-    XCTAssertEqual(event.getIntegerValueField(.scrollWheelEventPointDeltaAxis2), 120)
+    XCTAssertEqual(event.getIntegerValueField(.scrollWheelEventPointDeltaAxis2), -120, "right is a negative second wheel")
     XCTAssertEqual(event.getIntegerValueField(.scrollWheelEventPointDeltaAxis1), 0)
     // The window's id in field 51; fields 91 and 92 are set as the vendor sets them, but CoreGraphics keeps them on mouse
     // events only and reads them back as 0 on a scroll-wheel event.

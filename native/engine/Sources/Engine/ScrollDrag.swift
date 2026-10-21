@@ -31,14 +31,17 @@ func scrollDelta(pages: Double, length: CGFloat?) throws -> Int32 {
   return delta
 }
 
-/// The wheels of a scroll by `delta` pixels: up (0, +n), down (0, −n), left (−n, 0), right (+n, 0) as (x, y), and the
-/// wheel count, 2 for a horizontal scroll so its second wheel is read.
+/// The wheels of a scroll by `delta` pixels: up (0, +n), down (0, −n), left (+n, 0), right (−n, 0) as (x, y), and the
+/// wheel count, 2 for a horizontal scroll so its second wheel is read. The second wheel's sign runs as the first's: a
+/// positive delta scrolls toward the content's start, up on the first wheel and left on the second (read on TextEdit
+/// on 2026-10-21, a +n second wheel moving the horizontal bar 0.5 → 0; the vendor's recovered signs, left −n and
+/// right +n, are the other way round).
 func scrollWheels(_ direction: ScrollDirection, delta: Int32) -> (count: UInt32, vertical: Int32, horizontal: Int32) {
   switch direction {
   case .up: return (1, delta, 0)
   case .down: return (1, -delta, 0)
-  case .left: return (2, 0, -delta)
-  case .right: return (2, 0, delta)
+  case .left: return (2, 0, delta)
+  case .right: return (2, 0, -delta)
   }
 }
 

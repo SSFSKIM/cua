@@ -6,7 +6,7 @@
 // is the goldens' own invariant.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {EXPECTED} from './native-goldens/goldens.mjs';
+import {EXPECTED, read} from './native-goldens/goldens.mjs';
 import {EXPIRING_FAULTS, addsUndeclared, audit, formatAudit, rerender} from './native-goldens/audit.mjs';
 
 test('on the committed goldens nothing is undeclared, nothing over-declared, and every declaration is needed', () => {
@@ -82,4 +82,20 @@ test('a correction that creates a difference (an engine fix\'s value hard-coded 
   const text = formatAudit(report);
   assert.match(text, new RegExp(`delete: \\[${entry.index}\\] textedit skyshot windowUrl`));
   assert.doesNotMatch(text, new RegExp(`ENGINE DEFECT: \\[${entry.index}\\]`));
+});
+
+test('a vendor-defect declaration stays: never delete, never an engine defect, and nothing of it is left once the engine declarations go', t => {
+  assert.equal(EXPIRING_FAULTS.includes('vendor'), false);
+  const report = {source: 'live', goldens: [], afterDeletion: [], declarations: [{index: 0, expiring: false, neededIn: ['finder/full', 'finder/before'],
+    rule: {scene: 'finder', kind: 'subsetCount', identifier: 'ListView', fault: 'vendor'}}]};
+  assert.match(formatAudit(report), /keep \(vendor defect\): \[0\] finder subsetCount ListView \(vendor\): needed in finder\/full, finder\/before/);
+  // On a live recording whose Finder list has more than 100 items, the declaration absorbs the vendor's capped count.
+  if (!/ID: ListView \(showing [\d, -]+ of 100 items\)/.test(read('finder', 'vendor.txt'))) { t.skip('the committed recording has no capped Finder list'); return; }
+  const rule = {scene: 'finder', golden: ['full', 'before'], kind: 'subsetCount', fault: 'vendor', identifier: 'ListView', cap: 100, count: 1, cause: 'test'};
+  const live = audit({expected: [...EXPECTED.filter(each => each.kind !== 'subsetCount'), rule], source: {kind: 'live'}});
+  const entry = live.declarations.at(-1);
+  assert.deepEqual(entry.neededIn, ['finder/full', 'finder/before']);
+  assert.deepEqual(live.goldens.filter(g => g.scene === 'finder' && g.golden !== 'diff').flatMap(g => g.undeclared), []);
+  assert.deepEqual(live.afterDeletion.filter(g => g.scene === 'finder').flatMap(g => g.differences), []);
+  assert.doesNotMatch(formatAudit(live), new RegExp(`(delete|ENGINE DEFECT): \\[${entry.index}\\]`));
 });

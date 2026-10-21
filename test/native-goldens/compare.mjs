@@ -132,9 +132,26 @@ function applyPart(text, {label, cua, vendor}) {
   return text.includes(`, ${part}`) ? text.replace(`, ${part}`, '') : text.replace(part, '').replace(/, $/, '');
 }
 
+// The one vendor defect a golden declares (`kind: "subsetCount"`, fault "vendor"): the vendor's `(showing <ranges> of
+// <N> items)` counts the element's childCount (availableSubsetDescription 0x10063e220, through get_childCount
+// 0x10079e94c) over the hierarchy its prefetch read with _AXUIElementCopyHierarchy and AXChildren capped at
+// MaxArrayCount 100 (docs/doperpowers/research/2026-10-18-own-native-engine/F-helper-logic.md §1 item 1), so it never
+// exceeds 100; cua prints the true count, which tells a model the list goes on. Only that N may differ: on the element
+// whose `ID: <identifier>` the rule names, the line otherwise the same with the same visible ranges, the vendor's N
+// equal to min(cua's N, cap) and cua's N above the cap. -> cua's line with the vendor's N, or null when it does not apply.
+const SUBSET = /\(showing ([\d, -]+) of (\d+) items\)/;
+function applySubsetCount(vendorLine, cuaLine, {identifier, cap}) {
+  if (!new RegExp(`(?:^|, )ID: ${identifier.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?: |$)`).test(cuaLine)) return null;
+  const v = SUBSET.exec(vendorLine), c = SUBSET.exec(cuaLine);
+  if (!v || !c || v[1] !== c[1]) return null;
+  const vendorN = Number(v[2]), cuaN = Number(c[2]);
+  if (!(cuaN > cap) || vendorN !== Math.min(cuaN, cap)) return null;
+  return cuaLine.replace(SUBSET, `(showing ${c[1]} of ${vendorN} items)`);
+}
+
 // → {differences: [{kind, …}], added, lines, indexMap}. `declared`: the entries of ./expected.json for this golden:
 // `missing` and `added` lines by matching key, `part` differences inside a matched line, the `header` and the `trailer`
-// (each pinned to both sides' exact text), each `count` times exactly (default 1). `indexMap` (a diff only): the vendor
+// (each pinned to both sides' exact text), the vendor's capped `subsetCount`, each `count` times exactly (default 1). `indexMap` (a diff only): the vendor
 // index → cua index of the matched lines of the two `before` texts. The result's `indexMap` is this comparison's.
 export function compare(vendorText, cuaText, {kind = 'full', structural = false, declared: rules = [], indexMap = null} = {}) {
   const declared = rules.map(rule => ({...rule, left: rule.count ?? 1}));
@@ -159,7 +176,7 @@ export function compare(vendorText, cuaText, {kind = 'full', structural = false,
     if (!allow('added', rule => rule.head === head)) differences.push({kind: 'added', head, line: cua.items[j].rest});
   });
 
-  const parts = declared.filter(rule => rule.kind === 'part');
+  const parts = declared.filter(rule => rule.kind === 'part'), subsets = declared.filter(rule => rule.kind === 'subsetCount');
   for (const [i, j] of pairs) {
     const v = vendor.items[i], c = cua.items[j];
     if (v.depth !== c.depth) differences.push({kind: 'depth', line: v.rest, vendor: v.depth, cua: c.depth});
@@ -168,6 +185,10 @@ export function compare(vendorText, cuaText, {kind = 'full', structural = false,
     let cuaLine = textOf(c.rest, structural);
     if (same(vendorLine, cuaLine)) continue;
     const applied = [];
+    for (const rule of subsets) {
+      const next = rule.left > 0 ? applySubsetCount(vendorLine, cuaLine, rule) : null;
+      if (next !== null) { cuaLine = next; applied.push(rule); break; }
+    }
     for (const rule of parts) {
       const next = rule.left > 0 ? applyPart(cuaLine, rule) : null;
       if (next !== null) { cuaLine = next; applied.push(rule); }
@@ -216,8 +237,8 @@ export function compare(vendorText, cuaText, {kind = 'full', structural = false,
   }
 
   for (const rule of declared) {
-    if (['missing', 'added', 'part', 'header', 'trailer'].includes(rule.kind) && rule.left !== 0) {
-      differences.push({kind: 'overdeclared', rule: rule.kind, head: rule.head ?? rule.label ?? null, left: rule.left});
+    if (['missing', 'added', 'part', 'header', 'trailer', 'subsetCount'].includes(rule.kind) && rule.left !== 0) {
+      differences.push({kind: 'overdeclared', rule: rule.kind, head: rule.head ?? rule.label ?? rule.identifier ?? null, left: rule.left});
     }
   }
   return {differences, added, lines: cua.items.length, indexMap: map};

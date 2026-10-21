@@ -30,7 +30,7 @@ export function addsUndeclared(base, without) {
 const judge = (scene, golden, rules, expected) => (golden === 'diff' ? COMPARE.diff(scene, rules, declared(scene, 'before', expected)) : COMPARE[golden](scene, rules));
 
 // What a declaration declares, in one line.
-export const describeRule = rule => [rule.scene, rule.kind, rule.correction ?? (rule.label ? `${rule.label}: ${rule.cua}` : null) ?? rule.head ?? (rule.kind === 'header' || rule.kind === 'trailer' ? JSON.stringify(rule.cua) : '')]
+export const describeRule = rule => [rule.scene, rule.kind, rule.correction ?? (rule.label ? `${rule.label}: ${rule.cua}` : null) ?? rule.head ?? rule.identifier ?? (rule.kind === 'header' || rule.kind === 'trailer' ? JSON.stringify(rule.cua) : '')]
   .filter(part => part !== '').join(' ');
 
 // -> {source, goldens: [{scene, golden, undeclared, overdeclared, added, lines, overTenPercent}],
@@ -82,7 +82,8 @@ export function formatAudit(report) {
     const what = `[${index}] ${describeRule(rule)} (${rule.fault})`;
     if (!neededIn.length) return `delete: ${what}: removing it leaves no difference undeclared`;
     if (expiring) return `${live ? 'ENGINE DEFECT' : 'expires at the live re-recording'}: ${what}: still needed in ${neededIn.join(', ')}`;
-    return `keep: ${what}: needed in ${neededIn.join(', ')}`;
+    // A vendor defect (fault "vendor") stays as long as the pinned vendor has it: cua's output is the right one.
+    return `keep${rule.fault === 'vendor' ? ' (vendor defect)' : ''}: ${what}: needed in ${neededIn.join(', ')}`;
   }));
   list('Declarations whose count exceeds what they absorb:', report.goldens.flatMap(g => g.overdeclared.map(d => `${g.scene}/${g.golden}  ${d.rule} ${d.head ?? ''} (${d.left} left)`)));
   list('Goldens adding more than 10% of their lines without a Decision Log entry:', report.goldens.filter(g => g.overTenPercent).map(g => `${g.scene}/${g.golden}  ${g.added} of ${g.lines}`));

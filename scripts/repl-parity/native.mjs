@@ -2,6 +2,8 @@ import {randomUUID} from 'node:crypto';
 import {remoteCommand,quote,linuxSession,ownNodeEnv,preparedHomeEnv} from './topology.mjs';
 import {runRawScenario} from './runner.mjs';
 import {declaredDevice} from './devices.mjs';
+import {serveCommand} from '../native-baseline/remote.mjs';
+import {assertEngineOptions} from '../native-baseline/engine.mjs';
 // The native lane runs on the declared Linux device it was prepared on (cua-gce, or the paused cua-linux VM).
 export function nativeCommand({device,checkout,home,host,fixtureMode='blank',...facts}){
  if(declaredDevice(device).platform!=='linux'||facts.platform!=='linux'||!['vendor','cua'].includes(host))throw Error('Native parity requires a prepared declared Linux device');
@@ -25,4 +27,14 @@ export async function runNativeScenario(scenario,{pool,prepared,host,emit}){
   if(ready.isError||!ready.content?.some(c=>c.text?.endsWith('NATIVE_READY')))throw Error('Native setup failed: '+ready.content?.filter(c=>c.type==='text').map(c=>c.text).join('\n'));
   return await runRawScenario(scenario,{client,emit,checkout:prepared.checkout,reset:false});
  }finally{await client.call('end_task');const status=await client.close();if(status.code!==0)throw Error('Native cleanup failed');}
+}
+// The darwin native command (#117's native-mac suite, ./native-mac.mjs): the native baseline's serve of the harness
+// checkout on the approved home prepare.mjs admitted (its token presented, HOME the account's, so the serve's selection
+// finds the approved engine), the computer surface alone, the REPL host and the native engine each named, never left to
+// a default or to the account's ~/.config/cua/engine.json (CUA_NATIVE_ENGINE, the Decision Log's whole-M1b rule).
+export function nativeMacCommand({device,host,engine,approvedEngine,pre,prepared}){
+ if(declaredDevice(device).platform!=='darwin')throw Error('The macOS native lane runs on a declared macOS device');
+ assertEngineOptions({platform:'darwin',surface:'computer',host,engine,approvedEngine});
+ if(!prepared?.runtimeReuse||!prepared.admission)throw Error('The macOS native lane serves the approved runtime in place: its preparation is the approved home scripts/native-baseline/prepare.mjs admitted');
+ return serveCommand({device,checkout:pre.checkout,home:pre.home,userHome:prepared.userHome,configHome:prepared.configHome,tmpdir:prepared.tmpdir,admission:prepared.admission,xSession:{},host,engine,platform:'darwin',surface:'computer'});
 }

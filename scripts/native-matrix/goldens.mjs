@@ -14,7 +14,9 @@
 //                                      declarations are deleted; exit 1 while anything is left to act on
 //   goldens.mjs cleanup --device <alias> --preparation <dir>/preparation.json
 //                                      finish what a recording that died left: Finder's teardown steps, every scene
-//                                      down, the approved engine stopped, the approved home's cleanup (prepare.mjs)
+//                                      down, the approved engine stopped, the approved home's cleanup (prepare.mjs);
+//                                      the engine only once every scene is confirmed down, the home only once the
+//                                      engine stopped; exit 1 and the file kept until then
 //
 // `record`, in one sitting and one run directory on the device (default ~/Library/Caches/cua-harness/native-goldens):
 //   - Refuses before anything is prepared unless the approved engine exists and its build is the harness checkout's
@@ -506,17 +508,33 @@ function putBackFrontmost(ops, front) {
 // What a dead recording leaves and `cleanup` undoes, in order.
 const CLEANUP_STEPS = 'Finder\'s teardown steps (goldens-device.mjs steps finder --phase teardown), scenes-mac.mjs down all --run <run>, goldens-device.mjs engine-stop, the approved home\'s cleanup, then the owner\'s front app put back';
 
-// The cleanup of a recording that died, from its preparation.json ({device, prepared, run, frontmost?}): each step tried
-// whatever the one before answered. -> {finderTeardown, scenesDown, engineStop, preparationCleanup, frontmost?}.
-export function cleanupRecording({prepared, run, frontmost = null}, ops) {
+// The cleanup of a recording that died, from its preparation.json ({device, prepared, run, frontmost?,
+// preparationCleaned?}): each step tried whatever the one before answered, except that the engine is stopped only once
+// every scene is confirmed down, and the approved home given back only once the engine stopped (busy is a refusal);
+// until then they stay held, the journal with them, so the cleanup can be run again. The home's cleanup restores it
+// even when its own stop fails (prepare.mjs cleanupRun), so a cleanup that gave it back without the engine stopped is
+// not done either: `preparationCleaned` tells the next one to stop the engine only.
+// -> {finderTeardown, scenesDown, engineStop, preparationCleanup, frontmost?, preparationCleaned, restored}.
+export function cleanupRecording({prepared, run, frontmost = null, preparationCleaned = false}, ops) {
   const tried = fn => { try { return fn(); } catch (error) { return {error: error.message}; } };
-  return {
-    finderTeardown: tried(() => ops.goldens(['steps', 'finder', '--run', run, '--phase', 'teardown'])),
-    scenesDown: tried(() => ops.scenes(['down', 'all', '--run', run])),
-    engineStop: tried(() => ops.goldens(['engine-stop'])),
-    preparationCleanup: tried(() => ops.cleanup(prepared)),
-    ...(frontmost?.bundleId ? {frontmost: putBackFrontmost(ops, frontmost)} : {}),
-  };
+  const finderTeardown = tried(() => ops.goldens(['steps', 'finder', '--run', run, '--phase', 'teardown']));
+  const scenesDown = tried(() => ops.scenes(['down', 'all', '--run', run]));
+  const down = scenesDown?.down === true, notDown = {deferred: 'a scene is not confirmed down; run the cleanup again once it is'};
+  const engineStop = down ? tried(() => ops.goldens(['engine-stop'])) : notDown;
+  const stopped = down && !engineStop?.error;
+  const preparationCleanup = preparationCleaned ? {removed: true, earlier: true}
+    : stopped ? tried(() => ops.cleanup(prepared)) : down ? {deferred: 'the engine did not stop; run the cleanup again once it does'} : notDown;
+  const cleaned = preparationCleanup?.removed === true;
+  return {finderTeardown, scenesDown, engineStop, preparationCleanup, ...(frontmost?.bundleId ? {frontmost: putBackFrontmost(ops, frontmost)} : {}),
+    preparationCleaned: cleaned, restored: stopped && cleaned && !preparationCleanup.engineStop?.error};
+}
+
+// The journal after a cleanup: removed once restored (exit 0); otherwise kept, recording a home already given back
+// (exit 1).
+export function settleCleanupJournal(file, preparation, out) {
+  if (out.restored) { fs.rmSync(file, {force: true}); return 0; }
+  if (out.preparationCleaned && !preparation.preparationCleaned) fs.writeFileSync(file, `${JSON.stringify({...preparation, preparationCleaned: true}, null, 2)}\n`, {mode: 0o600});
+  return 1;
 }
 
 // ---- the CLI ------------------------------------------------------------------------------------------------------
@@ -566,9 +584,7 @@ export async function main(argv = process.argv.slice(2), {log = console.log} = {
     if (preparation.device !== command.device) throw new Error(`${command.preparation} is a preparation on ${preparation.device}, not ${command.device}`);
     const out = cleanupRecording(preparation, ops);
     log(JSON.stringify(out, null, 2));
-    if (out.preparationCleanup?.error) return 1;
-    fs.rmSync(command.preparation, {force: true});
-    return 0;
+    return settleCleanupJournal(command.preparation, preparation, out);
   }
   return record(command, {ops, log, connect: (spec, handlers) => new StdioClient({...spec, clientName: 'cua-native-goldens', ...handlers}),
     controllerBuild: () => ({build: engineBuild(), engineVersion: engineVersion()}),

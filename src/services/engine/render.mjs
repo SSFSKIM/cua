@@ -94,7 +94,9 @@ export function layout(skyshot, numbering) {
   const roots = presented.roots.map(root => number(root, 0));
   const lines = [];
   (function visit(nodes) { for (const node of nodes) { lines.push(elementLine(node)); visit(node.children); } })(roots);
-  const lineOf = node => elementLine({index: indexOf(node.token), depth: 0, text: lineText(node, urls), detailText: detailText(node)});
+  // A trailer line is the element's own line without the width rule's `(showing …)`, which only the tree's layout gives
+  // [golden: Finder, the vendor's focused list view].
+  const lineOf = node => elementLine({index: indexOf(node.token), depth: 0, text: lineText(node, urls)});
   return {
     title: presented.title, appName: presented.appName, header: `Window: "${presented.title}", App: ${presented.appName}.`,
     roots, lines, nodeCount: lines.length, markers: truncationMarkers(skyshot), trailer: trailer(presented, lineOf),

@@ -1,0 +1,45 @@
+{
+  "about": "The native-mac suite's expected differences (docs/doperpowers/specs/2026-10-18-own-native-engine-design.md, Verification system part 3; Acceptance 6), read by `node scripts/repl-parity.mjs diff <vendor-run> <cua-run> --expected scripts/repl-parity/expected/native-mac.json` (scripts/repl-parity/native-mac-diff.mjs). Every difference between the vendor engine's accessibility text and cua's on the four scenes is declared here with its cause, in the vendor-defects style (scripts/repl-parity/vendor-defects.mjs): an observation of the pinned vendor or of the scene, never a skip. `scene` is textedit, finder, chrome, electron or *; `golden` is full (the fixed state), before (the action's first observation), diff (the observation right after the action) or settle (the observation two seconds later), one or a list, all three text goldens when absent; `fault` is \"vendor\" (the pinned vendor's own defect: cua's output is the right one), \"scene state\" (the two lanes' actions left different states) or \"departure\" (cua's declared difference from the vendor, with `decisionLog` citing its entry by its dated opening); an engine or renderer fault of cua's is a defect to fix, never a declaration. Kinds and their fields are the renderer goldens' (test/native-goldens/expected.json): `missing` and `added` (a whole line by its matching `head`: role word, flags and title, then ` | ` and the labels), `part` (inside a matched line, cua's `<label>: <cua>` is the vendor's `<label>: <vendor>`), `header` and `trailer` (both sides' exact text), `subsetCount` (the vendor's `(showing <ranges> of <N> items)` on the element whose `ID:` is `identifier` is min(cua's N, `cap`)), `addedOverTenPercent` (`decisionLog`), and `settle` (`lane`: the engine whose observation moved in the two seconds after the action). `count` is exact (default 1); a declaration nothing needed is itself a difference. The entries below are the ones the renderer goldens' recording (test/native-goldens/expected.json, the M1b closing wave) shows apply to the suite's cells, which are the goldens' own cells on the same scenes; the first full run on the mini (M2b.5) confirms each or reports it overdeclared.",
+  "declarations": [
+    {
+      "scene": "finder",
+      "golden": [
+        "full",
+        "before"
+      ],
+      "kind": "subsetCount",
+      "fault": "vendor",
+      "identifier": "ListView",
+      "cap": 100,
+      "count": 1,
+      "cause": "Vendor defect, declared for the renderer goldens by the spec's Decision Log \"M1b closing wave\" item 1c: the vendor's subset count of the run's file list reads `of 100 items` where cua reads the true count. availableSubsetDescription (0x10063e220) counts the element's childCount through get_childCount (0x10079e94c), over the hierarchy its prefetch read with _AXUIElementCopyHierarchy with AXChildren capped at MaxArrayCount 100 (docs/doperpowers/research/2026-10-18-own-native-engine/F-helper-logic.md §1 item 1), so its N never exceeds 100. cua keeps the true count: a model looking for item 150 must not be told the list ends at 100. Only N may differ; the visible ranges and the rest of the line must match."
+    },
+    {
+      "scene": "textedit",
+      "golden": "diff",
+      "kind": "header",
+      "fault": "scene state",
+      "vendor": "The following is a diff from the previous accessibility tree for Window: \"cua-scene.rtf\" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.",
+      "cua": "There has been no change in the accessibility tree for Window: \"cua-scene.rtf\".",
+      "cause": "Scene state, not rendering (carried from the renderer goldens' recording, test/native-goldens/expected.json): the vendor's click on the document's first line scrolled the document to its end (the vertical scroll bar and its indicator 0.02 → 1, its diff's only two lines), while cua's click left the tree unchanged, so cua answers the no-change sentence. The vendor activates TextEdit on a click (#162); cua does not."
+    },
+    {
+      "scene": "textedit",
+      "golden": "diff",
+      "kind": "missing",
+      "fault": "scene state",
+      "head": "~scroll bar (settable, float) 1 | ",
+      "count": 1,
+      "cause": "Scene state, as the header entry above: the vendor's click scrolled the document to its end and cua's did not."
+    },
+    {
+      "scene": "textedit",
+      "golden": "diff",
+      "kind": "missing",
+      "fault": "scene state",
+      "head": "~value indicator (settable, float) 1 | ",
+      "count": 1,
+      "cause": "Scene state, as the header entry above: the vendor's click scrolled the document to its end and cua's did not."
+    }
+  ]
+}

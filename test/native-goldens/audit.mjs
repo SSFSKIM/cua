@@ -27,7 +27,7 @@ export function addsUndeclared(base, without) {
 
 // One golden judged under `rules`; the diff's index map is read under the same list's declarations of the first
 // observation.
-const judge = (scene, golden, rules, expected) => (golden === 'diff' ? COMPARE.diff(scene, rules, declared(scene, 'before', expected)) : COMPARE[golden](scene, rules));
+const judge = (scene, golden, rules) => COMPARE[golden](scene, rules);
 
 // What a declaration declares, in one line.
 export const describeRule = rule => [rule.scene, rule.kind, rule.correction ?? (rule.label ? `${rule.label}: ${rule.cua}` : null) ?? rule.head ?? rule.identifier ?? (rule.kind === 'header' || rule.kind === 'trailer' ? JSON.stringify(rule.cua) : '')]
@@ -41,13 +41,13 @@ export function audit({expected = EXPECTED, source = SOURCE} = {}) {
   const goldens = [], afterDeletion = [];
   for (const scene of SCENES) for (const golden of GOLDENS) {
     const rules = declared(scene, golden, expected);
-    const result = judge(scene, golden, rules, expected);
+    const result = judge(scene, golden, rules);
     goldens.push({scene, golden, undeclared: undeclaredOf(result.differences), overdeclared: result.differences.filter(d => d.kind === 'overdeclared'),
       added: result.added, lines: result.lines, overTenPercent: result.added > result.lines * 0.1 && !allowsAddedLines(rules)});
     for (const rule of rules) {
-      if (addsUndeclared(result.differences, judge(scene, golden, rules.filter(each => each !== rule), expected).differences)) neededIn.get(rule).push(`${scene}/${golden}`);
+      if (addsUndeclared(result.differences, judge(scene, golden, rules.filter(each => each !== rule)).differences)) neededIn.get(rule).push(`${scene}/${golden}`);
     }
-    afterDeletion.push({scene, golden, differences: undeclaredOf(judge(scene, golden, declared(scene, golden, kept), kept).differences)});
+    afterDeletion.push({scene, golden, differences: undeclaredOf(judge(scene, golden, declared(scene, golden, kept)).differences)});
   }
   return {source: source.kind, goldens, afterDeletion,
     declarations: expected.map((rule, index) => ({index, rule, expiring: isExpiring(rule), neededIn: neededIn.get(rule)}))};

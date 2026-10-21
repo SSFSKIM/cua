@@ -232,6 +232,9 @@ test('the width rule\'s partial children: (showing <ranges> of <count> items)', 
   const shot = skyshot(win([node('o', 1, 'AXOutline', {roleDescription: 'outline', title: 'O', flags: {focusable: true},
     shown: {count: 18, of: 205, subset: 'visible', ranges: [[0, 9], [12, 20]]}})]));
   assert.equal(lines(shot)[1], '\t1 outline O (showing 0-9, 12-20 of 205 items)');
+  // Only the tree's layout gives it: the trailer's line of the same element has none [golden: Finder's focused list view].
+  const focused = {...shot, focused: 'o'};
+  assert.ok(render(focused, advanceNumbering(null, focused)).endsWith('\nThe focused UI element is 1 outline O'));
   const omitted = skyshot(win([node('o', 1, 'AXOutline', {roleDescription: 'outline', title: 'O', flags: {focusable: true}, shown: {count: 0, of: 600, subset: 'omitted'}})]));
   assert.equal(lines(omitted)[1], '\t1 outline O');
 });

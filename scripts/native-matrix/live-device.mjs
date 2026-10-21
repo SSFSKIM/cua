@@ -957,6 +957,11 @@ export const defaultIo = run => {
     try { return runProbe(probeBundle(), args, {run}); } catch (error) { if (error.stuck) stuckProbe = error.message; throw error; }
   },
   probeStuck: () => stuckProbe,
+  // A scheduled probe, launched now and awaited by a later command (./matrix-device.mjs probe).
+  probeLaunch: args => launchProbe(probeBundle(), args, {run}),
+  probeAwait: handle => {
+    try { return awaitProbe(handle); } catch (error) { if (error.stuck) stuckProbe = error.message; throw error; }
+  },
   readPerContext: readPerContextLive,
   clipboard: () => clipboardDigest(),
   windows: () => systemWindows(),

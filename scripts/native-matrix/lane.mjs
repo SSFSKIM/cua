@@ -12,6 +12,7 @@ import {classifyHelpers, preflightScript, serveCommand} from '../native-baseline
 import {hostAttestationOf} from '../native-baseline.mjs';
 import {SCENES} from '../repl-parity/scenes-mac.mjs';
 import {checkoutCli, deviceOps, isSceneApproval} from './goldens.mjs';
+import {sha256Hex} from './matrix-text.mjs';
 import {boundedExec, journaledScript, SSH_OPTIONS} from './live.mjs';
 
 export const CELL_MS = 60_000, BIND_MS = 120_000;
@@ -66,11 +67,19 @@ export function matrixOps(device, {exec = execFileSync} = {}) {
   };
 }
 
+// The engine's input meta on a result, as the probe cells read it (src/services/engine/service.mjs, reset at each call
+// and set on an input error too): the action's interval, the engine's receipt time, the idle time it measured, the
+// characters a type_text entered, and `intervention: "off"` when detection is not running. The vendor reports none.
+// -> {actionInterval, receivedAt, hidIdleMs, entered, intervention}, each null when absent.
+export const engineMetaOf = meta => Object.fromEntries([['actionInterval', 'cua/actionInterval'], ['receivedAt', 'cua/receivedAt'], ['hidIdleMs', 'cua/hidIdleMs'],
+  ['entered', 'cua/entered'], ['intervention', 'cua/intervention']].map(([key, name]) => [key, meta?.[name] ?? null]));
+
 // The lane: the serve of `host` and `engine` on the prepared home, an MCP client that accepts only the computer-use
 // approval of one of the scenes' apps (recorded in meta.elicitations), and its first cell. Every js result's engine
 // attestation is collected (meta.nativeEngine, ./native-baseline/engine.mjs attestEngine) and one naming another engine
 // stops the lane at once; the first result attests the host. -> {client, js(code, timeoutMs) -> {ok, value|error,
-// inCellMs, wallMs, route, at}} (`at`: the device-clock window around the call, timedCode).
+// inCellMs, wallMs, route, engine, at}} (`at`: the device-clock window around the call, timedCode; `engine`: the last
+// call's input meta, engineMetaOf).
 export async function connectLane({ops, pre, prepared, host, engine, connect, bundleIds, meta, stderrFile, now = () => performance.now()}) {
   const client = connect({...ops.serveSpec({pre, prepared, host, engine}), clientName: 'cua-native-matrix',
     answer: msg => (isSceneApproval(msg, bundleIds) ? {action: 'accept', content: {}} : {action: 'decline'}),
@@ -96,7 +105,7 @@ export async function connectLane({ops, pre, prepared, host, engine, connect, bu
     const at = atOf(text);
     if (!at) throw new Error('a cell printed no device-clock window: its activations could not be accounted for; the lane stopped');
     const route = result?._meta?.['cua/inputRoute'];
-    return {...parsed, wallMs, route: route === undefined ? null : route, at};
+    return {...parsed, wallMs, route: route === undefined ? null : route, engine: engineMetaOf(result?._meta), at};
   };
   const first = await js(FIRST, BIND_MS).catch(closing);
   if (!first.ok) await closing(new Error(`the lane's first cell failed: ${first.error}`));
@@ -115,6 +124,9 @@ export function dryOps({log, engine, approvedEngine = '/Users/owner/Library/Appl
   // The scenes as up made them, and the last one activated in front: what the dry reads and key guard see.
   const records = {};
   let front = null;
+  // The scheduled probe pending, and the focused field's hash the focus probe reads: empty once a scene is activated
+  // (each probe cell empties its field after one), the keystroke's text after its finish (an ANSI r composes ㄱ).
+  let pending = null, focusHash = sha256Hex(''), source = 'com.apple.keylayout.ABC';
   const reading = () => ({at: 0, frontmost: front ? {pid: front.pid, bundleId: front.bundleId, owned: true} : null,
     topWindow: front ? {ownerPid: front.pid, number: front.window.number, bounds, owned: true} : null});
   return {
@@ -138,9 +150,27 @@ export function dryOps({log, engine, approvedEngine = '/Users/owner/Library/Appl
       const at = [clock(), clock()];
       switch (args[0]) {
         case 'compile': return {front: 'front-window-dry', windows: 'system-windows-dry'};
-        case 'read': return {reading: reading(), watcher: args.includes('--watcher'), at, ...(args.includes('--focus') ? {focus: {appOwned: true, appPid: front?.pid ?? null, named: true}} : {})};
+        case 'read': return {reading: reading(), watcher: args.includes('--watcher'), at, ...(args.includes('--focus') ? {focus: {appOwned: true, appPid: front?.pid ?? null, named: true, valueHash: focusHash}} : {})};
+        case 'probe': {
+          if (args[1] !== 'finish') {
+            const flag = name => args[args.indexOf(`--${name}`) + 1];
+            const typed = args[1] !== 'keystroke' ? null : args.includes('--mode') && flag('text') === 'r' ? 'ㄱ' : flag('text');
+            pending = {kind: args[1], scheduled: clock() + Number(flag('lead')), text: typed, source: args[1] === 'input-source' ? flag('source') : null};
+            return {answer: {scheduled: pending.scheduled, pid: ++pid}, at};
+          }
+          const done = pending;
+          pending = null;
+          if (done?.kind === 'keystroke') focusHash = sha256Hex(done.text);
+          if (done?.kind === 'input-source') source = done.source;
+          return {answer: {answer: done?.kind === 'input-source' ? {selected: true, selectedAt: done.scheduled, current: {id: done.source}}
+            : {postedAt: done?.scheduled ?? clock(), units: done?.text?.length ?? 0, chars: done?.text?.length ?? 0, mode: 'typed', presses: []}}, at};
+        }
+        case 'source':
+          if (args[1] === 'select') source = args[args.indexOf('--source') + 1];
+          return {answer: {save: {kept: false, saved: {source: 'com.apple.keylayout.ABC', perContext: false}}, current: {current: source}, select: {selected: true, current: source},
+            'per-context': {perContext: args[args.indexOf('--value') + 1] === 'on'}, restore: {sourceRestored: true, perContextRestored: true}}[args[1]] ?? {}, at};
         case 'step':
-          if (args[1] === 'activate') front = records[args[2]] ?? front;
+          if (args[1] === 'activate') { front = records[args[2]] ?? front; focusHash = sha256Hex(''); }
           return {answer: args[1] === 'down' ? {down: true} : {scene: args[2], ok: true}, at};
         case 'alerts': return args[1] === 'baseline' ? {baseline: 0} : {abort: false, export: {alerts: [], keywords: [], unknown: {count: 0, windows: []}}, at};
         case 'launched':
@@ -167,7 +197,7 @@ export function dryOps({log, engine, approvedEngine = '/Users/owner/Library/Appl
 export function dryConnect({log, engine, host, clock = Date.now}) {
   return () => {
     const value = {ready: true, ok: true, inFront: true, scratchInFront: true, opened: true, closed: true, panel: false, documentInFront: true, bound: true, actMs: 1, threw: false,
-      targets: [], lines: 1, named: 1, unclassified: 0, ids: 0, outcome: {}};
+      targets: [], lines: 1, named: 1, unclassified: 0, ids: 0, outcome: {}, typed: true, clicked: true, sceneInFront: true, landed: true, observed: true, hash: sha256Hex(''), length: 0};
     const meta = {'cua/nativeEngine': {engine, version: '0.0.0', build: engine === 'cua' ? 'd'.repeat(64) : '26.0-dry'}, ...(host === 'cua' ? {'cua/replHost': {host: 'cua'}} : {})};
     return {
       initialize: async () => ({serverInfo: {name: host === 'cua' ? 'cua-repl-host' : 'dry'}}),

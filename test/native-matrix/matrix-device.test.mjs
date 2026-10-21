@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {alerts, compiled, isWatcher, launchIntent, ownedFocus, quitLaunched, read, recordLaunch, settleLaunches, WINDOWLESS, windowlessUp} from '../../scripts/native-matrix/matrix-device.mjs';
+import {alerts, compiled, isWatcher, launchIntent, ownedFocus, PROBE_FILE, probeFinish, probeStart, quitLaunched, read, recordLaunch, settleLaunches, source, WINDOWLESS, windowlessUp} from '../../scripts/native-matrix/matrix-device.mjs';
 
 const state = {scenes: {textedit: {pid: 11}, finder: {pid: 7}}};
 const bounds = {x: 0, y: 25, width: 900, height: 700};
@@ -26,11 +26,14 @@ test('read: the run\'s own pids and bounds, another app by bundle id only, the w
   assert.equal(read({watcher: 901}, io).watcher, false, 'a watcher that is gone is not coverage');
   assert.equal(read({}, io).watcher, false, 'no watcher named, no coverage');
   assert.deepEqual(probed, []);
-  assert.deepEqual(read({focus: '40,0,25,900,700', watcher: 900}, io).focus, {appOwned: true, appPid: 7, named: true}, 'a journaled launch is the run\'s own');
+  assert.deepEqual(read({focus: '40,0,25,900,700', watcher: 900}, io).focus, {appOwned: true, appPid: 7, named: true, valueHash: null}, 'a journaled launch is the run\'s own');
   assert.deepEqual(probed, [['focus', '--window', '40,0,25,900,700']]);
   assert.throws(() => read({focus: '99,0,25,900,700'}, io), /does not own/);
   assert.throws(() => read({focus: '7,0,25'}, io), /pid,x,y,w,h/);
-  assert.deepEqual(ownedFocus({focusedApp: {pid: 99}, named: false}, [7]), {appOwned: false, appPid: null, named: false});
+  assert.deepEqual(ownedFocus({focusedApp: {pid: 99}, named: false}, [7]), {appOwned: false, appPid: null, named: false, valueHash: null});
+  // The value's hash leaves only for the named window, which read() allows only when it is the run's own.
+  assert.deepEqual(ownedFocus({focusedApp: {pid: 7}, named: true, valueHash: 'ab'.repeat(32)}, [7]).valueHash, 'ab'.repeat(32));
+  assert.equal(ownedFocus({focusedApp: {pid: 7}, named: false, valueHash: 'ab'.repeat(32)}, [7]).valueHash, null, 'never another window\'s');
   assert.equal(isWatcher([{pid: 5, command: '/A/cua Engine.app/Contents/MacOS/cua-engine --probe watch-activations'}], 5), true);
   assert.equal(isWatcher([{pid: 5, command: '/A/cua Engine.app/Contents/MacOS/cua-engine'}], 5), false);
 });
@@ -171,4 +174,52 @@ test('a Swift reader is compiled once per source and reused', () => {
     fs.writeFileSync(script, 'print("[]")');
     assert.notEqual(compiled(script, dir, {exec}), first, 'a changed source is compiled again');
   } finally { fs.rmSync(dir, {recursive: true, force: true}); }
+});
+
+test('probe start and finish: a scheduled keystroke or switch launched on the run\'s own window and awaited in a second command; one at a time', () => {
+  const dir = tmp();
+  try {
+    const launched = [], awaited = [];
+    const io = {dir, state: () => state, launched: () => [], now: () => 1_000_000,
+      probeLaunch: args => { launched.push(args); return {command: args[0], label: 'x', pid: 901, start: 'T', scratch: '/tmp/s', out: '/tmp/s/out.json', launchedAt: 1_000_000}; },
+      probeAwait: handle => { awaited.push(handle.pid); return {pid: 901, postedAt: 1_003_001, units: 2, chars: 2, mode: 'typed', layout: 'com.apple.keylayout.ABC', presses: []}; }};
+    const started = probeStart({kind: 'keystroke', window: '11,0,25,900,700', text: 'qz', lead: 3000}, io);
+    assert.equal(started.scheduled, 1_003_000);
+    assert.deepEqual(launched[0], ['keystroke', '--user-pid', '11', '--user-bounds', '0,25,900,700', '--at', '1003000', 'qz']);
+    assert.ok(fs.existsSync(join(dir, PROBE_FILE)));
+    assert.throws(() => probeStart({kind: 'keystroke', window: '11,0,25,900,700', text: 'qz', lead: 3000}, io), /a probe is already pending/);
+    // A handle past the probe's bound (a run that died before its finish) is dropped, not a refusal.
+    const later = {...io, now: () => 1_000_000 + 61_000};
+    assert.equal(probeStart({kind: 'keystroke', window: '11,0,25,900,700', text: 'qz', lead: 3000}, later).scheduled, 1_064_000);
+    assert.deepEqual(probeFinish(io).answer.postedAt, 1_003_001);
+    assert.deepEqual(awaited, [901]);
+    assert.ok(!fs.existsSync(join(dir, PROBE_FILE)), 'the handle goes once awaited');
+    assert.throws(() => probeFinish(io), /no probe is pending/);
+    probeStart({kind: 'keystroke', window: '11,0,25,900,700', text: 'r', lead: 3000, mode: 'ansiKeys'}, io);
+    assert.deepEqual(launched[2].slice(0, 2), ['keystroke', '--ansi-keys']);
+    probeFinish(io);
+    probeStart({kind: 'input-source', id: 'com.apple.inputmethod.Korean.2SetKorean', lead: 1500}, io);
+    assert.deepEqual(launched[3], ['input-source', 'com.apple.inputmethod.Korean.2SetKorean', '--at', '1001500']);
+    probeFinish(io);
+    assert.throws(() => probeStart({kind: 'keystroke', window: '99,0,25,900,700', text: 'qz', lead: 3000}, io), /does not own/, 'a keystroke is gated only on the run\'s own window');
+    assert.throws(() => probeStart({kind: 'keystroke', window: '11,0,25,900,700', text: 'qz', lead: 90_000}, io), /--lead/);
+    assert.throws(() => probeStart({kind: 'keystroke', window: '11,0,25,900,700', text: 'q z', lead: 3000}, io), /text/);
+    assert.throws(() => probeStart({kind: 'focus', lead: 3000}, io), /keystroke or input-source/);
+    assert.equal(launched.length, 4, 'nothing launched on a refusal');
+  } finally { fs.rmSync(dir, {recursive: true, force: true}); }
+});
+
+test('source: the owner\'s source and preference saved before the first switch (the live harness\'s record), a selection read back, the per-context preference written and read, the restore kept for the put-back', async () => {
+  const calls = [];
+  let perContext = false, current = 'com.apple.keylayout.ABC';
+  const io = {probe: args => { calls.push(args.join(' ')); if (args[1] === 'current') return {id: current}; current = args[1]; return {selected: true, current: {id: current}}; },
+    readPerContext: () => perContext, writePerContext: value => { perContext = value; },
+    saveInput: () => ({kept: false, saved: {source: {id: 'com.apple.keylayout.ABC'}, perContext: false}}), restoreInput: async ({keep}) => ({keep, sourceRestored: true, perContextRestored: true})};
+  assert.deepEqual(await source('save', {}, io), {kept: false, saved: {source: 'com.apple.keylayout.ABC', perContext: false}});
+  assert.deepEqual(await source('select', {id: 'com.apple.inputmethod.Korean.2SetKorean'}, io), {selected: true, current: 'com.apple.inputmethod.Korean.2SetKorean'});
+  assert.deepEqual(await source('current', {}, io), {current: 'com.apple.inputmethod.Korean.2SetKorean'});
+  assert.deepEqual(await source('per-context', {value: 'on'}, io), {perContext: true});
+  assert.deepEqual(await source('restore', {}, io), {keep: true, sourceRestored: true, perContextRestored: true}, 'the record stays for the put-back to verify');
+  await assert.rejects(() => source('select', {id: 'not an id'}, io), /source id/);
+  await assert.rejects(() => source('per-context', {value: 'maybe'}, io), /on or off/);
 });

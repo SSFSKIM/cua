@@ -102,3 +102,13 @@ test('every helper is self-contained, so a cell embeds it by its source', () => 
   assert.equal(run.focusedIndexOf(vendor.electron), 5);
   assert.equal(run.rowIndexOfName(vendor.finder, 'scene-file-003'), 25);
 });
+
+test('sha256Hex is SHA-256 of the UTF-8, as the focus probe hashes a value, and runs embedded in a cell', async () => {
+  const {createHash} = await import('node:crypto');
+  const strings = ['', 'qz', 'The quick brown fox jumps over the lazy dog.', '한글 테스트 😀', 'ㄱㄴㄷ', 'é', '日本語', '줄1\n줄2', 'x'.repeat(1000), '😀'.repeat(70)];
+  for (const s of strings) assert.equal(text.sha256Hex(s), createHash('sha256').update(s, 'utf8').digest('hex'), JSON.stringify(s.slice(0, 20)));
+  // A lone surrogate is UTF-8 encoded as U+FFFD, as TextEncoder and Swift's String do.
+  assert.equal(text.sha256Hex('\ud83d'), createHash('sha256').update('�', 'utf8').digest('hex'));
+  const embedded = new Function(`${text.EMBEDDED}\nreturn sha256Hex;`)();
+  assert.equal(embedded('한글'), text.sha256Hex('한글'));
+});

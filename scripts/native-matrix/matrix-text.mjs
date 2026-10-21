@@ -181,8 +181,56 @@ export function idCount(ax) {
   return elementLines(ax).filter(l => /(?:^| |, )ID: /.test(l.content)).length;
 }
 
+// The SHA-256 of a string's UTF-8, lowercase hex: what `--probe focus` reports as a value's hash (FocusProbe.swift
+// valueHash), computed inside a cell so a read-back is compared by hash (part 6) with nothing of the value leaving it.
+// Self-contained: the REPL's globals are not assumed to carry TextEncoder or crypto.
+export function sha256Hex(text) {
+  const bytes = [];
+  const s = String(text);
+  for (let i = 0; i < s.length; i++) {
+    let c = s.charCodeAt(i);
+    if (c >= 0xd800 && c <= 0xdbff && i + 1 < s.length && (s.charCodeAt(i + 1) & 0xfc00) === 0xdc00) c = 0x10000 + ((c - 0xd800) << 10) + (s.charCodeAt(++i) - 0xdc00);
+    else if (c >= 0xd800 && c <= 0xdfff) c = 0xfffd;
+    if (c < 0x80) bytes.push(c);
+    else if (c < 0x800) bytes.push(0xc0 | (c >> 6), 0x80 | (c & 63));
+    else if (c < 0x10000) bytes.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));
+    else bytes.push(0xf0 | (c >> 18), 0x80 | ((c >> 12) & 63), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));
+  }
+  const k = [];
+  for (let n = 2; k.length < 64; n++) {
+    let prime = true;
+    for (let d = 2; d * d <= n; d++) if (n % d === 0) { prime = false; break; }
+    if (prime) k.push((Math.cbrt(n) % 1) * 2 ** 32 >>> 0);
+  }
+  const h = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];
+  const length = bytes.length;
+  bytes.push(0x80);
+  while (bytes.length % 64 !== 56) bytes.push(0);
+  const bits = length * 8;
+  for (let i = 7; i >= 0; i--) bytes.push(i >= 4 ? 0 : (bits >>> (i * 8)) & 255);
+  const hi = Math.floor(length / 2 ** 29);
+  bytes[bytes.length - 8] = (hi >>> 24) & 255; bytes[bytes.length - 7] = (hi >>> 16) & 255; bytes[bytes.length - 6] = (hi >>> 8) & 255; bytes[bytes.length - 5] = hi & 255;
+  const rotr = (x, n) => (x >>> n) | (x << (32 - n));
+  const w = new Array(64);
+  for (let at = 0; at < bytes.length; at += 64) {
+    for (let i = 0; i < 16; i++) w[i] = (bytes[at + 4 * i] << 24) | (bytes[at + 4 * i + 1] << 16) | (bytes[at + 4 * i + 2] << 8) | bytes[at + 4 * i + 3];
+    for (let i = 16; i < 64; i++) {
+      const s0 = rotr(w[i - 15], 7) ^ rotr(w[i - 15], 18) ^ (w[i - 15] >>> 3), s1 = rotr(w[i - 2], 17) ^ rotr(w[i - 2], 19) ^ (w[i - 2] >>> 10);
+      w[i] = (w[i - 16] + s0 + w[i - 7] + s1) | 0;
+    }
+    let [a, b, c, d, e, f, g, hh] = h;
+    for (let i = 0; i < 64; i++) {
+      const t1 = (hh + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + ((e & f) ^ (~e & g)) + k[i] + w[i]) | 0;
+      const t2 = ((rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) | 0;
+      hh = g; g = f; f = e; e = (d + t1) | 0; d = c; c = b; b = a; a = (t1 + t2) | 0;
+    }
+    [a, b, c, d, e, f, g, hh].forEach((v, i) => { h[i] = (h[i] + v) | 0; });
+  }
+  return h.map(v => (v >>> 0).toString(16).padStart(8, '0')).join('');
+}
+
 // The helpers' source, for a cell to embed (in this order: each calls only earlier ones or indexOfTarget).
 export const EMBEDDED = [`const windowTitleOf = ${windowTitleOf.toString()};`, indexOfTarget, elementLines, lineOfIndex, parentIndexOf, indexOfPart, valueOfIndex,
   focusedIndexOf, selectedTextOf, selectedIndexesOf, rowIndexOfName, showingOf, scrollBarValueBeside,
   `const SUBROLE_WORDS = ${JSON.stringify(SUBROLE_WORDS)};`, findTarget, `const ROLE_WORDS = ${JSON.stringify(ROLE_WORDS)};`, `const LABELS = ${LABELS.toString()};`,
-  namedLines, idCount].map(f => (typeof f === 'string' ? f : f.toString())).join('\n');
+  namedLines, idCount, sha256Hex].map(f => (typeof f === 'string' ? f : f.toString())).join('\n');

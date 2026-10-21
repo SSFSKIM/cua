@@ -37,6 +37,20 @@
 //       journal names quit as it appears until none has appeared for 3 s, then the intents cleared; one still appearing
 //       after 20 s keeps its intent -> {quit, remaining, pending, waitedMs}. The run and `native-matrix.mjs cleanup`
 //       call it after the recovery, so a controller that died before the launched app appeared never strands it.
+//   probe keystroke --run <dir> --window <pid,x,y,w,h> --text <letters> --lead <ms> [--mode ansiKeys]
+//   probe input-source --run <dir> --source <id> --lead <ms>
+//       a scheduled probe (UserProbe's `keystroke --at`, `input-source --at`) launched now with its time `--lead` ms
+//       ahead on this clock, and not awaited: the action it must fall inside is sent meanwhile. A keystroke is gated on
+//       one of the run's own windows. Its handle is kept in the run directory (PROBE_FILE); one at a time
+//       -> {scheduled, pid}
+//   probe finish --run <dir>
+//       the pending probe awaited (./live-device.mjs awaitProbe: bounded, killed past its bound) -> {answer}: the
+//       keystroke's post time, presses and units, or the switch's time and the sources it read
+//   source save|current|select|per-context|restore --run <dir> [--source <id>] [--value on|off]
+//       the input source for the Unicode matrix (part 6), through the live harness's record and probe: the owner's
+//       source and per-context preference saved before the first switch (./live-device.mjs saveInputSource, first record
+//       wins), a source selected through `--probe input-source` and read back, the preference written and read back, and
+//       the saved ones restored with the record kept, so the put-back's input-source step verifies them again
 //   windowless up --run <dir>
 //       the windowless app of the "app with no window" refusal: a stay-open AppleScript applet with no window and no
 //       reopen handler (built once, ad hoc signed, its own bundle id), launched in the background and journaled as a
@@ -54,7 +68,7 @@ import {launchOf, quitOwned} from '../accept/fixture-app.mjs';
 import {FRONT_WINDOW_SCRIPT} from '../accept/key-guard.mjs';
 import {main as scenesMain, readState, SCENES} from '../repl-parity/scenes-mac.mjs';
 import {alertWatch} from './live-checks.mjs';
-import {defaultIo, processTable} from './live-device.mjs';
+import {defaultIo, PROBE_MS, processTable, restoreInputSource, saveInputSource} from './live-device.mjs';
 import {ownedReading} from './oracle.mjs';
 
 const SCRIPT = fileURLToPath(import.meta.url);
@@ -87,11 +101,13 @@ export const ownedPids = (state, launches = []) => [...Object.values(state?.scen
 
 // ---- reads ---------------------------------------------------------------------------------------------------------------
 
-// The focus probe's report as it may leave the device. -> {appOwned, appPid, named}.
+// The focus probe's report as it may leave the device: the value's hash only for the named window, which read() names
+// only when it is the run's own. -> {appOwned, appPid, named, valueHash}.
 export function ownedFocus(report, owned) {
   const pid = report?.focusedApp?.pid ?? null;
-  const mine = Number.isInteger(pid) && owned.includes(pid);
-  return {appOwned: mine, appPid: mine ? pid : null, named: report?.named === true};
+  const mine = Number.isInteger(pid) && owned.includes(pid), named = report?.named === true;
+  const hash = named && /^[0-9a-f]{64}$/.test(report?.valueHash ?? '') ? report.valueHash : null;
+  return {appOwned: mine, appPid: mine ? pid : null, named, valueHash: hash};
 }
 
 // The oracle's reading. io: {frontWindow(), probe(args), state(), launched(), watcherRuns(pid)}.
@@ -109,6 +125,73 @@ export function read({focus = null, watcher = null}, io) {
 
 // Whether `pid` is still the activation watcher (the approved bundle's `--probe watch-activations`).
 export const isWatcher = (table, pid) => table.some(p => p.pid === pid && /\/cua-engine --probe watch-activations\b/.test(p.command));
+
+// ---- the scheduled probes -------------------------------------------------------------------------------------------------
+
+export const PROBE_FILE = 'matrix-probe.json';
+const WINDOW_ARG = /^\d+,-?\d+(\.\d+)?,-?\d+(\.\d+)?,\d+(\.\d+)?,\d+(\.\d+)?$/;
+const MAX_LEAD_MS = 30_000;
+
+// A scheduled probe launched now, its handle kept. io: {dir, state(), launched(), now(), probeLaunch(args)}.
+// -> {scheduled (the device time it acts at), pid}.
+export function probeStart({kind, window, text, mode, id, lead}, io) {
+  const file = join(io.dir, PROBE_FILE);
+  if (fs.existsSync(file)) {
+    // A handle past the probe's bound is a run's that died before its finish (the recovery stopped the probe): dropped.
+    const stale = JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (!(io.now() - stale.launchedAt > PROBE_MS)) throw new Error('a probe is already pending: finish it first');
+    fs.rmSync(stale.scratch, {recursive: true, force: true});
+    fs.rmSync(file, {force: true});
+  }
+  if (!Number.isSafeInteger(lead) || lead < 0 || lead > MAX_LEAD_MS) throw new Error(`--lead needs the milliseconds ahead, at most ${MAX_LEAD_MS}`);
+  let args;
+  if (kind === 'keystroke') {
+    if (!WINDOW_ARG.test(window ?? '')) throw new Error('--window needs pid,x,y,w,h');
+    const [pid, ...bounds] = window.split(',');
+    if (!ownedPids(io.state(), io.launched()).includes(Number(pid))) throw new Error('--window names a window of a process the run does not own');
+    if (!/^[A-Za-z0-9]{1,16}$/.test(text ?? '')) throw new Error('--text is a few letters or digits');
+    if (mode !== undefined && mode !== 'ansiKeys') throw new Error('--mode is ansiKeys or absent');
+    args = ['keystroke', ...(mode === 'ansiKeys' ? ['--ansi-keys'] : []), '--user-pid', pid, '--user-bounds', bounds.join(',')];
+  } else if (kind === 'input-source') {
+    if (!/^[A-Za-z0-9._-]+$/.test(id ?? '')) throw new Error('--source needs an input source id');
+    args = ['input-source', id];
+  } else throw new Error('probe keystroke or input-source');
+  const scheduled = io.now() + lead;
+  args.push('--at', String(scheduled));
+  if (kind === 'keystroke') args.push(text);
+  const handle = io.probeLaunch(args);
+  fs.writeFileSync(file, `${JSON.stringify(handle)}\n`, {mode: 0o600});
+  return {scheduled, pid: handle.pid ?? null};
+}
+
+// The pending probe awaited; its handle removed whatever the await answered. io: {dir, probeAwait(handle)}. -> {answer}.
+export function probeFinish(io) {
+  const file = join(io.dir, PROBE_FILE);
+  if (!fs.existsSync(file)) throw new Error('no probe is pending');
+  const handle = JSON.parse(fs.readFileSync(file, 'utf8'));
+  try { return {answer: io.probeAwait(handle)}; } finally { fs.rmSync(file, {force: true}); }
+}
+
+// ---- the input source ----------------------------------------------------------------------------------------------------
+
+// io: {probe(args), readPerContext(), writePerContext(value), saveInput(), restoreInput({keep})}.
+export async function source(action, {id, value} = {}, io) {
+  switch (action) {
+    case 'save': { const out = io.saveInput(); return {kept: out.kept, saved: {source: out.saved?.source?.id ?? null, perContext: out.saved?.perContext ?? null}}; }
+    case 'current': return {current: io.probe(['input-source', 'current'])?.id ?? null};
+    case 'select': {
+      if (!/^[A-Za-z0-9._-]+$/.test(id ?? '')) throw new Error('--source needs an input source id');
+      const out = io.probe(['input-source', id]);
+      return {selected: out?.selected === true, current: io.probe(['input-source', 'current'])?.id ?? null};
+    }
+    case 'per-context':
+      if (!['on', 'off'].includes(value)) throw new Error('--value is on or off');
+      io.writePerContext(value === 'on');
+      return {perContext: io.readPerContext()};
+    case 'restore': return io.restoreInput({keep: true});
+    default: throw new Error('source save|current|select|per-context|restore');
+  }
+}
 
 // ---- the alert watch -----------------------------------------------------------------------------------------------------
 
@@ -258,7 +341,7 @@ function parse(argv) {
   }
   return {command, positional, flags};
 }
-const USAGE = 'usage: matrix-device.mjs compile|read|alerts|launched|windowless --run <dir> … | step <scenes-mac.mjs arguments>';
+const USAGE = 'usage: matrix-device.mjs compile|read|alerts|launched|probe|source|windowless --run <dir> … | step <scenes-mac.mjs arguments>';
 const sleep = ms => new Promise(done => setTimeout(done, ms));
 
 export async function main(argv, {io: given = {}} = {}) {
@@ -274,6 +357,8 @@ export async function main(argv, {io: given = {}} = {}) {
     watcherRuns: pid => isWatcher(processTable(), pid),
     probe: live.probe, runningApps: live.runningApps, launchOf: pid => launchOf(pid), quit: pids => quitOwned(pids, {waitMs: LAUNCH_QUIT_MS}),
     app: () => windowlessApp(), open: app => run('/usr/bin/open', ['-n', '-g', '-a', app]), sleep, now: Date.now,
+    probeLaunch: live.probeLaunch, probeAwait: live.probeAwait, readPerContext: live.readPerContext, writePerContext: live.writePerContext,
+    saveInput: () => saveInputSource({io: live}), restoreInput: ({keep}) => restoreInputSource({io: live, keep}),
     ...given,
   };
   switch (command) {
@@ -287,6 +372,10 @@ export async function main(argv, {io: given = {}} = {}) {
       if (positional[0] === 'quit') return quitLaunched(io);
       if (positional[0] === 'settle') return settleLaunches({}, io);
       throw new Error(USAGE);
+    case 'probe':
+      if (positional[0] === 'finish') return timed(() => probeFinish(io));
+      return timed(() => probeStart({kind: positional[0], window: flags.window, text: flags.text, mode: flags.mode, id: flags.source, lead: Number(flags.lead)}, io));
+    case 'source': return timed(() => source(positional[0], {id: flags.source, value: flags.value}, io));
     case 'windowless':
       if (positional[0] === 'up') return timed(() => windowlessUp(io));
       throw new Error(USAGE);

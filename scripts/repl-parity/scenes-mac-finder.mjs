@@ -143,6 +143,12 @@ export function recordVisibleState(file, visible) {
   writeRecord(file, {...record, visible: Object.fromEntries(FINDER_PARTS.map(part => [part, visible[part] === true]))});
   return {visible: readSavedPreferences(file).visible, kept: false};
 }
+// Drops the restored mark, durably, before a toggle's key is sent: a run that dies between the key and its count must
+// not leave a record that reads as restored while Finder draws the part toggled.
+export function unmarkVisibleRestored(file) {
+  const {visibleRestoredAt, ...record} = existingRecord(file);
+  if (visibleRestoredAt !== undefined) writeRecord(file, record);
+}
 // Counts one toggle of `part` sent, and drops any restored mark: the window has moved since.
 export function recordToggleSent(file, part) {
   const {visibleRestoredAt, ...record} = existingRecord(file);

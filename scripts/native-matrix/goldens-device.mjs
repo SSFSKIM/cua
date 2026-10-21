@@ -55,6 +55,7 @@ import {normalizeDrift} from '../../test/native-goldens/compare.mjs';
 import {SCENES, activateScene, finderOwned, fixedStateProblems, guardOf, readState, teardownFor} from '../repl-parity/scenes-mac.mjs';
 import {
   DESELECT_ALL_KEY, FINDER_CHROME, SAVED_PREFERENCES, finderChromeShown, markVisibleRestored, recordToggleSent, recordVisibleState, toggleUntil,
+  unmarkVisibleRestored,
 } from '../repl-parity/scenes-mac-finder.mjs';
 import {actionIndex} from '../repl-parity/scenes-mac-text.mjs';
 import {frontWindow} from '../repl-parity/scenes-mac-device.mjs';
@@ -243,7 +244,7 @@ export async function runSteps({id, phase, run, record, client, io, screenshots 
     } else if (step.chrome) {
       const toggle = FINDER_CHROME.find(part => part.id === step.chrome).toggle;
       done.push({chrome: step.chrome, ...await toggleUntil({part: step.chrome, shown: step.shown, observe: chromeShown,
-        toggle: () => press(toggle, step.guard), sent: part => recordToggleSent(saved, part)})});
+        toggle: () => { unmarkVisibleRestored(saved); return press(toggle, step.guard); }, sent: part => recordToggleSent(saved, part)})});
     } else done.push({pressKey: step.pressKey, route: await press(step.pressKey, step.guard)});
   }
   return {scene: id, phase, steps: done};

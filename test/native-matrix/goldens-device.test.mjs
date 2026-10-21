@@ -493,6 +493,28 @@ test('Finder setup observes only the run\'s own window: another window in front 
   assert.deepEqual(finder.pressed, ['super+2', 'alt+super+a']);
 });
 
+test('the restored marker is dropped from the saved record before a toggle\'s key is sent, so a run that dies right after it is never read as restored', async () => {
+  const finder = finderEngine({keys: {ShowSidebar: true}, state: {sidebar: true, statusBar: false, pathBar: false}, drawn: {sidebar: true, statusBar: true, pathBar: false}});
+  const {run, file} = finderRun(finder);
+  await run('setup');
+  await run('teardown');
+  assert.ok(readSavedPreferences(file).visibleRestoredAt, 'restored, as a teardown leaves it');
+  // A new setup's first chrome key: the record must already be unmarked when it goes out; then the run dies.
+  const execute = finder.client.execute, atKey = [];
+  finder.client.execute = async (method, args) => {
+    if (method === 'press_key' && args.key === 'ctrl+super+s') {
+      atKey.push('visibleRestoredAt' in readSavedPreferences(file));
+      await execute(method, args);
+      throw new Error('the run died after the key');
+    }
+    return execute(method, args);
+  };
+  await assert.rejects(run('setup'), /the run died/);
+  assert.deepEqual(atKey, [false], 'unmarked before the key was sent');
+  assert.equal('visibleRestoredAt' in readSavedPreferences(file), false);
+  assert.equal(finder.drawn.sidebar, false, 'the key did hide the sidebar');
+});
+
 test('a run that died after its setup is restored from the saved file: the next run\'s teardown brings the window to the owner\'s visible state', async () => {
   // The dead run hid the sidebar and the status bar and never tore down; its record (keys, visible state) is kept.
   const finder = finderEngine({keys: {ShowSidebar: true}, state: {sidebar: true, statusBar: false, pathBar: false}, drawn: {sidebar: true, statusBar: true, pathBar: false}});

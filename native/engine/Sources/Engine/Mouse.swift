@@ -99,10 +99,6 @@ struct ClickTarget {
   let windowFrame: CGRect?
   let windowID: CGWindowID?
   let pid: pid_t
-
-  /// The point in the window's own coordinates (its origin subtracted; unflipped, since F does not say when the
-  /// vendor's flipped case applies).
-  var windowLocal: CGPoint? { windowFrame.map { CGPoint(x: point.x - $0.minX, y: point.y - $0.minY) } }
 }
 
 /// The events of `count` clicks at `target` with `flags`, made and ready to post; empty when AppKit made none.
@@ -112,21 +108,74 @@ func clickEvents(_ target: ClickTarget, button: MouseButton, count: Int, flags: 
   for plan in clickEventPlan(button, count: count) {
     let number = numbers[plan.pair] ?? nextEventNumber()
     numbers[plan.pair] = number
-    guard let event = NSEvent.mouseEvent(with: plan.type, location: target.point, modifierFlags: [], timestamp: 0,
-                                         windowNumber: Int(target.windowID ?? 0), context: nil, eventNumber: number,
-                                         clickCount: plan.clickCount, pressure: 1.0)?.cgEvent else { return [] }
-    event.flags = flags
-    event.location = target.point
-    event.setIntegerValueField(.mouseEventButtonNumber, value: button.number)
-    event.setIntegerValueField(.mouseEventSubtype, value: 3)
-    if let windowID = target.windowID {
-      event.setIntegerValueField(eventField(91), value: Int64(windowID))
-      event.setIntegerValueField(eventField(92), value: Int64(windowID))
-      if let local = target.windowLocal { setWindowLocation?(event, local) }
-    }
+    guard let event = mouseEvent(plan.type, at: target.point, in: target, number: number, clickCount: plan.clickCount,
+                                 button: button, flags: flags) else { return [] }
     events.append(event)
   }
   return events
+}
+
+/// Where each of a drag's events lies.
+enum DragPoint: Equatable { case start, middle, end }
+
+/// One event of a drag, as data (F §16.6): its type, its point, its click count, and whether it takes the drag's
+/// second event number (the dragged events do; the down and the up share the first).
+struct DragEventPlan: Equatable {
+  let type: NSEvent.EventType
+  let at: DragPoint
+  let clickCount: Int
+  let secondNumber: Bool
+}
+
+/// The vendor's drag (FUN_100744b44): left down at the start (click count 1, number N), dragged at the start, the
+/// midpoint and the end (click count 0, number N + 1), left up at the end (click count 1, number N).
+let dragEventPlan: [DragEventPlan] = [
+  DragEventPlan(type: .leftMouseDown, at: .start, clickCount: 1, secondNumber: false),
+  DragEventPlan(type: .leftMouseDragged, at: .start, clickCount: 0, secondNumber: true),
+  DragEventPlan(type: .leftMouseDragged, at: .middle, clickCount: 0, secondNumber: true),
+  DragEventPlan(type: .leftMouseDragged, at: .end, clickCount: 0, secondNumber: true),
+  DragEventPlan(type: .leftMouseUp, at: .end, clickCount: 1, secondNumber: false),
+]
+
+/// A drag's five events from `start` to `end`, all aimed at the start's window (`window`, whose frame and id place
+/// them), with `flags`; empty when AppKit made none. A drag takes two event numbers.
+func dragEvents(from start: CGPoint, to end: CGPoint, window: ClickTarget, flags: CGEventFlags) -> [CGEvent] {
+  let first = nextEventNumber(), second = nextEventNumber()
+  let middle = CGPoint(x: (start.x + end.x) / 2, y: (start.y + end.y) / 2)
+  var events: [CGEvent] = []
+  for plan in dragEventPlan {
+    let point = plan.at == .start ? start : plan.at == .middle ? middle : end
+    guard let event = mouseEvent(plan.type, at: point, in: window, number: plan.secondNumber ? second : first,
+                                 clickCount: plan.clickCount, button: .left, flags: flags) else { return [] }
+    events.append(event)
+  }
+  return events
+}
+
+/// One mouse event made by AppKit with the vendor's fields (F §5.3): the global point, the button in field 3, subtype 3
+/// in field 7, and the window's id and window-local point from `window` when it names one.
+private func mouseEvent(_ type: NSEvent.EventType, at point: CGPoint, in window: ClickTarget, number: Int, clickCount: Int,
+                        button: MouseButton, flags: CGEventFlags) -> CGEvent? {
+  guard let event = NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: 0,
+                                       windowNumber: Int(window.windowID ?? 0), context: nil, eventNumber: number,
+                                       clickCount: clickCount, pressure: 1.0)?.cgEvent else { return nil }
+  event.flags = flags
+  event.location = point
+  event.setIntegerValueField(.mouseEventButtonNumber, value: button.number)
+  event.setIntegerValueField(.mouseEventSubtype, value: 3)
+  stampWindow(event, id: window.windowID, frame: window.windowFrame, point: point, windowIDField: false)
+  return event
+}
+
+/// Aims an event at a window: its id in fields 91 and 92 (and 51 when `windowIDField`, a scroll's), and the point in the
+/// window's own coordinates through the private CGEventSetWindowLocation (unflipped, F does not say when the vendor's
+/// flipped case applies). Nothing without a window id.
+func stampWindow(_ event: CGEvent, id: CGWindowID?, frame: CGRect?, point: CGPoint, windowIDField: Bool) {
+  guard let id else { return }
+  if windowIDField { event.setIntegerValueField(eventField(51), value: Int64(id)) }
+  event.setIntegerValueField(eventField(91), value: Int64(id))
+  event.setIntegerValueField(eventField(92), value: Int64(id))
+  if let frame { setWindowLocation?(event, CGPoint(x: point.x - frame.minX, y: point.y - frame.minY)) }
 }
 
 /// Posts `events` to `pid` back to back, each stamped with the current time, through `post` (route 3's seam passes its

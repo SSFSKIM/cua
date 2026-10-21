@@ -34,9 +34,13 @@
 //   no Input Monitoring grant), cua/entered (the UTF-16 units a type_text entered, on its result and on the error that
 //   stopped it) and cua/routeAdvice (the per-app route-4 override, once route 3's guard has failed three actions in a
 //   row for the app). (cua/serviceMs is the wrapper's, M2a.)
+// - The unknown secondary action's sentence: the vendor's ends with the decimal element index, which only the service
+//   knows, so the engine's invalidSecondaryAction is answered as `<action> is not a valid secondary action for <index>`
+//   (R/F-helper-logic.md §16.3), its code, name and meta kept.
 import {createEngineClient} from './client.mjs';
 import {createObservations} from './observations.mjs';
 import {createPolicy, toolSurface} from './policy.mjs';
+import {SkyComputerUseError} from './protocol.mjs';
 
 export const METHODS = ['list_apps', 'get_app_state', 'click', 'drag', 'paste', 'perform_secondary_action', 'press_key', 'scroll', 'select_text', 'set_value', 'type_text'];
 const APP_SCOPED = new Set(METHODS.filter(method => method !== 'list_apps'));
@@ -156,7 +160,16 @@ export function createService({nodeRepl, client = null}) {
       args.element = element.token;
       lineage = element.lineage;
     }
-    const result = await call(method, args, {lineage});
+    let result;
+    try {
+      result = await call(method, args, {lineage});
+    } catch (error) {
+      if (method === 'perform_secondary_action' && error?.name === 'SkyComputerUseError' && error.errorName === 'invalidSecondaryAction') {
+        throw new SkyComputerUseError({code: error.code, reason: `${String(input.action).slice(0, 256)} is not a valid secondary action for ${index}`,
+          errorName: error.errorName, meta: error.meta});
+      }
+      throw error;
+    }
     if (result?.meta) setMeta(inputMeta(result.meta));
     return undefined;
   }

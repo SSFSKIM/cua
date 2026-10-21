@@ -34,6 +34,9 @@ final class ConnectionState: @unchecked Sendable {
   /// Apps acted on since their last observation, whose next get_app_state settles first (the vendor's deferred
   /// settle, F §8.6). An input method calls `markActed` once its events are posted.
   var needsSettle: Set<String> = []
+  /// Per app (by lineage key), the menu-bar item a plain click recorded, at which observations root their walk
+  /// (MenuRecord.swift).
+  var menuRecords: [String: AXUIElement] = [:]
 
   init(id: Int, fd: Int32) {
     self.id = id
@@ -117,6 +120,9 @@ final class Revision {
   var children: [Int: [Int]] = [:]
   var root: Int?
   var menu: [Int] = []
+  /// The recorded menu-bar item the observation walked from instead of the window (MenuRecord.swift); nil for a walk of
+  /// the window and the menu bar. A re-fetch walks the same root.
+  var menuRoot: AXUIElement?
 
   /// A sibling list of this revision with its handles: the menu bar's items, a node's children, or (no parent) the
   /// window's root.
@@ -169,6 +175,13 @@ final class Lineage {
   }
 
   func entry(_ number: Int) -> LineageEntry? { current?.entries[number] }
+
+  /// The entry's identity as `data` reads now, after an action changed what it matches by (set_value's write: the
+  /// vendor re-fetches ignoring the value, F §16.4, so the element stays resolvable by its new value).
+  func refreshIdentity(_ number: Int, _ data: ElementData) {
+    guard let entry = current?.entries[number] else { return }
+    current?.entries[number]?.identity = ElementIdentity(data, pid: entry.identity.pid)
+  }
 
   func replace(_ number: Int, element: AXUIElement, owner: pid_t) {
     current?.entries[number]?.element = element
@@ -229,7 +242,7 @@ final class Lineage {
     let before = observed.entries.values.filter { $0.identity.matches(entry.identity) }.count
     var found: [AXUIElement] = []
     if before == 1 {
-      let tree = resolver.tree()
+      let tree = resolver.tree(observed.menuRoot)
       found = matching(entry.identity, window: tree.window, menuItems: tree.menuItems, source: source)
     }
     switch RefetchVerdict.of(before: before, after: found.count) {
@@ -251,9 +264,10 @@ struct ElementResolver {
   var stillValid: (AXUIElement) -> Bool
   /// A fresh source for the re-read and the re-fetch's walk.
   var source: () -> ElementSource
-  /// What a re-fetch walks: the app's primary window now and the menu-bar elements an observation reads (the bar, then
-  /// its items but the Apple menu; `menuBarElements`).
-  var tree: () -> (window: AXUIElement?, menuItems: [AXUIElement])
+  /// What a re-fetch walks: given the recorded menu-bar item the observation walked from, that item alone; otherwise
+  /// the app's primary window now and the menu-bar elements an observation reads (the bar, then its items but the Apple
+  /// menu; `menuBarElements`).
+  var tree: (_ menuRoot: AXUIElement?) -> (window: AXUIElement?, menuItems: [AXUIElement])
 
   /// The engine's: `lineage`'s watches, the live handle, and `pid`'s application element.
   static func live(_ lineage: Lineage, pid: pid_t) -> ElementResolver {
@@ -261,7 +275,8 @@ struct ElementResolver {
       invalidated: { lineage.invalidates($0.element, owner: $0.identity.pid) },
       stillValid: { copyAttribute($0, kAXRoleAttribute).error != .invalidUIElement },
       source: { ElementSource() },
-      tree: {
+      tree: { menuRoot in
+        if let menuRoot { return (prepare(menuRoot), []) }
         let application = prepare(AXUIElementCreateApplication(pid))
         // The menu-bar elements as the observation reads them.
         let bar = elementAttribute(application, kAXMenuBarAttribute)

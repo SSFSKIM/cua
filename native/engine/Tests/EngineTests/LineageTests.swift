@@ -24,7 +24,7 @@ private final class FakeResolution {
       invalidated: { [self] _ in invalidated },
       stillValid: { [self] _ in valid },
       source: { [self] in FakeSource(tree) },
-      tree: { [self] in
+      tree: { [self] _ in
         treeReads += 1
         return (Engine.element(window), menu.map(Engine.element))
       })

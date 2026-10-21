@@ -740,6 +740,31 @@ final class CSSSanitizerTests: XCTestCase {
     }
   }
 
+  /// Comment-looking text inside strings is not a comment: a loading token between two such strings is seen and removed
+  /// (review finding, round 4), in a declaration list and in a sheet.
+  func testCommentDelimitersInsideStringsHideNothing() {
+    let hidden = #"background-image: var(--a, "/*"), url(http://127.0.0.1:9/x.png), var(--b, "*/")"#
+    XCTAssertEqual(sanitizedDeclarations("--a: none; --b: none; " + hidden), "--a: none; --b: none")
+    XCTAssertEqual(sanitizedDeclarations(#"color: red; content: '/*' url(x) '*/'"#), "color: red")
+    XCTAssertEqual(sanitizedDeclarations(#"color: red; content: "\"/*" url(x) "*/""#), "color: red", "an escaped quote does not end the string")
+    XCTAssertEqual(sanitizedSheet("p { --a: none; --b: none; \(hidden); }"), "p { --a: none; --b: none }")
+    XCTAssertEqual(sanitizedSheet(#"p { color: red } i[title="/*"] { background: url(x) } b[title="*/"] { color: blue }"#),
+                   #"p { color: red }"# + "\n" + #"b[title="*/"] { color: blue }"#)
+  }
+
+  /// The converse: a real comment between two strings still hides nothing and loads nothing.
+  func testARealCommentBetweenStringsIsStillAComment() {
+    XCTAssertEqual(sanitizedDeclarations(#"color: red; font-family: "a" /* url(x) */ "b""#), #"color: red; font-family: "a" /* url(x) */ "b""#)
+    XCTAssertEqual(sanitizedDeclarations(#"color: red; background: "a" /* x */ url(y)"#), "color: red")
+  }
+
+  /// A sheet may end with a closed comment.
+  func testASheetMayEndWithAComment() {
+    XCTAssertEqual(sanitizedSheet("p{font-weight:bold} /* c */"), "p { font-weight:bold }")
+    XCTAssertEqual(sanitizedSheet("p{font-weight:bold} /* c */ \n /* d */"), "p { font-weight:bold }")
+    XCTAssertNil(sanitizedSheet("p{font-weight:bold} /* open"))
+  }
+
   func testWhatCannotBeParsedIsDroppedWhole() {
     for text in [#"color: red; content: "abc"#, "color: red; /* open", "color: red; width: calc(1px", "color: red; } p { x: y",
                  "color red", #"color: red; background: url(x"#, "color: red\\"] {

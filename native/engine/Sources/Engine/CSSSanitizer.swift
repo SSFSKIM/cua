@@ -20,15 +20,19 @@ private let loadingRules: Set<String> = ["import", "font-face", "namespace"]
 
 private typealias Scalars = [Unicode.Scalar]
 
-/// Text with comments removed and escapes decoded (`\` with one to six hex digits and one optional whitespace, `\` with a
-/// newline as nothing, `\` with any other character as that character), lowercased; nil for an unterminated comment or
-/// a trailing backslash.
+/// Text with comments removed and escapes decoded, lowercased: the token stream the CSS parser reads, so the check sees
+/// what the import will. Comments are recognized only outside strings, as `boundary` and the parser recognize them (a
+/// `/*` inside a string is text); escapes (`\` with one to six hex digits and one optional whitespace, `\` with a newline
+/// as nothing, `\` with any other character as that character) are decoded inside strings and out, and an escaped quote
+/// never ends a string. A string's content stays in the text, so a loading token inside one is still caught. Nil for an
+/// unterminated comment or string, or a trailing backslash.
 private func decoded(_ text: Scalars) -> String? {
   var result = String.UnicodeScalarView()
+  var quote: Unicode.Scalar?
   var i = 0
   while i < text.count {
     let c = text[i]
-    if c == "/", i + 1 < text.count, text[i + 1] == "*" {
+    if quote == nil, c == "/", i + 1 < text.count, text[i + 1] == "*" {
       guard let end = commentEnd(text, i) else { return nil }
       i = end
     } else if c == "\\" {
@@ -45,10 +49,16 @@ private func decoded(_ text: Scalars) -> String? {
         i = j
       }
     } else {
+      if let open = quote {
+        if c == open { quote = nil }
+      } else if c == "\"" || c == "'" {
+        quote = c
+      }
       result.append(c)
       i += 1
     }
   }
+  guard quote == nil else { return nil }
   return String(result).lowercased()
 }
 
@@ -158,8 +168,8 @@ private func sanitizedRules(_ scalars: Scalars) -> String? {
     switch boundary(scalars, from: start, stops: [";", "{"]) {
     case .invalid: return nil
     case .end:
-      // Trailing text with no block or semicolon: whitespace only, or it is dropped whole.
-      guard trimmed(Scalars(scalars[start...])).isEmpty else { return nil }
+      // Trailing text with no block or semicolon: whitespace and closed comments only, or it is dropped whole.
+      guard decoded(Scalars(scalars[start...]))?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == true else { return nil }
       start = scalars.count
     case .found(let index):
       let prelude = Scalars(scalars[start..<index])

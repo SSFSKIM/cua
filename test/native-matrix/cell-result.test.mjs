@@ -21,6 +21,15 @@ test('the verdict: refused, then no-verdict without a valid row, fail on a bad r
   assert.equal(verdictOf({complete: true, rows: [row(), row({id: 'c', ok: false, invalid: 'not in front'})]}), 'pass', 'an invalid row counts for nothing');
 });
 
+test('a declared row is not ok and does not fail the verdict; it needs a kind and a cause', () => {
+  const defect = row({id: 'hscroll/vendor', engine: 'vendor', ok: false, declared: {kind: 'vendor-defect', cause: 'the vendor scrolls the wrong axis'}});
+  assert.equal(verdictOf({complete: true, rows: [row(), defect]}), 'pass');
+  assert.equal(verdictOf({complete: true, rows: [defect]}), 'pass');
+  assert.equal(verdictOf({complete: false, rows: [defect]}), 'fail', 'an incomplete cell still never passes');
+  assert.deepEqual(validateCellResult(base({rows: [row(), defect]})), []);
+  assert.ok(rowProblems({...defect, declared: {kind: 'vendor-defect'}}).some(p => /declared needs a kind and a cause/.test(p)));
+});
+
 test('a built result conforms, carries its verdict and bounds its sentences', () => {
   const result = base({rows: [row({error: 'x'.repeat(400)})], problems: ['y'.repeat(400)]});
   assert.equal(result.schema, CELL_RESULT_SCHEMA);

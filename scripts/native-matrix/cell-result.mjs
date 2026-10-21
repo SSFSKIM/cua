@@ -14,7 +14,8 @@
 //              (`_meta['cua/nativeEngine']`; a lane that drives the engine's socket directly names host null)
 //   complete   true when the cell ran to its end and its put-back held; a result that is not complete is never a pass
 //   verdict    'pass' | 'fail' | 'no-verdict' | 'refused' (verdictOf: refused before anything on the device changed;
-//              no-verdict when no row is valid; fail when any valid row is not ok or the result is not complete; else pass)
+//              no-verdict when no row is valid; fail when any valid row is neither ok nor declared, or the result is not
+//              complete; else pass)
 //   problems   [string]: why it is not complete, each a bounded sentence
 //   rows       [Row]
 //   putBack    optional, the put-back's answer ({ok, ...})
@@ -25,10 +26,11 @@
 //              (part 5's finding elements), 'interference' (part 5's not interfering), 'launch' (part 4's launch path),
 //              'concurrent', 'intervention', 'unicode', 'settle' (M2b.3), 'residue' (M2a's residue, M2b.1)
 //   id         the row's name within its section, stable across runs and engines, so two engines' rows pair by it:
-//              a method row `<target>/<regime>/<method>.<case>` (the target a scene or `openPanel`), a speed row
+//              a method row `<target>/<regime>/<method>.<case>` (the target a scene or `openPanel`; a background row
+//              ends `@<user>`, the user scene), a speed row
 //              `<scene>/<op>` (op getAXState, getScreenshot, listApps or `method.<method>.<case>`), a finding row
 //              `<scene>/target.<id>` (outcome {found, resolved}), `<scene>/lines` (outcome {lines, named, unclassified})
-//              or `<scene>/ids` (outcome {ids}), a launch row `<scene>/background/launch`, a residue row whatever its
+//              or `<scene>/ids` (outcome {ids}), a launch row `<scene>/background/launch@<user>`, a residue row whatever its
 //              cell names it
 //   engine     'vendor' | 'cua': the engine the row measured (a residue cell comparing both carries rows of each)
 //   sample     a positive integer (1 when the cell takes one)
@@ -43,8 +45,10 @@
 //   outcome    optional, what was read back: booleans, numbers, error names, bounded sentences; never accessibility
 //              text, titles or values of windows the run does not own
 //   interference   optional, part 5's oracle on the row (./oracle.mjs): {ok, frontmost, topWindow, activations, route4}
-//   declared   optional, a declared cause that keeps a row from counting against the engine (an owner-accepted route-4
-//              or self-activating family, a vendor defect): {kind, cause}
+//   declared   optional, the declared cause of a row that is not ok, which keeps it from failing the verdict (a vendor
+//              defect the cell exists to show, an expected difference): {kind, cause}. Never silent: the summary lists
+//              every declared row that is not ok. The oracle's own declarations (an owner-accepted route 4, a family
+//              that activates itself at launch) are `interference.declared`, and do not excuse the row's outcome.
 //   error      optional, a bounded sentence (at most 300 characters)
 // Anything else a row carries is kept and ignored by the summary.
 import * as fs from 'node:fs';
@@ -64,13 +68,14 @@ const isTime = value => isString(value) && !Number.isNaN(Date.parse(value));
 const bounded = text => String(text).slice(0, ERROR_CHARS);
 
 // The cell's verdict from its rows: refused before anything ran; no-verdict without a valid row; fail on any valid row
-// that is not ok, or when the cell did not complete; else pass.
+// that is neither ok nor declared (a declared row is not ok and says why), or when the cell did not complete; else pass.
+export const counts = row => row.ok === true || row.declared !== undefined;
 export function verdictOf({refused = false, complete, rows}) {
   if (refused) return 'refused';
   const valid = rows.filter(row => !row.invalid);
   if (!valid.length) return 'no-verdict';
   if (!complete) return 'fail';
-  return valid.every(row => row.ok) ? 'pass' : 'fail';
+  return valid.every(counts) ? 'pass' : 'fail';
 }
 
 // A CellResult from its parts, the verdict computed and the errors bounded. -> CellResult.

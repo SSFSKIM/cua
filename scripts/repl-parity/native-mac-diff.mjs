@@ -3,11 +3,12 @@
 // runs of the suite (./native-mac.mjs), one per engine, from one sitting.
 //
 // The accessibility texts are compared exactly as the renderer's goldens are (test/native-goldens/compare.mjs, the same
-// comparator, not a second one): modulo index renumbering, element lines matched in order by role, flags, title and
-// labels, each matched pair then compared whole, indexes followed through the matched lines into the focused-element
-// trailer and into a diff's `Removed element IDs:` ranges and `~` lines. Per scene three comparisons, the goldens' three:
-// `full` (the fixed state), `before` (the action's first observation) and `diff` (the observation right after the
-// action, its indexes read through `before`'s matched lines). A golden adding more than a tenth of its lines needs a
+// comparator, not a second one): element lines matched in order by index, role, flags, title and labels, each matched
+// pair then compared whole, the trailer and a diff's `Removed element IDs:` as text. Indexes are compared, never
+// renumbered away: the renderer prints free text raw, so no line is certainly an element line rather than a value's
+// (the comparator's own account); a numbering one lane shifted shows as differences, in plain view. Per scene three
+// comparisons, the goldens' three: `full` (the fixed state), `before` (the action's first observation) and `diff` (the
+// observation right after the action). A golden adding more than a tenth of its lines needs a
 // declaration citing a Decision Log entry (part 3's 10% rule), as the goldens' test applies it to the two trees.
 //
 // The observation right after the action is compared in the form it came in: a default-mode observation is a diff, the
@@ -139,7 +140,6 @@ export function diffNativeMac(vendor, cua, {declarations = []} = {}) {
   const applies = (scene, golden) => declarations.filter(rule => (rule.scene === scene || rule.scene === '*') && goldensOf(rule).includes(golden));
   for (const scene of SCENE_IDS) {
     const out = scenes[scene] = {};
-    let indexMap = null;
     for (const golden of ['full', 'before', 'diff']) {
       const [cell, kind] = TEXT_OF[golden];
       const v = vendor.text(scene, kind), c = cua.text(scene, kind);
@@ -151,7 +151,7 @@ export function diffNativeMac(vendor, cua, {declarations = []} = {}) {
       }
       const rules = applies(scene, golden).filter(rule => rule.kind !== 'settle');
       // The fixed state and the action's first observation are full trees; the one right after the action is compared
-      // in the form both lanes gave it, a diff (or the no-change answer) through `before`'s indexes, a full tree as one.
+      // in the form both lanes gave it, a diff (or the no-change answer) as one, a full tree as one.
       const forms = [formOf(v), formOf(c)], diffLike = form => form === 'diff' || form === 'noChange';
       const as = golden !== 'diff' ? (forms.every(form => form === 'full') ? 'full' : null)
         : forms.every(diffLike) ? 'diff' : forms.every(form => form === 'full') ? 'full' : null;
@@ -161,8 +161,7 @@ export function diffNativeMac(vendor, cua, {declarations = []} = {}) {
         differences.push(difference);
         continue;
       }
-      const result = compare(v, c, {kind: as, declared: rules, indexMap: as === 'diff' ? indexMap : null});
-      if (golden === 'before') indexMap = result.indexMap;
+      const result = compare(v, c, {kind: as, declared: rules});
       const found = result.differences.map(d => ({scene, golden, ...d}));
       if (as === 'full' && result.added > result.lines * 0.1 && !allowsAddedLines(rules)) found.push({scene, golden, kind: 'addedOverTenPercent', added: result.added, lines: result.lines});
       out[golden] = {compared: true, added: result.added, lines: result.lines, differences: found};

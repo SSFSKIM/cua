@@ -667,6 +667,7 @@ final class ActivationSparingTests: XCTestCase {
 
 final class MenuSpanTests: XCTestCase {
   private let target: pid_t = 990_001, user: pid_t = 990_002
+  private let activations = HeldActivations()
   private let window = CGRect(x: 80, y: 60, width: 610, height: 860)
 
   private func meta() -> InputMeta {
@@ -695,7 +696,7 @@ final class MenuSpanTests: XCTestCase {
     let clock = Clock()
     let connection = ConnectionState(id: 1, fd: -1, menuSpan: clock.span())
     var meta = meta()
-    try recordHeldMenu(el(90), app: "a", connection: connection, activation: activation(seam), beforeActivating: {}, meta: &meta)
+    try recordHeldMenu(el(90), app: "a", pid: target, connection: connection, activations: activations, activation: { self.activation(seam) }, beforeActivating: {}, meta: &meta)
     XCTAssertEqual(seam.posts.map(\.kind), [.appKit(1), .mouse(.leftMouseDown), .mouse(.leftMouseUp)], "activated at the record")
     XCTAssertNotNil(meta.activationGuardMs)
     XCTAssertNil(meta.startedAt, "nothing is pressed or posted to the item")
@@ -757,7 +758,7 @@ final class MenuSpanTests: XCTestCase {
     var released = 0
     _ = connection.menuSpan.requestBegan()
     connection.recordMenu(el(90), app: "a") { released += 1; return true }
-    connection.menuSpan.requestEnded()
+    connection.menuSpan.requestEnded(onRecord: true)
     XCTAssertEqual(clock.timers.last?.ms, menuSpanIdleMs)
     XCTAssertEqual(menuSpanIdleMs, 30_000)
     clock.fireLast()
@@ -772,18 +773,87 @@ final class MenuSpanTests: XCTestCase {
     let span = clock.span()
     var released = 0
     span.hold(app: "a") { released += 1; return true }
-    span.requestEnded()
+    span.requestEnded(onRecord: true)
     _ = span.requestBegan()          // a request on the record arrives before the bound
     clock.fireLast()                 // the old timer fires mid-request
     XCTAssertEqual(released, 0, "a running request holds the span")
-    span.requestEnded()
+    span.requestEnded(onRecord: true)
     let stale = clock.timers.count
     _ = span.requestBegan()
-    span.requestEnded()
+    span.requestEnded(onRecord: true)
     clock.timers[stale - 1].work()   // the timer armed before the newest request
     XCTAssertEqual(released, 0, "only the last request's timer may fire")
     clock.fireLast()
     XCTAssertEqual(released, 1)
+  }
+
+  /// A request not on the record (resolve_app of the held app, list_apps) neither renews the bound nor holds it off past
+  /// its own end: a bound that passed while it ran releases as it ends.
+  func testARequestOffTheRecordNeitherRenewsTheBoundNorOutlastsIt() {
+    let clock = Clock()
+    let span = clock.span()
+    var released = 0
+    span.hold(app: "a") { released += 1; return true }
+    span.requestEnded(onRecord: true)
+    let timers = clock.timers.count
+    _ = span.requestBegan()
+    span.requestEnded(onRecord: false)
+    XCTAssertEqual(clock.timers.count, timers, "no new timer: the bound runs on from the last request on the record")
+    _ = span.requestBegan()
+    clock.fireLast()                 // the bound passes while an off-record request runs
+    XCTAssertEqual(released, 0)
+    span.requestEnded(onRecord: false)
+    XCTAssertEqual(released, 1, "released as that request ends")
+    XCTAssertEqual(span.requestBegan(), "a")
+  }
+
+  func testResolvingAnotherAppEndsTheSpanAndOnlyTheRecordRenewsIt() {
+    XCTAssertEqual(menuSpanStep(method: "resolve_app", app: "b", heldApp: "a", inRecordedMenu: false), .endBefore)
+    XCTAssertEqual(menuSpanStep(method: "resolve_app", app: "a", heldApp: "a", inRecordedMenu: false), .keep)
+    XCTAssertFalse(menuSpanRenewingMethods.contains("resolve_app"))
+    XCTAssertFalse(menuSpanRenewingMethods.contains("list_apps"))
+    XCTAssertEqual(menuSpanRenewingMethods, ["get_app_state", "click", "perform_secondary_action"])
+  }
+
+  /// A new record on the same connection while a span holds the app: the activation carries over (no second activation,
+  /// no deactivation between), so the new menu's observation and press still find the app believing itself active.
+  func testARecordAnewKeepsTheAppActiveThroughToItsPress() throws {
+    let seam = GuardSeam(frontmost: user)
+    let connection = ConnectionState(id: 1, fd: -1, menuSpan: Clock().span())
+    var meta = meta()
+    try recordHeldMenu(el(90), app: "a", pid: target, connection: connection, activations: activations, activation: { self.activation(seam) },
+                       beforeActivating: {}, meta: &meta)
+    var again = self.meta()
+    try recordHeldMenu(el(95), app: "a", pid: target, connection: connection, activations: activations, activation: { self.activation(seam) },
+                       beforeActivating: {}, meta: &again)
+    XCTAssertEqual(seam.posts.map(\.kind), [.appKit(1), .mouse(.leftMouseDown), .mouse(.leftMouseUp)], "one activation, never withdrawn")
+    XCTAssertNil(again.activationGuardMs, "the second record shares the running activation")
+    XCTAssertEqual(activations.holders(target), 1)
+    XCTAssertEqual(connection.menuRoot(app: "a", stillValid: { _ in true }).map(FakeAX.id), 95)
+    connection.endMenuInteraction()  // the press on the new menu
+    XCTAssertEqual(seam.posts.map(\.kind).last, .appKit(2))
+    XCTAssertEqual(activations.holders(target), 0)
+  }
+
+  /// Two connections recording the same app's menus share one activation: the first one's release leaves the second's
+  /// span active, and the last release deactivates.
+  func testTwoConnectionsOnOneProcessShareTheActivationAndTheLastReleaseDeactivates() throws {
+    let seam = GuardSeam(frontmost: user)
+    let first = ConnectionState(id: 1, fd: -1, menuSpan: Clock().span())
+    let second = ConnectionState(id: 2, fd: -1, menuSpan: Clock().span())
+    var meta = meta()
+    try recordHeldMenu(el(90), app: "a", pid: target, connection: first, activations: activations, activation: { self.activation(seam) },
+                       beforeActivating: {}, meta: &meta)
+    var other = self.meta()
+    try recordHeldMenu(el(90), app: "a", pid: target, connection: second, activations: activations, activation: { self.activation(seam) },
+                       beforeActivating: {}, meta: &other)
+    XCTAssertEqual(activations.holders(target), 2)
+    first.endMenuInteraction()
+    XCTAssertFalse(seam.posts.contains { $0.kind == .appKit(2) }, "the second connection's span still relies on it")
+    XCTAssertEqual(activations.holders(target), 1)
+    second.endMenuInteraction()
+    XCTAssertEqual(seam.posts.map(\.kind).last, .appKit(2))
+    XCTAssertEqual(activations.holders(target), 0)
   }
 
   func testTheConnectionClosingEndsTheSpanAndAReleaseFailureIsLoggedNotThrown() {
@@ -800,13 +870,14 @@ final class MenuSpanTests: XCTestCase {
     let seam = GuardSeam(frontmost: user, frontmostAfterPost: target)  // the app came to the front
     let connection = ConnectionState(id: 1, fd: -1, menuSpan: Clock().span())
     var meta = meta()
-    XCTAssertThrowsError(try recordHeldMenu(el(90), app: "a", connection: connection, activation: activation(seam),
+    XCTAssertThrowsError(try recordHeldMenu(el(90), app: "a", pid: target, connection: connection, activations: activations, activation: { self.activation(seam) },
                                             beforeActivating: {}, meta: &meta)) { error in
       XCTAssertEqual((error as? EngineError)?.errorName, "activationFailed")
     }
     XCTAssertNotNil(meta.activationGuardMs, "the failed guard's duration is kept")
     XCTAssertNil(connection.menuRecords["a"], "nothing recorded")
     XCTAssertNil(connection.menuSpan.app)
+    XCTAssertEqual(activations.holders(target), 0, "nothing held")
     XCTAssertEqual(seam.reactivated, [user], "the user's front restored by activation")
   }
 
@@ -814,7 +885,7 @@ final class MenuSpanTests: XCTestCase {
     let seam = GuardSeam(frontmost: user)
     let connection = ConnectionState(id: 1, fd: -1, menuSpan: Clock().span())
     var meta = meta()
-    XCTAssertThrowsError(try recordHeldMenu(el(90), app: "a", connection: connection, activation: activation(seam),
+    XCTAssertThrowsError(try recordHeldMenu(el(90), app: "a", pid: target, connection: connection, activations: activations, activation: { self.activation(seam) },
                                             beforeActivating: { throw EngineError(name: "userIntervened", "x") }, meta: &meta))
     XCTAssertTrue(seam.posts.isEmpty)
     XCTAssertNil(connection.menuRecords["a"])

@@ -15,7 +15,7 @@ import os
 // - after the item press (a click or secondary action on an element of the recorded menu);
 // - at the first request aimed elsewhere (another app, or an action on anything outside the recorded menu);
 // - when the record clears (AXCancel on the item, a new record, the item gone, the connection closing, shutdown);
-// - after `menuSpanIdleMs` with no request on the connection.
+// - after `menuSpanIdleMs` with no request on the record (an observation of the held app, or a press or record on it).
 // Ending the span clears the record with it: the menu and its activation have one lifetime, so an observation never shows
 // the recorded menu's items as an app no longer believing itself active computes them. The activation's guard restores
 // the user's window by re-activating the user's app, never by Accessibility (`restoresByActivationOnly`). A release that
@@ -37,9 +37,11 @@ final class MenuSpan: @unchecked Sendable {
   private let lock = NSLock()
   private var held: (app: String, release: () -> Bool)?
   private var busy = false
+  /// The idle bound passed while a request ran that was not on the record; it releases as that request ends.
+  private var lapseDue = false
   /// The app whose span the idle bound released, until the connection's next request clears its record.
   private var lapsedApp: String?
-  /// Bumped by every request's start and end, so only the timer armed by the last request's end may fire.
+  /// Bumped by every hold and every re-arming, so only the newest timer may fire.
   private var armed = 0
   /// Bumped by every hold, so a request can tell whether it started a new span.
   private var holds = 0
@@ -69,49 +71,66 @@ final class MenuSpan: @unchecked Sendable {
   /// How many spans have been held: unchanged across a request that started none.
   var serial: Int { locked { holds } }
 
-  /// Holds a new span for `app`, releasing any earlier one first.
+  /// Holds a new span for `app`, releasing any earlier one first. The request that recorded it arms the idle bound as it
+  /// ends.
   func hold(app: String, release: @escaping () -> Bool) {
     locked {
       releaseHeld()
       held = (app, release)
       holds += 1
+      armed += 1
     }
   }
 
   /// Ends the span now, if one is held.
   func end() { locked { releaseHeld() } }
 
-  /// A request starts: the idle timer is disarmed. Answers the app whose span lapsed while idle, whose record the caller
-  /// clears.
+  /// A request starts; no idle release while it runs. Answers the app whose span lapsed while idle, whose record the
+  /// caller clears.
   func requestBegan() -> String? {
     locked {
       busy = true
-      armed += 1
       defer { lapsedApp = nil }
       return lapsedApp
     }
   }
 
-  /// A request ended: the idle bound starts again while a span is held.
-  func requestEnded() {
+  /// A request ended. One on the record (`onRecord`: an observation of the held app, or a press or record on it) starts
+  /// the idle bound again; any other leaves the bound running, and releases now if it passed meanwhile.
+  func requestEnded(onRecord: Bool) {
     locked {
       busy = false
-      armed += 1
-      guard held != nil else { return }
-      let timer = armed
-      schedule(idleMs) { [weak self] in self?.lapse(timer) }
+      guard held != nil else {
+        lapseDue = false
+        return
+      }
+      if onRecord {
+        lapseDue = false
+        armed += 1
+        let timer = armed
+        schedule(idleMs) { [weak self] in self?.lapse(timer) }
+      } else if lapseDue {
+        lapseDue = false
+        lapseNow()
+      }
     }
   }
 
   private func lapse(_ timer: Int) {
     locked {
-      guard timer == armed, !busy, let app = held?.app else { return }
-      releaseHeld()
-      lapsedApp = app
+      guard timer == armed, held != nil else { return }
+      if busy { lapseDue = true } else { lapseNow() }
     }
   }
 
+  private func lapseNow() {
+    guard let app = held?.app else { return }
+    releaseHeld()
+    lapsedApp = app
+  }
+
   private func releaseHeld() {
+    lapseDue = false
     guard let ending = held else { return }
     held = nil
     if !ending.release() {
@@ -120,11 +139,74 @@ final class MenuSpan: @unchecked Sendable {
   }
 }
 
+/// The held activations of the engine, one per target process however many connections' spans hold it (route 3's state
+/// is the process's, not a connection's): the first span to acquire a process's activation runs it, the others share
+/// it, and the last to release it deactivates. So a span ending never withdraws an activation another span (another
+/// connection's, or the same connection's new record) still relies on.
+final class HeldActivations: @unchecked Sendable {
+  private let lock = NSLock()
+  private var held: [pid_t: (activation: FakeActivation, holders: Int)] = [:]
+
+  /// The holders of `pid`'s activation (the unit tests' view).
+  func holders(_ pid: pid_t) -> Int {
+    lock.lock()
+    defer { lock.unlock() }
+    return held[pid]?.holders ?? 0
+  }
+
+  /// Acquires `pid`'s held activation: when no span holds it, `make()`'s activation runs (its guard time into `meta`, a
+  /// failed guard's too; a failed guard throws with the activation undone and nothing held); otherwise the running one
+  /// is shared. Answers the release, which runs once and deactivates when the last holder releases; it answers false
+  /// only when that deactivation could not post.
+  func acquire(pid: pid_t, make: () -> FakeActivation, meta: inout InputMeta) throws -> () -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    if let shared = held[pid] {
+      held[pid] = (shared.activation, shared.holders + 1)
+    } else {
+      let activation = make()
+      do {
+        defer { meta.activationGuardMs = activation.guardMs }
+        try activation.activate()
+      } catch {
+        activation.deactivate()
+        throw error
+      }
+      held[pid] = (activation, 1)
+    }
+    let once = NSLock()
+    var released = false
+    return { [self] in
+      once.lock()
+      defer { once.unlock() }
+      guard !released else { return true }
+      released = true
+      return release(pid)
+    }
+  }
+
+  private func release(_ pid: pid_t) -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    guard let entry = held[pid] else { return true }
+    guard entry.holders <= 1 else {
+      held[pid] = (entry.activation, entry.holders - 1)
+      return true
+    }
+    held[pid] = nil
+    return entry.activation.deactivate()
+  }
+}
+
 /// What a request does to the held span (the span is held for `heldApp`): `keep` it, end it before the request runs, or
 /// let the request run inside it and end it after. Another app ends it; an observation of the app keeps it; a click or
 /// secondary action on an element of the recorded menu (`inRecordedMenu`) is the item press; anything else is aimed
 /// outside the menu.
 enum MenuSpanStep: Equatable { case keep, endBefore, endAfter }
+
+/// The methods whose request on the held app restarts the idle bound: its observation, and a press or a record on it.
+/// resolve_app and list_apps act on nothing, so they never keep a menu the model has walked away from.
+let menuSpanRenewingMethods: Set<String> = ["get_app_state", "click", "perform_secondary_action"]
 
 func menuSpanStep(method: String, app: String?, heldApp: String?, inRecordedMenu: Bool) -> MenuSpanStep {
   guard let heldApp, let app else { return .keep }
@@ -136,30 +218,24 @@ func menuSpanStep(method: String, app: String?, heldApp: String?, inRecordedMenu
   }
 }
 
-/// The menu-bar record with its held activation: the in-flight intervention check, route 3's activation for the app's
-/// window (its guard time into the meta, a failed guard's too), then the record holding the span. A failed guard
-/// refuses the record as activationFailed with the activation undone and nothing recorded.
-func recordHeldMenu(_ item: AXUIElement, app key: String, connection: ConnectionState, activation: FakeActivation,
-                    beforeActivating: () throws -> Void, meta: inout InputMeta) throws {
+/// The menu-bar record with its held activation: the in-flight intervention check, the app's held activation acquired
+/// (run by the first span to hold it, its guard time into the meta, a failed guard's too), then the record holding the
+/// span. A failed guard refuses the record as activationFailed with the activation undone and nothing recorded.
+func recordHeldMenu(_ item: AXUIElement, app key: String, pid: pid_t, connection: ConnectionState, activations: HeldActivations,
+                    activation: () -> FakeActivation, beforeActivating: () throws -> Void, meta: inout InputMeta) throws {
   try beforeActivating()
-  do {
-    defer { meta.activationGuardMs = activation.guardMs }
-    try activation.activate()
-  } catch {
-    activation.deactivate()
-    throw error
-  }
-  connection.recordMenu(item, app: key) { activation.deactivate() }
+  let release = try activations.acquire(pid: pid, make: activation, meta: &meta)
+  connection.recordMenu(item, app: key, release: release)
 }
 
 extension Engine {
   /// The record with its activation for the app's primary window (the observed window), restored by activation only.
   func holdMenuRecord(_ item: AXUIElement, app: ResolvedApp, appPid: pid_t, guarding: InterventionGuard, context: ExecutionContext,
                       meta: inout InputMeta) throws {
-    let application = prepare(AXUIElementCreateApplication(appPid))
-    let activation = FakeActivation(pid: appPid, window: primaryWindow(of: application) ?? application, restoresByActivationOnly: true)
-    try recordHeldMenu(item, app: app.key, connection: context.connection, activation: activation,
-                       beforeActivating: guarding.checkInFlight, meta: &meta)
+    try recordHeldMenu(item, app: app.key, pid: appPid, connection: context.connection, activations: heldActivations, activation: {
+      let application = prepare(AXUIElementCreateApplication(appPid))
+      return FakeActivation(pid: appPid, window: primaryWindow(of: application) ?? application, restoresByActivationOnly: true)
+    }, beforeActivating: guarding.checkInFlight, meta: &meta)
   }
 }
 

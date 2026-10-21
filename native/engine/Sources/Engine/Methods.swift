@@ -35,6 +35,8 @@ final class Engine: @unchecked Sendable {
   let routes: [String: Int]
   /// Route 3's consecutive guard failures per app, for `routeAdvice` and status (Routes.swift).
   let routeAdvice = RouteAdviceTracker()
+  /// The menus' held activations, one per process across connections (MenuSpan.swift).
+  let heldActivations = HeldActivations()
   /// Whether the Mac is locked now (the session dictionary; replaced in the unit tests).
   let screenLocked: () -> Bool
   /// The pasteboard a paste writes: the general one (Paste.swift; the unit tests write pasteboards of their own).
@@ -136,11 +138,15 @@ final class Engine: @unchecked Sendable {
     // A request on the connection holds off the menu span's idle bound while it runs; a span that lapsed while idle takes
     // its record with it before anything reads the record (MenuSpan.swift).
     if let lapsed = connection.menuSpan.requestBegan() { connection.menuRecords[lapsed] = nil }
-    defer { connection.menuSpan.requestEnded() }
     var target: ResolvedApp?
+    // Only a request on the record (an observation of the held app, or a press or record on it) restarts the idle bound.
+    defer {
+      let onRecord = target != nil && target?.key == connection.menuSpan.app && menuSpanRenewingMethods.contains(method)
+      connection.menuSpan.requestEnded(onRecord: onRecord)
+    }
     do {
       try refuseWhenLocked(isLocked: screenLocked)
-      if method != "list_apps" && method != "resolve_app" && (args["app"] != nil || args["pid"] != nil) { target = try resolveApp(args) }
+      if method != "list_apps" && (args["app"] != nil || args["pid"] != nil) { target = try resolveApp(args) }
     } catch let error as EngineError where inputMethods.contains(method) {
       throw withMeta(error, InputMeta(context))
     }
@@ -154,7 +160,7 @@ final class Engine: @unchecked Sendable {
     switch method {
     case "list_apps": return apps.list()
     case "resolve_app":
-      let app = try resolveApp(args)
+      let app = try target ?? resolveApp(args)  // resolved once, above, for the menu span's decision too
       apps.recordUse(app)
       return app.wire
     case "get_app_state": return try getAppState(args, context)

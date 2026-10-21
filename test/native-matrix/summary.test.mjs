@@ -90,7 +90,7 @@ test('another cell\'s result (a residue cell on the live harness) is read in the
 test('an incomplete result is a blocking problem, and a result that does not conform is named', () => {
   const dir = fs.mkdtempSync(join(tmpdir(), 'matrix-summary-'));
   try {
-    writeCellResult(join(dir, 'a'), {...lane('cua'), complete: false, verdict: 'fail', problems: ['the put-back did not hold']});
+    writeCellResult(join(dir, 'a'), {...lane('cua'), complete: false, verdict: 'no-verdict', problems: ['the put-back did not hold']});
     fs.mkdirSync(join(dir, 'b'));
     fs.writeFileSync(join(dir, 'b', 'result.json'), JSON.stringify({schema: 'native-matrix-cell-1', cell: 'x'}));
     const {results, problems} = readResults([dir]);

@@ -16,7 +16,8 @@ test('the verdict: refused, then no-verdict without a valid row, fail on a bad r
   assert.equal(verdictOf({complete: true, rows: []}), 'no-verdict');
   assert.equal(verdictOf({complete: true, rows: [row({ok: false, invalid: 'the probe posted outside the interval'})]}), 'no-verdict');
   assert.equal(verdictOf({complete: true, rows: [row(), row({ok: false, id: 'b'})]}), 'fail');
-  assert.equal(verdictOf({complete: false, rows: [row()]}), 'fail', 'an incomplete cell never passes');
+  assert.equal(verdictOf({complete: false, rows: [row()]}), 'no-verdict', 'an incomplete cell is no verdict: never a pass, never a plain fail');
+  assert.equal(verdictOf({complete: false, rows: [row({ok: false})]}), 'no-verdict', 'missing evidence outranks a failed row');
   assert.equal(verdictOf({complete: false, rows: []}), 'no-verdict');
   assert.equal(verdictOf({complete: true, rows: [row(), row({id: 'c', ok: false, invalid: 'not in front'})]}), 'pass', 'an invalid row counts for nothing');
 });
@@ -25,7 +26,7 @@ test('a declared row is not ok and does not fail the verdict; it needs a kind an
   const defect = row({id: 'hscroll/vendor', engine: 'vendor', ok: false, declared: {kind: 'vendor-defect', cause: 'the vendor scrolls the wrong axis'}});
   assert.equal(verdictOf({complete: true, rows: [row(), defect]}), 'pass');
   assert.equal(verdictOf({complete: true, rows: [defect]}), 'pass');
-  assert.equal(verdictOf({complete: false, rows: [defect]}), 'fail', 'an incomplete cell still never passes');
+  assert.equal(verdictOf({complete: false, rows: [defect]}), 'no-verdict', 'an incomplete cell still never passes');
   assert.deepEqual(validateCellResult(base({rows: [row(), defect]})), []);
   assert.ok(rowProblems({...defect, declared: {kind: 'vendor-defect'}}).some(p => /declared needs a kind and a cause/.test(p)));
 });
@@ -58,6 +59,7 @@ test('a result whose verdict does not follow from its rows, or that repeats a ro
   assert.ok(validateCellResult(lying).some(p => /does not follow/.test(p)));
   const incomplete = {...base(), complete: false, verdict: 'pass'};
   assert.ok(validateCellResult(incomplete).some(p => /incomplete result cannot pass/.test(p)));
+  assert.ok(validateCellResult({...base(), complete: false, verdict: 'fail'}).some(p => /cannot fail: it is no-verdict/.test(p)));
   const twice = base({rows: [row(), row()]});
   assert.ok(validateCellResult(twice).some(p => /two rows/.test(p)));
   // The same id on the other engine, or another sample, is another row.

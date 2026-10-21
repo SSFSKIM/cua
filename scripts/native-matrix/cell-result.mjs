@@ -12,10 +12,11 @@
 //   started, finished   ISO times
 //   lanes      [{host, engine, build, version}]: each lane the result measured, as its results attested it
 //              (`_meta['cua/nativeEngine']`; a lane that drives the engine's socket directly names host null)
-//   complete   true when the cell ran to its end and its put-back held; a result that is not complete is never a pass
+//   complete   true when the cell ran to its end, all its mandatory evidence is in and its put-back held; a result
+//              that is not complete is no-verdict
 //   verdict    'pass' | 'fail' | 'no-verdict' | 'refused' (verdictOf: refused before anything on the device changed;
-//              no-verdict when no row is valid; fail when any valid row is neither ok nor declared, or the result is not
-//              complete; else pass)
+//              no-verdict when no row is valid or the result is not complete (missing evidence: never a pass, never a
+//              plain fail); fail when any valid row is neither ok nor declared; else pass)
 //   problems   [string]: why it is not complete, each a bounded sentence
 //   rows       [Row]
 //   putBack    optional, the put-back's answer ({ok, ...})
@@ -67,14 +68,14 @@ const isString = value => typeof value === 'string' && value.length > 0;
 const isTime = value => isString(value) && !Number.isNaN(Date.parse(value));
 const bounded = text => String(text).slice(0, ERROR_CHARS);
 
-// The cell's verdict from its rows: refused before anything ran; no-verdict without a valid row; fail on any valid row
-// that is neither ok nor declared (a declared row is not ok and says why), or when the cell did not complete; else pass.
+// The cell's verdict from its rows: refused before anything ran; no-verdict without a valid row or when the cell did
+// not complete (its evidence is missing: a cell with missing samples is NO VERDICT, which blocks); fail on any valid
+// row that is neither ok nor declared (a declared row is not ok and says why); else pass.
 export const counts = row => row.ok === true || row.declared !== undefined;
 export function verdictOf({refused = false, complete, rows}) {
   if (refused) return 'refused';
   const valid = rows.filter(row => !row.invalid);
-  if (!valid.length) return 'no-verdict';
-  if (!complete) return 'fail';
+  if (!valid.length || !complete) return 'no-verdict';
   return valid.every(counts) ? 'pass' : 'fail';
 }
 
@@ -120,7 +121,7 @@ export function validateCellResult(result) {
   if (!Array.isArray(result.problems) || result.problems.some(p => typeof p !== 'string')) out.push('problems is not a list of sentences');
   if (!Array.isArray(result.rows)) return [...out, 'rows is not a list'];
   result.rows.forEach((row, i) => out.push(...rowProblems(row, `rows[${i}]`)));
-  if (result.complete === false && result.verdict === 'pass') out.push('an incomplete result cannot pass');
+  if (result.complete === false && ['pass', 'fail'].includes(result.verdict)) out.push(`an incomplete result cannot ${result.verdict === 'pass' ? 'pass' : 'fail'}: it is no-verdict`);
   if (Array.isArray(result.rows) && VERDICTS.includes(result.verdict) && result.verdict !== 'refused') {
     const expected = verdictOf({complete: result.complete === true, rows: result.rows});
     if (expected !== result.verdict) out.push(`verdict ${result.verdict} does not follow from the rows and complete (${expected})`);

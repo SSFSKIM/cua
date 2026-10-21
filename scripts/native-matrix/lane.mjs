@@ -125,8 +125,8 @@ export function dryOps({log, engine, approvedEngine = '/Users/owner/Library/Appl
     preflight: step('preflight', ({prepared}) => ({checkout: '/Users/owner/Developer/GitHub/cua-parity', home: prepared.home, runtimeRoot: prepared.runtimeReuse.runtimeRoot, commit, dirty: false,
       release: '26.0-dry', serves: 0, engine: {checkoutBuild: build, installed: {bundlePath: approvedEngine, engineVersion: '0.0.0', build}, installedReal: approvedEngine, approvedEngineReal: approvedEngine}})),
     serveSpec: step('serve', {command: 'ssh', args: ['dry']}),
-    helpers: step('helpers', () => (engine === 'cua' ? `00:01 ${approvedEngine}/Contents/MacOS/cua-engine --probe watch-activations\n00:01 ${approvedEngine}/Contents/MacOS/cua-engine`
-      : `00:01 ${home}/runtime/SkyComputerUseService`)),
+    helpers: step('helpers', () => (engine === 'cua' ? `00:00 ${approvedEngine}/Contents/MacOS/cua-engine --probe watch-activations\n00:00 ${approvedEngine}/Contents/MacOS/cua-engine`
+      : `00:00 ${home}/runtime/SkyComputerUseService`)),
     journalTo: () => {},
   };
 }
@@ -134,7 +134,7 @@ export function dryOps({log, engine, approvedEngine = '/Users/owner/Library/Appl
 // requested engine; the vendor's helper path is made up to match dryOps' runtime root.
 export function dryConnect({log, engine, host}) {
   return () => {
-    const value = {ready: true, ok: true, inFront: true, opened: true, closed: true, panel: false, documentInFront: true, bound: true, actMs: 1, at: [Date.now(), Date.now()], threw: false,
+    const value = {ready: true, ok: true, inFront: true, scratchInFront: true, opened: true, closed: true, panel: false, documentInFront: true, bound: true, actMs: 1, at: [Date.now(), Date.now()], threw: false,
       targets: [], lines: 1, named: 1, unclassified: 0, ids: 0, outcome: {}};
     const meta = {'cua/nativeEngine': {engine, version: '0.0.0', build: engine === 'cua' ? 'd'.repeat(64) : '26.0-dry'}, ...(host === 'cua' ? {'cua/replHost': {host: 'cua'}} : {})};
     return {

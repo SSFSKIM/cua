@@ -1,0 +1,8 @@
+{
+  "name": "cua-electron-fixture",
+  "productName": "cua Electron Fixture",
+  "version": "1.0.0",
+  "private": true,
+  "description": "The macOS scenes' Electron fixture (the own native engine spec, Verification system part 2): a text field, a list and a button.",
+  "main": "main.js"
+}

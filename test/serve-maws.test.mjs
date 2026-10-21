@@ -7,6 +7,7 @@
 // fake upstream, started under the runtime's anchor, is a descendant; this test process, the server's parent, is not.
 // The check needs the peer identity addon, built for Apple silicon macOS only, so the cases that need a ready host skip
 // elsewhere.
+import './helpers/scratch-home.mjs'; // first: the native engine's selection must not read the account's own settings
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {execFile, spawn} from 'node:child_process';

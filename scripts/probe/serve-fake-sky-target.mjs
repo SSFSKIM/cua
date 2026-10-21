@@ -32,7 +32,7 @@ const code = await serve({
     ...launch,
     env: {
       ...launch.env,
-      CUA_SKY_VENDOR_SERVICE: real,
+      CUA_SKY_SERVICE: real,
       NODE_REPL_TRUSTED_CODE_PATHS: `${launch.env.NODE_REPL_TRUSTED_CODE_PATHS}:${dirname(real)}`,
     },
   }),

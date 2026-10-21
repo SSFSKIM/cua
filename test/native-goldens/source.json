@@ -1,0 +1,6 @@
+{
+  "about": "Where the golden files come from (PROVENANCE.md). `m0`: M0's second sitting, re-keyed by ./rekey.mjs. `live`: a recording by scripts/native-matrix/goldens.mjs, whose run directory's goldens/ holds the files byte for byte. `redacted` names the scenes whose captures were redacted, which are compared by structure (./compare.mjs).",
+  "kind": "live",
+  "dir": "docs/doperpowers/research/2026-10-18-own-native-engine/m1b/goldens-final/goldens",
+  "redacted": []
+}

@@ -1,0 +1,172 @@
+{"lane":"vendor","run":2,"op":"warm.listApps","sample":1,"ok":true,"wallMs":782.73,"inCellMs":719.398,"apps":10,"running":10}
+{"lane":"vendor","run":2,"op":"warm.listApps","sample":2,"ok":true,"wallMs":38.725,"inCellMs":16.996,"apps":10,"running":10}
+{"lane":"vendor","run":2,"op":"warm.listApps","sample":3,"ok":true,"wallMs":183.682,"inCellMs":26.691,"apps":10,"running":10}
+{"lane":"vendor","run":2,"op":"warm.listApps","sample":4,"ok":true,"wallMs":60.299,"inCellMs":21.134,"apps":10,"running":10}
+{"lane":"vendor","run":2,"op":"warm.listApps","sample":5,"ok":true,"wallMs":48.826,"inCellMs":24.229,"apps":10,"running":10}
+{"lane":"vendor","run":2,"op":"warm.listApps","sample":6,"ok":true,"wallMs":100.396,"inCellMs":32.084,"apps":10,"running":10}
+{"lane":"vendor","run":2,"op":"warm.listApps","sample":7,"ok":true,"wallMs":74.726,"inCellMs":28.507,"apps":10,"running":10}
+{"lane":"vendor","run":2,"op":"warm.listApps","sample":8,"ok":true,"wallMs":40.103,"inCellMs":19.74,"apps":10,"running":10}
+{"lane":"vendor","run":2,"op":"warm.listApps","sample":9,"ok":true,"wallMs":142.216,"inCellMs":27.542,"apps":10,"running":10}
+{"lane":"vendor","run":2,"op":"warm.listApps","sample":10,"ok":true,"wallMs":63.134,"inCellMs":41.488,"apps":10,"running":10}
+{"lane":"vendor","run":2,"op":"warm.listApps","sample":11,"ok":true,"wallMs":94.377,"inCellMs":36.678,"apps":10,"running":10}
+{"lane":"vendor","run":2,"op":"warm.listApps","sample":12,"ok":true,"wallMs":94.489,"inCellMs":33.807,"apps":10,"running":10}
+{"lane":"vendor","run":2,"op":"warm.listApps","sample":13,"ok":true,"wallMs":93.823,"inCellMs":35.38,"apps":10,"running":10}
+{"lane":"vendor","run":2,"op":"warm.listApps","sample":14,"ok":true,"wallMs":56.199,"inCellMs":24.614,"apps":10,"running":10}
+{"lane":"vendor","run":2,"op":"warm.listApps","sample":15,"ok":true,"wallMs":125.247,"inCellMs":28.361,"apps":10,"running":10}
+{"lane":"vendor","run":2,"op":"warm.listApps","sample":16,"ok":true,"wallMs":98.697,"inCellMs":40.998,"apps":10,"running":10}
+{"lane":"vendor","run":2,"op":"warm.listApps","sample":17,"ok":true,"wallMs":55.367,"inCellMs":35.284,"apps":10,"running":10}
+{"lane":"vendor","run":2,"op":"warm.listApps","sample":18,"ok":true,"wallMs":59.466,"inCellMs":28.784,"apps":10,"running":10}
+{"lane":"vendor","run":2,"op":"warm.listApps","sample":19,"ok":true,"wallMs":80.846,"inCellMs":26.218,"apps":10,"running":10}
+{"lane":"vendor","run":2,"op":"warm.listApps","sample":20,"ok":true,"wallMs":48.132,"inCellMs":27.525,"apps":10,"running":10}
+{"lane":"vendor","run":2,"op":"warm.listApps","sample":21,"ok":true,"wallMs":164.911,"inCellMs":28.008,"apps":10,"running":10}
+{"lane":"vendor","run":2,"op":"warm.listApps","sample":22,"ok":true,"wallMs":80.289,"inCellMs":42.505,"apps":10,"running":10}
+{"lane":"vendor","run":2,"op":"warm.listApps","sample":23,"ok":true,"wallMs":49.307,"inCellMs":25.265,"apps":10,"running":10}
+{"lane":"vendor","run":2,"op":"warm.listApps","sample":24,"ok":true,"wallMs":63.866,"inCellMs":16.722,"apps":10,"running":10}
+{"lane":"vendor","run":2,"op":"warm.listApps","sample":25,"ok":true,"wallMs":44.184,"inCellMs":23.889,"apps":10,"running":10}
+{"lane":"vendor","run":2,"op":"warm.listApps","sample":26,"ok":true,"wallMs":52.293,"inCellMs":25.952,"apps":10,"running":10}
+{"lane":"vendor","run":2,"op":"warm.listApps","sample":27,"ok":true,"wallMs":40.786,"inCellMs":23.143,"apps":10,"running":10}
+{"lane":"vendor","run":2,"op":"warm.listApps","sample":28,"ok":true,"wallMs":44.521,"inCellMs":24.586,"apps":10,"running":10}
+{"lane":"vendor","run":2,"op":"warm.listApps","sample":29,"ok":true,"wallMs":37.689,"inCellMs":21.252,"apps":10,"running":10}
+{"lane":"vendor","run":2,"op":"warm.listApps","sample":30,"ok":true,"wallMs":117.669,"inCellMs":20.398,"apps":10,"running":10}
+{"lane":"vendor","run":2,"op":"bind.getApp","sample":1,"ok":true,"wallMs":289.091,"inCellMs":262.394,"bound":true,"scene":"textedit","recordedPid":68944,"runningPids":[68944],"pidOk":true}
+{"lane":"vendor","run":2,"op":"probe.e.concealed","sample":1,"ok":false,"notRun":"a concealed type_text needs the secret store; the spike serve runs with secrets off","scene":"textedit"}
+{"lane":"vendor","run":2,"op":"probe.e.perContext","sample":1,"ok":false,"notRun":"the per-context input preference is the owner's; changing and restoring it is the matrix's (M2b)","scene":"textedit"}
+{"lane":"vendor","run":2,"op":"probe.d.tap","sample":1,"ok":false,"notRun":"the listen-only event tap is cua's engine; the cua lane runs the real rows","scene":"textedit"}
+{"lane":"vendor","run":2,"op":"probe.d.hidReset","sample":1,"ok":false,"notRun":"the keystroke probe is cua's engine; the cua lane runs the real rows","scene":"textedit"}
+{"lane":"vendor","run":2,"op":"setup.activate","scene":"textedit","sample":1,"ok":true,"wallMs":1073.939,"note":"harness-owned, not judged: device-side open -a, checked with lsappinfo front"}
+{"lane":"vendor","run":2,"op":"golden.fixed","sample":1,"ok":true,"wallMs":261.187,"inCellMs":96.84,"files":[{"kind":"text","name":"textedit.text.txt","bytes":4702,"redacted":false}],"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"setup.activate","scene":"textedit","sample":1,"ok":true,"wallMs":814.369,"note":"harness-owned, not judged: device-side open -a, checked with lsappinfo front"}
+{"lane":"vendor","run":2,"op":"warm.getAXState","sample":1,"ok":true,"wallMs":102.491,"inCellMs":67.457,"chars":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getAXState","sample":2,"ok":true,"wallMs":100.986,"inCellMs":54.761,"chars":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getAXState","sample":3,"ok":true,"wallMs":99.929,"inCellMs":49.862,"chars":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getAXState","sample":4,"ok":true,"wallMs":104.002,"inCellMs":51.386,"chars":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getAXState","sample":5,"ok":true,"wallMs":118.424,"inCellMs":49.479,"chars":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getAXState","sample":6,"ok":true,"wallMs":84.637,"inCellMs":67.702,"chars":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getAXState","sample":7,"ok":true,"wallMs":80.239,"inCellMs":45.512,"chars":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getAXState","sample":8,"ok":true,"wallMs":117.28,"inCellMs":52.103,"chars":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getAXState","sample":9,"ok":true,"wallMs":83.7,"inCellMs":51.042,"chars":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getAXState","sample":10,"ok":true,"wallMs":158.808,"inCellMs":47.379,"chars":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getAXState","sample":11,"ok":true,"wallMs":171.001,"inCellMs":84.07,"chars":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getAXState","sample":12,"ok":true,"wallMs":80.047,"inCellMs":51.867,"chars":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getAXState","sample":13,"ok":true,"wallMs":62.418,"inCellMs":45.314,"chars":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getAXState","sample":14,"ok":true,"wallMs":85.415,"inCellMs":46.209,"chars":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getAXState","sample":15,"ok":true,"wallMs":121.512,"inCellMs":45.218,"chars":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getAXState","sample":16,"ok":true,"wallMs":88.378,"inCellMs":55.137,"chars":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getAXState","sample":17,"ok":true,"wallMs":116.5,"inCellMs":57.301,"chars":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getAXState","sample":18,"ok":true,"wallMs":100.021,"inCellMs":54.699,"chars":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getAXState","sample":19,"ok":true,"wallMs":76.434,"inCellMs":46.52,"chars":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getAXState","sample":20,"ok":true,"wallMs":139.606,"inCellMs":43.153,"chars":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getAXState","sample":21,"ok":true,"wallMs":92.913,"inCellMs":52.051,"chars":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getAXState","sample":22,"ok":true,"wallMs":89.246,"inCellMs":51.115,"chars":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getAXState","sample":23,"ok":true,"wallMs":168.465,"inCellMs":61.294,"chars":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getAXState","sample":24,"ok":true,"wallMs":179.578,"inCellMs":58.985,"chars":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getAXState","sample":25,"ok":true,"wallMs":117.795,"inCellMs":59.848,"chars":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getAXState","sample":26,"ok":true,"wallMs":108.401,"inCellMs":65.087,"chars":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getAXState","sample":27,"ok":true,"wallMs":79.255,"inCellMs":53.926,"chars":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getAXState","sample":28,"ok":true,"wallMs":70.067,"inCellMs":44.291,"chars":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getAXState","sample":29,"ok":true,"wallMs":142.661,"inCellMs":49.575,"chars":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getAXState","sample":30,"ok":true,"wallMs":74.962,"inCellMs":49.451,"chars":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"guard.scratch","sample":1,"ok":true,"wallMs":74.908,"inCellMs":45.68,"scratchInFront":true,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"guard.scratch","sample":2,"ok":true,"wallMs":100.575,"inCellMs":50.911,"scratchInFront":true,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getScreenshot","sample":1,"ok":true,"wallMs":66.029,"inCellMs":46.727,"bytes":141865,"width":1220,"height":1720,"format":"jpeg","sha256":"4d51fc843eb782bf","scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getScreenshot","sample":2,"ok":true,"wallMs":89.553,"inCellMs":46.644,"bytes":141865,"width":1220,"height":1720,"format":"jpeg","sha256":"4d51fc843eb782bf","scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getScreenshot","sample":3,"ok":true,"wallMs":68.661,"inCellMs":46.556,"bytes":141890,"width":1220,"height":1720,"format":"jpeg","sha256":"bd82143f11b69eaa","scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getScreenshot","sample":4,"ok":true,"wallMs":149.423,"inCellMs":48.334,"bytes":141813,"width":1220,"height":1720,"format":"jpeg","sha256":"32fa02132f8920ec","scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getScreenshot","sample":5,"ok":true,"wallMs":92.6,"inCellMs":53.314,"bytes":141805,"width":1220,"height":1720,"format":"jpeg","sha256":"2e73a7ae8f5ad4e3","scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getScreenshot","sample":6,"ok":true,"wallMs":66.631,"inCellMs":48.079,"bytes":141813,"width":1220,"height":1720,"format":"jpeg","sha256":"32fa02132f8920ec","scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getScreenshot","sample":7,"ok":true,"wallMs":93.954,"inCellMs":47.971,"bytes":141844,"width":1220,"height":1720,"format":"jpeg","sha256":"45f580abe686525a","scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getScreenshot","sample":8,"ok":true,"wallMs":87.893,"inCellMs":47.825,"bytes":141865,"width":1220,"height":1720,"format":"jpeg","sha256":"4d51fc843eb782bf","scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getScreenshot","sample":9,"ok":true,"wallMs":68.252,"inCellMs":46.885,"bytes":141865,"width":1220,"height":1720,"format":"jpeg","sha256":"4d51fc843eb782bf","scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getScreenshot","sample":10,"ok":true,"wallMs":121.786,"inCellMs":46.512,"bytes":141865,"width":1220,"height":1720,"format":"jpeg","sha256":"4d51fc843eb782bf","scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getScreenshot","sample":11,"ok":true,"wallMs":87.347,"inCellMs":59.308,"bytes":141865,"width":1220,"height":1720,"format":"jpeg","sha256":"4d51fc843eb782bf","scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getScreenshot","sample":12,"ok":true,"wallMs":103.291,"inCellMs":46.71,"bytes":141865,"width":1220,"height":1720,"format":"jpeg","sha256":"4d51fc843eb782bf","scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getScreenshot","sample":13,"ok":true,"wallMs":89.396,"inCellMs":49.945,"bytes":141865,"width":1220,"height":1720,"format":"jpeg","sha256":"4d51fc843eb782bf","scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getScreenshot","sample":14,"ok":true,"wallMs":106.357,"inCellMs":51.287,"bytes":141890,"width":1220,"height":1720,"format":"jpeg","sha256":"bd82143f11b69eaa","scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getScreenshot","sample":15,"ok":true,"wallMs":135.435,"inCellMs":47.911,"bytes":141805,"width":1220,"height":1720,"format":"jpeg","sha256":"2e73a7ae8f5ad4e3","scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getScreenshot","sample":16,"ok":true,"wallMs":93.637,"inCellMs":67.356,"bytes":141805,"width":1220,"height":1720,"format":"jpeg","sha256":"2e73a7ae8f5ad4e3","scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getScreenshot","sample":17,"ok":true,"wallMs":86.509,"inCellMs":59.592,"bytes":141813,"width":1220,"height":1720,"format":"jpeg","sha256":"32fa02132f8920ec","scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getScreenshot","sample":18,"ok":true,"wallMs":87.275,"inCellMs":46.846,"bytes":141890,"width":1220,"height":1720,"format":"jpeg","sha256":"bd82143f11b69eaa","scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getScreenshot","sample":19,"ok":true,"wallMs":72.579,"inCellMs":49.3,"bytes":141865,"width":1220,"height":1720,"format":"jpeg","sha256":"4d51fc843eb782bf","scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getScreenshot","sample":20,"ok":true,"wallMs":186.837,"inCellMs":49.178,"bytes":141865,"width":1220,"height":1720,"format":"jpeg","sha256":"4d51fc843eb782bf","scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getScreenshot","sample":21,"ok":true,"wallMs":139.815,"inCellMs":73.753,"bytes":141865,"width":1220,"height":1720,"format":"jpeg","sha256":"4d51fc843eb782bf","scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getScreenshot","sample":22,"ok":true,"wallMs":120.314,"inCellMs":54.947,"bytes":141865,"width":1220,"height":1720,"format":"jpeg","sha256":"4d51fc843eb782bf","scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getScreenshot","sample":23,"ok":true,"wallMs":100.225,"inCellMs":55.489,"bytes":141890,"width":1220,"height":1720,"format":"jpeg","sha256":"bd82143f11b69eaa","scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getScreenshot","sample":24,"ok":true,"wallMs":169.212,"inCellMs":47.504,"bytes":141805,"width":1220,"height":1720,"format":"jpeg","sha256":"2e73a7ae8f5ad4e3","scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getScreenshot","sample":25,"ok":true,"wallMs":100.898,"inCellMs":68.959,"bytes":141813,"width":1220,"height":1720,"format":"jpeg","sha256":"32fa02132f8920ec","scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getScreenshot","sample":26,"ok":true,"wallMs":90.047,"inCellMs":53.73,"bytes":141865,"width":1220,"height":1720,"format":"jpeg","sha256":"4d51fc843eb782bf","scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getScreenshot","sample":27,"ok":true,"wallMs":113.693,"inCellMs":50.507,"bytes":141865,"width":1220,"height":1720,"format":"jpeg","sha256":"4d51fc843eb782bf","scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getScreenshot","sample":28,"ok":true,"wallMs":70.192,"inCellMs":51.115,"bytes":141865,"width":1220,"height":1720,"format":"jpeg","sha256":"4d51fc843eb782bf","scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getScreenshot","sample":29,"ok":true,"wallMs":155.408,"inCellMs":54.47,"bytes":141865,"width":1220,"height":1720,"format":"jpeg","sha256":"4d51fc843eb782bf","scene":"textedit"}
+{"lane":"vendor","run":2,"op":"warm.getScreenshot","sample":30,"ok":true,"wallMs":69.321,"inCellMs":49.959,"bytes":141865,"width":1220,"height":1720,"format":"jpeg","sha256":"4d51fc843eb782bf","scene":"textedit"}
+{"lane":"vendor","run":2,"op":"task.act","sample":1,"ok":true,"wallMs":1059.777,"inCellMs":965.358,"actions":1,"observations":1,"scene":"textedit","route":null}
+{"lane":"vendor","run":2,"op":"task.verify","sample":1,"ok":true,"wallMs":480.083,"inCellMs":456.626,"observations":1,"present":true,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"task.close","sample":1,"ok":true,"wallMs":2780.961,"inCellMs":2760.494,"actions":2,"observations":3,"sheet":true,"closed":true,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"task.total","scene":"textedit","sample":1,"ok":true,"wallMs":4320.821,"inCellMs":4182.478,"outcome":"typed text verified, document closed without saving"}
+{"lane":"vendor","run":2,"op":"task.act","sample":2,"ok":true,"wallMs":1065.809,"inCellMs":965.515,"actions":1,"observations":1,"scene":"textedit","route":null}
+{"lane":"vendor","run":2,"op":"task.verify","sample":2,"ok":true,"wallMs":488.08,"inCellMs":461.466,"observations":1,"present":true,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"task.close","sample":2,"ok":true,"wallMs":2957.676,"inCellMs":2902.683,"actions":2,"observations":3,"sheet":true,"closed":true,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"task.total","scene":"textedit","sample":2,"ok":true,"wallMs":4511.565,"inCellMs":4329.664,"outcome":"typed text verified, document closed without saving"}
+{"lane":"vendor","run":2,"op":"task.act","sample":3,"ok":true,"wallMs":1033.847,"inCellMs":986.138,"actions":1,"observations":1,"scene":"textedit","route":null}
+{"lane":"vendor","run":2,"op":"task.verify","sample":3,"ok":true,"wallMs":485.057,"inCellMs":454.076,"observations":1,"present":true,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"task.close","sample":3,"ok":true,"wallMs":2638.669,"inCellMs":2597.477,"actions":2,"observations":3,"sheet":true,"closed":true,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"task.total","scene":"textedit","sample":3,"ok":true,"wallMs":4157.573,"inCellMs":4037.691,"outcome":"typed text verified, document closed without saving"}
+{"lane":"vendor","run":2,"op":"task.act","sample":4,"ok":true,"wallMs":1024.731,"inCellMs":970.008,"actions":1,"observations":1,"scene":"textedit","route":null}
+{"lane":"vendor","run":2,"op":"task.verify","sample":4,"ok":true,"wallMs":518.533,"inCellMs":442,"observations":1,"present":true,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"task.close","sample":4,"ok":true,"wallMs":2422.807,"inCellMs":2400.415,"actions":2,"observations":3,"sheet":true,"closed":true,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"task.total","scene":"textedit","sample":4,"ok":true,"wallMs":3966.071,"inCellMs":3812.423,"outcome":"typed text verified, document closed without saving"}
+{"lane":"vendor","run":2,"op":"task.act","sample":5,"ok":true,"wallMs":1062.211,"inCellMs":959.969,"actions":1,"observations":1,"scene":"textedit","route":null}
+{"lane":"vendor","run":2,"op":"task.verify","sample":5,"ok":true,"wallMs":503.217,"inCellMs":461.405,"observations":1,"present":true,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"task.close","sample":5,"ok":true,"wallMs":2769.707,"inCellMs":2656.685,"actions":2,"observations":3,"sheet":true,"closed":true,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"task.total","scene":"textedit","sample":5,"ok":true,"wallMs":4335.135,"inCellMs":4078.059,"outcome":"typed text verified, document closed without saving"}
+{"lane":"vendor","run":2,"op":"task.act","sample":6,"ok":true,"wallMs":1226.266,"inCellMs":977.04,"actions":1,"observations":1,"scene":"textedit","route":null}
+{"lane":"vendor","run":2,"op":"task.verify","sample":6,"ok":true,"wallMs":534.096,"inCellMs":460.167,"observations":1,"present":true,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"task.close","sample":6,"ok":true,"wallMs":2751.575,"inCellMs":2671.912,"actions":2,"observations":3,"sheet":true,"closed":true,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"task.total","scene":"textedit","sample":6,"ok":true,"wallMs":4511.937,"inCellMs":4109.119,"outcome":"typed text verified, document closed without saving"}
+{"lane":"vendor","run":2,"op":"task.act","sample":7,"ok":true,"wallMs":1226.029,"inCellMs":949.576,"actions":1,"observations":1,"scene":"textedit","route":null}
+{"lane":"vendor","run":2,"op":"task.verify","sample":7,"ok":true,"wallMs":512.438,"inCellMs":446.574,"observations":1,"present":true,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"task.close","sample":7,"ok":true,"wallMs":2423.218,"inCellMs":2400.697,"actions":2,"observations":3,"sheet":true,"closed":true,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"task.total","scene":"textedit","sample":7,"ok":true,"wallMs":4161.685,"inCellMs":3796.847,"outcome":"typed text verified, document closed without saving"}
+{"lane":"vendor","run":2,"op":"task.act","sample":8,"ok":true,"wallMs":1124.2,"inCellMs":1006.624,"actions":1,"observations":1,"scene":"textedit","route":null}
+{"lane":"vendor","run":2,"op":"task.verify","sample":8,"ok":true,"wallMs":513.148,"inCellMs":461.913,"observations":1,"present":true,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"task.close","sample":8,"ok":true,"wallMs":2667.817,"inCellMs":2598.861,"actions":2,"observations":3,"sheet":true,"closed":true,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"task.total","scene":"textedit","sample":8,"ok":true,"wallMs":4305.165,"inCellMs":4067.398,"outcome":"typed text verified, document closed without saving"}
+{"lane":"vendor","run":2,"op":"task.act","sample":9,"ok":true,"wallMs":1041.892,"inCellMs":963.642,"actions":1,"observations":1,"scene":"textedit","route":null}
+{"lane":"vendor","run":2,"op":"task.verify","sample":9,"ok":true,"wallMs":458.72,"inCellMs":439.947,"observations":1,"present":true,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"task.close","sample":9,"ok":true,"wallMs":2699.486,"inCellMs":2666.813,"actions":2,"observations":3,"sheet":true,"closed":true,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"task.total","scene":"textedit","sample":9,"ok":true,"wallMs":4200.098,"inCellMs":4070.402,"outcome":"typed text verified, document closed without saving"}
+{"lane":"vendor","run":2,"op":"task.act","sample":10,"ok":true,"wallMs":1280.337,"inCellMs":978.015,"actions":1,"observations":1,"scene":"textedit","route":null}
+{"lane":"vendor","run":2,"op":"task.verify","sample":10,"ok":true,"wallMs":496.623,"inCellMs":467.425,"observations":1,"present":true,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"task.close","sample":10,"ok":true,"wallMs":2408.554,"inCellMs":2372.326,"actions":2,"observations":3,"sheet":true,"closed":true,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"task.total","scene":"textedit","sample":10,"ok":true,"wallMs":4185.514,"inCellMs":3817.766,"outcome":"typed text verified, document closed without saving"}
+{"lane":"vendor","run":2,"op":"tree.getAXState","sample":1,"ok":true,"wallMs":105.239,"inCellMs":72.544,"chars":4702,"textBytes":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"tree.getAXState","sample":2,"ok":true,"wallMs":110.914,"inCellMs":63.077,"chars":4702,"textBytes":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"tree.getAXState","sample":3,"ok":true,"wallMs":88.86,"inCellMs":58.528,"chars":4702,"textBytes":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"tree.getAXState","sample":4,"ok":true,"wallMs":200.964,"inCellMs":45.576,"chars":4702,"textBytes":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"tree.getAXState","sample":5,"ok":true,"wallMs":126.723,"inCellMs":80.813,"chars":4702,"textBytes":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"tree.getAXState","sample":6,"ok":true,"wallMs":82.715,"inCellMs":58.849,"chars":4702,"textBytes":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"tree.getAXState","sample":7,"ok":true,"wallMs":111.924,"inCellMs":46.699,"chars":4702,"textBytes":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"tree.getAXState","sample":8,"ok":true,"wallMs":223.556,"inCellMs":53.912,"chars":4702,"textBytes":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"tree.getAXState","sample":9,"ok":true,"wallMs":101.688,"inCellMs":79.485,"chars":4702,"textBytes":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"tree.getAXState","sample":10,"ok":true,"wallMs":90.131,"inCellMs":65.169,"chars":4702,"textBytes":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"tree.getAXState","sample":11,"ok":true,"wallMs":81.302,"inCellMs":56.938,"chars":4702,"textBytes":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"tree.getAXState","sample":12,"ok":true,"wallMs":101.561,"inCellMs":47.618,"chars":4702,"textBytes":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"tree.getAXState","sample":13,"ok":true,"wallMs":187.415,"inCellMs":72.241,"chars":4702,"textBytes":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"tree.getAXState","sample":14,"ok":true,"wallMs":116.395,"inCellMs":70.55,"chars":4702,"textBytes":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"tree.getAXState","sample":15,"ok":true,"wallMs":97.307,"inCellMs":53.313,"chars":4702,"textBytes":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"tree.getAXState","sample":16,"ok":true,"wallMs":105.058,"inCellMs":48.212,"chars":4702,"textBytes":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"tree.getAXState","sample":17,"ok":true,"wallMs":109.936,"inCellMs":56.728,"chars":4702,"textBytes":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"tree.getAXState","sample":18,"ok":true,"wallMs":95.946,"inCellMs":48.448,"chars":4702,"textBytes":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"tree.getAXState","sample":19,"ok":true,"wallMs":72.852,"inCellMs":49.02,"chars":4702,"textBytes":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"tree.getAXState","sample":20,"ok":true,"wallMs":82.293,"inCellMs":59.72,"chars":4702,"textBytes":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"tree.getAXState","sample":21,"ok":true,"wallMs":77.43,"inCellMs":47.92,"chars":4702,"textBytes":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"tree.getAXState","sample":22,"ok":true,"wallMs":184.885,"inCellMs":52.926,"chars":4702,"textBytes":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"tree.getAXState","sample":23,"ok":true,"wallMs":68.588,"inCellMs":48.094,"chars":4702,"textBytes":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"tree.getAXState","sample":24,"ok":true,"wallMs":116.849,"inCellMs":56.87,"chars":4702,"textBytes":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"tree.getAXState","sample":25,"ok":true,"wallMs":86.074,"inCellMs":52.848,"chars":4702,"textBytes":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"tree.getAXState","sample":26,"ok":true,"wallMs":73.562,"inCellMs":47.878,"chars":4702,"textBytes":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"tree.getAXState","sample":27,"ok":true,"wallMs":76.233,"inCellMs":48.405,"chars":4702,"textBytes":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"tree.getAXState","sample":28,"ok":true,"wallMs":166.737,"inCellMs":61.959,"chars":4702,"textBytes":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"tree.getAXState","sample":29,"ok":true,"wallMs":72.601,"inCellMs":49.528,"chars":4702,"textBytes":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"tree.getAXState","sample":30,"ok":true,"wallMs":94.707,"inCellMs":56.338,"chars":4702,"textBytes":4702,"lines":184,"elements":59,"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"golden.action","sample":1,"ok":true,"wallMs":847.838,"inCellMs":821.836,"actions":1,"observations":3,"files":[{"kind":"before.txt","name":"textedit.action.before.txt","bytes":4702,"redacted":false},{"kind":"diff.txt","name":"textedit.action.diff.txt","bytes":881,"redacted":false},{"kind":"after.txt","name":"textedit.action.after.txt","bytes":4696,"redacted":false}],"scene":"textedit"}
+{"lane":"vendor","run":2,"op":"end_task","sample":1,"ok":true}

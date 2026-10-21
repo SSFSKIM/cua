@@ -217,7 +217,7 @@ test('createElicitation asks the client: accept, decline and cancel come back in
   assert.deepEqual(parsed(await ask('refused')), {rejected: 'client refused'});
   const asked = host.serverRequests.filter(m => m.method === 'elicitation/create');
   assert.equal(asked.length, 6);
-  assert.deepEqual(asked[0].params, {_meta: {k: 1}, message: 'accept', requestedSchema: {properties: {name: {type: 'string'}}, required: ['name'], type: 'object'}});
+  assert.deepEqual(asked[0].params, {_meta: {k: 1}, message: 'accept', mode: 'form', requestedSchema: {properties: {name: {type: 'string'}}, required: ['name'], type: 'object'}});
   assert.deepEqual(parsed(await ask('bad schema', {type: 'array'})), {rejected: `${INVALID_SCHEMA_PREFIX}expected type "object"`});
   assert.deepEqual(parsed(await ask('nested schema', {type: 'object', properties: {deep: {type: 'object'}}})), {rejected: `${INVALID_SCHEMA_PREFIX}property "deep" must be a string, number, integer or boolean schema`});
   assert.equal(host.serverRequests.filter(m => m.method === 'elicitation/create').length, 6, 'an invalid schema never reaches the client');

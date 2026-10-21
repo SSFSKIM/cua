@@ -2,6 +2,7 @@
 // adapter (E3) drives as well as node:http. Most tests serve in-process connections (createServer over the in-memory
 // fake upstream of mcp-harness.mjs) so the order of every reply is the test's; the last ones serve real connections
 // (openConnection on a scratch home whose runtime is the fake upstream process) to prove what a session releases.
+import './helpers/scratch-home.mjs'; // first: the native engine's selection must not read the account's own settings
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {existsSync, readdirSync} from 'node:fs';

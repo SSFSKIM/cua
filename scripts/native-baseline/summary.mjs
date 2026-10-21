@@ -9,11 +9,14 @@
 // they ran against (commit, REPL host, runtime release, hardware, OS, display, service, sandbox, sample plan) are reported
 // as problems, and so is a run whose answering host is not attested on every connection it opened (scripts/bench-summary.mjs
 // validateHostAttestations), or, recorded with host attestation, one that lacks its sandbox policy or falls short of its
-// plan (coverageProblems). A run recorded before host attestation has no requested host and is summarised as such.
+// plan (coverageProblems). A run recorded before host attestation has no requested host and is summarised as such. A macOS
+// computer run of #117 also attests its native engine (requested and answering, scripts/native-baseline/engine.mjs) and
+// the approved engine it served; one whose engine or helper attestation is unsound is a problem (engineProblem).
 import {readFileSync, readdirSync, existsSync} from 'node:fs';
 import {join} from 'node:path';
 import {validateHostAttestations} from '../bench-summary.mjs';
 import {METHOD_CASES} from './linux-cells.mjs';
+import {engineProblem, attestedBuild} from './engine.mjs';
 
 // The order operations are reported in; anything else follows alphabetically.
 export const OPERATION_ORDER = [
@@ -58,7 +61,7 @@ export const isDefaultPlan = plan => Object.entries(DEFAULT_PLAN).every(([key, n
 export const surfaceOf = meta => meta.surface ?? 'computer';
 
 const GiB = 1024 ** 3;
-const ATTESTED = ['device', 'commit', 'host', 'release', 'hardware', 'os', 'display', 'service', 'sandbox', 'plan'];
+const ATTESTED = ['device', 'commit', 'host', 'engine', 'approvedEngine', 'release', 'hardware', 'os', 'display', 'service', 'sandbox', 'plan'];
 // The answering host a run attests: the requested host and what its connections' initialize named, or null for a run
 // recorded before host attestation.
 function hostAttested(meta) {
@@ -66,6 +69,15 @@ function hostAttested(meta) {
   const answered = [...new Set((meta.hostAttestations ?? []).map(a => `${a?.serverInfo?.name ?? '?'} ${a?.serverInfo?.version ?? '?'}`))].sort();
   return `${meta.host} (initialize: ${answered.join(', ') || 'none recorded'})`;
 }
+// The native engine a run attests: the requested engine and every value its js results' attestation named, or null for
+// a run that records none (before engine attestation, or not a macOS computer run).
+function engineAttested(meta) {
+  const record = meta.nativeEngine;
+  if (!record) return null;
+  const answered = (record.attested ?? []).map(a => `${a.engine} ${a.version}, build ${attestedBuild(a.build)}`);
+  return `${record.requested} (attested: ${answered.join('; ') || 'none'}${record.unattested ? `; ${record.unattested} unattested` : ''})`;
+}
+const approvedAttested = approved => (approved?.build ? `${attestedBuild(approved.build)} (cua ${approved.engineVersion ?? '?'}, ${approved.bundlePath ?? '?'})` : null);
 // The facts a run attests, as the strings the summary compares and prints.
 export function attestation(meta) {
   const hw = meta.hardware ?? {}, os = meta.os ?? {}, display = meta.display ?? {}, service = meta.service ?? {}, plan = meta.plan ?? {};
@@ -73,6 +85,8 @@ export function attestation(meta) {
     device: meta.device ?? null,
     commit: meta.commit ?? null,
     host: hostAttested(meta),
+    engine: engineAttested(meta),
+    approvedEngine: approvedAttested(meta.nativeEngine?.approved),
     release: meta.runtime?.release ?? null,
     hardware: [hw.model, hw.chip, hw.memoryBytes ? `${Math.round(hw.memoryBytes / GiB)} GiB` : null].filter(Boolean).join(', ') || null,
     os: os.version ? `${os.name ?? 'macOS'} ${os.version}${os.build ? ` (${os.build})` : ''}` : null,
@@ -93,7 +107,7 @@ export function coverageProblems(run) {
   const count = op => rows.filter(r => r.op === op).length;
   const linux = meta.platform === 'linux';
   const expected = surfaceOf(meta) === 'browser' ? [['ssh.roundtrip', 5]] : [['ssh.roundtrip', 5], ['warm.noop', plan.samples], ['warm.getState', plan.samples], ['warm.listApps', plan.samples],
-    [linux ? 'setup.findWindow' : 'setup.newDocument', 1], ['bind.getApp', 1], ['warm.getAXState', plan.samples], ['warm.getScreenshot', plan.samples],
+    ...(meta.nativeEngine ? [['setup.activate', 1]] : []), [linux ? 'setup.findWindow' : 'setup.newDocument', 1], ['bind.getApp', 1], ['warm.getAXState', plan.samples], ['warm.getScreenshot', plan.samples],
     ['task.act', plan.tasks], [linux ? 'task.clear' : 'task.close', plan.tasks], ['task.total', plan.tasks],
     ...(linux ? Object.keys(METHOD_CASES).map(op => [op, 1]) : []), ['end_task', 1]];
   const problems = expected.filter(([op, n]) => count(op) !== n).map(([op, n]) => `${name} covers ${count(op)} ${op} sample${count(op) === 1 ? '' : 's'}, the plan ${n}`);
@@ -146,6 +160,8 @@ export function summarize(runs) {
     if (run.meta.complete !== true) problems.push(`${run.name} is incomplete${run.meta.error ? ` (${run.meta.error})` : ''}`);
     const host = hostProblem(run.meta, run.name);
     if (host) problems.push(host);
+    const engine = engineProblem(run.meta, run.name);
+    if (engine) problems.push(engine);
     // Evidence recorded with host attestation must also record its sandbox policy and cover its whole plan.
     if (run.meta.host !== undefined) {
       if (!run.meta.sandbox?.mode) problems.push(`${run.name} records no sandbox policy`);
@@ -181,7 +197,8 @@ export function renderMarkdown(summary) {
     '# Native baseline summary', '',
     `Runs: ${summary.runs.map(r => `${r.name} (${r.started ?? '?'} to ${r.finished ?? '?'}${r.complete ? '' : ', incomplete'})`).join('; ')}.`, '',
     '| Attested | Value |', '|---|---|',
-    `| Device | ${a.device ?? '–'} |`, `| Host commit | ${a.commit ?? '–'} |`, `| REPL host | ${a.host ?? 'not attested (recorded before host attestation)'} |`, `| Runtime release | ${a.release ?? '–'} |`,
+    `| Device | ${a.device ?? '–'} |`, `| Host commit | ${a.commit ?? '–'} |`, `| REPL host | ${a.host ?? 'not attested (recorded before host attestation)'} |`,
+    `| Engine | ${a.engine ?? '–'} |`, `| Approved engine | ${a.approvedEngine ?? '–'} |`, `| Runtime release | ${a.release ?? '–'} |`,
     `| Hardware | ${a.hardware ?? '–'} |`, `| OS | ${a.os ?? '–'} |`, `| Display | ${a.display ?? '–'} |`, `| Service | ${a.service ?? '–'} |`, `| Sandbox | ${a.sandbox ?? '–'} |`, `| Sample plan | ${a.plan ?? '–'} |`, '',
     'Milliseconds. Latency columns cover successful samples only (invalidated samples, whose target was not the scratch document, are counted apart); wall is the harness\'s time around the MCP call (it includes the ssh pipe), in-cell is `performance.now()` inside the cell on the device.', '',
     '| Operation | Samples | OK | Invalid | Errors | Wall median | Wall p95 | Wall max | In-cell median | In-cell p95 | In-cell max |',
@@ -198,6 +215,6 @@ export function renderMarkdown(summary) {
   const errors = summary.operations.flatMap(o => o.errors.map(e => `- ${o.op}, ${e.run} sample ${e.sample}: ${e.error}`));
   lines.push('', '## Errors', '', ...(errors.length ? errors : ['None.']));
   lines.push('', '## Problems', '', ...(summary.problems.length ? summary.problems.map(p => `- ${p}`)
-    : ['No problems: every run is complete and attests the same commit, REPL host, release, hardware, OS, display, service, sandbox and sample plan.']));
+    : ['No problems: every run is complete and attests the same commit, REPL host, engine, approved engine, release, hardware, OS, display, service, sandbox and sample plan.']));
   return lines.join('\n') + '\n';
 }

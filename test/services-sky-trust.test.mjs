@@ -2,6 +2,7 @@
 // real path lies outside NODE_REPL_TRUSTED_CODE_PATHS. This runs the service in a child Node with a copy of that
 // resolve hook (pinned node_repl 26.928.40906, trusted-worker.js) and exactly the environment buildLaunch produces,
 // so a new import outside the trusted directories fails here rather than only in a live runtime.
+import './helpers/scratch-home.mjs'; // first: the native engine's selection must not read the account's own settings
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {execFile} from 'node:child_process';
@@ -86,7 +87,7 @@ const ownAsVendorNames = env => ({...env, NODE_REPL_TRUSTED_SERVICES: env.CUA_RE
 test('the production sky service and everything it imports load under exactly the launch\'s trusted paths', {skip: typeof registerHooks !== 'function'}, async t => {
   const {env} = launchWithFakeVendor(t, {secretsUnavailable: 'secrets_disabled'});
   const [setup, reference] = await runWorker(env);
-  assert.deepEqual(setup, {vendor: 'setup'}, 'delegated to the vendor module named by CUA_SKY_VENDOR_SERVICE');
+  assert.deepEqual(setup, {vendor: 'setup'}, 'delegated to the service module named by CUA_SKY_SERVICE');
   assert.match(reference.error, /\[secrets_disabled\]$/, 'a reference fails closed with the launch\'s reason');
 });
 

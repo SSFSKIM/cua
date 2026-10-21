@@ -1,0 +1,45 @@
+{
+  "about": "Every difference between cua's output and the vendor's on these goldens, each with its cause (PROVENANCE.md). `fault` names where it comes from: \"engine\" (the recorded Skyshot is wrong, or lacks what the vendor reads), \"redaction\" (Finder's captures hide the content the rule reads) \"scene state\" (the two lanes' actions left different states), \"vendor\" (the pinned vendor's own defect: cua's output is the right one, and the declaration stays as long as the vendor has it) or \"engine or renderer\" (undecided until M1b compares Finder by full text). The engine corrections (`kind: \"skyshot\"`, fault \"engine\") and the engine differences expire: M1b re-records these goldens live from the fixed engine (task M1a.2b) and deletes every engine-fault declaration then; one still needed at that point is an engine defect, not a declaration. Kinds: `skyshot` (a correction applied to the Skyshot before rendering), `part` (inside a matched line, cua's `<label>: <cua>` is the vendor's `<label>: <vendor>`), `missing` and `added` (a whole line, by its matching key), `header` and `trailer` (both sides' exact text), `addedOverTenPercent` (`decisionLog` cites the entry by its dated opening, `- Decision (<YYYY-MM-DD>…`), `subsetCount` (on the element whose `ID:` is `identifier`, the vendor's `(showing <ranges> of <N> items)` N is min(cua's N, `cap`) with cua's N above the cap, the line otherwise equal, its ranges included). `golden` is \"full\", \"before\" or \"diff\" (all three when absent); `count` is exact.",
+  "declarations": [
+    {
+      "scene": "textedit",
+      "golden": "diff",
+      "kind": "header",
+      "fault": "scene state",
+      "vendor": "The following is a diff from the previous accessibility tree for Window: \"cua-scene.rtf\" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.",
+      "cua": "There has been no change in the accessibility tree for Window: \"cua-scene.rtf\".",
+      "cause": "Scene state, not rendering: the vendor's click on the document's first line scrolled the document to its end (the vertical scroll bar and its indicator 0.02 → 1, its diff's only two lines), while cua's click left the tree unchanged (its before and after Skyshots differ in no node), so cua answers the no-change sentence. The vendor activates TextEdit on a click (#162); cua does not."
+    },
+    {
+      "scene": "textedit",
+      "golden": "diff",
+      "kind": "missing",
+      "fault": "scene state",
+      "head": "~scroll bar (settable, float) 1 | ",
+      "count": 1,
+      "cause": "Scene state, not rendering: the vendor's click on the document's first line scrolled the document to its end (the vertical scroll bar and its indicator 0.02 → 1, its diff's only two lines), while cua's click left the tree unchanged (its before and after Skyshots differ in no node), so cua answers the no-change sentence. The vendor activates TextEdit on a click (#162); cua does not."
+    },
+    {
+      "scene": "textedit",
+      "golden": "diff",
+      "kind": "missing",
+      "fault": "scene state",
+      "head": "~value indicator (settable, float) 1 | ",
+      "count": 1,
+      "cause": "Scene state, not rendering: the vendor's click on the document's first line scrolled the document to its end (the vertical scroll bar and its indicator 0.02 → 1, its diff's only two lines), while cua's click left the tree unchanged (its before and after Skyshots differ in no node), so cua answers the no-change sentence. The vendor activates TextEdit on a click (#162); cua does not."
+    },
+    {
+      "scene": "finder",
+      "golden": [
+        "full",
+        "before"
+      ],
+      "kind": "subsetCount",
+      "fault": "vendor",
+      "identifier": "ListView",
+      "cap": 100,
+      "count": 1,
+      "cause": "Vendor defect: the vendor's subset count of the run's 205-file list reads `of 100 items` where cua reads `of 205 items`. availableSubsetDescription (0x10063e220) counts the element's childCount through get_childCount (0x10079e94c), over the hierarchy its prefetch read with _AXUIElementCopyHierarchy with AXChildren capped at MaxArrayCount 100 (docs/doperpowers/research/2026-10-18-own-native-engine/F-helper-logic.md §1 item 1), so its N never exceeds 100. cua keeps the true count: a model looking for item 150 must not be told the list ends at 100. Only N may differ; the visible ranges and the rest of the line must match."
+    }
+  ]
+}

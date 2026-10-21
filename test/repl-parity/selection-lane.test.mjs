@@ -3,11 +3,13 @@
 // listing and doctor resolve the selection (replHostFor, invalid_repl_host). Every refusal carries one sentence.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync,realpathSync} from 'node:fs';
+import {existsSync,readFileSync,realpathSync} from 'node:fs';
 import {spawnSync} from 'node:child_process';
 import {join} from 'node:path';
 import {expectedSelection,selectionCases,assertSelection,selectionVerdict} from '../../scripts/repl-parity/selection.mjs';
-import {ordinaryCall,refusalOf,listingOutcome,evaluateSelection} from '../../scripts/repl-parity/selection-device.mjs';
+import {ordinaryCall,refusalOf,listingOutcome,evaluateSelection,applyEngineRow} from '../../scripts/repl-parity/selection-device.mjs';
+import {placeFixtureEngine,fixtureEngineLaunched,FIXTURE_ENGINE} from '../../scripts/probe/fixture-engine.mjs';
+import {engineDirectory,installedEngine} from '../../src/runtime/engine.mjs';
 import {REPO,scratch,shortScratch,forgeActiveRuntime} from '../fixtures/runtime-fixture.mjs';
 import {loadPins,selectPin} from '../../src/runtime/manifest.mjs';
 const pinned=(()=>{try{selectPin(loadPins());return true;}catch{return false;}})();
@@ -73,7 +75,7 @@ test('the profiles-listing invalid row accepts only invalid_repl_host with the e
 test('other refusals are read from the row\'s own doctor lane too',()=>{
  const row={platform:'darwin',registration:'cua',maws:false,surfaces:['computer'],lane:'ordinary',override:'cua',node24:true,managedNode:true};
  assert.equal(expectedSelection(row).error,'repl_host_refused');
- const refused='refused (repl_host_refused): CUA_REPL_HOST=cua is not supported with the computer surface on macOS';
+ const refused='refused (repl_host_refused): CUA_REPL_HOST=cua is not supported with the computer surface on macOS and the default vendor engine: the vendor\'s computer-use helper accepts only the vendor host\'s node_repl as a peer';
  const own='cua host (explicit): CUA_REPL_HOST=cua, on Node /node';
  const detail=(ordinary,listing)=>`${ordinary}. Browser route: none, no browser surface. The profile listing (browser only): ${listing}. CUA_REPL_HOST=cua or vendor chooses`;
  assert.doesNotThrow(()=>assertSelection(row,{doctor:{status:'fail',detail:detail(refused,own)},error:'repl_host_refused',errorMessage:'cua: repl_host_refused'}));
@@ -147,4 +149,30 @@ test('the lane verdict fails on any failing row or check, an unfinished lane, or
  assert.equal(failing.lines[2],'check job: job wrong');
  assert.deepEqual(selectionVerdict({complete:false,error:'install failed',planned:3,rows:[],failures:[]}),{ok:false,lines:['lane stopped before finishing: install failed']});
  assert.equal(selectionVerdict({complete:true,planned:3,rows:rows(2),failures:[]}).ok,false);
+});
+
+// #117's engine rows on the device: the row's setting reaches the environment or the scratch HOME's engine.json, and the
+// fixture approved engine reads as installed exactly on the rows that say so (a real ad hoc codesign of a scratch copy;
+// nothing is launched).
+test('engine rows set CUA_NATIVE_ENGINE or engine.json, and approve the fixture engine only where the row is installed',{skip:process.platform!=='darwin'&&'the fixture engine is signed with macOS codesign'},t=>{
+ const s=scratch('cua-sel-engine-');t.after(s.cleanup);const user=realpathSync(s.dir),dir=engineDirectory(user),settings=join(user,'.config','cua','engine.json');
+ let placed=0;const place=home=>{placed++;return placeFixtureEngine(home);};
+ assert.deepEqual(applyEngineRow(user,{engine:'cua',installed:true},{place}),{CUA_NATIVE_ENGINE:'cua'});
+ assert.deepEqual(installedEngine({dir}),{bundlePath:join(dir,'cua Engine.app'),engineVersion:FIXTURE_ENGINE.version,build:FIXTURE_ENGINE.build,approvedAt:installedEngine({dir}).approvedAt});
+ assert.equal(existsSync(settings),false);
+ assert.deepEqual(applyEngineRow(user,{engine:'cua',engineFrom:'settings',installed:true},{place}),{});
+ assert.deepEqual(JSON.parse(readFileSync(settings,'utf8')),{engine:'cua'});
+ assert.equal(placed,1,'the fixture is signed once and kept');
+ assert.deepEqual(applyEngineRow(user,{engine:'invalid',installed:false},{place}),{CUA_NATIVE_ENGINE:'invalid'});
+ assert.equal(installedEngine({dir}),null,'not installed: approved.json is gone');
+ assert.equal(existsSync(settings),false);
+ assert.deepEqual(applyEngineRow(user,{engine:'unset',installed:true},{place}),{});
+ assert.equal(installedEngine({dir}).build,FIXTURE_ENGINE.build);
+ assert.deepEqual(applyEngineRow(user,{},{place}),{},'a row with no engine fields is today\'s');
+ assert.equal(installedEngine({dir}),null);
+ // The probes' launch check: the fixture's executable, run directly here (never through LaunchServices), leaves the
+ // marker fixtureEngineLaunched reads; nothing had run it before.
+ assert.equal(fixtureEngineLaunched(user),false);
+ assert.equal(spawnSync(join(dir,'cua Engine.app','Contents','MacOS','cua-engine')).status,0);
+ assert.equal(fixtureEngineLaunched(user),true);
 });

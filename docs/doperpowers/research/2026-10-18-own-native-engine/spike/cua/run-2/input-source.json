@@ -1,0 +1,7 @@
+{
+  "name": "ABC",
+  "keyboardLayout": true,
+  "id": "com.apple.keylayout.ABC",
+  "perContextInput": false,
+  "asciiCapable": true
+}

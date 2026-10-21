@@ -6,7 +6,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {existsSync, mkdirSync, realpathSync, statSync, symlinkSync} from 'node:fs';
 import {join} from 'node:path';
-import {buildLaunch, createLaunchDirs, removeLaunchDirs, SKY_SERVICE, BROWSER_SERVICE} from '../src/runtime/launch.mjs';
+import {buildLaunch, createLaunchDirs, removeLaunchDirs, SKY_SERVICE, BROWSER_SERVICE, ENGINE_SERVICE_DIR} from '../src/runtime/launch.mjs';
 import {parsePin, runtimeFor} from '../src/runtime/manifest.mjs';
 import {scratch, fixturePin, linuxFixturePin} from './fixtures/runtime-fixture.mjs';
 import {helperFor} from '../src/sandbox/linux.mjs';
@@ -49,9 +49,10 @@ test('a Linux computer-use launch runs cua\'s own host: the desktop session, the
     CUA_REPL_SANDBOX_HELPER: join(home, 'sandbox', helper.path.split('/').at(-2), 'codex-linux-sandbox'), CUA_REPL_SANDBOX_HELPER_SHA256: helper.sha256,
     CUA_REPL_WORKER_NETWORK: 'enabled',
     OAI_SKY_LINUX_BIN: join(runtime.root, 'cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64'),
-    CUA_SKY_VENDOR_SERVICE: p.skyVendorService,
+    CUA_SKY_SERVICE: p.skyVendorService,
   });
   assert.equal(JSON.parse(env.CUA_REPL_TRUSTED_SERVICES).sky, SKY_SERVICE);
+  assert.ok(!env.CUA_REPL_TRUSTED_CODE_PATHS.split(':').includes(ENGINE_SERVICE_DIR), 'cua\'s macOS engine service is never trusted on Linux (#171)');
   assert.equal(launch.sandboxHelperRoot, join(home, 'sandbox'), 'the helper\'s directory, which the scoped preflight protects');
   // The Linux shape of the deny list (#115 M0c): the home's private directories and run/ one by one, the session re-exposed.
   const {deny, reexpose} = JSON.parse(env.CUA_SANDBOX_DENY_READ);
@@ -105,7 +106,7 @@ test('a Linux browser-only launch configures no computer-use helper', t => {
   const {home, runtime} = linux(t);
   const {env} = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, surfaces: ['browser'], services: {browser: BROWSER_SERVICE}, resolveOwnNode: ownNode});
   assert.equal(env.CUA_REPL_ENABLED_SURFACES, 'browser');
-  for (const key of ['OAI_SKY_LINUX_BIN', 'CUA_SKY_VENDOR_SERVICE', 'SKY_CUA_SERVICE_PATH']) assert.equal(key in env, false, key);
+  for (const key of ['OAI_SKY_LINUX_BIN', 'CUA_SKY_SERVICE', 'SKY_CUA_SERVICE_PATH']) assert.equal(key in env, false, key);
   assert.deepEqual(Object.keys(env).filter(key => /BROWSER/.test(key)).sort(), ['BROWSER_USE_AVAILABLE_BACKENDS', 'BROWSER_USE_BACKEND_PATHS'], 'cua\'s browser service, given cua\'s sockets');
   assert.deepEqual([env.CUA_REPL_SANDBOX_HELPER, env.CUA_REPL_WORKER_NETWORK, env.CODEX_CLI_PATH], [helperFor({home, arch: 'x64'}).path, undefined, undefined],
     'confined by the helper, the worker with no network: nothing it runs needs one');

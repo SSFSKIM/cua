@@ -1,0 +1,28 @@
+Window: "cua Electron fixture", App: cua Electron Fixture.
+0 표준 윈도우 cua Electron fixture, Secondary Actions: Raise
+	1 container cua Electron fixture
+		2 container
+			3 HTML 콘텐츠 cua Electron fixture, URL: file:///Users/new/Library/Caches/cua-harness/electron-fixture/44.9.0-3a9e238ede15/cua%20Electron%20Fixture.app/Contents/Resources/app/index.html
+				4 container
+					5 텍스트 엔트리 영역 (settable) Fixture text
+					6 목록 상자 Fixture list
+						7 텍스트 Alpha
+						8 텍스트 Bravo
+						9 텍스트 Charlie
+						10 텍스트 Delta
+						11 텍스트 Echo
+						12 텍스트 Foxtrot
+					13 버튼 Fixture button
+					14 container Fixture status
+						15 텍스트 Pressed 1 time
+	16 닫기 버튼
+	17 전체 화면 버튼 Help: 이 버튼을 누르면 윈도우를 확대/축소합니다., Secondary Actions: 윈도우 확대/축소
+	18 최소화 버튼
+19 menu bar
+	20 cua Electron Fixture
+	21 File
+	22 Edit
+	23 View
+	24 Window
+
+The focused UI element is 13 버튼 Fixture button

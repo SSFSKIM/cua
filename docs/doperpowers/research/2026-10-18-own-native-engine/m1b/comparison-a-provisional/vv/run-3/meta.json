@@ -1,0 +1,372 @@
+{
+  "measurement": {
+    "schema": 2,
+    "experiment": "m1b5-2026-10-21",
+    "freshInstall": false
+  },
+  "runtimeReuse": {
+    "approvedHome": "/Users/new/Library/Application Support/cua-spike-vendor",
+    "release": "26.928.40906-darwin-arm64",
+    "runtimeRoot": "/Users/new/Library/Application Support/cua-spike-vendor/runtimes/26.928.40906-darwin-arm64",
+    "helper": "/Users/new/Library/Application Support/cua-spike-vendor/runtimes/26.928.40906-darwin-arm64/cua_node/lib/node_modules/@oai/sky/Codex Computer Use.app",
+    "executable": "/Users/new/Library/Application Support/cua-spike-vendor/runtimes/26.928.40906-darwin-arm64/cua_node/lib/node_modules/@oai/sky/Codex Computer Use.app/Contents/MacOS/SkyComputerUseService",
+    "reason": "a new on-disk copy of the native helper raises a one-time screen-capture confirmation; the approved copy is reused"
+  },
+  "nodeMode": "managed",
+  "preparation": {
+    "device": "mini",
+    "home": "/Users/new/Library/Application Support/cua-spike-vendor",
+    "userHome": "/Users/new",
+    "configHome": "/Users/new/.local/share/cua-native-baseline/run-C52yVV/config",
+    "tmpdir": "/Users/new/.local/share/cua-native-baseline/run-C52yVV/tmp",
+    "scratch": "/Users/new/.local/share/cua-native-baseline/run-C52yVV",
+    "token": "1134619e-b40b-4615-ae78-f6e3af27b9ec",
+    "admission": "1134619e-b40b-4615-ae78-f6e3af27b9ec",
+    "xSession": {},
+    "nodeMode": "managed",
+    "nodeOverride": null,
+    "runtimeReuse": {
+      "approvedHome": "/Users/new/Library/Application Support/cua-spike-vendor",
+      "release": "26.928.40906-darwin-arm64",
+      "runtimeRoot": "/Users/new/Library/Application Support/cua-spike-vendor/runtimes/26.928.40906-darwin-arm64",
+      "helper": "/Users/new/Library/Application Support/cua-spike-vendor/runtimes/26.928.40906-darwin-arm64/cua_node/lib/node_modules/@oai/sky/Codex Computer Use.app",
+      "executable": "/Users/new/Library/Application Support/cua-spike-vendor/runtimes/26.928.40906-darwin-arm64/cua_node/lib/node_modules/@oai/sky/Codex Computer Use.app/Contents/MacOS/SkyComputerUseService",
+      "reason": "a new on-disk copy of the native helper raises a one-time screen-capture confirmation; the approved copy is reused"
+    },
+    "stashed": [],
+    "ownNode": {
+      "path": "/Users/new/Library/Application Support/cua-spike-vendor/node/24.22.0/bin/node",
+      "version": "v24.22.0"
+    },
+    "engineStop": {
+      "wasRunning": false
+    }
+  },
+  "controllerIdentity": {
+    "hostname": "SK.local",
+    "platform": "darwin",
+    "arch": "arm64",
+    "os": "25.6.0",
+    "node": "v22.23.2",
+    "cpu": {
+      "model": "Apple M1 Max",
+      "count": 10
+    }
+  },
+  "userHome": "/Users/new",
+  "xSession": {},
+  "deviceIdentity": {
+    "alias": "mini",
+    "arch": "arm64",
+    "hostname": "Mac-mini.local",
+    "os": {
+      "name": "macOS",
+      "version": "27.0",
+      "build": "26A428"
+    },
+    "cpu": {
+      "model": "Apple M2 Pro",
+      "count": 10
+    }
+  },
+  "load": {
+    "device": {
+      "before": "9:45  up 18:50, 2 users, load averages: 3.06 3.33 3.01",
+      "after": "9:47  up 18:52, 2 users, load averages: 2.89 3.19 2.99"
+    },
+    "controller": {
+      "before": "17:45  up 22 days,  5:46, 39 users, load averages: 21.42 22.03 35.13",
+      "after": "17:47  up 22 days,  5:48, 38 users, load averages: 18.92 20.08 32.59"
+    }
+  },
+  "device": "mini",
+  "platform": "darwin",
+  "host": "vendor",
+  "surface": "computer",
+  "hostAttestations": [
+    {
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 140,
+        "cua/nativeEngine": {
+          "engine": "vendor",
+          "version": "26.924.1001281",
+          "build": "26.928.40906-darwin-arm64"
+        },
+        "cua/taskId": "62d4fb33-c3c1-49a2-b81f-b5e57cc6d841",
+        "cua/nativeExecution": {
+          "path": "/Users/new/Library/Application Support/cua-spike-vendor/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node",
+          "version": "v24.21.0"
+        },
+        "cua/sandboxLaunch": {
+          "launcher": "cua-compat",
+          "tmpdir": "session"
+        }
+      }
+    },
+    {
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 116,
+        "cua/nativeEngine": {
+          "engine": "vendor",
+          "version": "26.924.1001281",
+          "build": "26.928.40906-darwin-arm64"
+        },
+        "cua/taskId": "d7baed9a-6e17-4b8b-afe2-227d0799989b",
+        "cua/nativeExecution": {
+          "path": "/Users/new/Library/Application Support/cua-spike-vendor/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node",
+          "version": "v24.21.0"
+        },
+        "cua/sandboxLaunch": {
+          "launcher": "cua-compat",
+          "tmpdir": "session"
+        }
+      }
+    },
+    {
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 125,
+        "cua/nativeEngine": {
+          "engine": "vendor",
+          "version": "26.924.1001281",
+          "build": "26.928.40906-darwin-arm64"
+        },
+        "cua/taskId": "ff8d00d6-75f9-4bd7-b1ed-413cf9b845f2",
+        "cua/nativeExecution": {
+          "path": "/Users/new/Library/Application Support/cua-spike-vendor/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node",
+          "version": "v24.21.0"
+        },
+        "cua/sandboxLaunch": {
+          "launcher": "cua-compat",
+          "tmpdir": "session"
+        }
+      }
+    },
+    {
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 119,
+        "cua/nativeEngine": {
+          "engine": "vendor",
+          "version": "26.924.1001281",
+          "build": "26.928.40906-darwin-arm64"
+        },
+        "cua/taskId": "815135f8-07ea-4eeb-aa58-2ab4984cf6a8",
+        "cua/nativeExecution": {
+          "path": "/Users/new/Library/Application Support/cua-spike-vendor/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node",
+          "version": "v24.21.0"
+        },
+        "cua/sandboxLaunch": {
+          "launcher": "cua-compat",
+          "tmpdir": "session"
+        }
+      }
+    },
+    {
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 118,
+        "cua/nativeEngine": {
+          "engine": "vendor",
+          "version": "26.924.1001281",
+          "build": "26.928.40906-darwin-arm64"
+        },
+        "cua/taskId": "289e3a49-16f4-4ad9-92ea-463d35c40d5c",
+        "cua/nativeExecution": {
+          "path": "/Users/new/Library/Application Support/cua-spike-vendor/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node",
+          "version": "v24.21.0"
+        },
+        "cua/sandboxLaunch": {
+          "launcher": "cua-compat",
+          "tmpdir": "session"
+        }
+      }
+    },
+    {
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 116,
+        "cua/nativeEngine": {
+          "engine": "vendor",
+          "version": "26.924.1001281",
+          "build": "26.928.40906-darwin-arm64"
+        },
+        "cua/taskId": "b17f16db-866e-4f32-9434-b6ef5a491e02",
+        "cua/nativeExecution": {
+          "path": "/Users/new/Library/Application Support/cua-spike-vendor/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node",
+          "version": "v24.21.0"
+        },
+        "cua/sandboxLaunch": {
+          "launcher": "cua-compat",
+          "tmpdir": "session"
+        }
+      }
+    }
+  ],
+  "connections": 6,
+  "protocolVersion": "2025-06-18",
+  "environment": {
+    "CUA_REPL_HOST": "vendor",
+    "CUA_NATIVE_ENGINE": "vendor",
+    "CUA_SHIM_SURFACES": "computer",
+    "CUA_SHIM_PERSIST": "session",
+    "CUA_SHIM_SECRETS": "off"
+  },
+  "plan": {
+    "samples": 30,
+    "cold": 5,
+    "tasks": 10,
+    "coldPlan": [
+      "miss",
+      "hit",
+      "miss",
+      "hit",
+      "hit"
+    ]
+  },
+  "started": "2026-10-21T00:45:11.122Z",
+  "spikeWaitMs": 7452,
+  "elicitations": [
+    {
+      "t": "2026-10-21T00:45:39.877Z",
+      "at": 37436.031125,
+      "app": "com.apple.TextEdit",
+      "action": "accept"
+    }
+  ],
+  "complete": true,
+  "nativeEngine": {
+    "requested": "vendor",
+    "approved": {
+      "bundlePath": "/Users/new/Library/Application Support/cua/engine/cua Engine.app",
+      "engineVersion": "0.1.0",
+      "build": "6757e0ebe1880618801eb3e8d2ab3c74e6884df449732b32fb81141b3f1389ff",
+      "signature": {
+        "kind": "identity",
+        "identityMatches": true
+      }
+    },
+    "checkoutBuild": "6757e0ebe1880618801eb3e8d2ab3c74e6884df449732b32fb81141b3f1389ff",
+    "attested": [
+      {
+        "engine": "vendor",
+        "version": "26.924.1001281",
+        "build": "26.928.40906-darwin-arm64"
+      }
+    ],
+    "unattested": 0
+  },
+  "engineStop": {
+    "start": {
+      "wasRunning": false
+    },
+    "end": {
+      "wasRunning": false
+    }
+  },
+  "commit": "ccbb824265b0c7853d60dacdbc8b706069b6c647",
+  "checkout": "/Users/new/Developer/GitHub/cua-parity",
+  "home": "/Users/new/Library/Application Support/cua-spike-vendor",
+  "node": "v24.18.0",
+  "ownNode": {
+    "path": "/Users/new/Library/Application Support/cua-spike-vendor/node/24.22.0/bin/node",
+    "version": "v24.22.0"
+  },
+  "runtime": {
+    "release": "26.928.40906-darwin-arm64"
+  },
+  "sandbox": {
+    "mode": "scoped",
+    "explicit": false
+  },
+  "hardware": {
+    "model": "Mac14,12",
+    "chip": "Apple M2 Pro",
+    "memoryBytes": 17179869184
+  },
+  "os": {
+    "name": "macOS",
+    "version": "27.0",
+    "build": "26A428"
+  },
+  "display": {
+    "pixels": "5120 x 2880",
+    "resolution": "2560 x 1440",
+    "scale": 2,
+    "virtual": true
+  },
+  "textEdit": {
+    "runningBefore": false,
+    "launchedByRun": true,
+    "pid": 10392,
+    "started": "Wed Oct 21 09:45:39 2026",
+    "scratchDocument": true,
+    "quitByRun": true
+  },
+  "helperAtStart": {
+    "helper": "none observed",
+    "helpers": []
+  },
+  "answeringNode": {
+    "path": "/Users/new/Library/Application Support/cua-spike-vendor/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node",
+    "version": "v24.21.0"
+  },
+  "sandboxLaunch": {
+    "launcher": "cua-compat",
+    "tmpdir": "session"
+  },
+  "service": {
+    "surface": "computer",
+    "engine": "vendor",
+    "answered": "vendor",
+    "helper": "pinned runtime",
+    "helpers": [
+      {
+        "path": "~/Library/Application Support/cua-spike-vendor/runtimes/26.928.40906-darwin-arm64/cua_node/lib/node_modules/@oai/sky/Codex Computer Use.app/Contents/MacOS/SkyComputerUseService",
+        "kind": "vendor",
+        "origin": "pinned runtime",
+        "ageSeconds": 16,
+        "startedDuringRun": true
+      }
+    ]
+  },
+  "leftovers": {
+    "serves": 0,
+    "textEditRunning": false
+  },
+  "finished": "2026-10-21T00:47:12.171Z",
+  "preparationCleanup": {
+    "removed": true,
+    "restored": [],
+    "helpersStopped": [],
+    "engineStop": {
+      "wasRunning": false
+    }
+  }
+}

@@ -11,6 +11,8 @@ import {loadPins, selectPin, findPin} from './runtime/manifest.mjs';
 import {installRuntime, installSandboxHelper, useRuntime} from './runtime/install.mjs';
 import {describeLeftovers, describeRemoval, findCodexLeftovers, removeCodexLeftovers} from './runtime/codex-leftovers.mjs';
 import {installNode} from './runtime/node-install.mjs';
+import {approveEngine, buildEngine, engineStatus, lineReader, shortBuild, stopEngine} from './runtime/engine.mjs';
+import {signWaitMs} from './runtime/engine-sign.mjs';
 import {loadNodePins, nodeDistName, selectNodePin} from './runtime/managed-node.mjs';
 import {inspectRuntime, summarize} from './runtime/doctor.mjs';
 import {resolveRuntime} from './runtime/manifest.mjs';
@@ -69,7 +71,18 @@ ${darwin ? '' : `          [--sandbox-helper <file>]                            
                                                                only once every cua using this home is updated, since
                                                                an older cua sharing the home may still need it
   doctor [--json]                                              passive runtime health; exit 1 when a check fails
-  runtime use <release> [--json]                               activate another verified installed release
+${darwin ? `  engine build [--sign adhoc] [--sign-wait <ms>] [--json]      build, sign and install cua's native engine at its one place
+                                                               on this Mac (~/Library/Application Support/cua/engine), pending
+                                                               until approved; signed with signingIdentity in
+                                                               ~/.config/cua/engine.json or CUA_SIGNING_IDENTITY (ad hoc: CI only);
+                                                               over SSH the sign waits 45 s for the console's keychain prompt
+                                                               (--sign-wait or CUA_SIGN_WAIT_MS, up to 1800000: the attended
+                                                               first sign on a Mac, e.g. 600000)
+  engine approve [--json]                                      approve the built engine: its grants (the owner at the console
+                                                               when one is missing), a relaunch and one capture, then approved
+  engine status [--json]                                       the engine's bundle, signature, approval and running grants
+  engine stop [--json]                                         stop the running engine (refused while a session uses it)
+` : ''}  runtime use <release> [--json]                               activate another verified installed release
   serve [--http <host:port>]                                   MCP over stdin/stdout until EOF or a signal (--http: as agent run --http)
   secrets set <KEY> [--project|--global]                       store a secret in ~/.config/claude-secrets/KEY (--project:
                                                                this project's, ~/.config/claude-secrets/projects/<slug>/KEY),
@@ -761,9 +774,63 @@ export function cuaUnregisterLines(result) {
   return lines;
 }
 
-const COMMANDS = {install, doctor, runtime, serve, secrets, profiles, chrome, remote, agent, devices};
+// `cua engine build|approve|status|stop` (src/runtime/engine.mjs; #117's own native engine, M1b): the one approved engine
+// per Mac. Progress and the operator's questions go to stderr, the result to stdout; the signing identity is never
+// printed. approve reads the operator's answers from stdin, so over SSH the controller types them (no tty needed); with
+// stdin at its end, approve proceeds only where no answer is needed. `deps` reaches src/runtime/engine.mjs as its seam.
+const ENGINE_COMMANDS = ['build', 'approve', 'status', 'stop'];
+const signatureText = ({kind, identityMatches}) => (kind === null ? 'unsigned' : kind === 'adhoc' ? 'ad hoc' : identityMatches === null ? 'an identity (none is configured)'
+  : identityMatches ? 'the configured identity' : 'an identity that is not the configured one');
 
-// `deps` reaches only the install handler, as its test seam.
+export function engineStatusLines(status) {
+  const lines = [status.exists ? `engine: ${status.bundlePath} (version ${status.engineVersion}, build ${shortBuild(status.build)}), signed with ${signatureText(status.signature)}`
+    : `engine: none built at ${status.bundlePath} (cua engine build)`];
+  if (status.exists) lines.push(status.approved ? `approved: yes, at ${status.approvedAt}`
+    : `approved: no${status.approvedBuild ? ` (approved.json names build ${shortBuild(status.approvedBuild)})` : ''}; run cua engine approve with the owner at the console`);
+  const s = status.status;
+  lines.push(s ? `running: pid ${s.pid}, accessibility ${s.accessibility}, screen recording ${s.screenRecording}, input monitoring ${s.inputMonitoring}, ${s.connections} other connection(s)`
+    : 'running: no');
+  return lines;
+}
+
+async function engine(args, deps = {}, {platform = process.platform} = {}) {
+  const [command, ...rest] = args;
+  if (!ENGINE_COMMANDS.includes(command)) throw new UsageError(`engine takes ${ENGINE_COMMANDS.join(', ')}`);
+  const {values} = parse(rest, command === 'build' ? {sign: {type: 'string'}, 'sign-wait': {type: 'string'}} : {});
+  if (values.sign !== undefined && values.sign !== 'adhoc') throw new UsageError('engine build takes --sign adhoc or no --sign (the configured identity)');
+  if (platform !== 'darwin') fail('engine_macos_only', 'cua\'s native engine is macOS only', {hint: 'on Linux the computer surface keeps sky_linux until #171'});
+  const log = line => process.stderr.write(`${line}\n`);
+  if (command === 'status') {
+    const status = await engineStatus(deps);
+    print(values.json ? status : engineStatusLines(status).join('\n'));
+    return 0;
+  }
+  if (command === 'stop') {
+    const stopped = await stopEngine(deps);
+    print(values.json ? {ok: true, ...stopped} : stopped.wasRunning ? `stopped cua's engine (pid ${stopped.pid})` : 'no engine was running');
+    return 0;
+  }
+  if (command === 'build') {
+    const timeoutMs = signWaitMs({flag: values['sign-wait'], env: deps.env ?? process.env});
+    const built = await buildEngine({...deps, ...(values.sign ? {identity: 'adhoc'} : {}), signOptions: {...deps.signOptions, timeoutMs}, log});
+    print(values.json ? {ok: true, ...built} : built.changed
+      ? `built cua's engine ${shortBuild(built.build)} at ${built.bundlePath}, signed with ${signatureText(built.signature)}; pending until cua engine approve`
+      : `cua's engine ${shortBuild(built.build)} at ${built.bundlePath} is already this build, signed with ${signatureText(built.signature)}`);
+    return 0;
+  }
+  const operator = deps.operator ?? lineReader(process.stdin);
+  try {
+    const approved = await approveEngine({...deps, operator, log});
+    print(values.json ? {ok: approved.approved, ...approved} : approved.approved
+      ? `approved cua's engine ${shortBuild(approved.build)} at ${approved.approvedAt}`
+      : `not approved: ${approved.reason}`);
+    return approved.approved ? 0 : 1;
+  } finally { operator.close?.(); }
+}
+
+const COMMANDS = {install, doctor, runtime, serve, secrets, profiles, chrome, remote, agent, devices, engine};
+
+// `deps` reaches only the install and engine handlers, as their test seams.
 export async function main(argv, deps) {
   const [command, ...rest] = argv;
   const json = rest.includes('--json');
@@ -771,7 +838,7 @@ export async function main(argv, deps) {
     if (command === 'help' || command === '--help' || command === '-h') { print(USAGE); return 0; }
     const handler = COMMANDS[command];
     if (!handler) throw new UsageError(command ? `unknown command "${command}"` : 'missing command');
-    return (await (handler === install ? install(rest, deps) : handler(rest))) ?? 0;
+    return (await (handler === install || handler === engine ? handler(rest, deps) : handler(rest))) ?? 0;
   } catch (error) {
     if (error instanceof UsageError) {
       process.stderr.write(`cua: ${error.message}\n${USAGE}\n`);

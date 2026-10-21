@@ -1,0 +1,1 @@
+# 2026-10-19T15:10:32.532Z exit SIGKILL after the harness's eof; the last 0 bytes of stderr follow

@@ -22,7 +22,11 @@
 // and `warn` where one would default to cua's own host but no Node 24 or later resolves here (own_host_node_unavailable:
 // that session keeps the vendor host), naming the candidates tried (the Node `cua install` places among them) and the
 // remedies: `cua install`, a Node 24 of the user's own, or CUA_NODE. Node is resolved once for both, as
-// a connection resolves it once (`resolveOwnNode`, launch.mjs ownHostNode by default, injectable for tests).
+// a connection resolves it once (`resolveOwnNode`, launch.mjs ownHostNode by default, injectable for tests). For the
+// computer surface on macOS the selection follows the native engine's table (#117, launch.mjs nativeEngineFor; `engine`
+// reaches it, for tests): the session's sentence then names the engine it drives after the host's explanation
+// (`; native engine ENGINE (REASON): ...`), and the row also warns where a default cua engine keeps the vendor host and
+// engine (engine_not_installed). The engine's own row (its bundle, signature and grants) is M3's `engine`.
 // `sandbox` describes the CUA_SHIM_SANDBOX in `env` (src/runtime/sandbox.mjs). Under scoped it fails when the
 // profile's write roots ($CUA_HOME/run: a connection's run directory and its session temp, which is its TMPDIR) overlap
 // a trusted code path (the release's modules, the checkout's src/repl-host, src/sandbox, src/services and src/secrets),
@@ -61,6 +65,7 @@ import {execFile} from 'node:child_process';
 import {homedir} from 'node:os';
 import {dirname, join} from 'node:path';
 import {CuaError} from './errors.mjs';
+import {shortBuild} from './engine.mjs';
 import {homeLayout, realHome} from './layout.mjs';
 import {BROWSER_SERVICE, BROWSER_SERVICE_IMPL_DIR, COMPAT_EXECUTABLE, compatExecutable, CUA_API_DIR, CUA_API_DOCS_DIR, REPL_HOST_DIR, SANDBOX_DIR, SERVICE_SUPPORT_DIRS, SKY_SERVICE, NODE_FLOOR, ownHostNode, replHostFor} from './launch.mjs';
 import {SANDBOX_CONFLICT_HINT, assertDenyListShape, describeConflicts, protectedPaths, sandboxConflicts, sandboxModeFrom, scopedWriteRoots} from './sandbox.mjs';
@@ -109,7 +114,7 @@ function launcherCheck({sandboxExec, compat, node}) {
   return result('sandbox.launcher', 'pass', `cua's own sandbox confines the children: ${sandboxExec} for cua's own host, and on the vendor host ${compat}${node ? ` on ${node}` : ''}; no Codex CLI is launched`);
 }
 
-export async function inspectRuntime({home, env = process.env, live = false, pins, host = {platform: process.platform, arch: process.arch}, verifySignatures = verifyCodeSignatures, inspectHelper = inspectNativeHelper, inspectSecrets = inspectSecretStore, inspectLinux = linuxDesktopChecks, inspectChrome = defaultInspectChrome, inspectAgent = defaultInspectAgent, sweep = sweepRun, resolveOwnNode, launcher = {sandboxExec: SEATBELT_EXEC, compat: COMPAT_EXECUTABLE}, linuxHelper = verifiedLinuxHelper}) {
+export async function inspectRuntime({home, env = process.env, live = false, pins, host = {platform: process.platform, arch: process.arch}, verifySignatures = verifyCodeSignatures, inspectHelper = inspectNativeHelper, inspectSecrets = inspectSecretStore, inspectLinux = linuxDesktopChecks, inspectChrome = defaultInspectChrome, inspectAgent = defaultInspectAgent, sweep = sweepRun, resolveOwnNode, engine, launcher = {sandboxExec: SEATBELT_EXEC, compat: COMPAT_EXECUTABLE}, linuxHelper = verifiedLinuxHelper}) {
   if (live) throw new Error(`inspectRuntime is passive; live probes are separate explicit scripts (${LIVE_PROBE})`);
   pins ??= loadPins();
   const checks = [];
@@ -173,7 +178,7 @@ export async function inspectRuntime({home, env = process.env, live = false, pin
   const secretsEnabled = (env.CUA_SHIM_SECRETS ?? 'on') !== 'off';
   checks.push(classifyStore(secretsInfo, {enabled: secretsEnabled}));
   if (secretsInfo.project) checks.push(classifyStore(secretsInfo.project, {enabled: secretsEnabled, project: secretsInfo.project.root}));
-  checks.push(replHostCheck(home, env, host.platform, resolveOwnNode));
+  checks.push(replHostCheck(home, env, host.platform, resolveOwnNode, engine));
   checks.push(...await inspectChrome({home, host, env}));
   checks.push(...await inspectAgent({home, env, host}));
 
@@ -185,17 +190,32 @@ export async function inspectRuntime({home, env = process.env, live = false, pin
 const ROLLBACK = 'CUA_REPL_HOST=vendor keeps the vendor host';
 const REPL_HOST_REASONS = {
   explicit: ({host}) => `CUA_REPL_HOST=${host}`,
-  macos_native_peer_requires_vendor: () => 'the computer surface on macOS, whose helper accepts only the vendor host\'s node_repl as a peer until #117',
+  macos_native_peer_requires_vendor: () => 'the computer surface on macOS with the vendor engine, whose helper accepts only the vendor host\'s node_repl as a peer',
+  cua_engine: () => 'CUA_REPL_HOST is unset, and cua\'s engine runs on cua\'s own host (CUA_REPL_HOST=vendor runs it on the vendor host, comparison A\'s lane)',
+  engine_not_installed: () => 'the default engine is cua\'s, but no approved engine is installed on this Mac, so this session keeps the vendor host and engine until one is: run `cua install --engine` (or `cua engine build`, then `cua engine approve` with the owner at the console)',
   linux: () => 'CUA_REPL_HOST is unset, and cua\'s own host is the only one on Linux (the browser surface, if on, uses cua\'s browser service; the vendor host is retired there, #115)',
   browser_only: () => `CUA_REPL_HOST is unset, and cua's own host is the default for a browser-only session; ${ROLLBACK}`,
   own_host_node_unavailable: ({nodeTried}) => `CUA_REPL_HOST is unset, and this session would default to cua's own host, but cua's own host needs Node ${NODE_FLOOR} or later and none was found (${nodeTried.join(', ')}), so it keeps the vendor host. To move it to cua's own host, run \`cua install\` (it installs the pinned Node ${NODE_FLOOR} for it under $CUA_HOME/node), install Node ${NODE_FLOOR} or later yourself, or set CUA_NODE to the absolute path of one`,
 };
 
-// The host a launch with `surfaces` here would run -> {host, reason, node?, nodeTried?} or, refused, {code, message}.
-// `resolveOwnNode` is the check's one Node resolution, shared by the session and the listing.
-function replHostSelection(home, env, platform, surfaces, resolveOwnNode) {
+// The native engine a macOS computer selection drives, after the host's explanation.
+const ENGINE_REASONS = {
+  explicit: () => 'CUA_NATIVE_ENGINE=',
+  settings: () => '"engine" in ~/.config/cua/engine.json is ',
+  default: () => 'the default engine is ',
+};
+function engineWords({engine, reason, app}) {
+  const why = ENGINE_REASONS[reason];
+  if (engine === 'cua') return `native engine cua (${reason}): ${why()}cua; the approved cua Engine.app at ${app.bundlePath} (version ${app.engineVersion}, build ${shortBuild(app.build)})`;
+  if (why) return `native engine vendor (${reason}): ${why()}vendor; the vendor's Codex Computer Use helper${reason === 'default' ? ' (CUA_NATIVE_ENGINE=cua selects cua\'s own)' : ''}`;
+  return `native engine vendor (${reason}): the default cua engine is not available here, so the vendor's Codex Computer Use helper serves this session`;
+}
+
+// The host a launch with `surfaces` here would run -> {host, reason, node?, nodeTried?, engine?} or, refused, {code,
+// message}. `resolveOwnNode` is the check's one Node resolution, shared by the session and the listing.
+function replHostSelection(home, env, platform, surfaces, resolveOwnNode, engine) {
   try {
-    return replHostFor({platform, surfaces, ambient: env, home, resolveOwnNode});
+    return replHostFor({platform, surfaces, ambient: env, home, resolveOwnNode, engine});
   } catch (error) {
     if (!(error instanceof CuaError)) throw error;
     return {code: error.code, message: error.message};
@@ -213,7 +233,7 @@ function resolvedOnce(resolve) {
   };
 }
 
-function replHostCheck(home, env, platform, resolveOwnNode) {
+function replHostCheck(home, env, platform, resolveOwnNode, engine) {
   let surfaces;
   // CUA_NODE's form first, as `cua serve` checks it at start (settingsFrom) whatever the selection: an explicit vendor
   // host never asks for Node, but the connection is refused all the same.
@@ -222,10 +242,11 @@ function replHostCheck(home, env, platform, resolveOwnNode) {
     return result('repl.host', 'fail', `${error.message}; every connection is refused`);
   }
   const resolve = resolvedOnce(resolveOwnNode ?? (() => ownHostNode({ambient: env, home})));
-  const session = replHostSelection(home, env, platform, surfaces, resolve);
-  const listing = replHostSelection(home, env, platform, ['browser'], resolve);
-  const words = r => (r.code ? `refused (${r.code}): ${r.message}` : `${r.host} host (${r.reason})${r.node ? ` on Node ${r.node}` : ''}: ${REPL_HOST_REASONS[r.reason](r)}`);
-  const status = session.code || listing.code ? 'fail' : [session, listing].some(r => r.reason === 'own_host_node_unavailable') ? 'warn' : 'pass';
+  const session = replHostSelection(home, env, platform, surfaces, resolve, engine);
+  const listing = replHostSelection(home, env, platform, ['browser'], resolve, engine);
+  const words = r => (r.code ? `refused (${r.code}): ${r.message}`
+    : `${r.host} host (${r.reason})${r.node ? ` on Node ${r.node}` : ''}: ${REPL_HOST_REASONS[r.reason](r)}${r.engine ? `; ${engineWords(r.engine)}` : ''}`);
+  const status = session.code || listing.code ? 'fail' : [session, listing].some(r => r.reason === 'own_host_node_unavailable' || r.engine?.status === 'warn') ? 'warn' : 'pass';
   return result('repl.host', status,
     `${words(session)}. The profile listing (browser only): ${words(listing)}.${platform === 'linux' ? '' : ' CUA_REPL_HOST=cua or vendor chooses'}`);
 }

@@ -1,0 +1,4 @@
+<scratch file>: replacing existing signature
+<scratch file>: errSecInternalComponent
+codesign failed: 1
+Reading (2026-10-19 19:31Z): no dialog was expected over SSH; codesign failed with errSecInternalComponent, which is what codesign reports when the login keychain is locked in the SSH session (it cannot prompt there). The partition list was set at the console; whether a console-unlocked or ssh-unlocked keychain now signs without a prompt is open for M1b.

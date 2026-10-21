@@ -1,0 +1,33 @@
+Window: "cua Electron fixture", App: cua Electron Fixture.
+0 표준 윈도우 cua Electron fixture, Secondary Actions: Raise
+	1 container (settable) cua Electron fixture
+		2 container (settable)
+			3 container (settable)
+				4 container (settable)
+					5 container (settable)
+						6 container (settable)
+							7 HTML 콘텐츠 (collapsed) cua Electron fixture, URL: file:///Users/new/Library/Caches/cua-harness/electron-fixture/44.9.0-3a9e238ede15/cua%20Electron%20Fixture.app/Contents/Resources/app/index.html
+								8 container (collapsed)
+									9 텍스트 엔트리 영역 (collapsed, settable) Fixture text
+									10 목록 상자 (collapsed, settable) Fixture list
+										11 텍스트 (collapsed) Alpha
+										12 텍스트 (collapsed) Bravo
+										13 텍스트 (collapsed) Charlie
+										14 텍스트 (collapsed) Delta
+										15 텍스트 (collapsed) Echo
+										16 텍스트 (collapsed) Foxtrot
+									17 버튼 (collapsed) Fixture button
+									18 container (collapsed) Fixture status
+										31 텍스트 (collapsed) Pressed 1 time
+						20 container (settable)
+	21 닫기 버튼
+	22 전체 화면 버튼 Help: 이 버튼을 누르면 윈도우를 확대/축소합니다., Secondary Actions: Zoom Window
+		23 container
+			32 container
+	24 최소화 버튼
+25 (selectable, collapsed) Apple, Secondary Actions: Cancel
+26 (selectable, collapsed) cua Electron Fixture, Secondary Actions: Cancel
+27 (selectable, collapsed) File, Secondary Actions: Cancel
+28 (selectable, collapsed) Edit, Secondary Actions: Cancel
+29 (selectable, collapsed) View, Secondary Actions: Cancel
+30 (selectable, collapsed) Window, Secondary Actions: Cancel

@@ -3,6 +3,7 @@
 // interface. The relay path (connectRelay, `agent run --relay`) runs against fake relays (bare WebSocket servers) and
 // the real relay (relay/server.mjs) in this process, over real WebSockets; those tests need the `ws` package and skip,
 // saying so, in a checkout where `npm ci` was not run.
+import './helpers/scratch-home.mjs'; // first: the native engine's selection must not read the account's own settings
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawn, spawnSync} from 'node:child_process';

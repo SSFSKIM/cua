@@ -1,0 +1,965 @@
+// One lane of measure.mjs (the own native engine spec, M0 "Spike"; Concrete Steps "M0 spike on the mini"): N runs, each
+// in <out>/run-<n> with results.jsonl (one row per sample or probe verdict) and meta.json, on the four scenes
+// (scripts/spike/engine/scenes.mjs), through the real facade and a real REPL host:
+//   vendor  the approved vendor runtime served by `cua serve` on the vendor host, through prepare.mjs's approved-home
+//           path (admission, the home's state/ and run/ moved aside and back, the run's helper stopped at cleanup):
+//           scripts/native-baseline/{prepare,remote,serve}.mjs as the native baseline uses them, over ssh on a declared
+//           device and in process on this Mac (localPreparation).
+//   cua     the spike's serve (scripts/spike/engine/serve.mjs, cua's own host with the spike service) from the harness
+//           checkout, on the same prepared home, after the approved engine is launched with `open -n -g -a` (the own
+//           host's relay still runs plain `open -a` until M1a, so no measured cell takes the relay's launch).
+// Every run begins and ends with the engine stop discipline (`shutdown`, refused while another connection is open),
+// and the cua lane refuses unless the checkout's build is approved.json's (./engine-control.mjs).
+//
+// Input: the engine's input routes landed (feat/117-input), so the cua lane runs its input cells; the switch stays as
+// the one place to record them as not run again. The vendor lane runs its input cells as the native baseline does,
+// keys only through the #162 key guard.
+import * as fs from 'node:fs';
+import {mkdtempSync} from 'node:fs';
+import {createHash} from 'node:crypto';
+import {homedir, tmpdir} from 'node:os';
+import {dirname, join, resolve} from 'node:path';
+import {FIRST, LIST_APPS, AX_FULL, SCREENSHOT, SCRATCH_GUARD, TASK_NEW, TASK_TYPE, TASK_VERIFY, TASK_CLOSE, QUIT_TEXTEDIT, parseCell} from '../../../native-baseline/cells.mjs';
+import {prepareNative, cleanupNative, homeUsers} from '../../../native-baseline/prepare.mjs';
+import {serveCommand, preparationScript, preflightScript, HELPER_SCRIPT, classifyHelpers} from '../../../native-baseline/remote.mjs';
+import {FRONTMOST_SCRIPT, parseFrontmost, sendIfFrontmost} from '../../../accept/key-guard.mjs';
+import {hostAttestationOf} from '../../../native-baseline.mjs';
+import {textOf} from '../../../browser-parity/mcp.mjs';
+import {execute, quote, remoteCommand} from '../../../browser-parity/topology.mjs';
+import {executionFacts} from '../../../repl-parity/provenance.mjs';
+import {assertManagedNode} from '../../../repl-parity/node-provenance.mjs';
+import {SCENES, finderFolderFiles} from '../scenes.mjs';
+import {runningApps} from '../scene-processes.mjs';
+import * as spike from './cells.mjs';
+import {SCENE_WINDOW, ACTION_TARGET, KEY_PROBE, USER_WINDOW, TEXT_TARGET} from './targets.mjs';
+import {DEFAULT_GROUPS, TAP_MODES, laneTakes, groupNotRunRows} from './groups.mjs';
+import {Stop, routesGroup, effectsGroup, coordGroup, tapGroup, refusalFields, operatorTapFields} from './input-groups.mjs';
+import {stopEngine, assertApprovedBuild, launchEngine, EngineRefusal} from './engine-control.mjs';
+import {engineOps, inCheckout, lastJson} from './device.mjs';
+import {redactGolden} from './redact.mjs';
+
+// THE switch: whether the cua engine answers click, press_key and type_text. True since the input routes landed
+// (feat/117-input, routes 1–3 with the probes' spike arguments); while false the cua lane records every input cell as
+// not run, which is how a lane without the input build still runs.
+export const CUA_INPUT_METHODS_BUILT = true;
+export const NOT_BUILT = 'input methods not built';
+const REFUSED = 2;
+export const LANES = ['vendor', 'cua'];
+export const SCENE_ORDER = ['textedit', 'finder', 'chrome', 'electron'];
+
+// Whether the sitting's kept Finder scene (the record a previous run left up) is reused: only while its window is on
+// screen (preflight's finderWindows). A kept window that is minimized or on another Space (preflight's off-screen list)
+// is the operator's to bring back or close, with its own message rather than "did not come up".
+export function keptFinderWindow(kept, checked) {
+  if (!kept) return false;
+  const number = kept.window?.number;
+  if ((checked.finderWindows ?? []).includes(number)) return true;
+  if ((checked.finderOffScreenWindows ?? []).some(w => w.number === number)) throw new Error('the run\'s Finder window is not on screen; bring it back or close it');
+  return false;
+}
+// scenes.mjs's CLI on the device. Its contract: one JSON line; exit 1 with an answer the lane reads when a refusal holds
+// (`refusals`) or a scene stays up (`down: false`), and exit 1 with `{error}` when the command failed. So only the first
+// two are answers on exit 1; an `{error}` throws with its text, and anything else (no JSON, another status) throws as the
+// command's own failure: nothing is read as an answer it is not.
+export const sceneCliOf = (d, shell) => args => {
+  const command = `${d.node} scripts/spike/engine/scenes.mjs ${args.map(quote).join(' ')}`;
+  let answer;
+  try { answer = lastJson(shell(command)); }
+  catch (error) {
+    let out = null;
+    try { out = lastJson(error.stdout ?? ''); } catch {}
+    if (error.status === 1 && out && (out.refusals?.length || out.down === false)) return out;
+    if (out?.error) throw new Error(`scenes.mjs ${args[0]}: ${out.error}`);
+    throw error;
+  }
+  if (answer?.error) throw new Error(`scenes.mjs ${args[0]}: ${answer.error}`);
+  return answer;
+};
+
+// After every Finder click (the action golden, probe (a), probe (b)'s forced routes): a rename that the click started is
+// ended with Escape (through the #162 key guard on the vendor lane, posted to Finder on the cua lane) and the sample is
+// invalid; a rename that does not end, or a state that cannot be read, stops all input (`stop` throws), so no later key
+// or typing cell can rename a file of the shared folder. -> async () => extra row fields ({} when no rename began).
+export function renameGuard({lane, js, keyCell, emit, stop}) {
+  return async () => {
+    const seen = await js(spike.FINDER_EDITING());
+    if (!seen.cell?.ok) return stop(`Finder's state after a click could not be read (${seen.cell?.error ?? seen.failure}); no further input was sent`);
+    if (!seen.cell.value.editing) return {};
+    await (lane === 'vendor' ? keyCell('com.apple.finder', spike.PRESS('finder', 'Escape'), ['Escape']) : js(spike.PRESS('finder', 'Escape')));
+    const again = await js(spike.FINDER_EDITING());
+    const escaped = again.cell?.ok === true && again.cell.value.editing === false;
+    emit({op: 'guard.finderRename', scene: 'finder', sample: 1, ok: escaped, editing: true, escaped});
+    if (!escaped) return stop('a Finder rename the click started did not end with Escape; no further input was sent');
+    return {ok: false, invalid: 'the click started a rename of the row; Escape ended it'};
+  };
+}
+
+// The sitting's kept Finder record, before the run's scenes come up: reused while its window is on screen; a record
+// whose window is gone (a person closed it, or Finder quit, between runs) is cleared through `down finder`, which
+// succeeds once the window is gone, so `up finder` can open a new one rather than refuse "already up". -> reuse.
+export function keptFinderRecord({kept, checked, sceneCli, sceneDir, log = () => {}, meta = {}}) {
+  if (keptFinderWindow(kept, checked)) return true;
+  if (!kept) return false;
+  const what = `the kept Finder record (window ${kept.window?.number})`;
+  let down;
+  try { down = sceneCli(['down', 'finder', '--run', sceneDir]); } catch (error) { throw new Error(`${what} could not be cleared: ${error.message}`); }
+  if (down.down !== true) throw new Error(`${what} could not be cleared: ${down.reason ?? 'down finder did not clear it'}`);
+  meta.finderRecordCleared = {window: kept.window?.number ?? null};
+  log(`the kept Finder window ${kept.window?.number} is gone; its record was cleared and the run opens a new one`);
+  return false;
+}
+const CELL_MS = 60_000, BIND_MS = 120_000;
+const round = ms => Math.round(ms * 1000) / 1000;
+
+// What names each scene's window and what each probe acts on (./targets.mjs).
+export {SCENE_WINDOW, ACTION_TARGET, KEY_PROBE, USER_WINDOW, Stop};
+// The scenes' profile directories under the scene directory (scenes.mjs), removed before each run brings them up.
+const USER_DATA = Object.freeze({chrome: 'chrome-user-data', electron: 'electron-user-data'});
+// Probe (d)'s typed text: long enough (`seconds` keyed, at about 1 ms a character) for a person's keystroke or click to
+// land inside the action; the operator's instructions are relayed (U6), so the default is 10 s, not the first 3 s.
+export const OPERATOR_SECONDS = 10;
+export const interventionText = (seconds = OPERATOR_SECONDS) => 'cua intervention probe. '.repeat(Math.ceil(seconds * 1000 / 24));
+// Probe (b)'s forced routes per action: route 1 (the AX action, clicks only), 2′ (the plain pid-post, U12), 2 (with ⌘
+// on a click into an inactive app) and 3 (the fake activation).
+export const FORCED_ROUTES = Object.freeze({click: [1, "2'", 2, 3], key: ["2'", 2, 3]});
+// Probe (e)'s strings (Verification system part 6) and the two input sources it runs under.
+export const UNICODE_STRINGS = Object.freeze(['The quick brown fox jumps over the lazy dog.', '한글 테스트', 'ㄱㄴㄷ', '가나다 abc 123', '😀 이모지', 'é', '日本語', '줄1\n줄2']);
+export const INPUT_SOURCES = Object.freeze({latin: 'com.apple.keylayout.ABC', korean: 'com.apple.inputmethod.Korean.2SetKorean'});
+
+// The approval the harness answers: a computer-use elicitation for one of the run's scene apps. Both hosts send it as
+// `mode: 'form'` (the own host since #117, src/repl-host/elicitation.mjs); unlike scripts/accept/lib.mjs's
+// isTextEditApproval, this matcher does not check the mode, only the connector and the app.
+export function isSceneApproval(msg, bundleIds) {
+  if (msg?.method !== 'elicitation/create') return false;
+  const params = msg.params ?? {}, meta = params._meta ?? {}, schema = params.requestedSchema, tool = meta.tool_params;
+  return /^Allow Computer Use to use ".+"\?$/.test(params.message ?? '')
+    && schema !== null && typeof schema === 'object' && schema.type === 'object' && Object.keys(schema.properties ?? {}).length === 0
+    && meta.connector_id === 'computer-use' && meta.codex_approval_kind === 'mcp_tool_call'
+    && tool !== null && typeof tool === 'object' && Object.keys(tool).length === 1 && bundleIds.includes(tool.app);
+}
+
+// The rows a lane records instead of running its input cells, one per cell, so `summary` shows each. -> [row].
+export function notRunRows({lane, scenes, inputBuilt = lane === 'vendor' || CUA_INPUT_METHODS_BUILT}) {
+  if (inputBuilt || lane !== 'cua') return [];
+  const row = (op, extra = {}) => ({op, sample: 1, ok: false, notRun: NOT_BUILT, ...extra});
+  return [
+    ...(scenes.includes('textedit') ? ['task.act', 'task.verify', 'task.close', 'task.total'].map(op => row(op, {scene: 'textedit'})) : []),
+    ...scenes.map(scene => row('golden.action', {scene})),
+    ...scenes.flatMap(scene => ['click', 'key'].flatMap(action => [row(`probe.a.${action}`, {scene, user: USER_WINDOW[scene]}), row(`probe.b.${action}`, {scene})])),
+    ...scenes.map(scene => row('probe.c\'.settle.afterAction', {scene})),
+    row('probe.d.noFire', {scene: 'textedit'}), row('probe.d.operatorKeystroke', {scene: 'textedit'}), row('probe.d.backgroundClick', {scene: 'textedit'}),
+    ...['latin', 'korean'].flatMap(source => ['textedit', 'chrome'].filter(s => scenes.includes(s)).map(scene => row('probe.e.typeText', {scene, source}))),
+  ];
+}
+
+// Rows the vendor lane cannot have, each with its reason: the event tap and the keystroke probe are cua's engine
+// (probe (d)); the cua lane runs the real rows when its input is built.
+export const VENDOR_ONLY_ROWS = Object.freeze([
+  {op: 'probe.d.tap', sample: 1, ok: false, notRun: 'the listen-only event tap is cua\'s engine; the cua lane runs the real rows', scene: 'textedit'},
+  {op: 'probe.d.hidReset', sample: 1, ok: false, notRun: 'the keystroke probe is cua\'s engine; the cua lane runs the real rows', scene: 'textedit'},
+]);
+
+// Rows that do not depend on the input switch: what the spike cannot measure on either lane yet, each with its reason.
+export const STRUCTURAL_ROWS = Object.freeze([
+  {op: 'probe.e.concealed', sample: 1, ok: false, notRun: 'a concealed type_text needs the secret store; the spike serve runs with secrets off', scene: 'textedit'},
+  {op: 'probe.e.perContext', sample: 1, ok: false, notRun: 'the per-context input preference is the owner\'s; changing and restoring it is the matrix\'s (M2b)', scene: 'textedit'},
+]);
+
+// The own host's serve of the spike (scripts/spike/engine/serve.mjs) on the device, in the prepared environment.
+export function cuaServeCommand(d, {home, userHome, configHome, tmpdir: tmp, engine, node}) {
+  const env = `-i PATH="$PATH" LANG=C.UTF-8 HOME=${quote(userHome)} XDG_CONFIG_HOME=${quote(configHome)} TMPDIR=${quote(tmp)} CUA_HOME=${quote(home)}`
+    + `${engine ? ` CUA_ENGINE_APP=${quote(engine)}` : ''}${node ? ` CUA_NODE=${quote(node)}` : ''} CUA_SHIM_SURFACES=computer CUA_SHIM_PERSIST=session CUA_SHIM_SECRETS=off`;
+  return d.command(inCheckout(d, `exec env ${env} ${d.node} scripts/spike/engine/serve.mjs`));
+}
+
+// The input source around a cell group that switches it: saved into the run directory first, restored afterwards
+// whatever happens (the owner's source is never left switched).
+export async function withInputSource(ops, dir, fn) {
+  const saved = ops.inputSource('current');
+  if (!saved?.id) throw new Error(`the input source could not be read (${JSON.stringify(saved?.error ?? saved)})`);
+  fs.writeFileSync(join(dir, 'input-source.json'), JSON.stringify(saved, null, 2) + '\n', {mode: 0o600});
+  try { return await fn(saved); }
+  finally {
+    const now = ops.inputSource('current');
+    if (now?.id !== saved.id) {
+      const restored = ops.inputSource(saved.id);
+      if (restored?.current?.id !== saved.id) throw new Error(`the owner's input source ${saved.id} could not be restored`);
+    }
+  }
+}
+
+// One run of a lane. `io`: {shell, ops, connect(spec, handlers), confirm, log, sleep}. -> 0 when complete.
+export async function runOnce(options, io) {
+  const {lane, d, dir, approvedRuntime, engine, scenes, samples, tasks, node, sceneDir, probes = ['c'], operator = false, inputBuilt = lane === 'vendor' || CUA_INPUT_METHODS_BUILT,
+    groups = DEFAULT_GROUPS, tapModes = TAP_MODES, routeSamples = 3, operatorSeconds = OPERATOR_SECONDS} = options;
+  const takes = group => groups.includes(group) && laneTakes(lane, group);
+  const {shell, ops, log = console.log} = io;
+  const sleep = io.sleep ?? (ms => new Promise(r => setTimeout(r, ms)));
+  if (fs.existsSync(join(dir, 'results.jsonl')) || fs.existsSync(join(dir, 'meta.json'))) throw new Error(`${dir} already holds a run`);
+  fs.mkdirSync(dir, {recursive: true});
+  fs.writeFileSync(join(dir, 'results.jsonl'), '');
+  const meta = {schema: 'spike-measure-1', lane, run: options.run, device: d.device, sceneDir, started: new Date().toISOString(), plan: {samples, tasks, scenes, probes, operator, inputBuilt, groups, tapModes, routeSamples, operatorSeconds},
+    elicitations: [], problems: [], complete: false};
+  const emit = row => { const full = {lane, run: options.run, ...row}; fs.appendFileSync(join(dir, 'results.jsonl'), JSON.stringify(full) + '\n'); return full; };
+  const write = () => fs.writeFileSync(join(dir, 'meta.json'), JSON.stringify(meta, null, 2) + '\n');
+  const sceneCli = sceneCliOf(d, shell);
+  const front = () => sceneCli(['front']);
+  let prepared = null, client = null, stopped = null, refused = false, records = {};
+  const skipped = new Set();
+  const active = () => scenes.filter(scene => records[scene] && !skipped.has(scene));
+
+  // The build gate first (it reads only): nothing is prepared or launched for an engine the run may not use.
+  try { meta.engine = lane === 'cua' ? await assertApprovedBuild(ops) : {approved: ops.approved()}; }
+  catch (error) {
+    meta.error = error.message; meta.refused = error instanceof EngineRefusal; write();
+    log(`run ${options.run}: refused: ${error.message}`);
+    return REFUSED;
+  }
+
+  try {
+    prepared = d.local ? (lane === 'vendor' ? (io.localPreparation ?? localPreparation()).prepare(approvedRuntime) : localPrepared({approvedRuntime}))
+      : lastJson(shell(preparationScript('prepare', {device: d.device, approvedHome: approvedRuntime})));
+    meta.preparation = prepared;
+    // Written at once, so a run that dies leaves what `measure.mjs cleanup --device <d> --preparation <file>` needs to
+    // resume prepare.mjs's cleanup (which names its recovery directory when it cannot finish).
+    if (!prepared.local) {
+      const file = join(dir, 'preparation.json');
+      fs.writeFileSync(file, JSON.stringify({device: d.device, prepared}, null, 2) + '\n', {mode: 0o600});
+      log(`run ${options.run}: the approved home ${prepared.home} is held: start no cua session on this home until cleanup reports removed: true`);
+      log(`run ${options.run}: if this run dies, resume its cleanup with: node scripts/spike/engine/measure.mjs cleanup --device ${d.device} --preparation ${quote(file)}`);
+    }
+    // The stop discipline inside the admission: no other run can start an engine between this stop and the run's launch.
+    try { meta.engineStopAtStart = await stopEngine(ops); }
+    catch (error) { if (error instanceof EngineRefusal) { refused = true; meta.refused = true; } throw error; }
+    const pre = lastJson(shell(preflightScript({host: lane, prepared, surface: 'computer'})));
+    Object.assign(meta, {commit: pre.commit, dirty: pre.dirty, checkout: pre.checkout, release: pre.release, sandbox: pre.sandbox, hardware: pre.hardware, os: pre.os, display: pre.display, ownNode: pre.ownNode});
+    if (!d.local && pre.dirty) throw new Error('the harness checkout is dirty');
+    meta.helpersAtStart = classifyHelpers(shell(HELPER_SCRIPT), pre.runtimeRoot);
+
+    // The scenes' refusals before anything is launched. The scene directory is shared by the sitting (Finder remembers
+    // its view per folder, and the cua lane leaves its Finder window up for the next run).
+    const checked = sceneCli(['preflight', '--run', sceneDir]);
+    if (checked.refusals?.length) throw new Error(`the scenes refuse: ${checked.refusals.map(r => r.message).join('; ')}`);
+    // Finder's windows off screen do not refuse (the spec's Decision Log, 2026-10-19); the run keeps their record.
+    meta.finderOffScreenWindows = checked.finderOffScreenWindows ?? [];
+    meta.finderHidden = checked.finderHidden ?? null;
+    const kept = readSceneState(shell, sceneDir).scenes ?? {};
+    const finderKept = scenes.includes('finder') && keptFinderRecord({kept: kept.finder, checked, sceneCli, sceneDir, log, meta});
+
+    if (lane === 'cua' && probes.includes('c')) await probeC({d, shell, ops, emit, front, log, meta});
+    if (lane === 'cua') meta.engineLaunch = {via: 'open -n -g -a', ...pick(await launchEngine(ops), ['pid', 'build', 'accessibility', 'screenRecording', 'connections'])};
+
+    for (const scene of scenes) {
+      if (scene === 'finder' && finderKept) { records.finder = kept.finder; meta.finderReused = true; continue; }
+      // Chrome's and the fixture's profiles are each run's own: only Finder's folder is shared by the sitting.
+      if (USER_DATA[scene]) shell(`rm -rf ${quote(join(sceneDir, USER_DATA[scene]))}`);
+      let up;
+      try { up = sceneCli(['up', scene, '--run', sceneDir]); } catch (error) { throw new Error(`scene ${scene} did not come up: ${error.message}`); }
+      records[scene] = up;
+    }
+    meta.scenes = Object.fromEntries(Object.entries(records).map(([id, r]) => [id, {app: r.app, bundleId: r.bundleId, pid: r.pid, window: r.window?.number ?? null}]));
+    const bundleIds = Object.values(records).map(r => r.bundleId);
+
+    // The connection.
+    const spec = lane === 'vendor'
+      ? onDevice(d, serveCommand({device: d.local ? 'local' : d.device, checkout: pre.checkout, home: pre.home, userHome: prepared.userHome, configHome: prepared.configHome, tmpdir: prepared.tmpdir, admission: prepared.admission, xSession: {}, host: 'vendor', platform: 'darwin', surface: 'computer'}))
+      : cuaServeCommand(d, {home: prepared.home, userHome: prepared.userHome, configHome: prepared.configHome, tmpdir: prepared.tmpdir, engine, node});
+    meta.serveNode = (io.serveNode ?? serveNode)(d, {lane, checkout: pre.checkout});
+    client = io.connect(spec, {
+      answer: msg => (isSceneApproval(msg, bundleIds) ? {action: 'accept', content: {}} : {action: 'decline'}),
+      onElicitation: (row, msg) => meta.elicitations.push({t: row.t, app: msg.params?._meta?.tool_params?.app ?? null, action: row.action}),
+      stderrFile: join(dir, 'serve-stderr.txt'),
+    });
+    const serverInfo = (await client.initialize())?.serverInfo ?? null;
+    await client.request('tools/list');
+
+    const js = async (code, timeoutMs = CELL_MS) => {
+      if (stopped) throw new Stop(stopped);
+      const started = performance.now();
+      let result;
+      try { result = await client.request('tools/call', {name: 'js', arguments: {code, timeout_ms: timeoutMs}}, timeoutMs + 15_000); }
+      catch (error) {
+        if (/timed out/.test(error.message)) { stopped = `a cell timed out (${error.message}); no further input was sent`; throw new Stop(stopped); }
+        return {wallMs: performance.now() - started, cell: null, meta: null, failure: error.message};
+      }
+      meta.hostAttestation ??= hostAttestationOf(serverInfo, result);
+      const text = textOf(result), parsed = parseCell(text);
+      // A cell without its marker failed outside the envelope; its output may hold a tree (getApp emits one), so the
+      // row records a fixed sentence, never the output.
+      return {wallMs: performance.now() - started, cell: parsed, meta: result?._meta ?? null, failure: parsed ? null : `the cell printed no result marker${result?.isError ? ' (an error result)' : ''}`};
+    };
+    const record = (op, sample, r, extra = {}) => {
+      const value = r.cell?.ok ? r.cell.value ?? {} : null;
+      return {op, sample, ok: Boolean(value) && !value.invalid, wallMs: round(r.wallMs), ...(r.cell?.inCellMs !== undefined ? {inCellMs: round(r.cell.inCellMs)} : {}),
+        ...(value ?? {error: r.cell?.error ?? r.failure ?? 'failed'}), ...extra};
+    };
+    const row = (op, sample, r, extra) => emit(record(op, sample, r, extra));
+    const attest = r => {
+      const native = r.meta?.['cua/nativeEngine'];
+      if (lane === 'cua' && native && !meta.nativeEngine) {
+        meta.nativeEngine = native;
+        if (native.build !== meta.engine.build) meta.problems.push(`the engine that answered (build ${String(native.build).slice(0, 12)}) is not the approved build`);
+      }
+      return r;
+    };
+    const frontmost = () => parseFrontmost(shell(FRONTMOST_SCRIPT));
+    // A key cell for an app the harness put in front (#162): sent only while that app is frontmost.
+    const keyCell = async (bundleId, code, keys) => {
+      const out = await sendIfFrontmost({target: bundleId, keys, frontmost, send: () => js(code)});
+      if (out.sent) return out.result;
+      emit({op: 'key.skipped', sample: 1, ok: false, ...out.skipped});
+      stopped = `${keys.join(', ')} not sent: the frontmost application is ${out.skipped.frontmost}, not ${bundleId} (#162)`;
+      throw new Stop(stopped);
+    };
+    const activate = async scene => {
+      const started = performance.now();
+      const ok = await bringToFront({shell, sleep}, records[scene]);
+      emit({op: 'setup.activate', scene, sample: 1, ok, wallMs: round(performance.now() - started), note: 'harness-owned, not judged: device-side open -a, checked with lsappinfo front'});
+      if (!ok) throw new Error(`${scene} did not become the frontmost application`);
+    };
+    // Finder's key goes only while Finder is frontmost and its top window is the run's.
+    const finderKey = async (code, keys) => {
+      const seen = front();
+      if (seen.frontmost?.bundleId !== 'com.apple.finder' || seen.topWindow?.number !== records.finder.window.number) {
+        emit({op: 'key.skipped', sample: 1, ok: false, keys, target: 'the run\'s Finder window', frontmost: seen.frontmost?.bundleId ?? 'unreadable'});
+        stopped = `${keys.join(', ')} not sent: the run's Finder window is not in front`; throw new Stop(stopped);
+      }
+      return js(code);
+    };
+    const finderRenameGuard = renameGuard({lane, js, keyCell, emit, stop: message => { stopped = message; throw new Stop(message); }});
+    const ctx = {lane, d, engine, dir, meta, emit, row, js, attest, records, scenes, samples, tasks, inputBuilt, operator, operatorSeconds, tapModes, keyCell, finderKey, finderRenameGuard, activate, front, ops, shell, io, log, prepared, skipped, active, sleep};
+
+    const first = await js(FIRST, BIND_MS);
+    if (!first.cell?.ok) throw new Error(`the first cell failed: ${first.failure ?? first.cell?.error}`);
+    if (takes('speed')) for (let sample = 1; sample <= samples; sample++) row('warm.listApps', sample, attest(await js(LIST_APPS)));
+    for (const scene of scenes) await bind(ctx, scene);
+    // The baseline's TextEdit cells (the task's close, the teardown's quit) name the scene document, whatever groups run.
+    if (active().includes('textedit')) {
+      const ready = await js(spike.USE_TEXTEDIT(SCENE_WINDOW.textedit));
+      if (!ready.cell?.ok) throw new Error(`the TextEdit scene is not ready: ${ready.cell?.error ?? ready.failure}`);
+    }
+    // U3: the Chrome scene window's title as the front-window checks see it (the run's own Chrome for Testing window).
+    if (active().includes('chrome')) {
+      const titled = await js(spike.SCENE_WINDOW_TITLE('chrome', records.chrome.app, SCENE_WINDOW.chrome, {raw: lane === 'cua'}));
+      row('check.sceneWindow', 1, titled, {scene: 'chrome', ...(titled.cell?.ok ? {ok: titled.cell.value.accepted === true} : {})});
+    }
+
+    for (const notRun of [...notRunRows({lane, scenes, inputBuilt}), ...(groups.includes('e') ? STRUCTURAL_ROWS : []), ...(lane === 'vendor' && groups.includes('d') ? VENDOR_ONLY_ROWS : []),
+      ...groupNotRunRows(lane, groups)]) emit(notRun);
+    if (active().includes('finder')) await finderSetup(ctx);
+    if (takes('speed')) {
+      // The goldens on one fixed front application on both lanes (TextEdit, else the first scene).
+      if (active().length) await activate(active().includes('textedit') ? 'textedit' : active()[0]);
+      for (const scene of active()) await golden(ctx, scene, 'golden.fixed', spike.GOLDEN(scene, records[scene].app, SCENE_WINDOW[scene], {raw: lane === 'cua'}));
+      if (active().includes('textedit')) await textEditCells(ctx);
+      for (const scene of active()) await treeCells(ctx, scene);
+      for (const scene of active().filter(s => s !== 'textedit')) await screenshotCells(ctx, scene);
+      if (lane === 'cua') {
+        const passed = await preflightSwitches(ctx, active());
+        for (const scene of active()) await engineCells(ctx, scene, passed);
+        if (passed.has('readSet')) for (const scene of active()) await equivalenceCells(ctx, scene);
+      }
+      if (inputBuilt) for (const scene of active()) await golden(ctx, scene, 'golden.action', spike.ACTION_GOLDEN(scene, records[scene].app, SCENE_WINDOW[scene], ACTION_TARGET[scene], {raw: lane === 'cua'}),
+        scene === 'finder' ? {after: finderRenameGuard} : {});
+    }
+    if (lane === 'cua' && inputBuilt) {
+      if (takes('ab')) await probesAB(ctx);
+      if (takes('routes')) await routesGroup(ctx, {samples: routeSamples});
+      if (takes('effects')) await effectsGroup(ctx);
+      if (takes('coord')) await coordGroup(ctx);
+      if (takes('tap')) for (const mode of await tapGroup(ctx, tapModes)) await probeDTap(ctx, {mode});
+      if (takes('d')) await probeD(ctx, {tasksRan: takes('speed')});
+      if (takes('e')) await probeE(ctx);
+    }
+    // end_task is the MCP proxy's tool (src/mcp); the cua lane's serve.mjs runs the supervisor without the proxy, so
+    // there it is a not-run row rather than a failure.
+    if (lane === 'cua') emit({op: 'end_task', sample: 1, ok: false, notRun: 'the spike serve runs the REPL host without the MCP proxy, which provides end_task'});
+    else {
+      const ended = await client.call('end_task');
+      emit({op: 'end_task', sample: 1, ok: ended.isError !== true});
+    }
+    meta.complete = true;
+  } catch (error) {
+    meta.error = error.message;
+    if (!(error instanceof Stop)) log(`run ${options.run}: ${error.message}`);
+  } finally {
+    if (stopped) { meta.stopped = stopped; meta.complete = false; }
+    meta.teardown = await teardown({lane, shell, client, records, scenes, sceneCli, sceneDir, stopped, inputBuilt, sleep}).catch(error => ({error: error.message}));
+    if (meta.teardown?.error) meta.complete = false;
+    // The closing stop pairs with the opening one, inside the admission: a run refused before it stops nothing.
+    if (meta.engineStopAtStart !== undefined) { try { meta.engineStopAtEnd = await stopEngine(ops); } catch (error) { meta.engineStopAtEnd = {error: error.message}; meta.complete = false; } }
+    try { meta.helpersAtEnd = classifyHelpers(shell(HELPER_SCRIPT), meta.preparation?.runtimeReuse?.runtimeRoot ?? null); } catch {}
+    if (prepared && !prepared.local) {
+      try { meta.preparationCleanup = cleanupPreparation(d, shell, prepared, io.localPreparation); }
+      catch (error) { meta.preparationCleanup = {removed: false, error: error.message}; meta.complete = false; }
+    }
+    if (prepared?.local) for (const path of [prepared.configHome, prepared.tmpdir]) fs.rmSync(path, {recursive: true, force: true});
+    if (meta.problems.length) meta.complete = false;
+    meta.finished = new Date().toISOString();
+    write();
+  }
+  log(`run ${options.run} (${lane}): ${meta.complete ? 'complete' : `${refused ? 'refused' : 'INCOMPLETE'}: ${meta.stopped ?? meta.error ?? meta.problems.join('; ')}`}`);
+  return refused ? REFUSED : meta.complete ? 0 : 1;
+}
+
+const pick = (object, keys) => Object.fromEntries(keys.filter(k => object?.[k] !== undefined).map(k => [k, object[k]]));
+const readSceneState = (shell, sceneDir) => {
+  try { return JSON.parse(shell(`cat ${quote(join(sceneDir, 'scenes.json'))} 2>/dev/null || echo '{}'`)); } catch { return {}; }
+};
+
+// Puts a scene's app in front (device-side open -a) and polls lsappinfo for up to 5 s. -> whether it got there.
+async function bringToFront({shell, sleep}, record) {
+  shell(`/usr/bin/open -a ${quote(record.app)}`);
+  for (let i = 0; i < 20; i++) { if (parseFrontmost(shell(FRONTMOST_SCRIPT)) === record.bundleId) return true; await sleep(250); }
+  return parseFrontmost(shell(FRONTMOST_SCRIPT)) === record.bundleId;
+}
+
+// Binds a scene's app by its path and checks the path named exactly the run's process: on the device exactly one
+// process runs the scene's bundle id and it is the recorded one, and on the cua lane the bound observation's pid is it.
+// A scene whose binding names another process is skipped and is a run problem.
+async function bind({lane, js, row, shell, records, meta, skipped}, scene) {
+  const record = records[scene];
+  const r = await js(spike.BIND(scene, record.app), BIND_MS);
+  const exec = (command, args) => shell([command, ...args].map(quote).join(' '));
+  const runningPids = runningApps(record.bundleId, {exec}).map(app => app.pid);
+  const boundPid = lane === 'cua' && r.cell?.ok ? (await js(spike.BOUND_PID(record.app))).cell?.value?.pid ?? null : null;
+  const pidOk = runningPids.length === 1 && runningPids[0] === record.pid && (lane !== 'cua' || boundPid === record.pid);
+  const out = row('bind.getApp', 1, r, {scene, recordedPid: record.pid, runningPids, ...(lane === 'cua' ? {boundPid} : {}), pidOk, ...(r.cell?.ok && !pidOk ? {ok: false} : {})});
+  if (!out.ok) {
+    skipped.add(scene);
+    meta.problems.push(`${scene}: ${pidOk ? `the bind failed (${out.error})` : `the bound app is not exactly the run's process ${record.pid} (running ${runningPids.join(', ') || 'none'}${lane === 'cua' ? `, bound ${boundPid}` : ''})`}; its rows did not run`);
+  }
+}
+
+// The vendor lane on this Mac: prepare.mjs's approved-home functions called in process, as the declared lane calls them
+// over ssh (the admission, state/ and run/ moved aside and back with recovery.json, the TMPDIR witness, the run's
+// helper stopped only when proven its own, the refusals). `seams` are prepare.mjs's own (the tests inject a device).
+// Should the home be a live cua home (its sessions name it nowhere on a command line), prepare.mjs's check for other
+// users also counts the home's live sessions and agent (homeHolders): checked after the admission is taken, a holder
+// refuses the preparation and, at cleanup, keeps the home aside. The managed Node is checked before the admission and
+// any move, so a home without it refuses with the owner's state/ and run/ untouched.
+export const localPreparation = (seams = {}) => {
+  const {holdersOf = homeHolders, ...rest} = seams;
+  const usersOf = (home, options) => [...(rest.usersOf ?? homeUsers)(home, options), ...holdersOf(home)];
+  return {
+    prepare: approvedHome => {
+      const home = fs.realpathSync(approvedHome);
+      assertManagedNode((rest.inspect ?? executionFacts)({source: home, ambient: {PATH: process.env.PATH, HOME: rest.userHomeDir ?? homedir(), CUA_HOME: home}}));
+      return prepareNative({device: 'local', approvedHome}, {declared: () => ({platform: 'darwin'}), ...rest, usersOf});
+    },
+    cleanup: prepared => cleanupNative(prepared, {...rest, usersOf}),
+  };
+};
+
+const aliveByKill = pid => { try { process.kill(pid, 0); return true; } catch (error) { return error.code === 'EPERM'; } };
+// A record the check cannot read: a user of its own (never signalled: it is not the run's), so the run refuses.
+const unreadable = what => ({pid: `unreadable ${what}`, helper: false, owned: false, unreadable: true});
+
+// What holds `home` as prepare.mjs counts users ({pid, helper: false, owned: false}), liveness by kill(pid, 0), which
+// delivers no signal:
+//   the live sessions registered in run/ (src/runtime/run-dir.mjs: run/<session>.pid, the claiming process's pid);
+//   the live holder of state/agent.lock (src/remote/agent.mjs: {pid, token}).
+// Fail closed: a record or lock that is unreadable, empty or malformed is a user too; only an absent one is skipped.
+const SESSION_RECORD = /^[A-Za-z0-9-]{1,128}\.pid$/;
+export function homeHolders(home, {alive = aliveByKill} = {}) {
+  const holders = [];
+  let names = [];
+  try { names = fs.readdirSync(join(home, 'run')); } catch (error) { if (error.code !== 'ENOENT') holders.push(unreadable('run/')); }
+  for (const name of names.filter(n => n.endsWith('.pid'))) {
+    if (!SESSION_RECORD.test(name)) { holders.push(unreadable(`run/${name}`)); continue; }
+    let text;
+    try { text = fs.readFileSync(join(home, 'run', name), 'utf8'); } catch (error) { if (error.code !== 'ENOENT') holders.push(unreadable(`run/${name}`)); continue; }
+    const pid = /^\d+\n?$/.test(text) ? Number(text.trim()) : NaN;
+    if (!Number.isSafeInteger(pid) || pid <= 0) { holders.push(unreadable(`run/${name}`)); continue; }
+    if (alive(pid)) holders.push({pid, helper: false, owned: false});
+  }
+  let lock = null;
+  try { lock = fs.readFileSync(join(home, 'state', 'agent.lock'), 'utf8'); } catch (error) { if (error.code !== 'ENOENT') holders.push(unreadable('state/agent.lock')); }
+  if (lock !== null) {
+    let pid = NaN;
+    try { pid = JSON.parse(lock).pid; } catch {}
+    if (!Number.isSafeInteger(pid) || pid <= 0) holders.push(unreadable('state/agent.lock'));
+    else if (alive(pid)) holders.push({pid, helper: false, owned: false});
+  }
+  return holders;
+}
+
+// prepare.mjs's cleanup for a run's preparation: in process on this Mac, over ssh on a declared device. It is resumable:
+// a failure names the recovery directory, keeps the admission, and can be run again (`measure.mjs cleanup`).
+export function cleanupPreparation(d, shell, prepared, local = localPreparation()) {
+  return d.local ? local.cleanup(prepared) : lastJson(shell(preparationScript('cleanup', prepared)));
+}
+
+// The Node the serve runs on (path and version), read through the serve's own transport and PATH: the vendor lane's
+// serve script runs `node` from the PATH ssh (or /bin/sh here) gives it, the cua lane's runs the device's node.
+function serveNode(d, {lane, checkout}) {
+  const probe = `cd ${quote(checkout)} && ${lane === 'vendor' ? 'node' : d.node} -e 'console.log(JSON.stringify({path: process.execPath, version: process.version}))'`;
+  try { return lastJson(execute(lane === 'vendor' ? onDevice(d, remoteCommand(d.local ? 'local' : d.device, probe)) : d.command(probe))); }
+  catch (error) { return {error: error.message.split('\n')[0].slice(0, 200)}; }
+}
+
+// The baseline's serve command is an ssh command; on this Mac the same script runs under /bin/sh.
+const onDevice = (d, spec) => (d.local ? {command: '/bin/sh', args: ['-c', spec.args.at(-1)]} : spec);
+
+// The cua lane on this Mac: no prepare.mjs admission; the given home is served as it is, with the run's own
+// XDG_CONFIG_HOME and TMPDIR.
+function localPrepared({approvedRuntime}) {
+  const scratch = mkdtempSync(join(tmpdir(), 'cua-spike-measure-'));
+  const configHome = join(scratch, 'config'), tmp = join(scratch, 'tmp');
+  fs.mkdirSync(configHome, {mode: 0o700}); fs.mkdirSync(tmp, {mode: 0o700});
+  return {local: true, home: fs.realpathSync(approvedRuntime), userHome: process.env.HOME, configHome, tmpdir: tmp, scratch};
+}
+
+// A golden: the cell writes its files into the session's temp directory; the harness copies them, checks their
+// hashes, redacts Finder's (the sidebar is the owner's) and writes them under <run>/goldens/.
+async function golden({js, row, shell, dir, records, prepared}, scene, op, code, {after} = {}) {
+  const r = await js(code, BIND_MS);
+  const files = r.cell?.ok ? r.cell.value.files : [];
+  const kept = [], problems = [];
+  const allowed = scene === 'finder' ? [SCENES.finder.fixedState.folder, ...finderFolderFiles()] : null;
+  for (const file of files) {
+    if (!isSessionFile(prepared, file.path)) { problems.push(`not read: ${file.kind} was written outside the session's temp directory`); continue; }
+    const text = shell(`cat ${quote(file.path)} && rm -f ${quote(file.path)}`);   // the device keeps no copy (Finder's is unredacted)
+    if (createHash('sha256').update(text).digest('hex') !== file.sha256) { problems.push(`not kept: ${file.kind} changed between the cell and the copy`); continue; }
+    const out = allowed ? redactGolden(text, file.kind, allowed) : text;
+    fs.mkdirSync(join(dir, 'goldens'), {recursive: true});
+    const name = file.path.split('/').at(-1).replace(/^cua-spike-golden-/, '');
+    fs.writeFileSync(join(dir, 'goldens', name), out, {mode: 0o644});
+    kept.push({kind: file.kind, name, bytes: file.bytes, redacted: Boolean(allowed)});
+  }
+  const checked = after ? await after() : {};
+  row(op, 1, r, {scene, files: kept, ...(problems.length ? {ok: false, error: problems.join('; ')} : {}), ...checked});
+}
+// A golden file the harness may read: written by the cell into the session's temp directory, which is the session's
+// own under the served home's run/ (buildLaunch) or the run's TMPDIR.
+export const isSessionFile = ({home, tmpdir: runTmp}, path) => typeof path === 'string' && !path.includes('/../')
+  && /\/cua-spike-golden-[A-Za-z0-9.+-]+$/.test(path)
+  && [`${home}/run/`, ...(runTmp ? [`${runTmp}/`] : [])].some(prefix => path.startsWith(prefix));
+
+// Finder's fixed state is list view. The vendor lane sets it (Finder in front with the run's window on top, then
+// super+2 through the guard); Finder keeps the view per folder, so the cua lane, which cannot send keys yet, checks it.
+async function finderSetup(ctx) {
+  const {lane, js, row, emit, activate, finderKey, inputBuilt} = ctx;
+  if (lane === 'vendor' || inputBuilt) {
+    await activate('finder');
+    row('setup.finderListView', 1, await finderKey(spike.PRESS('finder', 'super+2'), ['super+2']), {scene: 'finder'});
+  }
+  const view = await js(spike.FINDER_VIEW(SCENE_WINDOW.finder));
+  row('check.finderListView', 1, view, {scene: 'finder'});
+  // Finder's fixed state is list view; without it no Finder row is measured, and none is pooled.
+  if (!view.cell?.ok || !view.cell.value.listView) {
+    const reason = view.cell?.ok ? 'the run\'s Finder folder is not in list view (the vendor lane sets it: run it first in the sitting)' : `Finder's view could not be read: ${view.cell?.error ?? view.failure}`;
+    ctx.skipped.add('finder');
+    emit({op: 'scene.finder', scene: 'finder', sample: 1, ok: false, notRun: reason});
+    ctx.meta.problems.push(`finder: ${reason}; its rows did not run`);
+  }
+}
+
+// The baseline's TextEdit cells on the scene document: setup.activate, getAXState and getScreenshot (bracketed by
+// the scratch guard), the three-cell task through the key guard (vendor lane; on the cua lane those rows are not run).
+async function textEditCells(ctx) {
+  const {js, row, emit, activate, keyCell, samples, tasks, inputBuilt, attest} = ctx;
+  await activate('textedit');
+  const ready = await js(spike.USE_TEXTEDIT(SCENE_WINDOW.textedit));
+  if (!ready.cell?.ok) throw new Error(`the TextEdit scene is not ready: ${ready.cell?.error ?? ready.failure}`);
+  for (let sample = 1; sample <= samples; sample++) row('warm.getAXState', sample, attest(await js(AX_FULL)), {scene: 'textedit'});
+  const guard = async n => { const r = row('guard.scratch', n, await js(SCRATCH_GUARD), {scene: 'textedit'}); return r.ok && r.scratchInFront === true; };
+  if (!await guard(1)) throw new Error('the scene document is not in front before the screenshot series');
+  const shots = [];
+  for (let sample = 1; sample <= samples; sample++) shots.push({sample, r: await js(SCREENSHOT)});
+  const still = await guard(2);
+  for (const {sample, r} of shots) row('warm.getScreenshot', sample, r, {scene: 'textedit', ...(still ? {} : {ok: false, invalid: 'the scene document was not in front after the series'})});
+  if (!inputBuilt) return;
+  for (let sample = 1; sample <= tasks; sample++) {
+    const steps = [];
+    const opened = await keyCell('com.apple.TextEdit', TASK_NEW, ['super+n']);
+    const typed = opened.cell?.ok ? await keyCell('com.apple.TextEdit', TASK_TYPE, ['typeText']) : null;
+    const act = typed ? {...typed, wallMs: opened.wallMs + typed.wallMs, cell: typed.cell && {...typed.cell, inCellMs: (opened.cell.inCellMs ?? 0) + (typed.cell.inCellMs ?? 0)}} : opened;
+    steps.push(row('task.act', sample, act, {scene: 'textedit', route: typed?.meta?.['cua/inputRoute'] ?? null}));
+    if (steps[0].ok) steps.push(row('task.verify', sample, await js(TASK_VERIFY), {scene: 'textedit'}));
+    steps.push(row('task.close', sample, await keyCell('com.apple.TextEdit', TASK_CLOSE, ['super+w']), {scene: 'textedit'}));
+    const ok = steps.length === 3 && steps.every(s => s.ok);
+    emit({op: 'task.total', scene: 'textedit', sample, ok, wallMs: round(steps.reduce((t, s) => t + (s.wallMs ?? 0), 0)), inCellMs: round(steps.reduce((t, s) => t + (s.inCellMs ?? 0), 0)),
+      outcome: ok ? 'typed text verified, document closed without saving' : steps.find(s => !s.ok)?.error ?? 'failed'});
+    if (!steps.at(-1).ok) throw new Error(`task ${sample}'s document could not be confirmed closed`);
+  }
+}
+
+// getScreenshot of a scene other than TextEdit (whose series the baseline's own cells take), as the baseline times it:
+// the series bracketed by a check that the scene's window is its app's front window, every sample invalid when it is
+// not in front afterwards.
+async function screenshotCells({js, row, samples}, scene) {
+  const guard = async n => { const r = row('guard.scene', n, await js(spike.SCENE_GUARD(scene, SCENE_WINDOW[scene])), {scene}); return r.ok && r.inFront === true; };
+  if (!await guard(1)) { row('warm.getScreenshot', 1, {wallMs: 0, cell: null, failure: 'the scene window was not in front before the series'}, {scene}); return; }
+  const shots = [];
+  for (let sample = 1; sample <= samples; sample++) shots.push({sample, r: await js(spike.SCENE_SCREENSHOT(scene))});
+  const still = await guard(2);
+  for (const {sample, r} of shots) row('warm.getScreenshot', sample, r, {scene, ...(still ? {} : {ok: false, invalid: 'the scene window was not in front after the series'})});
+}
+
+// The tree read of each scene through the facade, with the raw Skyshot's size and the engine's timings on the cua lane.
+async function treeCells({lane, js, row, attest, records, samples}, scene) {
+  for (let sample = 1; sample <= samples; sample++) {
+    const r = attest(await js(spike.TREE(scene, SCENE_WINDOW[scene])));
+    const extra = {scene};
+    if (lane === 'cua' && r.cell?.ok) {
+      const facts = await js(spike.SKYSHOT_FACTS(records[scene].app));
+      if (facts.cell?.ok) Object.assign(extra, {engine: facts.cell.value});
+    }
+    row('tree.getAXState', sample, r, extra);
+  }
+}
+
+// The engine's spike switches, each with the value its preflight and its series test, the scenes it applies to, and
+// the series' ops. A web-area wait happens only on a web-shaped scene.
+export const SWITCHES = Object.freeze({
+  prefetch: {value: 'hierarchy', scenes: null, series: [['probe.c\'.route.public', {prefetch: 'public'}], ['probe.c\'.route.hierarchy', {prefetch: 'hierarchy'}]]},
+  valueMarkdown: {value: false, scenes: null, series: [['valueMarkdown.on', {valueMarkdown: true}], ['valueMarkdown.off', {valueMarkdown: false}]]},
+  focusableSelectable: {value: false, scenes: null, series: [['focusableSelectable.on', {focusableSelectable: true}], ['focusableSelectable.off', {focusableSelectable: false}]]},
+  webAreaWait: {value: false, scenes: ['chrome', 'electron'], series: [['webAreaWait.on', {webAreaWait: true}], ['webAreaWait.off', {webAreaWait: false}]]},
+  settle: {value: true, scenes: null, series: [['probe.c\'.settle.rest', {settle: true}]]},
+  // The per-role read set (Decision Log, 2026-10-19): its series is the rendering-equivalence cell (equivalenceCells).
+  readSet: {value: 'reduced', scenes: null, series: []},
+});
+// Where a switch's preflight runs: the first of the run's scenes that can show it (TextEdit has the Markdown fetch).
+const PREFLIGHT_ORDER = ['textedit', 'finder', 'chrome', 'electron'];
+
+// Whether the engine saw a switch, from the timings of an observation without it (`plain`) and one with it
+// (`switched`, at SWITCHES[name].value): true, false, or null when this scene cannot show it.
+export function switchVerdict(name, plain, switched) {
+  if (!plain || !switched) return false;
+  switch (name) {
+    case 'prefetch': return switched.route === SWITCHES.prefetch.value;
+    case 'settle': return switched.settle !== undefined;
+    case 'valueMarkdown': return plain.markdownFetches > 0 ? !(switched.markdownFetches > 0) : null;
+    case 'focusableSelectable': return plain.focusableMs > 0 || plain.selectableMs > 0 ? !(switched.focusableMs > 0 || switched.selectableMs > 0) : null;
+    case 'webAreaWait': return plain.webAreaFound !== undefined ? switched.webAreaFound === undefined : null;
+    // The engine labels the read set it used in its timings, as it labels the fetch route.
+    case 'readSet': return switched.readSet === SWITCHES.readSet.value;
+    default: throw new Error(`unknown switch ${name}`);
+  }
+}
+
+// Cua lane, once per run: each switch's preflight on one scene (an observation without it and one with it). A switch
+// the service did not forward, or that no scene of the run can show, is one not-run row and skips its series; an
+// unforwarded one is also a run problem. -> the switches that passed.
+async function preflightSwitches({js, emit, records, meta}, scenes) {
+  const plain = new Map(), passed = new Set();
+  const observe = async (scene, switches) => (await js(spike.ENGINE_OBSERVE(records[scene].app, switches))).cell?.value?.timings ?? null;
+  for (const [name, spec] of Object.entries(SWITCHES)) {
+    const scene = PREFLIGHT_ORDER.find(s => scenes.includes(s) && (!spec.scenes || spec.scenes.includes(s)));
+    if (!scene) { emit({op: `switch.${name}`, sample: 1, ok: false, notRun: `no scene of this run can show ${name}`}); continue; }
+    if (!plain.has(scene)) plain.set(scene, await observe(scene, {}));
+    const verdict = switchVerdict(name, plain.get(scene), await observe(scene, {[name]: spec.value}));
+    emit({op: 'preflight.switch', switch: name, scene, sample: 1, ok: verdict === true, forwarded: verdict});
+    if (verdict === true) { passed.add(name); continue; }
+    const reason = verdict === null ? `undetermined: ${scene} shows no effect of ${name}` : `the engine did not apply ${name} (not forwarded, a fallback, or a failed observation)`;
+    emit({op: `switch.${name}`, scene, sample: 1, ok: false, notRun: reason});
+    if (verdict === false) meta.problems.push(`${name}: ${reason}; its series did not run`);
+  }
+  return passed;
+}
+
+// Cua lane, probe (c′) and the switches' costs: the two fetch routes and each on/off pair alternated per sample, and the
+// settle notification count at rest, for the switches that passed their preflight.
+async function engineCells({js, row, records, samples}, scene, passed) {
+  const app = records[scene].app;
+  const pairs = Object.entries(SWITCHES).filter(([name, spec]) => passed.has(name) && name !== 'settle' && (!spec.scenes || spec.scenes.includes(scene)));
+  for (let sample = 1; sample <= samples; sample++)
+    for (const [, {series}] of pairs)
+      for (const [op, switches] of sample % 2 ? series : [...series].reverse()) row(op, sample, await js(spike.ENGINE_OBSERVE(app, switches)), {scene});
+  if (passed.has('settle'))
+    for (let sample = 1; sample <= Math.min(samples, 5); sample++) row('probe.c\'.settle.rest', sample, await js(spike.ENGINE_OBSERVE(app, {settle: true})), {scene});
+}
+
+// Cua lane: rendering equivalence of the per-role read set (Decision Log, 2026-10-19). Each sample observes the scene's
+// fixed state with the full and the reduced read set, in alternating order, and compares the stand-in renderer's texts
+// (equal, the two SHA-256s, the count of differing lines; never the text), timing each observation in-cell. Drift
+// between two observations is not a difference: summary judges a scene equal when any sample at rest is equal, and
+// different only when every sample differs.
+export const EQUIVALENCE_SAMPLES = 5;
+async function equivalenceCells({js, row, records, samples}, scene) {
+  for (let sample = 1; sample <= Math.min(samples, EQUIVALENCE_SAMPLES); sample++)
+    row('equivalence.readSet', sample, await js(spike.READ_SET_EQUIVALENCE(records[scene].app, sample % 2 ? ['full', 'reduced'] : ['reduced', 'full'])), {scene});
+}
+
+// Probe (c), on the cua lane with the engine stopped: does `open -a` without -g activate the engine; do two copies at
+// different paths both come up under `open -n -g -a` and bind their own sockets. Both stopped and the copy removed.
+export async function probeC({d, shell, ops, emit, front, log, meta, opsFor = bundle => engineOps(d, shell, {engine: bundle}), timing = {}}) {
+  const before = front();
+  try {
+    const status = await launchEngine(ops, {plain: true, ...timing});
+    const after = front();
+    emit({op: 'probe.c.plainOpen', sample: 1, ok: true, enginePid: status.pid, activated: after.frontmost?.pid === status.pid,
+      frontmostChanged: before.frontmost?.pid !== after.frontmost?.pid, topWindowChanged: before.topWindow?.number !== after.topWindow?.number});
+  } catch (error) { emit({op: 'probe.c.plainOpen', sample: 1, ok: false, error: error.message}); }
+  finally { await stopEngine(ops, timing); }
+  const bundle = ops.bundle().bundle, copyDir = join(dirname(dirname(bundle)), 'engine-probe-c');
+  const copy = opsFor(join(copyDir, 'cua Engine.app'));
+  try {
+    ops.removeCopy(copyDir);
+    ops.copy(copyDir);
+    const a = await launchEngine(ops, timing), b = await launchEngine(copy, timing);
+    const after = front();
+    emit({op: 'probe.c.twoCopies', sample: 1, ok: a.pid !== b.pid && a.socket !== b.socket, approved: pick(a, ['pid', 'socket', 'bundlePath']), copy: pick(b, ['pid', 'socket', 'bundlePath']),
+      frontmostChanged: before.frontmost?.pid !== after.frontmost?.pid});
+  } catch (error) { emit({op: 'probe.c.twoCopies', sample: 1, ok: false, error: error.message}); }
+  finally {
+    let copyStopped = true;
+    for (const [name, target] of [['copy', copy], ['approved', ops]]) {
+      try { await stopEngine(target, timing); } catch (error) { if (name === 'copy') copyStopped = false; log(`probe (c): ${error.message}`); }
+    }
+    // A copy whose engine may still run is left in place (removing it would leave an engine serving a vanished bundle).
+    if (copyStopped) ops.removeCopy(copyDir);
+    else { meta.problems.push(`probe (c): the copy's engine did not stop; ${copyDir} was left in place`); meta.probeCopyLeft = copyDir; }
+  }
+}
+
+// (d) The tap itself, around one key action on the TextEdit scene: created with Accessibility alone, and whether
+// the engine's own pid-posted HID-source events reach the tap or reset the HID idle counter — the two answers that
+// choose between the tap and the HID-idle fallback. `mode` (listen | active, U5) is the tap's kind, sent to probe_tap
+// and kept on both rows; without it the engine's default.
+export async function probeDTap({js, emit, records, front, activate, ops}, {mode} = {}) {
+  if (!records.textedit) return;
+  const tapMode = mode ? {mode} : {};
+  const sum = (counts, kind) => Object.values(counts ?? {}).reduce((t, per) => t + (per?.[kind] ?? 0), 0);
+  // ops.probeTap answers the engine's result and throws its refusal with the engine's name (tapNotCreated's sentence
+  // says whether the listen grant was seen), which the row keeps. A stopped run stops here too: nothing more is sent.
+  const failed = (op, error) => {
+    if (error instanceof Stop) throw error;
+    const refused = refusalFields(error);
+    emit({op, scene: 'textedit', sample: 1, ...tapMode, ok: false, errorName: error.errorName ?? null, error: error.message,
+      listenPreflight: refused.listenPreflight, postPreflight: refused.postPreflight});
+  };
+  // A tap started is stopped whatever its action does, a stopped run included (stopping a tap sends no input); when
+  // both fail, the action's error is the one reported. -> the action's result and the tap's report.
+  const aroundTap = async (seconds, action) => {
+    ops.probeTap('start', {app: records.textedit.app, seconds, ...tapMode});
+    let acted;
+    try { acted = await action(); }
+    catch (error) { try { ops.probeTap('stop'); } catch {} throw error; }
+    return {acted, report: ops.probeTap('stop')};
+  };
+  try {
+    await activate('textedit');
+    const {acted, report} = await aroundTap(180, () => js(spike.ACT_KEY('textedit', KEY_PROBE.textedit)));
+    const counts = report.counts ?? {};
+    // A key action that failed posted nothing to count: the row fails with its error and answers neither question.
+    const posted = acted.cell?.ok === true;
+    emit({op: 'probe.d.tap', scene: 'textedit', sample: 1, ...tapMode, ok: posted, ...(posted ? {} : {error: acted.cell?.error ?? acted.failure ?? 'failed'}),
+      created: true, listenAccess: report.listenAccess ?? null,
+      own: sum(counts, 'own'), driven: sum(counts, 'driven'), other: sum(counts, 'other'),
+      ownPostsReachTheTap: posted ? sum(counts, 'own') > 0 : null, hidIdleMsAfterOwnPosts: posted ? report.hidIdleMs ?? null : null,
+      route: acted.meta?.['cua/inputRoute'] ?? null, inCellMs: acted.cell?.inCellMs ?? null,
+      ownTimes: report.ownTimes ?? [], drivenTimes: report.drivenTimes ?? [], listenPreflight: report.listenPreflight ?? null, postPreflight: report.postPreflight ?? null});
+  } catch (error) { failed('probe.d.tap', error); }
+  // (d) The keystroke probe as a stand-in user: an HID-tap-posted event, counted as the driven app's input when the
+  // tap attributes it, and its reset of the HID idle counter.
+  try {
+    await activate('textedit');
+    const seen = front();
+    const bounds = seen.topWindow?.bounds;
+    if (seen.frontmost?.pid !== records.textedit.pid || !bounds) {
+      emit({op: 'probe.d.hidReset', scene: 'textedit', sample: 1, ...tapMode, ok: false, notRun: 'the scene window was not the front one for the keystroke probe'});
+      return;
+    }
+    const {acted: sent, report} = await aroundTap(120, () => ops.keystroke(records.textedit.pid, `${bounds.x},${bounds.y},${bounds.width},${bounds.height}`, 'cua'));
+    const counts = report.counts ?? {};
+    emit({op: 'probe.d.hidReset', scene: 'textedit', sample: 1, ...tapMode, ok: sum(counts, 'driven') > 0,
+      driven: sum(counts, 'driven'), other: sum(counts, 'other'), hidIdleMs: report.hidIdleMs ?? null,
+      probe: sent, drivenTimes: report.drivenTimes ?? []});
+  } catch (error) { failed('probe.d.hidReset', error); }
+}
+
+// Cua lane: probes (a) and (b) on every scene with its paired user window in front — (b) also forces each route
+// through the spike-only spikeRoute (FORCED_ROUTES, route 2′ included) with a watch-activations probe running, so what
+// route 3 does to the user's frontmost is seen from outside the engine.
+async function probesAB(ctx) {
+  const {js, row, emit, records, front, activate, ops, active, finderRenameGuard} = ctx;
+  const renameCheck = (scene, action) => (scene === 'finder' && action === 'click' ? finderRenameGuard() : {});
+  for (const scene of active()) {
+    const user = USER_WINDOW[scene];
+    if (!records[user]) { for (const action of ['click', 'key']) emit({op: `probe.a.${action}`, scene, user, sample: 1, ok: false, notRun: `the user window's scene (${user}) is not up`}); continue; }
+    for (const action of ['click', 'key']) {
+      await activate(user);
+      const located = await js(spike.LOCATE(scene, SCENE_WINDOW[scene], ACTION_TARGET[scene]));
+      if (!located.cell?.ok) { row(`probe.a.${action}`, 1, located, {scene, user}); continue; }
+      const before = front();
+      if (before.frontmost?.pid !== records[user].pid || before.topWindow?.ownerPid !== records[user].pid) { emit({op: `probe.a.${action}`, scene, user, sample: 1, ok: false, error: 'the user window was not in front; nothing was sent'}); continue; }
+      const acted = await js(action === 'click' ? spike.ACT_CLICK(scene) : spike.ACT_KEY(scene, KEY_PROBE[scene]));
+      const after = front();
+      const unchanged = after.frontmost?.pid === before.frontmost?.pid && after.topWindow?.number === before.topWindow?.number;
+      const renamed = await renameCheck(scene, action);
+      row(`probe.a.${action}`, 1, acted, {scene, user, frontmostUnchanged: after.frontmost?.pid === before.frontmost?.pid, topWindowUnchanged: after.topWindow?.number === before.topWindow?.number, ...(acted.cell?.ok && !unchanged ? {ok: false, invalid: 'the front application or window changed'} : {}), ...renamed});
+      const back = await js(spike.READBACK(scene));
+      row(`probe.b.${action}`, 1, acted, {scene, route: acted.meta?.['cua/inputRoute'] ?? null, activationGuardMs: acted.meta?.['cua/activationGuardMs'] ?? null, treeChanged: back.cell?.value?.treeChanged ?? null});
+      // (b) forced: each route the action allows, through the spike-only argument, with a watch-activations probe
+      // running around the ones that fake-activate, so an activation or a lost key focus is seen from outside.
+      const watch = {};
+      try {
+        if (action === 'click' || action === 'key') {
+          watch.started = ops.watch();
+        }
+        for (const route of FORCED_ROUTES[action]) {
+          const forced = await js(action === 'click'
+            ? spike.SPIKE_CLICK(records[scene].app, route)
+            : spike.SPIKE_INPUT(records[scene].app, 'press_key', {key: KEY_PROBE[scene], spikeRoute: String(route)}));
+          const afterForced = front();
+          const renamedForced = await renameCheck(scene, action);
+          row(`probe.b.forced.${route}`, 1, forced, {scene, action, forcedRoute: route, ...renamedForced,
+            route: forced.meta?.['cua/inputRoute'] ?? null, activationGuardMs: forced.meta?.['cua/activationGuardMs'] ?? null,
+            failed: forced.cell?.value?.failed ?? null,
+            frontmostUnchanged: afterForced.frontmost?.pid === before.frontmost?.pid, topWindowUnchanged: afterForced.topWindow?.number === before.topWindow?.number,
+            ...(forced.cell?.value?.failed ? {ok: false, error: forced.cell.value.failed} : {}),
+            ...(forced.cell?.ok && afterForced.frontmost?.pid !== before.frontmost?.pid ? {ok: false, invalid: 'the forced route changed the front application'} : {})});
+        }
+      } catch (error) {
+        if (error instanceof Stop) throw error;   // the rename guard stopped all input
+        emit({op: 'probe.b.forced', scene, sample: 1, ok: false, error: error.message});
+      } finally {
+        if (watch.started) {
+          const lines = ops.watchStop();
+          emit({op: 'probe.b.watch', scene, sample: 1, ok: true, activations: lines.filter(l => l.kind === 'activated').length,
+            deactivations: lines.filter(l => l.kind === 'deactivated').length, lines: lines.slice(0, 20)});
+        }
+      }
+    }
+  }
+}
+
+// Cua lane, probe (d): the engine's own effects never fire the intervention check (over this run's task rows, which
+// the speed group makes), the tap and the keystroke probe through probe_tap and the bundle's --probe, and with
+// --operator the two operator steps (U6), each inside a tap when one can be created so the operator's input carries
+// its post times, which the row sets against the action's interval.
+async function probeD(ctx, {tasksRan}) {
+  const {js, emit, records, activate, operator, operatorSeconds = OPERATOR_SECONDS, tapModes = TAP_MODES, io, ops, dir} = ctx;
+  // (d) The engine's own effects never fire it: the TextEdit task rows of this run must carry no userIntervened.
+  if (!tasksRan) emit({op: 'probe.d.noFire', scene: 'textedit', sample: 1, ok: false, notRun: 'the task rows are the speed group\'s: run d with speed for this check'});
+  else {
+    const taskRows = fs.readFileSync(join(dir, 'results.jsonl'), 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line)).filter(r => r.op?.startsWith('task.') && !r.notRun);
+    const fired = taskRows.filter(r => /userIntervened|The user changed|still interacting/.test(r.error ?? ''));
+    emit({op: 'probe.d.noFire', scene: 'textedit', sample: 1, ok: taskRows.length > 0 && !fired.length, taskRows: taskRows.length, fired: fired.length,
+      note: 'the engine\'s own super+n, typing, super+w and sheet click in the task rows; none may fail as userIntervened'});
+  }
+  await probeDTap(ctx);
+  if (!operator || !records.textedit) {
+    for (const op of ['probe.d.operatorKeystroke', 'probe.d.backgroundClick']) emit({op, scene: 'textedit', sample: 1, ok: false, notRun: operator ? 'the TextEdit scene is not up' : 'operator steps not requested (--operator)'});
+    return;
+  }
+  const text = interventionText(operatorSeconds);
+  // The keystroke goes into the driven app while it is frontmost; the click into its window while the paired user
+  // window is in front (the driven app in the background).
+  for (const [op, front, instruction] of [['probe.d.operatorKeystroke', 'textedit', 'press ONE key at the console; it goes into the TextEdit scene document'],
+    ['probe.d.backgroundClick', USER_WINDOW.textedit, 'click ONCE into the TextEdit scene window, which is behind the Finder window']]) {
+    if (!records[front]) { emit({op, scene: 'textedit', sample: 1, ok: false, notRun: `the ${front} scene is not up`}); continue; }
+    await activate(front);
+    if (!await io.confirm(`Operator: answer Enter to start; the engine then types for about ${operatorSeconds} s, and while it types ${instruction} (n to skip): `)) { emit({op, scene: 'textedit', sample: 1, ok: false, notRun: 'skipped by the operator'}); continue; }
+    // A tap around the typing, the first of the modes that creates one, so the operator's input carries its times.
+    let tap = null;
+    for (const mode of tapModes) {
+      try { ops.probeTap('start', {app: records.textedit.app, seconds: operatorSeconds + 60, mode}); tap = {mode, created: true}; break; }
+      catch (error) { if (error instanceof Stop) throw error; tap = {mode, created: false, ...refusalFields(error)}; }
+    }
+    let r, report = null;
+    try { r = await js(spike.ACT_TYPE('textedit', text)); }
+    finally { if (tap?.created) { try { report = ops.probeTap('stop'); } catch (error) { tap.stopError = refusalFields(error); } } }
+    const intervened = /userIntervened|The user changed|still interacting/.test(r.cell?.error ?? '');
+    const interval = r.meta?.['cua/actionInterval'] ?? null;
+    emit({op, scene: 'textedit', sample: 1, ok: intervened, intervened, error: r.cell?.error ?? r.failure ?? null, inCellMs: r.cell?.inCellMs ?? null, actionInterval: interval,
+      receivedAt: r.meta?.['cua/receivedAt'] ?? null, hidIdleMs: r.meta?.['cua/hidIdleMs'] ?? null, typedSeconds: operatorSeconds, tap,
+      ...(report ? operatorTapFields(report, interval) : {}),
+      operatorConfirmedTiming: await io.confirm('Was your input made while the engine was typing? [Enter = yes, n = no] ')});
+    await js(spike.TREE('textedit', SCENE_WINDOW.textedit));   // the fresh observation the post-intervention lock asks for
+  }
+}
+
+// Cua lane, probe (e): Korean and Unicode under both sources, with the owner's source saved and restored, plus the keyed
+// bypass of the paste routing (spikeKeyed) for the per-context question. Chrome's notes field is focused first: the
+// probes before it move the page's focus (probe (b)'s Tab, the route matrix's clicks), and text typed with no field
+// focused lands nowhere (a space toggles a focused checkbox).
+async function probeE(ctx) {
+  const {js, row, emit, records, scenes, activate, ops, dir, active} = ctx;
+  // (e) Korean and Unicode, under both sources; the owner's source restored whatever happens.
+  await withInputSource(ops, dir, async () => {
+    for (const [source, id] of Object.entries(INPUT_SOURCES)) {
+      const switched = ops.inputSource(id);
+      if (!switched?.selected) { emit({op: 'probe.e.typeText', source, sample: 1, ok: false, error: `the ${source} source ${id} could not be selected`}); continue; }
+      for (const scene of ['textedit', 'chrome'].filter(s => active().includes(s))) {
+        if (scene === 'chrome') {
+          const located = await js(spike.LOCATE('chrome', SCENE_WINDOW.chrome, TEXT_TARGET.chrome));
+          const focused = located.cell?.ok ? await js(spike.ACT_CLICK('chrome')) : located;
+          row('probe.e.focus', 1, focused, {scene, source, target: TEXT_TARGET.chrome, route: focused.meta?.['cua/inputRoute'] ?? null});
+        }
+        let sample = 0;
+        for (const text of UNICODE_STRINGS) {
+          sample++;
+          // A marker of digits and # (no letters, which a Korean source would compose) unique to this sample brackets
+          // the text, so the readback compares exactly what this sample typed.
+          const id = `${Object.keys(INPUT_SOURCES).indexOf(source)}${scenes.indexOf(scene)}${String(sample).padStart(2, '0')}`;
+          const typed = await js(spike.ACT_TYPE(scene, `#${id}#${text}#/${id}#`));
+          const landed = await js(spike.TEXT_LANDED(scene, records[scene].app, id, text));
+          row('probe.e.typeText', sample, typed, {scene, source, route: typed.meta?.['cua/inputRoute'] ?? null, landed: landed.cell?.value?.landed ?? null, exact: landed.cell?.value?.exact ?? null, expected: landed.cell?.value?.expected ?? null});
+        }
+        // The per-context question without touching the owner's preference: with this source active and the driven app
+        // in the background, keyed Latin through the spike-only bypass — does the Hangul input method compose it (the
+        // landed value shows jamo) or does the keyed form land as typed? The preference itself is M2b's.
+        if (source === 'korean' && USER_WINDOW[scene] && records[USER_WINDOW[scene]]) {
+          await activate(USER_WINDOW[scene]);
+          const typed = await js(spike.SPIKE_INPUT(records[scene].app, 'type_text', {text: UNICODE_STRINGS[0], spikeKeyed: true}));
+          const landed = await js(spike.TEXT_LANDED(scene, records[scene].app, UNICODE_STRINGS[0]));
+          row('probe.e.keyedLatin', 1, typed, {scene, source, route: typed.meta?.['cua/inputRoute'] ?? null,
+            landed: landed.cell?.value?.landed ?? null, expected: landed.cell?.value?.expected ?? null,
+            note: "spikeKeyed bypasses the paste routing; the per-context preference stays the matrix's (M2b)"});
+        }
+      }
+    }
+  });
+}
+
+// The run's scenes down. Vendor lane (or input built): Finder's run window closed with super+w through the guard and
+// TextEdit quit from its scene document with super+q through the key guard, as the baseline quits it; then every scene
+// the run brought up is stopped. Cua lane without input: Finder's window stays up for the next run (recorded), and
+// TextEdit is stopped by the recorded-pid SIGTERM. Nothing is sent after a stop (a prompt may be waiting).
+async function teardown({lane, shell, client, records, scenes, sceneCli, sceneDir, stopped, inputBuilt, sleep}) {
+  const out = {};
+  const canType = client && !stopped && (lane === 'vendor' || inputBuilt);
+  const cell = code => client.request('tools/call', {name: 'js', arguments: {code, timeout_ms: CELL_MS}}, CELL_MS + 15_000);
+  const toFront = scene => bringToFront({shell, sleep}, records[scene]);
+  if (canType) {
+    try {
+      if (records.finder && await toFront('finder')) {
+        const seen = sceneCli(['front']);
+        out.finderClosed = seen.frontmost?.bundleId === 'com.apple.finder' && seen.topWindow?.number === records.finder.window.number;
+        if (out.finderClosed) { await cell(spike.PRESS('finder', 'super+w')); await sleep(1000); }
+      }
+      if (records.textedit && await toFront('textedit')) {
+        out.textEditQuit = parseCell(textOf(await cell(QUIT_TEXTEDIT)))?.ok === true;
+      }
+    } catch (error) { out.inputError = error.message; }
+  }
+  if (client) { try { await client.close(); } catch {} }
+  const down = [];
+  for (const scene of [...scenes].reverse()) {
+    if (!records[scene]) continue;
+    if (scene === 'finder' && !out.finderClosed) { out.finderLeftOpen = true; continue; }
+    // One scene's failed down does not keep the others up, and keeps its own error text.
+    try {
+      const result = sceneCli(['down', scene, '--run', sceneDir]);
+      down.push({scene, down: result.down ?? false, ...(result.reason ? {reason: result.reason} : {})});
+    } catch (error) { down.push({scene, down: false, error: error.message}); }
+  }
+  out.down = down;
+  if (down.some(s => !s.down)) out.error = `scenes still up: ${down.filter(s => !s.down).map(s => s.scene).join(', ')}`;
+  return out;
+}
+
+// All runs of a lane. -> 0 when every run is complete.
+export async function measureLane(options, io) {
+  let code = 0;
+  for (let run = 1; run <= options.runs; run++) {
+    const result = await runOnce({...options, run, dir: join(resolve(options.out), `run-${run}`)}, io);
+    if (result !== 0) code = 1;
+    if (result === REFUSED) break;   // the engine refused: no later run could do better
+  }
+  return code;
+}

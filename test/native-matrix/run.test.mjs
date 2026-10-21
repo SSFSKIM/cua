@@ -140,6 +140,14 @@ test('the watcher\'s coverage: gone at a row\'s read leaves that row invalid; a 
     return a[0] === 'read' && ++reads === 3 ? {...answer, watcher: false} : answer;
   }}});
   assert.deepEqual(gone.result.rows.filter(r => /watcher was not running/.test(r.invalid ?? '')).map(r => r.id), ['textedit/background/getAXState.tree@finder']);
+  // An activation inside a row that ended invalid is kept as that row's, not dropped.
+  const calls = [], first = cellsOf('textedit', 'getAXState', 'tree').act;
+  reads = 0;
+  const kept = await runWith({calls, ops: {
+    matrix: (base, a) => { const answer = base(a); return a[0] === 'read' && ++reads === 3 ? {...answer, watcher: false} : answer; },
+    ...stopWith(() => ({activations: [{kind: 'activated', bundleId: 'com.apple.TextEdit', at: calls.find(c => c.code.includes(first)).at[0] + 1}]})),
+  }});
+  assert.deepEqual(kept.result.meta.activations.accounted.map(a => a.kind), ['invalid-row']);
   const lost = await runWith({ops: stopWith(() => { throw new Error('ssh: connection reset'); })});
   assert.equal(lost.result.complete, false);
   assert.ok(lost.result.problems.some(p => /could not be read/.test(p)));

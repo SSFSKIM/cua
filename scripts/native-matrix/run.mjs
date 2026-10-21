@@ -316,7 +316,10 @@ function finishWatch(ctx) {
     if (judged.oracle) judged.row.interference = judgeInterference({...judged.oracle, activations: seen});
     else judged.row.activations = seen.length;
   }
-  ctx.meta.activations = {accounted, unaccounted: unaccounted.map(e => ({bundleId: e.bundleId ?? null, at: e.at ?? null}))};
+  // A row that ended invalid is judged by nothing: what fell in it is kept as that row's, never dropped.
+  const inInvalid = Object.entries(byRow).filter(([key]) => !ctx.judged.has(key))
+    .flatMap(([key, events]) => events.map(e => ({kind: 'invalid-row', key, bundleId: e.bundleId ?? null, at: e.at ?? null})));
+  ctx.meta.activations = {accounted: [...accounted, ...inInvalid], unaccounted: unaccounted.map(e => ({bundleId: e.bundleId ?? null, at: e.at ?? null}))};
   if (unaccounted.length) ctx.problems.push(`${unaccounted.length} activation(s) fell in no step of the run: not accounted for`);
 }
 

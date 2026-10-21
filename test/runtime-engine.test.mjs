@@ -12,7 +12,8 @@ import {spawn} from 'node:child_process';
 import {PassThrough} from 'node:stream';
 import {shortScratch} from './fixtures/runtime-fixture.mjs';
 import {EngineFailure, startFakeEngine} from './helpers/fake-engine.mjs';
-import {CERT_SHA1, NAME, fakeCodesignRead, markSigned} from './helpers/fake-codesign.mjs';
+import {CERT_SHA1, CODESIGN_TIMED_OUT, NAME, fakeCodesignRead, markSigned} from './helpers/fake-codesign.mjs';
+const CODESIGN_TIMED_OUT_READ = () => CODESIGN_TIMED_OUT;
 import {BUNDLE_NAME, engineBuild, infoPlist} from '../src/runtime/engine-bundle.mjs';
 import {approveEngine, buildEngine, CAPTURE_ALERT_PREDICATE, engineStatus, installedEngine, lineReader, stopEngine, watchCaptureAlerts} from '../src/runtime/engine.mjs';
 import {main} from '../src/cli.mjs';
@@ -200,6 +201,24 @@ test('the same build under a signature that is not the configured identity is re
   assert.deepEqual(result.signature, {kind: 'identity', identityMatches: true});
 });
 
+test('a signature codesign cannot read fails closed in build: the same build is rebuilt, and an unreadable staged signature fails before the move', async t => {
+  const w = world(t);
+  w.placeBundle({build: w.checkoutBuild(), approved: true});
+  const result = await buildEngine({...w.deps, runSync: (file, args) => (args.at(-1) === w.bundle ? CODESIGN_TIMED_OUT : fakeCodesignRead(file, args))});
+  assert.equal(result.changed, true, 'an installed bundle whose signature cannot be read is not taken as signed as asked');
+
+  const fresh = world(t);
+  fresh.placeBundle({approved: true});
+  await assert.rejects(buildEngine({...fresh.deps, runSync: () => CODESIGN_TIMED_OUT}), error => {
+    assert.equal(error.code, 'engine_sign_failed');
+    assert.match(error.message, /could not be read after signing \(codesign did not finish within 60 s/);
+    return true;
+  });
+  assert.equal(fresh.plistBuild(), OLD_BUILD, 'the approved bundle is untouched');
+  assert.ok(!existsSync(join(fresh.dir, 'pending.json')));
+  assert.ok(!existsSync(join(fresh.dir, 'staging', BUNDLE_NAME)));
+});
+
 test('cua engine build waits for the GUI-session sign as long as --sign-wait or CUA_SIGN_WAIT_MS says (the flag first), 45 s by default', {skip: process.platform !== 'darwin' && 'the engine commands are macOS only'}, async t => {
   // Over SSH (launchd's manager is not Aqua) with a job that never answers: the refusal names the bound the wait used.
   const waited = async (args, env = {}) => {
@@ -285,6 +304,30 @@ test('engineStatus reports the bundle, the signature as a match, the engine\'s s
   noIdentity(status, 'status');
   writeFileSync(join(w.dir, 'pending.json'), JSON.stringify({build: 'c'.repeat(64), identity: CERT_SHA1, builtAt: 'x'}));
   noIdentity((await engineStatus(w.deps)).pending, 'pending');
+});
+
+test('a signature codesign cannot read reports approval as unknown, never as no; installedEngine and approve still refuse it', async t => {
+  const w = world(t);
+  w.placeBundle({approved: true});
+  const deps = {...w.deps, runSync: CODESIGN_TIMED_OUT_READ};
+  const status = await engineStatus(deps);
+  assert.equal(status.signature.kind, 'unreadable');
+  assert.equal(status.signature.identityMatches, null);
+  assert.match(status.signature.reason, /codesign did not finish within 60 s/);
+  assert.equal(status.approved, null, 'unknown: the build is approved.json\'s and the signature could not be read');
+  assert.equal(status.approvedBuild, OLD_BUILD);
+  noIdentity(status, 'status');
+  writeFileSync(join(w.dir, 'approved.json'), JSON.stringify({build: 'c'.repeat(64), identity: CERT_SHA1, approvedAt: 'when'}));
+  assert.equal((await engineStatus(deps)).approved, false, 'another build is approved: no, whatever the signature');
+  writeFileSync(join(w.dir, 'approved.json'), JSON.stringify({build: OLD_BUILD, identity: CERT_SHA1, approvedAt: 'when'}));
+  assert.equal(installedEngine({dir: w.dir, runSync: CODESIGN_TIMED_OUT_READ}), null, 'gating: an unverified bundle is not the approved engine');
+  await assert.rejects(approveEngine(deps), error => {
+    assert.equal(error.code, 'engine_signature_unreadable');
+    assert.match(error.message, /could not be read \(codesign did not finish within 60 s/);
+    return true;
+  });
+  assert.equal(w.engines.length, 0, 'nothing launched');
+  assert.equal(w.json('approved.json').identity, CERT_SHA1, 'approved.json untouched');
 });
 
 test('installedEngine is the bundle only when its build and signature are approved.json\'s', t => {

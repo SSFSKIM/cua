@@ -23,7 +23,7 @@ import {readFileSync, realpathSync} from 'node:fs';
 import {homedir} from 'node:os';
 import {engineDirectory, enginePaths, installedEngine} from '../../src/runtime/engine.mjs';
 import {engineBuild} from '../../src/runtime/engine-bundle.mjs';
-import {configuredIdentity, identityMatches, readSignature} from '../../src/runtime/engine-sign.mjs';
+import {configuredIdentity, readSignature, signatureReport} from '../../src/runtime/engine-sign.mjs';
 import {bundleIdentity} from '../../src/services/engine/client.mjs';
 
 export const ENGINES = Object.freeze(['vendor', 'cua']);
@@ -50,11 +50,11 @@ export function assertEngineOptions({platform, surface, host, engine, approvedEn
 }
 
 // The approved bundle's signature as evidence may carry it (the spec's M1b pre-flight item 2): its kind and whether it
-// matches the configured signing identity, never the identity itself (approvedEngineFacts keeps only these two keys, and
-// {kind: null, identityMatches: null} when the signature cannot be read).
+// matches the configured signing identity, never the identity itself (approvedEngineFacts keeps only these two keys:
+// kind 'unreadable' with the match null when codesign could not read the signature, {kind: null, identityMatches: null}
+// when reading it threw).
 function publicSignature(bundle, env) {
-  const signature = readSignature(bundle);
-  return {kind: signature?.kind ?? null, identityMatches: signature ? identityMatches(signature, configuredIdentity({env})) : null};
+  return signatureReport(readSignature(bundle), configuredIdentity({env}));
 }
 
 // Device side, run by the preflight in the serve's environment: the checkout's build, the approved engine as the serve's

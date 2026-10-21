@@ -779,14 +779,16 @@ export function cuaUnregisterLines(result) {
 // printed. approve reads the operator's answers from stdin, so over SSH the controller types them (no tty needed); with
 // stdin at its end, approve proceeds only where no answer is needed. `deps` reaches src/runtime/engine.mjs as its seam.
 const ENGINE_COMMANDS = ['build', 'approve', 'status', 'stop'];
-const signatureText = ({kind, identityMatches}) => (kind === null ? 'unsigned' : kind === 'adhoc' ? 'ad hoc' : identityMatches === null ? 'an identity (none is configured)'
-  : identityMatches ? 'the configured identity' : 'an identity that is not the configured one');
+const signatureText = ({kind, identityMatches, reason}) => (kind === null ? 'unsigned' : kind === 'unreadable' ? `signature unknown (unreadable: ${reason})`
+  : `signed with ${kind === 'adhoc' ? 'ad hoc' : identityMatches === null ? 'an identity (none is configured)'
+    : identityMatches ? 'the configured identity' : 'an identity that is not the configured one'}`);
 
 export function engineStatusLines(status) {
-  const lines = [status.exists ? `engine: ${status.bundlePath} (version ${status.engineVersion}, build ${shortBuild(status.build)}), signed with ${signatureText(status.signature)}`
+  const lines = [status.exists ? `engine: ${status.bundlePath} (version ${status.engineVersion}, build ${shortBuild(status.build)}), ${signatureText(status.signature)}`
     : `engine: none built at ${status.bundlePath} (cua engine build)`];
   if (status.exists) lines.push(status.approved ? `approved: yes, at ${status.approvedAt}`
-    : `approved: no${status.approvedBuild ? ` (approved.json names build ${shortBuild(status.approvedBuild)})` : ''}; run cua engine approve with the owner at the console`);
+    : status.approved === null ? `approved: unknown (the signature could not be read; approved.json names build ${shortBuild(status.approvedBuild)})`
+      : `approved: no${status.approvedBuild ? ` (approved.json names build ${shortBuild(status.approvedBuild)})` : ''}; run cua engine approve with the owner at the console`);
   const s = status.status;
   lines.push(s ? `running: pid ${s.pid}, accessibility ${s.accessibility}, screen recording ${s.screenRecording}, input monitoring ${s.inputMonitoring}, ${s.connections} other connection(s)`
     : 'running: no');

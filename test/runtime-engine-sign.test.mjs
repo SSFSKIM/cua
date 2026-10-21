@@ -10,10 +10,10 @@ import {existsSync, mkdirSync, readFileSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {scratch} from './fixtures/runtime-fixture.mjs';
-import {CERT_SHA1, NAME, fakeCodesignRead, markSigned} from './helpers/fake-codesign.mjs';
+import {CERT_SHA1, CODESIGN_TIMED_OUT, NAME, fakeCodesignRead, markSigned} from './helpers/fake-codesign.mjs';
 import {parsePlist} from '../src/remote/plist.mjs';
 import {
-  SIGN_JOB_SCRIPT, SIGN_JOB_TIMEOUT_MS, identityMatches, jobCodesignMs, readSignature, recordedIdentity, resolveSigningIdentity, runSignJob, signBundle, signWaitMs,
+  SIGN_JOB_SCRIPT, SIGN_JOB_TIMEOUT_MS, identityMatches, jobCodesignMs, readSignature, recordedIdentity, resolveSigningIdentity, runSignJob, signatureReport, signBundle, signWaitMs,
 } from '../src/runtime/engine-sign.mjs';
 
 const SHA1 = 'ABCDEF0123456789ABCDEF0123456789ABCDEF01';
@@ -67,6 +67,40 @@ test('a signature reads as the leaf certificate\'s SHA-1 and subject, ad hoc, or
   assert.deepEqual(adhoc, {kind: 'adhoc'});
   assert.equal(recordedIdentity(adhoc), 'adhoc');
   assert.equal(identityMatches(adhoc, CERT_SHA1), false);
+});
+
+// codesign -d's answers, as spawnSync returns them, when the read does not finish or fails for another reason than the
+// bundle being unsigned (the mini, 2026-10-21T13:22Z: codesign blocked, most likely behind a prompt at the console).
+const KILLED = {status: null, signal: 'SIGKILL', stdout: '', stderr: ''};
+const NO_CODESIGN = {status: null, signal: null, stdout: '', stderr: '', error: Object.assign(new Error('spawnSync /usr/bin/codesign ENOENT'), {code: 'ENOENT'})};
+const OTHER_FAILURE = {status: 1, signal: null, stdout: '', stderr: `/e/cua Engine.app: errSecInternalComponent for signer "${NAME}" ${CERT_SHA1}\n`};
+
+test('a signature codesign cannot read is unreadable with the reason, not unsigned; it records no identity and matches nothing', () => {
+  const read = answer => readSignature('/e/cua Engine.app', {runSync: () => answer});
+  const timedOut = read(CODESIGN_TIMED_OUT);
+  assert.equal(timedOut.kind, 'unreadable');
+  assert.match(timedOut.reason, /codesign did not finish within 60 s/);
+  assert.match(read({...CODESIGN_TIMED_OUT, error: undefined}).reason, /codesign was killed \(SIGTERM\)/, 'a signal with no error');
+  assert.match(read(KILLED).reason, /codesign was killed \(SIGKILL\)/);
+  assert.match(read(NO_CODESIGN).reason, /codesign could not run: .*ENOENT/);
+  const other = read(OTHER_FAILURE);
+  assert.equal(other.kind, 'unreadable');
+  assert.match(other.reason, /codesign exited 1: .*errSecInternalComponent/);
+  assert.ok(!other.reason.includes(CERT_SHA1) && !other.reason.includes(NAME), 'the reason names no identity');
+  for (const unreadable of [timedOut, other]) {
+    assert.equal(recordedIdentity(unreadable), null);
+    assert.equal(identityMatches(unreadable, CERT_SHA1), false, 'gating: never the configured identity');
+  }
+  assert.equal(read({status: 1, signal: null, stdout: '', stderr: '/e/cua Engine.app: code object is not signed at all\n'}), null, 'unsigned stays null');
+});
+
+test('signatureReport gives the kind and the match, the match unknown for an unreadable signature, never the identity', () => {
+  const unreadable = readSignature('/e', {runSync: () => CODESIGN_TIMED_OUT});
+  assert.deepEqual(signatureReport(unreadable, CERT_SHA1), {kind: 'unreadable', identityMatches: null, reason: unreadable.reason});
+  assert.deepEqual(signatureReport(null, CERT_SHA1), {kind: null, identityMatches: null});
+  assert.deepEqual(signatureReport({kind: 'adhoc'}, CERT_SHA1), {kind: 'adhoc', identityMatches: false});
+  assert.deepEqual(signatureReport({kind: 'identity', sha1: CERT_SHA1, authority: NAME}, CERT_SHA1), {kind: 'identity', identityMatches: true});
+  assert.deepEqual(signatureReport({kind: 'identity', sha1: CERT_SHA1, authority: NAME}, null), {kind: 'identity', identityMatches: null});
 });
 
 // A recorder of the async runner: answers by a handler per program, records every call.

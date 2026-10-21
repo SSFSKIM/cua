@@ -10,7 +10,8 @@ import {mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync} from 'node:
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {isComputerUseApproval} from '../scripts/accept/lib.mjs';
-import {approvalMemory, elicitationParams} from '../src/repl-host/elicitation.mjs';
+import {elicitationParams} from '../src/repl-host/elicitation.mjs';
+import {approvalMemory} from '../src/mcp/approval-memory.mjs';
 import {DESKTOP_APPROVAL, LINUX_WINDOW_METHODS, linuxApprovalRequest} from '../src/services/engine/policy.mjs';
 import {createSkyService} from '../src/services/sky.mjs';
 
@@ -22,16 +23,16 @@ const execute = (method, input) => ({type: 'execute', method, args: input === un
 const ACCEPT = {action: 'accept', content: {}, _meta: {persist: 'session'}};
 
 // The trusted worker's nodeRepl as the wrapper's policy uses it, the client answering `answer(message)`; `memory` puts
-// the supervisor's approval memory in front of the client, as the own host does.
+// the connection's approval memory (cua's proxy, src/mcp/approval-memory.mjs) in front of the client.
 function worker({answer = () => ACCEPT, memory = false} = {}) {
   const asked = [];
   const remembered = approvalMemory();
   const nodeRepl = {
     requestMeta: {'x-codex-turn-metadata': {call_id: 'call-3'}},
     createElicitation: async request => {
-      const message = {message: request.message, meta: request.meta};
+      const message = {message: request.message, _meta: request.meta};
       const recalled = memory ? remembered.recall(message) : null;
-      if (recalled) { const {ok, ...fields} = recalled; return fields; }
+      if (recalled) return {...recalled, _meta: null};
       asked.push(structuredClone(request));
       const outcome = {ok: true, ...answer(request)};
       if (memory) remembered.record(message, outcome);
@@ -79,8 +80,36 @@ test('the Linux approval is the macOS shape keyed by the Linux app: low risk wha
   assert.equal(linuxApprovalRequest({toolName: 'click', key: 'org.chromium.Chromium', display: 'org.chromium.Chromium'}).meta.riskLevel, 'low');
 });
 
+// The method sets as the design states them (docs/doperpowers/specs/2026-10-18-own-native-engine-design.md, Policy and
+// approvals, its Linux sentence; Decision Log "M3.1, maws-3f's rulings" item 1), written out here rather than read from
+// the module, so a method the module drops or adds shows as a difference.
+const SPEC_WINDOW_METHODS = ['get_window_state', 'click', 'press_key', 'type_text', 'scroll', 'drag', 'move', 'perform_secondary_action',
+  'activate_window', 'key_down', 'key_up', 'clipboard_read', 'clipboard_write'];
+const SPEC_DESKTOP_REQUESTS = [execute('move_relative', {dx: 1, dy: 1}), {type: 'drag_start', handle_id: 'h', point: {x: 1, y: 1}}];
+const SPEC_ASK_NOTHING = [execute('list_apps'), execute('list_windows'), execute('get_screenshot'), execute('clipboard_release', {handle: 'c1'})];
+
+test('the method sets are the design\'s: the window methods (clipboard_read and clipboard_write among them) ask, the desktop ones ask (desktop), and listing, the screenshot and clipboard_release ask nothing', async () => {
+  assert.deepEqual([...LINUX_WINDOW_METHODS].sort(), [...SPEC_WINDOW_METHODS].sort(), 'the module\'s window methods');
+  for (const method of SPEC_WINDOW_METHODS) {
+    const {service, asked} = linux();
+    await service.handleRpc(execute(method, {window: GEDIT}));
+    assert.deepEqual(asked.map(a => a.meta.tool_params.app), ['org.gnome.gedit'], `${method} asks for its window's app`);
+  }
+  for (const request of SPEC_DESKTOP_REQUESTS) {
+    const {service, asked} = linux();
+    await service.handleRpc(request);
+    assert.deepEqual(asked.map(a => a.meta.tool_params.app), [DESKTOP_APPROVAL.key], `${request.method ?? request.type} asks for the desktop`);
+  }
+  for (const request of SPEC_ASK_NOTHING) {
+    const {service, asked, received} = linux();
+    await service.handleRpc(request);
+    assert.deepEqual(asked, [], `${request.method} asks nothing`);
+    assert.deepEqual(received, [request], `${request.method} goes to the vendor unchanged`);
+  }
+});
+
 test('every method that reads or drives a window asks, keyed by the app sky_linux lists for that window id, not the app the request names', async () => {
-  for (const method of LINUX_WINDOW_METHODS) {
+  for (const method of SPEC_WINDOW_METHODS) {
     const {service, asked, delivered} = linux();
     // The request claims gedit for the terminal's window: the approval asked is the terminal's.
     const request = execute(method, {window: {...TERMINAL, app: 'org.gnome.gedit'}, key: 'a'});
@@ -99,7 +128,7 @@ test('anything but accept fails "Computer Use was not approved to use <app>" and
   }
 });
 
-test('the supervisor\'s memory answers a repeat for the same app, across its windows, and another app asks', async () => {
+test('the connection\'s memory answers a repeat for the same app, across its windows, and another app asks', async () => {
   const second = window(9, 'org.gnome.gedit', 'other.txt - gedit');
   const {service, asked} = linux({memory: true, windows: [...WINDOWS, second]});
   await service.handleRpc(execute('get_window_state', {window: GEDIT}));

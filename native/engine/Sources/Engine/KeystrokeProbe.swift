@@ -26,7 +26,7 @@ struct KeystrokeRequest: Equatable {
   let text: String
 
   /// The flags in any order, one text argument; throws ProbeUsage naming what is wrong.
-  static func parse(_ arguments: [String]) throws -> KeystrokeRequest {
+  static func parse(_ arguments: [String]) throws(ProbeUsage) -> KeystrokeRequest {
     var pid: pid_t?
     var bounds: CGRect?
     var at: Int64?
@@ -94,8 +94,7 @@ extension Probe {
   /// 64 on a usage error.
   static func keystroke(_ arguments: [String]) -> Int32 {
     let request: KeystrokeRequest
-    do { request = try KeystrokeRequest.parse(arguments) } catch let usage as ProbeUsage { return emit(["error": usage.message], status: 64) }
-    catch { return emit(["error": "\(error)"], status: 64) }
+    do { request = try KeystrokeRequest.parse(arguments) } catch { return emit(["error": error.message], status: 64) }
     if let at = request.at { while unixMilliseconds() < at { usleep(1_000) } }
     guard frontWindowIs(pid: request.pid, bounds: request.bounds) else {
       return emit(["error": "the front window is not the named one; nothing was sent"], status: 4)

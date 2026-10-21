@@ -8,9 +8,9 @@ import Foundation
 // only), `input-source <id>` (selects that source, a keyboard layout or an input mode such as Korean 2-Set, and reads it
 // back; the harness saves and restores the owner's), `keystroke` (the stand-in user: HID-state events posted at the HID
 // event tap, only while the named window is frontmost, with each character's string or key codes alone;
-// KeystrokeProbe.swift), `focus` (the focused app and window, and the named window's
-// focused value as a hash; FocusProbe.swift) and `watch-activations` (every NSWorkspace activation and deactivation with
-// its time, the probe's own pid printed first, so the harness can stop it and the oracles can exclude probe instances).
+// KeystrokeProbe.swift), `focus` (the focused app and window, and the named window's focused value as a hash;
+// FocusProbe.swift) and `watch-activations` (every NSWorkspace activation and deactivation with its time, the probe's
+// own pid printed first, so the harness can stop it and the oracles can exclude probe instances).
 enum Probe {
   static func run(_ arguments: [String]) -> Int32 {
     switch arguments.first {

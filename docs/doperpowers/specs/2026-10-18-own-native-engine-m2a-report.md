@@ -10,17 +10,18 @@ Where the rest of the record lives:
 
 ## Status
 
-_Draft, 2026-10-21 11:56Z: everything is integrated and reviewed. The hold commit is e2ad3dbb (ci-gate GREEN, run 39593249861), and the hold is planned for ~16:30Z._
+**Done 2026-10-21.** M2a.1–M2a.5 and M2a are ticked. The hold ran from 12:28Z to 13:22Z. The post-hold fixes have been reviewed; their final gate is in the PR's Validation Evidence.
 
 | Task | State |
 |---|---|
-| M2a.1: intervention, the lock screen, route 4's override, `--probe` | Reviewed clean, ticked |
-| M2a.2: set_value, select_text, perform_secondary_action, scroll, drag, the menu bar | Reviewed clean, ticked. The menu activation switch was added after integration (reviewed clean) |
-| M2a.3: paste, clipboard snapshot and restore, rich text, type_text's paste route | Reviewed clean after four rounds, ticked |
-| M2a.4: settle, enablement, the minimized primary window, `cua/serviceMs` | Reviewed clean, ticked |
-| Whole-milestone reviewer-high | Round 1 found three Important and one Minor. All fixed (53e6c7f5, ef4d1336); re-review **correct** at 9c71da8e |
-| M2a.5a: the hold harness | Six review rounds, merged at 1912d2d9. One abort-path gap is left open as tech debt by the agreed stopping rule |
-| M2a.5: live on the mini | Pending a hold |
+| M2a.1: intervention, the lock screen, route 4's override, `--probe` | Reviewed clean |
+| M2a.2: set_value, select_text, perform_secondary_action, scroll, drag, the menu bar | Reviewed clean |
+| M2a.3: paste, clipboard snapshot and restore, rich text, type_text's paste route | Reviewed clean after four rounds |
+| M2a.4: settle, enablement, the minimized primary window, `cua/serviceMs` | Reviewed clean |
+| Whole-milestone reviewer-high | Round 1: three Important findings and one Minor, all fixed; re-review **correct** at 9c71da8e |
+| M2a.5a: the hold harness | Six review rounds; one abort-path gap logged as tech debt under the agreed stopping rule |
+| M2a.5: live on the mini | Comparison A PASS. Minimized, menu, input-source and enablement read. Paste and the HID composition row were not run (an unrelated console prompt) |
+| After the hold | Keyboard input into a minimized window refused; the vendor's held menu activation adopted (120 s idle bound); the switch removed; `cua engine status` reports an unreadable signature as unknown. Reviewed: three defects fixed, plus one intervention race fixed |
 
 ## Lanes and integration
 
@@ -136,4 +137,14 @@ Each item is work left for its own ticket or for M2b.
 
 ## Validation
 
-_Pending._
+- **Hosted gates.** ci-gate ran green at each integration point:
+  - 39585430382 at 9c71da8e (the engine after reviewer-high);
+  - 39593249861 at e2ad3dbb (the hold commit);
+  - 39609236641 and 39609318127 (the post-hold minimized refusal and the status fix).
+  The head's run is in the PR.
+- **Tests.** Swift 408–409 per lane head; native-matrix 164/164; full `npm test` 3628 passing, 0 failing.
+- **Live.** `docs/doperpowers/research/2026-10-18-own-native-engine/m2a/`: the comparison-a runs, comparison.md (VERDICT: PASS), and `live/*/result.json`.
+- **Environment friction met in this milestone,** logged in #177 by the workers who met it:
+  - real-engine tests answer `screenLocked` while the MacBook is locked;
+  - the repl-host orphan-lifecycle flake;
+  - an unrelated SecurityAgent prompt on the mini, which aborts paste and hangs codesign over SSH.

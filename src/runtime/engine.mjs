@@ -103,9 +103,12 @@ async function poll(ctx, probe, timeoutMs) {
 
 const busy = (pid, n) => fail('engine_busy', `the engine (pid ${pid}) has ${others(n)} open`, {hint: 'it is serving a session; run this again once nothing uses it (the approved bundle and the running engine are untouched)'});
 
-async function stop(ctx) {
+// `pid`, when given, is the engine the caller means: another one answering at the socket is left alone (engine_mismatch).
+async function stop(ctx, {pid} = {}) {
   const status = await statusOf(ctx);
   if (!status) return {wasRunning: false};
+  if (pid !== undefined && status.pid !== pid)
+    fail('engine_mismatch', `another engine (pid ${status.pid}) answers at ${ctx.paths.socket} now, not pid ${pid}; it was left alone`);
   if (status.connections > 0) busy(status.pid, status.connections);
   const answer = await ctx.rpc('shutdown');
   if (!answer.ok && !answer.unreachable) {
@@ -163,12 +166,27 @@ export function installedEngine({dir = engineDirectory(), runSync} = {}) {
   if (!approved) return null;
   let onDisk;
   try { onDisk = bundleOnDisk(paths.bundle, runSync); } catch { return null; }
-  if (!approvedMatches(onDisk, approved)) return null;
-  return {bundlePath: paths.bundle, engineVersion: onDisk.engineVersion, build: onDisk.build, approvedAt: approved.approvedAt};
+  return installedFrom({dir, onDisk, approved});
 }
 
-// The bundle on disk with its signature, and approved.json's and pending.json's records.
+// The approved location read once (the bundle on disk with its signature, which carries the SHA-1 and the subject and
+// is never printed; approved.json's and pending.json's records), for a caller that needs both installedFrom's answer and
+// inspectEngine's read with one codesign (doctor).
+export function readApprovedLocation({dir = engineDirectory(), runSync} = {}) {
+  const paths = enginePaths(dir);
+  return {dir, onDisk: bundleOnDisk(paths.bundle, runSync), approved: readRecord(paths.approved), pending: readRecord(paths.pending)};
+}
+
+// installedEngine's answer from a location already read.
+export function installedFrom({dir, onDisk, approved}) {
+  if (!approvedMatches(onDisk, approved)) return null;
+  return {bundlePath: enginePaths(dir).bundle, engineVersion: onDisk.engineVersion, build: onDisk.build, approvedAt: approved.approvedAt};
+}
+
+// The bundle on disk with its signature, and approved.json's and pending.json's records: `ctx.location` when the caller
+// read it already (readApprovedLocation, for this same directory), else read here.
 function bundleFacts(ctx) {
+  if (ctx.location) return ctx.location;
   const {paths} = ctx;
   return {onDisk: bundleOnDisk(paths.bundle, ctx.runSync), approved: readRecord(paths.approved), pending: readRecord(paths.pending)};
 }
@@ -203,11 +221,17 @@ function statusReport(ctx, {onDisk, approved, pending}, status) {
 // it. A pending or unapproved bundle, one whose signature cannot be read, and any other app at the approved location
 // (the harnesses' fixture approved engine, scripts/probe/fixture-engine.mjs) are never launched. Nothing here prompts or
 // captures: the engine's start and its `status` do neither. Never throws for what it finds: a status read that fails
-// is `statusError`, a launch or stop that fails is `launch.error`.
+// is `statusError`, a launch or stop that fails is `launch.error`. `mayLaunch: false` reads without launching (doctor,
+// when sessions would not use cua's engine).
+// Only the instance launched here is ever stopped: `open` names no pid, so the engine that answers after the launch is
+// taken as this launch's only when it runs this bundle at this build, and the stop is sent only while that same pid
+// still answers. Anything else that took the socket (another copy, another build, another engine racing in) is reported
+// as `launch.mismatch` or `launch.replaced` and left alone.
 // -> engineStatus's report with `running` meaning an engine answered before this read, `status` the answer read (from
 // that engine, or from the one launched here), `bundleId`, `statusError` (string | null), and `launch`: null when nothing
-// was launched, else {pid, stopped: true} | {pid, stopped: false, leftRunning: true, detail} | {pid?, error}.
-export async function inspectEngine(deps) {
+// was launched, else {pid, stopped: true} | {pid, stopped: false, leftRunning: true, detail} |
+// {pid, stopped: false, mismatch: {bundlePath, build}} | {pid, stopped: false, replaced: true, detail} | {pid?, error}.
+export async function inspectEngine({mayLaunch = true, ...deps} = {}) {
   const ctx = context(deps);
   const facts = bundleFacts(ctx);
   const read = async () => {
@@ -220,22 +244,31 @@ export async function inspectEngine(deps) {
   let {status} = before;
   let launched = null;
   const bundleId = bundleIdOf(ctx.paths.bundle);
-  if (!status && !before.error && bundleId === BUNDLE_ID && approval(facts.onDisk, facts.approved) === true) {
+  if (mayLaunch && !status && !before.error && bundleId === BUNDLE_ID && approval(facts.onDisk, facts.approved) === true) {
     launched = {};
     try { status = await launch(ctx); launched.pid = status.pid; } catch (error) {
       if (!(error instanceof CuaError)) throw error;
       launched.error = error.message;
     }
-    if (status) {
-      try { await stop(ctx); launched.stopped = true; } catch (error) {
+    if (status && !runsBundle(status, ctx.paths.bundle, facts.onDisk.build)) {
+      Object.assign(launched, {stopped: false, mismatch: {bundlePath: status.bundlePath ?? null, build: status.build ?? null}});
+    } else if (status) {
+      try { await stop(ctx, {pid: status.pid}); launched.stopped = true; } catch (error) {
         if (!(error instanceof CuaError)) throw error;
         launched.stopped = false;
         if (error.code === 'engine_busy') Object.assign(launched, {leftRunning: true, detail: error.message});
+        else if (error.code === 'engine_mismatch') Object.assign(launched, {replaced: true, detail: error.message});
         else launched.error = error.message;
       }
     }
   }
   return {...statusReport(ctx, facts, status), running: Boolean(before.status), bundleId, statusError: before.error ?? null, launch: launched};
+}
+
+// Whether a status answer is the engine of `bundle` at `build` (its own report of where it runs from, as sameEngine).
+function runsBundle(status, bundle, build) {
+  const real = path => { try { return realpathSync(path); } catch { return path; } };
+  return typeof status.bundlePath === 'string' && real(status.bundlePath) === real(bundle) && status.build === build;
 }
 
 function bundleIdOf(bundle) {

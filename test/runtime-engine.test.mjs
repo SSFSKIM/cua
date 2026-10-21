@@ -15,7 +15,7 @@ import {EngineFailure, startFakeEngine} from './helpers/fake-engine.mjs';
 import {CERT_SHA1, CODESIGN_TIMED_OUT, NAME, fakeCodesignRead, markSigned} from './helpers/fake-codesign.mjs';
 const CODESIGN_TIMED_OUT_READ = () => CODESIGN_TIMED_OUT;
 import {BUNDLE_NAME, engineBuild, infoPlist} from '../src/runtime/engine-bundle.mjs';
-import {approveEngine, buildEngine, CAPTURE_ALERT_PREDICATE, engineRecords, engineStatus, inspectEngine, installedEngine, lineReader, stopEngine, watchCaptureAlerts} from '../src/runtime/engine.mjs';
+import {approveEngine, buildEngine, CAPTURE_ALERT_PREDICATE, engineRecords, engineStatus, inspectEngine, installedEngine, installedFrom, readApprovedLocation, lineReader, stopEngine, watchCaptureAlerts} from '../src/runtime/engine.mjs';
 import {main} from '../src/cli.mjs';
 
 const OLD_BUILD = 'b'.repeat(64);
@@ -51,7 +51,8 @@ function world(t, {identity = CERT_SHA1, engineAnswers = {}} = {}) {
     const engine = {pid, received: [], stopped: false};
     const fake = await startFakeEngine(t, socket, {identity: {engineVersion: '9.9.9', build}, handlers: {
       status: () => { state.onStatus?.(state); return {engineVersion: '9.9.9', build, accessibility: state.accessibility, screenRecording: state.screenRecording,
-        inputMonitoring: state.inputMonitoring, canPostHid: true, socket, pid, bundlePath: state.bundlePath ?? bundle, connections: state.connections}; },
+        inputMonitoring: state.inputMonitoring, canPostHid: true, socket, pid: state.statusPid ?? pid, bundlePath: state.bundlePath ?? bundle, connections: state.connections,
+        ...(state.statusBuild ? {build: state.statusBuild} : {})}; },
       approve: () => { order.push('approve'); state.onApprove?.(state, engine); return {accessibility: state.accessibility, screenRecording: state.screenRecording, captured: state.accessibility && state.screenRecording && state.captured}; },
       shutdown: () => {
         if (state.connections > 0 || state.busyOnShutdown) throw new EngineFailure(-10005, 'busy', 'busy', {connections: state.connections || 1});
@@ -400,6 +401,49 @@ test('a session that connects before inspectEngine stops the engine it launched 
     assert.equal(w.engines[0].stopped, false, 'left for the session');
     assert.equal(read.status.connections, 0, 'the status read is the launch\'s');
   }
+});
+
+test('after its launch, inspectEngine stops only the engine of this bundle and build it launched: another responder gets no shutdown', async t => {
+  // Another copy or another build answering at the socket after the launch (an engine racing in) is not doctor's.
+  for (const [other, field] of [[{bundlePath: '/elsewhere/cua Engine.app'}, 'bundlePath'], [{statusBuild: 'c'.repeat(64)}, 'build']]) {
+    const w = world(t);
+    w.placeBundle({approved: true});
+    Object.assign(w.state, other);
+    const read = await inspectEngine(w.deps);
+    assert.equal(read.launch.stopped, false, field);
+    assert.deepEqual(read.launch.mismatch, {bundlePath: w.state.bundlePath ?? w.bundle, build: w.state.statusBuild ?? OLD_BUILD});
+    assert.ok(!methods(w.engines[0]).includes('shutdown'), `${field}: no shutdown`);
+    assert.equal(w.engines[0].stopped, false);
+  }
+  // The right engine answered the launch, but another pid answers by the time of the stop: left alone.
+  const w = world(t);
+  w.placeBundle({approved: true});
+  let reads = 0;
+  w.state.onStatus = state => { if (++reads >= 2) state.statusPid = 999; };
+  const read = await inspectEngine(w.deps);
+  assert.equal(read.launch.pid, w.engines[0].pid);
+  assert.equal(read.launch.stopped, false);
+  assert.equal(read.launch.replaced, true);
+  assert.match(read.launch.detail, /another engine \(pid 999\) answers at .* now, not pid 100; it was left alone/);
+  assert.ok(!methods(w.engines[0]).includes('shutdown'));
+});
+
+test('inspectEngine with mayLaunch false reads only; with a location already read it runs no second codesign', async t => {
+  const w = world(t);
+  w.placeBundle({approved: true});
+  const quiet = await inspectEngine({...w.deps, mayLaunch: false});
+  assert.equal(quiet.launch, null);
+  assert.equal(quiet.approved, true);
+  assert.deepEqual(opened(w), []);
+  let codesigns = 0;
+  const counting = (...args) => { codesigns++; return fakeCodesignRead(...args); };
+  const location = readApprovedLocation({dir: w.dir, runSync: counting});
+  assert.equal(codesigns, 1);
+  assert.deepEqual(installedFrom(location), {bundlePath: w.bundle, engineVersion: '9.9.9', build: OLD_BUILD, approvedAt: '2026-10-20T00:00:00.000Z'});
+  const read = await inspectEngine({...w.deps, runSync: counting, location});
+  assert.equal(codesigns, 1, 'inspection reused the location\'s read');
+  assert.deepEqual(read.launch, {pid: w.engines[0].pid, stopped: true});
+  assert.deepEqual(read.signature, {kind: 'identity', identityMatches: true});
 });
 
 test('a missing, pending or unapproved bundle, or one whose signature cannot be read, is never launched', async t => {

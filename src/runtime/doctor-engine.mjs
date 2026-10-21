@@ -2,22 +2,27 @@
 // signing and permissions"; the Input section's route 4; the Decision Log's "M3 pre-flight" item 1) and the report's
 // `engine` object, which `cua doctor --json` carries beside the checks.
 //
-// The selection is the launcher's (launch.mjs nativeEngineFor, with the inputs repl.host uses). When cua's engine is
-// the one selected, the row reads the approved location through engine.mjs inspectEngine: the bundle and its records,
-// the signature as a match and a kind (never the identity), and the engine's `status`, which gives the three grants
-// (Input Monitoring the intervention tap's), whether the socket's owner is the approved bundle, the probe mode's
-// ability, the route-4 overrides the engine read at launch and the apps `routeAdvice` names. An engine already running
-// is read and left alone; with none running, inspectEngine launches the approved bundle, reads it and stops it (never a
-// pending or unapproved one). When the vendor's engine is selected, nothing is launched, connected to or signed: the
-// row says cua's engine is not selected, how to select it and what the approved location holds, from its files only.
-// Off macOS, or without the computer surface, no native engine applies.
+// Two selections are reported. `selected` is the engine a session here actually drives: repl.host's own selection
+// (launch.mjs replHostFor, whose computer-surface rows follow the engine × host table), null when every session is
+// refused. `preferred` is the engine the setting names (CUA_NATIVE_ENGINE, else engine.json's `engine`, else the
+// default), which onboarding needs beside it: a preferred cua engine that sessions do not use (no approved engine, no
+// Node 24, a refused host) is what this row exists to explain.
 //
-// Status: `fail` where every session is refused or cannot observe (no approved engine for an explicit selection, an
+// When cua's engine is preferred, the row reads the approved location through engine.mjs inspectEngine: the bundle and
+// its records, the signature as a match and a kind (never the identity), and an engine's `status`, which gives the
+// three grants (Input Monitoring the intervention tap's), whether the socket's owner is the approved bundle, the probe
+// mode's ability, the route-4 overrides the engine read at launch and the apps `routeAdvice` names. An engine already
+// running is read and left alone. Only when sessions do drive cua's engine does inspectEngine launch the approved bundle
+// to read it, and stop it after (never a pending or unapproved one). When the vendor's engine is preferred, nothing is
+// launched, connected to or signed: the row says so, how to select cua's, and what the approved location holds, from
+// its files only. Off macOS, or without the computer surface, no native engine applies.
+//
+// Status: `fail` where every session is refused or cannot observe (cua's engine preferred and sessions refused, an
 // unknown setting, an engine.json the engine refuses to start with, a bundle that is not cua's engine, the engine
 // unreadable or unlaunchable, another engine at the socket, Accessibility or Screen Recording not granted); `warn`
-// where sessions run with less than the design means (Input Monitoring missing, so intervention detection is off; the
-// signature not the configured identity's; route 3 advising an override; the default's fallback to the vendor engine;
-// an engine doctor launched and could not stop); `skip` where cua's engine is not in use; else `pass`. The probe's
+// where sessions run with less than the design means (the default's fallback to the vendor engine, Input Monitoring
+// missing so intervention detection is off, the signature not the configured identity's, route 3 advising an override,
+// an engine doctor launched and could not stop); `skip` where cua's engine is not preferred; else `pass`. The probe's
 // ability is reported, not judged.
 import {realpathSync} from 'node:fs';
 import {homedir} from 'node:os';
@@ -25,7 +30,7 @@ import {CuaError} from './errors.mjs';
 import {BUNDLE_ID} from './engine-bundle.mjs';
 import {ENGINE_GRANTS, engineDirectory, engineRecords, grantSteps, inspectEngine, shortBuild} from './engine.mjs';
 import {readEngineSettings} from './engine-sign.mjs';
-import {nativeEngineFor} from './launch.mjs';
+import {nativeEngineSetting} from './launch.mjs';
 import {surfacesFrom} from '../mcp/surface.mjs';
 
 const result = (name, status, detail) => ({name, status, detail});
@@ -34,13 +39,15 @@ const UNREAD = Object.freeze({accessibility: null, screenRecording: null, inputM
 const SEVERITY = ['pass', 'warn', 'fail'];
 const worst = statuses => statuses.reduce((a, b) => (SEVERITY.indexOf(b) > SEVERITY.indexOf(a) ? b : a), 'pass');
 
-export const defaultInspectEngine = ({env}) => inspectEngine({dir: engineDirectory(env.HOME || homedir()), env});
+// `location`, when given, is the approved location already read (doctor's shared read), reused so its codesign runs once.
+export const defaultInspectEngine = ({env, mayLaunch, location}) => inspectEngine({dir: engineDirectory(env.HOME || homedir()), env, mayLaunch, location: location?.()});
 export const defaultEngineRecords = ({env}) => engineRecords({dir: engineDirectory(env.HOME || homedir())});
 
-// -> {row, report}; `report` is undefined off macOS. `engine` carries nativeEngineFor's inputs ({config, installed,
-// defaultEngine}), shared with repl.host so both read the same selection; `inspect` and `records` read the approved
-// location (inspectEngine's and engineRecords' reports; seams for tests, which never launch anything).
-export async function engineCheck({env, platform, engine = {}, inspect = defaultInspectEngine, records = defaultEngineRecords}) {
+// -> {row, report}; `report` is undefined off macOS. `session` is repl.host's selection for a session here (replHostFor's
+// answer, or {code, message} when refused; undefined when repl.host refused every connection before selecting).
+// `engine` carries nativeEngineFor's inputs ({config, installed, defaultEngine, location}), shared with repl.host;
+// `inspect` and `records` read the approved location (seams for tests, which never launch anything).
+export async function engineCheck({env, platform, session, engine = {}, inspect = defaultInspectEngine, records = defaultEngineRecords}) {
   if (platform !== 'darwin') return {row: result('engine', 'skip', 'cua\'s native engine is macOS\'s; computer sessions here use the pinned Linux helper (#171 replaces it)')};
   let surfaces;
   try { surfaces = surfacesFrom(env.CUA_SHIM_SURFACES); } catch (error) {
@@ -49,37 +56,24 @@ export async function engineCheck({env, platform, engine = {}, inspect = default
   }
   if (!surfaces.includes('computer'))
     return {row: result('engine', 'skip', 'the computer surface is off here (CUA_SHIM_SURFACES), so no session drives a native engine'), report: notApplicable('computer_surface_off')};
+  if (!session) return {row: result('engine', 'skip', 'repl.host refuses every connection here before any engine is selected (see repl.host)'), report: notApplicable('repl_host_refused_all')};
 
   const config = engine.config ?? (() => readEngineSettings({env}));
-  const selection = select(env, {...engine, config});
-  if (selection.selected === null)
-    return {row: result('engine', 'fail', `${selection.refused.message}; every macOS computer session is refused (${selection.refused.code})`), report: {...notApplicable(selection.refused.code), refused: selection.refused}};
-  if (selection.selected === 'vendor') return vendorRow(selection, records({env}));
-  const facts = await inspect({env});
-  const settings = settingsOf(config);
-  return selection.installed ? installedRow(selection, facts, settings) : notInstalledRow(selection, facts, settings);
-}
-
-// The engine nativeEngineFor selects -> {selected: 'cua' | 'vendor' | null, reason, refused, installed}. Its refusals
-// keep what they say about the engine: engine_not_installed is cua's selected without an approved engine,
-// repl_host_refused the vendor's selected under CUA_REPL_HOST=cua (the host's refusal, which repl.host names), and
-// invalid_setting no engine at all.
-function select(env, engine) {
-  const host = env.CUA_REPL_HOST === 'cua' || env.CUA_REPL_HOST === 'vendor' ? env.CUA_REPL_HOST : null;
-  try {
-    const chosen = nativeEngineFor({env, requestedHost: host, ...engine});
-    if (chosen.reason === 'engine_not_installed') return {selected: 'cua', reason: 'engine_not_installed', source: 'default', refused: null, installed: false};
-    return {selected: chosen.engine, reason: chosen.reason, source: chosen.reason, refused: null, installed: chosen.engine === 'cua'};
-  } catch (error) {
+  let preferred;
+  try { preferred = nativeEngineSetting({env, config, ...(engine.defaultEngine ? {defaultEngine: engine.defaultEngine} : {})}); } catch (error) {
     if (!(error instanceof CuaError)) throw error;
     const refused = {code: error.code, message: error.message};
-    if (error.code === 'engine_not_installed') return {selected: 'cua', reason: error.code, source: sourceOf(env, engine.config), refused, installed: false};
-    if (error.code === 'repl_host_refused') return {selected: 'vendor', reason: error.code, source: sourceOf(env, engine.config), refused, installed: false};
-    return {selected: null, reason: error.code, refused, installed: false};
+    return {row: result('engine', 'fail', `${error.message}; every macOS computer session is refused (${error.code})`), report: {...notApplicable(error.code), refused}};
   }
+  const refused = session.code ? {code: session.code, message: session.message} : null;
+  const selection = {selected: refused ? null : session.engine?.engine ?? null, reason: refused ? refused.code : session.engine?.reason ?? null, refused,
+    preferred: {engine: preferred.engine, reason: preferred.reason}};
+  if (preferred.engine === 'vendor') return vendorRow(selection, records({env}));
+  const facts = await inspect({env, mayLaunch: selection.selected === 'cua', location: engine.location});
+  const settings = settingsOf(config);
+  return selection.selected === 'cua' ? installedRow(selection, facts, settings) : notInUseRow(selection, facts, settings);
 }
-// Where a refused selection came from (nativeEngineFor read the same setting before it refused).
-const sourceOf = (env, config) => (env.CUA_NATIVE_ENGINE ? 'explicit' : config()?.engine !== undefined ? 'settings' : 'default');
+
 const SOURCE_WORDS = {
   explicit: engine => `CUA_NATIVE_ENGINE=${engine}`,
   settings: engine => `"engine": "${engine}" in ${SETTINGS}`,
@@ -87,14 +81,14 @@ const SOURCE_WORDS = {
 };
 
 function notApplicable(reason) {
-  return {selected: null, reason, refused: null, bundle: null, exists: null, version: null, build: null, approved: null, approvedBuild: null, approvedAt: null,
+  return {selected: null, reason, refused: null, preferred: null, bundle: null, exists: null, version: null, build: null, approved: null, approvedBuild: null, approvedAt: null,
     pending: null, signature: null, running: null, launched: null, statusError: null, socket: null, permissions: UNREAD, probe: {canPostHid: null}, routes: null, routeAdvice: null};
 }
 
-// ---- the vendor's engine selected ----
+// ---- the vendor's engine preferred ----
 
 function vendorRow(selection, records) {
-  const why = selection.source === 'default' ? 'the default engine is the vendor\'s' : SOURCE_WORDS[selection.source]('vendor');
+  const why = selection.preferred.reason === 'default' ? 'the default engine is the vendor\'s' : SOURCE_WORDS[selection.preferred.reason]('vendor');
   const serves = selection.refused ? `; sessions here are refused (${selection.refused.code}; see repl.host)` : ', so macOS computer sessions use the vendor\'s Codex Computer Use helper (helper.live)';
   const holds = records.approved && records.exists ? `approved.json approves build ${shortBuild(records.approved.build)} at ${records.bundlePath}`
     : records.pending && records.exists ? `a bundle at ${records.bundlePath} is pending approval (build ${shortBuild(records.pending.build)}; cua engine approve)`
@@ -103,24 +97,25 @@ function vendorRow(selection, records) {
   return {
     row: result('engine', 'skip', `cua's engine is not selected: ${why}${serves}. `
       + `CUA_NATIVE_ENGINE=cua, or "engine": "cua" in ${SETTINGS}, selects cua's own, which runs an approved engine: ${holds}`),
-    report: {...notApplicable(selection.reason), selected: 'vendor', refused: selection.refused, bundle: records.bundlePath, exists: records.exists,
+    report: {...notApplicable(selection.reason), selected: selection.selected, refused: selection.refused, preferred: selection.preferred, bundle: records.bundlePath, exists: records.exists,
       approved: records.exists ? null : false, approvedBuild: records.approved?.build ?? null, approvedAt: records.approved?.approvedAt ?? null, pending: records.pending},
   };
 }
 
-// ---- cua's engine selected ----
+// ---- cua's engine preferred ----
 
 // The report's facts from inspectEngine's read.
 function factsReport(selection, facts, settings) {
   const status = facts.status;
-  const permissions = status ? {accessibility: status.accessibility === true, screenRecording: status.screenRecording === true, inputMonitoring: status.inputMonitoring === true} : UNREAD;
+  const owned = Boolean(status) && ownsSocket(facts);
+  const permissions = owned ? {accessibility: status.accessibility === true, screenRecording: status.screenRecording === true, inputMonitoring: status.inputMonitoring === true} : UNREAD;
   return {
-    selected: 'cua', reason: selection.reason, refused: selection.refused,
+    selected: selection.selected, reason: selection.reason, refused: selection.refused, preferred: selection.preferred,
     bundle: facts.bundlePath, exists: facts.exists, version: facts.engineVersion, build: facts.build,
     approved: facts.approved, approvedBuild: facts.approvedBuild, approvedAt: facts.approvedAt, pending: facts.pending,
     signature: facts.signature, running: facts.running, launched: facts.launch, statusError: facts.statusError,
     socket: {path: status?.socket ?? null, ownerIsApproved: status ? ownsSocket(facts) : null},
-    permissions, probe: {canPostHid: status ? status.canPostHid === true : null},
+    permissions, probe: {canPostHid: owned ? status.canPostHid === true : null},
     routes: status ? status.routes ?? {} : settings.routes, routeAdvice: status ? status.routeAdvice ?? [] : null,
   };
 }
@@ -129,12 +124,20 @@ const real = path => { try { return realpathSync(path); } catch { return path; }
 // Whether the engine that answered is the approved bundle: its own report of where it runs from and its build.
 const ownsSocket = facts => facts.approved === true && real(facts.status.bundlePath) === real(facts.bundlePath) && facts.status.build === facts.build;
 
-function notInstalledRow(selection, facts, settings) {
-  const source = SOURCE_WORDS[selection.source]('cua');
-  const consequence = selection.refused ? 'so every macOS computer session is refused (engine_not_installed)' : 'so macOS computer sessions keep the vendor host and engine until one is';
-  const parts = [installState(facts)];
+// cua's engine preferred, and sessions do not drive it: refused, or kept on the vendor's engine by the default's
+// fallback (no approved engine, or no Node 24 for cua's own host). Nothing is launched (inspectEngine's mayLaunch).
+function notInUseRow(selection, facts, settings) {
+  const source = SOURCE_WORDS[selection.preferred.reason]('cua');
+  const code = selection.refused?.code ?? selection.reason;
+  const notInstalled = code === 'engine_not_installed';
+  const consequence = selection.refused ? `so every macOS computer session is refused (${code})` : `so macOS computer sessions keep the vendor host and engine (${code})`;
+  const cause = notInstalled ? 'no approved engine is installed' : code === 'own_host_node_unavailable' || code === 'repl_host_node'
+    ? `cua's own host finds no Node 24 or later (see repl.host)` : `repl.host refuses it (see repl.host)`;
+  const parts = [facts.approved === true
+    ? `the approved cua Engine.app at ${facts.bundlePath} (version ${facts.engineVersion}, build ${shortBuild(facts.build)}) is installed, and doctor does not launch it while no session would use it`
+    : installState(facts)];
   if (settings.problem) parts.push(settings.problem);
-  return {row: result('engine', selection.refused || settings.problem ? 'fail' : 'warn', `cua's engine is selected (${source}), but no approved engine is installed, ${consequence}: ${parts.join('; ')}`),
+  return {row: result('engine', selection.refused || settings.problem ? 'fail' : 'warn', `cua's engine is preferred (${source}), but ${cause}, ${consequence}: ${parts.join('; ')}`),
     report: factsReport(selection, facts, settings)};
 }
 
@@ -157,12 +160,12 @@ function installedRow(selection, facts, settings) {
   parts.push(signatureWords(facts.signature, say));
   if (facts.bundleId !== BUNDLE_ID) parts.push(say('fail', `but it is not cua's engine (bundle id ${facts.bundleId ?? 'unreadable'}), so doctor does not launch it`));
   else parts.push(processWords(facts, report, say));
-  if (facts.status) {
+  if (report.socket.ownerIsApproved) {
     parts.push(...grantWords(facts.status, facts.bundlePath, say));
     parts.push(facts.status.canPostHid === true ? 'the probe mode can post HID events (cua-engine --probe keystroke)' : 'the probe mode cannot post HID events, so the harnesses\' keystroke cells refuse');
   }
   parts.push(...routeWords(report, settings, facts.status, say));
-  return {row: result('engine', worst(verdicts), `cua's engine is selected (${SOURCE_WORDS[selection.source]('cua')}): ${parts.join('; ')}`), report};
+  return {row: result('engine', worst(verdicts), `cua's engine is selected (${SOURCE_WORDS[selection.preferred.reason]('cua')}): ${parts.join('; ')}`), report};
 }
 
 function signatureWords(signature, say) {
@@ -177,10 +180,13 @@ function processWords(facts, report, say) {
   const {status, launch} = facts;
   if (facts.statusError) return say('fail', `the engine at its socket answered status with an error: ${facts.statusError}`);
   if (launch?.error && !launch.pid) return say('fail', `no engine was running, and launching this bundle to read its grants failed: ${launch.error}; sessions launch it the same way`);
+  if (launch?.mismatch)
+    return say('fail', `no engine was running, so doctor launched this bundle to read its grants, but the engine that answered (pid ${launch.pid}) runs ${launch.mismatch.bundlePath}, build ${shortBuild(launch.mismatch.build)}, not this bundle: doctor left it alone, and sessions refuse it on its build`);
   if (status && report.socket.ownerIsApproved === false)
     return say('fail', `the engine answering at ${status.socket} (pid ${status.pid}) is not this bundle: it runs ${status.bundlePath}, build ${shortBuild(status.build)}; sessions refuse it on its build: stop it with cua engine stop`);
   if (facts.running) return `the engine answering at ${status.socket} (pid ${status.pid}) is this bundle, already running: read and left alone`;
   if (launch?.stopped) return `no engine was running, so doctor launched this bundle (open -n -g -a, pid ${launch.pid}) to read its grants and stopped it`;
+  if (launch?.replaced) return say('warn', `no engine was running, so doctor launched this bundle (pid ${launch.pid}) to read its grants; by the stop another engine answered at the socket, and doctor left it alone (${launch.detail})`);
   if (launch?.leftRunning) return `no engine was running, so doctor launched this bundle (pid ${launch.pid}) to read its grants; a session connected before doctor could stop it, so it was left running for that session (${launch.detail})`;
   if (launch?.error) return say('warn', `no engine was running, so doctor launched this bundle (pid ${launch.pid}) to read its grants, and could not stop it: ${launch.error}`);
   return say('fail', 'no engine is running and doctor did not launch one, so its grants are unread');

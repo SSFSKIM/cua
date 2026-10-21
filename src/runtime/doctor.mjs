@@ -2,8 +2,8 @@
 // version, vendor signatures) separately from live-helper and permission evidence, which a passive check can only
 // observe from outside: it never opens an app, starts or signals the vendor's helper, connects to its socket or
 // requests a grant. Doctor connects only to cua's own sockets: chrome.hosts.live, to cua's own hosts, and the `engine`
-// row, to cua's own engine, whose grants are read from its `status`; with cua's engine selected and none running, that
-// row launches the approved engine, reads it and stops it (src/runtime/doctor-engine.mjs; never a pending bundle, and
+// row, to cua's own engine, whose grants are read from its `status`; when sessions here drive cua's engine and none is
+// running, that row launches the approved engine, reads it and stops only that instance (src/runtime/doctor-engine.mjs; never a pending bundle, and
 // nothing that prompts or captures). Live behavior is the job of explicit probe scripts. `blocked` marks evidence that
 // is unavailable passively; `skip` marks a check that does not apply on this host (neither a failure nor blocked
 // evidence).
@@ -29,8 +29,8 @@
 // computer surface on macOS the selection follows the native engine's table (#117, launch.mjs nativeEngineFor; `engine`
 // reaches it, for tests): the session's sentence then names the engine it drives after the host's explanation
 // (`; native engine ENGINE (REASON): ...`), and the row also warns where a default cua engine keeps the vendor host and
-// engine (engine_not_installed). The engine's own row is `engine` (src/runtime/doctor-engine.mjs): with cua's engine
-// selected, its approved bundle, the signature as a match, whether the socket's owner is the approved bundle, the three
+// engine (engine_not_installed). The engine's own row is `engine` (src/runtime/doctor-engine.mjs), whose effective
+// selection is this row's session selection, reported beside the preferred engine: with cua's engine preferred, its approved bundle, the signature as a match, whether the socket's owner is the approved bundle, the three
 // grants, the probe's ability, the route-4 overrides and the apps routeAdvice names; else why it is not in use. Its
 // facts are also the report's `engine` object (macOS only). The two rows share one read of the approved engine.
 // `sandbox` describes the CUA_SHIM_SANDBOX in `env` (src/runtime/sandbox.mjs). Under scoped it fails when the
@@ -71,7 +71,7 @@ import {execFile} from 'node:child_process';
 import {homedir} from 'node:os';
 import {dirname, join} from 'node:path';
 import {CuaError} from './errors.mjs';
-import {engineDirectory, installedEngine, shortBuild} from './engine.mjs';
+import {engineDirectory, installedFrom, readApprovedLocation, shortBuild} from './engine.mjs';
 import {defaultEngineRecords, defaultInspectEngine, engineCheck} from './doctor-engine.mjs';
 import {homeLayout, realHome} from './layout.mjs';
 import {BROWSER_SERVICE, BROWSER_SERVICE_IMPL_DIR, COMPAT_EXECUTABLE, compatExecutable, CUA_API_DIR, CUA_API_DOCS_DIR, REPL_HOST_DIR, SANDBOX_DIR, SERVICE_SUPPORT_DIRS, SKY_SERVICE, NODE_FLOOR, ownHostNode, replHostFor} from './launch.mjs';
@@ -186,8 +186,9 @@ export async function inspectRuntime({home, env = process.env, live = false, pin
   checks.push(classifyStore(secretsInfo, {enabled: secretsEnabled}));
   if (secretsInfo.project) checks.push(classifyStore(secretsInfo.project, {enabled: secretsEnabled, project: secretsInfo.project.root}));
   const engineInputs = sharedEngineInputs(engine, env);
-  checks.push(replHostCheck(home, env, host.platform, resolveOwnNode, engineInputs));
-  const engineRow = await engineCheck({env, platform: host.platform, engine: engineInputs, inspect: inspectEngine, records: readEngineRecords});
+  const replHost = replHostCheck(home, env, host.platform, resolveOwnNode, engineInputs);
+  checks.push(replHost.row);
+  const engineRow = await engineCheck({env, platform: host.platform, session: replHost.session, engine: engineInputs, inspect: inspectEngine, records: readEngineRecords});
   checks.push(engineRow.row);
   checks.push(...await inspectChrome({home, host, env}));
   checks.push(...await inspectAgent({home, env, host}));
@@ -198,12 +199,16 @@ export async function inspectRuntime({home, env = process.env, live = false, pin
   return report;
 }
 
-// nativeEngineFor's inputs for repl.host and the engine row, the approved engine asked at most once (installedEngine
-// reads the bundle's signature with codesign), as a connection asks it once.
+// nativeEngineFor's inputs for repl.host and the engine row, with the approved location read at most once: its one
+// codesign serves the selection's `installed` and the engine row's inspection (`location`, which the default
+// inspection reuses), as a connection asks it once. `engine.location` and `engine.installed` are seams for tests.
 function sharedEngineInputs(engine = {}, env) {
-  const installed = engine.installed ?? (() => installedEngine({dir: engineDirectory(env.HOME || homedir())}));
+  const read = engine.location ?? (() => readApprovedLocation({dir: engineDirectory(env.HOME || homedir())}));
+  let location;
+  const once = () => (location ??= {value: read()}).value;
+  const installed = engine.installed ?? (() => { try { return installedFrom(once()); } catch { return null; } });
   let answer;
-  return {...engine, installed: () => (answer ??= {value: installed()}).value};
+  return {...engine, location: once, installed: () => (answer ??= {value: installed()}).value};
 }
 
 const ROLLBACK = 'CUA_REPL_HOST=vendor keeps the vendor host';
@@ -258,7 +263,7 @@ function replHostCheck(home, env, platform, resolveOwnNode, engine) {
   // host never asks for Node, but the connection is refused all the same.
   try { surfaces = surfacesFrom(env.CUA_SHIM_SURFACES); cuaNodeFrom(env); } catch (error) {
     if (!(error instanceof CuaError)) throw error;
-    return result('repl.host', 'fail', `${error.message}; every connection is refused`);
+    return {row: result('repl.host', 'fail', `${error.message}; every connection is refused`)};
   }
   const resolve = resolvedOnce(resolveOwnNode ?? (() => ownHostNode({ambient: env, home})));
   const session = replHostSelection(home, env, platform, surfaces, resolve, engine);
@@ -266,8 +271,9 @@ function replHostCheck(home, env, platform, resolveOwnNode, engine) {
   const words = r => (r.code ? `refused (${r.code}): ${r.message}`
     : `${r.host} host (${r.reason})${r.node ? ` on Node ${r.node}` : ''}: ${REPL_HOST_REASONS[r.reason](r)}${r.engine ? `; ${engineWords(r.engine)}` : ''}`);
   const status = session.code || listing.code ? 'fail' : [session, listing].some(r => r.reason === 'own_host_node_unavailable' || r.engine?.status === 'warn') ? 'warn' : 'pass';
-  return result('repl.host', status,
-    `${words(session)}. The profile listing (browser only): ${words(listing)}.${platform === 'linux' ? '' : ' CUA_REPL_HOST=cua or vendor chooses'}`);
+  // `session` is also the engine row's effective selection: the engine a session here actually drives.
+  return {session, row: result('repl.host', status,
+    `${words(session)}. The profile listing (browser only): ${words(listing)}.${platform === 'linux' ? '' : ' CUA_REPL_HOST=cua or vendor chooses'}`)};
 }
 
 // sandbox.userns as it bears on this setup: every scoped or default launch on Linux runs under cua's helper, which

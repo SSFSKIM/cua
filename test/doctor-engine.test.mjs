@@ -11,6 +11,9 @@ import {mkdirSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {engineCheck} from '../src/runtime/doctor-engine.mjs';
 import {inspectRuntime} from '../src/runtime/doctor.mjs';
+import {replHostFor} from '../src/runtime/launch.mjs';
+import {CuaError} from '../src/runtime/errors.mjs';
+import {surfacesFrom} from '../src/mcp/surface.mjs';
 import {scratch} from './fixtures/runtime-fixture.mjs';
 
 const BUILD = 'a'.repeat(64);
@@ -27,21 +30,33 @@ const facts = over => ({bundlePath: BUNDLE, exists: true, engineVersion: '0.4.0'
   signature: {kind: 'identity', identityMatches: true}, approved: true, approvedBuild: BUILD, approvedAt: '2026-10-21T00:00:00.000Z', pending: null,
   running: true, status: status(), statusError: null, launch: null, ...over});
 
-// The row for `env` (CUA_SHIM_SURFACES defaults to the computer surface), with the selection's inputs and the read stubbed.
-async function row(env = {}, {read = facts(), installed = true, config = {}, defaultEngine = 'vendor', platform = 'darwin', records} = {}) {
-  let inspected = 0;
-  const result = await engineCheck({env: {HOME: '/nonexistent-home', CUA_SHIM_SURFACES: 'computer,browser', ...env}, platform,
-    engine: {defaultEngine, config: () => config, installed: () => (installed ? APP : null)},
-    inspect: async () => { inspected++; return read; },
+const WITH_NODE = () => '/usr/local/bin/node';
+const WITHOUT_NODE = () => { throw Object.assign(new CuaError('repl_host_node', 'cua\'s own host needs Node 24 or later and none was found'), {tried: ['/usr/bin/node (v22.0.0)']}); };
+
+// The row for `env` (CUA_SHIM_SURFACES defaults to the computer surface), with the selection's inputs and the read
+// stubbed; the session's selection is repl.host's, computed as doctor computes it (replHostFor with the same inputs).
+async function row(env = {}, {read = facts(), installed = true, config = {}, defaultEngine = 'vendor', platform = 'darwin', records, node = true} = {}) {
+  const inspections = [];
+  const fullEnv = {HOME: '/nonexistent-home', CUA_SHIM_SURFACES: 'computer,browser', ...env};
+  const engine = {defaultEngine, config: () => config, installed: () => (installed ? APP : null)};
+  let session;
+  try { session = replHostFor({platform, surfaces: surfacesFrom(fullEnv.CUA_SHIM_SURFACES), ambient: fullEnv, home: '/nonexistent-home', resolveOwnNode: node ? WITH_NODE : WITHOUT_NODE, engine}); } catch (error) {
+    if (!(error instanceof CuaError)) throw error;
+    session = {code: error.code, message: error.message};
+  }
+  const result = await engineCheck({env: fullEnv, platform, session, engine,
+    inspect: async options => { inspections.push(options); return read; },
     records: records ?? (() => ({bundlePath: BUNDLE, exists: false, approved: null, pending: null}))});
-  return {...result, inspected};
+  return {...result, inspected: inspections.length, mayLaunch: inspections[0]?.mayLaunch, session};
 }
 
 const noIdentity = value => assert.ok(!JSON.stringify(value).includes(IDENTITY), 'no identity');
 
 test('cua\'s engine selected, approved, already running and fully granted: pass, with acceptance 1\'s fields', async () => {
-  const {row: check, report, inspected} = await row({CUA_NATIVE_ENGINE: 'cua'});
+  const {row: check, report, inspected, mayLaunch} = await row({CUA_NATIVE_ENGINE: 'cua'});
   assert.equal(inspected, 1);
+  assert.equal(mayLaunch, true, 'sessions drive cua\'s engine, so doctor may launch it');
+  assert.deepEqual(report.preferred, {engine: 'cua', reason: 'explicit'});
   assert.equal(check.name, 'engine');
   assert.equal(check.status, 'pass', check.detail);
   assert.equal(report.selected, 'cua');
@@ -155,7 +170,7 @@ test('an engine.json the engine refuses to start with fails the row', async () =
   }
 });
 
-test('cua\'s engine selected with no approved engine: refused sessions fail the row, the default\'s fallback warns; each names what to do', async () => {
+test('cua\'s engine preferred with no approved engine: refused sessions fail the row, the default\'s fallback warns; each names what to do; nothing is launched', async () => {
   const cases = [
     [facts({exists: false, engineVersion: null, build: null, signature: {kind: null, identityMatches: null}, approved: false, approvedBuild: null, running: false, status: null}), /no bundle at .*cua Engine\.app: build it with cua engine build, then approve it with cua engine approve/],
     [facts({approved: false, approvedBuild: null, pending: {build: BUILD, builtAt: 'then'}, running: false, status: null}), /\(build aaaaaaaaaaaa\) is pending approval: run cua engine approve with the owner at the console/],
@@ -166,21 +181,59 @@ test('cua\'s engine selected with no approved engine: refused sessions fail the 
   for (const [read, words] of cases) {
     const refused = await row({CUA_NATIVE_ENGINE: 'cua'}, {installed: false, read});
     assert.equal(refused.row.status, 'fail', refused.row.detail);
-    assert.equal(refused.report.selected, 'cua');
+    assert.equal(refused.report.selected, null, 'sessions drive no engine');
+    assert.deepEqual(refused.report.preferred, {engine: 'cua', reason: 'explicit'});
     assert.equal(refused.report.reason, 'engine_not_installed');
     assert.equal(refused.report.refused.code, 'engine_not_installed');
-    assert.match(refused.row.detail, /^cua's engine is selected \(CUA_NATIVE_ENGINE=cua\), but no approved engine is installed, so every macOS computer session is refused \(engine_not_installed\): /);
+    assert.equal(refused.mayLaunch, false);
+    assert.match(refused.row.detail, /^cua's engine is preferred \(CUA_NATIVE_ENGINE=cua\), but no approved engine is installed, so every macOS computer session is refused \(engine_not_installed\): /);
     assert.match(refused.row.detail, words);
   }
   const fallback = await row({}, {installed: false, defaultEngine: 'cua', read: cases[1][0]});
   assert.equal(fallback.row.status, 'warn');
-  assert.equal(fallback.report.selected, 'cua');
+  assert.equal(fallback.report.selected, 'vendor', 'the engine sessions use');
+  assert.deepEqual(fallback.report.preferred, {engine: 'cua', reason: 'default'});
+  assert.equal(fallback.report.reason, 'engine_not_installed');
   assert.equal(fallback.report.refused, null);
-  assert.match(fallback.row.detail, /^cua's engine is selected \(the default engine\), but no approved engine is installed, so macOS computer sessions keep the vendor host and engine until one is: /);
+  assert.equal(fallback.mayLaunch, false);
+  assert.match(fallback.row.detail, /^cua's engine is preferred \(the default engine\), but no approved engine is installed, so macOS computer sessions keep the vendor host and engine \(engine_not_installed\): /);
   // A bundle at the approved location that is not cua's engine is never launched, and fails the row.
   const foreign = await row({CUA_NATIVE_ENGINE: 'cua'}, {read: facts({bundleId: 'io.github.ssfskim.cua.fixture-engine', running: false, status: null})});
   assert.equal(foreign.row.status, 'fail');
   assert.match(foreign.row.detail, /is not cua's engine \(bundle id io\.github\.ssfskim\.cua\.fixture-engine\), so doctor does not launch it/);
+});
+
+test('the default cua engine without Node 24: sessions keep the vendor engine, so the row warns, reports both selections and launches nothing', async () => {
+  const fallback = await row({}, {defaultEngine: 'cua', node: false, read: facts({running: false, status: null})});
+  assert.equal(fallback.session.reason, 'own_host_node_unavailable', 'repl.host\'s own selection');
+  assert.equal(fallback.row.status, 'warn', fallback.row.detail);
+  assert.equal(fallback.report.selected, 'vendor');
+  assert.equal(fallback.report.reason, 'own_host_node_unavailable');
+  assert.deepEqual(fallback.report.preferred, {engine: 'cua', reason: 'default'});
+  assert.equal(fallback.report.refused, null);
+  assert.equal(fallback.mayLaunch, false, 'no session would use it, so doctor does not launch it');
+  assert.equal(fallback.report.launched, null);
+  assert.match(fallback.row.detail, /^cua's engine is preferred \(the default engine\), but cua's own host finds no Node 24 or later \(see repl\.host\), so macOS computer sessions keep the vendor host and engine \(own_host_node_unavailable\): the approved cua Engine\.app at .* is installed, and doctor does not launch it while no session would use it$/);
+  // Explicitly preferred, the same missing Node refuses every session (repl_host_node): fail, still nothing launched.
+  const explicit = await row({CUA_NATIVE_ENGINE: 'cua'}, {node: false, read: facts({running: false, status: null})});
+  assert.equal(explicit.row.status, 'fail');
+  assert.equal(explicit.report.selected, null);
+  assert.equal(explicit.report.refused.code, 'repl_host_node');
+  assert.equal(explicit.mayLaunch, false);
+  assert.match(explicit.row.detail, /^cua's engine is preferred \(CUA_NATIVE_ENGINE=cua\), but cua's own host finds no Node 24 or later \(see repl\.host\), so every macOS computer session is refused \(repl_host_node\): /);
+});
+
+test('an engine that answers doctor\'s launch but is not this bundle, or one that took the socket by the stop, is reported and left alone', async () => {
+  const mismatch = await row({CUA_NATIVE_ENGINE: 'cua'}, {read: facts({running: false, status: status({pid: 91, bundlePath: '/elsewhere/cua Engine.app'}),
+    launch: {pid: 91, stopped: false, mismatch: {bundlePath: '/elsewhere/cua Engine.app', build: BUILD}}})});
+  assert.equal(mismatch.row.status, 'fail');
+  assert.match(mismatch.row.detail, /the engine that answered \(pid 91\) runs \/elsewhere\/cua Engine\.app, build aaaaaaaaaaaa, not this bundle: doctor left it alone/);
+  assert.deepEqual(mismatch.report.permissions, {accessibility: null, screenRecording: null, inputMonitoring: null}, 'another engine\'s grants are not this bundle\'s');
+  assert.equal(mismatch.report.socket.ownerIsApproved, false);
+  const replaced = await row({CUA_NATIVE_ENGINE: 'cua'}, {read: facts({running: false, status: status({pid: 92}),
+    launch: {pid: 92, stopped: false, replaced: true, detail: 'another engine (pid 999) answers at /x now, not pid 92; it was left alone'}})});
+  assert.equal(replaced.row.status, 'warn');
+  assert.match(replaced.row.detail, /by the stop another engine answered at the socket, and doctor left it alone \(another engine \(pid 999\)/);
 });
 
 test('the vendor engine selected: skip, saying cua\'s engine is not selected, how to select it and what is installed, with nothing inspected', async () => {
@@ -189,6 +242,7 @@ test('the vendor engine selected: skip, saying cua\'s engine is not selected, ho
   assert.equal(today.row.status, 'skip');
   assert.equal(today.report.selected, 'vendor');
   assert.equal(today.report.reason, 'default');
+  assert.deepEqual(today.report.preferred, {engine: 'vendor', reason: 'default'});
   assert.match(today.row.detail, /^cua's engine is not selected: the default engine is the vendor's, so macOS computer sessions use the vendor's Codex Computer Use helper \(helper\.live\)\. CUA_NATIVE_ENGINE=cua, or "engine": "cua" in ~\/\.config\/cua\/engine\.json, selects cua's own, which runs an approved engine: none is installed on this Mac \(cua engine build, then cua engine approve with the owner at the console\)$/);
   assert.deepEqual(today.report.permissions, {accessibility: null, screenRecording: null, inputMonitoring: null});
   const approved = await row({CUA_NATIVE_ENGINE: 'vendor'}, {records: () => ({bundlePath: BUNDLE, exists: true, approved: {build: BUILD, approvedAt: 'when'}, pending: null})});
@@ -203,7 +257,9 @@ test('the vendor engine selected: skip, saying cua\'s engine is not selected, ho
   // The vendor engine with CUA_REPL_HOST=cua is the host's refusal (repl.host names it); the engine row says the vendor's is selected.
   const refusedHost = await row({CUA_REPL_HOST: 'cua'});
   assert.equal(refusedHost.row.status, 'skip');
-  assert.equal(refusedHost.report.selected, 'vendor');
+  assert.equal(refusedHost.report.selected, null);
+  assert.deepEqual(refusedHost.report.preferred, {engine: 'vendor', reason: 'default'});
+  assert.equal(refusedHost.report.reason, 'repl_host_refused');
   assert.match(refusedHost.row.detail, /sessions here are refused \(repl_host_refused; see repl\.host\)/);
 });
 
@@ -243,6 +299,25 @@ test('cua doctor reports the engine row and the JSON `engine`, the selection\'s 
   assert.equal(read, 1);
 });
 
+test('cua doctor reads the approved location once: its codesign serves the selection and the engine row\'s inspection', async t => {
+  const s = scratch();
+  t.after(s.cleanup);
+  const SHA1 = 'F'.repeat(40);
+  const location = {dir: '/approved', onDisk: {exists: true, engineVersion: '0.4.0', build: BUILD, signature: {kind: 'identity', sha1: SHA1, authority: 'x'}},
+    approved: {build: BUILD, identity: SHA1, approvedAt: 'when'}, pending: null};
+  let reads = 0;
+  let handed;
+  const report = await inspectRuntime({home: s.dir, env: {HOME: s.dir, CUA_NATIVE_ENGINE: 'cua', CUA_SHIM_SURFACES: 'computer'}, host: {platform: 'darwin', arch: 'arm64'},
+    inspectHelper: async () => ({socket: '/x', holders: []}), inspectSecrets: async () => ({dir: '/none', exists: false}), inspectAgent: async () => [], inspectChrome: async () => [],
+    verifySignatures: async () => [], resolveOwnNode: () => '/usr/local/bin/node',
+    engine: {config: () => ({}), location: () => { reads++; return location; }},
+    inspectEngine: async options => { handed = options.location(); return facts(); }});
+  assert.equal(report.engine.selected, 'cua', 'the selection read the location as installed');
+  assert.equal(handed, location, 'the inspection got the same read');
+  assert.equal(reads, 1, 'one read, so one codesign');
+  assert.ok(!JSON.stringify(report).includes(SHA1), 'no identity');
+});
+
 test('cua doctor\'s default engine read finds nothing under an empty HOME and launches nothing', async t => {
   const s = scratch();
   t.after(s.cleanup);
@@ -253,7 +328,8 @@ test('cua doctor\'s default engine read finds nothing under an empty HOME and la
     verifySignatures: async () => [], resolveOwnNode: () => '/usr/local/bin/node'});
   const check = report.checks.find(c => c.name === 'engine');
   assert.equal(check.status, 'fail');
-  assert.equal(report.engine.selected, 'cua');
+  assert.equal(report.engine.selected, null);
+  assert.deepEqual(report.engine.preferred, {engine: 'cua', reason: 'settings'});
   assert.equal(report.engine.reason, 'engine_not_installed');
   assert.equal(report.engine.exists, false);
   assert.equal(report.engine.launched, null);

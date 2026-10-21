@@ -452,7 +452,12 @@ export function nativeEngineFor({env, requestedHost = null, defaultEngine = DEFA
   return {engine: 'cua', reason: setting.reason, status: 'pass', app: {bundlePath: app.bundlePath, engineVersion: app.engineVersion, build: app.build}};
 }
 
-// -> {engine, reason: 'explicit' | 'settings' | 'default'}.
+// The engine the setting names, before the approved engine, the host and Node decide what a session gets -> {engine,
+// reason: 'explicit' | 'settings' | 'default'}; invalid_setting as nativeEngineFor refuses. Doctor's engine row reports
+// it as the preference beside the effective selection.
+export function nativeEngineSetting({env, config = () => readEngineSettings({env}), defaultEngine = DEFAULT_NATIVE_ENGINE}) {
+  return engineSetting(env, config, defaultEngine);
+}
 function engineSetting(env, config, defaultEngine) {
   const value = env.CUA_NATIVE_ENGINE;
   if (value !== undefined && value !== '') {

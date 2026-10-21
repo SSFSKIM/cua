@@ -19,12 +19,12 @@ import {homedir} from 'node:os';
 import {join} from 'node:path';
 import {spawn} from 'node:child_process';
 import {createInterface} from 'node:readline';
-import {fail} from './errors.mjs';
+import {CuaError, fail} from './errors.mjs';
 import {ENGINE_DIRECTORY_IN_HOME} from './layout.mjs';
-import {BUNDLE_NAME, ENGINE_SOURCE, EXECUTABLE, assembleBundle, engineBuild, engineVersion} from './engine-bundle.mjs';
+import {BUNDLE_ID, BUNDLE_NAME, ENGINE_SOURCE, EXECUTABLE, assembleBundle, engineBuild, engineVersion} from './engine-bundle.mjs';
 import {configuredIdentity, identityMatches, lastLines, readSignature, recordedIdentity, resolveSigningIdentity, runCommand, signatureReport, signBundle, sleepFor} from './engine-sign.mjs';
 import {FrameDecoder, encodeFrame} from '../services/engine/protocol.mjs';
-import {bundleIdentity} from '../services/engine/client.mjs';
+import {bundleIdentity, plistString} from '../services/engine/client.mjs';
 
 const OPEN = '/usr/bin/open';
 const BUILD_TIMEOUT_MS = 30 * 60_000;
@@ -167,14 +167,20 @@ export function installedEngine({dir = engineDirectory(), runSync} = {}) {
   return {bundlePath: paths.bundle, engineVersion: onDisk.engineVersion, build: onDisk.build, approvedAt: approved.approvedAt};
 }
 
+// The bundle on disk with its signature, and approved.json's and pending.json's records.
+function bundleFacts(ctx) {
+  const {paths} = ctx;
+  return {onDisk: bundleOnDisk(paths.bundle, ctx.runSync), approved: readRecord(paths.approved), pending: readRecord(paths.pending)};
+}
+
 // The bundle, approved.json's and pending.json's state, and the running engine's status answer (null when none runs).
 export async function engineStatus(deps) {
   const ctx = context(deps);
+  return statusReport(ctx, bundleFacts(ctx), await statusOf(ctx));
+}
+
+function statusReport(ctx, {onDisk, approved, pending}, status) {
   const {paths} = ctx;
-  const onDisk = bundleOnDisk(paths.bundle, ctx.runSync);
-  const approved = readRecord(paths.approved);
-  const pending = readRecord(paths.pending);
-  const status = await statusOf(ctx);
   return {
     bundlePath: paths.bundle,
     exists: onDisk.exists,
@@ -187,6 +193,67 @@ export async function engineStatus(deps) {
     pending: pending ? {build: pending.build ?? null, builtAt: pending.builtAt ?? null} : null,
     running: Boolean(status),
     status,
+  };
+}
+
+// What `cua doctor`'s engine row reads (the Decision Log's "M3 pre-flight" item 1). An engine already answering at the
+// socket is read and left alone. With none answering and the approved bundle installed (its build and signature
+// approved.json's, and its bundle id cua's engine's), the bundle is launched as the launcher launches it (open -n -g -a),
+// read, and sent `shutdown`; a session that connects in between makes the stop busy, and the engine is left running for
+// it. A pending or unapproved bundle, one whose signature cannot be read, and any other app at the approved location
+// (the harnesses' fixture approved engine, scripts/probe/fixture-engine.mjs) are never launched. Nothing here prompts or
+// captures: the engine's start and its `status` do neither. Never throws for what it finds: a status read that fails
+// is `statusError`, a launch or stop that fails is `launch.error`.
+// -> engineStatus's report with `running` meaning an engine answered before this read, `status` the answer read (from
+// that engine, or from the one launched here), `bundleId`, `statusError` (string | null), and `launch`: null when nothing
+// was launched, else {pid, stopped: true} | {pid, stopped: false, leftRunning: true, detail} | {pid?, error}.
+export async function inspectEngine(deps) {
+  const ctx = context(deps);
+  const facts = bundleFacts(ctx);
+  const read = async () => {
+    try { return {status: await statusOf(ctx)}; } catch (error) {
+      if (error?.code !== 'engine_unreadable') throw error;
+      return {status: null, error: error.message};
+    }
+  };
+  const before = await read();
+  let {status} = before;
+  let launched = null;
+  const bundleId = bundleIdOf(ctx.paths.bundle);
+  if (!status && !before.error && bundleId === BUNDLE_ID && approval(facts.onDisk, facts.approved) === true) {
+    launched = {};
+    try { status = await launch(ctx); launched.pid = status.pid; } catch (error) {
+      if (!(error instanceof CuaError)) throw error;
+      launched.error = error.message;
+    }
+    if (status) {
+      try { await stop(ctx); launched.stopped = true; } catch (error) {
+        if (!(error instanceof CuaError)) throw error;
+        launched.stopped = false;
+        if (error.code === 'engine_busy') Object.assign(launched, {leftRunning: true, detail: error.message});
+        else launched.error = error.message;
+      }
+    }
+  }
+  return {...statusReport(ctx, facts, status), running: Boolean(before.status), bundleId, statusError: before.error ?? null, launch: launched};
+}
+
+function bundleIdOf(bundle) {
+  try { return plistString(readFileSync(join(bundle, 'Contents', 'Info.plist'), 'utf8'), 'CFBundleIdentifier'); } catch { return null; }
+}
+
+// The approved location's records as files only, with no codesign and no connection: whether a bundle is there, and
+// approved.json's and pending.json's builds and times (never their identity). What doctor says about an engine that is
+// not selected.
+export function engineRecords({dir = engineDirectory()} = {}) {
+  const paths = enginePaths(dir);
+  const approved = readRecord(paths.approved);
+  const pending = readRecord(paths.pending);
+  return {
+    bundlePath: paths.bundle,
+    exists: existsSync(paths.bundle),
+    approved: approved ? {build: approved.build ?? null, approvedAt: approved.approvedAt ?? null} : null,
+    pending: pending ? {build: pending.build ?? null, builtAt: pending.builtAt ?? null} : null,
   };
 }
 
@@ -268,6 +335,8 @@ const GRANTS = [
 
 const steps = (grant, bundle) => `cua Engine needs ${grant.pane}: at the console, open System Settings → Privacy & Security → ${grant.pane}, `
   + `click "+", press ⌘⇧G and enter ${bundle}, then switch it on${grant.note ? ` (${grant.note})` : ''}`;
+// The three grants and their by-hand steps, for doctor's engine row.
+export {GRANTS as ENGINE_GRANTS, steps as grantSteps};
 
 function sameEngine(status, bundle, onDisk) {
   const real = path => { try { return realpathSync(path); } catch { return path; } };

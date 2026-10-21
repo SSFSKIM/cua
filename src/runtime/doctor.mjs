@@ -1,9 +1,12 @@
-// Passive diagnosis. Reports the installed runtime's health (platform, active release, files, vendor manifest, IPC
+// Diagnosis. Reports the installed runtime's health (platform, active release, files, vendor manifest, IPC
 // version, vendor signatures) separately from live-helper and permission evidence, which a passive check can only
-// observe from outside: it never opens an app, starts or signals the helper, connects to its socket or requests a
-// grant. The one connection doctor makes is chrome.hosts.live, to cua's own host sockets. Live behavior is the job of
-// explicit probe scripts. `blocked` marks evidence that is unavailable passively;
-// `skip` marks a check that does not apply on this host (neither a failure nor blocked evidence).
+// observe from outside: it never opens an app, starts or signals the vendor's helper, connects to its socket or
+// requests a grant. Doctor connects only to cua's own sockets: chrome.hosts.live, to cua's own hosts, and the `engine`
+// row, to cua's own engine, whose grants are read from its `status`; with cua's engine selected and none running, that
+// row launches the approved engine, reads it and stops it (src/runtime/doctor-engine.mjs; never a pending bundle, and
+// nothing that prompts or captures). Live behavior is the job of explicit probe scripts. `blocked` marks evidence that
+// is unavailable passively; `skip` marks a check that does not apply on this host (neither a failure nor blocked
+// evidence).
 // `ok` means runtime health only: no check failed. It does not mean the live helper, permissions or a release
 // acceptance gate were proven, and it must never be reported as release acceptance.
 // `secrets.store` (src/secrets/check.mjs) describes the secret store, $HOME/.config/claude-secrets, from metadata only:
@@ -26,7 +29,10 @@
 // computer surface on macOS the selection follows the native engine's table (#117, launch.mjs nativeEngineFor; `engine`
 // reaches it, for tests): the session's sentence then names the engine it drives after the host's explanation
 // (`; native engine ENGINE (REASON): ...`), and the row also warns where a default cua engine keeps the vendor host and
-// engine (engine_not_installed). The engine's own row (its bundle, signature and grants) is M3's `engine`.
+// engine (engine_not_installed). The engine's own row is `engine` (src/runtime/doctor-engine.mjs): with cua's engine
+// selected, its approved bundle, the signature as a match, whether the socket's owner is the approved bundle, the three
+// grants, the probe's ability, the route-4 overrides and the apps routeAdvice names; else why it is not in use. Its
+// facts are also the report's `engine` object (macOS only). The two rows share one read of the approved engine.
 // `sandbox` describes the CUA_SHIM_SANDBOX in `env` (src/runtime/sandbox.mjs). Under scoped it fails when the
 // profile's write roots ($CUA_HOME/run: a connection's run directory and its session temp, which is its TMPDIR) overlap
 // a trusted code path (the release's modules, the checkout's src/repl-host, src/sandbox, src/services and src/secrets),
@@ -65,7 +71,8 @@ import {execFile} from 'node:child_process';
 import {homedir} from 'node:os';
 import {dirname, join} from 'node:path';
 import {CuaError} from './errors.mjs';
-import {shortBuild} from './engine.mjs';
+import {engineDirectory, installedEngine, shortBuild} from './engine.mjs';
+import {defaultEngineRecords, defaultInspectEngine, engineCheck} from './doctor-engine.mjs';
 import {homeLayout, realHome} from './layout.mjs';
 import {BROWSER_SERVICE, BROWSER_SERVICE_IMPL_DIR, COMPAT_EXECUTABLE, compatExecutable, CUA_API_DIR, CUA_API_DOCS_DIR, REPL_HOST_DIR, SANDBOX_DIR, SERVICE_SUPPORT_DIRS, SKY_SERVICE, NODE_FLOOR, ownHostNode, replHostFor} from './launch.mjs';
 import {SANDBOX_CONFLICT_HINT, assertDenyListShape, describeConflicts, protectedPaths, sandboxConflicts, sandboxModeFrom, scopedWriteRoots} from './sandbox.mjs';
@@ -114,7 +121,7 @@ function launcherCheck({sandboxExec, compat, node}) {
   return result('sandbox.launcher', 'pass', `cua's own sandbox confines the children: ${sandboxExec} for cua's own host, and on the vendor host ${compat}${node ? ` on ${node}` : ''}; no Codex CLI is launched`);
 }
 
-export async function inspectRuntime({home, env = process.env, live = false, pins, host = {platform: process.platform, arch: process.arch}, verifySignatures = verifyCodeSignatures, inspectHelper = inspectNativeHelper, inspectSecrets = inspectSecretStore, inspectLinux = linuxDesktopChecks, inspectChrome = defaultInspectChrome, inspectAgent = defaultInspectAgent, sweep = sweepRun, resolveOwnNode, engine, launcher = {sandboxExec: SEATBELT_EXEC, compat: COMPAT_EXECUTABLE}, linuxHelper = verifiedLinuxHelper}) {
+export async function inspectRuntime({home, env = process.env, live = false, pins, host = {platform: process.platform, arch: process.arch}, verifySignatures = verifyCodeSignatures, inspectHelper = inspectNativeHelper, inspectSecrets = inspectSecretStore, inspectLinux = linuxDesktopChecks, inspectChrome = defaultInspectChrome, inspectAgent = defaultInspectAgent, sweep = sweepRun, resolveOwnNode, engine, inspectEngine = defaultInspectEngine, readEngineRecords = defaultEngineRecords, launcher = {sandboxExec: SEATBELT_EXEC, compat: COMPAT_EXECUTABLE}, linuxHelper = verifiedLinuxHelper}) {
   if (live) throw new Error(`inspectRuntime is passive; live probes are separate explicit scripts (${LIVE_PROBE})`);
   pins ??= loadPins();
   const checks = [];
@@ -178,13 +185,25 @@ export async function inspectRuntime({home, env = process.env, live = false, pin
   const secretsEnabled = (env.CUA_SHIM_SECRETS ?? 'on') !== 'off';
   checks.push(classifyStore(secretsInfo, {enabled: secretsEnabled}));
   if (secretsInfo.project) checks.push(classifyStore(secretsInfo.project, {enabled: secretsEnabled, project: secretsInfo.project.root}));
-  checks.push(replHostCheck(home, env, host.platform, resolveOwnNode, engine));
+  const engineInputs = sharedEngineInputs(engine, env);
+  checks.push(replHostCheck(home, env, host.platform, resolveOwnNode, engineInputs));
+  const engineRow = await engineCheck({env, platform: host.platform, engine: engineInputs, inspect: inspectEngine, records: readEngineRecords});
+  checks.push(engineRow.row);
   checks.push(...await inspectChrome({home, host, env}));
   checks.push(...await inspectAgent({home, env, host}));
 
   const report = {ok: !checks.some(c => c.status === 'fail'), checks};
   if (runtime) report.runtime = {release: runtime.release, root: runtime.root, paths: runtime.paths};
+  if (engineRow.report) report.engine = engineRow.report;
   return report;
+}
+
+// nativeEngineFor's inputs for repl.host and the engine row, the approved engine asked at most once (installedEngine
+// reads the bundle's signature with codesign), as a connection asks it once.
+function sharedEngineInputs(engine = {}, env) {
+  const installed = engine.installed ?? (() => installedEngine({dir: engineDirectory(env.HOME || homedir())}));
+  let answer;
+  return {...engine, installed: () => (answer ??= {value: installed()}).value};
 }
 
 const ROLLBACK = 'CUA_REPL_HOST=vendor keeps the vendor host';

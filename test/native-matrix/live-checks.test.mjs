@@ -279,7 +279,7 @@ test('compositionGuard: HID keys only while the scene\'s TextEdit is the front a
   assert.deepEqual(compositionGuard(ok), {post: true, reason: null});
   assert.deepEqual(compositionGuard({...ok, frontmost: {pid: 5, bundleId: 'com.google.Chrome'}}),
     {post: false, reason: 'front app not the scene', seen: {frontmost: {pid: 5, bundleId: 'com.google.Chrome'}, topWindow: ok.topWindow, sceneWindow: 41}});
-  assert.deepEqual(compositionGuard({...ok, frontmost: null}), {post: false, reason: 'front app not the scene'});
+  assert.deepEqual(compositionGuard({...ok, frontmost: null}), {post: false, reason: 'front app not the scene', seen: {frontmost: null, topWindow: ok.topWindow, sceneWindow: 41}});
   assert.equal(compositionGuard({...ok, topWindow: {ownerPid: 600, number: 99}}).reason, 'front window not the scene window');
   assert.equal(compositionGuard({...ok, topWindow: {ownerPid: 5, number: 41}}).reason, 'front window not the scene window');
   assert.equal(compositionGuard({...ok, observedWindow: {pid: 600, frame: {x: 400, y: 20, width: 600, height: 800}}}).reason, 'the scene window is not TextEdit\'s key window');

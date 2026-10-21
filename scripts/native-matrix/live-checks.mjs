@@ -243,32 +243,41 @@ export function menuItemLabel(item) {
   return item.effect === true ? 'acts' : 'no effect';
 }
 
-// The menu path (the vendor reading's item 10): per item, each lane's label side by side; cua's lane decides whether
-// the menu path takes activation: a valid cua item read disabled or without effect where the vendor's works means it
-// does. Only valid, conclusive cua items decide.
-export function menuComparison(cua, vendor) {
+// The vendor lane's item as a label (it has no lanes nor validity of its own): not found, acts, read disabled, no effect.
+const vendorItemLabel = v => (v.found !== true ? 'not found' : v.effect === true ? 'acts' : v.enabled === false ? 'read disabled' : 'no effect');
+
+// The menu path (the vendor reading's item 10): per item, cua's lane (run with the switch `setting`) and the vendor's
+// labels side by side, and what the pair decides. Only valid, conclusive cua items decide, and only an item shown to
+// act decides anything: cua's falling short where the vendor's acts, or every cua item acting. An item that acts on
+// neither lane (both read disabled, say) shows nothing either way: inconclusive.
+export function menuComparison(cua, vendor, {setting = 'off'} = {}) {
   const items = {}, ids = Object.keys(MENU_ITEMS);
   for (const id of ids) {
     const c = cua?.[id] ?? null, v = vendor?.[id] ?? null;
-    const cl = c ? menuItemLabel(c) : null;
-    const vl = v ? (v.found !== true ? 'not found' : v.effect === true ? 'acts' : v.enabled === false ? 'read disabled' : 'no effect') : null;
+    const cl = c ? menuItemLabel(c) : null, vl = v ? vendorItemLabel(v) : null;
     items[id] = {cua: c && {label: cl, enabled: c.enabled ?? null, effect: c.effect ?? null},
       vendor: v && {label: vl, enabled: v.enabled ?? null, effect: v.effect ?? null},
       same: cl !== null && cl === vl, cuaBetter: cl === 'acts' && vl !== 'acts', cuaWorse: vl === 'acts' && ['no effect', 'read disabled'].includes(cl)};
   }
   const conclusive = ids.every(id => ['acts', 'no effect', 'read disabled'].includes(items[id].cua?.label) && items[id].vendor && items[id].vendor.label !== 'not found');
+  const short = ids.filter(id => items[id]?.cuaWorse), unshown = ids.filter(id => items[id].cua?.label !== 'acts' && items[id].vendor?.label !== 'acts');
   const decision = !conclusive ? 'undecided: an item was not exposed, a cua item is not valid or conclusive, or a lane is missing'
-    : ids.some(id => items[id].cuaWorse) ? 'the menu path takes activation: cua reads an item disabled or it does nothing where the vendor\'s works'
-      : 'no activation: cua reads the responder-chain items enabled and they act without it';
+    : short.length ? (setting === 'off' ? `the menu path takes activation: cua reads ${short.join(', ')} disabled or it does nothing where the vendor's works`
+      : `route 3's activation is not enough: cua's ${short.join(', ')} does nothing where the vendor's works`)
+      : unshown.length ? `inconclusive: no demonstrated success for ${unshown.join(', ')}: neither cua's ${setting} lane nor the vendor's item acts`
+        : setting === 'off' ? 'no activation: cua reads the responder-chain items enabled and they act without it'
+          : 'with activation: cua\'s items act with route 3\'s activation around the press';
   return {items, decision};
 }
 
 // The menu activation switch (M2a.2's `spikeMenuActivation`, off by default, for the hold to decide): cua's lane run
 // with it off and with it on. Only valid items count: "acts without activation" comes from off-lane items pressed or
-// read under the background condition, "activation is not enough" from on-lane items pressed under it. -> {setting:
+// read under the background condition, "activation is not enough" from on-lane items pressed under it, and only for
+// an item shown to act somewhere (the vendor's lane acting): an item no lane acts on demonstrates nothing, so the
+// setting is undecided, as menuComparison calls it inconclusive. -> {setting:
 // off|on|neither|undecided, line, labels: {off, on}, items: {off, on}: per item {label, effect, route,
 // activationGuardMs}}.
-export function menuSettingVerdict(off, on) {
+export function menuSettingVerdict(off, on, vendor = null) {
   const ids = Object.keys(MENU_ITEMS);
   const labels = lane => (lane ? Object.fromEntries(ids.map(id => [id, menuItemLabel(lane[id])])) : null);
   const summary = lane => Object.fromEntries(ids.map(id => [id, {label: lane ? menuItemLabel(lane[id]) : null, effect: lane?.[id]?.effect ?? null,
@@ -287,7 +296,11 @@ export function menuSettingVerdict(off, on) {
     const onReason = unsettled('on', onL, ['acts', 'no effect']);
     if (onReason) [setting, line] = ['undecided', `undecided: ${onReason}`];
     else if (ids.every(id => onL[id] === 'acts')) [setting, line] = ['on', 'set on: every item acts only with route 3\'s activation around its press (spikeMenuActivation on by default)'];
-    else [setting, line] = ['neither', `neither: route 3's activation around the press is not enough for ${ids.filter(id => onL[id] !== 'acts').join(', ')}`];
+    else {
+      const failing = ids.filter(id => onL[id] !== 'acts'), unshown = failing.filter(id => !vendor?.[id] || vendorItemLabel(vendor[id]) !== 'acts');
+      [setting, line] = unshown.length ? ['undecided', `undecided: no demonstrated success for ${unshown.join(', ')}: no lane acts, cua's or the vendor's`]
+        : ['neither', `neither: route 3's activation around the press is not enough for ${failing.join(', ')}`];
+    }
   }
   return {setting, line, labels: {off: offL, on: onL}, items: {off: summary(off), on: summary(on)}};
 }
@@ -407,14 +420,56 @@ export function finderCheck(baseline, now, {runWindow}) {
   const keysAsSaved = Object.keys(baseline.keys ?? {}).every(key => now.keys?.[key] === baseline.keys[key]);
   return {ok: runWindowGone && windowsAsAtBegin && keysAsSaved, runWindowGone, windowsAsAtBegin, keysAsSaved};
 }
-// The harness's own work still running on the device after a command was cut off (`ps -axo pid=,ppid=,uid=,command=`):
-// the device CLIs this hold runs from the harness checkout and the vendor serve started from it, of this user, never
-// the caller or its ancestors, and never a cua serve started from anywhere else (the owner's). -> [{pid, command}].
+// ---- Recovery: only what this run provably owns -------------------------------------------------------------------
+
+// The run's journal (in its run directory): one row per device process the run started, `kind\tpid\tstart\tlabel`,
+// where start is ps's lstart (C locale): the device CLIs and the vendor serve (each journaled by the remote shell that
+// execs it, live.mjs journaledScript), each probe the CLIs launch and each put-back step's process (live-device.mjs).
+// A probe whose pid could not be resolved is journaled with `-` for pid and start.
+export const JOURNAL_FILE = 'live-journal.tsv';
+const startOf = text => String(text).trim().split(/\s+/).join(' ');
+export const parseJournal = text => String(text).split('\n').map(line => line.split('\t')).filter(f => f.length === 4 && ['cli', 'probe'].includes(f[0]))
+  .map(([kind, pid, start, label]) => ({kind, pid: pid === '-' ? null : Number(pid), start: start === '-' ? null : startOf(start), label}));
+// `ps -axo pid=,ppid=,uid=,lstart=,command=` under the C locale. -> [{pid, ppid, uid, start, command}].
+export const parseProcessTable = text => String(text).split('\n')
+  .map(line => /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\w{3}\s+\w{3}\s+\d+\s+[\d:]+\s+\d{4})\s+(.*)$/.exec(line)).filter(Boolean)
+  .map(([, pid, ppid, uid, start, command]) => ({pid: Number(pid), ppid: Number(ppid), uid: Number(uid), start: startOf(start), command}));
+// A probe of the approved bundle (its engine executable run with --probe).
+export const isBundleProbe = (command, bundle) => Boolean(bundle) && command.startsWith(`${bundle}/Contents/MacOS/cua-engine --probe `);
+// What looks like the harness's work without being journaled: its device CLIs run from the harness checkout, the
+// vendor serve from it, a probe of the approved bundle.
 const HARNESS_COMMANDS = /^node scripts\/(native-matrix\/(live-device|goldens-device)|repl-parity\/scenes-mac)\.mjs /;
-export function outstandingHarness(psText, {self, ancestors = [], uid, checkout}) {
-  const serve = new RegExp(`^node ${checkout.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/(bin/cua\\.mjs serve|scripts/native-baseline/serve\\.mjs)`);
-  return String(psText).split('\n').map(line => /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(.*)$/.exec(line)).filter(Boolean)
-    .map(([, pid, ppid, user, command]) => ({pid: Number(pid), ppid: Number(ppid), uid: Number(user), command}))
-    .filter(p => p.uid === uid && p.pid !== self && !ancestors.includes(p.pid) && (HARNESS_COMMANDS.test(p.command) || serve.test(p.command)))
-    .map(({pid, command}) => ({pid, command}));
+const looksLikeHarness = (command, {checkout, bundle}) => HARNESS_COMMANDS.test(command) || isBundleProbe(command, bundle)
+  || command.startsWith(`node ${checkout}/bin/cua.mjs serve`) || command.startsWith(`node ${checkout}/scripts/native-baseline/serve.mjs`);
+export const SCENE_UP = 'scenes-mac.mjs up';
+
+// The recovery's targets: the journaled processes still running as this user with the start time the journal holds
+// (a pid reused since, or another run's process, never matches), never the recovery itself or its ancestors. A scene
+// startup is awaited, not stopped (its scene is recorded only once its window is there; the put-back then brings it
+// down). Everything else that looks like the harness's (another run's CLI, a probe nobody journaled) is listed, never
+// touched; `known` are pids the put-back stops itself (the watcher). -> {stop, await: [{pid, kind, label}],
+// unresolvedProbes, untouched: [{pid, command}]}.
+export function recoveryPlan(journal, table, {self, ancestors = [], uid, checkout, bundle, known = []}) {
+  const running = new Map(table.filter(p => p.uid === uid).map(p => [p.pid, p]));
+  const mine = new Map();
+  for (const e of journal) {
+    const p = e.pid === null ? null : running.get(e.pid);
+    if (p && p.start === e.start && p.pid !== self && !ancestors.includes(p.pid) && !mine.has(p.pid)) mine.set(p.pid, {pid: p.pid, kind: e.kind, label: e.label});
+  }
+  const owned = new Set([...mine.keys(), self, ...ancestors, ...known]);
+  return {
+    stop: [...mine.values()].filter(e => e.label !== SCENE_UP),
+    await: [...mine.values()].filter(e => e.label === SCENE_UP),
+    unresolvedProbes: journal.filter(e => e.kind === 'probe' && e.pid === null).length,
+    untouched: [...running.values()].filter(p => !owned.has(p.pid) && looksLikeHarness(p.command, {checkout, bundle}))
+      .map(p => ({pid: p.pid, command: p.command.split(' ').slice(0, 2).join(' ')})),
+  };
 }
+
+// The recovery's bounds (live-device.mjs recover and putBack), here so the controller's step timeouts cover them: the
+// stop of a process (SIGTERM, then SIGKILL, each awaited killMs), the wait on a scene startup and on a probe whose pid
+// was never resolved, and each put-back step (stepMs, then the stop of its process and of the probes it launched).
+export const RECOVERY_BOUNDS = Object.freeze({killMs: 3_000, sceneUpWaitMs: 120_000, probeWaitMs: 65_000, stepMs: 120_000, stepKillMs: 3_000});
+const PUTBACK_STEPS = 8;
+export const putBackBoundMs = (b = RECOVERY_BOUNDS) => PUTBACK_STEPS * (b.stepMs + 2 * b.stepKillMs + 2 * b.killMs);
+export const recoverBoundMs = (b = RECOVERY_BOUNDS) => 4 * b.killMs + b.sceneUpWaitMs + b.probeWaitMs + putBackBoundMs(b);

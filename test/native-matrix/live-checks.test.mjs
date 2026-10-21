@@ -7,7 +7,7 @@ import * as fs from 'node:fs';
 import {
   ABC, FIRST_LINE, KOREAN_2SET, LAST_LINE, NEVER_OBSERVED, allSelected, alertWatch, enablementOf, enablementVerdict, failureOf, finderCheck, firstLineBold,
   compositionGuard, compositionReading, frontAppAction, inputSourceVerdict, liveRefusals, menuBarItem, menuComparison, menuItemAt, menuItemLabel, menuSettingVerdict, minimizeButton, minimizedVerdict,
-  outstandingHarness, parsePerContext, pasteVerdict, perContextRestore, putBackPlan, restoreTarget, textArea, vendorMenuBarIndex, vendorMenuItem, vendorSelectedText, vendorTextAreaIndex,
+  RECOVERY_BOUNDS, parseJournal, parseProcessTable, parsePerContext, putBackBoundMs, recoverBoundMs, recoveryPlan, pasteVerdict, perContextRestore, putBackPlan, restoreTarget, textArea, vendorMenuBarIndex, vendorMenuItem, vendorSelectedText, vendorTextAreaIndex,
 } from '../../scripts/native-matrix/live-checks.mjs';
 import {SkyComputerUseError} from '../../src/services/engine/protocol.mjs';
 
@@ -155,9 +155,18 @@ test('menuComparison: per item each lane\'s label, and what the pair decides; on
   const works = {found: true, enabled: true, clicked: true, click: {ok: true, route: 1}, effect: true, valid: true};
   const both = menuComparison({selectAll: works, bold: works}, {selectAll: works, bold: works});
   assert.equal(both.decision, 'no activation: cua reads the responder-chain items enabled and they act without it');
+  assert.equal(menuComparison({selectAll: works, bold: works}, {selectAll: works, bold: works}, {setting: 'on'}).decision,
+    'with activation: cua\'s items act with route 3\'s activation around the press', 'the on lane never claims "without activation"');
+  // Both lanes read an item disabled: nothing acted, so nothing is shown either way.
+  const readDisabled = {...works, enabled: false, clicked: false, click: undefined, effect: false};
+  const neither = menuComparison({selectAll: works, bold: readDisabled}, {selectAll: works, bold: {...works, enabled: false, effect: false}});
+  assert.equal(neither.decision, 'inconclusive: no demonstrated success for bold: neither cua\'s off lane nor the vendor\'s item acts');
+  assert.equal(neither.items.bold.vendor.label, 'read disabled');
   assert.equal(both.items.selectAll.same, true);
   const disabled = menuComparison({selectAll: {...works, enabled: false, clicked: false, click: undefined, effect: false}, bold: works}, {selectAll: works, bold: works});
-  assert.equal(disabled.decision, 'the menu path takes activation: cua reads an item disabled or it does nothing where the vendor\'s works');
+  assert.equal(disabled.decision, 'the menu path takes activation: cua reads selectAll disabled or it does nothing where the vendor\'s works');
+  assert.equal(menuComparison({selectAll: {...works, effect: false}, bold: works}, {selectAll: works, bold: works}, {setting: 'on'}).decision,
+    'route 3\'s activation is not enough: cua\'s selectAll does nothing where the vendor\'s works');
   assert.equal(disabled.items.selectAll.cua.label, 'read disabled');
   const vendorFails = menuComparison({selectAll: works, bold: works}, {selectAll: {...works, effect: false}, bold: works});
   assert.equal(vendorFails.items.selectAll.cuaBetter, true);
@@ -202,7 +211,8 @@ test('menuSettingVerdict: the setting to make the default, decided only by attem
   const disabled = {found: true, enabled: false, valid: true, clicked: false, effect: false};
   const guarded = {...acts, click: {ok: true, route: 1, posted: true, activationGuardMs: 18.5}};
   const lane = (selectAll, bold) => ({selectAll, bold});
-  const v = (off, on) => menuSettingVerdict(off, on);
+  const vendorActs = lane(acts, acts);
+  const v = (off, on, vendor = vendorActs) => menuSettingVerdict(off, on, vendor);
   const keep = v(lane(acts, acts), lane(guarded, guarded));
   assert.equal(keep.setting, 'off');
   assert.equal(keep.line, 'keep off: every item acts without activation (spikeMenuActivation stays off by default)');
@@ -222,6 +232,14 @@ test('menuSettingVerdict: the setting to make the default, decided only by attem
   assert.equal(v(lane({...none, valid: false}, acts), lane(guarded, guarded)).line, 'undecided: off lane selectAll invalid', 'an off item lost to an activation is no evidence for on');
   assert.equal(v(lane(acts, acts), null).setting, 'off', 'off decides alone when every item acts');
   assert.equal(v(null, lane(acts, acts)).line, 'undecided: off lane missing');
+  // "Activation is not enough" needs the item shown to act somewhere: the vendor's acting. Read disabled (or doing
+  // nothing) on every lane, the vendor's included, demonstrates nothing.
+  const unshown = v(lane(acts, disabled), lane(guarded, {...guarded, effect: false}), lane(acts, {...disabled, clicked: undefined}));
+  assert.equal(unshown.setting, 'undecided');
+  assert.equal(unshown.line, 'undecided: no demonstrated success for bold: no lane acts, cua\'s or the vendor\'s');
+  assert.equal(v(lane(acts, disabled), lane(guarded, {...guarded, effect: false}), null).line, 'undecided: no demonstrated success for bold: no lane acts, cua\'s or the vendor\'s',
+    'without the vendor\'s lane nothing shows the item can act');
+  assert.equal(v(lane(acts, disabled), lane(guarded, guarded), null).setting, 'on', 'the on lane acting is its own demonstration');
 });
 
 test('pasteVerdict: the pastes land behind the user window, type_text takes the paste route under a met Korean precondition, the clipboard\'s types unchanged', () => {
@@ -385,20 +403,60 @@ test('finderCheck: the run\'s Finder window gone, Finder\'s windows as at begin,
   assert.equal(finderCheck(null, {windows: [], keys}, {runWindow: null}).ok, false, 'no baseline, nothing verified');
 });
 
-test('outstandingHarness: the harness\'s own commands and the parity serve still running, never the caller, its ancestors, another user\'s or an owner\'s cua', () => {
-  const checkout = '/Users/u/Developer/GitHub/cua-parity';
-  const ps = [
-    '  100     1  501 node scripts/native-matrix/live-device.mjs paste --run /r',
-    '  101   100  501 /usr/bin/swift scripts/native-matrix/system-windows.swift',
-    '  102     1  501 node scripts/repl-parity/scenes-mac.mjs up textedit --run /r',
-    '  103     1  501 node scripts/native-matrix/goldens-device.mjs steps finder --run /r',
-    `  104     1  501 node ${checkout}/bin/cua.mjs serve`,
-    '  105     1  501 node /Users/u/.cua/bin/cua.mjs serve',
-    '  106     1  502 node scripts/native-matrix/live-device.mjs menu --run /r',
-    '  200   199  501 node scripts/native-matrix/live-device.mjs recover --run /r',
-    '  199     1  501 bash -c cd /Users/u/Developer/GitHub/cua-parity && node scripts/native-matrix/live-device.mjs recover --run /r',
-    '  300     1  501 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-  ].join('\n');
-  assert.deepEqual(outstandingHarness(ps, {self: 200, ancestors: [199, 1], uid: 501, checkout}).map(p => p.pid), [100, 102, 103, 104]);
+test('parseProcessTable and parseJournal: ps\'s lstart and the journal\'s rows read alike, whitespace aside', () => {
+  const table = parseProcessTable([
+    '  100     1  501 Tue Oct 21 10:00:00 2026     node scripts/native-matrix/live-device.mjs paste --run /r',
+    '  101   100  501 Wed Oct  1 09:05:07 2026     /usr/bin/swift x.swift',
+    'garbage',
+  ].join('\n'));
+  assert.deepEqual(table, [
+    {pid: 100, ppid: 1, uid: 501, start: 'Tue Oct 21 10:00:00 2026', command: 'node scripts/native-matrix/live-device.mjs paste --run /r'},
+    {pid: 101, ppid: 100, uid: 501, start: 'Wed Oct 1 09:05:07 2026', command: '/usr/bin/swift x.swift'}]);
+  assert.deepEqual(parseJournal('cli\t100\tTue Oct 21 10:00:00 2026\tlive-device.mjs paste\nprobe\t-\t-\tkeystroke\n\nbad\n'), [
+    {kind: 'cli', pid: 100, start: 'Tue Oct 21 10:00:00 2026', label: 'live-device.mjs paste'},
+    {kind: 'probe', pid: null, start: null, label: 'keystroke'}]);
 });
 
+test('recoveryPlan: only journaled pids whose start time still matches are stopped; an in-flight scene up is awaited; anything else is listed, untouched', () => {
+  const checkout = '/Users/u/Developer/GitHub/cua-parity', bundle = '/Users/u/Applications/Cua Engine.app';
+  const T = 'Tue Oct 21 10:00:00 2026', LATER = 'Tue Oct 21 11:00:00 2026';
+  const row = (pid, command, start = T, uid = 501) => ({pid, ppid: 1, uid, start, command});
+  const table = [
+    row(100, 'node scripts/native-matrix/live-device.mjs paste --run /r'),
+    row(101, 'node scripts/repl-parity/scenes-mac.mjs up textedit --run /r'),
+    row(102, `node ${checkout}/bin/cua.mjs serve`),
+    row(103, 'node scripts/native-matrix/live-device.mjs menu --run /other', LATER),
+    row(104, 'node scripts/native-matrix/live-device.mjs paste --run /another-run'),
+    row(105, `${bundle}/Contents/MacOS/cua-engine --probe keystroke --user-pid 1 rk`),
+    row(106, `${bundle}/Contents/MacOS/cua-engine --probe input-source current`),
+    row(107, `${bundle}/Contents/MacOS/cua-engine --probe watch-activations`),
+    row(108, 'node scripts/native-matrix/live-device.mjs paste --run /r', T, 502),
+    row(200, 'node scripts/native-matrix/live-device.mjs recover --run /r'),
+    row(300, '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'),
+  ];
+  const journal = [
+    {kind: 'cli', pid: 100, start: T, label: 'live-device.mjs paste'},
+    {kind: 'cli', pid: 101, start: T, label: 'scenes-mac.mjs up'},
+    {kind: 'cli', pid: 102, start: T, label: 'vendor serve'},
+    // pid 103 was this run's once, but the process there now started later: another run's, or a reused pid.
+    {kind: 'cli', pid: 103, start: T, label: 'live-device.mjs menu'},
+    {kind: 'probe', pid: 105, start: T, label: 'keystroke'},
+    {kind: 'probe', pid: null, start: null, label: 'input-source'},
+    {kind: 'cli', pid: 108, start: T, label: 'live-device.mjs paste'},
+    {kind: 'cli', pid: 200, start: T, label: 'live-device.mjs recover'},
+    {kind: 'cli', pid: 999, start: T, label: 'live-device.mjs begin'},
+  ];
+  const plan = recoveryPlan(journal, table, {self: 200, ancestors: [1], uid: 501, checkout, bundle, known: [107]});
+  assert.deepEqual(plan.stop, [{pid: 100, kind: 'cli', label: 'live-device.mjs paste'}, {pid: 102, kind: 'cli', label: 'vendor serve'}, {pid: 105, kind: 'probe', label: 'keystroke'}]);
+  assert.deepEqual(plan.await, [{pid: 101, kind: 'cli', label: 'scenes-mac.mjs up'}], 'a scene startup is awaited, never killed');
+  assert.equal(plan.unresolvedProbes, 1);
+  assert.deepEqual(plan.untouched.map(p => p.pid), [103, 104, 106], 'another run\'s CLI and a probe nobody journaled are listed only');
+  assert.equal(plan.untouched[0].command, 'node scripts/native-matrix/live-device.mjs');
+  assert.deepEqual(recoveryPlan([], table, {self: 200, ancestors: [], uid: 501, checkout, bundle: null}).stop, [], 'nothing journaled, nothing signaled');
+});
+
+test('the recovery\'s bound covers its waits and every put-back step with the stop after it', () => {
+  const b = RECOVERY_BOUNDS;
+  assert.equal(putBackBoundMs(b), 8 * (b.stepMs + 2 * b.stepKillMs + 2 * b.killMs));
+  assert.equal(recoverBoundMs(b), 4 * b.killMs + b.sceneUpWaitMs + b.probeWaitMs + putBackBoundMs(b));
+});

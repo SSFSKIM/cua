@@ -18,15 +18,18 @@
 //                                      through the approved bundle's probe, read back, the saved ones restored
 //   input-source-restore               the saved source and preference restored (what put-back runs)
 //   watch start|stop --run <dir>       the approved bundle's `--probe watch-activations` around the vendor's lane
-//   putback --run <dir>                the put-back (./live-checks.mjs putBackPlan), every step tried
-//   recover --run <dir>                the harness's work still running here stopped first (device CLIs, the vendor
-//                                      serve from the harness checkout), then the put-back: what the controller runs
-//                                      after every command, on an interrupt or a timeout, and as `cleanup`
+//   putback --run <dir>                the put-back (./live-checks.mjs putBackPlan), each step in its own process,
+//                                      stopped and awaited past its bound before the next
+//   putback-step <step> --run <dir>    one put-back step (what the put-back runs as that process)
+//   recover --run <dir>                what this run's journal shows still running here (its device CLIs, the vendor
+//                                      serve, its probes; their start times matching) stopped first, a scene startup
+//                                      awaited, then the put-back: what the controller runs after every command, on
+//                                      an interrupt or a timeout, and as `cleanup`
 //
 // What leaves the device: booleans, counts, element counts, error names and the engine's bounded sentences,
 // input-source ids, bundle ids of apps that activated. No observation's text, title or value, no screenshot (each is
 // removed as soon as its answer is in), no pid of an app the run does not own.
-import {execFileSync} from 'node:child_process';
+import {execFileSync, spawn} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import * as fs from 'node:fs';
 import {homedir, tmpdir} from 'node:os';
@@ -44,8 +47,9 @@ import {engineCheck, engineClientFor, main as goldensDeviceMain, ownershipProble
 import {controllerCheckout} from './goldens.mjs';
 import {REPO_ROOT} from './goldens-install.mjs';
 import {
-  FIRST_LINE, KOREAN_2SET, alertWatch, finderCheck, outstandingHarness, compositionGuard, compositionReading, MENU_ITEMS, PASTE_TARGETS, allSelected, enablementOf, enablementVerdict, failureOf, firstLineBold, frontAppAction, inputSourceVerdict, liveRefusals,
+  FIRST_LINE, KOREAN_2SET, alertWatch, finderCheck, compositionGuard, compositionReading, MENU_ITEMS, PASTE_TARGETS, allSelected, enablementOf, enablementVerdict, failureOf, firstLineBold, frontAppAction, inputSourceVerdict, liveRefusals,
   menuBarItem, menuItemAt, minimizeButton, minimizedVerdict, parsePerContext, pasteVerdict, perContextRestore, putBackPlan, restoreTarget, textArea,
+  JOURNAL_FILE, RECOVERY_BOUNDS, isBundleProbe, parseJournal, parseProcessTable, recoveryPlan,
 } from './live-checks.mjs';
 
 const SCRIPT = fileURLToPath(import.meta.url);
@@ -517,6 +521,9 @@ export async function restoreInputSource({io, keep = false}) {
   const saved = readSaved(io.savedInputSource);
   if (!saved) return {saved: false};
   const source = restoreTarget(saved);
+  // A probe that would not exit may still switch the source: nothing is restored behind it (the record stays).
+  const stuck = io.probeStuck?.();
+  if (stuck) return {source, sourceRestored: false, perContextRestored: false, perContextWritten: false, skipped: `not restored: ${stuck}`};
   if (io.probe(['input-source', 'current'])?.id !== source) io.probe(['input-source', source]);
   const sourceRestored = io.probe(['input-source', 'current'])?.id === source;
   const plan = perContextRestore(saved.perContext ?? null, io.readPerContext());
@@ -558,21 +565,15 @@ export function saveFinderBaseline(run, io) {
 
 const BUNDLES = Object.freeze({textedit: TEXTEDIT_BUNDLE_ID, chromeForTesting: CHROME_FOR_TESTING_BUNDLE_ID, electronFixture: FIXTURE_BUNDLE_ID});
 
-// The put-back (./live-checks.mjs putBackPlan): each step tried whatever the one before answered, each bounded
-// (PUTBACK_STEP_MS; the device reads inside it carry their own timeouts). -> {plan, steps, ok}.
-export const PUTBACK_STEP_MS = 120_000;
-const capped = (promise, ms, label) => {
-  let timer;
-  return Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`${label} did not finish within ${ms / 1000} s`)), ms); })])
-    .finally(() => clearTimeout(timer));
-};
-export async function putBack({run, io}) {
+// The put-back (./live-checks.mjs putBackPlan): each step tried whatever the one before answered, each bounded. The
+// steps, as functions of the run directory's records (each read when its step starts). -> {plan, stepFns}.
+function putBackSteps(run, io) {
   const state = readState(run), frontFile = join(run, FRONTMOST_FILE), finderFile = join(run, FINDER_FILE), watchFile = join(run, WATCH_FILE);
   const front = readSaved(frontFile), finderBaseline = readSaved(finderFile);
   const plan = putBackPlan({scenesUp: Object.keys(state.scenes ?? {}), inputSourceSaved: fs.existsSync(io.savedInputSource), frontSaved: Boolean(front),
     watchSaved: fs.existsSync(watchFile), finderBaseline: Boolean(finderBaseline)});
   const runWindow = state.scenes?.finder?.window?.number ?? null;
-  const run1 = {
+  const stepFns = {
     'watch-stop': async () => {
       const watch = readSaved(watchFile);
       io.watch.stop(watch);
@@ -604,42 +605,174 @@ export async function putBack({run, io}) {
       return {ok: inFront, bundleId: front.bundleId, reactivated: out?.reactivated === true, inFront, ...(out?.reason ? {reason: out.reason} : {})};
     },
   };
-  const steps = {};
-  for (const step of plan) {
-    try { steps[step] = await capped(run1[step](), PUTBACK_STEP_MS, step); } catch (error) { steps[step] = {ok: false, error: String(error.message).slice(0, 300)}; }
-  }
-  return {plan, steps, ok: plan.every(step => steps[step].ok === true)};
+  return {plan, stepFns};
 }
 
-// The recovery (a command cut off, interrupted or timed out on the controller, or `live.mjs cleanup` after a crash):
-// first whatever the harness still runs here is stopped (its device CLIs and the vendor serve from the harness checkout,
-// never the caller, its ancestors or an owner's cua; SIGTERM, then SIGKILL after RECOVER_KILL_MS), so nothing races the
-// restore; then the put-back, which stops the watcher and the engine. -> {killed, survivors, putBack, ok}.
-export const RECOVER_KILL_MS = 3_000;
-export async function recover({run, io}) {
-  const outstanding = io.outstanding();
-  for (const p of outstanding) io.signal(p.pid, 'SIGTERM');
-  const t0 = io.now();
-  while (outstanding.some(p => io.processRuns(p.pid)) && io.now() - t0 < RECOVER_KILL_MS) await io.sleep(100);
-  for (const p of outstanding) if (io.processRuns(p.pid)) io.signal(p.pid, 'SIGKILL');
-  await io.sleep(outstanding.length ? 200 : 0);
-  const survivors = outstanding.filter(p => io.processRuns(p.pid)).map(p => p.command.split(' ').slice(0, 3).join(' '));
-  const out = await putBack({run, io});
-  return {killed: outstanding.map(p => p.command.split(' ').slice(0, 3).join(' ')), survivors, putBack: out, ok: survivors.length === 0 && out.ok};
+// Whether `promise` settles within `ms` (a real timer, cleared once it does).
+const settlesWithin = (promise, ms) => {
+  let timer;
+  return Promise.race([promise.then(() => true, () => true), new Promise(resolve => { timer = setTimeout(resolve, ms, false); })]).finally(() => clearTimeout(timer));
+};
+// A step run in this process: past its bound it cannot be stopped (its promise runs on), so it ends the put-back.
+const inProcessStep = fn => { const result = Promise.resolve().then(fn); return {result, exited: result.then(() => {}, () => {}), kill: () => {}}; };
+// Stops a step's process: SIGTERM, then SIGKILL, each awaited stepKillMs. -> whether it exited.
+async function stopStep(handle, bounds) {
+  handle.kill('SIGTERM');
+  if (await settlesWithin(handle.exited, bounds.stepKillMs)) return true;
+  handle.kill('SIGKILL');
+  return settlesWithin(handle.exited, bounds.stepKillMs);
+}
+
+// The put-back: each planned step in its own process (io.startStep: live-device.mjs putback-step, its own process group),
+// bounded by stepMs. A step past its bound is stopped, its exit awaited, and the probes the run journaled stopped,
+// before the next step runs; a step that cannot be stopped ends the put-back there (ok false, a line for the owner):
+// no later step, the front app's above all, runs behind an action that may still land. -> {plan, steps, ok, manual?}.
+export async function putBack({run, io, bounds = RECOVERY_BOUNDS}) {
+  const {plan, stepFns} = putBackSteps(run, io);
+  const steps = {};
+  let manual = null;
+  for (const step of plan) {
+    if (manual) { steps[step] = {ok: false, skipped: `not run: ${manual}`}; continue; }
+    const handle = io.startStep ? io.startStep(step) : inProcessStep(stepFns[step]);
+    // The probes a step that failed or overran left running are stopped too before the next step.
+    const probesStopped = async () => (await stopProcesses(ownedNow(run, io).stop.filter(e => e.kind === 'probe'), io, bounds)).length === 0;
+    if (await settlesWithin(handle.result, bounds.stepMs)) {
+      steps[step] = await handle.result.then(out => (out?.error && out.ok === undefined ? {ok: false, error: out.error} : out),
+        error => ({ok: false, error: String(error.message).slice(0, 300)}));
+      if (steps[step].error && !await probesStopped()) manual = `a probe the put-back's ${step} step launched did not exit and may still act: check the Mac by hand (input source, front app), then run cleanup again`;
+      continue;
+    }
+    const stopped = await stopStep(handle, bounds) && await probesStopped();
+    steps[step] = {ok: false, error: `${step} did not finish within ${bounds.stepMs / 1000} s; ${stopped ? 'its process was stopped' : 'its process could not be stopped'}`};
+    if (!stopped) manual = `the put-back's ${step} step could not be stopped and may still act: check the Mac by hand (scenes, input source, front app), then run cleanup again`;
+  }
+  return {plan, steps, ok: plan.every(step => steps[step].ok === true), ...(manual ? {manual} : {})};
+}
+
+// The recovery's reading of what this run owns (live-checks.mjs recoveryPlan), the watcher left to the put-back.
+const ownedNow = (run, io) => recoveryPlan(io.journal(), io.processes(), {...io.identity(), known: [readSaved(join(run, WATCH_FILE))?.pid].filter(Number.isInteger)});
+// Waits up to `ms` (io's clock) while `test()` holds. -> whether it stopped holding.
+async function whileHolds(test, io, ms) {
+  for (const t0 = io.now(); test();) { if (io.now() - t0 >= ms) return !test(); await io.sleep(100); }
+  return true;
+}
+// SIGTERM, then SIGKILL, each awaited killMs. -> the ones still running.
+async function stopProcesses(list, io, bounds) {
+  if (!list.length) return [];
+  const running = () => list.filter(p => io.processRuns(p.pid));
+  for (const p of list) io.signal(p.pid, 'SIGTERM');
+  if (await whileHolds(() => running().length > 0, io, bounds.killMs)) return [];
+  for (const p of running()) io.signal(p.pid, 'SIGKILL');
+  await whileHolds(() => running().length > 0, io, bounds.killMs);
+  return running();
+}
+
+// The recovery (a command cut off, interrupted or timed out on the controller, or `live.mjs cleanup` after a crash). It
+// acts only on what this run provably owns (its journal's pids whose start time still matches), and nothing restores
+// until what it stopped has exited: first this run's CLIs and serve (SIGTERM, then SIGKILL); a scene startup awaited,
+// never killed (its scene is recorded only once its window is there); then the probes journaled meanwhile, stopped the
+// same way, and a probe whose pid was never resolved waited for (any probe of the bundle, bounded); then the put-back.
+// Anything still running, or a startup still under way, leaves everything unrestored with a line for the owner. What
+// looks like the harness's but is not journaled is listed, never touched.
+// -> {killed, survivors, awaited, probeWait, untouched, putBack, ok, manual?}.
+export async function recover({run, io, bounds = RECOVERY_BOUNDS}) {
+  const first = ownedNow(run, io);
+  const survivors = await stopProcesses(first.stop, io, bounds);
+  const awaited = [];
+  for (const up of first.await) awaited.push({label: up.label, exited: await whileHolds(() => io.processRuns(up.pid), io, bounds.sceneUpWaitMs)});
+  const second = ownedNow(run, io), handled = new Set(first.stop.map(p => p.pid));
+  const late = second.stop.filter(p => !handled.has(p.pid));
+  survivors.push(...await stopProcesses(late, io, bounds));
+  let probeWait = null;
+  if (second.unresolvedProbes) {
+    const {bundle, uid} = io.identity(), watchPid = readSaved(join(run, WATCH_FILE))?.pid;
+    const probes = () => io.processes().filter(p => p.uid === uid && p.pid !== watchPid && isBundleProbe(p.command, bundle));
+    const waited = probes().length > 0;
+    await whileHolds(() => probes().length > 0, io, bounds.probeWaitMs);
+    probeWait = {unresolved: second.unresolvedProbes, waited, remaining: probes().length};
+  }
+  const result = {killed: [...first.stop, ...late].map(p => p.label), survivors: survivors.map(p => p.label), awaited, probeWait, untouched: second.untouched};
+  const blocking = [
+    ...result.survivors.map(label => `${label} outlived SIGKILL`),
+    ...awaited.filter(a => !a.exited).map(a => `${a.label} is still running after ${bounds.sceneUpWaitMs / 1000} s`),
+    ...(probeWait?.remaining ? [`${probeWait.remaining} probe of the engine bundle still running after ${bounds.probeWaitMs / 1000} s`] : []),
+  ];
+  if (blocking.length) {
+    return {...result, putBack: null, ok: false,
+      manual: `nothing was restored: ${blocking.join('; ')}. Once it has exited (or after stopping it by hand), run cleanup again`};
+  }
+  const out = await putBack({run, io, bounds});
+  return {...result, putBack: out, ok: out.ok, ...(out.manual ? {manual: out.manual} : {})};
+}
+
+// The journal (live-checks.mjs JOURNAL_FILE): a row appended for a process this run started, its start time read here
+// unless known (a process gone before it is read gets none, and so never matches).
+const processStart = pid => {
+  try { return execFileSync('/bin/ps', ['-o', 'lstart=', '-p', String(pid)], {encoding: 'utf8', env: {...process.env, LC_ALL: 'C'}, timeout: DEVICE_READ_MS}).trim() || null; }
+  catch { return null; }
+};
+export function journalProcess(run, {kind, pid, start, label}) {
+  const at = pid ? (start ?? processStart(pid)) : null;
+  fs.appendFileSync(join(run, JOURNAL_FILE), `${kind}\t${pid ?? '-'}\t${at ?? '-'}\t${label}\n`, {mode: 0o600});
+}
+const readJournal = run => { try { return parseJournal(fs.readFileSync(join(run, JOURNAL_FILE), 'utf8')); } catch (error) { if (error.code === 'ENOENT') return []; throw error; } };
+
+// A child process in its own process group, so a stop reaches what it runs (its reads and writes); its answer is its
+// last JSON line. -> {pid, result, exited, kill(signal)}.
+export function childHandle(command, args) {
+  const child = spawn(command, args, {stdio: ['ignore', 'pipe', 'ignore'], detached: true});
+  let out = '';
+  child.stdout.on('data', chunk => { out += chunk; });
+  const exited = new Promise(resolve => { child.once('exit', resolve); child.once('error', resolve); });
+  const result = new Promise((resolve, reject) => {
+    child.once('error', reject);
+    child.once('close', (code, signal) => {
+      try { resolve(JSON.parse(out.trim().split('\n').at(-1))); } catch { reject(new Error(`the step process ended (${signal ?? code}) without an answer`)); }
+    });
+  });
+  return {pid: child.pid, result, exited, kill: signal => { try { process.kill(-child.pid, signal); } catch {} }};
 }
 
 // ---- The probe -------------------------------------------------------------------------------------------------------
 
-// The approved bundle's `--probe <args>` as its own instance (UserProbe: `open -n -g -W --stdout <file> --stderr <file>`),
-// run to completion. -> its last JSON line.
-export function runProbe(bundle, args, {exec = execFileSync} = {}) {
+// The approved bundle's `--probe <args>` as its own instance (UserProbe's `open -n -g --stdout <file> --stderr <file>`),
+// launched without -W so its own process is known: its pid is the bundle's one new probe of that name after the launch,
+// journaled with its start time (or `-` when it could not be resolved) so the recovery can stop it. Awaited to its exit
+// (PROBE_MS); past that it is killed and its exit confirmed before the error, so nothing restores behind it; one that
+// will not exit throws marked `stuck`. -> its last JSON line.
+export const PROBE_MS = 60_000;
+const PROBE_IDENTIFY_MS = 5_000, PROBE_POLL_MS = 50;
+const syncSleep = ms => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+const lastLine = file => { try { return JSON.parse(fs.readFileSync(file, 'utf8').trim().split('\n').at(-1)); } catch { return undefined; } };
+export function runProbe(bundle, args, {exec = execFileSync, run = null, table = () => processTable(), alive = processRuns, kill = (pid, signal) => process.kill(pid, signal),
+  sleep = syncSleep, now = Date.now, killMs = RECOVERY_BOUNDS.killMs} = {}) {
   if (!args.every(a => /^[A-Za-z0-9._,-]+$/.test(a) || a === '\n')) throw new Error('a probe argument is a name, a number list, an input-source id or a Return');
+  const uid = process.getuid();
+  const probes = () => table().filter(p => p.uid === uid && isBundleProbe(p.command, bundle) && p.command.includes(` --probe ${args[0]}`));
+  const before = new Set(probes().map(p => p.pid));
   const scratch = fs.mkdtempSync(join(tmpdir(), 'cua-live-probe-'));
   try {
     const out = join(scratch, 'out.json'), err = join(scratch, 'err.txt');
-    exec('/usr/bin/open', ['-n', '-g', '-W', '--stdout', out, '--stderr', err, '-a', bundle, '--args', '--probe', ...args], {stdio: 'ignore', timeout: 60_000, killSignal: 'SIGKILL'});
-    const line = fs.readFileSync(out, 'utf8').trim().split('\n').at(-1);
-    return JSON.parse(line);
+    exec('/usr/bin/open', ['-n', '-g', '--stdout', out, '--stderr', err, '-a', bundle, '--args', '--probe', ...args], {stdio: 'ignore', timeout: 15_000});
+    const t0 = now();
+    let probe = null;
+    while (!probe && now() - t0 < PROBE_IDENTIFY_MS) {
+      probe = probes().find(p => !before.has(p.pid)) ?? null;
+      if (!probe) { if (lastLine(out) !== undefined) break; sleep(PROBE_POLL_MS); }
+    }
+    if (run) journalProcess(run, {kind: 'probe', pid: probe?.pid ?? null, start: probe?.start ?? null, label: args[0]});
+    const done = () => (probe ? !alive(probe.pid) : lastLine(out) !== undefined);
+    while (!done() && now() - t0 < PROBE_MS) sleep(PROBE_POLL_MS);
+    if (!done()) {
+      if (!probe) throw Object.assign(new Error(`the ${args[0]} probe did not finish within ${PROBE_MS / 1000} s and its process was never identified`), {stuck: true});
+      try { kill(probe.pid, 'SIGKILL'); } catch {}
+      for (const k0 = now(); alive(probe.pid) && now() - k0 < killMs;) sleep(PROBE_POLL_MS);
+      if (alive(probe.pid)) throw Object.assign(new Error(`the ${args[0]} probe (pid ${probe.pid}) did not exit after SIGKILL`), {stuck: true});
+      throw new Error(`the ${args[0]} probe did not finish within ${PROBE_MS / 1000} s; its process was stopped`);
+    }
+    const answer = lastLine(out);
+    if (answer === undefined) throw new Error(`the ${args[0]} probe printed no answer`);
+    return answer;
   } finally { fs.rmSync(scratch, {recursive: true, force: true}); }
 }
 
@@ -712,13 +845,19 @@ const KEYBOARD_LAYOUT_SCRIPT = fileURLToPath(new URL('./keyboard-layout.swift', 
 export function keyboardLayout({exec = execFileSync} = {}) {
   return JSON.parse(exec('/usr/bin/swift', [KEYBOARD_LAYOUT_SCRIPT], {encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: SWIFT_READ_MS}));
 }
-// The harness's own processes still running here (live-checks.mjs outstandingHarness), from one ps reading.
-export function outstandingProcesses({exec = execFileSync} = {}) {
-  const ps = exec('/bin/ps', ['-axo', 'pid=,ppid=,uid=,command='], {encoding: 'utf8', timeout: DEVICE_READ_MS, maxBuffer: 16 * 1024 * 1024});
-  const parents = new Map(ps.split('\n').map(l => /^\s*(\d+)\s+(\d+)/.exec(l)).filter(Boolean).map(m => [Number(m[1]), Number(m[2])]));
+// Every process here with its start time (ps's lstart under the C locale, as the journal records it).
+export function processTable({exec = execFileSync} = {}) {
+  return parseProcessTable(exec('/bin/ps', ['-axo', 'pid=,ppid=,uid=,lstart=,command='],
+    {encoding: 'utf8', env: {...process.env, LC_ALL: 'C'}, timeout: DEVICE_READ_MS, maxBuffer: 16 * 1024 * 1024}));
+}
+// Who the recovery is: itself and its ancestors (never signaled), its user, the harness checkout, the approved bundle.
+function identity() {
+  const parents = new Map(processTable().map(p => [p.pid, p.ppid]));
   const ancestors = [];
   for (let pid = process.ppid; pid > 1 && !ancestors.includes(pid); pid = parents.get(pid) ?? 1) ancestors.push(pid);
-  return outstandingHarness(ps, {self: process.pid, ancestors, uid: process.getuid(), checkout: REPO_ROOT});
+  let bundle = null;
+  try { bundle = probeBundle(); } catch {}
+  return {self: process.pid, ancestors, uid: process.getuid(), checkout: REPO_ROOT, bundle};
 }
 const processRuns = pid => { if (!Number.isInteger(pid) || pid <= 1) return false; try { process.kill(pid, 0); return true; } catch (error) { return error.code === 'EPERM'; } };
 
@@ -727,14 +866,21 @@ const approvedBundle = () => {
   if (!installed) throw new Error('no approved engine on this Mac: build and approve it first (cua engine build, cua engine approve)');
   return installed.bundlePath;
 };
+// The bundle's real path, as a launched probe's command line shows it.
+const probeBundle = () => fs.realpathSync(approvedBundle());
 
-export const defaultIo = run => ({
+export const defaultIo = run => {
+  let stuckProbe = null;
+  return {
   client: () => engineClientFor(approvedBundle()),
   frontmost: () => frontmostProcess(),
   windowOnScreen: (pid, number) => appWindows(pid).find(w => w.number === number)?.onScreen ?? null,
   activate: id => activateScene(id, {run}),
   watch: {start: () => startWatch(approvedBundle(), run), stop: watch => stopWatch(watch)},
-  probe: args => runProbe(approvedBundle(), args),
+  probe: args => {
+    try { return runProbe(probeBundle(), args, {run}); } catch (error) { if (error.stuck) stuckProbe = error.message; throw error; }
+  },
+  probeStuck: () => stuckProbe,
   readPerContext: readPerContextLive,
   clipboard: () => clipboardDigest(),
   windows: () => systemWindows(),
@@ -743,7 +889,15 @@ export const defaultIo = run => ({
   finderWindows: () => { const pid = runningApps(FINDER_BUNDLE_ID)[0]?.pid; return pid ? appWindows(pid).filter(w => w.onScreen).map(w => w.number) : []; },
   finderPreferences: () => readFinderPreferences(),
   finderSavedPreferences: () => readSavedPreferences(),
-  outstanding: () => outstandingProcesses(),
+  journal: () => (run ? readJournal(run) : []),
+  processes: () => processTable(),
+  identity,
+  // Each put-back step in its own process (this script's putback-step), journaled.
+  startStep: step => {
+    const handle = childHandle(process.execPath, [SCRIPT, 'putback-step', step, '--run', run]);
+    if (handle.pid) journalProcess(run, {kind: 'cli', pid: handle.pid, label: `putback-step ${step}`});
+    return handle;
+  },
   processRuns,
   signal: (pid, signal) => { try { process.kill(pid, signal); } catch {} },
   writePerContext: writePerContextLive,
@@ -762,7 +916,8 @@ export const defaultIo = run => ({
   reactivate: front => reactivateApp(front),
   sleep: sleepFor,
   now: Date.now,
-});
+  };
+};
 
 function parse(argv) {
   const [command, ...rest] = argv, flags = {}, positional = [];
@@ -771,7 +926,7 @@ function parse(argv) {
   }
   return {command, positional, flags};
 }
-const USAGE = 'usage: live-device.mjs begin --run <dir> --commit <sha> | minimized|enablement|paste|putback|recover --run <dir> | menu --run <dir> [--menu-activation off|on] | watch start|stop --run <dir> | input-source | input-source-restore';
+const USAGE = 'usage: live-device.mjs begin --run <dir> --commit <sha> | minimized|enablement|paste|putback|recover --run <dir> | putback-step <step> --run <dir> | menu --run <dir> [--menu-activation off|on] | watch start|stop --run <dir> | input-source [--run <dir>] | input-source-restore';
 const runDir = flags => {
   if (!flags.run || !isAbsolute(flags.run)) throw new Error('--run <absolute directory> is required');
   fs.mkdirSync(flags.run, {recursive: true, mode: 0o700});
@@ -786,10 +941,10 @@ const sceneRecord = (run, id) => {
 export async function main(argv, {io: given = {}} = {}) {
   const {command, positional, flags} = parse(argv);
   if (command === 'input-source' || command === 'input-source-restore') {
-    const io = {...defaultIo(null), ...given};
+    const io = {...defaultIo(flags.run ? runDir(flags) : null), ...given};
     return command === 'input-source' ? inputSourceCheck({io}) : restoreInputSource({io});
   }
-  if (!['begin', 'minimized', 'menu', 'paste', 'enablement', 'putback', 'recover', 'watch'].includes(command)) throw new Error(USAGE);
+  if (!['begin', 'minimized', 'menu', 'paste', 'enablement', 'putback', 'putback-step', 'recover', 'watch'].includes(command)) throw new Error(USAGE);
   if (command === 'menu' && flags['menu-activation'] !== undefined && !['off', 'on'].includes(flags['menu-activation'])) throw new Error(USAGE);
   const run = runDir(flags), io = {...defaultIo(run), ...given};
   const screenshots = join(run, SCREENSHOT_DIR);
@@ -799,6 +954,11 @@ export async function main(argv, {io: given = {}} = {}) {
   }
   if (command === 'putback') return putBack({run, io});
   if (command === 'recover') return recover({run, io});
+  if (command === 'putback-step') {
+    const {stepFns} = putBackSteps(run, io);
+    if (!stepFns[positional[0]]) throw new Error(USAGE);
+    return stepFns[positional[0]]();
+  }
   if (command === 'watch') {
     if (positional[0] === 'start') { const watch = io.watch.start(); return {watching: true, pid: watch.pid}; }
     if (positional[0] !== 'stop') throw new Error(USAGE);

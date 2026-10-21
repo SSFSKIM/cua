@@ -9,7 +9,9 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {MARKER, parseCell} from '../../scripts/native-baseline/cells.mjs';
 import {EFFECT, MENU_BAR, MENU_ITEM, SELECT_FIRST_LINE} from '../../scripts/native-matrix/live-cells.mjs';
-import {SSH_OPTIONS, boundedExec, checkPassed, dryConnect, dryExec, liveOps, parseCommand, runLive, stepTimeout} from '../../scripts/native-matrix/live.mjs';
+import {SSH_OPTIONS, boundedExec, checkPassed, dryConnect, dryExec, journaledScript, liveOps, parseCommand, runLive, stepTimeout} from '../../scripts/native-matrix/live.mjs';
+import {JOURNAL_FILE, parseJournal, putBackBoundMs, recoverBoundMs} from '../../scripts/native-matrix/live-checks.mjs';
+import {execFileSync} from 'node:child_process';
 
 const scratches = [];
 const scratch = () => { const dir = fs.realpathSync(fs.mkdtempSync(join(tmpdir(), 'cua-live-'))); scratches.push(dir); return dir; };
@@ -189,7 +191,7 @@ test('menu: the vendor home prepared and checked first, cua\'s lane, a fresh Tex
   assert.deepEqual(lane.items.selectAll.front[0], {bundleId: 'com.apple.finder', user: true, textedit: false});
   assert.deepEqual(lane.activations, [{kind: 'activated', bundleId: 'com.apple.TextEdit', scene: true}]);
   assert.equal(comparison.off.decision, 'no activation: cua reads the responder-chain items enabled and they act without it');
-  assert.equal(comparison.on.decision, comparison.off.decision);
+  assert.equal(comparison.on.decision, 'with activation: cua\'s items act with route 3\'s activation around the press');
   assert.equal(r.vendor.engineAttestation.engine, 'vendor');
   assert.equal(fs.existsSync(join(out, 'preparation.json')), false, 'a cleaned home leaves no preparation behind');
   assert.doesNotMatch(JSON.stringify(r), /Line 0/, 'no document text in the result');
@@ -266,7 +268,8 @@ test('the dry run prints every device command through the real ssh wrapper, in o
     "live-device.mjs 'watch' 'stop'", 'prepare.mjs cleanup', "live-device.mjs 'recover'"];
   let at = -1;
   for (const needle of order) { const next = unquoted.indexOf(needle, at + 1); assert.ok(next > at, `${needle} in order`); at = next; }
-  assert.match(text, /^ssh mini 'cd \$HOME\/Developer\/GitHub\/cua-parity && node scripts\/native-matrix\/live-device\.mjs '\\''begin'\\''/m);
+  assert.match(text, /^ssh mini 'cd \$HOME\/Developer\/GitHub\/cua-parity && <journaled> && exec node scripts\/native-matrix\/live-device\.mjs '\\''begin'\\''/m);
+  assert.doesNotMatch(text, /&& node /, 'every device process the run starts is journaled');
 });
 
 test('the dry run of each other command walks its sequence to the put-back', async () => {
@@ -349,7 +352,43 @@ test('boundedExec: every ssh gets ConnectTimeout and ServerAlive and its step\'s
   assert.equal(seen[0].options.killSignal, 'SIGKILL');
   assert.equal(seen[0].options.encoding, 'utf8');
   assert.deepEqual(seen[3], {command: 'git', args: ['status'], options: {}});
-  assert.equal(stepTimeout("node scripts/native-matrix/live-device.mjs 'recover' '--run' '/r'"), 660_000);
+  assert.ok(stepTimeout("node scripts/native-matrix/live-device.mjs 'recover' '--run' '/r'") > recoverBoundMs(), 'the controller outwaits the recovery\'s own bounds');
+  assert.ok(stepTimeout("node scripts/native-matrix/live-device.mjs 'putback' '--run' '/r'") > putBackBoundMs());
+});
+
+test('journaledScript: the remote shell journals its own pid and start time, then execs the device CLI or the serve in its place', () => {
+  const cli = "export PATH=x\ncd $HOME/Developer/GitHub/cua-parity && node scripts/repl-parity/scenes-mac.mjs 'up' 'textedit' '--run' '/r'";
+  const journaled = journaledScript(cli, '/r');
+  assert.match(journaled, /^export PATH=x\ncd \$HOME\/Developer\/GitHub\/cua-parity && \/bin\/mkdir -p -m 700 '\/r' && printf /);
+  assert.match(journaled, /"\$\$" "\$\(LC_ALL=C \/bin\/ps -o lstart= -p \$\$\)" 'scenes-mac\.mjs up' >> '\/r\/live-journal\.tsv' && exec node scripts\/repl-parity\/scenes-mac\.mjs 'up'/);
+  const serve = "export PATH=x\ncd '/c' && exec env -i PATH=\"$PATH\" CUA_HOME='/h' node '/c/scripts/native-baseline/serve.mjs'";
+  assert.match(journaledScript(serve, '/r'), /'vendor serve' >> '\/r\/live-journal\.tsv' && exec env -i PATH=/);
+  assert.equal(journaledScript('printf %s "$HOME"', '/r'), 'printf %s "$HOME"', 'a shell step that execs no node is not a process the run leaves');
+  assert.equal(journaledScript(cli, null), cli);
+});
+
+test('journaledScript, run by a real shell: the journaled pid and start time are the exec\'d process\'s own', () => {
+  const run = scratch(), shell = fs.existsSync('/bin/zsh') ? '/bin/zsh' : '/bin/sh';
+  const probe = "node -e \"const {execFileSync} = require('node:child_process'); console.log(JSON.stringify({pid: process.pid, start: execFileSync('/bin/ps', ['-o', 'lstart=', '-p', String(process.pid)], {encoding: 'utf8', env: {...process.env, LC_ALL: 'C'}}).trim()}))\"";
+  const out = JSON.parse(execFileSync(shell, ['-c', journaledScript(`cd ${run} && ${probe}`, join(run, 'device-run'))], {encoding: 'utf8'}));
+  const [row] = parseJournal(fs.readFileSync(join(run, 'device-run', JOURNAL_FILE), 'utf8'));
+  assert.equal(row.pid, out.pid);
+  assert.equal(row.start, out.start.split(/\s+/).join(' '));
+  assert.equal(fs.statSync(join(run, 'device-run')).mode & 0o777, 0o700);
+});
+
+test('liveOps journals every device CLI and the serve once the run is named; the input-source check names it too', async () => {
+  const seen = [];
+  const exec = (command, args) => { seen.push(args.at(-1)); return '{"ok":true}\n'; };
+  const ops = liveOps('mini', {exec});
+  ops.live(['minimized', '--run', '/r']);
+  ops.journalTo('/r');
+  ops.live(['minimized', '--run', '/r']);
+  assert.doesNotMatch(seen[0], /live-journal/);
+  assert.match(seen[1], /'live-device\.mjs minimized' >> '\/r\/live-journal\.tsv' && exec node /);
+  const device = fakeDevice(), out = scratch();
+  await runLive({command: 'input-source', device: 'mini', out}, io(device));
+  assert.deepEqual(device.calls.find(c => c[1] === 'input-source'), ['live', 'input-source', '--run', result(out).runDir]);
 });
 
 test('the dry run\'s menu lanes carry the setting their flags asked for', async () => {

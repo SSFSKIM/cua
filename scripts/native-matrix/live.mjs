@@ -66,7 +66,7 @@ import {checkoutCli, checkVendorPreflight, connectVendorLane, controllerCheckout
 import {BIND} from './goldens-cells.mjs';
 import {REPO_ROOT} from './goldens-install.mjs';
 import {EFFECT, MENU_BAR, MENU_ITEM, SELECT_FIRST_LINE} from './live-cells.mjs';
-import {MENU_ITEMS, menuComparison, menuSettingVerdict} from './live-checks.mjs';
+import {JOURNAL_FILE, MENU_ITEMS, menuComparison, menuSettingVerdict, putBackBoundMs, recoverBoundMs} from './live-checks.mjs';
 import {SCENES} from '../repl-parity/scenes-mac.mjs';
 
 const SCRIPT = fileURLToPath(import.meta.url);
@@ -83,34 +83,55 @@ const LIVE_DEVICE = 'scripts/native-matrix/live-device.mjs';
 export const SSH_OPTIONS = Object.freeze(['-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=4']);
 // Each device step's bound, by its CLI and command (the remote script names them); a step past its bound is killed
 // here (SIGKILL on the local ssh) and the controller's recovery then stops whatever still runs on the device before it
-// restores anything.
+// restores anything. The put-back's and the recovery's outwait their own bounds on the device (live-checks.mjs
+// RECOVERY_BOUNDS), so the controller never gives up on one that is still within them.
+const BOUND_MARGIN_MS = 60_000;
 const STEP_TIMEOUTS = Object.freeze({
   'live-device.mjs begin': 120_000, 'live-device.mjs minimized': 240_000, 'live-device.mjs menu': 240_000, 'live-device.mjs paste': 420_000,
-  'live-device.mjs enablement': 180_000, 'live-device.mjs input-source': 180_000, 'live-device.mjs watch': 60_000, 'live-device.mjs putback': 600_000,
-  'live-device.mjs recover': 660_000, 'scenes-mac.mjs up': 180_000, 'scenes-mac.mjs down': 180_000, 'scenes-mac.mjs activate': 60_000,
+  'live-device.mjs enablement': 180_000, 'live-device.mjs input-source': 180_000, 'live-device.mjs watch': 60_000, 'live-device.mjs putback': putBackBoundMs() + BOUND_MARGIN_MS,
+  'live-device.mjs recover': recoverBoundMs() + BOUND_MARGIN_MS, 'scenes-mac.mjs up': 180_000, 'scenes-mac.mjs down': 180_000, 'scenes-mac.mjs activate': 60_000,
   'scenes-mac.mjs frontmost': 60_000, 'prepare.mjs prepare': 300_000, 'prepare.mjs cleanup': 300_000,
 });
 const DEFAULT_STEP_MS = 180_000, PREFLIGHT_MS = 300_000, HOME_MS = 30_000;
+const stepOf = script => /(live-device\.mjs|scenes-mac\.mjs|prepare\.mjs) '?([\w-]+)'?/.exec(script);
 export function stepTimeout(script) {
   if (/hostIdentity/.test(script)) return PREFLIGHT_MS;
   if (/printf %s "\$HOME"/.test(script)) return HOME_MS;
-  const match = /(live-device\.mjs|scenes-mac\.mjs|prepare\.mjs) '?([\w-]+)'?/.exec(script);
+  const match = stepOf(script);
   return (match && STEP_TIMEOUTS[`${match[1]} ${match[2]}`]) ?? DEFAULT_STEP_MS;
 }
-// An exec whose every ssh carries SSH_OPTIONS and its step's timeout.
-export function boundedExec(exec) {
+// A device step's remote script with its process journaled in the run's journal (live-checks.mjs JOURNAL_FILE) before
+// it starts: the remote shell writes its own pid and start time (ps's lstart, C locale), then execs the device CLI or
+// the vendor serve in its place, so that pid and start time are the process's own and the recovery can tell it from
+// another run's or a reused pid. A script that execs no node (a read of $HOME, the preflight) is left as it is.
+const NODE_LAUNCH = /&& (exec env |node )/;
+export function journaledScript(script, run) {
+  if (!run || !NODE_LAUNCH.test(script)) return script;
+  const step = stepOf(script);
+  const label = step ? `${step[1]} ${step[2]}` : /serve\.mjs|cua\.mjs'? serve/.test(script) ? 'vendor serve' : 'device node';
+  const record = `/bin/mkdir -p -m 700 ${quote(run)} && printf 'cli\\t%s\\t%s\\t%s\\n' "$$" "$(LC_ALL=C /bin/ps -o lstart= -p $$)" ${quote(label)} >> ${quote(`${run}/${JOURNAL_FILE}`)}`;
+  return script.replace(NODE_LAUNCH, (_, launch) => `&& ${record} && exec ${launch === 'node ' ? 'node ' : 'env '}`);
+}
+// An exec whose every ssh carries SSH_OPTIONS and its step's timeout, its node launch journaled once `journal.run` is set.
+export function boundedExec(exec, journal = {run: null}) {
   return (command, args, options = {}) => (command !== 'ssh' ? exec(command, args, options)
-    : exec(command, [...SSH_OPTIONS, ...args], {...options, timeout: options.timeout ?? stepTimeout(String(args.at(-1))), killSignal: 'SIGKILL'}));
+    : exec(command, [...SSH_OPTIONS, ...args.slice(0, -1), journaledScript(String(args.at(-1)), journal.run)],
+      {...options, timeout: options.timeout ?? stepTimeout(String(args.at(-1))), killSignal: 'SIGKILL'}));
 }
 
 // The goldens recorder's device steps (scenes, the vendor home, the vendor preflight and serve) plus this hold's device
-// CLI, all through one bounded exec; the vendor serve's ssh carries the same options.
+// CLI, all through one bounded exec; the vendor serve's ssh carries the same options and is journaled as well.
+// `journalTo(run)` names the run whose journal records each device process from then on.
 export function liveOps(device, {exec = execFileSync} = {}) {
-  const bounded = boundedExec(exec);
+  const journal = {run: null};
+  const bounded = boundedExec(exec, journal);
   const base = deviceOps(device, {exec: bounded});
   const {cli} = checkoutCli(device, {exec: bounded});
-  return {...base, live: args => cli(LIVE_DEVICE, args, {answersOnFailure: true}),
-    serveSpec: spec => { const serve = base.serveSpec(spec); return serve.command === 'ssh' ? {...serve, args: [...SSH_OPTIONS, ...serve.args]} : serve; }};
+  return {...base, live: args => cli(LIVE_DEVICE, args, {answersOnFailure: true}), journalTo: run => { journal.run = run; },
+    serveSpec: spec => {
+      const serve = base.serveSpec(spec);
+      return serve.command === 'ssh' ? {...serve, args: [...SSH_OPTIONS, ...serve.args.slice(0, -1), journaledScript(serve.args.at(-1), journal.run)]} : serve;
+    }};
 }
 
 // ---- the commands -----------------------------------------------------------------------------------------------------
@@ -136,6 +157,7 @@ export async function runLive(options, io) {
   result.controller = controller;
   const run = options.run ?? `${ops.home()}/${DEFAULT_RUN}`;
   result.runDir = run;
+  ops.journalTo?.(run);
   const exitCode = code => (interrupt.signal ? (interrupt.signal === 'SIGINT' ? 130 : 143) : code);
 
   if (command === 'cleanup') {
@@ -149,7 +171,7 @@ export async function runLive(options, io) {
     } else finish(result, ops, run, null);
     result.complete = result.pass = result.recovery?.ok === true && !result.preparationCleanup?.error;
     write();
-    log(`cleanup ${result.complete ? 'done' : `INCOMPLETE: ${JSON.stringify(result.putBack?.steps ?? result.recovery)}`}`);
+    log(`cleanup ${result.complete ? 'done' : `INCOMPLETE: ${result.recovery?.manual ?? JSON.stringify(result.putBack?.steps ?? result.recovery)}`}`);
     return result.complete ? 0 : 1;
   }
 
@@ -201,6 +223,7 @@ export async function runLive(options, io) {
     result.finished = new Date().toISOString();
     write();
   }
+  if (result.recovery?.manual) log(`the recovery needs you: ${result.recovery.manual}`);
   log(`${command} ${result.complete ? (result.pass ? 'PASS' : 'complete, NOT PASSED') : 'INCOMPLETE'}${dryRun ? ' (dry run: the answers were made up, nothing ran)' : dir ? `: ${join(dir, 'result.json')}` : ''}`);
   return exitCode(result.pass ? 0 : 1);
 }
@@ -210,7 +233,8 @@ export async function runLive(options, io) {
 function finish(result, ops, run, saved) {
   try {
     const recovery = ops.live(['recover', '--run', run]);
-    result.recovery = {ok: recovery?.ok === true, killed: recovery?.killed ?? [], survivors: recovery?.survivors ?? []};
+    result.recovery = {ok: recovery?.ok === true, killed: recovery?.killed ?? [], survivors: recovery?.survivors ?? [], awaited: recovery?.awaited ?? [],
+      probeWait: recovery?.probeWait ?? null, untouched: recovery?.untouched ?? [], ...(recovery?.manual ? {manual: recovery.manual} : {})};
     result.putBack = recovery?.putBack ?? null;
   } catch (error) { result.recovery = {ok: false, error: error.message}; result.putBack = null; }
   try {
@@ -247,7 +271,7 @@ export const CHECKS = {
     up(ctx, 'textedit'); await ctx.checkpoint(); up(ctx, 'finder'); activate(ctx, 'finder'); await ctx.checkpoint();
     return ctx.ops.live(['paste', '--run', ctx.run]);
   },
-  'input-source': async ctx => ctx.ops.live(['input-source']),
+  'input-source': async ctx => ctx.ops.live(['input-source', '--run', ctx.run]),
   enablement: async ctx => { up(ctx, 'chrome'); await ctx.checkpoint(); return ctx.ops.live(['enablement', '--run', ctx.run]); },
   menu: menuCheck,
 };
@@ -313,8 +337,8 @@ async function menuCheck(ctx) {
       }
     } catch (error) { vendor.problem = error.message; }
     finally { vendor.activations = ops.live(['watch', 'stop', '--run', run]).activations ?? []; }
-    return {cua, vendor, comparison: Object.fromEntries(MENU_ACTIVATION.map(setting => [setting, menuComparison(cua[setting]?.items, vendor.items)])),
-      setting: menuSettingVerdict(cua.off?.items, cua.on?.items)};
+    return {cua, vendor, comparison: Object.fromEntries(MENU_ACTIVATION.map(setting => [setting, menuComparison(cua[setting]?.items, vendor.items, {setting})])),
+      setting: menuSettingVerdict(cua.off?.items, cua.on?.items, vendor.problem ? null : vendor.items)};
   } finally {
     if (client) {
       try { await client.call('end_task'); } catch {}
@@ -340,7 +364,7 @@ export const DRY_ANSWERS = Object.freeze({
   'live-device.mjs enablement': {verdict: {released: true}},
   'live-device.mjs input-source': {verdict: {pass: true}},
   'live-device.mjs putback': {plan: [], steps: {}, ok: true},
-  'live-device.mjs recover': {killed: [], survivors: [], putBack: {plan: ['scenes-down', 'engine-stop', 'apps-check', 'finder-check', 'front-app'], steps: {}, ok: true}, ok: true},
+  'live-device.mjs recover': {killed: [], survivors: [], awaited: [], probeWait: null, untouched: [], putBack: {plan: ['scenes-down', 'engine-stop', 'apps-check', 'finder-check', 'front-app'], steps: {}, ok: true}, ok: true},
   'live-device.mjs watch': {watching: true, activations: []},
   'scenes-mac.mjs up': {pid: 1, window: {number: 1}},
   'scenes-mac.mjs activate': {ok: true},
@@ -350,10 +374,12 @@ export const DRY_ANSWERS = Object.freeze({
   'prepare.mjs cleanup': {removed: true},
 });
 
-// An exec that prints each ssh command (the remote script after its PATH line) and answers it from DRY_ANSWERS.
+// An exec that prints each ssh command (the remote script after its PATH line, the journal's record shown as
+// <journaled>: journaledScript) and answers it from DRY_ANSWERS.
+const JOURNAL_RECORD = /\/bin\/mkdir -p -m 700 .*? >> '[^']*live-journal\.tsv' && /;
 export function dryExec({log, commit}) {
   return (command, args) => {
-    const script = String(args.at(-1)).split('\n').slice(1).join('\n');
+    const script = String(args.at(-1)).split('\n').slice(1).join('\n').replace(JOURNAL_RECORD, '<journaled> && ');
     const device = args.at(-2);
     if (/hostIdentity/.test(script)) {
       log(`ssh ${device} <the native baseline's vendor preflight: host vendor, engine vendor (${script.length} characters)>`);

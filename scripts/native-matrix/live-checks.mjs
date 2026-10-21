@@ -117,13 +117,18 @@ export function alertWatch(before, now, {runPids}) {
 
 // The hard guard before HID-tap keys are posted (they go to whatever is in front): the frontmost process is the run's
 // TextEdit (lsappinfo), the frontmost layer-0 window is the scene window (CGWindowList) and the engine's read of
-// TextEdit's own key window (its focused window first) is the scene window's frame. -> {post, reason}.
+// TextEdit's own key window (its focused window first) has that front window's frame as CGWindowList reads it now. The
+// bounds recorded at the scene's up are not the comparison: TextEdit may place or resize its window after up (hold 1
+// refused every variant on them). A refusal keeps what it read (`seen`) and, for the key window, both frames.
+// -> {post, reason, seen?, frames?}.
 export function compositionGuard({frontmost, topWindow, observedWindow, record}) {
-  if (frontmost?.pid !== record.pid) return {post: false, reason: 'front app not the scene'};
-  if (topWindow?.ownerPid !== record.pid || topWindow?.number !== record.window.number) return {post: false, reason: 'front window not the scene window'};
-  const b = record.window.bounds, f = observedWindow?.frame;
-  if (!f || observedWindow.pid !== record.pid || [f.x - b.x, f.y - b.y, f.width - b.width, f.height - b.height].some(d => Math.abs(d) > 1)) {
-    return {post: false, reason: 'the scene window is not TextEdit\'s key window'};
+  const seen = {frontmost: frontmost ?? null, topWindow: topWindow ?? null, sceneWindow: record.window.number ?? null};
+  if (frontmost?.pid !== record.pid) return {post: false, reason: 'front app not the scene', seen};
+  if (topWindow?.ownerPid !== record.pid || topWindow?.number !== record.window.number) return {post: false, reason: 'front window not the scene window', seen};
+  const b = topWindow.bounds, f = observedWindow?.frame;
+  if (!b || !f || observedWindow.pid !== record.pid || [f.x - b.x, f.y - b.y, f.width - b.width, f.height - b.height].some(d => !(Math.abs(d) <= 1))) {
+    return {post: false, reason: 'the scene window is not TextEdit\'s key window',
+      frames: {observed: f ?? null, observedPid: observedWindow?.pid ?? null, frontWindow: b ?? null, recordedAtUp: record.window.bounds ?? null}, seen};
   }
   return {post: true, reason: null};
 }

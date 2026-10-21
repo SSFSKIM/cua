@@ -121,31 +121,33 @@ func keystrokeUnits(_ text: String, mode: KeystrokeMode, press: (UInt16) -> KeyP
   }
 }
 
-/// The modifier keys in the order a chord presses them (⌃⌥⇧⌘, the menus' order), each with its left-hand key code;
-/// released in reverse.
-private let modifierKeys: [(CarbonModifiers, CGKeyCode)] = [
-  (.control, CGKeyCode(kVK_Control)), (.option, CGKeyCode(kVK_Option)), (.shift, CGKeyCode(kVK_Shift)), (.command, CGKeyCode(kVK_Command)),
+/// The modifier keys in the order a chord presses them (⌃⌥⇧⌘, the menus' order), each with its left-hand key code and
+/// that key's device bit (NX_DEVICELCTLKEYMASK, …LALT…, …LSHIFT…, …LCMD…), which a physical keyboard's events carry
+/// beside the generic mask; released in reverse.
+private let modifierKeys: [(CarbonModifiers, CGKeyCode, device: UInt64)] = [
+  (.control, CGKeyCode(kVK_Control), 0x01), (.option, CGKeyCode(kVK_Option), 0x20),
+  (.shift, CGKeyCode(kVK_Shift), 0x02), (.command, CGKeyCode(kVK_Command), 0x08),
 ]
 
 /// One press as a keyboard posts it: a flags-changed event per modifier going down, carrying that modifier's key code and
 /// the flags held so far; the key down and up carrying every flag; a flags-changed event per modifier coming up, in
-/// reverse, carrying the flags still held. Every flag is explicit (no `restore`, which reads the session's state back)
+/// reverse, carrying the flags still held. A held modifier's flags are its generic mask and its left-hand device bit. Every flag is explicit (no `restore`, which reads the session's state back)
 /// and no event carries a string. A press of modifiers alone is its flags-changed events.
 func keyboardPressEvents(_ press: KeyPress) -> [KeyEvent] {
   let held = modifierKeys.filter { press.modifiers.contains($0.0) }
-  var flags = CarbonModifiers()
+  var flags: CGEventFlags = []
   var events: [KeyEvent] = []
-  for (modifier, code) in held {
-    flags.formUnion(modifier)
-    events.append(KeyEvent(kind: .flags, keyCode: code, flags: flags.eventFlags, text: nil))
+  for (modifier, code, device) in held {
+    flags.formUnion(modifier.eventFlags.union(CGEventFlags(rawValue: device)))
+    events.append(KeyEvent(kind: .flags, keyCode: code, flags: flags, text: nil))
   }
   if let code = press.keyCode {
-    events.append(KeyEvent(kind: .down, keyCode: code, flags: flags.eventFlags, text: nil))
-    events.append(KeyEvent(kind: .up, keyCode: code, flags: flags.eventFlags, text: nil))
+    events.append(KeyEvent(kind: .down, keyCode: code, flags: flags, text: nil))
+    events.append(KeyEvent(kind: .up, keyCode: code, flags: flags, text: nil))
   }
-  for (modifier, code) in held.reversed() {
-    flags.remove(modifier)
-    events.append(KeyEvent(kind: .flags, keyCode: code, flags: flags.eventFlags, text: nil))
+  for (modifier, code, device) in held.reversed() {
+    flags.subtract(modifier.eventFlags.union(CGEventFlags(rawValue: device)))
+    events.append(KeyEvent(kind: .flags, keyCode: code, flags: flags, text: nil))
   }
   return events
 }

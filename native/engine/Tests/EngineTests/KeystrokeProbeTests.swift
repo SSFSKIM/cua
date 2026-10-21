@@ -125,7 +125,7 @@ final class KeystrokeProbeTests: XCTestCase {
     }
     let chord = try XCTUnwrap(try keySpecUnits("alt+Return").first)
     XCTAssertEqual(chord.first { $0.kind == .down }?.keyCode, 0x24)
-    XCTAssertEqual(chord.first { $0.kind == .down }?.flags, .maskAlternate, "option+Return, spelled in press_key's modifier names")
+    XCTAssertEqual(chord.first { $0.kind == .down }?.flags, alt, "option+Return, spelled in press_key's modifier names")
   }
 
   func testAnUnknownOrUnparseableSpecRefuses() {
@@ -144,25 +144,30 @@ final class KeystrokeProbeTests: XCTestCase {
     }
   }
 
+  // A keyboard's flags: each modifier's generic mask with its left-hand device bit (NX_DEVICEL…KEYMASK).
+  private let alt = CGEventFlags(rawValue: 0x80000 | 0x20), ctl = CGEventFlags(rawValue: 0x40000 | 0x01)
+  private let shf = CGEventFlags(rawValue: 0x20000 | 0x02)
+
   func testAChordPostsAsAKeyboardDoes() throws {
     let option = CGKeyCode(0x3A)
+    XCTAssertEqual(alt.rawValue, 0x80020)
     XCTAssertEqual(try keySpecUnits("alt+Return").first, [
-      KeyEvent(kind: .flags, keyCode: option, flags: .maskAlternate, text: nil),
-      KeyEvent(kind: .down, keyCode: returnKeyCode, flags: .maskAlternate, text: nil),
-      KeyEvent(kind: .up, keyCode: returnKeyCode, flags: .maskAlternate, text: nil),
+      KeyEvent(kind: .flags, keyCode: option, flags: alt, text: nil),
+      KeyEvent(kind: .down, keyCode: returnKeyCode, flags: alt, text: nil),
+      KeyEvent(kind: .up, keyCode: returnKeyCode, flags: alt, text: nil),
       KeyEvent(kind: .flags, keyCode: option, flags: [], text: nil),
     ])
     let control = CGKeyCode(0x3B), shift = CGKeyCode(0x38)
     XCTAssertEqual(try keySpecUnits("ctrl+shift+Tab").first, [
-      KeyEvent(kind: .flags, keyCode: control, flags: .maskControl, text: nil),
-      KeyEvent(kind: .flags, keyCode: shift, flags: [.maskControl, .maskShift], text: nil),
-      KeyEvent(kind: .down, keyCode: 0x30, flags: [.maskControl, .maskShift], text: nil),
-      KeyEvent(kind: .up, keyCode: 0x30, flags: [.maskControl, .maskShift], text: nil),
-      KeyEvent(kind: .flags, keyCode: shift, flags: .maskControl, text: nil),
+      KeyEvent(kind: .flags, keyCode: control, flags: ctl, text: nil),
+      KeyEvent(kind: .flags, keyCode: shift, flags: ctl.union(shf), text: nil),
+      KeyEvent(kind: .down, keyCode: 0x30, flags: ctl.union(shf), text: nil),
+      KeyEvent(kind: .up, keyCode: 0x30, flags: ctl.union(shf), text: nil),
+      KeyEvent(kind: .flags, keyCode: shift, flags: ctl, text: nil),
       KeyEvent(kind: .flags, keyCode: control, flags: [], text: nil),
     ], "each modifier goes down in turn and comes up in reverse, every event carrying the flags then held")
     XCTAssertEqual(try keySpecUnits("R").first?.map(\.keyCode), [shift, 0x0F, 0x0F, shift], "an upper-case letter is r under Shift")
-    XCTAssertEqual(try keySpecUnits("shift").first, [KeyEvent(kind: .flags, keyCode: shift, flags: .maskShift, text: nil),
+    XCTAssertEqual(try keySpecUnits("shift").first, [KeyEvent(kind: .flags, keyCode: shift, flags: shf, text: nil),
                                                       KeyEvent(kind: .flags, keyCode: shift, flags: [], text: nil)])
     XCTAssertTrue(try keySpecUnits("r BackSpace alt+Return ctrl+shift+Tab").joined().allSatisfy { $0.text == nil }, "no string on any event")
     XCTAssertFalse(try keySpecUnits("alt+Return").joined().contains { $0.kind == .restore }, "every flag is explicit, none read back")
@@ -173,8 +178,8 @@ final class KeystrokeProbeTests: XCTestCase {
     let events = try XCTUnwrap(try keySpecUnits("alt+Return").first).map { try XCTUnwrap(poster.event($0)) }
     XCTAssertEqual(events.map(\.type), [.flagsChanged, .keyDown, .keyUp, .flagsChanged])
     XCTAssertEqual(events.map { $0.getIntegerValueField(.keyboardEventKeycode) }, [0x3A, 0x24, 0x24, 0x3A])
-    XCTAssertEqual(events.map(\.flags).map { $0.intersection([.maskAlternate, .maskShift, .maskControl, .maskCommand]) },
-                   [.maskAlternate, .maskAlternate, .maskAlternate, []])
+    XCTAssertEqual(events.map(\.flags).map { $0.intersection([.maskAlternate, .maskShift, .maskControl, .maskCommand, CGEventFlags(rawValue: 0x2B)]) },
+                   [alt, alt, alt, []])
     let pressKeys = try XCTUnwrap(poster.event(KeyEvent(kind: .flags, keyCode: 0, flags: .maskCommand, text: nil)))
     XCTAssertEqual(pressKeys.getIntegerValueField(.keyboardEventKeycode), 0, "press_key's combined flags event keeps key code 0")
   }
@@ -182,8 +187,25 @@ final class KeystrokeProbeTests: XCTestCase {
   func testTheKeysReportSeparatesTheFlagsChangedEvents() throws {
     let units = try keySpecUnits("r alt+Return")
     XCTAssertEqual(pressesWire(units) as NSArray, [["keyCode": 0x0F, "flags": 0, "unicode": NSNull()],
-                                                   ["keyCode": 0x24, "flags": Int(CGEventFlags.maskAlternate.rawValue), "unicode": NSNull()]] as NSArray)
-    XCTAssertEqual(flagsChangedWire(units) as NSArray, [[], [["keyCode": 0x3A, "flags": Int(CGEventFlags.maskAlternate.rawValue)],
+                                                   ["keyCode": 0x24, "flags": 0x80020, "unicode": NSNull()]] as NSArray)
+    XCTAssertEqual(flagsChangedWire(units) as NSArray, [[], [["keyCode": 0x3A, "flags": 0x80020],
                                                              ["keyCode": 0x3A, "flags": 0]]] as NSArray)
+  }
+
+  func testPressKeysEventsKeepTheGenericFlagsAlone() throws {
+    // press_key's own events are untouched by the probe's device bits: the generic mask only, read back from the made
+    // events too.
+    let press = try XCTUnwrap(try parseKeySequence("alt+Return").first)
+    let events = keyPressEvents(press)
+    XCTAssertEqual(events, [
+      KeyEvent(kind: .flags, keyCode: 0, flags: .maskAlternate, text: nil),
+      KeyEvent(kind: .down, keyCode: returnKeyCode, flags: .maskAlternate, text: nil),
+      KeyEvent(kind: .up, keyCode: returnKeyCode, flags: .maskAlternate, text: nil),
+      KeyEvent(kind: .restore, keyCode: 0, flags: [], text: nil),
+    ])
+    let poster = EventPoster(source: nil) { _ in }
+    let made = try events.prefix(3).map { try XCTUnwrap(poster.event($0)) }
+    XCTAssertEqual(made.map { $0.flags.rawValue & 0xFF }, [0, 0, 0], "no device bit on press_key's events")
+    XCTAssertEqual(made.map { $0.flags.contains(.maskAlternate) }, [true, true, true])
   }
 }

@@ -64,7 +64,7 @@ How to see it: on the mini, with the plugin at the release this work ships, run 
   - [x] (2026-10-21 07:58Z) M2a.1 — (aa3531c0, review fixes 277ca253; reviewed clean) Intervention (the listen-only tap under Input Monitoring, attribution, the debounce, the in-flight stop, the pre-action refusal, the re-query lock, `intervention: "off"`), the lock screen on every request, route 4's per-app override and `routeAdvice`, the `--probe` mode completed (`focus`), the spike's `probe_tap` and `probe_spike` retired.
   - [ ] M2a.2 — The remaining methods (`set_value`, `select_text`, `perform_secondary_action` validated by `filterActions`, `scroll`, `drag`), scroll-into-view before a synthesized element click, the menu-bar activate-and-record path.
   - [ ] M2a.3 — Paste (the lazy provider, the markers, snapshot and restore, the engine-wide FIFO lock, the read and effect waits) and `type_text`'s paste route (a non-Latin source, the per-context preference).
-  - [x] (2026-10-21 08:40Z) M2a.4 — (87571ece, review fixes f9daa446 on `m2a/settle`; reviewed clean) Settle on the vendor's rule for a first observation, enablement re-checked and released, the minimized primary window, `cua/serviceMs` in the wrapper.
+  - [x] (2026-10-21 08:17Z) M2a.4 — (87571ece, review fixes f9daa446 on `m2a/settle`; reviewed clean) Settle on the vendor's rule for a first observation, enablement re-checked and released, the minimized primary window, `cua/serviceMs` in the wrapper.
   - [ ] M2a.5 — Live on the mini: comparison A's `task.*` rows on the reviewed M2a build.
 - [ ] M2b — The matrix, oracles and the `native-mac` suite.
 - [ ] M3 — Engine-aware tooling, comparisons B and C, Linux approvals.

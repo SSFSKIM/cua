@@ -36,7 +36,11 @@ export function parse(text, {kind}) {
   const header = lines.shift();
   const items = [];
   const out = {header, items, trailer: null, removed: null, unparsed: []};
-  let expected = 0;
+  // A full tree's element line opens at depth 0 or at most one below the last element's, with an index not seen yet;
+  // indexes need not run from 0 without gaps (a default-mode fallback keeps the lineage's surviving ones). Any other
+  // line continues the last element's value. A value line shaped like an element line is read the same way on both
+  // sides, so it can only cost a reported difference, never hide one.
+  const seen = new Set();
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     if (TRAILER.test(line) && (i === 0 || lines[i - 1] === '' || kind === 'diff')) {
@@ -48,8 +52,8 @@ export function parse(text, {kind}) {
     const removed = /^Removed element IDs: (.*)$/.exec(line);
     if (removed && kind === 'diff') { out.removed = expandRanges(removed[1]); continue; }
     const match = (kind === 'diff' ? /^([~+])(\t*)(\d+) (.*)$/ : /^()(\t*)(\d+) (.*)$/).exec(line);
-    if (match && (kind === 'diff' || Number(match[3]) === expected)) {
-      expected = Number(match[3]) + 1;
+    if (match && (kind === 'diff' || (match[2].length <= (items.length ? items.at(-1).depth + 1 : 0) && !seen.has(Number(match[3]))))) {
+      seen.add(Number(match[3]));
       items.push({mark: match[1], depth: match[2].length, index: Number(match[3]), rest: match[4]});
     } else if (items.length) {
       items.at(-1).rest += `\n${line}`;   // a multi-line value's continuation
@@ -215,8 +219,8 @@ export function compare(vendorText, cuaText, {kind = 'full', structural = false,
 
   // The trailer: the same kind, naming the matched elements. An element's index is followed through this comparison's
   // matched lines and, in a diff (which prints only what changed), through the two `before` texts' (`indexMap`); an
-  // element neither names is compared by its line, and cua's must then be no element a matched line names. Selected
-  // text is compared whole.
+  // element neither names must not be one a matched line names on cua's side. Either way the rest of its line is
+  // compared. Selected text is compared whole.
   const map = new Map(pairs.map(([i, j]) => [vendor.items[i].index, cua.items[j].index]));
   const resolve = index => map.get(index) ?? (kind === 'diff' ? indexMap?.get(index) : undefined);
   const named = new Set([...map.values(), ...(kind === 'diff' && indexMap ? indexMap.values() : [])]);
@@ -227,7 +231,8 @@ export function compare(vendorText, cuaText, {kind = 'full', structural = false,
     return vendor.trailer.items.every((item, n) => {
       const other = cua.trailer.items[n];
       const mapped = resolve(item.index);
-      return mapped === undefined ? same(textOf(item.rest, structural), textOf(other.rest, structural)) && !named.has(other.index) : mapped === other.index;
+      const sameIndex = mapped === undefined ? !named.has(other.index) : mapped === other.index;
+      return sameIndex && same(textOf(item.rest, structural), textOf(other.rest, structural));
     });
   };
   if (!sameTrailer() && !allow('trailer', rule => rule.vendor === (vendor.trailer?.text ?? null) && rule.cua === (cua.trailer?.text ?? null))) {

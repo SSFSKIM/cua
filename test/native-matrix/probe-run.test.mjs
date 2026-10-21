@@ -157,6 +157,12 @@ test('the sheet variant: a post outside the opening action\'s own interval is re
   assert.equal(none.result.verdict, 'no-verdict');
   const late = await runWith({plan: planOf('concurrent-use-sheet'), cellName: 'concurrent-use-sheet', cell: sheetCells({follow: c => followUp(c, {receipt: 6_000})})});
   assert.match(rowOf(late.result, SHEET).invalid, /past the 5000 ms debounce/);
+  // The opening refused as the user's intervention, inside its interval: no sheet, nothing to follow up, and a failure.
+  const fired = await runWith({plan: planOf('concurrent-use-sheet'), cellName: 'concurrent-use-sheet',
+    cell: sheetCells({open: c => opening(c, {over: {threw: true, errorName: 'userIntervened', message: `${USER_CHANGED}/x'.`}}),
+      follow: c => ({...followUp(c, {over: {opened: false, clicked: false}}), _meta: {}})})});
+  const refusedOpening = rowOf(fired.result, SHEET);
+  assert.deepEqual([refusedOpening.ok, refusedOpening.invalid, refusedOpening.outcome.openingThrew, refusedOpening.outcome.sheetOpened], [false, undefined, true, false]);
 });
 
 test('the sheet variant\'s oracle: a transient focus steal during the opening action, or an unaccepted route 4 on either action, fails its interference', async () => {

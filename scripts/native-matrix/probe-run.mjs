@@ -210,8 +210,9 @@ async function sheetAttempt(ctx, {lead, id, key}) {
     outcome: {sheetOpened: value.opened === true, openingThrew: opening.value.threw, followUpRefused: refusedWith(value, STILL_INTERACTING) || refusedWith(value, USER_CHANGED),
       followUpThrew: value.threw, errorName: value.errorName, sheetClosed: check.value?.closed === true, userLanded, ...timing(interval, postedAt, opening),
       receiptAfterPostMs: Number.isFinite(postedAt) && Number.isFinite(receivedAt) ? receivedAt - postedAt : null}};
+  // No sheet came up, so nothing was followed up: the opening's own outcome is the sample's, its receipt unneeded.
   const why = probeProblem(probe.answer) ?? detectionOff(opening) ?? detectionOff(follow) ?? postValidity(postedAt, interval)
-    ?? receiptValidity({engine: ctx.engine, postedAt, receivedAt: follow.engine?.receivedAt, callAt: value.clickAt});
+    ?? (value.clicked === true ? receiptValidity({engine: ctx.engine, postedAt, receivedAt: follow.engine?.receivedAt, callAt: value.clickAt}) : null);
   if (why) return span.end({...row, ok: false, invalid: why}, {retry: true, lead: nextPreMs({callAt: opening.value.callAt, interval, postedAt, scheduled: probe.scheduled, preMs})});
   if (after.watcher !== true) return span.end({...row, ok: false, invalid: 'the activation watcher was not running after the action'});
   const routes = [opened.route, typed.route, opening.route, follow.route];

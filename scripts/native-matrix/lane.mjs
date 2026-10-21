@@ -178,6 +178,7 @@ export function dryOps({log, engine, approvedEngine = '/Users/owner/Library/Appl
           if (args[1] === 'record') return {recorded: true, pid: ++pid, candidates: 1};
           return args[1] === 'settle' ? {quit: 0, remaining: 0, pending: 0, waitedMs: 0} : {quit: 1, remaining: 0, gone: 0, pending: 0};
         case 'windowless': return {answer: {pid: ++pid, app: '/tmp/windowless.app'}, at};
+        case 'load': return {answer: {loadavg: [1.5, 1.2, 1], uptimeS: 86_400, cpus: 10}, at};
         default: return {};
       }
     }),

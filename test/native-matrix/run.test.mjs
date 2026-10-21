@@ -19,8 +19,11 @@ test('one pairing of the background regime: the hold in order, a conforming resu
   assert.deepEqual(validateCellResult(result), []);
   assert.equal(result.cell, 'non-interference');
   const order = names(steps).filter(s => !/^(matrix read|matrix step|matrix alerts|helpers)/.test(s));
-  assert.deepEqual(order, ['home', 'live begin', 'prepare', 'preflight', 'scenes preflight', 'scenes up', 'goldens steps', 'scenes up', 'goldens steps', 'goldens engine-stop',
-    'matrix compile', 'live watch', 'serve', 'live watch', 'matrix launched', 'live recover', 'matrix launched', 'scenes frontmost', 'cleanup']);
+  assert.deepEqual(order, ['home', 'live begin', 'matrix load', 'prepare', 'preflight', 'scenes preflight', 'scenes up', 'goldens steps', 'scenes up', 'goldens steps', 'goldens engine-stop',
+    'matrix compile', 'live watch', 'serve', 'live watch', 'matrix launched', 'live recover', 'matrix launched', 'scenes frontmost', 'cleanup', 'matrix load']);
+  // The device's load before the run's work and after its put-back, for the hold's record.
+  assert.deepEqual(Object.keys(result.meta.load), ['before', 'after']);
+  assert.deepEqual(result.meta.load.before, {loadavg: [1.5, 1.2, 1], uptimeS: 86_400, cpus: 10});
   assert.deepEqual(matrixSteps(steps, 'alerts')[0], ['alerts', 'baseline', '--run', result.meta.runDir], 'the alert baseline is kept before the lane');
   const method = result.rows.filter(r => r.section === 'method');
   assert.ok(method.length > 10 && method.every(r => r.regime === 'background' && r.user === 'finder' && r.id.endsWith('@finder')));
@@ -32,6 +35,18 @@ test('one pairing of the background regime: the hold in order, a conforming resu
   assert.ok(matrixSteps(steps, 'read').some(a => a.includes('--focus') && /^\d+,100,100,800,600$/.test(a[a.indexOf('--focus') + 1])));
   // Each scene is brought to the front before its bind, so getApp's emitted text is the run's window.
   assert.deepEqual(matrixSteps(steps, 'step').slice(0, 2).map(a => a.slice(1, 3)), [['activate', 'textedit'], ['activate', 'finder']]);
+});
+
+test('a lane can run exactly run n of a hold (--run-number), and --runs counts from it', async () => {
+  const third = await runWith({runNumber: 3});
+  assert.deepEqual(Object.keys(third.results), ['run-3']);
+  assert.deepEqual([third.result.meta.run, third.result.meta.sitting], [3, 's1']);
+  assert.ok(third.result.rows.filter(r => r.section === 'method').every(r => r.sample === 3), 'the run number is the sample');
+  const two = await runWith({runNumber: 2, runs: 2});
+  assert.deepEqual(Object.entries(two.results).map(([d, r]) => [d, r.meta.run]), [['run-2', 2], ['run-3', 3]]);
+  const plain = await runWith({runs: 2});
+  assert.deepEqual(Object.keys(plain.results), ['run-1', 'run-2']);
+  await assert.rejects(runWith({runNumber: 0}), /--run-number/);
 });
 
 test('a sitting is required, and only the whole matrix\'s plan is the full one', async () => {

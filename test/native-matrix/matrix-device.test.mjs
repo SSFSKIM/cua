@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {alerts, compiled, isWatcher, launchIntent, ownedFocus, PROBE_FILE, probeFinish, probeStart, quitLaunched, read, recordLaunch, settleLaunches, source, WINDOWLESS, windowlessUp} from '../../scripts/native-matrix/matrix-device.mjs';
+import {alerts, compiled, deviceLoad, isWatcher, launchIntent, ownedFocus, PROBE_FILE, probeFinish, probeStart, quitLaunched, read, recordLaunch, settleLaunches, source, WINDOWLESS, windowlessUp} from '../../scripts/native-matrix/matrix-device.mjs';
 
 const state = {scenes: {textedit: {pid: 11}, finder: {pid: 7}}};
 const bounds = {x: 0, y: 25, width: 900, height: 700};
@@ -250,4 +250,11 @@ test('a probe whose await is stuck keeps its handle, marked; nothing starts whil
     assert.throws(() => probeFinish(plain), /its process was stopped/);
     assert.ok(!fs.existsSync(join(dir, PROBE_FILE)));
   } finally { fs.rmSync(dir, {recursive: true, force: true}); }
+});
+
+test('load: the Mac\'s load averages, uptime and core count, nothing else', () => {
+  assert.deepEqual(deviceLoad({loadavg: () => [2.345, 1.5, 0.75], uptime: () => 86_400.6, cpus: () => 10}), {loadavg: [2.35, 1.5, 0.75], uptimeS: 86_401, cpus: 10});
+  const real = deviceLoad();
+  assert.equal(real.loadavg.length, 3);
+  assert.ok(Number.isInteger(real.uptimeS) && Number.isInteger(real.cpus));
 });

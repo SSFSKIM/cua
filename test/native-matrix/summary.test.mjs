@@ -57,7 +57,7 @@ function fullRun(engine, run, {axMs = 40, resolved = 10, tweak = rows => rows, m
     return row;
   });
   return cellResult({cell: 'matrix', device: 'mini', started: '2026-10-21T00:00:00Z', lanes: [{host: engine, engine, build: `b-${engine}`, version: 'v', ...lane}], complete, rows: tweak(rows),
-    meta: {run, samples, sitting: 's1', commit: 'c', os: '26.0', planId: 'full', ...meta}});
+    meta: {run, samples, sitting: 's1', commit: 'c', os: '26.0', planId: 'full', nativeEngine: {approved: {build: 'a'.repeat(64)}}, ...meta}});
 }
 const set = (id, patch) => rows => rows.map(r => (r.id === id ? {...r, ...patch} : r));
 // Three full runs per side unless given; `extra` results written beside them.
@@ -106,7 +106,7 @@ test('missing proof is NO VERDICT, never a pass: fewer than three runs, a missin
   assert.ok(twice.missing.some(p => /repeat run number\(s\) 1/.test(p)));
   assert.ok(twice.missing.some(p => /appear twice/.test(p)));
   const sittings = judged({vendor: {resolved: 9, meta: {sitting: 's0'}}});
-  assert.ok(sittings.missing.some(p => /more than one sitting/.test(p)));
+  assert.ok(sittings.missing.some(p => /run 1's vendor and cua runs name more than one hold/.test(p)), sittings.missing.join('\n'));
   const builds = judged({vendor: {resolved: 9}, extra: [fullRun('cua', 4, {lane: {build: 'b-other'}})]});
   assert.ok(builds.missing.some(p => /more than one build of the cua engine/.test(p)));
   const unattested = judged({vendor: {resolved: 9}, cua: {lane: {build: null}}});
@@ -239,4 +239,34 @@ test('the probe cells\' and the Korean matrix\'s background rows are judged by t
   const unread = judged({vendor: {axMs: 50, resolved: 9}, cua: {axMs: 40, tweak: rows => rows.map(r => (r.id === SHEET || r.id === COMPOSING ? (({interference, ...rest}) => rest)(r) : r))}});
   assert.equal(unread.verdict, 'NO VERDICT');
   assert.ok(unread.missing.some(p => /6 valid background or launch row\(s\) on cua carry no oracle reading/.test(p)), unread.missing.join('\n'));
+});
+
+test('the hold is judged per run number: each run\'s vendor and cua results share one hold, one commit and one approved build; the run numbers may span holds', () => {
+  // Hold 2a's runs 1 and 2, hold 2b's run 3 (each vendor/cua pair in one sitting), at a later commit: one proof.
+  const hold = n => (n === 3 ? {sitting: 'hold-2b', commit: 'c2'} : {sitting: 'hold-2a', commit: 'c'});
+  const dir = fs.mkdtempSync(join(tmpdir(), 'matrix-summary-'));
+  const judgeRuns = (vendorMeta, cuaMeta, numbers = {vendor: [1, 2, 3], cua: [1, 2, 3]}) => {
+    fs.rmSync(dir, {recursive: true, force: true});
+    for (const n of numbers.vendor) writeCellResult(join(dir, 'vendor', `run-${n}`), fullRun('vendor', n, {resolved: 9, axMs: 50, meta: vendorMeta(n)}));
+    for (const n of numbers.cua) writeCellResult(join(dir, 'cua', `run-${n}`), fullRun('cua', n, {meta: cuaMeta(n)}));
+    const {results, problems} = readResults([dir]);
+    return judge(results, problems);
+  };
+  try {
+    const split = judgeRuns(hold, hold);
+    assert.equal(split.verdict, 'PASS', split.missing.join('\n'));
+    assert.deepEqual(split.missing, []);
+    const crossed = judgeRuns(hold, n => ({...hold(n), sitting: n === 3 ? 'hold-2c' : 'hold-2a'}));
+    assert.ok(crossed.missing.some(p => /^run 3's vendor and cua runs name more than one hold \("hold-2[bc]", "hold-2[bc]"\): a pair is measured in one hold$/.test(p)), crossed.missing.join('\n'));
+    assert.equal(crossed.missing.filter(p => /^run \d/.test(p)).length, 1, 'runs 1 and 2 share hold 2a');
+    const commits = judgeRuns(hold, n => ({...hold(n), commit: n === 2 ? 'c3' : hold(n).commit}));
+    assert.ok(commits.missing.some(p => /^run 2's vendor and cua runs name more than one commit/.test(p)));
+    const builds = judgeRuns(hold, n => ({...hold(n), nativeEngine: {approved: {build: n === 1 ? 'e'.repeat(64) : 'a'.repeat(64)}}}));
+    assert.ok(builds.missing.some(p => /^run 1's vendor and cua runs name more than one approved engine build/.test(p)));
+    const unrecorded = judgeRuns(hold, n => ({...hold(n), nativeEngine: n === 2 ? {} : {approved: {build: 'a'.repeat(64)}}}));
+    assert.ok(unrecorded.missing.some(p => /^run 2: a run records no approved engine build/.test(p)), unrecorded.missing.join('\n'));
+    const unpaired = judgeRuns(hold, hold, {vendor: [1, 2, 3], cua: [1, 2, 4]});
+    assert.ok(unpaired.missing.includes('run 3 has no cua full run: its samples cannot be compared with the vendor\'s'), unpaired.missing.join('\n'));
+    assert.ok(unpaired.missing.includes('run 4 has no vendor full run: its samples cannot be compared with cua\'s'));
+  } finally { fs.rmSync(dir, {recursive: true, force: true}); }
 });

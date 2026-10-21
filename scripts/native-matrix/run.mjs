@@ -131,20 +131,23 @@ export const scenesOf = plan => SCENE_ORDER.filter(id => plan.frontmost.some(t =
 // (./lane.mjs matrixOps), connect, controllerCheckout(), log, dryRun, interrupt: {signal}, now}. -> 0 every run complete
 // and passed, 1 otherwise, 2 refused before anything on the device changed; 130/143 on an interrupt (the put-back ran).
 export async function runMatrix(options, io) {
-  const {host, engine, approvedRuntime, approvedEngine, out, runs = DEFAULT_RUNS, samples = DEFAULT_SAMPLES, sitting} = options;
+  const {host, engine, approvedRuntime, approvedEngine, out, runNumber, samples = DEFAULT_SAMPLES, sitting} = options;
+  // --run-number n: exactly run n of a hold split by run, unless --runs says more (counted from n).
+  const first = runNumber ?? 1, runs = options.runs ?? (runNumber === undefined ? DEFAULT_RUNS : 1);
   if (!HOSTS.includes(host)) throw new Error('run needs --host vendor|cua');
   assertEngineOptions({platform: 'darwin', surface: 'computer', host, engine, approvedEngine});
   if (!/^\/[^\0\n]*$/.test(approvedRuntime ?? '')) throw new Error('run needs --approved-runtime <the approved CUA_HOME, an absolute path>');
   if (!Number.isSafeInteger(runs) || runs < 1) throw new Error('--runs needs a positive integer');
+  if (!Number.isSafeInteger(first) || first < 1) throw new Error('--run-number needs a positive integer');
   if (!Number.isSafeInteger(samples) || samples < 1) throw new Error('--samples needs a positive integer');
-  if (!/^[\w.-]+$/.test(sitting ?? '')) throw new Error('run needs --sitting <id> (letters, digits, dot, dash, underscore): every lane of one sitting names the same');
+  if (!/^[\w.-]+$/.test(sitting ?? '')) throw new Error('run needs --sitting <id> (letters, digits, dot, dash, underscore): every lane of one hold names the same');
   if (!out) throw new Error('run needs --out <dir>');
   const base = resolve(out);
-  const dirs = Array.from({length: runs}, (_, i) => join(base, `run-${i + 1}`));
+  const dirs = Array.from({length: runs}, (_, i) => join(base, `run-${first + i}`));
   if (!io.dryRun) for (const dir of dirs) if (fs.existsSync(join(dir, 'result.json'))) throw new Error(`${dir} already holds a result: choose a new --out`);
   let worst = 0;
   for (const [i, dir] of dirs.entries()) {
-    const code = await runOnce({...options, runs, samples, n: i + 1, dir}, io);
+    const code = await runOnce({...options, runs, samples, n: first + i, dir}, io);
     if (code === REFUSED) return REFUSED;
     if (io.interrupt?.signal) return io.interrupt.signal === 'SIGINT' ? 130 : 143;
     worst = Math.max(worst, code);
@@ -195,6 +198,7 @@ async function runOnce(options, io) {
     log(`refused: ${refusals.join('; ')}`);
     return REFUSED;
   }
+  meta.load = {before: deviceLoad(ops, run)};
   meta.frontApp = {saved: begun.frontmost?.bundleId ?? null};
   meta.engineStopAtStart = begun.engineStop ?? null;
   log(`run ${n}: the owner's front app (${meta.frontApp.saved ?? 'none'}) is saved on the device and the engine stopped; if this run dies: node scripts/native-matrix.mjs cleanup --device ${device} --run ${quote(run)} --preparation ${quote(join(dir, 'preparation.json'))}`);
@@ -300,6 +304,7 @@ async function runOnce(options, io) {
       if (attested) lanes = [{host: meta.hostAttestation?.host ?? host, engine: attested.engine, build: attested.build, version: attested.version}];
     }
     complete = complete && problems.length === 0;
+    meta.load.after = deviceLoad(ops, run);
     meta.finished = new Date().toISOString();
     const result = write();
     log(`run ${n} ${complete ? result.verdict.toUpperCase() : 'INCOMPLETE'}${dryRun ? ' (dry run: the answers were made up, nothing ran)' : `: ${join(dir, 'result.json')}`}`);
@@ -330,6 +335,12 @@ async function inputSections(ctx, plan) {
       if (!ctx.meta.inputSource.restored) ctx.problems.push(`the owner's input source and per-context preference were not restored after the input sections${restored?.skipped ? ` (${restored.skipped})` : ''}; the put-back tries again`);
     } catch (error) { ctx.problems.push(`the input source's restore failed: ${error.message}; the put-back tries again`); }
   }
+}
+
+// The device's load averages and uptime (./matrix-device.mjs load), read before the run's work and after its put-back
+// for the hold's record; a failed read is recorded, never the run's problem. -> {loadavg, uptimeS, cpus} or {error}.
+function deviceLoad(ops, run) {
+  try { return ops.matrix(['load', '--run', run])?.answer ?? {error: 'no answer'}; } catch (error) { return {error: error.message}; }
 }
 
 // The live hold's recovery and put-back (./live-device.mjs recover). `stopped`: the work that could still launch an app

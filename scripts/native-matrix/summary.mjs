@@ -29,9 +29,11 @@
 //   (./cell-result.mjs verdictOf), listed.
 //
 // What counts (the proof): only the whole matrix's results (cell 'matrix', meta.planId 'full') feed the tables; a
-// narrowed matrix cell (`cell method --scene …`) is listed and not counted. The full runs must form one sitting: at
-// least RUNS_PER_SIDE complete, attested runs per engine, one device, one meta.sitting, one commit, one OS, one host and
-// one engine build per engine, no (section, id, engine, sample) twice, and every row of the manifest (manifestOf) in
+// narrowed matrix cell (`cell method --scene …`) is listed and not counted. The full runs must form one proof: at least
+// RUNS_PER_SIDE complete, attested runs per engine, one device, one OS, one host and one engine build per engine; each
+// run number's vendor and cua runs one hold (meta.sitting, the lanes' --sitting), one commit and one approved engine
+// build, so every pair of samples compared was measured together (the run numbers may span holds: hold 2a's runs 1
+// and 2, hold 2b's run 3); no (section, id, engine, sample) twice, and every row of the manifest (manifestOf) in
 // every run, built only from a run whose own metadata says what it holds (a positive meta.run and meta.samples, an
 // attested lane naming its host and engine); every valid background or launch row carries its oracle reading. Whatever
 // is missing is NO VERDICT, which blocks M5 as a failure does but is not one. What the matrix does not run on a shared
@@ -98,17 +100,32 @@ function metadataProblems(result) {
   return out;
 }
 
-// Whether the full runs are one sitting's proof (the module's header). -> [missing proof, each a sentence].
+// Whether the full runs are one proof (the module's header). -> [missing proof, each a sentence].
 export function proofProblems(full) {
   const missing = [];
   const one = (what, values) => {
     const seen = [...new Set(values.map(v => JSON.stringify(v ?? null)))];
-    if (seen.length > 1) missing.push(`the full runs name more than one ${what} (${seen.join(', ')}): one sitting's runs are judged together`);
+    if (seen.length > 1) missing.push(`the full runs name more than one ${what} (${seen.join(', ')}): one proof's runs are judged together`);
   };
   one('device', full.map(({result}) => result.device));
-  one('sitting', full.map(({result}) => result.meta?.sitting));
-  one('commit', full.map(({result}) => result.meta?.commit));
   one('OS', full.map(({result}) => result.meta?.os));
+  // Each run number's pair: one hold, one commit, one approved engine build (the bundle every lane's probes run).
+  const byRun = new Map();
+  for (const entry of full) if (Number.isSafeInteger(entry.result.meta?.run)) byRun.set(entry.result.meta.run, [...(byRun.get(entry.result.meta.run) ?? []), entry]);
+  for (const [n, list] of [...byRun].sort(([a], [b]) => a - b)) {
+    const has = engine => list.some(({result}) => result.lanes[0]?.engine === engine);
+    if (!has('cua')) missing.push(`run ${n} has no cua full run: its samples cannot be compared with the vendor's`);
+    if (!has('vendor')) missing.push(`run ${n} has no vendor full run: its samples cannot be compared with cua's`);
+    const pair = (what, values) => {
+      const seen = [...new Set(values.map(v => JSON.stringify(v ?? null)))];
+      if (seen.length > 1) missing.push(`run ${n}'s vendor and cua runs name more than one ${what} (${seen.join(', ')}): a pair is measured in one hold`);
+    };
+    pair('hold', list.map(({result}) => result.meta?.sitting));
+    pair('commit', list.map(({result}) => result.meta?.commit));
+    const builds = list.map(({result}) => result.meta?.nativeEngine?.approved?.build);
+    if (builds.some(b => typeof b !== 'string' || !b)) missing.push(`run ${n}: a run records no approved engine build (meta.nativeEngine.approved): its pair cannot be shown to share one`);
+    else pair('approved engine build', builds);
+  }
   for (const engine of ['vendor', 'cua']) {
     const mine = full.filter(({result}) => result.lanes[0]?.engine === engine);
     one(`host for the ${engine} engine`, mine.map(({result}) => result.lanes[0].host));

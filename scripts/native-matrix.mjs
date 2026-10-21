@@ -7,10 +7,13 @@
 // --engine), so every speed number is in-cell, and every result must attest that engine.
 //
 //   node scripts/native-matrix.mjs run --device <alias> --host vendor|cua --engine vendor|cua --approved-runtime <CUA_HOME>
-//        --approved-engine <the approved cua Engine.app> --sitting <id> --out <dir> [--runs 3] [--samples 10] [--run <device dir>] [--dry-run]
+//        --approved-engine <the approved cua Engine.app> --sitting <hold id> --out <dir> [--runs 3] [--run-number n] [--samples 10]
+//        [--run <device dir>] [--dry-run]
 //     One lane, --runs runs, each the whole hold (./native-matrix/run.mjs) and one result in <out>/run-<n>/result.json.
 //     The lanes are --host vendor --engine vendor, --host vendor --engine cua and --host cua --engine cua; every lane
-//     of one sitting names the same --sitting.
+//     of one hold names the same --sitting, the hold's id, recorded in each run's meta. A hold split by run runs exactly
+//     run n with --run-number n (--runs then counts from n, 1 by default; <out>/run-<n>/), so each run's vendor and cua
+//     lanes share one sitting: `summary` pairs them per run number.
 //   node scripts/native-matrix.mjs cell <name> [the run's options] [--scene <id>] [--user <id>]
 //   node scripts/native-matrix.mjs cell --list
 //     One registered cell (./native-matrix/registry.mjs): the matrix's own (a part of the run, narrowed by --scene and
@@ -19,7 +22,8 @@
 //     another harness (M2a's residue on the live harness; `settle`, the native-mac suite's lane).
 //   node scripts/native-matrix.mjs compare <vendor-dir> <cua-dir> [--out comparison.md]
 //     Every result under the two directories judged (./native-matrix/summary.mjs; only full matrix runs count, three
-//     complete attested runs per side of one sitting, every manifest row present): VERDICT PASS (exit 0), OWNER (exit 3:
+//     complete attested runs per side, each run number's vendor and cua runs of one hold, one commit and one approved
+//     build, every manifest row present): VERDICT PASS (exit 0), OWNER (exit 3:
 //     nothing failed, the owner's calls remain: a missed speed beat, finding parity, a declared self-activating family),
 //     NO VERDICT (exit 4: nothing failed, proof is missing; it blocks M5 as a failure does) or FAIL (exit 1).
 //   node scripts/native-matrix.mjs summary <dir>... [--out summary.md]
@@ -45,20 +49,20 @@ import {cleanupMatrix, planOf, runMatrix} from './native-matrix/run.mjs';
 import {judge, readResults, renderSummary} from './native-matrix/summary.mjs';
 
 const SCRIPT = fileURLToPath(import.meta.url);
-export const USAGE = `usage: native-matrix.mjs run --device <alias> --host vendor|cua --engine vendor|cua --approved-runtime <home> --approved-engine <bundle> --sitting <id> --out <dir> [--runs n] [--samples n] [--run <device dir>] [--dry-run]
+export const USAGE = `usage: native-matrix.mjs run --device <alias> --host vendor|cua --engine vendor|cua --approved-runtime <home> --approved-engine <bundle> --sitting <hold id> --out <dir> [--runs n] [--run-number n] [--samples n] [--run <device dir>] [--dry-run]
        native-matrix.mjs cell <name> [the run's options] [--scene <id>] [--user <id>] | cell --list
        native-matrix.mjs compare <vendor-dir> <cua-dir> [--out <file>]
        native-matrix.mjs summary <dir>... [--out <file>]
        native-matrix.mjs cleanup --device <alias> [--run <device dir>] [--preparation <file>] [--dry-run]`;
 const OPTIONS = {device: {type: 'string'}, host: {type: 'string'}, engine: {type: 'string'}, 'approved-runtime': {type: 'string'}, 'approved-engine': {type: 'string'},
-  out: {type: 'string'}, runs: {type: 'string'}, samples: {type: 'string'}, run: {type: 'string'}, scene: {type: 'string'}, user: {type: 'string'}, sitting: {type: 'string'},
+  out: {type: 'string'}, runs: {type: 'string'}, 'run-number': {type: 'string'}, samples: {type: 'string'}, run: {type: 'string'}, scene: {type: 'string'}, user: {type: 'string'}, sitting: {type: 'string'},
   preparation: {type: 'string'}, list: {type: 'boolean', default: false}, 'dry-run': {type: 'boolean', default: false}};
 const fail = message => { throw new Error(`${message}\n${USAGE}`); };
 const absolute = (value, name) => { if (value !== undefined && (!isAbsolute(value) || value.includes('\n'))) fail(`--${name} needs an absolute path`); return value; };
-// The sitting every lane of one sitting names (`summary` refuses results of two): required on the device, made up in a
-// dry run.
+// The hold every lane of one hold names (`summary` refuses a run number whose vendor and cua runs name two): required on
+// the device, made up in a dry run.
 const sittingOf = (value, dryRun) => {
-  if (value === undefined) return dryRun ? 'dry-run' : fail('--sitting <id> is required: the same id on every lane of the sitting');
+  if (value === undefined) return dryRun ? 'dry-run' : fail('--sitting <hold id> is required: the same id on every lane of the hold');
   if (!/^[\w.-]+$/.test(value)) fail('--sitting takes letters, digits, dot, dash and underscore');
   return value;
 };
@@ -75,6 +79,7 @@ export function parseCommand(argv) {
   const dryRun = values['dry-run'];
   const lane = () => ({device: values.device, host: values.host, engine: values.engine, approvedRuntime: absolute(values['approved-runtime'], 'approved-runtime'),
     approvedEngine: absolute(values['approved-engine'], 'approved-engine'), out: values.out ? resolve(values.out) : undefined, runs: count(values.runs, 'runs', undefined),
+    runNumber: count(values['run-number'], 'run-number', undefined),
     samples: count(values.samples, 'samples', undefined), run: absolute(values.run, 'run'), sitting: sittingOf(values.sitting, dryRun), dryRun});
   switch (command) {
     case 'run':

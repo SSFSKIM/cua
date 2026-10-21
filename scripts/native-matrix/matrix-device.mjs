@@ -51,6 +51,9 @@
 //       source and per-context preference saved before the first switch (./live-device.mjs saveInputSource, first record
 //       wins), a source selected through `--probe input-source` and read back, the preference written and read back, and
 //       the saved ones restored with the record kept, so the put-back's input-source step verifies them again
+//   load --run <dir>
+//       the Mac's load averages over 1, 5 and 15 minutes, its uptime and its core count (the run's record of the load it
+//       ran under, before its work and after its put-back) -> {loadavg, uptimeS, cpus}
 //   windowless up --run <dir>
 //       the windowless app of the "app with no window" refusal: a stay-open AppleScript applet with no window and no
 //       reopen handler (built once, ad hoc signed, its own bundle id), launched in the background and journaled as a
@@ -61,7 +64,7 @@
 import {execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import * as fs from 'node:fs';
-import {homedir} from 'node:os';
+import {cpus, homedir, loadavg, uptime} from 'node:os';
 import {basename, isAbsolute, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {launchOf, quitOwned} from '../accept/fixture-app.mjs';
@@ -208,6 +211,12 @@ export async function source(action, {id, value} = {}, io) {
     default: throw new Error('source save|current|select|per-context|restore');
   }
 }
+
+// ---- the load ----------------------------------------------------------------------------------------------------------
+
+// io: {loadavg(), uptime(), cpus()}. -> {loadavg: [1, 5, 15 min], uptimeS, cpus}.
+export const deviceLoad = (io = {loadavg, uptime, cpus: () => cpus().length}) =>
+  ({loadavg: io.loadavg().map(x => Math.round(x * 100) / 100), uptimeS: Math.round(io.uptime()), cpus: io.cpus()});
 
 // ---- the alert watch -----------------------------------------------------------------------------------------------------
 
@@ -357,7 +366,7 @@ function parse(argv) {
   }
   return {command, positional, flags};
 }
-const USAGE = 'usage: matrix-device.mjs compile|read|alerts|launched|probe|source|windowless --run <dir> … | step <scenes-mac.mjs arguments>';
+const USAGE = 'usage: matrix-device.mjs compile|read|alerts|launched|probe|source|load|windowless --run <dir> … | step <scenes-mac.mjs arguments>';
 const sleep = ms => new Promise(done => setTimeout(done, ms));
 
 export async function main(argv, {io: given = {}} = {}) {
@@ -392,6 +401,7 @@ export async function main(argv, {io: given = {}} = {}) {
       if (positional[0] === 'finish') return timed(() => probeFinish(io));
       return timed(() => probeStart({kind: positional[0], window: flags.window, text: flags.text, mode: flags.mode, id: flags.source, lead: Number(flags.lead)}, io));
     case 'source': return timed(() => source(positional[0], {id: flags.source, value: flags.value}, io));
+    case 'load': return timed(() => deviceLoad());
     case 'windowless':
       if (positional[0] === 'up') return timed(() => windowlessUp(io));
       throw new Error(USAGE);

@@ -369,9 +369,11 @@ final class AutoStopTests: XCTestCase {
   func testCancelStopsTheDeadlineFromFiring() {
     let autoStop = AutoStop()
     var fired = 0
-    autoStop.arm(seconds: 0) { fired += 1 }
+    // A 1 s deadline cannot fire before the cancel on the next line, however loaded the runner (a 0 s one raced it:
+    // hosted ci-gate run 39531662385 saw it fire once).
+    autoStop.arm(seconds: 1) { fired += 1 }
     autoStop.cancel()
-    Thread.sleep(forTimeInterval: 0.3)
+    Thread.sleep(forTimeInterval: 1.3)
     XCTAssertEqual(fired, 0, "a cancelled deadline never stops anything")
   }
 
@@ -387,9 +389,9 @@ final class AutoStopTests: XCTestCase {
   func testASecondArmSupersedesTheFirst() {
     let autoStop = AutoStop()
     var fired = 0
-    autoStop.arm(seconds: 0) { fired += 10 }  // superseded: never runs
+    autoStop.arm(seconds: 1) { fired += 10 }  // superseded before it can fire: never runs
     autoStop.arm(seconds: 0) { fired += 1 }   // current generation
-    Thread.sleep(forTimeInterval: 0.3)
+    Thread.sleep(forTimeInterval: 1.3)
     XCTAssertEqual(fired, 1)
   }
 }

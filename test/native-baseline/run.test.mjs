@@ -626,6 +626,17 @@ test('a TextEdit that started before the run\'s bind is not the run\'s: the run 
   assert.deepEqual([app.keys, app.clicks], [[], []]);
 });
 
+// ps's etime subtracts whole seconds (now's and the start's, each truncated), so it can read up to 1 s more than the
+// process's age: the mini's comparison A run 2 (2026-10-21 00:13Z) refused the TextEdit its own bind launched.
+test('a TextEdit whose etime reads 1 s more than the bind has run is still the run\'s; 2 s more is not', async t => {
+  const own = await macRun(t, {engine: 'cua', textEditProcess: () => ({...TEXTEDIT_PROCESS, ageSeconds: 1})});
+  assert.equal(own.code, 0);
+  assert.equal(own.meta.textEdit.launchedByRun, true);
+  const other = await macRun(t, {engine: 'cua', textEditProcess: () => ({...TEXTEDIT_PROCESS, ageSeconds: 2})});
+  assert.equal(other.code, 1);
+  assert.match(other.meta.error, /started before this run's bind \(2 s ago\)/);
+});
+
 test('at the kill, a pid that is no longer the run\'s TextEdit is not signalled; the reason is recorded', async t => {
   for (const [reused, why] of [
     [{...TEXTEDIT_PROCESS, path: '/usr/libexec/somethingelse'}, /not signalled: pid 4242 is now \/usr\/libexec\/somethingelse started Mon Oct 19 22:38:02 2026, not the run's TextEdit/],

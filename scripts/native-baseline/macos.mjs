@@ -26,6 +26,8 @@ export function parseProcess(output) {
   const match = /^\s*(\d+-)?(\d+(?::\d+){1,2})\s+([A-Z][a-z]{2} [A-Z][a-z]{2} [ \d]\d \d{2}:\d{2}:\d{2} \d{4})\s+(\S.*?)\s*$/.exec(String(output).split('\n')[0] ?? '');
   return match ? {ageSeconds: etimeSeconds(`${match[1] ?? ''}${match[2]}`), started: match[3], path: match[4]} : null;
 }
+// ps's etime can read up to this much more than a process's age (whole seconds subtracted).
+const ETIME_SLACK_MS = 1_000;
 const isTextEdit = process => process !== null && /\/TextEdit$/.test(process.path);
 
 export function macosDevice(remote, {checkout, runtimeRoot, engineBundle = null}) {
@@ -166,14 +168,15 @@ export const macosAdapter = {
     meta.service = {surface: 'computer', engine: meta.nativeEngine?.requested ?? 'vendor', answered: meta.nativeEngine ? meta.nativeEngine.attested[0]?.engine ?? 'unattested' : 'vendor', ...ctx.helperAttestation()};
     // Whether the bind launched TextEdit, and its pid whenever it did, bound or not: the key guard's target and, should
     // the run fail before its scratch document, what cleanup ends. A TextEdit is the run's only when it started after the
-    // bind began (ps, as helperAttestation's startedDuringRun reads its helpers; etime is whole seconds, floored, so a process
-    // that started during the bind is never older than the bind); one that started
-    // earlier came up between the preflight and the bind, someone else's, and the run refuses to drive it.
+    // bind began (ps, as helperAttestation's startedDuringRun reads its helpers). etime subtracts whole seconds, now's and
+    // the start's each truncated, so it can read up to 1 s more than the process's age (the mini, 2026-10-21: a run
+    // refused the TextEdit its own bind launched); a process up to ETIME_SLACK_MS older than the bind is the run's. One
+    // that started earlier came up between the preflight and the bind, someone else's, and the run refuses to drive it.
     meta.textEdit.launchedByRun = false;
     if (!pre.textEditRunning && device.leftovers().textEditRunning) {
       const pid = device.textEditPid(), process = device.processOf(pid);
       if (!isTextEdit(process)) throw new Error(`TextEdit (pid ${pid}) could not be read as TextEdit by ps (${process ? process.path : 'no such process'}); refusing to drive it`);
-      if (!(process.ageSeconds * 1000 <= Date.now() - bindStarted)) throw new Error(`TextEdit (pid ${pid}) started before this run's bind (${process.ageSeconds} s ago): it is not the run's; refusing to drive it`);
+      if (!(process.ageSeconds * 1000 - ETIME_SLACK_MS <= Date.now() - bindStarted)) throw new Error(`TextEdit (pid ${pid}) started before this run's bind (${process.ageSeconds} s ago): it is not the run's; refusing to drive it`);
       Object.assign(meta.textEdit, {launchedByRun: true, pid, started: process.started});
     }
     if (!bound.cell?.ok) throw new Error(`cua.getApp(TextEdit) failed: ${bound.cell?.error ?? bound.failure}`);

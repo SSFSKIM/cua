@@ -246,16 +246,19 @@ extension Engine {
 
   /// The operation, holding the engine-wide lock: the app prepared by route 3's activation when it does not believe it
   /// has focus, then pasted into.
-  private func pasteOperation(_ parts: [PastePart], _ target: PasteTarget, _ context: ExecutionContext,
+  func pasteOperation(_ parts: [PastePart], _ target: PasteTarget, _ context: ExecutionContext,
                               entered: inout Int, meta: inout InputMeta) throws {
     meta.inputRoute = .paste
     try withPasteLock(pasteLock, deadline: context.deadline) {
       // Waiting for the lock took time: a user event since the guard was read stops the paste before anything is done.
       try target.guarding.checkInFlight()
-      let activation = FakeActivation(pid: target.pid, window: primaryWindow(of: target.application) ?? target.application)
+      let activation = FakeActivation(pid: target.pid, window: primaryWindow(of: target.application) ?? target.application,
+                                      system: pasteActivation)
       defer { activation.deactivate() }  // every path out, error or success, undoes the activation
-      try activation.activate()
-      meta.activationGuardMs = activation.guardMs
+      do {
+        defer { meta.activationGuardMs = activation.guardMs }  // a guard that failed still says how long it held
+        try activation.activate()
+      }
 
       let application = target.application
       let effect = PasteEffect(hasObserver: false, read: { effectReading(of: application) })

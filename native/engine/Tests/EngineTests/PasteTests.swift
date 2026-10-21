@@ -733,6 +733,43 @@ final class PasteOperationTests: XCTestCase {
   }
 }
 
+
+// MARK: The paste's activation
+
+final class PasteActivationTests: XCTestCase {
+  private let target: pid_t = 990_001, user: pid_t = 990_002
+
+  /// The paste's route-3 activation fails its guard: refused before the pasteboard is touched, and the guard's duration
+  /// kept in the meta for the diagnosis, as a click's is (whole-milestone review, P3), on paste and on type_text's paste
+  /// route alike.
+  func testAFailedGuardKeepsItsDurationOnBothPastePaths() throws {
+    for typed in [false, true] {
+      let seam = GuardSeam(frontmost: user, frontmostAfterPost: target)
+      let pasteboard = TestPasteboard()
+      pasteboard.userCopies("the owner's")
+      let engine = Engine(paths: ServerPaths(socket: "/tmp/x.sock", directory: "/tmp", lock: "/tmp/x.lock", usage: "/tmp/cua-engine-test-usage.json"),
+                          intervention: InterventionMonitor(listenGranted: { false }), screenLocked: { false },
+                          pasteboard: { pasteboard.access }, pasteActivation: seam.system)
+      let context = ExecutionContext(connection: ConnectionState(id: 1, fd: -1), receivedAt: 1, hidIdleMs: 0,
+                                     deadline: unixMilliseconds() + 60_000, lineage: nil)
+      let app = ResolvedApp(appPath: "/Applications/TextEdit.app", bundleIdentifier: nil, displayName: "TextEdit", running: nil)
+      let pasteTarget = PasteTarget(app: app, pid: target, application: AXUIElementCreateApplication(target), keyboard: target,
+                                    guarding: .off(app: "TextEdit"))
+      var meta = InputMeta(context)
+      var entered = 0
+      XCTAssertThrowsError(try typed
+        ? engine.typeTextByPaste("x\ny", pasteTarget, context, meta: &meta)
+        : engine.pasteOperation([.content(plain("x"), units: 1)], pasteTarget, context, entered: &entered, meta: &meta)) {
+        XCTAssertEqual(($0 as? EngineError)?.errorName, "activationFailed", typed ? "type_text" : "paste")
+      }
+      XCTAssertEqual(meta.inputRoute, .paste)
+      XCTAssertNotNil(meta.activationGuardMs, "the failed guard's duration is kept for the diagnosis (\(typed ? "type_text" : "paste"))")
+      XCTAssertNil(meta.startedAt, "nothing was posted")
+      XCTAssertEqual(pasteboard.strings(), ["the owner's"], "the pasteboard was never touched")
+    }
+  }
+}
+
 // MARK: Which sources key and which paste
 
 /// The routing predicate (review finding 4): a source keys when its TIS type is a keyboard layout, whatever its script,

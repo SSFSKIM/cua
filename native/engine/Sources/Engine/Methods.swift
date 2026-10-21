@@ -41,16 +41,20 @@ final class Engine: @unchecked Sendable {
   let pasteboardAccess: () -> PasteboardAccess
   /// One paste at a time across every connection, from the snapshot through the restore (Pasteboard.swift).
   let pasteLock = FIFOLock()
+  /// The outside world of the paste's route-3 activation (Paste.swift): the system's, replaced in the unit tests.
+  let pasteActivation: ActivationSystem
   weak var server: Server?
 
   init(paths: ServerPaths, routes: [String: Int] = [:], intervention: InterventionMonitor = InterventionMonitor(),
-       screenLocked: @escaping () -> Bool = screenIsLocked, pasteboard: @escaping () -> PasteboardAccess = SystemPasteboard.general) {
+       screenLocked: @escaping () -> Bool = screenIsLocked, pasteboard: @escaping () -> PasteboardAccess = SystemPasteboard.general,
+       pasteActivation: ActivationSystem = ActivationSystem()) {
     self.paths = paths
     self.apps = AppDirectory(usagePath: paths.usage)
     self.routes = routes
     self.intervention = intervention
     self.screenLocked = screenLocked
     self.pasteboardAccess = pasteboard
+    self.pasteActivation = pasteActivation
   }
 
   func handle(_ request: Request, on connection: ConnectionState, receivedAt: Int64) -> Outcome {

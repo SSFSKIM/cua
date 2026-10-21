@@ -17,9 +17,10 @@
 //     --user, e.g. `cell non-interference --scene textedit --user finder`), one implemented on another harness (M2a's
 //     residue on the live harness), or one still planned (M2b.3's), which is named and refused.
 //   node scripts/native-matrix.mjs compare <vendor-dir> <cua-dir> [--out comparison.md]
-//     Every result under the two directories judged (./native-matrix/summary.mjs): VERDICT PASS (exit 0), OWNER (exit 3:
-//     nothing failed, the owner's calls remain: a missed speed beat, finding parity, a declared self-activating family,
-//     fewer than three runs per side) or FAIL (exit 1).
+//     Every result under the two directories judged (./native-matrix/summary.mjs; only full matrix runs count, three
+//     complete attested runs per side of one sitting, every manifest row present): VERDICT PASS (exit 0), OWNER (exit 3:
+//     nothing failed, the owner's calls remain: a missed speed beat, finding parity, a declared self-activating family),
+//     NO VERDICT (exit 4: nothing failed, proof is missing; it blocks M5 as a failure does) or FAIL (exit 1).
 //   node scripts/native-matrix.mjs summary <dir>... [--out summary.md]
 //     The method table, the per-scene speed table and the three-point section, written to --out (default
 //     <first dir>/summary.md): Acceptance 7's docs/evidence/<sitting date>-own-native-engine/summary.md.
@@ -108,7 +109,7 @@ function judgeDirs(dirs) {
   const judged = judge(results, problems);
   return {judged, text: renderSummary(judged)};
 }
-const VERDICT_CODE = {PASS: 0, FAIL: 1, OWNER: 3};
+const VERDICT_CODE = {PASS: 0, FAIL: 1, OWNER: 3, 'NO VERDICT': 4};
 
 export async function main(argv = process.argv.slice(2), {log = console.log, io: given = null} = {}) {
   const options = parseCommand(argv);
@@ -118,6 +119,7 @@ export async function main(argv = process.argv.slice(2), {log = console.log, io:
     if (options.command === 'compare') {
       log(`VERDICT: ${judged.verdict}`);
       for (const b of judged.blocking) log(`  blocking: ${b}`);
+      for (const m of judged.missing) log(`  missing: ${m}`);
       for (const o of judged.owner) log(`  owner: ${o}`);
     }
     return VERDICT_CODE[judged.verdict];

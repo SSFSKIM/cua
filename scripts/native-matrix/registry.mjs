@@ -11,7 +11,10 @@
 //   rows feed, and the runner module, which exports `runCell(name, options, io) -> exit code` and `cellIo(options,
 //   {log, interrupt, dryRun}) -> io` (the io its own CLI builds). The runner writes its CellResult to
 //   `<options.out>/result.json`; the registry then reads it back, validates it and checks it answers the name asked.
-//   A source whose module is not on this checkout yet is skipped. A name two kinds define is refused.
+//   A source names the cells it is expected to carry (EXPECTED_RESIDUE for M2a's residue): its names module missing,
+//   listing other names, or its runner missing or without runCell and cellIo fails loudly, so an expected cell is never
+//   silently absent from `cell --list` or the matrix. A name two kinds define is refused. External sources are loaded
+//   only when a name is not the matrix's own or planned (and for `cell --list`).
 // - Planned (PLANNED): named so `cell <name>` says which task builds it rather than that it does not exist; the
 //   section each will write is already in the schema (concurrent, intervention, unicode, settle).
 import {join} from 'node:path';
@@ -36,33 +39,48 @@ export const PLANNED = Object.freeze({
   settle: {section: 'settle', by: 'M2b.3', describe: 'the settle cell: the observation after an action equals the one two seconds later'},
 });
 
-export const EXTERNAL_SOURCES = Object.freeze([{names: './residue-checks.mjs', list: 'RESIDUE_CELLS', section: 'residue', runner: './live.mjs'}]);
+// M2a's residue cells on the live harness (M2b.1b: scripts/native-matrix/residue-checks.mjs RESIDUE_CELLS, run by
+// ./live.mjs runCell with its cellIo).
+export const EXPECTED_RESIDUE = Object.freeze(['route4', 'minimized-select', 'enablement', 'menu', 'hscroll']);
+export const EXTERNAL_SOURCES = Object.freeze([{names: './residue-checks.mjs', list: 'RESIDUE_CELLS', section: 'residue', runner: './live.mjs', expected: EXPECTED_RESIDUE}]);
 const importHere = spec => import(new URL(spec, import.meta.url).href);
 const missing = error => error?.code === 'ERR_MODULE_NOT_FOUND';
+// A source's module, or a loud failure naming the cells it should carry.
+async function required(load, spec, source) {
+  try { return await load(spec); } catch (error) {
+    if (missing(error)) throw new Error(`the cells ${source.expected.join(', ')} are expected from ${spec}, which is not on this checkout: merge the harness that carries them (M2b.1b)`);
+    throw error;
+  }
+}
 
-// The external cells, by name. -> {[name]: {module, section, describe, load()}}.
+// The external cells, by name, each source checked whole (the module's header). -> {[name]: {module, section, describe,
+// load()}}.
 export async function externalCells({sources = EXTERNAL_SOURCES, load = importHere} = {}) {
   const out = {};
   for (const source of sources) {
-    let names;
-    try { names = (await load(source.names))?.[source.list]; } catch (error) { if (missing(error)) continue; throw error; }
-    if (!Array.isArray(names)) continue;
     if (!SECTIONS.includes(source.section)) throw new Error(`${source.names} feeds ${source.section}, not a section of the schema`);
-    for (const name of names) {
+    const names = (await required(load, source.names, source))?.[source.list];
+    const listed = Array.isArray(names) ? names : [];
+    if (listed.length !== source.expected.length || source.expected.some(name => !listed.includes(name))) {
+      throw new Error(`${source.names} lists ${listed.join(', ') || 'no cells'}; this registry expects ${source.expected.join(', ')}`);
+    }
+    const runner = await required(load, source.runner, source);
+    if (typeof runner?.runCell !== 'function' || typeof runner?.cellIo !== 'function') throw new Error(`${source.runner} exports no runCell and cellIo: the cells ${listed.join(', ')} cannot be run`);
+    for (const name of listed) {
       if (MATRIX_CELLS[name] || PLANNED[name] || out[name]) throw new Error(`the cell ${name} is defined twice (${source.names})`);
-      out[name] = {module: source.runner, section: source.section, describe: `${source.section} cell on ${source.runner}`, load: () => load(source.runner)};
+      out[name] = {module: source.runner, section: source.section, describe: `${source.section} cell on ${source.runner}`, load: async () => runner};
     }
   }
   return out;
 }
 
-// What `cell <name>` runs. -> {kind: 'matrix', plan, section} | {kind: 'external', ...} | {kind: 'planned', by, section};
+// What `cell <name>` runs. -> {kind: 'matrix', plan, section} | {kind: 'planned', by, section} | {kind: 'external', ...};
 // an unknown name throws with the list.
 export async function resolveCell(name, options = {}) {
   if (MATRIX_CELLS[name]) return {kind: 'matrix', ...MATRIX_CELLS[name]};
+  if (PLANNED[name]) return {kind: 'planned', ...PLANNED[name]};
   const external = await externalCells(options);
   if (external[name]) return {kind: 'external', ...external[name]};
-  if (PLANNED[name]) return {kind: 'planned', ...PLANNED[name]};
   throw new Error(`no cell ${name}; the cells: ${Object.keys({...MATRIX_CELLS, ...external, ...PLANNED}).join(', ')}`);
 }
 

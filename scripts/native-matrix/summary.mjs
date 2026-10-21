@@ -18,11 +18,25 @@
 // - Interference (the `interference` of background method rows and launch rows): cua at 100%, a row with a declared
 //   cause (a self-activating family, an accepted route 4) listed for the owner rather than passed; the vendor's score
 //   recorded beside it.
+// - Launch rows (section 'launch'): the launch worked (`ok`) judged as a background method row is, apart from their
+//   interference: a valid cua sample that did not launch is worse, none valid is no verdict.
 // - Any other section (concurrent use, intervention, Unicode, settle, residue): each cell's verdict per engine as its
 //   rows give it (./cell-result.mjs verdictOf), listed.
+//
+// What counts (the proof): only the whole matrix's results (cell 'matrix', meta.planId 'full') feed the tables; a
+// narrowed matrix cell (`cell method --scene …`) is listed and not counted. The full runs must form one sitting: at
+// least RUNS_PER_SIDE complete, attested runs per engine, one device, one meta.sitting, one commit, one OS, one host and
+// one engine build per engine, no (section, id, engine, sample) twice, and every row of the manifest (manifestOf) in
+// every run. Whatever is missing is NO VERDICT, which blocks M5 as a failure does but is not one.
+//
+// The verdict: FAIL when something was judged worse, lower or interfering; else NO VERDICT when proof is missing; else
+// OWNER when only the owner's calls remain; else PASS.
 import {stats} from '../native-baseline/summary.mjs';
+import {SCENES} from '../repl-parity/scenes-mac.mjs';
 import {readCellResults} from './cell-result.mjs';
-import {ENGINE_METHOD, METHODS, NOT_APPLICABLE, TARGETS} from './plan.mjs';
+import {CASES, caseId, ENGINE_METHOD, METHODS, NOT_APPLICABLE, SCENE_OF, TARGETS} from './plan.mjs';
+import {MATRIX_CELLS} from './registry.mjs';
+import {FULL_PLAN} from './run.mjs';
 
 export const BEAT = 0.9;
 export const RUNS_PER_SIDE = 3;
@@ -38,6 +52,55 @@ export function readResults(dirs) {
     else results.push({path: `${dir}/${path}`, result});
   }
   return {results, problems};
+}
+
+// Every row one full matrix run must hold (FULL_PLAN): the method cases of both regimes, the speed ops of every scene
+// (`samples` each), the finding rows of every scene (its ten targets, the lines and the ID count) and the launch rows.
+// `run` is the run's number (meta.run), the sample of its method, finding and launch rows. -> [{section, id, sample}].
+export function manifestOf({run, samples}, plan = FULL_PLAN) {
+  const out = [];
+  for (const target of plan.frontmost) for (const c of CASES[target]) out.push({section: 'method', id: caseId(target, 'frontmost', c), sample: run});
+  for (const {driven, user} of plan.background) for (const c of CASES[driven]) out.push({section: 'method', id: caseId(driven, 'background', c, user), sample: run});
+  const scenes = [...new Set(plan.frontmost.filter(t => t !== 'openPanel').map(t => SCENE_OF[t]))];
+  if (plan.speed) for (const scene of scenes) for (const op of SPEED_OPS) for (let i = 1; i <= samples; i++) out.push({section: 'speed', id: `${scene}/${op}`, sample: (run - 1) * samples + i});
+  if (plan.finding) for (const scene of scenes) {
+    for (const t of SCENES[scene].targets) out.push({section: 'finding', id: `${scene}/target.${t.id}`, sample: run});
+    out.push({section: 'finding', id: `${scene}/lines`, sample: run}, {section: 'finding', id: `${scene}/ids`, sample: run});
+  }
+  for (const {scene, user} of plan.launch) out.push({section: 'launch', id: `${scene}/background/launch@${user}`, sample: run});
+  return out;
+}
+
+// Whether the full runs are one sitting's proof (the module's header). -> [missing proof, each a sentence].
+export function proofProblems(full) {
+  const missing = [];
+  const one = (what, values) => {
+    const seen = [...new Set(values.map(v => JSON.stringify(v ?? null)))];
+    if (seen.length > 1) missing.push(`the full runs name more than one ${what} (${seen.join(', ')}): one sitting's runs are judged together`);
+  };
+  one('device', full.map(({result}) => result.device));
+  one('sitting', full.map(({result}) => result.meta?.sitting));
+  one('commit', full.map(({result}) => result.meta?.commit));
+  one('OS', full.map(({result}) => result.meta?.os));
+  for (const engine of ['vendor', 'cua']) {
+    const mine = full.filter(({result}) => result.lanes[0]?.engine === engine);
+    one(`host for the ${engine} engine`, mine.map(({result}) => result.lanes[0].host));
+    one(`build of the ${engine} engine`, mine.map(({result}) => [result.lanes[0].build, result.lanes[0].version]));
+    const attested = mine.filter(({result}) => result.complete && result.lanes[0].build);
+    if (attested.length < RUNS_PER_SIDE) missing.push(`runs: ${attested.length} complete, attested full matrix run(s) on ${engine}, ${RUNS_PER_SIDE} are the rule`);
+    const runs = mine.map(({result}) => result.meta?.run);
+    const twice = runs.filter((n, i) => runs.indexOf(n) !== i);
+    if (twice.length) missing.push(`the ${engine} engine's full runs repeat run number(s) ${[...new Set(twice)].join(', ')}: two lanes' runs cannot be told apart sample for sample`);
+    for (const {path, result} of mine) {
+      const have = new Set(result.rows.map(r => `${r.section} ${r.id} ${r.sample}`));
+      const absent = manifestOf({run: result.meta?.run, samples: result.meta?.samples}).filter(e => !have.has(`${e.section} ${e.id} ${e.sample}`));
+      if (absent.length) missing.push(`${path}: ${absent.length} row(s) of the manifest missing (${absent.slice(0, 3).map(e => `${e.section} ${e.id}#${e.sample}`).join(', ')}${absent.length > 3 ? ', …' : ''})`);
+    }
+  }
+  const keys = full.flatMap(({result}) => result.rows.map(r => `${r.section} ${r.id} ${r.engine} ${r.sample}`));
+  const repeated = [...new Set(keys.filter((k, i) => keys.indexOf(k) !== i))];
+  if (repeated.length) missing.push(`${repeated.length} row(s) appear twice in the full runs (${repeated.slice(0, 3).join(', ')}${repeated.length > 3 ? ', …' : ''})`);
+  return missing;
 }
 
 const groupBy = (items, key) => { const out = new Map(); for (const item of items) { const k = key(item); if (!out.has(k)) out.set(k, []); out.get(k).push(item); } return out; };
@@ -84,17 +147,19 @@ export function findingMeasures(rows) {
   return {resolved, found, share: round((stats(lines)?.median ?? 0) * 1000) / 1000, ids: stats(ids)?.median ?? 0, targets: targets.size};
 }
 
-// The judgment of everything pooled. -> {problems, runs, methods, speed, finding, interference, others, verdict}.
+// The judgment of everything read. `problems`: results that could not be read, missing proof. -> {problems, runs,
+// narrowed, methods, launch, speed, finding, interference, others, owner, blocking, missing, verdict}.
 export function judge(results, problems = []) {
-  const rows = results.flatMap(({result}) => result.rows.map(row => ({...row, cell: result.cell})));
-  const by = engine => rows.filter(r => r.engine === engine);
+  const own = ({result}) => Boolean(MATRIX_CELLS[result.cell]);
+  const full = results.filter(r => own(r) && r.result.cell === 'matrix' && r.result.meta?.planId === 'full');
+  const narrowed = results.filter(r => own(r) && !full.includes(r)).map(({path, result}) => ({path, cell: result.cell, planId: result.meta?.planId ?? null}));
+  const rows = full.flatMap(({result}) => result.rows.map(row => ({...row, cell: result.cell})));
   const runs = {vendor: 0, cua: 0};
-  const hosts = {vendor: new Set(), cua: new Set()};
+  for (const {result} of full) runs[result.lanes[0]?.engine] = (runs[result.lanes[0]?.engine] ?? 0) + 1;
+  const missingProof = [...problems, ...proofProblems(full)];
   for (const {result, path} of results) {
-    if (result.cell === 'matrix') for (const lane of result.lanes) { runs[lane.engine]++; hosts[lane.engine].add(lane.host); }
-    if (!result.complete) problems.push(`${path}: ${result.cell} is ${result.verdict === 'refused' ? 'refused' : 'incomplete'}${result.problems.length ? ` (${result.problems.join('; ')})` : ''}`);
+    if (!result.complete && !narrowed.some(n => n.path === path)) missingProof.push(`${path}: ${result.cell} is ${result.verdict === 'refused' ? 'refused' : 'incomplete'}${result.problems.length ? ` (${result.problems.join('; ')})` : ''}`);
   }
-  for (const engine of ['vendor', 'cua']) if (hosts[engine].size > 1) problems.push(`the ${engine} engine's matrix runs come from more than one host (${[...hosts[engine]].join(', ')}): one lane per engine is judged`);
 
   // Methods.
   const methodRows = rows.filter(r => r.section === 'method');
@@ -134,19 +199,24 @@ export function judge(results, problems = []) {
       failed: list.filter(r => !r.interference.ok && !declared(r)).map(r => ({id: r.id, frontmost: r.interference.frontmost, topWindow: r.interference.topWindow, focus: r.interference.focus ?? null,
         activations: r.interference.activations, route4: r.interference.route4}))}];
   }));
-  const launches = rows.filter(r => r.section === 'launch');
+  // The launch path's outcome, apart from its interference.
+  const launch = [];
+  for (const [id, list] of groupBy(rows.filter(r => r.section === 'launch'), r => r.id)) {
+    launch.push({id, ...judgeMethod('background', list.filter(r => r.engine === 'vendor'), list.filter(r => r.engine === 'cua'))});
+  }
+  launch.sort((a, b) => a.id.localeCompare(b.id));
 
-  // Other cells, by cell and engine.
+  // Other cells (implemented elsewhere), by cell and engine.
   const others = [];
   for (const {result, path} of results) {
-    if (['matrix'].includes(result.cell)) continue;
+    if (own({result})) continue;
     for (const [engine, list] of groupBy(result.rows, r => r.engine)) {
       const valid = list.filter(r => !r.invalid);
       others.push({cell: result.cell, path, engine, sections: [...new Set(list.map(r => r.section))], verdict: result.verdict, ok: valid.filter(r => r.ok).length, valid: valid.length, invalid: list.length - valid.length});
     }
   }
 
-  const methodFails = methods.filter(m => m.verdict === 'worse' || m.verdict === 'no-verdict');
+  const methodFails = methods.filter(m => m.verdict === 'worse'), methodUnproven = methods.filter(m => m.verdict === 'no-verdict');
   const interferencePass = interference.cua.rows > 0 && interference.cua.failed.length === 0 && interference.cua.declared.length === 0;
   const speedMisses = speed.filter(s => s.beat === false);
   const speedUnmeasured = speed.filter(s => s.beat === null);
@@ -157,19 +227,25 @@ export function judge(results, problems = []) {
     ...speedMisses.map(s => `speed: ${s.id} missed the 10% beat (cua ${round(s.cua.median)} ms against ${round(s.vendor.median)} ms, p95 ${round(s.cua.p95)} against ${round(s.vendor.p95)})`),
     ...(findingVerdict === 'parity' ? ['finding elements: parity on the resolved sum (the owner decides)'] : []),
     ...interference.cua.declared.map(d => `not interfering: ${d.id}: ${d.cause}`),
-    ...(runs.vendor < RUNS_PER_SIDE || runs.cua < RUNS_PER_SIDE ? [`runs: ${runs.vendor} vendor and ${runs.cua} cua matrix runs, ${RUNS_PER_SIDE} per side are the rule`] : []),
   ];
   const blocking = [
-    ...problems,
-    ...methodFails.map(m => `method: ${m.id} is ${m.verdict === 'worse' ? 'worse on cua' : 'without a valid cua sample'}`),
-    ...(findingVerdict === 'fail' ? lower.map(f => `finding elements: ${f.scene} is lower on cua`) : findingVerdict === 'no-verdict' ? ['finding elements: a scene has no measure on one engine'] : []),
+    ...methodFails.map(m => `method: ${m.id} is worse on cua`),
+    ...launch.filter(l => l.verdict === 'worse').map(l => `launch: ${l.id} did not launch on cua`),
+    ...(findingVerdict === 'fail' ? lower.map(f => `finding elements: ${f.scene} is lower on cua`) : []),
     ...interference.cua.failed.map(f => `not interfering: ${f.id} failed on cua`),
+    ...others.filter(o => o.engine === 'cua' && o.verdict === 'fail').map(o => `${o.cell}: fail on cua`),
+  ];
+  const missing = [
+    ...missingProof,
+    ...methodUnproven.map(m => `method: ${m.id} has no valid cua sample`),
+    ...launch.filter(l => l.verdict === 'no-verdict').map(l => `launch: ${l.id} has no valid cua sample`),
+    ...(findingVerdict === 'no-verdict' ? ['finding elements: a scene has no measure on one engine'] : []),
     ...(interference.cua.rows === 0 ? ['not interfering: no background row was judged on cua'] : []),
     ...speedUnmeasured.map(s => `speed: ${s.id} has no measure on one engine`),
-    ...others.filter(o => o.engine === 'cua' && o.verdict !== 'pass').map(o => `${o.cell}: ${o.verdict} on cua`),
+    ...others.filter(o => o.engine === 'cua' && o.verdict !== 'pass' && o.verdict !== 'fail').map(o => `${o.cell}: ${o.verdict} on cua`),
   ];
-  const verdict = blocking.length ? 'FAIL' : owner.length ? 'OWNER' : 'PASS';
-  return {problems, runs, methods, speed, finding, findingVerdict, interference, interferencePass, launches: launches.length, others, owner, blocking, verdict};
+  const verdict = blocking.length ? 'FAIL' : missing.length ? 'NO VERDICT' : owner.length ? 'OWNER' : 'PASS';
+  return {problems: missingProof, runs, narrowed, methods, launch, speed, finding, findingVerdict, interference, interferencePass, others, owner, blocking, missing, verdict};
 }
 
 // ---- the report ---------------------------------------------------------------------------------------------------------
@@ -198,9 +274,11 @@ export function methodTable(methods) {
 }
 
 export function renderSummary(j, {title = 'Native matrix summary'} = {}) {
-  const out = [`# ${title}`, '', `Verdict: **${j.verdict}**${j.verdict === 'OWNER' ? ' (nothing failed; the owner\'s calls below remain)' : ''}`, '',
-    `Matrix runs: ${j.runs.vendor} vendor, ${j.runs.cua} cua (${RUNS_PER_SIDE} per side are the rule).`, ''];
+  const note = {OWNER: ' (nothing failed; the owner\'s calls below remain)', 'NO VERDICT': ' (nothing failed, but the proof below is missing: it blocks M5 as a failure does)'};
+  const out = [`# ${title}`, '', `Verdict: **${j.verdict}**${note[j.verdict] ?? ''}`, '',
+    `Full matrix runs: ${j.runs.vendor} vendor, ${j.runs.cua} cua (${RUNS_PER_SIDE} per side are the rule).`, ''];
   if (j.blocking.length) out.push('## Blocking', '', ...j.blocking.map(b => `- ${b}`), '');
+  if (j.missing.length) out.push('## Missing proof (no verdict)', '', ...j.missing.map(b => `- ${b}`), '');
   if (j.owner.length) out.push('## For the owner', '', ...j.owner.map(o => `- ${o}`), '');
 
   out.push('## The three points', '');
@@ -230,12 +308,21 @@ export function renderSummary(j, {title = 'Native matrix summary'} = {}) {
   for (const f of j.finding) out.push(`| ${f.scene} | ${f.vendor?.resolved ?? '-'}/${f.vendor?.targets ?? '-'} | ${f.cua?.resolved ?? '-'}/${f.cua?.targets ?? '-'} | ${f.vendor?.share ?? '-'} | ${f.cua?.share ?? '-'} | ${f.vendor?.ids ?? '-'} | ${f.cua?.ids ?? '-'} |`);
   out.push('');
 
+  if (j.launch.length) {
+    out.push('## Launch path', '', '| row | verdict | vendor ok | cua ok |', '|---|---|---|---|');
+    for (const l of j.launch) out.push(`| ${l.id} | ${MARK[l.verdict]} | ${counts(l.vendor)} | ${counts(l.cua)} |`);
+    out.push('');
+  }
+
   out.push('## Not interfering', '');
   for (const engine of ['cua', 'vendor']) {
     const i = j.interference[engine];
     out.push(`- ${engine}: ${share(engine)}${i.failed.length ? `; failed: ${i.failed.map(f => `${f.id} (${[!f.frontmost && 'frontmost changed', !f.topWindow && 'top window changed', f.focus === false && 'focus left the user window', f.activations && `${f.activations} activation(s)`, f.route4 && 'route 4'].filter(Boolean).join(', ')})`).join('; ')}` : ''}${i.declared.length ? `; declared: ${i.declared.map(d => `${d.id} (${d.kind})`).join('; ')}` : ''}`);
   }
   out.push('');
+  if (j.narrowed.length) {
+    out.push('## Narrowed matrix cells (listed, not counted)', '', ...j.narrowed.map(n => `- ${n.path}: ${n.cell} (${n.planId ?? 'no plan id'})`), '');
+  }
   if (j.others.length) {
     out.push('## Other cells', '', '| cell | engine | sections | verdict | ok |', '|---|---|---|---|---|');
     for (const o of j.others) out.push(`| ${o.cell} | ${o.engine} | ${o.sections.join(', ')} | ${o.verdict} | ${o.ok}/${o.valid}${o.invalid ? ` (+${o.invalid} invalid)` : ''} |`);

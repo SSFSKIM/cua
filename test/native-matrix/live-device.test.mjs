@@ -120,7 +120,8 @@ test('minimizedCheck: typing and ⌘A that act on the minimized window are recor
   const io = deviceIo({windowOnScreen: () => !client.state.minimized, activate: async () => { client.state.minimized = false; return {ok: true}; }});
   const out = await minimizedCheck({record: TEXTEDIT, client, io, screenshots: join(scratch(), 'shots')});
   assert.deepEqual(out.verdict.recorded, {typeTextValueChanged: true, superAEffect: true});
-  assert.equal(out.verdict.decision, 'keys act on a minimized window: they stay allowed');
+  assert.deepEqual(out.verdict.decision, {plainKeys: 'type_text and press_key without ⌘ stay allowed: typed text reached the minimized window',
+    commandChords: '⌘ chords stay allowed: ⌘A acted with the window minimized'});
 });
 
 test('minimizedCheck: a window that never minimizes stops the check before any input, and is still restored', async () => {

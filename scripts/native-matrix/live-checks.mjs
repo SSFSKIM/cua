@@ -112,9 +112,10 @@ export function vendorTextAreaIndex(ax, firstLine) {
 
 // The minimized window (the pre-flight entry's item 2, M2a.4's items 2): the observation keeps its tree and drops its
 // screenshot with the reason, a synthesized element click is refused naming the minimized window with nothing posted,
-// set_value and select_text act; then what typing and ⌘A do, which the design leaves open and which decides whether keys
-// into a minimized window are refused (recorded, not judged); and the window put back on screen. -> {pass, failed,
-// recorded, decision}.
+// set_value and select_text act; then what typing and ⌘A do, which the design leaves open (recorded, not judged); and the
+// window put back on screen. The two outcomes decide two refusals apart (M2a.4's ruling): typing that does not land
+// refuses type_text and press_key without ⌘; a ⌘A that does not act, and only that, refuses ⌘ chords too. -> {pass,
+// failed, recorded, decision: {plainKeys, commandChords}}.
 export function minimizedVerdict(steps) {
   const {minimize, observe, click, setValue, selectText, typeText, selectAll, restore} = steps ?? {};
   const expectations = {
@@ -130,10 +131,15 @@ export function minimizedVerdict(steps) {
   };
   const failed = Object.keys(expectations).filter(key => !expectations[key]);
   const recorded = {typeTextValueChanged: typeText?.valueChanged ?? null, superAEffect: selectAll?.effect ?? null};
-  const decision = recorded.typeTextValueChanged === null || recorded.superAEffect === null ? null
-    : recorded.typeTextValueChanged || recorded.superAEffect ? 'keys act on a minimized window: they stay allowed'
-      : 'keys reach no window while it is minimized: refusing typeText and pressKey into a minimized window loses nothing';
-  return {pass: failed.length === 0 && decision !== null, failed, recorded, decision};
+  const decision = {
+    plainKeys: recorded.typeTextValueChanged === null ? null : recorded.typeTextValueChanged
+      ? 'type_text and press_key without ⌘ stay allowed: typed text reached the minimized window'
+      : 'refuse type_text and press_key without ⌘ into a minimized window: typed text did not reach it',
+    commandChords: recorded.superAEffect === null ? null : recorded.superAEffect
+      ? '⌘ chords stay allowed: ⌘A acted with the window minimized'
+      : 'refuse ⌘ chords into a minimized window too: ⌘A did not act',
+  };
+  return {pass: failed.length === 0 && decision.plainKeys !== null && decision.commandChords !== null, failed, recorded, decision};
 }
 
 // The menu path (the vendor reading's item 10): per item, each lane's enabled state and effect side by side; cua's lane

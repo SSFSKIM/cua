@@ -106,10 +106,20 @@ test('minimizedVerdict: the observation, the refusal and the Accessibility route
   const out = minimizedVerdict(steps);
   assert.equal(out.pass, true);
   assert.deepEqual(out.recorded, {typeTextValueChanged: false, superAEffect: false});
-  assert.equal(out.decision, 'keys reach no window while it is minimized: refusing typeText and pressKey into a minimized window loses nothing');
-  const typed = minimizedVerdict({...steps, typeText: {ok: true, valueChanged: true}, selectAll: {ok: true, effect: true}});
-  assert.equal(typed.pass, true);
-  assert.equal(typed.decision, 'keys act on a minimized window: they stay allowed');
+  // The two outcomes decide two refusals apart (M2a.4's ruling): plain typing decides type_text and press_key without ⌘;
+  // ⌘A decides ⌘ chords, refused only when it did not act. All four combinations read as their consequences.
+  const REFUSE_PLAIN = 'refuse type_text and press_key without ⌘ into a minimized window: typed text did not reach it';
+  const ALLOW_PLAIN = 'type_text and press_key without ⌘ stay allowed: typed text reached the minimized window';
+  const REFUSE_CHORDS = 'refuse ⌘ chords into a minimized window too: ⌘A did not act';
+  const ALLOW_CHORDS = '⌘ chords stay allowed: ⌘A acted with the window minimized';
+  assert.deepEqual(out.decision, {plainKeys: REFUSE_PLAIN, commandChords: REFUSE_CHORDS});
+  const combo = (valueChanged, effect) => minimizedVerdict({...steps, typeText: {ok: true, valueChanged}, selectAll: {ok: true, effect}});
+  assert.deepEqual(combo(false, true).decision, {plainKeys: REFUSE_PLAIN, commandChords: ALLOW_CHORDS});
+  assert.deepEqual(combo(true, false).decision, {plainKeys: ALLOW_PLAIN, commandChords: REFUSE_CHORDS});
+  assert.deepEqual(combo(true, true).decision, {plainKeys: ALLOW_PLAIN, commandChords: ALLOW_CHORDS});
+  assert.equal(combo(true, true).pass, true);
+  assert.deepEqual(combo(false, null).decision, {plainKeys: REFUSE_PLAIN, commandChords: null});
+  assert.equal(combo(false, null).pass, false, 'an outcome not recorded is no result');
   const leaked = minimizedVerdict({...steps, observe: {...steps.observe, screenshotNull: false, screenshotOmitted: null}});
   assert.equal(leaked.pass, false);
   assert.deepEqual(leaked.failed, ['screenshotNull', 'screenshotOmitted']);
@@ -119,7 +129,7 @@ test('minimizedVerdict: the observation, the refusal and the Accessibility route
   assert.deepEqual(unrestored.failed, ['restored']);
   const missing = minimizedVerdict({minimize: steps.minimize});
   assert.equal(missing.pass, false);
-  assert.equal(missing.decision, null);
+  assert.deepEqual(missing.decision, {plainKeys: null, commandChords: null});
 });
 
 test('menuComparison: per item the enabled state and the effect on each lane, and what the pair decides', () => {

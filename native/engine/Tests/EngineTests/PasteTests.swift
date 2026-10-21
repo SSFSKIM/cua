@@ -57,7 +57,27 @@ private final class ClearThenFail: PasteboardAccess {
     cleared = true
     return PasteboardWrite(own: board.prepareForNewContents(with: .currentHostOnly), written: false)
   }
-  func restore(_ snapshot: PasteboardSnapshot?) { inner.restore(snapshot) }
+  func restore(_ snapshot: PasteboardSnapshot?, expecting own: Int) { inner.restore(snapshot, expecting: own) }
+}
+
+/// A pasteboard on which the user copies after the engine's last change-count read and before its restore runs: the race
+/// a restore that checks ownership apart from its clear would lose (whole-milestone review, P1).
+private final class CopyBeforeRestore: PasteboardAccess {
+  private let inner: SystemPasteboard
+  private let copy: () -> Void
+
+  init(_ pasteboard: TestPasteboard, copy: @escaping () -> Void) {
+    inner = pasteboard.access
+    self.copy = copy
+  }
+
+  var changeCount: Int { inner.changeCount }
+  func snapshot() -> PasteboardState { inner.snapshot() }
+  func write(_ item: NSPasteboardItem, expecting expected: Int) -> PasteboardWrite? { inner.write(item, expecting: expected) }
+  func restore(_ snapshot: PasteboardSnapshot?, expecting own: Int) {
+    copy()
+    inner.restore(snapshot, expecting: own)
+  }
 }
 
 // MARK: Formats and representations
@@ -310,9 +330,19 @@ final class PasteboardTests: XCTestCase {
     XCTAssertEqual(snapshot[0].first { $0.type == .html }?.data, Data("<i>one</i>".utf8))
 
     pasteboard.userCopies("replaced")
-    pasteboard.access.restore(snapshot)
+    pasteboard.access.restore(snapshot, expecting: pasteboard.board.changeCount)
     XCTAssertEqual(pasteboard.strings(), ["one", "two"])
     XCTAssertEqual(pasteboard.appReads(.html), "<i>one</i>")
+  }
+
+  /// A restore expecting a count the pasteboard has moved past leaves the newer contents alone.
+  func testARestoreWithAStaleCountLeavesTheContentsAlone() {
+    let pasteboard = TestPasteboard()
+    pasteboard.userCopies("ours")
+    let own = pasteboard.board.changeCount
+    pasteboard.userCopies("newer")
+    pasteboard.access.restore(nil, expecting: own)
+    XCTAssertEqual(pasteboard.strings(), ["newer"])
   }
 
   func testAnEmptyPasteboardSnapshotsAsNilAndRestoresEmpty() {
@@ -320,7 +350,7 @@ final class PasteboardTests: XCTestCase {
     pasteboard.board.clearContents()
     XCTAssertNil(pasteboard.access.snapshot().items)
     pasteboard.userCopies("ours")
-    pasteboard.access.restore(nil)
+    pasteboard.access.restore(nil, expecting: pasteboard.board.changeCount)
     XCTAssertEqual(pasteboard.board.pasteboardItems?.count ?? 0, 0)
   }
 }
@@ -419,6 +449,31 @@ final class PasteOperationTests: XCTestCase {
     XCTAssertEqual(entered, 6)
     XCTAssertNotNil(meta.startedAt)
     XCTAssertNotNil(meta.endedAt)
+  }
+
+  /// A human copy after the last ownership read and before the restore's clear: the restore rechecks the count in the
+  /// same operation as its clear, so the human's copy is kept, and the answer is the one a restore skipped earlier gives
+  /// (whole-milestone review, P1): success for a paste that landed, the paste's own error for one that failed.
+  func testAHumanCopyJustBeforeTheRestoreIsKept() throws {
+    let pasteboard = TestPasteboard()
+    pasteboard.userCopies("the owner's")
+    let racing = CopyBeforeRestore(pasteboard) { pasteboard.userCopies("human copy") }
+    var characters = 0
+    var entered = 0
+    var meta = meta()
+    try runPaste([.content(plain("pasted"), units: 6)], pasteboard: racing,
+                 effect: effect { EffectReading(range: [characters, 0], characters: characters) }, readTimeoutMs: 0,
+                 checkInFlight: {}, postPaste: { _ = pasteboard.appReads(); characters = 6; return true }, postReturn: { true },
+                 entered: &entered, meta: &meta)
+    XCTAssertEqual(pasteboard.strings(), ["human copy"], "the landed paste's restore left the human's copy alone")
+    XCTAssertEqual(entered, 6)
+
+    pasteboard.userCopies("the owner's")
+    XCTAssertThrowsError(try runPaste([.content(plain("x"), units: 1)], pasteboard: racing, effect: effect(), readTimeoutMs: 0,
+                                      checkInFlight: {}, postPaste: { true }, postReturn: { true }, entered: &entered, meta: &meta)) {
+      XCTAssertEqual(($0 as? EngineError)?.errorName, "clipboardReadTimedOut")
+    }
+    XCTAssertEqual(pasteboard.strings(), ["human copy"], "the failed paste's restore left the human's copy alone")
   }
 
   /// The pasteboard taken (cleared) but the write refused: the previous contents come back (review finding 1).

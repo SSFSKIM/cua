@@ -182,10 +182,11 @@ func runPaste(_ parts: [PastePart], pasteboard: PasteboardAccess, effect: PasteE
   restore(snapshot, own: own, on: pasteboard)
 }
 
-/// The restore (F §7.6): only after a write, and only while the pasteboard still holds what the engine wrote.
+/// The restore (F §7.6): only after a write, and only while the pasteboard still holds what the engine wrote, which the
+/// restore itself checks at its clear.
 private func restore(_ snapshot: PasteboardSnapshot?, own: Int?, on pasteboard: PasteboardAccess) {
-  guard let own, pasteboard.changeCount == own else { return }
-  pasteboard.restore(snapshot)
+  guard let own else { return }
+  pasteboard.restore(snapshot, expecting: own)
 }
 
 /// What the paste operates on, as the input method's checks found it: the app, its application element, the process that

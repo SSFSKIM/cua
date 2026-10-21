@@ -182,10 +182,11 @@ func runPaste(_ parts: [PastePart], pasteboard: PasteboardAccess, effect: PasteE
   restore(snapshot, own: own, on: pasteboard)
 }
 
-/// The restore (F §7.6): only after a write, and only while the pasteboard still holds what the engine wrote.
+/// The restore (F §7.6): only after a write, and only while the pasteboard still holds what the engine wrote, which the
+/// restore itself checks at its clear.
 private func restore(_ snapshot: PasteboardSnapshot?, own: Int?, on pasteboard: PasteboardAccess) {
-  guard let own, pasteboard.changeCount == own else { return }
-  pasteboard.restore(snapshot)
+  guard let own else { return }
+  pasteboard.restore(snapshot, expecting: own)
 }
 
 /// What the paste operates on, as the input method's checks found it: the app, its application element, the process that
@@ -245,16 +246,19 @@ extension Engine {
 
   /// The operation, holding the engine-wide lock: the app prepared by route 3's activation when it does not believe it
   /// has focus, then pasted into.
-  private func pasteOperation(_ parts: [PastePart], _ target: PasteTarget, _ context: ExecutionContext,
+  func pasteOperation(_ parts: [PastePart], _ target: PasteTarget, _ context: ExecutionContext,
                               entered: inout Int, meta: inout InputMeta) throws {
     meta.inputRoute = .paste
     try withPasteLock(pasteLock, deadline: context.deadline) {
       // Waiting for the lock took time: a user event since the guard was read stops the paste before anything is done.
       try target.guarding.checkInFlight()
-      let activation = FakeActivation(pid: target.pid, window: primaryWindow(of: target.application) ?? target.application)
+      let activation = FakeActivation(pid: target.pid, window: primaryWindow(of: target.application) ?? target.application,
+                                      system: pasteActivation)
       defer { activation.deactivate() }  // every path out, error or success, undoes the activation
-      try activation.activate()
-      meta.activationGuardMs = activation.guardMs
+      do {
+        defer { meta.activationGuardMs = activation.guardMs }  // a guard that failed still says how long it held
+        try activation.activate()
+      }
 
       let application = target.application
       let effect = PasteEffect(hasObserver: false, read: { effectReading(of: application) })

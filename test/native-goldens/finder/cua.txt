@@ -1,254 +1,250 @@
 Window: "cua-scene-finder", App: Finder.
-0 ⟨6⟩ cua-scene-finder, ID: ⟨12⟩, Secondary Actions: Raise
-	1 ⟨6⟩
-		2 ⟨6⟩ ID: ⟨6⟩, Secondary Actions: Scroll Left, Scroll Right, Scroll Up, Scroll Down
-			3 ⟨3⟩ Description: ⟨4⟩, ID: ⟨5⟩
-				4 row (selectable, collapsed) Value: ⟨5⟩, Secondary Actions: Expand
-				5 row (selectable, collapsed) Value: ⟨2⟩, Secondary Actions: Expand
-				6 row (selectable, expanded) Value: ⟨2⟩, Secondary Actions: Collapse
-				7 row (selectable, collapsed) Value: ⟨12⟩, Secondary Actions: Expand
-				8 row (selectable, collapsed) Value: ⟨12⟩, Secondary Actions: Expand
-				9 row (selectable, collapsed) Value: ⟨3⟩, Secondary Actions: Expand
-				10 row (selectable, collapsed) Value: ⟨12⟩, Secondary Actions: Expand
-				11 row (selectable, collapsed) Value: ⟨7⟩, Secondary Actions: Expand
-				12 row (selectable, collapsed) Value: ⟨4⟩, Secondary Actions: Expand
-				13 row (selectable, collapsed) Value: ⟨3⟩, Secondary Actions: Expand
-				14 row (selectable, expanded) Value: ⟨4⟩, Secondary Actions: Collapse
-				15 row (selectable, collapsed) Value: ⟨7⟩, Secondary Actions: Expand
-				16 row (selectable, collapsed) Value: ⟨4⟩, Secondary Actions: Expand
-				17 row (selectable, collapsed) Value: ⟨2⟩, Secondary Actions: Expand
-				18 row (selectable, collapsed) Value: ⟨9⟩, Secondary Actions: Expand
-				19 row (selectable, collapsed) Value: ⟨4⟩, Secondary Actions: Expand
-				20 row (selectable, expanded) Value: ⟨2⟩, Secondary Actions: Collapse
-				21 row (selectable, collapsed) Value: ⟨3⟩, Secondary Actions: Expand
-				22 row (selectable, collapsed) Value: ⟨3⟩, Secondary Actions: Expand
-				23 row (selectable, collapsed) Value: ⟨3⟩, Secondary Actions: Expand
-				24 row (selectable, collapsed) Value: ⟨3⟩, Secondary Actions: Expand
-				25 row (selectable, collapsed) Value: ⟨3⟩, Secondary Actions: Expand
-				26 row (selectable, collapsed) Value: ⟨3⟩, Secondary Actions: Expand
-				27 row (selectable, collapsed) Value: ⟨2⟩, Secondary Actions: Expand
-				28 row (selectable, collapsed) Value: ⟨6⟩, Secondary Actions: Expand
-			29 ⟨6⟩ (settable, integer) Value: 0, ID: ⟨6⟩
-				30 ⟨5⟩ (settable, integer) 0
-				31 ⟨9⟩
-				32 ⟨9⟩
-				33 ⟨9⟩
-				34 ⟨9⟩
-		35 ⟨6⟩ (disabled, collapsed, settable, integer) Value: 177, Secondary Actions: Expand
-		36 ⟨6⟩ ID: ⟨7⟩, Secondary Actions: Scroll Left, Scroll Right, Scroll Up, Scroll Down
-			37 ⟨3⟩ Description: ⟨5⟩, ID: ⟨8⟩ (showing 0-18 of 205 items)
-				38 row (selectable, collapsed) Secondary Actions: Expand
-					39 ⟨1⟩ Secondary Actions: Open
-						40 ⟨3⟩
-						41 ⟨6⟩ (settable) URL: ⟨96⟩, Value: scene-file-001, Secondary Actions: Open
-					42 ⟨1⟩
-						43 ⟨3⟩ ⟨10⟩
-					44 ⟨1⟩
-						45 ⟨3⟩ ⟨5⟩
-					46 ⟨1⟩
-						47 ⟨3⟩ ⟨2⟩
-				48 row (selectable, collapsed) Secondary Actions: Expand
-					49 ⟨1⟩ Secondary Actions: Open
-						50 ⟨3⟩
-						51 ⟨6⟩ (settable) URL: ⟨96⟩, Value: scene-file-002, Secondary Actions: Open
-					52 ⟨1⟩
-						53 ⟨3⟩ ⟨10⟩
-					54 ⟨1⟩
-						55 ⟨3⟩ ⟨5⟩
-					56 ⟨1⟩
-						57 ⟨3⟩ ⟨2⟩
-				58 row (selectable, collapsed) Secondary Actions: Expand
-					59 ⟨1⟩ Secondary Actions: Open
-						60 ⟨3⟩
-						61 ⟨6⟩ (settable) URL: ⟨96⟩, Value: scene-file-003, Secondary Actions: Open
-					62 ⟨1⟩
-						63 ⟨3⟩ ⟨10⟩
-					64 ⟨1⟩
-						65 ⟨3⟩ ⟨5⟩
-					66 ⟨1⟩
-						67 ⟨3⟩ ⟨2⟩
-				68 row (selectable, collapsed) Secondary Actions: Expand
-					69 ⟨1⟩ Secondary Actions: Open
-						70 ⟨3⟩
-						71 ⟨6⟩ (settable) URL: ⟨96⟩, Value: scene-file-004, Secondary Actions: Open
-					72 ⟨1⟩
-						73 ⟨3⟩ ⟨10⟩
-					74 ⟨1⟩
-						75 ⟨3⟩ ⟨5⟩
-					76 ⟨1⟩
-						77 ⟨3⟩ ⟨2⟩
-				78 row (selectable, collapsed) Secondary Actions: Expand
-					79 ⟨1⟩ Secondary Actions: Open
-						80 ⟨3⟩
-						81 ⟨6⟩ (settable) URL: ⟨96⟩, Value: scene-file-005, Secondary Actions: Open
-					82 ⟨1⟩
-						83 ⟨3⟩ ⟨10⟩
-					84 ⟨1⟩
-						85 ⟨3⟩ ⟨5⟩
-					86 ⟨1⟩
-						87 ⟨3⟩ ⟨2⟩
-				88 row (selectable, collapsed) Secondary Actions: Expand
-					89 ⟨1⟩ Secondary Actions: Open
-						90 ⟨3⟩
-						91 ⟨6⟩ (settable) URL: ⟨96⟩, Value: scene-file-006, Secondary Actions: Open
-					92 ⟨1⟩
-						93 ⟨3⟩ ⟨10⟩
-					94 ⟨1⟩
-						95 ⟨3⟩ ⟨5⟩
-					96 ⟨1⟩
-						97 ⟨3⟩ ⟨2⟩
-				98 row (selectable, collapsed) Secondary Actions: Expand
-					99 ⟨1⟩ Secondary Actions: Open
-						100 ⟨3⟩
-						101 ⟨6⟩ (settable) URL: ⟨96⟩, Value: scene-file-007, Secondary Actions: Open
-					102 ⟨1⟩
-						103 ⟨3⟩ ⟨10⟩
-					104 ⟨1⟩
-						105 ⟨3⟩ ⟨5⟩
-					106 ⟨1⟩
-						107 ⟨3⟩ ⟨2⟩
-				108 row (selectable, collapsed) Secondary Actions: Expand
-					109 ⟨1⟩ Secondary Actions: Open
-						110 ⟨3⟩
-						111 ⟨6⟩ (settable) URL: ⟨96⟩, Value: scene-file-008, Secondary Actions: Open
-					112 ⟨1⟩
-						113 ⟨3⟩ ⟨10⟩
-					114 ⟨1⟩
-						115 ⟨3⟩ ⟨5⟩
-					116 ⟨1⟩
-						117 ⟨3⟩ ⟨2⟩
-				118 row (selectable, collapsed) Secondary Actions: Expand
-					119 ⟨1⟩ Secondary Actions: Open
-						120 ⟨3⟩
-						121 ⟨6⟩ (settable) URL: ⟨96⟩, Value: scene-file-009, Secondary Actions: Open
-					122 ⟨1⟩
-						123 ⟨3⟩ ⟨10⟩
-					124 ⟨1⟩
-						125 ⟨3⟩ ⟨5⟩
-					126 ⟨1⟩
-						127 ⟨3⟩ ⟨2⟩
-				128 row (selectable, collapsed) Secondary Actions: Expand
-					129 ⟨1⟩ Secondary Actions: Open
-						130 ⟨3⟩
-						131 ⟨6⟩ (settable) URL: ⟨96⟩, Value: scene-file-010, Secondary Actions: Open
-					132 ⟨1⟩
-						133 ⟨3⟩ ⟨10⟩
-					134 ⟨1⟩
-						135 ⟨3⟩ ⟨5⟩
-					136 ⟨1⟩
-						137 ⟨3⟩ ⟨2⟩
-				138 row (selectable, collapsed) Secondary Actions: Expand
-					139 ⟨1⟩ Secondary Actions: Open
-						140 ⟨3⟩
-						141 ⟨6⟩ (settable) URL: ⟨96⟩, Value: scene-file-011, Secondary Actions: Open
-					142 ⟨1⟩
-						143 ⟨3⟩ ⟨10⟩
-					144 ⟨1⟩
-						145 ⟨3⟩ ⟨5⟩
-					146 ⟨1⟩
-						147 ⟨3⟩ ⟨2⟩
-				148 row (selectable, collapsed) Secondary Actions: Expand
-					149 ⟨1⟩ Secondary Actions: Open
-						150 ⟨3⟩
-						151 ⟨6⟩ (settable) URL: ⟨96⟩, Value: scene-file-012, Secondary Actions: Open
-					152 ⟨1⟩
-						153 ⟨3⟩ ⟨10⟩
-					154 ⟨1⟩
-						155 ⟨3⟩ ⟨5⟩
-					156 ⟨1⟩
-						157 ⟨3⟩ ⟨2⟩
-				158 row (selectable, collapsed) Secondary Actions: Expand
-					159 ⟨1⟩ Secondary Actions: Open
-						160 ⟨3⟩
-						161 ⟨6⟩ (settable) URL: ⟨96⟩, Value: scene-file-013, Secondary Actions: Open
-					162 ⟨1⟩
-						163 ⟨3⟩ ⟨10⟩
-					164 ⟨1⟩
-						165 ⟨3⟩ ⟨5⟩
-					166 ⟨1⟩
-						167 ⟨3⟩ ⟨2⟩
-				168 row (selectable, collapsed) Secondary Actions: Expand
-					169 ⟨1⟩ Secondary Actions: Open
-						170 ⟨3⟩
-						171 ⟨6⟩ (settable) URL: ⟨96⟩, Value: scene-file-014, Secondary Actions: Open
-					172 ⟨1⟩
-						173 ⟨3⟩ ⟨10⟩
-					174 ⟨1⟩
-						175 ⟨3⟩ ⟨5⟩
-					176 ⟨1⟩
-						177 ⟨3⟩ ⟨2⟩
-				178 row (selectable, collapsed) Secondary Actions: Expand
-					179 ⟨1⟩ Secondary Actions: Open
-						180 ⟨3⟩
-						181 ⟨6⟩ (settable) URL: ⟨96⟩, Value: scene-file-015, Secondary Actions: Open
-					182 ⟨1⟩
-						183 ⟨3⟩ ⟨10⟩
-					184 ⟨1⟩
-						185 ⟨3⟩ ⟨5⟩
-					186 ⟨1⟩
-						187 ⟨3⟩ ⟨2⟩
-				188 row (selectable, collapsed) Secondary Actions: Expand
-					189 ⟨1⟩ Secondary Actions: Open
-						190 ⟨3⟩
-						191 ⟨6⟩ (settable) URL: ⟨96⟩, Value: scene-file-016, Secondary Actions: Open
-					192 ⟨1⟩
-						193 ⟨3⟩ ⟨10⟩
-					194 ⟨1⟩
-						195 ⟨3⟩ ⟨5⟩
-					196 ⟨1⟩
-						197 ⟨3⟩ ⟨2⟩
-				198 row (selectable, collapsed) Secondary Actions: Expand
-					199 ⟨1⟩ Secondary Actions: Open
-						200 ⟨3⟩
-						201 ⟨6⟩ (settable) URL: ⟨96⟩, Value: scene-file-017, Secondary Actions: Open
-					202 ⟨1⟩
-						203 ⟨3⟩ ⟨10⟩
-					204 ⟨1⟩
-						205 ⟨3⟩ ⟨5⟩
-					206 ⟨1⟩
-						207 ⟨3⟩ ⟨2⟩
-				208 row (selectable, collapsed) Secondary Actions: Expand
-					209 ⟨1⟩ Secondary Actions: Open
-						210 ⟨3⟩
-						211 ⟨6⟩ (settable) URL: ⟨96⟩, Value: scene-file-018, Secondary Actions: Open
-					212 ⟨1⟩
-						213 ⟨3⟩ ⟨10⟩
-					214 ⟨1⟩
-						215 ⟨3⟩ ⟨5⟩
-					216 ⟨1⟩
-						217 ⟨3⟩ ⟨2⟩
-			218 ⟨6⟩ (settable, integer) Value: 0, ID: ⟨7⟩
-				219 ⟨5⟩ (settable, integer) 0
-				220 ⟨9⟩
-				221 ⟨9⟩
-				222 ⟨9⟩
-				223 ⟨9⟩
-		224 ⟨6⟩ Details: ⟨5⟩, ID: ⟨9⟩
-			225 ⟨3⟩ Value: ⟨24⟩, ID: ⟨13⟩
-	226 ⟨5⟩
-		227 container ⟨6⟩
-			228 ⟨2⟩ (disabled) ⟨2⟩
-			229 ⟨2⟩ (disabled) ⟨3⟩
-		230 ⟨6⟩ Description: ⟨6⟩, Value: 0
-		231 ⟨6⟩ Description: ⟨5⟩, Value: 1
-		232 ⟨6⟩ Description: ⟨5⟩, Value: 0
-		233 ⟨6⟩ Description: ⟨6⟩, Value: 0
-		234 ⟨5⟩ Description: ⟨2⟩, Help: ⟨33⟩, Secondary Actions: ⟨39⟩, ⟨39⟩, ⟨42⟩
-		235 ⟨2⟩ (disabled) Description: ⟨2⟩, Help: ⟨13⟩, Secondary Actions: ⟨39⟩, ⟨39⟩, ⟨42⟩
-		236 ⟨2⟩ (disabled) Description: ⟨5⟩, Help: ⟨9⟩, Secondary Actions: ⟨39⟩, ⟨39⟩, ⟨42⟩
-		237 ⟨5⟩ Description: ⟨2⟩, Help: ⟨18⟩, Secondary Actions: ⟨39⟩, ⟨39⟩, ⟨42⟩
-		238 ⟨2⟩ ⟨2⟩
-	239 ⟨5⟩
-	240 ⟨8⟩ Help: ⟨24⟩, Secondary Actions: Zoom Window
-	241 ⟨6⟩
-	242 ⟨3⟩ cua-scene-finder
-243 (selectable, collapsed) ⟨5⟩, Secondary Actions: Cancel, Expand
-244 (selectable, collapsed) ⟨6⟩, ID: ⟨8⟩, Secondary Actions: Cancel, Expand
-245 (selectable, collapsed) ⟨2⟩, ID: ⟨8⟩, Secondary Actions: Cancel, Expand
-246 (selectable, collapsed) ⟨2⟩, ID: ⟨8⟩, Secondary Actions: Cancel, Expand
-247 (selectable, collapsed) ⟨2⟩, ID: ⟨8⟩, Secondary Actions: Cancel, Expand
-248 (selectable, collapsed) ⟨2⟩, ID: ⟨8⟩, Secondary Actions: Cancel, Expand
-249 (selectable, collapsed) ⟨3⟩, ID: ⟨8⟩, Secondary Actions: Cancel, Expand
-250 (selectable, collapsed) ⟨3⟩, ID: ⟨8⟩, Secondary Actions: Cancel, Expand
+0 표준 윈도우 cua-scene-finder, ID: FinderWindow, Secondary Actions: Raise
+	1 자르기 그룹
+		2 자르기 도구 (disabled, settable, float) -1
+		3 스크롤 영역 Secondary Actions: Scroll Up, Scroll Down
+			4 윤곽체 Description: 목록 보기, ID: ListView (showing 0-21 of 205 items)
+				5 row (selectable)
+					6 셀 Secondary Actions: Finder 항목 열기
+						7 이미지
+						8 텍스트 필드 (settable) URL: file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-001, Value: scene-file-001, Secondary Actions: Finder 항목 열기
+					9 셀
+						10 텍스트 2026년 1월 15일 오후 9:00
+					11 셀
+						12 텍스트 15바이트
+					13 셀
+						14 텍스트 문서
+				15 row (selectable)
+					16 셀 Secondary Actions: Finder 항목 열기
+						17 이미지
+						18 텍스트 필드 (settable) URL: file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-002, Value: scene-file-002, Secondary Actions: Finder 항목 열기
+					19 셀
+						20 텍스트 2026년 1월 15일 오후 9:00
+					21 셀
+						22 텍스트 15바이트
+					23 셀
+						24 텍스트 문서
+				25 row (selectable)
+					26 셀 Secondary Actions: Finder 항목 열기
+						27 이미지
+						28 텍스트 필드 (settable) URL: file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-003, Value: scene-file-003, Secondary Actions: Finder 항목 열기
+					29 셀
+						30 텍스트 2026년 1월 15일 오후 9:00
+					31 셀
+						32 텍스트 15바이트
+					33 셀
+						34 텍스트 문서
+				35 row (selectable)
+					36 셀 Secondary Actions: Finder 항목 열기
+						37 이미지
+						38 텍스트 필드 (settable) URL: file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-004, Value: scene-file-004, Secondary Actions: Finder 항목 열기
+					39 셀
+						40 텍스트 2026년 1월 15일 오후 9:00
+					41 셀
+						42 텍스트 15바이트
+					43 셀
+						44 텍스트 문서
+				45 row (selectable)
+					46 셀 Secondary Actions: Finder 항목 열기
+						47 이미지
+						48 텍스트 필드 (settable) URL: file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-005, Value: scene-file-005, Secondary Actions: Finder 항목 열기
+					49 셀
+						50 텍스트 2026년 1월 15일 오후 9:00
+					51 셀
+						52 텍스트 15바이트
+					53 셀
+						54 텍스트 문서
+				55 row (selectable)
+					56 셀 Secondary Actions: Finder 항목 열기
+						57 이미지
+						58 텍스트 필드 (settable) URL: file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-006, Value: scene-file-006, Secondary Actions: Finder 항목 열기
+					59 셀
+						60 텍스트 2026년 1월 15일 오후 9:00
+					61 셀
+						62 텍스트 15바이트
+					63 셀
+						64 텍스트 문서
+				65 row (selectable)
+					66 셀 Secondary Actions: Finder 항목 열기
+						67 이미지
+						68 텍스트 필드 (settable) URL: file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-007, Value: scene-file-007, Secondary Actions: Finder 항목 열기
+					69 셀
+						70 텍스트 2026년 1월 15일 오후 9:00
+					71 셀
+						72 텍스트 15바이트
+					73 셀
+						74 텍스트 문서
+				75 row (selectable)
+					76 셀 Secondary Actions: Finder 항목 열기
+						77 이미지
+						78 텍스트 필드 (settable) URL: file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-008, Value: scene-file-008, Secondary Actions: Finder 항목 열기
+					79 셀
+						80 텍스트 2026년 1월 15일 오후 9:00
+					81 셀
+						82 텍스트 15바이트
+					83 셀
+						84 텍스트 문서
+				85 row (selectable)
+					86 셀 Secondary Actions: Finder 항목 열기
+						87 이미지
+						88 텍스트 필드 (settable) URL: file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-009, Value: scene-file-009, Secondary Actions: Finder 항목 열기
+					89 셀
+						90 텍스트 2026년 1월 15일 오후 9:00
+					91 셀
+						92 텍스트 15바이트
+					93 셀
+						94 텍스트 문서
+				95 row (selectable)
+					96 셀 Secondary Actions: Finder 항목 열기
+						97 이미지
+						98 텍스트 필드 (settable) URL: file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-010, Value: scene-file-010, Secondary Actions: Finder 항목 열기
+					99 셀
+						100 텍스트 2026년 1월 15일 오후 9:00
+					101 셀
+						102 텍스트 15바이트
+					103 셀
+						104 텍스트 문서
+				105 row (selectable)
+					106 셀 Secondary Actions: Finder 항목 열기
+						107 이미지
+						108 텍스트 필드 (settable) URL: file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-011, Value: scene-file-011, Secondary Actions: Finder 항목 열기
+					109 셀
+						110 텍스트 2026년 1월 15일 오후 9:00
+					111 셀
+						112 텍스트 15바이트
+					113 셀
+						114 텍스트 문서
+				115 row (selectable)
+					116 셀 Secondary Actions: Finder 항목 열기
+						117 이미지
+						118 텍스트 필드 (settable) URL: file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-012, Value: scene-file-012, Secondary Actions: Finder 항목 열기
+					119 셀
+						120 텍스트 2026년 1월 15일 오후 9:00
+					121 셀
+						122 텍스트 15바이트
+					123 셀
+						124 텍스트 문서
+				125 row (selectable)
+					126 셀 Secondary Actions: Finder 항목 열기
+						127 이미지
+						128 텍스트 필드 (settable) URL: file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-013, Value: scene-file-013, Secondary Actions: Finder 항목 열기
+					129 셀
+						130 텍스트 2026년 1월 15일 오후 9:00
+					131 셀
+						132 텍스트 15바이트
+					133 셀
+						134 텍스트 문서
+				135 row (selectable)
+					136 셀 Secondary Actions: Finder 항목 열기
+						137 이미지
+						138 텍스트 필드 (settable) URL: file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-014, Value: scene-file-014, Secondary Actions: Finder 항목 열기
+					139 셀
+						140 텍스트 2026년 1월 15일 오후 9:00
+					141 셀
+						142 텍스트 15바이트
+					143 셀
+						144 텍스트 문서
+				145 row (selectable)
+					146 셀 Secondary Actions: Finder 항목 열기
+						147 이미지
+						148 텍스트 필드 (settable) URL: file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-015, Value: scene-file-015, Secondary Actions: Finder 항목 열기
+					149 셀
+						150 텍스트 2026년 1월 15일 오후 9:00
+					151 셀
+						152 텍스트 15바이트
+					153 셀
+						154 텍스트 문서
+				155 row (selectable)
+					156 셀 Secondary Actions: Finder 항목 열기
+						157 이미지
+						158 텍스트 필드 (settable) URL: file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-016, Value: scene-file-016, Secondary Actions: Finder 항목 열기
+					159 셀
+						160 텍스트 2026년 1월 15일 오후 9:00
+					161 셀
+						162 텍스트 15바이트
+					163 셀
+						164 텍스트 문서
+				165 row (selectable)
+					166 셀 Secondary Actions: Finder 항목 열기
+						167 이미지
+						168 텍스트 필드 (settable) URL: file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-017, Value: scene-file-017, Secondary Actions: Finder 항목 열기
+					169 셀
+						170 텍스트 2026년 1월 15일 오후 9:00
+					171 셀
+						172 텍스트 15바이트
+					173 셀
+						174 텍스트 문서
+				175 row (selectable)
+					176 셀 Secondary Actions: Finder 항목 열기
+						177 이미지
+						178 텍스트 필드 (settable) URL: file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-018, Value: scene-file-018, Secondary Actions: Finder 항목 열기
+					179 셀
+						180 텍스트 2026년 1월 15일 오후 9:00
+					181 셀
+						182 텍스트 15바이트
+					183 셀
+						184 텍스트 문서
+				185 row (selectable)
+					186 셀 Secondary Actions: Finder 항목 열기
+						187 이미지
+						188 텍스트 필드 (settable) URL: file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-019, Value: scene-file-019, Secondary Actions: Finder 항목 열기
+					189 셀
+						190 텍스트 2026년 1월 15일 오후 9:00
+					191 셀
+						192 텍스트 15바이트
+					193 셀
+						194 텍스트 문서
+				195 row (selectable)
+					196 셀 Secondary Actions: Finder 항목 열기
+						197 이미지
+						198 텍스트 필드 (settable) URL: file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-020, Value: scene-file-020, Secondary Actions: Finder 항목 열기
+					199 셀
+						200 텍스트 2026년 1월 15일 오후 9:00
+					201 셀
+						202 텍스트 15바이트
+					203 셀
+						204 텍스트 문서
+				205 row (selectable)
+					206 셀 Secondary Actions: Finder 항목 열기
+						207 이미지
+						208 텍스트 필드 (settable) URL: file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-021, Value: scene-file-021, Secondary Actions: Finder 항목 열기
+					209 셀
+						210 텍스트 2026년 1월 15일 오후 9:00
+					211 셀
+						212 텍스트 15바이트
+					213 셀
+						214 텍스트 문서
+			215 스크롤 막대 (settable, float) 0
+				216 값 표시기 (settable, float) 0
+				217 화살표 증가 버튼
+				218 화살표 감소 버튼
+				219 페이지 증가 버튼
+				220 페이지 감소 버튼
+	221 도구 막대
+		222 container 뒤로/앞으로
+			223 버튼 (disabled) 뒤로
+			224 버튼 (disabled) 앞으로
+		225 라디오 버튼 Description: 아이콘 보기, Value: 0
+		226 라디오 버튼 Description: 목록 보기, Value: 1
+		227 라디오 버튼 Description: 계층 보기, Value: 0
+		228 라디오 버튼 Description: 갤러리 보기, Value: 0
+		229 메뉴 버튼 Description: 그룹, Help: 항목 그룹화 변경(Option 버튼을 계속 눌러 정렬 변경), Secondary Actions: 이전으로 이동, 다음으로 이동, 도구 막대에서 제거
+		230 버튼 (disabled) Description: 공유, Help: 선택된 항목을 공유합니다, Secondary Actions: 이전으로 이동, 다음으로 이동, 도구 막대에서 제거
+		231 버튼 (disabled) Description: 태그 편집, Help: 태그를 편집합니다, Secondary Actions: 이전으로 이동, 다음으로 이동, 도구 막대에서 제거
+		232 메뉴 버튼 Description: 동작, Help: 선택한 항목으로 작업을 실행합니다, Secondary Actions: 이전으로 이동, 다음으로 이동, 도구 막대에서 제거
+		233 텍스트 필드 검색
+			234 버튼 검색
+	235 닫기 버튼
+	236 전체 화면 버튼 Help: 이 버튼을 누르면 윈도우를 확대/축소합니다., Secondary Actions: 윈도우 확대/축소
+	237 최소화 버튼
+	238 텍스트 cua-scene-finder
+239 menu bar
+	240 Finder
+	241 파일
+	242 편집
+	243 보기
+	244 이동
+	245 윈도우
+	246 도움말
 
-The focused UI element is 37 ⟨3⟩ Description: ⟨5⟩, ID: ⟨8⟩ (showing 0-18 of 205 items)
+The focused UI element is 4 윤곽체 Description: 목록 보기, ID: ListView (showing 0-21 of 205 items)

@@ -1,6 +1,6 @@
 Window: "cua scene page", App: Google Chrome for Testing.
-0 표준 윈도우 cua scene page - Chrome for Testing, URL: 127.0.0.1:55785/, Secondary Actions: Raise
-	1 container cua scene page - Chrome for Testing, URL: 127.0.0.1:55785/
+0 표준 윈도우 cua scene page - Chrome for Testing, URL: 127.0.0.1:65166/, Secondary Actions: Raise
+	1 container cua scene page - Chrome for Testing, URL: 127.0.0.1:65166/
 		2 container
 			3 도구 막대
 				4 스크롤 영역
@@ -11,13 +11,13 @@ Window: "cua scene page", App: Google Chrome for Testing.
 							9 버튼 새로고침, Help: 페이지 새로고침
 				10 container
 					11 팝업 버튼 사이트 정보 보기
-					12 텍스트 필드 (settable) 주소창 및 검색창, Value: 127.0.0.1:55785, Placeholder: Google에서 검색하거나 URL을 입력하세요.
+					12 텍스트 필드 (settable) 주소창 및 검색창, Value: 127.0.0.1:65166, Placeholder: Google에서 검색하거나 URL을 입력하세요.
 					13 버튼 현재 탭을 북마크에 추가
 				14 버튼 나
 				15 팝업 버튼 Chromium
 			16 container
 				17 스크롤 영역
-					18 HTML 콘텐츠 cua scene page, URL: 127.0.0.1:55785/
+					18 HTML 콘텐츠 cua scene page, URL: 127.0.0.1:65166/
 						19 container
 							20 항목 cua scene page, Value: 1
 								21 텍스트 cua scene page
@@ -31,7 +31,7 @@ Window: "cua scene page", App: Google Chrome for Testing.
 								29 라디오 버튼 Mode B, Value: 0
 							30 팝업 버튼 Scene choice, Value: One
 								31 (selected) One
-							32 link Scene section, Value: 127.0.0.1:55785/#section
+							32 link Scene section, Value: 127.0.0.1:65166/#section
 							33 container Scene status
 								34 텍스트 Ready
 							35 항목 Section, Value: 2

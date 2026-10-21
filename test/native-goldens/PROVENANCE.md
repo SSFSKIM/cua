@@ -7,62 +7,56 @@ the rules of `docs/doperpowers/specs/2026-10-18-own-native-engine-design.md` (Ve
 <!-- source: written by scripts/native-matrix/goldens.mjs install from a live recording -->
 ## Source captures
 
-The M1a pre-flight Decision Log entry (2026-10-19), item 5, says M0's goldens are re-keyed, not re-recorded. These are
-M0's second sitting, unit 9, committed at
-`docs/doperpowers/research/2026-10-18-own-native-engine/spike/sit2/u9/` (each run's `goldens/`, `meta.json` and
-`preparation.json`).
+A live recording by `scripts/native-matrix/goldens.mjs record` (the own native engine spec, M1b; the Decision Log's
+"M1b pre-flight" item 5), committed at `docs/doperpowers/research/2026-10-18-own-native-engine/m1b/goldens-final` with its `meta.json`: both lanes in one sitting and one run
+directory, each scene's two lanes on the same fixed state. The fixed state's two captures sit between two of cua's
+observations that rendered alike, and every vendor text was read only after cua's engine had checked the same state
+(the scene's `fixedStateProblems`, the run's process and window).
 
 | | cua lane | vendor lane |
 |---|---|---|
-| Run | `cua/run-2`, all four scenes | `vendor/run-2` for TextEdit, Chrome and Electron; `vendor/run-1` for Finder |
-| Started | 2026-10-19T20:04:01.745Z | run-2 2026-10-19T19:52:50.677Z; run-1 2026-10-19T19:49:57.934Z |
-| Build | spike engine `b99ea9678bfd67d566e656d20ce2ade5e0c9c74627589af3e02af36374960676`, version 0.1.0 | Codex Computer Use runtime `26.928.40906-darwin-arm64` (`SkyComputerUseService`) |
+| Path | the approved engine's socket, the raw `Skyshot` (`scripts/native-matrix/goldens-device.mjs`) | `cua serve` on the vendor host, the approved vendor runtime (`prepare.mjs`'s approved-home path) |
+| Build | engine `4b31b8e61195fa9580636bfd08387653072bc50b6da089c008e5c2c952649043`, version 0.1.0, approved 2026-10-21T01:09:31.257Z, signature identity (identity matches: true) | Codex Computer Use runtime `26.928.40906-darwin-arm64` (`SkyComputerUseService`) |
 
 Both lanes share the following:
-- harness commit `b72740b8bee79ebce73845a483315f1e7a67b457`;
-- device `mini` (Mac14,12), macOS 27.0 (26A428), display scale 2;
-- the second sitting, 2026-10-19.
+- the recording, 2026-10-21T04:57:08.947Z to 2026-10-21T04:59:37.652Z, on device `mini` (Mac14,12), macOS 27.0 (26A428), display scale 2;
+- the harness checkout at `0b44493ef562d0fd6d04441202b6a2bf1f50f3b7`, whose engine build is the approved one, and the run directory `/Users/new/Library/Caches/cua-harness/native-goldens` on the device;
+- Chrome for Testing 155.0.8059.84 and the Electron fixture 44.9.0-23c8b77691d0.
 
-**Why Finder's vendor run is run 1.** The vendor lane ran first.
-- Its run 1 began with no Finder row selected, the same state cua's run 2 began in.
-- Its runs 2 and 3 began with the previous run's clicked row still selected.
-- TextEdit and Electron are identical across the vendor's runs. Chrome's runs differ only by the port of the loopback page.
+Each scene's window frame in points, as cua's observations read it (Finder's one window holds every capture of its
+scene, so its frame is the same throughout), and how many attempts the fixed state took:
+
+| scene | frame | over the captures | fixed-state attempts |
+|---|---|---|---|
+| textedit | 309, 103, 610 × 860 | the same over 5 | 1 |
+| finder | 820, 261, 920 × 492 | the same over 5 | 1 |
+| chrome | 80, 60, 1000 × 760 | the same over 5 | 1 |
+| electron | 140, 100, 720 × 560 | the same over 5 | 1 |
 
 ## Files per scene
 
-| Golden file | Source |
+| Golden file | Source (`docs/doperpowers/research/2026-10-18-own-native-engine/m1b/goldens-final/goldens/<scene>/`, byte for byte) |
 |---|---|
-| `skyshot.json` | cua `<scene>.skyshot.json`, re-keyed |
-| `vendor.txt` | vendor `<scene>.text.txt`, byte for byte |
-| `action.before.skyshot.json` | cua `<scene>.action.before.skyshot.json`, re-keyed |
-| `action.after.skyshot.json` | cua `<scene>.action.after-diff.skyshot.json` (the default-mode observation after the click, in the before's lineage), re-keyed |
-| `action.vendor.before.txt` | vendor `<scene>.action.before.txt`, byte for byte (the base of the vendor's diff) |
-| `action.vendor.diff.txt` | vendor `<scene>.action.diff.txt`, byte for byte |
-| `cua.txt`, `cua.diff.txt` | cua's own rendering and diff, written by the tests with `UPDATE_GOLDENS=1` and pinned byte for byte |
+| `skyshot.json` | cua's full observation of the fixed state, the one taken right after the vendor's text |
+| `vendor.txt` | the vendor's full text of the same state |
+| `action.before.skyshot.json` | cua's full observation before the action's click |
+| `action.after.skyshot.json` | cua's next observation after the click, in the same lineage (the diff's subject) |
+| `action.vendor.before.txt` | the vendor's full text before its click (the base of its diff) |
+| `action.vendor.diff.txt` | the vendor's diff after its click |
+| `cua.txt`, `cua.diff.txt` | cua's own rendering and diff, written by `goldens.mjs check --write` (or the tests with `UPDATE_GOLDENS=1`) and pinned byte for byte |
 
-## Re-keying
+`source.json` names the recording, and the render test checks every file above against it. The engine's
+per-observation diagnostics (`timings`, such as `focusRead`) are in `meta.json`, not in the Skyshots. Each lane's
+action started from the fixed state: Finder's selection was cleared in the same window between the two actions, and
+the other scenes were restarted; cua's action clicked only once its observation rendered as the kept fixed-state
+Skyshot does (the loopback page's port aside), and `meta.json` gives each scene's `startAttempts`.
 
-`node test/native-goldens/rekey.mjs`, run from the repository root, regenerates every file above except the pinned
-ones. The script's header lists each change. All of them are mechanical:
-- Each node's `index` n becomes `token: "t<n>"`, M1a.1's token format.
-- The index-valued fields (`focused`, `selectedElements`, `servesAsTitle`/`servesAsTitleFor`) become tokens, under the
-  Interfaces' name `servesAsTitleFor`.
-- The spike's diagnostic `timings` are dropped.
-- Finder's redaction marker for the empty string, `⟨0⟩`, becomes `''` again.
+## Finder is full text
 
-The render test checks every file above against its source: each Skyshot equals `rekey` of the recorded capture, and
-each vendor text equals the recorded bytes.
-
-## Finder is structural
-
-Finder's window lists the owner's sidebar places, which the harness does not own. M0's capture already replaced every
-string that the run does not own with its length (`⟨n⟩`). For that reason no golden here carries that content, and
-Finder is compared against the vendor by structure (`compare.mjs`'s structural mode). Lines are matched by depth, the
-English role word where the redaction kept one, and the flags group. Each matched pair is then compared by its length,
-with every `⟨n⟩` counted as n characters. The redaction folds a localized role word, the flags and the title into one
-`⟨n⟩` on most Finder lines, so the length is what such a line still tells. The other three scenes are compared by full
-text, values included, with only the loopback page's port normalized.
-
+Finder's fixed state hides the sidebar, the status bar and the path bar (`scripts/repl-parity/scenes-mac-finder.mjs`),
+and every Skyshot was checked before it left the device, so Finder's window carries only the run's folder and files
+and Finder's own vocabulary. It is compared by full text like the other scenes, with only the loopback page's port
+normalized.
 <!-- /source -->
 
 ## Expected differences
@@ -94,12 +88,41 @@ engine supplies no action descriptions, so each such difference is declared with
 <!-- sizing: written by scripts/native-matrix/goldens.mjs install from a live recording -->
 ## Vendor sizing config (Statsig 406601636)
 
-Read on the mini at 2026-10-19T21:45:21Z with `ssh mini 'bash -s' < scripts/native-baseline/read-sizing-config.sh`, which prints
-only that config from the vendor helper's cached Statsig store, one line per cached evaluation. The plist's mtime was
-2026-10-19T20:30:43Z. All 10 cached evaluations read rule `default` with `should_use_legacy_screenshot_sizing` absent
-(false), value `{"jpeg_compression_quality": 0.8, "should_normalize_screenshot_to_point_resolution": true,
-"should_use_jpeg": true}`. The newest fetch was 2026-10-19T20:30:09Z; the oldest was 15:38:03Z, before the second
-sitting's captures. The cache refreshes only while the vendor helper runs, so this read shows the last fetch, not a
-fresh one; the helper was not started to force one. So the legacy downsizing fit was off for every vendor capture these
-goldens pair with, and the sizes follow the rule in the spec's "Screenshot" (U1).
+Read on the device in the recording's sitting with `scripts/native-baseline/read-sizing-config.sh`, which prints only
+that config from the vendor helper's cached Statsig store, one line per cached evaluation. The cache refreshes only
+while the vendor helper runs, so the first read shows the last fetch before the sitting and the second what the run's
+helper held after the captures. A line whose `legacy` is anything but `absent (false)` means the legacy downsizing
+fit was on, and the vendor's sizes would not follow the rule in the spec's "Screenshot" (U1).
+
+Before the vendor lane, at 2026-10-21T04:57:17.354Z:
+
+```
+plist mtime 2026-10-21T04:54:01Z
+0 fetched 2026-10-21T01:05:23Z rule default legacy absent (false) value {"jpeg_compression_quality": 0.8, "should_normalize_screenshot_to_point_resolution": true, "should_use_jpeg": true}
+1 fetched 2026-10-21T03:56:01Z rule default legacy absent (false) value {"jpeg_compression_quality": 0.8, "should_normalize_screenshot_to_point_resolution": true, "should_use_jpeg": true}
+2 fetched 2026-10-21T00:47:09Z rule default legacy absent (false) value {"jpeg_compression_quality": 0.8, "should_normalize_screenshot_to_point_resolution": true, "should_use_jpeg": true}
+3 fetched 2026-10-21T01:05:23Z rule default legacy absent (false) value {"jpeg_compression_quality": 0.8, "should_normalize_screenshot_to_point_resolution": true, "should_use_jpeg": true}
+4 fetched 2026-10-21T01:53:51Z rule default legacy absent (false) value {"jpeg_compression_quality": 0.8, "should_normalize_screenshot_to_point_resolution": true, "should_use_jpeg": true}
+5 fetched 2026-10-21T01:14:17Z rule default legacy absent (false) value {"jpeg_compression_quality": 0.8, "should_normalize_screenshot_to_point_resolution": true, "should_use_jpeg": true}
+6 fetched 2026-10-21T01:14:17Z rule default legacy absent (false) value {"jpeg_compression_quality": 0.8, "should_normalize_screenshot_to_point_resolution": true, "should_use_jpeg": true}
+7 fetched 2026-10-21T02:36:11Z rule default legacy absent (false) value {"jpeg_compression_quality": 0.8, "should_normalize_screenshot_to_point_resolution": true, "should_use_jpeg": true}
+8 fetched 2026-10-21T01:14:17Z rule default legacy absent (false) value {"jpeg_compression_quality": 0.8, "should_normalize_screenshot_to_point_resolution": true, "should_use_jpeg": true}
+9 fetched 2026-10-21T00:47:09Z rule default legacy absent (false) value {"jpeg_compression_quality": 0.8, "should_normalize_screenshot_to_point_resolution": true, "should_use_jpeg": true}
+```
+
+After its captures, the run's helper still running, at 2026-10-21T04:59:34.886Z:
+
+```
+plist mtime 2026-10-21T04:57:31Z
+0 fetched 2026-10-21T01:14:17Z rule default legacy absent (false) value {"jpeg_compression_quality": 0.8, "should_normalize_screenshot_to_point_resolution": true, "should_use_jpeg": true}
+1 fetched 2026-10-21T01:53:51Z rule default legacy absent (false) value {"jpeg_compression_quality": 0.8, "should_normalize_screenshot_to_point_resolution": true, "should_use_jpeg": true}
+2 fetched 2026-10-21T01:05:23Z rule default legacy absent (false) value {"jpeg_compression_quality": 0.8, "should_normalize_screenshot_to_point_resolution": true, "should_use_jpeg": true}
+3 fetched 2026-10-21T03:56:01Z rule default legacy absent (false) value {"jpeg_compression_quality": 0.8, "should_normalize_screenshot_to_point_resolution": true, "should_use_jpeg": true}
+4 fetched 2026-10-21T01:14:17Z rule default legacy absent (false) value {"jpeg_compression_quality": 0.8, "should_normalize_screenshot_to_point_resolution": true, "should_use_jpeg": true}
+5 fetched 2026-10-21T04:53:48Z rule default legacy absent (false) value {"jpeg_compression_quality": 0.8, "should_normalize_screenshot_to_point_resolution": true, "should_use_jpeg": true}
+6 fetched 2026-10-21T01:14:17Z rule default legacy absent (false) value {"jpeg_compression_quality": 0.8, "should_normalize_screenshot_to_point_resolution": true, "should_use_jpeg": true}
+7 fetched 2026-10-21T00:47:09Z rule default legacy absent (false) value {"jpeg_compression_quality": 0.8, "should_normalize_screenshot_to_point_resolution": true, "should_use_jpeg": true}
+8 fetched 2026-10-21T02:36:11Z rule default legacy absent (false) value {"jpeg_compression_quality": 0.8, "should_normalize_screenshot_to_point_resolution": true, "should_use_jpeg": true}
+9 fetched 2026-10-21T01:05:23Z rule default legacy absent (false) value {"jpeg_compression_quality": 0.8, "should_normalize_screenshot_to_point_resolution": true, "should_use_jpeg": true}
+```
 <!-- /sizing -->

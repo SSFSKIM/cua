@@ -1,26 +1,28 @@
 Window: "cua Electron fixture", App: cua Electron Fixture.
 0 표준 윈도우 cua Electron fixture, Secondary Actions: Raise
-	1 container (settable) cua Electron fixture
-		2 container (settable)
-			3 HTML 콘텐츠 (collapsed) cua Electron fixture, Secondary Actions: Expand, URL: file:///Users/new/Library/Caches/cua-harness/electron-fixture/44.9.0-012125d3c853/cua%20Electron%20Fixture.app/Contents/Resources/app/index.html
-				4 container (collapsed) Secondary Actions: Expand
-					5 텍스트 엔트리 영역 (collapsed, settable) Description: Fixture text, Secondary Actions: Expand
-					6 목록 상자 (collapsed, settable) Description: Fixture list, Secondary Actions: Expand
-						7 텍스트 (collapsed) Value: Alpha, Secondary Actions: Expand
-						8 텍스트 (collapsed) Value: Bravo, Secondary Actions: Expand
-						9 텍스트 (collapsed) Value: Charlie, Secondary Actions: Expand
-						10 텍스트 (collapsed) Value: Delta, Secondary Actions: Expand
-						11 텍스트 (collapsed) Value: Echo, Secondary Actions: Expand
-						12 텍스트 (collapsed) Value: Foxtrot, Secondary Actions: Expand
-					13 버튼 (collapsed) Fixture button, Secondary Actions: Expand
-					14 container (collapsed) Description: Fixture status, Secondary Actions: Expand
-						15 텍스트 (collapsed) Value: Pressed 0 times, Secondary Actions: Expand
+	1 container cua Electron fixture
+		2 container
+			3 HTML 콘텐츠 cua Electron fixture, URL: file:///Users/new/Library/Caches/cua-harness/electron-fixture/44.9.0-23c8b77691d0/cua%20Electron%20Fixture.app/Contents/Resources/app/index.html
+				4 container
+					5 텍스트 엔트리 영역 (settable) Fixture text
+					6 목록 상자 Fixture list
+						7 텍스트 Alpha
+						8 텍스트 Bravo
+						9 텍스트 Charlie
+						10 텍스트 Delta
+						11 텍스트 Echo
+						12 텍스트 Foxtrot
+					13 버튼 Fixture button
+					14 container Fixture status
+						15 텍스트 Pressed 0 times
 	16 닫기 버튼
-	17 전체 화면 버튼 Help: 이 버튼을 누르면 윈도우를 확대/축소합니다., Secondary Actions: Zoom Window
+	17 전체 화면 버튼 Help: 이 버튼을 누르면 윈도우를 확대/축소합니다., Secondary Actions: 윈도우 확대/축소
 	18 최소화 버튼
-19 (selectable, collapsed) Apple, Secondary Actions: Cancel, Expand
-20 (selectable, collapsed) cua Electron Fixture, Secondary Actions: Cancel, Expand
-21 (selectable, collapsed) File, Secondary Actions: Cancel, Expand
-22 (selectable, collapsed) Edit, Secondary Actions: Cancel, Expand
-23 (selectable, collapsed) View, Secondary Actions: Cancel, Expand
-24 (selectable, collapsed) Window, Secondary Actions: Cancel, Expand
+19 menu bar
+	20 cua Electron Fixture
+	21 File
+	22 Edit
+	23 View
+	24 Window
+
+The focused UI element is 5 텍스트 엔트리 영역 (settable) Fixture text

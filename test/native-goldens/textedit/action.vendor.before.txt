@@ -1,5 +1,5 @@
 Window: "cua-scene.rtf", App: TextEdit.
-0 standard window cua-scene.rtf, URL: file:///Users/new/Library/Caches/cua-harness/spike-scenes/textedit/cua-scene.rtf, Secondary Actions: Raise
+0 standard window cua-scene.rtf, URL: file:///Users/new/Library/Caches/cua-harness/native-goldens/textedit/cua-scene.rtf, Secondary Actions: Raise
 	1 scroll area Secondary Actions: Scroll Left, Scroll Right, Scroll Up, Scroll Down
 		2 text entry area (settable) ID: First Text View, Value: cua scene document
 **Bold scene line**

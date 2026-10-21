@@ -1,5 +1,5 @@
 Window: "cua-scene.rtf", App: TextEdit.
-0 standard window cua-scene.rtf, Secondary Actions: Raise
+0 standard window cua-scene.rtf, URL: file:///Users/new/Library/Caches/cua-harness/native-goldens/textedit/cua-scene.rtf, Secondary Actions: Raise
 	1 scroll area Secondary Actions: Scroll Left, Scroll Right, Scroll Up, Scroll Down
 		2 text entry area (settable) ID: First Text View, Value: cua scene document
 **Bold scene line**
@@ -71,9 +71,9 @@ Line 60
 			8 increment page button
 			9 decrement page button
 		10 ruler
-			11 ruler marker (settable, integer) Value: 0, Secondary Actions: Delete
+			11 ruler marker (settable, float) Value: 0, Secondary Actions: Delete
 			12 ruler marker (settable, float) Value: 21.16402116402116, Secondary Actions: Delete
-			13 ruler marker (settable, integer) Value: 0, Secondary Actions: Delete
+			13 ruler marker (settable, float) Value: 0, Secondary Actions: Delete
 			14 ruler marker (settable, float) Value: 1.26984126984127, Secondary Actions: Delete
 			15 ruler marker (settable, float) Value: 2.53968253968254, Secondary Actions: Delete
 			16 ruler marker (settable, float) Value: 3.809523809523809, Secondary Actions: Delete
@@ -106,19 +106,19 @@ Line 60
 		43 menu button Description: list style, Help: List bullets and numbering
 		44 pop up button Description: line spacing, Help: Line and paragraph spacing, Value: 1.0
 	45 close button
-	46 full screen button Help: this button also has an action to zoom the window, Secondary Actions: Zoom Window
+	46 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
 	47 minimize button
 	48 menu button (disabled) document actions
 	49 image cua-scene.rtf
 	50 text cua-scene.rtf
-51 (selectable, collapsed) Apple, Secondary Actions: Cancel, Expand
-52 (selectable, collapsed) TextEdit, Secondary Actions: Cancel, Expand
-53 (selectable, collapsed) File, Secondary Actions: Cancel, Expand
-54 (selectable, collapsed) Edit, Secondary Actions: Cancel, Expand
-55 (selectable, collapsed) Format, Secondary Actions: Cancel, Expand
-56 (selectable, collapsed) View, Secondary Actions: Cancel, Expand
-57 (selectable, collapsed) Window, Secondary Actions: Cancel, Expand
-58 (selectable, collapsed) Help, Secondary Actions: Cancel, Expand
+51 menu bar
+	52 TextEdit
+	53 File
+	54 Edit
+	55 Format
+	56 View
+	57 Window
+	58 Help
 
 The focused UI element is 2 text entry area (settable) ID: First Text View, Value: cua scene document
 **Bold scene line**

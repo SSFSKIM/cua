@@ -1,13 +1,13 @@
 The following is a diff from the previous accessibility tree for Window: "cua-scene-finder" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
-~				78 row (selected, collapsed) Secondary Actions: Expand
-~					79 ⟨1⟩ (selected) Secondary Actions: Open
-~					82 ⟨1⟩ (selected)
-~					84 ⟨1⟩ (selected)
-~					86 ⟨1⟩ (selected)
-~			225 ⟨3⟩ Value: ⟨25⟩, ID: ⟨13⟩
-~		235 ⟨2⟩ Description: ⟨2⟩, Help: ⟨13⟩, Secondary Actions: ⟨39⟩, ⟨39⟩, ⟨42⟩
-~		236 ⟨2⟩ Description: ⟨5⟩, Help: ⟨9⟩, Secondary Actions: ⟨39⟩, ⟨39⟩, ⟨42⟩
+~				45 row (selected)
+~					46 셀 (selected) Secondary Actions: Finder 항목 열기
+~						48 텍스트 필드 (selected, settable) URL: file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-005, Value: scene-file-005, Secondary Actions: Finder 항목 열기
+~					49 셀 (selected)
+~					51 셀 (selected)
+~					53 셀 (selected)
+~		230 버튼 Description: 공유, Help: 선택된 항목을 공유합니다, Secondary Actions: 이전으로 이동, 다음으로 이동, 도구 막대에서 제거
+~		231 버튼 Description: 태그 추가, Help: 태그를 편집합니다, Secondary Actions: 이전으로 이동, 다음으로 이동, 도구 막대에서 제거
 Selected:
-	78 row (selected, collapsed) Secondary Actions: Expand
+	45 row (selected)
 
 Note: Pay special attention to the content selected by the user. If the user asks a question or refers to the content they are looking at on-screen, they might be referring to the selected content (but they might be referring to something else that's visible, too).

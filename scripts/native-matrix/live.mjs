@@ -44,13 +44,13 @@
 //   cleanup       the put-back alone (and the vendor home's cleanup from a preparation.json), for a command that died.
 import * as fs from 'node:fs';
 import {tmpdir} from 'node:os';
-import {dirname, isAbsolute, join, resolve} from 'node:path';
+import {isAbsolute, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
 import {StdioClient} from '../browser-parity/mcp.mjs';
 import {quote} from '../browser-parity/topology.mjs';
 import {MARKER} from '../native-baseline/cells.mjs';
-import {checkVendorPreflight, connectVendorLane, controllerCheckout, deviceOps, checkoutCli} from './goldens.mjs';
+import {checkoutCli, checkVendorPreflight, connectVendorLane, controllerCheckout, deviceOps} from './goldens.mjs';
 import {BIND} from './goldens-cells.mjs';
 import {REPO_ROOT} from './goldens-install.mjs';
 import {EFFECT, MENU_BAR, MENU_ITEM, SELECT_FIRST_LINE} from './live-cells.mjs';
@@ -137,7 +137,7 @@ export async function runLive(options, io) {
     result.finished = new Date().toISOString();
     write();
   }
-  log(`${command} ${result.complete ? (result.pass ? 'PASS' : 'complete, NOT PASSED') : 'INCOMPLETE'}${dir && !dryRun ? `: ${join(dir, 'result.json')}` : ''}`);
+  log(`${command} ${result.complete ? (result.pass ? 'PASS' : 'complete, NOT PASSED') : 'INCOMPLETE'}${dryRun ? ' (dry run: the answers were made up, nothing ran)' : dir ? `: ${join(dir, 'result.json')}` : ''}`);
   return result.pass ? 0 : 1;
 }
 

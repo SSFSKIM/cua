@@ -1,13 +1,16 @@
 #!/usr/bin/env node
 import {resolvePendingDeclarations,pendingCellsFor,classifyPendingCell} from './repl-parity/pending-cells.mjs';
 import {runNativeScenario} from './repl-parity/native.mjs';
+import {nativeMacIo,runNativeMac} from './repl-parity/native-mac.mjs';
+import {nativeMacDiff,summaryLine} from './repl-parity/native-mac-diff.mjs';
+import {assertEngineOptions} from './native-baseline/engine.mjs';
 import {parseArgs} from 'node:util';
 import {mkdirSync,readFileSync,writeFileSync,appendFileSync} from 'node:fs';
 import {join,resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {execFileSync} from 'node:child_process';
 import {root,cellsCommand} from './repl-parity/topology.mjs';
-import {managePreparation} from './repl-parity/prepare-device.mjs';
+import {managePreparation,manageApprovedPreparation,approvedJournalFor,isApprovedJournal} from './repl-parity/prepare-device.mjs';
 import {selectScenarios,inventory,caseSchedule,inSuite,milestones,scenarioCellLabels} from './repl-parity/registry.mjs';
 import scenarios from '../test/repl-parity/scenarios/index.mjs';
 import {REPL_HOST_VERSION} from '../src/repl-host/identity.mjs';
@@ -28,20 +31,45 @@ const state=device=>join(root,'.doperpowers/sde/repl-parity',`${device}.json`);
 const save=(p,value)=>writeFileSync(p,JSON.stringify(value,null,2)+'\n');
 // The CLI's arguments, validated: the action, its options and positionals. It reads no journal and starts nothing.
 export function parseSelection(argv){
- const {values:v,positionals:[action,a,b]}=parseArgs({args:argv,allowPositionals:true,options:{device:{type:'string',default:'local'},host:{type:'string',default:'vendor'},suite:{type:'string'},through:{type:'string'},out:{type:'string'},expected:{type:'string'},commit:{type:'string'},profile:{type:'string'},node:{type:'string'},home:{type:'string'},'pending-cell':{type:'string',multiple:true},'pending-reason':{type:'string'},'pause-file':{type:'string'}}});
+ const {values:v,positionals:[action,a,b]}=parseArgs({args:argv,allowPositionals:true,options:{device:{type:'string',default:'local'},host:{type:'string',default:'vendor'},engine:{type:'string'},'approved-runtime':{type:'string'},'approved-engine':{type:'string'},suite:{type:'string'},through:{type:'string'},out:{type:'string'},expected:{type:'string'},commit:{type:'string'},profile:{type:'string'},node:{type:'string'},home:{type:'string'},'pending-cell':{type:'string',multiple:true},'pending-reason':{type:'string'},'pause-file':{type:'string'}}});
  if((v['pending-cell']?.length||v['pending-reason'])&&(action!=='run'||!isDeclaredDevice(v.device)||DEVICES[v.device].platform!=='linux'))throw new Error('Pending declarations require a live Linux run; diff reads recorded declarations');
  if(v.through&&!milestones.includes(v.through))throw new Error('Invalid through milestone');
- if(!(v.device==='local'||isDeclaredDevice(v.device))||!['vendor','cua'].includes(v.host)||!['cells','services','api','docs-profiles','secrets','secrets-live','native','all'].includes(v.suite??'cells'))throw new Error('Invalid parity selection');
+ if(!(v.device==='local'||isDeclaredDevice(v.device))||!['vendor','cua'].includes(v.host)||!['cells','services','api','docs-profiles','secrets','secrets-live','native','native-mac','all'].includes(v.suite??'cells'))throw new Error('Invalid parity selection');
+ const approved=v['approved-runtime']!==undefined||v['approved-engine']!==undefined;
+ if(v.suite==='native-mac'||action==='prepare'&&approved)nativeMacSelection(action,v,approved);
+ else if(v.engine!==undefined||approved)throw new Error('--engine, --approved-runtime and --approved-engine select the macOS native engine: they belong to the native-mac suite (run --suite native-mac) and to its prepare');
  return {action,v,a,b};
+}
+// The native-mac suite (#117; docs/doperpowers/specs/2026-10-18-own-native-engine-design.md, Verification system part 3)
+// and its prepare: on a declared macOS device, over the runtime and the engine the owner approved there, served in place
+// (a fresh home would raise the screen-capture confirmation again); a run names its REPL host and its native engine
+// apart, as the native baseline's lanes do (scripts/native-baseline/engine.mjs). A diff reads recorded runs only.
+function nativeMacSelection(action,v,approved){
+ if(action==='diff'){if(v.engine!==undefined||approved)throw new Error('diff reads the recorded runs: --engine and the approved options belong to the native-mac suite\'s run and prepare');return;}
+ if(!isDeclaredDevice(v.device)||DEVICES[v.device].platform!=='darwin')throw new Error('the native-mac suite and its prepare run on a declared macOS device (scripts/repl-parity/devices.mjs)');
+ for(const name of ['approved-runtime','approved-engine']){
+  if(v[name]===undefined)throw new Error(`--${name} is required on macOS: every lane serves the ${name==='approved-runtime'?'runtime copy':'cua Engine.app'} the owner approved on the device, in place; harnesses never install or build one`);
+  if(!/^\/[^\0\n]*$/.test(v[name]))throw new Error(`--${name} needs an absolute path`);
+ }
+ if(action==='prepare'){if(v.engine!==undefined)throw new Error('prepare serves the approved engine to every lane: --engine belongs to run');return;}
+ if(action!=='run')throw new Error('the native-mac suite is prepared, run and diffed');
+ if(v.through)throw new Error('the native-mac suite is not an inventory suite: --through does not apply');
+ assertEngineOptions({platform:'darwin',surface:'computer',host:v.host,engine:v.engine,approvedEngine:v['approved-engine']});
 }
 export async function main(argv=process.argv.slice(2)){
  const {action,v,a,b}=parseSelection(argv);
  if(action==='prepare'||action==='cleanup-prepared'){
+  // On macOS the approved route: the approved runtime and engine served in place, nothing installed (the native-mac suite).
+  if(action==='prepare'?v['approved-runtime']!==undefined:isApprovedJournal(state(v.device))){console.log(JSON.stringify(manageApprovedPreparation(action,{...v,journal:state(v.device)}),null,2));return;}
   const prepared=managePreparation(action,{...v,journal:state(v.device)});
   console.log(JSON.stringify(prepared,null,2));return;
  }
  if(action==='diff'){
   if(!a||!b)throw new Error('diff needs two run directories');
+  if((v.suite??json(join(a,'meta.json')).suite)==='native-mac'){
+   // The JSON report, then its summary line (Acceptance 6): `summary: N unexpected differences`.
+   const report=nativeMacDiff(a,b,{expected:v.expected});console.log(JSON.stringify(report,null,2));console.log(summaryLine(report));if(!report.ok)process.exitCode=1;return;
+  }
   const load=dir=>({meta:json(join(dir,'meta.json')),tools:json(join(dir,'tools.json')),rows:readFileSync(join(dir,'results.jsonl'),'utf8').trim().split('\n').filter(Boolean).map(JSON.parse)});
   const left=load(a),right=load(b);
   if(v.expected&&left.meta.host==='vendor'&&right.meta.host==='vendor')throw new Error('No expected-differences file permitted for vendor determinism');
@@ -51,6 +79,11 @@ export async function main(argv=process.argv.slice(2)){
  }
  v.suite??='cells';
  if(action!=='run'||!v.out)throw new Error('Usage: repl-parity prepare|cleanup-prepared|run|diff; run requires --out');
+ if(v.suite==='native-mac'){
+  // One lane per run, on the prepared sitting's commit, approved runtime and approved engine (./repl-parity/native-mac.mjs).
+  const prepared=approvedJournalFor(json(state(v.device)),v);
+  process.exitCode=await runNativeMac({device:v.device,host:v.host,engine:v.engine,approvedRuntime:v['approved-runtime'],approvedEngine:v['approved-engine'],commit:prepared.commit,out:v.out},nativeMacIo(v.device));return;
+ }
  if(v.device==='local'){
   const {scenarios:selected,pending}=selectScenarios(scenarios,inventory,{suite:v.suite,through:v.through,platform:process.platform});
   const doubles=selected.filter(s=>s.backend==='secret-double');

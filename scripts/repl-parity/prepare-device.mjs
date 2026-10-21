@@ -12,7 +12,8 @@ import {executionFacts} from './provenance.mjs';
 import {prepareEndpoint,removeEndpoint} from './remote-device.mjs';
 import {endpointPlan} from './remote.mjs';
 import {nodeEnvironment} from './node-provenance.mjs';
-import {prepareCommand,remoteCommand,quote,execute as executeCommand} from './topology.mjs';
+import {prepareCommand,nativePrepareCommand,remoteCommand,quote,execute as executeCommand} from './topology.mjs';
+import {PARITY_CHECKOUT} from '../native-baseline/remote.mjs';
 
 const SESSION_KEYS=['DISPLAY','XAUTHORITY','DBUS_SESSION_BUS_ADDRESS','XDG_RUNTIME_DIR','XDG_DATA_DIRS'];
 const SAFE_KEYS=['PATH','TMPDIR','LANG','LC_ALL','LC_CTYPE','USER','LOGNAME','HOME','CUA_HOME','CHROME_CONFIG_HOME','XDG_CONFIG_HOME','CUA_PARITY_NODE_MODE',...SESSION_KEYS];
@@ -82,6 +83,45 @@ export function managePreparation(action,{journal,out,...options},{execute=execu
  if(!parsed.some(r=>r.removed===true))throw new Error('Prepared home removal was not confirmed; journal retained');
  if(parsed.at(-1)?.siblingRemoved!==true)throw new Error('The sibling user HOME\'s removal was not confirmed; journal retained');
  rmSync(journal);return {removed:true,siblingRemoved:true};
+}
+
+// The approved route (#117's native-mac suite; docs/doperpowers/specs/2026-10-18-own-native-engine-design.md, M2b): on
+// macOS a lane serves the runtime copy and the cua Engine.app the owner approved on the device, in place, because a new
+// on-disk copy of either raises the screen-capture confirmation only the owner can answer. So prepare installs nothing:
+// it places the harness checkout at the sitting's commit (nativePrepareCommand, as the native baseline's prepare does),
+// checks that the approved engine exists and is that checkout's build (scripts/native-matrix/goldens-device.mjs
+// engine-check, reading only; harnesses never build one), and journals the sitting. Each run then takes the approved
+// home's admission, stops the engine at its start and its end (scripts/native-baseline/prepare.mjs) and gives it back,
+// so between runs nothing on the device is the harness's, and cleanup-prepared removes only the journal.
+const ENGINE_CHECK=`cd ${PARITY_CHECKOUT} && node scripts/native-matrix/goldens-device.mjs engine-check`;
+export const isApprovedJournal=journal=>existsSync(journal)&&readJson(journal).route==='approved';
+export function manageApprovedPreparation(action,{journal,out,device,commit,'approved-runtime':approvedRuntime,'approved-engine':approvedEngine},{execute=executeCommand,engineCheck=d=>JSON.parse(execute(remoteCommand(d,ENGINE_CHECK)).trim().split('\n').at(-1))}={}) {
+ if(action==='prepare') {
+  if(existsSync(journal)&&readJson(journal).ownedPreparation)throw new Error('Owned preparation already exists; run cleanup-prepared before preparing again');
+  if(declaredDevice(device).platform!=='darwin')throw new Error('the approved route serves a macOS device');
+  const head=execute(nativePrepareCommand({device,commit})).trim().split('\n').at(-1).trim();
+  if(!/^[0-9a-f]{40}$/.test(head)||!head.startsWith(commit))throw new Error(`the harness checkout is not at ${commit} after its placement (HEAD ${head})`);
+  const checked=engineCheck(device);
+  if(!checked?.ok)throw new Error(`the approved engine cannot serve this sitting: ${(checked?.problems??['the device gave no answer']).join('; ')}`);
+  const {build,engineVersion,signature}=checked.engine;
+  const prepared={route:'approved',device,platform:'darwin',commit:head,approvedRuntime,approvedEngine,engine:{build,engineVersion,signature},preparedAt:new Date().toISOString()};
+  save(journal,prepared);
+  if(out)save(join(resolve(out),'prepare.json'),prepared);
+  return prepared;
+ }
+ if(action!=='cleanup-prepared')throw new Error('Unknown preparation action');
+ const prepared=existsSync(journal)?readJson(journal):null;
+ if(prepared?.route!=='approved'||prepared.device!==device)throw new Error('No approved preparation of this device to clean');
+ rmSync(journal);return {removed:true,owned:false};
+}
+// The journal a native-mac run may use: the approved route's, for this device, naming the run's approved runtime and
+// engine (one sitting serves one of each).
+export function approvedJournalFor(prepared,{device,'approved-runtime':approvedRuntime,'approved-engine':approvedEngine}) {
+ if(prepared?.route!=='approved')throw new Error('the device\'s preparation is not the approved route: prepare it with --approved-runtime and --approved-engine (cleanup-prepared first if another is outstanding)');
+ if(prepared.device!==device)throw new Error(`the preparation is of ${prepared.device}, not ${device}`);
+ if(prepared.approvedRuntime!==approvedRuntime)throw new Error(`the sitting was prepared on the approved runtime ${prepared.approvedRuntime}, not ${approvedRuntime}`);
+ if(prepared.approvedEngine!==approvedEngine)throw new Error(`the sitting was prepared on the approved engine ${prepared.approvedEngine}, not ${approvedEngine}`);
+ return prepared;
 }
 
 function main(argv=process.argv.slice(2)) {

@@ -222,4 +222,32 @@ test('source: the owner\'s source and preference saved before the first switch (
   assert.deepEqual(await source('restore', {}, io), {keep: true, sourceRestored: true, perContextRestored: true}, 'the record stays for the put-back to verify');
   await assert.rejects(() => source('select', {id: 'not an id'}, io), /source id/);
   await assert.rejects(() => source('per-context', {value: 'maybe'}, io), /on or off/);
+  // An earlier probe that may still act (the device's journal, ./live-device.mjs probeBarrier): no selection behind it.
+  await assert.rejects(() => source('select', {id: 'com.apple.keylayout.ABC'}, {...io, probeStuck: () => 'the probe input-source#a is still running'}), /may still act: the probe input-source#a/);
+});
+
+test('a probe whose await is stuck keeps its handle, marked; nothing starts while the journal shows it running, and it is dropped once it has exited', () => {
+  const dir = tmp();
+  try {
+    let running = 'the probe input-source#a is still running';
+    const launched = [];
+    const io = {dir, state: () => state, launched: () => [], now: () => 1_000_000, probeStuck: () => running,
+      probeLaunch: args => { launched.push(args); return {command: args[0], label: 'input-source#a', pid: 901, start: 'T', scratch: '/tmp/s', out: '/tmp/s/out.json', launchedAt: 1_000_000}; },
+      probeAwait: () => { throw Object.assign(new Error('the input-source probe (pid 901) did not exit after SIGKILL'), {stuck: true}); }};
+    running = null;
+    probeStart({kind: 'input-source', id: 'com.apple.inputmethod.Korean.2SetKorean', lead: 1500}, io);
+    running = 'the probe input-source#a is still running';
+    assert.throws(() => probeFinish(io), /did not exit after SIGKILL/);
+    const kept = JSON.parse(fs.readFileSync(join(dir, PROBE_FILE), 'utf8'));
+    assert.match(kept.stuck, /did not exit after SIGKILL/, 'the stuck handle stays on the device for the next command');
+    assert.throws(() => probeStart({kind: 'keystroke', window: '11,0,25,900,700', text: 'qz', lead: 3000}, io), /may still act: the probe input-source#a/);
+    assert.equal(launched.length, 1);
+    running = null;
+    probeStart({kind: 'keystroke', window: '11,0,25,900,700', text: 'qz', lead: 3000}, io);
+    assert.equal(launched.length, 2, 'once the journal shows it exited, the stuck handle is dropped');
+    // An await that failed otherwise (the probe stopped): the handle goes.
+    const plain = {...io, probeAwait: () => { throw new Error('the keystroke probe did not finish within 60 s; its process was stopped'); }};
+    assert.throws(() => probeFinish(plain), /its process was stopped/);
+    assert.ok(!fs.existsSync(join(dir, PROBE_FILE)));
+  } finally { fs.rmSync(dir, {recursive: true, force: true}); }
 });

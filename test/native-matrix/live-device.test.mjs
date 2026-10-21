@@ -10,7 +10,7 @@ import {join} from 'node:path';
 import {SkyComputerUseError} from '../../src/services/engine/protocol.mjs';
 import {ABC, FIRST_LINE, JOURNAL_FILE, KOREAN_2SET, PASTE_TARGETS, RECOVERY_BOUNDS, parseJournal} from '../../scripts/native-matrix/live-checks.mjs';
 import {
-  COMPOSITION_QUIET_MS, COMPOSITION_VARIANTS, INTERVENTION_DEBOUNCE_MS, PASTE, PASTE_DEADLINE_MS, begin, childHandle, inputSourceCheck, menuCheck, minimizedCheck, pasteCheck, putBack, recover, restoreInputSource, runProbe, launchProbe, awaitProbe,
+  COMPOSITION_QUIET_MS, COMPOSITION_VARIANTS, INTERVENTION_DEBOUNCE_MS, PASTE, PASTE_DEADLINE_MS, begin, childHandle, inputSourceCheck, menuCheck, minimizedCheck, pasteCheck, putBack, probeBarrier, recover, restoreInputSource, runProbe, launchProbe, awaitProbe,
   saveFrontmost, saveInputSource,
 } from '../../scripts/native-matrix/live-device.mjs';
 
@@ -1012,4 +1012,19 @@ test('pasteCheck: sends nothing unless the user window is in front, and an engin
   assert.equal(out.steps.text.errorName, 'unknownMethod');
   assert.equal(out.verdict.pass, false);
   assert.equal(old.input.current, ABC);
+});
+
+test('probeBarrier: a probe the run journaled that still runs, or a launch never identified while a probe of the bundle runs, holds every restore; the watcher never does', () => {
+  const run = scratch();
+  fs.writeFileSync(join(run, 'live-watch.json'), JSON.stringify({pid: 950, dir: run}));
+  const watcher = {pid: 950, ppid: 1, uid: 501, start: T, command: `${BUNDLE}/Contents/MacOS/cua-engine --probe watch-activations`};
+  const probe = {pid: 910, ppid: 1, uid: 501, start: T, command: `${BUNDLE}/Contents/MacOS/cua-engine --probe input-source ${KOREAN_2SET} --at 1`};
+  const io = ({journal, rows}) => ({journal: () => journal, processes: () => rows, identity: () => ({self: 200, ancestors: [], uid: 501, checkout: '/c', bundle: BUNDLE})});
+  const resolved = [{kind: 'probe', pid: 910, start: T, label: 'input-source#a'}];
+  assert.match(probeBarrier(run, io({journal: resolved, rows: [watcher, probe]})), /input-source#a is still running/);
+  assert.equal(probeBarrier(run, io({journal: resolved, rows: [watcher]})), null, 'exited: nothing holds');
+  assert.equal(probeBarrier(run, io({journal: resolved, rows: [watcher, {...probe, start: 'Wed Oct 22 10:00:00 2026'}]})), null, 'a reused pid is not the probe');
+  const unresolved = [{kind: 'probe', pid: null, start: null, label: 'input-source#b'}];
+  assert.match(probeBarrier(run, io({journal: unresolved, rows: [watcher, {...probe, pid: 911}]})), /never identified/);
+  assert.equal(probeBarrier(run, io({journal: unresolved, rows: [watcher]})), null, 'the watcher alone holds nothing');
 });

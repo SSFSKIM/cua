@@ -714,6 +714,19 @@ async function awaitUnresolvedProbes(run, io, bounds) {
   await whileHolds(() => probes().length > 0, io, bounds.probeWaitMs);
   return {unresolved, waited, remaining: probes().length};
 }
+// The barrier before anything restores or switches the input source from a later command: a probe this run journaled
+// that still runs (its pid with the start time the journal holds), or a launch never identified while a probe of the
+// bundle other than the watcher runs. The journal is the run directory's, so the barrier holds across commands, as the
+// recovery's does. -> why nothing may act behind it, or null.
+export function probeBarrier(run, io) {
+  const plan = ownedNow(run, io), watchPid = readSaved(join(run, WATCH_FILE))?.pid;
+  const running = plan.stop.filter(e => e.kind === 'probe' && e.pid !== watchPid);
+  if (running.length) return `the probe ${running.map(e => e.label).join(', ')} is still running`;
+  if (!plan.unresolvedProbes) return null;
+  const {bundle, uid} = io.identity();
+  const live = io.processes().filter(p => p.uid === uid && p.pid !== watchPid && isBundleProbe(p.command, bundle) && !/ --probe watch-activations\b/.test(p.command));
+  return live.length ? `a probe launch whose process was never identified may still be running (${live.length} probe(s) of the engine bundle)` : null;
+}
 // SIGTERM, then SIGKILL, each awaited killMs. -> the ones still running.
 async function stopProcesses(list, io, bounds) {
   if (!list.length) return [];
@@ -956,7 +969,9 @@ export const defaultIo = run => {
   probe: args => {
     try { return runProbe(probeBundle(), args, {run}); } catch (error) { if (error.stuck) stuckProbe = error.message; throw error; }
   },
-  probeStuck: () => stuckProbe,
+  // A probe this command found stuck, or one the run's journal shows still running (probeBarrier): nothing restores or
+  // selects a source behind it.
+  probeStuck: () => stuckProbe ?? (run ? probeBarrier(run, {journal: () => readJournal(run), processes: () => processTable(), identity}) : null),
   // A scheduled probe, launched now and awaited by a later command (./matrix-device.mjs probe).
   probeLaunch: args => launchProbe(probeBundle(), args, {run}),
   probeAwait: handle => {

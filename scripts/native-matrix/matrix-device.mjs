@@ -132,15 +132,19 @@ export const PROBE_FILE = 'matrix-probe.json';
 const WINDOW_ARG = /^\d+,-?\d+(\.\d+)?,-?\d+(\.\d+)?,\d+(\.\d+)?,\d+(\.\d+)?$/;
 const MAX_LEAD_MS = 30_000;
 
-// A scheduled probe launched now, its handle kept. io: {dir, state(), launched(), now(), probeLaunch(args)}.
+// A scheduled probe launched now, its handle kept; none while an earlier one may still act (probeStuck). io: {dir, state(),
+// launched(), now(), probeLaunch(args), probeStuck()}.
 // -> {scheduled (the device time it acts at), pid}.
 export function probeStart({kind, window, text, mode, id, lead}, io) {
   const file = join(io.dir, PROBE_FILE);
+  const busy = io.probeStuck?.();
+  if (busy) throw new Error(`an earlier probe may still act: ${busy}`);
   if (fs.existsSync(file)) {
-    // A handle past the probe's bound is a run's that died before its finish (the recovery stopped the probe): dropped.
-    const stale = JSON.parse(fs.readFileSync(file, 'utf8'));
-    if (!(io.now() - stale.launchedAt > PROBE_MS)) throw new Error('a probe is already pending: finish it first');
-    fs.rmSync(stale.scratch, {recursive: true, force: true});
+    // A handle marked stuck whose probe has since exited, or one past the probe's bound (a run that died before its
+    // finish; the recovery stopped the probe): dropped.
+    const left = JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (!left.stuck && !(io.now() - left.launchedAt > PROBE_MS)) throw new Error('a probe is already pending: finish it first');
+    fs.rmSync(left.scratch, {recursive: true, force: true});
     fs.rmSync(file, {force: true});
   }
   if (!Number.isSafeInteger(lead) || lead < 0 || lead > MAX_LEAD_MS) throw new Error(`--lead needs the milliseconds ahead, at most ${MAX_LEAD_MS}`);
@@ -164,23 +168,35 @@ export function probeStart({kind, window, text, mode, id, lead}, io) {
   return {scheduled, pid: handle.pid ?? null};
 }
 
-// The pending probe awaited; its handle removed whatever the await answered. io: {dir, probeAwait(handle)}. -> {answer}.
+// The pending probe awaited, its handle removed once it answered or was stopped. A probe that would not exit (`stuck`)
+// keeps its handle, marked: the run's journal shows it running to the next command (probeStuck), which neither starts
+// another probe nor switches or restores the source until it has exited. io: {dir, probeAwait(handle)}. -> {answer}.
 export function probeFinish(io) {
   const file = join(io.dir, PROBE_FILE);
   if (!fs.existsSync(file)) throw new Error('no probe is pending');
   const handle = JSON.parse(fs.readFileSync(file, 'utf8'));
-  try { return {answer: io.probeAwait(handle)}; } finally { fs.rmSync(file, {force: true}); }
+  let answer;
+  try { answer = io.probeAwait(handle); } catch (error) {
+    if (error.stuck) fs.writeFileSync(file, `${JSON.stringify({...handle, stuck: String(error.message).slice(0, 300)})}\n`, {mode: 0o600});
+    else fs.rmSync(file, {force: true});
+    throw error;
+  }
+  fs.rmSync(file, {force: true});
+  return {answer};
 }
 
 // ---- the input source ----------------------------------------------------------------------------------------------------
 
-// io: {probe(args), readPerContext(), writePerContext(value), saveInput(), restoreInput({keep})}.
+// io: {probe(args), probeStuck(), readPerContext(), writePerContext(value), saveInput(), restoreInput({keep})} (the restore
+// holds behind a probe that may still act itself: ./live-device.mjs restoreInputSource).
 export async function source(action, {id, value} = {}, io) {
   switch (action) {
     case 'save': { const out = io.saveInput(); return {kept: out.kept, saved: {source: out.saved?.source?.id ?? null, perContext: out.saved?.perContext ?? null}}; }
     case 'current': return {current: io.probe(['input-source', 'current'])?.id ?? null};
     case 'select': {
       if (!/^[A-Za-z0-9._-]+$/.test(id ?? '')) throw new Error('--source needs an input source id');
+      const busy = io.probeStuck?.();
+      if (busy) throw new Error(`an earlier probe may still act: ${busy}`);
       const out = io.probe(['input-source', id]);
       return {selected: out?.selected === true, current: io.probe(['input-source', 'current'])?.id ?? null};
     }
@@ -357,7 +373,7 @@ export async function main(argv, {io: given = {}} = {}) {
     watcherRuns: pid => isWatcher(processTable(), pid),
     probe: live.probe, runningApps: live.runningApps, launchOf: pid => launchOf(pid), quit: pids => quitOwned(pids, {waitMs: LAUNCH_QUIT_MS}),
     app: () => windowlessApp(), open: app => run('/usr/bin/open', ['-n', '-g', '-a', app]), sleep, now: Date.now,
-    probeLaunch: live.probeLaunch, probeAwait: live.probeAwait, readPerContext: live.readPerContext, writePerContext: live.writePerContext,
+    probeLaunch: live.probeLaunch, probeAwait: live.probeAwait, probeStuck: live.probeStuck, readPerContext: live.readPerContext, writePerContext: live.writePerContext,
     saveInput: () => saveInputSource({io: live}), restoreInput: ({keep}) => restoreInputSource({io: live, keep}),
     ...given,
   };

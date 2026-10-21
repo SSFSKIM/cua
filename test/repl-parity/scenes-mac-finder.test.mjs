@@ -11,7 +11,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {
-  FINDER_CHROME, FINDER_DEFAULT_TOOLBAR, chromeShown, hideSteps, restoreSteps, preferenceWrites, parsePreference,
+  FINDER_CHROME, FINDER_DEFAULT_TOOLBAR, FINDER_KEYS, chromeShown, hideSteps, restoreSteps, preferenceWrites, parsePreference,
   finderWindowProblems, readSavedPreferences, saveOriginalPreferences, clearSavedPreferences,
 } from '../../scripts/repl-parity/scenes-mac-finder.mjs';
 
@@ -33,14 +33,28 @@ function without(shot, ...tokens) {
 // The fixed state: no sidebar (its scroll area t2 and the splitter t86) and no status bar (t276).
 const fixedState = () => without(capture(), 't2', 't86', 't276');
 
-test('the chrome parts, their preference keys, the value Finder assumes when a key is unset, and the toggle keys', () => {
+test('the chrome parts, their preference keys, what Finder shows while a key is unset on each macOS, and the toggle keys', () => {
+  // macOS 27 shows the status bar while ShowStatusBar is unset (the mini's goldens sitting, 2026-10-21); macOS 26 hides it.
   assert.deepEqual(FINDER_CHROME.map(p => [p.id, p.key, p.shownWhenUnset, p.toggle]), [
-    ['sidebar', 'ShowSidebar', true, 'ctrl+super+s'],
-    ['statusBar', 'ShowStatusBar', false, 'super+slash'],
-    ['pathBar', 'ShowPathbar', false, 'alt+super+p'],
+    ['sidebar', 'ShowSidebar', {26: true, 27: true}, 'ctrl+super+s'],
+    ['statusBar', 'ShowStatusBar', {26: false, 27: true}, 'super+slash'],
+    ['pathBar', 'ShowPathbar', {26: false, 27: false}, 'alt+super+p'],
   ]);
-  assert.deepEqual(chromeShown({}), {sidebar: true, statusBar: false, pathBar: false});
-  assert.deepEqual(chromeShown({ShowSidebar: false, ShowStatusBar: true, ShowPathbar: null}), {sidebar: false, statusBar: true, pathBar: false});
+  assert.deepEqual(chromeShown({}, 26), {sidebar: true, statusBar: false, pathBar: false});
+  assert.deepEqual(chromeShown({}, 27), {sidebar: true, statusBar: true, pathBar: false});
+  // A set key is the owner's choice on every macOS.
+  for (const major of [26, 27]) assert.deepEqual(chromeShown({ShowSidebar: false, ShowStatusBar: false, ShowPathbar: null}, major), {sidebar: false, statusBar: false, pathBar: false});
+  assert.deepEqual(chromeShown({ShowSidebar: false, ShowStatusBar: true, ShowPathbar: null}, 26), {sidebar: false, statusBar: true, pathBar: false});
+});
+
+test('a macOS whose unset defaults are not known, or no version at all, is refused rather than guessed', () => {
+  for (const major of [25, 28, 15, undefined, null, NaN, '27', 27.5]) {
+    assert.throws(() => chromeShown({}, major), /macOS/, String(major));
+    assert.throws(() => hideSteps({ShowSidebar: false, ShowStatusBar: false, ShowPathbar: false}, major), /macOS/, `${major}: even when every key is set`);
+    assert.throws(() => restoreSteps({}, {}, major), /macOS/, String(major));
+  }
+  // The key writes need no default: they put each key back exactly, so a restore never depends on the version.
+  assert.deepEqual(preferenceWrites({ShowSidebar: false}, {ShowSidebar: null}), [{key: 'ShowSidebar', value: null}]);
 });
 
 test('defaults read output: 1 and 0 are the Boolean, an unset key (no output) is null', () => {
@@ -51,24 +65,66 @@ test('defaults read output: 1 and 0 are the Boolean, an unset key (no output) is
   assert.throws(() => parsePreference('Nlsv\n'), /not a Boolean/);
 });
 
-test('hide steps toggle exactly the parts the preferences show, sidebar first', () => {
-  assert.deepEqual(hideSteps({}), [{pressKey: 'ctrl+super+s', hides: 'sidebar'}]);
-  assert.deepEqual(hideSteps({ShowSidebar: true, ShowStatusBar: true, ShowPathbar: true}),
-    [{pressKey: 'ctrl+super+s', hides: 'sidebar'}, {pressKey: 'super+slash', hides: 'statusBar'}, {pressKey: 'alt+super+p', hides: 'pathBar'}]);
-  assert.deepEqual(hideSteps({ShowSidebar: false, ShowStatusBar: false}), [], 'the owner\'s Finder already hides them: nothing is changed');
+test('hide steps toggle exactly the parts the preferences show on the running macOS, sidebar first', () => {
+  assert.deepEqual(hideSteps({}, 26), [{pressKey: 'ctrl+super+s', hides: 'sidebar'}]);
+  assert.deepEqual(hideSteps({}, 27), [{pressKey: 'ctrl+super+s', hides: 'sidebar'}, {pressKey: 'super+slash', hides: 'statusBar'}]);
+  for (const major of [26, 27]) {
+    assert.deepEqual(hideSteps({ShowSidebar: true, ShowStatusBar: true, ShowPathbar: true}, major),
+      [{pressKey: 'ctrl+super+s', hides: 'sidebar'}, {pressKey: 'super+slash', hides: 'statusBar'}, {pressKey: 'alt+super+p', hides: 'pathBar'}]);
+    assert.deepEqual(hideSteps({ShowSidebar: false, ShowStatusBar: false}, major), [], 'the owner\'s Finder already hides them: nothing is changed');
+  }
+  // The mini's pre-state: the sidebar set, the status bar and path bar unset. macOS 27 shows the status bar, so ⌘/ is
+  // sent there; on macOS 26 it is not.
+  const mini = {ShowSidebar: true, ShowStatusBar: null, ShowPathbar: null};
+  assert.deepEqual(hideSteps(mini, 26).map(s => s.hides), ['sidebar']);
+  assert.deepEqual(hideSteps(mini, 27).map(s => s.hides), ['sidebar', 'statusBar']);
 });
 
 test('restore steps toggle back each part whose shown state differs from the saved one; writes restore the keys exactly', () => {
   const saved = {ShowSidebar: null, ShowStatusBar: true, ShowPathbar: null};
   const afterHide = {ShowSidebar: false, ShowStatusBar: false, ShowPathbar: null};
-  assert.deepEqual(restoreSteps(afterHide, saved), [{pressKey: 'ctrl+super+s', restores: 'sidebar'}, {pressKey: 'super+slash', restores: 'statusBar'}]);
-  assert.deepEqual(restoreSteps(saved, saved), []);
+  for (const major of [26, 27]) {
+    assert.deepEqual(restoreSteps(afterHide, saved, major), [{pressKey: 'ctrl+super+s', restores: 'sidebar'}, {pressKey: 'super+slash', restores: 'statusBar'}]);
+    assert.deepEqual(restoreSteps(saved, saved, major), []);
+    // After the toggles went back, the sidebar key holds an explicit true where it was unset: shown alike, but the key
+    // is put back as it was (deleted).
+    assert.deepEqual(restoreSteps({ShowSidebar: true, ShowStatusBar: true, ShowPathbar: null}, saved, major), []);
+  }
   assert.deepEqual(preferenceWrites(afterHide, saved), [{key: 'ShowSidebar', value: null}, {key: 'ShowStatusBar', value: true}]);
-  // After the toggles went back, the sidebar key holds an explicit true where it was unset: shown alike, but the key
-  // is put back as it was (deleted).
-  assert.deepEqual(restoreSteps({ShowSidebar: true, ShowStatusBar: true, ShowPathbar: null}, saved), []);
   assert.deepEqual(preferenceWrites({ShowSidebar: true, ShowStatusBar: true, ShowPathbar: null}, saved), [{key: 'ShowSidebar', value: null}]);
   assert.deepEqual(preferenceWrites(saved, saved), []);
+  // Both sides read with the running macOS's default: an unset status bar is shown on 27, so a status bar the setup hid
+  // (an explicit false) is toggled back there, and on 26 it is not (unset and false both read hidden).
+  const unsetStatus = {ShowSidebar: true, ShowStatusBar: null, ShowPathbar: null};
+  const hidden = {ShowSidebar: false, ShowStatusBar: false, ShowPathbar: null};
+  assert.deepEqual(restoreSteps(hidden, unsetStatus, 27).map(s => s.restores), ['sidebar', 'statusBar']);
+  assert.deepEqual(restoreSteps(hidden, unsetStatus, 26).map(s => s.restores), ['sidebar']);
+});
+
+// Finder as the toggles drive it: a toggle flips the part's shown state in the window and writes the shown state it
+// leaves as an explicit Boolean (an unset key becomes set). -> the preferences after the steps.
+const toggled = (preferences, steps, major) => steps.reduce((prefs, step) => {
+  const part = FINDER_CHROME.find(p => p.toggle === step.pressKey);
+  return {...prefs, [part.key]: !chromeShown(prefs, major)[part.id]};
+}, {...preferences});
+const written = (preferences, writes) => writes.reduce((prefs, {key, value}) => ({...prefs, [key]: value}), {...preferences});
+
+test('setup then restore on macOS 26 and 27, from every pre-state: each key ends as saved, an unset key unset, and the window as the owner had it', () => {
+  const values = [null, true, false];
+  const preStates = values.flatMap(a => values.flatMap(b => values.map(c => ({ShowSidebar: a, ShowStatusBar: b, ShowPathbar: c}))));
+  for (const major of [26, 27]) for (const saved of preStates) {
+    const label = `macOS ${major}, ${JSON.stringify(saved)}`;
+    const setup = hideSteps(saved, major);
+    const afterSetup = toggled(saved, setup, major);
+    assert.deepEqual(chromeShown(afterSetup, major), {sidebar: false, statusBar: false, pathBar: false}, `${label}: the setup hides all three`);
+    const back = restoreSteps(afterSetup, saved, major);
+    assert.deepEqual(back.map(s => s.restores), setup.map(s => s.hides), `${label}: the restore toggles back exactly what the setup hid`);
+    const afterToggles = toggled(afterSetup, back, major);
+    assert.deepEqual(chromeShown(afterToggles, major), chromeShown(saved, major), `${label}: the window shows what it showed before`);
+    const end = written(afterToggles, preferenceWrites(afterToggles, saved));
+    assert.deepEqual(end, saved, `${label}: every key is its saved value`);
+    for (const key of FINDER_KEYS) if (saved[key] === null) assert.equal(end[key], null, `${label}: ${key} unset again, never a Boolean`);
+  }
 });
 
 test('the saved preferences are the ones before the run\'s first toggle: a later save keeps them, a clear ends them', () => {
@@ -76,13 +132,13 @@ test('the saved preferences are the ones before the run\'s first toggle: a later
   try {
     const file = join(dir, 'nested', 'finder-preferences.json');
     assert.equal(readSavedPreferences(file), null);
-    const first = saveOriginalPreferences(file, {ShowSidebar: null, ShowStatusBar: true, ShowPathbar: false}, {now: () => 'T1'});
-    assert.deepEqual(first, {saved: {ShowSidebar: null, ShowStatusBar: true, ShowPathbar: false}, savedAt: 'T1', kept: false});
+    const first = saveOriginalPreferences(file, {ShowSidebar: null, ShowStatusBar: true, ShowPathbar: false}, {now: () => 'T1', macosMajor: 27});
+    assert.deepEqual(first, {saved: {ShowSidebar: null, ShowStatusBar: true, ShowPathbar: false}, savedAt: 'T1', macosMajor: 27, kept: false});
     assert.equal(fs.statSync(file).mode & 0o777, 0o600);
     // A second save (a later up, after the run's toggles changed the preferences) keeps the original.
-    const again = saveOriginalPreferences(file, {ShowSidebar: false, ShowStatusBar: false, ShowPathbar: false}, {now: () => 'T2'});
-    assert.deepEqual(again, {saved: {ShowSidebar: null, ShowStatusBar: true, ShowPathbar: false}, savedAt: 'T1', kept: true});
-    assert.deepEqual(readSavedPreferences(file), {saved: {ShowSidebar: null, ShowStatusBar: true, ShowPathbar: false}, savedAt: 'T1'});
+    const again = saveOriginalPreferences(file, {ShowSidebar: false, ShowStatusBar: false, ShowPathbar: false}, {now: () => 'T2', macosMajor: 26});
+    assert.deepEqual(again, {saved: {ShowSidebar: null, ShowStatusBar: true, ShowPathbar: false}, savedAt: 'T1', macosMajor: 27, kept: true});
+    assert.deepEqual(readSavedPreferences(file), {saved: {ShowSidebar: null, ShowStatusBar: true, ShowPathbar: false}, savedAt: 'T1', macosMajor: 27});
     clearSavedPreferences(file);
     assert.equal(readSavedPreferences(file), null);
     clearSavedPreferences(file);

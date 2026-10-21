@@ -66,11 +66,11 @@ import {PAGE_CONTROLS, PAGE_INITIAL, PAGE_TITLE, startScenePage} from '../native
 import {FIXTURE_BUNDLE_ID, FIXTURE_CONTROLS, FIXTURE_INITIAL, buildElectronFixture} from '../native-matrix/fixtures/electron-fixture.mjs';
 import {CHROME_FOR_TESTING_BUNDLE_ID, placeChromeForTesting} from '../native-matrix/fixtures/chrome-for-testing.mjs';
 import {
-  activateApp, appWindows, appWindowState, awaitOwnLaunch, frontmostProcess, frontWindow, openApp, readFinderPreferences, runningApps,
+  activateApp, appWindows, appWindowState, awaitOwnLaunch, frontmostProcess, frontWindow, openApp, readFinderPreferences, readMacosMajor, runningApps,
   stopRecorded, writeFinderPreference,
 } from './scenes-mac-device.mjs';
 import {
-  CLOSE_WINDOW_KEY, DESELECT_ALL_KEY, LIST_VIEW_KEY, SAVED_PREFERENCES, clearSavedPreferences, finderWindowProblems, hideSteps, preferenceWrites,
+  CLOSE_WINDOW_KEY, DESELECT_ALL_KEY, LIST_VIEW_KEY, SAVED_PREFERENCES, chromeShown, clearSavedPreferences, finderWindowProblems, hideSteps, preferenceWrites,
   readSavedPreferences, restoreSteps, saveOriginalPreferences,
 } from './scenes-mac-finder.mjs';
 import {windowTitleOf} from './scenes-mac-text.mjs';
@@ -259,19 +259,20 @@ export const guardOf = (id, record) => ({pid: record.pid, bundleId: sceneOf(id).
 
 // The steps that take a scene from up to its fixed state, in order: `{activate: <scene>}` (the `activate` command) and
 // `{pressKey, guard}` (through the engine, sent only while the key guard finds `guard` in front). Finder: in front, list
-// view, nothing selected, then the toggles that hide what `preferences` (Finder's, read at up) show. The other scenes
-// come up in their fixed state. -> [step].
+// view, nothing selected, then the toggles that hide what `preferences` (Finder's, read at up) show on the macOS read at
+// up (record.macosMajor). The other scenes come up in their fixed state. -> [step].
 export function setupSteps(id, record, preferences = {}) {
   if (sceneOf(id).id !== 'finder') return [];
   const guard = guardOf(id, record);
-  return [{activate: 'finder'}, {pressKey: LIST_VIEW_KEY, guard}, {pressKey: DESELECT_ALL_KEY, guard}, ...hideSteps(preferences).map(step => ({...step, guard}))];
+  return [{activate: 'finder'}, {pressKey: LIST_VIEW_KEY, guard}, {pressKey: DESELECT_ALL_KEY, guard}, ...hideSteps(preferences, record.macosMajor).map(step => ({...step, guard}))];
 }
-// The steps before `down`: Finder in front, the toggles that bring its chrome back to the `saved` preferences (none
-// when nothing is saved), then the run's window closed. The other scenes need none: down stops the run's process. -> [step].
-export function teardownSteps(id, record, {current = {}, saved = null} = {}) {
+// The steps before `down`: Finder in front, the toggles that bring its chrome back to the `saved` preferences on the
+// running macOS `macosMajor` (none when nothing is saved), then the run's window closed. The other scenes need none:
+// down stops the run's process. -> [step].
+export function teardownSteps(id, record, {current = {}, saved = null, macosMajor} = {}) {
   if (sceneOf(id).id !== 'finder') return [];
   const guard = guardOf(id, record);
-  return [{activate: 'finder'}, ...(saved ? restoreSteps(current, saved) : []).map(step => ({...step, guard})), {pressKey: CLOSE_WINDOW_KEY, closes: 'window', guard}];
+  return [{activate: 'finder'}, ...(saved ? restoreSteps(current, saved, macosMajor) : []).map(step => ({...step, guard})), {pressKey: CLOSE_WINDOW_KEY, closes: 'window', guard}];
 }
 
 // What the run owns in its Finder window, from the scene's record.
@@ -295,7 +296,7 @@ const defaultIo = () => ({
   runningApps, appWindows, appWindowState, openApp, activateApp, awaitOwnLaunch, stopRecorded, launchOf, now: Date.now, sleep,
   frontmostProcess: () => frontmostProcess(), frontWindow: () => frontWindow(),
   finderPid: () => runningApps(FINDER_BUNDLE_ID)[0]?.pid ?? null,
-  finderPreferences: () => readFinderPreferences(), writeFinderPreference: (key, value) => writeFinderPreference(key, value), savedPreferencesFile: SAVED_PREFERENCES,
+  finderPreferences: () => readFinderPreferences(), macosMajor: () => readMacosMajor(), writeFinderPreference: (key, value) => writeFinderPreference(key, value), savedPreferencesFile: SAVED_PREFERENCES,
   placeChrome: () => placeChromeForTesting(), buildElectron: () => buildElectronFixture(), spawnPage,
 });
 
@@ -382,8 +383,9 @@ export const electronArgs = ({userDataDir, placement = SCENES.electron.placement
 
 // Brings one scene up. -> the scene's record: {scene, app, bundleId, pid, at?, window, setup, ...}, where `setup` lists
 // the driver's steps to the fixed state (setupSteps). Finder's also carries the chrome `preferences` read before its
-// window opened, and `savedPreferences` says when the owner's values were saved and whether that record was `kept`
-// from earlier (this run's earlier up, or a run that died before restoring them).
+// window opened, the `macosMajor` they are read on and the `chrome` parts its window shows under them, and
+// `savedPreferences` says when the owner's values were saved and whether that record was `kept` from earlier (this run's
+// earlier up, or a run that died before restoring them).
 export async function upScene(id, {run, chromeApp, electronApp, io = defaultIo()}) {
   const scene = sceneOf(id), state = readState(run);
   if (state.scenes[id]) throw new Error(`scene ${id} is already up in this run; bring it down first`);
@@ -404,15 +406,16 @@ export async function upScene(id, {run, chromeApp, electronApp, io = defaultIo()
       fs.writeFileSync(join(folder, name), `${name}\n`, {mode: 0o600});
       fs.utimesSync(join(folder, name), modified, modified);
     }
-    // Read before the window opens, which is when Finder applies them.
-    const preferences = io.finderPreferences();
+    // Read before the window opens, which is when Finder applies them. What an unset key shows depends on the macOS,
+    // and a macOS without a known default (or an unreadable one) refuses here, before any window opens.
+    const preferences = io.finderPreferences(), macosMajor = io.macosMajor(), chrome = chromeShown(preferences, macosMajor);
     // Every window Finder has right before the open, on screen or not, is not the run's.
     const before = documentWindows(io.appWindows(pid)).map(w => w.number);
     io.openApp({app: scene.app, files: [folder]});
     const window = await awaitWindow(pid, {before, io, onScreenOnly: true});
     // Saved once the run owns its window (no toggle can follow a failed up), from the reading taken before the open.
-    const {savedAt, kept} = saveOriginalPreferences(io.savedPreferencesFile, preferences);
-    record = {app: scene.app, folder, pid, window, preferences, savedPreferences: {savedAt, kept}};
+    const {savedAt, kept} = saveOriginalPreferences(io.savedPreferencesFile, preferences, {macosMajor});
+    record = {app: scene.app, folder, pid, window, preferences, macosMajor, chrome, savedPreferences: {savedAt, kept}};
   } else if (id === 'chrome') {
     const app = chromeApp ?? (await io.placeChrome()).appPath, userDataDir = freshChromeProfile(run);
     record = {scene: id, bundleId: scene.bundleId, app, userDataDir};
@@ -467,12 +470,14 @@ export async function activateScene(id, {run, io = defaultIo(), boundMs = 5000, 
   return {scene: id, ok: false, frontmost, ...(finder ? {topWindow} : {}), reason};
 }
 
-// The driver's steps before `down` (teardownSteps), from the run's record and, for Finder, its preferences now and the
-// owner's saved values. -> [step].
+// The driver's steps before `down` (teardownSteps), from the run's record and, for Finder, its preferences now, the
+// owner's saved values and the running macOS (read again: the toggles act on this Finder, whatever macOS the saved
+// record was read on). -> [step].
 export function teardownFor(id, {run, io = defaultIo()}) {
   const record = recordOf(id, run);
   if (sceneOf(id).id !== 'finder') return teardownSteps(id, record);
-  return teardownSteps(id, record, {current: io.finderPreferences(), saved: readSavedPreferences(io.savedPreferencesFile)?.saved ?? null});
+  const saved = readSavedPreferences(io.savedPreferencesFile)?.saved ?? null;
+  return teardownSteps(id, record, {current: io.finderPreferences(), saved, ...(saved ? {macosMajor: io.macosMajor()} : {})});
 }
 
 // Writes back each Finder chrome key that still differs from the owner's saved value, reads them again, and ends the

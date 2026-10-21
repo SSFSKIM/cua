@@ -15,9 +15,9 @@ import {
   setupSteps, teardownSteps, teardownFor, activateScene, restoreFinder, fixedStateProblems, finderOwned, isSceneWindow, FINDER_FILES_MODIFIED,
 } from '../../scripts/repl-parity/scenes-mac.mjs';
 import {indexOfTarget, indexOfRowCell, actionIndex, windowTitleOf} from '../../scripts/repl-parity/scenes-mac-text.mjs';
-import {parseAsns, parseAppInfo, awaitOwnLaunch, stopRecorded, readFinderPreferences, writeFinderPreference, openApp, activateApp} from '../../scripts/repl-parity/scenes-mac-device.mjs';
+import {parseAsns, parseAppInfo, awaitOwnLaunch, stopRecorded, readFinderPreferences, writeFinderPreference, openApp, activateApp, parseMacosMajor, readMacosMajor} from '../../scripts/repl-parity/scenes-mac-device.mjs';
 import {isSameLaunch} from '../../scripts/accept/fixture-app.mjs';
-import {readSavedPreferences} from '../../scripts/repl-parity/scenes-mac-finder.mjs';
+import {FINDER_CHROME, readSavedPreferences} from '../../scripts/repl-parity/scenes-mac-finder.mjs';
 import {FIXTURE_BUNDLE_ID, FIXTURE_CONTROLS} from '../../scripts/native-matrix/fixtures/electron-fixture.mjs';
 import {PAGE_CONTROLS, PAGE_HTML} from '../../scripts/native-matrix/fixtures/scene-page.mjs';
 
@@ -208,15 +208,16 @@ let prefsFiles = 0;
 // A device with the given running processes and windows; `open` starts a process of the launched app's bundle id.
 // `preferences` are Finder's chrome keys as `defaults` reads them (null: unset); `writes` lists every write and a key
 // in `stuck` ignores writes; `front` is what is frontmost ({pid, bundleId, topWindow}), set by `activateApp` to the
-// activated app's process unless `activates` is false.
+// activated app's process unless `activates` is false; `macosMajor` is the device's macOS (a function: what reading it
+// does, e.g. throw).
 function fakeDevice({running = [], windows = {}, finderPid = 736, finderHidden = false, finderOpens = [{onScreen: true}],
-  preferences = {ShowSidebar: null, ShowStatusBar: null, ShowPathbar: null}, stuck = [], activates = true} = {}) {
+  preferences = {ShowSidebar: null, ShowStatusBar: null, ShowPathbar: null}, stuck = [], activates = true, macosMajor = () => 26} = {}) {
   const calls = [], launches = {}, created = [], writes = [];
   let nextPid = 500, clock = 1_000_000, nextWindow = 900;
   const io = {
     calls, running, windows, created, preferences, writes, front: null,
     savedPreferencesFile: join(PREFS_ROOT, `${prefsFiles++}`, 'finder-preferences.json'),
-    finderPreferences: () => ({...preferences}),
+    finderPreferences: () => ({...preferences}), macosMajor,
     writeFinderPreference: (key, value) => { writes.push([key, value]); if (!stuck.includes(key)) preferences[key] = value; },
     frontmostProcess: () => (io.front ? {pid: io.front.pid, bundleId: io.front.bundleId} : null),
     frontWindow: () => ({at: clock, frontmost: io.front ? {pid: io.front.pid, bundleId: io.front.bundleId} : null, topWindow: io.front?.topWindow ?? null}),
@@ -629,7 +630,7 @@ test('the action targets resolve on the vendor\'s own text of each fixed state; 
 });
 
 test('setup: Finder in front, list view, nothing selected, then the toggles the preferences call for, each key guarded by the run\'s window', () => {
-  const record = {pid: 736, bundleId: FINDER, window: {number: 901}};
+  const record = {pid: 736, bundleId: FINDER, window: {number: 901}, macosMajor: 26};
   const guard = {pid: 736, bundleId: FINDER, window: 901};
   assert.deepEqual(setupSteps('finder', record, {ShowSidebar: null, ShowStatusBar: true, ShowPathbar: false}), [
     {activate: 'finder'},
@@ -640,20 +641,30 @@ test('setup: Finder in front, list view, nothing selected, then the toggles the 
   ]);
   assert.deepEqual(setupSteps('finder', record, {ShowSidebar: false, ShowStatusBar: false, ShowPathbar: false}).map(s => s.pressKey ?? 'activate'), ['activate', 'super+2', 'alt+super+a']);
   for (const id of ['textedit', 'chrome', 'electron']) assert.deepEqual(setupSteps(id, {pid: 5, bundleId: SCENES[id].bundleId}), [], `${id} comes up in its fixed state`);
+  // The macOS read at up decides what an unset key shows: the mini's pre-state on 27 needs ⌘/ as well.
+  const mini = {ShowSidebar: true, ShowStatusBar: null, ShowPathbar: null};
+  assert.deepEqual(setupSteps('finder', record, mini).filter(s => s.hides).map(s => s.pressKey), ['ctrl+super+s']);
+  assert.deepEqual(setupSteps('finder', {...record, macosMajor: 27}, mini).filter(s => s.hides).map(s => s.pressKey), ['ctrl+super+s', 'super+slash']);
+  assert.throws(() => setupSteps('finder', {...record, macosMajor: undefined}, mini), /macOS/, 'no version: refused, not guessed');
 });
 
 test('teardown: Finder in front, the chrome toggled back to the saved state, then the run\'s window closed; the others are stopped by down', () => {
   const record = {pid: 736, bundleId: FINDER, window: {number: 901}};
   const guard = {pid: 736, bundleId: FINDER, window: 901};
   const saved = {ShowSidebar: null, ShowStatusBar: true, ShowPathbar: null};
-  assert.deepEqual(teardownSteps('finder', record, {current: {ShowSidebar: false, ShowStatusBar: false, ShowPathbar: null}, saved}), [
+  assert.deepEqual(teardownSteps('finder', record, {current: {ShowSidebar: false, ShowStatusBar: false, ShowPathbar: null}, saved, macosMajor: 26}), [
     {activate: 'finder'},
     {pressKey: 'ctrl+super+s', restores: 'sidebar', guard},
     {pressKey: 'super+slash', restores: 'statusBar', guard},
     {pressKey: 'super+w', closes: 'window', guard},
   ]);
-  assert.deepEqual(teardownSteps('finder', record, {current: saved, saved}).map(s => s.pressKey ?? 'activate'), ['activate', 'super+w']);
+  assert.deepEqual(teardownSteps('finder', record, {current: saved, saved, macosMajor: 26}).map(s => s.pressKey ?? 'activate'), ['activate', 'super+w']);
   assert.deepEqual(teardownSteps('finder', record, {current: saved, saved: null}).map(s => s.pressKey ?? 'activate'), ['activate', 'super+w'], 'nothing saved: nothing to toggle back');
+  // The mini's pre-state after a macOS 27 setup hid the sidebar and the status bar: both are toggled back there.
+  const mini = {ShowSidebar: true, ShowStatusBar: null, ShowPathbar: null}, hid = {ShowSidebar: false, ShowStatusBar: false, ShowPathbar: null};
+  assert.deepEqual(teardownSteps('finder', record, {current: hid, saved: mini, macosMajor: 27}).filter(s => s.restores).map(s => s.restores), ['sidebar', 'statusBar']);
+  assert.deepEqual(teardownSteps('finder', record, {current: hid, saved: mini, macosMajor: 26}).filter(s => s.restores).map(s => s.restores), ['sidebar']);
+  assert.throws(() => teardownSteps('finder', record, {current: hid, saved: mini}), /macOS/, 'toggles back need the running macOS');
   for (const id of ['textedit', 'chrome', 'electron']) assert.deepEqual(teardownSteps(id, {pid: 5}), []);
 });
 
@@ -820,8 +831,8 @@ test('device reads: an absent key reads as null in both macOS phrasings; deletin
   assert.throws(() => writeFinderPreference('ShowSidebar', null, {exec: stuck}), /could not delete Finder's ShowSidebar preference/);
 });
 
-test('Finder\'s keys left unset by the owner: saved as absent, read as macOS\'s defaults, and restored by deletion', async () => withRun(async run => {
-  // The owner never set any of the three (the mini's case): the sidebar shows, the status bar and path bar do not.
+test('Finder\'s keys left unset by the owner: saved as absent, read as macOS 26\'s defaults, and restored by deletion', async () => withRun(async run => {
+  // The owner never set any of the three, on macOS 26: the sidebar shows, the status bar and path bar do not.
   const defaults = fakeDefaults({});
   const io = fakeDevice();
   io.finderPreferences = () => readFinderPreferences({exec: defaults.exec});
@@ -850,3 +861,82 @@ test('device launches: open -g for a scene\'s launch (never activating), open -a
   activateApp('/A.app', {exec});
   assert.deepEqual(calls, [['/usr/bin/open', '-g', '-n', '-a', '/A.app', '/f', '--args', '--x'], ['/usr/bin/open', '-a', '/A.app']]);
 });
+
+test('device reads: the macOS major from sw_vers; an output that is not a version is refused', () => {
+  assert.equal(parseMacosMajor('27.0\n'), 27);
+  assert.equal(parseMacosMajor('26.6.1\n'), 26);
+  assert.equal(parseMacosMajor('26\n'), 26);
+  for (const text of ['', '\n', 'macOS 27', '27.x', 'twenty-seven', null]) assert.throws(() => parseMacosMajor(text), /macOS version/, String(text));
+  const calls = [];
+  assert.equal(readMacosMajor({exec: (cmd, args) => { calls.push([cmd, ...args]); return '27.0\n'; }}), 27);
+  assert.deepEqual(calls, [['/usr/bin/sw_vers', '-productVersion']]);
+});
+
+// Finder over `defaults` (fakeDefaults) on the given macOS: each toggle the driver sends flips that part's shown state in
+// the window and writes the state it leaves as an explicit Boolean, as Finder does.
+const finderToggles = (defaults, major) => steps => {
+  for (const step of steps.filter(s => s.hides || s.restores)) {
+    const part = FINDER_CHROME.find(p => p.toggle === step.pressKey);
+    const shown = defaults.store[part.key] ?? part.shownWhenUnset[major];
+    defaults.store[part.key] = !shown;
+  }
+};
+
+for (const major of [26, 27]) {
+  test(`macOS ${major}: the mini's pre-state through up, setup, teardown and down ends with every key as saved and the unset ones unset`, async () => withRun(async run => {
+    // The mini's Finder: ShowSidebar=1, ShowStatusBar and ShowPathbar unset (the M1b.5 sitting).
+    const defaults = fakeDefaults({ShowSidebar: true});
+    const io = fakeDevice({macosMajor: () => major});
+    io.finderPreferences = () => readFinderPreferences({exec: defaults.exec});
+    io.writeFinderPreference = (key, value) => writeFinderPreference(key, value, {exec: defaults.exec});
+    const send = finderToggles(defaults, major);
+    const record = await upScene('finder', {run, io});
+    assert.equal(record.macosMajor, major);
+    const saved = readSavedPreferences(io.savedPreferencesFile);
+    assert.deepEqual(saved.saved, {ShowSidebar: true, ShowStatusBar: null, ShowPathbar: null});
+    assert.equal(saved.macosMajor, major, 'the saved record says which macOS it was read on');
+    const hides = record.setup.filter(s => s.hides).map(s => s.hides);
+    assert.deepEqual(hides, major === 27 ? ['sidebar', 'statusBar'] : ['sidebar']);
+    send(record.setup);
+    assert.deepEqual(defaults.store, major === 27 ? {ShowSidebar: false, ShowStatusBar: false} : {ShowSidebar: false});
+    const teardown = teardownFor('finder', {run, io});
+    assert.deepEqual(teardown.filter(s => s.restores).map(s => s.restores), hides, 'the teardown toggles back exactly what the setup hid');
+    send(teardown);
+    io.windows[736] = io.windows[736].filter(w => w.number !== record.window.number);   // the teardown's super+w
+    const down = await downScene('finder', {run, io});
+    assert.equal(down.down, true);
+    assert.deepEqual(down.preferences.wrote, major === 27 ? ['ShowStatusBar'] : [], 'a status bar toggled back on 27 holds an explicit true: deleted');
+    assert.deepEqual(defaults.store, {ShowSidebar: true}, 'every key as the owner had it, the unset ones absent');
+    assert.ok(!defaults.calls.some(([verb, key]) => verb === 'write' && key !== 'ShowSidebar'), 'an unset key is never written as a Boolean');
+    assert.equal(readSavedPreferences(io.savedPreferencesFile), null);
+  }));
+}
+
+test('up finder refuses before opening a window when the macOS is unknown or unreadable, and saves nothing', async () => {
+  for (const macosMajor of [() => 28, () => { throw new Error('the macOS version could not be read: sw_vers failed'); }]) await withRun(async run => {
+    const io = fakeDevice({macosMajor});
+    await assert.rejects(upScene('finder', {run, io}), /macOS/);
+    assert.deepEqual(io.calls, [], 'no window opened');
+    assert.equal(readSavedPreferences(io.savedPreferencesFile), null);
+    assert.deepEqual(readState(run), {scenes: {}});
+  });
+});
+
+test('teardown resolves the default on the running macOS, so a record saved before a macOS update still toggles back what this window hid', async () => withRun(async run => {
+  // An earlier run saved on macOS 26 and died before restoring; this run is on 27. Its window was opened, and its setup
+  // computed, under 27's defaults, so its toggles are undone under 27's too; the key writes restore the saved values.
+  const io = fakeDevice({macosMajor: () => 27, preferences: {ShowSidebar: false, ShowStatusBar: null, ShowPathbar: null}});
+  fs.mkdirSync(join(io.savedPreferencesFile, '..'), {recursive: true});
+  fs.writeFileSync(io.savedPreferencesFile, JSON.stringify({saved: {ShowSidebar: true, ShowStatusBar: null, ShowPathbar: null}, savedAt: 'T0', macosMajor: 26}));
+  const record = await upScene('finder', {run, io});
+  assert.deepEqual(record.savedPreferences, {savedAt: 'T0', kept: true});
+  assert.deepEqual(record.setup.filter(s => s.hides).map(s => s.hides), ['statusBar'], 'the sidebar is already hidden; 27 shows the unset status bar');
+  Object.assign(io.preferences, {ShowStatusBar: false});
+  assert.deepEqual(teardownFor('finder', {run, io}).filter(s => s.restores).map(s => s.restores), ['sidebar', 'statusBar']);
+  // An older record without a version is read the same way: the running macOS decides.
+  fs.writeFileSync(io.savedPreferencesFile, JSON.stringify({saved: {ShowSidebar: true, ShowStatusBar: null, ShowPathbar: null}, savedAt: 'T0'}));
+  assert.deepEqual(teardownFor('finder', {run, io}).filter(s => s.restores).map(s => s.restores), ['sidebar', 'statusBar']);
+  // An unreadable macOS at teardown refuses the toggles rather than guessing them.
+  io.macosMajor = () => { throw new Error('the macOS version could not be read'); };
+  assert.throws(() => teardownFor('finder', {run, io}), /macOS/);
+}));

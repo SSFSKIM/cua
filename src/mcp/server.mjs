@@ -30,6 +30,9 @@
 // - Control traffic is never queued behind JavaScript: cancellations and elicitation answers go straight upstream.
 // - js/js_reset results get their image MIME types corrected and token-bearing URLs redacted (surface.mjs); requests
 //   and error replies pass unchanged. Accepted app approvals get `_meta.persist`.
+// - The connection's approval memory (./approval-memory.mjs): a computer-use app approval the client accepted (with
+//   `_meta.persist`) or declined is answered here on its repeats, across idle stops and worker replacements, and never
+//   reaches the client again; an answer that arrives after its runtime stopped is remembered and not forwarded.
 // - With `nativeEngine` (the launch's engine attestation, a macOS computer session's: src/runtime/launch.mjs), every
 //   js/js_reset result carries `_meta['cua/nativeEngine']`: the service's own when it set one (cua's engine, as its
 //   ping answered), else the launch's, which is how the vendor engine is attested (#117, EngineAttestation).
@@ -63,6 +66,7 @@ import {sandboxModeFrom, withSandbox} from '../runtime/sandbox.mjs';
 import {runtimeIdleFrom} from './lazy-runtime.mjs';
 import {configuredBackends, startClientBackends} from '../chrome/client-mode.mjs';
 import {realHome} from '../runtime/layout.mjs';
+import {approvalMemory} from './approval-memory.mjs';
 
 const idKey = id => JSON.stringify(id);
 const PERSIST_MODES = ['session', 'none'];
@@ -101,7 +105,8 @@ export function createServer({
   const upstreamPending = new Map();   // upstream ID -> {resolve, clientKey?}
   const upstreamIdOf = new Map();      // client ID key -> upstream ID, for cancellation
   const queuedWork = new Map();        // client ID key -> lifecycle ticket, for withdrawing queued work
-  const elicitations = new Set();      // runtime request ID keys awaiting the client's answer
+  const elicitations = new Map();      // runtime request ID key -> {params, stale} awaiting the client's answer
+  const approvals = approvalMemory();  // the connection's computer-use app approvals (./approval-memory.mjs)
   const localReplies = new Set();      // local tool replies still being computed (profiles_list may take a launch)
 
   // The client transport. Losing it closes the connection like EOF; callers are still settled internally, just not
@@ -199,6 +204,9 @@ export function createServer({
       }
       if (terminal()) return;
       const teardown = await upstream.stop({budgetMs: teardownBudgetMs});
+      // What the stopped runtime asked is still the connection's to remember, but its answer has no runtime to go to:
+      // a fresh one numbers its own requests and may reuse the id.
+      for (const pending of elicitations.values()) pending.stale = true;
       if (!teardown) return;
       restarted = true;
       if (!teardown.confirmed) {
@@ -353,7 +361,12 @@ export function createServer({
     if (target?.answer(msg)) return;                          // a device's request (cua-device-<n>)
     if (lifecycle.state === 'failed') return;
     const key = idKey(msg.id);
-    if (elicitations.delete(key) && msg.result) msg = {...msg, result: persistAccepted(msg.result, persist)};
+    const pending = elicitations.get(key);
+    elicitations.delete(key);
+    if (pending && msg.result) msg = {...msg, result: persistAccepted(msg.result, persist)};
+    // The answer is the connection's even when the runtime, or the worker, that asked is gone by now.
+    if (pending) approvals.record(pending.params, msg.result ?? null);
+    if (pending?.stale) return;
     upstream.send(msg);
   }
 
@@ -375,7 +388,12 @@ export function createServer({
   upstream.onMessage(msg => {
     if (msg.method !== undefined) {
       if (lifecycle.state === 'failed') return;
-      if (msg.id !== undefined && msg.method === 'elicitation/create') elicitations.add(idKey(msg.id));
+      if (msg.id !== undefined && msg.method === 'elicitation/create') {
+        // An app the connection already answered is answered from its memory; the client is not asked again.
+        const remembered = approvals.recall(msg.params);
+        if (remembered) return void upstream.send({jsonrpc: '2.0', id: msg.id, result: remembered});
+        elicitations.set(idKey(msg.id), {params: msg.params, stale: false});
+      }
       return write(msg);
     }
     if (msg.id !== undefined) settleUpstream(msg.id, msg);

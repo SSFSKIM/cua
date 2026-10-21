@@ -9,7 +9,8 @@ import {readFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {REPO} from './fixtures/runtime-fixture.mjs';
 import {isTextEditApproval} from '../scripts/accept/lib.mjs';
-import {approvalMemory, elicitationParams} from '../src/repl-host/elicitation.mjs';
+import {elicitationParams} from '../src/repl-host/elicitation.mjs';
+import {approvalMemory} from '../src/mcp/approval-memory.mjs';
 import {serverError} from '../src/services/engine/protocol.mjs';
 import {
   FORBIDDEN, HIGH_RISK, RISK_SUBTITLE, SWIFT_POLICY_FILE, SYSTEM_SECURITY, approvalRequest, createPolicy, refusal, riskOf, swiftPolicySource,
@@ -24,19 +25,19 @@ const TARGETS = {
 const byString = {...TARGETS, [TARGETS.TextEdit.appPath]: TARGETS.TextEdit, 'com.apple.TextEdit': TARGETS.TextEdit};
 
 // A trusted worker's nodeRepl as the policy uses it, with the client's answers from `answer(request)`; `memory` puts the
-// supervisor's approval memory in front of the client, as the own host does.
+// connection's approval memory (cua's proxy, src/mcp/approval-memory.mjs) in front of the client, as a cua session does.
 function worker({answer = () => ({action: 'accept', content: null, _meta: {persist: 'session'}}), memory = false, requestMeta = {'x-codex-turn-metadata': {call_id: 'call-7'}}} = {}) {
   const asked = [];
   const meta = [];
   const remembered = approvalMemory();
   const toWorker = message => {
     if (memory) {
-      const recalled = remembered.recall(message);
-      if (recalled) return recalled;
+      const recalled = remembered.recall({_meta: message.meta});
+      if (recalled) return {ok: true, ...recalled, _meta: null};
     }
     asked.push(structuredClone(message));
     const outcome = {ok: true, ...answer(message)};
-    if (memory) remembered.record(message, outcome);
+    if (memory) remembered.record({_meta: message.meta}, outcome);
     return outcome;
   };
   const nodeRepl = {

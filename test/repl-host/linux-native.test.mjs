@@ -11,11 +11,14 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
+import {createInterface} from 'node:readline';
+import {PassThrough} from 'node:stream';
 import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {BROWSER_SERVICE, SKY_SERVICE, buildLaunch, createLaunchDirs} from '../../src/runtime/launch.mjs';
-import {SANDBOX_META_KEY, sandboxModeFrom, sandboxState} from '../../src/runtime/sandbox.mjs';
+import {sandboxModeFrom, sandboxState} from '../../src/runtime/sandbox.mjs';
 import {spawnUpstream} from '../../src/mcp/upstream.mjs';
+import {createServer} from '../../src/mcp/server.mjs';
 import {handshakeRecords, lazyRuntime} from '../../src/mcp/lazy-runtime.mjs';
 import {REPL_HOST_META_KEY, REPL_HOST_NAME, REPL_HOST_VERSION, hostIdentity} from '../../src/repl-host/identity.mjs';
 import {TRUSTED_WORKER} from '../../src/repl-host/supervisor.mjs';
@@ -37,11 +40,13 @@ const caught = code => `try { ${code} nodeRepl.write("resolved"); } catch (e) { 
 // The app of the fixture's windows (test/fixtures/linux-native-runtime.mjs), the one approval the sessions accept.
 const GEDIT = 'org.gnome.gedit';
 
-// A connection's runtime for a Linux session on `surfaces`, CUA_REPL_HOST=cua -> the driver: {call, js, stop,
-// terminate, worker(), fixture, launch, asked}. Calls carry the sandbox state the proxy derives for Linux and these
-// surfaces (sandboxModeFrom with CUA_SHIM_SANDBOX unset). The client offers form elicitation and answers as cua's proxy
-// does under the session default: it accepts the approval of the fixture's app with `_meta.persist: "session"` and
-// declines anything else, recording each request in `asked` (#117 M3: the wrapper asks Linux's approvals).
+// A connection for a Linux session on `surfaces`, CUA_REPL_HOST=cua -> the driver: {call, js, stop, terminate, worker(),
+// fixture, launch, asked}. cua's proxy (src/mcp/server.mjs createServer) stands in front of the lazy runtime, as `cua
+// serve` puts it: it stamps the sandbox state the proxy derives for Linux and these surfaces (sandboxModeFrom with
+// CUA_SHIM_SANDBOX unset), adds `_meta.persist: "session"` to accepted approvals and keeps the connection's approval
+// memory (#117 M3). Its idle timer is the test's: `stop()` fires it, so the runtime goes through the connection's own
+// idle stop, and resolves that stop's teardown. The client offers form elicitation, accepts the approval of the
+// fixture's app and declines anything else, recording each request it is asked in `asked`.
 async function linuxSession(t, {surfaces, secrets = {}}) {
   const fixture = linuxNativeRuntime(t, {node, secrets});
   const ambient = {HOME: fixture.home, USER: 'u', TMPDIR: process.env.TMPDIR, LANG: 'C.UTF-8', CUA_REPL_HOST: 'cua', ...DESKTOP};
@@ -53,19 +58,25 @@ async function linuxSession(t, {surfaces, secrets = {}}) {
   assert.equal(launch.env.CUA_REPL_SANDBOX_HELPER.startsWith(join(fixture.home, 'sandbox')), true);
   launch.env.CUA_REPL_SANDBOX_HELPER_SHA256 = fixture.helperSha;
   createLaunchDirs(launch);
-  const meta = {[SANDBOX_META_KEY]: sandboxState(sandboxModeFrom({}), launch.cwd)};
   let current = null;
   const upstream = lazyRuntime({start: async () => (current = spawnUpstream(launch, {stderr: 'ignore'})),
     records: handshakeRecords({dir: join(fixture.home, 'state', 'handshake'), surfaces, host: hostIdentity({host: 'cua', release: fixture.runtime.release})})});
+  const teardowns = [];
+  const stopRuntime = upstream.stop;
+  upstream.stop = options => { const teardown = stopRuntime(options); teardowns.push(teardown); return teardown; };
+  let idle = null;
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const server = createServer({input, output, upstream, sessionId: 'linux-native-1', surfaces, platform: 'linux', persist: 'session',
+    sandboxState: sandboxState(sandboxModeFrom({}), launch.cwd), runtimeIdleMs: 60_000, idleTimer: fn => { idle = fn; return () => { if (idle === fn) idle = null; }; },
+    completionDeadlineMs: 5000, teardownBudgetMs: 5000, diagnostics: () => {}});
   const pending = new Map();
   const asked = [];
   const answer = pinnedApprovals(() => [GEDIT], asked);
-  upstream.onMessage(msg => {
-    if (msg.method === 'elicitation/create') {
-      const result = answer(msg);
-      upstream.send({jsonrpc: '2.0', id: msg.id, result: result.action === 'accept' ? {...result, _meta: {persist: 'session'}} : result});
-      return;
-    }
+  const send = msg => input.write(JSON.stringify({jsonrpc: '2.0', ...msg}) + '\n');
+  createInterface({input: output}).on('line', line => {
+    const msg = JSON.parse(line);
+    if (msg.method === 'elicitation/create') return send({id: msg.id, result: answer(msg)});
     pending.get(msg.id)?.(msg);
     pending.delete(msg.id);
   });
@@ -74,16 +85,25 @@ async function linuxSession(t, {surfaces, secrets = {}}) {
     const n = ++id;
     const timer = setTimeout(() => { pending.delete(n); reject(new Error(`no reply to ${method} within ${DEADLINE_MS} ms`)); }, DEADLINE_MS);
     pending.set(n, msg => { clearTimeout(timer); resolve(msg); });
-    upstream.send({jsonrpc: '2.0', id: n, method, params});
+    send({id: n, method, params});
   });
-  t.after(() => upstream.terminate({budgetMs: 5000}));
+  t.after(async () => { await upstream.terminate({budgetMs: 5000}); input.end(); await server.closed; });
   const initialized = await request('initialize', {protocolVersion: '2025-06-18', capabilities: {elicitation: {}}, clientInfo: {name: 'linux-native-test', version: '0'}});
-  const call = async (name, args = {}) => (await request('tools/call', {name, arguments: args, _meta: meta})).result;
+  send({method: 'notifications/initialized', params: {}});
+  const call = async (name, args = {}) => (await request('tools/call', {name, arguments: args})).result;
   const js = async (code, extra = {}) => call('js', {code, ...extra});
+  // The connection's idle stop: the open task is completed, then the runtime torn down.
+  async function stop() {
+    for (let i = 0; i < 200 && !idle; i++) await delay(10);
+    assert.ok(idle, 'the idle timer is armed once no call runs');
+    const before = teardowns.length;
+    idle();
+    for (let i = 0; i < 500 && teardowns.length === before; i++) await delay(10);
+    return teardowns.at(-1);
+  }
   // The worker itself, not the helper (double) that launched it with the worker's command line after `--`.
   const worker = () => descendants(current.pid).filter(p => p.command.includes(TRUSTED_WORKER) && !p.command.includes('--permission-profile'));
-  return {fixture, launch, initialized, call, js, worker, asked, group: () => current.pid,
-    stop: () => upstream.stop({budgetMs: 5000}), terminate: () => upstream.terminate({budgetMs: 5000})};
+  return {fixture, launch, initialized, call, js, worker, asked, group: () => current.pid, stop, terminate: () => upstream.terminate({budgetMs: 5000})};
 }
 
 const ok = result => { assert.equal(result.isError, false, JSON.stringify(result.content)); return result; };
@@ -146,8 +166,7 @@ test('a Linux computer session on the own host drives sky_linux through the owne
   ok(await session.js('const later = await cua.getApp({windowId: 7}); await later.pressKey("Return");'));
   const relaunched = session.fixture.helperLog().at(-1).pid;
   assert.notEqual(relaunched, helper, 'a fresh helper after the idle stop');
-  // Whether the approval also outlives the idle stop is the supervisor memory's scope, not this test's: only the app.
-  assert.ok(session.asked.every(entry => entry.app === GEDIT && entry.action === 'accept'), JSON.stringify(session.asked));
+  assert.deepEqual(session.asked.map(entry => entry.app), [GEDIT], 'the approval outlives the kernel and the idle stop: the connection\'s, not the runtime\'s');
   assert.equal((await session.terminate()).confirmed, true, 'the connection\'s close empties the group too');
   assert.equal(alive(relaunched), false);
 });

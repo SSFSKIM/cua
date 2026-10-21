@@ -222,6 +222,69 @@ test('a declined elicitation is forwarded unchanged and persistence can be disab
   assert.deepEqual((await h.upstream.next(m => m.id === 'e2' && m.method === undefined)).result, {action: 'accept', content: {}});
 });
 
+// The connection's approval memory (#117 M3; docs/doperpowers/specs/2026-10-18-own-native-engine-design.md, Interfaces,
+// ApprovalMemory): a computer-use app approval (connector_id "computer-use", keyed by tool_params.app) the client
+// accepted with _meta.persist, or declined, answers its repeats on this connection without asking the client again.
+const approvalRequest = (id, app, {connector = 'computer-use'} = {}) => ({jsonrpc: '2.0', id, method: 'elicitation/create', params: {
+  message: `Allow Computer Use to use "${app}"?`, mode: 'form', requestedSchema: {type: 'object', properties: {}},
+  _meta: {codex_approval_kind: 'mcp_tool_call', connector_id: connector, persist: ['session'], tool_name: 'click', tool_params: {app}}}});
+const upstreamAnswer = (h, id) => h.upstream.next(m => m.id === id && m.method === undefined, {label: `the answer to ${id}`});
+const clientAsked = h => h.client.frames.filter(m => m.method === 'elicitation/create').map(m => m.params._meta?.tool_params?.app ?? null);
+const REMEMBERED = action => ({action, content: {source: 'computer-use-persisted-state'}});
+
+test('an app the client accepted or declined is answered from the connection\'s memory on its repeats, any tool, never asking again', async () => {
+  const h = harness();
+  await initialized(h);
+  h.upstream.emit(approvalRequest(1, 'com.apple.TextEdit'));
+  await h.client.next(m => m.id === 1 && m.method === 'elicitation/create');
+  h.client.send({jsonrpc: '2.0', id: 1, result: {action: 'accept', content: {}}});
+  assert.deepEqual((await upstreamAnswer(h, 1)).result, {action: 'accept', content: {}, _meta: {persist: 'session'}}, 'the first answer is the client\'s');
+  h.upstream.emit(approvalRequest(2, 'com.apple.TextEdit'));
+  assert.deepEqual((await upstreamAnswer(h, 2)).result, REMEMBERED('accept'));
+
+  h.upstream.emit(approvalRequest(3, 'com.apple.finder'));
+  await h.client.next(m => m.id === 3 && m.method === 'elicitation/create');
+  h.client.send({jsonrpc: '2.0', id: 3, result: {action: 'decline'}});
+  assert.deepEqual((await upstreamAnswer(h, 3)).result, {action: 'decline'});
+  h.upstream.emit(approvalRequest(4, 'com.apple.finder'));
+  assert.deepEqual((await upstreamAnswer(h, 4)).result, REMEMBERED('decline'), 'a model retrying a declined app is not re-prompted');
+  assert.deepEqual(clientAsked(h), ['com.apple.TextEdit', 'com.apple.finder'], 'the client was asked once per app');
+  assert.equal(h.client.responsesFor(2).length + h.client.frames.filter(m => m.id === 2 || m.id === 4).length, 0, 'the remembered asks never reached the client');
+
+  const next = harness();
+  await initialized(next);
+  next.upstream.emit(approvalRequest(1, 'com.apple.TextEdit'));
+  await next.client.next(m => m.id === 1 && m.method === 'elicitation/create', {label: 'a new connection asks again'});
+});
+
+test('a cancel, an error reply, a malformed answer, an accept without persistence and another connector\'s elicitation are never remembered', async () => {
+  const h = harness();
+  await initialized(h);
+  let id = 0;
+  const ask = async (app, reply, options) => {
+    const n = ++id;
+    h.upstream.emit(approvalRequest(n, app, options));
+    await h.client.next(m => m.id === n && m.method === 'elicitation/create', {label: `ask ${n}`});
+    h.client.send({jsonrpc: '2.0', id: n, ...reply});
+    await upstreamAnswer(h, n);
+  };
+  for (let i = 0; i < 2; i++) await ask('com.apple.Notes', {result: {action: 'cancel'}});
+  for (let i = 0; i < 2; i++) await ask('com.apple.Notes', {error: {code: -1, message: 'no'}});
+  for (let i = 0; i < 2; i++) await ask('com.apple.Notes', {result: {action: 'granted'}});
+  for (let i = 0; i < 2; i++) await ask('com.apple.Notes', {result: {action: 'accept', content: {}, _meta: {fixture: 'client meta, no persist'}}});
+  for (let i = 0; i < 2; i++) await ask('com.apple.Notes', {result: {action: 'accept', content: {}}}, {connector: 'browser-use'});
+  assert.equal(clientAsked(h).length, 10, 'every one asked the client');
+
+  const none = harness({server: {persist: 'none'}});
+  await initialized(none);
+  for (const n of [1, 2]) {
+    none.upstream.emit(approvalRequest(n, 'com.apple.TextEdit'));
+    await none.client.next(m => m.id === n && m.method === 'elicitation/create');
+    none.client.send({jsonrpc: '2.0', id: n, result: {action: 'accept', content: {}}});
+    assert.deepEqual((await upstreamAnswer(none, n)).result, {action: 'accept', content: {}}, 'CUA_SHIM_PERSIST=none: asked every time');
+  }
+});
+
 test('cancelling an in-flight js forwards notifications/cancelled with the upstream ID and does not end the task', async () => {
   const h = harness();
   await initialized(h);

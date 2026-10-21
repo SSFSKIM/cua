@@ -17,7 +17,7 @@ import {join} from 'node:path';
 import {shortScratch} from './fixtures/runtime-fixture.mjs';
 import {nativePipe} from './helpers/fake-engine.mjs';
 import {debugEngine, engineSkip, engineVersionFromSource, startEngine} from './helpers/engine-wire.mjs';
-import {approvalMemory} from '../src/repl-host/elicitation.mjs';
+import {approvalMemory} from '../src/mcp/approval-memory.mjs';
 import {createSkyService} from '../src/services/sky.mjs';
 import {createEngineClient} from '../src/services/engine/client.mjs';
 import {createService} from '../src/services/engine/service.mjs';
@@ -50,9 +50,9 @@ async function session(t, {answer = () => ({action: 'decline', content: null, _m
     nativePipe: nativePipe(),
     launchServices: {openApplication: async () => { await startEngine(t, bin, {socket}); }},
     createElicitation: async request => {
-      const message = {message: request.message, meta: request.meta};
+      const message = {message: request.message, _meta: request.meta};
       const recalled = memory.recall(message);
-      if (recalled) { const {ok, ...fields} = recalled; return fields; }
+      if (recalled) return {...recalled, _meta: null};
       asked.push(request);
       const outcome = {ok: true, ...answer(request)};
       memory.record(message, outcome);

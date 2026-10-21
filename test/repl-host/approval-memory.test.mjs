@@ -1,14 +1,15 @@
-// The own host's approval memory (docs/doperpowers/specs/2026-10-18-own-native-engine-design.md, "Policy and approvals";
-// Interfaces, ApprovalMemory) end to end: a real supervisor, kernel and trusted worker over MCP, with a fixture trusted
-// service that asks the vendor's computer-use app approval as its policy does (R/A-contract.md §2.6). Per connection, a
-// repeat for the same app is answered from memory, accepts and declines alike, across a worker replacement (an answer
-// that arrives after the asking worker ended included); a new connection asks again. Needs Node 24 or later (CUA_NODE); skips visibly otherwise.
+// The own host and the approval memory (docs/doperpowers/specs/2026-10-18-own-native-engine-design.md, Interfaces,
+// ApprovalMemory; Decision Log "M3.1, maws-3f's rulings" item 2): the memory is cua's MCP connection's
+// (src/mcp/approval-memory.mjs, tested in test/mcp-approval-memory.test.mjs, test/mcp-server.test.mjs and, across the
+// idle stop, test/serve-lazy.test.mjs), so this host asks the client every time, and a client's answer that arrives
+// after the asking worker ended reaches no other worker. A real supervisor, kernel and trusted worker over MCP, with a
+// fixture trusted service that asks the vendor's computer-use app approval as its policy does (R/A-contract.md §2.6).
+// Needs Node 24 or later (CUA_NODE); skips visibly otherwise.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {setTimeout as delay} from 'node:timers/promises';
 import {kernelNode} from './kernel-harness.mjs';
 import {startHost, texts} from './supervisor-harness.mjs';
-import {PERSISTED_STATE_SOURCE} from '../../src/repl-host/elicitation.mjs';
 import {TRUSTED_EXIT_SENTENCE} from '../../src/repl-host/supervisor.mjs';
 import {isTextEditApproval} from '../../scripts/accept/lib.mjs';
 
@@ -29,7 +30,6 @@ const ask = (host, request, options) => host.js(`nodeRepl.write(JSON.stringify(a
   .then(result => JSON.parse(texts(result).at(-1)));
 const workerPid = (host, options) => ask(host, {pid: true}, options);
 const asked = host => host.serverRequests.filter(m => m.method === 'elicitation/create');
-const REMEMBERED = action => ({action, content: {source: PERSISTED_STATE_SOURCE}, _meta: null});
 const TEXTEDIT = {app: 'com.apple.TextEdit', display: 'TextEdit'};
 const FINDER = {app: 'com.apple.finder', display: 'Finder'};
 
@@ -39,54 +39,24 @@ const answering = (answers, persist = 'session') => msg => {
   return {result: action === 'accept' ? {action, content: {}, ...(persist === 'none' ? {} : {_meta: {persist}})} : {action}};
 };
 
-test('a repeat of an approved or declined app is answered from the connection\'s memory, the accept marked persisted, never asking the client again', own, async t => {
+test('the host asks the client for every approval, a repeat of an accepted or declined app included: the memory is the connection\'s, above it', own, async t => {
   const host = await startHost(t, {node, capabilities: {elicitation: {}}, services: {approve: APPROVAL_SERVICE},
     onServerRequest: answering({'com.apple.TextEdit': 'accept', 'com.apple.finder': 'decline'})});
-  assert.deepEqual(await ask(host, TEXTEDIT), {action: 'accept', content: {}, _meta: {persist: 'session'}}, 'the first ask is the client\'s');
-  assert.equal(asked(host).length, 1);
+  assert.deepEqual(await ask(host, TEXTEDIT), {action: 'accept', content: {}, _meta: {persist: 'session'}});
   assert.equal(isTextEditApproval(asked(host)[0]), true, 'the request the harness matcher accepts, as the vendor host sends it');
-  assert.deepEqual(await ask(host, TEXTEDIT), REMEMBERED('accept'));
-  assert.deepEqual(await ask(host, {...TEXTEDIT, tool: 'click'}), REMEMBERED('accept'), 'any tool on the same app');
-  assert.equal(asked(host).length, 1, 'the client was asked once');
-
+  assert.deepEqual(await ask(host, TEXTEDIT), {action: 'accept', content: {}, _meta: {persist: 'session'}});
   assert.deepEqual(await ask(host, FINDER), {action: 'decline', content: null, _meta: null});
-  assert.deepEqual(await ask(host, FINDER), REMEMBERED('decline'), 'a model retrying a declined app is not re-prompted');
-  assert.equal(asked(host).length, 2);
-});
-
-test('a cancel, an accept the connection does not remember (CUA_SHIM_PERSIST=none) and another connector\'s elicitation ask every time', own, async t => {
-  const host = await startHost(t, {node, capabilities: {elicitation: {}}, services: {approve: APPROVAL_SERVICE},
-    onServerRequest: answering({'com.apple.TextEdit': 'accept', 'com.apple.Notes': 'cancel'}, 'none')});
-  await ask(host, TEXTEDIT);
-  assert.deepEqual(await ask(host, TEXTEDIT), {action: 'accept', content: {}, _meta: null});
-  await ask(host, {app: 'com.apple.Notes', display: 'Notes'});
-  await ask(host, {app: 'com.apple.Notes', display: 'Notes'});
+  assert.deepEqual(await ask(host, FINDER), {action: 'decline', content: null, _meta: null});
   assert.equal(asked(host).length, 4);
-  const other = await startHost(t, {node, capabilities: {elicitation: {}}, services: {approve: APPROVAL_SERVICE}, onServerRequest: answering({'com.apple.TextEdit': 'accept'})});
-  await ask(other, {...TEXTEDIT, connector: 'browser-use'});
-  await ask(other, {...TEXTEDIT, connector: 'browser-use'});
-  assert.equal(asked(other).length, 2, 'only computer-use approvals are remembered');
 });
 
-test('the memory is the connection\'s: it survives the worker\'s replacement, and a new connection asks again', own, async t => {
-  const host = await startHost(t, {node, capabilities: {elicitation: {}}, services: {approve: APPROVAL_SERVICE}, onServerRequest: answering({'com.apple.TextEdit': 'accept'})});
-  await ask(host, TEXTEDIT);
-  const asking = await workerPid(host);
-  // A sandbox-policy change replaces the trusted worker (trusted-worker.test.mjs); the supervisor, and the memory, stay.
-  assert.deepEqual(await ask(host, TEXTEDIT, {mode: 'disabled'}), REMEMBERED('accept'));
-  assert.notEqual(await workerPid(host, {mode: 'disabled'}), asking, 'another worker answered');
-  assert.equal(asked(host).length, 1);
-  const next = await startHost(t, {node, capabilities: {elicitation: {}}, services: {approve: APPROVAL_SERVICE}, onServerRequest: answering({'com.apple.TextEdit': 'accept'})});
-  assert.deepEqual(await ask(next, TEXTEDIT), {action: 'accept', content: {}, _meta: {persist: 'session'}});
-  assert.equal(asked(next).length, 1, 'a new connection asks again');
-});
-
-test('an answer that arrives after the asking worker ended is still the connection\'s: the next worker\'s ask is answered from memory', own, async t => {
+test('an answer that arrives after the asking worker ended goes to no other worker: the next worker\'s ask is asked anew', own, async t => {
   let release;
   const held = new Promise(resolve => { release = resolve; });
   const answer = answering({'com.apple.TextEdit': 'accept'});
+  let first = true;
   const host = await startHost(t, {node, capabilities: {elicitation: {}}, services: {approve: APPROVAL_SERVICE},
-    onServerRequest: msg => held.then(() => answer(msg))});
+    onServerRequest: msg => (first ? (first = false, held.then(() => answer(msg))) : answer(msg))});
   const asking = await workerPid(host);
   const cell = host.js(`await nodeRepl.rpc('approve', ${JSON.stringify(TEXTEDIT)});`);
   for (let i = 0; i < 250 && asked(host).length === 0; i++) await delay(20);
@@ -95,7 +65,7 @@ test('an answer that arrives after the asking worker ended is still the connecti
   assert.match(texts(await cell).join('\n'), new RegExp(TRUSTED_EXIT_SENTENCE), 'the cell fails with its worker');
   release();
   await delay(50);
-  assert.deepEqual(await ask(host, TEXTEDIT), REMEMBERED('accept'), 'the late answer was remembered');
+  assert.deepEqual(await ask(host, TEXTEDIT), {action: 'accept', content: {}, _meta: {persist: 'session'}}, 'the next worker asks the client itself');
   assert.notEqual(await workerPid(host), asking, 'another worker asked');
-  assert.equal(asked(host).length, 1, 'the client was asked once');
+  assert.equal(asked(host).length, 2);
 });

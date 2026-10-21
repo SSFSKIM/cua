@@ -9,7 +9,8 @@ import Foundation
 // back; the harness saves and restores the owner's), `keystroke` (the stand-in user: HID-state events posted at the HID
 // event tap, only while the named window is frontmost, with each character's string, the layout's key codes alone or
 // the fixed ANSI keys; KeystrokeProbe.swift), `focus` (the focused app and window, and the named window's focused value
-// as a hash; FocusProbe.swift) and `watch-activations` (every NSWorkspace activation and deactivation with its time, the probe's
+// as a hash; FocusProbe.swift), `text-view` (a harness-owned text view's selected range and scroll bars by Accessibility,
+// past the engine's observation; TextViewProbe.swift) and `watch-activations` (every NSWorkspace activation and deactivation with its time, the probe's
 // own pid printed first, so the harness can stop it and the oracles can exclude probe instances).
 enum Probe {
   static func run(_ arguments: [String]) -> Int32 {
@@ -21,10 +22,12 @@ enum Probe {
       return keystroke(Array(arguments.dropFirst()))
     case "focus":
       return focus(Array(arguments.dropFirst()))
+    case "text-view":
+      return textView(Array(arguments.dropFirst()))
     case "watch-activations":
       return watchActivations()
     default:
-      return emit(["error": "usage: --probe input-source current|<id> | keystroke --user-pid <n> --user-bounds <x,y,w,h> [--at <unix ms>] [--key-codes-only|--ansi-keys] <text> | focus [--window <pid,x,y,w,h>] | watch-activations"],
+      return emit(["error": "usage: --probe input-source current|<id> | keystroke --user-pid <n> --user-bounds <x,y,w,h> [--at <unix ms>] [--key-codes-only|--ansi-keys] <text> | focus [--window <pid,x,y,w,h>] | text-view --pid <n> | watch-activations"],
                   status: 64)
     }
   }

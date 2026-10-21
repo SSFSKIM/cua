@@ -628,6 +628,9 @@ final class GuardSeam {
   let reactivationTakesFront: Bool
   /// Processes whose re-activation fails (route 4's restore of the user's app).
   var reactivationRefused: Set<pid_t> = []
+  /// The user's key window: 42 at the first read, this one at every later read (route 4's read after the restore).
+  var keyWindowAfterFirstRead: CGWindowID? = 42
+  var userWindowReads = 0
 
   init(frontmost: pid_t?, frontmostAfterPost: pid_t? = nil, reactivates: Bool = true, step: Double = 10, raiseCost: Double = 0,
        reactivationTakesFront: Bool = false, targetInFront: @escaping (Int) -> Bool = { _ in false }) {
@@ -682,7 +685,11 @@ final class GuardSeam {
       if reactivates && self.reactivationTakesFront { self.frontmost = pid }
       return reactivates
     }
-    system.userWindow = { _ in (AXUIElementCreateApplication(990_002), 42) }
+    system.userWindow = { _ in
+      self.userWindowReads += 1
+      let id: CGWindowID? = self.userWindowReads == 1 ? 42 : self.keyWindowAfterFirstRead
+      return id.map { (AXUIElementCreateApplication(990_002), $0) }
+    }
     system.userWindowNumber = { _ in 42 }
     var samples = 0
     system.isInFront = { _, _ in samples += 1; return self.targetInFront(samples) }

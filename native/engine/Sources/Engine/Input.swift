@@ -72,6 +72,8 @@ struct InputMeta {
   var entered: Int?
   /// The per-app route-4 override named once route 3's guard has failed three actions in a row for the app.
   var routeAdvice: String?
+  /// Route 4 only: whether the user's key window is the one it was before the foreground assist (ForegroundAssist).
+  var keyWindowRestored: Bool?
   /// With detection on, the milliseconds from the app's last attributed user event to the request's receipt (null when
   /// none was attributed while the app was driven); with detection off, the machine-wide HID idle time at receipt.
   var hidIdleMs: Int?
@@ -119,6 +121,7 @@ struct InputMeta {
     if interventionOff { wire["intervention"] = "off" }
     if let entered { wire["entered"] = entered }
     if let routeAdvice { wire["routeAdvice"] = routeAdvice }
+    if let keyWindowRestored { wire["keyWindowRestored"] = keyWindowRestored }
     return wire
   }
 }
@@ -163,7 +166,10 @@ func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation
     guard !made.isEmpty else { throw EngineError(name: "eventCreationFailed", "The mouse events could not be created.") }
     meta.posting { _ = postToProcess(made, pid: pid, post: post); return true }
   }
-  if route == .foreground, let foreground { try foreground.run(send) } else { try send() }
+  if route == .foreground, let foreground {
+    defer { meta.keyWindowRestored = foreground.keyWindowRestored }  // on a restore failure too
+    try foreground.run(send)
+  } else { try send() }
 }
 
 /// Typed text keyed unit by unit (the spec's Design, "Text"): the input source checked before every event and after the

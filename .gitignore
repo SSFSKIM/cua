@@ -28,3 +28,6 @@ scripts/sandbox-golden/target/
 
 # scripts/sandbox-probe/hosted-gate.sh's reports (the ci-kit gate sandbox-live uploads them when it fails)
 hosted-gate-out/
+
+# SwiftPM build output (a `swift test` in the package; the build hash ignores it, src/runtime/engine-bundle.mjs)
+native/engine/.build/

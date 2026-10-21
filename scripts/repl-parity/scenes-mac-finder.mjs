@@ -76,6 +76,56 @@ export const restoreSteps = (current, saved, major) => FINDER_CHROME.filter(part
 // The keys to write back so each holds exactly its saved value (null: delete the key). -> [{key, value}].
 export const preferenceWrites = (current, saved) => FINDER_KEYS.filter(key => (current?.[key] ?? null) !== (saved?.[key] ?? null)).map(key => ({key, value: saved?.[key] ?? null}));
 
+// ---- What the window shows, read off its structure ----------------------------------------------------------------
+
+// The mini's Finder window on macOS 27 (the closing hold, roles and identifiers only): AXWindow → AXSplitGroup; the
+// sidebar is an AXScrollArea holding an outline before an AXSplitter; then an inner AXSplitGroup holding the list's
+// AXScrollArea (→ AXOutline `ListView`, the run's list), the status bar (AXUnknown `statusBar` → AXStaticText
+// `statusBarText`) and, when shown, the path bar right after it (an AXList with a description → the path's components
+// as AXStaticText). The `_NS:` identifiers are nib-generated and are not used.
+const STATUS_BAR_IDS = new Set(['statusBar', 'statusBarText']);
+
+// Which chrome parts the run's window shows, by structure, never by text: the sidebar as an outline besides the run's
+// list (finderWindowProblems' sidebar_shown), the status bar by its identifiers, the path bar as any AXList outside the
+// run's list and the toolbar (conservative: an AXList the path bar is not still reads as shown, and a part that will
+// not hide refuses the scene rather than letting text through). -> {sidebar, statusBar, pathBar}, or null when the
+// run's list is not in the window (another view, another folder, no observation): nothing is guessed then.
+export function finderChromeShown(shot, {files}) {
+  if (!shot || !Array.isArray(shot.nodes)) return null;
+  const {nodes} = shot, fileNames = new Set(files);
+  const outlines = nodes.flatMap((node, i) => (node.role === 'AXOutline' ? [i] : []));
+  const list = outlines.find(i => nodes.slice(i + 1, subtreeEnd(nodes, i)).some(node => fileNames.has(node.value)));
+  if (list === undefined) return null;
+  const listEnd = subtreeEnd(nodes, list), toolbar = nodes.findIndex(node => node.role === 'AXToolbar');
+  const toolbarEnd = toolbar < 0 ? -1 : subtreeEnd(nodes, toolbar);
+  const outside = i => !(i >= list && i < listEnd) && !(i >= toolbar && i < toolbarEnd);
+  return {
+    sidebar: outlines.some(i => i !== list),
+    statusBar: nodes.some((node, i) => outside(i) && STATUS_BAR_IDS.has(node.identifier)),
+    pathBar: nodes.some((node, i) => outside(i) && node.role === 'AXList'),
+  };
+}
+
+// The most toggles one part gets to reach the wanted state: Finder's toggle state and what its window draws can
+// disagree (macOS 27 draws an unset status bar while its toggle state starts hidden, so the first ⌘/ changes nothing on
+// screen), and two presses cover either case; a part that still differs is refused, never toggled further.
+export const MAX_TOGGLES = 2;
+
+// Toggles `part` until the window shows it as `shown`, observing before each toggle. `observe()` -> finderChromeShown's
+// answer; `toggle(part)` sends the part's key; `sent(part)` is told after each toggle, so a run that dies has recorded
+// what it sent. -> {part, shown, toggles}; throws when the window cannot be read or the part still differs after
+// MAX_TOGGLES.
+export async function toggleUntil({part, shown, observe, toggle, sent = () => {}, max = MAX_TOGGLES}) {
+  for (let toggles = 0; ; toggles++) {
+    const now = await observe();
+    if (!now) throw new Error(`Finder's ${part} could not be read: the run's list is not in its window`);
+    if (now[part] === shown) return {part, shown, toggles};
+    if (toggles === max) throw new Error(`Finder's ${part} is still ${shown ? 'hidden' : 'shown'} after ${max} toggles; nothing more is sent`);
+    await toggle(part);
+    sent(part);
+  }
+}
+
 // ---- The saved preferences ----------------------------------------------------------------------------------------------
 
 export function readSavedPreferences(file = SAVED_PREFERENCES) {

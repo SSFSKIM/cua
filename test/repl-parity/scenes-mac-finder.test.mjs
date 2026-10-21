@@ -12,7 +12,7 @@ import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {
   FINDER_CHROME, FINDER_DEFAULT_TOOLBAR, FINDER_KEYS, chromeShown, hideSteps, restoreSteps, preferenceWrites, parsePreference,
-  finderWindowProblems, readSavedPreferences, saveOriginalPreferences, clearSavedPreferences,
+  finderWindowProblems, readSavedPreferences, saveOriginalPreferences, clearSavedPreferences, finderChromeShown, toggleUntil,
 } from '../../scripts/repl-parity/scenes-mac-finder.mjs';
 
 const capture = () => JSON.parse(fs.readFileSync(new URL('../native-goldens/finder/skyshot.json', import.meta.url), 'utf8'));
@@ -220,4 +220,106 @@ test('the toolbar must be Finder\'s default set: an item the owner added could c
 test('a Skyshot that is not one is refused, not passed', () => {
   assert.deepEqual(finderWindowProblems(null, owned).map(p => p.code), ['no_observation']);
   assert.deepEqual(finderWindowProblems({nodes: 'x'}, owned).map(p => p.code), ['no_observation']);
+});
+
+// ---- What the window shows, by structure, and the toggles driven by it -------------------------------------------------
+
+// The mini's Finder window on macOS 27 (the closing hold, roles and identifiers only): the status bar is AXUnknown
+// `statusBar` holding AXStaticText `statusBarText`, after the list's scroll area in the inner split group; the path bar,
+// when shown, is an AXList right after it, holding the path's components as AXStaticText. M0's capture redacted the two
+// identifiers to their lengths (9 and 13), which they are restored to here; the path bar was never captured and is
+// synthesized in that position.
+const identified = shot => {
+  for (const [token, id] of [['t276', 'statusBar'], ['t277', 'statusBarText']]) {
+    const node = shot.nodes.find(n => n.token === token);
+    if (node) { assert.equal(node.identifier, `⟨${id.length}⟩`); node.identifier = id; }
+  }
+  return shot;
+};
+function withPathBar(shot) {
+  const status = shot.nodes.findIndex(n => n.token === 't277');
+  const list = shot.nodes.findIndex(n => n.token === 't88');
+  const at = status >= 0 ? status + 1 : (() => { let j = list + 1; while (j < shot.nodes.length && shot.nodes[j].depth > shot.nodes[list].depth) j++; return j; })();
+  const depth = shot.nodes[list].depth, base = {...shot.nodes[list], identifier: null, title: null, value: null, valueDescription: null};
+  const bar = [{...base, token: 'tP', role: 'AXList', description: '⟨4⟩', depth, children: 2},
+    ...['⟨6⟩', '⟨16⟩'].map((value, i) => ({...base, token: `tP${i}`, role: 'AXStaticText', value, depth: depth + 1, children: 0}))];
+  return {...shot, nodes: [...shot.nodes.slice(0, at), ...bar, ...shot.nodes.slice(at)]};
+}
+
+test('the chrome parts shown, read from the window\'s structure: an outline besides the list, the statusBar view, an AXList outside the list', () => {
+  const m0 = () => identified(capture());
+  assert.deepEqual(finderChromeShown(m0(), owned), {sidebar: true, statusBar: true, pathBar: false}, 'M0\'s capture: sidebar and status bar');
+  assert.deepEqual(finderChromeShown(fixedState(), owned), {sidebar: false, statusBar: false, pathBar: false});
+  assert.deepEqual(finderChromeShown(without(m0(), 't2', 't86'), owned), {sidebar: false, statusBar: true, pathBar: false});
+  assert.deepEqual(finderChromeShown(withPathBar(m0()), owned), {sidebar: true, statusBar: true, pathBar: true}, 'the path bar beside the status bar');
+  assert.deepEqual(finderChromeShown(withPathBar(fixedState()), owned), {sidebar: false, statusBar: false, pathBar: true});
+  // The status text alone (its view's node gone) still reads as the status bar; text never decides.
+  assert.equal(finderChromeShown({...m0(), nodes: m0().nodes.filter(n => n.token !== 't276')}, owned).statusBar, true);
+  const other = {...m0(), nodes: m0().nodes.map(n => (n.token === 't277' ? {...n, value: 'anything'} : n))};
+  assert.equal(finderChromeShown(other, owned).statusBar, true);
+  // Without the run's list the window's structure is not known: nothing is guessed.
+  assert.equal(finderChromeShown(without(fixedState(), 't89'), owned), null);
+  assert.equal(finderChromeShown(null, owned), null);
+});
+
+// Finder's chrome as the live hold on macOS 27 found it: each part has Finder's toggle state and what the window
+// draws. A toggle flips the state, writes it to the key as a Boolean and makes the window draw the state. On 27 an unset
+// ShowStatusBar is drawn while the state starts hidden, so the first ⌘/ is a no-op on screen.
+function finderModel({drawn, state, keys = {}}) {
+  const model = {drawn: {...drawn}, state: {...state}, keys: {...keys}, sent: []};
+  model.toggle = part => {
+    model.sent.push(part);
+    model.state[part] = !model.state[part];
+    model.drawn[part] = model.state[part];
+    model.keys[FINDER_CHROME.find(p => p.id === part).key] = model.state[part];
+  };
+  return model;
+}
+const DRIVE = {observe: model => async () => ({...model.drawn}), toggle: model => async part => model.toggle(part)};
+
+test('toggleUntil: macOS 27\'s unset status bar takes two toggles (unset, then 1 with the bar still drawn, then 0 and hidden)', async () => {
+  const model = finderModel({drawn: {statusBar: true}, state: {statusBar: false}});
+  const out = await toggleUntil({part: 'statusBar', shown: false, observe: DRIVE.observe(model), toggle: DRIVE.toggle(model)});
+  assert.deepEqual(out, {part: 'statusBar', shown: false, toggles: 2});
+  assert.deepEqual(model.keys, {ShowStatusBar: false});
+  assert.equal(model.drawn.statusBar, false);
+  // Back to the owner's visible state: one toggle, the bar drawn again (the key then holds 1 until it is written back).
+  const back = await toggleUntil({part: 'statusBar', shown: true, observe: DRIVE.observe(model), toggle: DRIVE.toggle(model)});
+  assert.deepEqual(back, {part: 'statusBar', shown: true, toggles: 1});
+  assert.equal(model.drawn.statusBar, true);
+});
+
+test('toggleUntil: where the state and the window agree (macOS 26) one toggle per part; none when the window already matches', async () => {
+  const model = finderModel({drawn: {sidebar: true}, state: {sidebar: true}});
+  assert.deepEqual(await toggleUntil({part: 'sidebar', shown: false, observe: DRIVE.observe(model), toggle: DRIVE.toggle(model)}), {part: 'sidebar', shown: false, toggles: 1});
+  assert.deepEqual(await toggleUntil({part: 'sidebar', shown: false, observe: DRIVE.observe(model), toggle: DRIVE.toggle(model)}), {part: 'sidebar', shown: false, toggles: 0});
+  assert.deepEqual(model.sent, ['sidebar']);
+});
+
+test('toggleUntil: a part that still does not match after two toggles is refused, with no third sent; an unknown window is refused at once', async () => {
+  const stuck = {drawn: {pathBar: true}};
+  const sent = [];
+  await assert.rejects(toggleUntil({part: 'pathBar', shown: false, observe: async () => ({...stuck.drawn}), toggle: async part => { sent.push(part); }}),
+    /pathBar.*still shown after 2 toggles/);
+  assert.deepEqual(sent, ['pathBar', 'pathBar']);
+  const none = [];
+  await assert.rejects(toggleUntil({part: 'sidebar', shown: false, observe: async () => null, toggle: async part => { none.push(part); }}), /could not be read/);
+  assert.deepEqual(none, []);
+  // Each toggle is reported as it is sent, so a run that dies mid-way has recorded it.
+  const reported = [];
+  const model = finderModel({drawn: {statusBar: true}, state: {statusBar: false}});
+  await toggleUntil({part: 'statusBar', shown: false, observe: DRIVE.observe(model), toggle: DRIVE.toggle(model), sent: part => reported.push(part)});
+  assert.deepEqual(reported, ['statusBar', 'statusBar']);
+});
+
+test('toggleUntil: from every combination of Finder\'s toggle state and what the window draws, a part is hidden and then brought back to what it drew', async () => {
+  for (const part of FINDER_CHROME.map(p => p.id)) for (const state of [true, false]) for (const drawn of [true, false]) {
+    const model = finderModel({drawn: {[part]: drawn}, state: {[part]: state}});
+    const hidden = await toggleUntil({part, shown: false, observe: DRIVE.observe(model), toggle: DRIVE.toggle(model)});
+    assert.equal(model.drawn[part], false, `${part} state ${state} drawn ${drawn}`);
+    assert.ok(hidden.toggles <= 2);
+    const back = await toggleUntil({part, shown: drawn, observe: DRIVE.observe(model), toggle: DRIVE.toggle(model)});
+    assert.equal(model.drawn[part], drawn, `${part}: drawn as the owner saw it`);
+    assert.ok(back.toggles <= 2);
+  }
 });

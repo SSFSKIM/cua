@@ -709,6 +709,17 @@ test('launchProbe and awaitProbe: the launch returns a handle another process ca
   assert.deepEqual(hung.killed, ['SIGKILL 900']);
 });
 
+test('launchProbe: an argument is a name, a key spec (press_key\'s + chord), a number list, an input-source id or a Return; nothing else is launched', () => {
+  const device = probeDevice();
+  const keys = ['keystroke', '--user-pid', '600', '--user-bounds', '400,20,600,800', '--keys', 'r', 'k', 'BackSpace', 'k', 'alt+Return'];
+  launchProbe(BUNDLE, keys, device.options);
+  assert.deepEqual(device.launched[0].slice(-keys.length), keys);
+  for (const bad of ['r k', 'a;b', '$(x)', '', 'a/b']) {
+    assert.throws(() => launchProbe(BUNDLE, ['keystroke', '--keys', bad], device.options), /a probe argument is/, JSON.stringify(bad));
+  }
+  assert.equal(device.launched.length, 1);
+});
+
 test('runProbe: a probe past its bound is killed and its exit confirmed before the error; one that will not exit is reported stuck', () => {
   const hung = probeDevice({exits: false});
   assert.throws(() => runProbe(BUNDLE, ['input-source', 'current'], hung.options), error => /did not finish within 60 s; its process was stopped/.test(error.message) && !error.stuck);

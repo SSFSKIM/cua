@@ -817,8 +817,11 @@ const lastLine = file => { try { return JSON.parse(fs.readFileSync(file, 'utf8')
 export const runProbe = (bundle, args, options = {}) => awaitProbe(launchProbe(bundle, args, options), options);
 
 // The launch, journaled and identified. -> {command, label, pid (null when unresolved), start, scratch, out, launchedAt}.
+// An argument is a name, a key spec, a number list, an input-source id or a Return. `+` is admitted for press_key's
+// chords (`alt+Return`, the keystroke probe's `--keys`), so the probe takes press_key's key string verbatim through its
+// own parser; it is inert here, since the arguments reach `open --args` by execFile, never through a shell.
 export function launchProbe(bundle, args, {exec = execFileSync, run = null, table = () => processTable(), sleep = syncSleep, now = Date.now} = {}) {
-  if (!args.every(a => /^[A-Za-z0-9._,-]+$/.test(a) || a === '\n')) throw new Error('a probe argument is a name, a number list, an input-source id or a Return');
+  if (!args.every(a => /^[A-Za-z0-9._,+-]+$/.test(a) || a === '\n')) throw new Error('a probe argument is a name, a key spec, a number list, an input-source id or a Return');
   const uid = process.getuid(), label = `${args[0]}#${randomBytes(4).toString('hex')}`;
   const probes = () => table().filter(p => p.uid === uid && isBundleProbe(p.command, bundle));
   const before = new Set(probes().map(p => p.pid));

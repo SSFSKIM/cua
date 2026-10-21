@@ -7,8 +7,8 @@ import Foundation
 // `watch-activations`, which is resident until killed. The commands: `input-source current` (the active source, read
 // only), `input-source <id> [--at <unix ms>]` (selects that source, a keyboard layout or an input mode such as Korean
 // 2-Set, at the scheduled time when `--at` is given, and reads it back; the harness saves and restores the owner's), `keystroke` (the stand-in user: HID-state events posted at the HID
-// event tap, only while the named window is frontmost, with each character's string, the layout's key codes alone or
-// the fixed ANSI keys; KeystrokeProbe.swift), `focus` (the focused app and window, and the named window's focused value
+// event tap, only while the named window is frontmost, with each character's string, the layout's key codes alone, the
+// fixed ANSI keys, or press_key's key specs posted as a keyboard posts them; KeystrokeProbe.swift), `focus` (the focused app and window, and the named window's focused value
 // as a hash; FocusProbe.swift), `text-view` (a harness-owned text view's selected range and scroll bars by Accessibility,
 // past the engine's observation; TextViewProbe.swift) and `watch-activations` (every NSWorkspace activation and deactivation with its time, the probe's
 // own pid printed first, so the harness can stop it and the oracles can exclude probe instances).
@@ -26,7 +26,7 @@ enum Probe {
     case "watch-activations":
       return watchActivations()
     default:
-      return emit(["error": "usage: --probe input-source current|<id> [--at <unix ms>] | keystroke --user-pid <n> --user-bounds <x,y,w,h> [--at <unix ms>] [--key-codes-only|--ansi-keys] <text> | focus [--window <pid,x,y,w,h>] | text-view --pid <n> [--set-horizontal <0..1>] [--set-vertical <0..1>] | watch-activations"],
+      return emit(["error": "usage: --probe input-source current|<id> [--at <unix ms>] | keystroke --user-pid <n> --user-bounds <x,y,w,h> [--at <unix ms>] [--key-codes-only|--ansi-keys] <text> | keystroke --user-pid <n> --user-bounds <x,y,w,h> [--at <unix ms>] --keys <press_key spec>... | focus [--window <pid,x,y,w,h>] | text-view --pid <n> [--set-horizontal <0..1>] [--set-vertical <0..1>] | watch-activations"],
                   status: 64)
     }
   }

@@ -496,10 +496,13 @@ async function compositionVariant({variant, record, client, io, observe, watchAl
   row.complete = row.keys.exitStatus === 0 && !row.commit.skipped && row.commit.exitStatus === 0;
   return row;
 }
-// The keystroke probe's exit status as its JSON shows it (open -W does not pass the probe's status through):
-// KeystrokeProbe.swift's keystroke exits 4 when the front window is not the named one (before or between keys), 5 when
-// no layout or event could be made or the variant cannot key the text, 64 on a usage error, 0 when every key was posted.
-const probeStatus = output => (output?.aborted || /front window is not the named one/.test(output?.error ?? '') ? 4
+// The keystroke probe's exit status as its JSON shows it (open -W does not pass the probe's status through): the line's
+// own `exitStatus` when it is an integer (every probe's final line carries it, Probe.emit). Older builds lack it, so it
+// is inferred from the line: KeystrokeProbe.swift's keystroke exits 4 when the front window is not the named one (before
+// or between keys), 5 when no layout or event could be made or the variant cannot key the text, 64 on a usage error, 0
+// when every key was posted.
+export const probeStatus = output => (Number.isInteger(output?.exitStatus) ? output.exitStatus
+  : output?.aborted || /front window is not the named one/.test(output?.error ?? '') ? 4
   : /layout|cannot key|could not be created/.test(output?.error ?? '') ? 5 : output?.error ? 64 : Number.isInteger(output?.units) ? 0 : null);
 
 // An alert's text, read through the engine's observation of a system-alert process (alertWatch's `readable`; never any

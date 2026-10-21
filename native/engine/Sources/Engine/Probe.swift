@@ -11,7 +11,10 @@ import Foundation
 // fixed ANSI keys, or press_key's key specs posted as a keyboard posts them; KeystrokeProbe.swift), `focus` (the focused app and window, and the named window's focused value
 // as a hash; FocusProbe.swift), `text-view` (a harness-owned text view's selected range and scroll bars by Accessibility,
 // past the engine's observation; TextViewProbe.swift) and `watch-activations` (every NSWorkspace activation and deactivation with its time, the probe's
-// own pid printed first, so the harness can stop it and the oracles can exclude probe instances).
+// own pid printed first, so the harness can stop it and the oracles can exclude probe instances). Every command but
+// `watch-activations` prints one JSON line, its result, carrying `exitStatus` (the process's exit code, which `open`
+// does not pass through); `watch-activations` streams lines until killed and has no final line, so none of its lines
+// carries one.
 enum Probe {
   static func run(_ arguments: [String]) -> Int32 {
     switch arguments.first {
@@ -59,13 +62,13 @@ enum Probe {
   /// `watch-activations`: prints its own pid, then every NSWorkspace application activation and deactivation with its
   /// time, until killed (the resident probe runs without -W).
   private static func watchActivations() -> Int32 {
-    _ = emit(["pid": Int(getpid()), "watch": "activations"], status: 0)
+    stream(["pid": Int(getpid()), "watch": "activations"])
     let center = NSWorkspace.shared.notificationCenter
     for (name, kind) in [(NSWorkspace.didActivateApplicationNotification, "activated"), (NSWorkspace.didDeactivateApplicationNotification, "deactivated")] {
       center.addObserver(forName: name, object: nil, queue: .main) { notification in
         guard let application = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
-        _ = emit(["at": Int(unixMilliseconds()), "kind": kind, "pid": Int(application.processIdentifier),
-                  "bundleId": application.bundleIdentifier ?? NSNull()], status: 0)
+        stream(["at": Int(unixMilliseconds()), "kind": kind, "pid": Int(application.processIdentifier),
+                "bundleId": application.bundleIdentifier ?? NSNull()])
       }
     }
     RunLoop.main.run()
@@ -101,9 +104,19 @@ enum Probe {
     return wire
   }
 
+  /// Where a probe's lines go: standard output (the unit tests capture them).
+  nonisolated(unsafe) static var write: (Data) -> Void = { FileHandle.standardOutput.write($0) }
+
+  /// A command's final line, with `exitStatus`, the status the process exits with: a harness that launches the probe
+  /// through `open` never sees the exit code. Every command's result goes through here, so every final line carries it.
   static func emit(_ object: [String: Any], status: Int32) -> Int32 {
-    if let data = encodeJSON(object) { FileHandle.standardOutput.write(data + Data("\n".utf8)) }
+    stream(object.merging(["exitStatus": Int(status)]) { $1 })
     return status
+  }
+
+  /// A line before the final one: watch-activations' stream, which ends only when the resident probe is killed.
+  static func stream(_ object: [String: Any]) {
+    if let data = encodeJSON(object) { write(data + Data("\n".utf8)) }
   }
 }
 

@@ -11,7 +11,7 @@ import {SkyComputerUseError} from '../../src/services/engine/protocol.mjs';
 import {ABC, FIRST_LINE, JOURNAL_FILE, KOREAN_2SET, PASTE_TARGETS, RECOVERY_BOUNDS, parseJournal} from '../../scripts/native-matrix/live-checks.mjs';
 import {
   COMPOSITION_QUIET_MS, COMPOSITION_VARIANTS, INTERVENTION_DEBOUNCE_MS, PASTE, PASTE_DEADLINE_MS, begin, childHandle, inputSourceCheck, menuCheck, minimizedCheck, pasteCheck, putBack, probeBarrier, recover, restoreInputSource, runProbe, launchProbe, awaitProbe,
-  saveFrontmost, saveInputSource,
+  probeStatus, saveFrontmost, saveInputSource,
 } from '../../scripts/native-matrix/live-device.mjs';
 
 const GOLDEN = JSON.parse(fs.readFileSync(new URL('../native-goldens/textedit/skyshot.json', import.meta.url), 'utf8'));
@@ -718,6 +718,22 @@ test('launchProbe: an argument is a name, a key spec (press_key\'s + chord), a n
     assert.throws(() => launchProbe(BUNDLE, ['keystroke', '--keys', bad], device.options), /a probe argument is/, JSON.stringify(bad));
   }
   assert.equal(device.launched.length, 1);
+});
+
+test('probeStatus: the probe\'s own exitStatus when it is an integer; otherwise inferred from the line, as older builds need', () => {
+  // Preferred: the status the probe printed, even where the inference would read the line otherwise.
+  assert.equal(probeStatus({error: 'no input source with that id', exitStatus: 2}), 2);
+  assert.equal(probeStatus({units: 3, exitStatus: 4, aborted: true}), 4);
+  assert.equal(probeStatus({units: 3, presses: [], exitStatus: 0}), 0);
+  assert.equal(probeStatus({error: 'Unknown key name \'Bogus\' in the key combination; nothing was sent', exitStatus: 5}), 5);
+  // Fallback: no integer exitStatus.
+  assert.equal(probeStatus({units: 2, aborted: true}), 4);
+  assert.equal(probeStatus({error: 'the front window is not the named one; nothing was sent'}), 4);
+  assert.equal(probeStatus({error: 'Unable to get the current keyboard layout.'}), 5);
+  assert.equal(probeStatus({error: 'keystroke needs --user-pid, --user-bounds and a text'}), 64);
+  assert.equal(probeStatus({units: 2, exitStatus: '0'}), 0, 'a non-integer exitStatus is ignored');
+  assert.equal(probeStatus({units: 2, exitStatus: 1.5}), 0);
+  assert.equal(probeStatus(undefined), null);
 });
 
 test('runProbe: a probe past its bound is killed and its exit confirmed before the error; one that will not exit is reported stuck', () => {

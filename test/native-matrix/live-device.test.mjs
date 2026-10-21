@@ -134,6 +134,27 @@ test('minimizedCheck: a window that never minimizes stops the check before any i
   assert.deepEqual(activated, ['textedit']);
 });
 
+test('minimizedCheck: an engine error mid-check keeps the steps so far and still restores the window', async () => {
+  const client = fakeEngine();
+  const activated = [];
+  const io = deviceIo({windowOnScreen: () => !client.state.minimized, activate: async id => { activated.push(id); client.state.minimized = false; return {ok: true}; }});
+  client.execute = (execute => async (method, args, options) => { if (method === 'set_value') throw new Error('engine socket closed'); return execute.call(client, method, args, options); })(client.execute);
+  const out = await minimizedCheck({record: TEXTEDIT, client, io, screenshots: join(scratch(), 'shots')});
+  assert.equal(out.steps.setValue.ok, false);
+  const failing = fakeEngine();
+  const observed = [];
+  failing.execute = (execute => async (method, args, options) => {
+    if (method === 'get_app_state') { observed.push(1); if (observed.length === 3) throw new Error('engine socket closed'); }
+    return execute.call(failing, method, args, options);
+  })(failing.execute);
+  const io2 = deviceIo({windowOnScreen: () => !failing.state.minimized, activate: async id => { activated.push(id); failing.state.minimized = false; return {ok: true}; }});
+  const stopped = await minimizedCheck({record: TEXTEDIT, client: failing, io: io2, screenshots: join(scratch(), 'shots')});
+  assert.match(stopped.problem, /the minimized check stopped: engine socket closed/);
+  assert.equal(stopped.steps.click.refused, true);
+  assert.equal(stopped.verdict.pass, false);
+  assert.deepEqual(activated, ['textedit', 'textedit']);
+});
+
 test('minimizedCheck: an observation of another process sends nothing at all', async () => {
   const client = fakeEngine({script: method => (method === 'get_app_state' ? {...structuredClone(GOLDEN), app: {...GOLDEN.app, pid: 1}} : undefined)});
   assert.notEqual(GOLDEN.app.pid, TEXTEDIT.pid);

@@ -96,6 +96,8 @@ export async function minimizedCheck({record, client, io, screenshots}) {
   let touched = false, problem = null;
   try {
     problem = await minimizedSteps({record, client, io, screenshots, steps, touch: () => { touched = true; }});
+  } catch (error) {
+    problem = `the minimized check stopped: ${String(error.message).slice(0, 300)}`;
   } finally {
     if (touched) {
       const front = await io.activate('textedit');
@@ -131,8 +133,7 @@ async function minimizedSteps({record, client, io, screenshots, steps, touch}) {
   const click = await attempt(() => client.execute('click', {app, element: area.token}, {lineage: shot.lineage}));
   steps.click = {...click, refused: !click.ok, namesMinimized: !click.ok && /minimized/i.test(click.message ?? '')};
 
-  const area0 = textArea(shot);
-  steps.setValue = await attempt(() => client.execute('set_value', {app, element: area0.token, value: SET_VALUE}, {lineage: shot.lineage}));
+  steps.setValue = await attempt(() => client.execute('set_value', {app, element: area.token, value: SET_VALUE}, {lineage: shot.lineage}));
   shot = await observe();
   steps.setValue.valueMatches = textArea(shot)?.value === SET_VALUE;
 
@@ -225,7 +226,7 @@ export async function enablementCheck({record, io, screenshots}) {
       const shot = await getState(client, record.app, screenshots);
       if (shot?.app?.pid !== record.pid) throw new Error('the observation is not of the run\'s Chrome for Testing');
       return enablementOf(shot.timings);
-    } finally { client.close(); }
+    } finally { await client.close(); }
   };
   const first = await read();
   await io.sleep(RELEASE_WAIT_MS);

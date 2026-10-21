@@ -40,7 +40,7 @@ import {engineCheck, engineClientFor, main as goldensDeviceMain, ownershipProble
 import {controllerCheckout} from './goldens.mjs';
 import {REPO_ROOT} from './goldens-install.mjs';
 import {
-  FIRST_LINE, KOREAN_2SET, MENU_ITEMS, PASTE_TARGETS, allSelected, enablementOf, enablementVerdict, failureOf, firstLineBold, frontAppAction, inputSourceVerdict, liveRefusals,
+  FIRST_LINE, KOREAN_2SET, alertCandidates, MENU_ITEMS, PASTE_TARGETS, allSelected, enablementOf, enablementVerdict, failureOf, firstLineBold, frontAppAction, inputSourceVerdict, liveRefusals,
   menuBarItem, menuItemAt, minimizeButton, minimizedVerdict, parsePerContext, pasteVerdict, perContextRestore, putBackPlan, restoreTarget, textArea,
 } from './live-checks.mjs';
 
@@ -232,13 +232,27 @@ export function activationsOf(lines, watch) {
 
 // What the paste check writes: a plain paste, a Markdown paste (bold), and type_text's paste route over two lines.
 export const PASTE = Object.freeze({text: 'cua paste plain', markdown: '**cua paste bold**', typed: 'cua typed paste\nsecond typed line'});
+// Each paste step's deadline. The engine bounds its own waits by it (the paste lock's wait answers timeoutReached; the
+// read and effect waits answer clipboardReadTimedOut at 2 s each), and the client gives the connection up a grace after
+// it (src/services/engine/client.mjs), so no paste step outlives about 25 s; the alert's text read is bounded the same
+// way, shorter.
+export const PASTE_DEADLINE_MS = 20_000;
+const ALERT_READ_DEADLINE_MS = 5_000;
+const ALERT_TEXT_CHARS = 500;
+
+// Thrown to stop the paste section once something the harness must not act past is seen (an alert, a step that
+// outlived its bound); the steps so far are kept.
+class PasteAbort extends Error {}
 
 // M2a.3 live (its report's concerns: whether TextEdit reads the lazy item and shows the effect within the 2 s waits,
 // whether ⌘V into a background app after route 3's activation lands), on the run's TextEdit behind the run's Finder
 // window: each paste replaces a selected line of the run's document and is read back through an observation; type_text
-// runs with Korean 2-Set selected through the approved bundle's probe (an input method takes the paste route), the
-// owner's source and per-context preference restored after whatever happened. The owner's clipboard is fingerprinted
-// here before and after (the engine restores it only while nobody else wrote it); only whether it is the same leaves.
+// runs with Korean 2-Set selected through the approved bundle's probe (an input method takes the paste route) and the
+// per-context input preference turned off for it when it read on (so the probe's selection is the engine's too), the
+// owner's source and preference restored right after whatever happened (and verified again by the put-back, which owns
+// the saved record). Before the first step and after each, the screen is read for a system alert (a pasteboard-privacy
+// prompt): one aborts the section unclicked, its owner and text recorded. The owner's clipboard is fingerprinted here
+// before and after (the engine restores it only while nobody else wrote it); only whether it is the same leaves.
 export async function pasteCheck({record, user, client, io, screenshots}) {
   const userInFront = () => io.frontmost()?.pid === user.pid;
   if (!userInFront()) return {problem: 'the user window (the run\'s Finder) is not in front; nothing was sent'};
@@ -246,24 +260,40 @@ export async function pasteCheck({record, user, client, io, screenshots}) {
   const steps = {userInFront: []};
   let problem = null;
   try {
-    problem = await pasteSteps({record, client, io, screenshots, steps, userInFront});
+    problem = await pasteSteps({record, user, client, io, screenshots, steps, userInFront});
   } catch (error) {
-    problem = `the paste check stopped: ${String(error.message).slice(0, 300)}`;
+    problem = error instanceof PasteAbort ? error.message : `the paste check stopped: ${String(error.message).slice(0, 300)}`;
   } finally {
     if (steps.inputSource) {
-      const restored = await restoreInputSource({io});
+      const restored = await restoreInputSource({io, keep: true});
       steps.inputSource.restored = restored.sourceRestored === true && restored.perContextRestored === true;
+      steps.inputSource.perContext.restored = io.readPerContext();
     }
     steps.clipboard = {same: io.clipboard() === before};
   }
   return {...(problem ? {problem} : {}), steps, verdict: pasteVerdict(steps)};
 }
 
-async function pasteSteps({record, client, io, screenshots, steps, userInFront}) {
+async function pasteSteps({record, user, client, io, screenshots, steps, userInFront}) {
   const app = record.app, observe = () => getState(client, app, screenshots);
   let shot = await observe();
   const owned = ownershipProblems('textedit', shot, record);
   if (owned.length) return `the observation is not the run's TextEdit window (${owned.map(p => p.message).join('; ')}); nothing was sent`;
+
+  // The alert watch: the screen before the first step is the baseline; a candidate stops the section, never touched.
+  const baseline = io.windows();
+  const watchAlerts = async at => {
+    const found = alertCandidates(baseline, io.windows(), {runPids: [record.pid, user.pid]});
+    if (!found.length) { steps.pasteAlert = false; return; }
+    steps.pasteAlert = true;
+    steps.alert = {at, windows: found, text: await alertText(client, found, screenshots)};
+    throw new PasteAbort(`a system alert appeared (${at}: ${found.map(w => w.ownerBundleId ?? w.ownerName).join(', ')}); the paste section stopped without touching it`);
+  };
+  // A step that outlived its bound spends the connection: the section stops there.
+  const bounded = out => {
+    if (!out.ok && /did not answer|timed out|closed/i.test(out.message ?? '') && !out.errorName) throw new PasteAbort(`a paste step did not answer within its bound: ${out.message}`);
+    return out;
+  };
   // Selects `line`, sends `request(lineage)`, reads the result back. -> the action's result and the area after it.
   const replace = async (line, request) => {
     const selected = await attempt(() => client.execute('select_text', {app, element: textArea(shot).token, text: line}, {lineage: shot.lineage}));
@@ -271,24 +301,51 @@ async function pasteSteps({record, client, io, screenshots, steps, userInFront})
     if (!selected.ok || shot.selectedText !== line) return {out: {ok: false, prepared: false, ...(selected.ok ? {} : {selectError: selected.errorName})}, area: textArea(shot)};
     const out = await attempt(() => request(shot.lineage));
     steps.userInFront.push(userInFront());
-    shot = await observe();
-    return {out: {...out, prepared: true}, area: textArea(shot)};
+    return {out: {...out, prepared: true}, area: null, after: async () => { shot = await observe(); return textArea(shot); }};
+  };
+  const run = async (name, line, request, judge) => {
+    const {out, area, after} = await replace(line, request);
+    steps[name] = out;
+    bounded(out);
+    await watchAlerts(`after ${name}`);
+    Object.assign(steps[name], judge(after ? await after() : area));
   };
   const [textLine, markdownLine, typedLine] = PASTE_TARGETS;
   const landed = (area, text, line) => typeof area?.value === 'string' && area.value.includes(text) && !area.value.includes(line);
+  const deadline = {deadlineMs: PASTE_DEADLINE_MS};
 
-  let {out, area} = await replace(textLine, lineage => client.execute('paste', {app, text: PASTE.text, format: 'text'}, {lineage}));
-  steps.text = {...out, lands: landed(area, PASTE.text, textLine)};
+  await watchAlerts('before text');
+  await run('text', textLine, lineage => client.execute('paste', {app, text: PASTE.text, format: 'text'}, {lineage, ...deadline}),
+    area => ({lands: landed(area, PASTE.text, textLine)}));
 
   const bold = PASTE.markdown.replace(/\*\*/g, '');
-  ({out, area} = await replace(markdownLine, lineage => client.execute('paste', {app, text: PASTE.markdown, format: 'md'}, {lineage})));
-  steps.markdown = {...out, lands: landed(area, bold, markdownLine), bold: typeof area?.valueMarkdown === 'string' && area.valueMarkdown.includes(PASTE.markdown)};
+  await run('markdown', markdownLine, lineage => client.execute('paste', {app, text: PASTE.markdown, format: 'md'}, {lineage, ...deadline}),
+    area => ({lands: landed(area, bold, markdownLine), bold: typeof area?.valueMarkdown === 'string' && area.valueMarkdown.includes(PASTE.markdown)}));
 
+  // Korean 2-Set for type_text, with the per-context preference off while it runs (on, the probe's selection would
+  // stay in the probe's own input context and the engine would read the owner's source).
   saveInputSource({io});
-  steps.inputSource = {selected: io.probe(['input-source', KOREAN_2SET])?.selected === true};
-  ({out, area} = await replace(typedLine, lineage => client.execute('type_text', {app, text: PASTE.typed}, {lineage})));
-  steps.typeText = {...out, lands: landed(area, PASTE.typed, typedLine)};
+  const read = io.readPerContext();
+  steps.inputSource = {perContext: {read, setOff: read === true, restored: null}};
+  if (read === true) io.writePerContext(false);
+  steps.inputSource.selected = io.probe(['input-source', KOREAN_2SET])?.selected === true;
+  await watchAlerts('before typeText');
+  await run('typeText', typedLine, lineage => client.execute('type_text', {app, text: PASTE.typed}, {lineage, ...deadline}),
+    area => ({lands: landed(area, PASTE.typed, typedLine), sourceAfter: io.probe(['input-source', 'current'])?.id ?? null}));
   return null;
+}
+
+// An alert's text, read through the engine's observation of its owner (no screenshot, no input, bounded): the static
+// texts' and buttons' strings, joined and capped. Null when the owner cannot be read.
+async function alertText(client, windows, screenshots) {
+  const owner = windows.find(w => w.ownerBundleId)?.ownerBundleId;
+  if (!owner) return null;
+  try {
+    const {result} = await client.execute('get_app_state', {app: owner, includeScreenshot: false, outputDirectory: screenshots}, {deadlineMs: ALERT_READ_DEADLINE_MS});
+    const strings = (result?.nodes ?? []).filter(n => n.role === 'AXStaticText' || n.role === 'AXButton')
+      .map(n => n.value ?? n.title ?? n.description).filter(v => typeof v === 'string' && v.length > 0);
+    return strings.join(' | ').slice(0, ALERT_TEXT_CHARS) || null;
+  } catch (error) { return `(unread: ${String(error.errorName ?? error.message).slice(0, 120)})`; }
 }
 
 // ---- Enablement released ---------------------------------------------------------------------------------------------
@@ -334,14 +391,14 @@ export async function inputSourceCheck({io}) {
     selected = {selected: answer?.selected === true, current: {id: answer?.current?.id ?? null}};
     readBack = {id: io.probe(['input-source', 'current'])?.id ?? null};
   } catch (thrown) { error = String(thrown.message).slice(0, 300); }
-  const restored = await restoreInputSource({io});
+  const restored = await restoreInputSource({io, keep: true});
   const saved = {kept: save.kept, source: {id: save.saved.source?.id ?? null}, perContext: save.saved.perContext ?? null};
   return {saved, selected, readBack, restored, ...(error ? {error} : {}), verdict: inputSourceVerdict({saved, selected, readBack, restored})};
 }
 
 // The saved source selected again (when it is not the current one) and read back, the per-context preference written
 // back where it differs; the record removed only once both hold.
-export async function restoreInputSource({io}) {
+export async function restoreInputSource({io, keep = false}) {
   const saved = readSaved(io.savedInputSource);
   if (!saved) return {saved: false};
   const source = restoreTarget(saved);
@@ -350,7 +407,7 @@ export async function restoreInputSource({io}) {
   const plan = perContextRestore(saved.perContext ?? null, io.readPerContext());
   if (plan.write) io.writePerContext(plan.value);
   const perContextRestored = io.readPerContext() === (saved.perContext ?? null);
-  if (sourceRestored && perContextRestored) fs.rmSync(io.savedInputSource, {force: true});
+  if (sourceRestored && perContextRestored && !keep) fs.rmSync(io.savedInputSource, {force: true});
   return {source, sourceRestored, perContextRestored, perContextWritten: plan.write === true, ...(plan.unrestorable ? {unrestorable: plan.unrestorable} : {})};
 }
 
@@ -476,6 +533,12 @@ export function clipboardDigest({exec = execFileSync} = {}) {
   return createHash('sha256').update(out).digest('hex');
 }
 
+// Every on-screen window at every layer (./system-windows.swift), for the paste check's alert watch.
+const SYSTEM_WINDOWS_SCRIPT = fileURLToPath(new URL('./system-windows.swift', import.meta.url));
+export function systemWindows({exec = execFileSync} = {}) {
+  return JSON.parse(exec('/usr/bin/swift', [SYSTEM_WINDOWS_SCRIPT], {encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 120_000})).windows;
+}
+
 const approvedBundle = () => {
   const installed = installedEngine();
   if (!installed) throw new Error('no approved engine on this Mac: build and approve it first (cua engine build, cua engine approve)');
@@ -491,6 +554,7 @@ export const defaultIo = run => ({
   probe: args => runProbe(approvedBundle(), args),
   readPerContext: readPerContextLive,
   clipboard: () => clipboardDigest(),
+  windows: () => systemWindows(),
   writePerContext: writePerContextLive,
   savedInputSource: SAVED_INPUT_SOURCE,
   preflight: dir => scenesPreflight({run: dir}),

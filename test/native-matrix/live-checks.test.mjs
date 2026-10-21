@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import {
   ABC, FIRST_LINE, KOREAN_2SET, LAST_LINE, NEVER_TOUCHED, allSelected, enablementOf, enablementVerdict, failureOf, firstLineBold, frontAppAction,
-  inputSourceVerdict, liveRefusals, menuBarItem, menuComparison, menuItemAt, menuSettingVerdict, minimizeButton, minimizedVerdict, parsePerContext, pasteVerdict,
+  alertCandidates, inputSourceVerdict, liveRefusals, menuBarItem, menuComparison, menuItemAt, menuSettingVerdict, minimizeButton, minimizedVerdict, parsePerContext, pasteVerdict,
   perContextRestore, putBackPlan, restoreTarget, textArea, vendorMenuBarIndex, vendorMenuItem, vendorSelectedText, vendorTextAreaIndex,
 } from '../../scripts/native-matrix/live-checks.mjs';
 import {SkyComputerUseError} from '../../src/services/engine/protocol.mjs';
@@ -203,19 +203,45 @@ test('pasteVerdict: plain and Markdown pastes land behind the user window, type_
     text: {ok: true, route: 'paste', posted: true, lands: true},
     markdown: {ok: true, route: 'paste', posted: true, lands: true, bold: true},
     typeText: {ok: true, route: 'paste', posted: true, lands: true, entered: 27},
-    inputSource: {selected: true, restored: true},
+    inputSource: {selected: true, restored: true, perContext: {read: true, setOff: true, restored: true}},
+    pasteAlert: false,
     clipboard: {same: true},
   };
   const out = pasteVerdict(steps);
   assert.equal(out.pass, true, JSON.stringify(out.failed));
-  assert.deepEqual(out.recorded, {markdownBold: true, entered: 27});
+  assert.deepEqual(out.recorded, {markdownBold: true, entered: 27, perContext: {read: true, setOff: true, restored: true}, sourceAfter: null});
+  // An alert during a paste: the section aborted, a failure of its own.
+  const alerted = pasteVerdict({...steps, pasteAlert: true, typeText: undefined});
+  assert.deepEqual(alerted.failed, ['typeTextPasteRoute', 'typeTextLands', 'noPasteAlert']);
+  // type_text keyed under Korean: a finding with the engine's source, beside the failed expectation.
+  const keyed = pasteVerdict({...steps, typeText: {ok: true, route: "2'", lands: false, sourceAfter: 'com.apple.keylayout.ABC'}});
+  assert.equal(keyed.recorded.sourceAfter, 'com.apple.keylayout.ABC');
+  assert.match(keyed.finding, /type_text keyed \(route 2'\) with Korean 2-Set selected and the per-context preference off; the engine reports no source on the wire, and the probe read com\.apple\.keylayout\.ABC right after/);
+  assert.equal(out.finding, null);
   assert.deepEqual(pasteVerdict({...steps, clipboard: {same: false}}).failed, ['clipboardRestored']);
   assert.deepEqual(pasteVerdict({...steps, typeText: {...steps.typeText, route: "2'"}}).failed, ['typeTextPasteRoute']);
   assert.deepEqual(pasteVerdict({...steps, userInFront: [true, false, true]}).failed, ['userStaysInFront']);
   assert.deepEqual(pasteVerdict({...steps, markdown: {...steps.markdown, bold: false}}).failed, [], 'bold is recorded, not judged');
   assert.deepEqual(pasteVerdict({...steps, text: {ok: false, errorName: 'clipboardReadTimedOut', posted: true}}).failed, ['textLands']);
-  assert.deepEqual(pasteVerdict({...steps, inputSource: {selected: true, restored: false}}).failed, ['inputSourceRestored']);
+  assert.deepEqual(pasteVerdict({...steps, inputSource: {...steps.inputSource, restored: false}}).failed, ['inputSourceRestored']);
   assert.equal(pasteVerdict({}).pass, false);
+});
+
+test('alertCandidates: a system alert owner, a window that names the pasteboard, or a new low-layer window of another process; never the run\'s own', () => {
+  const w = (number, ownerPid, extra = {}) => ({number, ownerPid, ownerName: 'App', ownerBundleId: 'com.example.app', layer: 0, name: null, ...extra});
+  const before = [w(1, 10), w(2, 11, {layer: 25, ownerName: 'Control Center', ownerBundleId: 'com.apple.controlcenter'}), w(3, 600)];
+  const runPids = [600, 700];
+  assert.deepEqual(alertCandidates(before, before, {runPids}), [], 'what was there before is no alert');
+  assert.deepEqual(alertCandidates(before, [...before, w(4, 600), w(5, 700, {layer: 8})], {runPids}), [], 'the run\'s own windows are never alerts');
+  const unc = w(6, 12, {ownerName: 'UserNotificationCenter', ownerBundleId: 'com.apple.UserNotificationCenter', layer: 8});
+  assert.deepEqual(alertCandidates([...before, unc], [...before, unc], {runPids}).map(c => c.number), [6], 'an alert owner is an alert even when it was there before');
+  const named = w(7, 13, {layer: 0, name: 'Allow paste from TextEdit?'});
+  const korean = w(8, 14, {layer: 25, name: '클립보드 접근'});
+  const fresh = w(9, 15, {layer: 3});
+  const menu = w(10, 16, {layer: 101}), status = w(11, 17, {layer: 25});
+  assert.deepEqual(alertCandidates(before, [...before, named, korean, fresh, menu, status], {runPids}).map(c => c.number), [7, 8, 9]);
+  const out = alertCandidates(before, [...before, named], {runPids})[0];
+  assert.deepEqual(Object.keys(out).sort(), ['layer', 'name', 'number', 'ownerBundleId', 'ownerName', 'ownerPid']);
 });
 
 test('inputSourceVerdict: selected, read back as Korean 2-Set, and the owner\'s source and preference restored', () => {

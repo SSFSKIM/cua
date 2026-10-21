@@ -10,7 +10,7 @@ import {join} from 'node:path';
 import {SkyComputerUseError} from '../../src/services/engine/protocol.mjs';
 import {ABC, FIRST_LINE, KOREAN_2SET, PASTE_TARGETS} from '../../scripts/native-matrix/live-checks.mjs';
 import {
-  PASTE, begin, enablementCheck, inputSourceCheck, menuCheck, minimizedCheck, pasteCheck, putBack, restoreInputSource, saveFrontmost, saveInputSource,
+  PASTE, PASTE_DEADLINE_MS, begin, enablementCheck, inputSourceCheck, menuCheck, minimizedCheck, pasteCheck, putBack, restoreInputSource, saveFrontmost, saveInputSource,
 } from '../../scripts/native-matrix/live-device.mjs';
 
 const GOLDEN = JSON.parse(fs.readFileSync(new URL('../native-goldens/textedit/skyshot.json', import.meta.url), 'utf8'));
@@ -288,7 +288,7 @@ function fakeInput({current = ABC, perContext = false, select = id => id, saved}
   }};
 }
 
-test('inputSourceCheck: the owner\'s source and preference saved first, Korean 2-Set selected and read back, ABC restored, the record cleared', async () => {
+test('inputSourceCheck: the owner\'s source and preference saved first, Korean 2-Set selected and read back, ABC restored, the record kept for the put-back to verify', async () => {
   const file = join(scratch(), 'input-source.json');
   const {state, io} = fakeInput();
   io.savedInputSource = file;
@@ -296,7 +296,7 @@ test('inputSourceCheck: the owner\'s source and preference saved first, Korean 2
   assert.equal(out.verdict.pass, true, JSON.stringify(out));
   assert.deepEqual(state.probes, ['input-source current', `input-source ${KOREAN_2SET}`, 'input-source current', 'input-source current', `input-source ${ABC}`, 'input-source current']);
   assert.equal(state.current, ABC);
-  assert.equal(fs.existsSync(file), false, 'a restored record is removed');
+  assert.equal(fs.existsSync(file), true, 'the put-back verifies the restore and removes the record');
   assert.deepEqual(state.writes, [], 'an unchanged preference is never written');
 });
 
@@ -311,7 +311,7 @@ test('inputSourceCheck: a selection that fails is restored all the same; a recor
   assert.ok(out.verdict.failed.includes('selected'));
   assert.equal(state.current, 'com.apple.keylayout.US', 'the dead run\'s saved source is the one restored');
   assert.deepEqual(state.writes, [true]);
-  assert.equal(fs.existsSync(file), false);
+  assert.equal(fs.existsSync(file), true);
 });
 
 test('restoreInputSource: nothing saved is nothing to restore; a restore that does not hold keeps the record', async () => {
@@ -402,24 +402,44 @@ test('putBack: the owner\'s Chrome in front is never activated; a scene app stil
 });
 
 // The paste check's device: a fake probe switching the source the fake engine's type_text reads, a fake clipboard.
-function pasteDevice({clipboardAfter = null, selectKorean = true} = {}) {
+// The screen: the owner's windows (titles included, as a Mac with Screen Recording reads them), plus whatever a test adds.
+const OWNER_WINDOWS = [{ownerPid: 50, ownerName: 'Mail', ownerBundleId: 'com.apple.mail', layer: 0, number: 900, name: 'Inbox — private subject', bounds: {}},
+  {ownerPid: 51, ownerName: 'Dock', ownerBundleId: 'com.apple.dock', layer: 20, number: 901, name: null, bounds: {}}];
+const PRIVACY_ALERT = {ownerPid: 77, ownerName: 'UserNotificationCenter', ownerBundleId: 'com.apple.UserNotificationCenter', layer: 8, number: 950, name: null, bounds: {}};
+function pasteDevice({clipboardAfter = null, selectKorean = true, perContext = false, alertAfter = null} = {}) {
   const file = join(scratch(), 'input-source.json');
-  const {state: input, io: inputIo} = fakeInput({select: id => (id === KOREAN_2SET && !selectKorean ? ABC : id)});
+  const {state: input, io: inputIo} = fakeInput({perContext, select: id => (id === KOREAN_2SET && !selectKorean ? ABC : id)});
   let clipboard = 'owner digest';
-  const io = deviceIo({...inputIo, savedInputSource: file, clipboard: () => clipboard});
-  const client = fakeEngine({source: () => input.current});
+  const screen = {windows: [...OWNER_WINDOWS]};
+  const io = deviceIo({...inputIo, savedInputSource: file, clipboard: () => clipboard, windows: () => structuredClone(screen.windows)});
+  // Under the per-context preference the probe's selection stays in the probe's own context: the engine still reads ABC.
+  const client = fakeEngine({source: () => (input.perContext ? ABC : input.current)});
+  const execute = client.execute.bind(client);
+  client.execute = async (method, args, options) => {
+    if (method === 'get_app_state' && args.app === PRIVACY_ALERT.ownerBundleId) {
+      client.calls.push({method, args, options});
+      return {result: {app: {pid: 77}, nodes: [{role: 'AXStaticText', value: '“cua Engine” would like to paste from “Finder”.'}, {role: 'AXButton', title: 'Allow Paste'},
+        {role: 'AXButton', title: 'Don’t Allow Paste'}], screenshot: null}, engineMs: 1};
+    }
+    const out = await execute(method, args, options);
+    if (method === alertAfter) screen.windows.push(PRIVACY_ALERT);
+    return out;
+  };
   if (clipboardAfter) {
-    const execute = client.execute.bind(client);
-    client.execute = async (method, args, options) => { const out = await execute(method, args, options); if (method === 'paste') clipboard = clipboardAfter; return out; };
+    const inner = client.execute;
+    client.execute = async (method, args, options) => { const out = await inner(method, args, options); if (method === 'paste') clipboard = clipboardAfter; return out; };
   }
-  return {io, client, input, file};
+  return {io, client, input, file, screen};
 }
 
 test('pasteCheck: plain and Markdown pastes replace a selected line behind the user window, type_text pastes under Korean 2-Set, the source and the clipboard are back', async () => {
   const {io, client, input, file} = pasteDevice();
   const out = await pasteCheck({record: TEXTEDIT, user: FINDER, client, io, screenshots: join(scratch(), 'shots')});
   assert.equal(out.verdict.pass, true, JSON.stringify(out));
-  assert.deepEqual(out.verdict.recorded, {markdownBold: true, entered: PASTE.typed.length});
+  assert.deepEqual(out.verdict.recorded, {markdownBold: true, entered: PASTE.typed.length, perContext: {read: false, setOff: false, restored: false}, sourceAfter: KOREAN_2SET});
+  assert.equal(out.steps.pasteAlert, false);
+  // Each paste and the paste-routed type_text carry the bounded deadline.
+  assert.ok(client.calls.filter(c => c.method === 'paste' || c.method === 'type_text').every(c => c.options.deadlineMs === PASTE_DEADLINE_MS));
   const sent = client.calls.filter(c => c.method !== 'get_app_state');
   assert.deepEqual(sent.map(c => c.method), ['select_text', 'paste', 'select_text', 'paste', 'select_text', 'type_text']);
   assert.deepEqual(sent.filter(c => c.method === 'select_text').map(c => c.args.text), PASTE_TARGETS);
@@ -427,9 +447,68 @@ test('pasteCheck: plain and Markdown pastes replace a selected line behind the u
   assert.equal(out.steps.typeText.route, 'paste');
   assert.deepEqual(out.steps.userInFront, [true, true, true]);
   assert.equal(input.current, ABC, 'the owner\'s source is back');
-  assert.equal(fs.existsSync(file), false);
+  assert.equal(fs.existsSync(file), true, 'kept for the put-back to verify');
   assert.deepEqual(out.steps.clipboard, {same: true});
-  assert.doesNotMatch(JSON.stringify(out), /Line 0|owner digest/, 'no document text, no clipboard content');
+  assert.doesNotMatch(JSON.stringify(out), /Line 0|owner digest|private subject|Mail/, 'no document text, no clipboard content, nothing of the owner\'s windows');
+});
+
+test('pasteCheck: a per-context preference read on is turned off for the paste step and restored with the source', async () => {
+  const {io, client, input} = pasteDevice({perContext: true});
+  const out = await pasteCheck({record: TEXTEDIT, user: FINDER, client, io, screenshots: join(scratch(), 'shots')});
+  assert.deepEqual(input.writes, [false, true], 'off before Korean is selected, back on after');
+  assert.deepEqual(out.steps.inputSource.perContext, {read: true, setOff: true, restored: true});
+  assert.equal(input.perContext, true);
+  assert.equal(input.current, ABC);
+  assert.equal(out.steps.typeText.route, 'paste', 'with the preference off the engine sees Korean');
+  const offIndex = input.probes.indexOf(`input-source ${KOREAN_2SET}`);
+  assert.ok(offIndex > 0);
+});
+
+test('pasteCheck: a type_text that still keys is a finding with the source read after it, not a harness failure', async () => {
+  const {io, client} = pasteDevice({selectKorean: false});
+  const out = await pasteCheck({record: TEXTEDIT, user: FINDER, client, io, screenshots: join(scratch(), 'shots')});
+  assert.equal(out.steps.typeText.route, "2'");
+  assert.equal(out.steps.typeText.sourceAfter, ABC);
+  assert.match(out.verdict.finding, /type_text keyed \(route 2'\)/);
+});
+
+test('pasteCheck: a privacy alert after the first paste aborts the section unclicked, records its owner and text, and still restores the source', async () => {
+  const {io, client, input} = pasteDevice({alertAfter: 'paste', perContext: true});
+  const out = await pasteCheck({record: TEXTEDIT, user: FINDER, client, io, screenshots: join(scratch(), 'shots')});
+  assert.equal(out.steps.pasteAlert, true);
+  assert.deepEqual(out.steps.alert.windows, [{ownerPid: 77, ownerName: 'UserNotificationCenter', ownerBundleId: 'com.apple.UserNotificationCenter', layer: 8, number: 950, name: null}]);
+  assert.equal(out.steps.alert.at, 'after text');
+  assert.match(out.steps.alert.text, /would like to paste from/);
+  assert.match(out.problem, /alert/);
+  assert.ok(out.verdict.failed.includes('noPasteAlert'));
+  const sent = client.calls.filter(c => c.method !== 'get_app_state').map(c => c.method);
+  assert.deepEqual(sent, ['select_text', 'paste'], 'nothing after the alert, and never a click');
+  const alertRead = client.calls.find(c => c.method === 'get_app_state' && c.args.app === 'com.apple.UserNotificationCenter');
+  assert.equal(alertRead.args.includeScreenshot, false);
+  assert.equal(input.current, ABC);
+  assert.equal(input.perContext, true, 'the preference was never changed: the section stopped before the switch');
+});
+
+test('pasteCheck: an alert already up before the first paste stops everything before any paste', async () => {
+  const {io, client, screen} = pasteDevice();
+  screen.windows.push(PRIVACY_ALERT);
+  const out = await pasteCheck({record: TEXTEDIT, user: FINDER, client, io, screenshots: join(scratch(), 'shots')});
+  assert.equal(out.steps.alert.at, 'before text');
+  assert.deepEqual(client.calls.filter(c => c.method !== 'get_app_state').map(c => c.method), []);
+});
+
+test('pasteCheck: a paste step that outlives its bound aborts the section; the source is restored', async () => {
+  const {io, client, input} = pasteDevice({perContext: true});
+  const inner = client.execute;
+  client.execute = async (method, args, options) => {
+    if (method === 'type_text') throw Object.assign(new Error('The engine did not answer execute within 25000 ms'), {name: 'SkyComputerUseTransportError'});
+    return inner(method, args, options);
+  };
+  const out = await pasteCheck({record: TEXTEDIT, user: FINDER, client, io, screenshots: join(scratch(), 'shots')});
+  assert.match(out.problem, /did not answer/);
+  assert.equal(out.steps.typeText.ok, false);
+  assert.equal(input.current, ABC);
+  assert.equal(input.perContext, true);
 });
 
 test('pasteCheck: a clipboard left changed and a type_text that keyed fail their expectations; the source is restored all the same', async () => {

@@ -42,8 +42,11 @@
 //                 vendor action and an activation watcher around every lane; the setting verdict names which switch
 //                 setting works, so the default is set from the result.
 //   paste         M2a.3 on the run's TextEdit behind the run's Finder window: a plain and a Markdown paste, each over a
-//                 selected line, and type_text under Korean 2-Set (the paste route), each read back; the user window in
-//                 front throughout; the owner's source restored and the owner's clipboard's type list unchanged.
+//                 selected line, and type_text under Korean 2-Set (the paste route; the per-context input preference
+//                 turned off for it when it read on), each read back; the user window in front throughout; a system
+//                 alert (a pasteboard-privacy prompt) before or after any step aborts the section unclicked, its owner and
+//                 text recorded; the owner's source and preference restored (the put-back verifies them) and the
+//                 owner's clipboard's type list unchanged.
 //   input-source  `--probe input-source` through the approved bundle: the owner's source and per-context preference
 //                 saved, Korean 2-Set selected, read back by a second probe, both restored (and again by put-back).
 //   enablement    the run's Chrome for Testing observed by one connection, which closes, then by a second: released when
@@ -267,7 +270,7 @@ export const DRY_ANSWERS = Object.freeze({
   'live-device.mjs begin': {refusals: [], checkout: {dirty: false}, engine: {build: '(the approved build)'}, frontmost: {bundleId: 'com.apple.Terminal'}, engineStop: {wasRunning: false}},
   'live-device.mjs minimized': {steps: {}, verdict: {pass: true}},
   'live-device.mjs menu': {menuActivation: false, items: {selectAll: {found: true, enabled: true, effect: true}, bold: {found: true, enabled: true, effect: true}}, activations: []},
-  'live-device.mjs paste': {steps: {}, verdict: {pass: true}},
+  'live-device.mjs paste': {steps: {pasteAlert: false, inputSource: {perContext: {read: true, setOff: true, restored: true}, selected: true, restored: true}}, verdict: {pass: true, finding: null}},
   'live-device.mjs enablement': {verdict: {released: true}},
   'live-device.mjs input-source': {verdict: {pass: true}},
   'live-device.mjs putback': {plan: [], steps: {}, ok: true},

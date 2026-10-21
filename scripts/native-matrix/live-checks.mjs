@@ -67,6 +67,26 @@ export function failureOf(error) {
     ...(meta?.activationGuardMs != null ? {activationGuardMs: meta.activationGuardMs} : {})};
 }
 
+// ---- System alerts (the paste check) -------------------------------------------------------------------------------
+
+// The processes that show system alerts (by bundle id; owner names are localized), the words an alert about the
+// pasteboard carries in a title, and the layer below which a new window of another process counts as one (the Dock,
+// the menu bar, status items and menus sit at 20 and above).
+const ALERT_BUNDLES = Object.freeze(['com.apple.UserNotificationCenter', 'com.apple.coreservices.uiagent', 'com.apple.SecurityAgent', 'com.apple.universalAccessAuthWarn']);
+const ALERT_NAMES = Object.freeze(['UserNotificationCenter', 'CoreServicesUIAgent', 'SecurityAgent', 'universalAccessAuthWarn']);
+const ALERT_WORDS = /paste|pasteboard|clipboard|붙여넣|클립보드/i;
+const ALERT_LAYER_BELOW = 20;
+// The windows of `now` (./system-windows.swift) that may be a system alert, given the windows of `before`: a window of
+// an alert process (there before or not), one whose title names the pasteboard, or a new window of another process
+// below the menu and Dock layers; never a window of the run's own processes. -> [{ownerPid, ownerName, ownerBundleId,
+// layer, number, name}], no bounds; the caller keeps nothing else of the screen.
+export function alertCandidates(before, now, {runPids}) {
+  const known = new Set((before ?? []).map(w => w.number));
+  return (now ?? []).filter(w => !runPids.includes(w.ownerPid) && (ALERT_BUNDLES.includes(w.ownerBundleId) || ALERT_NAMES.includes(w.ownerName)
+    || ALERT_WORDS.test(w.name ?? '') || (!known.has(w.number) && w.layer >= 0 && w.layer < ALERT_LAYER_BELOW)))
+    .map(({ownerPid, ownerName, ownerBundleId, layer, number, name}) => ({ownerPid, ownerName: ownerName ?? null, ownerBundleId: ownerBundleId ?? null, layer, number, name: name ?? null}));
+}
+
 // ---- The vendor's text (each function self-contained: a cell embeds it by its source) -------------------------------
 
 // The index of the menu-bar item `title`: a line of that bare title under the `menu bar` element.
@@ -193,9 +213,11 @@ export function menuSettingVerdict(off, on) {
 // The paste check (M2a.3 live, on the integrated wire once m2a/paste lands): a plain and a Markdown paste into the run's
 // TextEdit behind the run's Finder window, each landing where a selection was; type_text under Korean 2-Set taking the
 // paste route and landing; the user window in front after each; the owner's clipboard as it was (the engine restores it
-// only while nobody else wrote it); the input source restored. Bold Markdown and `entered` are recorded, not judged.
+// only while nobody else wrote it); the input source restored; no system alert during it (a pasteboard-privacy prompt
+// aborts the section). Bold Markdown, `entered`, the per-context preference read and restored, and the source read
+// after type_text are recorded, not judged; a type_text that keyed is a finding.
 export function pasteVerdict(steps) {
-  const {userInFront, text, markdown, typeText, inputSource, clipboard} = steps ?? {};
+  const {userInFront, text, markdown, typeText, inputSource, pasteAlert, clipboard} = steps ?? {};
   const expectations = {
     textLands: text?.ok === true && text.route === 'paste' && text.lands === true,
     markdownLands: markdown?.ok === true && markdown.route === 'paste' && markdown.lands === true,
@@ -203,10 +225,16 @@ export function pasteVerdict(steps) {
     typeTextLands: typeText?.ok === true && typeText.lands === true,
     userStaysInFront: Array.isArray(userInFront) && userInFront.length > 0 && userInFront.every(Boolean),
     inputSourceRestored: inputSource?.restored === true,
+    noPasteAlert: pasteAlert === false,
     clipboardRestored: clipboard?.same === true,
   };
   const failed = Object.keys(expectations).filter(key => !expectations[key]);
-  return {pass: failed.length === 0, failed, recorded: {markdownBold: markdown?.bold ?? null, entered: typeText?.entered ?? null}};
+  // type_text keyed where it should have pasted: a finding about what the engine read, not a harness failure.
+  const finding = typeText?.ok === true && typeText.route !== 'paste'
+    ? `type_text keyed (route ${typeText.route}) with Korean 2-Set selected and the per-context preference off; the engine reports no source on the wire, and the probe read ${typeText.sourceAfter ?? 'nothing'} right after`
+    : null;
+  return {pass: failed.length === 0, failed, finding,
+    recorded: {markdownBold: markdown?.bold ?? null, entered: typeText?.entered ?? null, perContext: inputSource?.perContext ?? null, sourceAfter: typeText?.sourceAfter ?? null}};
 }
 
 // The engine's enablement diagnostics on one observation (its `timings`, M2a.4): `enablementPrior` what the attribute

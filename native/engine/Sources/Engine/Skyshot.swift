@@ -8,8 +8,22 @@ import Foundation
 // items (Walk.swift) and returns a `Skyshot` JSON tree; rendering to the model's text is the service's. `timings`
 // carries the per-phase durations and counts the M0 spike measures; the request's switches choose what it prices.
 
-/// How long an app that is launching is waited for.
+/// How long an app the observation opened (launched, or reopened with no primary window) is waited for: the vendor's
+/// `waitUntilHasPrimaryWindow` 0x1006fbdf0, 5.0 s at 0x100164ae8, polled every 50 ms.
 let launchWindowWaitMs: Int64 = 5_000
+
+/// What the observation's preparation sends before reading, the vendor's (0x10014c494 → 0x10014c4f0, the open helper
+/// 0x100164860 → 0x1001648c4): a launch for an app that is not running, and a non-activating reopen for a running app
+/// with no primary window, which some apps (TextEdit, Finder) answer by opening a window. The vendor reopens an app
+/// whose primary window is minimized too; cua does not, since the reopen un-minimizes the owner's window (Decision
+/// Log, M1b.5).
+enum PreparationOpen: Equatable { case launch, reopen }
+
+func preparationOpen(isRunning: Bool, hasPrimaryWindow: Bool, minimized: Bool) -> PreparationOpen? {
+  if !isRunning { return .launch }
+  if !hasPrimaryWindow { return .reopen }
+  return nil
+}
 
 /// Per-phase timings, counts and labels of one observation, returned as `Skyshot.timings`.
 struct Timings {
@@ -97,14 +111,22 @@ extension Engine {
     let webAreaWaitEnabled = args["webAreaWait"] as? Bool ?? true
 
     var app = try timings.time("resolve") { try resolveApp(args) }
-    var launched = false
-    if !app.isRunning {
+    var opened = false
+    let existing = app.pid.map { prepare(AXUIElementCreateApplication($0)) }
+    switch preparationOpen(isRunning: app.isRunning, hasPrimaryWindow: existing.flatMap(primaryWindow(of:)) != nil, minimized: false) {
+    case .launch?:
       let running = try timings.time("launch") { try apps.launch(app, deadline: min(context.deadline, unixMilliseconds() + launchWindowWaitMs)) }
       app = ResolvedApp(appPath: app.appPath, bundleIdentifier: running.bundleIdentifier ?? app.bundleIdentifier, displayName: running.localizedName ?? app.displayName, running: running)
-      launched = true
+      opened = true
+    case .reopen?:
+      _ = try timings.time("reopen") { try apps.launch(app, deadline: min(context.deadline, unixMilliseconds() + launchWindowWaitMs)) }
+      timings.set("reopened", true)
+      opened = true
+    case nil:
+      break
     }
     let appPid = app.pid!
-    let application = prepare(AXUIElementCreateApplication(appPid))
+    let application = existing ?? prepare(AXUIElementCreateApplication(appPid))
     let connection = context.connection
     let webShaped = webAccessibility.isWebShaped(app.appPath)
     timings.set("webShaped", webShaped)
@@ -144,8 +166,8 @@ extension Engine {
       enabledNow = true
     }
 
-    let windowDeadline = launched ? min(context.deadline, unixMilliseconds() + launchWindowWaitMs) : unixMilliseconds()
-    guard let window = try timings.time("window", { try awaitPrimaryWindow(of: application, until: windowDeadline, launched: launched) }) else {
+    let windowDeadline = opened ? min(context.deadline, unixMilliseconds() + launchWindowWaitMs) : unixMilliseconds()
+    guard let window = try timings.time("window", { try awaitPrimaryWindow(of: application, until: windowDeadline, opened: opened) }) else {
       throw EngineError(name: "noWindowsAvailable", "noWindowsAvailable")
     }
     // The wait follows any enabling (the named bundles' too) and every Chromium window.
@@ -296,15 +318,17 @@ extension Engine {
                        desktopLevel: server.desktopLevel, ownerIsFinder: ownerIsFinder)
   }
 
-  /// The app's primary window; for an app just launched, polled until `deadline`.
-  func awaitPrimaryWindow(of application: AXUIElement, until deadline: Int64, launched: Bool) throws -> AXUIElement? {
-    while true {
-      if let window = primaryWindow(of: application) { return window }
-      if unixMilliseconds() >= deadline {
-        if launched { throw EngineError(name: "timeoutReached", "timeoutReached") }
-        return nil
-      }
-      usleep(50_000)
+}
+
+/// The primary window, polled every 50 ms until `deadline` (Unix ms); past it, `timeoutReached` for an app the
+/// observation opened (the vendor's wait throws it, 0x1006fbf70), else nil (`noWindowsAvailable` at the caller).
+func awaitPrimaryWindow(of application: AXUIElement, until deadline: Int64, opened: Bool) throws -> AXUIElement? {
+  while true {
+    if let window = primaryWindow(of: application) { return window }
+    if unixMilliseconds() >= deadline {
+      if opened { throw EngineError(name: "timeoutReached", "timeoutReached") }
+      return nil
     }
+    usleep(50_000)
   }
 }

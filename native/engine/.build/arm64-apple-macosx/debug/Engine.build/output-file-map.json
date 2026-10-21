@@ -1,0 +1,201 @@
+{
+  "": {
+    "swift-dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/primary.swiftdeps"
+  },
+  "/Users/new/Developer/GitHub/cua-117/native/engine/Sources/Engine/AX.swift": {
+    "dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/AX.d",
+    "object": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/AX.swift.o",
+    "swiftmodule": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/AX~partial.swiftmodule",
+    "swift-dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/AX.swiftdeps",
+    "diagnostics": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/AX.dia"
+  },
+  "/Users/new/Developer/GitHub/cua-117/native/engine/Sources/Engine/Activation.swift": {
+    "dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Activation.d",
+    "object": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Activation.swift.o",
+    "swiftmodule": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Activation~partial.swiftmodule",
+    "swift-dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Activation.swiftdeps",
+    "diagnostics": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Activation.dia"
+  },
+  "/Users/new/Developer/GitHub/cua-117/native/engine/Sources/Engine/Apps.swift": {
+    "dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Apps.d",
+    "object": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Apps.swift.o",
+    "swiftmodule": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Apps~partial.swiftmodule",
+    "swift-dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Apps.swiftdeps",
+    "diagnostics": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Apps.dia"
+  },
+  "/Users/new/Developer/GitHub/cua-117/native/engine/Sources/Engine/Config.swift": {
+    "dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Config.d",
+    "object": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Config.swift.o",
+    "swiftmodule": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Config~partial.swiftmodule",
+    "swift-dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Config.swiftdeps",
+    "diagnostics": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Config.dia"
+  },
+  "/Users/new/Developer/GitHub/cua-117/native/engine/Sources/Engine/Derivations.swift": {
+    "dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Derivations.d",
+    "object": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Derivations.swift.o",
+    "swiftmodule": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Derivations~partial.swiftmodule",
+    "swift-dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Derivations.swiftdeps",
+    "diagnostics": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Derivations.dia"
+  },
+  "/Users/new/Developer/GitHub/cua-117/native/engine/Sources/Engine/Enablement.swift": {
+    "dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Enablement.d",
+    "object": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Enablement.swift.o",
+    "swiftmodule": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Enablement~partial.swiftmodule",
+    "swift-dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Enablement.swiftdeps",
+    "diagnostics": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Enablement.dia"
+  },
+  "/Users/new/Developer/GitHub/cua-117/native/engine/Sources/Engine/Fetch.swift": {
+    "dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Fetch.d",
+    "object": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Fetch.swift.o",
+    "swiftmodule": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Fetch~partial.swiftmodule",
+    "swift-dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Fetch.swiftdeps",
+    "diagnostics": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Fetch.dia"
+  },
+  "/Users/new/Developer/GitHub/cua-117/native/engine/Sources/Engine/Input.swift": {
+    "dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Input.d",
+    "object": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Input.swift.o",
+    "swiftmodule": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Input~partial.swiftmodule",
+    "swift-dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Input.swiftdeps",
+    "diagnostics": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Input.dia"
+  },
+  "/Users/new/Developer/GitHub/cua-117/native/engine/Sources/Engine/Keyboard.swift": {
+    "dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Keyboard.d",
+    "object": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Keyboard.swift.o",
+    "swiftmodule": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Keyboard~partial.swiftmodule",
+    "swift-dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Keyboard.swiftdeps",
+    "diagnostics": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Keyboard.dia"
+  },
+  "/Users/new/Developer/GitHub/cua-117/native/engine/Sources/Engine/Lifecycle.swift": {
+    "dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Lifecycle.d",
+    "object": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Lifecycle.swift.o",
+    "swiftmodule": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Lifecycle~partial.swiftmodule",
+    "swift-dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Lifecycle.swiftdeps",
+    "diagnostics": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Lifecycle.dia"
+  },
+  "/Users/new/Developer/GitHub/cua-117/native/engine/Sources/Engine/Lineage.swift": {
+    "dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Lineage.d",
+    "object": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Lineage.swift.o",
+    "swiftmodule": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Lineage~partial.swiftmodule",
+    "swift-dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Lineage.swiftdeps",
+    "diagnostics": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Lineage.dia"
+  },
+  "/Users/new/Developer/GitHub/cua-117/native/engine/Sources/Engine/Methods.swift": {
+    "dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Methods.d",
+    "object": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Methods.swift.o",
+    "swiftmodule": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Methods~partial.swiftmodule",
+    "swift-dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Methods.swiftdeps",
+    "diagnostics": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Methods.dia"
+  },
+  "/Users/new/Developer/GitHub/cua-117/native/engine/Sources/Engine/Monitor.swift": {
+    "dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Monitor.d",
+    "object": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Monitor.swift.o",
+    "swiftmodule": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Monitor~partial.swiftmodule",
+    "swift-dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Monitor.swiftdeps",
+    "diagnostics": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Monitor.dia"
+  },
+  "/Users/new/Developer/GitHub/cua-117/native/engine/Sources/Engine/Mouse.swift": {
+    "dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Mouse.d",
+    "object": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Mouse.swift.o",
+    "swiftmodule": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Mouse~partial.swiftmodule",
+    "swift-dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Mouse.swiftdeps",
+    "diagnostics": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Mouse.dia"
+  },
+  "/Users/new/Developer/GitHub/cua-117/native/engine/Sources/Engine/OwnerPolicy.swift": {
+    "dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/OwnerPolicy.d",
+    "object": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/OwnerPolicy.swift.o",
+    "swiftmodule": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/OwnerPolicy~partial.swiftmodule",
+    "swift-dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/OwnerPolicy.swiftdeps",
+    "diagnostics": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/OwnerPolicy.dia"
+  },
+  "/Users/new/Developer/GitHub/cua-117/native/engine/Sources/Engine/Policy.generated.swift": {
+    "dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Policy.generated.d",
+    "object": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Policy.generated.swift.o",
+    "swiftmodule": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Policy.generated~partial.swiftmodule",
+    "swift-dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Policy.generated.swiftdeps",
+    "diagnostics": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Policy.generated.dia"
+  },
+  "/Users/new/Developer/GitHub/cua-117/native/engine/Sources/Engine/Probe.swift": {
+    "dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Probe.d",
+    "object": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Probe.swift.o",
+    "swiftmodule": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Probe~partial.swiftmodule",
+    "swift-dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Probe.swiftdeps",
+    "diagnostics": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Probe.dia"
+  },
+  "/Users/new/Developer/GitHub/cua-117/native/engine/Sources/Engine/Protocol.swift": {
+    "dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Protocol.d",
+    "object": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Protocol.swift.o",
+    "swiftmodule": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Protocol~partial.swiftmodule",
+    "swift-dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Protocol.swiftdeps",
+    "diagnostics": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Protocol.dia"
+  },
+  "/Users/new/Developer/GitHub/cua-117/native/engine/Sources/Engine/Routes.swift": {
+    "dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Routes.d",
+    "object": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Routes.swift.o",
+    "swiftmodule": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Routes~partial.swiftmodule",
+    "swift-dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Routes.swiftdeps",
+    "diagnostics": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Routes.dia"
+  },
+  "/Users/new/Developer/GitHub/cua-117/native/engine/Sources/Engine/Screenshot.swift": {
+    "dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Screenshot.d",
+    "object": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Screenshot.swift.o",
+    "swiftmodule": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Screenshot~partial.swiftmodule",
+    "swift-dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Screenshot.swiftdeps",
+    "diagnostics": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Screenshot.dia"
+  },
+  "/Users/new/Developer/GitHub/cua-117/native/engine/Sources/Engine/Server.swift": {
+    "dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Server.d",
+    "object": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Server.swift.o",
+    "swiftmodule": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Server~partial.swiftmodule",
+    "swift-dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Server.swiftdeps",
+    "diagnostics": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Server.dia"
+  },
+  "/Users/new/Developer/GitHub/cua-117/native/engine/Sources/Engine/Settle.swift": {
+    "dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Settle.d",
+    "object": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Settle.swift.o",
+    "swiftmodule": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Settle~partial.swiftmodule",
+    "swift-dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Settle.swiftdeps",
+    "diagnostics": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Settle.dia"
+  },
+  "/Users/new/Developer/GitHub/cua-117/native/engine/Sources/Engine/Skyshot.swift": {
+    "dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Skyshot.d",
+    "object": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Skyshot.swift.o",
+    "swiftmodule": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Skyshot~partial.swiftmodule",
+    "swift-dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Skyshot.swiftdeps",
+    "diagnostics": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Skyshot.dia"
+  },
+  "/Users/new/Developer/GitHub/cua-117/native/engine/Sources/Engine/SpikeProbe.swift": {
+    "dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/SpikeProbe.d",
+    "object": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/SpikeProbe.swift.o",
+    "swiftmodule": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/SpikeProbe~partial.swiftmodule",
+    "swift-dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/SpikeProbe.swiftdeps",
+    "diagnostics": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/SpikeProbe.dia"
+  },
+  "/Users/new/Developer/GitHub/cua-117/native/engine/Sources/Engine/Tap.swift": {
+    "dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Tap.d",
+    "object": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Tap.swift.o",
+    "swiftmodule": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Tap~partial.swiftmodule",
+    "swift-dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Tap.swiftdeps",
+    "diagnostics": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Tap.dia"
+  },
+  "/Users/new/Developer/GitHub/cua-117/native/engine/Sources/Engine/Version.swift": {
+    "dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Version.d",
+    "object": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Version.swift.o",
+    "swiftmodule": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Version~partial.swiftmodule",
+    "swift-dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Version.swiftdeps",
+    "diagnostics": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Version.dia"
+  },
+  "/Users/new/Developer/GitHub/cua-117/native/engine/Sources/Engine/Walk.swift": {
+    "dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Walk.d",
+    "object": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Walk.swift.o",
+    "swiftmodule": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Walk~partial.swiftmodule",
+    "swift-dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Walk.swiftdeps",
+    "diagnostics": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/Walk.dia"
+  },
+  "/Users/new/Developer/GitHub/cua-117/native/engine/Sources/Engine/main.swift": {
+    "dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/main.d",
+    "object": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/main.swift.o",
+    "swiftmodule": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/main~partial.swiftmodule",
+    "swift-dependencies": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/main.swiftdeps",
+    "diagnostics": "/Users/new/Developer/GitHub/cua-117/native/engine/.build/arm64-apple-macosx/debug/Engine.build/main.dia"
+  }
+}

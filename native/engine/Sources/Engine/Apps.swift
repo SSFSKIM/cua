@@ -227,11 +227,13 @@ final class AppDirectory: @unchecked Sendable {
     return rows
   }
 
-  /// Launches a resolved app that is not running, without activating it, and returns its process; a launch that does
-  /// not finish by `deadline` (Unix ms) is `timeoutReached`, as the vendor's.
+  /// Opens a resolved app without activating it and returns its process: a launch when it is not running, a reopen when
+  /// it is (the vendor's open helper 0x1001648c4: `activates = false`, `allowsRunningApplicationSubstitution = false`).
+  /// An open that does not finish by `deadline` (Unix ms) is `timeoutReached`, as the vendor's.
   func launch(_ app: ResolvedApp, deadline: Int64) throws -> NSRunningApplication {
     let configuration = NSWorkspace.OpenConfiguration()
     configuration.activates = false
+    configuration.allowsRunningApplicationSubstitution = false
     configuration.addsToRecentItems = false
     configuration.promptsUserIfNeeded = false
     let box = Box<Result<NSRunningApplication, Error>>()

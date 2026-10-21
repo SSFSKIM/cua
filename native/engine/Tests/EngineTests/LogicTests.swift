@@ -239,3 +239,41 @@ final class FetchDecodeTests: XCTestCase {
     XCTAssertEqual(positionRanges([]), [])
   }
 }
+
+// The observation's preparation (M1b.5, the vendor's 0x10014c494 → 0x10014c4f0): what it opens before reading, and the
+// window wait that follows an open.
+final class PreparationOpenTests: XCTestCase {
+  func testAnAppThatIsNotRunningIsLaunched() {
+    XCTAssertEqual(preparationOpen(isRunning: false, hasPrimaryWindow: false, minimized: false), .launch)
+  }
+
+  func testARunningAppWithNoPrimaryWindowIsReopened() {
+    XCTAssertEqual(preparationOpen(isRunning: true, hasPrimaryWindow: false, minimized: false), .reopen)
+  }
+
+  func testARunningAppWithAPrimaryWindowIsNotOpenedAgain() {
+    XCTAssertNil(preparationOpen(isRunning: true, hasPrimaryWindow: true, minimized: false))
+  }
+
+  // The vendor reopens here; cua does not, since the reopen would un-minimize the owner's window (Decision Log, M1b.5).
+  func testAMinimizedPrimaryWindowIsNotReopened() {
+    XCTAssertNil(preparationOpen(isRunning: true, hasPrimaryWindow: true, minimized: true))
+  }
+
+  // A pid with no process: no window ever appears.
+  private let windowless = AXUIElementCreateApplication(pid_t(Int32.max - 7))
+
+  func testAnOpenedAppWithNoWindowByTheDeadlineIsTimeoutReached() {
+    let started = unixMilliseconds()
+    XCTAssertThrowsError(try awaitPrimaryWindow(of: windowless, until: started + 150, opened: true)) { error in
+      XCTAssertEqual((error as? EngineError)?.errorName, "timeoutReached")
+    }
+    XCTAssertGreaterThanOrEqual(unixMilliseconds() - started, 150)
+  }
+
+  func testAnAppTheObservationDidNotOpenIsNotWaitedFor() throws {
+    let started = unixMilliseconds()
+    XCTAssertNil(try awaitPrimaryWindow(of: windowless, until: started, opened: false))
+    XCTAssertLessThan(unixMilliseconds() - started, 100)
+  }
+}

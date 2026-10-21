@@ -49,3 +49,13 @@ test('a full tree numbered with gaps (a default-mode fallback keeps the lineage\
   assert.deepEqual(compare(value, value).differences, []);
   assert.deepEqual(compare(value, value).lines, 3);
 });
+
+test('a line that may be a value\'s continuation is never renumbered away: it is compared with its number', () => {
+  const doc = (line, after = 3) => `Window: "w", App: A.\n0 standard window w\n\t1 text area, Value: first\n${line}\nLine 02\n\t${after} button After\n51 menu bar\n`;
+  // An untabbed line after the first (a root, or a value's line) and a line after a value's line keep their numbers.
+  assert.notDeepEqual(kinds(compare(doc('200 apples'), doc('300 apples'))), []);
+  assert.deepEqual(kinds(compare(doc('200 apples'), doc('200 apples'))), []);
+  assert.notDeepEqual(kinds(compare(doc('Line 01', 3), doc('Line 01', 4))), [], 'the element after a value, renumbered, is reported');
+  assert.deepEqual(kinds(compare(doc('Line 01'), doc('Line 01'))), []);
+  assert.notDeepEqual(kinds(compare(doc('Line 01').replace('51 menu bar', '50 menu bar'), doc('Line 01'))), [], 'a second root keeps its number');
+});

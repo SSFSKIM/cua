@@ -130,6 +130,20 @@ test('the observation right after the action is compared in the form it came in:
   assert.deepEqual(mixed.differences.map(d => [d.scene, d.golden, d.kind, d.vendor, d.cua]), [['chrome', 'diff', 'form', 'diff', 'full']]);
 });
 
+test('a numeric line inside a multi-line value is compared with its number: a changed number is never renumbered away', () => {
+  // TextEdit's document is the text entry area's value, its lines raw continuation lines (textedit/vendor.txt).
+  const vendor = laneTexts('vendor'), cua = laneTexts('cua');
+  assert.match(vendor.textedit.full, /\nLine 01\n/);
+  vendor.textedit.full = vendor.textedit.full.replace('\nLine 01\n', '\n200 apples\n');
+  cua.textedit.full = cua.textedit.full.replace('\nLine 01\n', '\n300 apples\n');
+  const report = diffNativeMac(...pair({vendor: {texts: vendor}, cua: {texts: cua}}), {declarations});
+  assert.notEqual(report.summary, '0 unexpected differences');
+  assert.ok(report.differences.length > 0 && report.differences.every(d => d.scene === 'textedit' && d.golden === 'full'), JSON.stringify(report.differences.map(d => [d.scene, d.golden, d.kind])));
+  // The same number on both sides is the same text.
+  cua.textedit.full = cua.textedit.full.replace('\n300 apples\n', '\n200 apples\n');
+  assert.equal(diffNativeMac(...pair({vendor: {texts: vendor}, cua: {texts: cua}}), {declarations}).summary, '0 unexpected differences');
+});
+
 test('a cell one lane did not answer is a difference, and the goldens it feeds are not compared', () => {
   const texts = laneTexts('cua');
   delete texts.finder.before; delete texts.finder.diff; delete texts.finder.later;

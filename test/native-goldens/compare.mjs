@@ -27,20 +27,32 @@ const TRAILER = /^(The focused UI element is |Selected:$|Selected text: ```$)/;
 // What differs between the lanes without being a rendering: each lane served the Chrome scene's page on its own port.
 const DRIFT = [[/127\.0\.0\.1:\d+/g, '127.0.0.1:⟨port⟩']];
 
-// A text as {header, items: [{mark, depth, index, rest}], trailer: {kind, items, text} | null, removed: [id] | null,
-// unparsed: [line]}. An item's `rest` is its line after the index, with any continuation lines of a multi-line value;
-// `unparsed` holds the lines before the first element line that are none of the text's kind (a full tree read as a
-// diff, say), which a comparison reports rather than drops.
+// A text as {header, items: [{mark, depth, index, rest, literal}], trailer: {kind, items, text} | null, removed: [id] |
+// null, unparsed: [line]}. An item's `rest` is its line after the index, with any continuation lines of a multi-line
+// value; `unparsed` holds the lines before the first element line that are none of the text's kind (a full tree read as
+// a diff, say), which a comparison reports rather than drops.
+//
+// Where an element line ends and a value's continuation begins: the renderer prints a value raw (its newlines included,
+// long and multi-line parts last; src/services/engine/render.mjs parts), so a continuation line can look like an element
+// line and the grammar cannot always tell them apart. A full tree's element line opens at depth 0 first, then at most
+// one below the last element's, with an index not seen yet (indexes need not run from 0 without gaps: a default-mode
+// fallback keeps the lineage's surviving ones); any other line is a continuation. Of the element lines, two kinds may
+// still be a value's line, and are `literal`: compared with their index, which is never renumbered away, so a value's
+// numeric line is never matched away: the index of a literal line must be the vendor's shifted by exactly the
+// renumbering in force where it stands (the offset of the nearest matched pair before it whose lines are both element
+// lines beyond doubt; none, no shift), so a renumbered element there still matches and a value's number that changed
+// is a difference. These lines are
+//   - an untabbed line after the first: the tree's further roots (the menu bar) are untabbed, and so is a value's
+//     plain line;
+//   - a line right after a continuation line: inside a multi-line value, any line may be the value's.
+// In a diff (marked `~` or `+` lines, in no depth order) the second applies.
 export function parse(text, {kind}) {
   const lines = text.replace(/\n$/, '').split('\n');
   const header = lines.shift();
   const items = [];
   const out = {header, items, trailer: null, removed: null, unparsed: []};
-  // A full tree's element line opens at depth 0 or at most one below the last element's, with an index not seen yet;
-  // indexes need not run from 0 without gaps (a default-mode fallback keeps the lineage's surviving ones). Any other
-  // line continues the last element's value. A value line shaped like an element line is read the same way on both
-  // sides, so it can only cost a reported difference, never hide one.
   const seen = new Set();
+  let inValue = false;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     if (TRAILER.test(line) && (i === 0 || lines[i - 1] === '' || kind === 'diff')) {
@@ -52,11 +64,15 @@ export function parse(text, {kind}) {
     const removed = /^Removed element IDs: (.*)$/.exec(line);
     if (removed && kind === 'diff') { out.removed = expandRanges(removed[1]); continue; }
     const match = (kind === 'diff' ? /^([~+])(\t*)(\d+) (.*)$/ : /^()(\t*)(\d+) (.*)$/).exec(line);
-    if (match && (kind === 'diff' || (match[2].length <= (items.length ? items.at(-1).depth + 1 : 0) && !seen.has(Number(match[3]))))) {
-      seen.add(Number(match[3]));
-      items.push({mark: match[1], depth: match[2].length, index: Number(match[3]), rest: match[4]});
+    const depth = match?.[2].length, index = Number(match?.[3]);
+    if (match && (kind === 'diff' || (depth <= (items.length ? items.at(-1).depth + 1 : 0) && !seen.has(index)))) {
+      const literal = items.length > 0 && (inValue || (kind !== 'diff' && depth === 0));
+      seen.add(index);
+      items.push({mark: match[1], depth, index, rest: match[4], literal});
+      inValue = false;
     } else if (items.length) {
       items.at(-1).rest += `\n${line}`;   // a multi-line value's continuation
+      inValue = true;
     } else {
       out.unparsed.push(line);
     }
@@ -190,6 +206,14 @@ export function compare(vendorText, cuaText, {kind = 'full', structural = false,
   });
 
   const parts = declared.filter(rule => rule.kind === 'part'), subsets = declared.filter(rule => rule.kind === 'subsetCount');
+  // A literal line's index: the vendor's, shifted by the renumbering in force where it stands (see parse).
+  let offset = 0;
+  for (const [i, j] of pairs) {
+    const v = vendor.items[i], c = cua.items[j];
+    if (!v.literal && !c.literal) offset = c.index - v.index;
+    else if (c.index - v.index !== offset) differences.push({kind: 'literalIndex', line: v.rest, vendor: v.index, cua: c.index, offset});
+  }
+
   for (const [i, j] of pairs) {
     const v = vendor.items[i], c = cua.items[j];
     if (v.depth !== c.depth) differences.push({kind: 'depth', line: v.rest, vendor: v.depth, cua: c.depth});

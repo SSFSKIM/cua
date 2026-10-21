@@ -20,8 +20,13 @@
 //   recorded beside it.
 // - Launch rows (section 'launch'): the launch worked (`ok`) judged as a background method row is, apart from their
 //   interference: a valid cua sample that did not launch is worse, none valid is no verdict.
-// - Any other section (concurrent use, intervention, Unicode, settle, residue): each cell's verdict per engine as its
-//   rows give it (./cell-result.mjs verdictOf), listed.
+// - The probe cells (sections 'concurrent' and 'intervention', ./probe-run.mjs) and the Korean and Unicode matrix
+//   ('unicode', ./unicode-run.mjs), rows of every full run: each judged against its own outcome as a background method
+//   row is (the cell's rule, not the vendor's result, is the reference; the vendor's is recorded beside it): a valid
+//   cua sample that failed blocks, none valid is no verdict; a declared Unicode row is the owner's to read, and a
+//   declaration of the expected file no full run needed is named for the owner.
+// - Any other cell (the settle cell, M2a's residue): each cell's verdict per engine as its rows give it
+//   (./cell-result.mjs verdictOf), listed.
 //
 // What counts (the proof): only the whole matrix's results (cell 'matrix', meta.planId 'full') feed the tables; a
 // narrowed matrix cell (`cell method --scene …`) is listed and not counted. The full runs must form one sitting: at
@@ -39,13 +44,16 @@ import {SCENES} from '../repl-parity/scenes-mac.mjs';
 import {readCellResults} from './cell-result.mjs';
 import {CASES, caseId, ENGINE_METHOD, METHODS, NOT_APPLICABLE, OWNER_OPTIONS, SCENE_OF, TARGETS} from './plan.mjs';
 import {MATRIX_CELLS} from './registry.mjs';
+import {probeRowsOf} from './probe-run.mjs';
 import {FULL_PLAN} from './run.mjs';
+import {CONDITIONS, readDeclarations, UNICODE_FIELDS, unicodeRowsOf} from './unicode-plan.mjs';
 
 export const BEAT = 0.9;
 export const RUNS_PER_SIDE = 3;
 export const SPEED_OPS = Object.freeze(['getAXState', 'getScreenshot', 'listApps']);
 const SCENE_IDS = ['textedit', 'finder', 'chrome', 'electron'];
 const round = n => (n === null || n === undefined ? null : Math.round(n * 10) / 10);
+const SECTION_NAMES = {concurrent: 'concurrent use', intervention: 'intervention', unicode: 'unicode'};
 
 // Every CellResult under `dirs`, with what keeps any of them from being read. -> {results: [{path, result}], problems}.
 export function readResults(dirs) {
@@ -58,7 +66,8 @@ export function readResults(dirs) {
 }
 
 // Every row one full matrix run must hold (FULL_PLAN): the method cases of both regimes, the speed ops of every scene
-// (`samples` each), the finding rows of every scene (its ten targets, the lines and the ID count) and the launch rows.
+// (`samples` each), the finding rows of every scene (its ten targets, the lines and the ID count), the launch rows, the
+// probe cells' rows and the Unicode matrix's.
 // `run` is the run's number (meta.run), the sample of its method, finding and launch rows. -> [{section, id, sample}].
 export function manifestOf({run, samples}, plan = FULL_PLAN) {
   const out = [];
@@ -71,6 +80,8 @@ export function manifestOf({run, samples}, plan = FULL_PLAN) {
     out.push({section: 'finding', id: `${scene}/lines`, sample: run}, {section: 'finding', id: `${scene}/ids`, sample: run});
   }
   for (const {scene, user} of plan.launch) out.push({section: 'launch', id: `${scene}/background/launch@${user}`, sample: run});
+  for (const {section, id} of probeRowsOf(plan)) out.push({section, id, sample: run});
+  if (plan.unicode) for (const {id} of unicodeRowsOf(plan.unicode)) out.push({section: 'unicode', id, sample: run});
   return out;
 }
 
@@ -229,6 +240,19 @@ export function judge(results, problems = []) {
   }
   launch.sort((a, b) => a.id.localeCompare(b.id));
 
+  // The probe cells and the Unicode matrix, each row against its own outcome.
+  const byOwnOutcome = sections => {
+    const out = [];
+    for (const [id, list] of groupBy(rows.filter(r => sections.includes(r.section)), r => r.id)) {
+      out.push({id, section: list[0].section, ...judgeMethod('background', list.filter(r => r.engine === 'vendor'), list.filter(r => r.engine === 'cua'))});
+    }
+    return out.sort((a, b) => a.id.localeCompare(b.id));
+  };
+  const probe = byOwnOutcome(['concurrent', 'intervention']);
+  const unicode = byOwnOutcome(['unicode']);
+  const failedUnicode = new Set(rows.filter(r => r.section === 'unicode' && !r.invalid && r.ok !== true).map(r => `${r.id}\0${r.engine}`));
+  const unneeded = full.length ? readDeclarations().filter(d => !failedUnicode.has(`${d.id}\0${d.engine}`)) : [];
+
   // Other cells (implemented elsewhere), by cell and engine.
   const others = [];
   for (const {result, path} of results) {
@@ -250,25 +274,28 @@ export function judge(results, problems = []) {
     ...speedMisses.map(s => `speed: ${s.id} missed the 10% beat (cua ${round(s.cua.median)} ms against ${round(s.vendor.median)} ms, p95 ${round(s.cua.p95)} against ${round(s.vendor.p95)})`),
     ...(findingVerdict === 'parity' ? ['finding elements: parity on the resolved sum (the owner decides)'] : []),
     ...interference.cua.declared.map(d => `not interfering: ${d.id}: ${d.cause}`),
+    ...unneeded.map(d => `unicode: the expected file declares ${d.id} on ${d.engine}, which no full run needed: remove it`),
   ];
   const blocking = [
     ...methodFails.map(m => `method: ${m.id} is worse on cua`),
     ...launch.filter(l => l.verdict === 'worse').map(l => `launch: ${l.id} did not launch on cua`),
     ...(findingVerdict === 'fail' ? lower.map(f => `finding elements: ${f.scene} is lower on cua`) : []),
     ...interference.cua.failed.map(f => `not interfering: ${f.id} failed on cua`),
+    ...[...probe, ...unicode].filter(r => r.verdict === 'worse').map(r => `${r.section}: ${r.id} failed on cua`),
     ...others.filter(o => o.engine === 'cua' && o.verdict === 'fail').map(o => `${o.cell}: fail on cua`),
   ];
   const missing = [
     ...missingProof,
     ...methodUnproven.map(m => `method: ${m.id} has no valid cua sample`),
     ...launch.filter(l => l.verdict === 'no-verdict').map(l => `launch: ${l.id} has no valid cua sample`),
+    ...[...probe, ...unicode].filter(r => r.verdict === 'no-verdict').map(r => `${SECTION_NAMES[r.section]}: ${r.id} has no valid cua sample`),
     ...(findingVerdict === 'no-verdict' ? ['finding elements: a scene has no measure on one engine'] : []),
     ...(interference.cua.rows === 0 ? ['not interfering: no background row was judged on cua'] : []),
     ...speedUnmeasured.map(s => `speed: ${s.id} has no measure on one engine`),
     ...others.filter(o => o.engine === 'cua' && o.verdict !== 'pass' && o.verdict !== 'fail').map(o => `${o.cell}: ${o.verdict} on cua`),
   ];
   const verdict = blocking.length ? 'FAIL' : missing.length ? 'NO VERDICT' : owner.length ? 'OWNER' : 'PASS';
-  return {problems: missingProof, runs, narrowed, methods, launch, speed, finding, findingVerdict, interference, interferencePass, others, owner, blocking, missing,
+  return {problems: missingProof, runs, narrowed, methods, launch, speed, finding, findingVerdict, interference, interferencePass, probe, unicode, others, owner, blocking, missing,
     options: OWNER_OPTIONS.map(o => ({...o})), verdict};
 }
 
@@ -312,7 +339,10 @@ export function renderSummary(j, {title = 'Native matrix summary'} = {}) {
   const sum = engine => j.finding.reduce((n, f) => n + (f[engine]?.resolved ?? 0), 0);
   out.push(`- **Finding elements**: ${j.findingVerdict}; resolved targets vendor ${sum('vendor')}, cua ${sum('cua')} of ${j.finding.reduce((n, f) => n + (f.vendor?.targets ?? f.cua?.targets ?? 0), 0)}.`);
   const share = engine => (j.interference[engine].rows ? `${Math.round((j.interference[engine].ok / j.interference[engine].rows) * 1000) / 10}% (${j.interference[engine].ok}/${j.interference[engine].rows})` : 'no rows');
-  out.push(`- **Not interfering**: cua ${share('cua')}, vendor ${share('vendor')}; cua route-4 actions outside accepted families: ${j.interference.cua.route4}; declared for the owner: ${j.interference.cua.declared.length}.`, '');
+  out.push(`- **Not interfering**: cua ${share('cua')}, vendor ${share('vendor')}; cua route-4 actions outside accepted families: ${j.interference.cua.route4}; declared for the owner: ${j.interference.cua.declared.length}.`);
+  const passing = list => list.filter(r => ['equal', 'better'].includes(r.verdict)).length;
+  out.push(`- **Concurrent use and intervention**: ${passing(j.probe)} of ${j.probe.length} rows pass on cua (concurrent use and its sheet variant, intervention fires, the pre-action refusal).`);
+  out.push(`- **Korean and Unicode**: ${passing(j.unicode)} of ${j.unicode.length} rows pass on cua.`, '');
 
   out.push('## Methods', '', methodTable(j.methods), '', 'F: frontmost regime (the vendor\'s outcome is the reference, sample for sample); B: background regime (the fixture\'s ground truth). n/a: no meaningful target on that scene, on both engines:', '');
   for (const target of TARGETS) for (const [method, reason] of Object.entries(NOT_APPLICABLE[target] ?? {})) out.push(`- ${target} ${ENGINE_METHOD[method]}: ${reason}`);
@@ -337,6 +367,28 @@ export function renderSummary(j, {title = 'Native matrix summary'} = {}) {
     out.push('## Launch path', '', '| row | verdict | vendor ok | cua ok |', '|---|---|---|---|');
     for (const l of j.launch) out.push(`| ${l.id} | ${MARK[l.verdict]} | ${counts(l.vendor)} | ${counts(l.cua)} |`);
     out.push('');
+  }
+
+  if (j.probe.length) {
+    out.push('## Concurrent use and intervention', '', 'Each row against its own outcome (the user\'s keystroke kept, userIntervened, the refusal); the vendor\'s recorded beside it.', '',
+      '| row | verdict | vendor ok | cua ok |', '|---|---|---|---|');
+    for (const r of j.probe) out.push(`| ${r.id} | ${MARK[r.verdict]} | ${counts(r.vendor)} | ${counts(r.cua)} |`);
+    out.push('');
+  }
+  if (j.unicode.length) {
+    out.push('## Korean and Unicode', '', 'Each field\'s cell: cua ok/valid, then the vendor\'s; a cua row that failed is marked. Read back by SHA-256 against the string sent.', '');
+    for (const condition of CONDITIONS) {
+      const list = j.unicode.filter(r => r.id.split('/')[1].split('@')[0] === condition);
+      if (!list.length) continue;
+      const users = [...new Set(list.map(r => r.id.split('/')[1].split('@')[1]).filter(Boolean))];
+      out.push(`### ${condition}${users.length ? ` (user window: ${list.map(r => `${r.id.split('/')[0]}@${r.id.split('/')[1].split('@')[1]}`).filter((v, i, a) => a.indexOf(v) === i).join(', ')})` : ''}`, '',
+        `| row | ${UNICODE_FIELDS.join(' | ')} |`, `|---|${UNICODE_FIELDS.map(() => '---').join('|')}|`);
+      for (const name of [...new Set(list.map(r => r.id.split('/')[2]))]) {
+        const cell = field => { const r = list.find(x => x.id.startsWith(`${field}/`) && x.id.endsWith(`/${name}`)); return r ? `${r.verdict === 'worse' ? '**' : ''}${r.cua.ok}/${r.cua.valid}${r.verdict === 'worse' ? '**' : ''} · ${r.vendor.ok}/${r.vendor.valid}` : '-'; };
+        out.push(`| ${name} | ${UNICODE_FIELDS.map(cell).join(' | ')} |`);
+      }
+      out.push('');
+    }
   }
 
   out.push('## Not interfering', '');

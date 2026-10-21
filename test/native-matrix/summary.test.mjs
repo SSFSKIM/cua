@@ -198,3 +198,33 @@ test('a declared row passes its comparison and is listed for the owner; an oracl
   assert.ok(j.owner.some(o => /not interfering: textedit\/background\/click.control@finder: TextEdit activated/.test(o)));
   assert.equal(j.verdict, 'OWNER');
 });
+
+const CONCURRENT = 'chrome/concurrent@textedit', FIRES = 'textedit/intervention.fires', KOREAN = 'textedit/korean/typeText.acceptance4';
+test('the probe cells and the Korean matrix are in every full run\'s manifest, judged against their own outcome: a failed or unproven cua row blocks', () => {
+  const manifest = manifestOf({run: 2, samples: 2});
+  assert.deepEqual(manifest.filter(e => ['concurrent', 'intervention'].includes(e.section)).map(e => `${e.section} ${e.id} ${e.sample}`),
+    ['concurrent finder/concurrent@textedit 2', 'concurrent chrome/concurrent@textedit 2', 'concurrent textedit/concurrent.sheet@electron 2',
+      'intervention textedit/intervention.fires 2', 'intervention textedit/intervention.preAction 2']);
+  assert.equal(manifest.filter(e => e.section === 'unicode').length, 225);
+  const pass = judged({vendor: {axMs: 50, resolved: 9}, cua: {axMs: 40}});
+  assert.equal(pass.verdict, 'PASS');
+  assert.ok(pass.probe.every(p => p.verdict === 'equal') && pass.unicode.every(u => u.verdict === 'equal'));
+  // The vendor's results are recorded, never the reference: a vendor that did not keep the user's keystroke is better for cua.
+  const vendorFailed = judged({vendor: {axMs: 50, resolved: 9, tweak: set(CONCURRENT, {ok: false})}, cua: {axMs: 40}});
+  assert.equal(vendorFailed.verdict, 'PASS');
+  assert.equal(vendorFailed.probe.find(p => p.id === CONCURRENT).verdict, 'better');
+  const failed = judged({vendor: {axMs: 50, resolved: 9}, cua: {axMs: 40, tweak: set(FIRES, {ok: false, outcome: {fired: false}})}});
+  assert.ok(failed.blocking.includes(`intervention: ${FIRES} failed on cua`));
+  const unproven = judged({vendor: {axMs: 50, resolved: 9}, cua: {axMs: 40, tweak: set(CONCURRENT, {ok: false, invalid: 'the probe posted 300 ms before the action\'s interval'})}});
+  assert.deepEqual([unproven.verdict, unproven.blocking], ['NO VERDICT', []]);
+  assert.ok(unproven.missing.includes(`concurrent use: ${CONCURRENT} has no valid cua sample`));
+  const korean = judged({vendor: {axMs: 50, resolved: 9}, cua: {axMs: 40, tweak: set(KOREAN, {ok: false})}});
+  assert.ok(korean.blocking.includes(`unicode: ${KOREAN} failed on cua`), 'Acceptance 4');
+  const declared = judged({vendor: {axMs: 50, resolved: 9}, cua: {axMs: 40, tweak: set(KOREAN, {ok: false, declared: {kind: 'normalization', cause: 'TextEdit composes'}})}});
+  assert.deepEqual([declared.verdict, declared.blocking], ['OWNER', []]);
+  assert.ok(declared.owner.some(o => o.includes(`declared: unicode ${KOREAN} on cua: normalization: TextEdit composes`)));
+  const text = renderSummary(pass);
+  for (const part of ['## Concurrent use and intervention', `| ${CONCURRENT} | equal |`, '## Korean and Unicode', '### korean', '| typeText.acceptance4 |',
+    '**Concurrent use and intervention**: 5 of 5 rows pass on cua'])
+    assert.ok(text.includes(part), part);
+});

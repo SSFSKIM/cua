@@ -12,17 +12,55 @@ import Foundation
 /// `waitUntilHasPrimaryWindow` 0x1006fbdf0, 5.0 s at 0x100164ae8, polled every 50 ms.
 let launchWindowWaitMs: Int64 = 5_000
 
-/// What the observation's preparation sends before reading, the vendor's (0x10014c494 → 0x10014c4f0, the open helper
-/// 0x100164860 → 0x1001648c4): a launch for an app that is not running, and a non-activating reopen for a running app
-/// with no primary window, which some apps (TextEdit, Finder) answer by opening a window. The vendor reopens an app
-/// whose primary window is minimized too; cua does not, since the reopen un-minimizes the owner's window (Decision
-/// Log, M1b.5).
-enum PreparationOpen: Equatable { case launch, reopen }
+/// What reading an app's primary window found (F §1.7's three steps): the window; a confirmed absence, every step
+/// answered with no window; or a read that failed (the app could not answer, e.g. `kAXErrorCannotComplete`).
+enum WindowRead { case window(AXUIElement), absent, failed(AXError) }
 
-func preparationOpen(isRunning: Bool, hasPrimaryWindow: Bool, minimized: Bool) -> PreparationOpen? {
-  if !isRunning { return .launch }
-  if !hasPrimaryWindow { return .reopen }
-  return nil
+/// The errors that confirm an attribute has no window rather than that the app could not be read.
+private let absentErrors: Set<AXError> = [.noValue, .attributeUnsupported]
+
+/// The primary window read through `read` (one attribute's value and error).
+func readPrimaryWindow(_ read: (String) -> (value: CFTypeRef?, error: AXError)) -> WindowRead {
+  var failure: AXError?
+  for name in [kAXFocusedWindowAttribute, kAXMainWindowAttribute] {
+    let (value, error) = read(name)
+    if error == .success, let value, CFGetTypeID(value) == AXUIElementGetTypeID() { return .window(prepare(value as! AXUIElement)) }
+    if error != .success, !absentErrors.contains(error) { failure = failure ?? error }
+  }
+  let (windows, error) = read(kAXWindowsAttribute)
+  if error == .success, let last = elementList(windows).last { return .window(prepare(last)) }
+  if error != .success, !absentErrors.contains(error) { failure = failure ?? error }
+  return failure.map { .failed($0) } ?? .absent
+}
+
+/// The observation's preparation, the vendor's (0x10014c494 → 0x10014c4f0, its open helper 0x100164860 →
+/// 0x1001648c4): an app that is not running is launched; a running app whose primary window reads as absent gets a
+/// non-activating open (a reopen), which some apps (TextEdit, Finder) answer by opening a window. Two declared
+/// differences (Decision Log, M1b.5): an app whose read failed is never opened (its read is retried until the deadline,
+/// then `timeoutReached`), where the vendor's failed read reads as no window; and a minimized primary window is never
+/// reopened, since the reopen would un-minimize the owner's window. The reads are charged to the request's deadline: no
+/// open is sent once it has passed. The open's own process is the one observed after it, so an app replaced
+/// meanwhile is followed. -> {opened, the open's process (nil when nothing was opened), the pid to observe}.
+func prepareTarget<Running>(pid: pid_t?, deadline: Int64, now: () -> Int64, sleep: () -> Void,
+                            read: (pid_t) -> WindowRead,
+                            open: (_ deadline: Int64) throws -> (running: Running, pid: pid_t)) throws -> (opened: Bool, running: Running?, pid: pid_t) {
+  let timeout = EngineError(name: "timeoutReached", "timeoutReached")
+  func openNow() throws -> (opened: Bool, running: Running?, pid: pid_t) {
+    guard now() < deadline else { throw timeout }
+    let (running, openedPid) = try open(min(deadline, now() + launchWindowWaitMs))
+    return (true, running, openedPid)
+  }
+  guard now() < deadline else { throw timeout }
+  guard let pid else { return try openNow() }
+  while true {
+    switch read(pid) {
+    case .window: return (false, nil, pid)
+    case .absent: return try openNow()
+    case .failed:
+      guard now() < deadline else { throw timeout }
+      sleep()
+    }
+  }
 }
 
 /// Per-phase timings, counts and labels of one observation, returned as `Skyshot.timings`.
@@ -111,22 +149,18 @@ extension Engine {
     let webAreaWaitEnabled = args["webAreaWait"] as? Bool ?? true
 
     var app = try timings.time("resolve") { try resolveApp(args) }
-    var opened = false
-    let existing = app.pid.map { prepare(AXUIElementCreateApplication($0)) }
-    switch preparationOpen(isRunning: app.isRunning, hasPrimaryWindow: existing.flatMap(primaryWindow(of:)) != nil, minimized: false) {
-    case .launch?:
-      let running = try timings.time("launch") { try apps.launch(app, deadline: min(context.deadline, unixMilliseconds() + launchWindowWaitMs)) }
-      app = ResolvedApp(appPath: app.appPath, bundleIdentifier: running.bundleIdentifier ?? app.bundleIdentifier, displayName: running.localizedName ?? app.displayName, running: running)
-      opened = true
-    case .reopen?:
-      _ = try timings.time("reopen") { try apps.launch(app, deadline: min(context.deadline, unixMilliseconds() + launchWindowWaitMs)) }
-      timings.set("reopened", true)
-      opened = true
-    case nil:
-      break
+    let target = try timings.time("prepare") {
+      try prepareTarget(pid: app.pid, deadline: context.deadline, now: unixMilliseconds, sleep: { usleep(50_000) },
+                        read: { pid in let element = prepare(AXUIElementCreateApplication(pid)); return readPrimaryWindow { copyAttribute(element, $0) } },
+                        open: { deadline in let running = try apps.launch(app, deadline: deadline); return (running, running.processIdentifier) })
     }
-    let appPid = app.pid!
-    let application = existing ?? prepare(AXUIElementCreateApplication(appPid))
+    if let running = target.running {
+      timings.set(app.isRunning ? "reopened" : "launched", true)
+      app = ResolvedApp(appPath: app.appPath, bundleIdentifier: running.bundleIdentifier ?? app.bundleIdentifier, displayName: running.localizedName ?? app.displayName, running: running)
+    }
+    let opened = target.opened
+    let appPid = target.pid
+    let application = prepare(AXUIElementCreateApplication(appPid))
     let connection = context.connection
     let webShaped = webAccessibility.isWebShaped(app.appPath)
     timings.set("webShaped", webShaped)

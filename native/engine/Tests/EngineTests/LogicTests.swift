@@ -240,24 +240,99 @@ final class FetchDecodeTests: XCTestCase {
   }
 }
 
-// The observation's preparation (M1b.5, the vendor's 0x10014c494 → 0x10014c4f0): what it opens before reading, and the
-// window wait that follows an open.
-final class PreparationOpenTests: XCTestCase {
-  func testAnAppThatIsNotRunningIsLaunched() {
-    XCTAssertEqual(preparationOpen(isRunning: false, hasPrimaryWindow: false, minimized: false), .launch)
+// The observation's preparation (M1b.5, the vendor's 0x10014c494 → 0x10014c4f0): what it opens before reading, the
+// reads charged to the deadline, the replacement followed, and the window wait that follows an open.
+final class PreparationTests: XCTestCase {
+  private let someWindow = AXUIElementCreateApplication(pid_t(61_500)) as CFTypeRef
+  private let windowList = [AXUIElementCreateApplication(pid_t(61_501))] as CFArray
+
+  private func reads(_ answers: [String: (CFTypeRef?, AXError)]) -> (String) -> (value: CFTypeRef?, error: AXError) {
+    { name in let answer = answers[name] ?? (nil, .noValue); return (answer.0, answer.1) }
   }
 
-  func testARunningAppWithNoPrimaryWindowIsReopened() {
-    XCTAssertEqual(preparationOpen(isRunning: true, hasPrimaryWindow: false, minimized: false), .reopen)
+  func testTheFocusedWindowIsRead() {
+    guard case .window = readPrimaryWindow(reads([kAXFocusedWindowAttribute: (someWindow, .success)])) else { return XCTFail() }
   }
 
-  func testARunningAppWithAPrimaryWindowIsNotOpenedAgain() {
-    XCTAssertNil(preparationOpen(isRunning: true, hasPrimaryWindow: true, minimized: false))
+  func testNoValueAndUnsupportedEverywhereIsAConfirmedAbsence() {
+    guard case .absent = readPrimaryWindow(reads([kAXMainWindowAttribute: (nil, .attributeUnsupported), kAXWindowsAttribute: ([] as CFArray, .success)])) else { return XCTFail() }
   }
 
-  // The vendor reopens here; cua does not, since the reopen would un-minimize the owner's window (Decision Log, M1b.5).
-  func testAMinimizedPrimaryWindowIsNotReopened() {
-    XCTAssertNil(preparationOpen(isRunning: true, hasPrimaryWindow: true, minimized: true))
+  func testAFailedReadIsNotAnAbsence() {
+    guard case .failed(let error) = readPrimaryWindow(reads([kAXFocusedWindowAttribute: (nil, .cannotComplete)])) else { return XCTFail() }
+    XCTAssertEqual(error, .cannotComplete)
+  }
+
+  func testAWindowInAXWindowsWinsOverAFailedFocusedRead() {
+    guard case .window = readPrimaryWindow(reads([kAXFocusedWindowAttribute: (nil, .cannotComplete), kAXWindowsAttribute: (windowList, .success)])) else { return XCTFail() }
+  }
+
+  // A fake clock: every read and sleep advances it.
+  private final class Clock { var now: Int64 = 1_000 }
+
+  private func run(pid: pid_t?, deadline: Int64 = 2_000, reads: [WindowRead], readMs: Int64 = 10, openedPid: pid_t = 42, clock: Clock = Clock())
+    -> (result: Result<(opened: Bool, running: String?, pid: pid_t), Error>, opens: [Int64], readsDone: Int) {
+    var remaining = reads, opens: [Int64] = [], done = 0
+    let result = Result {
+      try prepareTarget(pid: pid, deadline: deadline, now: { clock.now }, sleep: { clock.now += 50 },
+                        read: { _ in done += 1; clock.now += readMs; return remaining.count > 1 ? remaining.removeFirst() : remaining[0] },
+                        open: { budget in opens.append(budget); return ("opened", openedPid) })
+    }
+    return (result, opens, done)
+  }
+
+  private func isTimeout(_ result: Result<(opened: Bool, running: String?, pid: pid_t), Error>) -> Bool {
+    if case .failure(let error) = result { return (error as? EngineError)?.errorName == "timeoutReached" }
+    return false
+  }
+
+  func testAnAppThatIsNotRunningIsLaunchedWithTheLaunchBudget() throws {
+    let outcome = run(pid: nil, deadline: 99_000, reads: [.absent])
+    let target = try outcome.result.get()
+    XCTAssertEqual([target.opened, target.pid == 42], [true, true])
+    XCTAssertEqual(outcome.opens, [1_000 + launchWindowWaitMs])
+    XCTAssertEqual(outcome.readsDone, 0)
+  }
+
+  func testARunningAppWithAWindowIsNotOpened() throws {
+    let outcome = run(pid: 7, reads: [.window(AXUIElementCreateApplication(7))])
+    XCTAssertEqual(try outcome.result.get().opened, false)
+    XCTAssertEqual(outcome.opens, [])
+  }
+
+  func testARunningAppWithNoWindowIsReopenedWithinTheDeadline() throws {
+    let outcome = run(pid: 7, deadline: 2_000, reads: [.absent])
+    XCTAssertEqual(try outcome.result.get().opened, true)
+    XCTAssertEqual(outcome.opens, [2_000])  // min(deadline, now + 5 s)
+  }
+
+  func testTheReopensOwnProcessIsTheOneObserved() throws {
+    XCTAssertEqual(try run(pid: 7, reads: [.absent], openedPid: 8).result.get().pid, 8)
+  }
+
+  func testAFailedReadIsRetriedAndNeverOpensWhenAWindowAnswers() throws {
+    let outcome = run(pid: 7, reads: [.failed(.cannotComplete), .failed(.cannotComplete), .window(AXUIElementCreateApplication(7))])
+    XCTAssertEqual(try outcome.result.get().opened, false)
+    XCTAssertEqual(outcome.opens, [])
+    XCTAssertEqual(outcome.readsDone, 3)
+  }
+
+  func testAReadThatKeepsFailingIsTimeoutReachedWithNoOpen() {
+    let outcome = run(pid: 7, deadline: 1_500, reads: [.failed(.cannotComplete)])
+    XCTAssertTrue(isTimeout(outcome.result))
+    XCTAssertEqual(outcome.opens, [])
+  }
+
+  func testNoOpenIsSentOnceTheReadsHaveUsedTheDeadline() {
+    let outcome = run(pid: 7, deadline: 1_500, reads: [.absent], readMs: 600)
+    XCTAssertTrue(isTimeout(outcome.result))
+    XCTAssertEqual(outcome.opens, [])
+  }
+
+  func testAPassedDeadlineReadsAndOpensNothing() {
+    let outcome = run(pid: 7, deadline: 1_000, reads: [.absent])
+    XCTAssertTrue(isTimeout(outcome.result))
+    XCTAssertEqual([outcome.opens.count, outcome.readsDone], [0, 0])
   }
 
   // A pid with no process: no window ever appears.
@@ -268,7 +343,9 @@ final class PreparationOpenTests: XCTestCase {
     XCTAssertThrowsError(try awaitPrimaryWindow(of: windowless, until: started + 150, opened: true)) { error in
       XCTAssertEqual((error as? EngineError)?.errorName, "timeoutReached")
     }
-    XCTAssertGreaterThanOrEqual(unixMilliseconds() - started, 150)
+    let elapsed = unixMilliseconds() - started
+    XCTAssertGreaterThanOrEqual(elapsed, 150)
+    XCTAssertLessThan(elapsed, 600)
   }
 
   func testAnAppTheObservationDidNotOpenIsNotWaitedFor() throws {

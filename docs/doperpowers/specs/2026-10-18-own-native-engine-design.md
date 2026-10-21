@@ -79,7 +79,7 @@ How to see it: on the mini, with the plugin at the release this work ships, run 
 - [ ] M6 — Retirement of the vendor runtime on macOS.
 - [ ] M3 tasks (branch `feat/117-m3` from `feat/117-m2b` at 027179bc, before M2b's squash; Decision Log "M3 pre-flight"):
   - [ ] M3.1 — Linux approvals through the policy module, `surface.mjs`'s Linux rule, the Linux harnesses answering the pinned approval, `CUA_SHIM_PERSIST=always` refused at `cua serve` (worktree `cua-117-m3-linux`, branch `m3/linux`).
-  - [ ] M3.2 — `doctor`'s `engine` row.
+  - [x] (2026-10-21) M3.2 — `doctor`'s `engine` row (793195d6, review fixes a2b5993a; reviewed clean).
   - [ ] M3.3 — `verify.mjs` (`--engine`, `--bind`), `scripts/probe/lib.mjs` and `scripts/probe-lifecycle.mjs` engine-aware (worktree `cua-117-m3-verify`, branch `m3/verify`).
   - [ ] M3.4 — `scripts/accept/textedit.mjs` and `scripts/accept-native.mjs` (`--engine`; items 12 and 13 pinned to the vendor engine); consumes M3.2 and M3.3.
   - [ ] M3.5 — Live: one hold on the mini (comparisons B and C, `verify --engine cua --bind`, acceptance 9, `accept-native` items 7 and 8 on cua's engine) and the Linux parity suite with approvals on a Linux device.
@@ -1022,6 +1022,12 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   2. **The approval memory moves to `cua serve`'s MCP connection.** The supervisor's memory died with the runtime's idle stop (15 min by default) while the MCP connection stayed open, so a remembered app asked again mid-session, against the README's promise; M3 makes it visible, since every Linux session now asks. The key and semantics are unchanged (accepts with `_meta.persist` and declines remembered, a new connection asks again), tested across an idle stop. Alternative: keep it in the supervisor and correct the README; lost because the promise is the right behaviour.
   3. **README and onboarding lines M3 makes false are corrected in M3** (the `CUA_SHIM_PERSIST` `always` value, now refused; "no app asks" on Linux); the rest of the docs stay with M4 and M5.
   Date/Author: 2026-10-21, plan-executor for maws-3f, on maws-3f's rulings.
+- Decision (M3.2, doctor's engine row, 2026-10-21; 793195d6, review fixes a2b5993a): the gaps the row settled.
+  1. **`engine.selected` is the engine sessions actually use**, taken from repl.host's own `replHostFor` selection (null when sessions are refused); the setting's choice is `engine.preferred {engine, reason}`. So acceptance 1's `engine.selected: "cua"` holds only when sessions drive cua's engine, and the default's fallbacks (no approved engine, no Node 24) read vendor with a warning.
+  2. **Doctor launches only when the effective engine is cua** and the approved bundle carries the engine's bundle id (`io.github.ssfskim.cua.engine`, so the harnesses' fixture approved engines are never launched); it treats the answering engine as its own only when it reports this bundle's real path and build, and stops it only while the same pid answers; any other responder is reported (`launch.mismatch`, `launch.replaced`) and left alone, and its grants are not reported as the approved bundle's. With the vendor engine selected the row reads the approved location's files only (no codesign, no socket).
+  3. **Status**: `fail` for refused sessions, an `engine.json` the engine would refuse, a foreign bundle, a status or launch failure, another engine at the socket, or Accessibility or Screen Recording missing; `warn` for Input Monitoring missing, an identity mismatch, ad hoc or no configured identity, `routeAdvice` naming apps, the default's fallback, or a launched engine doctor could not stop; `skip` when no session uses the engine; the probe's ability reported, not judged. Route overrides come from the running engine's `status`, else from `engine.json` read as `Config.swift` reads it. Sentences name `cua engine build` and `cua engine approve`; M4 brings this row and repl.host to `cua install --engine`.
+  4. The approved location is read once per doctor run (one codesign), shared by the selection and the row (`readApprovedLocation`).
+  Date/Author: 2026-10-21, plan-executor for maws-3f.
 
 ## Outcomes & Retrospective
 

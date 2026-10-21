@@ -65,7 +65,13 @@ import {configuredBackends, startClientBackends} from '../chrome/client-mode.mjs
 import {realHome} from '../runtime/layout.mjs';
 
 const idKey = id => JSON.stringify(id);
-const PERSIST_MODES = ['session', 'always', 'none'];
+const PERSIST_MODES = ['session', 'none'];
+// #117 M3: an approval is remembered for its connection only (the REPL host's supervisor), so `always` would be a
+// silent no-op; it is refused with the owner's route instead: the plugin's Elicitation hook removes the asking, and a
+// stricter hook is where a veto lives.
+const PERSIST_ALWAYS_REFUSAL = 'CUA_SHIM_PERSIST=always is not supported: cua remembers an approval for its connection only. '
+  + 'To stop being asked, let the plugin\'s Elicitation hook (hooks/cua-approve.sh) answer; a stricter hook is where a veto lives. '
+  + `CUA_SHIM_PERSIST must be one of ${PERSIST_MODES.join(', ')}`;
 const COMPLETION_CODES = new Set(['completion_timeout', 'completion_failed']);
 const NOT_CONFIGURED = {unavailable: {code: 'secrets_not_configured', message: 'secret storage is not configured for this server'}};
 const LIST_CODES = new Set(['unreadable']);
@@ -435,6 +441,7 @@ export function createServer({
 // connection has the device tools (stdio), whose rule joins the notes.
 export function settingsFrom(env, {platform = process.platform, devices = false} = {}) {
   const persist = env.CUA_SHIM_PERSIST ?? 'session';
+  if (persist === 'always') fail('invalid_setting', PERSIST_ALWAYS_REFUSAL);
   if (!PERSIST_MODES.includes(persist)) fail('invalid_setting', `CUA_SHIM_PERSIST must be one of ${PERSIST_MODES.join(', ')}`);
   const surfaces = surfacesFrom(env.CUA_SHIM_SURFACES);
   const hostNotes = env.CUA_SHIM_HOST_NOTES === 'none' ? '' : (env.CUA_SHIM_HOST_NOTES ?? hostNotesFor(surfaces, {platform, devices}));

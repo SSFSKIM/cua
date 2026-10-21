@@ -22,6 +22,10 @@ export const MENU_ITEMS = Object.freeze({
   selectAll: Object.freeze({menu: 'Edit', path: Object.freeze(['Select All'])}),
   bold: Object.freeze({menu: 'Format', path: Object.freeze(['Font', 'Bold'])}),
 });
+// The paste check's three lines of the run's document, one replaced by each paste (a plain paste, a Markdown paste,
+// type_text's paste route).
+export const PASTE_TARGETS = Object.freeze(['Line 10', 'Line 11', 'Line 12']);
+if (!PASTE_TARGETS.every(line => DOCUMENT.filter(l => l === line).length === 1)) throw new Error('the paste check\'s lines are not in the run\'s document once each');
 const MESSAGE_CHARS = 300;
 
 // ---- cua's Skyshots ----------------------------------------------------------------------------------------------
@@ -54,11 +58,13 @@ export const allSelected = selected => typeof selected === 'string' && selected.
 // Whether the document's first line renders bold (the Markdown the engine and the vendor read off the attributed value).
 export const firstLineBold = markdown => typeof markdown === 'string' && markdown.includes(`**${FIRST_LINE}**`);
 
-// An engine error as a result keeps it: its name, its sentence bounded, the route and whether any event was posted.
+// An engine error as a result keeps it: its name, its sentence bounded, the route, whether any event was posted, and
+// the activation guard's time when one ran (a failed guard keeps it, M2a.2).
 export function failureOf(error) {
   const meta = error?.meta ?? null;
   return {errorName: error?.errorName ?? null, message: String(error?.message ?? error).slice(0, MESSAGE_CHARS),
-    ...(meta?.inputRoute !== undefined ? {route: meta.inputRoute} : {}), posted: meta?.startedAt != null};
+    ...(meta?.inputRoute !== undefined ? {route: meta.inputRoute} : {}), posted: meta?.startedAt != null,
+    ...(meta?.activationGuardMs != null ? {activationGuardMs: meta.activationGuardMs} : {})};
 }
 
 // ---- The vendor's text (each function self-contained: a cell embeds it by its source) -------------------------------
@@ -113,11 +119,12 @@ export function vendorTextAreaIndex(ax, firstLine) {
 // The minimized window (the pre-flight entry's item 2, M2a.4's items 2): the observation keeps its tree and drops its
 // screenshot with the reason, a synthesized element click is refused naming the minimized window with nothing posted,
 // set_value and select_text act; then what typing and ⌘A do, which the design leaves open (recorded, not judged); and the
-// window put back on screen. The two outcomes decide two refusals apart (M2a.4's ruling): typing that does not land
+// window put back on screen. set_value and select_text post nothing (the focus click is skipped in a minimized window);
+// an element scroll's refusal is recorded, not judged (a unit test gates it). The two outcomes decide two refusals apart (M2a.4's ruling): typing that does not land
 // refuses type_text and press_key without ⌘; a ⌘A that does not act, and only that, refuses ⌘ chords too. -> {pass,
 // failed, recorded, decision: {plainKeys, commandChords}}.
 export function minimizedVerdict(steps) {
-  const {minimize, observe, click, setValue, selectText, typeText, selectAll, restore} = steps ?? {};
+  const {minimize, observe, click, scroll, setValue, selectText, typeText, selectAll, restore} = steps ?? {};
   const expectations = {
     minimized: minimize?.minimized === true,
     treePresent: observe?.treePresent === true && observe?.textArea === true,
@@ -126,11 +133,14 @@ export function minimizedVerdict(steps) {
     clickRefused: click?.refused === true && click?.errorName === 'windowMinimized' && click?.namesMinimized === true,
     clickRefusedNothingPosted: click?.refused === true && click?.posted === false,
     setValueActs: setValue?.ok === true && setValue?.valueMatches === true,
+    setValueNoClick: setValue?.posted === false,
     selectTextActs: selectText?.ok === true && selectText?.selectionMatches === true,
+    selectTextNoClick: selectText?.posted === false,
     restored: restore?.onScreen === true,
   };
   const failed = Object.keys(expectations).filter(key => !expectations[key]);
-  const recorded = {typeTextValueChanged: typeText?.valueChanged ?? null, superAEffect: selectAll?.effect ?? null};
+  const recorded = {typeTextValueChanged: typeText?.valueChanged ?? null, superAEffect: selectAll?.effect ?? null,
+    scrollRefused: scroll ? scroll.refused === true && scroll.errorName === 'windowMinimized' && scroll.posted === false : null};
   const decision = {
     plainKeys: recorded.typeTextValueChanged === null ? null : recorded.typeTextValueChanged
       ? 'type_text and press_key without ⌘ stay allowed: typed text reached the minimized window'
@@ -162,17 +172,55 @@ export function menuComparison(cua, vendor) {
   return {items, decision};
 }
 
-// The engine's enablement diagnostics on one observation (its `timings`, M2a.4): `enabled` names the attribute this
-// observation set, which the engine does only when it did not read true; `webAreaSeen` that an earlier observation of
-// the process found the web area, which a release forgets.
-export const enablementOf = timings => ({set: timings?.enabled ?? null, webShaped: timings?.webShaped ?? null, chromium: timings?.chromium ?? null,
-  webAreaSeen: timings?.webAreaSeen === true, webAreaFound: timings?.webAreaFound ?? null});
-// Enablement released (the critique's A3, M2a.4 item 3): a first connection sets the attribute and closes; the second
-// connection's observation finds it not true and sets it again, with the web area forgotten. -> {released, ...}.
+// The menu activation switch (M2a.2's `spikeMenuActivation`, off by default, for the hold to decide): cua's lane run
+// once with it off and once on; a setting works when every item is found, enabled and takes effect. The decision names
+// the setting to make the default; per setting and item, its effect, its press's route and activationGuardMs. -> {works:
+// {off, on}, failing: {off, on}, items: {off, on}, decision}.
+export function menuSettingVerdict(off, on) {
+  const ids = Object.keys(MENU_ITEMS);
+  const failing = lane => ids.filter(id => !(lane?.[id]?.found === true && lane[id].enabled === true && lane[id].effect === true));
+  const works = {off: Boolean(off) && failing(off).length === 0, on: Boolean(on) && failing(on).length === 0};
+  const exposed = lane => lane && ids.every(id => lane[id]?.found === true);
+  const decision = !exposed(off) || !exposed(on) ? 'undecided: an item was not exposed or a run is missing'
+    : works.off ? `off works: keep spikeMenuActivation off by default (the menu path takes no activation); on ${works.on ? 'works too' : 'does not'}`
+      : works.on ? 'only on works: set spikeMenuActivation on by default (route 3\'s activation around a menu item\'s press)'
+        : 'neither works: route 3\'s activation around the press is not enough for a background app\'s responder-chain items';
+  const summary = lane => Object.fromEntries(ids.map(id => [id, {effect: lane?.[id]?.effect ?? null, route: lane?.[id]?.click?.route ?? null,
+    activationGuardMs: lane?.[id]?.click?.activationGuardMs ?? null}]));
+  return {works, failing: {off: failing(off), on: failing(on)}, items: {off: summary(off), on: summary(on)}, decision};
+}
+
+// The paste check (M2a.3 live, on the integrated wire once m2a/paste lands): a plain and a Markdown paste into the run's
+// TextEdit behind the run's Finder window, each landing where a selection was; type_text under Korean 2-Set taking the
+// paste route and landing; the user window in front after each; the owner's clipboard as it was (the engine restores it
+// only while nobody else wrote it); the input source restored. Bold Markdown and `entered` are recorded, not judged.
+export function pasteVerdict(steps) {
+  const {userInFront, text, markdown, typeText, inputSource, clipboard} = steps ?? {};
+  const expectations = {
+    textLands: text?.ok === true && text.route === 'paste' && text.lands === true,
+    markdownLands: markdown?.ok === true && markdown.route === 'paste' && markdown.lands === true,
+    typeTextPasteRoute: typeText?.route === 'paste',
+    typeTextLands: typeText?.ok === true && typeText.lands === true,
+    userStaysInFront: Array.isArray(userInFront) && userInFront.length > 0 && userInFront.every(Boolean),
+    inputSourceRestored: inputSource?.restored === true,
+    clipboardRestored: clipboard?.same === true,
+  };
+  const failed = Object.keys(expectations).filter(key => !expectations[key]);
+  return {pass: failed.length === 0, failed, recorded: {markdownBold: markdown?.bold ?? null, entered: typeText?.entered ?? null}};
+}
+
+// The engine's enablement diagnostics on one observation (its `timings`, M2a.4): `enablementPrior` what the attribute
+// read before the observation touched it ("true", "false" or "unreadable"; absent when the app lists neither), `enabled`
+// the attribute it set, which the engine does only when it read false; `webAreaSeen` that an earlier observation of the
+// process found the web area, which a release forgets.
+export const enablementOf = timings => ({prior: timings?.enablementPrior ?? null, set: timings?.enabled ?? null, webShaped: timings?.webShaped ?? null,
+  chromium: timings?.chromium ?? null, webAreaSeen: timings?.webAreaSeen === true, webAreaFound: timings?.webAreaFound ?? null});
+// Enablement released (the critique's A3, M2a.4 item 3): the first connection's first observation reads the attribute
+// false and the engine sets it; after that connection closes, a new connection's first observation reads it false
+// again. -> {released, priors, first, second}.
 export function enablementVerdict({first, second}) {
-  const released = !first?.set ? null : Boolean(second?.set) && second.webAreaSeen !== true;
-  return {released, first, second,
-    diagnostic: 'the engine reports the attribute it set (timings.enabled) only when it did not read true; it does not tell false from unreadable, which the release needs (an unreadable value is set but never owned): a prior-value diagnostic is not in M2a.4\'s engine'};
+  const released = first?.prior === 'false' && Boolean(first?.set) && second?.prior === 'false';
+  return {released, priors: {first: first?.prior ?? null, second: second?.prior ?? null}, first, second};
 }
 
 // --probe input-source (the pre-flight entry's item 4): Korean 2-Set selected and read back by a second probe, then the

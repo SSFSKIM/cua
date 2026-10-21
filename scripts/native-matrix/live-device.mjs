@@ -7,7 +7,12 @@
 //   begin --run <dir> --commit <sha>   the refusals (./live-checks.mjs liveRefusals); with none, the owner's front app
 //                                      saved in the run directory (its pid stays here) and the approved engine stopped
 //   minimized --run <dir>              the minimized-window check on the run's TextEdit (cua's engine only)
-//   menu --run <dir>                   cua's lane of the menu check: the run's TextEdit behind the run's Finder window
+//   menu --run <dir> [--menu-activation off|on]
+//                                      cua's lane of the menu check: the run's TextEdit behind the run's Finder window,
+//                                      each menu item's press with M2a.2's spikeMenuActivation switch off (the default) or on
+//   paste --run <dir>                  the paste check: a plain and a Markdown paste and type_text under Korean 2-Set into
+//                                      the run's TextEdit behind the run's Finder window; the owner's clipboard compared
+//                                      before and after here (only whether it is the same leaves)
 //   enablement --run <dir>             two connections, one after the other, observing the run's Chrome for Testing
 //   input-source                       the owner's source and per-context preference saved, Korean 2-Set selected
 //                                      through the approved bundle's probe, read back, the saved ones restored
@@ -19,6 +24,7 @@
 // input-source ids, bundle ids of apps that activated. No observation's text, title or value, no screenshot (each is
 // removed as soon as its answer is in), no pid of an app the run does not own.
 import {execFileSync} from 'node:child_process';
+import {createHash} from 'node:crypto';
 import * as fs from 'node:fs';
 import {homedir, tmpdir} from 'node:os';
 import {dirname, isAbsolute, join} from 'node:path';
@@ -34,8 +40,8 @@ import {engineCheck, engineClientFor, main as goldensDeviceMain, ownershipProble
 import {controllerCheckout} from './goldens.mjs';
 import {REPO_ROOT} from './goldens-install.mjs';
 import {
-  FIRST_LINE, KOREAN_2SET, MENU_ITEMS, allSelected, enablementOf, enablementVerdict, failureOf, firstLineBold, frontAppAction, inputSourceVerdict, liveRefusals,
-  menuBarItem, menuItemAt, minimizeButton, minimizedVerdict, parsePerContext, perContextRestore, putBackPlan, restoreTarget, textArea,
+  FIRST_LINE, KOREAN_2SET, MENU_ITEMS, PASTE_TARGETS, allSelected, enablementOf, enablementVerdict, failureOf, firstLineBold, frontAppAction, inputSourceVerdict, liveRefusals,
+  menuBarItem, menuItemAt, minimizeButton, minimizedVerdict, parsePerContext, pasteVerdict, perContextRestore, putBackPlan, restoreTarget, textArea,
 } from './live-checks.mjs';
 
 const SCRIPT = fileURLToPath(import.meta.url);
@@ -67,11 +73,13 @@ async function getState(client, app, screenshots) {
   }
   return result;
 }
-// An action as a result keeps it: {ok, route, posted} or failureOf's fields.
+// An action as a result keeps it: {ok, route, posted, activationGuardMs?, entered?} or failureOf's fields.
 async function attempt(fn) {
   try {
     const {result} = await fn();
-    return {ok: true, route: result?.meta?.inputRoute ?? null, posted: result?.meta?.startedAt != null};
+    const meta = result?.meta;
+    return {ok: true, route: meta?.inputRoute ?? null, posted: meta?.startedAt != null,
+      ...(meta?.activationGuardMs != null ? {activationGuardMs: meta.activationGuardMs} : {}), ...(meta?.entered != null ? {entered: meta.entered} : {})};
   } catch (error) { return {ok: false, ...failureOf(error)}; }
 }
 // Polls `test()` until it holds or `boundMs` pass. -> whether it held.
@@ -132,6 +140,9 @@ async function minimizedSteps({record, client, io, screenshots, steps, touch}) {
   // A synthesized click (the text area advertises no AXPress): refused before anything is posted.
   const click = await attempt(() => client.execute('click', {app, element: area.token}, {lineage: shot.lineage}));
   steps.click = {...click, refused: !click.ok, namesMinimized: !click.ok && /minimized/i.test(click.message ?? '')};
+  // An element scroll (62235d71): refused as windowMinimized before the scroll into view, nothing scrolled.
+  const scroll = await attempt(() => client.execute('scroll', {app, element: area.token, direction: 'down', pages: 1}, {lineage: shot.lineage}));
+  steps.scroll = {...scroll, refused: !scroll.ok};
 
   steps.setValue = await attempt(() => client.execute('set_value', {app, element: area.token, value: SET_VALUE}, {lineage: shot.lineage}));
   shot = await observe();
@@ -159,25 +170,27 @@ async function minimizedSteps({record, client, io, screenshots, steps, touch}) {
 // Per item: the menu-bar click (the record, nothing posted), the rooted observation and the item's enabled state, the
 // item's element click (not sent when it reads disabled), the effect read back through an observation; Bold after the
 // document's first line is selected. After each action the frontmost process is read (the user window must stay in
-// front), and the approved bundle's activation watcher runs throughout.
-export async function menuCheck({record, user, client, io, screenshots}) {
+// front), and the approved bundle's activation watcher runs throughout. `menuActivation` sends M2a.2's engine-only
+// `spikeMenuActivation: true` with each item's press (route 3's activation around the route-1 press; never with the
+// menu-bar record's click), so the hold runs the lane with it off and on and the result sets the default.
+export async function menuCheck({record, user, client, io, screenshots, menuActivation = false}) {
   const userInFront = () => io.frontmost()?.pid === user.pid;
   if (!userInFront()) return {problem: 'the user window (the run\'s Finder) is not in front; nothing was sent'};
   const watch = io.watch.start();
   const items = {};
   let problem = null;
   try {
-    for (const id of Object.keys(MENU_ITEMS)) items[id] = await menuItem({id, record, client, io, screenshots, userInFront});
+    for (const id of Object.keys(MENU_ITEMS)) items[id] = await menuItem({id, record, client, io, screenshots, userInFront, menuActivation});
   } catch (error) { problem = `the menu check stopped: ${String(error.message).slice(0, 300)}`; }
   finally {
     const lines = await io.watch.stop(watch);
     items.activations = activationsOf(lines, watch);
   }
   const {activations, ...byItem} = items;
-  return {...(problem ? {problem} : {}), items: byItem, activations};
+  return {...(problem ? {problem} : {}), menuActivation, items: byItem, activations};
 }
 
-async function menuItem({id, record, client, io, screenshots, userInFront}) {
+async function menuItem({id, record, client, io, screenshots, userInFront, menuActivation}) {
   const {menu, path} = MENU_ITEMS[id], app = record.app, observe = () => getState(client, app, screenshots);
   const out = {};
   let shot = await observe();
@@ -199,7 +212,7 @@ async function menuItem({id, record, client, io, screenshots, userInFront}) {
   out.found = true;
   out.enabled = item.flags?.enabled !== false;
   if (out.enabled) {
-    out.click = await attempt(() => client.execute('click', {app, element: item.token}, {lineage: shot.lineage}));
+    out.click = await attempt(() => client.execute('click', {app, element: item.token, ...(menuActivation ? {spikeMenuActivation: true} : {})}, {lineage: shot.lineage}));
     out.clicked = out.click.ok;
     out.userInFront.push(userInFront());
   } else out.clicked = false;
@@ -213,6 +226,69 @@ async function menuItem({id, record, client, io, screenshots, userInFront}) {
 export function activationsOf(lines, watch) {
   return (lines ?? []).filter(line => line?.kind && line.pid !== watch?.pid)
     .map(line => ({kind: line.kind, bundleId: line.bundleId ?? null, scene: SCENE_BUNDLE_IDS.includes(line.bundleId), ...(line.at ? {at: line.at} : {})}));
+}
+
+// ---- Paste (M2a.3) ---------------------------------------------------------------------------------------------------
+
+// What the paste check writes: a plain paste, a Markdown paste (bold), and type_text's paste route over two lines.
+export const PASTE = Object.freeze({text: 'cua paste plain', markdown: '**cua paste bold**', typed: 'cua typed paste\nsecond typed line'});
+
+// M2a.3 live (its report's concerns: whether TextEdit reads the lazy item and shows the effect within the 2 s waits,
+// whether ⌘V into a background app after route 3's activation lands), on the run's TextEdit behind the run's Finder
+// window: each paste replaces a selected line of the run's document and is read back through an observation; type_text
+// runs with Korean 2-Set selected through the approved bundle's probe (an input method takes the paste route), the
+// owner's source and per-context preference restored after whatever happened. The owner's clipboard is fingerprinted
+// here before and after (the engine restores it only while nobody else wrote it); only whether it is the same leaves.
+export async function pasteCheck({record, user, client, io, screenshots}) {
+  const userInFront = () => io.frontmost()?.pid === user.pid;
+  if (!userInFront()) return {problem: 'the user window (the run\'s Finder) is not in front; nothing was sent'};
+  const before = io.clipboard();
+  const steps = {userInFront: []};
+  let problem = null;
+  try {
+    problem = await pasteSteps({record, client, io, screenshots, steps, userInFront});
+  } catch (error) {
+    problem = `the paste check stopped: ${String(error.message).slice(0, 300)}`;
+  } finally {
+    if (steps.inputSource) {
+      const restored = await restoreInputSource({io});
+      steps.inputSource.restored = restored.sourceRestored === true && restored.perContextRestored === true;
+    }
+    steps.clipboard = {same: io.clipboard() === before};
+  }
+  return {...(problem ? {problem} : {}), steps, verdict: pasteVerdict(steps)};
+}
+
+async function pasteSteps({record, client, io, screenshots, steps, userInFront}) {
+  const app = record.app, observe = () => getState(client, app, screenshots);
+  let shot = await observe();
+  const owned = ownershipProblems('textedit', shot, record);
+  if (owned.length) return `the observation is not the run's TextEdit window (${owned.map(p => p.message).join('; ')}); nothing was sent`;
+  // Selects `line`, sends `request(lineage)`, reads the result back. -> the action's result and the area after it.
+  const replace = async (line, request) => {
+    const selected = await attempt(() => client.execute('select_text', {app, element: textArea(shot).token, text: line}, {lineage: shot.lineage}));
+    shot = await observe();
+    if (!selected.ok || shot.selectedText !== line) return {out: {ok: false, prepared: false, ...(selected.ok ? {} : {selectError: selected.errorName})}, area: textArea(shot)};
+    const out = await attempt(() => request(shot.lineage));
+    steps.userInFront.push(userInFront());
+    shot = await observe();
+    return {out: {...out, prepared: true}, area: textArea(shot)};
+  };
+  const [textLine, markdownLine, typedLine] = PASTE_TARGETS;
+  const landed = (area, text, line) => typeof area?.value === 'string' && area.value.includes(text) && !area.value.includes(line);
+
+  let {out, area} = await replace(textLine, lineage => client.execute('paste', {app, text: PASTE.text, format: 'text'}, {lineage}));
+  steps.text = {...out, lands: landed(area, PASTE.text, textLine)};
+
+  const bold = PASTE.markdown.replace(/\*\*/g, '');
+  ({out, area} = await replace(markdownLine, lineage => client.execute('paste', {app, text: PASTE.markdown, format: 'md'}, {lineage})));
+  steps.markdown = {...out, lands: landed(area, bold, markdownLine), bold: typeof area?.valueMarkdown === 'string' && area.valueMarkdown.includes(PASTE.markdown)};
+
+  saveInputSource({io});
+  steps.inputSource = {selected: io.probe(['input-source', KOREAN_2SET])?.selected === true};
+  ({out, area} = await replace(typedLine, lineage => client.execute('type_text', {app, text: PASTE.typed}, {lineage})));
+  steps.typeText = {...out, lands: landed(area, PASTE.typed, typedLine)};
+  return null;
 }
 
 // ---- Enablement released ---------------------------------------------------------------------------------------------
@@ -388,6 +464,18 @@ function writePerContextLive(value) {
   execFileSync('/usr/bin/defaults', ['write', ...PER_CONTEXT, '-dict-add', 'TextInputGlobalPropertyPerContextInput', '-bool', value ? 'true' : 'false'], {stdio: 'ignore'});
 }
 
+// The general pasteboard's items and their types (osascript's JavaScript over AppKit), digested here. Types only, never
+// the data: reading a type list raises no pasteboard-privacy alert where reading data may, and the owner's content
+// never enters the harness. An item the engine's paste left behind carries M2a.3's concealed and transient markers, so
+// a restore that did not happen shows as a different type list. -> a sha256 hex digest.
+const CLIPBOARD_TYPES_JXA = `ObjC.import('AppKit');
+const items = ObjC.unwrap($.NSPasteboard.generalPasteboard.pasteboardItems) || [];
+JSON.stringify(items.map(item => (ObjC.unwrap(item.types) || []).map(t => ObjC.unwrap(t))));`;
+export function clipboardDigest({exec = execFileSync} = {}) {
+  const out = exec('/usr/bin/osascript', ['-l', 'JavaScript', '-e', CLIPBOARD_TYPES_JXA], {encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe']});
+  return createHash('sha256').update(out).digest('hex');
+}
+
 const approvedBundle = () => {
   const installed = installedEngine();
   if (!installed) throw new Error('no approved engine on this Mac: build and approve it first (cua engine build, cua engine approve)');
@@ -402,6 +490,7 @@ export const defaultIo = run => ({
   watch: {start: () => startWatch(approvedBundle(), run), stop: watch => stopWatch(watch)},
   probe: args => runProbe(approvedBundle(), args),
   readPerContext: readPerContextLive,
+  clipboard: () => clipboardDigest(),
   writePerContext: writePerContextLive,
   savedInputSource: SAVED_INPUT_SOURCE,
   preflight: dir => scenesPreflight({run: dir}),
@@ -427,7 +516,7 @@ function parse(argv) {
   }
   return {command, positional, flags};
 }
-const USAGE = 'usage: live-device.mjs begin --run <dir> --commit <sha> | minimized|menu|enablement|putback --run <dir> | watch start|stop --run <dir> | input-source | input-source-restore';
+const USAGE = 'usage: live-device.mjs begin --run <dir> --commit <sha> | minimized|enablement|paste|putback --run <dir> | menu --run <dir> [--menu-activation off|on] | watch start|stop --run <dir> | input-source | input-source-restore';
 const runDir = flags => {
   if (!flags.run || !isAbsolute(flags.run)) throw new Error('--run <absolute directory> is required');
   fs.mkdirSync(flags.run, {recursive: true, mode: 0o700});
@@ -445,7 +534,8 @@ export async function main(argv, {io: given = {}} = {}) {
     const io = {...defaultIo(null), ...given};
     return command === 'input-source' ? inputSourceCheck({io}) : restoreInputSource({io});
   }
-  if (!['begin', 'minimized', 'menu', 'enablement', 'putback', 'watch'].includes(command)) throw new Error(USAGE);
+  if (!['begin', 'minimized', 'menu', 'paste', 'enablement', 'putback', 'watch'].includes(command)) throw new Error(USAGE);
+  if (command === 'menu' && flags['menu-activation'] !== undefined && !['off', 'on'].includes(flags['menu-activation'])) throw new Error(USAGE);
   const run = runDir(flags), io = {...defaultIo(run), ...given};
   const screenshots = join(run, SCREENSHOT_DIR);
   if (command === 'begin') {
@@ -466,8 +556,9 @@ export async function main(argv, {io: given = {}} = {}) {
   const client = io.client();
   try {
     if (command === 'minimized') return await minimizedCheck({record, client, io, screenshots});
-    return await menuCheck({record, user: sceneRecord(run, 'finder'), client, io, screenshots});
-  } finally { client.close(); }
+    if (command === 'paste') return await pasteCheck({record, user: sceneRecord(run, 'finder'), client, io, screenshots});
+    return await menuCheck({record, user: sceneRecord(run, 'finder'), client, io, screenshots, menuActivation: flags['menu-activation'] === 'on'});
+  } finally { await client.close(); }
 }
 
 if (process.argv[1] && SCRIPT === fs.realpathSync(process.argv[1])) {

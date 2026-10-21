@@ -8,6 +8,7 @@
 //
 //   live.mjs minimized    --device <alias> --out <dir> [--run <device dir>] [--dry-run]
 //   live.mjs menu         --device <alias> --approved-runtime <home> --out <dir> [--run <device dir>] [--dry-run]
+//   live.mjs paste        --device <alias> --out <dir> [--run <device dir>] [--dry-run]
 //   live.mjs input-source --device <alias> --out <dir> [--run <device dir>] [--dry-run]
 //   live.mjs enablement   --device <alias> --out <dir> [--run <device dir>] [--dry-run]
 //   live.mjs cleanup      --device <alias> [--run <device dir>] [--preparation <dir>/preparation.json] [--out <dir>] [--dry-run]
@@ -30,17 +31,24 @@
 //
 // The checks:
 //   minimized     the run's TextEdit window minimized by its own button; the observation (tree, no screenshot, the
-//                 reason), a refused synthesized click, set_value and select_text acting, then type_text and ⌘A
-//                 recorded (did the value change, did the selection become the whole value), the window restored.
+//                 reason), a refused synthesized click and element scroll, set_value and select_text acting with no
+//                 click posted, then type_text and ⌘A recorded (did the value change, did the selection become the
+//                 whole value), each outcome's consequence stated apart, the window restored.
 //   menu          the run's TextEdit behind the run's Finder window: Edit > Select All, and Format > Font > Bold with the
 //                 first line selected, each through the menu-bar click (the record) and an observation (its enabled
-//                 state), an element click, and an observation (its effect); on cua's engine, then on the vendor's on a
-//                 fresh TextEdit in the same state, the frontmost process read after each vendor action and an
-//                 activation watcher around both lanes; the comparison decides whether the menu path takes activation.
+//                 state), an element click, and an observation (its effect); on cua's engine twice, M2a.2's
+//                 spikeMenuActivation off then on (each item's route and activationGuardMs recorded), then on the
+//                 vendor's, each lane on a fresh TextEdit in the same state, the frontmost process read after each
+//                 vendor action and an activation watcher around every lane; the setting verdict names which switch
+//                 setting works, so the default is set from the result.
+//   paste         M2a.3 on the run's TextEdit behind the run's Finder window: a plain and a Markdown paste, each over a
+//                 selected line, and type_text under Korean 2-Set (the paste route), each read back; the user window in
+//                 front throughout; the owner's source restored and the owner's clipboard's type list unchanged.
 //   input-source  `--probe input-source` through the approved bundle: the owner's source and per-context preference
 //                 saved, Korean 2-Set selected, read back by a second probe, both restored (and again by put-back).
-//   enablement    the run's Chrome for Testing observed by one connection, which closes, then by a second: the engine's
-//                 diagnostics show whether the second found the attribute released (set again) or still set.
+//   enablement    the run's Chrome for Testing observed by one connection, which closes, then by a second: released when
+//                 each connection's first observation reads the attribute false (timings.enablementPrior) and the
+//                 first sets it.
 //   cleanup       the put-back alone (and the vendor home's cleanup from a preparation.json), for a command that died.
 import * as fs from 'node:fs';
 import {tmpdir} from 'node:os';
@@ -54,13 +62,14 @@ import {checkoutCli, checkVendorPreflight, connectVendorLane, controllerCheckout
 import {BIND} from './goldens-cells.mjs';
 import {REPO_ROOT} from './goldens-install.mjs';
 import {EFFECT, MENU_BAR, MENU_ITEM, SELECT_FIRST_LINE} from './live-cells.mjs';
-import {MENU_ITEMS, menuComparison} from './live-checks.mjs';
+import {MENU_ITEMS, menuComparison, menuSettingVerdict} from './live-checks.mjs';
 import {SCENES} from '../repl-parity/scenes-mac.mjs';
 
 const SCRIPT = fileURLToPath(import.meta.url);
 const REFUSED = 2;
 export const DEFAULT_RUN = 'Library/Caches/cua-harness/native-live';
-export const COMMANDS = Object.freeze(['minimized', 'menu', 'input-source', 'enablement', 'cleanup']);
+export const COMMANDS = Object.freeze(['minimized', 'menu', 'paste', 'input-source', 'enablement', 'cleanup']);
+const MENU_ACTIVATION = Object.freeze(['off', 'on']);
 const LIVE_DEVICE = 'scripts/native-matrix/live-device.mjs';
 
 // ---- the device ---------------------------------------------------------------------------------------------------
@@ -154,7 +163,11 @@ export function checkPassed(command, check) {
   if (!check || check.problem) return false;
   if (command === 'minimized' || command === 'input-source') return check.verdict?.pass === true;
   if (command === 'enablement') return check.verdict?.released === true;
-  if (command === 'menu') return !check.cua?.problem && !check.vendor?.problem && typeof check.comparison?.decision === 'string' && !check.comparison.decision.startsWith('undecided');
+  if (command === 'paste') return check.verdict?.pass === true;
+  if (command === 'menu') {
+    return MENU_ACTIVATION.every(setting => check.cua?.[setting] && !check.cua[setting].problem) && !check.vendor?.problem
+      && typeof check.setting?.decision === 'string' && !check.setting.decision.startsWith('undecided');
+  }
   return false;
 }
 
@@ -170,6 +183,7 @@ const activate = (ctx, id) => {
 
 export const CHECKS = {
   minimized: async ctx => { up(ctx, 'textedit'); return ctx.ops.live(['minimized', '--run', ctx.run]); },
+  paste: async ctx => { up(ctx, 'textedit'); up(ctx, 'finder'); activate(ctx, 'finder'); return ctx.ops.live(['paste', '--run', ctx.run]); },
   'input-source': async ctx => ctx.ops.live(['input-source']),
   enablement: async ctx => { up(ctx, 'chrome'); return ctx.ops.live(['enablement', '--run', ctx.run]); },
   menu: menuCheck,
@@ -190,13 +204,22 @@ async function menuCheck(ctx) {
     result.vendor = {home: prepared.home, release: pre.release ?? null};
     let textedit = up(ctx, 'textedit');
     const finder = up(ctx, 'finder');
-    activate(ctx, 'finder');
-    const cua = ops.live(['menu', '--run', run]);
+    // A fresh TextEdit (the run's document rewritten) before each lane after the first, so every lane starts alike.
+    const fresh = why => {
+      const down = ops.scenes(['down', 'textedit', '--run', run]);
+      if (!down?.down) throw new Error(`the run's TextEdit did not come down for ${why}`);
+      textedit = up(ctx, 'textedit');
+    };
+    // cua's lane twice: M2a.2's spikeMenuActivation off (the default), then on.
+    const cua = {};
+    for (const setting of MENU_ACTIVATION) {
+      if (setting !== MENU_ACTIVATION[0]) fresh(`cua's lane with the switch ${setting}`);
+      activate(ctx, 'finder');
+      cua[setting] = ops.live(['menu', '--run', run, '--menu-activation', setting]);
+    }
 
-    // The vendor's lane on the same scene state: a fresh TextEdit (the run's document rewritten), Finder in front.
-    const down = ops.scenes(['down', 'textedit', '--run', run]);
-    if (!down?.down) throw new Error('the run\'s TextEdit did not come down for the vendor lane');
-    textedit = up(ctx, 'textedit');
+    // The vendor's lane on the same scene state, Finder in front.
+    fresh('the vendor lane');
     const stderrFile = join(fs.mkdtempSync(join(tmpdir(), 'cua-live-serve-')), 'serve-stderr.txt');
     let js;
     ({client, js} = await connectVendorLane({ops, pre, prepared, connect: io.connect, bundleIds: [SCENES.textedit.bundleId], meta: result, stderrFile}));
@@ -224,7 +247,8 @@ async function menuCheck(ctx) {
       }
     } catch (error) { vendor.problem = error.message; }
     finally { vendor.activations = ops.live(['watch', 'stop', '--run', run]).activations ?? []; }
-    return {cua, vendor, comparison: menuComparison(cua?.items, vendor.items)};
+    return {cua, vendor, comparison: Object.fromEntries(MENU_ACTIVATION.map(setting => [setting, menuComparison(cua[setting]?.items, vendor.items)])),
+      setting: menuSettingVerdict(cua.off?.items, cua.on?.items)};
   } finally {
     if (client) {
       try { await client.call('end_task'); } catch {}
@@ -242,7 +266,8 @@ const DRY_RELEASE = '26.928.40906-darwin-arm64';
 export const DRY_ANSWERS = Object.freeze({
   'live-device.mjs begin': {refusals: [], checkout: {dirty: false}, engine: {build: '(the approved build)'}, frontmost: {bundleId: 'com.apple.Terminal'}, engineStop: {wasRunning: false}},
   'live-device.mjs minimized': {steps: {}, verdict: {pass: true}},
-  'live-device.mjs menu': {items: {selectAll: {found: true, enabled: true, effect: true}, bold: {found: true, enabled: true, effect: true}}, activations: []},
+  'live-device.mjs menu': {menuActivation: false, items: {selectAll: {found: true, enabled: true, effect: true}, bold: {found: true, enabled: true, effect: true}}, activations: []},
+  'live-device.mjs paste': {steps: {}, verdict: {pass: true}},
   'live-device.mjs enablement': {verdict: {released: true}},
   'live-device.mjs input-source': {verdict: {pass: true}},
   'live-device.mjs putback': {plan: [], steps: {}, ok: true},
@@ -295,7 +320,7 @@ export function dryConnect({log}) {
 
 // ---- the CLI ------------------------------------------------------------------------------------------------------
 
-export const USAGE = 'usage: live.mjs minimized|input-source|enablement --device <alias> --out <dir> [--run <device dir>] [--dry-run] | live.mjs menu --device <alias> --approved-runtime <home> --out <dir> [--run <device dir>] [--dry-run] | live.mjs cleanup --device <alias> [--run <device dir>] [--preparation <file>] [--out <dir>] [--dry-run]';
+export const USAGE = 'usage: live.mjs minimized|paste|input-source|enablement --device <alias> --out <dir> [--run <device dir>] [--dry-run] | live.mjs menu --device <alias> --approved-runtime <home> --out <dir> [--run <device dir>] [--dry-run] | live.mjs cleanup --device <alias> [--run <device dir>] [--preparation <file>] [--out <dir>] [--dry-run]';
 const OPTIONS = {device: {type: 'string'}, out: {type: 'string'}, run: {type: 'string'}, 'approved-runtime': {type: 'string'}, preparation: {type: 'string'},
   'dry-run': {type: 'boolean', default: false}};
 const fail = message => { throw new Error(`${message}\n${USAGE}`); };

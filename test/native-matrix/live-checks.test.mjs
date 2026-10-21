@@ -6,8 +6,8 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import {
   ABC, FIRST_LINE, KOREAN_2SET, LAST_LINE, NEVER_TOUCHED, allSelected, enablementOf, enablementVerdict, failureOf, firstLineBold, frontAppAction,
-  inputSourceVerdict, liveRefusals, menuBarItem, menuComparison, menuItemAt, minimizeButton, minimizedVerdict, parsePerContext, perContextRestore,
-  putBackPlan, restoreTarget, textArea, vendorMenuBarIndex, vendorMenuItem, vendorSelectedText, vendorTextAreaIndex,
+  inputSourceVerdict, liveRefusals, menuBarItem, menuComparison, menuItemAt, menuSettingVerdict, minimizeButton, minimizedVerdict, parsePerContext, pasteVerdict,
+  perContextRestore, putBackPlan, restoreTarget, textArea, vendorMenuBarIndex, vendorMenuItem, vendorSelectedText, vendorTextAreaIndex,
 } from '../../scripts/native-matrix/live-checks.mjs';
 import {SkyComputerUseError} from '../../src/services/engine/protocol.mjs';
 
@@ -90,6 +90,9 @@ test('failureOf keeps the error name, a bounded sentence and whether anything wa
   assert.equal(out.posted, false);
   assert.equal(failureOf(new Error('boom')).errorName, null);
   assert.equal(failureOf(Object.assign(new Error('x'), {errorName: 'userIntervened', meta: {startedAt: 5, endedAt: 6}})).posted, true);
+  // A failed activation guard's time rides on the error (M2a.2's menu press and route 3 keep it).
+  assert.equal(failureOf(Object.assign(new Error('x'), {errorName: 'activationFailed', meta: {inputRoute: 1, startedAt: null, activationGuardMs: 41.5}})).activationGuardMs, 41.5);
+  assert.equal('activationGuardMs' in failureOf(error), false);
 });
 
 test('minimizedVerdict: the observation, the refusal and the Accessibility routes are expectations; typing and the ⌘A are recorded', () => {
@@ -97,15 +100,24 @@ test('minimizedVerdict: the observation, the refusal and the Accessibility route
     minimize: {ok: true, minimized: true},
     observe: {ok: true, treePresent: true, textArea: true, screenshotNull: true, screenshotOmitted: 'windowMinimized'},
     click: {ok: false, refused: true, errorName: 'windowMinimized', namesMinimized: true, posted: false},
-    setValue: {ok: true, valueMatches: true},
-    selectText: {ok: true, selectionMatches: true},
+    scroll: {ok: false, refused: true, errorName: 'windowMinimized', posted: false},
+    setValue: {ok: true, valueMatches: true, posted: false},
+    selectText: {ok: true, selectionMatches: true, posted: false},
     typeText: {ok: true, valueChanged: false, route: "2'"},
     selectAll: {ok: true, effect: false, route: "2'"},
     restore: {ok: true, onScreen: true},
   };
   const out = minimizedVerdict(steps);
   assert.equal(out.pass, true);
-  assert.deepEqual(out.recorded, {typeTextValueChanged: false, superAEffect: false});
+  assert.deepEqual(out.recorded, {typeTextValueChanged: false, superAEffect: false, scrollRefused: true});
+  // The focus click is skipped in a minimized window (62235d71): set_value and select_text post nothing.
+  assert.deepEqual(minimizedVerdict({...steps, setValue: {...steps.setValue, posted: true}}).failed, ['setValueNoClick']);
+  assert.deepEqual(minimizedVerdict({...steps, selectText: {...steps.selectText, posted: true}}).failed, ['selectTextNoClick']);
+  // The element scroll's refusal is recorded, not judged (a unit test gates it).
+  const scrolled = minimizedVerdict({...steps, scroll: {ok: true, route: 3, posted: true}});
+  assert.equal(scrolled.pass, true);
+  assert.equal(scrolled.recorded.scrollRefused, false);
+  assert.equal(minimizedVerdict({...steps, scroll: undefined}).recorded.scrollRefused, null);
   // The two outcomes decide two refusals apart (M2a.4's ruling): plain typing decides type_text and press_key without ⌘;
   // ⌘A decides ⌘ chords, refused only when it did not act. All four combinations read as their consequences.
   const REFUSE_PLAIN = 'refuse type_text and press_key without ⌘ into a minimized window: typed text did not reach it';
@@ -148,16 +160,62 @@ test('menuComparison: per item the enabled state and the effect on each lane, an
   assert.equal(menuComparison({selectAll: works, bold: works}, null).decision, 'undecided: an item was not exposed or a lane is missing');
 });
 
-test('enablementOf and enablementVerdict: a second connection\'s observation that sets the attribute again shows the release', () => {
-  assert.deepEqual(enablementOf({enable: 0.4, enabled: 'AXManualAccessibility', webShaped: true, chromium: true, webAreaWait: 120, webAreaFound: true, nodes: 83}),
-    {set: 'AXManualAccessibility', webShaped: true, chromium: true, webAreaSeen: false, webAreaFound: true});
-  const first = {set: 'AXManualAccessibility', webShaped: true, chromium: true, webAreaSeen: false, webAreaFound: true};
+test('enablementOf and enablementVerdict: released when each connection\'s first observation reads the attribute false and the first sets it', () => {
+  assert.deepEqual(enablementOf({enable: 0.4, enablementPrior: 'false', enabled: 'AXManualAccessibility', webShaped: true, chromium: true, webAreaWait: 120, webAreaFound: true, nodes: 83}),
+    {prior: 'false', set: 'AXManualAccessibility', webShaped: true, chromium: true, webAreaSeen: false, webAreaFound: true});
+  assert.equal(enablementOf({}).prior, null, 'an app listing neither attribute reports no prior');
+  const first = {prior: 'false', set: 'AXManualAccessibility', webShaped: true, chromium: true, webAreaSeen: false, webAreaFound: true};
   const released = enablementVerdict({first, second: first});
   assert.equal(released.released, true);
-  assert.match(released.diagnostic, /false from unreadable/);
-  const kept = enablementVerdict({first, second: {set: null, webShaped: true, chromium: true, webAreaSeen: true, webAreaFound: null}});
-  assert.equal(kept.released, false);
-  assert.equal(enablementVerdict({first: {...first, set: null}, second: first}).released, null, 'the first connection never set it: nothing to release');
+  assert.deepEqual(released.priors, {first: 'false', second: 'false'});
+  assert.equal('diagnostic' in released, false, 'the prior is read off the engine now');
+  // Still true after the first connection closed: not released.
+  assert.equal(enablementVerdict({first, second: {...first, prior: 'true', set: null}}).released, false);
+  // A first read that was not false (true: someone else's; unreadable: never owned) cannot show a release.
+  assert.equal(enablementVerdict({first: {...first, prior: 'true', set: null}, second: first}).released, false);
+  assert.equal(enablementVerdict({first: {...first, prior: 'unreadable'}, second: first}).released, false);
+  assert.equal(enablementVerdict({first: {...first, set: null}, second: first}).released, false, 'read false but not set: nothing was owned');
+  assert.equal(enablementVerdict({first: null, second: first}).released, false);
+});
+
+test('menuSettingVerdict: which spikeMenuActivation setting makes both items act, so the default can be set from it', () => {
+  const works = {found: true, enabled: true, clicked: true, effect: true};
+  const fails = {...works, effect: false};
+  const lane = (selectAll, bold) => ({selectAll, bold});
+  const v = (off, on) => menuSettingVerdict(off, on);
+  assert.deepEqual(v(lane(works, works), lane(works, works)).works, {off: true, on: true});
+  assert.equal(v(lane(works, works), lane(works, works)).decision, 'off works: keep spikeMenuActivation off by default (the menu path takes no activation); on works too');
+  assert.equal(v(lane(works, works), lane(fails, works)).decision, 'off works: keep spikeMenuActivation off by default (the menu path takes no activation); on does not');
+  assert.equal(v(lane(fails, works), lane(works, works)).decision, 'only on works: set spikeMenuActivation on by default (route 3\'s activation around a menu item\'s press)');
+  assert.equal(v(lane(fails, works), lane(fails, works)).decision, 'neither works: route 3\'s activation around the press is not enough for a background app\'s responder-chain items');
+  assert.deepEqual(v(lane(fails, works), lane(fails, works)).failing, {off: ['selectAll'], on: ['selectAll']});
+  const pressed = {...works, click: {ok: true, route: 1, posted: true, activationGuardMs: 18.5}};
+  assert.deepEqual(v(lane(fails, works), lane(pressed, pressed)).items, {
+    off: {selectAll: {effect: false, route: null, activationGuardMs: null}, bold: {effect: true, route: null, activationGuardMs: null}},
+    on: {selectAll: {effect: true, route: 1, activationGuardMs: 18.5}, bold: {effect: true, route: 1, activationGuardMs: 18.5}}});
+  assert.match(v(lane({found: false}, works), lane(works, works)).decision, /^undecided/);
+  assert.match(v(null, lane(works, works)).decision, /^undecided/);
+});
+
+test('pasteVerdict: plain and Markdown pastes land behind the user window, type_text takes the paste route under Korean 2-Set, the owner\'s clipboard is back', () => {
+  const steps = {
+    userInFront: [true, true, true],
+    text: {ok: true, route: 'paste', posted: true, lands: true},
+    markdown: {ok: true, route: 'paste', posted: true, lands: true, bold: true},
+    typeText: {ok: true, route: 'paste', posted: true, lands: true, entered: 27},
+    inputSource: {selected: true, restored: true},
+    clipboard: {same: true},
+  };
+  const out = pasteVerdict(steps);
+  assert.equal(out.pass, true, JSON.stringify(out.failed));
+  assert.deepEqual(out.recorded, {markdownBold: true, entered: 27});
+  assert.deepEqual(pasteVerdict({...steps, clipboard: {same: false}}).failed, ['clipboardRestored']);
+  assert.deepEqual(pasteVerdict({...steps, typeText: {...steps.typeText, route: "2'"}}).failed, ['typeTextPasteRoute']);
+  assert.deepEqual(pasteVerdict({...steps, userInFront: [true, false, true]}).failed, ['userStaysInFront']);
+  assert.deepEqual(pasteVerdict({...steps, markdown: {...steps.markdown, bold: false}}).failed, [], 'bold is recorded, not judged');
+  assert.deepEqual(pasteVerdict({...steps, text: {ok: false, errorName: 'clipboardReadTimedOut', posted: true}}).failed, ['textLands']);
+  assert.deepEqual(pasteVerdict({...steps, inputSource: {selected: true, restored: false}}).failed, ['inputSourceRestored']);
+  assert.equal(pasteVerdict({}).pass, false);
 });
 
 test('inputSourceVerdict: selected, read back as Korean 2-Set, and the owner\'s source and preference restored', () => {

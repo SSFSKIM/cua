@@ -12,13 +12,13 @@ const meta = (over = {}) => ({device: 'mini', host: 'cua', engine: 'cua', commit
 const settle = (scene, settled) => ({scene, cell: 'settle', ok: true, settled});
 
 test('a native-mac lane\'s settle rows as the matrix\'s rows: one per scene, a lane that moved fails unless declared for its engine', () => {
-  const rows = [settle('textedit', true), settle('finder', true), settle('chrome', false), {scene: 'chrome', cell: 'action', ok: true}];
+  const rows = [settle('textedit', true), settle('finder', true), settle('chrome', false), {scene: 'chrome', cell: 'action', ok: true}, settle('electron', true)];
   const result = settleResult({meta: meta(), rows, declarations: [{scene: 'chrome', golden: 'settle', kind: 'settle', lane: 'vendor', fault: 'vendor', cause: 'vendor only'}]});
   assert.deepEqual(validateCellResult(result), []);
   assert.equal(result.cell, 'settle');
   assert.deepEqual(result.lanes, [{host: 'cua', engine: 'cua', build: 'b'.repeat(64), version: '0.1.0'}]);
   assert.deepEqual(result.rows.map(r => [r.id, r.ok, r.invalid ?? null]), [['textedit/settle', true, null], ['finder/settle', true, null], ['chrome/settle', false, null],
-    ['electron/settle', false, 'the scene\'s action did not complete: no settle reading']]);
+    ['electron/settle', true, null]]);
   assert.equal(result.verdict, 'fail', 'a vendor declaration does not excuse cua\'s lane');
   const declared = settleResult({meta: meta(), rows, declarations: [{scene: '*', golden: 'settle', kind: 'settle', lane: 'cua', fault: 'scene state', cause: 'the page animates'}]});
   assert.deepEqual(declared.rows[2].declared, {kind: 'settle', cause: 'the page animates'});
@@ -38,4 +38,14 @@ test('cell settle runs the suite\'s lane with this checkout\'s commit; a dry run
   assert.equal(await runCell('settle', options, io), 0);
   assert.deepEqual(runs, [{device: 'mini', host: 'vendor', engine: 'cua', approvedRuntime: '/h', approvedEngine: '/e', commit: 'd'.repeat(40), out: '/tmp/settle-out'}]);
   await assert.rejects(runCell('nope', options, io), /settle/);
+});
+
+test('the settle cell needs every scene\'s settle reading, whatever the suite\'s completion says: one settled scene and three failed actions is no verdict', () => {
+  // The suite is complete (a lane cell's failure is its outcome for the diff), but only TextEdit's action settled.
+  const rows = [settle('textedit', true), {scene: 'finder', cell: 'action', ok: false, error: 'x'}, {scene: 'chrome', cell: 'action', ok: false, error: 'x'}, {scene: 'electron', cell: 'bind', ok: false, error: 'x'}];
+  const result = settleResult({meta: meta(), rows});
+  assert.deepEqual(validateCellResult(result), []);
+  assert.deepEqual([result.complete, result.verdict], [false, 'no-verdict']);
+  assert.ok(result.problems.includes('finder: no settle reading (its action did not complete): the settle cell needs every scene\'s'), result.problems.join('\n'));
+  assert.equal(result.problems.length, 3);
 });

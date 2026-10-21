@@ -6,7 +6,8 @@
 // written by scripts/repl-parity/native-mac.mjs runNativeMac into `<out>/result.json`), so the matrix's `summary` reads
 // them in its one shape; `native-matrix.mjs cell settle` runs that lane (the registry's external source, runCell and
 // cellIo). A lane that did not settle fails its row unless the suite's expected file declares it for that engine (its
-// `settle` kind, `lane` the engine), the same declaration the suite's diff reads.
+// `settle` kind, `lane` the engine), the same declaration the suite's diff reads; a scene with no reading at all (its
+// bind, fixed state or action failed, which the suite records as an outcome) leaves the cell incomplete: no verdict.
 import {SCENE_IDS} from '../repl-parity/scenes-mac.mjs';
 import {cellResult} from './cell-result.mjs';
 import {controllerCheckout} from './goldens.mjs';
@@ -27,9 +28,13 @@ export function settleResult({meta, rows, declarations = []}) {
     const rule = settled ? null : declarations.find(d => d.kind === 'settle' && d.lane === engine && (d.scene === '*' || d.scene === scene));
     return {...base, ok: settled, outcome: {settled}, ...(rule ? {declared: {kind: 'settle', cause: rule.cause}} : {})};
   });
+  // The suite completes with a scene's lane cell failed (an outcome for its diff); the settle cell does not: each
+  // scene's reading is its evidence, and one missing leaves it incomplete, so no verdict.
+  const unread = out.filter(r => r.invalid).map(r => `${r.scene}: no settle reading (its action did not complete): the settle cell needs every scene's`);
   return cellResult({cell: 'settle', device: meta.device ?? null, started: meta.started, finished: meta.finished ?? new Date().toISOString(),
     lanes: [{host: meta.hostAttestation?.host ?? meta.host ?? null, engine, build: attested?.build ?? null, version: attested?.version ?? null}],
-    complete: meta.complete === true, refused: Boolean(meta.refused?.length), problems: [...(meta.refused ?? []), ...(meta.problems ?? []), ...(meta.error ? [meta.error] : [])],
+    complete: meta.complete === true && unread.length === 0, refused: Boolean(meta.refused?.length),
+    problems: [...(meta.refused ?? []), ...(meta.problems ?? []), ...(meta.error ? [meta.error] : []), ...(meta.refused?.length ? [] : unread)],
     rows: out, meta: {suite: meta.suite ?? 'native-mac', commit: meta.commit ?? null}});
 }
 

@@ -285,6 +285,16 @@ test('a text whose state cua\'s check refuses is removed unread: the fixed text 
   assert.equal(after.calls.filter(c => c[1] === 'down').length, 4, 'every scene is brought down');
 });
 
+test('lane cells that fail leave the suite complete but the settle cell without its readings: no verdict, never a pass', async () => {
+  const device = fakeDevice();
+  const lane = fakeLane(device, {engine: 'cua', fail: (kind, scene) => (kind === 'action' && scene !== 'textedit' ? 'activationFailed' : null)});
+  const run = await runLane({engine: 'cua', device, lane});
+  assert.equal(run.code, 0, 'the suite is complete: the failures are outcomes for the diff');
+  const result = JSON.parse(fs.readFileSync(join(run.out, 'result.json'), 'utf8'));
+  assert.deepEqual([result.complete, result.verdict], [false, 'no-verdict']);
+  assert.equal(result.rows.filter(r => !r.invalid).length, 1);
+});
+
 test('a lane cell that fails is the lane\'s outcome, recorded for the diff; the run stays complete', async () => {
   const device = fakeDevice();
   const lane = fakeLane(device, {engine: 'cua', fail: (kind, scene) => (kind === 'action' && scene === 'electron' ? 'activationFailed: the user\'s app lost frontmost' : null)});

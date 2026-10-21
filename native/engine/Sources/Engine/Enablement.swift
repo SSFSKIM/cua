@@ -80,6 +80,22 @@ struct EnablementAccess: @unchecked Sendable {
   }
 }
 
+/// What an enablement attribute read before the engine touched it at an observation: the live harness's evidence that
+/// a release writes back only what read false (`timings.enablementPrior`).
+enum EnablementPrior: Equatable {
+  case readTrue, readFalse, unreadable
+
+  init(_ read: Bool?) { self = read.map { $0 ? .readTrue : .readFalse } ?? .unreadable }
+
+  var wire: String {
+    switch self {
+    case .readTrue: return "true"
+    case .readFalse: return "false"
+    case .unreadable: return "unreadable"
+    }
+  }
+}
+
 /// One process's enablement as the engine left it. `io` serializes the process's reads and writes, so a release's write
 /// and a new observation's read never interleave; the fields are touched only under it.
 private final class EnabledProcess: @unchecked Sendable {
@@ -143,6 +159,12 @@ final class WebAccessibility: @unchecked Sendable {
   /// enablement attribute the process lists is set when it does not read true now. Returns the attribute this call set
   /// (nil when none is listed, the names cannot be read yet, it reads true, or the write failed).
   func enable(pid: pid_t, launched: Date?, connection: Int, access: EnablementAccess) -> String? {
+    enableReporting(pid: pid, launched: launched, connection: connection, access: access).set
+  }
+
+  /// `enable`, also answering what the attribute read before this call touched it (nil when nothing was read: none is
+  /// listed, or the names cannot be read yet), which the observation reports as `timings.enablementPrior`.
+  func enableReporting(pid: pid_t, launched: Date?, connection: Int, access: EnablementAccess) -> (set: String?, prior: EnablementPrior?) {
     let key = Self.process(pid, launched)
     lock.lock()
     let entry = processes[key] ?? EnabledProcess(access: access)
@@ -153,12 +175,13 @@ final class WebAccessibility: @unchecked Sendable {
     entry.io.lock()
     defer { entry.io.unlock() }
     if entry.listed == nil, let names = entry.access.listed() { entry.listed = .some(enablementAttribute(listed: names)) }
-    guard let listed = entry.listed, let name = listed else { return nil }
-    let prior = entry.access.read(name)
-    guard prior != true, entry.access.write(name, true) else { return nil }
+    guard let listed = entry.listed, let name = listed else { return (nil, nil) }
+    let read = entry.access.read(name)
+    let prior = EnablementPrior(read)
+    guard read != true, entry.access.write(name, true) else { return (nil, prior) }
     // Owned, and so released later, only when it read false (A3): an unreadable value may be another client's.
-    if prior == false { entry.owned = name }
-    return name
+    if read == false { entry.owned = name }
+    return (name, prior)
   }
 
   /// `connection` closed: every process it observed that no other connection observes is released.

@@ -226,11 +226,17 @@ extension Engine {
     var enabledNow = false
     let launchDate = app.running?.launchDate
     let eligible = enablementEligible(bundleIdentifier: app.bundleIdentifier, webShaped: webShaped)
-    if eligible, let attribute = timings.time("enable", {
-      webAccessibility.enable(pid: appPid, launched: launchDate, connection: connection.id, access: .live(pid: appPid, launched: launchDate))
-    }) {
-      timings.set("enabled", attribute)
-      enabledNow = true
+    if eligible {
+      let enabling = timings.time("enable") {
+        webAccessibility.enableReporting(pid: appPid, launched: launchDate, connection: connection.id, access: .live(pid: appPid, launched: launchDate))
+      }
+      // What the attribute read before this observation touched it: "true", "false" or "unreadable"; absent when the
+      // app lists neither attribute (or is not eligible).
+      if let prior = enabling.prior { timings.set("enablementPrior", prior.wire) }
+      if let attribute = enabling.set {
+        timings.set("enabled", attribute)
+        enabledNow = true
+      }
     }
 
     // The window is there by now when the engine opened the app (waited above); otherwise it is read once.

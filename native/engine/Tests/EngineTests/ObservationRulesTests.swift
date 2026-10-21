@@ -268,6 +268,25 @@ final class EnablementReleaseTests: XCTestCase {
     XCTAssertEqual(b.written, ["AXEnhancedUserInterface=true", "AXEnhancedUserInterface=false"])
   }
 
+  func testEachObservationReportsWhatTheAttributeReadBeforeTheEngineTouchedIt() {
+    // timings.enablementPrior, which the live harness reads to show the release's precondition (it read false).
+    let web = WebAccessibility()
+    let app = FakeApplication(names: ["AXManualAccessibility"])
+    let first = web.enableReporting(pid: 7, launched: launched, connection: 1, access: app.access)
+    XCTAssertEqual(first.set, "AXManualAccessibility")
+    XCTAssertEqual(first.prior?.wire, "false")
+    let second = web.enableReporting(pid: 7, launched: launched, connection: 1, access: app.access)
+    XCTAssertNil(second.set)
+    XCTAssertEqual(second.prior?.wire, "true", "set by the engine at the first observation")
+    let other = FakeApplication(names: ["AXEnhancedUserInterface"])
+    other.unreadable = ["AXEnhancedUserInterface"]
+    XCTAssertEqual(web.enableReporting(pid: 8, launched: launched, connection: 1, access: other.access).prior?.wire, "unreadable")
+    XCTAssertNil(web.enableReporting(pid: 9, launched: launched, connection: 1, access: FakeApplication(names: ["AXTitle"]).access).prior,
+                 "nothing listed: nothing read, nothing reported")
+    XCTAssertNil(web.enableReporting(pid: 10, launched: launched, connection: 1, access: FakeApplication(names: nil).access).prior,
+                 "names not readable yet")
+  }
+
   func testAnObservationThatBeginsDuringAReleasesResetWaitsForItAndEnablesAgain() {
     // A barrier holds the release inside its reset of the attribute (still true) while a new connection observes the
     // process. The new observation must not read the not-yet-reset true and skip enabling: it shares the retiring

@@ -97,14 +97,23 @@ private final class FakeApplication: @unchecked Sendable {
   var current = true
   var writes: [(String, Bool)] = []
   var namesRead = 0
+  var failWrites = false
+  /// Runs inside every write before it takes effect (a barrier a test holds a release's reset at).
+  var duringWrite: (String, Bool) -> Void = { _, _ in }
 
   init(names: [String]?) { self.names = names }
 
   var access: EnablementAccess {
     EnablementAccess(
       listed: { self.namesRead += 1; return self.names },
-      read: { self.unreadable.contains($0) ? nil : self.values[$0] },
-      write: { name, value in self.writes.append((name, value)); self.values[name] = value; return true },
+      read: { self.unreadable.contains($0) ? nil : self.values[$0] ?? false },  // an attribute nobody set reads false
+      write: { name, value in
+        self.duringWrite(name, value)
+        self.writes.append((name, value))
+        guard !self.failWrites else { return false }
+        self.values[name] = value
+        return true
+      },
       current: { self.current })
   }
 
@@ -155,13 +164,45 @@ final class EnablementReleaseTests: XCTestCase {
     XCTAssertTrue(app.writes.isEmpty)
   }
 
-  func testAnUnreadableAttributeIsSetAndOwned() {
+  func testAnUnreadableAttributeIsSetButNeverOwnedSoACloseLeavesItEnabled() {
     let web = WebAccessibility()
     let app = FakeApplication(names: ["AXManualAccessibility"])
-    app.unreadable = ["AXManualAccessibility"]
+    app.unreadable = ["AXManualAccessibility"]  // another client may have enabled it: the engine cannot tell
     XCTAssertEqual(web.enable(pid: 7, launched: launched, connection: 1, access: app.access), "AXManualAccessibility", "the vendor's rule: set unless it reads true")
     web.release(connection: 1)
-    XCTAssertEqual(app.written, ["AXManualAccessibility=true", "AXManualAccessibility=false"])
+    XCTAssertEqual(app.written, ["AXManualAccessibility=true"], "owned only when it read false (A3): never released")
+    XCTAssertEqual(app.values["AXManualAccessibility"], true)
+    web.releaseAll()
+    XCTAssertEqual(app.writes.count, 1)
+  }
+
+  func testAnUnreadableReadDoesNotDropOwnershipTheEngineAlreadyHas() {
+    let web = WebAccessibility()
+    let app = FakeApplication(names: ["AXManualAccessibility"])
+    app.values["AXManualAccessibility"] = false
+    _ = web.enable(pid: 7, launched: launched, connection: 1, access: app.access)
+    app.unreadable = ["AXManualAccessibility"]
+    _ = web.enable(pid: 7, launched: launched, connection: 1, access: app.access)
+    web.release(connection: 1)
+    XCTAssertEqual(app.written.last, "AXManualAccessibility=false")
+  }
+
+  func testAFailedResetKeepsOwnershipSoALaterCloseOrShutdownRetries() {
+    var failures: [String] = []
+    let web = WebAccessibility(releaseFailed: { failures.append($0) })
+    let app = FakeApplication(names: ["AXManualAccessibility"])
+    _ = web.enable(pid: 7, launched: launched, connection: 1, access: app.access)
+    app.failWrites = true
+    web.release(connection: 1)
+    XCTAssertEqual(app.values["AXManualAccessibility"], true, "the reset did not take")
+    XCTAssertEqual(failures, ["enablement release failed: AXManualAccessibility on pid 7; kept for a later close or shutdown"])
+    web.releaseAll()
+    XCTAssertEqual(failures.count, 2, "shutdown retried it")
+    app.failWrites = false
+    XCTAssertNil(web.enable(pid: 7, launched: launched, connection: 2, access: app.access), "it still reads true: nothing to set")
+    web.release(connection: 2)
+    XCTAssertEqual(app.values["AXManualAccessibility"], false, "the next close released what the engine still owns")
+    XCTAssertEqual(failures.count, 2)
   }
 
   func testAProcessNoLongerTheOneObservedIsNotWritten() {
@@ -227,23 +268,37 @@ final class EnablementReleaseTests: XCTestCase {
     XCTAssertEqual(b.written, ["AXEnhancedUserInterface=true", "AXEnhancedUserInterface=false"])
   }
 
-  func testAnObservationThatBeginsWhileAReleaseRunsIsEnabledAfterIt() {
-    // The release's write and a new observation's read never interleave: the new observer either keeps the process
-    // enabled (it registered first) or finds it released and sets it again (it registered after).
+  func testAnObservationThatBeginsDuringAReleasesResetWaitsForItAndEnablesAgain() {
+    // A barrier holds the release inside its reset of the attribute (still true) while a new connection observes the
+    // process. The new observation must not read the not-yet-reset true and skip enabling: it shares the retiring
+    // entry's lock, so it reads after the reset and sets the attribute again, owning it.
     let web = WebAccessibility()
     let app = FakeApplication(names: ["AXManualAccessibility"])
     _ = web.enable(pid: 7, launched: launched, connection: 1, access: app.access)
-    let group = DispatchGroup()
-    let launched = self.launched
-    for connection in 2...9 {
-      DispatchQueue.global().async(group: group) {
-        _ = web.enable(pid: 7, launched: launched, connection: connection, access: app.access)
-      }
+    let inReset = DispatchSemaphore(value: 0)
+    let proceed = DispatchSemaphore(value: 0)
+    app.duringWrite = { _, value in
+      guard !value else { return }
+      inReset.signal()
+      _ = proceed.wait(timeout: .now() + 5)
     }
-    web.release(connection: 1)
-    group.wait()
-    for connection in 2...9 { web.release(connection: connection) }
-    XCTAssertEqual(app.values["AXManualAccessibility"], false, "the last close released it")
-    XCTAssertEqual(app.written.last, "AXManualAccessibility=false")
+    let released = DispatchSemaphore(value: 0)
+    Thread { web.release(connection: 1); released.signal() }.start()
+    XCTAssertEqual(inReset.wait(timeout: .now() + 5), .success, "the release reached its reset")
+    app.duringWrite = { _, _ in }  // read only once the reset is held
+    let enabled = Box<String?>()
+    let observed = DispatchSemaphore(value: 0)
+    let launched = self.launched
+    Thread { enabled.value = web.enable(pid: 7, launched: launched, connection: 2, access: app.access); observed.signal() }.start()
+    let registered = Date().addingTimeInterval(5)
+    while !web.observers(pid: 7, launched: launched).contains(2), Date() < registered { usleep(1_000) }
+    XCTAssertTrue(web.observers(pid: 7, launched: launched).contains(2), "the new observation registered during the reset")
+    proceed.signal()
+    XCTAssertEqual(released.wait(timeout: .now() + 5), .success)
+    XCTAssertEqual(observed.wait(timeout: .now() + 5), .success)
+    XCTAssertEqual(enabled.value, "AXManualAccessibility", "it read the reset value and enabled again")
+    XCTAssertEqual(app.values["AXManualAccessibility"], true, "the process stays enabled under its new observer")
+    web.release(connection: 2)
+    XCTAssertEqual(app.written, ["AXManualAccessibility=true", "AXManualAccessibility=false", "AXManualAccessibility=true", "AXManualAccessibility=false"])
   }
 }

@@ -1,6 +1,7 @@
 import AppKit
 import ApplicationServices
 import Foundation
+import os
 
 // Enablement (the spec's Design, "Observation (skyshot)"; F §1.7, §1.9). An application element that lists
 // AXManualAccessibility gets it set (Electron, Chromium), else one that lists AXEnhancedUserInterface gets that, never
@@ -10,11 +11,15 @@ import Foundation
 // (`com.apple.iWork*`, `com.spotify.client`), where the vendor sets AXEnhancedUserInterface on any app that lists it in
 // its full-UI context, since that attribute changes how an AppKit app (the owner's Finder) behaves while it stays set
 // (Decision Log, T1's re-review); and the engine **releases** what it set: when the last connection that observed the
-// process closes (or the engine shuts down), it writes the attribute back to false, never writing one that read true
-// before the engine set it (VoiceOver's or another assistive client's), since the vendor never unsets and a web app left
-// in full-accessibility mode after cua is done is interference (A3). The first observation after enabling, and every
+// process closes (or the engine shuts down), it writes the attribute back to false. It owns, and so releases, only an
+// attribute it read false and then set: one that read true, or could not be read, may be VoiceOver's or another
+// assistive client's and is never written back. A failed write back is logged and retried at a later close or the
+// shutdown. The release is a declared difference, since the vendor never unsets, and a web app left in
+// full-accessibility mode after cua is done is interference (A3). The first observation after enabling, and every
 // observation of a Chromium window until a web area has been seen in the process, waits 100 ms and then up to 1 s for
 // an AXWebArea to appear. The vendor's Spotify fake activation before enabling is route 3's and is not done here.
+
+private let enablementLog = Logger(subsystem: "io.github.ssfskim.cua.engine", category: "enablement")
 
 let webAreaLeadMs: UInt32 = 100
 let webAreaWaitMs = 1_000.0
@@ -82,7 +87,7 @@ private final class EnabledProcess: @unchecked Sendable {
   let access: EnablementAccess
   /// The attribute the process lists (`enablementAttribute`), once its names could be read; `.some(nil)`: neither.
   var listed: String??
-  /// The attribute the engine set, which it releases; nil when it set none (or the attribute read true before it did).
+  /// The attribute the engine set after reading it false, which it releases; nil otherwise.
   var owned: String?
 
   init(access: EnablementAccess) { self.access = access }
@@ -96,6 +101,19 @@ final class WebAccessibility: @unchecked Sendable {
   private var webAreaSeen: Set<String> = []
   private var processes: [String: EnabledProcess] = [:]
   private var observers: [String: Set<Int>] = [:]
+  /// Told (a bounded, value-free line) when a reset of the attribute the engine set fails; it stays owned.
+  private let releaseFailed: (String) -> Void
+
+  init(releaseFailed: @escaping (String) -> Void = { enablementLog.error("\($0, privacy: .public)") }) {
+    self.releaseFailed = releaseFailed
+  }
+
+  /// The connections observing a process now.
+  func observers(pid: pid_t, launched: Date?) -> Set<Int> {
+    lock.lock()
+    defer { lock.unlock() }
+    return observers[Self.process(pid, launched)] ?? []
+  }
 
   private static func process(_ pid: pid_t, _ launched: Date?) -> String { "\(pid)@\(launched?.timeIntervalSince1970 ?? 0)" }
 
@@ -136,8 +154,10 @@ final class WebAccessibility: @unchecked Sendable {
     defer { entry.io.unlock() }
     if entry.listed == nil, let names = entry.access.listed() { entry.listed = .some(enablementAttribute(listed: names)) }
     guard let listed = entry.listed, let name = listed else { return nil }
-    guard entry.access.read(name) != true, entry.access.write(name, true) else { return nil }
-    entry.owned = name
+    let prior = entry.access.read(name)
+    guard prior != true, entry.access.write(name, true) else { return nil }
+    // Owned, and so released later, only when it read false (A3): an unreadable value may be another client's.
+    if prior == false { entry.owned = name }
     return name
   }
 
@@ -163,23 +183,39 @@ final class WebAccessibility: @unchecked Sendable {
     for (key, entry) in all { releaseIfUnobserved(key, entry) }
   }
 
-  /// Writes back what the engine set on a process no connection observes now, and forgets the process (with its web
-  /// area, whose tree may go with the attribute, so a later enabling waits for it again). An observation that registered
-  /// since keeps it; one that registers after finds it released and sets it again.
+  /// Writes back what the engine set on a process no connection observes now, then retires the process (with its web
+  /// area, whose tree may go with the attribute, so a later enabling waits for it again). The entry stays discoverable
+  /// through the reset, so an observation that begins meanwhile shares its lock and reads after the reset (setting the
+  /// attribute again, owned); it is retired only afterwards, by an atomic re-check that no observer registered. A reset
+  /// that fails keeps the ownership and the entry, so a later close or the shutdown retries it, and is logged.
   private func releaseIfUnobserved(_ key: String, _ entry: EnabledProcess) {
     entry.io.lock()
     defer { entry.io.unlock() }
+    guard unobserved(key) else { return }
+    var reset = false
+    if let owned = entry.owned {
+      if !entry.access.current() {
+        entry.owned = nil  // the process ended (its pid may be another launch's): nothing to write back
+      } else if entry.access.write(owned, false) {
+        entry.owned = nil
+        reset = true
+      } else {
+        releaseFailed("enablement release failed: \(owned) on pid \(key.prefix { $0 != "@" }); kept for a later close or shutdown")
+      }
+    }
     lock.lock()
-    let unobserved = observers[key]?.isEmpty ?? true
-    if unobserved {
+    if reset { webAreaSeen.remove(key) }
+    if entry.owned == nil, observers[key]?.isEmpty ?? true, processes[key] === entry {
       observers[key] = nil
-      if processes[key] === entry { processes[key] = nil }
-      if entry.owned != nil { webAreaSeen.remove(key) }
+      processes[key] = nil
     }
     lock.unlock()
-    guard unobserved, let owned = entry.owned else { return }
-    entry.owned = nil
-    if entry.access.current() { _ = entry.access.write(owned, false) }
+  }
+
+  private func unobserved(_ key: String) -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    return observers[key]?.isEmpty ?? true
   }
 }
 

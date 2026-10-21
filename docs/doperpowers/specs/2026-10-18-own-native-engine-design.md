@@ -67,7 +67,7 @@ How to see it: on the mini, with the plugin at the release this work ships, run 
   - [x] (2026-10-21 08:17Z) M2a.4 — (87571ece, review fixes f9daa446 on `m2a/settle`; reviewed clean; integration onto feat with M2a.2's drag and scroll pending) Settle on the vendor's rule for a first observation, enablement re-checked and released, the minimized primary window, `cua/serviceMs` in the wrapper.
   - [x] (2026-10-21 13:53Z) M2a.5 — (hold 2026-10-21 12:28–13:22Z on build 1ec58faab897; evidence bba7573e; Decision Log "M2a.5 hold"; paste and the HID row not run, residue for M2b) Live on the mini: comparison A's `task.*` rows on the reviewed M2a build.
 - [ ] M2b — The matrix, oracles and the `native-mac` suite (branch `feat/117-m2b` from 885d7d8e; Decision Log "M2b pre-flight").
-  - [ ] M2b.1a — `--probe keystroke --key-codes-only`; the HID composition row in two variants and paste, ready for the first hold.
+  - [x] (2026-10-21) M2b.1a — (96a36d01..b7161e6d, review fix f36b1f38; reviewed clean) `--probe keystroke --key-codes-only`; the HID composition row in two variants and paste, ready for the first hold.
   - [ ] M2b.1b — The rest of M2a's residue as live cells: route 4, `select_text` minimized, enablement release by Chromium's mode, the held menu activation against the vendor, horizontal scroll.
   - [ ] M2b.2 — `scripts/native-matrix.mjs`: the method matrix in two regimes, speed and finding-elements cells, the non-interference oracle and the key guard's user-window case, `compare`, `summary`.
   - [ ] M2b.3 — The probe-driven cells (concurrent use and its sheet variant, intervention fires, pre-action refusal), the Korean and Unicode matrix, the settle cell.
@@ -345,7 +345,7 @@ node scripts/native-baseline.mjs compare --end-to-end <dir>/vv <dir>/cc --out <d
 # expected: each prints VERDICT: PASS (or NO VERDICT with the missing rows named) and the per-operation table
 
 # M2b onward: the differential suite and the matrix (A = --approved-runtime <home> --approved-engine <bundle>)
-node scripts/repl-parity.mjs prepare --device mini $A
+node scripts/repl-parity.mjs prepare --device mini --commit <sha> $A
 node scripts/repl-parity.mjs run --device mini $A --suite native-mac --host vendor --engine vendor --out <dir>/vendor
 node scripts/repl-parity.mjs run --device mini $A --suite native-mac --host cua    --engine cua    --out <dir>/cua
 node scripts/repl-parity.mjs diff <dir>/vendor <dir>/cua --expected scripts/repl-parity/expected/native-mac.json

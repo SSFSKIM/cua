@@ -5,8 +5,8 @@ import Foundation
 
 // `cua-engine --probe <command>` (Interfaces, UserProbe). A probe binds no socket; every command exits except
 // `watch-activations`, which is resident until killed. The commands: `input-source current` (the active source, read
-// only), `input-source <id>` (selects that source, a keyboard layout or an input mode such as Korean 2-Set, and reads it
-// back; the harness saves and restores the owner's), `keystroke` (the stand-in user: HID-state events posted at the HID
+// only), `input-source <id> [--at <unix ms>]` (selects that source, a keyboard layout or an input mode such as Korean
+// 2-Set, at the scheduled time when `--at` is given, and reads it back; the harness saves and restores the owner's), `keystroke` (the stand-in user: HID-state events posted at the HID
 // event tap, only while the named window is frontmost, with each character's string, the layout's key codes alone or
 // the fixed ANSI keys; KeystrokeProbe.swift), `focus` (the focused app and window, and the named window's focused value
 // as a hash; FocusProbe.swift), `text-view` (a harness-owned text view's selected range and scroll bars by Accessibility,
@@ -16,8 +16,7 @@ enum Probe {
   static func run(_ arguments: [String]) -> Int32 {
     switch arguments.first {
     case "input-source":
-      guard arguments.count == 2 else { return emit(["error": "usage: --probe input-source current|<id>"], status: 64) }
-      return inputSource(arguments[1])
+      do { return inputSource(try InputSourceRequest.parse(Array(arguments.dropFirst()))) } catch { return emit(["error": error.message], status: 64) }
     case "keystroke":
       return keystroke(Array(arguments.dropFirst()))
     case "focus":
@@ -27,18 +26,24 @@ enum Probe {
     case "watch-activations":
       return watchActivations()
     default:
-      return emit(["error": "usage: --probe input-source current|<id> | keystroke --user-pid <n> --user-bounds <x,y,w,h> [--at <unix ms>] [--key-codes-only|--ansi-keys] <text> | focus [--window <pid,x,y,w,h>] | text-view --pid <n> [--set-horizontal <0..1>] [--set-vertical <0..1>] | watch-activations"],
+      return emit(["error": "usage: --probe input-source current|<id> [--at <unix ms>] | keystroke --user-pid <n> --user-bounds <x,y,w,h> [--at <unix ms>] [--key-codes-only|--ansi-keys] <text> | focus [--window <pid,x,y,w,h>] | text-view --pid <n> [--set-horizontal <0..1>] [--set-vertical <0..1>] | watch-activations"],
                   status: 64)
     }
   }
 
-  private static func inputSource(_ argument: String) -> Int32 {
-    let previous = currentInputSource()
-    if argument == "current" { return emit(sourceWire(previous), status: 0) }
+  /// `input-source current` reads; `input-source <id> [--at <unix ms>]` waits for `--at` when given, then selects and
+  /// reads back, printing `selectedAt`, the time the selection was made (the matrix's mid-switch row places it inside
+  /// a keyed type_text's interval).
+  private static func inputSource(_ request: InputSourceRequest) -> Int32 {
+    let argument = request.source
+    if argument == "current" { return emit(sourceWire(currentInputSource()), status: 0) }
     let filter = [kTISPropertyInputSourceID as String: argument] as CFDictionary
     guard let list = TISCreateInputSourceList(filter, true)?.takeRetainedValue() as? [TISInputSource], let source = list.first else {
       return emit(["error": "no input source with that id"], status: 2)
     }
+    if let at = request.at { while unixMilliseconds() < at { usleep(1_000) } }
+    let previous = currentInputSource()
+    let selectedAt = unixMilliseconds()
     let status = TISSelectInputSource(source)
     // Read back: the selection holds only when the current source is the one asked for (an input mode's parent method
     // may take a moment to switch), polled for up to 500 ms.
@@ -48,7 +53,7 @@ enum Probe {
       current = currentInputSource()
     }
     let selected = status == noErr && current.id == argument
-    return emit(["previous": sourceWire(previous), "current": sourceWire(current), "selected": selected], status: selected ? 0 : 3)
+    return emit(["previous": sourceWire(previous), "current": sourceWire(current), "selected": selected, "selectedAt": Int(selectedAt)], status: selected ? 0 : 3)
   }
 
   /// `watch-activations`: prints its own pid, then every NSWorkspace application activation and deactivation with its
@@ -99,5 +104,29 @@ enum Probe {
   static func emit(_ object: [String: Any], status: Int32) -> Int32 {
     if let data = encodeJSON(object) { FileHandle.standardOutput.write(data + Data("\n".utf8)) }
     return status
+  }
+}
+
+/// The input-source command's arguments: `current` or one source id, and `--at` (a selection only).
+struct InputSourceRequest: Equatable {
+  let source: String
+  let at: Int64?
+
+  static func parse(_ arguments: [String]) throws(ProbeUsage) -> InputSourceRequest {
+    var source: String?
+    var at: Int64?
+    var index = 0
+    while index < arguments.count {
+      if arguments[index] == "--at" {
+        guard index + 1 < arguments.count, let time = Int64(arguments[index + 1]) else { throw ProbeUsage(message: "--at needs a unix ms number") }
+        at = time; index += 2
+      } else {
+        guard source == nil else { throw ProbeUsage(message: "input-source takes one source") }
+        source = arguments[index]; index += 1
+      }
+    }
+    guard let source else { throw ProbeUsage(message: "input-source needs current or a source id") }
+    if source == "current", at != nil { throw ProbeUsage(message: "--at schedules a selection, not a reading of the current source") }
+    return InputSourceRequest(source: source, at: at)
   }
 }

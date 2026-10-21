@@ -34,7 +34,8 @@ export function settleResult({meta, rows, declarations = []}) {
 }
 
 // `cell settle`: the suite's lane on the requested host and engine (the sitting's checkout at this checkout's commit, as
-// the matrix's own runs require), which writes the result where --out says. io: cellIo's. -> its exit code.
+// the matrix's own runs require), which writes the result where --out says. io: cellIo's. -> the suite's exit code, which
+// is 0 for any complete lane: the registry's runExternal answers the result's verdict.
 export async function runCell(name, options, io) {
   if (!SETTLE_CELLS.includes(name)) throw new Error(`settle-cell.mjs runs the settle cell, not ${name}`);
   const lane = {device: options.device, host: options.host, engine: options.engine, approvedRuntime: options.approvedRuntime, approvedEngine: options.approvedEngine};

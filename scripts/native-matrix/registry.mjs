@@ -88,7 +88,9 @@ export async function listCells(options = {}) {
 }
 
 // Runs an external cell through its runner (its own io, its own harness), then reads its CellResult back from
-// `<out>/result.json` and checks it (in a dry run nothing is written, so nothing is read). -> the runner's exit code.
+// `<out>/result.json` and checks it (in a dry run nothing is written, so nothing is read). -> the runner's exit code when
+// it failed, else the result's verdict as the matrix's own runs answer it: 0 for a pass, 1 for anything else (a runner
+// that completed whatever its rows said, as the native-mac suite does, never passes a failed cell).
 export async function runExternal(name, def, options, base) {
   const runner = await def.load();
   if (typeof runner?.runCell !== 'function' || typeof runner?.cellIo !== 'function') throw new Error(`${def.module} exports no runCell and cellIo: the ${name} cell cannot be run from here`);
@@ -101,5 +103,5 @@ export async function runExternal(name, def, options, base) {
   if (result?.cell !== name) problems.push(`the result answers ${result?.cell ?? 'no cell'}, not ${name}`);
   if (problems.length) throw new Error(`${name} (${def.module}) wrote a result that does not conform: ${problems.join('; ')}`);
   (base.log ?? console.log)(`${name}: ${result.verdict}: ${file}`);
-  return code;
+  return code !== 0 ? code : result.verdict === 'pass' ? 0 : 1;
 }

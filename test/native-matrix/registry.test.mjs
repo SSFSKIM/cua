@@ -9,6 +9,7 @@ import {join} from 'node:path';
 import {cellResult, writeCellResult} from '../../scripts/native-matrix/cell-result.mjs';
 import {EXPECTED_RESIDUE, externalCells, listCells, resolveCell, runExternal} from '../../scripts/native-matrix/registry.mjs';
 import {planOf, scenesOf} from '../../scripts/native-matrix/run.mjs';
+import {runCell as runSettle, settleResult} from '../../scripts/native-matrix/settle-cell.mjs';
 
 const residue = (cell, ok = true) => cellResult({cell, device: 'mini', started: '2026-10-21T00:00:00Z', lanes: [{host: null, engine: 'cua', build: 'b', version: 'v'}], complete: true,
   rows: [{section: 'residue', id: `${cell}/one`, engine: 'cua', sample: 1, ok}]});
@@ -103,4 +104,18 @@ test('an expected source that is missing, lists other cells or has no runCell an
   const twice = harness();
   twice.modules['./residue-checks.mjs'] = {RESIDUE_CELLS: ['speed']};
   await assert.rejects(externalCells({load: twice.load, sources: [{names: './residue-checks.mjs', list: 'RESIDUE_CELLS', section: 'residue', runner: './live.mjs', expected: ['speed']}]}), /defined twice/);
+});
+
+test('an external cell\'s exit is its result\'s verdict: a complete settle lane with a scene that did not settle exits 1, though the suite exited 0', async () => {
+  const dir = fs.mkdtempSync(join(tmpdir(), 'registry-'));
+  try {
+    const meta = {device: 'mini', engine: 'cua', commit: 'c', started: '2026-10-21T00:00:00Z', finished: '2026-10-21T00:10:00Z', plan: {scenes: ['textedit', 'finder']}, complete: true,
+      problems: [], hostAttestation: {host: 'cua'}, engineAttestation: {attested: [{engine: 'cua', version: 'v', build: 'b'}]}};
+    const suite = settled => ({SETTLE_CELLS: ['settle'], runCell: runSettle, cellIo: () => ({log: () => {}, controllerCheckout: () => ({commit: 'c'}),
+      runSuite: async ({out}) => { writeCellResult(out, settleResult({meta, rows: [{scene: 'textedit', cell: 'settle', settled: true}, {scene: 'finder', cell: 'settle', settled}]})); return 0; }})});
+    const def = mod => ({module: './settle-cell.mjs', load: async () => mod});
+    const options = out => ({device: 'mini', host: 'cua', engine: 'cua', out: join(dir, out)});
+    assert.equal(await runExternal('settle', def(suite(false)), options('moved'), {log: () => {}}), 1, 'a failed settle row fails the cell');
+    assert.equal(await runExternal('settle', def(suite(true)), options('held'), {log: () => {}}), 0);
+  } finally { fs.rmSync(dir, {recursive: true, force: true}); }
 });

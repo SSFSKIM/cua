@@ -120,11 +120,15 @@ export function proofProblems(full) {
       const seen = [...new Set(values.map(v => JSON.stringify(v ?? null)))];
       if (seen.length > 1) missing.push(`run ${n}'s vendor and cua runs name more than one ${what} (${seen.join(', ')}): a pair is measured in one hold`);
     };
-    pair('hold', list.map(({result}) => result.meta?.sitting));
-    pair('commit', list.map(({result}) => result.meta?.commit));
-    const builds = list.map(({result}) => result.meta?.nativeEngine?.approved?.build);
-    if (builds.some(b => typeof b !== 'string' || !b)) missing.push(`run ${n}: a run records no approved engine build (meta.nativeEngine.approved): its pair cannot be shown to share one`);
-    else pair('approved engine build', builds);
+    // Each value recorded (a non-empty string) on every run of the pair before the pair is compared: values absent on
+    // both sides are not one shared value.
+    const shared = (what, field, values) => {
+      if (values.some(v => typeof v !== 'string' || !v)) missing.push(`run ${n}: a run records no ${what} (${field}): its pair cannot be shown to share one`);
+      else pair(what, values);
+    };
+    shared('hold', 'meta.sitting', list.map(({result}) => result.meta?.sitting));
+    shared('commit', 'meta.commit', list.map(({result}) => result.meta?.commit));
+    shared('approved engine build', 'meta.nativeEngine.approved', list.map(({result}) => result.meta?.nativeEngine?.approved?.build));
   }
   for (const engine of ['vendor', 'cua']) {
     const mine = full.filter(({result}) => result.lanes[0]?.engine === engine);

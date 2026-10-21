@@ -263,6 +263,17 @@ test('the hold is judged per run number: each run\'s vendor and cua results shar
     assert.ok(commits.missing.some(p => /^run 2's vendor and cua runs name more than one commit/.test(p)));
     const builds = judgeRuns(hold, n => ({...hold(n), nativeEngine: {approved: {build: n === 1 ? 'e'.repeat(64) : 'a'.repeat(64)}}}));
     assert.ok(builds.missing.some(p => /^run 1's vendor and cua runs name more than one approved engine build/.test(p)));
+    // A hold or commit absent, null or empty on every run is not one shared hold: each run names what it is missing.
+    for (const blank of [undefined, null, '']) {
+      const holdless = judgeRuns(n => ({...hold(n), sitting: blank}), n => ({...hold(n), sitting: blank}));
+      assert.equal(holdless.verdict, 'NO VERDICT', `sitting ${JSON.stringify(blank)}`);
+      assert.deepEqual(holdless.missing.filter(p => /records no hold/.test(p)).length, 3, holdless.missing.join('\n'));
+      const commitless = judgeRuns(n => ({...hold(n), commit: blank}), n => ({...hold(n), commit: blank}));
+      assert.equal(commitless.verdict, 'NO VERDICT', `commit ${JSON.stringify(blank)}`);
+      assert.ok(commitless.missing.some(p => /^run 1: a run records no commit/.test(p)), commitless.missing.join('\n'));
+    }
+    const oneSide = judgeRuns(hold, n => ({...hold(n), sitting: n === 2 ? null : hold(n).sitting}));
+    assert.ok(oneSide.missing.some(p => /^run 2: a run records no hold \(meta\.sitting\)/.test(p)), oneSide.missing.join('\n'));
     const unrecorded = judgeRuns(hold, n => ({...hold(n), nativeEngine: n === 2 ? {} : {approved: {build: 'a'.repeat(64)}}}));
     assert.ok(unrecorded.missing.some(p => /^run 2: a run records no approved engine build/.test(p)), unrecorded.missing.join('\n'));
     const unpaired = judgeRuns(hold, hold, {vendor: [1, 2, 3], cua: [1, 2, 4]});

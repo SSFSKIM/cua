@@ -9,7 +9,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {MARKER, parseCell} from '../../scripts/native-baseline/cells.mjs';
 import {EFFECT, MENU_BAR, MENU_ITEM, SELECT_FIRST_LINE} from '../../scripts/native-matrix/live-cells.mjs';
-import {checkPassed, dryConnect, dryExec, liveOps, parseCommand, runLive} from '../../scripts/native-matrix/live.mjs';
+import {SSH_OPTIONS, boundedExec, checkPassed, dryConnect, dryExec, liveOps, parseCommand, runLive, stepTimeout} from '../../scripts/native-matrix/live.mjs';
 
 const scratches = [];
 const scratch = () => { const dir = fs.realpathSync(fs.mkdtempSync(join(tmpdir(), 'cua-live-'))); scratches.push(dir); return dir; };
@@ -18,24 +18,27 @@ const COMMIT = 'c'.repeat(40);
 const RUN = '/Users/u/Library/Caches/cua-harness/native-live';
 const PREPARED = {device: 'mini', home: '/h', userHome: '/Users/u', configHome: '/s/config', tmpdir: '/s/tmp', admission: 'token',
   runtimeReuse: {approvedHome: '/h', release: '26.928.40906-darwin-arm64', runtimeRoot: '/h/runtimes/26.928.40906-darwin-arm64'}};
-const WORKS = {found: true, enabled: true, effect: true};
+const WORKS = {found: true, enabled: true, valid: true, clicked: true, click: {ok: true, route: 1, posted: true}, effect: true};
 const PASSED = {minimized: {steps: {}, verdict: {pass: true}}, enablement: {verdict: {released: true}}, 'input-source': {verdict: {pass: true}}, paste: {steps: {}, verdict: {pass: true}},
   menu: {items: {selectAll: WORKS, bold: WORKS}, activations: []}};
 
 // A device double answering each CLI command; `calls` keeps the order.
 function fakeDevice({begin = {refusals: [], checkout: {commit: COMMIT, dirty: false}, engine: {build: 'b'}, frontmost: {bundleId: 'com.apple.Terminal'}, engineStop: {wasRunning: false}},
-  live = {}, upFails = null, putback = {plan: ['scenes-down', 'engine-stop', 'apps-check', 'front-app'], steps: {}, ok: true}, frontmost = () => ({pid: 77, bundleId: 'com.apple.Terminal'})} = {}) {
+  live = {}, upFails = null, putback = {plan: ['scenes-down', 'engine-stop', 'apps-check', 'front-app'], steps: {}, ok: true}, frontmost = () => ({pid: 77, bundleId: 'com.apple.Terminal'}),
+  onCall = () => {}} = {}) {
   const calls = [];
   let pid = 600;
   const ops = {
     home: () => '/Users/u',
     live(args) {
       calls.push(['live', ...args]);
+      onCall(['live', ...args]);
       const [command] = args;
+      if (live[command]) return typeof live[command] === 'function' ? live[command](args) : live[command];
       if (command === 'begin') return begin;
       if (command === 'putback') return putback;
+      if (command === 'recover') return {killed: [], survivors: [], putBack: putback, ok: putback.ok === true};
       if (command === 'watch') return args[1] === 'start' ? {watching: true} : {activations: [{kind: 'activated', bundleId: 'com.apple.TextEdit', scene: true}]};
-      if (live[command]) return typeof live[command] === 'function' ? live[command](args) : live[command];
       if (command === 'menu') return {...PASSED.menu, menuActivation: args[args.indexOf('--menu-activation') + 1] === 'on'};
       return PASSED[command];
     },
@@ -125,7 +128,7 @@ test('minimized: begin, the scene up, the device check, then the put-back and th
   const device = fakeDevice(), out = scratch();
   const code = await runLive({command: 'minimized', device: 'mini', out}, io(device));
   assert.equal(code, 0);
-  assert.deepEqual(device.calls.map(c => c.slice(0, 3).join(' ')), ['live begin --run', 'scenes up textedit', 'live minimized --run', 'live putback --run', 'scenes frontmost']);
+  assert.deepEqual(device.calls.map(c => c.slice(0, 3).join(' ')), ['live begin --run', 'scenes up textedit', 'live minimized --run', 'live recover --run', 'scenes frontmost']);
   assert.deepEqual(device.calls[0], ['live', 'begin', '--run', RUN, '--commit', COMMIT]);
   const r = result(out);
   assert.equal(r.complete, true);
@@ -147,7 +150,7 @@ test('a refusal stops the command before anything on the device changes: no scen
 test('a check that stops still ends in the put-back; the result is incomplete', async () => {
   const device = fakeDevice({upFails: 'chrome'}), out = scratch();
   assert.equal(await runLive({command: 'enablement', device: 'mini', out}, io(device)), 1);
-  assert.deepEqual(device.calls.map(c => c.slice(0, 2).join(' ')), ['live begin', 'scenes up', 'live putback', 'scenes frontmost']);
+  assert.deepEqual(device.calls.map(c => c.slice(0, 2).join(' ')), ['live begin', 'scenes up', 'live recover', 'scenes frontmost']);
   const r = result(out);
   assert.equal(r.complete, false);
   assert.match(r.problems[0], /enablement check stopped/);
@@ -156,7 +159,7 @@ test('a check that stops still ends in the put-back; the result is incomplete', 
 test('a put-back that does not finish leaves the command incomplete whatever the check said', async () => {
   const device = fakeDevice({putback: {plan: [], steps: {'apps-check': {ok: false}}, ok: false}}), out = scratch();
   assert.equal(await runLive({command: 'input-source', device: 'mini', out}, io(device)), 1);
-  assert.deepEqual(device.calls.map(c => c.slice(0, 2).join(' ')), ['live begin', 'live input-source', 'live putback', 'scenes frontmost']);
+  assert.deepEqual(device.calls.map(c => c.slice(0, 2).join(' ')), ['live begin', 'live input-source', 'live recover', 'scenes frontmost']);
   assert.equal(result(out).complete, false);
 });
 
@@ -169,7 +172,7 @@ test('menu: the vendor home prepared and checked first, cua\'s lane, a fresh Tex
   assert.deepEqual(device.calls.filter(c => c[0] !== 'scenes' || c[1] !== 'frontmost').map(c => (c[1] === 'menu' ? c.slice(0, 2).concat(c.slice(4)) : c.slice(0, 3)).join(' ')),
     ['live begin --run', 'prepare /h', 'preflight', 'scenes up textedit', 'scenes up finder', 'scenes activate finder', 'live menu --menu-activation off',
       'scenes down textedit', 'scenes up textedit', 'scenes activate finder', 'live menu --menu-activation on',
-      'scenes down textedit', 'scenes up textedit', 'live watch start', 'scenes activate finder', 'scenes activate finder', 'live watch stop', 'cleanup /h', 'live putback --run']);
+      'scenes down textedit', 'scenes up textedit', 'live watch start', 'scenes activate finder', 'scenes activate finder', 'live watch stop', 'cleanup /h', 'live recover --run']);
   assert.deepEqual(vendor.cells, ['first', 'goldens:bind textedit', 'live:bar selectAll', 'live:item selectAll', 'live:effect selectAll', 'live:select bold',
     'live:bar bold', 'live:item bold', 'live:effect bold']);
   assert.deepEqual(vendor.clicks, [54, 73, 55, 84]);
@@ -177,7 +180,8 @@ test('menu: the vendor home prepared and checked first, cua\'s lane, a fresh Tex
   assert.equal(vendor.closed, true);
   const {vendor: lane, comparison, setting, cua} = r.check;
   assert.deepEqual([cua.off.menuActivation, cua.on.menuActivation], [false, true]);
-  assert.equal(setting.decision, 'off works: keep spikeMenuActivation off by default (the menu path takes no activation); on works too');
+  assert.equal(setting.setting, 'off');
+  assert.equal(setting.line, 'keep off: every item acts without activation (spikeMenuActivation stays off by default)');
   assert.equal(lane.items.selectAll.enabled, true);
   assert.equal(lane.items.selectAll.effect, true);
   assert.equal(lane.items.bold.prepared, true);
@@ -199,8 +203,8 @@ test('menu: the setting verdict comes from the two cua lanes, so a result where 
   const code = await runLive({command: 'menu', device: 'mini', out, approvedRuntime: '/h'}, io(device, {connect: fakeVendor({texts: vendorTexts()}).connect}));
   assert.equal(code, 0);
   const {setting, comparison} = result(out).check;
-  assert.equal(setting.decision, 'only on works: set spikeMenuActivation on by default (route 3\'s activation around a menu item\'s press)');
-  assert.deepEqual(setting.failing, {off: ['selectAll'], on: []});
+  assert.equal(setting.setting, 'on');
+  assert.deepEqual(setting.labels, {off: {selectAll: 'no effect', bold: 'acts'}, on: {selectAll: 'acts', bold: 'acts'}});
   assert.equal(comparison.off.items.selectAll.cuaWorse, true);
 });
 
@@ -208,7 +212,7 @@ test('paste: TextEdit and Finder up, Finder in front, the device check, then the
   const device = fakeDevice(), out = scratch();
   assert.equal(await runLive({command: 'paste', device: 'mini', out}, io(device)), 0);
   assert.deepEqual(device.calls.map(c => c.slice(0, 3).join(' ')),
-    ['live begin --run', 'scenes up textedit', 'scenes up finder', 'scenes activate finder', 'live paste --run', 'live putback --run', 'scenes frontmost']);
+    ['live begin --run', 'scenes up textedit', 'scenes up finder', 'scenes activate finder', 'live paste --run', 'live recover --run', 'scenes frontmost']);
   assert.equal(result(out).pass, true);
 });
 
@@ -219,17 +223,17 @@ test('menu: a vendor lane that fails still closes its serve, cleans the vendor h
   assert.equal(code, 1);
   const r = result(out);
   assert.match(r.check.vendor.problem, /noWindowsAvailable/);
-  assert.equal(r.check.comparison.off.decision, 'undecided: an item was not exposed or a lane is missing');
+  assert.match(r.check.comparison.off.decision, /^undecided/);
   assert.equal(vendor.closed, true);
   assert.ok(device.calls.some(c => c[0] === 'cleanup'));
-  assert.equal(device.calls.at(-2)[1], 'putback');
+  assert.equal(device.calls.at(-2)[1], 'recover');
 });
 
 test('cleanup: the put-back alone, and the vendor home from a preparation a dead menu command left', async () => {
   const device = fakeDevice(), dir = scratch(), preparation = join(dir, 'preparation.json');
   fs.writeFileSync(preparation, JSON.stringify({device: 'mini', prepared: PREPARED, run: RUN}));
   assert.equal(await runLive({command: 'cleanup', device: 'mini', preparation}, io(device)), 0);
-  assert.deepEqual(device.calls.map(c => c.slice(0, 2).join(' ')), ['cleanup /h', 'live putback', 'scenes frontmost']);
+  assert.deepEqual(device.calls.map(c => c.slice(0, 2).join(' ')), ['live recover', 'scenes frontmost', 'cleanup /h'], 'the recovery stops a serve still running before its home goes');
   assert.equal(fs.existsSync(preparation), false);
 });
 
@@ -238,10 +242,10 @@ test('checkPassed: each check\'s own bar', () => {
   assert.equal(checkPassed('minimized', {problem: 'x', verdict: {pass: true}}), false);
   assert.equal(checkPassed('enablement', {verdict: {released: false}}), false);
   const lanes = {off: {items: {}}, on: {items: {}}};
-  assert.equal(checkPassed('menu', {cua: lanes, vendor: {}, setting: {decision: 'only on works: …'}}), true, 'a decision either way is a result');
-  assert.equal(checkPassed('menu', {cua: lanes, vendor: {}, setting: {decision: 'undecided: …'}}), false);
-  assert.equal(checkPassed('menu', {cua: {off: lanes.off}, vendor: {}, setting: {decision: 'off works: …'}}), false, 'both settings must have run');
-  assert.equal(checkPassed('menu', {cua: {...lanes, on: {problem: 'x'}}, vendor: {}, setting: {decision: 'off works: …'}}), false);
+  for (const setting of ['off', 'on', 'neither']) assert.equal(checkPassed('menu', {cua: lanes, vendor: {}, setting: {setting}}), true, `${setting} is a result`);
+  assert.equal(checkPassed('menu', {cua: lanes, vendor: {}, setting: {setting: 'undecided'}}), false);
+  assert.equal(checkPassed('menu', {cua: {off: lanes.off}, vendor: {}, setting: {setting: 'off'}}), false, 'both settings must have run');
+  assert.equal(checkPassed('menu', {cua: {...lanes, on: {problem: 'x'}}, vendor: {}, setting: {setting: 'off'}}), false);
   assert.equal(checkPassed('paste', {verdict: {pass: true}}), true);
   assert.equal(checkPassed('paste', {verdict: {pass: false}}), false);
 });
@@ -259,7 +263,7 @@ test('the dry run prints every device command through the real ssh wrapper, in o
   const order = ['printf %s "$HOME"', "live-device.mjs 'begin'", "prepare.mjs prepare", "the native baseline's vendor preflight", "scenes-mac.mjs 'up' 'textedit'",
     "scenes-mac.mjs 'up' 'finder'", "live-device.mjs 'menu' '--run'", "'--menu-activation' 'off'", "scenes-mac.mjs 'down' 'textedit'", "scenes-mac.mjs 'up' 'textedit'",
     "live-device.mjs 'menu' '--run'", "'--menu-activation' 'on'", "scenes-mac.mjs 'down' 'textedit'", 'vendor cell: goldens:bind textedit', 'vendor cell: live:effect bold',
-    "live-device.mjs 'watch' 'stop'", 'prepare.mjs cleanup', "live-device.mjs 'putback'"];
+    "live-device.mjs 'watch' 'stop'", 'prepare.mjs cleanup', "live-device.mjs 'recover'"];
   let at = -1;
   for (const needle of order) { const next = unquoted.indexOf(needle, at + 1); assert.ok(next > at, `${needle} in order`); at = next; }
   assert.match(text, /^ssh mini 'cd \$HOME\/Developer\/GitHub\/cua-parity && node scripts\/native-matrix\/live-device\.mjs '\\''begin'\\''/m);
@@ -272,7 +276,7 @@ test('the dry run of each other command walks its sequence to the put-back', asy
     const code = await runLive({command, device: 'mini', out: null}, {ops: liveOps('mini', {exec: dryExec({log, commit: COMMIT})}), connect: dryConnect({log}),
       controllerCheckout: () => ({commit: COMMIT, dirty: false}), log, dryRun: true});
     assert.equal(code, 0, command);
-    assert.match(lines.join('\n'), /live-device\.mjs '\\''putback'\\''/, command);
+    assert.match(lines.join('\n'), /live-device\.mjs '\\''recover'\\''/, command);
     if (command !== 'cleanup') assert.match(lines.join('\n'), new RegExp(`live-device\\.mjs '\\\\''${command}'\\\\''`), command);
     if (command !== 'cleanup') assert.match(lines.at(-1), /PASS \(dry run/, command);
   }
@@ -301,4 +305,57 @@ test('the vendor cells return indexes and booleans only, and refuse when TextEdi
   } finally { delete globalThis.__apps; }
   assert.throws(() => MENU_BAR('nope'), /unknown menu item/);
   assert.ok(MARKER);
+});
+
+test('an interrupt is acted on at the next step: the recovery runs once and the command exits 130', async () => {
+  const interrupt = {signal: null};
+  const device = fakeDevice({onCall: call => { if (call[1] === 'begin') interrupt.signal = 'SIGINT'; }}), out = scratch();
+  const code = await runLive({command: 'paste', device: 'mini', out}, io(device, {interrupt}));
+  assert.equal(code, 130);
+  assert.deepEqual(device.calls.map(c => c.slice(0, 2).join(' ')), ['live begin', 'live recover', 'scenes frontmost'], 'no scene came up after the interrupt');
+  const r = result(out);
+  assert.equal(r.interrupted, 'SIGINT');
+  assert.match(r.problems[0], /interrupted by SIGINT/);
+  const term = {signal: null};
+  const later = fakeDevice({onCall: call => { if (call[1] === 'paste') term.signal = 'SIGTERM'; }});
+  assert.equal(await runLive({command: 'paste', device: 'mini', out: scratch()}, io(later, {interrupt: term})), 143);
+  assert.equal(later.calls.filter(c => c[1] === 'recover').length, 1, 'the recovery runs once');
+});
+
+test('a begin that fails (a timed-out ssh) still runs the recovery: it may have saved the front app or stopped the engine', async () => {
+  const device = fakeDevice({live: {begin: () => { throw Object.assign(new Error('spawnSync ssh ETIMEDOUT'), {code: 'ETIMEDOUT'}); }}}), out = scratch();
+  assert.equal(await runLive({command: 'minimized', device: 'mini', out}, io(device)), 1);
+  assert.deepEqual(device.calls.map(c => c.slice(0, 2).join(' ')), ['live begin', 'live recover', 'scenes frontmost']);
+  assert.match(result(out).problems[0], /begin failed: spawnSync ssh ETIMEDOUT/);
+});
+
+test('a device step that times out ends the check; the recovery (which stops what still runs on the device) follows', async () => {
+  const device = fakeDevice({live: {paste: () => { throw Object.assign(new Error('spawnSync ssh ETIMEDOUT'), {code: 'ETIMEDOUT'}); }}}), out = scratch();
+  assert.equal(await runLive({command: 'paste', device: 'mini', out}, io(device)), 1);
+  assert.deepEqual(device.calls.map(c => c.slice(0, 2).join(' ')).slice(-3), ['live paste', 'live recover', 'scenes frontmost']);
+  assert.equal(result(out).complete, false);
+});
+
+test('boundedExec: every ssh gets ConnectTimeout and ServerAlive and its step\'s timeout; anything else passes through', () => {
+  const seen = [];
+  const exec = boundedExec((command, args, options) => { seen.push({command, args, options}); return ''; });
+  exec('ssh', ['-o', 'BatchMode=yes', 'mini', "export PATH=x\ncd $HOME/Developer/GitHub/cua-parity && node scripts/native-matrix/live-device.mjs 'paste' '--run' '/r'"], {encoding: 'utf8'});
+  exec('ssh', ['mini', 'printf %s "$HOME"'], {});
+  exec('ssh', ['mini', "cd x && node scripts/repl-parity/scenes-mac.mjs 'activate' 'finder'"], {});
+  exec('git', ['status'], {});
+  assert.deepEqual(seen[0].args.slice(0, 6), [...SSH_OPTIONS]);
+  assert.deepEqual(SSH_OPTIONS, ['-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=4']);
+  assert.deepEqual([seen[0].options.timeout, seen[1].options.timeout, seen[2].options.timeout], [420_000, 30_000, 60_000]);
+  assert.equal(seen[0].options.killSignal, 'SIGKILL');
+  assert.equal(seen[0].options.encoding, 'utf8');
+  assert.deepEqual(seen[3], {command: 'git', args: ['status'], options: {}});
+  assert.equal(stepTimeout("node scripts/native-matrix/live-device.mjs 'recover' '--run' '/r'"), 660_000);
+});
+
+test('the dry run\'s menu lanes carry the setting their flags asked for', async () => {
+  const lines = [];
+  const log = line => lines.push(line);
+  const ops = liveOps('mini', {exec: dryExec({log, commit: COMMIT})});
+  assert.equal(ops.live(['menu', '--run', '/r', '--menu-activation', 'on']).menuActivation, true);
+  assert.equal(ops.live(['menu', '--run', '/r', '--menu-activation', 'off']).menuActivation, false);
 });

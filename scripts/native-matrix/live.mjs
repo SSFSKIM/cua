@@ -53,6 +53,7 @@
 //                 each connection's first observation reads the attribute false (timings.enablementPrior) and the
 //                 first sets it.
 //   cleanup       the put-back alone (and the vendor home's cleanup from a preparation.json), for a command that died.
+import {execFileSync} from 'node:child_process';
 import * as fs from 'node:fs';
 import {tmpdir} from 'node:os';
 import {isAbsolute, join, resolve} from 'node:path';
@@ -77,21 +78,52 @@ const LIVE_DEVICE = 'scripts/native-matrix/live-device.mjs';
 
 // ---- the device ---------------------------------------------------------------------------------------------------
 
+// Every ssh the hold opens: a bounded connect and a dead peer noticed (ServerAlive), so a hung link fails the step
+// instead of holding the hold.
+export const SSH_OPTIONS = Object.freeze(['-o', 'ConnectTimeout=15', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=4']);
+// Each device step's bound, by its CLI and command (the remote script names them); a step past its bound is killed
+// here (SIGKILL on the local ssh) and the controller's recovery then stops whatever still runs on the device before it
+// restores anything.
+const STEP_TIMEOUTS = Object.freeze({
+  'live-device.mjs begin': 120_000, 'live-device.mjs minimized': 240_000, 'live-device.mjs menu': 240_000, 'live-device.mjs paste': 420_000,
+  'live-device.mjs enablement': 180_000, 'live-device.mjs input-source': 180_000, 'live-device.mjs watch': 60_000, 'live-device.mjs putback': 600_000,
+  'live-device.mjs recover': 660_000, 'scenes-mac.mjs up': 180_000, 'scenes-mac.mjs down': 180_000, 'scenes-mac.mjs activate': 60_000,
+  'scenes-mac.mjs frontmost': 60_000, 'prepare.mjs prepare': 300_000, 'prepare.mjs cleanup': 300_000,
+});
+const DEFAULT_STEP_MS = 180_000, PREFLIGHT_MS = 300_000, HOME_MS = 30_000;
+export function stepTimeout(script) {
+  if (/hostIdentity/.test(script)) return PREFLIGHT_MS;
+  if (/printf %s "\$HOME"/.test(script)) return HOME_MS;
+  const match = /(live-device\.mjs|scenes-mac\.mjs|prepare\.mjs) '?([\w-]+)'?/.exec(script);
+  return (match && STEP_TIMEOUTS[`${match[1]} ${match[2]}`]) ?? DEFAULT_STEP_MS;
+}
+// An exec whose every ssh carries SSH_OPTIONS and its step's timeout.
+export function boundedExec(exec) {
+  return (command, args, options = {}) => (command !== 'ssh' ? exec(command, args, options)
+    : exec(command, [...SSH_OPTIONS, ...args], {...options, timeout: options.timeout ?? stepTimeout(String(args.at(-1))), killSignal: 'SIGKILL'}));
+}
+
 // The goldens recorder's device steps (scenes, the vendor home, the vendor preflight and serve) plus this hold's device
-// CLI, all through one exec.
-export function liveOps(device, {exec} = {}) {
-  const base = deviceOps(device, exec ? {exec} : {});
-  const {cli} = checkoutCli(device, exec ? {exec} : {});
-  return {...base, live: args => cli(LIVE_DEVICE, args, {answersOnFailure: true})};
+// CLI, all through one bounded exec; the vendor serve's ssh carries the same options.
+export function liveOps(device, {exec = execFileSync} = {}) {
+  const bounded = boundedExec(exec);
+  const base = deviceOps(device, {exec: bounded});
+  const {cli} = checkoutCli(device, {exec: bounded});
+  return {...base, live: args => cli(LIVE_DEVICE, args, {answersOnFailure: true}),
+    serveSpec: spec => { const serve = base.serveSpec(spec); return serve.command === 'ssh' ? {...serve, args: [...SSH_OPTIONS, ...serve.args]} : serve; }};
 }
 
 // ---- the commands -----------------------------------------------------------------------------------------------------
 
-// io: {ops (liveOps), connect(spec, handlers) -> MCP client, controllerCheckout() -> {commit, dirty}, log, dryRun}.
+// io: {ops (liveOps), connect(spec, handlers) -> MCP client, controllerCheckout() -> {commit, dirty}, log, dryRun,
+// interrupt: {signal} set by main's SIGINT/SIGTERM handler}. An interrupt is acted on at the next step boundary (a
+// Ctrl-C reaches the running ssh too, which ends that step at once); the recovery then runs once and the command exits
+// 130 (SIGINT) or 143 (SIGTERM).
 // -> 0 complete and passed, 1 otherwise, 2 refused before anything on the device changed.
 export async function runLive(options, io) {
   const {command, device, out, approvedRuntime} = options;
   const {ops, log = console.log, dryRun = false} = io;
+  const interrupt = io.interrupt ?? {signal: null};
   const dir = out ? resolve(out) : null;
   if (!dryRun && dir && fs.existsSync(join(dir, 'result.json'))) throw new Error(`${dir} already holds a result: choose a new --out`);
   const result = {schema: 'native-live-1', command, device, started: new Date().toISOString(), problems: [], complete: false, pass: false};
@@ -104,25 +136,38 @@ export async function runLive(options, io) {
   result.controller = controller;
   const run = options.run ?? `${ops.home()}/${DEFAULT_RUN}`;
   result.runDir = run;
+  const exitCode = code => (interrupt.signal ? (interrupt.signal === 'SIGINT' ? 130 : 143) : code);
 
   if (command === 'cleanup') {
     if (options.preparation) {
       const preparation = JSON.parse(fs.readFileSync(options.preparation, 'utf8'));
       if (preparation.device !== device) throw new Error(`${options.preparation} is a preparation on ${preparation.device}, not ${device}`);
+      // The recovery first, so a vendor serve still running is stopped before its home goes.
+      finish(result, ops, run, null);
       try { result.preparationCleanup = ops.cleanup(preparation.prepared); if (!dryRun) fs.rmSync(options.preparation, {force: true}); }
       catch (error) { result.preparationCleanup = {removed: false, error: error.message}; }
-    }
-    finish(result, ops, run, null);
-    result.complete = result.pass = result.putBack?.ok === true && !result.preparationCleanup?.error;
+    } else finish(result, ops, run, null);
+    result.complete = result.pass = result.recovery?.ok === true && !result.preparationCleanup?.error;
     write();
-    log(`cleanup ${result.complete ? 'done' : `INCOMPLETE: ${JSON.stringify(result.putBack?.steps ?? result.putBack)}`}`);
+    log(`cleanup ${result.complete ? 'done' : `INCOMPLETE: ${JSON.stringify(result.putBack?.steps ?? result.recovery)}`}`);
     return result.complete ? 0 : 1;
   }
 
   const refusals = [];
   if (!controller.commit) refusals.push('this checkout\'s commit could not be read');
   if (controller.dirty) refusals.push('this checkout has uncommitted changes to tracked files: the hold runs a reviewed commit; commit or stash them');
-  const begun = refusals.length ? null : ops.live(['begin', '--run', run, '--commit', controller.commit]);
+  let begun = null;
+  if (!refusals.length) {
+    try { begun = ops.live(['begin', '--run', run, '--commit', controller.commit]); } catch (error) {
+      // begin may have saved the front app or stopped the engine before it failed: recover.
+      result.problems.push(`begin failed: ${error.message}`);
+      finish(result, ops, run, null);
+      Object.assign(result, {finished: new Date().toISOString()});
+      write();
+      log(`${command} INCOMPLETE: begin failed (${error.message}); the recovery ran`);
+      return exitCode(1);
+    }
+  }
   if (begun) Object.assign(result, {checkout: begun.checkout, engine: begun.engine});
   refusals.push(...(begun?.refusals ?? []));
   if (refusals.length) {
@@ -135,8 +180,14 @@ export async function runLive(options, io) {
   write();
   log(`${command}: the owner's front app (${begun.frontmost?.bundleId ?? 'none'}) is saved on the device and the engine stopped; if this command dies, run: node scripts/native-matrix/live.mjs cleanup --device ${device} --run ${quote(run)}${command === 'menu' && dir ? ` --preparation ${quote(join(dir, 'preparation.json'))}` : ''}`);
 
-  const ctx = {ops, io, run, result, dir, dryRun, log, approvedRuntime, device, controller};
+  // A step boundary: a macrotask turn (so a signal's handler has run), then stop if one came.
+  const checkpoint = async () => {
+    await new Promise(resolve => setImmediate(resolve));
+    if (interrupt.signal) throw new Error(`interrupted by ${interrupt.signal}`);
+  };
+  const ctx = {ops, io, run, result, dir, dryRun, log, approvedRuntime, device, controller, checkpoint};
   try {
+    await checkpoint();
     result.check = await CHECKS[command](ctx);
     result.pass = checkPassed(command, result.check);
   } catch (error) {
@@ -144,18 +195,24 @@ export async function runLive(options, io) {
     log(`${command} stopped: ${error.message}`);
   } finally {
     finish(result, ops, run, begun.frontmost);
-    result.complete = result.problems.length === 0 && result.putBack?.ok === true;
+    if (interrupt.signal) result.interrupted = interrupt.signal;
+    result.complete = result.problems.length === 0 && result.recovery?.ok === true;
     result.pass = result.complete && result.pass;
     result.finished = new Date().toISOString();
     write();
   }
   log(`${command} ${result.complete ? (result.pass ? 'PASS' : 'complete, NOT PASSED') : 'INCOMPLETE'}${dryRun ? ' (dry run: the answers were made up, nothing ran)' : dir ? `: ${join(dir, 'result.json')}` : ''}`);
-  return result.pass ? 0 : 1;
+  return exitCode(result.pass ? 0 : 1);
 }
 
-// The put-back, then the front app read again against the one saved at begin (by bundle id; the device kept the pid).
+// The recovery (./live-device.mjs recover: the harness's work still running on the device stopped, then the put-back),
+// then the front app read again against the one saved at begin, with lsappinfo (by bundle id; the device kept the pid).
 function finish(result, ops, run, saved) {
-  try { result.putBack = ops.live(['putback', '--run', run]); } catch (error) { result.putBack = {ok: false, error: error.message}; }
+  try {
+    const recovery = ops.live(['recover', '--run', run]);
+    result.recovery = {ok: recovery?.ok === true, killed: recovery?.killed ?? [], survivors: recovery?.survivors ?? []};
+    result.putBack = recovery?.putBack ?? null;
+  } catch (error) { result.recovery = {ok: false, error: error.message}; result.putBack = null; }
   try {
     const now = ops.scenes(['frontmost']);
     result.frontApp = {saved: saved?.bundleId ?? null, now: now?.bundleId ?? null, same: saved?.bundleId ? now?.bundleId === saved.bundleId : null};
@@ -169,7 +226,7 @@ export function checkPassed(command, check) {
   if (command === 'paste') return check.verdict?.pass === true;
   if (command === 'menu') {
     return MENU_ACTIVATION.every(setting => check.cua?.[setting] && !check.cua[setting].problem) && !check.vendor?.problem
-      && typeof check.setting?.decision === 'string' && !check.setting.decision.startsWith('undecided');
+      && ['off', 'on', 'neither'].includes(check.setting?.setting);
   }
   return false;
 }
@@ -185,10 +242,13 @@ const activate = (ctx, id) => {
 };
 
 export const CHECKS = {
-  minimized: async ctx => { up(ctx, 'textedit'); return ctx.ops.live(['minimized', '--run', ctx.run]); },
-  paste: async ctx => { up(ctx, 'textedit'); up(ctx, 'finder'); activate(ctx, 'finder'); return ctx.ops.live(['paste', '--run', ctx.run]); },
+  minimized: async ctx => { up(ctx, 'textedit'); await ctx.checkpoint(); return ctx.ops.live(['minimized', '--run', ctx.run]); },
+  paste: async ctx => {
+    up(ctx, 'textedit'); await ctx.checkpoint(); up(ctx, 'finder'); activate(ctx, 'finder'); await ctx.checkpoint();
+    return ctx.ops.live(['paste', '--run', ctx.run]);
+  },
   'input-source': async ctx => ctx.ops.live(['input-source']),
-  enablement: async ctx => { up(ctx, 'chrome'); return ctx.ops.live(['enablement', '--run', ctx.run]); },
+  enablement: async ctx => { up(ctx, 'chrome'); await ctx.checkpoint(); return ctx.ops.live(['enablement', '--run', ctx.run]); },
   menu: menuCheck,
 };
 
@@ -216,12 +276,14 @@ async function menuCheck(ctx) {
     // cua's lane twice: M2a.2's spikeMenuActivation off (the default), then on.
     const cua = {};
     for (const setting of MENU_ACTIVATION) {
+      await ctx.checkpoint();
       if (setting !== MENU_ACTIVATION[0]) fresh(`cua's lane with the switch ${setting}`);
       activate(ctx, 'finder');
       cua[setting] = ops.live(['menu', '--run', run, '--menu-activation', setting]);
     }
 
     // The vendor's lane on the same scene state, Finder in front.
+    await ctx.checkpoint();
     fresh('the vendor lane');
     const stderrFile = join(fs.mkdtempSync(join(tmpdir(), 'cua-live-serve-')), 'serve-stderr.txt');
     let js;
@@ -236,6 +298,7 @@ async function menuCheck(ctx) {
     try {
       vendor.items = {};
       for (const id of Object.keys(MENU_ITEMS)) {
+        await ctx.checkpoint();
         activate(ctx, 'finder');
         const item = vendor.items[id] = {front: [front()]};
         const cellOf = async code => { const out = await js(code); if (!out.ok) throw new Error(`the vendor's ${id} cell failed: ${out.error}`); return out.value; };
@@ -269,11 +332,15 @@ const DRY_RELEASE = '26.928.40906-darwin-arm64';
 export const DRY_ANSWERS = Object.freeze({
   'live-device.mjs begin': {refusals: [], checkout: {dirty: false}, engine: {build: '(the approved build)'}, frontmost: {bundleId: 'com.apple.Terminal'}, engineStop: {wasRunning: false}},
   'live-device.mjs minimized': {steps: {}, verdict: {pass: true}},
-  'live-device.mjs menu': {menuActivation: false, items: {selectAll: {found: true, enabled: true, effect: true}, bold: {found: true, enabled: true, effect: true}}, activations: []},
-  'live-device.mjs paste': {steps: {pasteAlert: false, inputSource: {perContext: {read: true, setOff: true, restored: true}, selected: true, restored: true}}, verdict: {pass: true, finding: null}},
+  'live-device.mjs menu': {menuActivation: false, items: Object.fromEntries(['selectAll', 'bold'].map(id => [id, {found: true, enabled: true, valid: true, clicked: true,
+    click: {ok: true, route: 1, posted: true}, effect: true}])), activations: []},
+  'live-device.mjs paste': {steps: {pasteAlert: false, precondition: {selected: true, readBack: 'com.apple.inputmethod.Korean.2SetKorean', perContextOff: true, met: true},
+    inputSource: {perContext: {read: true, setOff: true, restored: true}, restored: true}, clipboard: {typesUnchanged: true},
+    hidComposition: {emptied: true, activated: true, keys: {exitStatus: 0}, reading: {reading: '가'}}}, verdict: {pass: true, typeText: 'measured', finding: null}},
   'live-device.mjs enablement': {verdict: {released: true}},
   'live-device.mjs input-source': {verdict: {pass: true}},
   'live-device.mjs putback': {plan: [], steps: {}, ok: true},
+  'live-device.mjs recover': {killed: [], survivors: [], putBack: {plan: ['scenes-down', 'engine-stop', 'apps-check', 'finder-check', 'front-app'], steps: {}, ok: true}, ok: true},
   'live-device.mjs watch': {watching: true, activations: []},
   'scenes-mac.mjs up': {pid: 1, window: {number: 1}},
   'scenes-mac.mjs activate': {ok: true},
@@ -295,8 +362,10 @@ export function dryExec({log, commit}) {
     log(`ssh ${device} ${quote(script)}`);
     if (/printf %s "\$HOME"/.test(script)) return '/Users/owner';
     const match = /(live-device\.mjs|scenes-mac\.mjs|prepare\.mjs) '?([\w-]+)'?/.exec(script);
-    const answer = match ? DRY_ANSWERS[`${match[1]} ${match[2]}`] : null;
+    let answer = match ? DRY_ANSWERS[`${match[1]} ${match[2]}`] : null;
     if (!answer) throw new Error(`the dry run has no answer for: ${script.slice(0, 200)}`);
+    // The menu lane's setting is the one its flags asked for.
+    if (match[1] === 'live-device.mjs' && match[2] === 'menu') answer = {...answer, menuActivation: /'--menu-activation'\W+'on'/.test(script)};
     return `${JSON.stringify(answer)}\n`;
   };
 }
@@ -346,11 +415,22 @@ export function parseCommand(argv) {
 export async function main(argv = process.argv.slice(2), {log = console.log} = {}) {
   const options = parseCommand(argv);
   const checkout = controllerCheckout(REPO_ROOT);
+  // SIGINT and SIGTERM: recorded, acted on at the next step boundary; the recovery runs once and the command exits. A
+  // second signal while it runs is told to wait (the recovery is bounded).
+  const interrupt = {signal: null};
+  const onSignal = signal => {
+    if (interrupt.signal) { log(`${signal}: the recovery is already running; it is bounded, let it finish`); return; }
+    interrupt.signal = signal;
+    log(`${signal}: stopping at the next step, then the recovery runs once`);
+  };
+  process.on('SIGINT', onSignal);
+  process.on('SIGTERM', onSignal);
   const io = options.dryRun
-    ? {ops: liveOps(options.device, {exec: dryExec({log, commit: checkout.commit})}), connect: dryConnect({log}), controllerCheckout: () => checkout, log, dryRun: true}
-    : {ops: liveOps(options.device), connect: (spec, handlers) => new StdioClient({...spec, clientName: 'cua-native-live', ...handlers}), controllerCheckout: () => checkout, log};
+    ? {ops: liveOps(options.device, {exec: dryExec({log, commit: checkout.commit})}), connect: dryConnect({log}), controllerCheckout: () => checkout, log, dryRun: true, interrupt}
+    : {ops: liveOps(options.device), connect: (spec, handlers) => new StdioClient({...spec, clientName: 'cua-native-live', ...handlers}), controllerCheckout: () => checkout,
+      log, interrupt};
   if (options.dryRun) log(`# dry run of live.mjs ${options.command} on ${options.device}: every device command in order, none run`);
-  return runLive(options, io);
+  try { return await runLive(options, io); } finally { process.off('SIGINT', onSignal); process.off('SIGTERM', onSignal); }
 }
 
 if (process.argv[1] && SCRIPT === fs.realpathSync(process.argv[1])) {

@@ -6,7 +6,7 @@
 // What leaves the device is what these return: booleans, counts, element indexes, error names and the engine's bounded
 // sentences, input-source ids. The scenes' windows are all the run's own; even so no document text is returned, only
 // whether it holds what the check put there.
-import {textEditDocument} from '../repl-parity/scenes-mac.mjs';
+import {SCENE_BUNDLE_IDS, textEditDocument} from '../repl-parity/scenes-mac.mjs';
 
 const DOCUMENT = textEditDocument().lines;
 // The run's TextEdit document's first and last lines (scenes-mac.mjs): a selection that holds both holds the whole.
@@ -14,8 +14,11 @@ export const FIRST_LINE = DOCUMENT[0];
 export const LAST_LINE = DOCUMENT.at(-1);
 export const KOREAN_2SET = 'com.apple.inputmethod.Korean.2SetKorean';
 export const ABC = 'com.apple.keylayout.ABC';
-// The owner's apps a put-back never activates, whatever was in front: the hold's rule is that the run never touches them.
-export const NEVER_TOUCHED = Object.freeze(['com.google.Chrome', 'com.anthropic.claudefordesktop']);
+// The owner's apps the hold never observes or drives under any rule (Chrome, any channel, and Claude Desktop). The
+// put-back may still give one of them the front back by activation alone (maws-3f, 2026-10-21: NSRunningApplication's
+// activate, no posted event, no Accessibility), read before and after with lsappinfo only.
+export const NEVER_OBSERVED = Object.freeze(['com.google.Chrome', 'com.google.Chrome.beta', 'com.google.Chrome.dev', 'com.google.Chrome.canary',
+  'com.anthropic.claudefordesktop']);
 // The menu check's two items (the vendor reading's item 10): items AppKit validates against the key window's responder
 // chain, so a background app may read them disabled or not act on them without activation.
 export const MENU_ITEMS = Object.freeze({
@@ -69,22 +72,68 @@ export function failureOf(error) {
 
 // ---- System alerts (the paste check) -------------------------------------------------------------------------------
 
-// The processes that show system alerts (by bundle id; owner names are localized), the words an alert about the
-// pasteboard carries in a title, and the layer below which a new window of another process counts as one (the Dock,
-// the menu bar, status items and menus sit at 20 and above).
-const ALERT_BUNDLES = Object.freeze(['com.apple.UserNotificationCenter', 'com.apple.coreservices.uiagent', 'com.apple.SecurityAgent', 'com.apple.universalAccessAuthWarn']);
-const ALERT_NAMES = Object.freeze(['UserNotificationCenter', 'CoreServicesUIAgent', 'SecurityAgent', 'universalAccessAuthWarn']);
-const ALERT_WORDS = /paste|pasteboard|clipboard|붙여넣|클립보드/i;
+// The system-alert processes, by bundle id, with the names they run under (owner names can be localized; these are the
+// process names). Only these are ever read for text, through the engine; never Chrome or Claude Desktop.
+const ALERT_PROCESSES = Object.freeze({
+  'com.apple.UserNotificationCenter': 'UserNotificationCenter',
+  'com.apple.coreservices.uiagent': 'CoreServicesUIAgent',
+  'com.apple.SecurityAgent': 'SecurityAgent',
+  'com.apple.universalAccessAuthWarn': 'universalAccessAuthWarn',
+});
+const ALERT_KEYWORDS = Object.freeze(['pasteboard', 'paste', 'clipboard', '붙여넣', '클립보드']);
+// The layer below which a new window of another process counts as a possible alert (the Dock, the menu bar, status
+// items and menus sit at 20 and above).
 const ALERT_LAYER_BELOW = 20;
-// The windows of `now` (./system-windows.swift) that may be a system alert, given the windows of `before`: a window of
-// an alert process (there before or not), one whose title names the pasteboard, or a new window of another process
-// below the menu and Dock layers; never a window of the run's own processes. -> [{ownerPid, ownerName, ownerBundleId,
-// layer, number, name}], no bounds; the caller keeps nothing else of the screen.
-export function alertCandidates(before, now, {runPids}) {
+const alertProcessOf = w => {
+  if (NEVER_OBSERVED.includes(w.ownerBundleId)) return null;
+  if (Object.hasOwn(ALERT_PROCESSES, w.ownerBundleId ?? '')) return w.ownerBundleId;
+  if (w.ownerBundleId == null) return Object.keys(ALERT_PROCESSES).find(id => ALERT_PROCESSES[id] === w.ownerName) ?? null;
+  return null;
+};
+// The paste check's alert watch, between the screen before the section (`before`) and now (./system-windows.swift):
+// a window of a system-alert process (there before or not), a window whose title holds a pasteboard keyword, or any new
+// window of another process below the menu and Dock layers aborts the section; the run's own processes never do. What
+// may leave the device (`export`) is sanitized: an alert process's bundle id and layer; for a title match only the
+// keyword; for anything else only its layer, counted. `readable` names the alert processes whose text the engine may
+// read; no other owner is ever observed.
+// -> {abort, export: {alerts, keywords, unknown: {count, windows}}, readable: [{bundleId}]}.
+export function alertWatch(before, now, {runPids}) {
   const known = new Set((before ?? []).map(w => w.number));
-  return (now ?? []).filter(w => !runPids.includes(w.ownerPid) && (ALERT_BUNDLES.includes(w.ownerBundleId) || ALERT_NAMES.includes(w.ownerName)
-    || ALERT_WORDS.test(w.name ?? '') || (!known.has(w.number) && w.layer >= 0 && w.layer < ALERT_LAYER_BELOW)))
-    .map(({ownerPid, ownerName, ownerBundleId, layer, number, name}) => ({ownerPid, ownerName: ownerName ?? null, ownerBundleId: ownerBundleId ?? null, layer, number, name: name ?? null}));
+  const alerts = [], keywords = [], unknown = [];
+  for (const w of now ?? []) {
+    if (runPids.includes(w.ownerPid)) continue;
+    const bundleId = alertProcessOf(w);
+    const keyword = ALERT_KEYWORDS.find(k => String(w.name ?? '').toLowerCase().includes(k));
+    if (bundleId) alerts.push({bundleId, layer: w.layer, isAlertProcess: true});
+    else if (keyword) keywords.push({keyword, layer: w.layer, isAlertProcess: false});
+    else if (!known.has(w.number) && w.layer >= 0 && w.layer < ALERT_LAYER_BELOW) unknown.push({layer: w.layer, isAlertProcess: false});
+  }
+  const readable = [...new Set(alerts.map(a => a.bundleId))].map(bundleId => ({bundleId}));
+  return {abort: alerts.length + keywords.length + unknown.length > 0, export: {alerts, keywords, unknown: {count: unknown.length, windows: unknown}}, readable};
+}
+
+// ---- The HID composition row (MAWS P4-B2, a measurement) -----------------------------------------------------------
+
+// The hard guard before HID-tap keys are posted (they go to whatever is in front): the frontmost process is the run's
+// TextEdit (lsappinfo), the frontmost layer-0 window is the scene window (CGWindowList) and the engine's read of
+// TextEdit's own key window (its focused window first) is the scene window's frame. -> {post, reason}.
+export function compositionGuard({frontmost, topWindow, observedWindow, record}) {
+  if (frontmost?.pid !== record.pid) return {post: false, reason: 'front app not the scene'};
+  if (topWindow?.ownerPid !== record.pid || topWindow?.number !== record.window.number) return {post: false, reason: 'front window not the scene window'};
+  const b = record.window.bounds, f = observedWindow?.frame;
+  if (!f || observedWindow.pid !== record.pid || [f.x - b.x, f.y - b.y, f.width - b.width, f.height - b.height].some(d => Math.abs(d) > 1)) {
+    return {post: false, reason: 'the scene window is not TextEdit\'s key window'};
+  }
+  return {post: true, reason: null};
+}
+// What the scene's text read after r, k (and after the commit Return): 가 composed, "rk", "ㄱㅏ", or anything else
+// verbatim (the run's own document). The reading only, no conclusion. -> {reading, verbatim?}.
+export function compositionReading(value) {
+  const text = String(value ?? '').replace(/\n+$/, '');
+  if (text === '가') return {reading: '가'};
+  if (text === 'rk') return {reading: 'rk'};
+  if (text === 'ㄱㅏ') return {reading: 'ㄱㅏ'};
+  return {reading: 'other', verbatim: String(value ?? '')};
 }
 
 // ---- The vendor's text (each function self-contained: a cell embeds it by its source) -------------------------------
@@ -136,15 +185,23 @@ export function vendorTextAreaIndex(ax, firstLine) {
 
 // ---- The checks' verdicts ------------------------------------------------------------------------------------------
 
-// The minimized window (the pre-flight entry's item 2, M2a.4's items 2): the observation keeps its tree and drops its
-// screenshot with the reason, a synthesized element click is refused naming the minimized window with nothing posted,
-// set_value and select_text act; then what typing and ⌘A do, which the design leaves open (recorded, not judged); and the
-// window put back on screen. set_value and select_text post nothing (the focus click is skipped in a minimized window);
-// an element scroll's refusal is recorded, not judged (a unit test gates it). The two outcomes decide two refusals apart (M2a.4's ruling): typing that does not land
-// refuses type_text and press_key without ⌘; a ⌘A that does not act, and only that, refuses ⌘ chords too. -> {pass,
-// failed, recorded, decision: {plainKeys, commandChords}}.
+// The minimized window (the pre-flight entry's item 2, M2a.4's item 2): the observation keeps its tree and drops its
+// screenshot with the reason; a synthesized element click and an element scroll are refused naming the minimized
+// window with nothing posted; set_value and select_text act and post nothing (the focus click is skipped); then typing
+// and ⌘A, each a policy: plain typing decides type_text and press_key without ⌘, ⌘A decides ⌘ chords and paste
+// (maws-3f's correction: paste's ⌘V is a menu key equivalent to the first responder). Every measurement is taken with
+// the window read minimized before and after it: one that is not makes the section invalid. A key request that answers
+// an error is inconclusive, never policy evidence. -> {status: valid|invalid|inconclusive, pass, failed, recorded,
+// decision: {plainKeys, commandChordsAndPaste} | null, reason?}.
+const MEASURED = ['observe', 'click', 'scroll', 'setValue', 'selectText', 'typeText', 'selectAll'];
 export function minimizedVerdict(steps) {
   const {minimize, observe, click, scroll, setValue, selectText, typeText, selectAll, restore} = steps ?? {};
+  const recorded = {typeTextValueChanged: typeText?.ok === true ? typeText.valueChanged ?? null : null, superAEffect: selectAll?.ok === true ? selectAll.effect ?? null : null};
+  const unminimized = steps?.invalid?.at ?? MEASURED.find(name => steps?.[name] && (steps[name].minimizedBefore === false || steps[name].minimizedAfter === false));
+  if (unminimized) {
+    return {status: 'invalid', pass: false, failed: [], recorded, decision: null,
+      reason: `the window was not minimized around ${unminimized}: the section measured nothing valid from there`};
+  }
   const expectations = {
     minimized: minimize?.minimized === true,
     treePresent: observe?.treePresent === true && observe?.textArea === true,
@@ -152,6 +209,7 @@ export function minimizedVerdict(steps) {
     screenshotOmitted: observe?.screenshotOmitted === 'windowMinimized',
     clickRefused: click?.refused === true && click?.errorName === 'windowMinimized' && click?.namesMinimized === true,
     clickRefusedNothingPosted: click?.refused === true && click?.posted === false,
+    scrollRefused: scroll?.refused === true && scroll?.errorName === 'windowMinimized' && scroll?.posted === false,
     setValueActs: setValue?.ok === true && setValue?.valueMatches === true,
     setValueNoClick: setValue?.posted === false,
     selectTextActs: selectText?.ok === true && selectText?.selectionMatches === true,
@@ -159,81 +217,106 @@ export function minimizedVerdict(steps) {
     restored: restore?.onScreen === true,
   };
   const failed = Object.keys(expectations).filter(key => !expectations[key]);
-  const recorded = {typeTextValueChanged: typeText?.valueChanged ?? null, superAEffect: selectAll?.effect ?? null,
-    scrollRefused: scroll ? scroll.refused === true && scroll.errorName === 'windowMinimized' && scroll.posted === false : null};
+  const policy = (step, field, request, yes, no) => (!step ? null : step.ok !== true ? `inconclusive: ${request} answered ${step.errorName ?? 'an error'}`
+    : step[field] == null ? null : step[field] ? yes : no);
   const decision = {
-    plainKeys: recorded.typeTextValueChanged === null ? null : recorded.typeTextValueChanged
-      ? 'type_text and press_key without ⌘ stay allowed: typed text reached the minimized window'
-      : 'refuse type_text and press_key without ⌘ into a minimized window: typed text did not reach it',
-    commandChords: recorded.superAEffect === null ? null : recorded.superAEffect
-      ? '⌘ chords stay allowed: ⌘A acted with the window minimized'
-      : 'refuse ⌘ chords into a minimized window too: ⌘A did not act',
+    plainKeys: policy(typeText, 'valueChanged', 'type_text', 'type_text and press_key without ⌘ stay allowed: typed text reached the minimized window',
+      'refuse type_text and press_key without ⌘ into a minimized window: typed text did not reach it'),
+    commandChordsAndPaste: policy(selectAll, 'effect', 'press_key super+a', '⌘ chords and paste go through: ⌘A acted with the window minimized',
+      'refuse ⌘ chords and paste into a minimized window: ⌘A did not act'),
   };
-  return {pass: failed.length === 0 && decision.plainKeys !== null && decision.commandChords !== null, failed, recorded, decision};
+  const inconclusive = Object.values(decision).some(d => typeof d === 'string' && d.startsWith('inconclusive'));
+  const concluded = Object.values(decision).every(d => typeof d === 'string' && !d.startsWith('inconclusive'));
+  return {status: inconclusive ? 'inconclusive' : 'valid', pass: failed.length === 0 && concluded, failed, recorded, decision};
 }
 
-// The menu path (the vendor reading's item 10): per item, each lane's enabled state and effect side by side; cua's lane
-// decides whether the menu path takes activation: an item it reads disabled, or one that does nothing, where the
-// vendor's works, means it does.
+// One menu item's result as a label: `not found`; `invalid` (the lane lost the background condition before or during
+// it: the user window left the front, or an activation was recorded); `unattempted` (the lane stopped before it); `read
+// disabled` (read disabled and not pressed, in the off lane: valid evidence, not an attempt); `inconclusive` (the press
+// answered an error); `acts` or `no effect` (pressed, valid, the effect read back).
+export function menuItemLabel(item) {
+  if (!item || item.found !== true) return 'not found';
+  if (item.valid === false) return 'invalid';
+  if (item.attempted === false) return 'unattempted';
+  if (!item.click) return item.enabled === false ? 'read disabled' : 'unattempted';
+  if (item.click.ok !== true) return 'inconclusive';
+  return item.effect === true ? 'acts' : 'no effect';
+}
+
+// The menu path (the vendor reading's item 10): per item, each lane's label side by side; cua's lane decides whether
+// the menu path takes activation: a valid cua item read disabled or without effect where the vendor's works means it
+// does. Only valid, conclusive cua items decide.
 export function menuComparison(cua, vendor) {
   const items = {}, ids = Object.keys(MENU_ITEMS);
   for (const id of ids) {
     const c = cua?.[id] ?? null, v = vendor?.[id] ?? null;
-    const works = lane => lane?.found === true && lane.enabled === true && lane.effect === true;
-    items[id] = {cua: c && {found: c.found === true, enabled: c.enabled ?? null, effect: c.effect ?? null},
-      vendor: v && {found: v.found === true, enabled: v.enabled ?? null, effect: v.effect ?? null},
-      same: Boolean(c && v) && c.found === v.found && c.enabled === v.enabled && c.effect === v.effect,
-      cuaBetter: works(c) && !works(v), cuaWorse: works(v) && !works(c)};
+    const cl = c ? menuItemLabel(c) : null;
+    const vl = v ? (v.found !== true ? 'not found' : v.effect === true ? 'acts' : v.enabled === false ? 'read disabled' : 'no effect') : null;
+    items[id] = {cua: c && {label: cl, enabled: c.enabled ?? null, effect: c.effect ?? null},
+      vendor: v && {label: vl, enabled: v.enabled ?? null, effect: v.effect ?? null},
+      same: cl !== null && cl === vl, cuaBetter: cl === 'acts' && vl !== 'acts', cuaWorse: vl === 'acts' && ['no effect', 'read disabled'].includes(cl)};
   }
-  const undecided = !cua || !vendor || ids.some(id => cua[id]?.found !== true || vendor[id]?.found !== true);
-  const decision = undecided ? 'undecided: an item was not exposed or a lane is missing'
+  const conclusive = ids.every(id => ['acts', 'no effect', 'read disabled'].includes(items[id].cua?.label) && items[id].vendor && items[id].vendor.label !== 'not found');
+  const decision = !conclusive ? 'undecided: an item was not exposed, a cua item is not valid or conclusive, or a lane is missing'
     : ids.some(id => items[id].cuaWorse) ? 'the menu path takes activation: cua reads an item disabled or it does nothing where the vendor\'s works'
       : 'no activation: cua reads the responder-chain items enabled and they act without it';
   return {items, decision};
 }
 
 // The menu activation switch (M2a.2's `spikeMenuActivation`, off by default, for the hold to decide): cua's lane run
-// once with it off and once on; a setting works when every item is found, enabled and takes effect. The decision names
-// the setting to make the default; per setting and item, its effect, its press's route and activationGuardMs. -> {works:
-// {off, on}, failing: {off, on}, items: {off, on}, decision}.
+// with it off and with it on. Only valid items count: "acts without activation" comes from off-lane items pressed or
+// read under the background condition, "activation is not enough" from on-lane items pressed under it. -> {setting:
+// off|on|neither|undecided, line, labels: {off, on}, items: {off, on}: per item {label, effect, route,
+// activationGuardMs}}.
 export function menuSettingVerdict(off, on) {
   const ids = Object.keys(MENU_ITEMS);
-  const failing = lane => ids.filter(id => !(lane?.[id]?.found === true && lane[id].enabled === true && lane[id].effect === true));
-  const works = {off: Boolean(off) && failing(off).length === 0, on: Boolean(on) && failing(on).length === 0};
-  const exposed = lane => lane && ids.every(id => lane[id]?.found === true);
-  const decision = !exposed(off) || !exposed(on) ? 'undecided: an item was not exposed or a run is missing'
-    : works.off ? `off works: keep spikeMenuActivation off by default (the menu path takes no activation); on ${works.on ? 'works too' : 'does not'}`
-      : works.on ? 'only on works: set spikeMenuActivation on by default (route 3\'s activation around a menu item\'s press)'
-        : 'neither works: route 3\'s activation around the press is not enough for a background app\'s responder-chain items';
-  const summary = lane => Object.fromEntries(ids.map(id => [id, {effect: lane?.[id]?.effect ?? null, route: lane?.[id]?.click?.route ?? null,
-    activationGuardMs: lane?.[id]?.click?.activationGuardMs ?? null}]));
-  return {works, failing: {off: failing(off), on: failing(on)}, items: {off: summary(off), on: summary(on)}, decision};
+  const labels = lane => (lane ? Object.fromEntries(ids.map(id => [id, menuItemLabel(lane[id])])) : null);
+  const summary = lane => Object.fromEntries(ids.map(id => [id, {label: lane ? menuItemLabel(lane[id]) : null, effect: lane?.[id]?.effect ?? null,
+    route: lane?.[id]?.click?.route ?? null, activationGuardMs: lane?.[id]?.click?.activationGuardMs ?? null}]));
+  const offL = labels(off), onL = labels(on);
+  const unsettled = (name, l, allowed) => {
+    if (!l) return `${name} lane missing`;
+    const bad = ids.filter(id => !allowed.includes(l[id]));
+    return bad.length ? bad.map(id => `${name} lane ${id} ${l[id]}`).join(', ') : null;
+  };
+  let setting, line;
+  const offReason = unsettled('off', offL, ['acts', 'no effect', 'read disabled']);
+  if (offReason) [setting, line] = ['undecided', `undecided: ${offReason}`];
+  else if (ids.every(id => offL[id] === 'acts')) [setting, line] = ['off', 'keep off: every item acts without activation (spikeMenuActivation stays off by default)'];
+  else {
+    const onReason = unsettled('on', onL, ['acts', 'no effect']);
+    if (onReason) [setting, line] = ['undecided', `undecided: ${onReason}`];
+    else if (ids.every(id => onL[id] === 'acts')) [setting, line] = ['on', 'set on: every item acts only with route 3\'s activation around its press (spikeMenuActivation on by default)'];
+    else [setting, line] = ['neither', `neither: route 3's activation around the press is not enough for ${ids.filter(id => onL[id] !== 'acts').join(', ')}`];
+  }
+  return {setting, line, labels: {off: offL, on: onL}, items: {off: summary(off), on: summary(on)}};
 }
 
-// The paste check (M2a.3 live, on the integrated wire once m2a/paste lands): a plain and a Markdown paste into the run's
-// TextEdit behind the run's Finder window, each landing where a selection was; type_text under Korean 2-Set taking the
-// paste route and landing; the user window in front after each; the owner's clipboard as it was (the engine restores it
-// only while nobody else wrote it); the input source restored; no system alert during it (a pasteboard-privacy prompt
-// aborts the section). Bold Markdown, `entered`, the per-context preference read and restored, and the source read
-// after type_text are recorded, not judged; a type_text that keyed is a finding.
+// The paste check (M2a.3 live): a plain and a Markdown paste into the run's TextEdit behind the run's Finder window,
+// each landing where a selection was; type_text under Korean 2-Set taking the paste route and landing, measured only
+// when its precondition holds (Korean selected and read back, the per-context preference read off); the user window in
+// front after each; the input source restored; no system alert during it (one aborts the section); the owner's
+// clipboard's item and type lists unchanged, a topology check only (no content is read: a second process reading the
+// owner's pasteboard is the privacy-alert risk itself; the content restore is the engine's unit tests'). Bold Markdown,
+// `entered`, the preference read and restored and the source after type_text are recorded; a met precondition followed
+// by a keyed type_text is the engine finding. -> {pass, failed, typeText: measured|<why not>, finding, recorded}.
 export function pasteVerdict(steps) {
   const {userInFront, text, markdown, typeText, inputSource, pasteAlert, clipboard} = steps ?? {};
+  const measured = typeText?.measured === true;
   const expectations = {
     textLands: text?.ok === true && text.route === 'paste' && text.lands === true,
     markdownLands: markdown?.ok === true && markdown.route === 'paste' && markdown.lands === true,
-    typeTextPasteRoute: typeText?.route === 'paste',
-    typeTextLands: typeText?.ok === true && typeText.lands === true,
+    ...(measured ? {typeTextPasteRoute: typeText.route === 'paste', typeTextLands: typeText.ok === true && typeText.lands === true} : {typeTextMeasured: false}),
     userStaysInFront: Array.isArray(userInFront) && userInFront.length > 0 && userInFront.every(Boolean),
     inputSourceRestored: inputSource?.restored === true,
     noPasteAlert: pasteAlert === false,
-    clipboardRestored: clipboard?.same === true,
+    clipboardTypesUnchanged: clipboard?.typesUnchanged === true,
   };
   const failed = Object.keys(expectations).filter(key => !expectations[key]);
-  // type_text keyed where it should have pasted: a finding about what the engine read, not a harness failure.
-  const finding = typeText?.ok === true && typeText.route !== 'paste'
-    ? `type_text keyed (route ${typeText.route}) with Korean 2-Set selected and the per-context preference off; the engine reports no source on the wire, and the probe read ${typeText.sourceAfter ?? 'nothing'} right after`
+  const finding = measured && typeText.ok === true && typeText.route !== 'paste'
+    ? `engine finding: type_text keyed (route ${typeText.route}) with Korean 2-Set selected and read back and the per-context preference off; the engine reports no source on the wire, and the probe read ${typeText.sourceAfter ?? 'nothing'} right after`
     : null;
-  return {pass: failed.length === 0, failed, finding,
+  return {pass: failed.length === 0, failed, typeText: measured ? 'measured' : typeText?.reason ?? 'not reached', finding,
     recorded: {markdownBold: markdown?.bold ?? null, entered: typeText?.entered ?? null, perContext: inputSource?.perContext ?? null, sourceAfter: typeText?.sourceAfter ?? null}};
 }
 
@@ -297,18 +380,41 @@ export function liveRefusals({preflight, checkout, engine, state}, {controllerCo
   return out;
 }
 
-// The put-back after every command and in cleanup, in order: Finder's teardown (its window closed through the engine,
-// its chrome toggled back to the owner's visible state when one was saved) while the engine still runs, every scene
-// down (Finder's keys written back), the owner's input source and per-context preference when a switch saved them, the
-// engine stopped, the check that no scene app and no Chrome for Testing runs, and the owner's front app last, once
-// nothing of the run can take the front again.
-export function putBackPlan({scenesUp = [], inputSourceSaved = false, frontSaved = false}) {
-  return [...(scenesUp.includes('finder') ? ['finder-teardown'] : []), 'scenes-down', ...(inputSourceSaved ? ['input-source'] : []), 'engine-stop', 'apps-check',
-    ...(frontSaved ? ['front-app'] : [])];
+// The put-back after every command and in cleanup (after the recovery stopped anything still running), in order: the
+// activation watcher a command left running stopped and verified gone, Finder's teardown (its window closed through
+// the engine) while the engine still runs, every scene down (Finder's keys written back), the owner's input source and
+// per-context preference when a switch saved them (verified here, then the record removed), the engine stopped, the
+// check that no scene app and no Chrome for Testing runs, Finder observed (the run's window gone, its windows and
+// chrome keys as at begin), and the owner's front app last, once nothing of the run can take the front again.
+export function putBackPlan({scenesUp = [], inputSourceSaved = false, frontSaved = false, watchSaved = false, finderBaseline = false}) {
+  return [...(watchSaved ? ['watch-stop'] : []), ...(scenesUp.includes('finder') ? ['finder-teardown'] : []), 'scenes-down', ...(inputSourceSaved ? ['input-source'] : []),
+    'engine-stop', 'apps-check', ...(finderBaseline ? ['finder-check'] : []), ...(frontSaved ? ['front-app'] : [])];
 }
-// Whether the owner's front app is put back in front: yes, unless nothing was saved or it is one the hold never touches.
+// Whether the owner's front app is given the front back: yes for any app saved at begin that is not a scene app,
+// Chrome and Claude Desktop included (by activation alone; maws-3f, 2026-10-21).
 export function frontAppAction(front) {
   if (!front?.bundleId) return {reactivate: false, reason: 'nothing was recorded in front'};
-  if (NEVER_TOUCHED.includes(front.bundleId)) return {reactivate: false, reason: 'the owner\'s Chrome and Claude are never touched; bring it back by hand'};
+  if (SCENE_BUNDLE_IDS.includes(front.bundleId)) return {reactivate: false, reason: 'the app in front was a scene app; it is not brought back'};
   return {reactivate: true};
+}
+// Finder after the put-back against Finder at begin: the run's window gone, Finder's on-screen windows (numbers) as at
+// begin, its three chrome keys as the owner's. -> {ok, runWindowGone, windowsAsAtBegin, keysAsSaved}.
+export function finderCheck(baseline, now, {runWindow}) {
+  if (!baseline || !now) return {ok: false, runWindowGone: null, windowsAsAtBegin: null, keysAsSaved: null};
+  const runWindowGone = runWindow == null || !now.windows.includes(runWindow);
+  const same = (a, b) => a.length === b.length && [...a].sort().every((v, i) => v === [...b].sort()[i]);
+  const windowsAsAtBegin = same(now.windows, baseline.windows);
+  const keysAsSaved = Object.keys(baseline.keys ?? {}).every(key => now.keys?.[key] === baseline.keys[key]);
+  return {ok: runWindowGone && windowsAsAtBegin && keysAsSaved, runWindowGone, windowsAsAtBegin, keysAsSaved};
+}
+// The harness's own work still running on the device after a command was cut off (`ps -axo pid=,ppid=,uid=,command=`):
+// the device CLIs this hold runs from the harness checkout and the vendor serve started from it, of this user, never
+// the caller or its ancestors, and never a cua serve started from anywhere else (the owner's). -> [{pid, command}].
+const HARNESS_COMMANDS = /^node scripts\/(native-matrix\/(live-device|goldens-device)|repl-parity\/scenes-mac)\.mjs /;
+export function outstandingHarness(psText, {self, ancestors = [], uid, checkout}) {
+  const serve = new RegExp(`^node ${checkout.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/(bin/cua\\.mjs serve|scripts/native-baseline/serve\\.mjs)`);
+  return String(psText).split('\n').map(line => /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(.*)$/.exec(line)).filter(Boolean)
+    .map(([, pid, ppid, user, command]) => ({pid: Number(pid), ppid: Number(ppid), uid: Number(user), command}))
+    .filter(p => p.uid === uid && p.pid !== self && !ancestors.includes(p.pid) && (HARNESS_COMMANDS.test(p.command) || serve.test(p.command)))
+    .map(({pid, command}) => ({pid, command}));
 }

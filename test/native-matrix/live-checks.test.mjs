@@ -5,9 +5,9 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import {
-  ABC, FIRST_LINE, KOREAN_2SET, LAST_LINE, NEVER_TOUCHED, allSelected, enablementOf, enablementVerdict, failureOf, firstLineBold, frontAppAction,
-  alertCandidates, inputSourceVerdict, liveRefusals, menuBarItem, menuComparison, menuItemAt, menuSettingVerdict, minimizeButton, minimizedVerdict, parsePerContext, pasteVerdict,
-  perContextRestore, putBackPlan, restoreTarget, textArea, vendorMenuBarIndex, vendorMenuItem, vendorSelectedText, vendorTextAreaIndex,
+  ABC, FIRST_LINE, KOREAN_2SET, LAST_LINE, NEVER_OBSERVED, allSelected, alertWatch, enablementOf, enablementVerdict, failureOf, finderCheck, firstLineBold,
+  compositionGuard, compositionReading, frontAppAction, inputSourceVerdict, liveRefusals, menuBarItem, menuComparison, menuItemAt, menuItemLabel, menuSettingVerdict, minimizeButton, minimizedVerdict,
+  outstandingHarness, parsePerContext, pasteVerdict, perContextRestore, putBackPlan, restoreTarget, textArea, vendorMenuBarIndex, vendorMenuItem, vendorSelectedText, vendorTextAreaIndex,
 } from '../../scripts/native-matrix/live-checks.mjs';
 import {SkyComputerUseError} from '../../src/services/engine/protocol.mjs';
 
@@ -95,69 +95,87 @@ test('failureOf keeps the error name, a bounded sentence and whether anything wa
   assert.equal('activationGuardMs' in failureOf(error), false);
 });
 
-test('minimizedVerdict: the observation, the refusal and the Accessibility routes are expectations; typing and the ⌘A are recorded', () => {
+test('minimizedVerdict: the observation, the refusals and the Accessibility routes are expectations; typing and ⌘A each decide a policy', () => {
+  const measured = (out) => ({...out, minimizedBefore: true, minimizedAfter: true});
   const steps = {
     minimize: {ok: true, minimized: true},
-    observe: {ok: true, treePresent: true, textArea: true, screenshotNull: true, screenshotOmitted: 'windowMinimized'},
-    click: {ok: false, refused: true, errorName: 'windowMinimized', namesMinimized: true, posted: false},
-    scroll: {ok: false, refused: true, errorName: 'windowMinimized', posted: false},
-    setValue: {ok: true, valueMatches: true, posted: false},
-    selectText: {ok: true, selectionMatches: true, posted: false},
-    typeText: {ok: true, valueChanged: false, route: "2'"},
-    selectAll: {ok: true, effect: false, route: "2'"},
+    observe: measured({ok: true, treePresent: true, textArea: true, screenshotNull: true, screenshotOmitted: 'windowMinimized'}),
+    click: measured({ok: false, refused: true, errorName: 'windowMinimized', namesMinimized: true, posted: false}),
+    scroll: measured({ok: false, refused: true, errorName: 'windowMinimized', posted: false}),
+    setValue: measured({ok: true, valueMatches: true, posted: false}),
+    selectText: measured({ok: true, selectionMatches: true, posted: false}),
+    typeText: measured({ok: true, valueChanged: false, route: "2'"}),
+    selectAll: measured({ok: true, effect: false, route: "2'"}),
     restore: {ok: true, onScreen: true},
   };
   const out = minimizedVerdict(steps);
-  assert.equal(out.pass, true);
-  assert.deepEqual(out.recorded, {typeTextValueChanged: false, superAEffect: false, scrollRefused: true});
+  assert.equal(out.status, 'valid');
+  assert.equal(out.pass, true, JSON.stringify(out.failed));
+  assert.deepEqual(out.recorded, {typeTextValueChanged: false, superAEffect: false});
   // The focus click is skipped in a minimized window (62235d71): set_value and select_text post nothing.
   assert.deepEqual(minimizedVerdict({...steps, setValue: {...steps.setValue, posted: true}}).failed, ['setValueNoClick']);
   assert.deepEqual(minimizedVerdict({...steps, selectText: {...steps.selectText, posted: true}}).failed, ['selectTextNoClick']);
-  // The element scroll's refusal is recorded, not judged (a unit test gates it).
-  const scrolled = minimizedVerdict({...steps, scroll: {ok: true, route: 3, posted: true}});
-  assert.equal(scrolled.pass, true);
-  assert.equal(scrolled.recorded.scrollRefused, false);
-  assert.equal(minimizedVerdict({...steps, scroll: undefined}).recorded.scrollRefused, null);
-  // The two outcomes decide two refusals apart (M2a.4's ruling): plain typing decides type_text and press_key without ⌘;
-  // ⌘A decides ⌘ chords, refused only when it did not act. All four combinations read as their consequences.
+  // The element scroll's refusal is required: a scroll posted into a minimized window fails the check.
+  assert.deepEqual(minimizedVerdict({...steps, scroll: measured({ok: true, route: 3, posted: true})}).failed, ['scrollRefused']);
+  assert.deepEqual(minimizedVerdict({...steps, scroll: undefined}).failed, ['scrollRefused']);
+  // Plain typing decides type_text and press_key without ⌘; ⌘A decides ⌘ chords and paste (maws-3f's correction).
   const REFUSE_PLAIN = 'refuse type_text and press_key without ⌘ into a minimized window: typed text did not reach it';
   const ALLOW_PLAIN = 'type_text and press_key without ⌘ stay allowed: typed text reached the minimized window';
-  const REFUSE_CHORDS = 'refuse ⌘ chords into a minimized window too: ⌘A did not act';
-  const ALLOW_CHORDS = '⌘ chords stay allowed: ⌘A acted with the window minimized';
-  assert.deepEqual(out.decision, {plainKeys: REFUSE_PLAIN, commandChords: REFUSE_CHORDS});
-  const combo = (valueChanged, effect) => minimizedVerdict({...steps, typeText: {ok: true, valueChanged}, selectAll: {ok: true, effect}});
-  assert.deepEqual(combo(false, true).decision, {plainKeys: REFUSE_PLAIN, commandChords: ALLOW_CHORDS});
-  assert.deepEqual(combo(true, false).decision, {plainKeys: ALLOW_PLAIN, commandChords: REFUSE_CHORDS});
-  assert.deepEqual(combo(true, true).decision, {plainKeys: ALLOW_PLAIN, commandChords: ALLOW_CHORDS});
-  assert.equal(combo(true, true).pass, true);
-  assert.deepEqual(combo(false, null).decision, {plainKeys: REFUSE_PLAIN, commandChords: null});
-  assert.equal(combo(false, null).pass, false, 'an outcome not recorded is no result');
+  const REFUSE_CHORDS = 'refuse ⌘ chords and paste into a minimized window: ⌘A did not act';
+  const ALLOW_CHORDS = '⌘ chords and paste go through: ⌘A acted with the window minimized';
+  assert.deepEqual(out.decision, {plainKeys: REFUSE_PLAIN, commandChordsAndPaste: REFUSE_CHORDS});
+  const combo = (valueChanged, effect) => minimizedVerdict({...steps, typeText: measured({ok: true, valueChanged}), selectAll: measured({ok: true, effect})});
+  assert.deepEqual(combo(false, true).decision, {plainKeys: REFUSE_PLAIN, commandChordsAndPaste: ALLOW_CHORDS});
+  assert.deepEqual(combo(true, false).decision, {plainKeys: ALLOW_PLAIN, commandChordsAndPaste: REFUSE_CHORDS});
+  assert.deepEqual(combo(true, true).decision, {plainKeys: ALLOW_PLAIN, commandChordsAndPaste: ALLOW_CHORDS});
+  // A key request that answers an error is inconclusive, never policy evidence.
+  const intervened = minimizedVerdict({...steps, typeText: measured({ok: false, errorName: 'userIntervened', posted: true})});
+  assert.equal(intervened.status, 'inconclusive');
+  assert.equal(intervened.pass, false);
+  assert.equal(intervened.decision.plainKeys, 'inconclusive: type_text answered userIntervened');
+  assert.equal(intervened.decision.commandChordsAndPaste, REFUSE_CHORDS);
+  assert.equal(minimizedVerdict({...steps, selectAll: measured({ok: false, errorName: 'timeoutReached'})}).decision.commandChordsAndPaste, 'inconclusive: press_key super+a answered timeoutReached');
+  // Any measurement taken while the window was not minimized, before or after, invalidates the section.
+  const unminimized = minimizedVerdict({...steps, selectText: {...steps.selectText, minimizedAfter: false}, invalid: {at: 'selectText'}});
+  assert.equal(unminimized.status, 'invalid');
+  assert.equal(unminimized.pass, false);
+  assert.equal(unminimized.decision, null);
+  assert.match(unminimized.reason, /selectText/);
+  assert.equal(minimizedVerdict({...steps, typeText: {...steps.typeText, minimizedBefore: false}}).status, 'invalid', 'a step that reads un-minimized is invalid even unflagged');
   const leaked = minimizedVerdict({...steps, observe: {...steps.observe, screenshotNull: false, screenshotOmitted: null}});
-  assert.equal(leaked.pass, false);
   assert.deepEqual(leaked.failed, ['screenshotNull', 'screenshotOmitted']);
-  const posted = minimizedVerdict({...steps, click: {...steps.click, posted: true}});
-  assert.deepEqual(posted.failed, ['clickRefusedNothingPosted']);
-  const unrestored = minimizedVerdict({...steps, restore: {ok: false, onScreen: false}});
-  assert.deepEqual(unrestored.failed, ['restored']);
+  assert.deepEqual(minimizedVerdict({...steps, click: {...steps.click, posted: true}}).failed, ['clickRefusedNothingPosted']);
+  assert.deepEqual(minimizedVerdict({...steps, restore: {ok: false, onScreen: false}}).failed, ['restored']);
   const missing = minimizedVerdict({minimize: steps.minimize});
   assert.equal(missing.pass, false);
-  assert.deepEqual(missing.decision, {plainKeys: null, commandChords: null});
+  assert.deepEqual(missing.decision, {plainKeys: null, commandChordsAndPaste: null});
 });
 
-test('menuComparison: per item the enabled state and the effect on each lane, and what the pair decides', () => {
-  const works = {found: true, enabled: true, clicked: true, effect: true};
+test('menuComparison: per item each lane\'s label, and what the pair decides; only a valid cua item counts', () => {
+  const works = {found: true, enabled: true, clicked: true, click: {ok: true, route: 1}, effect: true, valid: true};
   const both = menuComparison({selectAll: works, bold: works}, {selectAll: works, bold: works});
   assert.equal(both.decision, 'no activation: cua reads the responder-chain items enabled and they act without it');
   assert.equal(both.items.selectAll.same, true);
-  const disabled = menuComparison({selectAll: {...works, enabled: false, clicked: false, effect: false}, bold: works}, {selectAll: works, bold: works});
+  const disabled = menuComparison({selectAll: {...works, enabled: false, clicked: false, click: undefined, effect: false}, bold: works}, {selectAll: works, bold: works});
   assert.equal(disabled.decision, 'the menu path takes activation: cua reads an item disabled or it does nothing where the vendor\'s works');
-  assert.equal(disabled.items.selectAll.same, false);
+  assert.equal(disabled.items.selectAll.cua.label, 'read disabled');
   const vendorFails = menuComparison({selectAll: works, bold: works}, {selectAll: {...works, effect: false}, bold: works});
-  assert.equal(vendorFails.decision, 'no activation: cua reads the responder-chain items enabled and they act without it');
   assert.equal(vendorFails.items.selectAll.cuaBetter, true);
-  const unexposed = menuComparison({selectAll: works, bold: {found: false}}, {selectAll: works, bold: works});
-  assert.equal(unexposed.decision, 'undecided: an item was not exposed or a lane is missing');
-  assert.equal(menuComparison({selectAll: works, bold: works}, null).decision, 'undecided: an item was not exposed or a lane is missing');
+  assert.match(menuComparison({selectAll: works, bold: {found: false}}, {selectAll: works, bold: works}).decision, /^undecided/);
+  assert.match(menuComparison({selectAll: {...works, valid: false}, bold: works}, {selectAll: works, bold: works}).decision, /^undecided/, 'an invalid cua item decides nothing');
+  assert.match(menuComparison({selectAll: works, bold: works}, null).decision, /^undecided/);
+});
+
+test('menuItemLabel: not found, invalid, unattempted, read disabled, inconclusive, acts, no effect', () => {
+  const base = {found: true, enabled: true, valid: true};
+  assert.equal(menuItemLabel({found: false}), 'not found');
+  assert.equal(menuItemLabel({...base, valid: false, clicked: true, click: {ok: true}, effect: true}), 'invalid');
+  assert.equal(menuItemLabel({...base, attempted: false, reason: 'the lane lost the background condition'}), 'unattempted');
+  assert.equal(menuItemLabel({...base, enabled: false, clicked: false}), 'read disabled');
+  assert.equal(menuItemLabel({...base, clicked: false, click: {ok: false, errorName: 'activationFailed'}}), 'inconclusive');
+  assert.equal(menuItemLabel({...base, clicked: true, click: {ok: true}, effect: true}), 'acts');
+  assert.equal(menuItemLabel({...base, enabled: false, clicked: true, click: {ok: true}, effect: false}), 'no effect', 'a disabled item pressed in the on lane');
+  assert.equal(menuItemLabel(undefined), 'not found');
 });
 
 test('enablementOf and enablementVerdict: released when each connection\'s first observation reads the attribute false and the first sets it', () => {
@@ -178,48 +196,65 @@ test('enablementOf and enablementVerdict: released when each connection\'s first
   assert.equal(enablementVerdict({first: null, second: first}).released, false);
 });
 
-test('menuSettingVerdict: which spikeMenuActivation setting makes both items act, so the default can be set from it', () => {
-  const works = {found: true, enabled: true, clicked: true, effect: true};
-  const fails = {...works, effect: false};
+test('menuSettingVerdict: the setting to make the default, decided only by attempted items valid under the background condition', () => {
+  const acts = {found: true, enabled: true, valid: true, clicked: true, click: {ok: true, route: 1, posted: true}, effect: true};
+  const none = {...acts, effect: false};
+  const disabled = {found: true, enabled: false, valid: true, clicked: false, effect: false};
+  const guarded = {...acts, click: {ok: true, route: 1, posted: true, activationGuardMs: 18.5}};
   const lane = (selectAll, bold) => ({selectAll, bold});
   const v = (off, on) => menuSettingVerdict(off, on);
-  assert.deepEqual(v(lane(works, works), lane(works, works)).works, {off: true, on: true});
-  assert.equal(v(lane(works, works), lane(works, works)).decision, 'off works: keep spikeMenuActivation off by default (the menu path takes no activation); on works too');
-  assert.equal(v(lane(works, works), lane(fails, works)).decision, 'off works: keep spikeMenuActivation off by default (the menu path takes no activation); on does not');
-  assert.equal(v(lane(fails, works), lane(works, works)).decision, 'only on works: set spikeMenuActivation on by default (route 3\'s activation around a menu item\'s press)');
-  assert.equal(v(lane(fails, works), lane(fails, works)).decision, 'neither works: route 3\'s activation around the press is not enough for a background app\'s responder-chain items');
-  assert.deepEqual(v(lane(fails, works), lane(fails, works)).failing, {off: ['selectAll'], on: ['selectAll']});
-  const pressed = {...works, click: {ok: true, route: 1, posted: true, activationGuardMs: 18.5}};
-  assert.deepEqual(v(lane(fails, works), lane(pressed, pressed)).items, {
-    off: {selectAll: {effect: false, route: null, activationGuardMs: null}, bold: {effect: true, route: null, activationGuardMs: null}},
-    on: {selectAll: {effect: true, route: 1, activationGuardMs: 18.5}, bold: {effect: true, route: 1, activationGuardMs: 18.5}}});
-  assert.match(v(lane({found: false}, works), lane(works, works)).decision, /^undecided/);
-  assert.match(v(null, lane(works, works)).decision, /^undecided/);
+  const keep = v(lane(acts, acts), lane(guarded, guarded));
+  assert.equal(keep.setting, 'off');
+  assert.equal(keep.line, 'keep off: every item acts without activation (spikeMenuActivation stays off by default)');
+  const on = v(lane(disabled, none), lane(guarded, guarded));
+  assert.equal(on.setting, 'on');
+  assert.equal(on.line, 'set on: every item acts only with route 3\'s activation around its press (spikeMenuActivation on by default)');
+  assert.deepEqual(on.labels, {off: {selectAll: 'read disabled', bold: 'no effect'}, on: {selectAll: 'acts', bold: 'acts'}});
+  assert.deepEqual(on.items.on.selectAll, {label: 'acts', effect: true, route: 1, activationGuardMs: 18.5});
+  const neither = v(lane(none, acts), lane({...guarded, effect: false}, guarded));
+  assert.equal(neither.setting, 'neither');
+  assert.equal(neither.line, 'neither: route 3\'s activation around the press is not enough for selectAll');
+  // Undecided, with the reason, whenever an item that matters is not found, inconclusive, unattempted or invalid.
+  const lost = v(lane(none, acts), lane(guarded, {...guarded, valid: false}));
+  assert.equal(lost.setting, 'undecided');
+  assert.equal(lost.line, 'undecided: on lane bold invalid');
+  assert.equal(v(lane({found: false}, acts), lane(guarded, guarded)).line, 'undecided: off lane selectAll not found');
+  assert.equal(v(lane({...none, valid: false}, acts), lane(guarded, guarded)).line, 'undecided: off lane selectAll invalid', 'an off item lost to an activation is no evidence for on');
+  assert.equal(v(lane(acts, acts), null).setting, 'off', 'off decides alone when every item acts');
+  assert.equal(v(null, lane(acts, acts)).line, 'undecided: off lane missing');
 });
 
-test('pasteVerdict: plain and Markdown pastes land behind the user window, type_text takes the paste route under Korean 2-Set, the owner\'s clipboard is back', () => {
+test('pasteVerdict: the pastes land behind the user window, type_text takes the paste route under a met Korean precondition, the clipboard\'s types unchanged', () => {
+  const met = {selected: true, readBack: KOREAN_2SET, perContextOff: true, met: true};
   const steps = {
     userInFront: [true, true, true],
     text: {ok: true, route: 'paste', posted: true, lands: true},
     markdown: {ok: true, route: 'paste', posted: true, lands: true, bold: true},
-    typeText: {ok: true, route: 'paste', posted: true, lands: true, entered: 27},
-    inputSource: {selected: true, restored: true, perContext: {read: true, setOff: true, restored: true}},
+    typeText: {measured: true, ok: true, route: 'paste', posted: true, lands: true, entered: 27},
+    precondition: met,
+    inputSource: {restored: true, perContext: {read: true, setOff: true, restored: true}},
     pasteAlert: false,
-    clipboard: {same: true},
+    clipboard: {typesUnchanged: true},
   };
   const out = pasteVerdict(steps);
   assert.equal(out.pass, true, JSON.stringify(out.failed));
+  assert.equal(out.typeText, 'measured');
   assert.deepEqual(out.recorded, {markdownBold: true, entered: 27, perContext: {read: true, setOff: true, restored: true}, sourceAfter: null});
-  // An alert during a paste: the section aborted, a failure of its own.
-  const alerted = pasteVerdict({...steps, pasteAlert: true, typeText: undefined});
-  assert.deepEqual(alerted.failed, ['typeTextPasteRoute', 'typeTextLands', 'noPasteAlert']);
-  // type_text keyed under Korean: a finding with the engine's source, beside the failed expectation.
-  const keyed = pasteVerdict({...steps, typeText: {ok: true, route: "2'", lands: false, sourceAfter: 'com.apple.keylayout.ABC'}});
-  assert.equal(keyed.recorded.sourceAfter, 'com.apple.keylayout.ABC');
-  assert.match(keyed.finding, /type_text keyed \(route 2'\) with Korean 2-Set selected and the per-context preference off; the engine reports no source on the wire, and the probe read com\.apple\.keylayout\.ABC right after/);
   assert.equal(out.finding, null);
-  assert.deepEqual(pasteVerdict({...steps, clipboard: {same: false}}).failed, ['clipboardRestored']);
-  assert.deepEqual(pasteVerdict({...steps, typeText: {...steps.typeText, route: "2'"}}).failed, ['typeTextPasteRoute']);
+  // The precondition unmet: type_text is not measured and the verdict says so; no finding.
+  const unmet = pasteVerdict({...steps, precondition: {...met, perContextOff: false, met: false}, typeText: {measured: false, reason: 'precondition unmet: the per-context preference still reads on'}});
+  assert.equal(unmet.typeText, 'precondition unmet: the per-context preference still reads on');
+  assert.deepEqual(unmet.failed, ['typeTextMeasured']);
+  assert.equal(unmet.finding, null);
+  // A met precondition followed by a keyed route: the engine finding, beside the failed expectation.
+  const keyed = pasteVerdict({...steps, typeText: {measured: true, ok: true, route: "2'", lands: false, sourceAfter: KOREAN_2SET}});
+  assert.deepEqual(keyed.failed, ['typeTextPasteRoute', 'typeTextLands']);
+  assert.match(keyed.finding, /^engine finding: type_text keyed \(route 2'\) with Korean 2-Set selected and read back and the per-context preference off; the engine reports no source on the wire, and the probe read com\.apple\.inputmethod\.Korean\.2SetKorean right after$/);
+  // An alert: the section aborted before type_text.
+  const alerted = pasteVerdict({...steps, pasteAlert: true, typeText: undefined});
+  assert.deepEqual(alerted.failed, ['typeTextMeasured', 'noPasteAlert']);
+  assert.equal(alerted.typeText, 'not reached');
+  assert.deepEqual(pasteVerdict({...steps, clipboard: {typesUnchanged: false}}).failed, ['clipboardTypesUnchanged']);
   assert.deepEqual(pasteVerdict({...steps, userInFront: [true, false, true]}).failed, ['userStaysInFront']);
   assert.deepEqual(pasteVerdict({...steps, markdown: {...steps.markdown, bold: false}}).failed, [], 'bold is recorded, not judged');
   assert.deepEqual(pasteVerdict({...steps, text: {ok: false, errorName: 'clipboardReadTimedOut', posted: true}}).failed, ['textLands']);
@@ -227,21 +262,59 @@ test('pasteVerdict: plain and Markdown pastes land behind the user window, type_
   assert.equal(pasteVerdict({}).pass, false);
 });
 
-test('alertCandidates: a system alert owner, a window that names the pasteboard, or a new low-layer window of another process; never the run\'s own', () => {
-  const w = (number, ownerPid, extra = {}) => ({number, ownerPid, ownerName: 'App', ownerBundleId: 'com.example.app', layer: 0, name: null, ...extra});
-  const before = [w(1, 10), w(2, 11, {layer: 25, ownerName: 'Control Center', ownerBundleId: 'com.apple.controlcenter'}), w(3, 600)];
+test('alertWatch: system-alert processes are read by name; anything else new aborts but leaves only its layer; a pasteboard title leaves only the keyword', () => {
+  const w = (number, ownerPid, extra = {}) => ({number, ownerPid, ownerName: 'Mail', ownerBundleId: 'com.apple.mail', layer: 0, name: 'Inbox — private', ...extra});
+  const before = [w(1, 10), w(2, 11, {layer: 25, ownerName: 'Control Center', ownerBundleId: 'com.apple.controlcenter', name: null}), w(3, 600)];
   const runPids = [600, 700];
-  assert.deepEqual(alertCandidates(before, before, {runPids}), [], 'what was there before is no alert');
-  assert.deepEqual(alertCandidates(before, [...before, w(4, 600), w(5, 700, {layer: 8})], {runPids}), [], 'the run\'s own windows are never alerts');
-  const unc = w(6, 12, {ownerName: 'UserNotificationCenter', ownerBundleId: 'com.apple.UserNotificationCenter', layer: 8});
-  assert.deepEqual(alertCandidates([...before, unc], [...before, unc], {runPids}).map(c => c.number), [6], 'an alert owner is an alert even when it was there before');
-  const named = w(7, 13, {layer: 0, name: 'Allow paste from TextEdit?'});
-  const korean = w(8, 14, {layer: 25, name: '클립보드 접근'});
-  const fresh = w(9, 15, {layer: 3});
-  const menu = w(10, 16, {layer: 101}), status = w(11, 17, {layer: 25});
-  assert.deepEqual(alertCandidates(before, [...before, named, korean, fresh, menu, status], {runPids}).map(c => c.number), [7, 8, 9]);
-  const out = alertCandidates(before, [...before, named], {runPids})[0];
-  assert.deepEqual(Object.keys(out).sort(), ['layer', 'name', 'number', 'ownerBundleId', 'ownerName', 'ownerPid']);
+  const quiet = alertWatch(before, before, {runPids});
+  assert.equal(quiet.abort, false);
+  assert.deepEqual(quiet.export, {alerts: [], keywords: [], unknown: {count: 0, windows: []}});
+  assert.equal(alertWatch(before, [...before, w(4, 600), w(5, 700, {layer: 8})], {runPids}).abort, false, 'the run\'s own windows are never alerts');
+  // A system-alert process: abort; its bundle id leaves; it is the only owner whose text may be read.
+  const unc = w(6, 12, {ownerName: 'UserNotificationCenter', ownerBundleId: 'com.apple.UserNotificationCenter', layer: 8, name: 'secret'});
+  const alerted = alertWatch([...before, unc], [...before, unc], {runPids});
+  assert.equal(alerted.abort, true);
+  assert.deepEqual(alerted.export.alerts, [{bundleId: 'com.apple.UserNotificationCenter', layer: 8, isAlertProcess: true}]);
+  assert.deepEqual(alerted.readable, [{bundleId: 'com.apple.UserNotificationCenter'}]);
+  // A localized owner name with no bundle id still identifies an alert process by its name.
+  assert.deepEqual(alertWatch(before, [...before, w(7, 13, {ownerName: 'CoreServicesUIAgent', ownerBundleId: null, layer: 0})], {runPids}).export.alerts,
+    [{bundleId: 'com.apple.coreservices.uiagent', layer: 0, isAlertProcess: true}]);
+  // A title naming the pasteboard: abort; only the keyword leaves; the owner leaves only when it is an alert process.
+  const titled = alertWatch(before, [...before, w(8, 14, {name: 'Allow “cua Engine” to paste from Mail?', layer: 3})], {runPids});
+  assert.equal(titled.abort, true);
+  assert.deepEqual(titled.export.keywords, [{keyword: 'paste', layer: 3, isAlertProcess: false}]);
+  assert.deepEqual(titled.readable, [], 'an unknown owner is never observed');
+  // Any other new low-layer window: abort, sanitized to its layer.
+  const fresh = alertWatch(before, [...before, w(9, 15, {layer: 3}), w(10, 16, {layer: 101}), w(11, 17, {layer: 25})], {runPids});
+  assert.equal(fresh.abort, true);
+  assert.deepEqual(fresh.export.unknown, {count: 1, windows: [{layer: 3, isAlertProcess: false}]});
+  assert.doesNotMatch(JSON.stringify([titled.export, fresh.export, alerted.export]), /Mail|private|secret|Inbox|com\.apple\.mail|ownerPid|"number"/);
+  // Chrome and Claude Desktop are never readable, whatever they show.
+  for (const bundleId of NEVER_OBSERVED) {
+    const out = alertWatch(before, [...before, w(12, 18, {ownerBundleId: bundleId, ownerName: 'UserNotificationCenter', name: 'paste'})], {runPids});
+    assert.deepEqual(out.readable, []);
+  }
+});
+
+test('compositionGuard: HID keys only while the scene\'s TextEdit is the front app, its scene window the front window and TextEdit\'s key window', () => {
+  const record = {pid: 600, window: {number: 41, bounds: {x: 10, y: 20, width: 600, height: 800}}};
+  const ok = {frontmost: {pid: 600, bundleId: 'com.apple.TextEdit'}, topWindow: {ownerPid: 600, number: 41}, observedWindow: {pid: 600, frame: {x: 10, y: 20, width: 600, height: 800}}, record};
+  assert.deepEqual(compositionGuard(ok), {post: true, reason: null});
+  assert.deepEqual(compositionGuard({...ok, frontmost: {pid: 5, bundleId: 'com.google.Chrome'}}), {post: false, reason: 'front app not the scene'});
+  assert.deepEqual(compositionGuard({...ok, frontmost: null}), {post: false, reason: 'front app not the scene'});
+  assert.equal(compositionGuard({...ok, topWindow: {ownerPid: 600, number: 99}}).reason, 'front window not the scene window');
+  assert.equal(compositionGuard({...ok, topWindow: {ownerPid: 5, number: 41}}).reason, 'front window not the scene window');
+  assert.equal(compositionGuard({...ok, observedWindow: {pid: 600, frame: {x: 400, y: 20, width: 600, height: 800}}}).reason, 'the scene window is not TextEdit\'s key window');
+  assert.equal(compositionGuard({...ok, observedWindow: null}).post, false);
+});
+
+test('compositionReading: 가, rk, ㄱㅏ, or anything else verbatim, and nothing more', () => {
+  assert.deepEqual(compositionReading('가'), {reading: '가'});
+  assert.deepEqual(compositionReading('가\n'), {reading: '가'}, 'the commit Return\'s newline is not part of the reading');
+  assert.deepEqual(compositionReading('rk'), {reading: 'rk'});
+  assert.deepEqual(compositionReading('ㄱㅏ'), {reading: 'ㄱㅏ'});
+  assert.deepEqual(compositionReading('ㄱ'), {reading: 'other', verbatim: 'ㄱ'});
+  assert.deepEqual(compositionReading(null), {reading: 'other', verbatim: ''});
 });
 
 test('inputSourceVerdict: selected, read back as Korean 2-Set, and the owner\'s source and preference restored', () => {
@@ -285,16 +358,47 @@ test('liveRefusals: the scenes\' refusals, a dirty or other checkout, a wrong en
   assert.match(all.join('\n'), /left textedit up.*cleanup/);
 });
 
-test('putBackPlan: Finder\'s teardown before the scenes go down, the engine stopped after, the front app last', () => {
-  assert.deepEqual(putBackPlan({scenesUp: ['textedit', 'finder'], inputSourceSaved: true, frontSaved: true}),
-    ['finder-teardown', 'scenes-down', 'input-source', 'engine-stop', 'apps-check', 'front-app']);
+test('putBackPlan: the watcher stopped first, Finder\'s teardown before the scenes go down, the engine stopped after, Finder observed, the front app last', () => {
+  assert.deepEqual(putBackPlan({scenesUp: ['textedit', 'finder'], inputSourceSaved: true, frontSaved: true, watchSaved: true, finderBaseline: true}),
+    ['watch-stop', 'finder-teardown', 'scenes-down', 'input-source', 'engine-stop', 'apps-check', 'finder-check', 'front-app']);
   assert.deepEqual(putBackPlan({scenesUp: [], inputSourceSaved: false, frontSaved: false}), ['scenes-down', 'engine-stop', 'apps-check']);
-  assert.deepEqual(putBackPlan({scenesUp: ['chrome'], inputSourceSaved: false, frontSaved: true}), ['scenes-down', 'engine-stop', 'apps-check', 'front-app']);
+  assert.deepEqual(putBackPlan({scenesUp: ['chrome'], inputSourceSaved: false, frontSaved: true, finderBaseline: true}), ['scenes-down', 'engine-stop', 'apps-check', 'finder-check', 'front-app']);
 });
 
-test('frontAppAction: the owner\'s app back in front, except the owner\'s Chrome and Claude, which are never touched', () => {
+test('frontAppAction: the owner\'s app back in front by activation alone, Chrome and Claude Desktop included; never a scene app', () => {
   assert.deepEqual(frontAppAction({pid: 5, bundleId: 'com.apple.Terminal'}), {reactivate: true});
-  for (const bundleId of NEVER_TOUCHED) assert.equal(frontAppAction({pid: 5, bundleId}).reactivate, false);
-  assert.ok(NEVER_TOUCHED.includes('com.google.Chrome') && NEVER_TOUCHED.includes('com.anthropic.claudefordesktop'));
+  assert.deepEqual(frontAppAction({pid: 5, bundleId: 'com.google.Chrome'}), {reactivate: true});
+  assert.deepEqual(frontAppAction({pid: 5, bundleId: 'com.anthropic.claudefordesktop'}), {reactivate: true});
   assert.equal(frontAppAction(null).reactivate, false);
+  assert.equal(frontAppAction({pid: 5, bundleId: 'com.apple.TextEdit'}).reactivate, false);
+  assert.ok(NEVER_OBSERVED.includes('com.google.Chrome') && NEVER_OBSERVED.includes('com.anthropic.claudefordesktop'));
 });
+
+test('finderCheck: the run\'s Finder window gone, Finder\'s windows as at begin, its chrome keys as the owner\'s', () => {
+  const keys = {ShowSidebar: true, ShowStatusBar: false, ShowPathbar: false};
+  const baseline = {windows: [], keys};
+  assert.deepEqual(finderCheck(baseline, {windows: [], keys}, {runWindow: 42}), {ok: true, runWindowGone: true, windowsAsAtBegin: true, keysAsSaved: true});
+  assert.deepEqual(finderCheck(baseline, {windows: [42], keys}, {runWindow: 42}), {ok: false, runWindowGone: false, windowsAsAtBegin: false, keysAsSaved: true});
+  assert.equal(finderCheck(baseline, {windows: [7], keys}, {runWindow: 42}).windowsAsAtBegin, false);
+  assert.equal(finderCheck(baseline, {windows: [], keys: {...keys, ShowPathbar: true}}, {runWindow: 42}).keysAsSaved, false);
+  assert.equal(finderCheck({windows: [3], keys}, {windows: [3], keys}, {runWindow: null}).ok, true, 'a window the owner had at begin stays');
+  assert.equal(finderCheck(null, {windows: [], keys}, {runWindow: null}).ok, false, 'no baseline, nothing verified');
+});
+
+test('outstandingHarness: the harness\'s own commands and the parity serve still running, never the caller, its ancestors, another user\'s or an owner\'s cua', () => {
+  const checkout = '/Users/u/Developer/GitHub/cua-parity';
+  const ps = [
+    '  100     1  501 node scripts/native-matrix/live-device.mjs paste --run /r',
+    '  101   100  501 /usr/bin/swift scripts/native-matrix/system-windows.swift',
+    '  102     1  501 node scripts/repl-parity/scenes-mac.mjs up textedit --run /r',
+    '  103     1  501 node scripts/native-matrix/goldens-device.mjs steps finder --run /r',
+    `  104     1  501 node ${checkout}/bin/cua.mjs serve`,
+    '  105     1  501 node /Users/u/.cua/bin/cua.mjs serve',
+    '  106     1  502 node scripts/native-matrix/live-device.mjs menu --run /r',
+    '  200   199  501 node scripts/native-matrix/live-device.mjs recover --run /r',
+    '  199     1  501 bash -c cd /Users/u/Developer/GitHub/cua-parity && node scripts/native-matrix/live-device.mjs recover --run /r',
+    '  300     1  501 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+  ].join('\n');
+  assert.deepEqual(outstandingHarness(ps, {self: 200, ancestors: [199, 1], uid: 501, checkout}).map(p => p.pid), [100, 102, 103, 104]);
+});
+

@@ -10,7 +10,8 @@ import {join} from 'node:path';
 import {SkyComputerUseError} from '../../src/services/engine/protocol.mjs';
 import {ABC, FIRST_LINE, KOREAN_2SET, PASTE_TARGETS} from '../../scripts/native-matrix/live-checks.mjs';
 import {
-  PASTE, PASTE_DEADLINE_MS, begin, enablementCheck, inputSourceCheck, menuCheck, minimizedCheck, pasteCheck, putBack, restoreInputSource, saveFrontmost, saveInputSource,
+  PASTE, PASTE_DEADLINE_MS, begin, enablementCheck, inputSourceCheck, menuCheck, minimizedCheck, pasteCheck, putBack, recover, restoreInputSource, saveFrontmost,
+  saveInputSource,
 } from '../../scripts/native-matrix/live-device.mjs';
 
 const GOLDEN = JSON.parse(fs.readFileSync(new URL('../native-goldens/textedit/skyshot.json', import.meta.url), 'utf8'));
@@ -42,6 +43,7 @@ function fakeEngine({minimized = false, script = () => undefined, menus = {}, me
     const shot = structuredClone(GOLDEN);
     shot.revision = state.revision;
     shot.app = {...shot.app, pid: TEXTEDIT.pid};
+    shot.window = {...shot.window, pid: TEXTEDIT.pid, frame: {...TEXTEDIT.window.bounds}};
     const node = shot.nodes.find(n => n.role === 'AXTextArea');
     Object.assign(node, {value: state.value, valueMarkdown: state.markdown});
     shot.selectedText = state.selected;
@@ -120,9 +122,13 @@ test('minimizedCheck: minimized through its own button, observed with its tree a
   const io = deviceIo({windowOnScreen: () => (client.state.minimized ? false : onScreen), activate: async id => { activated.push(id); client.state.minimized = false; return {ok: true}; }});
   const out = await minimizedCheck({record: TEXTEDIT, client, io, screenshots: join(run, 'shots')});
   assert.equal(out.verdict.pass, true, JSON.stringify(out.verdict));
-  assert.deepEqual(out.verdict.recorded, {typeTextValueChanged: false, superAEffect: false, scrollRefused: true});
+  assert.deepEqual(out.verdict.recorded, {typeTextValueChanged: false, superAEffect: false});
   assert.equal(out.steps.minimize.route, 1);
-  assert.deepEqual(out.steps.observe, {ok: true, treePresent: true, textArea: true, screenshotNull: true, screenshotOmitted: 'windowMinimized', engineSaysMinimized: true});
+  assert.deepEqual(out.steps.observe, {ok: true, treePresent: true, textArea: true, screenshotNull: true, screenshotOmitted: 'windowMinimized', engineSaysMinimized: true,
+    minimizedBefore: true, minimizedAfter: true});
+  assert.equal(out.verdict.status, 'valid');
+  assert.ok(['click', 'scroll', 'setValue', 'selectText', 'typeText', 'selectAll'].every(name => out.steps[name].minimizedBefore && out.steps[name].minimizedAfter),
+    'every measurement bracketed by a minimized reading');
   assert.equal(out.steps.click.errorName, 'windowMinimized');
   assert.equal(out.steps.click.posted, false);
   assert.deepEqual(activated, ['textedit']);
@@ -136,7 +142,7 @@ test('minimizedCheck: minimized through its own button, observed with its tree a
   // The element scroll in the minimized window: refused, nothing scrolled; set_value and select_text posted no click.
   assert.deepEqual({refused: out.steps.scroll.refused, errorName: out.steps.scroll.errorName, posted: out.steps.scroll.posted}, {refused: true, errorName: 'windowMinimized', posted: false});
   assert.equal(sent[2].args.element, sent[1].args.element, 'the scroll aims at the text area');
-  assert.equal(out.verdict.recorded.scrollRefused, true);
+  assert.ok(!out.verdict.failed.includes('scrollRefused'));
   assert.equal(out.steps.setValue.posted, false);
   assert.equal(out.steps.selectText.posted, false);
   // Every observation asked for the screenshot, as cua's service does.
@@ -153,9 +159,9 @@ test('minimizedCheck: typing and ⌘A that act on the minimized window are recor
   }});
   const io = deviceIo({windowOnScreen: () => !client.state.minimized, activate: async () => { client.state.minimized = false; return {ok: true}; }});
   const out = await minimizedCheck({record: TEXTEDIT, client, io, screenshots: join(scratch(), 'shots')});
-  assert.deepEqual(out.verdict.recorded, {typeTextValueChanged: true, superAEffect: true, scrollRefused: true});
+  assert.deepEqual(out.verdict.recorded, {typeTextValueChanged: true, superAEffect: true});
   assert.deepEqual(out.verdict.decision, {plainKeys: 'type_text and press_key without ⌘ stay allowed: typed text reached the minimized window',
-    commandChords: '⌘ chords stay allowed: ⌘A acted with the window minimized'});
+    commandChordsAndPaste: '⌘ chords and paste go through: ⌘A acted with the window minimized'});
 });
 
 test('minimizedCheck: a window that never minimizes stops the check before any input, and is still restored', async () => {
@@ -190,6 +196,38 @@ test('minimizedCheck: an engine error mid-check keeps the steps so far and still
   assert.deepEqual(activated, ['textedit', 'textedit']);
 });
 
+test('minimizedCheck: a window that comes back on screen during a measurement makes the section invalid; nothing more is sent, nothing re-minimized', async () => {
+  const client = fakeEngine();
+  let unminimizeAfterSelect = true;
+  const inner = client.execute;
+  client.execute = async (method, args, options) => {
+    const out = await inner.call(client, method, args, options);
+    if (method === 'select_text' && unminimizeAfterSelect) { client.state.minimized = false; unminimizeAfterSelect = false; }
+    return out;
+  };
+  const activated = [];
+  const io = deviceIo({windowOnScreen: () => !client.state.minimized, activate: async id => { activated.push(id); client.state.minimized = false; return {ok: true}; }});
+  const out = await minimizedCheck({record: TEXTEDIT, client, io, screenshots: join(scratch(), 'shots')});
+  assert.equal(out.verdict.status, 'invalid');
+  assert.equal(out.verdict.decision, null);
+  assert.deepEqual(out.steps.invalid, {at: 'selectText'});
+  assert.equal(out.steps.selectText.minimizedAfter, false);
+  assert.match(out.problem, /not minimized around selectText/);
+  const sent = client.calls.filter(c => c.method !== 'get_app_state').map(c => c.method);
+  assert.deepEqual(sent, ['click', 'click', 'scroll', 'set_value', 'select_text'], 'no key probe after the window came back');
+  assert.ok(!client.calls.some(c => c.method === 'click' && c.args.element === 't49' && c !== client.calls.find(x => x.method === 'click')), 'the minimize button is pressed once only');
+  assert.deepEqual(activated, ['textedit']);
+});
+
+test('minimizedCheck: a key probe that answers an error is inconclusive, not policy evidence', async () => {
+  const client = fakeEngine({script: method => (method === 'type_text' ? engineError('userIntervened', 'The user is typing.') : undefined)});
+  const io = deviceIo({windowOnScreen: () => !client.state.minimized, activate: async () => { client.state.minimized = false; return {ok: true}; }});
+  const out = await minimizedCheck({record: TEXTEDIT, client, io, screenshots: join(scratch(), 'shots')});
+  assert.equal(out.verdict.status, 'inconclusive');
+  assert.equal(out.verdict.decision.plainKeys, 'inconclusive: type_text answered userIntervened');
+  assert.equal(out.verdict.pass, false);
+});
+
 test('minimizedCheck: an observation of another process sends nothing at all', async () => {
   const client = fakeEngine({script: method => (method === 'get_app_state' ? {...structuredClone(GOLDEN), app: {...GOLDEN.app, pid: 1}} : undefined)});
   assert.notEqual(GOLDEN.app.pid, TEXTEDIT.pid);
@@ -198,54 +236,81 @@ test('minimizedCheck: an observation of another process sends nothing at all', a
   assert.deepEqual(client.calls.map(c => c.method), ['get_app_state']);
 });
 
-test('menuCheck: each item through the menu-bar record and a rooted observation, its enabled state, its effect read back, the user window in front throughout', async () => {
+const quietWatch = (lines = []) => ({start: () => ({pid: 9}), stop: () => lines});
+
+test('menuCheck: each item through the menu-bar record and a rooted observation, its enabled state, its effect read back, valid under the background condition', async () => {
   const client = fakeEngine({menus: MENUS});
   const watched = [];
-  const io = deviceIo({watch: {start: () => { watched.push('start'); return {pid: 9}; }, stop: () => { watched.push('stop'); return [{kind: 'activated', bundleId: 'com.apple.TextEdit', pid: 600}]; }}});
+  const io = deviceIo({watch: {start: () => { watched.push('start'); return {pid: 9}; }, stop: () => { watched.push('stop'); return [{kind: 'deactivated', bundleId: 'com.apple.mail', pid: 50, at: 1}]; }}});
   const out = await menuCheck({record: TEXTEDIT, user: FINDER, client, io, screenshots: join(scratch(), 'shots')});
   assert.deepEqual(watched, ['start', 'stop']);
   assert.equal(out.menuActivation, false);
   assert.deepEqual(out.items.selectAll, {found: true, rooted: true, enabled: true, record: {ok: true, route: 1, posted: false}, clicked: true, click: {ok: true, route: 1, posted: true},
-    effect: true, userInFront: [true, true]});
-  assert.ok(client.calls.filter(c => c.method === 'click').every(c => !('spikeMenuActivation' in c.args)), 'off sends no switch at all');
+    effect: true, userInFront: [true, true], valid: true});
   assert.equal(out.items.bold.prepared, true, 'the first line was selected before Format');
   assert.equal(out.items.bold.effect, true);
-  assert.equal(out.items.bold.enabled, true);
-  assert.deepEqual(out.activations, [{kind: 'activated', bundleId: 'com.apple.TextEdit', scene: true}]);
-  const select = client.calls.find(c => c.method === 'select_text');
-  assert.equal(select.args.text, FIRST_LINE);
+  assert.equal(out.items.bold.valid, true);
+  assert.ok(client.calls.filter(c => c.method === 'click').every(c => !('spikeMenuActivation' in c.args)), 'off sends no switch at all');
+  assert.equal(client.calls.find(c => c.method === 'select_text').args.text, FIRST_LINE);
   assert.doesNotMatch(JSON.stringify(out), /Line 0/);
 });
 
-test('menuCheck with the switch on: only the menu item\'s press carries spikeMenuActivation; its route and guard time are recorded', async () => {
-  const off = await menuCheck({record: TEXTEDIT, user: FINDER, client: fakeEngine({menus: MENUS, menuNeedsActivation: true}), io: deviceIo({watch: {start: () => ({pid: 9}), stop: () => []}}),
+test('menuCheck with the switch on: only the item\'s press carries it, a disabled item is pressed all the same, its route and guard time recorded', async () => {
+  const off = await menuCheck({record: TEXTEDIT, user: FINDER, client: fakeEngine({menus: MENUS, menuNeedsActivation: true}), io: deviceIo({watch: quietWatch()}),
     screenshots: join(scratch(), 'shots')});
   assert.deepEqual([off.items.selectAll.effect, off.items.bold.effect], [false, false], 'the fake\'s background responder chain needs the activation');
-  const client = fakeEngine({menus: MENUS, menuNeedsActivation: true});
-  const on = await menuCheck({record: TEXTEDIT, user: FINDER, client, io: deviceIo({watch: {start: () => ({pid: 9}), stop: () => []}}), screenshots: join(scratch(), 'shots'), menuActivation: true});
+  const menus = structuredClone(MENUS);
+  menus.Edit[3].flags.enabled = false;
+  const client = fakeEngine({menus, menuNeedsActivation: true});
+  const on = await menuCheck({record: TEXTEDIT, user: FINDER, client, io: deviceIo({watch: quietWatch()}), screenshots: join(scratch(), 'shots'), menuActivation: true});
   assert.equal(on.menuActivation, true);
+  assert.equal(on.items.selectAll.enabled, false);
+  assert.equal(on.items.selectAll.clicked, true, 'read disabled, pressed under the switch');
   assert.deepEqual([on.items.selectAll.effect, on.items.bold.effect], [true, true]);
   assert.deepEqual(on.items.selectAll.click, {ok: true, route: 1, posted: true, activationGuardMs: 18.5});
-  const clicks = client.calls.filter(c => c.method === 'click');
-  assert.deepEqual(clicks.map(c => c.args.spikeMenuActivation === true), [false, true, false, true], 'the menu-bar record clicks carry no switch, the item presses do');
+  assert.deepEqual(client.calls.filter(c => c.method === 'click').map(c => c.args.spikeMenuActivation === true), [false, true, false, true], 'the menu-bar record clicks carry no switch');
 });
 
-test('menuCheck: an item read disabled is not clicked; a submenu not exposed is recorded as not found', async () => {
+test('menuCheck off: an item read disabled is not pressed; a submenu not exposed is recorded as not found', async () => {
   const menus = structuredClone(MENUS);
   menus.Edit[3].flags.enabled = false;
   menus.Format = menus.Format.slice(0, 3);
   const client = fakeEngine({menus});
-  const out = await menuCheck({record: TEXTEDIT, user: FINDER, client, io: deviceIo({watch: {start: () => ({pid: 9}), stop: () => []}}), screenshots: join(scratch(), 'shots')});
+  const out = await menuCheck({record: TEXTEDIT, user: FINDER, client, io: deviceIo({watch: quietWatch()}), screenshots: join(scratch(), 'shots')});
   assert.equal(out.items.selectAll.enabled, false);
   assert.equal(out.items.selectAll.clicked, false);
-  assert.equal(out.items.selectAll.effect, false);
   assert.equal(out.items.bold.found, false);
   assert.ok(!client.calls.some(c => c.method === 'click' && c.args.element === 't83'));
 });
 
+test('menuCheck: the user window leaving the front invalidates that item and stops the lane; the rest are unattempted', async () => {
+  const client = fakeEngine({menus: MENUS});
+  let lost = false;
+  const inner = client.execute;
+  client.execute = async (method, args, options) => { const out = await inner.call(client, method, args, options); if (args?.element === 't83') lost = true; return out; };
+  const io = deviceIo({watch: quietWatch(), frontmost: () => (lost ? {pid: TEXTEDIT.pid, bundleId: 'com.apple.TextEdit'} : {pid: FINDER.pid, bundleId: 'com.apple.finder'})});
+  const out = await menuCheck({record: TEXTEDIT, user: FINDER, client, io, screenshots: join(scratch(), 'shots')});
+  assert.equal(out.lostAt, 'selectAll');
+  assert.equal(out.items.selectAll.valid, false);
+  assert.deepEqual(out.items.bold, {found: true, attempted: false, valid: false, reason: 'the lane lost the background condition before it'});
+  assert.ok(!client.calls.some(c => c.args?.element === 't94'), 'nothing sent after the front was lost');
+});
+
+test('menuCheck: an activation the watcher records during an item invalidates it and every item after', async () => {
+  const client = fakeEngine({menus: MENUS});
+  let t = 0;
+  const io = deviceIo({now: () => (t += 100), watch: quietWatch([{pid: 9, watch: 'activations'}, {kind: 'activated', bundleId: 'com.apple.TextEdit', pid: 600, at: 150}])});
+  const out = await menuCheck({record: TEXTEDIT, user: FINDER, client, io, screenshots: join(scratch(), 'shots')});
+  assert.equal(out.invalidFrom, 'selectAll');
+  assert.deepEqual([out.items.selectAll.valid, out.items.bold.valid], [false, false]);
+  const later = await menuCheck({record: TEXTEDIT, user: FINDER, client: fakeEngine({menus: MENUS}), screenshots: join(scratch(), 'shots'),
+    io: deviceIo({now: (() => { let u = 0; return () => (u += 100); })(), watch: quietWatch([{kind: 'activated', bundleId: 'com.apple.TextEdit', pid: 600, at: 350}])})});
+  assert.deepEqual([later.items.selectAll.valid, later.items.bold.valid], [true, false]);
+});
+
 test('menuCheck: refuses to send anything unless the user window is in front', async () => {
   const client = fakeEngine({menus: MENUS});
-  const out = await menuCheck({record: TEXTEDIT, user: FINDER, client, io: deviceIo({frontmost: () => ({pid: 1, bundleId: 'com.apple.Terminal'}), watch: {start: () => ({pid: 9}), stop: () => []}}),
+  const out = await menuCheck({record: TEXTEDIT, user: FINDER, client, io: deviceIo({frontmost: () => ({pid: 1, bundleId: 'com.apple.Terminal'}), watch: quietWatch()}),
     screenshots: join(scratch(), 'shots')});
   assert.match(out.problem, /user window/);
   assert.deepEqual(client.calls, []);
@@ -343,7 +408,8 @@ test('begin: refusals stop it before the front app is saved or the engine stoppe
   const run = scratch();
   const calls = [];
   const io = {preflight: () => ({refusals: [{code: 'textedit_running', message: 'TextEdit is running and is not the run\'s'}]}), gitState: () => ({commit: 'c1', dirty: false}),
-    engineCheck: () => ({ok: true, engine: {build: 'b'}, problems: []}), frontmost: () => ({pid: 77, bundleId: 'com.apple.Terminal'}), stop: async () => { calls.push('stop'); return {wasRunning: false}; }};
+    engineCheck: () => ({ok: true, engine: {build: 'b'}, problems: []}), frontmost: () => ({pid: 77, bundleId: 'com.apple.Terminal'}), stop: async () => { calls.push('stop'); return {wasRunning: false}; },
+    finderWindows: () => [], finderPreferences: () => ({ShowSidebar: true}), finderSavedPreferences: () => null};
   const refused = await begin({run, commit: 'c1', io});
   assert.deepEqual(refused.refusals, ['TextEdit is running and is not the run\'s']);
   assert.deepEqual(calls, []);
@@ -354,6 +420,7 @@ test('begin: refusals stop it before the front app is saved or the engine stoppe
   assert.deepEqual(ok.frontmost, {bundleId: 'com.apple.Terminal'});
   assert.equal(JSON.parse(fs.readFileSync(join(run, 'live-frontmost.json'), 'utf8')).pid, 77);
   assert.doesNotMatch(JSON.stringify(ok), /77/);
+  assert.deepEqual(JSON.parse(fs.readFileSync(join(run, 'live-finder.json'), 'utf8')).keys, {ShowSidebar: true}, 'Finder at begin, for the put-back');
 });
 
 test('saveFrontmost: a front app a dead run saved is kept (the current one may be a scene app)', () => {
@@ -363,57 +430,128 @@ test('saveFrontmost: a front app a dead run saved is kept (the current one may b
   assert.equal(JSON.parse(fs.readFileSync(join(run, 'live-frontmost.json'), 'utf8')).bundleId, 'com.apple.Terminal');
 });
 
-test('putBack: every planned step runs whatever the one before answered, in order, and the front app comes back last', async () => {
-  const run = scratch(), order = [];
+// A put-back device: the scenes, the engine, the apps, Finder and the front app, every call in `order`.
+function putBackIo(run, extra = {}) {
+  const order = [];
+  const io = {savedInputSource: join(run, 'none.json'), order,
+    goldensSteps: async args => { order.push(args.join(' ')); return {steps: []}; },
+    scenes: async args => { order.push(args.join(' ')); return {down: true}; },
+    stop: async () => { order.push('engine-stop'); return {wasRunning: true}; },
+    runningApps: () => [],
+    finderWindows: () => [], finderPreferences: () => ({ShowSidebar: true, ShowStatusBar: false, ShowPathbar: false}),
+    reactivate: async front => { order.push(`reactivate ${front.bundleId}`); return {reactivated: true, inFront: true}; },
+    frontmost: () => ({pid: 77, bundleId: 'com.apple.Terminal'}),
+    watch: {stop: watch => { order.push(`watch-stop ${watch?.pid}`); return []; }}, processRuns: () => false,
+    client: () => { throw new Error('the put-back observes nothing through the engine'); },
+    sleep: async () => {}, now: (() => { let t = 0; return () => (t += 100); })(), ...extra};
+  return io;
+}
+const FINDER_BASELINE = {windows: [], keys: {ShowSidebar: true, ShowStatusBar: false, ShowPathbar: false}};
+
+test('putBack: the watcher stopped first, every planned step run whatever the one before answered, Finder observed, the front app last', async () => {
+  const run = scratch();
   fs.writeFileSync(join(run, 'scenes.json'), JSON.stringify({scenes: {textedit: TEXTEDIT, finder: FINDER}}));
+  fs.writeFileSync(join(run, 'live-watch.json'), JSON.stringify({pid: 4242, dir: join(run, 'watch-x')}));
+  fs.writeFileSync(join(run, 'live-finder.json'), JSON.stringify(FINDER_BASELINE));
   saveFrontmost(run, {pid: 77, bundleId: 'com.apple.Terminal'});
   const savedInput = join(run, 'input-source.json');
   fs.writeFileSync(savedInput, JSON.stringify({savedAt: 't0', source: {id: ABC}, perContext: false}));
   const {io: input} = fakeInput({current: KOREAN_2SET});
-  const io = {...input, savedInputSource: savedInput,
-    goldensSteps: async args => { order.push(args.join(' ')); throw new Error('the run\'s Finder window could not be observed'); },
-    scenes: async args => { order.push(args.join(' ')); return {down: true}; },
-    stop: async () => { order.push('engine-stop'); return {wasRunning: true}; },
-    runningApps: bundleId => { order.push(`running ${bundleId}`); return []; },
-    reactivate: async front => { order.push(`reactivate ${front.bundleId}`); return {reactivated: true, inFront: true}; },
-    frontmost: () => ({pid: 77, bundleId: 'com.apple.Terminal'})};
+  const io = putBackIo(run, {...input, savedInputSource: savedInput,
+    goldensSteps: async args => { io.order.push(args.join(' ')); throw new Error('the run\'s Finder window could not be observed'); }});
   const out = await putBack({run, io});
-  assert.deepEqual(out.plan, ['finder-teardown', 'scenes-down', 'input-source', 'engine-stop', 'apps-check', 'front-app']);
-  assert.deepEqual(order.filter(o => !o.startsWith('running')), [`steps finder --run ${run} --phase teardown`, `down all --run ${run}`, 'engine-stop', 'reactivate com.apple.Terminal']);
+  assert.deepEqual(out.plan, ['watch-stop', 'finder-teardown', 'scenes-down', 'input-source', 'engine-stop', 'apps-check', 'finder-check', 'front-app']);
+  assert.deepEqual(io.order, ['watch-stop 4242', `steps finder --run ${run} --phase teardown`, `down all --run ${run}`, 'engine-stop', 'reactivate com.apple.Terminal']);
   assert.match(out.steps['finder-teardown'].error, /could not be observed/);
   assert.equal(out.steps['input-source'].sourceRestored, true);
-  assert.deepEqual(out.steps['apps-check'], {ok: true, running: {textedit: 0, chromeForTesting: 0, electronFixture: 0}});
+  assert.equal(fs.existsSync(savedInput), false, 'the put-back verified the restore and removed the record');
+  assert.deepEqual(out.steps['watch-stop'], {ok: true, stopped: true});
+  assert.deepEqual(out.steps['finder-check'], {ok: true, runWindowGone: true, windowsAsAtBegin: true, keysAsSaved: true});
   assert.deepEqual(out.steps['front-app'], {ok: true, bundleId: 'com.apple.Terminal', reactivated: true, inFront: true});
   assert.equal(out.ok, false, 'a failed step leaves the put-back incomplete');
   assert.equal(fs.existsSync(join(run, 'live-frontmost.json')), false, 'the front app once back, its record goes');
 });
 
-test('putBack: the owner\'s Chrome in front is never activated; a scene app still running fails the apps check', async () => {
+test('putBack: a watcher that will not stop, Finder\'s window still open or a key not back fail it', async () => {
   const run = scratch();
-  saveFrontmost(run, {pid: 5, bundleId: 'com.google.Chrome'});
-  const io = {savedInputSource: join(run, 'none.json'), scenes: async () => ({down: true}), stop: async () => ({wasRunning: false}),
-    runningApps: bundleId => (bundleId === 'com.apple.TextEdit' ? [{pid: 600, bundleId}] : []),
-    reactivate: async () => { throw new Error('never called'); }, frontmost: () => ({pid: 6, bundleId: 'com.apple.finder'})};
+  fs.writeFileSync(join(run, 'scenes.json'), JSON.stringify({scenes: {finder: FINDER}}));
+  fs.writeFileSync(join(run, 'live-watch.json'), JSON.stringify({pid: 4242, dir: join(run, 'watch-x')}));
+  fs.writeFileSync(join(run, 'live-finder.json'), JSON.stringify(FINDER_BASELINE));
+  const io = putBackIo(run, {processRuns: pid => pid === 4242, finderWindows: () => [FINDER.window.number], finderPreferences: () => ({...FINDER_BASELINE.keys, ShowPathbar: true})});
   const out = await putBack({run, io});
-  assert.equal(out.steps['front-app'].reactivated, false);
-  assert.match(out.steps['front-app'].reason, /never touched/);
+  assert.deepEqual(out.steps['watch-stop'], {ok: false, stopped: false});
+  assert.deepEqual(out.steps['finder-check'], {ok: false, runWindowGone: false, windowsAsAtBegin: false, keysAsSaved: false});
+  assert.equal(out.ok, false);
+  assert.equal(fs.existsSync(join(run, 'live-watch.json')), true, 'kept for the next put-back');
+});
+
+for (const bundleId of ['com.google.Chrome', 'com.anthropic.claudefordesktop']) {
+  test(`putBack: ${bundleId} in front at begin is given the front back by activation alone, never observed`, async () => {
+    const run = scratch();
+    saveFrontmost(run, {pid: 5, bundleId});
+    const reactivated = [];
+    const io = putBackIo(run, {reactivate: async front => { reactivated.push(front); return {reactivated: true, inFront: true}; }, frontmost: () => ({pid: 5, bundleId}),
+      goldensSteps: async () => { throw new Error('no engine step may run against the owner\'s app'); }});
+    const out = await putBack({run, io});
+    assert.deepEqual(reactivated, [{pid: 5, bundleId, savedAt: reactivated[0].savedAt}]);
+    assert.deepEqual(out.steps['front-app'], {ok: true, bundleId, reactivated: true, inFront: true});
+    assert.ok(!out.plan.includes('finder-teardown'));
+  });
+}
+
+test('putBack: a scene app still running fails the apps check', async () => {
+  const run = scratch();
+  const io = putBackIo(run, {runningApps: bundleId => (bundleId === 'com.apple.TextEdit' ? [{pid: 600, bundleId}] : [])});
+  const out = await putBack({run, io});
   assert.equal(out.steps['apps-check'].ok, false);
   assert.equal(out.steps['apps-check'].running.textedit, 1);
 });
 
-// The paste check's device: a fake probe switching the source the fake engine's type_text reads, a fake clipboard.
-// The screen: the owner's windows (titles included, as a Mac with Screen Recording reads them), plus whatever a test adds.
+test('recover: the harness\'s outstanding work is stopped first (SIGTERM, then SIGKILL), then the put-back', async () => {
+  const run = scratch();
+  const signals = [], alive = new Set([300, 301]);
+  const io = putBackIo(run, {
+    outstanding: () => [{pid: 300, command: 'node scripts/native-matrix/live-device.mjs paste --run /r'}, {pid: 301, command: 'node scripts/repl-parity/scenes-mac.mjs up textedit'}],
+    signal: (pid, signal) => { signals.push(`${signal} ${pid}`); if (signal === 'SIGKILL' || pid === 300) alive.delete(pid); },
+    processRuns: pid => alive.has(pid)});
+  const out = await recover({run, io});
+  assert.deepEqual(signals, ['SIGTERM 300', 'SIGTERM 301', 'SIGKILL 301']);
+  assert.deepEqual(out.killed, ['node scripts/native-matrix/live-device.mjs paste', 'node scripts/repl-parity/scenes-mac.mjs up']);
+  assert.deepEqual(out.survivors, []);
+  assert.equal(io.order[0], 'down all --run ' + run, 'the put-back runs only after the kill');
+  assert.equal(out.ok, true);
+  const stuck = await recover({run, io: putBackIo(run, {outstanding: () => [{pid: 9, command: 'node scripts/native-matrix/live-device.mjs menu'}], signal: () => {}, processRuns: pid => pid === 9})});
+  assert.deepEqual(stuck.survivors, ['node scripts/native-matrix/live-device.mjs menu']);
+  assert.equal(stuck.ok, false);
+});
+
+// The paste check's device: a fake probe switching the source the fake engine's type_text reads (and posting the
+// composition row's keys into the fake TextEdit when it is in front), a fake clipboard, the screen.
+// The owner's windows (titles included, as a Mac with Screen Recording reads them), plus whatever a test adds.
 const OWNER_WINDOWS = [{ownerPid: 50, ownerName: 'Mail', ownerBundleId: 'com.apple.mail', layer: 0, number: 900, name: 'Inbox — private subject', bounds: {}},
   {ownerPid: 51, ownerName: 'Dock', ownerBundleId: 'com.apple.dock', layer: 20, number: 901, name: null, bounds: {}}];
-const PRIVACY_ALERT = {ownerPid: 77, ownerName: 'UserNotificationCenter', ownerBundleId: 'com.apple.UserNotificationCenter', layer: 8, number: 950, name: null, bounds: {}};
-function pasteDevice({clipboardAfter = null, selectKorean = true, perContext = false, alertAfter = null} = {}) {
+const PRIVACY_ALERT = {ownerPid: 77, ownerName: 'UserNotificationCenter', ownerBundleId: 'com.apple.UserNotificationCenter', layer: 8, number: 950, name: 'secret title', bounds: {}};
+function pasteDevice({clipboardAfter = null, selectKorean = true, perContext = false, alertAfter = null, compose = keys => (keys === 'rk' ? '가' : keys), frontStaysFinder = false} = {}) {
   const file = join(scratch(), 'input-source.json');
   const {state: input, io: inputIo} = fakeInput({perContext, select: id => (id === KOREAN_2SET && !selectKorean ? ABC : id)});
   let clipboard = 'owner digest';
-  const screen = {windows: [...OWNER_WINDOWS]};
-  const io = deviceIo({...inputIo, savedInputSource: file, clipboard: () => clipboard, windows: () => structuredClone(screen.windows)});
+  const screen = {windows: [...OWNER_WINDOWS], front: FINDER};
   // Under the per-context preference the probe's selection stays in the probe's own context: the engine still reads ABC.
   const client = fakeEngine({source: () => (input.perContext ? ABC : input.current)});
+  const probes = [];
+  const probe = args => {
+    if (args[0] !== 'keystroke') return inputIo.probe(args);
+    probes.push(args);
+    if (screen.front !== TEXTEDIT) return {error: 'the front window is not the named one; nothing was sent'};
+    const text = args.at(-1);
+    client.state.value += text === '\n' ? '\n' : compose(text);
+    return {pid: 31, postedAt: 1, units: [...text].length, chars: text.length};
+  };
+  const io = deviceIo({...inputIo, probe, savedInputSource: file, clipboard: () => clipboard, windows: () => structuredClone(screen.windows),
+    activate: async id => { if (id === 'textedit' && !frontStaysFinder) screen.front = TEXTEDIT; return {ok: true}; },
+    frontmost: () => ({pid: screen.front.pid, bundleId: screen.front === TEXTEDIT ? 'com.apple.TextEdit' : 'com.apple.finder'}),
+    frontWindow: () => ({topWindow: {ownerPid: screen.front.pid, number: screen.front.window.number, bounds: screen.front.window.bounds}}),
+    keyboardLayout: () => ({inputSourceId: input.current, keyboardLayoutId: 'com.apple.keylayout.2SetHangul'})});
   const execute = client.execute.bind(client);
   client.execute = async (method, args, options) => {
     if (method === 'get_app_state' && args.app === PRIVACY_ALERT.ownerBundleId) {
@@ -429,108 +567,146 @@ function pasteDevice({clipboardAfter = null, selectKorean = true, perContext = f
     const inner = client.execute;
     client.execute = async (method, args, options) => { const out = await inner(method, args, options); if (method === 'paste') clipboard = clipboardAfter; return out; };
   }
-  return {io, client, input, file, screen};
+  return {io, client, input, file, screen, probes};
 }
+const pasteRun = device => pasteCheck({record: TEXTEDIT, user: FINDER, client: device.client, io: device.io, screenshots: join(scratch(), 'shots')});
 
-test('pasteCheck: plain and Markdown pastes replace a selected line behind the user window, type_text pastes under Korean 2-Set, the source and the clipboard are back', async () => {
-  const {io, client, input, file} = pasteDevice();
-  const out = await pasteCheck({record: TEXTEDIT, user: FINDER, client, io, screenshots: join(scratch(), 'shots')});
+test('pasteCheck: plain and Markdown pastes behind the user window, type_text pasting under a met Korean precondition, the source back, the clipboard\'s types unchanged', async () => {
+  const device = pasteDevice();
+  const out = await pasteRun(device);
   assert.equal(out.verdict.pass, true, JSON.stringify(out));
-  assert.deepEqual(out.verdict.recorded, {markdownBold: true, entered: PASTE.typed.length, perContext: {read: false, setOff: false, restored: false}, sourceAfter: KOREAN_2SET});
+  assert.equal(out.verdict.typeText, 'measured');
+  assert.deepEqual(out.steps.precondition, {selected: true, readBack: KOREAN_2SET, perContextOff: true, met: true});
   assert.equal(out.steps.pasteAlert, false);
-  // Each paste and the paste-routed type_text carry the bounded deadline.
-  assert.ok(client.calls.filter(c => c.method === 'paste' || c.method === 'type_text').every(c => c.options.deadlineMs === PASTE_DEADLINE_MS));
-  const sent = client.calls.filter(c => c.method !== 'get_app_state');
-  assert.deepEqual(sent.map(c => c.method), ['select_text', 'paste', 'select_text', 'paste', 'select_text', 'type_text']);
-  assert.deepEqual(sent.filter(c => c.method === 'select_text').map(c => c.args.text), PASTE_TARGETS);
-  assert.deepEqual(sent.filter(c => c.method === 'paste').map(c => [c.args.format, c.args.text]), [['text', PASTE.text], ['md', PASTE.markdown]]);
-  assert.equal(out.steps.typeText.route, 'paste');
+  const sent = device.client.calls.filter(c => !['get_app_state'].includes(c.method)).map(c => c.method);
+  assert.deepEqual(sent.slice(0, 6), ['select_text', 'paste', 'select_text', 'paste', 'select_text', 'type_text']);
+  assert.deepEqual(device.client.calls.filter(c => c.method === 'select_text').map(c => c.args.text), PASTE_TARGETS);
+  assert.ok(device.client.calls.filter(c => c.method === 'paste' || c.method === 'type_text').every(c => c.options.deadlineMs === PASTE_DEADLINE_MS));
   assert.deepEqual(out.steps.userInFront, [true, true, true]);
-  assert.equal(input.current, ABC, 'the owner\'s source is back');
-  assert.equal(fs.existsSync(file), true, 'kept for the put-back to verify');
-  assert.deepEqual(out.steps.clipboard, {same: true});
-  assert.doesNotMatch(JSON.stringify(out), /Line 0|owner digest|private subject|Mail/, 'no document text, no clipboard content, nothing of the owner\'s windows');
+  assert.equal(device.input.current, ABC, 'the owner\'s source is back');
+  assert.equal(fs.existsSync(device.file), true, 'kept for the put-back to verify');
+  assert.deepEqual(out.steps.clipboard, {typesUnchanged: true});
+  assert.doesNotMatch(JSON.stringify(out), /Line 0|owner digest|private subject|Mail|com\.apple\.mail/, 'no document text, no clipboard content, nothing of the owner\'s windows');
 });
 
-test('pasteCheck: a per-context preference read on is turned off for the paste step and restored with the source', async () => {
-  const {io, client, input} = pasteDevice({perContext: true});
-  const out = await pasteCheck({record: TEXTEDIT, user: FINDER, client, io, screenshots: join(scratch(), 'shots')});
-  assert.deepEqual(input.writes, [false, true], 'off before Korean is selected, back on after');
+test('hidComposition: inside the Korean window, the document emptied, TextEdit in front, r and k posted through the probe under the guard, read back before and after the commit', async () => {
+  const device = pasteDevice();
+  const {hidComposition: row} = (await pasteRun(device)).steps;
+  assert.equal(row.emptied, true);
+  assert.equal(row.activated, true);
+  assert.deepEqual(row.layout, {inputSourceId: KOREAN_2SET, keyboardLayoutId: 'com.apple.keylayout.2SetHangul'});
+  const b = TEXTEDIT.window.bounds;
+  assert.deepEqual(device.probes, [['keystroke', '--user-pid', String(TEXTEDIT.pid), '--user-bounds', `${b.x},${b.y},${b.width},${b.height}`, 'rk'],
+    ['keystroke', '--user-pid', String(TEXTEDIT.pid), '--user-bounds', `${b.x},${b.y},${b.width},${b.height}`, '\n']]);
+  assert.equal(row.keys.invocation, `cua-engine --probe keystroke --user-pid ${TEXTEDIT.pid} --user-bounds ${b.x},${b.y},${b.width},${b.height} rk`);
+  assert.deepEqual(row.keys.output, {pid: 31, postedAt: 1, units: 2, chars: 2});
+  assert.equal(row.keys.exitStatus, 0);
+  assert.equal(row.keys.frontChangedAfter, false);
+  assert.equal(row.valueBeforeCommit, '가');
+  assert.equal(row.valueAfterCommit, '가\n');
+  assert.deepEqual(row.reading, {reading: '가'});
+  assert.equal(device.input.current, ABC);
+  // Each reading as it comes: rk, ㄱㅏ, anything else verbatim.
+  for (const [composed, reading] of [['rk', {reading: 'rk'}], ['ㄱㅏ', {reading: 'ㄱㅏ'}], ['ㄱ', {reading: 'other', verbatim: 'ㄱ\n'}]]) {
+    assert.deepEqual((await pasteRun(pasteDevice({compose: () => composed}))).steps.hidComposition.reading, reading);
+  }
+});
+
+test('hidComposition: with TextEdit not in front nothing is posted, the row says why', async () => {
+  const device = pasteDevice({frontStaysFinder: true});
+  const {hidComposition: row} = (await pasteRun(device)).steps;
+  assert.equal(row.skipped, 'front app not the scene');
+  assert.deepEqual(device.probes, [], 'no HID key while another app is in front');
+});
+
+test('pasteCheck: a per-context preference read on is turned off for the Korean window and restored with the source', async () => {
+  const device = pasteDevice({perContext: true});
+  const out = await pasteRun(device);
+  assert.deepEqual(device.input.writes, [false, true], 'off before Korean is selected, back on after');
   assert.deepEqual(out.steps.inputSource.perContext, {read: true, setOff: true, restored: true});
-  assert.equal(input.perContext, true);
-  assert.equal(input.current, ABC);
   assert.equal(out.steps.typeText.route, 'paste', 'with the preference off the engine sees Korean');
-  const offIndex = input.probes.indexOf(`input-source ${KOREAN_2SET}`);
-  assert.ok(offIndex > 0);
+  assert.equal(device.input.current, ABC);
 });
 
-test('pasteCheck: a type_text that still keys is a finding with the source read after it, not a harness failure', async () => {
-  const {io, client} = pasteDevice({selectKorean: false});
-  const out = await pasteCheck({record: TEXTEDIT, user: FINDER, client, io, screenshots: join(scratch(), 'shots')});
+test('pasteCheck: an unmet Korean precondition leaves type_text and the composition row unmeasured; a met one that keys is the engine finding', async () => {
+  const unmet = await pasteRun(pasteDevice({selectKorean: false}));
+  assert.equal(unmet.steps.precondition.met, false);
+  assert.match(unmet.verdict.typeText, /^precondition unmet: Korean 2-Set was not selected; the source reads back com\.apple\.keylayout\.ABC$/);
+  assert.match(unmet.steps.hidComposition.skipped, /^precondition unmet/);
+  assert.equal(unmet.verdict.finding, null);
+  const keyed = pasteDevice();
+  keyed.client.execute = (inner => async (method, args, options) => (method === 'type_text' ? {result: route("2'"), engineMs: 1} : inner(method, args, options)))(keyed.client.execute);
+  const out = await pasteRun(keyed);
   assert.equal(out.steps.typeText.route, "2'");
-  assert.equal(out.steps.typeText.sourceAfter, ABC);
-  assert.match(out.verdict.finding, /type_text keyed \(route 2'\)/);
+  assert.equal(out.steps.typeText.sourceAfter, KOREAN_2SET);
+  assert.match(out.verdict.finding, /^engine finding: type_text keyed \(route 2'\)/);
 });
 
-test('pasteCheck: a privacy alert after the first paste aborts the section unclicked, records its owner and text, and still restores the source', async () => {
-  const {io, client, input} = pasteDevice({alertAfter: 'paste', perContext: true});
-  const out = await pasteCheck({record: TEXTEDIT, user: FINDER, client, io, screenshots: join(scratch(), 'shots')});
+test('pasteCheck: a privacy alert after the first paste aborts the section unclicked; only the alert process is read; the export is sanitized', async () => {
+  const device = pasteDevice({alertAfter: 'paste', perContext: true});
+  const out = await pasteRun(device);
   assert.equal(out.steps.pasteAlert, true);
-  assert.deepEqual(out.steps.alert.windows, [{ownerPid: 77, ownerName: 'UserNotificationCenter', ownerBundleId: 'com.apple.UserNotificationCenter', layer: 8, number: 950, name: null}]);
-  assert.equal(out.steps.alert.at, 'after text');
-  assert.match(out.steps.alert.text, /would like to paste from/);
+  assert.deepEqual(out.steps.alert, {at: 'after text', alerts: [{bundleId: 'com.apple.UserNotificationCenter', layer: 8, isAlertProcess: true}], keywords: [],
+    unknown: {count: 0, windows: []}, text: '“cua Engine” would like to paste from “Finder”. | Allow Paste | Don’t Allow Paste'});
   assert.match(out.problem, /alert/);
   assert.ok(out.verdict.failed.includes('noPasteAlert'));
-  const sent = client.calls.filter(c => c.method !== 'get_app_state').map(c => c.method);
-  assert.deepEqual(sent, ['select_text', 'paste'], 'nothing after the alert, and never a click');
-  const alertRead = client.calls.find(c => c.method === 'get_app_state' && c.args.app === 'com.apple.UserNotificationCenter');
-  assert.equal(alertRead.args.includeScreenshot, false);
-  assert.equal(input.current, ABC);
-  assert.equal(input.perContext, true, 'the preference was never changed: the section stopped before the switch');
+  assert.deepEqual(device.client.calls.filter(c => c.method !== 'get_app_state').map(c => c.method), ['select_text', 'paste'], 'nothing after the alert, and never a click');
+  const reads = device.client.calls.filter(c => c.method === 'get_app_state' && c.args.app !== TEXTEDIT.app);
+  assert.deepEqual(reads.map(c => [c.args.app, c.args.includeScreenshot]), [['com.apple.UserNotificationCenter', false]]);
+  assert.equal(device.input.perContext, true, 'the section stopped before the preference was touched');
+  assert.doesNotMatch(JSON.stringify(out), /secret title|ownerPid|"number"/);
 });
 
-test('pasteCheck: an alert already up before the first paste stops everything before any paste', async () => {
-  const {io, client, screen} = pasteDevice();
-  screen.windows.push(PRIVACY_ALERT);
-  const out = await pasteCheck({record: TEXTEDIT, user: FINDER, client, io, screenshots: join(scratch(), 'shots')});
-  assert.equal(out.steps.alert.at, 'before text');
-  assert.deepEqual(client.calls.filter(c => c.method !== 'get_app_state').map(c => c.method), []);
+test('pasteCheck: an unknown new window aborts the section but leaves only its layer; its owner is never observed', async () => {
+  const device = pasteDevice();
+  const inner = device.client.execute;
+  device.client.execute = async (method, args, options) => {
+    const out = await inner(method, args, options);
+    if (method === 'paste') device.screen.windows.push({ownerPid: 88, ownerName: 'Slack', ownerBundleId: 'com.tinyspeck.slackmacgap', layer: 3, number: 960, name: 'DM from someone', bounds: {}});
+    return out;
+  };
+  const out = await pasteRun(device);
+  assert.deepEqual(out.steps.alert, {at: 'after text', alerts: [], keywords: [], unknown: {count: 1, windows: [{layer: 3, isAlertProcess: false}]}, text: null});
+  assert.deepEqual(device.client.calls.filter(c => c.method !== 'get_app_state').map(c => c.method), ['select_text', 'paste']);
+  assert.ok(!device.client.calls.some(c => c.args?.app === 'com.tinyspeck.slackmacgap'));
+  assert.doesNotMatch(JSON.stringify(out), /Slack|DM from|tinyspeck/);
+  // A window that was already there before the section is the baseline, not an alert.
+  const quiet = pasteDevice();
+  quiet.screen.windows.push({ownerPid: 88, ownerName: 'Slack', ownerBundleId: 'com.tinyspeck.slackmacgap', layer: 3, number: 960, name: 'DM', bounds: {}});
+  assert.equal((await pasteRun(quiet)).steps.pasteAlert, false);
 });
 
 test('pasteCheck: a paste step that outlives its bound aborts the section; the source is restored', async () => {
-  const {io, client, input} = pasteDevice({perContext: true});
-  const inner = client.execute;
-  client.execute = async (method, args, options) => {
+  const device = pasteDevice({perContext: true});
+  const inner = device.client.execute;
+  device.client.execute = async (method, args, options) => {
     if (method === 'type_text') throw Object.assign(new Error('The engine did not answer execute within 25000 ms'), {name: 'SkyComputerUseTransportError'});
     return inner(method, args, options);
   };
-  const out = await pasteCheck({record: TEXTEDIT, user: FINDER, client, io, screenshots: join(scratch(), 'shots')});
+  const out = await pasteRun(device);
   assert.match(out.problem, /did not answer/);
   assert.equal(out.steps.typeText.ok, false);
-  assert.equal(input.current, ABC);
-  assert.equal(input.perContext, true);
+  assert.equal(device.input.current, ABC);
+  assert.equal(device.input.perContext, true);
 });
 
-test('pasteCheck: a clipboard left changed and a type_text that keyed fail their expectations; the source is restored all the same', async () => {
-  const {io, client, input} = pasteDevice({clipboardAfter: 'engine digest', selectKorean: false});
-  const out = await pasteCheck({record: TEXTEDIT, user: FINDER, client, io, screenshots: join(scratch(), 'shots')});
-  assert.deepEqual(out.verdict.failed, ['typeTextPasteRoute', 'typeTextLands', 'clipboardRestored']);
-  assert.equal(out.steps.inputSource.selected, false);
-  assert.equal(input.current, ABC);
+test('pasteCheck: a clipboard whose types changed fails its topology check', async () => {
+  const out = await pasteRun(pasteDevice({clipboardAfter: 'engine digest'}));
+  assert.deepEqual(out.verdict.failed, ['clipboardTypesUnchanged']);
 });
 
-test('pasteCheck: sends nothing unless the user window is in front, and an engine without paste stops it with the source restored', async () => {
-  const {io, client} = pasteDevice();
-  const refused = await pasteCheck({record: TEXTEDIT, user: FINDER, client, io: {...io, frontmost: () => ({pid: 1})}, screenshots: join(scratch(), 'shots')});
+test('pasteCheck: sends nothing unless the user window is in front, and an engine without paste is recorded, the source restored', async () => {
+  const device = pasteDevice();
+  const refused = await pasteCheck({record: TEXTEDIT, user: FINDER, client: device.client, io: {...device.io, frontmost: () => ({pid: 1})}, screenshots: join(scratch(), 'shots')});
   assert.match(refused.problem, /user window/);
-  assert.deepEqual(client.calls, []);
+  assert.deepEqual(device.client.calls, []);
   const old = pasteDevice();
-  const execute = old.client.execute.bind(old.client);
+  const inner = old.client.execute;
   old.client.execute = async (method, args, options) => {
     if (method === 'paste') throw engineError('unknownMethod', 'Unknown method paste');
-    return execute(method, args, options);
+    return inner(method, args, options);
   };
-  const out = await pasteCheck({record: TEXTEDIT, user: FINDER, client: old.client, io: old.io, screenshots: join(scratch(), 'shots')});
+  const out = await pasteRun(old);
   assert.equal(out.steps.text.errorName, 'unknownMethod');
   assert.equal(out.verdict.pass, false);
   assert.equal(old.input.current, ABC);

@@ -196,11 +196,12 @@ async function sheetAttempt(ctx, {lead, id, key}) {
   const after = read(ctx, focusOf(userWindow));
   const check = span.add(await ctx.lane.js(sheetCheckCell()));
   if (!check.ok || check.value?.closed !== true || check.value?.sceneInFront !== true) {
-    // A refused follow-up leaves the sheet up: once the debounce it may have started is out, closed again.
+    // A refused follow-up leaves the sheet up, a refused opening the dirty untitled document: once the debounce it may
+    // have started is out, the untitled document's own cleanup closes either (its sheet's Delete, or super+w and then
+    // the sheet's Delete), the scene's document back in front.
     ctx.posted[driven] = ctx.posted[user];
     await quiet(ctx, driven);
-    const closed = span.add(await ctx.lane.js(sheetCheckCell({close: true})));
-    if (!closed.ok || closed.value?.sceneInFront !== true) throw new Stop('the sheet variant\'s untitled document could not be closed: TextEdit\'s scene document is not in front');
+    await closeUntitled(ctx, keys);
   }
   const postedAt = probe.answer?.postedAt, interval = intervalOf(ctx.engine, opening), {value} = follow;
   const receivedAt = ctx.engine === 'cua' ? follow.engine?.receivedAt : value.clickAt;

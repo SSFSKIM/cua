@@ -197,13 +197,11 @@ const clickAt = Date.now();
 if (button !== null) { try { await __app.click(button); } catch (e) { __m.threw = String(e?.message ?? e).slice(0, 300); __m.errorName = String(e?.errorName ?? e?.name ?? "").slice(0, 80) || null; } }
 const endAt = Date.now();
 return {opened, clicked: button !== null, clickAt, endAt, threw: __m.threw !== null, errorName: __m.errorName, message: __m.threw};`);
-// After the follow-up: the sheet gone and the scene's document TextEdit's front window again. With `close`, a sheet still
-// up is closed by its Delete button first (the cleanup of a refused follow-up). -> {closed, sceneInFront}.
-export const sheetCheckCell = ({close = false} = {}) => cell(`${prelude('textedit')}
-// cua-matrix-cell: sheet.${close ? 'close' : 'check'}
+// After the follow-up: the sheet gone and the scene's document TextEdit's front window again. -> {closed, sceneInFront}.
+export const sheetCheckCell = () => cell(`${prelude('textedit')}
+// cua-matrix-cell: sheet.check
 ${keepOrDelete}
 let ax = await observe();
-${close ? 'if (__sheet(ax)) { const b = __deleteButton(ax); if (b !== null) await __app.click(b); ax = await observe(); }' : ''}
 for (const end = Date.now() + 5000; (__sheet(ax) || !inFront(ax)) && Date.now() < end;) ax = await observe();
 return {closed: !__sheet(ax), sceneInFront: inFront(ax)};`);
 

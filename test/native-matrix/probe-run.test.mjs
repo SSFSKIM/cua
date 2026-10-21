@@ -134,14 +134,14 @@ test('the sheet variant: super+w on TextEdit\'s dirty untitled document as its o
   assert.doesNotMatch(open.code, /click/, 'the opening call holds only the opening action, so its meta is its own');
   assert.ok(follow.at[0] >= open.at[1], 'the follow-up is its own call, after');
   assert.ok(matrixSteps(steps, 'probe')[0].includes('keystroke'));
-  // A refused follow-up fails the row, and the sheet is closed again before the run goes on.
+  // A refused follow-up fails the row, and the untitled document's cleanup closes the sheet before the run goes on.
   const refusedCalls = [];
   const refused = await runWith({plan: planOf('concurrent-use-sheet'), cellName: 'concurrent-use-sheet', calls: refusedCalls,
     cell: c => (tagOf(c) === 'sheet.follow' ? followUp(c, {over: {threw: true, errorName: 'userIntervened', message: `${STILL_INTERACTING}/x'.`}})
       : tagOf(c) === 'sheet.check' ? {closed: false, sceneInFront: false} : sheetCells()(c))});
   const failed = rowOf(refused.result, SHEET);
   assert.deepEqual([failed.ok, failed.outcome.followUpRefused], [false, true]);
-  assert.ok(refusedCalls.some(c => tagOf(c.code) === 'sheet.close'));
+  assert.ok(refusedCalls.some(c => tagOf(c.code) === 'sheet.cleanup'));
 });
 
 test('the sheet variant: a post outside the opening action\'s own interval is retried at its middle; none measured is no verdict; a follow-up received past the debounce is invalid', async () => {
@@ -157,12 +157,18 @@ test('the sheet variant: a post outside the opening action\'s own interval is re
   assert.equal(none.result.verdict, 'no-verdict');
   const late = await runWith({plan: planOf('concurrent-use-sheet'), cellName: 'concurrent-use-sheet', cell: sheetCells({follow: c => followUp(c, {receipt: 6_000})})});
   assert.match(rowOf(late.result, SHEET).invalid, /past the 5000 ms debounce/);
-  // The opening refused as the user's intervention, inside its interval: no sheet, nothing to follow up, and a failure.
-  const fired = await runWith({plan: planOf('concurrent-use-sheet'), cellName: 'concurrent-use-sheet',
-    cell: sheetCells({open: c => opening(c, {over: {threw: true, errorName: 'userIntervened', message: `${USER_CHANGED}/x'.`}}),
-      follow: c => ({...followUp(c, {over: {opened: false, clicked: false}}), _meta: {}})})});
+  // The opening refused as the user's intervention, inside its interval: no sheet, nothing to follow up, the dirty
+  // untitled document still TextEdit's front window. The row fails, and the untitled document's own cleanup closes it.
+  const firedCalls = [];
+  const fired = await runWith({plan: planOf('concurrent-use-sheet'), cellName: 'concurrent-use-sheet', calls: firedCalls,
+    cell: c => (tagOf(c) === 'sheet.check' ? {closed: true, sceneInFront: false}
+      : sheetCells({open: c2 => opening(c2, {over: {threw: true, errorName: 'userIntervened', message: `${USER_CHANGED}/x'.`}}),
+        follow: c2 => ({...followUp(c2, {over: {opened: false, clicked: false}}), _meta: {}})})(c))});
+  assert.equal(fired.result.rows.length, 1, JSON.stringify(fired.result.problems));
   const refusedOpening = rowOf(fired.result, SHEET);
   assert.deepEqual([refusedOpening.ok, refusedOpening.invalid, refusedOpening.outcome.openingThrew, refusedOpening.outcome.sheetOpened], [false, undefined, true, false]);
+  assert.ok(firedCalls.some(c => tagOf(c.code) === 'sheet.cleanup'), 'the untitled document closed by its own cleanup');
+  assert.equal(fired.result.complete, true, JSON.stringify(fired.result.problems));
 });
 
 test('the sheet variant\'s oracle: a transient focus steal during the opening action, or an unaccepted route 4 on either action, fails its interference', async () => {

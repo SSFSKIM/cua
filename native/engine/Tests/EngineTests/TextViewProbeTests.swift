@@ -51,4 +51,27 @@ final class TextViewProbeTests: XCTestCase {
     XCTAssertNil(nearestAncestor(of: 7, role: "AXScrollArea", roleOf: { self.roles[$0] }, parent: { self.parents[$0] }), "a text area outside any scroll area")
     XCTAssertNil(nearestAncestor(of: 5, role: "AXScrollArea", roleOf: { self.roles[$0] }, parent: { self.parents[$0] }, levels: 1))
   }
+  func testTheStartIsWrittenAfterTheFarEndSoAScrollableBarMustMoveTheContent() {
+    XCTAssertEqual(horizontalStartAway(from: 0.5), 0)
+    XCTAssertEqual(horizontalStartAway(from: 0.2), 1)
+    XCTAssertEqual(horizontalStartAway(from: 1), 0)
+    XCTAssertEqual(horizontalStartAway(from: 0), 1)
+
+    // A scrollable page: the text area's x follows the bar, even when the bar already read the start.
+    var bar = 0.5, writes: [Double] = []
+    let scrollable = writeHorizontalStart(0.5, write: { bar = $0; writes.append($0); return .success }, settle: {}, contentX: { CGFloat(-1000 * bar) })
+    XCTAssertEqual(writes, [0, 0.5], "the far end, then the start")
+    XCTAssertEqual(scrollable.error, .success)
+    XCTAssertEqual(scrollable.contentMoved, true)
+
+    // A page laid out within its window: the bar takes the value, the content stays.
+    let fixed = writeHorizontalStart(0.5, write: { _ in .success }, settle: {}, contentX: { 20 })
+    XCTAssertEqual(fixed.contentMoved, false)
+    XCTAssertEqual(writeHorizontalStart(0.5, write: { _ in .success }, settle: {}, contentX: { 20.4 }).contentMoved, false, "under half a point is no move")
+
+    let unread = writeHorizontalStart(0.5, write: { _ in .success }, settle: {}, contentX: { nil })
+    XCTAssertNil(unread.contentMoved, "no position, no judgement")
+    let refused = writeHorizontalStart(0.5, write: { _ in .attributeUnsupported }, settle: {}, contentX: { 20 })
+    XCTAssertEqual(refused.error, .attributeUnsupported, "the start's own write error")
+  }
 }

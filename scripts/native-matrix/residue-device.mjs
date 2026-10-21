@@ -11,14 +11,14 @@ import {TEXTEDIT_BUNDLE_ID} from '../repl-parity/scenes-mac.mjs';
 import {ownershipProblems} from './goldens-device.mjs';
 import {activationsOf, attempt, getState, until} from './live-device.mjs';
 import {enablementOf, minimizeButton, textArea} from './live-checks.mjs';
-import {SELECT_BEFORE, SELECT_MINIMIZED, minimizedSelectRanges, modeAt, parseAccessibilityRecord, preparedEngineSettings, rangeOf} from './residue-checks.mjs';
+import {SELECT_BEFORE, SELECT_MINIMIZED, hscrollStartProblem, minimizedSelectRanges, modeAt, parseAccessibilityRecord, preparedEngineSettings, rangeOf} from './residue-checks.mjs';
 
 // ---- `--probe text-view` -----------------------------------------------------------------------------------------
 
 // The run's text view as the probe reads it (TextViewProbe.swift): of the process's windows, the one with a text area
 // (the scene's only window), its minimized flag, selected range and scroll-bar values, and whether the app's focused
 // element is that text area; whether the text area's midpoint shows (as an element scroll's preparation reads it).
-// -> {minimized, range, horizontal, vertical, midpointShows, focusedRole, focusedIsTextArea} or {error}.
+// -> {minimized, range, horizontal, vertical, horizontalEnabled, midpointShows, focusedRole, focusedIsTextArea} or {error}.
 export function textViewOf(answer) {
   if (!answer || answer.error) return {error: String(answer?.error ?? 'no answer').slice(0, 300)};
   const windows = Array.isArray(answer.windows) ? answer.windows : [];
@@ -27,6 +27,7 @@ export function textViewOf(answer) {
   const w = windows[index], bars = w.textArea.scrollBars ?? {};
   const number = v => (typeof v === 'number' && Number.isFinite(v) ? v : null);
   return {minimized: w.minimized === true, range: w.textArea.selectedRange ?? null, horizontal: number(bars.horizontal), vertical: number(bars.vertical),
+    horizontalEnabled: typeof bars.horizontalEnabled === 'boolean' ? bars.horizontalEnabled : null,
     midpointShows: typeof w.textArea.midpointShows === 'boolean' ? w.textArea.midpointShows : null, focusedRole: answer.focused?.role ?? null, focusedIsTextArea: answer.focused?.textAreaOfWindow === index};
 }
 const readTextView = (io, pid) => { try { return textViewOf(io.probe(['text-view', '--pid', String(pid)])); } catch (error) { return {error: String(error.message).slice(0, 300)}; } };
@@ -205,7 +206,8 @@ export async function enablementCheck({record, io, screenshots}) {
 // The scene's horizontal and vertical scroll-bar values (after `settleMs`, so a scroll's animation has ended) and whether
 // its text area's midpoint shows, by the probe: what both lanes are judged by. With `start`, the probe first writes that
 // value to both scroll bars (the harness's own AX path, neither lane's), so a lane starts mid-way, a scroll either way
-// shows, and the text area's midpoint shows (an element scroll's preparation then has nothing to move).
+// shows, and the text area's midpoint shows (an element scroll's preparation then has nothing to move); the reading
+// carries whether the horizontal bar is enabled and the write whether it moved the content (hscrollStartProblem).
 export const HSCROLL_START = 0.5;
 export async function hscrollRead({record, io, settleMs = 0, start = null}) {
   if (settleMs > 0) await io.sleep(settleMs);
@@ -216,13 +218,16 @@ export async function hscrollRead({record, io, settleMs = 0, start = null}) {
     read = textViewOf(answer);
   } catch (error) { read = {error: String(error.message).slice(0, 300)}; }
   const set = start === null ? {} : {set: answer?.set ?? null};
-  return read.error ? {error: read.error, ...set} : {horizontal: read.horizontal, vertical: read.vertical, midpointShows: read.midpointShows, ...set};
+  return read.error ? {error: read.error, ...set}
+    : {horizontal: read.horizontal, vertical: read.vertical, horizontalEnabled: read.horizontalEnabled, midpointShows: read.midpointShows, ...set};
 }
 export const HSCROLL_SETTLE_MS = 1_000;
 
 // cua's lane of the horizontal scroll: the run's wide-page TextEdit behind the run's Finder window, its text area
 // started mid-way (HSCROLL_START, by the probe), scrolled right by one page through the engine, read back by position
-// before and after. A failed read after the scroll is kept as its error, never as a position.
+// before and after. A start that gives no evidence (hscrollStartProblem: no bar, not mid-way, no horizontally
+// scrollable content, the midpoint hidden) sends nothing. A failed read after the scroll is kept as its error, never as
+// a position.
 export async function hscrollCheck({record, user, client, io, screenshots}) {
   const userInFront = () => io.frontmost()?.pid === user.pid;
   if (!userInFront()) return {problem: 'the user window (the run\'s Finder) is not in front; nothing was sent'};
@@ -231,7 +236,8 @@ export async function hscrollCheck({record, user, client, io, screenshots}) {
   const owned = ownershipProblems('textedit', shot, record);
   if (owned.length) return {problem: `the observation is not the run's TextEdit window (${owned.map(p => p.code).join(', ')}); nothing was sent`};
   const before = await hscrollRead({record, io, start: HSCROLL_START});
-  if (before.error || typeof before.horizontal !== 'number') return {problem: `no horizontal scroll bar to read before the scroll (${before.error ?? 'none shown'}); nothing was sent`, before};
+  const unusable = hscrollStartProblem(before);
+  if (unusable) return {problem: `${unusable}; nothing was sent`, before};
   const scroll = await attempt(() => client.execute('scroll', {app, element: textArea(shot).token, direction: 'right', pages: 1}, {lineage: shot.lineage}));
   const after = await hscrollRead({record, io, settleMs: HSCROLL_SETTLE_MS});
   return {before, scroll, after, userInFront: userInFront()};

@@ -148,28 +148,40 @@ const menuRow = (id, engine, label, extra) => ({section: 'residue', id: `menu/te
 
 // One lane's horizontal scroll by its read-back position: the scene's horizontal scroll bar's value before (both bars
 // set mid-way by the probe, so a scroll either way shows) and after, read by `--probe text-view` for either engine alike.
-// The motion is the wheel's only when the element scroll's preparation (positionElement, the vendor's and cua's alike:
-// Positioning.swift) has nothing to do, which is when the text area's midpoint shows before the scroll; and it is a
-// lane's only when its scroll was carried out (cua's: answered ok, posted; the vendor's: its cell found the text area
-// and its scroll returned). cua's own failure to scroll is its failure; the vendor's, an intervention or a timeout say
-// nothing. `direction` is where the content went: `right` (the bar's value grew: what "right" asks for), `left` (the
-// opposite sign), `none`. -> {valid, invalid?, sent, scrollError?, direction, moved, before, after}.
+// The lane is judged only from a usable start (hscrollStartProblem), and its motion is the lane's only when its scroll
+// was carried out (cua's: answered ok, posted; the vendor's: its cell found the text area and its scroll returned).
+// cua's own failure to scroll is its failure; the vendor's, an intervention or a timeout say nothing. `direction` is
+// where the content went: `right` (the bar's value grew: what "right" asks for), `left` (the opposite sign), `none`. -> {valid, invalid?, sent, scrollError?, direction, moved, before, after}.
 export const HSCROLL_START_BAND = Object.freeze([0.2, 0.8]);
 const HSCROLL_EPSILON = 0.001;
 const finite = v => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+// Why a lane's start, its reading before the scroll (residue-device.mjs hscrollRead with the start written), gives no
+// evidence, or null; each lane refuses to send its scroll on one. A bar read mid-way; horizontally scrollable content,
+// which the bar reading the written value does not show: hold 1 (2026-10-21) read TextEdit's page view laid out within
+// its window take 0.5 on a disabled bar and move nothing, so the bar must not read disabled and the start's write,
+// made after the far end, must have moved the content (the probe's `contentMoved`); and the text area's midpoint
+// showing, so the element scroll's preparation (positionElement, the vendor's and cua's alike: Positioning.swift) has
+// nothing to move before the wheel.
+export function hscrollStartProblem(before) {
+  const horizontal = finite(before?.horizontal), moved = before?.set?.horizontal?.contentMoved;
+  const [low, high] = HSCROLL_START_BAND;
+  return horizontal === null ? `the scene shows no horizontal scroll bar to read${before?.error ? ` (${before.error})` : ''}`
+    : horizontal < low || horizontal > high ? `the horizontal bar did not start mid-way (read ${horizontal}): a scroll one way could not show`
+      : before.horizontalEnabled === false ? 'no horizontally scrollable content: the horizontal scroll bar is disabled'
+        : moved !== true ? `no horizontally scrollable content: the content did not move when the start was written${moved === false ? '' : ' (its position could not be read)'}`
+          : before.midpointShows !== true ? 'the text area\'s midpoint did not show before the scroll: the element scroll\'s preparation would move the view before the wheel'
+            : null;
+}
 export function hscrollLane(lane, engine) {
   const before = finite(lane?.before?.horizontal), after = finite(lane?.after?.horizontal), scroll = lane?.scroll ?? null;
   const sent = engine === 'vendor' ? scroll?.found === true && scroll?.scrolled === true : scroll?.ok === true && scroll?.posted === true;
   const scrollError = sent ? null : !scroll ? 'not sent'
     : engine === 'vendor' ? (scroll.found === false ? 'the vendor found no text area' : scroll.scrollError ?? 'not scrolled') : scroll.errorName ?? 'nothing posted';
   const saysNothing = !sent && (engine === 'vendor' || !scroll || INCONCLUSIVE_ERRORS.includes(scroll.errorName));
-  const [low, high] = HSCROLL_START_BAND;
-  const invalid = lane?.problem ? lane.problem : before === null ? 'the scene shows no horizontal scroll bar to read'
-    : before < low || before > high ? `the horizontal bar did not start mid-way (read ${before}): a scroll one way could not show`
-      : lane.before.midpointShows !== true ? 'the text area\'s midpoint did not show before the scroll: the element scroll\'s preparation would move the view before the wheel'
-        : saysNothing ? `the scroll was not carried out (${scrollError})`
-          : sent && after === null ? `the horizontal bar was not read after the scroll (${lane?.after?.error ?? 'no value'})`
-            : lane?.userInFront === false ? 'the user window left the front' : null;
+  const invalid = lane?.problem ? lane.problem : hscrollStartProblem(lane?.before)
+    ?? (saysNothing ? `the scroll was not carried out (${scrollError})`
+      : sent && after === null ? `the horizontal bar was not read after the scroll (${lane?.after?.error ?? 'no value'})`
+        : lane?.userInFront === false ? 'the user window left the front' : null);
   const direction = invalid || !sent ? null : after > before + HSCROLL_EPSILON ? 'right' : after < before - HSCROLL_EPSILON ? 'left' : 'none';
   return {valid: !invalid, ...(invalid ? {invalid} : {}), sent, ...(sent ? {} : {scrollError}), direction, moved: direction === 'right', before, after};
 }

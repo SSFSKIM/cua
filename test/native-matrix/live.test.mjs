@@ -308,7 +308,7 @@ test('checkPassed: each check\'s own bar', () => {
   assert.equal(checkPassed('menu', {...lanes, comparison: {items: {selectAll: {cua: {label: 'read disabled'}, vendor: {label: 'acts'}}, bold: {cua: {label: 'acts'}, vendor: {label: 'acts'}}}}}), false);
   const menuOf = (cua, vendor) => ({...lanes, comparison: {items: Object.fromEntries(['selectAll', 'bold'].map(id => [id, {cua: {label: cua}, vendor: {label: vendor}}]))}});
   assert.equal(checkPassed('menu', menuOf('invalid', 'acts')), false, 'cua\'s items gave no valid evidence: the vendor\'s alone do not pass');
-  const vendorLane = after => ({before: {horizontal: 0.5, midpointShows: true}, scroll: {found: true, scrolled: true, scrollError: null}, after: {horizontal: after}, userInFront: true});
+  const vendorLane = after => ({before: {...DRY_ANSWERS['live-device.mjs hscroll'].before}, scroll: {found: true, scrolled: true, scrollError: null}, after: {horizontal: after}, userInFront: true});
   assert.equal(checkPassed('hscroll', {cua: PASSED.hscroll, vendor: vendorLane(0.9)}), true);
   assert.equal(checkPassed('hscroll', {cua: PASSED.hscroll, vendor: vendorLane(0.5)}), true, 'the declared vendor defect');
   assert.equal(checkPassed('hscroll', {cua: PASSED.hscroll, vendor: vendorLane(0.1)}), false, 'an opposite sign');
@@ -354,6 +354,32 @@ test('the dry run of each other command walks its sequence to the put-back', asy
     if (command === 'paste') assert.match(lines.join('\n'), /^paste hidComposition: unicode \S+ .*; keyCodesOnly \S+ .*; ansiKeys \S+ /m, 'the dry run walks the three variants of the composition row');
   }
   assert.deepEqual(Object.keys(DRY_ANSWERS['live-device.mjs paste'].steps.hidComposition.variants), ['unicode', 'keyCodesOnly', 'ansiKeys']);
+});
+
+test('the hscroll vendor lane on no horizontally scrollable content sends nothing and gives no verdict', async () => {
+  const lines = [];
+  const log = line => lines.push(line);
+  const dry = dryExec({log, commit: COMMIT});
+  // The vendor lane's start read as hold 1 read TextEdit's page view within its window: the bar disabled, the content still.
+  const exec = (command, args) => {
+    const out = dry(command, args);
+    if (!/hscroll-read'?[^\n]*'--start'/.test(String(args.at(-1)).replaceAll("'\\''", "'"))) return out;
+    const answer = JSON.parse(out);
+    return `${JSON.stringify({...answer, horizontalEnabled: false, set: {...answer.set, horizontal: {...answer.set.horizontal, contentMoved: false}}})}\n`;
+  };
+  // Not a dry run, so the result is written (the device and the vendor serve are still the dry doubles).
+  const out = join(scratch(), 'out');
+  const code = await runLive({command: 'hscroll', device: 'mini', out, approvedRuntime: '/h'}, {ops: liveOps('mini', {exec}), connect: dryConnect({log}),
+    controllerCheckout: () => ({commit: COMMIT, dirty: false}), log});
+  const text = lines.join('\n');
+  assert.doesNotMatch(text, /vendor cell: live:scroll right/, 'the vendor\'s scroll is never sent');
+  assert.match(text, /live-device\.mjs '\\''recover'\\''/, 'the put-back still runs');
+  assert.notEqual(code, 0);
+  const result = JSON.parse(fs.readFileSync(join(out, 'result.json'), 'utf8'));
+  assert.equal(result.check.vendor.problem, 'no horizontally scrollable content: the horizontal scroll bar is disabled; nothing was sent');
+  assert.equal(result.check.vendor.scroll, undefined);
+  assert.match(result.check.verdict, /^no verdict/);
+  assert.equal(result.complete, false, 'a lane that gave no evidence leaves the cell unfinished');
 });
 
 test('cellIo is the io main runs a command with, so the registry\'s runCell runs a residue cell as live.mjs does', async () => {

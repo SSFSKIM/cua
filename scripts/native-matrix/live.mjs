@@ -67,7 +67,9 @@
 //                 AXSelectedTextRange by `--probe text-view`) told from the read (the engine's observation).
 //   hscroll       (a residue cell) the run's TextEdit on a page wider than its window behind the run's Finder window,
 //                 its horizontal bar set mid-way by the probe, scrolled right one page by cua's engine, then the same by
-//                 the vendor's on a fresh TextEdit, each read back by the bar's value: the direction each moved.
+//                 the vendor's on a fresh TextEdit, each read back by the bar's value: the direction each moved. A lane
+//                 whose page shows no horizontally scrollable content (the bar disabled, or the content unmoved by the
+//                 start's write) sends nothing and gives no verdict.
 //   A residue cell's result.json is the native matrix's CellResult (./cell-result.mjs) with the fields below kept.
 //   cleanup       the put-back alone (and the vendor home's cleanup from a preparation.json), for a command that died.
 import {execFileSync} from 'node:child_process';
@@ -86,7 +88,7 @@ import {counts} from './cell-result.mjs';
 import {EFFECT, MENU_BAR, MENU_ITEM, SCROLL_RIGHT, SELECT_FIRST_LINE} from './live-cells.mjs';
 import {JOURNAL_FILE, MENU_ITEMS, menuComparison, putBackBoundMs, recoverBoundMs} from './live-checks.mjs';
 import {HSCROLL_START} from './residue-device.mjs';
-import {CHROME_NOT_JUDGED, RESIDUE_CELLS, asCellResult, gapProblem, hscrollVerdict, isResidueCell, residueGaps, residueRows} from './residue-checks.mjs';
+import {CHROME_NOT_JUDGED, RESIDUE_CELLS, asCellResult, gapProblem, hscrollStartProblem, hscrollVerdict, isResidueCell, residueGaps, residueRows} from './residue-checks.mjs';
 import {SCENES} from '../repl-parity/scenes-mac.mjs';
 
 const SCRIPT = fileURLToPath(import.meta.url);
@@ -422,7 +424,9 @@ async function menuCheck(ctx) {
 // The hscroll cell (the M2a vendor reading's item 6): the run's TextEdit opened on a page wider than its window
 // (scenes-mac.mjs's `wide-page` layout), behind the run's Finder window; cua's lane scrolls its text area right by one
 // page on the device, then on a fresh TextEdit the vendor's lane does through its facade, each read back by position
-// (the horizontal scroll bar's value, `--probe text-view`) before and after.
+// (the horizontal scroll bar's value, `--probe text-view`) before and after. Neither lane sends its scroll from a start
+// that gives no evidence (residue-checks.mjs hscrollStartProblem), so a page with no horizontally scrollable content
+// yields no verdict.
 async function hscrollCheck(ctx) {
   const {ops, run} = ctx;
   const wide = ['--layout', 'wide-page'];
@@ -437,6 +441,11 @@ async function hscrollCheck(ctx) {
     const js = await lane(textedit);
     activate(ctx, 'finder');
     const vendor = {before: ops.live(['hscroll-read', '--run', run, '--start', String(HSCROLL_START)])};
+    const unusable = hscrollStartProblem(vendor.before);
+    if (unusable) {
+      vendor.problem = `${unusable}; nothing was sent`;
+      return {cua, vendor, verdict: hscrollVerdict(cua, vendor).verdict};
+    }
     try {
       const out = await js(SCROLL_RIGHT);
       if (!out.ok) throw new Error(`the vendor's scroll cell failed: ${out.error}`);
@@ -453,7 +462,7 @@ async function hscrollCheck(ctx) {
 
 // The device's answers on the success path, by the CLI and its command, so a dry run walks the whole sequence.
 const DRY_RELEASE = '26.928.40906-darwin-arm64';
-const DRY_SET = Object.freeze({horizontal: {requested: 0.5, written: true, error: null}, vertical: {requested: 0.5, written: true, error: null}});
+const DRY_SET = Object.freeze({horizontal: {requested: 0.5, written: true, error: 0, contentMoved: true}, vertical: {requested: 0.5, written: true, error: 0}});
 export const DRY_ANSWERS = Object.freeze({
   'live-device.mjs begin': {refusals: [], checkout: {dirty: false}, engine: {build: '(the approved build)'}, frontmost: {bundleId: 'com.apple.Terminal'}, engineStop: {wasRunning: false}},
   'live-device.mjs minimized': {steps: {}, verdict: {pass: true}},
@@ -466,9 +475,9 @@ export const DRY_ANSWERS = Object.freeze({
     prior: {ok: true, range: {location: 34, length: 7}}, minimize: {ok: true, minimized: true},
     select: {ok: true, route: 1, minimizedBefore: true, minimizedAfter: true}, probeMinimized: {range: {location: 106, length: 7}, minimizedBefore: true, minimizedAfter: true},
     engineMinimized: {selectedText: 'Line 10', minimizedBefore: true, minimizedAfter: true}, restore: {ok: true, onScreen: true}, restored: {range: {location: 106, length: 7}, selectedText: 'Line 10'}}},
-  'live-device.mjs hscroll': {before: {horizontal: 0.5, vertical: 0.5, midpointShows: true, set: DRY_SET}, scroll: {ok: true, route: "2'", posted: true},
+  'live-device.mjs hscroll': {before: {horizontal: 0.5, vertical: 0.5, horizontalEnabled: true, midpointShows: true, set: DRY_SET}, scroll: {ok: true, route: "2'", posted: true},
     after: {horizontal: 0.9, vertical: 0.5, midpointShows: true}, userInFront: true},
-  'live-device.mjs hscroll-read': {horizontal: 0.9, vertical: 0.5, midpointShows: true},
+  'live-device.mjs hscroll-read': {horizontal: 0.9, vertical: 0.5, horizontalEnabled: true, midpointShows: true},
   'live-device.mjs paste': {steps: {pasteAlert: false, precondition: {selected: true, readBack: 'com.apple.inputmethod.Korean.2SetKorean', perContextOff: true, met: true},
     inputSource: {perContext: {read: true, setOff: true, restored: true}, restored: true}, clipboard: {typesUnchanged: true},
     hidComposition: {variants: Object.fromEntries(['unicode', 'keyCodesOnly', 'ansiKeys'].map(variant => [variant, {emptied: true, activated: true, source: 'com.apple.inputmethod.Korean.2SetKorean',

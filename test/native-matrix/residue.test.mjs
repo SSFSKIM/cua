@@ -9,7 +9,7 @@ import {SkyComputerUseError} from '../../src/services/engine/protocol.mjs';
 import {validateCellResult} from '../../scripts/native-matrix/cell-result.mjs';
 import {DRY_ANSWERS} from '../../scripts/native-matrix/live.mjs';
 import {
-  CHROME_NOT_JUDGED, HSCROLL_DEFECT, RESIDUE_CELLS, hscrollLane, SELECT_BEFORE, SELECT_MINIMIZED, asCellResult, enablementVerdict, hscrollVerdict, minimizedSelectRanges,
+  CHROME_NOT_JUDGED, HSCROLL_DEFECT, RESIDUE_CELLS, hscrollLane, hscrollStartProblem, SELECT_BEFORE, SELECT_MINIMIZED, asCellResult, enablementVerdict, hscrollVerdict, minimizedSelectRanges,
   minimizedSelectVerdict, modeAt, parseAccessibilityRecord, preparedEngineSettings, rangeOf, residueGaps, residueRows, route4Verdict,
 } from '../../scripts/native-matrix/residue-checks.mjs';
 import {HSCROLL_START, ROUTE4_HOME, enablementCheck, hscrollCheck, minimizedSelectCheck, route4Check, stripRestoredText, textViewOf} from '../../scripts/native-matrix/residue-device.mjs';
@@ -68,16 +68,20 @@ function textEditEngine({minimized = false, selectWhileMinimized = 'lands', clic
     if (args.length > 3) {
       assert.deepEqual([args[3], args[5]], ['--set-horizontal', '--set-vertical']);
       const one = requested => ({requested, written: state.settable !== false, error: state.settable !== false ? null : -25205});
-      set = {horizontal: one(Number(args[4])), vertical: one(Number(args[6]))};
+      // The horizontal start is written after the far end: the content moves when the bar takes it and scrolls it.
+      set = {horizontal: {...one(Number(args[4])), contentMoved: state.settable !== false && state.scrollable !== false}, vertical: one(Number(args[6]))};
       if (state.settable !== false) { state.horizontal = Number(args[4]); state.vertical = Number(args[6]); }
       state.calls.push({method: 'probe.set', args: [Number(args[4]), Number(args[6])]});
     }
     return {...(set ? {set} : {}), pid: TEXTEDIT.pid,
-      windows: [{minimized: state.minimized, textArea: {selectedRange: rangeNow(), scrollBars: {horizontal: state.horizontal, vertical: state.vertical}, midpointShows: state.midpointShows}}],
+      windows: [{minimized: state.minimized, textArea: {selectedRange: rangeNow(), scrollBars: {horizontal: state.horizontal, vertical: state.vertical, horizontalEnabled: state.horizontalEnabled ?? true}, midpointShows: state.midpointShows}}],
       focused: {role: state.minimized ? null : 'AXTextArea', textAreaOfWindow: state.minimized ? null : 0}};
   };
   return {state, client, probe};
 }
+// A lane's reading before its scroll on a horizontally scrollable page: the bar enabled, the start written and taken.
+const SCROLLABLE_START = Object.freeze({horizontal: 0.5, vertical: 0.5, horizontalEnabled: true, midpointShows: true,
+  set: {horizontal: {requested: 0.5, written: true, error: 0, contentMoved: true}, vertical: {requested: 0.5, written: true, error: 0}}});
 const liveOf = (command, check) => ({schema: 'native-live-1', command, device: 'mini', started: '2026-10-21T10:00:00.000Z', finished: '2026-10-21T10:01:00.000Z',
   problems: [], complete: true, engine: {build: 'b'.repeat(64), engineVersion: '0.1.0'}, vendor: {release: '26.928'}, check});
 const io = (extra = {}) => ({sleep: async () => {}, now: (() => { let t = 0; return () => (t += 100); })(), frontmost: () => ({pid: FINDER.pid, bundleId: 'com.apple.finder'}),
@@ -96,7 +100,7 @@ test('every residue cell\'s live result, adapted, is a conforming CellResult tha
     enablement: DRY_ANSWERS['live-device.mjs enablement'],
     menu: {comparison: {items: {selectAll: {cua: {label: 'acts', enabled: true, effect: true}, vendor: {label: 'acts', enabled: true, effect: true}},
       bold: {cua: {label: 'acts'}, vendor: {label: 'acts'}}}}, cua: {items: {selectAll: works, bold: works}}, vendor: {items: {selectAll: works, bold: works}}},
-    hscroll: {cua: DRY_ANSWERS['live-device.mjs hscroll'], vendor: {before: {horizontal: 0.5, midpointShows: true}, scroll: {found: true, scrolled: true, scrollError: null}, after: {horizontal: 0.9}, userInFront: true}},
+    hscroll: {cua: DRY_ANSWERS['live-device.mjs hscroll'], vendor: {before: SCROLLABLE_START, scroll: {found: true, scrolled: true, scrollError: null}, after: {horizontal: 0.9}, userInFront: true}},
   };
   for (const command of RESIDUE_CELLS) {
     const live = {schema: 'native-live-1', command, device: 'mini', started: '2026-10-21T10:00:00.000Z', finished: '2026-10-21T10:01:00.000Z', problems: [], complete: true, pass: true,
@@ -252,8 +256,10 @@ test('minimizedSelectVerdict: a window that came back mid-measure, or a prior se
 });
 
 test('textViewOf: the window with a text area, its range and bars; errors and missing reads kept as such', () => {
-  assert.deepEqual(textViewOf({pid: 1, windows: [{minimized: false, textArea: null}, {minimized: true, textArea: {selectedRange: {location: 3, length: 4}, scrollBars: {horizontal: 0.5, vertical: null}}}],
-    focused: {role: 'AXTextArea', textAreaOfWindow: 1}}), {minimized: true, range: {location: 3, length: 4}, horizontal: 0.5, vertical: null, midpointShows: null, focusedRole: 'AXTextArea', focusedIsTextArea: true});
+  assert.deepEqual(textViewOf({pid: 1, windows: [{minimized: false, textArea: null}, {minimized: true, textArea: {selectedRange: {location: 3, length: 4}, scrollBars: {horizontal: 0.5, vertical: null, horizontalEnabled: false}}}],
+    focused: {role: 'AXTextArea', textAreaOfWindow: 1}}), {minimized: true, range: {location: 3, length: 4}, horizontal: 0.5, vertical: null, horizontalEnabled: false, midpointShows: null,
+    focusedRole: 'AXTextArea', focusedIsTextArea: true});
+  assert.equal(textViewOf({windows: [{textArea: {scrollBars: {horizontal: 0.5}}}]}).horizontalEnabled, null, 'an unread enablement is no reading');
   assert.match(textViewOf({error: 'this bundle has no Accessibility grant'}).error, /grant/);
   assert.match(textViewOf({windows: [{textArea: null}]}).error, /no window/);
 });
@@ -310,7 +316,8 @@ test('hscrollCheck: cua\'s lane sets both bars mid-way by the probe, then scroll
   assert.deepEqual(state.calls[scrollAt].args, {app: TEXTEDIT.app, element: GOLDEN.nodes.find(n => n.role === 'AXTextArea').token, direction: 'right', pages: 1});
   assert.deepEqual([out.before.horizontal, out.after.horizontal], [0.5, 0.75]);
   assert.equal(out.before.midpointShows, true, 'the element scroll\'s preparation has nothing to do');
-  assert.deepEqual(out.before.set.horizontal, {requested: 0.5, written: true, error: null});
+  assert.deepEqual(out.before.set.horizontal, {requested: 0.5, written: true, error: null, contentMoved: true});
+  assert.equal(out.before.horizontalEnabled, true);
   assert.deepEqual(out.scroll, {ok: true, route: "2'", posted: true});
   assert.equal(out.userInFront, true);
   assert.equal(hscrollLane(out, 'cua').direction, 'right');
@@ -328,16 +335,18 @@ test('hscrollLane: a lane is judged only from a mid-way start the element scroll
   const run = scratch(), engine = textEditEngine();
   engine.state.settable = false;
   const out = await hscrollCheck({record: TEXTEDIT, user: FINDER, client: engine.client, screenshots: join(run, 'shots'), io: io({probe: engine.probe})});
-  assert.deepEqual(out.before.set.horizontal, {requested: 0.5, written: false, error: -25205});
-  assert.match(hscrollLane(out, 'cua').invalid, /did not start mid-way \(read 0\)/);
+  assert.deepEqual(out.before.set.horizontal, {requested: 0.5, written: false, error: -25205, contentMoved: false});
+  assert.match(hscrollLane(out, 'cua').invalid, /did not start mid-way \(read 0\).*; nothing was sent$/);
   assert.equal(hscrollLane(out, 'cua').direction, null);
+  assert.equal(engine.state.calls.some(c => c.method === 'scroll'), false, 'an unusable start sends nothing');
 
   const hidden = textEditEngine();
   hidden.state.midpointShows = false;
   const moved = await hscrollCheck({record: TEXTEDIT, user: FINDER, client: hidden.client, screenshots: join(run, 'shots'), io: io({probe: hidden.probe})});
   assert.match(hscrollLane(moved, 'cua').invalid, /midpoint did not show/);
+  assert.equal(hidden.state.calls.some(c => c.method === 'scroll'), false);
 
-  const good = {before: {horizontal: 0.5, midpointShows: true}, after: {horizontal: 0.9}, userInFront: true};
+  const good = {before: SCROLLABLE_START, after: {horizontal: 0.9}, userInFront: true};
   assert.equal(hscrollLane({...good, scroll: {ok: true, posted: true}}, 'cua').valid, true);
   assert.equal(hscrollLane({...good, after: {horizontal: Number.NaN}, scroll: {ok: true, posted: true}}, 'cua').valid, false, 'a reading must be finite');
   assert.match(hscrollLane({...good, scroll: {found: false, scrolled: false, scrollError: null}}, 'vendor').invalid, /not carried out \(the vendor found no text area\)/);
@@ -347,14 +356,52 @@ test('hscrollLane: a lane is judged only from a mid-way start the element scroll
   assert.deepEqual([failed.valid, failed.sent, failed.moved, failed.direction], [true, false, false, null], 'cua\'s own failure to scroll is its failure, whatever the bar did');
 });
 
+test('hscroll: a disabled horizontal bar, or content the start\'s write did not move, is no horizontally scrollable content: no verdict, nothing sent', async () => {
+  // Hold 1 (2026-10-21): TextEdit's page view within its window reads back the written 0.5 from a disabled bar.
+  const run = scratch(), disabled = textEditEngine();
+  Object.assign(disabled.state, {horizontalEnabled: false, scrollable: false});
+  const out = await hscrollCheck({record: TEXTEDIT, user: FINDER, client: disabled.client, screenshots: join(run, 'shots'), io: io({probe: disabled.probe})});
+  assert.equal(out.before.horizontal, 0.5, 'the written value reads back');
+  assert.match(out.problem, /^no horizontally scrollable content: the horizontal scroll bar is disabled; nothing was sent$/);
+  assert.equal(disabled.state.calls.some(c => c.method === 'scroll'), false);
+  assert.equal(out.scroll, undefined);
+
+  const still = textEditEngine();
+  still.state.scrollable = false;
+  const unmoved = await hscrollCheck({record: TEXTEDIT, user: FINDER, client: still.client, screenshots: join(run, 'shots'), io: io({probe: still.probe})});
+  assert.match(unmoved.problem, /^no horizontally scrollable content: the content did not move when the start was written/);
+  assert.equal(still.state.calls.some(c => c.method === 'scroll'), false);
+
+  const start = patch => ({...SCROLLABLE_START, ...patch});
+  assert.equal(hscrollStartProblem(SCROLLABLE_START), null);
+  assert.match(hscrollStartProblem(start({horizontalEnabled: false})), /^no horizontally scrollable content: the horizontal scroll bar is disabled$/);
+  assert.match(hscrollStartProblem(start({set: {horizontal: {...SCROLLABLE_START.set.horizontal, contentMoved: false}}})), /the content did not move when the start was written/);
+  assert.match(hscrollStartProblem(start({set: {horizontal: {...SCROLLABLE_START.set.horizontal, contentMoved: null}}})), /its position could not be read/);
+  assert.match(hscrollStartProblem(start({set: undefined})), /^no horizontally scrollable content/, 'a start never shown to move the content proves nothing');
+  assert.equal(hscrollStartProblem(start({horizontalEnabled: null})), null, 'content that moved is scrollable whatever the enablement read');
+  assert.match(hscrollStartProblem({error: 'the probe exited 2'}), /no horizontal scroll bar to read \(the probe exited 2\)/);
+
+  // The vendor's lane read so: no verdict, whatever its scroll did.
+  const {cua, vendor} = hscrollLanes();
+  const unscrollable = {...vendor(0.5), before: start({horizontalEnabled: false, set: {horizontal: {...SCROLLABLE_START.set.horizontal, contentMoved: false}}})};
+  assert.match(hscrollLane(unscrollable, 'vendor').invalid, /^no horizontally scrollable content/);
+  const verdict = hscrollVerdict(cua(0.9), unscrollable);
+  assert.match(verdict.verdict, /^no verdict/);
+  assert.equal(verdict.vendorDefect, false, 'never the declared defect');
+  const rows = residueRows('hscroll', {cua: cua(0.9), vendor: unscrollable});
+  assert.match(rows[1].invalid, /^no horizontally scrollable content/);
+  assert.equal(rows[1].declared, undefined);
+  assert.equal(asCellResult('hscroll', liveOf('hscroll', {cua: cua(0.9), vendor: unscrollable})).verdict, 'no-verdict');
+});
+
 test('hscrollLane: the direction is the sign of the bar\'s move from mid-way: right, left, or none', () => {
-  const lane = after => hscrollLane({before: {horizontal: 0.5, midpointShows: true}, scroll: {ok: true, posted: true}, after: {horizontal: after}, userInFront: true}, 'cua');
+  const lane = after => hscrollLane({before: SCROLLABLE_START, scroll: {ok: true, posted: true}, after: {horizontal: after}, userInFront: true}, 'cua');
   assert.deepEqual([0.9, 0.1, 0.5, 0.5005].map(a => lane(a).direction), ['right', 'left', 'none', 'none']);
   assert.deepEqual([0.9, 0.1, 0.5].map(a => lane(a).moved), [true, false, false]);
 });
 
 const hscrollLanes = () => {
-  const lane = (after, scroll) => ({before: {horizontal: 0.5, midpointShows: true}, scroll, after: {horizontal: after}, userInFront: true});
+  const lane = (after, scroll) => ({before: SCROLLABLE_START, scroll, after: {horizontal: after}, userInFront: true});
   const cua = after => lane(after, {ok: true, route: "2'", posted: true}), vendor = after => lane(after, {found: true, scrolled: true, scrollError: null});
   return {cua, vendor};
 };

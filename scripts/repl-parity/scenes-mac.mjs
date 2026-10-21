@@ -13,7 +13,8 @@
 //             window in front, since nothing outside an engine may script Finder without an Automation prompt, and
 //             restores what the hiding changed (`teardown`, then `down finder`).
 //   chrome    Chrome for Testing at the pinned version (scripts/native-matrix/fixtures/chrome-for-testing.json), placed in
-//             the harness cache, with its own --user-data-dir under the run directory and the loopback scene page
+//             the harness cache, with a fresh --user-data-dir per launch under the run directory (removed by down, so a
+//             restart is a first run like the first launch) and the loopback scene page
 //             (scripts/native-matrix/fixtures/scene-page.mjs) served by a detached process of the run.
 //   electron  The Electron fixture app (scripts/native-matrix/fixtures/electron-fixture.mjs) with its own bundle id and a
 //             scratch user-data directory under the run directory.
@@ -359,6 +360,19 @@ export const chromeArgsProblems = args => args.slice(0, -1).filter(a => !a.start
 // macOS, and the per-process AppleLanguages pair cannot be passed without the stray tab above. The scene's targets are
 // the page's controls, whose names are the page's own, so no check depends on Chrome's UI language.
 export const chromePreferences = () => ({translate: {enabled: false}, intl: {accept_languages: 'en-US,en'}});
+// Every launch of the scene, a restart included, gets a new profile under the run directory holding only
+// chromePreferences, so each is Chrome's first run. A restart on the first launch's profile came up as a later run of
+// it: the omnibox's placeholder turned from "Search Google or type a URL" to "Ask Google or type a URL" (the mini's
+// goldens recording, 2026-10-20), so the fixed state never matched again. The likely cause, read from Chromium's source
+// and not observed: the AI-mode eligibility a run fetches is stored in the profile and read at the next start
+// (components/omnibox/browser/aim_eligibility_service.cc). Down removes the profile once Chrome has exited.
+// -> the profile's path.
+function freshChromeProfile(run) {
+  const userDataDir = fs.mkdtempSync(join(run, 'chrome-user-data-'));
+  fs.mkdirSync(join(userDataDir, 'Default'), {mode: 0o700});
+  fs.writeFileSync(join(userDataDir, 'Default', 'Preferences'), JSON.stringify(chromePreferences()), {mode: 0o600});
+  return userDataDir;
+}
 export const electronArgs = ({userDataDir, placement = SCENES.electron.placement}) => [
   `--cua-fixture-user-data=${userDataDir}`, `--cua-fixture-bounds=${[placement.x, placement.y, placement.width, placement.height].join(',')}`];
 
@@ -396,10 +410,7 @@ export async function upScene(id, {run, chromeApp, electronApp, io = defaultIo()
     const {savedAt, kept} = saveOriginalPreferences(io.savedPreferencesFile, preferences);
     record = {app: scene.app, folder, pid, window, preferences, savedPreferences: {savedAt, kept}};
   } else if (id === 'chrome') {
-    const app = chromeApp ?? (await io.placeChrome()).appPath, userDataDir = join(run, 'chrome-user-data');
-    fs.mkdirSync(join(userDataDir, 'Default'), {recursive: true, mode: 0o700});
-    const preferences = join(userDataDir, 'Default', 'Preferences');
-    if (!fs.existsSync(preferences)) fs.writeFileSync(preferences, JSON.stringify(chromePreferences()), {mode: 0o600});
+    const app = chromeApp ?? (await io.placeChrome()).appPath, userDataDir = freshChromeProfile(run);
     const page = await io.spawnPage(run);
     try { record = {app, userDataDir, page, ...await launchOwn({app, bundleId: scene.bundleId, args: chromeArgs({userDataDir, url: page.url}), io})}; }
     catch (error) { await io.stopRecorded(page); throw error; }
@@ -487,6 +498,8 @@ export async function downScene(id, {run, io = defaultIo()}) {
     const stopped = await io.stopRecorded(record);
     const page = record.page ? await io.stopRecorded(record.page) : null;
     result = {down: !stopped.remaining.length && !page?.remaining.length, stopped, ...(page ? {page} : {})};
+    // Chrome's profile is the launch's alone (freshChromeProfile): removed once Chrome has exited, never under it.
+    if (id === 'chrome' && result.down) fs.rmSync(record.userDataDir, {recursive: true, force: true, maxRetries: 3});
   }
   if (result.down) { const {[id]: _, ...rest} = state.scenes; writeState(run, {...state, scenes: rest}); }
   return {scene: id, ...result};

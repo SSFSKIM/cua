@@ -299,7 +299,7 @@ test('up of each scene: TextEdit on the run\'s document in English, Chrome on th
   assert.deepEqual(io.calls[0][1].args, ['-AppleLanguages', '(en)', '-ApplePersistenceIgnoreState', 'YES']);
   const chrome = await upScene('chrome', {run, io});
   assert.equal(chrome.page.url, 'http://127.0.0.1:4000/');
-  assert.deepEqual(io.calls[1][1].args, chromeArgs({userDataDir: join(run, 'chrome-user-data'), url: chrome.page.url}));
+  assert.deepEqual(io.calls[1][1].args, chromeArgs({userDataDir: chrome.userDataDir, url: chrome.page.url}));
   assert.ok(io.calls[1][1].args.includes('--use-mock-keychain'));
   assert.ok(!io.calls[1][1].args.some(a => /accessibility/i.test(a)), 'Chrome is never told to turn accessibility on');
   // Every argument but the URL is a switch: Chrome opens any other argument as a tab, as the first sitting's
@@ -313,7 +313,7 @@ test('up of each scene: TextEdit on the run\'s document in English, Chrome on th
   assert.ok(args.some(a => /^--disable-features=.*\bTranslate\b/.test(a)));
   assert.match(PAGE_HTML, /<html lang="en" translate="no">/);
   assert.match(PAGE_HTML, /<meta name="google" content="notranslate">/);
-  assert.deepEqual(JSON.parse(fs.readFileSync(join(run, 'chrome-user-data', 'Default', 'Preferences'), 'utf8')), chromePreferences());
+  assert.deepEqual(JSON.parse(fs.readFileSync(join(chrome.userDataDir, 'Default', 'Preferences'), 'utf8')), chromePreferences());
   assert.equal(chromePreferences().translate.enabled, false);
   const finder = await upScene('finder', {run, io});
   assert.equal(finder.pid, 736);
@@ -418,6 +418,36 @@ test('down stops only what the run recorded; Finder is never signalled and stays
   assert.deepEqual(io.calls.filter(c => c[0] === 'stop').map(c => c[1]), [chrome.pid, chrome.page.pid], 'nothing of Finder\'s was stopped');
   assert.deepEqual(readState(run).scenes, {});
   assert.deepEqual(await downScene('electron', {run, io}), {scene: 'electron', down: true, wasUp: false});
+}));
+
+test('every Chrome launch, a restart included, gets a fresh profile under the run directory, written as the first; down removes it', async () => withRun(async run => {
+  // A restart on the first launch's profile came up as a later run of it: the omnibox's placeholder changed (the
+  // goldens recording of 2026-10-20), so the fixed state never matched again. Each launch is a first run instead.
+  const io = fakeDevice();
+  const first = await upScene('chrome', {run, io});
+  assert.ok(first.userDataDir.startsWith(`${run}/`), 'the profile lives under the run directory');
+  assert.deepEqual(io.calls[0][1].args, chromeArgs({userDataDir: first.userDataDir, url: first.page.url}));
+  assert.deepEqual(chromeArgsProblems(io.calls[0][1].args), []);
+  fs.writeFileSync(join(first.userDataDir, 'Local State'), '{"a later run": true}');   // what Chrome leaves in its profile
+  const down = await downScene('chrome', {run, io});
+  assert.equal(down.down, true);
+  assert.equal(fs.existsSync(first.userDataDir), false, 'down removes the stopped launch\'s profile');
+  io.running.splice(io.running.findIndex(p => p.pid === first.pid), 1);   // the stopped process is gone
+  const again = await upScene('chrome', {run, io});
+  assert.notEqual(again.userDataDir, first.userDataDir);
+  assert.ok(again.userDataDir.startsWith(`${run}/`));
+  assert.deepEqual(fs.readdirSync(again.userDataDir), ['Default'], 'nothing of an earlier launch: a first run again');
+  assert.deepEqual(JSON.parse(fs.readFileSync(join(again.userDataDir, 'Default', 'Preferences'), 'utf8')), chromePreferences());
+  assert.deepEqual(chromeArgsProblems(io.calls.at(-1)[1].args), []);
+}));
+
+test('a Chrome launch that would not stop keeps its profile and its record, so a later down finishes both', async () => withRun(async run => {
+  const io = fakeDevice();
+  const chrome = await upScene('chrome', {run, io});
+  io.stopRecorded = async record => ({stopped: [], remaining: [record.pid]});
+  assert.equal((await downScene('chrome', {run, io})).down, false);
+  assert.ok(fs.existsSync(chrome.userDataDir), 'a running Chrome\'s profile is not removed under it');
+  assert.ok(readState(run).scenes.chrome);
 }));
 
 test('stopRecorded signals only a pid that is still the recorded launch', async () => {
@@ -663,6 +693,61 @@ test('device reads: Finder\'s preference keys through defaults, an unset key as 
   ]);
   assert.throws(() => writeFinderPreference('FXPreferredViewStyle', true, {exec: record}), /not one of/);
 });
+
+// `defaults` for Finder's domain over a store of Booleans, failing on an absent key as macOS 27 does (the mini's
+// recording of 2026-10-20) or, with `older`, as macOS 26 does.
+function fakeDefaults(store, {older = false} = {}) {
+  const calls = [];
+  const absent = key => Object.assign(new Error('Command failed'), {status: 1,
+    stderr: older ? `The domain/default pair of (com.apple.finder, ${key}) does not exist\n` : `Error: Could not find key '${key}' in domain 'com.apple.finder'.\n`});
+  const exec = (cmd, [verb, , key, , value]) => {
+    calls.push([verb, key, ...(value === undefined ? [] : [value])]);
+    if (verb === 'read') { if (Object.hasOwn(store, key)) return store[key] ? '1\n' : '0\n'; throw absent(key); }
+    if (verb === 'write') { store[key] = value === 'true'; return ''; }
+    if (verb === 'delete') { if (!Object.hasOwn(store, key)) throw absent(key); delete store[key]; return ''; }
+    throw new Error(`unexpected defaults ${verb}`);
+  };
+  return {exec, calls, store};
+}
+
+test('device reads: an absent key reads as null in both macOS phrasings; deleting an absent key is already restored', () => {
+  for (const older of [false, true]) {
+    const {exec} = fakeDefaults({ShowSidebar: false}, {older});
+    assert.deepEqual(readFinderPreferences({exec}), {ShowSidebar: false, ShowStatusBar: null, ShowPathbar: null});
+  }
+  // Deleting a key that is already absent is the restore's goal reached, not a failure.
+  const device = fakeDefaults({ShowSidebar: true});
+  writeFinderPreference('ShowStatusBar', null, {exec: device.exec});
+  writeFinderPreference('ShowSidebar', null, {exec: device.exec});
+  assert.deepEqual(device.store, {});
+  assert.deepEqual(device.calls, [['delete', 'ShowStatusBar'], ['read', 'ShowStatusBar'], ['delete', 'ShowSidebar']]);
+  // A delete that fails while the key is still there is thrown.
+  const stuck = (cmd, [verb]) => { if (verb === 'read') return '1\n'; throw Object.assign(new Error('Command failed'), {status: 1, stderr: 'cfprefsd'}); };
+  assert.throws(() => writeFinderPreference('ShowSidebar', null, {exec: stuck}), /could not delete Finder's ShowSidebar preference/);
+});
+
+test('Finder\'s keys left unset by the owner: saved as absent, read as macOS\'s defaults, and restored by deletion', async () => withRun(async run => {
+  // The owner never set any of the three (the mini's case): the sidebar shows, the status bar and path bar do not.
+  const defaults = fakeDefaults({});
+  const io = fakeDevice();
+  io.finderPreferences = () => readFinderPreferences({exec: defaults.exec});
+  io.writeFinderPreference = (key, value) => writeFinderPreference(key, value, {exec: defaults.exec});
+  const record = await upScene('finder', {run, io});
+  assert.deepEqual(record.preferences, {ShowSidebar: null, ShowStatusBar: null, ShowPathbar: null});
+  assert.deepEqual(readSavedPreferences(io.savedPreferencesFile).saved, {ShowSidebar: null, ShowStatusBar: null, ShowPathbar: null}, 'absent is saved as absent');
+  assert.deepEqual(record.setup.filter(s => s.hides).map(s => s.hides), ['sidebar'], 'only what macOS shows by default is hidden');
+  // Finder's toggles write explicit values: the setup hid the sidebar, then the teardown showed it again.
+  defaults.store.ShowSidebar = false;
+  assert.deepEqual(teardownFor('finder', {run, io}).filter(s => s.restores).map(s => s.restores), ['sidebar']);
+  defaults.store.ShowSidebar = true;
+  io.windows[736] = io.windows[736].filter(w => w.number !== record.window.number);
+  const down = await downScene('finder', {run, io});
+  assert.equal(down.down, true);
+  assert.deepEqual(down.preferences.wrote, ['ShowSidebar'], 'shown alike, but an explicit true is not the owner\'s absent key');
+  assert.deepEqual(defaults.store, {}, 'every key absent again, as the owner had it');
+  assert.ok(!defaults.calls.some(([verb]) => verb === 'write'), 'nothing is written in place of an absent key');
+  assert.equal(readSavedPreferences(io.savedPreferencesFile), null);
+}));
 
 test('device launches: open -g for a scene\'s launch (never activating), open -a without -g for an activation', () => {
   const calls = [];

@@ -19,6 +19,11 @@
 //      of the driven target run with the oracle's reading before and after the act (./matrix-device.mjs read, the focus
 //      probe after); keys only through the key guard's user-window case; a paste or typeText act only between two alert
 //      checks; the windowless app (the "app with no window" refusal) brought up for its pairing and quit after it
+//   6b. the input sections (inputSections): the owner's input source and per-context preference saved on the device,
+//      the Latin source selected with the preference off; the probe cells (./probe-run.mjs: concurrent use on Finder and
+//      Chrome behind TextEdit's document, its sheet variant behind the Electron fixture, intervention fires and the
+//      pre-action refusal on TextEdit in front), then the Korean and Unicode matrix (./unicode-run.mjs); the source and
+//      the preference restored after, whatever happened
 //   7. the launch path (the Electron fixture; TextEdit's is an owner option, ./plan.mjs OWNER_OPTIONS): the user
 //      window in front, the scene down, the launch's intent journaled on the device, the app observed by its path
 //      through the engine's own call (its text never leaves the cell), the launched process journaled by pid and start
@@ -48,32 +53,38 @@ import {quote} from '../browser-parity/topology.mjs';
 import {AX_FULL, LIST_APPS, SCRATCH_GUARD, SCREENSHOT} from '../native-baseline/cells.mjs';
 import {assertEngineOptions, checkApprovedEngine, engineProblem} from '../native-baseline/engine.mjs';
 import {HOSTS} from '../native-baseline/remote.mjs';
-import {BACKGROUND_PAIRINGS, SCENES} from '../repl-parity/scenes-mac.mjs';
+import {BACKGROUND_PAIRINGS, CONCURRENT_USE, CONCURRENT_USE_SHEET, SCENES} from '../repl-parity/scenes-mac.mjs';
 import {cellResult, validateCellResult, writeCellResult} from './cell-result.mjs';
 import {checkVendorPreflight} from './goldens.mjs';
 import {BIND} from './goldens-cells.mjs';
 import {BIND_MS, connectLane, helpersOf} from './lane.mjs';
-import {caseCells, CLOSE_PANEL, findingCell, launchCell, launchCheckCell, OPEN_PANEL, selectCell} from './matrix-cells.mjs';
+import {CLOSE_PANEL, findingCell, launchCell, launchCheckCell, OPEN_PANEL, selectCell} from './matrix-cells.mjs';
 import {accountActivations, judgeInterference, userWindowOf} from './oracle.mjs';
 import {CASES, caseId, OWNER_OPTIONS, SCENE_OF, WINDOWLESS_BUNDLE_ID} from './plan.mjs';
-import {activate, alertCheck, focusOf, js, mark, push, read, sendKeys, step, Stop, TEXTEDIT, userFront} from './steps.mjs';
+import {probeCells} from './probe-run.mjs';
+import {activate, caseRow, device, focusOf, js, mark, PASTING, push, read, sendKeys, step, Stop, TEXTEDIT} from './steps.mjs';
+import {ABC, UNICODE_PLAN, unicodeRowsOf} from './unicode-plan.mjs';
+import {unicodeSection} from './unicode-run.mjs';
+
+export {PASTING};
 
 export const DEFAULT_RUN = 'Library/Caches/cua-harness/native-matrix';
 export const DEFAULT_RUNS = 3;
 export const DEFAULT_SAMPLES = 10;
 export const REFUSED = 2;
 const SCENE_ORDER = ['textedit', 'finder', 'chrome', 'electron'];
-// The acts that may paste (type_text's paste route included): each sent only between two alert checks.
-export const PASTING = Object.freeze(['paste', 'typeText']);
 
 // The whole matrix, and what each registry cell runs of it (./registry.mjs). `id` names the plan in every result
 // (meta.planId); only a 'full' plan's results count toward the verdict (./summary.mjs).
 export const FULL_PLAN = Object.freeze({
   id: 'full', frontmost: ['textedit', 'openPanel', 'finder', 'chrome', 'electron'], speed: true, finding: true,
   background: [...BACKGROUND_PAIRINGS, {driven: 'openPanel', user: 'finder'}, {driven: 'windowless', user: 'finder'}],
+  // The probe cells (./probe-run.mjs) and the Korean and Unicode matrix (./unicode-run.mjs), between the background
+  // regime and the launch path (which leaves its scene down).
+  concurrent: CONCURRENT_USE.driven, sheet: true, intervention: ['fires', 'preAction'], unicode: UNICODE_PLAN,
   launch: [{scene: 'electron', user: 'finder'}],
 });
-const EMPTY_PLAN = {frontmost: [], speed: false, finding: false, background: [], launch: []};
+const EMPTY_PLAN = {frontmost: [], speed: false, finding: false, background: [], concurrent: [], sheet: false, intervention: [], unicode: null, launch: []};
 const NARROWABLE = [...FULL_PLAN.frontmost, 'windowless'];
 // A plan narrowed to one target (and for the background, one user): the registry's `cell <name> --scene --user`. Its id
 // is 'full' only for the whole matrix.
@@ -81,7 +92,7 @@ export function planOf(kind, {scene = null, user = null} = {}) {
   if (scene !== null && !NARROWABLE.includes(scene)) throw new Error(`--scene is one of ${NARROWABLE.join(', ')}`);
   if (user !== null && !SCENE_ORDER.includes(user)) throw new Error(`--user is one of ${SCENE_ORDER.join(', ')}`);
   const plan = narrowed(kind, {scene, user});
-  if (!plan.frontmost.length && !plan.background.length && !plan.launch.length) {
+  if (!plan.frontmost.length && !plan.background.length && !plan.launch.length && !plan.concurrent.length && !plan.sheet && !plan.intervention.length && !plan.unicode?.fields.length) {
     const option = OWNER_OPTIONS.find(o => kind === 'launch' && o.section === 'launch' && o.id.startsWith(`${scene}/`));
     throw new Error(`the ${kind} cell has nothing to run for${scene ? ` --scene ${scene}` : ''}${user ? ` --user ${user}` : ''}${option ? `: ${option.option} (${option.reason})` : ''}`);
   }
@@ -99,12 +110,21 @@ function narrowed(kind, {scene, user}) {
     case 'finding': return {...EMPTY_PLAN, frontmost: FULL_PLAN.frontmost.filter(t => t !== 'openPanel' && front(t)), finding: true, onlyMeasures: true};
     case 'background': return {...EMPTY_PLAN, background: FULL_PLAN.background.filter(back)};
     case 'launch': return {...EMPTY_PLAN, launch: FULL_PLAN.launch.filter(l => !scene || l.scene === scene)};
+    // The probe cells: concurrent use narrows to a driven scene (its user window is TextEdit's), the others are one each.
+    case 'concurrent-use': return {...EMPTY_PLAN, concurrent: FULL_PLAN.concurrent.filter(d => (!scene || d === scene) && (!user || user === CONCURRENT_USE.user))};
+    case 'concurrent-use-sheet': return {...EMPTY_PLAN, sheet: (!scene || scene === CONCURRENT_USE_SHEET.driven) && (!user || user === CONCURRENT_USE_SHEET.user)};
+    case 'intervention-fires': return {...EMPTY_PLAN, intervention: !scene || scene === 'textedit' ? ['fires'] : []};
+    case 'pre-action-refusal': return {...EMPTY_PLAN, intervention: !scene || scene === 'textedit' ? ['preAction'] : []};
+    // The Korean and Unicode matrix narrows to one field.
+    case 'korean': return {...EMPTY_PLAN, unicode: {...UNICODE_PLAN, fields: UNICODE_PLAN.fields.filter(f => !scene || f === scene)}};
     default: throw new Error(`no plan ${kind}`);
   }
 }
 // The scenes a plan brings up.
 export const scenesOf = plan => SCENE_ORDER.filter(id => plan.frontmost.some(t => SCENE_OF[t] === id)
-  || plan.background.some(p => SCENE_OF[p.driven] === id || p.user === id) || plan.launch.some(l => l.scene === id || l.user === id));
+  || plan.background.some(p => SCENE_OF[p.driven] === id || p.user === id) || plan.launch.some(l => l.scene === id || l.user === id)
+  || (plan.concurrent ?? []).some(d => d === id || CONCURRENT_USE.user === id) || (plan.sheet && [CONCURRENT_USE_SHEET.driven, CONCURRENT_USE_SHEET.user].includes(id))
+  || (plan.intervention?.length && id === 'textedit') || unicodeRowsOf(plan.unicode ?? {fields: [], conditions: []}).some(r => r.field === id || r.user === id));
 
 // options: {device, host, engine, approvedRuntime, approvedEngine, out, runs, samples, run (the device directory), plan
 // (planOf's), cell (the registry name the results answer), sitting (the sitting's id, in every result)}; io: {ops
@@ -140,7 +160,8 @@ async function runOnce(options, io) {
   const started = new Date().toISOString();
   const rows = [], problems = [];
   const meta = {run: n, host, engine, samples, sitting, planId: plan.id ?? 'full',
-    plan: {frontmost: plan.frontmost, background: plan.background, launch: plan.launch, speed: plan.speed, finding: plan.finding},
+    plan: {frontmost: plan.frontmost, background: plan.background, launch: plan.launch, speed: plan.speed, finding: plan.finding, concurrent: plan.concurrent ?? [],
+      sheet: plan.sheet ?? false, intervention: plan.intervention ?? [], unicode: plan.unicode ?? null},
     elicitations: [], keySkipped: []};
   let refused = false, complete = false, putBack, lanes = [{host, engine, build: null, version: null}];
   const write = () => {
@@ -183,7 +204,9 @@ async function runOnce(options, io) {
     if (interrupt.signal) throw new Stop(`interrupted by ${interrupt.signal}`);
   };
   // windows: every step's device-clock window [{kind, key, at}]; judged: the rows whose activations are charged, by key.
-  const ctx = {ops, run, rows, problems, meta, samples, n, engine, records: {}, lane: null, checkpoint, log, now, watcher: null, windows: [], judged: new Map()};
+  // posted: the scenes a probe typed into, by when (./steps.mjs quiet); latin: the probe cells' source precondition.
+  const ctx = {ops, run, rows, problems, meta, samples, n, engine, records: {}, lane: null, checkpoint, log, now, sleep: io.sleep ?? (ms => new Promise(done => setTimeout(done, ms))),
+    watcher: null, windows: [], judged: new Map(), posted: {}, latin: false};
   let prepared = null, pre = null, laneStarted = null;
   const helpers = [];
   const snapshot = () => {
@@ -241,6 +264,7 @@ async function runOnce(options, io) {
     snapshot();
     for (const target of plan.frontmost) await frontmostTarget(ctx, target, plan);
     for (const pairing of plan.background) await backgroundPairing(ctx, pairing);
+    await inputSections(ctx, plan);
     for (const launch of plan.launch) await launchRow(ctx, launch);
     snapshot();
     try { await ctx.lane.client.call('end_task'); } catch (error) { problems.push(`end_task failed: ${error.message}`); }
@@ -279,6 +303,30 @@ async function runOnce(options, io) {
     const result = write();
     log(`run ${n} ${complete ? result.verdict.toUpperCase() : 'INCOMPLETE'}${dryRun ? ' (dry run: the answers were made up, nothing ran)' : `: ${join(dir, 'result.json')}`}`);
     return complete && result.verdict === 'pass' ? 0 : 1;
+  }
+}
+
+// The sections that switch the input source or post a probe's keys: the probe cells under the Latin source with the
+// per-context preference off, then the Korean and Unicode matrix. The owner's source and preference are saved on the
+// device before the first switch (the live harness's record, ./matrix-device.mjs source save) and restored after,
+// whatever happened; the record stays for the put-back, which verifies them again.
+async function inputSections(ctx, plan) {
+  if (!(plan.concurrent?.length || plan.sheet || plan.intervention?.length || plan.unicode?.fields.length)) return;
+  const saved = device(ctx, ['source', 'save']);
+  ctx.meta.inputSource = {savedNow: saved?.kept === false};
+  try {
+    const off = device(ctx, ['source', 'per-context', '--value', 'off']);
+    const latin = device(ctx, ['source', 'select', '--source', ABC]);
+    ctx.latin = off?.perContext === false && latin?.selected === true && latin.current === ABC;
+    ctx.meta.inputSource.latin = ctx.latin;
+    await probeCells(ctx, plan);
+    if (plan.unicode?.fields.length) await unicodeSection(ctx, plan.unicode);
+  } finally {
+    try {
+      const restored = device(ctx, ['source', 'restore']);
+      ctx.meta.inputSource.restored = restored?.sourceRestored === true && restored?.perContextRestored === true;
+      if (!ctx.meta.inputSource.restored) ctx.problems.push(`the owner's input source and per-context preference were not restored after the input sections${restored?.skipped ? ` (${restored.skipped})` : ''}; the put-back tries again`);
+    } catch (error) { ctx.problems.push(`the input source's restore failed: ${error.message}; the put-back tries again`); }
   }
 }
 
@@ -348,46 +396,6 @@ function finishWatch(ctx) {
 }
 
 // ---- the regimes --------------------------------------------------------------------------------------------------------
-
-// One case: prepare, act (one facade call), check; in the background regime the oracle's readings around the act, each
-// with the watcher alive. The row's window runs from its prepare's start to its check's end; the activations in it are
-// the row's (the frontmost regime records their count, the background regime's oracle judges them).
-async function caseRow(ctx, target, regime, c, {user = null, userWindow = null, speed = false} = {}) {
-  await ctx.checkpoint();
-  const scene = SCENE_OF[target];
-  const key = `row:${ctx.rows.length}`;
-  const row = {section: 'method', id: caseId(target, regime, c, user), engine: ctx.engine, sample: ctx.n, ok: false, scene, target, regime, method: c.method, case: c.case, expect: c.expect,
-    ...(user ? {user} : {})};
-  const cells = caseCells(target, c);
-  let from = null, to = null;
-  const span = r => { from ??= r?.at?.[0] ?? null; to = r?.at?.[1] ?? to; return r; };
-  const done = extra => { if (from !== null) mark(ctx, 'row', key, [from, to]); return push(ctx, {...row, ...extra}); };
-  const prepared = span(await ctx.lane.js(cells.prepare));
-  if (!prepared.ok) return done({invalid: 'the prepare cell failed', error: prepared.error});
-  if (!prepared.value?.ready) return done({invalid: `not prepared: ${prepared.value?.reason ?? 'no reason'}`});
-  let before = null;
-  if (regime === 'background') {
-    before = await userFront(ctx, user, userWindow);
-    if (!before) return done({invalid: 'the user window was not in front before the action'});
-    if (before.watcher !== true) return done({invalid: 'the activation watcher was not running before the action'});
-  }
-  if (PASTING.includes(c.method)) alertCheck(ctx, `before ${row.id}`);
-  const act = span(c.keys ? await sendKeys(ctx, cells.act, c.keys, {scene, front: before, userWindow, kind: 'row', key}) : await ctx.lane.js(cells.act));
-  if (act === null) return done({invalid: 'the key guard did not send the action\'s keys'});
-  if (PASTING.includes(c.method)) alertCheck(ctx, `after ${row.id}`);
-  if (!act.ok) return done({invalid: 'the act cell failed', error: act.error});
-  Object.assign(row, {inCellMs: act.value.actMs, wallMs: act.wallMs, inputRoute: act.route});
-  const after = regime === 'background' ? read(ctx, focusOf(userWindow)) : null;
-  const check = span(await ctx.lane.js(cells.check));
-  if (!check.ok) return done({invalid: 'the check cell failed', error: check.error});
-  if (check.value?.invalid) return done({invalid: check.value.invalid});
-  if (after && after.watcher !== true) return done({invalid: 'the activation watcher was not running after the action'});
-  const pushed = done({ok: check.value?.ok === true, outcome: check.value?.outcome ?? {}});
-  ctx.judged.set(key, {row: pushed, oracle: regime === 'background'
-    ? {before: before.reading, after: after.reading, focus: after.focus ?? null, inputRoute: act.route, scene, userPid: userWindow.pid} : null});
-  if (speed) push(ctx, {section: 'speed', id: `${scene}/method.${target === 'openPanel' ? 'panel.' : ''}${c.method}.${c.case}`, engine: ctx.engine, sample: ctx.n, ok: true, inCellMs: act.value.actMs, wallMs: act.wallMs});
-  return pushed;
-}
 
 // Every case of a target left invalid for one reason (its precondition could not be set up).
 const invalidCases = (ctx, target, regime, reason, user = null) => {

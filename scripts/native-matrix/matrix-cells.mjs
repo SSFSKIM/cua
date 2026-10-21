@@ -28,6 +28,7 @@ export const NOT_AN_ACTION = /is not a valid secondary action/i;
 //   panel(ax)    the front window is TextEdit's Open panel (its window element carries ID open-panel)
 //   count, plain the occurrences of a string; a value without the grammar's bold markers
 //   jpegSize     a screenshot's dimensions from its JPEG SOF or PNG IHDR (the bytes never leave the cell)
+//   sha256Hex    a string's SHA-256 (./matrix-text.mjs), for read-backs compared by hash
 //   nonce()      a fresh token, so a value a case writes was never there before
 //   refusedAs(s) the act threw, and its message carries the sentence `s` (a regular expression's source)
 //   __m          the case's state, from prepare to check
@@ -35,7 +36,7 @@ const sceneHead = scene => (scene === null ? '' : `const __app = globalThis.__ap
 if (!__app) throw new Error(${j(`the ${scene} scene is not bound`)});
 const observe = () => __app.getAXState({emit: false, disableDiffing: true});
 const inFront = ax => (windowTitleOf(ax) ?? "").startsWith(${j(SCENES[scene].window.title)});`);
-const prelude = scene => `${EMBEDDED}
+export const prelude = scene => `${EMBEDDED}
 const indexOfRowCell = ${indexOfRowCell.toString()};
 ${sceneHead(scene)}
 const panel = ax => /ID: open-panel\\b/.test(lineOfIndex(ax, 0) ?? "");
@@ -82,6 +83,13 @@ if (__m.threw !== null) return {ok: false, outcome: {...(__r?.outcome ?? {}), th
 return __r;`),
   };
 }
+
+// The scene's app observed once (an engine get_app_state): after a probe's keys into it have started the engine's
+// intervention debounce and set the re-query flag, the observation completed once the debounce has expired clears the
+// flag (the spec's "User intervention"), so the run's next action on the app is not refused. -> {observed}.
+export const requeryCell = scene => cell(`${prelude(scene)}
+await observe();
+return {observed: true};`);
 
 // The speed cells' selection: the scene's app as `app` and its exact front title as `__scratch`, so the baseline's
 // AX_FULL, SCREENSHOT and SCRATCH_GUARD cells (scripts/native-baseline/cells.mjs) measure the scene unchanged.

@@ -2,10 +2,16 @@
 // to 6): what every section of a run (./run.mjs; the probe cells, ./probe-run.mjs; the Korean and Unicode matrix,
 // ./unicode-run.mjs) does on the device and the lane, each keeping its device-clock window so the activation watcher's
 // events are accounted for (./oracle.mjs accountActivations). `ctx` is the run's (./run.mjs runOnce): {ops, run, rows,
-// problems, meta, samples, n, engine, records, lane, checkpoint, log, now, watcher, windows, judged}.
+// problems, meta, samples, n, engine, records, lane, checkpoint, log, now, sleep, watcher, windows, judged, posted}.
 import {frontmostFromProbe, sendIfFrontmost} from '../accept/key-guard.mjs';
 import {guardOf, SCENES} from '../repl-parity/scenes-mac.mjs';
+import {COMPOSITION_QUIET_MS} from './live-device.mjs';
+import {caseCells, requeryCell} from './matrix-cells.mjs';
 import {userWindowOf} from './oracle.mjs';
+import {caseId, SCENE_OF} from './plan.mjs';
+
+// The acts that may paste (type_text's paste route included): each sent only between two alert checks.
+export const PASTING = Object.freeze(['paste', 'typeText']);
 
 // Stops the run (its put-back runs): something the run must not act past.
 export class Stop extends Error {}
@@ -69,3 +75,74 @@ export async function userFront(ctx, user, userWindow) {
   return sameWindow(userWindowOf(r.reading, userWindow.pid), userWindow) ? r : null;
 }
 
+
+// A matrix-device command that changes nothing on screen (the scheduled probes, the input source), its window the
+// harness's, intending no activation. -> the command's answer.
+export function device(ctx, args) {
+  const {answer, at} = ctx.ops.matrix([...args, '--run', ctx.run]) ?? {};
+  mark(ctx, 'harness', args.slice(0, 2).join(':'), at, []);
+  return answer;
+}
+
+// The engine's intervention debounce after a probe's keys into a scene (the keys are a user's to the engine; ./live-
+// device.mjs COMPOSITION_QUIET_MS): the run records when the probe was known done (`ctx.posted[scene]`, the controller's
+// clock), and before it drives that scene again it waits the debounce out (waitQuiet) and observes the scene once, which
+// clears the re-query flag (quiet). Without it the run's own next step would be refused as the user's intervention.
+export async function waitQuiet(ctx, scene) {
+  const at = ctx.posted[scene];
+  if (at === undefined) return;
+  const wait = at + COMPOSITION_QUIET_MS - ctx.now();
+  if (wait > 0) await ctx.sleep(wait);
+}
+export async function quiet(ctx, scene) {
+  if (ctx.posted[scene] === undefined) return;
+  await waitQuiet(ctx, scene);
+  const observed = await js(ctx, 'harness', `requery:${scene}`, requeryCell(scene));
+  if (!observed.ok) throw new Stop(`${scene} could not be observed after the probe's keys (${observed.error}): its re-query flag stays set`);
+  delete ctx.posted[scene];
+}
+
+// ---- a case's row ----------------------------------------------------------------------------------------------------
+
+// One case: prepare, act (one facade call), check; in the background regime the oracle's readings around the act, each
+// with the watcher alive. A method row by default; the Unicode matrix's rows name their own section and id (`extra`
+// kept on the row). The row's window runs from its prepare's start to its check's end; the activations in it are
+// the row's (the frontmost regime records their count, the background regime's oracle judges them).
+export async function caseRow(ctx, target, regime, c, {user = null, userWindow = null, speed = false, section = 'method', id = null, userValue = null, extra = {}} = {}) {
+  await ctx.checkpoint();
+  const scene = SCENE_OF[target];
+  const key = `row:${ctx.rows.length}`;
+  const row = {section, id: id ?? caseId(target, regime, c, user), engine: ctx.engine, sample: ctx.n, ok: false, scene, target, regime, method: c.method, case: c.case, expect: c.expect,
+    ...(user ? {user} : {}), ...extra};
+  const cells = caseCells(target, c);
+  let from = null, to = null;
+  const span = r => { from ??= r?.at?.[0] ?? null; to = r?.at?.[1] ?? to; return r; };
+  const done = extra => { if (from !== null) mark(ctx, 'row', key, [from, to]); return push(ctx, {...row, ...extra}); };
+  const prepared = span(await ctx.lane.js(cells.prepare));
+  if (!prepared.ok) return done({invalid: 'the prepare cell failed', error: prepared.error});
+  if (!prepared.value?.ready) return done({invalid: `not prepared: ${prepared.value?.reason ?? 'no reason'}`});
+  let before = null;
+  if (regime === 'background') {
+    before = await userFront(ctx, user, userWindow);
+    if (!before) return done({invalid: 'the user window was not in front before the action'});
+    if (before.watcher !== true) return done({invalid: 'the activation watcher was not running before the action'});
+  }
+  if (PASTING.includes(c.method)) alertCheck(ctx, `before ${row.id}`);
+  const act = span(c.keys ? await sendKeys(ctx, cells.act, c.keys, {scene, front: before, userWindow, kind: 'row', key}) : await ctx.lane.js(cells.act));
+  if (act === null) return done({invalid: 'the key guard did not send the action\'s keys'});
+  if (PASTING.includes(c.method)) alertCheck(ctx, `after ${row.id}`);
+  if (!act.ok) return done({invalid: 'the act cell failed', error: act.error});
+  Object.assign(row, {inCellMs: act.value.actMs, wallMs: act.wallMs, inputRoute: act.route});
+  const after = regime === 'background' ? read(ctx, focusOf(userWindow)) : null;
+  const check = span(await ctx.lane.js(cells.check));
+  if (!check.ok) return done({invalid: 'the check cell failed', error: check.error});
+  if (check.value?.invalid) return done({invalid: check.value.invalid});
+  if (after && after.watcher !== true) return done({invalid: 'the activation watcher was not running after the action'});
+  // With `userValue`, the user window's field must also have kept that value (the focus probe's hash after the act).
+  const kept = userValue === null ? null : after?.focus?.named === true && after.focus.valueHash === userValue;
+  const pushed = done({ok: check.value?.ok === true && kept !== false, outcome: {...(check.value?.outcome ?? {}), ...(kept === null ? {} : {userKept: kept})}});
+  ctx.judged.set(key, {row: pushed, oracle: regime === 'background'
+    ? {before: before.reading, after: after.reading, focus: after.focus ?? null, inputRoute: act.route, scene, userPid: userWindow.pid} : null});
+  if (speed) push(ctx, {section: 'speed', id: `${scene}/method.${target === 'openPanel' ? 'panel.' : ''}${c.method}.${c.case}`, engine: ctx.engine, sample: ctx.n, ok: true, inCellMs: act.value.actMs, wallMs: act.wallMs});
+  return pushed;
+}

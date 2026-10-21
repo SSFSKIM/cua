@@ -252,8 +252,8 @@ extension Engine {
         let ax = AXOps.live
         if forced == nil, button == .left, count == 1, resolved.entry.identity.role == kAXMenuBarItemRole,
            menuOfMenuBarItem(resolved.element, ax: ax) != nil {
-          meta.inputRoute = .action  // an accessibility-only path: nothing is posted
-          context.connection.recordMenu(resolved.element, app: app.key)
+          meta.inputRoute = .action  // nothing is pressed or posted to the item; the app's activation is held (MenuSpan.swift)
+          try holdMenuRecord(resolved.element, app: app, appPid: appPid, guarding: guarding, context: context, meta: &meta)
           return ["meta": meta.wire]
         }
         let target = try positionedTarget(resolved, token: token, app: app, appPid: appPid, context: context, guarding: guarding)

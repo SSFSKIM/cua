@@ -133,12 +133,24 @@ final class Engine: @unchecked Sendable {
     // The lock screen, then every app-scoped method resolves, so the forbidden list holds on every call whoever the
     // client is. An input method refused here carries the input meta like any other error of an input method (nothing
     // posted).
+    // A request on the connection holds off the menu span's idle bound while it runs; a span that lapsed while idle takes
+    // its record with it before anything reads the record (MenuSpan.swift).
+    if let lapsed = connection.menuSpan.requestBegan() { connection.menuRecords[lapsed] = nil }
+    defer { connection.menuSpan.requestEnded() }
+    var target: ResolvedApp?
     do {
       try refuseWhenLocked(isLocked: screenLocked)
-      if method != "list_apps" && method != "resolve_app" && (args["app"] != nil || args["pid"] != nil) { _ = try resolveApp(args) }
+      if method != "list_apps" && method != "resolve_app" && (args["app"] != nil || args["pid"] != nil) { target = try resolveApp(args) }
     } catch let error as EngineError where inputMethods.contains(method) {
       throw withMeta(error, InputMeta(context))
     }
+    // The held menu activation: kept for the recorded menu's observations, ended after the item press (unless the
+    // request recorded a menu anew), ended before anything aimed elsewhere.
+    let step = menuSpanStep(method: method, app: target?.key, heldApp: connection.menuSpan.app,
+                            inRecordedMenu: target.map { connection.inRecordedMenu(args, app: $0.key, lineage: context.lineage) } ?? false)
+    if step == .endBefore { connection.endMenuInteraction() }
+    let spanBefore = connection.menuSpan.serial
+    defer { if step == .endAfter && connection.menuSpan.serial == spanBefore { connection.endMenuInteraction() } }
     switch method {
     case "list_apps": return apps.list()
     case "resolve_app":

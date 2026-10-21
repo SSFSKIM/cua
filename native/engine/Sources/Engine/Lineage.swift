@@ -40,11 +40,15 @@ final class ConnectionState: @unchecked Sendable {
   /// Per app (by lineage key), the menu-bar item a plain click recorded, at which observations root their walk
   /// (MenuRecord.swift).
   var menuRecords: [String: AXUIElement] = [:]
+  /// The record's held activation (MenuSpan.swift).
+  let menuSpan: MenuSpan
 
-  init(id: Int, fd: Int32) {
+  init(id: Int, fd: Int32, menuSpan: MenuSpan = MenuSpan()) {
     self.id = id
     self.fd = fd
+    self.menuSpan = menuSpan
   }
+
 
   func markActed(_ app: ResolvedApp) { needsSettle.insert(app.key) }
 }

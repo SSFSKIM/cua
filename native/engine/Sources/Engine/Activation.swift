@@ -84,6 +84,9 @@ struct ActivationSystem {
           let id = windowNumber(of: window, pid: user, frame: frame(of: window)) else { return nil }
     return (window, id)
   }
+  /// The user's front window by its number alone, from the window list (no Accessibility call on the user's app): the
+  /// menu's held activation, whose restore is by activation only.
+  var userWindowNumber: (pid_t) -> CGWindowID? = frontWindowNumber
   var isInFront: (CGWindowID, CGWindowID) -> Bool = windowIsInFront
   var raise: (AXUIElement) -> Void = { AXUIElementPerformAction($0, kAXRaiseAction as CFString) }
   var activationPoint: (AXUIElement) -> CGPoint? = { point(attribute($0, "AXActivationPoint")) }
@@ -106,6 +109,15 @@ func windowIsInFront(_ window: CGWindowID, of other: CGWindowID) -> Bool {
     if number == other { return false }
   }
   return false
+}
+
+/// The frontmost on-screen window of `pid` in the ordinary layer (CGWindowList lists front to back); nil when it has none.
+func frontWindowNumber(of pid: pid_t) -> CGWindowID? {
+  guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { return nil }
+  for info in list where (info[kCGWindowOwnerPID as String] as? Int).map(pid_t.init) == pid && (info[kCGWindowLayer as String] as? Int) == 0 {
+    if let number = info[kCGWindowNumber as String] as? Int { return CGWindowID(number) }
+  }
+  return nil
 }
 
 /// Route 3's refusal (Interfaces, input errors): the action's own events were never posted.
@@ -139,15 +151,19 @@ final class FakeActivation {
   /// Where the activation click must not land (the target of a click with another button than the left,
   /// `activationSparing`); the click is skipped there.
   let sparing: CGRect?
+  /// The guard keeps the user's window on top by re-activating the user's app rather than by AXRaise on its window, and
+  /// reads that window from the window list: no Accessibility call on any other app (the menu's held activation).
+  let restoresByActivationOnly: Bool
   private let system: ActivationSystem
   private(set) var activated = false
   /// How long the guard held after the activation pair, for the result's meta; nil when no guard ran.
   private(set) var guardMs: Double?
 
   init(pid: pid_t, appPid: pid_t? = nil, window: AXUIElement, windowFrame: CGRect?, windowID: CGWindowID?, sparing: CGRect? = nil,
-       system: ActivationSystem = ActivationSystem()) {
+       restoresByActivationOnly: Bool = false, system: ActivationSystem = ActivationSystem()) {
     self.pid = pid
     self.sparing = sparing
+    self.restoresByActivationOnly = restoresByActivationOnly
     self.appPid = appPid ?? pid
     self.window = window
     self.windowFrame = windowFrame
@@ -156,10 +172,12 @@ final class FakeActivation {
   }
 
   /// The window's frame and number read from the Accessibility API.
-  convenience init(pid: pid_t, appPid: pid_t? = nil, window: AXUIElement, sparing: CGRect? = nil, system: ActivationSystem = ActivationSystem()) {
+  convenience init(pid: pid_t, appPid: pid_t? = nil, window: AXUIElement, sparing: CGRect? = nil, restoresByActivationOnly: Bool = false,
+                   system: ActivationSystem = ActivationSystem()) {
     let windowFrame = frame(of: window)
     self.init(pid: pid, appPid: appPid, window: window, windowFrame: windowFrame,
-              windowID: windowNumber(of: window, pid: pid, frame: windowFrame), sparing: sparing, system: system)
+              windowID: windowNumber(of: window, pid: pid, frame: windowFrame), sparing: sparing,
+              restoresByActivationOnly: restoresByActivationOnly, system: system)
   }
 
   /// The vendor's safelyEnforceActiveState: nothing when the app believes it has focus; otherwise the activation pair,
@@ -172,7 +190,14 @@ final class FakeActivation {
       postActivation()
       return
     }
-    let userWindow = system.userWindow(user)
+    // The user's window the target's must stay behind, and how it is brought back on top.
+    let userWindow: (id: CGWindowID, restore: () -> Void)?
+    let system = system
+    if restoresByActivationOnly {
+      userWindow = system.userWindowNumber(user).map { id in (id, { _ = system.reactivate(user) }) }
+    } else {
+      userWindow = system.userWindow(user).map { found in (found.id, { system.raise(found.element) }) }
+    }
     let release = OnceRelease(system.holdScreenUpdates())
     defer { release() }
     system.schedule(activationHoldCapMs) { release() }
@@ -194,7 +219,7 @@ final class FakeActivation {
       }
       if let windowID, let userWindow, system.isInFront(windowID, userWindow.id) {
         stable = 0
-        system.raise(userWindow.element)
+        userWindow.restore()
       } else {
         stable += 1
       }
@@ -204,11 +229,14 @@ final class FakeActivation {
     }
   }
 
-  /// After the action's events: the deactivation subtype, unless the app really is active now.
-  func deactivate() {
-    guard activated, system.frontmost() != pid else { return }
-    post(subtype: NSEvent.EventSubtype.applicationDeactivated.rawValue)
+  /// After the action's events: the deactivation subtype, unless the app really is active now. False only when the
+  /// deactivation was due and its event could not be made (the app may still believe itself active).
+  @discardableResult
+  func deactivate() -> Bool {
+    guard activated, system.frontmost() != pid else { return true }
+    guard post(subtype: NSEvent.EventSubtype.applicationDeactivated.rawValue) else { return false }
     activated = false
+    return true
   }
 
   /// The vendor's enforceActiveState for an app that does not believe it is active: subtype 1, then a left click at the
@@ -221,11 +249,13 @@ final class FakeActivation {
     _ = postToProcess(clickEvents(target, button: .left, count: 1, flags: []), pid: pid, post: system.post)
   }
 
-  private func post(subtype: Int16) {
+  @discardableResult
+  private func post(subtype: Int16) -> Bool {
     guard let event = NSEvent.otherEvent(with: .appKitDefined, location: .zero, modifierFlags: NSEvent.ModifierFlags(rawValue: 0xC0000),
                                          timestamp: 0, windowNumber: Int(windowID ?? 0), context: nil, subtype: subtype, data1: 0, data2: 0)?.cgEvent
-    else { return }
+    else { return false }
     event.timestamp = DispatchTime.now().uptimeNanoseconds
     system.post(event, pid)
+    return true
   }
 }

@@ -683,6 +683,7 @@ final class GuardSeam {
       return reactivates
     }
     system.userWindow = { _ in (AXUIElementCreateApplication(990_002), 42) }
+    system.userWindowNumber = { _ in 42 }
     var samples = 0
     system.isInFront = { _, _ in samples += 1; return self.targetInFront(samples) }
     system.raise = { _ in self.raises += 1; self.advance(self.raiseCost) }

@@ -10,10 +10,8 @@ import Foundation
 // nothing), when another item is recorded, and when the item is gone; an observation reads without clearing, and
 // keyboard and coordinate actions leave it. No AXCancel, Escape or menu-close event is ever sent.
 //
-// cua's difference, declared: no activation. The vendor fakes activation for the observed window first
-// (safelyEnforceActiveState); a background app's menu items are read and pressed through Accessibility without it, and
-// cua's activation is per action. Whether an item AppKit validates against the key window's responder chain reads
-// enabled and works without it is M2a.5's live check. The vendor's persistent observer also clears on `menuClosed`;
+// The record holds route 3's activation for the app from the record to the end of the menu interaction (MenuSpan.swift),
+// as the vendor's does; ending the span clears the record. The vendor's persistent observer also clears on `menuClosed`;
 // cua has no persistent observer and never opens the menu, so that clearing is not built.
 
 /// The menu a menu-bar item opens: the first of its direct AXChildren whose role is AXMenu (FUN_100083904; no
@@ -24,17 +22,26 @@ func menuOfMenuBarItem(_ element: AXUIElement, ax: AXOps) -> AXUIElement? {
 }
 
 extension ConnectionState {
-  /// Records `item` for the app (by its lineage key), replacing any earlier record.
-  func recordMenu(_ item: AXUIElement, app key: String) { menuRecords[key] = item }
+  /// Records `item` for the app (by its lineage key) with the span `release` ends, replacing any earlier record and
+  /// ending its span: a connection drives one menu at a time.
+  func recordMenu(_ item: AXUIElement, app key: String, release: @escaping () -> Bool) {
+    endMenuInteraction()
+    menuRecords = [key: item]
+    menuSpan.hold(app: key, release: release)
+  }
 
-  func clearMenuRecord(app key: String) { menuRecords[key] = nil }
+  /// Clears the app's record, ending its span.
+  func clearMenuRecord(app key: String) {
+    menuRecords[key] = nil
+    if menuSpan.app == key { menuSpan.end() }
+  }
 
   /// The recorded item an observation of the app roots its walk at; a record whose item is gone (its handle no longer
   /// valid) is dropped, and the observation walks the window.
   func menuRoot(app key: String, stillValid: (AXUIElement) -> Bool = { copyAttribute($0, kAXRoleAttribute).error != .invalidUIElement }) -> AXUIElement? {
     guard let item = menuRecords[key] else { return nil }
     guard stillValid(item) else {
-      menuRecords[key] = nil
+      clearMenuRecord(app: key)
       return nil
     }
     return item

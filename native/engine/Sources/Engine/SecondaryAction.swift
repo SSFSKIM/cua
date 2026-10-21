@@ -86,7 +86,7 @@ extension Engine {
       }
       if target.entry.identity.role == kAXMenuBarItemRole {
         if chosen.name == kAXPickAction, menuOfMenuBarItem(target.element, ax: ax) != nil {
-          context.connection.recordMenu(target.element, app: app.key)
+          try holdMenuRecord(target.element, app: app, appPid: appPid, guarding: guarding, context: context, meta: &meta)
           return ["meta": meta.wire]
         }
         if chosen.name == kAXCancelAction {

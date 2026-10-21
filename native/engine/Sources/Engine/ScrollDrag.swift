@@ -83,7 +83,7 @@ extension Engine {
         let resolved = try targetElement(token, app: app, appPid: appPid, context: context)
         // A minimized own window is refused before the scroll into view and the point (Minimized.swift).
         let (element, pointing, point) = try elementScrollPlacement(resolved.element, app: app.displayName, ax: .live) {
-          let element = try positionedTarget(resolved, token: token, app: app, appPid: appPid, context: context)
+          let element = try positionedTarget(resolved, token: token, app: app, appPid: appPid, context: context, guarding: guarding)
           let pointing = ElementPointing(element.element, owner: element.owner)
           guard let point = pointing.point else { throw EngineError(name: "cannotClickOffscreenElement", "The element is not visible on screen.") }
           return (element, pointing, point)
@@ -151,15 +151,16 @@ extension Engine {
       let route = coordinateClickRoute(forced: forced, foreground: routeFourOverride(app.bundleIdentifier, routes: routes))
       let activation = route == .activation
         ? FakeActivation(pid: owner, appPid: appPid, window: start.window, windowFrame: start.windowFrame, windowID: windowID) : nil
-      try recordingRouteAdvice(route, app: app, meta: &meta) { meta in
-        try deliverPointer(to: owner, route: route, activation: activation,
-                           foreground: route == .foreground ? ForegroundAssist(appPid: appPid) : nil,
-                           beforePosting: guarding.checkInFlight, post: { $0.postToPid($1) }, meta: &meta) {
-          let active = NSRunningApplication(processIdentifier: owner)?.isActive == true
-          return dragEvents(from: start.point, to: end.point, window: window, flags: clickFlags(route, targetActive: active))
+      try armingSettle(&meta, acted: { context.connection.markActed(app) }) { meta in
+        try recordingRouteAdvice(route, app: app, meta: &meta) { meta in
+          try deliverPointer(to: owner, route: route, activation: activation,
+                             foreground: route == .foreground ? ForegroundAssist(appPid: appPid) : nil,
+                             beforePosting: guarding.checkInFlight, post: { $0.postToPid($1) }, meta: &meta) {
+            let active = NSRunningApplication(processIdentifier: owner)?.isActive == true
+            return dragEvents(from: start.point, to: end.point, window: window, flags: clickFlags(route, targetActive: active))
+          }
         }
       }
-      context.connection.markActed(app)
       return ["meta": meta.wire]
     } catch let error as EngineError {
       throw withMeta(error, meta)

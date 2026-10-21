@@ -225,6 +225,14 @@ func deliverActivatedAction(_ action: String, activation: FakeActivation, before
   try deliverAction(action, perform: perform, meta: &meta)
 }
 
+/// An action's delivery with the deferred settle armed (`acted`, markActed) whenever `meta` says something was posted,
+/// a failure after the posting included (route 4's foregroundRestoreFailed, after every event; a route-1 action the
+/// element performed and erred on), and never when nothing was (a refusal before the first event).
+func armingSettle<T>(_ meta: inout InputMeta, acted: () -> Void, _ deliver: (inout InputMeta) throws -> T) throws -> T {
+  defer { if meta.startedAt != nil { acted() } }
+  return try deliver(&meta)
+}
+
 /// Whether a route-1 press takes `deliverActivatedAction`: only a menu item's, and only under the switch.
 func activatesPress(switchedOn: Bool, role: String) -> Bool { switchedOn && role == kAXMenuItemRole }
 
@@ -276,25 +284,27 @@ extension Engine {
           context.connection.recordMenu(resolved.element, app: app.key)
           return ["meta": meta.wire]
         }
-        let target = try positionedTarget(resolved, token: token, app: app, appPid: appPid, context: context)
+        let target = try positionedTarget(resolved, token: token, app: app, appPid: appPid, context: context, guarding: guarding)
         let pointing = ElementPointing(target.element, owner: target.owner, ax: ax)
         let plan = try elementClickPlan(forced: forced, button: button, count: count, role: target.entry.identity.role, actions: target.entry.actions,
                                         synthesized: synthesizedClickRoute(forced: nil, foreground: foreground)) {
           pointing.relation == .descendant  // no point, or no answer: the action needs no point
         }
-        switch plan {
-        case .action(let action):
-          let perform: (String) -> AXError = { AXUIElementPerformAction(target.element, $0 as CFString) }
-          if activatesPress(switchedOn: menuActivation, role: target.entry.identity.role) {
-            let application = prepare(AXUIElementCreateApplication(appPid))
-            let activation = FakeActivation(pid: target.owner, appPid: appPid, window: primaryWindow(of: application) ?? application)
-            try deliverActivatedAction(action, activation: activation, beforePressing: guarding.checkInFlight, perform: perform, meta: &meta)
-          } else {
-            try guarding.checkInFlight()
-            try deliverAction(action, perform: perform, meta: &meta)
+        try armingSettle(&meta, acted: { context.connection.markActed(app) }) { meta in
+          switch plan {
+          case .action(let action):
+            let perform: (String) -> AXError = { AXUIElementPerformAction(target.element, $0 as CFString) }
+            if activatesPress(switchedOn: menuActivation, role: target.entry.identity.role) {
+              let application = prepare(AXUIElementCreateApplication(appPid))
+              let activation = FakeActivation(pid: target.owner, appPid: appPid, window: primaryWindow(of: application) ?? application)
+              try deliverActivatedAction(action, activation: activation, beforePressing: guarding.checkInFlight, perform: perform, meta: &meta)
+            } else {
+              try guarding.checkInFlight()
+              try deliverAction(action, perform: perform, meta: &meta)
+            }
+          case .synthesized(let route):
+            try synthesizedClick(pointing, route: route, button: button, count: count, app: app, appPid: appPid, guarding: guarding, meta: &meta)
           }
-        case .synthesized(let route):
-          try synthesizedClick(pointing, route: route, button: button, count: count, app: app, appPid: appPid, guarding: guarding, meta: &meta)
         }
         context.connection.clearMenuRecord(app: app.key)
       } else {
@@ -309,14 +319,15 @@ extension Engine {
         let sparing = button == .left ? nil : activationSparing(button: button, target: pointArea(placed.point, hitFrame: hit.flatMap { frame(of: $0) }))
         let activation = route == .activation
           ? FakeActivation(pid: owner, appPid: appPid, window: placed.window, windowFrame: placed.windowFrame, windowID: windowID, sparing: sparing) : nil
-        try recordingRouteAdvice(route, app: app, meta: &meta) { meta in
-          try deliverClick(target, route: route, button: button, count: count, activation: activation,
-                           foreground: route == .foreground ? ForegroundAssist(appPid: appPid) : nil,
-                           targetActive: { NSRunningApplication(processIdentifier: owner)?.isActive == true },
-                           beforePosting: guarding.checkInFlight, post: { $0.postToPid($1) }, meta: &meta)
+        try armingSettle(&meta, acted: { context.connection.markActed(app) }) { meta in
+          try recordingRouteAdvice(route, app: app, meta: &meta) { meta in
+            try deliverClick(target, route: route, button: button, count: count, activation: activation,
+                             foreground: route == .foreground ? ForegroundAssist(appPid: appPid) : nil,
+                             targetActive: { NSRunningApplication(processIdentifier: owner)?.isActive == true },
+                             beforePosting: guarding.checkInFlight, post: { $0.postToPid($1) }, meta: &meta)
+          }
         }
       }
-      context.connection.markActed(app)
       return ["meta": meta.wire]
     } catch let error as EngineError {
       throw withMeta(error, meta)

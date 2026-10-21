@@ -117,6 +117,29 @@ final class ForegroundAssistTests: XCTestCase {
     XCTAssertLessThan(seam.clock, foregroundWaitMs + 100)
   }
 
+  /// The deferred settle is armed by what was posted, not by success: a click posted before route 4's restore failed
+  /// arms it; a click refused before its events does not.
+  func testAFailureAfterThePostingStillArmsTheSettleAndARefusalBeforeItDoesNot() {
+    let seam = GuardSeam(frontmost: user, reactivationTakesFront: true)
+    seam.reactivationRefused = [user]
+    var meta = meta(), acted = 0
+    XCTAssertThrowsError(try armingSettle(&meta, acted: { acted += 1 }) { meta in
+      try deliverClick(clickTarget(), route: .foreground, button: .left, count: 1, activation: nil,
+                       foreground: ForegroundAssist(appPid: target, system: seam.system), targetActive: { true }, post: seam.system.post, meta: &meta)
+    }) { error in XCTAssertEqual((error as? EngineError)?.errorName, "foregroundRestoreFailed") }
+    XCTAssertNotNil(meta.startedAt)
+    XCTAssertEqual(acted, 1, "the click changed the app: its next observation settles first")
+
+    let refusing = GuardSeam(frontmost: user, reactivates: false)   // the app never comes to the front
+    var refused = self.meta()
+    XCTAssertThrowsError(try armingSettle(&refused, acted: { acted += 1 }) { meta in
+      try deliverClick(clickTarget(), route: .foreground, button: .left, count: 1, activation: nil,
+                       foreground: ForegroundAssist(appPid: target, system: refusing.system), targetActive: { true }, post: refusing.system.post, meta: &meta)
+    }) { error in XCTAssertEqual((error as? EngineError)?.errorName, "activationFailed") }
+    XCTAssertNil(refused.startedAt)
+    XCTAssertEqual(acted, 1, "nothing was posted: no settle")
+  }
+
   /// A delivery that failed is the error reported, even when the restore did not take either.
   func testADeliverysFailureComesBeforeTheRestores() {
     let seam = GuardSeam(frontmost: user, reactivationTakesFront: true)

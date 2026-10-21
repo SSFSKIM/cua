@@ -30,11 +30,12 @@ func midpointShows(_ frame: CGRect?, in visible: CGRect?) -> Bool {
 }
 
 /// The vendor's positionElement through `ax`: nothing when the element's midpoint shows; otherwise one scroll-into-view
-/// operation per scrolling level, then the poll.
+/// operation per scrolling level, then the poll. `beforeMutating` runs before each action or write (the in-flight
+/// intervention check: a user event stops the preparation before it scrolls anything the user is looking at).
 @discardableResult
-func positionElement(_ element: AXUIElement, ax: AXOps) -> PositionOutcome {
+func positionElement(_ element: AXUIElement, ax: AXOps, beforeMutating: () throws -> Void = {}) throws -> PositionOutcome {
   if midpointShows(ax.frame(element), in: ax.visible(element)) { return .visible }
-  guard scrollIntoView(element, ax: ax) else { return .unscrollable }
+  guard try scrollIntoView(element, ax: ax, beforeMutating: beforeMutating) else { return .unscrollable }
   let started = ax.now()
   while true {
     if midpointShows(ax.frame(element), in: ax.visible(element)) { return .scrolled }
@@ -43,10 +44,15 @@ func positionElement(_ element: AXUIElement, ax: AXOps) -> PositionOutcome {
   }
 }
 
-/// The operations of `scrollToVisible(frame:)` (0x10078d8f4); true when one succeeded.
-func scrollIntoView(_ element: AXUIElement, ax: AXOps) -> Bool {
-  if ax.actions(element).contains("AXScrollToVisible") { return ax.perform(element, "AXScrollToVisible") == .success }
+/// The operations of `scrollToVisible(frame:)` (0x10078d8f4); true when one succeeded. `beforeMutating` runs before
+/// each action or write.
+func scrollIntoView(_ element: AXUIElement, ax: AXOps, beforeMutating: () throws -> Void = {}) throws -> Bool {
+  if ax.actions(element).contains("AXScrollToVisible") {
+    try beforeMutating()
+    return ax.perform(element, "AXScrollToVisible") == .success
+  }
   if ax.role(element) == kAXCellRole, ax.isSettable(element, "AXScrollToVisible") {
+    try beforeMutating()
     return ax.write(element, "AXScrollToVisible", kCFBooleanTrue) == .success
   }
   var scrolled = false
@@ -56,7 +62,9 @@ func scrollIntoView(_ element: AXUIElement, ax: AXOps) -> Bool {
     let role = ax.role(node) ?? ""
     if role == kAXApplicationRole || scrollBoundaryRoles.contains(role) { break }
     // The target's frame is read again at each level: an inner scroll has moved it.
-    if role == kAXScrollAreaRole, let target = ax.frame(element), scrollArea(node, toShow: target, ax: ax) { scrolled = true }
+    if role == kAXScrollAreaRole, let target = ax.frame(element), try scrollArea(node, toShow: target, ax: ax, beforeMutating: beforeMutating) {
+      scrolled = true
+    }
     current = ax.parent(node)
     level += 1
   }
@@ -68,18 +76,22 @@ private let scrollBoundaryRoles: Set<String> = [kAXWindowRole, kAXSheetRole, kAX
 
 /// One scroll area's operation: each bar whose axis does not show the target set to the fraction that does; where no
 /// bar could be set and the target lies outside the area, AXMakeScreenRectVisible set to the target's rect.
-private func scrollArea(_ area: AXUIElement, toShow target: CGRect, ax: AXOps) -> Bool {
+private func scrollArea(_ area: AXUIElement, toShow target: CGRect, ax: AXOps, beforeMutating: () throws -> Void) throws -> Bool {
   guard let viewport = ax.frame(area) else { return false }
   let content = elementList(ax.read(area, kAXContentsAttribute)).first.flatMap(ax.frame)
   var scrolled = false
   for (axis, attribute) in [(ScrollAxis.vertical, kAXVerticalScrollBarAttribute), (.horizontal, kAXHorizontalScrollBarAttribute)] {
     guard let content, let fraction = scrollBarFraction(showing: target, viewport: viewport, content: content, axis: axis),
           let bar = ax.element(area, attribute), ax.isSettable(bar, kAXValueAttribute) else { continue }
+    try beforeMutating()
     if ax.write(bar, kAXValueAttribute, NSNumber(value: fraction)) == .success { scrolled = true }
   }
   if !scrolled && !viewport.contains(target) {
     var rect = target
-    if let value = AXValueCreate(.cgRect, &rect), ax.write(area, "AXMakeScreenRectVisible", value) == .success { scrolled = true }
+    if let value = AXValueCreate(.cgRect, &rect) {
+      try beforeMutating()
+      if ax.write(area, "AXMakeScreenRectVisible", value) == .success { scrolled = true }
+    }
   }
   return scrolled
 }

@@ -84,28 +84,28 @@ final class PositioningTests: XCTestCase {
     return ax
   }
 
-  func testAnElementWhoseMidpointShowsIsLeftAlone() {
+  func testAnElementWhoseMidpointShowsIsLeftAlone() throws {
     let ax = list(rowAt: 150)
-    XCTAssertEqual(positionElement(el(4), ax: ax.ops), .visible)
+    XCTAssertEqual(try positionElement(el(4), ax: ax.ops), .visible)
     XCTAssertTrue(ax.writes.isEmpty)
     XCTAssertTrue(ax.performs.isEmpty)
   }
 
-  func testTheElementsOwnScrollToVisibleIsPerformedThenPolledUntilItShows() {
+  func testTheElementsOwnScrollToVisibleIsPerformedThenPolledUntilItShows() throws {
     let ax = list(rowAt: 600)
     ax.actions = [4: ["AXPress", "AXScrollToVisible"]]
     ax.onPerform = { id, _ in if id == 4 { ax.frames[4] = CGRect(x: 0, y: 200, width: 400, height: 20) } }
-    XCTAssertEqual(positionElement(el(4), ax: ax.ops), .scrolled)
+    XCTAssertEqual(try positionElement(el(4), ax: ax.ops), .scrolled)
     XCTAssertEqual(ax.performs.map(\.action), ["AXScrollToVisible"])
     XCTAssertTrue(ax.writes.isEmpty, "no bar is set when the element scrolls itself")
   }
 
-  func testACellUsesItsSettableScrollToVisibleAttribute() {
+  func testACellUsesItsSettableScrollToVisibleAttribute() throws {
     let ax = list(rowAt: 600)
     ax.roles[4] = kAXCellRole
     ax.settable = [4: ["AXScrollToVisible"]]
     ax.onWrite = { id, _, _ in if id == 4 { ax.frames[4] = CGRect(x: 0, y: 200, width: 400, height: 20) } }
-    XCTAssertEqual(positionElement(el(4), ax: ax.ops), .scrolled)
+    XCTAssertEqual(try positionElement(el(4), ax: ax.ops), .scrolled)
     XCTAssertEqual(ax.writes.map(\.attribute), ["AXScrollToVisible"])
     XCTAssertTrue(CFEqual(ax.writes[0].value, kCFBooleanTrue))
   }
@@ -114,24 +114,56 @@ final class PositioningTests: XCTestCase {
     let ax = list(rowAt: 600)  // 500 points into a 1000-point list behind a 200-point view: 800 scrollable
     ax.settable = [5: [kAXValueAttribute]]
     ax.onWrite = { id, _, _ in if id == 5 { ax.frames[4] = CGRect(x: 0, y: 280, width: 400, height: 20) } }
-    XCTAssertEqual(positionElement(el(4), ax: ax.ops), .scrolled)
+    XCTAssertEqual(try positionElement(el(4), ax: ax.ops), .scrolled)
     let write = try XCTUnwrap(ax.writes.first)
     XCTAssertEqual(write.id, 5)
     XCTAssertEqual((write.value as? NSNumber)?.doubleValue ?? -1, (520 - 200) / 800, accuracy: 1e-9, "the row's bottom at the view's bottom")
   }
 
-  func testNothingScrollableIsLeftWithoutAPoll() {
+  // MARK: The in-flight intervention check before each scroll operation
+
+  /// A check that lets `allowed` operations through, then answers the user's event.
+  private func intervening(after allowed: Int) -> (() throws -> Void, () -> Int) {
+    var calls = 0
+    return ({ calls += 1; if calls > allowed { throw EngineError(name: "userIntervened", "The user changed the app.") } }, { calls })
+  }
+
+  func testAUserEventDuringResolutionStopsTheScrollBeforeAnyAction() {
+    let ax = list(rowAt: 600)
+    ax.actions = [4: ["AXScrollToVisible"]]
+    let (check, _) = intervening(after: 0)
+    XCTAssertThrowsError(try positionElement(el(4), ax: ax.ops, beforeMutating: check)) { error in
+      XCTAssertEqual((error as? EngineError)?.errorName, "userIntervened")
+    }
+    XCTAssertTrue(ax.performs.isEmpty, "nothing scrolled under the user")
+    XCTAssertTrue(ax.writes.isEmpty)
+  }
+
+  func testAUserEventBetweenTwoBarWritesStopsBeforeTheSecond() {
+    let ax = list(rowAt: 600)
+    ax.frames[3] = CGRect(x: 0, y: 100, width: 1000, height: 1000)   // the list scrolls both ways
+    ax.frames[4] = CGRect(x: 600, y: 600, width: 100, height: 20)    // below and right of the view
+    ax.roles[6] = kAXScrollBarRole
+    ax.values[2]?[kAXHorizontalScrollBarAttribute] = el(6)
+    ax.settable = [5: [kAXValueAttribute], 6: [kAXValueAttribute]]
+    let (check, calls) = intervening(after: 1)
+    XCTAssertThrowsError(try positionElement(el(4), ax: ax.ops, beforeMutating: check))
+    XCTAssertEqual(ax.writes.map(\.id), [5], "the vertical bar was set before the event; the horizontal one never")
+    XCTAssertEqual(calls(), 2)
+  }
+
+  func testNothingScrollableIsLeftWithoutAPoll() throws {
     let ax = list(rowAt: 600)  // no action, not a cell, and the bar is not settable; AXMakeScreenRectVisible fails too
     var ops = ax.ops
     ops.write = { _, _, _ in .attributeUnsupported }
-    XCTAssertEqual(positionElement(el(4), ax: ops), .unscrollable)
+    XCTAssertEqual(try positionElement(el(4), ax: ops), .unscrollable)
     XCTAssertEqual(ax.sleeps, 0, "no operation succeeded, so nothing is polled")
   }
 
-  func testThePollsTimeoutIsSwallowedAtHalfASecond() {
+  func testThePollsTimeoutIsSwallowedAtHalfASecond() throws {
     let ax = list(rowAt: 600)
     ax.actions = [4: ["AXScrollToVisible"]]  // performed, but the row never moves
-    XCTAssertEqual(positionElement(el(4), ax: ax.ops), .stillHidden)
+    XCTAssertEqual(try positionElement(el(4), ax: ax.ops), .stillHidden)
     XCTAssertGreaterThanOrEqual(ax.clock, positionPollTimeoutMs)
     XCTAssertLessThan(ax.clock, positionPollTimeoutMs + positionPollIntervalMs)
     XCTAssertEqual(ax.sleeps, 5, "every 0.1 s")
@@ -368,6 +400,28 @@ final class ValueSettingTests: XCTestCase {
     XCTAssertThrowsError(try focusingClick(&refused, acted: { marks += 1 }) { _ in throw EngineError(name: "activationFailed", "guard") })
     XCTAssertNil(refused.startedAt, "a click refused before its events posts nothing")
     XCTAssertEqual(marks, 1, "and changes nothing")
+  }
+
+  func testAUserEventBeforeTheFocusWriteMovesNoFocus() {
+    var clicks = 0
+    let ax = field(focused: false)
+    XCTAssertThrowsError(try focusFieldIfNeeded(el(1), bundleIdentifier: nil, ax: ax.ops,
+                                                beforeMutating: { throw EngineError(name: "userIntervened", "x") }) { clicks += 1 })
+    XCTAssertTrue(ax.writes.isEmpty, "no AXFocused write")
+    XCTAssertEqual(clicks, 0)
+  }
+
+  func testAUserEventAfterTheFocusWriteStopsTheFallbackClick() {
+    var clicks = 0, checks = 0
+    let ax = field(focused: false)
+    var ops = ax.ops
+    ops.write = { _, name, _ in ax.writes.append((1, name, kCFBooleanTrue)); return .success }  // accepted, focus does not take
+    XCTAssertThrowsError(try focusFieldIfNeeded(el(1), bundleIdentifier: nil, ax: ops, beforeMutating: {
+      checks += 1
+      if checks > 1 { throw EngineError(name: "userIntervened", "x") }
+    }) { clicks += 1 })
+    XCTAssertEqual(ax.writes.map(\.attribute), [kAXFocusedAttribute])
+    XCTAssertEqual(clicks, 0, "the click is never posted")
   }
 
   func testSafarisDOMElementsGoStraightToTheClick() throws {

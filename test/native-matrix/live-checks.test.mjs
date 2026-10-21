@@ -277,7 +277,8 @@ test('compositionGuard: HID keys only while the scene\'s TextEdit is the front a
   const record = {pid: 600, window: {number: 41, bounds: {x: 10, y: 20, width: 600, height: 800}}};
   const ok = {frontmost: {pid: 600, bundleId: 'com.apple.TextEdit'}, topWindow: {ownerPid: 600, number: 41, bounds: {x: 10, y: 20, width: 600, height: 800}}, observedWindow: {pid: 600, frame: {x: 10, y: 20, width: 600, height: 800}}, record};
   assert.deepEqual(compositionGuard(ok), {post: true, reason: null});
-  assert.deepEqual(compositionGuard({...ok, frontmost: {pid: 5, bundleId: 'com.google.Chrome'}}), {post: false, reason: 'front app not the scene'});
+  assert.deepEqual(compositionGuard({...ok, frontmost: {pid: 5, bundleId: 'com.google.Chrome'}}),
+    {post: false, reason: 'front app not the scene', seen: {frontmost: {pid: 5, bundleId: 'com.google.Chrome'}, topWindow: ok.topWindow, sceneWindow: 41}});
   assert.deepEqual(compositionGuard({...ok, frontmost: null}), {post: false, reason: 'front app not the scene'});
   assert.equal(compositionGuard({...ok, topWindow: {ownerPid: 600, number: 99}}).reason, 'front window not the scene window');
   assert.equal(compositionGuard({...ok, topWindow: {ownerPid: 5, number: 41}}).reason, 'front window not the scene window');
@@ -289,6 +290,7 @@ test('compositionGuard: HID keys only while the scene\'s TextEdit is the front a
   const refused = compositionGuard({...ok, topWindow: {...ok.topWindow, bounds: placed}});
   assert.equal(refused.post, false);
   assert.deepEqual(refused.frames, {observed: ok.observedWindow.frame, observedPid: 600, frontWindow: placed, recordedAtUp: record.window.bounds});
+  assert.deepEqual(compositionGuard({...ok, topWindow: {ownerPid: 600, number: 99}}).seen.topWindow, {ownerPid: 600, number: 99}, 'a refused front window is kept');
   assert.equal(compositionGuard({...ok, topWindow: {ownerPid: 600, number: 41}}).post, false, 'no bounds read now: no post');
   assert.equal(compositionGuard({...ok, observedWindow: {pid: 600, frame: {x: 10, y: 20, width: Number.NaN, height: 800}}}).post, false, 'an unreadable dimension is no match');
 });

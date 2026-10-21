@@ -143,16 +143,44 @@ final class ImportedHTMLTests: XCTestCase {
       </body></html>
       """
     let result = try imported(html).lowercased()
-    for name in ["img", "link", "iframe", "frame", "frameset", "object", "embed", "script", "style", "video", "audio", "source", "meta", "base"] {
+    for name in ["img", "link", "iframe", "frame", "frameset", "object", "embed", "script", "video", "audio", "source", "meta", "base"] {
       XCTAssertFalse(result.contains("<\(name) ") || result.contains("<\(name)>") || result.contains("<\(name)/"), "\(name): \(result)")
     }
-    for attribute in ["style=", "src=", "background=", "poster=", "data=", "url("] {
+    for attribute in ["src=", "background=", "poster=", "data=", "url("] {
       XCTAssertFalse(result.contains(attribute), "\(attribute): \(result)")
     }
     XCTAssertFalse(result.contains("127.0.0.1"), result)
     XCTAssertTrue(result.contains("https://example.com/"), "a link's href loads nothing and is kept")
+    XCTAssertTrue(result.contains(#"style="color: red""#), "CSS that loads nothing is kept: \(result)")
+    XCTAssertFalse(result.contains("<body style"), "a style attribute left with no declaration is dropped: \(result)")
     let text = try rendered(html)
     XCTAssertTrue(text.contains("kept link") && text.contains("cell"), text)
+  }
+
+  /// The engine's RTF keeps the formatting CSS gives (review finding, round 3): a style attribute's bold and colour, and a
+  /// style element's rule with a child combinator, whose `>` must reach the import unescaped.
+  func testTheRTFKeepsStyleFormatting() throws {
+    let html = #"<style>p > b { color: #00ff00 }</style><p><span style="font-weight: bold; color: #ff0000">important</span> <b>green</b></p>"#
+    let rtf = try pasteRepresentations(html, format: .html)[1].data
+    let back = try XCTUnwrap(NSAttributedString(rtf: rtf, documentAttributes: nil))
+    func attributes(of word: String) -> (bold: Bool, red: CGFloat, green: CGFloat) {
+      let range = (back.string as NSString).range(of: word)
+      let font = back.attribute(.font, at: range.location, effectiveRange: nil) as? NSFont
+      let color = (back.attribute(.foregroundColor, at: range.location, effectiveRange: nil) as? NSColor)?.usingColorSpace(.sRGB)
+      return (font?.fontDescriptor.symbolicTraits.contains(.bold) ?? false, color?.redComponent ?? -1, color?.greenComponent ?? -1)
+    }
+    let important = attributes(of: "important")
+    XCTAssertTrue(important.bold)
+    XCTAssertEqual(important.red, 1, accuracy: 0.01)
+    XCTAssertEqual(important.green, 0, accuracy: 0.01)
+    XCTAssertEqual(attributes(of: "green").green, 1, accuracy: 0.01, "the child combinator survived the serialization")
+  }
+
+  /// A sheet that could close its own element in HTML is dropped whole.
+  func testASheetThatCouldCloseItsElementIsDropped() throws {
+    let result = try imported(#"<style>p::after { content: "</style><img src=http://127.0.0.1:9/x>" }</style><p>t</p>"#).lowercased()
+    XCTAssertFalse(result.contains("<img"), result)
+    XCTAssertFalse(result.contains("127.0.0.1"), result)
   }
 
   /// Text with no markup at all, and the empty string, still import.
@@ -681,6 +709,70 @@ final class InputSourceRouteTests: XCTestCase {
       let info = try installed(id)
       XCTAssertFalse(info.keyboardLayout, id)
       XCTAssertEqual(route(info), .paste, id)
+    }
+  }
+}
+
+
+// MARK: CSS
+
+/// Declarations and sheets keep what cannot load and lose what can, matched after comments and escapes are decoded;
+/// what cannot be parsed confidently is dropped whole (review finding, round 3).
+final class CSSSanitizerTests: XCTestCase {
+  func testDeclarationsKeepWhatCannotLoad() {
+    XCTAssertEqual(sanitizedDeclarations("font-weight: bold; color: #ff0000"), "font-weight: bold; color: #ff0000")
+    XCTAssertEqual(sanitizedDeclarations("color: red; background: url(http://127.0.0.1:9/x); margin: 0;"), "color: red; margin: 0")
+    XCTAssertEqual(sanitizedDeclarations("color: red /* url(x) */"), "color: red /* url(x) */", "a comment loads nothing")
+  }
+
+  func testEveryLoadingFunctionAndPropertyIsRemoved() {
+    for declaration in ["background: URL(x)", "background-image: image-set(\"a.png\" 1x)", "background: -webkit-image-set(\"a.png\" 1x)",
+                        "background: image(\"a.png\")", "background: cross-fade(url(a), url(b), 50%)", "background: -moz-element(#a)",
+                        "width: expression(alert(1))", "behavior: url(x.htc)", "-moz-binding: url(x.xml#b)", "content: \"url(x)\""] {
+      XCTAssertEqual(sanitizedDeclarations("color: red; " + declaration), "color: red", declaration)
+    }
+  }
+
+  func testAURLBehindAnEscapeOrACommentIsRemoved() {
+    for declaration in [#"background: u\72l(x)"#, #"background: \75 rl(x)"#, #"background: \000075\000072\00006c(x)"#,
+                        #"background: \u\r\l(x)"#, "background: url/**/(x)", "background: u/* */rl(x)", #"background: \55 RL(x)"#] {
+      XCTAssertEqual(sanitizedDeclarations("color: red; " + declaration), "color: red", declaration)
+    }
+  }
+
+  func testWhatCannotBeParsedIsDroppedWhole() {
+    for text in [#"color: red; content: "abc"#, "color: red; /* open", "color: red; width: calc(1px", "color: red; } p { x: y",
+                 "color red", #"color: red; background: url(x"#, "color: red\\"] {
+      XCTAssertNil(sanitizedDeclarations(text), text)
+    }
+  }
+
+  func testSheetsKeepTheirRulesAndLoseTheLoadingOnes() {
+    let sheet = #"""
+      @charset "utf-8";
+      @import url(http://127.0.0.1:9/a.css);
+      @IMPORT "b.css";
+      @\69mport "c.css";
+      @namespace svg url(http://www.w3.org/2000/svg);
+      @font-face { font-family: X; src: url(x.woff) }
+      p > b { color: red; background: url(y) }
+      i { background: url(z) }
+      @media screen { b { font-weight: bold; list-style-image: url(w) } }
+      @keyframes k { from { opacity: 0 } to { opacity: 1 } }
+      @unknown-rule { p { color: blue } }
+      """#
+    XCTAssertEqual(sanitizedSheet(sheet), """
+      @charset "utf-8";
+      p > b { color: red }
+      @media screen { b { font-weight: bold } }
+      @keyframes k { from { opacity: 0 }
+      to { opacity: 1 } }
+      """)
+  }
+
+  func testASheetThatCannotBeParsedIsDroppedWhole() {
+    for sheet in ["p { color: red", "p { color: red } }", #"p { content: "a }"#, "/* p { color: red }", "p { color: red } <x"] {
+      XCTAssertNil(sanitizedSheet(sheet), sheet)
     }
   }
 }

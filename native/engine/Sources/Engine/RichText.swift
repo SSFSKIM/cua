@@ -47,31 +47,40 @@ func pasteRepresentations(_ text: String, format: PasteFormat) throws -> [PasteR
 /// pasteboard's provider; the HTML it is given loads nothing (`htmlForImport`), so this is a backstop.
 private let htmlImportTimeoutSeconds = 5.0
 
-/// Elements that load a resource (or redirect, or carry CSS), removed with their content; `img` is replaced by its alt
-/// text instead.
-private let loadingElements: Set<String> = ["link", "iframe", "frame", "frameset", "object", "embed", "applet", "script", "style",
+/// Elements that load a resource (or redirect), removed with their content; `img` is replaced by its alt text instead,
+/// and `style` keeps what of its sheet cannot load (CSSSanitizer.swift).
+private let loadingElements: Set<String> = ["link", "iframe", "frame", "frameset", "object", "embed", "applet", "script",
                                             "video", "audio", "source", "track", "picture", "svg", "meta", "base"]
-/// Attributes that load a resource or carry CSS (where a `url()` can hide), dropped from every element.
+/// Attributes that load a resource, dropped from every element; `style` keeps what of its declarations cannot load.
 private let loadingAttributes: Set<String> = ["src", "srcset", "lowsrc", "dynsrc", "background", "poster", "data", "codebase",
-                                              "archive", "classid", "style", "manifest", "longdesc", "usemap", "action", "formaction",
+                                              "archive", "classid", "manifest", "longdesc", "usemap", "action", "formaction",
                                               "xlink:href", "ping"]
 
 /// The HTML AppKit's import is given for the RTF and the rendered text, so the engine fetches nothing at all: the
 /// source parsed structurally (`XMLDocument` with HTML tidying, inside a body so text without markup parses too), every
 /// `img` replaced by an escaped text node of its alt text, every resource-loading element removed with its content,
-/// every loading or CSS-carrying attribute, every event handler and every `href` outside `a` dropped, then serialized.
-/// public.html keeps the source as given. HTML the parser refuses is the write failure: nothing is touched.
+/// every loading attribute, every event handler and every `href` outside `a` dropped, and CSS kept but for what could
+/// load (style sheets and `style` attributes, CSSSanitizer.swift; one that cannot be parsed confidently is dropped whole),
+/// then serialized as HTML, so a style sheet's `>` reaches the import as a combinator. public.html keeps the source as
+/// given. HTML the parser refuses is the write failure: nothing is touched.
 func htmlForImport(_ html: String) throws -> String {
   guard let document = try? XMLDocument(xmlString: "<html><body>" + html + "</body></html>", options: [.documentTidyHTML]),
         let root = document.rootElement() else { throw clipboardWriteFailed }
   strip(root)
-  return root.xmlString
+  document.documentContentKind = .html
+  return document.xmlString
 }
 
 private func strip(_ element: XMLElement) {
   for attribute in element.attributes ?? [] {
     let name = (attribute.name ?? "").lowercased()
-    if loadingAttributes.contains(name) || name.hasPrefix("on") || (name == "href" && element.localName?.lowercased() != "a") {
+    if name == "style" {
+      if let kept = sanitizedDeclarations(attribute.stringValue ?? ""), !kept.isEmpty {
+        attribute.stringValue = kept
+      } else {
+        element.removeAttribute(forName: attribute.name ?? "")
+      }
+    } else if loadingAttributes.contains(name) || name.hasPrefix("on") || (name == "href" && element.localName?.lowercased() != "a") {
       element.removeAttribute(forName: attribute.name ?? "")
     }
   }
@@ -80,6 +89,8 @@ private func strip(_ element: XMLElement) {
     let name = (child.localName ?? "").lowercased()
     if name == "img" {
       element.replaceChild(at: index, with: XMLNode.text(withStringValue: child.attribute(forName: "alt")?.stringValue ?? "") as! XMLNode)
+    } else if name == "style" {
+      if let kept = sanitizedSheet(child.stringValue ?? ""), !kept.isEmpty { child.stringValue = kept } else { element.removeChild(at: index) }
     } else if loadingElements.contains(name) || (name == "input" && child.attribute(forName: "type")?.stringValue?.lowercased() == "image") {
       element.removeChild(at: index)
     } else {

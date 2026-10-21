@@ -21,10 +21,8 @@ struct Outcome {
   var exitAfter = false
 }
 
-/// The facade's methods this build does not implement yet (M2a adds them; paste answers its concealed refusal already).
-private let laterMethods: Set<String> = ["drag", "perform_secondary_action", "scroll", "select_text", "set_value"]
-/// The input methods: every error they return carries the input meta (Interfaces, input errors), the ones this build
-/// does not implement yet included, so a lock-screen refusal reads the same on every input method.
+/// The input methods: every error they return carries the input meta (Interfaces, input errors), paste's included, so a
+/// lock-screen refusal reads the same on every input method.
 private let inputMethods: Set<String> = ["click", "press_key", "type_text", "paste", "drag", "perform_secondary_action", "scroll", "select_text", "set_value"]
 
 final class Engine: @unchecked Sendable {
@@ -143,8 +141,11 @@ final class Engine: @unchecked Sendable {
     case "press_key": return try pressKey(args, context)
     case "type_text": return try typeText(args, context)
     case "paste": return try paste(args, context)
-    case _ where laterMethods.contains(method):
-      throw EngineError(name: "notImplemented", "\(method) is not implemented by this engine build")
+    case "set_value": return try setValue(args, context)
+    case "select_text": return try selectText(args, context)
+    case "perform_secondary_action": return try performSecondaryAction(args, context)
+    case "scroll": return try scroll(args, context)
+    case "drag": return try drag(args, context)
     default:
       throw EngineError(name: "unknownMethod", "Unknown method: \(method.prefix(64))")
     }

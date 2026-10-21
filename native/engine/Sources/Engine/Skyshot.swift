@@ -252,7 +252,11 @@ extension Engine {
       lineage.resetWatches()
     }
 
-    let menuBarElement = timings.time("menuBar") { elementAttribute(application, kAXMenuBarAttribute) }
+    // A recorded menu-bar item (MenuRecord.swift) roots the walk in place of the window and the menu bar, with no
+    // screenshot; the header stays the window's.
+    let menuRoot = connection.menuRoot(app: app.key)
+    if menuRoot != nil { timings.set("menuRoot", true) }
+    let menuBarElement = menuRoot != nil ? nil : timings.time("menuBar") { elementAttribute(application, kAXMenuBarAttribute) }
     let menuItems = timings.time("menuBar") { menuBarElement.map { elementList(attribute($0, kAXChildrenAttribute)) } ?? [] }
     let windowFrame = frame(of: window)
     // The window capture runs beside the tree walk (in-sitting tuning iteration 1): it needs only the window and its
@@ -263,7 +267,7 @@ extension Engine {
     // element token never change), and the capture thread only passes it to AX calls, which any thread may make, as
     // the walk's own reads of the same window on this thread do.
     nonisolated(unsafe) let captureWindow = window
-    let pendingCapture: PendingCapture<CapturedScreenshot>? = includeScreenshot
+    let pendingCapture: PendingCapture<CapturedScreenshot>? = includeScreenshot && menuRoot == nil
       ? PendingCapture { [self] timings in
           try capture(window: captureWindow, pid: capturePid, frame: windowFrame, into: outputDirectory!, name: displayName,
                       revision: captureRevision, timings: &timings)
@@ -281,8 +285,9 @@ extension Engine {
     }
     let deadline = monotonicMilliseconds() + Double(min(observationDeadlineMs, max(0, context.deadline - unixMilliseconds())))
     let walk = TreeWalk(source: source, lineage: lineage, limits: WalkLimits(deadline: deadline), markdown: markdownEnabled,
-                        interactionFlags: interactionFlags, chromium: chromium, visibleFrame: windowFrame)
-    timings.time("walk") { walk.run(window: window, menuBar: menuBarElement, menuItems: menuItems) }
+                        interactionFlags: interactionFlags, chromium: chromium, visibleFrame: menuRoot == nil ? windowFrame : nil)
+    timings.time("walk") { walk.run(window: menuRoot ?? window, menuBar: menuBarElement, menuItems: menuItems) }
+    walk.revision.menuRoot = menuRoot
     timings.merge(source.costs)
     timings.set("nodes", walk.nodes.count + walk.menuBar.count)
     timings.set("markdownFetches", walk.markdownFetches)

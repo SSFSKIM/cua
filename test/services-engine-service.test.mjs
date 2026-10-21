@@ -278,6 +278,22 @@ test('an input error carries the engine\'s meta; the next call\'s meta starts ov
   for (const key of ['cua/inputRoute', 'cua/actionInterval', 'cua/receivedAt', 'cua/hidIdleMs', 'cua/activationGuardMs', 'cua/pointUnconfirmed']) assert.equal(meta[key], null, key);
 });
 
+test('an unknown secondary action answers the vendor\'s sentence with the model\'s index, which only the service knows; its meta rides along', async t => {
+  const refusedMeta = {...INPUT_META, inputRoute: 1, startedAt: null, endedAt: null, activationGuardMs: undefined, pointUnconfirmed: undefined};
+  const {engine, getApp, call, meta} = await session(t, {handlers: {'execute:perform_secondary_action': () => {
+    throw new EngineFailure(-10005, 'Frobnicate is not a valid secondary action for the element', 'invalidSecondaryAction', {meta: refusedMeta});
+  }}});
+  const {app} = await getApp('TextEdit');
+  await assert.rejects(call(() => app.performSecondaryAction(2, 'Frobnicate')), error => {
+    assert.equal(error.message, 'Computer Use server error -10005: Frobnicate is not a valid secondary action for 2');
+    assert.equal(error.errorName, 'invalidSecondaryAction');
+    return true;
+  });
+  assert.equal(engine.executes().find(p => p.method === 'perform_secondary_action').args.element, 't2', 'the engine got the token, never the index');
+  assert.equal(meta['cua/inputRoute'], 1);
+  assert.deepEqual(meta['cua/actionInterval'], {startedAt: null, endedAt: null});
+});
+
 test('intervention, entered and routeAdvice ride as cua/ meta on results and on the userIntervened error that stopped a type_text; the next call starts over', async t => {
   const stopped = {...INPUT_META, inputRoute: "2'", activationGuardMs: undefined, pointUnconfirmed: undefined, entered: 3};
   const {getApp, call, meta} = await session(t, {handlers: {

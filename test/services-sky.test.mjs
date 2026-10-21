@@ -126,6 +126,28 @@ test('an input error whose meta says nothing was posted answers that nothing was
   }
 });
 
+test('a concealed set_value stopped under one of cua\'s set_value names repeats the name, value-free, and says whether anything was entered', async () => {
+  const value = VALUES['WORK_PASSWORD'];
+  const names = ['valueNotSettable', 'invalidNumber', 'invalidDate', 'unsupportedValueType', 'cannotClickOffscreenElement',
+    'elementNoLongerValid', 'elementAmbiguousBeforeRefetch', 'elementAmbiguousAfterRefetch'];
+  for (const name of names) {
+    const {service} = harness({answer: () => { throw new EngineError(name, `refused ${value}`, NOTHING_POSTED); }});
+    const error = await rejection(service.handleRpc(setValue(REF('WORK_PASSWORD'))));
+    assert.equal(error.code, 'secret_input_failed', name);
+    assert.match(error.message, new RegExp(`failed \\(${name}\\)`), `${name} is named`);
+    assert.match(error.message, /nothing was entered/, name);
+    assertValueFree(error);
+  }
+  // A refused write, and a value refused after the focus click posted: named, and maybe entered.
+  for (const name of ['actionFailed', 'invalidNumber']) {
+    const {service} = harness({answer: () => { throw new EngineError(name, `refused ${value}`, {...NOTHING_POSTED, inputRoute: '1', startedAt: 1000, endedAt: 1042}); }});
+    const error = await rejection(service.handleRpc(setValue(REF('WORK_PASSWORD'))));
+    assert.match(error.message, new RegExp(`failed \\(${name}\\)`), name);
+    assert.match(error.message, /may have been partly entered/, name);
+    assertValueFree(error);
+  }
+});
+
 test('userIntervened after substitution says which of its two sentences the model must act on, value-free, on both engines', async () => {
   const value = VALUES['WORK_PASSWORD'];
   const app = '/System/Applications/TextEdit.app';

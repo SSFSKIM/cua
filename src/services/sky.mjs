@@ -73,8 +73,11 @@ const FIELD_OF = {paste: 'text', type_text: 'text', set_value: 'value'};
 const REQUEST_KEYS = ['type', 'method', 'args'];
 
 // Error names a SkyComputerUseError may carry that a diagnostic repeats: the pinned vendor's (ServerErrorCode in @oai/sky
-// errors.js), and the four cua's engine raises that the vendor has no name for (the native engine spec's Interfaces,
-// all value-free). Anything else from the service is withheld.
+// errors.js); the four cua's engine raises that the vendor has no name for (the native engine spec's Interfaces); and
+// the names a concealed set_value can stop under in cua's engine: its element's resolution, the element not settable,
+// the value not of the element's type, the focus click finding nothing to click, the write refused. All are fixed
+// names, never the value. invalidNumber and invalidDate do say the secret does not parse as the element's type, which
+// is what the model must know to stop retrying it there. Anything else from the service is withheld.
 const ADMITTED_ERROR_NAMES = new Set([
   'senderProcessNotAuthenticated', 'couldNotGetRequestData', 'couldNotGetRequestTypeName', 'couldNotResolveRequestType',
   'unhandledEvent', 'unknownError', 'appNotAllowed', 'runningApplicationNotFound', 'accessibilityError',
@@ -82,6 +85,8 @@ const ADMITTED_ERROR_NAMES = new Set([
   'permissionsPending', 'blockedURL', 'userIntervened', 'couldNotGetSenderPID', 'ambiguousApp',
   'couldNotGetBootstrapPort', 'screenLocked', 'jsonRPCError',
   'concealedInputUnavailable', 'inputSourceChanged', 'noScreenshotForCoordinates', 'activationFailed',
+  'elementNoLongerValid', 'elementAmbiguousBeforeRefetch', 'elementAmbiguousAfterRefetch', 'valueNotSettable', 'invalidNumber',
+  'invalidDate', 'unsupportedValueType', 'cannotClickOffscreenElement', 'actionFailed',
 ]);
 
 // The substitution a request asks for: null to delegate it untouched, or {method, rule, input, reference, request}.

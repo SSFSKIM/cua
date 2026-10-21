@@ -43,10 +43,11 @@ final class ElementClickPlanTests: XCTestCase {
     XCTAssertEqual(calls, 1)
   }
 
-  /// The vendor opens a menu-bar item by activating the app and recording its menu (FUN_100083904's role test), never by
-  /// a press or a synthesized click: every click on one is refused before anything is posted, whatever the button,
-  /// count or forced route, and the gate is never consulted. The menu bar's own node is refused the same way: a
-  /// synthesized click at its midpoint would land on one of its items.
+  /// The vendor opens a menu-bar item by recording its menu (FUN_100083904's role test), never by a press or a
+  /// synthesized click: a click that reaches the plan (the record path, MenuRecord.swift, takes the plain left click on
+  /// an item with a menu before it) is refused before anything is posted, whatever the button, count or forced route,
+  /// and the gate is never consulted. The menu bar's own node is refused the same way: a synthesized click at its
+  /// midpoint would land on one of its items.
   func testEveryClickOnAMenuBarItemOrTheMenuBarIsRefused() {
     var calls = 0
     for role in ["AXMenuBarItem", "AXMenuBar"] {
@@ -56,7 +57,7 @@ final class ElementClickPlanTests: XCTestCase {
                                     gateCalls: &calls)) { error in
         XCTAssertEqual((error as? EngineError)?.errorName, "menuBarItemUnsupported")
         let message = (error as? EngineError)?.message ?? ""
-        XCTAssertTrue(message.contains("later engine release"), message)
+        XCTAssertTrue(message.contains("Only a plain left click") && message.contains("Nothing was clicked"), message)
         XCTAssertTrue(message.contains("keyboard shortcut") && message.contains("pressKey"), "the sentence names the alternative: \(message)")
         XCTAssertFalse(message.contains("M2a"), "no milestone names in model-facing text")
       }
@@ -598,6 +599,8 @@ struct GuardPost: Equatable {
   let kind: Kind
   let pid: pid_t
   let flags: CGEventFlags?
+  /// A mouse event's global point.
+  var location: CGPoint? = nil
 }
 
 /// Route 3's outside world on a fake clock: posts, holds and re-activations recorded; the frontmost app, the window
@@ -659,7 +662,8 @@ final class GuardSeam {
       default: kind = .other
       }
       if case .mouse = kind {
-        self.posts.append(GuardPost(kind: kind, pid: pid, flags: event.flags.intersection([.maskCommand, .maskShift, .maskControl, .maskAlternate])))
+        self.posts.append(GuardPost(kind: kind, pid: pid, flags: event.flags.intersection([.maskCommand, .maskShift, .maskControl, .maskAlternate]),
+                                    location: event.location))
       } else {
         self.posts.append(GuardPost(kind: kind, pid: pid, flags: nil))
       }

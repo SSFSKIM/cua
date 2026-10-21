@@ -97,8 +97,9 @@ export function loadNativeMacRun(dir) {
   return {dir, meta, rows, row, text};
 }
 
-// Whether two runs may be compared: both complete runs of this suite on macOS, from one sitting (one device, the harness
-// checkout at one commit, one approved engine, one vendor runtime) with the same cells (one controller commit). With
+// Whether two runs may be compared: both complete runs of this suite on macOS, from one sitting (one hold, named by both
+// runs; one device, the harness checkout at one commit, one approved engine, one vendor runtime) with the same cells
+// (one controller commit). With
 // declarations, the vendor-engine run first and the cua-engine run second; two runs of one engine (determinism) take none.
 export function checkPair(vendor, cua, {declarations = []} = {}) {
   for (const run of [vendor, cua]) {
@@ -109,6 +110,8 @@ export function checkPair(vendor, cua, {declarations = []} = {}) {
   const [a, b] = [vendor.meta, cua.meta];
   if (a.engine === b.engine) { if (declarations.length) throw new Error('two runs of the same engine are a determinism check: same-engine runs take no expected differences'); }
   else if (a.engine !== 'vendor' || b.engine !== 'cua') throw new Error('diff takes the vendor-engine run first and the cua-engine run second');
+  if (typeof a.sitting !== 'string' || !a.sitting || typeof b.sitting !== 'string' || !b.sitting) throw new Error('a run names no hold (meta.sitting): one sitting is one hold, which both runs name');
+  if (a.sitting !== b.sitting) throw new Error(`the runs are of two holds (${a.sitting}, ${b.sitting}): one sitting is one hold`);
   if (a.device !== b.device) throw new Error(`the runs are on two devices (${a.device}, ${b.device})`);
   if (a.commit !== b.commit) throw new Error(`the runs' harness checkouts are at two commits (${a.commit}, ${b.commit}): one sitting is one commit`);
   if (a.approved?.build !== b.approved?.build || !a.approved?.build) throw new Error('the runs served two approved engines (or none): one sitting is one approved engine');

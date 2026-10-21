@@ -36,7 +36,7 @@ test('cell settle runs the suite\'s lane with this checkout\'s commit; a dry run
   assert.equal(runs.length, 0);
   assert.match(lines.join('\n'), /native-mac suite/);
   assert.equal(await runCell('settle', options, io), 0);
-  assert.deepEqual(runs, [{device: 'mini', host: 'vendor', engine: 'cua', approvedRuntime: '/h', approvedEngine: '/e', commit: 'd'.repeat(40), out: '/tmp/settle-out'}]);
+  assert.deepEqual(runs, [{device: 'mini', host: 'vendor', engine: 'cua', approvedRuntime: '/h', approvedEngine: '/e', commit: 'd'.repeat(40), sitting: 's', out: '/tmp/settle-out'}]);
   await assert.rejects(runCell('nope', options, io), /settle/);
 });
 

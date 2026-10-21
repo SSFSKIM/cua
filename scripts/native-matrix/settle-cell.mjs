@@ -48,7 +48,7 @@ export async function runCell(name, options, io) {
     io.log(`dry: the native-mac suite's lane (--host ${lane.host} --engine ${lane.engine}) on ${lane.device}, whose settle rows become ${options.out}/result.json; nothing ran`);
     return 0;
   }
-  return io.runSuite({...lane, commit: io.controllerCheckout().commit, out: options.out, ...(options.run ? {run: options.run} : {})});
+  return io.runSuite({...lane, commit: io.controllerCheckout().commit, sitting: options.sitting, out: options.out, ...(options.run ? {run: options.run} : {})});
 }
 
 // The suite's own io (scripts/repl-parity/native-mac.mjs nativeMacIo), loaded when the cell runs.

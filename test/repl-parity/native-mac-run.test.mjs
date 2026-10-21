@@ -109,7 +109,7 @@ function fakeLane(device, {engine, host = engine, texts = laneTexts(engine), att
 const runLane = async ({engine, host = engine, device = fakeDevice(), lane, controller = {commit: 'd'.repeat(40), dirty: false}, ...options} = {}) => {
   const out = join(scratch(), engine);
   lane ??= fakeLane(device, {engine, host});
-  const code = await runNativeMac({device: 'mini', host, engine, approvedRuntime: APPROVED_RUNTIME, approvedEngine: APPROVED_ENGINE, commit: COMMIT, out, ...options},
+  const code = await runNativeMac({device: 'mini', host, engine, approvedRuntime: APPROVED_RUNTIME, approvedEngine: APPROVED_ENGINE, commit: COMMIT, sitting: 'hold-2b', out, ...options},
     {ops: device.ops, connect: lane.connect, controllerCheckout: () => controller, log: () => {}});
   const meta = fs.existsSync(join(out, 'meta.json')) ? JSON.parse(fs.readFileSync(join(out, 'meta.json'), 'utf8')) : null;
   return {code, out, meta, device, lane};
@@ -122,6 +122,7 @@ test('a lane through the facade on the four scenes: texts kept only after cua\'s
   assert.deepEqual({engine: vendor.meta.engine, host: vendor.meta.host, suite: vendor.meta.suite, commit: vendor.meta.commit, release: vendor.meta.runtimeRelease}, {engine: 'vendor', host: 'vendor', suite: 'native-mac', commit: COMMIT, release: RELEASE});
   assert.deepEqual(vendor.meta.engineAttestation, {attested: [ATTEST.vendor], unattested: 0});
   assert.equal(vendor.meta.approved.build, BUILD);
+  assert.equal(vendor.meta.sitting, 'hold-2b', 'the hold the diff pairs the lanes by');
   // The serve's lane pins the engine; only the scenes' approvals were accepted.
   assert.deepEqual(vendor.device.calls.find(c => c[0] === 'serve'), ['serve', 'vendor', 'vendor']);
   assert.deepEqual(vendor.lane.elicitations.map(e => e.action), ['accept', 'accept', 'accept', 'accept']);
@@ -238,6 +239,11 @@ test('an engine that will not stop when the run ends: the run is incomplete and 
   assert.match(run.meta.error, /did not stop when the run ended: busy/);
   const journal = JSON.parse(fs.readFileSync(join(run.out, 'preparation.json'), 'utf8'));
   assert.deepEqual([journal.device, journal.prepared.home, journal.preparationCleaned], ['mini', '/h', true]);
+});
+
+test('a lane names its hold, or it is not run', async () => {
+  await assert.rejects(runLane({engine: 'cua', sitting: undefined}), /needs the hold it belongs to/);
+  await assert.rejects(runLane({engine: 'cua', sitting: ''}), /needs the hold it belongs to/);
 });
 
 test('a scene whose up failed part way is still brought down', async () => {

@@ -99,15 +99,17 @@ export function laneAttestationProblem(record, {engine, approved, checkoutBuild,
   return null;
 }
 
-// options: {device, host, engine, approvedRuntime, approvedEngine, commit (the prepared sitting's), out, run?}.
+// options: {device, host, engine, approvedRuntime, approvedEngine, commit (the prepared sitting's), sitting (the hold's id,
+// in meta.json: the diff pairs two lanes only of one hold), out, run?}.
 // io: {ops (nativeMacOps), connect(spec, handlers) -> MCP client, controllerCheckout() -> {commit, dirty}, log, sleep}.
 export async function runNativeMac(options, io) {
-  const {device, host, engine, approvedRuntime, approvedEngine, commit, out} = options;
+  const {device, host, engine, approvedRuntime, approvedEngine, commit, sitting, out} = options;
   const {ops, log = console.log} = io;
+  if (typeof sitting !== 'string' || !sitting) throw new Error('a native-mac lane needs the hold it belongs to (its sitting id): the diff pairs two lanes of one hold only');
   const dir = resolve(out);
   if (fs.existsSync(join(dir, 'meta.json'))) throw new Error(`${dir} already holds a run: choose a new --out`);
   fs.mkdirSync(dir, {recursive: true});
-  const meta = {schema: 'native-mac-1', suite: 'native-mac', device, platform: 'darwin', host, engine, commit, approvedRuntime, approvedEngine,
+  const meta = {schema: 'native-mac-1', suite: 'native-mac', device, platform: 'darwin', host, engine, sitting, commit, approvedRuntime, approvedEngine,
     started: new Date().toISOString(), plan: {scenes: [...SCENE_IDS]}, problems: [], scenes: {}, elicitations: [], complete: false};
   const write = () => fs.writeFileSync(join(dir, 'meta.json'), `${JSON.stringify(meta, null, 2)}\n`);
   // The lane's settle rows as the matrix's settle cell (scripts/native-matrix/settle-cell.mjs), beside meta.json.

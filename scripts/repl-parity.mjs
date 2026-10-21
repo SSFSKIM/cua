@@ -80,9 +80,10 @@ export async function main(argv=process.argv.slice(2)){
  v.suite??='cells';
  if(action!=='run'||!v.out)throw new Error('Usage: repl-parity prepare|cleanup-prepared|run|diff; run requires --out');
  if(v.suite==='native-mac'){
-  // One lane per run, on the prepared sitting's commit, approved runtime and approved engine (./repl-parity/native-mac.mjs).
+  // One lane per run, on the prepared sitting's commit, approved runtime and approved engine (./repl-parity/native-mac.mjs);
+  // the preparation's time is the hold's id the diff pairs the lanes by (one prepare per sitting).
   const prepared=approvedJournalFor(json(state(v.device)),v);
-  process.exitCode=await runNativeMac({device:v.device,host:v.host,engine:v.engine,approvedRuntime:v['approved-runtime'],approvedEngine:v['approved-engine'],commit:prepared.commit,out:v.out},nativeMacIo(v.device));return;
+  process.exitCode=await runNativeMac({device:v.device,host:v.host,engine:v.engine,approvedRuntime:v['approved-runtime'],approvedEngine:v['approved-engine'],commit:prepared.commit,sitting:prepared.preparedAt,out:v.out},nativeMacIo(v.device));return;
  }
  if(v.device==='local'){
   const {scenarios:selected,pending}=selectScenarios(scenarios,inventory,{suite:v.suite,through:v.through,platform:process.platform});

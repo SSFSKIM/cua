@@ -185,6 +185,10 @@ test('checkPair: one sitting, one checkout, one approved engine, the vendor-engi
   assert.throws(() => checkPair(vendor, run('c4', 'cua', {commit: 'f'.repeat(40)}), {declarations}), /commit/);
   assert.throws(() => checkPair(vendor, run('c5', 'cua', {harness: {commit: 'f'.repeat(40), dirty: false}}), {declarations}), /cells/);
   assert.throws(() => checkPair(vendor, run('c6', 'cua', {suite: 'native'}), {declarations}), /native-mac/);
+  // Two holds with the same software, or a run naming none, are not one sitting.
+  assert.throws(() => checkPair(vendor, run('c7', 'cua', {sitting: 'hold-2c'}), {declarations}), /two holds \(hold-2b, hold-2c\)/);
+  assert.throws(() => checkPair(vendor, run('c8', 'cua', {sitting: undefined}), {declarations}), /names no hold/);
+  assert.throws(() => checkPair(run('v4', 'vendor', {sitting: ''}), run('c9', 'cua', {sitting: ''}), {declarations}), /names no hold/);
 });
 
 test('loadNativeMacRun refuses a text that is not the one its row hashed', () => {

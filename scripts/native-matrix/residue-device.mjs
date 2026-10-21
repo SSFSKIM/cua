@@ -11,13 +11,14 @@ import {TEXTEDIT_BUNDLE_ID} from '../repl-parity/scenes-mac.mjs';
 import {ownershipProblems} from './goldens-device.mjs';
 import {activationsOf, attempt, getState, until} from './live-device.mjs';
 import {enablementOf, minimizeButton, textArea} from './live-checks.mjs';
-import {SELECT_BEFORE, SELECT_MINIMIZED, minimizedSelectRanges, modeAt, parseAccessibilityRecord, preparedEngineSettings} from './residue-checks.mjs';
+import {SELECT_BEFORE, SELECT_MINIMIZED, minimizedSelectRanges, modeAt, parseAccessibilityRecord, preparedEngineSettings, rangeOf} from './residue-checks.mjs';
 
 // ---- `--probe text-view` -----------------------------------------------------------------------------------------
 
 // The run's text view as the probe reads it (TextViewProbe.swift): of the process's windows, the one with a text area
 // (the scene's only window), its minimized flag, selected range and scroll-bar values, and whether the app's focused
-// element is that text area. -> {minimized, range, horizontal, vertical, focusedRole, focusedIsTextArea} or {error}.
+// element is that text area; whether the text area's midpoint shows (as an element scroll's preparation reads it).
+// -> {minimized, range, horizontal, vertical, midpointShows, focusedRole, focusedIsTextArea} or {error}.
 export function textViewOf(answer) {
   if (!answer || answer.error) return {error: String(answer?.error ?? 'no answer').slice(0, 300)};
   const windows = Array.isArray(answer.windows) ? answer.windows : [];
@@ -26,7 +27,7 @@ export function textViewOf(answer) {
   const w = windows[index], bars = w.textArea.scrollBars ?? {};
   const number = v => (typeof v === 'number' && Number.isFinite(v) ? v : null);
   return {minimized: w.minimized === true, range: w.textArea.selectedRange ?? null, horizontal: number(bars.horizontal), vertical: number(bars.vertical),
-    focusedRole: answer.focused?.role ?? null, focusedIsTextArea: answer.focused?.textAreaOfWindow === index};
+    midpointShows: typeof w.textArea.midpointShows === 'boolean' ? w.textArea.midpointShows : null, focusedRole: answer.focused?.role ?? null, focusedIsTextArea: answer.focused?.textAreaOfWindow === index};
 }
 const readTextView = (io, pid) => { try { return textViewOf(io.probe(['text-view', '--pid', String(pid)])); } catch (error) { return {error: String(error.message).slice(0, 300)}; } };
 
@@ -37,8 +38,8 @@ const readTextView = (io, pid) => { try { return textViewOf(io.probe(['text-view
 // it launches, so the approved bundle is launched here under a prepared home (inside the run directory) whose
 // engine.json gives the scene's TextEdit route 4, the owner's own peerPolicy and routes copied in (read, never
 // written). `status.routes` must name it before anything is sent. The run's TextEdit is behind the run's Finder window:
-// a selection is set by Accessibility, then a synthesized click on the text area (no AXPress: route 3's place, route 4
-// by the override) must collapse it, by route 4, with Finder frontmost again, its window on top and the engine's read
+// a selection is set by Accessibility (read back by `--probe text-view`), then a synthesized click on the text area (no
+// AXPress: route 3's place, route 4 by the override) must collapse it to a caret the probe reads, by route 4, with Finder frontmost again, its window on top and the engine's read
 // of Finder's key window the same as before (keyWindowRestored). The activation watcher records what route 4
 // activated. The engine launched under the prepared home is shut down before the cell returns, whatever happened, so
 // no later client meets it; the put-back's engine stop covers a cell that died.
@@ -62,9 +63,11 @@ export async function route4Check({record, user, io, run, screenshots}) {
     let shot = await observe();
     const owned = ownershipProblems('textedit', shot, record);
     if (owned.length) return {problem: `the observation is not the run's TextEdit window (${owned.map(p => p.code).join(', ')}); nothing was sent`, steps};
+    const expected = rangeOf(textArea(shot)?.value, SELECT_MINIMIZED);
     const selected = await attempt(() => client.execute('select_text', {app, element: textArea(shot).token, text: SELECT_MINIMIZED}, {lineage: shot.lineage}));
+    steps.preparedRange = readTextView(io, record.pid).range ?? null;
+    steps.prepared = selected.ok && expected !== null && steps.preparedRange?.location === expected.location && steps.preparedRange?.length === expected.length;
     shot = await observe();
-    steps.prepared = selected.ok && shot.selectedText === SELECT_MINIMIZED;
     steps.userInFrontBefore = userInFront();
     const topBefore = io.frontWindow()?.topWindow ?? null;
     steps.topBeforeIsUser = topBefore?.ownerPid === user.pid && topBefore?.number === user.window.number;
@@ -72,8 +75,11 @@ export async function route4Check({record, user, io, run, screenshots}) {
     steps.click = await attempt(() => client.execute('click', {app, element: textArea(shot).token}, {lineage: shot.lineage}));
     const top = io.frontWindow()?.topWindow ?? null;
     steps.after = {frontRestored: userInFront(), topWindowRestored: top?.ownerPid === user.pid && top?.number === user.window.number};
-    shot = await observe();
-    steps.landed = !shot.selectedText;
+    // Delivery is the caret the probe reads on the text area itself: the observation's selected text goes through the
+    // focused element, whose failed read shows no selection as a collapsed one does.
+    const landed = readTextView(io, record.pid);
+    steps.landedRange = landed.range ?? null;
+    if (landed.error) steps.landedError = landed.error;
   } catch (error) {
     problem = `the route4 check stopped: ${String(error.message).slice(0, 300)}`;
   } finally {
@@ -196,24 +202,27 @@ export async function enablementCheck({record, io, screenshots}) {
 
 // ---- hscroll -----------------------------------------------------------------------------------------------------
 
-// The scene's horizontal and vertical scroll-bar values (after `settleMs`, so a scroll's animation has ended), by the
-// probe: what both lanes are judged by. With `start`, the probe first writes that value to the horizontal scroll bar
-// (the harness's own AX path, neither lane's), so a lane starts mid-way and a scroll either way shows.
+// The scene's horizontal and vertical scroll-bar values (after `settleMs`, so a scroll's animation has ended) and whether
+// its text area's midpoint shows, by the probe: what both lanes are judged by. With `start`, the probe first writes that
+// value to both scroll bars (the harness's own AX path, neither lane's), so a lane starts mid-way, a scroll either way
+// shows, and the text area's midpoint shows (an element scroll's preparation then has nothing to move).
 export const HSCROLL_START = 0.5;
 export async function hscrollRead({record, io, settleMs = 0, start = null}) {
   if (settleMs > 0) await io.sleep(settleMs);
-  let read;
+  const setting = start === null ? [] : ['--set-horizontal', String(start), '--set-vertical', String(start)];
+  let answer = null, read;
   try {
-    const answer = io.probe(['text-view', '--pid', String(record.pid), ...(start === null ? [] : ['--set-horizontal', String(start)])]);
-    read = {...textViewOf(answer), ...(start === null ? {} : {set: answer?.set ?? null})};
+    answer = io.probe(['text-view', '--pid', String(record.pid), ...setting]);
+    read = textViewOf(answer);
   } catch (error) { read = {error: String(error.message).slice(0, 300)}; }
-  return read.error ? {error: read.error, ...(read.set ? {set: read.set} : {})} : {horizontal: read.horizontal, vertical: read.vertical, ...(start === null ? {} : {set: read.set})};
+  const set = start === null ? {} : {set: answer?.set ?? null};
+  return read.error ? {error: read.error, ...set} : {horizontal: read.horizontal, vertical: read.vertical, midpointShows: read.midpointShows, ...set};
 }
 export const HSCROLL_SETTLE_MS = 1_000;
 
 // cua's lane of the horizontal scroll: the run's wide-page TextEdit behind the run's Finder window, its text area
 // started mid-way (HSCROLL_START, by the probe), scrolled right by one page through the engine, read back by position
-// before and after.
+// before and after. A failed read after the scroll is kept as its error, never as a position.
 export async function hscrollCheck({record, user, client, io, screenshots}) {
   const userInFront = () => io.frontmost()?.pid === user.pid;
   if (!userInFront()) return {problem: 'the user window (the run\'s Finder) is not in front; nothing was sent'};

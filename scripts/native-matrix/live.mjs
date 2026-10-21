@@ -86,7 +86,7 @@ import {counts} from './cell-result.mjs';
 import {EFFECT, MENU_BAR, MENU_ITEM, SCROLL_RIGHT, SELECT_FIRST_LINE} from './live-cells.mjs';
 import {JOURNAL_FILE, MENU_ITEMS, menuComparison, putBackBoundMs, recoverBoundMs} from './live-checks.mjs';
 import {HSCROLL_START} from './residue-device.mjs';
-import {CHROME_NOT_JUDGED, RESIDUE_CELLS, asCellResult, hscrollVerdict, isResidueCell, residueRows} from './residue-checks.mjs';
+import {CHROME_NOT_JUDGED, RESIDUE_CELLS, asCellResult, gapProblem, hscrollVerdict, isResidueCell, residueGaps, residueRows} from './residue-checks.mjs';
 import {SCENES} from '../repl-parity/scenes-mac.mjs';
 
 const SCRIPT = fileURLToPath(import.meta.url);
@@ -236,7 +236,11 @@ export async function runLive(options, io) {
     await checkpoint();
     result.check = await CHECKS[command](ctx);
     // A residue cell's lane that stopped (cua's on the device, the vendor's through its serve) leaves the cell unfinished.
-    if (isResidueCell(command)) for (const lane of ['cua', 'vendor']) if (result.check?.[lane]?.problem) result.problems.push(`the ${lane} lane stopped: ${result.check[lane].problem}`);
+    // A mandatory lane or item without valid evidence leaves it incomplete too (./residue-checks.mjs residueGaps).
+    if (isResidueCell(command)) {
+      for (const lane of ['cua', 'vendor']) if (result.check?.[lane]?.problem) result.problems.push(`the ${lane} lane stopped: ${result.check[lane].problem}`);
+      for (const gap of residueGaps(command, residueRows(command, result.check))) result.problems.push(gapProblem(gap));
+    }
     result.pass = checkPassed(command, result.check);
     const composition = command === 'paste' ? compositionSummary(result.check) : null;
     if (composition) log(`paste ${composition}`);
@@ -275,11 +279,11 @@ export function checkPassed(command, check) {
   if (!check || check.problem) return false;
   if (command === 'minimized' || command === 'input-source') return check.verdict?.pass === true;
   if (command === 'paste') return check.verdict?.pass === true;
-  // A residue cell passes when its rows count (./residue-checks.mjs; the CellResult's verdict rule, ./cell-result.mjs,
-  // where a declared row counts).
+  // A residue cell passes when every mandatory row gave valid evidence and every valid row counts (./residue-checks.mjs;
+  // the CellResult's verdict rule, ./cell-result.mjs, where a declared row counts).
   if (isResidueCell(command)) {
     const rows = residueRows(command, check), valid = rows.filter(row => !row.invalid);
-    return valid.length > 0 && valid.every(counts);
+    return valid.length > 0 && valid.every(counts) && residueGaps(command, rows).length === 0;
   }
   return false;
 }
@@ -449,20 +453,22 @@ async function hscrollCheck(ctx) {
 
 // The device's answers on the success path, by the CLI and its command, so a dry run walks the whole sequence.
 const DRY_RELEASE = '26.928.40906-darwin-arm64';
+const DRY_SET = Object.freeze({horizontal: {requested: 0.5, written: true, error: null}, vertical: {requested: 0.5, written: true, error: null}});
 export const DRY_ANSWERS = Object.freeze({
   'live-device.mjs begin': {refusals: [], checkout: {dirty: false}, engine: {build: '(the approved build)'}, frontmost: {bundleId: 'com.apple.Terminal'}, engineStop: {wasRunning: false}},
   'live-device.mjs minimized': {steps: {}, verdict: {pass: true}},
   'live-device.mjs menu': {items: Object.fromEntries(['selectAll', 'bold'].map(id => [id, {found: true, enabled: true, valid: true, clicked: true,
     click: {ok: true, route: 1, posted: true}, effect: true}])), activations: []},
   'live-device.mjs route4': {steps: {override: {read: true, routes: 1}, prepared: true, userInFrontBefore: true, topBeforeIsUser: true,
-    click: {ok: true, route: 4, posted: true, keyWindowRestored: true}, after: {frontRestored: true, topWindowRestored: true}, landed: true, activations: []}},
+    preparedRange: {location: 106, length: 7}, click: {ok: true, route: 4, posted: true, keyWindowRestored: true}, after: {frontRestored: true, topWindowRestored: true},
+    landedRange: {location: 0, length: 0}, activations: []}},
   'live-device.mjs minimized-select': {steps: {expected: {before: {location: 34, length: 7}, minimized: {location: 106, length: 7}},
     prior: {ok: true, range: {location: 34, length: 7}}, minimize: {ok: true, minimized: true},
     select: {ok: true, route: 1, minimizedBefore: true, minimizedAfter: true}, probeMinimized: {range: {location: 106, length: 7}, minimizedBefore: true, minimizedAfter: true},
     engineMinimized: {selectedText: 'Line 10', minimizedBefore: true, minimizedAfter: true}, restore: {ok: true, onScreen: true}, restored: {range: {location: 106, length: 7}, selectedText: 'Line 10'}}},
-  'live-device.mjs hscroll': {before: {horizontal: 0.5, vertical: 0, set: {requested: 0.5, written: true, error: null}}, scroll: {ok: true, route: "2'", posted: true},
-    after: {horizontal: 0.9, vertical: 0}, userInFront: true},
-  'live-device.mjs hscroll-read': {horizontal: 0.9, vertical: 0},
+  'live-device.mjs hscroll': {before: {horizontal: 0.5, vertical: 0.5, midpointShows: true, set: DRY_SET}, scroll: {ok: true, route: "2'", posted: true},
+    after: {horizontal: 0.9, vertical: 0.5, midpointShows: true}, userInFront: true},
+  'live-device.mjs hscroll-read': {horizontal: 0.9, vertical: 0.5, midpointShows: true},
   'live-device.mjs paste': {steps: {pasteAlert: false, precondition: {selected: true, readBack: 'com.apple.inputmethod.Korean.2SetKorean', perContextOff: true, met: true},
     inputSource: {perContext: {read: true, setOff: true, restored: true}, restored: true}, clipboard: {typesUnchanged: true},
     hidComposition: {variants: Object.fromEntries(['unicode', 'keyCodesOnly', 'ansiKeys'].map(variant => [variant, {emptied: true, activated: true, source: 'com.apple.inputmethod.Korean.2SetKorean',
@@ -498,7 +504,7 @@ export function dryExec({log, commit}) {
     let answer = match ? DRY_ANSWERS[`${match[1]} ${match[2]}`] : null;
     if (!answer) throw new Error(`the dry run has no answer for: ${script.slice(0, 200)}`);
     // The vendor's hscroll reads: before its scroll the bar set mid-way, after it moved right.
-    if (match[2] === 'hscroll-read' && /'--start'/.test(script)) answer = {...answer, horizontal: 0.5, set: {requested: 0.5, written: true, error: null}};
+    if (match[2] === 'hscroll-read' && /'--start'/.test(script)) answer = {...answer, horizontal: 0.5, set: DRY_SET};
     return `${JSON.stringify(answer)}\n`;
   };
 }
@@ -515,7 +521,7 @@ export function dryConnect({log}) {
         const [, tag] = /\/\* ((?:goldens|live):\w+ \w+) \*\//.exec(params.arguments.code) ?? [null, 'first'];
         log(`  vendor cell: ${tag}`);
         if (/:bind /.test(tag)) { await handlers.answer({method: 'elicitation/create', params: {_meta: {connector_id: 'computer-use', tool_params: {app: 'com.apple.TextEdit'}}}}); return answer({bound: true}); }
-        return answer({ready: true, prepared: true, barFound: true, recorded: true, found: true, enabled: true, clicked: true, effect: true});
+        return answer({ready: true, prepared: true, barFound: true, recorded: true, found: true, enabled: true, clicked: true, effect: true, scrolled: true, scrollError: null});
       },
       async call(name) { log(`  vendor: ${name}`); return {}; },
       async close() {},

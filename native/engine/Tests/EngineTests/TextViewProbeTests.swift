@@ -23,6 +23,13 @@ final class TextViewProbeTests: XCTestCase {
       XCTAssertNil(TextViewRequest.parse(bad), "\(bad)")
     }
     XCTAssertNil(textViewProbePid(["--pid", "612", "--set-horizontal", "0.5"]), "the read-only form takes no write")
+    XCTAssertEqual(TextViewRequest.parse(["--pid", "612", "--set-horizontal", "0.5", "--set-vertical", "0.25"]),
+                   TextViewRequest(pid: 612, setHorizontal: 0.5, setVertical: 0.25))
+    XCTAssertEqual(TextViewRequest.parse(["--pid", "612", "--set-vertical", "1"])?.writes, true)
+    for bad in [["--pid", "612", "--set-vertical", "2"], ["--pid", "612", "--set-vertical", "0.5", "--set-vertical", "0.5"]] {
+      XCTAssertNil(TextViewRequest.parse(bad), "\(bad)")
+    }
+    XCTAssertNil(textViewProbePid(["--pid", "612", "--set-vertical", "0.5"]))
   }
 
   // window 0 > [toolbar 1 > [button 2], scroll area 3 > [group 4 > [text area 5], scroll bar 6]], text area 7

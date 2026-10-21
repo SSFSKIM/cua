@@ -6,39 +6,48 @@ import Foundation
 // of the process's windows (AXWindows, a minimized one included): whether it reads minimized, and its first text area's
 // AXSelectedTextRange and the scroll bars' values of the scroll area around it. Plus the application's focused element:
 // its role, and which window's text area it is, if any. Numbers, Booleans and roles only: no title, value or text ever
-// leaves. With `--set-horizontal <v>` it first writes that value to the first text area's horizontal scroll bar (the
-// only write it makes, on a harness-owned window). The `select_text` minimized cell reads the selection the engine's observation (which goes through the focused
-// element) may not see; the horizontal scroll cell reads the content's position for both engines' lanes alike.
+// leaves. With `--set-horizontal <v>` and `--set-vertical <v>` it first writes those values to the first text area's
+// scroll bars (the only writes it makes, on a harness-owned window). The `select_text` minimized cell and route 4's click
+// read the selection the engine's observation (which goes through the focused element) may not see; the horizontal
+// scroll cell reads the content's position for both engines' lanes alike, and whether the text area's midpoint shows
+// (`midpointShows`, the condition under which an element scroll's positionElement does nothing before its wheel).
 
-/// The probe's arguments: `--pid <n>`, and optionally `--set-horizontal <v>`, a value in [0, 1] written to the text
-/// area's horizontal scroll bar before the reading (the hscroll cell's starting position, set by the harness's own AX
-/// path, not by either lane under test).
+/// The probe's arguments: `--pid <n>`, and optionally `--set-horizontal <v>` and `--set-vertical <v>`, values in [0, 1]
+/// written to the text area's scroll bars before the reading (the hscroll cell's starting position, set by the harness's
+/// own AX path, not by either lane under test).
 struct TextViewRequest: Equatable {
   let pid: pid_t
   var setHorizontal: Double? = nil
+  var setVertical: Double? = nil
 
   static func parse(_ arguments: [String]) -> TextViewRequest? {
-    var pid: pid_t?, set: Double?
+    var pid: pid_t?, horizontal: Double?, vertical: Double?
     var rest = arguments[...]
+    let unit: (String) -> Double? = { value in Double(value).flatMap { $0.isFinite && $0 >= 0 && $0 <= 1 ? $0 : nil } }
     while let flag = rest.popFirst() {
       guard let value = rest.popFirst() else { return nil }
       switch flag {
       case "--pid" where pid == nil:
         guard let n = Int32(value), n > 0 else { return nil }
         pid = n
-      case "--set-horizontal" where set == nil:
-        guard let v = Double(value), v.isFinite, v >= 0, v <= 1 else { return nil }
-        set = v
+      case "--set-horizontal" where horizontal == nil:
+        guard let v = unit(value) else { return nil }
+        horizontal = v
+      case "--set-vertical" where vertical == nil:
+        guard let v = unit(value) else { return nil }
+        vertical = v
       default: return nil
       }
     }
-    return pid.map { TextViewRequest(pid: $0, setHorizontal: set) }
+    return pid.map { TextViewRequest(pid: $0, setHorizontal: horizontal, setVertical: vertical) }
   }
+
+  var writes: Bool { setHorizontal != nil || setVertical != nil }
 }
 
 /// `--pid <n>` alone (the read-only form); nil for anything else.
 func textViewProbePid(_ arguments: [String]) -> pid_t? {
-  guard let request = TextViewRequest.parse(arguments), request.setHorizontal == nil else { return nil }
+  guard let request = TextViewRequest.parse(arguments), !request.writes else { return nil }
   return request.pid
 }
 
@@ -74,7 +83,7 @@ func nearestAncestor<Element>(of element: Element, role: String, roleOf: (Elemen
 
 extension Probe {
   static func textView(_ arguments: [String]) -> Int32 {
-    guard let request = TextViewRequest.parse(arguments) else { return emit(["error": "usage: --probe text-view --pid <n> [--set-horizontal <0..1>]"], status: 64) }
+    guard let request = TextViewRequest.parse(arguments) else { return emit(["error": "usage: --probe text-view --pid <n> [--set-horizontal <0..1>] [--set-vertical <0..1>]"], status: 64) }
     let pid = request.pid
     var setWire: [String: Any]? = nil
     guard AXIsProcessTrusted() else { return emit(["error": "this bundle has no Accessibility grant"], status: 3) }
@@ -93,10 +102,14 @@ extension Probe {
       if let area = firstDescendant(of: window, role: kAXTextAreaRole, roleOf: roleOf, children: children) {
         var read: [String: Any] = ["selectedRange": rangeWire(attribute(area, kAXSelectedTextRangeAttribute)) ?? NSNull()]
         if let scrollArea = nearestAncestor(of: area, role: kAXScrollAreaRole, roleOf: roleOf, parent: { elementAttribute($0, kAXParentAttribute) }) {
-          if let target = request.setHorizontal, setWire == nil {
-            let bar = elementAttribute(scrollArea, kAXHorizontalScrollBarAttribute)
-            let written = bar.map { AXUIElementSetAttributeValue($0, kAXValueAttribute as CFString, NSNumber(value: target)) }
-            setWire = ["requested": target, "written": written.map { $0 == .success } ?? false, "error": written.map { Int($0.rawValue) } ?? NSNull()]
+          if request.writes, setWire == nil {
+            var wire: [String: Any] = [:]
+            for (name, target, attribute) in [("horizontal", request.setHorizontal, kAXHorizontalScrollBarAttribute), ("vertical", request.setVertical, kAXVerticalScrollBarAttribute)] {
+              guard let target else { continue }
+              let written = elementAttribute(scrollArea, attribute).map { AXUIElementSetAttributeValue($0, kAXValueAttribute as CFString, NSNumber(value: target)) }
+              wire[name] = ["requested": target, "written": written.map { $0 == .success } ?? false, "error": written.map { Int($0.rawValue) } ?? "no \(name) scroll bar"]
+            }
+            setWire = wire
             usleep(200_000)  // the scroll view moves its content on the next pass of the app's run loop
           }
           let value: (String) -> Any = { name in
@@ -104,6 +117,9 @@ extension Probe {
           }
           read["scrollBars"] = ["horizontal": value(kAXHorizontalScrollBarAttribute), "vertical": value(kAXVerticalScrollBarAttribute)]
         }
+        // As positionElement reads it (Positioning.swift): the frame's midpoint inside the part its clipping ancestors show.
+        let ax = AXOps.live
+        read["midpointShows"] = midpointShows(ax.frame(area), in: ax.visible(area))
         if let focused, CFEqual(focused, area) { focusedWindow = index }
         entry["textArea"] = read
       } else {
@@ -114,7 +130,7 @@ extension Probe {
     let focusedRole: Any = focused.flatMap(roleOf) ?? NSNull()
     let focusedArea: Any = focusedWindow ?? NSNull()
     var answer: [String: Any] = ["pid": Int(pid), "windows": windows, "focused": ["role": focusedRole, "textAreaOfWindow": focusedArea]]
-    if let target = request.setHorizontal { answer["set"] = setWire ?? ["requested": target, "written": false, "error": "no horizontal scroll bar"] }
+    if request.writes { answer["set"] = setWire ?? ["error": "no scroll area around a text area"] }
     return emit(answer, status: 0)
   }
 }

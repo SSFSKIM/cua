@@ -214,6 +214,22 @@ test('menu: cua\'s item reading disabled where the vendor\'s acts falls short; i
   assert.deepEqual(r.rows.filter(row => !row.ok).map(row => `${row.engine} ${row.id} ${row.outcome.label}`), ['cua menu/textedit-behind-finder/selectAll read disabled']);
 });
 
+test('menu: cua\'s items invalid while the vendor\'s act leave the cell incomplete, its invalid rows kept; neither the command nor the CellResult passes', async () => {
+  const lost = {...WORKS, valid: false};
+  const device = fakeDevice({frontmost: () => ({pid: 700, bundleId: 'com.apple.finder'}), live: {menu: {items: {selectAll: lost, bold: lost}, activations: []}}});
+  const out = scratch(), lines = [];
+  const code = await runLive({command: 'menu', device: 'mini', out, approvedRuntime: '/h'}, io(device, {connect: fakeVendor({texts: vendorTexts()}).connect, log: line => lines.push(line)}));
+  assert.equal(code, 1);
+  const r = result(out);
+  assert.notEqual(r.verdict, 'pass');
+  assert.equal(r.complete, false);
+  assert.match(lines.at(-1), /^menu INCOMPLETE/);
+  assert.deepEqual(r.rows.filter(row => row.engine === 'cua').map(row => Boolean(row.invalid)), [true, true]);
+  assert.deepEqual(r.rows.filter(row => row.engine === 'vendor').map(row => row.ok), [true, true]);
+  assert.ok(r.problems.some(p => /^no valid evidence: menu\/textedit-behind-finder\/selectAll \(cua\)/.test(p)), r.problems.join('; '));
+  assert.deepEqual(validateCellResult(r), []);
+});
+
 test('paste: TextEdit and Finder up, Finder in front, the device check, then the put-back', async () => {
   const device = fakeDevice(), out = scratch();
   assert.equal(await runLive({command: 'paste', device: 'mini', out}, io(device)), 0);
@@ -290,9 +306,13 @@ test('checkPassed: each check\'s own bar', () => {
   const lanes = {cua: {items: {selectAll: WORKS, bold: WORKS}}, vendor: {items: {selectAll: WORKS, bold: WORKS}}};
   assert.equal(checkPassed('menu', {...lanes, comparison: {items: Object.fromEntries(['selectAll', 'bold'].map(id => [id, {cua: {label: 'acts'}, vendor: {label: 'acts'}}]))}}), true);
   assert.equal(checkPassed('menu', {...lanes, comparison: {items: {selectAll: {cua: {label: 'read disabled'}, vendor: {label: 'acts'}}, bold: {cua: {label: 'acts'}, vendor: {label: 'acts'}}}}}), false);
-  assert.equal(checkPassed('hscroll', {cua: PASSED.hscroll, vendor: {before: {horizontal: 0.5}, after: {horizontal: 0.9}, userInFront: true}}), true);
-  assert.equal(checkPassed('hscroll', {cua: PASSED.hscroll, vendor: {before: {horizontal: 0.5}, after: {horizontal: 0.5}, userInFront: true}}), true, 'the declared vendor defect');
-  assert.equal(checkPassed('hscroll', {cua: PASSED.hscroll, vendor: {before: {horizontal: 0.5}, after: {horizontal: 0.1}, userInFront: true}}), false, 'an opposite sign');
+  const menuOf = (cua, vendor) => ({...lanes, comparison: {items: Object.fromEntries(['selectAll', 'bold'].map(id => [id, {cua: {label: cua}, vendor: {label: vendor}}]))}});
+  assert.equal(checkPassed('menu', menuOf('invalid', 'acts')), false, 'cua\'s items gave no valid evidence: the vendor\'s alone do not pass');
+  const vendorLane = after => ({before: {horizontal: 0.5, midpointShows: true}, scroll: {found: true, scrolled: true, scrollError: null}, after: {horizontal: after}, userInFront: true});
+  assert.equal(checkPassed('hscroll', {cua: PASSED.hscroll, vendor: vendorLane(0.9)}), true);
+  assert.equal(checkPassed('hscroll', {cua: PASSED.hscroll, vendor: vendorLane(0.5)}), true, 'the declared vendor defect');
+  assert.equal(checkPassed('hscroll', {cua: PASSED.hscroll, vendor: vendorLane(0.1)}), false, 'an opposite sign');
+  assert.equal(checkPassed('hscroll', {cua: {...PASSED.hscroll, userInFront: false}, vendor: vendorLane(0.9)}), false, 'cua\'s lane invalid');
   assert.equal(checkPassed('paste', {verdict: {pass: true}}), true);
   assert.equal(checkPassed('paste', {verdict: {pass: false}}), false);
 });

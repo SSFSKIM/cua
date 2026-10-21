@@ -35,8 +35,12 @@ export function preparedEngineSettings(owner, bundleId) {
   return settings;
 }
 
+// A range the probe read that is a caret: readable, with a zero length. An unreadable read is never one.
+const isCaret = range => Number.isInteger(range?.location) && range.length === 0;
+
 // Route 4's click (a synthesized click into the background scene app, the user window in front) judged by outcome: the
-// click landed (the selection set before it collapsed to a caret), it went by route 4, and afterwards the user's app is
+// click landed (the selection set before it, read by the probe, collapsed to a caret the probe reads: `landedRange`,
+// never the observation's selected text, which a focus read that failed leaves empty too), it went by route 4, and afterwards the user's app is
 // frontmost again (lsappinfo), the user's window is the top window (CGWindowList), and the engine read the user's key
 // window back (keyWindowRestored). The activations the watcher saw are recorded, not judged (route 4 activates by
 // design). -> {valid, invalid?, ok, outcome}.
@@ -47,7 +51,7 @@ export function route4Verdict(steps) {
       : s.prepared !== true ? 'the selection the click should collapse could not be set'
         : !s.click ? 'the click was not sent' : null;
   const outcome = {
-    landed: s.landed ?? null, route: s.click?.route ?? null, clickOk: s.click?.ok ?? null, errorName: s.click?.errorName ?? null,
+    landed: isCaret(s.landedRange), route: s.click?.route ?? null, clickOk: s.click?.ok ?? null, errorName: s.click?.errorName ?? null,
     frontRestored: s.after?.frontRestored ?? null, topWindowRestored: s.after?.topWindowRestored ?? null,
     keyWindowRestored: s.click?.keyWindowRestored ?? null, activations: (s.activations ?? []).map(a => `${a.kind} ${a.bundleId ?? 'unknown'}`),
     routeAdvice: 'not exercised: three route-3 guard failures in a row need an app that takes the front during the guard, which no scene does without contrivance (RouteAdviceTests cover it)',
@@ -67,6 +71,15 @@ export function rangeOf(value, text) {
 }
 const sameRange = (a, b) => Boolean(a && b) && a.location === b.location && a.length === b.length;
 
+// An engine error that says nothing about the case: the user intervened, or the engine timed out (a busy machine).
+const INCONCLUSIVE_ERRORS = Object.freeze(['userIntervened', 'timeoutReached']);
+// select_text's error as the write's outcome: the minimized-window refusal with nothing posted is the refusal the rule
+// would be; any other error (an element or lineage no longer valid, a refusal after posting) is a failure. null when it
+// answered ok. (An inconclusive error never reaches here: it makes the sample invalid.)
+const selectFailure = select => (select.ok === true ? null
+  : select.errorName === 'windowMinimized' ? (select.posted === false ? 'refused (windowMinimized)' : 'failed (windowMinimized, after posting)')
+    : `failed (${select.errorName ?? 'an error'})`);
+
 // select_text into a minimized window, told apart (the M2a.5 hold's item 2: it answered ok and the observation showed no
 // selection): the write, read by `--probe text-view` (AXSelectedTextRange on the text area itself, past the focused
 // element) while the window is still minimized; the engine's read, its observation's selected text then; and both again
@@ -78,9 +91,12 @@ export function minimizedSelectVerdict(steps) {
   const invalid = s.problem ? s.problem
     : unminimized ? `the window was not minimized around ${unminimized}`
       : !sameRange(s.prior?.range, s.expected?.before) ? 'the selection set before minimizing did not read back'
-        : !s.select ? 'select_text was not sent' : !s.probeMinimized?.range ? 'the text view could not be read while minimized' : null;
+        : !s.select ? 'select_text was not sent'
+          : s.select.ok !== true && INCONCLUSIVE_ERRORS.includes(s.select.errorName) ? `select_text ended ${s.select.errorName}: the sample says nothing about a minimized window`
+            : !s.probeMinimized?.range ? 'the text view could not be read while minimized' : null;
   const expected = s.expected?.minimized ?? null;
-  const write = invalid ? null : !s.select.ok ? `refused (${s.select.errorName ?? 'an error'})`
+  const failure = invalid ? null : selectFailure(s.select);
+  const write = invalid ? null : failure ? failure
     : sameRange(s.probeMinimized.range, expected) ? 'landed' : sameRange(s.probeMinimized.range, s.expected?.before) ? 'did not land' : 'landed elsewhere';
   const read = invalid ? null : s.engineMinimized?.selectedText === SELECT_MINIMIZED ? 'saw it'
     : write === 'landed' ? 'missed it' : 'nothing to see';
@@ -89,7 +105,8 @@ export function minimizedSelectVerdict(steps) {
     : write === 'landed' ? (read === 'saw it' ? 'keep select_text into a minimized window: the write lands and the observation shows it'
       : 'keep select_text into a minimized window: the write lands; the observation of a minimized window does not show the selection (a read gap, not a write failure)')
       : write.startsWith('refused') ? 'select_text is refused already; nothing to decide'
-        : 'refuse select_text into a minimized window: it answers ok and the selection does not change';
+        : write.startsWith('failed') ? null
+          : 'refuse select_text into a minimized window: it answers ok and the selection does not change';
   return {valid: !invalid, ...(invalid ? {invalid} : {}), write, read, restored, decision};
 }
 
@@ -129,32 +146,45 @@ const menuRow = (id, engine, label, extra) => ({section: 'residue', id: `menu/te
 
 // ---- hscroll ---------------------------------------------------------------------------------------------------------
 
-// One lane's horizontal scroll by its read-back position: the scene's horizontal scroll bar's value before (set mid-way
-// by the probe, so a scroll either way shows) and after, read by `--probe text-view` for either engine alike. `direction`
-// is where the content went: `right` (the bar's value grew: what "right" asks for), `left` (the opposite sign), `none`.
-// -> {valid, invalid?, direction, moved, before, after}.
+// One lane's horizontal scroll by its read-back position: the scene's horizontal scroll bar's value before (both bars
+// set mid-way by the probe, so a scroll either way shows) and after, read by `--probe text-view` for either engine alike.
+// The motion is the wheel's only when the element scroll's preparation (positionElement, the vendor's and cua's alike:
+// Positioning.swift) has nothing to do, which is when the text area's midpoint shows before the scroll; and it is a
+// lane's only when its scroll was carried out (cua's: answered ok, posted; the vendor's: its cell found the text area
+// and its scroll returned). cua's own failure to scroll is its failure; the vendor's, an intervention or a timeout say
+// nothing. `direction` is where the content went: `right` (the bar's value grew: what "right" asks for), `left` (the
+// opposite sign), `none`. -> {valid, invalid?, sent, scrollError?, direction, moved, before, after}.
 export const HSCROLL_START_BAND = Object.freeze([0.2, 0.8]);
 const HSCROLL_EPSILON = 0.001;
-export function hscrollLane(lane) {
-  const before = lane?.before?.horizontal, after = lane?.after?.horizontal;
+const finite = v => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+export function hscrollLane(lane, engine) {
+  const before = finite(lane?.before?.horizontal), after = finite(lane?.after?.horizontal), scroll = lane?.scroll ?? null;
+  const sent = engine === 'vendor' ? scroll?.found === true && scroll?.scrolled === true : scroll?.ok === true && scroll?.posted === true;
+  const scrollError = sent ? null : !scroll ? 'not sent'
+    : engine === 'vendor' ? (scroll.found === false ? 'the vendor found no text area' : scroll.scrollError ?? 'not scrolled') : scroll.errorName ?? 'nothing posted';
+  const saysNothing = !sent && (engine === 'vendor' || !scroll || INCONCLUSIVE_ERRORS.includes(scroll.errorName));
   const [low, high] = HSCROLL_START_BAND;
-  const invalid = lane?.problem ? lane.problem : typeof before !== 'number' ? 'the scene shows no horizontal scroll bar to read'
+  const invalid = lane?.problem ? lane.problem : before === null ? 'the scene shows no horizontal scroll bar to read'
     : before < low || before > high ? `the horizontal bar did not start mid-way (read ${before}): a scroll one way could not show`
-      : typeof after !== 'number' ? 'the horizontal bar was not read after the scroll'
-        : lane?.userInFront === false ? 'the user window left the front' : null;
-  const direction = invalid ? null : after > before + HSCROLL_EPSILON ? 'right' : after < before - HSCROLL_EPSILON ? 'left' : 'none';
-  return {valid: !invalid, ...(invalid ? {invalid} : {}), direction, moved: direction === 'right', before: before ?? null, after: after ?? null};
+      : lane.before.midpointShows !== true ? 'the text area\'s midpoint did not show before the scroll: the element scroll\'s preparation would move the view before the wheel'
+        : saysNothing ? `the scroll was not carried out (${scrollError})`
+          : sent && after === null ? `the horizontal bar was not read after the scroll (${lane?.after?.error ?? 'no value'})`
+            : lane?.userInFront === false ? 'the user window left the front' : null;
+  const direction = invalid || !sent ? null : after > before + HSCROLL_EPSILON ? 'right' : after < before - HSCROLL_EPSILON ? 'left' : 'none';
+  return {valid: !invalid, ...(invalid ? {invalid} : {}), sent, ...(sent ? {} : {scrollError}), direction, moved: direction === 'right', before, after};
 }
 export const HSCROLL_DEFECT = 'the vendor\'s one-wheel horizontal scroll moves nothing, either way, from a mid-way start (its delta rides in the second wheel of a one-wheel event); declared as the vendor\'s defect, as Finder\'s capped item count is (M2a vendor reading item 6)';
-// The verdict of item 6, by direction: the vendor's moving as cua's does is equivalent; moving nothing (where cua's moves)
-// is its defect, declared; moving the other way is a sign difference, recorded and not declared.
+// The verdict of item 6, by direction, on two valid lanes whose scrolls were carried out: the vendor's moving as cua's
+// does is equivalent; moving nothing (where cua's moves) is its defect, declared; moving the other way is a sign
+// difference, recorded and not declared.
 export function hscrollVerdict(cua, vendor) {
-  const c = hscrollLane(cua), v = hscrollLane(vendor);
+  const c = hscrollLane(cua, 'cua'), v = hscrollLane(vendor, 'vendor');
   const verdict = !c.valid || !v.valid ? 'no verdict: a lane is not valid'
-    : c.direction === 'none' ? 'cua\'s horizontal scroll moves nothing'
-      : v.direction === c.direction ? 'equivalent: the vendor\'s moves as cua\'s does'
-        : v.direction === 'none' ? 'vendor defect: its one-wheel horizontal scroll moves nothing where cua\'s moves'
-          : `opposite sign: the vendor's scroll moves ${v.direction} where cua's moves ${c.direction}`;
+    : !c.sent ? `cua's scroll failed (${c.scrollError})`
+      : c.direction === 'none' ? 'cua\'s horizontal scroll moves nothing'
+        : v.direction === c.direction ? 'equivalent: the vendor\'s moves as cua\'s does'
+          : v.direction === 'none' ? 'vendor defect: its one-wheel horizontal scroll moves nothing where cua\'s moves'
+            : `opposite sign: the vendor's scroll moves ${v.direction} where cua's moves ${c.direction}`;
   return {cua: c, vendor: v, verdict, vendorDefect: verdict.startsWith('vendor defect'), oppositeSign: verdict.startsWith('opposite sign')};
 }
 
@@ -175,7 +205,7 @@ export function residueRows(command, check) {
     const v = minimizedSelectVerdict(check.steps);
     const base = {scene: 'textedit', method: 'select_text', case: 'minimized window', inputRoute: check.steps?.select?.route ?? null};
     return [
-      row('minimized-select/textedit/write', 'cua', {valid: v.valid, invalid: v.invalid, ok: v.write === 'landed' || v.write?.startsWith('refused')}, {...base, outcome: {write: v.write}}),
+      row('minimized-select/textedit/write', 'cua', {valid: v.valid, invalid: v.invalid, ok: v.write === 'landed' || v.write === 'refused (windowMinimized)'}, {...base, outcome: {write: v.write}}),
       row('minimized-select/textedit/read', 'cua', {valid: v.valid && v.write === 'landed', invalid: v.invalid ?? 'the write did not land: nothing to read', ok: v.read === 'saw it'},
         {...base, outcome: {read: v.read, restored: v.restored}}),
     ];
@@ -197,13 +227,33 @@ export function residueRows(command, check) {
     const base = {scene: 'textedit', user: 'finder', regime: 'background', method: 'scroll', case: 'right, 1 page, wide page'};
     return [
       row('hscroll/textedit-wide-page/right', 'cua', {...v.cua, ok: v.cua.moved}, {...base, inputRoute: check.cua?.scroll?.route ?? null,
-        outcome: {direction: v.cua.direction, before: v.cua.before, after: v.cua.after}}),
-      row('hscroll/textedit-wide-page/right', 'vendor', {...v.vendor, ok: v.vendor.moved}, {...base, outcome: {direction: v.vendor.direction, before: v.vendor.before, after: v.vendor.after, verdict: v.verdict},
+        outcome: {direction: v.cua.direction, before: v.cua.before, after: v.cua.after, ...(v.cua.sent ? {} : {scrollError: v.cua.scrollError})}}),
+      row('hscroll/textedit-wide-page/right', 'vendor', {...v.vendor, ok: v.vendor.moved}, {...base, outcome: {direction: v.vendor.direction, before: v.vendor.before, after: v.vendor.after,
+        ...(v.vendor.sent ? {} : {scrollError: v.vendor.scrollError}), verdict: v.verdict},
         ...(v.vendorDefect ? {declared: {kind: 'vendor-defect', cause: HSCROLL_DEFECT}} : {})}),
     ];
   }
   return [];
 }
+
+// The rows a residue cell cannot be judged without, by (id, engine): every lane and item it compares. (The minimized-
+// select read row is not: it has something to read only when the write landed.)
+const MANDATORY_ROWS = {
+  route4: () => [['route4/textedit-behind-finder/click', 'cua']],
+  'minimized-select': () => [['minimized-select/textedit/write', 'cua']],
+  enablement: () => [1, 2].map(i => [`enablement/electron/release-${i}`, 'cua']),
+  menu: () => Object.keys(MENU_ITEMS).flatMap(id => ['cua', 'vendor'].map(engine => [`menu/textedit-behind-finder/${id}`, engine])),
+  hscroll: () => ['cua', 'vendor'].map(engine => ['hscroll/textedit-wide-page/right', engine]),
+};
+// The mandatory evidence a cell's rows lack: each mandatory row missing or invalid, as `<id> (<engine>): <why>`. A
+// cell with any is incomplete (./cell-result.mjs: an incomplete cell never passes), its invalid rows kept. -> [string].
+export function residueGaps(command, rows) {
+  return (MANDATORY_ROWS[command]?.() ?? []).flatMap(([id, engine]) => {
+    const found = rows.find(r => r.id === id && r.engine === engine);
+    return !found ? [`${id} (${engine}): not measured`] : found.invalid ? [`${id} (${engine}): ${found.invalid}`] : [];
+  });
+}
+export const gapProblem = gap => `no valid evidence: ${gap}`;
 
 // The lanes a residue cell measured: cua's engine through its socket (no host), and the vendor's through the vendor
 // host for the cells that compare. -> [{host, engine, build, version}].
@@ -217,9 +267,12 @@ export function residueLanes(command, live) {
 // fields stay (check, putBack, recovery, frontApp, ... : every read path the runbook names), the CellResult's
 // (schema, cell, lanes, verdict, rows; complete and problems kept) are laid over them.
 export function asCellResult(command, live) {
+  const rows = residueRows(command, live.check);
+  const gaps = live.refused ? [] : residueGaps(command, rows).map(gapProblem);
+  const problems = [...(live.problems ?? []), ...gaps.filter(gap => !(live.problems ?? []).includes(gap))];
   const shaped = cellResult({cell: command, device: live.device ?? null, started: live.started, finished: live.finished ?? new Date().toISOString(),
-    lanes: residueLanes(command, live), complete: live.complete === true, refused: Boolean(live.refused), problems: live.problems ?? [],
-    rows: residueRows(command, live.check), ...(live.putBack !== undefined && live.putBack !== null ? {putBack: live.putBack} : {})});
+    lanes: residueLanes(command, live), complete: live.complete === true && gaps.length === 0, refused: Boolean(live.refused), problems,
+    rows, ...(live.putBack !== undefined && live.putBack !== null ? {putBack: live.putBack} : {})});
   return {...live, ...shaped};
 }
 

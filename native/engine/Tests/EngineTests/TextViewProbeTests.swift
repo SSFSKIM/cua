@@ -14,6 +14,17 @@ final class TextViewProbeTests: XCTestCase {
     XCTAssertNil(textViewProbePid(["--window", "612"]))
   }
 
+  func testTheHorizontalStartIsAValueInTheUnitRange() {
+    XCTAssertEqual(TextViewRequest.parse(["--pid", "612", "--set-horizontal", "0.5"]), TextViewRequest(pid: 612, setHorizontal: 0.5))
+    XCTAssertEqual(TextViewRequest.parse(["--set-horizontal", "0", "--pid", "612"]), TextViewRequest(pid: 612, setHorizontal: 0))
+    XCTAssertEqual(TextViewRequest.parse(["--pid", "612"]), TextViewRequest(pid: 612))
+    for bad in [["--pid", "612", "--set-horizontal", "1.5"], ["--pid", "612", "--set-horizontal", "-0.1"], ["--pid", "612", "--set-horizontal", "nan"],
+                ["--pid", "612", "--set-horizontal"], ["--set-horizontal", "0.5"], ["--pid", "1", "--pid", "2"]] {
+      XCTAssertNil(TextViewRequest.parse(bad), "\(bad)")
+    }
+    XCTAssertNil(textViewProbePid(["--pid", "612", "--set-horizontal", "0.5"]), "the read-only form takes no write")
+  }
+
   // window 0 > [toolbar 1 > [button 2], scroll area 3 > [group 4 > [text area 5], scroll bar 6]], text area 7
   private let roles = [0: "AXWindow", 1: "AXToolbar", 2: "AXButton", 3: "AXScrollArea", 4: "AXGroup", 5: "AXTextArea", 6: "AXScrollBar", 7: "AXTextArea"]
   private let kids = [0: [1, 3, 7], 1: [2], 3: [4, 6], 4: [5]]

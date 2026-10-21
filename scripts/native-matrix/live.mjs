@@ -66,8 +66,8 @@
 //   minimized-select (a residue cell) select_text into the run's minimized TextEdit, the write (the text area's
 //                 AXSelectedTextRange by `--probe text-view`) told from the read (the engine's observation).
 //   hscroll       (a residue cell) the run's TextEdit on a page wider than its window behind the run's Finder window,
-//                 scrolled right one page by cua's engine, then by the vendor's on a fresh TextEdit, each read back by
-//                 the horizontal scroll bar's value.
+//                 its horizontal bar set mid-way by the probe, scrolled right one page by cua's engine, then the same by
+//                 the vendor's on a fresh TextEdit, each read back by the bar's value: the direction each moved.
 //   A residue cell's result.json is the native matrix's CellResult (./cell-result.mjs) with the fields below kept.
 //   cleanup       the put-back alone (and the vendor home's cleanup from a preparation.json), for a command that died.
 import {execFileSync} from 'node:child_process';
@@ -82,8 +82,10 @@ import {MARKER} from '../native-baseline/cells.mjs';
 import {checkoutCli, checkVendorPreflight, connectVendorLane, controllerCheckout, deviceOps} from './goldens.mjs';
 import {BIND} from './goldens-cells.mjs';
 import {REPO_ROOT} from './goldens-install.mjs';
+import {counts} from './cell-result.mjs';
 import {EFFECT, MENU_BAR, MENU_ITEM, SCROLL_RIGHT, SELECT_FIRST_LINE} from './live-cells.mjs';
 import {JOURNAL_FILE, MENU_ITEMS, menuComparison, putBackBoundMs, recoverBoundMs} from './live-checks.mjs';
+import {HSCROLL_START} from './residue-device.mjs';
 import {CHROME_NOT_JUDGED, RESIDUE_CELLS, asCellResult, hscrollVerdict, isResidueCell, residueRows} from './residue-checks.mjs';
 import {SCENES} from '../repl-parity/scenes-mac.mjs';
 
@@ -273,10 +275,11 @@ export function checkPassed(command, check) {
   if (!check || check.problem) return false;
   if (command === 'minimized' || command === 'input-source') return check.verdict?.pass === true;
   if (command === 'paste') return check.verdict?.pass === true;
-  // A residue cell passes when its rows do (./residue-checks.mjs; the CellResult's verdict rule, ./cell-result.mjs).
+  // A residue cell passes when its rows count (./residue-checks.mjs; the CellResult's verdict rule, ./cell-result.mjs,
+  // where a declared row counts).
   if (isResidueCell(command)) {
     const rows = residueRows(command, check), valid = rows.filter(row => !row.invalid);
-    return valid.length > 0 && valid.every(row => row.ok);
+    return valid.length > 0 && valid.every(counts);
   }
   return false;
 }
@@ -429,7 +432,7 @@ async function hscrollCheck(ctx) {
     const textedit = freshTextEdit(ctx, 'the vendor lane', wide);
     const js = await lane(textedit);
     activate(ctx, 'finder');
-    const vendor = {before: ops.live(['hscroll-read', '--run', run])};
+    const vendor = {before: ops.live(['hscroll-read', '--run', run, '--start', String(HSCROLL_START)])};
     try {
       const out = await js(SCROLL_RIGHT);
       if (!out.ok) throw new Error(`the vendor's scroll cell failed: ${out.error}`);
@@ -457,8 +460,9 @@ export const DRY_ANSWERS = Object.freeze({
     prior: {ok: true, range: {location: 34, length: 7}}, minimize: {ok: true, minimized: true},
     select: {ok: true, route: 1, minimizedBefore: true, minimizedAfter: true}, probeMinimized: {range: {location: 106, length: 7}, minimizedBefore: true, minimizedAfter: true},
     engineMinimized: {selectedText: 'Line 10', minimizedBefore: true, minimizedAfter: true}, restore: {ok: true, onScreen: true}, restored: {range: {location: 106, length: 7}, selectedText: 'Line 10'}}},
-  'live-device.mjs hscroll': {before: {horizontal: 0, vertical: 0}, scroll: {ok: true, route: "2'", posted: true}, after: {horizontal: 0.4, vertical: 0}, userInFront: true},
-  'live-device.mjs hscroll-read': {horizontal: 0.4, vertical: 0},
+  'live-device.mjs hscroll': {before: {horizontal: 0.5, vertical: 0, set: {requested: 0.5, written: true, error: null}}, scroll: {ok: true, route: "2'", posted: true},
+    after: {horizontal: 0.9, vertical: 0}, userInFront: true},
+  'live-device.mjs hscroll-read': {horizontal: 0.9, vertical: 0},
   'live-device.mjs paste': {steps: {pasteAlert: false, precondition: {selected: true, readBack: 'com.apple.inputmethod.Korean.2SetKorean', perContextOff: true, met: true},
     inputSource: {perContext: {read: true, setOff: true, restored: true}, restored: true}, clipboard: {typesUnchanged: true},
     hidComposition: {variants: Object.fromEntries(['unicode', 'keyCodesOnly', 'ansiKeys'].map(variant => [variant, {emptied: true, activated: true, source: 'com.apple.inputmethod.Korean.2SetKorean',
@@ -493,8 +497,8 @@ export function dryExec({log, commit}) {
     const match = /(live-device\.mjs|scenes-mac\.mjs|prepare\.mjs) '?([\w-]+)'?/.exec(script);
     let answer = match ? DRY_ANSWERS[`${match[1]} ${match[2]}`] : null;
     if (!answer) throw new Error(`the dry run has no answer for: ${script.slice(0, 200)}`);
-    // The vendor's hscroll reads: before its scroll (no settle) the bar at the start, after it moved.
-    if (match[2] === 'hscroll-read' && !/'--settle-ms'/.test(script)) answer = {...answer, horizontal: 0};
+    // The vendor's hscroll reads: before its scroll the bar set mid-way, after it moved right.
+    if (match[2] === 'hscroll-read' && /'--start'/.test(script)) answer = {...answer, horizontal: 0.5, set: {requested: 0.5, written: true, error: null}};
     return `${JSON.stringify(answer)}\n`;
   };
 }
@@ -541,9 +545,19 @@ export function parseCommand(argv) {
     approvedRuntime: absolute(values['approved-runtime'], 'approved-runtime'), preparation: absolute(values.preparation, 'preparation'), dryRun};
 }
 
+// The io a live command (and so a residue cell, through runCell) runs with: the device's ops, the engine connection and
+// the controller's checkout, made-up answers in a dry run. main builds it here, as native-matrix.mjs's registry does.
+// -> {ops, connect, controllerCheckout, log, dryRun?, interrupt}.
+export function cellIo(options, {log = console.log, interrupt = {signal: null}, dryRun = false} = {}) {
+  const checkout = controllerCheckout(REPO_ROOT);
+  return dryRun
+    ? {ops: liveOps(options.device, {exec: dryExec({log, commit: checkout.commit})}), connect: dryConnect({log}), controllerCheckout: () => checkout, log, dryRun: true, interrupt}
+    : {ops: liveOps(options.device), connect: (spec, handlers) => new StdioClient({...spec, clientName: 'cua-native-live', ...handlers}), controllerCheckout: () => checkout,
+      log, interrupt};
+}
+
 export async function main(argv = process.argv.slice(2), {log = console.log} = {}) {
   const options = parseCommand(argv);
-  const checkout = controllerCheckout(REPO_ROOT);
   // SIGINT and SIGTERM: recorded, acted on at the next step boundary; the recovery runs once and the command exits. A
   // second signal while it runs is told to wait (the recovery is bounded).
   const interrupt = {signal: null};
@@ -554,10 +568,7 @@ export async function main(argv = process.argv.slice(2), {log = console.log} = {
   };
   process.on('SIGINT', onSignal);
   process.on('SIGTERM', onSignal);
-  const io = options.dryRun
-    ? {ops: liveOps(options.device, {exec: dryExec({log, commit: checkout.commit})}), connect: dryConnect({log}), controllerCheckout: () => checkout, log, dryRun: true, interrupt}
-    : {ops: liveOps(options.device), connect: (spec, handlers) => new StdioClient({...spec, clientName: 'cua-native-live', ...handlers}), controllerCheckout: () => checkout,
-      log, interrupt};
+  const io = cellIo(options, {log, interrupt, dryRun: options.dryRun});
   if (options.dryRun) log(`# dry run of live.mjs ${options.command} on ${options.device}: every device command in order, none run`);
   try { return await runLive(options, io); } finally { process.off('SIGINT', onSignal); process.off('SIGTERM', onSignal); }
 }

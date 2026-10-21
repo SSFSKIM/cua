@@ -9,10 +9,10 @@ import {SkyComputerUseError} from '../../src/services/engine/protocol.mjs';
 import {validateCellResult} from '../../scripts/native-matrix/cell-result.mjs';
 import {DRY_ANSWERS} from '../../scripts/native-matrix/live.mjs';
 import {
-  CHROME_NOT_JUDGED, HSCROLL_DEFECT, RESIDUE_CELLS, SELECT_BEFORE, SELECT_MINIMIZED, asCellResult, enablementVerdict, hscrollVerdict, minimizedSelectRanges,
+  CHROME_NOT_JUDGED, HSCROLL_DEFECT, RESIDUE_CELLS, hscrollLane, SELECT_BEFORE, SELECT_MINIMIZED, asCellResult, enablementVerdict, hscrollVerdict, minimizedSelectRanges,
   minimizedSelectVerdict, modeAt, parseAccessibilityRecord, preparedEngineSettings, rangeOf, residueRows, route4Verdict,
 } from '../../scripts/native-matrix/residue-checks.mjs';
-import {ROUTE4_HOME, enablementCheck, hscrollCheck, minimizedSelectCheck, route4Check, stripRestoredText, textViewOf} from '../../scripts/native-matrix/residue-device.mjs';
+import {HSCROLL_START, ROUTE4_HOME, enablementCheck, hscrollCheck, minimizedSelectCheck, route4Check, stripRestoredText, textViewOf} from '../../scripts/native-matrix/residue-device.mjs';
 
 const scratches = [];
 const scratch = () => { const dir = fs.realpathSync(fs.mkdtempSync(join(tmpdir(), 'cua-residue-'))); scratches.push(dir); return dir; };
@@ -52,15 +52,23 @@ function textEditEngine({minimized = false, selectWhileMinimized = 'lands', clic
         if (args.element === 't49') { state.minimized = true; return {result: route(1), engineMs: 1}; }
         if (args.element === area().token) { state.selected = null; return {result: route(clickRoute, true, clickRoute === 4 ? {keyWindowRestored} : {}), engineMs: 1}; }
       }
-      if (method === 'scroll') { state.horizontal += 0.25; return {result: route("2'"), engineMs: 1}; }
+      if (method === 'scroll') { state.horizontal += state.scrollStep ?? 0.25; return {result: route("2'"), engineMs: 1}; }
       throw new Error(`unexpected ${method}`);
     },
     close() { state.closed = true; },
   };
   const rangeNow = () => (state.selected ? rangeOf(state.value, state.selected) : {location: 0, length: 0});
+  // The probe reads the text view and, given --set-horizontal, first writes the horizontal bar (unless `settable` is off).
   const probe = args => {
-    assert.deepEqual(args, ['text-view', '--pid', String(TEXTEDIT.pid)]);
-    return {pid: TEXTEDIT.pid, windows: [{minimized: state.minimized, textArea: {selectedRange: rangeNow(), scrollBars: {horizontal: state.horizontal, vertical: 0}}}],
+    assert.deepEqual(args.slice(0, 3), ['text-view', '--pid', String(TEXTEDIT.pid)]);
+    let set;
+    if (args.length > 3) {
+      assert.equal(args[3], '--set-horizontal');
+      set = {requested: Number(args[4]), written: state.settable !== false, error: state.settable !== false ? null : -25205};
+      if (set.written) state.horizontal = Number(args[4]);
+      state.calls.push({method: 'probe.set-horizontal', args: Number(args[4])});
+    }
+    return {...(set ? {set} : {}), pid: TEXTEDIT.pid, windows: [{minimized: state.minimized, textArea: {selectedRange: rangeNow(), scrollBars: {horizontal: state.horizontal, vertical: 0}}}],
       focused: {role: state.minimized ? null : 'AXTextArea', textAreaOfWindow: state.minimized ? null : 0}};
   };
   return {state, client, probe};
@@ -81,7 +89,7 @@ test('every residue cell\'s live result, adapted, is a conforming CellResult tha
     enablement: DRY_ANSWERS['live-device.mjs enablement'],
     menu: {comparison: {items: {selectAll: {cua: {label: 'acts', enabled: true, effect: true}, vendor: {label: 'acts', enabled: true, effect: true}},
       bold: {cua: {label: 'acts'}, vendor: {label: 'acts'}}}}, cua: {items: {selectAll: works, bold: works}}, vendor: {items: {selectAll: works, bold: works}}},
-    hscroll: {cua: DRY_ANSWERS['live-device.mjs hscroll'], vendor: {before: {horizontal: 0}, after: {horizontal: 0.4}, userInFront: true}},
+    hscroll: {cua: DRY_ANSWERS['live-device.mjs hscroll'], vendor: {before: {horizontal: 0.5}, after: {horizontal: 0.9}, userInFront: true}},
   };
   for (const command of RESIDUE_CELLS) {
     const live = {schema: 'native-live-1', command, device: 'mini', started: '2026-10-21T10:00:00.000Z', finished: '2026-10-21T10:01:00.000Z', problems: [], complete: true, pass: true,
@@ -259,26 +267,70 @@ test('enablementVerdict: a mode already on before the cell, or a close the mode 
 
 // ---- hscroll -----------------------------------------------------------------------------------------------------------
 
-test('hscrollCheck: cua\'s lane scrolls the text area right one page, read back by the horizontal bar before and after', async () => {
-  const run = scratch(), {client, probe} = textEditEngine();
+test('hscrollCheck: cua\'s lane sets the bar mid-way by the probe, then scrolls the text area right one page, read back before and after', async () => {
+  const run = scratch(), {client, probe, state} = textEditEngine();
   const out = await hscrollCheck({record: TEXTEDIT, user: FINDER, client, screenshots: join(run, 'shots'), io: io({probe})});
-  assert.deepEqual(client.calls.find(c => c.method === 'scroll').args, {app: TEXTEDIT.app, element: GOLDEN.nodes.find(n => n.role === 'AXTextArea').token, direction: 'right', pages: 1});
-  assert.deepEqual([out.before.horizontal, out.after.horizontal], [0, 0.25]);
+  const setAt = state.calls.findIndex(c => c.method === 'probe.set-horizontal'), scrollAt = state.calls.findIndex(c => c.method === 'scroll');
+  assert.ok(setAt >= 0 && setAt < scrollAt, 'the bar is set before the scroll');
+  assert.equal(state.calls[setAt].args, HSCROLL_START);
+  assert.deepEqual(client.calls[scrollAt].args, {app: TEXTEDIT.app, element: GOLDEN.nodes.find(n => n.role === 'AXTextArea').token, direction: 'right', pages: 1});
+  assert.deepEqual([out.before.horizontal, out.after.horizontal], [0.5, 0.75]);
+  assert.deepEqual(out.before.set, {requested: 0.5, written: true, error: null});
   assert.equal(out.userInFront, true);
+  assert.equal(hscrollLane(out).direction, 'right');
   const none = await hscrollCheck({record: TEXTEDIT, user: FINDER, client: textEditEngine().client, screenshots: join(run, 'shots'),
     io: io({probe: () => ({pid: 600, windows: [{minimized: false, textArea: {selectedRange: null}}]})})});
   assert.match(none.problem, /no horizontal scroll bar/);
 });
 
-test('hscrollVerdict: a vendor scroll that moves nothing where cua\'s moves is the vendor\'s declared defect; both moving is equivalent', () => {
-  const moved = {before: {horizontal: 0}, after: {horizontal: 0.3}, userInFront: true}, still = {before: {horizontal: 0}, after: {horizontal: 0}, userInFront: true};
-  assert.equal(hscrollVerdict(moved, moved).verdict, 'equivalent: both move the content');
-  const defect = hscrollVerdict(moved, still);
+test('hscrollLane: a bar the probe could not set mid-way leaves the lane invalid, since a scroll one way could not show', async () => {
+  const run = scratch(), engine = textEditEngine();
+  engine.state.settable = false;
+  const out = await hscrollCheck({record: TEXTEDIT, user: FINDER, client: engine.client, screenshots: join(run, 'shots'), io: io({probe: engine.probe})});
+  assert.deepEqual(out.before.set, {requested: 0.5, written: false, error: -25205});
+  const lane = hscrollLane(out);
+  assert.equal(lane.valid, false);
+  assert.match(lane.invalid, /did not start mid-way \(read 0\)/);
+  assert.equal(lane.direction, null);
+  assert.equal(hscrollLane({before: {horizontal: 0.5}, userInFront: true}).invalid, 'the horizontal bar was not read after the scroll');
+});
+
+test('hscrollLane: the direction is the sign of the bar\'s move from mid-way: right, left, or none', () => {
+  const lane = after => hscrollLane({before: {horizontal: 0.5}, after: {horizontal: after}, userInFront: true});
+  assert.deepEqual([0.9, 0.1, 0.5, 0.5005].map(a => lane(a).direction), ['right', 'left', 'none', 'none']);
+  assert.deepEqual([0.9, 0.1, 0.5].map(a => lane(a).moved), [true, false, false]);
+});
+
+test('hscrollVerdict: moved as cua\'s is equivalent; moved nothing is the vendor\'s declared defect and the cell passes; moved opposite is a sign difference and the cell fails', () => {
+  const lane = after => ({before: {horizontal: 0.5}, after: {horizontal: after}, userInFront: true});
+  const right = lane(0.9), left = lane(0.1), still = lane(0.5);
+  const cell = vendor => asCellResult('hscroll', {schema: 'native-live-1', command: 'hscroll', device: 'mini', started: '2026-10-21T10:00:00.000Z',
+    finished: '2026-10-21T10:01:00.000Z', problems: [], complete: true, engine: {build: 'b'.repeat(64)}, vendor: {release: '26.928'}, check: {cua: right, vendor}});
+
+  assert.equal(hscrollVerdict(right, right).verdict, 'equivalent: the vendor\'s moves as cua\'s does');
+  assert.equal(cell(right).verdict, 'pass');
+
+  const defect = hscrollVerdict(right, still);
   assert.equal(defect.vendorDefect, true);
-  const rows = residueRows('hscroll', {cua: moved, vendor: still});
-  assert.deepEqual(rows.map(r => [r.engine, r.ok]), [['cua', true], ['vendor', false]]);
+  assert.match(defect.verdict, /^vendor defect/);
+  const rows = residueRows('hscroll', {cua: right, vendor: still});
+  assert.deepEqual(rows.map(r => [r.engine, r.ok, r.outcome.direction]), [['cua', true, 'right'], ['vendor', false, 'none']]);
   assert.deepEqual(rows[1].declared, {kind: 'vendor-defect', cause: HSCROLL_DEFECT});
-  assert.equal(hscrollVerdict(still, moved).verdict, 'cua\'s horizontal scroll moves nothing');
-  assert.match(hscrollVerdict({before: {horizontal: null}}, moved).verdict, /^no verdict/);
-  assert.equal(residueRows('hscroll', {cua: {...moved, userInFront: false}, vendor: moved})[0].invalid, 'the user window left the front');
+  assert.deepEqual(validateCellResult(cell(still)), []);
+  assert.equal(cell(still).verdict, 'pass', 'finding the declared defect is the cell doing its job');
+
+  const opposite = hscrollVerdict(right, left);
+  assert.equal(opposite.oppositeSign, true);
+  assert.equal(opposite.vendorDefect, false);
+  assert.equal(opposite.verdict, 'opposite sign: the vendor\'s scroll moves left where cua\'s moves right');
+  const oppositeRows = residueRows('hscroll', {cua: right, vendor: left});
+  assert.equal(oppositeRows[1].declared, undefined, 'a sign difference is not the declared defect');
+  assert.equal(oppositeRows[1].outcome.direction, 'left');
+  assert.equal(cell(left).verdict, 'fail');
+
+  assert.equal(hscrollVerdict(still, right).verdict, 'cua\'s horizontal scroll moves nothing');
+  assert.equal(hscrollVerdict(left, left).verdict, 'equivalent: the vendor\'s moves as cua\'s does');
+  assert.equal(residueRows('hscroll', {cua: left, vendor: left})[0].ok, false, 'cua moving left when asked right is not ok');
+  assert.match(hscrollVerdict({before: {horizontal: null}}, right).verdict, /^no verdict/);
+  assert.equal(residueRows('hscroll', {cua: {...right, userInFront: false}, vendor: right})[0].invalid, 'the user window left the front');
 });

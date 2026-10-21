@@ -129,22 +129,33 @@ const menuRow = (id, engine, label, extra) => ({section: 'residue', id: `menu/te
 
 // ---- hscroll ---------------------------------------------------------------------------------------------------------
 
-// One lane's horizontal scroll by its read-back position: the scene's horizontal scroll bar's value before and after,
-// read by `--probe text-view` for either engine alike. -> {valid, invalid?, moved, before, after}.
+// One lane's horizontal scroll by its read-back position: the scene's horizontal scroll bar's value before (set mid-way
+// by the probe, so a scroll either way shows) and after, read by `--probe text-view` for either engine alike. `direction`
+// is where the content went: `right` (the bar's value grew: what "right" asks for), `left` (the opposite sign), `none`.
+// -> {valid, invalid?, direction, moved, before, after}.
+export const HSCROLL_START_BAND = Object.freeze([0.2, 0.8]);
+const HSCROLL_EPSILON = 0.001;
 export function hscrollLane(lane) {
   const before = lane?.before?.horizontal, after = lane?.after?.horizontal;
+  const [low, high] = HSCROLL_START_BAND;
   const invalid = lane?.problem ? lane.problem : typeof before !== 'number' ? 'the scene shows no horizontal scroll bar to read'
-    : lane?.userInFront === false ? 'the user window left the front' : null;
-  return {valid: !invalid, ...(invalid ? {invalid} : {}), moved: !invalid && typeof after === 'number' && after > before + 0.001, before: before ?? null, after: after ?? null};
+    : before < low || before > high ? `the horizontal bar did not start mid-way (read ${before}): a scroll one way could not show`
+      : typeof after !== 'number' ? 'the horizontal bar was not read after the scroll'
+        : lane?.userInFront === false ? 'the user window left the front' : null;
+  const direction = invalid ? null : after > before + HSCROLL_EPSILON ? 'right' : after < before - HSCROLL_EPSILON ? 'left' : 'none';
+  return {valid: !invalid, ...(invalid ? {invalid} : {}), direction, moved: direction === 'right', before: before ?? null, after: after ?? null};
 }
-export const HSCROLL_DEFECT = 'the vendor\'s one-wheel horizontal scroll moves nothing (its delta rides in the second wheel of a one-wheel event); declared as the vendor\'s defect, as Finder\'s capped item count is (M2a vendor reading item 6)';
-// The verdict of item 6: a vendor scroll that moves nothing is its defect (declared), otherwise the two are equivalent.
+export const HSCROLL_DEFECT = 'the vendor\'s one-wheel horizontal scroll moves nothing, either way, from a mid-way start (its delta rides in the second wheel of a one-wheel event); declared as the vendor\'s defect, as Finder\'s capped item count is (M2a vendor reading item 6)';
+// The verdict of item 6, by direction: the vendor's moving as cua's does is equivalent; moving nothing (where cua's moves)
+// is its defect, declared; moving the other way is a sign difference, recorded and not declared.
 export function hscrollVerdict(cua, vendor) {
   const c = hscrollLane(cua), v = hscrollLane(vendor);
   const verdict = !c.valid || !v.valid ? 'no verdict: a lane is not valid'
-    : !v.moved && c.moved ? 'vendor defect: its one-wheel horizontal scroll moves nothing where cua\'s moves'
-      : v.moved && c.moved ? 'equivalent: both move the content' : !c.moved ? 'cua\'s horizontal scroll moves nothing' : 'no verdict';
-  return {cua: c, vendor: v, verdict, vendorDefect: verdict.startsWith('vendor defect')};
+    : c.direction === 'none' ? 'cua\'s horizontal scroll moves nothing'
+      : v.direction === c.direction ? 'equivalent: the vendor\'s moves as cua\'s does'
+        : v.direction === 'none' ? 'vendor defect: its one-wheel horizontal scroll moves nothing where cua\'s moves'
+          : `opposite sign: the vendor's scroll moves ${v.direction} where cua's moves ${c.direction}`;
+  return {cua: c, vendor: v, verdict, vendorDefect: verdict.startsWith('vendor defect'), oppositeSign: verdict.startsWith('opposite sign')};
 }
 
 // ---- Rows and the adapter --------------------------------------------------------------------------------------------
@@ -185,8 +196,9 @@ export function residueRows(command, check) {
     const v = hscrollVerdict(check.cua, check.vendor);
     const base = {scene: 'textedit', user: 'finder', regime: 'background', method: 'scroll', case: 'right, 1 page, wide page'};
     return [
-      row('hscroll/textedit-wide-page/right', 'cua', {...v.cua, ok: v.cua.moved}, {...base, inputRoute: check.cua?.scroll?.route ?? null, outcome: {before: v.cua.before, after: v.cua.after}}),
-      row('hscroll/textedit-wide-page/right', 'vendor', {...v.vendor, ok: v.vendor.moved}, {...base, outcome: {before: v.vendor.before, after: v.vendor.after},
+      row('hscroll/textedit-wide-page/right', 'cua', {...v.cua, ok: v.cua.moved}, {...base, inputRoute: check.cua?.scroll?.route ?? null,
+        outcome: {direction: v.cua.direction, before: v.cua.before, after: v.cua.after}}),
+      row('hscroll/textedit-wide-page/right', 'vendor', {...v.vendor, ok: v.vendor.moved}, {...base, outcome: {direction: v.vendor.direction, before: v.vendor.before, after: v.vendor.after, verdict: v.verdict},
         ...(v.vendorDefect ? {declared: {kind: 'vendor-defect', cause: HSCROLL_DEFECT}} : {})}),
     ];
   }

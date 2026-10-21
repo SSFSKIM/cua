@@ -10,9 +10,11 @@ import {join} from 'node:path';
 import {MARKER, parseCell} from '../../scripts/native-baseline/cells.mjs';
 import {EFFECT, MENU_BAR, MENU_ITEM, SELECT_FIRST_LINE} from '../../scripts/native-matrix/live-cells.mjs';
 import {validateCellResult} from '../../scripts/native-matrix/cell-result.mjs';
-import {DRY_ANSWERS, SSH_OPTIONS, boundedExec, checkPassed, compositionSummary, dryConnect, dryExec, journaledScript, liveOps, parseCommand, runLive, stepTimeout} from '../../scripts/native-matrix/live.mjs';
+import {DRY_ANSWERS, SSH_OPTIONS, boundedExec, cellIo, checkPassed, compositionSummary, dryConnect, dryExec, journaledScript, liveOps, parseCommand, runCell, runLive, stepTimeout} from '../../scripts/native-matrix/live.mjs';
 import {JOURNAL_FILE, parseJournal, putBackBoundMs, recoverBoundMs} from '../../scripts/native-matrix/live-checks.mjs';
 import {execFileSync} from 'node:child_process';
+import {controllerCheckout} from '../../scripts/native-matrix/goldens.mjs';
+import {REPO_ROOT} from '../../scripts/native-matrix/goldens-install.mjs';
 
 const scratches = [];
 const scratch = () => { const dir = fs.realpathSync(fs.mkdtempSync(join(tmpdir(), 'cua-live-'))); scratches.push(dir); return dir; };
@@ -288,7 +290,9 @@ test('checkPassed: each check\'s own bar', () => {
   const lanes = {cua: {items: {selectAll: WORKS, bold: WORKS}}, vendor: {items: {selectAll: WORKS, bold: WORKS}}};
   assert.equal(checkPassed('menu', {...lanes, comparison: {items: Object.fromEntries(['selectAll', 'bold'].map(id => [id, {cua: {label: 'acts'}, vendor: {label: 'acts'}}]))}}), true);
   assert.equal(checkPassed('menu', {...lanes, comparison: {items: {selectAll: {cua: {label: 'read disabled'}, vendor: {label: 'acts'}}, bold: {cua: {label: 'acts'}, vendor: {label: 'acts'}}}}}), false);
-  assert.equal(checkPassed('hscroll', {cua: PASSED.hscroll, vendor: {before: {horizontal: 0}, after: {horizontal: 0.4}, userInFront: true}}), true);
+  assert.equal(checkPassed('hscroll', {cua: PASSED.hscroll, vendor: {before: {horizontal: 0.5}, after: {horizontal: 0.9}, userInFront: true}}), true);
+  assert.equal(checkPassed('hscroll', {cua: PASSED.hscroll, vendor: {before: {horizontal: 0.5}, after: {horizontal: 0.5}, userInFront: true}}), true, 'the declared vendor defect');
+  assert.equal(checkPassed('hscroll', {cua: PASSED.hscroll, vendor: {before: {horizontal: 0.5}, after: {horizontal: 0.1}, userInFront: true}}), false, 'an opposite sign');
   assert.equal(checkPassed('paste', {verdict: {pass: true}}), true);
   assert.equal(checkPassed('paste', {verdict: {pass: false}}), false);
 });
@@ -323,9 +327,30 @@ test('the dry run of each other command walks its sequence to the put-back', asy
     assert.match(lines.join('\n'), /live-device\.mjs '\\''recover'\\''/, command);
     if (command !== 'cleanup') assert.match(lines.join('\n'), new RegExp(`live-device\\.mjs '\\\\''${command}'\\\\''`), command);
     if (command !== 'cleanup') assert.match(lines.at(-1), /PASS \(dry run/, command);
+    if (command === 'hscroll') {
+      const reads = lines.join('\n').replaceAll("'\\''", "'").match(/live-device\.mjs '(hscroll|hscroll-read)'[^\n]*/g);
+      assert.deepEqual(reads.map(r => /'--start' '0\.5'/.test(r)), [false, true, false], 'the vendor lane is set mid-way before its scroll, not after');
+    }
     if (command === 'paste') assert.match(lines.join('\n'), /^paste hidComposition: unicode \S+ .*; keyCodesOnly \S+ .*; ansiKeys \S+ /m, 'the dry run walks the three variants of the composition row');
   }
   assert.deepEqual(Object.keys(DRY_ANSWERS['live-device.mjs paste'].steps.hidComposition.variants), ['unicode', 'keyCodesOnly', 'ansiKeys']);
+});
+
+test('cellIo is the io main runs a command with, so the registry\'s runCell runs a residue cell as live.mjs does', async () => {
+  const lines = [];
+  const log = line => lines.push(line);
+  const options = {command: 'hscroll', device: 'mini', out: null, approvedRuntime: '/h', dryRun: true};
+  const io = cellIo(options, {log, dryRun: true});
+  assert.deepEqual(Object.keys(io).sort(), ['connect', 'controllerCheckout', 'dryRun', 'interrupt', 'log', 'ops'].sort());
+  assert.deepEqual(io.interrupt, {signal: null});
+  assert.deepEqual(io.controllerCheckout(), controllerCheckout(REPO_ROOT));
+  const live = cellIo({...options, dryRun: false}, {log});
+  assert.equal(live.dryRun, undefined);
+  assert.deepEqual(Object.keys(live).sort(), ['connect', 'controllerCheckout', 'interrupt', 'log', 'ops'].sort());
+  // The checkout under test may be dirty; the dry run's own refusal of one is covered by the begin tests.
+  const code = await runCell('hscroll', options, {...io, controllerCheckout: () => ({commit: io.controllerCheckout().commit, dirty: false})});
+  assert.equal(code, 0);
+  assert.match(lines.at(-1), /^hscroll PASS \(dry run/);
 });
 
 test('the vendor cells return indexes and booleans only, and refuse when TextEdit is not bound', async () => {

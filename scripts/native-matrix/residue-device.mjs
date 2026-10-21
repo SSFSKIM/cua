@@ -197,16 +197,23 @@ export async function enablementCheck({record, io, screenshots}) {
 // ---- hscroll -----------------------------------------------------------------------------------------------------
 
 // The scene's horizontal and vertical scroll-bar values (after `settleMs`, so a scroll's animation has ended), by the
-// probe: what both lanes are judged by.
-export async function hscrollRead({record, io, settleMs = 0}) {
+// probe: what both lanes are judged by. With `start`, the probe first writes that value to the horizontal scroll bar
+// (the harness's own AX path, neither lane's), so a lane starts mid-way and a scroll either way shows.
+export const HSCROLL_START = 0.5;
+export async function hscrollRead({record, io, settleMs = 0, start = null}) {
   if (settleMs > 0) await io.sleep(settleMs);
-  const read = readTextView(io, record.pid);
-  return read.error ? {error: read.error} : {horizontal: read.horizontal, vertical: read.vertical};
+  let read;
+  try {
+    const answer = io.probe(['text-view', '--pid', String(record.pid), ...(start === null ? [] : ['--set-horizontal', String(start)])]);
+    read = {...textViewOf(answer), ...(start === null ? {} : {set: answer?.set ?? null})};
+  } catch (error) { read = {error: String(error.message).slice(0, 300)}; }
+  return read.error ? {error: read.error, ...(read.set ? {set: read.set} : {})} : {horizontal: read.horizontal, vertical: read.vertical, ...(start === null ? {} : {set: read.set})};
 }
 export const HSCROLL_SETTLE_MS = 1_000;
 
 // cua's lane of the horizontal scroll: the run's wide-page TextEdit behind the run's Finder window, its text area
-// scrolled right by one page through the engine, read back by position before and after.
+// started mid-way (HSCROLL_START, by the probe), scrolled right by one page through the engine, read back by position
+// before and after.
 export async function hscrollCheck({record, user, client, io, screenshots}) {
   const userInFront = () => io.frontmost()?.pid === user.pid;
   if (!userInFront()) return {problem: 'the user window (the run\'s Finder) is not in front; nothing was sent'};
@@ -214,7 +221,7 @@ export async function hscrollCheck({record, user, client, io, screenshots}) {
   const shot = await getState(client, app, screenshots);
   const owned = ownershipProblems('textedit', shot, record);
   if (owned.length) return {problem: `the observation is not the run's TextEdit window (${owned.map(p => p.code).join(', ')}); nothing was sent`};
-  const before = await hscrollRead({record, io});
+  const before = await hscrollRead({record, io, start: HSCROLL_START});
   if (before.error || typeof before.horizontal !== 'number') return {problem: `no horizontal scroll bar to read before the scroll (${before.error ?? 'none shown'}); nothing was sent`, before};
   const scroll = await attempt(() => client.execute('scroll', {app, element: textArea(shot).token, direction: 'right', pages: 1}, {lineage: shot.lineage}));
   const after = await hscrollRead({record, io, settleMs: HSCROLL_SETTLE_MS});

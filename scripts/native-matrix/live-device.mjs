@@ -19,8 +19,9 @@
 //                                      click into the run's TextEdit behind the run's Finder window
 //   minimized-select --run <dir>       select_text into the run's minimized TextEdit, the write and the read told apart
 //   hscroll --run <dir>                cua's lane of the horizontal scroll on the run's wide-page TextEdit
-//   hscroll-read --run <dir> [--settle-ms <n>]
-//                                      the run's TextEdit's scroll-bar values by --probe text-view (both lanes' reading)
+//   hscroll-read --run <dir> [--settle-ms <n>] [--start <0..1>]
+//                                      the run's TextEdit's scroll-bar values by --probe text-view (both lanes' reading),
+//                                      after writing the horizontal bar to `start` when given (the lane's starting point)
 //   input-source                       the owner's source and per-context preference saved, Korean 2-Set selected
 //                                      through the approved bundle's probe, read back, the saved ones restored
 //   input-source-restore               the saved source and preference restored (what put-back runs)
@@ -989,7 +990,7 @@ function parse(argv) {
   }
   return {command, positional, flags};
 }
-const USAGE = 'usage: live-device.mjs begin --run <dir> --commit <sha> | minimized|enablement|paste|route4|minimized-select|hscroll|menu|putback|recover --run <dir> | hscroll-read --run <dir> [--settle-ms <n>] | putback-step <step> --run <dir> | watch start|stop --run <dir> | input-source [--run <dir>] | input-source-restore';
+const USAGE = 'usage: live-device.mjs begin --run <dir> --commit <sha> | minimized|enablement|paste|route4|minimized-select|hscroll|menu|putback|recover --run <dir> | hscroll-read --run <dir> [--settle-ms <n>] [--start <0..1>] | putback-step <step> --run <dir> | watch start|stop --run <dir> | input-source [--run <dir>] | input-source-restore';
 const runDir = flags => {
   if (!flags.run || !isAbsolute(flags.run)) throw new Error('--run <absolute directory> is required');
   fs.mkdirSync(flags.run, {recursive: true, mode: 0o700});
@@ -1034,8 +1035,10 @@ export async function main(argv, {io: given = {}} = {}) {
   if (command === 'route4') return route4Check({record, user: sceneRecord(run, 'finder'), io, run, screenshots});
   if (command === 'hscroll-read') {
     const settleMs = flags['settle-ms'] === undefined ? 0 : Number(flags['settle-ms']);
+    const start = flags.start === undefined ? null : Number(flags.start);
     if (!Number.isInteger(settleMs) || settleMs < 0 || settleMs > 10 * HSCROLL_SETTLE_MS) throw new Error(USAGE);
-    return hscrollRead({record, io, settleMs});
+    if (start !== null && !(Number.isFinite(start) && start >= 0 && start <= 1)) throw new Error(USAGE);
+    return hscrollRead({record, io, settleMs, start});
   }
   const client = io.client();
   try {

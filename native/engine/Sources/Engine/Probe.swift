@@ -27,7 +27,7 @@ enum Probe {
     case "watch-activations":
       return watchActivations()
     default:
-      return emit(["error": "usage: --probe input-source current|<id> | keystroke --user-pid <n> --user-bounds <x,y,w,h> [--at <unix ms>] [--key-codes-only|--ansi-keys] <text> | focus [--window <pid,x,y,w,h>] | text-view --pid <n> | watch-activations"],
+      return emit(["error": "usage: --probe input-source current|<id> | keystroke --user-pid <n> --user-bounds <x,y,w,h> [--at <unix ms>] [--key-codes-only|--ansi-keys] <text> | focus [--window <pid,x,y,w,h>] | text-view --pid <n> [--set-horizontal <0..1>] | watch-activations"],
                   status: 64)
     }
   }

@@ -600,6 +600,73 @@ final class ActivationSparingTests: XCTestCase {
   }
 }
 
+// MARK: The menu activation switch
+
+final class MenuActivationTests: XCTestCase {
+  private let target: pid_t = 990_001, user: pid_t = 990_002
+  private let window = CGRect(x: 80, y: 60, width: 610, height: 860)
+
+  private func meta() -> InputMeta {
+    InputMeta(ExecutionContext(connection: ConnectionState(id: 1, fd: -1), receivedAt: 1, hidIdleMs: 0, deadline: 2, lineage: nil))
+  }
+
+  private func activation(_ seam: GuardSeam) -> FakeActivation {
+    seam.activationPoint = CGPoint(x: 300, y: 70)  // the title bar, inside the frame
+    return FakeActivation(pid: target, window: AXUIElementCreateApplication(target), windowFrame: window, windowID: 41, system: seam.system)
+  }
+
+  func testThePressRunsBetweenTheActivationAndTheDeactivationAndStaysRouteOne() throws {
+    let seam = GuardSeam(frontmost: user)
+    var meta = meta()
+    var postsAtPress: [GuardPost.Kind] = []
+    try deliverActivatedAction("AXPress", activation: activation(seam), perform: { action in
+      XCTAssertEqual(action, "AXPress")
+      postsAtPress = seam.posts.map(\.kind)
+      return .success
+    }, meta: &meta)
+    XCTAssertEqual(postsAtPress, [.appKit(1), .mouse(.leftMouseDown), .mouse(.leftMouseUp)], "activated, its click at the activation point")
+    XCTAssertEqual(seam.posts.map(\.kind).last, .appKit(2), "deactivated after the press")
+    XCTAssertEqual(meta.inputRoute, .action)
+    XCTAssertNotNil(meta.activationGuardMs)
+    XCTAssertNotNil(meta.startedAt)
+  }
+
+  func testAGuardFailurePressesNothing() {
+    let seam = GuardSeam(frontmost: user, frontmostAfterPost: target)  // the app came to the front
+    var meta = meta(), presses = 0
+    XCTAssertThrowsError(try deliverActivatedAction("AXPress", activation: activation(seam), perform: { _ in presses += 1; return .success }, meta: &meta)) { error in
+      XCTAssertEqual((error as? EngineError)?.errorName, "activationFailed")
+    }
+    XCTAssertEqual(presses, 0)
+    XCTAssertNil(meta.startedAt, "nothing was pressed")
+    XCTAssertEqual(meta.inputRoute, .action)
+  }
+
+  func testAnInterventionDuringTheActivationPressesNothingAndStillDeactivates() {
+    let seam = GuardSeam(frontmost: user)
+    var meta = meta(), presses = 0
+    XCTAssertThrowsError(try deliverActivatedAction("AXPress", activation: activation(seam),
+                                                    beforePressing: { throw EngineError(name: "userIntervened", "stopped") },
+                                                    perform: { _ in presses += 1; return .success }, meta: &meta))
+    XCTAssertEqual(presses, 0)
+    XCTAssertEqual(seam.posts.map(\.kind).last, .appKit(2))
+  }
+
+  func testOnlyAMenuItemsPressIsActivatedAndOnlyUnderTheSwitch() {
+    XCTAssertTrue(activatesPress(switchedOn: true, role: kAXMenuItemRole))
+    XCTAssertFalse(activatesPress(switchedOn: true, role: kAXButtonRole), "an ordinary route-1 click activates nothing")
+    XCTAssertFalse(activatesPress(switchedOn: true, role: kAXMenuBarItemRole))
+    XCTAssertFalse(activatesPress(switchedOn: false, role: kAXMenuItemRole))
+  }
+
+  func testTheSwitchIsOffByDefault() {
+    XCTAssertFalse(spikeMenuActivationArg([:]))
+    XCTAssertFalse(spikeMenuActivationArg(["spikeMenuActivation": false]))
+    XCTAssertFalse(spikeMenuActivationArg(["spikeMenuActivation": "true"]), "only a JSON true turns it on")
+    XCTAssertTrue(spikeMenuActivationArg(["spikeMenuActivation": true]))
+  }
+}
+
 // MARK: The methods answer
 
 final class RemainingMethodsTests: XCTestCase {

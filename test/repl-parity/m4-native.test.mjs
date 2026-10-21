@@ -49,3 +49,26 @@ test('the vendor formatter permits an enabled unnamed menu item with an empty te
  const state='Accessibility source: at_spi\n0 frame owned-fixture.txt\n\t1 text (settable)\n\t2 ';
  assert.equal(isFullNativeTree(state,'owned-fixture.txt'),true);
 });
+
+// Linux approvals (#117 M3): the lane learns its owned window's app before it binds, accepts exactly that app's
+// approval and declines everything else, so no native case can pass by accepting every approval.
+test('the native lane accepts only the approval of its owned window\'s app, learnt before the bind', async () => {
+ const {runNativeScenario,nativeWindowApp}=await import('../../scripts/repl-parity/native.mjs');
+ const approval=app=>({method:'elicitation/create',params:{message:`Allow Computer Use to use "${app}"?`,mode:'form',requestedSchema:{type:'object',properties:{}},
+  _meta:{connector_id:'computer-use',codex_approval_kind:'mcp_tool_call',tool_params:{app}}}});
+ const answers=[],calls=[];let answer;
+ const client={setElicitationAnswer:fn=>{answer=fn;},close:async()=>({code:0}),
+  call:async(name,args)=>{
+   calls.push(args?.title??name);
+   if(name==='end_task')return {isError:false,structuredContent:{status:'ended'}};
+   if(args.title==='Find harness-owned gedit'){answers.push(await answer(approval('org.gnome.gedit')));return {isError:false,content:[{type:'text',text:'NATIVE_WINDOW:{"app":"org.gnome.gedit"}'}]};}
+   for(const app of ['org.gnome.gedit','org.gnome.Terminal','(desktop)'])answers.push([app,(await answer(approval(app))).action]);
+   return {isError:false,content:[{type:'text',text:'NATIVE_READY'}]};
+  }};
+ const prepared={device:'cua-linux',platform:'linux',checkout:'/fixture',home:'/runtime'};
+ await runNativeScenario({cells:[],assert:()=>({ok:true})},{pool:{open:async()=>client},prepared,host:'cua',emit:()=>{}});
+ assert.deepEqual(calls,['Find harness-owned gedit','Bind harness-owned gedit','end_task']);
+ assert.deepEqual(answers,[{action:'decline'},['org.gnome.gedit','accept'],['org.gnome.Terminal','decline'],['(desktop)','decline']],'nothing before the window is known; then its app only');
+ assert.throws(()=>nativeWindowApp({isError:false,content:[{type:'text',text:'NATIVE_WINDOW:{"app":""}'}]}),/Native setup failed/);
+ assert.throws(()=>nativeWindowApp({isError:true,content:[{type:'text',text:'NATIVE_WINDOW:{"app":"x"}'}]}),/Native setup failed/);
+});

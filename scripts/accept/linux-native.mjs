@@ -7,7 +7,10 @@
 // the trusted worker drives the display), and that `cua.computer.launch_app` launches an application outside the
 // sandbox (#115's supervisor-side launch): a harness-owned desktop entry running zenity with the run's marker, whose
 // process must start in this machine's PID namespace and outlive the call. And it checks that `CUA_REPL_HOST=vendor` is
-// refused on Linux with a sentence. Its whole GUI footprint: one standalone gedit process (`gedit --standalone`) on an
+// refused on Linux with a sentence. Approvals (#117 M3: Linux asks per app, src/services/engine/policy.mjs): the
+// fixture accepts, for the session, only the approval of its own gedit window's app (read from the window list before
+// it binds) and of its own desktop entry's id (before it launches), declines everything else, and checks each was asked
+// once in the connection (the supervisor's memory answers repeats). Its whole GUI footprint: one standalone gedit process (`gedit --standalone`) on an
 // empty file in a directory it creates under /tmp, and one zenity dialog carrying the marker (its desktop entry under
 // ~/.local/share/applications, named for the run); both are ended (zenity only when its own command line carries the
 // marker) and both files removed in `finally`. It types with pressKey, one X keysym per character, because the
@@ -22,6 +25,7 @@ import {basename, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {defaultHome} from '../../src/runtime/layout.mjs';
 import {findTool} from '../../src/runtime/tools.mjs';
+import {pinnedApprovals} from './lib.mjs';
 import {keysymsFor} from './linux-native-lib.mjs';
 import {openSession, resultText} from './mcp-session.mjs';
 
@@ -45,6 +49,9 @@ const marked = () => readdirSync('/proc').filter(name => /^\d+$/.test(name)).fil
 }).map(Number);
 let gedit = null;
 let session = null;
+// The apps whose approval the fixture accepts (its window's, then its entry's), and every request it was asked.
+const pinned = new Set();
+const asked = [];
 try {
   const gEditPath = findTool('gedit', process.env.PATH);
   if (!step('preconditions', process.platform === 'linux' && !!process.env.DISPLAY && !!gEditPath,
@@ -52,17 +59,22 @@ try {
   writeFileSync(file, '');
   gedit = spawn(gEditPath, ['--standalone', file], {detached: true, stdio: 'ignore'});
   const runBefore = runEntries();
-  session = openSession({args: [CLI, 'serve'], env: process.env, clientName: 'cua-linux-native'});
+  session = openSession({args: [CLI, 'serve'], env: {...process.env, CUA_SHIM_PERSIST: 'session'}, clientName: 'cua-linux-native', onServerRequest: pinnedApprovals(() => pinned, asked)});
   await session.initialize();
 
-  // Bind the fixture's own window: poll the window list (bounded) for its title, then getApp by window id.
-  const bind = await session.js(`const deadline = Date.now() + 20000; let win;
+  // Find the fixture's own window: poll the window list (bounded) for its title, which asks nothing; its app is the one
+  // approval the fixture accepts for it. Then getApp by window id.
+  const find = await session.js(`const deadline = Date.now() + 20000; let win;
     while (!win && Date.now() < deadline) { win = (await cua.listWindows({emit: false})).find(w => (w.title ?? '').includes(${JSON.stringify(basename(file))})); if (!win) await new Promise(r => setTimeout(r, 500)); }
     if (!win) throw new Error('the fixture window did not appear');
-    globalThis.fixtureApp = await cua.getApp({windowId: win.id}); await fixtureApp.getAXState({emit: false});
-    nodeRepl.write(JSON.stringify({windowId: win.id, app: win.app, title: win.title}));`, 90_000);
-  const bound = /\{"windowId".*\}$/m.exec(resultText(bind))?.[0];
-  if (!step('bind the fixture window by X11 id', !bind.result?.isError && !!bound, bound ? JSON.parse(bound) : resultText(bind).slice(0, 600))) throw new Error('bind');
+    globalThis.fixtureWindow = win; nodeRepl.write(JSON.stringify({windowId: win.id, app: win.app, title: win.title}));`, 90_000);
+  const found = /\{"windowId".*\}$/m.exec(resultText(find))?.[0];
+  const window = found ? JSON.parse(found) : null;
+  if (typeof window?.app === 'string' && window.app) pinned.add(window.app);
+  const bind = window && await session.js(`globalThis.fixtureApp = await cua.getApp({windowId: fixtureWindow.id}); await fixtureApp.getAXState({emit: false});
+    nodeRepl.write('{"bound":true}');`, 90_000);
+  if (!step('bind the fixture window by X11 id', !find.result?.isError && pinned.size === 1 && !bind?.result?.isError && /"bound":true/.test(bind ? resultText(bind) : ''),
+    window ?? resultText(find).slice(0, 600))) throw new Error('bind');
 
   const typed = await session.js(`for (const key of ${JSON.stringify(keysymsFor(marker))}) await fixtureApp.pressKey(key);
     const tree = await fixtureApp.getAXState({emit: false, disableDiffing: true});
@@ -92,6 +104,7 @@ try {
   // and outlives the call.
   mkdirSync(applications, {recursive: true});
   writeFileSync(entry, `[Desktop Entry]\nType=Application\nName=cua acceptance ${marker}\nExec=/usr/bin/zenity --info --text=${marker}\nTerminal=false\n`);
+  pinned.add(entryId);
   const launched = await session.js(`await cua.computer.launch_app({app: ${JSON.stringify(entryId)}}); nodeRepl.write('launched');`, 60_000);
   let pids = [];
   for (let i = 0; i < 40 && !pids.length; i++) { await new Promise(r => setTimeout(r, 250)); pids = marked(); }
@@ -103,6 +116,12 @@ try {
 
   const ended = await session.call('end_task');
   step('end_task', ended.result?.structuredContent?.status === 'ended', ended.result?.structuredContent);
+  // Linux asks per app: the window's app once (every later gedit call answered from the connection's memory), the
+  // launched entry's id once, both accepted, and nothing else asked.
+  const approvals = asked.filter(a => a.method === 'elicitation/create');
+  step('approvals: the fixture window\'s app and the launched entry\'s id, each asked once and accepted, nothing else asked',
+    approvals.length === 2 && [...pinned].every(app => approvals.filter(a => a.app === app && a.action === 'accept').length === 1),
+    {pinned: [...pinned], asked: approvals, otherRequests: asked.length - approvals.length});
   const exit = await session.terminate();
   session = null;
   step('cua serve exited cleanly', exit.code === 0 && !exit.forced, exit);

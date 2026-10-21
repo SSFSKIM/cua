@@ -22,6 +22,7 @@ import {TRUSTED_WORKER} from '../../src/repl-host/supervisor.mjs';
 import {kernelNode} from './kernel-harness.mjs';
 import {alive, descendants, texts} from './supervisor-harness.mjs';
 import {linuxNativeRuntime, sha256} from '../fixtures/linux-native-runtime.mjs';
+import {pinnedApprovals} from '../../scripts/accept/lib.mjs';
 
 const {node, skip} = kernelNode();
 const own = {skip};
@@ -33,9 +34,14 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 const pgidOf = pid => Number(execFileSync('ps', ['-o', 'pgid=', '-p', String(pid)], {encoding: 'utf8'}).trim());
 const caught = code => `try { ${code} nodeRepl.write("resolved"); } catch (e) { nodeRepl.write(e.message); }`;
 
+// The app of the fixture's windows (test/fixtures/linux-native-runtime.mjs), the one approval the sessions accept.
+const GEDIT = 'org.gnome.gedit';
+
 // A connection's runtime for a Linux session on `surfaces`, CUA_REPL_HOST=cua -> the driver: {call, js, stop,
-// terminate, worker(), fixture, launch}. Calls carry the sandbox state the proxy derives for Linux and these surfaces
-// (sandboxModeFrom with CUA_SHIM_SANDBOX unset).
+// terminate, worker(), fixture, launch, asked}. Calls carry the sandbox state the proxy derives for Linux and these
+// surfaces (sandboxModeFrom with CUA_SHIM_SANDBOX unset). The client offers form elicitation and answers as cua's proxy
+// does under the session default: it accepts the approval of the fixture's app with `_meta.persist: "session"` and
+// declines anything else, recording each request in `asked` (#117 M3: the wrapper asks Linux's approvals).
 async function linuxSession(t, {surfaces, secrets = {}}) {
   const fixture = linuxNativeRuntime(t, {node, secrets});
   const ambient = {HOME: fixture.home, USER: 'u', TMPDIR: process.env.TMPDIR, LANG: 'C.UTF-8', CUA_REPL_HOST: 'cua', ...DESKTOP};
@@ -52,7 +58,17 @@ async function linuxSession(t, {surfaces, secrets = {}}) {
   const upstream = lazyRuntime({start: async () => (current = spawnUpstream(launch, {stderr: 'ignore'})),
     records: handshakeRecords({dir: join(fixture.home, 'state', 'handshake'), surfaces, host: hostIdentity({host: 'cua', release: fixture.runtime.release})})});
   const pending = new Map();
-  upstream.onMessage(msg => { pending.get(msg.id)?.(msg); pending.delete(msg.id); });
+  const asked = [];
+  const answer = pinnedApprovals(() => [GEDIT], asked);
+  upstream.onMessage(msg => {
+    if (msg.method === 'elicitation/create') {
+      const result = answer(msg);
+      upstream.send({jsonrpc: '2.0', id: msg.id, result: result.action === 'accept' ? {...result, _meta: {persist: 'session'}} : result});
+      return;
+    }
+    pending.get(msg.id)?.(msg);
+    pending.delete(msg.id);
+  });
   let id = 0;
   const request = (method, params) => new Promise((resolve, reject) => {
     const n = ++id;
@@ -61,12 +77,12 @@ async function linuxSession(t, {surfaces, secrets = {}}) {
     upstream.send({jsonrpc: '2.0', id: n, method, params});
   });
   t.after(() => upstream.terminate({budgetMs: 5000}));
-  const initialized = await request('initialize', {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'linux-native-test', version: '0'}});
+  const initialized = await request('initialize', {protocolVersion: '2025-06-18', capabilities: {elicitation: {}}, clientInfo: {name: 'linux-native-test', version: '0'}});
   const call = async (name, args = {}) => (await request('tools/call', {name, arguments: args, _meta: meta})).result;
   const js = async (code, extra = {}) => call('js', {code, ...extra});
   // The worker itself, not the helper (double) that launched it with the worker's command line after `--`.
   const worker = () => descendants(current.pid).filter(p => p.command.includes(TRUSTED_WORKER) && !p.command.includes('--permission-profile'));
-  return {fixture, launch, initialized, call, js, worker, group: () => current.pid,
+  return {fixture, launch, initialized, call, js, worker, asked, group: () => current.pid,
     stop: () => upstream.stop({budgetMs: 5000}), terminate: () => upstream.terminate({budgetMs: 5000})};
 }
 
@@ -98,9 +114,11 @@ test('a Linux computer session on the own host drives sky_linux through the owne
   assert.deepEqual(first._meta[REPL_HOST_META_KEY], {host: 'cua', version: REPL_HOST_VERSION});
   assert.deepEqual(JSON.parse(texts(first).at(-1)), {target: 'linux', windows: [7, 8],
     keys: ['computer', 'getApp', 'getState', 'initialize', 'listApps', 'listWindows', 'rewriteDocumentation']});
+  // Each window method follows the approval's own list_windows (the app sky_linux names for that window id).
   assert.deepEqual(session.fixture.helperLog().map(({command, window, text}) => [command, window, text]), [
-    ['list_windows', null, undefined], ['list_windows', null, undefined], ['get_window_state', 7, undefined],
-    ['type_text', 7, sha256('hello')], ['press_key', 7, undefined]]);
+    ['list_windows', null, undefined], ['list_windows', null, undefined], ['list_windows', null, undefined], ['get_window_state', 7, undefined],
+    ['list_windows', null, undefined], ['type_text', 7, sha256('hello')], ['list_windows', null, undefined], ['press_key', 7, undefined]]);
+  assert.deepEqual(session.asked, [{method: 'elicitation/create', app: GEDIT, action: 'accept'}], 'one approval for the window\'s app; the host remembers it');
   assertConfined(session.fixture.launches(), {worker: 'enabled'});
 
   const [helper] = new Set(session.fixture.helperLog().map(entry => entry.pid));
@@ -117,6 +135,7 @@ test('a Linux computer session on the own host drives sky_linux through the owne
   await delay(300);
   assert.equal(alive(helper), true, 'the helper survived the kernel\'s timeout and the reset');
   ok(await session.js('const again = await cua.getApp({windowId: 7}); await again.typeText("after");'));
+  assert.equal(session.asked.length, 1, 'the approval outlives the kernel\'s timeout and the reset');
   assert.deepEqual([...new Set(session.fixture.helperLog().map(entry => entry.pid))], [helper], 'the same helper answered after the kernel was replaced');
 
   // The idle stop (lazy-runtime stop: the owned group's teardown) takes the worker and its helper; the next call starts
@@ -127,6 +146,8 @@ test('a Linux computer session on the own host drives sky_linux through the owne
   ok(await session.js('const later = await cua.getApp({windowId: 7}); await later.pressKey("Return");'));
   const relaunched = session.fixture.helperLog().at(-1).pid;
   assert.notEqual(relaunched, helper, 'a fresh helper after the idle stop');
+  // Whether the approval also outlives the idle stop is the supervisor memory's scope, not this test's: only the app.
+  assert.ok(session.asked.every(entry => entry.app === GEDIT && entry.action === 'accept'), JSON.stringify(session.asked));
   assert.equal((await session.terminate()).confirmed, true, 'the connection\'s close empties the group too');
   assert.equal(alive(relaunched), false);
 });
@@ -157,6 +178,7 @@ test('Linux native secret substitution: a whole-field reference in typeText and 
   assert.equal(await run(caught('await failing.typeText("plain");')), 'AT-SPI could not insert plain', 'an ordinary failure keeps the native error');
 
   assert.equal(JSON.stringify(results).includes(SENTINEL), false, 'no result carries the value');
+  assert.deepEqual(session.asked.map(({app, action}) => [app, action]), [[GEDIT, 'accept']], 'both windows are the one app\'s: asked once');
 });
 
 test('a combined Linux session on the own host has both surfaces, the scoped default and the same helper; a browser-only one keeps the worker off the network', own, async t => {

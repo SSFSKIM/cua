@@ -16,11 +16,18 @@ const paste = (text, extra = {}) => ({type: 'execute', method: 'paste', args: [{
 const typeText = text => ({type: 'execute', method: 'type_text', args: [{app: 'com.apple.TextEdit', text}]});
 const setValue = value => ({type: 'execute', method: 'set_value', args: [{app: 'com.apple.TextEdit', element_index: 4, value}]});
 
-// A vendor double recording each request it is given, answering with `answer(request)` (which may throw).
+// A vendor double recording each request it is given, answering with `answer(request)` (which may throw). On Linux the
+// wrapper asks its approvals first (test/services-sky-linux-policy.test.mjs): the double lists LINUX_WINDOWS for the
+// policy's window lookup, which is not recorded, and the client accepts every approval.
 function harness({answer = () => undefined, secretsUnavailable = null, read, platform = 'darwin'} = {}) {
   const received = [];
   const reads = [];
-  const vendor = {handleRpc: async request => { received.push(structuredClone(request)); return answer(request); }};
+  const vendor = {handleRpc: async request => {
+    if (platform === 'linux' && request.method === 'list_windows') return LINUX_WINDOWS;
+    received.push(structuredClone(request));
+    return answer(request);
+  }};
+  const nodeRepl = {requestMeta: {}, createElicitation: async () => ({action: 'accept', content: {}})};
   const secrets = {
     read: read ?? (async label => {
       reads.push(label);
@@ -28,7 +35,7 @@ function harness({answer = () => undefined, secretsUnavailable = null, read, pla
       return VALUES[label];
     }),
   };
-  const service = createSkyService({loadVendor: async () => vendor, secrets, secretsUnavailable, platform});
+  const service = createSkyService({loadVendor: async () => vendor, secrets, secretsUnavailable, platform, nodeRepl});
   return {service, received, reads};
 }
 
@@ -420,6 +427,7 @@ test('with secrets off or unavailable, a coerced-method reference still fails cl
 // Linux (Phase F shapes, tinysky_alt/bind_linux_app.js): the bound app is a window object, paste arrives as type_text,
 // and setValue does not exist. The window is the vendor's own (sky_linux list_windows/get_window_state).
 const WINDOW = {app: 'Gedit', focused: true, height: 600, id: 6291503, modal: false, title: 'notes.txt - gedit', width: 800, window_type: 'normal', x: 0, y: 0};
+const LINUX_WINDOWS = [WINDOW];
 const linuxType = (text, window = WINDOW) => ({type: 'execute', method: 'type_text', args: [{window, text}]});
 
 test('Linux: a reference as the whole text of type_text {window, text} is substituted', async () => {

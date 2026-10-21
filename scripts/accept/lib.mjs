@@ -173,20 +173,38 @@ function nodeOptionsTokens(text) {
 // no field (an object schema with no properties).
 // The live TextEdit fixture accepts this one request (for the session only) and declines everything else.
 export const TEXTEDIT_BUNDLE = 'com.apple.TextEdit';
-export function isTextEditApproval(msg) {
+export const isTextEditApproval = msg => isComputerUseApproval(msg, {app: TEXTEDIT_BUNDLE, display: 'TextEdit'});
+
+// The same request for any one app: `app` the key it carries (macOS: the bundle id; Linux: the window's app as
+// listWindows() names it, launch_app's id, or the whole desktop's key), `display` the name its message shows (Linux:
+// the key itself). The Linux harnesses accept it for the app of the window they own and decline everything else.
+export function isComputerUseApproval(msg, {app, display = app}) {
   if (msg?.method !== 'elicitation/create') return false;
   const params = msg.params ?? {};
   const meta = params._meta ?? {};
   const toolParams = meta.tool_params;
   const schema = params.requestedSchema;
-  return params.message === 'Allow Computer Use to use "TextEdit"?'
+  return typeof app === 'string' && app !== ''
+    && params.message === `Allow Computer Use to use "${display}"?`
     && params.mode === 'form'
     && schema !== null && typeof schema === 'object' && schema.type === 'object'
     && schema.properties !== null && typeof schema.properties === 'object' && Object.keys(schema.properties).length === 0
     && meta.connector_id === 'computer-use'
     && meta.codex_approval_kind === 'mcp_tool_call'
     && toolParams !== null && typeof toolParams === 'object'
-    && Object.keys(toolParams).length === 1 && toolParams.app === TEXTEDIT_BUNDLE;
+    && Object.keys(toolParams).length === 1 && toolParams.app === app;
+}
+
+// A server-request handler (scripts/accept/mcp-session.mjs onServerRequest, a parity client's answer) that accepts, for
+// the session, exactly the approval of an app in `pinned()` (the apps of the windows the harness owns, read once known)
+// and declines everything else, recording each request's app and answer in `asked`.
+export function pinnedApprovals(pinned, asked = []) {
+  return msg => {
+    const app = msg?.params?._meta?.tool_params?.app ?? null;
+    const accepted = [...pinned()].some(key => isComputerUseApproval(msg, {app: key}));
+    asked.push({method: msg?.method ?? null, app, action: accepted ? 'accept' : 'decline'});
+    return accepted ? {action: 'accept', content: {}} : {action: 'decline'};
+  };
 }
 
 // Every entry under `root` (symbolic links are recorded, not followed) with what a mutation would change.

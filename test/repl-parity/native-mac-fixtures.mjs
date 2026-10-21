@@ -12,15 +12,21 @@ const read = (scene, name) => fs.readFileSync(new URL(`${scene}/${name}`, GOLDEN
 const rendered = (scene, name) => { const shot = JSON.parse(read(scene, name)); return render(shot, advanceNumbering(null, shot)); };
 export const sha = text => createHash('sha256').update(text).digest('hex');
 const noChange = full => `There has been no change in the accessibility tree for ${/^(Window: "[^"]*")/.exec(full)[1]}.`;
+// The no-change answer an observation of `after`'s scene gives when nothing moved: the sentence, then `after`'s trailer
+// (the renderer appends the current selection or focus to it, src/services/engine/diff.mjs).
+export function settledAfter(after, full) {
+  const lines = after.split('\n'), at = lines.findIndex(line => /^(The focused UI element is |Selected:$|Selected text: ```$)/.test(line));
+  return `${noChange(full)}${at < 0 ? '' : `\n${lines.slice(at).join('\n')}`}`;
+}
 
 // Per scene {full, before, diff, later}: the vendor's recorded texts, or cua's renderings of its recorded Skyshots; the
-// observation two seconds after the action is the no-change answer on both (a settled scene).
+// observation two seconds after the action is the no-change answer with the diff's trailer on both (a settled scene).
 export function laneTexts(engine) {
   return Object.fromEntries(SCENE_IDS.map(scene => {
     const full = engine === 'vendor' ? read(scene, 'vendor.txt') : read(scene, 'cua.txt');
     const before = engine === 'vendor' ? read(scene, 'action.vendor.before.txt') : rendered(scene, 'action.before.skyshot.json');
     const diff = engine === 'vendor' ? read(scene, 'action.vendor.diff.txt') : read(scene, 'cua.diff.txt');
-    return [scene, {full, before, diff, later: noChange(full)}];
+    return [scene, {full, before, diff, later: settledAfter(diff, full)}];
   }));
 }
 

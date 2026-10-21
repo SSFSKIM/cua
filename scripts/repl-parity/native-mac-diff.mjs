@@ -10,10 +10,16 @@
 // action, its indexes read through `before`'s matched lines). A golden adding more than a tenth of its lines needs a
 // declaration citing a Decision Log entry (part 3's 10% rule), as the goldens' test applies it to the two trees.
 //
+// The observation right after the action is compared in the form it came in: a default-mode observation is a diff, the
+// no-change answer, or the full tree (the renderer's fallback when the changes do not fit the diff's budget or the
+// lineage is new, src/services/engine/diff.mjs), the last compared as a tree. Two lanes answering in two forms (a full
+// tree against a diff) are a difference of form.
+//
 // The settle cell ("the observation right after an action equals the observation two seconds later", part 7) is scored
 // on both engines: a lane settled when its default-mode observation two seconds after the one right after the action is
-// the no-change answer, which the renderer gives exactly when the rendered tree did not change. A lane that did not settle
-// is a difference, on either engine, until it is declared.
+// the no-change answer for the same window with the same trailer (the renderer appends the current selection or focus
+// to the no-change sentence, so an unchanged tree with a moved focus is not settled). A lane that did not settle is a
+// difference, on either engine, until it is declared.
 //
 // Every difference is declared in the expected file with its cause, as scripts/repl-parity/vendor-defects.mjs declares
 // the vendor's (`fault: "vendor"`), or counted: the report's `summary` is "N unexpected differences". A declaration
@@ -22,7 +28,7 @@ import * as fs from 'node:fs';
 import {createHash} from 'node:crypto';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {compare} from '../../test/native-goldens/compare.mjs';
+import {compare, parse} from '../../test/native-goldens/compare.mjs';
 import {allowsAddedLines} from '../../test/native-goldens/goldens.mjs';
 import {SCENE_IDS} from './scenes-mac.mjs';
 
@@ -109,10 +115,19 @@ export function checkPair(vendor, cua, {declarations = []} = {}) {
   if (a.harness?.commit !== b.harness?.commit) throw new Error('the runs\' cells came from two controller commits: the same scripted cells run on both engines');
 }
 
-// The no-change answer the observation two seconds after the action gives on a settled scene (the renderer's
-// src/services/engine/diff.mjs; the vendor's sentence, R/sky-behaviour.md "No change").
-const NO_CHANGE = /^There has been no change in the accessibility tree for Window: "/;
-export const isSettled = text => typeof text === 'string' && NO_CHANGE.test(text);
+// An observation's form by its first line (the renderer's src/services/engine/diff.mjs and render.mjs; the vendor's
+// sentences, R/sky-behaviour.md §9): 'full', 'diff', 'noChange', or null.
+const FORMS = [['noChange', /^There has been no change in the accessibility tree for Window: "/],
+  ['diff', /^The following is a diff from the previous accessibility tree for Window: "/], ['full', /^Window: "/]];
+export const formOf = text => (typeof text === 'string' ? FORMS.find(([, pattern]) => pattern.test(text))?.[0] ?? null : null);
+const parsed = text => parse(text, {kind: formOf(text) === 'full' ? 'full' : 'diff'});
+const windowOf = text => /Window: "([^"]*)"/.exec(text.split('\n')[0])?.[1] ?? null;
+// Settled: the observation two seconds after `after` (the one right after the action) is the no-change answer for the
+// same window, with the same trailer, so nothing of the observation moved: neither the tree, nor the selection or focus.
+export function isSettled(after, later) {
+  if (formOf(after) === null || formOf(later) !== 'noChange' || windowOf(after) !== windowOf(later)) return false;
+  return (parsed(after).trailer?.text ?? null) === (parsed(later).trailer?.text ?? null);
+}
 
 const statusOf = row => (row ? {ok: row.ok === true, ...(row.ok ? {} : {error: row.error ?? null})} : {ok: false, error: 'no row'});
 
@@ -135,10 +150,21 @@ export function diffNativeMac(vendor, cua, {declarations = []} = {}) {
         continue;
       }
       const rules = applies(scene, golden).filter(rule => rule.kind !== 'settle');
-      const result = compare(v, c, {kind: golden === 'diff' ? 'diff' : 'full', declared: rules, indexMap: golden === 'diff' ? indexMap : null});
+      // The fixed state and the action's first observation are full trees; the one right after the action is compared
+      // in the form both lanes gave it, a diff (or the no-change answer) through `before`'s indexes, a full tree as one.
+      const forms = [formOf(v), formOf(c)], diffLike = form => form === 'diff' || form === 'noChange';
+      const as = golden !== 'diff' ? (forms.every(form => form === 'full') ? 'full' : null)
+        : forms.every(diffLike) ? 'diff' : forms.every(form => form === 'full') ? 'full' : null;
+      if (as === null) {
+        const difference = {scene, golden, kind: 'form', vendor: forms[0], cua: forms[1]};
+        out[golden] = {compared: false, differences: [difference]};
+        differences.push(difference);
+        continue;
+      }
+      const result = compare(v, c, {kind: as, declared: rules, indexMap: as === 'diff' ? indexMap : null});
       if (golden === 'before') indexMap = result.indexMap;
       const found = result.differences.map(d => ({scene, golden, ...d}));
-      if (golden !== 'diff' && result.added > result.lines * 0.1 && !allowsAddedLines(rules)) found.push({scene, golden, kind: 'addedOverTenPercent', added: result.added, lines: result.lines});
+      if (as === 'full' && result.added > result.lines * 0.1 && !allowsAddedLines(rules)) found.push({scene, golden, kind: 'addedOverTenPercent', added: result.added, lines: result.lines});
       out[golden] = {compared: true, added: result.added, lines: result.lines, differences: found};
       differences.push(...found);
       declared.push(...rules.map(rule => ({scene, golden, kind: rule.kind, fault: rule.fault, cause: rule.cause, ...(rule.count ? {count: rule.count} : {})})));
@@ -154,7 +180,7 @@ export function diffNativeMac(vendor, cua, {declarations = []} = {}) {
         out.settle[lane] = null;
         continue;
       }
-      const settled = isSettled(run.text(scene, 'later'));
+      const settled = isSettled(run.text(scene, 'diff'), run.text(scene, 'later'));
       out.settle[lane] = settled;
       if (settled) continue;
       const rule = settleRules.find(each => each.lane === lane && each.left > 0);

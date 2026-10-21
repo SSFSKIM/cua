@@ -28,14 +28,20 @@ const ENGINE_FACTS = {checkoutBuild: BUILD, installed: {bundlePath: APPROVED_ENG
 const ATTEST = {vendor: {engine: 'vendor', version: '1.0.744', build: RELEASE}, cua: {engine: 'cua', version: '0.1.0', build: BUILD}};
 
 // The device: the scenes' CLI, cua's side reads (goldens-device.mjs), preparation, the lane's preflight, the files.
-function fakeDevice({verify = () => null, preflight = {}, frontmost = {pid: 321, bundleId: 'com.apple.Terminal'}} = {}) {
+// `teardown(scene, n)` and `down(scene, n)` (the n-th call for the scene) answer a failure: a message the teardown steps
+// throw, or the down's answer.
+function fakeDevice({verify = () => null, preflight = {}, frontmost = {pid: 321, bundleId: 'com.apple.Terminal'}, teardown = () => null, down = () => null} = {}) {
   const calls = [], files = new Map(), taken = [], discarded = [];
   let pid = 100;
   const ops = {
     goldens(args) {
       calls.push(['goldens', ...args]);
       const [command, scene] = args;
-      if (command === 'steps') return {scene, phase: args.at(-1), steps: []};
+      if (command === 'steps') {
+        const failure = args.at(-1) === 'teardown' && teardown(scene, calls.filter(c => c[1] === 'steps' && c[2] === scene && c.at(-1) === 'teardown').length);
+        if (failure) throw new Error(failure);
+        return {scene, phase: args.at(-1), steps: []};
+      }
       if (command === 'observe' || command === 'verify') {
         const n = calls.filter(c => c[1] === command && c[2] === scene).length;
         return verify(scene, n, command) ?? {scene, build: BUILD, skyshot: {nodes: []}, timings: null, frame: null, problems: []};
@@ -51,7 +57,7 @@ function fakeDevice({verify = () => null, preflight = {}, frontmost = {pid: 321,
       if (command === 'preflight') return {refusals: []};
       if (command === 'up') return {scene, app: `/Apps/${scene}.app`, bundleId: SCENES[scene].bundleId, pid: pid++, window: {number: 7}, setup: []};
       if (command === 'activate') return {scene, ok: true};
-      if (command === 'down') return {scene, down: true};
+      if (command === 'down') return down(scene, calls.filter(c => c[1] === 'down' && c[2] === scene).length) ?? {scene, down: true};
       if (command === 'reactivate') return {reactivated: true, inFront: true};
       throw new Error(`unexpected scenes ${command}`);
     },
@@ -177,6 +183,49 @@ test('an engine that changes mid-run stops the run at that result, incomplete, w
   assert.equal(lane.cells.includes('action finder'), false, 'nothing more is sent once an attestation changed');
   const ups = run.device.calls.filter(c => c[1] === 'up').map(c => c[2]), downs = run.device.calls.filter(c => c[1] === 'down').map(c => c[2]);
   assert.deepEqual(downs, ups);
+});
+
+test('a scene that would not come down: its down is tried whatever its teardown answered, once more at the end, and a scene still up keeps the approved home held', async () => {
+  // A transient failure: Finder's teardown steps stop once, so its down refuses (the run's window still open); the final
+  // recovery brings it down and the run ends as usual.
+  const transient = await runLane({engine: 'vendor', device: fakeDevice({
+    teardown: (scene, n) => (scene === 'finder' && n === 1 ? 'the key guard found another window in front' : null),
+    down: (scene, n) => (scene === 'finder' && n === 1 ? {scene, down: false, windowOpen: true, reason: 'the run\'s Finder window is still open'} : null)})});
+  assert.equal(transient.code, 0, transient.meta.error ?? transient.meta.problems.join('; '));
+  assert.deepEqual(transient.meta.scenes.finder.takeDown, {attempts: 2, failures: ['its teardown steps stopped: the key guard found another window in front', 'the run\'s Finder window is still open'], down: true});
+  const order = transient.device.calls.map(c => c.slice(0, 3).join(' '));
+  assert.deepEqual(order.filter(c => c.startsWith('scenes down')), ['scenes down textedit', 'scenes down finder', 'scenes down chrome', 'scenes down electron', 'scenes down finder']);
+  assert.ok(order.lastIndexOf('scenes down finder') < order.indexOf('cleanup /h'), 'the recovery comes before the approved home is given back');
+  assert.equal(fs.existsSync(join(transient.out, 'preparation.json')), false);
+
+  // Teardown steps that fail do not keep a scene's processes up: its down is still sent, and answers.
+  const stepsOnly = await runLane({engine: 'vendor', device: fakeDevice({teardown: scene => (scene === 'chrome' ? 'the steps stopped' : null)})});
+  assert.equal(stepsOnly.code, 0);
+  assert.deepEqual(stepsOnly.meta.scenes.chrome.takeDown, {attempts: 1, failures: ['its teardown steps stopped: the steps stopped'], down: true});
+
+  // A scene still up after the recovery: the run is incomplete, the approved home stays held and preparation.json stays,
+  // the input of goldens.mjs cleanup; the lane is closed and the owner's front app put back all the same.
+  const stuck = await runLane({engine: 'vendor', device: fakeDevice({down: scene => (scene === 'textedit' ? {scene, down: false, reason: 'TextEdit 101 still running'} : null)})});
+  assert.equal(stuck.code, 1);
+  assert.deepEqual(stuck.meta.problems, ['textedit: could not be brought down (TextEdit 101 still running)']);
+  assert.equal(stuck.meta.scenes.textedit.takeDown.attempts, 2);
+  assert.equal(stuck.device.calls.some(c => c[0] === 'cleanup'), false);
+  assert.match(stuck.meta.preparationCleanup.deferred, /textedit/);
+  const journal = JSON.parse(fs.readFileSync(join(stuck.out, 'preparation.json'), 'utf8'));
+  assert.deepEqual([journal.device, journal.prepared.home, journal.frontmost.bundleId], ['mini', '/h', 'com.apple.Terminal']);
+  assert.equal(stuck.lane.closed, true);
+  assert.deepEqual(stuck.device.calls.at(-1).slice(0, 2), ['scenes', 'reactivate']);
+});
+
+test('a scene whose up failed part way is still brought down', async () => {
+  const device = fakeDevice();
+  const scenes = device.ops.scenes;
+  device.ops.scenes = args => { if (args[0] === 'up' && args[1] === 'chrome') { device.calls.push(['scenes', ...args]); throw new Error('the scene page did not start within 10000 ms'); } return scenes(args); };
+  const run = await runLane({engine: 'vendor', device});
+  assert.equal(run.code, 1);
+  assert.ok(run.device.calls.some(c => c[1] === 'down' && c[2] === 'chrome'));
+  assert.equal(run.meta.scenes.chrome.takeDown.down, true);
+  assert.equal(fs.existsSync(join(run.out, 'preparation.json')), false);
 });
 
 test('refusals before any scene: the approved engine is not the checkout\'s build, the harness checkout is elsewhere, the controller is dirty', async () => {

@@ -29,7 +29,11 @@
 //     down. A text whose state cua's read refused is removed on the device unread: the fixed text is taken again (three
 //     attempts), the action's end the scene. A lane cell that fails is the lane's outcome, recorded for the diff.
 //   - Always ends with every scene down, the lane closed, the approved home given back with the engine stopped
-//     (prepare.mjs cleanupRun), and the owner's front app back in front.
+//     (prepare.mjs cleanupRun), and the owner's front app back in front. A scene's down is tried even when its teardown
+//     steps failed (down checks for itself what is still the run's: Finder's refuses while the run's window is open), and
+//     a scene that stayed up is tried once more at the end. One still up then leaves the approved home held and
+//     preparation.json in place, so `goldens.mjs cleanup --preparation` restores it all in order (Finder's teardown,
+//     every scene down, the engine stopped, the home given back): the run's journal goes only once nothing is left.
 // It writes <out>/meta.json (the sitting's facts, the attestations, each scene's account; never a token, an identity or
 // any accessibility text), <out>/results.jsonl (one row per scene and cell: bind, fixed, action, settle) and
 // <out>/texts/<scene>/<kind>.txt (full, before, diff, later). Exit 0 complete, 1 incomplete, 2 refused.
@@ -182,12 +186,18 @@ export async function runNativeMac(options, io) {
     meta.error = error.message;
     log(`run stopped: ${error.message}`);
   } finally {
+    // The bounded final recovery: each scene still up gets one more teardown and down.
     for (const id of [...ctx.up]) takeDown(ctx, id);
+    const outstanding = [...ctx.up];
+    for (const id of outstanding) meta.problems.push(`${id}: could not be brought down (${meta.scenes[id]?.takeDown?.failures.at(-1) ?? 'it stayed up'})`);
     if (client) {
       try { await client.call('end_task'); } catch {}
       try { await client.close(); } catch {}
     }
-    if (ctx.prepared) {
+    if (ctx.prepared && outstanding.length) {
+      meta.preparationCleanup = {deferred: `the scenes ${outstanding.join(', ')} are still up`};
+      log(`${outstanding.join(', ')} still up: the approved home stays held and ${join(dir, 'preparation.json')} kept; restore it all with node scripts/native-matrix/goldens.mjs cleanup --device ${device} --preparation ${join(dir, 'preparation.json')}`);
+    } else if (ctx.prepared) {
       try {
         const cleanup = ops.cleanup(ctx.prepared);
         meta.preparationCleanup = {removed: cleanup.removed === true};
@@ -255,16 +265,18 @@ async function runScene(ctx, id) {
   }
   const texts = Object.fromEntries(files.map(file => [file.kind, keep(ctx, id, file)]));
   emit({scene: id, cell: 'action', ok: true, index: action.value.index, texts});
-  const later = fs.readFileSync(join(ctx.dir, texts.later.file), 'utf8');
-  emit({scene: id, cell: 'settle', ok: true, settled: isSettled(later)});
+  const keptText = kind => fs.readFileSync(join(ctx.dir, texts[kind].file), 'utf8');
+  emit({scene: id, cell: 'settle', ok: true, settled: isSettled(keptText('diff'), keptText('later'))});
 }
 
 function bringUp(ctx, id) {
   const {ops, run, fixtures} = ctx;
   const extra = id === 'chrome' ? ['--chrome-app', fixtures.chrome.appPath] : id === 'electron' ? ['--electron-app', fixtures.electron.appPath] : [];
+  // Counted up before `up` answers: an up that failed part way may have started what down must stop (down of a scene
+  // the run never brought up answers down).
+  ctx.up.add(id);
   let record;
   try { record = ops.scenes(['up', id, '--run', run, ...extra]); } catch (error) { throw new SceneProblem(`it did not come up: ${error.message}`); }
-  ctx.up.add(id);
   steps(ctx, id, 'setup');
   return record;
 }
@@ -272,15 +284,17 @@ function bringUp(ctx, id) {
 function steps(ctx, id, phase) {
   try { return ctx.ops.goldens(['steps', id, '--run', ctx.run, '--phase', phase]); } catch (error) { throw new SceneProblem(`its ${phase} steps stopped: ${error.message}`); }
 }
+// The scene's teardown steps, then its down whatever the steps answered; it leaves ctx.up only once down confirms it.
+// Each attempt is in the scene's account (meta.scenes[id].takeDown); the run's finally decides what a scene still up means.
 function takeDown(ctx, id) {
-  let reason = null;
+  const account = (ctx.meta.scenes[id] ??= {}).takeDown ??= {attempts: 0, failures: []};
+  account.attempts++;
+  try { steps(ctx, id, 'teardown'); } catch (error) { account.failures.push(error.message); }
   try {
-    steps(ctx, id, 'teardown');
     const down = ctx.ops.scenes(['down', id, '--run', ctx.run]);
-    if (down.down) ctx.up.delete(id); else reason = down.reason ?? 'it stayed up';
-  } catch (error) { reason = error.message; }
-  if (reason !== null) ctx.meta.problems.push(`${id}: could not be brought down (${reason})`);
-  ctx.up.delete(id);
+    if (down.down) ctx.up.delete(id); else account.failures.push(down.reason ?? 'it stayed up');
+  } catch (error) { account.failures.push(error.message); }
+  account.down = !ctx.up.has(id);
 }
 function activate(ctx, id) {
   const front = ctx.ops.scenes(['activate', id, '--run', ctx.run]);

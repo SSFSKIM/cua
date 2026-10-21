@@ -27,13 +27,15 @@ const TRAILER = /^(The focused UI element is |Selected:$|Selected text: ```$)/;
 // What differs between the lanes without being a rendering: each lane served the Chrome scene's page on its own port.
 const DRIFT = [[/127\.0\.0\.1:\d+/g, '127.0.0.1:⟨port⟩']];
 
-// A text as {header, items: [{mark, depth, index, rest}], trailer: {kind, items, text} | null, removed: [id] | null}.
-// An item's `rest` is its line after the index, with any continuation lines of a multi-line value.
+// A text as {header, items: [{mark, depth, index, rest}], trailer: {kind, items, text} | null, removed: [id] | null,
+// unparsed: [line]}. An item's `rest` is its line after the index, with any continuation lines of a multi-line value;
+// `unparsed` holds the lines before the first element line that are none of the text's kind (a full tree read as a
+// diff, say), which a comparison reports rather than drops.
 export function parse(text, {kind}) {
   const lines = text.replace(/\n$/, '').split('\n');
   const header = lines.shift();
   const items = [];
-  const out = {header, items, trailer: null, removed: null};
+  const out = {header, items, trailer: null, removed: null, unparsed: []};
   let expected = 0;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -51,6 +53,8 @@ export function parse(text, {kind}) {
       items.push({mark: match[1], depth: match[2].length, index: Number(match[3]), rest: match[4]});
     } else if (items.length) {
       items.at(-1).rest += `\n${line}`;   // a multi-line value's continuation
+    } else {
+      out.unparsed.push(line);
     }
   }
   return out;
@@ -168,6 +172,8 @@ export function compare(vendorText, cuaText, {kind = 'full', structural = false,
     return Boolean(rule);
   };
 
+  // Two texts alike: exactly, or (redacted) by length.
+  const same = (a, b) => (structural ? lengthOf(a) === lengthOf(b) : a === b);
   const matchedVendor = new Set(pairs.map(([i]) => i)), matchedCua = new Set(pairs.map(([, j]) => j));
   vendorKeys.forEach((head, i) => {
     if (!matchedVendor.has(i) && !allow('missing', rule => rule.head === head)) differences.push({kind: 'missing', head, line: vendor.items[i].rest});
@@ -183,7 +189,6 @@ export function compare(vendorText, cuaText, {kind = 'full', structural = false,
   for (const [i, j] of pairs) {
     const v = vendor.items[i], c = cua.items[j];
     if (v.depth !== c.depth) differences.push({kind: 'depth', line: v.rest, vendor: v.depth, cua: c.depth});
-    const same = (a, b) => (structural ? lengthOf(a) === lengthOf(b) : a === b);
     const vendorLine = textOf(v.rest, structural);
     let cuaLine = textOf(c.rest, structural);
     if (same(vendorLine, cuaLine)) continue;
@@ -208,21 +213,27 @@ export function compare(vendorText, cuaText, {kind = 'full', structural = false,
     differences.push({kind: 'header', vendor: vendor.header, cua: cua.header});
   }
 
-  // The trailer: the same kind, naming the matched elements.
+  // The trailer: the same kind, naming the matched elements. An element's index is followed through this comparison's
+  // matched lines and, in a diff (which prints only what changed), through the two `before` texts' (`indexMap`); an
+  // element neither names is compared by its line, and cua's must then be no element a matched line names. Selected
+  // text is compared whole.
   const map = new Map(pairs.map(([i, j]) => [vendor.items[i].index, cua.items[j].index]));
+  const resolve = index => map.get(index) ?? (kind === 'diff' ? indexMap?.get(index) : undefined);
+  const named = new Set([...map.values(), ...(kind === 'diff' && indexMap ? indexMap.values() : [])]);
   const sameTrailer = () => {
     if (!vendor.trailer || !cua.trailer) return vendor.trailer === cua.trailer;
     if (vendor.trailer.kind !== cua.trailer.kind || vendor.trailer.items.length !== cua.trailer.items.length) return false;
+    if (vendor.trailer.kind === 'selectedText') return same(textOf(vendor.trailer.text, structural), textOf(cua.trailer.text, structural));
     return vendor.trailer.items.every((item, n) => {
       const other = cua.trailer.items[n];
-      const mapped = kind === 'full' ? map.get(item.index) : undefined;
-      // A trailer element the tree does not print (or a diff, which prints only changed lines) is compared by its line.
-      return mapped === undefined ? textOf(item.rest, structural) === textOf(other.rest, structural) : mapped === other.index;
+      const mapped = resolve(item.index);
+      return mapped === undefined ? same(textOf(item.rest, structural), textOf(other.rest, structural)) && !named.has(other.index) : mapped === other.index;
     });
   };
   if (!sameTrailer() && !allow('trailer', rule => rule.vendor === (vendor.trailer?.text ?? null) && rule.cua === (cua.trailer?.text ?? null))) {
     differences.push({kind: 'trailer', vendor: vendor.trailer?.text ?? null, cua: cua.trailer?.text ?? null});
   }
+  if (vendor.unparsed.length || cua.unparsed.length) differences.push({kind: 'unparsed', vendor: vendor.unparsed, cua: cua.unparsed});
 
   if (kind === 'diff') {
     // The removed IDs and the `~` lines name elements of the previous tree: the same ones, through the before texts.

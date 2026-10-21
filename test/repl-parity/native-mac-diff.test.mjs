@@ -11,7 +11,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {checkPair, diffNativeMac, isSettled, loadNativeMacRun, summaryLine, validateDeclarations, EXPECTED_FILE} from '../../scripts/repl-parity/native-mac-diff.mjs';
-import {laneTexts, writeRun} from './native-mac-fixtures.mjs';
+import {laneTexts, settledAfter, writeRun} from './native-mac-fixtures.mjs';
 
 const scratches = [];
 after(() => { for (const dir of scratches) fs.rmSync(dir, {recursive: true, force: true}); });
@@ -79,8 +79,8 @@ test('the 10% rule: a golden adding more than a tenth of its lines needs a decla
 test('the settle cell is scored on both engines: a lane whose observation moved two seconds after its action is a difference until declared', () => {
   const moved = laneTexts('cua');
   moved.chrome.later = moved.chrome.diff;
-  assert.equal(isSettled(moved.chrome.later), false);
-  assert.equal(isSettled(laneTexts('cua').chrome.later), true);
+  assert.equal(isSettled(moved.chrome.diff, moved.chrome.later), false);
+  assert.equal(isSettled(laneTexts('cua').chrome.diff, laneTexts('cua').chrome.later), true);
   const report = diffNativeMac(...pair({cua: {texts: moved}}), {declarations});
   assert.deepEqual(report.scenes.chrome.settle, {vendor: true, cua: false});
   assert.deepEqual(report.differences.map(d => [d.scene, d.golden, d.kind, d.lane]), [['chrome', 'settle', 'settle', 'cua']]);
@@ -94,6 +94,40 @@ test('the settle cell is scored on both engines: a lane whose observation moved 
   // A settle declaration nothing needed is itself a difference.
   const unneeded = diffNativeMac(...pair(), {declarations: validateDeclarations({declarations: [...EXPECTED.declarations, declared]})});
   assert.deepEqual(unneeded.differences.map(d => [d.scene, d.kind, d.rule]), [['electron', 'overdeclared', 'settle']]);
+});
+
+test('settled is the same observation, its trailer included: a focus or selection that moved in the two seconds is not settled', () => {
+  const lane = laneTexts('cua');
+  const {diff, later} = lane.chrome;
+  assert.match(later, /^There has been no change[^\n]*\nThe focused UI element is 25 /);
+  assert.equal(isSettled(diff, later), true);
+  // The tree did not change, the focus did: the renderer's no-change sentence carries the new trailer.
+  const focusMoved = later.replace('The focused UI element is 25 체크박스 Scene option, Value: 1', 'The focused UI element is 22 텍스트 엔트리 영역 (settable) Scene notes');
+  assert.notEqual(focusMoved, later);
+  assert.equal(isSettled(diff, focusMoved), false);
+  assert.equal(isSettled(diff, later.replace(/\nThe focused UI element is[^]*$/, '')), false, 'a trailer gone');
+  assert.equal(isSettled(diff, later.replace('Window: "cua scene page"', 'Window: "another"')), false, 'another window');
+  const selected = text => `${later.split('\n')[0]}\nSelected text: \`\`\`\n${text}\n\`\`\`\n\nNote: the note.`;
+  assert.equal(isSettled(selected('abc'), selected('abc')), true);
+  assert.equal(isSettled(selected('abc'), selected('abd')), false, 'the selection moved');
+  const report = diffNativeMac(...pair({cua: {texts: {...lane, chrome: {...lane.chrome, later: focusMoved}}}}), {declarations});
+  assert.deepEqual(report.differences.map(d => [d.scene, d.golden, d.kind, d.lane]), [['chrome', 'settle', 'settle', 'cua']]);
+});
+
+test('the observation right after the action is compared in the form it came in: a full tree (the diff over budget) line by line', () => {
+  // Both lanes answered the full tree (the renderer's fallback): compared as trees, modulo renumbering.
+  const asFull = engine => { const lane = laneTexts(engine); const diff = lane.chrome.before; return {...lane, chrome: {...lane.chrome, diff, later: settledAfter(diff, lane.chrome.full)}}; };
+  const vendor = asFull('vendor'), cua = asFull('cua');
+  assert.deepEqual(diffNativeMac(...pair({vendor: {texts: vendor}, cua: {texts: cua}}), {declarations}).differences, []);
+  // A value that differs in the two full trees is a difference, never dropped.
+  const changed = {...cua, chrome: {...cua.chrome, diff: cua.chrome.diff.replace('Scene option, Value: 0', 'Scene option, Value: 1')}};
+  assert.notEqual(changed.chrome.diff, cua.chrome.diff);
+  changed.chrome.later = settledAfter(changed.chrome.diff, cua.chrome.full);
+  const report = diffNativeMac(...pair({vendor: {texts: vendor}, cua: {texts: changed}}), {declarations});
+  assert.deepEqual(report.differences.map(d => [d.scene, d.golden, d.kind]), [['chrome', 'diff', 'text']]);
+  // One lane's full tree against the other's diff is a difference of form, not compared line by line.
+  const mixed = diffNativeMac(...pair({cua: {texts: cua}}), {declarations});
+  assert.deepEqual(mixed.differences.map(d => [d.scene, d.golden, d.kind, d.vendor, d.cua]), [['chrome', 'diff', 'form', 'diff', 'full']]);
 });
 
 test('a cell one lane did not answer is a difference, and the goldens it feeds are not compared', () => {

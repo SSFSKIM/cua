@@ -109,3 +109,36 @@ export const panelCell = (open, ms = 10_000) => cell(`${prelude('textedit')}
 let ax = await observe();
 for (const end = Date.now() + ${ms}; panel(ax) !== ${open} && Date.now() < end;) ax = await observe();
 return {panel: panel(ax), documentInFront: inFront(ax)};`);
+
+// TextEdit's Open panel opened by ⌘O from its document (a key cell: the run sends it only under the key guard, with
+// TextEdit's process in front), then awaited. -> {opened, reason?}.
+export const OPEN_PANEL = cell(`${prelude('textedit')}
+let ax = await observe();
+if (panel(ax)) return {opened: true};
+if (!inFront(ax)) return {opened: false, reason: "the scene document is not TextEdit's front window"};
+await __app.pressKey("super+o");
+for (const end = Date.now() + 10000; !panel(ax) && Date.now() < end;) ax = await observe();
+return {opened: panel(ax)};`);
+
+// The panel closed by the harness when its case did not close it (a click on Cancel: the panel, served out of process,
+// takes no keys sent to TextEdit). -> {closed}.
+export const CLOSE_PANEL = cell(`${prelude('textedit')}
+let ax = await observe();
+if (!panel(ax)) return {closed: true};
+const index = indexOfTarget(ax, "Cancel") ?? indexOfTarget(ax, "취소");
+if (index !== null) await __app.click(index);
+for (const end = Date.now() + 5000; panel(ax) && Date.now() < end;) ax = await observe();
+return {closed: !panel(ax)};`);
+
+// The launch path's act (part 4): the scene's app, not running, resolved by its path, which must bring it up without
+// the engine activating it; the device clock around the call, as an act cell's. -> {actMs, at, threw}.
+export const launchCell = (scene, app) => cell(`globalThis.__apps ??= {};
+const __from = Date.now(), __t = performance.now();
+let threw = null;
+try { globalThis.__apps[${j(scene)}] = await cua.getApp(${j(app)}); } catch (e) { threw = String(e?.message ?? e).slice(0, 300); }
+return {actMs: performance.now() - __t, at: [__from, Date.now()], threw: threw !== null, ...(threw === null ? {} : {error: threw})};`);
+
+// The launch path's outcome: the app listed as running. -> {ok, outcome: {listed, running}}.
+export const launchCheckCell = scene => cell(`const apps = await cua.listApps({emit: false});
+const hit = (Array.isArray(apps) ? apps : []).find(a => [a?.id, a?.bundleId, a?.bundleIdentifier].includes(${j(SCENES[scene].bundleId)}));
+return {ok: Boolean(hit) && hit.isRunning !== false, outcome: {listed: Boolean(hit), running: hit ? hit.isRunning !== false : null}};`);

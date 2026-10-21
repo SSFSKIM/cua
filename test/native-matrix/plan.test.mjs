@@ -162,3 +162,29 @@ test('the speed selection binds the scene as the baseline\'s cells expect it', a
   assert.equal(typeof globalThis.__scratch, 'string');
   delete globalThis.app; delete globalThis.__scratch;
 });
+
+test('the Open panel: opened by ⌘O only from the scene document, closed by a click on Cancel', async () => {
+  const {OPEN_PANEL, CLOSE_PANEL} = await import('../../scripts/native-matrix/matrix-cells.mjs');
+  const document = golden('textedit', 'vendor.txt');
+  const panelText = 'Window: "Open", App: TextEdit.\n0 standard window ID: open-panel\n\t1 button Cancel\n';
+  const app = fakeApp(document, {pressKey: a => { a.ax = panelText; }, click: (a, index) => { if (index === 1) a.ax = document; }});
+  assert.deepEqual((await run(OPEN_PANEL, {apps: {textedit: app}})).value, {opened: true});
+  assert.deepEqual(app.calls, [['pressKey', 'super+o']]);
+  assert.deepEqual((await run(CLOSE_PANEL, {apps: {textedit: app}})).value, {closed: true});
+  assert.deepEqual(app.calls.at(-1), ['click', 1]);
+  const elsewhere = fakeApp(document.replace('Window: "cua-scene.rtf"', 'Window: "Untitled"'));
+  assert.equal((await run(OPEN_PANEL, {apps: {textedit: elsewhere}})).value.opened, false);
+  assert.deepEqual(elsewhere.calls, [], 'nothing is sent from another window');
+});
+
+test('the launch path: the app resolved by its path, timed on the device clock, and found running', async () => {
+  const {launchCell, launchCheckCell} = await import('../../scripts/native-matrix/matrix-cells.mjs');
+  const asked = [];
+  const cua = {getApp: async app => { asked.push(app); return {launched: true}; }, listApps: async () => [{id: 'com.apple.TextEdit', isRunning: true}]};
+  const act = await run(launchCell('textedit', '/System/Applications/TextEdit.app'), {cua});
+  assert.equal(act.value.threw, false);
+  assert.deepEqual(asked, ['/System/Applications/TextEdit.app']);
+  assert.deepEqual((await run(launchCheckCell('textedit'), {cua})).value, {ok: true, outcome: {listed: true, running: true}});
+  const failing = await run(launchCell('electron', '/x.app'), {cua: {getApp: async () => { throw new Error('appNotFound'); }}});
+  assert.deepEqual([failing.value.threw, failing.value.error], [true, 'appNotFound']);
+});

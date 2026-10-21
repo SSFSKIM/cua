@@ -72,10 +72,14 @@ export function attributeActivations(activations, rows, {marginMs = ACTIVATION_M
 }
 
 // One row's oracle. `scene`: the driven scene (its family decides route 4's acceptance); `launched`: the bundle id a
-// launch-path row brought up, whose own activation is declared for the owner rather than counted as a pass.
-// -> {ok, frontmost, topWindow, activations, route4, declared?}.
-export function judgeInterference({before, after, activations = [], inputRoute = null, scene, launched = null, accepted = OWNER_ACCEPTED}) {
-  const {frontmost, topWindow} = sameFront(before, after);
+// launch-path row brought up, whose own activation is declared for the owner rather than counted as a pass; `focus`:
+// the `--probe focus` reading after the action, naming the user window (./matrix-device.mjs ownedFocus), which must
+// still be the focused application's focused window (the keyboard focus kept, Acceptance 3); null when not read.
+// -> {ok, frontmost, topWindow, focus, activations, route4, declared?}.
+export function judgeInterference({before, after, activations = [], inputRoute = null, scene, launched = null, focus = null, userPid = null, accepted = OWNER_ACCEPTED}) {
+  const same = sameFront(before, after);
+  const focusKept = focus === null ? null : focus.appOwned === true && focus.appPid === userPid && focus.named === true;
+  const frontmost = same.frontmost, topWindow = same.topWindow && focusKept !== false;
   const family = SCENES[scene]?.family ?? null;
   const route4 = inputRoute === 4;
   const route4Accepted = route4 && accepted.route4.includes(family);
@@ -83,7 +87,7 @@ export function judgeInterference({before, after, activations = [], inputRoute =
   const others = activations.filter(e => !own.includes(e));
   const selfAccepted = own.length > 0 && accepted.selfActivating.includes(family);
   const ok = frontmost && topWindow && others.length === 0 && (own.length === 0 || selfAccepted) && (!route4 || route4Accepted);
-  const out = {ok, frontmost, topWindow, activations: activations.length, route4};
+  const out = {ok, frontmost, topWindow: same.topWindow, focus: focusKept, activations: activations.length, route4};
   if (own.length && !selfAccepted && frontmost && topWindow && others.length === 0)
     return {...out, declared: {kind: 'self-activating', cause: `${launched} activated at its launch: the family's own activation, recorded for the owner's acceptance`}};
   if (route4Accepted) return {...out, declared: {kind: 'route4-accepted', cause: `route 4 on ${family}, a family the owner accepted`}};

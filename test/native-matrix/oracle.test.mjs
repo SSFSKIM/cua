@@ -47,7 +47,13 @@ test('activations are charged to the row whose action they fall in, with the mar
 
 test('a row passes only with the front unchanged, no activation and no route 4 outside an accepted family', () => {
   const same = {before: finder, after: finder, scene: 'textedit'};
-  assert.deepEqual(judgeInterference({...same, inputRoute: 3}), {ok: true, frontmost: true, topWindow: true, activations: 0, route4: false});
+  assert.deepEqual(judgeInterference({...same, inputRoute: 3}), {ok: true, frontmost: true, topWindow: true, focus: null, activations: 0, route4: false});
+  // The focus probe after the action: the user window must keep the keyboard focus.
+  assert.equal(judgeInterference({...same, userPid: 7, focus: {appOwned: true, appPid: 7, named: true}}).ok, true);
+  const lost = judgeInterference({...same, userPid: 7, focus: {appOwned: true, appPid: 11, named: false}});
+  assert.equal(lost.ok, false);
+  assert.equal(lost.focus, false);
+  assert.equal(judgeInterference({...same, userPid: 7, focus: {appOwned: false, appPid: null, named: false}}).ok, false);
   assert.equal(judgeInterference({...same, inputRoute: 4}).ok, false);
   const accepted = judgeInterference({...same, inputRoute: 4, accepted: {route4: ['AppKit text'], selfActivating: []}});
   assert.equal(accepted.ok, true);

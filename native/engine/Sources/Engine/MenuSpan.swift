@@ -15,18 +15,18 @@ import os
 // - after the item press (a click or secondary action on an element of the recorded menu);
 // - at the first request aimed elsewhere (another app, or an action on anything outside the recorded menu);
 // - when the record clears (AXCancel on the item, a new record, the item gone, the connection closing, shutdown);
-// - after `menuSpanIdleMs` with no request on the record (an observation of the held app, or a press or record on it).
+// - after `menuSpanIdleMs` with no request on the record (an observation of the held app, or a press or record on it);
+//   a press on its items after that is refused (menuActivationLapsed), never made on items computed unactivated.
 // Ending the span clears the record with it: the menu and its activation have one lifetime, so an observation never shows
 // the recorded menu's items as an app no longer believing itself active computes them. The activation's guard restores
 // the user's window by re-activating the user's app, never by Accessibility (`restoresByActivationOnly`). A release that
 // cannot post is logged, never thrown: the request it ends has already been answered or is another's.
 
-/// How long a held menu activation outlasts the connection's last request. The Decision Log names 10 s, "unless the
-/// task finds a reason for another value": the span must outlast a model's turn between the menu's observation and the
-/// item press, which for an agent that reasons before it acts regularly passes 10 s, and a span lapsed there turns the
-/// press into one on items computed disabled (the hold's failure). 30 s covers a long turn while still releasing a menu
-/// the model has walked away from well before the user would notice its app behaving as active.
-let menuSpanIdleMs: Double = 30_000
+/// How long a held menu activation outlasts the last request on the record: 120 s (the coordinator's ruling,
+/// 2026-10-21). The span must outlast a model's turn between the menu's observation and the item press, which for an
+/// agent that reasons before it acts regularly passes 10 s; a span lapsed there turns the press into one on items the app
+/// computes disabled (the hold's failure), so such a press is refused as menuActivationLapsed rather than made.
+let menuSpanIdleMs: Double = 120_000
 
 private let menuLog = Logger(subsystem: "io.github.ssfskim.cua.engine", category: "menu")
 
@@ -198,17 +198,24 @@ final class HeldActivations: @unchecked Sendable {
   }
 }
 
-/// What a request does to the held span (the span is held for `heldApp`): `keep` it, end it before the request runs, or
-/// let the request run inside it and end it after. Another app ends it; an observation of the app keeps it; a click or
-/// secondary action on an element of the recorded menu (`inRecordedMenu`) is the item press; anything else is aimed
-/// outside the menu.
-enum MenuSpanStep: Equatable { case keep, endBefore, endAfter }
+/// What a request does to the held span (the span is held for `heldApp`): `keep` it, end it before the request runs, let
+/// the request run inside it and end it after, or refuse a press on a menu whose span has ended. Another app ends it; an
+/// observation of the app keeps it; a click or secondary action on an item of the recorded menu (`inRecordedMenu`) is
+/// the item press; anything else is aimed outside the menu.
+enum MenuSpanStep: Equatable { case keep, endBefore, endAfter, refuseLapsed }
+
+/// The refusal of a press on a recorded menu whose activation has ended.
+let menuActivationLapsed = EngineError(name: "menuActivationLapsed",
+  "The menu's activation has ended (2 minutes passed with no request on it, or another request ended the menu interaction), so its items would not respond. Nothing was pressed. Click the menu bar item again to show its menu, then press the item.")
 
 /// The methods whose request on the held app restarts the idle bound: its observation, and a press or a record on it.
 /// resolve_app and list_apps act on nothing, so they never keep a menu the model has walked away from.
 let menuSpanRenewingMethods: Set<String> = ["get_app_state", "click", "perform_secondary_action"]
 
 func menuSpanStep(method: String, app: String?, heldApp: String?, inRecordedMenu: Bool) -> MenuSpanStep {
+  // A press on an item of a recorded menu that no span holds any more (the idle bound passed, or another request ended
+  // the interaction) would act on items computed without the activation: refused, never made silently.
+  if method == "click" || method == "perform_secondary_action", inRecordedMenu, app != nil, app != heldApp { return .refuseLapsed }
   guard let heldApp, let app else { return .keep }
   guard app == heldApp else { return .endBefore }
   switch method {
@@ -240,12 +247,25 @@ extension Engine {
 }
 
 extension ConnectionState {
-  /// Whether the request's element token names an element of the app's recorded menu: the lineage's current revision was
-  /// walked from the recorded item, and the token is one of its elements.
+  /// Whether the request's element token names an item of the app's recorded menu: the lineage's current revision was
+  /// walked from the recorded menu-bar item, and the token is one of its elements other than that item (a click on the
+  /// item records its menu anew).
   func inRecordedMenu(_ args: [String: Any], app key: String, lineage wanted: String?) -> Bool {
     guard let token = args["element"] as? String, let number = tokenNumber(token), let lineage = lineages[key], lineage.id == wanted,
           let revision = lineage.current, revision.menuRoot != nil else { return false }
-    return revision.entries[number] != nil
+    return revision.entries[number] != nil && number != revision.root
+  }
+
+  /// Applies the span decision before the request runs: the span ended when the request is aimed elsewhere, and a press
+  /// on a menu no span holds refused with nothing pressed.
+  func enterMenuSpan(_ step: MenuSpanStep) throws {
+    switch step {
+    case .endBefore: endMenuInteraction()
+    case .refuseLapsed:
+      endMenuInteraction()
+      throw menuActivationLapsed
+    case .keep, .endAfter: break
+    }
   }
 
   /// The menu interaction ends: the span released and its record cleared.

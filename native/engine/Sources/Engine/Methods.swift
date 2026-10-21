@@ -154,7 +154,11 @@ final class Engine: @unchecked Sendable {
     // request recorded a menu anew), ended before anything aimed elsewhere.
     let step = menuSpanStep(method: method, app: target?.key, heldApp: connection.menuSpan.app,
                             inRecordedMenu: target.map { connection.inRecordedMenu(args, app: $0.key, lineage: context.lineage) } ?? false)
-    if step == .endBefore { connection.endMenuInteraction() }
+    do {
+      try connection.enterMenuSpan(step)
+    } catch let error as EngineError where inputMethods.contains(method) {
+      throw withMeta(error, InputMeta(context))
+    }
     let spanBefore = connection.menuSpan.serial
     defer { if step == .endAfter && connection.menuSpan.serial == spanBefore { connection.endMenuInteraction() } }
     switch method {

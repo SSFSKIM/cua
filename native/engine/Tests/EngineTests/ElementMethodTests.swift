@@ -726,7 +726,7 @@ final class MenuSpanTests: XCTestCase {
   func testTheSpanEndsBeforeAnythingAimedElsewhere() {
     let held = "a"
     XCTAssertEqual(menuSpanStep(method: "get_app_state", app: "b", heldApp: held, inRecordedMenu: false), .endBefore, "another app")
-    XCTAssertEqual(menuSpanStep(method: "click", app: "b", heldApp: held, inRecordedMenu: true), .endBefore)
+    XCTAssertEqual(menuSpanStep(method: "click", app: "b", heldApp: held, inRecordedMenu: true), .refuseLapsed, "a press on a menu of an app no span holds")
     XCTAssertEqual(menuSpanStep(method: "click", app: held, heldApp: held, inRecordedMenu: false), .endBefore, "outside the menu")
     XCTAssertEqual(menuSpanStep(method: "perform_secondary_action", app: held, heldApp: held, inRecordedMenu: true), .endAfter)
     for method in ["press_key", "type_text", "paste", "scroll", "drag", "set_value", "select_text"] {
@@ -750,6 +750,8 @@ final class MenuSpanTests: XCTestCase {
     XCTAssertFalse(connection.inRecordedMenu(["element": item], app: "a", lineage: "Lother"), "another lineage")
     XCTAssertFalse(connection.inRecordedMenu(["element": "t999"], app: "a", lineage: lineage.id))
     XCTAssertFalse(connection.inRecordedMenu(["x": 1], app: "a", lineage: lineage.id), "a coordinate")
+    let root = rooted.nodes.first?["token"] as? String ?? ""
+    XCTAssertFalse(connection.inRecordedMenu(["element": root], app: "a", lineage: lineage.id), "the menu-bar item records anew")
   }
 
   func testTheIdleBoundReleasesAndTheNextRequestClearsTheRecord() {
@@ -760,12 +762,47 @@ final class MenuSpanTests: XCTestCase {
     connection.recordMenu(el(90), app: "a") { released += 1; return true }
     connection.menuSpan.requestEnded(onRecord: true)
     XCTAssertEqual(clock.timers.last?.ms, menuSpanIdleMs)
-    XCTAssertEqual(menuSpanIdleMs, 30_000)
+    XCTAssertEqual(menuSpanIdleMs, 120_000, "the coordinator's bound")
     clock.fireLast()
     XCTAssertEqual(released, 1, "released after the idle bound")
     XCTAssertNil(connection.menuSpan.app)
     XCTAssertEqual(connection.menuSpan.requestBegan(), "a", "the next request learns which record to clear")
     XCTAssertNil(connection.menuSpan.requestBegan())
+  }
+
+  /// The idle bound passes, then the model presses an item of the menu it observed: refused with the lapse sentence and
+  /// nothing pressed, never a press on items computed without the activation.
+  func testAPressAfterTheIdleReleaseIsRefusedWithNothingPressed() throws {
+    let clock = Clock()
+    let connection = ConnectionState(id: 1, fd: -1, menuSpan: clock.span())
+    let tree = FakeTree()
+    tree.children = [0: [1], 90: [91], 91: [92]]
+    let lineage = Lineage()
+    connection.lineages["a"] = lineage
+    var released = 0
+    _ = connection.menuSpan.requestBegan()
+    connection.recordMenu(Engine.element(90), app: "a") { released += 1; return true }
+    connection.menuSpan.requestEnded(onRecord: true)
+    let rooted = walk(tree, lineage, window: 90)  // the recorded menu's observation
+    lineage.current?.menuRoot = Engine.element(90)
+    let item = try XCTUnwrap(rooted.nodes.last?["token"] as? String)
+
+    clock.fireLast()                               // the idle bound passes
+    XCTAssertEqual(released, 1)
+    if let lapsed = connection.menuSpan.requestBegan() { connection.menuRecords[lapsed] = nil }  // the press arrives
+    let step = menuSpanStep(method: "click", app: "a", heldApp: connection.menuSpan.app,
+                            inRecordedMenu: connection.inRecordedMenu(["element": item], app: "a", lineage: lineage.id))
+    XCTAssertEqual(step, .refuseLapsed)
+    XCTAssertThrowsError(try connection.enterMenuSpan(step)) { error in
+      XCTAssertEqual((error as? EngineError)?.errorName, "menuActivationLapsed")
+      XCTAssertTrue((error as? EngineError)?.message.contains("Nothing was pressed") == true)
+      XCTAssertTrue((error as? EngineError)?.message.contains("Click the menu bar item again") == true)
+    }
+    XCTAssertNil(connection.menuRecords["a"])
+    XCTAssertEqual(menuSpanStep(method: "perform_secondary_action", app: "a", heldApp: nil, inRecordedMenu: true), .refuseLapsed)
+    XCTAssertEqual(menuSpanStep(method: "click", app: "a", heldApp: "b", inRecordedMenu: true), .refuseLapsed, "another app's span")
+    XCTAssertEqual(menuSpanStep(method: "click", app: "a", heldApp: nil, inRecordedMenu: false), .keep, "the item itself records anew")
+    XCTAssertEqual(menuSpanStep(method: "get_app_state", app: "a", heldApp: nil, inRecordedMenu: false), .keep)
   }
 
   func testNoIdleReleaseWhileARequestRunsOrAfterANewerOne() {

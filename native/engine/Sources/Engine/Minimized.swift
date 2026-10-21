@@ -10,7 +10,8 @@ import Foundation
 // "windowMinimized"`), which the service carries as the result's meta. Where the window exposes no tree the observation
 // is refused. Input that needs the window on screen, a click, drag or scroll at a point (a synthesized element click, a
 // coordinate), is refused before anything is posted, while what reaches the element through Accessibility still acts:
-// an advertised action (a route-1 click, a secondary action), set_value and select_text. Keys and typed text are not
+// an advertised action (a route-1 click, a secondary action), set_value and select_text, whose focusing click is
+// skipped in a minimized window rather than refused (ElementInput.swift's focusField). Keys and typed text are not
 // refused: they go to the process, whose menu key equivalents work with no window on screen. An off-stage Stage
 // Manager window that reads minimized falls under the same rule. Declared differences from the vendor: its reopen of a
 // minimized app and its Stage Manager writes.
@@ -35,4 +36,18 @@ func minimizedObservation(minimized: Bool, exposesTree: Bool, includeScreenshot:
 func refuseMinimizedWindow(minimized: Bool, app: String) throws {
   guard minimized else { return }
   throw EngineError(name: windowMinimizedReason, "The \(app) window is minimized, so nothing can be clicked, dragged or scrolled at a point in it. Ask the user to restore the window, or use setValue, selectText or performSecondaryAction, which act without it.")
+}
+
+/// Pointer input aimed into `window` (a click, drag or scroll at a point): refused when the window is minimized, before
+/// `deliver` runs, which holds everything the method does after placing its point (its delta, its in-flight
+/// intervention check, any post). No window (a menu-bar item's) is not the rule's case.
+func pointerInput<T>(in window: AXUIElement?, app: String, minimized: (AXUIElement) -> Bool = isMinimized, _ deliver: () throws -> T) throws -> T {
+  try refuseMinimizedWindow(minimized: window.map(minimized) ?? false, app: app)
+  return try deliver()
+}
+
+/// A coordinate placed in `window` by `place` (the connection's screenshot of it), refused first when the window is
+/// minimized: the cause is the minimized window, not a missing screenshot the model could not get anyway.
+func placeCoordinate(in window: AXUIElement, app: String, minimized: (AXUIElement) -> Bool = isMinimized, _ place: () throws -> CGPoint) throws -> CGPoint {
+  try pointerInput(in: window, app: app, minimized: minimized, place)
 }

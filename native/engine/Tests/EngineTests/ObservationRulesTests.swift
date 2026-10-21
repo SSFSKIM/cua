@@ -302,3 +302,50 @@ final class EnablementReleaseTests: XCTestCase {
     XCTAssertEqual(app.written, ["AXManualAccessibility=true", "AXManualAccessibility=false", "AXManualAccessibility=true", "AXManualAccessibility=false"])
   }
 }
+
+/// The minimized rule wired into the pointer methods: scroll and drag (and a click at a point) are refused before their
+/// delta, their in-flight intervention check and any post, and a coordinate is refused for the minimized window before
+/// it is placed in a screenshot, so the model is told the cause rather than to take a screenshot it cannot get.
+final class MinimizedPointerInputTests: XCTestCase {
+  private let window = AXUIElementCreateApplication(1)
+
+  /// A scroll's or drag's tail as the methods run it: the delta, the in-flight check, the post.
+  private final class Tail {
+    var steps: [String] = []
+    func run() throws -> String {
+      steps.append("delta")
+      steps.append("checkInFlight")
+      steps.append("post")
+      return "posted"
+    }
+  }
+
+  func testAScrollIntoAMinimizedWindowIsRefusedBeforeItsDeltaCheckAndPost() {
+    let tail = Tail()
+    XCTAssertThrowsError(try pointerInput(in: window, app: "TextEdit", minimized: { _ in true }) { try tail.run() }) { error in
+      XCTAssertEqual((error as? EngineError)?.errorName, "windowMinimized")
+      XCTAssertTrue((error as? EngineError)?.message.contains("scrolled") == true)
+    }
+    XCTAssertEqual(tail.steps, [], "nothing of the scroll ran")
+  }
+
+  func testAScrollOnScreenOrWithoutAWindowRuns() throws {
+    let shown = Tail()
+    XCTAssertEqual(try pointerInput(in: window, app: "TextEdit", minimized: { _ in false }) { try shown.run() }, "posted")
+    XCTAssertEqual(shown.steps, ["delta", "checkInFlight", "post"])
+    let windowless = Tail()  // a scroll at an element with no window of its own (a menu-bar item's)
+    XCTAssertEqual(try pointerInput(in: nil, app: "TextEdit", minimized: { _ in true }) { try windowless.run() }, "posted")
+  }
+
+  func testADragFromAMinimizedWindowIsRefusedBeforeItsStartIsPlacedInAScreenshot() {
+    var placed = 0
+    XCTAssertThrowsError(try placeCoordinate(in: window, app: "TextEdit", minimized: { _ in true }) { placed += 1; return CGPoint(x: 1, y: 2) }) { error in
+      XCTAssertEqual((error as? EngineError)?.errorName, "windowMinimized", "the cause, not noScreenshotForCoordinates")
+    }
+    XCTAssertEqual(placed, 0)
+  }
+
+  func testADragInAWindowOnScreenIsPlaced() throws {
+    XCTAssertEqual(try placeCoordinate(in: window, app: "TextEdit", minimized: { _ in false }) { CGPoint(x: 1, y: 2) }, CGPoint(x: 1, y: 2))
+  }
+}

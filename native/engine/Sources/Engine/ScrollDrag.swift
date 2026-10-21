@@ -78,6 +78,7 @@ extension Engine {
       let (app, appPid, guarding) = try inputPrologue(args, context, meta: &meta)
       let target: ClickTarget
       let length: CGFloat?
+      let window: AXUIElement?
       if let token {
         let element = try positionedTarget(try targetElement(token, app: app, appPid: appPid, context: context), token: token,
                                            app: app, appPid: appPid, context: context)
@@ -86,7 +87,7 @@ extension Engine {
         target = ClickTarget(point: point, windowFrame: pointing.windowFrame, windowID: pointing.windowID, pid: element.owner)
         let own = frame(of: element.element) ?? pointing.windowFrame
         length = own.map { direction.horizontal ? $0.width : $0.height }
-        // MINIMIZED-WINDOW REFUSAL (M2a.4 wires refuseMinimizedWindow here at merge): the window is `pointing.window`.
+        window = pointing.window
       } else {
         let placed: (point: CGPoint, window: AXUIElement, windowFrame: CGRect)
         if hasPoint {
@@ -98,7 +99,7 @@ extension Engine {
           }
           placed = (CGPoint(x: windowFrame.midX, y: windowFrame.midY), window, windowFrame)
         }
-        // MINIMIZED-WINDOW REFUSAL (M2a.4 wires refuseMinimizedWindow here at merge): the window is `placed.window`.
+        window = placed.window  // a coordinate's was refused already when placed; the centre's is checked below
         let owner = hitTest(window: placed.window, at: placed.point).map { ownerPid(of: $0, fallback: appPid) } ?? appPid
         try refuseForbiddenOwner(owner)
         actionTargets(owner, app: app, connection: context.connection)
@@ -106,13 +107,17 @@ extension Engine {
                              windowID: windowNumber(of: placed.window, pid: appPid, frame: placed.windowFrame), pid: owner)
         length = direction.horizontal ? placed.windowFrame.width : placed.windowFrame.height
       }
-      let delta = try scrollDelta(pages: pages, length: length)
-      meta.inputRoute = .plainPost
-      try guarding.checkInFlight()
-      guard let event = scrollEvent(direction, delta: delta, at: target) else {
-        throw EngineError(name: "eventCreationFailed", "The scroll event could not be created.")
+      // A wheel at a point in a minimized window reaches nothing on screen (Minimized.swift): refused before the delta,
+      // the in-flight check and the post.
+      try pointerInput(in: window, app: app.displayName) {
+        let delta = try scrollDelta(pages: pages, length: length)
+        meta.inputRoute = .plainPost
+        try guarding.checkInFlight()
+        guard let event = scrollEvent(direction, delta: delta, at: target) else {
+          throw EngineError(name: "eventCreationFailed", "The scroll event could not be created.")
+        }
+        meta.posting { _ = postToProcess([event], pid: target.pid); return true }
       }
-      meta.posting { _ = postToProcess([event], pid: target.pid); return true }
       return ["meta": meta.wire]  // a scroll never arms the settle (F §8.1)
     } catch let error as EngineError {
       throw withMeta(error, meta)
@@ -133,7 +138,7 @@ extension Engine {
       let (app, appPid, guarding) = try inputPrologue(args, context, meta: &meta)
       let start = try coordinatePoint(fromX, fromY, app: app, appPid: appPid, context: context)
       let end = try coordinatePoint(toX, toY, app: app, appPid: appPid, context: context)
-      // MINIMIZED-WINDOW REFUSAL (M2a.4 wires refuseMinimizedWindow here at merge): the window is `start.window`.
+      // Both points were refused in a minimized window as they were placed (coordinatePoint), before anything below.
       let owner = hitTest(window: start.window, at: start.point).map { ownerPid(of: $0, fallback: appPid) } ?? appPid
       try refuseForbiddenOwner(owner)
       actionTargets(owner, app: app, connection: context.connection)

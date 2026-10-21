@@ -156,14 +156,17 @@ extension Engine {
   }
 
   /// A coordinate the model sent, in the pixels of the connection's last screenshot of the app's primary window, as a
-  /// global point in that window (Screenshot.swift; refused as noScreenshotForCoordinates when it cannot be placed).
+  /// global point in that window (Screenshot.swift; refused as windowMinimized when that window is minimized, then as
+  /// noScreenshotForCoordinates when it cannot be placed).
   func coordinatePoint(_ x: Double, _ y: Double, app: ResolvedApp, appPid: pid_t, context: ExecutionContext) throws -> (point: CGPoint, window: AXUIElement, windowFrame: CGRect) {
     guard x.isFinite, y.isFinite else { throw EngineError.invalidArguments("x and y must be finite coordinates") }
     let application = prepare(AXUIElementCreateApplication(appPid))
     guard let window = primaryWindow(of: application), let windowFrame = frame(of: window) else {
       throw EngineError(name: "noWindowsAvailable", "noWindowsAvailable")
     }
-    let local = try context.connection.screenshotPoint(x, y, app: app, window: window, lineage: context.lineage)
+    let local = try placeCoordinate(in: window, app: app.displayName) {
+      try context.connection.screenshotPoint(x, y, app: app, window: window, lineage: context.lineage)
+    }
     return (CGPoint(x: windowFrame.minX + local.x, y: windowFrame.minY + local.y), window, windowFrame)
   }
 
@@ -185,6 +188,8 @@ extension Engine {
   /// left; the in-flight intervention check just before the click's events.
   func synthesizedClick(_ pointing: ElementPointing, route: InputRoute, button: MouseButton, count: Int, app: ResolvedApp, appPid: pid_t,
                         guarding: InterventionGuard, meta: inout InputMeta) throws {
+    // A point in a minimized window reaches nothing on screen (Minimized.swift); a route-1 action never comes here.
+    try refuseMinimizedWindow(minimized: pointing.window.map(isMinimized) ?? false, app: app.displayName)
     guard let point = pointing.point, !pointing.relation.covered else {
       throw EngineError(name: "cannotClickOffscreenElement", "The element is not visible on screen.")
     }
@@ -208,13 +213,16 @@ extension Engine {
   }
 
   /// focusFieldIfNeeded with its fallback click: a plain left click by the synthesized route the app takes (3, or 4
-  /// under the owner's override), kept by `focusingClick`.
+  /// under the owner's override), kept by `focusingClick`. In a minimized window the click is skipped rather than
+  /// refused: set_value and select_text act through Accessibility, which needs no window on screen (Minimized.swift).
   func focusField(_ target: ElementTarget, app: ResolvedApp, appPid: pid_t, guarding: InterventionGuard, connection: ConnectionState,
                   meta: inout InputMeta) throws {
     try focusFieldIfNeeded(target.element, bundleIdentifier: app.bundleIdentifier, ax: .live) {
+      let pointing = ElementPointing(target.element, owner: target.owner)
+      if pointing.window.map(isMinimized) == true { return }
       let route = synthesizedClickRoute(forced: nil, foreground: routeFourOverride(app.bundleIdentifier, routes: routes))
       try focusingClick(&meta, acted: { connection.markActed(app) }) { clickMeta in
-        try synthesizedClick(ElementPointing(target.element, owner: target.owner), route: route, button: .left, count: 1,
+        try synthesizedClick(pointing, route: route, button: .left, count: 1,
                              app: app, appPid: appPid, guarding: guarding, meta: &clickMeta)
       }
     }

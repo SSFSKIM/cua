@@ -467,9 +467,13 @@ function writeGolden(ctx, id, name, text) {
 }
 
 // The owner's front app back in front (scripts/repl-parity/scenes-mac.mjs reactivateApp decides on the device whether it
-// may be). -> {reactivated, inFront?, reason?} or {error}; never the pid.
+// may be). -> {reactivated, inFront?, reason?} or {error, status?}; never the pid. A failure's message is not kept: the
+// transport's quotes the whole remote command (`--pid '<pid>'` with it) and the device's own can quote its subcommand,
+// so meta.json gets a fixed sentence and, from the transport, the exit status alone.
 function putBackFrontmost(ops, front) {
-  try { return ops.scenes(['reactivate', '--bundle-id', front.bundleId, '--pid', String(front.pid)]); } catch (error) { return {error: error.message}; }
+  try { return ops.scenes(['reactivate', '--bundle-id', front.bundleId, '--pid', String(front.pid)]); } catch (error) {
+    return {error: 'the put-back of the front app failed', ...(Number.isInteger(error.status) ? {status: error.status} : {})};
+  }
 }
 
 // What a dead recording leaves and `cleanup` undoes, in order.

@@ -540,6 +540,23 @@ test('the app the owner had in front is read before anything is prepared and put
   assert.equal('frontmost' in cleanupRecording({device: 'mini', prepared: PREPARED, run: '/r'}, fakeDevice().ops), false);
 });
 
+test('a put-back that fails leaves a fixed sentence and at most the exit status in meta.json, never the command or its output', async () => {
+  // The transport's failure quotes the whole remote command, `--pid '321'` with it; the device's own {error} can too.
+  const failing = (error) => {
+    const device = fakeDevice(), scenes = device.ops.scenes;
+    device.ops.scenes = args => { if (args[0] === 'reactivate') throw error; return scenes(args); };
+    return device;
+  };
+  const transport = () => Object.assign(new Error("Command failed: ssh mini cd ~/Developer/GitHub/cua-parity && node scripts/repl-parity/scenes-mac.mjs reactivate --bundle-id 'com.apple.Terminal' --pid '321'\nssh: connect to host mini port 22: Operation timed out"), {status: 255});
+  const out = await run({device: failing(transport())});
+  assert.equal(out.code, 0, JSON.stringify(out.meta.problems ?? out.meta.error));
+  assert.deepEqual(out.meta.frontmost, {bundleId: 'com.apple.Terminal', putBack: {error: 'the put-back of the front app failed', status: 255}});
+  assert.doesNotMatch(JSON.stringify(out.meta), /\b321\b/);
+  const deviceError = new Error('scenes-mac.mjs reactivate: Command failed: /usr/bin/swift activate-process.swift 321 com.apple.Terminal');
+  const cleaned = cleanupRecording({device: 'mini', prepared: PREPARED, run: '/r', frontmost: {bundleId: 'com.apple.Terminal', pid: 321}}, failing(deviceError).ops);
+  assert.deepEqual(cleaned.frontmost, {error: 'the put-back of the front app failed'});
+});
+
 test('preparation.json holds the frontmost app for cleanup while the recording runs', async () => {
   const device = fakeDevice(), repo = fakeRepo(), dir = join(repo.root, 'docs', 'goldens-run');
   let preparation = null;

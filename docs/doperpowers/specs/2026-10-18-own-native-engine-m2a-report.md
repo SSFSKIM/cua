@@ -144,7 +144,7 @@ Each item is work left for its own ticket or for M2b.
   The head's run is in the PR.
 - **Tests.** Swift 408–409 per lane head; native-matrix 164/164; full `npm test` 3628 passing, 0 failing.
 - **Live.** `docs/doperpowers/research/2026-10-18-own-native-engine/m2a/`: the comparison-a runs, comparison.md (VERDICT: PASS), and `live/*/result.json`.
-- **Environment friction met in this milestone,** logged in #177 by the workers who met it:
+- **Environment friction met in this milestone,** logged in the friction tracker, #177:
   - real-engine tests answer `screenLocked` while the MacBook is locked;
   - the repl-host orphan-lifecycle flake;
   - an unrelated SecurityAgent prompt on the mini, which aborts paste and hangs codesign over SSH.

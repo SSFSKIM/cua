@@ -70,6 +70,9 @@ const lastJson = text => JSON.parse(String(text).trim().split('\n').at(-1));
 
 // A scene that cannot go on: recorded as the run's problem, the scene taken down, the next one run.
 class SceneProblem extends Error {}
+// A signal the caller recorded (io.interrupt.signal): the run stops at its next step, then puts everything back.
+class Interrupted extends Error {}
+const SIGNAL_CODES = {SIGINT: 130, SIGTERM: 143};
 const describeProblems = problems => problems.map(p => `${p.code}: ${p.message}`).join('; ');
 
 // The device steps of a lane: the goldens recorder's (scenes, cua's side reads, the approved home, the files), with the
@@ -103,7 +106,9 @@ export function laneAttestationProblem(record, {engine, approved, checkoutBuild,
 
 // options: {device, host, engine, approvedRuntime, approvedEngine, commit (the prepared sitting's), sitting (the hold's id,
 // in meta.json: the diff pairs two lanes only of one hold), out, run?}.
-// io: {ops (nativeMacOps), connect(spec, handlers) -> MCP client, controllerCheckout() -> {commit, dirty}, log, sleep}.
+// io: {ops (nativeMacOps), connect(spec, handlers) -> MCP client, controllerCheckout() -> {commit, dirty}, log, sleep,
+// interrupt? ({signal}: once set, the run stops before its next device step or lane cell, and its end runs as always)}.
+// -> 0 complete, 1 incomplete, 2 refused, 130 or 143 interrupted.
 export async function runNativeMac(options, io) {
   const {device, host, engine, approvedRuntime, approvedEngine, commit, sitting, out} = options;
   const {ops, log = console.log} = io;
@@ -129,7 +134,9 @@ export async function runNativeMac(options, io) {
   }
   fs.writeFileSync(join(dir, 'results.jsonl'), '');
   const emit = row => fs.appendFileSync(join(dir, 'results.jsonl'), `${JSON.stringify(row)}\n`);
-  const ctx = {ops, meta, dir, emit, log, up: new Set(), prepared: null, js: null, run: null, fixtures: null};
+  const interrupt = io.interrupt ?? {signal: null};
+  const checkpoint = () => { if (interrupt.signal) throw new Interrupted(`interrupted by ${interrupt.signal}`); };
+  const ctx = {ops, meta, dir, emit, log, checkpoint, up: new Set(), prepared: null, js: null, run: null, fixtures: null};
   let client = null, frontmost = null, released = false;
   write();
   try {
@@ -141,6 +148,7 @@ export async function runNativeMac(options, io) {
     ctx.prepared = ops.prepare(approvedRuntime);
     fs.writeFileSync(join(dir, 'preparation.json'), `${JSON.stringify({device, prepared: ctx.prepared, run: ctx.run, frontmost}, null, 2)}\n`, {mode: 0o600});
     log(`the approved home ${ctx.prepared.home} is held; if this run dies: node scripts/native-matrix/goldens.mjs cleanup --device ${device} --preparation ${join(dir, 'preparation.json')}`);
+    checkpoint();
     if (!ctx.prepared.engineStop) throw new Error('the device\'s preparation did not stop cua\'s engine (every live run begins with cua engine stop, scripts/native-baseline/prepare.mjs): is the harness checkout at this sitting\'s commit?');
     meta.engineStop = {start: ctx.prepared.engineStop};
 
@@ -152,6 +160,7 @@ export async function runNativeMac(options, io) {
     const scenesPreflight = ops.scenes(['preflight', '--run', ctx.run]);
     if (scenesPreflight.refusals?.length) throw new Error(`the scenes refuse: ${scenesPreflight.refusals.map(r => r.message).join('; ')}`);
 
+    checkpoint();
     // The lane, judged on the attestation of every result.
     meta.engineAttestation = {attested: [], unattested: 0};
     const expected = {engine, approved, checkoutBuild, release: pre.release};
@@ -182,6 +191,7 @@ export async function runNativeMac(options, io) {
 
     for (const id of SCENE_IDS) {
       try {
+        checkpoint();
         await runScene(ctx, id);
         meta.scenes[id].recorded = true;
       } catch (error) {
@@ -196,6 +206,7 @@ export async function runNativeMac(options, io) {
     meta.complete = SCENE_IDS.every(id => meta.scenes[id]?.recorded) && meta.problems.length === 0;
   } catch (error) {
     meta.error = error.message;
+    if (error instanceof Interrupted) meta.interrupted = interrupt.signal;
     log(`run stopped: ${error.message}`);
   } finally {
     // The bounded final recovery: each scene still up gets one more teardown and down.
@@ -246,7 +257,7 @@ export async function runNativeMac(options, io) {
     }
   }
   log(`native-mac ${host}/${engine}: ${meta.complete ? 'complete' : `INCOMPLETE: ${meta.error ?? meta.problems.join('; ')}`}`);
-  return meta.complete ? 0 : 1;
+  return meta.interrupted ? SIGNAL_CODES[meta.interrupted] ?? 1 : meta.complete ? 0 : 1;
 }
 
 // One scene on the lane: the cells between cua's side reads, its texts kept only once the state they were read from is
@@ -255,10 +266,11 @@ async function runScene(ctx, id) {
   const {ops, meta, run, emit} = ctx, scene = SCENES[id];
   const account = meta.scenes[id] = {};
   const checkBuild = answer => { if (answer.build !== meta.approved.build) throw new SceneProblem(`the engine that answered cua's read (build ${attestedBuild(answer.build)}) is not the approved one`); return answer; };
-  const read = command => checkBuild(ops.goldens([command, id, '--run', run]));
+  const read = command => { ctx.checkpoint(); return checkBuild(ops.goldens([command, id, '--run', run])); };
   const record = bringUp(ctx, id);
   activate(ctx, id);
   const lane = async (cell, code, timeoutMs) => {
+    ctx.checkpoint();
     const answer = await ctx.js(code, timeoutMs);
     if (!answer.ok) { emit({scene: id, cell, ok: false, error: answer.error}); account.outcome = `${cell} failed on the lane`; }
     return answer;

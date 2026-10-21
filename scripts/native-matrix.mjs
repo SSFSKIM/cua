@@ -138,7 +138,7 @@ export async function main(argv = process.argv.slice(2), {log = console.log, io:
   const checkout = controllerCheckout(REPO_ROOT);
   const interrupt = {signal: null};
   const onSignal = signal => {
-    if (interrupt.signal) { log(`${signal}: the put-back is already running; it is bounded, let it finish`); return; }
+    if (interrupt.signal) { log(`${signal}: already stopping (${interrupt.signal}): the run ends at its next step and puts everything back; it is bounded, let it finish`); return; }
     interrupt.signal = signal;
     log(`${signal}: stopping at the next step, then the put-back runs once`);
   };

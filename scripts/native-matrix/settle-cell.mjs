@@ -51,8 +51,9 @@ export async function runCell(name, options, io) {
   return io.runSuite({...lane, commit: io.controllerCheckout().commit, sitting: options.sitting, out: options.out, ...(options.run ? {run: options.run} : {})});
 }
 
-// The suite's own io (scripts/repl-parity/native-mac.mjs nativeMacIo), loaded when the cell runs.
-export function cellIo(options, {log = console.log, dryRun = false} = {}) {
-  return {log, dryRun, controllerCheckout: () => controllerCheckout(REPO_ROOT),
-    runSuite: async lane => { const suite = await import('../repl-parity/native-mac.mjs'); return suite.runNativeMac(lane, {...suite.nativeMacIo(lane.device), log}); }};
+// The suite's own io (scripts/repl-parity/native-mac.mjs nativeMacIo), loaded when the cell runs, with the matrix
+// CLI's interrupt ({signal}, set on SIGINT or SIGTERM), so the lane stops at its next step and puts everything back.
+export function cellIo(options, {log = console.log, dryRun = false, interrupt = {signal: null}, load = () => import('../repl-parity/native-mac.mjs')} = {}) {
+  return {log, dryRun, interrupt, controllerCheckout: () => controllerCheckout(REPO_ROOT),
+    runSuite: async lane => { const suite = await load(); return suite.runNativeMac(lane, {...suite.nativeMacIo(lane.device), log, interrupt}); }};
 }

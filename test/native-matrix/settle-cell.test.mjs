@@ -4,7 +4,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {validateCellResult} from '../../scripts/native-matrix/cell-result.mjs';
-import {runCell, SETTLE_CELLS, settleResult} from '../../scripts/native-matrix/settle-cell.mjs';
+import {cellIo, runCell, SETTLE_CELLS, settleResult} from '../../scripts/native-matrix/settle-cell.mjs';
 
 const meta = (over = {}) => ({device: 'mini', host: 'cua', engine: 'cua', commit: 'c'.repeat(40), started: '2026-10-21T00:00:00.000Z', finished: '2026-10-21T00:10:00.000Z',
   plan: {scenes: ['textedit', 'finder', 'chrome', 'electron']}, complete: true, problems: [], hostAttestation: {host: 'cua'},
@@ -48,4 +48,14 @@ test('the settle cell needs every scene\'s settle reading, whatever the suite\'s
   assert.deepEqual([result.complete, result.verdict], [false, 'no-verdict']);
   assert.ok(result.problems.includes('finder: no settle reading (its action did not complete): the settle cell needs every scene\'s'), result.problems.join('\n'));
   assert.equal(result.problems.length, 3);
+});
+
+test('cell settle passes the matrix CLI\'s interrupt to the suite\'s lane, so a signal stops it', async () => {
+  const interrupt = {signal: null}, seen = [];
+  const suite = {nativeMacIo: device => ({ops: {device}}), runNativeMac: async (lane, io) => { seen.push({lane, io}); return 0; }};
+  const io = cellIo({}, {log: () => {}, interrupt, load: async () => suite});
+  assert.equal(io.interrupt, interrupt);
+  await io.runSuite({device: 'mini', sitting: 's'});
+  assert.equal(seen[0].io.interrupt, interrupt);
+  assert.deepEqual(seen[0].io.ops, {device: 'mini'});
 });

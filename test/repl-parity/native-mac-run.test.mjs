@@ -106,11 +106,11 @@ function fakeLane(device, {engine, host = engine, texts = laneTexts(engine), att
   return {connect: (spec, given) => { handlers = given; return client; }, cells, elicitations, get closed() { return closed; }};
 }
 
-const runLane = async ({engine, host = engine, device = fakeDevice(), lane, controller = {commit: 'd'.repeat(40), dirty: false}, ...options} = {}) => {
+const runLane = async ({engine, host = engine, device = fakeDevice(), lane, controller = {commit: 'd'.repeat(40), dirty: false}, interrupt, ...options} = {}) => {
   const out = join(scratch(), engine);
   lane ??= fakeLane(device, {engine, host});
   const code = await runNativeMac({device: 'mini', host, engine, approvedRuntime: APPROVED_RUNTIME, approvedEngine: APPROVED_ENGINE, commit: COMMIT, sitting: 'hold-2b', out, ...options},
-    {ops: device.ops, connect: lane.connect, controllerCheckout: () => controller, log: () => {}});
+    {ops: device.ops, connect: lane.connect, controllerCheckout: () => controller, log: () => {}, ...(interrupt ? {interrupt} : {})});
   const meta = fs.existsSync(join(out, 'meta.json')) ? JSON.parse(fs.readFileSync(join(out, 'meta.json'), 'utf8')) : null;
   return {code, out, meta, device, lane};
 };
@@ -265,6 +265,26 @@ test('the owner\'s front app not put back in front leaves the run incomplete, wi
   device.ops.scenes = args => (args[0] === 'reactivate' ? {reactivated: false, required: false, reason: 'the app is no longer running as the process that was in front'} : scenes(args));
   const quit = await runLane({engine: 'cua', device});
   assert.deepEqual([quit.code, quit.meta.complete, fs.existsSync(join(quit.out, 'preparation.json'))], [0, true, false]);
+});
+
+test('an interrupt stops the lane at the next step: no further cell, every scene down, the home given back, the front app put back, recorded as interrupted', async () => {
+  const device = fakeDevice(), interrupt = {signal: null};
+  const lane = fakeLane(device, {engine: 'cua', fail: (kind, scene) => { if (kind === 'bind' && scene === 'finder') interrupt.signal = 'SIGTERM'; return null; }});
+  const run = await runLane({engine: 'cua', device, lane, interrupt});
+  assert.equal(run.code, 143);
+  assert.deepEqual([run.meta.interrupted, run.meta.complete], ['SIGTERM', false]);
+  assert.match(run.meta.error, /interrupted by SIGTERM/);
+  assert.deepEqual(lane.cells.filter(c => /finder|chrome|electron/.test(c)), ['bind finder'], 'nothing after the cell in flight');
+  assert.ok(['textedit', 'finder'].every(scene => device.calls.some(c => c[1] === 'down' && c[2] === scene)));
+  assert.ok(device.calls.some(c => c[0] === 'cleanup'));
+  assert.deepEqual(device.calls.at(-1).slice(0, 2), ['scenes', 'reactivate']);
+  assert.equal(JSON.parse(fs.readFileSync(join(run.out, 'result.json'), 'utf8')).verdict, 'no-verdict');
+  // A signal before the lane: nothing is brought up.
+  const early = fakeDevice(), before = {signal: 'SIGINT'};
+  const stopped = await runLane({engine: 'cua', device: early, interrupt: before});
+  assert.equal(stopped.code, 130);
+  assert.equal(early.calls.some(c => c[1] === 'up'), false);
+  assert.ok(early.calls.some(c => c[0] === 'cleanup'));
 });
 
 test('a scene whose up failed part way is still brought down', async () => {

@@ -4,9 +4,10 @@ import Foundation
 // What a paste puts on the pasteboard per format (the spec's Design, "Paste"; R/F-helper-logic.md §7.2, the vendor's
 // FUN_1001b76e0 and FUN_1001b81c8): `text` → plain only; `html` → public.html (the source as given), public.rtf and
 // public.utf8-plain-text (the rendered text, not the source), in that order; `md` → converted to HTML first, then as
-// `html`. The vendor converts with its own RichText graph (Markdown to HTML 0x100ec8064, HTML to an attributed string and
-// RTF through RichTextConverter); cua uses Apple's: Foundation's Markdown parser for `md`, rendered here to HTML from its
-// presentation intents, and AppKit's HTML import for the attributed string, whose RTF and text are the other two.
+// `html`, the HTML given to AppKit's import with every image replaced by its alt text. The vendor converts with its own
+// RichText graph (Markdown to HTML 0x100ec8064, HTML to an attributed string and RTF through RichTextConverter); cua
+// uses Apple's: Foundation's Markdown parser for `md`, rendered here to HTML from its presentation intents, and
+// AppKit's HTML import for the attributed string, whose RTF and text are the other two.
 
 /// The facade's paste formats (R/A-contract.md §1.4); absent means `text`, as the facade defaults it.
 enum PasteFormat: String {
@@ -42,16 +43,38 @@ func pasteRepresentations(_ text: String, format: PasteFormat) throws -> [PasteR
   }
 }
 
-/// How long AppKit's HTML import may wait for what the HTML loads (an image's URL): the import runs on the main thread,
-/// whose run loop serves the engine's observers and the pasteboard's provider, so a slow resource must not hold it.
+/// How long AppKit's HTML import may wait for what the HTML still loads (a stylesheet, a frame): the import runs on the
+/// main thread, whose run loop serves the engine's observers and the pasteboard's provider, so a slow resource must not
+/// hold it.
 private let htmlImportTimeoutSeconds = 5.0
+
+private let imageTag = try! NSRegularExpression(pattern: #"<img\b[^>]*>"#, options: [.caseInsensitive])
+private let altAttribute = try! NSRegularExpression(pattern: #"\balt\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))"#, options: [.caseInsensitive])
+
+/// The HTML AppKit's import is given for the RTF and the rendered text: every `img` replaced by its alt text (nothing
+/// without one), so the engine never fetches an image's URL; RTF carries no images anyway. public.html keeps the source.
+func htmlForImport(_ html: String) -> String {
+  let source = html as NSString
+  var result = ""
+  var last = 0
+  for match in imageTag.matches(in: html, range: NSRange(location: 0, length: source.length)) {
+    result += source.substring(with: NSRange(location: last, length: match.range.location - last))
+    let tag = source.substring(with: match.range) as NSString
+    if let alt = altAttribute.firstMatch(in: tag as String, range: NSRange(location: 0, length: tag.length)) {
+      for group in 1...3 where alt.range(at: group).location != NSNotFound { result += tag.substring(with: alt.range(at: group)) }
+    }
+    last = match.range.location + match.range.length
+  }
+  return result + source.substring(from: last)
+}
 
 /// HTML as the vendor declares it: the source, then RTF and the rendered text of its attributed string; both are
 /// required (a failed import is the write failure).
 private func htmlRepresentations(_ html: String) throws -> [PasteRepresentation] {
+  let imported = htmlForImport(html)
   let converted: (rtf: Data, text: String)? = onMain {
     guard let attributed = try? NSAttributedString(
-      data: Data(html.utf8),
+      data: Data(imported.utf8),
       options: [.documentType: NSAttributedString.DocumentType.html, .characterEncoding: String.Encoding.utf8.rawValue,
                 .timeout: htmlImportTimeoutSeconds],
       documentAttributes: nil) else { return nil }
@@ -71,7 +94,8 @@ private func htmlRepresentations(_ html: String) throws -> [PasteRepresentation]
 
 /// CommonMark with GitHub's tables, parsed by Foundation and rendered to HTML from each run's presentation intents: the
 /// block intents (innermost first in a run's components) opened and closed by their identity, so consecutive runs of
-/// one paragraph or list share their tags; the inline intents as `em`, `strong`, `code`, `del` and `a`; inline and block
+/// one paragraph or list share their tags, an ordered list keeping its start; the inline intents as `em`, `strong`,
+/// `code`, `del`, `a` and `img` (its text the alt, kept for the target app to decide on); inline and block
 /// HTML in the source passed through as CommonMark renderers pass it. A failed parse is the write failure.
 func markdownHTML(_ markdown: String) throws -> String {
   guard let parsed = try? AttributedString(markdown: markdown, options: .init(interpretedSyntax: .full)) else {
@@ -84,7 +108,9 @@ func markdownHTML(_ markdown: String) throws -> String {
     var shared = 0
     while shared < open.count, shared < blocks.count, open[shared].identity == blocks[shared].identity { shared += 1 }
     html += closeBlocks(open, from: shared)
-    for (depth, block) in blocks.enumerated().dropFirst(shared) { html += openTag(block, inHeaderRow: inHeaderRow(blocks, below: depth)) }
+    for (depth, block) in blocks.enumerated().dropFirst(shared) {
+      html += openTag(block, inHeaderRow: inHeaderRow(blocks, below: depth), firstItem: depth + 1 < blocks.count ? blocks[depth + 1] : nil)
+    }
     open = blocks
     html += inline(String(parsed[run.range].characters), run: run, block: blocks.last?.kind)
   }
@@ -102,11 +128,14 @@ private func closeBlocks(_ path: [PresentationIntent.IntentType], from start: In
   return (start..<path.count).reversed().map { closeTag(path[$0], inHeaderRow: inHeaderRow(path, below: $0)) }.joined()
 }
 
-private func openTag(_ block: PresentationIntent.IntentType, inHeaderRow: Bool) -> String {
+/// A block's opening tag; `firstItem`, the block inside it on the run that opens it, gives an ordered list its start.
+private func openTag(_ block: PresentationIntent.IntentType, inHeaderRow: Bool, firstItem: PresentationIntent.IntentType?) -> String {
   switch block.kind {
   case .paragraph: return "<p>"
   case .header(let level): return "<h\(level)>"
-  case .orderedList: return "<ol>\n"
+  case .orderedList:
+    if case .listItem(let ordinal) = firstItem?.kind, ordinal != 1 { return "<ol start=\"\(ordinal)\">\n" }
+    return "<ol>\n"
   case .unorderedList: return "<ul>\n"
   case .listItem: return "<li>"
   case .codeBlock(let language):
@@ -153,6 +182,7 @@ private func inline(_ text: String, run: AttributedString.Runs.Run, block: Prese
     if intent.contains(.strikethrough) { body = "<del>\(body)</del>" }
     if intent.contains(.emphasized) { body = "<em>\(body)</em>" }
     if intent.contains(.stronglyEmphasized) { body = "<strong>\(body)</strong>" }
+    if let image = run.imageURL { body = "<img src=\"\(escapeHTML(image.absoluteString))\" alt=\"\(escapeHTML(text))\">" }
     if let link = run.link { body = "<a href=\"\(escapeHTML(link.absoluteString))\">\(body)</a>" }
   }
   return body

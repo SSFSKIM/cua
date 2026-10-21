@@ -1,4 +1,5 @@
 import AppKit
+import Carbon
 import Foundation
 import XCTest
 @testable import Engine
@@ -38,6 +39,26 @@ private final class TestPasteboard {
   deinit { board.releaseGlobally() }
 }
 
+/// A pasteboard whose write takes it (clears it, as prepareForNewContents does) and then fails.
+private final class ClearThenFail: PasteboardAccess {
+  private let inner: SystemPasteboard
+  private let board: NSPasteboard
+  private(set) var cleared = false
+
+  init(_ board: NSPasteboard) {
+    self.board = board
+    inner = SystemPasteboard(board)
+  }
+
+  var changeCount: Int { inner.changeCount }
+  func snapshot() -> PasteboardSnapshot? { inner.snapshot() }
+  func write(_ item: NSPasteboardItem) -> PasteboardWrite {
+    cleared = true
+    return PasteboardWrite(own: board.prepareForNewContents(with: .currentHostOnly), written: false)
+  }
+  func restore(_ snapshot: PasteboardSnapshot?) { inner.restore(snapshot) }
+}
+
 // MARK: Formats and representations
 
 final class PasteFormatTests: XCTestCase {
@@ -73,6 +94,19 @@ final class PasteFormatTests: XCTestCase {
     XCTAssertEqual(String(data: representations[0].data, encoding: .utf8), "<h1>Title</h1>\n<p>Some <strong>bold</strong></p>\n")
     let rendered = String(data: representations[2].data, encoding: .utf8) ?? ""
     XCTAssertTrue(rendered.contains("Title") && rendered.contains("Some bold"), rendered)
+  }
+}
+
+final class ImportedHTMLTests: XCTestCase {
+  /// What AppKit's import sees has every image replaced by its alt text, so the engine never fetches an image's URL;
+  /// public.html keeps the source as given (review finding 3).
+  func testImagesBecomeTheirAltTextForTheImportOnly() throws {
+    XCTAssertEqual(htmlForImport(#"<p>a <img src="https://example.com/x.png" alt="the cat"> b <IMG SRC='y.png' ALT='dog'/> c <img src=z.png> d</p>"#),
+                   "<p>a the cat b dog c  d</p>")
+    let source = #"<p>Hi <img src="http://127.0.0.1:9/never" alt="pic"></p>"#
+    let representations = try pasteRepresentations(source, format: .html)
+    XCTAssertEqual(String(data: representations[0].data, encoding: .utf8), source, "the source as given")
+    XCTAssertEqual(String(data: representations[2].data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines), "Hi pic")
   }
 }
 
@@ -142,6 +176,18 @@ final class MarkdownHTMLTests: XCTestCase {
       """)
   }
 
+  /// An ordered list keeps its start number (review finding 3).
+  func testAnOrderedListKeepsItsStart() throws {
+    XCTAssertEqual(try markdownHTML("5. five\n6. six"), "<ol start=\"5\">\n<li><p>five</p>\n</li>\n<li><p>six</p>\n</li>\n</ol>\n")
+    XCTAssertTrue(try markdownHTML("1. one").hasPrefix("<ol>\n"))
+  }
+
+  /// An image survives in the HTML as `img` with its source and alt text; the target app decides what to do with it.
+  func testAnImageSurvivesAsImg() throws {
+    XCTAssertEqual(try markdownHTML("See ![a \"cat\"](https://example.com/c.png) here"),
+                   "<p>See <img src=\"https://example.com/c.png\" alt=\"a &quot;cat&quot;\"> here</p>\n")
+  }
+
   func testPlainTextEscapes() throws {
     XCTAssertEqual(try markdownHTML("a < b & \"c\""), "<p>a &lt; b &amp; &quot;c&quot;</p>\n")
   }
@@ -157,8 +203,9 @@ final class PasteboardTests: XCTestCase {
     let representations = try pasteRepresentations("<p>x</p>", format: .html)
     let provider = LazyPasteProvider(representations)
     let item = try XCTUnwrap(provider.item())
-    let own = try XCTUnwrap(pasteboard.access.write(item))
-    XCTAssertEqual(pasteboard.access.changeCount, own)
+    let write = pasteboard.access.write(item)
+    XCTAssertTrue(write.written)
+    XCTAssertEqual(pasteboard.access.changeCount, write.own)
     XCTAssertEqual(Set(pasteboard.board.types?.map(\.rawValue) ?? []).isSuperset(of: ["public.html", "public.rtf", "public.utf8-plain-text",
                                                                                        "org.nspasteboard.ConcealedType", "org.nspasteboard.TransientType"]), true)
     XCTAssertFalse(provider.waitForRead(timeoutMs: 0), "nothing has read it yet")
@@ -290,6 +337,51 @@ final class PasteOperationTests: XCTestCase {
     XCTAssertEqual(entered, 6)
     XCTAssertNotNil(meta.startedAt)
     XCTAssertNotNil(meta.endedAt)
+  }
+
+  /// The pasteboard taken (cleared) but the write refused: the previous contents come back (review finding 1).
+  func testAWriteThatFailsAfterTheClearStillRestores() {
+    let pasteboard = TestPasteboard()
+    pasteboard.userCopies("the owner's")
+    let failing = ClearThenFail(pasteboard.board)
+    var posted = false
+    var entered = 0
+    var meta = meta()
+    XCTAssertThrowsError(try runPaste([.content(plain("x"), units: 1)], pasteboard: failing, effect: effect(), readTimeoutMs: 0,
+                                      checkInFlight: {}, postPaste: { posted = true; return true }, postReturn: { true },
+                                      entered: &entered, meta: &meta)) {
+      XCTAssertEqual(($0 as? EngineError)?.errorName, "clipboardWriteFailed")
+    }
+    XCTAssertTrue(failing.cleared, "the write took the pasteboard before it failed")
+    XCTAssertFalse(posted)
+    XCTAssertEqual(pasteboard.strings(), ["the owner's"])
+  }
+
+  /// A human copy during a line's effect wait: the next line never retakes the pasteboard, the paste stops as the
+  /// conflict, and the human's copy is kept (review finding 2).
+  func testAHumanCopyBetweenLinesStopsTheTypedTextAndIsKept() {
+    let pasteboard = TestPasteboard()
+    pasteboard.userCopies("older")
+    var log: [String] = []
+    var characters = 0
+    var reads = 0
+    var entered = 0
+    var meta = meta()
+    let reading = {
+      reads += 1
+      if reads == 2 { pasteboard.userCopies("newer human copy") }  // the first poll of line a's effect wait
+      return EffectReading(range: nil, characters: characters)
+    }
+    XCTAssertThrowsError(try run(pasteParts(typing: "a\nb"), pasteboard, effect: effect(reading: reading), postPaste: {
+      log.append("paste " + (pasteboard.appReads() ?? "nil"))
+      characters += 1
+      return true
+    }, postReturn: { log.append("Return"); return true }, entered: &entered, meta: &meta)) {
+      XCTAssertEqual(($0 as? EngineError)?.errorName, "clipboardConflict")
+    }
+    XCTAssertEqual(log, ["paste a", "Return"], "line b was never written")
+    XCTAssertEqual(pasteboard.strings(), ["newer human copy"])
+    XCTAssertEqual(entered, 2)
   }
 
   /// No read within the wait: the vendor's sentence, the previous contents restored, the interval kept (⌘V was posted).
@@ -448,5 +540,40 @@ final class PasteOperationTests: XCTestCase {
       if checks == 3 { throw userChanged("TextEdit") }
     }, postPaste: { _ = pasteboard.appReads(); characters += 2; return true }, entered: &entered, meta: &meta))
     XCTAssertEqual(entered, 3)
+  }
+}
+
+// MARK: Which sources key and which paste
+
+/// The routing predicate (review finding 4): a source keys when its TIS type is a keyboard layout, whatever its script,
+/// since a layout's keys compose nothing; an input method or input mode (Korean, Japanese) takes the paste route. Read
+/// from the installed sources by id; nothing is selected.
+final class InputSourceRouteTests: XCTestCase {
+  private func installed(_ id: String) throws -> InputSourceInfo {
+    let filter = [kTISPropertyInputSourceID as String: id] as CFDictionary
+    guard let list = TISCreateInputSourceList(filter, true)?.takeRetainedValue() as? [TISInputSource], let source = list.first else {
+      throw XCTSkip("\(id) is not installed on this Mac")
+    }
+    return inputSourceInfo(source)
+  }
+
+  private func route(_ info: InputSourceInfo) -> TextRoute {
+    textRoute(keyboardLayout: info.keyboardLayout, perContextUnknown: false, concealed: false, spikeKeyed: false)
+  }
+
+  func testKeyboardLayoutsOfAnyScriptAreKeyed() throws {
+    for id in ["com.apple.keylayout.ABC", "com.apple.keylayout.US", "com.apple.keylayout.Russian", "com.apple.keylayout.Greek"] {
+      let info = try installed(id)
+      XCTAssertTrue(info.keyboardLayout, id)
+      XCTAssertEqual(route(info), .keyed, id)
+    }
+  }
+
+  func testInputMethodsAndModesPaste() throws {
+    for id in ["com.apple.inputmethod.Korean.2SetKorean", "com.apple.inputmethod.Kotoeri.RomajiTyping.Japanese"] {
+      let info = try installed(id)
+      XCTAssertFalse(info.keyboardLayout, id)
+      XCTAssertEqual(route(info), .paste, id)
+    }
   }
 }

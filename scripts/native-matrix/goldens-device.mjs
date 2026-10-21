@@ -103,8 +103,9 @@ export function sceneProblems(id, shot, record) {
 }
 
 // One get_app_state as cua's service sends it (always with the screenshot), the image removed once the answer is in.
-async function getState(client, record, screenshots, extra) {
-  const {result} = await client.execute('get_app_state', {app: record.app, includeScreenshot: true, outputDirectory: screenshots, ...extra});
+// `options` are the request's (deadlineMs: the engine's deadline for it; the client's default otherwise).
+async function getState(client, record, screenshots, extra, options) {
+  const {result} = await client.execute('get_app_state', {app: record.app, includeScreenshot: true, outputDirectory: screenshots, ...extra}, options);
   const url = result?.screenshot?.url;
   if (typeof url === 'string' && url.startsWith('file:')) {
     const path = fileURLToPath(url);
@@ -114,29 +115,37 @@ async function getState(client, record, screenshots, extra) {
 }
 
 // The scene read until it has settled: full observations `intervalMs` apart until two consecutive ones pass the scene's
-// checks and render alike (stateDigest), for at most `boundMs` from the first. -> {shot, problems: [], settle} with the
-// later of the two; or {shot: null, problems, settle}: a problem waiting cannot clear at once, the transient problems of
-// the last read at the bound, or `unstable` (with `observed`, the last read, which passed the checks) when the reads
-// passed but never twice alike. `settle` is {reads, ms} for the record.
-// With `strict`, no problem is read through: every one refuses at once (verify).
+// checks and render alike (stateDigest), within `boundMs` of the first. The bound holds for the reads themselves: each
+// request carries the time left as the engine's deadline (a stalled read is cut at the bound, not at the client's
+// 120 s default), and a read that answers past the bound is not accepted. -> {shot, problems: [], settle} with the
+// later of the two; or {shot: null, problems, settle}: a problem waiting cannot clear (with `strict`, any problem) at
+// once, the transient problems of the last read at the bound, or `unstable` (with `observed`, the last read, when it
+// passed the checks) when no two reads passed alike in time. `settle` is {reads, ms} for the record.
 export async function settledState({id, record, client, screenshots, sleep = sleepFor, now = Date.now, boundMs = SETTLE_BOUND_MS, intervalMs = SETTLE_INTERVAL_MS, strict = false}) {
-  const t0 = now();
-  let reads = 0, previous = null, shot = null, problems = [];
+  const t0 = now(), deadline = t0 + boundMs;
+  let reads = 0, previous = null, problems = [], observed = null;
   const settle = () => ({reads, ms: now() - t0});
   for (;;) {
     if (reads) await sleep(intervalMs);
-    shot = await getState(client, record, screenshots, {disableDiff: true});
+    const remaining = deadline - now();
+    if (remaining <= 0) break;
     reads++;
+    let shot;
+    try { shot = await getState(client, record, screenshots, {disableDiff: true}, {deadlineMs: remaining}); } catch (error) {
+      if (now() >= deadline) break;   // the engine's deadline: the bound reached inside the read
+      throw error;
+    }
+    if (now() > deadline) break;
     problems = sceneProblems(id, shot, record);
     if (problems.some(p => strict || !TRANSIENT.has(p.code))) return {shot: null, problems, settle: settle()};
     const digest = problems.length ? null : stateDigest(goldenForm(shot));
     if (digest !== null && digest === previous) return {shot, problems: [], settle: settle()};
     previous = digest;
-    if (now() - t0 >= boundMs) break;
+    observed = digest === null ? null : goldenForm(shot);
   }
   if (problems.length) return {shot: null, problems, settle: settle()};
   return {shot: null, problems: [{code: 'unstable', message: `cua's observation did not render alike in two consecutive reads ${intervalMs} ms apart within ${boundMs} ms`}],
-    observed: goldenForm(shot), settle: settle()};
+    ...(observed ? {observed} : {}), settle: settle()};
 }
 
 // The fixed state's observation, settled; `strict` for verify. -> {scene, build, skyshot | null, timings, frame, settle,

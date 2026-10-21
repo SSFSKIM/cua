@@ -81,8 +81,8 @@ test('observe: the settled full observation with the screenshot, the image remov
   const client = fakeClient(Array(2).fill({...recorded, screenshot: {...recorded.screenshot, url: pathToFileURL(image).href}, timings: {focusRead: 'outsideTheWalk'}}));
   const out = await observe({id: 'textedit', record: recordOf('textedit', recorded.app.pid), client, screenshots, ...fakeClock()});
   // Two reads that render alike: the state held for one interval.
-  const call = {method: 'get_app_state', args: {app: '/Applications/textedit.app', includeScreenshot: true, outputDirectory: screenshots, disableDiff: true}, options: {}};
-  assert.deepEqual(client.calls, [call, call]);
+  const call = {method: 'get_app_state', args: {app: '/Applications/textedit.app', includeScreenshot: true, outputDirectory: screenshots, disableDiff: true}};
+  assert.deepEqual(client.calls, [{...call, options: {deadlineMs: SETTLE_BOUND_MS}}, {...call, options: {deadlineMs: SETTLE_BOUND_MS - SETTLE_INTERVAL_MS}}]);
   assert.deepEqual(out.problems, []);
   assert.equal(out.skyshot.timings, undefined);
   assert.deepEqual(out.timings, {focusRead: 'outsideTheWalk'});
@@ -122,7 +122,7 @@ test('observe: another process or another window of the app is refused', async (
   const clock = fakeClock(), untitled = fakeClient(Array(30).fill({...recorded, window: {...recorded.window, title: 'Untitled'}}));
   const otherWindow = await observe({id: 'textedit', record: recordOf('textedit', recorded.app.pid), client: untitled, screenshots: '/s', ...clock});
   assert.deepEqual(otherWindow.problems.map(p => p.code), ['other_window']);
-  assert.equal(untitled.calls.length, SETTLE_BOUND_MS / SETTLE_INTERVAL_MS + 1);
+  assert.equal(untitled.calls.length, SETTLE_BOUND_MS / SETTLE_INTERVAL_MS);
   assert.equal(clock.now(), SETTLE_BOUND_MS);
   assert.equal(otherWindow.skyshot, null);
   assert.doesNotMatch(JSON.stringify(otherWindow.problems), /Untitled/);
@@ -245,7 +245,7 @@ test('act: a window of the run\'s process still showing a temporary title is obs
   const stays = fakeClient(Array(30).fill(untitled));
   const refused = await act({id: 'electron', record, client: stays, screenshots: '/s', expect: digestOf(fixed), ...fakeClock()});
   assert.deepEqual(refused.problems.map(p => p.code), ['other_window']);
-  assert.equal(stays.calls.length, SETTLE_BOUND_MS / SETTLE_INTERVAL_MS + 1);
+  assert.equal(stays.calls.length, SETTLE_BOUND_MS / SETTLE_INTERVAL_MS);
   assert.equal('observed' in refused, false);
   // Another process is refused at once.
   const other = fakeClient([{...fixed, app: {...fixed.app, pid: fixed.app.pid + 1}}]);
@@ -283,7 +283,7 @@ test('settledState: a state that keeps changing within the bound is refused as u
   assert.ok(RESET_MAY_CLEAR.includes('unstable'));
   assert.equal(out.shot, null);
   assert.equal(out.observed.nodes[1].value, `v${n - 1}`);
-  assert.equal(client.calls.length, SETTLE_BOUND_MS / SETTLE_INTERVAL_MS + 1, 'read every interval until the bound, then no more');
+  assert.equal(client.calls.length, SETTLE_BOUND_MS / SETTLE_INTERVAL_MS, 'read every interval until the bound, then no more');
   assert.equal(clock.now(), SETTLE_BOUND_MS);
 });
 
@@ -299,6 +299,52 @@ test('settledState: proceeds at once when the first two reads render alike; the 
   const quick = fakeClock();
   const once = await settledState({id: 'electron', record, client: fakeClient([fixed, fixed]), screenshots: '/s', boundMs: 300, intervalMs: 100, ...quick});
   assert.deepEqual([once.problems, quick.slept], [[], [100]]);
+});
+
+// An engine client on the fake clock whose get_app_state takes `readMs`: one that honours the request's deadline answers
+// with the engine's deadline error at it, one that does not answers late.
+function slowClient(answer, clock, {readMs, honoursDeadline = true}) {
+  const deadlines = [];
+  return {deadlines, identity: {build: 'b'.repeat(64)}, calls: [],
+    async execute(method, args, options = {}) {
+      deadlines.push(options.deadlineMs);
+      if (honoursDeadline && options.deadlineMs !== undefined && readMs > options.deadlineMs) {
+        await clock.sleep(options.deadlineMs);
+        throw new SkyComputerUseError({code: -10007, reason: 'the request\'s deadline passed', errorName: 'deadlineExceeded'});
+      }
+      await clock.sleep(readMs);
+      return {result: structuredClone(answer), engineMs: readMs};
+    },
+    close() {}};
+}
+
+test('settledState: each read carries the bound\'s remaining time as its deadline, and a read that ends past the bound is never accepted', async () => {
+  const fixed = shot('textedit', 'skyshot.json');
+  const record = recordOf('textedit', fixed.app.pid);
+  // Two identical reads of 6 s each: the second would end at 12.5 s. The engine stops it at the bound instead.
+  const clock = fakeClock(), client = slowClient(fixed, clock, {readMs: 6000});
+  const out = await settledState({id: 'textedit', record, client, screenshots: '/s', ...clock});
+  assert.deepEqual(client.deadlines, [SETTLE_BOUND_MS, SETTLE_BOUND_MS - 6000 - SETTLE_INTERVAL_MS]);
+  assert.deepEqual(out.problems.map(p => p.code), ['unstable']);
+  assert.equal(out.shot, null);
+  assert.equal(clock.now(), SETTLE_BOUND_MS, 'refused at the bound');
+  // An answer that comes after the deadline anyway (the client's grace) is not accepted either.
+  const late = fakeClock(), ignoring = slowClient(fixed, late, {readMs: 6000, honoursDeadline: false});
+  const lateOut = await settledState({id: 'textedit', record, client: ignoring, screenshots: '/s', ...late});
+  assert.deepEqual(lateOut.problems.map(p => p.code), ['unstable']);
+  assert.equal(late.now(), 12_500);
+  // A stalled read is refused at the bound, not at the client's default deadline (120 s).
+  const stalled = fakeClock(), stuck = slowClient(fixed, stalled, {readMs: 120_000});
+  const stalledOut = await settledState({id: 'textedit', record, client: stuck, screenshots: '/s', ...stalled});
+  assert.deepEqual(stalledOut.problems.map(p => p.code), ['unstable']);
+  assert.equal(stalled.now(), SETTLE_BOUND_MS);
+  assert.deepEqual(stuck.deadlines, [SETTLE_BOUND_MS]);
+  // Reads that fit settle as before, inside the bound.
+  const quick = fakeClock(), fast = slowClient(fixed, quick, {readMs: 200});
+  const fastOut = await settledState({id: 'textedit', record, client: fast, screenshots: '/s', ...quick});
+  assert.deepEqual(fastOut.problems, []);
+  assert.deepEqual(fast.deadlines, [SETTLE_BOUND_MS, SETTLE_BOUND_MS - 700]);
+  assert.equal(quick.now(), 900);
 });
 
 test('steps: activations and keys in order, each key through the engine only while its guard is in front', async () => {

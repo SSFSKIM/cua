@@ -10,7 +10,7 @@ Where the rest of the record lives:
 
 ## Status
 
-_Draft, 2026-10-21 10:20Z: the code is integrated and its fix waves are in flight; the hold has not run._
+_Draft, 2026-10-21 11:56Z: everything is integrated and reviewed. The hold commit is e2ad3dbb (ci-gate GREEN, run 39593249861), and the hold is planned for ~16:30Z._
 
 | Task | State |
 |---|---|
@@ -18,7 +18,8 @@ _Draft, 2026-10-21 10:20Z: the code is integrated and its fix waves are in fligh
 | M2a.2: set_value, select_text, perform_secondary_action, scroll, drag, the menu bar | Reviewed clean, ticked. The menu activation switch was added after integration (reviewed clean) |
 | M2a.3: paste, clipboard snapshot and restore, rich text, type_text's paste route | Reviewed clean after four rounds, ticked |
 | M2a.4: settle, enablement, the minimized primary window, `cua/serviceMs` | Reviewed clean, ticked |
-| Whole-milestone reviewer-high | Round 1: three Important findings and one Minor; fix waves in flight |
+| Whole-milestone reviewer-high | Round 1 found three Important and one Minor. All fixed (53e6c7f5, ef4d1336); re-review **correct** at 9c71da8e |
+| M2a.5a: the hold harness | Six review rounds, merged at 1912d2d9. One abort-path gap is left open as tech debt by the agreed stopping rule |
 | M2a.5: live on the mini | Pending a hold |
 
 ## Lanes and integration
@@ -32,7 +33,7 @@ M2a ran as parallel lanes, each in its own worktree and Swift scratch path, and 
 | M2a.2 | m2a/methods | ef303a88; the switch at f088b551 |
 | M2a.4 | m2a/settle | aca8c704; wiring at ca2aa113; fixes at 62235d71 |
 | M2a.3 | m2a/paste | eb498351 |
-| M2a.5a (the hold harness) | m2a/live | pending |
+| M2a.5a (the hold harness) | m2a/live | 6ac56803 (round 5), 1912d2d9 (round 6) |
 
 ## Reviews
 
@@ -51,7 +52,17 @@ M2a ran as parallel lanes, each in its own worktree and Swift scratch path, and 
   - (P2) A route-4 failure after posting skipped the deferred settle.
   - (P3) Paste lost `activationGuardMs` when its guard failed.
   - maws-3f corrected the preparation ruling: the synthesized focus-click fallback counts as posting.
-- **The hold harness**, f088b551..2b31600b: one Critical finding (window data could leave the device) and nine Important ones. In a fix round.
+- **The hold harness**, six rounds:
+  - **Round 1** (f088b551..2b31600b) found one Critical: owner window titles and text could leave the device, and the alert watch could observe arbitrary apps. It also found nine Important:
+    - no put-back on a signal;
+    - unbounded SSH;
+    - the protected front app (resolved by the coordinator's ruling: restore by activation only);
+    - minimized and menu verdicts built on invalid evidence;
+    - the Korean precondition;
+    - the clipboard claim (relabelled as a type-topology check);
+    - the Finder observation.
+  - **Rounds 4 to 6** closed those, then tightened the recovery: it acts only on journaled processes, waits out scene startups and probes, and confirms that a timed-out step's process group is empty.
+  - **Stopping rule**, agreed with the coordinator: after round 6, abort-path gaps go to tech debt. The hold is attended, and phase 4 checks each put-back item independently. One gap stayed open: recovery does not wait for a probe launch that is still pending. It is logged at e2ad3dbb, and the runbook re-reads the input source and the front app after any recovery.
 
 ## The live hold (M2a.5)
 

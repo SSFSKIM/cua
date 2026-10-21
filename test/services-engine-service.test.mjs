@@ -213,7 +213,7 @@ test('model code reaches the raw methods, but only the vendor\'s fields reach th
   const {getApp, call, sky, engine} = await session(t, {handlers});
   await getApp('TextEdit');
   const app = APPS.TextEdit.appPath;
-  const spike = {spikeRoute: 3, spikeKeyed: true, spikeEventSource: 1, spikeMenuActivation: true, pid: 9, settle: false, extra: 'x'};
+  const spike = {spikeRoute: 3, spikeKeyed: true, spikeEventSource: 1, pid: 9, settle: false, extra: 'x'};
   const sent = [
     ['click', {app, x: 1, y: 2, mouse_button: 'left', click_count: 1}],
     ['click', {app, element_index: 1}],

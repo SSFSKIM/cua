@@ -155,7 +155,6 @@ extension Engine {
     var timings = Timings()
     let started = monotonicMilliseconds()
     try requireAccessibility()
-    try refuseWhenLocked()
     let includeScreenshot = args["includeScreenshot"] as? Bool ?? false
     let outputDirectory = args["outputDirectory"] as? String
     if includeScreenshot { guard outputDirectory?.hasPrefix("/") == true else { throw EngineError.invalidArguments("outputDirectory must be an absolute path") } }
@@ -182,6 +181,8 @@ extension Engine {
     let appPid = target.pid
     let application = prepare(AXUIElementCreateApplication(appPid))
     let connection = context.connection
+    // The connection drives the app from here: a user event during the observation keeps the re-query flag set.
+    observationBegins(app, pid: appPid, connection: connection)
     let webShaped = webAccessibility.isWebShaped(app.appPath)
     timings.set("webShaped", webShaped)
 
@@ -324,7 +325,8 @@ extension Engine {
     // since its elements were read, so it invalidates until the next observation.
     timings.time("monitor") { lineage.watch(Set([appPid]).union(walk.revision.owners), afterRead: true) }
     timings.set("watchedProcesses", lineage.watched)
-    connection.requiresRequery.remove(app.key)
+    // The re-query flag clears only when the debounce has expired by now (Intervention.swift; R/sky-behaviour.md §23.4).
+    observationCompleted(app, pid: appPid, connection: connection)
 
     var screenshot: Any = NSNull()
     if let pendingCapture {

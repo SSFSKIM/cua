@@ -53,10 +53,10 @@ final class Server: @unchecked Sendable {
   /// Set, with the listener closed, under `lock` once a shutdown is accepted: nothing is accepted after it.
   private var shuttingDown = false
 
-  init(paths: ServerPaths, peerPolicy: PeerPolicy) {
+  init(paths: ServerPaths, settings: EngineSettings) {
     self.paths = paths
-    self.peerPolicy = peerPolicy
-    self.engine = Engine(paths: paths)
+    self.peerPolicy = settings.peerPolicy
+    self.engine = Engine(paths: paths, routes: settings.routes)
   }
 
   /// Claims the directory, the lock and the socket, then accepts on a thread of its own.
@@ -176,6 +176,7 @@ final class Server: @unchecked Sendable {
     open[connection.id] = nil
     lock.unlock()
     close(connection.fd)
+    engine.connectionClosed(connection)  // its drives end; the intervention tap goes with the last (Intervention.swift)
   }
 
   /// Accepts a shutdown atomically with accept: with no connection open but `connection`, closes the listener under the

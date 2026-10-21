@@ -5,7 +5,8 @@ import ScreenCaptureKit
 
 // The protocol's methods (Interfaces, EngineProtocol): ping, status, approve, shutdown, and execute with the facade's
 // method vocabulary plus resolve_app. Nothing here asks for a permission before a request needs it: status reads the
-// grants with the non-prompting preflight calls only.
+// grants with the non-prompting preflight calls only. Every execute is refused while the Mac is locked (the spec's
+// Design, "Lock screen"), whatever its method; the protocol's own methods answer, so doctor can still read status.
 
 struct ExecutionContext {
   let connection: ConnectionState
@@ -22,18 +23,31 @@ struct Outcome {
 
 /// The facade's methods this build does not implement yet (M2a adds them; paste answers its concealed refusal already).
 private let laterMethods: Set<String> = ["drag", "perform_secondary_action", "scroll", "select_text", "set_value"]
-/// The input methods this build answers; every error they return carries the input meta (Interfaces, input errors).
-private let inputMethods: Set<String> = ["click", "press_key", "type_text", "paste"]
+/// The input methods: every error they return carries the input meta (Interfaces, input errors), the ones this build
+/// does not implement yet included, so a lock-screen refusal reads the same on every input method.
+private let inputMethods: Set<String> = ["click", "press_key", "type_text", "paste", "drag", "perform_secondary_action", "scroll", "select_text", "set_value"]
 
 final class Engine: @unchecked Sendable {
   let paths: ServerPaths
   let apps: AppDirectory
   let webAccessibility = WebAccessibility()
+  /// The intervention tap and its ledger (Intervention.swift).
+  let intervention: InterventionMonitor
+  /// The owner's per-app route-4 override, `routes` in engine.json as read at launch (Config.swift).
+  let routes: [String: Int]
+  /// Route 3's consecutive guard failures per app, for `routeAdvice` and status (Routes.swift).
+  let routeAdvice = RouteAdviceTracker()
+  /// Whether the Mac is locked now (the session dictionary; replaced in the unit tests).
+  let screenLocked: () -> Bool
   weak var server: Server?
 
-  init(paths: ServerPaths) {
+  init(paths: ServerPaths, routes: [String: Int] = [:], intervention: InterventionMonitor = InterventionMonitor(),
+       screenLocked: @escaping () -> Bool = screenIsLocked) {
     self.paths = paths
     self.apps = AppDirectory(usagePath: paths.usage)
+    self.routes = routes
+    self.intervention = intervention
+    self.screenLocked = screenLocked
   }
 
   func handle(_ request: Request, on connection: ConnectionState, receivedAt: Int64) -> Outcome {
@@ -47,8 +61,6 @@ final class Engine: @unchecked Sendable {
         if others > 0 { throw EngineError(name: "busy", "busy", extra: ["connections": others]) }
         return Outcome(result: .success([String: Any]()), exitAfter: true)
       case "execute": return Outcome(result: .success(try execute(request.params, connection, receivedAt)))
-      case "probe_tap": return Outcome(result: .success(try probeTap(request.params)))  // spike-only, probe (d) (Tap.swift)
-      case "probe_spike": return Outcome(result: .success(try probeSpike(request.params, receivedAt: receivedAt)))  // spike-only (SpikeProbe.swift)
       default: throw EngineError(rpc: .methodNotFound, "Method not found: \(request.method.prefix(64))")
       }
     } catch let error as EngineError {
@@ -80,6 +92,10 @@ final class Engine: @unchecked Sendable {
       "pid": Int(getpid()),
       "bundlePath": Bundle.main.bundlePath,
       "connections": server?.others(than: connection) ?? 0,
+      // What doctor reports beside the grants: the per-app route-4 override as this engine read it at launch, and the
+      // apps route 3's guard has failed three actions in a row for (each named by `routeAdvice` on its refusal).
+      "routes": routes,
+      "routeAdvice": routeAdvice.advised,
     ]
   }
 
@@ -107,12 +123,14 @@ final class Engine: @unchecked Sendable {
     let args = params["args"] as? [String: Any] ?? [:]
     let context = ExecutionContext(connection: connection, receivedAt: receivedAt, hidIdleMs: hidIdleMilliseconds(),
                                    deadline: deadline, lineage: params["lineage"] as? String)
-    // Every app-scoped method resolves first, so the forbidden list holds on every call whoever the client is.
-    // An input method refused here carries the input meta like any other error of an input method (nothing posted).
-    if method != "list_apps" && method != "resolve_app" && (args["app"] != nil || args["pid"] != nil) {
-      do { _ = try resolveApp(args) } catch let error as EngineError where inputMethods.contains(method) {
-        throw withMeta(error, InputMeta(context))
-      }
+    // The lock screen, then every app-scoped method resolves, so the forbidden list holds on every call whoever the
+    // client is. An input method refused here carries the input meta like any other error of an input method (nothing
+    // posted).
+    do {
+      try refuseWhenLocked(isLocked: screenLocked)
+      if method != "list_apps" && method != "resolve_app" && (args["app"] != nil || args["pid"] != nil) { _ = try resolveApp(args) }
+    } catch let error as EngineError where inputMethods.contains(method) {
+      throw withMeta(error, InputMeta(context))
     }
     switch method {
     case "list_apps": return apps.list()
@@ -154,13 +172,22 @@ final class Engine: @unchecked Sendable {
     throw EngineError(.permissionsPending, "cua Engine needs the Screen Recording permission: allow \"cua Engine\" in System Settings > Privacy & Security > Screen & System Audio Recording; a relaunch of the engine is pending before screenshots can use it.")
   }
 
-  func refuseWhenLocked() throws {
-    let session = CGSessionCopyCurrentDictionary() as? [String: Any]
-    if (session?["CGSSessionScreenIsLocked"] as? NSNumber)?.boolValue == true {
-      throw EngineError(.screenLocked, "The Mac is locked and automatic unlock could not unlock it. Ask the user to unlock the Mac manually before continuing.")
-    }
-  }
 }
+
+/// Fails `screenLocked` (−10020) with the vendor's first sentence (R/sky-behaviour.md §19) while the Mac is locked; no
+/// auto-unlock and no guardian (the spec's Design, "Lock screen").
+func refuseWhenLocked(isLocked: () -> Bool) throws {
+  guard isLocked() else { return }
+  throw EngineError(.screenLocked, "The Mac is locked and automatic unlock could not unlock it. Ask the user to unlock the Mac manually before continuing.")
+}
+
+/// The session dictionary's lock flag (`CGSSessionScreenIsLocked`); absent reads as unlocked.
+func sessionIsLocked(_ session: [String: Any]?) -> Bool {
+  (session?["CGSSessionScreenIsLocked"] as? NSNumber)?.boolValue == true
+}
+
+/// Whether the console session is locked now.
+func screenIsLocked() -> Bool { sessionIsLocked(CGSessionCopyCurrentDictionary() as? [String: Any]) }
 
 /// Milliseconds since the last input event of any kind at the HID level, machine-wide.
 func hidIdleMilliseconds() -> Int {

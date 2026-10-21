@@ -620,8 +620,12 @@ final class GuardSeam {
   /// Scheduled work by due time on the fake clock, run as the clock passes it.
   private var timers: [(due: Double, work: () -> Void)] = []
 
+  /// Whether a successful re-activation makes its app frontmost (route 4's activation and restore).
+  let reactivationTakesFront: Bool
+
   init(frontmost: pid_t?, frontmostAfterPost: pid_t? = nil, reactivates: Bool = true, step: Double = 10, raiseCost: Double = 0,
-       targetInFront: @escaping (Int) -> Bool = { _ in false }) {
+       reactivationTakesFront: Bool = false, targetInFront: @escaping (Int) -> Bool = { _ in false }) {
+    self.reactivationTakesFront = reactivationTakesFront
     self.frontmost = frontmost
     self.frontmostAfterPost = frontmostAfterPost
     self.reactivates = reactivates
@@ -665,7 +669,11 @@ final class GuardSeam {
       self.holds += 1
       return { self.releases += 1; self.releasedAt = self.clock }
     }
-    system.reactivate = { pid in self.reactivated.append(pid); return self.reactivates }
+    system.reactivate = { pid in
+      self.reactivated.append(pid)
+      if self.reactivates && self.reactivationTakesFront { self.frontmost = pid }
+      return self.reactivates
+    }
     system.userWindow = { _ in (AXUIElementCreateApplication(990_002), 42) }
     var samples = 0
     system.isInFront = { _, _ in samples += 1; return self.targetInFront(samples) }

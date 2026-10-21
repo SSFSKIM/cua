@@ -29,8 +29,11 @@
 //   cua/nativeEngine {engine, version, build} on every result; cua/engineMs, the client's time around the socket round
 //   trip of the method's own request, null when it never reached the engine (a decline, an index the service refused);
 //   cua/settle on an observation whose settle hit its cap; on input results and input errors the engine's meta as
-//   cua/inputRoute, cua/actionInterval {startedAt, endedAt}, cua/receivedAt, cua/hidIdleMs, and cua/activationGuardMs
-//   and cua/pointUnconfirmed when the engine sends them. (cua/serviceMs is the wrapper's, M2a.)
+//   cua/inputRoute, cua/actionInterval {startedAt, endedAt}, cua/receivedAt, cua/hidIdleMs, and when the engine sends
+//   them cua/activationGuardMs, cua/pointUnconfirmed, cua/intervention ("off": intervention detection is not running,
+//   no Input Monitoring grant), cua/entered (the UTF-16 units a type_text entered, on its result and on the error that
+//   stopped it) and cua/routeAdvice (the per-app route-4 override, once route 3's guard has failed three actions in a
+//   row for the app). (cua/serviceMs is the wrapper's, M2a.)
 import {createEngineClient} from './client.mjs';
 import {createObservations} from './observations.mjs';
 import {createPolicy, toolSurface} from './policy.mjs';
@@ -54,8 +57,10 @@ const FIELDS = {
 // The keys a call sets only sometimes, reset at its start.
 const PER_CALL = {
   'cua/engineMs': null, 'cua/settle': null, 'cua/inputRoute': null, 'cua/actionInterval': null, 'cua/receivedAt': null, 'cua/hidIdleMs': null,
-  'cua/activationGuardMs': null, 'cua/pointUnconfirmed': null,
+  'cua/activationGuardMs': null, 'cua/pointUnconfirmed': null, 'cua/intervention': null, 'cua/entered': null, 'cua/routeAdvice': null,
 };
+// The engine's optional input meta keys, carried under cua/<key> when it sends them.
+const OPTIONAL_INPUT_META = ['activationGuardMs', 'pointUnconfirmed', 'intervention', 'entered', 'routeAdvice'];
 
 // An observation of another bundle than the approved one (internal: the call is redone once).
 class IdentityChanged extends Error {}
@@ -67,8 +72,7 @@ function inputMeta(meta) {
     'cua/actionInterval': {startedAt: meta.startedAt ?? null, endedAt: meta.endedAt ?? null},
     'cua/receivedAt': meta.receivedAt ?? null,
     'cua/hidIdleMs': meta.hidIdleMs ?? null,
-    ...(meta.activationGuardMs !== undefined ? {'cua/activationGuardMs': meta.activationGuardMs} : {}),
-    ...(meta.pointUnconfirmed !== undefined ? {'cua/pointUnconfirmed': meta.pointUnconfirmed} : {}),
+    ...Object.fromEntries(OPTIONAL_INPUT_META.filter(key => meta[key] !== undefined).map(key => [`cua/${key}`, meta[key]])),
   };
 }
 

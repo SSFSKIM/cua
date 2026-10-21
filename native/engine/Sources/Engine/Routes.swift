@@ -2,15 +2,18 @@ import ApplicationServices
 import CoreGraphics
 import Foundation
 
-// The input routes as M1a rules them (the spec's Design, "Input" after the second sitting, "Keys" and "Text";
-// Interfaces, InputRoute): key presses and typed text by route 2′, the plain post with no fake activation; clicks by
-// the ladder 1 → 3: route 1, the element's own action, for a plain single left click on an element that advertises
-// AXPick or AXPress and whose clickable point does not land on a strict descendant of it, and route 3, the fake
-// activation then the plain post, for every synthesized click (an element without the action, any other button or
-// count, every coordinate click). A click on a menu-bar item is refused: the vendor neither presses nor synthesizes one
-// but activates the app and records the item's menu for the next observation (FUN_100083904's role test), a path built
-// with that observation later. Route 2, the ⌘ post, and a forced 2′ click are reachable only through the
-// spike's `spikeRoute`. Route 4 is M2a's. Everything here is pure, so the choice is unit-tested.
+// The input routes (the spec's Design, "Input" after the second sitting, "Keys" and "Text"; Interfaces, InputRoute): key
+// presses and typed text by route 2′, the plain post with no fake activation; clicks by the ladder 1 → 3 → 4: route 1,
+// the element's own action, for a plain single left click on an element that advertises AXPick or AXPress and whose
+// clickable point does not land on a strict descendant of it, and route 3, the fake activation then the plain post, for
+// every synthesized click (an element without the action, any other button or count, every coordinate click) — or route
+// 4, the foreground assist, in its place for an app the owner's per-app override names (`routes: {<bundle id>: 4}` in
+// engine.json), and never otherwise. When route 3's guard has failed three actions in a row for an app, the refusal's
+// meta names the override (`routeAdvice`), so the owner learns of the case rather than the engine deciding it. A click
+// on a menu-bar item is refused: the vendor neither presses nor synthesizes one but activates the app and records the
+// item's menu for the next observation (FUN_100083904's role test), a path built with that observation later. Route 2,
+// the ⌘ post, and a forced 2′ click are reachable only through the spike's `spikeRoute`. Everything here is pure, so the
+// choice is unit-tested.
 
 /// How an element click is carried.
 enum ElementClickPlan: Equatable {
@@ -25,7 +28,7 @@ enum ElementClickPlan: Equatable {
 /// before anything is posted. A forced route (the spike's) skips the gate; a forced route 1
 /// needs an advertised action.
 func elementClickPlan(forced: InputRoute?, button: MouseButton, count: Int, role: String, actions: [String],
-                      landsOnDescendant: () -> Bool) throws -> ElementClickPlan {
+                      synthesized: InputRoute = .activation, landsOnDescendant: () -> Bool) throws -> ElementClickPlan {
   if role == "AXMenuBarItem" || role == "AXMenuBar" { throw menuBarItemUnsupported }
   let advertised = actions.first(where: { $0 == "AXPick" }) ?? actions.first(where: { $0 == "AXPress" })
   if let forced {
@@ -36,7 +39,7 @@ func elementClickPlan(forced: InputRoute?, button: MouseButton, count: Int, role
     return .action(advertised)
   }
   if button == .left, count == 1, let advertised, !landsOnDescendant() { return .action(advertised) }
-  return .synthesized(.activation)
+  return .synthesized(synthesized)
 }
 
 /// The refusal of a click on a menu-bar item: the vendor opens a menu-bar item by activating the app and recording the
@@ -45,8 +48,57 @@ func elementClickPlan(forced: InputRoute?, button: MouseButton, count: Int, role
 let menuBarItemUnsupported = EngineError(name: "menuBarItemUnsupported",
   "Clicking the menu bar or a menu bar item is not supported by this engine yet; menu bar items open through a path that comes in a later engine release. Nothing was clicked. Use the app's keyboard shortcut for the command with pressKey instead.")
 
-/// A coordinate click's route: 3, unless the spike forces another.
-func coordinateClickRoute(forced: InputRoute?) -> InputRoute { forced ?? .activation }
+/// A coordinate click's route: 3, or 4 for an app the owner's override names, unless the spike forces another.
+func coordinateClickRoute(forced: InputRoute?, foreground: Bool = false) -> InputRoute {
+  synthesizedClickRoute(forced: forced, foreground: foreground)
+}
+
+/// A synthesized click's route: the spike's forced one, else route 4 where the owner's override names the app, else 3.
+func synthesizedClickRoute(forced: InputRoute?, foreground: Bool) -> InputRoute {
+  forced ?? (foreground ? .foreground : .activation)
+}
+
+/// Whether the owner's per-app override gives `bundleIdentifier` route 4; an app without a bundle id is never named.
+func routeFourOverride(_ bundleIdentifier: String?, routes: [String: Int]) -> Bool {
+  bundleIdentifier.map { routes[$0] == 4 } ?? false
+}
+
+/// How many route-3 guard failures in a row for one app make its refusal name the override.
+let routeAdviceThreshold = 3
+
+/// The advice a refusal's meta carries once route 3's guard has failed `routeAdviceThreshold` actions in a row for an app.
+func routeAdviceSentence(_ bundleIdentifier: String) -> String {
+  "Route 3 could not prepare \(bundleIdentifier) for a background click on \(routeAdviceThreshold) actions in a row. If the owner accepts clicks that bring it to the front for a moment, add \"routes\": {\"\(bundleIdentifier)\": 4} to ~/.config/cua/engine.json and restart the engine."
+}
+
+/// Route 3's consecutive guard failures per app (engine-wide, by bundle id): a failure counts, any route-3 click that
+/// passes its guard resets the run. Its advised list is what status reports for doctor.
+final class RouteAdviceTracker: @unchecked Sendable {
+  private let lock = NSLock()
+  private var failures: [String: Int] = [:]
+
+  /// Records one route-3 click's outcome for the app; answers the advice when this failure reaches the threshold or
+  /// goes past it.
+  func record(_ bundleIdentifier: String?, guardFailed: Bool) -> String? {
+    guard let bundleIdentifier, !bundleIdentifier.isEmpty else { return nil }
+    lock.lock()
+    defer { lock.unlock() }
+    guard guardFailed else {
+      failures[bundleIdentifier] = nil
+      return nil
+    }
+    let run = (failures[bundleIdentifier] ?? 0) + 1
+    failures[bundleIdentifier] = run
+    return run >= routeAdviceThreshold ? routeAdviceSentence(bundleIdentifier) : nil
+  }
+
+  /// The apps whose last `routeAdviceThreshold` route-3 clicks or more all failed their guard, sorted.
+  var advised: [String] {
+    lock.lock()
+    defer { lock.unlock() }
+    return failures.filter { $0.value >= routeAdviceThreshold }.keys.sorted()
+  }
+}
 
 /// A key press's or typed text's route: 2′, unless the spike forces another.
 func keyRoute(forced: InputRoute?) -> InputRoute { forced ?? .plainPost }

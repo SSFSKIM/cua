@@ -278,6 +278,29 @@ test('an input error carries the engine\'s meta; the next call\'s meta starts ov
   for (const key of ['cua/inputRoute', 'cua/actionInterval', 'cua/receivedAt', 'cua/hidIdleMs', 'cua/activationGuardMs', 'cua/pointUnconfirmed']) assert.equal(meta[key], null, key);
 });
 
+test('intervention, entered and routeAdvice ride as cua/ meta on results and on the userIntervened error that stopped a type_text; the next call starts over', async t => {
+  const stopped = {...INPUT_META, inputRoute: "2'", activationGuardMs: undefined, pointUnconfirmed: undefined, entered: 3};
+  const {getApp, call, meta} = await session(t, {handlers: {
+    'execute:type_text': () => { throw new EngineFailure(-10016, 'The user changed \'/System/Applications/TextEdit.app\'. Re-query the latest state with `get_app_state` before sending more actions.', 'userIntervened', {meta: stopped}); },
+    'execute:press_key': () => ({meta: {...INPUT_META, inputRoute: "2'", activationGuardMs: undefined, pointUnconfirmed: undefined, intervention: 'off', hidIdleMs: 52000}}),
+    'execute:click': () => { throw new EngineFailure(-10005, 'The action was not performed: another app came to the front.', 'activationFailed', {meta: {...INPUT_META, startedAt: null, endedAt: null, routeAdvice: 'add "routes": {"com.apple.TextEdit": 4}'}}); },
+  }});
+  const {app} = await getApp('TextEdit');
+  await assert.rejects(call(() => app.typeText('hello')), /The user changed/);
+  assert.equal(meta['cua/entered'], 3);
+  assert.deepEqual(meta['cua/actionInterval'], {startedAt: 1000, endedAt: 1042}, 'the stopped action\'s interval');
+  assert.equal(meta['cua/intervention'], null, 'detection was on');
+  await call(() => app.pressKey('a'));
+  assert.equal(meta['cua/intervention'], 'off');
+  assert.equal(meta['cua/entered'], null, 'a key press carries no count, and none is left standing');
+  assert.equal(meta['cua/hidIdleMs'], 52000);
+  await assert.rejects(call(() => app.click(1)), /another app came to the front/);
+  assert.equal(meta['cua/routeAdvice'], 'add "routes": {"com.apple.TextEdit": 4}');
+  assert.equal(meta['cua/intervention'], null);
+  await call(() => app.getAXState({emit: false}));
+  for (const key of ['cua/intervention', 'cua/entered', 'cua/routeAdvice']) assert.equal(meta[key], null, key);
+});
+
 test('cua/settle rides on the observation whose settle hit its cap, and on no other', async t => {
   const {getApp, call, meta, trees} = await session(t);
   const {app} = await getApp('TextEdit');

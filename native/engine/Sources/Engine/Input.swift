@@ -2,16 +2,21 @@ import AppKit
 import ApplicationServices
 import Foundation
 
-// Input methods (the spec's Design, "Input", "Keys" and "Text"; R/F-helper-logic.md §5–6, R/sky-behaviour.md §10–14):
-// click, press_key and type_text on M1a's route table (Routes.swift): keys and typed text by route 2′, the plain post
-// with no fake activation; clicks by route 1 where the element advertises the action and the hit-test gate passes,
-// else by route 3, whose failed guard is refused as activationFailed with the click's own events never posted. The
-// engine never activates an app on its own (route 4 is M2a's), never moves the real pointer, posts to the process that
-// owns the target element, and refuses a target served by a forbidden process before anything is posted
-// (OwnerPolicy.swift). Every result and every error raised after the arguments validate carries the input meta
+// Input methods (the spec's Design, "Input", "Keys", "Text" and "User intervention"; R/F-helper-logic.md §5–6 and §9,
+// R/sky-behaviour.md §10–14 and §18): click, press_key and type_text on the route table (Routes.swift): keys and typed
+// text by route 2′, the plain post with no fake activation; clicks by route 1 where the element advertises the action
+// and the hit-test gate passes, else by route 3, whose failed guard is refused as activationFailed with the click's own
+// events never posted, or by route 4 in its place for an app the owner's override names (ForegroundAssist.swift). The
+// engine never activates an app on its own, never moves the real pointer, posts to the process that owns the target
+// element, and refuses a target served by a forbidden process before anything is posted (OwnerPolicy.swift). Every
+// input request passes the intervention guard (Intervention.swift) before anything is posted, and a sequence checks it
+// again between its events: between the activation and the click, between the presses of a key sequence, between the
+// characters of typed text. Every result and every error raised after the arguments validate carries the input meta
 // (Interfaces, EngineProtocol): {inputRoute, startedAt, endedAt, receivedAt, hidIdleMs}, startedAt/endedAt null while
 // nothing was posted, inputRoute null until a route is chosen; the guard's duration rides as activationGuardMs when
-// route 3 ran one. The settle an action arms runs at the next get_app_state (markActed). Spike-only arguments, which the
+// route 3 ran one, `intervention: "off"` when detection is off, `entered` on a type_text that keyed (never a concealed
+// one), and `routeAdvice` once route 3's guard has failed three actions in a row for the app. The settle an action arms
+// runs at the next get_app_state (markActed). Spike-only arguments, which the
 // facade never sends: `spikeRoute` ("1"|"2'"|"2"|"3", force one route; route 2, the ⌘ post, is reachable only this
 // way), `spikeEventSource` ("private", post keys from a private event source instead of the HID-system one) and
 // `spikeKeyed` (type_text: key through the layout regardless of the source routing, probe (e)'s per-context case;
@@ -19,12 +24,13 @@ import Foundation
 // naming it, with inputRoute "paste"; the paste route itself is M2a's.
 
 /// A route that carried an input (the spec's Design, "Input"; Interfaces, EngineProtocol's
-/// `inputRoute: 1 | "2'" | 2 | 3 | 4 | "paste"`). Route 4 is M2a's.
+/// `inputRoute: 1 | "2'" | 2 | 3 | 4 | "paste"`).
 enum InputRoute: Equatable {
   case action       // 1: the element's accessibility action
   case plainPost    // 2′: the events posted to the owning pid, no ⌘ flag, no fake activation
   case commandPost  // 2: the same post, ⌘ added for a click into an inactive app (the vendor's background click); spike only
   case activation   // 3: the fake activation (nothing when the app already believes it has focus), then the plain post
+  case foreground   // 4: the app activated, the plain post, the user's app restored; only by the owner's override
   case paste        // type_text's paste route
 
   /// The wire's spelling: the numbered routes as numbers, 2′ as the string "2'".
@@ -34,6 +40,7 @@ enum InputRoute: Equatable {
     case .plainPost: return "2'"
     case .commandPost: return 2
     case .activation: return 3
+    case .foreground: return 4
     case .paste: return "paste"
     }
   }
@@ -59,9 +66,32 @@ struct InputMeta {
   /// A synthesized element click whose hit-test answered nothing or only a container of the element, so the point
   /// could not be confirmed to reach it; reported as `pointUnconfirmed: true`.
   var pointUnconfirmed = false
+  /// Intervention detection is off for this request (no Input Monitoring grant, or no tap): `intervention: "off"`.
+  var interventionOff = false
+  /// A type_text's UTF-16 units entered, on its result and on an error that stopped it; never for a concealed request,
+  /// whose count would tell a secret's length.
+  var entered: Int?
+  /// The per-app route-4 override named once route 3's guard has failed three actions in a row for the app.
+  var routeAdvice: String?
+  /// With detection on, the milliseconds from the app's last attributed user event to the request's receipt (null when
+  /// none was attributed while the app was driven); with detection off, the machine-wide HID idle time at receipt.
+  var hidIdleMs: Int?
   let context: ExecutionContext
 
-  init(_ context: ExecutionContext) { self.context = context }
+  init(_ context: ExecutionContext) {
+    self.context = context
+    hidIdleMs = context.hidIdleMs
+  }
+
+  /// What the request's intervention guard says about it: detection off, or the idle time since the app's last
+  /// attributed event.
+  mutating func apply(_ guarding: InterventionGuard) {
+    if guarding.detection {
+      hidIdleMs = guarding.idleMilliseconds(at: context.receivedAt)
+    } else {
+      interventionOff = true
+    }
+  }
 
   var wire: [String: Any] {
     var wire: [String: Any] = [
@@ -69,10 +99,13 @@ struct InputMeta {
       "startedAt": startedAt.map { Int($0) } ?? NSNull(),
       "endedAt": endedAt.map { Int($0) } ?? NSNull(),
       "receivedAt": Int(context.receivedAt),
-      "hidIdleMs": context.hidIdleMs,
+      "hidIdleMs": hidIdleMs ?? NSNull(),
     ]
     if let activationGuardMs { wire["activationGuardMs"] = activationGuardMs }
     if pointUnconfirmed { wire["pointUnconfirmed"] = true }
+    if interventionOff { wire["intervention"] = "off" }
+    if let entered { wire["entered"] = entered }
+    if let routeAdvice { wire["routeAdvice"] = routeAdvice }
     return wire
   }
 }
@@ -85,22 +118,65 @@ func withMeta(_ error: EngineError, _ meta: InputMeta) -> EngineError {
 }
 
 /// A synthesized click's delivery: under route 3 the fake activation first (nothing when the app already believes it has
-/// focus), then the click's events posted back to back to the target's process, then the activation withdrawn. A
-/// failed guard throws before any of the click's events is posted, and nothing is retried (never with ⌘). The meta
-/// carries the route from the start, so a refusal names the route that failed.
+/// focus), then the click's events posted back to back to the target's process, then the activation withdrawn; under
+/// route 4 the events are posted while the foreground assist holds the app in front. A failed guard throws before any of
+/// the click's events is posted, and nothing is retried (never with ⌘). `beforePosting` runs once the app is prepared,
+/// just before the events (the intervention guard's in-flight check: a user event during the activation stops the
+/// click). The meta carries the route from the start, so a refusal names the route that failed.
 func deliverClick(_ target: ClickTarget, route: InputRoute, button: MouseButton, count: Int, activation: FakeActivation?,
-                  targetActive: () -> Bool, post: (CGEvent, pid_t) -> Void, meta: inout InputMeta) throws {
+                  foreground: ForegroundAssist? = nil, targetActive: () -> Bool, beforePosting: () throws -> Void = {},
+                  post: (CGEvent, pid_t) -> Void, meta: inout InputMeta) throws {
   meta.inputRoute = route
   defer { activation?.deactivate() }  // every path out of the click, error or success, undoes the activation
   if route == .activation, let activation {
     try activation.activate()
     meta.activationGuardMs = activation.guardMs
   }
-  let events = clickEvents(target, button: button, count: count, flags: clickFlags(route, targetActive: targetActive()))
-  guard !events.isEmpty else { throw EngineError(name: "eventCreationFailed", "The click events could not be created.") }
-  let (startedAt, endedAt) = postToProcess(events, pid: target.pid, post: post)
-  meta.startedAt = startedAt
-  meta.endedAt = endedAt
+  var posted: (startedAt: Int64, endedAt: Int64)?
+  func send() throws {
+    try beforePosting()
+    let events = clickEvents(target, button: button, count: count, flags: clickFlags(route, targetActive: targetActive()))
+    guard !events.isEmpty else { throw EngineError(name: "eventCreationFailed", "The click events could not be created.") }
+    posted = postToProcess(events, pid: target.pid, post: post)
+  }
+  if route == .foreground, let foreground { try foreground.run(send) } else { try send() }
+  meta.startedAt = posted?.startedAt
+  meta.endedAt = posted?.endedAt
+}
+
+/// Typed text keyed unit by unit (the spec's Design, "Text"): the input source checked before every event and after the
+/// last, the intervention guard between units (never between a key down and its key up), `pause` after every event. The
+/// meta's interval runs from the first event to the last one posted, and `entered` counts the UTF-16 units entered,
+/// stopped or not, unless the request is concealed.
+func keyText(_ units: [TypedUnit], concealed: Bool, checkSource: (_ entered: Int, _ total: Int) throws -> Void,
+             checkIntervention: () throws -> Void, post: (KeyEvent) -> Bool, pause: () -> Void, meta: inout InputMeta) throws {
+  let total = units.reduce(0) { $0 + $1.consumed }
+  var entered = 0
+  meta.startedAt = unixMilliseconds()
+  defer {
+    meta.endedAt = unixMilliseconds()
+    if !concealed { meta.entered = entered }
+  }
+  for unit in units {
+    try checkIntervention()
+    for spec in unit.events {
+      try checkSource(entered, total)
+      guard post(spec) else { throw EngineError(name: "eventCreationFailed", "A key event could not be created.") }
+      pause()
+    }
+    entered += unit.consumed
+  }
+  try checkSource(entered, total)
+}
+
+/// A key sequence's presses, each its four events with no gap (F §6.4), the intervention guard between presses.
+func keyPresses(_ presses: [KeyPress], checkIntervention: () throws -> Void, post: (KeyEvent) -> Bool, meta: inout InputMeta) throws {
+  meta.startedAt = unixMilliseconds()
+  defer { meta.endedAt = unixMilliseconds() }
+  for press in presses {
+    try checkIntervention()
+    for spec in keyPressEvents(press) { _ = post(spec) }
+  }
 }
 
 /// An element's own action, route 1: performed, and refused as actionFailed when the element does not accept it (no
@@ -125,8 +201,9 @@ extension Engine {
   /// it), and reported as `pointUnconfirmed` when the hit-test answers nothing or only a container. A click on a
   /// menu-bar item is refused before anything is posted. A coordinate click is in the pixels
   /// of the last screenshot of the app's primary window on this connection, refused (`noScreenshotForCoordinates`,
-  /// nothing posted) when there is none, and goes by route 3. The process serving the target receives the input, after the forbidden
-  /// list has been checked against it.
+  /// nothing posted) when there is none, and goes by route 3. Route 4 takes route 3's place for an app the owner's
+  /// override names. The process serving the target receives the input, after the forbidden list has been checked
+  /// against it.
   func click(_ args: [String: Any], _ context: ExecutionContext) throws -> Any {
     let token = try elementTokenArg(args, lineage: context.lineage)
     let hasElement = token != nil
@@ -147,7 +224,20 @@ extension Engine {
       let app = try resolveApp(args)
       guard let appPid = app.pid else { throw EngineError(.runningApplicationNotFound, "Running application not found: \(app.displayName)") }
       try requireAccessibility()
-      try refuseWhenLocked()
+      let guarding = interventionGuard(app: app, pid: appPid, requestApp: args["app"] as? String, connection: context.connection)
+      meta.apply(guarding)
+      try guarding.checkBeforePosting()
+      let foreground = routeFourOverride(app.bundleIdentifier, routes: routes)
+      // Route 3's guard outcome per app, for routeAdvice: a refusal by the guard counts, a click past it resets the run.
+      func delivering(_ route: InputRoute, _ deliver: () throws -> Void) throws {
+        do {
+          try deliver()
+          if route == .activation { _ = routeAdvice.record(app.bundleIdentifier, guardFailed: false) }
+        } catch let error as EngineError where route == .activation && error.errorName == "activationFailed" {
+          meta.routeAdvice = routeAdvice.record(app.bundleIdentifier, guardFailed: true)
+          throw error
+        }
+      }
 
       if let token, let lineage = context.lineage {
         let entry = try context.connection.element(token, app: app, lineage: lineage) { ElementResolver.live($0, pid: appPid) }
@@ -170,7 +260,8 @@ extension Engine {
           relation = found
           return found
         }
-        let plan = try elementClickPlan(forced: forced, button: button, count: count, role: entry.identity.role, actions: entry.actions) {
+        let plan = try elementClickPlan(forced: forced, button: button, count: count, role: entry.identity.role, actions: entry.actions,
+                                        synthesized: synthesizedClickRoute(forced: nil, foreground: foreground)) {
           hitAtPoint() == .descendant  // no point, or no answer: the action needs no point
         }
         switch plan {
@@ -188,9 +279,12 @@ extension Engine {
             return FakeActivation(pid: owner, appPid: appPid, window: primaryWindow(of: application) ?? application)
           }
           let target = ClickTarget(point: point, windowFrame: ownWindowFrame, windowID: ownWindowID, pid: owner)
-          try deliverClick(target, route: route, button: button, count: count, activation: route == .activation ? activation() : nil,
-                           targetActive: { NSRunningApplication(processIdentifier: owner)?.isActive == true },
-                           post: { $0.postToPid($1) }, meta: &meta)
+          try delivering(route) {
+            try deliverClick(target, route: route, button: button, count: count, activation: route == .activation ? activation() : nil,
+                             foreground: route == .foreground ? ForegroundAssist(appPid: appPid) : nil,
+                             targetActive: { NSRunningApplication(processIdentifier: owner)?.isActive == true },
+                             beforePosting: guarding.checkInFlight, post: { $0.postToPid($1) }, meta: &meta)
+          }
         }
       } else {
         guard let x = numberArg(args["x"]), let y = numberArg(args["y"]), x.isFinite, y.isFinite else {
@@ -207,12 +301,15 @@ extension Engine {
         try refuseForbiddenOwner(owner)
         let windowID = windowNumber(of: window, pid: appPid, frame: windowFrame)
         let target = ClickTarget(point: point, windowFrame: windowFrame, windowID: windowID, pid: owner)
-        let route = coordinateClickRoute(forced: forced)
+        let route = coordinateClickRoute(forced: forced, foreground: foreground)
         let activation = route == .activation
           ? FakeActivation(pid: owner, appPid: appPid, window: window, windowFrame: windowFrame, windowID: windowID) : nil
-        try deliverClick(target, route: route, button: button, count: count, activation: activation,
-                         targetActive: { NSRunningApplication(processIdentifier: owner)?.isActive == true },
-                         post: { $0.postToPid($1) }, meta: &meta)
+        try delivering(route) {
+          try deliverClick(target, route: route, button: button, count: count, activation: activation,
+                           foreground: route == .foreground ? ForegroundAssist(appPid: appPid) : nil,
+                           targetActive: { NSRunningApplication(processIdentifier: owner)?.isActive == true },
+                           beforePosting: guarding.checkInFlight, post: { $0.postToPid($1) }, meta: &meta)
+        }
       }
       context.connection.markActed(app)
       return ["meta": meta.wire]
@@ -225,8 +322,8 @@ extension Engine {
 
   /// `press_key {app, key}`: the vendor's grammar (Keyboard.swift), four events per press with no gap, posted by route
   /// 2′ to the process that owns the app's focused element, with no fake activation (the second sitting: keys by 2′
-  /// delivered on every scene without firing the app's activation hooks). A spike cell may force route 3's activation
-  /// first, or label the post route 2.
+  /// delivered on every scene without firing the app's activation hooks); a sequence stops between presses at a user
+  /// event attributed to the app. A spike cell may force route 3's activation first, or label the post route 2.
   func pressKey(_ args: [String: Any], _ context: ExecutionContext) throws -> Any {
     guard let key = args["key"] as? String else { throw EngineError.invalidArguments("key is required") }
     let presses = try parseKeySequence(key)  // validated before anything is resolved, so an unknown name never posts
@@ -237,7 +334,9 @@ extension Engine {
       let app = try resolveApp(args)
       guard let pid = app.pid else { throw EngineError(.runningApplicationNotFound, "Running application not found: \(app.displayName)") }
       try requireAccessibility()
-      try refuseWhenLocked()
+      let guarding = interventionGuard(app: app, pid: pid, requestApp: args["app"] as? String, connection: context.connection)
+      meta.apply(guarding)
+      try guarding.checkBeforePosting()
       let application = prepare(AXUIElementCreateApplication(pid))
       let target = keyboardTarget(application, fallback: pid)
       try refuseForbiddenOwner(target)
@@ -245,12 +344,8 @@ extension Engine {
       let activation = try forcedActivation(meta.inputRoute, pid: pid, application: application, meta: &meta)
       defer { activation?.deactivate() }  // every path out of the posting, error or success, undoes a forced activation
       let poster = EventPoster.toProcess(target, sourceState: privateSourceArg(args) ? .privateState : .hidSystemState)
-      meta.startedAt = unixMilliseconds()
-      for press in presses {
-        for spec in keyPressEvents(press) { poster.post(spec) }
-      }
-      meta.endedAt = unixMilliseconds()
-      context.connection.markActed(app)
+      defer { context.connection.markActed(app) }  // a sequence stopped midway changed the app too
+      try keyPresses(presses, checkIntervention: guarding.checkInFlight, post: { poster.post($0) }, meta: &meta)
       return ["meta": meta.wire]
     } catch let error as EngineError {
       throw withMeta(error, meta)
@@ -263,7 +358,8 @@ extension Engine {
   /// Under a Latin layout whose reading is reliable the text is keyed as the vendor keys it, by route 2′ with no fake
   /// activation, with the source checked before every event and after the last; anything else takes the paste route,
   /// which M1a does not build (notImplemented naming it). A concealed request never takes the paste route and never keys
-  /// under a reading it cannot trust: it fails closed as concealedInputUnavailable before anything is entered.
+  /// under a reading it cannot trust: it fails closed as concealedInputUnavailable before anything is entered. A keyed
+  /// request stops between characters at a user event attributed to the app, reporting what it entered.
   func typeText(_ args: [String: Any], _ context: ExecutionContext) throws -> Any {
     guard let text = args["text"] as? String else { throw EngineError(name: "invalidArguments", "Missing text to type") }
     let concealed = (args["concealed"] as? NSNumber)?.boolValue ?? false
@@ -275,7 +371,9 @@ extension Engine {
       let app = try resolveApp(args)
       guard let pid = app.pid else { throw EngineError(.runningApplicationNotFound, "Running application not found: \(app.displayName)") }
       try requireAccessibility()
-      try refuseWhenLocked()
+      let guarding = interventionGuard(app: app, pid: pid, requestApp: args["app"] as? String, connection: context.connection)
+      meta.apply(guarding)
+      try guarding.checkBeforePosting()
       // The forbidden list on the process the keys would reach comes before anything else is decided.
       let application = prepare(AXUIElementCreateApplication(pid))
       let target = keyboardTarget(application, fallback: pid)
@@ -300,23 +398,13 @@ extension Engine {
       let activation = try forcedActivation(meta.inputRoute, pid: pid, application: application, meta: &meta)
       defer { activation?.deactivate() }  // an inputSourceChanged mid-typing undoes a forced activation too
       let poster = EventPoster.toProcess(target, sourceState: privateSourceArg(args) ? .privateState : .hidSystemState)
-      meta.startedAt = unixMilliseconds()
-
       let initialSource = currentInputSourceID()
-      let units = typedUnits(text, press: layout.press(for:))
-      var entered = 0
-      let total = units.reduce(0) { $0 + $1.consumed }
-      for unit in units {
-        for spec in unit.events {
-          try checkInputSource(initialSource, entered: entered, total: total)
-          guard poster.post(spec) else { throw EngineError(name: "eventCreationFailed", "A key event could not be created.") }
-          usleep(250)  // the vendor's gap between typed-text events (F §12)
-        }
-        entered += unit.consumed
-      }
-      try checkInputSource(initialSource, entered: entered, total: total)
-      meta.endedAt = unixMilliseconds()
-      context.connection.markActed(app)
+      defer { context.connection.markActed(app) }  // text stopped midway changed the app too
+      try keyText(typedUnits(text, press: layout.press(for:)), concealed: concealed,
+                  checkSource: { try self.checkInputSource(initialSource, entered: $0, total: $1) },
+                  checkIntervention: guarding.checkInFlight, post: { poster.post($0) },
+                  pause: { usleep(250) },  // the vendor's gap between typed-text events (F §12)
+                  meta: &meta)
       return ["meta": meta.wire]
     } catch let error as EngineError {
       throw withMeta(error, meta)

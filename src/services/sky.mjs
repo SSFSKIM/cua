@@ -45,7 +45,7 @@ import {pathToFileURL} from 'node:url';
 import {parseReference} from '../secrets/reference.mjs';
 import {
   SecretInputError, NOTHING_ENTERED, isPlainObject, propertyKey, matchesShape, refuseUnusable, unavailable, readFailure, inputFailed, inputFailedUnentered, concealedInputUnavailable,
-  secretsFromEnv,
+  interventionKind, userIntervened, secretsFromEnv,
 } from './secret-input.mjs';
 
 export {SecretInputError};
@@ -191,7 +191,11 @@ export function createSkyService({loadVendor, secrets, secretsUnavailable = null
       // cua's engine refused the concealed request before entering anything: no keyed route it trusts, and no paste.
       if (kind === 'concealedInputUnavailable') throw concealedInputUnavailable(method, reference.label);
       // cua's engine says nothing was posted (its input meta's startedAt null), whatever the error's name.
-      if (error?.name === 'SkyComputerUseError' && error.meta && error.meta.startedAt === null) throw inputFailedUnentered(method, reference.label, kind);
+      const unentered = error?.name === 'SkyComputerUseError' && Boolean(error.meta) && error.meta.startedAt === null;
+      // The user intervened: which of its two sentences, so the model knows whether to wait or to re-query.
+      const intervened = kind === 'userIntervened' ? interventionKind(error.message) : null;
+      if (intervened) throw userIntervened(method, reference.label, intervened, unentered);
+      if (unentered) throw inputFailedUnentered(method, reference.label, kind);
       throw inputFailed(method, reference.label, kind);
     }
   }

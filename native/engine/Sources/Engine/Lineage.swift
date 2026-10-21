@@ -27,8 +27,10 @@ final class ConnectionState: @unchecked Sendable {
   let fd: Int32
   /// Lineages by app key (`ResolvedApp.key`).
   var lineages: [String: Lineage] = [:]
-  /// Apps whose actions are refused until a fresh get_app_state, after an intervention.
-  var requiresRequery: Set<String> = []
+  /// Per app this connection drives, the ledger sequence its re-query flag was last cleared at (or it began driving the
+  /// app at): an event attributed to the app after it refuses the connection's actions until a fresh get_app_state
+  /// completes after the debounce (Intervention.swift).
+  var interventionCleared: [String: Int] = [:]
   /// Apps acted on since their last observation, whose next get_app_state settles first (the vendor's deferred
   /// settle, F §8.6). An input method calls `markActed` once its events are posted.
   var needsSettle: Set<String> = []

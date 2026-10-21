@@ -12,7 +12,7 @@ do { settings = try EngineSettings.load() } catch { fail(ServerPaths.configExit,
 let application = NSApplication.shared
 // The screens a capture is sized by, read here on the main thread before any request can arrive (Screenshot.swift).
 screenScales.start()
-let server = Server(paths: ServerPaths.resolve(), peerPolicy: settings.peerPolicy)
+let server = Server(paths: ServerPaths.resolve(), settings: settings)
 server.start()
 // Inside cua Engine.app, LSUIElement keeps the engine out of the Dock; an unbundled run (a test's debug build) is
 // kept from ever becoming a UI app.

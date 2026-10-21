@@ -3,12 +3,13 @@ import Carbon
 import CoreGraphics
 import Foundation
 
-// `cua-engine --probe <command>` (Interfaces, UserProbe; the spike's minimal seed). A probe binds no socket; every
-// command exits except `watch-activations`, which is resident until killed. Built here: `input-source current` (the
-// active source, read only), `input-source <id>` (selects that source; the harness saves and restores the owner's),
-// `keystroke` (probe (d)'s stand-in user: HID-state events posted at the HID event tap, only while the named window is
-// frontmost) and `watch-activations` (route 3's guard check: every NSWorkspace activation and deactivation with its
-// time, the probe's own pid printed first, so the harness can stop it and the oracles can exclude probe instances).
+// `cua-engine --probe <command>` (Interfaces, UserProbe). A probe binds no socket; every command exits except
+// `watch-activations`, which is resident until killed. The commands: `input-source current` (the active source, read
+// only), `input-source <id>` (selects that source, a keyboard layout or an input mode such as Korean 2-Set, and reads it
+// back; the harness saves and restores the owner's), `keystroke` (the stand-in user: HID-state events posted at the HID
+// event tap, only while the named window is frontmost), `focus` (the focused app and window, and the named window's
+// focused value as a hash; FocusProbe.swift) and `watch-activations` (every NSWorkspace activation and deactivation with
+// its time, the probe's own pid printed first, so the harness can stop it and the oracles can exclude probe instances).
 enum Probe {
   static func run(_ arguments: [String]) -> Int32 {
     switch arguments.first {
@@ -17,10 +18,12 @@ enum Probe {
       return inputSource(arguments[1])
     case "keystroke":
       return keystroke(Array(arguments.dropFirst()))
+    case "focus":
+      return focus(Array(arguments.dropFirst()))
     case "watch-activations":
       return watchActivations()
     default:
-      return emit(["error": "usage: --probe input-source current|<id> | keystroke --user-pid <n> --user-bounds <x,y,w,h> [--at <unix ms>] <text> | watch-activations"],
+      return emit(["error": "usage: --probe input-source current|<id> | keystroke --user-pid <n> --user-bounds <x,y,w,h> [--at <unix ms>] <text> | focus [--window <pid,x,y,w,h>] | watch-activations"],
                   status: 64)
     }
   }
@@ -33,7 +36,15 @@ enum Probe {
       return emit(["error": "no input source with that id"], status: 2)
     }
     let status = TISSelectInputSource(source)
-    return emit(["previous": sourceWire(previous), "current": sourceWire(currentInputSource()), "selected": status == noErr], status: status == noErr ? 0 : 3)
+    // Read back: the selection holds only when the current source is the one asked for (an input mode's parent method
+    // may take a moment to switch), polled for up to 500 ms.
+    var current = currentInputSource()
+    for _ in 0..<10 where status == noErr && current.id != argument {
+      usleep(50_000)
+      current = currentInputSource()
+    }
+    let selected = status == noErr && current.id == argument
+    return emit(["previous": sourceWire(previous), "current": sourceWire(current), "selected": selected], status: selected ? 0 : 3)
   }
 
   /// `keystroke --user-pid <n> --user-bounds <x,y,w,h> [--at <unix ms>] <text>`: waits for `--at`, checks that the
@@ -136,7 +147,7 @@ enum Probe {
     return wire
   }
 
-  private static func emit(_ object: [String: Any], status: Int32) -> Int32 {
+  static func emit(_ object: [String: Any], status: Int32) -> Int32 {
     if let data = encodeJSON(object) { FileHandle.standardOutput.write(data + Data("\n".utf8)) }
     return status
   }

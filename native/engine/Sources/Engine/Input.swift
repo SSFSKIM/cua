@@ -155,8 +155,8 @@ func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation
   meta.inputRoute = route
   defer { activation?.deactivate() }  // every path out of the action, error or success, undoes the activation
   if route == .activation, let activation {
+    defer { meta.activationGuardMs = activation.guardMs }  // a guard that failed still says how long it held
     try activation.activate()
-    meta.activationGuardMs = activation.guardMs
   }
   // The interval is stamped as the events are posted, so an error after them (route 4's restore) still says they were.
   func send() throws {

@@ -75,7 +75,7 @@ import {
 } from './scenes-mac-device.mjs';
 import {
   CLOSE_WINDOW_KEY, DESELECT_ALL_KEY, FINDER_PARTS, LIST_VIEW_KEY, SAVED_PREFERENCES, clearSavedPreferences, finderWindowProblems, preferenceWrites,
-  readSavedPreferences, saveOriginalPreferences,
+  readSavedPreferences, saveOriginalPreferences, savedRecordDistrust,
 } from './scenes-mac-finder.mjs';
 import {windowTitleOf} from './scenes-mac-text.mjs';
 import {isSameLaunch, launchOf} from '../accept/fixture-app.mjs';
@@ -452,8 +452,12 @@ export async function upScene(id, {run, chromeApp, electronApp, io = defaultIo()
       fs.writeFileSync(join(folder, name), `${name}\n`, {mode: 0o600});
       fs.utimesSync(join(folder, name), modified, modified);
     }
-    // Read before the window opens: the owner's values, to be written back at down.
-    const preferences = io.finderPreferences();
+    // Read before the window opens: the owner's values, to be written back at down. A kept record that cannot say what
+    // the owner's windows showed refuses here: restoring from it would leave the run's toggles in Finder's windows, and
+    // this run's setup would take its hidden window for the owner's.
+    const preferences = io.finderPreferences(), existing = readSavedPreferences(io.savedPreferencesFile);
+    const distrust = existing && savedRecordDistrust(existing, preferences);
+    if (distrust) throw new Error(`Finder's saved preferences (${io.savedPreferencesFile}) cannot be restored from: ${distrust}. Run \`node scripts/repl-parity/scenes-mac.mjs restore-finder\` to write the keys back, set the sidebar, status bar and path bar in Finder's View menu as you had them, then bring the scene up again`);
     // Every window Finder has right before the open, on screen or not, is not the run's.
     const before = documentWindows(io.appWindows(pid)).map(w => w.number);
     io.openApp({app: scene.app, files: [folder]});
@@ -534,14 +538,20 @@ export function teardownFor(id, {run, io = defaultIo()}) {
 export async function restoreFinder({io = defaultIo()} = {}) {
   const record = readSavedPreferences(io.savedPreferencesFile);
   if (!record) return {preferences: {restored: true, wrote: [], remaining: [], saved: false}};
-  const writes = preferenceWrites(io.finderPreferences(), record.saved);
+  const current = io.finderPreferences(), distrust = savedRecordDistrust(record, current);
+  const writes = preferenceWrites(current, record.saved);
   for (const {key, value} of writes) io.writeFinderPreference(key, value);
   const remaining = preferenceWrites(io.finderPreferences(), record.saved).map(w => w.key);
-  const visibleRestored = record.visible ? Boolean(record.visibleRestoredAt) : null;
-  if (!remaining.length && visibleRestored !== false) clearSavedPreferences(io.savedPreferencesFile);
+  // An untrusted record (savedRecordDistrust) has no visible state a teardown could restore: it ends once its keys are
+  // back, and the owner is told to check the View menu. A trusted one with an unrestored visible state is kept.
+  const visibleRestored = distrust ? false : record.visible ? Boolean(record.visibleRestoredAt) : null;
+  if (!remaining.length && (distrust || visibleRestored !== false)) clearSavedPreferences(io.savedPreferencesFile);
+  const visibleNote = distrust
+    ? `Finder's windows may still draw a run's hidden chrome: the saved record ${distrust.replace(/^it /, '')}; set the sidebar, status bar and path bar in Finder's View menu as you had them (Finder reads the keys only at launch)`
+    : 'Finder\'s windows may still draw the run\'s hidden chrome: no window was toggled back here, and Finder reads the keys only at launch; the record is kept, so the next Finder scene\'s teardown restores it (or set the parts back in Finder\'s View menu)';
   return {preferences: {restored: !remaining.length, wrote: writes.map(w => w.key), remaining, savedAt: record.savedAt,
     ...(visibleRestored === null ? {} : {visibleRestored}),
-    ...(visibleRestored === false ? {visibleNote: 'Finder\'s windows may still draw the run\'s hidden chrome: no window was toggled back here, and Finder reads the keys only at launch; the record is kept, so the next Finder scene\'s teardown restores it (or toggle the parts back in View)'} : {})}};
+    ...(visibleRestored === false ? {visibleNote} : {})}};
 }
 
 // Brings one scene down: stops only what the run recorded at its launch. Finder: checks the run's window is gone, then

@@ -11,7 +11,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {
-  FINDER_CHROME, FINDER_DEFAULT_TOOLBAR, preferenceWrites, parsePreference, recordVisibleState, recordToggleSent, markVisibleRestored,
+  FINDER_CHROME, FINDER_DEFAULT_TOOLBAR, preferenceWrites, parsePreference, recordVisibleState, recordToggleSent, markVisibleRestored, FINDER_RECORD_SCHEMA, savedRecordDistrust,
   finderWindowProblems, readSavedPreferences, saveOriginalPreferences, clearSavedPreferences, finderChromeShown, toggleUntil,
 } from '../../scripts/repl-parity/scenes-mac-finder.mjs';
 
@@ -55,12 +55,12 @@ test('the saved preferences are the ones before the run\'s first toggle: a later
     const file = join(dir, 'nested', 'finder-preferences.json');
     assert.equal(readSavedPreferences(file), null);
     const first = saveOriginalPreferences(file, {ShowSidebar: null, ShowStatusBar: true, ShowPathbar: false}, {now: () => 'T1'});
-    assert.deepEqual(first, {saved: {ShowSidebar: null, ShowStatusBar: true, ShowPathbar: false}, savedAt: 'T1', kept: false});
+    assert.deepEqual(first, {saved: {ShowSidebar: null, ShowStatusBar: true, ShowPathbar: false}, savedAt: 'T1', schema: FINDER_RECORD_SCHEMA, kept: false});
     assert.equal(fs.statSync(file).mode & 0o777, 0o600);
     // A second save (a later up, after the run's toggles changed the preferences) keeps the original.
     const again = saveOriginalPreferences(file, {ShowSidebar: false, ShowStatusBar: false, ShowPathbar: false}, {now: () => 'T2'});
-    assert.deepEqual(again, {saved: {ShowSidebar: null, ShowStatusBar: true, ShowPathbar: false}, savedAt: 'T1', kept: true});
-    assert.deepEqual(readSavedPreferences(file), {saved: {ShowSidebar: null, ShowStatusBar: true, ShowPathbar: false}, savedAt: 'T1'});
+    assert.deepEqual(again, {saved: {ShowSidebar: null, ShowStatusBar: true, ShowPathbar: false}, savedAt: 'T1', schema: FINDER_RECORD_SCHEMA, kept: true});
+    assert.deepEqual(readSavedPreferences(file), {saved: {ShowSidebar: null, ShowStatusBar: true, ShowPathbar: false}, savedAt: 'T1', schema: FINDER_RECORD_SCHEMA});
     clearSavedPreferences(file);
     assert.equal(readSavedPreferences(file), null);
     clearSavedPreferences(file);
@@ -266,4 +266,14 @@ test('the saved record also keeps the owner\'s visible chrome, first recorded wi
     assert.deepEqual(readSavedPreferences(file).saved, {ShowSidebar: true, ShowStatusBar: null, ShowPathbar: null}, 'the keys untouched');
     assert.equal(fs.statSync(file).mode & 0o777, 0o600);
   } finally { fs.rmSync(dir, {recursive: true, force: true}); }
+});
+
+test('a saved record is trusted only with this harness\'s schema, and without a visible state only while no toggle could have happened', () => {
+  const keys = {ShowSidebar: true, ShowStatusBar: null, ShowPathbar: null};
+  assert.equal(savedRecordDistrust({saved: keys, savedAt: 'T', schema: FINDER_RECORD_SCHEMA}, keys), null, 'saved, setup not yet observed');
+  assert.equal(savedRecordDistrust({saved: keys, savedAt: 'T', schema: FINDER_RECORD_SCHEMA, visible: {sidebar: true, statusBar: true, pathBar: false}}, {...keys, ShowSidebar: false}), null);
+  // An older harness's record: no schema, so no visible state it could have recorded.
+  assert.match(savedRecordDistrust({saved: keys, savedAt: 'T'}, keys), /older harness/);
+  // No visible state, but the keys moved: a toggle may have happened before anything was recorded.
+  assert.match(savedRecordDistrust({saved: keys, savedAt: 'T', schema: FINDER_RECORD_SCHEMA}, {...keys, ShowSidebar: false}), /toggle/);
 });

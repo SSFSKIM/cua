@@ -17,7 +17,7 @@ import {
 import {indexOfTarget, indexOfRowCell, actionIndex, windowTitleOf} from '../../scripts/repl-parity/scenes-mac-text.mjs';
 import {parseAsns, parseAppInfo, awaitOwnLaunch, stopRecorded, readFinderPreferences, writeFinderPreference, openApp, activateApp} from '../../scripts/repl-parity/scenes-mac-device.mjs';
 import {isSameLaunch} from '../../scripts/accept/fixture-app.mjs';
-import {markVisibleRestored, readSavedPreferences, recordVisibleState} from '../../scripts/repl-parity/scenes-mac-finder.mjs';
+import {FINDER_RECORD_SCHEMA, markVisibleRestored, readSavedPreferences, recordVisibleState} from '../../scripts/repl-parity/scenes-mac-finder.mjs';
 import {FIXTURE_BUNDLE_ID, FIXTURE_CONTROLS} from '../../scripts/native-matrix/fixtures/electron-fixture.mjs';
 import {PAGE_CONTROLS, PAGE_HTML} from '../../scripts/native-matrix/fixtures/scene-page.mjs';
 
@@ -744,7 +744,8 @@ test('up finder saves the owner\'s preferences once, before the run\'s first tog
   await downScene('finder', {run, io});
   Object.assign(io.preferences, {ShowSidebar: false, ShowStatusBar: false});   // a later toggle, before a second up
   fs.mkdirSync(join(io.savedPreferencesFile, '..'), {recursive: true});
-  fs.writeFileSync(io.savedPreferencesFile, JSON.stringify({saved: {ShowSidebar: null, ShowStatusBar: true, ShowPathbar: null}, savedAt: 'T0'}));
+  fs.writeFileSync(io.savedPreferencesFile, JSON.stringify({saved: {ShowSidebar: null, ShowStatusBar: true, ShowPathbar: null}, savedAt: 'T0', schema: FINDER_RECORD_SCHEMA,
+    visible: {sidebar: true, statusBar: true, pathBar: false}}));
   const again = await upScene('finder', {run, io});
   assert.deepEqual(again.savedPreferences, {savedAt: 'T0', kept: true}, 'an earlier run\'s unrestored record is reported, and kept');
   assert.deepEqual(readSavedPreferences(io.savedPreferencesFile).saved, {ShowSidebar: null, ShowStatusBar: true, ShowPathbar: null}, 'the owner\'s values are kept');
@@ -780,7 +781,7 @@ test('a dead run\'s keys are written back without a window, the visible state re
   // only, says the visible state is not restored, and keeps the record (keys and visible state) for the next up.
   const io = fakeDevice({preferences: {ShowSidebar: false, ShowStatusBar: false, ShowPathbar: null}});
   fs.mkdirSync(join(io.savedPreferencesFile, '..'), {recursive: true});
-  fs.writeFileSync(io.savedPreferencesFile, JSON.stringify({saved: {ShowSidebar: true, ShowStatusBar: null, ShowPathbar: null}, savedAt: 'T0',
+  fs.writeFileSync(io.savedPreferencesFile, JSON.stringify({saved: {ShowSidebar: true, ShowStatusBar: null, ShowPathbar: null}, savedAt: 'T0', schema: FINDER_RECORD_SCHEMA,
     visible: {sidebar: true, statusBar: true, pathBar: false}, toggles: {sidebar: 1, statusBar: 2}}));
   const out = await restoreFinder({io});
   assert.equal(out.preferences.restored, true, 'every key is its saved value');
@@ -797,16 +798,19 @@ test('a dead run\'s keys are written back without a window, the visible state re
 test('a key Finder will not take back keeps the scene down false and the saved record, so a later down or restore finishes it', async () => withRun(async run => {
   const io = fakeDevice({preferences: {ShowSidebar: true, ShowStatusBar: null, ShowPathbar: null}, stuck: ['ShowSidebar']});
   const {savedPreferences: {savedAt}} = await upScene('finder', {run, io});
+  // The setup observed and hid the sidebar; the teardown brought the window back and marked it.
+  recordVisibleState(io.savedPreferencesFile, {sidebar: true, statusBar: false, pathBar: false});
+  markVisibleRestored(io.savedPreferencesFile);
   io.preferences.ShowSidebar = false;
   io.windows[736] = [];
   const down = await downScene('finder', {run, io});
   assert.equal(down.down, false);
-  assert.deepEqual(down.preferences, {restored: false, wrote: ['ShowSidebar'], remaining: ['ShowSidebar'], savedAt});
+  assert.deepEqual(down.preferences, {restored: false, wrote: ['ShowSidebar'], remaining: ['ShowSidebar'], savedAt, visibleRestored: true});
   assert.match(down.reason, /ShowSidebar/);
   assert.ok(readSavedPreferences(io.savedPreferencesFile));
   assert.equal(exitCodeFor(down), 1);
   io.preferences.ShowSidebar = true;   // the owner, or Finder, put it back
-  assert.deepEqual((await restoreFinder({io})).preferences, {restored: true, wrote: [], remaining: [], savedAt});
+  assert.deepEqual((await restoreFinder({io})).preferences, {restored: true, wrote: [], remaining: [], savedAt, visibleRestored: true});
   assert.equal(readSavedPreferences(io.savedPreferencesFile), null);
 }));
 
@@ -814,9 +818,11 @@ test('down finder and restore-finder with no Finder record still restore what an
   const io = fakeDevice({preferences: {ShowSidebar: false, ShowStatusBar: null, ShowPathbar: null}});
   assert.deepEqual(await restoreFinder({io}), {preferences: {restored: true, wrote: [], remaining: [], saved: false}});
   fs.mkdirSync(join(io.savedPreferencesFile, '..'), {recursive: true});
-  fs.writeFileSync(io.savedPreferencesFile, JSON.stringify({saved: {ShowSidebar: true, ShowStatusBar: null, ShowPathbar: null}, savedAt: 'T0'}));
+  // An earlier run whose teardown brought its window back but which died before its down.
+  fs.writeFileSync(io.savedPreferencesFile, JSON.stringify({saved: {ShowSidebar: true, ShowStatusBar: null, ShowPathbar: null}, savedAt: 'T0', schema: FINDER_RECORD_SCHEMA,
+    visible: {sidebar: true, statusBar: false, pathBar: false}, visibleRestoredAt: 'T1'}));
   const down = await downScene('finder', {run, io});
-  assert.deepEqual(down, {scene: 'finder', down: true, wasUp: false, preferences: {restored: true, wrote: ['ShowSidebar'], remaining: [], savedAt: 'T0'}});
+  assert.deepEqual(down, {scene: 'finder', down: true, wasUp: false, preferences: {restored: true, wrote: ['ShowSidebar'], remaining: [], savedAt: 'T0', visibleRestored: true}});
   assert.equal(io.preferences.ShowSidebar, true);
   assert.equal(readSavedPreferences(io.savedPreferencesFile), null);
 }));
@@ -938,3 +944,34 @@ test('device launches: open -g for a scene\'s launch (never activating), open -a
   assert.deepEqual(calls, [['/usr/bin/open', '-g', '-n', '-a', '/A.app', '/f', '--args', '--x'], ['/usr/bin/open', '-a', '/A.app']]);
 });
 
+
+test('a saved record from an older harness (no schema) is not trusted: up finder refuses, restore-finder writes the keys and says the windows are unrestored', async () => withRun(async run => {
+  // The base commit's file: the keys only. A run from it that hid the sidebar and died left ShowSidebar 0.
+  const io = fakeDevice({preferences: {ShowSidebar: false, ShowStatusBar: null, ShowPathbar: null}});
+  fs.mkdirSync(join(io.savedPreferencesFile, '..'), {recursive: true});
+  fs.writeFileSync(io.savedPreferencesFile, JSON.stringify({saved: {ShowSidebar: true, ShowStatusBar: null, ShowPathbar: null}, savedAt: 'T0'}));
+  const refused = await upScene('finder', {run, io}).then(() => null, error => error);
+  assert.ok(refused, 'up finder refuses');
+  assert.match(refused.message, /restore-finder/);
+  assert.match(refused.message, /View menu/);
+  assert.deepEqual(io.calls, [], 'no window opened');
+  assert.deepEqual(readState(run), {scenes: {}});
+  const out = await restoreFinder({io});
+  assert.equal(out.preferences.restored, true);
+  assert.deepEqual(io.preferences, {ShowSidebar: true, ShowStatusBar: null, ShowPathbar: null});
+  assert.equal(out.preferences.visibleRestored, false, 'not reported as success');
+  assert.match(out.preferences.visibleNote, /View menu/);
+  assert.equal(readSavedPreferences(io.savedPreferencesFile), null, 'the untrusted record ends once its keys are back, so up can run again');
+  assert.ok((await upScene('finder', {run, io})).pid);
+}));
+
+test('a record with this schema but no visible state is trusted while its keys are untouched, and refused once they moved', async () => {
+  for (const [current, trusted] of [[{ShowSidebar: true, ShowStatusBar: null, ShowPathbar: null}, true], [{ShowSidebar: false, ShowStatusBar: null, ShowPathbar: null}, false]]) await withRun(async run => {
+    const io = fakeDevice({preferences: current});
+    fs.mkdirSync(join(io.savedPreferencesFile, '..'), {recursive: true});
+    fs.writeFileSync(io.savedPreferencesFile, JSON.stringify({saved: {ShowSidebar: true, ShowStatusBar: null, ShowPathbar: null}, savedAt: 'T0', schema: FINDER_RECORD_SCHEMA}));
+    const up = upScene('finder', {run, io});
+    if (trusted) assert.equal((await up).savedPreferences.kept, true);
+    else await assert.rejects(up, /restore-finder/);
+  });
+});

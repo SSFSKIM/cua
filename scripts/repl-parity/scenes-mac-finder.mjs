@@ -112,7 +112,7 @@ export async function toggleUntil({part, shown, observe, toggle, sent = () => {}
 export function readSavedPreferences(file = SAVED_PREFERENCES) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch (error) { if (error.code === 'ENOENT') return null; throw error; }
 }
-// The record: {saved: the keys, savedAt, visible?: the owner's visible chrome ({sidebar, statusBar, pathBar}, observed
+// The record: {schema, saved: the keys, savedAt, visible?: the owner's visible chrome ({sidebar, statusBar, pathBar}, observed
 // before the first toggle), toggles?: {part: count} sent (information), visibleRestoredAt?: when a teardown brought
 // the window back to `visible` (unset again by any later toggle)}.
 function writeRecord(file, record) {
@@ -126,12 +126,24 @@ const existingRecord = file => {
   if (!record) throw new Error('no saved Finder preferences: the chrome is recorded only beside the owner\'s keys (up finder saves them)');
   return record;
 };
+// The record's schema: a record without it was written by a harness that saved the keys only, so it cannot say what the
+// owner's windows showed (savedRecordDistrust).
+export const FINDER_RECORD_SCHEMA = 'finder-chrome-2';
+// Why a kept record cannot be restored from, given Finder's keys now: an older harness's (no schema), or one with no
+// visible state whose keys have moved, so a toggle may have happened before anything was recorded. -> a sentence, or
+// null when it is trusted.
+export function savedRecordDistrust(record, current) {
+  if (record.schema !== FINDER_RECORD_SCHEMA) return 'it was saved by an older harness that did not record what Finder\'s windows showed';
+  if (!record.visible && preferenceWrites(current, record.saved).length)
+    return 'it has no record of what Finder\'s windows showed, and the keys have changed since, so a toggle may have happened before it was recorded';
+  return null;
+}
 // Saves `preferences` as the owner's unless a record exists already, whose values are then kept (they predate this
-// run's toggles, or an earlier run's that never restored). -> {saved, savedAt, kept}.
+// run's toggles, or an earlier run's that never restored). -> {saved, savedAt, schema, kept}.
 export function saveOriginalPreferences(file, preferences, {now = () => new Date().toISOString()} = {}) {
   const existing = readSavedPreferences(file);
   if (existing) return {...existing, kept: true};
-  const record = {saved: Object.fromEntries(FINDER_KEYS.map(key => [key, preferences?.[key] ?? null])), savedAt: now()};
+  const record = {saved: Object.fromEntries(FINDER_KEYS.map(key => [key, preferences?.[key] ?? null])), savedAt: now(), schema: FINDER_RECORD_SCHEMA};
   writeRecord(file, record);
   return {...record, kept: false};
 }

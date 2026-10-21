@@ -114,14 +114,15 @@ test('framing: a frame of exactly 8 MiB is read, one byte more is refused and th
   assert.equal(await wire.next(), null, 'closed after the refusal');
 });
 
-test('execute refuses an unknown method and a facade method the spike does not implement, by name, with -10005', {skip}, async t => {
+test('execute refuses an unknown method by name with -10005; every facade method is implemented', {skip}, async t => {
   const {wire} = await engine(t);
   const unknown = await wire.execute('no_such_method');
   assert.equal(unknown.error.code, -10005);
   assert.equal(unknown.error.errorName, 'unknownMethod');
-  const notYet = await wire.execute('scroll', {app: 'com.apple.finder', direction: 'down'});
-  assert.equal(notYet.error.code, -10005);
-  assert.equal(notYet.error.errorName, 'notImplemented');
+  // scroll reaches its own argument check (it answered notImplemented before M2a.2); nothing is posted.
+  const scroll = await wire.execute('scroll', {app: 'com.apple.finder', direction: 'down', pages: 0});
+  assert.equal(scroll.error.code, -10005);
+  assert.equal(scroll.error.errorName, 'invalidScrollPages');
   const noApp = await wire.execute('resolve_app', {});
   assert.equal(noApp.error.code, -10005);
   assert.equal(noApp.error.errorName, 'invalidArguments');
@@ -157,6 +158,13 @@ test('the input methods validate their arguments and resolve the app without pos
     ['press_key', {app: 'com.apple.finder'}, 'invalidArguments'],
     ['press_key', {app: 'com.apple.finder', key: 'Ctrl'}, 'invalidKey'],  // the vendor's code has no such alias (F §6.4)
     ['type_text', {app: 'com.apple.finder'}, 'invalidArguments'],
+    ['set_value', {app: 'com.apple.finder', element: 't0'}, 'invalidArguments', 'Labc'],  // no value
+    ['set_value', {app: 'com.apple.finder', value: 'v'}, 'invalidArguments'],  // no element
+    ['select_text', {app: 'com.apple.finder', element: 't0', text: 'a', selection_type: 'cursorAfter'}, 'invalidArguments', 'Labc'],
+    ['perform_secondary_action', {app: 'com.apple.finder', element: 't0'}, 'invalidArguments', 'Labc'],  // no action
+    ['scroll', {app: 'com.apple.finder', direction: 'sideways'}, 'invalidArguments'],
+    ['scroll', {app: 'com.apple.finder', direction: 'up', pages: -1}, 'invalidScrollPages'],
+    ['drag', {app: 'com.apple.finder', from_x: 1, from_y: 2, to_x: 3}, 'invalidArguments'],
     ['click', {app: 'com.apple.finder', element: 't0', x: 1, y: 2}, 'invalidArguments', 'Labc'],
     ['click', {app: 'com.apple.finder', element: 't0'}, 'invalidArguments', ''],
   ]) {
@@ -175,6 +183,11 @@ test('the input methods validate their arguments and resolve the app without pos
     ['press_key', {...noSuch, key: 'Return'}],
     ['press_key', {...noSuch, key: 'Return', spikeRoute: '2'}],
     ['type_text', {...noSuch, text: 'x'}],
+    ['set_value', {...noSuch, element: 't0', value: 'v'}, 'Labc'],
+    ['select_text', {...noSuch, element: 't0', text: 'x'}, 'Labc'],
+    ['perform_secondary_action', {...noSuch, element: 't0', action: 'Raise'}, 'Labc'],
+    ['scroll', {...noSuch, direction: 'down'}],
+    ['drag', {...noSuch, from_x: 1, from_y: 2, to_x: 3, to_y: 4}],
   ]) {
     const answer = await wire.call('execute', {method, args, deadlineUnixMilliseconds: Date.now() + 120_000, ...(lineage ? {lineage} : {})});
     assert.equal(answer.error?.code, -10010, method);

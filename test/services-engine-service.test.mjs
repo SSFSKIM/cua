@@ -213,7 +213,7 @@ test('model code reaches the raw methods, but only the vendor\'s fields reach th
   const {getApp, call, sky, engine} = await session(t, {handlers});
   await getApp('TextEdit');
   const app = APPS.TextEdit.appPath;
-  const spike = {spikeRoute: 3, spikeKeyed: true, spikeEventSource: 1, pid: 9, settle: false, extra: 'x'};
+  const spike = {spikeRoute: 3, spikeKeyed: true, spikeEventSource: 1, spikeMenuActivation: true, pid: 9, settle: false, extra: 'x'};
   const sent = [
     ['click', {app, x: 1, y: 2, mouse_button: 'left', click_count: 1}],
     ['click', {app, element_index: 1}],
@@ -278,6 +278,22 @@ test('an input error carries the engine\'s meta; the next call\'s meta starts ov
   for (const key of ['cua/inputRoute', 'cua/actionInterval', 'cua/receivedAt', 'cua/hidIdleMs', 'cua/activationGuardMs', 'cua/pointUnconfirmed']) assert.equal(meta[key], null, key);
 });
 
+test('an unknown secondary action answers the vendor\'s sentence with the model\'s index, which only the service knows; its meta rides along', async t => {
+  const refusedMeta = {...INPUT_META, inputRoute: 1, startedAt: null, endedAt: null, activationGuardMs: undefined, pointUnconfirmed: undefined};
+  const {engine, getApp, call, meta} = await session(t, {handlers: {'execute:perform_secondary_action': () => {
+    throw new EngineFailure(-10005, 'Frobnicate is not a valid secondary action for the element', 'invalidSecondaryAction', {meta: refusedMeta});
+  }}});
+  const {app} = await getApp('TextEdit');
+  await assert.rejects(call(() => app.performSecondaryAction(2, 'Frobnicate')), error => {
+    assert.equal(error.message, 'Computer Use server error -10005: Frobnicate is not a valid secondary action for 2');
+    assert.equal(error.errorName, 'invalidSecondaryAction');
+    return true;
+  });
+  assert.equal(engine.executes().find(p => p.method === 'perform_secondary_action').args.element, 't2', 'the engine got the token, never the index');
+  assert.equal(meta['cua/inputRoute'], 1);
+  assert.deepEqual(meta['cua/actionInterval'], {startedAt: null, endedAt: null});
+});
+
 test('intervention, entered and routeAdvice ride as cua/ meta on results and on the userIntervened error that stopped a type_text; the next call starts over', async t => {
   const stopped = {...INPUT_META, inputRoute: "2'", activationGuardMs: undefined, pointUnconfirmed: undefined, entered: 3};
   const {getApp, call, meta} = await session(t, {handlers: {
@@ -308,6 +324,23 @@ test('cua/settle rides on the observation whose settle hit its cap, and on no ot
   trees.get(APPS.TextEdit.appPath).settle = 'capped';
   await call(() => app.getAXState({emit: false}));
   assert.equal(meta['cua/settle'], 'capped');
+});
+
+test('an observation of a minimized window carries no screenshot and its meta says why; the next observation clears it', async t => {
+  const {getApp, call, meta, trees} = await session(t);
+  const {app} = await getApp('TextEdit');
+  assert.equal(meta['cua/screenshotOmitted'], null);
+  const tree = trees.get(APPS.TextEdit.appPath);
+  const shown = tree.screenshot;
+  Object.assign(tree, {screenshot: null, screenshotOmitted: 'windowMinimized'});
+  const state = await call(() => app.getAXStateAndScreenshot({emit: false}));
+  assert.equal(state.screenshot, undefined, 'the facade returns the state alone');
+  assert.equal(meta['cua/screenshotOmitted'], 'windowMinimized');
+  await assert.rejects(call(() => app.getScreenshot({emit: false})), {message: `Screenshot unavailable for ${APPS.TextEdit.appPath}.`});
+  assert.equal(meta['cua/screenshotOmitted'], 'windowMinimized', 'getScreenshot\'s refusal is the facade\'s; the meta says why');
+  Object.assign(tree, {screenshot: shown, screenshotOmitted: undefined});
+  await call(() => app.getAXState({emit: false}));
+  assert.equal(meta['cua/screenshotOmitted'], null);
 });
 
 test('a declined app fails "Computer Use was not approved to use <app>" with nothing observed; a forbidden one the vendor\'s sentence with nothing asked', async t => {

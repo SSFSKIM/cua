@@ -126,6 +126,28 @@ test('an input error whose meta says nothing was posted answers that nothing was
   }
 });
 
+test('a concealed set_value stopped under one of cua\'s set_value names repeats the name, value-free, and says whether anything was entered', async () => {
+  const value = VALUES['WORK_PASSWORD'];
+  const names = ['valueNotSettable', 'invalidNumber', 'invalidDate', 'unsupportedValueType', 'cannotClickOffscreenElement',
+    'elementNoLongerValid', 'elementAmbiguousBeforeRefetch', 'elementAmbiguousAfterRefetch'];
+  for (const name of names) {
+    const {service} = harness({answer: () => { throw new EngineError(name, `refused ${value}`, NOTHING_POSTED); }});
+    const error = await rejection(service.handleRpc(setValue(REF('WORK_PASSWORD'))));
+    assert.equal(error.code, 'secret_input_failed', name);
+    assert.match(error.message, new RegExp(`failed \\(${name}\\)`), `${name} is named`);
+    assert.match(error.message, /nothing was entered/, name);
+    assertValueFree(error);
+  }
+  // A refused write, and a value refused after the focus click posted: named, and maybe entered.
+  for (const name of ['actionFailed', 'invalidNumber']) {
+    const {service} = harness({answer: () => { throw new EngineError(name, `refused ${value}`, {...NOTHING_POSTED, inputRoute: '1', startedAt: 1000, endedAt: 1042}); }});
+    const error = await rejection(service.handleRpc(setValue(REF('WORK_PASSWORD'))));
+    assert.match(error.message, new RegExp(`failed \\(${name}\\)`), name);
+    assert.match(error.message, /may have been partly entered/, name);
+    assertValueFree(error);
+  }
+});
+
 test('userIntervened after substitution says which of its two sentences the model must act on, value-free, on both engines', async () => {
   const value = VALUES['WORK_PASSWORD'];
   const app = '/System/Applications/TextEdit.app';
@@ -169,7 +191,7 @@ test('userIntervened after substitution says which of its two sentences the mode
 
 test('cua\'s engine-only error names are admitted value-free; concealedInputUnavailable gets its own sentence, saying nothing was entered', async () => {
   const value = VALUES['WORK_PASSWORD'];
-  for (const name of ['inputSourceChanged', 'noScreenshotForCoordinates', 'activationFailed']) {
+  for (const name of ['inputSourceChanged', 'noScreenshotForCoordinates', 'activationFailed', 'windowMinimized']) {
     const {service} = harness({answer: () => { throw new EngineError(name, `stopped after typing ${value}`); }});
     const error = await rejection(service.handleRpc(typeText(REF('WORK_PASSWORD'))));
     assert.equal(error.code, 'secret_input_failed', name);
@@ -479,4 +501,38 @@ test('the launch names the service the wrapper delegates to in CUA_SKY_SERVICE, 
   assert.deepEqual(await skyServiceFromEnv({...env, CUA_SKY_SERVICE: module}).handleRpc({type: 'setup'}), {served: 'setup'});
   const unset = await rejection(skyServiceFromEnv({...env, CUA_SKY_VENDOR_SERVICE: module}).handleRpc({type: 'setup'}));
   assert.equal(unset.message, 'cua: the sky service is not configured for this runtime (CUA_SKY_SERVICE) [sky_not_configured]', 'the retired name is not read');
+});
+
+// cua/serviceMs (Design, "Result meta"; M1a.4's item 4): the wrapper's time around handleRpc, on both macOS lanes, so a
+// single-call row separates the host's transport from service, policy, approval and engine together.
+function timedHarness({answer = () => ({ok: true}), platform = 'darwin', ticks = [100, 112.3456]} = {}) {
+  const metas = [];
+  const clock = [...ticks];
+  const vendor = {handleRpc: async request => answer(request)};
+  const service = createSkyService({
+    loadVendor: async () => vendor, secrets: {read: async label => VALUES[label]}, platform,
+    now: () => clock.shift(), setResponseMeta: meta => metas.push(meta),
+  });
+  return {service, metas};
+}
+
+test('cua/serviceMs is the wrapper\'s time around the delegated handleRpc, rounded to the microsecond, on every macOS call', async () => {
+  const {service, metas} = timedHarness();
+  assert.deepEqual(await service.handleRpc({type: 'execute', method: 'list_apps', args: []}), {ok: true});
+  assert.deepEqual(metas, [{'cua/serviceMs': 12.346}]);
+});
+
+test('cua/serviceMs rides on a failure too, set before the error propagates, and on a substituted request', async () => {
+  const failing = timedHarness({answer: () => { throw new EngineError('activationFailed', 'refused'); }});
+  await rejection(failing.service.handleRpc({type: 'execute', method: 'click', args: [{app: 'a', element_index: 1}]}));
+  assert.deepEqual(failing.metas, [{'cua/serviceMs': 12.346}]);
+  const substituted = timedHarness({ticks: [5, 6]});
+  await substituted.service.handleRpc(typeText(REF('WORK_PASSWORD')));
+  assert.deepEqual(substituted.metas, [{'cua/serviceMs': 1}]);
+});
+
+test('Linux results carry no cua/serviceMs: the separation is the macOS comparisons\'', async () => {
+  const {service, metas} = timedHarness({platform: 'linux'});
+  await service.handleRpc({type: 'execute', method: 'list_apps', args: []});
+  assert.deepEqual(metas, []);
 });

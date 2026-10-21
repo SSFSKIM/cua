@@ -136,14 +136,18 @@ final class FakeActivation {
   let window: AXUIElement
   let windowFrame: CGRect?
   let windowID: CGWindowID?
+  /// Where the activation click must not land (the target of a click with another button than the left,
+  /// `activationSparing`); the click is skipped there.
+  let sparing: CGRect?
   private let system: ActivationSystem
   private(set) var activated = false
   /// How long the guard held after the activation pair, for the result's meta; nil when no guard ran.
   private(set) var guardMs: Double?
 
-  init(pid: pid_t, appPid: pid_t? = nil, window: AXUIElement, windowFrame: CGRect?, windowID: CGWindowID?,
+  init(pid: pid_t, appPid: pid_t? = nil, window: AXUIElement, windowFrame: CGRect?, windowID: CGWindowID?, sparing: CGRect? = nil,
        system: ActivationSystem = ActivationSystem()) {
     self.pid = pid
+    self.sparing = sparing
     self.appPid = appPid ?? pid
     self.window = window
     self.windowFrame = windowFrame
@@ -152,10 +156,10 @@ final class FakeActivation {
   }
 
   /// The window's frame and number read from the Accessibility API.
-  convenience init(pid: pid_t, appPid: pid_t? = nil, window: AXUIElement, system: ActivationSystem = ActivationSystem()) {
+  convenience init(pid: pid_t, appPid: pid_t? = nil, window: AXUIElement, sparing: CGRect? = nil, system: ActivationSystem = ActivationSystem()) {
     let windowFrame = frame(of: window)
     self.init(pid: pid, appPid: appPid, window: window, windowFrame: windowFrame,
-              windowID: windowNumber(of: window, pid: pid, frame: windowFrame), system: system)
+              windowID: windowNumber(of: window, pid: pid, frame: windowFrame), sparing: sparing, system: system)
   }
 
   /// The vendor's safelyEnforceActiveState: nothing when the app believes it has focus; otherwise the activation pair,
@@ -208,11 +212,11 @@ final class FakeActivation {
   }
 
   /// The vendor's enforceActiveState for an app that does not believe it is active: subtype 1, then a left click at the
-  /// window's AXActivationPoint when that point lies inside the window's frame.
+  /// window's AXActivationPoint when that point lies inside the window's frame and outside the spared area.
   private func postActivation() {
     post(subtype: NSEvent.EventSubtype.applicationActivated.rawValue)
     activated = true
-    guard let point = activationClickPoint(system.activationPoint(window), windowFrame: windowFrame) else { return }
+    guard let point = activationClickPoint(system.activationPoint(window), windowFrame: windowFrame, sparing: sparing) else { return }
     let target = ClickTarget(point: point, windowFrame: windowFrame, windowID: windowID, pid: pid)
     _ = postToProcess(clickEvents(target, button: .left, count: 1, flags: []), pid: pid, post: system.post)
   }

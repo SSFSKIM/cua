@@ -177,6 +177,7 @@ final class Server: @unchecked Sendable {
     lock.unlock()
     close(connection.fd)
     engine.connectionClosed(connection)  // its drives end; the intervention tap goes with the last (Intervention.swift)
+    engine.webAccessibility.release(connection: connection.id)  // enablement no connection observes now (Enablement.swift)
   }
 
   /// Accepts a shutdown atomically with accept: with no connection open but `connection`, closes the listener under the
@@ -226,6 +227,7 @@ final class Server: @unchecked Sendable {
 
   /// After an accepted shutdown (the listener already closed): the socket removed, then exit, which releases the lock.
   func stopAndExit() -> Never {
+    engine.webAccessibility.releaseAll()  // the engine's enablement goes with it
     unlink(paths.socket)
     Lifecycle.exit("shutdown requested", status: 0)
   }

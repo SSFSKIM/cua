@@ -20,7 +20,8 @@ import Foundation
 // facade never sends: `spikeRoute` ("1"|"2'"|"2"|"3", force one route; route 2, the ⌘ post, is reachable only this
 // way), `spikeEventSource` ("private", post keys from a private event source instead of the HID-system one) and
 // `spikeKeyed` (type_text: key through the layout regardless of the source routing, probe (e)'s per-context case;
-// never for a concealed request). A non-concealed type_text that routes to the paste route answers notImplemented
+// never for a concealed request) and `spikeMenuActivation` (click: route 3's activation around a route-1 press of a
+// menu item, off by default; `deliverActivatedAction`). A non-concealed type_text that routes to the paste route answers notImplemented
 // naming it, with inputRoute "paste"; the paste route itself is M2a's.
 
 /// A route that carried an input (the spec's Design, "Input"; Interfaces, EngineProtocol's
@@ -140,18 +141,29 @@ func withMeta(_ error: EngineError, _ meta: InputMeta) -> EngineError {
 func deliverClick(_ target: ClickTarget, route: InputRoute, button: MouseButton, count: Int, activation: FakeActivation?,
                   foreground: ForegroundAssist? = nil, targetActive: () -> Bool, beforePosting: () throws -> Void = {},
                   post: (CGEvent, pid_t) -> Void, meta: inout InputMeta) throws {
+  try deliverPointer(to: target.pid, route: route, activation: activation, foreground: foreground, beforePosting: beforePosting,
+                     post: post, meta: &meta) {
+    clickEvents(target, button: button, count: count, flags: clickFlags(route, targetActive: targetActive()))
+  }
+}
+
+/// A synthesized pointer action's delivery (a click's, a drag's), as `deliverClick` describes it: `events` makes the
+/// action's events once the app is prepared, and they are posted back to back to `pid`.
+func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation?, foreground: ForegroundAssist? = nil,
+                    beforePosting: () throws -> Void = {}, post: (CGEvent, pid_t) -> Void, meta: inout InputMeta,
+                    events: () -> [CGEvent]) throws {
   meta.inputRoute = route
-  defer { activation?.deactivate() }  // every path out of the click, error or success, undoes the activation
+  defer { activation?.deactivate() }  // every path out of the action, error or success, undoes the activation
   if route == .activation, let activation {
+    defer { meta.activationGuardMs = activation.guardMs }  // a guard that failed still says how long it held
     try activation.activate()
-    meta.activationGuardMs = activation.guardMs
   }
   // The interval is stamped as the events are posted, so an error after them (route 4's restore) still says they were.
   func send() throws {
     try beforePosting()
-    let events = clickEvents(target, button: button, count: count, flags: clickFlags(route, targetActive: targetActive()))
-    guard !events.isEmpty else { throw EngineError(name: "eventCreationFailed", "The click events could not be created.") }
-    meta.posting { _ = postToProcess(events, pid: target.pid, post: post); return true }
+    let made = events()
+    guard !made.isEmpty else { throw EngineError(name: "eventCreationFailed", "The mouse events could not be created.") }
+    meta.posting { _ = postToProcess(made, pid: pid, post: post); return true }
   }
   if route == .foreground, let foreground { try foreground.run(send) } else { try send() }
 }
@@ -189,27 +201,51 @@ func keyPresses(_ presses: [KeyPress], checkIntervention: () throws -> Void, pos
 /// fall-through to a synthesized click, which could click twice after an action that took effect and still erred).
 func deliverAction(_ action: String, perform: (String) -> AXError, meta: inout InputMeta) throws {
   meta.inputRoute = .action
-  meta.startedAt = unixMilliseconds()
-  let error = perform(action)
-  meta.endedAt = unixMilliseconds()
+  var error = AXError.failure
+  meta.posting { error = perform(action); return true }
   guard error == .success else { throw EngineError(name: "actionFailed", "The element did not accept the \(action) action.") }
 }
+
+/// A route-1 press with route 3's activation around it, for a menu item's press under `spikeMenuActivation`: the vendor
+/// presses a recorded menu's items in an app it left believing itself active (F §16.9.2, §16.9.6), and a menu item's
+/// command goes through the key window's responder chain, which a background app may not offer. Per action, as cua's
+/// activation always is: the activation for the app's primary window (subtype 1, and the click at its AXActivationPoint
+/// when that lies inside the frame), the in-flight check, the press, then the deactivation on every path. The route stays
+/// 1, the guard's time rides in the meta (a failed guard's too), and a guard failure refuses as activationFailed with
+/// nothing pressed.
+func deliverActivatedAction(_ action: String, activation: FakeActivation, beforePressing: () throws -> Void = {},
+                            perform: (String) -> AXError, meta: inout InputMeta) throws {
+  meta.inputRoute = .action
+  defer { activation.deactivate() }
+  do {
+    defer { meta.activationGuardMs = activation.guardMs }  // a guard that failed still says how long it held
+    try activation.activate()
+  }
+  try beforePressing()
+  try deliverAction(action, perform: perform, meta: &meta)
+}
+
+/// Whether a route-1 press takes `deliverActivatedAction`: only a menu item's, and only under the switch.
+func activatesPress(switchedOn: Bool, role: String) -> Bool { switchedOn && role == kAXMenuItemRole }
+
+/// The spike-only `spikeMenuActivation` switch: off unless the request sets it true.
+func spikeMenuActivationArg(_ args: [String: Any]) -> Bool { (args["spikeMenuActivation"] as? Bool) == true }
 
 extension Engine {
   // MARK: click
 
   /// `click {app, element | x, y, mouse_button?, click_count?}`, `element` a token of the request's `lineage` (the
-  /// service's translation of the facade's element_index). An element click takes route 1 (AXPick, else AXPress) for a
-  /// plain left click on an element that advertises the action and whose clickable point does not land on a strict
-  /// descendant of it (the vendor's nested-content gate, applied to every element by cua); every other element click
-  /// is synthesized by route 3 at the midpoint of the element's visible frame, refused as not visible when nothing of it
-  /// shows, its frame cannot be read now, or the hit-test there answers something unrelated to it (something covers
-  /// it), and reported as `pointUnconfirmed` when the hit-test answers nothing or only a container. A click on a
-  /// menu-bar item is refused before anything is posted. A coordinate click is in the pixels
-  /// of the last screenshot of the app's primary window on this connection, refused (`noScreenshotForCoordinates`,
-  /// nothing posted) when there is none, and goes by route 3. Route 4 takes route 3's place for an app the owner's
-  /// override names. The process serving the target receives the input, after the forbidden list has been checked
-  /// against it.
+  /// service's translation of the facade's element_index). An element is first scrolled into view (positionElement,
+  /// Positioning.swift). An element click takes route 1 (AXPick, else AXPress) for a plain left click on an element
+  /// that advertises the action and whose clickable point does not land on a strict descendant of it (the vendor's
+  /// nested-content gate, applied to every element by cua); every other element click is synthesized by route 3 at the
+  /// midpoint of the element's visible frame (`synthesizedClick`), its activation click sparing the element for any
+  /// button but the left. A plain left click on a menu-bar item with a menu records the item (MenuRecord.swift) and
+  /// posts nothing; any other click on a menu-bar item or the menu bar is refused before anything is posted. A
+  /// successful element click clears the app's menu record. A coordinate click is in the pixels of the last screenshot
+  /// of the app's primary window on this connection, refused (`noScreenshotForCoordinates`, nothing posted) when there
+  /// is none, and goes by route 3. Route 4 takes route 3's place for an app the owner's override names. The process
+  /// serving the target receives the input, after the forbidden list has been checked against it.
   func click(_ args: [String: Any], _ context: ExecutionContext) throws -> Any {
     let token = try elementTokenArg(args, lineage: context.lineage)
     let hasElement = token != nil
@@ -224,95 +260,56 @@ extension Engine {
     let count = (args["click_count"] as? NSNumber)?.intValue ?? 1
     guard count >= 1 else { throw EngineError.invalidArguments("click_count must be at least 1") }
     let forced = try spikeRouteArg(args, usable: hasElement ? InputRoute.elementClick : InputRoute.synthesized)
+    let menuActivation = spikeMenuActivationArg(args)
 
     var meta = InputMeta(context)
     do {
-      let app = try resolveApp(args)
-      guard let appPid = app.pid else { throw EngineError(.runningApplicationNotFound, "Running application not found: \(app.displayName)") }
-      try requireAccessibility()
-      let guarding = interventionGuard(app: app, pid: appPid, requestApp: args["app"] as? String, connection: context.connection)
-      meta.apply(guarding)
-      try guarding.checkBeforePosting()
+      let (app, appPid, guarding) = try inputPrologue(args, context, meta: &meta)
       let foreground = routeFourOverride(app.bundleIdentifier, routes: routes)
-      // Route 3's guard outcome per app, for routeAdvice: a refusal by the guard counts, a click past it resets the run.
-      func delivering(_ route: InputRoute, _ deliver: () throws -> Void) throws {
-        do {
-          try deliver()
-          if route == .activation { _ = routeAdvice.record(app.bundleIdentifier, guardFailed: false) }
-        } catch let error as EngineError where route == .activation && error.errorName == "activationFailed" {
-          meta.routeAdvice = routeAdvice.record(app.bundleIdentifier, guardFailed: true)
-          throw error
-        }
-      }
 
-      if let token, let lineage = context.lineage {
-        let entry = try context.connection.element(token, app: app, lineage: lineage) { ElementResolver.live($0, pid: appPid) }
-        let owner = ownerPid(of: entry.element, fallback: appPid)  // a sheet or panel is served by another process
-        try refuseForbiddenOwner(owner)
-        actionTargets(owner, app: app, connection: context.connection)
-        // The element's own window, which for a panel served by another process is that process's window; a menu-bar
-        // item has none. The point is read live: a frame that cannot be read now is not replaced by the observed one.
-        let ownWindow = elementAttribute(entry.element, kAXWindowAttribute)
-        let ownWindowFrame = ownWindow.flatMap { frame(of: $0) }
-        let ownWindowID = ownWindow.flatMap { windowNumber(of: $0, pid: owner, frame: ownWindowFrame) }
-        let visible = visibleFrame(of: entry.element, frame: { frame(of: $0) }, role: { stringAttribute($0, kAXRoleAttribute) },
-                                   parent: { elementAttribute($0, kAXParentAttribute) }, actions: actionNames(of:))
-        let point = clickablePoint(frame: visible, visibleIn: ownWindowFrame)
-        // One hit-test and one classification of it, shared by the gate and the reach check, taken only when needed.
-        var relation: HitRelation?
-        func hitAtPoint() -> HitRelation {
-          if let relation { return relation }
-          let found = point.map { hitRelation(hitTest(application: owner, at: $0), to: entry.element,
-                                              parent: { elementAttribute($0, kAXParentAttribute) }, same: { CFEqual($0, $1) }) } ?? .noAnswer
-          relation = found
-          return found
+      if let token {
+        let resolved = try targetElement(token, app: app, appPid: appPid, context: context)
+        let ax = AXOps.live
+        if forced == nil, button == .left, count == 1, resolved.entry.identity.role == kAXMenuBarItemRole,
+           menuOfMenuBarItem(resolved.element, ax: ax) != nil {
+          meta.inputRoute = .action  // an accessibility-only path: nothing is posted
+          context.connection.recordMenu(resolved.element, app: app.key)
+          return ["meta": meta.wire]
         }
-        let plan = try elementClickPlan(forced: forced, button: button, count: count, role: entry.identity.role, actions: entry.actions,
+        let target = try positionedTarget(resolved, token: token, app: app, appPid: appPid, context: context)
+        let pointing = ElementPointing(target.element, owner: target.owner, ax: ax)
+        let plan = try elementClickPlan(forced: forced, button: button, count: count, role: target.entry.identity.role, actions: target.entry.actions,
                                         synthesized: synthesizedClickRoute(forced: nil, foreground: foreground)) {
-          hitAtPoint() == .descendant  // no point, or no answer: the action needs no point
+          pointing.relation == .descendant  // no point, or no answer: the action needs no point
         }
         switch plan {
         case .action(let action):
-          try deliverAction(action, perform: { AXUIElementPerformAction(entry.element, $0 as CFString) }, meta: &meta)
-        case .synthesized(let route):
-          guard let point, !hitAtPoint().covered else {
-            throw EngineError(name: "cannotClickOffscreenElement", "The element is not visible on screen.")
-          }
-          meta.pointUnconfirmed = hitAtPoint().unconfirmed
-          // Route 3's activation is for the element's window, else the app's primary window (a menu-bar item's).
-          func activation() -> FakeActivation {
-            if let ownWindow { return FakeActivation(pid: owner, appPid: appPid, window: ownWindow, windowFrame: ownWindowFrame, windowID: ownWindowID) }
+          let perform: (String) -> AXError = { AXUIElementPerformAction(target.element, $0 as CFString) }
+          if activatesPress(switchedOn: menuActivation, role: target.entry.identity.role) {
             let application = prepare(AXUIElementCreateApplication(appPid))
-            return FakeActivation(pid: owner, appPid: appPid, window: primaryWindow(of: application) ?? application)
+            let activation = FakeActivation(pid: target.owner, appPid: appPid, window: primaryWindow(of: application) ?? application)
+            try deliverActivatedAction(action, activation: activation, beforePressing: guarding.checkInFlight, perform: perform, meta: &meta)
+          } else {
+            try guarding.checkInFlight()
+            try deliverAction(action, perform: perform, meta: &meta)
           }
-          let target = ClickTarget(point: point, windowFrame: ownWindowFrame, windowID: ownWindowID, pid: owner)
-          try delivering(route) {
-            try deliverClick(target, route: route, button: button, count: count, activation: route == .activation ? activation() : nil,
-                             foreground: route == .foreground ? ForegroundAssist(appPid: appPid) : nil,
-                             targetActive: { NSRunningApplication(processIdentifier: owner)?.isActive == true },
-                             beforePosting: guarding.checkInFlight, post: { $0.postToPid($1) }, meta: &meta)
-          }
+        case .synthesized(let route):
+          try synthesizedClick(pointing, route: route, button: button, count: count, app: app, appPid: appPid, guarding: guarding, meta: &meta)
         }
+        context.connection.clearMenuRecord(app: app.key)
       } else {
-        guard let x = numberArg(args["x"]), let y = numberArg(args["y"]), x.isFinite, y.isFinite else {
-          throw EngineError.invalidArguments("x and y must be finite coordinates")
-        }
-        let application = prepare(AXUIElementCreateApplication(appPid))
-        guard let window = primaryWindow(of: application), let windowFrame = frame(of: window) else {
-          throw EngineError(name: "noWindowsAvailable", "noWindowsAvailable")
-        }
-        // Screenshot pixels to points, by the scale of the screenshot the model was given (Screenshot.swift).
-        let local = try context.connection.screenshotPoint(x, y, app: app, window: window, lineage: context.lineage)
-        let point = CGPoint(x: windowFrame.minX + local.x, y: windowFrame.minY + local.y)
-        let owner = hitTest(window: window, at: point).map { ownerPid(of: $0, fallback: appPid) } ?? appPid
+        let placed = try coordinatePoint(numberArg(args["x"])!, numberArg(args["y"])!, app: app, appPid: appPid, context: context)
+        let hit = hitTest(window: placed.window, at: placed.point)
+        let owner = hit.map { ownerPid(of: $0, fallback: appPid) } ?? appPid
         try refuseForbiddenOwner(owner)
         actionTargets(owner, app: app, connection: context.connection)
-        let windowID = windowNumber(of: window, pid: appPid, frame: windowFrame)
-        let target = ClickTarget(point: point, windowFrame: windowFrame, windowID: windowID, pid: owner)
+        let windowID = windowNumber(of: placed.window, pid: appPid, frame: placed.windowFrame)
+        let target = ClickTarget(point: placed.point, windowFrame: placed.windowFrame, windowID: windowID, pid: owner)
         let route = coordinateClickRoute(forced: forced, foreground: foreground)
+        let sparing = button == .left ? nil : activationSparing(button: button, target: pointArea(placed.point, hitFrame: hit.flatMap { frame(of: $0) }))
         let activation = route == .activation
-          ? FakeActivation(pid: owner, appPid: appPid, window: window, windowFrame: windowFrame, windowID: windowID) : nil
-        try delivering(route) {
+          ? FakeActivation(pid: owner, appPid: appPid, window: placed.window, windowFrame: placed.windowFrame, windowID: windowID, sparing: sparing) : nil
+        try recordingRouteAdvice(route, app: app, meta: &meta) { meta in
           try deliverClick(target, route: route, button: button, count: count, activation: activation,
                            foreground: route == .foreground ? ForegroundAssist(appPid: appPid) : nil,
                            targetActive: { NSRunningApplication(processIdentifier: owner)?.isActive == true },

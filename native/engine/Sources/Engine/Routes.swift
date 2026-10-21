@@ -10,8 +10,7 @@ import Foundation
 // 4, the foreground assist, in its place for an app the owner's per-app override names (`routes: {<bundle id>: 4}` in
 // engine.json), and never otherwise. When route 3's guard has failed three actions in a row for an app, the refusal's
 // meta names the override (`routeAdvice`), so the owner learns of the case rather than the engine deciding it. A click
-// on a menu-bar item is refused: the vendor neither presses nor synthesizes one but activates the app and records the
-// item's menu for the next observation (FUN_100083904's role test), a path built with that observation later. Route 2,
+// on a menu-bar item that is not the record path's plain left click (MenuRecord.swift) is refused here. Route 2,
 // the ⌘ post, and a forced 2′ click are reachable only through the spike's `spikeRoute`. Everything here is pure, so the
 // choice is unit-tested.
 
@@ -42,11 +41,12 @@ func elementClickPlan(forced: InputRoute?, button: MouseButton, count: Int, role
   return .synthesized(synthesized)
 }
 
-/// The refusal of a click on a menu-bar item: the vendor opens a menu-bar item by activating the app and recording the
-/// item's menu for the next observation (FUN_100071538 → FUN_100083904 → FUN_100071790), which this engine does not do
-/// yet; pressing or synthesizing would open it a way the vendor never does. Nothing is posted.
+/// The refusal of a click on a menu-bar item that the record path does not take (another button, several clicks, a
+/// forced route, an item without a menu) and of any click on the menu bar itself: the vendor neither presses nor
+/// synthesizes a menu-bar click, and pressing or synthesizing one would open the menu a way the vendor never does (an
+/// AXPress may enter the app's menu tracking). Nothing is posted.
 let menuBarItemUnsupported = EngineError(name: "menuBarItemUnsupported",
-  "Clicking the menu bar or a menu bar item is not supported by this engine yet; menu bar items open through a path that comes in a later engine release. Nothing was clicked. Use the app's keyboard shortcut for the command with pressKey instead.")
+  "Only a plain left click on a menu bar item is supported: it shows the item's menu in the next observation, whose menu items can then be clicked. Nothing was clicked. For anything else, use the app's keyboard shortcut for the command with pressKey.")
 
 /// A coordinate click's route: 3, or 4 for an app the owner's override names, unless the spike forces another.
 func coordinateClickRoute(forced: InputRoute?, foreground: Bool = false) -> InputRoute {
@@ -200,9 +200,12 @@ func clickablePoint(frame: CGRect?, visibleIn bounds: CGRect?) -> CGPoint? {
 /// Where route 3's activation click goes: the window's AXActivationPoint when it lies inside the window's frame, else
 /// nowhere — the believed-active state then rests on the subtype-1 event alone (the second sitting's U13: Chrome's point
 /// is the screen's bottom-left corner, where a click lands on its menu bar). A declared difference from the vendor,
-/// which posts the click wherever the point is.
-func activationClickPoint(_ activationPoint: CGPoint?, windowFrame: CGRect?) -> CGPoint? {
+/// which posts the click wherever the point is. Nor in `sparing`, the target of a click with another button than the
+/// left (`activationSparing`): a left click there would be a click on the target the model never asked for (the M2a
+/// vendor reading, item 8); the subtype-1 event alone then carries the activation, as it does outside the frame.
+func activationClickPoint(_ activationPoint: CGPoint?, windowFrame: CGRect?, sparing: CGRect? = nil) -> CGPoint? {
   guard let activationPoint, let windowFrame, windowFrame.contains(activationPoint) else { return nil }
+  if let sparing, sparing.contains(activationPoint) { return nil }
   return activationPoint
 }
 

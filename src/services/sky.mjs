@@ -73,15 +73,20 @@ const FIELD_OF = {paste: 'text', type_text: 'text', set_value: 'value'};
 const REQUEST_KEYS = ['type', 'method', 'args'];
 
 // Error names a SkyComputerUseError may carry that a diagnostic repeats: the pinned vendor's (ServerErrorCode in @oai/sky
-// errors.js), and the four cua's engine raises that the vendor has no name for (the native engine spec's Interfaces,
-// all value-free). Anything else from the service is withheld.
+// errors.js); the five cua's engine raises that the vendor has no name for (the native engine spec's Interfaces); and
+// the names a concealed set_value can stop under in cua's engine: its element's resolution, the element not settable,
+// the value not of the element's type, the focus click finding nothing to click, the write refused. All are fixed
+// names, never the value. invalidNumber and invalidDate do say the secret does not parse as the element's type, which
+// is what the model must know to stop retrying it there. Anything else from the service is withheld.
 const ADMITTED_ERROR_NAMES = new Set([
   'senderProcessNotAuthenticated', 'couldNotGetRequestData', 'couldNotGetRequestTypeName', 'couldNotResolveRequestType',
   'unhandledEvent', 'unknownError', 'appNotAllowed', 'runningApplicationNotFound', 'accessibilityError',
   'permissionsNotGranted', 'invalidApp', 'noActiveSession', 'userStoppedSession', 'incompatibleClientVersion',
   'permissionsPending', 'blockedURL', 'userIntervened', 'couldNotGetSenderPID', 'ambiguousApp',
   'couldNotGetBootstrapPort', 'screenLocked', 'jsonRPCError',
-  'concealedInputUnavailable', 'inputSourceChanged', 'noScreenshotForCoordinates', 'activationFailed',
+  'concealedInputUnavailable', 'inputSourceChanged', 'noScreenshotForCoordinates', 'activationFailed', 'windowMinimized',
+  'elementNoLongerValid', 'elementAmbiguousBeforeRefetch', 'elementAmbiguousAfterRefetch', 'valueNotSettable', 'invalidNumber',
+  'invalidDate', 'unsupportedValueType', 'cannotClickOffscreenElement', 'actionFailed',
 ]);
 
 // The substitution a request asks for: null to delegate it untouched, or {method, rule, input, reference, request}.
@@ -157,8 +162,11 @@ function launchAppId(request) {
 // shapes (the process's own; the vendor target matches the platform it runs on). On Linux `openApplication` (the
 // trusted worker's nodeRepl.launchServices.openApplication) launches a desktop entry outside the sandbox, and `env`
 // names the XDG data directories it is found in.
+// On macOS every request's time through handleRpc, success or failure, is set as `cua/serviceMs` through
+// `setResponseMeta` (the trusted worker's nodeRepl.setResponseMeta, on either host) read with `now`.
 export function createSkyService({loadVendor, secrets, secretsUnavailable = null, platform = process.platform, env = process.env,
-  openApplication = target => globalThis.nodeRepl.launchServices.openApplication(target)}) {
+  openApplication = target => globalThis.nodeRepl.launchServices.openApplication(target),
+  now = () => performance.now(), setResponseMeta = meta => globalThis.nodeRepl?.setResponseMeta?.(meta)}) {
   const eligible = ELIGIBLE_BY_PLATFORM[platform] ?? {};
   let vendor = null;
   const vendorService = () => (vendor ??= loadVendor());
@@ -170,7 +178,20 @@ export function createSkyService({loadVendor, secrets, secretsUnavailable = null
     await openApplication({applicationPath: entry});
   }
 
+  // cua/serviceMs (the native engine spec's Design, "Result meta"): everything below the wrapper, the service's policy
+  // and approval and the engine together, so a single-call row separates the host's transport from it, on the vendor's
+  // engine and on cua's alike. Response meta merges by key per execution, so a multi-call cell keeps its last call's.
   async function handleRpc(request) {
+    if (platform !== 'darwin') return delegate(request);
+    const started = now();
+    try {
+      return await delegate(request);
+    } finally {
+      setResponseMeta({'cua/serviceMs': Math.round((now() - started) * 1000) / 1000});
+    }
+  }
+
+  async function delegate(request) {
     const app = platform === 'linux' ? launchAppId(request) : null;
     if (app !== null) return launchLinuxApp(app);
     const plan = substitutionFor(request, eligible);

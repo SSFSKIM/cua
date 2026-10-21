@@ -2,6 +2,8 @@
 
 ## Open
 
+- **2026-10-21 — The tz probe's hung-child case failed once under full-suite load (minor, seen during #117 M1b's Finder wave).** `test/sandbox-probe/tz-probe.test.mjs` "a probe runs fresh children under the launcher, kills a hung one at the bound with its whole tree, and leaves nothing" (line 80) failed in a local `npm test` and passed 14/14 alone. Likely the same small fixed bound as the capture-argv row below. Fix: derive the bound from a measured tick, or assert the kill without depending on scheduler latency.
+
 - **2026-10-21 — The engine client's ping case sent two pings under full-suite load (minor, seen during #117 M1b's closing wave).** `test/spike-engine-client.test.mjs` "connect pings with cua-engine-1 and accepts an engine whose version and build match the bundle" (line 68) failed once in a local `npm test`. It saw the ping twice instead of once, and passed 15/15 three times alone. Likely a retry timer that fires under scheduler latency before the first answer is read. Fix: assert the first ping's shape and that a match is accepted, or make the retry budget independent of load.
 
 - **2026-10-21 — The vendor host's `api/browser-cuaapi/keypress` assertion failed once on the hosted runner (minor, #117 M1b; no fix here).** Gate `parity-browser` run [39531662385](https://github.com/SSFSKIM/cua/actions/runs/39531662385) on b8ec2d76, a scripts-only change: the vendor host's case failed one assertion, and the re-run [39533801956](https://github.com/SSFSKIM/cua/actions/runs/39533801956) passed. It is the vendor host's case, so cua's code cannot fix it. If it recurs, read the run directory on a re-run before widening a budget, as for the `drag` row below.

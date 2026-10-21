@@ -204,9 +204,10 @@ async function runOnce(options, io) {
     if (interrupt.signal) throw new Stop(`interrupted by ${interrupt.signal}`);
   };
   // windows: every step's device-clock window [{kind, key, at}]; judged: the rows whose activations are charged, by key.
-  // posted: the scenes a probe typed into, by when (./steps.mjs quiet); latin: the probe cells' source precondition.
+  // posted: the scenes a probe typed into, by when (./steps.mjs quiet); latin: the probe cells' source precondition;
+  // perContextOff: the preference read off, the Unicode matrix's precondition for every condition but its own.
   const ctx = {ops, run, rows, problems, meta, samples, n, engine, records: {}, lane: null, checkpoint, log, now, sleep: io.sleep ?? (ms => new Promise(done => setTimeout(done, ms))),
-    watcher: null, windows: [], judged: new Map(), posted: {}, latin: false};
+    watcher: null, windows: [], judged: new Map(), posted: {}, latin: false, perContextOff: false};
   let prepared = null, pre = null, laneStarted = null;
   const helpers = [];
   const snapshot = () => {
@@ -317,8 +318,9 @@ async function inputSections(ctx, plan) {
   try {
     const off = device(ctx, ['source', 'per-context', '--value', 'off']);
     const latin = device(ctx, ['source', 'select', '--source', ABC]);
-    ctx.latin = off?.perContext === false && latin?.selected === true && latin.current === ABC;
-    ctx.meta.inputSource.latin = ctx.latin;
+    ctx.perContextOff = off?.perContext === false;
+    ctx.latin = ctx.perContextOff && latin?.selected === true && latin.current === ABC;
+    Object.assign(ctx.meta.inputSource, {perContextOff: ctx.perContextOff, latin: ctx.latin});
     await probeCells(ctx, plan);
     if (plan.unicode?.fields.length) await unicodeSection(ctx, plan.unicode);
   } finally {

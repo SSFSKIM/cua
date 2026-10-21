@@ -31,8 +31,10 @@ test('cell korean --scene textedit: every row in run order under its source, Acc
   assert.deepEqual(result.rows.map(r => r.id), expected);
   assert.ok(result.rows.every(r => r.section === 'unicode' && r.ok === true && !r.invalid), JSON.stringify(result.rows.filter(r => !r.ok).slice(0, 2)));
   assert.ok(result.rows.some(r => r.id === 'textedit/latin/typeText.acceptance4') && result.rows.some(r => r.id === 'textedit/korean/typeText.acceptance4'));
-  // The probe cells' Latin, the Latin condition's, the mid-switch's and the one after its switch; then Korean.
-  assert.deepEqual(sources(steps), ['save', 'per-context off', 'select ABC', 'select ABC', 'select ABC', 'select ABC', 'select Korean.2SetKorean', 'select Korean.2SetKorean',
+  // The run's Latin; then each target's source read with it in front (this double's context always reads Korean): the
+  // Latin condition's and the mid-switch's selected there, the one after the switch; the Korean conditions' read as
+  // held; then the per-context condition's.
+  assert.deepEqual(sources(steps), ['save', 'per-context off', 'select ABC', 'current', 'select ABC', 'current', 'select ABC', 'select ABC', 'current', 'current',
     'per-context on', 'select Korean.2SetKorean', 'select ABC', 'current', 'restore']);
   // The mid-switch: the probe's switch scheduled inside the typing, finished after it.
   assert.deepEqual(matrixSteps(steps, 'probe').map(a => a[1]), ['input-source', 'finish', 'keystroke', 'finish']);
@@ -76,4 +78,33 @@ test('a composition the user window did not show, or a per-context context that 
   assert.deepEqual([rows[0].ok, rows[1].ok, rows[1].outcome.userKept], [true, false, false]);
   assert.ok(rows.slice(2).every(r => /disturbed the user window's composition/.test(r.invalid)));
   assert.equal(run.result.verdict, 'fail');
+});
+
+test('a per-context preference still reading on after the off request leaves every source-dependent row invalid, whatever a selection read back', async () => {
+  const stillOn = {matrix: (base, a) => { const out = base(a); return a[0] === 'source' && a[1] === 'per-context' ? {...out, answer: {perContext: true}} : out; }};
+  const {result} = await runWith({plan: planOf('korean', {scene: 'textedit'}), cellName: 'korean', cell: midSwitch, ops: stillOn});
+  assert.equal(result.meta.inputSource.latin, false);
+  const dependent = result.rows.filter(r => r.condition !== 'perContext');
+  assert.ok(dependent.length > 0);
+  assert.ok(dependent.every(r => /per-context preference did not read off/.test(r.invalid)), JSON.stringify(dependent.find(r => !r.invalid)));
+  assert.notEqual(result.verdict, 'pass');
+});
+
+test('each target\'s source is read with the target in front and selected there when it reads another; one that will not hold leaves its rows invalid', async () => {
+  const plan = {...planOf('korean', {scene: 'chrome'}), unicode: {fields: ['chrome'], conditions: ['latin', 'korean']}};
+  // Chrome's context reads Korean when it first comes to the front: the Latin source is selected with it in front.
+  let drift = true;
+  const drifted = {matrix: (base, a) => {
+    const out = base(a);
+    if (a[0] === 'source' && a[1] === 'current' && drift) { drift = false; return {...out, answer: {current: KOREAN_2SET}}; }
+    return out;
+  }};
+  const {steps, result} = await runWith({plan, cellName: 'korean', ops: drifted});
+  assert.deepEqual(sources(steps), ['save', 'per-context off', 'select ABC', 'current', 'select ABC', 'current', 'select Korean.2SetKorean', 'restore']);
+  assert.ok(result.rows.every(r => r.ok === true && !r.invalid));
+  // The Korean source never holds in Chrome's context: its rows invalid, the Latin ones judged.
+  const refused = {matrix: (base, a) => (a[0] === 'source' && a[1] === 'select' && a.includes(KOREAN_2SET) ? {answer: {selected: false, current: 'com.apple.keylayout.ABC'}, at: [1, 2]} : base(a))};
+  const stuck = await runWith({plan, cellName: 'korean', ops: refused});
+  assert.ok(stuck.result.rows.filter(r => r.condition === 'korean').every(r => /Korean source did not hold with chrome in front/.test(r.invalid)));
+  assert.ok(stuck.result.rows.filter(r => r.condition === 'latin').every(r => r.ok === true));
 });

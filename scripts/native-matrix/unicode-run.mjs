@@ -4,6 +4,11 @@
 // per-context preference before (the live harness's record) and restores both after, whatever happened; the put-back
 // verifies them again.
 //
+// A source says something about a row only where the row's target reads it: with the per-context preference on, each
+// app keeps its own, so every condition but the per-context one needs the preference read off (./run.mjs inputSections
+// asks for it; rows are invalid when it did not hold), and each target's source is established with the target in
+// front (read, selected there when it reads another, read back), never taken from a selection made elsewhere.
+//
 // Each row is a case on the field's scene (./steps.mjs caseRow, the method rows' runner: prepare, one facade call under
 // the key guard between two alert checks, the read-back by hash), frontmost under the Latin and Korean sources, behind
 // the user window under the composition and the per-context preference, where the oracle reads the user window around
@@ -26,13 +31,14 @@ export async function unicodeSection(ctx, plan) {
     const mine = rows.filter(r => r.condition === condition);
     if (!mine.length) continue;
     const source = ['korean', 'composing'].includes(condition) ? KOREAN_2SET : ABC;
-    const selected = condition === 'perContext' || useSource(ctx, source, condition);
+    const unset = condition !== 'perContext' && ctx.perContextOff !== true
+      ? 'the per-context preference did not read off: a source selected now says nothing about the one each target reads' : null;
     for (const field of plan.fields) {
       const ofField = mine.filter(r => r.field === field);
       if (!ofField.length) continue;
       await ctx.checkpoint();
-      if (!selected) { for (const r of ofField) invalidRow(ctx, r, `the ${source === ABC ? 'Latin' : 'Korean'} source was not selected and read back`); continue; }
-      if (condition === 'latin' || condition === 'korean') await frontmostRows(ctx, field, ofField);
+      if (unset) { for (const r of ofField) invalidRow(ctx, r, unset); continue; }
+      if (condition === 'latin' || condition === 'korean') await frontmostRows(ctx, field, ofField, source);
       else if (condition === 'midSwitch') await midSwitchRow(ctx, ofField[0]);
       else if (condition === 'composing') await composingRows(ctx, field, ofField);
       else await perContextRows(ctx, field, ofField);
@@ -49,16 +55,27 @@ function useSource(ctx, id, when) {
   ctx.meta.unicode.readings.push({when, select: id, held});
   return held;
 }
+// The source the scene now in front reads, established there: read, selected when it reads another, read back.
+// -> whether it holds.
+function establishSource(ctx, id, when) {
+  const current = device(ctx, ['source', 'current'])?.current ?? null;
+  if (current !== id) return useSource(ctx, id, when);
+  ctx.meta.unicode.readings.push({when, current, held: true});
+  return true;
+}
+const sourceName = id => (id === ABC ? 'Latin' : 'Korean');
+const notHeld = (id, scene) => `the ${sourceName(id)} source did not hold with ${scene} in front`;
 const rowBase = (ctx, r) => ({section: 'unicode', id: r.id, engine: ctx.engine, sample: ctx.n, ok: false, scene: r.field, target: r.field, regime: r.regime, method: r.method,
   case: r.string.id, expect: 'outcome', condition: r.condition, ...(r.user ? {user: r.user} : {})});
 const invalidRow = (ctx, r, reason) => push(ctx, {...rowBase(ctx, r), invalid: reason});
 const options = r => ({section: 'unicode', id: r.id, extra: {condition: r.condition}});
 
-// The Latin or Korean source: the field's scene in front, each row a frontmost case.
-async function frontmostRows(ctx, field, rows) {
+// The Latin or Korean source: the field's scene in front reading it, each row a frontmost case.
+async function frontmostRows(ctx, field, rows, source) {
   await quiet(ctx, field);
   const front = activate(ctx, field);
   if (!front?.ok) { for (const r of rows) invalidRow(ctx, r, `${field} did not come to the front (${front?.reason ?? 'no answer'})`); return; }
+  if (!establishSource(ctx, source, `${rows[0].condition}:${field}`)) { for (const r of rows) invalidRow(ctx, r, notHeld(source, field)); return; }
   for (const r of rows) await caseRow(ctx, field, 'frontmost', unicodeCase(r), options(r));
 }
 
@@ -80,7 +97,8 @@ async function behindUser(ctx, field, user) {
   return {userWindow};
 }
 
-// A Hangul composition in progress in the user window (the probe's ANSI r under the Korean source), read back by the
+// A Hangul composition in progress in the user window (the probe's ANSI r under the Korean source, established with the
+// user window in front), read back by the
 // focus probe as the composed jamo; then the rows behind it, each also requiring the user's field to keep that value.
 // After a row disturbed it, the rest say nothing about the composition: invalid.
 async function composingRows(ctx, field, rows) {
@@ -88,6 +106,7 @@ async function composingRows(ctx, field, rows) {
   const setup = await behindUser(ctx, field, user);
   if (setup.invalid) { for (const r of rows) invalidRow(ctx, r, setup.invalid); return; }
   const {userWindow} = setup;
+  if (!establishSource(ctx, KOREAN_2SET, `composing@${user}`)) { for (const r of rows) invalidRow(ctx, r, `no composition in progress: ${notHeld(KOREAN_2SET, user)}`); return; }
   const started = device(ctx, ['probe', 'keystroke', '--window', focusOf(userWindow), '--text', COMPOSITION.key, '--mode', 'ansiKeys', '--lead', '1500']);
   const finished = device(ctx, ['probe', 'finish']);
   ctx.posted[user] = ctx.now();
@@ -136,6 +155,7 @@ async function midSwitchRow(ctx, r) {
   await quiet(ctx, field);
   const front = activate(ctx, field);
   if (!front?.ok) return invalidRow(ctx, r, `${field} did not come to the front`);
+  if (!establishSource(ctx, ABC, `midSwitch:${field}`)) return invalidRow(ctx, r, notHeld(ABC, field));
   const retries = [];
   let preMs = PRE_MS.textedit;
   for (let n = 1; n <= PROBE_ATTEMPTS; n++) {

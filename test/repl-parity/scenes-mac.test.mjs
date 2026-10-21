@@ -15,7 +15,8 @@ import {
   setupSteps, teardownSteps, teardownFor, activateScene, restoreFinder, fixedStateProblems, finderOwned, isSceneWindow, FINDER_FILES_MODIFIED,
 } from '../../scripts/repl-parity/scenes-mac.mjs';
 import {indexOfTarget, indexOfRowCell, actionIndex, windowTitleOf} from '../../scripts/repl-parity/scenes-mac-text.mjs';
-import {parseAsns, parseAppInfo, stopRecorded, readFinderPreferences, writeFinderPreference, openApp, activateApp} from '../../scripts/repl-parity/scenes-mac-device.mjs';
+import {parseAsns, parseAppInfo, awaitOwnLaunch, stopRecorded, readFinderPreferences, writeFinderPreference, openApp, activateApp} from '../../scripts/repl-parity/scenes-mac-device.mjs';
+import {isSameLaunch} from '../../scripts/accept/fixture-app.mjs';
 import {readSavedPreferences} from '../../scripts/repl-parity/scenes-mac-finder.mjs';
 import {FIXTURE_BUNDLE_ID, FIXTURE_CONTROLS} from '../../scripts/native-matrix/fixtures/electron-fixture.mjs';
 import {PAGE_CONTROLS, PAGE_HTML} from '../../scripts/native-matrix/fixtures/scene-page.mjs';
@@ -252,7 +253,11 @@ function fakeDevice({running = [], windows = {}, finderPid = 736, finderHidden =
       windows[pid] = [{number: nextWindow++, bounds: {x: 140, y: 100, width: 720, height: 560}}];
     },
     awaitOwnLaunch: async ({bundleId, before}) => { const p = running.find(r => r.bundleId === bundleId && !before.includes(r.pid)); return {pid: p.pid, at: launches[p.pid]}; },
-    stopRecorded: async record => { calls.push(['stop', record.pid]); return {stopped: [record.pid], remaining: []}; },
+    stopRecorded: async record => {
+      if (!record?.pid) return {stopped: [], remaining: [], skipped: 'not recorded'};
+      calls.push(['stop', record.pid]);
+      return {stopped: [record.pid], remaining: []};
+    },
     spawnPage: async () => { const pid = nextPid++; launches[pid] = clock; return {pid, at: clock, url: 'http://127.0.0.1:4000/', port: 4000}; },
     placeChrome: async () => ({appPath: '/cache/chrome-mac-arm64/Google Chrome for Testing.app'}),
     buildElectron: () => ({appPath: '/cache/44.9.0-abc/cua Electron Fixture.app'}),
@@ -449,6 +454,95 @@ test('a Chrome launch that would not stop keeps its profile and its record, so a
   assert.ok(fs.existsSync(chrome.userDataDir), 'a running Chrome\'s profile is not removed under it');
   assert.ok(readState(run).scenes.chrome);
 }));
+
+test('a failed scene page start leaves no fresh Chrome profile or scene record', async () => withRun(async run => {
+  const io = fakeDevice();
+  io.spawnPage = async () => { throw new Error('scene page failed to start'); };
+  await assert.rejects(upScene('chrome', {run, io}), /scene page failed to start/);
+  assert.deepEqual(fs.readdirSync(run).filter(name => name.startsWith('chrome-user-data-')), []);
+  assert.deepEqual(readState(run), {scenes: {}});
+  assert.deepEqual(io.calls, [], 'Chrome was never launched');
+}));
+
+test('a Chrome launch whose window never appears stops Chrome and the page before removing its fresh profile', async () => withRun(async run => {
+  const io = fakeDevice(), stop = io.stopRecorded;
+  io.appWindows = () => [];
+  io.stopRecorded = async record => {
+    assert.equal(fs.readdirSync(run).filter(name => name.startsWith('chrome-user-data-')).length, 1, 'keep the profile until both processes stop');
+    return stop(record);
+  };
+  await assert.rejects(upScene('chrome', {run, io}), /no new window/);
+  assert.deepEqual(io.calls.filter(c => c[0] === 'stop').map(c => c[1]), [501, 500], 'Chrome and its page were stopped');
+  assert.deepEqual(fs.readdirSync(run).filter(name => name.startsWith('chrome-user-data-')), []);
+  assert.deepEqual(readState(run), {scenes: {}});
+}));
+
+for (const stubborn of ['chrome', 'page']) {
+  test(`a failed Chrome launch keeps its profile and a recoverable record while ${stubborn} will not stop`, async () => withRun(async run => {
+    const io = fakeDevice(), stop = io.stopRecorded;
+    io.appWindows = () => [];
+    io.stopRecorded = async record => {
+      const role = io.running.some(p => p.pid === record.pid && p.bundleId === CFT) ? 'chrome' : 'page';
+      if (role !== stubborn) return stop(record);
+      io.calls.push(['stop', record.pid]);
+      return {stopped: [], remaining: [record.pid]};
+    };
+    await assert.rejects(upScene('chrome', {run, io}), /no new window/);
+    const record = readState(run).scenes.chrome;
+    assert.ok(record, 'failed cleanup must keep a scene record for down');
+    assert.equal(record.scene, 'chrome');
+    assert.equal(record.bundleId, CFT);
+    assert.equal(record.at, io.launchOf(record.pid));
+    assert.equal(record.page.at, io.launchOf(record.page.pid));
+    assert.ok(fs.existsSync(record.userDataDir), 'do not remove the profile until both processes are confirmed stopped');
+    await assert.rejects(upScene('chrome', {run, io}), /already up/, 'a retry cannot orphan the retained profile');
+    io.stopRecorded = stop;
+    assert.equal((await downScene('chrome', {run, io})).down, true);
+    assert.equal(fs.existsSync(record.userDataDir), false);
+    assert.deepEqual(readState(run), {scenes: {}});
+  }));
+}
+
+for (const capture of ['ambiguous', 'unreadable']) {
+  test(`a Chrome ${capture} launch capture keeps its profile and recovery record until every browser is gone, without signalling them`, async () => withRun(async run => {
+    const io = fakeDevice(), open = io.openApp, launch = io.launchOf, exited = new Set(), signalled = [];
+    // Two matching processes appear together, or the browser's launch time cannot be read: neither identifies an owner.
+    if (capture === 'ambiguous') io.openApp = request => { open(request); open(request); };
+    io.launchOf = pid => exited.has(pid) || (capture === 'unreadable' && io.running.some(p => p.pid === pid && p.bundleId === CFT)) ? null : launch(pid);
+    io.awaitOwnLaunch = options => awaitOwnLaunch({...options, apps: io.runningApps, launch: io.launchOf, boundMs: 0});
+    io.stopRecorded = record => stopRecorded(record, {
+      sameLaunch: r => isSameLaunch(r, {launchOf: io.launchOf}),
+      quit: async pids => {
+        signalled.push(...pids);
+        for (const pid of pids) exited.add(pid);
+        return {quit: pids, remaining: []};
+      },
+    });
+    await assert.rejects(upScene('chrome', {run, io}), capture === 'ambiguous' ? /2 new .* processes appeared/ : /no .* process appeared/);
+    assert.equal(fs.readdirSync(run).filter(name => name.startsWith('chrome-user-data-')).length, 1, 'an unidentified browser may still be using the profile');
+    const record = readState(run).scenes.chrome;
+    assert.ok(record, 'the failed launch must remain recoverable by a later down');
+    assert.equal(record.pid, undefined, 'no browser has been identified as the run\'s');
+    assert.equal(record.at, undefined);
+    assert.deepEqual(signalled, [record.page.pid], 'only the page has a recorded launch to stop');
+    await assert.rejects(upScene('chrome', {run, io}), /already up/, 'a retry cannot orphan the retained profile');
+    // Losing one ambiguous candidate must not turn the survivor into an owned process on a later down.
+    while (io.running.length) {
+      const down = await downScene('chrome', {run, io});
+      assert.equal(down.down, false);
+      assert.equal(exitCodeFor(down), 1);
+      assert.deepEqual(down.stopped.remaining, io.running.map(p => p.pid));
+      assert.deepEqual(readState(run).scenes.chrome, record);
+      assert.ok(fs.existsSync(record.userDataDir));
+      assert.deepEqual(signalled, [record.page.pid], 'unidentified browsers are never signalled');
+      io.running.pop();   // the owner quits a browser; only absence can release the profile
+    }
+    assert.equal((await downScene('chrome', {run, io})).down, true);
+    assert.equal(fs.existsSync(record.userDataDir), false);
+    assert.deepEqual(readState(run), {scenes: {}});
+    assert.deepEqual(signalled, [record.page.pid]);
+  }));
+}
 
 test('stopRecorded signals only a pid that is still the recorded launch', async () => {
   const quit = [];

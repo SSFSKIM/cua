@@ -326,12 +326,16 @@ async function awaitWindow(pid, {before = [], io, boundMs = 20_000, onScreenOnly
     await io.sleep(250);
   }
 }
-// Launches `app` as a new process of `bundleId` (none of which may run) and waits for its window; a launch whose window
-// never comes is stopped again, since it is the run's. -> {pid, at, window}.
-async function launchOwn({app, bundleId, files, args, io}) {
+// Starts `app` as a new process of `bundleId` (none of which may run). -> {pid, at}, retained before waiting for a window.
+async function startOwn({app, bundleId, files, args, io}) {
   const before = io.runningApps(bundleId).map(p => p.pid), startedAt = io.now();
   io.openApp({app, files, args, newInstance: true});
-  const launch = await io.awaitOwnLaunch({bundleId, before, startedAt});
+  return io.awaitOwnLaunch({bundleId, before, startedAt});
+}
+// Launches `app` and waits for its window; a launch whose window never comes is stopped again, since it is the run's.
+// -> {pid, at, window}.
+async function launchOwn({io, ...options}) {
+  const launch = await startOwn({...options, io});
   try { return {...launch, window: await awaitWindow(launch.pid, {io})}; }
   catch (error) { await io.stopRecorded(launch); throw error; }
 }
@@ -411,9 +415,20 @@ export async function upScene(id, {run, chromeApp, electronApp, io = defaultIo()
     record = {app: scene.app, folder, pid, window, preferences, savedPreferences: {savedAt, kept}};
   } else if (id === 'chrome') {
     const app = chromeApp ?? (await io.placeChrome()).appPath, userDataDir = freshChromeProfile(run);
-    const page = await io.spawnPage(run);
-    try { record = {app, userDataDir, page, ...await launchOwn({app, bundleId: scene.bundleId, args: chromeArgs({userDataDir, url: page.url}), io})}; }
-    catch (error) { await io.stopRecorded(page); throw error; }
+    record = {scene: id, bundleId: scene.bundleId, app, userDataDir};
+    try {
+      record.page = await io.spawnPage(run);
+      // An open can start Chrome without yielding an unambiguous launch identity.
+      record.launchAttempted = true;
+      Object.assign(record, await startOwn({app, bundleId: scene.bundleId, args: chromeArgs({userDataDir, url: record.page.url}), io}));
+      record.window = await awaitWindow(record.pid, {io});
+    } catch (error) {
+      // Use down's cleanup even before up completed: remove the profile only after both processes stop, or keep their
+      // launch identities and the profile in state so a later down can finish (including when stopping itself throws).
+      writeState(run, {...state, scenes: {...state.scenes, [id]: record}});
+      await downScene(id, {run, io});
+      throw error;
+    }
   } else {
     const app = electronApp ?? io.buildElectron().appPath, userDataDir = join(run, 'electron-user-data');
     fs.mkdirSync(userDataDir, {recursive: true, mode: 0o700});
@@ -495,7 +510,10 @@ export async function downScene(id, {run, io = defaultIo()}) {
       result = {down: preferences.restored, ...(preferences.saved === false ? {} : {preferences}), ...(preferences.restored ? {} : {reason: unrestored(preferences)})};
     }
   } else {
-    const stopped = await io.stopRecorded(record);
+    // Without a captured identity no browser is safe to signal; only absence can release an attempted launch's profile.
+    const stopped = id === 'chrome' && record.launchAttempted && !record.pid
+      ? {stopped: [], remaining: io.runningApps(CHROME_FOR_TESTING_BUNDLE_ID).map(p => p.pid), skipped: 'browser launch was not identified; none is safe to signal'}
+      : await io.stopRecorded(record);
     const page = record.page ? await io.stopRecorded(record.page) : null;
     result = {down: !stopped.remaining.length && !page?.remaining.length, stopped, ...(page ? {page} : {})};
     // Chrome's profile is the launch's alone (freshChromeProfile): removed once Chrome has exited, never under it.

@@ -7,7 +7,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {EXPECTED} from './native-goldens/goldens.mjs';
-import {EXPIRING_FAULTS, audit, formatAudit, rerender} from './native-goldens/audit.mjs';
+import {EXPIRING_FAULTS, addsUndeclared, audit, formatAudit, rerender} from './native-goldens/audit.mjs';
 
 test('on the committed goldens nothing is undeclared, nothing over-declared, and every declaration is needed', () => {
   const report = audit();
@@ -59,4 +59,27 @@ test('re-rendering the committed goldens changes no pinned file', () => {
   const rendered = rerender({write: false});
   assert.equal(rendered.length, 8);
   assert.deepEqual(rendered.filter(r => r.changed), []);
+});
+
+test('a declaration is needed only when removing it adds an undeclared difference, never when removing it only removes one', () => {
+  const a = {kind: 'text', vendor: 'x', cua: 'y'}, b = {kind: 'missing', head: 'h', line: 'l'};
+  assert.equal(addsUndeclared([a], [a, b]), true, 'removing it uncovers b');
+  assert.equal(addsUndeclared([a, b], [a]), false, 'removing it only takes b away: it created b');
+  assert.equal(addsUndeclared([a], [a]), false);
+  assert.equal(addsUndeclared([a, b], [b, {...a}]), false, 'the same multiset in another order');
+  assert.equal(addsUndeclared([a], [a, {...a}]), true, 'one more of the same difference');
+  // Over-declared counts are not undeclared differences.
+  assert.equal(addsUndeclared([], [{kind: 'overdeclared', rule: 'part', head: null, left: 1}]), false);
+});
+
+test('a correction that creates a difference (an engine fix\'s value hard-coded after the fix) is reported delete, not ENGINE DEFECT', () => {
+  // TextEdit's window URL pinned to a path no recording has: the correction itself makes cua's line differ.
+  const wrong = {scene: 'textedit', kind: 'skyshot', correction: 'windowUrl', url: 'file:///nowhere/cua-scene.rtf', fault: 'engine', cause: 'test'};
+  const report = audit({expected: [...EXPECTED, wrong], source: {kind: 'live'}});
+  const entry = report.declarations.at(-1);
+  assert.deepEqual(entry.neededIn, []);
+  assert.ok(report.goldens.some(g => g.scene === 'textedit' && g.undeclared.length), 'it shows as an undeclared difference while declared');
+  const text = formatAudit(report);
+  assert.match(text, new RegExp(`delete: \\[${entry.index}\\] textedit skyshot windowUrl`));
+  assert.doesNotMatch(text, new RegExp(`ENGINE DEFECT: \\[${entry.index}\\]`));
 });

@@ -2,8 +2,9 @@
 // expire here"; PROVENANCE.md): the pinned renderings re-rendered from the recorded Skyshots, then every golden judged
 // against ./expected.json as the tests judge it (./goldens.mjs), reporting
 //   - every difference no declaration covers;
-//   - for each declaration, the goldens where it is needed (removing it changes what is left undeclared), so one that
-//     changes nothing is to be deleted;
+//   - for each declaration, the goldens where it is needed (removing it adds a difference left undeclared), so one that
+//     adds none is to be deleted, including one whose removal only takes differences away: it creates them (the
+//     M1b hold's TextEdit windowUrl correction, which pinned M0's document path after the engine had been fixed);
 //   - the declarations whose counts exceed what they absorb;
 //   - what remains once every expiring declaration (faults engine, redaction, engine or renderer) is deleted: on a live
 //     recording each such remainder is an engine defect to report, never a declaration to add.
@@ -16,7 +17,13 @@ import {SOURCE} from './source.mjs';
 export const EXPIRING_FAULTS = Object.freeze(['engine', 'redaction', 'engine or renderer']);
 const isExpiring = rule => EXPIRING_FAULTS.includes(rule.fault);
 const undeclaredOf = differences => differences.filter(d => d.kind !== 'overdeclared');
-const signature = differences => undeclaredOf(differences).map(d => JSON.stringify(d)).sort().join('\n');
+// Whether `without` (a golden's differences once a declaration is removed) holds an undeclared difference `base` (with
+// it) does not, counted as a multiset. A removal that only takes differences away is not a need.
+export function addsUndeclared(base, without) {
+  const left = new Map();
+  for (const d of undeclaredOf(base)) { const key = JSON.stringify(d); left.set(key, (left.get(key) ?? 0) + 1); }
+  return undeclaredOf(without).some(d => { const key = JSON.stringify(d), n = left.get(key) ?? 0; if (n) left.set(key, n - 1); return n === 0; });
+}
 
 // One golden judged under `rules`; the diff's index map is read under the same list's declarations of the first
 // observation.
@@ -37,9 +44,8 @@ export function audit({expected = EXPECTED, source = SOURCE} = {}) {
     const result = judge(scene, golden, rules, expected);
     goldens.push({scene, golden, undeclared: undeclaredOf(result.differences), overdeclared: result.differences.filter(d => d.kind === 'overdeclared'),
       added: result.added, lines: result.lines, overTenPercent: result.added > result.lines * 0.1 && !allowsAddedLines(rules)});
-    const base = signature(result.differences);
     for (const rule of rules) {
-      if (signature(judge(scene, golden, rules.filter(each => each !== rule), expected).differences) !== base) neededIn.get(rule).push(`${scene}/${golden}`);
+      if (addsUndeclared(result.differences, judge(scene, golden, rules.filter(each => each !== rule), expected).differences)) neededIn.get(rule).push(`${scene}/${golden}`);
     }
     afterDeletion.push({scene, golden, differences: undeclaredOf(judge(scene, golden, declared(scene, golden, kept), kept).differences)});
   }
@@ -74,7 +80,7 @@ export function formatAudit(report) {
     report.goldens.flatMap(g => g.undeclared.map(d => `${g.scene}/${g.golden}  ${describeDifference(d)}`)));
   list('Declarations:', report.declarations.map(({index, rule, expiring, neededIn}) => {
     const what = `[${index}] ${describeRule(rule)} (${rule.fault})`;
-    if (!neededIn.length) return `delete: ${what}: changes nothing`;
+    if (!neededIn.length) return `delete: ${what}: removing it leaves no difference undeclared`;
     if (expiring) return `${live ? 'ENGINE DEFECT' : 'expires at the live re-recording'}: ${what}: still needed in ${neededIn.join(', ')}`;
     return `keep: ${what}: needed in ${neededIn.join(', ')}`;
   }));

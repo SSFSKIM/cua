@@ -95,6 +95,37 @@ final class ForegroundAssistTests: XCTestCase {
     XCTAssertEqual(seam.reactivated, [target, user])
   }
 
+  /// The activation takes and the click is posted, but the user's app does not come back: the action fails
+  /// foregroundRestoreFailed, within the bound, and its meta still says the click was posted.
+  func testARestoreThatDoesNotTakeIsReportedWithTheClickPosted() {
+    let seam = GuardSeam(frontmost: user, reactivationTakesFront: true)
+    seam.reactivationRefused = [user]
+    var meta = meta()
+    XCTAssertThrowsError(try deliverClick(clickTarget(), route: .foreground, button: .left, count: 1, activation: nil,
+                                          foreground: ForegroundAssist(appPid: target, system: seam.system), targetActive: { true },
+                                          post: seam.system.post, meta: &meta)) { error in
+      XCTAssertEqual((error as? EngineError)?.errorName, "foregroundRestoreFailed")
+      XCTAssertTrue((error as? EngineError)?.message.contains("Do not repeat the click") == true)
+    }
+    XCTAssertEqual(seam.posts.map(\.kind), [.mouse(.leftMouseDown), .mouse(.leftMouseUp)])
+    XCTAssertNotNil(meta.startedAt, "the click was posted")
+    XCTAssertNotNil(meta.endedAt)
+    XCTAssertEqual(meta.inputRoute, .foreground)
+    XCTAssertEqual(seam.reactivated, [target, user])
+    XCTAssertEqual(seam.raises, 1, "the user's window is still raised")
+    XCTAssertGreaterThanOrEqual(seam.clock, foregroundWaitMs, "the restore's read is bounded")
+    XCTAssertLessThan(seam.clock, foregroundWaitMs + 100)
+  }
+
+  /// A delivery that failed is the error reported, even when the restore did not take either.
+  func testADeliverysFailureComesBeforeTheRestores() {
+    let seam = GuardSeam(frontmost: user, reactivationTakesFront: true)
+    seam.reactivationRefused = [user]
+    XCTAssertThrowsError(try ForegroundAssist(appPid: target, system: seam.system).run { throw userChanged("x") }) { error in
+      XCTAssertEqual((error as? EngineError)?.errorName, "userIntervened")
+    }
+  }
+
   func testRouteFourPostsThePlainClickWhileTheAppIsInFront() throws {
     let seam = GuardSeam(frontmost: user, reactivationTakesFront: true)
     var meta = meta()

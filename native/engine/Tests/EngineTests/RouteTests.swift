@@ -625,6 +625,8 @@ final class GuardSeam {
 
   /// Whether a successful re-activation makes its app frontmost (route 4's activation and restore).
   let reactivationTakesFront: Bool
+  /// Processes whose re-activation fails (route 4's restore of the user's app).
+  var reactivationRefused: Set<pid_t> = []
 
   init(frontmost: pid_t?, frontmostAfterPost: pid_t? = nil, reactivates: Bool = true, step: Double = 10, raiseCost: Double = 0,
        reactivationTakesFront: Bool = false, targetInFront: @escaping (Int) -> Bool = { _ in false }) {
@@ -675,8 +677,9 @@ final class GuardSeam {
     }
     system.reactivate = { pid in
       self.reactivated.append(pid)
-      if self.reactivates && self.reactivationTakesFront { self.frontmost = pid }
-      return self.reactivates
+      let reactivates = self.reactivates && !self.reactivationRefused.contains(pid)
+      if reactivates && self.reactivationTakesFront { self.frontmost = pid }
+      return reactivates
     }
     system.userWindow = { _ in (AXUIElementCreateApplication(990_002), 42) }
     var samples = 0

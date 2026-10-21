@@ -261,6 +261,95 @@ final class InterventionMonitorTests: XCTestCase {
   }
 }
 
+// MARK: The engine's drives: an observation's clearing, and the processes that count as the app's
+
+final class EngineInterventionTests: XCTestCase {
+  private let appPid: pid_t = 200, panelService: pid_t = 300
+  private let app = ResolvedApp(appPath: "/Applications/TextEdit.app", bundleIdentifier: "com.apple.TextEdit", displayName: "TextEdit", running: nil)
+  private var monitor: InterventionMonitor!
+  private var engine: Engine!
+  private let connection = ConnectionState(id: 1, fd: -1)
+
+  override func setUp() {
+    // Detection on with no tap: events arrive through note, as the tap's callback would deliver them.
+    monitor = InterventionMonitor(listenGranted: { true }, createsTap: false)
+    engine = Engine(paths: ServerPaths(socket: "/tmp/x.sock", directory: "/tmp", lock: "/tmp/x.lock", usage: "/tmp/cua-engine-test-usage.json"),
+                    intervention: monitor)
+  }
+
+  /// A user event long enough ago that its debounce has expired: only the re-query flag can refuse.
+  private func userClick(on pid: pid_t) {
+    monitor.note(TapEventFields(type: .leftMouseDown, sourcePID: 5, targetPID: pid, windowID: 0), at: unixMilliseconds() - 10_000)
+  }
+
+  private func verdict() -> InterventionVerdict {
+    engine.interventionGuard(app: app, pid: appPid, requestApp: nil, connection: connection).verdict
+  }
+
+  /// An observation whose screenshot fails after the tree was read clears nothing: the model has not seen the state the
+  /// flag asks it to re-query, so the next action is still refused. One that answers clears it.
+  func testAFailedObservationKeepsTheRequeryLock() {
+    engine.observationBegins(app, pid: appPid, connection: connection)
+    userClick(on: appPid)
+    XCTAssertEqual(verdict(), .userChanged)
+
+    let failed = engine.observationRead(app, owners: [appPid], connection: connection)
+    XCTAssertThrowsError(try engine.observationAnswered(failed, connection: connection) {
+      throw EngineError(name: "screenCaptureFailed", "The capture failed.")
+    })
+    XCTAssertEqual(verdict(), .userChanged, "a failed capture keeps the lock")
+
+    let answered = engine.observationRead(app, owners: [appPid], connection: connection)
+    XCTAssertEqual(engine.observationAnswered(answered, connection: connection) { "skyshot" }, "skyshot")
+    XCTAssertEqual(verdict(), .proceed)
+  }
+
+  /// The clearing is taken at the read: an event after the tree was read and before the observation answered is not
+  /// cleared by it.
+  func testAnEventAfterTheReadIsNotClearedByTheObservation() {
+    engine.observationBegins(app, pid: appPid, connection: connection)
+    let clearing = engine.observationRead(app, owners: [appPid], connection: connection)
+    userClick(on: appPid)
+    engine.observationAnswered(clearing, connection: connection) {}
+    XCTAssertEqual(verdict(), .userChanged)
+  }
+
+  /// A panel served by another process (an Open panel): the observation met its service, whose window takes the user's
+  /// clicks on the panel, so those clicks count as the user's on the app.
+  func testAClickOnAPanelServedByAnotherProcessCounts() {
+    engine.observationBegins(app, pid: appPid, connection: connection)
+    engine.observationAnswered(engine.observationRead(app, owners: [appPid, panelService], connection: connection), connection: connection) {}
+    XCTAssertEqual(verdict(), .proceed)
+    userClick(on: panelService)
+    XCTAssertEqual(verdict(), .userChanged, "the user's click on the panel is attributed to the app")
+  }
+
+  /// The process an action's events go to is driven for the app from then on, so the user's events on it stop the
+  /// action in flight, even when no observation met it.
+  func testAnActionsTargetProcessCountsInFlight() {
+    engine.observationBegins(app, pid: appPid, connection: connection)
+    let guarding = engine.interventionGuard(app: app, pid: appPid, requestApp: nil, connection: connection)
+    XCTAssertNoThrow(try guarding.checkBeforePosting())
+    engine.actionTargets(panelService, app: app, connection: connection)
+    XCTAssertNoThrow(try guarding.checkInFlight())
+    userClick(on: panelService)
+    XCTAssertThrowsError(try guarding.checkInFlight()) { error in
+      XCTAssertEqual((error as? EngineError)?.message, userChanged(app.appPath).message)
+    }
+  }
+
+  /// With detection off nothing is driven for the app, observation or target alike.
+  func testWithDetectionOffNothingIsDriven() {
+    let off = Engine(paths: ServerPaths(socket: "/tmp/x.sock", directory: "/tmp", lock: "/tmp/x.lock", usage: "/tmp/cua-engine-test-usage.json"),
+                     intervention: InterventionMonitor(listenGranted: { false }))
+    off.observationBegins(app, pid: appPid, connection: connection)
+    off.observationAnswered(off.observationRead(app, owners: [panelService], connection: connection), connection: connection) {}
+    off.actionTargets(panelService, app: app, connection: connection)
+    XCTAssertTrue(connection.interventionProcesses.isEmpty)
+    XCTAssertFalse(off.intervention.ledger.isDriven(panelService))
+  }
+}
+
 // MARK: Stopping a keyed sequence
 
 final class KeyedSequenceStopTests: XCTestCase {
@@ -328,5 +417,52 @@ final class KeyedSequenceStopTests: XCTestCase {
     XCTAssertEqual(posted, [.flags, .down, .up, .restore], "the first press whole, the second never begun")
     XCTAssertNotNil(meta.startedAt)
     XCTAssertNotNil(meta.endedAt)
+  }
+
+  /// Nothing posted, no interval: a stop before the first unit, empty text and a first event that cannot be created all
+  /// leave startedAt and endedAt null, which is what tells the wrapper nothing was entered (InputMeta.posting).
+  func testNothingPostedLeavesTheIntervalNull() {
+    var refused = meta()
+    var posted = 0
+    XCTAssertThrowsError(try keyText(units(3), concealed: false, checkSource: { _, _ in }, checkIntervention: { throw userChanged("x") },
+                                     post: { _ in posted += 1; return true }, pause: {}, meta: &refused))
+    XCTAssertEqual(posted, 0)
+    XCTAssertNil(refused.startedAt)
+    XCTAssertNil(refused.endedAt)
+    XCTAssertEqual(refused.entered, 0)
+
+    var empty = meta()
+    XCTAssertNoThrow(try keyText([], concealed: false, checkSource: { _, _ in }, checkIntervention: {}, post: { _ in true }, pause: {}, meta: &empty))
+    XCTAssertNil(empty.startedAt)
+    XCTAssertNil(empty.endedAt)
+
+    var uncreated = meta()
+    XCTAssertThrowsError(try keyText(units(2), concealed: false, checkSource: { _, _ in }, checkIntervention: {}, post: { _ in false }, pause: {}, meta: &uncreated)) { error in
+      XCTAssertEqual((error as? EngineError)?.errorName, "eventCreationFailed")
+    }
+    XCTAssertNil(uncreated.startedAt)
+    XCTAssertNil(uncreated.endedAt)
+
+    var pressRefused = meta()
+    XCTAssertThrowsError(try keyPresses([KeyPress(keyCode: 0, modifiers: [])], checkIntervention: { throw userChanged("x") },
+                                        post: { _ in true }, meta: &pressRefused))
+    XCTAssertNil(pressRefused.startedAt)
+    XCTAssertNil(pressRefused.endedAt)
+  }
+
+  /// The rule itself: started as the first successful post begins, ended after the last one that succeeded.
+  func testTheIntervalSpansTheSuccessfulPosts() {
+    var meta = meta()
+    XCTAssertFalse(meta.posting { false })
+    XCTAssertNil(meta.startedAt)
+    XCTAssertTrue(meta.posting { true })
+    let started = meta.startedAt
+    XCTAssertNotNil(started)
+    XCTAssertTrue(meta.posting { usleep(2_000); return true })
+    XCTAssertEqual(meta.startedAt, started, "the start is the first post's")
+    XCTAssertGreaterThan(meta.endedAt!, started!)
+    let ended = meta.endedAt
+    XCTAssertFalse(meta.posting { false })
+    XCTAssertEqual(meta.endedAt, ended, "a failed post does not move the end")
   }
 }

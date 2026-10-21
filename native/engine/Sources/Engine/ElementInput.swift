@@ -107,6 +107,7 @@ extension Engine {
     let entry = try context.connection.element(token, app: app, lineage: lineage) { ElementResolver.live($0, pid: appPid) }
     let owner = ownerPid(of: entry.element, fallback: appPid)
     try refuseForbiddenOwner(owner)
+    actionTargets(owner, app: app, connection: context.connection)
     return ElementTarget(entry: entry, owner: owner)
   }
 

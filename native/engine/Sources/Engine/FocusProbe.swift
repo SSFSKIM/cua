@@ -47,19 +47,54 @@ func valueHash(_ value: String) -> String {
   SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
 }
 
-/// Polls `read` every 50 ms until it answers a value or `timeoutMs` has passed.
-func awaitValue(timeoutMs: Double, now: () -> Double, sleep: (Double) -> Void, read: () -> String?) -> String? {
+/// What one poll of the named window's value found.
+enum ValuePoll: Equatable {
+  /// The focused element, inside the named window, carries this value.
+  case value(String)
+  /// The named window still has the focus, but its focused element carries no value yet.
+  case notYet
+  /// The focus left the named window (another window, or the focused element is not inside it): no value is read.
+  case focusMoved
+}
+
+/// Polls `read` every 50 ms until it answers a value, the focus moves, or `timeoutMs` has passed.
+func awaitValue(timeoutMs: Double, now: () -> Double, sleep: (Double) -> Void, read: () -> ValuePoll) -> String? {
   let started = now()
   while true {
-    if let value = read() { return value }
+    switch read() {
+    case .value(let value): return value
+    case .focusMoved: return nil
+    case .notYet: break
+    }
     guard now() - started < timeoutMs else { return nil }
     sleep(50)
   }
 }
 
+/// The system's focus as the probe reads it, a seam so the poll's checks are testable.
+struct FocusSource {
+  /// The focused app and its focused window now.
+  var reading: () -> FocusReading
+  /// The focused app's focused element now: the owner pid and frame of the window it belongs to, and a reader of its
+  /// value (called only once the element is known to sit in the named window).
+  var focusedElement: () -> (windowPid: pid_t?, windowFrame: CGRect?, value: () -> String?)?
+}
+
+/// One poll: the named window is still the focused one, and the focused element belongs to it, before its value is read.
+func pollNamedValue(_ named: NamedWindow, source: FocusSource) -> ValuePoll {
+  let now = source.reading()
+  guard named.matches(pid: now.windowPid, frame: now.windowFrame) else { return .focusMoved }
+  // An element that names no window yet cannot be placed: no read, but the wait goes on.
+  guard let element = source.focusedElement(), element.windowPid != nil else { return .notYet }
+  guard named.matches(pid: element.windowPid, frame: element.windowFrame) else { return .focusMoved }
+  return element.value().map(ValuePoll.value) ?? .notYet
+}
+
 /// The probe's report: the focused app and window, whether the window is the named one, and the hash of the focused
-/// element's value — `value` is asked only for the named window.
-func focusReport(_ reading: FocusReading, named: NamedWindow?, value: () -> String?) -> [String: Any] {
+/// element's value — read only while the named window keeps the focus and the element sits in it, re-checked before
+/// every read, so a focus that moves during the wait reports no hash rather than another window's.
+func focusReport(named: NamedWindow?, source: FocusSource, timeoutMs: Double = 1_000, now: () -> Double, sleep: (Double) -> Void) -> [String: Any] {
+  let reading = source.reading()
   let isNamed = named?.matches(pid: reading.windowPid, frame: reading.windowFrame) ?? false
   var report: [String: Any] = [
     "focusedApp": reading.appPid.map { ["pid": Int($0), "bundleId": reading.bundleIdentifier ?? NSNull()] as [String: Any] } ?? NSNull(),
@@ -67,7 +102,9 @@ func focusReport(_ reading: FocusReading, named: NamedWindow?, value: () -> Stri
     "named": isNamed,
     "valueHash": NSNull(),
   ]
-  if isNamed, let read = value() { report["valueHash"] = valueHash(read) }
+  if isNamed, let named, let value = awaitValue(timeoutMs: timeoutMs, now: now, sleep: sleep, read: { pollNamedValue(named, source: source) }) {
+    report["valueHash"] = valueHash(value)
+  }
   return report
 }
 
@@ -86,24 +123,34 @@ extension Probe {
       // As the engine enables a web-shaped app: the named window's process exposes its tree and values from here on.
       AXUIElementSetAttributeValue(prepare(AXUIElementCreateApplication(named.pid)), "AXManualAccessibility" as CFString, kCFBooleanTrue)
     }
-    let system = prepare(AXUIElementCreateSystemWide())
-    let application = elementAttribute(system, kAXFocusedApplicationAttribute)
-    let window = application.flatMap { elementAttribute($0, kAXFocusedWindowAttribute) }
-    let appPid = application.map { pid(of: $0) }
-    let reading = FocusReading(appPid: appPid, bundleIdentifier: appPid.flatMap { NSRunningApplication(processIdentifier: $0)?.bundleIdentifier },
-                               windowPid: window.map { pid(of: $0) }, windowFrame: window.flatMap { frame(of: $0) })
-    var report = focusReport(reading, named: named) {
-      awaitValue(timeoutMs: 1_000, now: monotonicMilliseconds, sleep: { usleep(UInt32($0 * 1000)) }) {
-        // The focused element is read again on every poll: a Chromium window may name it only once it is enabled.
-        guard let application, let focused = elementAttribute(application, kAXFocusedUIElementAttribute),
-              let value = attribute(focused, kAXValueAttribute) else { return nil }
-        if CFGetTypeID(value) == CFStringGetTypeID() { return value as? String }
-        if CFGetTypeID(value) == CFAttributedStringGetTypeID() { return (value as? NSAttributedString)?.string }
-        return nil
-      }
-    }
+    var report = focusReport(named: named, source: liveFocusSource(), now: monotonicMilliseconds, sleep: { usleep(UInt32($0 * 1000)) })
     report["accessibility"] = AXIsProcessTrusted()
     report["at"] = Int(unixMilliseconds())
     return emit(report, status: 0)
+  }
+
+  /// The system-wide focus through the Accessibility API, read afresh on every call (a Chromium window may name its
+  /// focused element only once it is enabled).
+  private static func liveFocusSource() -> FocusSource {
+    let system = prepare(AXUIElementCreateSystemWide())
+    func application() -> AXUIElement? { elementAttribute(system, kAXFocusedApplicationAttribute) }
+    return FocusSource(
+      reading: {
+        let application = application()
+        let window = application.flatMap { elementAttribute($0, kAXFocusedWindowAttribute) }
+        let appPid = application.map { pid(of: $0) }
+        return FocusReading(appPid: appPid, bundleIdentifier: appPid.flatMap { NSRunningApplication(processIdentifier: $0)?.bundleIdentifier },
+                            windowPid: window.map { pid(of: $0) }, windowFrame: window.flatMap { frame(of: $0) })
+      },
+      focusedElement: {
+        guard let focused = application().flatMap({ elementAttribute($0, kAXFocusedUIElementAttribute) }) else { return nil }
+        let window = elementAttribute(focused, kAXWindowAttribute)
+        return (window.map { pid(of: $0) }, window.flatMap { frame(of: $0) }, {
+          guard let value = attribute(focused, kAXValueAttribute) else { return nil }
+          if CFGetTypeID(value) == CFStringGetTypeID() { return value as? String }
+          if CFGetTypeID(value) == CFAttributedStringGetTypeID() { return (value as? NSAttributedString)?.string }
+          return nil
+        })
+      })
   }
 }

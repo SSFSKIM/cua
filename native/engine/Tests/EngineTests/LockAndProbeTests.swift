@@ -104,47 +104,113 @@ final class FocusProbeTests: XCTestCase {
     XCTAssertEqual(valueHash("한글"), "bd87f9bb68b67d2fa1cb82b6751820e946d5b1316d25d5fd96512fb4be44a2a8", "UTF-8, as the harness hashes the text it sent")
   }
 
+  /// A scripted focus: `windows` answers the focused window per reading (the last one repeats), `element` the focused
+  /// element's window per poll, and every value read is counted.
+  private final class ScriptedFocus {
+    var windows: [(pid: pid_t, frame: CGRect)?]
+    var elementWindows: [(pid: pid_t, frame: CGRect)?]
+    var value: String?
+    var valueReads = 0
+    private var readings = 0, polls = 0
+
+    init(windows: [(pid: pid_t, frame: CGRect)?], elementWindows: [(pid: pid_t, frame: CGRect)?], value: String?) {
+      self.windows = windows
+      self.elementWindows = elementWindows
+      self.value = value
+    }
+
+    var source: FocusSource {
+      FocusSource(
+        reading: {
+          let window = self.windows[min(self.readings, self.windows.count - 1)]
+          self.readings += 1
+          return FocusReading(appPid: window?.pid, bundleIdentifier: "io.github.ssfskim.cua.fixture.electron", windowPid: window?.pid, windowFrame: window?.frame)
+        },
+        focusedElement: {
+          let window = self.elementWindows[min(self.polls, self.elementWindows.count - 1)]
+          self.polls += 1
+          return (window?.pid, window?.frame, { self.valueReads += 1; return self.value })
+        })
+    }
+  }
+
+  private let named = NamedWindow(pid: 7, bounds: CGRect(x: 10, y: 20, width: 300, height: 400))
+  private let namedWindow: (pid: pid_t, frame: CGRect) = (7, CGRect(x: 10, y: 20, width: 300, height: 400))
+  private let otherWindow: (pid: pid_t, frame: CGRect) = (9, CGRect(x: 0, y: 0, width: 5, height: 5))
+
+  private func report(_ focus: ScriptedFocus, named: NamedWindow?) -> [String: Any] {
+    var clock: Double = 0
+    return focusReport(named: named, source: focus.source, now: { clock }, sleep: { clock += $0 })
+  }
+
   /// The value is read only when the focused window is the named one; otherwise it is never read, and only pids and
   /// bounds are reported.
   func testTheValueIsReadOnlyForTheNamedWindow() {
-    let named = NamedWindow(pid: 7, bounds: CGRect(x: 10, y: 20, width: 300, height: 400))
-    let reading = FocusReading(appPid: 7, bundleIdentifier: "io.github.ssfskim.cua.fixture.electron", windowPid: 7,
-                               windowFrame: CGRect(x: 10, y: 20, width: 300, height: 400))
-    var reads = 0
-    let report = focusReport(reading, named: named, value: { reads += 1; return "hello" })
-    XCTAssertEqual(report["named"] as? Bool, true)
-    XCTAssertEqual(report["valueHash"] as? String, valueHash("hello"))
-    XCTAssertEqual(reads, 1)
-    XCTAssertEqual((report["focusedApp"] as? [String: Any])?["pid"] as? Int, 7)
-    XCTAssertEqual((report["focusedWindow"] as? [String: Any])?["pid"] as? Int, 7)
+    let inside = ScriptedFocus(windows: [namedWindow], elementWindows: [namedWindow], value: "hello")
+    let found = report(inside, named: named)
+    XCTAssertEqual(found["named"] as? Bool, true)
+    XCTAssertEqual(found["valueHash"] as? String, valueHash("hello"))
+    XCTAssertEqual(inside.valueReads, 1)
+    XCTAssertEqual((found["focusedApp"] as? [String: Any])?["pid"] as? Int, 7)
+    XCTAssertEqual((found["focusedWindow"] as? [String: Any])?["pid"] as? Int, 7)
 
-    let elsewhere = focusReport(FocusReading(appPid: 9, bundleIdentifier: "com.apple.finder", windowPid: 9, windowFrame: CGRect(x: 0, y: 0, width: 5, height: 5)),
-                                named: named, value: { reads += 1; return "secret" })
-    XCTAssertEqual(elsewhere["named"] as? Bool, false)
-    XCTAssertTrue(elsewhere["valueHash"] is NSNull)
-    XCTAssertEqual(reads, 1, "never read outside the named window")
+    let elsewhere = ScriptedFocus(windows: [otherWindow], elementWindows: [otherWindow], value: "secret")
+    let other = report(elsewhere, named: named)
+    XCTAssertEqual(other["named"] as? Bool, false)
+    XCTAssertTrue(other["valueHash"] is NSNull)
+    XCTAssertEqual(elsewhere.valueReads, 0, "never read outside the named window")
 
-    let unnamed = focusReport(reading, named: nil, value: { reads += 1; return "x" })
-    XCTAssertTrue(unnamed["valueHash"] is NSNull)
-    XCTAssertEqual(reads, 1, "with no window named, no value is read")
+    let unnamed = ScriptedFocus(windows: [namedWindow], elementWindows: [namedWindow], value: "x")
+    XCTAssertTrue(report(unnamed, named: nil)["valueHash"] is NSNull)
+    XCTAssertEqual(unnamed.valueReads, 0, "with no window named, no value is read")
+  }
+
+  /// The focus moves to another window during the wait: the check before each read stops it, and no hash is reported
+  /// (never another window's value).
+  func testAFocusThatMovesDuringTheWaitReportsNoHash() {
+    let moved = ScriptedFocus(windows: [namedWindow, namedWindow, otherWindow], elementWindows: [namedWindow, otherWindow], value: nil)
+    let found = report(moved, named: named)
+    XCTAssertEqual(found["named"] as? Bool, true, "the window was the named one when the probe began")
+    XCTAssertTrue(found["valueHash"] is NSNull)
+    XCTAssertEqual(moved.valueReads, 1, "the one read made while the named window still had the focus")
+  }
+
+  /// The focused window is still the named one, but the focused element sits in another window (a popover of another
+  /// process): its value is never read.
+  func testAnElementOutsideTheNamedWindowIsNeverRead() {
+    let focus = ScriptedFocus(windows: [namedWindow], elementWindows: [otherWindow], value: "another window's text")
+    let found = report(focus, named: named)
+    XCTAssertTrue(found["valueHash"] is NSNull)
+    XCTAssertEqual(focus.valueReads, 0)
+  }
+
+  /// An element that names no window is not read, and the wait goes on until it does.
+  func testAnElementWithNoWindowIsWaitedFor() {
+    let focus = ScriptedFocus(windows: [namedWindow], elementWindows: [nil, nil, namedWindow], value: "late")
+    XCTAssertEqual(report(focus, named: named)["valueHash"] as? String, valueHash("late"))
+    XCTAssertEqual(focus.valueReads, 1)
   }
 
   func testNoFocusedAppOrWindowReadsAsNull() {
-    let report = focusReport(FocusReading(appPid: nil, bundleIdentifier: nil, windowPid: nil, windowFrame: nil), named: nil, value: { nil })
-    XCTAssertTrue(report["focusedApp"] is NSNull)
-    XCTAssertTrue(report["focusedWindow"] is NSNull)
-    XCTAssertEqual(report["named"] as? Bool, false)
+    let found = report(ScriptedFocus(windows: [nil], elementWindows: [nil], value: nil), named: nil)
+    XCTAssertTrue(found["focusedApp"] is NSNull)
+    XCTAssertTrue(found["focusedWindow"] is NSNull)
+    XCTAssertEqual(found["named"] as? Bool, false)
   }
 
-  /// The wait for a value after enabling the named pid's accessibility: polled up to 1 s.
+  /// The wait for a value after enabling the named pid's accessibility: polled up to 1 s, ended early by a focus change.
   func testTheValueWaitPollsForUpToOneSecond() {
     var clock: Double = 0
     var reads = 0
-    XCTAssertEqual(awaitValue(timeoutMs: 1_000, now: { clock }, sleep: { clock += $0 }, read: { reads += 1; return reads >= 3 ? "v" : nil }), "v")
+    XCTAssertEqual(awaitValue(timeoutMs: 1_000, now: { clock }, sleep: { clock += $0 }, read: { reads += 1; return reads >= 3 ? .value("v") : .notYet }), "v")
     clock = 0
     reads = 0
-    XCTAssertNil(awaitValue(timeoutMs: 1_000, now: { clock }, sleep: { clock += $0 }, read: { reads += 1; return nil }))
+    XCTAssertNil(awaitValue(timeoutMs: 1_000, now: { clock }, sleep: { clock += $0 }, read: { reads += 1; return .notYet }))
     XCTAssertGreaterThanOrEqual(clock, 1_000)
     XCTAssertLessThan(clock, 1_100)
+    clock = 0
+    reads = 0
+    XCTAssertNil(awaitValue(timeoutMs: 1_000, now: { clock }, sleep: { clock += $0 }, read: { reads += 1; return reads >= 2 ? .focusMoved : .notYet }))
+    XCTAssertEqual(reads, 2, "a moved focus ends the wait at once")
   }
 }

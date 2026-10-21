@@ -93,6 +93,20 @@ struct InputMeta {
     }
   }
 
+  /// The action interval's one rule, for every method that posts events: `post` posts one event (or one group posted
+  /// back to back) and answers whether it was posted. `startedAt` is stamped as the first post that succeeds begins and
+  /// `endedAt` after the last one that succeeded, so a request that posts nothing (refused, stopped before its first
+  /// event, empty, or whose first event could not be created) keeps both null, which is how the service and the wrapper
+  /// know nothing was entered.
+  @discardableResult
+  mutating func posting(_ post: () -> Bool) -> Bool {
+    let begun = unixMilliseconds()
+    guard post() else { return false }
+    if startedAt == nil { startedAt = begun }
+    endedAt = unixMilliseconds()
+    return true
+  }
+
   var wire: [String: Any] {
     var wire: [String: Any] = [
       "inputRoute": inputRoute?.wire ?? NSNull(),
@@ -143,16 +157,14 @@ func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation
     try activation.activate()
     meta.activationGuardMs = activation.guardMs
   }
-  var posted: (startedAt: Int64, endedAt: Int64)?
+  // The interval is stamped as the events are posted, so an error after them (route 4's restore) still says they were.
   func send() throws {
     try beforePosting()
     let made = events()
     guard !made.isEmpty else { throw EngineError(name: "eventCreationFailed", "The mouse events could not be created.") }
-    posted = postToProcess(made, pid: pid, post: post)
+    meta.posting { _ = postToProcess(made, pid: pid, post: post); return true }
   }
   if route == .foreground, let foreground { try foreground.run(send) } else { try send() }
-  meta.startedAt = posted?.startedAt
-  meta.endedAt = posted?.endedAt
 }
 
 /// Typed text keyed unit by unit (the spec's Design, "Text"): the input source checked before every event and after the
@@ -163,16 +175,12 @@ func keyText(_ units: [TypedUnit], concealed: Bool, checkSource: (_ entered: Int
              checkIntervention: () throws -> Void, post: (KeyEvent) -> Bool, pause: () -> Void, meta: inout InputMeta) throws {
   let total = units.reduce(0) { $0 + $1.consumed }
   var entered = 0
-  meta.startedAt = unixMilliseconds()
-  defer {
-    meta.endedAt = unixMilliseconds()
-    if !concealed { meta.entered = entered }
-  }
+  defer { if !concealed { meta.entered = entered } }
   for unit in units {
     try checkIntervention()
     for spec in unit.events {
       try checkSource(entered, total)
-      guard post(spec) else { throw EngineError(name: "eventCreationFailed", "A key event could not be created.") }
+      guard meta.posting({ post(spec) }) else { throw EngineError(name: "eventCreationFailed", "A key event could not be created.") }
       pause()
     }
     entered += unit.consumed
@@ -182,11 +190,9 @@ func keyText(_ units: [TypedUnit], concealed: Bool, checkSource: (_ entered: Int
 
 /// A key sequence's presses, each its four events with no gap (F §6.4), the intervention guard between presses.
 func keyPresses(_ presses: [KeyPress], checkIntervention: () throws -> Void, post: (KeyEvent) -> Bool, meta: inout InputMeta) throws {
-  meta.startedAt = unixMilliseconds()
-  defer { meta.endedAt = unixMilliseconds() }
   for press in presses {
     try checkIntervention()
-    for spec in keyPressEvents(press) { _ = post(spec) }
+    for spec in keyPressEvents(press) { meta.posting { post(spec) } }
   }
 }
 
@@ -263,6 +269,7 @@ extension Engine {
         let hit = hitTest(window: placed.window, at: placed.point)
         let owner = hit.map { ownerPid(of: $0, fallback: appPid) } ?? appPid
         try refuseForbiddenOwner(owner)
+        actionTargets(owner, app: app, connection: context.connection)
         let windowID = windowNumber(of: placed.window, pid: appPid, frame: placed.windowFrame)
         let target = ClickTarget(point: placed.point, windowFrame: placed.windowFrame, windowID: windowID, pid: owner)
         let route = coordinateClickRoute(forced: forced, foreground: foreground)
@@ -305,6 +312,7 @@ extension Engine {
       let application = prepare(AXUIElementCreateApplication(pid))
       let target = keyboardTarget(application, fallback: pid)
       try refuseForbiddenOwner(target)
+      actionTargets(target, app: app, connection: context.connection)
       meta.inputRoute = keyRoute(forced: forced)
       let activation = try forcedActivation(meta.inputRoute, pid: pid, application: application, meta: &meta)
       defer { activation?.deactivate() }  // every path out of the posting, error or success, undoes a forced activation
@@ -343,6 +351,7 @@ extension Engine {
       let application = prepare(AXUIElementCreateApplication(pid))
       let target = keyboardTarget(application, fallback: pid)
       try refuseForbiddenOwner(target)
+      actionTargets(target, app: app, connection: context.connection)
 
       let source = currentInputSource()
       // macOS may hold a source per app; the session's reading then says nothing about a background app.

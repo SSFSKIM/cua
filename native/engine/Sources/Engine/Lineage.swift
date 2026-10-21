@@ -31,6 +31,9 @@ final class ConnectionState: @unchecked Sendable {
   /// app at): an event attributed to the app after it refuses the connection's actions until a fresh get_app_state
   /// completes after the debounce (Intervention.swift).
   var interventionCleared: [String: Int] = [:]
+  /// Per app this connection drives, the processes whose attributed events count as the user's on it: the app's own and
+  /// every process an observation of it met (a panel's service, whose window takes the user's clicks on the panel).
+  var interventionProcesses: [String: Set<pid_t>] = [:]
   /// Apps acted on since their last observation, whose next get_app_state settles first (the vendor's deferred
   /// settle, F §8.6). An input method calls `markActed` once its events are posted.
   var needsSettle: Set<String> = []

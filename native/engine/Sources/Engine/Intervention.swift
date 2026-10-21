@@ -138,19 +138,27 @@ final class InterventionLedger: @unchecked Sendable {
     last[pid] = AttributedEvent(sequence: sequence, at: at)
   }
 
-  func lastEvent(_ pid: pid_t) -> AttributedEvent? {
+  func lastEvent(_ pid: pid_t) -> AttributedEvent? { lastEvent(among: [pid]) }
+
+  /// The latest event attributed to any of an app's processes (its own and a panel service's).
+  func lastEvent(among pids: Set<pid_t>) -> AttributedEvent? {
     lock.lock()
     defer { lock.unlock() }
-    return last[pid]
+    return Self.latest(pids.compactMap { last[$0] })
   }
 
-  /// The sequence a completed observation clears the flag to: now's, when the debounce has expired at `now`; nil (the
-  /// flag stays) while it is live. Read under one lock, so no event slips between the test and the sequence.
-  func clearPoint(_ pid: pid_t, now: Int64) -> Int? {
+  func clearPoint(_ pid: pid_t, now: Int64) -> Int? { clearPoint(among: [pid], now: now) }
+
+  /// The sequence a completed observation clears the flag to: now's, when the debounce of the app's processes has expired
+  /// at `now`; nil (the flag stays) while it is live. Read under one lock, so no event slips between the test and the
+  /// sequence.
+  func clearPoint(among pids: Set<pid_t>, now: Int64) -> Int? {
     lock.lock()
     defer { lock.unlock() }
-    return isDebouncing(last[pid], now: now) ? nil : sequence
+    return isDebouncing(Self.latest(pids.compactMap { last[$0] }), now: now) ? nil : sequence
   }
+
+  private static func latest(_ events: [AttributedEvent]) -> AttributedEvent? { events.max { $0.sequence < $1.sequence } }
 
   /// Forgets a closed connection; a process no connection drives any longer loses its record. Answers whether any
   /// process is still driven.
@@ -233,12 +241,15 @@ final class InterventionMonitor: @unchecked Sendable {
   let ledger = InterventionLedger()
   /// The Input Monitoring grant, read with the non-prompting preflight only (the request variant would raise a prompt).
   private let listenGranted: () -> Bool
+  /// False for the tests' monitor: detection runs with no tap, its events arriving through `note` only.
+  private let createsTap: Bool
   private let lock = NSLock()
   private var tap: CFMachPort?
   private var runLoop: CFRunLoop?
 
-  init(listenGranted: @escaping () -> Bool = { CGPreflightListenEventAccess() }) {
+  init(listenGranted: @escaping () -> Bool = { CGPreflightListenEventAccess() }, createsTap: Bool = true) {
     self.listenGranted = listenGranted
+    self.createsTap = createsTap
   }
 
   /// Connection `connection` drives `pid`, with detection on: the grant reads true and the tap runs, created now when it
@@ -249,7 +260,7 @@ final class InterventionMonitor: @unchecked Sendable {
     guard listenGranted() else { return nil }
     lock.lock()
     defer { lock.unlock() }
-    guard tap != nil || start() else { return nil }
+    guard !createsTap || tap != nil || start() else { return nil }
     return ledger.drive(pid, connection: connection)
   }
 
@@ -343,25 +354,54 @@ extension Engine {
   /// The intervention guard of an input request on `app` (process `pid`), which also starts driving it: the caller puts
   /// its reading into the meta, calls `checkBeforePosting` before anything is posted and `checkInFlight` between the
   /// events of the sequence. `requestApp` is the request's own app string, which the sentences name (the bound path when
-  /// the request named a pid).
+  /// the request named a pid). The reading covers every process the connection drives for the app: its own and those an
+  /// observation of it met, so a click the user makes on a panel served by another process (an Open panel) counts.
   func interventionGuard(app: ResolvedApp, pid: pid_t, requestApp: String?, connection: ConnectionState) -> InterventionGuard {
     let name = String((requestApp ?? app.appPath).prefix(1024))
     guard let now = intervention.drive(pid, connection: connection.id) else { return .off(app: name) }
     let ledger = intervention.ledger
     let cleared = connection.markDriven(app.key, now: now)
-    return InterventionGuard.reading(app: name, cleared: cleared, now: unixMilliseconds(), latest: { ledger.lastEvent(pid) })
+    connection.driveProcesses(app.key, [pid])
+    // Read on every check, so a target's process registered after the guard was made (`actionTargets`) counts in flight.
+    return InterventionGuard.reading(app: name, cleared: cleared, now: unixMilliseconds(),
+                                     latest: { ledger.lastEvent(among: connection.interventionProcesses[app.key] ?? [pid]) })
+  }
+
+  /// The process an action's events go to (the owner of its target element, the keyboard's focused process), driven for
+  /// `app` from now on when detection is on: the user's own events on it then stop the action in flight and count against
+  /// the next one.
+  func actionTargets(_ owner: pid_t, app: ResolvedApp, connection: ConnectionState) {
+    guard let processes = connection.interventionProcesses[app.key], !processes.contains(owner),
+          intervention.drive(owner, connection: connection.id) != nil else { return }
+    connection.driveProcesses(app.key, [owner])
   }
 
   /// An observation of `app` begins: the connection drives it from now on (events during the observation count).
   func observationBegins(_ app: ResolvedApp, pid: pid_t, connection: ConnectionState) {
     guard let now = intervention.drive(pid, connection: connection.id) else { return }
     _ = connection.markDriven(app.key, now: now)
+    connection.driveProcesses(app.key, [pid])
   }
 
-  /// An observation of `app` completed: the re-query flag clears only when the debounce has expired by now (the model's
-  /// re-query while the user still works leaves it set, so the next action is refused rather than posted into their work).
-  func observationCompleted(_ app: ResolvedApp, pid: pid_t, connection: ConnectionState) {
-    connection.clearIntervention(app.key, point: intervention.ledger.clearPoint(pid, now: unixMilliseconds()))
+  /// The observation has read the app, meeting `owners` (the processes serving its elements: a panel's service among
+  /// them): they are driven for the app from now on, and the re-query flag's clearing is taken now, when the tree the
+  /// model will see was read, so an event after the read is not cleared by it. The clearing applies only once the
+  /// observation answers (`observationAnswered`); one that fails after the read (its screenshot) leaves the flag set.
+  func observationRead(_ app: ResolvedApp, owners: Set<pid_t>, connection: ConnectionState) -> PendingClearing {
+    guard let processes = connection.interventionProcesses[app.key] else { return PendingClearing(key: app.key, point: nil) }
+    let driven = owners.subtracting(processes).filter { intervention.drive($0, connection: connection.id) != nil }
+    let all = connection.driveProcesses(app.key, driven)
+    // The flag clears only when the debounce has expired by now (the model's re-query while the user still works leaves
+    // it set, so the next action is refused rather than posted into their work).
+    return PendingClearing(key: app.key, point: intervention.ledger.clearPoint(among: all, now: unixMilliseconds()))
+  }
+
+  /// Runs the rest of an observation after its read, `finish` (the screenshot's join), and clears the re-query flag only
+  /// when it answers: a failed observation leaves the model without the state the flag asks it to re-query.
+  func observationAnswered<Answer>(_ clearing: PendingClearing, connection: ConnectionState, _ finish: () throws -> Answer) rethrows -> Answer {
+    let answer = try finish()
+    connection.clearIntervention(clearing.key, point: clearing.point)
+    return answer
   }
 
   /// A connection closed: its drives end, and the tap is torn down once no connection drives any app.
@@ -370,7 +410,21 @@ extension Engine {
   }
 }
 
+/// An observation's clearing of the re-query flag, taken when it read the app and applied when it answers.
+struct PendingClearing {
+  let key: String
+  /// The ledger sequence to clear to; nil while the debounce is live (or the app is not driven), leaving the flag set.
+  let point: Int?
+}
+
 extension ConnectionState {
+  /// Adds `pids` to the processes driven for the app `key`; answers them all.
+  @discardableResult
+  func driveProcesses(_ key: String, _ pids: Set<pid_t>) -> Set<pid_t> {
+    interventionProcesses[key, default: []].formUnion(pids)
+    return interventionProcesses[key]!
+  }
+
   /// A completed observation's clearing: to `point` when the debounce had expired (a nil point leaves the flag set), and
   /// only for an app this connection drives.
   func clearIntervention(_ key: String, point: Int?) {

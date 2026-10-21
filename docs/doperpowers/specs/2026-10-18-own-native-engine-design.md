@@ -918,6 +918,12 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   6. **paste and hidComposition were not run.** A SecurityAgent prompt was on screen from 12:34:35Z. By the coordinator's read of the log it was the owner's ClaudeUsage menubar app after a keychain read by another Claude CLI, not the hold's. The paste section's alert watch aborted cleanly, put-back ok. Both rows go to M2b's first hold.
   7. **Put-back held on every command**: Finder's keys, ABC with per-context 0, front app Terminal, no scene app or Chrome for Testing, the engine stopped.
   Date/Author: 2026-10-21, plan-executor for maws-3f.
+- Decision (menu activation held from the record, 2026-10-21, maws-3f; revises the M2a vendor reading's departure "the menu bar is recorded with no activation"): **cua takes the vendor's held activation for a background app's menu.**
+  The hold (M2a.5 hold item 3) showed that per-action activation is not enough: the app computes its menu items' enablement when the menu opens. cua's menu commands therefore did nothing on a background app while the vendor's worked, a functional regression. Parity outweighs the focus cost, which the vendor already pays.
+  - **Trigger and span as the vendor's** (vendor reading §4, items 2 and 6). Route 3's fake activation (`safelyEnforceActiveState`; the user's front app is kept in front) runs only at the menu-bar record: a plain click or AXPick on an AXMenuBarItem with an AXMenu child. It never runs on an ordinary observation. It holds through the recorded menu's observations and the item press.
+  - **Release, a declared difference in the owner's favour.** The vendor deactivates only at its lifecycle end. cua posts route 3's deactivation when the menu interaction ends: after the item press, at the first request aimed elsewhere, when the record clears, or after a 10 s idle bound. Front-app restore is activation-only. No AX touches any other app.
+  - **Verification.** Unit tests cover the span and the release. The live check is in M2b's matrix against the vendor, on Select All and Bold. `spikeMenuActivation` is removed (9c58dd0e).
+  Date/Author: 2026-10-21, plan-executor for maws-3f.
 - Decision: no cursor overlay, no per-app instruction texts, no cross-connection approval persistence, no audio, no lock-screen unlock in this work.
   Rationale: none is reachable by cua's facade today or wanted by the owner; MAWS synthesizes its own agent cursor.
   Date/Author: 2026-10-18, maws-3f.

@@ -60,7 +60,7 @@ private final class FakeClock {
 }
 
 final class SettleTests: XCTestCase {
-  private func run(_ clock: FakeClock, sample: Double = settleSampleMs, deadline: Double = .infinity,
+  private func run(_ clock: FakeClock, sample: Double = nativeSettleSampleMs, deadline: Double = .infinity,
                    ready: @escaping () -> Bool? = { true }) -> SettleReport {
     runSettle(sampleMs: sample, deadlineMs: deadline, now: { clock.now }, sleep: { clock.now += $0 }, drain: clock.drain, ready: ready)
   }
@@ -127,7 +127,7 @@ final class SettleTests: XCTestCase {
     // Every read of this clock finds it 70 ms later, as if the thread lost the processor between any two reads.
     var clock = 0.0
     var sleeps: [Double] = []
-    let report = runSettle(sampleMs: settleSampleMs, deadlineMs: 100, now: { defer { clock += 70 }; return clock },
+    let report = runSettle(sampleMs: nativeSettleSampleMs, deadlineMs: 100, now: { defer { clock += 70 }; return clock },
                            sleep: { sleeps.append($0); clock += $0 }, drain: { [] }, ready: { true })
     XCTAssertTrue(report.timedOut)
     XCTAssertFalse(sleeps.isEmpty)

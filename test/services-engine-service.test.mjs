@@ -310,6 +310,23 @@ test('cua/settle rides on the observation whose settle hit its cap, and on no ot
   assert.equal(meta['cua/settle'], 'capped');
 });
 
+test('an observation of a minimized window carries no screenshot and its meta says why; the next observation clears it', async t => {
+  const {getApp, call, meta, trees} = await session(t);
+  const {app} = await getApp('TextEdit');
+  assert.equal(meta['cua/screenshotOmitted'], null);
+  const tree = trees.get(APPS.TextEdit.appPath);
+  const shown = tree.screenshot;
+  Object.assign(tree, {screenshot: null, screenshotOmitted: 'windowMinimized'});
+  const state = await call(() => app.getAXStateAndScreenshot({emit: false}));
+  assert.equal(state.screenshot, undefined, 'the facade returns the state alone');
+  assert.equal(meta['cua/screenshotOmitted'], 'windowMinimized');
+  await assert.rejects(call(() => app.getScreenshot({emit: false})), {message: `Screenshot unavailable for ${APPS.TextEdit.appPath}.`});
+  assert.equal(meta['cua/screenshotOmitted'], 'windowMinimized', 'getScreenshot\'s refusal is the facade\'s; the meta says why');
+  Object.assign(tree, {screenshot: shown, screenshotOmitted: undefined});
+  await call(() => app.getAXState({emit: false}));
+  assert.equal(meta['cua/screenshotOmitted'], null);
+});
+
 test('a declined app fails "Computer Use was not approved to use <app>" with nothing observed; a forbidden one the vendor\'s sentence with nothing asked', async t => {
   const declined = await session(t, {answer: () => ({action: 'decline', content: null, _meta: null})});
   await assert.rejects(declined.getApp('TextEdit'), {message: 'Computer Use was not approved to use TextEdit'});

@@ -268,6 +268,9 @@ extension Engine {
         case .action(let action):
           try deliverAction(action, perform: { AXUIElementPerformAction(entry.element, $0 as CFString) }, meta: &meta)
         case .synthesized(let route):
+          // A point in a minimized window reaches nothing on screen (Minimized.swift); route 1 above still acts. A
+          // menu-bar item has no window of its own and is not in one.
+          try refuseMinimizedWindow(minimized: ownWindow.map(isMinimized) ?? false, app: app.displayName)
           guard let point, !hitAtPoint().covered else {
             throw EngineError(name: "cannotClickOffscreenElement", "The element is not visible on screen.")
           }
@@ -294,6 +297,7 @@ extension Engine {
         guard let window = primaryWindow(of: application), let windowFrame = frame(of: window) else {
           throw EngineError(name: "noWindowsAvailable", "noWindowsAvailable")
         }
+        try refuseMinimizedWindow(minimized: isMinimized(window), app: app.displayName)
         // Screenshot pixels to points, by the scale of the screenshot the model was given (Screenshot.swift).
         let local = try context.connection.screenshotPoint(x, y, app: app, window: window, lineage: context.lineage)
         let point = CGPoint(x: windowFrame.minX + local.x, y: windowFrame.minY + local.y)

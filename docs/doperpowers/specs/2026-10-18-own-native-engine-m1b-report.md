@@ -6,7 +6,7 @@ The spec's Progress, Decision Log ("M1b pre-flight", "M1b.1"–"M1b.4b", "whole-
 
 ## Status
 
-M1b is open on one line of its Proves: the goldens. Everything else it promises is met.
+**Closed 2026-10-21 05:40Z; see the addendum.** The account below is as of the 02:44Z hand-back, when M1b was open on one line of its Proves, the goldens.
 
 | Proves | State | Evidence |
 |---|---|---|
@@ -116,3 +116,39 @@ These need tickets. The dispatching session registers them.
   - ci-gate 39506615602 (1e4a5425) and 39507932222 (737dbf20): GREEN.
   - 39528214569 (34b4c796): GREEN, 6/6.
   - 39531662385 (b8ec2d76): RED 2/6, the two flakes in residue item 8. The failed gates re-ran GREEN in 39533801956 (engine-swift, parity-browser); the other four passed in the first run.
+
+## Addendum: closing M1b (2026-10-21 02:44Z–05:40Z)
+
+M1b is closed: all three Proves lines are met on the approved build 4b31b8e61195, and M1b.5 and M1b are ticked in the spec's Progress.
+
+| Proves | State | Evidence |
+|---|---|---|
+| Comparison A within the no-regression rule | Met (unchanged) | `m1b/comparison-a/` |
+| The selection table live | Met (unchanged) | `m1b/selection/` |
+| The goldens re-recorded live, Finder compared as full text, every engine-fault correction expired | **Met** | `m1b/goldens-final/`, installed in d6012ad6; expected.json in 77974c33; `goldens.mjs check` exit 0 |
+
+**The harness wave, off the mini (24c2f5a2..84c6eeea).** AutoStop's racing tests (22c92a99); Finder's unset defaults by macOS version (2acf166b, later withdrawn); the settled read for every scene and Chrome's filled page, with `up chrome` waiting for the page's own load beacon (0281bb97); the review's two findings, a capture's guard reads refusing a wrong window at once and the settle bound holding for the reads themselves (875631b6, 32036cb5). reviewer-medium: incorrect, then correct.
+
+**Hold 3 (03:53–04:03Z).** TextEdit, Chrome and Electron recorded at the first attempt; Finder refused three times (`m1b/goldens-run-incomplete-84c6eeea/`, kept). Read in the run's own window by structure: Finder's status-bar toggle state disagreed with what its window drew (the first ⌘/ wrote 1 and changed nothing), and an external `defaults write` changed nothing (Finder reads its chrome keys only at launch). The put-back was observed in one window (sidebar, status bar, no path bar) before the release.
+
+**The Finder fix (84c6eeea..05f85ed6).** Setup observes the run's first window, saves the owner's visible state beside the keys, and toggles each part only while the window still shows it; teardown toggles until the window matches the saved state, then writes the keys back (889ce621, 35c40e2a). The review's two recovery findings: the restored marker dropped before a toggle is sent, and an untrustworthy saved record refused (fb8d073b, ce5b0669). reviewer-medium: incorrect, then correct.
+
+**Hold 4 (04:52–05:00Z).** The first pass refused Finder, although it reached its fixed state at the first attempt, because the recorder compared frames by their JSON text and the engine varies key order; 0b44493e compares the four numbers, and the re-run at 0b44493e recorded all four scenes at the first attempt and the first reset (Chrome's settles 4, 2 and 3 reads; Finder's five frames the same). Finder's setup toggle counts were not logged in this recording (013f4eaa logs them from the next run); its evidence is the first-attempt pass, `frames.same`, and a fresh window after teardown drawing the sidebar and status bar and no path bar. The scene windows left Finder frontmost where Terminal had been; the recorder restores the owner's front app from the next run (b5923385). Put back: Finder's keys at ShowSidebar=1 and the other two unset, no scene app or engine running, ABC, the old `chrome-user-data` removed.
+
+**The expiry audit.** After `check --write` re-rendered the pinned files, 23 of 26 corrections were deleted; three TextEdit scene-state declarations stay. TextEdit's `windowUrl`, labelled `ENGINE DEFECT`, was an expired correction pinning M0's path, which the audit misread (d99812b7: a declaration is needed only when removing it adds a difference). One line remained, Finder's list `of 100 items` against cua's `of 205`: the vendor's count is capped by its hierarchy prefetch (MaxArrayCount 100). Per maws-3f's ruling it is declared as the vendor's defect, scoped to the count alone (7b9a3f1b), and cua keeps the true count (spec Decision Log "M1b closing wave" 1c).
+
+**The close wave's review.** reviewer-low on 05f85ed6..d6012ad6: incorrect, with four P2s and a P3: the vendor-defect match accepted a longer identifier and a count-shaped text anywhere in the line; the front-app restore could pick or launch another instance, and its error path could carry the owner's pid into meta.json; one test proved ordering, not the row. Fixed in b20126e3, 03a84e2a, bf13eb32, e82b53e4.
+
+**Tests.** 13a45700 moved the tests built on M0's Finder capture to a frozen copy, so the suite holds on the live data. `npm test`: 3,518 passed, 170 skipped, 0 failed. CI on the close is listed in the Validation update below.
+
+**Residue, updated.**
+1. Finder's unset default: resolved (observation-driven chrome).
+2. Chrome readiness: the harness half resolved; the M2a question stays (should `get_app_state` settle on a still-filling web tree, against the vendor's UI-settle wait).
+3. The minimized-window branch: unchanged.
+4. The goldens: resolved.
+5. The merge constraint (`native/engine/.build` in 3fcc4e49): unchanged.
+6. Stale remote branches: resolved by maws-3f.
+7. M4's sign wait: unchanged.
+8. The CI flakes: AutoStop fixed; the keypress, ping and tz-probe flakes are tracker rows.
+9. New: Finder's path bar detector reads any AXList outside the list and toolbar as the path bar, which is conservative (a false reading refuses); a capture with the path bar shown would let it be narrowed.
+10. New: the recorder's front-app put-back activates the saved process by pid through `NSRunningApplication` (scripts/repl-parity/activate-process.swift, never a launch) and is unverified live. Run over ssh, a background process's activation request may be declined under macOS's cooperative activation; meta.json would then read `{reactivated: true, inFront: false}`. The next recording settles it.

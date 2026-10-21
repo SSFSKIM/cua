@@ -9,7 +9,8 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {SkyComputerUseError} from '../../src/services/engine/protocol.mjs';
-import {DESELECT_ALL_KEY} from '../../scripts/repl-parity/scenes-mac-finder.mjs';
+import {DESELECT_ALL_KEY, FINDER_CHROME, readSavedPreferences, saveOriginalPreferences} from '../../scripts/repl-parity/scenes-mac-finder.mjs';
+import {setupSteps, teardownSteps} from '../../scripts/repl-parity/scenes-mac.mjs';
 import {EventEmitter} from 'node:events';
 import {RESET_MAY_CLEAR, SCREENSHOT_DIR, SETTLE_BOUND_MS, SETTLE_INTERVAL_MS, act, engineCheck, engineNodeRepl, goldenForm, main, observe, runSteps, settledState, stateDigest, verify} from '../../scripts/native-matrix/goldens-device.mjs';
 
@@ -348,16 +349,15 @@ test('settledState: each read carries the bound\'s remaining time as its deadlin
 });
 
 test('steps: activations and keys in order, each key through the engine only while its guard is in front', async () => {
-  const record = recordOf('finder', 400, {setup: [{activate: 'finder'}, {pressKey: 'super+2', guard: {pid: 400, window: 7}}, {pressKey: 'ctrl+super+s', hides: 'sidebar', guard: {pid: 400, window: 7}}]});
+  const record = recordOf('finder', 400, {setup: [{activate: 'finder'}, {pressKey: 'super+2', guard: {pid: 400, window: 7}}, {pressKey: 'alt+super+a', guard: {pid: 400, window: 7}}]});
   const client = fakeClient([{meta: {inputRoute: "2'"}}, {meta: {inputRoute: "2'"}}]);
   const activated = [];
   const io = {activate: async id => { activated.push(id); return {ok: true}; }, frontmost: () => ({pid: 400, topWindow: {ownerPid: 400, number: 7}}), sleep: async () => {}};
   const out = await runSteps({id: 'finder', phase: 'setup', record, client, io});
   assert.deepEqual(activated, ['finder']);
-  assert.deepEqual(client.calls.map(c => [c.method, c.args.key]), [['press_key', 'super+2'], ['press_key', 'ctrl+super+s']]);
-  assert.deepEqual(out.steps.map(s => s.pressKey ?? s.activate), ['finder', 'super+2', 'ctrl+super+s']);
+  assert.deepEqual(client.calls.map(c => [c.method, c.args.key]), [['press_key', 'super+2'], ['press_key', 'alt+super+a']]);
+  assert.deepEqual(out.steps.map(s => s.pressKey ?? s.activate), ['finder', 'super+2', 'alt+super+a']);
 });
-
 test('steps: a key whose guard is not in front stops the steps with nothing more sent', async () => {
   const record = recordOf('finder', 400, {setup: [{pressKey: 'super+2', guard: {pid: 400, window: 7}}, {pressKey: 'alt+super+a', guard: {pid: 400, window: 7}}]});
   const client = fakeClient([]);
@@ -377,6 +377,136 @@ test('steps: Finder\'s reset deselects all in the run\'s window; the teardown st
   assert.deepEqual(client.calls.map(c => c.args.key), [DESELECT_ALL_KEY, 'super+w']);
   const none = await runSteps({id: 'textedit', phase: 'reset', record: recordOf('textedit', 9), client, io});
   assert.deepEqual(none.steps, []);
+});
+
+// ---- Finder's chrome, driven by observation ----------------------------------------------------------------------
+
+// Finder through a fake engine. Each part has Finder's toggle `state` and what the window `drawn`s, set independently
+// (the closing hold on macOS 27: an unset ShowStatusBar drawn while its toggle state is hidden; the path bar's state and
+// window agreeing; the sidebar shown and set). A part's key flips its state, writes it to the key as a Boolean and makes
+// the window draw it; a part in `stuck` ignores its key on screen. get_app_state answers M0's Finder capture (its status
+// bar's identifiers restored) with the drawn parts in it.
+const FINDER_FOLDER = '/run/finder/cua-scene-finder';
+function finderSkyshot(drawn, pid) {
+  const shot = shot_('finder', 'skyshot.json');
+  for (const [token, id] of [['t276', 'statusBar'], ['t277', 'statusBarText']]) shot.nodes.find(n => n.token === token).identifier = id;
+  const drop = new Set(), subtree = token => { const i = shot.nodes.findIndex(n => n.token === token); drop.add(i); for (let j = i + 1; j < shot.nodes.length && shot.nodes[j].depth > shot.nodes[i].depth; j++) drop.add(j); };
+  if (!drawn.sidebar) { subtree('t2'); subtree('t86'); }
+  if (!drawn.statusBar) subtree('t276');
+  let nodes = shot.nodes.filter((_, i) => !drop.has(i));
+  if (drawn.pathBar) {
+    const list = nodes.findIndex(n => n.token === 't88');
+    let at = list + 1; while (at < nodes.length && nodes[at].depth > nodes[list].depth) at++;
+    if (nodes[at]?.token === 't276') at += 2;
+    const base = {...nodes[list], identifier: null, title: null, value: null};
+    nodes = [...nodes.slice(0, at), {...base, token: 'tP', role: 'AXList', description: '⟨4⟩', children: 1}, {...base, token: 'tP0', role: 'AXStaticText', value: '⟨6⟩', depth: base.depth + 1, children: 0}, ...nodes.slice(at)];
+  }
+  return {...shot, app: {...shot.app, pid}, nodes};
+}
+const shot_ = shot;
+function finderEngine({state, drawn, keys = {}, stuck = [], pid = 402}) {
+  const finder = {state: {...state}, drawn: {...drawn}, keys: {...keys}, pressed: []};
+  finder.client = {identity: {build: 'b'.repeat(64)}, calls: [],
+    async execute(method, args) {
+      finder.client.calls.push({method, args});
+      if (method === 'get_app_state') return {result: finderSkyshot(finder.drawn, pid)};
+      const part = FINDER_CHROME.find(p => p.toggle === args.key);
+      finder.pressed.push(args.key);
+      if (part) {
+        finder.state[part.id] = !finder.state[part.id];
+        finder.keys[part.key] = finder.state[part.id];
+        if (!stuck.includes(part.id)) finder.drawn[part.id] = finder.state[part.id];
+      }
+      return {result: {meta: {inputRoute: 3}}};
+    },
+    close() {}};
+  return finder;
+}
+function finderRun(finder, {pid = 402} = {}) {
+  const dir = scratch(), file = join(dir, 'finder-preferences.json');
+  const record = recordOf('finder', pid, {bundleId: 'com.apple.finder', folder: FINDER_FOLDER, window: {number: 7, bounds: {x: 0, y: 0, width: 920, height: 436}}});
+  record.setup = setupSteps('finder', record);
+  const clock = fakeClock();
+  const io = {activate: async () => ({ok: true}), frontmost: () => ({pid, topWindow: {ownerPid: pid, number: 7}}), ...clock, savedPreferencesFile: file,
+    teardown: () => teardownSteps('finder', record, {visible: readSavedPreferences(file)?.visible ?? null})};
+  saveOriginalPreferences(file, {ShowSidebar: finder.keys.ShowSidebar ?? null, ShowStatusBar: finder.keys.ShowStatusBar ?? null, ShowPathbar: finder.keys.ShowPathbar ?? null});
+  return {record, io, file, run: (phase, client = finder.client) => runSteps({id: 'finder', phase, run: dir, record, client, io, screenshots: join(dir, SCREENSHOT_DIR)})};
+}
+const keysOf = finder => FINDER_CHROME.map(p => finder.keys[p.key] ?? null);
+
+test('Finder setup on macOS 27: the unset status bar is drawn, its first ⌘/ writes 1 with the bar still there, the second writes 0 and hides it', async () => {
+  // The mini: ShowSidebar=1 and drawn; ShowStatusBar unset, drawn, toggle state hidden; ShowPathbar unset and hidden.
+  const finder = finderEngine({keys: {ShowSidebar: true}, state: {sidebar: true, statusBar: false, pathBar: false}, drawn: {sidebar: true, statusBar: true, pathBar: false}});
+  const {run, file} = finderRun(finder);
+  const keyTrail = [];
+  const execute = finder.client.execute;
+  finder.client.execute = async (method, args) => { const out = await execute(method, args); if (args.key === 'super+slash') keyTrail.push(finder.keys.ShowStatusBar); return out; };
+  const out = await run('setup');
+  assert.deepEqual(finder.pressed, ['super+2', 'alt+super+a', 'ctrl+super+s', 'super+slash', 'super+slash']);
+  assert.deepEqual(keyTrail, [true, false], 'unset, then 1 (no change on screen), then 0 (hidden)');
+  assert.deepEqual(finder.drawn, {sidebar: false, statusBar: false, pathBar: false});
+  assert.deepEqual(out.steps.filter(s => s.chrome).map(s => [s.chrome, s.toggles]), [['sidebar', 1], ['statusBar', 2], ['pathBar', 0]]);
+  const saved = readSavedPreferences(file);
+  assert.deepEqual(saved.visible, {sidebar: true, statusBar: true, pathBar: false}, 'the owner\'s visible chrome, observed before any toggle');
+  assert.deepEqual(saved.toggles, {sidebar: 1, statusBar: 2});
+  // Teardown: each part brought back to what the owner saw, by observation; the status bar takes one toggle back.
+  finder.pressed.length = 0;
+  const down = await run('teardown');
+  assert.deepEqual(finder.pressed, ['ctrl+super+s', 'super+slash', 'super+w']);
+  assert.deepEqual(finder.drawn, {sidebar: true, statusBar: true, pathBar: false}, 'the window as the owner had it');
+  assert.ok(readSavedPreferences(file).visibleRestoredAt, 'the visible state is marked restored');
+  assert.deepEqual(down.steps.filter(s => s.chrome).map(s => [s.chrome, s.toggles]), [['sidebar', 1], ['statusBar', 1], ['pathBar', 0]]);
+  // The keys now hold explicit values; down writes them back to the saved ones (ShowStatusBar deleted), as before.
+  assert.deepEqual(keysOf(finder), [true, true, null]);
+});
+
+test('Finder setup where the toggle state and the window agree (macOS 26-like): one toggle per shown part, and back', async () => {
+  const finder = finderEngine({state: {sidebar: true, statusBar: true, pathBar: true}, drawn: {sidebar: true, statusBar: true, pathBar: true}, keys: {ShowSidebar: true, ShowStatusBar: true, ShowPathbar: true}});
+  const {run} = finderRun(finder);
+  const out = await run('setup');
+  assert.deepEqual(out.steps.filter(s => s.chrome).map(s => s.toggles), [1, 1, 1]);
+  assert.deepEqual(finder.drawn, {sidebar: false, statusBar: false, pathBar: false});
+  const down = await run('teardown');
+  assert.deepEqual(down.steps.filter(s => s.chrome).map(s => s.toggles), [1, 1, 1]);
+  assert.deepEqual(finder.drawn, {sidebar: true, statusBar: true, pathBar: true});
+  assert.deepEqual(keysOf(finder), [true, true, true]);
+});
+
+test('Finder setup refuses a part still shown after two toggles, with nothing further sent; the toggles it sent are recorded', async () => {
+  const finder = finderEngine({state: {sidebar: false, statusBar: false, pathBar: false}, drawn: {sidebar: false, statusBar: true, pathBar: false}, stuck: ['statusBar']});
+  const {run, file} = finderRun(finder);
+  await assert.rejects(run('setup'), /statusBar is still shown after 2 toggles/);
+  assert.deepEqual(finder.pressed, ['super+2', 'alt+super+a', 'super+slash', 'super+slash']);
+  assert.deepEqual(readSavedPreferences(file).toggles, {statusBar: 2});
+  // A part that will not come back at teardown refuses too, and the window is not closed over it.
+  finder.pressed.length = 0;
+  finder.drawn.statusBar = false;
+  await assert.rejects(run('teardown'), /statusBar is still hidden after 2 toggles/);
+  assert.equal(finder.pressed.includes('super+w'), false);
+  assert.equal('visibleRestoredAt' in readSavedPreferences(file), false);
+});
+
+test('Finder setup observes only the run\'s own window: another window in front refuses before any chrome toggle', async () => {
+  const finder = finderEngine({state: {sidebar: true, statusBar: true, pathBar: false}, drawn: {sidebar: true, statusBar: true, pathBar: false}});
+  const {run} = finderRun(finder, {pid: 999});   // the run's record names another process than the engine's Finder
+  await assert.rejects(run('setup'), /could not be observed: other_process/);
+  assert.deepEqual(finder.pressed, ['super+2', 'alt+super+a']);
+});
+
+test('a run that died after its setup is restored from the saved file: the next run\'s teardown brings the window to the owner\'s visible state', async () => {
+  // The dead run hid the sidebar and the status bar and never tore down; its record (keys, visible state) is kept.
+  const finder = finderEngine({keys: {ShowSidebar: true}, state: {sidebar: true, statusBar: false, pathBar: false}, drawn: {sidebar: true, statusBar: true, pathBar: false}});
+  const dead = finderRun(finder);
+  await dead.run('setup');
+  assert.deepEqual(finder.drawn, {sidebar: false, statusBar: false, pathBar: false});
+  // The next run opens a new window, which draws what Finder's state now says: nothing. Its setup must not take that
+  // for the owner's state.
+  const next = finderRun(finder);
+  fs.copyFileSync(dead.file, next.file);
+  await next.run('setup');
+  assert.deepEqual(readSavedPreferences(next.file).visible, {sidebar: true, statusBar: true, pathBar: false}, 'the owner\'s, from the dead run');
+  await next.run('teardown');
+  assert.deepEqual(finder.drawn, {sidebar: true, statusBar: true, pathBar: false});
 });
 
 test('main: a scene command needs the approved engine, and the client is closed whatever happens', async () => {

@@ -3,8 +3,7 @@
 // and which is frontmost (lsappinfo, which answers over ssh as it does at the console), a process's windows and the
 // front window (FrontWindowProbe, scripts/accept/front-window.swift: pids, window numbers and bounds, never a name),
 // `open` through LaunchServices, the stop of a process the run launched, and Finder's three window-chrome preference
-// keys (./scenes-mac-finder.mjs) with the macOS major version that says what Finder shows while one is unset. Nothing
-// here reads a window title, an accessibility value, a process's environment or
+// keys (./scenes-mac-finder.mjs). Nothing here reads a window title, an accessibility value, a process's environment or
 // any preference but those three keys, and nothing signals a process the run did not record at its launch.
 import {execFileSync} from 'node:child_process';
 import {awaitLaunch, isSameLaunch, launchOf, quitOwned} from '../accept/fixture-app.mjs';
@@ -65,23 +64,14 @@ export async function stopRecorded(record, {sameLaunch = isSameLaunch, quit = qu
   return {stopped, remaining};
 }
 
-// `sw_vers -productVersion` prints `27.0`, `26.6.1` (a major alone is accepted too). -> the major as an integer; throws
-// on anything else, so Finder's unset defaults are never resolved from a guess.
-export function parseMacosMajor(text) {
-  const match = /^(\d+)(?:\.\d+){0,2}$/.exec(String(text ?? '').trim());
-  if (!match) throw new Error('the macOS version (sw_vers -productVersion) is not a version; Finder\'s unset chrome defaults cannot be resolved');
-  return Number(match[1]);
-}
-export const readMacosMajor = ({exec = run} = {}) => parseMacosMajor(exec('/usr/bin/sw_vers', ['-productVersion'], {timeout: 10_000}));
-
 // How `defaults read` says a key is unset (exit 1): macOS 26 "The domain/default pair of (<domain>, <key>) does not
 // exist", macOS 27 "Error: Could not find key '<key>' in domain '<domain>'." (the mini's goldens recording, 2026-10-20).
 const UNSET_KEY = /does not exist|Could not find key/;
 const withStderr = {stdio: ['ignore', 'pipe', 'pipe']};
 const failure = error => String(error.stderr || error.message).trim();
 
-// One window-chrome key as `defaults` reads it: a Boolean, or null for an unset key, which is a state of its own (Finder
-// then assumes its built-in default for the running macOS, FINDER_CHROME's shownWhenUnset). Any other failure throws, so an unreadable key is
+// One window-chrome key as `defaults` reads it: a Boolean, or null for an unset key, which is a state of its own (what
+// Finder then draws is its own; the scene reads it off the window). Any other failure throws, so an unreadable key is
 // never taken for an unset one.
 function readFinderPreference(key, exec) {
   let text;

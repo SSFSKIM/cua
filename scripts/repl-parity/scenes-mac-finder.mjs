@@ -8,12 +8,17 @@
 //
 // Hiding is a toggle in the window (View → Hide Sidebar ⌃⌘S, Hide Status Bar ⌘/, Hide Path Bar ⌥⌘P), sent by the driver
 // through the engine with the run's window in front, because nothing outside an engine may script Finder without an
-// Automation prompt. A toggle writes Finder's preference for new windows (ShowSidebar) or for every window
-// (ShowStatusBar, ShowPathbar), so which toggles to send is read from those keys and, for a key the owner never set, from
-// what Finder shows while it is unset on the running macOS (FINDER_CHROME's shownWhenUnset), and the keys as they were
-// before the run's first toggle are saved in one harness-wide file (SAVED_PREFERENCES) that a later up keeps, so a run that dies
-// before restoring is still restored from the owner's values by the next. Restoring is first the toggles back in the
-// run's window (Finder's own state then matches) and then the keys written back exactly where they still differ.
+// Automation prompt. Which toggles to send is read off the window, never off the preference keys: the keys cannot
+// predict what Finder draws (the closing hold on macOS 27: with ShowStatusBar unset a new window draws the status bar
+// while Finder's toggle state starts hidden, so the first ⌘/ wrote 1 with the bar unchanged and the second wrote 0 and
+// hid it), and Finder reads its chrome keys only at launch, so an external `defaults` write never reaches the running
+// Finder (writing ShowStatusBar false before the window opened did not hide the bar); only the toggles change what its
+// windows draw. So the driver observes the run's window and toggles each part until it is hidden (toggleUntil, at most
+// twice), and before the first toggle it records what the window showed, the owner's visible chrome. That record and
+// the keys as they were are saved in one harness-wide file (SAVED_PREFERENCES) that a later up keeps, so a run that
+// dies before restoring is still restored from the owner's state by the next. Restoring is the parts toggled back, by
+// observation, until the window shows the saved visible state, then the keys written back exactly where they differ
+// (an unset key deleted); a toggle cannot do the second, since Finder writes the state it leaves as a Boolean.
 //
 // The fixed state is checked on the engine's Skyshot of the run's window before anything of it is recorded
 // (finderWindowProblems): a toggle the preferences mispredicted, or a Finder that shows something new, refuses the
@@ -24,19 +29,13 @@ import {dirname, join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 
 export const FINDER_DOMAIN = 'com.apple.finder';
-// The parts the fixed state hides: the preference key, whether a window shows the part while the key is unset, per macOS
-// major version, and the menu's key. The default moved: macOS 27 shows the status bar with ShowStatusBar unset (the
-// mini's goldens sitting, 2026-10-21, and M0's capture of the same Finder, test/native-goldens/finder/skyshot.json),
-// where macOS 26 hides it. The others are not observed with the key unset on 27 (the mini sets ShowSidebar; its path bar
-// was unset and hidden in both captures) and keep Finder's long-standing defaults. A macOS without a row is refused, not
-// guessed (unsetShown): a wrong guess either leaves a part showing the owner's text, which the fixed-state check then
-// refuses, or toggles a hidden part on and back off with the restore misreading it.
+// The parts the fixed state hides: the preference key the part's toggle writes, and the menu's key.
 export const FINDER_CHROME = Object.freeze([
-  {id: 'sidebar', key: 'ShowSidebar', shownWhenUnset: {26: true, 27: true}, toggle: 'ctrl+super+s'},
-  {id: 'statusBar', key: 'ShowStatusBar', shownWhenUnset: {26: false, 27: true}, toggle: 'super+slash'},
-  {id: 'pathBar', key: 'ShowPathbar', shownWhenUnset: {26: false, 27: false}, toggle: 'alt+super+p'},
-].map(part => Object.freeze({...part, shownWhenUnset: Object.freeze(part.shownWhenUnset)})));
-export const FINDER_MACOS_MAJORS = Object.freeze(Object.keys(FINDER_CHROME[0].shownWhenUnset).map(Number));
+  {id: 'sidebar', key: 'ShowSidebar', toggle: 'ctrl+super+s'},
+  {id: 'statusBar', key: 'ShowStatusBar', toggle: 'super+slash'},
+  {id: 'pathBar', key: 'ShowPathbar', toggle: 'alt+super+p'},
+].map(Object.freeze));
+export const FINDER_PARTS = FINDER_CHROME.map(part => part.id);
 export const FINDER_KEYS = FINDER_CHROME.map(part => part.key);
 // The rest of the fixed state's keys: list view (the run's folder keeps it in its own .DS_Store), no row selected
 // (Edit → Deselect All, so a window kept from an earlier action starts as a fresh one), and the window's close.
@@ -55,24 +54,6 @@ export function parsePreference(text) {
   throw new Error('a Finder chrome preference is not a Boolean; the scene does not change it');
 }
 
-// Whether a window shows `part` while its key is unset on macOS `major` (an integer, scenes-mac-device.mjs
-// readMacosMajor); throws for a version the table has no row for, and for no version at all, even when every key is set,
-// so a caller that lost the version is caught at once rather than on the first owner with an unset key.
-function unsetShown(part, major) {
-  if (!Number.isInteger(major) || !Object.hasOwn(part.shownWhenUnset, major))
-    throw new Error(`Finder's chrome with its keys unset is known on macOS ${FINDER_MACOS_MAJORS.join(' and ')}, not on macOS ${major}: open a Finder window with ShowSidebar, ShowStatusBar and ShowPathbar unset, note which parts it shows, and add the row to FINDER_CHROME`);
-  return part.shownWhenUnset[major];
-}
-const isShown = (preferences, part, major) => { const unset = unsetShown(part, major); return preferences?.[part.key] ?? unset; };
-// Which parts a new run window shows under these preferences on macOS `major`. -> {sidebar, statusBar, pathBar}.
-export const chromeShown = (preferences, major) => Object.fromEntries(FINDER_CHROME.map(part => [part.id, isShown(preferences, part, major)]));
-// The toggles that hide what the preferences show on macOS `major`. -> [{pressKey, hides}].
-export const hideSteps = (preferences, major) => FINDER_CHROME.filter(part => isShown(preferences, part, major)).map(part => ({pressKey: part.toggle, hides: part.id}));
-// The toggles that bring each part back to the shown state the saved preferences give. Both sides are read with the
-// running macOS's default: the toggles act on this Finder, whose window shows an unset key as this macOS does, and the
-// key writes then put each key back exactly (an unset one deleted), whatever macOS the record was saved on.
-// -> [{pressKey, restores}].
-export const restoreSteps = (current, saved, major) => FINDER_CHROME.filter(part => isShown(current, part, major) !== isShown(saved, part, major)).map(part => ({pressKey: part.toggle, restores: part.id}));
 // The keys to write back so each holds exactly its saved value (null: delete the key). -> [{key, value}].
 export const preferenceWrites = (current, saved) => FINDER_KEYS.filter(key => (current?.[key] ?? null) !== (saved?.[key] ?? null)).map(key => ({key, value: saved?.[key] ?? null}));
 
@@ -131,19 +112,46 @@ export async function toggleUntil({part, shown, observe, toggle, sent = () => {}
 export function readSavedPreferences(file = SAVED_PREFERENCES) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch (error) { if (error.code === 'ENOENT') return null; throw error; }
 }
-// Saves `preferences` as the owner's unless a record exists already, whose values are then kept (they predate this
-// run's toggles, or an earlier run's that never restored). `macosMajor` is the macOS they were read on, kept for the
-// record: a restore reads the running macOS instead (restoreSteps), so a record without it (written before it was
-// recorded) restores the same way. -> {saved, savedAt, macosMajor?, kept}.
-export function saveOriginalPreferences(file, preferences, {now = () => new Date().toISOString(), macosMajor} = {}) {
-  const existing = readSavedPreferences(file);
-  if (existing) return {...existing, kept: true};
-  const record = {saved: Object.fromEntries(FINDER_KEYS.map(key => [key, preferences?.[key] ?? null])), savedAt: now(), ...(macosMajor === undefined ? {} : {macosMajor})};
+// The record: {saved: the keys, savedAt, visible?: the owner's visible chrome ({sidebar, statusBar, pathBar}, observed
+// before the first toggle), toggles?: {part: count} sent (information), visibleRestoredAt?: when a teardown brought
+// the window back to `visible` (unset again by any later toggle)}.
+function writeRecord(file, record) {
   fs.mkdirSync(dirname(file), {recursive: true, mode: 0o700});
   const temporary = `${file}.${process.pid}`;
   fs.writeFileSync(temporary, JSON.stringify(record, null, 2) + '\n', {mode: 0o600});
   fs.renameSync(temporary, file);
+}
+const existingRecord = file => {
+  const record = readSavedPreferences(file);
+  if (!record) throw new Error('no saved Finder preferences: the chrome is recorded only beside the owner\'s keys (up finder saves them)');
+  return record;
+};
+// Saves `preferences` as the owner's unless a record exists already, whose values are then kept (they predate this
+// run's toggles, or an earlier run's that never restored). -> {saved, savedAt, kept}.
+export function saveOriginalPreferences(file, preferences, {now = () => new Date().toISOString()} = {}) {
+  const existing = readSavedPreferences(file);
+  if (existing) return {...existing, kept: true};
+  const record = {saved: Object.fromEntries(FINDER_KEYS.map(key => [key, preferences?.[key] ?? null])), savedAt: now()};
+  writeRecord(file, record);
   return {...record, kept: false};
+}
+// Records the owner's visible chrome unless the record has one: an earlier run's that died is the owner's, while this
+// run's window may already show that run's toggles. -> {visible, kept}.
+export function recordVisibleState(file, visible) {
+  const record = existingRecord(file);
+  if (record.visible) return {visible: record.visible, kept: true};
+  writeRecord(file, {...record, visible: Object.fromEntries(FINDER_PARTS.map(part => [part, visible[part] === true]))});
+  return {visible: readSavedPreferences(file).visible, kept: false};
+}
+// Counts one toggle of `part` sent, and drops any restored mark: the window has moved since.
+export function recordToggleSent(file, part) {
+  const {visibleRestoredAt, ...record} = existingRecord(file);
+  void visibleRestoredAt;
+  writeRecord(file, {...record, toggles: {...record.toggles, [part]: (record.toggles?.[part] ?? 0) + 1}});
+}
+// Marks the visible chrome brought back to the saved state.
+export function markVisibleRestored(file, {now = () => new Date().toISOString()} = {}) {
+  writeRecord(file, {...existingRecord(file), visibleRestoredAt: now()});
 }
 export const clearSavedPreferences = (file = SAVED_PREFERENCES) => fs.rmSync(file, {force: true});
 

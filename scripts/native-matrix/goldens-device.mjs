@@ -36,7 +36,9 @@
 // fixed state (`--expect`, stateDigest of the fixed-state Skyshot the controller kept); otherwise it is refused with
 // nothing clicked, and the controller resets the scene for the problems a reset may clear (RESET_MAY_CLEAR).
 // `steps` sends a scene's setup, reset or teardown keys through the engine, each only while the key guard finds its
-// target in front (scripts/accept/key-guard.mjs, by pid and, for Finder, the run's window).
+// target in front (scripts/accept/key-guard.mjs, by pid and, for Finder, the run's window). Finder's chrome is set and
+// brought back by observation (scenes-mac.mjs setupSteps and teardownSteps): what its window shows is read off the
+// engine's Skyshot before each toggle, since Finder's keys do not say what it draws.
 import {execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import * as fs from 'node:fs';
@@ -50,8 +52,10 @@ import {engineBuild, engineVersion} from '../../src/runtime/engine-bundle.mjs';
 import {configuredIdentity, identityMatches, readSignature} from '../../src/runtime/engine-sign.mjs';
 import {advanceNumbering, render} from '../../src/services/engine/render.mjs';
 import {normalizeDrift} from '../../test/native-goldens/compare.mjs';
-import {SCENES, activateScene, fixedStateProblems, guardOf, readState, teardownFor} from '../repl-parity/scenes-mac.mjs';
-import {DESELECT_ALL_KEY} from '../repl-parity/scenes-mac-finder.mjs';
+import {SCENES, activateScene, finderOwned, fixedStateProblems, guardOf, readState, teardownFor} from '../repl-parity/scenes-mac.mjs';
+import {
+  DESELECT_ALL_KEY, FINDER_CHROME, SAVED_PREFERENCES, finderChromeShown, markVisibleRestored, recordToggleSent, recordVisibleState, toggleUntil,
+} from '../repl-parity/scenes-mac-finder.mjs';
 import {actionIndex} from '../repl-parity/scenes-mac-text.mjs';
 import {frontWindow} from '../repl-parity/scenes-mac-device.mjs';
 import {frontmostFromProbe, sendIfFrontmost} from '../accept/key-guard.mjs';
@@ -95,11 +99,16 @@ export const goldenForm = shot => { const {timings, ...rest} = shot; void timing
 // Why a Skyshot is not the scene's fixed state on the run's window: another process, another window, or (Finder) a
 // window showing what the run does not own. -> [{code, message, ...}], never carrying the Skyshot's text.
 export function sceneProblems(id, shot, record) {
+  return [...ownershipProblems(id, shot, record), ...fixedStateProblems(id, shot, record)];
+}
+// The part of sceneProblems that says the Skyshot is of the run's process and the scene's window, whatever state that
+// window is in (what Finder's chrome steps need before the window is in its fixed state).
+export function ownershipProblems(id, shot, record) {
   const problems = [];
   if (shot?.app?.pid !== record.pid) problems.push({code: 'other_process', message: `the observation is not of the run's process ${record.pid}`});
   const title = shot?.window?.title;
   if (typeof title !== 'string' || !title.startsWith(SCENES[id].window.title)) problems.push({code: 'other_window', message: 'the observed window is not the scene\'s window'});
-  return [...problems, ...fixedStateProblems(id, shot, record)];
+  return problems;
 }
 
 // One get_app_state as cua's service sends it (always with the screenshot), the image removed once the answer is in.
@@ -120,8 +129,9 @@ async function getState(client, record, screenshots, extra, options) {
 // 120 s default), and a read that answers past the bound is not accepted. -> {shot, problems: [], settle} with the
 // later of the two; or {shot: null, problems, settle}: a problem waiting cannot clear (with `strict`, any problem) at
 // once, the transient problems of the last read at the bound, or `unstable` (with `observed`, the last read, when it
-// passed the checks) when no two reads passed alike in time. `settle` is {reads, ms} for the record.
-export async function settledState({id, record, client, screenshots, sleep = sleepFor, now = Date.now, boundMs = SETTLE_BOUND_MS, intervalMs = SETTLE_INTERVAL_MS, strict = false}) {
+// passed the checks) when no two reads passed alike in time. `settle` is {reads, ms} for the record. `check` is what a
+// read must pass (sceneProblems; Finder's chrome steps check only ownership).
+export async function settledState({id, record, client, screenshots, sleep = sleepFor, now = Date.now, boundMs = SETTLE_BOUND_MS, intervalMs = SETTLE_INTERVAL_MS, strict = false, check = sceneProblems}) {
   const t0 = now(), deadline = t0 + boundMs;
   let reads = 0, previous = null, problems = [], observed = null;
   const settle = () => ({reads, ms: now() - t0});
@@ -136,7 +146,7 @@ export async function settledState({id, record, client, screenshots, sleep = sle
       throw error;
     }
     if (now() > deadline) break;
-    problems = sceneProblems(id, shot, record);
+    problems = check(id, shot, record);
     if (problems.some(p => strict || !TRANSIENT.has(p.code))) return {shot: null, problems, settle: settle()};
     const digest = problems.length ? null : stateDigest(goldenForm(shot));
     if (digest !== null && digest === previous) return {shot, problems: [], settle: settle()};
@@ -197,23 +207,44 @@ function stepsOf(id, phase, {record, run, io}) {
   throw new Error(`unknown phase ${phase}: setup, reset or teardown`);
 }
 
-// Runs a phase's steps in order; an activation that fails or a key whose guard is not in front stops them, with no later
-// step sent. io: {activate(id, run) -> {ok, reason?}, frontmost() -> {pid, topWindow}, teardown(id, run), sleep}.
-// -> {scene, phase, steps: [{activate} | {pressKey, route}]}.
-export async function runSteps({id, phase, run, record, client, io}) {
+// Runs a phase's steps in order; an activation that fails, a key whose guard is not in front, or a Finder chrome step
+// that cannot read the window or reach its state stops them, with no later step sent. Finder's chrome steps read the
+// run's window as a settled observation that must be the run's own window (ownershipProblems, every problem refused at
+// once) and keep what they saw on this device: only which parts were shown and the toggle counts leave.
+// io: {activate(id, run) -> {ok, reason?}, frontmost() -> {pid, topWindow}, teardown(id, run), sleep, now,
+// savedPreferencesFile}. -> {scene, phase, steps: [{activate} | {pressKey, route} | {visibleState, ...} | {chrome,
+// shown, toggles}]}.
+export async function runSteps({id, phase, run, record, client, io, screenshots = join(run ?? '.', SCREENSHOT_DIR)}) {
+  const sleep = io.sleep ?? sleepFor, saved = io.savedPreferencesFile ?? SAVED_PREFERENCES;
+  const press = async (key, guard) => {
+    const out = await sendIfFrontmost({target: guard, keys: [key], frontmost: io.frontmost, send: () => client.execute('press_key', {app: record.app, key})});
+    if (!out.sent) throw new Error(`${key} not sent: its target (pid ${guard?.pid}${guard?.window ? `, window ${guard.window}` : ''}) is not in front; no further step was sent`);
+    await sleep(STEP_SETTLE_MS);
+    return out.result.result?.meta?.inputRoute ?? null;
+  };
+  const chromeShown = async () => {
+    const read = await settledState({id, record, client, screenshots, sleep, now: io.now, strict: true, check: ownershipProblems});
+    if (read.problems.length) throw new Error(`the run's Finder window could not be observed: ${read.problems.map(p => p.code).join(', ')}; no further step was sent`);
+    return finderChromeShown(read.shot, finderOwned(record));
+  };
   const done = [];
   for (const step of stepsOf(id, phase, {record, run, io})) {
     if (step.activate) {
       const front = await io.activate(step.activate, run);
       if (!front?.ok) throw new Error(`${step.activate} did not come to the front: ${front?.reason ?? 'no answer'}; no further step was sent`);
       done.push({activate: step.activate});
-      continue;
-    }
-    const out = await sendIfFrontmost({target: step.guard, keys: [step.pressKey], frontmost: io.frontmost,
-      send: () => client.execute('press_key', {app: record.app, key: step.pressKey})});
-    if (!out.sent) throw new Error(`${step.pressKey} not sent: its target (pid ${step.guard?.pid}${step.guard?.window ? `, window ${step.guard.window}` : ''}) is not in front; no further step was sent`);
-    done.push({pressKey: step.pressKey, route: out.result.result?.meta?.inputRoute ?? null});
-    await (io.sleep ?? sleepFor)(STEP_SETTLE_MS);
+    } else if (step.visibleState === 'record') {
+      const shown = await chromeShown();
+      if (!shown) throw new Error('Finder\'s chrome could not be read: the run\'s list is not in its window; no further step was sent');
+      done.push({visibleState: 'record', ...recordVisibleState(saved, shown)});
+    } else if (step.visibleState === 'restored') {
+      markVisibleRestored(saved);
+      done.push({visibleState: 'restored'});
+    } else if (step.chrome) {
+      const toggle = FINDER_CHROME.find(part => part.id === step.chrome).toggle;
+      done.push({chrome: step.chrome, ...await toggleUntil({part: step.chrome, shown: step.shown, observe: chromeShown,
+        toggle: () => press(toggle, step.guard), sent: part => recordToggleSent(saved, part)})});
+    } else done.push({pressKey: step.pressKey, route: await press(step.pressKey, step.guard)});
   }
   return {scene: id, phase, steps: done};
 }
@@ -278,7 +309,7 @@ export async function main(argv, {io: given = {}} = {}) {
   try {
     if (command === 'observe' || command === 'verify') return await observe({id: scene, record, client, screenshots, sleep: io.sleep, now: io.now, strict: command === 'verify'});
     if (command === 'action') return await act({id: scene, record, client, screenshots, expect: flags.expect, sleep: io.sleep, now: io.now});
-    return await runSteps({id: scene, phase: flags.phase, run, record, client, io});
+    return await runSteps({id: scene, phase: flags.phase, run, record, client, io, screenshots});
   } finally { client.close(); }
 }
 

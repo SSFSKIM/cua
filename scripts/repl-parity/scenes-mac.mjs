@@ -29,7 +29,8 @@
 //
 // What a driver (the goldens recorder, the matrix) does with a scene, in order: `preflight`; `up <scene>`, whose record
 // carries the scene's `setup` steps; the setup steps (`activate` through `activate <scene>`, each `pressKey` through the
-// engine and the key guard with the step's `guard`, scripts/accept/key-guard.mjs); `fixedStateProblems` on the engine's
+// engine and the key guard with the step's `guard`, scripts/accept/key-guard.mjs; Finder's `visibleState` and `chrome`
+// steps observe the run's window through the engine and toggle by what it shows, scripts/native-matrix/goldens-device.mjs); `fixedStateProblems` on the engine's
 // Skyshot of the scene window before anything of it is recorded; the cells; `teardown-steps <scene>` and those steps;
 // `down <scene>`, which stops the run's process or, for Finder, checks the run's window is gone and writes back any
 // preference the hiding still leaves changed (`restore-finder` does that alone, for a run that died).
@@ -69,12 +70,12 @@ import {PAGE_CONTROLS, PAGE_INITIAL, PAGE_TITLE, startScenePage} from '../native
 import {FIXTURE_BUNDLE_ID, FIXTURE_CONTROLS, FIXTURE_INITIAL, buildElectronFixture} from '../native-matrix/fixtures/electron-fixture.mjs';
 import {CHROME_FOR_TESTING_BUNDLE_ID, placeChromeForTesting} from '../native-matrix/fixtures/chrome-for-testing.mjs';
 import {
-  activateApp, appWindows, appWindowState, awaitOwnLaunch, frontmostProcess, frontWindow, openApp, readFinderPreferences, readMacosMajor, runningApps,
+  activateApp, appWindows, appWindowState, awaitOwnLaunch, frontmostProcess, frontWindow, openApp, readFinderPreferences, runningApps,
   stopRecorded, writeFinderPreference,
 } from './scenes-mac-device.mjs';
 import {
-  CLOSE_WINDOW_KEY, DESELECT_ALL_KEY, LIST_VIEW_KEY, SAVED_PREFERENCES, chromeShown, clearSavedPreferences, finderWindowProblems, hideSteps, preferenceWrites,
-  readSavedPreferences, restoreSteps, saveOriginalPreferences,
+  CLOSE_WINDOW_KEY, DESELECT_ALL_KEY, FINDER_PARTS, LIST_VIEW_KEY, SAVED_PREFERENCES, clearSavedPreferences, finderWindowProblems, preferenceWrites,
+  readSavedPreferences, saveOriginalPreferences,
 } from './scenes-mac-finder.mjs';
 import {windowTitleOf} from './scenes-mac-text.mjs';
 import {isSameLaunch, launchOf} from '../accept/fixture-app.mjs';
@@ -262,20 +263,25 @@ export const guardOf = (id, record) => ({pid: record.pid, bundleId: sceneOf(id).
 
 // The steps that take a scene from up to its fixed state, in order: `{activate: <scene>}` (the `activate` command) and
 // `{pressKey, guard}` (through the engine, sent only while the key guard finds `guard` in front). Finder: in front, list
-// view, nothing selected, then the toggles that hide what `preferences` (Finder's, read at up) show on the macOS read at
-// up (record.macosMajor). The other scenes come up in their fixed state. -> [step].
-export function setupSteps(id, record, preferences = {}) {
+// view, nothing selected, then `{visibleState: 'record'}` (the window's chrome as the owner sees it, observed before any
+// toggle and saved beside the keys) and one `{chrome: <part>, shown: false}` per part (its toggle sent only while the
+// window still shows it, at most twice; scenes-mac-finder.mjs toggleUntil). The preference keys do not say what the
+// window draws, so they choose nothing here. The other scenes come up in their fixed state. -> [step].
+export function setupSteps(id, record) {
   if (sceneOf(id).id !== 'finder') return [];
   const guard = guardOf(id, record);
-  return [{activate: 'finder'}, {pressKey: LIST_VIEW_KEY, guard}, {pressKey: DESELECT_ALL_KEY, guard}, ...hideSteps(preferences, record.macosMajor).map(step => ({...step, guard}))];
+  return [{activate: 'finder'}, {pressKey: LIST_VIEW_KEY, guard}, {pressKey: DESELECT_ALL_KEY, guard}, {visibleState: 'record', guard},
+    ...FINDER_PARTS.map(part => ({chrome: part, shown: false, guard}))];
 }
-// The steps before `down`: Finder in front, the toggles that bring its chrome back to the `saved` preferences on the
-// running macOS `macosMajor` (none when nothing is saved), then the run's window closed. The other scenes need none:
-// down stops the run's process. -> [step].
-export function teardownSteps(id, record, {current = {}, saved = null, macosMajor} = {}) {
+// The steps before `down`: Finder in front, each part toggled by observation until the window shows the saved
+// `visible` chrome, `{visibleState: 'restored'}` (marked in the saved record), then the run's window closed. Without a
+// saved visible state (a run that died before its setup observed) nothing was toggled and nothing is. The other scenes
+// need none: down stops the run's process. -> [step].
+export function teardownSteps(id, record, {visible = null} = {}) {
   if (sceneOf(id).id !== 'finder') return [];
   const guard = guardOf(id, record);
-  return [{activate: 'finder'}, ...(saved ? restoreSteps(current, saved, macosMajor) : []).map(step => ({...step, guard})), {pressKey: CLOSE_WINDOW_KEY, closes: 'window', guard}];
+  const chrome = visible ? [...FINDER_PARTS.map(part => ({chrome: part, shown: visible[part] === true, guard})), {visibleState: 'restored'}] : [];
+  return [{activate: 'finder'}, ...chrome, {pressKey: CLOSE_WINDOW_KEY, closes: 'window', guard}];
 }
 
 // The page's controls whose value Chromium exposes only once its accessibility tree has filled: the heading's level, the
@@ -324,7 +330,7 @@ const defaultIo = () => ({
   runningApps, appWindows, appWindowState, openApp, activateApp, awaitOwnLaunch, stopRecorded, launchOf, now: Date.now, sleep,
   frontmostProcess: () => frontmostProcess(), frontWindow: () => frontWindow(),
   finderPid: () => runningApps(FINDER_BUNDLE_ID)[0]?.pid ?? null,
-  finderPreferences: () => readFinderPreferences(), macosMajor: () => readMacosMajor(), writeFinderPreference: (key, value) => writeFinderPreference(key, value), savedPreferencesFile: SAVED_PREFERENCES,
+  finderPreferences: () => readFinderPreferences(), writeFinderPreference: (key, value) => writeFinderPreference(key, value), savedPreferencesFile: SAVED_PREFERENCES,
   placeChrome: () => placeChromeForTesting(), buildElectron: () => buildElectronFixture(), spawnPage, pageLoaded: run => readPageLoaded(run),
 });
 
@@ -424,9 +430,8 @@ export const electronArgs = ({userDataDir, placement = SCENES.electron.placement
 
 // Brings one scene up. -> the scene's record: {scene, app, bundleId, pid, at?, window, setup, ...}, where `setup` lists
 // the driver's steps to the fixed state (setupSteps). Finder's also carries the chrome `preferences` read before its
-// window opened, the `macosMajor` they are read on and the `chrome` parts its window shows under them, and
-// `savedPreferences` says when the owner's values were saved and whether that record was `kept` from earlier (this run's
-// earlier up, or a run that died before restoring them).
+// window opened, and `savedPreferences` says when the owner's values were saved and whether that record was `kept`
+// from earlier (this run's earlier up, or a run that died before restoring them).
 export async function upScene(id, {run, chromeApp, electronApp, io = defaultIo()}) {
   const scene = sceneOf(id), state = readState(run);
   if (state.scenes[id]) throw new Error(`scene ${id} is already up in this run; bring it down first`);
@@ -447,16 +452,15 @@ export async function upScene(id, {run, chromeApp, electronApp, io = defaultIo()
       fs.writeFileSync(join(folder, name), `${name}\n`, {mode: 0o600});
       fs.utimesSync(join(folder, name), modified, modified);
     }
-    // Read before the window opens, which is when Finder applies them. What an unset key shows depends on the macOS,
-    // and a macOS without a known default (or an unreadable one) refuses here, before any window opens.
-    const preferences = io.finderPreferences(), macosMajor = io.macosMajor(), chrome = chromeShown(preferences, macosMajor);
+    // Read before the window opens: the owner's values, to be written back at down.
+    const preferences = io.finderPreferences();
     // Every window Finder has right before the open, on screen or not, is not the run's.
     const before = documentWindows(io.appWindows(pid)).map(w => w.number);
     io.openApp({app: scene.app, files: [folder]});
     const window = await awaitWindow(pid, {before, io, onScreenOnly: true});
     // Saved once the run owns its window (no toggle can follow a failed up), from the reading taken before the open.
-    const {savedAt, kept} = saveOriginalPreferences(io.savedPreferencesFile, preferences, {macosMajor});
-    record = {app: scene.app, folder, pid, window, preferences, macosMajor, chrome, savedPreferences: {savedAt, kept}};
+    const {savedAt, kept} = saveOriginalPreferences(io.savedPreferencesFile, preferences);
+    record = {app: scene.app, folder, pid, window, preferences, savedPreferences: {savedAt, kept}};
   } else if (id === 'chrome') {
     const app = chromeApp ?? (await io.placeChrome()).appPath, userDataDir = freshChromeProfile(run);
     record = {scene: id, bundleId: scene.bundleId, app, userDataDir};
@@ -481,7 +485,7 @@ export async function upScene(id, {run, chromeApp, electronApp, io = defaultIo()
     record = {app, userDataDir, ...await launchOwn({app, bundleId: scene.bundleId, args: electronArgs({userDataDir}), io})};
   }
   record = {scene: id, bundleId: scene.bundleId, ...record};
-  record.setup = setupSteps(id, record, record.preferences);
+  record.setup = setupSteps(id, record);
   writeState(run, {...state, scenes: {...state.scenes, [id]: record}});
   return record;
 }
@@ -513,18 +517,19 @@ export async function activateScene(id, {run, io = defaultIo(), boundMs = 5000, 
   return {scene: id, ok: false, frontmost, ...(finder ? {topWindow} : {}), reason};
 }
 
-// The driver's steps before `down` (teardownSteps), from the run's record and, for Finder, its preferences now, the
-// owner's saved values and the running macOS (read again: the toggles act on this Finder, whatever macOS the saved
-// record was read on). -> [step].
+// The driver's steps before `down` (teardownSteps), from the run's record and, for Finder, the owner's saved visible
+// chrome. -> [step].
 export function teardownFor(id, {run, io = defaultIo()}) {
   const record = recordOf(id, run);
   if (sceneOf(id).id !== 'finder') return teardownSteps(id, record);
-  const saved = readSavedPreferences(io.savedPreferencesFile)?.saved ?? null;
-  return teardownSteps(id, record, {current: io.finderPreferences(), saved, ...(saved ? {macosMajor: io.macosMajor()} : {})});
+  return teardownSteps(id, record, {visible: readSavedPreferences(io.savedPreferencesFile)?.visible ?? null});
 }
 
-// Writes back each Finder chrome key that still differs from the owner's saved value, reads them again, and ends the
-// saved record once all match. -> {preferences: {restored, wrote, remaining, savedAt}} (`saved: false` instead of
+// Writes back each Finder chrome key that still differs from the owner's saved value and reads them again. The keys
+// alone cannot bring back what Finder's windows draw (Finder reads them only at launch), so where a visible state was
+// saved, the record ends only once a teardown has also marked it restored in a window; otherwise the record is kept,
+// so the next run's teardown restores it, and the output says so (`visibleRestored: false`, `visibleNote`).
+// -> {preferences: {restored, wrote, remaining, savedAt, visibleRestored?, visibleNote?}} (`saved: false` instead of
 // `savedAt` when nothing was saved), so the output says which run's record it restored.
 export async function restoreFinder({io = defaultIo()} = {}) {
   const record = readSavedPreferences(io.savedPreferencesFile);
@@ -532,8 +537,11 @@ export async function restoreFinder({io = defaultIo()} = {}) {
   const writes = preferenceWrites(io.finderPreferences(), record.saved);
   for (const {key, value} of writes) io.writeFinderPreference(key, value);
   const remaining = preferenceWrites(io.finderPreferences(), record.saved).map(w => w.key);
-  if (!remaining.length) clearSavedPreferences(io.savedPreferencesFile);
-  return {preferences: {restored: !remaining.length, wrote: writes.map(w => w.key), remaining, savedAt: record.savedAt}};
+  const visibleRestored = record.visible ? Boolean(record.visibleRestoredAt) : null;
+  if (!remaining.length && visibleRestored !== false) clearSavedPreferences(io.savedPreferencesFile);
+  return {preferences: {restored: !remaining.length, wrote: writes.map(w => w.key), remaining, savedAt: record.savedAt,
+    ...(visibleRestored === null ? {} : {visibleRestored}),
+    ...(visibleRestored === false ? {visibleNote: 'Finder\'s windows may still draw the run\'s hidden chrome: no window was toggled back here, and Finder reads the keys only at launch; the record is kept, so the next Finder scene\'s teardown restores it (or toggle the parts back in View)'} : {})}};
 }
 
 // Brings one scene down: stops only what the run recorded at its launch. Finder: checks the run's window is gone, then

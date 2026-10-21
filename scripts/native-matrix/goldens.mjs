@@ -81,13 +81,11 @@ const describeProblems = problems => problems.map(p => `${p.code}: ${p.message}`
 
 // ---- the device ---------------------------------------------------------------------------------------------------
 
-// The device steps over ssh, in the harness checkout. Each answer is the command's last JSON line.
-export function deviceOps(device, {exec = execFileSync} = {}) {
-  if (declaredDevice(device).platform !== 'darwin') throw new Error(`${device} is not a macOS device`);
+// The device's shell over ssh, the harness checkout's shell, and a device CLI's answer: its JSON line, also on exit 1
+// when it is an answer (a refusal, a scene still up, an activation that failed); an {error} throws with its text.
+export function checkoutCli(device, {exec = execFileSync} = {}) {
   const ssh = script => { const {command, args} = remoteCommand(device, script); return exec(command, args, {encoding: 'utf8', maxBuffer: 256 * 1024 * 1024}); };
   const inCheckout = script => ssh(`cd ${PARITY_CHECKOUT} && ${script}`);
-  // A device CLI's answer: its JSON line, also on exit 1 when it is an answer (a refusal, a scene still up, an
-  // activation that failed); an {error} throws with its text.
   const cli = (file, args, {answersOnFailure = false} = {}) => {
     const label = `${file.split('/').at(-1)} ${args[0]}${args[1] && !args[1].startsWith('--') ? ` ${args[1]}` : ''}`;
     let out;
@@ -101,6 +99,13 @@ export function deviceOps(device, {exec = execFileSync} = {}) {
     if (out?.error) throw new Error(`${label}: ${out.error}`);
     return out;
   };
+  return {ssh, inCheckout, cli};
+}
+
+// The device steps over ssh, in the harness checkout. Each answer is the command's last JSON line.
+export function deviceOps(device, {exec = execFileSync} = {}) {
+  if (declaredDevice(device).platform !== 'darwin') throw new Error(`${device} is not a macOS device`);
+  const {ssh, inCheckout, cli} = checkoutCli(device, {exec});
   return {
     goldens: args => cli('scripts/native-matrix/goldens-device.mjs', args),
     scenes: args => cli('scripts/repl-parity/scenes-mac.mjs', args, {answersOnFailure: true}),
@@ -136,6 +141,55 @@ export function vendorEngineProblem(result, release) {
   if (attested.engine !== 'vendor') return `the ${attested.engine} engine answered the vendor lane, not the vendor engine (is CUA_NATIVE_ENGINE or ~/.config/cua/engine.json selecting another?)`;
   if (attested.build !== release) return `the vendor engine attests the runtime ${attestedBuild(attested.build)}, not the prepared ${release}`;
   return null;
+}
+
+// The native baseline's refusals for a vendor serve on a prepared approved home (scripts/native-baseline.mjs
+// runPrepared): the harness checkout clean and at this checkout's commit (`why` says what needs that), a runtime
+// installed, no serve of the checkout running, and the serve resolving exactly the approved runtime copy.
+export function checkVendorPreflight(pre, prepared, {commit, why}) {
+  if (pre.dirty) throw new Error('the harness checkout is dirty');
+  if (pre.commit !== commit) throw new Error(`the harness checkout is at ${pre.commit}, this checkout at ${commit}: ${why}; place the harness checkout at this commit`);
+  if (!pre.release) throw new Error('no runtime installed in the approved home');
+  if (pre.serves) throw new Error('a serve of the harness checkout is already running on the device');
+  const reuse = prepared.runtimeReuse ?? null;
+  if (!reuse || pre.home !== reuse.approvedHome || pre.runtimeRoot !== reuse.runtimeRoot)
+    throw new Error(`the serve resolves the runtime ${pre.runtimeRoot}, not the approved ${reuse?.runtimeRoot ?? '(none prepared)'}; refusing rather than serving another copy`);
+}
+
+// The vendor lane's serve on the prepared home, pinned to the vendor engine (CUA_NATIVE_ENGINE=vendor in serveSpec):
+// an MCP client that accepts only the computer-use approval of one of `bundleIds` and records every elicitation in
+// meta.elicitations, and its first cell run. `js(code, timeoutMs)` answers a cell's parsed marker; the first result
+// attests the vendor host and the vendor engine at the serve's runtime release (meta.vendor.hostAttestation and
+// engineAttestation), anything else stopping the lane; a cell that printed no marker throws `clientCellProblem`.
+// -> {client, js}.
+export async function connectVendorLane({ops, pre, prepared, connect, bundleIds, meta, stderrFile, clientCellProblem = Error}) {
+  meta.vendor ??= {};
+  meta.elicitations ??= [];
+  const client = connect(ops.serveSpec({pre, prepared}), {
+    answer: msg => (isSceneApproval(msg, bundleIds) ? {action: 'accept', content: {}} : {action: 'decline'}),
+    onElicitation: (row, msg) => meta.elicitations.push({t: row.t, app: msg.params?._meta?.tool_params?.app ?? null, action: row.action}),
+    stderrFile,
+  });
+  // A lane that fails before it is handed over closes its client here, since the caller never holds it.
+  const closing = async error => { try { await client.close(); } catch {} throw error; };
+  const serverInfo = await client.initialize().then(answer => answer?.serverInfo ?? null, closing);
+  await client.request('tools/list').catch(closing);
+  const js = async (code, timeoutMs = CELL_MS) => {
+    const result = await client.request('tools/call', {name: 'js', arguments: {code, timeout_ms: timeoutMs}}, timeoutMs + 15_000);
+    if (!meta.vendor.hostAttestation) {
+      meta.vendor.hostAttestation = hostAttestationOf(serverInfo, result);
+      if (meta.vendor.hostAttestation.host !== 'vendor') throw new Error(`the vendor lane was answered by the ${meta.vendor.hostAttestation.host} host`);
+      const problem = vendorEngineProblem(result, pre.release);
+      meta.vendor.engineAttestation = result?._meta?.['cua/nativeEngine'] ?? null;
+      if (problem) throw new Error(problem);
+    }
+    const parsed = parseCell(textOf(result));
+    if (!parsed) throw new clientCellProblem(`a vendor cell printed no result marker${result?.isError ? ' (an error result)' : ''}`);
+    return parsed;
+  };
+  const first = await js(FIRST, BIND_MS).catch(closing);
+  if (!first.ok) await closing(new Error(`the vendor's first cell failed: ${first.error}`));
+  return {client, js};
 }
 
 const renderedText = shot => render(shot, advanceNumbering(null, shot));
@@ -198,42 +252,15 @@ export async function record(options, io) {
     Object.assign(meta.checkout, {commit: pre.commit, dirty: pre.dirty});
     Object.assign(meta, {hardware: pre.hardware, os: pre.os, display: pre.display});
     Object.assign(meta.vendor, {release: pre.release ?? null, runtimeRoot: pre.runtimeRoot ?? null});
-    // The native baseline's refusals for a vendor serve (scripts/native-baseline.mjs runBaseline).
-    if (pre.dirty) throw new Error('the harness checkout is dirty');
-    if (pre.commit !== checkout.commit) throw new Error(`the harness checkout is at ${pre.commit}, this checkout at ${checkout.commit}: the start-state digest needs both on one commit (one renderer); place the harness checkout at this commit`);
-    if (!pre.release) throw new Error('no runtime installed in the approved home');
-    if (pre.serves) throw new Error('a serve of the harness checkout is already running on the device');
-    const reuse = ctx.prepared.runtimeReuse ?? null;
-    if (!reuse || pre.home !== reuse.approvedHome || pre.runtimeRoot !== reuse.runtimeRoot)
-      throw new Error(`the serve resolves the runtime ${pre.runtimeRoot}, not the approved ${reuse?.runtimeRoot ?? '(none prepared)'}; refusing rather than serving another copy`);
+    checkVendorPreflight(pre, ctx.prepared, {commit: checkout.commit, why: 'the start-state digest needs both on one commit (one renderer)'});
 
     const preflight = ops.scenes(['preflight', '--run', ctx.run]);
     if (preflight.refusals?.length) throw new Error(`the scenes refuse: ${preflight.refusals.map(r => r.message).join('; ')}`);
 
-    const bundleIds = SCENE_ORDER.map(id => SCENES[id].bundleId);
-    client = io.connect(ops.serveSpec({pre, prepared: ctx.prepared}), {
-      answer: msg => (isSceneApproval(msg, bundleIds) ? {action: 'accept', content: {}} : {action: 'decline'}),
-      onElicitation: (row, msg) => meta.elicitations.push({t: row.t, app: msg.params?._meta?.tool_params?.app ?? null, action: row.action}),
-      // Outside the recording, which is committed: the serve's stderr is a diagnostic, not evidence.
-      stderrFile: ctx.serveStderr = join(fs.mkdtempSync(join(tmpdir(), 'cua-goldens-serve-')), 'serve-stderr.txt'),
-    });
-    const serverInfo = (await client.initialize())?.serverInfo ?? null;
-    await client.request('tools/list');
-    ctx.js = async (code, timeoutMs = CELL_MS) => {
-      const result = await client.request('tools/call', {name: 'js', arguments: {code, timeout_ms: timeoutMs}}, timeoutMs + 15_000);
-      if (!meta.vendor.hostAttestation) {
-        meta.vendor.hostAttestation = hostAttestationOf(serverInfo, result);
-        if (meta.vendor.hostAttestation.host !== 'vendor') throw new Error(`the vendor lane was answered by the ${meta.vendor.hostAttestation.host} host`);
-        const problem = vendorEngineProblem(result, pre.release);
-        meta.vendor.engineAttestation = result?._meta?.['cua/nativeEngine'] ?? null;
-        if (problem) throw new Error(problem);
-      }
-      const parsed = parseCell(textOf(result));
-      if (!parsed) throw new SceneProblem(`a vendor cell printed no result marker${result?.isError ? ' (an error result)' : ''}`);
-      return parsed;
-    };
-    const first = await ctx.js(FIRST, BIND_MS);
-    if (!first.ok) throw new Error(`the vendor's first cell failed: ${first.error}`);
+    // Outside the recording, which is committed: the serve's stderr is a diagnostic, not evidence.
+    ctx.serveStderr = join(fs.mkdtempSync(join(tmpdir(), 'cua-goldens-serve-')), 'serve-stderr.txt');
+    ({client, js: ctx.js} = await connectVendorLane({ops, pre, prepared: ctx.prepared, connect: io.connect, bundleIds: SCENE_ORDER.map(id => SCENES[id].bundleId),
+      meta, stderrFile: ctx.serveStderr, clientCellProblem: SceneProblem}));
 
     for (const id of scenes) {
       try {

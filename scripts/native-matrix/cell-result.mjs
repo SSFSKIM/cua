@@ -25,11 +25,16 @@
 //              (part 5's finding elements), 'interference' (part 5's not interfering), 'launch' (part 4's launch path),
 //              'concurrent', 'intervention', 'unicode', 'settle' (M2b.3), 'residue' (M2a's residue, M2b.1)
 //   id         the row's name within its section, stable across runs and engines, so two engines' rows pair by it:
-//              for a method row `<scene>/<regime>/<method>.<case>`, a speed row `<scene>/<op>`, a residue row whatever
-//              its cell names it
+//              a method row `<target>/<regime>/<method>.<case>` (the target a scene or `openPanel`), a speed row
+//              `<scene>/<op>` (op getAXState, getScreenshot, listApps or `method.<method>.<case>`), a finding row
+//              `<scene>/target.<id>` (outcome {found, resolved}), `<scene>/lines` (outcome {lines, named, unclassified})
+//              or `<scene>/ids` (outcome {ids}), a launch row `<scene>/background/launch`, a residue row whatever its
+//              cell names it
 //   engine     'vendor' | 'cua': the engine the row measured (a residue cell comparing both carries rows of each)
 //   sample     a positive integer (1 when the cell takes one)
-//   ok         the outcome judged against its reference (the fixture's ground truth, or the refusal the case expects)
+//   ok         the outcome judged against its reference (the fixture's ground truth, or the refusal the case expects);
+//              on a 'speed' or 'finding' row, that the sample was measured (those sections are judged by comparing the
+//              two engines' samples, ./summary.mjs, not row by row)
 //   invalid    optional, a reason: the sample says nothing (its target was not in front, its probe post fell outside
 //              the action's interval); never a pass and never a fail, kept out of every verdict and statistic
 //   scene, user, regime ('frontmost' | 'background'), method, case   optional, what the row drove

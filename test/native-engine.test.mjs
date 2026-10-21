@@ -114,14 +114,15 @@ test('framing: a frame of exactly 8 MiB is read, one byte more is refused and th
   assert.equal(await wire.next(), null, 'closed after the refusal');
 });
 
-test('execute refuses an unknown method and a facade method the spike does not implement, by name, with -10005', {skip}, async t => {
+test('execute refuses an unknown method by name with -10005; every facade method is implemented', {skip}, async t => {
   const {wire} = await engine(t);
   const unknown = await wire.execute('no_such_method');
   assert.equal(unknown.error.code, -10005);
   assert.equal(unknown.error.errorName, 'unknownMethod');
-  const notYet = await wire.execute('scroll', {app: 'com.apple.finder', direction: 'down'});
-  assert.equal(notYet.error.code, -10005);
-  assert.equal(notYet.error.errorName, 'notImplemented');
+  // scroll reaches its own argument check (it answered notImplemented before M2a.2); nothing is posted.
+  const scroll = await wire.execute('scroll', {app: 'com.apple.finder', direction: 'down', pages: 0});
+  assert.equal(scroll.error.code, -10005);
+  assert.equal(scroll.error.errorName, 'invalidScrollPages');
   const noApp = await wire.execute('resolve_app', {});
   assert.equal(noApp.error.code, -10005);
   assert.equal(noApp.error.errorName, 'invalidArguments');
@@ -157,6 +158,13 @@ test('the input methods validate their arguments and resolve the app without pos
     ['press_key', {app: 'com.apple.finder'}, 'invalidArguments'],
     ['press_key', {app: 'com.apple.finder', key: 'Ctrl'}, 'invalidKey'],  // the vendor's code has no such alias (F §6.4)
     ['type_text', {app: 'com.apple.finder'}, 'invalidArguments'],
+    ['set_value', {app: 'com.apple.finder', element: 't0'}, 'invalidArguments', 'Labc'],  // no value
+    ['set_value', {app: 'com.apple.finder', value: 'v'}, 'invalidArguments'],  // no element
+    ['select_text', {app: 'com.apple.finder', element: 't0', text: 'a', selection_type: 'cursorAfter'}, 'invalidArguments', 'Labc'],
+    ['perform_secondary_action', {app: 'com.apple.finder', element: 't0'}, 'invalidArguments', 'Labc'],  // no action
+    ['scroll', {app: 'com.apple.finder', direction: 'sideways'}, 'invalidArguments'],
+    ['scroll', {app: 'com.apple.finder', direction: 'up', pages: -1}, 'invalidScrollPages'],
+    ['drag', {app: 'com.apple.finder', from_x: 1, from_y: 2, to_x: 3}, 'invalidArguments'],
     ['click', {app: 'com.apple.finder', element: 't0', x: 1, y: 2}, 'invalidArguments', 'Labc'],
     ['click', {app: 'com.apple.finder', element: 't0'}, 'invalidArguments', ''],
   ]) {
@@ -175,6 +183,11 @@ test('the input methods validate their arguments and resolve the app without pos
     ['press_key', {...noSuch, key: 'Return'}],
     ['press_key', {...noSuch, key: 'Return', spikeRoute: '2'}],
     ['type_text', {...noSuch, text: 'x'}],
+    ['set_value', {...noSuch, element: 't0', value: 'v'}, 'Labc'],
+    ['select_text', {...noSuch, element: 't0', text: 'x'}, 'Labc'],
+    ['perform_secondary_action', {...noSuch, element: 't0', action: 'Raise'}, 'Labc'],
+    ['scroll', {...noSuch, direction: 'down'}],
+    ['drag', {...noSuch, from_x: 1, from_y: 2, to_x: 3, to_y: 4}],
   ]) {
     const answer = await wire.call('execute', {method, args, deadlineUnixMilliseconds: Date.now() + 120_000, ...(lineage ? {lineage} : {})});
     assert.equal(answer.error?.code, -10010, method);
@@ -188,42 +201,16 @@ test('the input methods validate their arguments and resolve the app without pos
   }
 });
 
-test('probe_tap refuses a missing op, an unknown app and a stop with nothing running, without creating a tap', {skip}, async t => {
+test('the spike\'s probe_tap and probe_spike methods are gone: method not found', {skip}, async t => {
   const {wire} = await engine(t);
-  const noOp = await wire.call('probe_tap', {});
-  assert.equal(noOp.error.errorName, 'invalidArguments');
-  const noApp = await wire.call('probe_tap', {op: 'start', app: 'io.github.ssfskim.cua.engine-test.no-such-app'});
-  assert.equal(noApp.error.code, -10010);
-  const noTap = await wire.call('probe_tap', {op: 'stop'});
-  assert.equal(noTap.error.errorName, 'tapNotRunning');
-  // Every refusal names the mode (null before one is known) and both non-prompting preflights, in data and sentence.
-  const badMode = await wire.call('probe_tap', {op: 'start', app: 'com.apple.finder', mode: 'filter'});
-  assert.equal(badMode.error.errorName, 'invalidArguments');
-  for (const [refusal, mode] of [[noOp, null], [noApp, 'listen'], [noTap, null], [badMode, null]]) {
-    assert.equal(refusal.error.mode, mode);
-    for (const preflight of ['listenPreflight', 'postPreflight']) assert.equal(typeof refusal.error[preflight], 'boolean', preflight);
-    assert.match(refusal.error.message, /listen preflight (not )?granted, post preflight (not )?granted/);
-  }
-  const activeNoApp = await wire.call('probe_tap', {op: 'start', app: 'io.github.ssfskim.cua.engine-test.no-such-app', mode: 'active'});
-  assert.equal(activeNoApp.error.code, -10010);
-  assert.equal(activeNoApp.error.mode, 'active');
-});
-
-test('probe_spike refuses a missing op, a malformed range and an unknown app before reading anything', {skip}, async t => {
-  const {wire} = await engine(t);
-  const noOp = await wire.call('probe_spike', {app: 'com.apple.finder'});
-  assert.equal(noOp.error.errorName, 'invalidArguments');
-  const badRange = await wire.call('probe_spike', {op: 'selection', app: 'com.apple.finder', set: {location: -1, length: 0}});
-  assert.equal(badRange.error.errorName, 'invalidArguments');
-  for (const op of ['activationPoint', 'activate', 'selection']) {
-    const noApp = await wire.call('probe_spike', {op, app: 'io.github.ssfskim.cua.engine-test.no-such-app'});
-    assert.equal(noApp.error.code, -10010, op);
-    assert.equal(noApp.error.errorName, 'invalidApp', op);
+  for (const method of ['probe_tap', 'probe_spike']) {
+    const answer = await wire.call(method, {op: 'stop'});
+    assert.equal(answer.error?.code, -32601, method);
   }
 });
 
-test('a concealed paste is refused as concealedInputUnavailable with the input meta, nothing posted', {skip: finderSkip}, async t => {
-  // paste's body posts nothing in this build and asks for no permission; Finder only has to resolve.
+test('a concealed paste is refused as concealedInputUnavailable, and malformed pastes by name, with the input meta, nothing posted', {skip: finderSkip}, async t => {
+  // Only refusals: a well-formed paste would write this Mac's pasteboard and post ⌘V. Finder only has to resolve.
   const {wire} = await engine(t);
   const concealed = await wire.execute('paste', {app: 'com.apple.finder', text: 'x', format: 'text', concealed: true});
   assert.equal(concealed.error?.errorName, 'concealedInputUnavailable');
@@ -231,9 +218,12 @@ test('a concealed paste is refused as concealedInputUnavailable with the input m
   assert.doesNotMatch(concealed.error.message, /\bx\b/, 'never the value');
   assert.equal(concealed.error.meta.inputRoute, null);
   assert.equal(concealed.error.meta.startedAt, null);
-  const plain = await wire.execute('paste', {app: 'com.apple.finder', text: 'x', format: 'text'});
-  assert.equal(plain.error?.errorName, 'notImplemented');
-  assert.equal(typeof plain.error.meta.receivedAt, 'number');
+  for (const args of [{text: 'x', format: 'rtf'}, {format: 'text'}, {text: 3}]) {
+    const refused = await wire.execute('paste', {app: 'com.apple.finder', ...args});
+    assert.equal(refused.error?.errorName, 'invalidArguments', JSON.stringify(args));
+    assert.equal(refused.error.meta.startedAt, null);
+    assert.equal(typeof refused.error.meta.receivedAt, 'number');
+  }
 });
 
 test('every app-scoped execute refuses a forbidden app, by bundle id or by path, before its method runs', {skip}, async t => {

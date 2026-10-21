@@ -27,16 +27,28 @@ final class ConnectionState: @unchecked Sendable {
   let fd: Int32
   /// Lineages by app key (`ResolvedApp.key`).
   var lineages: [String: Lineage] = [:]
-  /// Apps whose actions are refused until a fresh get_app_state, after an intervention.
-  var requiresRequery: Set<String> = []
+  /// Per app this connection drives, the ledger sequence its re-query flag was last cleared at (or it began driving the
+  /// app at): an event attributed to the app after it refuses the connection's actions until a fresh get_app_state
+  /// completes after the debounce (Intervention.swift).
+  var interventionCleared: [String: Int] = [:]
+  /// Per app this connection drives, the processes whose attributed events count as the user's on it: the app's own and
+  /// every process an observation of it met (a panel's service, whose window takes the user's clicks on the panel).
+  var interventionProcesses: [String: Set<pid_t>] = [:]
   /// Apps acted on since their last observation, whose next get_app_state settles first (the vendor's deferred
   /// settle, F §8.6). An input method calls `markActed` once its events are posted.
   var needsSettle: Set<String> = []
+  /// Per app (by lineage key), the menu-bar item a plain click recorded, at which observations root their walk
+  /// (MenuRecord.swift).
+  var menuRecords: [String: AXUIElement] = [:]
+  /// The record's held activation (MenuSpan.swift).
+  let menuSpan: MenuSpan
 
-  init(id: Int, fd: Int32) {
+  init(id: Int, fd: Int32, menuSpan: MenuSpan = MenuSpan()) {
     self.id = id
     self.fd = fd
+    self.menuSpan = menuSpan
   }
+
 
   func markActed(_ app: ResolvedApp) { needsSettle.insert(app.key) }
 }
@@ -73,9 +85,11 @@ struct ElementIdentity {
     self.pid = pid
   }
 
-  func matches(_ other: ElementIdentity) -> Bool {
+  /// The vendor's match (FUN_100221838); `ignoringValue` leaves the value out, as the re-check after set_value's write
+  /// does (F §3.6, §16.4).
+  func matches(_ other: ElementIdentity, ignoringValue: Bool = false) -> Bool {
     role == other.role && subrole == other.subrole && roleDescription == other.roleDescription && title == other.title
-      && value == other.value && valueDescription == other.valueDescription && description == other.description
+      && (ignoringValue || value == other.value) && valueDescription == other.valueDescription && description == other.description
       && placeholder == other.placeholder && help == other.help && identifier == other.identifier && url == other.url
   }
 }
@@ -95,7 +109,7 @@ private func identityValue(_ value: CFTypeRef?) -> String? {
 struct LineageEntry {
   var element: AXUIElement
   var identity: ElementIdentity
-  let actions: [String]
+  var actions: [String]
   let frame: CGRect?
 }
 
@@ -115,6 +129,9 @@ final class Revision {
   var children: [Int: [Int]] = [:]
   var root: Int?
   var menu: [Int] = []
+  /// The recorded menu-bar item the observation walked from instead of the window (MenuRecord.swift); nil for a walk of
+  /// the window and the menu bar. A re-fetch walks the same root.
+  var menuRoot: AXUIElement?
 
   /// A sibling list of this revision with its handles: the menu bar's items, a node's children, or (no parent) the
   /// window's root.
@@ -168,6 +185,14 @@ final class Lineage {
 
   func entry(_ number: Int) -> LineageEntry? { current?.entries[number] }
 
+  /// The entry as it reads now, after a re-check that always re-reads (`Refetch.always`, `.ignoringValue`): its handle,
+  /// its identity (which carries the value a write changed) and its actions.
+  private func renew(_ number: Int, element: AXUIElement, data: ElementData, owner: pid_t, actions: [String]) {
+    current?.entries[number]?.element = element
+    current?.entries[number]?.identity = ElementIdentity(data, pid: owner)
+    current?.entries[number]?.actions = actions
+  }
+
   func replace(_ number: Int, element: AXUIElement, owner: pid_t) {
     current?.entries[number]?.element = element
     if let identity = current?.entries[number]?.identity { current?.entries[number]?.identity = identity.owned(by: owner) }
@@ -207,39 +232,54 @@ final class Lineage {
 
   /// The element `token` names in this lineage's current revision (F §3.5–3.7). Without an invalidation since the
   /// observation the handle is only validated (one AXRole read); otherwise it is re-read, then re-fetched by its eleven
-  /// attributes under the app's primary window and menu bar, wherever its process. The vendor's sentences in the
-  /// vendor's order: no such token → no longer valid; an invalid handle → no longer valid; the stored attributes matched
-  /// by more or fewer than one element of the observed tree → "couldn't be started"; none now → no longer valid; several
-  /// now → "couldn't be finished".
-  func resolve(_ token: String, resolver: ElementResolver) throws -> LineageEntry {
+  /// attributes under the app's primary window and menu bar, wherever its process. `refetch` other than `.ifNeeded`
+  /// re-reads whatever the watch says, and the entry then takes what it reads now (handle, identity, actions). The
+  /// vendor's sentences in the vendor's order: no such token → no longer valid; an invalid handle → no longer valid; the
+  /// stored attributes matched by more or fewer than one element of the observed tree → "couldn't be started"; none now
+  /// → no longer valid; several now → "couldn't be finished".
+  func resolve(_ token: String, resolver: ElementResolver, refetch: Refetch = .ifNeeded) throws -> LineageEntry {
     guard let number = tokenNumber(token), let entry = entry(number), let observed = current else { throw ElementErrors.noLongerValid }
-    guard resolver.invalidated(entry) else {
+    if refetch == .ifNeeded, !resolver.invalidated(entry) {
       guard resolver.stillValid(entry.element) else { throw ElementErrors.noLongerValid }
       return entry
     }
+    let ignoringValue = refetch == .ignoringValue
     let source = resolver.source()
     // A menu-bar entry's identity was recorded through the attributes the element lists; it is read the same way.
     let inMenu = observed.menu.contains(number)
-    let live = inMenu ? source.listedData(entry.element) : source.data(entry.element)
-    if let live, ElementIdentity(live, pid: entry.identity.pid).matches(entry.identity) {
-      return entry
+    func read(_ element: AXUIElement) -> ElementData? { inMenu ? source.listedData(element) : source.data(element) }
+    func settle(on element: AXUIElement, owner: pid_t, data: ElementData?) throws -> LineageEntry {
+      if refetch == .ifNeeded {
+        replace(number, element: element, owner: owner)
+      } else {
+        guard let data else { throw ElementErrors.noLongerValid }
+        renew(number, element: element, data: data, owner: owner, actions: source.actions(element))
+      }
+      return self.entry(number)!
     }
-    let before = observed.entries.values.filter { $0.identity.matches(entry.identity) }.count
+    if let live = read(entry.element), ElementIdentity(live, pid: entry.identity.pid).matches(entry.identity, ignoringValue: ignoringValue) {
+      return refetch == .ifNeeded ? entry : try settle(on: entry.element, owner: entry.identity.pid, data: live)
+    }
+    let before = observed.entries.values.filter { $0.identity.matches(entry.identity, ignoringValue: ignoringValue) }.count
     var found: [AXUIElement] = []
     if before == 1 {
-      let tree = resolver.tree()
-      found = matching(entry.identity, window: tree.window, menuItems: tree.menuItems, source: source)
+      let tree = resolver.tree(observed.menuRoot)
+      found = matching(entry.identity, ignoringValue: ignoringValue, window: tree.window, menuItems: tree.menuItems, source: source)
     }
     switch RefetchVerdict.of(before: before, after: found.count) {
     case .ambiguousBefore: throw ElementErrors.ambiguousBeforeRefetch
     case .noLongerValid: throw ElementErrors.noLongerValid
     case .ambiguousAfter: throw ElementErrors.ambiguousAfterRefetch
-    case .found:
-      replace(number, element: found[0], owner: source.owner(found[0]))
-      return self.entry(number)!
+    case .found: return try settle(on: found[0], owner: source.owner(found[0]), data: read(found[0]))
     }
   }
 }
+
+/// When resolving a token re-reads its element: `.ifNeeded` only after an invalidation (F §3.5); `.always` whatever the
+/// watch says, after a scroll into view reported moving the tree (`prepareToInteract` re-fetches then, F §16.8), whose
+/// notifications may not have arrived yet; `.ignoringValue` as `.always`, with the value left out of the match, after
+/// set_value's write (`refetchIfNeeded(validateElement: true, ignoreValueChange: true)`, F §16.4).
+enum Refetch: Equatable { case ifNeeded, always, ignoringValue }
 
 /// What resolving a token needs from the live system: the Accessibility API in the engine, a fake tree in the tests.
 struct ElementResolver {
@@ -249,9 +289,10 @@ struct ElementResolver {
   var stillValid: (AXUIElement) -> Bool
   /// A fresh source for the re-read and the re-fetch's walk.
   var source: () -> ElementSource
-  /// What a re-fetch walks: the app's primary window now and the menu-bar elements an observation reads (the bar, then
-  /// its items but the Apple menu; `menuBarElements`).
-  var tree: () -> (window: AXUIElement?, menuItems: [AXUIElement])
+  /// What a re-fetch walks: given the recorded menu-bar item the observation walked from, that item alone; otherwise
+  /// the app's primary window now and the menu-bar elements an observation reads (the bar, then its items but the Apple
+  /// menu; `menuBarElements`).
+  var tree: (_ menuRoot: AXUIElement?) -> (window: AXUIElement?, menuItems: [AXUIElement])
 
   /// The engine's: `lineage`'s watches, the live handle, and `pid`'s application element.
   static func live(_ lineage: Lineage, pid: pid_t) -> ElementResolver {
@@ -259,7 +300,8 @@ struct ElementResolver {
       invalidated: { lineage.invalidates($0.element, owner: $0.identity.pid) },
       stillValid: { copyAttribute($0, kAXRoleAttribute).error != .invalidUIElement },
       source: { ElementSource() },
-      tree: {
+      tree: { menuRoot in
+        if let menuRoot { return (prepare(menuRoot), []) }
         let application = prepare(AXUIElementCreateApplication(pid))
         // The menu-bar elements as the observation reads them.
         let bar = elementAttribute(application, kAXMenuBarAttribute)
@@ -356,16 +398,18 @@ func elementTokenArg(_ args: [String: Any], lineage: String?) throws -> String? 
 extension ConnectionState {
   /// The element `token` names in the app's current lineage, which must be `wanted` (the lineage guard: a token of
   /// another lineage, or of one that ended with disableDiff, a relaunch or a reconnect, is no longer valid).
-  func element(_ token: String, app: ResolvedApp, lineage wanted: String, resolver: (Lineage) -> ElementResolver) throws -> LineageEntry {
+  func element(_ token: String, app: ResolvedApp, lineage wanted: String, refetch: Refetch = .ifNeeded,
+               resolver: (Lineage) -> ElementResolver) throws -> LineageEntry {
     guard let lineage = lineages[app.key], wanted == lineage.id else { throw ElementErrors.noLongerValid }
-    return try lineage.resolve(token, resolver: resolver(lineage))
+    return try lineage.resolve(token, resolver: resolver(lineage), refetch: refetch)
   }
 }
 
 /// The elements an observation would emit now (the window's tree, preorder, within its depth, width and node caps and
 /// its deadline, then the menu-bar elements, read through the attributes they list and without a Debug item, as the
 /// walk reads them) whose eleven attributes equal the identity's, whichever process serves them.
-private func matching(_ identity: ElementIdentity, window: AXUIElement?, menuItems: [AXUIElement], source: ElementSource) -> [AXUIElement] {
+private func matching(_ identity: ElementIdentity, ignoringValue: Bool, window: AXUIElement?, menuItems: [AXUIElement],
+                      source: ElementSource) -> [AXUIElement] {
   var found: [AXUIElement] = []
   // (element, depth, descend): menu-bar elements are matched but never walked into, as the observation does.
   var stack: [(AXUIElement, Int, Bool)] = menuItems.reversed().map { (prepare($0), 0, false) }
@@ -379,7 +423,7 @@ private func matching(_ identity: ElementIdentity, window: AXUIElement?, menuIte
           let data = descend ? source.data(element) : source.listedData(element) else { continue }
     if !descend, data.role != kAXMenuBarRole, isDebugMenuItem(data) { continue }
     visited += 1
-    if ElementIdentity(data, pid: identity.pid).matches(identity) { found.append(element) }
+    if ElementIdentity(data, pid: identity.pid).matches(identity, ignoringValue: ignoringValue) { found.append(element) }
     if descend && depth < maxDepth {
       for child in chooseChildren(of: element, data: data, source: source, visibleFrame: windowFrame).children.reversed() {
         stack.append((prepare(child), depth + 1, true))

@@ -22,7 +22,7 @@ import {createInterface} from 'node:readline';
 import {fail} from './errors.mjs';
 import {ENGINE_DIRECTORY_IN_HOME} from './layout.mjs';
 import {BUNDLE_NAME, ENGINE_SOURCE, EXECUTABLE, assembleBundle, engineBuild, engineVersion} from './engine-bundle.mjs';
-import {configuredIdentity, identityMatches, lastLines, readSignature, recordedIdentity, resolveSigningIdentity, runCommand, signBundle, sleepFor} from './engine-sign.mjs';
+import {configuredIdentity, identityMatches, lastLines, readSignature, recordedIdentity, resolveSigningIdentity, runCommand, signatureReport, signBundle, sleepFor} from './engine-sign.mjs';
 import {FrameDecoder, encodeFrame} from '../services/engine/protocol.mjs';
 import {bundleIdentity} from '../services/engine/client.mjs';
 
@@ -146,8 +146,14 @@ function bundleOnDisk(bundle, runSync) {
   return {exists: true, ...identity, signature: readSignature(bundle, runSync ? {runSync} : {})};
 }
 
-const publicSignature = (signature, configured) => ({kind: signature?.kind ?? null, identityMatches: signature ? identityMatches(signature, configured) : null});
-const approvedMatches = (onDisk, approved) => Boolean(onDisk.exists && approved && onDisk.build === approved.build && recordedIdentity(onDisk.signature) === approved.identity);
+// Whether the bundle on disk is the one approved.json approves: true, false, or null (unknown) when the build is
+// approved.json's and the answer turns on a signature codesign could not read. Gating takes only true (approvedMatches).
+function approval(onDisk, approved) {
+  if (!onDisk.exists || !approved || onDisk.build !== approved.build) return false;
+  if (onDisk.signature?.kind === 'unreadable') return null;
+  return recordedIdentity(onDisk.signature) === approved.identity;
+}
+const approvedMatches = (onDisk, approved) => approval(onDisk, approved) === true;
 
 // The approved bundle, or null: the bundle at the approved location whose build and signature are approved.json's.
 // Never throws: anything unreadable is "not installed".
@@ -174,8 +180,8 @@ export async function engineStatus(deps) {
     exists: onDisk.exists,
     engineVersion: onDisk.engineVersion ?? null,
     build: onDisk.build ?? null,
-    signature: publicSignature(onDisk.signature, configuredIdentity({env: ctx.env})),
-    approved: approvedMatches(onDisk, approved),
+    signature: signatureReport(onDisk.signature, configuredIdentity({env: ctx.env})),
+    approved: approval(onDisk, approved),
     approvedBuild: approved?.build ?? null,
     approvedAt: approved?.approvedAt ?? null,
     pending: pending ? {build: pending.build ?? null, builtAt: pending.builtAt ?? null} : null,
@@ -208,7 +214,7 @@ export async function buildEngine({identity, scratchPath, sourceRoot = ENGINE_SO
   const signedAsAsked = signature => (adhoc ? signature?.kind === 'adhoc' : identityMatches(signature, wanted) === true);
   if (current.exists && current.build === build && signedAsAsked(current.signature)) {
     log(`cua's engine build ${shortBuild(build)} is already at ${paths.bundle}; nothing to do`);
-    return {bundlePath: paths.bundle, engineVersion: current.engineVersion, build, signature: publicSignature(current.signature, configured), changed: false, stopped: null};
+    return {bundlePath: paths.bundle, engineVersion: current.engineVersion, build, signature: signatureReport(current.signature, configured), changed: false, stopped: null};
   }
 
   mkdirSync(paths.dir, {recursive: true, mode: 0o700});
@@ -230,7 +236,8 @@ export async function buildEngine({identity, scratchPath, sourceRoot = ENGINE_SO
     log(adhoc ? 'signing ad hoc' : 'signing with the configured identity');
     await signBundle(staged, {identity: adhoc ? 'adhoc' : identity, env: ctx.env, run: ctx.run, sleep: ctx.sleep, now: ctx.now, ...signOptions});
     signature = readSignature(staged, ctx.runSync ? {runSync: ctx.runSync} : {});
-    if (!signature) fail('engine_sign_failed', 'the staged bundle reads as unsigned after signing');
+    if (!recordedIdentity(signature))
+      fail('engine_sign_failed', signature ? `the staged bundle's signature could not be read after signing (${signature.reason})` : 'the staged bundle reads as unsigned after signing');
     stopped = await stop(ctx);
     if (stopped.wasRunning) log(`stopped the running engine (pid ${stopped.pid})`);
   } catch (error) {
@@ -248,7 +255,7 @@ export async function buildEngine({identity, scratchPath, sourceRoot = ENGINE_SO
   rmSync(paths.staging, {recursive: true, force: true});
   writeRecord(paths.pending, {build, identity: recordedIdentity(signature), builtAt: new Date(ctx.now()).toISOString()});
   log(`installed cua's engine ${shortBuild(build)} at ${paths.bundle}, pending approval (cua engine approve)`);
-  return {bundlePath: paths.bundle, engineVersion: version, build, signature: publicSignature(signature, configured), changed: true, stopped: stopped.wasRunning ? {pid: stopped.pid} : null};
+  return {bundlePath: paths.bundle, engineVersion: version, build, signature: signatureReport(signature, configured), changed: true, stopped: stopped.wasRunning ? {pid: stopped.pid} : null};
 }
 
 // ---- approveEngine ----
@@ -328,6 +335,9 @@ export async function approveEngine(deps) {
   const onDisk = bundleOnDisk(paths.bundle, ctx.runSync);
   if (!onDisk.exists) fail('engine_not_built', `no engine bundle at ${paths.bundle}`, {hint: 'build it first: cua engine build'});
   const identity = recordedIdentity(onDisk.signature);
+  if (onDisk.signature?.kind === 'unreadable')
+    fail('engine_signature_unreadable', `the signature of the bundle at ${paths.bundle} could not be read (${onDisk.signature.reason}), so approve cannot tell which build and identity it would approve`,
+      {hint: 'codesign may be blocked behind a prompt at the console: see to it there, then run cua engine approve again'});
   if (!identity) fail('engine_not_built', `the bundle at ${paths.bundle} is not signed`, {hint: 'rebuild it: cua engine build'});
 
   let status = await statusOf(ctx);

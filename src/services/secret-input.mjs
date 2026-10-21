@@ -77,6 +77,25 @@ export const inputFailed = (what, label, kind) => new SecretInputError('secret_i
 // The same failure when the runtime reports nothing posted (cua's engine: the error's input meta with startedAt null).
 export const inputFailedUnentered = (what, label, kind) => new SecretInputError('secret_input_failed', `${what} with secret "${label}" failed (${kind}) after the secret was read, and ${NOTHING_ENTERED}. The runtime's error is withheld because it can contain the secret`);
 
+// userIntervened (−10016) carries one of two sentences that ask the model for different things (the vendor's, which cua's
+// engine keeps): wait and retry while the user is still at the app, or re-query its state after the user changed it.
+// The wrapper withholds the runtime's text, so it repeats which one with a fixed sentence of its own. "Still interacting"
+// is always a refusal before the action on either engine, so nothing was entered; "changed" was entered in part only
+// when the runtime does not say nothing was posted (cua's engine stops a typed sequence in flight; the vendor's meta
+// says nothing either way). Never a count of what was entered, which would tell the secret's length.
+const INTERVENED = {
+  stillInteracting: 'the user is still interacting with the app; wait 5 seconds and retry',
+  userChanged: 'the user changed the app; re-query its state (getAXState) before sending more actions',
+};
+// Which of the two a runtime's message is, read from the sentence's fixed opening only; null for anything else.
+export function interventionKind(message) {
+  if (typeof message !== 'string') return null;
+  if (message.includes('The user is still interacting with \'')) return 'stillInteracting';
+  if (message.includes('The user changed \'')) return 'userChanged';
+  return null;
+}
+export const userIntervened = (what, label, kind, unentered) => new SecretInputError('secret_input_failed', `${what} with secret "${label}" failed (userIntervened) after the secret was read: ${INTERVENED[kind]}; ${kind === 'stillInteracting' || unentered ? NOTHING_ENTERED : 'it may have been partly entered'}. The runtime's error is withheld because it can contain the secret`);
+
 // cua's native engine refused a concealed request before entering anything (its concealedInputUnavailable): a secret is
 // never pasted, so a concealed paste is refused whatever the input source, and a concealed type_text is keyed only under
 // an input source whose reading the engine trusts. A fixed sentence per method, not the engine's, as every diagnostic

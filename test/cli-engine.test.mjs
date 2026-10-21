@@ -84,3 +84,14 @@ test('the status lines say whether the signature is the configured identity with
     'running: pid 7, accessibility true, screen recording false, input monitoring true, 1 other connection(s)',
   ]);
 });
+
+test('the status lines say what they do not know when the signature could not be read', () => {
+  const unreadable = {bundlePath: '/e/cua Engine.app', exists: true, engineVersion: '0.1.0', build: 'f'.repeat(64),
+    signature: {kind: 'unreadable', identityMatches: null, reason: 'codesign did not finish within 60 s'}, approved: null, approvedBuild: 'f'.repeat(64),
+    approvedAt: '2026-10-21T12:29:00.000Z', pending: null, running: false, status: null};
+  assert.deepEqual(engineStatusLines(unreadable).slice(0, 2), [
+    'engine: /e/cua Engine.app (version 0.1.0, build ffffffffffff), signature unknown (unreadable: codesign did not finish within 60 s)',
+    'approved: unknown (the signature could not be read; approved.json names build ffffffffffff)',
+  ]);
+  assert.match(engineStatusLines({...unreadable, signature: {kind: null, identityMatches: null}, approved: false})[0], /build ffffffffffff\), unsigned$/);
+});

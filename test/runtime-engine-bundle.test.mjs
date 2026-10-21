@@ -84,7 +84,11 @@ test('buildEngine with --sign adhoc and real codesign: a strictly verifying hard
   assert.match(details.stderr, /Identifier=io\.github\.ssfskim\.cua\.engine/);
   assert.equal(spawnSync('/usr/bin/codesign', ['-d', '--entitlements', '-', '--xml', bundle], {encoding: 'utf8'}).stdout.trim(), '', 'no entitlements');
   assert.deepEqual(readSignature(bundle), {kind: 'adhoc'});
-  assert.equal(readSignature(join(work.dir, 'src')), null, 'an unsigned directory');
+  writeFileSync(join(work.dir, 'unsigned'), 'not code\n');
+  assert.equal(readSignature(join(work.dir, 'unsigned')), null, 'codesign: code object is not signed at all');
+  const notABundle = readSignature(join(work.dir, 'src'));
+  assert.equal(notABundle.kind, 'unreadable', 'a directory codesign cannot read as a bundle is not called unsigned');
+  assert.match(notABundle.reason, /codesign exited 1: .*bundle format unrecognized/);
 
   const status = await engineStatus({dir, env: {HOME: work.dir}});
   assert.equal(status.build, result.build);

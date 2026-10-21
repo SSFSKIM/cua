@@ -1,11 +1,12 @@
 import Foundation
 
 // The engine's own settings in $HOME/.config/cua/engine.json (the spec's Decision Log, M1a pre-flight item 4). The file
-// is shared: `engine`, `signingIdentity` and `routes` are other readers' and left alone here. The engine reads one key,
-// `peerPolicy`, which selects the peer check: in #117 its only value is "uid" (absent means "uid"), the policy the owner
-// accepted on 2026-10-18; any other value, or a file that is not a JSON object, stops the engine at start with a
-// sentence naming the setting, so a policy this build does not have is never silently replaced by a weaker one. A
-// second value (#174's trusted-ancestor policy) is a new case of PeerPolicy.
+// is shared: `engine` and `signingIdentity` are other readers' and left alone here. The engine reads two keys, once at
+// launch. `peerPolicy` selects the peer check: in #117 its only value is "uid" (absent means "uid"), the policy the owner
+// accepted on 2026-10-18; a second value (#174's trusted-ancestor policy) is a new case of PeerPolicy. `routes` is the
+// owner's per-app route-4 override (the spec's Design, "Input" route 4): `{<bundle id>: 4}`, absent or empty meaning no
+// app gets route 4. Any other value of either, or a file that is not a JSON object, stops the engine at start with a
+// sentence naming the setting, so a policy or an override the owner wrote is never silently replaced or dropped.
 
 /// Who may hold a connection to the engine (the spec's Design, "Socket and peer check").
 enum PeerPolicy: String {
@@ -22,6 +23,8 @@ enum PeerPolicy: String {
 
 struct EngineSettings {
   let peerPolicy: PeerPolicy
+  /// Bundle id → route; the only route an override names is 4.
+  var routes: [String: Int] = [:]
 
   /// A setting the engine cannot run under; `message` names the setting and the file.
   struct Invalid: Error {
@@ -39,11 +42,28 @@ struct EngineSettings {
     guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
       throw Invalid(message: "\(path) is not a JSON object; the engine reads peerPolicy from it")
     }
-    guard let given = object["peerPolicy"] else { return EngineSettings(peerPolicy: .uid) }
-    guard let name = given as? String, let policy = PeerPolicy(rawValue: name) else {
-      throw Invalid(message: "peerPolicy in \(path) must be \"uid\" (or absent); this engine has no other peer policy")
+    var policy = PeerPolicy.uid
+    if let given = object["peerPolicy"] {
+      guard let name = given as? String, let named = PeerPolicy(rawValue: name) else {
+        throw Invalid(message: "peerPolicy in \(path) must be \"uid\" (or absent); this engine has no other peer policy")
+      }
+      policy = named
     }
-    return EngineSettings(peerPolicy: policy)
+    return EngineSettings(peerPolicy: policy, routes: try parseRoutes(object["routes"], path: path))
+  }
+
+  /// `routes`: absent, or an object of bundle ids each mapped to the number 4.
+  private static func parseRoutes(_ given: Any?, path: String) throws -> [String: Int] {
+    guard let given else { return [:] }
+    let invalid = Invalid(message: "routes in \(path) must map bundle ids to 4, the foreground route (or be absent); this engine has no other route override")
+    guard let table = given as? [String: Any] else { throw invalid }
+    var routes: [String: Int] = [:]
+    for (bundle, route) in table {
+      guard !bundle.isEmpty, let number = route as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(),
+            number.doubleValue == 4 else { throw invalid }
+      routes[bundle] = 4
+    }
+    return routes
   }
 
   /// The settings of this run; a missing file is the defaults, an unreadable one an error.

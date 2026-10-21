@@ -143,3 +143,17 @@ func windowNumber(of window: AXUIElement, pid: pid_t, frame: CGRect?) -> CGWindo
   }
   return nil
 }
+
+/// A CFRange as the AXValue AXSelectedTextRange takes.
+func axRangeValue(_ range: CFRange) -> AXValue {
+  var range = range
+  return AXValueCreate(.cfRange, &range)!
+}
+
+/// An AXSelectedTextRange value as {location, length}; nil for anything that is not a range.
+func rangeWire(_ value: CFTypeRef?) -> [String: Int]? {
+  guard let value, CFGetTypeID(value) == AXValueGetTypeID(), AXValueGetType(value as! AXValue) == .cfRange else { return nil }
+  var range = CFRange()
+  guard AXValueGetValue(value as! AXValue, .cfRange, &range) else { return nil }
+  return ["location": range.location, "length": range.length]
+}

@@ -111,16 +111,30 @@ export const jobCodesignMs = waitMs => waitMs - Math.min(SIGN_JOB_MARGIN_MS, Mat
 
 const defaultRunSync = (file, args, {timeout = 60_000} = {}) => spawnSync(file, args, {encoding: 'utf8', timeout});
 
+// How long a signature read waits for codesign before spawnSync kills it: a codesign blocked behind a prompt at the
+// console (the mini, 2026-10-21T13:22Z) reads as unreadable after this, never as unsigned.
+const READ_TIMEOUT_MS = 60_000;
+const NOT_SIGNED = /code object is not signed at all/;
+
+// Why a codesign -d that did not answer with a signature failed, the identity masked.
+function unreadableReason(read) {
+  if (read.error?.code === 'ETIMEDOUT') return `codesign did not finish within ${READ_TIMEOUT_MS / 1000} s`;
+  if (read.error) return `codesign could not run: ${read.error.code ?? read.error.message}`;
+  if (read.signal) return `codesign was killed (${read.signal})`;
+  return `codesign exited ${read.status}: ${redact(lastLines(`${read.stdout ?? ''}${read.stderr ?? ''}`))}`;
+}
+
 // The bundle's signature as codesign reports it: {kind: 'identity', sha1, authority} (the leaf certificate's SHA-1, the
-// form `security find-identity` lists, and its subject, codesign's first Authority line), {kind: 'adhoc'}, or null when
-// the bundle is unsigned or unreadable.
+// form `security find-identity` lists, and its subject, codesign's first Authority line), {kind: 'adhoc'}, null when
+// codesign says the bundle is not signed, or {kind: 'unreadable', reason} when codesign did not say (it timed out, was
+// killed, could not run, or failed otherwise): unreadable is not unsigned, and it matches no identity and records none.
 export function readSignature(bundle, {runSync = defaultRunSync} = {}) {
   const scratch = mkdtempSync(join(tmpdir(), 'cua-engine-signature-'));
   try {
     const prefix = join(scratch, 'cert');
-    const read = runSync(CODESIGN, ['-d', '-vv', `--extract-certificates=${prefix}`, bundle]);
-    if (read.status !== 0) return null;
+    const read = runSync(CODESIGN, ['-d', '-vv', `--extract-certificates=${prefix}`, bundle], {timeout: READ_TIMEOUT_MS});
     const details = `${read.stdout ?? ''}${read.stderr ?? ''}`;
+    if (read.status !== 0) return !read.error && !read.signal && NOT_SIGNED.test(details) ? null : {kind: 'unreadable', reason: unreadableReason(read)};
     if (existsSync(`${prefix}0`)) {
       const sha1 = createHash('sha1').update(readFileSync(`${prefix}0`)).digest('hex').toUpperCase();
       return {kind: 'identity', sha1, authority: /^Authority=(.*)$/m.exec(details)?.[1] ?? null};
@@ -129,15 +143,24 @@ export function readSignature(bundle, {runSync = defaultRunSync} = {}) {
   } finally { rmSync(scratch, {recursive: true, force: true}); }
 }
 
-// What pending.json and approved.json record for a signature: the leaf's SHA-1, or "adhoc"; null when unsigned.
+// What pending.json and approved.json record for a signature: the leaf's SHA-1, or "adhoc"; null when unsigned or
+// unreadable (so an unreadable signature never equals a recorded one).
 export const recordedIdentity = signature => (signature?.kind === 'identity' ? signature.sha1 : signature?.kind === 'adhoc' ? 'adhoc' : null);
 
 // Whether a signature is the configured identity's: a SHA-1 compares with the leaf's, a common name with its subject.
-// null when nothing is configured.
+// null when nothing is configured; false for anything but an identity signature, an unreadable one included.
 export function identityMatches(signature, identity) {
   if (!identity) return null;
   if (signature?.kind !== 'identity') return false;
   return /^[0-9a-f]{40}$/i.test(identity) ? signature.sha1 === identity.toUpperCase() : signature.authority === identity;
+}
+
+// A signature as callers may report it, never the identity: {kind, identityMatches}, kind null when unsigned; an
+// unreadable signature's match is unknown (null) and it carries codesign's reason. For reporting only: gate on
+// recordedIdentity or identityMatches, which an unreadable signature never satisfies.
+export function signatureReport(signature, configured) {
+  if (signature?.kind === 'unreadable') return {kind: 'unreadable', identityMatches: null, reason: signature.reason};
+  return {kind: signature?.kind ?? null, identityMatches: signature ? identityMatches(signature, configured) : null};
 }
 
 // ---- signing ----

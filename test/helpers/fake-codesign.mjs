@@ -26,6 +26,11 @@ export function fakeCodesignRead(file, args) {
   return {status: 0, stdout: '', stderr: `Executable=x\nCodeDirectory v=20400 flags=0x10000(runtime)\nAuthority=${marker.name}\nAuthority=Apple Worldwide Developer Relations Certification Authority\nAuthority=Apple Root CA\n`};
 }
 
+// spawnSync's answer for a codesign it killed at its bound (error ETIMEDOUT, SIGTERM, no status): what a codesign blocked
+// behind a prompt at the console reads as.
+export const CODESIGN_TIMED_OUT = {status: null, signal: 'SIGTERM', stdout: '', stderr: '',
+  error: Object.assign(new Error('spawnSync /usr/bin/codesign ETIMEDOUT'), {code: 'ETIMEDOUT'})};
+
 export function markSigned(bundle, kind) {
   mkdirSync(join(bundle, 'Contents', '_CodeSignature'), {recursive: true});
   writeFileSync(join(bundle, 'Contents', '_CodeSignature', 'fake.json'), JSON.stringify(kind === 'adhoc' ? {kind} : {kind, name: NAME, cert: CERT.toString('base64')}));

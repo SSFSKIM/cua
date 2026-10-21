@@ -49,7 +49,7 @@ import {createEngineClient} from '../../src/services/engine/client.mjs';
 import {createObservations} from '../../src/services/engine/observations.mjs';
 import {installedEngine, shortBuild, stopEngine} from '../../src/runtime/engine.mjs';
 import {engineBuild, engineVersion} from '../../src/runtime/engine-bundle.mjs';
-import {configuredIdentity, identityMatches, readSignature} from '../../src/runtime/engine-sign.mjs';
+import {configuredIdentity, readSignature, signatureReport} from '../../src/runtime/engine-sign.mjs';
 import {advanceNumbering, render} from '../../src/services/engine/render.mjs';
 import {normalizeDrift} from '../../test/native-goldens/compare.mjs';
 import {SCENES, activateScene, finderOwned, fixedStateProblems, guardOf, readState, teardownFor} from '../repl-parity/scenes-mac.mjs';
@@ -86,7 +86,7 @@ export function engineCheck({installed, checkout, signature = null, configured =
   if (!installed) problems.push('no approved engine on this Mac: build and approve it first (cua engine build, cua engine approve)');
   else if (installed.build !== checkout.build) problems.push(`the approved engine's build ${shortBuild(installed.build)} is not this checkout's ${shortBuild(checkout.build)}: build and approve this checkout's engine first`);
   const engine = installed ? {bundlePath: installed.bundlePath, build: installed.build, engineVersion: installed.engineVersion, approvedAt: installed.approvedAt,
-    signature: {kind: signature?.kind ?? null, identityMatches: signature ? identityMatches(signature, configured) : null}} : null;
+    signature: signatureReport(signature, configured)} : null;
   return {ok: problems.length === 0, engine, checkout, problems};
 }
 

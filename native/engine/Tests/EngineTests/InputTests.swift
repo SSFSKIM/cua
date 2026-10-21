@@ -241,83 +241,6 @@ final class MousePlanTests: XCTestCase {
     XCTAssertEqual(clickEventPlan(.middle, count: 2).map(\.type),
                    [.otherMouseDown, .otherMouseUp, .otherMouseDown, .otherMouseUp])
   }
-
-  func testTheTapMaskIsTheVendorsFiveTypes() {
-    for type in [CGEventType.leftMouseDown, .rightMouseDown, .otherMouseDown, .scrollWheel, .keyDown] {
-      XCTAssertTrue(tapEventMask & (1 << type.rawValue) != 0, "\(type)")
-    }
-    for type in [CGEventType.leftMouseUp, .rightMouseUp, .otherMouseUp, .mouseMoved, .leftMouseDragged, .keyUp, .flagsChanged] {
-      XCTAssertTrue(tapEventMask & (1 << type.rawValue) == 0, "\(type)")
-    }
-  }
-}
-
-// MARK: The tap's pinned fields
-
-final class TapFieldsTests: XCTestCase {
-  private func event(_ type: CGEventType) -> CGEvent {
-    let event: CGEvent
-    switch type {
-    case .keyDown: event = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true)!
-    case .scrollWheel: event = CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: 1, wheel2: 0, wheel3: 0)!
-    default: event = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: .zero, mouseButton: .left)!
-    }
-    return event
-  }
-
-  /// The fields the callback touches, from a crafted event, and nothing else: type, 41, 40 and 51 (the spec's "User
-  /// intervention" pins this set; the Mirror asserts the struct carries no more, and a timestamped event proves the
-  /// timestamp is not among them).
-  func testTheCallbackReadsExactlyThePinnedFields() {
-    let down = event(.leftMouseDown)
-    down.setIntegerValueField(eventField(41), value: 501)
-    down.setIntegerValueField(eventField(40), value: 502)
-    down.setIntegerValueField(eventField(51), value: 77)
-    down.timestamp = 12345  // an event field outside the pinned set: it must not surface
-    let fields = tapFields(down)
-    XCTAssertEqual(fields.type, .leftMouseDown)
-    XCTAssertEqual(fields.sourcePID, 501)
-    XCTAssertEqual(fields.targetPID, 502)
-    XCTAssertEqual(fields.windowID, 77)
-    XCTAssertEqual(Mirror(reflecting: fields).children.compactMap(\.label), ["type", "sourcePID", "targetPID", "windowID"],
-                   "the pinned set is exactly the type and the three pids")
-    // A key event the callback never inspects beyond its fields: a key code set on the event is not in the fields.
-    let key = event(.keyDown)
-    key.setIntegerValueField(.keyboardEventKeycode, value: 0x24)
-    XCTAssertEqual(tapFields(key).type, .keyDown)
-    XCTAssertEqual(keyboardKeyCode(of: key) ?? -1, 0x24, "the fixture can set a key code; the fields struct carries none")
-  }
-
-  func testClassification() {
-    let engine: pid_t = 100
-    let driven: pid_t = 200
-    let owners: [Int64: pid_t] = [77: driven, 88: 300]
-    let window: (Int64) -> pid_t? = { owners[$0] }
-    XCTAssertEqual(TapEventClass.of(TapEventFields(type: .keyDown, sourcePID: engine, targetPID: 0, windowID: 0),
-                                    drivenPID: driven, enginePID: engine, windowOwner: window), .own)
-    XCTAssertEqual(TapEventClass.of(TapEventFields(type: .leftMouseDown, sourcePID: 5, targetPID: 0, windowID: 77),
-                                    drivenPID: driven, enginePID: engine, windowOwner: window), .driven)
-    XCTAssertEqual(TapEventClass.of(TapEventFields(type: .keyDown, sourcePID: 5, targetPID: driven, windowID: 0),
-                                    drivenPID: driven, enginePID: engine, windowOwner: window), .driven, "no window: the target pid decides")
-    XCTAssertEqual(TapEventClass.of(TapEventFields(type: .leftMouseDown, sourcePID: 5, targetPID: driven, windowID: 99),
-                                    drivenPID: driven, enginePID: engine, windowOwner: window), .driven,
-                   "an unresolvable window id falls to the target pid (F §9.3), never to nothing")
-    XCTAssertEqual(TapEventClass.of(TapEventFields(type: .keyDown, sourcePID: 5, targetPID: 400, windowID: 88),
-                                    drivenPID: driven, enginePID: engine, windowOwner: window), .other)
-  }
-
-  func testCountsRecordAndReport() {
-    let counts = TapCounts(drivenPID: 200)
-    counts.record(TapEventFields(type: .leftMouseDown, sourcePID: 100, targetPID: 0, windowID: 0), enginePID: 100)
-    counts.record(TapEventFields(type: .keyDown, sourcePID: 5, targetPID: 200, windowID: 0), enginePID: 100)
-    counts.record(TapEventFields(type: .keyDown, sourcePID: 5, targetPID: 200, windowID: 0), enginePID: 100)
-    let report = counts.report
-    XCTAssertEqual((report["counts"] as? [String: [String: Int]])?["leftMouseDown"]?["own"], 1)
-    XCTAssertEqual((report["counts"] as? [String: [String: Int]])?["keyDown"]?["driven"], 2)
-    XCTAssertEqual((report["ownTimes"] as? [Int64])?.count, 1)
-    XCTAssertEqual((report["drivenTimes"] as? [Int64])?.count, 2)
-    XCTAssertEqual(report["drivenPID"] as? Int, 200)
-  }
 }
 
 // MARK: The review round's pins
@@ -360,39 +283,6 @@ final class FrontWindowTests: XCTestCase {
     XCTAssertTrue(Probe.matchesFront(document, pid: 502, bounds: CGRect(x: 10, y: 20, width: 300, height: 400)))
     XCTAssertFalse(Probe.matchesFront(document, pid: 503, bounds: CGRect(x: 10, y: 20, width: 300, height: 400)), "the owner decides")
     XCTAssertFalse(Probe.matchesFront(document, pid: 502, bounds: CGRect(x: 40, y: 20, width: 300, height: 400)), "the bounds decide")
-  }
-}
-
-/// The tap's auto-stop: an early stop cancels the pending deadline, which would otherwise end a later tap's run
-/// (review round 1, the stale-timer finding).
-final class AutoStopTests: XCTestCase {
-  func testCancelStopsTheDeadlineFromFiring() {
-    let autoStop = AutoStop()
-    var fired = 0
-    // A 1 s deadline cannot fire before the cancel on the next line, however loaded the runner (a 0 s one raced it:
-    // hosted ci-gate run 39531662385 saw it fire once).
-    autoStop.arm(seconds: 1) { fired += 1 }
-    autoStop.cancel()
-    Thread.sleep(forTimeInterval: 1.3)
-    XCTAssertEqual(fired, 0, "a cancelled deadline never stops anything")
-  }
-
-  func testAnUncancelledDeadlineFires() {
-    let autoStop = AutoStop()
-    let fired = Box<Int>()
-    let done = DispatchSemaphore(value: 0)
-    autoStop.arm(seconds: 0) { fired.value = (fired.value ?? 0) + 1; done.signal() }
-    XCTAssertEqual(done.wait(timeout: .now() + .seconds(2)), .success)
-    XCTAssertEqual(fired.value, 1)
-  }
-
-  func testASecondArmSupersedesTheFirst() {
-    let autoStop = AutoStop()
-    var fired = 0
-    autoStop.arm(seconds: 1) { fired += 10 }  // superseded before it can fire: never runs
-    autoStop.arm(seconds: 0) { fired += 1 }   // current generation
-    Thread.sleep(forTimeInterval: 1.3)
-    XCTAssertEqual(fired, 1)
   }
 }
 
@@ -542,11 +432,6 @@ final class SeamStub {
     system.schedule = { _, _ in }  // the cap's timer never fires here: every guard ends first
     return system
   }
-}
-
-/// The keyboard key code of an event, for the fixture only (the tap never reads it).
-private func keyboardKeyCode(of event: CGEvent) -> Int64? {
-  event.getIntegerValueField(.keyboardEventKeycode)
 }
 
 /// An integer key code as CGKeyCode.

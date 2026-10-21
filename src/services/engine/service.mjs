@@ -28,12 +28,21 @@
 //   one that does not set a key leaves no earlier call's value standing as its own): codex/toolSurface (the policy's);
 //   cua/nativeEngine {engine, version, build} on every result; cua/engineMs, the client's time around the socket round
 //   trip of the method's own request, null when it never reached the engine (a decline, an index the service refused);
-//   cua/settle on an observation whose settle hit its cap; on input results and input errors the engine's meta as
-//   cua/inputRoute, cua/actionInterval {startedAt, endedAt}, cua/receivedAt, cua/hidIdleMs, and cua/activationGuardMs
-//   and cua/pointUnconfirmed when the engine sends them. (cua/serviceMs is the wrapper's, M2a.)
+//   cua/settle on an observation whose settle hit its cap; cua/screenshotOmitted on an observation whose screenshot the
+//   engine did not take, with the reason ("windowMinimized": a minimized window is observed in place with no screenshot,
+//   and the facade's getScreenshot then fails "Screenshot unavailable"); on input results and input errors the engine's meta as
+//   cua/inputRoute, cua/actionInterval {startedAt, endedAt}, cua/receivedAt, cua/hidIdleMs, and when the engine sends
+//   them cua/activationGuardMs, cua/pointUnconfirmed, cua/intervention ("off": intervention detection is not running,
+//   no Input Monitoring grant), cua/entered (the UTF-16 units a type_text entered, on its result and on the error that
+//   stopped it) and cua/routeAdvice (the per-app route-4 override, once route 3's guard has failed three actions in a
+//   row for the app). cua/serviceMs is the wrapper's (src/services/sky.mjs).
+// - The unknown secondary action's sentence: the vendor's ends with the decimal element index, which only the service
+//   knows, so the engine's invalidSecondaryAction is answered as `<action> is not a valid secondary action for <index>`
+//   (R/F-helper-logic.md §16.3), its code, name and meta kept.
 import {createEngineClient} from './client.mjs';
 import {createObservations} from './observations.mjs';
 import {createPolicy, toolSurface} from './policy.mjs';
+import {SkyComputerUseError} from './protocol.mjs';
 
 export const METHODS = ['list_apps', 'get_app_state', 'click', 'drag', 'paste', 'perform_secondary_action', 'press_key', 'scroll', 'select_text', 'set_value', 'type_text'];
 const APP_SCOPED = new Set(METHODS.filter(method => method !== 'list_apps'));
@@ -53,9 +62,11 @@ const FIELDS = {
 };
 // The keys a call sets only sometimes, reset at its start.
 const PER_CALL = {
-  'cua/engineMs': null, 'cua/settle': null, 'cua/inputRoute': null, 'cua/actionInterval': null, 'cua/receivedAt': null, 'cua/hidIdleMs': null,
-  'cua/activationGuardMs': null, 'cua/pointUnconfirmed': null,
+  'cua/engineMs': null, 'cua/settle': null, 'cua/screenshotOmitted': null, 'cua/inputRoute': null, 'cua/actionInterval': null, 'cua/receivedAt': null, 'cua/hidIdleMs': null,
+  'cua/activationGuardMs': null, 'cua/pointUnconfirmed': null, 'cua/intervention': null, 'cua/entered': null, 'cua/routeAdvice': null,
 };
+// The engine's optional input meta keys, carried under cua/<key> when it sends them.
+const OPTIONAL_INPUT_META = ['activationGuardMs', 'pointUnconfirmed', 'intervention', 'entered', 'routeAdvice'];
 
 // An observation of another bundle than the approved one (internal: the call is redone once).
 class IdentityChanged extends Error {}
@@ -67,8 +78,7 @@ function inputMeta(meta) {
     'cua/actionInterval': {startedAt: meta.startedAt ?? null, endedAt: meta.endedAt ?? null},
     'cua/receivedAt': meta.receivedAt ?? null,
     'cua/hidIdleMs': meta.hidIdleMs ?? null,
-    ...(meta.activationGuardMs !== undefined ? {'cua/activationGuardMs': meta.activationGuardMs} : {}),
-    ...(meta.pointUnconfirmed !== undefined ? {'cua/pointUnconfirmed': meta.pointUnconfirmed} : {}),
+    ...Object.fromEntries(OPTIONAL_INPUT_META.filter(key => meta[key] !== undefined).map(key => [`cua/${key}`, meta[key]])),
   };
 }
 
@@ -137,6 +147,7 @@ export function createService({nodeRepl, client = null}) {
     }
     const text = observations.observe(target.appPath, skyshot, {disableDiff: input.disableDiff === true});
     if (skyshot.settle) setMeta({'cua/settle': skyshot.settle});
+    if (skyshot.screenshotOmitted) setMeta({'cua/screenshotOmitted': skyshot.screenshotOmitted});
     return {app: target.appPath, screenshot: skyshot.screenshot?.url ? {url: skyshot.screenshot.url} : null, text};
   }
 
@@ -152,7 +163,16 @@ export function createService({nodeRepl, client = null}) {
       args.element = element.token;
       lineage = element.lineage;
     }
-    const result = await call(method, args, {lineage});
+    let result;
+    try {
+      result = await call(method, args, {lineage});
+    } catch (error) {
+      if (method === 'perform_secondary_action' && error?.name === 'SkyComputerUseError' && error.errorName === 'invalidSecondaryAction') {
+        throw new SkyComputerUseError({code: error.code, reason: `${String(input.action).slice(0, 256)} is not a valid secondary action for ${index}`,
+          errorName: error.errorName, meta: error.meta});
+      }
+      throw error;
+    }
     if (result?.meta) setMeta(inputMeta(result.meta));
     return undefined;
   }

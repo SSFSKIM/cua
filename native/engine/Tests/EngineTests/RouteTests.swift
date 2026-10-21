@@ -43,10 +43,11 @@ final class ElementClickPlanTests: XCTestCase {
     XCTAssertEqual(calls, 1)
   }
 
-  /// The vendor opens a menu-bar item by activating the app and recording its menu (FUN_100083904's role test), never by
-  /// a press or a synthesized click: every click on one is refused before anything is posted, whatever the button,
-  /// count or forced route, and the gate is never consulted. The menu bar's own node is refused the same way: a
-  /// synthesized click at its midpoint would land on one of its items.
+  /// The vendor opens a menu-bar item by recording its menu (FUN_100083904's role test), never by a press or a
+  /// synthesized click: a click that reaches the plan (the record path, MenuRecord.swift, takes the plain left click on
+  /// an item with a menu before it) is refused before anything is posted, whatever the button, count or forced route,
+  /// and the gate is never consulted. The menu bar's own node is refused the same way: a synthesized click at its
+  /// midpoint would land on one of its items.
   func testEveryClickOnAMenuBarItemOrTheMenuBarIsRefused() {
     var calls = 0
     for role in ["AXMenuBarItem", "AXMenuBar"] {
@@ -56,7 +57,7 @@ final class ElementClickPlanTests: XCTestCase {
                                     gateCalls: &calls)) { error in
         XCTAssertEqual((error as? EngineError)?.errorName, "menuBarItemUnsupported")
         let message = (error as? EngineError)?.message ?? ""
-        XCTAssertTrue(message.contains("later engine release"), message)
+        XCTAssertTrue(message.contains("Only a plain left click") && message.contains("Nothing was clicked"), message)
         XCTAssertTrue(message.contains("keyboard shortcut") && message.contains("pressKey"), "the sentence names the alternative: \(message)")
         XCTAssertFalse(message.contains("M2a"), "no milestone names in model-facing text")
       }
@@ -443,6 +444,7 @@ final class ClickDeliveryTests: XCTestCase {
     XCTAssertEqual(meta.inputRoute, .activation, "the refusal names the route that failed")
     XCTAssertNil(meta.startedAt)
     XCTAssertNil(meta.endedAt)
+    XCTAssertNotNil(meta.activationGuardMs, "the failed guard's duration is kept for the diagnosis")
   }
 
   func testRouteThreePostsThePlainClickAfterTheActivationAndWithdrawsIt() throws {
@@ -598,6 +600,8 @@ struct GuardPost: Equatable {
   let kind: Kind
   let pid: pid_t
   let flags: CGEventFlags?
+  /// A mouse event's global point.
+  var location: CGPoint? = nil
 }
 
 /// Route 3's outside world on a fake clock: posts, holds and re-activations recorded; the frontmost app, the window
@@ -620,8 +624,14 @@ final class GuardSeam {
   /// Scheduled work by due time on the fake clock, run as the clock passes it.
   private var timers: [(due: Double, work: () -> Void)] = []
 
+  /// Whether a successful re-activation makes its app frontmost (route 4's activation and restore).
+  let reactivationTakesFront: Bool
+  /// Processes whose re-activation fails (route 4's restore of the user's app).
+  var reactivationRefused: Set<pid_t> = []
+
   init(frontmost: pid_t?, frontmostAfterPost: pid_t? = nil, reactivates: Bool = true, step: Double = 10, raiseCost: Double = 0,
-       targetInFront: @escaping (Int) -> Bool = { _ in false }) {
+       reactivationTakesFront: Bool = false, targetInFront: @escaping (Int) -> Bool = { _ in false }) {
+    self.reactivationTakesFront = reactivationTakesFront
     self.frontmost = frontmost
     self.frontmostAfterPost = frontmostAfterPost
     self.reactivates = reactivates
@@ -653,7 +663,8 @@ final class GuardSeam {
       default: kind = .other
       }
       if case .mouse = kind {
-        self.posts.append(GuardPost(kind: kind, pid: pid, flags: event.flags.intersection([.maskCommand, .maskShift, .maskControl, .maskAlternate])))
+        self.posts.append(GuardPost(kind: kind, pid: pid, flags: event.flags.intersection([.maskCommand, .maskShift, .maskControl, .maskAlternate]),
+                                    location: event.location))
       } else {
         self.posts.append(GuardPost(kind: kind, pid: pid, flags: nil))
       }
@@ -665,8 +676,14 @@ final class GuardSeam {
       self.holds += 1
       return { self.releases += 1; self.releasedAt = self.clock }
     }
-    system.reactivate = { pid in self.reactivated.append(pid); return self.reactivates }
+    system.reactivate = { pid in
+      self.reactivated.append(pid)
+      let reactivates = self.reactivates && !self.reactivationRefused.contains(pid)
+      if reactivates && self.reactivationTakesFront { self.frontmost = pid }
+      return reactivates
+    }
     system.userWindow = { _ in (AXUIElementCreateApplication(990_002), 42) }
+    system.userWindowNumber = { _ in 42 }
     var samples = 0
     system.isInFront = { _, _ in samples += 1; return self.targetInFront(samples) }
     system.raise = { _ in self.raises += 1; self.advance(self.raiseCost) }

@@ -2,9 +2,10 @@ import AppKit
 import ApplicationServices
 import Foundation
 
-// Observation (the spec's Design, "Observation (skyshot)"): get_app_state settles first when the app was acted on since
-// its last observation (Settle.swift), enables a web-shaped app's accessibility (Enablement.swift), then walks the
-// app's primary window (AXFocusedWindow, else AXMainWindow, else the last of AXWindows) plus the menu bar's top-level
+// Observation (the spec's Design, "Observation (skyshot)"): get_app_state settles first when the engine just launched or
+// reopened the app or the app was acted on since its last observation (Settle.swift), enables a web-shaped app's
+// accessibility (Enablement.swift), observes a minimized primary window in place with no screenshot (Minimized.swift),
+// then walks the app's primary window (AXFocusedWindow, else AXMainWindow, else the last of AXWindows) plus the menu bar's top-level
 // items (Walk.swift) and returns a `Skyshot` JSON tree; rendering to the model's text is the service's. `timings`
 // carries the per-phase durations and counts the M0 spike measures; the request's switches choose what it prices.
 
@@ -155,7 +156,6 @@ extension Engine {
     var timings = Timings()
     let started = monotonicMilliseconds()
     try requireAccessibility()
-    try refuseWhenLocked()
     let includeScreenshot = args["includeScreenshot"] as? Bool ?? false
     let outputDirectory = args["outputDirectory"] as? String
     if includeScreenshot { guard outputDirectory?.hasPrefix("/") == true else { throw EngineError.invalidArguments("outputDirectory must be an absolute path") } }
@@ -182,48 +182,73 @@ extension Engine {
     let appPid = target.pid
     let application = prepare(AXUIElementCreateApplication(appPid))
     let connection = context.connection
+    // The connection drives the app from here: a user event during the observation keeps the re-query flag set.
+    observationBegins(app, pid: appPid, connection: connection)
     let webShaped = webAccessibility.isWebShaped(app.appPath)
     timings.set("webShaped", webShaped)
 
-    // The settle an earlier action armed (or the request forces) runs before anything is read; its last busy walk's
-    // reads are handed to the observation.
+    // After its own launch or reopen the engine waits for the window (5 s, polled every 50 ms; timeoutReached, the
+    // vendor's 0x1006fbf70) and then settles once before the observation; the settle an earlier action armed (or the
+    // request forces) runs next. Nothing else settles (observationSettles). A settle cut by the request's deadline is
+    // timeoutReached, an action's staying armed; a capped one is reported on the observation.
+    if opened {
+      _ = try timings.time("window") {
+        try awaitPrimaryWindow(of: application, until: min(context.deadline, unixMilliseconds() + launchWindowWaitMs), opened: true)
+      }
+    }
     var settleMarker: Any?
     var settled: Settled?
-    if args["settle"] as? Bool ?? connection.needsSettle.contains(app.key) {
+    for kind in observationSettles(opened: opened, armed: connection.needsSettle.contains(app.key), forced: args["settle"] as? Bool) {
+      let prefix = kind == .afterOpen ? "openSettle" : "settle"
       let settleCosts = FetchCosts()
       let requestDeadline = monotonicMilliseconds() + Double(context.deadline - unixMilliseconds())
-      let outcome = settle(application, pid: appPid, webShaped: webShaped, deadline: requestDeadline, costs: settleCosts)
-      settled = outcome
+      let outcome = settle(application, pid: appPid, sampleMs: settleSampleMs(kind, webShaped: webShaped), deadline: requestDeadline, costs: settleCosts)
       let report = outcome.report
-      // The action's settle stays armed: the next observation settles again.
       if report.timedOut { throw EngineError(name: "timeoutReached", "timeoutReached") }
-      timings.add("settle", report.ms)
-      for (phase, ms) in settleCosts.ms { timings.add(phase == "settleBusyWalk" ? phase : "settleBusyWalk" + phase.prefix(1).uppercased() + phase.dropFirst(), ms) }
-      for (name, n) in settleCosts.counts { timings.count("settleBusyWalk" + name.prefix(1).uppercased() + name.dropFirst(), n) }
-      timings.set("settle", report.capped ? "capped" : "settled")
-      timings.set("settleNotifications", report.total)
-      timings.set("settleNotificationCounts", report.counts)
-      timings.set("settleIgnoredTitleChanges", report.ignoredTitleChanges)
-      timings.set("settleBusyWalks", report.busyWalks)
-      timings.set("settleBusyVetoes", report.busyVetoes)
-      timings.set("settleObserved", report.observed)
-      timings.add("settleObserver", report.observerMs)
-      if let quietAt = report.quietAtMs { timings.set("settleQuietAtMs", (quietAt * 1000).rounded() / 1000) }
+      if kind.reusesTree { settled = outcome }  // the open's tree is discarded, as the vendor's (0x100164c0c)
+      timings.add(prefix, report.ms)
+      let busyWalk = prefix + "BusyWalk"
+      for (phase, ms) in settleCosts.ms { timings.add(phase == "settleBusyWalk" ? busyWalk : busyWalk + phase.prefix(1).uppercased() + phase.dropFirst(), ms) }
+      for (name, n) in settleCosts.counts { timings.count(busyWalk + name.prefix(1).uppercased() + name.dropFirst(), n) }
+      timings.set(prefix, report.capped ? "capped" : "settled")
+      timings.set(prefix + "Notifications", report.total)
+      timings.set(prefix + "NotificationCounts", report.counts)
+      timings.set(prefix + "IgnoredTitleChanges", report.ignoredTitleChanges)
+      timings.set(prefix + "BusyWalks", report.busyWalks)
+      timings.set(prefix + "BusyVetoes", report.busyVetoes)
+      timings.set(prefix + "Observed", report.observed)
+      timings.add(prefix + "Observer", report.observerMs)
+      if let quietAt = report.quietAtMs { timings.set(prefix + "QuietAtMs", (quietAt * 1000).rounded() / 1000) }
       if report.capped { settleMarker = "capped" }
     }
     connection.needsSettle.remove(app.key)
 
     var enabledNow = false
+    let launchDate = app.running?.launchDate
     let eligible = enablementEligible(bundleIdentifier: app.bundleIdentifier, webShaped: webShaped)
-    if eligible, let attribute = timings.time("enable", { webAccessibility.enable(application, pid: appPid) }) {
-      timings.set("enabled", attribute)
-      enabledNow = true
+    if eligible {
+      let enabling = timings.time("enable") {
+        webAccessibility.enableReporting(pid: appPid, launched: launchDate, connection: connection.id, access: .live(pid: appPid, launched: launchDate))
+      }
+      // What the attribute read before this observation touched it: "true", "false" or "unreadable"; absent when the
+      // app lists neither attribute (or is not eligible).
+      if let prior = enabling.prior { timings.set("enablementPrior", prior.wire) }
+      if let attribute = enabling.set {
+        timings.set("enabled", attribute)
+        enabledNow = true
+      }
     }
 
-    let windowDeadline = opened ? min(context.deadline, unixMilliseconds() + launchWindowWaitMs) : unixMilliseconds()
-    guard let window = try timings.time("window", { try awaitPrimaryWindow(of: application, until: windowDeadline, opened: opened) }) else {
+    // The window is there by now when the engine opened the app (waited above); otherwise it is read once.
+    guard let window = try timings.time("window", { try awaitPrimaryWindow(of: application, until: unixMilliseconds(), opened: false) }) else {
       throw EngineError(name: "noWindowsAvailable", "noWindowsAvailable")
     }
+    // A minimized primary window is observed in place with no screenshot, or refused when it exposes no tree (unless a
+    // recorded menu-bar item roots the walk instead of the window).
+    let minimized = isMinimized(window)
+    if minimized { timings.set("minimized", true) }
+    let exposesTree = !minimized || connection.menuRoot(app: app.key) != nil || !elementList(attribute(window, kAXChildrenAttribute)).isEmpty
+    let plan = try minimizedObservation(minimized: minimized, exposesTree: exposesTree, includeScreenshot: includeScreenshot, app: app.displayName)
     // The wait follows any enabling (the named bundles' too) and every Chromium window.
     var waited = false
     var chromium = false
@@ -231,7 +256,6 @@ extension Engine {
       chromium = timings.time("chromiumCheck") { isChromiumWindow(window) }
       timings.set("chromium", chromium)
     }
-    let launchDate = app.running?.launchDate
     let seenBefore = webAccessibility.hasSeenWebArea(pid: appPid, launched: launchDate)
     if seenBefore { timings.set("webAreaSeen", true) }
     if webAreaWaitNeeded(switchOn: webAreaWaitEnabled, enabledNow: enabledNow, chromium: chromium, seen: seenBefore) {
@@ -251,7 +275,11 @@ extension Engine {
       lineage.resetWatches()
     }
 
-    let menuBarElement = timings.time("menuBar") { elementAttribute(application, kAXMenuBarAttribute) }
+    // A recorded menu-bar item (MenuRecord.swift) roots the walk in place of the window and the menu bar, with no
+    // screenshot; the header stays the window's.
+    let menuRoot = connection.menuRoot(app: app.key)
+    if menuRoot != nil { timings.set("menuRoot", true) }
+    let menuBarElement = menuRoot != nil ? nil : timings.time("menuBar") { elementAttribute(application, kAXMenuBarAttribute) }
     let menuItems = timings.time("menuBar") { menuBarElement.map { elementList(attribute($0, kAXChildrenAttribute)) } ?? [] }
     let windowFrame = frame(of: window)
     // The window capture runs beside the tree walk (in-sitting tuning iteration 1): it needs only the window and its
@@ -262,7 +290,7 @@ extension Engine {
     // element token never change), and the capture thread only passes it to AX calls, which any thread may make, as
     // the walk's own reads of the same window on this thread do.
     nonisolated(unsafe) let captureWindow = window
-    let pendingCapture: PendingCapture<CapturedScreenshot>? = includeScreenshot
+    let pendingCapture: PendingCapture<CapturedScreenshot>? = plan.capture && menuRoot == nil
       ? PendingCapture { [self] timings in
           try capture(window: captureWindow, pid: capturePid, frame: windowFrame, into: outputDirectory!, name: displayName,
                       revision: captureRevision, timings: &timings)
@@ -280,8 +308,9 @@ extension Engine {
     }
     let deadline = monotonicMilliseconds() + Double(min(observationDeadlineMs, max(0, context.deadline - unixMilliseconds())))
     let walk = TreeWalk(source: source, lineage: lineage, limits: WalkLimits(deadline: deadline), markdown: markdownEnabled,
-                        interactionFlags: interactionFlags, chromium: chromium, visibleFrame: windowFrame)
-    timings.time("walk") { walk.run(window: window, menuBar: menuBarElement, menuItems: menuItems) }
+                        interactionFlags: interactionFlags, chromium: chromium, visibleFrame: menuRoot == nil ? windowFrame : nil)
+    timings.time("walk") { walk.run(window: menuRoot ?? window, menuBar: menuBarElement, menuItems: menuItems) }
+    walk.revision.menuRoot = menuRoot
     timings.merge(source.costs)
     timings.set("nodes", walk.nodes.count + walk.menuBar.count)
     timings.set("markdownFetches", walk.markdownFetches)
@@ -324,15 +353,18 @@ extension Engine {
     // since its elements were read, so it invalidates until the next observation.
     timings.time("monitor") { lineage.watch(Set([appPid]).union(walk.revision.owners), afterRead: true) }
     timings.set("watchedProcesses", lineage.watched)
-    connection.requiresRequery.remove(app.key)
+    // The re-query flag's clearing, taken at the read and applied only once the observation answers (Intervention.swift;
+    // R/sky-behaviour.md §23.4); the processes the walk met count as the app's from now on (a panel's service).
+    let clearing = observationRead(app, owners: walk.revision.owners, connection: connection)
 
-    var screenshot: Any = NSNull()
-    if let pendingCapture {
+    // The screenshot's join is the observation's last step that can fail; nothing after it throws.
+    let screenshot: Any = try observationAnswered(clearing, connection: connection) {
+      guard let pendingCapture else { return NSNull() }
       let joined = timings.time("screenshotJoin") { pendingCapture.wait() }
       timings.merge(joined.timings)
       let image = try joined.result.get()
-      screenshot = image.wire
       lineage.screenshot = ObservedScreenshot(window: window, image: image)  // what this window's coordinate clicks divide by
+      return image.wire
     }
     timings.add("total", monotonicMilliseconds() - started)
 
@@ -360,6 +392,7 @@ extension Engine {
       "timings": timings.wire,
     ]
     if let settleMarker { skyshot["settle"] = settleMarker }
+    if let omitted = plan.screenshotOmitted { skyshot["screenshotOmitted"] = omitted }
     return skyshot
   }
 

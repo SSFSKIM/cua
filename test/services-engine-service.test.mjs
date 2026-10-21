@@ -278,6 +278,64 @@ test('an input error carries the engine\'s meta; the next call\'s meta starts ov
   for (const key of ['cua/inputRoute', 'cua/actionInterval', 'cua/receivedAt', 'cua/hidIdleMs', 'cua/activationGuardMs', 'cua/pointUnconfirmed']) assert.equal(meta[key], null, key);
 });
 
+test('an unknown secondary action answers the vendor\'s sentence with the model\'s index, which only the service knows; its meta rides along', async t => {
+  const refusedMeta = {...INPUT_META, inputRoute: 1, startedAt: null, endedAt: null, activationGuardMs: undefined, pointUnconfirmed: undefined};
+  const {engine, getApp, call, meta} = await session(t, {handlers: {'execute:perform_secondary_action': () => {
+    throw new EngineFailure(-10005, 'Frobnicate is not a valid secondary action for the element', 'invalidSecondaryAction', {meta: refusedMeta});
+  }}});
+  const {app} = await getApp('TextEdit');
+  await assert.rejects(call(() => app.performSecondaryAction(2, 'Frobnicate')), error => {
+    assert.equal(error.message, 'Computer Use server error -10005: Frobnicate is not a valid secondary action for 2');
+    assert.equal(error.errorName, 'invalidSecondaryAction');
+    return true;
+  });
+  assert.equal(engine.executes().find(p => p.method === 'perform_secondary_action').args.element, 't2', 'the engine got the token, never the index');
+  assert.equal(meta['cua/inputRoute'], 1);
+  assert.deepEqual(meta['cua/actionInterval'], {startedAt: null, endedAt: null});
+});
+
+test('a paste reports its route as "paste", and its clipboard sentences reach the model as the engine wrote them', async t => {
+  const pasted = {...INPUT_META, inputRoute: 'paste', pointUnconfirmed: undefined};
+  const timedOut = 'Timed out waiting for the application to read the clipboard';
+  let fail = false;
+  const {getApp, call, meta, engine} = await session(t, {handlers: {'execute:paste': () => {
+    if (fail) throw new EngineFailure(-10005, timedOut, 'clipboardReadTimedOut', {meta: pasted});
+    return {meta: pasted};
+  }}});
+  const {app} = await getApp('TextEdit');
+  await call(() => app.paste('# Title', {format: 'md'}));
+  assert.deepEqual(engine.executes().at(-1).args, {app: APPS.TextEdit.appPath, text: '# Title', format: 'md'});
+  assert.equal(meta['cua/inputRoute'], 'paste');
+  assert.equal(meta['cua/activationGuardMs'], 41.5);
+  fail = true;
+  await assert.rejects(call(() => app.paste('x')), {message: `Computer Use server error -10005: ${timedOut}`});
+  assert.equal(meta['cua/inputRoute'], 'paste');
+  assert.deepEqual(meta['cua/actionInterval'], {startedAt: 1000, endedAt: 1042}, '⌘V was posted before the wait ran out');
+});
+
+test('intervention, entered and routeAdvice ride as cua/ meta on results and on the userIntervened error that stopped a type_text; the next call starts over', async t => {
+  const stopped = {...INPUT_META, inputRoute: "2'", activationGuardMs: undefined, pointUnconfirmed: undefined, entered: 3};
+  const {getApp, call, meta} = await session(t, {handlers: {
+    'execute:type_text': () => { throw new EngineFailure(-10016, 'The user changed \'/System/Applications/TextEdit.app\'. Re-query the latest state with `get_app_state` before sending more actions.', 'userIntervened', {meta: stopped}); },
+    'execute:press_key': () => ({meta: {...INPUT_META, inputRoute: "2'", activationGuardMs: undefined, pointUnconfirmed: undefined, intervention: 'off', hidIdleMs: 52000}}),
+    'execute:click': () => { throw new EngineFailure(-10005, 'The action was not performed: another app came to the front.', 'activationFailed', {meta: {...INPUT_META, startedAt: null, endedAt: null, routeAdvice: 'add "routes": {"com.apple.TextEdit": 4}'}}); },
+  }});
+  const {app} = await getApp('TextEdit');
+  await assert.rejects(call(() => app.typeText('hello')), /The user changed/);
+  assert.equal(meta['cua/entered'], 3);
+  assert.deepEqual(meta['cua/actionInterval'], {startedAt: 1000, endedAt: 1042}, 'the stopped action\'s interval');
+  assert.equal(meta['cua/intervention'], null, 'detection was on');
+  await call(() => app.pressKey('a'));
+  assert.equal(meta['cua/intervention'], 'off');
+  assert.equal(meta['cua/entered'], null, 'a key press carries no count, and none is left standing');
+  assert.equal(meta['cua/hidIdleMs'], 52000);
+  await assert.rejects(call(() => app.click(1)), /another app came to the front/);
+  assert.equal(meta['cua/routeAdvice'], 'add "routes": {"com.apple.TextEdit": 4}');
+  assert.equal(meta['cua/intervention'], null);
+  await call(() => app.getAXState({emit: false}));
+  for (const key of ['cua/intervention', 'cua/entered', 'cua/routeAdvice']) assert.equal(meta[key], null, key);
+});
+
 test('cua/settle rides on the observation whose settle hit its cap, and on no other', async t => {
   const {getApp, call, meta, trees} = await session(t);
   const {app} = await getApp('TextEdit');
@@ -285,6 +343,23 @@ test('cua/settle rides on the observation whose settle hit its cap, and on no ot
   trees.get(APPS.TextEdit.appPath).settle = 'capped';
   await call(() => app.getAXState({emit: false}));
   assert.equal(meta['cua/settle'], 'capped');
+});
+
+test('an observation of a minimized window carries no screenshot and its meta says why; the next observation clears it', async t => {
+  const {getApp, call, meta, trees} = await session(t);
+  const {app} = await getApp('TextEdit');
+  assert.equal(meta['cua/screenshotOmitted'], null);
+  const tree = trees.get(APPS.TextEdit.appPath);
+  const shown = tree.screenshot;
+  Object.assign(tree, {screenshot: null, screenshotOmitted: 'windowMinimized'});
+  const state = await call(() => app.getAXStateAndScreenshot({emit: false}));
+  assert.equal(state.screenshot, undefined, 'the facade returns the state alone');
+  assert.equal(meta['cua/screenshotOmitted'], 'windowMinimized');
+  await assert.rejects(call(() => app.getScreenshot({emit: false})), {message: `Screenshot unavailable for ${APPS.TextEdit.appPath}.`});
+  assert.equal(meta['cua/screenshotOmitted'], 'windowMinimized', 'getScreenshot\'s refusal is the facade\'s; the meta says why');
+  Object.assign(tree, {screenshot: shown, screenshotOmitted: undefined});
+  await call(() => app.getAXState({emit: false}));
+  assert.equal(meta['cua/screenshotOmitted'], null);
 });
 
 test('a declined app fails "Computer Use was not approved to use <app>" with nothing observed; a forbidden one the vendor\'s sentence with nothing asked', async t => {

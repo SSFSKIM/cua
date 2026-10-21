@@ -59,7 +59,7 @@ It consolidates three readings in this directory into one rule set: `A-contract.
 ## 2. Observation and window choice
 
 - **Context.** `get_app_state` observes in the full-UI context. F places it outside the informational context, and the event-stream context belongs to the recorder [F §2.3, §4.1; E §2.3]. Several rules below apply only in this context.
-- **Primary window.** `AXFocusedWindow`, else `AXMainWindow`, else the last element of `AXWindows` [F §1.7].
+- **Primary window.** `AXFocusedWindow`, else `AXMainWindow`, else the last element of `AXWindows` [F §1.7]. No getter reads `AXMinimized`, so an app whose only window is minimized selects that window (inference from AppKit) [F §16.1; M2a reading, 2026-10-21].
 - **No window.** The request fails `noWindowsAvailable` [F §1.7, inference; E §4.2; A §1.5]. cua's harnesses match `/noWindowsAvailable/` in the message [A §6.3]. The message's form is in §21.
 - **Window id.** The primary window maps to its CGWindow id through `_AXUIElementGetWindow`; failure is `cgWindowNotFound` [F §1.7, §11].
 - **Focused element.** `AXFocusedUIElement` is read, tolerating −25212 (no value) and −25205 (attribute unsupported) [F §1.7].
@@ -67,8 +67,14 @@ It consolidates three readings in this directory into one rule set: `A-contract.
   - *web-shaped*: the bundle's `CFBundleURLTypes` include the scheme `http`, or `NSPrincipalClass` is `AtomApplication` (Electron) or `BrowserCrApplication` (Chromium);
   - *Chromium*: web-shaped, and the window's first `AXChildren` element lists `ChromeAXNodeId`;
   - *Catalyst*.
-- **What is walked.** The primary window's `AXChildren` subtree, plus the menu bar's top-level items without submenus (inference). Sheets appear as the window's AX children. Nothing else is walked [F §1.8]. **F over A**: A §3.5 left the menu bar at rest open.
+- **What is walked.** The primary window's `AXChildren` subtree, plus the menu bar's top-level items without submenus (inference). Sheets appear as the window's AX children. Nothing else is walked [F §1.8]. **F over A**: A §3.5 left the menu bar at rest open. While a menu-bar item is recorded (§10), the walk is rooted at that item instead of the window [F §16.9; M2a reading, 2026-10-21].
 - **Terminated app.** The observation throws when the app's `NSRunningApplication` is terminated. The next call relaunches the app under a new controller and lineage ("getAXState() relaunches it") [F §3.4, inference; A §7].
+- **Preparation (M2a reading, 2026-10-21).**
+  - vendor: every `get_app_state` first runs a preparation that no action handler runs. An app not running is opened; a running app is opened again (the same non-activating open, i.e. a reopen) when it has no primary window or its primary window's `AXMinimized` reads true; an unreadable (nil) or false read opens nothing [F §8.10, §16.1].
+  - cua: the same for a missing primary window; for a minimized one, the rule below. The preparation's settle is §17 [cua: Decision Log, 2026-10-21 M2a vendor reading, items 1 and 2].
+- **Minimized window (M2a reading, 2026-10-21).**
+  - vendor: the preparation's reopen un-minimizes a default AppKit app's window (AppKit's reopen handling, inference), so it effectively never observes a minimized window; actions never reopen. Its capture takes an off-screen window by window id through SkyLight rather than refusing it, and what that image holds for a minimized window is undetermined. With Stage Manager on, every observation sets `AXMinimized` false on an off-stage window and may perform `AXAddToStage`, its only `AXMinimized` write [F §16.1].
+  - cua: the engine never un-minimizes the owner's window and never writes `AXMinimized` or performs `AXAddToStage`. It observes a minimized primary window in place when the Accessibility API exposes its tree, with no screenshot (`screenshot: null`, the reason in the result's meta). A request that cannot be served without the window on screen (a synthesized click or drag, a coordinate) is refused with a sentence naming the minimized window; an advertised action, `set_value` and `select_text` still act. Where the tree is not exposed, the observation is refused with that sentence. An off-stage window that reads minimized falls under this rule. The reopen and the Stage Manager writes are declared differences [cua: Decision Log, 2026-10-21 M2a pre-flight, item 2; M2a vendor reading, item 2].
 - **Screenshot, vendor.** Every `get_app_state` captures one: no caller passes `skipScreenshot`, and only a menu-bar-item focus skips the image [F §4.8]. Other facts [E §4.1–4.2; F §11]:
   - two back ends exist, ScreenCaptureKit and SkyLight's `SLSHWCaptureWindowListInRect`, and which is the default is not visible;
   - related windows (sheets, popovers, menus, inference) can be added and cropped to the key window;
@@ -89,8 +95,8 @@ It consolidates three readings in this directory into one rule set: `A-contract.
 - **No match.** `invalidApp` −10010 [A §1.5; cua: Design, App resolution and launch]. The vendor's sentence for it is not recovered [undetermined: F §14, not listed].
 - **Bound identity.** The policy's `appPath` replaces `app` before the call, and `getApp` binds to it, so every later call passes a path [A §2.6, §7]. cua does the same [cua: Design, App resolution and launch].
 - **Launch.**
-  - vendor: an app that is not running is launched with `activates = NO` [F §5.4]. `awaitingLaunchCompletion` re-reads `AXWindows` every 50 ms until it reads (or gives −25212 or −25205), with no attempt count or timeout of its own. The bound that was observed lives elsewhere: a cold TextEdit's first `getApp` failed after about 5.5 s with `Computer Use server error -10005: timeoutReached`, and the retry bound [F §8.8; A §7; undetermined: F §14.5].
-  - cua: `NSWorkspace.openApplication` with `activates = false`, then a wait of up to 5 s for a window, then `timeoutReached` [cua: Design, App resolution and launch].
+  - vendor: an app that is not running is launched with `activates = NO` [F §5.4]. `awaitingLaunchCompletion` re-reads `AXWindows` every 50 ms until it reads (or gives −25212 or −25205), with no attempt count or timeout of its own. The bound that was observed is the open helper's `waitUntilHasPrimaryWindow(timeout: 5.0, pollingInterval: 0.05)`, which a launch and a reopen share and which is followed by a settle (50 ms sampling, 250 ms quiet period, the tree discarded, §17): a cold TextEdit's first `getApp` failed after about 5.5 s with `Computer Use server error -10005: timeoutReached`, that wait plus the open itself (inference) [F §8.8, §8.10; A §7; M2a reading, 2026-10-21].
+  - cua: `NSWorkspace.openApplication` with `activates = false`, then a wait of up to 5 s for a window, then `timeoutReached` [cua: Design, App resolution and launch]. After the window wait it settles once, with 50 ms sampling and the 250 ms quiet period, and discards the tree [cua: Decision Log, 2026-10-21 M2a vendor reading, item 1].
 - **Dock attention.** vendor: `_SetApplicationDesiresAttention(psn, false)` runs twice at controller set-up [F §5.4] / cua: not in the Design (§23).
 - **list_apps.**
   - vendor: the running apps plus the apps used in the last 14 days, from Spotlight (`kMDItemLastUsedDate_Ranking`, `kMDItemUseCount`) [E §7]. Server rows are `{displayName, bundleIdentifier, appPath?, lastUsedDate?, useCount?, isRunning, isFrontmost}`, with the four non-optional fields always present [E §1.2]. The JS maps each to `{id: bundleIdentifier ?? displayName ?? "unknown", displayName, isRunning, lastUsedDate?, useCount?}` [A §1.4].
@@ -138,7 +144,7 @@ It consolidates three readings in this directory into one rule set: `A-contract.
 - **VoiceOver preference.**
   - vendor: set only for `com.microsoft.Excel`, `com.apple.Music`, the prefix `com.openai.atlas`, `company.thebrowser.Browser` and `company.thebrowser.dia`, in the full-UI context. The value is written through `NSUserDefaults` (suite and key inferred as `com.apple.VoiceOver` / `voiceOverOnOffKey`), then `com.apple.universalaccess.VoiceOverSettingsDidChange` is posted. For Arc, Dia and Atlas a later task follows (inference: a restore). Chrome, Chromium, Electron and AppKit apps never touch it [F §1.9; undetermined: F §14.3 for the literals]. **F over E**: E §2.4 could not see which apps.
   - cua: never touched, since the preference is global. Those five apps may expose less until the owner decides at M5 [cua: Decision Log 9].
-- **Web-area wait.** On the first observation of an app after enabling, or of a Chromium window: sleep 100 ms, then poll every 50 ms for up to 1 s for an `AXWebArea` under the window, then record the app as initialized [F §1.9]. F's wording does not say whether a Chromium window pays this on every observation or only until its app is recorded. The Design reads it as "or of any Chromium window" [cua: Design, Observation]; M0's Chrome timings settle it (§23).
+- **Web-area wait.** On the first observation of an app after enabling, or of a Chromium window: sleep 100 ms, then poll every 50 ms for up to 1 s for an `AXWebArea` under the window, then record the app as initialized [F §1.9]. F's wording does not say whether a Chromium window pays this on every observation or only until its app is recorded. The Design reads it as "or of any Chromium window" [cua: Design, Observation]; M0's Chrome timings settle it (§23). The wait tests presence only: no `AXLoaded`, child count or value is read, and nothing else on the observation path waits for web content to fill, so an already open Chrome window with a still-filling page is read as it is [F §8.11; M2a reading, 2026-10-21]. cua adds no fill wait; a scene state that must be filled is the harness's to wait for [cua: Decision Log, 2026-10-21 M2a vendor reading, item 1].
 
 ## 5. Tree transformations (the nine and the four)
 
@@ -318,15 +324,20 @@ Note: Pay special attention to the content selected by the user. …
   - 3: fake activation, then events.
   - 4: foreground assist. This is cua only; the vendor has no such path [F §5.4].
   - `"paste"`: typeText's fallback.
-- **Menu-bar item.** A plain click (left, one click, no hold, no held key, no flags) on an `AXMenuBarItem` runs fake activation for the window (§12) and records the open menu [F §5.1].
+- **Menu-bar item.**
+  - vendor: a plain click (left, one click, no hold, no held key, no flags) and the `AXPick` secondary action on an `AXMenuBarItem` whose direct `AXChildren` include an `AXMenu` press nothing and open nothing. They run fake activation for the observed window (§12) and record the item (the `AXMenu` child is stored beside it, but no code reads it). While the item is recorded, observations root the walk at it (the item, its menu, the menu items), keep the window's header and take no screenshot. The record clears on a successful element click or secondary action, on `AXCancel` of the item, on `menuClosed`, on a new record and on the controller's deactivation; no `AXCancel`, Escape or menu-close event is ever sent. A closed menu's `AXMenu` child is exposed, so the lookup succeeds on a closed menu [F §5.1, §5.8, §16.9; M2a reading, 2026-10-21, which corrects F §5.8's "the open menu"].
+  - cua: the same record, root and clearing, with no activation: a background app's menu items are read and pressed through Accessibility without it, and cua's activation is per action. If M2a.5 finds a background app's menus unexposed, the activation is revisited [cua: Decision Log, 2026-10-21 M2a vendor reading, item 10]. A menu populated lazily on open may show stale or empty items under the recorded root (inference, run time only).
 - **AX action choice.** `AXPick` if advertised, else `AXPress`, else none [F §5.1].
 - **When to synthesize** instead [F §5.1]:
   - a click count above 1, no AX action, a button other than left, a hold, a held key, flags, or `alwaysSimulateClick`. That is the feature flag `computerUseAlwaysSimulateClick`, whose default is not read [undetermined: F §5.1];
   - inside a web view, `FUN_1007a1b9c` decides: it hit-tests the clickable point and walks the hit element's ancestor chain (up to 300 levels, CFEqual per ancestor) looking for the clicked element — true, so synthesize, exactly when the point lands on a strict descendant of the target; no AXWebArea role is read, so the "web view" case is really the nested-content case, native or web [F §5.1, decompiled 2026-10-18].
-- **Performing the action.** Otherwise the AX action is performed. In a Catalyst app, when the element has `clickingMayCauseSelection` or role `AXMenuButton` and the app does not believe it has focus, fake activation runs first [F §5.1]. What `clickingMayCauseSelection` is, F does not define (§23).
+- **Performing the action.** Otherwise the AX action is performed. In a Catalyst app, when the element has `clickingMayCauseSelection` or role `AXMenuButton` and the app does not believe it has focus, fake activation runs first [F §5.1]. `clickingMayCauseSelection` is true when the element or an ancestor below the application (at most 300 levels) is selectable (never `AXMenuItem`/`AXMenuBarItem`; otherwise `AXSelected` supported and settable) or lists `AXSelectedRows`, `AXSelectedCells` or `AXSelectedChildren` [F §16.7; M2a reading, 2026-10-21]. It only reserves the vendor's route 3, which cua takes for every synthesized click; recorded, not built [cua: Decision Log, 2026-10-21 M2a vendor reading, item 9].
 - **Right clicks.** `AXShowMenu` is never used; right clicks are synthesized [F §5.1].
+- **Element-targeted middle click (M2a reading, 2026-10-21).**
+  - vendor: the element route maps the raw button so that only 1 is right: 0 and 2 are both left. An element middle click is a left click on the AX-action route. The coordinate route keeps 2 and synthesizes otherMouseDown/Up (25/26) [F §5.1, §16.7].
+  - cua: not adopted. A middle click is synthesized at the element's point by route 3, since it means something else (a new tab on a link). A declared difference [cua: Decision Log, 2026-10-21 M2a vendor reading, item 8].
 - **No inter-click delay.** `humanClickInterval` (0.1 s) is dropped by the click thunk and never applies [F §5.1].
-- **Synthesized element click.** The clickable point is computed by scrolling into view and taking the midpoint of the visible frame. When the element is not visible, the error is `cannotClickOffscreenElement`, which has no sentence of its own [F §5.1; E §6.2].
+- **Synthesized element click.** The element is first scrolled into view (`positionElement`, §16), then the clickable point is the midpoint of the frame when the visible region contains it; the click's own call does not scroll [F §5.1, §5.8, §16.8; M2a reading, 2026-10-21]. When the element is not visible, the error is `cannotClickOffscreenElement`, which has no sentence of its own [F §5.1; E §6.2].
 - **First interaction.** The first element interaction creates the app's focus enforcer (§12) [F §5.1].
 - **Coordinate click.** The screen point is point × scaling factor + the visible rect's origin, and the target is the window under it, taken from the ordered windows [F §5.2]. A menu element there gets `AXPress` (a hold, a multi-click or a held key is an error). Otherwise the click is synthesized [F §5.2]. The likely sentences are `Menu mouse action not supported` and `Failed to click menu item` [E §6.2, inference].
 - **The ⌘ flag (route 2)** [F §5.4]:
@@ -355,8 +366,10 @@ Note: Pay special attention to the content selected by the user. …
   - Fields 42, 45 and 51 are not set on clicks.
 - **Types.** Left down/up 1/2, right 3/4, other 25/26; dragged 6 (left), 7 (right), 27 (other) [F §5.3].
 - **Clicks.** For n clicks: down (click count i), then up (click count i), for i = 1…n. No mouse-moved events [F §5.3].
-- **Drag.** Down; dragged at the start, at the midpoint and at the end; up. The three dragged events share one event number and click count 0 [F §5.3]. cua: the Design says "interpolated moves"; parity is these three (§23).
-- **Event numbers.** From one global counter, one per down/up pair [F §5.3].
+- **Drag.**
+  - vendor: the target (pid and window) is resolved at the start point and kept. Down (event number N, click count 1); dragged at the start, at the midpoint and at the end (each click count 0, all with their own number N + 1); up (N, click count 1). All five carry the ⌘ activation flag of §10 (route 2), fields 91 and 92 of the start window and its window location, no field 51; a start point over a menu element takes `AXPress` instead; the settle is deferred [F §5.3, §16.6; M2a reading, 2026-10-21, which corrects F §5.3's shared number and the missing ⌘].
+  - cua: the same five events, all aimed at the start point's window, with the route table's difference: a drag into a background app takes route 3's activation like a synthesized click, never ⌘ [cua: Decision Log, 2026-10-21 M2a vendor reading, item 7].
+- **Event numbers.** From one global counter, one per down/up pair; a drag takes a second number for its dragged events [F §5.3, §16.6].
 - **Posting.** Each event's timestamp is set to now (uptime nanoseconds), then it is sent with `CGEventPostToPid(target pid)`, back to back, with no gap [F §5.3]. After each mouse-down there is a sleep only when a hold duration is given, which never happens on cua's path [F §5.3; E §1.3].
 - **Held keys and flags.** A held key is pressed before the click. Non-zero flags are posted as modifier events from an HID-state source before the first mouse event and released after the last [F §5.3].
 - **System-wide posting.** `CGEventPost` is called only by lock-screen code [F §5.3].
@@ -381,9 +394,9 @@ Note: Pay special attention to the content selected by the user. …
     4. Poll every 10 ms for up to 1 s (`timeoutReached`) that the user's app is still frontmost and that the target's window has not ordered above the user's focused window. An ordering above is answered with `AXRaise` on the user's window.
     5. If the user's app lost frontmost, call `activateWithOptions: 0` on it. Failure gives `originalApplicationActivationFailed`; another app in front gives `frontmostApplicationChanged`.
     6. Finally `SLSReenableUpdate`, clear the predicate and stop the taps.
-- **deactivateFocusEnforcer.** If the app believes it is active but is not, post AppKit-defined subtype 2 and clear both beliefs [F §5.5]. Otherwise the believed-active state persists between actions [F §13.13]; its callers other than Spotify's enablement are not listed in F. cua: the Design posts the deactivation subtype "when done" (§23).
+- **deactivateFocusEnforcer.** If the app believes it is active but is not, post AppKit-defined subtype 2 and clear both beliefs [F §5.5]. Otherwise the believed-active state persists between actions [F §13.13]. Its callers other than Spotify's enablement: only the controller's lifecycle `deactivate()` (AppModify deactivate, instance removal, app termination); the menu-bar path, the clearing of its record and `menuClosed` do not call it, so the driven app's believed-active state outlives a menu [F §16.9; M2a reading, 2026-10-21]. cua: the Design posts the deactivation subtype "when done" (§23).
 - **When the vendor uses fake activation** [F §5.1, §5.4, §6.1, §7.1, §7.3, §1.9]:
-  - a plain click on a menu-bar item;
+  - a plain click, or the `AXPick` secondary action, on a menu-bar item (§10; cua takes no activation there);
   - background clicks with a held key or flags, inside a web view, with `clickingMayCauseSelection`, or in a Catalyst app with that or `AXMenuButton`;
   - every keyboard action into an app that does not believe it has focus;
   - paste, both before the pasteboard is written and again before ⌘V;
@@ -514,29 +527,49 @@ cua:
 ## 16. Scroll, drag, setValue, selectText and secondary actions
 
 - **perform_secondary_action.**
-  - vendor: runs the named action through `perform(action:)`. The advertised actions are the line's `Secondary Actions` (§6) after `filterActions`, whose list includes the pseudo-actions `SAIExpand` and `SAICollapse`, which by inference set the disclosure attribute [E §2.1, §3.3]. An unknown action gives `<action> is not a valid secondary action for <element>`; how `<element>` is rendered is not read [E §6.2].
-  - cua: the element's own actions, with `AXIncrement`/`AXDecrement` among them [cua: Design, Input]. Whether `action` is matched against the description or the AX name is not read (§23).
+  - vendor [F §16.3; M2a reading, 2026-10-21]:
+    - `action` is matched against the description, the word the tree prints under `Secondary Actions` (`Increment`, not `AXIncrement`), exactly and case-sensitively, first hit.
+    - It is matched against the element's live actions **without `filterActions`**, plus the pseudo-actions `SAIExpand` and `SAICollapse` (labels `Expand` and `Collapse`). They are offered when `AXDisclosing` is supported and settable, and performing one toggles `AXDisclosing` (a toggle, not a set; no `AXExpanded`, no press). A description the rendered line omitted (`Show Default UI`, `Increment` on a settable slider) is therefore accepted. Descriptions are fixed English labels for the standard actions, else `AXUIElementCopyActionDescription`, else the raw name.
+    - An unknown action gives `<action> is not a valid secondary action for <id>`, `<id>` the decimal element index.
+    - The element is scrolled into view first (`positionElement`, below); page-scroll actions try the scroll bar's page button before the AX action.
+    - The settle delay is 0.1 only for the two menu-bar shortcuts (`AXPick`, `AXCancel` on an `AXMenuBarItem`, §10), otherwise none; on cua's path the settle is deferred anyway.
+  - cua: the same match by description against the live, unfiltered actions plus the two pseudo-actions; this supersedes the earlier text and the Plan's "validated by `filterActions`" [cua: Decision Log, 2026-10-21 M2a vendor reading, item 3].
 - **set_value.**
-  - vendor: sets the attribute, then re-checks the element ignoring its value (§8). The controller passes `autosubmitSearchFields`; its effect is not read, but Apple Music's instructions say set-value on its search field auto-submits [F §3.6; E §1.3, §8]. A field that is not settable gives `Cannot set a value for an element that is not settable` [E §6.2].
-  - cua: `AXValue` when settable [cua: Design, Input].
+  - vendor [F §16.4; M2a reading, 2026-10-21]:
+    - Order: scroll into view; settable check (`AXValue` supported and settable; otherwise `Cannot set a value for an element that is not settable` [E §6.2]); focus the field (`focusFieldIfNeeded`: a focusable `AXTextField`, `AXTextArea` or `AXDateTimeArea` that is not focused gets `AXFocused` true, re-read uncached, and a synthesized click when focus did not take); write.
+    - The string is coerced to the type of the element's current `AXValue`: number through an `en_US` decimal `NSNumberFormatter` (no rounding or clamping; a parse failure throws `invalidNumber`), Bool from `on`/`off` else `NSString.boolValue`, string, date; no value is a string for a text field or area, else an error; a switch or toggle checkbox is forced to Bool.
+    - Then the element is re-fetched ignoring its value (§8); the value is not read back or compared.
+    - `autosubmitSearchFields` (a search-field subrole, the identifier `WEB_BROWSER_ADDRESS_AND_SEARCH_FIELD`, or the key shortcut `⌘L`: fake activation and a synthesized Return) is off for a `node_repl`-class client, which is cua's kind; Apple Music's instructions describe the legacy MCP client.
+  - cua: the same order and coercion, with no auto-submit [cua: Decision Log, 2026-10-21 M2a vendor reading, item 4].
 - **select_text.**
-  - vendor: finds `text` in the element "exactly as it appears in the accessibility tree, including any Markdown formatting", using `prefix` and `suffix` to disambiguate. It then selects the text, or puts the caret before or after it [A §3.2; E §1.3].
-  - Errors: `Could not find the requested text to select in the element` when the text is not found; `Cannot select text for an element that does not support a settable selected text range` when the range is not settable [E §6.2].
-  - Mapping Markdown offsets back to the element's text is not read; `TransformedUIString` keeps source offsets [E §5.4].
-  - cua: `AXSelectedTextRange` [cua: Design, Input]; the offset mapping is §23.
+  - vendor: finds `text` in the element "exactly as it appears in the accessibility tree, including any Markdown formatting", using `prefix` and `suffix` to disambiguate. It then selects the text, or puts the caret before or after it [A §3.2; E §1.3]. In detail [F §16.2; M2a reading, 2026-10-21]:
+    - It searches the element's rendered Markdown value first, then the attributed string, else the cached value (not the title or description). The match is case-sensitive and literal; `prefix` and `suffix` must be immediately adjacent; overlapping occurrences count; exactly one match is required (none or several give nil, and a failed or ambiguous Markdown lookup falls through to the plain value).
+    - A Markdown range maps to source offsets through the node's offset map: syntax at either edge is skipped inward, a range of syntax only maps to nothing. Offsets are UTF-16 code units; a truncated value's start is added.
+    - `selection_type` (wire values `text`, `cursor_before`, `cursor_after`) gives `(L, N)`, `(L, 0)` and `(L + N, 0)` for the mapped `(L, N)`, written as `AXSelectedTextRange`.
+    - Order: settable check, range lookup, focus the field as in set_value, write; no scroll into view.
+  - Errors: `Could not find the requested text to select in the element` when no unique match is found; `Cannot select text for an element that does not support a settable selected text range` when the range is not settable, before any lookup [E §6.2; F §16.2].
+  - cua: the same search, mapping and `selection_type`, written as `AXSelectedTextRange` [cua: Decision Log, 2026-10-21 M2a vendor reading, item 5].
 - **scroll.**
-  - vendor: builds scroll-wheel events (`CGEventCreateScrollWheelEvent2`) from an HID-state source, sets the private window field 51 on them, and never settles or sets the settle flag [F §5.3, §8.1, §11, §13.11]. `pages` is a Double [E §1.3]. How pages become wheel deltas is not read; `scrollUsingScrollBar(direction:)` exists [E §3.3]. Errors: `Missing scroll amount`, `Missing scroll direction` [E §6.2].
-  - cua: wheel events in lines, `pages` × the scroll area's visible lines, at the element's centre or the point, posted to the owning process [cua: Design, Scroll].
+  - vendor [F §16.5; M2a reading, 2026-10-21]:
+    - One scroll-wheel event in pixels (`CGEventCreateScrollWheelEvent2`, pixel units, wheel count 1, vertical delta in the first wheel and horizontal in the second), from an HID-state source, with the window field 51 (and 91, 92) set, posted to the target's pid; it never settles or sets the settle flag [F §5.3, §8.1, §11, §13.11].
+    - `pages` is a Double [E §1.3]; `pages ≤ 0` is rejected (`invalidScrollPages`; `Missing scroll amount` and `Missing scroll direction` are legacy cases not thrown).
+    - The delta is `round(pages × max(length, 100))` as an integer with no minimum of 1, where length is the element's own frame height or width (up/down or left/right; the visible rect when the frame is unavailable), or the visible rect's for a coordinate. Signs `(x, y)`: up `(0, +n)`, down `(0, −n)`, left `(−n, 0)`, right `(+n, 0)`.
+    - The point is the coordinate (the virtual cursor moved there) or the element's clickable point after scrolling it into view; there is no search for a scroll area. `scrollUsingScrollBar` and the `AXScroll…ByPage` actions are not used.
+    - With wheel count 1, CoreGraphics may ignore the horizontal delta, so the vendor's horizontal scroll may not move anything (inference, run time only).
+  - cua: the same, with one difference: a horizontal scroll is posted with two wheels so its delta is read (M2b's matrix checks) [cua: Decision Log, 2026-10-21 M2a vendor reading, item 6]. This replaces the earlier "lines, `pages` × the scroll area's visible lines".
 - **drag.**
-  - vendor: §11's drag sequence, then a deferred settle [F §5.3, §8.1].
-  - cua: down, moves, up, posted to the owning process [cua: Design, Drag]; the number of moves is §23.
+  - vendor: §11's drag sequence, then a deferred settle [F §5.3, §8.1, §16.6].
+  - cua: §11's five events [cua: Decision Log, 2026-10-21 M2a vendor reading, item 7].
+- **Scroll into view (`positionElement`).**
+  - vendor [F §16.8; M2a reading, 2026-10-21]: walks from the element up to the first window, sheet, menu or popover and, per scrolling level, uses the `AXScrollToVisible` action when advertised; on an `AXCell`, the settable `AXScrollToVisible` attribute set true; at a scroll area otherwise, the scroll bars' `AXValue` set to the fraction that shows the rect (clamped to 0…1), or `AXMakeScreenRectVisible` where that is unavailable. No wheel events, no page actions. After an operation succeeds it polls up to 0.5 s every 0.1 s until the frame's midpoint lies in the clipping region, **swallowing a timeout**; an element still off-screen yields no point, so a synthesized click then throws `cannotClickOffscreenElement`. The pointer is never moved. Callers: an element click (the AX-action route too), `perform_secondary_action`, `set_value`, an element-targeted `scroll`; not `select_text`.
+  - cua: the same [cua: Decision Log, 2026-10-21 M2a vendor reading, item 9].
 
 ## 17. Settle
 
 - **The call.** `waitForUIToSettle(delay, notificationDelay: 0.25, includingScrollEvents: false)`; the quiet period is 0.25 s at every one of the 22 call sites [F §8.1].
 - **Sampling delay** [F §8.1]:
-  - 0.1 s after an AX-action click, keyboard actions, paste and two secondary-action sites;
-  - no delay given after synthesized clicks, setValue, selectText, coordinate clicks and drags, three secondary-action sites, and the deferred settle;
+  - 0.1 s after an AX-action click, keyboard actions, paste and the two menu-bar secondary-action shortcuts (`AXPick` and `AXCancel` on an `AXMenuBarItem`; not two ordinary action kinds, as F §8.1 first read them) [F §16.3; M2a reading, 2026-10-21];
+  - no delay given after synthesized clicks, setValue, selectText, coordinate clicks and drags, the ordinary secondary actions (Expand and Collapse included), and the deferred settle;
   - "no delay" resolves to 0.25 s for a web-shaped app (§2) and 0.1 s otherwise.
 - **On cua's path** the deferred settle is called with no delay, so sampling is 0.1 s for a native app and 0.25 s for a web-shaped one, whatever the action [F §8.1, §8.6]. F §8.1 also lists IPC-side sites for paste and the keyboard send at 0.1 s. F §8.6's conclusion, that cua's path defers, is the reading kept here.
 - **Scroll** never settles and never sets the flag, so an observation after a scroll does not wait [F §8.1].
@@ -559,10 +592,13 @@ cua:
   `AXProgressIndicator` is not a sign. `com.apple.Music` runs an extra check first that is not read [undetermined: F §14.5].
 - **The tree flows on.** The capture after a settle starts from the busy walk's tree, under its invalidation monitor [F §8.5].
 - **Deferred.**
-  - An action that returns no observation sets "needs settle" and returns. `get_app_state` reads and clears the flag: set means settle (no delay, 0.25 s quiet) and then capture from the settle's tree; clear means capture at once. Settle errors propagate [F §8.6].
+  - An action that returns no observation sets "needs settle" and returns. `get_app_state` reads and clears the flag: set means settle (no delay, 0.25 s quiet) and then capture from the settle's tree; clear means capture at once. Settle errors propagate [F §8.6]. The flag starts false (`0x1000181f8`), so a first observation, and any observation no action armed, captures at once [F §8.6; M2a reading, 2026-10-21].
   - On cua's IPC path, then, the settle happens at the next `get_app_state` on that app, not inside the action [F §8.6].
   - cua does the same, reusing the busy walk's tree [cua: Design, Settle].
 - **The cap.** vendor: silent / cua: reported as `cua/settle: "capped"` [F §8.3; cua: Decision Log 9]. Where that meta belongs is §23.
+- **The open settle (M2a reading, 2026-10-21).** `updateSkyshotSettlingIfNeeded` is not the only settle on the observation path.
+  - vendor: when the preparation had to open the app (§2: a launch, or a reopen of a running app whose primary window is missing or minimized), it waits for the primary window (`waitUntilHasPrimaryWindow`, 5.0 s cap, 50 ms poll), then settles once with `delay: 0.05`, `notificationDelay: 0.25` and scroll events off, and throws that settle's tree away, so the capture after it starts from a fresh walk. With `delay` given, the 0.25 / 0.1 resolution by web shape does not apply. A running app with a present, non-minimized primary window is not settled, native or web-shaped. Nothing on the path waits for web content to fill [F §8.1, §8.10, §8.11].
+  - cua: the engine settles after its own launch or reopen (50 ms sampling, 250 ms quiet period, tree discarded), never otherwise, and adds no fill wait [cua: Decision Log, 2026-10-21 M2a vendor reading, item 1].
 - **Budget.** cua suspends the cell's time budget around the launch wait, the action and the settle (`withSuspendedTimeout`); the vendor JS wraps the action likewise [cua: Design, Settle; A §2.6].
 - **Deadline.** vendor: a request whose `deadlineUnixMilliseconds` has already passed on receipt is rejected with −32001 `Request deadline exceeded`, before dispatch. No later check was found [F §8.9, inference: absence] / cua: §23.
 
@@ -674,8 +710,8 @@ Sentences the helper produces. The code is given where a source shows it [E §6.
 | text to select not found | not recovered | `Could not find the requested text to select in the element` | verbatim |
 | selection not settable | not recovered | `Cannot select text for an element that does not support a settable selected text range` | verbatim |
 | value not settable | not recovered | `Cannot set a value for an element that is not settable` | verbatim |
-| unknown secondary action | not recovered | `<action> is not a valid secondary action for <element>` | same shape |
-| scroll arguments | not recovered | `Missing scroll amount` / `Missing scroll direction` | unreachable behind the JS checks below |
+| unknown secondary action | not recovered | `<action> is not a valid secondary action for <element>` (`<element>` is the decimal element index, F §16.3) | same shape |
+| scroll arguments | not recovered | `Missing scroll amount` / `Missing scroll direction` (legacy cases; the vendor's path rejects `pages ≤ 0` with `invalidScrollPages`, F §16.5) | unreachable behind the JS checks below |
 | typeText without text | not recovered | `Missing text to type` | same |
 | holdKey duration (dormant) | not recovered | `Invalid duration` | unreachable |
 | paste write | not recovered | `Could not write generated content to the clipboard` | verbatim |
@@ -716,7 +752,7 @@ The cua column follows the Design's kept list and its Paste paragraph [cua: Desi
 | request deadline | client default 120 s, sent as `deadlineUnixMilliseconds`; checked on receipt only (−32001) | client default 120 s; engine enforcement §23 | [A §2.2; F §8.9; cua: Design, Client] |
 | connect | 250 ms connect-and-ping loop (each ping ≤ 1 s, retry after 100 ms); reconnect for ≤ 5 s after a launch | reconnect for ≤ 5 s after a launch | [A §2.1; cua: Design, Client] |
 | launch | `AXWindows` polled every 50 ms, no bound inside; `timeoutReached` observed at about 5.5 s | ≤ 5 s for a window, then `timeoutReached` | [F §8.8; A §7; cua: Design, App resolution and launch] |
-| web-area wait | 100 ms, then ≤ 1 s polled every 50 ms | same | [F §1.9] |
+| web-area wait | 100 ms, then ≤ 1 s polled every 50 ms; presence only, no fill wait | same | [F §1.9, §8.11] |
 | Spotify activation before enablement | ≤ 1 s polled every 50 ms | §23 | [F §1.9] |
 | messaging timeout | none | 1 s per element | [F §1.6; cua: Decision Log 9] |
 | traversal deadline | none | 10 s | [F §1.6; cua: Decision Log 9] |
@@ -740,6 +776,8 @@ The cua column follows the Design's kept list and its Paste paragraph [cua: Desi
 | paste effect | ≤ 2 s polled every 25 ms; 100 ms sleep without observer or baseline | same | [F §7.5] |
 | settle quiet period | 250 ms | same | [F §8.1] |
 | settle sampling | 0.1 s native, 0.25 s web-shaped | same | [F §8.1] |
+| open settle (after a launch or reopen) | 50 ms sampling, 250 ms quiet, tree discarded | same | [F §8.10; cua: Decision Log, 2026-10-21 M2a vendor reading, item 1] |
+| scroll-into-view poll | ≤ 0.5 s every 0.1 s, timeout swallowed | same | [F §16.8; cua: Decision Log, 2026-10-21 M2a vendor reading, item 9] |
 | settle cap | 5 s, silent | 5 s, reported | [F §8.3; cua: Decision Log 9] |
 | intervention debounce | 5 s, renewed per event | 5 s | [F §9.1; cua: Design, User intervention] |
 | debounce at request start | poll every 250 ms for ≤ 100 s, then refuse | refuse at once | [F §9.5; cua: Decision Log 9] |
@@ -759,31 +797,32 @@ Each point is either a place where the Design is silent while the vendor's rule 
    - the value's type, the DOM class list, the partial-array descriptor (count and available ranges) and the value's truncation;
    - and, on the observation, the selected elements beside `selectedText`.
    
-   It also carries a `checked` flag the grammar never prints. How the vendor derives focusable, selectable, settable and disclosable is not read. The proposal is `AXUIElementIsAttributeSettable` on `AXFocused`, `AXSelected` and `AXValue`, and the presence of `AXDisclosing`; the goldens confirm it.
+   It also carries a `checked` flag the grammar never prints. **Partly resolved (M2a reading, 2026-10-21).** *Selectable* is read: never for `AXMenuItem`/`AXMenuBarItem`, otherwise `AXSelected` supported and settable [F §16.7]. The predicates the actions use are also read: a settable value is `AXValue` supported and settable, a disclosable element has `AXDisclosing` supported **and settable** [F §16.3, §16.4]; whether the renderer's flags use the same ones is not read. How the vendor derives *focusable* is not read. The proposal is `AXUIElementIsAttributeSettable` on `AXFocused`, `AXSelected` and `AXValue`, and the presence of `AXDisclosing`; the goldens confirm it.
 3. **`cua/settle` placement.** The settle runs at the next observation (§17), so `cua/settle` belongs on the `get_app_state` result's meta, not on input results as the Interfaces block puts it.
 4. **`get_app_state` during the debounce.** The vendor waits the debounce out, then clears the re-query flag. cua refuses inputs at once, and the Design says nothing about observations. Recommendation: observe at once and clear the flag on success, since every later attributed event sets it again. Otherwise a model that re-queries during the debounce is still refused with "user changed" afterwards.
 5. **Paste across connections.** The pasteboard is machine-wide, and the vendor serializes every paste process-wide (§15). cua's one-request-in-flight rule is per connection, so the engine should serialize pastes across connections.
 6. **Error message forms.** Envelope or bare sentence (§21). The proposal is the envelope for case-name reasons (`noWindowsAvailable`, `timeoutReached`) and bare vendor sentences for the rest, then checked against M0's recorded vendor errors.
 7. **Ambiguity wording.** The vendor's sentence names bundle identifiers. A name or path that is ambiguous needs either the same sentence or a cua sentence of the same shape (§3).
-8. **Element-targeted middle click.** The vendor's element click takes left or right only; its middle behaviour is not read [undetermined: E §10.5].
-9. **Drag shape.** The vendor posts exactly three dragged events (start, midpoint, end); the Design says "interpolated moves" (§11).
+8. **Element-targeted middle click.** **Resolved (M2a reading, 2026-10-21).** The vendor's element route maps 0 and 2 both to left, so an element middle click is a left click; the coordinate route keeps 2 [F §16.7]. cua does not adopt it: it synthesizes a middle click at the element's point by route 3 (§10) [cua: Decision Log, 2026-10-21 M2a vendor reading, item 8].
+9. **Drag shape.** **Resolved (M2a reading, 2026-10-21).** The vendor posts exactly three dragged events (start, midpoint, end), each with its own event number, all with the ⌘ flag [F §16.6]; cua adopts them with route 3's activation instead of ⌘ (§11) [cua: Decision Log, 2026-10-21 M2a vendor reading, item 7].
 10. **Vendor rules the Design does not mention:**
     - the Spotify activation before enablement (§4);
     - `domClassList` for Jack and its `sent by me` flag (§4, §6);
     - the 5 ms typing gap for iPhone Mirroring (§14);
     - `_SetApplicationDesiresAttention` at set-up (§3);
-    - set-value's search-field auto-submit (§16);
-    - the `SAIExpand`/`SAICollapse` pseudo-actions (§16);
+    - set-value's search-field auto-submit (§16): **Resolved (M2a reading, 2026-10-21).** It is off for a `node_repl`-class client, cua's kind, so it is not parity for cua [F §16.4];
+    - the `SAIExpand`/`SAICollapse` pseudo-actions (§16): **Resolved (M2a reading, 2026-10-21).** Each toggles `AXDisclosing` [F §16.3];
     - scroll never arming the settle (§17).
-11. **select_text over Markdown.** Offsets found in the Markdown value must map back to the element's text (§16). The vendor's mapping is not read.
-12. **Secondary-action matching.** Whether `action` is matched against the description or the AX name (§16).
+11. **select_text over Markdown.** **Resolved (M2a reading, 2026-10-21).** The vendor maps a Markdown match to source offsets through the node's offset map, skipping syntax at the edges, in UTF-16 units [F §16.2] (§16).
+12. **Secondary-action matching.** **Resolved (M2a reading, 2026-10-21).** `action` is matched against the description, exactly, against the unfiltered live actions [F §16.3] (§16).
 13. **Out-of-process pid.** The public `AXUIElementGetPid` versus the vendor's `_AXUIElementGetActualPid` for view services (§10). The Open panel scene shows which one is needed.
 14. **The engine's deadline.** The vendor checks `deadlineUnixMilliseconds` on receipt only. Whether cua's engine checks it, and when, is not stated.
 15. **Header app name.** Localized or bundle name (§6). The Korean mini's capture settles it.
 16. **Value rendering.** Numbers, booleans, dates and newlines (§6), settled by the goldens.
 17. **Chromium web-area wait.** Every observation, or only until the app is recorded (§4). M0's Chrome timings settle it.
-18. **Fake-activation lifetime.** The vendor keeps the believed-active state between actions; the Design posts the deactivation "when done" (§12). M0's route-3 probe should measure both.
-19. **`clickingMayCauseSelection`.** F uses it in the click and activation decisions without defining it (§10). Until it is read or measured, cua's route 3 cannot reproduce that branch.
+18. **Fake-activation lifetime.** The vendor keeps the believed-active state between actions; the Design posts the deactivation "when done" (§12). M0's route-3 probe should measure both. **Vendor side resolved (M2a reading, 2026-10-21):** only the controller's lifecycle `deactivate()` calls `deactivateFocusEnforcer`; the menu-bar path, its record's clearing and `menuClosed` do not [F §16.9]. The cua side stays with the probe.
+19. **`clickingMayCauseSelection`.** **Resolved (M2a reading, 2026-10-21).** It is true when the element or an ancestor below the application is selectable or lists `AXSelectedRows`, `AXSelectedCells` or `AXSelectedChildren` [F §16.7] (§10). It only reserves the vendor's route 3, which cua takes for every synthesized click, so the branch needs no separate build [cua: Decision Log, 2026-10-21 M2a vendor reading, item 9].
+20. **Run time only, after the M2a reading (2026-10-21).** The pixel content of a minimized window's SkyLight capture, whether the vendor's horizontal scroll (wheel count 1) moves anything, and the items a lazily filled menu shows under the recorded menu-bar root (§2, §16, §10) [F §16.10; cua: Decision Log, 2026-10-21 M2a vendor reading, closing line].
 
 ## 24. F §13's divergences, resolved
 

@@ -225,7 +225,8 @@ final class TreeWalk {
       }
     }
 
-    let rootInherited = previous.flatMap { matchSiblings(old: $0.siblings(of: nil, menu: false), new: [window]).first ?? nil }
+    // A recorded menu-bar item walked as the root (MenuRecord.swift) keeps the token it had as a menu-bar entry.
+    let rootInherited = previous.flatMap { matchSiblings(old: $0.siblings(of: nil, menu: false) + $0.siblings(of: nil, menu: true), new: [window]).first ?? nil }
     walkWindow(Pending(element: window, depth: 0, parent: nil, inherited: rootInherited, inMenu: false),
                nodeLimit: limits.nodes - menuReads.count, byteLimit: limits.bytes - reservedBytes)
 
@@ -445,35 +446,8 @@ func nodeWire(token: String, depth: Int, pid: pid_t, data: ElementData, actions:
   return node
 }
 
-private let monospaceFamilies = ["menlo", "monaco", "courier", "sf mono", "sfmono", "andale mono", "consolas", "source code"]
-
-/// The Markdown rendering of a text element's attributed value: bold, italic and fixed-width runs from the font each
-/// run carries; nil when the value carries no such styling (the plain value then says everything).
+/// The Markdown rendering of a text element's attributed value (`markdownMapped`, TextSelection.swift); nil when the
+/// value carries no such styling (the plain value then says everything).
 func markdownRendering(of element: AXUIElement, length: Int) -> String? {
-  var range = CFRange(location: 0, length: length)
-  guard let rangeValue = AXValueCreate(.cfRange, &range) else { return nil }
-  var result: CFTypeRef?
-  guard AXUIElementCopyParameterizedAttributeValue(element, kAXAttributedStringForRangeParameterizedAttribute as CFString, rangeValue, &result) == .success,
-        let result, CFGetTypeID(result) == CFAttributedStringGetTypeID() else { return nil }
-  let attributed = result as! NSAttributedString
-  let text = attributed.string as NSString
-  var rendered = ""
-  var styled = false
-  attributed.enumerateAttributes(in: NSRange(location: 0, length: attributed.length)) { attributes, run, _ in
-    let piece = text.substring(with: run)
-    let font = attributes[NSAttributedString.Key("AXFont")] as? [String: Any]
-    let name = ((font?["AXFontName"] as? String) ?? "").lowercased()
-    let family = ((font?["AXFontFamily"] as? String) ?? "").lowercased()
-    let mono = monospaceFamilies.contains { name.contains($0) || family.contains($0) }
-    let bold = !mono && ["bold", "black", "heavy", "semibold"].contains { name.contains($0) }
-    let italic = !mono && (name.contains("italic") || name.contains("oblique"))
-    let marker = mono ? "`" : (bold ? "**" : "") + (italic ? "*" : "")
-    let core = piece.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !marker.isEmpty, !core.isEmpty else { rendered += piece; return }
-    styled = true
-    let leading = piece.prefix { $0.isWhitespace || $0.isNewline }
-    let trailing = String(piece.reversed().prefix { $0.isWhitespace || $0.isNewline }.reversed())
-    rendered += leading + marker + core + String(marker.reversed()) + trailing
-  }
-  return styled ? bounded(rendered) : nil
+  attributedValue(of: element, length: length).flatMap(markdownMapped).map { bounded($0.text) }
 }

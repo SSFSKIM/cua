@@ -53,10 +53,10 @@ final class Server: @unchecked Sendable {
   /// Set, with the listener closed, under `lock` once a shutdown is accepted: nothing is accepted after it.
   private var shuttingDown = false
 
-  init(paths: ServerPaths, peerPolicy: PeerPolicy) {
+  init(paths: ServerPaths, settings: EngineSettings) {
     self.paths = paths
-    self.peerPolicy = peerPolicy
-    self.engine = Engine(paths: paths)
+    self.peerPolicy = settings.peerPolicy
+    self.engine = Engine(paths: paths, routes: settings.routes)
   }
 
   /// Claims the directory, the lock and the socket, then accepts on a thread of its own.
@@ -176,6 +176,9 @@ final class Server: @unchecked Sendable {
     open[connection.id] = nil
     lock.unlock()
     close(connection.fd)
+    connection.endMenuInteraction()  // a held menu activation goes with its connection (MenuSpan.swift)
+    engine.connectionClosed(connection)  // its drives end; the intervention tap goes with the last (Intervention.swift)
+    engine.webAccessibility.release(connection: connection.id)  // enablement no connection observes now (Enablement.swift)
   }
 
   /// Accepts a shutdown atomically with accept: with no connection open but `connection`, closes the listener under the
@@ -225,6 +228,11 @@ final class Server: @unchecked Sendable {
 
   /// After an accepted shutdown (the listener already closed): the socket removed, then exit, which releases the lock.
   func stopAndExit() -> Never {
+    lock.lock()
+    let connections = Array(open.values)
+    lock.unlock()
+    for connection in connections { connection.menuSpan.end() }  // held menu activations end before the exit
+    engine.webAccessibility.releaseAll()  // the engine's enablement goes with it
     unlink(paths.socket)
     Lifecycle.exit("shutdown requested", status: 0)
   }

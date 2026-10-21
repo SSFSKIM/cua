@@ -82,13 +82,16 @@ func windowServerName(of window: CGWindowID) -> (name: String?, desktopLevel: Bo
 
 /// The actions FUN_100783260 describes with a fixed English word (its statics at 0x1014033e8–0x1014034f8), before any
 /// custom name or system description: FUN_1007816a0 skips `description(for:)` 0x1006e8bf8 whenever the table answers
-/// (`cbnz x1` at 0x10078177c). The words are the renderer's (render.mjs, ACTION_WORDS); the engine needs only the names,
-/// to leave the system unasked.
-let vendorActionWordNames: Set<String> = [
-  "AXPress", "AXPick", "AXIncrement", "AXDecrement", "AXConfirm", "AXCancel", "AXShowDefaultUI", "AXShowAlternateUI",
-  "AXRaise", "AXShowMenu", "AXScrollToVisible", "AXScrollLeftByPage", "AXScrollRightByPage", "AXScrollUpByPage",
-  "AXScrollDownByPage", "AXDelete", "SAIExpand", "SAICollapse",
+/// (`cbnz x1` at 0x10078177c). The renderer prints the same words (render.mjs, ACTION_WORDS); the engine needs them to
+/// leave the system unasked and to match perform_secondary_action's `action`, which names an action by its word.
+let vendorActionWords: [String: String] = [
+  "AXPress": "Press", "AXPick": "Pick", "AXIncrement": "Increment", "AXDecrement": "Decrement", "AXConfirm": "Confirm",
+  "AXCancel": "Cancel", "AXShowDefaultUI": "Show Default UI", "AXShowAlternateUI": "Show Alternate UI", "AXRaise": "Raise",
+  "AXShowMenu": "Show Menu", "AXScrollToVisible": "Scroll to Visible", "AXScrollLeftByPage": "Scroll Left",
+  "AXScrollRightByPage": "Scroll Right", "AXScrollUpByPage": "Scroll Up", "AXScrollDownByPage": "Scroll Down",
+  "AXDelete": "Delete", "SAIExpand": "Expand", "SAICollapse": "Collapse",
 ]
+let vendorActionWordNames = Set(vendorActionWords.keys)
 
 /// A custom action's name, FUN_100783928: for an action starting `Name:`, an NSScanner scans `Name:` off and then up to
 /// the first newline (skipping leading whitespace and newlines, the scanner's default); nil when nothing is scanned.

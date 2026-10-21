@@ -1,0 +1,1172 @@
+{
+  "schema": "native-goldens-1",
+  "device": "mini",
+  "started": "2026-10-21T03:55:09.932Z",
+  "plan": {
+    "scenes": [
+      "textedit",
+      "finder",
+      "chrome",
+      "electron"
+    ]
+  },
+  "problems": [
+    "finder: the fixed state did not hold in 3 attempts (unowned_text: the window carries text the run does not own outside its list (the status bar, the path bar, the sidebar, or a title): hide them and observe again; nothing of this observation may be recorded); nothing of it was recorded"
+  ],
+  "complete": false,
+  "scenes": {
+    "textedit": {
+      "captures": [
+        {
+          "name": "fixed.cua",
+          "at": "2026-10-21T03:55:35.188Z",
+          "frame": {
+            "x": 309,
+            "y": 103,
+            "width": 610,
+            "height": 860
+          },
+          "timings": {
+            "windowMs": 0.104,
+            "webShaped": false,
+            "settableMs": 2.567,
+            "menuBarMs": 0.5,
+            "actionDescriptionsMs": 0.042,
+            "estimatedBytes": 39242,
+            "watchedProcesses": 1,
+            "screenshotWriteMs": 0.797,
+            "attributesMs": 33.875,
+            "fetchFailures": 0,
+            "screenshotJoinMs": 5.207,
+            "focusMs": 0.298,
+            "markdownMs": 0.57,
+            "nodes": 61,
+            "screenshotEncodeMs": 6.761,
+            "screenshotContentCached": true,
+            "screenshotWindowListMs": 0.572,
+            "markdownFetches": 1,
+            "screenshotCaptureMs": 46.747,
+            "screenshotWindowNumberMs": 0.088,
+            "monitorMs": 0.597,
+            "resolveMs": 0.024,
+            "focusableMs": 1.947,
+            "walkMs": 49.554,
+            "actionsMs": 5.734,
+            "totalMs": 58.974,
+            "prepareMs": 0.379
+          },
+          "settle": {
+            "reads": 2,
+            "ms": 1164
+          }
+        },
+        {
+          "name": "fixed.cua",
+          "at": "2026-10-21T03:55:35.188Z",
+          "frame": {
+            "x": 309,
+            "height": 860,
+            "y": 103,
+            "width": 610
+          },
+          "timings": {
+            "windowMs": 0.113,
+            "webShaped": false,
+            "settableMs": 1.797,
+            "menuBarMs": 0.432,
+            "actionDescriptionsMs": 0.048,
+            "estimatedBytes": 39242,
+            "watchedProcesses": 1,
+            "screenshotWriteMs": 0.219,
+            "attributesMs": 24.126,
+            "fetchFailures": 0,
+            "screenshotJoinMs": 13.84,
+            "focusMs": 0.282,
+            "markdownMs": 0.317,
+            "nodes": 61,
+            "screenshotEncodeMs": 4.48,
+            "screenshotContentCached": true,
+            "screenshotWindowListMs": 0.488,
+            "markdownFetches": 1,
+            "screenshotCaptureMs": 45.651,
+            "screenshotWindowNumberMs": 0.099,
+            "monitorMs": 0.471,
+            "resolveMs": 0.024,
+            "focusableMs": 1.576,
+            "walkMs": 36.705,
+            "actionsMs": 4.312,
+            "totalMs": 53.953,
+            "prepareMs": 0.231
+          },
+          "settle": {
+            "reads": 2,
+            "ms": 624
+          },
+          "kept": true
+        },
+        {
+          "name": "action.vendor",
+          "at": "2026-10-21T03:55:40.284Z",
+          "frame": {
+            "x": 309,
+            "y": 103,
+            "height": 860,
+            "width": 610
+          },
+          "index": 2,
+          "timings": {
+            "windowMs": 0.09,
+            "webShaped": false,
+            "settableMs": 2.402,
+            "menuBarMs": 0.301,
+            "actionDescriptionsMs": 0.062,
+            "estimatedBytes": 39242,
+            "watchedProcesses": 1,
+            "screenshotWriteMs": 0.353,
+            "attributesMs": 33.9,
+            "fetchFailures": 0,
+            "screenshotJoinMs": 1.349,
+            "focusMs": 0.294,
+            "nodes": 61,
+            "markdownMs": 0.4,
+            "screenshotEncodeMs": 7.281,
+            "screenshotContentCached": true,
+            "screenshotWindowListMs": 0.392,
+            "markdownFetches": 1,
+            "screenshotCaptureMs": 41.703,
+            "screenshotWindowNumberMs": 0.056,
+            "monitorMs": 0.345,
+            "resolveMs": 0.023,
+            "focusableMs": 1.762,
+            "walkMs": 48.138,
+            "actionsMs": 5.366,
+            "totalMs": 52.436,
+            "prepareMs": 0.221
+          }
+        },
+        {
+          "name": "action.cua.before",
+          "at": "2026-10-21T03:55:47.175Z",
+          "frame": {
+            "x": 309,
+            "y": 103,
+            "width": 610,
+            "height": 860
+          },
+          "click": {
+            "index": 2,
+            "route": 3
+          },
+          "timings": {
+            "windowMs": 0.116,
+            "webShaped": false,
+            "settableMs": 2.992,
+            "menuBarMs": 0.465,
+            "actionDescriptionsMs": 0.045,
+            "estimatedBytes": 39242,
+            "watchedProcesses": 1,
+            "screenshotWriteMs": 0.286,
+            "attributesMs": 38.322,
+            "fetchFailures": 0,
+            "screenshotJoinMs": 20.79,
+            "focusMs": 0.246,
+            "screenshotContentMs": 36.113,
+            "nodes": 61,
+            "markdownMs": 0.519,
+            "screenshotEncodeMs": 8.205,
+            "screenshotContentCached": false,
+            "screenshotWindowListMs": 0.595,
+            "markdownFetches": 1,
+            "screenshotCaptureMs": 29.417,
+            "screenshotWindowNumberMs": 0.073,
+            "monitorMs": 0.55,
+            "resolveMs": 0.06,
+            "focusableMs": 1.797,
+            "walkMs": 53.975,
+            "actionsMs": 6.049,
+            "totalMs": 80.868,
+            "prepareMs": 0.441
+          },
+          "settle": {
+            "reads": 2,
+            "ms": 700
+          }
+        },
+        {
+          "name": "action.cua.after",
+          "at": "2026-10-21T03:55:47.175Z",
+          "frame": {
+            "y": 103,
+            "width": 610,
+            "x": 309,
+            "height": 860
+          },
+          "timings": {
+            "settleBusyVetoes": 0,
+            "windowMs": 0.094,
+            "webShaped": false,
+            "settleObserved": true,
+            "settableMs": 2.444,
+            "menuBarMs": 0.278,
+            "settleObserverMs": 18.509,
+            "actionDescriptionsMs": 0.08,
+            "estimatedBytes": 39242,
+            "watchedProcesses": 1,
+            "screenshotWriteMs": 0.497,
+            "settleTreeReused": true,
+            "attributesMs": 3.21,
+            "fetchFailures": 0,
+            "screenshotJoinMs": 44.57,
+            "settleMs": 347.951,
+            "settleBusyWalks": 1,
+            "settleIgnoredTitleChanges": 0,
+            "focusMs": 0.372,
+            "nodes": 61,
+            "markdownMs": 0.513,
+            "screenshotEncodeMs": 9.542,
+            "screenshotContentCached": true,
+            "settleNotificationCounts": {},
+            "settleBusyWalkMs": 35.275,
+            "markdownFetches": 1,
+            "screenshotWindowListMs": 0.96,
+            "settle": "settled",
+            "screenshotCaptureMs": 52.263,
+            "settleNotifications": 0,
+            "screenshotWindowNumberMs": 0.087,
+            "monitorMs": 0.031,
+            "settleBusyWalkAttributesMs": 34.44,
+            "focusableMs": 2.362,
+            "resolveMs": 0.009,
+            "walkMs": 18.729,
+            "actionsMs": 5.311,
+            "settleQuietAtMs": 312.132,
+            "totalMs": 439.43,
+            "prepareMs": 0.076
+          }
+        }
+      ],
+      "app": "/System/Applications/TextEdit.app",
+      "pid": 44650,
+      "window": {
+        "number": 13245,
+        "bounds": {
+          "height": 860,
+          "width": 610,
+          "x": 309,
+          "y": 103
+        }
+      },
+      "fixedAttempts": 1,
+      "fixedDigest": "ff62a333c93a36eaf4f8c3c75913492daec938db860f3c87dedf1a1b924d7fad",
+      "startAttempts": 1,
+      "restarted": {
+        "pid": 45092,
+        "window": {
+          "number": 13260,
+          "bounds": {
+            "height": 860,
+            "width": 610,
+            "x": 309,
+            "y": 103
+          }
+        }
+      },
+      "frames": {
+        "same": false,
+        "list": [
+          {
+            "capture": "fixed.cua",
+            "frame": {
+              "x": 309,
+              "y": 103,
+              "width": 610,
+              "height": 860
+            }
+          },
+          {
+            "capture": "fixed.cua",
+            "frame": {
+              "x": 309,
+              "height": 860,
+              "y": 103,
+              "width": 610
+            }
+          },
+          {
+            "capture": "action.vendor",
+            "frame": {
+              "x": 309,
+              "y": 103,
+              "height": 860,
+              "width": 610
+            }
+          },
+          {
+            "capture": "action.cua.before",
+            "frame": {
+              "x": 309,
+              "y": 103,
+              "width": 610,
+              "height": 860
+            }
+          },
+          {
+            "capture": "action.cua.after",
+            "frame": {
+              "y": 103,
+              "width": 610,
+              "x": 309,
+              "height": 860
+            }
+          }
+        ]
+      },
+      "recorded": true
+    },
+    "finder": {
+      "captures": [],
+      "app": "/System/Library/CoreServices/Finder.app",
+      "pid": 402,
+      "window": {
+        "number": 13271,
+        "bounds": {
+          "height": 436,
+          "width": 922,
+          "x": 819,
+          "y": 261
+        }
+      },
+      "fixedAttempts": 3
+    },
+    "chrome": {
+      "captures": [
+        {
+          "name": "fixed.cua",
+          "at": "2026-10-21T03:56:25.848Z",
+          "frame": {
+            "y": 60,
+            "height": 760,
+            "width": 1000,
+            "x": 80
+          },
+          "timings": {
+            "windowMs": 0.083,
+            "webShaped": true,
+            "menuBarMs": 0.532,
+            "settableMs": 0.268,
+            "actionDescriptionsMs": 0.038,
+            "disclosableMs": 2.245,
+            "estimatedBytes": 64864,
+            "watchedProcesses": 1,
+            "screenshotWriteMs": 0.41,
+            "attributesMs": 31.018,
+            "screenshotJoinMs": 1.89,
+            "fetchFailures": 0,
+            "webAreaSeen": true,
+            "chromium": true,
+            "nodes": 94,
+            "focusMs": 0.161,
+            "markdownMs": 0.465,
+            "screenshotEncodeMs": 10.691,
+            "chromiumCheckMs": 1.1,
+            "screenshotContentCached": true,
+            "screenshotWindowListMs": 0.585,
+            "enableMs": 0.001,
+            "markdownFetches": 1,
+            "screenshotCaptureMs": 49.194,
+            "screenshotWindowNumberMs": 0.055,
+            "monitorMs": 0.758,
+            "resolveMs": 0.02,
+            "focusableMs": 6.783,
+            "walkMs": 59.081,
+            "actionsMs": 7.064,
+            "selectableMs": 4.841,
+            "totalMs": 66.193,
+            "prepareMs": 0.325
+          },
+          "settle": {
+            "reads": 4,
+            "ms": 1945
+          }
+        },
+        {
+          "name": "fixed.cua",
+          "at": "2026-10-21T03:56:25.848Z",
+          "frame": {
+            "y": 60,
+            "height": 760,
+            "width": 1000,
+            "x": 80
+          },
+          "timings": {
+            "windowMs": 0.167,
+            "webShaped": true,
+            "menuBarMs": 0.689,
+            "settableMs": 0.137,
+            "actionDescriptionsMs": 0.026,
+            "disclosableMs": 1.541,
+            "estimatedBytes": 64864,
+            "watchedProcesses": 1,
+            "screenshotWriteMs": 0.329,
+            "attributesMs": 21.429,
+            "screenshotJoinMs": 1.011,
+            "fetchFailures": 0,
+            "webAreaSeen": true,
+            "chromium": true,
+            "nodes": 94,
+            "focusMs": 0.092,
+            "markdownMs": 0.232,
+            "screenshotEncodeMs": 6.051,
+            "chromiumCheckMs": 1.217,
+            "screenshotContentCached": true,
+            "screenshotWindowListMs": 0.5,
+            "enableMs": 0.001,
+            "markdownFetches": 1,
+            "screenshotCaptureMs": 35.465,
+            "screenshotWindowNumberMs": 0.126,
+            "monitorMs": 0.56,
+            "resolveMs": 0.027,
+            "focusableMs": 3.1,
+            "walkMs": 41.495,
+            "actionsMs": 7.078,
+            "selectableMs": 2.68,
+            "totalMs": 47.48,
+            "prepareMs": 0.319
+          },
+          "settle": {
+            "reads": 2,
+            "ms": 618
+          },
+          "kept": true
+        },
+        {
+          "name": "action.vendor",
+          "at": "2026-10-21T03:56:31.685Z",
+          "frame": {
+            "y": 60,
+            "height": 760,
+            "width": 1000,
+            "x": 80
+          },
+          "index": 25,
+          "timings": {
+            "windowMs": 0.066,
+            "webShaped": true,
+            "menuBarMs": 0.399,
+            "settableMs": 0.178,
+            "actionDescriptionsMs": 0.046,
+            "disclosableMs": 2.039,
+            "estimatedBytes": 64864,
+            "watchedProcesses": 1,
+            "screenshotWriteMs": 0.291,
+            "attributesMs": 33.576,
+            "screenshotJoinMs": 0.001,
+            "fetchFailures": 0,
+            "webAreaSeen": true,
+            "chromium": true,
+            "nodes": 94,
+            "focusMs": 0.147,
+            "markdownMs": 0.494,
+            "screenshotEncodeMs": 9.428,
+            "chromiumCheckMs": 1.018,
+            "screenshotContentCached": true,
+            "screenshotWindowListMs": 0.514,
+            "enableMs": 0.001,
+            "markdownFetches": 1,
+            "screenshotCaptureMs": 45.784,
+            "screenshotWindowNumberMs": 0.038,
+            "monitorMs": 0.433,
+            "resolveMs": 0.019,
+            "focusableMs": 4.112,
+            "walkMs": 57.912,
+            "actionsMs": 7.443,
+            "selectableMs": 3.85,
+            "totalMs": 62.624,
+            "prepareMs": 0.395
+          }
+        },
+        {
+          "name": "action.cua.before",
+          "at": "2026-10-21T03:56:42.235Z",
+          "frame": {
+            "y": 60,
+            "height": 760,
+            "width": 1000,
+            "x": 80
+          },
+          "click": {
+            "index": 25,
+            "route": 1
+          },
+          "timings": {
+            "windowMs": 0.133,
+            "webShaped": true,
+            "menuBarMs": 1.236,
+            "settableMs": 0.142,
+            "actionDescriptionsMs": 0.039,
+            "disclosableMs": 1.66,
+            "estimatedBytes": 64864,
+            "watchedProcesses": 1,
+            "screenshotWriteMs": 0.39,
+            "attributesMs": 34.086,
+            "screenshotJoinMs": 0.744,
+            "fetchFailures": 0,
+            "webAreaSeen": true,
+            "chromium": true,
+            "nodes": 94,
+            "focusMs": 0.152,
+            "markdownMs": 0.393,
+            "screenshotEncodeMs": 9.827,
+            "chromiumCheckMs": 1.29,
+            "screenshotContentCached": true,
+            "screenshotWindowListMs": 1.398,
+            "enableMs": 0.001,
+            "markdownFetches": 1,
+            "screenshotCaptureMs": 47.451,
+            "screenshotWindowNumberMs": 0.099,
+            "monitorMs": 0.514,
+            "resolveMs": 0.024,
+            "focusableMs": 3.63,
+            "walkMs": 58.43,
+            "actionsMs": 9.212,
+            "selectableMs": 3.314,
+            "totalMs": 65.758,
+            "prepareMs": 0.433
+          },
+          "settle": {
+            "reads": 3,
+            "ms": 2713
+          }
+        },
+        {
+          "name": "action.cua.after",
+          "at": "2026-10-21T03:56:42.235Z",
+          "frame": {
+            "x": 80,
+            "y": 60,
+            "height": 760,
+            "width": 1000
+          },
+          "timings": {
+            "settleBusyVetoes": 0,
+            "settleObserverMs": 0.563,
+            "webShaped": true,
+            "settleObserved": true,
+            "settableMs": 0.211,
+            "menuBarMs": 0.309,
+            "windowMs": 0.061,
+            "disclosableMs": 1.77,
+            "actionDescriptionsMs": 0.042,
+            "estimatedBytes": 64864,
+            "watchedProcesses": 1,
+            "screenshotWriteMs": 0.47,
+            "settleTreeReused": true,
+            "attributesMs": 4.999,
+            "screenshotJoinMs": 34.825,
+            "fetchFailures": 0,
+            "settleMs": 551.597,
+            "webAreaSeen": true,
+            "chromium": true,
+            "nodes": 94,
+            "settleBusyWalks": 1,
+            "settleIgnoredTitleChanges": 0,
+            "markdownMs": 0.41,
+            "focusMs": 0.169,
+            "enableMs": 0.002,
+            "screenshotContentCached": true,
+            "settleNotificationCounts": {
+              "AXFocusedUIElementChanged": 1
+            },
+            "screenshotWindowListMs": 1.013,
+            "markdownFetches": 1,
+            "screenshotEncodeMs": 12.062,
+            "chromiumCheckMs": 0.404,
+            "settle": "settled",
+            "screenshotCaptureMs": 50.025,
+            "settleNotifications": 1,
+            "settleBusyWalkMs": 42.413,
+            "screenshotWindowNumberMs": 0.075,
+            "monitorMs": 0.029,
+            "resolveMs": 0.017,
+            "focusableMs": 3.947,
+            "settleBusyWalkAttributesMs": 40.844,
+            "walkMs": 29.054,
+            "actionsMs": 7.318,
+            "settleQuietAtMs": 508.644,
+            "totalMs": 620.01,
+            "selectableMs": 3.53,
+            "prepareMs": 0.061
+          }
+        }
+      ],
+      "app": "/Users/new/Library/Caches/cua-harness/chrome-for-testing/155.0.8059.84/chrome-mac-arm64/Google Chrome for Testing.app",
+      "pid": 46219,
+      "window": {
+        "number": 13289,
+        "bounds": {
+          "height": 500,
+          "width": 500,
+          "x": 0,
+          "y": 940
+        }
+      },
+      "fixedAttempts": 1,
+      "fixedDigest": "a4d261b19746e962170a2889c1c30a5f73967c412495e2fa49c855657d039178",
+      "startAttempts": 1,
+      "restarted": {
+        "pid": 46777,
+        "window": {
+          "number": 13306,
+          "bounds": {
+            "height": 500,
+            "width": 500,
+            "x": 0,
+            "y": 940
+          }
+        }
+      },
+      "frames": {
+        "same": false,
+        "list": [
+          {
+            "capture": "fixed.cua",
+            "frame": {
+              "y": 60,
+              "height": 760,
+              "width": 1000,
+              "x": 80
+            }
+          },
+          {
+            "capture": "fixed.cua",
+            "frame": {
+              "y": 60,
+              "height": 760,
+              "width": 1000,
+              "x": 80
+            }
+          },
+          {
+            "capture": "action.vendor",
+            "frame": {
+              "y": 60,
+              "height": 760,
+              "width": 1000,
+              "x": 80
+            }
+          },
+          {
+            "capture": "action.cua.before",
+            "frame": {
+              "y": 60,
+              "height": 760,
+              "width": 1000,
+              "x": 80
+            }
+          },
+          {
+            "capture": "action.cua.after",
+            "frame": {
+              "x": 80,
+              "y": 60,
+              "height": 760,
+              "width": 1000
+            }
+          }
+        ]
+      },
+      "recorded": true
+    },
+    "electron": {
+      "captures": [
+        {
+          "name": "fixed.cua",
+          "at": "2026-10-21T03:56:58.018Z",
+          "frame": {
+            "x": 140,
+            "height": 560,
+            "y": 100,
+            "width": 720
+          },
+          "timings": {
+            "windowMs": 0.138,
+            "webShaped": true,
+            "menuBarMs": 0.637,
+            "settableMs": 0.068,
+            "actionDescriptionsMs": 0.081,
+            "disclosableMs": 0.83,
+            "estimatedBytes": 21535,
+            "watchedProcesses": 1,
+            "screenshotWriteMs": 0.253,
+            "attributesMs": 16.255,
+            "screenshotJoinMs": 27.154,
+            "fetchFailures": 0,
+            "webAreaSeen": true,
+            "chromium": true,
+            "nodes": 32,
+            "focusMs": 0.336,
+            "screenshotEncodeMs": 4.077,
+            "chromiumCheckMs": 1.391,
+            "screenshotWindowListMs": 0.894,
+            "screenshotContentCached": true,
+            "enableMs": 0,
+            "markdownFetches": 0,
+            "screenshotCaptureMs": 48.796,
+            "screenshotWindowNumberMs": 0.066,
+            "monitorMs": 0.655,
+            "resolveMs": 0.055,
+            "focusableMs": 1.603,
+            "walkMs": 26.42,
+            "actionsMs": 3.495,
+            "totalMs": 61.95,
+            "selectableMs": 1.216,
+            "prepareMs": 0.433
+          },
+          "settle": {
+            "reads": 2,
+            "ms": 799
+          }
+        },
+        {
+          "name": "fixed.cua",
+          "at": "2026-10-21T03:56:58.018Z",
+          "frame": {
+            "x": 140,
+            "width": 720,
+            "y": 100,
+            "height": 560
+          },
+          "timings": {
+            "windowMs": 0.158,
+            "webShaped": true,
+            "menuBarMs": 0.703,
+            "settableMs": 0.067,
+            "actionDescriptionsMs": 0.087,
+            "disclosableMs": 0.866,
+            "estimatedBytes": 21535,
+            "watchedProcesses": 1,
+            "screenshotWriteMs": 0.335,
+            "attributesMs": 14.821,
+            "screenshotJoinMs": 36.225,
+            "fetchFailures": 0,
+            "webAreaSeen": true,
+            "chromium": true,
+            "nodes": 32,
+            "focusMs": 0.318,
+            "screenshotEncodeMs": 6.409,
+            "chromiumCheckMs": 2.169,
+            "screenshotWindowListMs": 3.475,
+            "screenshotContentCached": true,
+            "enableMs": 0.001,
+            "markdownFetches": 0,
+            "screenshotCaptureMs": 52.228,
+            "screenshotWindowNumberMs": 0.06,
+            "monitorMs": 1.419,
+            "resolveMs": 0.049,
+            "focusableMs": 1.821,
+            "walkMs": 25.925,
+            "actionsMs": 3.811,
+            "totalMs": 70.773,
+            "selectableMs": 1.226,
+            "prepareMs": 0.449
+          },
+          "settle": {
+            "reads": 2,
+            "ms": 632
+          },
+          "kept": true
+        },
+        {
+          "name": "action.vendor",
+          "at": "2026-10-21T03:57:03.222Z",
+          "frame": {
+            "x": 140,
+            "height": 560,
+            "width": 720,
+            "y": 100
+          },
+          "index": 13,
+          "timings": {
+            "windowMs": 0.144,
+            "webShaped": true,
+            "menuBarMs": 0.315,
+            "settableMs": 0.086,
+            "actionDescriptionsMs": 0.18,
+            "disclosableMs": 1.085,
+            "estimatedBytes": 21534,
+            "watchedProcesses": 1,
+            "screenshotWriteMs": 0.411,
+            "attributesMs": 17.349,
+            "screenshotJoinMs": 30.921,
+            "fetchFailures": 0,
+            "webAreaSeen": true,
+            "chromium": true,
+            "nodes": 32,
+            "focusMs": 0.375,
+            "screenshotEncodeMs": 6.11,
+            "chromiumCheckMs": 1.414,
+            "screenshotWindowListMs": 0.672,
+            "screenshotContentCached": true,
+            "enableMs": 0.001,
+            "markdownFetches": 0,
+            "screenshotCaptureMs": 57.74,
+            "screenshotWindowNumberMs": 0.053,
+            "monitorMs": 0.424,
+            "resolveMs": 0.063,
+            "focusableMs": 2.494,
+            "walkMs": 33.663,
+            "actionsMs": 6.644,
+            "totalMs": 73.519,
+            "selectableMs": 1.542,
+            "prepareMs": 0.469
+          }
+        },
+        {
+          "name": "action.cua.before",
+          "at": "2026-10-21T03:57:13.092Z",
+          "frame": {
+            "x": 140,
+            "width": 720,
+            "height": 560,
+            "y": 100
+          },
+          "click": {
+            "index": 13,
+            "route": 1
+          },
+          "timings": {
+            "windowMs": 0.18,
+            "webShaped": true,
+            "settableMs": 0.042,
+            "menuBarMs": 0.345,
+            "actionDescriptionsMs": 0.058,
+            "disclosableMs": 0.549,
+            "estimatedBytes": 21535,
+            "watchedProcesses": 1,
+            "screenshotWriteMs": 0.207,
+            "attributesMs": 8.928,
+            "screenshotJoinMs": 22.177,
+            "fetchFailures": 0,
+            "webAreaSeen": true,
+            "chromium": true,
+            "nodes": 32,
+            "focusMs": 0.222,
+            "screenshotEncodeMs": 2.961,
+            "chromiumCheckMs": 1.442,
+            "screenshotContentCached": true,
+            "screenshotWindowListMs": 0.415,
+            "enableMs": 0.001,
+            "markdownFetches": 0,
+            "screenshotCaptureMs": 34.741,
+            "screenshotWindowNumberMs": 0.054,
+            "monitorMs": 0.404,
+            "resolveMs": 0.029,
+            "focusableMs": 1.117,
+            "walkMs": 15.835,
+            "actionsMs": 2.038,
+            "totalMs": 43.076,
+            "selectableMs": 0.837,
+            "prepareMs": 0.358
+          },
+          "settle": {
+            "reads": 3,
+            "ms": 2675
+          }
+        },
+        {
+          "name": "action.cua.after",
+          "at": "2026-10-21T03:57:13.092Z",
+          "frame": {
+            "x": 140,
+            "y": 100,
+            "height": 560,
+            "width": 720
+          },
+          "timings": {
+            "settleBusyVetoes": 0,
+            "settleObserverMs": 0.398,
+            "webShaped": true,
+            "settleObserved": true,
+            "settableMs": 0.088,
+            "menuBarMs": 0.327,
+            "windowMs": 0.088,
+            "disclosableMs": 1.252,
+            "actionDescriptionsMs": 0.126,
+            "estimatedBytes": 21534,
+            "watchedProcesses": 1,
+            "screenshotWriteMs": 0.305,
+            "settleTreeReused": true,
+            "attributesMs": 2.483,
+            "screenshotJoinMs": 44.977,
+            "fetchFailures": 0,
+            "settleMs": 520.927,
+            "webAreaSeen": true,
+            "settleIgnoredTitleChanges": 0,
+            "chromium": true,
+            "nodes": 32,
+            "settleBusyWalks": 1,
+            "focusMs": 0.35,
+            "screenshotEncodeMs": 5.827,
+            "enableMs": 0.002,
+            "screenshotContentCached": true,
+            "settleNotificationCounts": {
+              "AXFocusedUIElementChanged": 1
+            },
+            "screenshotWindowListMs": 0.753,
+            "markdownFetches": 0,
+            "chromiumCheckMs": 0.592,
+            "settleBusyWalkMs": 14.605,
+            "settle": "settled",
+            "screenshotCaptureMs": 55.443,
+            "settleNotifications": 1,
+            "screenshotWindowNumberMs": 0.051,
+            "monitorMs": 0.026,
+            "resolveMs": 0.006,
+            "focusableMs": 2.129,
+            "settleBusyWalkAttributesMs": 13.879,
+            "walkMs": 16.737,
+            "actionsMs": 5.166,
+            "settleQuietAtMs": 505.78,
+            "totalMs": 586.199,
+            "selectableMs": 1.74,
+            "prepareMs": 0.054
+          }
+        }
+      ],
+      "app": "/Users/new/Library/Caches/cua-harness/electron-fixture/44.9.0-23c8b77691d0/cua Electron Fixture.app",
+      "pid": 47155,
+      "window": {
+        "number": 13313,
+        "bounds": {
+          "height": 560,
+          "width": 720,
+          "x": 140,
+          "y": 100
+        }
+      },
+      "fixedAttempts": 1,
+      "fixedDigest": "9e0dff0859554892607c2a2f01919a8701b4ffe0cc0d1466b64171e6e4c5ca1a",
+      "startAttempts": 1,
+      "restarted": {
+        "pid": 47800,
+        "window": {
+          "number": 13328,
+          "bounds": {
+            "height": 562,
+            "width": 722,
+            "x": 139,
+            "y": 99
+          }
+        }
+      },
+      "frames": {
+        "same": false,
+        "list": [
+          {
+            "capture": "fixed.cua",
+            "frame": {
+              "x": 140,
+              "height": 560,
+              "y": 100,
+              "width": 720
+            }
+          },
+          {
+            "capture": "fixed.cua",
+            "frame": {
+              "x": 140,
+              "width": 720,
+              "y": 100,
+              "height": 560
+            }
+          },
+          {
+            "capture": "action.vendor",
+            "frame": {
+              "x": 140,
+              "height": 560,
+              "width": 720,
+              "y": 100
+            }
+          },
+          {
+            "capture": "action.cua.before",
+            "frame": {
+              "x": 140,
+              "width": 720,
+              "height": 560,
+              "y": 100
+            }
+          },
+          {
+            "capture": "action.cua.after",
+            "frame": {
+              "x": 140,
+              "y": 100,
+              "height": 560,
+              "width": 720
+            }
+          }
+        ]
+      },
+      "recorded": true
+    }
+  },
+  "elicitations": [
+    {
+      "t": "2026-10-21T03:55:30.244Z",
+      "app": "com.apple.TextEdit",
+      "action": "accept"
+    },
+    {
+      "t": "2026-10-21T03:55:58.400Z",
+      "app": "com.apple.finder",
+      "action": "accept"
+    },
+    {
+      "t": "2026-10-21T03:56:19.739Z",
+      "app": "com.google.chrome.for.testing",
+      "action": "accept"
+    },
+    {
+      "t": "2026-10-21T03:56:48.935Z",
+      "app": "io.github.ssfskim.cua.fixture.electron",
+      "action": "accept"
+    }
+  ],
+  "engine": {
+    "bundlePath": "/Users/new/Library/Application Support/cua/engine/cua Engine.app",
+    "build": "4b31b8e61195fa9580636bfd08387653072bc50b6da089c008e5c2c952649043",
+    "engineVersion": "0.1.0",
+    "approvedAt": "2026-10-21T01:09:31.257Z",
+    "signature": {
+      "kind": "identity",
+      "identityMatches": true
+    }
+  },
+  "checkout": {
+    "build": "4b31b8e61195fa9580636bfd08387653072bc50b6da089c008e5c2c952649043",
+    "commit": "84c6eeea746c791ab78667512d33fb2654339987",
+    "dirty": false
+  },
+  "controller": {
+    "build": "4b31b8e61195fa9580636bfd08387653072bc50b6da089c008e5c2c952649043",
+    "commit": "84c6eeea746c791ab78667512d33fb2654339987",
+    "dirty": false
+  },
+  "fixtures": {
+    "chrome": {
+      "appPath": "/Users/new/Library/Caches/cua-harness/chrome-for-testing/155.0.8059.84/chrome-mac-arm64/Google Chrome for Testing.app",
+      "version": "155.0.8059.84",
+      "reused": true
+    },
+    "electron": {
+      "appPath": "/Users/new/Library/Caches/cua-harness/electron-fixture/44.9.0-23c8b77691d0/cua Electron Fixture.app",
+      "bundleId": "io.github.ssfskim.cua.fixture.electron",
+      "electronVersion": "44.9.0",
+      "sourceHash": "23c8b77691d0",
+      "reused": true
+    }
+  },
+  "sizingConfig": {
+    "before": {
+      "readAt": "2026-10-21T03:55:12.425Z",
+      "lines": [
+        "plist mtime 2026-10-21T02:00:41Z",
+        "0 fetched 2026-10-21T01:53:51Z rule default legacy absent (false) value {\"jpeg_compression_quality\": 0.8, \"should_normalize_screenshot_to_point_resolution\": true, \"should_use_jpeg\": true}",
+        "1 fetched 2026-10-21T01:14:17Z rule default legacy absent (false) value {\"jpeg_compression_quality\": 0.8, \"should_normalize_screenshot_to_point_resolution\": true, \"should_use_jpeg\": true}",
+        "2 fetched 2026-10-21T00:47:09Z rule default legacy absent (false) value {\"jpeg_compression_quality\": 0.8, \"should_normalize_screenshot_to_point_resolution\": true, \"should_use_jpeg\": true}",
+        "3 fetched 2026-10-21T01:05:23Z rule default legacy absent (false) value {\"jpeg_compression_quality\": 0.8, \"should_normalize_screenshot_to_point_resolution\": true, \"should_use_jpeg\": true}",
+        "4 fetched 2026-10-21T01:14:17Z rule default legacy absent (false) value {\"jpeg_compression_quality\": 0.8, \"should_normalize_screenshot_to_point_resolution\": true, \"should_use_jpeg\": true}",
+        "5 fetched 2026-10-21T01:14:17Z rule default legacy absent (false) value {\"jpeg_compression_quality\": 0.8, \"should_normalize_screenshot_to_point_resolution\": true, \"should_use_jpeg\": true}",
+        "6 fetched 2026-10-21T00:47:09Z rule default legacy absent (false) value {\"jpeg_compression_quality\": 0.8, \"should_normalize_screenshot_to_point_resolution\": true, \"should_use_jpeg\": true}",
+        "7 fetched 2026-10-21T00:47:09Z rule default legacy absent (false) value {\"jpeg_compression_quality\": 0.8, \"should_normalize_screenshot_to_point_resolution\": true, \"should_use_jpeg\": true}",
+        "8 fetched 2026-10-21T01:05:23Z rule default legacy absent (false) value {\"jpeg_compression_quality\": 0.8, \"should_normalize_screenshot_to_point_resolution\": true, \"should_use_jpeg\": true}",
+        "9 fetched 2026-10-21T00:29:36Z rule default legacy absent (false) value {\"jpeg_compression_quality\": 0.8, \"should_normalize_screenshot_to_point_resolution\": true, \"should_use_jpeg\": true}"
+      ]
+    },
+    "after": {
+      "readAt": "2026-10-21T03:57:15.116Z",
+      "lines": [
+        "plist mtime 2026-10-21T03:55:31Z",
+        "0 fetched 2026-10-21T01:14:17Z rule default legacy absent (false) value {\"jpeg_compression_quality\": 0.8, \"should_normalize_screenshot_to_point_resolution\": true, \"should_use_jpeg\": true}",
+        "1 fetched 2026-10-21T01:14:17Z rule default legacy absent (false) value {\"jpeg_compression_quality\": 0.8, \"should_normalize_screenshot_to_point_resolution\": true, \"should_use_jpeg\": true}",
+        "2 fetched 2026-10-21T00:47:09Z rule default legacy absent (false) value {\"jpeg_compression_quality\": 0.8, \"should_normalize_screenshot_to_point_resolution\": true, \"should_use_jpeg\": true}",
+        "3 fetched 2026-10-21T02:36:11Z rule default legacy absent (false) value {\"jpeg_compression_quality\": 0.8, \"should_normalize_screenshot_to_point_resolution\": true, \"should_use_jpeg\": true}",
+        "4 fetched 2026-10-21T01:05:23Z rule default legacy absent (false) value {\"jpeg_compression_quality\": 0.8, \"should_normalize_screenshot_to_point_resolution\": true, \"should_use_jpeg\": true}",
+        "5 fetched 2026-10-21T01:14:17Z rule default legacy absent (false) value {\"jpeg_compression_quality\": 0.8, \"should_normalize_screenshot_to_point_resolution\": true, \"should_use_jpeg\": true}",
+        "6 fetched 2026-10-21T01:05:23Z rule default legacy absent (false) value {\"jpeg_compression_quality\": 0.8, \"should_normalize_screenshot_to_point_resolution\": true, \"should_use_jpeg\": true}",
+        "7 fetched 2026-10-21T00:47:09Z rule default legacy absent (false) value {\"jpeg_compression_quality\": 0.8, \"should_normalize_screenshot_to_point_resolution\": true, \"should_use_jpeg\": true}",
+        "8 fetched 2026-10-21T00:47:09Z rule default legacy absent (false) value {\"jpeg_compression_quality\": 0.8, \"should_normalize_screenshot_to_point_resolution\": true, \"should_use_jpeg\": true}",
+        "9 fetched 2026-10-21T01:53:51Z rule default legacy absent (false) value {\"jpeg_compression_quality\": 0.8, \"should_normalize_screenshot_to_point_resolution\": true, \"should_use_jpeg\": true}"
+      ]
+    }
+  },
+  "runDir": "/Users/new/Library/Caches/cua-harness/native-goldens",
+  "vendor": {
+    "home": "/Users/new/Library/Application Support/cua-spike-vendor",
+    "release": "26.928.40906-darwin-arm64",
+    "runtimeRoot": "/Users/new/Library/Application Support/cua-spike-vendor/runtimes/26.928.40906-darwin-arm64",
+    "hostAttestation": {
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 171,
+        "cua/nativeEngine": {
+          "engine": "vendor",
+          "version": "26.924.1001281",
+          "build": "26.928.40906-darwin-arm64"
+        },
+        "cua/taskId": "ff11eac8-cfd3-4cea-b3cc-02bcfced3ff5",
+        "cua/nativeExecution": {
+          "path": "/Users/new/Library/Application Support/cua-spike-vendor/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node",
+          "version": "v24.21.0"
+        },
+        "cua/sandboxLaunch": {
+          "launcher": "cua-compat",
+          "tmpdir": "session"
+        }
+      }
+    },
+    "engineAttestation": {
+      "engine": "vendor",
+      "version": "26.924.1001281",
+      "build": "26.928.40906-darwin-arm64"
+    }
+  },
+  "engineStopAtStart": {
+    "wasRunning": false
+  },
+  "hardware": {
+    "model": "Mac14,12",
+    "chip": "Apple M2 Pro",
+    "memoryBytes": 17179869184
+  },
+  "os": {
+    "name": "macOS",
+    "version": "27.0",
+    "build": "26A428"
+  },
+  "display": {
+    "pixels": "5120 x 2880",
+    "resolution": "2560 x 1440",
+    "scale": 2,
+    "virtual": true
+  },
+  "engineStopAtEnd": {
+    "wasRunning": true,
+    "pid": 44701
+  },
+  "preparationCleanup": {
+    "removed": true,
+    "restored": [],
+    "helpersStopped": [],
+    "engineStop": {
+      "wasRunning": false
+    }
+  },
+  "finished": "2026-10-21T03:57:18.071Z"
+}

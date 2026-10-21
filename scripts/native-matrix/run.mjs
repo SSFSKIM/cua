@@ -44,12 +44,11 @@ import * as fs from 'node:fs';
 import {mkdtempSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
-import {frontmostFromProbe, sendIfFrontmost} from '../accept/key-guard.mjs';
 import {quote} from '../browser-parity/topology.mjs';
 import {AX_FULL, LIST_APPS, SCRATCH_GUARD, SCREENSHOT} from '../native-baseline/cells.mjs';
 import {assertEngineOptions, checkApprovedEngine, engineProblem} from '../native-baseline/engine.mjs';
 import {HOSTS} from '../native-baseline/remote.mjs';
-import {BACKGROUND_PAIRINGS, guardOf, SCENES} from '../repl-parity/scenes-mac.mjs';
+import {BACKGROUND_PAIRINGS, SCENES} from '../repl-parity/scenes-mac.mjs';
 import {cellResult, validateCellResult, writeCellResult} from './cell-result.mjs';
 import {checkVendorPreflight} from './goldens.mjs';
 import {BIND} from './goldens-cells.mjs';
@@ -57,6 +56,7 @@ import {BIND_MS, connectLane, helpersOf} from './lane.mjs';
 import {caseCells, CLOSE_PANEL, findingCell, launchCell, launchCheckCell, OPEN_PANEL, selectCell} from './matrix-cells.mjs';
 import {accountActivations, judgeInterference, userWindowOf} from './oracle.mjs';
 import {CASES, caseId, OWNER_OPTIONS, SCENE_OF, WINDOWLESS_BUNDLE_ID} from './plan.mjs';
+import {activate, alertCheck, focusOf, js, mark, push, read, sendKeys, step, Stop, TEXTEDIT, userFront} from './steps.mjs';
 
 export const DEFAULT_RUN = 'Library/Caches/cua-harness/native-matrix';
 export const DEFAULT_RUNS = 3;
@@ -105,8 +105,6 @@ function narrowed(kind, {scene, user}) {
 // The scenes a plan brings up.
 export const scenesOf = plan => SCENE_ORDER.filter(id => plan.frontmost.some(t => SCENE_OF[t] === id)
   || plan.background.some(p => SCENE_OF[p.driven] === id || p.user === id) || plan.launch.some(l => l.scene === id || l.user === id));
-
-class Stop extends Error {}
 
 // options: {device, host, engine, approvedRuntime, approvedEngine, out, runs, samples, run (the device directory), plan
 // (planOf's), cell (the registry name the results answer), sitting (the sitting's id, in every result)}; io: {ops
@@ -347,67 +345,6 @@ function finishWatch(ctx) {
     .flatMap(([key, events]) => events.map(e => ({kind: 'invalid-row', key, bundleId: e.bundleId ?? null, at: e.at ?? null})));
   ctx.meta.activations = {accounted: [...accounted, ...inInvalid], unaccounted: unaccounted.map(e => ({bundleId: e.bundleId ?? null, at: e.at ?? null}))};
   if (unaccounted.length) ctx.problems.push(`${unaccounted.length} activation(s) fell in no step of the run: not accounted for`);
-}
-
-// ---- the steps and their windows ------------------------------------------------------------------------------------
-
-const push = (ctx, row) => { ctx.rows.push(row); return row; };
-// A step's device-clock window; a harness step names the apps it intends to activate (`apps`), the only activations
-// it excuses (./oracle.mjs accountActivations).
-const mark = (ctx, kind, key, at, apps = []) => {
-  if (Array.isArray(at) && at.length === 2 && at.every(Number.isFinite)) ctx.windows.push({kind, key, at, ...(kind === 'harness' ? {apps} : {})});
-};
-// A js cell, its device-clock window kept under `kind`.
-async function js(ctx, kind, key, code, {timeoutMs, apps} = {}) {
-  const r = await ctx.lane.js(code, timeoutMs);
-  mark(ctx, kind, key, r.at, apps);
-  return r;
-}
-const TEXTEDIT = [SCENES.textedit.bundleId];
-// A scenes command through ./matrix-device.mjs step, its window the harness's: `activate` intends its scene's app,
-// `down` (of a scene not in front) intends none. -> the command's answer.
-function step(ctx, args) {
-  const {answer, at} = ctx.ops.matrix(['step', ...args, '--run', ctx.run]) ?? {};
-  mark(ctx, 'harness', args.join(':'), at, args[0] === 'activate' ? [SCENES[args[1]].bundleId] : []);
-  return answer;
-}
-const activate = (ctx, scene) => step(ctx, ['activate', scene]);
-const read = (ctx, focus = null) => ctx.ops.matrix(['read', '--run', ctx.run, ...(ctx.watcher !== null ? ['--watcher', String(ctx.watcher)] : []), ...(focus ? ['--focus', focus] : [])]);
-const focusOf = w => `${w.pid},${w.bounds.x},${w.bounds.y},${w.bounds.width},${w.bounds.height}`;
-const sameWindow = (a, b) => Boolean(a && b) && a.pid === b.pid && ['x', 'y', 'width', 'height'].every(k => a.bounds[k] === b.bounds[k]);
-
-// The paste rows' system-alert watch (./matrix-device.mjs alerts check, the live paste check's): a possible alert stops
-// the run untouched; only its sanitized export is kept.
-function alertCheck(ctx, when) {
-  const check = ctx.ops.matrix(['alerts', 'check', '--run', ctx.run]);
-  if (check?.abort !== false) {
-    ctx.meta.alert = {when, ...(check?.export ?? {})};
-    throw new Stop(`a possible system alert appeared ${when}; the run stopped without touching it`);
-  }
-}
-
-// A key cell sent only under the key guard: the driven scene's process in front, or (given `userWindow`) the run's
-// user window. A skip with one of the run's windows in front leaves the row invalid; any other front (the owner at the
-// Mac, an alert) stops the run. -> the cell's answer, or null when it was not sent.
-async function sendKeys(ctx, code, keys, {scene, front, userWindow, kind = 'harness', key = `keys:${keys.join('+')}`}) {
-  const target = guardOf(scene, ctx.records[scene]);
-  const out = await sendIfFrontmost({target, keys, frontmost: () => frontmostFromProbe((front ?? read(ctx)).reading),
-    send: () => js(ctx, kind, key, code, {apps: [SCENES[scene].bundleId]}),
-    ...(userWindow ? {userWindow} : {})});
-  if (out.sent) return out.result;
-  const seen = out.skipped.frontmost;
-  ctx.meta.keySkipped.push({keys, scene, front: seen === 'unreadable' ? 'unreadable' : {bundleId: seen.bundleId ?? null, owned: seen.owned === true}});
-  if (seen === 'unreadable' || seen.owned !== true) throw new Stop(`${keys.join(', ')} not sent: the front is not one of the run's windows (#162); the run stopped`);
-  return null;
-}
-
-// The user window in front again before an act: read, and once re-activated when it is not. -> the reading or null.
-async function userFront(ctx, user, userWindow) {
-  let r = read(ctx);
-  if (sameWindow(userWindowOf(r.reading, userWindow.pid), userWindow)) return r;
-  activate(ctx, user);
-  r = read(ctx);
-  return sameWindow(userWindowOf(r.reading, userWindow.pid), userWindow) ? r : null;
 }
 
 // ---- the regimes --------------------------------------------------------------------------------------------------------

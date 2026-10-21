@@ -79,8 +79,8 @@ extension Engine {
       let target: ClickTarget
       let length: CGFloat?
       if let token {
-        let element = try targetElement(token, app: app, appPid: appPid, context: context)
-        positionElement(element.element, ax: .live)
+        let element = try positionedTarget(try targetElement(token, app: app, appPid: appPid, context: context), token: token,
+                                           app: app, appPid: appPid, context: context)
         let pointing = ElementPointing(element.element, owner: element.owner)
         guard let point = pointing.point else { throw EngineError(name: "cannotClickOffscreenElement", "The element is not visible on screen.") }
         target = ClickTarget(point: point, windowFrame: pointing.windowFrame, windowID: pointing.windowID, pid: element.owner)
@@ -101,6 +101,7 @@ extension Engine {
         // MINIMIZED-WINDOW REFUSAL (M2a.4 wires refuseMinimizedWindow here at merge): the window is `placed.window`.
         let owner = hitTest(window: placed.window, at: placed.point).map { ownerPid(of: $0, fallback: appPid) } ?? appPid
         try refuseForbiddenOwner(owner)
+        actionTargets(owner, app: app, connection: context.connection)
         target = ClickTarget(point: placed.point, windowFrame: placed.windowFrame,
                              windowID: windowNumber(of: placed.window, pid: appPid, frame: placed.windowFrame), pid: owner)
         length = direction.horizontal ? placed.windowFrame.width : placed.windowFrame.height
@@ -111,9 +112,7 @@ extension Engine {
       guard let event = scrollEvent(direction, delta: delta, at: target) else {
         throw EngineError(name: "eventCreationFailed", "The scroll event could not be created.")
       }
-      let posted = postToProcess([event], pid: target.pid)
-      meta.startedAt = posted.startedAt
-      meta.endedAt = posted.endedAt
+      meta.posting { _ = postToProcess([event], pid: target.pid); return true }
       return ["meta": meta.wire]  // a scroll never arms the settle (F §8.1)
     } catch let error as EngineError {
       throw withMeta(error, meta)
@@ -137,6 +136,7 @@ extension Engine {
       // MINIMIZED-WINDOW REFUSAL (M2a.4 wires refuseMinimizedWindow here at merge): the window is `start.window`.
       let owner = hitTest(window: start.window, at: start.point).map { ownerPid(of: $0, fallback: appPid) } ?? appPid
       try refuseForbiddenOwner(owner)
+      actionTargets(owner, app: app, connection: context.connection)
       let windowID = windowNumber(of: start.window, pid: appPid, frame: start.windowFrame)
       let window = ClickTarget(point: start.point, windowFrame: start.windowFrame, windowID: windowID, pid: owner)
       let route = coordinateClickRoute(forced: forced, foreground: routeFourOverride(app.bundleIdentifier, routes: routes))

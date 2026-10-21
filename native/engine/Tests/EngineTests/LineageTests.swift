@@ -173,6 +173,103 @@ final class TokenResolutionTests: XCTestCase {
     XCTAssertEqual(twinFake.treeReads, 0, "nothing is walked when the re-fetch cannot start")
   }
 
+  // MARK: The re-reads that do not wait for the watch (Refetch)
+
+  func testAfterAScrollTheElementIsReReadEvenWithNothingInvalidatedAndAReplacementTakesItsToken() throws {
+    let (tree, lineage) = observed()
+    let fake = FakeResolution(tree)          // the watch has said nothing yet
+    // The scroll recycled the label's row: the old handle is gone, a new one (5) shows the same thing with an action.
+    tree.unreadable = [3]
+    tree.children = [0: [1, 2, 5]]
+    tree.extra[5] = tree.extra[3]
+    tree.extra[5]?["AXTitle"] = "node 3" as CFString   // the fake's default title is its id's
+    tree.actions[5] = ["AXShowMenu"]
+    XCTAssertTrue(CFEqual(try lineage.resolve(elementToken(3), resolver: fake.resolver).element, Engine.element(3)),
+                  "if needed: nothing invalidated, the stored handle is only validated")
+    let entry = try lineage.resolve(elementToken(3), resolver: fake.resolver, refetch: .always)
+    XCTAssertTrue(CFEqual(entry.element, Engine.element(5)))
+    XCTAssertEqual(entry.actions, ["AXShowMenu"], "the actions are the replacement's, not the observed element's")
+    XCTAssertTrue(CFEqual(try XCTUnwrap(lineage.entry(3)).element, Engine.element(5)), "the token names the new handle")
+    XCTAssertEqual(fake.treeReads, 1)
+  }
+
+  func testAfterAScrollAnElementThatStillMatchesKeepsItsHandleWithoutAWalk() throws {
+    let (tree, lineage) = observed()
+    let fake = FakeResolution(tree)
+    tree.actions[2] = ["AXPress"]
+    let entry = try lineage.resolve(elementToken(2), resolver: fake.resolver, refetch: .always)
+    XCTAssertTrue(CFEqual(entry.element, Engine.element(2)))
+    XCTAssertEqual(entry.identity.pid, 777)
+    XCTAssertEqual(entry.actions, ["AXPress"])
+    XCTAssertEqual(fake.treeReads, 0)
+  }
+
+  func testAfterAWriteTheSameElementTakesItsNewValueAndStaysResolvable() throws {
+    let (tree, lineage) = observed()
+    tree.extra[1]?["AXValue"] = "sent" as CFString
+    let fake = FakeResolution(tree)
+    XCTAssertEqual(try lineage.resolve(elementToken(1), resolver: fake.resolver, refetch: .ignoringValue).identity.value, "s:sent")
+    XCTAssertEqual(fake.treeReads, 0)
+    fake.invalidated = true
+    XCTAssertTrue(CFEqual(try lineage.resolve(elementToken(1), resolver: fake.resolver).element, Engine.element(1)),
+                  "a later re-fetch matches the value the write left")
+  }
+
+  func testAWriteThatReplacedTheElementIsRefetchedWithoutTheValue() throws {
+    let (tree, lineage) = observed()
+    // The field was rebuilt by the write: the old handle is gone, and the new one (6) holds the new value.
+    tree.unreadable = [1]
+    tree.children = [0: [6, 2, 3]]
+    tree.extra[6] = ["AXRole": "AXTextField" as CFString, "AXValue": "sent" as CFString, "AXTitle": "node 1" as CFString]
+    tree.owners[6] = 4243
+    let fake = FakeResolution(tree)
+    let entry = try lineage.resolve(elementToken(1), resolver: fake.resolver, refetch: .ignoringValue)
+    XCTAssertTrue(CFEqual(entry.element, Engine.element(6)))
+    XCTAssertEqual(entry.identity.value, "s:sent", "the stored identity is the one read now")
+    XCTAssertEqual(entry.identity.pid, 4243)
+    XCTAssertTrue(CFEqual(try XCTUnwrap(lineage.entry(1)).element, Engine.element(6)))
+  }
+
+  func testAFailedReCheckAfterAWriteIsRaised() {
+    let (tree, lineage) = observed()
+    tree.unreadable = [1]
+    tree.children = [0: [2, 3]]               // the field is gone
+    XCTAssertThrowsError(try lineage.resolve(elementToken(1), resolver: FakeResolution(tree).resolver, refetch: .ignoringValue)) { error in
+      XCTAssertEqual((error as? EngineError)?.errorName, "elementNoLongerValid")
+    }
+  }
+
+  func testAScrollThatReplacedTheTargetHandsTheActionTheReplacement() throws {
+    let (tree, lineage) = observed()
+    let fake = FakeResolution(tree)
+    // The label (3) sits below its window's view (0, clipping at y 0…100); its scroll to visible recycles it as 5.
+    let ax = FakeAX()
+    ax.roles = [0: kAXWindowRole, 3: kAXStaticTextRole]
+    ax.parents = [3: 0]
+    ax.frames = [0: CGRect(x: 0, y: 0, width: 100, height: 100), 3: CGRect(x: 0, y: 400, width: 100, height: 20)]
+    ax.actions = [3: ["AXScrollToVisible"]]
+    ax.onPerform = { id, _ in
+      ax.frames[3] = nil
+      tree.unreadable = [3]
+      tree.children = [0: [1, 2, 5]]
+      tree.extra[5] = tree.extra[3]
+      tree.extra[5]?["AXTitle"] = "node 3" as CFString
+    }
+    let observedTarget = ElementTarget(entry: try lineage.resolve(elementToken(3), resolver: fake.resolver), owner: 4242)
+    var refetches = 0
+    let target = try scrolledIntoView(observedTarget, ax: ax.ops) {
+      refetches += 1
+      return ElementTarget(entry: try lineage.resolve(elementToken(3), resolver: fake.resolver, refetch: .always), owner: 4242)
+    }
+    XCTAssertEqual(ax.performs.map(\.action), ["AXScrollToVisible"])
+    XCTAssertEqual(refetches, 1)
+    XCTAssertTrue(CFEqual(target.element, Engine.element(5)), "the action goes to the element the scroll left, not the stale handle")
+
+    ax.frames[3] = CGRect(x: 0, y: 40, width: 100, height: 20)  // showing: nothing scrolled, nothing re-resolved
+    _ = try scrolledIntoView(observedTarget, ax: ax.ops) { refetches += 1; return observedTarget }
+    XCTAssertEqual(refetches, 1)
+  }
+
   func testTheLineageGuardRefusesATokenOfAnotherOrAnEndedLineage() throws {
     let (tree, lineage) = observed()
     let connection = ConnectionState(id: 1, fd: -1)

@@ -200,9 +200,8 @@ func keyPresses(_ presses: [KeyPress], checkIntervention: () throws -> Void, pos
 /// fall-through to a synthesized click, which could click twice after an action that took effect and still erred).
 func deliverAction(_ action: String, perform: (String) -> AXError, meta: inout InputMeta) throws {
   meta.inputRoute = .action
-  meta.startedAt = unixMilliseconds()
-  let error = perform(action)
-  meta.endedAt = unixMilliseconds()
+  var error = AXError.failure
+  meta.posting { error = perform(action); return true }
   guard error == .success else { throw EngineError(name: "actionFailed", "The element did not accept the \(action) action.") }
 }
 
@@ -242,15 +241,15 @@ extension Engine {
       let foreground = routeFourOverride(app.bundleIdentifier, routes: routes)
 
       if let token {
-        let target = try targetElement(token, app: app, appPid: appPid, context: context)
+        let resolved = try targetElement(token, app: app, appPid: appPid, context: context)
         let ax = AXOps.live
-        if forced == nil, button == .left, count == 1, target.entry.identity.role == kAXMenuBarItemRole,
-           menuOfMenuBarItem(target.element, ax: ax) != nil {
+        if forced == nil, button == .left, count == 1, resolved.entry.identity.role == kAXMenuBarItemRole,
+           menuOfMenuBarItem(resolved.element, ax: ax) != nil {
           meta.inputRoute = .action  // an accessibility-only path: nothing is posted
-          context.connection.recordMenu(target.element, app: app.key)
+          context.connection.recordMenu(resolved.element, app: app.key)
           return ["meta": meta.wire]
         }
-        positionElement(target.element, ax: ax)
+        let target = try positionedTarget(resolved, token: token, app: app, appPid: appPid, context: context)
         let pointing = ElementPointing(target.element, owner: target.owner, ax: ax)
         let plan = try elementClickPlan(forced: forced, button: button, count: count, role: target.entry.identity.role, actions: target.entry.actions,
                                         synthesized: synthesizedClickRoute(forced: nil, foreground: foreground)) {

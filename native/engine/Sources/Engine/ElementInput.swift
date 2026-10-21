@@ -86,6 +86,37 @@ func focusFieldIfNeeded(_ element: AXUIElement, bundleIdentifier: String?, ax: A
   return true
 }
 
+/// prepareToInteract's positioning (F §16.8; the re-fetch after a reported scroll, 0x1000701f8): the element scrolled
+/// into view and, when an operation scrolled, its target resolved again by `refetch`, since the scroll may have replaced
+/// the element (a recycled row) rather than moved it, and the process serving the result is checked again. A target that
+/// showed already, or that nothing could scroll, is kept as it was resolved.
+func scrolledIntoView(_ target: ElementTarget, ax: AXOps, refetch: () throws -> ElementTarget) throws -> ElementTarget {
+  switch positionElement(target.element, ax: ax) {
+  case .visible, .unscrollable: return target
+  case .scrolled, .stillHidden: return try refetch()
+  }
+}
+
+/// The bookkeeping around focusFieldIfNeeded's fallback click (`click`, which fills the meta it is given): once the click
+/// has posted, the app counts as acted on (`acted`, arming the settle) whatever follows, a refusal of the action
+/// included, and the method's interval spans the click's; its guard time, `pointUnconfirmed` and `routeAdvice` ride in
+/// the method's meta, which keeps the method's own route. A click refused or failed reports the meta it reached.
+func focusingClick(_ meta: inout InputMeta, acted: () -> Void, click: (inout InputMeta) throws -> Void) throws {
+  var clickMeta = meta
+  defer { if clickMeta.startedAt != nil { acted() } }
+  do {
+    try click(&clickMeta)
+  } catch {
+    meta = clickMeta
+    throw error
+  }
+  meta.startedAt = clickMeta.startedAt
+  meta.endedAt = clickMeta.endedAt
+  meta.activationGuardMs = clickMeta.activationGuardMs
+  meta.pointUnconfirmed = clickMeta.pointUnconfirmed
+  meta.routeAdvice = clickMeta.routeAdvice
+}
+
 extension Engine {
   /// The prologue of an input method, in the call order every one keeps: the app, the Accessibility grant, the
   /// intervention guard, its reading into the meta, the pre-action refusal. Nothing has been posted by its end.
@@ -100,15 +131,22 @@ extension Engine {
   }
 
   /// The element `token` names in the request's lineage, and the process serving it, which must not be forbidden (a
-  /// sheet or panel is served by another process than the app). A re-fetch walks what the lineage's current revision
-  /// walked: the recorded menu-bar item when the observation was rooted there, else the window and the menu bar.
-  func targetElement(_ token: String, app: ResolvedApp, appPid: pid_t, context: ExecutionContext) throws -> ElementTarget {
+  /// sheet or panel is served by another process than the app) and whose attributed events count as the user's on the
+  /// app from now on. A re-fetch walks what the lineage's current revision walked: the recorded menu-bar item when the
+  /// observation was rooted there, else the window and the menu bar.
+  func targetElement(_ token: String, app: ResolvedApp, appPid: pid_t, context: ExecutionContext, refetch: Refetch = .ifNeeded) throws -> ElementTarget {
     guard let lineage = context.lineage else { throw EngineError.invalidArguments("lineage is required with an element token") }
-    let entry = try context.connection.element(token, app: app, lineage: lineage) { ElementResolver.live($0, pid: appPid) }
+    let entry = try context.connection.element(token, app: app, lineage: lineage, refetch: refetch) { ElementResolver.live($0, pid: appPid) }
     let owner = ownerPid(of: entry.element, fallback: appPid)
     try refuseForbiddenOwner(owner)
     actionTargets(owner, app: app, connection: context.connection)
     return ElementTarget(entry: entry, owner: owner)
+  }
+
+  /// `target` scrolled into view, re-resolved when the scroll moved the tree (`scrolledIntoView`): the one boundary
+  /// every element action that positions passes (click, perform_secondary_action, set_value, an element scroll).
+  func positionedTarget(_ target: ElementTarget, token: String, app: ResolvedApp, appPid: pid_t, context: ExecutionContext) throws -> ElementTarget {
+    try scrolledIntoView(target, ax: .live) { try targetElement(token, app: app, appPid: appPid, context: context, refetch: .always) }
   }
 
   /// The token an element method requires; `method` names the method in the refusal.
@@ -170,25 +208,15 @@ extension Engine {
   }
 
   /// focusFieldIfNeeded with its fallback click: a plain left click by the synthesized route the app takes (3, or 4
-  /// under the owner's override). The meta keeps the route of the method's own action; the click's guard time rides in
-  /// it when one ran.
-  func focusField(_ target: ElementTarget, app: ResolvedApp, appPid: pid_t, guarding: InterventionGuard, meta: inout InputMeta) throws {
-    var clickMeta = meta
-    let clicked = try focusFieldIfNeeded(target.element, bundleIdentifier: app.bundleIdentifier, ax: .live) {
+  /// under the owner's override), kept by `focusingClick`.
+  func focusField(_ target: ElementTarget, app: ResolvedApp, appPid: pid_t, guarding: InterventionGuard, connection: ConnectionState,
+                  meta: inout InputMeta) throws {
+    try focusFieldIfNeeded(target.element, bundleIdentifier: app.bundleIdentifier, ax: .live) {
       let route = synthesizedClickRoute(forced: nil, foreground: routeFourOverride(app.bundleIdentifier, routes: routes))
-      do {
+      try focusingClick(&meta, acted: { connection.markActed(app) }) { clickMeta in
         try synthesizedClick(ElementPointing(target.element, owner: target.owner), route: route, button: .left, count: 1,
                              app: app, appPid: appPid, guarding: guarding, meta: &clickMeta)
-      } catch let error as EngineError {
-        meta = clickMeta  // a refused focus click reports what it reached
-        throw error
       }
-    }
-    if clicked {
-      meta.startedAt = clickMeta.startedAt  // the action's interval begins at the click's first event
-      meta.activationGuardMs = clickMeta.activationGuardMs
-      meta.pointUnconfirmed = clickMeta.pointUnconfirmed
-      meta.routeAdvice = clickMeta.routeAdvice
     }
   }
 }

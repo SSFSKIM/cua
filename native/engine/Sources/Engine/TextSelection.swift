@@ -158,13 +158,12 @@ extension Engine {
       let markdown = [kAXTextAreaRole, kAXTextFieldRole].contains(target.entry.identity.role) && length > 0 && length <= markdownMaxLength
         ? attributedValue(of: target.element, length: length).flatMap(markdownMapped) : nil
       guard let match = textRange(of: text, prefix: prefix, suffix: suffix, markdown: markdown, plain: plain) else { throw selectTextNotFound }
-      try focusField(target, app: app, appPid: appPid, guarding: guarding, meta: &meta)
+      try focusField(target, app: app, appPid: appPid, guarding: guarding, connection: context.connection, meta: &meta)
       try guarding.checkInFlight()
-      if meta.startedAt == nil { meta.startedAt = unixMilliseconds() }
-      let written = ax.write(target.element, kAXSelectedTextRangeAttribute, axRangeValue(selectionType.selection(match)))
-      meta.endedAt = unixMilliseconds()
-      guard written == .success else { throw EngineError(name: "actionFailed", "The element did not accept the text selection.") }
+      var written = AXError.failure
+      meta.posting { written = ax.write(target.element, kAXSelectedTextRangeAttribute, axRangeValue(selectionType.selection(match))); return true }
       context.connection.markActed(app)
+      guard written == .success else { throw EngineError(name: "actionFailed", "The element did not accept the text selection.") }
       return ["meta": meta.wire]
     } catch let error as EngineError {
       throw withMeta(error, meta)

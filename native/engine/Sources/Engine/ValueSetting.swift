@@ -60,6 +60,21 @@ func coercedValue(_ value: String, to kind: ValueKind?) throws -> CFTypeRef {
 
 let valueNotSettable = EngineError(name: "valueNotSettable", "Cannot set a value for an element that is not settable")
 
+/// set_value once its element is resolved and scrolled into view: the settable check, the focus (`focus`, which may
+/// click), the coercion, the in-flight intervention check, the write. The app counts as acted on (`acted`) once the
+/// write was made, accepted or not.
+func setElementValue(_ value: String, on element: AXUIElement, role: String, ax: AXOps, meta: inout InputMeta,
+                     focus: (inout InputMeta) throws -> Void, checkInFlight: () throws -> Void, acted: () -> Void) throws {
+  guard ax.isSettable(element, kAXValueAttribute) else { throw valueNotSettable }
+  try focus(&meta)
+  let converted = try coercedValue(value, to: valueKind(of: ax.read(element, kAXValueAttribute), role: role, subrole: ax.subrole(element)))
+  try checkInFlight()
+  var written = AXError.failure
+  meta.posting { written = ax.write(element, kAXValueAttribute, converted); return true }
+  acted()
+  guard written == .success else { throw EngineError(name: "actionFailed", "The element did not accept the value.") }
+}
+
 extension Engine {
   /// `set_value {app, element, value, concealed?}`.
   func setValue(_ args: [String: Any], _ context: ExecutionContext) throws -> Any {
@@ -69,24 +84,15 @@ extension Engine {
     var meta = InputMeta(context)
     do {
       let (app, appPid, guarding) = try inputPrologue(args, context, meta: &meta)
-      let target = try targetElement(token, app: app, appPid: appPid, context: context)
+      let resolved = try targetElement(token, app: app, appPid: appPid, context: context)
       meta.inputRoute = .action
-      let ax = AXOps.live
-      positionElement(target.element, ax: ax)
-      guard ax.isSettable(target.element, kAXValueAttribute) else { throw valueNotSettable }
-      try focusField(target, app: app, appPid: appPid, guarding: guarding, meta: &meta)
-      let converted = try coercedValue(value, to: valueKind(of: ax.read(target.element, kAXValueAttribute), role: target.entry.identity.role,
-                                                          subrole: ax.subrole(target.element)))
-      try guarding.checkInFlight()
-      if meta.startedAt == nil { meta.startedAt = unixMilliseconds() }
-      let written = ax.write(target.element, kAXValueAttribute, converted)
-      meta.endedAt = unixMilliseconds()
-      context.connection.markActed(app)
-      guard written == .success else { throw EngineError(name: "actionFailed", "The element did not accept the value.") }
-      // The element stays resolvable by what it holds now (its token's identity re-read, the value included).
-      if let number = tokenNumber(token), let data = ElementSource().data(target.element) {
-        context.connection.lineages[app.key]?.refreshIdentity(number, data)
-      }
+      let target = try positionedTarget(resolved, token: token, app: app, appPid: appPid, context: context)
+      try setElementValue(value, on: target.element, role: target.entry.identity.role, ax: .live, meta: &meta,
+                          focus: { meta in try focusField(target, app: app, appPid: appPid, guarding: guarding, connection: context.connection, meta: &meta) },
+                          checkInFlight: guarding.checkInFlight, acted: { context.connection.markActed(app) })
+      // The vendor's re-check after the write: a re-fetch matching without the value, whose result replaces the stored
+      // handle and identity; a failed one propagates, after the write (the interval says it was made).
+      _ = try context.connection.element(token, app: app, lineage: context.lineage ?? "", refetch: .ignoringValue) { ElementResolver.live($0, pid: appPid) }
       return ["meta": meta.wire]
     } catch let error as EngineError {
       throw withMeta(error, meta)

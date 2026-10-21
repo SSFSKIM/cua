@@ -77,10 +77,10 @@ extension Engine {
     var meta = InputMeta(context)
     do {
       let (app, appPid, guarding) = try inputPrologue(args, context, meta: &meta)
-      let target = try targetElement(token, app: app, appPid: appPid, context: context)
+      let resolved = try targetElement(token, app: app, appPid: appPid, context: context)
       meta.inputRoute = .action
       let ax = AXOps.live
-      positionElement(target.element, ax: ax)
+      let target = try positionedTarget(resolved, token: token, app: app, appPid: appPid, context: context)
       guard let chosen = offeredActions(of: target.element, ax: ax).first(where: { $0.description == action }) else {
         throw invalidSecondaryAction(action)
       }
@@ -95,9 +95,8 @@ extension Engine {
         }
       }
       try guarding.checkInFlight()
-      meta.startedAt = unixMilliseconds()
-      let performed = performOffered(chosen, on: target.element, ax: ax)
-      meta.endedAt = unixMilliseconds()
+      var performed = AXError.failure
+      meta.posting { performed = performOffered(chosen, on: target.element, ax: ax); return true }
       context.connection.markActed(app)
       guard performed == .success else { throw EngineError(name: "actionFailed", "The element did not accept the \(chosen.description.prefix(256)) action.") }
       context.connection.clearMenuRecord(app: app.key)

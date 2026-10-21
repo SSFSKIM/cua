@@ -294,6 +294,82 @@ final class ValueSettingTests: XCTestCase {
     XCTAssertEqual(clicks, 1)
   }
 
+  // MARK: The focus fallback click's bookkeeping
+
+  private func meta() -> InputMeta {
+    var meta = InputMeta(ExecutionContext(connection: ConnectionState(id: 1, fd: -1), receivedAt: 1, hidIdleMs: 0, deadline: 2, lineage: nil))
+    meta.inputRoute = .action
+    return meta
+  }
+
+  /// A field holding a number that refuses focus, so set_value's focus falls back to a click: `clicked` stands for the
+  /// click (route 3, its events posted), `acted` counts the app marked acted on.
+  private func setValue(_ value: String, inFlight: @escaping () throws -> Void = {}, acted: inout Int, meta: inout InputMeta) throws -> FakeAX {
+    let ax = field(focused: false)
+    ax.values[1]?[kAXValueAttribute] = NSNumber(value: 3)
+    ax.settable[1]?.insert(kAXValueAttribute)
+    var ops = ax.ops
+    let write = ops.write
+    ops.write = { element, name, value in name == kAXFocusedAttribute ? .success : write(element, name, value) }  // focus never takes
+    var marks = 0
+    defer { acted = marks }
+    try setElementValue(value, on: el(1), role: kAXTextFieldRole, ax: ops, meta: &meta,
+                        focus: { meta in
+                          try focusFieldIfNeeded(el(1), bundleIdentifier: nil, ax: ops) {
+                            try focusingClick(&meta, acted: { marks += 1 }) { click in
+                              click.inputRoute = .activation
+                              click.activationGuardMs = 12
+                              click.posting { true }
+                            }
+                          }
+                        },
+                        checkInFlight: inFlight, acted: { marks += 1 })
+    return ax
+  }
+
+  func testAFocusClickThenARefusedCoercionStillReportsTheClickAndArmsTheSettle() {
+    var meta = meta(), acted = 0
+    XCTAssertThrowsError(try setValue("three", acted: &acted, meta: &meta)) { error in
+      XCTAssertEqual((error as? EngineError)?.errorName, "invalidNumber")
+    }
+    XCTAssertNotNil(meta.startedAt, "the click's events were posted")
+    XCTAssertNotNil(meta.endedAt, "and the interval ends at the click's last event")
+    XCTAssertEqual(meta.activationGuardMs, 12)
+    XCTAssertEqual(meta.inputRoute, .action, "the method's own route")
+    XCTAssertEqual(acted, 1, "the click changed the app: its next observation settles first")
+  }
+
+  func testAFocusClickThenAnInterventionStillReportsTheClickAndArmsTheSettle() {
+    var meta = meta(), acted = 0
+    XCTAssertThrowsError(try setValue("4", inFlight: { throw EngineError(name: "userIntervened", "stopped") }, acted: &acted, meta: &meta))
+    XCTAssertNotNil(meta.startedAt)
+    XCTAssertNotNil(meta.endedAt)
+    XCTAssertEqual(acted, 1)
+  }
+
+  func testAWriteAfterTheFocusClickExtendsTheIntervalAndMarksOnceMore() throws {
+    var meta = meta(), acted = 0
+    let ax = try setValue("4", acted: &acted, meta: &meta)
+    XCTAssertEqual((ax.writes.last?.value as? NSNumber)?.intValue, 4)
+    XCTAssertLessThanOrEqual(try XCTUnwrap(meta.startedAt), try XCTUnwrap(meta.endedAt))
+    XCTAssertEqual(acted, 2, "the click's mark and the write's: the settle is armed either way")
+  }
+
+  func testAFocusClickThatPostsAndThenFailsStillArmsTheSettle() {
+    var meta = meta(), marks = 0
+    XCTAssertThrowsError(try focusingClick(&meta, acted: { marks += 1 }) { click in
+      click.posting { true }
+      throw EngineError(name: "foregroundRestoreFailed", "restore")   // route 4's restore, after the events
+    })
+    XCTAssertNotNil(meta.startedAt)
+    XCTAssertEqual(marks, 1)
+
+    var refused = self.meta()
+    XCTAssertThrowsError(try focusingClick(&refused, acted: { marks += 1 }) { _ in throw EngineError(name: "activationFailed", "guard") })
+    XCTAssertNil(refused.startedAt, "a click refused before its events posts nothing")
+    XCTAssertEqual(marks, 1, "and changes nothing")
+  }
+
   func testSafarisDOMElementsGoStraightToTheClick() throws {
     var clicks = 0
     let ax = field(focused: false)

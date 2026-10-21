@@ -5,6 +5,7 @@ import {existsSync, lstatSync, readdirSync, readlinkSync} from 'node:fs';
 import {join} from 'node:path';
 import {SANDBOX_DISABLED_STEP, SANDBOX_SCOPED_STEP} from '../probe/trusted-roots.mjs';
 import {SECRETS_OFF, STORE_UNREADABLE, failClosedSteps, refusedLaunchStep} from '../probe/fail-closed.mjs';
+import {approvalsByBehaviour} from '../probe/lib.mjs';
 
 export const STATUSES = ['PASS', 'FAIL', 'BLOCKED'];
 // A row that records an accepted consequence rather than checking a guarantee (the trusted roots a cell can write
@@ -308,17 +309,19 @@ export function scenarioVerdict(name, scenario, expected) {
   return {name, status, detail: `scenario status ${scenario.status}; ${scenario.steps.length} steps${notPassed.length ? `; not passed: ${notPassed.join('; ')}` : ', all passed'}${informational.length ? `; informational: ${informational.join('; ')}` : ''}${unexpected.length ? `; steps no phase expects: ${unexpected.join('; ')}` : ''}`};
 }
 
-// Acceptance 8, from the live TextEdit fixture: per-connection approval is observed only when both connections bound
-// the fixture's document, the vendor asked for approval on each and was answered, the session approval file existed
-// while each was open and was gone after it closed.
-export function approvalObservation(connections) {
-  const names = ['connection A', 'connection B'];
-  const entries = names.map(name => connections?.find(c => c.name === name));
-  const describe = c => `${c.name}: bound ${c.bound}, asked ${c.approvalRequests}, accepted ${c.approvalsAccepted}, session file ${c.sessionFileWhileOpen ? 'present' : 'absent'} while open, ${c.sessionFileAfterClose === false ? 'removed' : c.sessionFileAfterClose ? 'still present' : 'unchecked'} after close`;
-  if (entries.some(c => !c)) return {status: 'BLOCKED', detail: `not every connection ran (${entries.filter(Boolean).map(describe).join('; ') || 'none'})`};
-  const detail = entries.map(describe).join('; ');
-  if (entries.some(c => !c.bound)) return {status: 'BLOCKED', detail: `a connection did not bind the fixture's document: ${detail}`};
-  if (entries.some(c => c.approvalRequests === 0)) return {status: 'BLOCKED', detail: `the vendor did not ask on every connection (TextEdit may be on the machine-wide always-allow list): ${detail}`};
-  const ok = entries.every(c => c.approvalsAccepted === c.approvalRequests && c.sessionFileWhileOpen && c.sessionFileAfterClose === false);
-  return {status: ok ? 'PASS' : 'FAIL', detail};
+// Acceptance 8, from the live TextEdit fixture's approvals observed by behaviour (scripts/accept/engine-lane.mjs
+// approvalLedger; no file the host keeps, #117 M3): connection A binds twice and B once, each first bind asking once and
+// A's second asking nothing (the connection's memory), with nothing else declined (approvalsByBehaviour). Observed only
+// when both connections bound the fixture's document and A's second bind ran; else BLOCKED. A first bind that asked
+// nothing is BLOCKED on the vendor's engine (TextEdit may be on the vendor's own always-allow list) and a failure on
+// cua's (`engine`), whose memory is per connection and never persists beyond one.
+export function approvalObservation(connections, {engine} = {}) {
+  const entries = ['connection A', 'connection B'].map(name => connections?.find(c => c.name === name));
+  const judged = approvalsByBehaviour(entries.filter(Boolean));
+  if (entries.some(c => !c)) return {status: 'BLOCKED', detail: `not every connection ran (${judged.detail || 'none'})`};
+  if (entries.some(c => !c.bound)) return {status: 'BLOCKED', detail: `a connection did not bind the fixture's document: ${judged.detail}`};
+  if (entries[0].binds.length < 2) return {status: 'BLOCKED', detail: `connection A's second bind did not run: ${judged.detail}`};
+  if (judged.ok) return {status: 'PASS', detail: judged.detail};
+  const unasked = judged.problems.every(p => /first bind asked nothing/.test(p));
+  return {status: unasked && engine !== 'cua' ? 'BLOCKED' : 'FAIL', detail: `${judged.problems.join('; ')} (${judged.detail})`};
 }

@@ -162,8 +162,11 @@ async function main() {
     chmodSync(slot, 0o755);
   }
 
+  // A vendor-host (computer) session is the vendor engine's (#117 M3): pinned, since a --native run's HOME is the
+  // account's own, whose ~/.config/cua/engine.json would otherwise choose the engine.
   const env = {HOME: userHome, XDG_CONFIG_HOME: values['config-home'] ?? join(userHome, '.config'), USER: process.env.USER, LOGNAME: process.env.LOGNAME, LANG: 'C.UTF-8',
     PATH: process.env.PATH, TMPDIR: serveTmp, CUA_HOME: home, CUA_REPL_HOST: host, CUA_SHIM_SURFACES: host === 'vendor' ? 'computer' : 'browser',
+    ...(host === 'vendor' ? {CUA_NATIVE_ENGINE: 'vendor'} : {}),
     CUA_SHIM_SANDBOX: mode, CUA_SHIM_PERSIST: 'session', CUA_SHIM_SECRETS: 'off',
     ...(slot ? {CUA_PROBE_SLOT: slot} : {}), CUA_PROBE_LAUNCH_LOG: launchLog};
   const elicitations = [];
@@ -186,6 +189,8 @@ async function main() {
       const text = textOf(reply);
       const line = text.split('\n').reverse().find(l => l.startsWith(MARK));
       result = line ? JSON.parse(line.slice(MARK.length)) : {ok: false, noMarker: true, isError: reply?.isError ?? null, text: text.slice(0, 400)};
+      // The engine the result attests (#117), which scripts/accept/compat-route.mjs checks; null when none.
+      result.attested = reply?._meta?.['cua/nativeEngine'] ?? null;
     } catch (error) { result = {ok: false, transport: error.message}; }
     result.wallMs = Date.now() - t;
     ev(`cell ${name}`, result);

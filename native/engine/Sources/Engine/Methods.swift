@@ -21,7 +21,7 @@ struct Outcome {
   var exitAfter = false
 }
 
-/// The facade's methods this build does not implement yet (M2a adds them; paste answers its concealed refusal already).
+/// The facade's methods this build does not implement yet (M2a adds them).
 private let laterMethods: Set<String> = ["drag", "perform_secondary_action", "scroll", "select_text", "set_value"]
 /// The input methods: every error they return carries the input meta (Interfaces, input errors), the ones this build
 /// does not implement yet included, so a lock-screen refusal reads the same on every input method.
@@ -39,15 +39,20 @@ final class Engine: @unchecked Sendable {
   let routeAdvice = RouteAdviceTracker()
   /// Whether the Mac is locked now (the session dictionary; replaced in the unit tests).
   let screenLocked: () -> Bool
+  /// The pasteboard a paste writes: the general one (Paste.swift; the unit tests write pasteboards of their own).
+  let pasteboardAccess: () -> PasteboardAccess
+  /// One paste at a time across every connection, from the snapshot through the restore (Pasteboard.swift).
+  let pasteLock = FIFOLock()
   weak var server: Server?
 
   init(paths: ServerPaths, routes: [String: Int] = [:], intervention: InterventionMonitor = InterventionMonitor(),
-       screenLocked: @escaping () -> Bool = screenIsLocked) {
+       screenLocked: @escaping () -> Bool = screenIsLocked, pasteboard: @escaping () -> PasteboardAccess = SystemPasteboard.general) {
     self.paths = paths
     self.apps = AppDirectory(usagePath: paths.usage)
     self.routes = routes
     self.intervention = intervention
     self.screenLocked = screenLocked
+    self.pasteboardAccess = pasteboard
   }
 
   func handle(_ request: Request, on connection: ConnectionState, receivedAt: Int64) -> Outcome {

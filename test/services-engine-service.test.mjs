@@ -278,6 +278,25 @@ test('an input error carries the engine\'s meta; the next call\'s meta starts ov
   for (const key of ['cua/inputRoute', 'cua/actionInterval', 'cua/receivedAt', 'cua/hidIdleMs', 'cua/activationGuardMs', 'cua/pointUnconfirmed']) assert.equal(meta[key], null, key);
 });
 
+test('a paste reports its route as "paste", and its clipboard sentences reach the model as the engine wrote them', async t => {
+  const pasted = {...INPUT_META, inputRoute: 'paste', pointUnconfirmed: undefined};
+  const timedOut = 'Timed out waiting for the application to read the clipboard';
+  let fail = false;
+  const {getApp, call, meta, engine} = await session(t, {handlers: {'execute:paste': () => {
+    if (fail) throw new EngineFailure(-10005, timedOut, 'clipboardReadTimedOut', {meta: pasted});
+    return {meta: pasted};
+  }}});
+  const {app} = await getApp('TextEdit');
+  await call(() => app.paste('# Title', {format: 'md'}));
+  assert.deepEqual(engine.executes().at(-1).args, {app: APPS.TextEdit.appPath, text: '# Title', format: 'md'});
+  assert.equal(meta['cua/inputRoute'], 'paste');
+  assert.equal(meta['cua/activationGuardMs'], 41.5);
+  fail = true;
+  await assert.rejects(call(() => app.paste('x')), {message: `Computer Use server error -10005: ${timedOut}`});
+  assert.equal(meta['cua/inputRoute'], 'paste');
+  assert.deepEqual(meta['cua/actionInterval'], {startedAt: 1000, endedAt: 1042}, '⌘V was posted before the wait ran out');
+});
+
 test('intervention, entered and routeAdvice ride as cua/ meta on results and on the userIntervened error that stopped a type_text; the next call starts over', async t => {
   const stopped = {...INPUT_META, inputRoute: "2'", activationGuardMs: undefined, pointUnconfirmed: undefined, entered: 3};
   const {getApp, call, meta} = await session(t, {handlers: {

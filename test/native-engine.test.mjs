@@ -196,8 +196,8 @@ test('the spike\'s probe_tap and probe_spike methods are gone: method not found'
   }
 });
 
-test('a concealed paste is refused as concealedInputUnavailable with the input meta, nothing posted', {skip: finderSkip}, async t => {
-  // paste's body posts nothing in this build and asks for no permission; Finder only has to resolve.
+test('a concealed paste is refused as concealedInputUnavailable, and malformed pastes by name, with the input meta, nothing posted', {skip: finderSkip}, async t => {
+  // Only refusals: a well-formed paste would write this Mac's pasteboard and post ⌘V. Finder only has to resolve.
   const {wire} = await engine(t);
   const concealed = await wire.execute('paste', {app: 'com.apple.finder', text: 'x', format: 'text', concealed: true});
   assert.equal(concealed.error?.errorName, 'concealedInputUnavailable');
@@ -205,9 +205,12 @@ test('a concealed paste is refused as concealedInputUnavailable with the input m
   assert.doesNotMatch(concealed.error.message, /\bx\b/, 'never the value');
   assert.equal(concealed.error.meta.inputRoute, null);
   assert.equal(concealed.error.meta.startedAt, null);
-  const plain = await wire.execute('paste', {app: 'com.apple.finder', text: 'x', format: 'text'});
-  assert.equal(plain.error?.errorName, 'notImplemented');
-  assert.equal(typeof plain.error.meta.receivedAt, 'number');
+  for (const args of [{text: 'x', format: 'rtf'}, {format: 'text'}, {text: 3}]) {
+    const refused = await wire.execute('paste', {app: 'com.apple.finder', ...args});
+    assert.equal(refused.error?.errorName, 'invalidArguments', JSON.stringify(args));
+    assert.equal(refused.error.meta.startedAt, null);
+    assert.equal(typeof refused.error.meta.receivedAt, 'number');
+  }
 });
 
 test('every app-scoped execute refuses a forbidden app, by bundle id or by path, before its method runs', {skip}, async t => {

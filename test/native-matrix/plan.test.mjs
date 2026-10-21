@@ -174,9 +174,14 @@ test('Chrome\'s Apply needs the fresh name in the status; a status an earlier ro
   const r = await runCase('chrome', 'chrome', stale, 'click', 'apply');
   assert.equal(r.prepare.value.ready, true, JSON.stringify(r.prepare));
   assert.equal(r.check.value.ok, false);
+  let inert = false;
   const live = fakeApp(page, {setValue: (app, index, v) => { if (index === 23) { name = v; app.ax = withName(app.ax, v); } },
-    click: (app, index) => { if (index === 24) app.ax = app.ax.replace(/텍스트 (Ready|Applied: [^\n]*)/, `텍스트 Applied: ${name}`); }});
+    click: (app, index) => { if (index === 24 && !inert) app.ax = app.ax.replace(/텍스트 (Ready|Applied: [^\n]*)/, `텍스트 Applied: ${name}`); }});
   assert.equal((await runCase('chrome', 'chrome', live, 'click', 'apply')).check.value.ok, true);
+  // The same case again (the next run's row) with a click that does nothing: the status the first row left is not this
+  // row's, because this row's name is new.
+  inert = true;
+  assert.equal((await runCase('chrome', 'chrome', live, 'click', 'apply')).check.value.ok, false);
 });
 
 test('the caret click must collapse a selection it did not make; the drag must select across lines from no selection', async () => {

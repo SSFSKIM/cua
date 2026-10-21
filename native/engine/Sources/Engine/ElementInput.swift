@@ -218,12 +218,12 @@ extension Engine {
   func focusField(_ target: ElementTarget, app: ResolvedApp, appPid: pid_t, guarding: InterventionGuard, connection: ConnectionState,
                   meta: inout InputMeta) throws {
     try focusFieldIfNeeded(target.element, bundleIdentifier: app.bundleIdentifier, ax: .live) {
-      let pointing = ElementPointing(target.element, owner: target.owner)
-      if pointing.window.map(isMinimized) == true { return }
-      let route = synthesizedClickRoute(forced: nil, foreground: routeFourOverride(app.bundleIdentifier, routes: routes))
-      try focusingClick(&meta, acted: { connection.markActed(app) }) { clickMeta in
-        try synthesizedClick(pointing, route: route, button: .left, count: 1,
-                             app: app, appPid: appPid, guarding: guarding, meta: &clickMeta)
+      try focusFallbackClick(target.element, ax: .live) {
+        let route = synthesizedClickRoute(forced: nil, foreground: routeFourOverride(app.bundleIdentifier, routes: routes))
+        try focusingClick(&meta, acted: { connection.markActed(app) }) { clickMeta in
+          try synthesizedClick(ElementPointing(target.element, owner: target.owner), route: route, button: .left, count: 1,
+                               app: app, appPid: appPid, guarding: guarding, meta: &clickMeta)
+        }
       }
     }
   }

@@ -80,10 +80,14 @@ extension Engine {
       let length: CGFloat?
       let window: AXUIElement?
       if let token {
-        let element = try positionedTarget(try targetElement(token, app: app, appPid: appPid, context: context), token: token,
-                                           app: app, appPid: appPid, context: context)
-        let pointing = ElementPointing(element.element, owner: element.owner)
-        guard let point = pointing.point else { throw EngineError(name: "cannotClickOffscreenElement", "The element is not visible on screen.") }
+        let resolved = try targetElement(token, app: app, appPid: appPid, context: context)
+        // A minimized own window is refused before the scroll into view and the point (Minimized.swift).
+        let (element, pointing, point) = try elementScrollPlacement(resolved.element, app: app.displayName, ax: .live) {
+          let element = try positionedTarget(resolved, token: token, app: app, appPid: appPid, context: context)
+          let pointing = ElementPointing(element.element, owner: element.owner)
+          guard let point = pointing.point else { throw EngineError(name: "cannotClickOffscreenElement", "The element is not visible on screen.") }
+          return (element, pointing, point)
+        }
         target = ClickTarget(point: point, windowFrame: pointing.windowFrame, windowID: pointing.windowID, pid: element.owner)
         let own = frame(of: element.element) ?? pointing.windowFrame
         length = own.map { direction.horizontal ? $0.width : $0.height }

@@ -51,3 +51,24 @@ func pointerInput<T>(in window: AXUIElement?, app: String, minimized: (AXUIEleme
 func placeCoordinate(in window: AXUIElement, app: String, minimized: (AXUIElement) -> Bool = isMinimized, _ place: () throws -> CGPoint) throws -> CGPoint {
   try pointerInput(in: window, app: app, minimized: minimized, place)
 }
+
+/// Whether an element's own window reads minimized, through `ax` (a menu-bar item has no window: not the rule's case).
+func elementWindowMinimized(_ element: AXUIElement, ax: AXOps) -> Bool {
+  guard let window = ax.element(element, kAXWindowAttribute) else { return false }
+  return bool(ax.read(window, kAXMinimizedAttribute)) == true
+}
+
+/// An element scroll's placement, the element resolved: its own window refused when minimized before `position` (the
+/// scroll into view, then the point) runs, so a minimized element with no visible point answers windowMinimized
+/// rather than cannotClickOffscreenElement, and nothing is scrolled into view first.
+func elementScrollPlacement<T>(_ element: AXUIElement, app: String, ax: AXOps, _ position: () throws -> T) throws -> T {
+  try refuseMinimizedWindow(minimized: elementWindowMinimized(element, ax: ax), app: app)
+  return try position()
+}
+
+/// focusField's fallback click (set_value, select_text), skipped rather than refused when the element's own window is
+/// minimized: both act through Accessibility, which needs no window on screen.
+func focusFallbackClick(_ element: AXUIElement, ax: AXOps, _ click: () throws -> Void) rethrows {
+  guard !elementWindowMinimized(element, ax: ax) else { return }
+  try click()
+}

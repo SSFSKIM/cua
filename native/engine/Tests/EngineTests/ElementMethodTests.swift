@@ -631,3 +631,54 @@ final class RemainingMethodsTests: XCTestCase {
     XCTAssertEqual(errorName(execute("drag", ["from_x": 1, "from_y": 1, "to_x": 2])), "invalidArguments")
   }
 }
+
+// MARK: A minimized element window (M2a.4's integration review)
+
+final class MinimizedElementInputTests: XCTestCase {
+  /// A window (1) holding a text field (4) that refuses focus and shows no frame: the window minimized or not.
+  private func minimizedField(minimized: Bool) -> FakeAX {
+    let ax = FakeAX()
+    ax.roles = [1: kAXWindowRole, 4: kAXTextFieldRole]
+    ax.parents = [4: 1]
+    ax.values = [1: [kAXMinimizedAttribute: minimized ? kCFBooleanTrue : kCFBooleanFalse], 4: [kAXWindowAttribute: el(1), kAXFocusedAttribute: kCFBooleanFalse]]
+    ax.settable = [4: [kAXFocusedAttribute]]
+    return ax
+  }
+
+  func testAnElementScrollInAMinimizedWindowIsRefusedBeforePositioningOrAnyPoint() {
+    let ax = minimizedField(minimized: true)  // no frame anywhere: there is no visible point either
+    var ran: [String] = []
+    XCTAssertThrowsError(try elementScrollPlacement(el(4), app: "TextEdit", ax: ax.ops) { () throws -> CGPoint in
+      ran.append("position")
+      throw EngineError(name: "cannotClickOffscreenElement", "The element is not visible on screen.")
+    }) { error in
+      XCTAssertEqual((error as? EngineError)?.errorName, "windowMinimized", "the cause, not cannotClickOffscreenElement")
+    }
+    XCTAssertEqual(ran, [], "neither the scroll into view nor the point (nor, after them, the post) ran")
+    XCTAssertTrue(ax.writes.isEmpty && ax.performs.isEmpty, "nothing scrolled into view")
+  }
+
+  func testAnElementScrollOnScreenIsPositioned() throws {
+    var ran = 0
+    XCTAssertEqual(try elementScrollPlacement(el(4), app: "TextEdit", ax: minimizedField(minimized: false).ops) { ran += 1; return 7 }, 7)
+    XCTAssertEqual(ran, 1)
+  }
+
+  func testTheFocusFallbackClickIsSkippedInAMinimizedWindowWhileFocusIsStillTried() throws {
+    let ax = minimizedField(minimized: true)
+    var ops = ax.ops
+    let write = ops.write
+    ops.write = { element, name, value in _ = write(element, name, kCFBooleanFalse); return .success }  // accepted, never takes
+    var clicks = 0
+    try focusFieldIfNeeded(el(4), bundleIdentifier: nil, ax: ops) { focusFallbackClick(el(4), ax: ops) { clicks += 1 } }
+    XCTAssertEqual(ax.writes.map(\.attribute), [kAXFocusedAttribute], "the Accessibility focus was attempted")
+    XCTAssertEqual(clicks, 0, "no click into a minimized window")
+
+    let shown = minimizedField(minimized: false)
+    var shownOps = shown.ops
+    let shownWrite = shownOps.write
+    shownOps.write = { element, name, value in _ = shownWrite(element, name, kCFBooleanFalse); return .success }
+    try focusFieldIfNeeded(el(4), bundleIdentifier: nil, ax: shownOps) { focusFallbackClick(el(4), ax: shownOps) { clicks += 1 } }
+    XCTAssertEqual(clicks, 1, "on screen the fallback click runs")
+  }
+}

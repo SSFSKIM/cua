@@ -139,7 +139,11 @@ M1b is closed: all three Proves lines are met on the approved build 4b31b8e61195
 
 **The close wave's review.** reviewer-low on 05f85ed6..d6012ad6: incorrect, with four P2s and a P3: the vendor-defect match accepted a longer identifier and a count-shaped text anywhere in the line; the front-app restore could pick or launch another instance, and its error path could carry the owner's pid into meta.json; one test proved ordering, not the row. Fixed in b20126e3, 03a84e2a, bf13eb32, e82b53e4.
 
-**Tests.** 13a45700 moved the tests built on M0's Finder capture to a frozen copy, so the suite holds on the live data. `npm test`: 3,518 passed, 170 skipped, 0 failed. CI on the close is listed in the Validation update below.
+**Tests.** 13a45700 moved the tests built on M0's Finder capture to a frozen copy, so the suite holds on the live data. `npm test`: 3,518 passed, 170 skipped, 0 failed. `goldens.mjs check`: exit 0, nothing undeclared and nothing to delete. Hosted CI, GREEN 6/6 on each:
+- 39536667087 (530e955e) and 39538468868 (84c6eeea): the harness wave.
+- 39543059812 (0be11bab) and 39544555931 (05f85ed6): the Finder fix.
+- 39548542007 (d6012ad6): the goldens.
+- 39550783407 (1f4a23ad): the close wave's review fixes and the docs.
 
 **Residue, updated.**
 1. Finder's unset default: resolved (observation-driven chrome).

@@ -86,7 +86,7 @@ extension Engine {
       let (app, appPid, guarding) = try inputPrologue(args, context, meta: &meta)
       let resolved = try targetElement(token, app: app, appPid: appPid, context: context)
       meta.inputRoute = .action
-      let target = try positionedTarget(resolved, token: token, app: app, appPid: appPid, context: context)
+      let target = try positionedTarget(resolved, token: token, app: app, appPid: appPid, context: context, guarding: guarding)
       try setElementValue(value, on: target.element, role: target.entry.identity.role, ax: .live, meta: &meta,
                           focus: { meta in try focusField(target, app: app, appPid: appPid, guarding: guarding, connection: context.connection, meta: &meta) },
                           checkInFlight: guarding.checkInFlight, acted: { context.connection.markActed(app) })

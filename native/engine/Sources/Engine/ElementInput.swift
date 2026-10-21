@@ -72,16 +72,20 @@ private let focusFieldRoles: Set<String> = [kAXTextFieldRole, kAXTextAreaRole, "
 /// The vendor's focusFieldIfNeeded (0x10079f46c / 0x10079f6d0), shared by set_value and select_text: a focusable text
 /// field, text area or date-time area that is not focused gets AXFocused set true and re-read, and a synthesized click
 /// on it (`click`) when focus did not take; Safari's elements exposing AXDOMClassList go straight to the click. Nothing
-/// otherwise. Answers whether the click ran.
+/// otherwise. `beforeMutating` runs before the write and before the click (the in-flight intervention check: a user
+/// event stops the preparation before it moves the user's focus). Answers whether the click ran.
 @discardableResult
-func focusFieldIfNeeded(_ element: AXUIElement, bundleIdentifier: String?, ax: AXOps, click: () throws -> Void) throws -> Bool {
+func focusFieldIfNeeded(_ element: AXUIElement, bundleIdentifier: String?, ax: AXOps, beforeMutating: () throws -> Void = {},
+                        click: () throws -> Void) throws -> Bool {
   guard let role = ax.role(element), focusFieldRoles.contains(role), ax.isSettable(element, kAXFocusedAttribute) else { return false }
   if bool(ax.read(element, kAXFocusedAttribute)) == true { return false }
   let straightToClick = bundleIdentifier == "com.apple.Safari" && ax.read(element, "AXDOMClassList") != nil
   if !straightToClick {
+    try beforeMutating()
     _ = ax.write(element, kAXFocusedAttribute, kCFBooleanTrue)
     if bool(ax.read(element, kAXFocusedAttribute)) == true { return false }
   }
+  try beforeMutating()
   try click()
   return true
 }
@@ -90,8 +94,9 @@ func focusFieldIfNeeded(_ element: AXUIElement, bundleIdentifier: String?, ax: A
 /// into view and, when an operation scrolled, its target resolved again by `refetch`, since the scroll may have replaced
 /// the element (a recycled row) rather than moved it, and the process serving the result is checked again. A target that
 /// showed already, or that nothing could scroll, is kept as it was resolved.
-func scrolledIntoView(_ target: ElementTarget, ax: AXOps, refetch: () throws -> ElementTarget) throws -> ElementTarget {
-  switch positionElement(target.element, ax: ax) {
+func scrolledIntoView(_ target: ElementTarget, ax: AXOps, beforeMutating: () throws -> Void = {},
+                      refetch: () throws -> ElementTarget) throws -> ElementTarget {
+  switch try positionElement(target.element, ax: ax, beforeMutating: beforeMutating) {
   case .visible, .unscrollable: return target
   case .scrolled, .stillHidden: return try refetch()
   }
@@ -144,9 +149,13 @@ extension Engine {
   }
 
   /// `target` scrolled into view, re-resolved when the scroll moved the tree (`scrolledIntoView`): the one boundary
-  /// every element action that positions passes (click, perform_secondary_action, set_value, an element scroll).
-  func positionedTarget(_ target: ElementTarget, token: String, app: ResolvedApp, appPid: pid_t, context: ExecutionContext) throws -> ElementTarget {
-    try scrolledIntoView(target, ax: .live) { try targetElement(token, app: app, appPid: appPid, context: context, refetch: .always) }
+  /// every element action that positions passes (click, perform_secondary_action, set_value, an element scroll). The
+  /// in-flight intervention check runs before each scroll operation.
+  func positionedTarget(_ target: ElementTarget, token: String, app: ResolvedApp, appPid: pid_t, context: ExecutionContext,
+                        guarding: InterventionGuard) throws -> ElementTarget {
+    try scrolledIntoView(target, ax: .live, beforeMutating: guarding.checkInFlight) {
+      try targetElement(token, app: app, appPid: appPid, context: context, refetch: .always)
+    }
   }
 
   /// The token an element method requires; `method` names the method in the refusal.
@@ -217,7 +226,7 @@ extension Engine {
   /// refused: set_value and select_text act through Accessibility, which needs no window on screen (Minimized.swift).
   func focusField(_ target: ElementTarget, app: ResolvedApp, appPid: pid_t, guarding: InterventionGuard, connection: ConnectionState,
                   meta: inout InputMeta) throws {
-    try focusFieldIfNeeded(target.element, bundleIdentifier: app.bundleIdentifier, ax: .live) {
+    try focusFieldIfNeeded(target.element, bundleIdentifier: app.bundleIdentifier, ax: .live, beforeMutating: guarding.checkInFlight) {
       try focusFallbackClick(target.element, ax: .live) {
         let route = synthesizedClickRoute(forced: nil, foreground: routeFourOverride(app.bundleIdentifier, routes: routes))
         try focusingClick(&meta, acted: { connection.markActed(app) }) { clickMeta in

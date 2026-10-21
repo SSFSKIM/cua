@@ -80,7 +80,7 @@ extension Engine {
       let resolved = try targetElement(token, app: app, appPid: appPid, context: context)
       meta.inputRoute = .action
       let ax = AXOps.live
-      let target = try positionedTarget(resolved, token: token, app: app, appPid: appPid, context: context)
+      let target = try positionedTarget(resolved, token: token, app: app, appPid: appPid, context: context, guarding: guarding)
       guard let chosen = offeredActions(of: target.element, ax: ax).first(where: { $0.description == action }) else {
         throw invalidSecondaryAction(action)
       }

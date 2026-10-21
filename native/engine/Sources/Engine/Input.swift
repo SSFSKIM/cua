@@ -20,7 +20,8 @@ import Foundation
 // facade never sends: `spikeRoute` ("1"|"2'"|"2"|"3", force one route; route 2, the ⌘ post, is reachable only this
 // way), `spikeEventSource` ("private", post keys from a private event source instead of the HID-system one) and
 // `spikeKeyed` (type_text: key through the layout regardless of the source routing, probe (e)'s per-context case;
-// never for a concealed request). A non-concealed type_text that routes to the paste route answers notImplemented
+// never for a concealed request) and `spikeMenuActivation` (click: route 3's activation around a route-1 press of a
+// menu item, off by default; `deliverActivatedAction`). A non-concealed type_text that routes to the paste route answers notImplemented
 // naming it, with inputRoute "paste"; the paste route itself is M2a's.
 
 /// A route that carried an input (the spec's Design, "Input"; Interfaces, EngineProtocol's
@@ -154,8 +155,8 @@ func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation
   meta.inputRoute = route
   defer { activation?.deactivate() }  // every path out of the action, error or success, undoes the activation
   if route == .activation, let activation {
+    defer { meta.activationGuardMs = activation.guardMs }  // a guard that failed still says how long it held
     try activation.activate()
-    meta.activationGuardMs = activation.guardMs
   }
   // The interval is stamped as the events are posted, so an error after them (route 4's restore) still says they were.
   func send() throws {
@@ -205,6 +206,31 @@ func deliverAction(_ action: String, perform: (String) -> AXError, meta: inout I
   guard error == .success else { throw EngineError(name: "actionFailed", "The element did not accept the \(action) action.") }
 }
 
+/// A route-1 press with route 3's activation around it, for a menu item's press under `spikeMenuActivation`: the vendor
+/// presses a recorded menu's items in an app it left believing itself active (F §16.9.2, §16.9.6), and a menu item's
+/// command goes through the key window's responder chain, which a background app may not offer. Per action, as cua's
+/// activation always is: the activation for the app's primary window (subtype 1, and the click at its AXActivationPoint
+/// when that lies inside the frame), the in-flight check, the press, then the deactivation on every path. The route stays
+/// 1, the guard's time rides in the meta (a failed guard's too), and a guard failure refuses as activationFailed with
+/// nothing pressed.
+func deliverActivatedAction(_ action: String, activation: FakeActivation, beforePressing: () throws -> Void = {},
+                            perform: (String) -> AXError, meta: inout InputMeta) throws {
+  meta.inputRoute = .action
+  defer { activation.deactivate() }
+  do {
+    defer { meta.activationGuardMs = activation.guardMs }  // a guard that failed still says how long it held
+    try activation.activate()
+  }
+  try beforePressing()
+  try deliverAction(action, perform: perform, meta: &meta)
+}
+
+/// Whether a route-1 press takes `deliverActivatedAction`: only a menu item's, and only under the switch.
+func activatesPress(switchedOn: Bool, role: String) -> Bool { switchedOn && role == kAXMenuItemRole }
+
+/// The spike-only `spikeMenuActivation` switch: off unless the request sets it true.
+func spikeMenuActivationArg(_ args: [String: Any]) -> Bool { (args["spikeMenuActivation"] as? Bool) == true }
+
 extension Engine {
   // MARK: click
 
@@ -234,6 +260,7 @@ extension Engine {
     let count = (args["click_count"] as? NSNumber)?.intValue ?? 1
     guard count >= 1 else { throw EngineError.invalidArguments("click_count must be at least 1") }
     let forced = try spikeRouteArg(args, usable: hasElement ? InputRoute.elementClick : InputRoute.synthesized)
+    let menuActivation = spikeMenuActivationArg(args)
 
     var meta = InputMeta(context)
     do {
@@ -257,8 +284,15 @@ extension Engine {
         }
         switch plan {
         case .action(let action):
-          try guarding.checkInFlight()
-          try deliverAction(action, perform: { AXUIElementPerformAction(target.element, $0 as CFString) }, meta: &meta)
+          let perform: (String) -> AXError = { AXUIElementPerformAction(target.element, $0 as CFString) }
+          if activatesPress(switchedOn: menuActivation, role: target.entry.identity.role) {
+            let application = prepare(AXUIElementCreateApplication(appPid))
+            let activation = FakeActivation(pid: target.owner, appPid: appPid, window: primaryWindow(of: application) ?? application)
+            try deliverActivatedAction(action, activation: activation, beforePressing: guarding.checkInFlight, perform: perform, meta: &meta)
+          } else {
+            try guarding.checkInFlight()
+            try deliverAction(action, perform: perform, meta: &meta)
+          }
         case .synthesized(let route):
           try synthesizedClick(pointing, route: route, button: button, count: count, app: app, appPid: appPid, guarding: guarding, meta: &meta)
         }

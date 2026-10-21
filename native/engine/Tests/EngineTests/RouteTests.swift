@@ -444,6 +444,7 @@ final class ClickDeliveryTests: XCTestCase {
     XCTAssertEqual(meta.inputRoute, .activation, "the refusal names the route that failed")
     XCTAssertNil(meta.startedAt)
     XCTAssertNil(meta.endedAt)
+    XCTAssertNotNil(meta.activationGuardMs, "the failed guard's duration is kept for the diagnosis")
   }
 
   func testRouteThreePostsThePlainClickAfterTheActivationAndWithdrawsIt() throws {

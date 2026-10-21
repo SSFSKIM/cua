@@ -64,21 +64,31 @@ export async function stopRecorded(record, {sameLaunch = isSameLaunch, quit = qu
   return {stopped, remaining};
 }
 
-// Finder's window-chrome keys as `defaults` reads them: a Boolean, or null for an unset key (defaults exits 1 saying the
-// pair does not exist). Any other failure throws, so an unreadable key is never taken for an unset one. -> {key: value}.
-export function readFinderPreferences({exec = run} = {}) {
-  return Object.fromEntries(FINDER_KEYS.map(key => {
-    let text;
-    try { text = exec('/usr/bin/defaults', ['read', FINDER_DOMAIN, key], {stdio: ['ignore', 'pipe', 'pipe']}); } catch (error) {
-      if (error.status === 1 && /does not exist/.test(String(error.stderr ?? ''))) return [key, null];
-      throw new Error(`could not read Finder's ${key} preference: ${String(error.stderr ?? error.message).trim()}`);
-    }
-    return [key, parsePreference(text)];
-  }));
+// How `defaults read` says a key is unset (exit 1): macOS 26 "The domain/default pair of (<domain>, <key>) does not
+// exist", macOS 27 "Error: Could not find key '<key>' in domain '<domain>'." (the mini's goldens recording, 2026-10-20).
+const UNSET_KEY = /does not exist|Could not find key/;
+const withStderr = {stdio: ['ignore', 'pipe', 'pipe']};
+const failure = error => String(error.stderr || error.message).trim();
+
+// One window-chrome key as `defaults` reads it: a Boolean, or null for an unset key, which is a state of its own (Finder
+// then assumes its built-in default, FINDER_CHROME's shownWhenUnset). Any other failure throws, so an unreadable key is
+// never taken for an unset one.
+function readFinderPreference(key, exec) {
+  let text;
+  try { text = exec('/usr/bin/defaults', ['read', FINDER_DOMAIN, key], withStderr); } catch (error) {
+    if (error.status === 1 && UNSET_KEY.test(String(error.stderr ?? ''))) return null;
+    throw new Error(`could not read Finder's ${key} preference: ${failure(error)}`);
+  }
+  return parsePreference(text);
 }
-// Writes one of the three keys back: a Boolean, or null to delete it (unset, as it was).
+// Finder's three window-chrome keys. -> {key: true | false | null}.
+export const readFinderPreferences = ({exec = run} = {}) => Object.fromEntries(FINDER_KEYS.map(key => [key, readFinderPreference(key, exec)]));
+// Writes one of the three keys back: a Boolean, or null to delete it (unset, as it was). A delete that fails is checked
+// by reading the key: already unset is the goal reached (defaults refuses to delete an absent key), anything else throws.
 export function writeFinderPreference(key, value, {exec = run} = {}) {
   if (!FINDER_KEYS.includes(key)) throw new Error(`${key} is not one of the Finder keys the scene changes (${FINDER_KEYS.join(', ')})`);
-  if (value === null) exec('/usr/bin/defaults', ['delete', FINDER_DOMAIN, key]);
-  else exec('/usr/bin/defaults', ['write', FINDER_DOMAIN, key, '-bool', value ? 'true' : 'false']);
+  if (value !== null) { exec('/usr/bin/defaults', ['write', FINDER_DOMAIN, key, '-bool', value ? 'true' : 'false']); return; }
+  try { exec('/usr/bin/defaults', ['delete', FINDER_DOMAIN, key], withStderr); } catch (error) {
+    if (readFinderPreference(key, exec) !== null) throw new Error(`could not delete Finder's ${key} preference: ${failure(error)}`);
+  }
 }

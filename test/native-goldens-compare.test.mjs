@@ -16,6 +16,7 @@ test('the live case: the vendor\'s 100 against cua\'s 205, ranges 0-21 on both, 
   assert.deepEqual(judge(list('0-21', 100), list('0-21', 205)), []);
   assert.deepEqual(judge(list('0-21', 100), list('0-21', 205), []), ['text'], 'undeclared without it');
   assert.deepEqual(judge(list('0-9, 40-49', 100), list('0-9, 40-49', 1000)), [], 'several ranges, the same on both');
+  assert.deepEqual(judge('윤곽체 ID: ListView (showing 0-21 of 100 items)', '윤곽체 ID: ListView (showing 0-21 of 205 items)'), [], 'the ID the only part');
 });
 
 test('anything but the capped count stays a difference, and the declaration then absorbs nothing', () => {
@@ -26,6 +27,12 @@ test('anything but the capped count stays a difference, and the declaration then
     [list('0-21', 90), list('0-21', 95), 'cua\'s N not above the cap'],
     [list('0-21', 100, {description: '다른 보기'}), list('0-21', 205), 'another part of the line'],
     [list('0-21', 100, {id: 'OtherView'}), list('0-21', 205, {id: 'OtherView'}), 'another element than the declared one'],
+    [list('0-21', 100, {id: 'ListView Other'}), list('0-21', 205, {id: 'ListView Other'}), 'an identifier the declared one only begins'],
+    [list('0-21', 100, {id: 'ListView, Other'}), list('0-21', 205, {id: 'ListView, Other'}), 'the declared identifier not right before the count'],
+    // The count compared is the one the renderer appends at the line's end: the same text earlier in the line (here in
+    // the Description) is part of the line, which must otherwise be equal.
+    [list('0-21', 100, {description: '(showing 0-21 of 100 items)'}), list('0-21', 100, {description: '(showing 0-21 of 205 items)'}), 'a count-shaped text inside the line'],
+    [`${list('0-21', 100)} x`, `${list('0-21', 205)} x`, 'a count that does not end the line'],
   ]) assert.deepEqual(judge(vendor, cua), ['text', 'overdeclared'], why);
   // Equal lines need nothing: the declaration is then over-declared.
   assert.deepEqual(judge(list('0-21', 100), list('0-21', 100)), ['overdeclared']);

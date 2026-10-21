@@ -136,17 +136,20 @@ function applyPart(text, {label, cua, vendor}) {
 // <N> items)` counts the element's childCount (availableSubsetDescription 0x10063e220, through get_childCount
 // 0x10079e94c) over the hierarchy its prefetch read with _AXUIElementCopyHierarchy and AXChildren capped at
 // MaxArrayCount 100 (docs/doperpowers/research/2026-10-18-own-native-engine/F-helper-logic.md §1 item 1), so it never
-// exceeds 100; cua prints the true count, which tells a model the list goes on. Only that N may differ: on the element
-// whose `ID: <identifier>` the rule names, the line otherwise the same with the same visible ranges, the vendor's N
-// equal to min(cua's N, cap) and cua's N above the cap. -> cua's line with the vendor's N, or null when it does not apply.
-const SUBSET = /\(showing ([\d, -]+) of (\d+) items\)/;
+// exceeds 100; cua prints the true count, which tells a model the list goes on. Only that N may differ: the count is the
+// one the renderer appends at the end of the element's line (src/services/engine/render.mjs elementLine; any
+// count-shaped text before it is the element's own text), everything before it is equal on both sides and ends with
+// the rule's whole `ID: <identifier>` (after the role word or after `, `), the visible ranges are the same, the
+// vendor's N is min(cua's N, cap) and cua's N is above the cap. -> cua's line with the vendor's N, or null.
+const SUBSET = / \(showing ([\d, -]+) of (\d+) items\)$/;
 function applySubsetCount(vendorLine, cuaLine, {identifier, cap}) {
-  if (!new RegExp(`(?:^|, )ID: ${identifier.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?: |$)`).test(cuaLine)) return null;
   const v = SUBSET.exec(vendorLine), c = SUBSET.exec(cuaLine);
   if (!v || !c || v[1] !== c[1]) return null;
+  const head = cuaLine.slice(0, c.index);
+  if (head !== vendorLine.slice(0, v.index) || !(head === `ID: ${identifier}` || head.endsWith(` ID: ${identifier}`))) return null;
   const vendorN = Number(v[2]), cuaN = Number(c[2]);
   if (!(cuaN > cap) || vendorN !== Math.min(cuaN, cap)) return null;
-  return cuaLine.replace(SUBSET, `(showing ${c[1]} of ${vendorN} items)`);
+  return `${head} (showing ${c[1]} of ${vendorN} items)`;
 }
 
 // → {differences: [{kind, …}], added, lines, indexMap}. `declared`: the entries of ./expected.json for this golden:

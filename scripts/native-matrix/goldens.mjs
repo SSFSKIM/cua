@@ -139,7 +139,10 @@ export function vendorEngineProblem(result, release) {
 }
 
 const renderedText = shot => render(shot, advanceNumbering(null, shot));
-const sameFrame = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+// The engine's frame is a JSON object whose key order varies between answers (the 04:53Z hold's Finder frames were
+// identical and still read as moved), so frames are compared by their four numbers, never by their serialization.
+const FRAME_KEYS = ['x', 'y', 'width', 'height'];
+export const sameFrame = (a, b) => (a == null || b == null ? a == null && b == null : FRAME_KEYS.every(k => a[k] === b[k]));
 
 // io: {ops (deviceOps), connect(spec, handlers) -> MCP client, controllerBuild() -> {build, engineVersion},
 // controllerCheckout() -> {commit, dirty}, log, sleep}. -> 0 complete, 1 incomplete, 2 refused before anything was prepared.

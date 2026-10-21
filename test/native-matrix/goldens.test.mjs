@@ -486,3 +486,11 @@ test('a recording leaves no empty serve stderr directory behind', async () => {
   await run();
   assert.deepEqual(listing(), before);
 });
+
+test('a frame is the same frame whatever order its keys come in, and a moved or missing one is not', async () => {
+  const {sameFrame} = await import('../../scripts/native-matrix/goldens.mjs');
+  assert.equal(sameFrame({x: 820, y: 261, width: 920, height: 464}, {height: 464, width: 920, x: 820, y: 261}), true);
+  assert.equal(sameFrame({x: 820, y: 261, width: 920, height: 464}, {x: 821, y: 261, width: 920, height: 464}), false);
+  assert.equal(sameFrame({x: 820, y: 261, width: 920, height: 464}, null), false);
+  assert.equal(sameFrame(null, null), true);
+});

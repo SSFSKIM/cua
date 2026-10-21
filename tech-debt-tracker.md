@@ -2,6 +2,8 @@
 
 ## Open
 
+- **2026-10-21 — The vendor host's `api/browser-cuaapi/keypress` assertion failed once on the hosted runner (minor, #117 M1b; no fix here).** Gate `parity-browser` run [39531662385](https://github.com/SSFSKIM/cua/actions/runs/39531662385) on b8ec2d76, a scripts-only change: the vendor host's case failed one assertion, and the re-run [39533801956](https://github.com/SSFSKIM/cua/actions/runs/39533801956) passed. It is the vendor host's case, so cua's code cannot fix it. If it recurs, read the run directory on a re-run before widening a budget, as for the `drag` row below.
+
 - **2026-10-20 — `cua engine build` takes no lock on `<engine dir>/staging/` (minor, #117 M1b.1 review).** `buildEngine` in `src/runtime/engine.mjs` clears and recreates `paths.staging`, assembles and signs the bundle there, then swaps it for the approved bundle. Two concurrent `cua engine build` runs share that directory, so one can remove the other's half-assembled bundle or sign into the other's tree. Fix: a lock file beside `staging/` (exclusive create with the pid, stale if the pid is dead), or a per-run staging directory renamed into place.
 
 - **2026-10-20 — A 400 ms timing window in `test/sandbox-probe/capture-argv.test.mjs` fails under heavy local load (minor, seen during #117 M1b).** The two process-tree cases (lines 77 and 88) give the probe `--timeout-ms 400` to see the launcher's child before its window closes. On a loaded MacBook the window is too short for the attempts to finish as the cases assert, so they fail; they pass alone. Fix: widen the window (the cases only need it to expire, which the 5 s bound already covers), or wait on the pidfile instead of the clock.

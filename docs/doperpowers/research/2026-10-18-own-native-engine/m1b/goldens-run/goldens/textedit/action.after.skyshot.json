@@ -1,0 +1,2208 @@
+{
+ "screenshot": {
+  "height": 1720,
+  "url": "file:///Users/new/Library/Caches/cua-harness/native-goldens/goldens-screenshots/cua-engine-68070-2-48CCA23E.jpg",
+  "width": 1220,
+  "scale": 2
+ },
+ "nodes": [
+  {
+   "url": "file:///Users/new/Library/Caches/cua-harness/native-goldens/textedit/cua-scene.rtf",
+   "token": "t0",
+   "value": null,
+   "frame": {
+    "height": 860,
+    "width": 610,
+    "y": 103,
+    "x": 309
+   },
+   "title": "cua-scene.rtf",
+   "valueType": null,
+   "role": "AXWindow",
+   "depth": 0,
+   "identifier": "_NS:31",
+   "pid": 68265,
+   "description": null,
+   "actions": [
+    "AXRaise"
+   ],
+   "actionDescriptions": [
+    null
+   ],
+   "subrole": "AXStandardWindow",
+   "roleDescription": "standard window",
+   "children": 8,
+   "flags": {
+    "selectable": false,
+    "enabled": true,
+    "settable": false,
+    "focusable": false,
+    "selected": false,
+    "focused": false
+   },
+   "valueMarkdown": null
+  },
+  {
+   "value": null,
+   "actionDescriptions": [
+    null,
+    null,
+    null,
+    null
+   ],
+   "title": null,
+   "valueMarkdown": null,
+   "subrole": null,
+   "frame": {
+    "y": 171,
+    "width": 610,
+    "height": 792,
+    "x": 309
+   },
+   "identifier": "_NS:8",
+   "pid": 68265,
+   "role": "AXScrollArea",
+   "scrollBars": {
+    "horizontal": true,
+    "vertical": true
+   },
+   "roleDescription": "scroll area",
+   "token": "t1",
+   "description": null,
+   "children": 4,
+   "depth": 1,
+   "valueType": null,
+   "actions": [
+    "AXScrollLeftByPage",
+    "AXScrollRightByPage",
+    "AXScrollUpByPage",
+    "AXScrollDownByPage"
+   ],
+   "flags": {
+    "focused": false,
+    "selected": false,
+    "selectable": false,
+    "settable": false,
+    "enabled": true,
+    "focusable": true
+   }
+  },
+  {
+   "identifier": "First Text View",
+   "frame": {
+    "width": 610,
+    "height": 1054,
+    "x": 309,
+    "y": 197
+   },
+   "actionDescriptions": [
+    null
+   ],
+   "pid": 68265,
+   "valueMarkdown": "cua scene document\n**Bold scene line**\nLine 01\nLine 02\nLine 03\nLine 04\nLine 05\nLine 06\nLine 07\nLine 08\nLine 09\nLine 10\nLine 11\nLine 12\nLine 13\nLine 14\nLine 15\nLine 16\nLine 17\nLine 18\nLine 19\nLine 20\nLine 21\nLine 22\nLine 23\nLine 24\nLine 25\nLine 26\nLine 27\nLine 28\nLine 29\nLine 30\nLine 31\nLine 32\nLine 33\nLine 34\nLine 35\nLine 36\nLine 37\nLine 38\nLine 39\nLine 40\nLine 41\nLine 42\nLine 43\nLine 44\nLine 45\nLine 46\nLine 47\nLine 48\nLine 49\nLine 50\nLine 51\nLine 52\nLine 53\nLine 54\nLine 55\nLine 56\nLine 57\nLine 58\nLine 59\nLine 60",
+   "roleDescription": "text entry area",
+   "description": null,
+   "title": null,
+   "valueType": "string",
+   "numberOfCharacters": 514,
+   "role": "AXTextArea",
+   "token": "t2",
+   "depth": 2,
+   "value": "cua scene document\nBold scene line\nLine 01\nLine 02\nLine 03\nLine 04\nLine 05\nLine 06\nLine 07\nLine 08\nLine 09\nLine 10\nLine 11\nLine 12\nLine 13\nLine 14\nLine 15\nLine 16\nLine 17\nLine 18\nLine 19\nLine 20\nLine 21\nLine 22\nLine 23\nLine 24\nLine 25\nLine 26\nLine 27\nLine 28\nLine 29\nLine 30\nLine 31\nLine 32\nLine 33\nLine 34\nLine 35\nLine 36\nLine 37\nLine 38\nLine 39\nLine 40\nLine 41\nLine 42\nLine 43\nLine 44\nLine 45\nLine 46\nLine 47\nLine 48\nLine 49\nLine 50\nLine 51\nLine 52\nLine 53\nLine 54\nLine 55\nLine 56\nLine 57\nLine 58\nLine 59\nLine 60",
+   "actions": [
+    "AXShowMenu"
+   ],
+   "subrole": null,
+   "flags": {
+    "focusable": true,
+    "enabled": true,
+    "focused": true,
+    "selectable": false,
+    "selected": false,
+    "settable": true
+   },
+   "children": 0
+  },
+  {
+   "actions": [],
+   "actionDescriptions": [],
+   "flags": {
+    "selected": false,
+    "selectable": false,
+    "enabled": false,
+    "focused": false,
+    "focusable": false,
+    "settable": true
+   },
+   "roleDescription": "scroll bar",
+   "children": 0,
+   "pid": 68265,
+   "value": 0.18518517911434174,
+   "identifier": "_NS:24",
+   "depth": 2,
+   "valueType": "float",
+   "description": null,
+   "valueMarkdown": null,
+   "token": "t3",
+   "title": null,
+   "frame": {
+    "x": 315.5,
+    "width": 597,
+    "height": 19,
+    "y": 945
+   },
+   "subrole": null,
+   "role": "AXScrollBar"
+  },
+  {
+   "role": "AXScrollBar",
+   "value": 0.02,
+   "valueType": "float",
+   "pid": 68265,
+   "description": null,
+   "title": null,
+   "flags": {
+    "selected": false,
+    "enabled": true,
+    "focusable": true,
+    "focused": false,
+    "selectable": false,
+    "settable": true
+   },
+   "children": 5,
+   "depth": 2,
+   "actions": [],
+   "actionDescriptions": [],
+   "identifier": "_NS:27",
+   "frame": {
+    "x": 901,
+    "y": 202,
+    "width": 19,
+    "height": 754.5
+   },
+   "valueMarkdown": null,
+   "token": "t4",
+   "roleDescription": "scroll bar",
+   "subrole": null
+  },
+  {
+   "token": "t5",
+   "frame": {
+    "y": 210.5,
+    "x": 910,
+    "width": 6,
+    "height": 541
+   },
+   "subrole": null,
+   "pid": 68265,
+   "actions": [],
+   "children": 0,
+   "actionDescriptions": [],
+   "title": null,
+   "depth": 3,
+   "flags": {
+    "focused": false,
+    "enabled": true,
+    "selected": false,
+    "focusable": false,
+    "selectable": false,
+    "settable": true
+   },
+   "value": 0.02,
+   "valueType": "float",
+   "role": "AXValueIndicator",
+   "valueMarkdown": null,
+   "description": null,
+   "roleDescription": "value indicator",
+   "identifier": null
+  },
+  {
+   "valueMarkdown": null,
+   "pid": 68265,
+   "subrole": "AXIncrementArrow",
+   "flags": {
+    "settable": false,
+    "selectable": false,
+    "selected": false,
+    "enabled": true,
+    "focusable": false,
+    "focused": false
+   },
+   "roleDescription": "increment arrow button",
+   "token": "t6",
+   "frame": {
+    "x": 902,
+    "height": 0,
+    "width": 0,
+    "y": 203
+   },
+   "children": 0,
+   "actions": [
+    "AXPress"
+   ],
+   "title": null,
+   "valueType": null,
+   "depth": 3,
+   "value": null,
+   "description": null,
+   "identifier": null,
+   "role": "AXButton",
+   "actionDescriptions": [
+    null
+   ]
+  },
+  {
+   "actions": [
+    "AXPress"
+   ],
+   "actionDescriptions": [
+    null
+   ],
+   "valueMarkdown": null,
+   "description": null,
+   "flags": {
+    "selectable": false,
+    "enabled": true,
+    "settable": false,
+    "focused": false,
+    "focusable": false,
+    "selected": false
+   },
+   "frame": {
+    "width": 0,
+    "height": 0,
+    "x": 902,
+    "y": 203
+   },
+   "token": "t7",
+   "valueType": null,
+   "subrole": "AXDecrementArrow",
+   "roleDescription": "decrement arrow button",
+   "children": 0,
+   "identifier": null,
+   "role": "AXButton",
+   "depth": 3,
+   "pid": 68265,
+   "title": null,
+   "value": null
+  },
+  {
+   "flags": {
+    "settable": false,
+    "selected": false,
+    "focused": false,
+    "selectable": false,
+    "enabled": true,
+    "focusable": false
+   },
+   "subrole": "AXIncrementPage",
+   "valueMarkdown": null,
+   "actions": [
+    "AXPress"
+   ],
+   "valueType": null,
+   "token": "t8",
+   "roleDescription": "increment page button",
+   "title": null,
+   "pid": 68265,
+   "role": "AXButton",
+   "value": null,
+   "description": null,
+   "children": 0,
+   "actionDescriptions": [
+    null
+   ],
+   "depth": 3,
+   "frame": {
+    "y": 752,
+    "width": 6,
+    "x": 910,
+    "height": 200.5
+   },
+   "identifier": null
+  },
+  {
+   "depth": 3,
+   "pid": 68265,
+   "roleDescription": "decrement page button",
+   "actions": [
+    "AXPress"
+   ],
+   "token": "t9",
+   "title": null,
+   "valueType": null,
+   "valueMarkdown": null,
+   "role": "AXButton",
+   "value": null,
+   "flags": {
+    "focusable": false,
+    "selected": false,
+    "settable": false,
+    "focused": false,
+    "selectable": false,
+    "enabled": true
+   },
+   "frame": {
+    "y": 206,
+    "x": 910,
+    "height": 4,
+    "width": 6
+   },
+   "description": null,
+   "identifier": null,
+   "subrole": "AXDecrementPage",
+   "children": 0,
+   "actionDescriptions": [
+    null
+   ]
+  },
+  {
+   "actionDescriptions": [
+    null
+   ],
+   "token": "t10",
+   "roleDescription": "ruler",
+   "role": "AXRuler",
+   "valueType": null,
+   "children": 15,
+   "value": null,
+   "frame": {
+    "width": 610,
+    "x": 309,
+    "height": 32,
+    "y": 171
+   },
+   "pid": 68265,
+   "valueMarkdown": null,
+   "depth": 2,
+   "subrole": null,
+   "title": null,
+   "description": null,
+   "flags": {
+    "selectable": false,
+    "enabled": true,
+    "settable": false,
+    "focused": false,
+    "focusable": false,
+    "selected": false
+   },
+   "identifier": null,
+   "actions": [
+    "AXPress"
+   ]
+  },
+  {
+   "children": 0,
+   "role": "AXRulerMarker",
+   "valueMarkdown": null,
+   "token": "t11",
+   "value": 0,
+   "identifier": null,
+   "valueType": "float",
+   "frame": {
+    "height": 6,
+    "y": 180,
+    "x": 310,
+    "width": 9
+   },
+   "depth": 3,
+   "actions": [
+    "AXDelete"
+   ],
+   "subrole": null,
+   "roleDescription": "ruler marker",
+   "title": null,
+   "flags": {
+    "settable": true,
+    "enabled": true,
+    "focused": false,
+    "focusable": false,
+    "selectable": false,
+    "selected": false
+   },
+   "pid": 68265,
+   "actionDescriptions": [
+    null
+   ],
+   "description": null
+  },
+  {
+   "valueType": "float",
+   "actionDescriptions": [
+    null
+   ],
+   "pid": 68265,
+   "actions": [
+    "AXDelete"
+   ],
+   "role": "AXRulerMarker",
+   "identifier": null,
+   "depth": 3,
+   "subrole": null,
+   "title": null,
+   "frame": {
+    "width": 9,
+    "x": 910,
+    "height": 6,
+    "y": 180
+   },
+   "roleDescription": "ruler marker",
+   "children": 0,
+   "token": "t12",
+   "description": null,
+   "valueMarkdown": null,
+   "value": 21.164021164021165,
+   "flags": {
+    "focused": false,
+    "selectable": false,
+    "focusable": false,
+    "selected": false,
+    "enabled": true,
+    "settable": true
+   }
+  },
+  {
+   "pid": 68265,
+   "valueType": "float",
+   "flags": {
+    "selectable": false,
+    "settable": true,
+    "selected": false,
+    "focusable": false,
+    "enabled": true,
+    "focused": false
+   },
+   "valueMarkdown": null,
+   "token": "t13",
+   "identifier": null,
+   "children": 0,
+   "roleDescription": "ruler marker",
+   "description": null,
+   "actions": [
+    "AXDelete"
+   ],
+   "frame": {
+    "y": 176,
+    "height": 10,
+    "x": 310,
+    "width": 9
+   },
+   "subrole": null,
+   "value": 0,
+   "role": "AXRulerMarker",
+   "depth": 3,
+   "title": null,
+   "actionDescriptions": [
+    null
+   ]
+  },
+  {
+   "pid": 68265,
+   "roleDescription": "ruler marker",
+   "actionDescriptions": [
+    null
+   ],
+   "token": "t14",
+   "flags": {
+    "selected": false,
+    "enabled": true,
+    "settable": true,
+    "focusable": false,
+    "focused": false,
+    "selectable": false
+   },
+   "description": null,
+   "role": "AXRulerMarker",
+   "valueMarkdown": null,
+   "value": 1.2698412698412698,
+   "valueType": "float",
+   "identifier": null,
+   "actions": [
+    "AXDelete"
+   ],
+   "children": 0,
+   "frame": {
+    "height": 9,
+    "x": 350,
+    "width": 6,
+    "y": 177
+   },
+   "depth": 3,
+   "title": null,
+   "subrole": null
+  },
+  {
+   "title": null,
+   "valueType": "float",
+   "subrole": null,
+   "role": "AXRulerMarker",
+   "roleDescription": "ruler marker",
+   "frame": {
+    "width": 6,
+    "y": 177,
+    "height": 9,
+    "x": 386
+   },
+   "actionDescriptions": [
+    null
+   ],
+   "flags": {
+    "focusable": false,
+    "focused": false,
+    "enabled": true,
+    "selected": false,
+    "selectable": false,
+    "settable": true
+   },
+   "value": 2.5396825396825395,
+   "token": "t15",
+   "depth": 3,
+   "description": null,
+   "pid": 68265,
+   "children": 0,
+   "valueMarkdown": null,
+   "identifier": null,
+   "actions": [
+    "AXDelete"
+   ]
+  },
+  {
+   "flags": {
+    "focusable": false,
+    "selectable": false,
+    "settable": true,
+    "focused": false,
+    "selected": false,
+    "enabled": true
+   },
+   "actionDescriptions": [
+    null
+   ],
+   "actions": [
+    "AXDelete"
+   ],
+   "description": null,
+   "children": 0,
+   "subrole": null,
+   "pid": 68265,
+   "value": 3.8095238095238093,
+   "depth": 3,
+   "roleDescription": "ruler marker",
+   "token": "t16",
+   "title": null,
+   "identifier": null,
+   "frame": {
+    "y": 177,
+    "width": 6,
+    "x": 422,
+    "height": 9
+   },
+   "valueMarkdown": null,
+   "role": "AXRulerMarker",
+   "valueType": "float"
+  },
+  {
+   "pid": 68265,
+   "children": 0,
+   "actions": [
+    "AXDelete"
+   ],
+   "flags": {
+    "focusable": false,
+    "settable": true,
+    "enabled": true,
+    "focused": false,
+    "selected": false,
+    "selectable": false
+   },
+   "role": "AXRulerMarker",
+   "valueType": "float",
+   "identifier": null,
+   "depth": 3,
+   "subrole": null,
+   "token": "t17",
+   "actionDescriptions": [
+    null
+   ],
+   "title": null,
+   "roleDescription": "ruler marker",
+   "description": null,
+   "value": 5.079365079365079,
+   "valueMarkdown": null,
+   "frame": {
+    "x": 458,
+    "width": 6,
+    "y": 177,
+    "height": 9
+   }
+  },
+  {
+   "roleDescription": "ruler marker",
+   "children": 0,
+   "title": null,
+   "valueType": "float",
+   "identifier": null,
+   "actions": [
+    "AXDelete"
+   ],
+   "value": 6.349206349206349,
+   "frame": {
+    "y": 177,
+    "x": 494,
+    "width": 6,
+    "height": 9
+   },
+   "pid": 68265,
+   "subrole": null,
+   "valueMarkdown": null,
+   "actionDescriptions": [
+    null
+   ],
+   "description": null,
+   "token": "t18",
+   "flags": {
+    "settable": true,
+    "selectable": false,
+    "enabled": true,
+    "selected": false,
+    "focused": false,
+    "focusable": false
+   },
+   "depth": 3,
+   "role": "AXRulerMarker"
+  },
+  {
+   "subrole": null,
+   "pid": 68265,
+   "description": null,
+   "valueType": "float",
+   "children": 0,
+   "actions": [
+    "AXDelete"
+   ],
+   "value": 7.619047619047619,
+   "frame": {
+    "x": 530,
+    "y": 177,
+    "height": 9,
+    "width": 6
+   },
+   "flags": {
+    "selectable": false,
+    "focusable": false,
+    "settable": true,
+    "enabled": true,
+    "focused": false,
+    "selected": false
+   },
+   "role": "AXRulerMarker",
+   "roleDescription": "ruler marker",
+   "actionDescriptions": [
+    null
+   ],
+   "depth": 3,
+   "valueMarkdown": null,
+   "title": null,
+   "identifier": null,
+   "token": "t19"
+  },
+  {
+   "roleDescription": "ruler marker",
+   "valueType": "float",
+   "identifier": null,
+   "value": 8.88888888888889,
+   "frame": {
+    "width": 6,
+    "height": 9,
+    "y": 177,
+    "x": 566
+   },
+   "role": "AXRulerMarker",
+   "valueMarkdown": null,
+   "subrole": null,
+   "depth": 3,
+   "pid": 68265,
+   "description": null,
+   "flags": {
+    "selectable": false,
+    "selected": false,
+    "focusable": false,
+    "enabled": true,
+    "focused": false,
+    "settable": true
+   },
+   "children": 0,
+   "token": "t20",
+   "actions": [
+    "AXDelete"
+   ],
+   "actionDescriptions": [
+    null
+   ],
+   "title": null
+  },
+  {
+   "token": "t21",
+   "description": null,
+   "roleDescription": "ruler marker",
+   "value": 10.158730158730158,
+   "title": null,
+   "valueType": "float",
+   "subrole": null,
+   "frame": {
+    "y": 177,
+    "x": 602,
+    "height": 9,
+    "width": 6
+   },
+   "role": "AXRulerMarker",
+   "flags": {
+    "settable": true,
+    "focused": false,
+    "enabled": true,
+    "selectable": false,
+    "focusable": false,
+    "selected": false
+   },
+   "pid": 68265,
+   "identifier": null,
+   "actions": [
+    "AXDelete"
+   ],
+   "actionDescriptions": [
+    null
+   ],
+   "depth": 3,
+   "valueMarkdown": null,
+   "children": 0
+  },
+  {
+   "actionDescriptions": [
+    null
+   ],
+   "actions": [
+    "AXDelete"
+   ],
+   "token": "t22",
+   "valueType": "float",
+   "roleDescription": "ruler marker",
+   "depth": 3,
+   "value": 11.428571428571429,
+   "subrole": null,
+   "role": "AXRulerMarker",
+   "title": null,
+   "identifier": null,
+   "frame": {
+    "x": 638,
+    "y": 177,
+    "width": 6,
+    "height": 9
+   },
+   "children": 0,
+   "description": null,
+   "pid": 68265,
+   "flags": {
+    "settable": true,
+    "selectable": false,
+    "selected": false,
+    "enabled": true,
+    "focused": false,
+    "focusable": false
+   },
+   "valueMarkdown": null
+  },
+  {
+   "roleDescription": "ruler marker",
+   "flags": {
+    "selectable": false,
+    "focusable": false,
+    "settable": true,
+    "enabled": true,
+    "focused": false,
+    "selected": false
+   },
+   "token": "t23",
+   "actionDescriptions": [
+    null
+   ],
+   "valueMarkdown": null,
+   "subrole": null,
+   "valueType": "float",
+   "title": null,
+   "value": 12.698412698412698,
+   "pid": 68265,
+   "identifier": null,
+   "frame": {
+    "x": 674,
+    "width": 6,
+    "height": 9,
+    "y": 177
+   },
+   "role": "AXRulerMarker",
+   "description": null,
+   "depth": 3,
+   "actions": [
+    "AXDelete"
+   ],
+   "children": 0
+  },
+  {
+   "actions": [
+    "AXDelete"
+   ],
+   "role": "AXRulerMarker",
+   "title": null,
+   "valueMarkdown": null,
+   "frame": {
+    "x": 710,
+    "height": 9,
+    "y": 177,
+    "width": 6
+   },
+   "depth": 3,
+   "description": null,
+   "actionDescriptions": [
+    null
+   ],
+   "valueType": "float",
+   "flags": {
+    "enabled": true,
+    "selected": false,
+    "settable": true,
+    "selectable": false,
+    "focused": false,
+    "focusable": false
+   },
+   "token": "t24",
+   "subrole": null,
+   "value": 13.968253968253968,
+   "pid": 68265,
+   "identifier": null,
+   "children": 0,
+   "roleDescription": "ruler marker"
+  },
+  {
+   "flags": {
+    "settable": true,
+    "enabled": true,
+    "focusable": false,
+    "selected": false,
+    "focused": false,
+    "selectable": false
+   },
+   "valueMarkdown": null,
+   "frame": {
+    "x": 746,
+    "height": 9,
+    "width": 6,
+    "y": 177
+   },
+   "token": "t25",
+   "title": null,
+   "valueType": "float",
+   "pid": 68265,
+   "description": null,
+   "subrole": null,
+   "value": 15.238095238095237,
+   "role": "AXRulerMarker",
+   "roleDescription": "ruler marker",
+   "actions": [
+    "AXDelete"
+   ],
+   "identifier": null,
+   "children": 0,
+   "actionDescriptions": [
+    null
+   ],
+   "depth": 3
+  },
+  {
+   "roleDescription": "group",
+   "actions": [],
+   "role": "AXGroup",
+   "value": null,
+   "flags": {
+    "focused": false,
+    "selected": false,
+    "enabled": true,
+    "focusable": false,
+    "selectable": false,
+    "settable": false
+   },
+   "subrole": null,
+   "valueMarkdown": null,
+   "pid": 68265,
+   "title": null,
+   "children": 9,
+   "valueType": null,
+   "actionDescriptions": [],
+   "frame": {
+    "y": 135,
+    "height": 36,
+    "width": 610,
+    "x": 309
+   },
+   "token": "t26",
+   "description": "Formatting",
+   "identifier": null,
+   "depth": 1
+  },
+  {
+   "roleDescription": "group",
+   "valueMarkdown": null,
+   "token": "t27",
+   "pid": 68265,
+   "title": null,
+   "value": null,
+   "children": 4,
+   "role": "AXGroup",
+   "depth": 2,
+   "flags": {
+    "selected": false,
+    "selectable": false,
+    "enabled": true,
+    "settable": false,
+    "focused": false,
+    "focusable": false
+   },
+   "description": null,
+   "valueType": null,
+   "actionDescriptions": [],
+   "identifier": null,
+   "subrole": null,
+   "actions": [],
+   "frame": {
+    "height": 22,
+    "x": 316,
+    "width": 87.5,
+    "y": 142
+   }
+  },
+  {
+   "token": "t28",
+   "pid": 68265,
+   "frame": {
+    "x": 317,
+    "height": 20,
+    "y": 144,
+    "width": 21.5
+   },
+   "help": "Bold text",
+   "subrole": "AXSegment",
+   "valueType": "integer",
+   "flags": {
+    "focusable": true,
+    "selectable": false,
+    "selected": false,
+    "settable": false,
+    "enabled": true,
+    "focused": false
+   },
+   "description": "bold",
+   "value": 0,
+   "title": null,
+   "roleDescription": "checkbox",
+   "valueMarkdown": null,
+   "depth": 3,
+   "role": "AXCheckBox",
+   "identifier": null,
+   "children": 0,
+   "actions": [
+    "AXPress"
+   ],
+   "actionDescriptions": [
+    null
+   ]
+  },
+  {
+   "identifier": null,
+   "token": "t29",
+   "depth": 3,
+   "pid": 68265,
+   "role": "AXCheckBox",
+   "subrole": "AXSegment",
+   "help": "Italicize text",
+   "valueMarkdown": null,
+   "actionDescriptions": [
+    null
+   ],
+   "roleDescription": "checkbox",
+   "title": null,
+   "valueType": "integer",
+   "description": "italic",
+   "flags": {
+    "focused": false,
+    "settable": false,
+    "enabled": true,
+    "selected": false,
+    "selectable": false,
+    "focusable": true
+   },
+   "value": 0,
+   "children": 0,
+   "frame": {
+    "x": 338.5,
+    "y": 144,
+    "height": 20,
+    "width": 22
+   },
+   "actions": [
+    "AXPress"
+   ]
+  },
+  {
+   "description": "underline",
+   "help": "Underline text",
+   "actionDescriptions": [
+    null
+   ],
+   "value": 0,
+   "valueType": "integer",
+   "roleDescription": "checkbox",
+   "valueMarkdown": null,
+   "subrole": "AXSegment",
+   "role": "AXCheckBox",
+   "token": "t30",
+   "flags": {
+    "enabled": true,
+    "selected": false,
+    "focusable": true,
+    "focused": false,
+    "selectable": false,
+    "settable": false
+   },
+   "actions": [
+    "AXPress"
+   ],
+   "children": 0,
+   "title": null,
+   "depth": 3,
+   "identifier": null,
+   "frame": {
+    "x": 360.5,
+    "width": 21.5,
+    "height": 20,
+    "y": 144
+   },
+   "pid": 68265
+  },
+  {
+   "pid": 68265,
+   "depth": 3,
+   "subrole": "AXSegment",
+   "role": "AXCheckBox",
+   "value": 0,
+   "frame": {
+    "width": 22.5,
+    "x": 382,
+    "height": 20,
+    "y": 144
+   },
+   "valueMarkdown": null,
+   "children": 0,
+   "help": "Strikethrough text",
+   "flags": {
+    "focusable": true,
+    "selectable": false,
+    "settable": false,
+    "selected": false,
+    "focused": false,
+    "enabled": true
+   },
+   "identifier": null,
+   "actionDescriptions": [
+    null
+   ],
+   "description": "strikethrough",
+   "roleDescription": "checkbox",
+   "title": null,
+   "valueType": "integer",
+   "token": "t31",
+   "actions": [
+    "AXPress"
+   ]
+  },
+  {
+   "valueType": "string",
+   "actionDescriptions": [
+    null,
+    null
+   ],
+   "valueMarkdown": null,
+   "identifier": null,
+   "token": "t32",
+   "frame": {
+    "y": 142,
+    "height": 22,
+    "x": 406.5,
+    "width": 22
+   },
+   "actions": [
+    "AXPress",
+    "Name:Show color panel\nTarget:0x0\nSelector:(null)"
+   ],
+   "flags": {
+    "settable": false,
+    "focused": false,
+    "selectable": false,
+    "focusable": true,
+    "enabled": true,
+    "selected": false
+   },
+   "pid": 68265,
+   "subrole": null,
+   "help": "Click to choose the text color",
+   "depth": 2,
+   "role": "AXButton",
+   "title": null,
+   "children": 0,
+   "roleDescription": "button",
+   "value": "Clear",
+   "description": "text color"
+  },
+  {
+   "title": null,
+   "roleDescription": "button",
+   "actionDescriptions": [
+    null,
+    null
+   ],
+   "value": "Clear",
+   "identifier": null,
+   "children": 0,
+   "pid": 68265,
+   "valueType": "string",
+   "valueMarkdown": null,
+   "depth": 2,
+   "actions": [
+    "AXPress",
+    "Name:Show color panel\nTarget:0x0\nSelector:(null)"
+   ],
+   "description": "text background color",
+   "frame": {
+    "width": 22,
+    "x": 431.5,
+    "y": 142,
+    "height": 22
+   },
+   "role": "AXButton",
+   "help": "Click to choose the text background color",
+   "subrole": null,
+   "flags": {
+    "selected": false,
+    "selectable": false,
+    "settable": false,
+    "focused": false,
+    "enabled": true,
+    "focusable": true
+   },
+   "token": "t33"
+  },
+  {
+   "value": "Helvetica",
+   "depth": 2,
+   "role": "AXPopUpButton",
+   "pid": 68265,
+   "valueMarkdown": null,
+   "flags": {
+    "focusable": true,
+    "selected": false,
+    "selectable": false,
+    "settable": false,
+    "enabled": true,
+    "focused": false
+   },
+   "children": 0,
+   "actionDescriptions": [
+    null,
+    null
+   ],
+   "subrole": null,
+   "valueType": "string",
+   "identifier": null,
+   "description": "typeface",
+   "title": null,
+   "roleDescription": "pop up button",
+   "frame": {
+    "width": 82,
+    "height": 22,
+    "x": 456.5,
+    "y": 142
+   },
+   "help": "Choose the typeface",
+   "token": "t34",
+   "actions": [
+    "AXShowMenu",
+    "AXPress"
+   ]
+  },
+  {
+   "actions": [
+    "AXShowMenu",
+    "AXPress"
+   ],
+   "title": null,
+   "actionDescriptions": [
+    null,
+    null
+   ],
+   "description": "style",
+   "valueType": "string",
+   "subrole": null,
+   "children": 0,
+   "pid": 68265,
+   "roleDescription": "pop up button",
+   "token": "t35",
+   "role": "AXPopUpButton",
+   "value": "Regular",
+   "identifier": null,
+   "valueMarkdown": null,
+   "depth": 2,
+   "frame": {
+    "x": 541.5,
+    "width": 82,
+    "height": 22,
+    "y": 142
+   },
+   "help": "Choose the style",
+   "flags": {
+    "selected": false,
+    "selectable": false,
+    "enabled": true,
+    "settable": false,
+    "focusable": true,
+    "focused": false
+   }
+  },
+  {
+   "actions": [
+    "AXShowMenu",
+    "AXConfirm"
+   ],
+   "token": "t36",
+   "subrole": null,
+   "roleDescription": "combo box",
+   "role": "AXComboBox",
+   "title": null,
+   "valueType": "string",
+   "identifier": null,
+   "help": "Set the font size",
+   "pid": 68265,
+   "valueMarkdown": null,
+   "value": "14",
+   "flags": {
+    "selectable": false,
+    "enabled": true,
+    "selected": false,
+    "focused": false,
+    "focusable": false,
+    "settable": true
+   },
+   "numberOfCharacters": 2,
+   "children": 1,
+   "actionDescriptions": [
+    null,
+    null
+   ],
+   "description": "font size",
+   "frame": {
+    "height": 22,
+    "y": 142,
+    "x": 626.5,
+    "width": 52
+   },
+   "depth": 2
+  },
+  {
+   "identifier": null,
+   "actions": [
+    "AXPress"
+   ],
+   "frame": {
+    "width": 19.5,
+    "height": 13.5,
+    "x": 655,
+    "y": 146
+   },
+   "value": null,
+   "children": 0,
+   "subrole": null,
+   "token": "t37",
+   "flags": {
+    "focused": false,
+    "selected": false,
+    "selectable": false,
+    "focusable": false,
+    "settable": false,
+    "enabled": true
+   },
+   "role": "AXButton",
+   "title": "",
+   "actionDescriptions": [
+    null
+   ],
+   "pid": 68265,
+   "valueMarkdown": null,
+   "depth": 3,
+   "valueType": null,
+   "description": "font size",
+   "roleDescription": "button"
+  },
+  {
+   "value": null,
+   "role": "AXGroup",
+   "title": null,
+   "pid": 68265,
+   "roleDescription": "group",
+   "depth": 2,
+   "valueMarkdown": null,
+   "actions": [],
+   "token": "t38",
+   "flags": {
+    "settable": false,
+    "enabled": true,
+    "focusable": false,
+    "selected": false,
+    "selectable": false,
+    "focused": false
+   },
+   "frame": {
+    "width": 98,
+    "height": 22,
+    "x": 681.5,
+    "y": 142
+   },
+   "children": 4,
+   "actionDescriptions": [],
+   "valueType": null,
+   "subrole": null,
+   "identifier": null,
+   "description": null
+  },
+  {
+   "flags": {
+    "selected": false,
+    "selectable": false,
+    "settable": false,
+    "focused": false,
+    "enabled": true,
+    "focusable": true
+   },
+   "depth": 3,
+   "pid": 68265,
+   "identifier": null,
+   "role": "AXCheckBox",
+   "frame": {
+    "y": 144,
+    "height": 20,
+    "x": 682.5,
+    "width": 24.5
+   },
+   "title": null,
+   "children": 0,
+   "actionDescriptions": [
+    null
+   ],
+   "valueType": "integer",
+   "valueMarkdown": null,
+   "subrole": "AXSegment",
+   "actions": [
+    "AXPress"
+   ],
+   "token": "t39",
+   "help": "Align text to left",
+   "roleDescription": "checkbox",
+   "value": 0,
+   "description": "align left"
+  },
+  {
+   "subrole": "AXSegment",
+   "roleDescription": "checkbox",
+   "token": "t40",
+   "role": "AXCheckBox",
+   "children": 0,
+   "value": 0,
+   "valueType": "integer",
+   "identifier": null,
+   "frame": {
+    "x": 707,
+    "height": 20,
+    "y": 144,
+    "width": 24.5
+   },
+   "actionDescriptions": [
+    null
+   ],
+   "description": "align center",
+   "title": null,
+   "valueMarkdown": null,
+   "actions": [
+    "AXPress"
+   ],
+   "help": "Center text",
+   "pid": 68265,
+   "flags": {
+    "focusable": true,
+    "selectable": false,
+    "settable": false,
+    "selected": false,
+    "enabled": true,
+    "focused": false
+   },
+   "depth": 3
+  },
+  {
+   "token": "t41",
+   "title": null,
+   "pid": 68265,
+   "description": "align right",
+   "roleDescription": "checkbox",
+   "depth": 3,
+   "role": "AXCheckBox",
+   "children": 0,
+   "valueMarkdown": null,
+   "help": "Align text to right",
+   "flags": {
+    "enabled": true,
+    "focused": false,
+    "selectable": false,
+    "focusable": true,
+    "selected": false,
+    "settable": false
+   },
+   "value": 0,
+   "actions": [
+    "AXPress"
+   ],
+   "frame": {
+    "x": 731.5,
+    "width": 24.5,
+    "y": 144,
+    "height": 20
+   },
+   "valueType": "integer",
+   "actionDescriptions": [
+    null
+   ],
+   "subrole": "AXSegment",
+   "identifier": null
+  },
+  {
+   "token": "t42",
+   "roleDescription": "checkbox",
+   "flags": {
+    "selectable": false,
+    "settable": false,
+    "focusable": true,
+    "enabled": true,
+    "selected": false,
+    "focused": false
+   },
+   "actions": [
+    "AXPress"
+   ],
+   "actionDescriptions": [
+    null
+   ],
+   "title": null,
+   "description": "fully justify",
+   "depth": 3,
+   "valueType": "integer",
+   "subrole": "AXSegment",
+   "identifier": null,
+   "role": "AXCheckBox",
+   "children": 0,
+   "help": "Justify text",
+   "valueMarkdown": null,
+   "frame": {
+    "x": 756,
+    "height": 20,
+    "y": 144,
+    "width": 24.5
+   },
+   "value": 0,
+   "pid": 68265
+  },
+  {
+   "help": "List bullets and numbering",
+   "token": "t43",
+   "depth": 2,
+   "actionDescriptions": [
+    null,
+    null
+   ],
+   "actions": [
+    "AXShowMenu",
+    "AXPress"
+   ],
+   "value": null,
+   "role": "AXMenuButton",
+   "valueMarkdown": null,
+   "flags": {
+    "settable": false,
+    "enabled": true,
+    "focused": false,
+    "focusable": true,
+    "selected": false,
+    "selectable": false
+   },
+   "subrole": null,
+   "frame": {
+    "x": 782.5,
+    "width": 48,
+    "y": 142,
+    "height": 22
+   },
+   "title": null,
+   "valueType": null,
+   "children": 0,
+   "roleDescription": "menu button",
+   "pid": 68265,
+   "description": "list style",
+   "identifier": null
+  },
+  {
+   "identifier": null,
+   "pid": 68265,
+   "roleDescription": "pop up button",
+   "help": "Line and paragraph spacing",
+   "subrole": null,
+   "description": "line spacing",
+   "actionDescriptions": [
+    null,
+    null
+   ],
+   "children": 0,
+   "valueMarkdown": null,
+   "depth": 2,
+   "title": null,
+   "frame": {
+    "y": 142,
+    "x": 833.5,
+    "height": 22,
+    "width": 53
+   },
+   "token": "t44",
+   "flags": {
+    "focusable": true,
+    "enabled": true,
+    "selected": false,
+    "settable": false,
+    "focused": false,
+    "selectable": false
+   },
+   "valueType": "string",
+   "actions": [
+    "AXShowMenu",
+    "AXPress"
+   ],
+   "value": "1.0",
+   "role": "AXPopUpButton"
+  },
+  {
+   "valueType": null,
+   "roleDescription": "close button",
+   "token": "t45",
+   "role": "AXButton",
+   "actions": [
+    "AXPress"
+   ],
+   "identifier": null,
+   "valueMarkdown": null,
+   "children": 0,
+   "subrole": "AXCloseButton",
+   "pid": 68265,
+   "flags": {
+    "selectable": false,
+    "selected": false,
+    "focused": false,
+    "focusable": false,
+    "enabled": true,
+    "settable": false
+   },
+   "actionDescriptions": [
+    null
+   ],
+   "title": null,
+   "value": null,
+   "frame": {
+    "width": 16,
+    "x": 317,
+    "y": 111,
+    "height": 16
+   },
+   "description": null,
+   "depth": 1
+  },
+  {
+   "title": null,
+   "value": null,
+   "identifier": null,
+   "help": "this button also has an action to zoom the window",
+   "token": "t46",
+   "actionDescriptions": [
+    null,
+    "zoom the window",
+    null
+   ],
+   "subrole": "AXFullScreenButton",
+   "roleDescription": "full screen button",
+   "description": null,
+   "valueType": null,
+   "actions": [
+    "AXPress",
+    "AXZoomWindow",
+    "AXShowMenu"
+   ],
+   "pid": 68265,
+   "frame": {
+    "y": 111,
+    "height": 16,
+    "width": 16,
+    "x": 363
+   },
+   "depth": 1,
+   "valueMarkdown": null,
+   "role": "AXButton",
+   "children": 1,
+   "flags": {
+    "focused": false,
+    "focusable": false,
+    "enabled": true,
+    "selected": false,
+    "selectable": false,
+    "settable": false
+   }
+  },
+  {
+   "depth": 2,
+   "valueType": null,
+   "valueMarkdown": null,
+   "identifier": null,
+   "children": 1,
+   "frame": {
+    "height": 14,
+    "y": 112,
+    "width": 14,
+    "x": 364
+   },
+   "actionDescriptions": [],
+   "subrole": null,
+   "pid": 68265,
+   "description": null,
+   "flags": {
+    "focusable": false,
+    "selected": false,
+    "selectable": false,
+    "settable": false,
+    "enabled": true,
+    "focused": false
+   },
+   "role": "AXGroup",
+   "actions": [],
+   "roleDescription": "group",
+   "token": "t47",
+   "title": null,
+   "value": null
+  },
+  {
+   "depth": 3,
+   "value": null,
+   "actions": [],
+   "valueType": null,
+   "role": "AXGroup",
+   "flags": {
+    "settable": false,
+    "enabled": true,
+    "focused": false,
+    "focusable": false,
+    "selected": false,
+    "selectable": false
+   },
+   "actionDescriptions": [],
+   "description": null,
+   "valueMarkdown": null,
+   "subrole": null,
+   "pid": 68265,
+   "frame": {
+    "height": 14,
+    "y": 112,
+    "x": 364,
+    "width": 14
+   },
+   "token": "t60",
+   "roleDescription": "group",
+   "children": 0,
+   "title": null,
+   "identifier": null
+  },
+  {
+   "frame": {
+    "width": 16,
+    "x": 340,
+    "y": 111,
+    "height": 16
+   },
+   "title": null,
+   "identifier": null,
+   "actions": [
+    "AXPress"
+   ],
+   "flags": {
+    "selectable": false,
+    "settable": false,
+    "focused": false,
+    "selected": false,
+    "enabled": true,
+    "focusable": false
+   },
+   "token": "t48",
+   "valueType": null,
+   "children": 0,
+   "role": "AXButton",
+   "actionDescriptions": [
+    null
+   ],
+   "depth": 1,
+   "subrole": "AXMinimizeButton",
+   "roleDescription": "minimize button",
+   "valueMarkdown": null,
+   "description": null,
+   "pid": 68265,
+   "value": null
+  },
+  {
+   "actionDescriptions": [
+    null,
+    null
+   ],
+   "flags": {
+    "selectable": false,
+    "enabled": false,
+    "focused": false,
+    "focusable": false,
+    "settable": false,
+    "selected": false
+   },
+   "role": "AXMenuButton",
+   "frame": {
+    "y": 110,
+    "x": 501,
+    "width": 12,
+    "height": 18
+   },
+   "roleDescription": "menu button",
+   "identifier": null,
+   "actions": [
+    "AXPress",
+    "AXShowMenu"
+   ],
+   "token": "t49",
+   "depth": 1,
+   "subrole": null,
+   "title": "",
+   "description": "document actions",
+   "valueMarkdown": null,
+   "valueType": null,
+   "pid": 68265,
+   "value": null,
+   "children": 0
+  },
+  {
+   "role": "AXImage",
+   "children": 0,
+   "subrole": null,
+   "valueType": null,
+   "flags": {
+    "focused": false,
+    "enabled": true,
+    "focusable": false,
+    "selected": false,
+    "selectable": false,
+    "settable": false
+   },
+   "description": null,
+   "roleDescription": "image",
+   "identifier": null,
+   "token": "t50",
+   "pid": 68265,
+   "title": "cua-scene.rtf",
+   "frame": {
+    "y": 109,
+    "height": 18,
+    "x": 390,
+    "width": 18
+   },
+   "value": null,
+   "valueMarkdown": null,
+   "actions": [],
+   "depth": 1,
+   "actionDescriptions": []
+  },
+  {
+   "title": null,
+   "value": "cua-scene.rtf",
+   "roleDescription": "text",
+   "actionDescriptions": [],
+   "valueType": "string",
+   "pid": 68265,
+   "frame": {
+    "height": 16,
+    "x": 409,
+    "width": 93,
+    "y": 111
+   },
+   "children": 0,
+   "flags": {
+    "settable": false,
+    "enabled": true,
+    "selectable": false,
+    "focused": false,
+    "selected": false,
+    "focusable": false
+   },
+   "token": "t51",
+   "valueMarkdown": null,
+   "numberOfCharacters": 13,
+   "depth": 1,
+   "role": "AXStaticText",
+   "identifier": null,
+   "subrole": null,
+   "description": null,
+   "actions": []
+  }
+ ],
+ "window": {
+  "title": "cua-scene.rtf",
+  "pid": 68265,
+  "frame": {
+   "height": 860,
+   "x": 309,
+   "y": 103,
+   "width": 610
+  }
+ },
+ "focused": "t2",
+ "selectedElements": [],
+ "truncated": null,
+ "menuBar": [
+  {
+   "children": 7,
+   "frame": {
+    "x": 0,
+    "y": 0,
+    "height": 30,
+    "width": 2560
+   },
+   "subrole": null,
+   "value": null,
+   "title": null,
+   "actions": [
+    "AXCancel"
+   ],
+   "description": null,
+   "pid": 68265,
+   "actionDescriptions": [
+    null
+   ],
+   "depth": 0,
+   "flags": {
+    "focused": false,
+    "focusable": false,
+    "selected": false,
+    "selectable": false,
+    "settable": false,
+    "enabled": true
+   },
+   "token": "t52",
+   "identifier": "_NS:834",
+   "role": "AXMenuBar",
+   "valueType": null,
+   "valueMarkdown": null,
+   "roleDescription": null
+  },
+  {
+   "pid": 68265,
+   "depth": 1,
+   "roleDescription": null,
+   "actionDescriptions": [
+    null,
+    null,
+    null
+   ],
+   "title": "TextEdit",
+   "description": null,
+   "children": 0,
+   "flags": {
+    "focusable": false,
+    "enabled": true,
+    "focused": false,
+    "settable": false,
+    "selectable": false,
+    "selected": false
+   },
+   "token": "t53",
+   "identifier": "_NS:839",
+   "value": null,
+   "actions": [
+    "AXCancel",
+    "AXPress",
+    "AXPick"
+   ],
+   "subrole": null,
+   "role": "AXMenuBarItem",
+   "frame": {
+    "height": 30,
+    "x": 43,
+    "y": 0,
+    "width": 74
+   },
+   "valueMarkdown": null,
+   "valueType": null
+  },
+  {
+   "description": null,
+   "value": null,
+   "pid": 68265,
+   "depth": 1,
+   "role": "AXMenuBarItem",
+   "valueMarkdown": null,
+   "token": "t54",
+   "roleDescription": null,
+   "flags": {
+    "selected": false,
+    "enabled": true,
+    "focusable": false,
+    "selectable": false,
+    "settable": false,
+    "focused": false
+   },
+   "actions": [
+    "AXCancel",
+    "AXPress",
+    "AXPick"
+   ],
+   "children": 0,
+   "actionDescriptions": [
+    null,
+    null,
+    null
+   ],
+   "title": "File",
+   "frame": {
+    "y": 0,
+    "x": 116,
+    "height": 30,
+    "width": 42
+   },
+   "valueType": null,
+   "subrole": null,
+   "identifier": "_NS:861"
+  },
+  {
+   "roleDescription": null,
+   "description": null,
+   "token": "t55",
+   "title": "Edit",
+   "flags": {
+    "focused": false,
+    "settable": false,
+    "selectable": false,
+    "selected": false,
+    "focusable": false,
+    "enabled": true
+   },
+   "subrole": null,
+   "valueType": null,
+   "value": null,
+   "identifier": "_NS:887",
+   "frame": {
+    "y": 0,
+    "x": 157,
+    "width": 44,
+    "height": 30
+   },
+   "role": "AXMenuBarItem",
+   "actions": [
+    "AXCancel",
+    "AXPress",
+    "AXPick"
+   ],
+   "actionDescriptions": [
+    null,
+    null,
+    null
+   ],
+   "pid": 68265,
+   "depth": 1,
+   "valueMarkdown": null,
+   "children": 0
+  },
+  {
+   "token": "t56",
+   "identifier": "_NS:946",
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "focused": false,
+    "selected": false,
+    "selectable": false,
+    "settable": false
+   },
+   "actions": [
+    "AXCancel",
+    "AXPress",
+    "AXPick"
+   ],
+   "depth": 1,
+   "roleDescription": null,
+   "actionDescriptions": [
+    null,
+    null,
+    null
+   ],
+   "description": null,
+   "value": null,
+   "valueMarkdown": null,
+   "role": "AXMenuBarItem",
+   "children": 0,
+   "frame": {
+    "y": 0,
+    "width": 64,
+    "x": 200,
+    "height": 30
+   },
+   "valueType": null,
+   "pid": 68265,
+   "subrole": null,
+   "title": "Format"
+  },
+  {
+   "title": "View",
+   "token": "t57",
+   "valueMarkdown": null,
+   "roleDescription": null,
+   "flags": {
+    "focusable": false,
+    "selectable": false,
+    "settable": false,
+    "enabled": true,
+    "focused": false,
+    "selected": false
+   },
+   "value": null,
+   "actions": [
+    "AXCancel",
+    "AXPress",
+    "AXPick"
+   ],
+   "depth": 1,
+   "valueType": null,
+   "actionDescriptions": [
+    null,
+    null,
+    null
+   ],
+   "subrole": null,
+   "frame": {
+    "width": 50,
+    "height": 30,
+    "x": 263,
+    "y": 0
+   },
+   "description": null,
+   "identifier": "_NS:979",
+   "pid": 68265,
+   "role": "AXMenuBarItem",
+   "children": 0
+  },
+  {
+   "pid": 68265,
+   "roleDescription": null,
+   "flags": {
+    "focusable": false,
+    "enabled": true,
+    "selectable": false,
+    "focused": false,
+    "settable": false,
+    "selected": false
+   },
+   "actions": [
+    "AXCancel",
+    "AXPress",
+    "AXPick"
+   ],
+   "actionDescriptions": [
+    null,
+    null,
+    null
+   ],
+   "description": null,
+   "value": null,
+   "valueType": null,
+   "title": "Window",
+   "subrole": null,
+   "depth": 1,
+   "role": "AXMenuBarItem",
+   "identifier": "_NS:989",
+   "children": 0,
+   "valueMarkdown": null,
+   "token": "t58",
+   "frame": {
+    "width": 70,
+    "y": 0,
+    "x": 312,
+    "height": 30
+   }
+  },
+  {
+   "children": 0,
+   "subrole": null,
+   "roleDescription": null,
+   "identifier": "_NS:999",
+   "pid": 68265,
+   "actions": [
+    "AXCancel",
+    "AXPress",
+    "AXPick"
+   ],
+   "description": null,
+   "actionDescriptions": [
+    null,
+    null,
+    null
+   ],
+   "role": "AXMenuBarItem",
+   "frame": {
+    "width": 49,
+    "height": 30,
+    "x": 381,
+    "y": 0
+   },
+   "title": "Help",
+   "valueType": null,
+   "valueMarkdown": null,
+   "value": null,
+   "token": "t59",
+   "depth": 1,
+   "flags": {
+    "enabled": true,
+    "focused": false,
+    "selected": false,
+    "focusable": false,
+    "settable": false,
+    "selectable": false
+   }
+  }
+ ],
+ "revision": 2,
+ "selectedText": null,
+ "app": {
+  "displayName": "TextEdit",
+  "appPath": "/System/Applications/TextEdit.app",
+  "pid": 68265,
+  "bundleIdentifier": "com.apple.TextEdit",
+  "catalyst": false
+ },
+ "lineage": "L4a0a5311cf54"
+}

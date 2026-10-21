@@ -1,0 +1,1269 @@
+{
+ "truncated": null,
+ "focused": "t17",
+ "window": {
+  "pid": 71196,
+  "frame": {
+   "width": 720,
+   "y": 100,
+   "height": 560,
+   "x": 140
+  },
+  "title": "cua Electron fixture"
+ },
+ "selectedElements": [],
+ "lineage": "Lb539d98a9b24",
+ "menuBar": [
+  {
+   "subrole": null,
+   "actions": [
+    "AXCancel"
+   ],
+   "flags": {
+    "focusable": false,
+    "enabled": true,
+    "focused": false,
+    "settable": false,
+    "selected": false,
+    "selectable": false
+   },
+   "description": null,
+   "valueType": null,
+   "valueMarkdown": null,
+   "token": "t26",
+   "depth": 0,
+   "roleDescription": null,
+   "identifier": null,
+   "pid": 71196,
+   "value": null,
+   "role": "AXMenuBar",
+   "children": 5,
+   "title": null,
+   "frame": {
+    "y": 0,
+    "width": 2560,
+    "height": 30,
+    "x": 0
+   },
+   "actionDescriptions": [
+    null
+   ]
+  },
+  {
+   "title": "cua Electron Fixture",
+   "role": "AXMenuBarItem",
+   "frame": {
+    "height": 30,
+    "x": 43,
+    "width": 150,
+    "y": 0
+   },
+   "pid": 71196,
+   "roleDescription": null,
+   "valueType": null,
+   "actionDescriptions": [
+    null,
+    null,
+    null
+   ],
+   "token": "t27",
+   "actions": [
+    "AXCancel",
+    "AXPress",
+    "AXPick"
+   ],
+   "depth": 1,
+   "subrole": null,
+   "children": 0,
+   "value": null,
+   "flags": {
+    "selected": false,
+    "focused": false,
+    "selectable": false,
+    "focusable": false,
+    "settable": false,
+    "enabled": true
+   },
+   "description": null,
+   "valueMarkdown": null,
+   "identifier": null
+  },
+  {
+   "title": "File",
+   "actions": [
+    "AXCancel",
+    "AXPress",
+    "AXPick"
+   ],
+   "valueType": null,
+   "depth": 1,
+   "pid": 71196,
+   "frame": {
+    "y": 0,
+    "height": 30,
+    "x": 192,
+    "width": 42
+   },
+   "token": "t28",
+   "value": null,
+   "identifier": null,
+   "role": "AXMenuBarItem",
+   "subrole": null,
+   "roleDescription": null,
+   "description": null,
+   "flags": {
+    "enabled": true,
+    "selected": false,
+    "settable": false,
+    "focused": false,
+    "focusable": false,
+    "selectable": false
+   },
+   "children": 0,
+   "valueMarkdown": null,
+   "actionDescriptions": [
+    null,
+    null,
+    null
+   ]
+  },
+  {
+   "depth": 1,
+   "token": "t29",
+   "valueMarkdown": null,
+   "valueType": null,
+   "value": null,
+   "actionDescriptions": [
+    null,
+    null,
+    null
+   ],
+   "identifier": null,
+   "frame": {
+    "width": 44,
+    "x": 233,
+    "y": 0,
+    "height": 30
+   },
+   "roleDescription": null,
+   "children": 0,
+   "actions": [
+    "AXCancel",
+    "AXPress",
+    "AXPick"
+   ],
+   "description": null,
+   "flags": {
+    "selected": false,
+    "selectable": false,
+    "enabled": true,
+    "focused": false,
+    "focusable": false,
+    "settable": false
+   },
+   "pid": 71196,
+   "subrole": null,
+   "role": "AXMenuBarItem",
+   "title": "Edit"
+  },
+  {
+   "description": null,
+   "depth": 1,
+   "pid": 71196,
+   "flags": {
+    "selected": false,
+    "settable": false,
+    "focused": false,
+    "enabled": true,
+    "selectable": false,
+    "focusable": false
+   },
+   "frame": {
+    "height": 30,
+    "y": 0,
+    "x": 276,
+    "width": 51
+   },
+   "children": 0,
+   "valueMarkdown": null,
+   "token": "t30",
+   "roleDescription": null,
+   "title": "View",
+   "value": null,
+   "subrole": null,
+   "valueType": null,
+   "role": "AXMenuBarItem",
+   "actions": [
+    "AXCancel",
+    "AXPress",
+    "AXPick"
+   ],
+   "actionDescriptions": [
+    null,
+    null,
+    null
+   ],
+   "identifier": null
+  },
+  {
+   "identifier": null,
+   "token": "t31",
+   "actionDescriptions": [
+    null,
+    null,
+    null
+   ],
+   "description": null,
+   "value": null,
+   "roleDescription": null,
+   "frame": {
+    "x": 326,
+    "y": 0,
+    "height": 30,
+    "width": 69
+   },
+   "valueType": null,
+   "subrole": null,
+   "flags": {
+    "selectable": false,
+    "focused": false,
+    "settable": false,
+    "selected": false,
+    "enabled": true,
+    "focusable": false
+   },
+   "depth": 1,
+   "valueMarkdown": null,
+   "children": 0,
+   "pid": 71196,
+   "role": "AXMenuBarItem",
+   "actions": [
+    "AXCancel",
+    "AXPress",
+    "AXPick"
+   ],
+   "title": "Window"
+  }
+ ],
+ "screenshot": {
+  "width": 1440,
+  "scale": 2,
+  "url": "file:///Users/new/Library/Caches/cua-harness/native-goldens/goldens-screenshots/cua-engine-68070-2-39941CBF.jpg",
+  "height": 1120
+ },
+ "selectedText": null,
+ "revision": 2,
+ "nodes": [
+  {
+   "title": "cua Electron fixture",
+   "value": null,
+   "identifier": null,
+   "actionDescriptions": [
+    null
+   ],
+   "token": "t0",
+   "subrole": "AXStandardWindow",
+   "roleDescription": "표준 윈도우",
+   "description": null,
+   "valueType": null,
+   "actions": [
+    "AXRaise"
+   ],
+   "pid": 71196,
+   "frame": {
+    "y": 100,
+    "height": 560,
+    "width": 720,
+    "x": 140
+   },
+   "depth": 0,
+   "valueMarkdown": null,
+   "role": "AXWindow",
+   "children": 4,
+   "flags": {
+    "enabled": true,
+    "selected": false,
+    "settable": false,
+    "focusable": false,
+    "selectable": false,
+    "focused": false
+   }
+  },
+  {
+   "depth": 1,
+   "valueType": "string",
+   "valueMarkdown": null,
+   "identifier": null,
+   "children": 1,
+   "numberOfCharacters": 0,
+   "frame": {
+    "height": 528,
+    "x": 140,
+    "width": 720,
+    "y": 132
+   },
+   "domClassList": [
+    "RootView"
+   ],
+   "subrole": null,
+   "pid": 71196,
+   "description": "",
+   "flags": {
+    "focusable": true,
+    "focused": false,
+    "selectable": false,
+    "selected": false,
+    "settable": false,
+    "enabled": true
+   },
+   "role": "AXGroup",
+   "actions": [],
+   "roleDescription": "그룹",
+   "actionDescriptions": [],
+   "token": "t1",
+   "title": "cua Electron fixture",
+   "value": ""
+  },
+  {
+   "depth": 2,
+   "value": "",
+   "actions": [],
+   "valueType": "string",
+   "role": "AXGroup",
+   "flags": {
+    "selected": false,
+    "settable": false,
+    "focused": false,
+    "enabled": true,
+    "focusable": true,
+    "selectable": false
+   },
+   "actionDescriptions": [],
+   "description": "",
+   "valueMarkdown": null,
+   "subrole": null,
+   "pid": 71196,
+   "numberOfCharacters": 0,
+   "frame": {
+    "y": 132,
+    "x": 140,
+    "width": 720,
+    "height": 528
+   },
+   "domClassList": [
+    "NonClientView"
+   ],
+   "token": "t2",
+   "roleDescription": "그룹",
+   "children": 1,
+   "title": "",
+   "identifier": null
+  },
+  {
+   "frame": {
+    "x": 140,
+    "y": 132,
+    "height": 528,
+    "width": 720
+   },
+   "title": "",
+   "identifier": null,
+   "actions": [],
+   "flags": {
+    "focused": false,
+    "focusable": true,
+    "enabled": true,
+    "settable": false,
+    "selectable": false,
+    "selected": false
+   },
+   "token": "t3",
+   "valueType": "string",
+   "children": 1,
+   "role": "AXGroup",
+   "actionDescriptions": [],
+   "numberOfCharacters": 0,
+   "depth": 3,
+   "subrole": null,
+   "roleDescription": "그룹",
+   "valueMarkdown": null,
+   "domClassList": [
+    "NativeFrameViewMac"
+   ],
+   "description": "",
+   "pid": 71196,
+   "value": ""
+  },
+  {
+   "actionDescriptions": [],
+   "flags": {
+    "focused": false,
+    "selected": false,
+    "settable": false,
+    "selectable": false,
+    "focusable": true,
+    "enabled": true
+   },
+   "role": "AXGroup",
+   "frame": {
+    "height": 528,
+    "y": 132,
+    "x": 140,
+    "width": 720
+   },
+   "numberOfCharacters": 0,
+   "roleDescription": "그룹",
+   "identifier": null,
+   "actions": [],
+   "domClassList": [
+    "ClientView"
+   ],
+   "token": "t4",
+   "depth": 4,
+   "subrole": null,
+   "title": "",
+   "description": "",
+   "valueMarkdown": null,
+   "valueType": "string",
+   "pid": 71196,
+   "value": "",
+   "children": 1
+  },
+  {
+   "role": "AXGroup",
+   "children": 2,
+   "subrole": null,
+   "valueType": "string",
+   "flags": {
+    "enabled": true,
+    "selected": false,
+    "settable": false,
+    "focusable": true,
+    "focused": false,
+    "selectable": false
+   },
+   "description": "",
+   "numberOfCharacters": 0,
+   "roleDescription": "그룹",
+   "identifier": null,
+   "domClassList": [
+    "View"
+   ],
+   "token": "t5",
+   "pid": 71196,
+   "title": "",
+   "frame": {
+    "width": 720,
+    "x": 140,
+    "y": 132,
+    "height": 528
+   },
+   "value": "",
+   "valueMarkdown": null,
+   "actions": [],
+   "depth": 5,
+   "actionDescriptions": []
+  },
+  {
+   "title": "",
+   "value": "",
+   "roleDescription": "그룹",
+   "actionDescriptions": [],
+   "valueType": "string",
+   "pid": 71196,
+   "frame": {
+    "width": 720,
+    "height": 528,
+    "x": 140,
+    "y": 132
+   },
+   "domClassList": [
+    "View"
+   ],
+   "children": 1,
+   "flags": {
+    "selectable": false,
+    "settable": false,
+    "enabled": true,
+    "focused": false,
+    "selected": false,
+    "focusable": true
+   },
+   "token": "t6",
+   "valueMarkdown": null,
+   "numberOfCharacters": 0,
+   "depth": 6,
+   "role": "AXGroup",
+   "identifier": null,
+   "subrole": null,
+   "description": "",
+   "actions": []
+  },
+  {
+   "children": 1,
+   "frame": {
+    "width": 720,
+    "height": 528,
+    "y": 132,
+    "x": 140
+   },
+   "url": "file:///Users/new/Library/Caches/cua-harness/electron-fixture/44.9.0-23c8b77691d0/cua%20Electron%20Fixture.app/Contents/Resources/app/index.html",
+   "subrole": null,
+   "value": "",
+   "title": "cua Electron fixture",
+   "actions": [
+    "AXShowMenu",
+    "AXScrollToVisible"
+   ],
+   "description": "",
+   "numberOfCharacters": 0,
+   "pid": 71196,
+   "actionDescriptions": [
+    null,
+    null
+   ],
+   "depth": 7,
+   "flags": {
+    "focusable": true,
+    "selectable": false,
+    "expanded": false,
+    "disclosable": false,
+    "enabled": true,
+    "selected": false,
+    "focused": false,
+    "settable": false
+   },
+   "token": "t7",
+   "identifier": null,
+   "role": "AXWebArea",
+   "valueType": "string",
+   "valueMarkdown": null,
+   "domClassList": [],
+   "roleDescription": "HTML 콘텐츠"
+  },
+  {
+   "numberOfCharacters": 0,
+   "role": "AXGroup",
+   "roleDescription": "main",
+   "pid": 71196,
+   "depth": 8,
+   "subrole": "AXLandmarkMain",
+   "valueMarkdown": null,
+   "identifier": null,
+   "description": "",
+   "frame": {
+    "x": 156,
+    "height": 279,
+    "y": 148,
+    "width": 688
+   },
+   "children": 4,
+   "domClassList": [],
+   "value": "",
+   "actionDescriptions": [
+    null,
+    null
+   ],
+   "actions": [
+    "AXShowMenu",
+    "AXScrollToVisible"
+   ],
+   "title": "",
+   "token": "t8",
+   "valueType": "string",
+   "flags": {
+    "focused": false,
+    "selected": false,
+    "focusable": false,
+    "settable": false,
+    "disclosable": false,
+    "expanded": false,
+    "selectable": false,
+    "enabled": true
+   }
+  },
+  {
+   "title": "",
+   "frame": {
+    "y": 148,
+    "height": 99,
+    "x": 156,
+    "width": 426
+   },
+   "children": 0,
+   "numberOfCharacters": 0,
+   "domClassList": [],
+   "flags": {
+    "focusable": true,
+    "settable": true,
+    "focused": false,
+    "selected": false,
+    "selectable": false,
+    "enabled": true,
+    "expanded": false,
+    "disclosable": false
+   },
+   "token": "t9",
+   "description": "Fixture text",
+   "actionDescriptions": [
+    null,
+    null,
+    null
+   ],
+   "actions": [
+    "AXPress",
+    "AXShowMenu",
+    "AXScrollToVisible"
+   ],
+   "depth": 9,
+   "valueMarkdown": null,
+   "valueType": "string",
+   "pid": 71196,
+   "role": "AXTextArea",
+   "subrole": null,
+   "roleDescription": "텍스트 엔트리 영역",
+   "value": "",
+   "identifier": null
+  },
+  {
+   "actions": [
+    "AXPress",
+    "AXShowMenu",
+    "AXScrollToVisible"
+   ],
+   "value": "",
+   "actionDescriptions": [
+    null,
+    null,
+    null
+   ],
+   "valueType": "string",
+   "identifier": null,
+   "frame": {
+    "height": 104,
+    "y": 259,
+    "x": 156,
+    "width": 420
+   },
+   "numberOfCharacters": 0,
+   "title": "",
+   "valueMarkdown": null,
+   "pid": 71196,
+   "depth": 9,
+   "token": "t10",
+   "children": 6,
+   "role": "AXList",
+   "roleDescription": "목록 상자",
+   "flags": {
+    "disclosable": false,
+    "focused": false,
+    "selected": false,
+    "settable": false,
+    "selectable": false,
+    "expanded": false,
+    "focusable": true,
+    "enabled": true
+   },
+   "subrole": null,
+   "domClassList": [],
+   "description": "Fixture list"
+  },
+  {
+   "flags": {
+    "enabled": true,
+    "selected": false,
+    "settable": false,
+    "selectable": false,
+    "focused": false,
+    "focusable": true,
+    "disclosable": false,
+    "expanded": false
+   },
+   "roleDescription": "텍스트",
+   "role": "AXStaticText",
+   "value": "Alpha",
+   "children": 0,
+   "identifier": null,
+   "domClassList": [],
+   "valueType": "string",
+   "depth": 10,
+   "actions": [
+    "AXPress",
+    "AXShowMenu",
+    "AXScrollToVisible"
+   ],
+   "pid": 71196,
+   "subrole": null,
+   "title": "",
+   "token": "t11",
+   "description": "",
+   "numberOfCharacters": 0,
+   "actionDescriptions": [
+    null,
+    null,
+    null
+   ],
+   "frame": {
+    "x": 157,
+    "y": 260,
+    "width": 418,
+    "height": 17
+   },
+   "valueMarkdown": null
+  },
+  {
+   "token": "t12",
+   "subrole": null,
+   "pid": 71196,
+   "valueMarkdown": null,
+   "roleDescription": "텍스트",
+   "description": "",
+   "valueType": "string",
+   "frame": {
+    "x": 157,
+    "height": 17,
+    "y": 277,
+    "width": 418
+   },
+   "value": "Bravo",
+   "identifier": null,
+   "depth": 10,
+   "flags": {
+    "selected": false,
+    "settable": false,
+    "enabled": true,
+    "focused": false,
+    "selectable": false,
+    "disclosable": false,
+    "focusable": true,
+    "expanded": false
+   },
+   "actions": [
+    "AXPress",
+    "AXShowMenu",
+    "AXScrollToVisible"
+   ],
+   "children": 0,
+   "numberOfCharacters": 0,
+   "actionDescriptions": [
+    null,
+    null,
+    null
+   ],
+   "title": "",
+   "domClassList": [],
+   "role": "AXStaticText"
+  },
+  {
+   "actionDescriptions": [
+    null,
+    null,
+    null
+   ],
+   "title": "",
+   "valueMarkdown": null,
+   "token": "t13",
+   "value": "Charlie",
+   "description": "",
+   "valueType": "string",
+   "numberOfCharacters": 0,
+   "frame": {
+    "width": 418,
+    "x": 157,
+    "y": 294,
+    "height": 17
+   },
+   "roleDescription": "텍스트",
+   "role": "AXStaticText",
+   "children": 0,
+   "depth": 10,
+   "pid": 71196,
+   "flags": {
+    "settable": false,
+    "enabled": true,
+    "selectable": false,
+    "disclosable": false,
+    "focusable": true,
+    "expanded": false,
+    "selected": false,
+    "focused": false
+   },
+   "identifier": null,
+   "subrole": null,
+   "actions": [
+    "AXPress",
+    "AXShowMenu",
+    "AXScrollToVisible"
+   ],
+   "domClassList": []
+  },
+  {
+   "roleDescription": "텍스트",
+   "subrole": null,
+   "role": "AXStaticText",
+   "actions": [
+    "AXPress",
+    "AXShowMenu",
+    "AXScrollToVisible"
+   ],
+   "children": 0,
+   "value": "Delta",
+   "valueMarkdown": null,
+   "valueType": "string",
+   "identifier": null,
+   "frame": {
+    "height": 17,
+    "y": 311,
+    "x": 157,
+    "width": 418
+   },
+   "pid": 71196,
+   "numberOfCharacters": 0,
+   "description": "",
+   "token": "t14",
+   "flags": {
+    "enabled": true,
+    "selected": false,
+    "selectable": false,
+    "focusable": true,
+    "settable": false,
+    "expanded": false,
+    "disclosable": false,
+    "focused": false
+   },
+   "domClassList": [],
+   "actionDescriptions": [
+    null,
+    null,
+    null
+   ],
+   "depth": 10,
+   "title": ""
+  },
+  {
+   "numberOfCharacters": 0,
+   "actions": [
+    "AXPress",
+    "AXShowMenu",
+    "AXScrollToVisible"
+   ],
+   "subrole": null,
+   "description": "",
+   "value": "Echo",
+   "children": 0,
+   "actionDescriptions": [
+    null,
+    null,
+    null
+   ],
+   "roleDescription": "텍스트",
+   "role": "AXStaticText",
+   "token": "t15",
+   "valueType": "string",
+   "flags": {
+    "expanded": false,
+    "selected": false,
+    "settable": false,
+    "focused": false,
+    "enabled": true,
+    "selectable": false,
+    "focusable": true,
+    "disclosable": false
+   },
+   "pid": 71196,
+   "frame": {
+    "x": 157,
+    "y": 328,
+    "width": 418,
+    "height": 17
+   },
+   "depth": 10,
+   "valueMarkdown": null,
+   "domClassList": [],
+   "identifier": null,
+   "title": ""
+  },
+  {
+   "identifier": null,
+   "domClassList": [],
+   "numberOfCharacters": 0,
+   "flags": {
+    "enabled": true,
+    "focusable": true,
+    "disclosable": false,
+    "settable": false,
+    "expanded": false,
+    "focused": false,
+    "selected": false,
+    "selectable": false
+   },
+   "description": "",
+   "children": 0,
+   "title": "",
+   "actionDescriptions": [
+    null,
+    null,
+    null
+   ],
+   "token": "t16",
+   "actions": [
+    "AXPress",
+    "AXShowMenu",
+    "AXScrollToVisible"
+   ],
+   "role": "AXStaticText",
+   "value": "Foxtrot",
+   "frame": {
+    "width": 418,
+    "x": 157,
+    "y": 345,
+    "height": 17
+   },
+   "valueMarkdown": null,
+   "roleDescription": "텍스트",
+   "subrole": null,
+   "depth": 10,
+   "pid": 71196,
+   "valueType": "string"
+  },
+  {
+   "token": "t17",
+   "pid": 71196,
+   "title": "Fixture button",
+   "subrole": null,
+   "children": 0,
+   "numberOfCharacters": 0,
+   "value": "",
+   "actionDescriptions": [
+    null,
+    null,
+    null
+   ],
+   "actions": [
+    "AXPress",
+    "AXShowMenu",
+    "AXScrollToVisible"
+   ],
+   "frame": {
+    "height": 22,
+    "width": 98,
+    "y": 375,
+    "x": 156
+   },
+   "depth": 9,
+   "roleDescription": "버튼",
+   "domClassList": [],
+   "identifier": null,
+   "valueType": "string",
+   "flags": {
+    "disclosable": false,
+    "settable": false,
+    "focused": true,
+    "enabled": true,
+    "selectable": false,
+    "focusable": true,
+    "expanded": false,
+    "selected": false
+   },
+   "role": "AXButton",
+   "description": "",
+   "valueMarkdown": null
+  },
+  {
+   "pid": 71196,
+   "valueType": "string",
+   "frame": {
+    "width": 688,
+    "y": 411,
+    "x": 156,
+    "height": 16
+   },
+   "actionDescriptions": [
+    null,
+    null
+   ],
+   "roleDescription": "상태",
+   "children": 1,
+   "actions": [
+    "AXShowMenu",
+    "AXScrollToVisible"
+   ],
+   "role": "AXGroup",
+   "subrole": "AXApplicationStatus",
+   "numberOfCharacters": 0,
+   "valueMarkdown": null,
+   "title": "",
+   "value": "",
+   "domClassList": [],
+   "identifier": null,
+   "token": "t18",
+   "depth": 9,
+   "description": "Fixture status",
+   "flags": {
+    "settable": false,
+    "focused": false,
+    "expanded": false,
+    "selectable": false,
+    "disclosable": false,
+    "selected": false,
+    "enabled": true,
+    "focusable": false
+   }
+  },
+  {
+   "valueType": "string",
+   "children": 0,
+   "subrole": null,
+   "token": "t32",
+   "depth": 10,
+   "role": "AXStaticText",
+   "value": "Pressed 1 time",
+   "actions": [
+    "AXShowMenu",
+    "AXScrollToVisible"
+   ],
+   "valueMarkdown": null,
+   "flags": {
+    "focused": false,
+    "selected": false,
+    "settable": false,
+    "disclosable": false,
+    "focusable": false,
+    "expanded": false,
+    "enabled": true,
+    "selectable": false
+   },
+   "identifier": null,
+   "frame": {
+    "x": 156,
+    "y": 411,
+    "height": 16,
+    "width": 85
+   },
+   "title": "",
+   "numberOfCharacters": 0,
+   "domClassList": [],
+   "actionDescriptions": [
+    null,
+    null
+   ],
+   "description": "",
+   "pid": 71196,
+   "roleDescription": "텍스트"
+  },
+  {
+   "domClassList": [
+    "View"
+   ],
+   "role": "AXGroup",
+   "token": "t20",
+   "roleDescription": "그룹",
+   "title": "",
+   "identifier": null,
+   "actionDescriptions": [],
+   "numberOfCharacters": 0,
+   "description": "",
+   "depth": 6,
+   "value": "",
+   "actions": [],
+   "flags": {
+    "enabled": true,
+    "selected": false,
+    "focused": false,
+    "selectable": false,
+    "focusable": true,
+    "settable": false
+   },
+   "pid": 71196,
+   "valueType": "string",
+   "valueMarkdown": null,
+   "frame": {
+    "height": 528,
+    "x": 140,
+    "y": 132,
+    "width": 720
+   },
+   "children": 0,
+   "subrole": null
+  },
+  {
+   "valueType": null,
+   "frame": {
+    "y": 108,
+    "x": 148,
+    "width": 16,
+    "height": 16
+   },
+   "children": 0,
+   "actionDescriptions": [
+    null
+   ],
+   "title": null,
+   "depth": 1,
+   "subrole": "AXCloseButton",
+   "valueMarkdown": null,
+   "actions": [
+    "AXPress"
+   ],
+   "description": null,
+   "identifier": null,
+   "token": "t21",
+   "flags": {
+    "selectable": false,
+    "enabled": true,
+    "settable": false,
+    "focused": false,
+    "focusable": false,
+    "selected": false
+   },
+   "roleDescription": "닫기 버튼",
+   "pid": 71196,
+   "role": "AXButton",
+   "value": null
+  },
+  {
+   "roleDescription": "전체 화면 버튼",
+   "description": null,
+   "identifier": null,
+   "children": 1,
+   "subrole": "AXFullScreenButton",
+   "token": "t22",
+   "valueType": null,
+   "actions": [
+    "AXPress",
+    "AXZoomWindow",
+    "AXShowMenu"
+   ],
+   "depth": 1,
+   "valueMarkdown": null,
+   "value": null,
+   "flags": {
+    "focusable": false,
+    "selectable": false,
+    "selected": false,
+    "enabled": true,
+    "settable": false,
+    "focused": false
+   },
+   "title": null,
+   "frame": {
+    "y": 108,
+    "width": 16,
+    "height": 16,
+    "x": 194
+   },
+   "help": "이 버튼을 누르면 윈도우를 확대/축소합니다.",
+   "actionDescriptions": [
+    null,
+    "윈도우 확대/축소",
+    null
+   ],
+   "pid": 71196,
+   "role": "AXButton"
+  },
+  {
+   "role": "AXGroup",
+   "roleDescription": "그룹",
+   "pid": 71196,
+   "title": null,
+   "flags": {
+    "focusable": false,
+    "selectable": false,
+    "focused": false,
+    "enabled": true,
+    "selected": false,
+    "settable": false
+   },
+   "frame": {
+    "height": 14,
+    "x": 195,
+    "y": 109,
+    "width": 14
+   },
+   "token": "t23",
+   "identifier": null,
+   "value": null,
+   "valueMarkdown": null,
+   "children": 1,
+   "depth": 2,
+   "description": null,
+   "actions": [],
+   "subrole": null,
+   "actionDescriptions": [],
+   "valueType": null
+  },
+  {
+   "flags": {
+    "enabled": true,
+    "selectable": false,
+    "settable": false,
+    "focused": false,
+    "focusable": false,
+    "selected": false
+   },
+   "actions": [],
+   "description": null,
+   "value": null,
+   "identifier": null,
+   "title": null,
+   "frame": {
+    "y": 109,
+    "x": 195,
+    "height": 14,
+    "width": 14
+   },
+   "roleDescription": "그룹",
+   "pid": 71196,
+   "token": "t24",
+   "role": "AXGroup",
+   "valueType": null,
+   "children": 0,
+   "actionDescriptions": [],
+   "depth": 3,
+   "subrole": null,
+   "valueMarkdown": null
+  },
+  {
+   "valueType": null,
+   "children": 0,
+   "token": "t25",
+   "identifier": null,
+   "value": null,
+   "flags": {
+    "enabled": true,
+    "focusable": false,
+    "selectable": false,
+    "selected": false,
+    "focused": false,
+    "settable": false
+   },
+   "depth": 1,
+   "frame": {
+    "height": 16,
+    "y": 108,
+    "x": 171,
+    "width": 16
+   },
+   "subrole": "AXMinimizeButton",
+   "actions": [
+    "AXPress"
+   ],
+   "pid": 71196,
+   "valueMarkdown": null,
+   "title": null,
+   "actionDescriptions": [
+    null
+   ],
+   "roleDescription": "최소화 버튼",
+   "role": "AXButton",
+   "description": null
+  }
+ ],
+ "app": {
+  "catalyst": false,
+  "displayName": "cua Electron Fixture",
+  "appPath": "/Users/new/Library/Caches/cua-harness/electron-fixture/44.9.0-23c8b77691d0/cua Electron Fixture.app",
+  "pid": 71196,
+  "bundleIdentifier": "io.github.ssfskim.cua.fixture.electron"
+ }
+}

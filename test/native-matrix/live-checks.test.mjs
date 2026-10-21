@@ -115,6 +115,14 @@ test('minimizedVerdict: the observation, the refusals and the Accessibility rout
   // The focus click is skipped in a minimized window (62235d71): set_value and select_text post nothing.
   assert.deepEqual(minimizedVerdict({...steps, setValue: {...steps.setValue, posted: true}}).failed, ['setValueNoClick']);
   assert.deepEqual(minimizedVerdict({...steps, selectText: {...steps.selectText, posted: true}}).failed, ['selectTextNoClick']);
+  // The hold's live reading (m2a/live/minimized/result.json): route 1 (an Accessibility write) has its own action
+  // interval, so `posted` is no click; only the pointer route (3) is. selectText's selection did not match there.
+  const live = {...steps,
+    setValue: {ok: true, route: 1, posted: true, valueMatches: true, minimizedBefore: true, minimizedAfter: true},
+    selectText: {ok: true, route: 1, posted: true, selectionMatches: false, minimizedBefore: true, minimizedAfter: true}};
+  assert.deepEqual(minimizedVerdict(live).failed, ['selectTextActs'], 'no click on route 1');
+  assert.deepEqual(minimizedVerdict({...steps, setValue: {...steps.setValue, route: 3, posted: true}}).failed, ['setValueNoClick'], 'route 3 is a click');
+  assert.deepEqual(minimizedVerdict({...steps, selectText: {...steps.selectText, route: 3, posted: true}}).failed, ['selectTextNoClick']);
   // The element scroll's refusal is required: a scroll posted into a minimized window fails the check.
   assert.deepEqual(minimizedVerdict({...steps, scroll: measured({ok: true, route: 3, posted: true})}).failed, ['scrollRefused']);
   assert.deepEqual(minimizedVerdict({...steps, scroll: undefined}).failed, ['scrollRefused']);

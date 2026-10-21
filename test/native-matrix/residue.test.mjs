@@ -117,7 +117,7 @@ test('every residue cell\'s live result, adapted, is a conforming CellResult tha
   assert.deepEqual(validateCellResult(refused), []);
   const incomplete = asCellResult('route4', {device: 'mini', started: '2026-10-21T10:00:00.000Z', finished: '2026-10-21T10:00:01.000Z', problems: ['the route4 check stopped: x'], complete: false,
     check: DRY_ANSWERS['live-device.mjs route4']});
-  assert.equal(incomplete.verdict, 'fail', 'a valid passing row in an incomplete cell is not a pass');
+  assert.equal(incomplete.verdict, 'no-verdict', 'an incomplete cell is no-verdict, never a pass or a plain fail');
 });
 
 // ---- route4 ------------------------------------------------------------------------------------------------------------

@@ -499,6 +499,7 @@ const approvalAsk = (runtime, id, app) => runtime.emit({jsonrpc: '2.0', id, meth
   mode: 'form', requestedSchema: {type: 'object', properties: {}}, _meta: {connector_id: 'computer-use', tool_params: {app}}}});
 const answerTo = (runtime, id) => runtime.next(m => m.id === id && m.method === undefined, {label: `the answer to ${id}`});
 const asks = h => h.client.frames.filter(m => m.method === 'elicitation/create').map(m => m.params._meta.tool_params.app);
+const clientCopy = (h, app) => h.client.next(m => m.method === 'elicitation/create' && m.params._meta.tool_params.app === app, {label: `the client's ask for ${app}`});
 
 test('an app accepted and an app declined before an idle stop are answered from memory after it: the connection\'s, not the runtime\'s', async t => {
   const h = idleHarness();
@@ -509,11 +510,10 @@ test('an app accepted and an app declined before an idle stop are answered from 
   const [first] = h.runtimes;
   const call = await first.nextCall('js');
   approvalAsk(first, 1, 'org.gnome.gedit');
-  h.client.send({jsonrpc: '2.0', id: (await h.client.next(m => m.id === 1 && m.method === 'elicitation/create')).id, result: {action: 'accept', content: {}}});
+  h.client.send({jsonrpc: '2.0', id: (await clientCopy(h, 'org.gnome.gedit')).id, result: {action: 'accept', content: {}}});
   await answerTo(first, 1);
   approvalAsk(first, 2, 'org.gnome.Terminal');
-  await h.client.next(m => m.id === 2 && m.method === 'elicitation/create');
-  h.client.send({jsonrpc: '2.0', id: 2, result: {action: 'decline'}});
+  h.client.send({jsonrpc: '2.0', id: (await clientCopy(h, 'org.gnome.Terminal')).id, result: {action: 'decline'}});
   await answerTo(first, 2);
   first.text(call, 'asked');
   await js.response;
@@ -534,7 +534,7 @@ test('an app accepted and an app declined before an idle stop are answered from 
   assert.deepEqual(asks(h), ['org.gnome.gedit', 'org.gnome.Terminal'], 'nothing was asked after the stop');
 });
 
-test('an answer that arrives after its runtime stopped is still the connection\'s, and never reaches the next runtime', async t => {
+test('a fresh runtime reusing a stopped runtime\'s request id is its own request: the late answer is recorded for its own app and never reaches the new one', async t => {
   const h = idleHarness();
   t.after(async () => { h.client.eof(); await h.server.closed; });
   await h.client.request('initialize', INIT).response;
@@ -543,7 +543,7 @@ test('an answer that arrives after its runtime stopped is still the connection\'
   const [first] = h.runtimes;
   const call = await first.nextCall('js');
   approvalAsk(first, 1, 'org.gnome.gedit');
-  await h.client.next(m => m.id === 1 && m.method === 'elicitation/create');
+  const geditAsk = await h.client.next(m => m.method === 'elicitation/create' && m.params._meta.tool_params.app === 'org.gnome.gedit');
   first.text(call, 'the cell ended while the client still decides');
   await js.response;
   h.clock.fire();
@@ -554,7 +554,46 @@ test('an answer that arrives after its runtime stopped is still the connection\'
   await until('a fresh runtime', () => h.runtimes.length === 2);
   const second = h.runtimes[1];
   const call2 = await second.nextCall('js');
-  h.client.send({jsonrpc: '2.0', id: 1, result: {action: 'accept', content: {}}});
+  // The new runtime's ask, with the same id, arrives before the old one's answer.
+  approvalAsk(second, 1, 'org.gnome.Terminal');
+  const terminalAsk = await h.client.next(m => m.method === 'elicitation/create' && m.params._meta.tool_params.app === 'org.gnome.Terminal');
+  assert.notEqual(terminalAsk.id, geditAsk.id, 'the client sees two requests');
+  h.client.send({jsonrpc: '2.0', id: geditAsk.id, result: {action: 'accept', content: {}}});
+  await tick(20);
+  assert.equal(second.sent.filter(m => m.id === 1 && m.method === undefined).length, 0, 'gedit\'s answer did not answer the Terminal request');
+  h.client.send({jsonrpc: '2.0', id: terminalAsk.id, result: {action: 'decline'}});
+  assert.deepEqual((await answerTo(second, 1)).result, {action: 'decline'}, 'the Terminal request got the Terminal answer');
+
+  approvalAsk(second, 2, 'org.gnome.gedit');
+  assert.deepEqual((await answerTo(second, 2)).result, {action: 'accept', content: {source: 'computer-use-persisted-state'}}, 'the late gedit answer was recorded for gedit');
+  approvalAsk(second, 3, 'org.gnome.Terminal');
+  assert.deepEqual((await answerTo(second, 3)).result, {action: 'decline', content: {source: 'computer-use-persisted-state'}}, 'Terminal stays declined');
+  second.text(call2, 'ok');
+  await again.response;
+  assert.deepEqual(asks(h), ['org.gnome.gedit', 'org.gnome.Terminal']);
+});
+
+test('an answer that arrives after its runtime stopped is still the connection\'s, and never reaches the next runtime', async t => {
+  const h = idleHarness();
+  t.after(async () => { h.client.eof(); await h.server.closed; });
+  await h.client.request('initialize', INIT).response;
+  const js = h.client.call('js', {code: 'ask'});
+  await until('the launch', () => h.runtimes.length === 1);
+  const [first] = h.runtimes;
+  const call = await first.nextCall('js');
+  approvalAsk(first, 1, 'org.gnome.gedit');
+  const asked = await clientCopy(h, 'org.gnome.gedit');
+  first.text(call, 'the cell ended while the client still decides');
+  await js.response;
+  h.clock.fire();
+  await answer(first, 'turn_ended', '{}');
+  await until('the idle stop', () => h.stops() === 1);
+
+  const again = h.client.call('js', {code: 'again'});
+  await until('a fresh runtime', () => h.runtimes.length === 2);
+  const second = h.runtimes[1];
+  const call2 = await second.nextCall('js');
+  h.client.send({jsonrpc: '2.0', id: asked.id, result: {action: 'accept', content: {}}});
   await tick(20);
   assert.equal(second.sent.filter(m => m.id === 1 && m.method === undefined).length, 0, 'the stopped runtime\'s id is not the new one\'s');
   approvalAsk(second, 1, 'org.gnome.gedit');

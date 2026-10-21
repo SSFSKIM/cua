@@ -34,8 +34,9 @@ function worker({answer = () => ACCEPT, memory = false} = {}) {
       const recalled = memory ? remembered.recall(message) : null;
       if (recalled) return {...recalled, _meta: null};
       asked.push(structuredClone(request));
-      const outcome = {ok: true, ...answer(request)};
-      if (memory) remembered.record(message, outcome);
+      const reply = answer(request);
+      const outcome = {ok: true, ...reply};
+      if (memory) remembered.record(message, {result: reply});
       const {ok, ...fields} = outcome;
       return fields;
     },

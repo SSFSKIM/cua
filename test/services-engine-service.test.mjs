@@ -84,8 +84,9 @@ async function session(t, {handlers = {}, answer = () => ({action: 'accept', con
       const recalled = memory.recall(message);
       if (recalled) return {...recalled, _meta: null};
       record.asked.push(structuredClone(request));
-      const outcome = {ok: true, ...answer(request)};
-      memory.record(message, outcome);
+      const reply = answer(request);
+      const outcome = {ok: true, ...reply};
+      memory.record(message, {result: reply});
       const {ok, ...fields} = outcome;
       return fields;
     },

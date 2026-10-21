@@ -30,9 +30,12 @@
 // - Control traffic is never queued behind JavaScript: cancellations and elicitation answers go straight upstream.
 // - js/js_reset results get their image MIME types corrected and token-bearing URLs redacted (surface.mjs); requests
 //   and error replies pass unchanged. Accepted app approvals get `_meta.persist`.
-// - The connection's approval memory (./approval-memory.mjs): a computer-use app approval the client accepted (with
-//   `_meta.persist`) or declined is answered here on its repeats, across idle stops and worker replacements, and never
-//   reaches the client again; an answer that arrives after its runtime stopped is remembered and not forwarded.
+// - Elicitations reach the client under the connection's own ids (cua-elicitation-<n>), translated back to the asking
+//   runtime's id on the answer, since a fresh runtime may reuse a stopped one's. The connection's approval memory
+//   (./approval-memory.mjs): a computer-use app approval the client accepted (with `_meta.persist`) or declined, in an
+//   answer the runtime takes, is answered here on its repeats, across idle stops and worker replacements, and never
+//   reaches the client again; an answer that arrives after its runtime stopped is remembered for its app and not
+//   forwarded.
 // - With `nativeEngine` (the launch's engine attestation, a macOS computer session's: src/runtime/launch.mjs), every
 //   js/js_reset result carries `_meta['cua/nativeEngine']`: the service's own when it set one (cua's engine, as its
 //   ping answered), else the launch's, which is how the vendor engine is attested (#117, EngineAttestation).
@@ -70,7 +73,7 @@ import {approvalMemory} from './approval-memory.mjs';
 
 const idKey = id => JSON.stringify(id);
 const PERSIST_MODES = ['session', 'none'];
-// #117 M3: an approval is remembered for its connection only (the REPL host's supervisor), so `always` would be a
+// #117 M3: an approval is remembered for its connection only (./approval-memory.mjs), so `always` would be a
 // silent no-op; it is refused with the owner's route instead: the plugin's Elicitation hook removes the asking, and a
 // stricter hook is where a veto lives.
 const PERSIST_ALWAYS_REFUSAL = 'CUA_SHIM_PERSIST=always is not supported: cua remembers an approval for its connection only. '
@@ -105,7 +108,13 @@ export function createServer({
   const upstreamPending = new Map();   // upstream ID -> {resolve, clientKey?}
   const upstreamIdOf = new Map();      // client ID key -> upstream ID, for cancellation
   const queuedWork = new Map();        // client ID key -> lifecycle ticket, for withdrawing queued work
-  const elicitations = new Map();      // runtime request ID key -> {params, stale} awaiting the client's answer
+  // The runtime's elicitations awaiting the client's answer, under ids of the connection's own (cua-elicitation-<n>):
+  // client id key -> {upstreamId, generation, params}. A runtime numbers its requests itself, so a fresh one (after an
+  // idle stop) may reuse a stopped one's id; the connection's ids never repeat, and an answer goes back only to the
+  // runtime generation that asked, under its own id.
+  const elicitations = new Map();
+  let elicitationCount = 0;
+  let generation = 0;                  // the running runtime's: an idle stop starts the next
   const approvals = approvalMemory();  // the connection's computer-use app approvals (./approval-memory.mjs)
   const localReplies = new Set();      // local tool replies still being computed (profiles_list may take a launch)
 
@@ -204,9 +213,8 @@ export function createServer({
       }
       if (terminal()) return;
       const teardown = await upstream.stop({budgetMs: teardownBudgetMs});
-      // What the stopped runtime asked is still the connection's to remember, but its answer has no runtime to go to:
-      // a fresh one numbers its own requests and may reuse the id.
-      for (const pending of elicitations.values()) pending.stale = true;
+      // What the stopped runtime asked is still the connection's to remember, but its answer has no runtime to go to.
+      generation++;
       if (!teardown) return;
       restarted = true;
       if (!teardown.confirmed) {
@@ -362,12 +370,13 @@ export function createServer({
     if (lifecycle.state === 'failed') return;
     const key = idKey(msg.id);
     const pending = elicitations.get(key);
+    if (!pending) return void upstream.send(msg);
     elicitations.delete(key);
-    if (pending && msg.result) msg = {...msg, result: persistAccepted(msg.result, persist)};
-    // The answer is the connection's even when the runtime, or the worker, that asked is gone by now.
-    if (pending) approvals.record(pending.params, msg.result ?? null);
-    if (pending?.stale) return;
-    upstream.send(msg);
+    if (msg.result) msg = {...msg, result: persistAccepted(msg.result, persist)};
+    // The answer is the connection's, for the app it was asked about, even when the runtime or worker that asked is gone.
+    approvals.record(pending.params, msg);
+    if (pending.generation !== generation) return;
+    upstream.send({...msg, id: pending.upstreamId});
   }
 
   // readline re-emits an input error on its interface, where an unhandled one would throw out of the stream before
@@ -392,7 +401,17 @@ export function createServer({
         // An app the connection already answered is answered from its memory; the client is not asked again.
         const remembered = approvals.recall(msg.params);
         if (remembered) return void upstream.send({jsonrpc: '2.0', id: msg.id, result: remembered});
-        elicitations.set(idKey(msg.id), {params: msg.params, stale: false});
+        const id = `cua-elicitation-${++elicitationCount}`;
+        elicitations.set(idKey(id), {upstreamId: msg.id, generation, params: msg.params});
+        return write({...msg, id});
+      }
+      // The runtime withdrawing an elicitation it asked (its client-closed drain) names it by the client's id.
+      if (msg.method === 'notifications/cancelled') {
+        const entry = [...elicitations].find(([, e]) => e.generation === generation && idKey(e.upstreamId) === idKey(msg.params?.requestId));
+        if (entry) {
+          elicitations.delete(entry[0]);
+          return write({...msg, params: {...msg.params, requestId: JSON.parse(entry[0])}});
+        }
       }
       return write(msg);
     }

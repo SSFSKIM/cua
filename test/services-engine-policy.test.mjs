@@ -36,8 +36,9 @@ function worker({answer = () => ({action: 'accept', content: null, _meta: {persi
       if (recalled) return {ok: true, ...recalled, _meta: null};
     }
     asked.push(structuredClone(message));
-    const outcome = {ok: true, ...answer(message)};
-    if (memory) remembered.record({_meta: message.meta}, outcome);
+    const reply = answer(message);
+      const outcome = {ok: true, ...reply};
+    if (memory) remembered.record({_meta: message.meta}, {result: reply});
     return outcome;
   };
   const nodeRepl = {

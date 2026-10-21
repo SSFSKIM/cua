@@ -7,11 +7,15 @@
 // sandbox-policy change, a start timeout, its death), and an approval that vanished with either would ask again
 // mid-session.
 //
-// A decline is remembered; an accept only when the answer carries `_meta.persist` (`session`, or `always` from a
-// client that sends its own, kept for the connection only), which the connection adds unless CUA_SHIM_PERSIST=none;
-// a cancel, an error reply or a malformed answer is not an answer and asks again. A remembered answer carries
+// Only an answer the runtime takes is an answer: the client's whole reply is checked with the rule cua's host applies to
+// it (src/repl-host/elicitation.mjs elicitationOutcome: an error, even beside a result, fails; so does an unknown action,
+// or content or _meta that is not an object), so nothing the asking request failed on is remembered. Of those, a decline
+// is remembered; an accept only when it carries `_meta.persist` (`session`, or `always` from a client that sends its
+// own, kept for the connection only), which the connection adds unless CUA_SHIM_PERSIST=none; a cancel asks again. A remembered answer carries
 // `content.source: "computer-use-persisted-state"`, the vendor host's mark, which the vendor's policy reads as "no one
 // was asked". Nothing persists beyond the connection.
+import {elicitationOutcome} from '../repl-host/elicitation.mjs';
+
 export const COMPUTER_USE_CONNECTOR = 'computer-use';
 export const PERSISTED_STATE_SOURCE = 'computer-use-persisted-state';
 const REMEMBERED_PERSIST = ['session', 'always'];
@@ -27,7 +31,7 @@ export function approvalKey(params) {
 }
 
 // One connection's memory: recall(params) -> the MCP result to answer a remembered app with, or null to ask the client;
-// record(params, result) takes the result the client's answer carries on to the runtime (null for an error reply).
+// record(params, reply) takes the client's JSON-RPC reply ({result} or {error}) as it goes on to the runtime.
 export function approvalMemory() {
   const answers = new Map();   // app -> 'accept' | 'decline'
   return {
@@ -35,11 +39,12 @@ export function approvalMemory() {
       const action = answers.get(approvalKey(params));
       return action ? {action, content: {source: PERSISTED_STATE_SOURCE}} : null;
     },
-    record(params, result) {
+    record(params, reply) {
       const app = approvalKey(params);
-      if (app === null || !isPlainObject(result)) return;
-      if (result.action === 'decline') answers.set(app, 'decline');
-      else if (result.action === 'accept' && isPlainObject(result._meta) && REMEMBERED_PERSIST.includes(result._meta.persist)) answers.set(app, 'accept');
+      const outcome = elicitationOutcome(reply);
+      if (app === null || !outcome.ok) return;
+      if (outcome.action === 'decline') answers.set(app, 'decline');
+      else if (outcome.action === 'accept' && REMEMBERED_PERSIST.includes(outcome._meta?.persist)) answers.set(app, 'accept');
     },
   };
 }

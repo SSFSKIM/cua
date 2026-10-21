@@ -11,7 +11,8 @@
 //                                      cua's lane of the menu check: the run's TextEdit behind the run's Finder window,
 //                                      each menu item's press with M2a.2's spikeMenuActivation switch off (the default) or on
 //   paste --run <dir>                  the paste check: a plain and a Markdown paste and type_text under Korean 2-Set into
-//                                      the run's TextEdit behind the run's Finder window; the owner's clipboard compared
+//                                      the run's TextEdit behind the run's Finder window, then the HID composition row in
+//                                      its two variants with that TextEdit in front; the owner's clipboard compared
 //                                      before and after here (only whether it is the same leaves)
 //   enablement --run <dir>             two connections, one after the other, observing the run's Chrome for Testing
 //   input-source                       the owner's source and per-context preference saved, Korean 2-Set selected
@@ -27,8 +28,9 @@
 //                                      an interrupt or a timeout, and as `cleanup`
 //
 // What leaves the device: booleans, counts, element counts, error names and the engine's bounded sentences,
-// input-source ids, bundle ids of apps that activated. No observation's text, title or value, no screenshot (each is
-// removed as soon as its answer is in), no pid of an app the run does not own.
+// input-source ids, bundle ids of apps that activated, the composition row's value of the run's own emptied document.
+// No other observation's text, title or value, no screenshot (each is removed as soon as its answer is in), no pid of
+// an app the run does not own.
 import {execFileSync, spawn} from 'node:child_process';
 import {createHash, randomBytes} from 'node:crypto';
 import * as fs from 'node:fs';
@@ -297,6 +299,10 @@ const ALERT_READ_DEADLINE_MS = 5_000;
 const ALERT_TEXT_CHARS = 500;
 // The composition row's keys (MAWS P4-B2): r then k, which Korean 2-Set composes to 가; then a Return to commit.
 export const COMPOSITION_KEYS = 'rk';
+// The row's two variants, in order: each key down and up carrying its character's string (the probe's default, as
+// type_text keys), then the same key codes and flags with no string (`--key-codes-only`), whose reading comes from the
+// key codes through the input method alone.
+export const COMPOSITION_VARIANTS = Object.freeze(['unicode', 'keyCodesOnly']);
 
 // Thrown to stop the paste section once something the harness must not act past is seen (an alert, a step that
 // outlived its bound); the steps so far are kept.
@@ -408,14 +414,25 @@ async function pasteSteps({record, user, client, io, screenshots, steps, userInF
   return null;
 }
 
-// The HID composition row (MAWS P4-B2; a measurement only, no verdict on cua): inside the Korean window, the scene's
-// document emptied through the engine (set_value, Accessibility on the run's TextEdit), TextEdit brought to the front,
-// then `--probe keystroke … rk` at the HID tap, which goes to whatever is in front. The hard guard right before each
-// post: lsappinfo's frontmost is the run's TextEdit, CGWindowList's front window is the scene window, and the engine's
-// read of TextEdit's key window is the scene window (compositionGuard); failing it, nothing is posted. The probe
-// re-checks the front window before every key (status 4 when it is not the named one). The value is read back through
-// the engine on the run's TextEdit only, before and after a commit Return posted the same guarded way.
+// The HID composition row (MAWS P4-B2, the Decision Log's "M2b pre-flight" item 1; a measurement only, no verdict on
+// cua): inside the Korean window, once per variant (COMPOSITION_VARIANTS), each from a known state of its own: the
+// scene's document emptied through the engine (set_value, Accessibility on the run's TextEdit) and read back empty,
+// TextEdit brought to the front, the source and the layout it resolves to read, then `--probe keystroke … rk` at the
+// HID tap, which goes to whatever is in front. The hard guard right before each post: lsappinfo's frontmost is the
+// run's TextEdit, CGWindowList's front window is the scene window, and the engine's read of TextEdit's key window is
+// the scene window (compositionGuard); failing it, nothing is posted. The probe re-checks the front window before
+// every key (status 4 when it is not the named one). The value is read back through the engine on the run's TextEdit
+// only, before and after a commit Return posted the same guarded way in the same variant. The probe's JSON is kept as
+// it printed it (the layout it keyed through, each press's key code, flags and string); `keysUnmodified` says whether
+// every press went without a modifier, since a layout that keys r and k only under one (the 2-Set Hangul layout's
+// Option layer) is not the plain keys the vendor's pressKey posts.
 async function hidComposition({record, client, io, observe, watchAlerts}) {
+  const variants = {};
+  for (const variant of COMPOSITION_VARIANTS) variants[variant] = await compositionVariant({variant, record, client, io, observe, watchAlerts});
+  return {variants, markedText: 'not readable: the engine\'s observation carries no AXMarkedTextRange'};
+}
+
+async function compositionVariant({variant, record, client, io, observe, watchAlerts}) {
   const app = record.app, row = {};
   let shot = await observe();
   const emptied = await attempt(() => client.execute('set_value', {app, element: textArea(shot).token, value: ''}, {lineage: shot.lineage}));
@@ -423,8 +440,10 @@ async function hidComposition({record, client, io, observe, watchAlerts}) {
   row.emptied = emptied.ok && textArea(shot)?.value === '';
   if (!row.emptied) return {...row, skipped: 'the scene document could not be emptied'};
   row.activated = (await io.activate('textedit'))?.ok === true;
-  await watchAlerts('before hidComposition');
+  await watchAlerts(`before hidComposition ${variant}`);
+  row.source = io.probe(['input-source', 'current'])?.id ?? null;
   row.layout = io.keyboardLayout();
+  const flags = variant === 'keyCodesOnly' ? ['--key-codes-only'] : [];
   const post = async text => {
     const observed = (await observe()).window;
     const top = io.frontWindow()?.topWindow ?? null;
@@ -432,7 +451,7 @@ async function hidComposition({record, client, io, observe, watchAlerts}) {
     const guard = compositionGuard({frontmost, topWindow: top, observedWindow: observed, record});
     if (!guard.post) return {skipped: guard.reason, guard};
     const b = top.bounds;
-    const args = ['keystroke', '--user-pid', String(record.pid), '--user-bounds', `${b.x},${b.y},${b.width},${b.height}`, text];
+    const args = ['keystroke', ...flags, '--user-pid', String(record.pid), '--user-bounds', `${b.x},${b.y},${b.width},${b.height}`, text];
     const output = io.probe(args);
     const after = io.frontmost();
     const topAfter = io.frontWindow()?.topWindow ?? null;
@@ -441,8 +460,9 @@ async function hidComposition({record, client, io, observe, watchAlerts}) {
   };
   row.keys = await post(COMPOSITION_KEYS);
   if (row.keys.skipped) return {...row, skipped: row.keys.skipped};
+  const presses = row.keys.output?.presses;
+  row.keysUnmodified = Array.isArray(presses) && presses.length > 0 ? presses.every(p => p.flags === 0) : null;
   row.valueBeforeCommit = textArea(await observe())?.value ?? null;
-  row.markedText = 'not readable: the engine\'s observation carries no AXMarkedTextRange';
   row.commit = await post('\n');
   row.valueAfterCommit = row.commit.skipped ? null : textArea(await observe())?.value ?? null;
   row.reading = compositionReading(row.valueAfterCommit ?? row.valueBeforeCommit);

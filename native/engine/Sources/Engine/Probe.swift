@@ -7,7 +7,8 @@ import Foundation
 // `watch-activations`, which is resident until killed. The commands: `input-source current` (the active source, read
 // only), `input-source <id>` (selects that source, a keyboard layout or an input mode such as Korean 2-Set, and reads it
 // back; the harness saves and restores the owner's), `keystroke` (the stand-in user: HID-state events posted at the HID
-// event tap, only while the named window is frontmost), `focus` (the focused app and window, and the named window's
+// event tap, only while the named window is frontmost, with each character's string or key codes alone;
+// KeystrokeProbe.swift), `focus` (the focused app and window, and the named window's
 // focused value as a hash; FocusProbe.swift) and `watch-activations` (every NSWorkspace activation and deactivation with
 // its time, the probe's own pid printed first, so the harness can stop it and the oracles can exclude probe instances).
 enum Probe {
@@ -23,7 +24,7 @@ enum Probe {
     case "watch-activations":
       return watchActivations()
     default:
-      return emit(["error": "usage: --probe input-source current|<id> | keystroke --user-pid <n> --user-bounds <x,y,w,h> [--at <unix ms>] <text> | focus [--window <pid,x,y,w,h>] | watch-activations"],
+      return emit(["error": "usage: --probe input-source current|<id> | keystroke --user-pid <n> --user-bounds <x,y,w,h> [--at <unix ms>] [--key-codes-only] <text> | focus [--window <pid,x,y,w,h>] | watch-activations"],
                   status: 64)
     }
   }
@@ -45,55 +46,6 @@ enum Probe {
     }
     let selected = status == noErr && current.id == argument
     return emit(["previous": sourceWire(previous), "current": sourceWire(current), "selected": selected], status: selected ? 0 : 3)
-  }
-
-  /// `keystroke --user-pid <n> --user-bounds <x,y,w,h> [--at <unix ms>] <text>`: waits for `--at`, checks that the
-  /// front window is the named one, then types `text` from an HID-state event source at the HID event tap — the
-  /// closest stand-in for the owner's own typing that probe (d) has — checking the front window before every unit,
-  /// and prints the post time.
-  private static func keystroke(_ arguments: [String]) -> Int32 {
-    var pid: pid_t?
-    var bounds: CGRect?
-    var at: Int64?
-    var text: String?
-    var index = 0
-    while index < arguments.count {
-      switch arguments[index] {
-      case "--user-pid":
-        guard index + 1 < arguments.count, let number = Int32(arguments[index + 1]) else { return emit(["error": "--user-pid needs a number"], status: 64) }
-        pid = number; index += 2
-      case "--user-bounds":
-        guard index + 1 < arguments.count, let rect = parseBounds(arguments[index + 1]) else { return emit(["error": "--user-bounds needs x,y,w,h"], status: 64) }
-        bounds = rect; index += 2
-      case "--at":
-        guard index + 1 < arguments.count, let time = Int64(arguments[index + 1]) else { return emit(["error": "--at needs a unix ms number"], status: 64) }
-        at = time; index += 2
-      default:
-        guard text == nil else { return emit(["error": "keystroke takes one text argument"], status: 64) }
-        text = arguments[index]; index += 1
-      }
-    }
-    guard let pid, let bounds, let text else {
-      return emit(["error": "keystroke needs --user-pid, --user-bounds and a text"], status: 64)
-    }
-    if let at { while unixMilliseconds() < at { usleep(1_000) } }
-    guard frontWindowIs(pid: pid, bounds: bounds) else {
-      return emit(["error": "the front window is not the named one; nothing was sent"], status: 4)
-    }
-    guard let layout = KeyLayout.current() else { return emit(["error": "Unable to get the current keyboard layout."], status: 5) }
-    let poster = EventPoster.toHIDTap()
-    let units = typedUnits(text, press: layout.press(for:))
-    let postedAt = unixMilliseconds()
-    for unit in units {
-      guard frontWindowIs(pid: pid, bounds: bounds) else {
-        return emit(["pid": Int(getpid()), "postedAt": Int(postedAt), "aborted": true, "units": units.count], status: 4)
-      }
-      for spec in unit.events {
-        guard poster.post(spec) else { return emit(["error": "a key event could not be created"], status: 5) }
-        usleep(250)
-      }
-    }
-    return emit(["pid": Int(getpid()), "postedAt": Int(postedAt), "units": units.count, "chars": text.utf16.count], status: 0)
   }
 
   /// `watch-activations`: prints its own pid, then every NSWorkspace application activation and deactivation with its
@@ -120,7 +72,7 @@ enum Probe {
   }
 
   /// Whether the frontmost on-screen window is the named one, by owner pid and bounds (no window name is read).
-  private static func frontWindowIs(pid: pid_t, bounds: CGRect) -> Bool {
+  static func frontWindowIs(pid: pid_t, bounds: CGRect) -> Bool {
     guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]],
           let front = frontLayer0Window(list) else { return false }
     return matchesFront(front, pid: pid, bounds: bounds)
@@ -133,12 +85,6 @@ enum Probe {
           let rect = CGRect(dictionaryRepresentation: dictionary) else { return false }
     return abs(rect.minX - bounds.minX) < 1 && abs(rect.minY - bounds.minY) < 1
       && abs(rect.width - bounds.width) < 1 && abs(rect.height - bounds.height) < 1
-  }
-
-  private static func parseBounds(_ text: String) -> CGRect? {
-    let parts = text.split(separator: ",").compactMap { Double($0) }
-    guard parts.count == 4 else { return nil }
-    return CGRect(x: parts[0], y: parts[1], width: parts[2], height: parts[3])
   }
 
   private static func sourceWire(_ info: InputSourceInfo) -> [String: Any] {

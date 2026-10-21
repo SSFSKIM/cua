@@ -9,7 +9,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {MARKER, parseCell} from '../../scripts/native-baseline/cells.mjs';
 import {EFFECT, MENU_BAR, MENU_ITEM, SELECT_FIRST_LINE} from '../../scripts/native-matrix/live-cells.mjs';
-import {SSH_OPTIONS, boundedExec, checkPassed, dryConnect, dryExec, journaledScript, liveOps, parseCommand, runLive, stepTimeout} from '../../scripts/native-matrix/live.mjs';
+import {DRY_ANSWERS, SSH_OPTIONS, boundedExec, checkPassed, compositionSummary, dryConnect, dryExec, journaledScript, liveOps, parseCommand, runLive, stepTimeout} from '../../scripts/native-matrix/live.mjs';
 import {JOURNAL_FILE, parseJournal, putBackBoundMs, recoverBoundMs} from '../../scripts/native-matrix/live-checks.mjs';
 import {execFileSync} from 'node:child_process';
 
@@ -218,6 +218,32 @@ test('paste: TextEdit and Finder up, Finder in front, the device check, then the
   assert.equal(result(out).pass, true);
 });
 
+// The composition row as the device answers it: both variants, each with its probe's JSON and its source and layout.
+const variantRow = (keyCodesOnly, value) => ({emptied: true, activated: true, source: 'com.apple.inputmethod.Korean.2SetKorean',
+  layout: {inputSourceId: 'com.apple.inputmethod.Korean.2SetKorean', keyboardLayoutId: 'com.apple.keylayout.ABC'},
+  keys: {invocation: `cua-engine --probe keystroke ${keyCodesOnly ? '--key-codes-only ' : ''}… rk`, exitStatus: 0, frontChangedAfter: false,
+    output: {pid: 31, layout: 'com.apple.keylayout.ABC', keyCodesOnly, presses: [{keyCode: 15, flags: 0, unicode: keyCodesOnly ? null : 'r'}, {keyCode: 40, flags: 0, unicode: keyCodesOnly ? null : 'k'}], postedAt: 1, units: 2, chars: 2}},
+  keysUnmodified: true, valueBeforeCommit: value, valueAfterCommit: `${value}\n`, reading: {reading: value}});
+const COMPOSED = {steps: {hidComposition: {variants: {unicode: variantRow(false, '가'), keyCodesOnly: variantRow(true, 'rk')}}}, verdict: {pass: true}};
+
+test('paste: result.json carries the composition row\'s two variants as the device answered them, and the log names each reading', async () => {
+  const device = fakeDevice({live: {paste: COMPOSED}}), out = scratch(), lines = [];
+  assert.equal(await runLive({command: 'paste', device: 'mini', out}, io(device, {log: line => lines.push(line)})), 0);
+  const {variants} = result(out).check.steps.hidComposition;
+  assert.deepEqual(Object.keys(variants), ['unicode', 'keyCodesOnly']);
+  assert.deepEqual(variants.keyCodesOnly, COMPOSED.steps.hidComposition.variants.keyCodesOnly);
+  assert.ok(lines.includes('paste hidComposition: unicode 가 (com.apple.inputmethod.Korean.2SetKorean, layout com.apple.keylayout.ABC, keys unmodified); keyCodesOnly rk (com.apple.inputmethod.Korean.2SetKorean, layout com.apple.keylayout.ABC, keys unmodified)'), lines.join('\n'));
+});
+
+test('compositionSummary: each variant\'s reading or why it did not read; nothing for a row the check did not reach', () => {
+  assert.equal(compositionSummary({steps: {hidComposition: {skipped: 'precondition unmet: Korean 2-Set was not selected'}}}), 'hidComposition: skipped (precondition unmet: Korean 2-Set was not selected)');
+  assert.equal(compositionSummary({steps: {hidComposition: {variants: {unicode: {skipped: 'front app not the scene'},
+    keyCodesOnly: {...variantRow(true, 'x'), reading: {reading: 'other', verbatim: 'x\n'}, keysUnmodified: false}}}}}),
+  'hidComposition: unicode skipped (front app not the scene); keyCodesOnly other (com.apple.inputmethod.Korean.2SetKorean, layout com.apple.keylayout.ABC, keys under a modifier)');
+  assert.equal(compositionSummary({steps: {}}), null);
+  assert.equal(compositionSummary(undefined), null);
+});
+
 test('menu: a vendor lane that fails still closes its serve, cleans the vendor home and puts back', async () => {
   const device = fakeDevice({frontmost: () => ({pid: 700, bundleId: 'com.apple.finder'})}), out = scratch();
   const vendor = fakeVendor({texts: {next: () => { throw new Error('noWindowsAvailable'); }, clicked() {}, selected() {}}});
@@ -282,7 +308,9 @@ test('the dry run of each other command walks its sequence to the put-back', asy
     assert.match(lines.join('\n'), /live-device\.mjs '\\''recover'\\''/, command);
     if (command !== 'cleanup') assert.match(lines.join('\n'), new RegExp(`live-device\\.mjs '\\\\''${command}'\\\\''`), command);
     if (command !== 'cleanup') assert.match(lines.at(-1), /PASS \(dry run/, command);
+    if (command === 'paste') assert.match(lines.join('\n'), /^paste hidComposition: unicode \S+ .*; keyCodesOnly \S+ /m, 'the dry run walks both variants of the composition row');
   }
+  assert.deepEqual(Object.keys(DRY_ANSWERS['live-device.mjs paste'].steps.hidComposition.variants), ['unicode', 'keyCodesOnly']);
 });
 
 test('the vendor cells return indexes and booleans only, and refuse when TextEdit is not bound', async () => {

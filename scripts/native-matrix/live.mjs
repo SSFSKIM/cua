@@ -46,7 +46,11 @@
 //                 turned off for it when it read on), each read back; the user window in front throughout; a system
 //                 alert (a pasteboard-privacy prompt) before or after any step aborts the section unclicked, its owner and
 //                 text recorded; the owner's source and preference restored (the put-back verifies them) and the
-//                 owner's clipboard's type list unchanged.
+//                 owner's clipboard's type list unchanged. Inside the Korean window, the HID composition row (MAWS
+//                 P4-B2, a measurement): with the run's TextEdit frontmost and key, r then k posted at the HID tap by
+//                 `--probe keystroke`, once with each key's string and once `--key-codes-only`, each variant from an
+//                 emptied document, its value read back and classified (가, rk, ㄱㅏ or other), its probe JSON, source
+//                 and layout recorded; the log names each variant's reading (compositionSummary).
 //   input-source  `--probe input-source` through the approved bundle: the owner's source and per-context preference
 //                 saved, Korean 2-Set selected, read back by a second probe, both restored (and again by put-back).
 //   enablement    the run's Chrome for Testing observed by one connection, which closes, then by a second: released when
@@ -212,6 +216,8 @@ export async function runLive(options, io) {
     await checkpoint();
     result.check = await CHECKS[command](ctx);
     result.pass = checkPassed(command, result.check);
+    const composition = command === 'paste' ? compositionSummary(result.check) : null;
+    if (composition) log(`paste ${composition}`);
   } catch (error) {
     result.problems.push(`the ${command} check stopped: ${error.message}`);
     log(`${command} stopped: ${error.message}`);
@@ -253,6 +259,17 @@ export function checkPassed(command, check) {
       && ['off', 'on', 'neither'].includes(check.setting?.setting);
   }
   return false;
+}
+
+// The composition row in one line: each variant's reading, the source and layout it was keyed under and whether its
+// keys went unmodified, or why it did not read; null when the paste check did not reach the row.
+export function compositionSummary(check) {
+  const row = check?.steps?.hidComposition;
+  if (!row) return null;
+  if (!row.variants) return `hidComposition: skipped (${row.skipped ?? 'no variants'})`;
+  const one = (name, v) => (v?.skipped ? `${name} skipped (${v.skipped})`
+    : `${name} ${v?.reading?.reading ?? 'unread'} (${v?.source ?? 'source unread'}, layout ${v?.layout?.keyboardLayoutId ?? 'unread'}, keys ${v?.keysUnmodified === true ? 'unmodified' : v?.keysUnmodified === false ? 'under a modifier' : 'unreported'})`);
+  return `hidComposition: ${Object.entries(row.variants).map(([name, v]) => one(name, v)).join('; ')}`;
 }
 
 const up = (ctx, id) => {
@@ -360,7 +377,9 @@ export const DRY_ANSWERS = Object.freeze({
     click: {ok: true, route: 1, posted: true}, effect: true}])), activations: []},
   'live-device.mjs paste': {steps: {pasteAlert: false, precondition: {selected: true, readBack: 'com.apple.inputmethod.Korean.2SetKorean', perContextOff: true, met: true},
     inputSource: {perContext: {read: true, setOff: true, restored: true}, restored: true}, clipboard: {typesUnchanged: true},
-    hidComposition: {emptied: true, activated: true, keys: {exitStatus: 0}, reading: {reading: '가'}}}, verdict: {pass: true, typeText: 'measured', finding: null}},
+    hidComposition: {variants: Object.fromEntries(['unicode', 'keyCodesOnly'].map(variant => [variant, {emptied: true, activated: true, source: 'com.apple.inputmethod.Korean.2SetKorean',
+      layout: {inputSourceId: 'com.apple.inputmethod.Korean.2SetKorean', keyboardLayoutId: '(the layout)'}, keys: {exitStatus: 0, output: {keyCodesOnly: variant === 'keyCodesOnly'}},
+      keysUnmodified: true, reading: {reading: '(a reading)'}}]))}}, verdict: {pass: true, typeText: 'measured', finding: null}},
   'live-device.mjs enablement': {verdict: {released: true}},
   'live-device.mjs input-source': {verdict: {pass: true}},
   'live-device.mjs putback': {plan: [], steps: {}, ok: true},

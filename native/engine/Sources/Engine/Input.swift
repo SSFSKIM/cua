@@ -21,8 +21,8 @@ import Foundation
 // way), `spikeEventSource` ("private", post keys from a private event source instead of the HID-system one) and
 // `spikeKeyed` (type_text: key through the layout regardless of the source routing, probe (e)'s per-context case;
 // never for a concealed request) and `spikeMenuActivation` (click: route 3's activation around a route-1 press of a
-// menu item, off by default; `deliverActivatedAction`). A non-concealed type_text that routes to the paste route answers notImplemented
-// naming it, with inputRoute "paste"; the paste route itself is M2a's.
+// menu item, off by default; `deliverActivatedAction`). A non-concealed type_text that routes to the paste route is
+// pasted (Paste.swift).
 
 /// A route that carried an input (the spec's Design, "Input"; Interfaces, EngineProtocol's
 /// `inputRoute: 1 | "2'" | 2 | 3 | 4 | "paste"`).
@@ -362,8 +362,8 @@ extension Engine {
 
   /// `type_text {app, text, concealed?, spikeKeyed?}`: routed by the active input source (the spec's Design, "Text").
   /// Under a Latin layout whose reading is reliable the text is keyed as the vendor keys it, by route 2′ with no fake
-  /// activation, with the source checked before every event and after the last; anything else takes the paste route,
-  /// which M1a does not build (notImplemented naming it). A concealed request never takes the paste route and never keys
+  /// activation, with the source checked before every event and after the last; anything else takes the paste route
+  /// (Paste.swift), its newlines pressed as Return. A concealed request never takes the paste route and never keys
   /// under a reading it cannot trust: it fails closed as concealedInputUnavailable before anything is entered. A keyed
   /// request stops between characters at a user event attributed to the app, reporting what it entered.
   func typeText(_ args: [String: Any], _ context: ExecutionContext) throws -> Any {
@@ -393,9 +393,9 @@ extension Engine {
       case .refusedConcealed:
         throw concealedInputUnavailable(sourceID: source.id, perContext: source.keyboardLayout && perContextUnknown)
       case .paste:
-        meta.inputRoute = .paste
-        throw EngineError(name: "notImplemented",
-                          "type_text under this input source (\(source.id)) takes the paste route, which this engine build does not implement")
+        try typeTextByPaste(text, PasteTarget(app: app, pid: pid, application: application, keyboard: target, guarding: guarding),
+                            context, meta: &meta)
+        return ["meta": meta.wire]
       case .keyed: break
       }
       guard let layout = KeyLayout.current() else {
@@ -418,19 +418,6 @@ extension Engine {
     }
   }
 
-  // MARK: paste
-
-  /// `paste {app, text, format, concealed?}`: the method is M2a's; a concealed paste is refused already, as the Text rule
-  /// requires (secrets never take the pasteboard), with nothing entered.
-  func paste(_ args: [String: Any], _ context: ExecutionContext) throws -> Any {
-    let meta = InputMeta(context)
-    if (args["concealed"] as? NSNumber)?.boolValue == true {
-      throw withMeta(EngineError(name: "concealedInputUnavailable",
-                                 "Nothing was entered: a concealed value is never pasted. Use set_value on a settable element instead."), meta)
-    }
-    throw withMeta(EngineError(name: "notImplemented", "paste is not implemented by this engine build"), meta)
-  }
-
   /// A spike cell's forced route 3 for keys: the app's activation for its primary window, run before the keys. Nil for
   /// every other route, the default 2′ included.
   private func forcedActivation(_ route: InputRoute?, pid: pid_t, application: AXUIElement, meta: inout InputMeta) throws -> FakeActivation? {
@@ -448,7 +435,7 @@ extension Engine {
 
   /// The process keyboard events go to: the owner of the app's focused element, which for a sheet or an open panel is
   /// not the app (F §5.7's targetForKeyboardEvent), else the app.
-  private func keyboardTarget(_ application: AXUIElement, fallback pid: pid_t) -> pid_t {
+  func keyboardTarget(_ application: AXUIElement, fallback pid: pid_t) -> pid_t {
     guard let focused = elementAttribute(application, kAXFocusedUIElementAttribute) else { return pid }
     return ownerPid(of: focused, fallback: pid)
   }

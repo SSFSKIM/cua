@@ -28,7 +28,9 @@ final class KeystrokeProbeTests: XCTestCase {
       (base + ["--at"], "--at needs a unix ms number"),
       (base + ["rk", "more"], "keystroke takes one text argument"),
       (base, "keystroke needs --user-pid, --user-bounds and a text"),
-      (base + ["--key-codes-only", "--ansi-keys", "rk"], "keystroke takes at most one of --key-codes-only and --ansi-keys"),
+      (base + ["--key-codes-only", "--ansi-keys", "rk"], "keystroke takes at most one of --key-codes-only, --ansi-keys and --keys"),
+      (base + ["--keys", "--ansi-keys", "r"], "keystroke takes at most one of --key-codes-only, --ansi-keys and --keys"),
+      (base + ["--keys"], "keystroke needs --user-pid, --user-bounds and a text"),
     ]
     for (arguments, message) in cases {
       XCTAssertThrowsError(try KeystrokeRequest.parse(arguments), "\(arguments)") { error in
@@ -99,5 +101,89 @@ final class KeystrokeProbeTests: XCTestCase {
     XCTAssertNil(keystrokeUnits("R", mode: .ansiKeys, press: latin), "R is r under Shift: a modifier flag")
     XCTAssertNil(keystrokeUnits("r k", mode: .ansiKeys, press: latin), "a space is named, not keyed by its character")
     XCTAssertNotNil(keystrokeUnits("09az", mode: .ansiKeys, press: { _ in nil }), "digits and lower-case letters need no layout")
+  }
+
+  // MARK: Key specs (`--keys`, MAWS P4-B2's L6/L7)
+
+  func testTheKeysArgumentsArePressKeysKeyStringOneSpecPerArgument() throws {
+    let keys = try KeystrokeRequest.parse(base + ["--keys", "r", "k", "BackSpace", "k"])
+    XCTAssertEqual(keys, KeystrokeRequest(pid: 600, bounds: CGRect(x: 400, y: 20, width: 600, height: 800), at: nil, mode: .keySpecs, text: "r k BackSpace k"))
+    XCTAssertEqual(try KeystrokeRequest.parse(["r", "--keys"] + base + ["alt+Return"]).text, "r alt+Return", "flags in any order")
+  }
+
+  func testKeySpecsArePressKeysGrammarAndTable() throws {
+    let units = try keySpecUnits("r k BackSpace k")
+    XCTAssertEqual(units.count, 4, "one unit per spec")
+    XCTAssertEqual(units.map { $0.first { $0.kind == .down }?.keyCode }, [0x0F, 0x28, 0x33, 0x28])
+    XCTAssertEqual(try keySpecUnits("r k").map { $0.first { $0.kind == .down }?.keyCode }, ["r", "k"].map { keyTable[$0]?.keyCode },
+                   "letters are press_key's fixed ANSI codes, as --ansi-keys keys them")
+    let named: [(String, CGKeyCode)] = [("BackSpace", 0x33), ("Left", 0x7B), ("Right", 0x7C), ("Return", 0x24), ("Escape", 0x35)]
+    for (name, code) in named {
+      let unit = try XCTUnwrap(try keySpecUnits(name).first, name)
+      XCTAssertEqual(unit.first { $0.kind == .down }?.keyCode, code, name)
+      XCTAssertEqual(unit.first { $0.kind == .down }?.flags, [], name)
+    }
+    let chord = try XCTUnwrap(try keySpecUnits("alt+Return").first)
+    XCTAssertEqual(chord.first { $0.kind == .down }?.keyCode, 0x24)
+    XCTAssertEqual(chord.first { $0.kind == .down }?.flags, .maskAlternate, "option+Return, spelled in press_key's modifier names")
+  }
+
+  func testAnUnknownOrUnparseableSpecRefuses() {
+    for spec in ["r Bogus", "option+Return", "ctrl++", "a+b"] {
+      XCTAssertThrowsError(try keySpecUnits(spec), spec) { error in
+        XCTAssertEqual((error as? EngineError)?.errorName, "invalidKey", spec)
+      }
+    }
+  }
+
+  func testAPlainLetterOrNamedKeyIsItsKeyDownAndUpAlone() throws {
+    for (spec, code) in [("r", CGKeyCode(0x0F)), ("BackSpace", 0x33)] {
+      let events = try XCTUnwrap(try keySpecUnits(spec).first, spec)
+      XCTAssertEqual(events, [KeyEvent(kind: .down, keyCode: code, flags: [], text: nil), KeyEvent(kind: .up, keyCode: code, flags: [], text: nil)],
+                     "a keyboard sends no flags-changed event without a modifier")
+    }
+  }
+
+  func testAChordPostsAsAKeyboardDoes() throws {
+    let option = CGKeyCode(0x3A)
+    XCTAssertEqual(try keySpecUnits("alt+Return").first, [
+      KeyEvent(kind: .flags, keyCode: option, flags: .maskAlternate, text: nil),
+      KeyEvent(kind: .down, keyCode: returnKeyCode, flags: .maskAlternate, text: nil),
+      KeyEvent(kind: .up, keyCode: returnKeyCode, flags: .maskAlternate, text: nil),
+      KeyEvent(kind: .flags, keyCode: option, flags: [], text: nil),
+    ])
+    let control = CGKeyCode(0x3B), shift = CGKeyCode(0x38)
+    XCTAssertEqual(try keySpecUnits("ctrl+shift+Tab").first, [
+      KeyEvent(kind: .flags, keyCode: control, flags: .maskControl, text: nil),
+      KeyEvent(kind: .flags, keyCode: shift, flags: [.maskControl, .maskShift], text: nil),
+      KeyEvent(kind: .down, keyCode: 0x30, flags: [.maskControl, .maskShift], text: nil),
+      KeyEvent(kind: .up, keyCode: 0x30, flags: [.maskControl, .maskShift], text: nil),
+      KeyEvent(kind: .flags, keyCode: shift, flags: .maskControl, text: nil),
+      KeyEvent(kind: .flags, keyCode: control, flags: [], text: nil),
+    ], "each modifier goes down in turn and comes up in reverse, every event carrying the flags then held")
+    XCTAssertEqual(try keySpecUnits("R").first?.map(\.keyCode), [shift, 0x0F, 0x0F, shift], "an upper-case letter is r under Shift")
+    XCTAssertEqual(try keySpecUnits("shift").first, [KeyEvent(kind: .flags, keyCode: shift, flags: .maskShift, text: nil),
+                                                      KeyEvent(kind: .flags, keyCode: shift, flags: [], text: nil)])
+    XCTAssertTrue(try keySpecUnits("r BackSpace alt+Return ctrl+shift+Tab").joined().allSatisfy { $0.text == nil }, "no string on any event")
+    XCTAssertFalse(try keySpecUnits("alt+Return").joined().contains { $0.kind == .restore }, "every flag is explicit, none read back")
+  }
+
+  func testTheMadeEventsAreAKeyboardsTypesAndKeyCodes() throws {
+    let poster = EventPoster(source: nil) { _ in }
+    let events = try XCTUnwrap(try keySpecUnits("alt+Return").first).map { try XCTUnwrap(poster.event($0)) }
+    XCTAssertEqual(events.map(\.type), [.flagsChanged, .keyDown, .keyUp, .flagsChanged])
+    XCTAssertEqual(events.map { $0.getIntegerValueField(.keyboardEventKeycode) }, [0x3A, 0x24, 0x24, 0x3A])
+    XCTAssertEqual(events.map(\.flags).map { $0.intersection([.maskAlternate, .maskShift, .maskControl, .maskCommand]) },
+                   [.maskAlternate, .maskAlternate, .maskAlternate, []])
+    let pressKeys = try XCTUnwrap(poster.event(KeyEvent(kind: .flags, keyCode: 0, flags: .maskCommand, text: nil)))
+    XCTAssertEqual(pressKeys.getIntegerValueField(.keyboardEventKeycode), 0, "press_key's combined flags event keeps key code 0")
+  }
+
+  func testTheKeysReportSeparatesTheFlagsChangedEvents() throws {
+    let units = try keySpecUnits("r alt+Return")
+    XCTAssertEqual(pressesWire(units) as NSArray, [["keyCode": 0x0F, "flags": 0, "unicode": NSNull()],
+                                                   ["keyCode": 0x24, "flags": Int(CGEventFlags.maskAlternate.rawValue), "unicode": NSNull()]] as NSArray)
+    XCTAssertEqual(flagsChangedWire(units) as NSArray, [[], [["keyCode": 0x3A, "flags": Int(CGEventFlags.maskAlternate.rawValue)],
+                                                             ["keyCode": 0x3A, "flags": 0]]] as NSArray)
   }
 }

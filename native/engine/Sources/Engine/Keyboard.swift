@@ -341,21 +341,28 @@ struct EventPoster {
     EventPoster(source: CGEventSource(stateID: .hidSystemState)) { $0.post(tap: .cghidEventTap) }
   }
 
-  /// Makes, stamps and posts one key event; false when it could not be made.
-  @discardableResult
-  func post(_ spec: KeyEvent) -> Bool {
+  /// Makes one key event, unposted; nil when it could not be made. A flags-changed event carries its spec's key code:
+  /// the modifier key's when the keystroke probe posts a chord as a keyboard does, 0 (as made) for press_key's.
+  func event(_ spec: KeyEvent) -> CGEvent? {
     let event: CGEvent?
     switch spec.kind {
     case .flags, .restore:
       event = CGEvent(source: source)
       event?.type = .flagsChanged
       event?.flags = spec.kind == .restore ? CGEventSource.flagsState(.combinedSessionState) : spec.flags
+      event?.setIntegerValueField(.keyboardEventKeycode, value: Int64(spec.keyCode))
     case .down, .up:
       event = CGEvent(keyboardEventSource: source, virtualKey: spec.keyCode, keyDown: spec.kind == .down)
       event?.flags = spec.flags
       if let text = spec.text { event?.keyboardSetUnicodeString(stringLength: text.count, unicodeString: text) }
     }
-    guard let event else { return false }
+    return event
+  }
+
+  /// Makes, stamps and posts one key event; false when it could not be made.
+  @discardableResult
+  func post(_ spec: KeyEvent) -> Bool {
+    guard let event = event(spec) else { return false }
     event.timestamp = DispatchTime.now().uptimeNanoseconds
     deliver(event)
     return true

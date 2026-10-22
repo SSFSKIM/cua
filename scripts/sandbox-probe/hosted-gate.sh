@@ -27,7 +27,8 @@
 #
 # Public output (the repo is public). The runner's log carries only: each step's PASS/FAIL line and the summary; the
 # gate's own `hosted-gate:` lines (the run's and the baseline's images, the count of Codex CLI files in the installed
-# tree, doctor's sandbox.launcher status, probe-secrets' step names and statuses, of a fingerprint judged unequal its
+# tree, the verified download's outcome/source/release/URL host/SHA-256/byte count (download-proof.mjs), doctor's
+# sandbox.launcher status, probe-secrets' step names and statuses, of a fingerprint judged unequal its
 # undeclared checks' labels and results and its environment differences' names, never their values, and of a command
 # that failed its exit status and how many stderr lines were withheld); own-sandbox's and engine-lane's `PASS <label>`
 # and `FAIL <label>` lines; hosted-public.mjs's one failure line, naming the form and the files' basenames. Every producer's stderr (an
@@ -100,7 +101,12 @@ step() {
 "
 }
 
-install() { quiet install '' scratch node bin/cua.mjs install --json > "$RAW/install.json"; }
+# This gate's engine lane uses a fixture, not a capturing engine. Keep installation vendor-only even after the default
+# flips; engine-swift builds and verifies the real ad-hoc bundle in its own scratch HOME, without granting permissions.
+install() {
+  quiet install '' scratch env CUA_NATIVE_ENGINE=vendor node bin/cua.mjs install --json > "$RAW/install.json" || return $?
+  quiet download-proof '^hosted-gate: ' scratch node scripts/sandbox-probe/download-proof.mjs "$RAW/install.json"
+}
 no_codex() {
   found=$(find "$H" \( -name CodexCLI.app -o \( -name codex -type f \) \) -print 2> "$ERR/no-codex" | wc -l | tr -d ' ')
   echo "hosted-gate: Codex CLI files in the installed tree: $found" >&2

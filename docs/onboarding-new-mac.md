@@ -175,8 +175,24 @@ the service's relaunch), Input Monitoring. The harness never revokes or grants p
 
 ### 8. Wire it into Claude Code
 
+Choose one registration. The ordinary registration keeps the current vendor default:
+
 ```sh
 claude mcp add cua_repl -s user -e CUA_SHIM_SURFACES=computer,browser -- node ~/Developer/GitHub/cua/bin/cua.mjs serve
+```
+
+If you built and approved **cua's own engine** in step 7, use this variant instead so the registered server selects it
+on every connection. Configuring `signingIdentity` or selecting cua only for the earlier doctor command does not
+select it for `serve`; this registration sets the preference for this MCP server without changing the global default:
+
+```sh
+claude mcp add cua_repl -s user -e CUA_SHIM_SURFACES=computer,browser -e CUA_NATIVE_ENGINE=cua -- node ~/Developer/GitHub/cua/bin/cua.mjs serve
+```
+
+If `cua_repl` is already registered, remove that registration with `claude mcp remove cua_repl -s user` before adding
+the chosen variant. Then check the connection:
+
+```sh
 claude mcp list
 ```
 

@@ -76,14 +76,16 @@ import {socketHolders} from './probe/lib.mjs';
 import {pinLane} from './probe/pinned-engine.mjs';
 import {fingerprints, textLeaks} from './probe/leak-scan.mjs';
 import {
-  approvalObservation, diffSnapshots, doctorHealth, forbiddenPaths, inventoryCheck, missingFromPackage, PROBE_SECRETS_PHASES, probePhasesFor, rollup, scenarioVerdict,
-  snapshotTree, suiteVerdict, judgeSkips, skipReasons, testReporterEnv, testSummary, personalText, researchTreeLines, MINI_LAYOUT_FILES,
+  approvalObservation, doctorHealth, forbiddenPaths, inventoryCheck, missingFromPackage, PROBE_SECRETS_PHASES, probePhasesFor, rollup, scenarioVerdict,
+  suiteVerdict, judgeSkips, skipReasons, testReporterEnv, testSummary, personalText, researchTreeLines, MINI_LAYOUT_FILES,
 } from './accept/lib.mjs';
 import {OWN_STEPS, runTextEdit, SECRET_STEPS} from './accept/textedit.mjs';
 import {ATTEST_STEP, doctorEngineCheck, lifecycleEngineCheck, verifyChecks} from './accept/engine-lane.mjs';
 import {createStoreHome, generatedKey, isAccountHome, removeStoreHome, seedSecret} from './accept/secret-seed.mjs';
 import {ownSandboxAcceptance} from './accept/own-sandbox.mjs';
 import {compatRouteAcceptance} from './accept/compat-route.mjs';
+import {reinstallCheck} from './accept/reinstall.mjs';
+import {downloadProofCheck} from './accept/download-proof.mjs';
 
 const {values: options} = parseArgs({options: {
   report: {type: 'string'}, 'live-secrets': {type: 'boolean'}, 'live-textedit': {type: 'boolean'}, archive: {type: 'string'},
@@ -99,9 +101,9 @@ if (selected && ![...selected].every(id => Number.isInteger(id) && id >= 1 && id
 const wanted = id => !selected || selected.has(id);
 const REPO = realpathSync(fileURLToPath(new URL('..', import.meta.url)));
 const CLI = join(REPO, 'bin', 'cua.mjs');
-// The commit whose evidence (docs/evidence/m2-installer.md) proved download mode; acquisition code unchanged since
-// then lets that evidence stand for this run.
-const DOWNLOAD_EVIDENCE = {commit: 'bc315bc', doc: 'docs/evidence/m2-installer.md',
+// The controller records the actual hosted sandbox-live download. Its anchor must be the latest commit touching
+// these acquisition paths; missing or stale evidence is BLOCKED, never another download on the mini.
+const DOWNLOAD_EVIDENCE = {doc: 'docs/evidence/2026-10-22-own-native-engine-m4/download-proof.json',
   paths: ['src/runtime/install.mjs', 'src/runtime/checks.mjs', 'src/runtime/manifest.mjs', 'src/runtime/layout.mjs', 'runtime/releases']};
 const NO_DOWNLOAD_GUARD = '/nonexistent/cua-accept-reinstall-must-not-read-an-archive.zip';
 
@@ -216,21 +218,11 @@ async function item2() {
   checks.push(check('verified private runtime tree', verified.every(c => c?.status === 'pass') ? 'PASS' : 'FAIL',
     verified.map(c => c ? `${c.name} ${c.status}` : 'missing').join('; ') + ` (${sanitize(doctorChecks.find(c => c.name === 'runtime.signatures')?.detail ?? '')})`));
   if (runtime && verified.every(c => c?.status === 'pass')) {
-    const before = snapshotTree(runtime.root);
-    const reinstall = await run(process.execPath, [CLI, 'install', '--json', '--archive', options.archive ?? NO_DOWNLOAD_GUARD], {env: cuaEnv()});
-    const result = parseJson(reinstall.stdout);
-    const diff = diffSnapshots(before, snapshotTree(runtime.root));
-    checks.push(check('reinstall mutates nothing', reinstall.code === 0 && result?.changed === false && diff.same ? 'PASS' : 'FAIL',
-      `install --json → ${result ? `ok ${result.ok}, changed ${result.changed}` : `exit ${reinstall.code}: ${sanitize(reinstall.stderr.trim().split('\n').at(-1) ?? '')}`}; ${before.size} entries compared (type, mode, size, mtime, inode): ${diff.same ? 'identical' : `${diff.added.length} added, ${diff.removed.length} removed, ${diff.changed.length} changed`}`));
+    const reinstall = await reinstallCheck({runtimeRoot: runtime.root, cli: CLI, archivePath: options.archive ?? NO_DOWNLOAD_GUARD, env: cuaEnv(), run});
+    checks.push({...reinstall, detail: sanitize(reinstall.detail)});
   } else checks.push(check('reinstall mutates nothing', 'FAIL', 'not attempted: the installed release does not verify'));
   checks.push(fromSuite('bad hash, length, manifest or signature never activates', ['test/runtime-install.test.mjs', 'test/runtime-manifest.test.mjs', 'test/cli.test.mjs']));
-  const changed = sh('git', ['-C', REPO, 'log', '--format=%h', `${DOWNLOAD_EVIDENCE.commit}..HEAD`, '--', ...DOWNLOAD_EVIDENCE.paths]).trim();
-  const known = sh('git', ['-C', REPO, 'cat-file', '-t', DOWNLOAD_EVIDENCE.commit]).trim() === 'commit';
-  checks.push(check('download mode (official pinned URL)', !known ? 'BLOCKED' : changed ? 'BLOCKED' : 'PASS', !known
-    ? 'cannot tell whether the acquisition code changed since the recorded download proof; rerun: CUA_HOME="$(mktemp -d /tmp/cua-download.XXXXXX)" node bin/cua.mjs install'
-    : changed ? `acquisition code changed since ${DOWNLOAD_EVIDENCE.commit} (${changed.split('\n').join(', ')}): rerun CUA_HOME="$(mktemp -d /tmp/cua-download.XXXXXX)" node bin/cua.mjs install`
-      : `cited, not rerun: ${DOWNLOAD_EVIDENCE.doc} (byte-identical tree from the official URL); acquisition code unchanged since ${DOWNLOAD_EVIDENCE.commit}`,
-    {evidence: changed || !known ? 'needs rerun' : 'cited'}));
+  checks.push(downloadProofCheck({repo: REPO, evidence: DOWNLOAD_EVIDENCE, pin}));
   addItem(2, 'Pinned install: verified private tree, idempotent reinstall, refusal of bad archives, download mode', checks);
 }
 

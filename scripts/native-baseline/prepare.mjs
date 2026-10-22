@@ -160,7 +160,9 @@ export function prepareNative({device, display, node, approvedHome}, {directoryR
     // All CUA settings belong to this run, not the invoking SSH login. X-session keys are the only desktop inheritance.
     const environment = Object.fromEntries(['PATH', 'TMPDIR', 'LANG', 'LC_ALL', 'LC_CTYPE', 'USER', 'LOGNAME'].filter(k => ambient[k] !== undefined).map(k => [k, ambient[k]]));
     Object.assign(environment, xSession, {HOME: userHome, CUA_HOME: home, XDG_CONFIG_HOME: join(userHome, '.config'), CUA_SHIM_SECRETS: 'off'});
-    run(process.execPath, ['bin/cua.mjs', 'install'], {encoding: 'utf8', timeout: 300000, maxBuffer: 1024 * 1024, env: environment});
+    // Harnesses never build an engine: macOS cua lanes reuse the approved engine in place. Pin only this install
+    // step to vendor so even after the default flips it cannot create an unapproved copy under the scratch HOME.
+    run(process.execPath, ['bin/cua.mjs', 'install'], {encoding: 'utf8', timeout: 300000, maxBuffer: 1024 * 1024, env: {...environment, CUA_NATIVE_ENGINE: 'vendor'}});
     const facts = inspect({source: home, ambient: nodeEnvironment(environment, node)});
     if (!node) assertManagedNode(facts);
     else if (!facts.ownNode?.version || facts.ownNode.path !== node) throw new Error('Diagnostic Node override did not resolve');

@@ -141,7 +141,7 @@ const COMPUTER_RULES = {
   'element indexes; coordinates in screenshot pixels, downscaled': /Prefer accessibility element indexes; coordinates are screenshot pixels \(apply the host's downscale\)/,
   'role names in the system language': /role names are in the system language/,
   'drop a quit app\'s handle': /Drop a quit app's handle: getAXState\(\) relaunches it\./,
-  'typeText drops emoji: paste those': /typeText drops characters the layout cannot key \(emoji\); paste those and multiline text\./,
+  'vendor typeText drops emoji: paste those': /Vendor engine: typeText drops characters the layout cannot key \(emoji\); paste those and multiline text\./,
   'js_reset and rebind, never osascript': /If REPL state is confused, js_reset and rebind; never also use osascript\./,
 };
 // Phase F: the Linux rules replace the macOS-only ones.
@@ -234,6 +234,24 @@ test('each surface\'s rules are in the description of its tool, ahead of the 2,0
     if (platform === 'linux') for (const text of [instructions, ...Object.keys(tools).map(seen)]) assert.doesNotMatch(text, MACOS_ONLY, label);
   }
   assert.ok(jsRulesFor(['computer'], {platform: 'darwin'}).length + 2 + VENDOR_COMPUTER_JS <= DESCRIPTION_CAP, 'the default surface\'s js description is never cut');
+});
+
+test('the effective engine selects its model guidance, not the macOS default or the REPL host', async () => {
+  for (const engine of ['cua', 'vendor']) {
+    const h = harness({server: {platform: 'darwin', surfaces: ['computer'], nativeEngine: {engine, version: 'test', build: 'test'}}});
+    const tools = await toolsOf(h);
+    const description = tools.find(tool => tool.name === 'js').description.slice(0, DESCRIPTION_CAP);
+    if (engine === 'cua') {
+      assert.match(description, /typeText keys Latin-layout text and sends other characters as Unicode/);
+      assert.match(description, /Korean input or an unknown background input source it uses paste/);
+      assert.match(description, /secret paste is refused/);
+      assert.match(description, /"cua Engine" in System Settings/);
+      assert.doesNotMatch(description, /typeText drops characters/);
+    } else {
+      assert.match(description, /typeText drops characters/);
+      assert.doesNotMatch(description, /cua engine secrets|"cua Engine" in System Settings/);
+    }
+  }
 });
 
 test('CUA_REPL_HOST is checked at start whatever the surfaces: cua, vendor, or unset (each connection resolves it)', () => {

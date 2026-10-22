@@ -57,9 +57,9 @@ export function matrixOps(device, {exec = execFileSync} = {}) {
     live: args => cli(LIVE_DEVICE, args, {answersOnFailure: true}),
     matrix: args => cli(MATRIX_DEVICE, args),
     preflight: ({host, engine, approvedEngine, prepared}) => lastJson(ssh(preflightScript({host, engine, approvedEngine, prepared, surface: 'computer'}))),
-    serveSpec: ({pre, prepared, host, engine}) => {
+    serveSpec: ({pre, prepared, host, engine, spikeRoute = false}) => {
       const serve = serveCommand({device, checkout: pre.checkout, home: pre.home, userHome: prepared.userHome, configHome: prepared.configHome, tmpdir: prepared.tmpdir,
-        admission: prepared.admission, xSession: {}, host, engine, platform: 'darwin', surface: 'computer'});
+        admission: prepared.admission, xSession: {}, host, engine, platform: 'darwin', surface: 'computer', spikeRoute});
       return serve.command === 'ssh' ? {...serve, args: [...SSH_OPTIONS, ...serve.args.slice(0, -1), journaledScript(serve.args.at(-1), journal.run)]} : serve;
     },
     helpers: () => ssh(MATRIX_HELPER_SCRIPT),
@@ -82,9 +82,10 @@ export const engineMetaOf = meta => Object.fromEntries([['actionInterval', 'cua/
 // attestation is collected (meta.nativeEngine, ./native-baseline/engine.mjs attestEngine) and one naming another engine
 // stops the lane at once; the first result attests the host. -> {client, js(code, timeoutMs) -> {ok, value|error,
 // inCellMs, wallMs, route, engine, at}} (`at`: the device-clock window around the call, timedCode; `engine`: the last
-// call's input meta, engineMetaOf).
-export async function connectLane({ops, pre, prepared, host, engine, connect, bundleIds, meta, stderrFile, now = () => performance.now()}) {
-  const client = connect({...ops.serveSpec({pre, prepared, host, engine}), clientName: 'cua-native-matrix',
+// call's input meta, engineMetaOf). `spikeRoute` (the route A/B's lane only) lets the serve forward a click's forced
+// route (remote.mjs nativeEnvironment).
+export async function connectLane({ops, pre, prepared, host, engine, connect, bundleIds, meta, stderrFile, spikeRoute = false, now = () => performance.now()}) {
+  const client = connect({...ops.serveSpec({pre, prepared, host, engine, spikeRoute}), clientName: 'cua-native-matrix',
     answer: msg => (isSceneApproval(msg, bundleIds) ? {action: 'accept', content: {}} : {action: 'decline'}),
     onElicitation: (row, msg) => meta.elicitations.push({t: row.t, app: msg.params?._meta?.tool_params?.app ?? null, action: row.action}),
     stderrFile});

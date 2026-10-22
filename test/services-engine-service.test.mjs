@@ -238,6 +238,33 @@ test('model code reaches the raw methods, but only the vendor\'s fields reach th
   assert.deepEqual(engine.executes().at(-1).args, {app, key: 'a'}, 'and on no other');
 });
 
+test('CUA_ENGINE_SPIKE_ROUTE=1 (the route A/B\'s serve only) forwards a click\'s spikeRoute, a known route only, and no other method\'s or switch', async t => {
+  const handlers = Object.fromEntries(METHODS.filter(m => !['list_apps', 'get_app_state'].includes(m)).map(m => [`execute:${m}`, () => ({meta: INPUT_META})]));
+  const {getApp, call, sky, engine} = await session(t, {handlers, env: {CUA_ENGINE_SPIKE_ROUTE: '1'}});
+  await getApp('TextEdit');
+  const app = APPS.TextEdit.appPath;
+  for (const route of ['1', "2'", '2', '3']) {
+    await call(() => sky.click({app, element_index: 1, spikeRoute: route, spikeKeyed: true}));
+    assert.deepEqual(engine.executes().at(-1).args, {app, element: 't1', spikeRoute: route}, route);
+  }
+  await call(() => sky.click({app, x: 1, y: 2}));
+  assert.deepEqual(engine.executes().at(-1).args, {app, x: 1, y: 2}, 'a click without one sends none');
+  const before = engine.executes().length;
+  for (const route of [3, '4', '', null]) {
+    await assert.rejects(call(() => sky.click({app, element_index: 1, spikeRoute: route})), /\[invalid_spike_route\]/, String(route));
+  }
+  assert.equal(engine.executes().length, before, 'an invalid route reaches no engine');
+  await call(() => sky.press_key({app, key: 'Return', spikeRoute: '3'}));
+  assert.deepEqual(engine.executes().at(-1).args, {app, key: 'Return'}, 'only a click');
+  await call(() => sky.type_text({app, text: 'a', spikeRoute: '3', spikeKeyed: true}));
+  assert.deepEqual(engine.executes().at(-1).args, {app, text: 'a'}, 'only a click');
+
+  const other = await session(t, {handlers, env: {CUA_ENGINE_SPIKE_ROUTE: 'true'}});
+  await other.getApp('TextEdit');
+  await other.call(() => other.sky.click({app, element_index: 1, spikeRoute: '1'}));
+  assert.deepEqual(other.engine.executes().at(-1).args, {app, element: 't1'}, 'only the value 1 turns it on');
+});
+
 test('an index never issued answers "<n> is an invalid element ID", a retired one the "no longer valid" sentence, before the engine is asked', async t => {
   const {getApp, call, engine, trees} = await session(t);
   const {app} = await getApp('TextEdit');

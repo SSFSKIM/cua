@@ -11,7 +11,7 @@ import {validateCellResult} from '../../scripts/native-matrix/cell-result.mjs';
 import {listCells, resolveCell} from '../../scripts/native-matrix/registry.mjs';
 import {releaseOf, ROUTE_AB_SAMPLES, VARIANTS} from '../../scripts/native-matrix/route-ab.mjs';
 import {planOf} from '../../scripts/native-matrix/run.mjs';
-import {matrixSteps, runWith} from './run-doubles.mjs';
+import {args, matrixSteps, runWith} from './run-doubles.mjs';
 
 const zero = {appDidBecomeActive: 0, appDidResignActive: 0};
 const counted = (become, resign) => ({seq: become + resign, at: 1, counts: {...zero, appDidBecomeActive: become, appDidResignActive: resign}});
@@ -153,4 +153,12 @@ test('a dry run of the cell walks every step', async () => {
   const {result} = await runWith({plan: planOf('route-ab'), cellName: 'route-ab'});
   assert.deepEqual(validateCellResult(result), []);
   assert.equal(result.rows.length, 6);
+});
+
+test('only the route A/B lane\'s serve may forward a forced route (CUA_ENGINE_SPIKE_ROUTE); every other run\'s may not', async () => {
+  const serves = steps => steps.filter(step => step.startsWith('serve ')).map(args);
+  const ab = serves((await run()).steps);
+  assert.ok(ab.length > 0 && ab.every(spec => spec.spikeRoute === true), JSON.stringify(ab));
+  const other = serves((await runWith()).steps);
+  assert.ok(other.length > 0 && other.every(spec => spec.spikeRoute === false), JSON.stringify(other));
 });

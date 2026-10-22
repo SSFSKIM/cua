@@ -42,6 +42,11 @@
 // - The unknown secondary action's sentence: the vendor's ends with the decimal element index, which only the service
 //   knows, so the engine's invalidSecondaryAction is answered as `<action> is not a valid secondary action for <index>`
 //   (R/F-helper-logic.md §16.3), its code, name and meta kept.
+// - A forced click route, for the native matrix's route A/B only: a click's `spikeRoute` is forwarded when the worker's
+//   environment carries CUA_ENGINE_SPIKE_ROUTE=1, read once when the service is made. Only the matrix's route-ab serve
+//   sets it (scripts/native-matrix/run.mjs), and the launcher copies it into the worker only for cua's engine
+//   (src/runtime/launch.mjs). Without it no spike switch reaches the engine from model code (bd1136f1), and with it only
+//   the click's route can be chosen: the policy, the forbidden list and the approval run as for any click.
 import {createEngineClient} from './client.mjs';
 import {createObservations} from './observations.mjs';
 import {createPolicy, toolSurface} from './policy.mjs';
@@ -63,6 +68,9 @@ const FIELDS = {
   set_value: ['value', 'concealed'],
   type_text: ['text', 'concealed'],
 };
+// The click routes the engine's spike switch names (native/engine Input.swift, `spikeRoute`), forwarded only under
+// CUA_ENGINE_SPIKE_ROUTE=1.
+const SPIKE_ROUTES = new Set(['1', "2'", '2', '3']);
 // The keys a call sets only sometimes, reset at its start.
 const PER_CALL = {
   'cua/engineMs': null, 'cua/settle': null, 'cua/screenshotOmitted': null, 'cua/inputRoute': null, 'cua/actionInterval': null, 'cua/receivedAt': null, 'cua/hidIdleMs': null,
@@ -111,6 +119,7 @@ function inputMeta(meta) {
 export function createService({nodeRepl, client = null}) {
   const identities = new Map();   // app string -> Promise of resolve_app's answer, kept for the connection
   const observations = createObservations();
+  const spikeRoutes = nodeRepl?.env?.CUA_ENGINE_SPIKE_ROUTE === '1';
 
   const setMeta = meta => nodeRepl?.setResponseMeta?.(meta);
   const engine = () => {
@@ -183,6 +192,10 @@ export function createService({nodeRepl, client = null}) {
     const index = input.element_index;
     const args = {app: input.app};
     for (const field of FIELDS[method]) if (Object.hasOwn(input, field)) args[field] = input[field];
+    if (spikeRoutes && method === 'click' && Object.hasOwn(input, 'spikeRoute')) {
+      if (!SPIKE_ROUTES.has(input.spikeRoute)) throw new Error(`cua: spikeRoute must be one of 1, 2', 2 or 3 [invalid_spike_route]`);
+      args.spikeRoute = input.spikeRoute;
+    }
     let lineage = observations.lineage(target.appPath);
     if (index !== undefined) {
       const element = observations.element(target.appPath, index);

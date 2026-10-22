@@ -269,7 +269,9 @@ async function runOnce(options, io) {
     if (!Number.isSafeInteger(watch?.pid)) throw new Error('the activation watcher did not report its pid: no row could prove its coverage');
     ctx.watcher = watch.pid;
     const stderrFile = dryRun ? undefined : join(mkdtempSync(join(tmpdir(), 'cua-matrix-serve-')), 'serve-stderr.txt');
-    ctx.lane = await connectLane({ops, pre, prepared, host, engine, connect: io.connect, bundleIds: [...SCENE_ORDER.map(id => SCENES[id].bundleId), WINDOWLESS_BUNDLE_ID], meta, stderrFile});
+    // Only the route A/B's serve may forward a click's forced route (CUA_ENGINE_SPIKE_ROUTE, src/services/engine/service.mjs).
+    ctx.lane = await connectLane({ops, pre, prepared, host, engine, connect: io.connect, bundleIds: [...SCENE_ORDER.map(id => SCENES[id].bundleId), WINDOWLESS_BUNDLE_ID], meta, stderrFile,
+      spikeRoute: Boolean(plan.routeAb)});
     for (const id of scenes) {
       // getApp emits its text: the scene's own window in front first, so that text is the run's.
       const front = activate(ctx, id);

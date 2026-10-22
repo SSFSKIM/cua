@@ -19,14 +19,16 @@ const counted = (become, resign) => ({seq: become + resign, at: 1, counts: {...z
 // The fixture as the engine change drives it: a natural press holds a fake activation (become +1) until a request aimed
 // at the user's app releases it (resign +1); a forced route-1 press activates nothing. `honours`: the engine takes the
 // forced route (false: the service drops spikeRoute, every press is route 3).
-function fixture({honours = true, releases = true, effect = true} = {}) {
+function fixture({honours = true, releases = true, effect = true, activation = null} = {}) {
   let become = 3, resign = 3, held = false;
   const cell = code => {
     if (code.includes('cua-matrix:route-ab:act')) {
       const forced = code.includes('spikeRoute');
       const route = forced && honours ? 1 : 3;
-      if (route === 3 && !held) { become += 1; held = true; }
-      return {actMs: forced ? 4 : 9, at: [100, 104], threw: false, _meta: {'cua/inputRoute': route}};
+      const activated = route === 3 && !held;
+      if (activated) { become += 1; held = true; }
+      return {actMs: forced ? 4 : 9, at: [100, 104], threw: false, _meta: {'cua/inputRoute': route,
+        ...(activation && activated ? {'cua/activationClick': activation, 'cua/activationGuardMs': 12} : {})}};
     }
     if (code.includes('cua-matrix:route-ab:effect')) return effect ? {ok: true, outcome: {pressedOnce: true, effectMs: 140, polls: 2, firstMs: 60, pressed: 1}}
       : {ok: false, outcome: {pressedOnce: false, effectMs: null, polls: 9, firstMs: 60, pressed: 0}};
@@ -36,10 +38,10 @@ function fixture({honours = true, releases = true, effect = true} = {}) {
   const ops = {matrix: (base, a) => { const answer = base(a); return a[0] === 'electron-counters' ? {...answer, answer: counted(become, resign)} : answer; }};
   return {cell, ops};
 }
-const run = (over = {}) => {
+const run = (over = {}, plan = planOf('route-ab')) => {
   const {cell, ops} = fixture(over);
   const calls = [];
-  return runWith({plan: planOf('route-ab'), cellName: 'route-ab', cell, ops, calls}).then(out => ({...out, calls}));
+  return runWith({plan, cellName: 'route-ab', cell, ops, calls}).then(out => ({...out, calls}));
 };
 
 test('the cell is registered, narrows to the Electron fixture behind one user window, and lists as a narrowed cell', async () => {
@@ -153,4 +155,36 @@ test('a dry run of the cell walks every step', async () => {
   const {result} = await runWith({plan: planOf('route-ab'), cellName: 'route-ab'});
   assert.deepEqual(validateCellResult(result), []);
   assert.equal(result.rows.length, 6);
+});
+
+test('--natural-only narrows the cell to six natural samples; it belongs to the route A/B cell alone', async () => {
+  const plan = planOf('route-ab', {naturalOnly: true});
+  assert.deepEqual(plan.routeAb, {driven: 'electron', user: 'finder', naturalOnly: true});
+  assert.equal(plan.id, 'route-ab-natural-only');
+  assert.throws(() => planOf('method', {naturalOnly: true}), /--natural-only/);
+  const {parseCommand} = await import('../../scripts/native-matrix.mjs');
+  assert.equal(parseCommand(['cell', 'route-ab', '--device', 'mini', '--natural-only', '--dry-run']).naturalOnly, true);
+  assert.equal(parseCommand(['cell', 'route-ab', '--device', 'mini', '--dry-run']).naturalOnly, false);
+});
+
+test('natural only: every sample after the first begins with the previous hold released, and none is forced', async () => {
+  const {code, result, calls} = await run({activation: 'posted'}, planOf('route-ab', {naturalOnly: true}));
+  assert.equal(code, 0);
+  assert.deepEqual(validateCellResult(result), []);
+  assert.deepEqual(result.rows.map(r => [r.variant, r.sample]), [1, 2, 3, 4, 5, 6].map(n => ['natural', n]));
+  assert.ok(result.rows.every(r => r.invalid === undefined && r.ok && r.inputRoute === 3));
+  assert.deepEqual(result.rows.map(r => r.released), [undefined, true, true, true, true, true]);
+  assert.equal(calls.filter(c => c.code.includes('cua-matrix:route-ab:release')).length, 5);
+  assert.ok(calls.every(c => !c.code.includes('spikeRoute')), 'no forced press');
+  // Each press began un-held, so each ran the activation, whose click the engine reported.
+  assert.ok(result.rows.every(r => r.countersAfter.counts.appDidBecomeActive === r.countersBefore.counts.appDidBecomeActive + 1));
+  assert.ok(result.rows.every(r => r.activation?.click === 'posted' && r.activation.posted === true && r.activation.guardMs === 12));
+  assert.equal(result.meta.planId, 'route-ab-natural-only');
+});
+
+test('the activation click\'s meta is recorded when the engine reports it: posted, or why it was skipped; absent, null', async () => {
+  const skipped = await run({activation: 'control'}, planOf('route-ab', {naturalOnly: true}));
+  assert.ok(skipped.result.rows.every(r => r.activation?.posted === false && r.activation.click === 'control'));
+  const plain = await run();
+  assert.ok(plain.result.rows.every(r => r.activation === null), 'null: the act reported none');
 });

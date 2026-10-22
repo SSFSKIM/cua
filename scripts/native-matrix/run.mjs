@@ -92,18 +92,19 @@ const EMPTY_PLAN = {frontmost: [], speed: false, finding: false, background: [],
 const NARROWABLE = [...FULL_PLAN.frontmost, 'windowless'];
 // A plan narrowed to one target (and for the background, one user): the registry's `cell <name> --scene --user`. Its id
 // is 'full' only for the whole matrix.
-export function planOf(kind, {scene = null, user = null} = {}) {
+export function planOf(kind, {scene = null, user = null, naturalOnly = false} = {}) {
+  if (naturalOnly && kind !== 'route-ab') throw new Error('--natural-only narrows the route-ab cell alone');
   if (scene !== null && !NARROWABLE.includes(scene)) throw new Error(`--scene is one of ${NARROWABLE.join(', ')}`);
   if (user !== null && !SCENE_ORDER.includes(user)) throw new Error(`--user is one of ${SCENE_ORDER.join(', ')}`);
-  const plan = narrowed(kind, {scene, user});
+  const plan = narrowed(kind, {scene, user, naturalOnly});
   if (!plan.frontmost.length && !plan.background.length && !plan.launch.length && !plan.concurrent.length && !plan.sheet && !plan.intervention.length && !plan.unicode?.fields.length && !plan.routeAb) {
     const option = OWNER_OPTIONS.find(o => kind === 'launch' && o.section === 'launch' && o.id.startsWith(`${scene}/`));
     throw new Error(`the ${kind} cell has nothing to run for${scene ? ` --scene ${scene}` : ''}${user ? ` --user ${user}` : ''}${option ? `: ${option.option} (${option.reason})` : ''}`);
   }
-  const id = kind === 'matrix' && scene === null && user === null ? 'full' : `${kind}${scene ? `:${scene}` : ''}${user ? `@${user}` : ''}`;
+  const id = kind === 'matrix' && scene === null && user === null ? 'full' : `${kind}${naturalOnly ? '-natural-only' : ''}${scene ? `:${scene}` : ''}${user ? `@${user}` : ''}`;
   return {...plan, id};
 }
-function narrowed(kind, {scene, user}) {
+function narrowed(kind, {scene, user, naturalOnly}) {
   // --scene names a target exactly: textedit is the document, openPanel its Open panel.
   const front = t => !scene || t === scene;
   const back = p => (!scene || p.driven === scene) && (!user || p.user === user);
@@ -121,8 +122,10 @@ function narrowed(kind, {scene, user}) {
     case 'pre-action-refusal': return {...EMPTY_PLAN, intervention: !scene || scene === 'textedit' ? ['preAction'] : []};
     // The Korean and Unicode matrix narrows to one field.
     case 'korean': return {...EMPTY_PLAN, unicode: {...UNICODE_PLAN, fields: UNICODE_PLAN.fields.filter(f => !scene || f === scene)}};
-    // Hold 3's route A/B (./route-ab.mjs): the Electron fixture driven, behind Finder's window unless --user names another.
-    case 'route-ab': return {...EMPTY_PLAN, routeAb: (!scene || scene === ROUTE_AB.driven) && user !== ROUTE_AB.driven ? {driven: ROUTE_AB.driven, user: user ?? ROUTE_AB.user} : null};
+    // Hold 3's route A/B (./route-ab.mjs): the Electron fixture driven, behind Finder's window unless --user names another;
+    // --natural-only runs the natural samples alone.
+    case 'route-ab': return {...EMPTY_PLAN, routeAb: (!scene || scene === ROUTE_AB.driven) && user !== ROUTE_AB.driven
+      ? {driven: ROUTE_AB.driven, user: user ?? ROUTE_AB.user, ...(naturalOnly ? {naturalOnly: true} : {})} : null};
     default: throw new Error(`no plan ${kind}`);
   }
 }

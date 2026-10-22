@@ -7,9 +7,12 @@
 //            connection. A sample whose act reports another route is invalid: the argument did not reach the engine.
 //   natural  the facade's click, routed as the engine chooses (route 3 then AXPress under the engine change).
 // The first sample is forced, so it runs before any route-3 action on the fixture in the connection. Before every
-// later forced sample, the previous natural sample's hold is released by one request aimed at another app (an
+// sample that follows a natural one, that sample's hold is released by one request aimed at another app (an
 // observation of the user window's app) and the release is verified from the fixture's counters (releaseOf); a sample
-// whose release cannot be shown is invalid and sends nothing.
+// whose release cannot be shown is invalid and sends nothing. `--natural-only` (NATURAL_ONLY) runs six natural samples,
+// each after the first released so, so every press begins with the fixture not believing it is active and runs the
+// activation. Every row that acted records the activation's click as the engine reported it (`activation`: {click,
+// posted, guardMs}), or null when the act's meta carries none (the service passes no `cua/activationClick` today).
 //
 // Per sample: the fixture's counters (./matrix-device.mjs electron-counters); the prepare (count and index); the
 // oracle's reading with the focus probe on the user window; the act (its route and in-cell ms); the effect, polled by
@@ -26,7 +29,9 @@ import {activate, focusOf, js, mark, push, read, sameWindow} from './steps.mjs';
 const j = JSON.stringify;
 export const ROUTE_AB = Object.freeze({driven: 'electron', user: 'finder'});
 export const VARIANTS = Object.freeze(['forced1', 'natural', 'forced1', 'natural', 'forced1', 'natural']);
+export const NATURAL_ONLY = Object.freeze(VARIANTS.map(() => 'natural'));
 export const ROUTE_AB_SAMPLES = VARIANTS.length;
+export const variantsOf = routeAb => (routeAb.naturalOnly ? NATURAL_ONLY : VARIANTS);
 export const ROUTE_AB_ID = 'electron/background/click.button';
 export const EFFECT_BOUND_MS = 2000;
 // The fixture writes its counters after the app's events, which arrive after the request that caused them returns: the
@@ -71,6 +76,11 @@ export function releaseOf({start, natural, now}) {
   return {released: balanced && (!held || resignAdvanced), held, resignAdvanced, balanced};
 }
 
+// What route 3's activation click did, from the act's engine meta (./lane.mjs engineMetaOf): "posted", or why it was
+// skipped (noPoint, outsideFrame, spared, control, hitTestFailed), with the activation's guard time. -> that, or null.
+const activationOf = meta => (typeof meta?.activationClick === 'string'
+  ? {click: meta.activationClick, posted: meta.activationClick === 'posted', guardMs: meta.activationGuardMs ?? null} : null);
+
 // The fixture's counters on the device, its window the harness's (it activates nothing). -> {answer: counters | null, at}.
 function counters(ctx) {
   const {answer = null, at = null} = ctx.ops.matrix(['electron-counters', '--run', ctx.run]) ?? {};
@@ -80,22 +90,23 @@ function counters(ctx) {
 
 // The cell's section: the user window in front, then the samples. Every sample's row is pushed, invalid with its reason
 // when its precondition did not hold.
-export async function routeAbSection(ctx, {driven, user}) {
+export async function routeAbSection(ctx, routeAb) {
+  const {driven, user} = routeAb, variants = variantsOf(routeAb);
   const base = {section: 'route-ab', id: ROUTE_AB_ID, engine: ctx.engine, ok: false, scene: driven, target: driven, user, regime: 'background', method: 'click', case: 'button'};
   const sampleOf = i => (ctx.n - 1) * ROUTE_AB_SAMPLES + i + 1;
   const front = activate(ctx, user);
   const r0 = front?.ok ? read(ctx) : null;
   const userWindow = r0 ? userWindowOf(r0.reading, ctx.records[user].pid) : null;
   if (!userWindow) {
-    VARIANTS.forEach((variant, i) => push(ctx, {...base, variant, sample: sampleOf(i), invalid: `the user window (${user}) did not come to the front`}));
+    variants.forEach((variant, i) => push(ctx, {...base, variant, sample: sampleOf(i), invalid: `the user window (${user}) did not come to the front`}));
     return;
   }
   const start = counters(ctx).answer;
-  ctx.meta.routeAb = {countersAtStart: start};
+  ctx.meta.routeAb = {variants, countersAtStart: start};
   let natural = null;
-  for (const [i, variant] of VARIANTS.entries()) {
+  for (const [i, variant] of variants.entries()) {
     await ctx.checkpoint();
-    const row = await sample(ctx, {base: {...base, variant, sample: sampleOf(i)}, variant, user, userWindow, start, natural: i > 0 && variant === 'forced1' ? natural : null,
+    const row = await sample(ctx, {base: {...base, variant, sample: sampleOf(i)}, variant, user, userWindow, start, natural: i > 0 && variants[i - 1] === 'natural' ? natural : null,
       app: ctx.records[driven].app});
     // A natural sample that sent nothing held nothing: its counters before stand for after.
     if (variant === 'natural') natural = {before: row.countersBefore ?? null, after: row.countersAfter ?? (row.actAt === undefined ? row.countersBefore ?? null : null)};
@@ -139,7 +150,7 @@ async function sample(ctx, {base, variant, user, userWindow, start, natural, app
   if (before.watcher !== true) return done({invalid: 'the activation watcher was not running before the action'});
   const acted = span(await ctx.lane.js(cells.act));
   if (!acted.ok) return done({invalid: 'the act cell failed', error: acted.error});
-  Object.assign(row, {inputRoute: acted.route, inCellMs: acted.value.actMs, wallMs: acted.wallMs, actAt: acted.value.at ?? acted.at});
+  Object.assign(row, {inputRoute: acted.route, inCellMs: acted.value.actMs, wallMs: acted.wallMs, actAt: acted.value.at ?? acted.at, activation: activationOf(acted.engine)});
   const effected = span(await ctx.lane.js(routeAbCells(app, variant, (acted.value.at ?? acted.at)[1]).check));
   const after = span(read(ctx, focusOf(userWindow)));
   row.focusAfter = after.focus ?? null;

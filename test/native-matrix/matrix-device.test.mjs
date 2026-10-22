@@ -56,6 +56,28 @@ test('read: an unowned top window records only whether the engine under test own
   assert.deepEqual(asked, [], 'and not resolved');
 });
 
+test('read: the reading\'s `at` covers what it covered at 38ecfa07, and the engine-ownership lookup runs after it closes and after the focus probe', () => {
+  // A clock that ticks on every read, and every io call logged with the clock at that moment.
+  let t = 0;
+  const realNow = Date.now;
+  Date.now = () => ++t;
+  const calls = [];
+  const log = (name, value) => { calls.push({name, t}); return value; };
+  const io = {state: () => log('state', state), launched: () => log('launched', []), watcherRuns: () => log('watcherRuns', true),
+    frontWindow: () => log('frontWindow', {at: 5, frontmost: {pid: 500, bundleId: 'x'}, topWindow: {ownerPid: 500, number: 9, bounds, onScreen: true}}),
+    probe: () => log('probe', {focusedApp: {pid: 7}, named: false}),
+    executablePaths: pids => log('executablePaths', new Map(pids.map(p => [p, '/A/cua Engine.app/Contents/MacOS/x'])))};
+  let r;
+  try { r = read({focus: '7,0,25,900,700', watcher: 900, approvedEngine: '/A/cua Engine.app'}, io); } finally { Date.now = realNow; }
+  assert.deepEqual(calls.map(c => c.name), ['state', 'launched', 'frontWindow', 'watcherRuns', 'probe', 'executablePaths'],
+    'the focus probe follows the window read as at 38ecfa07; the ownership lookup comes last');
+  const inside = calls.filter(c => c.name !== 'executablePaths');
+  assert.ok(inside.every(c => c.t >= r.at[0] && c.t < r.at[1]), 'the reading\'s own calls are inside `at`');
+  assert.ok(calls.at(-1).t >= r.at[1], 'the lookup runs after `at` closes');
+  assert.equal(r.reading.topWindow.engine, true, 'its answer is still recorded');
+  assert.equal(r.reading.topWindow.ownerPid, null, 'never the pid');
+});
+
 test('the alert watch: a baseline of window numbers, then an alert process or a new low window aborts, the run\'s own never', () => {
   const dir = tmp();
   try {

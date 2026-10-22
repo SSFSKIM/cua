@@ -117,20 +117,24 @@ export function ownedFocus(report, owned) {
 
 // The oracle's reading. An unowned top window also records `engine`, recorded and never judged (./oracle.mjs sameFront
 // does not read it): whether its owner runs from the engine under test's roots (enginePids; the vendor engine's cursor
-// overlay), false when it runs from elsewhere, null when unresolved or no roots were given; never its pid.
+// overlay), false when it runs from elsewhere, null when unresolved or no roots were given; never its pid. Only the
+// owner's raw pid is kept during the reading; its path is resolved (a `ps`) after `at` closes and after the focus probe,
+// so the lookup never shifts the reading's timings.
 // io: {frontWindow(), probe(args), state(), launched(), watcherRuns(pid), executablePaths(pids)}.
 export function read({focus = null, watcher = null, approvedRuntime = null, approvedEngine = null}, io) {
   const from = Date.now();
   const owned = ownedPids(io.state(), io.launched());
   const raw = io.frontWindow();
   const out = {reading: ownedReading(raw, owned), watcher: Number.isSafeInteger(watcher) && io.watcherRuns(watcher)};
-  if (out.reading.topWindow?.owned === false) out.reading.topWindow.engine = engineOwns(raw.topWindow.ownerPid, [approvedRuntime, approvedEngine], io);
+  const unownedTop = out.reading.topWindow?.owned === false ? {pid: raw.topWindow.ownerPid} : null;
   if (focus !== null) {
     if (!/^\d+,-?\d+(\.\d+)?,-?\d+(\.\d+)?,\d+(\.\d+)?,\d+(\.\d+)?$/.test(focus)) throw new Error('--focus needs pid,x,y,w,h');
     if (!owned.includes(Number(focus.split(',')[0]))) throw new Error('--focus names a window of a process the run does not own');
     out.focus = ownedFocus(io.probe(['focus', '--window', focus]), owned);
   }
-  return {...out, at: [from, Date.now()]};
+  const at = [from, Date.now()];
+  if (unownedTop) out.reading.topWindow.engine = engineOwns(unownedTop.pid, [approvedRuntime, approvedEngine], io);
+  return {...out, at};
 }
 
 // Whether `pid` runs from the roots: true, false, or null when it does not resolve or no roots were given.

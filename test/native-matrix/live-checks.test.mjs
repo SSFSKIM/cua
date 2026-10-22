@@ -197,7 +197,7 @@ test('menuItemLabel: not found, invalid, unattempted, read disabled, inconclusiv
 
 test('enablementOf: the engine\'s enablement diagnostics, kept beside the enablement cell and never judged', () => {
   assert.deepEqual(enablementOf({enable: 0.4, enablementPrior: 'false', enabled: 'AXManualAccessibility', webShaped: true, chromium: true, webAreaWait: 120, webAreaFound: true, nodes: 83}),
-    {prior: 'false', set: 'AXManualAccessibility', webShaped: true, chromium: true, webAreaSeen: false, webAreaFound: true});
+    {prior: 'false', set: 'AXManualAccessibility', webShaped: true, chromium: true, webAreaFound: true});
   assert.equal(enablementOf({}).prior, null, 'an app listing neither attribute reports no prior');
 });
 

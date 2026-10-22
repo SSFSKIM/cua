@@ -224,26 +224,14 @@ final class EnablementReleaseTests: XCTestCase {
     XCTAssertEqual(app.namesRead, 2, "the listed attribute is read once per process once it answers")
   }
 
-  func testAReleaseForgetsTheWebAreaSoTheNextEnablingWaitsAgain() {
+  func testAReleasedProcessIsEnabledAndOwnedAgainByTheNextConnection() {
     let web = WebAccessibility()
     let app = FakeApplication(names: ["AXManualAccessibility"])
     _ = web.enable(pid: 7, launched: launched, connection: 1, access: app.access)
-    web.noteWebArea(pid: 7, launched: launched)
     web.release(connection: 1)
-    XCTAssertFalse(web.hasSeenWebArea(pid: 7, launched: launched), "the page's tree may be gone with the attribute")
     XCTAssertEqual(web.enable(pid: 7, launched: launched, connection: 4, access: app.access), "AXManualAccessibility", "enabled and owned again")
     web.release(connection: 4)
     XCTAssertEqual(app.written, ["AXManualAccessibility=true", "AXManualAccessibility=false", "AXManualAccessibility=true", "AXManualAccessibility=false"])
-  }
-
-  func testAProcessTheEngineDidNotEnableKeepsItsWebAreaAcrossAClose() {
-    let web = WebAccessibility()
-    let app = FakeApplication(names: ["AXManualAccessibility"])
-    app.values["AXManualAccessibility"] = true
-    _ = web.enable(pid: 7, launched: launched, connection: 1, access: app.access)
-    web.noteWebArea(pid: 7, launched: launched)
-    web.release(connection: 1)
-    XCTAssertTrue(web.hasSeenWebArea(pid: 7, launched: launched))
   }
 
   func testARelaunchReusingThePidIsAnotherProcess() {
@@ -319,6 +307,64 @@ final class EnablementReleaseTests: XCTestCase {
     XCTAssertEqual(app.values["AXManualAccessibility"], true, "the process stays enabled under its new observer")
     web.release(connection: 2)
     XCTAssertEqual(app.written, ["AXManualAccessibility=true", "AXManualAccessibility=false", "AXManualAccessibility=true", "AXManualAccessibility=false"])
+  }
+}
+
+/// The web-area wait (the vendor's rule, Enablement.swift `webAreaWaitNeeded`): it runs after enabling and on every
+/// Chromium observation, whatever earlier observations of the process saw. Each observation here is composed as
+/// getAppState composes it: the enablement's re-read-and-set, then the wait decision on a Chromium window or not.
+final class WebAreaWaitTests: XCTestCase {
+  private let launched = Date(timeIntervalSince1970: 1_000)
+
+  /// One observation of pid 7 by `connection`; true when it waits.
+  private func observe(_ web: WebAccessibility, _ app: FakeApplication, connection: Int, chromium: Bool = true) -> Bool {
+    let enabledNow = web.enable(pid: 7, launched: launched, connection: connection, access: app.access) != nil
+    return webAreaWaitNeeded(switchOn: true, enabledNow: enabledNow, chromium: chromium)
+  }
+
+  func testTheWaitRunsOnASecondObservationAfterOneThatSawTheWebArea() {
+    let web = WebAccessibility()
+    let app = FakeApplication(names: ["AXManualAccessibility"])
+    XCTAssertTrue(observe(web, app, connection: 1), "the first observation, enabling")
+    XCTAssertTrue(observe(web, app, connection: 1), "the page was seen, and the wait runs again (hold 2b: a first read can be an empty container)")
+    XCTAssertTrue(observe(web, app, connection: 1))
+    XCTAssertEqual(app.written, ["AXManualAccessibility=true"], "re-read and found true: set once")
+  }
+
+  func testTheWaitRunsAfterAReleaseWhenANewConnectionObserves() {
+    let web = WebAccessibility()
+    let owned = FakeApplication(names: ["AXManualAccessibility"])
+    XCTAssertTrue(observe(web, owned, connection: 1))
+    web.release(connection: 1)
+    XCTAssertTrue(observe(web, owned, connection: 2), "re-enabled after the write-back")
+    XCTAssertEqual(owned.written, ["AXManualAccessibility=true", "AXManualAccessibility=false", "AXManualAccessibility=true"])
+
+    // An attribute another client set is never released, so the next connection enables nothing; it still waits.
+    let other = WebAccessibility()
+    let voiceOver = FakeApplication(names: ["AXManualAccessibility"])
+    voiceOver.values["AXManualAccessibility"] = true
+    XCTAssertTrue(observe(other, voiceOver, connection: 1))
+    other.release(connection: 1)
+    XCTAssertTrue(observe(other, voiceOver, connection: 2))
+    XCTAssertTrue(voiceOver.writes.isEmpty)
+  }
+
+  func testTheWaitRunsOnAFreshConnectionWhileAnotherObservesTheProcess() {
+    let web = WebAccessibility()
+    let app = FakeApplication(names: ["AXManualAccessibility"])
+    XCTAssertTrue(observe(web, app, connection: 1))
+    XCTAssertTrue(observe(web, app, connection: 2), "nothing enabled now; a Chromium window waits")
+    web.release(connection: 1)
+    XCTAssertEqual(app.written, ["AXManualAccessibility=true"], "connection 2 still observes it")
+  }
+
+  func testANonChromiumWindowWaitsOnlyOnTheObservationThatEnabledIt() {
+    let web = WebAccessibility()
+    let named = FakeApplication(names: ["AXEnhancedUserInterface"])  // a named bundle (iWork, Spotify): not Chromium
+    XCTAssertTrue(observe(web, named, connection: 1, chromium: false), "after enabling (the vendor's rule)")
+    XCTAssertFalse(observe(web, named, connection: 1, chromium: false))
+    XCTAssertFalse(observe(web, FakeApplication(names: ["AXTitle"]), connection: 1, chromium: false), "nothing to enable: no wait")
+    XCTAssertFalse(webAreaWaitNeeded(switchOn: false, enabledNow: true, chromium: true), "the M0 switch off")
   }
 }
 

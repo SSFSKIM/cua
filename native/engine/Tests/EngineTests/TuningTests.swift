@@ -3,27 +3,8 @@ import ApplicationServices
 import XCTest
 @testable import Engine
 
-// The tuning round's rules: the web-area wait once per process, and the app-resolution cache's invalidation.
-
-final class WebAreaOncePerProcessTests: XCTestCase {
-  func testTheWaitRunsAfterEnablingOrOnChromiumUntilAWebAreaWasSeenInTheProcess() {
-    XCTAssertTrue(webAreaWaitNeeded(switchOn: true, enabledNow: true, chromium: false, seen: false))
-    XCTAssertTrue(webAreaWaitNeeded(switchOn: true, enabledNow: false, chromium: true, seen: false))
-    XCTAssertFalse(webAreaWaitNeeded(switchOn: true, enabledNow: false, chromium: true, seen: true), "seen in this process: skipped")
-    XCTAssertFalse(webAreaWaitNeeded(switchOn: true, enabledNow: false, chromium: false, seen: false))
-    XCTAssertFalse(webAreaWaitNeeded(switchOn: false, enabledNow: true, chromium: true, seen: false))
-  }
-
-  func testAWebAreaSeenIsRememberedPerProcessLaunchNotPerPid() {
-    let web = WebAccessibility()
-    let launched = Date(timeIntervalSince1970: 1_000)
-    XCTAssertFalse(web.hasSeenWebArea(pid: 4242, launched: launched))
-    web.noteWebArea(pid: 4242, launched: launched)
-    XCTAssertTrue(web.hasSeenWebArea(pid: 4242, launched: launched))
-    XCTAssertFalse(web.hasSeenWebArea(pid: 4242, launched: Date(timeIntervalSince1970: 2_000)), "a relaunch reusing the pid starts over")
-    XCTAssertFalse(web.hasSeenWebArea(pid: 4243, launched: launched))
-  }
-}
+// The tuning round's rules: the app-resolution cache's invalidation. (Its web-area wait once per process was withdrawn
+// on 2026-10-22; the wait's rule is pinned by ObservationRulesTests' WebAreaWaitTests.)
 
 final class ResolutionCacheTests: XCTestCase {
   private let app = ResolvedApp(appPath: "/Applications/Fake.app", bundleIdentifier: "com.example.fake", displayName: "Fake", running: nil)

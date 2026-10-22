@@ -15,9 +15,10 @@ import os
 // attribute it read false and then set: one that read true, or could not be read, may be VoiceOver's or another
 // assistive client's and is never written back. A failed write back is logged and retried at a later close or the
 // shutdown. The release is a declared difference, since the vendor never unsets, and a web app left in
-// full-accessibility mode after cua is done is interference (A3). The first observation after enabling, and every
-// observation of a Chromium window until a web area has been seen in the process, waits 100 ms and then up to 1 s for
-// an AXWebArea to appear. The vendor's Spotify fake activation before enabling is route 3's and is not done here.
+// full-accessibility mode after cua is done is interference (A3). The observation that enabled, and every observation
+// of a Chromium window, waits 100 ms and then up to 1 s for an AXWebArea to appear (the vendor's rule; Decision Log
+// 2026-10-22 withdrew the M0 tuning that skipped it once a web area had been seen in the process). The vendor's Spotify
+// fake activation before enabling is route 3's and is not done here.
 
 private let enablementLog = Logger(subsystem: "io.github.ssfskim.cua.engine", category: "enablement")
 
@@ -49,12 +50,10 @@ func enablementAttribute(listed names: [String]) -> String? {
   return nil
 }
 
-/// Whether an observation waits for a web area (the spec's Observation paragraph): after enabling, or on a Chromium
-/// window, until a web area has been seen in the process. cua's departure: the vendor waits on every Chromium
-/// observation (about 145 ms each on the MacBook shakedown); a window whose web area went away is the settle's busy
-/// veto's case (an unloaded AXWebArea).
-func webAreaWaitNeeded(switchOn: Bool, enabledNow: Bool, chromium: Bool, seen: Bool) -> Bool {
-  switchOn && (enabledNow || chromium) && !seen
+/// Whether an observation waits for a web area (the spec's Observation paragraph): after enabling, and on every
+/// Chromium window, as the vendor does. It waits for the web area's presence, not its contents.
+func webAreaWaitNeeded(switchOn: Bool, enabledNow: Bool, chromium: Bool) -> Bool {
+  switchOn && (enabledNow || chromium)
 }
 
 /// How the enablement reaches one process's application element: its attribute names (nil while they cannot be read,
@@ -110,11 +109,10 @@ private final class EnabledProcess: @unchecked Sendable {
 }
 
 /// Per engine: which bundles are web-shaped, per process (by pid and launch date, so a relaunch that reuses a pid starts
-/// over) the enablement the engine set and the connections that observed it, and the processes a web area was seen in.
+/// over) the enablement the engine set and the connections that observed it.
 final class WebAccessibility: @unchecked Sendable {
   private let lock = NSLock()
   private var webShapedByPath: [String: Bool] = [:]
-  private var webAreaSeen: Set<String> = []
   private var processes: [String: EnabledProcess] = [:]
   private var observers: [String: Set<Int>] = [:]
   /// Told (a bounded, value-free line) when a reset of the attribute the engine set fails; it stays owned.
@@ -132,18 +130,6 @@ final class WebAccessibility: @unchecked Sendable {
   }
 
   private static func process(_ pid: pid_t, _ launched: Date?) -> String { "\(pid)@\(launched?.timeIntervalSince1970 ?? 0)" }
-
-  func hasSeenWebArea(pid: pid_t, launched: Date?) -> Bool {
-    lock.lock()
-    defer { lock.unlock() }
-    return webAreaSeen.contains(Self.process(pid, launched))
-  }
-
-  func noteWebArea(pid: pid_t, launched: Date?) {
-    lock.lock()
-    defer { lock.unlock() }
-    webAreaSeen.insert(Self.process(pid, launched))
-  }
 
   func isWebShaped(_ appPath: String) -> Bool {
     lock.lock()
@@ -206,28 +192,25 @@ final class WebAccessibility: @unchecked Sendable {
     for (key, entry) in all { releaseIfUnobserved(key, entry) }
   }
 
-  /// Writes back what the engine set on a process no connection observes now, then retires the process (with its web
-  /// area, whose tree may go with the attribute, so a later enabling waits for it again). The entry stays discoverable
-  /// through the reset, so an observation that begins meanwhile shares its lock and reads after the reset (setting the
-  /// attribute again, owned); it is retired only afterwards, by an atomic re-check that no observer registered. A reset
-  /// that fails keeps the ownership and the entry, so a later close or the shutdown retries it, and is logged.
+  /// Writes back what the engine set on a process no connection observes now, then retires the process. The entry stays
+  /// discoverable through the reset, so an observation that begins meanwhile shares its lock and reads after the reset
+  /// (setting the attribute again, owned); it is retired only afterwards, by an atomic re-check that no observer
+  /// registered. A reset that fails keeps the ownership and the entry, so a later close or the shutdown retries it, and
+  /// is logged.
   private func releaseIfUnobserved(_ key: String, _ entry: EnabledProcess) {
     entry.io.lock()
     defer { entry.io.unlock() }
     guard unobserved(key) else { return }
-    var reset = false
     if let owned = entry.owned {
       if !entry.access.current() {
         entry.owned = nil  // the process ended (its pid may be another launch's): nothing to write back
       } else if entry.access.write(owned, false) {
         entry.owned = nil
-        reset = true
       } else {
         releaseFailed("enablement release failed: \(owned) on pid \(key.prefix { $0 != "@" }); kept for a later close or shutdown")
       }
     }
     lock.lock()
-    if reset { webAreaSeen.remove(key) }
     if entry.owned == nil, observers[key]?.isEmpty ?? true, processes[key] === entry {
       observers[key] = nil
       processes[key] = nil

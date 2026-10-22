@@ -309,11 +309,11 @@ export function pasteVerdict(steps) {
 
 // The engine's enablement diagnostics on one observation (its `timings`, M2a.4): `enablementPrior` what the attribute
 // read before the observation touched it ("true", "false" or "unreadable"; absent when the app lists neither), `enabled`
-// the attribute it set, which the engine does only when it read false; `webAreaSeen` that an earlier observation of the
-// process found the web area, which a release forgets. Kept beside the enablement cell's verdict, never judged: the
-// attribute's readback is not Chromium's mode (./residue-checks.mjs enablementVerdict).
+// the attribute it set, which the engine does only when it read false; `webAreaFound` whether the observation's web-area
+// wait found one. Kept beside the enablement cell's verdict, never judged: the attribute's readback is not Chromium's
+// mode (./residue-checks.mjs enablementVerdict).
 export const enablementOf = timings => ({prior: timings?.enablementPrior ?? null, set: timings?.enabled ?? null, webShaped: timings?.webShaped ?? null,
-  chromium: timings?.chromium ?? null, webAreaSeen: timings?.webAreaSeen === true, webAreaFound: timings?.webAreaFound ?? null});
+  chromium: timings?.chromium ?? null, webAreaFound: timings?.webAreaFound ?? null});
 
 // --probe input-source (the pre-flight entry's item 4): Korean 2-Set selected and read back by a second probe, then the
 // owner's source and per-context preference restored.

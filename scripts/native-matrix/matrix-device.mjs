@@ -18,7 +18,9 @@
 //   alerts baseline|check --run <dir>
 //       the paste rows' system-alert watch (./live-checks.mjs alertWatch, the live paste check's): the screen's windows
 //       at the baseline kept in the run directory (numbers and owners only), then each check against it -> {abort, export}
-//       (sanitized: alert processes' bundle ids and layers, title keywords, counts); no alert's text is ever read
+//       (sanitized: alert processes' bundle ids and layers, title keywords, counts); no alert's text is ever read. A check
+//       given --approved-runtime <home> and --approved-engine <bundle> leaves out the windows of the engine under test
+//       (enginePids: an owner whose executable lies inside either), as it does the run's own
 //   launched intent <scene> --run <dir>
 //       journaled before a launch row's act is sent: the scene's bundle id, the device's time and the pids of that
 //       bundle running at that moment -> {at, pids}. A controller that dies during or after the act leaves this, and
@@ -220,8 +222,29 @@ export const deviceLoad = (io = {loadavg, uptime, cpus: () => cpus().length}) =>
 
 // ---- the alert watch -----------------------------------------------------------------------------------------------------
 
-// io: {windows(), state(), launched(), dir}.
-export function alerts(action, io) {
+// The processes of the engine under test: an owner whose executable lies inside the approved runtime's home or the
+// approved engine bundle (the vendor engine's own cursor overlay is an on-screen window of its own). Exact by path
+// prefix with a trailing separator, so a sibling directory never matches; an owner whose path does not resolve is not
+// the engine. -> [pid].
+export function enginePids(pids, roots, pathsOf) {
+  const prefixes = roots.filter(Boolean).flatMap(root => { try { return [root, fs.realpathSync(root)]; } catch { return [root]; } })
+    .map(root => `${root.replace(/\/+$/, '')}/`);
+  if (!prefixes.length || !pids.length) return [];
+  const paths = pathsOf(pids);
+  return pids.filter(pid => { const path = paths.get(pid); return typeof path === 'string' && prefixes.some(p => path.startsWith(p)); });
+}
+
+// Each live pid's executable path (ps's comm, the full path on macOS); a pid that is gone is absent. -> Map pid -> path.
+export function executablePaths(pids, {exec = execFileSync} = {}) {
+  if (!pids.length) return new Map();
+  let out;
+  try { out = exec('/bin/ps', ['-o', 'pid=,comm=', '-p', pids.join(',')], {encoding: 'utf8', env: {...process.env, LC_ALL: 'C'}, timeout: 10_000}); }
+  catch (error) { out = String(error.stdout ?? ''); }
+  return new Map(String(out).split('\n').map(line => /^\s*(\d+) (.+)$/.exec(line)).filter(Boolean).map(m => [Number(m[1]), m[2]]));
+}
+
+// io: {windows(), state(), launched(), executablePaths(pids), dir}; roots: the engine under test's (enginePids), for a check.
+export function alerts(action, io, {approvedRuntime = null, approvedEngine = null} = {}) {
   const file = join(io.dir, ALERT_BASELINE_FILE);
   if (action === 'baseline') {
     const kept = io.windows().map(w => ({number: w.number}));
@@ -230,7 +253,10 @@ export function alerts(action, io) {
   }
   if (action !== 'check') throw new Error('alerts baseline|check');
   if (!fs.existsSync(file)) throw new Error('no alert baseline in the run directory: run alerts baseline first');
-  const watch = alertWatch(JSON.parse(fs.readFileSync(file, 'utf8')), io.windows(), {runPids: ownedPids(io.state(), io.launched())});
+  const windows = io.windows(), owned = ownedPids(io.state(), io.launched());
+  const others = [...new Set(windows.map(w => w.ownerPid))].filter(pid => Number.isInteger(pid) && !owned.includes(pid));
+  const engine = enginePids(others, [approvedRuntime, approvedEngine], pids => (io.executablePaths ?? executablePaths)(pids));
+  const watch = alertWatch(JSON.parse(fs.readFileSync(file, 'utf8')), windows, {runPids: [...owned, ...engine]});
   return {abort: watch.abort, export: watch.export};
 }
 
@@ -390,7 +416,7 @@ export async function main(argv, {io: given = {}} = {}) {
     case 'compile': return {front: basename(compiled(FRONT_WINDOW_SCRIPT, dir)), windows: basename(compiled(SYSTEM_WINDOWS_SCRIPT, dir))};
     case 'read': return read({focus: flags.focus ?? null, watcher: flags.watcher === undefined ? null : Number(flags.watcher)}, io);
     case 'step': return timed(() => (io.scenes ?? scenesMain)(argv.slice(1)));
-    case 'alerts': return {...alerts(positional[0], io), at: [Date.now(), Date.now()]};
+    case 'alerts': return {...alerts(positional[0], io, {approvedRuntime: flags['approved-runtime'] ?? null, approvedEngine: flags['approved-engine'] ?? null}), at: [Date.now(), Date.now()]};
     case 'launched':
       if (positional[0] === 'intent') return launchIntent({scene: positional[1]}, io);
       if (positional[0] === 'record') return recordLaunch({scene: positional[1], since: Number(flags.since)}, io);

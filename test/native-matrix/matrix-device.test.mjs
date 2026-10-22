@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {alerts, compiled, deviceLoad, isWatcher, launchIntent, ownedFocus, PROBE_FILE, probeFinish, probeStart, quitLaunched, read, recordLaunch, settleLaunches, source, WINDOWLESS, windowlessUp} from '../../scripts/native-matrix/matrix-device.mjs';
+import {alerts, compiled, executablePaths, deviceLoad, isWatcher, launchIntent, ownedFocus, PROBE_FILE, probeFinish, probeStart, quitLaunched, read, recordLaunch, settleLaunches, source, WINDOWLESS, windowlessUp} from '../../scripts/native-matrix/matrix-device.mjs';
 
 const state = {scenes: {textedit: {pid: 11}, finder: {pid: 7}}};
 const bounds = {x: 0, y: 25, width: 900, height: 700};
@@ -53,6 +53,44 @@ test('the alert watch: a baseline of window numbers, then an alert process or a 
     assert.equal(flagged.abort, true);
     assert.doesNotMatch(JSON.stringify(flagged), /Allow paste/, 'no alert text leaves');
   } finally { fs.rmSync(dir, {recursive: true, force: true}); }
+});
+
+test('the alert watch leaves out the engine under test: a window whose owner runs from the approved runtime or engine bundle', () => {
+  const dir = tmp();
+  const home = '/Users/o/Library/Application Support/cua-spike-vendor', bundle = '/Users/o/Library/Application Support/cua/engine/cua Engine.app';
+  const paths = {
+    500: `${home}/runtimes/1.2/node_modules/@oai/sky/Codex Computer Use.app/Contents/MacOS/ChatGPT Computer Use`,
+    501: `${bundle}/Contents/MacOS/cua-engine`,
+    502: `${home}-old/runtimes/1.2/Codex Computer Use.app/Contents/MacOS/ChatGPT Computer Use`,
+    503: `${bundle}x/Contents/MacOS/cua-engine`,
+  };
+  const asked = [];
+  try {
+    let windows = [{number: 1, ownerPid: 99, ownerName: 'Dock', layer: 20}];
+    const io = {dir, windows: () => windows, state: () => state, launched: () => [], executablePaths: pids => { asked.push(pids); return new Map(pids.filter(p => paths[p]).map(p => [p, paths[p]])); }};
+    alerts('baseline', io);
+    const roots = {approvedRuntime: home, approvedEngine: bundle};
+    windows = [...windows, {number: 2, ownerPid: 500, ownerName: 'ChatGPT Computer Use', layer: 0}, {number: 3, ownerPid: 501, ownerName: 'cua-engine', layer: 0}, {number: 4, ownerPid: 11, layer: 0}];
+    assert.equal(alerts('check', io, roots).abort, false, 'the engine\'s own overlay is not an alert');
+    assert.ok(asked.at(-1).includes(500) && !asked.at(-1).includes(11), 'only owners outside the run are resolved');
+    assert.equal(alerts('check', io).abort, true, 'with no roots given, nothing is left out');
+    for (const pid of [502, 503, 504]) {
+      const flagged = alerts('check', {...io, windows: () => [...windows, {number: 9, ownerPid: pid, ownerName: 'X', layer: 0}]}, roots);
+      assert.equal(flagged.abort, true, `pid ${pid}: a sibling path or an unresolved pid stays flagged`);
+      assert.deepEqual(flagged.export.unknown, {count: 1, windows: [{layer: 0, isAlertProcess: false}]});
+    }
+    // An alert process stays an alert whatever else runs.
+    assert.equal(alerts('check', {...io, windows: () => [...windows, {number: 10, ownerPid: 300, ownerBundleId: 'com.apple.UserNotificationCenter', layer: 8}]}, roots).abort, true);
+  } finally { fs.rmSync(dir, {recursive: true, force: true}); }
+});
+
+test('executable paths come from ps, a vanished pid simply absent', () => {
+  const out = executablePaths([1, 731, 99999], {exec: (cmd, args) => { assert.equal(cmd, '/bin/ps'); assert.deepEqual(args, ['-o', 'pid=,comm=', '-p', '1,731,99999']);
+    return '    1 /sbin/launchd\n  731 /System/Library/CoreServices/Dock.app/Contents/MacOS/Dock\n'; }});
+  assert.deepEqual([...out], [[1, '/sbin/launchd'], [731, '/System/Library/CoreServices/Dock.app/Contents/MacOS/Dock']]);
+  assert.deepEqual([...executablePaths([], {exec: () => assert.fail('no ps for no pids')})], []);
+  const failing = executablePaths([5], {exec: () => { const e = new Error('exit 1'); e.stdout = '    5 /a b/c\n'; throw e; }});
+  assert.deepEqual([...failing], [[5, '/a b/c']]);
 });
 
 test('a launch is identified and journaled at once, and quit only while it is the same process', async () => {

@@ -42,9 +42,10 @@ export const focusOf = w => `${w.pid},${w.bounds.x},${w.bounds.y},${w.bounds.wid
 export const sameWindow = (a, b) => Boolean(a && b) && a.pid === b.pid && ['x', 'y', 'width', 'height'].every(k => a.bounds[k] === b.bounds[k]);
 
 // The paste rows' system-alert watch (./matrix-device.mjs alerts check, the live paste check's): a possible alert stops
-// the run untouched; only its sanitized export is kept.
+// the run untouched; only its sanitized export is kept. The engine under test's own windows (its roots) are not alerts.
 export function alertCheck(ctx, when) {
-  const check = ctx.ops.matrix(['alerts', 'check', '--run', ctx.run]);
+  const roots = [['--approved-runtime', ctx.approvedRuntime], ['--approved-engine', ctx.approvedEngine]].filter(([, root]) => root).flat();
+  const check = ctx.ops.matrix(['alerts', 'check', '--run', ctx.run, ...roots]);
   if (check?.abort !== false) {
     ctx.meta.alert = {when, ...(check?.export ?? {})};
     throw new Stop(`a possible system alert appeared ${when}; the run stopped without touching it`);

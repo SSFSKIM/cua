@@ -211,7 +211,7 @@ async function runOnce(options, io) {
   // windows: every step's device-clock window [{kind, key, at}]; judged: the rows whose activations are charged, by key.
   // posted: the scenes a probe typed into, by when (./steps.mjs quiet); latin: the probe cells' source precondition;
   // perContextOff: the preference read off, the Unicode matrix's precondition for every condition but its own.
-  const ctx = {ops, run, rows, problems, meta, samples, n, engine, records: {}, lane: null, checkpoint, log, now, sleep: io.sleep ?? (ms => new Promise(done => setTimeout(done, ms))),
+  const ctx = {ops, run, rows, problems, meta, samples, n, engine, approvedRuntime, approvedEngine, records: {}, lane: null, checkpoint, log, now, sleep: io.sleep ?? (ms => new Promise(done => setTimeout(done, ms))),
     watcher: null, windows: [], judged: new Map(), posted: {}, latin: false, perContextOff: false};
   let prepared = null, pre = null, laneStarted = null;
   const helpers = [];

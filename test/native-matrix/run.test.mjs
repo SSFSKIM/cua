@@ -146,6 +146,7 @@ test('a paste or typeText act is sent only between two alert checks; an alert be
   const ok = await runWith();
   const checks = matrixSteps(ok.steps, 'alerts').filter(a => a[1] === 'check');
   assert.equal(checks.length, 2 * CASES.textedit.filter(c => PASTING.includes(c.method)).length);
+  assert.ok(checks.every(a => a.join(' ').includes(`--approved-runtime /H --approved-engine ${BUNDLE}`)), 'the engine under test\'s roots reach every check');
   const pastingActs = CASES.textedit.filter(c => PASTING.includes(c.method)).map(c => caseCells('textedit', c).act);
   let sent = 0;
   const stopped = await runWith({lane: code => { if (pastingActs.some(a => code.includes(a))) sent++; },

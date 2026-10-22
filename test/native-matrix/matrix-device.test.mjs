@@ -364,3 +364,29 @@ test('load: the Mac\'s load averages, uptime and core count, nothing else', () =
   assert.equal(real.loadavg.length, 3);
   assert.ok(Number.isInteger(real.uptimeS) && Number.isInteger(real.cpus));
 });
+
+test('Electron\'s accessibility mode: a read given --electron-mode returns the fixture record\'s latest mode and time, after the reading\'s window; the export returns the whole record, sanitized', async () => {
+  const {electronModeRecord, main} = await import('../../scripts/native-matrix/matrix-device.mjs');
+  const record = '{"at":10,"enabled":false,"source":"start"}\nnot json\n{"at":25,"enabled":true,"source":"event","extra":"x"}\n';
+  const io = {state: () => state, launched: () => [], watcherRuns: () => true, electronRecord: () => record,
+    frontWindow: () => ({at: 5, frontmost: {pid: 7, bundleId: 'com.apple.finder'}, topWindow: {ownerPid: 7, number: 3, bounds, onScreen: true}})};
+  assert.deepEqual(read({watcher: 900, electronMode: true}, io).electronMode, {enabled: true, at: 25});
+  assert.equal('electronMode' in read({watcher: 900}, io), false, 'only when asked');
+  assert.equal(read({electronMode: true}, {...io, electronRecord: () => null}).electronMode, null, 'no record: null');
+  assert.deepEqual(electronModeRecord(io), {records: [{at: 10, enabled: false, source: 'start'}, {at: 25, enabled: true, source: 'event'}]});
+  assert.deepEqual(electronModeRecord({...io, electronRecord: () => null}), {records: null});
+  // The CLI reads the record from the Electron scene's user-data directory in the run's scene state.
+  const {writeState} = await import('../../scripts/repl-parity/scenes-mac.mjs');
+  const {FIXTURE_ACCESSIBILITY_FILE} = await import('../../scripts/native-matrix/fixtures/electron-fixture.mjs');
+  const dir = fs.realpathSync(tmp());
+  try {
+    const userDataDir = join(dir, 'electron-user-data');
+    fs.mkdirSync(userDataDir);
+    fs.writeFileSync(join(userDataDir, FIXTURE_ACCESSIBILITY_FILE), record);
+    writeState(dir, {scenes: {electron: {pid: 12, userDataDir}}});
+    assert.deepEqual((await main(['electron-mode', '--run', dir])).records.map(r => r.at), [10, 25]);
+    writeState(dir, {scenes: {}});
+    assert.deepEqual(await main(['electron-mode', '--run', dir]), {records: null}, 'the scene is down: nothing to read');
+    await assert.rejects(main(['read', '--run', dir, '--electron-mode', 'yes']), /--electron-mode latest/);
+  } finally { fs.rmSync(dir, {recursive: true, force: true}); }
+});

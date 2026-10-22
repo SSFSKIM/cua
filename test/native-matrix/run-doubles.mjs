@@ -41,7 +41,10 @@ export async function runWith({engine = 'cua', plan = planOf('background', {scen
       ...(runNumber === undefined ? {} : {runNumber})}, {ops, connect: steered, controllerCheckout: () => checkout, log: () => {}, sleep: async ms => { slept.push(ms); }});
     const file = join(out, `run-${runNumber ?? 1}`, 'result.json');
     const results = Object.fromEntries(fs.readdirSync(out).map(d => [d, JSON.parse(fs.readFileSync(join(out, d, 'result.json'), 'utf8'))]));
-    return {code, steps, calls, slept, results, result: fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : null};
+    // The run directory's other files (the exports beside its result).
+    const runDir = join(out, `run-${runNumber ?? 1}`);
+    const files = fs.existsSync(runDir) ? Object.fromEntries(fs.readdirSync(runDir).filter(f => f !== 'result.json').map(f => [f, fs.readFileSync(join(runDir, f), 'utf8')])) : {};
+    return {code, steps, calls, slept, results, files, result: fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : null};
   } finally { fs.rmSync(out, {recursive: true, force: true}); }
 }
 export const args = s => JSON.parse(s.slice(s.indexOf(' ') + 1));

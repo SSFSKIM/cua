@@ -345,6 +345,45 @@ test('cua/settle rides on the observation whose settle hit its cap, and on no ot
   assert.equal(meta['cua/settle'], 'capped');
 });
 
+// The engine's observation diagnostics (Skyshot timings) as Chromium and Electron rows need them: enablement, the web
+// area's wait and the settle.
+const DIAGNOSED_TIMINGS = {totalMs: 1, walkMs: 3.5, nodes: 40, webShaped: true, enablementPrior: 'false', enabled: 'AXManualAccessibility', chromium: true, webAreaSeen: true,
+  webAreaFound: true, webAreaWaitMs: 12.25, settle: 'settled', settleMs: 251.5, settleNotifications: 3, settleNotificationCounts: {AXValueChanged: 2, AXFocusedUIElementChanged: 1},
+  settleBusyWalks: 0, settleBusyVetoes: 0, settleObserved: true, settleQuietAtMs: 101.125, settleTreeReused: true, focusRead: 'notAnElement', enableMs: 0.5};
+
+test('the observation\'s diagnostics ride only as cua/observation meta, a bounded whitelist; the model-facing result is byte-identical with and without them', async t => {
+  const {getApp, call, meta, trees, service} = await session(t);
+  const {app} = await getApp('TextEdit');
+  const tree = trees.get(APPS.TextEdit.appPath);
+  assert.equal(meta['cua/observation'], null, 'timings with none of the diagnostics leave the key reset');
+  // The same observation with and without the diagnostics: what the facade returns (what a cell prints, the model's
+  // text) and what the service answers are the same bytes.
+  const plain = {facade: JSON.stringify(await call(() => app.getAXStateAndScreenshot({emit: false, disableDiffing: true})))};
+  plain.service = JSON.stringify(await call(() => service.handleRpc({type: 'execute', method: 'get_app_state', args: [{app: APPS.TextEdit.appPath, disableDiff: true}]})));
+  plain.meta = {...meta};
+  tree.timings = {...DIAGNOSED_TIMINGS, settleNotificationCounts: {...DIAGNOSED_TIMINGS.settleNotificationCounts}, extra: {nested: 'x'}, longLabel: 'y'.repeat(200)};
+  const diagnosed = {facade: JSON.stringify(await call(() => app.getAXStateAndScreenshot({emit: false, disableDiffing: true})))};
+  diagnosed.service = JSON.stringify(await call(() => service.handleRpc({type: 'execute', method: 'get_app_state', args: [{app: APPS.TextEdit.appPath, disableDiff: true}]})));
+  assert.equal(diagnosed.facade, plain.facade);
+  assert.equal(diagnosed.service, plain.service);
+  for (const word of ['webShaped', 'enablementPrior', 'settleTreeReused', 'webArea', 'AXManualAccessibility', 'AXValueChanged']) assert.ok(!diagnosed.service.includes(word), word);
+  // The js tool result the host assembles from the execution: the content is the cell's output alone; the meta rides
+  // apart in _meta, never in content.
+  const {assembleResult} = await import('../src/repl-host/results.mjs');
+  const output = JSON.parse(diagnosed.service).text;
+  assert.deepEqual(assembleResult({ok: true, output, responseMeta: {...meta}}).content, assembleResult({ok: true, output, responseMeta: plain.meta}).content);
+  assert.deepEqual(meta['cua/observation'], {webShaped: true, enablementPrior: 'false', enabled: 'AXManualAccessibility', chromium: true, webAreaSeen: true, webAreaFound: true,
+    webAreaWaitMs: 12.25, settle: 'settled', settleMs: 251.5, settleNotifications: 3, settleNotificationCounts: {AXValueChanged: 2, AXFocusedUIElementChanged: 1},
+    settleBusyWalks: 0, settleBusyVetoes: 0, settleObserved: true, settleQuietAtMs: 101.125, settleTreeReused: true},
+  'the whitelist only: no phase timing, node count, focus read or unknown key, nothing nested beyond the notification counts');
+  // An input call resets it, and an observation without the diagnostics leaves it reset.
+  await call(() => app.click(1));
+  assert.equal(meta['cua/observation'], null);
+  tree.timings = {totalMs: 1};
+  await call(() => app.getAXState({emit: false}));
+  assert.equal(meta['cua/observation'], null);
+});
+
 test('an observation of a minimized window carries no screenshot and its meta says why; the next observation clears it', async t => {
   const {getApp, call, meta, trees} = await session(t);
   const {app} = await getApp('TextEdit');

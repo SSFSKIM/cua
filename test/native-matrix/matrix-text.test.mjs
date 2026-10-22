@@ -121,3 +121,28 @@ test('sha256Hex is SHA-256 of the UTF-8, as the focus probe hashes a value, and 
   const embedded = new Function(`${text.EMBEDDED}\nreturn sha256Hex;`)();
   assert.equal(embedded('한글'), text.sha256Hex('한글'));
 });
+
+test('a field\'s selection evidence is lengths and SHA-256 hashes only, with what changed since the prepare\'s reading', async () => {
+  const {createHash} = await import('node:crypto');
+  const sha = s => createHash('sha256').update(s, 'utf8').digest('hex');
+  // The Electron golden's text field (index 5) given a value, and a selection in the renderer's trailer.
+  const tree = vendor.electron.split('\n\nThe focused UI element')[0];
+  const field = (value, selected = null) => `${tree.replace(/^(\t+5 [^\n]*)$/m, `$1, Value: ${value}`)}${selected === null ? '' : `\n\nSelected text: \`\`\`\n${selected}\n\`\`\``}`;
+  const before = text.fieldReading(field('alpha **bold** two', 'two'), 5);
+  assert.deepEqual(before, {value: 'alpha bold two', selected: 'two'}, 'the reading is plain, as the checks compare');
+  // Nothing happened: the same selection and value.
+  assert.deepEqual(text.selectionEvidence(field('alpha **bold** two', 'two'), 5, before),
+    {selectedLength: 3, selectedHash: sha('two'), valueLength: 14, valueHash: sha('alpha bold two'), valueChanged: false, selectionChanged: false});
+  // A partial selection, an insertion, no selection at all.
+  assert.deepEqual(text.selectionEvidence(field('alpha bold two', 'alpha bold'), 5, before), {selectedLength: 10, selectedHash: sha('alpha bold'), valueLength: 14,
+    valueHash: sha('alpha bold two'), valueChanged: false, selectionChanged: true});
+  const inserted = text.selectionEvidence(field('alpha bold twoa'), 5, before);
+  assert.deepEqual(inserted, {selectedLength: null, selectedHash: null, valueLength: 15, valueHash: sha('alpha bold twoa'), valueChanged: true, selectionChanged: true});
+  // Without the prepare's reading nothing is said about change; no raw text ever.
+  const unknown = text.selectionEvidence(field('alpha bold two', 'two'), 5);
+  assert.deepEqual([unknown.valueChanged, unknown.selectionChanged], [null, null]);
+  assert.doesNotMatch(JSON.stringify([inserted, unknown]), /alpha|two/);
+  // Embedded in a cell, as the checks run it.
+  const embedded = new Function(`${text.EMBEDDED}\nreturn {fieldReading, selectionEvidence};`)();
+  assert.deepEqual(embedded.selectionEvidence(field('alpha bold twoa'), 5, before), inserted);
+});

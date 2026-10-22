@@ -13,7 +13,10 @@
 //             (`__m.threw`, `__m.errorName`), so the cell itself never fails on one.
 //   check     a cell body: observes and returns {ok, outcome}, the exact post-state the requested transition produces
 //             from the pre-state (an insertion is the pre-state's selection replaced by the text, not one more occurrence
-//             of it). An outcome case whose act threw fails whatever the check reads (./matrix-cells.mjs).
+//             of it). An outcome case whose act threw fails whatever the check reads (./matrix-cells.mjs). The select-all,
+//             setValue and selectText field cases also record `outcome.selection` (./matrix-text.mjs selectionEvidence:
+//             lengths and hashes against the prepare's reading, `__m.seen`), so a row that did nothing reads apart from a
+//             partial selection or an insertion.
 //   keys      the key names the act sends: the act is a key cell, sent only under the key guard.
 //   expect    'outcome' or 'refusal'.
 //   refusal   for a refusal: the vendor's sentence the engine must answer (cua's engine carries the vendor's), matched in
@@ -97,7 +100,7 @@ const unselected = plain(valueOfIndex(now, index));
 await __app.selectText(index, ${word}); now = await observe();
 if (selectedTextOf(now) !== ${word}) return {ready: false, reason: "the word could not be selected in the field"};
 if (plain(valueOfIndex(now, index)) !== unselected) return {ready: false, reason: "the field's value changed when the word was selected"};
-__m.index = index; __m.word = ${word}; __m.before = unselected;`;
+__m.index = index; __m.word = ${word}; __m.before = unselected; __m.seen = fieldReading(now, index);`;
 // The exact post-state of an insertion over a selection: the pre-state with the selected word replaced by the text.
 const replaced = (find, text) => `const ax = await observe();
 const after = plain(valueOfIndex(ax, ${find}));
@@ -107,12 +110,12 @@ return {ok: after === expected, outcome: {exact: after === expected, inserted: c
 const freshValue = (find, stem) => `${observed}
 const index = ${find};
 if (index === null) return {ready: false, reason: "the field is not in the text"};
-__m.index = index; __m.value = ${j(stem)} + " " + nonce();
+__m.index = index; __m.value = ${j(stem)} + " " + nonce(); __m.seen = fieldReading(ax, index);
 if (plain(valueOfIndex(ax, index)) === __m.value) return {ready: false, reason: "the field already holds the value"};
 return {ready: true};`;
 const setExactly = find => `const ax = await observe();
 const equal = plain(valueOfIndex(ax, ${find})) === __m.value;
-return {ok: equal, outcome: {equal}};`;
+return {ok: equal, outcome: {equal, selection: selectionEvidence(ax, ${find}, __m.seen)}};`;
 // A drag across the lines of a text field, at points grounded in the scene's layout (window points, scaled into the
 // screenshot's pixel space by the window's width) and verified before the drag: a harness click at each end must land
 // in the field (it takes the focus, nothing is selected). The post-state: a selection spanning lines, part of the
@@ -188,7 +191,7 @@ return {ok: value === "1", outcome: {checked: value === "1"}};`},
     check: `const ax = await observe();
 const selected = selectedTextOf(ax), value = valueOfIndex(ax, ${TEXT_AREA});
 const whole = typeof selected === "string" && plain(selected).trim() === plain(value).trim();
-return {ok: whole, outcome: {selected: typeof selected === "string", whole}};`},
+return {ok: whole, outcome: {selected: typeof selected === "string", whole, selection: selectionEvidence(ax, ${TEXT_AREA}, __m.seen)}};`},
   {method: 'selectText', case: 'line', expect: 'outcome',
     prepare: `${observed}
 let now = ax;
@@ -196,10 +199,10 @@ const index = ${TEXT_AREA};
 if (index === null || count(plain(valueOfIndex(now, index)), ${j(DOCUMENT[4])}) !== 1) return {ready: false, reason: "the line is not in the document once"};
 if (selectedTextOf(now) === ${j(DOCUMENT[4])}) { await __app.selectText(index, ${j(DOCUMENT[5])}); now = await observe(); }
 if (selectedTextOf(now) === ${j(DOCUMENT[4])}) return {ready: false, reason: "the line was already selected"};
-__m.index = index; return {ready: true};`,
+__m.index = index; __m.seen = fieldReading(now, index); return {ready: true};`,
     act: `await __app.selectText(__m.index, ${j(DOCUMENT[4])});`,
     check: `const ax = await observe();
-return {ok: selectedTextOf(ax) === ${j(DOCUMENT[4])}, outcome: {selected: selectedTextOf(ax) === ${j(DOCUMENT[4])}}};`},
+return {ok: selectedTextOf(ax) === ${j(DOCUMENT[4])}, outcome: {selected: selectedTextOf(ax) === ${j(DOCUMENT[4])}, selection: selectionEvidence(ax, ${TEXT_AREA}, __m.seen)}};`},
   {method: 'paste', case: 'replace', expect: 'outcome', keys: ['paste'],
     prepare: `${selectedIn({find: TEXT_AREA, word: j(DOCUMENT[8])})}\nreturn {ready: true};`, act: `await __app.paste(${j(PASTED)});`, check: replaced(TEXT_AREA, PASTED)},
   // A settable value written whole: the scene's lines and a fresh last line, so the cases after it (and the next
@@ -208,13 +211,13 @@ return {ok: selectedTextOf(ax) === ${j(DOCUMENT[4])}, outcome: {selected: select
     prepare: `${observed}
 const index = ${TEXT_AREA};
 if (index === null) return {ready: false, reason: "the document's text view is not in the text"};
-__m.index = index; __m.value = ${j(DOCUMENT.join('\n'))} + "\\ncua matrix set " + nonce();
+__m.index = index; __m.value = ${j(DOCUMENT.join('\n'))} + "\\ncua matrix set " + nonce(); __m.seen = fieldReading(ax, index);
 if (plain(valueOfIndex(ax, index)).trimEnd() === __m.value) return {ready: false, reason: "the document already holds the value"};
 return {ready: true};`,
     act: 'await __app.setValue(__m.index, __m.value);',
     check: `const ax = await observe();
 const equal = plain(valueOfIndex(ax, ${TEXT_AREA})).trimEnd() === __m.value;
-return {ok: equal, outcome: {equal}};`},
+return {ok: equal, outcome: {equal, selection: selectionEvidence(ax, ${TEXT_AREA}, __m.seen)}};`},
   ...['scroll', 'performSecondaryAction'].map(method => ({method, case: 'down', expect: 'outcome',
     prepare: `${observed}
 let now = ax;
@@ -309,6 +312,18 @@ const statusText = (container, pattern) => `elementLines(ax).filter(l => parentI
 // The text fields' known contents for the replacing and dragging cases: lines whose words occur once each.
 const FIELD_LINES = ['alpha one', 'bravo two', 'charlie three', 'delta four', 'echo five', 'foxtrot six', 'golf seven', 'hotel eight'];
 const FIELD_VALUE = j(FIELD_LINES.join('\n'));
+// A web field's selectText: the field given a fresh text holding "matrix" once, which the act selects.
+const selectMatrix = (kase, name) => ({method: 'selectText', case: kase, expect: 'outcome',
+  prepare: `${observed}
+let now = ax, index = ${named(name)};
+if (index === null) return {ready: false, reason: "the field is not in the text"};
+await __app.setValue(index, "cua select " + nonce() + " matrix"); now = await observe(); index = indexOfTarget(now, ${j(name)});
+if (count(plain(valueOfIndex(now, index)), "matrix") !== 1 || selectedTextOf(now) === "matrix") return {ready: false, reason: "the field could not be given its text first"};
+__m.index = index; __m.seen = fieldReading(now, index); return {ready: true};`,
+  act: 'await __app.selectText(__m.index, "matrix");',
+  check: `const ax = await observe();
+return {ok: selectedTextOf(ax) === "matrix", outcome: {selected: selectedTextOf(ax) === "matrix", selection: selectionEvidence(ax, ${named(name)}, __m.seen)}};`,
+});
 const chrome = [
   tree(`ax => { const page = ${named('Scene notes')} !== null && ${named('Apply')} !== null; return {ok: page, outcome: {page}}; }`),
   listApps('chrome'),
@@ -337,15 +352,7 @@ return {ready: true};`,
 const moved = focusedIndexOf(ax) === ${named('Scene name')};
 return {ok: moved, outcome: {moved}};`},
   {method: 'setValue', case: 'name', expect: 'outcome', prepare: freshValue(named('Scene name'), 'cua matrix set'), act: 'await __app.setValue(__m.index, __m.value);', check: setExactly(named('Scene name'))},
-  {method: 'selectText', case: 'name', expect: 'outcome',
-    prepare: `${observed}
-let now = ax, index = ${named('Scene name')};
-if (index === null) return {ready: false, reason: "the field is not in the text"};
-await __app.setValue(index, "cua select " + nonce() + " matrix"); now = await observe(); index = indexOfTarget(now, "Scene name");
-if (count(plain(valueOfIndex(now, index)), "matrix") !== 1 || selectedTextOf(now) === "matrix") return {ready: false, reason: "the field could not be given its text first"};
-__m.index = index; return {ready: true};`,
-    act: 'await __app.selectText(__m.index, "matrix");',
-    check: 'const ax = await observe();\nreturn {ok: selectedTextOf(ax) === "matrix", outcome: {selected: selectedTextOf(ax) === "matrix"}};'},
+  selectMatrix('name', 'Scene name'),
   {method: 'paste', case: 'replace', expect: 'outcome', keys: ['paste'],
     prepare: `${selectedIn({find: named('Scene notes'), value: FIELD_VALUE, word: j('foxtrot')})}\nreturn {ready: true};`, act: `await __app.paste(${j(PASTED)});`, check: replaced(named('Scene notes'), PASTED)},
   // Apply writes what the name field holds into the status line: a fresh name, which no earlier row applied.
@@ -400,15 +407,7 @@ return {ready: true};`,
 const moved = focusedIndexOf(ax) === ${named('Fixture list')};
 return {ok: moved, outcome: {moved}};`},
   {method: 'setValue', case: 'text', expect: 'outcome', prepare: freshValue(named('Fixture text'), 'cua matrix set'), act: 'await __app.setValue(__m.index, __m.value);', check: setExactly(named('Fixture text'))},
-  {method: 'selectText', case: 'text', expect: 'outcome',
-    prepare: `${observed}
-let now = ax, index = ${named('Fixture text')};
-if (index === null) return {ready: false, reason: "the field is not in the text"};
-await __app.setValue(index, "cua select " + nonce() + " matrix"); now = await observe(); index = indexOfTarget(now, "Fixture text");
-if (count(plain(valueOfIndex(now, index)), "matrix") !== 1 || selectedTextOf(now) === "matrix") return {ready: false, reason: "the field could not be given its text first"};
-__m.index = index; return {ready: true};`,
-    act: 'await __app.selectText(__m.index, "matrix");',
-    check: 'const ax = await observe();\nreturn {ok: selectedTextOf(ax) === "matrix", outcome: {selected: selectedTextOf(ax) === "matrix"}};'},
+  selectMatrix('text', 'Fixture text'),
   {method: 'paste', case: 'replace', expect: 'outcome', keys: ['paste'],
     prepare: `${selectedIn({find: named('Fixture text'), value: FIELD_VALUE, word: j('golf')})}\nreturn {ready: true};`, act: `await __app.paste(${j(PASTED)});`, check: replaced(named('Fixture text'), PASTED)},
   // The fixture in its 720 x 560 window: the text field's second to fourth lines, below the 28-point title bar and the

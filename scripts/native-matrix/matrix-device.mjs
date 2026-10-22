@@ -9,10 +9,16 @@
 //       the two window readers (scripts/accept/front-window.swift, ./system-windows.swift) compiled once into the run
 //       directory and reused by every read after (an interpreted read costs seconds)
 //   read --run <dir> --watcher <pid> [--focus <pid,x,y,w,h>] [--approved-runtime <home> --approved-engine <bundle>]
+//        [--electron-mode latest]
 //       the oracle's reading (./oracle.mjs ownedReading): the frontmost application and the top on-screen window, the
 //       run's processes by pid and any other application by bundle id only; whether the activation watcher <pid> still
 //       runs (`watch-activations` of the approved bundle), so a row's coverage is proven at both its ends; with --focus,
-//       the approved bundle's `--probe focus` naming that window (one of the run's)
+//       the approved bundle's `--probe focus` naming that window (one of the run's); with --electron-mode, the Electron
+//       fixture's accessibility mode as its record last showed it, {enabled, at} or null (read after the window closes)
+//   electron-mode --run <dir>
+//       the Electron fixture's whole accessibility record (its app.isAccessibilitySupportEnabled readings, written to
+//       the scene's user-data directory: fixtures/electron/main.js), each line kept as {at, enabled, source} only
+//       -> {records}, null while no Electron scene is up or it wrote none. The run exports it before the scene goes down
 //   step <scenes-mac.mjs arguments>
 //       one scenes command (activate, down) timed on the device clock -> {answer, at}
 //   alerts baseline|check --run <dir>
@@ -74,7 +80,9 @@ import {FRONT_WINDOW_SCRIPT} from '../accept/key-guard.mjs';
 import {main as scenesMain, readState, SCENES} from '../repl-parity/scenes-mac.mjs';
 import {alertWatch} from './live-checks.mjs';
 import {defaultIo, PROBE_MS, processTable, restoreInputSource, saveInputSource} from './live-device.mjs';
+import {FIXTURE_ACCESSIBILITY_FILE} from './fixtures/electron-fixture.mjs';
 import {ownedReading} from './oracle.mjs';
+import {parseAccessibilityRecord} from './residue-checks.mjs';
 
 const SCRIPT = fileURLToPath(import.meta.url);
 const SYSTEM_WINDOWS_SCRIPT = fileURLToPath(new URL('./system-windows.swift', import.meta.url));
@@ -132,8 +140,8 @@ const windowOf = text => { const [pid, x, y, width, height] = text.split(',').ma
 // overlay), false when it runs from elsewhere, null when unresolved or no roots were given; never its pid. Only the
 // owner's raw pid is kept during the reading; its path is resolved (a `ps`) after `at` closes and after the focus probe,
 // so the lookup never shifts the reading's timings.
-// io: {frontWindow(), probe(args), state(), launched(), watcherRuns(pid), executablePaths(pids)}.
-export function read({focus = null, watcher = null, approvedRuntime = null, approvedEngine = null}, io) {
+// io: {frontWindow(), probe(args), state(), launched(), watcherRuns(pid), executablePaths(pids), electronRecord()}.
+export function read({focus = null, watcher = null, approvedRuntime = null, approvedEngine = null, electronMode = false}, io) {
   const from = Date.now();
   const owned = ownedPids(io.state(), io.launched());
   const raw = io.frontWindow();
@@ -146,7 +154,24 @@ export function read({focus = null, watcher = null, approvedRuntime = null, appr
   }
   const at = [from, Date.now()];
   if (unownedTop) out.reading.topWindow.engine = engineOwns(unownedTop.pid, [approvedRuntime, approvedEngine], io);
+  if (electronMode) {
+    const latest = electronModeRecord(io).records?.at(-1) ?? null;
+    out.electronMode = latest && {enabled: latest.enabled, at: latest.at};
+  }
   return {...out, at};
+}
+
+// The Electron fixture's accessibility record, parsed (./residue-checks.mjs parseAccessibilityRecord) and kept to its
+// three fields. io: {electronRecord()}: the record's text, or null. -> {records: [{at, enabled, source}] | null}.
+export function electronModeRecord(io) {
+  const text = io.electronRecord();
+  return {records: text === null ? null : parseAccessibilityRecord(text).map(({at, enabled, source}) => ({at, enabled, source: typeof source === 'string' ? source.slice(0, 16) : null}))};
+}
+// The record's text from the Electron scene's user-data directory in the run's scene state, or null.
+function electronRecordIn(dir) {
+  const userDataDir = readState(dir).scenes?.electron?.userDataDir;
+  if (typeof userDataDir !== 'string') return null;
+  try { return fs.readFileSync(join(userDataDir, FIXTURE_ACCESSIBILITY_FILE), 'utf8'); } catch (error) { if (error.code === 'ENOENT') return null; throw error; }
 }
 
 // Whether `pid` runs from the roots: true, false, or null when it does not resolve or no roots were given.
@@ -428,7 +453,7 @@ function parse(argv) {
   }
   return {command, positional, flags};
 }
-const USAGE = 'usage: matrix-device.mjs compile|read|alerts|launched|probe|source|load|windowless --run <dir> … | step <scenes-mac.mjs arguments>';
+const USAGE = 'usage: matrix-device.mjs compile|read|electron-mode|alerts|launched|probe|source|load|windowless --run <dir> … | step <scenes-mac.mjs arguments>';
 const sleep = ms => new Promise(done => setTimeout(done, ms));
 
 export async function main(argv, {io: given = {}} = {}) {
@@ -446,12 +471,16 @@ export async function main(argv, {io: given = {}} = {}) {
     app: () => windowlessApp(), open: app => run('/usr/bin/open', ['-n', '-g', '-a', app]), sleep, now: Date.now,
     probeLaunch: live.probeLaunch, probeAwait: live.probeAwait, probeStuck: live.probeStuck, readPerContext: live.readPerContext, writePerContext: live.writePerContext,
     saveInput: () => saveInputSource({io: live}), restoreInput: ({keep}) => restoreInputSource({io: live, keep}),
+    electronRecord: () => electronRecordIn(dir),
     ...given,
   };
   const roots = {approvedRuntime: flags['approved-runtime'] ?? null, approvedEngine: flags['approved-engine'] ?? null};
   switch (command) {
     case 'compile': return {front: basename(compiled(FRONT_WINDOW_SCRIPT, dir)), windows: basename(compiled(SYSTEM_WINDOWS_SCRIPT, dir))};
-    case 'read': return read({focus: flags.focus ?? null, watcher: flags.watcher === undefined ? null : Number(flags.watcher), ...roots}, io);
+    case 'read':
+      if (flags['electron-mode'] !== undefined && flags['electron-mode'] !== 'latest') throw new Error('--electron-mode latest is the one reading');
+      return read({focus: flags.focus ?? null, watcher: flags.watcher === undefined ? null : Number(flags.watcher), electronMode: flags['electron-mode'] === 'latest', ...roots}, io);
+    case 'electron-mode': return electronModeRecord(io);
     case 'step': return timed(() => (io.scenes ?? scenesMain)(argv.slice(1)));
     case 'alerts': return {...alerts(positional[0], io, roots), at: [Date.now(), Date.now()]};
     case 'launched':

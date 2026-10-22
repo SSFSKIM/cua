@@ -30,7 +30,8 @@
 //      time, the oracle read, the outcome read, and the launched process quit in a `finally`
 //   8. end_task; the watcher's liveness read once more, the watcher stopped and every activation it saw accounted for
 //      against the steps' device-clock windows (./oracle.mjs accountActivations); the lane closed; every journaled
-//      launch quit (an intent kept); the live hold's `recover` (the put-back: Finder's chrome and keys, every scene down, the input source
+//      launch quit (an intent kept); the Electron fixture's accessibility record exported into the run's output unless
+//      the launch path's down already did (exportElectronMode); the live hold's `recover` (the put-back: Finder's chrome and keys, every scene down, the input source
 //      and per-context preference, the engine stopped, the apps and Finder checked, the owner's front app by activation
 //      alone); the launch intents settled once the recovery stopped the serve and the engine (the put-back again when
 //      that quit an app); the approved home's cleanup (the engine stopped again); the engine and helper attestations
@@ -213,8 +214,10 @@ async function runOnce(options, io) {
   // windows: every step's device-clock window [{kind, key, at}]; judged: the rows whose activations are charged, by key.
   // posted: the scenes a probe typed into, by when (./steps.mjs quiet); latin: the probe cells' source precondition;
   // perContextOff: the preference read off, the Unicode matrix's precondition for every condition but its own.
+  // out: the run's output directory for its exports (none on a dry run); electronExported: the Electron fixture's
+  // accessibility record already exported (exportElectronMode).
   const ctx = {ops, run, rows, problems, meta, samples, n, engine, approvedRuntime, approvedEngine, records: {}, lane: null, checkpoint, log, now, sleep: io.sleep ?? (ms => new Promise(done => setTimeout(done, ms))),
-    watcher: null, windows: [], judged: new Map(), posted: {}, latin: false, perContextOff: false};
+    watcher: null, windows: [], judged: new Map(), posted: {}, latin: false, perContextOff: false, out: dryRun ? null : dir, electronExported: false};
   let prepared = null, pre = null, laneStarted = null;
   const helpers = [];
   const snapshot = () => {
@@ -284,6 +287,7 @@ async function runOnce(options, io) {
     if (ctx.watcher !== null) finishWatch(ctx);
     if (ctx.lane) { try { await ctx.lane.client.close(); } catch {} }
     quitLaunched(ctx);
+    exportElectronMode(ctx);
     putBack = settleLaunches(ctx, recover(ops, run, problems));
     try {
       const front = ops.scenes(['frontmost']);
@@ -338,6 +342,22 @@ async function inputSections(ctx, plan) {
       if (!ctx.meta.inputSource.restored) ctx.problems.push(`the owner's input source and per-context preference were not restored after the input sections${restored?.skipped ? ` (${restored.skipped})` : ''}; the put-back tries again`);
     } catch (error) { ctx.problems.push(`the input source's restore failed: ${error.message}; the put-back tries again`); }
   }
+}
+
+// The Electron fixture's whole accessibility record (./matrix-device.mjs electron-mode: its mode's readings with their
+// times, nothing else), exported into the run's output (ELECTRON_MODE_FILE) before the scene goes down (the launch row's
+// down, else the put-back), once: the rows' `electronMode` is the latest reading at each act, this the whole account.
+// A diagnostic: a failed export is recorded in meta.electronMode, never the run's problem.
+export const ELECTRON_MODE_FILE = 'electron-accessibility.jsonl';
+function exportElectronMode(ctx) {
+  if (ctx.electronExported || !ctx.records.electron) return;
+  ctx.electronExported = true;
+  try {
+    const {records} = ctx.ops.matrix(['electron-mode', '--run', ctx.run]) ?? {};
+    if (!Array.isArray(records)) { ctx.meta.electronMode = {error: 'the fixture wrote no accessibility record'}; return; }
+    if (ctx.out) fs.writeFileSync(join(ctx.out, ELECTRON_MODE_FILE), records.map(r => `${JSON.stringify(r)}\n`).join(''), {mode: 0o600});
+    ctx.meta.electronMode = {file: ELECTRON_MODE_FILE, records: records.length};
+  } catch (error) { ctx.meta.electronMode = {error: String(error.message).slice(0, 300)}; }
 }
 
 // The device's load averages and uptime (./matrix-device.mjs load), read before the run's work and after its put-back
@@ -497,7 +517,8 @@ async function speedCells(ctx, scene) {
 async function findingRows(ctx, scene) {
   await ctx.checkpoint();
   const r = await js(ctx, 'measure', `${scene}/finding`, findingCell(scene));
-  const base = {section: 'finding', engine: ctx.engine, sample: ctx.n, scene};
+  // Finder's list range the scored observation showed (./matrix-cells.mjs FINDER_FIRST_ROWS), on each of its rows.
+  const base = {section: 'finding', engine: ctx.engine, sample: ctx.n, scene, ...(r.value?.showing !== undefined ? {showing: r.value.showing} : {})};
   if (!r.ok || r.value?.invalid) {
     push(ctx, {...base, id: `${scene}/lines`, ok: false, invalid: r.value?.invalid ?? 'the finding cell failed', ...(r.ok ? {} : {error: r.error})});
     return;
@@ -520,6 +541,7 @@ async function launchRow(ctx, {scene, user}) {
   const app = ctx.records[scene]?.app;
   const front = activate(ctx, user);
   if (!front?.ok) return push(ctx, {...row, invalid: `the user window (${user}) did not come to the front`});
+  if (scene === 'electron') exportElectronMode(ctx);
   const down = step(ctx, ['down', scene]);
   if (!down?.down) return push(ctx, {...row, invalid: `the scene could not be brought down first (${down?.reason ?? 'no answer'})`});
   const before = read(ctx);

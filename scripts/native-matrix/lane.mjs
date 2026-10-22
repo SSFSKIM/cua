@@ -67,12 +67,15 @@ export function matrixOps(device, {exec = execFileSync} = {}) {
   };
 }
 
-// The engine's input meta on a result, as the probe cells read it (src/services/engine/service.mjs, reset at each call
-// and set on an input error too): the action's interval, the engine's receipt time, the idle time it measured, the
-// characters a type_text entered, and `intervention: "off"` when detection is not running. The vendor reports none.
-// -> {actionInterval, receivedAt, hidIdleMs, entered, intervention}, each null when absent.
+// The engine's per-call meta on a result, as the probe cells and the web scenes' rows read it (src/services/engine/
+// service.mjs, reset at each call and set on an input error too): the action's interval, the engine's receipt time, the
+// idle time it measured, the characters a type_text entered, `intervention: "off"` when detection is not running, and
+// the observation's own diagnostics (`cua/observation`: web enablement, the web area, the settle; the result's _meta
+// only, never its text). Response meta merges across a cell's calls with each call resetting its keys, so a cell's meta
+// is its last facade call's. The vendor reports none.
+// -> {actionInterval, receivedAt, hidIdleMs, entered, intervention, observation}, each null when absent.
 export const engineMetaOf = meta => Object.fromEntries([['actionInterval', 'cua/actionInterval'], ['receivedAt', 'cua/receivedAt'], ['hidIdleMs', 'cua/hidIdleMs'],
-  ['entered', 'cua/entered'], ['intervention', 'cua/intervention']].map(([key, name]) => [key, meta?.[name] ?? null]));
+  ['entered', 'cua/entered'], ['intervention', 'cua/intervention'], ['observation', 'cua/observation']].map(([key, name]) => [key, meta?.[name] ?? null]));
 
 // The lane: the serve of `host` and `engine` on the prepared home, an MCP client that accepts only the computer-use
 // approval of one of the scenes' apps (recorded in meta.elicitations), and its first cell. Every js result's engine
@@ -152,7 +155,9 @@ export function dryOps({log, engine, approvedEngine = '/Users/owner/Library/Appl
       const at = [clock(), clock()];
       switch (args[0]) {
         case 'compile': return {front: 'front-window-dry', windows: 'system-windows-dry'};
-        case 'read': return {reading: reading(), watcher: args.includes('--watcher'), at, ...(args.includes('--focus') ? {focus: {appOwned: true, appPid: front?.pid ?? null, named: true, valueHash: focusHash}} : {})};
+        case 'read': return {reading: reading(), watcher: args.includes('--watcher'), at, ...(args.includes('--focus') ? {focus: {appOwned: true, appPid: front?.pid ?? null, named: true, valueHash: focusHash}} : {}),
+          ...(args.includes('--electron-mode') ? {electronMode: {enabled: true, at: at[0]}} : {})};
+        case 'electron-mode': return {records: [{at: 0, enabled: false, source: 'start'}]};
         case 'probe': {
           if (args[1] !== 'finish') {
             const flag = name => args[args.indexOf(`--${name}`) + 1];

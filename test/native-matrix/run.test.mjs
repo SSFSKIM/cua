@@ -238,3 +238,71 @@ test('the whole matrix\'s verdict stays its outcomes, the oracle summary\'s to j
   assert.ok(r.result.rows.some(row => row.interference?.ok === false));
   assert.deepEqual([r.result.judgesInterference, r.result.verdict], [undefined, 'pass']);
 });
+
+test('Chrome and Electron rows keep the engine\'s meta of their prepare, act and check; Electron rows record its accessibility mode beside the act; other scenes\' rows neither', async () => {
+  const observation = {webShaped: true, enablementPrior: 'false', enabled: 'AXManualAccessibility', settle: 'settled'};
+  const interval = {startedAt: 5, endedAt: 6};
+  const click = cellsOf('electron', 'click', 'button');
+  const cell = code => {
+    if (code.includes(click.prepare)) return {ready: true, _meta: {'cua/observation': observation}};
+    if (code.includes(click.act)) return {actMs: 1, at: [5, 6], threw: false, _meta: {'cua/inputRoute': 1, 'cua/actionInterval': interval}};
+    if (code.includes(click.check)) return {ok: true, outcome: {pressedOnce: true}, _meta: {'cua/observation': {...observation, settleTreeReused: true}}};
+    return null;
+  };
+  const {result, steps} = await runWith({plan: planOf('method', {scene: 'electron'}), cell});
+  assert.deepEqual(validateCellResult(result), []);
+  const rows = result.rows.filter(r => r.section === 'method' && r.method === 'click' && r.case === 'button');
+  assert.deepEqual(rows.map(r => r.regime), ['frontmost', 'background']);
+  for (const row of rows) {
+    assert.deepEqual(row.engineMeta, {prepare: {observation}, act: {actionInterval: interval}, check: {observation: {...observation, settleTreeReused: true}}}, row.id);
+    assert.deepEqual(row.actAt, [5, 6], row.id);
+    assert.deepEqual(Object.keys(row.electronMode ?? {}), ['enabled', 'at'], row.id);
+    assert.equal(row.inputRoute, 1);
+  }
+  // Every Electron row's device read after the act asks for the mode: the background's existing after-read, and in the
+  // frontmost a read after the check, so the act-to-check timing is the earlier holds'.
+  const electronRows = result.rows.filter(r => r.section === 'method' && !r.invalid);
+  assert.ok(electronRows.every(r => r.electronMode), 'every Electron method row');
+  const reads = matrixSteps(steps, 'read');
+  assert.ok(reads.filter(a => a.includes('--electron-mode')).length >= electronRows.length);
+  assert.ok(reads.filter(a => a.includes('--electron-mode')).every(a => a[a.indexOf('--electron-mode') + 1] === 'latest'));
+  // TextEdit's rows carry neither.
+  const textedit = await runWith({cell: code => (code.includes(cellsOf('textedit', 'click', 'control').prepare) ? {ready: true, _meta: {'cua/observation': observation}} : null)});
+  const plain = textedit.result.rows.filter(r => r.section === 'method');
+  assert.ok(plain.length > 10 && plain.every(r => r.engineMeta === undefined && r.electronMode === undefined && r.actAt === undefined));
+  assert.ok(matrixSteps(textedit.steps, 'read').every(a => !a.includes('--electron-mode')));
+});
+
+test('the Electron fixture\'s accessibility record is exported whole into the run\'s output before the scene goes down, once', async () => {
+  // The launch path brings the scene down: the export comes before that step.
+  const launch = await runWith({plan: planOf('launch', {scene: 'electron'})});
+  const order = launch.steps.map(s => (s.startsWith('matrix ') ? `matrix ${args(s)[0]}${args(s)[0] === 'step' ? ` ${args(s)[1]} ${args(s)[2]}` : ''}` : s.replace(/ .*$/, '')));
+  assert.equal(order.filter(s => s === 'matrix electron-mode').length, 1);
+  assert.ok(order.indexOf('matrix electron-mode') < order.indexOf('matrix step down electron'));
+  assert.deepEqual(launch.result.meta.electronMode, {file: 'electron-accessibility.jsonl', records: 1});
+  assert.deepEqual(launch.files['electron-accessibility.jsonl'].trim().split('\n').map(line => JSON.parse(line)), [{at: 0, enabled: false, source: 'start'}]);
+  // Without a launch row, before the put-back takes the scenes down.
+  const method = await runWith({plan: planOf('method', {scene: 'electron'})});
+  const names2 = names(method.steps);
+  assert.equal(names2.filter(s => s === 'matrix electron-mode').length, 1);
+  assert.ok(names2.indexOf('matrix electron-mode') < names2.indexOf('live recover'));
+  // A run without the Electron scene exports nothing.
+  const none = await runWith();
+  assert.ok(!names(none.steps).includes('matrix electron-mode'));
+  assert.equal(none.result.meta.electronMode, undefined);
+  assert.deepEqual(Object.keys(none.files), []);
+});
+
+test('the finding rows record Finder\'s list range; a list that did not start at its first rows leaves the cell invalid', async () => {
+  const {findingCell} = await import('../../scripts/native-matrix/matrix-cells.mjs');
+  const finding = findingCell('finder');
+  const scored = await runWith({plan: planOf('finding', {scene: 'finder'}), cell: code => (code.includes(finding)
+    ? {inFront: true, targets: [{id: 'file001', found: true, resolved: true}], lines: 10, named: 8, unclassified: 0, ids: 2, showing: {from: 0, to: 21, of: 205}} : null)});
+  const rows = scored.result.rows.filter(r => r.section === 'finding');
+  assert.deepEqual(rows.map(r => r.id), ['finder/target.file001', 'finder/lines', 'finder/ids']);
+  assert.ok(rows.every(r => !r.invalid && r.showing?.from === 0 && r.showing.of === 205));
+  const stuck = await runWith({plan: planOf('finding', {scene: 'finder'}), cell: code => (code.includes(finding)
+    ? {invalid: 'Finder\'s list did not start at its first rows', showing: {from: 125, to: 146, of: 205}} : null)});
+  assert.deepEqual(stuck.result.rows.filter(r => r.section === 'finding').map(r => [r.id, r.invalid, r.showing]),
+    [['finder/lines', 'Finder\'s list did not start at its first rows', {from: 125, to: 146, of: 205}]]);
+});

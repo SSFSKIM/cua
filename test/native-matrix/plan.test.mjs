@@ -351,3 +351,81 @@ test('the launch path: the app observed through the engine\'s call, its text kep
   const failing = await run(launchCell('electron', '/x.app'), {cua: {computer: {get_app_state: async () => { throw new Error('appNotFound'); }}}});
   assert.deepEqual([failing.value.threw, failing.value.error], [true, 'appNotFound']);
 });
+
+const sha = async s => (await import('node:crypto')).createHash('sha256').update(s, 'utf8').digest('hex');
+
+test('the select-all check records the selection by length and hash: nothing happened, a partial selection and the whole selection read apart', async () => {
+  const text = await import('../../scripts/native-matrix/matrix-text.mjs');
+  const doc = golden('textedit', 'vendor.txt');
+  const area = text.indexOfPart(doc, 'ID', 'First Text View');
+  const value = text.valueOfIndex(doc, area).replace(/\*\*/g, '');
+  const lineOf = index => new RegExp(`^\\t*(${index} .*)$`, 'm').exec(doc)[1];
+  const selectAll = onKeys => fakeApp(withTrailer(doc, {focused: focusedLine(doc)}), {
+    click: (app, index) => { app.ax = withTrailer(doc, {focused: lineOf(index)}); },
+    selectText: (app, _, word) => { app.ax = withTrailer(doc, {selectedText: word}); },
+    pressKey: app => onKeys(app),
+  });
+  const outcomeOf = async onKeys => {
+    const {prepare, check} = await runCase('textedit', 'textedit', selectAll(onKeys), 'pressKey', 'selectAll');
+    assert.equal(prepare.value.ready, true, JSON.stringify(prepare));
+    assert.doesNotMatch(JSON.stringify(check), /Line 0|cua scene document/, 'hashes only, never the text');
+    return check.value;
+  };
+  const nothing = await outcomeOf(() => {});
+  assert.equal(nothing.ok, false);
+  assert.deepEqual(nothing.outcome.selection, {selectedLength: 7, selectedHash: await sha('Line 03'), valueLength: value.length, valueHash: await sha(value), valueChanged: false,
+    selectionChanged: false}, 'the prepare\'s Line 03 still selected');
+  const partial = await outcomeOf(app => { app.ax = withTrailer(doc, {selectedText: 'Line 03\nLine 04'}); });
+  assert.deepEqual([partial.ok, partial.outcome.selection.selectedLength, partial.outcome.selection.selectionChanged, partial.outcome.selection.valueChanged], [false, 15, true, false]);
+  const whole = await outcomeOf(app => { app.ax = withTrailer(doc, {selectedText: value}); });
+  assert.equal(whole.ok, true, JSON.stringify(whole));
+  assert.deepEqual([whole.outcome.selection.selectedLength, whole.outcome.selection.selectedHash], [value.length, await sha(value)]);
+});
+
+test('the setValue and selectText checks record the field\'s selection and value by length and hash, and whether the value changed from the prepare\'s', async () => {
+  const field = electronField({value: 'alpha one'});
+  const set = await runCase('electron', 'electron', field.app, 'setValue', 'text');
+  assert.equal(set.check.value.ok, true, JSON.stringify(set));
+  assert.deepEqual(set.check.value.outcome.selection, {selectedLength: null, selectedHash: null, valueLength: field.state.value.length, valueHash: await sha(field.state.value),
+    valueChanged: true, selectionChanged: false});
+  const select = await runCase('electron', 'electron', field.app, 'selectText', 'text');
+  assert.equal(select.check.value.ok, true, JSON.stringify(select));
+  assert.deepEqual(select.check.value.outcome.selection, {selectedLength: 6, selectedHash: await sha('matrix'), valueLength: field.state.value.length, valueHash: await sha(field.state.value),
+    valueChanged: false, selectionChanged: true});
+  assert.doesNotMatch(JSON.stringify([set, select]), /cua matrix set|cua select/);
+  // An inert setValue: the value unchanged from the prepare's reading.
+  const inert = electronField({value: 'alpha one'});
+  inert.app.setValue = async () => {};
+  const stuck = await runCase('electron', 'electron', inert.app, 'setValue', 'text');
+  assert.deepEqual([stuck.check.value.ok, stuck.check.value.outcome.selection.valueChanged], [false, false]);
+  // TextEdit's and Chrome's cases record the same.
+  for (const [target, method, kase] of [['textedit', 'setValue', 'document'], ['textedit', 'selectText', 'line'], ['chrome', 'setValue', 'name'], ['chrome', 'selectText', 'name']])
+    assert.match(caseCells(target, casesOf(target, method, kase)).check, /selection: selectionEvidence\(/, `${target} ${method}.${kase}`);
+});
+
+test('the finding scorer starts Finder\'s list at its first rows, scrolled back up when it is not, and records the range; a list it cannot bring there is invalid', async () => {
+  const finder = golden('finder', 'vendor.txt');
+  const scrolled = finder.replace('(showing 0-21 of 100 items)', '(showing 125-146 of 200 items)');
+  const refuse = (_, index, action) => { throw new Error(`${action} is not a valid secondary action for element ${index}`); };
+  // At its first rows already: nothing is scrolled.
+  const top = fakeApp(finder, {performSecondaryAction: refuse});
+  const atTop = await run(findingCell('finder'), {apps: {finder: top}});
+  assert.deepEqual(atTop.value.showing, {from: 0, to: 21, of: 100});
+  assert.ok(top.calls.every(([method]) => method === 'performSecondaryAction'));
+  // Scrolled down (another run's viewport): scrolled up as the Finder rows' prepare does, then scored.
+  const down = fakeApp(scrolled, {performSecondaryAction: refuse, scroll: app => { app.ax = finder; }});
+  const normalized = await run(findingCell('finder'), {apps: {finder: down}});
+  assert.deepEqual(down.calls[0], ['scroll', 4, 'up', 20]);
+  assert.deepEqual(normalized.value.showing, {from: 0, to: 21, of: 100});
+  assert.deepEqual(normalized.value.targets, atTop.value.targets, 'the scored observation is the normalized one');
+  // A list that stays scrolled, or whose range cannot be read: invalid, never scored.
+  const stuck = fakeApp(scrolled, {performSecondaryAction: refuse});
+  const notTop = await run(findingCell('finder'), {apps: {finder: stuck}});
+  assert.deepEqual(notTop.value, {invalid: 'Finder\'s list did not start at its first rows', showing: {from: 125, to: 146, of: 200}});
+  assert.deepEqual(stuck.calls.map(c => c[0]), ['scroll']);
+  const unread = await run(findingCell('finder'), {apps: {finder: fakeApp(finder.replace(' (showing 0-21 of 100 items)', ''), {performSecondaryAction: refuse})}});
+  assert.deepEqual(unread.value, {invalid: 'Finder\'s list did not start at its first rows', showing: null});
+  // The other scenes have no list to normalize.
+  const chrome = await run(findingCell('chrome'), {apps: {chrome: fakeApp(golden('chrome', 'vendor.txt'), {performSecondaryAction: refuse})}});
+  assert.equal('showing' in chrome.value, false);
+});

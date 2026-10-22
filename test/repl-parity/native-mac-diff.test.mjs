@@ -172,6 +172,17 @@ test('a cell one lane did not answer is a difference, and the goldens it feeds a
   assert.equal(report.differences[0].cua.error, 'the engine refused the click');
 });
 
+test('a lane read without the Electron fixture\'s page is a difference: the side reads\' page check never hides it', () => {
+  // Hold 2b's cua lane: the window's second container empty, the page's thirteen lines absent.
+  const empty = fs.readFileSync(new URL('../../docs/doperpowers/research/2026-10-18-own-native-engine/m2b/hold2b/native-mac/cua/texts/electron/full.txt', import.meta.url), 'utf8');
+  const texts = laneTexts('cua');
+  texts.electron.full = empty;
+  const report = diffNativeMac(...pair({cua: {texts}}), {declarations});
+  const electron = report.differences.filter(d => d.scene === 'electron' && d.golden === 'full');
+  assert.ok(electron.some(d => d.kind === 'missing'), 'the page\'s lines are missing on the cua lane');
+  assert.equal(report.ok, false);
+});
+
 test('checkPair: one sitting, one checkout, one approved engine, the vendor-engine run first; a same-engine pair takes no declarations', () => {
   const root = scratch();
   const run = (name, engine, meta) => loadNativeMacRun(writeRun(join(root, name), {engine, meta}));

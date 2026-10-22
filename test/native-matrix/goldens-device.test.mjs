@@ -10,7 +10,7 @@ import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {SkyComputerUseError} from '../../src/services/engine/protocol.mjs';
 import {DESELECT_ALL_KEY, FINDER_CHROME, readSavedPreferences, saveOriginalPreferences} from '../../scripts/repl-parity/scenes-mac-finder.mjs';
-import {setupSteps, teardownSteps} from '../../scripts/repl-parity/scenes-mac.mjs';
+import {SCENES, setupSteps, teardownSteps} from '../../scripts/repl-parity/scenes-mac.mjs';
 import {EventEmitter} from 'node:events';
 import {RESET_MAY_CLEAR, SCREENSHOT_DIR, SETTLE_BOUND_MS, SETTLE_INTERVAL_MS, act, engineCheck, engineNodeRepl, goldenForm, main, observe, runSteps, settledState, stateDigest, verify} from '../../scripts/native-matrix/goldens-device.mjs';
 
@@ -174,10 +174,12 @@ test('act: the target found in cua\'s own rendering, clicked by its token in the
 });
 
 test('act: a target the settled tree does not expose is not clicked', async () => {
-  const before = shot('electron', 'action.before.skyshot.json');
-  const without = {...before, nodes: before.nodes.filter(n => n.title !== 'Fixture button' && n.description !== 'Fixture button')};
+  // TextEdit's: its fixed-state check does not name the target, so the settled state passes and only the target is missing
+  // (the Electron fixture's button is one of the page's controls, whose absence is a page still filling).
+  const before = shot('textedit', 'action.before.skyshot.json');
+  const without = {...before, nodes: before.nodes.filter(n => !String(n.value ?? '').startsWith(SCENES.textedit.action.click))};
   const client = fakeClient([without, without]);
-  const out = await act({id: 'electron', record: recordOf('electron', before.app.pid), client, screenshots: '/s', expect: digestOf(without), ...fakeClock()});
+  const out = await act({id: 'textedit', record: recordOf('textedit', before.app.pid), client, screenshots: '/s', expect: digestOf(without), ...fakeClock()});
   assert.deepEqual(client.calls.map(c => c.method), Array(2).fill('get_app_state'));
   assert.deepEqual(out.problems.map(p => p.code), ['target_missing']);
   assert.equal(out.before, null);

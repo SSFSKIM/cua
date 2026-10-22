@@ -314,15 +314,33 @@ export function chromePageProblems(shot) {
     : 'the scene page\'s controls do not carry their values yet (Chromium is still filling its tree); observe again'}];
 }
 
+// What keeps a Skyshot of the Electron scene from showing the fixture's page: its web area (titled as the window) and,
+// inside it, every control the fixture puts on screen, by role and name (Chromium names a control by its title, its
+// description or, for text, its value). Hold 2b's cua lane read the window with its second container empty, and the side
+// reads had accepted that state, since the fixture's process is wholly the run's. The check is the side reads' (the
+// state the lane's texts are kept against); a lane's own read without the page is still a difference in the diff.
+// -> [] or [{code: 'page_filling', controls, message}].
+const nameOf = node => [node.title, node.description, node.value];
+export function electronPageProblems(shot) {
+  const nodes = Array.isArray(shot?.nodes) ? shot.nodes : [];
+  const area = nodes.findIndex(n => n.role === 'AXWebArea' && n.title === SCENES.electron.fixedState.title);
+  const inside = area < 0 ? [] : nodes.slice(area + 1, subtreeEnd(nodes, area));
+  const missing = FIXTURE_CONTROLS.filter(c => !inside.some(n => n.role === c.role && nameOf(n).includes(c.name))).map(c => c.id);
+  if (!missing.length) return [];
+  return [{code: 'page_filling', controls: missing, message: area < 0 ? 'the Electron fixture\'s web area is not in the window yet; observe again'
+    : 'the Electron fixture\'s page does not hold all its controls yet; observe again'}];
+}
+
 // What the run owns in its Finder window, from the scene's record.
 export const finderOwned = record => ({folder: basename(record.folder), folderPath: record.folder, files: finderFolderFiles()});
 // What keeps an engine's Skyshot of the scene window from being the scene's fixed state, checked before anything of it
-// is recorded: Finder's window by ./scenes-mac-finder.mjs; Chrome's page filled (chromePageProblems); TextEdit's and
-// Electron's processes are wholly the run's. -> [{code, message}].
+// is recorded: Finder's window by ./scenes-mac-finder.mjs; Chrome's page filled (chromePageProblems); Electron's page
+// there (electronPageProblems); TextEdit's process is wholly the run's. -> [{code, message}].
 export function fixedStateProblems(id, skyshot, record) {
   const scene = sceneOf(id).id;
   if (scene === 'finder') return finderWindowProblems(skyshot, finderOwned(record));
   if (scene === 'chrome') return chromePageProblems(skyshot);
+  if (scene === 'electron') return electronPageProblems(skyshot);
   return [];
 }
 

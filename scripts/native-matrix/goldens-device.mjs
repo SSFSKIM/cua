@@ -68,7 +68,8 @@ export const SCREENSHOT_DIR = 'goldens-screenshots';
 export const SETTLE_INTERVAL_MS = 500, SETTLE_BOUND_MS = 10_000;
 // Problems waiting can clear, so the stability read reads on through them: a window of the run's process whose title is
 // not yet the scene's (a page or document still loading), a page whose tree is still filling (scenes-mac.mjs
-// chromePageProblems). Any other problem (another process, owner text in Finder's window) is refused at once.
+// chromePageProblems; the Electron fixture's page not there yet, electronPageProblems). Any other problem (another
+// process, owner text in Finder's window) is refused at once.
 const TRANSIENT = new Set(['other_window', 'page_filling']);
 // The refusals of `action` the controller answers by resetting the scene (a restart, or Finder's deselect) and trying
 // again: a settled state that is not the kept one, a state that never settled, a page that never filled.

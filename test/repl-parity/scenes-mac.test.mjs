@@ -893,7 +893,30 @@ test('the fixed-state check: Finder\'s on its Skyshot with what the run owns, Te
   assert.deepEqual(finderOwned(record), {folder: 'cua-scene-finder', folderPath: '/run/finder/cua-scene-finder', files: finderFolderFiles()});
   const shot = JSON.parse(fs.readFileSync(new URL('./fixtures/finder-m0/skyshot.json', import.meta.url), 'utf8'));
   assert.deepEqual(fixedStateProblems('finder', shot, record).map(p => p.code), ['sidebar_shown', 'unowned_text'], 'M0\'s capture showed the sidebar and the status bar');
-  for (const id of ['textedit', 'electron']) assert.deepEqual(fixedStateProblems(id, {nodes: []}, {}), []);
+  assert.deepEqual(fixedStateProblems('textedit', {nodes: []}, {}), []);
+});
+
+test('Electron\'s fixed state needs the fixture\'s page: its web area holding every named control; hold 2b\'s empty container is refused', () => {
+  // Hold 2b's cua lane read the fixture as a window whose second container was empty (12 lines against the vendor's 25),
+  // and the side reads had accepted that state: the check is the side reads', so a lane read missing the page is still a
+  // difference in the diff (native-mac-diff), never a state the run refuses to keep.
+  const filled = JSON.parse(fs.readFileSync(new URL('../native-goldens/electron/skyshot.json', import.meta.url), 'utf8'));
+  assert.deepEqual(fixedStateProblems('electron', filled, {}), []);
+  const area = filled.nodes.findIndex(n => n.role === 'AXWebArea');
+  const empty = {...filled, nodes: filled.nodes.slice(0, area)};
+  const problems = fixedStateProblems('electron', empty, {});
+  assert.deepEqual(problems.map(p => p.code), ['page_filling']);
+  assert.deepEqual(problems[0].controls, FIXTURE_CONTROLS.map(c => c.id));
+  assert.deepEqual(fixedStateProblems('electron', {nodes: []}, {}).map(p => p.code), ['page_filling']);
+  // The web area there but a control not in it yet (its name read from the title, the description or the value).
+  const noButton = {...filled, nodes: filled.nodes.filter(n => !(n.role === 'AXButton' && n.title === 'Fixture button'))};
+  assert.deepEqual(fixedStateProblems('electron', noButton, {})[0].controls, ['button']);
+  // A control outside the page's web area does not count.
+  const outside = {...filled, nodes: filled.nodes.map((n, i) => (i > area ? {...n, depth: Math.min(n.depth, filled.nodes[area].depth)} : n))};
+  assert.equal(fixedStateProblems('electron', outside, {})[0].controls.length, FIXTURE_CONTROLS.length);
+  // The state after the action (the button pressed, the status changed) still has the page.
+  const pressed = {...filled, nodes: filled.nodes.map(n => (n.value === 'Pressed 0 times' ? {...n, value: 'Pressed 1 time'} : n))};
+  assert.deepEqual(fixedStateProblems('electron', pressed, {}), []);
 });
 
 test('device reads: Finder\'s preference keys through defaults, an unset key as null, any other failure thrown', () => {

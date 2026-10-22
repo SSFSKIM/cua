@@ -436,7 +436,7 @@ async function cliInstall(t, args, deps) {
   process.stdout.write = chunk => { out.push(String(chunk)); return true; };
   process.stderr.write = chunk => { err.push(String(chunk)); return true; };
   try {
-    const status = await main(['install', ...args], deps);
+    const status = await main(['install', ...args], {env: {HOME: deps.home, CUA_NATIVE_ENGINE: 'vendor'}, ...deps});
     return {status, stdout: out.join(''), stderr: err.join('')};
   } finally { Object.assign(process.stdout, {write: write.stdout}); Object.assign(process.stderr, {write: write.stderr}); }
 }

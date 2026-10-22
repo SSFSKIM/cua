@@ -100,7 +100,9 @@ step() {
 "
 }
 
-install() { quiet install '' scratch node bin/cua.mjs install --json > "$RAW/install.json"; }
+# This gate's engine lane uses a fixture, not a capturing engine. Keep installation vendor-only even after the default
+# flips; engine-swift builds and verifies the real ad-hoc bundle in its own scratch HOME, without granting permissions.
+install() { quiet install '' scratch env CUA_NATIVE_ENGINE=vendor node bin/cua.mjs install --json > "$RAW/install.json"; }
 no_codex() {
   found=$(find "$H" \( -name CodexCLI.app -o \( -name codex -type f \) \) -print 2> "$ERR/no-codex" | wc -l | tr -d ' ')
   echo "hosted-gate: Codex CLI files in the installed tree: $found" >&2

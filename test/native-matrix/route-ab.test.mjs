@@ -9,7 +9,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {validateCellResult} from '../../scripts/native-matrix/cell-result.mjs';
 import {listCells, resolveCell} from '../../scripts/native-matrix/registry.mjs';
-import {releaseOf, ROUTE_AB_SAMPLES, VARIANTS} from '../../scripts/native-matrix/route-ab.mjs';
+import {effectVerdict, releaseOf, ROUTE_AB_SAMPLES, VARIANTS} from '../../scripts/native-matrix/route-ab.mjs';
 import {planOf} from '../../scripts/native-matrix/run.mjs';
 import {args, matrixSteps, runWith} from './run-doubles.mjs';
 
@@ -161,4 +161,12 @@ test('only the route A/B lane\'s serve may forward a forced route (CUA_ENGINE_SP
   assert.ok(ab.length > 0 && ab.every(spec => spec.spikeRoute === true), JSON.stringify(ab));
   const other = serves((await runWith()).steps);
   assert.ok(other.length > 0 && other.every(spec => spec.spikeRoute === false), JSON.stringify(other));
+});
+
+test('an effect first seen after the bound is recorded as late and never passes', () => {
+  assert.deepEqual(effectVerdict(5, 4, 1200, 2000), {ok: true, pressedOnce: true, late: false});
+  assert.deepEqual(effectVerdict(5, 4, 2000, 2000), {ok: true, pressedOnce: true, late: false});
+  assert.deepEqual(effectVerdict(5, 4, 2400, 2000), {ok: false, pressedOnce: true, late: true});
+  assert.deepEqual(effectVerdict(4, 4, null, 2000), {ok: false, pressedOnce: false, late: false});
+  assert.deepEqual(effectVerdict(6, 4, null, 2000), {ok: false, pressedOnce: false, late: false});
 });

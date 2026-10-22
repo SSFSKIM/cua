@@ -31,14 +31,17 @@ func scrollDelta(pages: Double, length: CGFloat?) throws -> Int32 {
   return delta
 }
 
-/// The wheels of a scroll by `delta` pixels: up (0, +n), down (0, −n), left (−n, 0), right (+n, 0) as (x, y), and the
-/// wheel count, 2 for a horizontal scroll so its second wheel is read.
+/// The wheels of a scroll by `delta` pixels: up (0, +n), down (0, −n), left (+n, 0), right (−n, 0) as (x, y), and the
+/// wheel count, 2 for a horizontal scroll so its second wheel is read. The second wheel's sign runs as the first's: a
+/// positive delta scrolls toward the content's start, up on the first wheel and left on the second (read on TextEdit
+/// on 2026-10-21, a +n second wheel moving the horizontal bar 0.5 → 0; the vendor's recovered signs, left −n and
+/// right +n, are the other way round).
 func scrollWheels(_ direction: ScrollDirection, delta: Int32) -> (count: UInt32, vertical: Int32, horizontal: Int32) {
   switch direction {
   case .up: return (1, delta, 0)
   case .down: return (1, -delta, 0)
-  case .left: return (2, 0, -delta)
-  case .right: return (2, 0, delta)
+  case .left: return (2, 0, delta)
+  case .right: return (2, 0, -delta)
   }
 }
 
@@ -153,9 +156,9 @@ extension Engine {
         ? FakeActivation(pid: owner, appPid: appPid, window: start.window, windowFrame: start.windowFrame, windowID: windowID) : nil
       try armingSettle(&meta, acted: { context.connection.markActed(app) }) { meta in
         try recordingRouteAdvice(route, app: app, meta: &meta) { meta in
-          try deliverPointer(to: owner, route: route, activation: activation,
+          try deliverPointer(to: owner, route: route, activation: activation, activations: heldActivations,
                              foreground: route == .foreground ? ForegroundAssist(appPid: appPid) : nil,
-                             beforePosting: guarding.checkInFlight, post: { $0.postToPid($1) }, meta: &meta) {
+                             beforeActivating: guarding.checkInFlight, beforePosting: guarding.checkInFlight, post: { $0.postToPid($1) }, meta: &meta) {
             let active = NSRunningApplication(processIdentifier: owner)?.isActive == true
             return dragEvents(from: start.point, to: end.point, window: window, flags: clickFlags(route, targetActive: active))
           }

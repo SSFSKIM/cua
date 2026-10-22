@@ -1,0 +1,1 @@
+phase0 20:30Z: macOS 27.0; Finder ShowSidebar=1, ShowStatusBar absent, ShowPathbar absent; input com.apple.keylayout.ABC, AppleSelectedInputSources [PressAndHold, ABC]; GlobalTextInputProperties PerContextInput=0; front com.apple.Terminal; no cua-engine/TextEdit/CfT; engine.json mtime 1792384396; load 2.19; SecurityAgent/claude auth empty; no foreign engine

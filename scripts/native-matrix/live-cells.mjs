@@ -1,5 +1,5 @@
-// The vendor lane's js cells of the M2a.5 menu check (./live.mjs menu; the Decision Log's "M2a vendor reading" item
-// 10), sent through the vendor host's facade in the native baseline's envelope (scripts/native-baseline/cells.mjs), on
+// The vendor lane's js cells of the menu and hscroll cells (./live.mjs menu, hscroll; the Decision Log's "M2a vendor reading" items
+// 10 and 6), sent through the vendor host's facade in the native baseline's envelope (scripts/native-baseline/cells.mjs), on
 // the TextEdit the goldens' BIND cell bound (globalThis.__apps.textedit). One cell per action, so the controller reads
 // the frontmost process between them (the vendor activates; that is recorded). A cell returns indexes and booleans,
 // never accessibility text. Each cell opens with a `/* live:<kind> <item> */` tag naming it.
@@ -57,3 +57,14 @@ ${HELPERS}
 const ax = await __app.getAXState({emit: false});
 ${test}`);
 };
+
+// The hscroll cell's vendor lane (M2b.1b; the M2a vendor reading's item 6): the run's wide-page TextEdit's text area
+// scrolled right by one page through the vendor's facade. Its position is read on the device by `--probe text-view`,
+// as cua's lane's is. -> {found, scrolled, scrollError}.
+export const SCROLL_RIGHT = cell(`/* live:scroll right */
+${HELPERS}
+const ax = await __app.getAXState({emit: false, disableDiffing: true});
+const index = vendorTextAreaIndex(ax, ${j(FIRST_LINE)});
+if (index === null) return {found: false, scrolled: false, scrollError: null};
+try { await __app.scroll(index, "right", 1); return {found: true, scrolled: true, scrollError: null}; }
+catch (e) { return {found: true, scrolled: false, scrollError: __error(e)}; }`);

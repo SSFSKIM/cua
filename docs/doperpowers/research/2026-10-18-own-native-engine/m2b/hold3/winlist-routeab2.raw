@@ -1,0 +1,8 @@
+layer=24 pid=179 owner=Window Server number=5 bounds=0,0,2560,30
+layer=21 pid=927 owner=알림 센터 number=67 bounds=0,0,2560,1440
+layer=20 pid=457 owner=Dock number=17 bounds=0,0,2560,1440
+layer=0 pid=431 owner=터미널 number=26 bounds=1400,280,580,408
+layer=0 pid=462 owner=Finder number=13847 bounds=820,261,920,800
+layer=0 pid=447 owner=Tailscale number=35 bounds=1280,30,1280,998
+owner=Claude [name only]
+layer=-2147483601 pid=927 owner=알림 센터 number=76 bounds=8,578,360,180

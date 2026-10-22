@@ -15,9 +15,13 @@ import os
 // attribute it read false and then set: one that read true, or could not be read, may be VoiceOver's or another
 // assistive client's and is never written back. A failed write back is logged and retried at a later close or the
 // shutdown. The release is a declared difference, since the vendor never unsets, and a web app left in
-// full-accessibility mode after cua is done is interference (A3). The first observation after enabling, and every
-// observation of a Chromium window until a web area has been seen in the process, waits 100 ms and then up to 1 s for
-// an AXWebArea to appear. The vendor's Spotify fake activation before enabling is route 3's and is not done here.
+// full-accessibility mode after cua is done is interference (A3). Once the engine has written a process's attribute
+// back, the next observation of that process sets it again, owned, whatever it reads: Chromium's attribute reads true
+// after the write-back (AppKit's readback, not Chromium's mode; Surprises, M2a.5 hold), so the rule of setting only
+// what does not read true would leave the page's tree gone (Decision Log 2026-10-22). The first observation after
+// enabling, and every observation of a Chromium window until a web area has been seen in the process, waits 100 ms and
+// then up to 1 s for an AXWebArea to appear. The vendor's Spotify fake activation before enabling is route 3's and is
+// not done here.
 
 private let enablementLog = Logger(subsystem: "io.github.ssfskim.cua.engine", category: "enablement")
 
@@ -57,6 +61,23 @@ func webAreaWaitNeeded(switchOn: Bool, enabledNow: Bool, chromium: Bool, seen: B
   switchOn && (enabledNow || chromium) && !seen
 }
 
+/// A process's generation, which keys the enablement's per-process state with its pid so a later process reusing the
+/// pid is another: LaunchServices' launch date, else (an app launched without LaunchServices, a dev `electron .`) the
+/// kernel's start time; nil when neither can be read.
+func processGeneration(launchDate: Date?, pid: pid_t) -> Date? {
+  launchDate ?? processStartTime(pid: pid)
+}
+
+/// The kernel's start time of process `pid` (`kp_proc.p_starttime`); nil when there is no such process.
+func processStartTime(pid: pid_t) -> Date? {
+  var info = kinfo_proc()
+  var size = MemoryLayout<kinfo_proc>.stride
+  var name: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
+  guard sysctl(&name, u_int(name.count), &info, &size, nil, 0) == 0, size > 0, info.kp_proc.p_pid == pid else { return nil }
+  let start = info.kp_proc.p_starttime
+  return Date(timeIntervalSince1970: Double(start.tv_sec) + Double(start.tv_usec) / 1_000_000)
+}
+
 /// How the enablement reaches one process's application element: its attribute names (nil while they cannot be read,
 /// a process still launching), one attribute's Boolean value (nil when unreadable), a write, and whether the process is
 /// still the one observed (a pid an ended process left behind may be another launch's by the time of a release).
@@ -66,7 +87,7 @@ struct EnablementAccess: @unchecked Sendable {
   var write: (String, Bool) -> Bool
   var current: () -> Bool
 
-  /// The application element of process `pid`, launched at `launched`.
+  /// The application element of process `pid`, of generation `launched` (`processGeneration`).
   static func live(pid: pid_t, launched: Date?) -> EnablementAccess {
     let application = prepare(AXUIElementCreateApplication(pid))
     return EnablementAccess(
@@ -76,7 +97,9 @@ struct EnablementAccess: @unchecked Sendable {
       },
       read: { bool(attribute(application, $0)) },
       write: { AXUIElementSetAttributeValue(application, $0 as CFString, ($1 ? kCFBooleanTrue : kCFBooleanFalse)!) == .success },
-      current: { NSRunningApplication(processIdentifier: pid).map { $0.launchDate == launched && !$0.isTerminated } ?? false })
+      current: {
+        NSRunningApplication(processIdentifier: pid).map { !$0.isTerminated && processGeneration(launchDate: $0.launchDate, pid: pid) == launched } ?? false
+      })
   }
 }
 
@@ -105,16 +128,24 @@ private final class EnabledProcess: @unchecked Sendable {
   var listed: String??
   /// The attribute the engine set after reading it false, which it releases; nil otherwise.
   var owned: String?
+  /// Whether the process's generation is known; a write-back is remembered only then, since a key of the pid alone
+  /// would match a later process reusing it.
+  let generationKnown: Bool
 
-  init(access: EnablementAccess) { self.access = access }
+  init(access: EnablementAccess, generationKnown: Bool) {
+    self.access = access
+    self.generationKnown = generationKnown
+  }
 }
 
-/// Per engine: which bundles are web-shaped, per process (by pid and launch date, so a relaunch that reuses a pid starts
-/// over) the enablement the engine set and the connections that observed it, and the processes a web area was seen in.
+/// Per engine: which bundles are web-shaped, per process (by pid and generation, so a relaunch that reuses a pid starts
+/// over) the enablement the engine set and the connections that observed it, the processes a web area was seen in, and
+/// the processes whose attribute the engine wrote back and has not set again since.
 final class WebAccessibility: @unchecked Sendable {
   private let lock = NSLock()
   private var webShapedByPath: [String: Bool] = [:]
   private var webAreaSeen: Set<String> = []
+  private var writtenBack: Set<String> = []
   private var processes: [String: EnabledProcess] = [:]
   private var observers: [String: Set<Int>] = [:]
   /// Told (a bounded, value-free line) when a reset of the attribute the engine set fails; it stays owned.
@@ -156,7 +187,8 @@ final class WebAccessibility: @unchecked Sendable {
   }
 
   /// An observation of an eligible process by `connection`: the connection is recorded as observing it, and the one
-  /// enablement attribute the process lists is set when it does not read true now. Returns the attribute this call set
+  /// enablement attribute the process lists is set when it does not read true now, or whatever it reads when the engine
+  /// wrote it back since it last set it. Returns the attribute this call set
   /// (nil when none is listed, the names cannot be read yet, it reads true, or the write failed).
   func enable(pid: pid_t, launched: Date?, connection: Int, access: EnablementAccess) -> String? {
     enableReporting(pid: pid, launched: launched, connection: connection, access: access).set
@@ -167,7 +199,7 @@ final class WebAccessibility: @unchecked Sendable {
   func enableReporting(pid: pid_t, launched: Date?, connection: Int, access: EnablementAccess) -> (set: String?, prior: EnablementPrior?) {
     let key = Self.process(pid, launched)
     lock.lock()
-    let entry = processes[key] ?? EnabledProcess(access: access)
+    let entry = processes[key] ?? EnabledProcess(access: access, generationKnown: launched != nil)
     processes[key] = entry
     observers[key, default: []].insert(connection)
     lock.unlock()
@@ -178,9 +210,18 @@ final class WebAccessibility: @unchecked Sendable {
     guard let listed = entry.listed, let name = listed else { return (nil, nil) }
     let read = entry.access.read(name)
     let prior = EnablementPrior(read)
-    guard read != true, entry.access.write(name, true) else { return (nil, prior) }
-    // Owned, and so released later, only when it read false (A3): an unreadable value may be another client's.
-    if read == false { entry.owned = name }
+    lock.lock()
+    let reEnabling = writtenBack.contains(key)
+    lock.unlock()
+    guard read != true || reEnabling, entry.access.write(name, true) else { return (nil, prior) }
+    // Owned, and so released later, only when it read false (A3): an unreadable value may be another client's. A value
+    // the engine itself wrote back is its own whatever it reads now.
+    if read == false || reEnabling {
+      entry.owned = name
+      lock.lock()
+      writtenBack.remove(key)
+      lock.unlock()
+    }
     return (name, prior)
   }
 
@@ -207,10 +248,11 @@ final class WebAccessibility: @unchecked Sendable {
   }
 
   /// Writes back what the engine set on a process no connection observes now, then retires the process (with its web
-  /// area, whose tree may go with the attribute, so a later enabling waits for it again). The entry stays discoverable
-  /// through the reset, so an observation that begins meanwhile shares its lock and reads after the reset (setting the
-  /// attribute again, owned); it is retired only afterwards, by an atomic re-check that no observer registered. A reset
-  /// that fails keeps the ownership and the entry, so a later close or the shutdown retries it, and is logged.
+  /// area, whose tree may go with the attribute, so a later enabling waits for it again), remembering the write-back so
+  /// the next observation enables again. The entry stays discoverable through the reset, so an observation that begins
+  /// meanwhile shares its lock and reads after the reset (setting the attribute again, owned); it is retired only
+  /// afterwards, by an atomic re-check that no observer registered. A reset that fails keeps the ownership and the
+  /// entry, so a later close or the shutdown retries it, and is logged.
   private func releaseIfUnobserved(_ key: String, _ entry: EnabledProcess) {
     entry.io.lock()
     defer { entry.io.unlock() }
@@ -227,7 +269,10 @@ final class WebAccessibility: @unchecked Sendable {
       }
     }
     lock.lock()
-    if reset { webAreaSeen.remove(key) }
+    if reset {
+      webAreaSeen.remove(key)
+      if entry.generationKnown { writtenBack.insert(key) }
+    }
     if entry.owned == nil, observers[key]?.isEmpty ?? true, processes[key] === entry {
       observers[key] = nil
       processes[key] = nil

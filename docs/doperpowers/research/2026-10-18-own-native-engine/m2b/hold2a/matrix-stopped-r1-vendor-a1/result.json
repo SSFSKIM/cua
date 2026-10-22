@@ -1,0 +1,1888 @@
+{
+  "schema": "native-matrix-cell-1",
+  "cell": "matrix",
+  "device": "mini",
+  "started": "2026-10-22T00:15:10.737Z",
+  "finished": "2026-10-22T00:17:23.838Z",
+  "lanes": [
+    {
+      "host": "vendor",
+      "engine": "vendor",
+      "build": "26.928.40906-darwin-arm64",
+      "version": "26.924.1001281"
+    }
+  ],
+  "complete": false,
+  "verdict": "no-verdict",
+  "problems": [
+    "stopped: a possible system alert appeared before finder/frontmost/typeText.typeSelect; the run stopped without touching it"
+  ],
+  "rows": [
+    {
+      "section": "speed",
+      "id": "textedit/getAXState",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 63.21704200000022,
+      "wallMs": 100.2159579999934
+    },
+    {
+      "section": "speed",
+      "id": "textedit/getAXState",
+      "engine": "vendor",
+      "sample": 2,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 49.44691700000021,
+      "wallMs": 84.8837080000012
+    },
+    {
+      "section": "speed",
+      "id": "textedit/getAXState",
+      "engine": "vendor",
+      "sample": 3,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 67.57629199999974,
+      "wallMs": 243.14529100000073
+    },
+    {
+      "section": "speed",
+      "id": "textedit/getAXState",
+      "engine": "vendor",
+      "sample": 4,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 56.45891699999993,
+      "wallMs": 121.35841699999582
+    },
+    {
+      "section": "speed",
+      "id": "textedit/getAXState",
+      "engine": "vendor",
+      "sample": 5,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 67.59233300000051,
+      "wallMs": 99.13016700000298
+    },
+    {
+      "section": "speed",
+      "id": "textedit/getAXState",
+      "engine": "vendor",
+      "sample": 6,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 47.94720899999993,
+      "wallMs": 102.50400000000081
+    },
+    {
+      "section": "speed",
+      "id": "textedit/getAXState",
+      "engine": "vendor",
+      "sample": 7,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 59.8207910000001,
+      "wallMs": 141.2849170000045
+    },
+    {
+      "section": "speed",
+      "id": "textedit/getAXState",
+      "engine": "vendor",
+      "sample": 8,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 52.81600000000071,
+      "wallMs": 120.99141699999745
+    },
+    {
+      "section": "speed",
+      "id": "textedit/getAXState",
+      "engine": "vendor",
+      "sample": 9,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 51.28595799999857,
+      "wallMs": 117.75108300000284
+    },
+    {
+      "section": "speed",
+      "id": "textedit/getAXState",
+      "engine": "vendor",
+      "sample": 10,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 54.82841700000063,
+      "wallMs": 119.11895799999911
+    },
+    {
+      "section": "speed",
+      "id": "textedit/getScreenshot",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 73.15545900000143,
+      "wallMs": 234.49954200000502
+    },
+    {
+      "section": "speed",
+      "id": "textedit/getScreenshot",
+      "engine": "vendor",
+      "sample": 2,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 69.10408300000017,
+      "wallMs": 93.90466700000252
+    },
+    {
+      "section": "speed",
+      "id": "textedit/getScreenshot",
+      "engine": "vendor",
+      "sample": 3,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 51.45316699999967,
+      "wallMs": 81.51091699999961
+    },
+    {
+      "section": "speed",
+      "id": "textedit/getScreenshot",
+      "engine": "vendor",
+      "sample": 4,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 46.01245799999924,
+      "wallMs": 68.99187499999971
+    },
+    {
+      "section": "speed",
+      "id": "textedit/getScreenshot",
+      "engine": "vendor",
+      "sample": 5,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 51.367292000000816,
+      "wallMs": 134.8700830000016
+    },
+    {
+      "section": "speed",
+      "id": "textedit/getScreenshot",
+      "engine": "vendor",
+      "sample": 6,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 60.74470900000051,
+      "wallMs": 114.66658300000563
+    },
+    {
+      "section": "speed",
+      "id": "textedit/getScreenshot",
+      "engine": "vendor",
+      "sample": 7,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 48.58758400000079,
+      "wallMs": 96.2946660000016
+    },
+    {
+      "section": "speed",
+      "id": "textedit/getScreenshot",
+      "engine": "vendor",
+      "sample": 8,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 49.89879199999996,
+      "wallMs": 112.29270800000086
+    },
+    {
+      "section": "speed",
+      "id": "textedit/getScreenshot",
+      "engine": "vendor",
+      "sample": 9,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 49.98583299999882,
+      "wallMs": 89.90174999999726
+    },
+    {
+      "section": "speed",
+      "id": "textedit/getScreenshot",
+      "engine": "vendor",
+      "sample": 10,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 46.49675000000025,
+      "wallMs": 124.68629099999816
+    },
+    {
+      "section": "speed",
+      "id": "textedit/listApps",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 20.562333999998373,
+      "wallMs": 43.306084000003466
+    },
+    {
+      "section": "speed",
+      "id": "textedit/listApps",
+      "engine": "vendor",
+      "sample": 2,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 18.668125000000146,
+      "wallMs": 68.0125840000037
+    },
+    {
+      "section": "speed",
+      "id": "textedit/listApps",
+      "engine": "vendor",
+      "sample": 3,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 18.044082999998864,
+      "wallMs": 64.05495800000062
+    },
+    {
+      "section": "speed",
+      "id": "textedit/listApps",
+      "engine": "vendor",
+      "sample": 4,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 17.48383400000057,
+      "wallMs": 42.10662500000035
+    },
+    {
+      "section": "speed",
+      "id": "textedit/listApps",
+      "engine": "vendor",
+      "sample": 5,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 18.81616699999904,
+      "wallMs": 40.61508400000457
+    },
+    {
+      "section": "speed",
+      "id": "textedit/listApps",
+      "engine": "vendor",
+      "sample": 6,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 17.80395800000042,
+      "wallMs": 63.48174999999901
+    },
+    {
+      "section": "speed",
+      "id": "textedit/listApps",
+      "engine": "vendor",
+      "sample": 7,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 31.920917000001282,
+      "wallMs": 139.7589999999982
+    },
+    {
+      "section": "speed",
+      "id": "textedit/listApps",
+      "engine": "vendor",
+      "sample": 8,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 32.06733299999905,
+      "wallMs": 82.20516599999974
+    },
+    {
+      "section": "speed",
+      "id": "textedit/listApps",
+      "engine": "vendor",
+      "sample": 9,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 33.63145799999984,
+      "wallMs": 81.73654199999874
+    },
+    {
+      "section": "speed",
+      "id": "textedit/listApps",
+      "engine": "vendor",
+      "sample": 10,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 24.556249999999636,
+      "wallMs": 47.532790999997815
+    },
+    {
+      "section": "finding",
+      "engine": "vendor",
+      "sample": 1,
+      "scene": "textedit",
+      "id": "textedit/target.document",
+      "ok": true,
+      "outcome": {
+        "found": true,
+        "resolved": true
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "vendor",
+      "sample": 1,
+      "scene": "textedit",
+      "id": "textedit/target.window",
+      "ok": true,
+      "outcome": {
+        "found": true,
+        "resolved": true
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "vendor",
+      "sample": 1,
+      "scene": "textedit",
+      "id": "textedit/target.styles",
+      "ok": true,
+      "outcome": {
+        "found": false,
+        "resolved": false
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "vendor",
+      "sample": 1,
+      "scene": "textedit",
+      "id": "textedit/target.alignment",
+      "ok": true,
+      "outcome": {
+        "found": false,
+        "resolved": false
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "vendor",
+      "sample": 1,
+      "scene": "textedit",
+      "id": "textedit/target.spacing",
+      "ok": true,
+      "outcome": {
+        "found": false,
+        "resolved": false
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "vendor",
+      "sample": 1,
+      "scene": "textedit",
+      "id": "textedit/target.lists",
+      "ok": true,
+      "outcome": {
+        "found": false,
+        "resolved": false
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "vendor",
+      "sample": 1,
+      "scene": "textedit",
+      "id": "textedit/target.close",
+      "ok": true,
+      "outcome": {
+        "found": true,
+        "resolved": true
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "vendor",
+      "sample": 1,
+      "scene": "textedit",
+      "id": "textedit/target.minimize",
+      "ok": true,
+      "outcome": {
+        "found": true,
+        "resolved": true
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "vendor",
+      "sample": 1,
+      "scene": "textedit",
+      "id": "textedit/target.fullScreen",
+      "ok": true,
+      "outcome": {
+        "found": true,
+        "resolved": true
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "vendor",
+      "sample": 1,
+      "scene": "textedit",
+      "id": "textedit/target.scrollBar",
+      "ok": true,
+      "outcome": {
+        "found": false,
+        "resolved": false
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "vendor",
+      "sample": 1,
+      "scene": "textedit",
+      "id": "textedit/lines",
+      "ok": true,
+      "outcome": {
+        "lines": 59,
+        "named": 28,
+        "unclassified": 0
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "vendor",
+      "sample": 1,
+      "scene": "textedit",
+      "id": "textedit/ids",
+      "ok": true,
+      "outcome": {
+        "ids": 1
+      }
+    },
+    {
+      "section": "method",
+      "id": "textedit/frontmost/getAXState.tree",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "frontmost",
+      "method": "getAXState",
+      "case": "tree",
+      "expect": "outcome",
+      "inCellMs": 92.75404100000014,
+      "wallMs": 196.12374999999884,
+      "inputRoute": null,
+      "outcome": {
+        "inFront": true,
+        "document": true,
+        "elements": 59
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.getAXState.tree",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "inCellMs": 92.75404100000014,
+      "wallMs": 196.12374999999884
+    },
+    {
+      "section": "method",
+      "id": "textedit/frontmost/listApps.running",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "frontmost",
+      "method": "listApps",
+      "case": "running",
+      "expect": "outcome",
+      "inCellMs": 30.717750000001615,
+      "wallMs": 104.92199999999866,
+      "inputRoute": null,
+      "outcome": {
+        "apps": 7,
+        "listed": true,
+        "running": true
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.listApps.running",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "inCellMs": 30.717750000001615,
+      "wallMs": 104.92199999999866
+    },
+    {
+      "section": "method",
+      "id": "textedit/frontmost/click.element",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "frontmost",
+      "method": "click",
+      "case": "element",
+      "expect": "outcome",
+      "inCellMs": 716.5658750000002,
+      "wallMs": 820.1504159999968,
+      "inputRoute": null,
+      "outcome": {
+        "collapsed": true,
+        "unchanged": true
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.click.element",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "inCellMs": 716.5658750000002,
+      "wallMs": 820.1504159999968
+    },
+    {
+      "section": "method",
+      "id": "textedit/frontmost/click.control",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "frontmost",
+      "method": "click",
+      "case": "control",
+      "expect": "outcome",
+      "inCellMs": 836.3113340000018,
+      "wallMs": 893.0034999999989,
+      "inputRoute": null,
+      "outcome": {
+        "checked": true
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.click.control",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "inCellMs": 836.3113340000018,
+      "wallMs": 893.0034999999989
+    },
+    {
+      "section": "method",
+      "id": "textedit/frontmost/typeText.replace",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "frontmost",
+      "method": "typeText",
+      "case": "replace",
+      "expect": "outcome",
+      "inCellMs": 230.93312499999956,
+      "wallMs": 462.8837080000012,
+      "inputRoute": null,
+      "outcome": {
+        "exact": true,
+        "inserted": 1
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.typeText.replace",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "inCellMs": 230.93312499999956,
+      "wallMs": 462.8837080000012
+    },
+    {
+      "section": "method",
+      "id": "textedit/frontmost/pressKey.selectAll",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "frontmost",
+      "method": "pressKey",
+      "case": "selectAll",
+      "expect": "outcome",
+      "inCellMs": 13.073083000002953,
+      "wallMs": 267.36675000000105,
+      "inputRoute": null,
+      "outcome": {
+        "selected": true,
+        "whole": true
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.pressKey.selectAll",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "inCellMs": 13.073083000002953,
+      "wallMs": 267.36675000000105
+    },
+    {
+      "section": "method",
+      "id": "textedit/frontmost/selectText.line",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "frontmost",
+      "method": "selectText",
+      "case": "line",
+      "expect": "outcome",
+      "inCellMs": 63.249791999998706,
+      "wallMs": 205.7738340000069,
+      "inputRoute": null,
+      "outcome": {
+        "selected": true
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.selectText.line",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "inCellMs": 63.249791999998706,
+      "wallMs": 205.7738340000069
+    },
+    {
+      "section": "method",
+      "id": "textedit/frontmost/paste.replace",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "frontmost",
+      "method": "paste",
+      "case": "replace",
+      "expect": "outcome",
+      "inCellMs": 42.375583000000915,
+      "wallMs": 284.6048330000049,
+      "inputRoute": null,
+      "outcome": {
+        "exact": true,
+        "inserted": 1
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.paste.replace",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "inCellMs": 42.375583000000915,
+      "wallMs": 284.6048330000049
+    },
+    {
+      "section": "method",
+      "id": "textedit/frontmost/setValue.document",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "frontmost",
+      "method": "setValue",
+      "case": "document",
+      "expect": "outcome",
+      "inCellMs": 700.4529169999951,
+      "wallMs": 799.0566249999974,
+      "inputRoute": null,
+      "outcome": {
+        "equal": true
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.setValue.document",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "inCellMs": 700.4529169999951,
+      "wallMs": 799.0566249999974
+    },
+    {
+      "section": "method",
+      "id": "textedit/frontmost/scroll.down",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "frontmost",
+      "method": "scroll",
+      "case": "down",
+      "expect": "outcome",
+      "inCellMs": 856.9730419999978,
+      "wallMs": 1008.0085409999883,
+      "inputRoute": null,
+      "outcome": {
+        "moved": true
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.scroll.down",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "inCellMs": 856.9730419999978,
+      "wallMs": 1008.0085409999883
+    },
+    {
+      "section": "method",
+      "id": "textedit/frontmost/performSecondaryAction.down",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "frontmost",
+      "method": "performSecondaryAction",
+      "case": "down",
+      "expect": "outcome",
+      "inCellMs": 513.6288750000022,
+      "wallMs": 618.784124999991,
+      "inputRoute": null,
+      "outcome": {
+        "moved": true
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.performSecondaryAction.down",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "inCellMs": 513.6288750000022,
+      "wallMs": 618.784124999991
+    },
+    {
+      "section": "method",
+      "id": "textedit/frontmost/drag.select",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "frontmost",
+      "method": "drag",
+      "case": "select",
+      "expect": "outcome",
+      "inCellMs": 34.51224999999977,
+      "wallMs": 127.63220799999544,
+      "inputRoute": null,
+      "outcome": {
+        "selected": true,
+        "spansLines": true,
+        "unchanged": true
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.drag.select",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "inCellMs": 34.51224999999977,
+      "wallMs": 127.63220799999544
+    },
+    {
+      "section": "method",
+      "id": "textedit/frontmost/selectText.notText",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "frontmost",
+      "method": "selectText",
+      "case": "notText",
+      "expect": "refusal",
+      "inCellMs": 9.562292000002344,
+      "wallMs": 111.4517499999929,
+      "inputRoute": null,
+      "outcome": {
+        "refused": true,
+        "expected": true,
+        "unchanged": true,
+        "errorName": "Error",
+        "message": "Computer Use server error -10005: Cannot select text for an element that does not support a settable selected text range"
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.selectText.notText",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "inCellMs": 9.562292000002344,
+      "wallMs": 111.4517499999929
+    },
+    {
+      "section": "method",
+      "id": "textedit/frontmost/setValue.notSettable",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "frontmost",
+      "method": "setValue",
+      "case": "notSettable",
+      "expect": "refusal",
+      "inCellMs": 434.46225000000413,
+      "wallMs": 671.5217080000002,
+      "inputRoute": null,
+      "outcome": {
+        "refused": true,
+        "expected": true,
+        "unchanged": true,
+        "errorName": "Error",
+        "message": "Computer Use server error -10005: Cannot set a value for an element that is not settable"
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.setValue.notSettable",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "inCellMs": 434.46225000000413,
+      "wallMs": 671.5217080000002
+    },
+    {
+      "section": "method",
+      "id": "textedit/frontmost/click.invalidIndex",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "frontmost",
+      "method": "click",
+      "case": "invalidIndex",
+      "expect": "refusal",
+      "inCellMs": 4.634916999995767,
+      "wallMs": 57.39783400000306,
+      "inputRoute": null,
+      "outcome": {
+        "refused": true,
+        "expected": true,
+        "unchanged": true,
+        "errorName": "Error",
+        "message": "Computer Use server error -10005: 99999 is an invalid element ID"
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.click.invalidIndex",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "inCellMs": 4.634916999995767,
+      "wallMs": 57.39783400000306
+    },
+    {
+      "section": "method",
+      "id": "openPanel/frontmost/getAXState.panel",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "scene": "textedit",
+      "target": "openPanel",
+      "regime": "frontmost",
+      "method": "getAXState",
+      "case": "panel",
+      "expect": "outcome",
+      "inCellMs": 138.42504100000224,
+      "wallMs": 243.19429200000013,
+      "inputRoute": null,
+      "outcome": {
+        "panel": true,
+        "elements": 65
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.panel.getAXState.panel",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "inCellMs": 138.42504100000224,
+      "wallMs": 243.19429200000013
+    },
+    {
+      "section": "method",
+      "id": "openPanel/frontmost/click.cancel",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "scene": "textedit",
+      "target": "openPanel",
+      "regime": "frontmost",
+      "method": "click",
+      "case": "cancel",
+      "expect": "outcome",
+      "inCellMs": 1336.9135410000017,
+      "wallMs": 1392.4337499999965,
+      "inputRoute": null,
+      "outcome": {
+        "closed": true,
+        "documentInFront": true
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.panel.click.cancel",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "inCellMs": 1336.9135410000017,
+      "wallMs": 1392.4337499999965
+    },
+    {
+      "section": "speed",
+      "id": "finder/getAXState",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 393.5054580000069,
+      "wallMs": 484.1252499999973
+    },
+    {
+      "section": "speed",
+      "id": "finder/getAXState",
+      "engine": "vendor",
+      "sample": 2,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 395.6332079999993,
+      "wallMs": 526.4353750000009
+    },
+    {
+      "section": "speed",
+      "id": "finder/getAXState",
+      "engine": "vendor",
+      "sample": 3,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 387.16300000000047,
+      "wallMs": 412.518624999997
+    },
+    {
+      "section": "speed",
+      "id": "finder/getAXState",
+      "engine": "vendor",
+      "sample": 4,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 372.20300000000134,
+      "wallMs": 414.09937500000524
+    },
+    {
+      "section": "speed",
+      "id": "finder/getAXState",
+      "engine": "vendor",
+      "sample": 5,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 362.8087089999972,
+      "wallMs": 416.9088330000086
+    },
+    {
+      "section": "speed",
+      "id": "finder/getAXState",
+      "engine": "vendor",
+      "sample": 6,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 379.4024589999972,
+      "wallMs": 409.0786250000092
+    },
+    {
+      "section": "speed",
+      "id": "finder/getAXState",
+      "engine": "vendor",
+      "sample": 7,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 369.6142499999987,
+      "wallMs": 439.65041600000404
+    },
+    {
+      "section": "speed",
+      "id": "finder/getAXState",
+      "engine": "vendor",
+      "sample": 8,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 396.7137500000026,
+      "wallMs": 524.5949159999873
+    },
+    {
+      "section": "speed",
+      "id": "finder/getAXState",
+      "engine": "vendor",
+      "sample": 9,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 374.35279199999786,
+      "wallMs": 479.6237919999985
+    },
+    {
+      "section": "speed",
+      "id": "finder/getAXState",
+      "engine": "vendor",
+      "sample": 10,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 399.14850000000297,
+      "wallMs": 498.7428750000108
+    },
+    {
+      "section": "speed",
+      "id": "finder/getScreenshot",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 400.10133399999904,
+      "wallMs": 504.3472909999982
+    },
+    {
+      "section": "speed",
+      "id": "finder/getScreenshot",
+      "engine": "vendor",
+      "sample": 2,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 397.94487500000105,
+      "wallMs": 512.9615420000046
+    },
+    {
+      "section": "speed",
+      "id": "finder/getScreenshot",
+      "engine": "vendor",
+      "sample": 3,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 410.62549999999464,
+      "wallMs": 637.3325829999958
+    },
+    {
+      "section": "speed",
+      "id": "finder/getScreenshot",
+      "engine": "vendor",
+      "sample": 4,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 376.7008329999953,
+      "wallMs": 396.05366700000013
+    },
+    {
+      "section": "speed",
+      "id": "finder/getScreenshot",
+      "engine": "vendor",
+      "sample": 5,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 376.2885830000014,
+      "wallMs": 411.5361249999987
+    },
+    {
+      "section": "speed",
+      "id": "finder/getScreenshot",
+      "engine": "vendor",
+      "sample": 6,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 371.86641700000473,
+      "wallMs": 416.19749999999476
+    },
+    {
+      "section": "speed",
+      "id": "finder/getScreenshot",
+      "engine": "vendor",
+      "sample": 7,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 372.4665410000016,
+      "wallMs": 392.0930839999928
+    },
+    {
+      "section": "speed",
+      "id": "finder/getScreenshot",
+      "engine": "vendor",
+      "sample": 8,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 363.1204160000052,
+      "wallMs": 468.83158399999957
+    },
+    {
+      "section": "speed",
+      "id": "finder/getScreenshot",
+      "engine": "vendor",
+      "sample": 9,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 407.29708300000493,
+      "wallMs": 544.4157500000001
+    },
+    {
+      "section": "speed",
+      "id": "finder/getScreenshot",
+      "engine": "vendor",
+      "sample": 10,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 376.54908299999806,
+      "wallMs": 414.55358399999386
+    },
+    {
+      "section": "speed",
+      "id": "finder/listApps",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 29.097916999999143,
+      "wallMs": 143.33379100001184
+    },
+    {
+      "section": "speed",
+      "id": "finder/listApps",
+      "engine": "vendor",
+      "sample": 2,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 33.19308300000557,
+      "wallMs": 107.08016599999974
+    },
+    {
+      "section": "speed",
+      "id": "finder/listApps",
+      "engine": "vendor",
+      "sample": 3,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 32.1929999999993,
+      "wallMs": 102.3027080000029
+    },
+    {
+      "section": "speed",
+      "id": "finder/listApps",
+      "engine": "vendor",
+      "sample": 4,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 35.86683400000038,
+      "wallMs": 119.54445800000394
+    },
+    {
+      "section": "speed",
+      "id": "finder/listApps",
+      "engine": "vendor",
+      "sample": 5,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 36.42170800000167,
+      "wallMs": 161.93970800000534
+    },
+    {
+      "section": "speed",
+      "id": "finder/listApps",
+      "engine": "vendor",
+      "sample": 6,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 33.859000000004016,
+      "wallMs": 107.38558400000329
+    },
+    {
+      "section": "speed",
+      "id": "finder/listApps",
+      "engine": "vendor",
+      "sample": 7,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 28.702375000000757,
+      "wallMs": 50.09062499999709
+    },
+    {
+      "section": "speed",
+      "id": "finder/listApps",
+      "engine": "vendor",
+      "sample": 8,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 30.647417000000132,
+      "wallMs": 66.64424999999756
+    },
+    {
+      "section": "speed",
+      "id": "finder/listApps",
+      "engine": "vendor",
+      "sample": 9,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 33.882416000000376,
+      "wallMs": 106.69912499999919
+    },
+    {
+      "section": "speed",
+      "id": "finder/listApps",
+      "engine": "vendor",
+      "sample": 10,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 34.257416000000376,
+      "wallMs": 184.33495799999218
+    },
+    {
+      "section": "finding",
+      "engine": "vendor",
+      "sample": 1,
+      "scene": "finder",
+      "id": "finder/target.file001",
+      "ok": true,
+      "outcome": {
+        "found": true,
+        "resolved": true
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "vendor",
+      "sample": 1,
+      "scene": "finder",
+      "id": "finder/target.file002",
+      "ok": true,
+      "outcome": {
+        "found": true,
+        "resolved": true
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "vendor",
+      "sample": 1,
+      "scene": "finder",
+      "id": "finder/target.file050",
+      "ok": true,
+      "outcome": {
+        "found": false,
+        "resolved": false
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "vendor",
+      "sample": 1,
+      "scene": "finder",
+      "id": "finder/target.file100",
+      "ok": true,
+      "outcome": {
+        "found": false,
+        "resolved": false
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "vendor",
+      "sample": 1,
+      "scene": "finder",
+      "id": "finder/target.file125",
+      "ok": true,
+      "outcome": {
+        "found": false,
+        "resolved": false
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "vendor",
+      "sample": 1,
+      "scene": "finder",
+      "id": "finder/target.file150",
+      "ok": true,
+      "outcome": {
+        "found": false,
+        "resolved": false
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "vendor",
+      "sample": 1,
+      "scene": "finder",
+      "id": "finder/target.file199",
+      "ok": true,
+      "outcome": {
+        "found": false,
+        "resolved": false
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "vendor",
+      "sample": 1,
+      "scene": "finder",
+      "id": "finder/target.file200",
+      "ok": true,
+      "outcome": {
+        "found": false,
+        "resolved": false
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "vendor",
+      "sample": 1,
+      "scene": "finder",
+      "id": "finder/target.window",
+      "ok": true,
+      "outcome": {
+        "found": true,
+        "resolved": true
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "vendor",
+      "sample": 1,
+      "scene": "finder",
+      "id": "finder/target.close",
+      "ok": true,
+      "outcome": {
+        "found": true,
+        "resolved": true
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "vendor",
+      "sample": 1,
+      "scene": "finder",
+      "id": "finder/lines",
+      "ok": true,
+      "outcome": {
+        "lines": 217,
+        "named": 77,
+        "unclassified": 0
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "vendor",
+      "sample": 1,
+      "scene": "finder",
+      "id": "finder/ids",
+      "ok": true,
+      "outcome": {
+        "ids": 2
+      }
+    },
+    {
+      "section": "method",
+      "id": "finder/frontmost/getAXState.tree",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "scene": "finder",
+      "target": "finder",
+      "regime": "frontmost",
+      "method": "getAXState",
+      "case": "tree",
+      "expect": "outcome",
+      "inCellMs": 422.64045899998746,
+      "wallMs": 526.3606250000012,
+      "inputRoute": null,
+      "outcome": {
+        "inFront": true,
+        "list": true,
+        "elements": 217
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "finder/method.getAXState.tree",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "inCellMs": 422.64045899998746,
+      "wallMs": 526.3606250000012
+    },
+    {
+      "section": "method",
+      "id": "finder/frontmost/listApps.running",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "scene": "finder",
+      "target": "finder",
+      "regime": "frontmost",
+      "method": "listApps",
+      "case": "running",
+      "expect": "outcome",
+      "inCellMs": 29.072291000004043,
+      "wallMs": 80.35187499999302,
+      "inputRoute": null,
+      "outcome": {
+        "apps": 7,
+        "listed": true,
+        "running": true
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "finder/method.listApps.running",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "inCellMs": 29.072291000004043,
+      "wallMs": 80.35187499999302
+    },
+    {
+      "section": "method",
+      "id": "finder/frontmost/click.row",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "scene": "finder",
+      "target": "finder",
+      "regime": "frontmost",
+      "method": "click",
+      "case": "row",
+      "expect": "outcome",
+      "inCellMs": 235.67541599999822,
+      "wallMs": 304.0047089999862,
+      "inputRoute": null,
+      "outcome": {
+        "rowFound": true,
+        "selected": 1,
+        "only": true
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "finder/method.click.row",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "inCellMs": 235.67541599999822,
+      "wallMs": 304.0047089999862
+    },
+    {
+      "section": "method",
+      "id": "finder/frontmost/pressKey.down",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "scene": "finder",
+      "target": "finder",
+      "regime": "frontmost",
+      "method": "pressKey",
+      "case": "down",
+      "expect": "outcome",
+      "inCellMs": 13.855624999996508,
+      "wallMs": 103.51458299999649,
+      "inputRoute": null,
+      "outcome": {
+        "rowFound": true,
+        "selected": 1,
+        "only": true
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "finder/method.pressKey.down",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "inCellMs": 13.855624999996508,
+      "wallMs": 103.51458299999649
+    }
+  ],
+  "putBack": {
+    "ok": true,
+    "stopped": true,
+    "steps": {
+      "finder-teardown": {
+        "ok": true,
+        "steps": 6
+      },
+      "scenes-down": {
+        "ok": true,
+        "down": true
+      },
+      "engine-stop": {
+        "ok": true,
+        "wasRunning": true,
+        "pid": 18337
+      },
+      "apps-check": {
+        "ok": true,
+        "running": {
+          "textedit": 0,
+          "chromeForTesting": 0,
+          "electronFixture": 0
+        }
+      },
+      "finder-check": {
+        "ok": true,
+        "runWindowGone": true,
+        "windowsAsAtBegin": true,
+        "keysAsSaved": true
+      },
+      "front-app": {
+        "ok": true,
+        "bundleId": "com.apple.Terminal",
+        "reactivated": true,
+        "inFront": true
+      }
+    }
+  },
+  "meta": {
+    "run": 1,
+    "host": "vendor",
+    "engine": "vendor",
+    "samples": 10,
+    "sitting": "hold2a",
+    "planId": "full",
+    "plan": {
+      "frontmost": [
+        "textedit",
+        "openPanel",
+        "finder",
+        "chrome",
+        "electron"
+      ],
+      "background": [
+        {
+          "driven": "textedit",
+          "user": "finder"
+        },
+        {
+          "driven": "finder",
+          "user": "textedit"
+        },
+        {
+          "driven": "chrome",
+          "user": "textedit"
+        },
+        {
+          "driven": "textedit",
+          "user": "chrome"
+        },
+        {
+          "driven": "electron",
+          "user": "finder"
+        },
+        {
+          "driven": "finder",
+          "user": "electron"
+        },
+        {
+          "driven": "openPanel",
+          "user": "finder"
+        },
+        {
+          "driven": "windowless",
+          "user": "finder"
+        }
+      ],
+      "launch": [
+        {
+          "scene": "electron",
+          "user": "finder"
+        }
+      ],
+      "speed": true,
+      "finding": true,
+      "concurrent": [
+        "finder",
+        "chrome"
+      ],
+      "sheet": true,
+      "intervention": [
+        "fires",
+        "preAction"
+      ],
+      "unicode": {
+        "fields": [
+          "textedit",
+          "chrome",
+          "electron"
+        ],
+        "conditions": [
+          "latin",
+          "midSwitch",
+          "korean",
+          "composing",
+          "perContext"
+        ]
+      }
+    },
+    "elicitations": [
+      {
+        "t": "2026-10-22T00:15:52.916Z",
+        "app": "com.apple.TextEdit",
+        "action": "accept"
+      },
+      {
+        "t": "2026-10-22T00:15:54.579Z",
+        "app": "com.apple.finder",
+        "action": "accept"
+      },
+      {
+        "t": "2026-10-22T00:15:55.984Z",
+        "app": "com.google.chrome.for.testing",
+        "action": "accept"
+      },
+      {
+        "t": "2026-10-22T00:15:57.081Z",
+        "app": "io.github.ssfskim.cua.fixture.electron",
+        "action": "accept"
+      }
+    ],
+    "keySkipped": [],
+    "controller": {
+      "commit": "d00d2aa85c9178ac1409ed1197225648026c34db",
+      "dirty": false
+    },
+    "runDir": "/Users/new/Library/Caches/cua-harness/native-matrix",
+    "load": {
+      "before": {
+        "loadavg": [
+          2.53,
+          2.39,
+          2.78
+        ],
+        "uptimeS": 26782,
+        "cpus": 10
+      },
+      "after": {
+        "loadavg": [
+          3.18,
+          2.76,
+          2.88
+        ],
+        "uptimeS": 26912,
+        "cpus": 10
+      }
+    },
+    "frontApp": {
+      "saved": "com.apple.Terminal",
+      "now": "com.apple.Terminal",
+      "same": true
+    },
+    "engineStopAtStart": {
+      "wasRunning": true,
+      "pid": 15302
+    },
+    "nativeEngine": {
+      "requested": "vendor",
+      "approved": {
+        "bundlePath": "/Users/new/Library/Application Support/cua/engine/cua Engine.app",
+        "engineVersion": "0.1.0",
+        "build": "f804291e4c8f4cd40fd947c74e3446162eaa8f42b82ccd3b50264cab9b5ee18e",
+        "signature": {
+          "kind": "identity",
+          "identityMatches": true
+        }
+      },
+      "checkoutBuild": "f804291e4c8f4cd40fd947c74e3446162eaa8f42b82ccd3b50264cab9b5ee18e",
+      "attested": [
+        {
+          "engine": "vendor",
+          "version": "26.924.1001281",
+          "build": "26.928.40906-darwin-arm64"
+        }
+      ],
+      "unattested": 0
+    },
+    "runtime": {
+      "release": "26.928.40906-darwin-arm64"
+    },
+    "commit": "d00d2aa85c9178ac1409ed1197225648026c34db",
+    "hardware": {
+      "model": "Mac14,12",
+      "chip": "Apple M2 Pro",
+      "memoryBytes": 17179869184
+    },
+    "os": {
+      "name": "macOS",
+      "version": "27.0",
+      "build": "26A428"
+    },
+    "display": {
+      "pixels": "5120 x 2880",
+      "resolution": "2560 x 1440",
+      "scale": 2,
+      "virtual": true
+    },
+    "fixtures": {
+      "chrome": {
+        "appPath": "/Users/new/Library/Caches/cua-harness/chrome-for-testing/155.0.8059.84/chrome-mac-arm64/Google Chrome for Testing.app",
+        "version": "155.0.8059.84",
+        "reused": true
+      },
+      "electron": {
+        "appPath": "/Users/new/Library/Caches/cua-harness/electron-fixture/44.9.0-faee60a202d5/cua Electron Fixture.app",
+        "bundleId": "io.github.ssfskim.cua.fixture.electron",
+        "electronVersion": "44.9.0",
+        "sourceHash": "faee60a202d5",
+        "reused": true
+      }
+    },
+    "engineStopAfterSetup": {
+      "wasRunning": true,
+      "pid": 16488
+    },
+    "hostAttestation": {
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 155,
+        "cua/serviceMs": 53.437,
+        "cua/nativeEngine": {
+          "engine": "vendor",
+          "version": "26.924.1001281",
+          "build": "26.928.40906-darwin-arm64"
+        },
+        "cua/taskId": "c3f6c488-38f3-4ccc-834c-1fc8178d9723",
+        "cua/nativeExecution": {
+          "path": "/Users/new/Library/Application Support/cua-spike-vendor/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node",
+          "version": "v24.21.0"
+        },
+        "cua/sandboxLaunch": {
+          "launcher": "cua-compat",
+          "tmpdir": "session"
+        }
+      }
+    },
+    "alert": {
+      "when": "before finder/frontmost/typeText.typeSelect",
+      "alerts": [],
+      "keywords": [],
+      "unknown": {
+        "count": 1,
+        "windows": [
+          {
+            "layer": 0,
+            "isAlertProcess": false
+          }
+        ]
+      }
+    },
+    "activations": {
+      "accounted": [
+        {
+          "kind": "harness",
+          "key": "activate:textedit",
+          "bundleId": "com.apple.TextEdit",
+          "at": 1792628152102
+        },
+        {
+          "kind": "harness",
+          "key": "activate:finder",
+          "bundleId": "com.apple.finder",
+          "at": 1792628153824
+        },
+        {
+          "kind": "harness",
+          "key": "activate:chrome",
+          "bundleId": "com.google.chrome.for.testing",
+          "at": 1792628155969
+        },
+        {
+          "kind": "harness",
+          "key": "activate:electron",
+          "bundleId": "io.github.ssfskim.cua.fixture.electron",
+          "at": 1792628157092
+        },
+        {
+          "kind": "harness",
+          "key": "activate:textedit",
+          "bundleId": "com.apple.TextEdit",
+          "at": 1792628158659
+        },
+        {
+          "kind": "harness",
+          "key": "activate:finder",
+          "bundleId": "com.apple.finder",
+          "at": 1792628201882
+        }
+      ],
+      "unaccounted": []
+    },
+    "preparationCleanup": {
+      "removed": true,
+      "restored": [],
+      "helpersStopped": [],
+      "engineStop": {
+        "wasRunning": false
+      }
+    },
+    "service": {
+      "helpers": [
+        {
+          "path": "~/Library/Application Support/cua-spike-vendor/runtimes/26.928.40906-darwin-arm64/cua_node/lib/node_modules/@oai/sky/Codex Computer Use.app/Contents/MacOS/SkyComputerUseService",
+          "kind": "vendor",
+          "origin": "pinned runtime",
+          "ageSeconds": 5,
+          "startedDuringRun": true
+        }
+      ]
+    },
+    "finished": "2026-10-22T00:17:23.837Z"
+  }
+}

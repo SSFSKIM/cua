@@ -65,6 +65,45 @@ final class ForegroundAssistTests: XCTestCase {
     XCTAssertEqual(seam.raises, 1, "the user's key window raised again")
   }
 
+  /// The key window read again after the restore (tech-debt-tracker's route-4 row): the same window reads restored,
+  /// another or none reads not restored; the meta carries it, on a restore failure too.
+  func testTheUsersKeyWindowIsReadAgainAfterTheRestoreAndReported() throws {
+    let same = GuardSeam(frontmost: user, reactivationTakesFront: true)
+    let assist = ForegroundAssist(appPid: target, system: same.system)
+    try assist.run {}
+    XCTAssertEqual(assist.keyWindowRestored, true)
+
+    for after in [CGWindowID(43), nil] {
+      let other = GuardSeam(frontmost: user, reactivationTakesFront: true)
+      other.keyWindowAfterFirstRead = after
+      var meta = meta()
+      try deliverClick(clickTarget(), route: .foreground, button: .left, count: 1, activation: nil,
+                       foreground: ForegroundAssist(appPid: target, system: other.system), targetActive: { true }, post: other.system.post, meta: &meta)
+      XCTAssertEqual(meta.keyWindowRestored, false)
+      XCTAssertEqual(meta.wire["keyWindowRestored"] as? Bool, false)
+    }
+
+    let failing = GuardSeam(frontmost: user, reactivationTakesFront: true)
+    failing.reactivationRefused = [user]
+    var meta = meta()
+    XCTAssertThrowsError(try deliverClick(clickTarget(), route: .foreground, button: .left, count: 1, activation: nil,
+                                          foreground: ForegroundAssist(appPid: target, system: failing.system), targetActive: { true },
+                                          post: failing.system.post, meta: &meta))
+    XCTAssertEqual(meta.keyWindowRestored, true, "read after a restore that failed its activation check too")
+  }
+
+  /// No restore ran (the app was in front already) or no key window was read before: nothing is reported.
+  func testNoRestoreReportsNoKeyWindow() throws {
+    let inFront = GuardSeam(frontmost: target, reactivationTakesFront: true)
+    let assist = ForegroundAssist(appPid: target, system: inFront.system)
+    try assist.run {}
+    XCTAssertNil(assist.keyWindowRestored)
+    var meta = meta()
+    try deliverClick(clickTarget(), route: .activation, button: .left, count: 1, activation: nil, targetActive: { true },
+                     post: inFront.system.post, meta: &meta)
+    XCTAssertNil(meta.wire["keyWindowRestored"], "only route 4 reports it")
+  }
+
   func testAnAppAlreadyInFrontIsNeitherActivatedNorRestored() throws {
     let seam = GuardSeam(frontmost: target, reactivationTakesFront: true)
     var delivered = 0

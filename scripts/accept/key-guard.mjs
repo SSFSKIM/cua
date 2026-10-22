@@ -16,7 +16,8 @@
 // windows as well) needs that window on top of the frontmost process; the reading is FrontWindowProbe's
 // (./front-window.swift), whose frontmost process is the same lsappinfo reading as FRONTMOST_PROCESS_SCRIPT. A bundle-id
 // target is the pre-M1b form, kept for the callers that have no pid yet (native-baseline's macos.mjs, M1b.4;
-// ./textedit.mjs, M3) and compared as before.
+// ./textedit.mjs, M3) and compared as before. From M2b a caller may name its own user window ({pid, bounds}) as the one
+// other window a key may be sent under (sendIfFrontmost): the background-regime cells of the native matrix.
 import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 
@@ -59,14 +60,33 @@ function frontRecord(target, front) {
   return target.window === undefined ? front : {...front, topWindow: front.topWindow ?? null};
 }
 
-// Sends (`send()`) only while `target` is frontmost (`frontmost()`, sync or async; a throw counts as unreadable).
-// `target` is a process, {pid, bundleId?, window?}, with `frontmost()` answering {pid, bundleId, topWindow?}, or a bundle
-// id with `frontmost()` answering one. -> {sent: true, result} or {sent: false, skipped: {event, keys, target, frontmost}}.
-export async function sendIfFrontmost({target, keys, frontmost, send}) {
+// The one allowed case beside the target (M2b; the own native engine spec, Verification system part 5): the frontmost
+// process is the harness's own user window's and its top window is that window, by owner pid and bounds (a window's
+// number can be reused, its frame and owner together name the run's window). The background-regime cells drive a scene
+// while that window is in front; any other window in front refuses as before.
+const BOUNDS = ['x', 'y', 'width', 'height'];
+function assertUserWindow(userWindow, target) {
+  if (typeof target === 'string') throw new Error('a user window is allowed only beside a process target ({pid}), never a bundle id');
+  if (!Number.isSafeInteger(userWindow?.pid) || userWindow.pid <= 0 || !BOUNDS.every(k => Number.isFinite(userWindow.bounds?.[k])))
+    throw new Error('the user window must name its owner pid and its bounds {x, y, width, height}');
+}
+const isUserWindow = (userWindow, front) => front !== null && typeof front === 'object' && front.pid === userWindow.pid
+  && front.topWindow?.ownerPid === userWindow.pid && BOUNDS.every(k => front.topWindow?.bounds?.[k] === userWindow.bounds[k]);
+
+// Sends (`send()`) only while `target` is frontmost (`frontmost()`, sync or async; a throw counts as unreadable), or,
+// given `userWindow` ({pid, bounds}: the harness's own user window of this run), while that window is the frontmost
+// process's top window. `target` is a process, {pid, bundleId?, window?}, with `frontmost()` answering {pid, bundleId,
+// topWindow?}, or a bundle id with `frontmost()` answering one (no user window then). -> {sent: true, result, via?:
+// 'user-window'} or {sent: false, skipped: {event, keys, target, frontmost, userWindow?}}.
+export async function sendIfFrontmost({target, keys, frontmost, send, userWindow}) {
+  if (userWindow !== undefined) assertUserWindow(userWindow, target);
   let front;
   try { front = await frontmost(); } catch { front = null; }
-  if (!isTarget(target, front)) return {sent: false, skipped: {event: KEY_SKIPPED, keys, target, frontmost: frontRecord(target, front)}};
-  return {sent: true, result: await send()};
+  if (isTarget(target, front)) return {sent: true, result: await send()};
+  if (userWindow !== undefined && isUserWindow(userWindow, front)) return {sent: true, result: await send(), via: 'user-window'};
+  const record = userWindow === undefined ? frontRecord(target, front)
+    : (front && typeof front === 'object' && Number.isSafeInteger(front.pid) ? {...front, topWindow: front.topWindow ?? null} : 'unreadable');
+  return {sent: false, skipped: {event: KEY_SKIPPED, keys, target, frontmost: record, ...(userWindow === undefined ? {} : {userWindow})}};
 }
 
 // For a session wrapped by scripts/mini-pause.mjs pausing(): the pause wait first, then the frontmost check, then the

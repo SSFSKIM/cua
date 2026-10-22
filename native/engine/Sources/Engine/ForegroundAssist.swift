@@ -14,7 +14,9 @@ import Foundation
 // refused as activationFailed with nothing delivered. Whatever happens after the activation, the user's app is
 // re-activated and its key window raised again, and the restore is checked the same way: a user's app that is not
 // frontmost again within the bound fails the action as foregroundRestoreFailed, after the click was posted (its input
-// meta says so), since the user is left looking at another app.
+// meta says so), since the user is left looking at another app. Whether the user's key window came back after the raise
+// is read again after the restore and reported (`keyWindowRestored` in the input meta), not enforced: a window that
+// refuses the raise leaves the user's app in front with another key window, which the harness's route-4 cell reads.
 
 /// How long route 4 waits for the activated app, and for the user's app on the restore, to be frontmost: route 3's
 /// guard bound.
@@ -24,6 +26,9 @@ let foregroundWaitMs: Double = activationGuardTimeoutMs
 final class ForegroundAssist {
   let appPid: pid_t
   private let system: ActivationSystem
+  /// After `run`: whether the user's key window is the one it was before the activation (by window number), read after
+  /// the restore's raise; nil when no restore ran or the user's key window could not be read before the activation.
+  private(set) var keyWindowRestored: Bool?
 
   init(appPid: pid_t, system: ActivationSystem = ActivationSystem()) {
     self.appPid = appPid
@@ -49,6 +54,7 @@ final class ForegroundAssist {
       try deliver()
     }
     let restored = restore(previous, window: userWindow?.element)
+    readKeyWindow(previous, before: userWindow?.id)
     try delivered.get()
     guard restored else {
       throw EngineError(name: "foregroundRestoreFailed",
@@ -72,5 +78,11 @@ final class ForegroundAssist {
     let restored = comesToFront(previous)
     if let window { system.raise(window) }
     return restored
+  }
+
+  /// Whether the user's app's key window after the restore is `before` (the one read before the activation).
+  private func readKeyWindow(_ previous: pid_t, before: CGWindowID?) {
+    guard let before else { return }
+    keyWindowRestored = system.userWindow(previous)?.id == before
   }
 }

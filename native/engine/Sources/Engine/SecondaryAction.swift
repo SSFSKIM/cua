@@ -7,7 +7,8 @@ import Foundation
 // live actions **unfiltered** (filterActions is the renderer's, never applied here) plus the disclosure pseudo-actions
 // SAIExpand and SAICollapse, which toggle AXDisclosing. The element is scrolled into view first. A page scroll first
 // tries the scroll bar's page button. On a menu-bar item, AXPick with a menu records the item (MenuRecord.swift) and
-// AXCancel clears the record; neither sends anything. Any other success clears the app's record. Route 1.
+// AXCancel clears the record; neither sends anything. Any other success clears the app's record. Route 1, or route 3
+// when the app does not believe it has focus (its activation held, FocusHold.swift).
 
 /// One action an element offers: its name and the description the model names it by.
 struct OfferedAction: Equatable {
@@ -93,6 +94,11 @@ extension Engine {
           context.connection.clearMenuRecord(app: app.key)
           return ["meta": meta.wire]
         }
+      }
+      // Route 3's held activation when the app does not believe it has focus (FocusHold.swift); route 1 inside a
+      // recorded menu's span.
+      if actionRoute(for: target, app: app, connection: context.connection) == .activation {
+        try holdElementFocus(target, app: app, appPid: appPid, guarding: guarding, context: context, meta: &meta)
       }
       try guarding.checkInFlight()
       var performed = AXError.failure

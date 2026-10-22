@@ -2,8 +2,11 @@ import ApplicationServices
 import CoreGraphics
 import Foundation
 
-// The input routes (the spec's Design, "Input" after the second sitting, "Keys" and "Text"; Interfaces, InputRoute): key
-// presses and typed text by route 2′, the plain post with no fake activation; clicks by the ladder 1 → 3 → 4: route 1,
+// The input routes (the spec's Design, "Input" after the second sitting, "Keys" and "Text"; Interfaces, InputRoute): typed
+// text and plain key presses by route 2′, the plain post with no fake activation; a ⌘ chord (a menu key equivalent) by
+// route 3 into an app that does not believe it has focus, and an element's own action or attribute write (a click by
+// AXPress, set_value, select_text, perform_secondary_action) likewise, its activation held across the interaction
+// (FocusHold.swift; the Decision Log's 2026-10-22 amendment of M2a's table); clicks by the ladder 1 → 3 → 4: route 1,
 // the element's own action, for a plain single left click on an element that advertises AXPick or AXPress and whose
 // clickable point does not land on a strict descendant of it, and route 3, the fake activation then the plain post, for
 // every synthesized click (an element without the action, any other button or count, every coordinate click) — or route
@@ -100,8 +103,28 @@ final class RouteAdviceTracker: @unchecked Sendable {
   }
 }
 
-/// A key press's or typed text's route: 2′, unless the spike forces another.
+/// Typed text's route: 2′, unless the spike forces another (measured and delivered on the four scenes, U12).
 func keyRoute(forced: InputRoute?) -> InputRoute { forced ?? .plainPost }
+
+/// A press that is a menu key equivalent: a key with ⌘ (a modifier pressed alone is none).
+func isKeyEquivalent(_ press: KeyPress) -> Bool { press.keyCode != nil && press.modifiers.contains(.command) }
+
+/// press_key's route: 3 when the sequence holds a key equivalent and the app does not believe it has focus, since a
+/// background app does not perform one (M2a.5: ⌘A in an inactive window had no effect; it computes its menu items'
+/// enablement as an inactive app), else 2′; the spike's forced route wins. The activation, held (FocusHold.swift), comes
+/// before the sequence's first press.
+func pressKeyRoute(forced: InputRoute?, presses: [KeyPress], believesFocus: Bool) -> InputRoute {
+  if let forced { return forced }
+  return !believesFocus && presses.contains(where: isKeyEquivalent) ? .activation : .plainPost
+}
+
+/// The route of an element's own action or attribute write (route 1's AXPress or AXPick click, set_value, select_text,
+/// perform_secondary_action): 3, the held activation then the action, when the app does not believe it has focus (an
+/// Electron button's AXPress, its field's value and selection writes were ineffective in a background app by route 1
+/// alone, M2b's matrix); 1 when it does, or inside a recorded menu whose span already holds the activation.
+func elementActionRoute(believesFocus: Bool, insideHeldMenu: Bool) -> InputRoute {
+  believesFocus || insideHeldMenu ? .action : .activation
+}
 
 /// The vendor's nested-content gate (F §5.1, FUN_1007a1b9c): whether the element the hit-test answered is a strict
 /// descendant of `target`, found by walking its parents up to 300 levels. A hit on the target itself, on an ancestor,
@@ -197,16 +220,51 @@ func clickablePoint(frame: CGRect?, visibleIn bounds: CGRect?) -> CGPoint? {
   return CGPoint(x: visible.midX, y: visible.midY)
 }
 
-/// Where route 3's activation click goes: the window's AXActivationPoint when it lies inside the window's frame, else
-/// nowhere — the believed-active state then rests on the subtype-1 event alone (the second sitting's U13: Chrome's point
-/// is the screen's bottom-left corner, where a click lands on its menu bar). A declared difference from the vendor,
-/// which posts the click wherever the point is. Nor in `sparing`, the target of a click with another button than the
-/// left (`activationSparing`): a left click there would be a click on the target the model never asked for (the M2a
-/// vendor reading, item 8); the subtype-1 event alone then carries the activation, as it does outside the frame.
-func activationClickPoint(_ activationPoint: CGPoint?, windowFrame: CGRect?, sparing: CGRect? = nil) -> CGPoint? {
-  guard let activationPoint, let windowFrame, windowFrame.contains(activationPoint) else { return nil }
-  if let sparing, sparing.contains(activationPoint) { return nil }
-  return activationPoint
+/// What the hit-test at the window's AXActivationPoint answered: the element's role and its advertised actions, nil
+/// when the query for them failed (so nothing says the element is not pressable).
+struct ActivationHit: Equatable {
+  let role: String?
+  let actions: [String]?
+}
+
+/// What route 3's activation click did (the result's meta `activationClick`): posted, or skipped and why.
+enum ActivationClick: String, Equatable {
+  case posted
+  case noPoint        // the window has no AXActivationPoint
+  case outsideFrame   // the point lies outside the window's frame (Chrome's, U13), or the frame is unknown
+  case spared         // the point lies in the target of a click with another button than the left
+  case control        // the hit-test there answered a control, or an element not known to be inert
+  case actionsUnknown // the hit-test answered an element whose actions could not be read
+  case hitTestFailed  // the hit-test there answered nothing
+}
+
+/// The roles a hit-test may answer at the activation point for the click to go: the window itself and the window's
+/// chrome that is not a control (its title, a plain group or toolbar), as U13 read on TextEdit, Finder and Electron.
+private let inertActivationRoles: Set<String> = ["AXWindow", "AXStaticText", "AXImage", "AXGroup", "AXToolbar", "AXSplitGroup"]
+/// The actions a left click could invoke; an element advertising one is a control whatever its role.
+private let clickInvokedActions: Set<String> = ["AXPress", "AXPick", "AXConfirm", "AXIncrement", "AXDecrement", "AXOpen"]
+
+/// Whether a left click at the hit element invokes nothing: an inert role advertising no click-invoked action.
+func activationPointIsInert(_ hit: ActivationHit) -> Bool {
+  guard let role = hit.role, inertActivationRoles.contains(role), let actions = hit.actions else { return false }
+  return clickInvokedActions.isDisjoint(with: actions)
+}
+
+/// Whether route 3's activation click goes at the window's AXActivationPoint (maws-3f's ruling, 2026-10-22, on the review
+/// of the focus hold): only when the point lies inside the window's frame, outside `sparing` (the target of a click with
+/// another button than the left, whose left click there would be one the model never asked for; the M2a vendor reading,
+/// item 8), and a hit-test there (`hit`, asked only then) answers the window or chrome that is no control. Otherwise the
+/// believed-active state rests on the activation's events alone, which delivered on Chrome, whose point is outside its
+/// frame (U13). A declared difference from the vendor, which posts the click wherever the point is (F §5.5): a click
+/// that lands on a control would invoke it before the action the model asked for.
+func activationClickDecision(_ activationPoint: CGPoint?, windowFrame: CGRect?, sparing: CGRect?,
+                             hit: () -> ActivationHit?) -> ActivationClick {
+  guard let activationPoint else { return .noPoint }
+  guard let windowFrame, windowFrame.contains(activationPoint) else { return .outsideFrame }
+  if let sparing, sparing.contains(activationPoint) { return .spared }
+  guard let found = hit() else { return .hitTestFailed }
+  if activationPointIsInert(found) { return .posted }
+  return found.actions == nil && found.role.map(inertActivationRoles.contains) == true ? .actionsUnknown : .control
 }
 
 /// What a type_text does with its text (the spec's Design, "Text").

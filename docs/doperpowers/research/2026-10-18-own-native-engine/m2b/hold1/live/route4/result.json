@@ -1,0 +1,202 @@
+{
+  "schema": "native-matrix-cell-1",
+  "command": "route4",
+  "device": "mini",
+  "started": "2026-10-21T20:30:55.480Z",
+  "problems": [],
+  "complete": true,
+  "pass": true,
+  "controller": {
+    "commit": "95a39eebcd2de0eee5c6178ec2eb2432ef2847bf",
+    "dirty": false
+  },
+  "runDir": "/Users/new/Library/Caches/cua-harness/native-live",
+  "checkout": {
+    "commit": "95a39eebcd2de0eee5c6178ec2eb2432ef2847bf",
+    "dirty": false
+  },
+  "engine": {
+    "bundlePath": "/Users/new/Library/Application Support/cua/engine/cua Engine.app",
+    "build": "b74949b3c7f985c05495d95485a1fb210cf8ab02a575abd7213bba88d96a4875",
+    "engineVersion": "0.1.0",
+    "approvedAt": "2026-10-21T20:28:58.005Z",
+    "signature": {
+      "kind": "identity",
+      "identityMatches": true
+    }
+  },
+  "frontmost": {
+    "bundleId": "com.apple.Terminal"
+  },
+  "engineStopAtStart": {
+    "wasRunning": false
+  },
+  "check": {
+    "steps": {
+      "engineStopBefore": {
+        "wasRunning": false
+      },
+      "override": {
+        "read": true,
+        "routes": 1
+      },
+      "preparedRange": {
+        "length": 7,
+        "location": 107
+      },
+      "prepared": true,
+      "userInFrontBefore": true,
+      "topBeforeIsUser": true,
+      "click": {
+        "ok": true,
+        "route": 4,
+        "posted": true,
+        "keyWindowRestored": true
+      },
+      "after": {
+        "frontRestored": true,
+        "topWindowRestored": true
+      },
+      "landedRange": {
+        "location": 202,
+        "length": 0
+      },
+      "activations": [
+        {
+          "kind": "activated",
+          "bundleId": "com.apple.TextEdit",
+          "scene": true,
+          "at": 1792614664746
+        },
+        {
+          "kind": "deactivated",
+          "bundleId": "com.apple.finder",
+          "scene": true,
+          "at": 1792614664748
+        },
+        {
+          "kind": "activated",
+          "bundleId": "com.apple.finder",
+          "scene": true,
+          "at": 1792614664761
+        },
+        {
+          "kind": "deactivated",
+          "bundleId": "com.apple.TextEdit",
+          "scene": true,
+          "at": 1792614664762
+        }
+      ],
+      "engineStopAfter": {
+        "wasRunning": true,
+        "pid": 33084
+      }
+    }
+  },
+  "recovery": {
+    "ok": true,
+    "killed": [],
+    "survivors": [],
+    "awaited": [],
+    "probeWait": null,
+    "untouched": []
+  },
+  "putBack": {
+    "plan": [
+      "watch-stop",
+      "finder-teardown",
+      "scenes-down",
+      "engine-stop",
+      "apps-check",
+      "finder-check",
+      "front-app"
+    ],
+    "steps": {
+      "watch-stop": {
+        "ok": true,
+        "stopped": true
+      },
+      "finder-teardown": {
+        "ok": true,
+        "steps": 2
+      },
+      "scenes-down": {
+        "ok": true,
+        "down": true
+      },
+      "engine-stop": {
+        "ok": true,
+        "wasRunning": true,
+        "pid": 33238
+      },
+      "apps-check": {
+        "ok": true,
+        "running": {
+          "textedit": 0,
+          "chromeForTesting": 0,
+          "electronFixture": 0
+        }
+      },
+      "finder-check": {
+        "ok": true,
+        "runWindowGone": true,
+        "windowsAsAtBegin": true,
+        "keysAsSaved": true
+      },
+      "front-app": {
+        "ok": true,
+        "bundleId": "com.apple.Terminal",
+        "reactivated": true,
+        "inFront": true
+      }
+    },
+    "ok": true
+  },
+  "frontApp": {
+    "saved": "com.apple.Terminal",
+    "now": "com.apple.Terminal",
+    "same": true
+  },
+  "finished": "2026-10-21T20:31:10.694Z",
+  "cell": "route4",
+  "lanes": [
+    {
+      "host": null,
+      "engine": "cua",
+      "build": "b74949b3c7f985c05495d95485a1fb210cf8ab02a575abd7213bba88d96a4875",
+      "version": "0.1.0"
+    }
+  ],
+  "verdict": "pass",
+  "rows": [
+    {
+      "section": "residue",
+      "id": "route4/textedit-behind-finder/click",
+      "engine": "cua",
+      "sample": 1,
+      "ok": true,
+      "scene": "textedit",
+      "user": "finder",
+      "regime": "background",
+      "method": "click",
+      "case": "synthesized element click",
+      "inputRoute": 4,
+      "outcome": {
+        "landed": true,
+        "route": 4,
+        "clickOk": true,
+        "errorName": null,
+        "frontRestored": true,
+        "topWindowRestored": true,
+        "keyWindowRestored": true,
+        "activations": [
+          "activated com.apple.TextEdit",
+          "deactivated com.apple.finder",
+          "activated com.apple.finder",
+          "deactivated com.apple.TextEdit"
+        ],
+        "routeAdvice": "not exercised: three route-3 guard failures in a row need an app that takes the front during the guard, which no scene does without contrivance (RouteAdviceTests cover it)"
+      }
+    }
+  ]
+}

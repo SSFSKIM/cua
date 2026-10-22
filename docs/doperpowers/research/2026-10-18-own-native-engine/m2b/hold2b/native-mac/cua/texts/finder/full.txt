@@ -1,0 +1,230 @@
+Window: "cua-scene-finder", App: Finder.
+0 표준 윈도우 cua-scene-finder, ID: FinderWindow, Secondary Actions: Raise
+	1 자르기 그룹
+		2 자르기 도구 (disabled, settable, float) -1
+		3 스크롤 영역 Secondary Actions: Scroll Up, Scroll Down
+			4 윤곽체 Description: 목록 보기, ID: ListView (showing 0-19 of 205 items)
+				5 row (selectable)
+					6 셀 Secondary Actions: Finder 항목 열기
+						7 이미지
+						8 텍스트 필드 (settable) Value: scene-file-001, Secondary Actions: Finder 항목 열기, URL: file:///Users/new/Library/Caches/cua-harness/repl-parity-native-mac/finder/cua-scene-finder/scene-file-001
+					9 셀
+						10 텍스트 2026년 1월 15일 오후 9:00
+					11 셀
+						12 텍스트 15바이트
+					13 셀
+						14 텍스트 문서
+				15 row (selectable)
+					16 셀 Secondary Actions: Finder 항목 열기
+						17 이미지
+						18 텍스트 필드 (settable) Value: scene-file-002, Secondary Actions: Finder 항목 열기, URL: file:///Users/new/Library/Caches/cua-harness/repl-parity-native-mac/finder/cua-scene-finder/scene-file-002
+					19 셀
+						20 텍스트 2026년 1월 15일 오후 9:00
+					21 셀
+						22 텍스트 15바이트
+					23 셀
+						24 텍스트 문서
+				25 row (selectable)
+					26 셀 Secondary Actions: Finder 항목 열기
+						27 이미지
+						28 텍스트 필드 (settable) Value: scene-file-003, Secondary Actions: Finder 항목 열기, URL: file:///Users/new/Library/Caches/cua-harness/repl-parity-native-mac/finder/cua-scene-finder/scene-file-003
+					29 셀
+						30 텍스트 2026년 1월 15일 오후 9:00
+					31 셀
+						32 텍스트 15바이트
+					33 셀
+						34 텍스트 문서
+				35 row (selectable)
+					36 셀 Secondary Actions: Finder 항목 열기
+						37 이미지
+						38 텍스트 필드 (settable) Value: scene-file-004, Secondary Actions: Finder 항목 열기, URL: file:///Users/new/Library/Caches/cua-harness/repl-parity-native-mac/finder/cua-scene-finder/scene-file-004
+					39 셀
+						40 텍스트 2026년 1월 15일 오후 9:00
+					41 셀
+						42 텍스트 15바이트
+					43 셀
+						44 텍스트 문서
+				45 row (selectable)
+					46 셀 Secondary Actions: Finder 항목 열기
+						47 이미지
+						48 텍스트 필드 (settable) Value: scene-file-005, Secondary Actions: Finder 항목 열기, URL: file:///Users/new/Library/Caches/cua-harness/repl-parity-native-mac/finder/cua-scene-finder/scene-file-005
+					49 셀
+						50 텍스트 2026년 1월 15일 오후 9:00
+					51 셀
+						52 텍스트 15바이트
+					53 셀
+						54 텍스트 문서
+				55 row (selectable)
+					56 셀 Secondary Actions: Finder 항목 열기
+						57 이미지
+						58 텍스트 필드 (settable) Value: scene-file-006, Secondary Actions: Finder 항목 열기, URL: file:///Users/new/Library/Caches/cua-harness/repl-parity-native-mac/finder/cua-scene-finder/scene-file-006
+					59 셀
+						60 텍스트 2026년 1월 15일 오후 9:00
+					61 셀
+						62 텍스트 15바이트
+					63 셀
+						64 텍스트 문서
+				65 row (selectable)
+					66 셀 Secondary Actions: Finder 항목 열기
+						67 이미지
+						68 텍스트 필드 (settable) Value: scene-file-007, Secondary Actions: Finder 항목 열기, URL: file:///Users/new/Library/Caches/cua-harness/repl-parity-native-mac/finder/cua-scene-finder/scene-file-007
+					69 셀
+						70 텍스트 2026년 1월 15일 오후 9:00
+					71 셀
+						72 텍스트 15바이트
+					73 셀
+						74 텍스트 문서
+				75 row (selectable)
+					76 셀 Secondary Actions: Finder 항목 열기
+						77 이미지
+						78 텍스트 필드 (settable) Value: scene-file-008, Secondary Actions: Finder 항목 열기, URL: file:///Users/new/Library/Caches/cua-harness/repl-parity-native-mac/finder/cua-scene-finder/scene-file-008
+					79 셀
+						80 텍스트 2026년 1월 15일 오후 9:00
+					81 셀
+						82 텍스트 15바이트
+					83 셀
+						84 텍스트 문서
+				85 row (selectable)
+					86 셀 Secondary Actions: Finder 항목 열기
+						87 이미지
+						88 텍스트 필드 (settable) Value: scene-file-009, Secondary Actions: Finder 항목 열기, URL: file:///Users/new/Library/Caches/cua-harness/repl-parity-native-mac/finder/cua-scene-finder/scene-file-009
+					89 셀
+						90 텍스트 2026년 1월 15일 오후 9:00
+					91 셀
+						92 텍스트 15바이트
+					93 셀
+						94 텍스트 문서
+				95 row (selectable)
+					96 셀 Secondary Actions: Finder 항목 열기
+						97 이미지
+						98 텍스트 필드 (settable) Value: scene-file-010, Secondary Actions: Finder 항목 열기, URL: file:///Users/new/Library/Caches/cua-harness/repl-parity-native-mac/finder/cua-scene-finder/scene-file-010
+					99 셀
+						100 텍스트 2026년 1월 15일 오후 9:00
+					101 셀
+						102 텍스트 15바이트
+					103 셀
+						104 텍스트 문서
+				105 row (selectable)
+					106 셀 Secondary Actions: Finder 항목 열기
+						107 이미지
+						108 텍스트 필드 (settable) Value: scene-file-011, Secondary Actions: Finder 항목 열기, URL: file:///Users/new/Library/Caches/cua-harness/repl-parity-native-mac/finder/cua-scene-finder/scene-file-011
+					109 셀
+						110 텍스트 2026년 1월 15일 오후 9:00
+					111 셀
+						112 텍스트 15바이트
+					113 셀
+						114 텍스트 문서
+				115 row (selectable)
+					116 셀 Secondary Actions: Finder 항목 열기
+						117 이미지
+						118 텍스트 필드 (settable) Value: scene-file-012, Secondary Actions: Finder 항목 열기, URL: file:///Users/new/Library/Caches/cua-harness/repl-parity-native-mac/finder/cua-scene-finder/scene-file-012
+					119 셀
+						120 텍스트 2026년 1월 15일 오후 9:00
+					121 셀
+						122 텍스트 15바이트
+					123 셀
+						124 텍스트 문서
+				125 row (selectable)
+					126 셀 Secondary Actions: Finder 항목 열기
+						127 이미지
+						128 텍스트 필드 (settable) Value: scene-file-013, Secondary Actions: Finder 항목 열기, URL: file:///Users/new/Library/Caches/cua-harness/repl-parity-native-mac/finder/cua-scene-finder/scene-file-013
+					129 셀
+						130 텍스트 2026년 1월 15일 오후 9:00
+					131 셀
+						132 텍스트 15바이트
+					133 셀
+						134 텍스트 문서
+				135 row (selectable)
+					136 셀 Secondary Actions: Finder 항목 열기
+						137 이미지
+						138 텍스트 필드 (settable) Value: scene-file-014, Secondary Actions: Finder 항목 열기, URL: file:///Users/new/Library/Caches/cua-harness/repl-parity-native-mac/finder/cua-scene-finder/scene-file-014
+					139 셀
+						140 텍스트 2026년 1월 15일 오후 9:00
+					141 셀
+						142 텍스트 15바이트
+					143 셀
+						144 텍스트 문서
+				145 row (selectable)
+					146 셀 Secondary Actions: Finder 항목 열기
+						147 이미지
+						148 텍스트 필드 (settable) Value: scene-file-015, Secondary Actions: Finder 항목 열기, URL: file:///Users/new/Library/Caches/cua-harness/repl-parity-native-mac/finder/cua-scene-finder/scene-file-015
+					149 셀
+						150 텍스트 2026년 1월 15일 오후 9:00
+					151 셀
+						152 텍스트 15바이트
+					153 셀
+						154 텍스트 문서
+				155 row (selectable)
+					156 셀 Secondary Actions: Finder 항목 열기
+						157 이미지
+						158 텍스트 필드 (settable) Value: scene-file-016, Secondary Actions: Finder 항목 열기, URL: file:///Users/new/Library/Caches/cua-harness/repl-parity-native-mac/finder/cua-scene-finder/scene-file-016
+					159 셀
+						160 텍스트 2026년 1월 15일 오후 9:00
+					161 셀
+						162 텍스트 15바이트
+					163 셀
+						164 텍스트 문서
+				165 row (selectable)
+					166 셀 Secondary Actions: Finder 항목 열기
+						167 이미지
+						168 텍스트 필드 (settable) Value: scene-file-017, Secondary Actions: Finder 항목 열기, URL: file:///Users/new/Library/Caches/cua-harness/repl-parity-native-mac/finder/cua-scene-finder/scene-file-017
+					169 셀
+						170 텍스트 2026년 1월 15일 오후 9:00
+					171 셀
+						172 텍스트 15바이트
+					173 셀
+						174 텍스트 문서
+				175 row (selectable)
+					176 셀 Secondary Actions: Finder 항목 열기
+						177 이미지
+						178 텍스트 필드 (settable) Value: scene-file-018, Secondary Actions: Finder 항목 열기, URL: file:///Users/new/Library/Caches/cua-harness/repl-parity-native-mac/finder/cua-scene-finder/scene-file-018
+					179 셀
+						180 텍스트 2026년 1월 15일 오후 9:00
+					181 셀
+						182 텍스트 15바이트
+					183 셀
+						184 텍스트 문서
+				185 row (selectable)
+					186 셀 Secondary Actions: Finder 항목 열기
+						187 이미지
+						188 텍스트 필드 (settable) Value: scene-file-019, Secondary Actions: Finder 항목 열기, URL: file:///Users/new/Library/Caches/cua-harness/repl-parity-native-mac/finder/cua-scene-finder/scene-file-019
+					189 셀
+						190 텍스트 2026년 1월 15일 오후 9:00
+					191 셀
+						192 텍스트 15바이트
+					193 셀
+						194 텍스트 문서
+			195 스크롤 막대 (settable, float) 0
+				196 값 표시기 (settable, float) 0
+				197 화살표 증가 버튼
+				198 화살표 감소 버튼
+				199 페이지 증가 버튼
+				200 페이지 감소 버튼
+	201 도구 막대
+		202 container 뒤로/앞으로
+			203 버튼 (disabled) 뒤로
+			204 버튼 (disabled) 앞으로
+		205 라디오 버튼 Description: 아이콘 보기, Value: 0
+		206 라디오 버튼 Description: 목록 보기, Value: 1
+		207 라디오 버튼 Description: 계층 보기, Value: 0
+		208 라디오 버튼 Description: 갤러리 보기, Value: 0
+		209 메뉴 버튼 Description: 그룹, Help: 항목 그룹화 변경(Option 버튼을 계속 눌러 정렬 변경), Secondary Actions: 이전으로 이동, 다음으로 이동, 도구 막대에서 제거
+		210 버튼 (disabled) Description: 공유, Help: 선택된 항목을 공유합니다, Secondary Actions: 이전으로 이동, 다음으로 이동, 도구 막대에서 제거
+		211 버튼 (disabled) Description: 태그 편집, Help: 태그를 편집합니다, Secondary Actions: 이전으로 이동, 다음으로 이동, 도구 막대에서 제거
+		212 메뉴 버튼 Description: 동작, Help: 선택한 항목으로 작업을 실행합니다, Secondary Actions: 이전으로 이동, 다음으로 이동, 도구 막대에서 제거
+		213 텍스트 필드 검색
+			214 버튼 검색
+	215 닫기 버튼
+	216 전체 화면 버튼 Help: 이 버튼을 누르면 윈도우를 확대/축소합니다., Secondary Actions: 윈도우 확대/축소
+	217 최소화 버튼
+	218 텍스트 cua-scene-finder
+219 menu bar
+	220 Finder
+	221 파일
+	222 편집
+	223 보기
+	224 이동
+	225 윈도우
+	226 도움말
+
+The focused UI element is 4 윤곽체 Description: 목록 보기, ID: ListView

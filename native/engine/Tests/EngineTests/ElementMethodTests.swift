@@ -508,7 +508,7 @@ final class MenuRecordTests: XCTestCase {
   }
 
   func testARecordIsReplacedClearedAndDroppedWhenItsItemIsGoneEachEndingItsSpan() {
-    let connection = ConnectionState(id: 1, fd: -1, menuSpan: MenuSpan(schedule: { _, _ in }))
+    let connection = ConnectionState(id: 1, fd: -1, menuSpan: ActivationSpan(schedule: { _, _ in }))
     var released: [Int] = []
     connection.recordMenu(el(1), app: "a") { released.append(1); return true }
     connection.recordMenu(el(2), app: "a") { released.append(2); return true }
@@ -577,8 +577,10 @@ final class ScrollAndDragTests: XCTestCase {
   func testTheWheelsAndTheirSigns() {
     XCTAssertTrue(scrollWheels(.up, delta: 5) == (1, 5, 0))
     XCTAssertTrue(scrollWheels(.down, delta: 5) == (1, -5, 0))
-    XCTAssertTrue(scrollWheels(.left, delta: 5) == (2, 0, -5), "two wheels, so the horizontal delta is read")
-    XCTAssertTrue(scrollWheels(.right, delta: 5) == (2, 0, 5))
+    // The second wheel's sign runs as the first's: a positive delta scrolls up and, on the second wheel, left (read on
+    // TextEdit on 2026-10-21: a +delta on wheel 2 moved the horizontal bar 0.5 → 0).
+    XCTAssertTrue(scrollWheels(.left, delta: 5) == (2, 0, 5), "two wheels, so the horizontal delta is read")
+    XCTAssertTrue(scrollWheels(.right, delta: 5) == (2, 0, -5))
   }
 
   func testTheScrollEventIsAimedAtItsWindow() throws {
@@ -587,7 +589,7 @@ final class ScrollAndDragTests: XCTestCase {
     XCTAssertEqual(event.type, .scrollWheel)
     XCTAssertEqual(event.location, CGPoint(x: 300, y: 400))
     XCTAssertEqual(event.getIntegerValueField(.scrollWheelEventIsContinuous), 1, "pixel units")
-    XCTAssertEqual(event.getIntegerValueField(.scrollWheelEventPointDeltaAxis2), 120)
+    XCTAssertEqual(event.getIntegerValueField(.scrollWheelEventPointDeltaAxis2), -120, "right is a negative second wheel")
     XCTAssertEqual(event.getIntegerValueField(.scrollWheelEventPointDeltaAxis1), 0)
     // The window's id in field 51; fields 91 and 92 are set as the vendor sets them, but CoreGraphics keeps them on mouse
     // events only and reads them back as 0 on a scroll-wheel event.
@@ -657,8 +659,9 @@ final class ActivationSparingTests: XCTestCase {
     XCTAssertNil(activationSparing(button: .left, target: link))
     XCTAssertEqual(activationSparing(button: .middle, target: link), link)
     XCTAssertEqual(activationSparing(button: .right, target: link), link)
-    XCTAssertNil(activationClickPoint(CGPoint(x: 110, y: 76), windowFrame: window, sparing: link))
-    XCTAssertEqual(activationClickPoint(CGPoint(x: 110, y: 76), windowFrame: window, sparing: nil), CGPoint(x: 110, y: 76))
+    let hit = ActivationHit(role: "AXWindow", actions: [])
+    XCTAssertEqual(activationClickDecision(CGPoint(x: 110, y: 76), windowFrame: window, sparing: link) { hit }, .spared)
+    XCTAssertEqual(activationClickDecision(CGPoint(x: 110, y: 76), windowFrame: window, sparing: nil) { hit }, .posted)
     XCTAssertEqual(pointArea(CGPoint(x: 10, y: 10), hitFrame: nil), CGRect(x: 9.5, y: 9.5, width: 1, height: 1), "a coordinate with no element spares its point")
   }
 }
@@ -678,8 +681,8 @@ final class MenuSpanTests: XCTestCase {
   private final class Clock {
     var timers: [(ms: Double, work: @Sendable () -> Void)] = []
     var failed: [String] = []
-    func span() -> MenuSpan {
-      MenuSpan(schedule: { ms, work in self.timers.append((ms, work)) }, releaseFailed: { self.failed.append($0) })
+    func span() -> ActivationSpan {
+      ActivationSpan(schedule: { ms, work in self.timers.append((ms, work)) }, releaseFailed: { self.failed.append($0) })
     }
     func fireLast() { timers.removeLast().work() }
   }

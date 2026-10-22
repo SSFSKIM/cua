@@ -37,8 +37,7 @@ export function renderDiff(scene, rules = []) {
 }
 
 // The comparisons against the vendor (./compare.mjs), each under the declarations it is given: the scene's state, the
-// action's first observation, and the action's diff, whose removed IDs and changed lines are followed through the
-// first observation's matched lines.
+// action's first observation, and the action's diff.
 export function compareFull(scene, rules) {
   return compare(read(scene, 'vendor.txt'), renderFull(scene, rules), {structural: STRUCTURAL.has(scene), declared: rules});
 }
@@ -48,10 +47,8 @@ export function compareBefore(scene, rules) {
   return compare(read(scene, 'action.vendor.before.txt'), render(before, advanceNumbering(null, before)), {structural: STRUCTURAL.has(scene), declared: rules});
 }
 
-// `beforeRules`: the declarations of the action's first observation that the index map is read under.
-export function compareDiff(scene, rules, beforeRules = declared(scene, 'before')) {
-  const {indexMap} = compareBefore(scene, beforeRules);
-  return compare(read(scene, 'action.vendor.diff.txt'), renderDiff(scene, rules), {kind: 'diff', structural: STRUCTURAL.has(scene), declared: rules, indexMap});
+export function compareDiff(scene, rules) {
+  return compare(read(scene, 'action.vendor.diff.txt'), renderDiff(scene, rules), {kind: 'diff', structural: STRUCTURAL.has(scene), declared: rules});
 }
 
 export const COMPARE = {full: compareFull, before: compareBefore, diff: compareDiff};

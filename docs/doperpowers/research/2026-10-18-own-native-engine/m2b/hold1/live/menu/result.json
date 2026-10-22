@@ -1,0 +1,385 @@
+{
+  "schema": "native-matrix-cell-1",
+  "command": "menu",
+  "device": "mini",
+  "started": "2026-10-21T20:34:52.901Z",
+  "problems": [],
+  "complete": true,
+  "pass": true,
+  "controller": {
+    "commit": "3e39d8189451d66bf890055d9439e1f904e21ad1",
+    "dirty": false
+  },
+  "runDir": "/Users/new/Library/Caches/cua-harness/native-live",
+  "checkout": {
+    "commit": "3e39d8189451d66bf890055d9439e1f904e21ad1",
+    "dirty": false
+  },
+  "engine": {
+    "bundlePath": "/Users/new/Library/Application Support/cua/engine/cua Engine.app",
+    "build": "b74949b3c7f985c05495d95485a1fb210cf8ab02a575abd7213bba88d96a4875",
+    "engineVersion": "0.1.0",
+    "approvedAt": "2026-10-21T20:28:58.005Z",
+    "signature": {
+      "kind": "identity",
+      "identityMatches": true
+    }
+  },
+  "frontmost": {
+    "bundleId": "com.apple.Terminal"
+  },
+  "engineStopAtStart": {
+    "wasRunning": false
+  },
+  "vendor": {
+    "home": "/Users/new/Library/Application Support/cua-spike-vendor",
+    "release": "26.928.40906-darwin-arm64",
+    "hostAttestation": {
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 262,
+        "cua/serviceMs": 148.205,
+        "cua/nativeEngine": {
+          "engine": "vendor",
+          "version": "26.924.1001281",
+          "build": "26.928.40906-darwin-arm64"
+        },
+        "cua/taskId": "744eda5c-2e37-4bd6-9c23-ca35a550f86b",
+        "cua/nativeExecution": {
+          "path": "/Users/new/Library/Application Support/cua-spike-vendor/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node",
+          "version": "v24.21.0"
+        },
+        "cua/sandboxLaunch": {
+          "launcher": "cua-compat",
+          "tmpdir": "session"
+        }
+      }
+    },
+    "engineAttestation": {
+      "engine": "vendor",
+      "version": "26.924.1001281",
+      "build": "26.928.40906-darwin-arm64"
+    }
+  },
+  "elicitations": [
+    {
+      "t": "2026-10-21T20:35:08.475Z",
+      "app": "com.apple.TextEdit",
+      "action": "accept"
+    }
+  ],
+  "preparationCleanup": {
+    "removed": true,
+    "restored": [],
+    "helpersStopped": [],
+    "engineStop": {
+      "wasRunning": true,
+      "pid": 38124
+    }
+  },
+  "check": {
+    "cua": {
+      "items": {
+        "selectAll": {
+          "record": {
+            "ok": true,
+            "route": 1,
+            "posted": false,
+            "activationGuardMs": 40.188
+          },
+          "userInFront": [
+            true,
+            true
+          ],
+          "rooted": true,
+          "found": true,
+          "enabled": true,
+          "click": {
+            "ok": true,
+            "route": 1,
+            "posted": true
+          },
+          "clicked": true,
+          "effect": true,
+          "valid": true
+        },
+        "bold": {
+          "prepared": true,
+          "record": {
+            "ok": true,
+            "route": 1,
+            "posted": false,
+            "activationGuardMs": 40.28
+          },
+          "userInFront": [
+            true,
+            true
+          ],
+          "rooted": true,
+          "found": true,
+          "enabled": true,
+          "click": {
+            "ok": true,
+            "route": 1,
+            "posted": true
+          },
+          "clicked": true,
+          "effect": true,
+          "valid": true
+        }
+      },
+      "activations": []
+    },
+    "vendor": {
+      "items": {
+        "selectAll": {
+          "front": [
+            {
+              "bundleId": "com.apple.finder",
+              "user": true,
+              "textedit": false
+            },
+            {
+              "bundleId": "com.apple.finder",
+              "user": true,
+              "textedit": false
+            },
+            {
+              "bundleId": "com.apple.finder",
+              "user": true,
+              "textedit": false
+            }
+          ],
+          "barFound": true,
+          "recorded": true,
+          "clickError": null,
+          "found": true,
+          "enabled": true,
+          "clicked": true,
+          "effect": true
+        },
+        "bold": {
+          "front": [
+            {
+              "bundleId": "com.apple.finder",
+              "user": true,
+              "textedit": false
+            },
+            {
+              "bundleId": "com.apple.finder",
+              "user": true,
+              "textedit": false
+            },
+            {
+              "bundleId": "com.apple.finder",
+              "user": true,
+              "textedit": false
+            },
+            {
+              "bundleId": "com.apple.finder",
+              "user": true,
+              "textedit": false
+            }
+          ],
+          "prepared": true,
+          "barFound": true,
+          "recorded": true,
+          "clickError": null,
+          "found": true,
+          "enabled": true,
+          "clicked": true,
+          "effect": true
+        }
+      },
+      "activations": []
+    },
+    "comparison": {
+      "items": {
+        "selectAll": {
+          "cua": {
+            "label": "acts",
+            "enabled": true,
+            "effect": true,
+            "route": 1,
+            "activationGuardMs": null
+          },
+          "vendor": {
+            "label": "acts",
+            "enabled": true,
+            "effect": true
+          },
+          "same": true,
+          "cuaBetter": false,
+          "cuaWorse": false
+        },
+        "bold": {
+          "cua": {
+            "label": "acts",
+            "enabled": true,
+            "effect": true,
+            "route": 1,
+            "activationGuardMs": null
+          },
+          "vendor": {
+            "label": "acts",
+            "enabled": true,
+            "effect": true
+          },
+          "same": true,
+          "cuaBetter": false,
+          "cuaWorse": false
+        }
+      },
+      "conclusive": true,
+      "decision": "parity: cua's held activation acts on every item the vendor's does"
+    }
+  },
+  "recovery": {
+    "ok": true,
+    "killed": [],
+    "survivors": [],
+    "awaited": [],
+    "probeWait": null,
+    "untouched": []
+  },
+  "putBack": {
+    "plan": [
+      "finder-teardown",
+      "scenes-down",
+      "engine-stop",
+      "apps-check",
+      "finder-check",
+      "front-app"
+    ],
+    "steps": {
+      "finder-teardown": {
+        "ok": true,
+        "steps": 2
+      },
+      "scenes-down": {
+        "ok": true,
+        "down": true
+      },
+      "engine-stop": {
+        "ok": true,
+        "wasRunning": true,
+        "pid": 39311
+      },
+      "apps-check": {
+        "ok": true,
+        "running": {
+          "textedit": 0,
+          "chromeForTesting": 0,
+          "electronFixture": 0
+        }
+      },
+      "finder-check": {
+        "ok": true,
+        "runWindowGone": true,
+        "windowsAsAtBegin": true,
+        "keysAsSaved": true
+      },
+      "front-app": {
+        "ok": true,
+        "bundleId": "com.apple.Terminal",
+        "reactivated": true,
+        "inFront": true
+      }
+    },
+    "ok": true
+  },
+  "frontApp": {
+    "saved": "com.apple.Terminal",
+    "now": "com.apple.Terminal",
+    "same": true
+  },
+  "finished": "2026-10-21T20:35:25.770Z",
+  "cell": "menu",
+  "lanes": [
+    {
+      "host": null,
+      "engine": "cua",
+      "build": "b74949b3c7f985c05495d95485a1fb210cf8ab02a575abd7213bba88d96a4875",
+      "version": "0.1.0"
+    },
+    {
+      "host": "vendor",
+      "engine": "vendor",
+      "build": "26.928.40906-darwin-arm64",
+      "version": null
+    }
+  ],
+  "verdict": "pass",
+  "rows": [
+    {
+      "section": "residue",
+      "id": "menu/textedit-behind-finder/selectAll",
+      "engine": "cua",
+      "sample": 1,
+      "ok": true,
+      "scene": "textedit",
+      "user": "finder",
+      "regime": "background",
+      "method": "click",
+      "outcome": {
+        "label": "acts",
+        "enabled": true,
+        "effect": true,
+        "route": 1
+      }
+    },
+    {
+      "section": "residue",
+      "id": "menu/textedit-behind-finder/selectAll",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "scene": "textedit",
+      "user": "finder",
+      "regime": "background",
+      "method": "click",
+      "outcome": {
+        "label": "acts",
+        "enabled": true,
+        "effect": true
+      }
+    },
+    {
+      "section": "residue",
+      "id": "menu/textedit-behind-finder/bold",
+      "engine": "cua",
+      "sample": 1,
+      "ok": true,
+      "scene": "textedit",
+      "user": "finder",
+      "regime": "background",
+      "method": "click",
+      "outcome": {
+        "label": "acts",
+        "enabled": true,
+        "effect": true,
+        "route": 1
+      }
+    },
+    {
+      "section": "residue",
+      "id": "menu/textedit-behind-finder/bold",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": true,
+      "scene": "textedit",
+      "user": "finder",
+      "regime": "background",
+      "method": "click",
+      "outcome": {
+        "label": "acts",
+        "enabled": true,
+        "effect": true
+      }
+    }
+  ]
+}

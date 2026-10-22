@@ -73,7 +73,7 @@ import {FIXTURE_BUNDLE_ID, FIXTURE_CONTROLS, FIXTURE_INITIAL, buildElectronFixtu
 import {CHROME_FOR_TESTING_BUNDLE_ID, placeChromeForTesting} from '../native-matrix/fixtures/chrome-for-testing.mjs';
 import {
   activateApp, activateProcess, appWindows, appWindowState, awaitOwnLaunch, frontmostProcess, frontWindow, openApp, readFinderPreferences, runningApps,
-  stopRecorded, writeFinderPreference,
+  showFolder, stopRecorded, writeFinderPreference,
 } from './scenes-mac-device.mjs';
 import {
   CLOSE_WINDOW_KEY, DESELECT_ALL_KEY, FINDER_PARTS, LIST_VIEW_KEY, SAVED_PREFERENCES, clearSavedPreferences, finderWindowProblems, preferenceWrites,
@@ -97,8 +97,17 @@ export const TEXTEDIT_STYLED_LINE = 'Bold scene line';
 export const TEXTEDIT_MARKDOWN_CAP = 2000;
 const TEXTEDIT_LINES = ['cua scene document', TEXTEDIT_STYLED_LINE, ...Array.from({length: 60}, (_, i) => `Line ${String(i + 1).padStart(2, '0')}`)];
 const rtfLine = line => (line === TEXTEDIT_STYLED_LINE ? `{\\b ${line}}` : line);
-export const textEditDocument = () => ({name: TEXTEDIT_DOCUMENT, lines: [...TEXTEDIT_LINES],
-  rtf: `{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0\\fswiss Helvetica;}}\\f0\\fs28 ${TEXTEDIT_LINES.map(rtfLine).join('\\par\n')}}\n`});
+// The layouts the document can open in: TextEdit's default (wrapped to the window), or `wide-page` (M2b.1b's horizontal
+// scroll cell): page layout (`\\viewkind1`, TextEdit's Wrap to Page) zoomed to 200% (`\\viewscale200`), so the page
+// is wider than the scene window and its scroll area has horizontally scrollable content. The zoom is what does it:
+// TextEdit ignores the paper width (`\\paperw28800`, 1440 points in twips) for the page view and lays the page out on
+// its own paper size, which fits the window, its horizontal bar disabled (hold 1, 2026-10-21).
+export const TEXTEDIT_LAYOUTS = Object.freeze({default: '', 'wide-page': '\\paperw28800\\paperh15840\\viewkind1\\viewscale200'});
+export const textEditDocument = ({layout = 'default'} = {}) => {
+  if (!Object.hasOwn(TEXTEDIT_LAYOUTS, layout)) throw new Error(`unknown TextEdit layout ${layout}; one of ${Object.keys(TEXTEDIT_LAYOUTS).join(', ')}`);
+  return {name: TEXTEDIT_DOCUMENT, lines: [...TEXTEDIT_LINES],
+    rtf: `{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0\\fswiss Helvetica;}}${TEXTEDIT_LAYOUTS[layout]}\\f0\\fs28 ${TEXTEDIT_LINES.map(rtfLine).join('\\par\n')}}\n`};
+};
 
 // Finder's run-owned folder: 200 files named without an extension, so the owner's show-extensions setting cannot change
 // what a row is called.
@@ -193,6 +202,11 @@ export const SCENES = Object.freeze({
   },
 });
 export const SCENE_IDS = Object.keys(SCENES);
+// The scenes whose tree follows their window's frame: Finder's list exposes only the rows its window's height shows
+// (hold 2b: rows 0-19 on one lane, 0-18 on the other). Its placement is Finder's, so each run records the frame it read
+// and the native-mac diff pairs two lanes only when it is one frame (native-mac-diff.mjs checkPair). The Electron
+// fixture's six-row list always fits, and its window, like Chrome's, is placed by the run.
+export const LIST_BEARING_SCENES = Object.freeze(['finder']);
 const sceneOf = id => { if (!Object.hasOwn(SCENES, id)) throw new Error(`unknown scene ${id}; one of ${SCENE_IDS.join(', ')}`); return SCENES[id]; };
 
 // The three pairs part 2 names, each taken in both directions; a driven scene's user window is the first pair naming it.
@@ -305,15 +319,33 @@ export function chromePageProblems(shot) {
     : 'the scene page\'s controls do not carry their values yet (Chromium is still filling its tree); observe again'}];
 }
 
+// What keeps a Skyshot of the Electron scene from showing the fixture's page: its web area (titled as the window) and,
+// inside it, every control the fixture puts on screen, by role and name (Chromium names a control by its title, its
+// description or, for text, its value). Hold 2b's cua lane read the window with its second container empty, and the side
+// reads had accepted that state, since the fixture's process is wholly the run's. The check is the side reads' (the
+// state the lane's texts are kept against); a lane's own read without the page is still a difference in the diff.
+// -> [] or [{code: 'page_filling', controls, message}].
+const nameOf = node => [node.title, node.description, node.value];
+export function electronPageProblems(shot) {
+  const nodes = Array.isArray(shot?.nodes) ? shot.nodes : [];
+  const area = nodes.findIndex(n => n.role === 'AXWebArea' && n.title === SCENES.electron.fixedState.title);
+  const inside = area < 0 ? [] : nodes.slice(area + 1, subtreeEnd(nodes, area));
+  const missing = FIXTURE_CONTROLS.filter(c => !inside.some(n => n.role === c.role && nameOf(n).includes(c.name))).map(c => c.id);
+  if (!missing.length) return [];
+  return [{code: 'page_filling', controls: missing, message: area < 0 ? 'the Electron fixture\'s web area is not in the window yet; observe again'
+    : 'the Electron fixture\'s page does not hold all its controls yet; observe again'}];
+}
+
 // What the run owns in its Finder window, from the scene's record.
 export const finderOwned = record => ({folder: basename(record.folder), folderPath: record.folder, files: finderFolderFiles()});
 // What keeps an engine's Skyshot of the scene window from being the scene's fixed state, checked before anything of it
-// is recorded: Finder's window by ./scenes-mac-finder.mjs; Chrome's page filled (chromePageProblems); TextEdit's and
-// Electron's processes are wholly the run's. -> [{code, message}].
+// is recorded: Finder's window by ./scenes-mac-finder.mjs; Chrome's page filled (chromePageProblems); Electron's page
+// there (electronPageProblems); TextEdit's process is wholly the run's. -> [{code, message}].
 export function fixedStateProblems(id, skyshot, record) {
   const scene = sceneOf(id).id;
   if (scene === 'finder') return finderWindowProblems(skyshot, finderOwned(record));
   if (scene === 'chrome') return chromePageProblems(skyshot);
+  if (scene === 'electron') return electronPageProblems(skyshot);
   return [];
 }
 
@@ -329,7 +361,7 @@ export function writeState(run, state) {
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 const defaultIo = () => ({
-  runningApps, appWindows, appWindowState, openApp, activateApp, activateProcess, awaitOwnLaunch, stopRecorded, launchOf, now: Date.now, sleep,
+  runningApps, appWindows, appWindowState, openApp, activateApp, showFolder, activateProcess, awaitOwnLaunch, stopRecorded, launchOf, now: Date.now, sleep,
   frontmostProcess: () => frontmostProcess(), frontWindow: () => frontWindow(),
   finderPid: () => runningApps(FINDER_BUNDLE_ID)[0]?.pid ?? null,
   finderPreferences: () => readFinderPreferences(), writeFinderPreference: (key, value) => writeFinderPreference(key, value), savedPreferencesFile: SAVED_PREFERENCES,
@@ -434,17 +466,18 @@ export const electronArgs = ({userDataDir, placement = SCENES.electron.placement
 // the driver's steps to the fixed state (setupSteps). Finder's also carries the chrome `preferences` read before its
 // window opened, and `savedPreferences` says when the owner's values were saved and whether that record was `kept`
 // from earlier (this run's earlier up, or a run that died before restoring them).
-export async function upScene(id, {run, chromeApp, electronApp, io = defaultIo()}) {
+export async function upScene(id, {run, chromeApp, electronApp, layout, io = defaultIo()}) {
   const scene = sceneOf(id), state = readState(run);
   if (state.scenes[id]) throw new Error(`scene ${id} is already up in this run; bring it down first`);
+  if (layout !== undefined && id !== 'textedit') throw new Error('--layout applies to the textedit scene only');
   const checked = preflight({run, io});
   if (checked.refusals.length) throw new Refused(checked.refusals);
   let record;
   if (id === 'textedit') {
-    const doc = textEditDocument(), dir = join(run, 'textedit'), file = join(dir, doc.name);
+    const doc = textEditDocument({layout}), dir = join(run, 'textedit'), file = join(dir, doc.name);
     fs.mkdirSync(dir, {recursive: true, mode: 0o700});
     fs.writeFileSync(file, doc.rtf, {mode: 0o600});
-    record = {app: scene.app, document: file, ...await launchOwn({app: scene.app, bundleId: scene.bundleId, files: [file], args: scene.launchArgs, io})};
+    record = {app: scene.app, document: file, ...(layout && layout !== 'default' ? {layout} : {}), ...await launchOwn({app: scene.app, bundleId: scene.bundleId, files: [file], args: scene.launchArgs, io})};
   } else if (id === 'finder') {
     const folder = join(run, 'finder', FINDER_FOLDER), pid = checked.finderPid;
     if (!pid) throw new Error('Finder is not running');
@@ -503,40 +536,59 @@ const recordOf = (id, run) => {
 };
 
 // Brings an up scene's process to the front (`open -a`, which activates the running instance) and polls for up to
-// `boundMs` until the frontmost process is the run's, by pid, and for Finder until the run's window is its top window.
-// -> {scene, ok, frontmost, topWindow? , reason?}; ok false names what was in front instead, nothing is guessed.
+// `boundMs` until the frontmost process is the run's, by pid, and for Finder until the run's window (by its number) is
+// its top window. When Finder is in front with another of its own windows above the run's, the run's folder is opened
+// again (`open -a Finder <folder>`), once: Finder brings the window already showing that folder to the front and
+// touches no other. Only while the run's window is on screen, since otherwise the open would make a new window.
+// -> {scene, ok, frontmost, topWindow?, raised?, runWindow?, reason?}; ok false names what was in front instead and,
+// for Finder, where the run's window stood (`runWindow`: its place among Finder's on-screen windows, front first, and
+// its bounds; null when it is not among them), nothing guessed.
 export async function activateScene(id, {run, io = defaultIo(), boundMs = 5000, pollMs = 250}) {
   const record = recordOf(id, run), finder = sceneOf(id).id === 'finder';
   io.activateApp(record.app);
-  let frontmost = null, topWindow = null;
+  let frontmost = null, topWindow = null, placed = false, raised = false;
   for (const t0 = io.now(); ;) {
     frontmost = io.frontmostProcess();
     if (frontmost?.pid === record.pid) {
       if (!finder) return {scene: id, ok: true, frontmost};
       topWindow = io.frontWindow().topWindow ?? null;
-      if (topWindow?.ownerPid === record.pid && topWindow.number === record.window.number) return {scene: id, ok: true, frontmost, topWindow};
+      if (topWindow?.ownerPid === record.pid && topWindow.number === record.window.number) return {scene: id, ok: true, frontmost, topWindow, ...(raised ? {raised} : {})};
+      if (!placed) { placed = true; if (runWindowPlace(io.appWindows(record.pid), record)?.order > 0) { io.showFolder(record.app, record.folder); raised = true; } }
     }
     if (io.now() - t0 >= boundMs) break;
     await io.sleep(pollMs);
   }
-  const reason = frontmost?.pid === record.pid ? 'the run\'s Finder is frontmost but its top window is not the run\'s window' : `the run's process ${record.pid} is not frontmost within ${boundMs} ms`;
-  return {scene: id, ok: false, frontmost, ...(finder ? {topWindow} : {}), reason};
+  if (frontmost?.pid !== record.pid) return {scene: id, ok: false, frontmost, ...(finder ? {topWindow} : {}), reason: `the run's process ${record.pid} is not frontmost within ${boundMs} ms`};
+  const place = runWindowPlace(io.appWindows(record.pid), record);
+  return {scene: id, ok: false, frontmost, topWindow, ...(raised ? {raised} : {}), runWindow: place, reason: `the run's Finder is frontmost but its top window is not the run's window: ${placeReason(place)}`};
 }
+// The run's window among Finder's on-screen windows (front to back). -> {order, bounds} or null.
+const runWindowPlace = (windows, record) => {
+  const shown = windows.filter(w => w.onScreen !== false), order = shown.findIndex(w => w.number === record.window.number);
+  return order < 0 ? null : {order, bounds: shown[order].bounds};
+};
+const placeReason = place => (place === null ? 'the run\'s window is not among Finder\'s on-screen windows (closed, minimized or on another Space)'
+  : place.order === 0 ? 'it is Finder\'s front window, but another process\'s window is on top'
+  : `${place.order} other Finder window${place.order === 1 ? ' is' : 's are'} above the run's window`)
+  + (place === null ? '' : ` (the run's window ${place.bounds.width}x${place.bounds.height} at ${place.bounds.x},${place.bounds.y})`);
 
 // Puts the app the owner had in front before a driver's run back in front at its end (every scene activates its own
 // app, so the run otherwise leaves a scene app or Finder where the owner had, say, Terminal): only while that app still
 // runs as the same process, and never a scene app, whose windows may be the run's or which the run has stopped.
-// `front` is the frontmost reading taken before the run ({pid, bundleId} or null). -> {reactivated, inFront?, reason?}.
+// `front` is the frontmost reading taken before the run ({pid, bundleId} or null). -> {reactivated, inFront?, required?,
+// reason?}: `required: false` when there is nothing to put back (nothing recorded, a scene app, the process gone), so
+// a put-back that did not hold is anything else (activated but not in front, an activation refused while it runs).
 export const SCENE_BUNDLE_IDS = Object.freeze(SCENE_IDS.map(id => SCENES[id].bundleId));
 const REACTIVATE_WAIT_MS = 2000;
 export async function reactivateApp(front, {io = defaultIo()} = {}) {
-  if (!front?.bundleId) return {reactivated: false, reason: 'nothing was recorded in front'};
-  if (SCENE_BUNDLE_IDS.includes(front.bundleId)) return {reactivated: false, reason: 'the app in front was a scene app; it is not brought back'};
-  if (!io.runningApps(front.bundleId).some(p => p.pid === front.pid)) return {reactivated: false, reason: 'the app is no longer running as the process that was in front'};
+  if (!front?.bundleId) return {reactivated: false, required: false, reason: 'nothing was recorded in front'};
+  if (SCENE_BUNDLE_IDS.includes(front.bundleId)) return {reactivated: false, required: false, reason: 'the app in front was a scene app; it is not brought back'};
+  const runs = () => io.runningApps(front.bundleId).some(p => p.pid === front.pid);
+  if (!runs()) return {reactivated: false, required: false, reason: 'the app is no longer running as the process that was in front'};
   // By pid, so another instance of the app is never the one activated and an exit after the check above launches
   // nothing (the activator refuses); then a bounded wait, since the activation completes asynchronously.
   const out = io.activateProcess({bundleId: front.bundleId, pid: front.pid});
-  if (!out.activated) return {reactivated: false, reason: out.reason};
+  if (!out.activated) return {reactivated: false, ...(runs() ? {} : {required: false}), reason: out.reason};
   for (const t0 = io.now(); ;) {
     if (io.frontmostProcess()?.pid === front.pid) return {reactivated: true, inFront: true};
     if (io.now() - t0 >= REACTIVATE_WAIT_MS) return {reactivated: true, inFront: false};
@@ -577,10 +629,13 @@ export async function restoreFinder({io = defaultIo()} = {}) {
     ...(visibleRestored === false ? {visibleNote} : {})}};
 }
 
-// Brings one scene down: stops only what the run recorded at its launch. Finder: checks the run's window is gone, then
-// writes back what the hiding still leaves changed in Finder's preferences (restoreFinder; also with no record, for a
-// run that died after saving). -> {scene, down: boolean, ...}; a scene still up (a process that would not exit, Finder's
-// window still open or a preference not restored) stays in the state so a later down can finish it.
+// Brings one scene down: stops only what the run recorded at its launch. Finder: writes back what the hiding still
+// leaves changed in Finder's preferences (restoreFinder; also with no record, for a run that died after saving), and is
+// down once the run's window is gone. The keys are written back with the window still open too (a teardown that could
+// not reach the window must not leave them hidden; Finder reads them only at launch, so the open window is unchanged),
+// and the saved record stays until a teardown has brought the window's chrome back. -> {scene, down: boolean, ...}; a
+// scene still up (a process that would not exit, Finder's window still open or a preference not restored) stays in the
+// state so a later down can finish it.
 export async function downScene(id, {run, io = defaultIo()}) {
   sceneOf(id);
   const state = readState(run), record = state.scenes[id];
@@ -593,11 +648,10 @@ export async function downScene(id, {run, io = defaultIo()}) {
   let result;
   if (id === 'finder') {
     const open = documentWindows(io.appWindows(record.pid)).some(w => w.number === record.window.number);
-    if (open) result = {down: false, windowOpen: true, reason: 'the run\'s Finder window is still open; send the teardown steps (teardown-steps finder), then run down again'};
-    else {
-      const {preferences} = await restoreFinder({io});
-      result = {down: preferences.restored, ...(preferences.saved === false ? {} : {preferences}), ...(preferences.restored ? {} : {reason: unrestored(preferences)})};
-    }
+    const {preferences} = await restoreFinder({io});
+    const kept = preferences.saved === false ? {} : {preferences};
+    if (open) result = {down: false, windowOpen: true, ...kept, reason: `the run's Finder window is still open; send the teardown steps (teardown-steps finder), then run down again${preferences.restored ? '' : `. ${unrestored(preferences)}`}`};
+    else result = {down: preferences.restored, ...kept, ...(preferences.restored ? {} : {reason: unrestored(preferences)})};
   } else {
     // Without a captured identity no browser is safe to signal; only absence can release an attempted launch's profile.
     const stopped = id === 'chrome' && record.launchAttempted && !record.pid
@@ -679,7 +733,7 @@ export async function main(argv) {
     case 'front': return frontWindow();
     case 'frontmost': return frontmostProcess();
     case 'reactivate': return reactivateApp({bundleId: flags['bundle-id'], pid: Number(flags.pid)});
-    case 'up': return upScene(target, {run: runDir(flags), chromeApp: flags['chrome-app'], electronApp: flags['electron-app']});
+    case 'up': return upScene(target, {run: runDir(flags), chromeApp: flags['chrome-app'], electronApp: flags['electron-app'], layout: flags.layout});
     case 'activate': return activateScene(target, {run: runDir(flags)});
     case 'teardown-steps': return {scene: target, steps: teardownFor(target, {run: runDir(flags)})};
     case 'restore-finder': return restoreFinder();

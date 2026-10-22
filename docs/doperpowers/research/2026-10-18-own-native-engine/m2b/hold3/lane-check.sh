@@ -1,0 +1,3 @@
+#!/bin/bash
+# lane-check <label>: the per-lane interference reads (5900, shim children, foreign engines, front app, source)
+ssh mini "echo \"[$1] \$(date -u +%H:%M:%SZ) 5900=\$(netstat -an -p tcp | grep '\.5900 ' | grep -c ESTABLISHED) load=\$(sysctl -n vm.loadavg)\"; for p in \$(pgrep -f cua-shim.mjs); do echo \"shim \$p children: \$(pgrep -P \$p | tr '\n' ' ')\"; done; echo \"engine:\$(pgrep -x 'cua Engine' | tr '\n' ' ') sky:\$(pgrep -f SkyComputerUseService | tr '\n' ' ')\"; echo \"sec:\$(pgrep -x SecurityAgent) auth:\$(pgrep -f 'claude auth status')\"; lsappinfo info -only bundleid \$(lsappinfo front) | grep bundleID; defaults read com.apple.HIToolbox AppleCurrentKeyboardLayoutInputSourceID" 2>&1 | tee -a /tmp/m2b-hold3/lanes.txt

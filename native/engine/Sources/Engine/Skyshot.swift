@@ -224,11 +224,11 @@ extension Engine {
     connection.needsSettle.remove(app.key)
 
     var enabledNow = false
-    let launchDate = app.running?.launchDate
+    let generation = processGeneration(launchDate: app.running?.launchDate, pid: appPid)
     let eligible = enablementEligible(bundleIdentifier: app.bundleIdentifier, webShaped: webShaped)
     if eligible {
       let enabling = timings.time("enable") {
-        webAccessibility.enableReporting(pid: appPid, launched: launchDate, connection: connection.id, access: .live(pid: appPid, launched: launchDate))
+        webAccessibility.enableReporting(pid: appPid, launched: generation, connection: connection.id, access: .live(pid: appPid, launched: generation))
       }
       // What the attribute read before this observation touched it: "true", "false" or "unreadable"; absent when the
       // app lists neither attribute (or is not eligible).
@@ -256,12 +256,12 @@ extension Engine {
       chromium = timings.time("chromiumCheck") { isChromiumWindow(window) }
       timings.set("chromium", chromium)
     }
-    let seenBefore = webAccessibility.hasSeenWebArea(pid: appPid, launched: launchDate)
+    let seenBefore = webAccessibility.hasSeenWebArea(pid: appPid, launched: generation)
     if seenBefore { timings.set("webAreaSeen", true) }
     if webAreaWaitNeeded(switchOn: webAreaWaitEnabled, enabledNow: enabledNow, chromium: chromium, seen: seenBefore) {
       let found = timings.time("webAreaWait") { waitForWebArea(under: window) }
       timings.set("webAreaFound", found)
-      if found { webAccessibility.noteWebArea(pid: appPid, launched: launchDate) }
+      if found { webAccessibility.noteWebArea(pid: appPid, launched: generation) }
       waited = true
     }
 
@@ -318,7 +318,7 @@ extension Engine {
     timings.set("fetchFailures", walk.failures)
     // A web area the walk itself emitted counts as seen too, so a process whose page was already exposed never waits.
     if webShaped, walk.nodes.contains(where: { $0["role"] as? String == "AXWebArea" }) {
-      webAccessibility.noteWebArea(pid: appPid, launched: launchDate)
+      webAccessibility.noteWebArea(pid: appPid, launched: generation)
     }
     if walk.deadlineHit { timings.set("deadlineHit", true) }
     if walk.budgetHit { timings.set("budgetHit", true) }

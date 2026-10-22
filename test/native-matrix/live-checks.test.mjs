@@ -5,8 +5,8 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import {
-  ABC, FIRST_LINE, KOREAN_2SET, LAST_LINE, NEVER_OBSERVED, allSelected, alertWatch, enablementOf, enablementVerdict, failureOf, finderCheck, firstLineBold,
-  compositionGuard, compositionReading, frontAppAction, inputSourceVerdict, liveRefusals, menuBarItem, menuComparison, menuItemAt, menuItemLabel, menuSettingVerdict, minimizeButton, minimizedVerdict,
+  ABC, FIRST_LINE, KOREAN_2SET, LAST_LINE, NEVER_OBSERVED, allSelected, alertWatch, enablementOf, failureOf, finderCheck, firstLineBold,
+  compositionGuard, compositionReading, frontAppAction, inputSourceVerdict, liveRefusals, menuBarItem, menuComparison, menuItemAt, menuItemLabel, minimizeButton, minimizedVerdict,
   RECOVERY_BOUNDS, parseJournal, parseProcessTable, parsePerContext, putBackBoundMs, recoverBoundMs, recoveryPlan, pasteVerdict, perContextRestore, putBackPlan, restoreTarget, textArea, vendorMenuBarIndex, vendorMenuItem, vendorSelectedText, vendorTextAreaIndex,
 } from '../../scripts/native-matrix/live-checks.mjs';
 import {SkyComputerUseError} from '../../src/services/engine/protocol.mjs';
@@ -160,27 +160,27 @@ test('minimizedVerdict: the observation, the refusals and the Accessibility rout
 });
 
 test('menuComparison: per item each lane\'s label, and what the pair decides; only a valid cua item counts', () => {
-  const works = {found: true, enabled: true, clicked: true, click: {ok: true, route: 1}, effect: true, valid: true};
+  const works = {found: true, enabled: true, clicked: true, click: {ok: true, route: 1, activationGuardMs: 41}, effect: true, valid: true};
   const both = menuComparison({selectAll: works, bold: works}, {selectAll: works, bold: works});
-  assert.equal(both.decision, 'no activation: cua reads the responder-chain items enabled and they act without it');
-  assert.equal(menuComparison({selectAll: works, bold: works}, {selectAll: works, bold: works}, {setting: 'on'}).decision,
-    'with activation: cua\'s items act with route 3\'s activation around the press', 'the on lane never claims "without activation"');
+  assert.equal(both.decision, 'parity: cua\'s held activation acts on every item the vendor\'s does');
+  assert.equal(both.conclusive, true);
+  assert.deepEqual(both.items.selectAll.cua, {label: 'acts', enabled: true, effect: true, route: 1, activationGuardMs: 41});
+  assert.equal(both.items.selectAll.same, true);
   // Both lanes read an item disabled: nothing acted, so nothing is shown either way.
   const readDisabled = {...works, enabled: false, clicked: false, click: undefined, effect: false};
   const neither = menuComparison({selectAll: works, bold: readDisabled}, {selectAll: works, bold: {...works, enabled: false, effect: false}});
-  assert.equal(neither.decision, 'inconclusive: no demonstrated success for bold: neither cua\'s off lane nor the vendor\'s item acts');
+  assert.equal(neither.decision, 'inconclusive: no demonstrated success for bold: neither lane\'s item acts');
   assert.equal(neither.items.bold.vendor.label, 'read disabled');
-  assert.equal(both.items.selectAll.same, true);
-  const disabled = menuComparison({selectAll: {...works, enabled: false, clicked: false, click: undefined, effect: false}, bold: works}, {selectAll: works, bold: works});
-  assert.equal(disabled.decision, 'the menu path takes activation: cua reads selectAll disabled or it does nothing where the vendor\'s works');
-  assert.equal(menuComparison({selectAll: {...works, effect: false}, bold: works}, {selectAll: works, bold: works}, {setting: 'on'}).decision,
-    'route 3\'s activation is not enough: cua\'s selectAll does nothing where the vendor\'s works');
+  const disabled = menuComparison({selectAll: readDisabled, bold: works}, {selectAll: works, bold: works});
+  assert.equal(disabled.decision, 'the held activation falls short: cua reads selectAll disabled or it does nothing where the vendor\'s works');
   assert.equal(disabled.items.selectAll.cua.label, 'read disabled');
+  assert.equal(menuComparison({selectAll: {...works, effect: false}, bold: works}, {selectAll: works, bold: works}).items.selectAll.cuaWorse, true);
   const vendorFails = menuComparison({selectAll: works, bold: works}, {selectAll: {...works, effect: false}, bold: works});
   assert.equal(vendorFails.items.selectAll.cuaBetter, true);
   assert.match(menuComparison({selectAll: works, bold: {found: false}}, {selectAll: works, bold: works}).decision, /^undecided/);
   assert.match(menuComparison({selectAll: {...works, valid: false}, bold: works}, {selectAll: works, bold: works}).decision, /^undecided/, 'an invalid cua item decides nothing');
   assert.match(menuComparison({selectAll: works, bold: works}, null).decision, /^undecided/);
+  assert.equal(menuComparison(null, {selectAll: works, bold: works}).conclusive, false);
 });
 
 test('menuItemLabel: not found, invalid, unattempted, read disabled, inconclusive, acts, no effect', () => {
@@ -195,63 +195,10 @@ test('menuItemLabel: not found, invalid, unattempted, read disabled, inconclusiv
   assert.equal(menuItemLabel(undefined), 'not found');
 });
 
-test('enablementOf and enablementVerdict: released when each connection\'s first observation reads the attribute false and the first sets it', () => {
+test('enablementOf: the engine\'s enablement diagnostics, kept beside the enablement cell and never judged', () => {
   assert.deepEqual(enablementOf({enable: 0.4, enablementPrior: 'false', enabled: 'AXManualAccessibility', webShaped: true, chromium: true, webAreaWait: 120, webAreaFound: true, nodes: 83}),
     {prior: 'false', set: 'AXManualAccessibility', webShaped: true, chromium: true, webAreaSeen: false, webAreaFound: true});
   assert.equal(enablementOf({}).prior, null, 'an app listing neither attribute reports no prior');
-  const first = {prior: 'false', set: 'AXManualAccessibility', webShaped: true, chromium: true, webAreaSeen: false, webAreaFound: true};
-  const released = enablementVerdict({first, second: first});
-  assert.equal(released.released, true);
-  assert.deepEqual(released.priors, {first: 'false', second: 'false'});
-  assert.equal('diagnostic' in released, false, 'the prior is read off the engine now');
-  // Still true after the first connection closed: not released.
-  assert.equal(enablementVerdict({first, second: {...first, prior: 'true', set: null}}).released, false);
-  // A first read that was not false (true: someone else's; unreadable: never owned) cannot show a release.
-  assert.equal(enablementVerdict({first: {...first, prior: 'true', set: null}, second: first}).released, false);
-  assert.equal(enablementVerdict({first: {...first, prior: 'unreadable'}, second: first}).released, false);
-  assert.equal(enablementVerdict({first: {...first, set: null}, second: first}).released, false, 'read false but not set: nothing was owned');
-  assert.equal(enablementVerdict({first: null, second: first}).released, false);
-});
-
-test('menuSettingVerdict: the setting to make the default, decided only by attempted items valid under the background condition', () => {
-  const acts = {found: true, enabled: true, valid: true, clicked: true, click: {ok: true, route: 1, posted: true}, effect: true};
-  const none = {...acts, effect: false};
-  const disabled = {found: true, enabled: false, valid: true, clicked: false, effect: false};
-  const guarded = {...acts, click: {ok: true, route: 1, posted: true, activationGuardMs: 18.5}};
-  const lane = (selectAll, bold) => ({selectAll, bold});
-  const vendorActs = lane(acts, acts);
-  const v = (off, on, vendor = vendorActs) => menuSettingVerdict(off, on, vendor);
-  const keep = v(lane(acts, acts), lane(guarded, guarded));
-  assert.equal(keep.setting, 'off');
-  assert.equal(keep.line, 'keep off: every item acts without activation (spikeMenuActivation stays off by default)');
-  const on = v(lane(disabled, none), lane(guarded, guarded));
-  assert.equal(on.setting, 'on');
-  assert.equal(on.line, 'set on: every item acts only with route 3\'s activation around its press (spikeMenuActivation on by default)');
-  assert.deepEqual(on.labels, {off: {selectAll: 'read disabled', bold: 'no effect'}, on: {selectAll: 'acts', bold: 'acts'}});
-  assert.deepEqual(on.items.on.selectAll, {label: 'acts', effect: true, route: 1, activationGuardMs: 18.5});
-  const neither = v(lane(none, acts), lane({...guarded, effect: false}, guarded));
-  assert.equal(neither.setting, 'neither');
-  assert.equal(neither.line, 'neither: no one setting acts for every item: off leaves selectAll not acting, on leaves selectAll not acting');
-  // Undecided, with the reason, whenever an item that matters is not found, inconclusive, unattempted or invalid.
-  const lost = v(lane(none, acts), lane(guarded, {...guarded, valid: false}));
-  assert.equal(lost.setting, 'undecided');
-  assert.equal(lost.line, 'undecided: on lane bold invalid');
-  assert.equal(v(lane({found: false}, acts), lane(guarded, guarded)).line, 'undecided: off lane selectAll not found');
-  assert.equal(v(lane({...none, valid: false}, acts), lane(guarded, guarded)).line, 'undecided: off lane selectAll invalid', 'an off item lost to an activation is no evidence for on');
-  assert.equal(v(lane(acts, acts), null).setting, 'off', 'off decides alone when every item acts');
-  assert.equal(v(null, lane(acts, acts)).line, 'undecided: off lane missing');
-  // "Activation is not enough" needs the item shown to act somewhere: the vendor's acting. Read disabled (or doing
-  // nothing) on every lane, the vendor's included, demonstrates nothing.
-  const unshown = v(lane(acts, disabled), lane(guarded, {...guarded, effect: false}), lane(acts, {...disabled, clicked: undefined}));
-  assert.equal(unshown.setting, 'undecided');
-  assert.equal(unshown.line, 'undecided: no demonstrated success for bold: no lane acts, cua\'s or the vendor\'s');
-  assert.equal(v(lane(acts, disabled), lane(guarded, {...guarded, effect: false}), null).line, 'undecided: no demonstrated success for bold: no lane acts, cua\'s or the vendor\'s',
-    'without the vendor\'s lane nothing shows the item can act');
-  assert.equal(v(lane(acts, disabled), lane(guarded, guarded), null).setting, 'on', 'the on lane acting is its own demonstration');
-  // Mixed lanes: selectAll acts only off, bold only on. Each lane's success counts, and the line names what each lane left.
-  const mixed = v(lane(acts, disabled), lane({...guarded, effect: false}, guarded), null);
-  assert.equal(mixed.setting, 'neither');
-  assert.equal(mixed.line, 'neither: no one setting acts for every item: off leaves bold not acting, on leaves selectAll not acting');
 });
 
 test('pasteVerdict: the pastes land behind the user window, type_text takes the paste route under a met Korean precondition, the clipboard\'s types unchanged', () => {
@@ -328,14 +275,24 @@ test('alertWatch: system-alert processes are read by name; anything else new abo
 
 test('compositionGuard: HID keys only while the scene\'s TextEdit is the front app, its scene window the front window and TextEdit\'s key window', () => {
   const record = {pid: 600, window: {number: 41, bounds: {x: 10, y: 20, width: 600, height: 800}}};
-  const ok = {frontmost: {pid: 600, bundleId: 'com.apple.TextEdit'}, topWindow: {ownerPid: 600, number: 41}, observedWindow: {pid: 600, frame: {x: 10, y: 20, width: 600, height: 800}}, record};
+  const ok = {frontmost: {pid: 600, bundleId: 'com.apple.TextEdit'}, topWindow: {ownerPid: 600, number: 41, bounds: {x: 10, y: 20, width: 600, height: 800}}, observedWindow: {pid: 600, frame: {x: 10, y: 20, width: 600, height: 800}}, record};
   assert.deepEqual(compositionGuard(ok), {post: true, reason: null});
-  assert.deepEqual(compositionGuard({...ok, frontmost: {pid: 5, bundleId: 'com.google.Chrome'}}), {post: false, reason: 'front app not the scene'});
-  assert.deepEqual(compositionGuard({...ok, frontmost: null}), {post: false, reason: 'front app not the scene'});
+  assert.deepEqual(compositionGuard({...ok, frontmost: {pid: 5, bundleId: 'com.google.Chrome'}}),
+    {post: false, reason: 'front app not the scene', seen: {frontmost: {pid: 5, bundleId: 'com.google.Chrome'}, topWindow: ok.topWindow, sceneWindow: 41}});
+  assert.deepEqual(compositionGuard({...ok, frontmost: null}), {post: false, reason: 'front app not the scene', seen: {frontmost: null, topWindow: ok.topWindow, sceneWindow: 41}});
   assert.equal(compositionGuard({...ok, topWindow: {ownerPid: 600, number: 99}}).reason, 'front window not the scene window');
   assert.equal(compositionGuard({...ok, topWindow: {ownerPid: 5, number: 41}}).reason, 'front window not the scene window');
   assert.equal(compositionGuard({...ok, observedWindow: {pid: 600, frame: {x: 400, y: 20, width: 600, height: 800}}}).reason, 'the scene window is not TextEdit\'s key window');
   assert.equal(compositionGuard({...ok, observedWindow: null}).post, false);
+  // The window moved or resized after up (hold 1): the comparison is the front window's bounds now, not the recorded ones.
+  const placed = {x: 300, y: 120, width: 700, height: 900};
+  assert.deepEqual(compositionGuard({...ok, topWindow: {...ok.topWindow, bounds: placed}, observedWindow: {pid: 600, frame: placed}}), {post: true, reason: null});
+  const refused = compositionGuard({...ok, topWindow: {...ok.topWindow, bounds: placed}});
+  assert.equal(refused.post, false);
+  assert.deepEqual(refused.frames, {observed: ok.observedWindow.frame, observedPid: 600, frontWindow: placed, recordedAtUp: record.window.bounds});
+  assert.deepEqual(compositionGuard({...ok, topWindow: {ownerPid: 600, number: 99}}).seen.topWindow, {ownerPid: 600, number: 99}, 'a refused front window is kept');
+  assert.equal(compositionGuard({...ok, topWindow: {ownerPid: 600, number: 41}}).post, false, 'no bounds read now: no post');
+  assert.equal(compositionGuard({...ok, observedWindow: {pid: 600, frame: {x: 10, y: 20, width: Number.NaN, height: 800}}}).post, false, 'an unreadable dimension is no match');
 });
 
 test('compositionReading: 가, rk, ㄱㅏ, or anything else verbatim, and nothing more', () => {

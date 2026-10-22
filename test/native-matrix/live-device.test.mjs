@@ -10,8 +10,8 @@ import {join} from 'node:path';
 import {SkyComputerUseError} from '../../src/services/engine/protocol.mjs';
 import {ABC, FIRST_LINE, JOURNAL_FILE, KOREAN_2SET, PASTE_TARGETS, RECOVERY_BOUNDS, parseJournal} from '../../scripts/native-matrix/live-checks.mjs';
 import {
-  PASTE, PASTE_DEADLINE_MS, begin, childHandle, enablementCheck, inputSourceCheck, menuCheck, minimizedCheck, pasteCheck, putBack, recover, restoreInputSource, runProbe,
-  saveFrontmost, saveInputSource,
+  COMPOSITION_QUIET_MS, COMPOSITION_VARIANTS, INTERVENTION_DEBOUNCE_MS, PASTE, PASTE_DEADLINE_MS, begin, childHandle, inputSourceCheck, menuCheck, minimizedCheck, pasteCheck, putBack, probeBarrier, recover, restoreInputSource, runProbe, launchProbe, awaitProbe,
+  probeStatus, saveFrontmost, saveInputSource,
 } from '../../scripts/native-matrix/live-device.mjs';
 
 const GOLDEN = JSON.parse(fs.readFileSync(new URL('../native-goldens/textedit/skyshot.json', import.meta.url), 'utf8'));
@@ -67,15 +67,12 @@ function fakeEngine({minimized = false, script = () => undefined, menus = {}, me
         const item = Object.values(menus).flat().find(n => n.token === args.element);
         if (item) {
           state.rooted = null;
-          const activated = args.spikeMenuActivation === true;
-          // A background app's responder chain answers only under route 3's activation when the fake says so.
-          if (!menuNeedsActivation || activated) {
+          // A background app's responder chain that does not answer (the M2a.5 hold's per-action activation) when the fake says so.
+          if (!menuNeedsActivation) {
             if (item.title === 'Select All') state.selected = state.value;
             if (item.title === 'Bold') state.markdown = state.markdown.replace(FIRST_LINE, `**${FIRST_LINE}**`);
           }
-          const result = route(1);
-          if (activated) result.meta.activationGuardMs = 18.5;
-          return {result, engineMs: 1};
+          return {result: route(1), engineMs: 1};
         }
         if (args.element === area().token && state.minimized) throw engineError('windowMinimized', 'The TextEdit window is minimized, so nothing can be clicked, dragged or scrolled at a point in it.');
         return {result: route(3), engineMs: 1};
@@ -244,34 +241,17 @@ test('menuCheck: each item through the menu-bar record and a rooted observation,
   const io = deviceIo({watch: {start: () => { watched.push('start'); return {pid: 9}; }, stop: () => { watched.push('stop'); return [{kind: 'deactivated', bundleId: 'com.apple.mail', pid: 50, at: 1}]; }}});
   const out = await menuCheck({record: TEXTEDIT, user: FINDER, client, io, screenshots: join(scratch(), 'shots')});
   assert.deepEqual(watched, ['start', 'stop']);
-  assert.equal(out.menuActivation, false);
   assert.deepEqual(out.items.selectAll, {found: true, rooted: true, enabled: true, record: {ok: true, route: 1, posted: false}, clicked: true, click: {ok: true, route: 1, posted: true},
     effect: true, userInFront: [true, true], valid: true});
   assert.equal(out.items.bold.prepared, true, 'the first line was selected before Format');
   assert.equal(out.items.bold.effect, true);
   assert.equal(out.items.bold.valid, true);
-  assert.ok(client.calls.filter(c => c.method === 'click').every(c => !('spikeMenuActivation' in c.args)), 'off sends no switch at all');
+  assert.ok(client.calls.filter(c => c.method === 'click').every(c => !('spikeMenuActivation' in c.args)), 'no engine switch is sent: the held activation is the engine\'s own');
   assert.equal(client.calls.find(c => c.method === 'select_text').args.text, FIRST_LINE);
   assert.doesNotMatch(JSON.stringify(out), /Line 0/);
 });
 
-test('menuCheck with the switch on: only the item\'s press carries it, a disabled item is pressed all the same, its route and guard time recorded', async () => {
-  const off = await menuCheck({record: TEXTEDIT, user: FINDER, client: fakeEngine({menus: MENUS, menuNeedsActivation: true}), io: deviceIo({watch: quietWatch()}),
-    screenshots: join(scratch(), 'shots')});
-  assert.deepEqual([off.items.selectAll.effect, off.items.bold.effect], [false, false], 'the fake\'s background responder chain needs the activation');
-  const menus = structuredClone(MENUS);
-  menus.Edit[3].flags.enabled = false;
-  const client = fakeEngine({menus, menuNeedsActivation: true});
-  const on = await menuCheck({record: TEXTEDIT, user: FINDER, client, io: deviceIo({watch: quietWatch()}), screenshots: join(scratch(), 'shots'), menuActivation: true});
-  assert.equal(on.menuActivation, true);
-  assert.equal(on.items.selectAll.enabled, false);
-  assert.equal(on.items.selectAll.clicked, true, 'read disabled, pressed under the switch');
-  assert.deepEqual([on.items.selectAll.effect, on.items.bold.effect], [true, true]);
-  assert.deepEqual(on.items.selectAll.click, {ok: true, route: 1, posted: true, activationGuardMs: 18.5});
-  assert.deepEqual(client.calls.filter(c => c.method === 'click').map(c => c.args.spikeMenuActivation === true), [false, true, false, true], 'the menu-bar record clicks carry no switch');
-});
-
-test('menuCheck off: an item read disabled is not pressed; a submenu not exposed is recorded as not found', async () => {
+test('menuCheck: an item read disabled is not pressed; a submenu not exposed is recorded as not found', async () => {
   const menus = structuredClone(MENUS);
   menus.Edit[3].flags.enabled = false;
   menus.Format = menus.Format.slice(0, 3);
@@ -314,26 +294,6 @@ test('menuCheck: refuses to send anything unless the user window is in front', a
     screenshots: join(scratch(), 'shots')});
   assert.match(out.problem, /user window/);
   assert.deepEqual(client.calls, []);
-});
-
-test('enablementCheck: two connections one after the other, each observing once, the first closed before the second opens', async () => {
-  const order = [];
-  const answers = [{enable: 0.3, enablementPrior: 'false', enabled: 'AXManualAccessibility', webShaped: true, chromium: true, webAreaWait: 150, webAreaFound: true},
-    {enable: 0.2, enablementPrior: 'false', enabled: 'AXManualAccessibility', webShaped: true, chromium: true, webAreaWait: 140, webAreaFound: true}];
-  const record = {scene: 'chrome', app: '/c/Chrome for Testing.app', pid: 800, window: {number: 3}};
-  const io = deviceIo({client: () => {
-    const n = order.filter(e => e.startsWith('open')).length + 1;
-    order.push(`open ${n}`);
-    return {async execute(method, args) {
-      order.push(`${method} ${n}`);
-      return {result: {app: {pid: 800}, window: {title: 'cua scene page'}, nodes: [{role: 'AXWebArea'}], screenshot: null, timings: answers[n - 1]}};
-    }, close() { order.push(`close ${n}`); }};
-  }});
-  const out = await enablementCheck({record, io, screenshots: join(scratch(), 'shots')});
-  assert.deepEqual(order, ['open 1', 'get_app_state 1', 'close 1', 'open 2', 'get_app_state 2', 'close 2']);
-  assert.equal(out.verdict.released, true);
-  assert.equal(out.verdict.first.set, 'AXManualAccessibility');
-  assert.deepEqual(out.verdict.priors, {first: 'false', second: 'false'});
 });
 
 // A fake probe and HIToolbox: the source the probe selects is the current one until another is selected.
@@ -732,6 +692,50 @@ test('runProbe: journaled pending before its open, launched without -W, resolved
   }
 });
 
+test('launchProbe and awaitProbe: the launch returns a handle another process can await (a JSON round trip), the answer read and the scratch removed', () => {
+  const run = scratch(), device = probeDevice();
+  const handle = JSON.parse(JSON.stringify(launchProbe(BUNDLE, ['input-source', 'com.apple.keylayout.ABC', '--at', '1700000000000'], {...device.options, run})));
+  assert.equal(handle.pid, 900);
+  assert.equal(handle.command, 'input-source');
+  assert.ok(fs.existsSync(handle.scratch), 'the output stays until the probe is awaited');
+  assert.deepEqual(device.launched[0].slice(-5), ['--probe', 'input-source', 'com.apple.keylayout.ABC', '--at', '1700000000000']);
+  assert.deepEqual(awaitProbe(handle, device.options), {id: 'com.apple.keylayout.ABC'});
+  assert.ok(!fs.existsSync(handle.scratch));
+  assert.deepEqual(journalOf(run).map(e => e.pid), [null, 900]);
+  // A probe past its bound when awaited is killed as runProbe kills it.
+  const hung = probeDevice({exits: false});
+  const late = launchProbe(BUNDLE, ['input-source', 'current'], hung.options);
+  assert.throws(() => awaitProbe(late, hung.options), /did not finish within 60 s; its process was stopped/);
+  assert.deepEqual(hung.killed, ['SIGKILL 900']);
+});
+
+test('launchProbe: an argument is a name, a key spec (press_key\'s + chord), a number list, an input-source id or a Return; nothing else is launched', () => {
+  const device = probeDevice();
+  const keys = ['keystroke', '--user-pid', '600', '--user-bounds', '400,20,600,800', '--keys', 'r', 'k', 'BackSpace', 'k', 'alt+Return'];
+  launchProbe(BUNDLE, keys, device.options);
+  assert.deepEqual(device.launched[0].slice(-keys.length), keys);
+  for (const bad of ['r k', 'a;b', '$(x)', '', 'a/b']) {
+    assert.throws(() => launchProbe(BUNDLE, ['keystroke', '--keys', bad], device.options), /a probe argument is/, JSON.stringify(bad));
+  }
+  assert.equal(device.launched.length, 1);
+});
+
+test('probeStatus: the probe\'s own exitStatus when it is an integer; otherwise inferred from the line, as older builds need', () => {
+  // Preferred: the status the probe printed, even where the inference would read the line otherwise.
+  assert.equal(probeStatus({error: 'no input source with that id', exitStatus: 2}), 2);
+  assert.equal(probeStatus({units: 3, exitStatus: 4, aborted: true}), 4);
+  assert.equal(probeStatus({units: 3, presses: [], exitStatus: 0}), 0);
+  assert.equal(probeStatus({error: 'Unknown key name \'Bogus\' in the key combination; nothing was sent', exitStatus: 5}), 5);
+  // Fallback: no integer exitStatus.
+  assert.equal(probeStatus({units: 2, aborted: true}), 4);
+  assert.equal(probeStatus({error: 'the front window is not the named one; nothing was sent'}), 4);
+  assert.equal(probeStatus({error: 'Unable to get the current keyboard layout.'}), 5);
+  assert.equal(probeStatus({error: 'keystroke needs --user-pid, --user-bounds and a text'}), 64);
+  assert.equal(probeStatus({units: 2, exitStatus: '0'}), 0, 'a non-integer exitStatus is ignored');
+  assert.equal(probeStatus({units: 2, exitStatus: 1.5}), 0);
+  assert.equal(probeStatus(undefined), null);
+});
+
 test('runProbe: a probe past its bound is killed and its exit confirmed before the error; one that will not exit is reported stuck', () => {
   const hung = probeDevice({exits: false});
   assert.throws(() => runProbe(BUNDLE, ['input-source', 'current'], hung.options), error => /did not finish within 60 s; its process was stopped/.test(error.message) && !error.stuck);
@@ -756,7 +760,7 @@ test('restoreInputSource: nothing is restored while a probe that would not exit 
 const OWNER_WINDOWS = [{ownerPid: 50, ownerName: 'Mail', ownerBundleId: 'com.apple.mail', layer: 0, number: 900, name: 'Inbox — private subject', bounds: {}},
   {ownerPid: 51, ownerName: 'Dock', ownerBundleId: 'com.apple.dock', layer: 20, number: 901, name: null, bounds: {}}];
 const PRIVACY_ALERT = {ownerPid: 77, ownerName: 'UserNotificationCenter', ownerBundleId: 'com.apple.UserNotificationCenter', layer: 8, number: 950, name: 'secret title', bounds: {}};
-function pasteDevice({clipboardAfter = null, selectKorean = true, perContext = false, alertAfter = null, compose = keys => (keys === 'rk' ? '가' : keys), frontStaysFinder = false} = {}) {
+function pasteDevice({clipboardAfter = null, selectKorean = true, perContext = false, alertAfter = null, compose = keys => (keys === 'rk' ? '가' : keys), frontStaysFinder = false, pressFlags = 0} = {}) {
   const file = join(scratch(), 'input-source.json');
   const {state: input, io: inputIo} = fakeInput({perContext, select: id => (id === KOREAN_2SET && !selectKorean ? ABC : id)});
   let clipboard = 'owner digest';
@@ -768,9 +772,10 @@ function pasteDevice({clipboardAfter = null, selectKorean = true, perContext = f
     if (args[0] !== 'keystroke') return inputIo.probe(args);
     probes.push(args);
     if (screen.front !== TEXTEDIT) return {error: 'the front window is not the named one; nothing was sent'};
-    const text = args.at(-1);
-    client.state.value += text === '\n' ? '\n' : compose(text);
-    return {pid: 31, postedAt: 1, units: [...text].length, chars: text.length};
+    const text = args.at(-1), mode = args.includes('--key-codes-only') ? 'keyCodesOnly' : args.includes('--ansi-keys') ? 'ansiKeys' : 'typed';
+    client.state.value += text === '\n' ? '\n' : compose(text, {mode});
+    return {pid: 31, layout: 'com.apple.keylayout.2SetHangul', mode, presses: [...text].map(c => ({keyCode: c.charCodeAt(0), flags: mode === 'ansiKeys' ? 0 : pressFlags, unicode: mode === 'typed' ? c : null})),
+      postedAt: 1, units: [...text].length, chars: text.length};
   };
   const io = deviceIo({...inputIo, probe, savedInputSource: file, clipboard: () => clipboard, windows: () => structuredClone(screen.windows),
     activate: async id => { if (id === 'textedit' && !frontStaysFinder) screen.front = TEXTEDIT; return {ok: true}; },
@@ -814,33 +819,132 @@ test('pasteCheck: plain and Markdown pastes behind the user window, type_text pa
   assert.doesNotMatch(JSON.stringify(out), /Line 0|owner digest|private subject|Mail|com\.apple\.mail/, 'no document text, no clipboard content, nothing of the owner\'s windows');
 });
 
-test('hidComposition: inside the Korean window, the document emptied, TextEdit in front, r and k posted through the probe under the guard, read back before and after the commit', async () => {
-  const device = pasteDevice();
+// Unicode strings first (today's keys), then the layout's key codes alone, then the fixed ANSI keys; each variant's
+// reading its own.
+const KEYED = (keys, {mode}) => (keys !== 'rk' ? keys : {typed: '가', keyCodesOnly: 'rk', ansiKeys: 'ㄱㅏ'}[mode]);
+
+test('hidComposition: inside the Korean window, three variants, each from an emptied document with TextEdit in front, r and k posted under the guard, read back before and after the commit', async () => {
+  const device = pasteDevice({compose: KEYED});
   const {hidComposition: row} = (await pasteRun(device)).steps;
-  assert.equal(row.emptied, true);
-  assert.equal(row.activated, true);
-  assert.deepEqual(row.layout, {inputSourceId: KOREAN_2SET, keyboardLayoutId: 'com.apple.keylayout.2SetHangul'});
-  const b = TEXTEDIT.window.bounds;
-  assert.deepEqual(device.probes, [['keystroke', '--user-pid', String(TEXTEDIT.pid), '--user-bounds', `${b.x},${b.y},${b.width},${b.height}`, 'rk'],
-    ['keystroke', '--user-pid', String(TEXTEDIT.pid), '--user-bounds', `${b.x},${b.y},${b.width},${b.height}`, '\n']]);
-  assert.equal(row.keys.invocation, `cua-engine --probe keystroke --user-pid ${TEXTEDIT.pid} --user-bounds ${b.x},${b.y},${b.width},${b.height} rk`);
-  assert.deepEqual(row.keys.output, {pid: 31, postedAt: 1, units: 2, chars: 2});
-  assert.equal(row.keys.exitStatus, 0);
-  assert.equal(row.keys.frontChangedAfter, false);
-  assert.equal(row.valueBeforeCommit, '가');
-  assert.equal(row.valueAfterCommit, '가\n');
-  assert.deepEqual(row.reading, {reading: '가'});
+  assert.deepEqual(Object.keys(row.variants), [...COMPOSITION_VARIANTS]);
+  assert.deepEqual(COMPOSITION_VARIANTS, ['unicode', 'keyCodesOnly', 'ansiKeys']);
+  const b = TEXTEDIT.window.bounds, named = ['--user-pid', String(TEXTEDIT.pid), '--user-bounds', `${b.x},${b.y},${b.width},${b.height}`];
+  assert.deepEqual(device.probes, [['keystroke', ...named, 'rk'], ['keystroke', ...named, '\n'],
+    ['keystroke', '--key-codes-only', ...named, 'rk'], ['keystroke', '--key-codes-only', ...named, '\n'],
+    ['keystroke', '--ansi-keys', ...named, 'rk'], ['keystroke', '--ansi-keys', ...named, '\n']]);
+  const empties = device.client.calls.filter(c => c.method === 'set_value');
+  assert.deepEqual(empties.map(c => c.args.value), ['', '', ''], 'the document emptied before each variant');
+  for (const [variant, flag, mode, composed] of [['unicode', '', 'typed', '가'], ['keyCodesOnly', '--key-codes-only ', 'keyCodesOnly', 'rk'], ['ansiKeys', '--ansi-keys ', 'ansiKeys', 'ㄱㅏ']]) {
+    const one = row.variants[variant];
+    assert.equal(one.emptied, true, variant);
+    assert.equal(one.activated, true, variant);
+    assert.equal(one.source, KOREAN_2SET, variant);
+    assert.deepEqual(one.layout, {inputSourceId: KOREAN_2SET, keyboardLayoutId: 'com.apple.keylayout.2SetHangul'}, variant);
+    assert.equal(one.keys.invocation, `cua-engine --probe keystroke ${flag}--user-pid ${TEXTEDIT.pid} --user-bounds ${b.x},${b.y},${b.width},${b.height} rk`);
+    assert.equal(one.keys.output.mode, mode, 'the probe\'s JSON as it printed it');
+    assert.equal(one.keys.output.layout, 'com.apple.keylayout.2SetHangul');
+    assert.equal(one.keys.exitStatus, 0);
+    assert.equal(one.keys.frontChangedAfter, false);
+    assert.equal(one.keysUnmodified, true);
+    assert.equal(one.valueBeforeCommit, composed, `${variant}: nothing of the other variant's keys`);
+    assert.equal(one.valueAfterCommit, `${composed}\n`);
+    assert.deepEqual(one.reading, {reading: composed});
+  }
   assert.equal(device.input.current, ABC);
   // Each reading as it comes: rk, ㄱㅏ, anything else verbatim.
   for (const [composed, reading] of [['rk', {reading: 'rk'}], ['ㄱㅏ', {reading: 'ㄱㅏ'}], ['ㄱ', {reading: 'other', verbatim: 'ㄱ\n'}]]) {
-    assert.deepEqual((await pasteRun(pasteDevice({compose: () => composed}))).steps.hidComposition.reading, reading);
+    const {variants} = (await pasteRun(pasteDevice({compose: () => composed}))).steps.hidComposition;
+    for (const variant of COMPOSITION_VARIANTS) assert.deepEqual(variants[variant].reading, reading, variant);
   }
 });
 
-test('hidComposition: with TextEdit not in front nothing is posted, the row says why', async () => {
+// The engine's intervention rule as it meets the row: the probe's keys are a user's, so each post starts a 5 s debounce
+// on TextEdit; set_value inside it is refused (still interacting), and after it only once an observation taken past it
+// has cleared the re-query flag (user changed).
+test('hidComposition: each reset after a variant\'s keys waits out the engine\'s debounce, observes, then empties; every variant reads', async () => {
+  const device = pasteDevice({compose: KEYED});
+  let t = 0, lastPost = null, flag = false;
+  const resets = [];
+  device.io.now = () => t;
+  device.io.sleep = async ms => { t += ms; };
+  const probe = device.io.probe;
+  device.io.probe = args => { const out = probe(args); if (args[0] === 'keystroke') { lastPost = t; flag = true; } t += 50; return out; };
+  device.client.execute = (inner => async (method, args, options) => {
+    t += 10;
+    if (method === 'get_app_state' && lastPost !== null && t >= lastPost + INTERVENTION_DEBOUNCE_MS) flag = false;
+    if (method === 'set_value' && lastPost !== null) {
+      resets.push({sinceLastPost: t - lastPost});
+      if (t < lastPost + INTERVENTION_DEBOUNCE_MS) throw engineError('userIntervened', "The user is still interacting with 'TextEdit'. Wait 5 seconds and retry.");
+      if (flag) throw engineError('userIntervened', "The user changed 'TextEdit'. Get the app's state again.");
+    }
+    return inner(method, args, options);
+  })(device.client.execute);
+  const {variants} = (await pasteRun(device)).steps.hidComposition;
+  for (const [variant, composed] of [['unicode', '가'], ['keyCodesOnly', 'rk'], ['ansiKeys', 'ㄱㅏ']]) {
+    assert.equal(variants[variant].emptied, true, variant);
+    assert.deepEqual(variants[variant].reading, {reading: composed}, variant);
+    assert.equal(variants[variant].complete, true, variant);
+  }
+  assert.equal(variants.unicode.debounceWaitMs, undefined, 'nothing to wait for before the first post');
+  assert.ok(variants.keyCodesOnly.debounceWaitMs > 0 && variants.ansiKeys.debounceWaitMs > 0);
+  assert.equal(resets.length, 2);
+  assert.ok(resets.every(r => r.sinceLastPost >= INTERVENTION_DEBOUNCE_MS), JSON.stringify(resets));
+  assert.ok(COMPOSITION_QUIET_MS > INTERVENTION_DEBOUNCE_MS);
+});
+
+test('hidComposition: a reset the engine still refuses is kept as the variant\'s error, and nothing is posted on that document', async () => {
+  const device = pasteDevice({compose: KEYED});
+  let posted = false;
+  const probe = device.io.probe;
+  device.io.probe = args => { if (args[0] === 'keystroke') posted = true; return probe(args); };
+  device.client.execute = (inner => async (method, args, options) => {
+    if (method === 'set_value' && posted) throw engineError('userIntervened', "The user is still interacting with 'TextEdit'. Wait 5 seconds and retry.");
+    return inner(method, args, options);
+  })(device.client.execute);
+  const {variants} = (await pasteRun(device)).steps.hidComposition;
+  assert.equal(variants.unicode.complete, true);
+  for (const variant of ['keyCodesOnly', 'ansiKeys']) {
+    assert.equal(variants[variant].skipped, 'the scene document could not be emptied', variant);
+    assert.equal(variants[variant].emptyError.errorName, 'userIntervened', variant);
+  }
+  assert.equal(device.probes.length, 2, 'only the first variant\'s keys and commit');
+});
+
+test('hidComposition: a commit that was not posted leaves the variant incomplete, its reading the value before the commit', async () => {
+  const device = pasteDevice({compose: KEYED});
+  device.io.probe = (inner => args => (args[0] === 'keystroke' && args.at(-1) === '\n' ? {error: 'the front window is not the named one; nothing was sent'} : inner(args)))(device.io.probe);
+  const {variants} = (await pasteRun(device)).steps.hidComposition;
+  for (const variant of COMPOSITION_VARIANTS) {
+    assert.equal(variants[variant].complete, false, variant);
+    assert.equal(variants[variant].commit.exitStatus, 4, variant);
+  }
+  assert.deepEqual(variants.unicode.reading, {reading: '가'});
+});
+
+test('hidComposition: keys the layout put under a modifier read as not unmodified; the fixed ANSI keys never are', async () => {
+  const {variants} = (await pasteRun(pasteDevice({pressFlags: 524288}))).steps.hidComposition;
+  assert.deepEqual(COMPOSITION_VARIANTS.map(variant => variants[variant].keysUnmodified), [false, false, true]);
+});
+
+test('hidComposition: a variant whose document could not be emptied posts nothing and says so; the other still reads', async () => {
+  const device = pasteDevice({compose: KEYED});
+  let empties = 0;
+  device.client.execute = (inner => async (method, args, options) => {
+    if (method === 'set_value' && ++empties === 2) { device.client.calls.push({method, args, options}); return {result: route(1), engineMs: 1}; }
+    return inner(method, args, options);
+  })(device.client.execute);
+  const {variants} = (await pasteRun(device)).steps.hidComposition;
+  assert.deepEqual(variants.unicode.reading, {reading: '가'});
+  assert.equal(variants.keyCodesOnly.emptied, false);
+  assert.equal(variants.keyCodesOnly.skipped, 'the scene document could not be emptied');
+  assert.deepEqual(device.probes.map(args => args[1]), ['--user-pid', '--user-pid', '--ansi-keys', '--ansi-keys'], 'no key-codes-only key on a document that was not empty');
+  assert.deepEqual(variants.ansiKeys.reading, {reading: 'ㄱㅏ'}, 'the next variant empties its own document and reads');
+});
+
+test('hidComposition: with TextEdit not in front nothing is posted, each variant says why', async () => {
   const device = pasteDevice({frontStaysFinder: true});
   const {hidComposition: row} = (await pasteRun(device)).steps;
-  assert.equal(row.skipped, 'front app not the scene');
+  for (const variant of COMPOSITION_VARIANTS) assert.equal(row.variants[variant].skipped, 'front app not the scene', variant);
   assert.deepEqual(device.probes, [], 'no HID key while another app is in front');
 });
 
@@ -935,4 +1039,19 @@ test('pasteCheck: sends nothing unless the user window is in front, and an engin
   assert.equal(out.steps.text.errorName, 'unknownMethod');
   assert.equal(out.verdict.pass, false);
   assert.equal(old.input.current, ABC);
+});
+
+test('probeBarrier: a probe the run journaled that still runs, or a launch never identified while a probe of the bundle runs, holds every restore; the watcher never does', () => {
+  const run = scratch();
+  fs.writeFileSync(join(run, 'live-watch.json'), JSON.stringify({pid: 950, dir: run}));
+  const watcher = {pid: 950, ppid: 1, uid: 501, start: T, command: `${BUNDLE}/Contents/MacOS/cua-engine --probe watch-activations`};
+  const probe = {pid: 910, ppid: 1, uid: 501, start: T, command: `${BUNDLE}/Contents/MacOS/cua-engine --probe input-source ${KOREAN_2SET} --at 1`};
+  const io = ({journal, rows}) => ({journal: () => journal, processes: () => rows, identity: () => ({self: 200, ancestors: [], uid: 501, checkout: '/c', bundle: BUNDLE})});
+  const resolved = [{kind: 'probe', pid: 910, start: T, label: 'input-source#a'}];
+  assert.match(probeBarrier(run, io({journal: resolved, rows: [watcher, probe]})), /input-source#a is still running/);
+  assert.equal(probeBarrier(run, io({journal: resolved, rows: [watcher]})), null, 'exited: nothing holds');
+  assert.equal(probeBarrier(run, io({journal: resolved, rows: [watcher, {...probe, start: 'Wed Oct 22 10:00:00 2026'}]})), null, 'a reused pid is not the probe');
+  const unresolved = [{kind: 'probe', pid: null, start: null, label: 'input-source#b'}];
+  assert.match(probeBarrier(run, io({journal: unresolved, rows: [watcher, {...probe, pid: 911}]})), /never identified/);
+  assert.equal(probeBarrier(run, io({journal: unresolved, rows: [watcher]})), null, 'the watcher alone holds nothing');
 });

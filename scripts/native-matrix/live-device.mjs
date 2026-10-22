@@ -7,13 +7,22 @@
 //   begin --run <dir> --commit <sha>   the refusals (./live-checks.mjs liveRefusals); with none, the owner's front app
 //                                      saved in the run directory (its pid stays here) and the approved engine stopped
 //   minimized --run <dir>              the minimized-window check on the run's TextEdit (cua's engine only)
-//   menu --run <dir> [--menu-activation off|on]
-//                                      cua's lane of the menu check: the run's TextEdit behind the run's Finder window,
-//                                      each menu item's press with M2a.2's spikeMenuActivation switch off (the default) or on
+//   menu --run <dir>                   cua's lane of the menu cell: the run's TextEdit behind the run's Finder window,
+//                                      each menu item through the held activation (./residue-checks.mjs)
 //   paste --run <dir>                  the paste check: a plain and a Markdown paste and type_text under Korean 2-Set into
-//                                      the run's TextEdit behind the run's Finder window; the owner's clipboard compared
+//                                      the run's TextEdit behind the run's Finder window, then the HID composition row in
+//                                      its three variants with that TextEdit in front; the owner's clipboard compared
 //                                      before and after here (only whether it is the same leaves)
-//   enablement --run <dir>             two connections, one after the other, observing the run's Chrome for Testing
+//   enablement --run <dir>             two connections, one after the other, observing the run's Electron fixture,
+//                                      judged by the fixture's own record of Chromium's mode (./residue-device.mjs)
+//   route4 --run <dir>                 the approved engine under a prepared home giving TextEdit route 4; a synthesized
+//                                      click into the run's TextEdit behind the run's Finder window
+//   minimized-select --run <dir>       select_text into the run's minimized TextEdit, the write and the read told apart
+//   hscroll --run <dir>                cua's lane of the horizontal scroll on the run's wide-page TextEdit
+//   hscroll-read --run <dir> [--settle-ms <n>] [--start <0..1>]
+//                                      the run's TextEdit's scroll-bar values by --probe text-view (both lanes' reading),
+//                                      after writing the horizontal bar to `start` when given, the vertical one where the
+//                                      text area's midpoint shows (the lane's starting point; residue-device.mjs hscrollRead)
 //   input-source                       the owner's source and per-context preference saved, Korean 2-Set selected
 //                                      through the approved bundle's probe, read back, the saved ones restored
 //   input-source-restore               the saved source and preference restored (what put-back runs)
@@ -27,8 +36,9 @@
 //                                      an interrupt or a timeout, and as `cleanup`
 //
 // What leaves the device: booleans, counts, element counts, error names and the engine's bounded sentences,
-// input-source ids, bundle ids of apps that activated. No observation's text, title or value, no screenshot (each is
-// removed as soon as its answer is in), no pid of an app the run does not own.
+// input-source ids, bundle ids of apps that activated, the composition row's value of the run's own emptied document.
+// No other observation's text, title or value, no screenshot (each is removed as soon as its answer is in), no pid of
+// an app the run does not own.
 import {execFileSync, spawn} from 'node:child_process';
 import {createHash, randomBytes} from 'node:crypto';
 import * as fs from 'node:fs';
@@ -47,10 +57,11 @@ import {engineCheck, engineClientFor, main as goldensDeviceMain, ownershipProble
 import {controllerCheckout} from './goldens.mjs';
 import {REPO_ROOT} from './goldens-install.mjs';
 import {
-  FIRST_LINE, KOREAN_2SET, alertWatch, finderCheck, compositionGuard, compositionReading, MENU_ITEMS, PASTE_TARGETS, allSelected, enablementOf, enablementVerdict, failureOf, firstLineBold, frontAppAction, inputSourceVerdict, liveRefusals,
+  FIRST_LINE, KOREAN_2SET, alertWatch, finderCheck, compositionGuard, compositionReading, MENU_ITEMS, PASTE_TARGETS, allSelected, failureOf, firstLineBold, frontAppAction, inputSourceVerdict, liveRefusals,
   menuBarItem, menuItemAt, minimizeButton, minimizedVerdict, parsePerContext, pasteVerdict, perContextRestore, putBackPlan, restoreTarget, textArea,
   JOURNAL_FILE, RECOVERY_BOUNDS, isBundleProbe, parseJournal, parseProcessTable, recoveryPlan,
 } from './live-checks.mjs';
+import {HSCROLL_SETTLE_MS, enablementCheck, hscrollCheck, hscrollRead, minimizedSelectCheck, route4Check, stripRestoredText} from './residue-device.mjs';
 
 const SCRIPT = fileURLToPath(import.meta.url);
 export const SCREENSHOT_DIR = 'live-screenshots';
@@ -62,8 +73,6 @@ const WATCH_FILE = 'live-watch.json';
 export const SAVED_INPUT_SOURCE = join(homedir(), 'Library/Caches/cua-harness/input-source.json');
 // How long a window takes to minimize or come back (the Dock's animation), polled.
 const WINDOW_MS = 5_000, WINDOW_POLL_MS = 250;
-// Between the enablement check's two connections: the engine releases when it sees the first one close.
-export const RELEASE_WAIT_MS = 1_000;
 // What the minimized check writes and selects in the run's document.
 const SET_VALUE = 'cua minimized set value check';
 const SELECT_TEXT = 'minimized';
@@ -73,7 +82,7 @@ const sleepFor = ms => new Promise(resolve => setTimeout(resolve, ms));
 // ---- Engine calls ----------------------------------------------------------------------------------------------------
 
 // One get_app_state as cua's service sends it (always with the screenshot), the image removed once the answer is in.
-async function getState(client, app, screenshots) {
+export async function getState(client, app, screenshots) {
   const {result} = await client.execute('get_app_state', {app, includeScreenshot: true, outputDirectory: screenshots});
   const url = result?.screenshot?.url;
   if (typeof url === 'string' && url.startsWith('file:')) {
@@ -83,16 +92,17 @@ async function getState(client, app, screenshots) {
   return result;
 }
 // An action as a result keeps it: {ok, route, posted, activationGuardMs?, entered?} or failureOf's fields.
-async function attempt(fn) {
+export async function attempt(fn) {
   try {
     const {result} = await fn();
     const meta = result?.meta;
     return {ok: true, route: meta?.inputRoute ?? null, posted: meta?.startedAt != null,
-      ...(meta?.activationGuardMs != null ? {activationGuardMs: meta.activationGuardMs} : {}), ...(meta?.entered != null ? {entered: meta.entered} : {})};
+      ...(meta?.activationGuardMs != null ? {activationGuardMs: meta.activationGuardMs} : {}), ...(meta?.entered != null ? {entered: meta.entered} : {}),
+      ...(typeof meta?.keyWindowRestored === 'boolean' ? {keyWindowRestored: meta.keyWindowRestored} : {})};
   } catch (error) { return {ok: false, ...failureOf(error)}; }
 }
 // Polls `test()` until it holds or `boundMs` pass. -> whether it held.
-async function until(test, io, boundMs = WINDOW_MS) {
+export async function until(test, io, boundMs = WINDOW_MS) {
   for (const t0 = io.now(); ;) {
     if (await test()) return true;
     if (io.now() - t0 >= boundMs) return false;
@@ -204,17 +214,15 @@ async function minimizedSteps({record, client, io, screenshots, steps, touch}) {
 
 // ---- The menu path, cua's lane ---------------------------------------------------------------------------------------
 
-// The vendor reading's item 10 on cua's engine: the run's TextEdit in the background behind the run's Finder window.
-// Per item: the menu-bar click (the record, nothing posted), the rooted observation and the item's enabled state, the
-// item's element click, the effect read back through an observation; Bold after the document's first line is
-// selected. `menuActivation` sends M2a.2's engine-only `spikeMenuActivation: true` with each item's press (route 3's
-// activation around the route-1 press; never with the menu-bar record's click), so the hold runs the lane with it off
-// and on and the result sets the default. Off, an item read disabled is not pressed (its reading is the evidence); on,
-// it is pressed all the same, so the switch is exercised. The background condition is read after every action (the
-// user window still in front) and the approved bundle's activation watcher runs throughout: an item during or after
-// which the user window left the front, or an activation was recorded, is invalid, and the lane sends nothing more
-// once the user window left. -> {menuActivation, items: {<id>: {..., valid, attempted?}}, activations, lostAt?}.
-export async function menuCheck({record, user, client, io, screenshots, menuActivation = false}) {
+// The menu cell's cua lane (the Decision Log's "menu activation held from the record"): the run's TextEdit in the
+// background behind the run's Finder window. Per item: the menu-bar click (the record, under which the engine holds
+// route 3's fake activation), the rooted observation and the item's enabled state, the item's element click unless it
+// reads disabled (the vendor's cell does the same), the effect read back through an observation; Bold after the
+// document's first line is selected. The background condition is read after every action (the user window still in
+// front) and the approved bundle's activation watcher runs throughout: an item during or after which the user window
+// left the front, or an activation was recorded, is invalid, and the lane sends nothing more once the user window left.
+// -> {items: {<id>: {..., valid, attempted?}}, activations, lostAt?}.
+export async function menuCheck({record, user, client, io, screenshots}) {
   const userInFront = () => io.frontmost()?.pid === user.pid;
   if (!userInFront()) return {problem: 'the user window (the run\'s Finder) is not in front; nothing was sent'};
   const watch = io.watch.start();
@@ -224,7 +232,7 @@ export async function menuCheck({record, user, client, io, screenshots, menuActi
     for (const id of Object.keys(MENU_ITEMS)) {
       if (lostAt) { items[id] = {found: true, attempted: false, valid: false, reason: 'the lane lost the background condition before it'}; continue; }
       const startedAt = io.now();
-      items[id] = await menuItem({id, record, client, io, screenshots, userInFront, menuActivation});
+      items[id] = await menuItem({id, record, client, io, screenshots, userInFront});
       items[id].window = {startedAt, endedAt: io.now()};
       if (items[id].userInFront?.includes(false)) { items[id].valid = false; lostAt = id; }
     }
@@ -242,10 +250,10 @@ export async function menuCheck({record, user, client, io, screenshots, menuActi
     else if (items[id].valid !== false) items[id].valid = true;
     delete items[id].window;
   }
-  return {...(problem ? {problem} : {}), menuActivation, items, activations, ...(lostAt ? {lostAt} : {}), ...(invalidFrom ? {invalidFrom} : {})};
+  return {...(problem ? {problem} : {}), items, activations, ...(lostAt ? {lostAt} : {}), ...(invalidFrom ? {invalidFrom} : {})};
 }
 
-async function menuItem({id, record, client, io, screenshots, userInFront, menuActivation}) {
+async function menuItem({id, record, client, io, screenshots, userInFront}) {
   const {menu, path} = MENU_ITEMS[id], app = record.app, observe = () => getState(client, app, screenshots);
   const out = {};
   let shot = await observe();
@@ -267,8 +275,8 @@ async function menuItem({id, record, client, io, screenshots, userInFront, menuA
   if (!item) return {...out, found: false};
   out.found = true;
   out.enabled = item.flags?.enabled !== false;
-  if (out.enabled || menuActivation) {
-    out.click = await attempt(() => client.execute('click', {app, element: item.token, ...(menuActivation ? {spikeMenuActivation: true} : {})}, {lineage: shot.lineage}));
+  if (out.enabled) {
+    out.click = await attempt(() => client.execute('click', {app, element: item.token}, {lineage: shot.lineage}));
     out.clicked = out.click.ok;
     out.userInFront.push(userInFront());
   } else out.clicked = false;
@@ -297,6 +305,12 @@ const ALERT_READ_DEADLINE_MS = 5_000;
 const ALERT_TEXT_CHARS = 500;
 // The composition row's keys (MAWS P4-B2): r then k, which Korean 2-Set composes to 가; then a Return to commit.
 export const COMPOSITION_KEYS = 'rk';
+// The row's three variants, in order: each key down and up carrying its character's string (the probe's default, as
+// type_text keys); the current layout's same key codes and flags with no string (`--key-codes-only`); and the physical
+// keys, press_key's fixed ANSI codes (r 15, k 40) with no flag and no string (`--ansi-keys`), what the vendor's pressKey
+// posted in MAWS P4-B2. The last two read what the key codes alone make through the input method.
+export const COMPOSITION_VARIANTS = Object.freeze(['unicode', 'keyCodesOnly', 'ansiKeys']);
+const VARIANT_FLAGS = Object.freeze({unicode: [], keyCodesOnly: ['--key-codes-only'], ansiKeys: ['--ansi-keys']});
 
 // Thrown to stop the paste section once something the harness must not act past is seen (an alert, a step that
 // outlived its bound); the steps so far are kept.
@@ -408,23 +422,54 @@ async function pasteSteps({record, user, client, io, screenshots, steps, userInF
   return null;
 }
 
-// The HID composition row (MAWS P4-B2; a measurement only, no verdict on cua): inside the Korean window, the scene's
-// document emptied through the engine (set_value, Accessibility on the run's TextEdit), TextEdit brought to the front,
-// then `--probe keystroke … rk` at the HID tap, which goes to whatever is in front. The hard guard right before each
-// post: lsappinfo's frontmost is the run's TextEdit, CGWindowList's front window is the scene window, and the engine's
-// read of TextEdit's key window is the scene window (compositionGuard); failing it, nothing is posted. The probe
-// re-checks the front window before every key (status 4 when it is not the named one). The value is read back through
-// the engine on the run's TextEdit only, before and after a commit Return posted the same guarded way.
+// The HID composition row (MAWS P4-B2, the Decision Log's "M2b pre-flight" item 1; a measurement only, no verdict on
+// cua): inside the Korean window, once per variant (COMPOSITION_VARIANTS), each from a known state of its own: the
+// scene's document emptied through the engine (set_value, Accessibility on the run's TextEdit) and read back empty,
+// TextEdit brought to the front, the source and the layout it resolves to read, then `--probe keystroke … rk` at the
+// HID tap, which goes to whatever is in front. The hard guard right before each post: lsappinfo's frontmost is the
+// run's TextEdit, CGWindowList's front window is the scene window, and the engine's read of TextEdit's key window is
+// the scene window (compositionGuard); failing it, nothing is posted. The probe re-checks the front window before
+// every key (status 4 when it is not the named one). The value is read back through the engine on the run's TextEdit
+// only, before and after a commit Return posted the same guarded way in the same variant. The probe's JSON is kept as
+// it printed it (the current layout, the mode, each press's key code, flags and string); `keysUnmodified` says whether
+// every press went without a modifier, since a layout that keys r and k only under one (the 2-Set Hangul layout's
+// Option layer) is not the plain keys the vendor's pressKey posts, which the ANSI variant posts whatever the layout.
+//
+// The probe's keys are a user's to the engine (another process's HID events, attributed to TextEdit), so each variant's
+// posts start the engine's 5 s intervention debounce on TextEdit, during which the next variant's reset (set_value) is
+// refused and an observation does not clear the re-query flag (the spec's "User intervention"). Before every reset after
+// the first post, the row therefore waits out the debounce from the last post (COMPOSITION_QUIET_MS, bounded), then
+// takes a fresh observation, which clears the flag, and only then resets; intervention detection stays on throughout.
 async function hidComposition({record, client, io, observe, watchAlerts}) {
+  const variants = {};
+  const posts = {lastAt: null};
+  for (const variant of COMPOSITION_VARIANTS) variants[variant] = await compositionVariant({variant, record, client, io, observe, watchAlerts, posts});
+  return {variants, markedText: 'not readable: the engine\'s observation carries no AXMarkedTextRange'};
+}
+// The engine's intervention debounce (Intervention.swift interventionDebounceMs) and the margin past it the composition
+// row waits before resetting the document after a probe's keys.
+export const INTERVENTION_DEBOUNCE_MS = 5_000;
+export const COMPOSITION_QUIET_MS = INTERVENTION_DEBOUNCE_MS + 750;
+
+async function compositionVariant({variant, record, client, io, observe, watchAlerts, posts = {lastAt: null}}) {
   const app = record.app, row = {};
+  if (posts.lastAt !== null) {
+    const wait = Math.max(0, posts.lastAt + COMPOSITION_QUIET_MS - io.now());
+    if (wait > 0) await io.sleep(wait);
+    row.debounceWaitMs = wait;
+  }
   let shot = await observe();
   const emptied = await attempt(() => client.execute('set_value', {app, element: textArea(shot).token, value: ''}, {lineage: shot.lineage}));
   shot = await observe();
   row.emptied = emptied.ok && textArea(shot)?.value === '';
-  if (!row.emptied) return {...row, skipped: 'the scene document could not be emptied'};
+  if (!row.emptied) {
+    return {...row, skipped: 'the scene document could not be emptied', ...(emptied.ok ? {} : {emptyError: {errorName: emptied.errorName, message: emptied.message}})};
+  }
   row.activated = (await io.activate('textedit'))?.ok === true;
-  await watchAlerts('before hidComposition');
+  await watchAlerts(`before hidComposition ${variant}`);
+  row.source = io.probe(['input-source', 'current'])?.id ?? null;
   row.layout = io.keyboardLayout();
+  const flags = VARIANT_FLAGS[variant];
   const post = async text => {
     const observed = (await observe()).window;
     const top = io.frontWindow()?.topWindow ?? null;
@@ -432,8 +477,9 @@ async function hidComposition({record, client, io, observe, watchAlerts}) {
     const guard = compositionGuard({frontmost, topWindow: top, observedWindow: observed, record});
     if (!guard.post) return {skipped: guard.reason, guard};
     const b = top.bounds;
-    const args = ['keystroke', '--user-pid', String(record.pid), '--user-bounds', `${b.x},${b.y},${b.width},${b.height}`, text];
-    const output = io.probe(args);
+    const args = ['keystroke', ...flags, '--user-pid', String(record.pid), '--user-bounds', `${b.x},${b.y},${b.width},${b.height}`, text];
+    let output;
+    try { output = io.probe(args); } finally { posts.lastAt = io.now(); }
     const after = io.frontmost();
     const topAfter = io.frontWindow()?.topWindow ?? null;
     return {invocation: `cua-engine --probe ${args.map(a => (a === '\n' ? '"\\n"' : a)).join(' ')}`, output, exitStatus: probeStatus(output),
@@ -441,18 +487,24 @@ async function hidComposition({record, client, io, observe, watchAlerts}) {
   };
   row.keys = await post(COMPOSITION_KEYS);
   if (row.keys.skipped) return {...row, skipped: row.keys.skipped};
+  const presses = row.keys.output?.presses;
+  row.keysUnmodified = Array.isArray(presses) && presses.length > 0 ? presses.every(p => p.flags === 0) : null;
   row.valueBeforeCommit = textArea(await observe())?.value ?? null;
-  row.markedText = 'not readable: the engine\'s observation carries no AXMarkedTextRange';
   row.commit = await post('\n');
   row.valueAfterCommit = row.commit.skipped ? null : textArea(await observe())?.value ?? null;
   row.reading = compositionReading(row.valueAfterCommit ?? row.valueBeforeCommit);
+  // Complete only when both posts went through whole: a reading of a run whose keys or commit did not is kept, labelled.
+  row.complete = row.keys.exitStatus === 0 && !row.commit.skipped && row.commit.exitStatus === 0;
   return row;
 }
-// The keystroke probe's exit status as its JSON shows it (open -W does not pass the probe's status through):
-// Probe.swift's keystroke exits 4 when the front window is not the named one (before or between keys), 5 when no layout
-// or event could be made, 64 on a usage error, 0 when every key was posted.
-const probeStatus = output => (output?.aborted || /front window is not the named one/.test(output?.error ?? '') ? 4
-  : /layout|could not be created/.test(output?.error ?? '') ? 5 : output?.error ? 64 : Number.isInteger(output?.units) ? 0 : null);
+// The keystroke probe's exit status as its JSON shows it (open -W does not pass the probe's status through): the line's
+// own `exitStatus` when it is an integer (every probe's final line carries it, Probe.emit). Older builds lack it, so it
+// is inferred from the line: KeystrokeProbe.swift's keystroke exits 4 when the front window is not the named one (before
+// or between keys), 5 when no layout or event could be made or the variant cannot key the text, 64 on a usage error, 0
+// when every key was posted.
+export const probeStatus = output => (Number.isInteger(output?.exitStatus) ? output.exitStatus
+  : output?.aborted || /front window is not the named one/.test(output?.error ?? '') ? 4
+  : /layout|cannot key|could not be created/.test(output?.error ?? '') ? 5 : output?.error ? 64 : Number.isInteger(output?.units) ? 0 : null);
 
 // An alert's text, read through the engine's observation of a system-alert process (alertWatch's `readable`; never any
 // other owner): no screenshot, no input, a short deadline; the static texts' and buttons' strings, joined and capped.
@@ -465,25 +517,6 @@ async function alertText(client, readable, screenshots) {
       .map(n => n.value ?? n.title ?? n.description).filter(v => typeof v === 'string' && v.length > 0);
     return strings.join(' | ').slice(0, ALERT_TEXT_CHARS) || null;
   } catch (error) { return `(unread: ${String(error.errorName ?? error.message).slice(0, 120)})`; }
-}
-
-// ---- Enablement released ---------------------------------------------------------------------------------------------
-
-// M2a.4's item 3 on the run's Chrome for Testing: a first connection observes and closes; after the engine has seen it
-// close, a second connection observes. The engine's enablement diagnostics say what each observation found and did.
-export async function enablementCheck({record, io, screenshots}) {
-  const read = async () => {
-    const client = io.client();
-    try {
-      const shot = await getState(client, record.app, screenshots);
-      if (shot?.app?.pid !== record.pid) throw new Error('the observation is not of the run\'s Chrome for Testing');
-      return enablementOf(shot.timings);
-    } finally { await client.close(); }
-  };
-  const first = await read();
-  await io.sleep(RELEASE_WAIT_MS);
-  const second = await read();
-  return {verdict: enablementVerdict({first, second})};
 }
 
 // ---- The input source ------------------------------------------------------------------------------------------------
@@ -685,6 +718,19 @@ async function awaitUnresolvedProbes(run, io, bounds) {
   await whileHolds(() => probes().length > 0, io, bounds.probeWaitMs);
   return {unresolved, waited, remaining: probes().length};
 }
+// The barrier before anything restores or switches the input source from a later command: a probe this run journaled
+// that still runs (its pid with the start time the journal holds), or a launch never identified while a probe of the
+// bundle other than the watcher runs. The journal is the run directory's, so the barrier holds across commands, as the
+// recovery's does. -> why nothing may act behind it, or null.
+export function probeBarrier(run, io) {
+  const plan = ownedNow(run, io), watchPid = readSaved(join(run, WATCH_FILE))?.pid;
+  const running = plan.stop.filter(e => e.kind === 'probe' && e.pid !== watchPid);
+  if (running.length) return `the probe ${running.map(e => e.label).join(', ')} is still running`;
+  if (!plan.unresolvedProbes) return null;
+  const {bundle, uid} = io.identity();
+  const live = io.processes().filter(p => p.uid === uid && p.pid !== watchPid && isBundleProbe(p.command, bundle) && !/ --probe watch-activations\b/.test(p.command));
+  return live.length ? `a probe launch whose process was never identified may still be running (${live.length} probe(s) of the engine bundle)` : null;
+}
 // SIGTERM, then SIGKILL, each awaited killMs. -> the ones still running.
 async function stopProcesses(list, io, bounds) {
   if (!list.length) return [];
@@ -763,46 +809,61 @@ export function childHandle(command, args) {
 // launched without -W so its own process is known. The launch is journaled `pending` before the open, then resolved:
 // its pid is taken only when exactly one new probe process of the bundle (of any name) appears after this open, and it
 // is this probe; none or several leave it unresolved (`-`): nothing is signaled, the recovery and the put-back wait on
-// the bundle's probes instead. Awaited to its exit
-// (PROBE_MS); past that it is killed and its exit confirmed before the error, so nothing restores behind it; one that
-// will not exit throws marked `stuck`. -> its last JSON line.
+// the bundle's probes instead. Awaited to its exit (PROBE_MS from its launch); past that it is killed and its exit
+// confirmed before the error, so nothing restores behind it; one that will not exit throws marked `stuck`.
+// runProbe launches and awaits in one call; the native matrix's scheduled probes (`keystroke --at`, `input-source --at`)
+// launch in one device command and are awaited in another, while the action they fall inside runs (./matrix-device.mjs
+// probe), so the launch answers a handle that survives a JSON round trip. -> the probe's last JSON line.
 export const PROBE_MS = 60_000;
 const PROBE_IDENTIFY_MS = 5_000, PROBE_POLL_MS = 50;
 const syncSleep = ms => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 const lastLine = file => { try { return JSON.parse(fs.readFileSync(file, 'utf8').trim().split('\n').at(-1)); } catch { return undefined; } };
-export function runProbe(bundle, args, {exec = execFileSync, run = null, table = () => processTable(), alive = processRuns, kill = (pid, signal) => process.kill(pid, signal),
-  sleep = syncSleep, now = Date.now, killMs = RECOVERY_BOUNDS.killMs} = {}) {
-  if (!args.every(a => /^[A-Za-z0-9._,-]+$/.test(a) || a === '\n')) throw new Error('a probe argument is a name, a number list, an input-source id or a Return');
-  const uid = process.getuid(), launch = `${args[0]}#${randomBytes(4).toString('hex')}`;
+export const runProbe = (bundle, args, options = {}) => awaitProbe(launchProbe(bundle, args, options), options);
+
+// The launch, journaled and identified. -> {command, label, pid (null when unresolved), start, scratch, out, launchedAt}.
+// An argument is a name, a key spec, a number list, an input-source id or a Return. `+` is admitted for press_key's
+// chords (`alt+Return`, the keystroke probe's `--keys`), so the probe takes press_key's key string verbatim through its
+// own parser; it is inert here, since the arguments reach `open --args` by execFile, never through a shell.
+export function launchProbe(bundle, args, {exec = execFileSync, run = null, table = () => processTable(), sleep = syncSleep, now = Date.now} = {}) {
+  if (!args.every(a => /^[A-Za-z0-9._,+-]+$/.test(a) || a === '\n')) throw new Error('a probe argument is a name, a key spec, a number list, an input-source id or a Return');
+  const uid = process.getuid(), label = `${args[0]}#${randomBytes(4).toString('hex')}`;
   const probes = () => table().filter(p => p.uid === uid && isBundleProbe(p.command, bundle));
   const before = new Set(probes().map(p => p.pid));
   const scratch = fs.mkdtempSync(join(tmpdir(), 'cua-live-probe-'));
   try {
     const out = join(scratch, 'out.json'), err = join(scratch, 'err.txt');
-    if (run) journalProcess(run, {kind: 'probe', pending: true, label: launch});
+    if (run) journalProcess(run, {kind: 'probe', pending: true, label});
     exec('/usr/bin/open', ['-n', '-g', '--stdout', out, '--stderr', err, '-a', bundle, '--args', '--probe', ...args], {stdio: 'ignore', timeout: 15_000});
-    const t0 = now();
+    const launchedAt = now();
     let fresh = [];
-    while (now() - t0 < PROBE_IDENTIFY_MS) {
+    while (now() - launchedAt < PROBE_IDENTIFY_MS) {
       fresh = probes().filter(p => !before.has(p.pid));
       if (fresh.length || lastLine(out) !== undefined) break;
       sleep(PROBE_POLL_MS);
     }
     const probe = fresh.length === 1 && fresh[0].command.includes(` --probe ${args[0]}`) ? fresh[0] : null;
-    if (run) journalProcess(run, {kind: 'probe', pid: probe?.pid ?? null, start: probe?.start ?? null, label: launch});
-    const done = () => (probe ? !alive(probe.pid) : lastLine(out) !== undefined);
-    while (!done() && now() - t0 < PROBE_MS) sleep(PROBE_POLL_MS);
+    if (run) journalProcess(run, {kind: 'probe', pid: probe?.pid ?? null, start: probe?.start ?? null, label});
+    return {command: args[0], label, pid: probe?.pid ?? null, start: probe?.start ?? null, scratch, out, launchedAt};
+  } catch (error) { fs.rmSync(scratch, {recursive: true, force: true}); throw error; }
+}
+
+// A launched probe awaited to its exit, its scratch removed whatever happened. -> its last JSON line.
+export function awaitProbe(handle, {alive = processRuns, kill = (pid, signal) => process.kill(pid, signal), sleep = syncSleep, now = Date.now, killMs = RECOVERY_BOUNDS.killMs} = {}) {
+  const {command, pid, out} = handle;
+  try {
+    const done = () => (pid ? !alive(pid) : lastLine(out) !== undefined);
+    while (!done() && now() - handle.launchedAt < PROBE_MS) sleep(PROBE_POLL_MS);
     if (!done()) {
-      if (!probe) throw Object.assign(new Error(`the ${args[0]} probe did not finish within ${PROBE_MS / 1000} s and its process was never identified`), {stuck: true});
-      try { kill(probe.pid, 'SIGKILL'); } catch {}
-      for (const k0 = now(); alive(probe.pid) && now() - k0 < killMs;) sleep(PROBE_POLL_MS);
-      if (alive(probe.pid)) throw Object.assign(new Error(`the ${args[0]} probe (pid ${probe.pid}) did not exit after SIGKILL`), {stuck: true});
-      throw new Error(`the ${args[0]} probe did not finish within ${PROBE_MS / 1000} s; its process was stopped`);
+      if (!pid) throw Object.assign(new Error(`the ${command} probe did not finish within ${PROBE_MS / 1000} s and its process was never identified`), {stuck: true});
+      try { kill(pid, 'SIGKILL'); } catch {}
+      for (const k0 = now(); alive(pid) && now() - k0 < killMs;) sleep(PROBE_POLL_MS);
+      if (alive(pid)) throw Object.assign(new Error(`the ${command} probe (pid ${pid}) did not exit after SIGKILL`), {stuck: true});
+      throw new Error(`the ${command} probe did not finish within ${PROBE_MS / 1000} s; its process was stopped`);
     }
     const answer = lastLine(out);
-    if (answer === undefined) throw new Error(`the ${args[0]} probe printed no answer`);
+    if (answer === undefined) throw new Error(`the ${command} probe printed no answer`);
     return answer;
-  } finally { fs.rmSync(scratch, {recursive: true, force: true}); }
+  } finally { fs.rmSync(handle.scratch, {recursive: true, force: true}); }
 }
 
 // The resident `--probe watch-activations` (started without -W, its pid read from its first line), recorded in the run
@@ -902,6 +963,12 @@ export const defaultIo = run => {
   let stuckProbe = null;
   return {
   client: () => engineClientFor(approvedBundle()),
+  // The route4 cell's client: the approved bundle, launched (when nothing answers) under a prepared home, which
+  // LaunchServices passes to it (`open --env`); the engine reads its settings from $HOME (Config.swift).
+  clientUnderHome: home => engineClientFor(approvedBundle(), {open: app => execFileSync('/usr/bin/open', ['-n', '-g', '--env', `HOME=${home}`, '-a', app], {stdio: 'ignore', timeout: 15_000})}),
+  // The owner's engine settings, read only (the route4 cell copies peerPolicy and routes into its prepared home).
+  ownerEngineSettings: () => { const file = join(homedir(), '.config/cua/engine.json'); try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; } },
+  readFile: file => { try { return fs.readFileSync(file, 'utf8'); } catch (error) { if (error.code === 'ENOENT') return ''; throw error; } },
   frontmost: () => frontmostProcess(),
   windowOnScreen: (pid, number) => appWindows(pid).find(w => w.number === number)?.onScreen ?? null,
   activate: id => activateScene(id, {run}),
@@ -909,7 +976,14 @@ export const defaultIo = run => {
   probe: args => {
     try { return runProbe(probeBundle(), args, {run}); } catch (error) { if (error.stuck) stuckProbe = error.message; throw error; }
   },
-  probeStuck: () => stuckProbe,
+  // A probe this command found stuck, or one the run's journal shows still running (probeBarrier): nothing restores or
+  // selects a source behind it.
+  probeStuck: () => stuckProbe ?? (run ? probeBarrier(run, {journal: () => readJournal(run), processes: () => processTable(), identity}) : null),
+  // A scheduled probe, launched now and awaited by a later command (./matrix-device.mjs probe).
+  probeLaunch: args => launchProbe(probeBundle(), args, {run}),
+  probeAwait: handle => {
+    try { return awaitProbe(handle); } catch (error) { if (error.stuck) stuckProbe = error.message; throw error; }
+  },
   readPerContext: readPerContextLive,
   clipboard: () => clipboardDigest(),
   windows: () => systemWindows(),
@@ -955,7 +1029,7 @@ function parse(argv) {
   }
   return {command, positional, flags};
 }
-const USAGE = 'usage: live-device.mjs begin --run <dir> --commit <sha> | minimized|enablement|paste|putback|recover --run <dir> | putback-step <step> --run <dir> | menu --run <dir> [--menu-activation off|on] | watch start|stop --run <dir> | input-source [--run <dir>] | input-source-restore';
+const USAGE = 'usage: live-device.mjs begin --run <dir> --commit <sha> | minimized|enablement|paste|route4|minimized-select|hscroll|menu|putback|recover --run <dir> | hscroll-read --run <dir> [--settle-ms <n>] [--start <0..1>] | putback-step <step> --run <dir> | watch start|stop --run <dir> | input-source [--run <dir>] | input-source-restore';
 const runDir = flags => {
   if (!flags.run || !isAbsolute(flags.run)) throw new Error('--run <absolute directory> is required');
   fs.mkdirSync(flags.run, {recursive: true, mode: 0o700});
@@ -973,8 +1047,7 @@ export async function main(argv, {io: given = {}} = {}) {
     const io = {...defaultIo(flags.run ? runDir(flags) : null), ...given};
     return command === 'input-source' ? inputSourceCheck({io}) : restoreInputSource({io});
   }
-  if (!['begin', 'minimized', 'menu', 'paste', 'enablement', 'putback', 'putback-step', 'recover', 'watch'].includes(command)) throw new Error(USAGE);
-  if (command === 'menu' && flags['menu-activation'] !== undefined && !['off', 'on'].includes(flags['menu-activation'])) throw new Error(USAGE);
+  if (!['begin', 'minimized', 'menu', 'paste', 'enablement', 'route4', 'minimized-select', 'hscroll', 'hscroll-read', 'putback', 'putback-step', 'recover', 'watch'].includes(command)) throw new Error(USAGE);
   const run = runDir(flags), io = {...defaultIo(run), ...given};
   const screenshots = join(run, SCREENSHOT_DIR);
   if (command === 'begin') {
@@ -996,13 +1069,23 @@ export async function main(argv, {io: given = {}} = {}) {
     fs.rmSync(file, {force: true});
     return {activations: activationsOf(lines, watch)};
   }
-  if (command === 'enablement') return enablementCheck({record: sceneRecord(run, 'chrome'), io, screenshots});
+  if (command === 'enablement') return enablementCheck({record: sceneRecord(run, 'electron'), io, screenshots});
   const record = sceneRecord(run, 'textedit');
+  if (command === 'route4') return route4Check({record, user: sceneRecord(run, 'finder'), io, run, screenshots});
+  if (command === 'hscroll-read') {
+    const settleMs = flags['settle-ms'] === undefined ? 0 : Number(flags['settle-ms']);
+    const start = flags.start === undefined ? null : Number(flags.start);
+    if (!Number.isInteger(settleMs) || settleMs < 0 || settleMs > 10 * HSCROLL_SETTLE_MS) throw new Error(USAGE);
+    if (start !== null && !(Number.isFinite(start) && start >= 0 && start <= 1)) throw new Error(USAGE);
+    return hscrollRead({record, io, settleMs, start});
+  }
   const client = io.client();
   try {
     if (command === 'minimized') return await minimizedCheck({record, client, io, screenshots});
+    if (command === 'minimized-select') return stripRestoredText(await minimizedSelectCheck({record, client, io, screenshots}));
+    if (command === 'hscroll') return await hscrollCheck({record, user: sceneRecord(run, 'finder'), client, io, screenshots});
     if (command === 'paste') return await pasteCheck({record, user: sceneRecord(run, 'finder'), client, io, screenshots});
-    return await menuCheck({record, user: sceneRecord(run, 'finder'), client, io, screenshots, menuActivation: flags['menu-activation'] === 'on'});
+    return await menuCheck({record, user: sceneRecord(run, 'finder'), client, io, screenshots});
   } finally { await client.close(); }
 }
 

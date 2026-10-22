@@ -1,0 +1,228 @@
+{
+  "schema": "native-matrix-cell-1",
+  "cell": "route-ab",
+  "device": "mini",
+  "started": "2026-10-22T20:59:15.859Z",
+  "finished": "2026-10-22T21:00:06.835Z",
+  "lanes": [
+    {
+      "host": "cua",
+      "engine": "cua",
+      "build": "0c363f8f4512b24891ce22af50f6515f99af4b008bee09770245de03b8c7e80d",
+      "version": "0.1.0"
+    }
+  ],
+  "complete": false,
+  "verdict": "no-verdict",
+  "judgesInterference": true,
+  "problems": [
+    "finder did not come to the front before its bind (the run's Finder is frontmost but its top window is not the run's window: it is Finder's front window, but another process's window is on top (the run's window 920x772 at 820,261))",
+    "the put-back did not hold",
+    "this run: no approved engine process (cua-engine) started during the run"
+  ],
+  "rows": [],
+  "putBack": {
+    "ok": false,
+    "stopped": true,
+    "steps": {
+      "finder-teardown": {
+        "ok": false,
+        "error": "finder did not come to the front: the run's Finder is frontmost but its top window is not the run's window: it is Finder's front window, but another process's window is on top (the run's window 920x772 at 820,261); no further step was sent",
+        "probeWait": {
+          "unresolved": 1,
+          "waited": false,
+          "remaining": 0
+        }
+      },
+      "scenes-down": {
+        "ok": false,
+        "down": false
+      },
+      "engine-stop": {
+        "ok": true,
+        "wasRunning": false
+      },
+      "apps-check": {
+        "ok": true,
+        "running": {
+          "textedit": 0,
+          "chromeForTesting": 0,
+          "electronFixture": 0
+        }
+      },
+      "finder-check": {
+        "ok": false,
+        "runWindowGone": false,
+        "windowsAsAtBegin": false,
+        "keysAsSaved": true
+      },
+      "front-app": {
+        "ok": true,
+        "bundleId": "com.apple.Terminal",
+        "reactivated": true,
+        "inFront": true
+      }
+    }
+  },
+  "meta": {
+    "run": 1,
+    "host": "cua",
+    "engine": "cua",
+    "samples": 10,
+    "sitting": "hold3",
+    "planId": "route-ab",
+    "plan": {
+      "frontmost": [],
+      "background": [],
+      "launch": [],
+      "speed": false,
+      "finding": false,
+      "concurrent": [],
+      "sheet": false,
+      "intervention": [],
+      "unicode": null,
+      "routeAb": {
+        "driven": "electron",
+        "user": "finder"
+      }
+    },
+    "elicitations": [],
+    "keySkipped": [],
+    "controller": {
+      "commit": "926181506bd923949ef7e6d5c854ff83f50c7d45",
+      "dirty": false
+    },
+    "runDir": "/Users/new/Library/Caches/cua-harness/native-matrix",
+    "load": {
+      "before": {
+        "loadavg": [
+          2.68,
+          3.59,
+          4.58
+        ],
+        "uptimeS": 101427,
+        "cpus": 10
+      },
+      "after": {
+        "loadavg": [
+          2.86,
+          3.5,
+          4.5
+        ],
+        "uptimeS": 101475,
+        "cpus": 10
+      }
+    },
+    "frontApp": {
+      "saved": "com.apple.Terminal",
+      "now": "com.apple.Terminal",
+      "same": true
+    },
+    "engineStopAtStart": {
+      "wasRunning": false
+    },
+    "nativeEngine": {
+      "requested": "cua",
+      "approved": {
+        "bundlePath": "/Users/new/Library/Application Support/cua/engine/cua Engine.app",
+        "engineVersion": "0.1.0",
+        "build": "0c363f8f4512b24891ce22af50f6515f99af4b008bee09770245de03b8c7e80d",
+        "signature": {
+          "kind": "identity",
+          "identityMatches": true
+        }
+      },
+      "checkoutBuild": "0c363f8f4512b24891ce22af50f6515f99af4b008bee09770245de03b8c7e80d",
+      "attested": [
+        {
+          "engine": "cua",
+          "version": "0.1.0",
+          "build": "0c363f8f4512b24891ce22af50f6515f99af4b008bee09770245de03b8c7e80d"
+        }
+      ],
+      "unattested": 0
+    },
+    "runtime": {
+      "release": "26.928.40906-darwin-arm64"
+    },
+    "commit": "926181506bd923949ef7e6d5c854ff83f50c7d45",
+    "hardware": {
+      "model": "Mac14,12",
+      "chip": "Apple M2 Pro",
+      "memoryBytes": 17179869184
+    },
+    "os": {
+      "name": "macOS",
+      "version": "27.0",
+      "build": "26A428"
+    },
+    "display": {
+      "pixels": "5120 x 2880",
+      "resolution": "2560 x 1440",
+      "scale": 2,
+      "virtual": true
+    },
+    "fixtures": {
+      "electron": {
+        "appPath": "/Users/new/Library/Caches/cua-harness/electron-fixture/44.9.0-faee60a202d5/cua Electron Fixture.app",
+        "bundleId": "io.github.ssfskim.cua.fixture.electron",
+        "electronVersion": "44.9.0",
+        "sourceHash": "faee60a202d5",
+        "reused": true
+      }
+    },
+    "engineStopAfterSetup": {
+      "wasRunning": true,
+      "pid": 21708
+    },
+    "hostAttestation": {
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "_meta": {
+        "cua/serviceMs": 2.884,
+        "codex/nodeReplExecutionDurationMs": 75,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/nativeEngine": {
+          "engine": "cua",
+          "version": "0.1.0",
+          "build": "0c363f8f4512b24891ce22af50f6515f99af4b008bee09770245de03b8c7e80d"
+        },
+        "cua/taskId": "ddce846d-2a97-44c1-a01d-4266da3f0147",
+        "cua/nativeExecution": {
+          "path": "/Users/new/Library/Application Support/cua-spike-vendor/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "cua/sandboxLaunch": {
+          "launcher": "cua",
+          "tmpdir": "session"
+        }
+      }
+    },
+    "activations": {
+      "accounted": [],
+      "unaccounted": []
+    },
+    "electronMode": {
+      "file": "electron-accessibility.jsonl",
+      "records": 1163
+    },
+    "preparationCleanup": {
+      "removed": true,
+      "restored": [],
+      "helpersStopped": [],
+      "engineStop": {
+        "wasRunning": false
+      }
+    },
+    "service": {
+      "helpers": []
+    },
+    "finished": "2026-10-22T21:00:06.835Z"
+  }
+}

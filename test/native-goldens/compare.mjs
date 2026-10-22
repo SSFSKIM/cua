@@ -1,12 +1,19 @@
 // The comparison the renderer's goldens are judged by (docs/doperpowers/specs/2026-10-18-own-native-engine-design.md,
-// Verification system, part 3): the vendor's text and cua's, recorded on the same scene state, compared **modulo index
-// renumbering**. Lines are matched in order (a longest common subsequence) by their head (role word, flags and title, up
-// to the first labelled part) and the labels of their parts; a vendor line cua lacks is `missing`, a cua line the vendor
-// lacks is `added`. Each matched pair is then compared whole: its depth, and its full text, values included, with only
-// what genuinely drifts between the two lanes normalized (the loopback page's port, DRIFT). Indexes never take part in
-// a line's text; they are followed through the matched pairs instead: the trailer must name the matched element, and a
-// diff's removed IDs and `~` lines must name, through the matched lines of the two `before` texts (`indexMap`), the same
-// elements. Every difference is declared in ./expected.json with its cause and its exact value or count, never absorbed.
+// Verification system, part 3): the vendor's text and cua's, recorded on the same scene state, compared line by line,
+// **literally**: element lines are matched in order (a longest common subsequence) by their index and their head (role
+// word, flags and title, up to the first labelled part) with the labels of their parts; a vendor line cua lacks is
+// `missing`, a cua line the vendor lacks is `added`. Each matched pair is then compared whole: its depth, and its full
+// text, values and value lines included, with only what genuinely drifts between the two lanes normalized (the loopback
+// page's port, DRIFT). The trailer and a diff's removed IDs are compared as text. Every difference is declared in
+// ./expected.json with its cause and its exact value or count, never absorbed.
+//
+// Why indexes are compared, not renumbered (fail-closed): the renderer prints every free-text attribute raw, newlines
+// included (src/services/engine/render.mjs: the window title in the header, the role description as the role word, the
+// title, Description, Help, Value, Details, Placeholder and ID parts; Fetch.swift reads them unaltered), so after the
+// header no line is certainly an element line rather than the continuation of one of those, and a line renumbered away
+// could be a value's text (`200 apples` against `300 apples`). With the two lanes numbering alike (the recorded goldens
+// add no line) the comparison is exact; where a declared added or missing line or another lineage shifts the
+// numbering, the shifted lines are differences in plain view: a false positive is visible, a hidden difference is not.
 //
 // `structural`: the scene window can carry content the harness does not own (Finder's sidebar), so both captures were
 // redacted (every string not run-owned replaced by its length, ⟨n⟩; scripts/spike/engine/measure/redact.mjs). There an
@@ -27,14 +34,17 @@ const TRAILER = /^(The focused UI element is |Selected:$|Selected text: ```$)/;
 // What differs between the lanes without being a rendering: each lane served the Chrome scene's page on its own port.
 const DRIFT = [[/127\.0\.0\.1:\d+/g, '127.0.0.1:⟨port⟩']];
 
-// A text as {header, items: [{mark, depth, index, rest}], trailer: {kind, items, text} | null, removed: [id] | null}.
-// An item's `rest` is its line after the index, with any continuation lines of a multi-line value.
+// A text as {header, items: [{mark, depth, index, rest}], trailer: {kind, text} | null, removed: string | null,
+// unparsed: [line]}. Every line shaped as an element line (`<tabs><index> `, in a diff `~` or `+` first) opens an item;
+// any other line continues the last item's (`rest`: its line after the index, then its continuation lines; `index`: the
+// index's digits as printed, compared as text, never as a number, which would make `0200` and `200` alike). `unparsed`
+// holds the lines before the first item that are none of the text's kind (a full tree read as a diff, say), which a
+// comparison reports rather than drops. The trailer runs to the end and is kept whole.
 export function parse(text, {kind}) {
   const lines = text.replace(/\n$/, '').split('\n');
   const header = lines.shift();
   const items = [];
-  const out = {header, items, trailer: null, removed: null};
-  let expected = 0;
+  const out = {header, items, trailer: null, removed: null, unparsed: []};
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     if (TRAILER.test(line) && (i === 0 || lines[i - 1] === '' || kind === 'diff')) {
@@ -44,36 +54,17 @@ export function parse(text, {kind}) {
       break;
     }
     const removed = /^Removed element IDs: (.*)$/.exec(line);
-    if (removed && kind === 'diff') { out.removed = expandRanges(removed[1]); continue; }
+    if (removed && kind === 'diff' && !items.length && out.removed === null) { out.removed = removed[1]; continue; }
     const match = (kind === 'diff' ? /^([~+])(\t*)(\d+) (.*)$/ : /^()(\t*)(\d+) (.*)$/).exec(line);
-    if (match && (kind === 'diff' || Number(match[3]) === expected)) {
-      expected = Number(match[3]) + 1;
-      items.push({mark: match[1], depth: match[2].length, index: Number(match[3]), rest: match[4]});
-    } else if (items.length) {
-      items.at(-1).rest += `\n${line}`;   // a multi-line value's continuation
-    }
+    if (match) items.push({mark: match[1], depth: match[2].length, index: match[3], rest: match[4]});
+    else if (items.length) items.at(-1).rest += `\n${line}`;   // a multi-line value's continuation
+    else out.unparsed.push(line);
   }
   return out;
 }
 
-function parseTrailer(lines) {
-  const text = lines.join('\n');
-  if (lines[0].startsWith('The focused UI element is ')) {
-    const match = /^(\d+) (.*)$/.exec(lines[0].slice('The focused UI element is '.length));
-    return {kind: 'focused', items: match ? [{index: Number(match[1]), rest: match[2]}] : [], text};
-  }
-  if (lines[0] === 'Selected:') {
-    const items = [];
-    for (const line of lines.slice(1)) { const match = /^\t(\d+) (.*)$/.exec(line); if (!match) break; items.push({index: Number(match[1]), rest: match[2]}); }
-    return {kind: 'selected', items, text};
-  }
-  return {kind: 'selectedText', items: [], text};
-}
-
-const expandRanges = text => text.split(', ').flatMap(part => {
-  const [lo, hi = lo] = part.split('-').map(Number);
-  return Array.from({length: hi - lo + 1}, (_, n) => lo + n);
-});
+const TRAILER_KINDS = [['focused', 'The focused UI element is '], ['selected', 'Selected:'], ['selectedText', 'Selected text: ']];
+const parseTrailer = lines => ({kind: TRAILER_KINDS.find(([, start]) => lines[0].startsWith(start))[0], text: lines.join('\n')});
 
 // An element line's matching form: {role, flags, title, labels}.
 export function normalize(rest, {structural = false} = {}) {
@@ -104,7 +95,8 @@ export const normalizeDrift = text => DRIFT.reduce((out, [pattern, replacement])
 const textOf = (rest, structural) => (structural ? rest : normalizeDrift(rest));
 const lengthOf = text => [...text.replace(/⟨(\d+)⟩/g, (_, n) => 'x'.repeat(Number(n)))].length;
 
-function matchKey(item, structural) {
+// An element line's head, as a declaration names it: diff mark, role word, flags and title, then ` | ` and the labels.
+function headOf(item, structural) {
   const line = normalize(item.rest, {structural});
   const head = line.role === null ? line.title : [line.role, line.flags.length ? `(${line.flags.join(', ')})` : '', line.title].filter(Boolean).join(' ');
   return `${structural ? `${item.depth}:` : ''}${item.mark}${normalizeDrift(head)} | ${line.labels.join(', ')}`;
@@ -152,15 +144,15 @@ function applySubsetCount(vendorLine, cuaLine, {identifier, cap}) {
   return `${head} (showing ${c[1]} of ${vendorN} items)`;
 }
 
-// → {differences: [{kind, …}], added, lines, indexMap}. `declared`: the entries of ./expected.json for this golden:
-// `missing` and `added` lines by matching key, `part` differences inside a matched line, the `header` and the `trailer`
-// (each pinned to both sides' exact text), the vendor's capped `subsetCount`, each `count` times exactly (default 1). `indexMap` (a diff only): the vendor
-// index → cua index of the matched lines of the two `before` texts. The result's `indexMap` is this comparison's.
-export function compare(vendorText, cuaText, {kind = 'full', structural = false, declared: rules = [], indexMap = null} = {}) {
+// → {differences: [{kind, …}], added, lines}. `declared`: the entries of ./expected.json for this golden: `missing` and
+// `added` lines by head, `part` differences inside a matched line, the `header` and the `trailer` (each pinned to both
+// sides' exact text), the vendor's capped `subsetCount`, each `count` times exactly (default 1).
+export function compare(vendorText, cuaText, {kind = 'full', structural = false, declared: rules = []} = {}) {
   const declared = rules.map(rule => ({...rule, left: rule.count ?? 1}));
   const vendor = parse(vendorText, {kind}), cua = parse(cuaText, {kind});
-  const vendorKeys = vendor.items.map(item => matchKey(item, structural)), cuaKeys = cua.items.map(item => matchKey(item, structural));
-  const pairs = matchInOrder(vendorKeys, cuaKeys);
+  const vendorHeads = vendor.items.map(item => headOf(item, structural)), cuaHeads = cua.items.map(item => headOf(item, structural));
+  // Matched by index and head: an index is never renumbered away (the top of this file).
+  const pairs = matchInOrder(vendor.items.map((item, i) => `${item.index} ${vendorHeads[i]}`), cua.items.map((item, j) => `${item.index} ${cuaHeads[j]}`));
   const differences = [];
   const allow = (kindName, test) => {
     const rule = declared.find(each => each.kind === kindName && each.left > 0 && test(each));
@@ -168,22 +160,23 @@ export function compare(vendorText, cuaText, {kind = 'full', structural = false,
     return Boolean(rule);
   };
 
+  // Two texts alike: exactly, or (redacted) by length.
+  const same = (a, b) => (structural ? lengthOf(a) === lengthOf(b) : a === b);
   const matchedVendor = new Set(pairs.map(([i]) => i)), matchedCua = new Set(pairs.map(([, j]) => j));
-  vendorKeys.forEach((head, i) => {
-    if (!matchedVendor.has(i) && !allow('missing', rule => rule.head === head)) differences.push({kind: 'missing', head, line: vendor.items[i].rest});
+  vendorHeads.forEach((head, i) => {
+    if (!matchedVendor.has(i) && !allow('missing', rule => rule.head === head)) differences.push({kind: 'missing', head, index: vendor.items[i].index, line: vendor.items[i].rest});
   });
   let added = 0;
-  cuaKeys.forEach((head, j) => {
+  cuaHeads.forEach((head, j) => {
     if (matchedCua.has(j)) return;
     added++;
-    if (!allow('added', rule => rule.head === head)) differences.push({kind: 'added', head, line: cua.items[j].rest});
+    if (!allow('added', rule => rule.head === head)) differences.push({kind: 'added', head, index: cua.items[j].index, line: cua.items[j].rest});
   });
 
   const parts = declared.filter(rule => rule.kind === 'part'), subsets = declared.filter(rule => rule.kind === 'subsetCount');
   for (const [i, j] of pairs) {
     const v = vendor.items[i], c = cua.items[j];
     if (v.depth !== c.depth) differences.push({kind: 'depth', line: v.rest, vendor: v.depth, cua: c.depth});
-    const same = (a, b) => (structural ? lengthOf(a) === lengthOf(b) : a === b);
     const vendorLine = textOf(v.rest, structural);
     let cuaLine = textOf(c.rest, structural);
     if (same(vendorLine, cuaLine)) continue;
@@ -208,43 +201,22 @@ export function compare(vendorText, cuaText, {kind = 'full', structural = false,
     differences.push({kind: 'header', vendor: vendor.header, cua: cua.header});
   }
 
-  // The trailer: the same kind, naming the matched elements.
-  const map = new Map(pairs.map(([i, j]) => [vendor.items[i].index, cua.items[j].index]));
-  const sameTrailer = () => {
-    if (!vendor.trailer || !cua.trailer) return vendor.trailer === cua.trailer;
-    if (vendor.trailer.kind !== cua.trailer.kind || vendor.trailer.items.length !== cua.trailer.items.length) return false;
-    return vendor.trailer.items.every((item, n) => {
-      const other = cua.trailer.items[n];
-      const mapped = kind === 'full' ? map.get(item.index) : undefined;
-      // A trailer element the tree does not print (or a diff, which prints only changed lines) is compared by its line.
-      return mapped === undefined ? textOf(item.rest, structural) === textOf(other.rest, structural) : mapped === other.index;
-    });
-  };
-  if (!sameTrailer() && !allow('trailer', rule => rule.vendor === (vendor.trailer?.text ?? null) && rule.cua === (cua.trailer?.text ?? null))) {
+  // The trailer, whole: its kind and its text, the elements it names by their indexes.
+  const sameTrailer = !vendor.trailer || !cua.trailer ? vendor.trailer === cua.trailer
+    : vendor.trailer.kind === cua.trailer.kind && same(textOf(vendor.trailer.text, structural), textOf(cua.trailer.text, structural));
+  if (!sameTrailer && !allow('trailer', rule => rule.vendor === (vendor.trailer?.text ?? null) && rule.cua === (cua.trailer?.text ?? null))) {
     differences.push({kind: 'trailer', vendor: vendor.trailer?.text ?? null, cua: cua.trailer?.text ?? null});
   }
-
-  if (kind === 'diff') {
-    // The removed IDs and the `~` lines name elements of the previous tree: the same ones, through the before texts.
-    const toCua = id => indexMap?.get(id);
-    const vendorRemoved = (vendor.removed ?? []).map(toCua), cuaRemoved = cua.removed ?? [];
-    const sorted = list => [...list].sort((a, b) => (a ?? -1) - (b ?? -1));
-    if (JSON.stringify(sorted(vendorRemoved)) !== JSON.stringify(sorted(cuaRemoved))) {
-      differences.push({kind: 'removed', vendor: vendor.removed, mapped: vendorRemoved, cua: cua.removed});
-    }
-    for (const [i, j] of pairs) {
-      if (vendor.items[i].mark === '~' && toCua(vendor.items[i].index) !== cua.items[j].index) {
-        differences.push({kind: 'changedIndex', line: vendor.items[i].rest, vendor: vendor.items[i].index, cua: cua.items[j].index});
-      }
-    }
-  }
+  if (vendor.unparsed.length || cua.unparsed.length) differences.push({kind: 'unparsed', vendor: vendor.unparsed, cua: cua.unparsed});
+  // A diff's removed IDs, as the two previous trees' indexes.
+  if (kind === 'diff' && vendor.removed !== cua.removed) differences.push({kind: 'removed', vendor: vendor.removed, cua: cua.removed});
 
   for (const rule of declared) {
     if (['missing', 'added', 'part', 'header', 'trailer', 'subsetCount'].includes(rule.kind) && rule.left !== 0) {
       differences.push({kind: 'overdeclared', rule: rule.kind, head: rule.head ?? rule.label ?? rule.identifier ?? null, left: rule.left});
     }
   }
-  return {differences, added, lines: cua.items.length, indexMap: map};
+  return {differences, added, lines: cua.items.length};
 }
 
 // The engine-side differences a golden declares (./expected.json, `kind: "skyshot"`), applied to a copy of cua's

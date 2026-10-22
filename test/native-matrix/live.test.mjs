@@ -9,9 +9,12 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {MARKER, parseCell} from '../../scripts/native-baseline/cells.mjs';
 import {EFFECT, MENU_BAR, MENU_ITEM, SELECT_FIRST_LINE} from '../../scripts/native-matrix/live-cells.mjs';
-import {SSH_OPTIONS, boundedExec, checkPassed, dryConnect, dryExec, journaledScript, liveOps, parseCommand, runLive, stepTimeout} from '../../scripts/native-matrix/live.mjs';
+import {validateCellResult} from '../../scripts/native-matrix/cell-result.mjs';
+import {DRY_ANSWERS, SSH_OPTIONS, boundedExec, cellIo, checkPassed, compositionSummary, dryConnect, dryExec, journaledScript, liveOps, parseCommand, runCell, runLive, stepTimeout} from '../../scripts/native-matrix/live.mjs';
 import {JOURNAL_FILE, parseJournal, putBackBoundMs, recoverBoundMs} from '../../scripts/native-matrix/live-checks.mjs';
 import {execFileSync} from 'node:child_process';
+import {controllerCheckout} from '../../scripts/native-matrix/goldens.mjs';
+import {REPO_ROOT} from '../../scripts/native-matrix/goldens-install.mjs';
 
 const scratches = [];
 const scratch = () => { const dir = fs.realpathSync(fs.mkdtempSync(join(tmpdir(), 'cua-live-'))); scratches.push(dir); return dir; };
@@ -21,7 +24,8 @@ const RUN = '/Users/u/Library/Caches/cua-harness/native-live';
 const PREPARED = {device: 'mini', home: '/h', userHome: '/Users/u', configHome: '/s/config', tmpdir: '/s/tmp', admission: 'token',
   runtimeReuse: {approvedHome: '/h', release: '26.928.40906-darwin-arm64', runtimeRoot: '/h/runtimes/26.928.40906-darwin-arm64'}};
 const WORKS = {found: true, enabled: true, valid: true, clicked: true, click: {ok: true, route: 1, posted: true}, effect: true};
-const PASSED = {minimized: {steps: {}, verdict: {pass: true}}, enablement: {verdict: {released: true}}, 'input-source': {verdict: {pass: true}}, paste: {steps: {}, verdict: {pass: true}},
+const PASSED = {minimized: {steps: {}, verdict: {pass: true}}, 'input-source': {verdict: {pass: true}}, paste: {steps: {}, verdict: {pass: true}},
+  ...Object.fromEntries(['enablement', 'route4', 'minimized-select', 'hscroll', 'hscroll-read'].map(c => [c, DRY_ANSWERS[`live-device.mjs ${c}`]])),
   menu: {items: {selectAll: WORKS, bold: WORKS}, activations: []}};
 
 // A device double answering each CLI command; `calls` keeps the order.
@@ -41,7 +45,6 @@ function fakeDevice({begin = {refusals: [], checkout: {commit: COMMIT, dirty: fa
       if (command === 'putback') return putback;
       if (command === 'recover') return {killed: [], survivors: [], putBack: putback, ok: putback.ok === true};
       if (command === 'watch') return args[1] === 'start' ? {watching: true} : {activations: [{kind: 'activated', bundleId: 'com.apple.TextEdit', scene: true}]};
-      if (command === 'menu') return {...PASSED.menu, menuActivation: args[args.indexOf('--menu-activation') + 1] === 'on'};
       return PASSED[command];
     },
     scenes(args) {
@@ -150,7 +153,7 @@ test('a refusal stops the command before anything on the device changes: no scen
 });
 
 test('a check that stops still ends in the put-back; the result is incomplete', async () => {
-  const device = fakeDevice({upFails: 'chrome'}), out = scratch();
+  const device = fakeDevice({upFails: 'electron'}), out = scratch();
   assert.equal(await runLive({command: 'enablement', device: 'mini', out}, io(device)), 1);
   assert.deepEqual(device.calls.map(c => c.slice(0, 2).join(' ')), ['live begin', 'scenes up', 'live recover', 'scenes frontmost']);
   const r = result(out);
@@ -171,43 +174,60 @@ test('menu: the vendor home prepared and checked first, cua\'s lane, a fresh Tex
   const code = await runLive({command: 'menu', device: 'mini', out, approvedRuntime: '/h'}, io(device, {connect: vendor.connect}));
   const r = result(out);
   assert.equal(code, 0, JSON.stringify(r.problems));
-  assert.deepEqual(device.calls.filter(c => c[0] !== 'scenes' || c[1] !== 'frontmost').map(c => (c[1] === 'menu' ? c.slice(0, 2).concat(c.slice(4)) : c.slice(0, 3)).join(' ')),
-    ['live begin --run', 'prepare /h', 'preflight', 'scenes up textedit', 'scenes up finder', 'scenes activate finder', 'live menu --menu-activation off',
-      'scenes down textedit', 'scenes up textedit', 'scenes activate finder', 'live menu --menu-activation on',
+  assert.deepEqual(device.calls.filter(c => c[0] !== 'scenes' || c[1] !== 'frontmost').map(c => c.slice(0, 3).join(' ')),
+    ['live begin --run', 'prepare /h', 'preflight', 'scenes up textedit', 'scenes up finder', 'scenes activate finder', 'live menu --run',
       'scenes down textedit', 'scenes up textedit', 'live watch start', 'scenes activate finder', 'scenes activate finder', 'live watch stop', 'cleanup /h', 'live recover --run']);
+  assert.ok(!device.calls.some(c => c.includes('--menu-activation')), 'no engine switch: the held activation is the engine\'s own');
   assert.deepEqual(vendor.cells, ['first', 'goldens:bind textedit', 'live:bar selectAll', 'live:item selectAll', 'live:effect selectAll', 'live:select bold',
     'live:bar bold', 'live:item bold', 'live:effect bold']);
   assert.deepEqual(vendor.clicks, [54, 73, 55, 84]);
   assert.deepEqual(vendor.selects, [[2, 'cua scene document']]);
   assert.equal(vendor.closed, true);
-  const {vendor: lane, comparison, setting, cua} = r.check;
-  assert.deepEqual([cua.off.menuActivation, cua.on.menuActivation], [false, true]);
-  assert.equal(setting.setting, 'off');
-  assert.equal(setting.line, 'keep off: every item acts without activation (spikeMenuActivation stays off by default)');
+  const {vendor: lane, comparison} = r.check;
   assert.equal(lane.items.selectAll.enabled, true);
-  assert.equal(lane.items.selectAll.effect, true);
-  assert.equal(lane.items.bold.prepared, true);
   assert.equal(lane.items.bold.effect, true);
   assert.deepEqual(lane.items.selectAll.front[0], {bundleId: 'com.apple.finder', user: true, textedit: false});
   assert.deepEqual(lane.activations, [{kind: 'activated', bundleId: 'com.apple.TextEdit', scene: true}]);
-  assert.equal(comparison.off.decision, 'no activation: cua reads the responder-chain items enabled and they act without it');
-  assert.equal(comparison.on.decision, 'with activation: cua\'s items act with route 3\'s activation around the press');
+  assert.equal(comparison.decision, 'parity: cua\'s held activation acts on every item the vendor\'s does');
+  // result.json is the matrix's CellResult, the live fields kept.
+  assert.deepEqual(validateCellResult(r), []);
+  assert.equal(r.schema, 'native-matrix-cell-1');
+  assert.equal(r.cell, 'menu');
+  assert.equal(r.verdict, 'pass');
+  assert.deepEqual(r.rows.map(row => `${row.engine} ${row.id} ${row.ok}`), ['cua menu/textedit-behind-finder/selectAll true', 'vendor menu/textedit-behind-finder/selectAll true',
+    'cua menu/textedit-behind-finder/bold true', 'vendor menu/textedit-behind-finder/bold true']);
+  assert.deepEqual(r.lanes.map(l => l.engine), ['cua', 'vendor']);
   assert.equal(r.vendor.engineAttestation.engine, 'vendor');
   assert.equal(fs.existsSync(join(out, 'preparation.json')), false, 'a cleaned home leaves no preparation behind');
   assert.doesNotMatch(JSON.stringify(r), /Line 0/, 'no document text in the result');
 });
 
-test('menu: the setting verdict comes from the two cua lanes, so a result where only the switch works says to set it on', async () => {
-  const fails = {...WORKS, effect: false};
-  const device = fakeDevice({frontmost: () => ({pid: 700, bundleId: 'com.apple.finder'}),
-    live: {menu: args => ({menuActivation: args.includes('on'), items: args.includes('on') ? {selectAll: WORKS, bold: WORKS} : {selectAll: fails, bold: WORKS}, activations: []})}});
+test('menu: cua\'s item reading disabled where the vendor\'s acts falls short; its row fails the cell', async () => {
+  const disabled = {found: true, enabled: false, valid: true, clicked: false, effect: false};
+  const device = fakeDevice({frontmost: () => ({pid: 700, bundleId: 'com.apple.finder'}), live: {menu: {items: {selectAll: disabled, bold: WORKS}, activations: []}}});
   const out = scratch();
   const code = await runLive({command: 'menu', device: 'mini', out, approvedRuntime: '/h'}, io(device, {connect: fakeVendor({texts: vendorTexts()}).connect}));
-  assert.equal(code, 0);
-  const {setting, comparison} = result(out).check;
-  assert.equal(setting.setting, 'on');
-  assert.deepEqual(setting.labels, {off: {selectAll: 'no effect', bold: 'acts'}, on: {selectAll: 'acts', bold: 'acts'}});
-  assert.equal(comparison.off.items.selectAll.cuaWorse, true);
+  assert.equal(code, 1);
+  const r = result(out);
+  assert.equal(r.check.comparison.decision, 'the held activation falls short: cua reads selectAll disabled or it does nothing where the vendor\'s works');
+  assert.equal(r.verdict, 'fail');
+  assert.deepEqual(r.rows.filter(row => !row.ok).map(row => `${row.engine} ${row.id} ${row.outcome.label}`), ['cua menu/textedit-behind-finder/selectAll read disabled']);
+});
+
+test('menu: cua\'s items invalid while the vendor\'s act leave the cell incomplete, its invalid rows kept; neither the command nor the CellResult passes', async () => {
+  const lost = {...WORKS, valid: false};
+  const device = fakeDevice({frontmost: () => ({pid: 700, bundleId: 'com.apple.finder'}), live: {menu: {items: {selectAll: lost, bold: lost}, activations: []}}});
+  const out = scratch(), lines = [];
+  const code = await runLive({command: 'menu', device: 'mini', out, approvedRuntime: '/h'}, io(device, {connect: fakeVendor({texts: vendorTexts()}).connect, log: line => lines.push(line)}));
+  assert.equal(code, 1);
+  const r = result(out);
+  assert.notEqual(r.verdict, 'pass');
+  assert.equal(r.complete, false);
+  assert.match(lines.at(-1), /^menu INCOMPLETE/);
+  assert.deepEqual(r.rows.filter(row => row.engine === 'cua').map(row => Boolean(row.invalid)), [true, true]);
+  assert.deepEqual(r.rows.filter(row => row.engine === 'vendor').map(row => row.ok), [true, true]);
+  assert.ok(r.problems.some(p => /^no valid evidence: menu\/textedit-behind-finder\/selectAll \(cua\)/.test(p)), r.problems.join('; '));
+  assert.deepEqual(validateCellResult(r), []);
 });
 
 test('paste: TextEdit and Finder up, Finder in front, the device check, then the put-back', async () => {
@@ -218,6 +238,44 @@ test('paste: TextEdit and Finder up, Finder in front, the device check, then the
   assert.equal(result(out).pass, true);
 });
 
+// The composition row as the device answers it: the three variants, each with its probe's JSON and its source and layout.
+const variantRow = (mode, value) => ({emptied: true, activated: true, source: 'com.apple.inputmethod.Korean.2SetKorean',
+  layout: {inputSourceId: 'com.apple.inputmethod.Korean.2SetKorean', keyboardLayoutId: 'com.apple.keylayout.ABC'},
+  keys: {invocation: `cua-engine --probe keystroke ${{typed: '', keyCodesOnly: '--key-codes-only ', ansiKeys: '--ansi-keys '}[mode]}… rk`, exitStatus: 0, frontChangedAfter: false,
+    output: {pid: 31, layout: 'com.apple.keylayout.ABC', mode, presses: [{keyCode: 15, flags: 0, unicode: mode === 'typed' ? 'r' : null}, {keyCode: 40, flags: 0, unicode: mode === 'typed' ? 'k' : null}], postedAt: 1, units: 2, chars: 2}},
+  commit: {exitStatus: 0, frontChangedAfter: false}, complete: true,
+  keysUnmodified: true, valueBeforeCommit: value, valueAfterCommit: `${value}\n`, reading: {reading: value}});
+const COMPOSED = {steps: {hidComposition: {variants: {unicode: variantRow('typed', '가'), keyCodesOnly: variantRow('keyCodesOnly', 'rk'), ansiKeys: variantRow('ansiKeys', '가')}}}, verdict: {pass: true}};
+
+test('paste: result.json carries the composition row\'s three variants as the device answered them, and the log names each reading', async () => {
+  const device = fakeDevice({live: {paste: COMPOSED}}), out = scratch(), lines = [];
+  assert.equal(await runLive({command: 'paste', device: 'mini', out}, io(device, {log: line => lines.push(line)})), 0);
+  const {variants} = result(out).check.steps.hidComposition;
+  assert.deepEqual(Object.keys(variants), ['unicode', 'keyCodesOnly', 'ansiKeys']);
+  assert.deepEqual(variants, COMPOSED.steps.hidComposition.variants);
+  assert.ok(lines.includes('paste hidComposition: unicode 가 (com.apple.inputmethod.Korean.2SetKorean, layout com.apple.keylayout.ABC, keys unmodified); keyCodesOnly rk (com.apple.inputmethod.Korean.2SetKorean, layout com.apple.keylayout.ABC, keys unmodified); ansiKeys 가 (com.apple.inputmethod.Korean.2SetKorean, layout com.apple.keylayout.ABC, keys unmodified)'), lines.join('\n'));
+});
+
+test('compositionSummary: each variant\'s reading or why it did not read; nothing for a row the check did not reach', () => {
+  assert.equal(compositionSummary({steps: {hidComposition: {skipped: 'precondition unmet: Korean 2-Set was not selected'}}}), 'hidComposition: skipped (precondition unmet: Korean 2-Set was not selected)');
+  assert.equal(compositionSummary({steps: {hidComposition: {variants: {unicode: {skipped: 'front app not the scene'},
+    keyCodesOnly: {...variantRow('keyCodesOnly', 'x'), reading: {reading: 'other', verbatim: 'x\n'}, keysUnmodified: false}}}}}),
+  'hidComposition: unicode skipped (front app not the scene); keyCodesOnly other (com.apple.inputmethod.Korean.2SetKorean, layout com.apple.keylayout.ABC, keys under a modifier)');
+  assert.equal(compositionSummary({steps: {}}), null);
+  assert.equal(compositionSummary(undefined), null);
+});
+
+test('compositionSummary: a variant whose keys or commit did not go through whole is labelled incomplete, with each post\'s status; a skip names the reset\'s error', () => {
+  const keysFailed = {...variantRow('ansiKeys', 'ㄱ'), keys: {...variantRow('ansiKeys', 'ㄱ').keys, exitStatus: 4}, reading: {reading: 'other', verbatim: 'ㄱ\n'}, complete: false};
+  const commitSkipped = {...variantRow('keyCodesOnly', 'rk'), commit: {skipped: 'front app not the scene'}, valueAfterCommit: null, complete: false};
+  const line = compositionSummary({steps: {hidComposition: {variants: {unicode: variantRow('typed', '가'), keyCodesOnly: commitSkipped, ansiKeys: keysFailed}}}});
+  assert.match(line, /unicode 가 \(/, 'a complete variant reads as before');
+  assert.match(line, /keyCodesOnly rk INCOMPLETE \(keys exit 0, commit skipped: front app not the scene\)/);
+  assert.match(line, /ansiKeys other INCOMPLETE \(keys exit 4, commit exit 0\) \(/);
+  const unemptied = compositionSummary({steps: {hidComposition: {variants: {unicode: {emptied: false, skipped: 'the scene document could not be emptied', emptyError: {errorName: 'userIntervened', message: 'x'}}}}}});
+  assert.equal(unemptied, 'hidComposition: unicode skipped (the scene document could not be emptied: userIntervened)');
+});
+
 test('menu: a vendor lane that fails still closes its serve, cleans the vendor home and puts back', async () => {
   const device = fakeDevice({frontmost: () => ({pid: 700, bundleId: 'com.apple.finder'})}), out = scratch();
   const vendor = fakeVendor({texts: {next: () => { throw new Error('noWindowsAvailable'); }, clicked() {}, selected() {}}});
@@ -225,7 +283,7 @@ test('menu: a vendor lane that fails still closes its serve, cleans the vendor h
   assert.equal(code, 1);
   const r = result(out);
   assert.match(r.check.vendor.problem, /noWindowsAvailable/);
-  assert.match(r.check.comparison.off.decision, /^undecided/);
+  assert.match(r.check.comparison.decision, /^undecided/);
   assert.equal(vendor.closed, true);
   assert.ok(device.calls.some(c => c[0] === 'cleanup'));
   assert.equal(device.calls.at(-2)[1], 'recover');
@@ -242,12 +300,19 @@ test('cleanup: the put-back alone, and the vendor home from a preparation a dead
 test('checkPassed: each check\'s own bar', () => {
   assert.equal(checkPassed('minimized', {verdict: {pass: true}}), true);
   assert.equal(checkPassed('minimized', {problem: 'x', verdict: {pass: true}}), false);
-  assert.equal(checkPassed('enablement', {verdict: {released: false}}), false);
-  const lanes = {off: {items: {}}, on: {items: {}}};
-  for (const setting of ['off', 'on', 'neither']) assert.equal(checkPassed('menu', {cua: lanes, vendor: {}, setting: {setting}}), true, `${setting} is a result`);
-  assert.equal(checkPassed('menu', {cua: lanes, vendor: {}, setting: {setting: 'undecided'}}), false);
-  assert.equal(checkPassed('menu', {cua: {off: lanes.off}, vendor: {}, setting: {setting: 'off'}}), false, 'both settings must have run');
-  assert.equal(checkPassed('menu', {cua: {...lanes, on: {problem: 'x'}}, vendor: {}, setting: {setting: 'off'}}), false);
+  for (const command of ['enablement', 'route4', 'minimized-select']) assert.equal(checkPassed(command, PASSED[command]), true, command);
+  assert.equal(checkPassed('enablement', {steps: {initial: true, cycles: []}}), false, 'no valid row: no pass');
+  assert.equal(checkPassed('route4', {steps: {...PASSED.route4.steps, click: {...PASSED.route4.steps.click, route: 3}}}), false);
+  const lanes = {cua: {items: {selectAll: WORKS, bold: WORKS}}, vendor: {items: {selectAll: WORKS, bold: WORKS}}};
+  assert.equal(checkPassed('menu', {...lanes, comparison: {items: Object.fromEntries(['selectAll', 'bold'].map(id => [id, {cua: {label: 'acts'}, vendor: {label: 'acts'}}]))}}), true);
+  assert.equal(checkPassed('menu', {...lanes, comparison: {items: {selectAll: {cua: {label: 'read disabled'}, vendor: {label: 'acts'}}, bold: {cua: {label: 'acts'}, vendor: {label: 'acts'}}}}}), false);
+  const menuOf = (cua, vendor) => ({...lanes, comparison: {items: Object.fromEntries(['selectAll', 'bold'].map(id => [id, {cua: {label: cua}, vendor: {label: vendor}}]))}});
+  assert.equal(checkPassed('menu', menuOf('invalid', 'acts')), false, 'cua\'s items gave no valid evidence: the vendor\'s alone do not pass');
+  const vendorLane = after => ({before: {...DRY_ANSWERS['live-device.mjs hscroll'].before}, scroll: {found: true, scrolled: true, scrollError: null}, after: {horizontal: after}, userInFront: true});
+  assert.equal(checkPassed('hscroll', {cua: PASSED.hscroll, vendor: vendorLane(0.9)}), true);
+  assert.equal(checkPassed('hscroll', {cua: PASSED.hscroll, vendor: vendorLane(0.5)}), true, 'the declared vendor defect');
+  assert.equal(checkPassed('hscroll', {cua: PASSED.hscroll, vendor: vendorLane(0.1)}), false, 'an opposite sign');
+  assert.equal(checkPassed('hscroll', {cua: {...PASSED.hscroll, userInFront: false}, vendor: vendorLane(0.9)}), false, 'cua\'s lane invalid');
   assert.equal(checkPassed('paste', {verdict: {pass: true}}), true);
   assert.equal(checkPassed('paste', {verdict: {pass: false}}), false);
 });
@@ -263,8 +328,8 @@ test('the dry run prints every device command through the real ssh wrapper, in o
   const text = lines.join('\n');
   const unquoted = text.replaceAll("'\\''", "'");
   const order = ['printf %s "$HOME"', "live-device.mjs 'begin'", "prepare.mjs prepare", "the native baseline's vendor preflight", "scenes-mac.mjs 'up' 'textedit'",
-    "scenes-mac.mjs 'up' 'finder'", "live-device.mjs 'menu' '--run'", "'--menu-activation' 'off'", "scenes-mac.mjs 'down' 'textedit'", "scenes-mac.mjs 'up' 'textedit'",
-    "live-device.mjs 'menu' '--run'", "'--menu-activation' 'on'", "scenes-mac.mjs 'down' 'textedit'", 'vendor cell: goldens:bind textedit', 'vendor cell: live:effect bold',
+    "scenes-mac.mjs 'up' 'finder'", "live-device.mjs 'menu' '--run'", "scenes-mac.mjs 'down' 'textedit'", "scenes-mac.mjs 'up' 'textedit'",
+    'vendor cell: goldens:bind textedit', 'vendor cell: live:effect bold',
     "live-device.mjs 'watch' 'stop'", 'prepare.mjs cleanup', "live-device.mjs 'recover'"];
   let at = -1;
   for (const needle of order) { const next = unquoted.indexOf(needle, at + 1); assert.ok(next > at, `${needle} in order`); at = next; }
@@ -273,16 +338,65 @@ test('the dry run prints every device command through the real ssh wrapper, in o
 });
 
 test('the dry run of each other command walks its sequence to the put-back', async () => {
-  for (const command of ['minimized', 'paste', 'input-source', 'enablement', 'cleanup']) {
+  for (const command of ['minimized', 'paste', 'input-source', 'enablement', 'route4', 'minimized-select', 'hscroll', 'cleanup']) {
     const lines = [];
     const log = line => lines.push(line);
-    const code = await runLive({command, device: 'mini', out: null}, {ops: liveOps('mini', {exec: dryExec({log, commit: COMMIT})}), connect: dryConnect({log}),
+    const code = await runLive({command, device: 'mini', out: null, ...(command === 'hscroll' ? {approvedRuntime: '/h'} : {})}, {ops: liveOps('mini', {exec: dryExec({log, commit: COMMIT})}), connect: dryConnect({log}),
       controllerCheckout: () => ({commit: COMMIT, dirty: false}), log, dryRun: true});
     assert.equal(code, 0, command);
     assert.match(lines.join('\n'), /live-device\.mjs '\\''recover'\\''/, command);
     if (command !== 'cleanup') assert.match(lines.join('\n'), new RegExp(`live-device\\.mjs '\\\\''${command}'\\\\''`), command);
     if (command !== 'cleanup') assert.match(lines.at(-1), /PASS \(dry run/, command);
+    if (command === 'hscroll') {
+      const reads = lines.join('\n').replaceAll("'\\''", "'").match(/live-device\.mjs '(hscroll|hscroll-read)'[^\n]*/g);
+      assert.deepEqual(reads.map(r => /'--start' '0\.5'/.test(r)), [false, true, false], 'the vendor lane is set mid-way before its scroll, not after');
+    }
+    if (command === 'paste') assert.match(lines.join('\n'), /^paste hidComposition: unicode \S+ .*; keyCodesOnly \S+ .*; ansiKeys \S+ /m, 'the dry run walks the three variants of the composition row');
   }
+  assert.deepEqual(Object.keys(DRY_ANSWERS['live-device.mjs paste'].steps.hidComposition.variants), ['unicode', 'keyCodesOnly', 'ansiKeys']);
+});
+
+test('the hscroll vendor lane on no horizontally scrollable content sends nothing and gives no verdict', async () => {
+  const lines = [];
+  const log = line => lines.push(line);
+  const dry = dryExec({log, commit: COMMIT});
+  // The vendor lane's start read as hold 1 read TextEdit's page view within its window: the bar disabled, the content still.
+  const exec = (command, args) => {
+    const out = dry(command, args);
+    if (!/hscroll-read'?[^\n]*'--start'/.test(String(args.at(-1)).replaceAll("'\\''", "'"))) return out;
+    const answer = JSON.parse(out);
+    return `${JSON.stringify({...answer, horizontalEnabled: false, set: {...answer.set, horizontal: {...answer.set.horizontal, contentMoved: false}}})}\n`;
+  };
+  // Not a dry run, so the result is written (the device and the vendor serve are still the dry doubles).
+  const out = join(scratch(), 'out');
+  const code = await runLive({command: 'hscroll', device: 'mini', out, approvedRuntime: '/h'}, {ops: liveOps('mini', {exec}), connect: dryConnect({log}),
+    controllerCheckout: () => ({commit: COMMIT, dirty: false}), log});
+  const text = lines.join('\n');
+  assert.doesNotMatch(text, /vendor cell: live:scroll right/, 'the vendor\'s scroll is never sent');
+  assert.match(text, /live-device\.mjs '\\''recover'\\''/, 'the put-back still runs');
+  assert.notEqual(code, 0);
+  const result = JSON.parse(fs.readFileSync(join(out, 'result.json'), 'utf8'));
+  assert.equal(result.check.vendor.problem, 'no horizontally scrollable content: the horizontal scroll bar is disabled; nothing was sent');
+  assert.equal(result.check.vendor.scroll, undefined);
+  assert.match(result.check.verdict, /^no verdict/);
+  assert.equal(result.complete, false, 'a lane that gave no evidence leaves the cell unfinished');
+});
+
+test('cellIo is the io main runs a command with, so the registry\'s runCell runs a residue cell as live.mjs does', async () => {
+  const lines = [];
+  const log = line => lines.push(line);
+  const options = {command: 'hscroll', device: 'mini', out: null, approvedRuntime: '/h', dryRun: true};
+  const io = cellIo(options, {log, dryRun: true});
+  assert.deepEqual(Object.keys(io).sort(), ['connect', 'controllerCheckout', 'dryRun', 'interrupt', 'log', 'ops'].sort());
+  assert.deepEqual(io.interrupt, {signal: null});
+  assert.deepEqual(io.controllerCheckout(), controllerCheckout(REPO_ROOT));
+  const live = cellIo({...options, dryRun: false}, {log});
+  assert.equal(live.dryRun, undefined);
+  assert.deepEqual(Object.keys(live).sort(), ['connect', 'controllerCheckout', 'interrupt', 'log', 'ops'].sort());
+  // The checkout under test may be dirty; the dry run's own refusal of one is covered by the begin tests.
+  const code = await runCell('hscroll', options, {...io, controllerCheckout: () => ({commit: io.controllerCheckout().commit, dirty: false})});
+  assert.equal(code, 0);
+  assert.match(lines.at(-1), /^hscroll PASS \(dry run/);
 });
 
 test('the vendor cells return indexes and booleans only, and refuse when TextEdit is not bound', async () => {
@@ -391,10 +505,3 @@ test('liveOps journals every device CLI and the serve once the run is named; the
   assert.deepEqual(device.calls.find(c => c[1] === 'input-source'), ['live', 'input-source', '--run', result(out).runDir]);
 });
 
-test('the dry run\'s menu lanes carry the setting their flags asked for', async () => {
-  const lines = [];
-  const log = line => lines.push(line);
-  const ops = liveOps('mini', {exec: dryExec({log, commit: COMMIT})});
-  assert.equal(ops.live(['menu', '--run', '/r', '--menu-activation', 'on']).menuActivation, true);
-  assert.equal(ops.live(['menu', '--run', '/r', '--menu-activation', 'off']).menuActivation, false);
-});

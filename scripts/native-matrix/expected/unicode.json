@@ -1,0 +1,4 @@
+{
+  "about": "The Korean and Unicode matrix's declared failures (docs/doperpowers/specs/2026-10-18-own-native-engine-design.md, Verification system part 6; scripts/native-matrix/unicode-plan.mjs). A row of the matrix's `unicode` section that is read back unequal to its string fails, unless a declaration here names that row's id (`<field>/<condition>[@<user>]/<method>.<string>`) and engine (vendor or cua) with its kind and its cause (autocorrection, an app that ignores Unicode events, a normalization the app applies). A declaration excuses only a failed row; one no failed row needed is named in the run's meta and the summary. Empty until a run on the mini shows a failure with a named cause.",
+  "declarations": []
+}

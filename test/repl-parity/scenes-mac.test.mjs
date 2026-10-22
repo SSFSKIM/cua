@@ -232,6 +232,8 @@ function fakeDevice({running = [], windows = {}, finderPid = 736, finderHidden =
       const p = running.find(r => r.bundleId === bundleId);
       io.front = p && {pid: p.pid, bundleId, topWindow: {ownerPid: p.pid, number: windows[p.pid]?.[0]?.number}};
     },
+    // The run's folder opened again (activateScene's raise): recorded; a test that needs the raise to work sets its own.
+    showFolder: (app, folder) => { calls.push(['show', app, folder]); },
     runningApps: id => running.filter(p => p.bundleId === id),
     appWindows: pid => windows[pid] ?? [],
     appWindowState: pid => ({windows: windows[pid] ?? [], hidden: pid === finderPid ? finderHidden : false}),
@@ -296,6 +298,18 @@ test('up records the run\'s own launch with its window; a second up of the same 
   await assert.rejects(upScene('electron', {run, io}), /already up/);
   // The run's own process is not a refusal for the next scene.
   assert.deepEqual(preflight({run, io}).refusals, []);
+}));
+
+test('up textedit --layout wide-page: the same document in page layout, zoomed to 200% so the page is wider than the window; any other layout or scene refuses', async () => withRun(async run => {
+  const io = fakeDevice();
+  const wide = await upScene('textedit', {run, io, layout: 'wide-page'});
+  const rtf = fs.readFileSync(wide.document, 'utf8');
+  assert.equal(wide.layout, 'wide-page');
+  assert.match(rtf, /\\paperw28800\\paperh15840\\viewkind1\\viewscale200\\f0/, 'TextEdit ignores the paper width for the page view: only the zoom makes it scroll');
+  assert.equal(rtf.replace('\\paperw28800\\paperh15840\\viewkind1\\viewscale200', ''), textEditDocument().rtf, 'only the layout differs');
+  assert.equal(textEditDocument({layout: 'default'}).rtf, textEditDocument().rtf);
+  assert.throws(() => textEditDocument({layout: 'narrow'}), /unknown TextEdit layout/);
+  await assert.rejects(upScene('finder', {run, io, layout: 'wide-page'}), /textedit scene only/);
 }));
 
 test('up of each scene: TextEdit on the run\'s document in English, Chrome on the page with its own profile, Finder on the run\'s folder', async () => withRun(async run => {
@@ -776,11 +790,19 @@ test('down finder, once the run\'s window is gone, writes back each key that sti
   const io = fakeDevice({preferences: {ShowSidebar: null, ShowStatusBar: true, ShowPathbar: null}});
   const record = await upScene('finder', {run, io});
   Object.assign(io.preferences, {ShowSidebar: false, ShowStatusBar: false});   // the setup's toggles
-  // While the window is open nothing is written: the driver brings the chrome back in it first (teardown).
+  recordVisibleState(io.savedPreferencesFile, {sidebar: true, statusBar: true, pathBar: false});
+  // While the window is open the scene stays up, but the keys are written back all the same (vendor run 3's put-back
+  // left them hidden when its teardown could not reach the window); the record is kept for the window's chrome.
   const open = await downScene('finder', {run, io});
   assert.equal(open.down, false);
-  assert.deepEqual(io.writes, []);
-  recordVisibleState(io.savedPreferencesFile, {sidebar: true, statusBar: true, pathBar: false});
+  assert.equal(open.windowOpen, true);
+  assert.deepEqual(io.writes, [['ShowSidebar', null], ['ShowStatusBar', true]]);
+  assert.equal(open.preferences.restored, true);
+  assert.equal(open.preferences.visibleRestored, false);
+  assert.ok(readSavedPreferences(io.savedPreferencesFile).visible, 'the record stays for the teardown to restore the window');
+  assert.ok(readState(run).scenes.finder);
+  io.writes.length = 0;
+  Object.assign(io.preferences, {ShowSidebar: false, ShowStatusBar: false});   // as the setup left them, for the rest
   const steps = teardownFor('finder', {run, io});
   assert.deepEqual(steps.map(s => s.chrome ?? s.visibleState ?? s.pressKey ?? 'activate'), ['activate', 'sidebar', 'statusBar', 'pathBar', 'restored', 'super+w']);
   assert.deepEqual(steps.filter(s => s.chrome).map(s => s.shown), [true, true, false], 'to the visible state the setup recorded');
@@ -866,6 +888,50 @@ test('activate brings the run\'s process to the front and checks it by pid; Find
   await assert.rejects(activateScene('electron', {run, io}), /not up/);
 }));
 
+test('activate brings the run\'s Finder window back above Finder\'s other windows by opening the run\'s folder again, once', async () => withRun(async run => {
+  // Vendor run 3's put-back: Finder in front, its top window not the run's; the teardown sent nothing and left the
+  // run's window open with the chrome keys hidden. Opening the run's folder again makes Finder bring the window showing
+  // it to the front; no other window is touched.
+  const io = fakeDevice();
+  const finder = await upScene('finder', {run, io});
+  io.windows[736].unshift({number: 5, bounds: {x: 0, y: 0, width: 800, height: 600}, onScreen: true});
+  io.showFolder = (app, folder) => {
+    io.calls.push(['show', app, folder]);
+    const mine = io.windows[736].find(w => w.number === finder.window.number);
+    io.windows[736] = [mine, ...io.windows[736].filter(w => w !== mine)];
+    io.front = {...io.front, topWindow: {ownerPid: 736, number: mine.number}};
+  };
+  const front = await activateScene('finder', {run, io});
+  assert.equal(front.ok, true);
+  assert.equal(front.raised, true);
+  assert.deepEqual(io.calls.filter(c => c[0] === 'show'), [['show', finder.app, finder.folder]]);
+}));
+
+test('activate says why the run\'s Finder window is not on top, and raises it only from behind Finder\'s own windows', async () => withRun(async run => {
+  const io = fakeDevice();
+  const finder = await upScene('finder', {run, io});
+  io.showFolder = (...args) => io.calls.push(['show', ...args]);
+  // Another process's window above Finder's, the run's window Finder's front one: nothing of Finder's to raise.
+  io.activateApp = app => { io.calls.push(['activate', app]); io.front = {pid: 736, bundleId: 'com.apple.finder', topWindow: {ownerPid: 4242, number: 77}}; };
+  const overlay = await activateScene('finder', {run, io});
+  assert.equal(overlay.ok, false);
+  assert.match(overlay.reason, /another process's window is on top/);
+  assert.deepEqual(overlay.runWindow, {order: 0, bounds: finder.window.bounds});
+  // Another Finder window stays above the run's whatever the raise did: the reason counts them.
+  io.windows[736].unshift({number: 5, bounds: {x: 0, y: 0, width: 800, height: 600}, onScreen: true});
+  io.activateApp = app => { io.calls.push(['activate', app]); io.front = {pid: 736, bundleId: 'com.apple.finder', topWindow: {ownerPid: 736, number: 5}}; };
+  const behind = await activateScene('finder', {run, io});
+  assert.equal(behind.ok, false);
+  assert.match(behind.reason, /1 other Finder window is above the run's window/);
+  assert.equal(io.calls.filter(c => c[0] === 'show').length, 1, 'one raise per activation');
+  // The run's window off screen (minimized, another Space) or gone: opening the folder would open a new window, so no raise.
+  io.windows[736] = io.windows[736].filter(w => w.number !== finder.window.number);
+  const gone = await activateScene('finder', {run, io});
+  assert.match(gone.reason, /not among Finder's on-screen windows/);
+  assert.equal(gone.runWindow, null);
+  assert.equal(io.calls.filter(c => c[0] === 'show').length, 1, 'no raise without the run\'s window on screen');
+}));
+
 test('activate gives up after its bound when the process never comes to the front, without guessing', async () => withRun(async run => {
   const io = fakeDevice({activates: false});
   await upScene('textedit', {run, io});
@@ -881,7 +947,30 @@ test('the fixed-state check: Finder\'s on its Skyshot with what the run owns, Te
   assert.deepEqual(finderOwned(record), {folder: 'cua-scene-finder', folderPath: '/run/finder/cua-scene-finder', files: finderFolderFiles()});
   const shot = JSON.parse(fs.readFileSync(new URL('./fixtures/finder-m0/skyshot.json', import.meta.url), 'utf8'));
   assert.deepEqual(fixedStateProblems('finder', shot, record).map(p => p.code), ['sidebar_shown', 'unowned_text'], 'M0\'s capture showed the sidebar and the status bar');
-  for (const id of ['textedit', 'electron']) assert.deepEqual(fixedStateProblems(id, {nodes: []}, {}), []);
+  assert.deepEqual(fixedStateProblems('textedit', {nodes: []}, {}), []);
+});
+
+test('Electron\'s fixed state needs the fixture\'s page: its web area holding every named control; hold 2b\'s empty container is refused', () => {
+  // Hold 2b's cua lane read the fixture as a window whose second container was empty (12 lines against the vendor's 25),
+  // and the side reads had accepted that state: the check is the side reads', so a lane read missing the page is still a
+  // difference in the diff (native-mac-diff), never a state the run refuses to keep.
+  const filled = JSON.parse(fs.readFileSync(new URL('../native-goldens/electron/skyshot.json', import.meta.url), 'utf8'));
+  assert.deepEqual(fixedStateProblems('electron', filled, {}), []);
+  const area = filled.nodes.findIndex(n => n.role === 'AXWebArea');
+  const empty = {...filled, nodes: filled.nodes.slice(0, area)};
+  const problems = fixedStateProblems('electron', empty, {});
+  assert.deepEqual(problems.map(p => p.code), ['page_filling']);
+  assert.deepEqual(problems[0].controls, FIXTURE_CONTROLS.map(c => c.id));
+  assert.deepEqual(fixedStateProblems('electron', {nodes: []}, {}).map(p => p.code), ['page_filling']);
+  // The web area there but a control not in it yet (its name read from the title, the description or the value).
+  const noButton = {...filled, nodes: filled.nodes.filter(n => !(n.role === 'AXButton' && n.title === 'Fixture button'))};
+  assert.deepEqual(fixedStateProblems('electron', noButton, {})[0].controls, ['button']);
+  // A control outside the page's web area does not count.
+  const outside = {...filled, nodes: filled.nodes.map((n, i) => (i > area ? {...n, depth: Math.min(n.depth, filled.nodes[area].depth)} : n))};
+  assert.equal(fixedStateProblems('electron', outside, {})[0].controls.length, FIXTURE_CONTROLS.length);
+  // The state after the action (the button pressed, the status changed) still has the page.
+  const pressed = {...filled, nodes: filled.nodes.map(n => (n.value === 'Pressed 0 times' ? {...n, value: 'Pressed 1 time'} : n))};
+  assert.deepEqual(fixedStateProblems('electron', pressed, {}), []);
 });
 
 test('device reads: Finder\'s preference keys through defaults, an unset key as null, any other failure thrown', () => {
@@ -1009,15 +1098,20 @@ test('reactivate puts the owner\'s app back in front only while it runs as the s
   for (const [front, reason] of [[{bundleId: 'com.apple.Terminal', pid: 999}, /no longer running/], [{bundleId: 'com.apple.Notes', pid: 5}, /no longer running/],
     [{bundleId: 'com.apple.finder', pid: 736}, /scene app/], [{bundleId: CFT, pid: 7}, /scene app/], [null, /nothing/]]) {
     const out = await reactivateApp(front, {io});
-    assert.equal(out.reactivated, false, JSON.stringify(front));
+    assert.deepEqual([out.reactivated, out.required], [false, false], JSON.stringify(front));
     assert.match(out.reason, reason);
   }
   assert.equal(activated.length, 1);
   // The process gone between the check and the activation: the activator, which addresses the pid, refuses; nothing is
   // launched in its place and nothing else is tried.
-  io.activateProcess = () => ({activated: false, reason: 'the process is no longer running as com.apple.Terminal'});
+  const gone = () => io.running.splice(io.running.findIndex(p => p.pid === 321), 1);
+  io.activateProcess = () => { gone(); return {activated: false, reason: 'the process is no longer running as com.apple.Terminal'}; };
   io.front = {pid: 77, bundleId: 'com.apple.Notes'};
-  assert.deepEqual(await reactivateApp({bundleId: 'com.apple.Terminal', pid: 321}, {io}), {reactivated: false, reason: 'the process is no longer running as com.apple.Terminal'});
+  assert.deepEqual(await reactivateApp({bundleId: 'com.apple.Terminal', pid: 321}, {io}), {reactivated: false, required: false, reason: 'the process is no longer running as com.apple.Terminal'});
+  // An activation refused while the process still runs: the put-back was required and did not happen.
+  io.running.push({pid: 321, bundleId: 'com.apple.Terminal'});
+  io.activateProcess = () => ({activated: false, reason: 'the activation was refused'});
+  assert.deepEqual(await reactivateApp({bundleId: 'com.apple.Terminal', pid: 321}, {io}), {reactivated: false, reason: 'the activation was refused'});
   assert.equal(io.calls.some(c => c[0] === 'open'), false);
 });
 

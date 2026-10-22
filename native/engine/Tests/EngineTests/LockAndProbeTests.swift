@@ -191,6 +191,19 @@ final class FocusProbeTests: XCTestCase {
     XCTAssertEqual(focus.valueReads, 1)
   }
 
+  /// Hold 2a: a probe process with no WindowServer connection reads no system-wide focused application (-25204, every
+  /// time), so the report connects first, before its first reading.
+  func testTheReportConnectsToTheWindowServerBeforeItsFirstReading() {
+    var events: [String] = []
+    let source = FocusSource(
+      reading: { events.append("reading"); return FocusReading(appPid: 7, bundleIdentifier: nil, windowPid: 7, windowFrame: CGRect(x: 0, y: 0, width: 5, height: 5)) },
+      focusedElement: { events.append("element"); return nil },
+      connect: { events.append("connect") })
+    var clock: Double = 0
+    _ = focusReport(named: nil, source: source, now: { clock }, sleep: { clock += $0 })
+    XCTAssertEqual(events, ["connect", "reading"])
+  }
+
   func testNoFocusedAppOrWindowReadsAsNull() {
     let found = report(ScriptedFocus(windows: [nil], elementWindows: [nil], value: nil), named: nil)
     XCTAssertTrue(found["focusedApp"] is NSNull)

@@ -1,0 +1,22 @@
+{"appPath":"/Users/new/Library/Caches/cua-harness/electron-fixture/44.9.0-faee60a202d5/cua Electron Fixture.app","bundleId":"io.github.ssfskim.cua.fixture.electron","electronVersion":"44.9.0","sourceH
+27.0
+ShowSidebar=1
+ShowStatusBar=Error: Could not find key 'ShowStatusBar' in domain 'com.apple.finder'.
+ShowPathbar=Error: Could not find key 'ShowPathbar' in domain 'com.apple.finder'.
+com.apple.keylayout.ABC
+{ TextInputGlobalPropertyPerContextInput = 0; } 
+[ NULL ]  ASN:0x0-0xc00c: (in front) 
+    bundleID="com.apple.Terminal"
+    bundle path=[ NULL ] 
+    executable path=[ NULL ] 
+ !cgsConnection !signalled type=[ NULL ]  flavor=[ NULL ]  Version=[ NULL ]  Arch=!!none 
+
+1792384396
+ 5:07  up 1 day,  3:18, 2 users, load averages: 2.61 2.37 2.10
+1
+shim 7096 children: 
+shim 8722 children: 
+shim 93128 children: 
+7096 node --disable-sigusr1 /Users/new/.claude/plugins/cache/cua/cua/0.16.0/cua-
+8722 node --disable-sigusr1 /Users/new/.claude/plugins/cache/cua/cua/0.16.0/cua-
+93128 node --disable-sigusr1 /Users/new/.claude/plugins/cache/cua/cua/0.16.0/cua

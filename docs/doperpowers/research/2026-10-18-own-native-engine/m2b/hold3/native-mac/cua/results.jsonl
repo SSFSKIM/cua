@@ -1,0 +1,16 @@
+{"scene":"textedit","cell":"bind","ok":true}
+{"scene":"textedit","cell":"fixed","ok":true,"reads":2,"texts":{"full":{"file":"texts/textedit/full.txt","sha256":"f637cdead60dcb127ce178fed8191b8b4610bf88401b0c264f45828ea95268dd","bytes":4712}}}
+{"scene":"textedit","cell":"action","ok":true,"index":2,"texts":{"before":{"file":"texts/textedit/before.txt","sha256":"f637cdead60dcb127ce178fed8191b8b4610bf88401b0c264f45828ea95268dd","bytes":4712},"diff":{"file":"texts/textedit/diff.txt","sha256":"d2526762085a2b3add64f87e5d158e03a6ab5ffdbb81d0fcdab47b8ae72f1dba","bytes":681},"later":{"file":"texts/textedit/later.txt","sha256":"d2526762085a2b3add64f87e5d158e03a6ab5ffdbb81d0fcdab47b8ae72f1dba","bytes":681}}}
+{"scene":"textedit","cell":"settle","ok":true,"settled":true}
+{"scene":"finder","cell":"bind","ok":true}
+{"scene":"finder","cell":"fixed","ok":true,"reads":2,"texts":{"full":{"file":"texts/finder/full.txt","sha256":"7caa8f29c53027be11d0d54337f43222eaf6cba27672e7c0f2b645d664ae8c7a","bytes":12144}}}
+{"scene":"finder","cell":"action","ok":true,"index":50,"texts":{"before":{"file":"texts/finder/before.txt","sha256":"7caa8f29c53027be11d0d54337f43222eaf6cba27672e7c0f2b645d664ae8c7a","bytes":12144},"diff":{"file":"texts/finder/diff.txt","sha256":"6103a122bc37c659883271f5b8f930ae9faa6911059131a86268e4b6e1c14622","bytes":1212},"later":{"file":"texts/finder/later.txt","sha256":"7942fdd265a4b90a47ca6977b34d2a0ef5f552162ad68aa3bca58534e004cac5","bytes":378}}}
+{"scene":"finder","cell":"settle","ok":true,"settled":true}
+{"scene":"chrome","cell":"bind","ok":true}
+{"scene":"chrome","cell":"fixed","ok":true,"reads":2,"texts":{"full":{"file":"texts/chrome/full.txt","sha256":"d6e05fa7468de97eca9520f16b28f824a8b066978d2f3eddec20f66910799b8c","bytes":2679}}}
+{"scene":"chrome","cell":"action","ok":true,"index":25,"texts":{"before":{"file":"texts/chrome/before.txt","sha256":"d6e05fa7468de97eca9520f16b28f824a8b066978d2f3eddec20f66910799b8c","bytes":2679},"diff":{"file":"texts/chrome/diff.txt","sha256":"e4149571d57c9684dab0afa780b5dc93b2ddf19867b02b714efd8a139c6c2d4d","bytes":314},"later":{"file":"texts/chrome/later.txt","sha256":"a2230f81677e5b8eec956434554f83d4b8067c913ecc1711ba724c7749a00aeb","bytes":145}}}
+{"scene":"chrome","cell":"settle","ok":true,"settled":true}
+{"scene":"electron","cell":"bind","ok":true}
+{"scene":"electron","cell":"fixed","ok":true,"reads":2,"texts":{"full":{"file":"texts/electron/full.txt","sha256":"0d37ec925d1cd5b3f86ba1804562e2ffc5413c8456db28a481a3c6af63ad500c","bytes":1050}}}
+{"scene":"electron","cell":"action","ok":true,"index":13,"texts":{"before":{"file":"texts/electron/before.txt","sha256":"0d37ec925d1cd5b3f86ba1804562e2ffc5413c8456db28a481a3c6af63ad500c","bytes":1050},"diff":{"file":"texts/electron/diff.txt","sha256":"8363ffe25d77ed90f8fa0d70e820585569a8bb687ce1a2d93ad189449c6a7c4d","bytes":318},"later":{"file":"texts/electron/later.txt","sha256":"cf8cdda03b0380895880fe38de3a3aac63053b7584416d8288454ec5ef09902e","bytes":137}}}
+{"scene":"electron","cell":"settle","ok":true,"settled":true}

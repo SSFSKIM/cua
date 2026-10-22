@@ -39,13 +39,13 @@ enum Probe {
   /// a keyed type_text's interval).
   private static func inputSource(_ request: InputSourceRequest) -> Int32 {
     let argument = request.source
-    if argument == "current" { return emit(sourceWire(currentInputSource()), status: 0) }
+    if argument == "current" { return emit(currentWire(), status: 0) }
     let filter = [kTISPropertyInputSourceID as String: argument] as CFDictionary
     guard let list = TISCreateInputSourceList(filter, true)?.takeRetainedValue() as? [TISInputSource], let source = list.first else {
       return emit(["error": "no input source with that id"], status: 2)
     }
     if let at = request.at { while unixMilliseconds() < at { usleep(1_000) } }
-    let previous = currentInputSource()
+    let previous = currentWire()
     let selectedAt = unixMilliseconds()
     let status = TISSelectInputSource(source)
     // Read back: the selection holds only when the current source is the one asked for (an input mode's parent method
@@ -56,7 +56,8 @@ enum Probe {
       current = currentInputSource()
     }
     let selected = status == noErr && current.id == argument
-    return emit(["previous": sourceWire(previous), "current": sourceWire(current), "selected": selected, "selectedAt": Int(selectedAt)], status: selected ? 0 : 3)
+    return emit(["previous": previous, "current": sourceWire(current, layout: currentKeyboardLayoutID(), perContextInput: perContextInputEnabled()), "selected": selected,
+                 "selectedAt": Int(selectedAt)], status: selected ? 0 : 3)
   }
 
   /// `watch-activations`: prints its own pid, then every NSWorkspace application activation and deactivation with its
@@ -98,10 +99,28 @@ enum Probe {
       && abs(rect.width - bounds.width) < 1 && abs(rect.height - bounds.height) < 1
   }
 
-  private static func sourceWire(_ info: InputSourceInfo) -> [String: Any] {
+  /// A source as the probe reports it: its id and kind, the per-context preference, and `layout`, the keyboard layout
+  /// key events are translated with now (TISCopyCurrentKeyboardLayoutInputSource; null when unreadable). An input
+  /// method that has engaged in the focused client reports its own layout (2-Set's com.apple.keylayout.2SetHangul);
+  /// a selection made while a field already held focus can read the method as current while the layout stays the
+  /// previous one and keys arrive raw (MAWS B2), so the harness reads both.
+  static func sourceWire(_ info: InputSourceInfo, layout: String?, perContextInput: Bool) -> [String: Any] {
     var wire = info.wire
-    wire["perContextInput"] = perContextInputEnabled()
+    wire["perContextInput"] = perContextInput
+    wire["layout"] = layout ?? NSNull()
     return wire
+  }
+
+  private static func currentWire() -> [String: Any] {
+    sourceWire(currentInputSource(), layout: currentKeyboardLayoutID(), perContextInput: perContextInputEnabled())
+  }
+
+  /// The current keyboard layout's source id.
+  private static func currentKeyboardLayoutID() -> String? {
+    onMain {
+      guard let pointer = TISGetInputSourceProperty(TISCopyCurrentKeyboardLayoutInputSource().takeRetainedValue(), kTISPropertyInputSourceID) else { return nil }
+      return Unmanaged<CFString>.fromOpaque(pointer).takeUnretainedValue() as String
+    }
   }
 
   /// Where a probe's lines go: standard output (the unit tests capture them).

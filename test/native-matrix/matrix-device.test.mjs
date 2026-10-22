@@ -314,13 +314,16 @@ test('probe start and finish: a scheduled keystroke or switch launched on the ru
 
 test('source: the owner\'s source and preference saved before the first switch (the live harness\'s record), a selection read back, the per-context preference written and read, the restore kept for the put-back', async () => {
   const calls = [];
+  // MAWS B2's regime: the selection reads back as current while the keyboard layout stays ABC (the probe's `layout`).
   let perContext = false, current = 'com.apple.keylayout.ABC';
-  const io = {probe: args => { calls.push(args.join(' ')); if (args[1] === 'current') return {id: current}; current = args[1]; return {selected: true, current: {id: current}}; },
+  const layout = 'com.apple.keylayout.ABC';
+  const io = {probe: args => { calls.push(args.join(' ')); if (args[1] === 'current') return {id: current, layout}; current = args[1]; return {selected: true, current: {id: current, layout}}; },
     readPerContext: () => perContext, writePerContext: value => { perContext = value; },
     saveInput: () => ({kept: false, saved: {source: {id: 'com.apple.keylayout.ABC'}, perContext: false}}), restoreInput: async ({keep}) => ({keep, sourceRestored: true, perContextRestored: true})};
   assert.deepEqual(await source('save', {}, io), {kept: false, saved: {source: 'com.apple.keylayout.ABC', perContext: false}});
-  assert.deepEqual(await source('select', {id: 'com.apple.inputmethod.Korean.2SetKorean'}, io), {selected: true, current: 'com.apple.inputmethod.Korean.2SetKorean'});
-  assert.deepEqual(await source('current', {}, io), {current: 'com.apple.inputmethod.Korean.2SetKorean'});
+  assert.deepEqual(await source('select', {id: 'com.apple.inputmethod.Korean.2SetKorean'}, io),
+    {selected: true, current: 'com.apple.inputmethod.Korean.2SetKorean', layout: 'com.apple.keylayout.ABC'}, 'the layout read beside the source');
+  assert.deepEqual(await source('current', {}, io), {current: 'com.apple.inputmethod.Korean.2SetKorean', layout: 'com.apple.keylayout.ABC'});
   assert.deepEqual(await source('per-context', {value: 'on'}, io), {perContext: true});
   assert.deepEqual(await source('restore', {}, io), {keep: true, sourceRestored: true, perContextRestored: true}, 'the record stays for the put-back to verify');
   await assert.rejects(() => source('select', {id: 'not an id'}, io), /source id/);

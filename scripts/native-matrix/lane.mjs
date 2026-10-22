@@ -114,6 +114,8 @@ export async function connectLane({ops, pre, prepared, host, engine, connect, bu
 
 // ---- the dry run ------------------------------------------------------------------------------------------------------
 
+// The keyboard layout a dry source reads with: 2-Set's own once engaged, ABC otherwise.
+const dryLayout = id => (id === 'com.apple.inputmethod.Korean.2SetKorean' ? 'com.apple.keylayout.2SetHangul' : 'com.apple.keylayout.ABC');
 // What a dry run's device answers: made up, each consistent with the step that asks, so the whole run's sequence is
 // exercised (and logged) with nothing sent anywhere. `clock` is the made-up device clock of every `at`.
 export function dryOps({log, engine, approvedEngine = '/Users/owner/Library/Application Support/cua/engine/cua Engine.app', commit, clock = Date.now}) {
@@ -167,7 +169,8 @@ export function dryOps({log, engine, approvedEngine = '/Users/owner/Library/Appl
         }
         case 'source':
           if (args[1] === 'select') source = args[args.indexOf('--source') + 1];
-          return {answer: {save: {kept: false, saved: {source: 'com.apple.keylayout.ABC', perContext: false}}, current: {current: source}, select: {selected: true, current: source},
+          return {answer: {save: {kept: false, saved: {source: 'com.apple.keylayout.ABC', perContext: false}}, current: {current: source, layout: dryLayout(source)},
+            select: {selected: true, current: source, layout: dryLayout(source)},
             'per-context': {perContext: args[args.indexOf('--value') + 1] === 'on'}, restore: {sourceRestored: true, perContextRestored: true}}[args[1]] ?? {}, at};
         case 'step':
           if (args[1] === 'activate') { front = records[args[2]] ?? front; focusHash = sha256Hex(''); }

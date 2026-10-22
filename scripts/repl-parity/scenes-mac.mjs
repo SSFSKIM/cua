@@ -73,7 +73,7 @@ import {FIXTURE_BUNDLE_ID, FIXTURE_CONTROLS, FIXTURE_INITIAL, buildElectronFixtu
 import {CHROME_FOR_TESTING_BUNDLE_ID, placeChromeForTesting} from '../native-matrix/fixtures/chrome-for-testing.mjs';
 import {
   activateApp, activateProcess, appWindows, appWindowState, awaitOwnLaunch, frontmostProcess, frontWindow, openApp, readFinderPreferences, runningApps,
-  stopRecorded, writeFinderPreference,
+  showFolder, stopRecorded, writeFinderPreference,
 } from './scenes-mac-device.mjs';
 import {
   CLOSE_WINDOW_KEY, DESELECT_ALL_KEY, FINDER_PARTS, LIST_VIEW_KEY, SAVED_PREFERENCES, clearSavedPreferences, finderWindowProblems, preferenceWrites,
@@ -361,7 +361,7 @@ export function writeState(run, state) {
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 const defaultIo = () => ({
-  runningApps, appWindows, appWindowState, openApp, activateApp, activateProcess, awaitOwnLaunch, stopRecorded, launchOf, now: Date.now, sleep,
+  runningApps, appWindows, appWindowState, openApp, activateApp, showFolder, activateProcess, awaitOwnLaunch, stopRecorded, launchOf, now: Date.now, sleep,
   frontmostProcess: () => frontmostProcess(), frontWindow: () => frontWindow(),
   finderPid: () => runningApps(FINDER_BUNDLE_ID)[0]?.pid ?? null,
   finderPreferences: () => readFinderPreferences(), writeFinderPreference: (key, value) => writeFinderPreference(key, value), savedPreferencesFile: SAVED_PREFERENCES,
@@ -536,25 +536,41 @@ const recordOf = (id, run) => {
 };
 
 // Brings an up scene's process to the front (`open -a`, which activates the running instance) and polls for up to
-// `boundMs` until the frontmost process is the run's, by pid, and for Finder until the run's window is its top window.
-// -> {scene, ok, frontmost, topWindow? , reason?}; ok false names what was in front instead, nothing is guessed.
+// `boundMs` until the frontmost process is the run's, by pid, and for Finder until the run's window (by its number) is
+// its top window. When Finder is in front with another of its own windows above the run's, the run's folder is opened
+// again (`open -a Finder <folder>`), once: Finder brings the window already showing that folder to the front and
+// touches no other. Only while the run's window is on screen, since otherwise the open would make a new window.
+// -> {scene, ok, frontmost, topWindow?, raised?, runWindow?, reason?}; ok false names what was in front instead and,
+// for Finder, where the run's window stood (`runWindow`: its place among Finder's on-screen windows, front first, and
+// its bounds; null when it is not among them), nothing guessed.
 export async function activateScene(id, {run, io = defaultIo(), boundMs = 5000, pollMs = 250}) {
   const record = recordOf(id, run), finder = sceneOf(id).id === 'finder';
   io.activateApp(record.app);
-  let frontmost = null, topWindow = null;
+  let frontmost = null, topWindow = null, placed = false, raised = false;
   for (const t0 = io.now(); ;) {
     frontmost = io.frontmostProcess();
     if (frontmost?.pid === record.pid) {
       if (!finder) return {scene: id, ok: true, frontmost};
       topWindow = io.frontWindow().topWindow ?? null;
-      if (topWindow?.ownerPid === record.pid && topWindow.number === record.window.number) return {scene: id, ok: true, frontmost, topWindow};
+      if (topWindow?.ownerPid === record.pid && topWindow.number === record.window.number) return {scene: id, ok: true, frontmost, topWindow, ...(raised ? {raised} : {})};
+      if (!placed) { placed = true; if (runWindowPlace(io.appWindows(record.pid), record)?.order > 0) { io.showFolder(record.app, record.folder); raised = true; } }
     }
     if (io.now() - t0 >= boundMs) break;
     await io.sleep(pollMs);
   }
-  const reason = frontmost?.pid === record.pid ? 'the run\'s Finder is frontmost but its top window is not the run\'s window' : `the run's process ${record.pid} is not frontmost within ${boundMs} ms`;
-  return {scene: id, ok: false, frontmost, ...(finder ? {topWindow} : {}), reason};
+  if (frontmost?.pid !== record.pid) return {scene: id, ok: false, frontmost, ...(finder ? {topWindow} : {}), reason: `the run's process ${record.pid} is not frontmost within ${boundMs} ms`};
+  const place = runWindowPlace(io.appWindows(record.pid), record);
+  return {scene: id, ok: false, frontmost, topWindow, ...(raised ? {raised} : {}), runWindow: place, reason: `the run's Finder is frontmost but its top window is not the run's window: ${placeReason(place)}`};
 }
+// The run's window among Finder's on-screen windows (front to back). -> {order, bounds} or null.
+const runWindowPlace = (windows, record) => {
+  const shown = windows.filter(w => w.onScreen !== false), order = shown.findIndex(w => w.number === record.window.number);
+  return order < 0 ? null : {order, bounds: shown[order].bounds};
+};
+const placeReason = place => (place === null ? 'the run\'s window is not among Finder\'s on-screen windows (closed, minimized or on another Space)'
+  : place.order === 0 ? 'it is Finder\'s front window, but another process\'s window is on top'
+  : `${place.order} other Finder window${place.order === 1 ? ' is' : 's are'} above the run's window`)
+  + (place === null ? '' : ` (the run's window ${place.bounds.width}x${place.bounds.height} at ${place.bounds.x},${place.bounds.y})`);
 
 // Puts the app the owner had in front before a driver's run back in front at its end (every scene activates its own
 // app, so the run otherwise leaves a scene app or Finder where the owner had, say, Terminal): only while that app still
@@ -613,10 +629,13 @@ export async function restoreFinder({io = defaultIo()} = {}) {
     ...(visibleRestored === false ? {visibleNote} : {})}};
 }
 
-// Brings one scene down: stops only what the run recorded at its launch. Finder: checks the run's window is gone, then
-// writes back what the hiding still leaves changed in Finder's preferences (restoreFinder; also with no record, for a
-// run that died after saving). -> {scene, down: boolean, ...}; a scene still up (a process that would not exit, Finder's
-// window still open or a preference not restored) stays in the state so a later down can finish it.
+// Brings one scene down: stops only what the run recorded at its launch. Finder: writes back what the hiding still
+// leaves changed in Finder's preferences (restoreFinder; also with no record, for a run that died after saving), and is
+// down once the run's window is gone. The keys are written back with the window still open too (a teardown that could
+// not reach the window must not leave them hidden; Finder reads them only at launch, so the open window is unchanged),
+// and the saved record stays until a teardown has brought the window's chrome back. -> {scene, down: boolean, ...}; a
+// scene still up (a process that would not exit, Finder's window still open or a preference not restored) stays in the
+// state so a later down can finish it.
 export async function downScene(id, {run, io = defaultIo()}) {
   sceneOf(id);
   const state = readState(run), record = state.scenes[id];
@@ -629,11 +648,10 @@ export async function downScene(id, {run, io = defaultIo()}) {
   let result;
   if (id === 'finder') {
     const open = documentWindows(io.appWindows(record.pid)).some(w => w.number === record.window.number);
-    if (open) result = {down: false, windowOpen: true, reason: 'the run\'s Finder window is still open; send the teardown steps (teardown-steps finder), then run down again'};
-    else {
-      const {preferences} = await restoreFinder({io});
-      result = {down: preferences.restored, ...(preferences.saved === false ? {} : {preferences}), ...(preferences.restored ? {} : {reason: unrestored(preferences)})};
-    }
+    const {preferences} = await restoreFinder({io});
+    const kept = preferences.saved === false ? {} : {preferences};
+    if (open) result = {down: false, windowOpen: true, ...kept, reason: `the run's Finder window is still open; send the teardown steps (teardown-steps finder), then run down again${preferences.restored ? '' : `. ${unrestored(preferences)}`}`};
+    else result = {down: preferences.restored, ...kept, ...(preferences.restored ? {} : {reason: unrestored(preferences)})};
   } else {
     // Without a captured identity no browser is safe to signal; only absence can release an attempted launch's profile.
     const stopped = id === 'chrome' && record.launchAttempted && !record.pid

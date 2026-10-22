@@ -78,6 +78,10 @@ struct FocusSource {
   /// The focused app's focused element now: the owner pid and frame of the window it belongs to, and a reader of its
   /// value (called only once the element is known to sit in the named window).
   var focusedElement: () -> (windowPid: pid_t?, windowFrame: CGRect?, value: () -> String?)?
+  /// Opens the process's WindowServer connection, before the first reading: the probe runs before NSApplication, and
+  /// until the process has a connection the system-wide AXFocusedApplication answers kAXErrorCannotComplete (-25204)
+  /// on every call, so no focused application is ever read (hold 2a).
+  var connect: () -> Void = {}
 }
 
 /// One poll: the named window is still the focused one, and the focused element belongs to it, before its value is read.
@@ -94,6 +98,7 @@ func pollNamedValue(_ named: NamedWindow, source: FocusSource) -> ValuePoll {
 /// element's value — read only while the named window keeps the focus and the element sits in it, re-checked before
 /// every read, so a focus that moves during the wait reports no hash rather than another window's.
 func focusReport(named: NamedWindow?, source: FocusSource, timeoutMs: Double = 1_000, now: () -> Double, sleep: (Double) -> Void) -> [String: Any] {
+  source.connect()
   let reading = source.reading()
   let isNamed = named?.matches(pid: reading.windowPid, frame: reading.windowFrame) ?? false
   var report: [String: Any] = [
@@ -151,6 +156,8 @@ extension Probe {
           if CFGetTypeID(value) == CFAttributedStringGetTypeID() { return (value as? NSAttributedString)?.string }
           return nil
         })
-      })
+      },
+      // One window list read opens the connection; nothing of it is kept.
+      connect: { _ = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) })
   }
 }

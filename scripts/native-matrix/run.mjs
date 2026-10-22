@@ -64,7 +64,7 @@ import {CASES, caseId, OWNER_OPTIONS, SCENE_OF, WINDOWLESS_BUNDLE_ID} from './pl
 import {probeCells} from './probe-run.mjs';
 import {activate, caseRow, device, focusOf, js, mark, PASTING, push, read, sendKeys, step, Stop, TEXTEDIT} from './steps.mjs';
 import {ABC, UNICODE_PLAN, unicodeRowsOf} from './unicode-plan.mjs';
-import {unicodeSection} from './unicode-run.mjs';
+import {REFOCUS_THROUGH, unicodeSection} from './unicode-run.mjs';
 
 export {PASTING};
 
@@ -124,7 +124,9 @@ function narrowed(kind, {scene, user}) {
 export const scenesOf = plan => SCENE_ORDER.filter(id => plan.frontmost.some(t => SCENE_OF[t] === id)
   || plan.background.some(p => SCENE_OF[p.driven] === id || p.user === id) || plan.launch.some(l => l.scene === id || l.user === id)
   || (plan.concurrent ?? []).some(d => d === id || CONCURRENT_USE.user === id) || (plan.sheet && [CONCURRENT_USE_SHEET.driven, CONCURRENT_USE_SHEET.user].includes(id))
-  || (plan.intervention?.length && id === 'textedit') || unicodeRowsOf(plan.unicode ?? {fields: [], conditions: []}).some(r => r.field === id || r.user === id));
+  || (plan.intervention?.length && id === 'textedit') || unicodeRowsOf(plan.unicode ?? {fields: [], conditions: []}).some(r => r.field === id || r.user === id
+    // The Korean source is read only after its target is refocused through another scene (./unicode-run.mjs koreanIn).
+    || (r.condition === 'korean' && REFOCUS_THROUGH[r.field] === id)));
 
 // options: {device, host, engine, approvedRuntime, approvedEngine, out, runs, samples, run (the device directory), plan
 // (planOf's), cell (the registry name the results answer), sitting (the sitting's id, in every result)}; io: {ops

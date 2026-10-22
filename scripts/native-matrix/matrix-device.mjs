@@ -221,18 +221,23 @@ export function probeFinish(io) {
 
 // ---- the input source ----------------------------------------------------------------------------------------------------
 
+// A source reading as it leaves the device: the current source's id and the keyboard layout key events are translated
+// with (the probe's `layout`): a 2-Set selection made while a field holds focus reads 2SetKorean with the layout still
+// ABC, the input method not engaged (MAWS B2).
+const reading = probed => ({current: probed?.id ?? null, layout: probed?.layout ?? null});
+
 // io: {probe(args), probeStuck(), readPerContext(), writePerContext(value), saveInput(), restoreInput({keep})} (the restore
 // holds behind a probe that may still act itself: ./live-device.mjs restoreInputSource).
 export async function source(action, {id, value} = {}, io) {
   switch (action) {
     case 'save': { const out = io.saveInput(); return {kept: out.kept, saved: {source: out.saved?.source?.id ?? null, perContext: out.saved?.perContext ?? null}}; }
-    case 'current': return {current: io.probe(['input-source', 'current'])?.id ?? null};
+    case 'current': return reading(io.probe(['input-source', 'current']));
     case 'select': {
       if (!/^[A-Za-z0-9._-]+$/.test(id ?? '')) throw new Error('--source needs an input source id');
       const busy = io.probeStuck?.();
       if (busy) throw new Error(`an earlier probe may still act: ${busy}`);
       const out = io.probe(['input-source', id]);
-      return {selected: out?.selected === true, current: io.probe(['input-source', 'current'])?.id ?? null};
+      return {selected: out?.selected === true, ...reading(io.probe(['input-source', 'current']))};
     }
     case 'per-context':
       if (!['on', 'off'].includes(value)) throw new Error('--value is on or off');

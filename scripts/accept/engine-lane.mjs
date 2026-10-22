@@ -4,7 +4,7 @@
 // selection alone). Pure pieces, testable without a GUI or an engine: the reply check the live TextEdit fixture wraps
 // its sessions in, the ledger that observes its approvals by behaviour (per bind, per connection), and what items 3, 4
 // and 8 judge from doctor's engine row, verify's report and probe-lifecycle's.
-import {attestationProblem, isAppApproval, isLifecycleRejection} from '../probe/lib.mjs';
+import {abandonedCountProblem, attestationProblem, isAppApproval, isLifecycleRejection} from '../probe/lib.mjs';
 
 const result = (name, status, detail) => ({name, status, detail});
 
@@ -149,6 +149,8 @@ export function lifecycleEngineCheck(p, pin) {
   else {
     if (engine.engine !== pin.engine) problems.push(`it pinned ${engine.engine}`);
     if (!(engine.attested > 0)) problems.push('no result attested');
+    const abandoned = abandonedCountProblem(engine);
+    if (abandoned) problems.push(abandoned);
   }
   if (pin.engine === 'cua') for (const [scenario, close] of CLOSES.map(([label, read]) => [label, read(p ?? {})])) {
     if (!close || !Array.isArray(close.engineSocketHeldAfterExit) || !Number.isInteger(close.engineSocketClientsUnseen)) problems.push(`${scenario}: no reading of the engine socket after the close`);

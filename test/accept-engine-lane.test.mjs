@@ -156,7 +156,7 @@ test('item 4 requires verify to have pinned the run\'s engine and every result t
 
 const closeRecord = over => ({code: 0, runtimeProcessesAfterExit: 0, leftAfterExit: [], engineSocketHeldAfterExit: [], engineSocketClientsUnseen: 0, ...over});
 const lifecycle = over => ({
-  engine: {engine: 'cua', pinnedBy: '--engine', host: 'cua', expected: CUA, attested: 9},
+  engine: {engine: 'cua', pinnedBy: '--engine', host: 'cua', expected: CUA, attested: 9, abandonedUnattested: 1},
   cancelDuringJs: {close: closeRecord()}, endTaskWithWorkInFlight: {close: closeRecord()},
   uncertainCompletion: {exit: {code: 1}, ...closeRecord()}, idleClose: closeRecord(), ...over,
 });
@@ -167,13 +167,17 @@ test('item 8: probe-lifecycle pinned the run\'s engine, every result attested it
   assert.equal(lifecycleEngineCheck(lifecycle({engine: {...lifecycle().engine, engine: 'vendor'}}), pinned('cua')).status, 'FAIL');
   assert.equal(lifecycleEngineCheck(lifecycle({engine: {...lifecycle().engine, attested: 0}}), pinned('cua')).status, 'FAIL');
   assert.equal(lifecycleEngineCheck(lifecycle({engine: undefined}), pinned('cua')).status, 'FAIL');
+  for (const count of [0, 2, undefined]) {
+    assert.match(lifecycleEngineCheck(lifecycle({engine: {...lifecycle().engine, abandonedUnattested: count}}), pinned('cua')).detail,
+      /abandoned call\(s\) accepted unattested where exactly 1/, `abandonedUnattested ${count}`);
+  }
   const held = lifecycleEngineCheck(lifecycle({idleClose: closeRecord({engineSocketHeldAfterExit: [4242]})}), pinned('cua'));
   assert.equal(held.status, 'FAIL');
   assert.match(held.detail, /idleClose.*4242/);
   const unseen = lifecycleEngineCheck(lifecycle({cancelDuringJs: {close: closeRecord({engineSocketClientsUnseen: 1})}}), pinned('cua'));
   assert.equal(unseen.status, 'FAIL', 'a connection whose client lsof could not show leaves the release unproven');
   assert.equal(lifecycleEngineCheck(lifecycle({uncertainCompletion: {exit: {code: 1}}}), pinned('cua')).status, 'FAIL', 'a close with no socket reading');
-  const vendor = {engine: {engine: 'vendor', pinnedBy: '--engine', host: 'vendor', expected: VENDOR, attested: 9}, idleClose: closeRecord({engineSocketHeldAfterExit: undefined, engineSocketClientsUnseen: undefined})};
+  const vendor = {engine: {engine: 'vendor', pinnedBy: '--engine', host: 'vendor', expected: VENDOR, attested: 9, abandonedUnattested: 1}, idleClose: closeRecord({engineSocketHeldAfterExit: undefined, engineSocketClientsUnseen: undefined})};
   assert.equal(lifecycleEngineCheck(vendor, pinned('vendor')).status, 'PASS', 'the vendor lane has no cua engine socket to read');
   assert.equal(lifecycleEngineCheck(lifecycle(), null), null);
 });

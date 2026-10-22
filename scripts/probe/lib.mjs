@@ -144,12 +144,21 @@ const rejectionCode = result => result?.isError === true && result.structuredCon
   && !Object.hasOwn(result._meta ?? {}, 'cua/taskId') ? result.structuredContent.code : null;
 export const isLifecycleRejection = result => PRE_DISPATCH_CODES.has(rejectionCode(result));
 
-// The connection's terminal codes for work it may have dispatched and then dropped (src/mcp/task.mjs fail, abandon,
-// #completionFailed): accepted unattested only for a call its caller declared abandoned (probe-lifecycle's stuck cell).
-const ABANDONED_CODES = new Set(['connection_failed', 'connection_closing', 'completion_timeout', 'completion_failed']);
+// The connection's codes for in-flight work it dropped (src/mcp/task.mjs fail, abandon, #completionFailed): accepted
+// unattested only for a call its caller declared abandoned (probe-lifecycle's stuck cell). completion_timeout and
+// completion_failed settle end_task, never a work call, so they are not among them.
+const ABANDONED_CODES = new Set(['connection_failed', 'connection_closing']);
 
 // A js result against `expected` -> {kind, problem}: 'rejected' (isLifecycleRejection: never dispatched), 'abandoned'
 // (a declared abandoned call the lifecycle failed, no `cua/taskId`), else 'attested' with attestationProblem's problem.
+// probe-lifecycle's engine block -> null, or the problem when its one declared abandoned call (scenario 3's stuck cell)
+// was not the only result accepted unattested as abandoned: exactly 1, where results are attested (`expected` set).
+export function abandonedCountProblem(engine) {
+  if (!engine?.expected) return null;
+  const count = engine.abandonedUnattested;
+  return count === 1 ? null : `${count ?? 'no'} abandoned call(s) accepted unattested where exactly 1 (scenario 3's stuck cell) is expected`;
+}
+
 export function resultAttestation(result, expected, {abandoned = false} = {}) {
   if (isLifecycleRejection(result)) return {kind: 'rejected', problem: null};
   if (abandoned && ABANDONED_CODES.has(rejectionCode(result))) return {kind: 'abandoned', problem: null};

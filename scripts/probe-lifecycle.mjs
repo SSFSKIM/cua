@@ -26,7 +26,7 @@ import {parseArgs} from 'node:util';
 import {defaultHome} from '../src/runtime/layout.mjs';
 import {resolveRuntime} from '../src/runtime/manifest.mjs';
 import {settingsFrom} from '../src/mcp/server.mjs';
-import {descendants, resultAttestation, leftoverProcesses, unixSocketEnds, unixSockets} from './probe/lib.mjs';
+import {abandonedCountProblem, descendants, resultAttestation, leftoverProcesses, unixSocketEnds, unixSockets} from './probe/lib.mjs';
 import {approvedEngineFacts, LaneUsageError, pinLane, selectLane} from './probe/pinned-engine.mjs';
 
 const CLI = fileURLToPath(new URL('../bin/cua.mjs', import.meta.url));
@@ -199,4 +199,8 @@ async function refuse(problem, {server, exited}) {
   report.idleClose = await c.close();
 }
 
+// The one declared abandoned call, and only it, may have gone unattested: any other count fails the run.
+const abandoned = abandonedCountProblem(report.engine);
+if (abandoned) report.abandonedProblem = abandoned;
 console.log(JSON.stringify(report, null, 1));
+if (abandoned) process.exit(1);

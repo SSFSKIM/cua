@@ -5,7 +5,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {
   approvalsByBehaviour, attestationProblem, boundedError, classifyOwnHostTree, cuaRootProcesses, descendants, engineSocketPeers,
-  bindRefusal, isAppApproval, isLifecycleRejection, leftoverProcesses, resultAttestation, lsappinfoPid, pinnedEngine, psRows, unixSocketEnds, unixSockets,
+  bindRefusal, isAppApproval, isLifecycleRejection, leftoverProcesses, resultAttestation, abandonedCountProblem, lsappinfoPid, pinnedEngine, psRows, unixSocketEnds, unixSockets,
 } from '../scripts/probe/lib.mjs';
 
 const HOME = '/Users/u';
@@ -71,9 +71,12 @@ test('a call declared abandoned may end in the connection\'s failure unattested;
   const rejection = code => ({isError: true, structuredContent: {status: 'error', code}});
   const expected = {engine: 'cua', version: '0.1.0', build: 'b74949b3aa'};
   const abandoned = {abandoned: true};
-  for (const code of ['connection_failed', 'connection_closing', 'completion_timeout', 'completion_failed']) {
+  for (const code of ['connection_failed', 'connection_closing']) {
     assert.deepEqual(resultAttestation(rejection(code), expected, abandoned), {kind: 'abandoned', problem: null}, code);
     assert.match(resultAttestation(rejection(code), expected).problem, /no cua\/nativeEngine attestation/, `${code}, undeclared`);
+  }
+  for (const code of ['completion_timeout', 'completion_failed']) {
+    assert.match(resultAttestation(rejection(code), expected, abandoned).problem, /no cua\/nativeEngine attestation/, `${code}, even declared`);
   }
   assert.match(resultAttestation({...rejection('connection_failed'), _meta: {'cua/taskId': 't1'}}, expected, abandoned).problem,
     /no cua\/nativeEngine attestation/, 'with cua/taskId the runtime answered it: it must attest');
@@ -82,6 +85,16 @@ test('a call declared abandoned may end in the connection\'s failure unattested;
   assert.deepEqual(resultAttestation(rejection('task_ending'), expected), {kind: 'rejected', problem: null});
   assert.deepEqual(resultAttestation({_meta: {'cua/nativeEngine': {...expected}, 'cua/taskId': 't1'}}, expected), {kind: 'attested', problem: null});
   assert.match(resultAttestation({_meta: {'cua/nativeEngine': {...expected, build: 'x'}, 'cua/taskId': 't1'}}, expected, abandoned).problem, /build x/);
+});
+
+test('probe-lifecycle passes only with exactly one abandoned call accepted unattested', () => {
+  const engine = {engine: 'cua', expected: {engine: 'cua', version: '0.1.0', build: 'b'}, attested: 6};
+  assert.match(abandonedCountProblem({...engine, abandonedUnattested: 0}), /0 abandoned call\(s\) .* exactly 1/);
+  assert.equal(abandonedCountProblem({...engine, abandonedUnattested: 1}), null);
+  assert.match(abandonedCountProblem({...engine, abandonedUnattested: 2}), /2 abandoned call\(s\)/);
+  assert.match(abandonedCountProblem({...engine}), /no abandoned call\(s\)/);
+  assert.equal(abandonedCountProblem({...engine, expected: null, abandonedUnattested: 0}), null, 'nothing attested: nothing to count');
+  assert.equal(abandonedCountProblem(undefined), null, 'no engine pinned');
 });
 
 test('the attestation must name the pinned engine with the expected version and build, on every result', () => {

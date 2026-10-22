@@ -232,6 +232,8 @@ function fakeDevice({running = [], windows = {}, finderPid = 736, finderHidden =
       const p = running.find(r => r.bundleId === bundleId);
       io.front = p && {pid: p.pid, bundleId, topWindow: {ownerPid: p.pid, number: windows[p.pid]?.[0]?.number}};
     },
+    // The run's folder opened again (activateScene's raise): recorded; a test that needs the raise to work sets its own.
+    showFolder: (app, folder) => { calls.push(['show', app, folder]); },
     runningApps: id => running.filter(p => p.bundleId === id),
     appWindows: pid => windows[pid] ?? [],
     appWindowState: pid => ({windows: windows[pid] ?? [], hidden: pid === finderPid ? finderHidden : false}),
@@ -788,11 +790,19 @@ test('down finder, once the run\'s window is gone, writes back each key that sti
   const io = fakeDevice({preferences: {ShowSidebar: null, ShowStatusBar: true, ShowPathbar: null}});
   const record = await upScene('finder', {run, io});
   Object.assign(io.preferences, {ShowSidebar: false, ShowStatusBar: false});   // the setup's toggles
-  // While the window is open nothing is written: the driver brings the chrome back in it first (teardown).
+  recordVisibleState(io.savedPreferencesFile, {sidebar: true, statusBar: true, pathBar: false});
+  // While the window is open the scene stays up, but the keys are written back all the same (vendor run 3's put-back
+  // left them hidden when its teardown could not reach the window); the record is kept for the window's chrome.
   const open = await downScene('finder', {run, io});
   assert.equal(open.down, false);
-  assert.deepEqual(io.writes, []);
-  recordVisibleState(io.savedPreferencesFile, {sidebar: true, statusBar: true, pathBar: false});
+  assert.equal(open.windowOpen, true);
+  assert.deepEqual(io.writes, [['ShowSidebar', null], ['ShowStatusBar', true]]);
+  assert.equal(open.preferences.restored, true);
+  assert.equal(open.preferences.visibleRestored, false);
+  assert.ok(readSavedPreferences(io.savedPreferencesFile).visible, 'the record stays for the teardown to restore the window');
+  assert.ok(readState(run).scenes.finder);
+  io.writes.length = 0;
+  Object.assign(io.preferences, {ShowSidebar: false, ShowStatusBar: false});   // as the setup left them, for the rest
   const steps = teardownFor('finder', {run, io});
   assert.deepEqual(steps.map(s => s.chrome ?? s.visibleState ?? s.pressKey ?? 'activate'), ['activate', 'sidebar', 'statusBar', 'pathBar', 'restored', 'super+w']);
   assert.deepEqual(steps.filter(s => s.chrome).map(s => s.shown), [true, true, false], 'to the visible state the setup recorded');
@@ -876,6 +886,50 @@ test('activate brings the run\'s process to the front and checks it by pid; Find
   assert.equal(other.ok, false);
   assert.match(other.reason, /not the run's window/);
   await assert.rejects(activateScene('electron', {run, io}), /not up/);
+}));
+
+test('activate brings the run\'s Finder window back above Finder\'s other windows by opening the run\'s folder again, once', async () => withRun(async run => {
+  // Vendor run 3's put-back: Finder in front, its top window not the run's; the teardown sent nothing and left the
+  // run's window open with the chrome keys hidden. Opening the run's folder again makes Finder bring the window showing
+  // it to the front; no other window is touched.
+  const io = fakeDevice();
+  const finder = await upScene('finder', {run, io});
+  io.windows[736].unshift({number: 5, bounds: {x: 0, y: 0, width: 800, height: 600}, onScreen: true});
+  io.showFolder = (app, folder) => {
+    io.calls.push(['show', app, folder]);
+    const mine = io.windows[736].find(w => w.number === finder.window.number);
+    io.windows[736] = [mine, ...io.windows[736].filter(w => w !== mine)];
+    io.front = {...io.front, topWindow: {ownerPid: 736, number: mine.number}};
+  };
+  const front = await activateScene('finder', {run, io});
+  assert.equal(front.ok, true);
+  assert.equal(front.raised, true);
+  assert.deepEqual(io.calls.filter(c => c[0] === 'show'), [['show', finder.app, finder.folder]]);
+}));
+
+test('activate says why the run\'s Finder window is not on top, and raises it only from behind Finder\'s own windows', async () => withRun(async run => {
+  const io = fakeDevice();
+  const finder = await upScene('finder', {run, io});
+  io.showFolder = (...args) => io.calls.push(['show', ...args]);
+  // Another process's window above Finder's, the run's window Finder's front one: nothing of Finder's to raise.
+  io.activateApp = app => { io.calls.push(['activate', app]); io.front = {pid: 736, bundleId: 'com.apple.finder', topWindow: {ownerPid: 4242, number: 77}}; };
+  const overlay = await activateScene('finder', {run, io});
+  assert.equal(overlay.ok, false);
+  assert.match(overlay.reason, /another process's window is on top/);
+  assert.deepEqual(overlay.runWindow, {order: 0, bounds: finder.window.bounds});
+  // Another Finder window stays above the run's whatever the raise did: the reason counts them.
+  io.windows[736].unshift({number: 5, bounds: {x: 0, y: 0, width: 800, height: 600}, onScreen: true});
+  io.activateApp = app => { io.calls.push(['activate', app]); io.front = {pid: 736, bundleId: 'com.apple.finder', topWindow: {ownerPid: 736, number: 5}}; };
+  const behind = await activateScene('finder', {run, io});
+  assert.equal(behind.ok, false);
+  assert.match(behind.reason, /1 other Finder window is above the run's window/);
+  assert.equal(io.calls.filter(c => c[0] === 'show').length, 1, 'one raise per activation');
+  // The run's window off screen (minimized, another Space) or gone: opening the folder would open a new window, so no raise.
+  io.windows[736] = io.windows[736].filter(w => w.number !== finder.window.number);
+  const gone = await activateScene('finder', {run, io});
+  assert.match(gone.reason, /not among Finder's on-screen windows/);
+  assert.equal(gone.runWindow, null);
+  assert.equal(io.calls.filter(c => c[0] === 'show').length, 1, 'no raise without the run\'s window on screen');
 }));
 
 test('activate gives up after its bound when the process never comes to the front, without guessing', async () => withRun(async run => {

@@ -29,4 +29,16 @@ final class InputSourceProbeTests: XCTestCase {
       }
     }
   }
+
+  /// The source's wire carries the keyboard layout key events are translated with beside its id: a 2-Set selection
+  /// made while a field already holds focus reads 2SetKorean while the layout stays ABC and keys arrive raw (MAWS B2),
+  /// so the matrix counts Korean only on the layout.
+  func testTheSourceWireCarriesTheLayout() {
+    let korean = InputSourceInfo(id: "com.apple.inputmethod.Korean.2SetKorean", name: "2-Set Korean", keyboardLayout: false, asciiCapable: false)
+    let wire = Probe.sourceWire(korean, layout: "com.apple.keylayout.ABC", perContextInput: false)
+    XCTAssertEqual(wire["id"] as? String, "com.apple.inputmethod.Korean.2SetKorean")
+    XCTAssertEqual(wire["layout"] as? String, "com.apple.keylayout.ABC")
+    XCTAssertEqual(wire["perContextInput"] as? Bool, false)
+    XCTAssertTrue(Probe.sourceWire(korean, layout: String?.none, perContextInput: true)["layout"] is NSNull, "an unreadable layout is null, never absent")
+  }
 }

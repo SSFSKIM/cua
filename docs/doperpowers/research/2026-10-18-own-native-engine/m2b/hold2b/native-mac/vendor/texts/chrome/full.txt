@@ -1,0 +1,64 @@
+Window: "cua scene page", App: Google Chrome for Testing.
+0 표준 윈도우 cua scene page - Chrome for Testing, URL: 127.0.0.1:62420/, Secondary Actions: Raise
+	1 container cua scene page - Chrome for Testing, URL: 127.0.0.1:62420/
+		2 container
+			3 도구 막대
+				4 스크롤 영역
+					5 container chrome://webui-toolbar.top-chrome/
+						6 툴바
+							7 버튼 (disabled) 뒤로, Help: 클릭하면 이전 페이지로 가고 누르고 있으면 방문 기록이 나타납니다.
+							8 버튼 (disabled) 앞으로, Help: 클릭하면 다음 페이지로 가고 누르고 있으면 방문 기록이 나타납니다.
+							9 버튼 새로고침, Help: 페이지 새로고침
+				10 container
+					11 팝업 버튼 사이트 정보 보기
+					12 텍스트 필드 (settable) 주소창 및 검색창, Value: 127.0.0.1:62420, Placeholder: Google에서 검색하거나 URL을 입력하세요.
+					13 버튼 현재 탭을 북마크에 추가
+				14 버튼 나
+				15 팝업 버튼 Chromium
+			16 container
+				17 스크롤 영역
+					18 HTML 콘텐츠 cua scene page, URL: 127.0.0.1:62420/
+						19 container
+							20 항목 cua scene page, Value: 1
+								21 텍스트 cua scene page
+							22 텍스트 엔트리 영역 (settable) Scene notes
+							23 텍스트 필드 (settable) Scene name
+							24 버튼 Apply
+							25 체크박스 Scene option, Value: 0
+							26 container Mode
+								27 텍스트 Mode
+								28 라디오 버튼 Mode A, Value: 1
+								29 라디오 버튼 Mode B, Value: 0
+							30 팝업 버튼 Scene choice, Value: One
+								31 (selected) One
+							32 link Scene section, Value: 127.0.0.1:62420/#section
+							33 container Scene status
+								34 텍스트 Ready
+							35 항목 Section, Value: 2
+								36 텍스트 Section
+			37 container 정보 표시줄 컨테이너
+				38 container 정보 표시줄
+					39 텍스트 테스트용 Chrome v155.0.8059.84은(는) 자동 테스트 전용입니다. 정기적인 탐색을 하려면 자동으로 업데이트되는 표준 버전의 Chrome을 사용하세요.
+					40 링크 Chrome 다운로드
+			41 팝업 버튼 탭 검색
+			42 container
+				43 탭 그룹
+					44 탭 (selected, settable, boolean) cua scene page, Value: on
+						45 버튼 닫기
+			46 버튼 새 탭
+	47 닫기 버튼
+	48 전체 화면 버튼 Help: 이 버튼을 누르면 윈도우를 확대/축소합니다., Secondary Actions: 윈도우 확대/축소
+	49 최소화 버튼
+50 menu bar
+	51 Google Chrome for Testing
+	52 파일
+	53 수정
+	54 보기
+	55 방문 기록
+	56 북마크
+	57 프로필
+	58 탭
+	59 창
+	60 도움말
+
+The focused UI element is 22 텍스트 엔트리 영역 (settable) Scene notes

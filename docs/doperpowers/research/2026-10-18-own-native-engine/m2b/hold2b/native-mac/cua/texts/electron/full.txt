@@ -1,0 +1,13 @@
+Window: "cua Electron fixture", App: cua Electron Fixture.
+0 표준 윈도우 cua Electron fixture, Secondary Actions: Raise
+	1 container cua Electron fixture
+		2 container
+	3 닫기 버튼
+	4 전체 화면 버튼 Help: 이 버튼을 누르면 윈도우를 확대/축소합니다., Secondary Actions: 윈도우 확대/축소
+	5 최소화 버튼
+6 menu bar
+	7 cua Electron Fixture
+	8 File
+	9 Edit
+	10 View
+	11 Window

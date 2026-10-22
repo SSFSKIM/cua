@@ -1,0 +1,110 @@
+{
+  "schema": "native-matrix-cell-1",
+  "cell": "matrix",
+  "device": "mini",
+  "started": "2026-10-22T03:22:31.116Z",
+  "finished": "2026-10-22T03:22:33.599Z",
+  "lanes": [
+    {
+      "host": "cua",
+      "engine": "cua",
+      "build": null,
+      "version": null
+    }
+  ],
+  "complete": false,
+  "verdict": "refused",
+  "problems": [
+    "a run that died left finder up in the run directory: run live.mjs cleanup first"
+  ],
+  "rows": [],
+  "meta": {
+    "run": 3,
+    "host": "cua",
+    "engine": "cua",
+    "samples": 10,
+    "sitting": "hold2b",
+    "planId": "full",
+    "plan": {
+      "frontmost": [
+        "textedit",
+        "openPanel",
+        "finder",
+        "chrome",
+        "electron"
+      ],
+      "background": [
+        {
+          "driven": "textedit",
+          "user": "finder"
+        },
+        {
+          "driven": "finder",
+          "user": "textedit"
+        },
+        {
+          "driven": "chrome",
+          "user": "textedit"
+        },
+        {
+          "driven": "textedit",
+          "user": "chrome"
+        },
+        {
+          "driven": "electron",
+          "user": "finder"
+        },
+        {
+          "driven": "finder",
+          "user": "electron"
+        },
+        {
+          "driven": "openPanel",
+          "user": "finder"
+        },
+        {
+          "driven": "windowless",
+          "user": "finder"
+        }
+      ],
+      "launch": [
+        {
+          "scene": "electron",
+          "user": "finder"
+        }
+      ],
+      "speed": true,
+      "finding": true,
+      "concurrent": [
+        "finder",
+        "chrome"
+      ],
+      "sheet": true,
+      "intervention": [
+        "fires",
+        "preAction"
+      ],
+      "unicode": {
+        "fields": [
+          "textedit",
+          "chrome",
+          "electron"
+        ],
+        "conditions": [
+          "latin",
+          "midSwitch",
+          "korean",
+          "composing",
+          "perContext"
+        ]
+      }
+    },
+    "elicitations": [],
+    "keySkipped": [],
+    "controller": {
+      "commit": "75286950f0fc8275939c6f2fed3114724e7f4346",
+      "dirty": false
+    },
+    "runDir": "/Users/new/Library/Caches/cua-harness/native-matrix"
+  }
+}

@@ -1,0 +1,5619 @@
+{
+  "schema": "native-matrix-cell-1",
+  "cell": "matrix",
+  "device": "mini",
+  "started": "2026-10-22T03:24:05.557Z",
+  "finished": "2026-10-22T03:32:45.728Z",
+  "lanes": [
+    {
+      "host": "cua",
+      "engine": "cua",
+      "build": "1abea7b0eea810db35f0d42ad28bf12cde8820ed004fa9bca29be8a19b0b987a",
+      "version": "0.1.0"
+    }
+  ],
+  "complete": false,
+  "verdict": "no-verdict",
+  "problems": [
+    "stopped: the sheet variant's untitled document could not be closed: TextEdit's scene document is not in front"
+  ],
+  "rows": [
+    {
+      "section": "speed",
+      "id": "textedit/getAXState",
+      "engine": "cua",
+      "sample": 21,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 105.66358299999956,
+      "wallMs": 204.0327499999985
+    },
+    {
+      "section": "speed",
+      "id": "textedit/getAXState",
+      "engine": "cua",
+      "sample": 22,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 82.75412499999948,
+      "wallMs": 196.45874999999796
+    },
+    {
+      "section": "speed",
+      "id": "textedit/getAXState",
+      "engine": "cua",
+      "sample": 23,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 75.19183300000077,
+      "wallMs": 148.12758299999405
+    },
+    {
+      "section": "speed",
+      "id": "textedit/getAXState",
+      "engine": "cua",
+      "sample": 24,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 51.43462499999987,
+      "wallMs": 81.86408300000039
+    },
+    {
+      "section": "speed",
+      "id": "textedit/getAXState",
+      "engine": "cua",
+      "sample": 25,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 41.59416699999929,
+      "wallMs": 88.48370799999975
+    },
+    {
+      "section": "speed",
+      "id": "textedit/getAXState",
+      "engine": "cua",
+      "sample": 26,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 50.06087500000103,
+      "wallMs": 204.61216599999898
+    },
+    {
+      "section": "speed",
+      "id": "textedit/getAXState",
+      "engine": "cua",
+      "sample": 27,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 66.03408300000046,
+      "wallMs": 131.57095800000388
+    },
+    {
+      "section": "speed",
+      "id": "textedit/getAXState",
+      "engine": "cua",
+      "sample": 28,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 44.352374999998574,
+      "wallMs": 79.88120799999888
+    },
+    {
+      "section": "speed",
+      "id": "textedit/getAXState",
+      "engine": "cua",
+      "sample": 29,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 57.0604170000006,
+      "wallMs": 129.43595900000219
+    },
+    {
+      "section": "speed",
+      "id": "textedit/getAXState",
+      "engine": "cua",
+      "sample": 30,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 39.784874999999374,
+      "wallMs": 166.14745800000674
+    },
+    {
+      "section": "speed",
+      "id": "textedit/getScreenshot",
+      "engine": "cua",
+      "sample": 21,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 70.8468329999996,
+      "wallMs": 146.19637499999953
+    },
+    {
+      "section": "speed",
+      "id": "textedit/getScreenshot",
+      "engine": "cua",
+      "sample": 22,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 50.78924999999981,
+      "wallMs": 84.04520799999591
+    },
+    {
+      "section": "speed",
+      "id": "textedit/getScreenshot",
+      "engine": "cua",
+      "sample": 23,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 40.93662500000028,
+      "wallMs": 79.88366700000188
+    },
+    {
+      "section": "speed",
+      "id": "textedit/getScreenshot",
+      "engine": "cua",
+      "sample": 24,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 51.60400000000118,
+      "wallMs": 202.573166999995
+    },
+    {
+      "section": "speed",
+      "id": "textedit/getScreenshot",
+      "engine": "cua",
+      "sample": 25,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 59.29704199999833,
+      "wallMs": 129.0547910000023
+    },
+    {
+      "section": "speed",
+      "id": "textedit/getScreenshot",
+      "engine": "cua",
+      "sample": 26,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 49.75024999999914,
+      "wallMs": 83.12933299999713
+    },
+    {
+      "section": "speed",
+      "id": "textedit/getScreenshot",
+      "engine": "cua",
+      "sample": 27,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 68.0094169999993,
+      "wallMs": 130.314959000003
+    },
+    {
+      "section": "speed",
+      "id": "textedit/getScreenshot",
+      "engine": "cua",
+      "sample": 28,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 51.081709000000046,
+      "wallMs": 173.36362499999814
+    },
+    {
+      "section": "speed",
+      "id": "textedit/getScreenshot",
+      "engine": "cua",
+      "sample": 29,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 75.98012500000004,
+      "wallMs": 202.6394169999985
+    },
+    {
+      "section": "speed",
+      "id": "textedit/getScreenshot",
+      "engine": "cua",
+      "sample": 30,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 76.23995800000012,
+      "wallMs": 144.8089170000021
+    },
+    {
+      "section": "speed",
+      "id": "textedit/listApps",
+      "engine": "cua",
+      "sample": 21,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 21.589458000000377,
+      "wallMs": 70.08150000000023
+    },
+    {
+      "section": "speed",
+      "id": "textedit/listApps",
+      "engine": "cua",
+      "sample": 22,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 4.159625000000233,
+      "wallMs": 118.466333999997
+    },
+    {
+      "section": "speed",
+      "id": "textedit/listApps",
+      "engine": "cua",
+      "sample": 23,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 3.321458000000348,
+      "wallMs": 99.81220799999574
+    },
+    {
+      "section": "speed",
+      "id": "textedit/listApps",
+      "engine": "cua",
+      "sample": 24,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 3.3479999999999563,
+      "wallMs": 104.22875000000204
+    },
+    {
+      "section": "speed",
+      "id": "textedit/listApps",
+      "engine": "cua",
+      "sample": 25,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 4.474416000000929,
+      "wallMs": 205.58008400000108
+    },
+    {
+      "section": "speed",
+      "id": "textedit/listApps",
+      "engine": "cua",
+      "sample": 26,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 7.432833000000755,
+      "wallMs": 102.30270900000323
+    },
+    {
+      "section": "speed",
+      "id": "textedit/listApps",
+      "engine": "cua",
+      "sample": 27,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 4.487500000001091,
+      "wallMs": 100.57995800000208
+    },
+    {
+      "section": "speed",
+      "id": "textedit/listApps",
+      "engine": "cua",
+      "sample": 28,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 3.940708000000086,
+      "wallMs": 102.92320800000016
+    },
+    {
+      "section": "speed",
+      "id": "textedit/listApps",
+      "engine": "cua",
+      "sample": 29,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 6.687874999999622,
+      "wallMs": 148.65979199999856
+    },
+    {
+      "section": "speed",
+      "id": "textedit/listApps",
+      "engine": "cua",
+      "sample": 30,
+      "ok": true,
+      "scene": "textedit",
+      "inCellMs": 5.088125000000218,
+      "wallMs": 72.79670900000201
+    },
+    {
+      "section": "finding",
+      "engine": "cua",
+      "sample": 3,
+      "scene": "textedit",
+      "id": "textedit/target.document",
+      "ok": true,
+      "outcome": {
+        "found": true,
+        "resolved": true
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "cua",
+      "sample": 3,
+      "scene": "textedit",
+      "id": "textedit/target.window",
+      "ok": true,
+      "outcome": {
+        "found": true,
+        "resolved": true
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "cua",
+      "sample": 3,
+      "scene": "textedit",
+      "id": "textedit/target.styles",
+      "ok": true,
+      "outcome": {
+        "found": false,
+        "resolved": false
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "cua",
+      "sample": 3,
+      "scene": "textedit",
+      "id": "textedit/target.alignment",
+      "ok": true,
+      "outcome": {
+        "found": false,
+        "resolved": false
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "cua",
+      "sample": 3,
+      "scene": "textedit",
+      "id": "textedit/target.spacing",
+      "ok": true,
+      "outcome": {
+        "found": false,
+        "resolved": false
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "cua",
+      "sample": 3,
+      "scene": "textedit",
+      "id": "textedit/target.lists",
+      "ok": true,
+      "outcome": {
+        "found": false,
+        "resolved": false
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "cua",
+      "sample": 3,
+      "scene": "textedit",
+      "id": "textedit/target.close",
+      "ok": true,
+      "outcome": {
+        "found": true,
+        "resolved": true
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "cua",
+      "sample": 3,
+      "scene": "textedit",
+      "id": "textedit/target.minimize",
+      "ok": true,
+      "outcome": {
+        "found": true,
+        "resolved": true
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "cua",
+      "sample": 3,
+      "scene": "textedit",
+      "id": "textedit/target.fullScreen",
+      "ok": true,
+      "outcome": {
+        "found": true,
+        "resolved": true
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "cua",
+      "sample": 3,
+      "scene": "textedit",
+      "id": "textedit/target.scrollBar",
+      "ok": true,
+      "outcome": {
+        "found": false,
+        "resolved": false
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "cua",
+      "sample": 3,
+      "scene": "textedit",
+      "id": "textedit/lines",
+      "ok": true,
+      "outcome": {
+        "lines": 59,
+        "named": 28,
+        "unclassified": 0
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "cua",
+      "sample": 3,
+      "scene": "textedit",
+      "id": "textedit/ids",
+      "ok": true,
+      "outcome": {
+        "ids": 1
+      }
+    },
+    {
+      "section": "method",
+      "id": "textedit/frontmost/getAXState.tree",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "frontmost",
+      "method": "getAXState",
+      "case": "tree",
+      "expect": "outcome",
+      "inCellMs": 89.56758300000001,
+      "wallMs": 218.0031669999953,
+      "inputRoute": null,
+      "outcome": {
+        "inFront": true,
+        "document": true,
+        "elements": 59
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.getAXState.tree",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "inCellMs": 89.56758300000001,
+      "wallMs": 218.0031669999953
+    },
+    {
+      "section": "method",
+      "id": "textedit/frontmost/listApps.running",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "frontmost",
+      "method": "listApps",
+      "case": "running",
+      "expect": "outcome",
+      "inCellMs": 14.462625000000116,
+      "wallMs": 114.82133299999987,
+      "inputRoute": null,
+      "outcome": {
+        "apps": 8,
+        "listed": true,
+        "running": true
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.listApps.running",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "inCellMs": 14.462625000000116,
+      "wallMs": 114.82133299999987
+    },
+    {
+      "section": "method",
+      "id": "textedit/frontmost/click.element",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "frontmost",
+      "method": "click",
+      "case": "element",
+      "expect": "outcome",
+      "inCellMs": 18.629916000001685,
+      "wallMs": 96.00516699999571,
+      "inputRoute": 3,
+      "outcome": {
+        "collapsed": true,
+        "unchanged": true
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.click.element",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "inCellMs": 18.629916000001685,
+      "wallMs": 96.00516699999571
+    },
+    {
+      "section": "method",
+      "id": "textedit/frontmost/click.control",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "frontmost",
+      "method": "click",
+      "case": "control",
+      "expect": "outcome",
+      "inCellMs": 112.94529200000034,
+      "wallMs": 236.0890419999996,
+      "inputRoute": 1,
+      "outcome": {
+        "checked": true
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.click.control",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "inCellMs": 112.94529200000034,
+      "wallMs": 236.0890419999996
+    },
+    {
+      "section": "method",
+      "id": "textedit/frontmost/typeText.replace",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "frontmost",
+      "method": "typeText",
+      "case": "replace",
+      "expect": "outcome",
+      "inCellMs": 91.29970799999865,
+      "wallMs": 221.95324999999866,
+      "inputRoute": "2'",
+      "outcome": {
+        "exact": true,
+        "inserted": 1
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.typeText.replace",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "inCellMs": 91.29970799999865,
+      "wallMs": 221.95324999999866
+    },
+    {
+      "section": "method",
+      "id": "textedit/frontmost/pressKey.selectAll",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "frontmost",
+      "method": "pressKey",
+      "case": "selectAll",
+      "expect": "outcome",
+      "inCellMs": 6.771749999999884,
+      "wallMs": 103.76712499999849,
+      "inputRoute": "2'",
+      "outcome": {
+        "selected": true,
+        "whole": true
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.pressKey.selectAll",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "inCellMs": 6.771749999999884,
+      "wallMs": 103.76712499999849
+    },
+    {
+      "section": "method",
+      "id": "textedit/frontmost/selectText.line",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "frontmost",
+      "method": "selectText",
+      "case": "line",
+      "expect": "outcome",
+      "inCellMs": 12.1472079999985,
+      "wallMs": 164.05716699999903,
+      "inputRoute": 1,
+      "outcome": {
+        "selected": true
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.selectText.line",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "inCellMs": 12.1472079999985,
+      "wallMs": 164.05716699999903
+    },
+    {
+      "section": "method",
+      "id": "textedit/frontmost/paste.replace",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "frontmost",
+      "method": "paste",
+      "case": "replace",
+      "expect": "outcome",
+      "inCellMs": 64.54745900000125,
+      "wallMs": 146.3324169999978,
+      "inputRoute": "paste",
+      "outcome": {
+        "exact": true,
+        "inserted": 1
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.paste.replace",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "inCellMs": 64.54745900000125,
+      "wallMs": 146.3324169999978
+    },
+    {
+      "section": "method",
+      "id": "textedit/frontmost/setValue.document",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "frontmost",
+      "method": "setValue",
+      "case": "document",
+      "expect": "outcome",
+      "inCellMs": 27.3405840000014,
+      "wallMs": 194.64433299998927,
+      "inputRoute": 1,
+      "outcome": {
+        "equal": true
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.setValue.document",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "inCellMs": 27.3405840000014,
+      "wallMs": 194.64433299998927
+    },
+    {
+      "section": "method",
+      "id": "textedit/frontmost/scroll.down",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "frontmost",
+      "method": "scroll",
+      "case": "down",
+      "expect": "outcome",
+      "inCellMs": 5.971874999999272,
+      "wallMs": 103.49550000000454,
+      "inputRoute": "2'",
+      "outcome": {
+        "moved": true
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.scroll.down",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "inCellMs": 5.971874999999272,
+      "wallMs": 103.49550000000454
+    },
+    {
+      "section": "method",
+      "id": "textedit/frontmost/performSecondaryAction.down",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "frontmost",
+      "method": "performSecondaryAction",
+      "case": "down",
+      "expect": "outcome",
+      "inCellMs": 5.457792000001064,
+      "wallMs": 103.20558300000266,
+      "inputRoute": 1,
+      "outcome": {
+        "moved": true
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.performSecondaryAction.down",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "inCellMs": 5.457792000001064,
+      "wallMs": 103.20558300000266
+    },
+    {
+      "section": "method",
+      "id": "textedit/frontmost/drag.select",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "frontmost",
+      "method": "drag",
+      "case": "select",
+      "expect": "outcome",
+      "inCellMs": 12.118292000006477,
+      "wallMs": 151.56483299999672,
+      "inputRoute": 3,
+      "outcome": {
+        "selected": true,
+        "spansLines": true,
+        "unchanged": true
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.drag.select",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "inCellMs": 12.118292000006477,
+      "wallMs": 151.56483299999672
+    },
+    {
+      "section": "method",
+      "id": "textedit/frontmost/selectText.notText",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "frontmost",
+      "method": "selectText",
+      "case": "notText",
+      "expect": "refusal",
+      "inCellMs": 2.313416999997571,
+      "wallMs": 64.66337500000373,
+      "inputRoute": 1,
+      "outcome": {
+        "refused": true,
+        "expected": true,
+        "unchanged": true,
+        "errorName": "Error",
+        "message": "Computer Use server error -10005: Cannot select text for an element that does not support a settable selected text range"
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.selectText.notText",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "inCellMs": 2.313416999997571,
+      "wallMs": 64.66337500000373
+    },
+    {
+      "section": "method",
+      "id": "textedit/frontmost/setValue.notSettable",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "frontmost",
+      "method": "setValue",
+      "case": "notSettable",
+      "expect": "refusal",
+      "inCellMs": 4.547959000003175,
+      "wallMs": 57.96366600001056,
+      "inputRoute": 1,
+      "outcome": {
+        "refused": true,
+        "expected": true,
+        "unchanged": true,
+        "errorName": "Error",
+        "message": "Computer Use server error -10005: Cannot set a value for an element that is not settable"
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.setValue.notSettable",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "inCellMs": 4.547959000003175,
+      "wallMs": 57.96366600001056
+    },
+    {
+      "section": "method",
+      "id": "textedit/frontmost/click.invalidIndex",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "frontmost",
+      "method": "click",
+      "case": "invalidIndex",
+      "expect": "refusal",
+      "inCellMs": 1.4923750000016298,
+      "wallMs": 80.82670799999323,
+      "inputRoute": null,
+      "outcome": {
+        "refused": true,
+        "expected": true,
+        "unchanged": true,
+        "errorName": "Error",
+        "message": "Computer Use server error -10005: 99999 is an invalid element ID"
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.click.invalidIndex",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "inCellMs": 1.4923750000016298,
+      "wallMs": 80.82670799999323
+    },
+    {
+      "section": "method",
+      "id": "openPanel/frontmost/getAXState.panel",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "textedit",
+      "target": "openPanel",
+      "regime": "frontmost",
+      "method": "getAXState",
+      "case": "panel",
+      "expect": "outcome",
+      "inCellMs": 132.79179199999635,
+      "wallMs": 290.77491599999485,
+      "inputRoute": null,
+      "outcome": {
+        "panel": true,
+        "elements": 65
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.panel.getAXState.panel",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "inCellMs": 132.79179199999635,
+      "wallMs": 290.77491599999485
+    },
+    {
+      "section": "method",
+      "id": "openPanel/frontmost/click.cancel",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "textedit",
+      "target": "openPanel",
+      "regime": "frontmost",
+      "method": "click",
+      "case": "cancel",
+      "expect": "outcome",
+      "inCellMs": 349.3020830000023,
+      "wallMs": 405.27249999999185,
+      "inputRoute": 1,
+      "outcome": {
+        "closed": true,
+        "documentInFront": true
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "textedit/method.panel.click.cancel",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "inCellMs": 349.3020830000023,
+      "wallMs": 405.27249999999185
+    },
+    {
+      "section": "speed",
+      "id": "finder/getAXState",
+      "engine": "cua",
+      "sample": 21,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 160.3626249999943,
+      "wallMs": 230.8097090000083
+    },
+    {
+      "section": "speed",
+      "id": "finder/getAXState",
+      "engine": "cua",
+      "sample": 22,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 151.85699999999633,
+      "wallMs": 195.39150000001246
+    },
+    {
+      "section": "speed",
+      "id": "finder/getAXState",
+      "engine": "cua",
+      "sample": 23,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 146.53304200000275,
+      "wallMs": 198.1547500000015
+    },
+    {
+      "section": "speed",
+      "id": "finder/getAXState",
+      "engine": "cua",
+      "sample": 24,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 157.22066600000107,
+      "wallMs": 300.55737500000396
+    },
+    {
+      "section": "speed",
+      "id": "finder/getAXState",
+      "engine": "cua",
+      "sample": 25,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 158.06900000000314,
+      "wallMs": 314.4349999999977
+    },
+    {
+      "section": "speed",
+      "id": "finder/getAXState",
+      "engine": "cua",
+      "sample": 26,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 185.94845899999927,
+      "wallMs": 305.2933340000018
+    },
+    {
+      "section": "speed",
+      "id": "finder/getAXState",
+      "engine": "cua",
+      "sample": 27,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 169.86916599999677,
+      "wallMs": 234.81062499999825
+    },
+    {
+      "section": "speed",
+      "id": "finder/getAXState",
+      "engine": "cua",
+      "sample": 28,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 144.10608299999876,
+      "wallMs": 177.25633400000515
+    },
+    {
+      "section": "speed",
+      "id": "finder/getAXState",
+      "engine": "cua",
+      "sample": 29,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 149.08908399999927,
+      "wallMs": 213.73479200000293
+    },
+    {
+      "section": "speed",
+      "id": "finder/getAXState",
+      "engine": "cua",
+      "sample": 30,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 188.68491599999834,
+      "wallMs": 343.8944590000028
+    },
+    {
+      "section": "speed",
+      "id": "finder/getScreenshot",
+      "engine": "cua",
+      "sample": 21,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 151.85870799999975,
+      "wallMs": 179.99766599999566
+    },
+    {
+      "section": "speed",
+      "id": "finder/getScreenshot",
+      "engine": "cua",
+      "sample": 22,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 139.67587500000081,
+      "wallMs": 170.70745799998986
+    },
+    {
+      "section": "speed",
+      "id": "finder/getScreenshot",
+      "engine": "cua",
+      "sample": 23,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 154.9624580000018,
+      "wallMs": 226.8054170000105
+    },
+    {
+      "section": "speed",
+      "id": "finder/getScreenshot",
+      "engine": "cua",
+      "sample": 24,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 152.63441600000078,
+      "wallMs": 253.52229100000113
+    },
+    {
+      "section": "speed",
+      "id": "finder/getScreenshot",
+      "engine": "cua",
+      "sample": 25,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 156.11883300000045,
+      "wallMs": 190.06175000000803
+    },
+    {
+      "section": "speed",
+      "id": "finder/getScreenshot",
+      "engine": "cua",
+      "sample": 26,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 149.21970899999724,
+      "wallMs": 176.12958300000173
+    },
+    {
+      "section": "speed",
+      "id": "finder/getScreenshot",
+      "engine": "cua",
+      "sample": 27,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 147.0850419999988,
+      "wallMs": 195.89054100000067
+    },
+    {
+      "section": "speed",
+      "id": "finder/getScreenshot",
+      "engine": "cua",
+      "sample": 28,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 151.51549999999406,
+      "wallMs": 209.68758399999933
+    },
+    {
+      "section": "speed",
+      "id": "finder/getScreenshot",
+      "engine": "cua",
+      "sample": 29,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 149.19591699999728,
+      "wallMs": 296.26641699999163
+    },
+    {
+      "section": "speed",
+      "id": "finder/getScreenshot",
+      "engine": "cua",
+      "sample": 30,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 181.1475000000064,
+      "wallMs": 246.22999999999593
+    },
+    {
+      "section": "speed",
+      "id": "finder/listApps",
+      "engine": "cua",
+      "sample": 21,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 22.185958000001847,
+      "wallMs": 117.78091599998879
+    },
+    {
+      "section": "speed",
+      "id": "finder/listApps",
+      "engine": "cua",
+      "sample": 22,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 4.608375000003434,
+      "wallMs": 97.09175000000687
+    },
+    {
+      "section": "speed",
+      "id": "finder/listApps",
+      "engine": "cua",
+      "sample": 23,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 2.673917000000074,
+      "wallMs": 97.35375000000931
+    },
+    {
+      "section": "speed",
+      "id": "finder/listApps",
+      "engine": "cua",
+      "sample": 24,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 2.581041000004916,
+      "wallMs": 117.064750000005
+    },
+    {
+      "section": "speed",
+      "id": "finder/listApps",
+      "engine": "cua",
+      "sample": 25,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 4.402208999999857,
+      "wallMs": 201.2673749999958
+    },
+    {
+      "section": "speed",
+      "id": "finder/listApps",
+      "engine": "cua",
+      "sample": 26,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 3.604749999998603,
+      "wallMs": 79.96108300000196
+    },
+    {
+      "section": "speed",
+      "id": "finder/listApps",
+      "engine": "cua",
+      "sample": 27,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 3.3417909999989206,
+      "wallMs": 113.68966699999874
+    },
+    {
+      "section": "speed",
+      "id": "finder/listApps",
+      "engine": "cua",
+      "sample": 28,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 3.94695800000045,
+      "wallMs": 102.4872919999907
+    },
+    {
+      "section": "speed",
+      "id": "finder/listApps",
+      "engine": "cua",
+      "sample": 29,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 4.922833000004175,
+      "wallMs": 215.09204200000386
+    },
+    {
+      "section": "speed",
+      "id": "finder/listApps",
+      "engine": "cua",
+      "sample": 30,
+      "ok": true,
+      "scene": "finder",
+      "inCellMs": 4.293665999997756,
+      "wallMs": 87.96924999999464
+    },
+    {
+      "section": "finding",
+      "engine": "cua",
+      "sample": 3,
+      "scene": "finder",
+      "id": "finder/target.file001",
+      "ok": true,
+      "outcome": {
+        "found": false,
+        "resolved": false
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "cua",
+      "sample": 3,
+      "scene": "finder",
+      "id": "finder/target.file002",
+      "ok": true,
+      "outcome": {
+        "found": false,
+        "resolved": false
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "cua",
+      "sample": 3,
+      "scene": "finder",
+      "id": "finder/target.file050",
+      "ok": true,
+      "outcome": {
+        "found": false,
+        "resolved": false
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "cua",
+      "sample": 3,
+      "scene": "finder",
+      "id": "finder/target.file100",
+      "ok": true,
+      "outcome": {
+        "found": false,
+        "resolved": false
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "cua",
+      "sample": 3,
+      "scene": "finder",
+      "id": "finder/target.file125",
+      "ok": true,
+      "outcome": {
+        "found": true,
+        "resolved": true
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "cua",
+      "sample": 3,
+      "scene": "finder",
+      "id": "finder/target.file150",
+      "ok": true,
+      "outcome": {
+        "found": true,
+        "resolved": true
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "cua",
+      "sample": 3,
+      "scene": "finder",
+      "id": "finder/target.file199",
+      "ok": true,
+      "outcome": {
+        "found": false,
+        "resolved": false
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "cua",
+      "sample": 3,
+      "scene": "finder",
+      "id": "finder/target.file200",
+      "ok": true,
+      "outcome": {
+        "found": false,
+        "resolved": false
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "cua",
+      "sample": 3,
+      "scene": "finder",
+      "id": "finder/target.window",
+      "ok": true,
+      "outcome": {
+        "found": true,
+        "resolved": true
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "cua",
+      "sample": 3,
+      "scene": "finder",
+      "id": "finder/target.close",
+      "ok": true,
+      "outcome": {
+        "found": true,
+        "resolved": true
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "cua",
+      "sample": 3,
+      "scene": "finder",
+      "id": "finder/lines",
+      "ok": true,
+      "outcome": {
+        "lines": 387,
+        "named": 128,
+        "unclassified": 0
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "cua",
+      "sample": 3,
+      "scene": "finder",
+      "id": "finder/ids",
+      "ok": true,
+      "outcome": {
+        "ids": 2
+      }
+    },
+    {
+      "section": "method",
+      "id": "finder/frontmost/getAXState.tree",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "finder",
+      "target": "finder",
+      "regime": "frontmost",
+      "method": "getAXState",
+      "case": "tree",
+      "expect": "outcome",
+      "inCellMs": 187.29079099999944,
+      "wallMs": 305.02150000000256,
+      "inputRoute": null,
+      "outcome": {
+        "inFront": true,
+        "list": true,
+        "elements": 387
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "finder/method.getAXState.tree",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "inCellMs": 187.29079099999944,
+      "wallMs": 305.02150000000256
+    },
+    {
+      "section": "method",
+      "id": "finder/frontmost/listApps.running",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "finder",
+      "target": "finder",
+      "regime": "frontmost",
+      "method": "listApps",
+      "case": "running",
+      "expect": "outcome",
+      "inCellMs": 19.23762500000157,
+      "wallMs": 114.65166699999827,
+      "inputRoute": null,
+      "outcome": {
+        "apps": 8,
+        "listed": true,
+        "running": true
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "finder/method.listApps.running",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "inCellMs": 19.23762500000157,
+      "wallMs": 114.65166699999827
+    },
+    {
+      "section": "method",
+      "id": "finder/frontmost/click.row",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "finder",
+      "target": "finder",
+      "regime": "frontmost",
+      "method": "click",
+      "case": "row",
+      "expect": "outcome",
+      "inCellMs": 9.2401250000039,
+      "wallMs": 87.56079200000386,
+      "inputRoute": 3,
+      "outcome": {
+        "rowFound": true,
+        "selected": 1,
+        "only": true
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "finder/method.click.row",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "inCellMs": 9.2401250000039,
+      "wallMs": 87.56079200000386
+    },
+    {
+      "section": "method",
+      "id": "finder/frontmost/pressKey.down",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "finder",
+      "target": "finder",
+      "regime": "frontmost",
+      "method": "pressKey",
+      "case": "down",
+      "expect": "outcome",
+      "inCellMs": 6.49033299999428,
+      "wallMs": 200.27962499999558,
+      "inputRoute": "2'",
+      "outcome": {
+        "rowFound": true,
+        "selected": 1,
+        "only": true
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "finder/method.pressKey.down",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "inCellMs": 6.49033299999428,
+      "wallMs": 200.27962499999558
+    },
+    {
+      "section": "method",
+      "id": "finder/frontmost/typeText.typeSelect",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "finder",
+      "target": "finder",
+      "regime": "frontmost",
+      "method": "typeText",
+      "case": "typeSelect",
+      "expect": "outcome",
+      "inCellMs": 39.923166999993555,
+      "wallMs": 138.90254199999617,
+      "inputRoute": "2'",
+      "outcome": {
+        "rowFound": true,
+        "selected": 1,
+        "only": true
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "finder/method.typeText.typeSelect",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "inCellMs": 39.923166999993555,
+      "wallMs": 138.90254199999617
+    },
+    {
+      "section": "method",
+      "id": "finder/frontmost/selectText.notText",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "finder",
+      "target": "finder",
+      "regime": "frontmost",
+      "method": "selectText",
+      "case": "notText",
+      "expect": "refusal",
+      "inCellMs": 2.4637500000026193,
+      "wallMs": 48.62779199999932,
+      "inputRoute": 1,
+      "outcome": {
+        "refused": true,
+        "expected": true,
+        "unchanged": true,
+        "errorName": "Error",
+        "message": "Computer Use server error -10005: Cannot select text for an element that does not support a settable selected text range"
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "finder/method.selectText.notText",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "inCellMs": 2.4637500000026193,
+      "wallMs": 48.62779199999932
+    },
+    {
+      "section": "method",
+      "id": "finder/frontmost/scroll.down",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "finder",
+      "target": "finder",
+      "regime": "frontmost",
+      "method": "scroll",
+      "case": "down",
+      "expect": "outcome",
+      "inCellMs": 541.4411659999969,
+      "wallMs": 594.9800410000025,
+      "inputRoute": "2'",
+      "outcome": {
+        "moved": true
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "finder/method.scroll.down",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "inCellMs": 541.4411659999969,
+      "wallMs": 594.9800410000025
+    },
+    {
+      "section": "method",
+      "id": "finder/frontmost/performSecondaryAction.down",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "finder",
+      "target": "finder",
+      "regime": "frontmost",
+      "method": "performSecondaryAction",
+      "case": "down",
+      "expect": "outcome",
+      "inCellMs": 11.58379199999763,
+      "wallMs": 60.90295800000604,
+      "inputRoute": 1,
+      "outcome": {
+        "moved": true
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "finder/method.performSecondaryAction.down",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "inCellMs": 11.58379199999763,
+      "wallMs": 60.90295800000604
+    },
+    {
+      "section": "speed",
+      "id": "chrome/getAXState",
+      "engine": "cua",
+      "sample": 21,
+      "ok": true,
+      "scene": "chrome",
+      "inCellMs": 55.384083000004466,
+      "wallMs": 88.54370799999742
+    },
+    {
+      "section": "speed",
+      "id": "chrome/getAXState",
+      "engine": "cua",
+      "sample": 22,
+      "ok": true,
+      "scene": "chrome",
+      "inCellMs": 42.989291999998386,
+      "wallMs": 79.97095799999079
+    },
+    {
+      "section": "speed",
+      "id": "chrome/getAXState",
+      "engine": "cua",
+      "sample": 23,
+      "ok": true,
+      "scene": "chrome",
+      "inCellMs": 56.62316600000486,
+      "wallMs": 113.03266699999222
+    },
+    {
+      "section": "speed",
+      "id": "chrome/getAXState",
+      "engine": "cua",
+      "sample": 24,
+      "ok": true,
+      "scene": "chrome",
+      "inCellMs": 47.9721669999999,
+      "wallMs": 91.75004099999205
+    },
+    {
+      "section": "speed",
+      "id": "chrome/getAXState",
+      "engine": "cua",
+      "sample": 25,
+      "ok": true,
+      "scene": "chrome",
+      "inCellMs": 47.42329199999949,
+      "wallMs": 185.38195799999812
+    },
+    {
+      "section": "speed",
+      "id": "chrome/getAXState",
+      "engine": "cua",
+      "sample": 26,
+      "ok": true,
+      "scene": "chrome",
+      "inCellMs": 68.10962499999732,
+      "wallMs": 144.23483299999498
+    },
+    {
+      "section": "speed",
+      "id": "chrome/getAXState",
+      "engine": "cua",
+      "sample": 27,
+      "ok": true,
+      "scene": "chrome",
+      "inCellMs": 44.51762500000041,
+      "wallMs": 79.32474999999977
+    },
+    {
+      "section": "speed",
+      "id": "chrome/getAXState",
+      "engine": "cua",
+      "sample": 28,
+      "ok": true,
+      "scene": "chrome",
+      "inCellMs": 45.28479199999856,
+      "wallMs": 102.60895900000469
+    },
+    {
+      "section": "speed",
+      "id": "chrome/getAXState",
+      "engine": "cua",
+      "sample": 29,
+      "ok": true,
+      "scene": "chrome",
+      "inCellMs": 47.927167000001646,
+      "wallMs": 183.625
+    },
+    {
+      "section": "speed",
+      "id": "chrome/getAXState",
+      "engine": "cua",
+      "sample": 30,
+      "ok": true,
+      "scene": "chrome",
+      "inCellMs": 69.18170899999677,
+      "wallMs": 141.78966700000456
+    },
+    {
+      "section": "speed",
+      "id": "chrome/getScreenshot",
+      "engine": "cua",
+      "sample": 21,
+      "ok": true,
+      "scene": "chrome",
+      "inCellMs": 47.57212499999878,
+      "wallMs": 80.38958299999649
+    },
+    {
+      "section": "speed",
+      "id": "chrome/getScreenshot",
+      "engine": "cua",
+      "sample": 22,
+      "ok": true,
+      "scene": "chrome",
+      "inCellMs": 52.38041700000031,
+      "wallMs": 117.4002499999915
+    },
+    {
+      "section": "speed",
+      "id": "chrome/getScreenshot",
+      "engine": "cua",
+      "sample": 23,
+      "ok": true,
+      "scene": "chrome",
+      "inCellMs": 52.48162500000035,
+      "wallMs": 178.30279200000223
+    },
+    {
+      "section": "speed",
+      "id": "chrome/getScreenshot",
+      "engine": "cua",
+      "sample": 24,
+      "ok": true,
+      "scene": "chrome",
+      "inCellMs": 82.36916599999677,
+      "wallMs": 148.6626249999972
+    },
+    {
+      "section": "speed",
+      "id": "chrome/getScreenshot",
+      "engine": "cua",
+      "sample": 25,
+      "ok": true,
+      "scene": "chrome",
+      "inCellMs": 44.79699999999866,
+      "wallMs": 76.63787500000035
+    },
+    {
+      "section": "speed",
+      "id": "chrome/getScreenshot",
+      "engine": "cua",
+      "sample": 26,
+      "ok": true,
+      "scene": "chrome",
+      "inCellMs": 42.185459000000264,
+      "wallMs": 89.5685000000085
+    },
+    {
+      "section": "speed",
+      "id": "chrome/getScreenshot",
+      "engine": "cua",
+      "sample": 27,
+      "ok": true,
+      "scene": "chrome",
+      "inCellMs": 46.5515000000014,
+      "wallMs": 103.17716600000858
+    },
+    {
+      "section": "speed",
+      "id": "chrome/getScreenshot",
+      "engine": "cua",
+      "sample": 28,
+      "ok": true,
+      "scene": "chrome",
+      "inCellMs": 68.71199999999953,
+      "wallMs": 231.67179100000067
+    },
+    {
+      "section": "speed",
+      "id": "chrome/getScreenshot",
+      "engine": "cua",
+      "sample": 29,
+      "ok": true,
+      "scene": "chrome",
+      "inCellMs": 45.22008299999288,
+      "wallMs": 72.47820800000045
+    },
+    {
+      "section": "speed",
+      "id": "chrome/getScreenshot",
+      "engine": "cua",
+      "sample": 30,
+      "ok": true,
+      "scene": "chrome",
+      "inCellMs": 46.05595799999719,
+      "wallMs": 113.76254199999676
+    },
+    {
+      "section": "speed",
+      "id": "chrome/listApps",
+      "engine": "cua",
+      "sample": 21,
+      "ok": true,
+      "scene": "chrome",
+      "inCellMs": 21.62866600000416,
+      "wallMs": 171.6698330000072
+    },
+    {
+      "section": "speed",
+      "id": "chrome/listApps",
+      "engine": "cua",
+      "sample": 22,
+      "ok": true,
+      "scene": "chrome",
+      "inCellMs": 3.1095839999907184,
+      "wallMs": 103.1481669999921
+    },
+    {
+      "section": "speed",
+      "id": "chrome/listApps",
+      "engine": "cua",
+      "sample": 23,
+      "ok": true,
+      "scene": "chrome",
+      "inCellMs": 3.5672080000076676,
+      "wallMs": 101.01124999999593
+    },
+    {
+      "section": "speed",
+      "id": "chrome/listApps",
+      "engine": "cua",
+      "sample": 24,
+      "ok": true,
+      "scene": "chrome",
+      "inCellMs": 4.798291999992216,
+      "wallMs": 116.62766700000793
+    },
+    {
+      "section": "speed",
+      "id": "chrome/listApps",
+      "engine": "cua",
+      "sample": 25,
+      "ok": true,
+      "scene": "chrome",
+      "inCellMs": 4.216792000006535,
+      "wallMs": 193.30370800000674
+    },
+    {
+      "section": "speed",
+      "id": "chrome/listApps",
+      "engine": "cua",
+      "sample": 26,
+      "ok": true,
+      "scene": "chrome",
+      "inCellMs": 2.813083999993978,
+      "wallMs": 117.68416699999943
+    },
+    {
+      "section": "speed",
+      "id": "chrome/listApps",
+      "engine": "cua",
+      "sample": 27,
+      "ok": true,
+      "scene": "chrome",
+      "inCellMs": 3.943874999997206,
+      "wallMs": 93.6442090000055
+    },
+    {
+      "section": "speed",
+      "id": "chrome/listApps",
+      "engine": "cua",
+      "sample": 28,
+      "ok": true,
+      "scene": "chrome",
+      "inCellMs": 2.518499999991036,
+      "wallMs": 91.3428750000021
+    },
+    {
+      "section": "speed",
+      "id": "chrome/listApps",
+      "engine": "cua",
+      "sample": 29,
+      "ok": true,
+      "scene": "chrome",
+      "inCellMs": 2.6820000000006985,
+      "wallMs": 201.20920800000022
+    },
+    {
+      "section": "speed",
+      "id": "chrome/listApps",
+      "engine": "cua",
+      "sample": 30,
+      "ok": true,
+      "scene": "chrome",
+      "inCellMs": 2.559792000000016,
+      "wallMs": 34.487584000002244
+    },
+    {
+      "section": "finding",
+      "engine": "cua",
+      "sample": 3,
+      "scene": "chrome",
+      "id": "chrome/target.heading",
+      "ok": true,
+      "outcome": {
+        "found": true,
+        "resolved": true
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "cua",
+      "sample": 3,
+      "scene": "chrome",
+      "id": "chrome/target.notes",
+      "ok": true,
+      "outcome": {
+        "found": true,
+        "resolved": true
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "cua",
+      "sample": 3,
+      "scene": "chrome",
+      "id": "chrome/target.name",
+      "ok": true,
+      "outcome": {
+        "found": true,
+        "resolved": true
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "cua",
+      "sample": 3,
+      "scene": "chrome",
+      "id": "chrome/target.apply",
+      "ok": true,
+      "outcome": {
+        "found": true,
+        "resolved": true
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "cua",
+      "sample": 3,
+      "scene": "chrome",
+      "id": "chrome/target.option",
+      "ok": true,
+      "outcome": {
+        "found": true,
+        "resolved": true
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "cua",
+      "sample": 3,
+      "scene": "chrome",
+      "id": "chrome/target.modeA",
+      "ok": true,
+      "outcome": {
+        "found": true,
+        "resolved": true
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "cua",
+      "sample": 3,
+      "scene": "chrome",
+      "id": "chrome/target.modeB",
+      "ok": true,
+      "outcome": {
+        "found": true,
+        "resolved": true
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "cua",
+      "sample": 3,
+      "scene": "chrome",
+      "id": "chrome/target.choice",
+      "ok": true,
+      "outcome": {
+        "found": true,
+        "resolved": true
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "cua",
+      "sample": 3,
+      "scene": "chrome",
+      "id": "chrome/target.section",
+      "ok": true,
+      "outcome": {
+        "found": true,
+        "resolved": true
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "cua",
+      "sample": 3,
+      "scene": "chrome",
+      "id": "chrome/target.status",
+      "ok": true,
+      "outcome": {
+        "found": true,
+        "resolved": true
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "cua",
+      "sample": 3,
+      "scene": "chrome",
+      "id": "chrome/lines",
+      "ok": true,
+      "outcome": {
+        "lines": 61,
+        "named": 47,
+        "unclassified": 0
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "cua",
+      "sample": 3,
+      "scene": "chrome",
+      "id": "chrome/ids",
+      "ok": true,
+      "outcome": {
+        "ids": 0
+      }
+    },
+    {
+      "section": "method",
+      "id": "chrome/frontmost/getAXState.tree",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "chrome",
+      "target": "chrome",
+      "regime": "frontmost",
+      "method": "getAXState",
+      "case": "tree",
+      "expect": "outcome",
+      "inCellMs": 57.29724999998871,
+      "wallMs": 238.85754199999792,
+      "inputRoute": null,
+      "outcome": {
+        "inFront": true,
+        "page": true,
+        "elements": 61
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "chrome/method.getAXState.tree",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "inCellMs": 57.29724999998871,
+      "wallMs": 238.85754199999792
+    },
+    {
+      "section": "method",
+      "id": "chrome/frontmost/listApps.running",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "chrome",
+      "target": "chrome",
+      "regime": "frontmost",
+      "method": "listApps",
+      "case": "running",
+      "expect": "outcome",
+      "inCellMs": 20.958917000010842,
+      "wallMs": 94.140625,
+      "inputRoute": null,
+      "outcome": {
+        "apps": 8,
+        "listed": true,
+        "running": true
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "chrome/method.listApps.running",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "inCellMs": 20.958917000010842,
+      "wallMs": 94.140625
+    },
+    {
+      "section": "method",
+      "id": "chrome/frontmost/click.checkbox",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "chrome",
+      "target": "chrome",
+      "regime": "frontmost",
+      "method": "click",
+      "case": "checkbox",
+      "expect": "outcome",
+      "inCellMs": 10.572209000005387,
+      "wallMs": 63.730083000002196,
+      "inputRoute": 1,
+      "outcome": {
+        "toggled": true
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "chrome/method.click.checkbox",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "inCellMs": 10.572209000005387,
+      "wallMs": 63.730083000002196
+    },
+    {
+      "section": "method",
+      "id": "chrome/frontmost/typeText.replace",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "chrome",
+      "target": "chrome",
+      "regime": "frontmost",
+      "method": "typeText",
+      "case": "replace",
+      "expect": "outcome",
+      "inCellMs": 107.57254199999443,
+      "wallMs": 236.85570800000278,
+      "inputRoute": "2'",
+      "outcome": {
+        "exact": true,
+        "inserted": 1
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "chrome/method.typeText.replace",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "inCellMs": 107.57254199999443,
+      "wallMs": 236.85570800000278
+    },
+    {
+      "section": "method",
+      "id": "chrome/frontmost/pressKey.tab",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "chrome",
+      "target": "chrome",
+      "regime": "frontmost",
+      "method": "pressKey",
+      "case": "tab",
+      "expect": "outcome",
+      "inCellMs": 5.162625000011758,
+      "wallMs": 76.01937500000349,
+      "inputRoute": "2'",
+      "outcome": {
+        "moved": true
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "chrome/method.pressKey.tab",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "inCellMs": 5.162625000011758,
+      "wallMs": 76.01937500000349
+    },
+    {
+      "section": "method",
+      "id": "chrome/frontmost/setValue.name",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "chrome",
+      "target": "chrome",
+      "regime": "frontmost",
+      "method": "setValue",
+      "case": "name",
+      "expect": "outcome",
+      "inCellMs": 8.149541999999201,
+      "wallMs": 96.16945800000394,
+      "inputRoute": 1,
+      "outcome": {
+        "equal": true
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "chrome/method.setValue.name",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "inCellMs": 8.149541999999201,
+      "wallMs": 96.16945800000394
+    },
+    {
+      "section": "method",
+      "id": "chrome/frontmost/selectText.name",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "chrome",
+      "target": "chrome",
+      "regime": "frontmost",
+      "method": "selectText",
+      "case": "name",
+      "expect": "outcome",
+      "inCellMs": 4.0118749999965075,
+      "wallMs": 111.3348330000008,
+      "inputRoute": 1,
+      "outcome": {
+        "selected": true
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "chrome/method.selectText.name",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "inCellMs": 4.0118749999965075,
+      "wallMs": 111.3348330000008
+    },
+    {
+      "section": "method",
+      "id": "chrome/frontmost/paste.replace",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "chrome",
+      "target": "chrome",
+      "regime": "frontmost",
+      "method": "paste",
+      "case": "replace",
+      "expect": "outcome",
+      "inCellMs": 98.45549999999639,
+      "wallMs": 210.57445899999584,
+      "inputRoute": "paste",
+      "outcome": {
+        "exact": true,
+        "inserted": 1
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "chrome/method.paste.replace",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "inCellMs": 98.45549999999639,
+      "wallMs": 210.57445899999584
+    },
+    {
+      "section": "method",
+      "id": "chrome/frontmost/click.apply",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "chrome",
+      "target": "chrome",
+      "regime": "frontmost",
+      "method": "click",
+      "case": "apply",
+      "expect": "outcome",
+      "inCellMs": 11.277582999988226,
+      "wallMs": 105.4965830000001,
+      "inputRoute": 1,
+      "outcome": {
+        "applied": true
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "chrome/method.click.apply",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "inCellMs": 11.277582999988226,
+      "wallMs": 105.4965830000001
+    },
+    {
+      "section": "method",
+      "id": "chrome/frontmost/drag.select",
+      "engine": "cua",
+      "sample": 3,
+      "ok": false,
+      "scene": "chrome",
+      "target": "chrome",
+      "regime": "frontmost",
+      "method": "drag",
+      "case": "select",
+      "expect": "outcome",
+      "invalid": "not prepared: a point of the drag is not in the field"
+    },
+    {
+      "section": "method",
+      "id": "chrome/frontmost/setValue.notSettable",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "chrome",
+      "target": "chrome",
+      "regime": "frontmost",
+      "method": "setValue",
+      "case": "notSettable",
+      "expect": "refusal",
+      "inCellMs": 8.760500000003958,
+      "wallMs": 98.80762500000128,
+      "inputRoute": 1,
+      "outcome": {
+        "refused": true,
+        "expected": true,
+        "unchanged": true,
+        "errorName": "Error",
+        "message": "Computer Use server error -10005: Cannot set a value for an element that is not settable"
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "chrome/method.setValue.notSettable",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "inCellMs": 8.760500000003958,
+      "wallMs": 98.80762500000128
+    },
+    {
+      "section": "method",
+      "id": "chrome/frontmost/selectText.notText",
+      "engine": "cua",
+      "sample": 3,
+      "ok": false,
+      "scene": "chrome",
+      "target": "chrome",
+      "regime": "frontmost",
+      "method": "selectText",
+      "case": "notText",
+      "expect": "refusal",
+      "inCellMs": 5.66737500000454,
+      "wallMs": 99.1960420000105,
+      "inputRoute": 1,
+      "outcome": {
+        "refused": true,
+        "expected": false,
+        "unchanged": true,
+        "errorName": "Error",
+        "message": "Computer Use server error -10005: Could not find the requested text to select in the element"
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "chrome/method.selectText.notText",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "inCellMs": 5.66737500000454,
+      "wallMs": 99.1960420000105
+    },
+    {
+      "section": "speed",
+      "id": "electron/getAXState",
+      "engine": "cua",
+      "sample": 21,
+      "ok": true,
+      "scene": "electron",
+      "inCellMs": 73.16366700000071,
+      "wallMs": 157.59508300000743
+    },
+    {
+      "section": "speed",
+      "id": "electron/getAXState",
+      "engine": "cua",
+      "sample": 22,
+      "ok": true,
+      "scene": "electron",
+      "inCellMs": 59.336916999993264,
+      "wallMs": 95.10199999999895
+    },
+    {
+      "section": "speed",
+      "id": "electron/getAXState",
+      "engine": "cua",
+      "sample": 23,
+      "ok": true,
+      "scene": "electron",
+      "inCellMs": 50.14295899998979,
+      "wallMs": 92.11200000000827
+    },
+    {
+      "section": "speed",
+      "id": "electron/getAXState",
+      "engine": "cua",
+      "sample": 24,
+      "ok": true,
+      "scene": "electron",
+      "inCellMs": 66.92912499999511,
+      "wallMs": 217.0374579999916
+    },
+    {
+      "section": "speed",
+      "id": "electron/getAXState",
+      "engine": "cua",
+      "sample": 25,
+      "ok": true,
+      "scene": "electron",
+      "inCellMs": 50.87212499999441,
+      "wallMs": 84.66037500000675
+    },
+    {
+      "section": "speed",
+      "id": "electron/getAXState",
+      "engine": "cua",
+      "sample": 26,
+      "ok": true,
+      "scene": "electron",
+      "inCellMs": 59.38766700000269,
+      "wallMs": 111.37120799999684
+    },
+    {
+      "section": "speed",
+      "id": "electron/getAXState",
+      "engine": "cua",
+      "sample": 27,
+      "ok": true,
+      "scene": "electron",
+      "inCellMs": 45.678833999991184,
+      "wallMs": 84.98887500001001
+    },
+    {
+      "section": "speed",
+      "id": "electron/getAXState",
+      "engine": "cua",
+      "sample": 28,
+      "ok": true,
+      "scene": "electron",
+      "inCellMs": 53.34333400000469,
+      "wallMs": 216.04020799999125
+    },
+    {
+      "section": "speed",
+      "id": "electron/getAXState",
+      "engine": "cua",
+      "sample": 29,
+      "ok": true,
+      "scene": "electron",
+      "inCellMs": 47.05337499998859,
+      "wallMs": 93.25824999999895
+    },
+    {
+      "section": "speed",
+      "id": "electron/getAXState",
+      "engine": "cua",
+      "sample": 30,
+      "ok": true,
+      "scene": "electron",
+      "inCellMs": 54.930166000005556,
+      "wallMs": 104.75820799999929
+    },
+    {
+      "section": "speed",
+      "id": "electron/getScreenshot",
+      "engine": "cua",
+      "sample": 21,
+      "ok": true,
+      "scene": "electron",
+      "inCellMs": 65.10499999999593,
+      "wallMs": 121.18762500000594
+    },
+    {
+      "section": "speed",
+      "id": "electron/getScreenshot",
+      "engine": "cua",
+      "sample": 22,
+      "ok": true,
+      "scene": "electron",
+      "inCellMs": 59.08729100000346,
+      "wallMs": 105.68912500000442
+    },
+    {
+      "section": "speed",
+      "id": "electron/getScreenshot",
+      "engine": "cua",
+      "sample": 23,
+      "ok": true,
+      "scene": "electron",
+      "inCellMs": 58.106041999999434,
+      "wallMs": 95.23091600000043
+    },
+    {
+      "section": "speed",
+      "id": "electron/getScreenshot",
+      "engine": "cua",
+      "sample": 24,
+      "ok": true,
+      "scene": "electron",
+      "inCellMs": 54.83445799999754,
+      "wallMs": 93.4069579999923
+    },
+    {
+      "section": "speed",
+      "id": "electron/getScreenshot",
+      "engine": "cua",
+      "sample": 25,
+      "ok": true,
+      "scene": "electron",
+      "inCellMs": 59.4476250000007,
+      "wallMs": 106.20650000000023
+    },
+    {
+      "section": "speed",
+      "id": "electron/getScreenshot",
+      "engine": "cua",
+      "sample": 26,
+      "ok": true,
+      "scene": "electron",
+      "inCellMs": 39.4667080000072,
+      "wallMs": 74.1340840000048
+    },
+    {
+      "section": "speed",
+      "id": "electron/getScreenshot",
+      "engine": "cua",
+      "sample": 27,
+      "ok": true,
+      "scene": "electron",
+      "inCellMs": 40.127249999990454,
+      "wallMs": 154.65120800001023
+    },
+    {
+      "section": "speed",
+      "id": "electron/getScreenshot",
+      "engine": "cua",
+      "sample": 28,
+      "ok": true,
+      "scene": "electron",
+      "inCellMs": 54.85558300001139,
+      "wallMs": 93.66033400000015
+    },
+    {
+      "section": "speed",
+      "id": "electron/getScreenshot",
+      "engine": "cua",
+      "sample": 29,
+      "ok": true,
+      "scene": "electron",
+      "inCellMs": 54.27049999999872,
+      "wallMs": 91.27116699999897
+    },
+    {
+      "section": "speed",
+      "id": "electron/getScreenshot",
+      "engine": "cua",
+      "sample": 30,
+      "ok": true,
+      "scene": "electron",
+      "inCellMs": 58.33908300001349,
+      "wallMs": 99.20141700000386
+    },
+    {
+      "section": "speed",
+      "id": "electron/listApps",
+      "engine": "cua",
+      "sample": 21,
+      "ok": true,
+      "scene": "electron",
+      "inCellMs": 14.259124999996857,
+      "wallMs": 187.9227080000128
+    },
+    {
+      "section": "speed",
+      "id": "electron/listApps",
+      "engine": "cua",
+      "sample": 22,
+      "ok": true,
+      "scene": "electron",
+      "inCellMs": 3.7322500000009313,
+      "wallMs": 101.72237499999756
+    },
+    {
+      "section": "speed",
+      "id": "electron/listApps",
+      "engine": "cua",
+      "sample": 23,
+      "ok": true,
+      "scene": "electron",
+      "inCellMs": 4.436000000001513,
+      "wallMs": 100.75112499999523
+    },
+    {
+      "section": "speed",
+      "id": "electron/listApps",
+      "engine": "cua",
+      "sample": 24,
+      "ok": true,
+      "scene": "electron",
+      "inCellMs": 3.8845000000001164,
+      "wallMs": 90.24054199999955
+    },
+    {
+      "section": "speed",
+      "id": "electron/listApps",
+      "engine": "cua",
+      "sample": 25,
+      "ok": true,
+      "scene": "electron",
+      "inCellMs": 3.31166699998721,
+      "wallMs": 116.88929200000712
+    },
+    {
+      "section": "speed",
+      "id": "electron/listApps",
+      "engine": "cua",
+      "sample": 26,
+      "ok": true,
+      "scene": "electron",
+      "inCellMs": 3.99383300000045,
+      "wallMs": 93.30762500000128
+    },
+    {
+      "section": "speed",
+      "id": "electron/listApps",
+      "engine": "cua",
+      "sample": 27,
+      "ok": true,
+      "scene": "electron",
+      "inCellMs": 4.907666000013705,
+      "wallMs": 104.86270800000057
+    },
+    {
+      "section": "speed",
+      "id": "electron/listApps",
+      "engine": "cua",
+      "sample": 28,
+      "ok": true,
+      "scene": "electron",
+      "inCellMs": 4.034041999999317,
+      "wallMs": 90.77716700000747
+    },
+    {
+      "section": "speed",
+      "id": "electron/listApps",
+      "engine": "cua",
+      "sample": 29,
+      "ok": true,
+      "scene": "electron",
+      "inCellMs": 3.798125000001164,
+      "wallMs": 101.79045799998858
+    },
+    {
+      "section": "speed",
+      "id": "electron/listApps",
+      "engine": "cua",
+      "sample": 30,
+      "ok": true,
+      "scene": "electron",
+      "inCellMs": 3.914333999986411,
+      "wallMs": 108.46845800000301
+    },
+    {
+      "section": "finding",
+      "engine": "cua",
+      "sample": 3,
+      "scene": "electron",
+      "id": "electron/target.text",
+      "ok": true,
+      "outcome": {
+        "found": true,
+        "resolved": true
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "cua",
+      "sample": 3,
+      "scene": "electron",
+      "id": "electron/target.list",
+      "ok": true,
+      "outcome": {
+        "found": true,
+        "resolved": true
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "cua",
+      "sample": 3,
+      "scene": "electron",
+      "id": "electron/target.optionAlpha",
+      "ok": true,
+      "outcome": {
+        "found": true,
+        "resolved": true
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "cua",
+      "sample": 3,
+      "scene": "electron",
+      "id": "electron/target.optionBravo",
+      "ok": true,
+      "outcome": {
+        "found": true,
+        "resolved": true
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "cua",
+      "sample": 3,
+      "scene": "electron",
+      "id": "electron/target.optionCharlie",
+      "ok": true,
+      "outcome": {
+        "found": true,
+        "resolved": true
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "cua",
+      "sample": 3,
+      "scene": "electron",
+      "id": "electron/target.optionDelta",
+      "ok": true,
+      "outcome": {
+        "found": true,
+        "resolved": true
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "cua",
+      "sample": 3,
+      "scene": "electron",
+      "id": "electron/target.optionEcho",
+      "ok": true,
+      "outcome": {
+        "found": true,
+        "resolved": true
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "cua",
+      "sample": 3,
+      "scene": "electron",
+      "id": "electron/target.optionFoxtrot",
+      "ok": true,
+      "outcome": {
+        "found": true,
+        "resolved": true
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "cua",
+      "sample": 3,
+      "scene": "electron",
+      "id": "electron/target.button",
+      "ok": true,
+      "outcome": {
+        "found": true,
+        "resolved": true
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "cua",
+      "sample": 3,
+      "scene": "electron",
+      "id": "electron/target.status",
+      "ok": true,
+      "outcome": {
+        "found": true,
+        "resolved": true
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "cua",
+      "sample": 3,
+      "scene": "electron",
+      "id": "electron/lines",
+      "ok": true,
+      "outcome": {
+        "lines": 25,
+        "named": 19,
+        "unclassified": 0
+      }
+    },
+    {
+      "section": "finding",
+      "engine": "cua",
+      "sample": 3,
+      "scene": "electron",
+      "id": "electron/ids",
+      "ok": true,
+      "outcome": {
+        "ids": 0
+      }
+    },
+    {
+      "section": "method",
+      "id": "electron/frontmost/getAXState.tree",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "electron",
+      "target": "electron",
+      "regime": "frontmost",
+      "method": "getAXState",
+      "case": "tree",
+      "expect": "outcome",
+      "inCellMs": 65.6737499999872,
+      "wallMs": 139.94445799998357,
+      "inputRoute": null,
+      "outcome": {
+        "inFront": true,
+        "fixture": true,
+        "elements": 25
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "electron/method.getAXState.tree",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "inCellMs": 65.6737499999872,
+      "wallMs": 139.94445799998357
+    },
+    {
+      "section": "method",
+      "id": "electron/frontmost/listApps.running",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "electron",
+      "target": "electron",
+      "regime": "frontmost",
+      "method": "listApps",
+      "case": "running",
+      "expect": "outcome",
+      "inCellMs": 20.34320899999875,
+      "wallMs": 106.1512909999874,
+      "inputRoute": null,
+      "outcome": {
+        "apps": 8,
+        "listed": true,
+        "running": true
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "electron/method.listApps.running",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "inCellMs": 20.34320899999875,
+      "wallMs": 106.1512909999874
+    },
+    {
+      "section": "method",
+      "id": "electron/frontmost/click.button",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "electron",
+      "target": "electron",
+      "regime": "frontmost",
+      "method": "click",
+      "case": "button",
+      "expect": "outcome",
+      "inCellMs": 12.398333999997703,
+      "wallMs": 86.07958299998427,
+      "inputRoute": 1,
+      "outcome": {
+        "pressedOnce": true
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "electron/method.click.button",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "inCellMs": 12.398333999997703,
+      "wallMs": 86.07958299998427
+    },
+    {
+      "section": "method",
+      "id": "electron/frontmost/typeText.replace",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "electron",
+      "target": "electron",
+      "regime": "frontmost",
+      "method": "typeText",
+      "case": "replace",
+      "expect": "outcome",
+      "inCellMs": 97.58745900000213,
+      "wallMs": 183.20666699999128,
+      "inputRoute": "2'",
+      "outcome": {
+        "exact": true,
+        "inserted": 1
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "electron/method.typeText.replace",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "inCellMs": 97.58745900000213,
+      "wallMs": 183.20666699999128
+    },
+    {
+      "section": "method",
+      "id": "electron/frontmost/pressKey.tab",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "electron",
+      "target": "electron",
+      "regime": "frontmost",
+      "method": "pressKey",
+      "case": "tab",
+      "expect": "outcome",
+      "inCellMs": 6.54133299998648,
+      "wallMs": 130.37537500000326,
+      "inputRoute": "2'",
+      "outcome": {
+        "moved": true
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "electron/method.pressKey.tab",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "inCellMs": 6.54133299998648,
+      "wallMs": 130.37537500000326
+    },
+    {
+      "section": "method",
+      "id": "electron/frontmost/setValue.text",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "electron",
+      "target": "electron",
+      "regime": "frontmost",
+      "method": "setValue",
+      "case": "text",
+      "expect": "outcome",
+      "inCellMs": 18.796332999991137,
+      "wallMs": 130.26024999999208,
+      "inputRoute": 1,
+      "outcome": {
+        "equal": true
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "electron/method.setValue.text",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "inCellMs": 18.796332999991137,
+      "wallMs": 130.26024999999208
+    },
+    {
+      "section": "method",
+      "id": "electron/frontmost/selectText.text",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "electron",
+      "target": "electron",
+      "regime": "frontmost",
+      "method": "selectText",
+      "case": "text",
+      "expect": "outcome",
+      "inCellMs": 6.185125000003609,
+      "wallMs": 103.97175000002608,
+      "inputRoute": 1,
+      "outcome": {
+        "selected": true
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "electron/method.selectText.text",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "inCellMs": 6.185125000003609,
+      "wallMs": 103.97175000002608
+    },
+    {
+      "section": "method",
+      "id": "electron/frontmost/paste.replace",
+      "engine": "cua",
+      "sample": 3,
+      "ok": false,
+      "scene": "electron",
+      "target": "electron",
+      "regime": "frontmost",
+      "method": "paste",
+      "case": "replace",
+      "expect": "outcome",
+      "invalid": "not prepared: the field could not be given the focus"
+    },
+    {
+      "section": "method",
+      "id": "electron/frontmost/drag.select",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "electron",
+      "target": "electron",
+      "regime": "frontmost",
+      "method": "drag",
+      "case": "select",
+      "expect": "outcome",
+      "inCellMs": 5.090749999988475,
+      "wallMs": 89.20879099998274,
+      "inputRoute": 3,
+      "outcome": {
+        "selected": true,
+        "spansLines": true,
+        "unchanged": true
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "electron/method.drag.select",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "inCellMs": 5.090749999988475,
+      "wallMs": 89.20879099998274
+    },
+    {
+      "section": "method",
+      "id": "electron/frontmost/setValue.notSettable",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "electron",
+      "target": "electron",
+      "regime": "frontmost",
+      "method": "setValue",
+      "case": "notSettable",
+      "expect": "refusal",
+      "inCellMs": 5.107999999992899,
+      "wallMs": 155.59687499998836,
+      "inputRoute": 1,
+      "outcome": {
+        "refused": true,
+        "expected": true,
+        "unchanged": true,
+        "errorName": "Error",
+        "message": "Computer Use server error -10005: Cannot set a value for an element that is not settable"
+      },
+      "activations": 0
+    },
+    {
+      "section": "speed",
+      "id": "electron/method.setValue.notSettable",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "inCellMs": 5.107999999992899,
+      "wallMs": 155.59687499998836
+    },
+    {
+      "section": "method",
+      "id": "textedit/background/getAXState.tree@finder",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "background",
+      "method": "getAXState",
+      "case": "tree",
+      "expect": "outcome",
+      "user": "finder",
+      "inCellMs": 105.14574999999604,
+      "wallMs": 198.13979200000176,
+      "inputRoute": null,
+      "outcome": {
+        "inFront": true,
+        "document": true,
+        "elements": 59
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "textedit/background/listApps.running@finder",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "background",
+      "method": "listApps",
+      "case": "running",
+      "expect": "outcome",
+      "user": "finder",
+      "inCellMs": 19.979584000000614,
+      "wallMs": 80.98058299999684,
+      "inputRoute": null,
+      "outcome": {
+        "apps": 8,
+        "listed": true,
+        "running": true
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "textedit/background/click.element@finder",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "background",
+      "method": "click",
+      "case": "element",
+      "expect": "outcome",
+      "user": "finder",
+      "inCellMs": 51.915750000000116,
+      "wallMs": 150.40291699999943,
+      "inputRoute": 3,
+      "outcome": {
+        "collapsed": true,
+        "unchanged": true
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "textedit/background/click.control@finder",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "background",
+      "method": "click",
+      "case": "control",
+      "expect": "outcome",
+      "user": "finder",
+      "inCellMs": 117.24954200000502,
+      "wallMs": 226.0863750000135,
+      "inputRoute": 1,
+      "outcome": {
+        "checked": true
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "textedit/background/typeText.replace@finder",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "background",
+      "method": "typeText",
+      "case": "replace",
+      "expect": "outcome",
+      "user": "finder",
+      "inCellMs": 114.03070800000569,
+      "wallMs": 196.33499999999185,
+      "inputRoute": "2'",
+      "outcome": {
+        "exact": true,
+        "inserted": 1
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "textedit/background/pressKey.selectAll@finder",
+      "engine": "cua",
+      "sample": 3,
+      "ok": false,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "background",
+      "method": "pressKey",
+      "case": "selectAll",
+      "expect": "outcome",
+      "user": "finder",
+      "inCellMs": 6.795165999996243,
+      "wallMs": 74.09870800000499,
+      "inputRoute": "2'",
+      "outcome": {
+        "selected": true,
+        "whole": false
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "textedit/background/selectText.line@finder",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "background",
+      "method": "selectText",
+      "case": "line",
+      "expect": "outcome",
+      "user": "finder",
+      "inCellMs": 9.115749999997206,
+      "wallMs": 94.90625,
+      "inputRoute": 1,
+      "outcome": {
+        "selected": true
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "textedit/background/paste.replace@finder",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "background",
+      "method": "paste",
+      "case": "replace",
+      "expect": "outcome",
+      "user": "finder",
+      "inCellMs": 76.57995899999514,
+      "wallMs": 303.11141699997825,
+      "inputRoute": "paste",
+      "outcome": {
+        "exact": true,
+        "inserted": 1
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "textedit/background/setValue.document@finder",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "background",
+      "method": "setValue",
+      "case": "document",
+      "expect": "outcome",
+      "user": "finder",
+      "inCellMs": 39.32308299999568,
+      "wallMs": 125.03149999998277,
+      "inputRoute": 1,
+      "outcome": {
+        "equal": true
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "textedit/background/scroll.down@finder",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "background",
+      "method": "scroll",
+      "case": "down",
+      "expect": "outcome",
+      "user": "finder",
+      "inCellMs": 7.134707999997772,
+      "wallMs": 213.11154100002022,
+      "inputRoute": "2'",
+      "outcome": {
+        "moved": true
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "textedit/background/performSecondaryAction.down@finder",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "background",
+      "method": "performSecondaryAction",
+      "case": "down",
+      "expect": "outcome",
+      "user": "finder",
+      "inCellMs": 7.664166999980807,
+      "wallMs": 89.42195799999172,
+      "inputRoute": 1,
+      "outcome": {
+        "moved": true
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "textedit/background/drag.select@finder",
+      "engine": "cua",
+      "sample": 3,
+      "ok": false,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "background",
+      "method": "drag",
+      "case": "select",
+      "expect": "outcome",
+      "user": "finder",
+      "invalid": "not prepared: the window changed size"
+    },
+    {
+      "section": "method",
+      "id": "textedit/background/selectText.notText@finder",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "background",
+      "method": "selectText",
+      "case": "notText",
+      "expect": "refusal",
+      "user": "finder",
+      "inCellMs": 3.2225000000034925,
+      "wallMs": 90.1636250000156,
+      "inputRoute": 1,
+      "outcome": {
+        "refused": true,
+        "expected": true,
+        "unchanged": true,
+        "errorName": "Error",
+        "message": "Computer Use server error -10005: Cannot select text for an element that does not support a settable selected text range"
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "textedit/background/setValue.notSettable@finder",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "background",
+      "method": "setValue",
+      "case": "notSettable",
+      "expect": "refusal",
+      "user": "finder",
+      "inCellMs": 6.926707999984501,
+      "wallMs": 76.9864579999994,
+      "inputRoute": 1,
+      "outcome": {
+        "refused": true,
+        "expected": true,
+        "unchanged": true,
+        "errorName": "Error",
+        "message": "Computer Use server error -10005: Cannot set a value for an element that is not settable"
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "textedit/background/click.invalidIndex@finder",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "background",
+      "method": "click",
+      "case": "invalidIndex",
+      "expect": "refusal",
+      "user": "finder",
+      "inCellMs": 1.7137500000244472,
+      "wallMs": 61.296249999984866,
+      "inputRoute": null,
+      "outcome": {
+        "refused": true,
+        "expected": true,
+        "unchanged": true,
+        "errorName": "Error",
+        "message": "Computer Use server error -10005: 99999 is an invalid element ID"
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "finder/background/getAXState.tree@textedit",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "finder",
+      "target": "finder",
+      "regime": "background",
+      "method": "getAXState",
+      "case": "tree",
+      "expect": "outcome",
+      "user": "textedit",
+      "inCellMs": 208.07099999999627,
+      "wallMs": 301.3864590000012,
+      "inputRoute": null,
+      "outcome": {
+        "inFront": true,
+        "list": true,
+        "elements": 397
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "finder/background/listApps.running@textedit",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "finder",
+      "target": "finder",
+      "regime": "background",
+      "method": "listApps",
+      "case": "running",
+      "expect": "outcome",
+      "user": "textedit",
+      "inCellMs": 16.266499999997905,
+      "wallMs": 157.98499999998603,
+      "inputRoute": null,
+      "outcome": {
+        "apps": 8,
+        "listed": true,
+        "running": true
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "finder/background/click.row@textedit",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "finder",
+      "target": "finder",
+      "regime": "background",
+      "method": "click",
+      "case": "row",
+      "expect": "outcome",
+      "user": "textedit",
+      "inCellMs": 54.32654199999524,
+      "wallMs": 150.28408400001354,
+      "inputRoute": 3,
+      "outcome": {
+        "rowFound": true,
+        "selected": 1,
+        "only": true
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "finder/background/pressKey.down@textedit",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "finder",
+      "target": "finder",
+      "regime": "background",
+      "method": "pressKey",
+      "case": "down",
+      "expect": "outcome",
+      "user": "textedit",
+      "inCellMs": 4.547374999994645,
+      "wallMs": 96.7717920000141,
+      "inputRoute": "2'",
+      "outcome": {
+        "rowFound": true,
+        "selected": 1,
+        "only": true
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "finder/background/typeText.typeSelect@textedit",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "finder",
+      "target": "finder",
+      "regime": "background",
+      "method": "typeText",
+      "case": "typeSelect",
+      "expect": "outcome",
+      "user": "textedit",
+      "inCellMs": 51.99787500000093,
+      "wallMs": 110.24820900001214,
+      "inputRoute": "2'",
+      "outcome": {
+        "rowFound": true,
+        "selected": 1,
+        "only": true
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "finder/background/selectText.notText@textedit",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "finder",
+      "target": "finder",
+      "regime": "background",
+      "method": "selectText",
+      "case": "notText",
+      "expect": "refusal",
+      "user": "textedit",
+      "inCellMs": 5.696832999994513,
+      "wallMs": 85.34779199998593,
+      "inputRoute": 1,
+      "outcome": {
+        "refused": true,
+        "expected": true,
+        "unchanged": true,
+        "errorName": "Error",
+        "message": "Computer Use server error -10005: Cannot select text for an element that does not support a settable selected text range"
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "finder/background/scroll.down@textedit",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "finder",
+      "target": "finder",
+      "regime": "background",
+      "method": "scroll",
+      "case": "down",
+      "expect": "outcome",
+      "user": "textedit",
+      "inCellMs": 553.8363750000135,
+      "wallMs": 637.7902080000204,
+      "inputRoute": "2'",
+      "outcome": {
+        "moved": true
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "finder/background/performSecondaryAction.down@textedit",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "finder",
+      "target": "finder",
+      "regime": "background",
+      "method": "performSecondaryAction",
+      "case": "down",
+      "expect": "outcome",
+      "user": "textedit",
+      "inCellMs": 35.878541999991285,
+      "wallMs": 122.38570899999468,
+      "inputRoute": 1,
+      "outcome": {
+        "moved": true
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "chrome/background/getAXState.tree@textedit",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "chrome",
+      "target": "chrome",
+      "regime": "background",
+      "method": "getAXState",
+      "case": "tree",
+      "expect": "outcome",
+      "user": "textedit",
+      "inCellMs": 91.71454099999391,
+      "wallMs": 221.59670900000492,
+      "inputRoute": null,
+      "outcome": {
+        "inFront": true,
+        "page": true,
+        "elements": 61
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "chrome/background/listApps.running@textedit",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "chrome",
+      "target": "chrome",
+      "regime": "background",
+      "method": "listApps",
+      "case": "running",
+      "expect": "outcome",
+      "user": "textedit",
+      "inCellMs": 18.339666999992914,
+      "wallMs": 110.7552920000162,
+      "inputRoute": null,
+      "outcome": {
+        "apps": 8,
+        "listed": true,
+        "running": true
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "chrome/background/click.checkbox@textedit",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "chrome",
+      "target": "chrome",
+      "regime": "background",
+      "method": "click",
+      "case": "checkbox",
+      "expect": "outcome",
+      "user": "textedit",
+      "inCellMs": 11.926333999988856,
+      "wallMs": 111.35708299998078,
+      "inputRoute": 1,
+      "outcome": {
+        "toggled": true
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "chrome/background/typeText.replace@textedit",
+      "engine": "cua",
+      "sample": 3,
+      "ok": false,
+      "scene": "chrome",
+      "target": "chrome",
+      "regime": "background",
+      "method": "typeText",
+      "case": "replace",
+      "expect": "outcome",
+      "user": "textedit",
+      "invalid": "not prepared: the word could not be selected in the field"
+    },
+    {
+      "section": "method",
+      "id": "chrome/background/pressKey.tab@textedit",
+      "engine": "cua",
+      "sample": 3,
+      "ok": false,
+      "scene": "chrome",
+      "target": "chrome",
+      "regime": "background",
+      "method": "pressKey",
+      "case": "tab",
+      "expect": "outcome",
+      "user": "textedit",
+      "inCellMs": 4.241833999985829,
+      "wallMs": 59.76279100001557,
+      "inputRoute": "2'",
+      "outcome": {
+        "moved": false
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "chrome/background/setValue.name@textedit",
+      "engine": "cua",
+      "sample": 3,
+      "ok": false,
+      "scene": "chrome",
+      "target": "chrome",
+      "regime": "background",
+      "method": "setValue",
+      "case": "name",
+      "expect": "outcome",
+      "user": "textedit",
+      "inCellMs": 10.425208000000566,
+      "wallMs": 122.80595800001174,
+      "inputRoute": 1,
+      "outcome": {
+        "equal": false
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "chrome/background/selectText.name@textedit",
+      "engine": "cua",
+      "sample": 3,
+      "ok": false,
+      "scene": "chrome",
+      "target": "chrome",
+      "regime": "background",
+      "method": "selectText",
+      "case": "name",
+      "expect": "outcome",
+      "user": "textedit",
+      "inCellMs": 3.9978330000012647,
+      "wallMs": 107.0162920000148,
+      "inputRoute": 1,
+      "outcome": {
+        "selected": false
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "chrome/background/paste.replace@textedit",
+      "engine": "cua",
+      "sample": 3,
+      "ok": false,
+      "scene": "chrome",
+      "target": "chrome",
+      "regime": "background",
+      "method": "paste",
+      "case": "replace",
+      "expect": "outcome",
+      "user": "textedit",
+      "invalid": "not prepared: the field could not be given the focus"
+    },
+    {
+      "section": "method",
+      "id": "chrome/background/click.apply@textedit",
+      "engine": "cua",
+      "sample": 3,
+      "ok": false,
+      "scene": "chrome",
+      "target": "chrome",
+      "regime": "background",
+      "method": "click",
+      "case": "apply",
+      "expect": "outcome",
+      "user": "textedit",
+      "invalid": "not prepared: the name field could not be given a fresh name"
+    },
+    {
+      "section": "method",
+      "id": "chrome/background/drag.select@textedit",
+      "engine": "cua",
+      "sample": 3,
+      "ok": false,
+      "scene": "chrome",
+      "target": "chrome",
+      "regime": "background",
+      "method": "drag",
+      "case": "select",
+      "expect": "outcome",
+      "user": "textedit",
+      "invalid": "not prepared: a point of the drag is not in the field"
+    },
+    {
+      "section": "method",
+      "id": "chrome/background/setValue.notSettable@textedit",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "chrome",
+      "target": "chrome",
+      "regime": "background",
+      "method": "setValue",
+      "case": "notSettable",
+      "expect": "refusal",
+      "user": "textedit",
+      "inCellMs": 9.140041000006022,
+      "wallMs": 127.57212500000605,
+      "inputRoute": 1,
+      "outcome": {
+        "refused": true,
+        "expected": true,
+        "unchanged": true,
+        "errorName": "Error",
+        "message": "Computer Use server error -10005: Cannot set a value for an element that is not settable"
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "chrome/background/selectText.notText@textedit",
+      "engine": "cua",
+      "sample": 3,
+      "ok": false,
+      "scene": "chrome",
+      "target": "chrome",
+      "regime": "background",
+      "method": "selectText",
+      "case": "notText",
+      "expect": "refusal",
+      "user": "textedit",
+      "inCellMs": 4.8657079999975394,
+      "wallMs": 207.93116699997336,
+      "inputRoute": 1,
+      "outcome": {
+        "refused": true,
+        "expected": false,
+        "unchanged": true,
+        "errorName": "Error",
+        "message": "Computer Use server error -10005: Could not find the requested text to select in the element"
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "textedit/background/getAXState.tree@chrome",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "background",
+      "method": "getAXState",
+      "case": "tree",
+      "expect": "outcome",
+      "user": "chrome",
+      "inCellMs": 131.59962500000256,
+      "wallMs": 214.11891600000672,
+      "inputRoute": null,
+      "outcome": {
+        "inFront": true,
+        "document": true,
+        "elements": 59
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "textedit/background/listApps.running@chrome",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "background",
+      "method": "listApps",
+      "case": "running",
+      "expect": "outcome",
+      "user": "chrome",
+      "inCellMs": 16.768249999993714,
+      "wallMs": 198.9975829999894,
+      "inputRoute": null,
+      "outcome": {
+        "apps": 8,
+        "listed": true,
+        "running": true
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "textedit/background/click.element@chrome",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "background",
+      "method": "click",
+      "case": "element",
+      "expect": "outcome",
+      "user": "chrome",
+      "inCellMs": 53.82887500000652,
+      "wallMs": 141.77462500002002,
+      "inputRoute": 3,
+      "outcome": {
+        "collapsed": true,
+        "unchanged": true
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "textedit/background/click.control@chrome",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "background",
+      "method": "click",
+      "case": "control",
+      "expect": "outcome",
+      "user": "chrome",
+      "inCellMs": 118.18008300001384,
+      "wallMs": 206.9237499999581,
+      "inputRoute": 1,
+      "outcome": {
+        "checked": true
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "textedit/background/typeText.replace@chrome",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "background",
+      "method": "typeText",
+      "case": "replace",
+      "expect": "outcome",
+      "user": "chrome",
+      "inCellMs": 92.8969999999972,
+      "wallMs": 197.56616599997506,
+      "inputRoute": "2'",
+      "outcome": {
+        "exact": true,
+        "inserted": 1
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "textedit/background/pressKey.selectAll@chrome",
+      "engine": "cua",
+      "sample": 3,
+      "ok": false,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "background",
+      "method": "pressKey",
+      "case": "selectAll",
+      "expect": "outcome",
+      "user": "chrome",
+      "inCellMs": 3.2906659999862313,
+      "wallMs": 112.7513339999714,
+      "inputRoute": "2'",
+      "outcome": {
+        "selected": true,
+        "whole": false
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "textedit/background/selectText.line@chrome",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "background",
+      "method": "selectText",
+      "case": "line",
+      "expect": "outcome",
+      "user": "chrome",
+      "inCellMs": 7.90916599999764,
+      "wallMs": 114.21604199998546,
+      "inputRoute": 1,
+      "outcome": {
+        "selected": true
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "textedit/background/paste.replace@chrome",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "background",
+      "method": "paste",
+      "case": "replace",
+      "expect": "outcome",
+      "user": "chrome",
+      "inCellMs": 83.13225000002421,
+      "wallMs": 309.8129159999662,
+      "inputRoute": "paste",
+      "outcome": {
+        "exact": true,
+        "inserted": 1
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "textedit/background/setValue.document@chrome",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "background",
+      "method": "setValue",
+      "case": "document",
+      "expect": "outcome",
+      "user": "chrome",
+      "inCellMs": 48.94887500000186,
+      "wallMs": 200.69954200001666,
+      "inputRoute": 1,
+      "outcome": {
+        "equal": true
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "textedit/background/scroll.down@chrome",
+      "engine": "cua",
+      "sample": 3,
+      "ok": false,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "background",
+      "method": "scroll",
+      "case": "down",
+      "expect": "outcome",
+      "user": "chrome",
+      "invalid": "not prepared: the vertical scroll bar is not readable at the document's top half"
+    },
+    {
+      "section": "method",
+      "id": "textedit/background/performSecondaryAction.down@chrome",
+      "engine": "cua",
+      "sample": 3,
+      "ok": false,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "background",
+      "method": "performSecondaryAction",
+      "case": "down",
+      "expect": "outcome",
+      "user": "chrome",
+      "invalid": "not prepared: the vertical scroll bar is not readable at the document's top half"
+    },
+    {
+      "section": "method",
+      "id": "textedit/background/drag.select@chrome",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "background",
+      "method": "drag",
+      "case": "select",
+      "expect": "outcome",
+      "user": "chrome",
+      "inCellMs": 71.83195899997372,
+      "wallMs": 147.217874999973,
+      "inputRoute": 3,
+      "outcome": {
+        "selected": true,
+        "spansLines": true,
+        "unchanged": true
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "textedit/background/selectText.notText@chrome",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "background",
+      "method": "selectText",
+      "case": "notText",
+      "expect": "refusal",
+      "user": "chrome",
+      "inCellMs": 5.031332999991719,
+      "wallMs": 88.26779200002784,
+      "inputRoute": 1,
+      "outcome": {
+        "refused": true,
+        "expected": true,
+        "unchanged": true,
+        "errorName": "Error",
+        "message": "Computer Use server error -10005: Cannot select text for an element that does not support a settable selected text range"
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "textedit/background/setValue.notSettable@chrome",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "background",
+      "method": "setValue",
+      "case": "notSettable",
+      "expect": "refusal",
+      "user": "chrome",
+      "inCellMs": 5.46508300001733,
+      "wallMs": 104.50500000000466,
+      "inputRoute": 1,
+      "outcome": {
+        "refused": true,
+        "expected": true,
+        "unchanged": true,
+        "errorName": "Error",
+        "message": "Computer Use server error -10005: Cannot set a value for an element that is not settable"
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "textedit/background/click.invalidIndex@chrome",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "textedit",
+      "target": "textedit",
+      "regime": "background",
+      "method": "click",
+      "case": "invalidIndex",
+      "expect": "refusal",
+      "user": "chrome",
+      "inCellMs": 1.7544999999809079,
+      "wallMs": 169.65199999994365,
+      "inputRoute": null,
+      "outcome": {
+        "refused": true,
+        "expected": true,
+        "unchanged": true,
+        "errorName": "Error",
+        "message": "Computer Use server error -10005: 99999 is an invalid element ID"
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "electron/background/getAXState.tree@finder",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "electron",
+      "target": "electron",
+      "regime": "background",
+      "method": "getAXState",
+      "case": "tree",
+      "expect": "outcome",
+      "user": "finder",
+      "inCellMs": 87.51991599996109,
+      "wallMs": 216.90174999996088,
+      "inputRoute": null,
+      "outcome": {
+        "inFront": true,
+        "fixture": true,
+        "elements": 25
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "electron/background/listApps.running@finder",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "electron",
+      "target": "electron",
+      "regime": "background",
+      "method": "listApps",
+      "case": "running",
+      "expect": "outcome",
+      "user": "finder",
+      "inCellMs": 16.65108300000429,
+      "wallMs": 172.26733300002525,
+      "inputRoute": null,
+      "outcome": {
+        "apps": 8,
+        "listed": true,
+        "running": true
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "electron/background/click.button@finder",
+      "engine": "cua",
+      "sample": 3,
+      "ok": false,
+      "scene": "electron",
+      "target": "electron",
+      "regime": "background",
+      "method": "click",
+      "case": "button",
+      "expect": "outcome",
+      "user": "finder",
+      "inCellMs": 9.2463750000461,
+      "wallMs": 183.73937500000466,
+      "inputRoute": 1,
+      "outcome": {
+        "pressedOnce": false
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "electron/background/typeText.replace@finder",
+      "engine": "cua",
+      "sample": 3,
+      "ok": false,
+      "scene": "electron",
+      "target": "electron",
+      "regime": "background",
+      "method": "typeText",
+      "case": "replace",
+      "expect": "outcome",
+      "user": "finder",
+      "invalid": "not prepared: the field could not be given the focus"
+    },
+    {
+      "section": "method",
+      "id": "electron/background/pressKey.tab@finder",
+      "engine": "cua",
+      "sample": 3,
+      "ok": false,
+      "scene": "electron",
+      "target": "electron",
+      "regime": "background",
+      "method": "pressKey",
+      "case": "tab",
+      "expect": "outcome",
+      "user": "finder",
+      "invalid": "not prepared: the field could not be given the focus"
+    },
+    {
+      "section": "method",
+      "id": "electron/background/setValue.text@finder",
+      "engine": "cua",
+      "sample": 3,
+      "ok": false,
+      "scene": "electron",
+      "target": "electron",
+      "regime": "background",
+      "method": "setValue",
+      "case": "text",
+      "expect": "outcome",
+      "user": "finder",
+      "inCellMs": 9.070917000004556,
+      "wallMs": 127.22204199997941,
+      "inputRoute": 1,
+      "outcome": {
+        "equal": false
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "electron/background/selectText.text@finder",
+      "engine": "cua",
+      "sample": 3,
+      "ok": false,
+      "scene": "electron",
+      "target": "electron",
+      "regime": "background",
+      "method": "selectText",
+      "case": "text",
+      "expect": "outcome",
+      "user": "finder",
+      "inCellMs": 3.166291000030469,
+      "wallMs": 120.913292000012,
+      "inputRoute": 1,
+      "outcome": {
+        "selected": false
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "electron/background/paste.replace@finder",
+      "engine": "cua",
+      "sample": 3,
+      "ok": false,
+      "scene": "electron",
+      "target": "electron",
+      "regime": "background",
+      "method": "paste",
+      "case": "replace",
+      "expect": "outcome",
+      "user": "finder",
+      "invalid": "not prepared: the field could not be given the focus"
+    },
+    {
+      "section": "method",
+      "id": "electron/background/drag.select@finder",
+      "engine": "cua",
+      "sample": 3,
+      "ok": false,
+      "scene": "electron",
+      "target": "electron",
+      "regime": "background",
+      "method": "drag",
+      "case": "select",
+      "expect": "outcome",
+      "user": "finder",
+      "invalid": "not prepared: a point of the drag is not in the field"
+    },
+    {
+      "section": "method",
+      "id": "electron/background/setValue.notSettable@finder",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "electron",
+      "target": "electron",
+      "regime": "background",
+      "method": "setValue",
+      "case": "notSettable",
+      "expect": "refusal",
+      "user": "finder",
+      "inCellMs": 4.55091699998593,
+      "wallMs": 94.01162499998463,
+      "inputRoute": 1,
+      "outcome": {
+        "refused": true,
+        "expected": true,
+        "unchanged": true,
+        "errorName": "Error",
+        "message": "Computer Use server error -10005: Cannot set a value for an element that is not settable"
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "finder/background/getAXState.tree@electron",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "finder",
+      "target": "finder",
+      "regime": "background",
+      "method": "getAXState",
+      "case": "tree",
+      "expect": "outcome",
+      "user": "electron",
+      "inCellMs": 179.21712500002468,
+      "wallMs": 409.0940829999745,
+      "inputRoute": null,
+      "outcome": {
+        "inFront": true,
+        "list": true,
+        "elements": 397
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "finder/background/listApps.running@electron",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "finder",
+      "target": "finder",
+      "regime": "background",
+      "method": "listApps",
+      "case": "running",
+      "expect": "outcome",
+      "user": "electron",
+      "inCellMs": 21.18599999998696,
+      "wallMs": 100.2290829999838,
+      "inputRoute": null,
+      "outcome": {
+        "apps": 8,
+        "listed": true,
+        "running": true
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "finder/background/click.row@electron",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "finder",
+      "target": "finder",
+      "regime": "background",
+      "method": "click",
+      "case": "row",
+      "expect": "outcome",
+      "user": "electron",
+      "inCellMs": 56.98891700000968,
+      "wallMs": 234.93041700002505,
+      "inputRoute": 3,
+      "outcome": {
+        "rowFound": true,
+        "selected": 1,
+        "only": true
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "finder/background/pressKey.down@electron",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "finder",
+      "target": "finder",
+      "regime": "background",
+      "method": "pressKey",
+      "case": "down",
+      "expect": "outcome",
+      "user": "electron",
+      "inCellMs": 6.548750000016298,
+      "wallMs": 112.26350000000093,
+      "inputRoute": "2'",
+      "outcome": {
+        "rowFound": true,
+        "selected": 1,
+        "only": true
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "finder/background/typeText.typeSelect@electron",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "finder",
+      "target": "finder",
+      "regime": "background",
+      "method": "typeText",
+      "case": "typeSelect",
+      "expect": "outcome",
+      "user": "electron",
+      "inCellMs": 35.62070899998071,
+      "wallMs": 190.80120799998986,
+      "inputRoute": "2'",
+      "outcome": {
+        "rowFound": true,
+        "selected": 1,
+        "only": true
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "finder/background/selectText.notText@electron",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "finder",
+      "target": "finder",
+      "regime": "background",
+      "method": "selectText",
+      "case": "notText",
+      "expect": "refusal",
+      "user": "electron",
+      "inCellMs": 3.38554099999601,
+      "wallMs": 90.1433750000433,
+      "inputRoute": 1,
+      "outcome": {
+        "refused": true,
+        "expected": true,
+        "unchanged": true,
+        "errorName": "Error",
+        "message": "Computer Use server error -10005: Cannot select text for an element that does not support a settable selected text range"
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "finder/background/scroll.down@electron",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "finder",
+      "target": "finder",
+      "regime": "background",
+      "method": "scroll",
+      "case": "down",
+      "expect": "outcome",
+      "user": "electron",
+      "inCellMs": 560.9619999999995,
+      "wallMs": 639.2481249999837,
+      "inputRoute": "2'",
+      "outcome": {
+        "moved": true
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "finder/background/performSecondaryAction.down@electron",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "finder",
+      "target": "finder",
+      "regime": "background",
+      "method": "performSecondaryAction",
+      "case": "down",
+      "expect": "outcome",
+      "user": "electron",
+      "inCellMs": 34.58137500000885,
+      "wallMs": 114.10983299999498,
+      "inputRoute": 1,
+      "outcome": {
+        "moved": true
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "openPanel/background/getAXState.panel@finder",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "textedit",
+      "target": "openPanel",
+      "regime": "background",
+      "method": "getAXState",
+      "case": "panel",
+      "expect": "outcome",
+      "user": "finder",
+      "inCellMs": 140.15608400001656,
+      "wallMs": 219.37133300001733,
+      "inputRoute": null,
+      "outcome": {
+        "panel": true,
+        "elements": 65
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "openPanel/background/click.cancel@finder",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": "textedit",
+      "target": "openPanel",
+      "regime": "background",
+      "method": "click",
+      "case": "cancel",
+      "expect": "outcome",
+      "user": "finder",
+      "inCellMs": 162.43325000000186,
+      "wallMs": 274.3510419999948,
+      "inputRoute": 1,
+      "outcome": {
+        "closed": true,
+        "documentInFront": true
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "method",
+      "id": "windowless/background/getAXState.noWindow@finder",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "scene": null,
+      "target": "windowless",
+      "regime": "background",
+      "method": "getAXState",
+      "case": "noWindow",
+      "expect": "refusal",
+      "user": "finder",
+      "inCellMs": 5109.6519160000025,
+      "wallMs": 5226.909916000033,
+      "inputRoute": null,
+      "outcome": {
+        "refused": true,
+        "expected": true,
+        "unbound": true,
+        "errorName": "Error",
+        "message": "Computer Use server error -10005: timeoutReached"
+      },
+      "interference": {
+        "ok": true,
+        "frontmost": true,
+        "topWindow": true,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "concurrent",
+      "id": "finder/concurrent@textedit",
+      "scene": "finder",
+      "user": "textedit",
+      "regime": "background",
+      "method": "typeText",
+      "case": "concurrent",
+      "engine": "cua",
+      "sample": 3,
+      "ok": true,
+      "inCellMs": 470.5366669999785,
+      "wallMs": 3271.5455409999704,
+      "inputRoute": "2'",
+      "outcome": {
+        "drivenLanded": true,
+        "userLanded": true,
+        "threw": false,
+        "errorName": null,
+        "intervalSource": "engine",
+        "intervalMs": 465,
+        "postOffsetMs": 164,
+        "late": 0,
+        "rowFound": true,
+        "selected": 1
+      },
+      "attempts": 1,
+      "interference": {
+        "ok": false,
+        "frontmost": true,
+        "topWindow": false,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    },
+    {
+      "section": "concurrent",
+      "id": "chrome/concurrent@textedit",
+      "scene": "chrome",
+      "user": "textedit",
+      "regime": "background",
+      "method": "typeText",
+      "case": "concurrent",
+      "engine": "cua",
+      "sample": 3,
+      "ok": false,
+      "inCellMs": 3086.7545829999726,
+      "wallMs": 5427.655374999973,
+      "inputRoute": "2'",
+      "outcome": {
+        "drivenLanded": false,
+        "userLanded": true,
+        "threw": false,
+        "errorName": null,
+        "intervalSource": "engine",
+        "intervalMs": 3080,
+        "postOffsetMs": 448,
+        "late": 0,
+        "exact": false,
+        "nfcEqual": false,
+        "length": 0,
+        "expectedLength": 1439
+      },
+      "attempts": 1,
+      "interference": {
+        "ok": false,
+        "frontmost": true,
+        "topWindow": false,
+        "focus": true,
+        "activations": 0,
+        "route4": false
+      }
+    }
+  ],
+  "putBack": {
+    "ok": true,
+    "stopped": true,
+    "steps": {
+      "finder-teardown": {
+        "ok": true,
+        "steps": 6
+      },
+      "scenes-down": {
+        "ok": true,
+        "down": true
+      },
+      "input-source": {
+        "ok": true,
+        "source": "com.apple.keylayout.ABC",
+        "sourceRestored": true,
+        "perContextRestored": true,
+        "perContextWritten": false
+      },
+      "engine-stop": {
+        "ok": true,
+        "wasRunning": true,
+        "pid": 10303
+      },
+      "apps-check": {
+        "ok": true,
+        "running": {
+          "textedit": 0,
+          "chromeForTesting": 0,
+          "electronFixture": 0
+        }
+      },
+      "finder-check": {
+        "ok": true,
+        "runWindowGone": true,
+        "windowsAsAtBegin": true,
+        "keysAsSaved": true
+      },
+      "front-app": {
+        "ok": true,
+        "bundleId": "com.apple.Terminal",
+        "reactivated": true,
+        "inFront": true
+      }
+    }
+  },
+  "meta": {
+    "run": 3,
+    "host": "cua",
+    "engine": "cua",
+    "samples": 10,
+    "sitting": "hold2b",
+    "planId": "full",
+    "plan": {
+      "frontmost": [
+        "textedit",
+        "openPanel",
+        "finder",
+        "chrome",
+        "electron"
+      ],
+      "background": [
+        {
+          "driven": "textedit",
+          "user": "finder"
+        },
+        {
+          "driven": "finder",
+          "user": "textedit"
+        },
+        {
+          "driven": "chrome",
+          "user": "textedit"
+        },
+        {
+          "driven": "textedit",
+          "user": "chrome"
+        },
+        {
+          "driven": "electron",
+          "user": "finder"
+        },
+        {
+          "driven": "finder",
+          "user": "electron"
+        },
+        {
+          "driven": "openPanel",
+          "user": "finder"
+        },
+        {
+          "driven": "windowless",
+          "user": "finder"
+        }
+      ],
+      "launch": [
+        {
+          "scene": "electron",
+          "user": "finder"
+        }
+      ],
+      "speed": true,
+      "finding": true,
+      "concurrent": [
+        "finder",
+        "chrome"
+      ],
+      "sheet": true,
+      "intervention": [
+        "fires",
+        "preAction"
+      ],
+      "unicode": {
+        "fields": [
+          "textedit",
+          "chrome",
+          "electron"
+        ],
+        "conditions": [
+          "latin",
+          "midSwitch",
+          "korean",
+          "composing",
+          "perContext"
+        ]
+      }
+    },
+    "elicitations": [
+      {
+        "t": "2026-10-22T03:24:46.963Z",
+        "app": "com.apple.TextEdit",
+        "action": "accept"
+      },
+      {
+        "t": "2026-10-22T03:24:48.665Z",
+        "app": "com.apple.finder",
+        "action": "accept"
+      },
+      {
+        "t": "2026-10-22T03:24:50.195Z",
+        "app": "com.google.chrome.for.testing",
+        "action": "accept"
+      },
+      {
+        "t": "2026-10-22T03:24:52.856Z",
+        "app": "io.github.ssfskim.cua.fixture.electron",
+        "action": "accept"
+      },
+      {
+        "t": "2026-10-22T03:30:53.629Z",
+        "app": "io.github.ssfskim.cua.fixture.windowless",
+        "action": "accept"
+      }
+    ],
+    "keySkipped": [],
+    "controller": {
+      "commit": "75286950f0fc8275939c6f2fed3114724e7f4346",
+      "dirty": false
+    },
+    "runDir": "/Users/new/Library/Caches/cua-harness/native-matrix",
+    "load": {
+      "before": {
+        "loadavg": [
+          1.88,
+          2.14,
+          2.39
+        ],
+        "uptimeS": 38117,
+        "cpus": 10
+      },
+      "after": {
+        "loadavg": [
+          2.55,
+          2.36,
+          2.39
+        ],
+        "uptimeS": 38634,
+        "cpus": 10
+      }
+    },
+    "frontApp": {
+      "saved": "com.apple.Terminal",
+      "now": "com.apple.Terminal",
+      "same": true
+    },
+    "engineStopAtStart": {
+      "wasRunning": false
+    },
+    "nativeEngine": {
+      "requested": "cua",
+      "approved": {
+        "bundlePath": "/Users/new/Library/Application Support/cua/engine/cua Engine.app",
+        "engineVersion": "0.1.0",
+        "build": "1abea7b0eea810db35f0d42ad28bf12cde8820ed004fa9bca29be8a19b0b987a",
+        "signature": {
+          "kind": "identity",
+          "identityMatches": true
+        }
+      },
+      "checkoutBuild": "1abea7b0eea810db35f0d42ad28bf12cde8820ed004fa9bca29be8a19b0b987a",
+      "attested": [
+        {
+          "engine": "cua",
+          "version": "0.1.0",
+          "build": "1abea7b0eea810db35f0d42ad28bf12cde8820ed004fa9bca29be8a19b0b987a"
+        }
+      ],
+      "unattested": 0
+    },
+    "runtime": {
+      "release": "26.928.40906-darwin-arm64"
+    },
+    "commit": "75286950f0fc8275939c6f2fed3114724e7f4346",
+    "hardware": {
+      "model": "Mac14,12",
+      "chip": "Apple M2 Pro",
+      "memoryBytes": 17179869184
+    },
+    "os": {
+      "name": "macOS",
+      "version": "27.0",
+      "build": "26A428"
+    },
+    "display": {
+      "pixels": "5120 x 2880",
+      "resolution": "2560 x 1440",
+      "scale": 2,
+      "virtual": true
+    },
+    "fixtures": {
+      "chrome": {
+        "appPath": "/Users/new/Library/Caches/cua-harness/chrome-for-testing/155.0.8059.84/chrome-mac-arm64/Google Chrome for Testing.app",
+        "version": "155.0.8059.84",
+        "reused": true
+      },
+      "electron": {
+        "appPath": "/Users/new/Library/Caches/cua-harness/electron-fixture/44.9.0-faee60a202d5/cua Electron Fixture.app",
+        "bundleId": "io.github.ssfskim.cua.fixture.electron",
+        "electronVersion": "44.9.0",
+        "sourceHash": "faee60a202d5",
+        "reused": true
+      }
+    },
+    "engineStopAfterSetup": {
+      "wasRunning": true,
+      "pid": 9883
+    },
+    "hostAttestation": {
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "_meta": {
+        "cua/serviceMs": 3.157,
+        "codex/nodeReplExecutionDurationMs": 79,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/nativeEngine": {
+          "engine": "cua",
+          "version": "0.1.0",
+          "build": "1abea7b0eea810db35f0d42ad28bf12cde8820ed004fa9bca29be8a19b0b987a"
+        },
+        "cua/taskId": "d8eee7d7-e603-4209-b450-d04c2033f4d5",
+        "cua/nativeExecution": {
+          "path": "/Users/new/Library/Application Support/cua-spike-vendor/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "cua/sandboxLaunch": {
+          "launcher": "cua",
+          "tmpdir": "session"
+        }
+      }
+    },
+    "inputSource": {
+      "savedNow": true,
+      "perContextOff": true,
+      "latin": true,
+      "restored": true
+    },
+    "activations": {
+      "accounted": [
+        {
+          "kind": "harness",
+          "key": "activate:textedit",
+          "bundleId": "com.apple.TextEdit",
+          "at": 1792639486189
+        },
+        {
+          "kind": "harness",
+          "key": "activate:finder",
+          "bundleId": "com.apple.finder",
+          "at": 1792639487950
+        },
+        {
+          "kind": "harness",
+          "key": "activate:chrome",
+          "bundleId": "com.google.chrome.for.testing",
+          "at": 1792639489977
+        },
+        {
+          "kind": "harness",
+          "key": "activate:electron",
+          "bundleId": "io.github.ssfskim.cua.fixture.electron",
+          "at": 1792639492644
+        },
+        {
+          "kind": "harness",
+          "key": "activate:textedit",
+          "bundleId": "com.apple.TextEdit",
+          "at": 1792639496223
+        },
+        {
+          "kind": "harness",
+          "key": "activate:finder",
+          "bundleId": "com.apple.finder",
+          "at": 1792639527037
+        },
+        {
+          "kind": "harness",
+          "key": "activate:chrome",
+          "bundleId": "com.google.chrome.for.testing",
+          "at": 1792639548451
+        },
+        {
+          "kind": "harness",
+          "key": "activate:electron",
+          "bundleId": "io.github.ssfskim.cua.fixture.electron",
+          "at": 1792639572734
+        },
+        {
+          "kind": "harness",
+          "key": "activate:finder",
+          "bundleId": "com.apple.finder",
+          "at": 1792639590231
+        },
+        {
+          "kind": "harness",
+          "key": "activate:textedit",
+          "bundleId": "com.apple.TextEdit",
+          "at": 1792639661289
+        },
+        {
+          "kind": "harness",
+          "key": "activate:chrome",
+          "bundleId": "com.google.chrome.for.testing",
+          "at": 1792639721502
+        },
+        {
+          "kind": "harness",
+          "key": "activate:finder",
+          "bundleId": "com.apple.finder",
+          "at": 1792639773419
+        },
+        {
+          "kind": "harness",
+          "key": "activate:electron",
+          "bundleId": "io.github.ssfskim.cua.fixture.electron",
+          "at": 1792639803332
+        },
+        {
+          "kind": "harness",
+          "key": "activate:textedit",
+          "bundleId": "com.apple.TextEdit",
+          "at": 1792639835568
+        },
+        {
+          "kind": "harness",
+          "key": "activate:finder",
+          "bundleId": "com.apple.finder",
+          "at": 1792639838232
+        },
+        {
+          "kind": "harness",
+          "key": "activate:textedit",
+          "bundleId": "com.apple.TextEdit",
+          "at": 1792639868448
+        },
+        {
+          "kind": "harness",
+          "key": "activate:electron",
+          "bundleId": "io.github.ssfskim.cua.fixture.electron",
+          "at": 1792639905526
+        }
+      ],
+      "unaccounted": []
+    },
+    "preparationCleanup": {
+      "removed": true,
+      "restored": [],
+      "helpersStopped": [],
+      "engineStop": {
+        "wasRunning": false
+      }
+    },
+    "service": {
+      "helpers": [
+        {
+          "path": "~/Library/Application Support/cua/engine/cua Engine.app/Contents/MacOS/cua-engine",
+          "kind": "cua",
+          "origin": "approved engine",
+          "ageSeconds": 9,
+          "startedDuringRun": true
+        }
+      ]
+    },
+    "finished": "2026-10-22T03:32:45.728Z"
+  }
+}

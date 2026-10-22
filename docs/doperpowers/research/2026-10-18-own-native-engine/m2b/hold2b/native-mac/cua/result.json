@@ -1,0 +1,68 @@
+{
+  "schema": "native-matrix-cell-1",
+  "cell": "settle",
+  "device": "mini",
+  "started": "2026-10-22T03:35:14.902Z",
+  "finished": "2026-10-22T03:37:14.789Z",
+  "lanes": [
+    {
+      "host": "cua",
+      "engine": "cua",
+      "build": "1abea7b0eea810db35f0d42ad28bf12cde8820ed004fa9bca29be8a19b0b987a",
+      "version": "0.1.0"
+    }
+  ],
+  "complete": true,
+  "verdict": "pass",
+  "problems": [],
+  "rows": [
+    {
+      "section": "settle",
+      "id": "textedit/settle",
+      "engine": "cua",
+      "sample": 1,
+      "ok": true,
+      "scene": "textedit",
+      "outcome": {
+        "settled": true
+      }
+    },
+    {
+      "section": "settle",
+      "id": "finder/settle",
+      "engine": "cua",
+      "sample": 1,
+      "ok": true,
+      "scene": "finder",
+      "outcome": {
+        "settled": true
+      }
+    },
+    {
+      "section": "settle",
+      "id": "chrome/settle",
+      "engine": "cua",
+      "sample": 1,
+      "ok": true,
+      "scene": "chrome",
+      "outcome": {
+        "settled": true
+      }
+    },
+    {
+      "section": "settle",
+      "id": "electron/settle",
+      "engine": "cua",
+      "sample": 1,
+      "ok": true,
+      "scene": "electron",
+      "outcome": {
+        "settled": true
+      }
+    }
+  ],
+  "meta": {
+    "suite": "native-mac",
+    "commit": "75286950f0fc8275939c6f2fed3114724e7f4346"
+  }
+}

@@ -1,0 +1,181 @@
+{
+  "schema": "native-mac-1",
+  "suite": "native-mac",
+  "device": "mini",
+  "platform": "darwin",
+  "host": "cua",
+  "engine": "cua",
+  "sitting": "2026-10-22T02:55:34.949Z",
+  "commit": "75286950f0fc8275939c6f2fed3114724e7f4346",
+  "approvedRuntime": "/Users/new/Library/Application Support/cua-spike-vendor",
+  "approvedEngine": "/Users/new/Library/Application Support/cua/engine/cua Engine.app",
+  "started": "2026-10-22T03:35:14.902Z",
+  "plan": {
+    "scenes": [
+      "textedit",
+      "finder",
+      "chrome",
+      "electron"
+    ]
+  },
+  "problems": [],
+  "scenes": {
+    "textedit": {
+      "fixedAttempts": 1,
+      "recorded": true,
+      "takeDown": {
+        "attempts": 1,
+        "failures": [],
+        "down": true
+      }
+    },
+    "finder": {
+      "fixedAttempts": 1,
+      "recorded": true,
+      "takeDown": {
+        "attempts": 1,
+        "failures": [],
+        "down": true
+      }
+    },
+    "chrome": {
+      "fixedAttempts": 1,
+      "recorded": true,
+      "takeDown": {
+        "attempts": 1,
+        "failures": [],
+        "down": true
+      }
+    },
+    "electron": {
+      "fixedAttempts": 1,
+      "recorded": true,
+      "takeDown": {
+        "attempts": 1,
+        "failures": [],
+        "down": true
+      }
+    }
+  },
+  "elicitations": [
+    {
+      "t": "2026-10-22T03:35:27.353Z",
+      "app": "com.apple.TextEdit",
+      "action": "accept"
+    },
+    {
+      "t": "2026-10-22T03:35:58.895Z",
+      "app": "com.apple.finder",
+      "action": "accept"
+    },
+    {
+      "t": "2026-10-22T03:36:30.329Z",
+      "app": "com.google.chrome.for.testing",
+      "action": "accept"
+    },
+    {
+      "t": "2026-10-22T03:36:50.997Z",
+      "app": "io.github.ssfskim.cua.fixture.electron",
+      "action": "accept"
+    }
+  ],
+  "complete": true,
+  "harness": {
+    "commit": "75286950f0fc8275939c6f2fed3114724e7f4346",
+    "dirty": false
+  },
+  "frontmost": {
+    "bundleId": "com.apple.Terminal",
+    "putBack": {
+      "reactivated": true,
+      "inFront": true
+    }
+  },
+  "fixtures": {
+    "chrome": {
+      "version": "155.0.8059.84"
+    },
+    "electron": {
+      "electronVersion": "44.9.0",
+      "sourceHash": "faee60a202d5"
+    }
+  },
+  "engineStop": {
+    "start": {
+      "wasRunning": false
+    },
+    "end": {
+      "wasRunning": true,
+      "pid": 20770
+    }
+  },
+  "runtimeRelease": "26.928.40906-darwin-arm64",
+  "checkoutBuild": "1abea7b0eea810db35f0d42ad28bf12cde8820ed004fa9bca29be8a19b0b987a",
+  "approved": {
+    "build": "1abea7b0eea810db35f0d42ad28bf12cde8820ed004fa9bca29be8a19b0b987a",
+    "engineVersion": "0.1.0",
+    "signature": {
+      "kind": "identity",
+      "identityMatches": true
+    }
+  },
+  "hardware": {
+    "model": "Mac14,12",
+    "chip": "Apple M2 Pro",
+    "memoryBytes": 17179869184
+  },
+  "os": {
+    "name": "macOS",
+    "version": "27.0",
+    "build": "26A428"
+  },
+  "display": {
+    "pixels": "5120 x 2880",
+    "resolution": "2560 x 1440",
+    "scale": 2,
+    "virtual": true
+  },
+  "engineAttestation": {
+    "attested": [
+      {
+        "engine": "cua",
+        "version": "0.1.0",
+        "build": "1abea7b0eea810db35f0d42ad28bf12cde8820ed004fa9bca29be8a19b0b987a"
+      }
+    ],
+    "unattested": 0
+  },
+  "hostAttestation": {
+    "host": "cua",
+    "serverInfo": {
+      "name": "cua-repl-host",
+      "version": "0.5.0"
+    },
+    "_meta": {
+      "cua/serviceMs": 2.814,
+      "codex/nodeReplExecutionDurationMs": 72,
+      "cua/replHost": {
+        "host": "cua",
+        "version": "0.5.0"
+      },
+      "cua/nativeEngine": {
+        "engine": "cua",
+        "version": "0.1.0",
+        "build": "1abea7b0eea810db35f0d42ad28bf12cde8820ed004fa9bca29be8a19b0b987a"
+      },
+      "cua/taskId": "b09c9066-cd50-48cb-be91-daf2d02c7065",
+      "cua/nativeExecution": {
+        "path": "/Users/new/Library/Application Support/cua-spike-vendor/node/24.22.0/bin/node",
+        "version": "v24.22.0"
+      },
+      "cua/sandboxLaunch": {
+        "launcher": "cua",
+        "tmpdir": "session"
+      }
+    }
+  },
+  "preparationCleanup": {
+    "removed": true
+  },
+  "finished": "2026-10-22T03:37:14.789Z"
+}

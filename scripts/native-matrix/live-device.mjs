@@ -761,6 +761,22 @@ async function stopProcesses(list, io, bounds) {
   return running();
 }
 
+// Probe-only recovery for goldens/native-mac, whose scene/front records are not the matrix's put-back records.
+// Recheck journal identity before each signal and wait: a PID reused during settlement is no longer ours.
+// Nothing is discarded here; a failed barrier can be retried by a later cleanup. Bound: 2 * killMs + probeWaitMs.
+export async function settleProbes({run, io, bounds = RECOVERY_BOUNDS}) {
+  const owned = () => ownedNow(run, io).stop.filter(p => p.kind === 'probe');
+  const stillOwned = pid => owned().some(p => p.pid === pid);
+  const survivors = await stopProcesses(owned(), {...io,
+    processRuns: stillOwned,
+    signal: (pid, signal) => { if (stillOwned(pid)) io.signal(pid, signal); },
+  }, bounds);
+  const probeWait = await awaitUnresolvedProbes(run, io, bounds);
+  const ok = survivors.length === 0 && !probeWait?.remaining;
+  return {ok, survivors: survivors.map(p => p.label), probeWait,
+    ...(!ok ? {manual: 'a frame probe may still act; keep the run and preparation records, check the Mac, then run cleanup again'} : {})};
+}
+
 // The recovery (a command cut off, interrupted or timed out on the controller, or `live.mjs cleanup` after a crash). It
 // acts only on what this run provably owns (its journal's pids whose start time still matches), and nothing restores
 // until what it stopped has exited: first this run's CLIs and serve (SIGTERM, then SIGKILL); a scene startup awaited,

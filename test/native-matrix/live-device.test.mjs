@@ -1199,3 +1199,50 @@ test('probeBarrier: a probe the run journaled that still runs, or a launch never
   assert.match(probeBarrier(run, io({journal: unresolved, rows: [watcher, {...probe, pid: 911}]})), /never identified/);
   assert.equal(probeBarrier(run, io({journal: unresolved, rows: [watcher]})), null, 'the watcher alone holds nothing');
 });
+
+test('probe-only settlement after controller death stops only owned identities, without matrix put-back', async () => {
+  const {settleProbes} = await import('../../scripts/native-matrix/live-device.mjs');
+  const run = scratch(), command = `${BUNDLE}/Contents/MacOS/cua-engine --probe window-frame`;
+  const rows = [row(900, command), row(901, command, 'later start'), row(902, command), row(903, 'node another-controller')];
+  const journal = [900, 901].map(pid => ({kind: 'probe', pid, start: T, label: `window-frame#${pid}`}));
+  journal.push({kind: 'cli', pid: 903, start: T, label: 'controller'});
+  const device = recoveryIo(run, {rows, journal, onSignal: (pid, signal, alive) => { if (signal === 'SIGKILL') alive.delete(pid); }});
+  const out = await settleProbes({run, io: device.io, bounds: SCALED});
+  assert.equal(out.ok, true);
+  assert.deepEqual(device.signals, ['SIGTERM 900', 'SIGKILL 900']);
+  assert.deepEqual(device.io.order, [], 'no matrix restoration: recording has different front/state records');
+  assert.deepEqual([...device.alive], [901, 902, 903]);
+});
+
+test('probe-only settlement never escalates to a reused PID, and preserves a stuck launch for later recovery', async () => {
+  const {settleProbes} = await import('../../scripts/native-matrix/live-device.mjs');
+  const run = scratch(), probe = row(900, `${BUNDLE}/Contents/MacOS/cua-engine --probe window-frame`);
+  const journal = [{kind: 'probe', pid: 900, start: T, label: 'window-frame#1'}];
+  const reused = recoveryIo(run, {rows: [probe], journal, onSignal: () => { probe.start = 'new process'; }});
+  assert.equal((await settleProbes({run, io: reused.io, bounds: SCALED})).ok, true);
+  assert.deepEqual(reused.signals, ['SIGTERM 900']);
+  probe.start = T;
+  const stuck = recoveryIo(run, {rows: [probe], journal});
+  assert.equal((await settleProbes({run, io: stuck.io, bounds: SCALED})).ok, false);
+  assert.deepEqual(stuck.signals, ['SIGTERM 900', 'SIGKILL 900']);
+  assert.equal(journal.length, 1, 'the recovery record survives failure');
+  stuck.alive.clear();
+  assert.equal((await settleProbes({run, io: stuck.io, bounds: SCALED})).ok, true);
+});
+
+test('an unidentified frame probe is waited for, never signaled; failure can recover on a later cleanup', async () => {
+  const {settleProbes} = await import('../../scripts/native-matrix/live-device.mjs');
+  const run = scratch(), probe = row(900, `${BUNDLE}/Contents/MacOS/cua-engine --probe window-frame`);
+  const journal = [{kind: 'probe', pid: null, start: null, label: 'window-frame#pending'}];
+  const device = recoveryIo(run, {rows: [probe], journal});
+  const blocked = await settleProbes({run, io: device.io, bounds: SCALED});
+  assert.equal(blocked.ok, false);
+  assert.deepEqual(blocked.probeWait, {unresolved: 1, waited: true, remaining: 1});
+  assert.deepEqual(device.signals, []);
+  let polls = 0;
+  device.io.processes = () => ++polls < 8 ? [probe] : [];
+  const recovered = await settleProbes({run, io: device.io, bounds: SCALED});
+  assert.equal(recovered.ok, true);
+  assert.equal(recovered.probeWait.waited, true);
+  assert.deepEqual(device.signals, []);
+});

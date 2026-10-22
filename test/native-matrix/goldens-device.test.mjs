@@ -595,3 +595,14 @@ for (const problem of ['clamped', 'wrong-window', 'unmatched', 'failed']) {
     await assert.rejects(run('setup'), /Finder frame probe/);
   });
 }
+
+test('settle-probes dispatches without requiring an up scene or invoking engine actions', async () => {
+  const run = scratch(), calls = [];
+  const out = await main(['settle-probes', '--run', run], {io: {
+    settleProbes: async given => { calls.push(given); return {ok: false, survivors: ['window-frame#1'], probeWait: null}; },
+    installed: () => { throw new Error('settlement does not start the engine'); },
+  }});
+  assert.deepEqual(calls, [run]);
+  assert.equal(out.ok, false);
+  await assert.rejects(main(['settle-probes', '--run', 'relative']), /absolute/);
+});

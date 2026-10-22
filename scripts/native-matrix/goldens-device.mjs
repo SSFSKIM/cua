@@ -9,6 +9,7 @@
 //   node scripts/native-matrix/goldens-device.mjs verify  <scene> --run <dir>
 //   node scripts/native-matrix/goldens-device.mjs action  <scene> --run <dir> --expect <digest>
 //   node scripts/native-matrix/goldens-device.mjs steps   <scene> --run <dir> --phase setup|reset|teardown
+//   node scripts/native-matrix/goldens-device.mjs settle-probes --run <dir>
 //
 // cua's lane is the raw Skyshot straight from the approved engine's socket (src/services/engine/client.mjs and its
 // protocol), as the device's own uid and outside any sandbox; no REPL host, service or policy sits between, so the
@@ -295,6 +296,10 @@ const defaultIo = () => ({
   // Lazy because live-device already consumes this module. Reuse its journaled, bounded LaunchServices probe path:
   // the approved bundle owns AX trust, never an ssh-launched Swift interpreter or an Automation grant.
   probe: async (args, run) => (await import('./live-device.mjs')).defaultIo(run).probe(args),
+  settleProbes: async run => {
+    const live = await import('./live-device.mjs');
+    return live.settleProbes({run, io: live.defaultIo(run)});
+  },
   frontmost: () => frontmostFromProbe(frontWindow()),
   teardown: (id, run) => teardownFor(id, {run}),
   sleep: sleepFor,
@@ -317,7 +322,11 @@ export async function main(argv, {io: given = {}} = {}) {
     return engineCheck({installed, checkout: io.checkout(), ...(installed ? io.signature(installed.bundlePath) : {})});
   }
   if (command === 'engine-stop') return io.stop();
-  if (!['observe', 'verify', 'action', 'steps'].includes(command)) throw new Error('usage: goldens-device.mjs engine-check | engine-stop | observe|verify <scene> --run <dir> | action <scene> --run <dir> --expect <digest> | steps <scene> --run <dir> --phase setup|reset|teardown');
+  if (command === 'settle-probes') {
+    if (!flags.run || !isAbsolute(flags.run)) throw new Error('--run <absolute directory> is required');
+    return io.settleProbes(flags.run);
+  }
+  if (!['observe', 'verify', 'action', 'steps'].includes(command)) throw new Error('usage: goldens-device.mjs engine-check | engine-stop | settle-probes --run <dir> | observe|verify <scene> --run <dir> | action <scene> --run <dir> --expect <digest> | steps <scene> --run <dir> --phase setup|reset|teardown');
   if (!Object.hasOwn(SCENES, scene ?? '')) throw new Error(`unknown scene ${scene}`);
   if (!flags.run || !isAbsolute(flags.run)) throw new Error('--run <absolute directory> is required');
   const run = fs.realpathSync(flags.run);

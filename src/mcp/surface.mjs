@@ -217,8 +217,16 @@ const JS_TITLE = 'Host rules (cua), before the documentation below:';
 const COMPUTER_RULES = [
   '- Prefer accessibility element indexes; coordinates are screenshot pixels (apply the host\'s downscale); role names are in the system language.',
   '- Drop a quit app\'s handle: getAXState() relaunches it.',
-  '- typeText drops characters the layout cannot key (emoji); paste those and multiline text.',
+  '- Vendor engine: typeText drops characters the layout cannot key (emoji); paste those and multiline text.',
   '- If REPL state is confused, js_reset and rebind; never also use osascript.',
+];
+// #117 M4: choose by the attested engine, not the host (the vendor host can serve cua's engine too).
+const CUA_COMPUTER_RULES = [
+  COMPUTER_RULES[0], COMPUTER_RULES[1],
+  '- cua engine: typeText keys Latin-layout text and sends other characters as Unicode; with Korean input or an unknown background input source it uses paste. Verify the result.',
+  '- cua engine secrets: use typeText under a reliable Latin input source, or setValue on a settable field; secret paste is refused, including typeText\'s paste fallback.',
+  '- cua engine permissions belong to "cua Engine" in System Settings > Privacy & Security; the owner grants them, never the agent.',
+  COMPUTER_RULES[3],
 ];
 const LINUX_COMPUTER_RULES = [
   '- Bind by window: cua.getApp({windowId}) with an id from listWindows(); if REPL state is confused, js_reset and rebind.',
@@ -229,8 +237,8 @@ const LINUX_COMPUTER_RULES = [
 ];
 const BROWSER_POINTER = '- Chrome: follow the rules in profiles_list\'s description (DOM-only tabs, per-phase budgets up to 120 s, evaluate in the page, slow createBrowserTab).';
 
-export function jsRulesFor(surfaces, {platform = process.platform} = {}) {
-  const computer = !surfaces.includes('computer') ? [] : platform === 'linux' ? LINUX_COMPUTER_RULES : COMPUTER_RULES;
+export function jsRulesFor(surfaces, {platform = process.platform, engine = 'vendor'} = {}) {
+  const computer = !surfaces.includes('computer') ? [] : platform === 'linux' ? LINUX_COMPUTER_RULES : engine === 'cua' ? CUA_COMPUTER_RULES : COMPUTER_RULES;
   return [JS_TITLE, ...computer, ...(surfaces.includes('browser') ? [BROWSER_POINTER] : [])].join('\n');
 }
 
@@ -246,8 +254,8 @@ const hintFor = (name, surfaces, platform) => (!surfaces.includes('browser') ? P
   : BROWSER_HINTS[surfaces.includes('computer') ? 'both' : 'browser'][name])(hintOs(platform));
 
 // `inAppBrowser`: a MAWS backend is configured (profiles_list's description says so).
-export function modelTools(upstreamTools, {surfaces = ['computer'], platform = process.platform, devices = false, inAppBrowser = false} = {}) {
-  const jsRules = jsRulesFor(surfaces, {platform});
+export function modelTools(upstreamTools, {surfaces = ['computer'], platform = process.platform, devices = false, inAppBrowser = false, engine = 'vendor'} = {}) {
+  const jsRules = jsRulesFor(surfaces, {platform, engine});
   const passed = (Array.isArray(upstreamTools) ? upstreamTools : [])
     .filter(tool => PASSED_THROUGH.has(tool.name))
     .map(tool => ({

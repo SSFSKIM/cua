@@ -2,9 +2,10 @@
 
 Lets Claude Code read and operate macOS and Linux apps (accessibility tree, screenshots, clicks, typing, menus).
 `cua serve` (the plugin runs it through `cua-shim.mjs`) is a stdio MCP server: supported sessions now use cua's own
-JavaScript REPL host and vendor-compatible `cua` API; macOS computer sessions keep OpenAI's host (see Use). Both still
-need the pinned runtime that `cua install` verifies and places under `CUA_HOME`, for the native engine and the retained
-vendor host. The sandbox that confines the model's JavaScript is cua's own on both platforms, and no Codex CLI is
+JavaScript REPL host and vendor-compatible `cua` API. macOS computer sessions default to OpenAI's engine and host;
+`CUA_NATIVE_ENGINE=cua` opts into cua's own native engine and host (see Install and Use). The default has not switched.
+Both routes still need the pinned runtime that `cua install` verifies and places under `CUA_HOME`, for retained modules
+and the vendor compatibility route. The sandbox that confines the model's JavaScript is cua's own on both platforms, and no Codex CLI is
 installed or launched (#115; see Configuration). Vendor files stay unmodified, and nothing in ChatGPT.app or `~/.codex`
 is read or modified. With the browser surface turned on it also drives your existing Chrome profiles,
 signed-in sessions included, through cua's own browser service, Chrome extension and native host, with no ChatGPT
@@ -28,10 +29,13 @@ The design and its status are in `docs/doperpowers/specs/2026-10-02-standalone-c
   downloads OpenAI's pinned ChatGPT archive from its official URL (about 690 MB), or takes a local copy with
   `--archive <zip>`, and refuses anything whose length, SHA-256, layout or OpenAI code signatures (team `2DC432GLL2`)
   differ from `runtime/releases/*.json`. Vendor files are never modified or re-signed.
-- Accessibility and Screen Recording for the native computer-use helper (`Codex Computer Use.app`, started by the
-  runtime through LaunchServices). macOS asks on first use; `cua doctor` cannot see these grants and reports them as
-  `blocked` until a live run shows them. Where ChatGPT's Computer Use already runs, its compatible helper serves this
-  runtime too and is reused as it is, never stopped or replaced.
+- For the default vendor engine: Accessibility and Screen Recording for `Codex Computer Use.app`, started through
+  LaunchServices. Doctor cannot read that helper's grants and reports them as `blocked` until a live run shows them.
+  An already-running compatible helper is reused, never stopped or replaced.
+- For cua's opt-in macOS engine: Xcode's Swift toolchain and a configured Apple Development signing identity, then
+  Accessibility, Screen & System Audio Recording, and Input Monitoring for **cua Engine**. The owner grants them in
+  System Settings; automation never answers a prompt. Input Monitoring enables user-intervention detection; without
+  it the engine reports detection off. Doctor reads these grants from the engine. See [new-Mac onboarding](docs/onboarding-new-mac.md).
 - Native control needs no account, and nothing is read from ChatGPT.app or `~/.codex`. macOS computer sessions, the one
   place the vendor's `node_repl` still runs, give it its own `CODEX_HOME` under `CUA_HOME` (`state/codex`, its config
   and app approvals) until #117; cua's own host and Linux use none.
@@ -59,6 +63,43 @@ node bin/cua.mjs doctor                    # --json for the structured checks; e
 switches between verified installed releases. A release that no longer verifies is reported with its offline recovery:
 stop the servers using it, remove its directory, install again. On Linux it also fetches cua's sandbox helper (see
 Linux).
+
+### Opt into cua's macOS engine
+
+Configure the signing identity first using [the owner steps](docs/onboarding-new-mac.md#7-macos-permissions-for-the-native-surface).
+Then, with no session using the engine:
+
+```sh
+node bin/cua.mjs install --engine          # builds/signs at the one approved engine location
+node bin/cua.mjs engine approve            # owner at the console for first grants and any capture confirmation
+CUA_NATIVE_ENGINE=cua node bin/cua.mjs doctor --json
+CUA_NATIVE_ENGINE=cua node bin/cua.mjs serve
+```
+
+The bundle is always `~/Library/Application Support/cua/engine/cua Engine.app`, independent of `CUA_HOME`.
+`install --engine` calls the same staged builder as `engine build`: it stops an idle old engine through its protocol
+before replacing it; if another connection is open, replacement fails and the approved bundle stays untouched.
+An unchanged build and signature are a no-op. A changed build is pending until `engine approve` proves capture and
+records it in `approved.json`; a harness serves that approved copy in place, never installs another one.
+
+Without `--engine`, install builds only when the engine selection is `cua` (`CUA_NATIVE_ENGINE`, then the `engine`
+setting in `~/.config/cua/engine.json`, then the current `vendor` default). An implicit engine build failure leaves the
+runtime installation done and prints its diagnostic; explicit `--engine` makes a build failure fatal. `--engine` does
+not change the selection. `--engine-sign adhoc` is for hosted CI with no lasting grants, not an everyday signing
+identity. `--sign-wait <ms>` or `CUA_SIGN_WAIT_MS` sets the signing wait as for `engine build` (45 s by default;
+600000 for an attended first sign, at most 1800000). On an already-onboarded Mac, GUI-domain signing over SSH is
+normally silent. If a password prompt appears, automation stops and the owner handles it at that Mac's console.
+
+`engine approve` prints the by-hand `+`/bundle-path steps when macOS shows no prompt, then relaunches to take the grants.
+A session's first missing permission fails with `permissionsPending`, naming **cua Engine** and the Settings pane.
+After a Screen Recording refusal, the next observation attempts an idle relaunch and retries once; another open
+connection prevents the relaunch and leaves the permission diagnostic visible. Observations include screenshots,
+so there is no text-only observation fallback without Screen Recording. Ordinary session launches stay in the background.
+
+On cua's engine, `typeText` keys Latin-layout characters and sends unkeyable characters as Unicode rather than dropping
+them. Korean input, or an unknown background per-document input source, uses paste; newline is a Return event. Verify
+what the app received: app substitutions and input-method behavior still matter. Secret references never use paste on
+cua's engine: use `typeText` with a reliable Latin source or `setValue` on a settable field (see Secrets).
 
 **Removing the Codex CLI's leftovers.** This cua no longer uses what the Codex CLI left in its home (#115), but an
 older cua sharing the same `CUA_HOME` may: an earlier plugin version, a long-running `cua serve` or agent from an
@@ -192,7 +233,8 @@ With `CUA_REPL_HOST` unset or empty, the defaults are:
 |---|---|---|
 | Linux | `cua`, with Node 24+ | The owned host serves Linux computer and browser sessions (`linux`); it is the only host there: the vendor host is retired on Linux (#115), so `CUA_REPL_HOST=vendor` is refused (`repl_host_refused`) and a missing Node 24 refuses (`repl_host_node`) |
 | macOS, browser only (MAWS and profile listing included) | `cua`, with Node 24+ | No native-helper peer is needed (`browser_only`) |
-| macOS, computer enabled | `vendor` | The native helper accepts only the vendor host's `node_repl` as a peer until #117 (`macos_native_peer_requires_vendor`); MAWS does not override this |
+| macOS, computer enabled, vendor engine (default) | `vendor` | The vendor helper accepts only the vendor host's `node_repl` as a peer (`macos_native_peer_requires_vendor`) |
+| macOS, computer enabled, `CUA_NATIVE_ENGINE=cua` | `cua`, with Node 24+ | Serves the approved cua engine; a missing approved engine refuses rather than silently using vendor |
 
 Either host runs cua's own browser service with the browser surface (Chrome).
 
@@ -210,7 +252,8 @@ the tarball. If no candidate qualifies, a macOS session that would default to cu
 `own_host_node_unavailable`, and a Linux session is refused: run `cua install`, install Node 24 or later yourself, or
 set `CUA_NODE` to one. This is selection before launch, not a retry on another host after a failed launch. On macOS
 `CUA_REPL_HOST=vendor` is the rollback. An explicit `CUA_REPL_HOST=cua` instead refuses when no suitable Node is found (`repl_host_node`) or when the
-computer surface is enabled on macOS (`repl_host_refused`); it is never silently downgraded. This replaces the host and
+computer surface uses the vendor engine on macOS (`repl_host_refused`); select `CUA_NATIVE_ENGINE=cua` with its approved
+bundle to use the own host for computer sessions. It is never silently downgraded. This replaces the host and
 facade on supported sessions, not the installed vendor runtime.
 
 `cua doctor`'s `repl.host` row names the host and reason for the configured session and the separate browser-only
@@ -331,9 +374,14 @@ Exactly one trailing newline is dropped from a file's contents, so a file writte
 (`secret_input_failed`, with the runtime's error name when it is one of its fixed codes); the runtime's own message is
 withheld because it can contain the value, and the input may have been partly entered.
 
+On cua's macOS engine, a substituted `typeText` is marked concealed: it uses keys/Unicode only under a reliable Latin
+input source (the per-document source preference off, or the app frontmost). Otherwise it fails before input with
+`concealedInputUnavailable`; use `setValue` on a settable field instead. A substituted `paste` is refused too, so secret
+text never enters the clipboard through this engine's input service. The vendor route's `paste` still uses the system
+clipboard, restores it afterwards, and may be recorded by clipboard managers.
+
 This is input substitution, not a vault around the value: once entered, a secret can be seen in screenshots, the
-app's accessibility text or the app itself, and `paste` uses the system clipboard as the runtime always does (it
-restores the previous contents; a clipboard manager may record it). `typeText` enters the value as keystrokes, so an
+app's accessibility text or the app itself. `typeText` enters the value as keystrokes, so an
 ordinary text view's own substitutions (autocorrect, automatic capitalization, smart dashes) can change it, and even
 text typed before it, as they would for a person typing; password fields do not do this. Only authorize secrets for
 apps you would type them into yourself. In Chrome the same rules apply to the two browser rows above, only on the
@@ -389,8 +437,8 @@ products: the per-URL site-status check that ended a session on sites OpenAI blo
 and its stored grants, and every approval prompt of its own. It lifts two of the vendor's limits: each phase of a
 locator action, wait or `evaluate` takes the caller's `timeoutMs` up to 120 s (3 s by default), and `evaluate` runs in
 the page's own world as Playwright's does. The REPL host is a separate choice (Use): browser-only macOS and Linux
-sessions default to cua's host when Node 24+ resolves; macOS sessions that also enable `computer` keep the vendor host
-until #117, with the same cua browser service.
+sessions default to cua's host when Node 24+ resolves; macOS sessions that also enable `computer` use the vendor host
+for the default vendor engine, or cua's host for the opt-in cua engine, with the same cua browser service.
 
 With the browser surface the model gets a fifth tool, `profiles_list`, whose description carries the Chrome rules:
 select only a profile `profiles_list` returned and never pick one for you, use Playwright locators for input, give a
@@ -1321,9 +1369,13 @@ On Linux, `scripts/accept/linux-secret.mjs --key KEY [--app zenity|gedit]` is th
 store: it types `{{secret:KEY}}` into a zenity entry dialog (whose printed answer is compared outside the MCP stream)
 or a gedit window (whose GTK3 text view the helper's text input crashes on arm64; the fixture records it).
 
-A macOS permission prompt is never answered by these scripts: the step stops and is reported BLOCKED with the human
-action needed. Release gates that need another environment (a clean Mac without ChatGPT, the pinned helper's own cold
-start, first-run permission prompts) are always reported BLOCKED here.
+A macOS permission prompt is never answered by these scripts: unattended runs report BLOCKED with the owner action
+needed. Item 9 retains the clean-Mac and vendor cold-start release gates. Cua's fresh onboarding is item 14,
+`--items 14 --engine cua --fresh-onboarding`, in an interactive terminal with the owner at the console. The owner
+removes only cua Engine's three permission entries, then re-adds Accessibility, Screen Recording (Later, so the service
+proves its relaunch), and Input Monitoring as prompted. The runner observes the permission errors, PID change and
+intervention status, then approves the build; it never edits TCC. An item selection missing its suite dependencies is
+refused rather than reporting checks against a suite that never ran.
 
 The Chrome acceptance has its own runner, `scripts/accept-chrome.mjs`, against `$CUA_HOME` on cua's extension route,
 the only one (spec `docs/doperpowers/specs/2026-10-07-own-chrome-extension-design.md`, H3b). It refuses a home not
@@ -1359,7 +1411,10 @@ The ChatGPT extension route's whole-phase runner (`--all`: C1–C7 with the host
 | `CUA_HOME` | `~/Library/Application Support/cua`; on Linux `${XDG_DATA_HOME:-~/.local/share}/cua` | the installed runtime (`runtimes/`), the Node `cua install` places for cua's own host (`node/`), on Linux cua's sandbox helper (`sandbox/<tag>/`), on macOS the vendor host's config and approvals (`state/codex`, its `CODEX_HOME`) and its per-session compat settings (`state/compat`), the runtime's recorded handshake answers (`state/handshake`), and per-connection directories (`run/`: each connection's working directory, with its session temp `run/<session>/tmp`, which is the connection's `TMPDIR`, and a record of the process that owns it; on Linux under `default` also `kernel/<session>`; a process killed before it could remove them is found dead by the next `cua serve` or `cua doctor`, which removes its entries and says so, `doctor` in its `run.stale` row). JavaScript cells cannot read it under `scoped` or `default` but the runtime, the Node and their own run directory (see below) |
 | `CUA_SHIM_SURFACES` | `computer` | `computer`, `browser` or `computer,browser`: with `browser` the agent also gets the browser API for your existing Chrome profiles (through cua's own extension and host and cua's own browser service, no login needed), the `profiles_list` tool and `{{secret:…}}` in Chrome fills; registered with `cua profiles add`/`bind` |
 | `CUA_BROWSER_BACKENDS` | unset | with the browser surface: MAWS's in-app browser sockets, absolute paths separated by `:` (MAWS sets it for its sessions' engines; see For MAWS) |
-| `CUA_REPL_HOST` | per session and Node availability (Use) | `cua` or `vendor`: selects the JavaScript host and facade, not the browser service (either host runs cua's). Unset or empty, Linux and browser-only macOS use cua's host when Node 24+ resolves; macOS computer sessions stay on the vendor host. If only Node is missing, macOS keeps the vendor host (`own_host_node_unavailable`) and Linux refuses (`repl_host_node`). `vendor` forces the vendor host as the rollback on macOS and is refused on Linux, where that host is retired (`repl_host_refused`, #115); explicit `cua` refuses the computer surface on macOS (`repl_host_refused`) or missing Node 24 (`repl_host_node`), never downgrades. Other nonempty values refuse (`invalid_setting` at start). `cua serve` and the independent profile listing use the same rule; `cua doctor` reports it in `repl.host`. `cua agent install` stores only an explicit nonempty value, never the resolved default |
+| `CUA_REPL_HOST` | per session, engine and Node availability (Use) | `cua` or `vendor`: selects the JavaScript host and facade, not the browser service. macOS computer sessions default to vendor with the vendor engine, cua with the cua engine; explicit own-host + vendor-engine is refused. Linux uses cua only. An explicit cua host needs Node 24+ and never silently downgrades. With no explicit host, eligible macOS sessions may use the vendor host when Node 24 is unavailable (`own_host_node_unavailable`); Linux refuses. Doctor reports the selection in `repl.host` |
+| `CUA_NATIVE_ENGINE` | `vendor` on macOS | `vendor` or `cua`; takes precedence over `~/.config/cua/engine.json`'s `engine`. Explicit/settings-selected cua requires the approved engine; no vendor fallback for an absent or pending bundle. `install --engine` builds but does not change this selection |
+| `CUA_SIGNING_IDENTITY` | `engine.json`'s `signingIdentity` | Apple Development identity's common name or SHA-1; used only to build/sign cua's engine, never printed in reports. No identity means a build refusal, not ad-hoc fallback |
+| `CUA_SIGN_WAIT_MS` | `45000` | signing wait in milliseconds, overridden by `--sign-wait`, at most `1800000`; use `600000` for the owner-attended first sign |
 | `CUA_NODE` | unset | absolute path to a Node executable to try first for cua's own host (24+), before the Node `cua install` placed under `$CUA_HOME/node`, the node running cua and the first `node` on `PATH`. A missing, unreadable or older candidate falls through to the next; a relative path refuses (`invalid_setting` at start). Never selects the vendor's pinned Node. `cua agent install` stores an explicit nonempty path as given, validated as absolute but not resolved or probed; unset or empty is omitted, so each later connection resolves afresh |
 | `CUA_SHIM_PERSIST` | `session` | `session` or `none`: whether an accepted approval is remembered for the connection (App approvals); `always` is refused (`invalid_setting` at start), its sentence naming the plugin's `Elicitation` hook (`hooks/cua-approve.sh`) |
 | `CUA_SHIM_HOST_NOTES` | built in | replacement host notes; `none` disables them |

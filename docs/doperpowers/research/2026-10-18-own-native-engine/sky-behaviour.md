@@ -487,7 +487,7 @@ Vendor:
 
 cua:
 
-- **Focus first.** Fake activation before keying when the app does not believe it has focus, as the vendor does [cua: Design, Text].
+- **Focus first.** Not for typed text: route 2′ delivered every scene's text with no activation (U12, the 2026-10-19 input sitting), so cua keys text without the vendor's focus-first step. Route 3's held activation covers ⌘ chords and element actions only [cua: Design, Input; Decision Log 2026-10-22, route 3 for key equivalents and element actions].
 - **Routing by input source.** cua reads `TISCopyCurrentKeyboardInputSource` and routes by it [cua: Decision Log 2]. With a Latin source, every character the layout can produce is keyed exactly as the vendor keys it. The reverse map is built once per layout and rebuilt on `kTISNotifySelectedKeyboardInputSourceChanged` [cua: Decision Log 6].
 - **Mid-request switch.** The current source's id is compared before every event and after the last. A change stops the request with `inputSourceChanged` and a bounded sentence naming how many UTF-16 units were entered [cua: Decision Log 8].
 - **Unkeyable characters** (an emoji, CJK, a combining sequence) go as Unicode-string events with key code 0. Each carries at most 20 UTF-16 units and never splits a surrogate pair or a combining sequence [cua: Decision Log 9].

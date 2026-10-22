@@ -181,6 +181,49 @@ test('the sheet variant: a post outside the opening action\'s own interval is re
   assert.equal(fired.result.complete, true, JSON.stringify(fired.result.problems));
 });
 
+// TextEdit's untitled document placed above the user window once `from` (a cell tag) is sent, until TextEdit is
+// activated: the reading's top window is then TextEdit's, so neither the user window's guard nor TextEdit's own sends.
+const untitledOnTop = from => {
+  let onTop = false;
+  return {
+    lane: code => { if (tagOf(code) === from) onTop = true; },
+    ops: {matrix: (base, a) => {
+      if (a[0] === 'step' && a[1] === 'activate' && a[2] === 'textedit') onTop = false;
+      const r = base(a);
+      if (a[0] !== 'read' || !onTop) return r;
+      return {...r, reading: {...r.reading, topWindow: {ownerPid: 4_242, number: 9, bounds: {x: 10, y: 10, width: 500, height: 400}, owned: true}}};
+    }},
+  };
+};
+
+test('the sheet variant\'s cleanup: when the untitled document will not close behind the user window, TextEdit is brought to the front and it is closed there', async () => {
+  // cua run 3 stopped here: the untitled document came up above the Electron window, so the cleanup's keys (sent only
+  // with the user window in front) were never sent, and the run stopped with the scene document not in front.
+  const calls = [];
+  const {lane, ops} = untitledOnTop('sheet.new');
+  const {result, steps} = await runWith({plan: planOf('concurrent-use-sheet'), cellName: 'concurrent-use-sheet', calls, lane, ops, cell: sheetCells()});
+  assert.equal(result.complete, true, JSON.stringify(result.problems));
+  assert.match(rowOf(result, SHEET).invalid, /text was not typed \(not sent\)/);
+  const tags = calls.map(c => tagOf(c.code)).filter(Boolean);
+  assert.equal(tags.filter(t => t === 'sheet.cleanup').length, 1, 'the cleanup sent once, from TextEdit in front');
+  const activations = matrixSteps(steps, 'step').filter(a => a[1] === 'activate').map(a => a[2]);
+  assert.equal(activations.at(-1), 'textedit');
+});
+
+test('the sheet variant\'s cleanup after the probe ran waits the debounce out first; a scene document still not in front stops the run with what the cleanup saw', async () => {
+  const calls = [], slept = [];
+  const {lane, ops} = untitledOnTop('sheet.type');
+  const {result} = await runWith({plan: planOf('concurrent-use-sheet'), cellName: 'concurrent-use-sheet', calls, slept, lane, ops,
+    cell: c => (tagOf(c) === 'sheet.cleanup' ? {closed: true, sceneInFront: false, front: 'none'} : sheetCells()(c))});
+  assert.equal(result.complete, false);
+  assert.match(result.problems.join(' '), /untitled document could not be closed: TextEdit's scene document is not in front \(.*front: none/);
+  // The probe was scheduled on the user window before the opening found it covered: TextEdit observed once the
+  // debounce is out, before the cleanup's keys.
+  assert.ok(slept.some(ms => ms > 5_000), `waited: ${slept.join(', ')}`);
+  const tags = calls.map(c => tagOf(c.code) ?? (c.code.includes('return {observed: true}') ? 'requery' : null)).filter(Boolean);
+  assert.equal(tags[tags.indexOf('sheet.cleanup') - 1], 'requery');
+});
+
 test('the sheet variant\'s oracle: a transient focus steal during the opening action, or an unaccepted route 4 on either action, fails its interference', async () => {
   const calls = [];
   const stolen = await runWith({plan: planOf('concurrent-use-sheet'), cellName: 'concurrent-use-sheet', calls, cell: sheetCells(),

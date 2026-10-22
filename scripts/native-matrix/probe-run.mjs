@@ -202,8 +202,6 @@ async function sheetAttempt(ctx, {lead, id, key}) {
     // A refused follow-up leaves the sheet up, a refused opening the dirty untitled document: once the debounce it may
     // have started is out, the untitled document's own cleanup closes either (its sheet's Delete, or super+w and then
     // the sheet's Delete), the scene's document back in front.
-    ctx.posted[driven] = ctx.posted[user];
-    await quiet(ctx, driven);
     await closeUntitled(ctx, keys);
   }
   const postedAt = probe.answer?.postedAt, interval = intervalOf(ctx.engine, opening), {value} = follow;
@@ -222,11 +220,23 @@ async function sheetAttempt(ctx, {lead, id, key}) {
   const routes = [opened.route, typed.route, opening.route, follow.route];
   return span.end(row, {oracle: {before: before.reading, after: after.reading, focus: after.focus ?? null, inputRoute: routes, scene: driven, userPid: userWindow.pid}});
 }
-// The untitled document closed after a variant that stopped part-way; a scene document not back in front stops the run.
+// The untitled document closed after a variant that stopped part-way. Once the debounce a probe of this attempt may have
+// started is out (its keys can be the user's to TextEdit too), the cleanup goes behind the user window; when that does
+// not bring the scene's document back (its keys skipped because the untitled document came up above the user window,
+// or TextEdit in the background naming another front window), TextEdit is brought to the front and the cleanup sent
+// again under its own guard. A scene document still not in front stops the run, with what each cleanup saw.
 async function closeUntitled(ctx, keys) {
-  const closed = await keys(CLOSE_UNTITLED_CELL, ['super+w']);
-  if (!closed?.ok || closed.value?.sceneInFront !== true) throw new Stop('the sheet variant\'s untitled document could not be closed: TextEdit\'s scene document is not in front');
+  const driven = 'textedit', user = 'electron';
+  if (ctx.posted[user] !== undefined) { ctx.posted[driven] ??= ctx.posted[user]; await quiet(ctx, driven); }
+  const behind = await keys(CLOSE_UNTITLED_CELL, ['super+w']);
+  if (behind?.ok && behind.value?.sceneInFront === true) return;
+  const front = activate(ctx, driven);
+  const there = front?.ok ? await sendKeys(ctx, CLOSE_UNTITLED_CELL, ['super+w'], {scene: driven, kind: 'harness', key: 'sheet:cleanup'}) : null;
+  if (there?.ok && there.value?.sceneInFront === true) return;
+  throw new Stop(`the sheet variant's untitled document could not be closed: TextEdit's scene document is not in front (behind the user window: ${cleanupSeen(behind)}; `
+    + `with TextEdit in front: ${front?.ok ? cleanupSeen(there) : `not activated, ${front?.reason ?? 'no answer'}`})`);
 }
+const cleanupSeen = r => (!r ? 'not sent' : !r.ok ? `the cell failed: ${String(r.error ?? '').slice(0, 160)}` : `front: ${r.value?.front ?? 'unknown'}, sheet ${r.value?.closed === false ? 'open' : 'closed'}`);
 
 // ---- intervention fires ---------------------------------------------------------------------------------------------
 

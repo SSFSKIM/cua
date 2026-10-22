@@ -207,16 +207,20 @@ return {closed: !__sheet(ax), sceneInFront: inFront(ax)};`);
 
 // The cleanup of a sheet variant that stopped part-way (a key cell, sent under the guard): the untitled document closed
 // (super+w, and its sheet's Delete when one comes up), so the scene's document is TextEdit's front window again.
-// -> {closed, sceneInFront}.
+// `front` names what TextEdit's front window was at the end, for the run's stop: scene, untitled, sheet, panel, other
+// or none (no window observed). -> {closed, sceneInFront, front}.
 export const CLOSE_UNTITLED_CELL = cell(`${prelude('textedit')}
 // cua-matrix-cell: sheet.cleanup
 ${keepOrDelete}
-let ax = await observe();
-if (!inFront(ax) && !__sheet(ax) && typeof globalThis.__sheetDoc === "string" && windowTitleOf(ax) === globalThis.__sheetDoc) { await __app.pressKey("super+w"); ax = await observe(); }
-for (const end = Date.now() + 5000; !inFront(ax) && !__sheet(ax) && Date.now() < end;) ax = await observe();
-if (__sheet(ax)) { const b = __deleteButton(ax); if (b !== null) await __app.click(b); ax = await observe(); }
-for (const end = Date.now() + 5000; !inFront(ax) && Date.now() < end;) ax = await observe();
-return {closed: !__sheet(ax), sceneInFront: inFront(ax)};`);
+const __observe = async () => { try { return await observe(); } catch (e) { if (/noWindowsAvailable/.test(String(e?.message ?? e))) return ""; throw e; } };
+const __untitled = ax => typeof globalThis.__sheetDoc === "string" && windowTitleOf(ax) === globalThis.__sheetDoc;
+let ax = await __observe();
+if (!inFront(ax) && !__sheet(ax) && __untitled(ax)) { await __app.pressKey("super+w"); ax = await __observe(); }
+for (const end = Date.now() + 5000; !inFront(ax) && !__sheet(ax) && Date.now() < end;) ax = await __observe();
+if (__sheet(ax)) { const b = __deleteButton(ax); if (b !== null) await __app.click(b); ax = await __observe(); }
+for (const end = Date.now() + 5000; !inFront(ax) && Date.now() < end;) ax = await __observe();
+const front = ax === "" ? "none" : inFront(ax) ? "scene" : __sheet(ax) ? "sheet" : panel(ax) ? "panel" : __untitled(ax) ? "untitled" : "other";
+return {closed: !__sheet(ax), sceneInFront: inFront(ax), front};`);
 
 // Intervention fires: after the refusal, the last typed character's landing on the document. -> {landed}.
 export const endsWithCell = (scene, text) => cell(`${prelude(scene)}

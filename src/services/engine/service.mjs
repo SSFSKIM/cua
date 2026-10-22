@@ -32,7 +32,8 @@
 //   engine did not take, with the reason ("windowMinimized": a minimized window is observed in place with no screenshot,
 //   and the facade's getScreenshot then fails "Screenshot unavailable"); on input results and input errors the engine's meta as
 //   cua/inputRoute, cua/actionInterval {startedAt, endedAt}, cua/receivedAt, cua/hidIdleMs, and when the engine sends
-//   them cua/activationGuardMs, cua/pointUnconfirmed, cua/intervention ("off": intervention detection is not running,
+//   them cua/activationGuardMs, cua/activationClick (route 3's activation click: "posted", or why it was skipped),
+//   cua/pointUnconfirmed, cua/intervention ("off": intervention detection is not running,
 //   no Input Monitoring grant), cua/entered (the UTF-16 units a type_text entered, on its result and on the error that
 //   stopped it) and cua/routeAdvice (the per-app route-4 override, once route 3's guard has failed three actions in a
 //   row for the app). cua/serviceMs is the wrapper's (src/services/sky.mjs).
@@ -63,10 +64,10 @@ const FIELDS = {
 // The keys a call sets only sometimes, reset at its start.
 const PER_CALL = {
   'cua/engineMs': null, 'cua/settle': null, 'cua/screenshotOmitted': null, 'cua/inputRoute': null, 'cua/actionInterval': null, 'cua/receivedAt': null, 'cua/hidIdleMs': null,
-  'cua/activationGuardMs': null, 'cua/pointUnconfirmed': null, 'cua/intervention': null, 'cua/entered': null, 'cua/routeAdvice': null,
+  'cua/activationGuardMs': null, 'cua/activationClick': null, 'cua/pointUnconfirmed': null, 'cua/intervention': null, 'cua/entered': null, 'cua/routeAdvice': null,
 };
 // The engine's optional input meta keys, carried under cua/<key> when it sends them.
-const OPTIONAL_INPUT_META = ['activationGuardMs', 'pointUnconfirmed', 'intervention', 'entered', 'routeAdvice'];
+const OPTIONAL_INPUT_META = ['activationGuardMs', 'activationClick', 'pointUnconfirmed', 'intervention', 'entered', 'routeAdvice'];
 
 // An observation of another bundle than the approved one (internal: the call is redone once).
 class IdentityChanged extends Error {}

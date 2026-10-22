@@ -28,7 +28,8 @@
 // Row (one judged sample):
 //   section    which part of the summary it feeds (SECTIONS): 'method' (part 4), 'speed' (part 5's speed), 'finding'
 //              (part 5's finding elements), 'interference' (part 5's not interfering), 'launch' (part 4's launch path),
-//              'concurrent', 'intervention', 'unicode', 'settle' (M2b.3), 'residue' (M2a's residue, M2b.1)
+//              'concurrent', 'intervention', 'unicode', 'settle' (M2b.3), 'residue' (M2a's residue, M2b.1), 'route-ab' (hold 3's
+//              route A/B on the Electron button, ./route-ab.mjs)
 //   id         the row's name within its section, stable across runs and engines, so two engines' rows pair by it:
 //              a method row `<target>/<regime>/<method>.<case>` (the target a scene or `openPanel`; a background row
 //              ends `@<user>`, the user scene), a speed row
@@ -60,7 +61,7 @@ import {join} from 'node:path';
 
 export const CELL_RESULT_SCHEMA = 'native-matrix-cell-1';
 export const RESULT_FILE = 'result.json';
-export const SECTIONS = Object.freeze(['method', 'speed', 'finding', 'interference', 'launch', 'concurrent', 'intervention', 'unicode', 'settle', 'residue']);
+export const SECTIONS = Object.freeze(['method', 'speed', 'finding', 'interference', 'launch', 'concurrent', 'intervention', 'unicode', 'settle', 'residue', 'route-ab']);
 export const ENGINES = Object.freeze(['vendor', 'cua']);
 export const REGIMES = Object.freeze(['frontmost', 'background']);
 export const VERDICTS = Object.freeze(['pass', 'fail', 'no-verdict', 'refused']);

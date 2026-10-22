@@ -14,11 +14,12 @@
 //     of one hold names the same --sitting, the hold's id, recorded in each run's meta. A hold split by run runs exactly
 //     run n with --run-number n (--runs then counts from n, 1 by default; <out>/run-<n>/), so each run's vendor and cua
 //     lanes share one sitting: `summary` pairs them per run number.
-//   node scripts/native-matrix.mjs cell <name> [the run's options] [--scene <id>] [--user <id>]
+//   node scripts/native-matrix.mjs cell <name> [the run's options] [--scene <id>] [--user <id>] [--natural-only]
 //   node scripts/native-matrix.mjs cell --list
 //     One registered cell (./native-matrix/registry.mjs): the matrix's own (a part of the run, narrowed by --scene and
 //     --user, e.g. `cell non-interference --scene textedit --user finder`, `cell korean --scene textedit`, the probe
-//     cells `concurrent-use`, `concurrent-use-sheet`, `intervention-fires`, `pre-action-refusal`), or one implemented on
+//     cells `concurrent-use`, `concurrent-use-sheet`, `intervention-fires`, `pre-action-refusal`, hold 3's `route-ab`, whose
+//     `--natural-only` runs its natural samples alone), or one implemented on
 //     another harness (M2a's residue on the live harness; `settle`, the native-mac suite's lane).
 //   node scripts/native-matrix.mjs compare <vendor-dir> <cua-dir> [--out comparison.md]
 //     Every result under the two directories judged (./native-matrix/summary.mjs; only full matrix runs count, three
@@ -50,13 +51,13 @@ import {judge, readResults, renderSummary} from './native-matrix/summary.mjs';
 
 const SCRIPT = fileURLToPath(import.meta.url);
 export const USAGE = `usage: native-matrix.mjs run --device <alias> --host vendor|cua --engine vendor|cua --approved-runtime <home> --approved-engine <bundle> --sitting <hold id> --out <dir> [--runs n] [--run-number n] [--samples n] [--run <device dir>] [--dry-run]
-       native-matrix.mjs cell <name> [the run's options] [--scene <id>] [--user <id>] | cell --list
+       native-matrix.mjs cell <name> [the run's options] [--scene <id>] [--user <id>] [--natural-only (route-ab)] | cell --list
        native-matrix.mjs compare <vendor-dir> <cua-dir> [--out <file>]
        native-matrix.mjs summary <dir>... [--out <file>]
        native-matrix.mjs cleanup --device <alias> [--run <device dir>] [--preparation <file>] [--dry-run]`;
 const OPTIONS = {device: {type: 'string'}, host: {type: 'string'}, engine: {type: 'string'}, 'approved-runtime': {type: 'string'}, 'approved-engine': {type: 'string'},
   out: {type: 'string'}, runs: {type: 'string'}, 'run-number': {type: 'string'}, samples: {type: 'string'}, run: {type: 'string'}, scene: {type: 'string'}, user: {type: 'string'}, sitting: {type: 'string'},
-  preparation: {type: 'string'}, list: {type: 'boolean', default: false}, 'dry-run': {type: 'boolean', default: false}};
+  preparation: {type: 'string'}, list: {type: 'boolean', default: false}, 'natural-only': {type: 'boolean', default: false}, 'dry-run': {type: 'boolean', default: false}};
 const fail = message => { throw new Error(`${message}\n${USAGE}`); };
 const absolute = (value, name) => { if (value !== undefined && (!isAbsolute(value) || value.includes('\n'))) fail(`--${name} needs an absolute path`); return value; };
 // The hold every lane of one hold names (`summary` refuses a run number whose vendor and cua runs name two): required on
@@ -92,7 +93,9 @@ export function parseCommand(argv) {
       if (rest.length !== 1) fail('cell needs one name (cell --list lists them)');
       if (!values.device) fail('--device is required');
       if (!values.out && !dryRun) fail('--out is required');
-      return {command, name: rest[0], ...lane(), out: values.out ? resolve(values.out) : resolve('native-matrix-dry-run'), scene: values.scene ?? null, user: values.user ?? null};
+      // Checked before dispatch: an external cell never reaches planOf, which refuses the flag for the matrix's own cells.
+      if (values['natural-only'] && rest[0] !== 'route-ab') fail('--natural-only belongs to the route A/B cell alone');
+      return {command, name: rest[0], ...lane(), out: values.out ? resolve(values.out) : resolve('native-matrix-dry-run'), scene: values.scene ?? null, user: values.user ?? null, naturalOnly: values['natural-only']};
     case 'compare':
       if (rest.length !== 2) fail('compare needs <vendor-dir> <cua-dir>');
       return {command, dirs: rest.map(d => resolve(d)), out: values.out ? resolve(values.out) : null};
@@ -154,7 +157,7 @@ export async function main(argv = process.argv.slice(2), {log = console.log, io:
     if (options.command === 'run') return await runMatrix({...options, cell: 'matrix', plan: planOf('matrix')}, io);
     const resolved = await resolveCell(options.name);
     if (resolved.kind === 'external') return await runExternal(options.name, resolved, options, {log, interrupt, dryRun: options.dryRun});
-    return await runMatrix({...options, cell: options.name, plan: planOf(resolved.plan, {scene: options.scene, user: options.user})}, io);
+    return await runMatrix({...options, cell: options.name, plan: planOf(resolved.plan, {scene: options.scene, user: options.user, naturalOnly: options.naturalOnly})}, io);
   } finally { process.off('SIGINT', onSignal); process.off('SIGTERM', onSignal); }
 }
 

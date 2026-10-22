@@ -57,9 +57,9 @@ export function matrixOps(device, {exec = execFileSync} = {}) {
     live: args => cli(LIVE_DEVICE, args, {answersOnFailure: true}),
     matrix: args => cli(MATRIX_DEVICE, args),
     preflight: ({host, engine, approvedEngine, prepared}) => lastJson(ssh(preflightScript({host, engine, approvedEngine, prepared, surface: 'computer'}))),
-    serveSpec: ({pre, prepared, host, engine}) => {
+    serveSpec: ({pre, prepared, host, engine, spikeRoute = false}) => {
       const serve = serveCommand({device, checkout: pre.checkout, home: pre.home, userHome: prepared.userHome, configHome: prepared.configHome, tmpdir: prepared.tmpdir,
-        admission: prepared.admission, xSession: {}, host, engine, platform: 'darwin', surface: 'computer'});
+        admission: prepared.admission, xSession: {}, host, engine, platform: 'darwin', surface: 'computer', spikeRoute});
       return serve.command === 'ssh' ? {...serve, args: [...SSH_OPTIONS, ...serve.args.slice(0, -1), journaledScript(serve.args.at(-1), journal.run)]} : serve;
     },
     helpers: () => ssh(MATRIX_HELPER_SCRIPT),
@@ -72,19 +72,22 @@ export function matrixOps(device, {exec = execFileSync} = {}) {
 // idle time it measured, the characters a type_text entered, `intervention: "off"` when detection is not running, and
 // the observation's own diagnostics (`cua/observation`: web enablement, the web area, the settle; the result's _meta
 // only, never its text). Response meta merges across a cell's calls with each call resetting its keys, so a cell's meta
-// is its last facade call's. The vendor reports none.
-// -> {actionInterval, receivedAt, hidIdleMs, entered, intervention, observation}, each null when absent.
+// is its last facade call's. The vendor reports none. With route 3, the activation's guard time and what its click did
+// (`cua/activationClick`: "posted", or why it was skipped) when the service passes them on.
+// -> {actionInterval, receivedAt, hidIdleMs, entered, intervention, observation, activationGuardMs, activationClick}, each null when absent.
 export const engineMetaOf = meta => Object.fromEntries([['actionInterval', 'cua/actionInterval'], ['receivedAt', 'cua/receivedAt'], ['hidIdleMs', 'cua/hidIdleMs'],
-  ['entered', 'cua/entered'], ['intervention', 'cua/intervention'], ['observation', 'cua/observation']].map(([key, name]) => [key, meta?.[name] ?? null]));
+  ['entered', 'cua/entered'], ['intervention', 'cua/intervention'], ['observation', 'cua/observation'], ['activationGuardMs', 'cua/activationGuardMs'],
+  ['activationClick', 'cua/activationClick']].map(([key, name]) => [key, meta?.[name] ?? null]));
 
 // The lane: the serve of `host` and `engine` on the prepared home, an MCP client that accepts only the computer-use
 // approval of one of the scenes' apps (recorded in meta.elicitations), and its first cell. Every js result's engine
 // attestation is collected (meta.nativeEngine, ./native-baseline/engine.mjs attestEngine) and one naming another engine
 // stops the lane at once; the first result attests the host. -> {client, js(code, timeoutMs) -> {ok, value|error,
 // inCellMs, wallMs, route, engine, at}} (`at`: the device-clock window around the call, timedCode; `engine`: the last
-// call's input meta, engineMetaOf).
-export async function connectLane({ops, pre, prepared, host, engine, connect, bundleIds, meta, stderrFile, now = () => performance.now()}) {
-  const client = connect({...ops.serveSpec({pre, prepared, host, engine}), clientName: 'cua-native-matrix',
+// call's input meta, engineMetaOf). `spikeRoute` (the route A/B's lane only) lets the serve forward a click's forced
+// route (remote.mjs nativeEnvironment).
+export async function connectLane({ops, pre, prepared, host, engine, connect, bundleIds, meta, stderrFile, spikeRoute = false, now = () => performance.now()}) {
+  const client = connect({...ops.serveSpec({pre, prepared, host, engine, spikeRoute}), clientName: 'cua-native-matrix',
     answer: msg => (isSceneApproval(msg, bundleIds) ? {action: 'accept', content: {}} : {action: 'decline'}),
     onElicitation: (row, msg) => meta.elicitations.push({t: row.t, app: msg.params?._meta?.tool_params?.app ?? null, action: row.action}),
     stderrFile});
@@ -158,6 +161,7 @@ export function dryOps({log, engine, approvedEngine = '/Users/owner/Library/Appl
         case 'read': return {reading: reading(), watcher: args.includes('--watcher'), at, ...(args.includes('--focus') ? {focus: {appOwned: true, appPid: front?.pid ?? null, named: true, valueHash: focusHash}} : {}),
           ...(args.includes('--electron-mode') ? {electronMode: {enabled: true, at: at[0]}} : {})};
         case 'electron-mode': return {records: [{at: 0, enabled: false, source: 'start'}]};
+        case 'electron-counters': return {answer: {seq: 0, at: 0, counts: {appDidBecomeActive: 0, appDidResignActive: 0}}, at};
         case 'probe': {
           if (args[1] !== 'finish') {
             const flag = name => args[args.indexOf(`--${name}`) + 1];

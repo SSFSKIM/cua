@@ -268,6 +268,15 @@
   is resolved. Make the individual attach error equally accurate at the next relevant prototype/production edit;
   do not treat this text as evidence of successful release.
 
+- **2026-10-22 — An env-gated spike route in the product engine service (#117 M2b, hold 3's route A/B).**
+  `src/services/engine/service.mjs` forwards a click's `spikeRoute` when the worker's environment carries
+  `CUA_ENGINE_SPIKE_ROUTE=1`. The product launch drops an ambient value (`src/runtime/launch.mjs`); only the harness
+  serve's launch hook adds it, for cua's engine, when the route-ab lane asks (`scripts/native-baseline/spike-route.mjs`).
+  So bd1136f1's guarantee holds in every user and model session, but the forwarding is a test switch living in product
+  code. Decide after #117's hold 3: keep it as a documented test hook (and let `cua doctor`
+  show it when set), or remove it with the route-ab cell once the A/B's question is settled. Spec Decision Log,
+  2026-10-22 "hold 3's route A/B".
+
 ## Resolved
 
 - **2026-10-18 — `scripts/probe-runtime.mjs` still names CodexCLI.app (minor, #115 M2; resolved 2026-10-18, #115 M4).** Resolved: the probe now launches the vendor host through `buildLaunch`/`createLaunchDirs` under a claimed session (cua's compat executable as `CODEX_CLI_PATH`), and `runtimePaths`/`probeEnv` are gone from the probe lib; its socket-allowance variant went with them, since the compat executable refuses node_repl's `--allow-unix-socket`. Not run live (it needs the native helper on the mini). That live probe, the one `cua doctor`'s `helper.permissions` row points to, builds its own vendor-host environment (`scripts/probe/lib.mjs` `runtimePaths`/`probeEnv`) with `CODEX_CLI_PATH` set to `runtimes/<release>/CodexCLI.app/Contents/MacOS/codex`, and refuses to start without that file. M2 dropped CodexCLI.app from the darwin pin, so the probe still works on a tree installed before M2 (the file is left in place) and refuses on a fresh install. Fix: build the launch through `buildLaunch`/`createLaunchDirs`, so it runs through cua's compat executable with the session's compat settings, or retire the probe in favour of `scripts/accept/compat-route.mjs`. Belongs with M4's cleanup of the leftover CodexCLI.app.

@@ -47,14 +47,16 @@ export const assertDisplay = display => { if (!/^[A-Za-z0-9.-]*:\d+(\.\d+)?$/.te
 // buildLaunch copies it into the runtime, and the native helper inherits it, which is how cleanup knows the run's helper.
 // `engine` (a macOS computer run's, ./engine.mjs) is CUA_NATIVE_ENGINE, explicit like the host, so the selection never
 // moves under the run; with HOME the account's, the serve's selection finds the approved engine there.
-export function nativeEnvironment({home, userHome, configHome, tmpdir, admission, host, engine, display, platform, xSession, node, surface = 'computer'}) {
+// `spikeRoute` (the native matrix's route A/B serve only) adds CUA_ENGINE_SPIKE_ROUTE=1, under which cua's service
+// forwards a click's forced route (src/services/engine/service.mjs).
+export function nativeEnvironment({home, userHome, configHome, tmpdir, admission, host, engine, display, platform, xSession, node, surface = 'computer', spikeRoute = false}) {
   assertHost(host); assertEngine(engine); assertOwnNode(host, node); assertSurface(surface);
   if (platform === 'linux') assertDisplay(xSession?.DISPLAY ?? display);
   const x = xSession === undefined ? (platform === 'linux' ? ` DISPLAY=${quote(display)} XAUTHORITY="$HOME/.Xauthority"` : '')
     : Object.entries(sessionEnvironment(xSession)).map(([key,value]) => ` ${key}=${quote(value)}`).join('');
   const clean = userHome ? `-i PATH="$PATH" LANG=${NATIVE_LOCALE.LANG} HOME=${quote(userHome)} XDG_CONFIG_HOME=${quote(configHome ?? userHome + '/.config')} ${tmpdir ? `TMPDIR=${quote(tmpdir)} ` : ''}`
     : '-u CUA_NODE ' + SESSION_KEYS.filter(key => xSession && !Object.hasOwn(xSession,key)).map(key => `-u ${key} `).join('');
-  return `${clean}CUA_HOME=${quote(home)} CUA_REPL_HOST=${host}${engine === undefined ? '' : ` CUA_NATIVE_ENGINE=${engine}`}${node === undefined ? '' : ` CUA_NODE=${quote(node)}`} CUA_SHIM_SURFACES=${surface} CUA_SHIM_PERSIST=session CUA_SHIM_SECRETS=off${admission ? ` CUA_NATIVE_ADMISSION=${quote(admission)}` : ''}${x}`;
+  return `${clean}CUA_HOME=${quote(home)} CUA_REPL_HOST=${host}${engine === undefined ? '' : ` CUA_NATIVE_ENGINE=${engine}`}${node === undefined ? '' : ` CUA_NODE=${quote(node)}`} CUA_SHIM_SURFACES=${surface} CUA_SHIM_PERSIST=session CUA_SHIM_SECRETS=off${admission ? ` CUA_NATIVE_ADMISSION=${quote(admission)}` : ''}${spikeRoute ? ' CUA_ENGINE_SPIKE_ROUTE=1' : ''}${x}`;
 }
 export function serveCommand(options) {
   const {device, checkout, userHome, node} = options;

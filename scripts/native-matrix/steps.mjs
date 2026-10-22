@@ -39,7 +39,10 @@ export function step(ctx, args) {
 export const activate = (ctx, scene) => step(ctx, ['activate', scene]);
 // The engine under test's roots, for the device to tell its own windows (./matrix-device.mjs enginePids).
 const engineRoots = ctx => [['--approved-runtime', ctx.approvedRuntime], ['--approved-engine', ctx.approvedEngine]].filter(([, root]) => root).flat();
-export const read = (ctx, focus = null) => ctx.ops.matrix(['read', '--run', ctx.run, ...(ctx.watcher !== null ? ['--watcher', String(ctx.watcher)] : []), ...(focus ? ['--focus', focus] : []), ...engineRoots(ctx)]);
+// `electronMode`: the Electron fixture's accessibility mode as its record last showed it, read with the rest
+// (./matrix-device.mjs read --electron-mode).
+export const read = (ctx, focus = null, {electronMode = false} = {}) => ctx.ops.matrix(['read', '--run', ctx.run, ...(ctx.watcher !== null ? ['--watcher', String(ctx.watcher)] : []),
+  ...(focus ? ['--focus', focus] : []), ...engineRoots(ctx), ...(electronMode ? ['--electron-mode', 'latest'] : [])]);
 export const focusOf = w => `${w.pid},${w.bounds.x},${w.bounds.y},${w.bounds.width},${w.bounds.height}`;
 export const sameWindow = (a, b) => Boolean(a && b) && a.pid === b.pid && ['x', 'y', 'width', 'height'].every(k => a.bounds[k] === b.bounds[k]);
 
@@ -106,10 +109,21 @@ export async function quiet(ctx, scene) {
 
 // ---- a case's row ----------------------------------------------------------------------------------------------------
 
+// The scenes whose rows keep the engine's per-call meta of their prepare, act and check (./lane.mjs engineMetaOf, its
+// nulls dropped): the web-shaped ones, whose observations depend on enablement, the web area and the settle.
+const DIAGNOSED = Object.freeze(['chrome', 'electron']);
+const presentMeta = meta => {
+  const kept = Object.entries(meta ?? {}).filter(([, value]) => value !== null);
+  return kept.length ? Object.fromEntries(kept) : null;
+};
+
 // One case: prepare, act (one facade call), check; in the background regime the oracle's readings around the act, each
 // with the watcher alive. A method row by default; the Unicode matrix's rows name their own section and id (`extra`
 // kept on the row). The row's window runs from its prepare's start to its check's end; the activations in it are
-// the row's (the frontmost regime records their count, the background regime's oracle judges them).
+// the row's (the frontmost regime records their count, the background regime's oracle judges them). A Chrome or
+// Electron row keeps its three calls' engine meta (`engineMeta`); an Electron row records the fixture's accessibility
+// mode (`electronMode` {enabled, at}, from the background's after-read, or in the frontmost from a read after the check
+// so the act-to-check timing stays the earlier holds') beside the act's device-clock window (`actAt`).
 export async function caseRow(ctx, target, regime, c, {user = null, userWindow = null, speed = false, section = 'method', id = null, userValue = null, extra = {}} = {}) {
   await ctx.checkpoint();
   const scene = SCENE_OF[target];
@@ -120,7 +134,13 @@ export async function caseRow(ctx, target, regime, c, {user = null, userWindow =
   let from = null, to = null;
   const span = r => { from ??= r?.at?.[0] ?? null; to = r?.at?.[1] ?? to; return r; };
   const done = extra => { if (from !== null) mark(ctx, 'row', key, [from, to]); return push(ctx, {...row, ...extra}); };
+  const keep = (phase, r) => {
+    const meta = DIAGNOSED.includes(scene) ? presentMeta(r?.engine) : null;
+    if (meta) (row.engineMeta ??= {})[phase] = meta;
+  };
+  const electron = scene === 'electron';
   const prepared = span(await ctx.lane.js(cells.prepare));
+  keep('prepare', prepared);
   if (!prepared.ok) return done({invalid: 'the prepare cell failed', error: prepared.error});
   if (!prepared.value?.ready) return done({invalid: `not prepared: ${prepared.value?.reason ?? 'no reason'}`});
   let before = null;
@@ -132,11 +152,14 @@ export async function caseRow(ctx, target, regime, c, {user = null, userWindow =
   if (PASTING.includes(c.method)) alertCheck(ctx, `before ${row.id}`);
   const act = span(c.keys ? await sendKeys(ctx, cells.act, c.keys, {scene, front: before, userWindow, kind: 'row', key}) : await ctx.lane.js(cells.act));
   if (act === null) return done({invalid: 'the key guard did not send the action\'s keys'});
+  keep('act', act);
   if (PASTING.includes(c.method)) alertCheck(ctx, `after ${row.id}`);
   if (!act.ok) return done({invalid: 'the act cell failed', error: act.error});
-  Object.assign(row, {inCellMs: act.value.actMs, wallMs: act.wallMs, inputRoute: act.route});
-  const after = regime === 'background' ? read(ctx, focusOf(userWindow)) : null;
+  Object.assign(row, {inCellMs: act.value.actMs, wallMs: act.wallMs, inputRoute: act.route, ...(electron ? {actAt: act.value.at ?? act.at} : {})});
+  const after = regime === 'background' ? read(ctx, focusOf(userWindow), {electronMode: electron}) : null;
   const check = span(await ctx.lane.js(cells.check));
+  keep('check', check);
+  if (electron) row.electronMode = (after ?? read(ctx, null, {electronMode: true}))?.electronMode ?? null;
   if (!check.ok) return done({invalid: 'the check cell failed', error: check.error});
   if (check.value?.invalid) return done({invalid: check.value.invalid});
   if (after && after.watcher !== true) return done({invalid: 'the activation watcher was not running after the action'});

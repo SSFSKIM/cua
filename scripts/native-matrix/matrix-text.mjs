@@ -238,8 +238,25 @@ export function sha256Hex(text) {
   return h.map(v => (v >>> 0).toString(16).padStart(8, '0')).join('');
 }
 
+// A text field's reading as the checks compare it (the renderer's bold markers dropped): its value and the trailer's
+// selected text, each null when the text shows none. -> {value, selected}.
+export function fieldReading(ax, index) {
+  const plainOf = t => (t === null ? null : String(t).replace(/\*\*/g, ''));
+  return {value: index === null ? null : plainOf(valueOfIndex(ax, index)), selected: plainOf(selectedTextOf(ax))};
+}
+// What a field's check records of its selection and value, by UTF-16 length and SHA-256 only (never the text), and
+// whether each changed from the prepare's reading `before` (fieldReading's; null: not said). So an action that did
+// nothing (the prepare's selection still there) reads apart from a partial selection or an insertion.
+// -> {selectedLength, selectedHash, valueLength, valueHash, valueChanged, selectionChanged}.
+export function selectionEvidence(ax, index, before = null) {
+  const now = fieldReading(ax, index);
+  return {selectedLength: now.selected?.length ?? null, selectedHash: now.selected === null ? null : sha256Hex(now.selected),
+    valueLength: now.value?.length ?? null, valueHash: now.value === null ? null : sha256Hex(now.value),
+    valueChanged: before === null ? null : now.value !== before.value, selectionChanged: before === null ? null : now.selected !== before.selected};
+}
+
 // The helpers' source, for a cell to embed (in this order: each calls only earlier ones or indexOfTarget).
 export const EMBEDDED = [`const windowTitleOf = ${windowTitleOf.toString()};`, indexOfTarget, elementLines, lineOfIndex, parentIndexOf, indexOfPart, indexOfId, valueOfIndex,
   focusedIndexOf, selectedTextOf, selectedIndexesOf, rowIndexOfName, showingOf, scrollBarValueBeside,
   `const SUBROLE_WORDS = ${JSON.stringify(SUBROLE_WORDS)};`, findTarget, `const ROLE_WORDS = ${JSON.stringify(ROLE_WORDS)};`, `const LABELS = ${LABELS.toString()};`,
-  namedLines, idCount, sha256Hex].map(f => (typeof f === 'string' ? f : f.toString())).join('\n');
+  namedLines, idCount, sha256Hex, fieldReading, selectionEvidence].map(f => (typeof f === 'string' ? f : f.toString())).join('\n');

@@ -16,6 +16,35 @@ function acceptNative(t, args, env = {}) {
   return spawnSync(process.execPath, [ACCEPT, '--items', '9', ...args], {encoding: 'utf8', env: {...clean, CUA_HOME: home, ...env}, timeout: 30_000});
 }
 
+test('partial item selections refuse before any suite, fixture or report runs', t => {
+  const run = acceptNative(t, ['--items', '7,8']);
+  assert.equal(run.status, 2, run.stderr);
+  assert.match(run.stderr, /requires item\(s\) 1/);
+  assert.equal(run.stdout, '');
+});
+
+test('item 14 without opt-in reports BLOCKED without touching the engine', t => {
+  const run = acceptNative(t, ['--items', '14']);
+  assert.equal(run.status, 3, run.stderr);
+  const report = JSON.parse(run.stdout);
+  assert.deepEqual(report.summary, {'14': 'BLOCKED'});
+  assert.match(report.items[0].checks[0].detail, /owner-run/);
+});
+
+test('fresh-onboarding cannot be requested then silently omitted from a selection', t => {
+  const run = acceptNative(t, ['--fresh-onboarding']);
+  assert.equal(run.status, 2, run.stderr);
+  assert.match(run.stderr, /requires item 14/);
+});
+
+test('an incomplete owner window blocks the unattended items instead of running them', t => {
+  const run = acceptNative(t, ['--items', '1,14', '--fresh-onboarding'], {CUA_SHIM_SURFACES: 'browser'});
+  assert.equal(run.status, 3, run.stderr);
+  const report = JSON.parse(run.stdout);
+  assert.deepEqual(report.summary, {'1': 'BLOCKED', '14': 'BLOCKED'});
+  assert.match(report.items.find(i => i.id === 1).checks[0].detail, /owner window/);
+});
+
 test('an unknown --engine is a usage error before any item runs', t => {
   const run = acceptNative(t, ['--engine', 'sky']);
   assert.equal(run.status, 2, run.stderr);

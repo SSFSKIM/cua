@@ -7,6 +7,20 @@ import {SANDBOX_DISABLED_STEP, SANDBOX_SCOPED_STEP} from '../probe/trusted-roots
 import {SECRETS_OFF, STORE_UNREADABLE, failClosedSteps, refusedLaunchStep} from '../probe/fail-closed.mjs';
 import {approvalsByBehaviour} from '../probe/lib.mjs';
 
+// A selected item must bring the results it consumes. Refuse rather than silently add live work or a whole suite
+// (#197); item 14 is independent so the owner window can finish before unattended checks start.
+export function acceptanceSelection(value) {
+  if (value === undefined) return null;
+  const parts = value.split(',');
+  if (!parts.every(p => /^\d+$/.test(p) && Number(p) >= 1 && Number(p) <= 14))
+    throw new Error('--items takes item numbers 1 to 14, comma-separated');
+  const selected = new Set(parts.map(Number));
+  const dependencies = {2: [1, 3], 3: [1], 6: [1, 4], 7: [1], 8: [1]};
+  const missing = [...new Set([...selected].flatMap(id => dependencies[id] ?? []))].filter(id => !selected.has(id));
+  if (missing.length) throw new Error(`selection requires item(s) ${missing.sort((a, b) => a - b).join(',')}; include them in --items`);
+  return selected;
+}
+
 export const STATUSES = ['PASS', 'FAIL', 'BLOCKED'];
 // A row that records an accepted consequence rather than checking a guarantee (the trusted roots a cell can write
 // under an explicitly requested disabled sandbox, #34, #36): it is reported, never a failure, and does not change what the rest rolls up to.

@@ -3,7 +3,9 @@
 // empty file in a new /tmp directory, finds that window by the file name and binds it by X11 window id, so every
 // observation and action is on the run's own window; it types with pressKey (./linux-cells.mjs says why) and clears the
 // text after each task instead of closing a document; and it records what typeText, paste and the Linux binder's
-// explicit refusals do, as method cases. Linux asks no per-app approval: any elicitation is declined and recorded.
+// explicit refusals do, as method cases. Linux asks per app (#117 M3, src/services/engine/policy.mjs): the run accepts,
+// for the session, only the approval of its own scratch window's app, read from the window list before it binds, and
+// declines anything else; each request is recorded (approval.elicitation, not judged).
 //
 // Ownership: a gedit the run opened is an entry {pid, dir, file, role}. A script ends a process only while its command
 // line names the entry's file (so a reused pid is never someone else's process) and removes only the entry's own
@@ -14,6 +16,7 @@ import * as cells from './cells.mjs';
 import * as linux from './linux-cells.mjs';
 import {assertDisplay, servePattern, NATIVE_LOCALE} from './remote.mjs';
 import {sessionEnvironment} from '../repl-parity/devices.mjs';
+import {pinnedApprovals} from '../accept/lib.mjs';
 
 const ROLES = ['scratch', 'victim'];
 const DIR = /^\/tmp\/cua-native-baseline-[A-Za-z0-9]{6}$/;
@@ -120,20 +123,23 @@ export function linuxDevice(remote, {display, checkout, runtimeRoot, xSession, u
   };
 }
 
+// The app whose approval a run accepts: its scratch window's, set once setup.findWindow has found it (start clears it).
+const pinned = new Set();
+
 // The Linux adapter of scripts/native-baseline.mjs's run.
 export const linuxAdapter = {
   platform: 'linux',
   target: 'gedit',
   device: (remote, {pre, display}) => linuxDevice(remote, {display, checkout: pre.checkout, runtimeRoot: pre.runtimeRoot, xSession: pre.xSession, userHome: pre.userHome}),
-  // Linux asks no per-app approval (src/mcp/surface.mjs LINUX_COMPUTER_RULES): nothing is accepted.
-  answer: () => ({action: 'decline'}),
+  // Only the run's own gedit window's app is accepted (the victims are gedit too: the connection's memory answers them).
+  answer: pinnedApprovals(() => pinned),
   refuse(pre) {
     if (pre.geditRunning) return 'gedit is running on the device: its windows may be the owner\'s; close it (or wait) and re-run';
     if (!pre.display) return `the X display ${pre.x?.display ?? '?'} did not answer xdpyinfo with the recorded X-session environment; run inside the device's X session`;
     if (!pre.gedit) return 'gedit is not installed on the device';
     return null;
   },
-  start(meta, pre) { meta.gedit = {version: pre.gedit, locale: NATIVE_LOCALE, owned: [], targetCleanup: [], crashReportsBefore: null}; meta.x = pre.x; },
+  start(meta, pre) { pinned.clear(); meta.gedit = {version: pre.gedit, locale: NATIVE_LOCALE, owned: [], targetCleanup: [], crashReportsBefore: null}; meta.x = pre.x; },
 
   async gui(ctx) {
     const {meta, device, guard, js, row, emit, measure} = ctx;
@@ -143,11 +149,13 @@ export const linuxAdapter = {
     const found = guard(await js(linux.findWindow(basename(scratch.file)), BIND_MS), 'finding the scratch window');
     row('setup.findWindow', 1, found);
     if (!found.cell?.ok) throw new Error(`the scratch gedit window did not appear: ${found.cell?.error ?? found.failure}`);
+    if (!found.cell.value?.app) throw new Error('the scratch gedit window names no app, so no approval can be pinned for it');
+    pinned.add(found.cell.value.app);
     const bind = guard(await js(linux.bind(found.cell.value.windowId), BIND_MS), 'cua.getApp({windowId})');
     const approvals = ctx.elicited();
     row('bind.getApp', 1, bind, {approvals: approvals.length});
-    approvals.forEach((a, i) => emit({op: 'approval.elicitation', sample: i + 1, ok: false, wallMs: Math.round((a.at - bind.started) * 1000) / 1000, action: a.action,
-      error: 'declined: Linux asks no per-app approval, so the harness accepts none'}));
+    approvals.forEach((a, i) => emit({op: 'approval.elicitation', sample: i + 1, ok: a.action === 'accept', wallMs: Math.round((a.at - bind.started) * 1000) / 1000, app: a.app, action: a.action,
+      note: 'wallMs: from the start of the getApp call to the approval request; the harness answers at once'}));
     meta.service = {surface: 'computer', engine: 'sky', answered: 'vendor', ...ctx.helperAttestation()};
     if (!bind.cell?.ok) throw new Error(`cua.getApp({windowId}) failed: ${bind.cell?.error ?? bind.failure}`);
 

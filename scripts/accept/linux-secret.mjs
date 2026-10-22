@@ -6,7 +6,9 @@
 // and returns only whether one matched. zenity (an entry dialog, whose accessibility text does not show the entry's
 // value): the cell clicks OK (by its element index; Return was not delivered to the dialog), and zenity prints the
 // entry to its stdout, which this process compares. It then scans the whole MCP transcript and the server's stderr for the value (raw and its
-// base64 forms), ends the task and checks that the connection left nothing under $CUA_HOME/run.
+// base64 forms), ends the task and checks that the connection left nothing under $CUA_HOME/run. Approvals (#117 M3:
+// Linux asks per app): it accepts, for the session, only the approval of its own fixture window's app (read from the
+// window list before it binds), declines everything else, and checks that app was asked once in the connection.
 // The key must already be stored in this process's $HOME store (`cua secrets set <KEY>`); its value is read here only
 // to hash it and to scan for it, and is never printed. GUI footprint: one fixture process on a file (gedit) or an entry
 // dialog (zenity) it starts, ended in `finally`, and a directory under /tmp it removes. On arm64, gedit's GTK3 text
@@ -23,6 +25,7 @@ import {defaultHome} from '../../src/runtime/layout.mjs';
 import {findTool} from '../../src/runtime/tools.mjs';
 import {fileStore, storeDir} from '../../src/secrets/store.mjs';
 import {fingerprintable, fingerprints, textLeaks, UNFINGERPRINTABLE} from '../probe/leak-scan.mjs';
+import {pinnedApprovals} from './lib.mjs';
 import {openSession, resultText} from './mcp-session.mjs';
 
 const {values: options} = parseArgs({options: {key: {type: 'string'}, app: {type: 'string', default: 'gedit'}}, strict: true});
@@ -40,6 +43,9 @@ const title = `cua-secret-${randomBytes(3).toString('hex')}`;
 let fixture = null;
 let session = null;
 let value = null;
+// The app whose approval the fixture accepts (its own window's), and every request it was asked.
+const pinned = new Set();
+const asked = [];
 try {
   const tool = ['gedit', 'zenity'].includes(options.app) ? findTool(options.app, process.env.PATH) : null;
   try { value = options.key ? await fileStore({dir: storeDir()}).read(options.key) : null; } catch (error) { report.storeError = error.code; }
@@ -60,16 +66,21 @@ try {
     fixture.exited = new Promise(resolve => fixture.once('exit', code => resolve(code)));
   }
   const runBefore = runEntries();
-  session = openSession({args: [CLI, 'serve'], env: process.env, clientName: 'cua-linux-secret'});
+  session = openSession({args: [CLI, 'serve'], env: {...process.env, CUA_SHIM_PERSIST: 'session'}, clientName: 'cua-linux-secret', onServerRequest: pinnedApprovals(() => pinned, asked)});
   await session.initialize();
 
-  const bind = await session.js(`const deadline = Date.now() + 20000; let win;
+  // Find the fixture's own window (listing asks nothing): its app is the one approval the fixture accepts. Then bind.
+  const find = await session.js(`const deadline = Date.now() + 20000; let win;
     while (!win && Date.now() < deadline) { win = (await cua.listWindows({emit: false})).find(w => (w.title ?? '').includes(${JSON.stringify(title)})); if (!win) await new Promise(r => setTimeout(r, 500)); }
     if (!win) throw new Error('the fixture window did not appear');
-    globalThis.fixtureApp = await cua.getApp({windowId: win.id}); await fixtureApp.getAXState({emit: false});
-    nodeRepl.write(JSON.stringify({windowId: win.id, app: win.app, title: win.title}));`, 90_000);
-  const bound = /\{"windowId".*\}$/m.exec(resultText(bind))?.[0];
-  if (!step('bind the fixture window by X11 id', !bind.result?.isError && !!bound, bound ? JSON.parse(bound) : resultText(bind).slice(0, 600))) throw new Error('bind');
+    globalThis.fixtureWindow = win; nodeRepl.write(JSON.stringify({windowId: win.id, app: win.app, title: win.title}));`, 90_000);
+  const bound = /\{"windowId".*\}$/m.exec(resultText(find))?.[0];
+  const window = bound ? JSON.parse(bound) : null;
+  if (typeof window?.app === 'string' && window.app) pinned.add(window.app);
+  const bind = window && await session.js(`globalThis.fixtureApp = await cua.getApp({windowId: fixtureWindow.id}); await fixtureApp.getAXState({emit: false});
+    nodeRepl.write('{"bound":true}');`, 90_000);
+  if (!step('bind the fixture window by X11 id', !find.result?.isError && pinned.size === 1 && !bind?.result?.isError && /"bound":true/.test(bind ? resultText(bind) : ''),
+    window ?? resultText(find).slice(0, 600))) throw new Error('bind');
 
   const typed = await session.js(`await fixtureApp.typeText(${JSON.stringify(`{{secret:${options.key}}}`)}); nodeRepl.write('{"typed":true}');`, 90_000);
   const typedText = resultText(typed);
@@ -105,6 +116,10 @@ try {
 
   const ended = await session.call('end_task');
   step('end_task', ended.result?.structuredContent?.status === 'ended', ended.result?.structuredContent);
+  // Linux asks per app: the fixture window's app once (every later call answered from the connection's memory), accepted.
+  const approvals = asked.filter(a => a.method === 'elicitation/create');
+  step('approvals: the fixture window\'s app asked once and accepted, nothing else asked',
+    approvals.length === 1 && approvals[0].action === 'accept' && pinned.has(approvals[0].app), {pinned: [...pinned], asked: approvals});
   const exit = await session.terminate();
   const leaks = textLeaks(session.transcript.join('\n') + session.stderr, prints);
   session = null;

@@ -446,6 +446,18 @@ test('an invalid CUA_SHIM_SURFACES fails classified before anything is launched'
   assert.equal(existsSync(join(home, 'state', 'codex', 'fake-upstream.jsonl')), false);
 });
 
+// #117 M3: approvals are remembered for the connection only; CUA_SHIM_PERSIST=always is refused rather than accepted as
+// a silent no-op, and the refusal names the plugin's Elicitation hook, where asking is removed or made stricter.
+test('CUA_SHIM_PERSIST=always is refused classified before anything is launched, naming the plugin\'s Elicitation hook', {skip: !supported}, async t => {
+  const home = fakeInstalledHome(t);
+  const server = launch(join(REPO, 'bin', 'cua.mjs'), home, ['serve'], {CUA_SHIM_PERSIST: 'always'});
+  server.child.stdin.end();
+  const {code, stderr} = await server.exit;
+  assert.equal(code, 1);
+  assert.match(stderr, /CUA_SHIM_PERSIST=always is not supported: .*hooks\/cua-approve\.sh.* \[invalid_setting\]/);
+  assert.equal(existsSync(join(home, 'state', 'codex', 'fake-upstream.jsonl')), false);
+});
+
 test('each connection gets its own random session ID', {skip: !supported}, async t => {
   const home = fakeInstalledHome(t);
   const sessions = [];

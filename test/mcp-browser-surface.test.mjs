@@ -123,7 +123,7 @@ const GENERAL_RULES = {
   'never read the secret store; type references': /Never read ~\/\.config\/claude-secrets; type secrets as \{\{secret:KEY\}\}/,
   'the surface rules are in the tool descriptions': /Each tool's description carries the rules for its surface/,
 };
-const MACOS_APPROVAL = /Apps ask for approval once per connection; report a declined app, don't retry\./;
+const APPROVAL = /Apps ask for approval once per connection; report a declined app, don't retry\./;
 const DEVICES_RULE = /devices_use moves every tool to that machine, under the notes and descriptions it returns; end_task first\./;
 const BROWSER_RULES = {
   'getBrowser only with an id from profiles_list, which is asked again on failure': /cua\.getBrowser\(\{extensionInstanceId\}\) only an id profiles_list returned for the profile the user means; if that fails, call profiles_list again/,
@@ -151,10 +151,10 @@ const LINUX_RULES = {
   'GTK3 text views: pressKey, not typeText or paste': /typeText and paste crash GTK3 text views: type there with pressKey/,
   'X keysyms': /one X keysym per call/,
   'element indexes; coordinates in screenshot pixels, downscaled': /Prefer accessibility element indexes; coordinates are screenshot pixels \(apply the host's downscale\)/,
-  'no per-app approval': /No app asks for approval: this connection drives every window of the session/,
-  'the trusted wrapper is not a boundary': /the trusted wrapper is not a boundary on Linux/,
+  // #117 M3: Linux asks per app too, and says what an app is there.
+  'approval per window app, launched id or the whole desktop': /Approval is per app: a window's app as listWindows\(\) names it, launch_app's id, and the whole desktop for input without a window\./,
 };
-const MACOS_ONLY = /macOS|osascript|getAXState|approval once per connection|typeText drops characters|role names are in the system language/;
+const MACOS_ONLY = /macOS|osascript|getAXState|typeText drops characters|role names are in the system language/;
 const DESCRIPTION_CAP = 2048;
 // A vendor js description longer than the cap, as the browser surface's is (2,847 characters with the browser alone,
 // 2,952 with both, measured on the 2026-10 pin): cua's rules must come before the cut.
@@ -180,7 +180,7 @@ test('the instructions carry the rules for every call on every surface, no surfa
     const {instructions} = await served({platform, surfaces, devices});
     assert.equal(instructions, `${UPSTREAM_INSTRUCTIONS}\n\n${hostNotesFor(surfaces, {platform, devices})}`, label);
     for (const [rule, pattern] of Object.entries(GENERAL_RULES)) assert.match(instructions, pattern, `${label}: ${rule}`);
-    assert.equal(MACOS_APPROVAL.test(instructions), platform === 'darwin' && surfaces.includes('computer'), `${label}: the per-app approval rule`);
+    assert.equal(APPROVAL.test(instructions), surfaces.includes('computer'), `${label}: the per-app approval rule`);
     assert.equal(DEVICES_RULE.test(instructions), devices, `${label}: the devices rule with the device tools only`);
     for (const [rule, pattern] of Object.entries({...BROWSER_RULES, ...COMPUTER_RULES, ...LINUX_RULES}))
       assert.doesNotMatch(instructions, pattern, `${label}: ${rule} is in its tool's description`);

@@ -30,8 +30,8 @@
 //   kernel that asked, by request id, and never to a later kernel generation.
 // - running + suspend_timeout / resume_timeout from the worker, or an elicitation awaiting the client: the budget pauses
 //   and resumes (nested). A worker's open levels end with it, so a cell that catches its exit is back on its budget.
-// - running + elicit for a computer-use app the connection already accepted or declined: answered at once from the
-//   connection's approval memory (./elicitation.mjs approvalMemory), which outlives every worker; the client is not asked.
+// - running + elicit: asked of the client every time. A computer-use app the connection already accepted or declined is
+//   answered from cua's MCP connection's approval memory (src/mcp/approval-memory.mjs), which outlives this host.
 // - running + submitted_code_complete: the submitted code and its tracked background work have drained; the budget
 //   ends there, and the after-code hooks run under their own per-hook deadlines (the worker's), on success and error.
 // - running + exec_result: the result is assembled once, with the response meta trusted code set, merged across the
@@ -90,7 +90,7 @@ import {assembleResult, imageFromDataUrl, sentenceResult} from './results.mjs';
 import {ownedGroupReaper, startKernelChild} from './kernel-child.mjs';
 import {executionBudget, timer} from './budget.mjs';
 import {DEFAULT_CONNECT_TIMEOUT_MS, nativePipeRelay} from './native-pipe.mjs';
-import {ELICITATION_CANCELLED_SENTENCE, approvalMemory, elicitationOutcome, elicitationParams, formElicitationSupported} from './elicitation.mjs';
+import {ELICITATION_CANCELLED_SENTENCE, elicitationOutcome, elicitationParams, formElicitationSupported} from './elicitation.mjs';
 import {launchServicesAction} from './launch-services.mjs';
 import {SANDBOX_META_KEY, SandboxStateError} from '../runtime/sandbox.mjs';
 import {parseDenyRead, policyTable, tableKey as launchKey, writeRootsOf} from '../sandbox/policy.mjs';
@@ -220,7 +220,6 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
   let turnCounter = 0;
   let clientRequestCounter = 0;
   const clientRequests = new Map();   // MCP id this host sent the client -> {worker, id, message, resume} (an elicitation)
-  const approvals = approvalMemory();  // the connection's computer-use app approvals (./elicitation.mjs), whatever worker asks
   let resolveClosed;
   const closed = new Promise(resolve => { resolveClosed = resolve; });
 
@@ -437,7 +436,8 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
     self.pending.clear();
     for (const resolve of self.turns.values()) resolve();
     self.turns.clear();
-    // Its elicitations stay open at the client: the cell is back on its budget, and a late answer is still remembered.
+    // Its elicitations stay open at the client: the cell is back on its budget, and a late answer is still the
+    // connection's (cua's proxy remembers it: src/mcp/approval-memory.mjs).
     for (const request of clientRequests.values()) if (request.worker === self) request.resume();
     // A withSuspendedTimeout it never closed ends with it: the cell that catches the failure is back on its budget.
     for (const [execution, depth] of self.suspensions) for (let i = 0; i < depth; i++) execution.budget.resume();
@@ -517,15 +517,13 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
     }
   }
 
-  // nodeRepl.createElicitation: asked of the client through cua's proxy; the answer goes back to the worker that asked.
-  // A computer-use app approval the connection already answered is answered from its memory instead, asking no one.
+  // nodeRepl.createElicitation: asked of the client through cua's proxy (which answers a remembered app approval
+  // itself); the answer goes back to the worker that asked.
   function elicit(self, current, message) {
     const answer = fields => self.child.send(sortedJson({type: 'elicitation_result', id: message.id, ...fields}));
     if (!current) return answer({ok: false, error: EXEC_CONTEXT_NOT_FOUND});
     const {params, error} = elicitationParams(message, {formSupported});
     if (error) return answer({ok: false, error});
-    const remembered = approvals.recall(message);
-    if (remembered) return answer(remembered);
     // The client is gone (the EOF drain): nobody can answer it.
     if (closing) return answer({ok: false, error: ELICITATION_CANCELLED_SENTENCE});
     const id = clientRequestCounter++;
@@ -545,9 +543,8 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
     if (!request) return;
     clientRequests.delete(msg.id);
     request.resume();
-    // The client's answer is the connection's, even when the worker that asked has been replaced since.
+    // A replaced worker's answer goes nowhere here; cua's proxy has remembered it for the connection.
     const outcome = elicitationOutcome(msg);
-    approvals.record(request.message, outcome);
     if (worker !== request.worker) return;
     request.worker.child.send(sortedJson({type: 'elicitation_result', id: request.id, ...outcome}));
   }

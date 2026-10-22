@@ -13,7 +13,7 @@ import {pathToFileURL} from 'node:url';
 import {shortScratch} from './fixtures/runtime-fixture.mjs';
 import {EngineFailure, nativePipe, startFakeEngine} from './helpers/fake-engine.mjs';
 import {node} from './native-goldens/builder.mjs';
-import {approvalMemory} from '../src/repl-host/elicitation.mjs';
+import {approvalMemory} from '../src/mcp/approval-memory.mjs';
 import {createSkyService} from '../src/services/sky.mjs';
 import {bind_mac_app} from '../src/cua-api/bind-mac-app.mjs';
 import {createEngineClient} from '../src/services/engine/client.mjs';
@@ -77,15 +77,16 @@ async function session(t, {handlers = {}, answer = () => ({action: 'accept', con
     requestMeta: {'x-codex-turn-metadata': {call_id: 'call-7'}},
     nativePipe: nativePipe(),
     launchServices: {openApplication: async () => assert.fail('the engine is running; nothing launches it')},
-    // The supervisor's side: a remembered app is answered from memory, anything else asks the client.
+    // The connection's side (cua's proxy): a remembered app is answered from memory, anything else asks the client.
     createElicitation: async request => {
       record.elicitations.push(structuredClone(request));
-      const message = {message: request.message, meta: request.meta};
+      const message = {message: request.message, _meta: request.meta};
       const recalled = memory.recall(message);
-      if (recalled) { const {ok, ...fields} = recalled; return fields; }
+      if (recalled) return {...recalled, _meta: null};
       record.asked.push(structuredClone(request));
-      const outcome = {ok: true, ...answer(request)};
-      memory.record(message, outcome);
+      const reply = answer(request);
+      const outcome = {ok: true, ...reply};
+      memory.record(message, {result: reply});
       const {ok, ...fields} = outcome;
       return fields;
     },

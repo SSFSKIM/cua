@@ -39,9 +39,10 @@ registerHooks({resolve(specifier, context, nextResolve) {
   return resolved;
 }});
 const out = [];
-// The trusted worker's nodeRepl, as much of it as a service's setup touches (cua's own browser service registers its
-// turn-ended hook there).
-if (process.env.TRUST_TEST_NODE_REPL === '1') globalThis.nodeRepl = {env: process.env, requestMeta: {}, addTurnEndedHandler: () => () => {}};
+// The trusted worker's nodeRepl, as much of it as a service touches (cua's own browser service registers its
+// turn-ended hook there; on Linux the sky wrapper asks its approvals through it, accepted here).
+if (process.env.TRUST_TEST_NODE_REPL === '1') globalThis.nodeRepl = {env: process.env, requestMeta: {}, addTurnEndedHandler: () => () => {},
+  createElicitation: async () => ({action: 'accept', content: {}})};
 const [name, setup, reference] = JSON.parse(process.env.TRUST_TEST_REQUESTS);
 try {
   const service = await import(pathToFileURL(JSON.parse(process.env.NODE_REPL_TRUSTED_SERVICES)[name]).href);
@@ -53,7 +54,8 @@ process.stdout.write(JSON.stringify(out));
 `;
 
 // The production service runs in a child of this platform, so the reference uses this platform's pinned shape.
-const SKY_INPUT = process.platform === 'linux' ? {window: {id: 7, app: 'Gedit', title: 't'}} : {app: 'a'};
+const SKY_WINDOW = {id: 7, app: 'Gedit', title: 't'};
+const SKY_INPUT = process.platform === 'linux' ? {window: SKY_WINDOW} : {app: 'a'};
 const SKY_REQUESTS = ['sky', {type: 'setup'}, {type: 'execute', method: 'type_text', args: [{...SKY_INPUT, text: '{{secret:WORK_PASSWORD}}'}]}];
 const BROWSER_REQUESTS = ['browser', {method: 'setup', params: {}}, {method: 'executeWithRecovery', params: {type: 'playwright_locator_fill', browser_id: '1', tab_id: '2', selector: 's', value: '{{secret:WORK_PASSWORD}}', replace: true}}];
 
@@ -74,7 +76,11 @@ function launchWithFakeVendor(t, {register = () => {}, host = 'vendor', ambient 
   register(home);
   const runtime = runtimeFor({home, pin: parsePin(fixturePin({sha256: 'a'.repeat(64), length: 1})), record: null});
   mkdirSync(dirname(runtime.paths.skyVendorService), {recursive: true});
-  writeFileSync(runtime.paths.skyVendorService, 'export async function handleRpc(request) { return {vendor: request.type, text: request.args?.[0]?.text}; }\n');
+  // On Linux the wrapper's approval lists the windows first (src/services/engine/policy.mjs createLinuxPolicy).
+  writeFileSync(runtime.paths.skyVendorService, `export async function handleRpc(request) {
+  if (request.method === 'list_windows') return ${JSON.stringify([SKY_WINDOW])};
+  return {vendor: request.type, text: request.args?.[0]?.text};
+}\n`);
   mkdirSync(dirname(runtime.paths.browserVendorService), {recursive: true});
   writeFileSync(runtime.paths.browserVendorService, 'export async function handleRpc(request) { return {vendor: request.method}; }\n');
   return buildLaunch({runtime, home, sessionId: SESSION, ambient: {...ambient, CUA_REPL_HOST: host}, services: {sky: SKY_SERVICE}, resolveOwnNode: () => process.execPath, ...options});
@@ -98,7 +104,7 @@ test('the production sky service reads a stored value from the launch\'s CUA_SEC
   writeFileSync(join(store, 'WORK_PASSWORD'), 'trusted-path-value\n', {mode: 0o600});
   const {env} = launchWithFakeVendor(t, {secretsDir: store});
   assert.equal(env.CUA_SECRETS_DIR, store);
-  const [, delivered] = await runWorker(env, ['sky', {type: 'setup'}, SKY_REQUESTS[2]]);
+  const [, delivered] = await runWorker(env, ['sky', {type: 'setup'}, SKY_REQUESTS[2]], {nodeRepl: true});
   assert.deepEqual(delivered, {vendor: 'execute', text: 'trusted-path-value'});
 });
 

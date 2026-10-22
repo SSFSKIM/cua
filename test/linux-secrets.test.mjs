@@ -32,8 +32,11 @@ function userHome(t) {
 test('the trusted sky service on Linux reads the file store and types into the bound window', async t => {
   const {dir} = userHome(t);
   const received = [];
-  const sky = createSkyService({platform: 'linux', secrets: fileStore({dir}), loadVendor: async () => ({handleRpc: async request => { received.push(request); }})});
   const window = {app: 'Gedit', focused: true, height: 600, id: 77, modal: false, title: 'notes', width: 800, x: 0, y: 0};
+  // The window's approval (#117 M3): the vendor lists the window, unrecorded, and the user accepts.
+  const nodeRepl = {createElicitation: async () => ({action: 'accept', content: {}})};
+  const sky = createSkyService({platform: 'linux', secrets: fileStore({dir}), nodeRepl,
+    loadVendor: async () => ({handleRpc: async request => (request.method === 'list_windows' ? [window] : void received.push(request))})});
   await sky.handleRpc({type: 'execute', method: 'type_text', args: [{window, text: '{{secret:WORK_PASSWORD}}'}]});
   assert.deepEqual(received, [{type: 'execute', method: 'type_text', args: [{window, text: 'linux-value'}]}]);
 });

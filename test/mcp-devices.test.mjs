@@ -358,7 +358,7 @@ test('an elicitation from the device reaches the local client as cua-device-<n>,
   const home = userHome(t);
   const mini = await device(t);
   await register(home, 'mini', mini);
-  const h = await local(t, home, {persist: 'always'});     // the device's own mode is session
+  const h = await local(t, home, {persist: 'none'});       // the device's own mode is session
   await use(h, 'mini');
   const deviceUp = mini.upstreamOf(0);
   const ran = h.client.call('js', {code: 'open Calculator'});

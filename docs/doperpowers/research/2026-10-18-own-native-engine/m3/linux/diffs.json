@@ -1,0 +1,591 @@
+{
+ "base-vs-control": {
+  "rawDifferences": 4957,
+  "inRunCases": [
+   {
+    "kind": "configuration",
+    "field": "backend"
+   }
+  ]
+ },
+ "head-vs-control": {
+  "rawDifferences": 4957,
+  "inRunCases": [
+   {
+    "kind": "configuration",
+    "field": "backend"
+   }
+  ]
+ },
+ "base-vs-head": {
+  "rawDifferences": 19,
+  "inRunCases": [
+   {
+    "kind": "configuration",
+    "case": "native/cua/computer",
+    "field": "caseConfigurations"
+   },
+   {
+    "kind": "configuration",
+    "case": "native/cua/computer.target",
+    "field": "caseConfigurations"
+   },
+   {
+    "kind": "configuration",
+    "case": "native/cua/computer.launch-app",
+    "field": "caseConfigurations"
+   },
+   {
+    "kind": "configuration",
+    "case": "native/cua/getapp",
+    "field": "caseConfigurations"
+   },
+   {
+    "kind": "configuration",
+    "case": "native/cua/listapps",
+    "field": "caseConfigurations"
+   },
+   {
+    "kind": "configuration",
+    "case": "native/cua/listwindows",
+    "field": "caseConfigurations"
+   },
+   {
+    "kind": "configuration",
+    "case": "native/target-app-decorated-tab/getaxstate",
+    "field": "caseConfigurations"
+   },
+   {
+    "kind": "configuration",
+    "case": "native/target-app-decorated-tab/getscreenshot",
+    "field": "caseConfigurations"
+   },
+   {
+    "kind": "configuration",
+    "case": "native/target-app-decorated-tab/getaxstateandscreenshot",
+    "field": "caseConfigurations"
+   },
+   {
+    "kind": "configuration",
+    "case": "native/target-app-decorated-tab/click",
+    "field": "caseConfigurations"
+   },
+   {
+    "kind": "configuration",
+    "case": "native/target-app-decorated-tab/drag",
+    "field": "caseConfigurations"
+   },
+   {
+    "kind": "configuration",
+    "case": "native/app/scroll",
+    "field": "caseConfigurations"
+   },
+   {
+    "kind": "configuration",
+    "case": "native/target-app-decorated-tab/scroll",
+    "field": "caseConfigurations"
+   },
+   {
+    "kind": "configuration",
+    "case": "native/target-app-decorated-tab/selecttext",
+    "field": "caseConfigurations"
+   },
+   {
+    "kind": "configuration",
+    "case": "native/target-app-decorated-tab/setvalue",
+    "field": "caseConfigurations"
+   },
+   {
+    "kind": "configuration",
+    "case": "native/target-app-decorated-tab/performsecondaryaction",
+    "field": "caseConfigurations"
+   },
+   {
+    "kind": "configuration",
+    "case": "native/app/presskey",
+    "field": "caseConfigurations"
+   },
+   {
+    "kind": "configuration",
+    "case": "native/app/typetext",
+    "field": "caseConfigurations"
+   },
+   {
+    "kind": "configuration",
+    "case": "native/app/paste",
+    "field": "caseConfigurations"
+   }
+  ]
+ },
+ "head-7539d5cd-vs-control (superseded)": {
+  "rawDifferences": 4971,
+  "inRunCases": [
+   {
+    "kind": "configuration",
+    "field": "backend"
+   },
+   {
+    "case": "secrets/native-live/linux/type-text",
+    "cell": "exercise",
+    "kind": "semantic",
+    "a": {
+     "ok": true,
+     "content": [
+      {
+       "type": "text",
+       "text": "NATIVE_SECRET:{\"backendCalled\":true,\"backendMatches\":true,\"errorSafe\":true,\"labelReportMatches\":true,\"messageOnly\":true,\"readLabels\":[\"PARITY_SYNTHETIC\",\"PARITY_SYNTHETIC\"],\"readMatches\":true,\"requestMatches\":true,\"resultMatches\":true}"
+      }
+     ],
+     "isError": false,
+     "meta": {
+      "cua/taskId": "<task:1>"
+     },
+     "proof": "service-boundary-double"
+    },
+    "b": {
+     "ok": true,
+     "content": [
+      {
+       "type": "text",
+       "text": "NATIVE_SECRET:{\"approvalMatches\":true,\"backendCalled\":true,\"backendMatches\":true,\"errorSafe\":true,\"labelReportMatches\":true,\"messageOnly\":true,\"readLabels\":[\"PARITY_SYNTHETIC\",\"PARITY_SYNTHETIC\"],\"readMatches\":true,\"requestMatches\":true,\"resultMatches\":true}"
+      }
+     ],
+     "isError": false,
+     "meta": {
+      "cua/taskId": "<task:1>"
+     },
+     "proof": "service-boundary-double"
+    }
+   },
+   {
+    "case": "secrets/native-live/refuse/invalid-label",
+    "cell": "exercise",
+    "kind": "semantic",
+    "a": {
+     "ok": true,
+     "content": [
+      {
+       "type": "text",
+       "text": "NATIVE_SECRET:{\"backendCalled\":false,\"backendMatches\":true,\"errorSafe\":true,\"labelReportMatches\":true,\"messageOnly\":true,\"readLabels\":[],\"readMatches\":true,\"requestMatches\":true,\"resultMatches\":true}"
+      }
+     ],
+     "isError": false,
+     "meta": {
+      "cua/taskId": "<task:1>"
+     },
+     "proof": "service-boundary-double"
+    },
+    "b": {
+     "ok": true,
+     "content": [
+      {
+       "type": "text",
+       "text": "NATIVE_SECRET:{\"approvalMatches\":true,\"backendCalled\":false,\"backendMatches\":true,\"errorSafe\":true,\"labelReportMatches\":true,\"messageOnly\":true,\"readLabels\":[],\"readMatches\":true,\"requestMatches\":true,\"resultMatches\":true}"
+      }
+     ],
+     "isError": false,
+     "meta": {
+      "cua/taskId": "<task:1>"
+     },
+     "proof": "service-boundary-double"
+    }
+   },
+   {
+    "case": "secrets/native-live/refuse/reserved-label",
+    "cell": "exercise",
+    "kind": "semantic",
+    "a": {
+     "ok": true,
+     "content": [
+      {
+       "type": "text",
+       "text": "NATIVE_SECRET:{\"backendCalled\":false,\"backendMatches\":true,\"errorSafe\":true,\"labelReportMatches\":true,\"messageOnly\":true,\"readLabels\":[],\"readMatches\":true,\"requestMatches\":true,\"resultMatches\":true}"
+      }
+     ],
+     "isError": false,
+     "meta": {
+      "cua/taskId": "<task:1>"
+     },
+     "proof": "service-boundary-double"
+    },
+    "b": {
+     "ok": true,
+     "content": [
+      {
+       "type": "text",
+       "text": "NATIVE_SECRET:{\"approvalMatches\":true,\"backendCalled\":false,\"backendMatches\":true,\"errorSafe\":true,\"labelReportMatches\":true,\"messageOnly\":true,\"readLabels\":[],\"readMatches\":true,\"requestMatches\":true,\"resultMatches\":true}"
+      }
+     ],
+     "isError": false,
+     "meta": {
+      "cua/taskId": "<task:1>"
+     },
+     "proof": "service-boundary-double"
+    }
+   },
+   {
+    "case": "secrets/native-live/refuse/unsupported-shape",
+    "cell": "exercise",
+    "kind": "semantic",
+    "a": {
+     "ok": true,
+     "content": [
+      {
+       "type": "text",
+       "text": "NATIVE_SECRET:{\"backendCalled\":false,\"backendMatches\":true,\"errorSafe\":true,\"labelReportMatches\":true,\"messageOnly\":true,\"readLabels\":[],\"readMatches\":true,\"requestMatches\":true,\"resultMatches\":true}"
+      }
+     ],
+     "isError": false,
+     "meta": {
+      "cua/taskId": "<task:1>"
+     },
+     "proof": "service-boundary-double"
+    },
+    "b": {
+     "ok": true,
+     "content": [
+      {
+       "type": "text",
+       "text": "NATIVE_SECRET:{\"approvalMatches\":true,\"backendCalled\":false,\"backendMatches\":true,\"errorSafe\":true,\"labelReportMatches\":true,\"messageOnly\":true,\"readLabels\":[],\"readMatches\":true,\"requestMatches\":true,\"resultMatches\":true}"
+      }
+     ],
+     "isError": false,
+     "meta": {
+      "cua/taskId": "<task:1>"
+     },
+     "proof": "service-boundary-double"
+    }
+   },
+   {
+    "case": "secrets/native-live/refuse/disabled",
+    "cell": "exercise",
+    "kind": "semantic",
+    "a": {
+     "ok": true,
+     "content": [
+      {
+       "type": "text",
+       "text": "NATIVE_SECRET:{\"backendCalled\":false,\"backendMatches\":true,\"errorSafe\":true,\"labelReportMatches\":true,\"messageOnly\":true,\"readLabels\":[],\"readMatches\":true,\"requestMatches\":true,\"resultMatches\":true}"
+      }
+     ],
+     "isError": false,
+     "meta": {
+      "cua/taskId": "<task:1>"
+     },
+     "proof": "service-boundary-double"
+    },
+    "b": {
+     "ok": true,
+     "content": [
+      {
+       "type": "text",
+       "text": "NATIVE_SECRET:{\"approvalMatches\":true,\"backendCalled\":false,\"backendMatches\":true,\"errorSafe\":true,\"labelReportMatches\":true,\"messageOnly\":true,\"readLabels\":[],\"readMatches\":true,\"requestMatches\":true,\"resultMatches\":true}"
+      }
+     ],
+     "isError": false,
+     "meta": {
+      "cua/taskId": "<task:1>"
+     },
+     "proof": "service-boundary-double"
+    }
+   },
+   {
+    "case": "secrets/native-live/refuse/unavailable",
+    "cell": "exercise",
+    "kind": "semantic",
+    "a": {
+     "ok": true,
+     "content": [
+      {
+       "type": "text",
+       "text": "NATIVE_SECRET:{\"backendCalled\":false,\"backendMatches\":true,\"errorSafe\":true,\"labelReportMatches\":true,\"messageOnly\":true,\"readLabels\":[],\"readMatches\":true,\"requestMatches\":true,\"resultMatches\":true}"
+      }
+     ],
+     "isError": false,
+     "meta": {
+      "cua/taskId": "<task:1>"
+     },
+     "proof": "service-boundary-double"
+    },
+    "b": {
+     "ok": true,
+     "content": [
+      {
+       "type": "text",
+       "text": "NATIVE_SECRET:{\"approvalMatches\":true,\"backendCalled\":false,\"backendMatches\":true,\"errorSafe\":true,\"labelReportMatches\":true,\"messageOnly\":true,\"readLabels\":[],\"readMatches\":true,\"requestMatches\":true,\"resultMatches\":true}"
+      }
+     ],
+     "isError": false,
+     "meta": {
+      "cua/taskId": "<task:1>"
+     },
+     "proof": "service-boundary-double"
+    }
+   },
+   {
+    "case": "secrets/native-live/refuse/unknown-label",
+    "cell": "exercise",
+    "kind": "semantic",
+    "a": {
+     "ok": true,
+     "content": [
+      {
+       "type": "text",
+       "text": "NATIVE_SECRET:{\"backendCalled\":false,\"backendMatches\":true,\"errorSafe\":true,\"labelReportMatches\":true,\"messageOnly\":true,\"readLabels\":[\"PARITY_SYNTHETIC\"],\"readMatches\":true,\"requestMatches\":true,\"resultMatches\":true}"
+      }
+     ],
+     "isError": false,
+     "meta": {
+      "cua/taskId": "<task:1>"
+     },
+     "proof": "service-boundary-double"
+    },
+    "b": {
+     "ok": true,
+     "content": [
+      {
+       "type": "text",
+       "text": "NATIVE_SECRET:{\"approvalMatches\":true,\"backendCalled\":false,\"backendMatches\":true,\"errorSafe\":true,\"labelReportMatches\":true,\"messageOnly\":true,\"readLabels\":[\"PARITY_SYNTHETIC\"],\"readMatches\":true,\"requestMatches\":true,\"resultMatches\":true}"
+      }
+     ],
+     "isError": false,
+     "meta": {
+      "cua/taskId": "<task:1>"
+     },
+     "proof": "service-boundary-double"
+    }
+   },
+   {
+    "case": "secrets/native-live/refuse/unsafe-store",
+    "cell": "exercise",
+    "kind": "semantic",
+    "a": {
+     "ok": true,
+     "content": [
+      {
+       "type": "text",
+       "text": "NATIVE_SECRET:{\"backendCalled\":false,\"backendMatches\":true,\"errorSafe\":true,\"labelReportMatches\":true,\"messageOnly\":true,\"readLabels\":[\"PARITY_SYNTHETIC\"],\"readMatches\":true,\"requestMatches\":true,\"resultMatches\":true}"
+      }
+     ],
+     "isError": false,
+     "meta": {
+      "cua/taskId": "<task:1>"
+     },
+     "proof": "service-boundary-double"
+    },
+    "b": {
+     "ok": true,
+     "content": [
+      {
+       "type": "text",
+       "text": "NATIVE_SECRET:{\"approvalMatches\":true,\"backendCalled\":false,\"backendMatches\":true,\"errorSafe\":true,\"labelReportMatches\":true,\"messageOnly\":true,\"readLabels\":[\"PARITY_SYNTHETIC\"],\"readMatches\":true,\"requestMatches\":true,\"resultMatches\":true}"
+      }
+     ],
+     "isError": false,
+     "meta": {
+      "cua/taskId": "<task:1>"
+     },
+     "proof": "service-boundary-double"
+    }
+   },
+   {
+    "case": "secrets/native-live/refuse/unreadable-store",
+    "cell": "exercise",
+    "kind": "semantic",
+    "a": {
+     "ok": true,
+     "content": [
+      {
+       "type": "text",
+       "text": "NATIVE_SECRET:{\"backendCalled\":false,\"backendMatches\":true,\"errorSafe\":true,\"labelReportMatches\":true,\"messageOnly\":true,\"readLabels\":[\"PARITY_SYNTHETIC\"],\"readMatches\":true,\"requestMatches\":true,\"resultMatches\":true}"
+      }
+     ],
+     "isError": false,
+     "meta": {
+      "cua/taskId": "<task:1>"
+     },
+     "proof": "service-boundary-double"
+    },
+    "b": {
+     "ok": true,
+     "content": [
+      {
+       "type": "text",
+       "text": "NATIVE_SECRET:{\"approvalMatches\":true,\"backendCalled\":false,\"backendMatches\":true,\"errorSafe\":true,\"labelReportMatches\":true,\"messageOnly\":true,\"readLabels\":[\"PARITY_SYNTHETIC\"],\"readMatches\":true,\"requestMatches\":true,\"resultMatches\":true}"
+      }
+     ],
+     "isError": false,
+     "meta": {
+      "cua/taskId": "<task:1>"
+     },
+     "proof": "service-boundary-double"
+    }
+   },
+   {
+    "case": "secrets/native-live/errors/post-read-sanitized",
+    "cell": "exercise",
+    "kind": "semantic",
+    "a": {
+     "ok": true,
+     "content": [
+      {
+       "type": "text",
+       "text": "NATIVE_SECRET:{\"backendCalled\":true,\"backendMatches\":true,\"errorSafe\":true,\"labelReportMatches\":true,\"messageOnly\":true,\"readLabels\":[\"PARITY_SYNTHETIC\"],\"readMatches\":true,\"requestMatches\":true,\"resultMatches\":true}"
+      }
+     ],
+     "isError": false,
+     "meta": {
+      "cua/taskId": "<task:1>"
+     },
+     "proof": "service-boundary-double"
+    },
+    "b": {
+     "ok": true,
+     "content": [
+      {
+       "type": "text",
+       "text": "NATIVE_SECRET:{\"approvalMatches\":true,\"backendCalled\":true,\"backendMatches\":true,\"errorSafe\":true,\"labelReportMatches\":true,\"messageOnly\":true,\"readLabels\":[\"PARITY_SYNTHETIC\"],\"readMatches\":true,\"requestMatches\":true,\"resultMatches\":true}"
+      }
+     ],
+     "isError": false,
+     "meta": {
+      "cua/taskId": "<task:1>"
+     },
+     "proof": "service-boundary-double"
+    }
+   },
+   {
+    "case": "secrets/native-live/reports/labels-not-values",
+    "cell": "exercise",
+    "kind": "semantic",
+    "a": {
+     "ok": true,
+     "content": [
+      {
+       "type": "text",
+       "text": "NATIVE_SECRET:{\"backendCalled\":true,\"backendMatches\":true,\"errorSafe\":true,\"labelReportMatches\":true,\"messageOnly\":true,\"readLabels\":[\"PARITY_SYNTHETIC\"],\"readMatches\":true,\"requestMatches\":true,\"resultMatches\":true}"
+      }
+     ],
+     "isError": false,
+     "meta": {
+      "cua/taskId": "<task:1>"
+     },
+     "proof": "service-boundary-double"
+    },
+    "b": {
+     "ok": true,
+     "content": [
+      {
+       "type": "text",
+       "text": "NATIVE_SECRET:{\"approvalMatches\":true,\"backendCalled\":true,\"backendMatches\":true,\"errorSafe\":true,\"labelReportMatches\":true,\"messageOnly\":true,\"readLabels\":[\"PARITY_SYNTHETIC\"],\"readMatches\":true,\"requestMatches\":true,\"resultMatches\":true}"
+      }
+     ],
+     "isError": false,
+     "meta": {
+      "cua/taskId": "<task:1>"
+     },
+     "proof": "service-boundary-double"
+    }
+   },
+   {
+    "case": "secrets/native-live/no-substitution/embedded-marker",
+    "cell": "exercise",
+    "kind": "semantic",
+    "a": {
+     "ok": true,
+     "content": [
+      {
+       "type": "text",
+       "text": "NATIVE_SECRET:{\"backendCalled\":true,\"backendMatches\":true,\"errorSafe\":true,\"labelReportMatches\":true,\"messageOnly\":true,\"readLabels\":[],\"readMatches\":true,\"requestMatches\":true,\"resultMatches\":true}"
+      }
+     ],
+     "isError": false,
+     "meta": {
+      "cua/taskId": "<task:1>"
+     },
+     "proof": "service-boundary-double"
+    },
+    "b": {
+     "ok": true,
+     "content": [
+      {
+       "type": "text",
+       "text": "NATIVE_SECRET:{\"approvalMatches\":true,\"backendCalled\":true,\"backendMatches\":true,\"errorSafe\":true,\"labelReportMatches\":true,\"messageOnly\":true,\"readLabels\":[],\"readMatches\":true,\"requestMatches\":true,\"resultMatches\":true}"
+      }
+     ],
+     "isError": false,
+     "meta": {
+      "cua/taskId": "<task:1>"
+     },
+     "proof": "service-boundary-double"
+    }
+   },
+   {
+    "case": "secrets/native-live/no-substitution/unsupported-methods-and-fields",
+    "cell": "exercise",
+    "kind": "semantic",
+    "a": {
+     "ok": true,
+     "content": [
+      {
+       "type": "text",
+       "text": "NATIVE_SECRET:{\"backendCalled\":true,\"backendMatches\":true,\"errorSafe\":true,\"labelReportMatches\":true,\"messageOnly\":true,\"readLabels\":[],\"readMatches\":true,\"requestMatches\":true,\"resultMatches\":true}"
+      }
+     ],
+     "isError": false,
+     "meta": {
+      "cua/taskId": "<task:1>"
+     },
+     "proof": "service-boundary-double"
+    },
+    "b": {
+     "ok": true,
+     "content": [
+      {
+       "type": "text",
+       "text": "NATIVE_SECRET:{\"approvalMatches\":true,\"backendCalled\":true,\"backendMatches\":true,\"errorSafe\":true,\"labelReportMatches\":true,\"messageOnly\":true,\"readLabels\":[],\"readMatches\":true,\"requestMatches\":true,\"resultMatches\":true}"
+      }
+     ],
+     "isError": false,
+     "meta": {
+      "cua/taskId": "<task:1>"
+     },
+     "proof": "service-boundary-double"
+    }
+   },
+   {
+    "case": "secrets/native-live/no-substitution/javascript-strings",
+    "cell": "exercise",
+    "kind": "semantic",
+    "a": {
+     "ok": true,
+     "content": [
+      {
+       "type": "text",
+       "text": "NATIVE_SECRET:{\"backendCalled\":false,\"backendMatches\":true,\"errorSafe\":true,\"labelReportMatches\":true,\"messageOnly\":true,\"readLabels\":[],\"readMatches\":true,\"requestMatches\":true,\"resultMatches\":true}"
+      }
+     ],
+     "isError": false,
+     "meta": {
+      "cua/taskId": "<task:1>"
+     },
+     "proof": "service-boundary-double"
+    },
+    "b": {
+     "ok": true,
+     "content": [
+      {
+       "type": "text",
+       "text": "NATIVE_SECRET:{\"approvalMatches\":true,\"backendCalled\":false,\"backendMatches\":true,\"errorSafe\":true,\"labelReportMatches\":true,\"messageOnly\":true,\"readLabels\":[],\"readMatches\":true,\"requestMatches\":true,\"resultMatches\":true}"
+      }
+     ],
+     "isError": false,
+     "meta": {
+      "cua/taskId": "<task:1>"
+     },
+     "proof": "service-boundary-double"
+    }
+   }
+  ]
+ }
+}

@@ -1,0 +1,2555 @@
+{
+  "schema": 1,
+  "pendingEnvironment": [],
+  "pendingObligations": [],
+  "host": "cua",
+  "observedHost": "cua",
+  "commit": "10846dfdb8a788ff3bca160e6749a416c7b14e55",
+  "harnessCommit": "10846dfdb8a788ff3bca160e6749a416c7b14e55",
+  "node": "v22.23.3",
+  "runtimeRelease": "26.928.40906-linux-arm64",
+  "ownNode": {
+    "path": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/node/24.22.0/bin/node",
+    "version": "v24.22.0"
+  },
+  "nodeMode": "managed",
+  "nodeOverride": null,
+  "hostVersion": "0.5.0",
+  "apiVersion": "0.5.0",
+  "device": "cua-linux",
+  "platform": "linux",
+  "surfaces": [
+    "computer",
+    "browser"
+  ],
+  "sandbox": "per-case",
+  "caseConfigurations": {
+    "secrets/native-live/linux/type-text": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "secrets/native-live/refuse/invalid-label": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "secrets/native-live/refuse/reserved-label": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "secrets/native-live/refuse/unsupported-shape": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "secrets/native-live/refuse/disabled": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "secrets/native-live/refuse/unavailable": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "secrets/native-live/refuse/unknown-label": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "secrets/native-live/refuse/unsafe-store": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "secrets/native-live/refuse/unreadable-store": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "secrets/native-live/errors/post-read-sanitized": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "secrets/native-live/reports/labels-not-values": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "secrets/native-live/no-substitution/embedded-marker": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "secrets/native-live/no-substitution/unsupported-methods-and-fields": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "secrets/native-live/no-substitution/javascript-strings": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "native/cua/computer": {
+      "surfaces": [
+        "computer"
+      ],
+      "sandbox": "scoped"
+    },
+    "native/cua/computer.target": {
+      "surfaces": [
+        "computer"
+      ],
+      "sandbox": "scoped"
+    },
+    "native/cua/computer.launch-app": {
+      "surfaces": [
+        "computer"
+      ],
+      "sandbox": "scoped"
+    },
+    "native/cua/getapp": {
+      "surfaces": [
+        "computer"
+      ],
+      "sandbox": "scoped"
+    },
+    "native/cua/listapps": {
+      "surfaces": [
+        "computer"
+      ],
+      "sandbox": "scoped"
+    },
+    "native/cua/listwindows": {
+      "surfaces": [
+        "computer"
+      ],
+      "sandbox": "scoped"
+    },
+    "native/target-app-decorated-tab/getaxstate": {
+      "surfaces": [
+        "computer"
+      ],
+      "sandbox": "scoped"
+    },
+    "native/target-app-decorated-tab/getscreenshot": {
+      "surfaces": [
+        "computer"
+      ],
+      "sandbox": "scoped"
+    },
+    "native/target-app-decorated-tab/getaxstateandscreenshot": {
+      "surfaces": [
+        "computer"
+      ],
+      "sandbox": "scoped"
+    },
+    "native/target-app-decorated-tab/click": {
+      "surfaces": [
+        "computer"
+      ],
+      "sandbox": "scoped"
+    },
+    "native/target-app-decorated-tab/drag": {
+      "surfaces": [
+        "computer"
+      ],
+      "sandbox": "scoped"
+    },
+    "native/app/scroll": {
+      "surfaces": [
+        "computer"
+      ],
+      "sandbox": "scoped"
+    },
+    "native/target-app-decorated-tab/scroll": {
+      "surfaces": [
+        "computer"
+      ],
+      "sandbox": "scoped"
+    },
+    "native/target-app-decorated-tab/selecttext": {
+      "surfaces": [
+        "computer"
+      ],
+      "sandbox": "scoped"
+    },
+    "native/target-app-decorated-tab/setvalue": {
+      "surfaces": [
+        "computer"
+      ],
+      "sandbox": "scoped"
+    },
+    "native/target-app-decorated-tab/performsecondaryaction": {
+      "surfaces": [
+        "computer"
+      ],
+      "sandbox": "scoped"
+    },
+    "native/app/presskey": {
+      "surfaces": [
+        "computer"
+      ],
+      "sandbox": "scoped"
+    },
+    "native/app/typetext": {
+      "surfaces": [
+        "computer"
+      ],
+      "sandbox": "scoped"
+    },
+    "native/app/paste": {
+      "surfaces": [
+        "computer"
+      ],
+      "sandbox": "scoped"
+    }
+  },
+  "service": "cua",
+  "backend": "fixture-services+native",
+  "profile": "me",
+  "suite": "native",
+  "through": null,
+  "caseIds": [
+    "secrets/native-live/linux/type-text",
+    "secrets/native-live/refuse/invalid-label",
+    "secrets/native-live/refuse/reserved-label",
+    "secrets/native-live/refuse/unsupported-shape",
+    "secrets/native-live/refuse/disabled",
+    "secrets/native-live/refuse/unavailable",
+    "secrets/native-live/refuse/unknown-label",
+    "secrets/native-live/refuse/unsafe-store",
+    "secrets/native-live/refuse/unreadable-store",
+    "secrets/native-live/errors/post-read-sanitized",
+    "secrets/native-live/reports/labels-not-values",
+    "secrets/native-live/no-substitution/embedded-marker",
+    "secrets/native-live/no-substitution/unsupported-methods-and-fields",
+    "secrets/native-live/no-substitution/javascript-strings",
+    "native/cua/computer",
+    "native/cua/computer.target",
+    "native/cua/computer.launch-app",
+    "native/cua/getapp",
+    "native/cua/listapps",
+    "native/cua/listwindows",
+    "native/target-app-decorated-tab/getaxstate",
+    "native/target-app-decorated-tab/getscreenshot",
+    "native/target-app-decorated-tab/getaxstateandscreenshot",
+    "native/target-app-decorated-tab/click",
+    "native/target-app-decorated-tab/drag",
+    "native/app/scroll",
+    "native/target-app-decorated-tab/scroll",
+    "native/target-app-decorated-tab/selecttext",
+    "native/target-app-decorated-tab/setvalue",
+    "native/target-app-decorated-tab/performsecondaryaction",
+    "native/app/presskey",
+    "native/app/typetext",
+    "native/app/paste"
+  ],
+  "caseCells": {
+    "secrets/native-live/linux/type-text": [
+      "setup",
+      "exercise"
+    ],
+    "secrets/native-live/refuse/invalid-label": [
+      "setup",
+      "exercise"
+    ],
+    "secrets/native-live/refuse/reserved-label": [
+      "setup",
+      "exercise"
+    ],
+    "secrets/native-live/refuse/unsupported-shape": [
+      "setup",
+      "exercise"
+    ],
+    "secrets/native-live/refuse/disabled": [
+      "setup",
+      "exercise"
+    ],
+    "secrets/native-live/refuse/unavailable": [
+      "setup",
+      "exercise"
+    ],
+    "secrets/native-live/refuse/unknown-label": [
+      "setup",
+      "exercise"
+    ],
+    "secrets/native-live/refuse/unsafe-store": [
+      "setup",
+      "exercise"
+    ],
+    "secrets/native-live/refuse/unreadable-store": [
+      "setup",
+      "exercise"
+    ],
+    "secrets/native-live/errors/post-read-sanitized": [
+      "setup",
+      "exercise"
+    ],
+    "secrets/native-live/reports/labels-not-values": [
+      "setup",
+      "exercise"
+    ],
+    "secrets/native-live/no-substitution/embedded-marker": [
+      "setup",
+      "exercise"
+    ],
+    "secrets/native-live/no-substitution/unsupported-methods-and-fields": [
+      "setup",
+      "exercise"
+    ],
+    "secrets/native-live/no-substitution/javascript-strings": [
+      "setup",
+      "exercise"
+    ],
+    "native/cua/computer": [
+      "exercise",
+      "end-task"
+    ],
+    "native/cua/computer.target": [
+      "exercise",
+      "end-task"
+    ],
+    "native/cua/computer.launch-app": [
+      "exercise",
+      "end-task"
+    ],
+    "native/cua/getapp": [
+      "exercise",
+      "end-task"
+    ],
+    "native/cua/listapps": [
+      "exercise",
+      "end-task"
+    ],
+    "native/cua/listwindows": [
+      "exercise",
+      "end-task"
+    ],
+    "native/target-app-decorated-tab/getaxstate": [
+      "exercise",
+      "end-task"
+    ],
+    "native/target-app-decorated-tab/getscreenshot": [
+      "exercise",
+      "end-task"
+    ],
+    "native/target-app-decorated-tab/getaxstateandscreenshot": [
+      "exercise",
+      "end-task"
+    ],
+    "native/target-app-decorated-tab/click": [
+      "exercise",
+      "end-task"
+    ],
+    "native/target-app-decorated-tab/drag": [
+      "exercise",
+      "end-task"
+    ],
+    "native/app/scroll": [
+      "exercise",
+      "end-task"
+    ],
+    "native/target-app-decorated-tab/scroll": [
+      "exercise",
+      "end-task"
+    ],
+    "native/target-app-decorated-tab/selecttext": [
+      "exercise",
+      "end-task"
+    ],
+    "native/target-app-decorated-tab/setvalue": [
+      "exercise",
+      "end-task"
+    ],
+    "native/target-app-decorated-tab/performsecondaryaction": [
+      "exercise",
+      "end-task"
+    ],
+    "native/app/presskey": [
+      "exercise",
+      "end-task"
+    ],
+    "native/app/typetext": [
+      "exercise",
+      "end-task"
+    ],
+    "native/app/paste": [
+      "exercise",
+      "end-task"
+    ]
+  },
+  "pending": [],
+  "limitations": [
+    {
+      "case": "secrets/native-live/linux/type-text",
+      "notes": [
+        "Real selected Linux facade, production secret wrapper and scratch fileStore; downstream native service is a recorder double, not live native input."
+      ]
+    },
+    {
+      "case": "secrets/native-live/refuse/invalid-label",
+      "notes": [
+        "Real selected Linux facade, production secret wrapper and scratch fileStore; downstream native service is a recorder double, not live native input."
+      ]
+    },
+    {
+      "case": "secrets/native-live/refuse/reserved-label",
+      "notes": [
+        "Real selected Linux facade, production secret wrapper and scratch fileStore; downstream native service is a recorder double, not live native input."
+      ]
+    },
+    {
+      "case": "secrets/native-live/refuse/unsupported-shape",
+      "notes": [
+        "Real selected Linux facade, production secret wrapper and scratch fileStore; downstream native service is a recorder double, not live native input."
+      ]
+    },
+    {
+      "case": "secrets/native-live/refuse/disabled",
+      "notes": [
+        "Real selected Linux facade, production secret wrapper and scratch fileStore; downstream native service is a recorder double, not live native input."
+      ]
+    },
+    {
+      "case": "secrets/native-live/refuse/unavailable",
+      "notes": [
+        "Real selected Linux facade, production secret wrapper and scratch fileStore; downstream native service is a recorder double, not live native input."
+      ]
+    },
+    {
+      "case": "secrets/native-live/refuse/unknown-label",
+      "notes": [
+        "Real selected Linux facade, production secret wrapper and scratch fileStore; downstream native service is a recorder double, not live native input."
+      ]
+    },
+    {
+      "case": "secrets/native-live/refuse/unsafe-store",
+      "notes": [
+        "Real selected Linux facade, production secret wrapper and scratch fileStore; downstream native service is a recorder double, not live native input."
+      ]
+    },
+    {
+      "case": "secrets/native-live/refuse/unreadable-store",
+      "notes": [
+        "Real selected Linux facade, production secret wrapper and scratch fileStore; downstream native service is a recorder double, not live native input."
+      ]
+    },
+    {
+      "case": "secrets/native-live/errors/post-read-sanitized",
+      "notes": [
+        "Real selected Linux facade, production secret wrapper and scratch fileStore; downstream native service is a recorder double, not live native input."
+      ]
+    },
+    {
+      "case": "secrets/native-live/reports/labels-not-values",
+      "notes": [
+        "Real selected Linux facade, production secret wrapper and scratch fileStore; downstream native service is a recorder double, not live native input."
+      ]
+    },
+    {
+      "case": "secrets/native-live/no-substitution/embedded-marker",
+      "notes": [
+        "Real selected Linux facade, production secret wrapper and scratch fileStore; downstream native service is a recorder double, not live native input."
+      ]
+    },
+    {
+      "case": "secrets/native-live/no-substitution/unsupported-methods-and-fields",
+      "notes": [
+        "Real selected Linux facade, production secret wrapper and scratch fileStore; downstream native service is a recorder double, not live native input."
+      ]
+    },
+    {
+      "case": "secrets/native-live/no-substitution/javascript-strings",
+      "notes": [
+        "Real selected Linux facade, production secret wrapper and scratch fileStore; downstream native service is a recorder double, not live native input."
+      ]
+    }
+  ],
+  "caseProofs": {
+    "secrets/native-live/linux/type-text": "service-boundary-double",
+    "secrets/native-live/refuse/invalid-label": "service-boundary-double",
+    "secrets/native-live/refuse/reserved-label": "service-boundary-double",
+    "secrets/native-live/refuse/unsupported-shape": "service-boundary-double",
+    "secrets/native-live/refuse/disabled": "service-boundary-double",
+    "secrets/native-live/refuse/unavailable": "service-boundary-double",
+    "secrets/native-live/refuse/unknown-label": "service-boundary-double",
+    "secrets/native-live/refuse/unsafe-store": "service-boundary-double",
+    "secrets/native-live/refuse/unreadable-store": "service-boundary-double",
+    "secrets/native-live/errors/post-read-sanitized": "service-boundary-double",
+    "secrets/native-live/reports/labels-not-values": "service-boundary-double",
+    "secrets/native-live/no-substitution/embedded-marker": "service-boundary-double",
+    "secrets/native-live/no-substitution/unsupported-methods-and-fields": "service-boundary-double",
+    "secrets/native-live/no-substitution/javascript-strings": "service-boundary-double",
+    "native/cua/computer": "native-live",
+    "native/cua/computer.target": "native-live",
+    "native/cua/computer.launch-app": "native-live",
+    "native/cua/getapp": "native-live",
+    "native/cua/listapps": "native-live",
+    "native/cua/listwindows": "native-live",
+    "native/target-app-decorated-tab/getaxstate": "native-live",
+    "native/target-app-decorated-tab/getscreenshot": "native-live",
+    "native/target-app-decorated-tab/getaxstateandscreenshot": "native-live",
+    "native/target-app-decorated-tab/click": "native-live",
+    "native/target-app-decorated-tab/drag": "native-live",
+    "native/app/scroll": "native-live",
+    "native/target-app-decorated-tab/scroll": "native-live",
+    "native/target-app-decorated-tab/selecttext": "native-live",
+    "native/target-app-decorated-tab/setvalue": "native-live",
+    "native/target-app-decorated-tab/performsecondaryaction": "native-live",
+    "native/app/presskey": "native-live",
+    "native/app/typetext": "native-live",
+    "native/app/paste": "native-live"
+  },
+  "complete": true,
+  "connections": [
+    "connection-1",
+    "connection-2",
+    "connection-3",
+    "connection-4",
+    "connection-5",
+    "connection-6",
+    "connection-7",
+    "connection-8",
+    "connection-9",
+    "connection-10",
+    "connection-11",
+    "connection-12",
+    "connection-13",
+    "connection-14",
+    "connection-15",
+    "connection-16",
+    "connection-17",
+    "connection-18",
+    "connection-19",
+    "connection-20",
+    "connection-21",
+    "connection-22",
+    "connection-23",
+    "connection-24",
+    "connection-25",
+    "connection-26",
+    "connection-27",
+    "connection-28",
+    "connection-29",
+    "connection-30",
+    "connection-31",
+    "connection-32",
+    "connection-33",
+    "connection-34"
+  ],
+  "hostAttestations": [
+    {
+      "connection": "connection-1",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+        "commit": "10846dfdb8a788ff3bca160e6749a416c7b14e55",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--no-first-run"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 0
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m4t1-cap-gnHODu",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m4t1-cap-gnHODu/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "b3a908d1-1e35-482c-82c4-c64b6448381d"
+      }
+    },
+    {
+      "connection": "connection-2",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+        "commit": "10846dfdb8a788ff3bca160e6749a416c7b14e55",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--no-first-run"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 0
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m4t1-cap-y4GTED",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m4t1-cap-y4GTED/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "cf2d58c5-66e5-426b-a4f2-1edbdf9b5680"
+      }
+    },
+    {
+      "connection": "connection-3",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+        "commit": "10846dfdb8a788ff3bca160e6749a416c7b14e55",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--no-first-run"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 0
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m4t1-cap-UxCF7p",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m4t1-cap-UxCF7p/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "8cf7cd26-f3cd-4853-a296-32701d8ad698"
+      }
+    },
+    {
+      "connection": "connection-4",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+        "commit": "10846dfdb8a788ff3bca160e6749a416c7b14e55",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--no-first-run"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 0
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m4t1-cap-FrwgTY",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m4t1-cap-FrwgTY/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "cfeca197-ca75-4309-a8fc-d0862e0eed7e"
+      }
+    },
+    {
+      "connection": "connection-5",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+        "commit": "10846dfdb8a788ff3bca160e6749a416c7b14e55",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--no-first-run"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 0
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m4t1-cap-Ko9WVT",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m4t1-cap-Ko9WVT/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "db9e654a-9ba9-4348-9e70-346e5c8cf837"
+      }
+    },
+    {
+      "connection": "connection-6",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+        "commit": "10846dfdb8a788ff3bca160e6749a416c7b14e55",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--no-first-run"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 0
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m4t1-cap-w8nHks",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m4t1-cap-w8nHks/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "d3810f55-4ef3-42a7-b85c-ddf7804e3124"
+      }
+    },
+    {
+      "connection": "connection-7",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+        "commit": "10846dfdb8a788ff3bca160e6749a416c7b14e55",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--no-first-run"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 0
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m4t1-cap-6AElkT",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m4t1-cap-6AElkT/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "63afdc74-2860-486b-8501-d205fd2bfda8"
+      }
+    },
+    {
+      "connection": "connection-8",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+        "commit": "10846dfdb8a788ff3bca160e6749a416c7b14e55",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--no-first-run"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 0
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m4t1-cap-3YPmCt",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m4t1-cap-3YPmCt/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "7660d85d-4f48-4f87-88dc-4ceca7eebd8c"
+      }
+    },
+    {
+      "connection": "connection-9",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+        "commit": "10846dfdb8a788ff3bca160e6749a416c7b14e55",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--no-first-run"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 0
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m4t1-cap-u9kE0y",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m4t1-cap-u9kE0y/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "a754a0c9-f29e-4da1-9250-2551d11cbf60"
+      }
+    },
+    {
+      "connection": "connection-10",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+        "commit": "10846dfdb8a788ff3bca160e6749a416c7b14e55",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--no-first-run"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 0
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m4t1-cap-nH0Y8I",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m4t1-cap-nH0Y8I/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "8e4d3eb9-00bb-4203-b405-8b8df467bae9"
+      }
+    },
+    {
+      "connection": "connection-11",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+        "commit": "10846dfdb8a788ff3bca160e6749a416c7b14e55",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--no-first-run"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 0
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m4t1-cap-mZxFdp",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m4t1-cap-mZxFdp/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "1cae57c3-955d-4e2f-aba6-c1f344048674"
+      }
+    },
+    {
+      "connection": "connection-12",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+        "commit": "10846dfdb8a788ff3bca160e6749a416c7b14e55",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--no-first-run"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 0
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m4t1-cap-6ndvCe",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m4t1-cap-6ndvCe/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "04678b6e-3709-4b22-b406-cda89cf8ba4d"
+      }
+    },
+    {
+      "connection": "connection-13",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+        "commit": "10846dfdb8a788ff3bca160e6749a416c7b14e55",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--no-first-run"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 0
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m4t1-cap-knvmtv",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m4t1-cap-knvmtv/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "34244d2e-7753-47ff-b51f-c9ffc4b6e936"
+      }
+    },
+    {
+      "connection": "connection-14",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+        "commit": "10846dfdb8a788ff3bca160e6749a416c7b14e55",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--no-first-run"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 0
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m4t1-cap-c9DKc3",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m4t1-cap-c9DKc3/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "a9e7b036-42f5-41e4-90da-318ee6073a33"
+      }
+    },
+    {
+      "connection": "connection-15",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+        "commit": "10846dfdb8a788ff3bca160e6749a416c7b14e55",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--no-first-run"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 0
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m4t1-cap-Z3t5Rw",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m4t1-cap-Z3t5Rw/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "963e3160-7235-42c5-a074-e341487af5bb"
+      }
+    },
+    {
+      "connection": "connection-16",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+        "commit": "10846dfdb8a788ff3bca160e6749a416c7b14e55",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--no-first-run"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 0
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m4t1-cap-nMne1G",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m4t1-cap-nMne1G/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 444,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "c5c4a73f-0607-44dd-bb83-ade5117685b0"
+      }
+    },
+    {
+      "connection": "connection-17",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+        "commit": "10846dfdb8a788ff3bca160e6749a416c7b14e55",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--no-first-run"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 0
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m4t1-cap-LB0ibU",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m4t1-cap-LB0ibU/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 284,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "da8d78df-2930-4c40-8b98-25aab7599a0e"
+      }
+    },
+    {
+      "connection": "connection-18",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+        "commit": "10846dfdb8a788ff3bca160e6749a416c7b14e55",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--no-first-run"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 0
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m4t1-cap-qtBwBt",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m4t1-cap-qtBwBt/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 228,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "14df7890-c294-430f-8e7b-0f22574934b1"
+      }
+    },
+    {
+      "connection": "connection-19",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+        "commit": "10846dfdb8a788ff3bca160e6749a416c7b14e55",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--no-first-run"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 0
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m4t1-cap-nsd9KH",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m4t1-cap-nsd9KH/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 158,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "08b8e21a-78ef-4f16-9679-362a6ba867d0"
+      }
+    },
+    {
+      "connection": "connection-20",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+        "commit": "10846dfdb8a788ff3bca160e6749a416c7b14e55",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--no-first-run"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 0
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m4t1-cap-eYrbeR",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m4t1-cap-eYrbeR/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 443,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "196fb14f-5a09-4266-b688-ea07ee1e799d"
+      }
+    },
+    {
+      "connection": "connection-21",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+        "commit": "10846dfdb8a788ff3bca160e6749a416c7b14e55",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--no-first-run"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 0
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m4t1-cap-rpP5kg",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m4t1-cap-rpP5kg/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 362,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "b1bacda3-b086-4b3e-9194-de25653a81ef"
+      }
+    },
+    {
+      "connection": "connection-22",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+        "commit": "10846dfdb8a788ff3bca160e6749a416c7b14e55",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--no-first-run"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 0
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m4t1-cap-LsLPAE",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m4t1-cap-LsLPAE/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 591,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "db36fb47-1f08-46bb-9f9e-f5d4fc11a4f9"
+      }
+    },
+    {
+      "connection": "connection-23",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+        "commit": "10846dfdb8a788ff3bca160e6749a416c7b14e55",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--no-first-run"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 0
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m4t1-cap-s6kaZA",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m4t1-cap-s6kaZA/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 162,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "e26e48cb-23e1-4a6e-b939-a8c38d9ffb6e"
+      }
+    },
+    {
+      "connection": "connection-24",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+        "commit": "10846dfdb8a788ff3bca160e6749a416c7b14e55",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--no-first-run"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 0
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m4t1-cap-BtyAYj",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m4t1-cap-BtyAYj/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 158,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "4a659dbc-8988-44d3-8ac0-f90af499f46b"
+      }
+    },
+    {
+      "connection": "connection-25",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+        "commit": "10846dfdb8a788ff3bca160e6749a416c7b14e55",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--no-first-run"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 0
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m4t1-cap-47U0bB",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m4t1-cap-47U0bB/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 569,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "cf3ee415-22e5-4e8a-b9b4-64b7957c590c"
+      }
+    },
+    {
+      "connection": "connection-26",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+        "commit": "10846dfdb8a788ff3bca160e6749a416c7b14e55",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--no-first-run"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 0
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m4t1-cap-3kk5zO",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m4t1-cap-3kk5zO/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 564,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "c97ade91-83df-40ec-8e46-cd637f3025db"
+      }
+    },
+    {
+      "connection": "connection-27",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+        "commit": "10846dfdb8a788ff3bca160e6749a416c7b14e55",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--no-first-run"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 0
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m4t1-cap-aveBZT",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m4t1-cap-aveBZT/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 563,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "97e5ce3b-6052-4028-a016-cad40c38ed97"
+      }
+    },
+    {
+      "connection": "connection-28",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+        "commit": "10846dfdb8a788ff3bca160e6749a416c7b14e55",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--no-first-run"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 0
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m4t1-cap-UPxApT",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m4t1-cap-UPxApT/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 178,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "25811da5-5e94-4e18-8fa4-17f12a56eefe"
+      }
+    },
+    {
+      "connection": "connection-29",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+        "commit": "10846dfdb8a788ff3bca160e6749a416c7b14e55",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--no-first-run"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 0
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m4t1-cap-jfn5Qv",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m4t1-cap-jfn5Qv/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 355,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "595e1fcb-7d4d-41a4-bc7e-c0c96dd6c086"
+      }
+    },
+    {
+      "connection": "connection-30",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+        "commit": "10846dfdb8a788ff3bca160e6749a416c7b14e55",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--no-first-run"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 0
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m4t1-cap-VbXRdF",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m4t1-cap-VbXRdF/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 148,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "e61eda47-e522-468d-b178-d85e14e382af"
+      }
+    },
+    {
+      "connection": "connection-31",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+        "commit": "10846dfdb8a788ff3bca160e6749a416c7b14e55",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--no-first-run"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 0
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m4t1-cap-P7ycUL",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m4t1-cap-P7ycUL/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 184,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "226300ea-2a9a-4995-bb22-99fe8b745044"
+      }
+    },
+    {
+      "connection": "connection-32",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+        "commit": "10846dfdb8a788ff3bca160e6749a416c7b14e55",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--no-first-run"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 0
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m4t1-cap-528nvX",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m4t1-cap-528nvX/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 360,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "cb850ad1-00a2-49fb-8791-6d413b0daa87"
+      }
+    },
+    {
+      "connection": "connection-33",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+        "commit": "10846dfdb8a788ff3bca160e6749a416c7b14e55",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--no-first-run"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 0
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m4t1-cap-YNDDqP",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m4t1-cap-YNDDqP/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 152,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "025b5542-932e-4217-ae2c-d7d574c8cdfd"
+      }
+    },
+    {
+      "connection": "connection-34",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+        "commit": "10846dfdb8a788ff3bca160e6749a416c7b14e55",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--no-first-run"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-5aQpx1",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 0
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m4t1-cap-7hWYYO",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m4t1-cap-7hWYYO/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 405,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "2e60490f-b951-4af2-9a4a-16f5711c2355"
+      }
+    }
+  ],
+  "vendorDefects": [],
+  "coveredCases": 33,
+  "recordedCases": 33
+}

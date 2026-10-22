@@ -74,7 +74,11 @@ How to see it: on the mini, with the plugin at the release this work ships, run 
   - [x] (2026-10-21) M2b.4 — (605f94c0, review fixes a1325dbc, cdbc5873, 871cfb2d, a4fe7aea, df50c355 on `m2b/parity`; reviewed clean after five rounds; merged 754802f7) The `native-mac` parity suite: `--engine`, the approved route on macOS, the darwin native command, the modulo-renumbering diff with its `summary` line.
   - [x] (2026-10-22 21:36Z) M2b.5 — (holds 1, 2a, 2b and 3; evidence `m2b/hold1/`..`m2b/hold3/`; Decision Log "M2b hold 3"; the triple is not met: hold 3 gave one paired run and one cua-only repeat under maws-3f's counting overrides, the route A/B unsettled, both owed to a later hold) Live on the mini: the residue hold first, then the matrix triples and the suite.
 - [x] (2026-10-22) M3 — Engine-aware tooling, comparisons B and C, Linux approvals (reviewed clean; live hold done; PR after M2b lands, rebased onto main).
-- [ ] M4 — Install, signing, permissions, docs.
+- [ ] M4 — Install, signing, permissions, docs (started 2026-10-22 from main d95261fb; M4 pre-flight below).
+  - [ ] M4.1 — Install selection, signing options and hosted bundle proof.
+  - [ ] M4.2 — Fresh-onboarding acceptance item and selection dependencies (#197).
+  - [ ] M4.3 — Permission flow and model/operator documentation.
+  - [ ] M4.4 — Owner-first mini hold: acceptance 1, 8 and fresh onboarding; whole-milestone reviewer-high.
 - [ ] M5 — Acceptance and the default switch.
 - [ ] M6 — Retirement of the vendor runtime on macOS.
 - [ ] M3 tasks (branch `feat/117-m3` from `feat/117-m2b` at 027179bc, before M2b's squash; Decision Log "M3 pre-flight"):
@@ -634,6 +638,8 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   Evidence: `m3/hold/README.md`.
 
 ## Decision Log
+
+- Decision (2026-10-22, M4 pre-flight): M4 starts on main d95261fb, consuming M1b's `buildEngine`, `approveEngine` and sign-wait handling and M3's engine-aware doctor and acceptance runner. The default engine remains vendor; the matrix harness and #182/#183 work stay outside this branch. The approved engine build is 0c363f8f4512b24891ce22af50f6515f99af4b008bee09770245de03b8c7e80d unless M4 actually changes native sources. The coordinator places #197 (accept-native item selections omit their item-1 dependency) inside M4 when the correction is small: include the prerequisite or reject the selection. #198's mini-wide environmental npm-test failures are outside M4: item 1 remains FAIL, each failure is classified, and the hosted Node 24 gate is the unit-suite authority, following M3. Acceptance 8 reports that qualification explicitly, never promotes missing or failing checks to PASS. All owner actions run first in a single timed owner window (revocation then fresh onboarding/re-grants), before unattended acceptance work; the mini is accessed only during the coordinator's booked hold.
 
 - Decision (2026-10-18, verification call at authoring): the spec gets an independent design review and, since the execution section has more than one milestone, the buildability review of the execution section in the same round, both re-run after the round's findings are folded until a round yields nothing worth changing; a `doperpowers:critique` debate runs on the design after M0 revises it from measurements and before M1a starts, because the input, settle and intervention choices are novel and the cost of being wrong is a milestone; every milestone's PR gets a `doperpowers:reviewer-high` whole-branch review; M5 is the acceptance sitting on the mini.
   Rationale: the siblings' council (#115) with the critique moved to where the design is measured rather than guessed.

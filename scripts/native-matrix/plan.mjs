@@ -434,7 +434,9 @@ export const CASES = Object.freeze({textedit, finder, chrome, electron, openPane
 // Each text scene's typing field, as an expression over the observation `ax` (the cases above find them so): TextEdit's
 // document, the Chrome page's textarea and the Electron fixture's text field. The probe cells and the Unicode matrix
 // (./probe-plan.mjs, ./unicode-plan.mjs) type into them.
-export const TEXT_FIELDS = Object.freeze({textedit: TEXT_AREA, chrome: named('Scene notes'), electron: named('Fixture text')});
+// TextEdit's typing field by its identifier, whether or not it holds text: emptied, its line's lone part is the bare
+// identifier (./matrix-text.mjs indexOfId), which TEXT_AREA's labelled part no longer matches.
+export const TEXT_FIELDS = Object.freeze({textedit: 'indexOfId(ax, "First Text View")', chrome: named('Scene notes'), electron: named('Fixture text')});
 
 // What a target has no meaningful case for, on both engines alike, with the reason the method table prints.
 export const NOT_APPLICABLE = Object.freeze({

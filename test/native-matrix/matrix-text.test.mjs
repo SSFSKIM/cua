@@ -37,6 +37,15 @@ test('an element is found by a labelled part, and its value read across the line
   assert.equal(text.indexOfPart(vendor.textedit, 'ID', 'First'), null, 'a part matches whole');
 });
 
+test('an element by its identifier: labelled beside other parts, bare when it is the line\'s only part', () => {
+  for (const ax of [vendor.textedit, cuaText.textedit]) assert.equal(text.indexOfId(ax, 'First Text View'), 2);
+  const emptied = vendor.textedit.replace(/^(\t\t2 text entry area \(settable\)) ID: First Text View, Value: [\s\S]*?(?=\n\t*\d+ )/m, '$1 First Text View');
+  assert.match(emptied, /^\t\t2 text entry area \(settable\) First Text View$/m);
+  assert.equal(text.indexOfPart(emptied, 'ID', 'First Text View'), null, 'the labelled part is gone');
+  assert.equal(text.indexOfId(emptied, 'First Text View'), 2);
+  assert.equal(text.indexOfId(emptied, 'First Text'), null, 'a prefix of the identifier is not it');
+});
+
 test('the trailer: the focused element, selected text and selected elements', () => {
   assert.equal(text.focusedIndexOf(vendor.electron), 5);
   assert.equal(text.focusedIndexOf(vendor.finder), 4);
@@ -95,7 +104,7 @@ test('the titled share and the ID count are read alike on both engines\' text', 
 
 test('every helper is self-contained, so a cell embeds it by its source', () => {
   const source = text.EMBEDDED;
-  for (const name of ['elementLines', 'lineOfIndex', 'parentIndexOf', 'indexOfPart', 'valueOfIndex', 'focusedIndexOf', 'selectedTextOf', 'selectedIndexesOf',
+  for (const name of ['elementLines', 'lineOfIndex', 'parentIndexOf', 'indexOfPart', 'indexOfId', 'valueOfIndex', 'focusedIndexOf', 'selectedTextOf', 'selectedIndexesOf',
     'rowIndexOfName', 'showingOf', 'scrollBarValueBeside', 'findTarget', 'namedLines', 'idCount', 'indexOfTarget', 'windowTitleOf'])
     assert.match(source, new RegExp(`function ${name}\\b|const ${name} =`), name);
   const run = new Function(`${source}\nreturn {focusedIndexOf, rowIndexOfName};`)();

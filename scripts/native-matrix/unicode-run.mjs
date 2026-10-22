@@ -67,7 +67,8 @@ const sourceName = id => (id === ABC ? 'Latin' : 'Korean');
 const notHeld = (id, scene) => `the ${sourceName(id)} source did not hold with ${scene} in front`;
 const rowBase = (ctx, r) => ({section: 'unicode', id: r.id, engine: ctx.engine, sample: ctx.n, ok: false, scene: r.field, target: r.field, regime: r.regime, method: r.method,
   case: r.string.id, expect: 'outcome', condition: r.condition, ...(r.user ? {user: r.user} : {})});
-const invalidRow = (ctx, r, reason) => push(ctx, {...rowBase(ctx, r), invalid: reason});
+// `focus`, given when the focus probe's reading was the precondition that failed, is recorded and never judged.
+const invalidRow = (ctx, r, reason, focus) => push(ctx, {...rowBase(ctx, r), invalid: reason, ...(focus === undefined ? {} : {focus})});
 const options = r => ({section: 'unicode', id: r.id, extra: {condition: r.condition}});
 
 // The Latin or Korean source: the field's scene in front reading it, each row a frontmost case.
@@ -93,7 +94,7 @@ async function behindUser(ctx, field, user) {
   const userWindow = userWindowOf(read(ctx).reading, ctx.records[user].pid);
   if (!userWindow) return {invalid: `the user window (${user}) was not in front`};
   const f0 = read(ctx, focusOf(userWindow));
-  if (f0.focus?.named !== true || f0.focus.valueHash !== EMPTY_HASH) return {invalid: 'the focus probe did not read the user window\'s field focused and empty'};
+  if (f0.focus?.named !== true || f0.focus.valueHash !== EMPTY_HASH) return {invalid: 'the focus probe did not read the user window\'s field focused and empty', focus: f0.focus ?? null};
   return {userWindow};
 }
 
@@ -104,7 +105,7 @@ async function behindUser(ctx, field, user) {
 async function composingRows(ctx, field, rows) {
   const {user} = rows[0];
   const setup = await behindUser(ctx, field, user);
-  if (setup.invalid) { for (const r of rows) invalidRow(ctx, r, setup.invalid); return; }
+  if (setup.invalid) { for (const r of rows) invalidRow(ctx, r, setup.invalid, setup.focus); return; }
   const {userWindow} = setup;
   if (!establishSource(ctx, KOREAN_2SET, `composing@${user}`)) { for (const r of rows) invalidRow(ctx, r, `no composition in progress: ${notHeld(KOREAN_2SET, user)}`); return; }
   const started = device(ctx, ['probe', 'keystroke', '--window', focusOf(userWindow), '--text', COMPOSITION.key, '--mode', 'ansiKeys', '--lead', '1500']);

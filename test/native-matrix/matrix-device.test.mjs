@@ -35,6 +35,31 @@ test('read: the run\'s own pids and bounds, another app by bundle id only, the w
   assert.deepEqual(ownedFocus({focusedApp: {pid: 7}, named: true, valueHash: 'ab'.repeat(32)}, [7]).valueHash, 'ab'.repeat(32));
   assert.equal(ownedFocus({focusedApp: {pid: 7}, named: false, valueHash: 'ab'.repeat(32)}, [7]).valueHash, null, 'never another window\'s');
   assert.equal(isWatcher([{pid: 5, command: '/A/cua Engine.app/Contents/MacOS/cua-engine --probe watch-activations'}], 5), true);
+});
+
+test('ownedFocus: why the named window was not the focused one, recorded for the run\'s own window only', () => {
+  const named = {pid: 7, bounds: {x: 820, y: 261, width: 920, height: 492}};
+  // Hold 2a: the probe read no focused application at all (every background row, every user app, both engines).
+  assert.deepEqual(ownedFocus({focusedApp: null, focusedWindow: null, named: false, valueHash: null, accessibility: true}, [7], named),
+    {appOwned: false, appPid: null, named: false, valueHash: null,
+      unnamed: {accessibility: true, appRead: false, appNamed: false, windowRead: false, windowNamed: false, deltas: null}});
+  // The named app focused, its focused window off by a few points: the per-axis deltas, focused minus named.
+  const off = ownedFocus({focusedApp: {pid: 7, bundleId: 'com.apple.finder'}, focusedWindow: {pid: 7, bounds: {x: 820, y: 261, width: 920, height: 520}},
+    named: false, valueHash: null, accessibility: true}, [7], named);
+  assert.deepEqual(off.unnamed, {accessibility: true, appRead: true, appNamed: true, windowRead: true, windowNamed: true, deltas: {x: 0, y: 0, width: 0, height: 28}});
+  // Another app focused: whether it was the named one, never its pid or its window's bounds.
+  const other = ownedFocus({focusedApp: {pid: 99, bundleId: 'com.example.other'}, focusedWindow: {pid: 99, bounds: {x: 1, y: 2, width: 3, height: 4}},
+    named: false, valueHash: null, accessibility: true}, [7], named);
+  assert.deepEqual(other, {appOwned: false, appPid: null, named: false, valueHash: null,
+    unnamed: {accessibility: true, appRead: true, appNamed: false, windowRead: true, windowNamed: false, deltas: null}});
+  assert.ok(!JSON.stringify(other).includes('99') && !JSON.stringify(other).includes('other'), 'nothing of another app leaves');
+  // The probe without its own Accessibility grant says so; a named window records no reason.
+  assert.equal(ownedFocus({focusedApp: null, named: false, accessibility: false}, [7], named).unnamed.accessibility, false);
+  assert.equal(ownedFocus({focusedApp: {pid: 7}, focusedWindow: {pid: 7, bounds: named.bounds}, named: true, valueHash: null}, [7], named).unnamed, undefined);
+  // read() hands the probe's window to it.
+  const io = {state: () => state, launched: () => [], watcherRuns: () => true, frontWindow: () => ({at: 5, frontmost: null, topWindow: null}),
+    probe: () => ({focusedApp: null, focusedWindow: null, named: false, valueHash: null, accessibility: true})};
+  assert.equal(read({focus: '7,820,261,920,492'}, io).focus.unnamed.appRead, false);
   assert.equal(isWatcher([{pid: 5, command: '/A/cua Engine.app/Contents/MacOS/cua-engine'}], 5), false);
 });
 

@@ -27,8 +27,8 @@ gates:
       claude plugin validate .
       npm run test:mods
   # #117: buildEngine's real release bundle, assembled and ad-hoc signed at the fixed engine location under a scratch
-  # HOME. Verify its signature and run the Swift unit tests using the same build scratch. Never approve or launch it:
-  # hosted CI holds no Accessibility, Screen Recording or Input Monitoring grants; live parts stay on the mini.
+  # HOME. Verify its signature and run the Swift unit tests using the same build scratch. Never approve or launch this
+  # installed bundle. Hosted runners may grant Accessibility; missing-grant paths use fakes, live onboarding stays on the mini.
   - name: engine-swift
     lane: hosted-macos
     timeout: 20

@@ -31,7 +31,7 @@ import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {compare, parse} from '../../test/native-goldens/compare.mjs';
 import {allowsAddedLines} from '../../test/native-goldens/goldens.mjs';
-import {SCENE_IDS} from './scenes-mac.mjs';
+import {LIST_BEARING_SCENES, SCENE_IDS} from './scenes-mac.mjs';
 
 export const EXPECTED_FILE = fileURLToPath(new URL('./expected/native-mac.json', import.meta.url));
 export const GOLDENS = Object.freeze(['full', 'before', 'diff', 'settle']);
@@ -99,7 +99,8 @@ export function loadNativeMacRun(dir) {
 
 // Whether two runs may be compared: both complete runs of this suite on macOS, from one sitting (one hold, named by both
 // runs; one device, the harness checkout at one commit, one approved engine, one vendor runtime) with the same cells
-// (one controller commit). With
+// (one controller commit), each list-bearing scene read in one window frame on both (within FRAME_TOLERANCE_PT on every
+// edge: a list's visible rows follow its window's height, so two frames make the pair invalid, not a difference). With
 // declarations, the vendor-engine run first and the cua-engine run second; two runs of one engine (determinism) take none.
 export function checkPair(vendor, cua, {declarations = []} = {}) {
   for (const run of [vendor, cua]) {
@@ -117,7 +118,18 @@ export function checkPair(vendor, cua, {declarations = []} = {}) {
   if (a.approved?.build !== b.approved?.build || !a.approved?.build) throw new Error('the runs served two approved engines (or none): one sitting is one approved engine');
   if (a.runtimeRelease !== b.runtimeRelease) throw new Error(`the runs served two vendor runtimes (${a.runtimeRelease}, ${b.runtimeRelease})`);
   if (a.harness?.commit !== b.harness?.commit) throw new Error('the runs\' cells came from two controller commits: the same scripted cells run on both engines');
+  for (const scene of LIST_BEARING_SCENES) {
+    const frames = [vendor, cua].map(run => run.meta.scenes?.[scene]?.frame ?? null);
+    frames.forEach((frame, i) => { if (!isFrame(frame)) throw new Error(`${scene}'s window frame is not recorded on the ${[a, b][i].engine} lane: its list's rows follow the frame, so the pair cannot be shown to be one geometry`); });
+    if (FRAME_KEYS.some(key => Math.abs(frames[0][key] - frames[1][key]) > FRAME_TOLERANCE_PT)) {
+      throw new Error(`${scene} was read in two window frames (${a.engine} ${frameText(frames[0])}, ${b.engine} ${frameText(frames[1])}): its list's rows follow the frame, so the pair is invalid; rerun with one frame`);
+    }
+  }
 }
+export const FRAME_TOLERANCE_PT = 1;
+const FRAME_KEYS = ['x', 'y', 'width', 'height'];
+const isFrame = frame => FRAME_KEYS.every(key => Number.isFinite(frame?.[key]));
+const frameText = frame => FRAME_KEYS.map(key => `${key} ${frame[key]}`).join(', ');
 
 // An observation's form by its first line (the renderer's src/services/engine/diff.mjs and render.mjs; the vendor's
 // sentences, R/sky-behaviour.md §9): 'full', 'diff', 'noChange', or null.

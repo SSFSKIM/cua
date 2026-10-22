@@ -106,6 +106,8 @@ test('observe: a refused read keeps the engine\'s diagnostics of its last read b
   assert.deepEqual(out.problems.map(p => p.code), ['page_filling']);
   assert.equal(out.skyshot, null);
   assert.deepEqual(out.timings, timings);
+  // And the window's frame it was read in (geometry, not text): a lane's frame is recorded whatever its read answered.
+  assert.deepEqual(out.frame, recorded.window.frame);
 });
 
 test('observe: an image outside the run\'s screenshot directory is never removed', async () => {

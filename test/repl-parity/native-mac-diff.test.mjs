@@ -11,7 +11,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {checkPair, diffNativeMac, isSettled, loadNativeMacRun, summaryLine, validateDeclarations, EXPECTED_FILE} from '../../scripts/repl-parity/native-mac-diff.mjs';
-import {laneTexts, settledAfter, writeRun} from './native-mac-fixtures.mjs';
+import {laneTexts, lanesMeta, settledAfter, writeRun} from './native-mac-fixtures.mjs';
 
 const scratches = [];
 after(() => { for (const dir of scratches) fs.rmSync(dir, {recursive: true, force: true}); });
@@ -200,6 +200,29 @@ test('checkPair: one sitting, one checkout, one approved engine, the vendor-engi
   assert.throws(() => checkPair(vendor, run('c7', 'cua', {sitting: 'hold-2c'}), {declarations}), /two holds \(hold-2b, hold-2c\)/);
   assert.throws(() => checkPair(vendor, run('c8', 'cua', {sitting: undefined}), {declarations}), /names no hold/);
   assert.throws(() => checkPair(run('v4', 'vendor', {sitting: ''}), run('c9', 'cua', {sitting: ''}), {declarations}), /names no hold/);
+});
+
+test('checkPair: a list-bearing scene read in two window frames is no pair; within 1 pt it is, and other scenes\' frames do not decide', () => {
+  // Hold 2b's Finder list showed rows 0-19 on the cua lane against 0-18 on the vendor's, with neither frame recorded:
+  // a list's visible rows follow its window's height, so two frames make an invalid pair, not a difference.
+  const root = scratch();
+  const lane = (name, engine, frames = {}) => {
+    const base = lanesMeta(engine).scenes;
+    const scenes = Object.fromEntries(Object.entries(base).map(([scene, account]) => [scene, frames[scene] === undefined ? account : {...account, frame: frames[scene]}]));
+    return loadNativeMacRun(writeRun(join(root, name), {engine, meta: {scenes}}));
+  };
+  const finder = {x: 100, y: 80, width: 920, height: 640};
+  const vendor = lane('v', 'vendor');
+  assert.deepEqual(vendor.meta.scenes.finder.frame, finder, 'the fixtures\' lanes share one Finder frame');
+  assert.doesNotThrow(() => checkPair(vendor, lane('c', 'cua'), {declarations}));
+  assert.doesNotThrow(() => checkPair(vendor, lane('c1', 'cua', {finder: {...finder, height: finder.height + 1}}), {declarations}));
+  assert.throws(() => checkPair(vendor, lane('c2', 'cua', {finder: {...finder, height: finder.height + 24}}), {declarations}),
+    /finder was read in two window frames \(vendor .*height 640.*, cua .*height 664.*\)/);
+  assert.throws(() => checkPair(vendor, lane('c3', 'cua', {finder: {...finder, x: finder.x + 2}}), {declarations}), /two window frames/);
+  assert.throws(() => checkPair(vendor, lane('c4', 'cua', {finder: null}), {declarations}), /finder's window frame is not recorded on the cua lane/);
+  assert.doesNotThrow(() => checkPair(vendor, lane('c5', 'cua', {textedit: {x: 0, y: 0, width: 300, height: 300}}), {declarations}));
+  // A determinism pair is held to the same geometry.
+  assert.throws(() => checkPair(vendor, lane('v2', 'vendor', {finder: {...finder, width: finder.width - 30}}), {declarations: []}), /two window frames/);
 });
 
 test('loadNativeMacRun refuses a text that is not the one its row hashed', () => {

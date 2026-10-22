@@ -202,6 +202,11 @@ export const SCENES = Object.freeze({
   },
 });
 export const SCENE_IDS = Object.keys(SCENES);
+// The scenes whose tree follows their window's frame: Finder's list exposes only the rows its window's height shows
+// (hold 2b: rows 0-19 on one lane, 0-18 on the other). Its placement is Finder's, so each run records the frame it read
+// and the native-mac diff pairs two lanes only when it is one frame (native-mac-diff.mjs checkPair). The Electron
+// fixture's six-row list always fits, and its window, like Chrome's, is placed by the run.
+export const LIST_BEARING_SCENES = Object.freeze(['finder']);
 const sceneOf = id => { if (!Object.hasOwn(SCENES, id)) throw new Error(`unknown scene ${id}; one of ${SCENE_IDS.join(', ')}`); return SCENES[id]; };
 
 // The three pairs part 2 names, each taken in both directions; a driven scene's user window is the first pair naming it.

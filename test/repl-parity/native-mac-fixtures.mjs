@@ -30,10 +30,13 @@ export function laneTexts(engine) {
   }));
 }
 
+// Each scene's window frame as both lanes' side reads saw it (the Chrome and Electron scenes' are their placements).
+export const FRAMES = Object.freeze({textedit: {x: 60, y: 40, width: 640, height: 720}, finder: {x: 100, y: 80, width: 920, height: 640},
+  chrome: {x: 80, y: 60, width: 1000, height: 760}, electron: {x: 140, y: 100, width: 720, height: 560}});
 export const APPROVED = {build: 'b'.repeat(64), engineVersion: '0.1.0', signature: {kind: 'identity', identityMatches: true}};
 export const lanesMeta = engine => ({schema: 'native-mac-1', suite: 'native-mac', device: 'mini', platform: 'darwin', host: engine, engine, sitting: 'hold-2b',
   commit: 'c'.repeat(40), harness: {commit: 'd'.repeat(40), dirty: false}, runtimeRelease: '26.928.40906-darwin-arm64', approved: APPROVED, checkoutBuild: APPROVED.build,
-  scenes: Object.fromEntries(SCENE_IDS.map(scene => [scene, {recorded: true}])), plan: {scenes: [...SCENE_IDS]}, problems: [], complete: true});
+  scenes: Object.fromEntries(SCENE_IDS.map(scene => [scene, {recorded: true, frame: FRAMES[scene]}])), plan: {scenes: [...SCENE_IDS]}, problems: [], complete: true});
 
 // A run directory as the runner writes it. `texts` per scene (missing kinds are cells that did not answer), `rows`
 // overrides per scene and cell, `meta` merged into the lane's meta.

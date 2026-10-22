@@ -36,8 +36,8 @@
 //     every scene down, the engine stopped, the home given back): the run's journal goes only once nothing is left.
 //     The owner's front app is put back last and checked: one that was to be put back and is not in front leaves the run
 //     incomplete and the journal in place, the home recorded as given back, so the same cleanup tries the app again.
-// It writes <out>/meta.json (the sitting's facts, the attestations, each scene's account with its side reads and cua's
-// engine timings for each; never a token, an identity or any accessibility text), <out>/results.jsonl (one row per scene and cell: bind, fixed, action, settle),
+// It writes <out>/meta.json (the sitting's facts, the attestations, each scene's account with its window frame and its
+// side reads, each with its frame and cua's engine timings; never a token, an identity or any accessibility text), <out>/results.jsonl (one row per scene and cell: bind, fixed, action, settle),
 // <out>/texts/<scene>/<kind>.txt (full, before, diff, later) and <out>/result.json, the settle rows as the native
 // matrix's settle cell (scripts/native-matrix/settle-cell.mjs), which its summary reads. Exit 0 complete, 1 incomplete, 2 refused.
 import * as fs from 'node:fs';
@@ -298,6 +298,8 @@ async function runScene(ctx, id) {
     const after = read('verify', `fixed ${attempt}`);
     if (after.problems.length) { discard(ctx, files); last = describeProblems(after.problems); continue; }
     kept = {reads: fixed.value.reads, texts: Object.fromEntries(files.map(file => [file.kind, keep(ctx, id, file)]))};
+    // The scene's frame: the window the kept fixed text was guarded in, which the diff pairs lanes by (checkPair).
+    account.frame = after.frame ?? null;
   }
   if (!kept) throw new SceneProblem(`the fixed state did not hold in ${FIXED_ATTEMPTS} attempts (${last}); nothing of it was kept`);
   emit({scene: id, cell: 'fixed', ok: true, ...kept});
@@ -318,11 +320,11 @@ async function runScene(ctx, id) {
 }
 
 // A side read as the scene's account keeps it: which read, at which step (`fixed <attempt>` or `action`), the problem
-// codes, and the engine's observation diagnostics as they come (`timings`: the enablement, the web-area wait, the
+// codes, the window's frame it read, and the engine's observation diagnostics as they come (`timings`: the enablement, the web-area wait, the
 // settle; null when the read carried none). Recorded, never judged. The side reads are cua's engine on either lane, so
 // these are cua's readings of the scene the lane drives; the lane's own reads return only text through the facade (cua's
 // service passes no timings on, nor does the vendor's), so neither lane's own engine's timings reach the run.
-const sideRead = (read, step, answer) => ({read, step, engine: 'cua', problems: (answer.problems ?? []).map(p => p.code), timings: answer.timings ?? null});
+const sideRead = (read, step, answer) => ({read, step, engine: 'cua', problems: (answer.problems ?? []).map(p => p.code), frame: answer.frame ?? null, timings: answer.timings ?? null});
 
 function bringUp(ctx, id) {
   const {ops, run, fixtures} = ctx;

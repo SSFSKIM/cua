@@ -131,10 +131,10 @@ struct InputMeta {
   }
 }
 
-/// Attaches `meta` to an error (the wire's `meta` member, beside code, message and errorName).
+/// Attaches input `meta` without losing the permission boundary's marker (the wire's `meta` member).
 func withMeta(_ error: EngineError, _ meta: InputMeta) -> EngineError {
   var error = error
-  error.extra["meta"] = meta.wire
+  error.extra["meta"] = (error.extra["meta"] as? [String: Any] ?? [:]).merging(meta.wire) { _, input in input }
   return error
 }
 

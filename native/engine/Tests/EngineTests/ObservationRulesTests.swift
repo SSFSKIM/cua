@@ -311,6 +311,47 @@ final class EnablementReleaseTests: XCTestCase {
     XCTAssertTrue(second.writes.isEmpty)
   }
 
+  func testAWriteBackIsNotRememberedForAProcessWithNoKnownGeneration() {
+    // The review of 447bb209: with no launch date and no start time, the key is the pid alone, so a remembered
+    // write-back would outlive the process and match a replacement reusing the pid (a dev `electron .`), which would be
+    // written true, owned and released: an attribute cua never owned.
+    let web = WebAccessibility()
+    let first = FakeApplication(names: ["AXManualAccessibility"])
+    XCTAssertEqual(web.enable(pid: 7, launched: nil, connection: 1, access: first.access), "AXManualAccessibility")
+    web.release(connection: 1)
+    XCTAssertEqual(first.written, ["AXManualAccessibility=true", "AXManualAccessibility=false"], "the release is unchanged")
+    let replacement = FakeApplication(names: ["AXManualAccessibility"])
+    replacement.values["AXManualAccessibility"] = true
+    XCTAssertNil(web.enable(pid: 7, launched: nil, connection: 2, access: replacement.access))
+    web.release(connection: 2)
+    XCTAssertTrue(replacement.writes.isEmpty)
+  }
+
+  func testAProcessWithNoLaunchDateIsIdentifiedByItsStartTimeAndReSetAfterAWriteBack() {
+    let pid = getpid()
+    let start = processStartTime(pid: pid)
+    XCTAssertNotNil(start, "the kernel's start time of a live process")
+    XCTAssertLessThan(start!.timeIntervalSinceNow, 0)
+    XCTAssertEqual(processGeneration(launchDate: nil, pid: pid), start, "no launch date: the start time")
+    XCTAssertEqual(processGeneration(launchDate: launched, pid: pid), launched, "LaunchServices' date when there is one")
+    let web = WebAccessibility()
+    let app = FakeApplication(names: ["AXManualAccessibility"])
+    let generation = processGeneration(launchDate: nil, pid: pid)
+    _ = web.enable(pid: pid, launched: generation, connection: 1, access: app.access)
+    web.release(connection: 1)
+    app.values["AXManualAccessibility"] = true  // the readback after the write-back
+    XCTAssertEqual(web.enable(pid: pid, launched: processGeneration(launchDate: nil, pid: pid), connection: 2, access: app.access),
+                   "AXManualAccessibility", "the same generation: re-set as before")
+  }
+
+  func testAnEndedProcessHasNoStartTime() throws {
+    let child = Process()
+    child.executableURL = URL(fileURLWithPath: "/usr/bin/true")
+    try child.run()
+    child.waitUntilExit()  // reaped
+    XCTAssertNil(processStartTime(pid: child.processIdentifier))
+  }
+
   func testShutdownReleasesEveryProcessTheEngineEnabled() {
     let web = WebAccessibility()
     let a = FakeApplication(names: ["AXManualAccessibility"])

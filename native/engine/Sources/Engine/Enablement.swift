@@ -61,6 +61,23 @@ func webAreaWaitNeeded(switchOn: Bool, enabledNow: Bool, chromium: Bool, seen: B
   switchOn && (enabledNow || chromium) && !seen
 }
 
+/// A process's generation, which keys the enablement's per-process state with its pid so a later process reusing the
+/// pid is another: LaunchServices' launch date, else (an app launched without LaunchServices, a dev `electron .`) the
+/// kernel's start time; nil when neither can be read.
+func processGeneration(launchDate: Date?, pid: pid_t) -> Date? {
+  launchDate ?? processStartTime(pid: pid)
+}
+
+/// The kernel's start time of process `pid` (`kp_proc.p_starttime`); nil when there is no such process.
+func processStartTime(pid: pid_t) -> Date? {
+  var info = kinfo_proc()
+  var size = MemoryLayout<kinfo_proc>.stride
+  var name: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
+  guard sysctl(&name, u_int(name.count), &info, &size, nil, 0) == 0, size > 0, info.kp_proc.p_pid == pid else { return nil }
+  let start = info.kp_proc.p_starttime
+  return Date(timeIntervalSince1970: Double(start.tv_sec) + Double(start.tv_usec) / 1_000_000)
+}
+
 /// How the enablement reaches one process's application element: its attribute names (nil while they cannot be read,
 /// a process still launching), one attribute's Boolean value (nil when unreadable), a write, and whether the process is
 /// still the one observed (a pid an ended process left behind may be another launch's by the time of a release).
@@ -70,7 +87,7 @@ struct EnablementAccess: @unchecked Sendable {
   var write: (String, Bool) -> Bool
   var current: () -> Bool
 
-  /// The application element of process `pid`, launched at `launched`.
+  /// The application element of process `pid`, of generation `launched` (`processGeneration`).
   static func live(pid: pid_t, launched: Date?) -> EnablementAccess {
     let application = prepare(AXUIElementCreateApplication(pid))
     return EnablementAccess(
@@ -80,7 +97,9 @@ struct EnablementAccess: @unchecked Sendable {
       },
       read: { bool(attribute(application, $0)) },
       write: { AXUIElementSetAttributeValue(application, $0 as CFString, ($1 ? kCFBooleanTrue : kCFBooleanFalse)!) == .success },
-      current: { NSRunningApplication(processIdentifier: pid).map { $0.launchDate == launched && !$0.isTerminated } ?? false })
+      current: {
+        NSRunningApplication(processIdentifier: pid).map { !$0.isTerminated && processGeneration(launchDate: $0.launchDate, pid: pid) == launched } ?? false
+      })
   }
 }
 
@@ -109,11 +128,17 @@ private final class EnabledProcess: @unchecked Sendable {
   var listed: String??
   /// The attribute the engine set after reading it false, which it releases; nil otherwise.
   var owned: String?
+  /// Whether the process's generation is known; a write-back is remembered only then, since a key of the pid alone
+  /// would match a later process reusing it.
+  let generationKnown: Bool
 
-  init(access: EnablementAccess) { self.access = access }
+  init(access: EnablementAccess, generationKnown: Bool) {
+    self.access = access
+    self.generationKnown = generationKnown
+  }
 }
 
-/// Per engine: which bundles are web-shaped, per process (by pid and launch date, so a relaunch that reuses a pid starts
+/// Per engine: which bundles are web-shaped, per process (by pid and generation, so a relaunch that reuses a pid starts
 /// over) the enablement the engine set and the connections that observed it, the processes a web area was seen in, and
 /// the processes whose attribute the engine wrote back and has not set again since.
 final class WebAccessibility: @unchecked Sendable {
@@ -174,7 +199,7 @@ final class WebAccessibility: @unchecked Sendable {
   func enableReporting(pid: pid_t, launched: Date?, connection: Int, access: EnablementAccess) -> (set: String?, prior: EnablementPrior?) {
     let key = Self.process(pid, launched)
     lock.lock()
-    let entry = processes[key] ?? EnabledProcess(access: access)
+    let entry = processes[key] ?? EnabledProcess(access: access, generationKnown: launched != nil)
     processes[key] = entry
     observers[key, default: []].insert(connection)
     lock.unlock()
@@ -246,7 +271,7 @@ final class WebAccessibility: @unchecked Sendable {
     lock.lock()
     if reset {
       webAreaSeen.remove(key)
-      writtenBack.insert(key)
+      if entry.generationKnown { writtenBack.insert(key) }
     }
     if entry.owned == nil, observers[key]?.isEmpty ?? true, processes[key] === entry {
       observers[key] = nil

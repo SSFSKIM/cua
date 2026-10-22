@@ -13,6 +13,9 @@ import {nativeSecretCases,LABEL,REFERENCE,WINDOW} from './native-secret-cases.mj
 // The scratch HOME a native lane made: <TMPDIR>/<parity scratch prefix>cap-XXXXXX/run/<id>/home, where the prefix is
 // scripts/repl-parity/topology.mjs parityScratchPrefix's grammar (cua-, or a run's cua-<label>-).
 // `nodeRepl` is the worker's (the approvals' route); a test outside the worker passes its own.
+// Every request that passes the wrapper's own refusals is approved first, the store read after: none of a row refused
+// before its read, each of every other's, all for the fixture window's app. `approvals` lists the apps the wrapper asked.
+export const approvalsMatch=(row,approvals)=>approvals.length===(row.error&&row.reads===0?0:row.requests.length)&&approvals.every(app=>app===WINDOW.app);
 export async function createNativeSecretOracle(home,{nodeRepl=globalThis.nodeRepl}={}){
  if(!/^cua-(?:[a-z0-9]+-)*cap-/.test(basename(dirname(dirname(dirname(home)))))||basename(home)!=='home'||basename(dirname(dirname(home)))!=='run'||await realpath(home)!==home)throw Error('Native secret fixture requires its canonical scratch HOME');
  const value='synthetic-'+randomUUID(),root=await mkdtemp(join(home,'native-secret-'));let row,wrapped,reads=[],inputs=[],outputs=[],approvals=[],safe=true;
@@ -36,10 +39,11 @@ export async function createNativeSecretOracle(home,{nodeRepl=globalThis.nodeRep
  return {async handleRpc(request){
   if(request.type==='secret.configure')return configure(request.id);
   if(request.type==='secret.observe'){
-   // Every request that passes the wrapper's own refusals is approved first, the store read after: none of a row
-   // refused before its read, each of every other's, all for the fixture window's app.
-   const error=request.outcome,expectedBackend=row.error&&!row.substitute?0:row.requests.length,expectedApprovals=row.error&&row.reads===0?0:row.requests.length;
-   return {requestMatches:inputs.length===row.requests.length&&inputs.every(Boolean),readMatches:reads.length===row.reads&&reads.every(l=>l===LABEL),readLabels:reads,backendMatches:outputs.length===expectedBackend&&outputs.every(Boolean),backendCalled:outputs.length>0,resultMatches:error.rejected===!!row.error&&(!row.error||error.message?.includes(`[${row.error}]`)),errorSafe:safe&&errorIsSafe(error,value),labelReportMatches:row.error!=='secret_input_failed'||error.message.includes(LABEL),messageOnly:!row.error||error.messageOnly===true,approvalMatches:approvals.length===expectedApprovals&&approvals.every(app=>app===WINDOW.app)};
+   // The approvals are folded into requestMatches, not reported as a key of their own: the printed report is compared
+   // with the vendor control's text (the parity diff), which predates Linux approvals (#117 M3), so a new key would be a
+   // difference in every case. A wrong approval still fails the case: requestMatches turns false.
+   const error=request.outcome,expectedBackend=row.error&&!row.substitute?0:row.requests.length;
+   return {requestMatches:inputs.length===row.requests.length&&inputs.every(Boolean)&&approvalsMatch(row,approvals),readMatches:reads.length===row.reads&&reads.every(l=>l===LABEL),readLabels:reads,backendMatches:outputs.length===expectedBackend&&outputs.every(Boolean),backendCalled:outputs.length>0,resultMatches:error.rejected===!!row.error&&(!row.error||error.message?.includes(`[${row.error}]`)),errorSafe:safe&&errorIsSafe(error,value),labelReportMatches:row.error!=='secret_input_failed'||error.message.includes(LABEL),messageOnly:!row.error||error.messageOnly===true};
   }
   if(request.type==='setup')return {target:'linux',methods:['list_windows','get_window_state','type_text','press_key']};
   if(request.type==='execute'&&request.method==='list_windows')return [WINDOW];

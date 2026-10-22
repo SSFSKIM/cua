@@ -17,7 +17,8 @@ const sources = steps => matrixSteps(steps, 'source').map(a => [a[1], ...(a.incl
   ...(a.includes('--value') ? [a[a.indexOf('--value') + 1]] : [])].join(' '));
 const ENTERED = 30;
 // The mid-switch: stopped by the switch after ENTERED units, the field holding exactly those.
-const midSwitch = c => (tagOf(c) === 'unicode.midSwitch' ? {actMs: 900, callAt: atOf(c), endAt: atOf(c) + 900, late: 0, threw: true, errorName: 'inputSourceChanged', message: 'changed',
+const midSwitch = c => (tagOf(c) === 'unicode.midSwitch' ? {actMs: 900, callAt: atOf(c), endAt: atOf(c) + 900, late: 0, threw: true, errorName: 'Error',
+  message: `Computer Use server error -10005: The input source changed after ${ENTERED} of ${MID_SWITCH.text.length} characters were entered; get the app's state to see what was typed.`,
   _meta: {'cua/actionInterval': {startedAt: atOf(c) + 50, endedAt: atOf(c) + 900}, 'cua/entered': ENTERED}}
   : tagOf(c) === 'unicode.midSwitch.check' ? {hash: sha256Hex(MID_SWITCH.text.slice(0, ENTERED)), length: ENTERED} : null);
 // The driven scene's context reads Korean when it is brought back (the per-context preference held).
@@ -40,6 +41,7 @@ test('cell korean --scene textedit: every row in run order under its source, Acc
   assert.deepEqual(matrixSteps(steps, 'probe').map(a => a[1]), ['input-source', 'finish', 'keystroke', 'finish']);
   const mid = result.rows.find(r => r.condition === 'midSwitch');
   assert.deepEqual([mid.outcome.stopped, mid.outcome.entered, mid.outcome.exact], [true, ENTERED, true]);
+  assert.match(mid.outcome.message, /The input source changed after 30 of/, 'the engine\'s sentence is kept on the row');
   // The composition: the probe's ANSI r into the user window (the Electron fixture's field), read back as ㄱ.
   const composing = matrixSteps(steps, 'probe').find(a => a[1] === 'keystroke');
   assert.deepEqual([composing[composing.indexOf('--text') + 1], composing[composing.indexOf('--mode') + 1]], ['r', 'ansiKeys']);

@@ -11,6 +11,9 @@ import {PRE_ACTION_DELAY_MS, PRE_MS, PROBE_ATTEMPTS, STILL_INTERACTING, USER_CHA
 import {planOf} from '../../scripts/native-matrix/run.mjs';
 import {matrixSteps, names, runWith, stopWith} from './run-doubles.mjs';
 
+// An engine refusal as a cell sees it: the REPL hands the cell a plain Error (src/repl-host/trusted-worker.mjs), so its
+// name is 'Error' and only its message, the vendor's envelope around the engine's sentence, says what it was.
+const REFUSED = 'Computer Use server error -10016: ';
 const tagOf = code => /cua-matrix-cell: ([\w.]+)/.exec(code)?.[1] ?? null;
 const atOf = code => Number(/const __at = (\d+)/.exec(code)?.[1]);
 const followOf = code => Number(/__followAt = (\d+)/.exec(code)?.[1]);
@@ -70,9 +73,9 @@ test('concurrent use: a post outside the interval is retried, aimed at the middl
 test('the probe cells wait out the debounce the probe started before the run drives that scene again, and observe it once', async () => {
   const calls = [];
   const {slept} = await runWith({plan: {...planOf('intervention-fires'), intervention: ['fires', 'preAction'], id: 'x'}, cellName: 'intervention-fires', calls,
-    cell: c => (tagOf(c) === 'intervention.act' ? acted(c, {threw: `${USER_CHANGED}x'. Re-query`, errorName: 'userIntervened'})
-      : tagOf(c) === 'intervention.next' ? {...acted(c), threw: true, errorName: 'userIntervened', message: `${USER_CHANGED}x'.`}
-        : tagOf(c) === 'preaction.act' ? acted(c, {threw: `${STILL_INTERACTING}x'. Wait`, errorName: 'userIntervened', interval: null}) : null)});
+    cell: c => (tagOf(c) === 'intervention.act' ? acted(c, {threw: `${REFUSED}${USER_CHANGED}x'. Re-query`, errorName: 'Error'})
+      : tagOf(c) === 'intervention.next' ? {...acted(c), threw: true, errorName: 'Error', message: `${REFUSED}${USER_CHANGED}x'.`}
+        : tagOf(c) === 'preaction.act' ? acted(c, {threw: `${REFUSED}${STILL_INTERACTING}x'. Wait`, errorName: 'Error', interval: null}) : null)});
   assert.ok(slept.some(ms => ms > 5_000), `waited: ${slept.join(', ')}`);
   // After fires: the next action is sent before any observation of TextEdit (which would clear the flag).
   const tags = calls.map(c => tagOf(c.code) ?? (c.code.includes('return {observed: true}') ? 'requery' : null)).filter(Boolean);
@@ -84,12 +87,14 @@ test('the probe cells wait out the debounce the probe started before the run dri
 
 test('intervention fires: userIntervened with the user-changed sentence, the next action refused with nothing posted until a get_app_state, then the same one lands', async () => {
   const {result} = await runWith({plan: planOf('intervention-fires'), cellName: 'intervention-fires',
-    cell: c => (tagOf(c) === 'intervention.act' ? acted(c, {threw: `${USER_CHANGED}/x'. Re-query`, errorName: 'userIntervened', meta: {'cua/entered': 12}})
-      : tagOf(c) === 'intervention.next' ? {...acted(c), threw: true, errorName: 'userIntervened', message: `${USER_CHANGED}/x'.`} : null)});
+    cell: c => (tagOf(c) === 'intervention.act' ? acted(c, {threw: `${REFUSED}${USER_CHANGED}/x'. Re-query`, errorName: 'Error', meta: {'cua/entered': 12}})
+      : tagOf(c) === 'intervention.next' ? {...acted(c), threw: true, errorName: 'Error', message: `${REFUSED}${USER_CHANGED}/x'.`} : null)});
   const row = rowOf(result, 'textedit/intervention.fires');
   assert.equal(row.ok, true, JSON.stringify(row));
   assert.deepEqual({fired: row.outcome.fired, entered: row.outcome.entered, refusedNext: row.outcome.refusedNext, nothingPosted: row.outcome.nothingPosted, againLanded: row.outcome.againLanded},
     {fired: true, entered: 12, refusedNext: true, nothingPosted: true, againLanded: true});
+  assert.equal(row.outcome.message, `${REFUSED}${USER_CHANGED}/x'. Re-query`, 'the engine\'s sentence is kept on the row');
+  assert.equal(row.outcome.nextMessage, `${REFUSED}${USER_CHANGED}/x'.`);
   // The typing went with TextEdit in front (the key guard's own case), never through a user window.
   assert.equal(result.verdict, 'pass');
   // Not fired: a failure, not invalid.
@@ -102,11 +107,16 @@ test('intervention fires: userIntervened with the user-changed sentence, the nex
 });
 
 test('the pre-action refusal: valid only when the engine received the request after the post and within the debounce; refused as still interacting, nothing posted', async () => {
-  const refused = (c, offset) => acted(c, {threw: `${STILL_INTERACTING}/x'. Wait 5 seconds and retry.`, errorName: 'userIntervened', interval: null,
+  const refused = (c, offset) => acted(c, {threw: `${REFUSED}${STILL_INTERACTING}/x'. Wait 5 seconds and retry.`, errorName: 'Error', interval: null,
     meta: {'cua/receivedAt': atOf(c) - PRE_ACTION_DELAY_MS + offset}});
   const {result} = await runWith({plan: planOf('pre-action-refusal'), cellName: 'pre-action-refusal', cell: c => (tagOf(c) === 'preaction.act' ? refused(c, 160) : null)});
   const row = rowOf(result, 'textedit/intervention.preAction');
   assert.deepEqual([row.ok, row.outcome.refused, row.outcome.nothingPosted, row.outcome.receiptAfterPostMs], [true, true, true, 160]);
+  assert.match(row.outcome.message, /^Computer Use server error -10016: The user is still interacting/);
+  // The sentence under another code is not the engine's userIntervened refusal.
+  const other = await runWith({plan: planOf('pre-action-refusal'), cellName: 'pre-action-refusal',
+    cell: c => (tagOf(c) === 'preaction.act' ? {...refused(c, 160), message: `Computer Use server error -10005: ${STILL_INTERACTING}/x'.`} : null)});
+  assert.equal(rowOf(other.result, 'textedit/intervention.preAction').outcome.refused, false);
   const late = await runWith({plan: planOf('pre-action-refusal'), cellName: 'pre-action-refusal', cell: c => (tagOf(c) === 'preaction.act' ? refused(c, 5_200) : null)});
   assert.match(rowOf(late.result, 'textedit/intervention.preAction').invalid, /past the 5000 ms debounce/);
   assert.equal(late.result.verdict, 'no-verdict');
@@ -147,7 +157,7 @@ test('the sheet variant: super+w on TextEdit\'s dirty untitled document as its o
   // A refused follow-up fails the row, and the untitled document's cleanup closes the sheet before the run goes on.
   const refusedCalls = [];
   const refused = await runWith({plan: planOf('concurrent-use-sheet'), cellName: 'concurrent-use-sheet', calls: refusedCalls,
-    cell: c => (tagOf(c) === 'sheet.follow' ? followUp(c, {over: {threw: true, errorName: 'userIntervened', message: `${STILL_INTERACTING}/x'.`}})
+    cell: c => (tagOf(c) === 'sheet.follow' ? followUp(c, {over: {threw: true, errorName: 'Error', message: `${REFUSED}${STILL_INTERACTING}/x'.`}})
       : tagOf(c) === 'sheet.check' ? {closed: false, sceneInFront: false} : sheetCells()(c))});
   const failed = rowOf(refused.result, SHEET);
   assert.deepEqual([failed.ok, failed.outcome.followUpRefused], [false, true]);
@@ -172,7 +182,7 @@ test('the sheet variant: a post outside the opening action\'s own interval is re
   const firedCalls = [];
   const fired = await runWith({plan: planOf('concurrent-use-sheet'), cellName: 'concurrent-use-sheet', calls: firedCalls,
     cell: c => (tagOf(c) === 'sheet.check' ? {closed: true, sceneInFront: false}
-      : sheetCells({open: c2 => opening(c2, {over: {threw: true, errorName: 'userIntervened', message: `${USER_CHANGED}/x'.`}}),
+      : sheetCells({open: c2 => opening(c2, {over: {threw: true, errorName: 'Error', message: `${REFUSED}${USER_CHANGED}/x'.`}}),
         follow: c2 => ({...followUp(c2, {over: {opened: false, clicked: false}}), _meta: {}})})(c))});
   assert.equal(fired.result.rows.length, 1, JSON.stringify(fired.result.problems));
   const refusedOpening = rowOf(fired.result, SHEET);

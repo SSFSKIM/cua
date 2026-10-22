@@ -38,9 +38,15 @@ export const PRE_MS = Object.freeze({chrome: 400, finder: 120, textedit: 400});
 export const PRE_ACTION_DELAY_MS = 150;
 // The sheet variant: super+w this long before the post, its follow-up click no earlier than this long after it.
 export const SHEET_PRE_MS = 100, SHEET_FOLLOW_MS = 300;
-// The engine's userIntervened sentences (native/engine/Sources/Engine/Intervention.swift), the app string elided.
+// The engine's userIntervened sentences (native/engine/Sources/Engine/Intervention.swift), the app string elided. An
+// engine error reaches a cell as a plain Error (the REPL's boundary, src/repl-host/trusted-worker.mjs), its name
+// 'Error', so a refusal is told by its message alone: the vendor's envelope with userIntervened's code (−10016), then
+// the sentence (the spec: the harnesses match substrings).
 export const USER_CHANGED = "The user changed '";
 export const STILL_INTERACTING = "The user is still interacting with '";
+export const USER_INTERVENED = 'Computer Use server error -10016: ';
+// Whether a cell's caught error (its `threw` and `message`) is the userIntervened refusal with `sentence`.
+export const refusedWith = (value, sentence) => value?.threw === true && typeof value.message === 'string' && value.message.startsWith(USER_INTERVENED) && value.message.includes(sentence);
 export const EMPTY_HASH = sha256Hex('');
 
 // ---- validity ------------------------------------------------------------------------------------------------------

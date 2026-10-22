@@ -18,7 +18,7 @@ import {sha256Hex} from './matrix-text.mjs';
 import {userWindowOf} from './oracle.mjs';
 import {emptyFieldCell, fieldCheckCell, intervalOf, nextPreMs, postValidity, PRE_MS, PROBE_ATTEMPTS, PROBE_LEAD_MS, probeProblem, EMPTY_HASH, scheduledActCell} from './probe-plan.mjs';
 import {activate, alertCheck, caseRow, device, focusOf, js, mark, push, quiet, read, sendKeys} from './steps.mjs';
-import {ABC, applyDeclarations, COMPOSITION, CONDITIONS, KOREAN_2SET, readDeclarations, unicodeCase, unicodeRowsOf} from './unicode-plan.mjs';
+import {ABC, applyDeclarations, COMPOSITION, CONDITIONS, INPUT_SOURCE_CHANGED, KOREAN_2SET, readDeclarations, unicodeCase, unicodeRowsOf} from './unicode-plan.mjs';
 
 const j = JSON.stringify;
 
@@ -149,7 +149,7 @@ async function perContextRows(ctx, field, rows) {
 }
 
 // The mid-switch row: the Latin source, the field's scene in front, a long keyed typeText, and the probe's switch to
-// Korean scheduled inside it. It must stop with inputSourceChanged, entering exactly what the field then holds (its
+// Korean scheduled inside it. It must stop with inputSourceChanged (its sentence in the message), entering exactly what the field then holds (its
 // hash against the text's first `cua/entered` units). The Latin source is selected again after it.
 async function midSwitchRow(ctx, r) {
   const field = r.field;
@@ -189,10 +189,10 @@ async function midSwitchAttempt(ctx, r, {preMs, key}) {
   const check = span(await ctx.lane.js(fieldCheckCell(field, null, 'unicode.midSwitch.check')));
   const entered = act.engine?.entered ?? null, switchedAt = finished?.answer?.selectedAt;
   const interval = intervalOf(ctx.engine, act);
-  const stopped = act.value.threw && act.value.errorName === 'inputSourceChanged';
+  const stopped = act.value.threw === true && INPUT_SOURCE_CHANGED.test(act.value.message ?? '');
   const exact = Number.isInteger(entered) && check.value?.length === entered && check.value?.hash === sha256Hex(r.string.text.slice(0, entered));
   const row = {ok: stopped && exact, inCellMs: act.value.actMs, wallMs: act.wallMs, inputRoute: act.route,
-    outcome: {stopped, errorName: act.value.errorName, entered, length: check.value?.length ?? null, exact, intervalSource: interval?.source ?? null,
+    outcome: {stopped, errorName: act.value.errorName, message: act.value.message ?? null, entered, length: check.value?.length ?? null, exact, intervalSource: interval?.source ?? null,
       switchOffsetMs: interval && Number.isFinite(switchedAt) ? switchedAt - interval.from : null}};
   const why = probeProblem(finished?.answer) ?? postValidity(switchedAt, interval)?.replace('the probe posted', 'the probe switched');
   if (why) return end({...row, ok: false, invalid: why}, {retry: true, preMs: nextPreMs({callAt: act.value.callAt, interval, postedAt: switchedAt, scheduled: started.scheduled, preMs})});

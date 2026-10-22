@@ -15,7 +15,7 @@ import {sha256Hex} from './matrix-text.mjs';
 import {userWindowOf} from './oracle.mjs';
 import {
   CLOSE_UNTITLED_CELL, CONCURRENT_TYPING, concurrentCheckCell, concurrentPrepareCell, EMPTY_HASH, emptyFieldCell, endsWithCell, intervalOf, LONG_TEXT, NEW_DOCUMENT_CELL,
-  nextPreMs, postValidity, PRE_ACTION_DELAY_MS, PRE_MS, PROBE_ATTEMPTS, PROBE_LEAD_MS, PROBE_TEXT, probeProblem, receiptValidity, scheduledActCell, SHEET_FOLLOW_MS,
+  nextPreMs, postValidity, PRE_ACTION_DELAY_MS, PRE_MS, PROBE_ATTEMPTS, PROBE_LEAD_MS, PROBE_TEXT, probeProblem, receiptValidity, refusedWith, scheduledActCell, SHEET_FOLLOW_MS,
   SHEET_PRE_MS, SHEET_TYPE_CELL, sheetCheckCell, sheetFollowCell, sheetOpenCell, STILL_INTERACTING, USER_CHANGED,
 } from './probe-plan.mjs';
 import {requeryCell} from './matrix-cells.mjs';
@@ -73,8 +73,6 @@ function spanOf(ctx, key) {
 // name the window, ./matrix-device.mjs ownedFocus), recorded and never judged.
 const precondition = ({invalid, focus}) => (focus === undefined ? {invalid} : {invalid, focus});
 const failed = (r, what) => (!r?.ok ? `${what} failed${r?.error ? `: ${String(r.error).slice(0, 200)}` : ''}` : null);
-// The engine's userIntervened refusal with one of its two sentences.
-const refusedWith = (value, sentence) => value?.threw === true && value.errorName === 'userIntervened' && typeof value.message === 'string' && value.message.includes(sentence);
 const detectionOff = act => (act?.engine?.intervention === 'off' ? 'intervention detection is off on the engine (no Input Monitoring grant): the cell cannot be judged' : null);
 
 // The user window in front with its typing field emptied and focused, read back by the focus probe. -> {userWindow,
@@ -278,7 +276,7 @@ async function firesAttempt(ctx, {lead, id, key}) {
   const interval = intervalOf(ctx.engine, act), postedAt = probe.answer?.postedAt;
   const fired = refusedWith(act.value, USER_CHANGED);
   const base = {inCellMs: act.value.actMs, wallMs: act.wallMs, inputRoute: act.route,
-    outcome: {fired, errorName: act.value.errorName, entered: act.engine?.entered ?? null, ...timing(interval, postedAt, act)}};
+    outcome: {fired, errorName: act.value.errorName, message: act.value.message ?? null, entered: act.engine?.entered ?? null, ...timing(interval, postedAt, act)}};
   const why = probeProblem(probe.answer) ?? detectionOff(act) ?? postValidity(postedAt, interval);
   if (why) return span.end({...base, ok: false, invalid: why}, {retry: true, lead: nextPreMs({callAt: act.value.callAt, interval, postedAt, scheduled: probe.scheduled, preMs})});
   // The debounce out (no observation of TextEdit meanwhile, which would clear the flag): the next action refused with
@@ -291,7 +289,7 @@ async function firesAttempt(ctx, {lead, id, key}) {
   delete ctx.posted[scene];
   const again = await typing(ctx, span, scene, scheduledActCell(scene, {act: 'await __app.typeText("x");', tag: 'intervention.again'}), {key, when: `${id} again`});
   const landed = span.add(await ctx.lane.js(endsWithCell(scene, 'x')));
-  const outcome = {...base.outcome, refusedNext: next?.ok === true && refusedWith(next.value, USER_CHANGED), nextErrorName: next?.value?.errorName ?? null,
+  const outcome = {...base.outcome, refusedNext: next?.ok === true && refusedWith(next.value, USER_CHANGED), nextErrorName: next?.value?.errorName ?? null, nextMessage: next?.value?.message ?? null,
     nothingPosted: h1 !== null && h1 === h2, requeried: requeried.ok === true, againLanded: again?.ok === true && !again.value.threw && landed.value?.landed === true};
   return span.end({...base, ok: fired && outcome.refusedNext && outcome.nothingPosted && outcome.requeried && outcome.againLanded, outcome});
 }
@@ -315,7 +313,7 @@ async function preActionAttempt(ctx, {lead, id, key}) {
   const postedAt = probe.answer?.postedAt, receivedAt = ctx.engine === 'cua' ? act.engine?.receivedAt : act.value.callAt;
   const refused = refusedWith(act.value, STILL_INTERACTING), nothingPosted = after.focus?.named === true && after.focus.valueHash === USER_HASH;
   const row = {ok: refused && nothingPosted, inCellMs: act.value.actMs, wallMs: act.wallMs, inputRoute: act.route,
-    outcome: {refused, errorName: act.value.errorName, nothingPosted, hidIdleMs: act.engine?.hidIdleMs ?? null,
+    outcome: {refused, errorName: act.value.errorName, message: act.value.message ?? null, nothingPosted, hidIdleMs: act.engine?.hidIdleMs ?? null,
       receiptAfterPostMs: Number.isFinite(postedAt) && Number.isFinite(receivedAt) ? receivedAt - postedAt : null}};
   const why = probeProblem(probe.answer) ?? detectionOff(act) ?? receiptValidity({engine: ctx.engine, postedAt, receivedAt: act.engine?.receivedAt, callAt: act.value.callAt});
   // A receipt before the post is answered by a later call; one past the debounce by an earlier one.

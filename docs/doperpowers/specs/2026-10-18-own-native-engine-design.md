@@ -237,7 +237,7 @@ Gates: the hosted macOS runner (`.github/ci-kit.yml`) builds the engine and runs
 
 Behaviour a person can verify on the mini, at the plugin release M5 ships (1–9) and M6 ships (10, with 1–4, 8 and 9 repeated; 5–7 cite M5's sitting, since the vendor engine no longer runs after M6):
 
-1. `cua doctor --json` shows `engine.selected: "cua"`, `engine.bundle` at the approved location, `engine.signature.identity` matching the configured identity, `engine.build` equal to `approved.json`'s, and `engine.permissions.accessibility`, `screenRecording` and `inputMonitoring` all `true` (the third added by the owner's decision of 2026-10-20, Decision Log, "second input sitting").
+1. `cua doctor --json` shows `engine.selected: "cua"`, `engine.bundle` at the approved location, `engine.signature.identityMatches: true` proving the configured-identity match without printing it, `engine.build` equal to `approved.json`'s, and `engine.permissions.accessibility`, `screenRecording` and `inputMonitoring` all `true` (the third added by the owner's decision of 2026-10-20, Decision Log, "second input sitting").
 2. In a session with the computer surface, `cua.getApp("com.apple.TextEdit")` asks one approval, answered by the harness in `verify.mjs --engine cua --bind com.apple.TextEdit` (and by the plugin's Elicitation hook in the owner's Claude Code sitting, M5), a second bind in the same connection asks nothing, and the processes holding cua's sockets and running under cua's runtime root are `cua-engine` and cua's Node: no `SkyComputerUseService` or `node_repl` started by cua (other installations' helpers, such as the ChatGPT app's own, are excluded by path).
 3. With a Finder window frontmost and a TextEdit document behind it, `textedit.click({element_index: <the text view>})` places the caret; the Finder window is still frontmost and still has keyboard focus (`cua-engine --probe focus` reports Finder as the focused application and the run's window as its focused window, and a probe keystroke moves Finder's selection to a run-owned file while the document's value is unchanged), and the result's `cua/inputRoute` is not 4.
 4. `app.typeText("한글 테스트 😀")` into a TextEdit document lands exactly, read back from the tree's `Value:`, with the Latin source active and with the Korean source active.
@@ -638,6 +638,8 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   Evidence: `m3/hold/README.md`.
 
 ## Decision Log
+
+- Decision (2026-10-22, M4 contracts refresh): `permissionsPending` carries `meta.permission: "accessibility" | "screenRecording"`, exposed as tool `_meta['cua/permission']`, so recovery arms only for Screen Recording and does not relaunch between the no-grants and Accessibility-only onboarding stages. This is diagnostic metadata, not a facade method change. Acceptance 1 now names the existing identity-safe `engine.signature.identityMatches: true`, as M3 implemented; no signing identity is emitted. The install signing options configure but do not themselves select the engine: `--engine-sign adhoc` pairs with `--engine` to force a CI build. The real-bundle proof is in `engine-swift`; sandbox-live retains its fake engine and both its installer and baseline preparation pin vendor so neither ever installs a harness engine.
 
 - Decision (2026-10-22, M4, coordinator ruling: no text-only observation fallback): Every observation keeps its screenshot; Accessibility without Screen Recording fails `permissionsPending` with the Screen Recording sentence. This follows vendor parity (F §4.8 and §15, gate inferred), and onboarding grants all three. The rejected alternative, an AX-only text observation with a screenshot-unavailable note, changes the facade and model-facing behavior for a state onboarding removes. This answers M1a.5 ruling (3); the owner has been told and may overrule.
 
@@ -1158,6 +1160,10 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   Date/Author: 2026-10-22, plan-executor for maws-3f.
 
 ## Outcomes & Retrospective
+
+### M4 in progress (2026-10-22)
+
+Offline implementation is in three isolated lanes: install/hosted bundle proof, staged onboarding and selection dependencies, and permission recovery. Operator documentation and engine-specific model rules are committed; the default remains vendor. No M4 live evidence has been collected and no mini access has occurred. Acceptance 8 will retain and classify item 1's environmental FAIL where reproduced (#198), with hosted Node 24 as suite authority, rather than claim an all-PASS milestone. The owner window and separately timed build/sign pre-step must be booked by the coordinator before any live proof.
 
 Pending for the initiative — written at finish. M1a's interim account (2026-10-20) follows; the full record is `docs/doperpowers/specs/2026-10-18-own-native-engine-m1a-report.md`.
 

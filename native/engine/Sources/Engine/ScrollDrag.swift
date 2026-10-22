@@ -158,7 +158,7 @@ extension Engine {
         try recordingRouteAdvice(route, app: app, meta: &meta) { meta in
           try deliverPointer(to: owner, route: route, activation: activation, activations: heldActivations,
                              foreground: route == .foreground ? ForegroundAssist(appPid: appPid) : nil,
-                             beforePosting: guarding.checkInFlight, post: { $0.postToPid($1) }, meta: &meta) {
+                             beforeActivating: guarding.checkInFlight, beforePosting: guarding.checkInFlight, post: { $0.postToPid($1) }, meta: &meta) {
             let active = NSRunningApplication(processIdentifier: owner)?.isActive == true
             return dragEvents(from: start.point, to: end.point, window: window, flags: clickFlags(route, targetActive: active))
           }

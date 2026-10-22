@@ -147,26 +147,30 @@ func withMeta(_ error: EngineError, _ meta: InputMeta) -> EngineError {
 /// click). The meta carries the route from the start, so a refusal names the route that failed.
 func deliverClick(_ target: ClickTarget, route: InputRoute, button: MouseButton, count: Int, activation: FakeActivation?,
                   activations: HeldActivations = HeldActivations(), foreground: ForegroundAssist? = nil, targetActive: () -> Bool,
-                  beforePosting: () throws -> Void = {}, post: (CGEvent, pid_t) -> Void, meta: inout InputMeta) throws {
+                  beforeActivating: () throws -> Void = {}, beforePosting: () throws -> Void = {}, post: (CGEvent, pid_t) -> Void,
+                  meta: inout InputMeta) throws {
   try deliverPointer(to: target.pid, route: route, activation: activation, activations: activations, foreground: foreground,
-                     beforePosting: beforePosting, post: post, meta: &meta) {
+                     beforeActivating: beforeActivating, beforePosting: beforePosting, post: post, meta: &meta) {
     clickEvents(target, button: button, count: count, flags: clickFlags(route, targetActive: targetActive()))
   }
 }
 
 /// A synthesized pointer action's delivery (a click's, a drag's), as `deliverClick` describes it: `events` makes the
 /// action's events once the app is prepared, and they are posted back to back to `pid`. `activations` is the engine's
-/// registry; the default, a registry of the action's own, shares with nothing (the unit tests').
+/// registry; the default, a registry of the action's own, shares with nothing (the unit tests'). `beforeActivating` (the
+/// in-flight intervention check) runs under the registry's lock, so a user event that lands while the action waits
+/// behind another holder's activation stops it before its activation and activation click; `beforePosting` runs again
+/// just before the events.
 func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation?, activations: HeldActivations = HeldActivations(),
-                    foreground: ForegroundAssist? = nil, beforePosting: () throws -> Void = {}, post: (CGEvent, pid_t) -> Void,
-                    meta: inout InputMeta, events: () -> [CGEvent]) throws {
+                    foreground: ForegroundAssist? = nil, beforeActivating: () throws -> Void = {}, beforePosting: () throws -> Void = {},
+                    post: (CGEvent, pid_t) -> Void, meta: inout InputMeta, events: () -> [CGEvent]) throws {
   meta.inputRoute = route
   var release: (() -> Bool)?
   defer { _ = release?() }  // every path out of the action, error or success, ends its lease
   if route == .activation, let activation {
     // A failed guard says how long it held; a shared activation runs none and leaves the meta's time in place (a
     // focusing click inside set_value's held activation).
-    release = try activations.acquire(pid: activation.pid, beforeActivating: {}, make: { activation }, meta: &meta)
+    release = try activations.acquire(pid: activation.pid, beforeActivating: beforeActivating, make: { activation }, meta: &meta)
   }
   // The interval is stamped as the events are posted, so an error after them (route 4's restore) still says they were.
   func send() throws {
@@ -310,7 +314,8 @@ extension Engine {
             try deliverClick(target, route: route, button: button, count: count, activation: activation, activations: heldActivations,
                              foreground: route == .foreground ? ForegroundAssist(appPid: appPid) : nil,
                              targetActive: { NSRunningApplication(processIdentifier: owner)?.isActive == true },
-                             beforePosting: guarding.checkInFlight, post: { $0.postToPid($1) }, meta: &meta)
+                             beforeActivating: guarding.checkInFlight, beforePosting: guarding.checkInFlight,
+                             post: { $0.postToPid($1) }, meta: &meta)
           }
         }
       }
@@ -350,7 +355,7 @@ extension Engine {
       if forced == nil, meta.inputRoute == .activation {
         try holdKeyFocus(app, pid: pid, application: application, guarding: guarding, context: context, meta: &meta)
       }
-      let release = try forcedActivation(forced, pid: pid, application: application, meta: &meta)
+      let release = try forcedActivation(forced, pid: pid, application: application, guarding: guarding, meta: &meta)
       defer { _ = release?() }  // every path out of the posting, error or success, ends a forced activation's lease
       let poster = EventPoster.toProcess(target, sourceState: privateSourceArg(args) ? .privateState : .hidSystemState)
       defer { context.connection.markActed(app) }  // a sequence stopped midway changed the app too
@@ -407,7 +412,7 @@ extension Engine {
         throw EngineError(name: "keyboardLayoutUnavailable", "Unable to get the current keyboard layout.")
       }
       meta.inputRoute = keyRoute(forced: forced)
-      let release = try forcedActivation(meta.inputRoute, pid: pid, application: application, meta: &meta)
+      let release = try forcedActivation(meta.inputRoute, pid: pid, application: application, guarding: guarding, meta: &meta)
       defer { _ = release?() }  // an inputSourceChanged mid-typing ends a forced activation's lease too
       let poster = EventPoster.toProcess(target, sourceState: privateSourceArg(args) ? .privateState : .hidSystemState)
       let initialSource = currentInputSourceID()
@@ -425,9 +430,10 @@ extension Engine {
 
   /// A spike cell's forced route 3 for keys: the app's activation for its primary window, leased before the keys;
   /// answers the lease's release. Nil for every other route, the default 2′ included.
-  private func forcedActivation(_ route: InputRoute?, pid: pid_t, application: AXUIElement, meta: inout InputMeta) throws -> (() -> Bool)? {
+  private func forcedActivation(_ route: InputRoute?, pid: pid_t, application: AXUIElement, guarding: InterventionGuard,
+                                meta: inout InputMeta) throws -> (() -> Bool)? {
     guard route == .activation else { return nil }
-    return try heldActivations.acquire(pid: pid, beforeActivating: {}, make: {
+    return try heldActivations.acquire(pid: pid, beforeActivating: guarding.checkInFlight, make: {
       FakeActivation(pid: pid, window: primaryWindow(of: application) ?? application)
     }, meta: &meta)
   }
@@ -492,6 +498,17 @@ func hitTest(window: AXUIElement, at point: CGPoint) -> AXUIElement? {
 /// deliver a click at the point to, whatever other apps' windows lie above it).
 func hitTest(application pid: pid_t, at point: CGPoint) -> AXUIElement? {
   hitTest(window: prepare(AXUIElementCreateApplication(pid)), at: point)
+}
+
+/// An element's advertised actions, read now; nil when the query failed (an element with no actions answers an empty
+/// list or no value, never an error).
+func establishedActionNames(of element: AXUIElement) -> [String]? {
+  var names: CFArray?
+  switch AXUIElementCopyActionNames(element, &names) {
+  case .success: return names as? [String] ?? []
+  case .noValue: return []
+  default: return nil
+  }
 }
 
 /// An element's advertised actions, read now.

@@ -94,7 +94,7 @@ struct ActivationSystem {
   var activationPoint: (AXUIElement) -> CGPoint? = { point(attribute($0, "AXActivationPoint")) }
   /// What the process answers at a global point (the activation click's hit-test), read from its application element.
   var hitAt: (pid_t, CGPoint) -> ActivationHit? = { pid, point in
-    hitTest(application: pid, at: point).map { ActivationHit(role: copyAttribute($0, kAXRoleAttribute).value as? String, actions: actionNames(of: $0)) }
+    hitTest(application: pid, at: point).map { ActivationHit(role: attribute($0, kAXRoleAttribute) as? String, actions: establishedActionNames(of: $0)) }
   }
   var now: () -> Double = monotonicMilliseconds
   var sleep: (Double) -> Void = { usleep(UInt32(max(0, $0) * 1000)) }
@@ -188,13 +188,21 @@ final class FakeActivation {
 
   /// What the activation click did, once the activation pair was posted; nil when none was.
   private(set) var click: ActivationClick?
+  /// The process's real-activation epoch (HeldActivations), read once the activation's subtype 1 is posted, or when it
+  /// finds the app already believing it has focus; nil when no registry tracks it.
+  var realEpoch: (() -> Int)?
+  /// The epoch that reading answered: a real activation or deactivation since makes this activation stale.
+  private(set) var epoch: Int?
 
   /// The vendor's safelyEnforceActiveState: nothing when the app believes it has focus; otherwise the activation pair,
   /// guarded so the user's app stays frontmost with its window on top. A throw after the pair (the guard's failure)
   /// leaves the activation in place — every caller's `defer { deactivate() }` undoes it on all of its own paths, so
   /// nothing here may undo it too, or a successful pair is undone before the caller's events are posted.
   func activate() throws {
-    guard !system.believesItHasFocus(pid) else { return }
+    guard !system.believesItHasFocus(pid) else {
+      epoch = realEpoch?()
+      return
+    }
     guard let user = system.frontmost(), user != pid else {
       postActivation()
       return
@@ -253,6 +261,7 @@ final class FakeActivation {
   private func postActivation() {
     post(subtype: NSEvent.EventSubtype.applicationActivated.rawValue)
     activated = true
+    epoch = realEpoch?()  // right after subtype 1: a real event from here on supersedes this activation
     let activationPoint = system.activationPoint(window)
     let system = system, pid = pid
     let decision = activationClickDecision(activationPoint, windowFrame: windowFrame, sparing: sparing) {

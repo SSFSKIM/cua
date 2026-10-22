@@ -76,4 +76,39 @@ final class ActivationClickTests: XCTestCase {
     let meta = InputMeta(ExecutionContext(connection: ConnectionState(id: 1, fd: -1), receivedAt: 1, hidIdleMs: 0, deadline: 2, lineage: nil))
     XCTAssertNil(meta.wire["activationClick"])
   }
+
+  /// A hit element whose action query failed is not known to be inert: a pressable group whose AXUIElementCopyActionNames
+  /// erred must not be clicked (the second review, finding 4).
+  func testAFailedActionQuerySkipsTheClick() throws {
+    XCTAssertEqual(decide(point, hit: ActivationHit(role: "AXGroup", actions: nil)), .actionsUnknown)
+    XCTAssertEqual(decide(point, hit: ActivationHit(role: "AXWindow", actions: nil)), .actionsUnknown)
+    XCTAssertEqual(decide(point, hit: ActivationHit(role: "AXButton", actions: nil)), .control, "a control by its role either way")
+    let seam = GuardSeam(frontmost: user)
+    seam.activationHit = ActivationHit(role: "AXGroup", actions: nil)
+    let subject = activation(seam)
+    try subject.activate()
+    XCTAssertEqual(seam.posts.map(\.kind), [.appKit(1)], "no left click")
+    XCTAssertEqual(subject.click, .actionsUnknown)
+  }
+
+  /// A per-action borrower runs the intervention check under the registry's lock, so a user event that lands while it
+  /// waits behind another holder's activation stops it before the activation and its click (the second review, finding 5).
+  func testAUserEventWhileAClickWaitsStopsItBeforeItsActivation() {
+    let seam = GuardSeam(frontmost: user)
+    let registry = HeldActivations()
+    var meta = InputMeta(ExecutionContext(connection: ConnectionState(id: 1, fd: -1), receivedAt: 1, hidIdleMs: 0, deadline: 2, lineage: nil))
+    var underLock = false
+    XCTAssertThrowsError(try deliverClick(ClickTarget(point: CGPoint(x: 300, y: 400), windowFrame: window, windowID: 41, pid: target),
+                                          route: .activation, button: .left, count: 1, activation: activation(seam), activations: registry,
+                                          targetActive: { false }, beforeActivating: {
+                                            underLock = registry.isLocked
+                                            throw userChanged("TextEdit")
+                                          }, post: seam.system.post, meta: &meta)) { error in
+      XCTAssertEqual((error as? EngineError)?.errorName, "userIntervened")
+    }
+    XCTAssertTrue(underLock, "the check runs once the registry's lock is held")
+    XCTAssertTrue(seam.posts.isEmpty, "no activation, no activation click, no click")
+    XCTAssertNil(meta.startedAt)
+    XCTAssertEqual(registry.holders(target), 0)
+  }
 }

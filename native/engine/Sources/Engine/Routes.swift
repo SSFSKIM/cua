@@ -220,10 +220,11 @@ func clickablePoint(frame: CGRect?, visibleIn bounds: CGRect?) -> CGPoint? {
   return CGPoint(x: visible.midX, y: visible.midY)
 }
 
-/// What the hit-test at the window's AXActivationPoint answered: the element's role and its advertised actions.
+/// What the hit-test at the window's AXActivationPoint answered: the element's role and its advertised actions, nil
+/// when the query for them failed (so nothing says the element is not pressable).
 struct ActivationHit: Equatable {
   let role: String?
-  let actions: [String]
+  let actions: [String]?
 }
 
 /// What route 3's activation click did (the result's meta `activationClick`): posted, or skipped and why.
@@ -233,6 +234,7 @@ enum ActivationClick: String, Equatable {
   case outsideFrame   // the point lies outside the window's frame (Chrome's, U13), or the frame is unknown
   case spared         // the point lies in the target of a click with another button than the left
   case control        // the hit-test there answered a control, or an element not known to be inert
+  case actionsUnknown // the hit-test answered an element whose actions could not be read
   case hitTestFailed  // the hit-test there answered nothing
 }
 
@@ -244,8 +246,8 @@ private let clickInvokedActions: Set<String> = ["AXPress", "AXPick", "AXConfirm"
 
 /// Whether a left click at the hit element invokes nothing: an inert role advertising no click-invoked action.
 func activationPointIsInert(_ hit: ActivationHit) -> Bool {
-  guard let role = hit.role, inertActivationRoles.contains(role) else { return false }
-  return clickInvokedActions.isDisjoint(with: hit.actions)
+  guard let role = hit.role, inertActivationRoles.contains(role), let actions = hit.actions else { return false }
+  return clickInvokedActions.isDisjoint(with: actions)
 }
 
 /// Whether route 3's activation click goes at the window's AXActivationPoint (maws-3f's ruling, 2026-10-22, on the review
@@ -261,7 +263,8 @@ func activationClickDecision(_ activationPoint: CGPoint?, windowFrame: CGRect?, 
   guard let windowFrame, windowFrame.contains(activationPoint) else { return .outsideFrame }
   if let sparing, sparing.contains(activationPoint) { return .spared }
   guard let found = hit() else { return .hitTestFailed }
-  return activationPointIsInert(found) ? .posted : .control
+  if activationPointIsInert(found) { return .posted }
+  return found.actions == nil && found.role.map(inertActivationRoles.contains) == true ? .actionsUnknown : .control
 }
 
 /// What a type_text does with its text (the spec's Design, "Text").

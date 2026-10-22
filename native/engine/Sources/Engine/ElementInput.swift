@@ -218,7 +218,7 @@ extension Engine {
                        activations: heldActivations,
                        foreground: route == .foreground ? ForegroundAssist(appPid: appPid) : nil,
                        targetActive: { NSRunningApplication(processIdentifier: owner)?.isActive == true },
-                       beforePosting: guarding.checkInFlight, post: { $0.postToPid($1) }, meta: &meta)
+                       beforeActivating: guarding.checkInFlight, beforePosting: guarding.checkInFlight, post: { $0.postToPid($1) }, meta: &meta)
     }
   }
 

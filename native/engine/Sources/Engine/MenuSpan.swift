@@ -150,18 +150,20 @@ final class ActivationSpan: @unchecked Sendable {
 /// activation another still relies on: a span ending mid-click waits for the click's release, and a click that began
 /// before a span leaves the span's process active.
 ///
-/// A real activation or deactivation of a held process (the user brings the app forward, or leaves it) clears its
-/// synthetic active state, as the vendor's tap updates its beliefs on real activation events (F §5.5, FUN_10072fd24):
-/// `realActivationChanged` marks the activation stale, the next acquire or `refresh` runs a new one in its place, and a
-/// stale activation's last release posts no deactivation, the system having withdrawn the state already.
+/// A real activation or deactivation of a process (the user brings the app forward, or leaves it) clears its synthetic
+/// active state, as the vendor's tap updates its beliefs on real activation events (F §5.5, FUN_10072fd24). Each one
+/// bumps the process's real-activation epoch (`realActivationChanged`, whether or not the process is held yet). An
+/// activation reads the epoch right after its subtype 1 is posted, and it is stale exactly when the epoch has moved
+/// since: a real event before the post leaves it current, one after makes it stale, however the event interleaves with
+/// the activation's AX reads, guard or hit-test. A stale activation is replaced by the next acquire or `refresh`, and
+/// never deactivated, on its last release or its failed guard's cleanup alike, the system having withdrawn its state.
 final class HeldActivations: @unchecked Sendable {
   private let lock = NSLock()
   private var held: [pid_t: (activation: FakeActivation, holders: Int)] = [:]
-  /// The processes held now and those a real activation change made stale, behind their own lock: the workspace's
-  /// notifications mark them from the main thread without waiting on an activation's guard under `lock`.
-  private let staleLock = NSLock()
-  private var tracked: Set<pid_t> = []
-  private var stale: Set<pid_t> = []
+  /// The real-activation epochs, behind their own lock: the workspace's notifications bump them from the main thread
+  /// without waiting on an activation's guard under `lock`, and an activation reads its process's under its guard.
+  private let epochLock = NSLock()
+  private var epochs: [pid_t: Int] = [:]
 
   /// The holders of `pid`'s activation (the unit tests' view).
   func holders(_ pid: pid_t) -> Int {
@@ -177,37 +179,30 @@ final class HeldActivations: @unchecked Sendable {
     return false
   }
 
-  /// A real activation or deactivation of `pid` was observed: a held activation of it is stale from now on.
+  /// A real activation or deactivation of `pid` was observed.
   func realActivationChanged(_ pid: pid_t) {
-    staleLock.lock()
-    defer { staleLock.unlock() }
-    if tracked.contains(pid) { stale.insert(pid) }
+    epochLock.lock()
+    defer { epochLock.unlock() }
+    epochs[pid, default: 0] += 1
   }
 
-  private func track(_ pid: pid_t, _ held: Bool) {
-    staleLock.lock()
-    defer { staleLock.unlock() }
-    stale.remove(pid)
-    if held { tracked.insert(pid) } else { tracked.remove(pid) }
+  private func epoch(_ pid: pid_t) -> Int {
+    epochLock.lock()
+    defer { epochLock.unlock() }
+    return epochs[pid] ?? 0
   }
 
-  /// Whether `pid`'s activation is stale, clearing the mark.
-  private func takeStale(_ pid: pid_t) -> Bool {
-    staleLock.lock()
-    defer { staleLock.unlock() }
-    return stale.remove(pid) != nil
-  }
-
-  private func markStale(_ pid: pid_t) {
-    staleLock.lock()
-    defer { staleLock.unlock() }
-    stale.insert(pid)
+  /// Whether a real activation or deactivation of its process came after the activation read the epoch.
+  private func isStale(_ activation: FakeActivation) -> Bool {
+    activation.epoch.map { $0 != epoch(activation.pid) } ?? false
   }
 
   /// Runs a new activation, its guard time and click into `meta` (a failed guard's too); a failed guard throws with it
-  /// undone.
+  /// undone, unless a real event already withdrew it.
   private func run(_ make: () -> FakeActivation, meta: inout InputMeta) throws -> FakeActivation {
     let activation = make()
+    let pid = activation.pid
+    activation.realEpoch = { [self] in epoch(pid) }
     do {
       defer {
         meta.activationGuardMs = activation.guardMs ?? meta.activationGuardMs
@@ -215,7 +210,7 @@ final class HeldActivations: @unchecked Sendable {
       }
       try activation.activate()
     } catch {
-      activation.deactivate()
+      if !isStale(activation) { activation.deactivate() }
       throw error
     }
     return activation
@@ -231,19 +226,10 @@ final class HeldActivations: @unchecked Sendable {
     defer { lock.unlock() }
     try beforeActivating()
     if let shared = held[pid] {
-      if takeStale(pid) {
-        do {
-          held[pid] = (try run(make, meta: &meta), shared.holders + 1)
-        } catch {
-          markStale(pid)
-          throw error
-        }
-      } else {
-        held[pid] = (shared.activation, shared.holders + 1)
-      }
+      let activation = isStale(shared.activation) ? try run(make, meta: &meta) : shared.activation
+      held[pid] = (activation, shared.holders + 1)
     } else {
       held[pid] = (try run(make, meta: &meta), 1)
-      track(pid, true)
     }
     let once = NSLock()
     var released = false
@@ -257,18 +243,13 @@ final class HeldActivations: @unchecked Sendable {
   }
 
   /// For a holder that already holds `pid`: when its activation went stale, `beforeActivating`, then `make()`'s run in its
-  /// place (a failed guard throws and leaves it stale); otherwise nothing.
+  /// place (a failed guard throws and leaves the stale one held); otherwise nothing.
   func refresh(pid: pid_t, beforeActivating: () throws -> Void, make: () -> FakeActivation, meta: inout InputMeta) throws {
     lock.lock()
     defer { lock.unlock() }
-    guard let entry = held[pid], takeStale(pid) else { return }
-    do {
-      try beforeActivating()
-      held[pid] = (try run(make, meta: &meta), entry.holders)
-    } catch {
-      markStale(pid)
-      throw error
-    }
+    guard let entry = held[pid], isStale(entry.activation) else { return }
+    try beforeActivating()
+    held[pid] = (try run(make, meta: &meta), entry.holders)
   }
 
   private func release(_ pid: pid_t) -> Bool {
@@ -280,14 +261,12 @@ final class HeldActivations: @unchecked Sendable {
       return true
     }
     held[pid] = nil
-    let wasStale = takeStale(pid)
-    track(pid, false)
-    return wasStale || entry.activation.deactivate()
+    return isStale(entry.activation) || entry.activation.deactivate()
   }
 }
 
-/// Marks a held process's activation stale on every real activation or deactivation the workspace reports (`center`,
-/// the workspace's notification center in the engine; the notifications arrive on the main run loop).
+/// Bumps a process's real-activation epoch on every real activation or deactivation the workspace reports (`center`, the
+/// workspace's notification center in the engine; the notifications arrive on the main run loop).
 func observeRealActivations(_ center: NotificationCenter, registry: HeldActivations) -> [NSObjectProtocol] {
   [NSWorkspace.didActivateApplicationNotification, NSWorkspace.didDeactivateApplicationNotification].map { name in
     center.addObserver(forName: name, object: nil, queue: nil) { note in

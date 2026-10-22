@@ -255,8 +255,10 @@ extension Engine {
       // Waiting for the lock took time: a user event since the guard was read stops the paste before anything is done.
       try target.guarding.checkInFlight()
       // Route 3's activation leased for the paste (shared when a hold keeps the process active); every path out, error
-      // or success, ends the lease. A guard that failed still says how long it held.
-      let release = try heldActivations.acquire(pid: target.pid, beforeActivating: {}, make: {
+      // or success, ends the lease. A guard that failed still says how long it held. The in-flight check runs again once
+      // the registry's lock is held: a user event while the paste waited behind another holder's activation stops it
+      // before its activation.
+      let release = try heldActivations.acquire(pid: target.pid, beforeActivating: target.guarding.checkInFlight, make: {
         FakeActivation(pid: target.pid, window: primaryWindow(of: target.application) ?? target.application, system: pasteActivation)
       }, meta: &meta)
       defer { _ = release() }

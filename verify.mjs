@@ -60,7 +60,7 @@ import {REPL_HOST_META_KEY} from './src/repl-host/identity.mjs';
 import {SEATBELT_EXEC} from './src/sandbox/seatbelt.mjs';
 import {
   approvalsByBehaviour, attestationProblem, bindRefusal, boundedError, classifyOwnHostTree, classifyProcesses, cuaRootProcesses, descendants, engineSocketPeers,
-  isAppApproval, lsappinfoPid, nativeSocketStep, outsideAnchorGroup, procTable, psRows, socketHolders, survivors, unixSocketEnds, unixSockets,
+  isAppApproval, isLifecycleRejection, lsappinfoPid, nativeSocketStep, outsideAnchorGroup, procTable, psRows, socketHolders, survivors, unixSocketEnds, unixSockets,
 } from './scripts/probe/lib.mjs';
 import {approvedEngineFacts, cuaNodes as cuaNodesOf, LaneUsageError, pinLane, selectLane} from './scripts/probe/pinned-engine.mjs';
 import {readWindows} from './scripts/accept/window-close.mjs';
@@ -125,7 +125,7 @@ if (pin) report.engine = {engine: pin.engine, pinnedBy: pin.pinnedBy, host: sele
 // Every js result attests the pinned engine. Any mismatch stops the run: nothing more is sent (no bind is approved on an
 // engine the lane did not mean), the serve is closed through the cleanup below, and the report says why.
 const attest = result => {
-  if (!expected) return;
+  if (!expected || isLifecycleRejection(result)) return;
   report.engine.attested++;
   const problem = attestationProblem(result?._meta, expected);
   if (problem) throw new Error(`refused on the attestation: ${problem}`);

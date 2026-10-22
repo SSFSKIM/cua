@@ -57,7 +57,7 @@ import {openConnection} from '../../src/mcp/connection.mjs';
 import {homeLayout, realHome} from '../../src/runtime/layout.mjs';
 import {resolveRuntime} from '../../src/runtime/manifest.mjs';
 import {STORE_RELATIVE} from '../../src/secrets/store.mjs';
-import {attestationProblem} from '../probe/lib.mjs';
+import {attestationProblem, isLifecycleRejection} from '../probe/lib.mjs';
 import {expectedAttestation} from '../probe/pinned-engine.mjs';
 
 const MODES = ['scoped', 'default', 'disabled'];
@@ -86,7 +86,7 @@ async function connect({home, env, expected = null}) {
   await request('initialize', {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'own-sandbox-acceptance', version: '0'}});
   const js = async code => {
     const result = (await request('tools/call', {name: 'js', arguments: {code: cellCode(code)}})).result;
-    const problem = expected && attestationProblem(result._meta, expected);
+    const problem = expected && !isLifecycleRejection(result) && attestationProblem(result._meta, expected);
     if (problem) throw new Error(`refused on the attestation: ${problem}`);
     const texts = (result.content ?? []).filter(c => c.type === 'text').map(c => c.text);
     if (result.isError) throw new Error(`cell failed: ${texts[0]?.slice(0, 2000)}`);

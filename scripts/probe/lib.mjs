@@ -132,6 +132,16 @@ export function attestationProblem(meta, expected) {
   return `the result attested ${show(attested)} where ${show(expected)} was expected`;
 }
 
+// Whether a work result came from the connection lifecycle's rejection path (src/mcp/server.mjs rejectionResult), where
+// no runtime work ran, so there is no engine to attest. The provenance mark is the missing `cua/taskId`: every result
+// the runtime answered carries one (runWork's success path, beside `cua/nativeEngine`). The rejection's shape (isError,
+// {status: 'error', code} with a code of src/mcp/task.mjs) must also match, but the code alone never exempts: a result
+// with `cua/taskId` must attest whatever its code. Every other result, an error or not, must attest.
+const LIFECYCLE_CODES = new Set(['task_ending', 'connection_failed', 'connection_closing', 'cancelled', 'completion_timeout', 'completion_failed']);
+export const isLifecycleRejection = result => result?.isError === true
+  && result.structuredContent?.status === 'error' && LIFECYCLE_CODES.has(result.structuredContent.code)
+  && !Object.hasOwn(result._meta ?? {}, 'cua/taskId');
+
 // The approval either engine's policy asks before it first uses `app` (a bundle id) in a connection, and nothing else:
 // the message names the app, the form asks for no field, the meta is the computer-use connector's and its tool
 // parameters are exactly the app (src/services/engine/policy.mjs approvalRequest; the vendor's, which

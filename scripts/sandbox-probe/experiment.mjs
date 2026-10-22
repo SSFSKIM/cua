@@ -43,7 +43,7 @@ import {fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
 import {StdioClient, textOf} from '../browser-parity/mcp.mjs';
 import {resolveRuntime} from '../../src/runtime/manifest.mjs';
-import {attestationProblem, ENGINE_META_KEY} from '../probe/lib.mjs';
+import {attestationProblem, ENGINE_META_KEY, isLifecycleRejection} from '../probe/lib.mjs';
 import {expectedAttestation} from '../probe/pinned-engine.mjs';
 import {auditExchange} from './app-server.mjs';
 import {createHelperTracker, helperExecutable, helperLauncherIs, helperPids, isAlive, ownedBySessionTmp} from './helpers.mjs';
@@ -110,7 +110,7 @@ const SCREENSHOT = ['Finder getScreenshot', `const app = await cua.getApp(${JSON
 // once: that call throws, and every later one throws again without sending, so no further cell reaches the engine; the
 // caller's teardown and result still follow. The attestation is judged on the raw reply, before its output is decoded;
 // output that does not decode is `undecodable`, apart from a call that failed in transport (`transport`), which has no
-// reply to attest.
+// reply to attest, and the connection lifecycle's own rejection (isLifecycleRejection), which no runtime work answered.
 export function cellRunner({call, expected = null, isCancelled = () => false, results, ev = () => {}}) {
   let refusal = null;
   return async (name, body) => {
@@ -120,7 +120,7 @@ export function cellRunner({call, expected = null, isCancelled = () => false, re
     let reply = null, transport = null;
     try { reply = await call(cell(body)); } catch (error) { transport = error.message; }
     // The reply's attestation is judged before anything in it is decoded, so output that cannot be read never hides it.
-    const problem = expected && reply ? attestationProblem(reply._meta, expected) : null;
+    const problem = expected && reply && !isLifecycleRejection(reply) ? attestationProblem(reply._meta, expected) : null;
     let result;
     if (!reply) result = {ok: false, transport: transport ?? 'no reply'};
     else {

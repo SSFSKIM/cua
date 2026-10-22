@@ -26,7 +26,7 @@ import {parseArgs} from 'node:util';
 import {defaultHome} from '../src/runtime/layout.mjs';
 import {resolveRuntime} from '../src/runtime/manifest.mjs';
 import {settingsFrom} from '../src/mcp/server.mjs';
-import {attestationProblem, descendants, leftoverProcesses, unixSocketEnds, unixSockets} from './probe/lib.mjs';
+import {attestationProblem, descendants, isLifecycleRejection, leftoverProcesses, unixSocketEnds, unixSockets} from './probe/lib.mjs';
 import {approvedEngineFacts, LaneUsageError, pinLane, selectLane} from './probe/pinned-engine.mjs';
 
 const CLI = fileURLToPath(new URL('../bin/cua.mjs', import.meta.url));
@@ -75,7 +75,8 @@ function connect() {
       if (msg.method === 'elicitation/create') declined++;
       return send({jsonrpc: '2.0', id: msg.id, result: {action: 'decline'}});
     }
-    if (jsCalls.has(msg.id) && msg.result) {
+    // A call the task lifecycle rejected (scenario 2's late call, scenario 3's stuck one) never reached the runtime.
+    if (jsCalls.has(msg.id) && msg.result && !isLifecycleRejection(msg.result)) {
       report.engine && report.engine.attested++;
       const problem = expected && attestationProblem(msg.result._meta, expected);
       if (problem) return refuse(problem, {server, exited});

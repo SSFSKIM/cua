@@ -4,7 +4,7 @@
 // selection alone). Pure pieces, testable without a GUI or an engine: the reply check the live TextEdit fixture wraps
 // its sessions in, the ledger that observes its approvals by behaviour (per bind, per connection), and what items 3, 4
 // and 8 judge from doctor's engine row, verify's report and probe-lifecycle's.
-import {attestationProblem, isAppApproval} from '../probe/lib.mjs';
+import {attestationProblem, isAppApproval, isLifecycleRejection} from '../probe/lib.mjs';
 
 const result = (name, status, detail) => ({name, status, detail});
 
@@ -23,7 +23,8 @@ export class AttestationRefusal extends Error {
 // Wraps `session.js` (and `dispatch`, the pause wrapper's undelayed send, scripts/mini-pause.mjs pausing) so every reply
 // that carries a result is checked against `expected` ({engine, version, build}): a match calls `onAttested()`; the first
 // mismatch calls `onRefused(problem)` once and throws an AttestationRefusal, and every later call throws it again
-// without sending. A reply with no result (a transport timeout, a JSON-RPC error) has nothing to attest and passes.
+// without sending. A reply with no result (a transport timeout, a JSON-RPC error) or the connection lifecycle's own
+// rejection (isLifecycleRejection: no runtime work ran) has nothing to attest and passes.
 // With no `expected` (no engine pinned) the session is returned as it is.
 export function attestReplies(session, {expected, onAttested = () => {}, onRefused = () => {}}) {
   if (!expected) return session;
@@ -31,7 +32,7 @@ export function attestReplies(session, {expected, onAttested = () => {}, onRefus
   const checked = send => async (...args) => {
     if (refusal) throw refusal;
     const reply = await send(...args);
-    if (reply?.result) {
+    if (reply?.result && !isLifecycleRejection(reply.result)) {
       const problem = attestationProblem(reply.result._meta, expected);
       if (problem) {
         refusal = new AttestationRefusal(problem);

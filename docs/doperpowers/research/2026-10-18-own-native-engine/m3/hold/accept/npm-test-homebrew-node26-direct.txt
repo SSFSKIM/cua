@@ -1,0 +1,17 @@
+2445:✖ macOS: a 192-byte socket path connects, bytes both ways, and the server sees one live descendant peer throughout (59.5145ms)
+2732:ℹ through M0: 0 due; 0 executable-linked; 0 uncovered (not live parity evidence)
+2733:ℹ PENDING M1: 114 rows; excluded from coverage
+2734:ℹ PENDING M2: 39 rows; excluded from coverage
+2735:ℹ PENDING M3: 338 rows; excluded from coverage
+2736:ℹ PENDING M4: 51 rows; excluded from coverage
+4043:✖ the operator's answers: one reader for the command, so lines that arrive together are each an answer; the end of input is no (2.271708ms)
+4167:ℹ tests 4145
+4168:ℹ suites 0
+4169:ℹ pass 4071
+4170:ℹ fail 2
+4171:ℹ cancelled 0
+4172:ℹ skipped 72
+4173:ℹ todo 0
+4174:ℹ duration_ms 81067.488292
+4179:✖ macOS: a 192-byte socket path connects, bytes both ways, and the server sees one live descendant peer throughout (59.5145ms)
+4204:✖ the operator's answers: one reader for the command, so lines that arrive together are each an answer; the end of input is no (2.271708ms)

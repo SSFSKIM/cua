@@ -1,0 +1,124 @@
+{
+ "release": "26.928.40906-darwin-arm64",
+ "at": "2026-10-22T11:08:12.769Z",
+ "engine": {
+  "engine": "cua",
+  "pinnedBy": "--engine",
+  "host": "cua",
+  "expected": {
+   "engine": "cua",
+   "version": "0.1.0",
+   "build": "0c363f8f4512b24891ce22af50f6515f99af4b008bee09770245de03b8c7e80d"
+  },
+  "attested": 7,
+  "abandonedUnattested": 1
+ },
+ "cancelDuringJs": {
+  "cancelAtMs": 947,
+  "reply": {
+   "atMs": 3456,
+   "isError": false,
+   "text": "cancelled:finished"
+  },
+  "stateSeenByNextCell": "cancelled:finished",
+  "endTask": {
+   "status": "ended",
+   "ended": true,
+   "taskId": "43dba14d-b092-4afe-a81f-6d93baa17bb0"
+  },
+  "close": {
+   "code": 0,
+   "signal": null,
+   "atMs": 3668,
+   "closeMs": 192,
+   "elicitationsDeclined": 0,
+   "runtimeProcessesAfterExit": 0,
+   "leftAfterExit": [],
+   "engineSocketHeldAfterExit": [],
+   "engineSocketClientsUnseen": 0
+  }
+ },
+ "endTaskWithWorkInFlight": {
+  "endAtMs": 712,
+  "work": {
+   "atMs": 2421,
+   "isError": false,
+   "text": "inflight:finished"
+  },
+  "lateWork": {
+   "atMs": 715,
+   "isError": true,
+   "structured": {
+    "status": "error",
+    "code": "task_ending"
+   },
+   "text": "cua: the current task is ending; send new work after end_task returns\n{\"status\":\"error\",\"code\":\"task_ending\"}"
+  },
+  "endTask": {
+   "atMs": 2425,
+   "isError": false,
+   "structured": {
+    "status": "ended",
+    "ended": true,
+    "taskId": "d46073f9-6f6f-42d8-bf01-d8763b1a9ae7"
+   },
+   "text": "{\"status\":\"ended\",\"ended\":true,\"taskId\":\"d46073f9-6f6f-42d8-bf01-d8763b1a9ae7\"}"
+  },
+  "close": {
+   "code": 0,
+   "signal": null,
+   "atMs": 2626,
+   "closeMs": 201,
+   "elicitationsDeclined": 0,
+   "runtimeProcessesAfterExit": 0,
+   "leftAfterExit": [],
+   "engineSocketHeldAfterExit": [],
+   "engineSocketClientsUnseen": 0
+  }
+ },
+ "uncertainCompletion": {
+  "endTask": {
+   "atMs": 5764,
+   "isError": true,
+   "structured": {
+    "status": "error",
+    "ended": false,
+    "code": "completion_timeout",
+    "stage": "quiescence",
+    "nativeCleanup": "unconfirmed"
+   },
+   "text": "cua: task completion did not finish within its deadline; this connection is closed\n{\"status\":\"error\",\"ended\":false,\"code"
+  },
+  "work": {
+   "atMs": 5764,
+   "isError": true,
+   "structured": {
+    "status": "error",
+    "code": "connection_failed"
+   },
+   "text": "cua: this connection failed and accepts no more work; start a new connection\n{\"status\":\"error\",\"code\":\"connection_failed"
+  },
+  "exit": {
+   "code": 1,
+   "signal": null,
+   "atMs": 7929
+  },
+  "runtimeProcessesAfterExit": 0,
+  "leftAfterExit": [],
+  "engineSocketHeldAfterExit": [],
+  "engineSocketClientsUnseen": 0,
+  "elicitationsDeclined": 0,
+  "serverStderr": "cua serve: connection failed (completion_timeout, quiescence); tearing down its runtime\ncua serve: runtime teardown needed SIGTERM; every owned process is gone"
+ },
+ "idleClose": {
+  "code": 0,
+  "signal": null,
+  "atMs": 577,
+  "closeMs": 167,
+  "elicitationsDeclined": 0,
+  "runtimeProcessesAfterExit": 0,
+  "leftAfterExit": [],
+  "engineSocketHeldAfterExit": [],
+  "engineSocketClientsUnseen": 0
+ }
+}

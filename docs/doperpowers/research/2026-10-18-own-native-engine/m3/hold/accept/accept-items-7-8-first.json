@@ -1,0 +1,97 @@
+{
+  "scenario": "accept-native",
+  "status": "FAIL",
+  "options": {
+    "liveSecrets": false,
+    "liveTextedit": true,
+    "callerSecretKey": false,
+    "items": [
+      7,
+      8
+    ],
+    "engine": {
+      "engine": "cua",
+      "pinnedBy": "--engine"
+    }
+  },
+  "release": null,
+  "home": "$CUA_HOME",
+  "host": "darwin-arm64",
+  "node": "v26.4.0",
+  "startedAt": "2026-10-22T10:50:01.438Z",
+  "finishedAt": "2026-10-22T10:50:12.409Z",
+  "summary": {
+    "7": "FAIL",
+    "8": "FAIL"
+  },
+  "connectionDirectoriesLeft": 0,
+  "items": [
+    {
+      "id": 7,
+      "title": "Native input substitution: methods, rejection before dispatch, store refusals",
+      "status": "FAIL",
+      "checks": [
+        {
+          "name": "exact reference expansion per method, ordinary input, invalid/missing/refused-file rejection before dispatch, value-free errors, unsupported shapes",
+          "status": "FAIL",
+          "detail": "npm test was not run in item 1; see test/services-sky.test.mjs, test/secrets-reference.test.mjs, test/services-sky-trust.test.mjs"
+        },
+        {
+          "name": "the store reads only a regular, owned, 0600 file without following links; every refusal is classified and value-free",
+          "status": "FAIL",
+          "detail": "npm test was not run in item 1; see test/secrets-store.test.mjs"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Task lifecycle: IDs, end_task outcomes, fail-closed completion; native cancel/approval behaviour observed",
+      "status": "FAIL",
+      "checks": [
+        {
+          "name": "lifecycle state machine, races, deadlines, EOF, elicitation routing, bounded teardown",
+          "status": "FAIL",
+          "detail": "npm test was not run in item 1; see test/mcp-lifecycle.test.mjs, test/mcp-server.test.mjs, test/mcp-upstream.test.mjs, test/serve-cli.test.mjs"
+        },
+        {
+          "name": "observed: cancel does not stop a running cell (it replies normally)",
+          "status": "PASS",
+          "detail": "as documented in docs/evidence/m3-mcp-lifecycle.md"
+        },
+        {
+          "name": "observed: end_task after a cancelled cell ends",
+          "status": "PASS",
+          "detail": "as documented in docs/evidence/m3-mcp-lifecycle.md"
+        },
+        {
+          "name": "observed: end_task with work in flight rejects new work as task_ending and ends after it",
+          "status": "FAIL",
+          "detail": "differs from the documented behaviour"
+        },
+        {
+          "name": "observed: uncertain completion fails closed (completion_timeout, native cleanup unconfirmed, exit 1, no runtime left)",
+          "status": "FAIL",
+          "detail": "differs from the documented behaviour"
+        },
+        {
+          "name": "observed: idle EOF closes cleanly with no runtime left",
+          "status": "FAIL",
+          "detail": "differs from the documented behaviour"
+        },
+        {
+          "name": "probe-lifecycle pinned the cua engine, every result attested it, and no closed connection holds its socket",
+          "status": "FAIL",
+          "detail": "refused on the attestation: no cua/nativeEngine attestation on the result; endTaskWithWorkInFlight: no reading of the engine socket after the close; uncertainCompletion: no reading of the engine socket after the close; idleClose: no reading of the engine socket after the close"
+        },
+        {
+          "name": "per-connection app approvals observed by behaviour",
+          "status": "PASS",
+          "detail": "connection A: 2 binds, asked 1, 0; accepted 1, 0; declined 0; connection B: 1 bind, asked 1; accepted 1; declined 0"
+        }
+      ],
+      "evidence": {
+        "cancelReplyMs": 2509
+      }
+    }
+  ]
+}

@@ -1,0 +1,57 @@
+== vc run-1 start 10:34:25Z
+== vc run-1 exit 0 10:36:07Z
+complete; leftovers: {"serves":0,"textEditRunning":false}
+front=com.apple.Terminal
+input=com.apple.keylayout.ABC
+secagent=
+load={ 2.80 2.81 2.77 }
+== cc run-1 start 10:36:08Z
+== cc run-1 exit 0 10:37:49Z
+complete; leftovers: {"serves":0,"textEditRunning":false}
+front=com.apple.Terminal
+input=com.apple.keylayout.ABC
+secagent=
+load={ 3.26 2.94 2.82 }
+== vv run-2 start 10:37:50Z
+== vv run-2 exit 0 10:39:52Z
+complete; leftovers: {"serves":0,"textEditRunning":false}
+front=com.apple.Terminal
+input=com.apple.keylayout.ABC
+secagent=
+load={ 3.11 2.96 2.84 }
+== vc run-2 start 10:39:53Z
+== vc run-2 exit 0 10:41:35Z
+complete; leftovers: {"serves":0,"textEditRunning":false}
+front=com.apple.Terminal
+input=com.apple.keylayout.ABC
+secagent=
+load={ 2.41 2.76 2.77 }
+== cc run-2 start 10:41:36Z
+== cc run-2 exit 0 10:43:15Z
+complete; leftovers: {"serves":0,"textEditRunning":false}
+front=com.apple.Terminal
+input=com.apple.keylayout.ABC
+secagent=
+load={ 1.69 2.46 2.66 }
+== vv run-3 start 10:43:15Z
+== vv run-3 exit 0 10:45:10Z
+complete; leftovers: {"serves":0,"textEditRunning":false}
+front=com.apple.Terminal
+input=com.apple.keylayout.ABC
+secagent=
+load={ 2.20 2.37 2.59 }
+== vc run-3 start 10:45:11Z
+== vc run-3 exit 0 10:46:52Z
+complete; leftovers: {"serves":0,"textEditRunning":false}
+front=com.apple.Terminal
+input=com.apple.keylayout.ABC
+secagent=
+load={ 2.12 2.25 2.51 }
+== cc run-3 start 10:46:54Z
+== cc run-3 exit 0 10:48:39Z
+complete; leftovers: {"serves":0,"textEditRunning":false}
+front=com.apple.Terminal
+input=com.apple.keylayout.ABC
+secagent=
+load={ 2.31 2.31 2.50 }
+PHASE1 DONE 10:48:40Z

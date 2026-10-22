@@ -1,0 +1,121 @@
+{
+  "scenario": "accept-native",
+  "status": "FAIL",
+  "options": {
+    "liveSecrets": false,
+    "liveTextedit": true,
+    "callerSecretKey": false,
+    "items": [
+      1,
+      7,
+      8
+    ],
+    "engine": {
+      "engine": "cua",
+      "pinnedBy": "--engine"
+    }
+  },
+  "release": null,
+  "home": "$CUA_HOME",
+  "host": "darwin-arm64",
+  "node": "v24.22.0",
+  "startedAt": "2026-10-22T11:17:50.957Z",
+  "finishedAt": "2026-10-22T11:19:26.323Z",
+  "summary": {
+    "1": "FAIL",
+    "7": "FAIL",
+    "8": "FAIL"
+  },
+  "connectionDirectoriesLeft": 0,
+  "items": [
+    {
+      "id": 1,
+      "title": "npm test",
+      "status": "FAIL",
+      "checks": [
+        {
+          "name": "npm test",
+          "status": "FAIL",
+          "detail": "exit 1, 11 failed, 0 cancelled; 11 failed (a start-up failure (MAWS does not trust the probe) exits nonzero, stops MAWS and removes the scratch directories; SIGINT goes through the one shutdown path: MAWS stopped, scratch removed, report written, nonzero exit; SIGTERM goes through the one shutdown path: MAWS stopped, scratch removed, report written, nonzero exit; macOS: a 192-byte socket path connects, bytes both ways, and the server sees one live descendant peer throughout; Linux prepare discovers H4 through the fresh preparation helper after clean clone setup; prepare preserves explicit diagnostic options and refuses a dirty clone before preparation; all ordinary launches clear ambient Node overrides and preserve private scratch HOME; a probe runs fresh children under the launcher, kills a hung one at the bound with its whole tree, and leaves nothing; the CLI accepts the documented options, writes its result and refuses anything else; a probe records its HOME class, its own scratch HOME's path, the Node, the platform and the launcher's identity; under --home real the child gets the account's HOME and the result records only the class), 72 skipped, 0 TODO in 75.6 s",
+          "totals": {
+            "tests": 4148,
+            "pass": 4065,
+            "fail": 11,
+            "cancelled": 0,
+            "skipped": 72,
+            "todo": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Native input substitution: methods, rejection before dispatch, store refusals",
+      "status": "FAIL",
+      "checks": [
+        {
+          "name": "exact reference expansion per method, ordinary input, invalid/missing/refused-file rejection before dispatch, value-free errors, unsupported shapes",
+          "status": "FAIL",
+          "detail": "npm test was FAIL in item 1; see test/services-sky.test.mjs, test/secrets-reference.test.mjs, test/services-sky-trust.test.mjs"
+        },
+        {
+          "name": "the store reads only a regular, owned, 0600 file without following links; every refusal is classified and value-free",
+          "status": "FAIL",
+          "detail": "npm test was FAIL in item 1; see test/secrets-store.test.mjs"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Task lifecycle: IDs, end_task outcomes, fail-closed completion; native cancel/approval behaviour observed",
+      "status": "FAIL",
+      "checks": [
+        {
+          "name": "lifecycle state machine, races, deadlines, EOF, elicitation routing, bounded teardown",
+          "status": "FAIL",
+          "detail": "npm test was FAIL in item 1; see test/mcp-lifecycle.test.mjs, test/mcp-server.test.mjs, test/mcp-upstream.test.mjs, test/serve-cli.test.mjs"
+        },
+        {
+          "name": "observed: cancel does not stop a running cell (it replies normally)",
+          "status": "PASS",
+          "detail": "as documented in docs/evidence/m3-mcp-lifecycle.md"
+        },
+        {
+          "name": "observed: end_task after a cancelled cell ends",
+          "status": "PASS",
+          "detail": "as documented in docs/evidence/m3-mcp-lifecycle.md"
+        },
+        {
+          "name": "observed: end_task with work in flight rejects new work as task_ending and ends after it",
+          "status": "PASS",
+          "detail": "as documented in docs/evidence/m3-mcp-lifecycle.md"
+        },
+        {
+          "name": "observed: uncertain completion fails closed (completion_timeout, native cleanup unconfirmed, exit 1, no runtime left)",
+          "status": "PASS",
+          "detail": "as documented in docs/evidence/m3-mcp-lifecycle.md"
+        },
+        {
+          "name": "observed: idle EOF closes cleanly with no runtime left",
+          "status": "PASS",
+          "detail": "as documented in docs/evidence/m3-mcp-lifecycle.md"
+        },
+        {
+          "name": "probe-lifecycle pinned the cua engine, every result attested it, and no closed connection holds its socket",
+          "status": "PASS",
+          "detail": "pinned cua (--engine) on the cua host; 7 result(s) attested"
+        },
+        {
+          "name": "per-connection app approvals observed by behaviour",
+          "status": "PASS",
+          "detail": "connection A: 2 binds, asked 1, 0; accepted 1, 0; declined 0; connection B: 1 bind, asked 1; accepted 1; declined 0"
+        }
+      ],
+      "evidence": {
+        "cancelReplyMs": 2507,
+        "uncertainExitCode": 1,
+        "idleCloseMs": 163
+      }
+    }
+  ]
+}

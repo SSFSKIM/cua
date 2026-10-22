@@ -73,7 +73,7 @@ How to see it: on the mini, with the plugin at the release this work ships, run 
   - [x] (2026-10-21) M2b.3 — (784f112a..d8585eff, review fixes 79fccd05..fdbf59ad, 95fd92fb, ce96bb87; reviewed clean after two rounds) The probe-driven cells (concurrent use and its sheet variant, intervention fires, pre-action refusal), the Korean and Unicode matrix, the settle cell.
   - [x] (2026-10-21) M2b.4 — (605f94c0, review fixes a1325dbc, cdbc5873, 871cfb2d, a4fe7aea, df50c355 on `m2b/parity`; reviewed clean after five rounds; merged 754802f7) The `native-mac` parity suite: `--engine`, the approved route on macOS, the darwin native command, the modulo-renumbering diff with its `summary` line.
   - [ ] M2b.5 — Live on the mini: the residue hold first, then the matrix triples and the suite.
-- [ ] M3 — Engine-aware tooling, comparisons B and C, Linux approvals.
+- [x] (2026-10-22) M3 — Engine-aware tooling, comparisons B and C, Linux approvals (reviewed clean; live hold done; PR after M2b lands, rebased onto main).
 - [ ] M4 — Install, signing, permissions, docs.
 - [ ] M5 — Acceptance and the default switch.
 - [ ] M6 — Retirement of the vendor runtime on macOS.
@@ -83,7 +83,7 @@ How to see it: on the mini, with the plugin at the release this work ships, run 
   - [x] (2026-10-21) M3.3 — `verify.mjs` (`--engine`, `--bind`), `scripts/probe/lib.mjs` and `scripts/probe-lifecycle.mjs` engine-aware (c63f8cdc, 0c18a3c7, review fixes bd139855, 33c53ad8 on `m3/verify`; reviewed clean; merged d0a7ed29).
   - [x] (2026-10-21) M3.4 — `scripts/accept/textedit.mjs` and `scripts/accept-native.mjs` (`--engine`; items 12 and 13 pinned to the vendor engine) (310f4f0b, review fixes d0da881d, bf16bb42; reviewed clean after two fix rounds).
   - [x] (2026-10-22 01:42Z) M3.5, Linux half — the parity suite with approvals on cua-linux at base 027179bc and head 10846dfd, each against #115's vendor control: head's one difference (`backend`) is also base's; nothing declared for M3 (`m3/linux/README.md`).
-  - [ ] M3.5 — Live: one hold on the mini (comparisons B and C, `verify --engine cua --bind`, acceptance 9, `accept-native` items 7 and 8 on cua's engine) and the Linux parity suite with approvals on a Linux device.
+  - [x] (2026-10-22 11:23Z) M3.5 — Live: one hold on the mini (10:26:47–11:23Z, controller 98f153b8, rerun on fead3a16, build 0c363f8f approved at the hold start; evidence `m3/hold/`). Results: comparisons A, B and C PASS; acceptance 2 (`verify --engine cua --bind`, asked 1 then 0) and 9 PASS; `accept-native` item 8's live checks PASS after the attestation fix (Decision Log "M3 hold"); items 7 and 8's named suites 141/141 on the mini. Item 1's whole `npm test` on the mini FAILs on 11 environmental cases, so the hosted Node 24 gate is the unit-suite authority (evidence README). Acceptance 6 is M2b's (Decision Log "M3, acceptance 6").
 
 ## Scope, inheritance and evidence
 
@@ -610,6 +610,12 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   Evidence: `m2b/hold1/live/paste-hid2/result.json`, `paste-hid3`.
 - Observation (M2b hold 1, the guard): **a scene window's bounds recorded at up go stale.** TextEdit placed its window after up, so a guard against the recorded bounds refused every post. Compare against the front window's bounds read at the same moment.
   Evidence: `m2b/hold1/live/paste/result.json`.
+- Observation (M3 hold, the attestation): **the task lifecycle answers some js calls itself, with no `_meta`.** A call rejected before dispatch (`task_ending`, `cancelled`) never reaches a runtime, and an in-flight call the connection drops (`connection_failed`, `connection_closing`) never gets an engine's answer. M3.3's "every js result attests" rule refused the first of these live; the rule now distinguishes them (Decision Log "M3 hold").
+  Evidence: `m3/hold/probe-lifecycle/`.
+- Observation (M3 hold, the suite on the mini): **the mini's whole `npm test` does not pass outside CI's environment.** Under the mini's default Homebrew Node 26.4.0, the operator-console test of `test/spike-engine-measure-groups.test.mjs` fails deterministically, though it passes under Node 24, CI's pin. Under accept-native's suite environment with Node 24.22.0 first on PATH, 11 other environmental cases fail, among them tz-probe, maws-live-probe, the topology cases and native-pipe's /tmp listing. So accept-native's item 1 cannot be the unit-suite authority on that Mac; the hosted gate is.
+  Evidence: `m3/hold/README.md`, item 1.
+- Observation (M3 hold, the TextEdit fixture): **with items 5 and 6 unselected, the fixture still runs but its steps go unreported, and it left its own TextEdit running.** When it cannot confirm that its close left TextEdit windowless, it leaves the TextEdit it launched running. The put-back stopped that TextEdit by pid (5 off-screen windows, no autosave or saved state).
+  Evidence: `m3/hold/README.md`.
 
 ## Decision Log
 
@@ -1100,3 +1106,16 @@ Left for M2b:
 - select_text in a minimized window;
 - verifying enablement's release by Chromium's mode;
 - the vendor-parity menu items logged in tech-debt-tracker.md.
+
+**M3 (027179bc..HEAD on feat/117-m3; Linux run 2026-10-22 00:37–01:42Z on cua-linux; hold on the mini 2026-10-22 10:26:47–11:23Z).** Five tasks, each executor-built and reviewed to clean: M3.1 Linux approvals and the connection's approval memory; M3.2 doctor's engine row; M3.3 verify and the probe library; M3.4 the acceptance scripts; M3.5 live. The whole-milestone reviewer-high found one P1, verify's bind on a windowless app, fixed by the window-server check. Proves, as recorded in Progress:
+- comparisons B and C PASS on the mini, with A for the record;
+- acceptance 2 and 9 PASS;
+- `accept-native` item 8's live checks PASS on cua's engine; items 7 and 8's named suites pass on the mini. Their suite checks read FAIL only through item 1's environmental failures on that Mac, and the hosted gate is the authority for the suites;
+- the Linux parity suite with approvals: head's only difference against the vendor control is the device's `backend`, also in base's, and the approvals' declared difference is retired;
+- acceptance 6 is left to M2b's native-mac proof (Decision Log).
+
+What the milestone taught:
+- A harness rule written before the first live run needs its live negative cases. "Every result attests" met the lifecycle's own answers only on the mini, and the first fix, keyed to a missing field, was too broad. Provenance, meaning which path produced the result, is the right key, and the review found the second path the first fix missed.
+- A guard that reads "running" where it means "has the window I need" fails in exactly the state a closed fixture leaves behind. The windowless TextEdit case reappeared in verify after M3.4 had fixed it in the accept fixture.
+- A runbook's subset selection (`--items 7,8`) silently dropped a dependency (item 1); a selection should carry its dependencies, or refuse.
+- Holds move. The hold moved from 14:15Z to 10:26Z, and the controller was re-merged four times onto M2b's moving head. Keeping a gated controller per M2b head made each move a merge, a gate and a push.

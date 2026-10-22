@@ -78,10 +78,11 @@ How to see it: on the mini, with the plugin at the release this work ships, run 
 - [ ] M5 — Acceptance and the default switch.
 - [ ] M6 — Retirement of the vendor runtime on macOS.
 - [ ] M3 tasks (branch `feat/117-m3` from `feat/117-m2b` at 027179bc, before M2b's squash; Decision Log "M3 pre-flight"):
-  - [x] (2026-10-21) M3.1 — Linux approvals through the policy module, `surface.mjs`'s Linux rule, the Linux harnesses answering the pinned approval, `CUA_SHIM_PERSIST=always` refused at `cua serve`, and the approval memory moved to the MCP connection (a5f7a494..767e06c8, review fixes 989e79b6..436edf2f and cf579bc1, a3d8813a on `m3/linux`; reviewed clean after two fix rounds; the live Linux parity run is M3.5's).
+  - [x] (2026-10-21) M3.1 — Linux approvals through the policy module, `surface.mjs`'s Linux rule, the Linux harnesses answering the pinned approval, `CUA_SHIM_PERSIST=always` refused at `cua serve`, and the approval memory moved to the MCP connection (a5f7a494..767e06c8, review fixes 989e79b6..436edf2f, cf579bc1, a3d8813a and 2707402d on `m3/linux`; reviewed clean after three fix rounds, the third from the live Linux parity run; merged 10846dfd).
   - [x] (2026-10-21) M3.2 — `doctor`'s `engine` row (793195d6, review fixes a2b5993a; reviewed clean).
   - [x] (2026-10-21) M3.3 — `verify.mjs` (`--engine`, `--bind`), `scripts/probe/lib.mjs` and `scripts/probe-lifecycle.mjs` engine-aware (c63f8cdc, 0c18a3c7, review fixes bd139855, 33c53ad8 on `m3/verify`; reviewed clean; merged d0a7ed29).
   - [x] (2026-10-21) M3.4 — `scripts/accept/textedit.mjs` and `scripts/accept-native.mjs` (`--engine`; items 12 and 13 pinned to the vendor engine) (310f4f0b, review fixes d0da881d, bf16bb42; reviewed clean after two fix rounds).
+  - [x] (2026-10-22 01:42Z) M3.5, Linux half — the parity suite with approvals on cua-linux at base 027179bc and head 10846dfd, each against #115's vendor control: head's one difference (`backend`) is also base's; nothing declared for M3 (`m3/linux/README.md`).
   - [ ] M3.5 — Live: one hold on the mini (comparisons B and C, `verify --engine cua --bind`, acceptance 9, `accept-native` items 7 and 8 on cua's engine) and the Linux parity suite with approvals on a Linux device.
 
 ## Scope, inheritance and evidence

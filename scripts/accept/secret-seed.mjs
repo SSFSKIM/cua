@@ -14,6 +14,8 @@ import {existsSync, mkdtempSync, realpathSync, rmSync} from 'node:fs';
 import {tmpdir, userInfo} from 'node:os';
 import {basename, dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {engineDirectory, installedEngine} from '../../src/runtime/engine.mjs';
+import {readEngineSettings} from '../../src/runtime/engine-sign.mjs';
 import {isLabel} from '../../src/secrets/label.mjs';
 import {fileStore, storeDir} from '../../src/secrets/store.mjs';
 
@@ -32,6 +34,13 @@ export const createStoreHome = (prefix = 'cua-secrets-home-') => realpathSync(mk
 // computer-use socket and Chrome's hosts under os.homedir(), which follows HOME.
 export const accountHome = () => userInfo().homedir;
 export const withAccountHome = launch => (launch.env.HOME === undefined ? launch : {...launch, env: {...launch.env, HOME: accountHome()}});
+// The engine selection of such a server reads the account's engine.json and approved engine (`serve`'s `engine` seam,
+// src/runtime/launch.mjs nativeEngineFor's `config` and `installed`), not the temporary store home's, which has
+// neither: the store moves, the engine the account approved does not. `home`: the account's home.
+export const accountEngine = (home = accountHome()) => ({
+  config: () => readEngineSettings({env: {HOME: home}}),
+  installed: () => installedEngine({dir: engineDirectory(home)}),
+});
 
 // Whether `home` is this account's own home directory, whose store a fixture must never touch.
 export function isAccountHome(home) {

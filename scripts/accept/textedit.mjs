@@ -32,8 +32,8 @@
 // temporary $HOME this fixture creates, seeds with a generated value under a generated KEY through `cua secrets set` at
 // a pty (scripts/accept/secret-seed.mjs) and removes in `finally`. Given a caller's key ({key, home}), it uses that
 // home's store as it is, reads the expected value from the key's file in this process (never printed), and leaves
-// both in place. On cua's engine the secret's delivery is not attempted (its steps are BLOCKED): the store's
-// temporary $HOME is the ambient HOME of that server, under which the launcher finds no approved engine.
+// both in place. That server (./serve-with-store.mjs) selects the pinned engine from the account's own engine.json and
+// approved engine (./secret-seed.mjs accountEngine), so the secret is delivered on either engine.
 import {execFile, execFileSync} from 'node:child_process';
 import {createHash, randomBytes, randomUUID} from 'node:crypto';
 import {existsSync, mkdtempSync, rmSync, writeFileSync} from 'node:fs';
@@ -48,9 +48,10 @@ import {socketHolders} from '../probe/lib.mjs';
 import {selectLane} from '../probe/pinned-engine.mjs';
 import {fingerprintable, fingerprints, textLeaks, UNFINGERPRINTABLE} from '../probe/leak-scan.mjs';
 import {TEXTEDIT_BUNDLE} from './lib.mjs';
-import {approvalLedger, AttestationRefusal, attestReplies} from './engine-lane.mjs';
+import {approvalLedger, ATTEST_STEP, AttestationRefusal, attestReplies} from './engine-lane.mjs';
 import {localFrontmost, sendToPausedSession} from './key-guard.mjs';
 import {awaitLaunch, cleanUpFixtureApp} from './fixture-app.mjs';
+import {awaitClose, readWindows} from './window-close.mjs';
 import {openSession, resultText} from './mcp-session.mjs';
 import {pauseGate, pausing} from '../mini-pause.mjs';
 import {createStoreHome, generatedKey, isAccountHome, removeStoreHome, seedSecret} from './secret-seed.mjs';
@@ -75,7 +76,7 @@ export const STEP = {
   teardown: 'every server the fixture started has exited',
   quitApp: 'quit the TextEdit this run started, and only it',
   front: 'hand the front back to the application frontmost before the run',
-  attest: 'every result attests the pinned engine',
+  attest: ATTEST_STEP,
   secretCreate: 'secret: the value in a fixture store',
   secretType: 'secret: type the reference',
   secretReadback: 'secret: the document holds exactly the stored value (compared by hash inside the cell)',
@@ -100,28 +101,33 @@ function cellJson(reply) {
   return {error: text.split('\n').filter(Boolean).at(-1)?.slice(0, 200) ?? (reply.error?.message ?? 'no output'), isError: true};
 }
 const out = fields => `nodeRepl.write(JSON.stringify({fixture: true, ...${fields}}))`;
+// A cell's own names in a block: a connection's cells share one top level, where a second `const` of the same name
+// (a second bind, a readback after a bind) would be a redeclaration. Only `globalThis.app` is meant to outlive a cell.
+const scoped = code => `{\n${code}\n}`;
 // TextEdit's front window title and its text area's value, from its accessibility text (emit:false: nothing is
 // displayed; the cell decides what to report). No cell reports another window's title.
 const OBSERVE = `const __ax = await app.getAXState({emit: false, disableDiffing: true});
 const __window = __ax.match(/^Window: "([^"]*)"/m)?.[1] ?? null;
 const __value = __ax.match(/Value: (.*?), ID: First Text View/)?.[1] ?? "";`;
 // An action cell: `action` runs only if the fixture's document is TextEdit's front window at that moment.
-const guarded = (docName, action) => `const __front = (await app.getAXState({emit: false, disableDiffing: true})).match(/^Window: "([^"]*)"/m)?.[1] ?? null;
+export const guarded = (docName, action) => scoped(`const __front = (await app.getAXState({emit: false, disableDiffing: true})).match(/^Window: "([^"]*)"/m)?.[1] ?? null;
 if (__front !== ${JSON.stringify(docName)}) { ${out('{identityLost: true}')}; } else {
 ${action}
-}`;
+}`);
+const ownWindow = docName => `__window === ${JSON.stringify(docName)}`;
+// Bind TextEdit (`globalThis.app`, kept for the connection's later cells) and report whether its front window is
+// `docName`.
+export const bindCell = docName => `globalThis.app = await cua.getApp(${JSON.stringify(TEXTEDIT_BUNDLE)});\n${scoped(`${OBSERVE}\n${out(`{own: ${ownWindow(docName)}}`)}`)}`;
+// Read the document back as a hash, never its text: the value crosses neither the MCP stream nor the report.
+export const readbackCell = (docName, marker) => scoped(`${OBSERVE}\nconst {createHash: __hash} = await import('node:crypto');
+${out(`{own: ${ownWindow(docName)}, hash: ${ownWindow(docName)} ? __hash('sha256').update(__value, 'utf8').digest('hex') : null, startsWithMarker: __value.startsWith(${JSON.stringify(marker)}), chars: [...__value].length}`)}`);
 
 // `engine`: the pinned engine ({engine, pinnedBy}, scripts/probe/pinned-engine.mjs pinLane's `pin`), null when none is
 // driven. `secret`: false, true (a generated key and value in a temporary $HOME), or {key, home} (the caller's stored
 // key). `pauseFile` (CUA_PAUSE_FILE, scripts/mini-pause.mjs): every cell waits at its boundary while the mini's CI runner
 // is busy, and never aborts, the owner standing by; each pause is in the observations.
 export async function runTextEdit({home, engine = null, secret = false, forbid = () => {}, stepMs = 60_000, pauseFile = process.env.CUA_PAUSE_FILE, frontmost = localFrontmost}) {
-  // The secret is delivered only where its server can serve the pinned engine (the header).
-  const secretBlocked = secret && engine?.engine === 'cua'
-    ? 'not attempted on cua\'s engine: the secret\'s server runs with the store\'s temporary $HOME, under which the launcher finds no approved engine (it reads the approved engine from the ambient HOME); run the UI delivery with --engine vendor'
-    : null;
-  const deliver = Boolean(secret) && !secretBlocked;
-  const callerKey = deliver && typeof secret === 'object' ? secret : null;
+  const callerKey = secret && typeof secret === 'object' ? secret : null;
   const steps = [];
   const record = (name, status, detail) => { steps.push({name, status, detail}); return status === 'PASS'; };
   const ledger = approvalLedger({app: TEXTEDIT_BUNDLE});
@@ -137,16 +143,16 @@ export async function runTextEdit({home, engine = null, secret = false, forbid =
   // One unbroken upper-case token (no separators, no words): the target's own text substitutions (autocorrect at a word
   // boundary, smart dashes for "--", capitalization) act on typed text in an ordinary text view. A caller's value is
   // read from its file once the preconditions hold.
-  let value = deliver && !callerKey ? `CUAUI${randomBytes(16).toString('hex').toUpperCase()}` : null;
+  let value = secret && !callerKey ? `CUAUI${randomBytes(16).toString('hex').toUpperCase()}` : null;
   if (value) forbid(value);
   let prints = value ? fingerprints(value) : [];
   let storeHome = callerKey ? callerKey.home : null;  // created by this invocation only without a caller's key
   let storeCreated = false;
   const docName = `cua-accept-${randomUUID()}.txt`;
-  const own = `__window === ${JSON.stringify(docName)}`;
+  const own = ownWindow(docName);
   let docDir = null;      // created exclusively by this invocation
   let docOpen = false;
-  let soleWindowConfirmed = false;  // the close step saw TextEdit hold no window at all once the fixture's closed
+  let soleWindowConfirmed = false;  // the close step saw TextEdit's processes hold no window at all once the fixture's closed
   let guiStopped = null;  // why no further input may be sent
   const sessions = [];
 
@@ -158,8 +164,8 @@ export async function runTextEdit({home, engine = null, secret = false, forbid =
   };
   // The serve's environment: the pinned engine set explicitly, so the account's ~/.config/cua/engine.json never
   // chooses it (with the secret, the store's temporary $HOME too).
-  const serveEnv = () => ({...process.env, CUA_HOME: home, CUA_SHIM_PERSIST: 'session', CUA_SHIM_SECRETS: deliver ? 'on' : 'off',
-    ...(engine ? {CUA_NATIVE_ENGINE: engine.engine} : {}), ...(deliver ? {HOME: storeHome} : {})});
+  const serveEnv = () => ({...process.env, CUA_HOME: home, CUA_SHIM_PERSIST: 'session', CUA_SHIM_SECRETS: secret ? 'on' : 'off',
+    ...(engine ? {CUA_NATIVE_ENGINE: engine.engine} : {}), ...(secret ? {HOME: storeHome} : {})});
   // The first result attesting another engine stops the run: that cell's caller gets an AttestationRefusal, and no
   // later cell on any connection is sent (each throws it again).
   let refused = null;
@@ -167,7 +173,7 @@ export async function runTextEdit({home, engine = null, secret = false, forbid =
     if (refused) throw refused;
     ledger.entry(name);
     const session = pausing(openSession({
-      args: deliver ? [SERVE_WITH_STORE] : [CLI, 'serve'], clientName: 'cua-accept-textedit', onServerRequest: onServerRequest(name), env: serveEnv(),
+      args: secret ? [SERVE_WITH_STORE] : [CLI, 'serve'], clientName: 'cua-accept-textedit', onServerRequest: onServerRequest(name), env: serveEnv(),
     }), pause, `the TextEdit sitting's ${name} cell`);
     attestReplies(session, {expected, onAttested: () => observations.engine.attested++, onRefused: problem => {
       refused = new AttestationRefusal(problem);
@@ -207,7 +213,7 @@ export async function runTextEdit({home, engine = null, secret = false, forbid =
     const counted = ledger.begin(name);
     let reply;
     try {
-      reply = cellJson(await session.js(`globalThis.app = await cua.getApp(${JSON.stringify(TEXTEDIT_BUNDLE)});\n${OBSERVE}\n${out(`{own: ${own}}`)}`, stepMs));
+      reply = cellJson(await session.js(bindCell(docName), stepMs));
     } finally { ledger.end(); }
     const asked = `the policy asked for approval ${counted.asked} time(s) during this bind`;
     if (reply.timedOut || reply.isError) counted.error = true;
@@ -234,7 +240,7 @@ export async function runTextEdit({home, engine = null, secret = false, forbid =
       return record(STEP.preconditions, 'FAIL', 'refused: the caller\'s store home is this account\'s own home; store the key under a temporary $HOME');
     // The host and engine the launcher selects for the pinned engine, as cua serve's connection selects them; a selection
     // it refuses (cua's engine not installed, say) is refused here, before any document is opened. Predicted with the
-    // account's HOME: the secret's store home (the vendor's engine only) changes nothing an explicit vendor pin reads.
+    // account's HOME, whose engine.json and approved engine the secret's server selects from too (accountEngine).
     if (engine) {
       try {
         ({expected} = selectLane({pin: engine, serveEnv: {...serveEnv(), HOME: process.env.HOME}, home, runtime, surfaces: settingsFrom(process.env).surfaces}));
@@ -244,7 +250,6 @@ export async function runTextEdit({home, engine = null, secret = false, forbid =
       observations.engine.expected = expected;
     }
     record(STEP.preconditions, 'PASS', `runtime ${runtime.release}; ${engine ? `the ${engine.engine} engine pinned (${engine.pinnedBy}), version ${expected.version} build ${expected.build}; ` : ''}TextEdit ${textEditBefore.length ? 'already running (left as it is)' : 'not running'}`);
-    if (secretBlocked) for (const step of SECRET_STEPS) record(step, 'BLOCKED', secretBlocked);
 
     if (callerKey) {
       // The caller's value, read here only to compare the readback with; it is never printed or reported.
@@ -259,7 +264,7 @@ export async function runTextEdit({home, engine = null, secret = false, forbid =
       forbid(value);
       prints = fingerprints(value);
       record(STEP.secretCreate, 'PASS', `the caller's key ${label}, stored before this run in the store home given (left in place)`);
-    } else if (deliver) {
+    } else if (secret) {
       storeHome = createStoreHome('cua-accept-textedit-');
       storeCreated = true;  // cleanup runs even if the seed is only partly confirmed
       const seeded = await seedSecret({home: storeHome, key: label, value, timeoutMs: 15_000});
@@ -307,7 +312,7 @@ ${out(`{own: ${own}, valueIsMarker: ${own} && __value === ${JSON.stringify(marke
     // then closes the fixture document.
     const b = await connect('connection B');
     if (await bind(b, 'connection B', STEP.bindB)) {
-      const deliveredReply = deliver ? await keyCell(b, STEP.secretType, ['typeText'], guarded(docName, `await app.typeText(${JSON.stringify(`{{secret:${label}}}`)});\n${out('{done: true}')}`)) : null;
+      const deliveredReply = secret ? await keyCell(b, STEP.secretType, ['typeText'], guarded(docName, `await app.typeText(${JSON.stringify(`{{secret:${label}}}`)});\n${out('{done: true}')}`)) : null;
       if (deliveredReply) {
         const delivered = cellJson(deliveredReply);
         const leakedBefore = textLeaks(b.transcript.join('\n') + b.stderr, prints);
@@ -320,7 +325,7 @@ ${out(`{own: ${own}, valueIsMarker: ${own} && __value === ${JSON.stringify(marke
           // marker check, so the value crosses neither the MCP stream nor the report. The whole transcript is scanned
           // again afterwards.
           const expectedHash = createHash('sha256').update(marker + value, 'utf8').digest('hex');
-          const readback = cellJson(await b.js(`${OBSERVE}\nconst {createHash: __hash} = await import('node:crypto');\n${out(`{own: ${own}, hash: ${own} ? __hash('sha256').update(__value, 'utf8').digest('hex') : null, startsWithMarker: __value.startsWith(${JSON.stringify(marker)}), chars: [...__value].length}`)}`, stepMs));
+          const readback = cellJson(await b.js(readbackCell(docName, marker), stepMs));
           const exact = readback.own && readback.hash === expectedHash;
           const leakedAfter = textLeaks(b.transcript.join('\n') + b.stderr, prints);
           if (readback.own === false) lost(STEP.secretReadback, 'read the document back');
@@ -332,25 +337,23 @@ ${out(`{own: ${own}, valueIsMarker: ${own} && __value === ${JSON.stringify(marke
         }
       }
       if (!guiStopped) {
-        // super+w only after confirming, in the same cell, that the fixture's window is in front. Right after it closes
-        // TextEdit can briefly report no front window, so the observation is retried; the close counts as confirmed
-        // only when TextEdit reports no window at all.
-        const closedReply = await keyCell(b, STEP.closeDoc, ['super+w'], guarded(docName, `await app.pressKey("super+w");
-let __after = null, __error = null;
-for (let attempt = 0; attempt < 6 && __after === null && __error === null; attempt++) {
-  if (attempt) await new Promise(resolve => setTimeout(resolve, 500));
-  try { __after = (await app.getAXState({emit: false, disableDiffing: true})).match(/^Window: "([^"]*)"/m)?.[1] ?? null; } catch (error) { __error = String(error?.message ?? error); }
-}
-${out(`{ownStillFront: __after === ${JSON.stringify(docName)}, otherFront: __after !== null && __after !== ${JSON.stringify(docName)}, noWindows: /noWindowsAvailable/.test(__error ?? ""), error: __error && !/noWindowsAvailable/.test(__error) ? __error.slice(0, 160) : undefined}`)}`));
+        // super+w only after confirming, in the same cell, that the fixture's window is in front. The close is judged
+        // from TextEdit's windows by number before and after (./window-close.mjs), never by observing TextEdit again:
+        // an observation of a TextEdit with no window would reopen it, and its Open panel can show the owner's
+        // documents.
+        const pids = textEditPids();
+        const before = await readWindows(pids);
+        const closedReply = await keyCell(b, STEP.closeDoc, ['super+w'], guarded(docName, `await app.pressKey("super+w");\n${out('{pressed: true}')}`));
         const closed = closedReply ? cellJson(closedReply) : null;
         if (!closed) { /* skipped: recorded by keyCell */ } else if (closed.timedOut) record(STEP.closeDoc, 'BLOCKED', `no answer within ${stepMs} ms; ${PROMPT_ACTION}`);
         else if (closed.identityLost) lost(STEP.closeDoc, 'close it');
         else if (closed.isError) record(STEP.closeDoc, 'FAIL', `the close cell failed: ${closed.error}`);
-        else if (closed.noWindows) { docOpen = false; soleWindowConfirmed = true; record(STEP.closeDoc, 'PASS', 'super+w closed the verified fixture window; TextEdit then reported no window at all'); }
-        else if (closed.ownStillFront) record(STEP.closeDoc, 'FAIL', 'the fixture document is still in front after super+w; close it by hand without saving elsewhere');
-        else record(STEP.closeDoc, 'BLOCKED', closed.otherFront
-          ? 'super+w went to the verified fixture window, but another TextEdit window (perhaps its Open panel) is now in front, so the document\'s absence cannot be confirmed; that window was not touched'
-          : `the result of super+w could not be observed (${closed.error ?? 'no window reported'}); check TextEdit by hand`);
+        else {
+          const verdict = await awaitClose({before, read: () => readWindows(pids)});
+          if (verdict.closed) docOpen = false;
+          soleWindowConfirmed = verdict.alone;
+          record(STEP.closeDoc, verdict.status, verdict.detail);
+        }
       }
     }
     await closeSession('connection B', b, STEP.closeB);
@@ -417,7 +420,7 @@ ${out(`{ownStillFront: __after === ${JSON.stringify(docName)}, otherFront: __aft
       : attested > 0 ? `${attested} result(s), each attesting the ${engine.engine} engine, version ${expected.version} build ${expected.build}` : 'no result came back to attest');
   }
   observations.marker = 'a benign generated marker (CUAMARKER<hex>)';
-  if (deliver) observations.secretLabel = label;
+  if (secret) observations.secretLabel = label;
   const status = steps.some(s => s.status === 'FAIL') ? 'FAIL' : steps.some(s => s.status === 'BLOCKED') || !steps.length ? 'BLOCKED' : 'PASS';
   return {scenario: secret ? 'live-textedit-with-secret' : 'live-textedit', status, steps, observations};
 }

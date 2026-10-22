@@ -462,11 +462,11 @@ const SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'];
 // hosts close with the connection. Once recorded, the handshake needs no runtime (src/mcp/lazy-runtime.mjs), so a
 // session that never uses cua never launches one. The connection's close waits for a readiness listing still running
 // (so serve keeps its signal handlers meanwhile), and serve exits 1 when the connection's runtime teardown, or a
-// listing's, could not be confirmed. Returns the exit code. `prepareLaunch`, `chrome`, `listBackends` and `idleTimer`
-// are openConnection's seams, forwarded unchanged. `project` is the secret store's project (src/secrets/project.mjs):
+// listing's, could not be confirmed. Returns the exit code. `prepareLaunch`, `chrome`, `listBackends`, `idleTimer` and
+// `engine` are openConnection's seams, forwarded unchanged. `project` is the secret store's project (src/secrets/project.mjs):
 // Claude Code starts the server in its session's directory, so the server's own working directory names it.
 export async function serve({home, env = process.env, input = process.stdin, output = process.stdout,
-  prepareLaunch, diagnostics = line => process.stderr.write(`cua serve: ${line}\n`), chrome, listBackends, idleTimer, project = projectRoot()}) {
+  prepareLaunch, diagnostics = line => process.stderr.write(`cua serve: ${line}\n`), chrome, listBackends, idleTimer, engine, project = projectRoot()}) {
   const settings = settingsFrom(env, {devices: true});
   const mawsPaths = settings.surfaces.includes('browser') ? configuredBackends(env) : [];
   try {
@@ -485,7 +485,7 @@ export async function serve({home, env = process.env, input = process.stdin, out
   const browserBackends = mawsPaths.length ? startClientBackends({home: realHome(home), paths: mawsPaths, log: diagnostics}) : null;
   try {
     connection = await openConnection({home, env, sessionId: randomUUID(), input, output, settings, diagnostics,
-      prepareLaunch, chrome, listBackends, idleTimer, devices: deviceDirectory({env}), browserBackends, project});
+      prepareLaunch, chrome, listBackends, idleTimer, engine, devices: deviceDirectory({env}), browserBackends, project});
     if (signalled) connection.close('signal');
     result = await connection.closed;
   } finally {

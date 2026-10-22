@@ -27,7 +27,9 @@
 // arch}, the process's by default: which pin resolves and the host notes) and
 // `probeUserns` (whether bubblewrap can create a user namespace) and `verifyHelper` (the pinned Linux sandbox helper's
 // check, src/sandbox/linux.mjs), both asked for a confined launch on Linux, exist for tests
-// only, as are `resolveOwnNode` (the own REPL host's Node, src/runtime/launch.mjs replHostFor) and `idleTimer` (createServer's clock for the idle stop). `onWithdrawn(requestId)` is told when a cancellation withdrew a request before it reached the runtime, the one
+// only, as are `resolveOwnNode` (the own REPL host's Node, src/runtime/launch.mjs replHostFor) and `idleTimer` (createServer's clock for the idle stop). `engine` reaches replHostFor's
+// nativeEngineFor (its `config` and `installed`): the live secret fixtures serve with HOME set to a temporary store home
+// and pass the account's engine.json and approved engine through it (scripts/accept/secret-seed.mjs accountEngine). `onWithdrawn(requestId)` is told when a cancellation withdrew a request before it reached the runtime, the one
 // case in which a request is never answered (the HTTP layer ends the stream that waits for it). `devices` (a device
 // directory, src/remote/directory.mjs) gives the connection the device tools and their host-notes rule: the stdio `serve`
 // passes one; the HTTP agent never does, so a device never drives a third one through itself. `browserBackends` (the
@@ -57,7 +59,7 @@ const SERVICES = {computer: {sky: SKY_SERVICE}, browser: {browser: BROWSER_SERVI
 export async function openConnection({home, env = process.env, sessionId, input, output, host = {platform: process.platform, arch: process.arch},
   devices = null, settings = settingsFrom(env, {platform: host.platform, devices: devices !== null}),
   diagnostics = line => process.stderr.write(`cua serve: ${line}\n`), prepareLaunch = launch => launch, chrome = chromeFacts({host, env}),
-  listBackends, onWithdrawn, probeUserns, verifyHelper, browserBackends = null, project = null, idleTimer, onProfilesList, resolveOwnNode}) {
+  listBackends, onWithdrawn, probeUserns, verifyHelper, browserBackends = null, project = null, idleTimer, onProfilesList, resolveOwnNode, engine}) {
   const {secrets: secretsEnabled, sandbox, ...serverSettings} = settings;
   const runtime = resolveRuntime({home, host});
   // The readiness listing runs under this connection's own mode (src/profiles/inventory.mjs listLiveBackends).
@@ -98,7 +100,7 @@ export async function openConnection({home, env = process.env, sessionId, input,
     // and only when the selection would be cua's own host: a default that finds no Node 24 keeps the vendor host
     // (own_host_node_unavailable), and the handshake records follow the host selected. A new connection resolves again,
     // so a Node installed meanwhile takes effect on the next connection.
-    const replHost = replHostFor({platform: runtime.manifest.platform, surfaces: serverSettings.surfaces, ambient: env, home, resolveOwnNode});
+    const replHost = replHostFor({platform: runtime.manifest.platform, surfaces: serverSettings.surfaces, ambient: env, home, resolveOwnNode, engine});
     const launchFor = () => buildLaunch({
       runtime, home, sessionId, ambient: env, replHost, surfaces: serverSettings.surfaces, sandbox,
       services: Object.assign({}, ...serverSettings.surfaces.map(s => SERVICES[s])),

@@ -54,6 +54,18 @@ test('each departure fails its own check', () => {
   }
 });
 
+test('a run the experiment stopped at a misattested banner fails, naming the refusal, with no native call or confinement judged passed', () => {
+  const r = passing();
+  const misattested = {engine: 'cua', version: '0.2.0', build: 'f'.repeat(64)};
+  r.results = {banner: {...ok({ready: true}), attested: misattested, refused: 'it attested cua\'s engine'}};
+  r.driverError = 'refused on the attestation: it attested cua\'s engine; no further cell was sent';
+  const failed = compatRouteChecks(r, {expected: VENDOR}).filter(c => !c.pass);
+  assert.ok(failed.some(c => /attest/.test(c.label) && /banner/.test(c.detail)), JSON.stringify(failed));
+  assert.ok(failed.some(c => /driver error/.test(c.label) && /refused on the attestation/.test(c.detail)));
+  assert.ok(failed.some(c => /native call listApps#1/.test(c.label)));
+  assert.ok(failed.length >= 6);
+});
+
 test('the attestation is checked against an expected vendor engine, never skipped', () => {
   const unchecked = compatRouteChecks(passing()).filter(c => !c.pass);
   assert.equal(unchecked.length, 1, 'no expected attestation is itself a failure');

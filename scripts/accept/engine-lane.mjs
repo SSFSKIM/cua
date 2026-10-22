@@ -8,6 +8,10 @@ import {attestationProblem, isAppApproval} from '../probe/lib.mjs';
 
 const result = (name, status, detail) => ({name, status, detail});
 
+// The step a live scenario (the TextEdit fixture, scripts/probe-secrets.mjs) records once an engine is pinned: FAIL at
+// the first result attesting another engine, else PASS with the count of results that attested it.
+export const ATTEST_STEP = 'every result attests the pinned engine';
+
 // A result that attested another engine (or none): nothing more may be sent on the lane.
 export class AttestationRefusal extends Error {
   constructor(problem) {

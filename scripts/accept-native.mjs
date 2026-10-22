@@ -13,8 +13,8 @@
 //
 // --engine vendor|cua pins the native engine of every native item (#117 M3; the own native engine spec's Decision Log,
 // "M3 pre-flight" item 3): doctor (item 3) runs with CUA_NATIVE_ENGINE set to it and its engine row must show sessions
-// driving it; verify.mjs (4) and scripts/probe-lifecycle.mjs (8) are passed --engine and the TextEdit fixture (5, 6, 8)
-// serves with it, and each checks every js result's `_meta['cua/nativeEngine']` against it, refusing on a mismatch.
+// driving it; verify.mjs (4) and scripts/probe-lifecycle.mjs (8) are passed --engine, and scripts/probe-secrets.mjs (6,
+// 7) and the TextEdit fixture (5, 6, 8) serve with it, and each checks every js result's `_meta['cua/nativeEngine']` against it, refusing on a mismatch.
 // Without --engine the engine is CUA_NATIVE_ENGINE, else the launcher's default, pinned the same way, so the account's
 // ~/.config/cua/engine.json never chooses it. Items 12 and 13 check the vendor host and its compatibility route, so they
 // run pinned to the vendor engine whatever --engine says (until #117 M6 retires them), their results attesting it.
@@ -80,7 +80,7 @@ import {
   snapshotTree, suiteVerdict, judgeSkips, skipReasons, testReporterEnv, testSummary, personalText, researchTreeLines, MINI_LAYOUT_FILES,
 } from './accept/lib.mjs';
 import {OWN_STEPS, runTextEdit, SECRET_STEPS} from './accept/textedit.mjs';
-import {doctorEngineCheck, lifecycleEngineCheck, verifyChecks} from './accept/engine-lane.mjs';
+import {ATTEST_STEP, doctorEngineCheck, lifecycleEngineCheck, verifyChecks} from './accept/engine-lane.mjs';
 import {createStoreHome, generatedKey, isAccountHome, removeStoreHome, seedSecret} from './accept/secret-seed.mjs';
 import {ownSandboxAcceptance} from './accept/own-sandbox.mjs';
 import {compatRouteAcceptance} from './accept/compat-route.mjs';
@@ -288,9 +288,9 @@ async function item4() {
 async function liveSecrets() {
   if (!options['live-secrets']) return null;
   const reportFile = join(home, `probe-secrets-${process.pid}.json`);
-  // Its servers run with its temporary $HOME (no approved engine there) and its real-vendor steps name the vendor's
-  // service: pinned to the vendor engine whatever --engine says, so a caller's CUA_NATIVE_ENGINE never reaches them.
-  const r = await run(process.execPath, [join(REPO, 'scripts', 'probe-secrets.mjs'), '--report', reportFile], {env: cuaEnv({CUA_NATIVE_ENGINE: 'vendor'}), timeoutMs: 900_000});
+  // On the pinned engine, which its servers select from the account's engine.json and approved engine although their
+  // HOME is the probe's temporary store home; every result must attest it (ATTEST_STEP).
+  const r = await run(process.execPath, [join(REPO, 'scripts', 'probe-secrets.mjs'), '--report', reportFile], {env: cuaEnv(engineEnv), timeoutMs: 900_000});
   const probe = existsSync(reportFile) ? parseJson(readFileSync(reportFile, 'utf8')) : null;
   rmSync(reportFile, {force: true});
   if (!probe) return {missing: `scripts/probe-secrets.mjs wrote no report (${ended(r)}): ${sanitize(r.stderr.trim().split('\n').at(-1) ?? '')}`, steps: []};
@@ -303,11 +303,13 @@ async function liveTextEdit() {
 }
 
 const NOT_REQUESTED = flag => check(`opt-in ${flag}`, 'BLOCKED', `not run: pass ${flag} to run it (never counted as a pass when skipped)`);
-const PROBE_STEPS = PROBE_SECRETS_PHASES.flatMap(p => p.steps);
-// The live probe's checks: its own complete verdict (a missing report is FAIL), then each expected phase.
+const PROBE_STEPS = [...PROBE_SECRETS_PHASES.flatMap(p => p.steps), ...(pin ? [ATTEST_STEP] : [])];
+// The live probe's checks: its own complete verdict (a missing report is FAIL), then each expected phase, and with an
+// engine pinned, that every result attested it.
 function probeChecks(probe, phases) {
   const verdict = probe.missing ? check('live: scripts/probe-secrets.mjs verdict', 'FAIL', probe.missing) : scenarioVerdict('live: scripts/probe-secrets.mjs verdict', probe, PROBE_STEPS);
-  return [verdict, ...phases.map(p => inventoryCheck(p.name, probe.steps, p.steps))];
+  return [verdict, ...phases.map(p => inventoryCheck(p.name, probe.steps, p.steps)),
+    ...(pin ? [inventoryCheck(`live: every result attests the pinned ${pin.engine} engine`, probe.steps, [ATTEST_STEP])] : [])];
 }
 
 async function item5(textedit) {

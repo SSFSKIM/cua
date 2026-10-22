@@ -33,9 +33,10 @@ test('cell korean --scene textedit: every row in run order under its source, Acc
   assert.ok(result.rows.every(r => r.section === 'unicode' && r.ok === true && !r.invalid), JSON.stringify(result.rows.filter(r => !r.ok).slice(0, 2)));
   assert.ok(result.rows.some(r => r.id === 'textedit/latin/typeText.acceptance4') && result.rows.some(r => r.id === 'textedit/korean/typeText.acceptance4'));
   // The run's Latin; then each target's source read with it in front (this double's context always reads Korean): the
-  // Latin condition's and the mid-switch's selected there, the one after the switch; the Korean conditions' read as
+  // Latin condition's and the mid-switch's selected there, the one after the switch; the Korean condition's read as
+  // held; the composition's Latin with its user window in front (ending any composition there), then Korean read as
   // held; then the per-context condition's.
-  assert.deepEqual(sources(steps), ['save', 'per-context off', 'select ABC', 'current', 'select ABC', 'current', 'select ABC', 'select ABC', 'current', 'current',
+  assert.deepEqual(sources(steps), ['save', 'per-context off', 'select ABC', 'current', 'select ABC', 'current', 'select ABC', 'select ABC', 'current', 'select ABC', 'current',
     'per-context on', 'select Korean.2SetKorean', 'select ABC', 'current', 'restore']);
   // The mid-switch: the probe's switch scheduled inside the typing, finished after it.
   assert.deepEqual(matrixSteps(steps, 'probe').map(a => a[1]), ['input-source', 'finish', 'keystroke', 'finish']);
@@ -80,6 +81,54 @@ test('a composition the user window did not show, or a per-context context that 
   assert.deepEqual([rows[0].ok, rows[1].ok, rows[1].outcome.userKept], [true, false, false]);
   assert.ok(rows.slice(2).every(r => /disturbed the user window's composition/.test(r.invalid)));
   assert.equal(run.result.verdict, 'fail');
+});
+
+test('a composition the user window\'s input method still holds from an earlier row is ended (Latin selected with it in front) before the field is emptied and the jamo composed', async () => {
+  // Hold 2b, both lanes: the Korean condition's `r k` row left 가 composing in the Electron field (Chromium sends the
+  // pid-posted keys through the input method), and the composing condition's user window was Electron with nothing
+  // activated in between, so the probe's r composed 각, not ㄱ. Likewise TextEdit after the Chrome group's ㄱ (ㄲ).
+  // The double: an input method holding a syllable in the front app until a source switch commits it.
+  const plan = {...planOf('korean', {scene: 'textedit'}), unicode: {fields: ['textedit'], conditions: ['composing']}};
+  // The source reads Korean throughout (as the Korean condition left it), so nothing but the run's own Latin at its
+  // start and the end of the composition selects anything.
+  let selects = 0;
+  const events = [];
+  const ime = {matrix: (base, a) => {
+    if (a[0] === 'source' && a[1] === 'select') { selects++; events.push(`select ${a[a.indexOf('--source') + 1]}`); }
+    if (a[0] === 'step' && a[1] === 'activate') events.push(`activate ${a[2]}`);
+    if (a[0] === 'probe' && a[1] === 'keystroke') events.push('probe');
+    const out = base(a);
+    if (a[0] === 'source' && a[1] === 'current') return {...out, answer: {current: KOREAN_2SET}};
+    return selects < 2 && a[0] === 'read' && out.focus?.valueHash === sha256Hex('ㄱ') ? {...out, focus: {...out.focus, valueHash: sha256Hex('각')}} : out;
+  }};
+  const lane = code => { if (tagOf(code) === 'field.empty') events.push('empty'); };
+  const {result} = await runWith({plan, cellName: 'korean', ops: ime, lane});
+  assert.ok(result.rows.every(r => !r.invalid), JSON.stringify(result.rows.find(r => r.invalid)));
+  const ended = result.meta.unicode.readings.find(r => r.when === 'composing@electron:end');
+  assert.deepEqual([ended.select, ended.held], ['com.apple.keylayout.ABC', true]);
+  // The user window brought to the front, Latin selected there, then its field emptied, then the probe's key.
+  const from = events.lastIndexOf('activate electron');
+  assert.deepEqual(events.slice(from, from + 3), ['activate electron', 'select com.apple.keylayout.ABC', 'empty']);
+  assert.ok(events.indexOf('probe') > from + 2);
+});
+
+test('the per-context condition reads the driven scene\'s source again for a while after bringing it back, since the switch follows the activation', async () => {
+  const plan = {...planOf('korean', {scene: 'chrome'}), unicode: {fields: ['chrome'], conditions: ['perContext']}};
+  // Chrome's context reads Latin on the first reading after it comes back, Korean on the second.
+  let on = false, back = 0, reads = 0;
+  const late = {matrix: (base, a) => {
+    if (a[0] === 'source' && a[1] === 'per-context' && a.includes('on')) on = true;
+    if (on && a[0] === 'step' && a[1] === 'activate' && a[2] === 'chrome') back++;
+    const out = base(a);
+    if (a[0] === 'source' && a[1] === 'current' && back === 2) return {...out, answer: {current: ++reads < 2 ? 'com.apple.keylayout.ABC' : KOREAN_2SET}};
+    return out;
+  }};
+  const slept = [];
+  const {result} = await runWith({plan, cellName: 'korean', ops: late, slept});
+  assert.ok(result.rows.every(r => r.ok === true && !r.invalid), JSON.stringify(result.rows.find(r => r.invalid)));
+  const reading = result.meta.unicode.readings.find(r => r.when === 'perContext:chrome@textedit');
+  assert.deepEqual([reading.heldAfter, reading.reads], [true, 2]);
+  assert.ok(slept.length > 0, 'waited between the readings');
 });
 
 test('a per-context preference still reading on after the off request leaves every source-dependent row invalid, whatever a selection read back', async () => {

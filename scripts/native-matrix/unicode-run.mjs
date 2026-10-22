@@ -21,6 +21,9 @@ import {activate, alertCheck, caseRow, device, focusOf, js, mark, push, quiet, r
 import {ABC, applyDeclarations, COMPOSITION, CONDITIONS, INPUT_SOURCE_CHANGED, KOREAN_2SET, readDeclarations, unicodeCase, unicodeRowsOf} from './unicode-plan.mjs';
 
 const j = JSON.stringify;
+// A reading that follows an action asynchronously (a web view's value after a key, an app's input source after its
+// activation) is taken up to this many times, this far apart, before its condition is said not to have held.
+export const SETTLE_READS = 4, SETTLE_READ_MS = 250;
 
 // The section: every row of `plan` ({fields, conditions}), then the expected file's declarations applied to them.
 export async function unicodeSection(ctx, plan) {
@@ -81,7 +84,11 @@ async function frontmostRows(ctx, field, rows, source) {
 }
 
 // The user window in front with its field emptied and focused, read back empty by the focus probe; the driven field
-// focused first while its scene was in front of its own app. -> {userWindow} or {invalid}.
+// focused first while its scene was in front of its own app. Before the user's field is emptied, the Latin source is
+// selected with it in front, which ends a composition its input method may still hold from an earlier row (the Korean
+// condition's `r k` leaves 가 composing where the keys go through the input method, as in Chromium; an earlier group's
+// composition stays in its user window): emptying the field does not end it, and the probe's r would then compose onto
+// it (각, ㄲ) rather than start ㄱ. -> {userWindow} or {invalid}.
 async function behindUser(ctx, field, user) {
   await quiet(ctx, field);
   await quiet(ctx, user);
@@ -89,6 +96,7 @@ async function behindUser(ctx, field, user) {
   if (!driven.ok || !driven.value?.ready) return {invalid: `the field was not prepared (${driven.error ?? driven.value?.reason ?? 'no reason'})`};
   const front = activate(ctx, user);
   if (!front?.ok) return {invalid: `the user window (${user}) did not come to the front`};
+  if (!useSource(ctx, ABC, `composing@${user}:end`)) return {invalid: `${notHeld(ABC, user)}: a composition left in the user window could not be ended`};
   const prepared = await js(ctx, 'harness', `unicode:prepare:${user}`, emptyFieldCell(user));
   if (!prepared.ok || !prepared.value?.ready) return {invalid: `the user window's field was not prepared (${prepared.error ?? prepared.value?.reason ?? 'no reason'})`};
   const userWindow = userWindowOf(read(ctx).reading, ctx.records[user].pid);
@@ -111,8 +119,14 @@ async function composingRows(ctx, field, rows) {
   const started = device(ctx, ['probe', 'keystroke', '--window', focusOf(userWindow), '--text', COMPOSITION.key, '--mode', 'ansiKeys', '--lead', '1500']);
   const finished = device(ctx, ['probe', 'finish']);
   ctx.posted[user] = ctx.now();
-  const composed = read(ctx, focusOf(userWindow)).focus?.valueHash ?? null;
-  ctx.meta.unicode.readings.push({when: `composing@${user}`, scheduled: started?.scheduled ?? null, posted: !probeProblem(finished?.answer), composed: composed === sha256Hex(COMPOSITION.composed)});
+  // Read until the field shows the jamo, a few times: a web view's accessibility value follows its DOM asynchronously.
+  const jamo = sha256Hex(COMPOSITION.composed);
+  let composed = null, reads = 0;
+  for (; reads < SETTLE_READS && composed !== jamo; reads++) {
+    if (reads) await ctx.sleep(SETTLE_READ_MS);
+    composed = read(ctx, focusOf(userWindow)).focus?.valueHash ?? null;
+  }
+  ctx.meta.unicode.readings.push({when: `composing@${user}`, scheduled: started?.scheduled ?? null, posted: !probeProblem(finished?.answer), composed: composed === jamo, reads});
   const problem = probeProblem(finished?.answer) ?? (composed === sha256Hex(COMPOSITION.composed) ? null : 'the user window\'s field did not read the composed jamo after the probe\'s key');
   if (problem) { for (const r of rows) invalidRow(ctx, r, `no composition in progress: ${problem}`); return; }
   let disturbed = false;
@@ -142,9 +156,14 @@ async function perContextRows(ctx, field, rows) {
   if (before) { for (const r of rows) invalidRow(ctx, r, before); return; }
   const done = [];
   for (const r of rows) done.push(await caseRow(ctx, field, 'background', unicodeCase(r), {...options(r), user, userWindow}));
+  // The context's source follows the activation: read a few times before it says the condition did not hold.
   const back = activate(ctx, field);
-  const held = back?.ok === true && device(ctx, ['source', 'current'])?.current === KOREAN_2SET;
-  ctx.meta.unicode.readings.push({when: `perContext:${field}@${user}`, perContext: on, drivenKorean: korean, userLatin: latin, heldAfter: held});
+  let held = false, reads = 0;
+  for (; back?.ok === true && reads < SETTLE_READS && !held; reads++) {
+    if (reads) await ctx.sleep(SETTLE_READ_MS);
+    held = device(ctx, ['source', 'current'])?.current === KOREAN_2SET;
+  }
+  ctx.meta.unicode.readings.push({when: `perContext:${field}@${user}`, perContext: on, drivenKorean: korean, userLatin: latin, heldAfter: held, reads});
   if (!held) for (const row of done) if (!row.invalid) Object.assign(row, {ok: false, invalid: 'the driven scene\'s context did not read Korean afterwards: the condition is not shown to have held'});
 }
 

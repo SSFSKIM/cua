@@ -95,6 +95,19 @@ test('observe: the settled full observation with the screenshot, the image remov
   assert.equal(fs.existsSync(image), false);
 });
 
+test('observe: a refused read keeps the engine\'s diagnostics of its last read beside the problems, never its text', async () => {
+  // Hold 2b's question: whether cua's engine waited for the Electron fixture's web area, and whether it enabled it. A
+  // read refused for the missing page is the one whose timings answer it.
+  const recorded = shot('electron', 'skyshot.json');
+  const area = recorded.nodes.findIndex(n => n.role === 'AXWebArea');
+  const timings = {webShaped: true, enablementPrior: {AXManualAccessibility: false}, enabled: 'AXManualAccessibility', webAreaWaitMs: 1000, webAreaFound: false};
+  const empty = {...recorded, nodes: recorded.nodes.slice(0, area), timings};
+  const out = await verify({id: 'electron', record: recordOf('electron', recorded.app.pid), client: fakeClient([empty]), screenshots: '/s', ...fakeClock()});
+  assert.deepEqual(out.problems.map(p => p.code), ['page_filling']);
+  assert.equal(out.skyshot, null);
+  assert.deepEqual(out.timings, timings);
+});
+
 test('observe: an image outside the run\'s screenshot directory is never removed', async () => {
   const run = scratch(), elsewhere = join(run, 'elsewhere.jpg');
   fs.writeFileSync(elsewhere, 'jpeg');

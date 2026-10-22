@@ -131,11 +131,12 @@ async function getState(client, record, screenshots, extra, options) {
 // 120 s default), and a read that answers past the bound is not accepted. -> {shot, problems: [], settle} with the
 // later of the two; or {shot: null, problems, settle}: a problem waiting cannot clear (with `strict`, any problem) at
 // once, the transient problems of the last read at the bound, or `unstable` (with `observed`, the last read, when it
-// passed the checks) when no two reads passed alike in time. `settle` is {reads, ms} for the record. `check` is what a
+// passed the checks) when no two reads passed alike in time; a refusal also carries `timings`, the engine's diagnostics
+// of its last read (null before any answered), never its text. `settle` is {reads, ms} for the record. `check` is what a
 // read must pass (sceneProblems; Finder's chrome steps check only ownership).
 export async function settledState({id, record, client, screenshots, sleep = sleepFor, now = Date.now, boundMs = SETTLE_BOUND_MS, intervalMs = SETTLE_INTERVAL_MS, strict = false, check = sceneProblems}) {
   const t0 = now(), deadline = t0 + boundMs;
-  let reads = 0, previous = null, problems = [], observed = null;
+  let reads = 0, previous = null, problems = [], observed = null, timings = null;
   const settle = () => ({reads, ms: now() - t0});
   for (;;) {
     if (reads) await sleep(intervalMs);
@@ -148,23 +149,24 @@ export async function settledState({id, record, client, screenshots, sleep = sle
       throw error;
     }
     if (now() > deadline) break;
+    timings = shot?.timings ?? null;
     problems = check(id, shot, record);
-    if (problems.some(p => strict || !TRANSIENT.has(p.code))) return {shot: null, problems, settle: settle()};
+    if (problems.some(p => strict || !TRANSIENT.has(p.code))) return {shot: null, problems, timings, settle: settle()};
     const digest = problems.length ? null : stateDigest(goldenForm(shot));
     if (digest !== null && digest === previous) return {shot, problems: [], settle: settle()};
     previous = digest;
     observed = digest === null ? null : goldenForm(shot);
   }
-  if (problems.length) return {shot: null, problems, settle: settle()};
-  return {shot: null, problems: [{code: 'unstable', message: `cua's observation did not render alike in two consecutive reads ${intervalMs} ms apart within ${boundMs} ms`}],
+  if (problems.length) return {shot: null, problems, timings, settle: settle()};
+  return {shot: null, timings, problems: [{code: 'unstable', message: `cua's observation did not render alike in two consecutive reads ${intervalMs} ms apart within ${boundMs} ms`}],
     ...(observed ? {observed} : {}), settle: settle()};
 }
 
 // The fixed state's observation, settled; `strict` for verify. -> {scene, build, skyshot | null, timings, frame, settle,
-// problems}.
+// problems}; a refused one keeps the timings of its last read (the native-mac lane records them).
 export async function observe({id, record, client, screenshots, sleep, now, strict = false}) {
-  const {shot, problems, settle} = await settledState({id, record, client, screenshots, sleep, now, strict});
-  if (problems.length) return {scene: id, build: client.identity?.build ?? null, skyshot: null, timings: null, frame: null, settle, problems};
+  const {shot, problems, settle, timings} = await settledState({id, record, client, screenshots, sleep, now, strict});
+  if (problems.length) return {scene: id, build: client.identity?.build ?? null, skyshot: null, timings, frame: null, settle, problems};
   return {scene: id, build: client.identity?.build ?? null, skyshot: goldenForm(shot), timings: shot.timings ?? null, frame: shot.window?.frame ?? null, settle, problems: []};
 }
 

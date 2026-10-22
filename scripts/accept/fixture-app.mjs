@@ -68,6 +68,17 @@ export async function awaitLaunch({pids, before, startedAt, launchOf: launch = p
 // Whether a recorded launch is still that process: its pid alive with the same launch time.
 export const isSameLaunch = (recorded, {launchOf: launch = pid => launchOf(pid)} = {}) => Boolean(recorded) && launch(recorded.pid) === recorded.at;
 
+// Capture immediately after the run opens its own empty document in a newly launched app. Never establish a
+// baseline from an app that was already running, a foreign PID, or a launch that changed while the probe ran.
+// Only these off-screen IDs may later be classified as launch-internal; later minimized documents cannot join it.
+export async function captureLaunchWindows({launch: recorded, before, readWindows, launchOf: launch = pid => launchOf(pid)}) {
+  if (before.length || !isSameLaunch(recorded, {launchOf: launch})) return null;
+  let windows;
+  try { windows = await readWindows([recorded.pid]); } catch { return null; }
+  if (!windows || windows.some(w => w.ownerPid !== recorded.pid) || !isSameLaunch(recorded, {launchOf: launch})) return null;
+  return {...recorded, windows: windowInventory(windows).offScreen};
+}
+
 // SIGTERM to each owned pid, then up to `waitMs` for it to exit. -> {quit: [pid], remaining: [pid]}.
 export async function quitOwned(pids, {kill = (pid, signal) => process.kill(pid, signal), alive = pid => { try { process.kill(pid, 0); return true; } catch (error) { return error.code === 'EPERM'; } },
   sleep = ms => new Promise(r => setTimeout(r, ms)), waitMs = 5000, pollMs = 100} = {}) {
@@ -89,13 +100,14 @@ export async function restoreFront(previous, {frontmost, activate = id => run('/
 }
 
 // The whole cleanup: the run's recorded launch quit (when it is still that process), then the front handed back. `run`
-// is what the run recorded: {before (pids), front (bundle id or null), launch ({pid, at} from captureLaunch, or null)}.
+// is what the run recorded: {before (pids), front (bundle id or null), launch ({pid, at} from captureLaunch, or null),
+// launchWindows (captureLaunchWindows's empty-launch inventory, or null)}.
 // `alone` must be exactly true, the caller's positive confirmation that the app holds no window but the fixture's; without
 // it nothing is signalled and a live recorded launch is returned as `leftRunning`. `pids` is read only to report which
 // processes running before are still there; it never selects anything to quit. When `readWindows` is supplied, the
 // caller has confirmed the fixture document closed, and a fresh list must contain no on-screen window or foreign PID
-// before quitting; the process identity is rechecked after that read. Off-screen internal windows are recorded by
-// count/bounds only (#196), using the same inventory as fresh onboarding.
+// before quitting; the process identity is rechecked after that read. Current off-screen IDs must be a subset of
+// this launch's internal inventory (#196); new/unclassified off-screen windows block too. Evidence is IDs/bounds only.
 // -> {launch, live, alone, quit, remaining, leftRunning, keptBefore, front, windowCheck?}.
 export async function cleanUpFixtureApp({name, bundle, run: started, alone = false, readWindows, pids = () => pidsOf(name), launchOf: launch = pid => launchOf(pid), quit = quitOwned, frontmost, activate, sleep}) {
   let live = isSameLaunch(started.launch, {launchOf: launch});
@@ -106,10 +118,16 @@ export async function cleanUpFixtureApp({name, bundle, run: started, alone = fal
     try { windows = await readWindows(); } catch { windows = null; }
     const inventory = windows && windowInventory(windows);
     const foreign = windows?.some(w => w.ownerPid !== started.launch.pid);
-    confirmed = Boolean(inventory && inventory.visible.length === 0 && !foreign);
+    const baseline = started.launchWindows;
+    const knownIds = new Set(baseline?.pid === started.launch.pid && baseline?.at === started.launch.at ? baseline.windows.map(w => w.number) : []);
+    const unclassified = inventory?.offScreen.filter(w => !knownIds.has(w.number)) ?? [];
+    confirmed = Boolean(inventory && inventory.visible.length === 0 && !foreign && unclassified.length === 0);
     windowCheck = {status: confirmed ? 'PASS' : 'BLOCKED',
-      detail: !inventory ? 'window list unreadable' : foreign ? 'window belongs to another PID' : inventory.visible.length ? 'on-screen window remains' : 'no on-screen window remains; off-screen internal windows do not block cleanup',
-      offScreenCount: inventory?.offScreenCount ?? null, offScreenBounds: inventory?.offScreenBounds ?? null};
+      detail: !inventory ? 'window list unreadable' : foreign ? 'window belongs to another PID' : inventory.visible.length ? 'on-screen window remains'
+        : unclassified.length ? 'unclassified off-screen window remains; it was not in this empty launch’s internal set'
+          : 'no on-screen window remains; every off-screen ID belongs to this empty launch’s internal set',
+      offScreenCount: inventory?.offScreenCount ?? null, offScreenBounds: inventory?.offScreenBounds ?? null,
+      unclassifiedOffScreen: unclassified};
     live = isSameLaunch(started.launch, {launchOf: launch});  // the window probe may have taken time
   }
   const {quit: quitPids, remaining} = live && confirmed ? await quit([started.launch.pid]) : {quit: [], remaining: []};

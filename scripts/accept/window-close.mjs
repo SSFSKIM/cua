@@ -12,12 +12,13 @@ const run = promisify(execFile);
 const windowBounds = w => Object.fromEntries(['x', 'y', 'width', 'height'].map(key => [key, w.bounds?.[key] ?? null]));
 
 // Shared by onboarding's one-visible-window admission and the TextEdit fixture's windowless cleanup (#196).
-// Only explicitly off-screen windows are excluded. TextEdit's internal off-screen windows are evidence (bounds
-// only), not documents to close; unknown visibility remains in the blocking set. No window title crosses here.
+// Only explicitly off-screen windows are separated; that alone does NOT classify them as internal. Cleanup compares
+// their IDs with its empty-launch inventory before excluding them. Off-screen evidence is IDs/bounds, never titles;
+// unknown visibility remains in the blocking set.
 export function windowInventory(windows) {
-  return {visible: windows.filter(w => w.onScreen !== false),
-    offScreenCount: windows.filter(w => w.onScreen === false).length,
-    offScreenBounds: windows.filter(w => w.onScreen === false).map(windowBounds)};
+  const offScreen = windows.filter(w => w.onScreen === false).map(w => ({number: w.number, bounds: windowBounds(w)}));
+  return {visible: windows.filter(w => w.onScreen !== false), offScreen,
+    offScreenCount: offScreen.length, offScreenBounds: offScreen.map(w => w.bounds)};
 }
 
 // Every layer-0 window of `pids` ([{ownerPid, number, onScreen}]), on screen or not, or null when a reading failed.

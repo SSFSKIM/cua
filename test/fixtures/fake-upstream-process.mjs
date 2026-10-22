@@ -12,7 +12,10 @@
 // cell (src/profiles/inventory.mjs) is answered with $CODEX_HOME/fake-backends.json as its listing when that file
 // exists (otherwise it is echoed like any cell, which the listing reads as a failure). A js call with code "relay" connects
 // to the first of BROWSER_USE_BACKEND_PATHS as the vendor browser service does and answers {relay: 'replied', info} with
-// its getInfo, or {relay: 'closed'} when the host closes the connection first (a refused peer).
+// its getInfo, or {relay: 'closed'} when the host closes the connection first (a refused peer). When
+// $CODEX_HOME/fake-attestation.json ({code, from, attestation}) exists, the `from`-th js call with exactly that code, and
+// every later one, counted across every upstream of the home, carries `_meta['cua/nativeEngine']: attestation`, the
+// service's own attestation, which the proxy passes through in place of the launch's.
 import {spawn} from 'node:child_process';
 import {connect} from 'node:net';
 import {createPeer, frameDecoder} from '../../src/chrome/protocol.mjs';
@@ -60,6 +63,16 @@ function relayGetInfo() {
   });
 }
 
+function attestationFor(code) {
+  const file = process.env.CODEX_HOME && join(process.env.CODEX_HOME, 'fake-attestation.json');
+  if (!file || !existsSync(file)) return {};
+  const {code: trigger, from, attestation} = JSON.parse(readFileSync(file, 'utf8'));
+  if (code !== trigger) return {};
+  const seen = readFileSync(record, 'utf8').trim().split('\n').map(line => JSON.parse(line))
+    .filter(entry => entry.received?.params?.name === 'js' && entry.received.params.arguments?.code === trigger).length;
+  return seen >= from ? {_meta: {'cua/nativeEngine': attestation}} : {};
+}
+
 const send = msg => {
   if (mode === 'noise') process.stdout.write('not json from the runtime\n');
   process.stdout.write(JSON.stringify(msg) + '\n');
@@ -88,7 +101,7 @@ createInterface({input: process.stdin}).on('line', line => {
       const backends = process.env.CODEX_HOME && join(process.env.CODEX_HOME, 'fake-backends.json');
       if (name === 'js' && String(args.code).includes('"CUABACKENDS "') && backends && existsSync(backends)) return reply(text(`CUABACKENDS ${readFileSync(backends, 'utf8').trim()}`));
       if (name === 'js' && args.code === 'relay') return relayGetInfo().then(outcome => reply(text(outcome)));
-      if (name === 'js') return reply(text({code: args.code, turn: _meta?.['x-codex-turn-metadata']}));
+      if (name === 'js') return reply({...text({code: args.code, turn: _meta?.['x-codex-turn-metadata']}), ...attestationFor(args.code)});
       if (name === 'js_reset') return reply(text('js kernel reset'));
       if (name === 'turn_ended') return reply(text('{}'));
       return send({jsonrpc: '2.0', id: msg.id, error: {code: -32602, message: `unknown tool ${name}`}});

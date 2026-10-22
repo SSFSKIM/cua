@@ -6,7 +6,8 @@
 // account's own store is never read. Everything else sees the account's real home, as under `cua serve` in a
 // terminal: the runtime's launch environment (the vendor's computer-use service finds the native computer-use socket
 // under os.homedir(), which follows HOME) and, for the browser surface, the Chrome facts and the readiness
-// listing behind profiles_list. The rest is the production server.
+// listing behind profiles_list, and the native engine's selection (the account's engine.json and approved engine,
+// so CUA_NATIVE_ENGINE=cua serves the account's approved engine). The rest is the production server.
 //
 //   HOME=<temporary home> CUA_HOME=<scratch home> node scripts/accept/serve-with-store.mjs
 import {serve, settingsFrom} from '../../src/mcp/server.mjs';
@@ -14,7 +15,7 @@ import {defaultHome} from '../../src/runtime/layout.mjs';
 import {resolveRuntime} from '../../src/runtime/manifest.mjs';
 import {chromeFacts} from '../../src/profiles/chrome.mjs';
 import {listLiveBackends} from '../../src/profiles/inventory.mjs';
-import {accountHome, isAccountHome, withAccountHome} from './secret-seed.mjs';
+import {accountEngine, accountHome, isAccountHome, withAccountHome} from './secret-seed.mjs';
 
 if (!process.env.CUA_HOME || isAccountHome(process.env.HOME)) {
   process.stderr.write('serve-with-store: run it with CUA_HOME set and HOME set to a temporary store home, not this account\'s\n');
@@ -26,6 +27,8 @@ const account = {...process.env, HOME: accountHome()};
 const code = await serve({
   home,
   prepareLaunch: withAccountHome,
+  // The engine is selected as the account's own, whatever CUA_NATIVE_ENGINE pins (secret-seed.mjs accountEngine).
+  engine: accountEngine(),
   // cua's extension, as `cua serve` itself checks it (src/mcp/connection.mjs), in the account's own Chrome data.
   chrome: chromeFacts({env: account, userHome: account.HOME}),
   listBackends: () => listLiveBackends({home, runtime: resolveRuntime({home}), ambient: account, tabCounts: false, sandbox: settingsFrom(process.env).sandbox}),

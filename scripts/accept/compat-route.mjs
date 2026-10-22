@@ -5,7 +5,9 @@
 // compat executable and the run's own helper (by its session temp) carries the same CODEX_CLI_PATH, the file it runs
 // `app-server` from; the kernel's TMPDIR is its session's own, its script directory is not writable, a link of a file
 // it cannot write is refused, cells reach no TCP or Unix socket and cua's home stays unlisted; no codex process runs
-// under the session; and the run's helper quit or was quit by its pid. Counts and error codes only.
+// under the session; and the run's helper quit or was quit by its pid. Counts and error codes only. The session is
+// pinned to the vendor engine (#117 M3: the experiment sets CUA_NATIVE_ENGINE=vendor, whatever accept-native's --engine
+// says, until M6 retires this item), and every cell's result must attest it: the helper's version, the runtime release.
 //
 //   node scripts/accept/compat-route.mjs --home <CUA_HOME> --user-home <HOME> --config-home <XDG_CONFIG_HOME> --out <file>
 import {spawn} from 'node:child_process';
@@ -15,16 +17,28 @@ import {join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
 import {COMPAT_EXECUTABLE} from '../../src/runtime/launch.mjs';
+import {resolveRuntime} from '../../src/runtime/manifest.mjs';
+import {attestationProblem, ENGINE_META_KEY} from '../probe/lib.mjs';
+import {expectedAttestation} from '../probe/pinned-engine.mjs';
 
 const EXPERIMENT = fileURLToPath(new URL('../sandbox-probe/experiment.mjs', import.meta.url));
 const NATIVE = ['listApps#1', 'Finder getApp+getAXState#1', 'listApps#2', 'Finder getAXState#2'];
 const DENIED = ['EPERM', 'EACCES'];
 
-// experiment.mjs's result -> [{label, pass, detail?}].
-export function compatRouteChecks(result, {compat = COMPAT_EXECUTABLE} = {}) {
+// experiment.mjs's result -> [{label, pass, detail?}]. `expected`: the vendor engine's attestation
+// (vendorAttestation), which every cell that ran must carry; without it that check fails rather than being skipped.
+export function compatRouteChecks(result, {compat = COMPAT_EXECUTABLE, expected = null} = {}) {
   const checks = [];
   const add = (label, pass, detail) => checks.push({label, pass: Boolean(pass), ...(detail === undefined ? {} : {detail})});
   const r = result?.results ?? {};
+  // Every cell that got a reply (a transport failure has none to attest, and fails its own check).
+  const cells = ['banner', 'confinement', ...NATIVE].filter(name => r[name] && r[name].transport === undefined);
+  const misattested = expected ? cells.flatMap(name => {
+    const problem = attestationProblem({[ENGINE_META_KEY]: r[name].attested}, expected);
+    return problem ? [`${name}: ${problem}`] : [];
+  }) : ['no expected attestation was given'];
+  add('every cell attests the vendor engine at the runtime release (pinned whatever --engine says)', cells.length > 0 && !misattested.length,
+    misattested.length ? misattested.join('; ') : `${cells.length} cell(s)`);
   add('the session started (banner cell)', r.banner?.ok === true, r.banner?.error);
   for (const name of NATIVE) add(`native call ${name} succeeds through the compat executable's app-server`, r[name]?.ok === true, r[name]?.error);
   add('the launch names cua\'s compat executable as CODEX_CLI_PATH', result?.launcher?.codexCliPath === compat, result?.launcher?.codexCliPath ?? 'none');
@@ -58,8 +72,10 @@ const teardownProven = (exit, result) => exit.signal !== 'SIGKILL' && helpersGon
 // experiment closes its serve, stops its own helpers by pid and writes its result) and given `graceMs` to finish; only
 // then is it killed. The scratch directory (the experiment's result, its launch log naming each session temp, the
 // helpers' ownership witness) is removed only when the teardown is proven, else kept and named (`kept`).
-// `experiment` and `node` are injectable for tests.
-export async function compatRouteAcceptance({home, userHome, configHome, node = process.execPath, experiment = EXPERIMENT, timeoutMs = 600_000, graceMs = 90_000}) {
+// `experiment`, `node` and `expected` (the vendor engine's attestation, by default read from the home's runtime) are
+// injectable for tests.
+export const vendorAttestation = home => expectedAttestation({engine: 'vendor', runtime: resolveRuntime({home})});
+export async function compatRouteAcceptance({home, userHome, configHome, node = process.execPath, experiment = EXPERIMENT, timeoutMs = 600_000, graceMs = 90_000, expected = vendorAttestation(home)}) {
   const scratch = mkdtempSync(join(tmpdir(), 'cua-compat-route-'));
   const out = join(scratch, 'result.json');
   const child = spawn(node, [experiment, '--native', '--home', home, '--user-home', userHome, '--config-home', configHome, '--scratch', scratch,
@@ -74,7 +90,7 @@ export async function compatRouteAcceptance({home, userHome, configHome, node = 
   });
   let result = null;
   try { result = JSON.parse(readFileSync(out, 'utf8')); } catch { /* judged below */ }
-  const checks = result ? compatRouteChecks(result) : [{label: 'the experiment wrote its result', pass: false, detail: `exit ${exit.code ?? exit.signal}: ${stderr.trim().split('\n').at(-1) ?? ''}`.slice(0, 300)}];
+  const checks = result ? compatRouteChecks(result, {expected}) : [{label: 'the experiment wrote its result', pass: false, detail: `exit ${exit.code ?? exit.signal}: ${stderr.trim().split('\n').at(-1) ?? ''}`.slice(0, 300)}];
   if (timedOut) checks.push({label: `the experiment finished within ${timeoutMs} ms`, pass: false, detail: exit.signal === 'SIGKILL' ? `killed after a ${graceMs} ms grace` : 'cancelled; it tore down on its own'});
   const proven = teardownProven(exit, result);
   if (!proven) checks.push({label: 'the run\'s teardown is proven (its helpers accounted for); the evidence is kept', pass: false, detail: scratch});

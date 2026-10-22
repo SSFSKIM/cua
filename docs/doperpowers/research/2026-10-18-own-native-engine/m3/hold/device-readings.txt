@@ -1,0 +1,33 @@
+---
+---
+7096: 
+78542: 
+80921: 
+80923: 
+[ NULL ]  ASN:0x0-0xc00c: (in front) 
+    bundleID="com.apple.Terminal"
+    bundle path=[ NULL ] 
+    executable path=[ NULL ] 
+ !cgsConnection !signalled type=[ NULL ]  flavor=[ NULL ]  Version=[ NULL ]  Arch=!!none 
+
+com.apple.keylayout.ABC
+19:28  up 17:40, 2 users, load averages: 1.72 2.51 2.71
+.
+ShowSidebar=1
+ShowStatusBar=Error: Could not find key 'ShowStatusBar' in domain 'com.apple.finder'.
+ShowPathbar=Error: Could not find key 'ShowPathbar' in domain 'com.apple.finder'.
+input=com.apple.keylayout.ABC
+perContext={TextInputGlobalPropertyPerContextInput=0;}
+front=com.apple.Terminal
+secagent= authstatus=
+engine= sky= textedit=52348
+cft= electron-fixture=
+shim 7096 alive=7096 children=
+shim 78542 alive= children=
+shim 80921 alive=80921 children=
+shim 80923 alive=80923 children=
+UNC=14013
+engine.json mtime=1792384396
+cua-parity=fead3a16 dirty=0
+load={ 2.22 2.15 2.39 }
+:5900=0

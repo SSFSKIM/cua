@@ -63,7 +63,8 @@ export async function runRawScenario(scenario,{client,emit,checkout,reset=true,c
   const timed=(paused,ms)=>{if(paused){pausedCells.push(timings.length);timings.push(undefined);}else timings.push(ms);};
   for(const cell of scenario.cells){
     const where=`${scenario.id} ${cell.label??cell.op}`,waited=await pause.wait(where),token=pause.begin();
-    if(cell.answer)client.setElicitationAnswer(async()=>{if(cell.answerDelayMs)await new Promise(r=>setTimeout(r,cell.answerDelayMs));return cell.answer;});
+    // A cell's answer: fixed, or a function of the request (a harness that accepts only the approval it pins).
+    if(cell.answer)client.setElicitationAnswer(async msg=>{if(cell.answerDelayMs)await new Promise(r=>setTimeout(r,cell.answerDelayMs));return typeof cell.answer==='function'?cell.answer(msg):cell.answer;});
     const start=performance.now();let result,timer;
     if(cell.op==='turn'){
       const replies=await observeTurnReplies(cell,{client}),witnessed=cell.witnessCount!==undefined;

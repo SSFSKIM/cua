@@ -180,13 +180,14 @@ const GENERAL_NOTES = [
   SECRETS_NOTE,
   '- Each tool\'s description carries the rules for its surface: follow them as these.',
 ];
-// macOS asks per app; on Linux nothing asks (the Linux js rules say so).
+// Both platforms ask per app (on Linux since #117 M3: a window's app, src/services/engine/policy.mjs; the Linux js rules
+// say what is keyed how).
 const APPROVAL_NOTE = '- Apps ask for approval once per connection; report a declined app, don\'t retry.';
 // With the device tools (a stdio connection), last.
 const DEVICES_NOTE = '- devices_use moves every tool to that machine, under the notes and descriptions it returns; end_task first.';
 
 export const DEFAULT_HOST_NOTES = [TITLE, COMPUTER_HEAD, ...GENERAL_NOTES, APPROVAL_NOTE].join('\n');
-export const LINUX_HOST_NOTES = [TITLE, LINUX_COMPUTER_HEAD, ...GENERAL_NOTES].join('\n');
+export const LINUX_HOST_NOTES = [TITLE, LINUX_COMPUTER_HEAD, ...GENERAL_NOTES, APPROVAL_NOTE].join('\n');
 
 // The notes for the enabled surfaces on `platform` (the host's by default), with the devices rule where the device
 // tools exist.
@@ -201,10 +202,12 @@ export function hostNotesFor(surfaces, {platform = process.platform, devices = f
 // read by then (only that tool hands out a profile's id).
 //
 // On Linux (Phase F) they differ where the vendor's Linux target does: apps are bound by X11 window, key names are X
-// keysyms, setValue and selectText do not exist and paste types, and nothing asks the user per app (the owner's
-// allow-all decision; cua adds no allowlist). DISPLAY and XAUTHORITY reach the runtime; since #115 a confined cell has
-// no socket to reach X with (only the trusted worker has the network), but under CUA_SHIM_SANDBOX=disabled a cell can
-// talk to X directly, so the rule keeps its cautious wording: the trusted wrapper is not a boundary there. Text input is F2's measurement on Ubuntu 24.04 arm64
+// keysyms, setValue and selectText do not exist and paste types. Approvals (#117 M3, replacing Phase F's allow-all;
+// docs/doperpowers/specs/2026-10-18-own-native-engine-design.md, Policy and approvals, whose friction the plugin's
+// Elicitation hook removes) are asked by the trusted wrapper per app: a window's app as listWindows() names it,
+// launch_app's id (so a launch and the first action on its window are two apps), and the whole desktop for input that
+// names no window. Approval is consent, not confinement: under CUA_SHIM_SANDBOX=disabled a cell can talk to X directly
+// (DISPLAY and XAUTHORITY reach the runtime; since #115 a confined cell has no socket to reach X with). Text input is F2's measurement on Ubuntu 24.04 arm64
 // (docs/evidence/2026-10-06-linux-acceptance.md): the helper's typeText and paste insert through AT-SPI and crashed the
 // GTK3 editors gedit and mousepad (SIGSEGV in gtk_text_buffer_get_iter_at_offset), while pressKey typed into gedit; in
 // GTK4's gnome-text-editor they inserted the text and then threw (Text.SetCaretOffset unsupported), which the general
@@ -222,7 +225,7 @@ const LINUX_COMPUTER_RULES = [
   '- setValue and selectText do not exist; paste types like typeText.',
   '- typeText and paste crash GTK3 text views: type there with pressKey, one X keysym per call (minus, space).',
   '- Prefer accessibility element indexes; coordinates are screenshot pixels (apply the host\'s downscale).',
-  '- No app asks for approval: this connection drives every window of the session; the trusted wrapper is not a boundary on Linux.',
+  '- Approval is per app: a window\'s app as listWindows() names it, launch_app\'s id, and the whole desktop for input without a window.',
 ];
 const BROWSER_POINTER = '- Chrome: follow the rules in profiles_list\'s description (DOM-only tabs, per-phase budgets up to 120 s, evaluate in the page, slow createBrowserTab).';
 

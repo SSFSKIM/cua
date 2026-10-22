@@ -1,3 +1,4 @@
+import './helpers/scratch-home.mjs'; // first: doctor's engine row must not read (or launch) the account's approved engine
 // The Codex CLI's leftovers in a cua home (src/runtime/codex-leftovers.mjs, #115 M4): what `cua install
 // --prune-leftovers` removes from cua's own CODEX_HOME by name (never the environment's CODEX_HOME), the release-tree
 // CLI component it removes under the Design's three conditions, the symbolic links it never follows, what node_repl

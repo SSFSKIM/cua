@@ -139,15 +139,15 @@ client on another machine, see Remote control.
 ## App approvals
 
 Apart from Claude Code's tool permission, OpenAI's stack asks before an app is first used, `Allow Computer Use to use
-"X"?`, as an MCP elicitation that Claude Code shows as a dialog. Where an accepted answer is remembered depends on
-`CUA_SHIM_PERSIST`:
+"X"?`, as an MCP elicitation that Claude Code shows as a dialog; on Linux cua's trusted wrapper asks the same per app
+(see Linux). An app declined is remembered for the connection; whether one accepted is depends on `CUA_SHIM_PERSIST`:
 
-- `session` (the default) writes `$CUA_HOME/state/codex/computer-use/sessions/<session id>.toml`; each server
-  connection has its own random session id, so every new connection asks once more per app, and the file is removed
-  when its connection closes.
-- `always` adds the app to the machine-wide list Codex Desktop's own "Always allow" uses,
-  `~/Library/Group Containers/2DC432GLL2.com.openai.sky.CUAService/Library/Application Support/Software/ComputerUseAppApprovals.json`;
-  an app on that list is never asked about again from any session or host. One more accept per app, then silence.
+- `session` (the default): the connection remembers it until it closes, through the runtime's idle stops, so every
+  new connection asks once more per app. (The vendor's host, which macOS computer sessions run, also writes
+  `$CUA_HOME/state/codex/computer-use/sessions/<session id>.toml`, removed when its connection closes.)
+- `none`: an accepted app is asked about again on every use.
+- `always` is refused at start (`invalid_setting`): cua remembers an approval for its connection only. To stop being
+  asked, let the plugin's `Elicitation` hook answer (below); a stricter hook is where a veto lives.
 
 **The plugin answers these dialogs for you, by design.** Its `Elicitation` hook (`hooks/hooks.json`, matcher
 `cua_repl|plugin:cua:cua_repl`) runs `hooks/cua-approve.sh`, which accepts every elicitation cua_repl sends (cua's
@@ -228,7 +228,7 @@ A runtime that goes 15 minutes (`CUA_RUNTIME_IDLE_MS`, in milliseconds; `0` keep
 `js`, `js_reset`, `end_task` or `profiles_list` live check is stopped as a task's end and a session's close stop it: an
 open task is completed first (its app and Chrome attachments released, a MAWS browser's lease included), the processes are torn down
 and the connection's working directory under `run/` removed, while the session's MCP connection, its MAWS socket and
-its app approvals stay. A running call never counts as idle. The next `js` or `js_reset` launches a fresh runtime, and
+its app approvals (which the connection remembers, not the runtime) stay. A running call never counts as idle. The next `js` or `js_reset` launches a fresh runtime, and
 its result opens with a line telling the model that the runtime restarted after idling and its REPL state (variables,
 app handles, tabs) is gone, ahead of the API document a fresh runtime returns; a call that arrives while the runtime is
 being stopped waits for the fresh one. `secrets_list`, `devices_list`,
@@ -1158,10 +1158,11 @@ lack of `DISPLAY`.
 
 **What differs from macOS:**
 
-- **Apps are bound by window.** Use `cua.getApp({windowId})` with an id from `listWindows()`. No app asks for
-  approval, so one connection can drive every window of the session. `DISPLAY` and `XAUTHORITY` reach the runtime;
-  under `scoped` and `default` a model cell has no socket to use them with, but under `disabled` it can talk to X
-  directly, and the trusted wrapper is then not a boundary. The `js` description keeps that cautious wording.
+- **Apps are bound by window.** Use `cua.getApp({windowId})` with an id from `listWindows()`. Approval is per app, as
+  on macOS (App approvals), asked by cua's trusted wrapper: a window's app as `listWindows()` names it, `launch_app`'s
+  id (so a launch and the first action on its window are two approvals), and "the whole desktop" for input that names
+  no window. `DISPLAY` and `XAUTHORITY` reach the runtime; under `scoped` and `default` a model cell has no socket to
+  use them with, but under `disabled` it can talk to X directly, and the trusted wrapper is then not a boundary.
 - **Typing.** The helper's `typeText` and `paste` insert text through AT-SPI. In GTK3 text views (gedit, mousepad)
   they crashed the app on arm64, and on x64 failed without inserting ("editable Paste did not insert text").
   `pressKey`, one X keysym per character, types there on both. In GTK4 they inserted the text and then threw.
@@ -1360,7 +1361,7 @@ The ChatGPT extension route's whole-phase runner (`--all`: C1–C7 with the host
 | `CUA_BROWSER_BACKENDS` | unset | with the browser surface: MAWS's in-app browser sockets, absolute paths separated by `:` (MAWS sets it for its sessions' engines; see For MAWS) |
 | `CUA_REPL_HOST` | per session and Node availability (Use) | `cua` or `vendor`: selects the JavaScript host and facade, not the browser service (either host runs cua's). Unset or empty, Linux and browser-only macOS use cua's host when Node 24+ resolves; macOS computer sessions stay on the vendor host. If only Node is missing, macOS keeps the vendor host (`own_host_node_unavailable`) and Linux refuses (`repl_host_node`). `vendor` forces the vendor host as the rollback on macOS and is refused on Linux, where that host is retired (`repl_host_refused`, #115); explicit `cua` refuses the computer surface on macOS (`repl_host_refused`) or missing Node 24 (`repl_host_node`), never downgrades. Other nonempty values refuse (`invalid_setting` at start). `cua serve` and the independent profile listing use the same rule; `cua doctor` reports it in `repl.host`. `cua agent install` stores only an explicit nonempty value, never the resolved default |
 | `CUA_NODE` | unset | absolute path to a Node executable to try first for cua's own host (24+), before the Node `cua install` placed under `$CUA_HOME/node`, the node running cua and the first `node` on `PATH`. A missing, unreadable or older candidate falls through to the next; a relative path refuses (`invalid_setting` at start). Never selects the vendor's pinned Node. `cua agent install` stores an explicit nonempty path as given, validated as absolute but not resolved or probed; unset or empty is omitted, so each later connection resolves afresh |
-| `CUA_SHIM_PERSIST` | `session` | `session`, `always` or `none`: how an accepted approval is remembered |
+| `CUA_SHIM_PERSIST` | `session` | `session` or `none`: whether an accepted approval is remembered for the connection (App approvals); `always` is refused (`invalid_setting` at start), its sentence naming the plugin's `Elicitation` hook (`hooks/cua-approve.sh`) |
 | `CUA_SHIM_HOST_NOTES` | built in | replacement host notes; `none` disables them |
 | `CUA_SHIM_MODEL` | the client's name from `initialize` | model label sent in the runtime's turn metadata |
 | `CUA_SHIM_SECRETS` | `on` | `off` hands the runtime no secret store; `secrets_list` then reports secrets as disabled and a `{{secret:…}}` reference fails with `secrets_disabled` |

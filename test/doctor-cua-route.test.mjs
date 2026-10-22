@@ -1,3 +1,4 @@
+import './helpers/scratch-home.mjs'; // first: doctor's engine row must not read (or launch) the account's approved engine
 // H2: doctor's Chrome rows (acceptance 1's rows, against fixtures): chrome.route saying whether the home is registered
 // for the cua extension and what the removed ChatGPT extension route left (#79), chrome.extension.<key> by the cua
 // presence rule, chrome.host.registered for io.github.ssfskim.cua and this home's launcher and its targets,

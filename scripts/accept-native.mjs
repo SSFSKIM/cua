@@ -9,6 +9,15 @@
 //   node scripts/accept-native.mjs [--live-secrets] [--live-textedit] [--archive <zip>] --report "$CUA_HOME/acceptance.json"
 //   node scripts/accept-native.mjs --live-secrets --live-textedit --secret-key <KEY> [--secret-home <dir>] --report …
 //   node scripts/accept-native.mjs --items 1,10 --report …   only the items named (a headless re-check of some items)
+//   node scripts/accept-native.mjs --engine cua --live-textedit --report …   on cua's own engine (#117 acceptance 8)
+//
+// --engine vendor|cua pins the native engine of every native item (#117 M3; the own native engine spec's Decision Log,
+// "M3 pre-flight" item 3): doctor (item 3) runs with CUA_NATIVE_ENGINE set to it and its engine row must show sessions
+// driving it; verify.mjs (4) and scripts/probe-lifecycle.mjs (8) are passed --engine, and scripts/probe-secrets.mjs (6,
+// 7) and the TextEdit fixture (5, 6, 8) serve with it, and each checks every js result's `_meta['cua/nativeEngine']` against it, refusing on a mismatch.
+// Without --engine the engine is CUA_NATIVE_ENGINE, else the launcher's default, pinned the same way, so the account's
+// ~/.config/cua/engine.json never chooses it. Items 12 and 13 check the vendor host and its compatibility route, so they
+// run pinned to the vendor engine whatever --engine says (until #117 M6 retires them), their results attesting it.
 //
 // --secret-key types a key the caller stored beforehand (`HOME=<dir> node bin/cua.mjs secrets set <KEY>`) instead of a
 // generated one; its store is the one under --secret-home, by default $HOME, which must not be this account's home.
@@ -60,22 +69,25 @@ import {fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
 import {loadPins, readInstalledRecord, resolveRuntime, selectPin} from '../src/runtime/manifest.mjs';
 import {NATIVE_SOCKET} from '../src/runtime/doctor.mjs';
+import {settingsFrom} from '../src/mcp/server.mjs';
 import {isLabel} from '../src/secrets/label.mjs';
 import {fileStore, storeDir} from '../src/secrets/store.mjs';
 import {socketHolders} from './probe/lib.mjs';
+import {pinLane} from './probe/pinned-engine.mjs';
 import {fingerprints, textLeaks} from './probe/leak-scan.mjs';
 import {
   approvalObservation, diffSnapshots, doctorHealth, forbiddenPaths, inventoryCheck, missingFromPackage, PROBE_SECRETS_PHASES, probePhasesFor, rollup, scenarioVerdict,
   snapshotTree, suiteVerdict, judgeSkips, skipReasons, testReporterEnv, testSummary, personalText, researchTreeLines, MINI_LAYOUT_FILES,
 } from './accept/lib.mjs';
 import {OWN_STEPS, runTextEdit, SECRET_STEPS} from './accept/textedit.mjs';
+import {ATTEST_STEP, doctorEngineCheck, lifecycleEngineCheck, verifyChecks} from './accept/engine-lane.mjs';
 import {createStoreHome, generatedKey, isAccountHome, removeStoreHome, seedSecret} from './accept/secret-seed.mjs';
 import {ownSandboxAcceptance} from './accept/own-sandbox.mjs';
 import {compatRouteAcceptance} from './accept/compat-route.mjs';
 
 const {values: options} = parseArgs({options: {
   report: {type: 'string'}, 'live-secrets': {type: 'boolean'}, 'live-textedit': {type: 'boolean'}, archive: {type: 'string'},
-  'secret-key': {type: 'string'}, 'secret-home': {type: 'string'}, items: {type: 'string'},
+  'secret-key': {type: 'string'}, 'secret-home': {type: 'string'}, items: {type: 'string'}, engine: {type: 'string'},
 }, strict: true});
 // --items 1,10: only those items run (a headless re-check of some items, #157); the report names the selection, and an
 // item that reads another's result (item 2 reads item 1's suite) finds it not run.
@@ -114,6 +126,14 @@ if (callerSecret && (!options['live-secrets'] || !options['live-textedit'] || !i
     + ' home (--secret-home, else $HOME) that is not this account\'s home');
   process.exit(2);
 }
+// The engine every native item pins (the header): null where none is driven (off macOS, or without the computer surface).
+let pin;
+try { ({pin} = pinLane({flag: options.engine, env: process.env, home, surfaces: settingsFrom(process.env).surfaces})); } catch (error) {
+  console.error(`accept-native: ${error.message}`);
+  process.exit(2);
+}
+const engineFlag = pin ? ['--engine', pin.engine] : [];
+const engineEnv = pin ? {CUA_NATIVE_ENGINE: pin.engine} : {};
 
 const forbidden = [];   // generated values the report must never contain
 const items = [];
@@ -217,7 +237,7 @@ async function item2() {
 // --- 3. doctor -----------------------------------------------------------------------------------------------------
 async function item3() {
   const checks = [];
-  const r = await run(process.execPath, [CLI, 'doctor', '--json'], {env: cuaEnv()});
+  const r = await run(process.execPath, [CLI, 'doctor', '--json'], {env: cuaEnv(engineEnv)});
   const doctor = parseJson(r.stdout);
   state.doctor = doctor;
   const status = name => doctor?.checks?.find(c => c.name === name)?.status ?? 'missing';
@@ -231,6 +251,8 @@ async function item3() {
     {checks: doctor?.checks?.map(c => ({name: c.name, status: c.status})) ?? null}));
   checks.push(check('runtime health reported apart from live helper and permission evidence', status('helper.permissions') === 'blocked' && status('helper.live') !== 'missing' ? 'PASS' : 'FAIL',
     `helper.live ${status('helper.live')} and helper.permissions ${status('helper.permissions')} are separate checks; a blocked live check does not fail runtime health`));
+  const engineRow = doctorEngineCheck(doctor, pin);
+  if (engineRow) checks.push(check(engineRow.name, engineRow.status, engineRow.detail));
   const empty = mkdtempSync('/tmp/cua-accept-empty.');
   try {
     const m = await run(process.execPath, [CLI, 'doctor', '--json'], {env: {...process.env, CUA_HOME: empty}});
@@ -246,27 +268,29 @@ async function item3() {
 // --- 4. serve / verify -----------------------------------------------------------------------------------------------
 async function item4() {
   const checks = [];
-  const r = await run(process.execPath, [join(REPO, 'verify.mjs')], {env: cuaEnv(), timeoutMs: 300_000});
+  const r = await run(process.execPath, [join(REPO, 'verify.mjs'), ...engineFlag], {env: cuaEnv(), timeoutMs: 300_000});
   const report = parseJson(r.stdout.slice(r.stdout.indexOf('{')));
   state.verify = report;
   checks.push(check('node verify.mjs', r.code === 0 && report?.problems?.length === 0 ? 'PASS' : 'FAIL',
     report ? `exit ${r.code}; tools ${report.tools?.join(', ')}; task ${report.task?.sameTaskAcrossCalls ? 'stable across calls' : 'unstable'}, end ${report.task?.end?.status}, repeat ${report.task?.repeatEnd}; problems: ${report.problems.length ? report.problems.map(sanitize).join('; ') : 'none'}` : `exit ${r.code}; no report`));
-  const processes = report?.processes;
-  checks.push(check('relocated binaries and own configuration; no installed-desktop runtime path', processes?.allExecutablesRelocated && processes.desktopRuntimePaths?.length === 0 ? 'PASS' : 'FAIL',
-    processes ? `${processes.ancestry.length} processes (server, anchor, runtime): ${[...new Set(processes.ancestry.map(p => p.executable))].join('; ')}` : 'no process evidence'));
+  // The tree by the host that served (allExecutablesExpected; allExecutablesRelocated is null on cua's own host), and
+  // with an engine pinned, verify's pin and its attestation.
+  for (const c of verifyChecks(report, pin)) checks.push(check(c.name, c.status, c.detail));
   const codexHome = join(home, 'state', 'codex');
   const authFiles = existsSync(codexHome) ? readdirSync(codexHome, {recursive: true}).map(String).filter(f => /(^|\/)auth[^/]*\.json$/i.test(f)) : [];
   checks.push(check('native without an account (owned empty CODEX_HOME)', authFiles.length === 0 && r.code === 0 ? 'PASS' : 'FAIL',
     authFiles.length ? `auth files present under $CUA_HOME/state/codex: ${authFiles.join(', ')}` : 'the runtime\'s CODEX_HOME ($CUA_HOME/state/codex) holds no auth file and nothing was copied from ~/.codex; the verify run above loaded the vendor API and reached the native helper without any account'));
-  addItem(4, 'serve and verify.mjs: four-tool surface on relocated binaries and own configuration', checks,
-    report ? {nativeHelper: report.nativeHelper, secretsList: report.secretsList, elicitationsDeclined: report.elicitationsDeclined} : undefined);
+  addItem(4, 'serve and verify.mjs: the tool surface on the serving host\'s own binaries and configuration, the pinned engine attested', checks,
+    report ? {nativeHelper: report.nativeHelper, secretsList: report.secretsList, elicitationsDeclined: report.elicitationsDeclined, ...(report.engine ? {engine: report.engine} : {})} : undefined);
 }
 
 // --- live scenarios (5, 6, 8) --------------------------------------------------------------------------------------
 async function liveSecrets() {
   if (!options['live-secrets']) return null;
   const reportFile = join(home, `probe-secrets-${process.pid}.json`);
-  const r = await run(process.execPath, [join(REPO, 'scripts', 'probe-secrets.mjs'), '--report', reportFile], {env: cuaEnv(), timeoutMs: 900_000});
+  // On the pinned engine, which its servers select from the account's engine.json and approved engine although their
+  // HOME is the probe's temporary store home; every result must attest it (ATTEST_STEP).
+  const r = await run(process.execPath, [join(REPO, 'scripts', 'probe-secrets.mjs'), '--report', reportFile], {env: cuaEnv(engineEnv), timeoutMs: 900_000});
   const probe = existsSync(reportFile) ? parseJson(readFileSync(reportFile, 'utf8')) : null;
   rmSync(reportFile, {force: true});
   if (!probe) return {missing: `scripts/probe-secrets.mjs wrote no report (${ended(r)}): ${sanitize(r.stderr.trim().split('\n').at(-1) ?? '')}`, steps: []};
@@ -275,15 +299,17 @@ async function liveSecrets() {
 
 async function liveTextEdit() {
   if (!options['live-textedit']) return null;
-  return runTextEdit({home, secret: callerSecret ?? Boolean(options['live-secrets']), forbid: value => forbidden.push(value)});
+  return runTextEdit({home, engine: pin, secret: callerSecret ?? Boolean(options['live-secrets']), forbid: value => forbidden.push(value)});
 }
 
 const NOT_REQUESTED = flag => check(`opt-in ${flag}`, 'BLOCKED', `not run: pass ${flag} to run it (never counted as a pass when skipped)`);
-const PROBE_STEPS = PROBE_SECRETS_PHASES.flatMap(p => p.steps);
-// The live probe's checks: its own complete verdict (a missing report is FAIL), then each expected phase.
+const PROBE_STEPS = [...PROBE_SECRETS_PHASES.flatMap(p => p.steps), ...(pin ? [ATTEST_STEP] : [])];
+// The live probe's checks: its own complete verdict (a missing report is FAIL), then each expected phase, and with an
+// engine pinned, that every result attested it.
 function probeChecks(probe, phases) {
   const verdict = probe.missing ? check('live: scripts/probe-secrets.mjs verdict', 'FAIL', probe.missing) : scenarioVerdict('live: scripts/probe-secrets.mjs verdict', probe, PROBE_STEPS);
-  return [verdict, ...phases.map(p => inventoryCheck(p.name, probe.steps, p.steps))];
+  return [verdict, ...phases.map(p => inventoryCheck(p.name, probe.steps, p.steps)),
+    ...(pin ? [inventoryCheck(`live: every result attests the pinned ${pin.engine} engine`, probe.steps, [ATTEST_STEP])] : [])];
 }
 
 async function item5(textedit) {
@@ -296,6 +322,7 @@ async function item5(textedit) {
   ];
   addItem(5, 'Live native fixture: its own disposable TextEdit document', checks, {
     nativeHelper: o.nativeHelper, textEdit: o.textEdit, screenshot: o.screenshot, elicitations: o.elicitations, connections: o.connections, guiInputStopped: o.guiInputStopped,
+    ...(o.engine ? {engine: o.engine} : {}),
     note: 'cold start of the pinned helper is not shown here: see item 9',
   });
 }
@@ -375,7 +402,7 @@ async function item7(probe) {
 
 async function item8(textedit) {
   const checks = [fromSuite('lifecycle state machine, races, deadlines, EOF, elicitation routing, bounded teardown', ['test/mcp-lifecycle.test.mjs', 'test/mcp-server.test.mjs', 'test/mcp-upstream.test.mjs', 'test/serve-cli.test.mjs'])];
-  const r = await run(process.execPath, [join(REPO, 'scripts', 'probe-lifecycle.mjs')], {env: cuaEnv(), timeoutMs: 300_000});
+  const r = await run(process.execPath, [join(REPO, 'scripts', 'probe-lifecycle.mjs'), ...engineFlag], {env: cuaEnv(), timeoutMs: 300_000});
   const p = parseJson(r.stdout.slice(r.stdout.indexOf('{')));
   if (!p) checks.push(check('native cancel/end_task behaviour observed (probe-lifecycle)', 'FAIL', `exit ${r.code}; no report: ${sanitize(r.stderr.trim().split('\n').at(-1) ?? '')}`));
   else {
@@ -387,14 +414,16 @@ async function item8(textedit) {
       ['idle EOF closes cleanly with no runtime left', p.idleClose?.code === 0 && p.idleClose.runtimeProcessesAfterExit === 0],
     ];
     for (const [name, ok] of expectations) checks.push(check(`observed: ${name}`, ok ? 'PASS' : 'FAIL', ok ? 'as documented in docs/evidence/m3-mcp-lifecycle.md' : 'differs from the documented behaviour'));
+    const engineCheck = lifecycleEngineCheck(p, pin);
+    if (engineCheck) checks.push(check(engineCheck.name, engineCheck.status, engineCheck.detail));
     state.lifecycle = {cancelReplyMs: p.cancelDuringJs?.reply ? p.cancelDuringJs.reply.atMs - p.cancelDuringJs.cancelAtMs : null,
       uncertainExitCode: p.uncertainCompletion?.exit?.code, idleCloseMs: p.idleClose?.closeMs};
   }
   if (!textedit) checks.push(check('per-connection app approvals observed', 'BLOCKED', 'observed only by the live TextEdit fixture: pass --live-textedit'));
   else {
-    const observed = approvalObservation(textedit.observations.connections);
-    const files = textedit.observations.sessionFiles;
-    checks.push(check('per-connection app approvals observed', observed.status, `${observed.detail}; session files under $CUA_HOME/state/codex/computer-use/sessions: ${files.before} before, ${files.after} after`));
+    // By behaviour (#117 M3): A's second bind asks nothing, B, a new connection, asks again.
+    const observed = approvalObservation(textedit.observations.connections, {engine: textedit.observations.engine?.engine});
+    checks.push(check('per-connection app approvals observed by behaviour', observed.status, observed.detail));
   }
   addItem(8, 'Task lifecycle: IDs, end_task outcomes, fail-closed completion; native cancel/approval behaviour observed', checks, state.lifecycle);
 }
@@ -493,6 +522,7 @@ async function item12() {
   const title = 'cua\'s sandbox on the macOS vendor host (#115 M2): the deny list, writes, script directory, links and network through the compat executable';
   if (process.platform !== 'darwin') return addItem(12, title, [check('vendor-host confinement', 'BLOCKED', 'the vendor host runs on macOS only')]);
   let report;
+  // Pinned to the vendor engine whatever --engine says (ownSandboxAcceptance pins it and checks every vendor-host result's attestation).
   try { report = await ownSandboxAcceptance({home, host: 'vendor'}); } catch (error) { return addItem(12, title, [check('vendor-host confinement run', 'FAIL', error.message)]); }
   addItem(12, title, report.checks.map(c => check(c.label, c.pass ? 'PASS' : 'FAIL', c.detail ?? (c.pass ? 'as expected' : 'not as expected'))), {modes: Object.keys(report.modes)});
 }
@@ -504,6 +534,7 @@ async function item13() {
   const configHome = process.env.XDG_CONFIG_HOME;
   if (!configHome || !process.env.HOME) return addItem(13, title, [check('compat route', 'BLOCKED', 'needs the account\'s HOME and a scratch XDG_CONFIG_HOME (the approved-runtime preparation gives both)')]);
   let report;
+  // Pinned to the vendor engine whatever --engine says (the experiment pins it; compatRouteChecks checks every cell's attestation).
   try { report = await compatRouteAcceptance({home, userHome: process.env.HOME, configHome}); } catch (error) { return addItem(13, title, [check('compat route run', 'FAIL', error.message)]); }
   addItem(13, title, report.checks.map(c => check(c.label, c.pass ? 'PASS' : 'FAIL', c.detail === undefined ? (c.pass ? 'as expected' : 'not as expected') : String(c.detail))));
 }
@@ -531,7 +562,8 @@ items.sort((a, b) => a.id - b.id);
 const runLeftovers = (existsSync(join(home, 'run')) ? readdirSync(join(home, 'run')) : []).filter(name => !runDirBefore.includes(name));
 const report = {
   scenario: 'accept-native', status: rollup(items.map(i => i.status)),
-  options: {liveSecrets: Boolean(options['live-secrets']), liveTextedit: Boolean(options['live-textedit']), callerSecretKey: Boolean(callerSecret), ...(selected ? {items: [...selected].sort((a, b) => a - b)} : {})},
+  options: {liveSecrets: Boolean(options['live-secrets']), liveTextedit: Boolean(options['live-textedit']), callerSecretKey: Boolean(callerSecret), ...(selected ? {items: [...selected].sort((a, b) => a - b)} : {}),
+    engine: pin ? {engine: pin.engine, pinnedBy: pin.pinnedBy} : null},
   release: state.doctor?.runtime?.release ?? null, home: '$CUA_HOME', host: `${process.platform}-${process.arch}`, node: process.version,
   startedAt: started.toISOString(), finishedAt: new Date().toISOString(),
   summary: Object.fromEntries(items.map(i => [i.id, i.status])),

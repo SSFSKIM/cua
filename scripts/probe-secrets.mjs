@@ -28,6 +28,12 @@
 //     the server cannot read (a second temporary $HOME whose store directory is mode 0000: secret_unreadable), a
 //     reference in each of the three methods fails before anything reaches the target.
 // `node scripts/accept-native.mjs --live-secrets` runs this probe as acceptance 6's live roundtrip.
+// The engine (#117 M3.4): on macOS with the computer surface every server is pinned to one engine (CUA_NATIVE_ENGINE,
+// else the launcher's default; accept-native passes its --engine so) and selects it from the account's own engine.json
+// and approved engine, not the store's temporary $HOME (scripts/accept/secret-seed.mjs accountEngine). Every js result
+// must attest it (`_meta['cua/nativeEngine']`): the first that does not stops the probe, nothing more is sent, and the
+// step "every result attests the pinned engine" fails. With cua's engine "real vendor" steps run against cua's engine
+// service; their names are kept, since acceptance phases name them.
 // Every observable channel is scanned for both sentinels (raw and as base64 at every alignment): the MCP transport in
 // both directions, serve/anchor/cua-repl/node_repl/kernel/trusted-worker stderr (all inherited by the served
 // process), every regular file the runtime left under $CUA_HOME/state and run (read whole; an unreadable one fails the
@@ -42,11 +48,14 @@ import {basename, dirname, join} from 'node:path';
 import {createInterface} from 'node:readline';
 import {fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
+import {settingsFrom} from '../src/mcp/server.mjs';
 import {defaultHome} from '../src/runtime/layout.mjs';
 import {resolveRuntime} from '../src/runtime/manifest.mjs';
 import {SKY_SERVICE, SERVICE_SUPPORT_DIRS} from '../src/runtime/launch.mjs';
 import {storeDir} from '../src/secrets/store.mjs';
-import {createStoreHome, generatedKey, removeStoreHome, seedSecret} from './accept/secret-seed.mjs';
+import {accountHome, createStoreHome, generatedKey, removeStoreHome, seedSecret} from './accept/secret-seed.mjs';
+import {ATTEST_STEP, AttestationRefusal, attestReplies} from './accept/engine-lane.mjs';
+import {pinLane, selectLane} from './probe/pinned-engine.mjs';
 import {fingerprints, scanFiles, textLeaks} from './probe/leak-scan.mjs';
 import {plantCell, trustedRootStep} from './probe/trusted-roots.mjs';
 import {SECRETS_OFF, STORE_UNREADABLE, closeStep, failClosedStep, refusedLaunchResult} from './probe/fail-closed.mjs';
@@ -59,6 +68,15 @@ const FAKE_SERVE = join(REPO, 'scripts', 'probe', 'serve-fake-sky-target.mjs');
 const STEP_MS = 15_000;
 
 const home = defaultHome();
+const surfaces = settingsFrom(process.env).surfaces;
+let pin;
+try { ({pin} = pinLane({flag: undefined, env: process.env, home, surfaces})); } catch (error) {
+  console.error(`probe-secrets: ${error.message}`);
+  process.exit(2);
+}
+// The attestation every js result must carry (selectLane, at the preconditions), how many did, and the refusal that
+// stopped the probe.
+const engine = {expected: null, attested: 0, refused: null};
 const label = generatedKey('CUA_PROBE');
 const sentinels = [1, 2].map(() => `cua-m5-sentinel-${randomBytes(18).toString('base64url')}`);
 const REF = `{{secret:${label}}}`;
@@ -117,7 +135,9 @@ export async function handleRpc(request) {
 const children = new Set();
 let storeHome = null;         // the probe's own temporary $HOME, whose store every server reads
 function connect(name, args, extraEnv = {}) {
-  const child = spawn(process.execPath, args, {stdio: ['pipe', 'pipe', 'pipe'], env: {...process.env, CUA_HOME: home, HOME: storeHome, ...extraEnv}});
+  if (engine.refused) throw engine.refused;
+  const child = spawn(process.execPath, args, {stdio: ['pipe', 'pipe', 'pipe'],
+    env: {...process.env, CUA_HOME: home, HOME: storeHome, ...(pin ? {CUA_NATIVE_ENGINE: pin.engine} : {}), ...extraEnv}});
   children.add(child);
   const transcript = [];
   let stderr = '';
@@ -139,7 +159,11 @@ function connect(name, args, extraEnv = {}) {
     waiters.set(id, msg => { clearTimeout(timer); waiters.delete(id); resolve(msg); });
     send({jsonrpc: '2.0', id, method, params});
   });
-  const js = (code, timeoutMs = 30_000, cellTimeout) => request('tools/call', {name: 'js', arguments: {code, ...(cellTimeout ? {timeout_ms: cellTimeout} : {})}}, timeoutMs + 5000);
+  const {js} = attestReplies({js: (code, timeoutMs = 30_000, cellTimeout) => request('tools/call', {name: 'js', arguments: {code, ...(cellTimeout ? {timeout_ms: cellTimeout} : {})}}, timeoutMs + 5000)},
+    {expected: engine.expected, onAttested: () => engine.attested++, onRefused: problem => {
+      engine.refused = new AttestationRefusal(problem);
+      record(ATTEST_STEP, 'FAIL', `${name}: ${engine.refused.message}; nothing more was sent`);
+    }});
   return {
     name, request, js, transcript, exited, get stderr() { return stderr; }, kill: signal => child.kill(signal),
     async open() {
@@ -349,8 +373,10 @@ let unreadableHome = null;
 const scratch = realpathSync(mkdtempSync('/tmp/cm5-'));
 try {
   const runtime = resolveRuntime({home});
+  // The pinned engine as the servers select it: the account's (accountEngine), whatever the store's HOME holds.
+  if (pin) ({expected: engine.expected} = selectLane({pin, serveEnv: {...process.env, CUA_HOME: home, CUA_NATIVE_ENGINE: pin.engine, HOME: accountHome()}, home, runtime, surfaces}));
   storeHome = createStoreHome('cua-probe-secrets-');
-  record('preconditions', 'PASS', `runtime ${runtime.release}; key ${label} in a temporary $HOME`);
+  record('preconditions', 'PASS', `runtime ${runtime.release}; key ${label} in a temporary $HOME${pin ? `; the ${pin.engine} engine pinned (${pin.pinnedBy}), version ${engine.expected.version} build ${engine.expected.build}` : ''}`);
   recorder = await startRecorder(join(scratch, 'r.sock'));
   const targetModule = join(scratch, 'target', 'sky-target.mjs');
   mkdirSync(dirname(targetModule));
@@ -378,7 +404,8 @@ try {
       names: ['the secret store', storeDir({HOME: unreadableHome})]});
   }
 } catch (error) {
-  record('unexpected', 'FAIL', `${error.code ?? 'error'}: ${error.message}`);
+  // A refusal on the attestation is recorded where it happened (ATTEST_STEP).
+  if (!(error instanceof AttestationRefusal)) record('unexpected', 'FAIL', `${error.code ?? 'error'}: ${error.message}`);
 } finally {
   for (const child of children) child.kill('SIGTERM');
   if (storeHome) {
@@ -399,6 +426,8 @@ const selfCheck = [0, 1, 2, 3, 4, 5].every(offset => {
   const frame = Buffer.concat([Buffer.alloc(offset, 0x41), Buffer.from(JSON.stringify({ok: true, value: sentinels[0]}))]);
   return leaks(frame.toString('base64')) > 0 && leaks(JSON.stringify({value: sentinels[1]})) > 0;
 });
+if (pin && !engine.refused) record(ATTEST_STEP, engine.attested > 0 ? 'PASS' : 'BLOCKED', engine.attested > 0
+  ? `${engine.attested} result(s), each attesting the ${pin.engine} engine, version ${engine.expected.version} build ${engine.expected.build}` : 'no result came back to attest');
 record('scanner self-check', selfCheck ? 'PASS' : 'FAIL', 'a generated value is found raw and as base64 at every byte offset');
 // Every regular file the runtime left under $CUA_HOME/state and run, read whole. An unreadable file is incomplete
 // evidence, so the scan cannot pass.

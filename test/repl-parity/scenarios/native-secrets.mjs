@@ -1,9 +1,14 @@
 import assert from 'node:assert/strict';
 import {caseSchedule} from '../../../scripts/repl-parity/registry.mjs';
-import {nativeSecretCases,LABEL} from '../fixtures/native-secret-cases.mjs';
+import {nativeSecretCases,LABEL,WINDOW} from '../fixtures/native-secret-cases.mjs';
+import {pinnedApprovals} from '../../../scripts/accept/lib.mjs';
+// The wrapper asks the fixture window's app before each request it lets through (Linux approvals): that one is accepted,
+// anything else declined, so a row can never pass by accepting everything. A wrong approval turns the report's
+// requestMatches false (the fixture folds it there, so the compared report keeps the control's keys).
+const answer=pinnedApprovals(()=>[WINDOW.app]);
 const plan=new Map(caseSchedule().map(c=>[c.id,c]));
 const parse=result=>{assert.equal(result.isError,false);const lines=result.content.filter(c=>c.type==='text').flatMap(c=>c.text.split('\n')).filter(t=>t.startsWith('NATIVE_SECRET:'));assert.equal(lines.length,1);return JSON.parse(lines[0].slice(14));};
 export default nativeSecretCases.map(row=>({...plan.get(row.id),backend:'fixture-services',nativeSecrets:true,boundaryProof:'service-boundary-double',limitations:['Real selected Linux facade, production secret wrapper and scratch fileStore; downstream native service is a recorder double, not live native input.'],cells:[
- {label:'setup',code:`var ready=await nodeRepl.rpc('sky',{type:'secret.configure',id:${JSON.stringify(row.id)}});var factory=await nativeSecretFactory();globalThis.cua=await factory.create_tinysky_alt({browser:false});globalThis.app=await cua.getApp({windowId:123});nodeRepl.write('\\nNATIVE_SECRET:'+JSON.stringify(ready)+'\\n');`},
+ {label:'setup',answer,code:`var ready=await nodeRepl.rpc('sky',{type:'secret.configure',id:${JSON.stringify(row.id)}});var factory=await nativeSecretFactory();globalThis.cua=await factory.create_tinysky_alt({browser:false});globalThis.app=await cua.getApp({windowId:123});nodeRepl.write('\\nNATIVE_SECRET:'+JSON.stringify(ready)+'\\n');`},
  {label:'exercise',code:`var outcome={rejected:false};try{await (${row.call});}catch(e){outcome={rejected:true,message:e.message,stack:e.stack,cause:String(e.cause),serialized:JSON.stringify(e),messageOnly:e.name==='Error'&&!('code' in e)&&!('cause' in e)&&Object.keys(e).length===0};}nodeRepl.write('NATIVE_SECRET:'+JSON.stringify(await nodeRepl.rpc('sky',{type:'secret.observe',outcome})));`},
 ],assert:({results})=>{assert.equal(results.length,2);assert.deepEqual(parse(results[0]),{ready:true});assert.deepEqual(parse(results[1]),{requestMatches:true,readMatches:true,readLabels:Array(row.reads).fill(LABEL),backendMatches:true,backendCalled:row.requests.length>0&&(!row.error||row.substitute),resultMatches:true,errorSafe:true,labelReportMatches:true,messageOnly:true});return {ok:true};}}));

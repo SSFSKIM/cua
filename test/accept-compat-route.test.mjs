@@ -8,7 +8,9 @@ import {join} from 'node:path';
 import {compatRouteAcceptance, compatRouteChecks} from '../scripts/accept/compat-route.mjs';
 import {COMPAT_EXECUTABLE} from '../src/runtime/launch.mjs';
 
-const ok = value => ({ok: true, value});
+// The vendor engine every cell of the run attests (#117 M3: item 13 is pinned to it whatever accept-native's --engine says).
+const VENDOR = {engine: 'vendor', version: '1.0', build: '26.928.40906'};
+const ok = value => ({ok: true, value, attested: VENDOR});
 const passing = () => ({
   results: {banner: ok({ready: true}), 'listApps#1': ok({apps: 7}), 'Finder getApp+getAXState#1': ok({chars: 10}), 'listApps#2': ok({apps: 7}), 'Finder getAXState#2': ok({chars: 10}),
     confinement: ok({cwdWrite: 'ok', tmpdirIsSession: true, tmpdirWrite: 'ok', outsideWrite: 'EPERM', trustedWrite: 'EPERM', slashTmpWrite: 'EPERM', listCuaHome: 'EPERM',
@@ -18,14 +20,15 @@ const passing = () => ({
 });
 
 test('a run through the compat executable with every expectation met passes every check', () => {
-  const checks = compatRouteChecks(passing());
+  const checks = compatRouteChecks(passing(), {expected: VENDOR});
   assert.deepEqual(checks.filter(c => !c.pass), []);
   assert.ok(checks.length >= 15);
 });
 
 test('each departure fails its own check', () => {
   const cases = {
-    'a native call failed': r => { r.results['listApps#2'] = {ok: false, error: 'Computer Use server error -10005'}; },
+    'a native call failed': r => { r.results['listApps#2'] = {ok: false, error: 'Computer Use server error -10005', attested: VENDOR}; },
+    'a native call got no reply': r => { r.results['listApps#2'] = {ok: false, transport: 'cancelled'}; },
     'the Codex CLI named': r => { r.launcher.codexCliPath = '/h/runtimes/r/CodexCLI.app/Contents/MacOS/codex'; },
     'no helper of the run seen': r => { r.launcher.helpers = []; },
     'a helper with another launcher': r => { r.launcher.helpers.push({launcherIsTheLaunch: false}); },
@@ -40,12 +43,33 @@ test('each departure fails its own check', () => {
     'a helper whose ownership was never read still lives': r => { r.helpers = {started: 1, quitByThemselves: 1, quitByHarness: 0, stillAlive: 0, uncertain: 0, unclassified: 1}; },
     'a helper signalled but still alive': r => { r.helpers = {started: 1, quitByThemselves: 0, quitByHarness: 1, stillAlive: 1, uncertain: 0, unclassified: 0}; },
     'a driver error': r => { r.driverError = 'timeout'; },
+    'a cell attested cua\'s engine': r => { r.results['listApps#1'].attested = {engine: 'cua', version: '0.1.0', build: 'b'}; },
+    'a cell attested another runtime release': r => { r.results.banner.attested = {...VENDOR, build: '26.1.0'}; },
+    'a cell carried no attestation': r => { r.results['Finder getAXState#2'].attested = null; },
   };
   for (const [label, change] of Object.entries(cases)) {
     const r = passing();
     change(r);
-    assert.equal(compatRouteChecks(r).filter(c => !c.pass).length, 1, label);
+    assert.equal(compatRouteChecks(r, {expected: VENDOR}).filter(c => !c.pass).length, 1, label);
   }
+});
+
+test('a run the experiment stopped at a misattested banner fails, naming the refusal, with no native call or confinement judged passed', () => {
+  const r = passing();
+  const misattested = {engine: 'cua', version: '0.2.0', build: 'f'.repeat(64)};
+  r.results = {banner: {...ok({ready: true}), attested: misattested, refused: 'it attested cua\'s engine'}};
+  r.driverError = 'refused on the attestation: it attested cua\'s engine; no further cell was sent';
+  const failed = compatRouteChecks(r, {expected: VENDOR}).filter(c => !c.pass);
+  assert.ok(failed.some(c => /attest/.test(c.label) && /banner/.test(c.detail)), JSON.stringify(failed));
+  assert.ok(failed.some(c => /driver error/.test(c.label) && /refused on the attestation/.test(c.detail)));
+  assert.ok(failed.some(c => /native call listApps#1/.test(c.label)));
+  assert.ok(failed.length >= 6);
+});
+
+test('the attestation is checked against an expected vendor engine, never skipped', () => {
+  const unchecked = compatRouteChecks(passing()).filter(c => !c.pass);
+  assert.equal(unchecked.length, 1, 'no expected attestation is itself a failure');
+  assert.match(unchecked[0].label, /attest/);
 });
 
 // The run's timeout (#115 M2 review): the experiment is cancelled cooperatively and given a bounded grace; its evidence
@@ -62,7 +86,7 @@ function double(t, body) {
   writeFileSync(file, DOUBLE_HEAD + body);
   return file;
 }
-const run = (experiment, extra = {}) => compatRouteAcceptance({home: '/h', userHome: '/u', configHome: '/c', experiment, timeoutMs: 300, graceMs: 300, ...extra});
+const run = (experiment, extra = {}) => compatRouteAcceptance({home: '/h', userHome: '/u', configHome: '/c', experiment, timeoutMs: 300, graceMs: 300, expected: VENDOR, ...extra});
 const keptDirs = new Set();
 const kept = r => { if (r.kept) keptDirs.add(r.kept); return r.kept; };
 test.after(() => { for (const dir of keptDirs) rmSync(dir, {recursive: true, force: true}); });

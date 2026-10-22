@@ -201,8 +201,8 @@ test('elicitations are forwarded while js is pending; an accepted answer gets se
   const upJs = await h.upstream.nextCall('js');
   h.upstream.emit({jsonrpc: '2.0', id: 900, method: 'elicitation/create', params: {message: 'Allow Computer Use to use "TextEdit"?', requestedSchema: {type: 'object', properties: {}}}});
   const elicitation = await h.client.next(m => m.method === 'elicitation/create');
-  assert.equal(elicitation.id, 900);
-  h.client.send({jsonrpc: '2.0', id: 900, result: {action: 'accept'}});
+  assert.equal(elicitation.id, 'cua-elicitation-1', 'under the connection\'s own id; the answer goes back under the runtime\'s');
+  h.client.send({jsonrpc: '2.0', id: elicitation.id, result: {action: 'accept'}});
   const answer = await h.upstream.next(m => m.id === 900 && m.method === undefined, {label: 'elicitation answer'});
   assert.deepEqual(answer.result, {action: 'accept', content: {}, _meta: {persist: 'session'}});
   h.upstream.text(upJs, 'bound');
@@ -213,13 +213,113 @@ test('a declined elicitation is forwarded unchanged and persistence can be disab
   const h = harness({server: {persist: 'none'}});
   await initialized(h);
   h.upstream.emit({jsonrpc: '2.0', id: 'e1', method: 'elicitation/create', params: {message: 'x'}});
-  await h.client.next(m => m.method === 'elicitation/create');
-  h.client.send({jsonrpc: '2.0', id: 'e1', result: {action: 'decline'}});
+  const e1 = await h.client.next(m => m.method === 'elicitation/create');
+  h.client.send({jsonrpc: '2.0', id: e1.id, result: {action: 'decline'}});
   assert.deepEqual((await h.upstream.next(m => m.id === 'e1' && m.method === undefined)).result, {action: 'decline'});
   h.upstream.emit({jsonrpc: '2.0', id: 'e2', method: 'elicitation/create', params: {message: 'y'}});
-  await h.client.next(m => m.id === 'e2');
-  h.client.send({jsonrpc: '2.0', id: 'e2', result: {action: 'accept', content: {}}});
+  const e2 = await h.client.next(m => m.method === 'elicitation/create' && m.params.message === 'y');
+  h.client.send({jsonrpc: '2.0', id: e2.id, result: {action: 'accept', content: {}}});
   assert.deepEqual((await h.upstream.next(m => m.id === 'e2' && m.method === undefined)).result, {action: 'accept', content: {}});
+});
+
+// The connection's approval memory (#117 M3; docs/doperpowers/specs/2026-10-18-own-native-engine-design.md, Interfaces,
+// ApprovalMemory): a computer-use app approval (connector_id "computer-use", keyed by tool_params.app) the client
+// accepted with _meta.persist, or declined, answers its repeats on this connection without asking the client again.
+const approvalRequest = (id, app, {connector = 'computer-use'} = {}) => ({jsonrpc: '2.0', id, method: 'elicitation/create', params: {
+  message: `Allow Computer Use to use "${app}"?`, mode: 'form', requestedSchema: {type: 'object', properties: {}},
+  _meta: {codex_approval_kind: 'mcp_tool_call', connector_id: connector, persist: ['session'], tool_name: 'click', tool_params: {app}}}});
+const upstreamAnswer = (h, id) => h.upstream.next(m => m.id === id && m.method === undefined, {label: `the answer to ${id}`});
+const clientAsked = h => h.client.frames.filter(m => m.method === 'elicitation/create').map(m => m.params._meta?.tool_params?.app ?? null);
+const REMEMBERED = action => ({action, content: {source: 'computer-use-persisted-state'}});
+// Emits the runtime's request `msg` and resolves the frame the client got for it (under the connection's own id).
+const relayed = (h, msg, label = `the client's copy of ${msg.id}`) => {
+  const after = h.client.frames.length;
+  h.upstream.emit(msg);
+  return h.client.next(m => m.method === 'elicitation/create', {after, label});
+};
+
+test('an app the client accepted or declined is answered from the connection\'s memory on its repeats, any tool, never asking again', async () => {
+  const h = harness();
+  await initialized(h);
+  const first = await relayed(h, approvalRequest(1, 'com.apple.TextEdit'));
+  h.client.send({jsonrpc: '2.0', id: first.id, result: {action: 'accept', content: {}}});
+  assert.deepEqual((await upstreamAnswer(h, 1)).result, {action: 'accept', content: {}, _meta: {persist: 'session'}}, 'the first answer is the client\'s');
+  h.upstream.emit(approvalRequest(2, 'com.apple.TextEdit'));
+  assert.deepEqual((await upstreamAnswer(h, 2)).result, REMEMBERED('accept'));
+
+  const third = await relayed(h, approvalRequest(3, 'com.apple.finder'));
+  h.client.send({jsonrpc: '2.0', id: third.id, result: {action: 'decline'}});
+  assert.deepEqual((await upstreamAnswer(h, 3)).result, {action: 'decline'});
+  h.upstream.emit(approvalRequest(4, 'com.apple.finder'));
+  assert.deepEqual((await upstreamAnswer(h, 4)).result, REMEMBERED('decline'), 'a model retrying a declined app is not re-prompted');
+  assert.deepEqual(clientAsked(h), ['com.apple.TextEdit', 'com.apple.finder'], 'the client was asked once per app');
+
+  const next = harness();
+  await initialized(next);
+  await relayed(next, approvalRequest(1, 'com.apple.TextEdit'), 'a new connection asks again');
+});
+
+test('the runtime withdrawing an elicitation names it to the client by the id the client was given', async () => {
+  const h = harness();
+  await initialized(h);
+  const asked = await relayed(h, approvalRequest(5, 'com.apple.TextEdit'));
+  const after = h.client.frames.length;
+  h.upstream.emit({jsonrpc: '2.0', method: 'notifications/cancelled', params: {requestId: 5, reason: 'gone'}});
+  const cancelled = await h.client.next(m => m.method === 'notifications/cancelled', {after});
+  assert.deepEqual(cancelled.params, {requestId: asked.id, reason: 'gone'});
+});
+
+test('an answer the runtime would reject is never remembered: malformed content or _meta, or an error beside a result, accept and decline alike', async () => {
+  const h = harness();
+  await initialized(h);
+  let id = 0;
+  // Each reply is answered twice for the same app; neither may come back from memory.
+  const twice = async (app, reply) => {
+    for (let i = 0; i < 2; i++) {
+      const asked = await relayed(h, approvalRequest(++id, app)).catch(() => null);
+      assert.ok(asked, `${app}: asked the client again (${JSON.stringify(reply)})`);
+      h.client.send({jsonrpc: '2.0', id: asked.id, ...reply});
+      await upstreamAnswer(h, id);
+    }
+  };
+  const bad = [
+    {result: {action: 'accept', content: [], _meta: {persist: 'session'}}},
+    {result: {action: 'accept', content: 'x', _meta: {persist: 'session'}}},
+    {result: {action: 'accept', content: {}, _meta: 'session'}},
+    {result: {action: 'accept', content: {}, _meta: [{persist: 'session'}]}},
+    {error: {code: -1, message: 'refused'}, result: {action: 'accept', content: {}, _meta: {persist: 'session'}}},
+    {result: {action: 'decline', content: []}},
+    {result: {action: 'decline', _meta: 'x'}},
+    {error: {code: -1, message: 'refused'}, result: {action: 'decline'}},
+  ];
+  for (const [i, reply] of bad.entries()) await twice(`com.example.app${i}`, reply);
+  assert.equal(clientAsked(h).length, bad.length * 2, 'every one asked the client again');
+});
+
+test('a cancel, an error reply, a malformed answer, an accept without persistence and another connector\'s elicitation are never remembered', async () => {
+  const h = harness();
+  await initialized(h);
+  let id = 0;
+  const ask = async (app, reply, options) => {
+    const n = ++id;
+    const asked = await relayed(h, approvalRequest(n, app, options));
+    h.client.send({jsonrpc: '2.0', id: asked.id, ...reply});
+    await upstreamAnswer(h, n);
+  };
+  for (let i = 0; i < 2; i++) await ask('com.apple.Notes', {result: {action: 'cancel'}});
+  for (let i = 0; i < 2; i++) await ask('com.apple.Notes', {error: {code: -1, message: 'no'}});
+  for (let i = 0; i < 2; i++) await ask('com.apple.Notes', {result: {action: 'granted'}});
+  for (let i = 0; i < 2; i++) await ask('com.apple.Notes', {result: {action: 'accept', content: {}, _meta: {fixture: 'client meta, no persist'}}});
+  for (let i = 0; i < 2; i++) await ask('com.apple.Notes', {result: {action: 'accept', content: {}}}, {connector: 'browser-use'});
+  assert.equal(clientAsked(h).length, 10, 'every one asked the client');
+
+  const none = harness({server: {persist: 'none'}});
+  await initialized(none);
+  for (const n of [1, 2]) {
+    const asked = await relayed(none, approvalRequest(n, 'com.apple.TextEdit'));
+    none.client.send({jsonrpc: '2.0', id: asked.id, result: {action: 'accept', content: {}}});
+    assert.deepEqual((await upstreamAnswer(none, n)).result, {action: 'accept', content: {}}, 'CUA_SHIM_PERSIST=none: asked every time');
+  }
 });
 
 test('cancelling an in-flight js forwards notifications/cancelled with the upstream ID and does not end the task', async () => {

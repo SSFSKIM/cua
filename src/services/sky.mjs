@@ -39,10 +39,18 @@
 // (desktopEntryFor), and the supervisor launches it outside the sandbox (nodeRepl.launchServices.openApplication,
 // src/repl-host/launch-services.mjs). It answers as the vendor's launch_app does (undefined). Any other launch_app shape
 // goes to the vendor unchanged, as on macOS.
+//
+// Approvals on Linux (docs/doperpowers/specs/2026-10-18-own-native-engine-design.md, "The service", Policy and approvals,
+// its Linux sentence): sky_linux has no policy of its own, so this wrapper asks through the policy module
+// (./engine/policy.mjs createLinuxPolicy) where the vendor would be reached: after its own refusals (a secret reference
+// it will not expand fails without asking), before a secret is read, and for launch_app once the id is found in
+// sky_linux's inventory. A request the user did not approve reaches nothing. On macOS the service asks for itself (cua's
+// engine service and the vendor's alike), so the wrapper asks nothing there.
 import {statSync} from 'node:fs';
 import {isAbsolute, join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {parseReference} from '../secrets/reference.mjs';
+import {createLinuxPolicy} from './engine/policy.mjs';
 import {
   SecretInputError, NOTHING_ENTERED, isPlainObject, propertyKey, matchesShape, refuseUnusable, unavailable, readFailure, inputFailed, inputFailedUnentered, concealedInputUnavailable,
   interventionKind, userIntervened, secretsFromEnv,
@@ -161,20 +169,27 @@ function launchAppId(request) {
 // `secretsUnavailable`, when set, is the launch's reason this connection has no store; `platform` picks the pinned
 // shapes (the process's own; the vendor target matches the platform it runs on). On Linux `openApplication` (the
 // trusted worker's nodeRepl.launchServices.openApplication) launches a desktop entry outside the sandbox, and `env`
-// names the XDG data directories it is found in.
+// names the XDG data directories it is found in. On Linux the approvals are asked through `nodeRepl` (the trusted
+// worker's: createElicitation, requestMeta).
 // On macOS every request's time through handleRpc, success or failure, is set as `cua/serviceMs` through
 // `setResponseMeta` (the trusted worker's nodeRepl.setResponseMeta, on either host) read with `now`.
 export function createSkyService({loadVendor, secrets, secretsUnavailable = null, platform = process.platform, env = process.env,
-  openApplication = target => globalThis.nodeRepl.launchServices.openApplication(target),
+  nodeRepl = globalThis.nodeRepl, openApplication = target => globalThis.nodeRepl.launchServices.openApplication(target),
   now = () => performance.now(), setResponseMeta = meta => globalThis.nodeRepl?.setResponseMeta?.(meta)}) {
   const eligible = ELIGIBLE_BY_PLATFORM[platform] ?? {};
   let vendor = null;
   const vendorService = () => (vendor ??= loadVendor());
+  const linuxPolicy = platform === 'linux'
+    ? createLinuxPolicy({nodeRepl, listWindows: async () => (await vendorService()).handleRpc({type: 'execute', method: 'list_windows', args: []})})
+    : null;
+  // Resolves once `request` may reach the vendor: on Linux, approved (or not app-scoped); elsewhere at once.
+  const approved = request => linuxPolicy?.approve(request, propertyKey(request?.method));
 
-  async function launchLinuxApp(app) {
+  async function launchLinuxApp(app, request) {
     const apps = await (await vendorService()).handleRpc({type: 'execute', method: 'list_apps', args: []});
     const entry = Array.isArray(apps) && apps.some(listed => listed?.id === app) ? desktopEntryFor(app, env) : null;
     if (!entry) throw new Error(`launchable application "${app}" was not found`);
+    await approved(request);
     await openApplication({applicationPath: entry});
   }
 
@@ -193,15 +208,19 @@ export function createSkyService({loadVendor, secrets, secretsUnavailable = null
 
   async function delegate(request) {
     const app = platform === 'linux' ? launchAppId(request) : null;
-    if (app !== null) return launchLinuxApp(app);
+    if (app !== null) return launchLinuxApp(app, request);
     const plan = substitutionFor(request, eligible);
-    if (!plan) return (await vendorService()).handleRpc(request);
+    if (!plan) {
+      await approved(request);
+      return (await vendorService()).handleRpc(request);
+    }
 
     const {method, rule, field, input, reference} = plan;
     refuseUnusable(reference);
     checkShape(plan);
     if (secretsUnavailable) throw unavailable(secretsUnavailable);
     const service = await vendorService();
+    await approved(request);
     let value;
     try { value = await secrets.read(reference.label); } catch (error) { throw readFailure(error, reference.label); }
 

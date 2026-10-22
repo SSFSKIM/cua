@@ -266,18 +266,25 @@ test('items 6 and 7 split the probe\'s phases as before: 6 the roundtrip, 7 subs
   for (const phase of PROBE_SECRETS_PHASES) assert.ok(probePhasesFor(6).includes(phase) || probePhasesFor(7).includes(phase), phase.name);
 });
 
-test('per-connection approval is observed only with both connections bound, asked, answered and their files handled', () => {
-  const conn = (name, over = {}) => ({name, bound: true, approvalRequests: 1, approvalsAccepted: 1, sessionFileWhileOpen: true, sessionFileAfterClose: false, ...over});
-  const both = (a = {}, b = {}) => [conn('connection A', a), conn('connection B', b)];
-  assert.equal(approvalObservation(both()).status, 'PASS');
-  assert.equal(approvalObservation([conn('connection A')]).status, 'BLOCKED');
-  assert.equal(approvalObservation(both({}, {bound: false})).status, 'BLOCKED');
-  assert.equal(approvalObservation(both({approvalRequests: 0, approvalsAccepted: 0})).status, 'BLOCKED');
-  assert.equal(approvalObservation(both({}, {sessionFileAfterClose: true})).status, 'FAIL');
-  assert.equal(approvalObservation(both({}, {sessionFileAfterClose: null})).status, 'FAIL');
-  assert.equal(approvalObservation(both({sessionFileWhileOpen: false})).status, 'FAIL');
-  assert.equal(approvalObservation(both({approvalRequests: 2, approvalsAccepted: 1})).status, 'FAIL');
+test('per-connection approval is observed by behaviour: A asks on its first bind and not its second, B asks again', () => {
+  const bind = (asked = 1, over = {}) => ({asked, accepted: asked, error: false, ...over});
+  const conn = (name, binds, over = {}) => ({name, bound: true, binds, declined: 0, ...over});
+  const both = ({a = [bind(), bind(0)], b = [bind()], aOver = {}, bOver = {}} = {}) => [conn('connection A', a, aOver), conn('connection B', b, bOver)];
+  for (const engine of ['vendor', 'cua']) assert.equal(approvalObservation(both(), {engine}).status, 'PASS', engine);
+  assert.match(approvalObservation(both()).detail, /connection A: 2 binds, asked 1, 0/);
+  // Not every connection ran, or bound the fixture's document: not observed.
+  assert.equal(approvalObservation([conn('connection A', [bind(), bind(0)])]).status, 'BLOCKED');
+  assert.equal(approvalObservation(both({bOver: {bound: false}})).status, 'BLOCKED');
+  assert.equal(approvalObservation(both({a: [bind()]})).status, 'BLOCKED', 'A\'s second bind never ran');
   assert.equal(approvalObservation(undefined).status, 'BLOCKED');
+  // The memory failed: a second bind in the same connection asked, or a new connection did not ask again.
+  assert.equal(approvalObservation(both({a: [bind(), bind(1)]})).status, 'FAIL');
+  assert.equal(approvalObservation(both({b: [bind(0)]}), {engine: 'cua'}).status, 'FAIL', 'nothing persists beyond a connection on cua\'s engine');
+  assert.equal(approvalObservation(both({b: [bind(0)]}), {engine: 'vendor'}).status, 'BLOCKED', 'the vendor may hold TextEdit on its own always-allow list');
+  assert.equal(approvalObservation(both({a: [bind(2), bind(0)]})).status, 'FAIL', 'a first bind asked twice');
+  assert.equal(approvalObservation(both({a: [bind(1, {accepted: 0}), bind(0)]})).status, 'FAIL');
+  assert.equal(approvalObservation(both({aOver: {declined: 1}})).status, 'FAIL', 'an approval outside a bind, or another request, was declined');
+  assert.equal(approvalObservation(both({b: [bind(1, {error: true})]})).status, 'FAIL');
 });
 
 test('doctor health for acceptance: the remote-control rows are reported but never gate it; every other failure does (#56)', async t => {

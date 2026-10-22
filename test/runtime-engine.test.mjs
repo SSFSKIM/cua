@@ -15,7 +15,7 @@ import {EngineFailure, startFakeEngine} from './helpers/fake-engine.mjs';
 import {CERT_SHA1, CODESIGN_TIMED_OUT, NAME, fakeCodesignRead, markSigned} from './helpers/fake-codesign.mjs';
 const CODESIGN_TIMED_OUT_READ = () => CODESIGN_TIMED_OUT;
 import {BUNDLE_NAME, engineBuild, infoPlist} from '../src/runtime/engine-bundle.mjs';
-import {approveEngine, buildEngine, CAPTURE_ALERT_PREDICATE, engineStatus, installedEngine, lineReader, stopEngine, watchCaptureAlerts} from '../src/runtime/engine.mjs';
+import {approveEngine, buildEngine, CAPTURE_ALERT_PREDICATE, engineRecords, engineStatus, inspectEngine, installedEngine, installedFrom, readApprovedLocation, lineReader, stopEngine, watchCaptureAlerts} from '../src/runtime/engine.mjs';
 import {main} from '../src/cli.mjs';
 
 const OLD_BUILD = 'b'.repeat(64);
@@ -51,7 +51,8 @@ function world(t, {identity = CERT_SHA1, engineAnswers = {}} = {}) {
     const engine = {pid, received: [], stopped: false};
     const fake = await startFakeEngine(t, socket, {identity: {engineVersion: '9.9.9', build}, handlers: {
       status: () => { state.onStatus?.(state); return {engineVersion: '9.9.9', build, accessibility: state.accessibility, screenRecording: state.screenRecording,
-        inputMonitoring: state.inputMonitoring, canPostHid: true, socket, pid, bundlePath: state.bundlePath ?? bundle, connections: state.connections}; },
+        inputMonitoring: state.inputMonitoring, canPostHid: true, socket, pid: state.statusPid ?? pid, bundlePath: state.bundlePath ?? bundle, connections: state.connections,
+        ...(state.statusBuild ? {build: state.statusBuild} : {})}; },
       approve: () => { order.push('approve'); state.onApprove?.(state, engine); return {accessibility: state.accessibility, screenRecording: state.screenRecording, captured: state.accessibility && state.screenRecording && state.captured}; },
       shutdown: () => {
         if (state.connections > 0 || state.busyOnShutdown) throw new EngineFailure(-10005, 'busy', 'busy', {connections: state.connections || 1});
@@ -78,6 +79,7 @@ function world(t, {identity = CERT_SHA1, engineAnswers = {}} = {}) {
     if (file === '/usr/bin/codesign' && args[0] === '--verify') return {code: 0, stdout: '', stderr: ''};
     if (file === '/usr/bin/open') {
       assert.deepEqual(args, ['-n', '-g', '-a', bundle]);
+      if (state.open) return state.open(args);
       await startEngine();
       return {code: 0, stdout: '', stderr: ''};
     }
@@ -344,6 +346,174 @@ test('installedEngine is the bundle only when its build and signature are approv
   assert.equal(installed(), null, 'another signature');
   writeFileSync(join(w.dir, 'approved.json'), '{broken');
   assert.equal(installed(), null, 'an unreadable approval is no approval');
+});
+
+// ---- inspectEngine and engineRecords (cua doctor's engine row; the Decision Log's "M3 pre-flight" item 1) ----
+
+const methods = engine => engine.received.map(r => r.method);
+const opened = w => w.calls.filter(call => call[0] === '/usr/bin/open');
+
+test('inspectEngine reads an engine already running and leaves it alone', async t => {
+  const w = world(t, {engineAnswers: {inputMonitoring: false}});
+  w.placeBundle({approved: true});
+  const engine = await w.startEngine();
+  const read = await inspectEngine(w.deps);
+  assert.equal(read.running, true);
+  assert.equal(read.launch, null);
+  assert.equal(read.approved, true);
+  assert.equal(read.status.pid, engine.pid);
+  assert.equal(read.status.inputMonitoring, false);
+  assert.deepEqual(opened(w), []);
+  assert.ok(!methods(engine).includes('shutdown'), 'never stopped');
+  assert.equal(engine.stopped, false);
+  noIdentity(read, 'inspectEngine');
+});
+
+test('with none running, inspectEngine launches the approved bundle as the launcher does, reads its status and stops the engine it started', async t => {
+  const w = world(t);
+  w.placeBundle({approved: true});
+  const read = await inspectEngine(w.deps);
+  assert.equal(read.running, false, 'nothing answered before doctor');
+  assert.deepEqual(opened(w), [['/usr/bin/open', '-n', '-g', '-a', w.bundle]]);
+  assert.equal(w.engines.length, 1);
+  assert.deepEqual(read.launch, {pid: w.engines[0].pid, stopped: true});
+  assert.equal(read.status.accessibility, true);
+  assert.equal(read.status.screenRecording, true);
+  assert.equal(read.status.inputMonitoring, true);
+  assert.equal(w.engines[0].stopped, true);
+  assert.ok(!methods(w.engines[0]).some(method => method === 'approve' || method === 'execute'), 'nothing that prompts or captures');
+  noIdentity(read, 'inspectEngine');
+});
+
+test('a session that connects before inspectEngine stops the engine it launched keeps that engine running', async t => {
+  for (const busyOnShutdown of [false, true]) {
+    const w = world(t);
+    w.placeBundle({approved: true});
+    let reads = 0;
+    // The launch's first status read sees no other connection; the stop's sees one (or shutdown itself answers busy).
+    w.state.onStatus = state => { if (++reads >= 2 && !busyOnShutdown) state.connections = 1; };
+    w.state.busyOnShutdown = busyOnShutdown;
+    const read = await inspectEngine(w.deps);
+    assert.equal(read.launch.stopped, false, `busyOnShutdown ${busyOnShutdown}`);
+    assert.equal(read.launch.leftRunning, true);
+    assert.equal(read.launch.pid, w.engines[0].pid);
+    assert.match(read.launch.detail, /other connection/);
+    assert.equal(w.engines[0].stopped, false, 'left for the session');
+    assert.equal(read.status.connections, 0, 'the status read is the launch\'s');
+  }
+});
+
+test('after its launch, inspectEngine stops only the engine of this bundle and build it launched: another responder gets no shutdown', async t => {
+  // Another copy or another build answering at the socket after the launch (an engine racing in) is not doctor's.
+  for (const [other, field] of [[{bundlePath: '/elsewhere/cua Engine.app'}, 'bundlePath'], [{statusBuild: 'c'.repeat(64)}, 'build']]) {
+    const w = world(t);
+    w.placeBundle({approved: true});
+    Object.assign(w.state, other);
+    const read = await inspectEngine(w.deps);
+    assert.equal(read.launch.stopped, false, field);
+    assert.deepEqual(read.launch.mismatch, {bundlePath: w.state.bundlePath ?? w.bundle, build: w.state.statusBuild ?? OLD_BUILD});
+    assert.ok(!methods(w.engines[0]).includes('shutdown'), `${field}: no shutdown`);
+    assert.equal(w.engines[0].stopped, false);
+  }
+  // The right engine answered the launch, but another pid answers by the time of the stop: left alone.
+  const w = world(t);
+  w.placeBundle({approved: true});
+  let reads = 0;
+  w.state.onStatus = state => { if (++reads >= 2) state.statusPid = 999; };
+  const read = await inspectEngine(w.deps);
+  assert.equal(read.launch.pid, w.engines[0].pid);
+  assert.equal(read.launch.stopped, false);
+  assert.equal(read.launch.replaced, true);
+  assert.match(read.launch.detail, /another engine \(pid 999\) answers at .* now, not pid 100; it was left alone/);
+  assert.ok(!methods(w.engines[0]).includes('shutdown'));
+});
+
+test('inspectEngine with mayLaunch false reads only; with a location already read it runs no second codesign', async t => {
+  const w = world(t);
+  w.placeBundle({approved: true});
+  const quiet = await inspectEngine({...w.deps, mayLaunch: false});
+  assert.equal(quiet.launch, null);
+  assert.equal(quiet.approved, true);
+  assert.deepEqual(opened(w), []);
+  let codesigns = 0;
+  const counting = (...args) => { codesigns++; return fakeCodesignRead(...args); };
+  const location = readApprovedLocation({dir: w.dir, runSync: counting});
+  assert.equal(codesigns, 1);
+  assert.deepEqual(installedFrom(location), {bundlePath: w.bundle, engineVersion: '9.9.9', build: OLD_BUILD, approvedAt: '2026-10-20T00:00:00.000Z'});
+  const read = await inspectEngine({...w.deps, runSync: counting, location});
+  assert.equal(codesigns, 1, 'inspection reused the location\'s read');
+  assert.deepEqual(read.launch, {pid: w.engines[0].pid, stopped: true});
+  assert.deepEqual(read.signature, {kind: 'identity', identityMatches: true});
+});
+
+test('a missing, pending or unapproved bundle, or one whose signature cannot be read, is never launched', async t => {
+  const w = world(t);
+  const missing = await inspectEngine(w.deps);
+  assert.equal(missing.exists, false);
+  assert.equal(missing.launch, null);
+  w.placeBundle();
+  writeFileSync(join(w.dir, 'pending.json'), JSON.stringify({build: OLD_BUILD, identity: CERT_SHA1, builtAt: 'then'}));
+  const pending = await inspectEngine(w.deps);
+  assert.equal(pending.approved, false);
+  assert.deepEqual(pending.pending, {build: OLD_BUILD, builtAt: 'then'});
+  assert.equal(pending.launch, null);
+  writeFileSync(join(w.dir, 'approved.json'), JSON.stringify({build: 'c'.repeat(64), identity: CERT_SHA1, approvedAt: 'when'}));
+  assert.equal((await inspectEngine(w.deps)).launch, null, 'another build is approved');
+  writeFileSync(join(w.dir, 'approved.json'), JSON.stringify({build: OLD_BUILD, identity: CERT_SHA1, approvedAt: 'when'}));
+  const unreadable = await inspectEngine({...w.deps, runSync: CODESIGN_TIMED_OUT_READ});
+  assert.equal(unreadable.approved, null);
+  assert.equal(unreadable.launch, null);
+  assert.deepEqual(opened(w), []);
+  assert.equal(w.engines.length, 0);
+});
+
+test('a bundle at the approved location that is not cua\'s engine is never launched, approved or not', async t => {
+  const w = world(t);
+  w.placeBundle({approved: true});
+  const plist = join(w.bundle, 'Contents', 'Info.plist');
+  writeFileSync(plist, readFileSync(plist, 'utf8').replace('io.github.ssfskim.cua.engine', 'io.github.ssfskim.cua.fixture-engine'));
+  const read = await inspectEngine(w.deps);
+  assert.equal(read.approved, true);
+  assert.equal(read.bundleId, 'io.github.ssfskim.cua.fixture-engine');
+  assert.equal(read.launch, null);
+  assert.deepEqual(opened(w), []);
+});
+
+test('a launch that fails, or an engine that never answers after it, is reported and never thrown', async t => {
+  const w = world(t);
+  w.placeBundle({approved: true});
+  w.state.open = () => ({code: 1, stdout: '', stderr: 'LSOpenURLsWithRole() failed with error -10810'});
+  const refused = await inspectEngine(w.deps);
+  assert.equal(refused.status, null);
+  assert.equal(refused.launch.stopped, undefined);
+  assert.match(refused.launch.error, /^open -n -g -a .* failed \(exit 1\): LSOpenURLsWithRole/);
+  w.state.open = () => ({code: 0, stdout: '', stderr: ''});
+  const silent = await inspectEngine(w.deps);
+  assert.match(silent.launch.error, /did not answer within 15 s/);
+  assert.equal(w.engines.length, 0);
+});
+
+test('a status read that fails is reported, and nothing is launched or stopped', async t => {
+  const w = world(t);
+  w.placeBundle({approved: true});
+  w.state.onStatus = () => { throw new EngineFailure(-32603, 'internal error', 'internal'); };
+  const engine = await w.startEngine();
+  const read = await inspectEngine(w.deps);
+  assert.equal(read.status, null);
+  assert.match(read.statusError, /did not answer status: internal error/);
+  assert.equal(read.launch, null);
+  assert.deepEqual(opened(w), []);
+  assert.ok(!methods(engine).includes('shutdown'));
+});
+
+test('engineRecords reads the bundle\'s presence, approved.json\'s and pending.json\'s builds, never codesign or the identity', t => {
+  const w = world(t);
+  assert.deepEqual(engineRecords({dir: w.dir}), {bundlePath: w.bundle, exists: false, approved: null, pending: null});
+  w.placeBundle({approved: true});
+  writeFileSync(join(w.dir, 'pending.json'), JSON.stringify({build: 'c'.repeat(64), identity: CERT_SHA1, builtAt: 'then'}));
+  const records = engineRecords({dir: w.dir});
+  assert.deepEqual(records, {bundlePath: w.bundle, exists: true, approved: {build: OLD_BUILD, approvedAt: '2026-10-20T00:00:00.000Z'}, pending: {build: 'c'.repeat(64), builtAt: 'then'}});
+  noIdentity(records, 'engineRecords');
 });
 
 // ---- approveEngine ----

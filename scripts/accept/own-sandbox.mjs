@@ -15,7 +15,9 @@
 // the session's own temp. Its script directory (node_repl's `.tmp*` with kernel.js, inside that temp) is readable but
 // not writable. And across sessions (scoped): while a vendor-host session runs, a cell of a concurrent own-host
 // session can neither write into nor read that session's script directory or run directory, and the victim's
-// trusted-worker.js is byte for byte what node_repl wrote.
+// trusted-worker.js is byte for byte what node_repl wrote. Its sessions are pinned to the vendor engine
+// (CUA_NATIVE_ENGINE=vendor, #117 M3), whatever accept-native's --engine says, and every vendor-host result must attest it
+// (the helper's version, the runtime release): a mismatch fails the run.
 //
 // Everything secret is synthetic: the user HOME is a temporary directory this run makes and removes, holding a
 // generated sentinel in its own secret store (and, through a symlinked project tier, in a directory outside it) and in
@@ -55,6 +57,8 @@ import {openConnection} from '../../src/mcp/connection.mjs';
 import {homeLayout, realHome} from '../../src/runtime/layout.mjs';
 import {resolveRuntime} from '../../src/runtime/manifest.mjs';
 import {STORE_RELATIVE} from '../../src/secrets/store.mjs';
+import {attestationProblem, isLifecycleRejection} from '../probe/lib.mjs';
+import {expectedAttestation} from '../probe/pinned-engine.mjs';
 
 const MODES = ['scoped', 'default', 'disabled'];
 const DENIED = new Set(['EPERM', 'EACCES']);
@@ -70,8 +74,9 @@ export function cellResult(texts) {
   throw new Error(`the cell returned no JSON report (${texts.length} text(s): ${texts.map(t => t.slice(0, 120)).join(' | ')})`);
 }
 
-// One own-host connection -> {js(code), close()}. `env` is the connection's environment.
-async function connect({home, env}) {
+// One connection -> {js(code), close()}. `env` is the connection's environment; with `expected` (a vendor-host
+// session's engine attestation) every result must carry it, else the cell throws.
+async function connect({home, env, expected = null}) {
   const input = new PassThrough(), output = new PassThrough();
   const pending = new Map();
   createInterface({input: output}).on('line', line => { const msg = JSON.parse(line); pending.get(msg.id)?.(msg); });
@@ -81,6 +86,8 @@ async function connect({home, env}) {
   await request('initialize', {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'own-sandbox-acceptance', version: '0'}});
   const js = async code => {
     const result = (await request('tools/call', {name: 'js', arguments: {code: cellCode(code)}})).result;
+    const problem = expected && !isLifecycleRejection(result) && attestationProblem(result._meta, expected);
+    if (problem) throw new Error(`refused on the attestation: ${problem}`);
     const texts = (result.content ?? []).filter(c => c.type === 'text').map(c => c.text);
     if (result.isError) throw new Error(`cell failed: ${texts[0]?.slice(0, 2000)}`);
     return cellResult(texts);
@@ -249,10 +256,13 @@ export async function ownSandboxAcceptance({home, host = 'cua', modes = MODES, n
     const expectOf = label => (label === '$CUA_HOME/remote (enrolled device)' ? JSON.stringify({deviceId: 'synthetic', secret: value}) : value);
     const targets = Object.fromEntries(Object.entries(sentinels).flatMap(([label, path]) => [[label, {path, read: 'file', expect: expectOf(label)}], [`${label} (listing)`, {path: resolve(path, '..'), read: 'dir'}]]));
     const env = (mode, which = host) => ({PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: user, LANG: 'C.UTF-8', CUA_REPL_HOST: which, CUA_SHIM_SURFACES: which === 'vendor' ? 'computer' : 'browser',
-      CUA_SHIM_SANDBOX: mode, CUA_RUNTIME_IDLE_MS: '0', ...(node && which === 'cua' ? {CUA_NODE: node} : {})});
+      CUA_SHIM_SANDBOX: mode, CUA_RUNTIME_IDLE_MS: '0', ...(which === 'vendor' ? {CUA_NATIVE_ENGINE: 'vendor'} : {}), ...(node && which === 'cua' ? {CUA_NODE: node} : {})});
+    // A vendor-host (computer) session attests the vendor engine; cua's own host here serves the browser surface only.
+    const vendorEngine = vendor ? expectedAttestation({engine: 'vendor', runtime}) : null;
+    const open = connectionEnv => connect({home: real, env: connectionEnv, expected: connectionEnv.CUA_REPL_HOST === 'vendor' ? vendorEngine : null});
     const cell = probeCell({targets, moduleDir, packageName, sentinel: sentinels.store, writeOutside: join(scratch, 'outside-write'), tcpPort: tcp.address().port, socketPath});
     for (const mode of modes) {
-      const connection = await connect({home: real, env: env(mode)});
+      const connection = await open(env(mode));
       let out, scripts = null;
       try {
         out = await connection.js(cell);
@@ -312,7 +322,7 @@ export async function ownSandboxAcceptance({home, host = 'cua', modes = MODES, n
     // Two concurrent sessions (vendor host only, scoped): an own-host kernel against this vendor-host session's script
     // directory and run directory, while its worker's script waits for its first start.
     if (vendor && modes.includes('scoped')) {
-      const victim = await connect({home: real, env: env('scoped')});
+      const victim = await open(env('scoped'));
       try {
         const where = await victim.js(`const fs = await import('node:fs'), os = await import('node:os'), path = await import('node:path');
 const tmp = os.tmpdir(); const dir = fs.readdirSync(tmp).find(n => n.startsWith('.tmp') && fs.existsSync(path.join(tmp, n, 'trusted-worker.js')));
@@ -320,7 +330,7 @@ nodeRepl.write(JSON.stringify({scripts: dir ? path.join(tmp, dir) : null, run: n
         if (!where.scripts) check('across sessions: the vendor-host session\'s script directory was found', false);
         else {
           const before = readFileSync(join(where.scripts, 'trusted-worker.js'));
-          const attacker = await connect({home: real, env: env('scoped', 'cua')});
+          const attacker = await open(env('scoped', 'cua'));
           let out;
           try { out = await attacker.js(attackCell(where)); } finally { await attacker.close(); }
           check('across sessions: an own-host kernel cannot write into a vendor-host session\'s script directory', !out.writeScripts.ok && DENIED.has(out.writeScripts.code), out.writeScripts.code);
@@ -344,7 +354,7 @@ nodeRepl.write(JSON.stringify({scripts: dir ? path.join(tmp, dir) : null, run: n
       for (const [label, home] of [['', user], [' (through a symlinked ~/.config)', linked]]) {
         const lateStore = join(home, STORE_RELATIVE);
         rmSync(lateStore, {recursive: true, force: true});
-        const connection = await connect({home: real, env: {...env(mode), HOME: home}});
+        const connection = await open({...env(mode), HOME: home});
         try {
           await connection.js('nodeRepl.write(JSON.stringify(1))');
           if (linux) check(`a store root missing at launch is created 0700 (a missing fixed target inside HOME)${label}`, existsSync(lateStore) && (statSync(lateStore).mode & 0o777) === 0o700);

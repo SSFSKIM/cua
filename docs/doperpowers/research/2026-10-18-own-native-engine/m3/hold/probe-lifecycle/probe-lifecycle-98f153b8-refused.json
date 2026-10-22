@@ -1,0 +1,46 @@
+{
+ "release": "26.928.40906-darwin-arm64",
+ "at": "2026-10-22T10:50:38.503Z",
+ "engine": {
+  "engine": "cua",
+  "pinnedBy": "--engine",
+  "host": "cua",
+  "expected": {
+   "engine": "cua",
+   "version": "0.1.0",
+   "build": "0c363f8f4512b24891ce22af50f6515f99af4b008bee09770245de03b8c7e80d"
+  },
+  "attested": 5
+ },
+ "cancelDuringJs": {
+  "cancelAtMs": 938,
+  "reply": {
+   "atMs": 3445,
+   "isError": false,
+   "text": "cancelled:finished"
+  },
+  "stateSeenByNextCell": "cancelled:finished",
+  "endTask": {
+   "status": "ended",
+   "ended": true,
+   "taskId": "05e03a6b-4aa4-440d-b050-6af9520ae366"
+  },
+  "close": {
+   "code": 0,
+   "signal": null,
+   "atMs": 3655,
+   "closeMs": 191,
+   "elicitationsDeclined": 0,
+   "runtimeProcessesAfterExit": 0,
+   "leftAfterExit": [],
+   "engineSocketHeldAfterExit": [],
+   "engineSocketClientsUnseen": 0
+  }
+ },
+ "refused": "refused on the attestation: no cua/nativeEngine attestation on the result",
+ "refusedServeExit": {
+  "code": 0,
+  "signal": null,
+  "atMs": 2641
+ }
+}

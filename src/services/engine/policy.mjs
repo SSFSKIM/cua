@@ -19,6 +19,8 @@
 // native/engine/Sources/Engine/Policy.generated.swift, generated from this module by scripts/generate-engine-policy.mjs
 // (so an edit to the list changes the engine's build), which test/services-engine-policy.test.mjs regenerates and
 // compares.
+//
+// On Linux the same approval is asked for sky_linux's requests, with no lists: createLinuxPolicy, below.
 
 // Password managers and the keychain: the vendor's list (R/E-helper-catalogue.md §6.1; membership read from the binary's
 // string order, an inference). iPhone Mirroring (com.apple.ScreenContinuity) is not on it: the vendor drives that app (its
@@ -61,9 +63,9 @@ export function refusal(bundleIdentifier) {
 export const riskOf = bundleIdentifier => (typeof bundleIdentifier === 'string' && HIGH_RISK_SET.has(bundleIdentifier.toLowerCase()) ? 'high' : 'low');
 
 // The approval the vendor's policy asks for `target` ({appPath, bundleIdentifier, displayName}) before `toolName`. An
-// app without a bundle id is named by its path, so the host's memory still has a key for it.
-export function approvalRequest({toolName, target, callId}) {
-  const risk = riskOf(target.bundleIdentifier);
+// app without a bundle id is named by its path, so the host's memory still has a key for it. `risk` is the table's
+// unless given (Linux has no table: linuxApprovalRequest).
+export function approvalRequest({toolName, target, callId, risk = riskOf(target.bundleIdentifier)}) {
   return {
     message: `Allow Computer Use to use "${target.displayName}"?`,
     meta: {
@@ -144,6 +146,81 @@ export function createPolicy({nodeRepl, resolve}) {
   }
 
   return {withPolicy};
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Linux (the Design's "The service", Policy and approvals, its Linux sentence; Decision Log "M3 pre-flight" item 4):
+// sky_linux, the Linux engine until #171, is approved through the same elicitation, asked by the trusted sky wrapper
+// (src/services/sky.mjs) before a request reaches it, and remembered per connection by the supervisor's approval memory
+// as on macOS. The key is the app a request reaches:
+// - a method that reads or drives one window: the app sky_linux itself lists for that window's id (list_windows), never
+//   the `app` the request carries, so a window object cannot borrow another app's approval (macOS resolves the app
+//   through the engine for the same reason);
+// - launch_app: the app id it launches (the launched window's first action then asks for its own app, a second key);
+// - input that names no window (absent or null, which sky_linux reads as desktop-wide input), move_relative (which takes
+//   none) and a drag handle's start (desktop coordinates): the whole desktop, one key of its own.
+// Listing (list_apps, list_windows), the desktop screenshot (get_screenshot) and releasing a clipboard handle reach no app
+// and ask nothing; so do a drag handle's moves and end, which sky_linux refuses unless the start (approved) made it. Any
+// other method is the vendor's to refuse. The policy asks and never forbids: the forbidden list and the risk table above
+// are macOS bundle ids, and a Linux list would be content with no source; if one is wanted it is #171's (cua's own Linux
+// engine). Every Linux approval is low risk.
+export const LINUX_WINDOW_METHODS = Object.freeze(['get_window_state', 'click', 'press_key', 'type_text', 'scroll', 'drag', 'move',
+  'perform_secondary_action', 'activate_window', 'key_down', 'key_up', 'clipboard_read', 'clipboard_write']);
+const WINDOW_METHODS = new Set(LINUX_WINDOW_METHODS);
+// The desktop's key and its name in the message: no window app is spelt with parentheses (a desktop file id or an X11
+// class), so the key cannot be a window's.
+export const DESKTOP_APPROVAL = Object.freeze({key: '(desktop)', display: 'the whole desktop'});
+
+// The Linux approval for `key` (the app, or the desktop's key) named `display`: the macOS request with no risk table.
+export function linuxApprovalRequest({toolName, key, display, callId}) {
+  return approvalRequest({toolName, target: {bundleIdentifier: key, displayName: display}, callId, risk: 'low'});
+}
+
+const isPositiveId = value => Number.isSafeInteger(value) && value > 0;
+const plainObject = value => typeof value === 'object' && value !== null && !Array.isArray(value);
+const NO_INPUT = 'Computer Use app approval requires an object input';
+const NO_WINDOW = 'Computer Use app approval requires a window from listWindows()';
+const NO_APP = 'Computer Use app approval requires a non-empty app';
+
+// `nodeRepl` is the trusted worker's (createElicitation, requestMeta); `listWindows()` answers sky_linux's list_windows.
+// `approve(request, method)` resolves once `request` (method `method`, the key the vendor looks it up by) needs no
+// approval or was accepted, and throws otherwise.
+export function createLinuxPolicy({nodeRepl, listWindows}) {
+  const desktop = toolName => ({toolName, key: DESKTOP_APPROVAL.key, display: DESKTOP_APPROVAL.display});
+
+  async function windowApp(toolName, window) {
+    if (!plainObject(window) || !isPositiveId(window.id)) throw new Error(NO_WINDOW);
+    const listed = (await listWindows())?.find?.(candidate => candidate?.id === window.id);
+    if (!listed) throw new Error(`Window ${window.id} is unavailable.`);
+    if (typeof listed.app !== 'string' || !listed.app.trim()) throw new Error(`Window ${window.id} names no app to approve.`);
+    return {toolName, key: listed.app, display: listed.app};
+  }
+
+  // The approval `request` needs, or null.
+  async function scopeOf(request, method) {
+    if (request?.type === 'drag_start') return desktop('drag_handle');
+    if (request?.type !== 'execute') return null;
+    const input = Array.isArray(request.args) ? request.args[0] : undefined;
+    if (method === 'move_relative') return desktop(method);
+    if (method === 'launch_app') {
+      if (!plainObject(input)) throw new Error(NO_INPUT);
+      if (typeof input.app !== 'string' || !input.app.trim()) throw new Error(NO_APP);
+      return {toolName: method, key: input.app, display: input.app};
+    }
+    if (!WINDOW_METHODS.has(method)) return null;
+    if (!plainObject(input)) throw new Error(NO_INPUT);
+    return input.window == null ? desktop(method) : windowApp(method, input.window);
+  }
+
+  async function approve(request, method) {
+    const scope = await scopeOf(request, method);
+    if (!scope) return;
+    const createElicitation = required(nodeRepl, 'createElicitation');
+    const answer = await createElicitation(linuxApprovalRequest({...scope, callId: toolCallId(nodeRepl)}));
+    if (answer?.action !== 'accept') throw new Error(`Computer Use was not approved to use ${scope.display}`);
+  }
+
+  return {approve};
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

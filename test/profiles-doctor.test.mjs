@@ -1,3 +1,4 @@
+import './helpers/scratch-home.mjs'; // first: doctor's engine row must not read (or launch) the account's approved engine
 // Doctor's Chrome checks (C5): whether the home is on the cua route, per registered profile the cua extension's
 // presence, the io.github.ssfskim.cua native-messaging registration, and cua's live hosts. All are passive capability
 // evidence: pass, warn or blocked, never a failure of runtime health. test/doctor-cua-route.test.mjs drives a registered

@@ -110,8 +110,8 @@ claude mcp list
 `~/.claude.json` is per machine; run this on each. Two hand-made parts of `~/.claude/settings.json` also have to be
 copied: the `mcp__cua_repl__*` permission entries, and the `Elicitation` hook matched to `cua_repl` that runs
 `~/.claude/hooks/cua-approve.sh` to accept the per-app and per-site approval dialogs. Without the hook each new
-connection shows a dialog per app and per site origin (`CUA_SHIM_PERSIST=always` remembers app approvals machine-wide
-instead). `CUA_SHIM_SANDBOX` defaults to `scoped` (cells cannot write outside their run directory or reach the
+connection shows a dialog per app and per site origin (`CUA_SHIM_PERSIST=always`, which remembered app approvals
+machine-wide, is refused since #117 M3: the hook is how to stop being asked). `CUA_SHIM_SANDBOX` defaults to `scoped` (cells cannot write outside their run directory or reach the
 network); `disabled` lifts both.
 
 ## For a resident agent service

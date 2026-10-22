@@ -43,6 +43,8 @@ import {fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
 import {StdioClient, textOf} from '../browser-parity/mcp.mjs';
 import {resolveRuntime} from '../../src/runtime/manifest.mjs';
+import {attestationProblem, ENGINE_META_KEY, isLifecycleRejection} from '../probe/lib.mjs';
+import {expectedAttestation} from '../probe/pinned-engine.mjs';
 import {auditExchange} from './app-server.mjs';
 import {createHelperTracker, helperExecutable, helperLauncherIs, helperPids, isAlive, ownedBySessionTmp} from './helpers.mjs';
 import {launchEnvVerdict} from './launch-env.mjs';
@@ -101,6 +103,42 @@ const NATIVE = [
 ];
 
 const SCREENSHOT = ['Finder getScreenshot', `const app = await cua.getApp(${JSON.stringify(FINDER)}); const shot = await app.getScreenshot({emit: false}); return {bytes: shot?.length ?? null};`];
+
+// One cell per call: `call(code)` sends it (the js tool's result back), and its result is kept under `results[name]`,
+// with `attested`, the engine its result attests (#117), and `wallMs`. With `expected` (the vendor engine's attestation,
+// a vendor-host session's), a result that attests another engine or none is kept with `refused` and stops the run at
+// once: that call throws, and every later one throws again without sending, so no further cell reaches the engine; the
+// caller's teardown and result still follow. The attestation is judged on the raw reply, before its output is decoded;
+// output that does not decode is `undecodable`, apart from a call that failed in transport (`transport`), which has no
+// reply to attest, and the connection lifecycle's pre-dispatch rejection (isLifecycleRejection), which no runtime work answered.
+export function cellRunner({call, expected = null, isCancelled = () => false, results, ev = () => {}}) {
+  let refusal = null;
+  return async (name, body) => {
+    if (isCancelled()) throw new Error('cancelled');
+    if (refusal) throw refusal;
+    const t = Date.now();
+    let reply = null, transport = null;
+    try { reply = await call(cell(body)); } catch (error) { transport = error.message; }
+    // The reply's attestation is judged before anything in it is decoded, so output that cannot be read never hides it.
+    const problem = expected && reply && !isLifecycleRejection(reply) ? attestationProblem(reply._meta, expected) : null;
+    let result;
+    if (!reply) result = {ok: false, transport: transport ?? 'no reply'};
+    else {
+      const text = textOf(reply);
+      const line = text.split('\n').reverse().find(l => l.startsWith(MARK));
+      try {
+        result = line ? JSON.parse(line.slice(MARK.length)) : {ok: false, noMarker: true, isError: reply.isError ?? null, text: text.slice(0, 400)};
+      } catch (error) { result = {ok: false, undecodable: error.message, text: line.slice(0, 400)}; }
+      result.attested = reply._meta?.[ENGINE_META_KEY] ?? null;
+    }
+    result.wallMs = Date.now() - t;
+    if (problem) result.refused = problem;
+    results[name] = result;
+    ev(`cell ${name}`, result);
+    if (problem) throw (refusal = new Error(`refused on the attestation: ${problem}; no further cell was sent`));
+    return result;
+  };
+}
 
 // How many processes below `root` are named codex (ps comm, by basename).
 export function codexDescendants(root, {ps = () => execFileSync('/bin/ps', ['-axo', 'pid=,ppid=,comm='], {encoding: 'utf8'})} = {}) {
@@ -162,8 +200,11 @@ async function main() {
     chmodSync(slot, 0o755);
   }
 
+  // A vendor-host (computer) session is the vendor engine's (#117 M3): pinned, since a --native run's HOME is the
+  // account's own, whose ~/.config/cua/engine.json would otherwise choose the engine.
   const env = {HOME: userHome, XDG_CONFIG_HOME: values['config-home'] ?? join(userHome, '.config'), USER: process.env.USER, LOGNAME: process.env.LOGNAME, LANG: 'C.UTF-8',
     PATH: process.env.PATH, TMPDIR: serveTmp, CUA_HOME: home, CUA_REPL_HOST: host, CUA_SHIM_SURFACES: host === 'vendor' ? 'computer' : 'browser',
+    ...(host === 'vendor' ? {CUA_NATIVE_ENGINE: 'vendor'} : {}),
     CUA_SHIM_SANDBOX: mode, CUA_SHIM_PERSIST: 'session', CUA_SHIM_SECRETS: 'off',
     ...(slot ? {CUA_PROBE_SLOT: slot} : {}), CUA_PROBE_LAUNCH_LOG: launchLog};
   const elicitations = [];
@@ -177,21 +218,11 @@ async function main() {
   // cells; the teardown below still runs (the serve closed, this run's helpers stopped by pid) and the result is written.
   let cancelled = false;
   process.once('SIGTERM', () => { cancelled = true; ev('cancelled (SIGTERM)'); client.failAll(new Error('cancelled')); });
-  const js = async (name, body) => {
-    if (cancelled) throw new Error('cancelled');
-    const t = Date.now();
-    let result;
-    try {
-      const reply = await client.call('js', {code: cell(body)});
-      const text = textOf(reply);
-      const line = text.split('\n').reverse().find(l => l.startsWith(MARK));
-      result = line ? JSON.parse(line.slice(MARK.length)) : {ok: false, noMarker: true, isError: reply?.isError ?? null, text: text.slice(0, 400)};
-    } catch (error) { result = {ok: false, transport: error.message}; }
-    result.wallMs = Date.now() - t;
-    ev(`cell ${name}`, result);
-    return result;
-  };
   const results = {};
+  // A vendor-host session attests the vendor engine at the runtime release; the first result that does not ends the
+  // cells (cellRunner), and scripts/accept/compat-route.mjs judges every cell's attestation again.
+  const js = cellRunner({call: code => client.call('js', {code}), expected: host === 'vendor' ? expectedAttestation({engine: 'vendor', runtime}) : null,
+    isCancelled: () => cancelled, results, ev});
   // This run's helpers run the release's helper with one of this run's session temps (helpers.mjs); no other is ever
   // signalled.
   const launchedTmps = () => readJsonl(launchLog).map(l => l.sessionTmp);
@@ -200,16 +231,16 @@ async function main() {
   try {
     const init = await client.initialize({elicitation: {form: {}}});
     out.serverInfo = init?.serverInfo ?? null;
-    results.banner = await js('banner', 'return {ready: true};');
+    await js('banner', 'return {ready: true};');
     if (envProbe) helpers.observe();
-    else results.confinement = await js('confinement', confinementCell({outside, marker, moduleDir: runtime.paths.moduleDir, cuaHome: home, tcpPort: tcp.address().port, unixPath,
+    else await js('confinement', confinementCell({outside, marker, moduleDir: runtime.paths.moduleDir, cuaHome: home, tcpPort: tcp.address().port, unixPath,
       sessionTmp: launchedTmps().at(-1) ?? null}));
     // No Codex CLI under this run (#115 M2): the processes below this one named codex, counted while the session lives.
     out.codexDescendants = codexDescendants(process.pid);
     if (values.native) {
       const tmpSeen = [];
       for (const [name, body] of watchTmp ? [...NATIVE, SCREENSHOT] : NATIVE) {
-        results[name] = await js(name, body);
+        await js(name, body);
         helpers.observe();
         if (!slot) for (const pid of helpers.owned()) if (!helperLaunchers.has(pid)) helperLaunchers.set(pid, {launcherIsTheLaunch: helperLauncherIs(pid, readJsonl(launchLog).at(-1)?.CODEX_CLI_PATH)});
         if (watchTmp) {

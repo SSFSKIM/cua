@@ -7,12 +7,12 @@
 //   HOME=<temporary store home> node scripts/probe/serve-fake-sky-target.mjs <absolute fake target module>
 // (uses $CUA_HOME).
 // As under scripts/accept/serve-with-store.mjs, the server resolves its secret store from that $HOME and the runtime's
-// launch gets the account's real home back. CUA_SHIM_SECRETS=off serves with secrets turned off (secrets_disabled).
+// launch gets the account's real home back, and the engine is selected from the account's own (accountEngine). CUA_SHIM_SECRETS=off serves with secrets turned off (secrets_disabled).
 import {dirname, isAbsolute} from 'node:path';
 import {realpathSync} from 'node:fs';
 import {serve} from '../../src/mcp/server.mjs';
 import {defaultHome} from '../../src/runtime/layout.mjs';
-import {isAccountHome, withAccountHome} from '../accept/secret-seed.mjs';
+import {accountEngine, isAccountHome, withAccountHome} from '../accept/secret-seed.mjs';
 
 const [target, ...rest] = process.argv.slice(2);
 if (!target || !isAbsolute(target) || rest.length || !process.env.CUA_HOME || isAccountHome(process.env.HOME)) {
@@ -28,6 +28,7 @@ const refused = error => {
 };
 const code = await serve({
   home: defaultHome(),
+  engine: accountEngine(),
   prepareLaunch: launch => withAccountHome({
     ...launch,
     env: {

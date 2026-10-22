@@ -19,12 +19,12 @@ import {homedir} from 'node:os';
 import {join} from 'node:path';
 import {spawn} from 'node:child_process';
 import {createInterface} from 'node:readline';
-import {fail} from './errors.mjs';
+import {CuaError, fail} from './errors.mjs';
 import {ENGINE_DIRECTORY_IN_HOME} from './layout.mjs';
-import {BUNDLE_NAME, ENGINE_SOURCE, EXECUTABLE, assembleBundle, engineBuild, engineVersion} from './engine-bundle.mjs';
+import {BUNDLE_ID, BUNDLE_NAME, ENGINE_SOURCE, EXECUTABLE, assembleBundle, engineBuild, engineVersion} from './engine-bundle.mjs';
 import {configuredIdentity, identityMatches, lastLines, readSignature, recordedIdentity, resolveSigningIdentity, runCommand, signatureReport, signBundle, sleepFor} from './engine-sign.mjs';
 import {FrameDecoder, encodeFrame} from '../services/engine/protocol.mjs';
-import {bundleIdentity} from '../services/engine/client.mjs';
+import {bundleIdentity, plistString} from '../services/engine/client.mjs';
 
 const OPEN = '/usr/bin/open';
 const BUILD_TIMEOUT_MS = 30 * 60_000;
@@ -103,9 +103,12 @@ async function poll(ctx, probe, timeoutMs) {
 
 const busy = (pid, n) => fail('engine_busy', `the engine (pid ${pid}) has ${others(n)} open`, {hint: 'it is serving a session; run this again once nothing uses it (the approved bundle and the running engine are untouched)'});
 
-async function stop(ctx) {
+// `pid`, when given, is the engine the caller means: another one answering at the socket is left alone (engine_mismatch).
+async function stop(ctx, {pid} = {}) {
   const status = await statusOf(ctx);
   if (!status) return {wasRunning: false};
+  if (pid !== undefined && status.pid !== pid)
+    fail('engine_mismatch', `another engine (pid ${status.pid}) answers at ${ctx.paths.socket} now, not pid ${pid}; it was left alone`);
   if (status.connections > 0) busy(status.pid, status.connections);
   const answer = await ctx.rpc('shutdown');
   if (!answer.ok && !answer.unreachable) {
@@ -163,18 +166,39 @@ export function installedEngine({dir = engineDirectory(), runSync} = {}) {
   if (!approved) return null;
   let onDisk;
   try { onDisk = bundleOnDisk(paths.bundle, runSync); } catch { return null; }
+  return installedFrom({dir, onDisk, approved});
+}
+
+// The approved location read once (the bundle on disk with its signature, which carries the SHA-1 and the subject and
+// is never printed; approved.json's and pending.json's records), for a caller that needs both installedFrom's answer and
+// inspectEngine's read with one codesign (doctor).
+export function readApprovedLocation({dir = engineDirectory(), runSync} = {}) {
+  const paths = enginePaths(dir);
+  return {dir, onDisk: bundleOnDisk(paths.bundle, runSync), approved: readRecord(paths.approved), pending: readRecord(paths.pending)};
+}
+
+// installedEngine's answer from a location already read.
+export function installedFrom({dir, onDisk, approved}) {
   if (!approvedMatches(onDisk, approved)) return null;
-  return {bundlePath: paths.bundle, engineVersion: onDisk.engineVersion, build: onDisk.build, approvedAt: approved.approvedAt};
+  return {bundlePath: enginePaths(dir).bundle, engineVersion: onDisk.engineVersion, build: onDisk.build, approvedAt: approved.approvedAt};
+}
+
+// The bundle on disk with its signature, and approved.json's and pending.json's records: `ctx.location` when the caller
+// read it already (readApprovedLocation, for this same directory), else read here.
+function bundleFacts(ctx) {
+  if (ctx.location) return ctx.location;
+  const {paths} = ctx;
+  return {onDisk: bundleOnDisk(paths.bundle, ctx.runSync), approved: readRecord(paths.approved), pending: readRecord(paths.pending)};
 }
 
 // The bundle, approved.json's and pending.json's state, and the running engine's status answer (null when none runs).
 export async function engineStatus(deps) {
   const ctx = context(deps);
+  return statusReport(ctx, bundleFacts(ctx), await statusOf(ctx));
+}
+
+function statusReport(ctx, {onDisk, approved, pending}, status) {
   const {paths} = ctx;
-  const onDisk = bundleOnDisk(paths.bundle, ctx.runSync);
-  const approved = readRecord(paths.approved);
-  const pending = readRecord(paths.pending);
-  const status = await statusOf(ctx);
   return {
     bundlePath: paths.bundle,
     exists: onDisk.exists,
@@ -187,6 +211,82 @@ export async function engineStatus(deps) {
     pending: pending ? {build: pending.build ?? null, builtAt: pending.builtAt ?? null} : null,
     running: Boolean(status),
     status,
+  };
+}
+
+// What `cua doctor`'s engine row reads (the Decision Log's "M3 pre-flight" item 1). An engine already answering at the
+// socket is read and left alone. With none answering and the approved bundle installed (its build and signature
+// approved.json's, and its bundle id cua's engine's), the bundle is launched as the launcher launches it (open -n -g -a),
+// read, and sent `shutdown`; a session that connects in between makes the stop busy, and the engine is left running for
+// it. A pending or unapproved bundle, one whose signature cannot be read, and any other app at the approved location
+// (the harnesses' fixture approved engine, scripts/probe/fixture-engine.mjs) are never launched. Nothing here prompts or
+// captures: the engine's start and its `status` do neither. Never throws for what it finds: a status read that fails
+// is `statusError`, a launch or stop that fails is `launch.error`. `mayLaunch: false` reads without launching (doctor,
+// when sessions would not use cua's engine).
+// Only the instance launched here is ever stopped: `open` names no pid, so the engine that answers after the launch is
+// taken as this launch's only when it runs this bundle at this build, and the stop is sent only while that same pid
+// still answers. Anything else that took the socket (another copy, another build, another engine racing in) is reported
+// as `launch.mismatch` or `launch.replaced` and left alone.
+// -> engineStatus's report with `running` meaning an engine answered before this read, `status` the answer read (from
+// that engine, or from the one launched here), `bundleId`, `statusError` (string | null), and `launch`: null when nothing
+// was launched, else {pid, stopped: true} | {pid, stopped: false, leftRunning: true, detail} |
+// {pid, stopped: false, mismatch: {bundlePath, build}} | {pid, stopped: false, replaced: true, detail} | {pid?, error}.
+export async function inspectEngine({mayLaunch = true, ...deps} = {}) {
+  const ctx = context(deps);
+  const facts = bundleFacts(ctx);
+  const read = async () => {
+    try { return {status: await statusOf(ctx)}; } catch (error) {
+      if (error?.code !== 'engine_unreadable') throw error;
+      return {status: null, error: error.message};
+    }
+  };
+  const before = await read();
+  let {status} = before;
+  let launched = null;
+  const bundleId = bundleIdOf(ctx.paths.bundle);
+  if (mayLaunch && !status && !before.error && bundleId === BUNDLE_ID && approval(facts.onDisk, facts.approved) === true) {
+    launched = {};
+    try { status = await launch(ctx); launched.pid = status.pid; } catch (error) {
+      if (!(error instanceof CuaError)) throw error;
+      launched.error = error.message;
+    }
+    if (status && !runsBundle(status, ctx.paths.bundle, facts.onDisk.build)) {
+      Object.assign(launched, {stopped: false, mismatch: {bundlePath: status.bundlePath ?? null, build: status.build ?? null}});
+    } else if (status) {
+      try { await stop(ctx, {pid: status.pid}); launched.stopped = true; } catch (error) {
+        if (!(error instanceof CuaError)) throw error;
+        launched.stopped = false;
+        if (error.code === 'engine_busy') Object.assign(launched, {leftRunning: true, detail: error.message});
+        else if (error.code === 'engine_mismatch') Object.assign(launched, {replaced: true, detail: error.message});
+        else launched.error = error.message;
+      }
+    }
+  }
+  return {...statusReport(ctx, facts, status), running: Boolean(before.status), bundleId, statusError: before.error ?? null, launch: launched};
+}
+
+// Whether a status answer is the engine of `bundle` at `build` (its own report of where it runs from, as sameEngine).
+function runsBundle(status, bundle, build) {
+  const real = path => { try { return realpathSync(path); } catch { return path; } };
+  return typeof status.bundlePath === 'string' && real(status.bundlePath) === real(bundle) && status.build === build;
+}
+
+function bundleIdOf(bundle) {
+  try { return plistString(readFileSync(join(bundle, 'Contents', 'Info.plist'), 'utf8'), 'CFBundleIdentifier'); } catch { return null; }
+}
+
+// The approved location's records as files only, with no codesign and no connection: whether a bundle is there, and
+// approved.json's and pending.json's builds and times (never their identity). What doctor says about an engine that is
+// not selected.
+export function engineRecords({dir = engineDirectory()} = {}) {
+  const paths = enginePaths(dir);
+  const approved = readRecord(paths.approved);
+  const pending = readRecord(paths.pending);
+  return {
+    bundlePath: paths.bundle,
+    exists: existsSync(paths.bundle),
+    approved: approved ? {build: approved.build ?? null, approvedAt: approved.approvedAt ?? null} : null,
+    pending: pending ? {build: pending.build ?? null, builtAt: pending.builtAt ?? null} : null,
   };
 }
 
@@ -268,6 +368,8 @@ const GRANTS = [
 
 const steps = (grant, bundle) => `cua Engine needs ${grant.pane}: at the console, open System Settings → Privacy & Security → ${grant.pane}, `
   + `click "+", press ⌘⇧G and enter ${bundle}, then switch it on${grant.note ? ` (${grant.note})` : ''}`;
+// The three grants and their by-hand steps, for doctor's engine row.
+export {GRANTS as ENGINE_GRANTS, steps as grantSteps};
 
 function sameEngine(status, bundle, onDisk) {
   const real = path => { try { return realpathSync(path); } catch { return path; } };

@@ -257,6 +257,60 @@ final class EnablementReleaseTests: XCTestCase {
     XCTAssertEqual(first.written, ["AXManualAccessibility=true"], "connection 1 still observes the first")
   }
 
+  /// One observation's wait decision, composed as getAppState composes it on a Chromium window.
+  private func waits(_ web: WebAccessibility, enabledNow: Bool, pid: pid_t = 7, launched: Date) -> Bool {
+    webAreaWaitNeeded(switchOn: true, enabledNow: enabledNow, chromium: true, seen: web.hasSeenWebArea(pid: pid, launched: launched))
+  }
+
+  func testAProcessTheEngineWroteBackIsSetAgainByTheNextConnectionThoughItReadsTrue() {
+    // M2a.5's Surprise: after the write-back, Chromium's attribute reads true (AppKit's readback, not Chromium's mode),
+    // while the page's tree went with the mode. The next observation must enable again, owned, so the wait runs.
+    let web = WebAccessibility()
+    let app = FakeApplication(names: ["AXManualAccessibility"])
+    XCTAssertEqual(web.enable(pid: 7, launched: launched, connection: 1, access: app.access), "AXManualAccessibility")
+    web.noteWebArea(pid: 7, launched: launched)
+    web.release(connection: 1)
+    app.values["AXManualAccessibility"] = true  // the readback after the write-back
+    let next = web.enableReporting(pid: 7, launched: launched, connection: 2, access: app.access)
+    XCTAssertEqual(next.set, "AXManualAccessibility", "re-enabled whatever it reads")
+    XCTAssertEqual(next.prior, .readTrue)
+    XCTAssertTrue(waits(web, enabledNow: next.set != nil, launched: launched), "the wait runs for the page to come back")
+    XCTAssertNil(web.enable(pid: 7, launched: launched, connection: 2, access: app.access), "owned again: the memory is spent")
+    web.release(connection: 2)
+    XCTAssertEqual(app.written, ["AXManualAccessibility=true", "AXManualAccessibility=false", "AXManualAccessibility=true", "AXManualAccessibility=false"],
+                   "owned again, so released again")
+  }
+
+  func testATrueTheEngineNeverOwnedIsNeverWrittenAcrossConnections() {
+    let web = WebAccessibility()
+    let voiceOver = FakeApplication(names: ["AXManualAccessibility"])
+    voiceOver.values["AXManualAccessibility"] = true
+    XCTAssertNil(web.enable(pid: 7, launched: launched, connection: 1, access: voiceOver.access))
+    web.release(connection: 1)
+    XCTAssertNil(web.enable(pid: 7, launched: launched, connection: 2, access: voiceOver.access))
+    web.release(connection: 2)
+    let unreadable = FakeApplication(names: ["AXManualAccessibility"])
+    unreadable.unreadable = ["AXManualAccessibility"]
+    _ = web.enable(pid: 8, launched: launched, connection: 3, access: unreadable.access)  // set, not owned
+    web.release(connection: 3)
+    unreadable.unreadable = []
+    unreadable.values["AXManualAccessibility"] = true
+    XCTAssertNil(web.enable(pid: 8, launched: launched, connection: 4, access: unreadable.access), "never written back, so not re-set")
+    XCTAssertTrue(voiceOver.writes.isEmpty)
+    XCTAssertEqual(unreadable.written, ["AXManualAccessibility=true"])
+  }
+
+  func testARelaunchReusingThePidIsNotTakenForTheProcessTheEngineWroteBack() {
+    let web = WebAccessibility()
+    let first = FakeApplication(names: ["AXManualAccessibility"])
+    _ = web.enable(pid: 7, launched: launched, connection: 1, access: first.access)
+    web.release(connection: 1)
+    let second = FakeApplication(names: ["AXManualAccessibility"])
+    second.values["AXManualAccessibility"] = true  // another client's, in the new launch
+    XCTAssertNil(web.enable(pid: 7, launched: Date(timeIntervalSince1970: 2_000), connection: 2, access: second.access))
+    XCTAssertTrue(second.writes.isEmpty)
+  }
+
   func testShutdownReleasesEveryProcessTheEngineEnabled() {
     let web = WebAccessibility()
     let a = FakeApplication(names: ["AXManualAccessibility"])

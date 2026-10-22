@@ -13,8 +13,9 @@
 // the identity it recorded right after its `open` (./fixture-app.mjs: the one pid absent before the run and launched
 // after it began, with that launch time; none or more than one records none, and a TextEdit running before is left as
 // it is), after the document close is confirmed and a fresh window-server read finds no on-screen layer-0 window.
-// TextEdit's internal off-screen windows do not block quitting (#196); only their count and bounds are recorded.
-// A visible window, foreign PID or unreadable list leaves the process running and the step BLOCKED. It then hands the
+// Off-screen windows are excluded only when their CG IDs were recorded at this run's own empty launch (#196),
+// never merely because they are off-screen. A visible or new/unclassified off-screen window, foreign PID or unreadable
+// list leaves the process running and the step BLOCKED; evidence contains IDs/bounds, never titles. It then hands the
 // front back to the application that was frontmost before the run (#157).
 // The engine (#117 M3.4; docs/doperpowers/specs/2026-10-18-own-native-engine-design.md, acceptance 8): the caller pins
 // one (`engine`, accept-native's --engine, scripts/probe/pinned-engine.mjs), every server runs with CUA_NATIVE_ENGINE set
@@ -52,7 +53,7 @@ import {fingerprintable, fingerprints, textLeaks, UNFINGERPRINTABLE} from '../pr
 import {TEXTEDIT_BUNDLE} from './lib.mjs';
 import {approvalLedger, ATTEST_STEP, AttestationRefusal, attestReplies} from './engine-lane.mjs';
 import {localFrontmost, sendToPausedSession} from './key-guard.mjs';
-import {awaitLaunch, cleanUpFixtureApp} from './fixture-app.mjs';
+import {awaitLaunch, captureLaunchWindows, cleanUpFixtureApp} from './fixture-app.mjs';
 import {awaitClose, readWindows} from './window-close.mjs';
 import {openSession, resultText} from './mcp-session.mjs';
 import {pauseGate, pausing} from '../mini-pause.mjs';
@@ -231,6 +232,7 @@ export async function runTextEdit({home, engine = null, secret = false, forbid =
   const frontBefore = (() => { try { return frontmost(); } catch { return null; } })();
   let opened = false;  // `open` was called: a TextEdit may have been started by this run
   let launched = null;  // captureLaunch's reading right after the `open`: the run's own TextEdit, if it started one
+  let launchWindows = null;  // off-screen IDs/bounds captured only at this run's own empty launch
   const helpersBefore = nativeHelpers();
   observations.textEdit = {runningBefore: textEditBefore.length > 0};
   // Returns early when a step cannot continue; cleanup and the result follow in any case.
@@ -286,6 +288,8 @@ export async function runTextEdit({home, engine = null, secret = false, forbid =
     // poll for the new pid, timed; past the bound a miss is recorded, never guessed.
     launched = await awaitLaunch({pids: textEditPids, before: textEditBefore, startedAt: runStartedAt});
     observations.textEdit.launch = {captured: Boolean(launched.launch), candidates: launched.candidates.length, waitedMs: launched.waitedMs, missed: launched.missed};
+    launchWindows = await captureLaunchWindows({launch: launched.launch, before: textEditBefore, readWindows});
+    observations.textEdit.launchInternalWindows = launchWindows?.windows ?? null;
     await sleep(1000);  // let the document window come to the front
     record(STEP.open, textEditPids().length ? 'PASS' : 'FAIL', `a new empty file in a directory created for this run under $CUA_HOME opened in TextEdit${launched.launch ? ` (started by the open: pid ${launched.launch.pid})`
       : launched.candidates.length > 1 ? ` (TextEdit pids ${launched.candidates.join(', ')} all started since the run began; which is this run's is ambiguous, so none is recorded as its own)`
@@ -372,7 +376,7 @@ ${out(`{own: ${own}, valueIsMarker: ${own} && __value === ${JSON.stringify(marke
       record(STEP.teardown, stuck.length ? 'FAIL' : 'PASS', `${exits.map(e => `${e.name}: ${e.exit.stuck ? 'still alive after SIGTERM, killed' : `exit ${e.exit.code ?? e.exit.signal}${e.exit.forced ? ' after SIGTERM' : ''}`}`).join('; ')}`);
     }
     if (opened) {
-      const app = await cleanUpFixtureApp({name: 'TextEdit', bundle: TEXTEDIT_BUNDLE, run: {before: textEditBefore, front: frontBefore, launch: launched?.launch ?? null},
+      const app = await cleanUpFixtureApp({name: 'TextEdit', bundle: TEXTEDIT_BUNDLE, run: {before: textEditBefore, front: frontBefore, launch: launched?.launch ?? null, launchWindows},
         alone: !docOpen && !guiStopped, readWindows: () => readWindows(textEditPids()), frontmost});
       observations.textEdit.quitByFixture = app.quit.length > 0;
       if (app.windowCheck) observations.textEdit.quitWindowCheck = app.windowCheck;

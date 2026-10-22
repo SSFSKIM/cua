@@ -77,7 +77,11 @@ function fixture(over = {}) {
     frontmost: () => over.focusLost ? 'com.apple.finder' : 'com.apple.TextEdit',
     connect: () => session,
     textEditStopped: async () => !(over.cleanupFailed && owners === 6),
-    doctor: async () => ({engine: {permissions: {accessibility: true, screenRecording: true, inputMonitoring: false}}, checks: [{name: 'engine', status: 'warn', detail: 'Input Monitoring missing, so the engine runs with intervention detection off'}]}),
+    doctor: async () => {
+      events.push(`doctor:${phase}`);
+      return {engine: {permissions: {accessibility: true, screenRecording: phase !== 'ax', inputMonitoring: false}},
+        checks: [{name: 'engine', status: phase === 'ax' ? 'fail' : 'warn', detail: over.axDoctorMissing && phase === 'ax' ? 'Screen Recording missing' : 'Input Monitoring missing, so the engine runs with intervention detection off'}]};
+    },
     approve: async () => { events.push('approve'); return {approved: !over.approveFailed, grants: {accessibility: true, screenRecording: true, inputMonitoring: true}, build: expected.build}; },
     operator: {next: async () => {
       events.push('owner'); owners++;
@@ -106,7 +110,7 @@ const run = async f => {
 test('owner sequence proves both model errors, same-session relaunch, then approval, with no automated revocation', async () => {
   const f = fixture(), report = await run(f);
   assert.equal(report.status, 'PASS', JSON.stringify(report));
-  assert.deepEqual(f.events, ['stop', 'owner', 'initialize', 'cell', 'owner', 'cell', 'owner', 'cell', 'owner', 'focus', 'cell', 'owner', 'close', 'approve', 'initialize', 'cell', 'focus', 'cell', 'close', 'owner']);
+  assert.deepEqual(f.events, ['stop', 'owner', 'initialize', 'cell', 'owner', 'cell', 'doctor:ax', 'owner', 'cell', 'owner', 'focus', 'cell', 'doctor:granted', 'owner', 'close', 'approve', 'initialize', 'cell', 'focus', 'cell', 'close', 'owner']);
   assert.deepEqual(report.observations.stage3CaptureConfirmation, {source: 'owner-observed', outcome: 'none'});
   assert.match(f.logs.join('\n'), /owner.*only|OWNER/);
   assert.match(f.logs.join('\n'), /Later/);
@@ -146,6 +150,14 @@ for (const option of ['approveFailed', 'finalGrantMissing', 'cleanupFailed']) te
   const f = fixture({[option]: true}), report = await run(f);
   assert.equal(report.status, 'FAIL', JSON.stringify(report));
   assert.ok(f.events.includes('approve'));
+});
+
+test('AX-only doctor must say intervention detection off before asking the owner to grant Screen Recording', async () => {
+  const f = fixture({axDoctorMissing: true}), report = await run(f);
+  assert.equal(report.status, 'FAIL', JSON.stringify(report));
+  assert.equal(f.events.filter(event => event === 'owner').length, 2, 'no Screen Recording grant prompt');
+  assert.equal(f.events.at(-1), 'close');
+  assert.ok(!f.events.includes('approve'));
 });
 
 test('a different running engine is left alone before asking the owner to revoke anything', async () => {

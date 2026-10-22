@@ -23,7 +23,7 @@ const CLI = fileURLToPath(new URL('../../bin/cua.mjs', import.meta.url));
 const KEYS = ['accessibility', 'screenRecording', 'inputMonitoring'];
 export const OWNER_WINDOW = '9 minutes continuously for item 14, inside the combined 12-minute owner window with the separate foreground trial: remove the three entries and open a blank TextEdit document (3); grant Accessibility (1); grant Screen Recording, choosing Later, and answer any capture confirmation (2); grant Input Monitoring (1); finish approval/checks and quit TextEdit without saving (2).';
 const STAGES = ['preconditions', 'owner revocation', 'Accessibility error reaches the model', 'all three grants absent',
-  'owner Accessibility grant', 'Screen Recording error reaches the model', 'owner Screen Recording grant',
+  'owner Accessibility grant', 'Screen Recording error reaches the model', 'AX-only intervention diagnostic', 'owner Screen Recording grant',
   'service relaunch recovery', 'owner capture confirmation observation', 'intervention off', 'owner Input Monitoring grant', 'engine approval',
   'final grants and approved build', 'intervention on', 'owner TextEdit cleanup'];
 const BIND = `globalThis.app = await cua.getApp(${JSON.stringify(TEXTEDIT_BUNDLE)});`;
@@ -110,6 +110,16 @@ export async function runFreshOnboarding({home, engine, requested = false}, deps
     const {expected} = selectLane({pin: engine, serveEnv: env, home, runtime: resolveRuntime({home}), surfaces: settingsFrom(env).surfaces});
     return {expected, bundlePath: enginePaths().bundle};
   });
+  const readDoctor = deps.doctor ?? (async () => {
+    // Doctor may exit 1 for the deliberately absent Screen Recording grant or unrelated informational account rows.
+    // Each stage judges the required engine evidence, not the overall doctor verdict.
+    let result;
+    try { result = await exec(process.execPath, [CLI, 'doctor', '--json'], {env, timeout: 60_000}); }
+    catch (error) { if (error.code !== 1 || !error.stdout) throw error; result = error; }
+    return JSON.parse(result.stdout);
+  });
+  const doctorSaysInterventionOff = doctor => doctor.engine?.permissions?.inputMonitoring === false
+    && /intervention detection off/.test(doctor.checks?.find(c => c.name === 'engine')?.detail ?? '');
   const ledger = approvalLedger({app: TEXTEDIT_BUNDLE});
   const connect = deps.connect ?? (() => openSession({args: [CLI, 'serve'], env, clientName: 'cua-fresh-onboarding', onServerRequest: msg => ledger.answer('onboarding', msg)}));
   let session = null, ownedWindow = null, stage = 'preconditions';
@@ -202,6 +212,11 @@ export async function runFreshOnboarding({home, engine, requested = false}, deps
     require(Number.isInteger(revoked.status?.pid) && pending.status.pid === revoked.status.pid,
       'engine PID changed during the Accessibility-only grant; no relaunch belongs to that stage');
     record(stage, 'PASS', 'MCP js error names Screen Recording, +, exact approved path and pending relaunch');
+    stage = 'AX-only intervention diagnostic';
+    const axDoctor = await readDoctor();
+    require(axDoctor.engine?.permissions?.accessibility === true && axDoctor.engine.permissions.screenRecording === false
+      && doctorSaysInterventionOff(axDoctor), 'AX-only doctor must report intervention detection off before Screen Recording is granted');
+    record(stage, 'PASS', 'with AX alone granted, doctor reports Input Monitoring absent and intervention detection off');
     await ask('owner Screen Recording grant', 'Follow the Screen Recording error just printed. Add ONLY cua Engine in Screen & System Audio Recording and switch it on. If macOS offers Quit & Reopen, choose Later. Leave Input Monitoring absent. Do not restart the engine yourself.', 'granted');
     stage = 'service relaunch recovery';
     const ready = await status();
@@ -219,16 +234,9 @@ export async function runFreshOnboarding({home, engine, requested = false}, deps
       'Did a capture confirmation appear during that retry? Answer it yourself if it did, then type answered. If none appeared, type none. Continue only when no capture prompt remains. This observation is separate from the later approve step’s log watch.', ['answered', 'none'])};
     stage = 'intervention off';
     const off = await cell(inputCell(''), {input: true});
-    const doctor = await (deps.doctor ?? (async () => {
-      // Doctor can exit 1 for unrelated informational account rows; this stage judges only its engine evidence.
-      let result;
-      try { result = await exec(process.execPath, [CLI, 'doctor', '--json'], {env, timeout: 60_000}); }
-      catch (error) { if (error.code !== 1 || !error.stdout) throw error; result = error; }
-      return JSON.parse(result.stdout);
-    }))();
+    const doctor = await readDoctor();
     require(payload(off)?.typed === true && off.result._meta?.['cua/intervention'] === 'off'
-      && doctor.engine?.permissions?.inputMonitoring === false
-      && /intervention detection off/.test(doctor.checks?.find(c => c.name === 'engine')?.detail ?? ''),
+      && doctorSaysInterventionOff(doctor),
     'input must attest intervention off, and doctor must say detection is off while Input Monitoring is absent');
     record(stage, 'PASS', 'one X typed into the blank document; input meta says off and doctor says intervention detection off');
     await ask('owner Input Monitoring grant', `In System Settings > Privacy & Security > Input Monitoring, add ONLY cua Engine with "+", press ⌘⇧G and enter ${bundlePath}, then switch it on. Choose Later if offered a restart; the approve step will relaunch.`, 'granted');

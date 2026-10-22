@@ -13,6 +13,7 @@
 // process's environment is not the witness here: ps -E shows nothing of a platform app's environment (Finder, Terminal,
 // TextEdit on macOS 26 and 27), so a marker passed through `open` could not be read back.
 import {execFileSync} from 'node:child_process';
+import {windowInventory} from './window-close.mjs';
 
 // ps in the C locale and in UTC: `lstart` carries no UTC offset, so local time would be ambiguous in a fall-back hour.
 const run = (cmd, args) => execFileSync(cmd, args, {encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], env: {...process.env, LC_ALL: 'C', TZ: 'UTC'}, timeout: 10_000});
@@ -91,13 +92,28 @@ export async function restoreFront(previous, {frontmost, activate = id => run('/
 // is what the run recorded: {before (pids), front (bundle id or null), launch ({pid, at} from captureLaunch, or null)}.
 // `alone` must be exactly true, the caller's positive confirmation that the app holds no window but the fixture's; without
 // it nothing is signalled and a live recorded launch is returned as `leftRunning`. `pids` is read only to report which
-// processes running before are still there; it never selects anything to quit.
-// -> {launch, live, alone, quit, remaining, leftRunning, keptBefore, front}.
-export async function cleanUpFixtureApp({name, bundle, run: started, alone = false, pids = () => pidsOf(name), launchOf: launch = pid => launchOf(pid), quit = quitOwned, frontmost, activate, sleep}) {
-  const live = isSameLaunch(started.launch, {launchOf: launch});
-  const confirmed = alone === true;
+// processes running before are still there; it never selects anything to quit. When `readWindows` is supplied, the
+// caller has confirmed the fixture document closed, and a fresh list must contain no on-screen window or foreign PID
+// before quitting; the process identity is rechecked after that read. Off-screen internal windows are recorded by
+// count/bounds only (#196), using the same inventory as fresh onboarding.
+// -> {launch, live, alone, quit, remaining, leftRunning, keptBefore, front, windowCheck?}.
+export async function cleanUpFixtureApp({name, bundle, run: started, alone = false, readWindows, pids = () => pidsOf(name), launchOf: launch = pid => launchOf(pid), quit = quitOwned, frontmost, activate, sleep}) {
+  let live = isSameLaunch(started.launch, {launchOf: launch});
+  let confirmed = alone === true;
+  let windowCheck = null;
+  if (live && confirmed && readWindows) {
+    let windows;
+    try { windows = await readWindows(); } catch { windows = null; }
+    const inventory = windows && windowInventory(windows);
+    const foreign = windows?.some(w => w.ownerPid !== started.launch.pid);
+    confirmed = Boolean(inventory && inventory.visible.length === 0 && !foreign);
+    windowCheck = {status: confirmed ? 'PASS' : 'BLOCKED',
+      detail: !inventory ? 'window list unreadable' : foreign ? 'window belongs to another PID' : inventory.visible.length ? 'on-screen window remains' : 'no on-screen window remains; off-screen internal windows do not block cleanup',
+      offScreenCount: inventory?.offScreenCount ?? null, offScreenBounds: inventory?.offScreenBounds ?? null};
+    live = isSameLaunch(started.launch, {launchOf: launch});  // the window probe may have taken time
+  }
   const {quit: quitPids, remaining} = live && confirmed ? await quit([started.launch.pid]) : {quit: [], remaining: []};
   const running = pids();
   const front = await restoreFront(started.front, {frontmost, app: bundle, ...(activate ? {activate} : {}), ...(sleep ? {sleep} : {})});
-  return {launch: started.launch ?? null, live, alone: confirmed, quit: quitPids, remaining, leftRunning: live && !confirmed ? started.launch.pid : null, keptBefore: started.before.filter(pid => running.includes(pid)), front};
+  return {launch: started.launch ?? null, live, alone: confirmed, quit: quitPids, remaining, leftRunning: live && !confirmed ? started.launch.pid : null, keptBefore: started.before.filter(pid => running.includes(pid)), front, ...(windowCheck ? {windowCheck} : {})};
 }

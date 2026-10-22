@@ -12,7 +12,8 @@ import {settingsFrom} from '../../src/mcp/server.mjs';
 import {selectLane} from '../probe/pinned-engine.mjs';
 import {approvalLedger, attestReplies} from './engine-lane.mjs';
 import {openSession, resultText} from './mcp-session.mjs';
-import {FRONT_WINDOW_SCRIPT, localFrontmost} from './key-guard.mjs';
+import {localFrontmost} from './key-guard.mjs';
+import {readWindows, windowInventory} from './window-close.mjs';
 import {setTimeout as sleep} from 'node:timers/promises';
 import {rollup, TEXTEDIT_BUNDLE} from './lib.mjs';
 
@@ -56,17 +57,14 @@ async function textEditPids() {
 // TextEdit has internal off-screen layer-0 windows (M3 observed five even on its own fixture launch). Only the one
 // visible window is the fixture. Keep the others' bounds as evidence, never their names or any action on them.
 export function onboardingWindow(windows, pid) {
-  const own = windows.filter(w => w.ownerPid === pid);
-  const visible = own.filter(w => w.onScreen === true);
-  if (visible.length !== 1) return null;
-  const bounds = w => Object.fromEntries(['x', 'y', 'width', 'height'].map(key => [key, w.bounds?.[key] ?? null]));
-  return {pid, number: visible[0].number, offScreenBounds: own.filter(w => w.onScreen === false).map(bounds)};
+  const {visible, offScreenBounds} = windowInventory(windows.filter(w => w.ownerPid === pid));
+  return visible.length === 1 ? {pid, number: visible[0].number, offScreenBounds} : null;
 }
 async function fixtureWindow() {
   const pids = await textEditPids();
   if (pids.length !== 1) return null;
-  const reading = JSON.parse((await exec('/usr/bin/swift', [FRONT_WINDOW_SCRIPT, 'windows', String(pids[0])], {timeout: 120_000})).stdout);
-  return onboardingWindow(reading.windows, pids[0]);
+  const windows = await readWindows(pids);
+  return windows && onboardingWindow(windows, pids[0]);
 }
 async function focusTextEdit() {
   await exec('/usr/bin/open', ['-a', 'TextEdit'], {timeout: 15_000});

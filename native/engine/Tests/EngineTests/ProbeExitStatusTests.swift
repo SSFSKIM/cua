@@ -54,6 +54,13 @@ final class ProbeExitStatusTests: XCTestCase {
     try assertStatus(["text-view"], 64)
   }
 
+  func testWindowFrameUsageIsOneFinalLine() throws {
+    let (status, object) = try run(["window-frame"])
+    XCTAssertEqual(status, 64)
+    XCTAssertEqual(object["exitStatus"] as? Int, 64)
+    XCTAssertTrue((object["error"] as? String)?.hasPrefix("usage: --probe window-frame ") == true)
+  }
+
   func testAnUnknownCommand() throws {
     try assertStatus(["no-such-command"], 64)
   }

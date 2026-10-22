@@ -75,11 +75,11 @@ How to see it: on the mini, with the plugin at the release this work ships, run 
   - [x] (2026-10-22 21:36Z) M2b.5 — (holds 1, 2a, 2b and 3; evidence `m2b/hold1/`..`m2b/hold3/`; Decision Log "M2b hold 3"; the triple is not met: hold 3 gave one paired run and one cua-only repeat under maws-3f's counting overrides, the route A/B unsettled, both owed to a later hold) Live on the mini: the residue hold first, then the matrix triples and the suite.
 - [x] (2026-10-22) M3 — Engine-aware tooling, comparisons B and C, Linux approvals (reviewed clean; live hold done; PR after M2b lands, rebased onto main).
 - [ ] M4 — Install, signing, permissions, docs (started 2026-10-22 from main d95261fb; M4 pre-flight below).
-  - [ ] M4.1 — Install selection, signing options and hosted bundle proof.
+  - [x] (2026-10-22) M4.1 — Install selection/signing options and hosted bundle-proof implementation (ced790b0; review fixes 43f28ab7 and 24685bba; merged cd82eb46). Task review approved; focused worker suite 156 pass/1 Linux-only skip. Actual hosted proof/evidence remains M4.4.
   - [ ] M4.2 — Fresh-onboarding acceptance item and selection dependencies (#197).
   - [ ] M4.3 — Permission flow and model/operator documentation.
     - [x] (2026-10-22) Permission flow merged at 54e85935 (a1af72ec): SR-only next-observation idle relaunch, actionable native grant steps and diagnostic metadata, foreground approve opt-in; task review approved, integrated focused JS 105/105. One non-blocking lineage-test coverage gap logged in tech-debt-tracker.md. Full native compilation and live proof still pending.
-    - [ ] Documentation/model rules review fix and authorized window-frame probe follow-up.
+    - [x] (2026-10-22) Documentation/model rules (c0308b93, 7d7b0037, reviewed opt-in registration fix 43f28ab7; merged cd82eb46) and exact-window probe (ffd7249b, reviewed correct; merged b97fd1eb). Native build a14f6a606776c3a0cd78f1ffb6a47787335cdc58ba15427eab5d163f3baf8f16; full native build/test and live proof pending.
   - [ ] M4.4 — Owner-first mini hold: acceptance 1, 8 and fresh onboarding; whole-milestone reviewer-high.
 - [ ] M5 — Acceptance and the default switch.
 - [ ] M6 — Retirement of the vendor runtime on macOS.
@@ -642,6 +642,8 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   Evidence: `m3/hold/README.md`.
 
 ## Decision Log
+
+- Decision (2026-10-22, M4 landing evidence, coordinator ruling): The proof reader stores its anchor in the machine-readable evidence rather than a hard-coded source constant, while the acquisition-path set stays unchanged. Keep the actual CI tested-commit ref available and fetch it into the hold checkout for ancestry verification. Immediately after squash landing, the coordinator runs a new hosted sandbox-live gate on the squash SHA and lands an evidence-only follow-up whose anchor is that SHA; this is part of M4 landing, not M5 residue. The old proof ref remains until the replacement is verified. The runbook's after-landing section gives the commands and requires the real proof reader to return PASS.
 
 - Decision (2026-10-22, M4 TextEdit fixture cleanup, coordinator ruling; #196): The existing `runTextEdit` fixture may quit its recorded own PID/start-time once no on-screen layer-0 window remains, reusing item 14's visibility predicate. Five off-screen windows were observed to be TextEdit internals appearing in the fixture's own empty launch; they are retained only as counts/bounds and do not prevent quitting. A visible window or foreign process remains BLOCKED. Tests cover both the five-off-screen quit and visible-window refusal. If cleanup still cannot prove ownership/closure live, acceptance 8 records that incomplete verdict rather than promoting it to PASS.
 

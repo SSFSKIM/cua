@@ -108,23 +108,30 @@ const SCREENSHOT = ['Finder getScreenshot', `const app = await cua.getApp(${JSON
 // with `attested`, the engine its result attests (#117), and `wallMs`. With `expected` (the vendor engine's attestation,
 // a vendor-host session's), a result that attests another engine or none is kept with `refused` and stops the run at
 // once: that call throws, and every later one throws again without sending, so no further cell reaches the engine; the
-// caller's teardown and result still follow. A call that failed in transport has no result to attest.
+// caller's teardown and result still follow. The attestation is judged on the raw reply, before its output is decoded;
+// output that does not decode is `undecodable`, apart from a call that failed in transport (`transport`), which has no
+// reply to attest.
 export function cellRunner({call, expected = null, isCancelled = () => false, results, ev = () => {}}) {
   let refusal = null;
   return async (name, body) => {
     if (isCancelled()) throw new Error('cancelled');
     if (refusal) throw refusal;
     const t = Date.now();
-    let result, reply = null;
-    try {
-      reply = await call(cell(body));
+    let reply = null, transport = null;
+    try { reply = await call(cell(body)); } catch (error) { transport = error.message; }
+    // The reply's attestation is judged before anything in it is decoded, so output that cannot be read never hides it.
+    const problem = expected && reply ? attestationProblem(reply._meta, expected) : null;
+    let result;
+    if (!reply) result = {ok: false, transport: transport ?? 'no reply'};
+    else {
       const text = textOf(reply);
       const line = text.split('\n').reverse().find(l => l.startsWith(MARK));
-      result = line ? JSON.parse(line.slice(MARK.length)) : {ok: false, noMarker: true, isError: reply?.isError ?? null, text: text.slice(0, 400)};
-      result.attested = reply?._meta?.[ENGINE_META_KEY] ?? null;
-    } catch (error) { reply = null; result = {ok: false, transport: error.message}; }
+      try {
+        result = line ? JSON.parse(line.slice(MARK.length)) : {ok: false, noMarker: true, isError: reply.isError ?? null, text: text.slice(0, 400)};
+      } catch (error) { result = {ok: false, undecodable: error.message, text: line.slice(0, 400)}; }
+      result.attested = reply._meta?.[ENGINE_META_KEY] ?? null;
+    }
     result.wallMs = Date.now() - t;
-    const problem = expected && reply ? attestationProblem(reply._meta, expected) : null;
     if (problem) result.refused = problem;
     results[name] = result;
     ev(`cell ${name}`, result);

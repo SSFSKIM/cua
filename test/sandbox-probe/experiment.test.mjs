@@ -34,6 +34,24 @@ test('a misattested banner stops the run: its result is kept with the refusal, a
   assert.equal('confinement' in results, false);
 });
 
+test('a misattested banner whose output cannot be decoded is still refused, its decoding failure kept apart from transport', async () => {
+  const malformed = {content: [{type: 'text', text: 'CUA115 {not json'}], _meta: {'cua/nativeEngine': {engine: 'cua', version: '0.2.0', build: 'f'.repeat(64)}}};
+  const {js, sent, results} = runner({replies: [malformed, reply({})]});
+  await assert.rejects(js('banner', 'return 1;'), /refused on the attestation: .*cua/);
+  assert.equal(results.banner.ok, false);
+  assert.equal('transport' in results.banner, false, 'a reply came back: not a transport failure');
+  assert.match(results.banner.undecodable, /JSON/);
+  assert.match(results.banner.refused, /cua/);
+  await assert.rejects(js('confinement', 'return 1;'), /refused on the attestation/);
+  assert.equal(sent.length, 1, 'no later cell was sent');
+  // Attested but undecodable: kept as a decoding failure, and the run goes on.
+  const attested = runner({replies: [{...malformed, _meta: {'cua/nativeEngine': VENDOR}}, reply({}, VENDOR)]});
+  const result = await attested.js('banner', 'return 1;');
+  assert.deepEqual([result.ok, 'transport' in result, result.attested], [false, false, VENDOR]);
+  await attested.js('confinement', 'return 1;');
+  assert.equal(attested.sent.length, 2);
+});
+
 test('a banner with no attestation, or another build, is refused the same way', async () => {
   for (const attested of [undefined, {...VENDOR, build: 'other'}]) {
     const {js, sent} = runner({replies: [reply({ready: true}, attested), reply({})]});

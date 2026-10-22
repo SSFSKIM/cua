@@ -19,7 +19,7 @@ const counted = (become, resign) => ({seq: become + resign, at: 1, counts: {...z
 // The fixture as the engine change drives it: a natural press holds a fake activation (become +1) until a request aimed
 // at the user's app releases it (resign +1); a forced route-1 press activates nothing. `honours`: the engine takes the
 // forced route (false: the service drops spikeRoute, every press is route 3).
-function fixture({honours = true, releases = true, effect = true, activation = null} = {}) {
+function fixture({honours = true, releases = true, effect = true, late = false, activation = null} = {}) {
   let become = 3, resign = 3, held = false;
   const cell = code => {
     if (code.includes('cua-matrix:route-ab:act')) {
@@ -30,7 +30,8 @@ function fixture({honours = true, releases = true, effect = true, activation = n
       return {actMs: forced ? 4 : 9, at: [100, 104], threw: false, _meta: {'cua/inputRoute': route,
         ...(activation && activated ? {'cua/activationClick': activation, 'cua/activationGuardMs': 12} : {})}};
     }
-    if (code.includes('cua-matrix:route-ab:effect')) return effect ? {ok: true, outcome: {pressedOnce: true, effectMs: 140, polls: 2, firstMs: 60, pressed: 1}}
+    if (code.includes('cua-matrix:route-ab:effect')) return late ? {ok: false, outcome: {pressedOnce: true, effectMs: 2400, late: true, polls: 9, firstMs: 60, pressed: 1}}
+      : effect ? {ok: true, outcome: {pressedOnce: true, effectMs: 140, late: false, polls: 2, firstMs: 60, pressed: 1}}
       : {ok: false, outcome: {pressedOnce: false, effectMs: null, polls: 9, firstMs: 60, pressed: 0}};
     if (code.includes('cua-matrix:route-ab:release')) { if (held && releases) { resign += 1; held = false; } return {observed: true}; }
     return null;
@@ -181,6 +182,7 @@ test('--natural-only narrows the cell to six natural samples; it belongs to the 
   const {parseCommand} = await import('../../scripts/native-matrix.mjs');
   assert.equal(parseCommand(['cell', 'route-ab', '--device', 'mini', '--natural-only', '--dry-run']).naturalOnly, true);
   assert.equal(parseCommand(['cell', 'route-ab', '--device', 'mini', '--dry-run']).naturalOnly, false);
+  for (const name of ['settle', 'hscroll', 'method']) assert.throws(() => parseCommand(['cell', name, '--device', 'mini', '--natural-only', '--dry-run']), /--natural-only belongs to the route A\/B cell alone/, name);
 });
 
 test('natural only: every sample after the first begins with the previous hold released, and none is forced', async () => {
@@ -205,4 +207,11 @@ test('the activation click\'s meta is recorded when the engine reports it: poste
   assert.ok(skipped.result.rows.every(r => r.activation?.posted === false && r.activation.click === 'control'));
   const plain = await run();
   assert.ok(plain.result.rows.every(r => r.activation === null), 'null: the act reported none');
+});
+
+test('a late effect fails its row in both modes: the check\'s bounded verdict judges the sample', async () => {
+  for (const plan of [undefined, planOf('route-ab', {naturalOnly: true})]) {
+    const {result} = await run({late: true}, plan);
+    assert.ok(result.rows.length > 0 && result.rows.every(r => r.ok === false && r.outcome.late === true && r.pressedOnce === true), JSON.stringify(result.rows.map(r => r.ok)));
+  }
 });

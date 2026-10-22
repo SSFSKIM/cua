@@ -171,7 +171,8 @@ async function sample(ctx, {base, variant, user, userWindow, start, natural, app
   if (variant === 'forced1' && String(acted.route) !== '1') {
     return done({invalid: `the engine reported route ${acted.route ?? 'none'}, not the forced route 1${acted.value.threw ? ' (the act threw: outcome.threw)' : ': spikeRoute did not reach it'}`});
   }
-  const pushed = done({ok: outcome.pressedOnce === true && !acted.value.threw});
+  // The check's own verdict: pressed once and first seen within the bound (a late effect is recorded, never passed).
+  const pushed = done({ok: effected.value?.ok === true && outcome.pressedOnce === true && outcome.late !== true && !acted.value.threw});
   ctx.judged.set(key, {row: pushed, oracle: {before: before.reading, after: after.reading, focus: after.focus ?? null, inputRoute: acted.route, scene: base.scene, userPid: userWindow.pid}});
   return pushed;
 }

@@ -93,6 +93,8 @@ export function parseCommand(argv) {
       if (rest.length !== 1) fail('cell needs one name (cell --list lists them)');
       if (!values.device) fail('--device is required');
       if (!values.out && !dryRun) fail('--out is required');
+      // Checked before dispatch: an external cell never reaches planOf, which refuses the flag for the matrix's own cells.
+      if (values['natural-only'] && rest[0] !== 'route-ab') fail('--natural-only belongs to the route A/B cell alone');
       return {command, name: rest[0], ...lane(), out: values.out ? resolve(values.out) : resolve('native-matrix-dry-run'), scene: values.scene ?? null, user: values.user ?? null, naturalOnly: values['natural-only']};
     case 'compare':
       if (rest.length !== 2) fail('compare needs <vendor-dir> <cua-dir>');

@@ -28,13 +28,15 @@ function ownership(e){
 }
 // The scratch user HOME is the cua home's sibling, never inside it (../harness-home.mjs).
 const scratchEnvironment=home=>({HOME:userHomeBeside(home),CUA_HOME:home,CHROME_CONFIG_HOME:join(userHomeBeside(home),'.config'),XDG_CONFIG_HOME:join(userHomeBeside(home),'.config')});
-function cli(home,args,{file,nodeOverride}={}){
+export function endpointCli(home,args,{file,nodeOverride,ambient=process.env,run=execFileSync}={}){
  const fd=file?openSync(file,'wx',0o600):undefined;
- try{return execFileSync(process.execPath,['bin/cua.mjs',...args],{env:nodeEnvironment({...process.env,...scratchEnvironment(home)},nodeOverride),encoding:'utf8',timeout:300000,stdio:['ignore',fd??'pipe','pipe'],maxBuffer:1024*1024});}
+ // Acquisition must never build a capturing engine in this synthetic HOME. The driven session keeps its selection.
+ const acquisition=args[0]==='install'?{CUA_NATIVE_ENGINE:'vendor'}:{};
+ try{return run(process.execPath,['bin/cua.mjs',...args],{env:nodeEnvironment({...ambient,...scratchEnvironment(home),...acquisition},nodeOverride),encoding:'utf8',timeout:300000,stdio:['ignore',fd??'pipe','pipe'],maxBuffer:1024*1024});}
  catch(error){throw new Error(`Remote cua ${args.slice(0,2).join(' ')} failed (${error.status??error.code}); inspect privately on device`);}
  finally{if(fd!==undefined)closeSync(fd);}
 }
-export function prepareEndpoint({experiment,relay,plan,prepared,enrollment=true},{directoryRoot=base(),tempRoot=realpathSync(tmpdir()),inspect=executionFacts,runCli=cli,registry=readRegistry,cacheArchives=prepareArchiveCache}={}){
+export function prepareEndpoint({experiment,relay,plan,prepared,enrollment=true},{directoryRoot=base(),tempRoot=realpathSync(tmpdir()),inspect=executionFacts,runCli=endpointCli,registry=readRegistry,cacheArchives=prepareArchiveCache}={}){
  endpointPlan(experiment,plan.device);assertPreparedFacts(prepared,inspect({source:prepared.home}));
  mkdirSync(directoryRoot,{recursive:true,mode:0o700});const parent=realpathSync(directoryRoot);
  if(parent===tempRoot||parent.startsWith(tempRoot+'/'))throw new Error('Remote home must be outside TMPDIR');

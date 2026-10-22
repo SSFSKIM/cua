@@ -76,14 +76,15 @@ import {socketHolders} from './probe/lib.mjs';
 import {pinLane} from './probe/pinned-engine.mjs';
 import {fingerprints, textLeaks} from './probe/leak-scan.mjs';
 import {
-  approvalObservation, diffSnapshots, doctorHealth, forbiddenPaths, inventoryCheck, missingFromPackage, PROBE_SECRETS_PHASES, probePhasesFor, rollup, scenarioVerdict,
-  snapshotTree, suiteVerdict, judgeSkips, skipReasons, testReporterEnv, testSummary, personalText, researchTreeLines, MINI_LAYOUT_FILES,
+  approvalObservation, doctorHealth, forbiddenPaths, inventoryCheck, missingFromPackage, PROBE_SECRETS_PHASES, probePhasesFor, rollup, scenarioVerdict,
+  suiteVerdict, judgeSkips, skipReasons, testReporterEnv, testSummary, personalText, researchTreeLines, MINI_LAYOUT_FILES,
 } from './accept/lib.mjs';
 import {OWN_STEPS, runTextEdit, SECRET_STEPS} from './accept/textedit.mjs';
 import {ATTEST_STEP, doctorEngineCheck, lifecycleEngineCheck, verifyChecks} from './accept/engine-lane.mjs';
 import {createStoreHome, generatedKey, isAccountHome, removeStoreHome, seedSecret} from './accept/secret-seed.mjs';
 import {ownSandboxAcceptance} from './accept/own-sandbox.mjs';
 import {compatRouteAcceptance} from './accept/compat-route.mjs';
+import {reinstallCheck} from './accept/reinstall.mjs';
 
 const {values: options} = parseArgs({options: {
   report: {type: 'string'}, 'live-secrets': {type: 'boolean'}, 'live-textedit': {type: 'boolean'}, archive: {type: 'string'},
@@ -216,12 +217,8 @@ async function item2() {
   checks.push(check('verified private runtime tree', verified.every(c => c?.status === 'pass') ? 'PASS' : 'FAIL',
     verified.map(c => c ? `${c.name} ${c.status}` : 'missing').join('; ') + ` (${sanitize(doctorChecks.find(c => c.name === 'runtime.signatures')?.detail ?? '')})`));
   if (runtime && verified.every(c => c?.status === 'pass')) {
-    const before = snapshotTree(runtime.root);
-    const reinstall = await run(process.execPath, [CLI, 'install', '--json', '--archive', options.archive ?? NO_DOWNLOAD_GUARD], {env: cuaEnv()});
-    const result = parseJson(reinstall.stdout);
-    const diff = diffSnapshots(before, snapshotTree(runtime.root));
-    checks.push(check('reinstall mutates nothing', reinstall.code === 0 && result?.changed === false && diff.same ? 'PASS' : 'FAIL',
-      `install --json → ${result ? `ok ${result.ok}, changed ${result.changed}` : `exit ${reinstall.code}: ${sanitize(reinstall.stderr.trim().split('\n').at(-1) ?? '')}`}; ${before.size} entries compared (type, mode, size, mtime, inode): ${diff.same ? 'identical' : `${diff.added.length} added, ${diff.removed.length} removed, ${diff.changed.length} changed`}`));
+    const reinstall = await reinstallCheck({runtimeRoot: runtime.root, cli: CLI, archivePath: options.archive ?? NO_DOWNLOAD_GUARD, env: cuaEnv(), run});
+    checks.push({...reinstall, detail: sanitize(reinstall.detail)});
   } else checks.push(check('reinstall mutates nothing', 'FAIL', 'not attempted: the installed release does not verify'));
   checks.push(fromSuite('bad hash, length, manifest or signature never activates', ['test/runtime-install.test.mjs', 'test/runtime-manifest.test.mjs', 'test/cli.test.mjs']));
   const changed = sh('git', ['-C', REPO, 'log', '--format=%h', `${DOWNLOAD_EVIDENCE.commit}..HEAD`, '--', ...DOWNLOAD_EVIDENCE.paths]).trim();

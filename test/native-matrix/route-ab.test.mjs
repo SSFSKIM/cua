@@ -9,7 +9,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {validateCellResult} from '../../scripts/native-matrix/cell-result.mjs';
 import {listCells, resolveCell} from '../../scripts/native-matrix/registry.mjs';
-import {releaseOf, ROUTE_AB_SAMPLES, VARIANTS} from '../../scripts/native-matrix/route-ab.mjs';
+import {effectVerdict, releaseOf, ROUTE_AB_SAMPLES, VARIANTS} from '../../scripts/native-matrix/route-ab.mjs';
 import {planOf} from '../../scripts/native-matrix/run.mjs';
 import {matrixSteps, runWith} from './run-doubles.mjs';
 
@@ -187,4 +187,12 @@ test('the activation click\'s meta is recorded when the engine reports it: poste
   assert.ok(skipped.result.rows.every(r => r.activation?.posted === false && r.activation.click === 'control'));
   const plain = await run();
   assert.ok(plain.result.rows.every(r => r.activation === null), 'null: the act reported none');
+});
+
+test('an effect first seen after the bound is recorded as late and never passes', () => {
+  assert.deepEqual(effectVerdict(5, 4, 1200, 2000), {ok: true, pressedOnce: true, late: false});
+  assert.deepEqual(effectVerdict(5, 4, 2000, 2000), {ok: true, pressedOnce: true, late: false});
+  assert.deepEqual(effectVerdict(5, 4, 2400, 2000), {ok: false, pressedOnce: true, late: true});
+  assert.deepEqual(effectVerdict(4, 4, null, 2000), {ok: false, pressedOnce: false, late: false});
+  assert.deepEqual(effectVerdict(6, 4, null, 2000), {ok: false, pressedOnce: false, late: false});
 });

@@ -43,8 +43,15 @@ const BUTTON = CASES.electron.find(c => c.method === 'click' && c.case === 'butt
 const act = (app, variant) => (variant === 'forced1'
   ? `/* cua-matrix:route-ab:act */ await nodeRepl.rpc("sky", {type: "execute", method: "click", args: [{app: ${j(app)}, element_index: __m.index, spikeRoute: "1"}]});`
   : `/* cua-matrix:route-ab:act */ ${BUTTON.act}`);
+// The press judged from the last count read: once exactly, and passed only when first seen within the bound (an
+// observation that began inside the bound and returned past it is recorded as late, not passed). Embedded in the cell.
+export function effectVerdict(count, before, effectMs, bound) {
+  const pressedOnce = count === before + 1, inBound = effectMs !== null && effectMs <= bound;
+  return {ok: pressedOnce && inBound, pressedOnce, late: pressedOnce && !inBound};
+}
 // The effect: observed until the count reads before + 1 (or past it) or the bound from the act's end passes; at least one
-// observation. -> {ok, outcome: {pressedOnce, effectMs, polls, firstMs, pressed}} (`pressed`: the count's change).
+// observation. -> {ok, outcome: {pressedOnce, effectMs, late, polls, firstMs, pressed}} (`pressed`: the count's change; `ok` only
+// for an effect seen within the bound, `late` for one seen after it).
 const effect = actEnd => `/* cua-matrix:route-ab:effect */
 const __actEnd = ${Number(actEnd)};
 let count = null, polls = 0, firstMs = null, effectMs = null;
@@ -54,8 +61,9 @@ do {
   polls += 1; firstMs ??= ms; count = ${pressed};
   if (count !== null && count >= __m.before + 1) { if (count === __m.before + 1) effectMs = ms; break; }
 } while (Date.now() - __actEnd < ${EFFECT_BOUND_MS});
-const pressedOnce = count === __m.before + 1;
-return {ok: pressedOnce, outcome: {pressedOnce, effectMs, polls, firstMs, pressed: count === null ? null : count - __m.before}};`;
+const __verdict = ${effectVerdict};
+const v = __verdict(count, __m.before, effectMs, ${EFFECT_BOUND_MS});
+return {ok: v.ok, outcome: {pressedOnce: v.pressedOnce, effectMs, late: v.late, polls, firstMs, pressed: count === null ? null : count - __m.before}};`;
 export const routeAbCells = (app, variant, actEnd) => caseCells('electron', {...BUTTON, act: act(app, variant), check: effect(actEnd)});
 // One observation of the user window's app: a request aimed at another app than the held one, which releases the hold.
 export const releaseCell = user => cell(`/* cua-matrix:route-ab:release */

@@ -1,0 +1,16 @@
+r1 vendor start 00:15:10  9:15  up  7:26, 2 users, load averages: 2.53 2.39 2.78
+r1 vendor end 00:17:23  9:17  up  7:29, 2 users, load averages: 3.01 2.73 2.87
+r1 vendor (attempt 2) start 00:18:25  9:18  up  7:30, 2 users, load averages: 2.87 2.78 2.88
+r1 vendor end 00:20:33  9:20  up  7:32, 2 users, load averages: 3.13 2.91 2.91
+r1 vendor (attempt 3) start 00:21:13  9:21  up  7:32, 2 users, load averages: 3.04 2.92 2.91
+r1 vendor end 00:23:21  9:23  up  7:35, 2 users, load averages: 3.95 3.46 3.15
+r1 cua start 00:24:50  9:24  up  7:36, 2 users, load averages: 2.51 3.17 3.07
+r1 cua end 00:38:23  9:38  up  7:50, 2 users, load averages: 1.93 2.31 2.67
+r1 vendor (38ecfa07) start 00:38:43  9:38  up  7:50, 2 users, load averages: 1.81 2.26 2.64
+r1 vendor end 00:54:05  9:54  up  8:05, 2 users, load averages: 2.26 2.40 2.53
+r2 vendor start 00:55:01  9:55  up  8:06, 2 users, load averages: 2.52 2.43 2.53
+r2 vendor end 01:09:00 10:09  up  8:20, 2 users, load averages: 2.71 2.89 2.77
+r2 cua start 01:09:01 10:09  up  8:20, 2 users, load averages: 2.71 2.89 2.77
+r2 cua end 01:22:16 10:22  up  8:33, 2 users, load averages: 2.76 2.62 2.61
+r2 vendor (re-run) start 01:22:42 10:22  up  8:34, 2 users, load averages: 2.36 2.54 2.58
+r2 vendor end 01:40:03 10:40  up  8:51, 2 users, load averages: 4.50 3.95 3.25

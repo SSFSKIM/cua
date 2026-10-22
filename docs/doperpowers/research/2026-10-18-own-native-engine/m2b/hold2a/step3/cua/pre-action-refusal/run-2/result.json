@@ -1,0 +1,249 @@
+{
+  "schema": "native-matrix-cell-1",
+  "cell": "pre-action-refusal",
+  "device": "mini",
+  "started": "2026-10-22T01:40:18.862Z",
+  "finished": "2026-10-22T01:40:53.834Z",
+  "lanes": [
+    {
+      "host": "cua",
+      "engine": "cua",
+      "build": "f804291e4c8f4cd40fd947c74e3446162eaa8f42b82ccd3b50264cab9b5ee18e",
+      "version": "0.1.0"
+    }
+  ],
+  "complete": true,
+  "verdict": "no-verdict",
+  "judgesInterference": true,
+  "problems": [],
+  "rows": [
+    {
+      "section": "intervention",
+      "id": "textedit/intervention.preAction",
+      "scene": "textedit",
+      "regime": "frontmost",
+      "method": "typeText",
+      "case": "preAction",
+      "engine": "cua",
+      "sample": 2,
+      "ok": false,
+      "invalid": "the focus probe did not read the document focused and empty",
+      "attempts": 1
+    }
+  ],
+  "putBack": {
+    "ok": true,
+    "stopped": true,
+    "steps": {
+      "scenes-down": {
+        "ok": true,
+        "down": true
+      },
+      "input-source": {
+        "ok": true,
+        "source": "com.apple.keylayout.ABC",
+        "sourceRestored": true,
+        "perContextRestored": true,
+        "perContextWritten": false
+      },
+      "engine-stop": {
+        "ok": true,
+        "wasRunning": true,
+        "pid": 35030
+      },
+      "apps-check": {
+        "ok": true,
+        "running": {
+          "textedit": 0,
+          "chromeForTesting": 0,
+          "electronFixture": 0
+        }
+      },
+      "finder-check": {
+        "ok": true,
+        "runWindowGone": true,
+        "windowsAsAtBegin": true,
+        "keysAsSaved": true
+      },
+      "front-app": {
+        "ok": true,
+        "bundleId": "com.apple.Terminal",
+        "reactivated": true,
+        "inFront": true
+      }
+    }
+  },
+  "meta": {
+    "run": 2,
+    "host": "cua",
+    "engine": "cua",
+    "samples": 10,
+    "sitting": "hold2a",
+    "planId": "pre-action-refusal",
+    "plan": {
+      "frontmost": [],
+      "background": [],
+      "launch": [],
+      "speed": false,
+      "finding": false,
+      "concurrent": [],
+      "sheet": false,
+      "intervention": [
+        "preAction"
+      ],
+      "unicode": null
+    },
+    "elicitations": [
+      {
+        "t": "2026-10-22T01:40:34.703Z",
+        "app": "com.apple.TextEdit",
+        "action": "accept"
+      }
+    ],
+    "keySkipped": [],
+    "controller": {
+      "commit": "c6e2cdba555479053e9635aa8ff19822a65b5d12",
+      "dirty": false
+    },
+    "runDir": "/Users/new/Library/Caches/cua-harness/native-matrix",
+    "load": {
+      "before": {
+        "loadavg": [
+          4.04,
+          3.87,
+          3.24
+        ],
+        "uptimeS": 31890,
+        "cpus": 10
+      },
+      "after": {
+        "loadavg": [
+          3.68,
+          3.79,
+          3.23
+        ],
+        "uptimeS": 31922,
+        "cpus": 10
+      }
+    },
+    "frontApp": {
+      "saved": "com.apple.Terminal",
+      "now": "com.apple.Terminal",
+      "same": true
+    },
+    "engineStopAtStart": {
+      "wasRunning": false
+    },
+    "nativeEngine": {
+      "requested": "cua",
+      "approved": {
+        "bundlePath": "/Users/new/Library/Application Support/cua/engine/cua Engine.app",
+        "engineVersion": "0.1.0",
+        "build": "f804291e4c8f4cd40fd947c74e3446162eaa8f42b82ccd3b50264cab9b5ee18e",
+        "signature": {
+          "kind": "identity",
+          "identityMatches": true
+        }
+      },
+      "checkoutBuild": "f804291e4c8f4cd40fd947c74e3446162eaa8f42b82ccd3b50264cab9b5ee18e",
+      "attested": [
+        {
+          "engine": "cua",
+          "version": "0.1.0",
+          "build": "f804291e4c8f4cd40fd947c74e3446162eaa8f42b82ccd3b50264cab9b5ee18e"
+        }
+      ],
+      "unattested": 0
+    },
+    "runtime": {
+      "release": "26.928.40906-darwin-arm64"
+    },
+    "commit": "c6e2cdba555479053e9635aa8ff19822a65b5d12",
+    "hardware": {
+      "model": "Mac14,12",
+      "chip": "Apple M2 Pro",
+      "memoryBytes": 17179869184
+    },
+    "os": {
+      "name": "macOS",
+      "version": "27.0",
+      "build": "26A428"
+    },
+    "display": {
+      "pixels": "5120 x 2880",
+      "resolution": "2560 x 1440",
+      "scale": 2,
+      "virtual": true
+    },
+    "fixtures": {},
+    "engineStopAfterSetup": {
+      "wasRunning": false
+    },
+    "hostAttestation": {
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "_meta": {
+        "cua/serviceMs": 2.77,
+        "codex/nodeReplExecutionDurationMs": 72,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/nativeEngine": {
+          "engine": "cua",
+          "version": "0.1.0",
+          "build": "f804291e4c8f4cd40fd947c74e3446162eaa8f42b82ccd3b50264cab9b5ee18e"
+        },
+        "cua/taskId": "34602746-5346-40b5-8a77-b8886b624e68",
+        "cua/nativeExecution": {
+          "path": "/Users/new/Library/Application Support/cua-spike-vendor/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "cua/sandboxLaunch": {
+          "launcher": "cua",
+          "tmpdir": "session"
+        }
+      }
+    },
+    "inputSource": {
+      "savedNow": true,
+      "perContextOff": true,
+      "latin": true,
+      "restored": true
+    },
+    "activations": {
+      "accounted": [
+        {
+          "kind": "harness",
+          "key": "activate:textedit",
+          "bundleId": "com.apple.TextEdit",
+          "at": 1792633234121
+        }
+      ],
+      "unaccounted": []
+    },
+    "preparationCleanup": {
+      "removed": true,
+      "restored": [],
+      "helpersStopped": [],
+      "engineStop": {
+        "wasRunning": false
+      }
+    },
+    "service": {
+      "helpers": [
+        {
+          "path": "~/Library/Application Support/cua/engine/cua Engine.app/Contents/MacOS/cua-engine",
+          "kind": "cua",
+          "origin": "approved engine",
+          "ageSeconds": 1,
+          "startedDuringRun": true
+        }
+      ]
+    },
+    "finished": "2026-10-22T01:40:53.834Z"
+  }
+}

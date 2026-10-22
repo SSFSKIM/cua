@@ -8,6 +8,7 @@ import * as fs from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {SkyComputerUseError} from '../../src/services/engine/protocol.mjs';
+import {reactivateApp} from '../../scripts/repl-parity/scenes-mac.mjs';
 import {ABC, FIRST_LINE, JOURNAL_FILE, KOREAN_2SET, PASTE_TARGETS, RECOVERY_BOUNDS, parseJournal} from '../../scripts/native-matrix/live-checks.mjs';
 import {
   COMPOSITION_QUIET_MS, COMPOSITION_VARIANTS, INTERVENTION_DEBOUNCE_MS, PASTE, PASTE_DEADLINE_MS, begin, childHandle, inputSourceCheck, menuCheck, minimizedCheck, pasteCheck, putBack, probeBarrier, recover, restoreInputSource, runProbe, launchProbe, awaitProbe,
@@ -390,6 +391,134 @@ test('saveFrontmost: a front app a dead run saved is kept (the current one may b
   assert.equal(JSON.parse(fs.readFileSync(join(run, 'live-frontmost.json'), 'utf8')).bundleId, 'com.apple.Terminal');
 });
 
+// Begin's device reads only; calls after the preflight mark anything a refused begin must not do.
+function beginIo(extra = {}) {
+  const calls = [];
+  return {calls, preflight: () => ({refusals: []}), gitState: () => ({commit: 'c1', dirty: false}),
+    engineCheck: () => ({ok: true, engine: {build: 'b'}, problems: []}),
+    frontmost: () => { calls.push('frontmost'); return {pid: 77, bundleId: 'com.apple.Terminal'}; },
+    finderWindows: () => { calls.push('finder'); return []; }, finderPreferences: () => ({ShowSidebar: true}), finderSavedPreferences: () => null,
+    stop: async () => { calls.push('stop'); return {wasRunning: false}; }, ...extra};
+}
+
+function assertRecoveryRefusal(out, file) {
+  assert.ok(out.refusals.some(r => r.includes(file) && /recover --run/.test(r)), JSON.stringify(out));
+  assert.equal(Object.hasOwn(out, 'frontmost'), false, 'a refused begin claims no new front record');
+  assert.equal(Object.hasOwn(out, 'engineStop'), false);
+}
+
+test('begin: failed put-back retaining an old scene app refuses a new run without replacing its recovery record', async () => {
+  const run = scratch(), file = join(run, 'live-frontmost.json');
+  saveFrontmost(run, {pid: 600, bundleId: 'com.apple.TextEdit'});
+  const before = fs.readFileSync(file, 'utf8');
+  const cleanupIo = putBackIo(run);
+  const cleanup = await putBack({run, io: cleanupIo});
+  assert.equal(cleanup.ok, false);
+  assert.match(cleanup.steps['front-app'].reason, /scene app/);
+  assert.ok(!cleanupIo.order.some(c => c.startsWith('reactivate')));
+  const io = beginIo();
+  const out = await begin({run, commit: 'c1', io});
+  assertRecoveryRefusal(out, 'live-frontmost.json');
+  assert.ok(out.refusals.some(r => r.includes(run)), 'the recovery command identifies the retained run directory');
+  assert.deepEqual(io.calls, [], 'no new front/Finder reading or engine stop');
+  assert.equal(fs.readFileSync(file, 'utf8'), before, 'the only recovery record survives byte for byte');
+  assert.deepEqual(fs.readdirSync(run), ['live-frontmost.json']);
+});
+
+for (const [file, contents] of [
+  ['live-frontmost.json', JSON.stringify({pid: 88, bundleId: 'com.apple.Notes', savedAt: 'old'})],
+  ['live-frontmost.json', '{unreadable JSON'], ['live-frontmost.json', 'null'],
+  ['live-finder.json', JSON.stringify({windows: [42], keys: {ShowSidebar: false}, savedAt: 'old'})],
+  ['live-finder.json', '{unreadable JSON'],
+]) {
+  test(`begin: stale ${file} (${contents}) refuses without parsing or adopting it`, async () => {
+    const run = scratch(), path = join(run, file), io = beginIo();
+    fs.writeFileSync(path, contents);
+    const out = await begin({run, commit: 'c1', io});
+    assertRecoveryRefusal(out, file);
+    assert.deepEqual(io.calls, []);
+    assert.equal(fs.readFileSync(path, 'utf8'), contents);
+    assert.deepEqual(fs.readdirSync(run), [file]);
+  });
+}
+
+test('begin: an unreadable front record path is unresolved recovery, not permission to replace it', async () => {
+  const run = scratch(), file = join(run, 'live-frontmost.json'), io = beginIo();
+  // A directory cannot be read as a JSON file, even when the tests run with elevated file access.
+  fs.mkdirSync(file);
+  const out = await begin({run, commit: 'c1', io});
+  assertRecoveryRefusal(out, 'live-frontmost.json');
+  assert.deepEqual(io.calls, []);
+  assert.equal(fs.statSync(file).isDirectory(), true);
+  assert.deepEqual(fs.readdirSync(run), ['live-frontmost.json']);
+});
+
+for (const front of [null, {}, {bundleId: 'com.apple.Terminal'}, {pid: 0, bundleId: 'com.apple.Terminal'},
+  {pid: 77, bundleId: ''}, {pid: 600, bundleId: 'com.apple.TextEdit'}, {pid: 700, bundleId: 'com.apple.finder'}]) {
+  test(`begin: an unrestorable current front (${JSON.stringify(front)}) refuses before creating start state`, async () => {
+    const run = scratch(), io = beginIo({frontmost: () => front});
+    const out = await begin({run, commit: 'c1', io});
+    assert.ok(out.refusals.some(r => /front app/.test(r)), JSON.stringify(out));
+    assert.equal(Object.hasOwn(out, 'frontmost'), false);
+    assert.deepEqual(io.calls, []);
+    assert.deepEqual(fs.readdirSync(run), []);
+  });
+}
+
+test('begin: an unreadable current front refuses without saving state or stopping the engine', async () => {
+  const run = scratch(), io = beginIo({frontmost: () => { throw new Error('front read failed'); }});
+  const out = await begin({run, commit: 'c1', io});
+  assert.ok(out.refusals.some(r => /front app/.test(r)), JSON.stringify(out));
+  assert.equal(Object.hasOwn(out, 'frontmost'), false);
+  assert.deepEqual(io.calls, []);
+  assert.deepEqual(fs.readdirSync(run), []);
+});
+
+test('begin: clean metadata and put-back use the saved front record, and successful cleanup permits a new begin', async () => {
+  const run = scratch();
+  const begun = await begin({run, commit: 'c1', io: beginIo()});
+  const front = JSON.parse(fs.readFileSync(join(run, 'live-frontmost.json'), 'utf8'));
+  assert.deepEqual(begun.refusals, []);
+  assert.deepEqual(begun.frontmost, {bundleId: front.bundleId});
+  assert.equal(front.pid, 77);
+  assert.equal(fs.statSync(join(run, 'live-frontmost.json')).mode & 0o777, 0o600);
+  const reactivated = [];
+  const cleanup = await putBack({run, io: putBackIo(run, {reactivate: async saved => {
+    reactivated.push(saved); return {reactivated: true, inFront: true};
+  }})});
+  assert.equal(cleanup.ok, true);
+  assert.deepEqual(reactivated, [front]);
+  assert.equal(fs.existsSync(join(run, 'live-frontmost.json')), false);
+  assert.equal(fs.existsSync(join(run, 'live-finder.json')), false);
+  const next = await begin({run, commit: 'c1', io: beginIo({frontmost: () => ({pid: 88, bundleId: 'com.apple.Notes'})})});
+  assert.deepEqual(next.refusals, []);
+  assert.deepEqual(next.frontmost, {bundleId: 'com.apple.Notes'});
+  assert.equal(JSON.parse(fs.readFileSync(join(run, 'live-frontmost.json'), 'utf8')).pid, 88);
+});
+
+test('begin: an exited or replaced saved process is never reactivated and its failed put-back blocks the next run', async () => {
+  for (const running of [[], [{pid: 88, bundleId: 'com.apple.Terminal'}], [{pid: 77, bundleId: 'com.apple.Notes'}]]) {
+    const run = scratch(), file = join(run, 'live-frontmost.json');
+    await begin({run, commit: 'c1', io: beginIo()});
+    const before = fs.readFileSync(file, 'utf8'), activated = [];
+    const io = putBackIo(run, {frontmost: () => running[0] ?? null,
+      reactivate: front => reactivateApp(front, {io: {
+        runningApps: bundleId => running.filter(p => p.bundleId === bundleId),
+        activateProcess: app => { activated.push(app); return {activated: true}; },
+      }}),
+    });
+    const cleanup = await putBack({run, io});
+    assert.equal(cleanup.ok, false);
+    assert.match(cleanup.steps['front-app'].reason, /no longer running/);
+    assert.deepEqual(activated, []);
+    assert.equal(fs.readFileSync(file, 'utf8'), before);
+    const nextIo = beginIo();
+    assertRecoveryRefusal(await begin({run, commit: 'c1', io: nextIo}), 'live-frontmost.json');
+    assert.deepEqual(nextIo.calls, []);
+    assert.equal(fs.readFileSync(file, 'utf8'), before);
+  }
+});
+
 // A put-back device: the scenes, the engine, the apps, Finder and the front app, every call in `order`.
 function putBackIo(run, extra = {}) {
   const order = [];
@@ -463,6 +592,21 @@ for (const bundleId of ['com.google.Chrome', 'com.anthropic.claudefordesktop']) 
     assert.ok(!out.plan.includes('finder-teardown'));
   });
 }
+
+test('putBack: a refused activation keeps the recovery record even when the front reading still matches', async () => {
+  const run = scratch(), file = join(run, 'live-frontmost.json');
+  saveFrontmost(run, {pid: 77, bundleId: 'com.apple.Terminal'});
+  const before = fs.readFileSync(file, 'utf8'), activated = [];
+  const io = putBackIo(run, {reactivate: front => reactivateApp(front, {io: {
+    runningApps: () => [], activateProcess: app => { activated.push(app); return {activated: true}; },
+  }})});
+  const out = await putBack({run, io});
+  assert.equal(out.ok, false);
+  assert.equal(out.steps['front-app'].ok, false);
+  assert.match(out.steps['front-app'].reason, /no longer running/);
+  assert.deepEqual(activated, []);
+  assert.equal(fs.readFileSync(file, 'utf8'), before);
+});
 
 test('putBack: a scene app still running fails the apps check', async () => {
   const run = scratch();

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {runInNewContext} from 'node:vm';
 import {readFileSync} from 'node:fs';
 import {advanceNumbering, render} from '../src/services/engine/render.mjs';
+import {ENGINE_GRANTS, grantSteps} from '../src/runtime/engine.mjs';
 
 const textEditShot = JSON.parse(readFileSync(new URL('./native-goldens/textedit/skyshot.json', import.meta.url), 'utf8'));
 function textEditState(value) {
@@ -14,7 +15,10 @@ function textEditState(value) {
 
 const path = '/fixture/cua Engine.app';
 const expected = {engine: 'cua', version: '1', build: 'build-a'};
-const errorText = pane => `Computer Use server error -10014: cua Engine needs the ${pane} permission. System Settings > Privacy & Security > ${pane}; click "+", enter ${path}, then switch it on; a relaunch is pending.`;
+// Native Permissions.swift deliberately mirrors grantSteps. Use the producer's actual pane words, including
+// Screen & System Audio Recording, rather than inventing a shortened Screen Recording sentence.
+const errorText = permission => `Computer Use server error -10014: ${grantSteps(ENGINE_GRANTS.find(grant => grant.key === permission), path)}`
+  + (permission === 'screenRecording' ? '; a relaunch of the engine is pending before screenshots can use it. Retry after granting it.' : ', then retry.');
 
 // External boundaries only: the runner's real cells execute against the fixture API, and real orchestration judges
 // the resulting model replies, statuses, operator answers and cleanup. No GUI, TCC, engine or subprocess is started.
@@ -35,7 +39,7 @@ function fixture(over = {}) {
       const content = [];
       const meta = activeMeta = {'cua/nativeEngine': expected};
       context.cua = {getApp: async () => {
-        if (!['granted', 'all'].includes(phase)) throw new Error(errorText(phase === 'revoked' ? 'Accessibility' : 'Screen Recording'));
+        if (!['granted', 'all'].includes(phase)) throw new Error(errorText(phase === 'revoked' ? 'accessibility' : 'screenRecording'));
         pid = over.noRelaunch ? 10 : 11;
         return {
           getScreenshot: async () => new Uint8Array(over.emptyScreenshot ? [] : [1, 2, 3]),
@@ -59,6 +63,7 @@ function fixture(over = {}) {
   const deps = {
     platform: 'darwin',
     prepare: async () => ({expected, bundlePath: path}),
+    checkoutBuild: () => over.staleBuild ? 'new-checkout-build' : expected.build,
     status: async () => {
       const value = status();
       if (over.otherConnection && phase === 'granted') value.status.connections = 2;
@@ -149,16 +154,26 @@ test('a different running engine is left alone before asking the owner to revoke
   assert.deepEqual(f.events, []);
 });
 
+test('a stale but approved installed build is refused before stopping the engine or asking for owner revocation', async () => {
+  const f = fixture({staleBuild: true}), report = await run(f);
+  assert.equal(report.status, 'FAIL', JSON.stringify(report));
+  assert.match(report.checks.find(c => c.name === 'preconditions').detail, /checkout/);
+  assert.deepEqual(f.events, []);
+});
+
 test('guidance must identify the precise permission and approved path, not merely mention permissions', async () => {
   const {permissionGuidance} = await import('../scripts/accept/onboarding.mjs');
   const reply = (text, permission = 'accessibility') => ({result: {isError: true, content: [{type: 'text', text}], _meta: {'cua/permission': permission}}});
-  const good = errorText('Accessibility');
-  assert.equal(permissionGuidance(reply(good), {pane: 'Accessibility', bundlePath: path}), true);
-  assert.equal(permissionGuidance(reply(good.replace(path, `"${path}"`)), {pane: 'Accessibility', bundlePath: path}), true);
+  const good = errorText('accessibility');
+  assert.equal(permissionGuidance(reply(good), {permission: 'accessibility', bundlePath: path}), true);
+  assert.equal(permissionGuidance(reply(good.replace(path, `"${path}"`)), {permission: 'accessibility', bundlePath: path}), true);
   for (const bad of [good.replace(path, path + '/other.app'), good.replace('"+"', 'add it'), good.replace('-10014', '-10001')]) {
-    assert.equal(permissionGuidance(reply(bad), {pane: 'Accessibility', bundlePath: path}), false);
+    assert.equal(permissionGuidance(reply(bad), {permission: 'accessibility', bundlePath: path}), false);
   }
-  assert.equal(permissionGuidance(reply(errorText('Screen Recording').replace('a relaunch is pending', 'retry'), 'screenRecording'), {pane: 'Screen Recording', bundlePath: path}), false);
+  const screen = errorText('screenRecording');
+  assert.equal(permissionGuidance(reply(screen, 'screenRecording'), {permission: 'screenRecording', bundlePath: path}), true);
+  assert.equal(permissionGuidance(reply(screen.replace('a relaunch of the engine is pending', 'retry'), 'screenRecording'), {permission: 'screenRecording', bundlePath: path}), false);
+  assert.equal(permissionGuidance(reply(screen.replaceAll('Screen & System Audio Recording', 'Accessibility'), 'screenRecording'), {permission: 'screenRecording', bundlePath: path}), false);
 });
 
 test('five internal off-screen TextEdit windows do not block the one visible fixture, but two visible windows do', async () => {

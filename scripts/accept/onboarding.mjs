@@ -6,7 +6,8 @@
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {fileURLToPath} from 'node:url';
-import {approveEngine, enginePaths, engineStatus, lineReader, stopEngine} from '../../src/runtime/engine.mjs';
+import {approveEngine, ENGINE_GRANTS, enginePaths, engineStatus, lineReader, stopEngine} from '../../src/runtime/engine.mjs';
+import {engineBuild} from '../../src/runtime/engine-bundle.mjs';
 import {resolveRuntime} from '../../src/runtime/manifest.mjs';
 import {settingsFrom} from '../../src/mcp/server.mjs';
 import {selectLane} from '../probe/pinned-engine.mjs';
@@ -39,15 +40,16 @@ export const inputCell = prior => `{
   nodeRepl.write(JSON.stringify({onboarding:true, typed:true}));
 }`;
 
-export function permissionGuidance(reply, {pane, bundlePath}) {
+export function permissionGuidance(reply, {permission, bundlePath}) {
+  const grant = ENGINE_GRANTS.find(grant => grant.key === permission);
+  if (!grant) return false;
   const text = resultText(reply);
   const printed = text.match(/\benter ["“]?(.+?\.app)["”]?, then\b/)?.[1];
-  const permission = pane === 'Accessibility' ? 'accessibility' : 'screenRecording';
   return reply?.result?._meta?.['cua/permission'] === permission
     && reply?.result?.isError === true && /(?:-10014|permissionsPending)/.test(text)
     && text.includes('cua Engine') && text.includes('System Settings') && text.includes('Privacy & Security')
-    && text.includes(pane) && /["“]?\+["”]?/.test(text) && printed === bundlePath
-    && (pane !== 'Screen Recording' || /relaunch[^\n]*pending|pending[^\n]*relaunch/i.test(text));
+    && text.includes(grant.pane) && /["“]?\+["”]?/.test(text) && printed === bundlePath
+    && (permission !== 'screenRecording' || /relaunch[^\n]*pending|pending[^\n]*relaunch/i.test(text));
 }
 
 async function textEditPids() {
@@ -157,6 +159,9 @@ export async function runFreshOnboarding({home, engine, requested = false}, deps
   };
   try {
     const {expected, bundlePath} = await prepare();
+    const checkoutBuild = (deps.checkoutBuild ?? engineBuild)();
+    require(expected.build === checkoutBuild, 'the selected approved engine build is not this checkout’s engineBuild; build and approve this checkout before the owner window');
+    observations.checkoutBuild = checkoutBuild;
     const before = await status();
     require(before.approved === true && before.build === expected.build && before.approvedBuild === expected.build
       && before.bundlePath === bundlePath && before.signature?.identityMatches === true,
@@ -179,7 +184,7 @@ export async function runFreshOnboarding({home, engine, requested = false}, deps
     await startSession();
     stage = 'Accessibility error reaches the model';
     const axError = await cell(BIND, {bind: true});
-    require(permissionGuidance(axError, {pane: 'Accessibility', bundlePath}), 'model reply lacks permissionsPending and exact Accessibility +/approved-path guidance');
+    require(permissionGuidance(axError, {permission: 'accessibility', bundlePath}), 'model reply lacks permissionsPending and exact Accessibility +/approved-path guidance');
     log(resultText(axError));
     record(stage, 'PASS', 'MCP js error names Accessibility, + and the exact approved bundle path');
     stage = 'all three grants absent';
@@ -189,7 +194,7 @@ export async function runFreshOnboarding({home, engine, requested = false}, deps
     await ask('owner Accessibility grant', 'Follow the Accessibility error just printed: add cua Engine with "+", enter its printed bundle path, then switch it on. Leave Screen Recording and Input Monitoring absent.', 'granted');
     stage = 'Screen Recording error reaches the model';
     const screenError = await cell(BIND, {bind: true});
-    require(permissionGuidance(screenError, {pane: 'Screen Recording', bundlePath}), 'model reply lacks permissionsPending, exact Screen Recording +/approved-path guidance or relaunch-pending wording');
+    require(permissionGuidance(screenError, {permission: 'screenRecording', bundlePath}), 'model reply lacks permissionsPending, exact Screen Recording +/approved-path guidance or relaunch-pending wording');
     log(resultText(screenError));
     const pending = await status();
     require(pending.status?.accessibility === true && pending.status.screenRecording === false && pending.status.inputMonitoring === false,

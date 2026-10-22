@@ -34,10 +34,13 @@
 // cua's roots (the home, the engine directory) during the session but cua-engine and cua's Node: the pinned runtime's
 // SkyComputerUseService or node_repl started then is a problem, while other installations' helpers (the ChatGPT app's)
 // lie outside those roots and are only reported.
-// --bind <bundle id> binds that app, which must already be running (verify never has the engine launch it), twice in
-// the connection, accepting only the policy's approval for that bundle (session persistence pinned) and declining
-// everything else: the first bind must ask once, the second nothing. The report carries counts, process and socket
-// identities and the attestation; never the tree's text, a title or a screenshot.
+// --bind <bundle id> binds that app twice in the connection, each bind only while the app is running with a layer-0
+// window the window server shows (FrontWindowProbe, read with no engine observation), the same pid and the same windows
+// before the second bind as before the first: verify never has the engine launch the app or reopen a windowless one,
+// which would open and capture its panel (TextEdit's Open panel can list the owner's documents). It accepts only the
+// policy's approval for that bundle (session persistence pinned) and declines everything else: the first bind must ask
+// once, the second nothing. The report carries counts, process and socket identities and the attestation; never the
+// tree's text, a title or a screenshot.
 //
 //   node verify.mjs                                       exit 0 when every check passes; prints a JSON report
 //   CUA_SHIM_SURFACES=computer,browser node verify.mjs   the same with the browser surface
@@ -56,10 +59,11 @@ import {resolveRuntime} from './src/runtime/manifest.mjs';
 import {REPL_HOST_META_KEY} from './src/repl-host/identity.mjs';
 import {SEATBELT_EXEC} from './src/sandbox/seatbelt.mjs';
 import {
-  approvalsByBehaviour, attestationProblem, boundedError, classifyOwnHostTree, classifyProcesses, cuaRootProcesses, descendants, engineSocketPeers,
+  approvalsByBehaviour, attestationProblem, bindRefusal, boundedError, classifyOwnHostTree, classifyProcesses, cuaRootProcesses, descendants, engineSocketPeers,
   isAppApproval, lsappinfoPid, nativeSocketStep, outsideAnchorGroup, procTable, psRows, socketHolders, survivors, unixSocketEnds, unixSockets,
 } from './scripts/probe/lib.mjs';
 import {approvedEngineFacts, cuaNodes as cuaNodesOf, LaneUsageError, pinLane, selectLane} from './scripts/probe/pinned-engine.mjs';
+import {readWindows} from './scripts/accept/window-close.mjs';
 import {settingsFrom} from './src/mcp/server.mjs';
 
 const CLI = fileURLToPath(new URL('./bin/cua.mjs', import.meta.url));
@@ -76,7 +80,7 @@ const {surfaces} = settingsFrom(process.env);
 const browser = surfaces.includes('browser');
 const darwin = process.platform === 'darwin';
 if (options.bind !== undefined && !(darwin && surfaces.includes('computer'))) usage('--bind applies only to the computer surface on macOS');
-if (options.bind !== undefined && !BUNDLE_ID.test(options.bind)) usage('--bind takes the bundle id of a running app, such as com.apple.TextEdit');
+if (options.bind !== undefined && !BUNDLE_ID.test(options.bind)) usage('--bind takes the bundle id of an app running with its window open, such as com.apple.TextEdit');
 let pinned;
 try { pinned = pinLane({flag: options.engine, env: process.env, home, surfaces}); } catch (error) {
   if (error instanceof LaneUsageError) usage(error.message);
@@ -227,12 +231,20 @@ try {
   }
 
   // --bind: the app twice in this connection, observed by behaviour (the first bind asks once, the second nothing).
+  // Before each bind the window server, not an observation, must show the app's window (bindRefusal): an observation of
+  // a windowless app reopens it and captures what it opens, so a missing scene is refused before any js call.
   if (options.bind) {
-    const pid = lsappinfoPid(sh('/usr/bin/lsappinfo', ['info', '-only', 'pid', '-app', options.bind]));
     const binds = [];
-    report.bind = {app: options.bind, running: pid !== null, binds};
-    if (pid === null) throw new Error(`${options.bind} is not running: verify binds only an app that is already running, so the engine never launches it`);
+    report.bind = {app: options.bind, binds};
+    let firstRead;
     for (const timeoutMs of [120_000, 60_000]) {
+      const pid = lsappinfoPid(sh('/usr/bin/lsappinfo', ['info', '-only', 'pid', '-app', options.bind]));
+      const windows = pid === null ? null : await readWindows([pid]);
+      report.bind.running ??= pid !== null;
+      const refusal = bindRefusal({app: options.bind, pid, windows, first: firstRead});
+      if (refusal) throw new Error(refusal);
+      firstRead ??= {pid, windows};
+      report.bind.windows = windows.length;
       binding = {asked: 0, accepted: 0, error: false};
       try {
         const result = await call('js', {code: `await cua.getApp(${JSON.stringify(options.bind)}); nodeRepl.write("bound")`, title: 'cua verify bind'}, timeoutMs);

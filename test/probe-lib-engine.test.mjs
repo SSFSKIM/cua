@@ -5,7 +5,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {
   approvalsByBehaviour, attestationProblem, boundedError, classifyOwnHostTree, cuaRootProcesses, descendants, engineSocketPeers,
-  isAppApproval, leftoverProcesses, lsappinfoPid, pinnedEngine, psRows, unixSocketEnds, unixSockets,
+  bindRefusal, isAppApproval, leftoverProcesses, lsappinfoPid, pinnedEngine, psRows, unixSocketEnds, unixSockets,
 } from '../scripts/probe/lib.mjs';
 
 const HOME = '/Users/u';
@@ -235,4 +235,21 @@ test('a running app\'s pid is read from lsappinfo in either of its forms; nothin
   assert.equal(lsappinfoPid('"parentpid"=1 '), null, 'another key ending in pid is not the pid');
   assert.equal(lsappinfoPid(''), null);
   assert.equal(lsappinfoPid('"pid"=0'), null);
+});
+
+test('a bind may observe the app only while the window server shows its windows, the same ones before each bind', () => {
+  const app = 'com.apple.TextEdit';
+  const windows = [{ownerPid: 501, number: 88}, {ownerPid: 501, number: 91}];
+  assert.equal(bindRefusal({app, pid: 501, windows}), null, 'the first bind: running, with a window');
+  assert.match(bindRefusal({app, pid: null, windows: null}), /com\.apple\.TextEdit is not running/);
+  assert.match(bindRefusal({app, pid: 501, windows: []}), /com\.apple\.TextEdit \(pid 501\) has no window: .*reopen.*Open panel/,
+    'running with no window: an observation would reopen it and capture its panel');
+  assert.match(bindRefusal({app, pid: 501, windows: null}), /the window server's windows of com\.apple\.TextEdit \(pid 501\) could not be read/);
+  const first = {pid: 501, windows};
+  assert.equal(bindRefusal({app, pid: 501, windows: [...windows].reverse(), first}), null, 'the same windows, in another order');
+  assert.equal(bindRefusal({app, pid: 501, windows: [...windows, {ownerPid: 501, number: 95}], first}), null, 'a window added beside them');
+  assert.match(bindRefusal({app, pid: 501, windows: [windows[0]], first}), /window 91 of com\.apple\.TextEdit read before the first bind is gone/);
+  assert.match(bindRefusal({app, pid: 501, windows: [windows[0], {ownerPid: 501, number: 92}], first}), /window 91 .* is gone/, 'a window replaced');
+  assert.match(bindRefusal({app, pid: 777, windows: [{ownerPid: 777, number: 88}], first}), /com\.apple\.TextEdit is now pid 777, not the pid 501 read before the first bind/);
+  assert.match(bindRefusal({app, pid: 501, windows: [], first}), /has no window/, 'the first rules still hold before the second bind');
 });

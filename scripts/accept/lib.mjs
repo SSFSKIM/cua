@@ -245,7 +245,7 @@ export function forbiddenPaths(paths) {
 }
 
 export const PACKAGE_REQUIRED = [
-  'bin/cua.mjs', 'cua-shim.mjs', 'verify.mjs', 'scripts/probe/lib.mjs', 'scripts/probe/pinned-engine.mjs', 'README.md', '.claude-plugin/plugin.json',
+  'bin/cua.mjs', 'cua-shim.mjs', 'verify.mjs', 'scripts/probe/lib.mjs', 'scripts/probe/pinned-engine.mjs', 'scripts/accept/window-close.mjs', 'scripts/accept/key-guard.mjs', 'scripts/accept/front-window.swift', 'README.md', '.claude-plugin/plugin.json',
   'src/cli.mjs', 'src/mcp/server.mjs', 'src/services/sky.mjs', 'src/secrets/store.mjs',
 ];
 export function missingFromPackage(files) {

@@ -284,3 +284,23 @@ export const lsappinfoPid = text => {
   const pid = Number(/(?:^|[\s,{])"?pid"?\s*=\s*(\d+)/m.exec(text ?? '')?.[1]);
   return Number.isSafeInteger(pid) && pid > 0 ? pid : null;
 };
+
+// Whether verify's --bind may observe `app` now, judged from the window server alone (FrontWindowProbe's layer-0
+// windows, scripts/accept/window-close.mjs readWindows), never by an observation: the engine reopens a running app
+// that has no primary window and every observation captures, so binding a TextEdit whose fixture document has closed
+// would open and capture its Open panel, which can list the owner's documents. `pid`: the app's pid now (null: not
+// running); `windows`: its layer-0 windows now ([{ownerPid, number}], null when the reading failed); `first`: the
+// {pid, windows} read before the first bind, given before every later one, whose pid must be the same and whose windows
+// must all still be there (a window replaced is gone). -> null when the bind may run, else the refusal sentence.
+export function bindRefusal({app, pid, windows, first}) {
+  if (pid === null) return `${app} is not running: verify binds only an app that is running with its window open, so the engine never launches it`;
+  if (first && pid !== first.pid) return `${app} is now pid ${pid}, not the pid ${first.pid} read before the first bind: it was relaunched, so the bind would observe a process the first bind never saw; bring the scene up again and re-run`;
+  if (windows === null) return `the window server's windows of ${app} (pid ${pid}) could not be read (FrontWindowProbe), so whether its window is still open is unknown; nothing was bound`;
+  if (windows.length === 0) return `${app} (pid ${pid}) has no window: an observation would reopen it and capture what it opens (TextEdit's Open panel), so verify binds only an app whose window is open; bring the scene up and re-run`;
+  if (first) {
+    const now = new Set(windows.map(w => `${w.ownerPid}:${w.number}`));
+    const gone = first.windows.filter(w => !now.has(`${w.ownerPid}:${w.number}`));
+    if (gone.length) return `window ${gone.map(w => w.number).join(', ')} of ${app} read before the first bind is gone, so the second bind could observe something other than the scene's window; bring the scene up again and re-run`;
+  }
+  return null;
+}

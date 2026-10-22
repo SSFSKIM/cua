@@ -14,7 +14,7 @@ test('usage errors exit 2 with a sentence and serve nothing', () => {
     [['--nope'], {}, /verify: Unknown option '--nope'/],
     [['--engine', 'sky'], {}, process.platform === 'darwin' ? /--engine must be vendor or cua/ : /--engine applies only to the computer surface on macOS/],
     [['--engine', 'cua'], {CUA_SHIM_SURFACES: 'browser'}, /--engine applies only to the computer surface on macOS/],
-    [['--bind', 'TextEdit'], {}, process.platform === 'darwin' ? /--bind takes the bundle id of a running app/ : /--bind applies only to the computer surface on macOS/],
+    [['--bind', 'TextEdit'], {}, process.platform === 'darwin' ? /--bind takes the bundle id of an app running with its window open/ : /--bind applies only to the computer surface on macOS/],
     [['--bind', 'com.apple.TextEdit'], {CUA_SHIM_SURFACES: 'browser'}, /--bind applies only to the computer surface on macOS/],
   ]) {
     const r = verify(args, extra);

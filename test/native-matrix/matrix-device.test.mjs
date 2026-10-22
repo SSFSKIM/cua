@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {alerts, compiled, deviceLoad, isWatcher, launchIntent, ownedFocus, PROBE_FILE, probeFinish, probeStart, quitLaunched, read, recordLaunch, settleLaunches, source, WINDOWLESS, windowlessUp} from '../../scripts/native-matrix/matrix-device.mjs';
+import {alerts, compiled, executablePaths, deviceLoad, isWatcher, launchIntent, ownedFocus, PROBE_FILE, probeFinish, probeStart, quitLaunched, read, recordLaunch, settleLaunches, source, WINDOWLESS, windowlessUp} from '../../scripts/native-matrix/matrix-device.mjs';
 
 const state = {scenes: {textedit: {pid: 11}, finder: {pid: 7}}};
 const bounds = {x: 0, y: 25, width: 900, height: 700};
@@ -35,7 +35,72 @@ test('read: the run\'s own pids and bounds, another app by bundle id only, the w
   assert.deepEqual(ownedFocus({focusedApp: {pid: 7}, named: true, valueHash: 'ab'.repeat(32)}, [7]).valueHash, 'ab'.repeat(32));
   assert.equal(ownedFocus({focusedApp: {pid: 7}, named: false, valueHash: 'ab'.repeat(32)}, [7]).valueHash, null, 'never another window\'s');
   assert.equal(isWatcher([{pid: 5, command: '/A/cua Engine.app/Contents/MacOS/cua-engine --probe watch-activations'}], 5), true);
+});
+
+test('ownedFocus: why the named window was not the focused one, recorded for the run\'s own window only', () => {
+  const named = {pid: 7, bounds: {x: 820, y: 261, width: 920, height: 492}};
+  // Hold 2a: the probe read no focused application at all (every background row, every user app, both engines).
+  assert.deepEqual(ownedFocus({focusedApp: null, focusedWindow: null, named: false, valueHash: null, accessibility: true}, [7], named),
+    {appOwned: false, appPid: null, named: false, valueHash: null,
+      unnamed: {accessibility: true, appRead: false, appNamed: false, windowRead: false, windowNamed: false, deltas: null}});
+  // The named app focused, its focused window off by a few points: the per-axis deltas, focused minus named.
+  const off = ownedFocus({focusedApp: {pid: 7, bundleId: 'com.apple.finder'}, focusedWindow: {pid: 7, bounds: {x: 820, y: 261, width: 920, height: 520}},
+    named: false, valueHash: null, accessibility: true}, [7], named);
+  assert.deepEqual(off.unnamed, {accessibility: true, appRead: true, appNamed: true, windowRead: true, windowNamed: true, deltas: {x: 0, y: 0, width: 0, height: 28}});
+  // Another app focused: whether it was the named one, never its pid or its window's bounds.
+  const other = ownedFocus({focusedApp: {pid: 99, bundleId: 'com.example.other'}, focusedWindow: {pid: 99, bounds: {x: 1, y: 2, width: 3, height: 4}},
+    named: false, valueHash: null, accessibility: true}, [7], named);
+  assert.deepEqual(other, {appOwned: false, appPid: null, named: false, valueHash: null,
+    unnamed: {accessibility: true, appRead: true, appNamed: false, windowRead: true, windowNamed: false, deltas: null}});
+  assert.ok(!JSON.stringify(other).includes('99') && !JSON.stringify(other).includes('other'), 'nothing of another app leaves');
+  // The probe without its own Accessibility grant says so; a named window records no reason.
+  assert.equal(ownedFocus({focusedApp: null, named: false, accessibility: false}, [7], named).unnamed.accessibility, false);
+  assert.equal(ownedFocus({focusedApp: {pid: 7}, focusedWindow: {pid: 7, bounds: named.bounds}, named: true, valueHash: null}, [7], named).unnamed, undefined);
+  // read() hands the probe's window to it.
+  const io = {state: () => state, launched: () => [], watcherRuns: () => true, frontWindow: () => ({at: 5, frontmost: null, topWindow: null}),
+    probe: () => ({focusedApp: null, focusedWindow: null, named: false, valueHash: null, accessibility: true})};
+  assert.equal(read({focus: '7,820,261,920,492'}, io).focus.unnamed.appRead, false);
   assert.equal(isWatcher([{pid: 5, command: '/A/cua Engine.app/Contents/MacOS/cua-engine'}], 5), false);
+});
+
+test('read: an unowned top window records only whether the engine under test owns it, never its pid, number or bounds', () => {
+  const home = '/Users/o/Library/Application Support/cua-spike-vendor', roots = {approvedRuntime: home, approvedEngine: '/A/cua Engine.app'};
+  const paths = {500: `${home}/runtimes/1.2/Codex Computer Use.app/Contents/MacOS/ChatGPT Computer Use`, 600: '/Applications/Mail.app/Contents/MacOS/Mail', 700: `${home}-old/x`};
+  const asked = [];
+  const ioOf = ownerPid => ({state: () => state, launched: () => [], watcherRuns: () => false,
+    executablePaths: pids => { asked.push(pids); return new Map(pids.filter(p => paths[p]).map(p => [p, paths[p]])); },
+    frontWindow: () => ({at: 5, frontmost: {pid: ownerPid, bundleId: 'x'}, topWindow: {ownerPid, number: 9, bounds: {x: 1510, y: 611, width: 126, height: 126}, onScreen: true}})});
+  const top = (pid, given = roots) => read({...given}, ioOf(pid)).reading.topWindow;
+  assert.deepEqual(top(500), {ownerPid: null, number: null, bounds: null, owned: false, engine: true});
+  assert.deepEqual(top(600), {ownerPid: null, number: null, bounds: null, owned: false, engine: false});
+  assert.equal(top(700).engine, false, 'a sibling directory is not the engine');
+  assert.equal(top(800).engine, null, 'an unresolved owner is unknown');
+  assert.equal(top(500, {}).engine, null, 'no roots given, unknown');
+  asked.length = 0;
+  assert.equal(Object.hasOwn(top(7), 'engine'), false, 'the run\'s own top window is unchanged');
+  assert.deepEqual(asked, [], 'and not resolved');
+});
+
+test('read: the reading\'s `at` covers what it covered at 38ecfa07, and the engine-ownership lookup runs after it closes and after the focus probe', () => {
+  // A clock that ticks on every read, and every io call logged with the clock at that moment.
+  let t = 0;
+  const realNow = Date.now;
+  Date.now = () => ++t;
+  const calls = [];
+  const log = (name, value) => { calls.push({name, t}); return value; };
+  const io = {state: () => log('state', state), launched: () => log('launched', []), watcherRuns: () => log('watcherRuns', true),
+    frontWindow: () => log('frontWindow', {at: 5, frontmost: {pid: 500, bundleId: 'x'}, topWindow: {ownerPid: 500, number: 9, bounds, onScreen: true}}),
+    probe: () => log('probe', {focusedApp: {pid: 7}, named: false}),
+    executablePaths: pids => log('executablePaths', new Map(pids.map(p => [p, '/A/cua Engine.app/Contents/MacOS/x'])))};
+  let r;
+  try { r = read({focus: '7,0,25,900,700', watcher: 900, approvedEngine: '/A/cua Engine.app'}, io); } finally { Date.now = realNow; }
+  assert.deepEqual(calls.map(c => c.name), ['state', 'launched', 'frontWindow', 'watcherRuns', 'probe', 'executablePaths'],
+    'the focus probe follows the window read as at 38ecfa07; the ownership lookup comes last');
+  const inside = calls.filter(c => c.name !== 'executablePaths');
+  assert.ok(inside.every(c => c.t >= r.at[0] && c.t < r.at[1]), 'the reading\'s own calls are inside `at`');
+  assert.ok(calls.at(-1).t >= r.at[1], 'the lookup runs after `at` closes');
+  assert.equal(r.reading.topWindow.engine, true, 'its answer is still recorded');
+  assert.equal(r.reading.topWindow.ownerPid, null, 'never the pid');
 });
 
 test('the alert watch: a baseline of window numbers, then an alert process or a new low window aborts, the run\'s own never', () => {
@@ -53,6 +118,44 @@ test('the alert watch: a baseline of window numbers, then an alert process or a 
     assert.equal(flagged.abort, true);
     assert.doesNotMatch(JSON.stringify(flagged), /Allow paste/, 'no alert text leaves');
   } finally { fs.rmSync(dir, {recursive: true, force: true}); }
+});
+
+test('the alert watch leaves out the engine under test: a window whose owner runs from the approved runtime or engine bundle', () => {
+  const dir = tmp();
+  const home = '/Users/o/Library/Application Support/cua-spike-vendor', bundle = '/Users/o/Library/Application Support/cua/engine/cua Engine.app';
+  const paths = {
+    500: `${home}/runtimes/1.2/node_modules/@oai/sky/Codex Computer Use.app/Contents/MacOS/ChatGPT Computer Use`,
+    501: `${bundle}/Contents/MacOS/cua-engine`,
+    502: `${home}-old/runtimes/1.2/Codex Computer Use.app/Contents/MacOS/ChatGPT Computer Use`,
+    503: `${bundle}x/Contents/MacOS/cua-engine`,
+  };
+  const asked = [];
+  try {
+    let windows = [{number: 1, ownerPid: 99, ownerName: 'Dock', layer: 20}];
+    const io = {dir, windows: () => windows, state: () => state, launched: () => [], executablePaths: pids => { asked.push(pids); return new Map(pids.filter(p => paths[p]).map(p => [p, paths[p]])); }};
+    alerts('baseline', io);
+    const roots = {approvedRuntime: home, approvedEngine: bundle};
+    windows = [...windows, {number: 2, ownerPid: 500, ownerName: 'ChatGPT Computer Use', layer: 0}, {number: 3, ownerPid: 501, ownerName: 'cua-engine', layer: 0}, {number: 4, ownerPid: 11, layer: 0}];
+    assert.equal(alerts('check', io, roots).abort, false, 'the engine\'s own overlay is not an alert');
+    assert.ok(asked.at(-1).includes(500) && !asked.at(-1).includes(11), 'only owners outside the run are resolved');
+    assert.equal(alerts('check', io).abort, true, 'with no roots given, nothing is left out');
+    for (const pid of [502, 503, 504]) {
+      const flagged = alerts('check', {...io, windows: () => [...windows, {number: 9, ownerPid: pid, ownerName: 'X', layer: 0}]}, roots);
+      assert.equal(flagged.abort, true, `pid ${pid}: a sibling path or an unresolved pid stays flagged`);
+      assert.deepEqual(flagged.export.unknown, {count: 1, windows: [{layer: 0, isAlertProcess: false}]});
+    }
+    // An alert process stays an alert whatever else runs.
+    assert.equal(alerts('check', {...io, windows: () => [...windows, {number: 10, ownerPid: 300, ownerBundleId: 'com.apple.UserNotificationCenter', layer: 8}]}, roots).abort, true);
+  } finally { fs.rmSync(dir, {recursive: true, force: true}); }
+});
+
+test('executable paths come from ps, a vanished pid simply absent', () => {
+  const out = executablePaths([1, 731, 99999], {exec: (cmd, args) => { assert.equal(cmd, '/bin/ps'); assert.deepEqual(args, ['-o', 'pid=,comm=', '-p', '1,731,99999']);
+    return '    1 /sbin/launchd\n  731 /System/Library/CoreServices/Dock.app/Contents/MacOS/Dock\n'; }});
+  assert.deepEqual([...out], [[1, '/sbin/launchd'], [731, '/System/Library/CoreServices/Dock.app/Contents/MacOS/Dock']]);
+  assert.deepEqual([...executablePaths([], {exec: () => assert.fail('no ps for no pids')})], []);
+  const failing = executablePaths([5], {exec: () => { const e = new Error('exit 1'); e.stdout = '    5 /a b/c\n'; throw e; }});
+  assert.deepEqual([...failing], [[5, '/a b/c']]);
 });
 
 test('a launch is identified and journaled at once, and quit only while it is the same process', async () => {
@@ -211,13 +314,16 @@ test('probe start and finish: a scheduled keystroke or switch launched on the ru
 
 test('source: the owner\'s source and preference saved before the first switch (the live harness\'s record), a selection read back, the per-context preference written and read, the restore kept for the put-back', async () => {
   const calls = [];
+  // MAWS B2's regime: the selection reads back as current while the keyboard layout stays ABC (the probe's `layout`).
   let perContext = false, current = 'com.apple.keylayout.ABC';
-  const io = {probe: args => { calls.push(args.join(' ')); if (args[1] === 'current') return {id: current}; current = args[1]; return {selected: true, current: {id: current}}; },
+  const layout = 'com.apple.keylayout.ABC';
+  const io = {probe: args => { calls.push(args.join(' ')); if (args[1] === 'current') return {id: current, layout}; current = args[1]; return {selected: true, current: {id: current, layout}}; },
     readPerContext: () => perContext, writePerContext: value => { perContext = value; },
     saveInput: () => ({kept: false, saved: {source: {id: 'com.apple.keylayout.ABC'}, perContext: false}}), restoreInput: async ({keep}) => ({keep, sourceRestored: true, perContextRestored: true})};
   assert.deepEqual(await source('save', {}, io), {kept: false, saved: {source: 'com.apple.keylayout.ABC', perContext: false}});
-  assert.deepEqual(await source('select', {id: 'com.apple.inputmethod.Korean.2SetKorean'}, io), {selected: true, current: 'com.apple.inputmethod.Korean.2SetKorean'});
-  assert.deepEqual(await source('current', {}, io), {current: 'com.apple.inputmethod.Korean.2SetKorean'});
+  assert.deepEqual(await source('select', {id: 'com.apple.inputmethod.Korean.2SetKorean'}, io),
+    {selected: true, current: 'com.apple.inputmethod.Korean.2SetKorean', layout: 'com.apple.keylayout.ABC'}, 'the layout read beside the source');
+  assert.deepEqual(await source('current', {}, io), {current: 'com.apple.inputmethod.Korean.2SetKorean', layout: 'com.apple.keylayout.ABC'});
   assert.deepEqual(await source('per-context', {value: 'on'}, io), {perContext: true});
   assert.deepEqual(await source('restore', {}, io), {keep: true, sourceRestored: true, perContextRestored: true}, 'the record stays for the put-back to verify');
   await assert.rejects(() => source('select', {id: 'not an id'}, io), /source id/);
@@ -257,4 +363,30 @@ test('load: the Mac\'s load averages, uptime and core count, nothing else', () =
   const real = deviceLoad();
   assert.equal(real.loadavg.length, 3);
   assert.ok(Number.isInteger(real.uptimeS) && Number.isInteger(real.cpus));
+});
+
+test('Electron\'s accessibility mode: a read given --electron-mode returns the fixture record\'s latest mode and time, after the reading\'s window; the export returns the whole record, sanitized', async () => {
+  const {electronModeRecord, main} = await import('../../scripts/native-matrix/matrix-device.mjs');
+  const record = '{"at":10,"enabled":false,"source":"start"}\nnot json\n{"at":25,"enabled":true,"source":"event","extra":"x"}\n';
+  const io = {state: () => state, launched: () => [], watcherRuns: () => true, electronRecord: () => record,
+    frontWindow: () => ({at: 5, frontmost: {pid: 7, bundleId: 'com.apple.finder'}, topWindow: {ownerPid: 7, number: 3, bounds, onScreen: true}})};
+  assert.deepEqual(read({watcher: 900, electronMode: true}, io).electronMode, {enabled: true, at: 25});
+  assert.equal('electronMode' in read({watcher: 900}, io), false, 'only when asked');
+  assert.equal(read({electronMode: true}, {...io, electronRecord: () => null}).electronMode, null, 'no record: null');
+  assert.deepEqual(electronModeRecord(io), {records: [{at: 10, enabled: false, source: 'start'}, {at: 25, enabled: true, source: 'event'}]});
+  assert.deepEqual(electronModeRecord({...io, electronRecord: () => null}), {records: null});
+  // The CLI reads the record from the Electron scene's user-data directory in the run's scene state.
+  const {writeState} = await import('../../scripts/repl-parity/scenes-mac.mjs');
+  const {FIXTURE_ACCESSIBILITY_FILE} = await import('../../scripts/native-matrix/fixtures/electron-fixture.mjs');
+  const dir = fs.realpathSync(tmp());
+  try {
+    const userDataDir = join(dir, 'electron-user-data');
+    fs.mkdirSync(userDataDir);
+    fs.writeFileSync(join(userDataDir, FIXTURE_ACCESSIBILITY_FILE), record);
+    writeState(dir, {scenes: {electron: {pid: 12, userDataDir}}});
+    assert.deepEqual((await main(['electron-mode', '--run', dir])).records.map(r => r.at), [10, 25]);
+    writeState(dir, {scenes: {}});
+    assert.deepEqual(await main(['electron-mode', '--run', dir]), {records: null}, 'the scene is down: nothing to read');
+    await assert.rejects(main(['read', '--run', dir, '--electron-mode', 'yes']), /--electron-mode latest/);
+  } finally { fs.rmSync(dir, {recursive: true, force: true}); }
 });

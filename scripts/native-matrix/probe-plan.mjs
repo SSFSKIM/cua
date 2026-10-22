@@ -38,9 +38,15 @@ export const PRE_MS = Object.freeze({chrome: 400, finder: 120, textedit: 400});
 export const PRE_ACTION_DELAY_MS = 150;
 // The sheet variant: super+w this long before the post, its follow-up click no earlier than this long after it.
 export const SHEET_PRE_MS = 100, SHEET_FOLLOW_MS = 300;
-// The engine's userIntervened sentences (native/engine/Sources/Engine/Intervention.swift), the app string elided.
+// The engine's userIntervened sentences (native/engine/Sources/Engine/Intervention.swift), the app string elided. An
+// engine error reaches a cell as a plain Error (the REPL's boundary, src/repl-host/trusted-worker.mjs), its name
+// 'Error', so a refusal is told by its message alone: the vendor's envelope with userIntervened's code (−10016), then
+// the sentence (the spec: the harnesses match substrings).
 export const USER_CHANGED = "The user changed '";
 export const STILL_INTERACTING = "The user is still interacting with '";
+export const USER_INTERVENED = 'Computer Use server error -10016: ';
+// Whether a cell's caught error (its `threw` and `message`) is the userIntervened refusal with `sentence`.
+export const refusedWith = (value, sentence) => value?.threw === true && typeof value.message === 'string' && value.message.startsWith(USER_INTERVENED) && value.message.includes(sentence);
 export const EMPTY_HASH = sha256Hex('');
 
 // ---- validity ------------------------------------------------------------------------------------------------------
@@ -207,16 +213,20 @@ return {closed: !__sheet(ax), sceneInFront: inFront(ax)};`);
 
 // The cleanup of a sheet variant that stopped part-way (a key cell, sent under the guard): the untitled document closed
 // (super+w, and its sheet's Delete when one comes up), so the scene's document is TextEdit's front window again.
-// -> {closed, sceneInFront}.
+// `front` names what TextEdit's front window was at the end, for the run's stop: scene, untitled, sheet, panel, other
+// or none (no window observed). -> {closed, sceneInFront, front}.
 export const CLOSE_UNTITLED_CELL = cell(`${prelude('textedit')}
 // cua-matrix-cell: sheet.cleanup
 ${keepOrDelete}
-let ax = await observe();
-if (!inFront(ax) && !__sheet(ax) && typeof globalThis.__sheetDoc === "string" && windowTitleOf(ax) === globalThis.__sheetDoc) { await __app.pressKey("super+w"); ax = await observe(); }
-for (const end = Date.now() + 5000; !inFront(ax) && !__sheet(ax) && Date.now() < end;) ax = await observe();
-if (__sheet(ax)) { const b = __deleteButton(ax); if (b !== null) await __app.click(b); ax = await observe(); }
-for (const end = Date.now() + 5000; !inFront(ax) && Date.now() < end;) ax = await observe();
-return {closed: !__sheet(ax), sceneInFront: inFront(ax)};`);
+const __observe = async () => { try { return await observe(); } catch (e) { if (/noWindowsAvailable/.test(String(e?.message ?? e))) return ""; throw e; } };
+const __untitled = ax => typeof globalThis.__sheetDoc === "string" && windowTitleOf(ax) === globalThis.__sheetDoc;
+let ax = await __observe();
+if (!inFront(ax) && !__sheet(ax) && __untitled(ax)) { await __app.pressKey("super+w"); ax = await __observe(); }
+for (const end = Date.now() + 5000; !inFront(ax) && !__sheet(ax) && Date.now() < end;) ax = await __observe();
+if (__sheet(ax)) { const b = __deleteButton(ax); if (b !== null) await __app.click(b); ax = await __observe(); }
+for (const end = Date.now() + 5000; !inFront(ax) && Date.now() < end;) ax = await __observe();
+const front = ax === "" ? "none" : inFront(ax) ? "scene" : __sheet(ax) ? "sheet" : panel(ax) ? "panel" : __untitled(ax) ? "untitled" : "other";
+return {closed: !__sheet(ax), sceneInFront: inFront(ax), front};`);
 
 // Intervention fires: after the refusal, the last typed character's landing on the document. -> {landed}.
 export const endsWithCell = (scene, text) => cell(`${prelude(scene)}

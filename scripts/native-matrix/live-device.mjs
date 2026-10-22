@@ -21,7 +21,8 @@
 //   hscroll --run <dir>                cua's lane of the horizontal scroll on the run's wide-page TextEdit
 //   hscroll-read --run <dir> [--settle-ms <n>] [--start <0..1>]
 //                                      the run's TextEdit's scroll-bar values by --probe text-view (both lanes' reading),
-//                                      after writing the horizontal bar to `start` when given (the lane's starting point)
+//                                      after writing the horizontal bar to `start` when given, the vertical one where the
+//                                      text area's midpoint shows (the lane's starting point; residue-device.mjs hscrollRead)
 //   input-source                       the owner's source and per-context preference saved, Korean 2-Set selected
 //                                      through the approved bundle's probe, read back, the saved ones restored
 //   input-source-restore               the saved source and preference restored (what put-back runs)

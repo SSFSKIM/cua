@@ -1,0 +1,12 @@
+75286950
+Build complete! (15.80초)
+{"appPath":"/Users/new/Library/Caches/cua-harness/electron-fixture/44.9.0-faee60a202d5/cua Electron Fixture.app","bundle
+27.0
+ShowSidebar=1
+ShowStatusBar=Error: Could not find key 'ShowStatusBar' in domain 'com.apple.finder'.
+ShowPathbar=Error: Could not find key 'ShowPathbar' in domain 'com.apple.finder'.
+com.apple.keylayout.ABC
+{ TextInputGlobalPropertyPerContextInput = 0; } 
+    bundleID="com.apple.Terminal"
+1792384396
+11:50  up 10:01, 2 users, load averages: 3.19 2.56 2.62

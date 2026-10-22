@@ -1,0 +1,13 @@
+The following is a diff from the previous accessibility tree for Window: "cua-scene-finder" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
+~				45 row (selected)
+~					46 셀 (selected) Secondary Actions: Finder 항목 열기
+~						48 텍스트 필드 (selected, settable) Value: scene-file-005, Secondary Actions: Finder 항목 열기, URL: file:///Users/new/Library/Caches/cua-harness/repl-parity-native-mac/finder/cua-scene-finder/scene-file-005
+~					49 셀 (selected)
+~					51 셀 (selected)
+~					53 셀 (selected)
+~		210 버튼 Description: 공유, Help: 선택된 항목을 공유합니다, Secondary Actions: 이전으로 이동, 다음으로 이동, 도구 막대에서 제거
+~		211 버튼 Description: 태그 추가, Help: 태그를 편집합니다, Secondary Actions: 이전으로 이동, 다음으로 이동, 도구 막대에서 제거
+Selected:
+	45 row (selected)
+
+Note: Pay special attention to the content selected by the user. If the user asks a question or refers to the content they are looking at on-screen, they might be referring to the selected content (but they might be referring to something else that's visible, too).

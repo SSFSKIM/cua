@@ -27,7 +27,7 @@ const APPS = {
 const byPath = Object.fromEntries(Object.values(APPS).map(app => [app.appPath, app]));
 const NO_LONGER_VALID = 'The element ID is no longer valid. Try to get the on-screen content again and see if that resolves the issue.';
 const ENGINE_MS = {resolve_app: 999};
-const INPUT_META = {inputRoute: 3, startedAt: 1000, endedAt: 1042, receivedAt: 990, hidIdleMs: 31000, activationGuardMs: 41.5, pointUnconfirmed: true};
+const INPUT_META = {inputRoute: 3, startedAt: 1000, endedAt: 1042, receivedAt: 990, hidIdleMs: 31000, activationGuardMs: 41.5, activationClick: 'posted', pointUnconfirmed: true};
 
 const win = title => node('t0', 0, 'AXWindow', {roleDescription: 'standard window', title, actions: ['AXRaise']});
 const button = (token, title) => node(token, 1, 'AXButton', {roleDescription: 'button', title, actions: ['AXPress']});
@@ -66,7 +66,7 @@ async function session(t, {handlers = {}, answer = () => ({action: 'accept', con
     'execute:get_app_state': ({args}) => { during('get_app_state'); return trees.get(args.app); },
     'execute:list_apps': () => { during('list_apps'); return [{id: 'com.apple.TextEdit', displayName: 'TextEdit', isRunning: true, extra: 1}, {id: 'io.example.old', displayName: 'Old', isRunning: false, lastUsedDate: 1.5, useCount: 2}]; },
     'execute:click': () => { during('click'); return {meta: INPUT_META}; },
-    'execute:press_key': () => ({meta: {...INPUT_META, inputRoute: "2'", activationGuardMs: undefined, pointUnconfirmed: undefined}}),
+    'execute:press_key': () => ({meta: {...INPUT_META, inputRoute: "2'", activationGuardMs: undefined, activationClick: undefined, pointUnconfirmed: undefined}}),
     'execute:type_text': () => ({meta: {...INPUT_META, inputRoute: "2'"}}),
     ...handlers,
   }});
@@ -194,6 +194,7 @@ test('an element index becomes the lineage\'s token, every execute carrying its 
   assert.equal(meta['cua/receivedAt'], 990);
   assert.equal(meta['cua/hidIdleMs'], 31000);
   assert.equal(meta['cua/activationGuardMs'], 41.5);
+  assert.equal(meta['cua/activationClick'], 'posted');
   assert.equal(meta['cua/pointUnconfirmed'], true);
   assert.deepEqual(meta['cua/nativeEngine'], {engine: 'cua', version: '0.1.0', build: 'b1'});
 
@@ -205,6 +206,7 @@ test('an element index becomes the lineage\'s token, every execute carrying its 
   assert.equal(engine.executes().at(-1).lineage, 'L-TextEdit', 'keys carry the lineage too');
   assert.equal(meta['cua/inputRoute'], "2'");
   assert.equal(meta['cua/activationGuardMs'], null, 'a key\'s result does not inherit the click\'s guard time');
+  assert.equal(meta['cua/activationClick'], null, 'nor its activation click');
   assert.equal(meta['cua/pointUnconfirmed'], null);
   assert.equal(engine.executes().at(-1).args.element, undefined);
 });
@@ -237,6 +239,33 @@ test('model code reaches the raw methods, but only the vendor\'s fields reach th
   assert.deepEqual(engine.executes().at(-1).args, {app, text: 'a', concealed: true}, 'concealed, on the methods the wrapper conceals');
   await call(() => sky.press_key({app, key: 'a', concealed: true}));
   assert.deepEqual(engine.executes().at(-1).args, {app, key: 'a'}, 'and on no other');
+});
+
+test('CUA_ENGINE_SPIKE_ROUTE=1 (the route A/B\'s serve only) forwards a click\'s spikeRoute, a known route only, and no other method\'s or switch', async t => {
+  const handlers = Object.fromEntries(METHODS.filter(m => !['list_apps', 'get_app_state'].includes(m)).map(m => [`execute:${m}`, () => ({meta: INPUT_META})]));
+  const {getApp, call, sky, engine} = await session(t, {handlers, env: {CUA_ENGINE_SPIKE_ROUTE: '1'}});
+  await getApp('TextEdit');
+  const app = APPS.TextEdit.appPath;
+  for (const route of ['1', "2'", '2', '3']) {
+    await call(() => sky.click({app, element_index: 1, spikeRoute: route, spikeKeyed: true}));
+    assert.deepEqual(engine.executes().at(-1).args, {app, element: 't1', spikeRoute: route}, route);
+  }
+  await call(() => sky.click({app, x: 1, y: 2}));
+  assert.deepEqual(engine.executes().at(-1).args, {app, x: 1, y: 2}, 'a click without one sends none');
+  const before = engine.executes().length;
+  for (const route of [3, '4', '', null]) {
+    await assert.rejects(call(() => sky.click({app, element_index: 1, spikeRoute: route})), /\[invalid_spike_route\]/, String(route));
+  }
+  assert.equal(engine.executes().length, before, 'an invalid route reaches no engine');
+  await call(() => sky.press_key({app, key: 'Return', spikeRoute: '3'}));
+  assert.deepEqual(engine.executes().at(-1).args, {app, key: 'Return'}, 'only a click');
+  await call(() => sky.type_text({app, text: 'a', spikeRoute: '3', spikeKeyed: true}));
+  assert.deepEqual(engine.executes().at(-1).args, {app, text: 'a'}, 'only a click');
+
+  const other = await session(t, {handlers, env: {CUA_ENGINE_SPIKE_ROUTE: 'true'}});
+  await other.getApp('TextEdit');
+  await other.call(() => other.sky.click({app, element_index: 1, spikeRoute: '1'}));
+  assert.deepEqual(other.engine.executes().at(-1).args, {app, element: 't1'}, 'only the value 1 turns it on');
 });
 
 test('an index never issued answers "<n> is an invalid element ID", a retired one the "no longer valid" sentence, before the engine is asked', async t => {
@@ -344,6 +373,45 @@ test('cua/settle rides on the observation whose settle hit its cap, and on no ot
   trees.get(APPS.TextEdit.appPath).settle = 'capped';
   await call(() => app.getAXState({emit: false}));
   assert.equal(meta['cua/settle'], 'capped');
+});
+
+// The engine's observation diagnostics (Skyshot timings) as Chromium and Electron rows need them: enablement, the web
+// area's wait and the settle.
+const DIAGNOSED_TIMINGS = {totalMs: 1, walkMs: 3.5, nodes: 40, webShaped: true, enablementPrior: 'false', enabled: 'AXManualAccessibility', chromium: true, webAreaSeen: true,
+  webAreaFound: true, webAreaWaitMs: 12.25, settle: 'settled', settleMs: 251.5, settleNotifications: 3, settleNotificationCounts: {AXValueChanged: 2, AXFocusedUIElementChanged: 1},
+  settleBusyWalks: 0, settleBusyVetoes: 0, settleObserved: true, settleQuietAtMs: 101.125, settleTreeReused: true, focusRead: 'notAnElement', enableMs: 0.5};
+
+test('the observation\'s diagnostics ride only as cua/observation meta, a bounded whitelist; the model-facing result is byte-identical with and without them', async t => {
+  const {getApp, call, meta, trees, service} = await session(t);
+  const {app} = await getApp('TextEdit');
+  const tree = trees.get(APPS.TextEdit.appPath);
+  assert.equal(meta['cua/observation'], null, 'timings with none of the diagnostics leave the key reset');
+  // The same observation with and without the diagnostics: what the facade returns (what a cell prints, the model's
+  // text) and what the service answers are the same bytes.
+  const plain = {facade: JSON.stringify(await call(() => app.getAXStateAndScreenshot({emit: false, disableDiffing: true})))};
+  plain.service = JSON.stringify(await call(() => service.handleRpc({type: 'execute', method: 'get_app_state', args: [{app: APPS.TextEdit.appPath, disableDiff: true}]})));
+  plain.meta = {...meta};
+  tree.timings = {...DIAGNOSED_TIMINGS, settleNotificationCounts: {...DIAGNOSED_TIMINGS.settleNotificationCounts}, extra: {nested: 'x'}, longLabel: 'y'.repeat(200)};
+  const diagnosed = {facade: JSON.stringify(await call(() => app.getAXStateAndScreenshot({emit: false, disableDiffing: true})))};
+  diagnosed.service = JSON.stringify(await call(() => service.handleRpc({type: 'execute', method: 'get_app_state', args: [{app: APPS.TextEdit.appPath, disableDiff: true}]})));
+  assert.equal(diagnosed.facade, plain.facade);
+  assert.equal(diagnosed.service, plain.service);
+  for (const word of ['webShaped', 'enablementPrior', 'settleTreeReused', 'webArea', 'AXManualAccessibility', 'AXValueChanged']) assert.ok(!diagnosed.service.includes(word), word);
+  // The js tool result the host assembles from the execution: the content is the cell's output alone; the meta rides
+  // apart in _meta, never in content.
+  const {assembleResult} = await import('../src/repl-host/results.mjs');
+  const output = JSON.parse(diagnosed.service).text;
+  assert.deepEqual(assembleResult({ok: true, output, responseMeta: {...meta}}).content, assembleResult({ok: true, output, responseMeta: plain.meta}).content);
+  assert.deepEqual(meta['cua/observation'], {webShaped: true, enablementPrior: 'false', enabled: 'AXManualAccessibility', chromium: true, webAreaSeen: true, webAreaFound: true,
+    webAreaWaitMs: 12.25, settle: 'settled', settleMs: 251.5, settleNotifications: 3, settleNotificationCounts: {AXValueChanged: 2, AXFocusedUIElementChanged: 1},
+    settleBusyWalks: 0, settleBusyVetoes: 0, settleObserved: true, settleQuietAtMs: 101.125, settleTreeReused: true},
+  'the whitelist only: no phase timing, node count, focus read or unknown key, nothing nested beyond the notification counts');
+  // An input call resets it, and an observation without the diagnostics leaves it reset.
+  await call(() => app.click(1));
+  assert.equal(meta['cua/observation'], null);
+  tree.timings = {totalMs: 1};
+  await call(() => app.getAXState({emit: false}));
+  assert.equal(meta['cua/observation'], null);
 });
 
 test('an observation of a minimized window carries no screenshot and its meta says why; the next observation clears it', async t => {

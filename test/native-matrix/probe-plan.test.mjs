@@ -3,7 +3,13 @@
 // how the next attempt's call is placed from the last one's times, and what a probe's answer says about its post.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {intervalOf, nextPreMs, postValidity, probeProblem, receiptValidity, PROBE_LEAD_MS} from '../../scripts/native-matrix/probe-plan.mjs';
+import {createHash} from 'node:crypto';
+import {readFileSync} from 'node:fs';
+import {fileURLToPath} from 'node:url';
+import {parseCell} from '../../scripts/native-baseline/cells.mjs';
+import {TEXT_FIELDS} from '../../scripts/native-matrix/plan.mjs';
+import {EMPTY_HASH, emptyField, emptyFieldCell, fieldCheck, fieldCheckCell, intervalOf, nextPreMs, postValidity, probeProblem, receiptValidity, PROBE_LEAD_MS} from '../../scripts/native-matrix/probe-plan.mjs';
+import {advanceNumbering, render} from '../../src/services/engine/render.mjs';
 
 const act = (engine, meta = {}, value = {callAt: 1_000, endAt: 3_000}) => ({engine: {actionInterval: null, receivedAt: null, ...meta}, value});
 
@@ -51,4 +57,59 @@ test('a probe that did not post is named from its answer', () => {
   assert.match(probeProblem(undefined), /no answer/);
   assert.equal(probeProblem({selected: true, selectedAt: 7}), null, 'a switch posts nothing and is timed by selectedAt');
   assert.match(probeProblem({selected: false, selectedAt: 7}), /not selected/);
+});
+
+// ---- the typing field's preparation (emptyField, shared by the probe cells and the Unicode matrix) -------------------
+
+// A scene app double observed through cua's own renderer: TextEdit's golden Skyshot with its text view's value and
+// focus as the double holds them, so the text the cell reads is the grammar the hold meets.
+const textEditDouble = ({value, focused}) => {
+  const skyshot = JSON.parse(readFileSync(fileURLToPath(new URL('../native-goldens/textedit/skyshot.json', import.meta.url)), 'utf8'));
+  const area = skyshot.nodes.find(n => n.identifier === 'First Text View');
+  const state = {value, focused, sets: []};
+  const observe = () => {
+    const s = structuredClone(skyshot), a = s.nodes.find(n => n.token === area.token);
+    a.value = state.value; delete a.valueMarkdown; a.numberOfCharacters = state.value.length; a.flags.focused = state.focused;
+    s.focused = state.focused ? area.token : null; s.selectedText = null;
+    return render(s, advanceNumbering(null, s));
+  };
+  return {state, app: {getAXState: async () => observe(), setValue: async (index, v) => { state.sets.push(index); state.value = v; }, click: async () => { state.focused = true; }}};
+};
+const runPrepared = async (scene, app) => {
+  globalThis.__apps = {[scene]: app};
+  const output = [];
+  try { await new (Object.getPrototypeOf(async () => {}).constructor)('nodeRepl', emptyFieldCell(scene))({write: t => output.push(t)}); }
+  finally { delete globalThis.__apps; }
+  return parseCell(output.join('\n'));
+};
+
+test('TextEdit: the text view stays findable once emptied (its identifier then prints as the line\'s lone, unlabelled part)', async () => {
+  const empty = textEditDouble({value: '', focused: true}).app;
+  assert.match(await empty.getAXState(), /^\t\t2 text entry area \(settable\) First Text View$/m, 'the renderer\'s lone-part rule');
+  for (const start of [{value: 'cua scene document\nLine 01', focused: false}, {value: '', focused: false}, {value: '', focused: true}]) {
+    const {state, app} = textEditDouble(start);
+    const result = await runPrepared('textedit', app);
+    assert.deepEqual(result?.value, {ready: true}, JSON.stringify(start));
+    assert.equal(state.value, '');
+    assert.equal(state.focused, true);
+    assert.deepEqual(state.sets, start.value === '' ? [] : [2]);
+  }
+  // The read-back finds it empty as well: the hash of '' and length 0, not "the field is not in the text".
+  const {app} = textEditDouble({value: '', focused: true});
+  globalThis.__apps = {textedit: app};
+  const output = [];
+  try { await new (Object.getPrototypeOf(async () => {}).constructor)('nodeRepl', fieldCheckCell('textedit', null))({write: t => output.push(t)}); }
+  finally { delete globalThis.__apps; }
+  assert.deepEqual(parseCell(output.join('\n'))?.value, {hash: EMPTY_HASH, length: 0});
+});
+
+test('Chrome and Electron prepare and read back exactly as before', () => {
+  const sha = s => createHash('sha256').update(s).digest('hex').slice(0, 16);
+  assert.equal(TEXT_FIELDS.chrome, 'indexOfTarget(ax, "Scene notes")');
+  assert.equal(TEXT_FIELDS.electron, 'indexOfTarget(ax, "Fixture text")');
+  // The bodies' sources as of 38ecfa07, before the TextEdit locator changed.
+  assert.deepEqual(['chrome', 'electron'].map(s => [sha(emptyField(s)), sha(fieldCheck(s, 'x')), sha(fieldCheck(s, null))]), [
+    ['7ca74a0117f13c23', '41639a7e0fddf612', '5cf0e282ecc58ddc'],
+    ['d1a0d9c29f49d7c6', '3495030f8aa3813c', 'bb2fde8b360fdc61'],
+  ]);
 });

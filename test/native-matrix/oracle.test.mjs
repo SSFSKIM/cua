@@ -71,6 +71,10 @@ test('a row passes only with the front unchanged, no activation and no route 4 o
   assert.equal(lost.ok, false);
   assert.equal(lost.focus, false);
   assert.equal(judgeInterference({...same, userPid: 7, focus: {appOwned: false, appPid: null, named: false}}).ok, false);
+  // Why the focus was not the user window's rides on the row, recorded and never judged.
+  const unnamed = {accessibility: true, appRead: false, appNamed: false, windowRead: false, windowNamed: false, deltas: null};
+  const unread = judgeInterference({...same, userPid: 7, focus: {appOwned: false, appPid: null, named: false, unnamed}});
+  assert.deepEqual(unread, {ok: false, frontmost: true, topWindow: true, focus: false, focusUnnamed: unnamed, activations: 0, route4: false});
   assert.equal(judgeInterference({...same, inputRoute: 4}).ok, false);
   const accepted = judgeInterference({...same, inputRoute: 4, accepted: {route4: ['AppKit text'], selfActivating: []}});
   assert.equal(accepted.ok, true);
@@ -88,4 +92,13 @@ test('a launch-path row: the launched app\'s own activation is declared for the 
   assert.equal(other.ok, false);
   assert.equal(other.declared, undefined);
   assert.equal(judgeInterference({...launch, activations: [{kind: 'activated', bundleId: 'com.apple.TextEdit', at: 1}], accepted: {route4: [], selfActivating: ['AppKit text']}}).ok, true);
+});
+
+test('the engine flag on an unowned top window is recorded, never judged', () => {
+  const unowned = engine => ({at: 1, frontmost: {pid: null, bundleId: 'com.x', owned: false}, topWindow: {ownerPid: null, number: null, bounds: null, owned: false, engine}});
+  assert.deepEqual(sameFront(unowned(true), unowned(false)), {frontmost: true, topWindow: true});
+  assert.deepEqual(sameFront(unowned(true), unowned(null)), sameFront(unowned(false), unowned(false)));
+  const judged = engine => judgeInterference({before: unowned(false), after: unowned(engine), scene: 'textedit'});
+  assert.deepEqual(judged(true), judged(false));
+  assert.equal(userWindowOf(unowned(true), 7), null);
 });

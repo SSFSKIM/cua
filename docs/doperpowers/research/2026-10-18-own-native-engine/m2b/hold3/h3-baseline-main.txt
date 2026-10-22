@@ -1,0 +1,21 @@
+20:05:24Z
+ShowSidebar=1
+ShowStatusBar=Error: Could not find key 'ShowStatusBar' in domain 'com.apple.finder'.
+ShowPathbar=Error: Could not find key 'ShowPathbar' in domain 'com.apple.finder'.
+com.apple.keylayout.ABC
+{
+    TextInputGlobalPropertyPerContextInput = 0;
+}
+    bundleID="com.apple.Terminal"
+SA:
+UNC:
+14013 UserNotificatio
+CAS:
+APPS:
+VNC:
+ENGJSON:
+1792384396
+fead3a16
+0c363f8f4512b24891ce22af50f6515f99af4b008bee09770245de03b8c7e80d
+approved.build=0c363f8f4512b24891ce22af50f6515f99af4b008bee09770245de03b8c7e80d approvedAt=2026-10-22T10:29:15.629Z
+ 5:05  up 1 day,  3:17, 2 users, load averages: 2.38 2.31 2.05

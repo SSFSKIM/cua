@@ -172,6 +172,19 @@ export function hscrollStartProblem(before) {
           : before.midpointShows !== true ? 'the text area\'s midpoint did not show before the scroll: the element scroll\'s preparation would move the view before the wheel'
             : null;
 }
+// The vertical start at which the text area's midpoint shows, from a scan of the vertical bar (residue-device.mjs
+// hscrollRead): the middle of the longest run of scanned values at which it showed, so the midpoint sits well inside
+// the view rather than at its edge; null when it showed at none. The probe reads only whether the midpoint shows, not
+// the frames, so the start is found by reading rather than computed. scan: [{vertical, midpointShows}], ascending.
+export function hscrollVerticalStart(scan) {
+  let best = null, run = null;
+  for (const {vertical, midpointShows} of scan) {
+    if (midpointShows !== true) { run = null; continue; }
+    run = run ? {...run, last: vertical, length: run.length + 1} : {first: vertical, last: vertical, length: 1};
+    if (!best || run.length > best.length) best = run;
+  }
+  return best ? Math.round((best.first + best.last) / 2 * 1000) / 1000 : null;
+}
 export function hscrollLane(lane, engine) {
   const before = finite(lane?.before?.horizontal), after = finite(lane?.after?.horizontal), scroll = lane?.scroll ?? null;
   const sent = engine === 'vendor' ? scroll?.found === true && scroll?.scrolled === true : scroll?.ok === true && scroll?.posted === true;

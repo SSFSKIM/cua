@@ -9,10 +9,10 @@ import {SkyComputerUseError} from '../../src/services/engine/protocol.mjs';
 import {validateCellResult} from '../../scripts/native-matrix/cell-result.mjs';
 import {DRY_ANSWERS} from '../../scripts/native-matrix/live.mjs';
 import {
-  CHROME_NOT_JUDGED, HSCROLL_DEFECT, RESIDUE_CELLS, hscrollLane, hscrollStartProblem, SELECT_BEFORE, SELECT_MINIMIZED, asCellResult, enablementVerdict, hscrollVerdict, minimizedSelectRanges,
+  CHROME_NOT_JUDGED, HSCROLL_DEFECT, RESIDUE_CELLS, hscrollLane, hscrollStartProblem, hscrollVerticalStart, SELECT_BEFORE, SELECT_MINIMIZED, asCellResult, enablementVerdict, hscrollVerdict, minimizedSelectRanges,
   minimizedSelectVerdict, modeAt, parseAccessibilityRecord, preparedEngineSettings, rangeOf, residueGaps, residueRows, route4Verdict,
 } from '../../scripts/native-matrix/residue-checks.mjs';
-import {HSCROLL_START, ROUTE4_HOME, enablementCheck, hscrollCheck, minimizedSelectCheck, route4Check, stripRestoredText, textViewOf} from '../../scripts/native-matrix/residue-device.mjs';
+import {HSCROLL_START, HSCROLL_VERTICAL_SCAN, ROUTE4_HOME, enablementCheck, hscrollCheck, hscrollRead, minimizedSelectCheck, route4Check, stripRestoredText, textViewOf} from '../../scripts/native-matrix/residue-device.mjs';
 
 const scratches = [];
 const scratch = () => { const dir = fs.realpathSync(fs.mkdtempSync(join(tmpdir(), 'cua-residue-'))); scratches.push(dir); return dir; };
@@ -60,7 +60,8 @@ function textEditEngine({minimized = false, selectWhileMinimized = 'lands', clic
   };
   const rangeNow = () => (state.selected ? rangeOf(state.value, state.selected) : {location: 0, length: 0});
   // The probe reads the text view and, given --set-horizontal and --set-vertical, first writes the bars (unless
-  // `settable` is off); `probeBroken` makes it fail, as a probe that cannot read does.
+  // `settable` is off); `probeBroken` makes it fail, as a probe that cannot read does. `midpointShows` is a Boolean, or
+  // a function of the vertical bar's value (a page view whose text area's midpoint shows only near the top).
   const probe = args => {
     assert.deepEqual(args.slice(0, 3), ['text-view', '--pid', String(TEXTEDIT.pid)]);
     if (state.probeBroken) throw new Error('the probe exited 2');
@@ -74,7 +75,7 @@ function textEditEngine({minimized = false, selectWhileMinimized = 'lands', clic
       state.calls.push({method: 'probe.set', args: [Number(args[4]), Number(args[6])]});
     }
     return {...(set ? {set} : {}), pid: TEXTEDIT.pid,
-      windows: [{minimized: state.minimized, textArea: {selectedRange: rangeNow(), scrollBars: {horizontal: state.horizontal, vertical: state.vertical, horizontalEnabled: state.horizontalEnabled ?? true}, midpointShows: state.midpointShows}}],
+      windows: [{minimized: state.minimized, textArea: {selectedRange: rangeNow(), scrollBars: {horizontal: state.horizontal, vertical: state.vertical, horizontalEnabled: state.horizontalEnabled ?? true}, midpointShows: typeof state.midpointShows === 'function' ? state.midpointShows(state.vertical) : state.midpointShows}}],
       focused: {role: state.minimized ? null : 'AXTextArea', textAreaOfWindow: state.minimized ? null : 0}};
   };
   return {state, client, probe};
@@ -310,9 +311,9 @@ test('enablementVerdict: a mode already on before the cell, or a close the mode 
 test('hscrollCheck: cua\'s lane sets both bars mid-way by the probe, then scrolls the text area right one page, read back before and after', async () => {
   const run = scratch(), {client, probe, state} = textEditEngine();
   const out = await hscrollCheck({record: TEXTEDIT, user: FINDER, client, screenshots: join(run, 'shots'), io: io({probe})});
-  const setAt = state.calls.findIndex(c => c.method === 'probe.set'), scrollAt = state.calls.findIndex(c => c.method === 'scroll');
+  const setAt = state.calls.findLastIndex(c => c.method === 'probe.set'), scrollAt = state.calls.findIndex(c => c.method === 'scroll');
   assert.ok(setAt >= 0 && setAt < scrollAt, 'the bars are set before the scroll');
-  assert.deepEqual(state.calls[setAt].args, [HSCROLL_START, HSCROLL_START]);
+  assert.deepEqual(state.calls[setAt].args, [HSCROLL_START, 0.5], 'a midpoint showing everywhere: the vertical start centred on it');
   assert.deepEqual(state.calls[scrollAt].args, {app: TEXTEDIT.app, element: GOLDEN.nodes.find(n => n.role === 'AXTextArea').token, direction: 'right', pages: 1});
   assert.deepEqual([out.before.horizontal, out.after.horizontal], [0.5, 0.75]);
   assert.equal(out.before.midpointShows, true, 'the element scroll\'s preparation has nothing to do');
@@ -392,6 +393,54 @@ test('hscroll: a disabled horizontal bar, or content the start\'s write did not 
   assert.match(rows[1].invalid, /^no horizontally scrollable content/);
   assert.equal(rows[1].declared, undefined);
   assert.equal(asCellResult('hscroll', liveOf('hscroll', {cua: cua(0.9), vendor: unscrollable})).verdict, 'no-verdict');
+});
+
+test('hscrollVerticalStart: the middle of the longest run of vertical values at which the midpoint showed, or null', () => {
+  const scan = shown => HSCROLL_VERTICAL_SCAN.map(vertical => ({vertical, midpointShows: shown.includes(vertical)}));
+  assert.equal(hscrollVerticalStart(scan([0.1, 0.2, 0.3])), 0.2);
+  assert.equal(hscrollVerticalStart(scan([0, 0.1])), 0.05);
+  assert.equal(hscrollVerticalStart(scan([0.1, 0.6, 0.7, 0.8])), 0.7, 'the longest run');
+  assert.equal(hscrollVerticalStart(scan(HSCROLL_VERTICAL_SCAN)), 0.5);
+  assert.equal(hscrollVerticalStart(scan([])), null);
+  assert.equal(hscrollVerticalStart([]), null);
+});
+
+test('hscrollRead with a start: the horizontal start, and the vertical one at which the text area\'s midpoint shows, written last', async () => {
+  // Hold 2a (2026-10-21): the wide page at 200% in page view, 0.5/0.5 showed the gap between pages, not the first page's midpoint.
+  const engine = textEditEngine();
+  engine.state.midpointShows = vertical => vertical >= 0.1 - 1e-9 && vertical <= 0.3 + 1e-9;
+  const before = await hscrollRead({record: TEXTEDIT, io: io({probe: engine.probe}), start: HSCROLL_START});
+  const sets = engine.state.calls.filter(c => c.method === 'probe.set').map(c => c.args);
+  assert.deepEqual(sets.slice(0, -1), HSCROLL_VERTICAL_SCAN.map(v => [HSCROLL_START, v]), 'every vertical candidate read, the horizontal start each time');
+  assert.equal(sets.at(-1)[0], HSCROLL_START);
+  assert.ok(Math.abs(sets.at(-1)[1] - 0.2) < 1e-9, 'the last write centres the midpoint\'s run');
+  assert.equal(before.midpointShows, true);
+  assert.equal(before.horizontal, HSCROLL_START);
+  assert.equal(before.set.horizontal.contentMoved, true, 'the start\'s own write moved the content');
+  assert.deepEqual(before.midpointShownAt.map(v => Math.round(v * 10) / 10), [0.1, 0.2, 0.3], 'the scan is recorded');
+  assert.equal(hscrollStartProblem(before), null);
+
+  const nowhere = textEditEngine();
+  nowhere.state.midpointShows = false;
+  const hidden = await hscrollRead({record: TEXTEDIT, io: io({probe: nowhere.probe}), start: HSCROLL_START});
+  assert.deepEqual(nowhere.state.calls.filter(c => c.method === 'probe.set').at(-1).args, [HSCROLL_START, HSCROLL_START], 'nowhere shown: mid-way, and refused');
+  assert.deepEqual(hidden.midpointShownAt, []);
+  assert.match(hscrollStartProblem(hidden), /midpoint did not show/);
+
+  const plain = textEditEngine();
+  const read = await hscrollRead({record: TEXTEDIT, io: io({probe: plain.probe})});
+  assert.equal(plain.state.calls.some(c => c.method === 'probe.set'), false, 'without a start, nothing is written');
+  assert.equal(Object.hasOwn(read, 'midpointShownAt'), false);
+});
+
+test('hscrollCheck: a midpoint that shows only off the mid-way vertical start is brought into view before the scroll, and the lane is judged', async () => {
+  const run = scratch(), engine = textEditEngine();
+  engine.state.midpointShows = vertical => vertical <= 0.2 + 1e-9;
+  const out = await hscrollCheck({record: TEXTEDIT, user: FINDER, client: engine.client, screenshots: join(run, 'shots'), io: io({probe: engine.probe})});
+  assert.equal(out.problem, undefined);
+  assert.equal(out.before.midpointShows, true);
+  assert.ok(engine.state.calls.findLastIndex(c => c.method === 'probe.set') < engine.state.calls.findIndex(c => c.method === 'scroll'));
+  assert.equal(hscrollLane(out, 'cua').direction, 'right');
 });
 
 test('hscrollLane: the direction is the sign of the bar\'s move from mid-way: right, left, or none', () => {

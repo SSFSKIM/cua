@@ -19,6 +19,8 @@
 //      of the driven target run with the oracle's reading before and after the act (./matrix-device.mjs read, the focus
 //      probe after); keys only through the key guard's user-window case; a paste or typeText act only between two alert
 //      checks; the windowless app (the "app with no window" refusal) brought up for its pairing and quit after it
+//   6a. hold 3's route A/B when the plan names it (`cell route-ab`, ./route-ab.mjs): the Electron fixture's button
+//      pressed behind the user window, route 1 forced against the engine's own route, each hold released between
 //   6b. the input sections (inputSections): the owner's input source and per-context preference saved on the device,
 //      the Latin source selected with the preference off; the probe cells (./probe-run.mjs: concurrent use on Finder and
 //      Chrome behind TextEdit's document, its sheet variant behind the Electron fixture, intervention fires and the
@@ -30,7 +32,8 @@
 //      time, the oracle read, the outcome read, and the launched process quit in a `finally`
 //   8. end_task; the watcher's liveness read once more, the watcher stopped and every activation it saw accounted for
 //      against the steps' device-clock windows (./oracle.mjs accountActivations); the lane closed; every journaled
-//      launch quit (an intent kept); the live hold's `recover` (the put-back: Finder's chrome and keys, every scene down, the input source
+//      launch quit (an intent kept); the Electron fixture's accessibility record exported into the run's output unless
+//      the launch path's down already did (exportElectronMode); the live hold's `recover` (the put-back: Finder's chrome and keys, every scene down, the input source
 //      and per-context preference, the engine stopped, the apps and Finder checked, the owner's front app by activation
 //      alone); the launch intents settled once the recovery stopped the serve and the engine (the put-back again when
 //      that quit an app); the approved home's cleanup (the engine stopped again); the engine and helper attestations
@@ -62,9 +65,10 @@ import {CLOSE_PANEL, findingCell, launchCell, launchCheckCell, OPEN_PANEL, selec
 import {accountActivations, judgeInterference, userWindowOf} from './oracle.mjs';
 import {CASES, caseId, OWNER_OPTIONS, SCENE_OF, WINDOWLESS_BUNDLE_ID} from './plan.mjs';
 import {probeCells} from './probe-run.mjs';
+import {ROUTE_AB, routeAbSection} from './route-ab.mjs';
 import {activate, caseRow, device, focusOf, js, mark, PASTING, push, read, sendKeys, step, Stop, TEXTEDIT} from './steps.mjs';
 import {ABC, UNICODE_PLAN, unicodeRowsOf} from './unicode-plan.mjs';
-import {unicodeSection} from './unicode-run.mjs';
+import {REFOCUS_THROUGH, unicodeSection} from './unicode-run.mjs';
 
 export {PASTING};
 
@@ -84,22 +88,23 @@ export const FULL_PLAN = Object.freeze({
   concurrent: CONCURRENT_USE.driven, sheet: true, intervention: ['fires', 'preAction'], unicode: UNICODE_PLAN,
   launch: [{scene: 'electron', user: 'finder'}],
 });
-const EMPTY_PLAN = {frontmost: [], speed: false, finding: false, background: [], concurrent: [], sheet: false, intervention: [], unicode: null, launch: []};
+const EMPTY_PLAN = {frontmost: [], speed: false, finding: false, background: [], concurrent: [], sheet: false, intervention: [], unicode: null, launch: [], routeAb: null};
 const NARROWABLE = [...FULL_PLAN.frontmost, 'windowless'];
 // A plan narrowed to one target (and for the background, one user): the registry's `cell <name> --scene --user`. Its id
 // is 'full' only for the whole matrix.
-export function planOf(kind, {scene = null, user = null} = {}) {
+export function planOf(kind, {scene = null, user = null, naturalOnly = false} = {}) {
+  if (naturalOnly && kind !== 'route-ab') throw new Error('--natural-only narrows the route-ab cell alone');
   if (scene !== null && !NARROWABLE.includes(scene)) throw new Error(`--scene is one of ${NARROWABLE.join(', ')}`);
   if (user !== null && !SCENE_ORDER.includes(user)) throw new Error(`--user is one of ${SCENE_ORDER.join(', ')}`);
-  const plan = narrowed(kind, {scene, user});
-  if (!plan.frontmost.length && !plan.background.length && !plan.launch.length && !plan.concurrent.length && !plan.sheet && !plan.intervention.length && !plan.unicode?.fields.length) {
+  const plan = narrowed(kind, {scene, user, naturalOnly});
+  if (!plan.frontmost.length && !plan.background.length && !plan.launch.length && !plan.concurrent.length && !plan.sheet && !plan.intervention.length && !plan.unicode?.fields.length && !plan.routeAb) {
     const option = OWNER_OPTIONS.find(o => kind === 'launch' && o.section === 'launch' && o.id.startsWith(`${scene}/`));
     throw new Error(`the ${kind} cell has nothing to run for${scene ? ` --scene ${scene}` : ''}${user ? ` --user ${user}` : ''}${option ? `: ${option.option} (${option.reason})` : ''}`);
   }
-  const id = kind === 'matrix' && scene === null && user === null ? 'full' : `${kind}${scene ? `:${scene}` : ''}${user ? `@${user}` : ''}`;
+  const id = kind === 'matrix' && scene === null && user === null ? 'full' : `${kind}${naturalOnly ? '-natural-only' : ''}${scene ? `:${scene}` : ''}${user ? `@${user}` : ''}`;
   return {...plan, id};
 }
-function narrowed(kind, {scene, user}) {
+function narrowed(kind, {scene, user, naturalOnly}) {
   // --scene names a target exactly: textedit is the document, openPanel its Open panel.
   const front = t => !scene || t === scene;
   const back = p => (!scene || p.driven === scene) && (!user || p.user === user);
@@ -117,6 +122,10 @@ function narrowed(kind, {scene, user}) {
     case 'pre-action-refusal': return {...EMPTY_PLAN, intervention: !scene || scene === 'textedit' ? ['preAction'] : []};
     // The Korean and Unicode matrix narrows to one field.
     case 'korean': return {...EMPTY_PLAN, unicode: {...UNICODE_PLAN, fields: UNICODE_PLAN.fields.filter(f => !scene || f === scene)}};
+    // Hold 3's route A/B (./route-ab.mjs): the Electron fixture driven, behind Finder's window unless --user names another;
+    // --natural-only runs the natural samples alone.
+    case 'route-ab': return {...EMPTY_PLAN, routeAb: (!scene || scene === ROUTE_AB.driven) && user !== ROUTE_AB.driven
+      ? {driven: ROUTE_AB.driven, user: user ?? ROUTE_AB.user, ...(naturalOnly ? {naturalOnly: true} : {})} : null};
     default: throw new Error(`no plan ${kind}`);
   }
 }
@@ -124,7 +133,9 @@ function narrowed(kind, {scene, user}) {
 export const scenesOf = plan => SCENE_ORDER.filter(id => plan.frontmost.some(t => SCENE_OF[t] === id)
   || plan.background.some(p => SCENE_OF[p.driven] === id || p.user === id) || plan.launch.some(l => l.scene === id || l.user === id)
   || (plan.concurrent ?? []).some(d => d === id || CONCURRENT_USE.user === id) || (plan.sheet && [CONCURRENT_USE_SHEET.driven, CONCURRENT_USE_SHEET.user].includes(id))
-  || (plan.intervention?.length && id === 'textedit') || unicodeRowsOf(plan.unicode ?? {fields: [], conditions: []}).some(r => r.field === id || r.user === id));
+  || (plan.intervention?.length && id === 'textedit') || (plan.routeAb && [plan.routeAb.driven, plan.routeAb.user].includes(id)) || unicodeRowsOf(plan.unicode ?? {fields: [], conditions: []}).some(r => r.field === id || r.user === id
+    // The Korean source is read only after its target is refocused through another scene (./unicode-run.mjs koreanIn).
+    || (r.condition === 'korean' && REFOCUS_THROUGH[r.field] === id)));
 
 // options: {device, host, engine, approvedRuntime, approvedEngine, out, runs, samples, run (the device directory), plan
 // (planOf's), cell (the registry name the results answer), sitting (the sitting's id, in every result)}; io: {ops
@@ -164,7 +175,7 @@ async function runOnce(options, io) {
   const rows = [], problems = [];
   const meta = {run: n, host, engine, samples, sitting, planId: plan.id ?? 'full',
     plan: {frontmost: plan.frontmost, background: plan.background, launch: plan.launch, speed: plan.speed, finding: plan.finding, concurrent: plan.concurrent ?? [],
-      sheet: plan.sheet ?? false, intervention: plan.intervention ?? [], unicode: plan.unicode ?? null},
+      sheet: plan.sheet ?? false, intervention: plan.intervention ?? [], unicode: plan.unicode ?? null, ...(plan.routeAb ? {routeAb: plan.routeAb} : {})},
     elicitations: [], keySkipped: []};
   let refused = false, complete = false, putBack, lanes = [{host, engine, build: null, version: null}];
   const write = () => {
@@ -211,8 +222,10 @@ async function runOnce(options, io) {
   // windows: every step's device-clock window [{kind, key, at}]; judged: the rows whose activations are charged, by key.
   // posted: the scenes a probe typed into, by when (./steps.mjs quiet); latin: the probe cells' source precondition;
   // perContextOff: the preference read off, the Unicode matrix's precondition for every condition but its own.
-  const ctx = {ops, run, rows, problems, meta, samples, n, engine, records: {}, lane: null, checkpoint, log, now, sleep: io.sleep ?? (ms => new Promise(done => setTimeout(done, ms))),
-    watcher: null, windows: [], judged: new Map(), posted: {}, latin: false, perContextOff: false};
+  // out: the run's output directory for its exports (none on a dry run); electronExported: the Electron fixture's
+  // accessibility record already exported (exportElectronMode).
+  const ctx = {ops, run, rows, problems, meta, samples, n, engine, approvedRuntime, approvedEngine, records: {}, lane: null, checkpoint, log, now, sleep: io.sleep ?? (ms => new Promise(done => setTimeout(done, ms))),
+    watcher: null, windows: [], judged: new Map(), posted: {}, latin: false, perContextOff: false, out: dryRun ? null : dir, electronExported: false};
   let prepared = null, pre = null, laneStarted = null;
   const helpers = [];
   const snapshot = () => {
@@ -259,7 +272,9 @@ async function runOnce(options, io) {
     if (!Number.isSafeInteger(watch?.pid)) throw new Error('the activation watcher did not report its pid: no row could prove its coverage');
     ctx.watcher = watch.pid;
     const stderrFile = dryRun ? undefined : join(mkdtempSync(join(tmpdir(), 'cua-matrix-serve-')), 'serve-stderr.txt');
-    ctx.lane = await connectLane({ops, pre, prepared, host, engine, connect: io.connect, bundleIds: [...SCENE_ORDER.map(id => SCENES[id].bundleId), WINDOWLESS_BUNDLE_ID], meta, stderrFile});
+    // Only the route A/B's serve may forward a click's forced route (CUA_ENGINE_SPIKE_ROUTE, src/services/engine/service.mjs).
+    ctx.lane = await connectLane({ops, pre, prepared, host, engine, connect: io.connect, bundleIds: [...SCENE_ORDER.map(id => SCENES[id].bundleId), WINDOWLESS_BUNDLE_ID], meta, stderrFile,
+      spikeRoute: Boolean(plan.routeAb && !plan.routeAb.naturalOnly)});
     for (const id of scenes) {
       // getApp emits its text: the scene's own window in front first, so that text is the run's.
       const front = activate(ctx, id);
@@ -270,6 +285,7 @@ async function runOnce(options, io) {
     snapshot();
     for (const target of plan.frontmost) await frontmostTarget(ctx, target, plan);
     for (const pairing of plan.background) await backgroundPairing(ctx, pairing);
+    if (plan.routeAb) await routeAbSection(ctx, plan.routeAb);
     await inputSections(ctx, plan);
     for (const launch of plan.launch) await launchRow(ctx, launch);
     snapshot();
@@ -282,6 +298,7 @@ async function runOnce(options, io) {
     if (ctx.watcher !== null) finishWatch(ctx);
     if (ctx.lane) { try { await ctx.lane.client.close(); } catch {} }
     quitLaunched(ctx);
+    exportElectronMode(ctx);
     putBack = settleLaunches(ctx, recover(ops, run, problems));
     try {
       const front = ops.scenes(['frontmost']);
@@ -336,6 +353,22 @@ async function inputSections(ctx, plan) {
       if (!ctx.meta.inputSource.restored) ctx.problems.push(`the owner's input source and per-context preference were not restored after the input sections${restored?.skipped ? ` (${restored.skipped})` : ''}; the put-back tries again`);
     } catch (error) { ctx.problems.push(`the input source's restore failed: ${error.message}; the put-back tries again`); }
   }
+}
+
+// The Electron fixture's whole accessibility record (./matrix-device.mjs electron-mode: its mode's readings with their
+// times, nothing else), exported into the run's output (ELECTRON_MODE_FILE) before the scene goes down (the launch row's
+// down, else the put-back), once: the rows' `electronMode` is the latest reading at each act, this the whole account.
+// A diagnostic: a failed export is recorded in meta.electronMode, never the run's problem.
+export const ELECTRON_MODE_FILE = 'electron-accessibility.jsonl';
+function exportElectronMode(ctx) {
+  if (ctx.electronExported || !ctx.records.electron) return;
+  ctx.electronExported = true;
+  try {
+    const {records} = ctx.ops.matrix(['electron-mode', '--run', ctx.run]) ?? {};
+    if (!Array.isArray(records)) { ctx.meta.electronMode = {error: 'the fixture wrote no accessibility record'}; return; }
+    if (ctx.out) fs.writeFileSync(join(ctx.out, ELECTRON_MODE_FILE), records.map(r => `${JSON.stringify(r)}\n`).join(''), {mode: 0o600});
+    ctx.meta.electronMode = {file: ELECTRON_MODE_FILE, records: records.length};
+  } catch (error) { ctx.meta.electronMode = {error: String(error.message).slice(0, 300)}; }
 }
 
 // The device's load averages and uptime (./matrix-device.mjs load), read before the run's work and after its put-back
@@ -495,7 +528,8 @@ async function speedCells(ctx, scene) {
 async function findingRows(ctx, scene) {
   await ctx.checkpoint();
   const r = await js(ctx, 'measure', `${scene}/finding`, findingCell(scene));
-  const base = {section: 'finding', engine: ctx.engine, sample: ctx.n, scene};
+  // Finder's list range the scored observation showed (./matrix-cells.mjs FINDER_FIRST_ROWS), on each of its rows.
+  const base = {section: 'finding', engine: ctx.engine, sample: ctx.n, scene, ...(r.value?.showing !== undefined ? {showing: r.value.showing} : {})};
   if (!r.ok || r.value?.invalid) {
     push(ctx, {...base, id: `${scene}/lines`, ok: false, invalid: r.value?.invalid ?? 'the finding cell failed', ...(r.ok ? {} : {error: r.error})});
     return;
@@ -518,6 +552,7 @@ async function launchRow(ctx, {scene, user}) {
   const app = ctx.records[scene]?.app;
   const front = activate(ctx, user);
   if (!front?.ok) return push(ctx, {...row, invalid: `the user window (${user}) did not come to the front`});
+  if (scene === 'electron') exportElectronMode(ctx);
   const down = step(ctx, ['down', scene]);
   if (!down?.down) return push(ctx, {...row, invalid: `the scene could not be brought down first (${down?.reason ?? 'no answer'})`});
   const before = read(ctx);

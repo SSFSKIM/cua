@@ -177,6 +177,7 @@ final class Server: @unchecked Sendable {
     lock.unlock()
     close(connection.fd)
     connection.endMenuInteraction()  // a held menu activation goes with its connection (MenuSpan.swift)
+    connection.endFocusHold()  // and its focus hold (FocusHold.swift)
     engine.connectionClosed(connection)  // its drives end; the intervention tap goes with the last (Intervention.swift)
     engine.webAccessibility.release(connection: connection.id)  // enablement no connection observes now (Enablement.swift)
   }
@@ -231,7 +232,10 @@ final class Server: @unchecked Sendable {
     lock.lock()
     let connections = Array(open.values)
     lock.unlock()
-    for connection in connections { connection.menuSpan.end() }  // held menu activations end before the exit
+    for connection in connections {  // held activations end before the exit
+      connection.menuSpan.end()
+      connection.endFocusHold()
+    }
     engine.webAccessibility.releaseAll()  // the engine's enablement goes with it
     unlink(paths.socket)
     Lifecycle.exit("shutdown requested", status: 0)

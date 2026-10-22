@@ -770,6 +770,41 @@ final class PasteActivationTests: XCTestCase {
   }
 }
 
+extension PasteActivationTests {
+  /// The paste rechecks the intervention guard once the registry's lock is held: a user event after the paste lock's
+  /// check, while the paste waited for the activation, stops it before the activation and the pasteboard (the second
+  /// review, finding 5).
+  func testAUserEventWhileThePasteWaitsForTheActivationStopsIt() {
+    let seam = GuardSeam(frontmost: 990_002)
+    let pasteboard = TestPasteboard()
+    pasteboard.userCopies("the owner's")
+    let engine = Engine(paths: ServerPaths(socket: "/tmp/x.sock", directory: "/tmp", lock: "/tmp/x.lock", usage: "/tmp/cua-engine-test-usage.json"),
+                        intervention: InterventionMonitor(listenGranted: { false }), screenLocked: { false },
+                        pasteboard: { pasteboard.access }, pasteActivation: seam.system)
+    let context = ExecutionContext(connection: ConnectionState(id: 1, fd: -1), receivedAt: 1, hidIdleMs: 0,
+                                   deadline: unixMilliseconds() + 60_000, lineage: nil)
+    let app = ResolvedApp(appPath: "/Applications/TextEdit.app", bundleIdentifier: nil, displayName: "TextEdit", running: nil)
+    var reads = 0
+    var lockedAtSecondCheck = false
+    // The first check (after the paste lock) sees nothing; the user's event lands before the second (under the registry).
+    let guarding = InterventionGuard(detection: true, verdict: .proceed, app: "TextEdit", start: 0, latest: {
+      reads += 1
+      if reads == 2 { lockedAtSecondCheck = engine.heldActivations.isLocked }
+      return reads >= 2 ? AttributedEvent(sequence: 1, at: 2) : nil
+    }, lastAtCheck: nil)
+    let target: pid_t = 990_001
+    let pasteTarget = PasteTarget(app: app, pid: target, application: AXUIElementCreateApplication(target), keyboard: target, guarding: guarding)
+    var meta = InputMeta(context)
+    var entered = 0
+    XCTAssertThrowsError(try engine.pasteOperation([.content(plain("x"), units: 1)], pasteTarget, context, entered: &entered, meta: &meta)) {
+      XCTAssertEqual(($0 as? EngineError)?.errorName, "userIntervened")
+    }
+    XCTAssertTrue(lockedAtSecondCheck, "the recheck runs under the registry's lock")
+    XCTAssertTrue(seam.posts.isEmpty, "no activation")
+    XCTAssertEqual(pasteboard.strings(), ["the owner's"], "the pasteboard was never touched")
+  }
+}
+
 // MARK: Which sources key and which paste
 
 /// The routing predicate (review finding 4): a source keys when its TIS type is a keyboard layout, whatever its script,

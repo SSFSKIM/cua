@@ -57,9 +57,9 @@ export function matrixOps(device, {exec = execFileSync} = {}) {
     live: args => cli(LIVE_DEVICE, args, {answersOnFailure: true}),
     matrix: args => cli(MATRIX_DEVICE, args),
     preflight: ({host, engine, approvedEngine, prepared}) => lastJson(ssh(preflightScript({host, engine, approvedEngine, prepared, surface: 'computer'}))),
-    serveSpec: ({pre, prepared, host, engine}) => {
+    serveSpec: ({pre, prepared, host, engine, spikeRoute = false}) => {
       const serve = serveCommand({device, checkout: pre.checkout, home: pre.home, userHome: prepared.userHome, configHome: prepared.configHome, tmpdir: prepared.tmpdir,
-        admission: prepared.admission, xSession: {}, host, engine, platform: 'darwin', surface: 'computer'});
+        admission: prepared.admission, xSession: {}, host, engine, platform: 'darwin', surface: 'computer', spikeRoute});
       return serve.command === 'ssh' ? {...serve, args: [...SSH_OPTIONS, ...serve.args.slice(0, -1), journaledScript(serve.args.at(-1), journal.run)]} : serve;
     },
     helpers: () => ssh(MATRIX_HELPER_SCRIPT),
@@ -67,21 +67,27 @@ export function matrixOps(device, {exec = execFileSync} = {}) {
   };
 }
 
-// The engine's input meta on a result, as the probe cells read it (src/services/engine/service.mjs, reset at each call
-// and set on an input error too): the action's interval, the engine's receipt time, the idle time it measured, the
-// characters a type_text entered, and `intervention: "off"` when detection is not running. The vendor reports none.
-// -> {actionInterval, receivedAt, hidIdleMs, entered, intervention}, each null when absent.
+// The engine's per-call meta on a result, as the probe cells and the web scenes' rows read it (src/services/engine/
+// service.mjs, reset at each call and set on an input error too): the action's interval, the engine's receipt time, the
+// idle time it measured, the characters a type_text entered, `intervention: "off"` when detection is not running, and
+// the observation's own diagnostics (`cua/observation`: web enablement, the web area, the settle; the result's _meta
+// only, never its text). Response meta merges across a cell's calls with each call resetting its keys, so a cell's meta
+// is its last facade call's. The vendor reports none. With route 3, the activation's guard time and what its click did
+// (`cua/activationClick`: "posted", or why it was skipped) when the service passes them on.
+// -> {actionInterval, receivedAt, hidIdleMs, entered, intervention, observation, activationGuardMs, activationClick}, each null when absent.
 export const engineMetaOf = meta => Object.fromEntries([['actionInterval', 'cua/actionInterval'], ['receivedAt', 'cua/receivedAt'], ['hidIdleMs', 'cua/hidIdleMs'],
-  ['entered', 'cua/entered'], ['intervention', 'cua/intervention']].map(([key, name]) => [key, meta?.[name] ?? null]));
+  ['entered', 'cua/entered'], ['intervention', 'cua/intervention'], ['observation', 'cua/observation'], ['activationGuardMs', 'cua/activationGuardMs'],
+  ['activationClick', 'cua/activationClick']].map(([key, name]) => [key, meta?.[name] ?? null]));
 
 // The lane: the serve of `host` and `engine` on the prepared home, an MCP client that accepts only the computer-use
 // approval of one of the scenes' apps (recorded in meta.elicitations), and its first cell. Every js result's engine
 // attestation is collected (meta.nativeEngine, ./native-baseline/engine.mjs attestEngine) and one naming another engine
 // stops the lane at once; the first result attests the host. -> {client, js(code, timeoutMs) -> {ok, value|error,
 // inCellMs, wallMs, route, engine, at}} (`at`: the device-clock window around the call, timedCode; `engine`: the last
-// call's input meta, engineMetaOf).
-export async function connectLane({ops, pre, prepared, host, engine, connect, bundleIds, meta, stderrFile, now = () => performance.now()}) {
-  const client = connect({...ops.serveSpec({pre, prepared, host, engine}), clientName: 'cua-native-matrix',
+// call's input meta, engineMetaOf). `spikeRoute` (the route A/B's lane only) lets the serve forward a click's forced
+// route (remote.mjs nativeEnvironment).
+export async function connectLane({ops, pre, prepared, host, engine, connect, bundleIds, meta, stderrFile, spikeRoute = false, now = () => performance.now()}) {
+  const client = connect({...ops.serveSpec({pre, prepared, host, engine, spikeRoute}), clientName: 'cua-native-matrix',
     answer: msg => (isSceneApproval(msg, bundleIds) ? {action: 'accept', content: {}} : {action: 'decline'}),
     onElicitation: (row, msg) => meta.elicitations.push({t: row.t, app: msg.params?._meta?.tool_params?.app ?? null, action: row.action}),
     stderrFile});
@@ -114,6 +120,8 @@ export async function connectLane({ops, pre, prepared, host, engine, connect, bu
 
 // ---- the dry run ------------------------------------------------------------------------------------------------------
 
+// The keyboard layout a dry source reads with: 2-Set's own once engaged, ABC otherwise.
+const dryLayout = id => (id === 'com.apple.inputmethod.Korean.2SetKorean' ? 'com.apple.keylayout.2SetHangul' : 'com.apple.keylayout.ABC');
 // What a dry run's device answers: made up, each consistent with the step that asks, so the whole run's sequence is
 // exercised (and logged) with nothing sent anywhere. `clock` is the made-up device clock of every `at`.
 export function dryOps({log, engine, approvedEngine = '/Users/owner/Library/Application Support/cua/engine/cua Engine.app', commit, clock = Date.now}) {
@@ -150,7 +158,10 @@ export function dryOps({log, engine, approvedEngine = '/Users/owner/Library/Appl
       const at = [clock(), clock()];
       switch (args[0]) {
         case 'compile': return {front: 'front-window-dry', windows: 'system-windows-dry'};
-        case 'read': return {reading: reading(), watcher: args.includes('--watcher'), at, ...(args.includes('--focus') ? {focus: {appOwned: true, appPid: front?.pid ?? null, named: true, valueHash: focusHash}} : {})};
+        case 'read': return {reading: reading(), watcher: args.includes('--watcher'), at, ...(args.includes('--focus') ? {focus: {appOwned: true, appPid: front?.pid ?? null, named: true, valueHash: focusHash}} : {}),
+          ...(args.includes('--electron-mode') ? {electronMode: {enabled: true, at: at[0]}} : {})};
+        case 'electron-mode': return {records: [{at: 0, enabled: false, source: 'start'}]};
+        case 'electron-counters': return {answer: {seq: 0, at: 0, counts: {appDidBecomeActive: 0, appDidResignActive: 0}}, at};
         case 'probe': {
           if (args[1] !== 'finish') {
             const flag = name => args[args.indexOf(`--${name}`) + 1];
@@ -167,7 +178,8 @@ export function dryOps({log, engine, approvedEngine = '/Users/owner/Library/Appl
         }
         case 'source':
           if (args[1] === 'select') source = args[args.indexOf('--source') + 1];
-          return {answer: {save: {kept: false, saved: {source: 'com.apple.keylayout.ABC', perContext: false}}, current: {current: source}, select: {selected: true, current: source},
+          return {answer: {save: {kept: false, saved: {source: 'com.apple.keylayout.ABC', perContext: false}}, current: {current: source, layout: dryLayout(source)},
+            select: {selected: true, current: source, layout: dryLayout(source)},
             'per-context': {perContext: args[args.indexOf('--value') + 1] === 'on'}, restore: {sourceRestored: true, perContextRestored: true}}[args[1]] ?? {}, at};
         case 'step':
           if (args[1] === 'activate') { front = records[args[2]] ?? front; focusHash = sha256Hex(''); }

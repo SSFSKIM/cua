@@ -28,17 +28,27 @@
 //   one that does not set a key leaves no earlier call's value standing as its own): codex/toolSurface (the policy's);
 //   cua/nativeEngine {engine, version, build} on every result; cua/engineMs, the client's time around the socket round
 //   trip of the method's own request, null when it never reached the engine (a decline, an index the service refused);
-//   cua/settle on an observation whose settle hit its cap; cua/screenshotOmitted on an observation whose screenshot the
+//   cua/settle on an observation whose settle hit its cap; cua/observation on an observation whose timings carry any of
+//   the engine's own diagnostics the harness reads (OBSERVATION_DIAGNOSTICS: web enablement, the web area's wait, the
+//   settle's status, duration and counts; the whitelist's scalars only), which, like every key here, rides in the tool
+//   result's _meta and never in its content, the model's text; cua/screenshotOmitted on an observation whose screenshot the
 //   engine did not take, with the reason ("windowMinimized": a minimized window is observed in place with no screenshot,
 //   and the facade's getScreenshot then fails "Screenshot unavailable"); on input results and input errors the engine's meta as
 //   cua/inputRoute, cua/actionInterval {startedAt, endedAt}, cua/receivedAt, cua/hidIdleMs, and when the engine sends
-//   them cua/activationGuardMs, cua/pointUnconfirmed, cua/intervention ("off": intervention detection is not running,
+//   them cua/activationGuardMs, cua/activationClick (route 3's activation click: "posted", or why it was skipped),
+//   cua/pointUnconfirmed, cua/intervention ("off": intervention detection is not running,
 //   no Input Monitoring grant), cua/entered (the UTF-16 units a type_text entered, on its result and on the error that
 //   stopped it) and cua/routeAdvice (the per-app route-4 override, once route 3's guard has failed three actions in a
 //   row for the app). cua/serviceMs is the wrapper's (src/services/sky.mjs).
 // - The unknown secondary action's sentence: the vendor's ends with the decimal element index, which only the service
 //   knows, so the engine's invalidSecondaryAction is answered as `<action> is not a valid secondary action for <index>`
 //   (R/F-helper-logic.md §16.3), its code, name and meta kept.
+// - A forced click route, for the native matrix's route A/B only: a click's `spikeRoute` is forwarded when the worker's
+//   environment carries CUA_ENGINE_SPIKE_ROUTE=1, read once when the service is made. The product launch never puts it
+//   there (src/runtime/launch.mjs drops it with every other ambient value); only the native matrix's route-ab serve adds
+//   it to its launch, through the harness serve's launch hook (scripts/native-baseline/spike-route.mjs). Without it no
+//   spike switch reaches the engine from model code (bd1136f1), and with it only the click's route can be chosen: the
+//   policy, the forbidden list and the approval run as for any click.
 import {createEngineClient} from './client.mjs';
 import {createObservations} from './observations.mjs';
 import {createPolicy, toolSurface} from './policy.mjs';
@@ -60,13 +70,37 @@ const FIELDS = {
   set_value: ['value', 'concealed'],
   type_text: ['text', 'concealed'],
 };
+// The click routes the engine's spike switch names (native/engine Input.swift, `spikeRoute`), forwarded only under
+// CUA_ENGINE_SPIKE_ROUTE=1.
+const SPIKE_ROUTES = new Set(['1', "2'", '2', '3']);
 // The keys a call sets only sometimes, reset at its start.
 const PER_CALL = {
   'cua/engineMs': null, 'cua/settle': null, 'cua/screenshotOmitted': null, 'cua/inputRoute': null, 'cua/actionInterval': null, 'cua/receivedAt': null, 'cua/hidIdleMs': null,
-  'cua/activationGuardMs': null, 'cua/pointUnconfirmed': null, 'cua/intervention': null, 'cua/entered': null, 'cua/routeAdvice': null,
+  'cua/activationGuardMs': null, 'cua/activationClick': null, 'cua/pointUnconfirmed': null, 'cua/intervention': null, 'cua/entered': null, 'cua/routeAdvice': null, 'cua/observation': null,
 };
 // The engine's optional input meta keys, carried under cua/<key> when it sends them.
-const OPTIONAL_INPUT_META = ['activationGuardMs', 'pointUnconfirmed', 'intervention', 'entered', 'routeAdvice'];
+const OPTIONAL_INPUT_META = ['activationGuardMs', 'activationClick', 'pointUnconfirmed', 'intervention', 'entered', 'routeAdvice'];
+
+// The Skyshot timings the native matrix keeps per call (scripts/native-matrix/lane.mjs engineMetaOf), so a row on a
+// web-shaped app shows how its observations went: whether the app is web-shaped and Chromium's, what web enablement read
+// before it touched the attribute and which attribute it set, whether the web area was seen or waited for (and how
+// long), and each settle's status, duration and counts. A bounded whitelist of scalars (a string of at most 64
+// characters), and the notification counts as at most 16 names to integers; never the text, the tree or the timings of
+// every phase.
+const OBSERVATION_DIAGNOSTICS = ['launched', 'reopened', 'webShaped', 'enablementPrior', 'enabled', 'chromium', 'webAreaSeen', 'webAreaFound', 'webAreaWaitMs',
+  ...['openSettle', 'settle'].flatMap(prefix => ['', 'Ms', 'Notifications', 'NotificationCounts', 'BusyWalks', 'BusyVetoes', 'Observed', 'QuietAtMs'].map(part => prefix + part)),
+  'settleTreeReused'];
+const DIAGNOSTIC_STRING_CHARS = 64, DIAGNOSTIC_COUNTS = 16;
+const isScalar = value => typeof value === 'boolean' || Number.isFinite(value) || (typeof value === 'string' && value.length <= DIAGNOSTIC_STRING_CHARS);
+const isCounts = value => value !== null && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length <= DIAGNOSTIC_COUNTS
+  && Object.entries(value).every(([name, n]) => name.length <= DIAGNOSTIC_STRING_CHARS && Number.isSafeInteger(n));
+// -> the whitelisted diagnostics of `timings`, or null when it carries none.
+function observationDiagnostics(timings) {
+  if (timings === null || typeof timings !== 'object') return null;
+  const kept = OBSERVATION_DIAGNOSTICS.filter(key => Object.hasOwn(timings, key) && (key.endsWith('NotificationCounts') ? isCounts(timings[key]) : isScalar(timings[key])))
+    .map(key => [key, timings[key]]);
+  return kept.length ? Object.fromEntries(kept) : null;
+}
 
 // An observation of another bundle than the approved one (internal: the call is redone once).
 class IdentityChanged extends Error {}
@@ -87,6 +121,7 @@ function inputMeta(meta) {
 export function createService({nodeRepl, client = null}) {
   const identities = new Map();   // app string -> Promise of resolve_app's answer, kept for the connection
   const observations = createObservations();
+  const spikeRoutes = nodeRepl?.env?.CUA_ENGINE_SPIKE_ROUTE === '1';
 
   const setMeta = meta => nodeRepl?.setResponseMeta?.(meta);
   const engine = () => {
@@ -148,6 +183,8 @@ export function createService({nodeRepl, client = null}) {
     const text = observations.observe(target.appPath, skyshot, {disableDiff: input.disableDiff === true});
     if (skyshot.settle) setMeta({'cua/settle': skyshot.settle});
     if (skyshot.screenshotOmitted) setMeta({'cua/screenshotOmitted': skyshot.screenshotOmitted});
+    const diagnostics = observationDiagnostics(skyshot.timings);
+    if (diagnostics) setMeta({'cua/observation': diagnostics});
     return {app: target.appPath, screenshot: skyshot.screenshot?.url ? {url: skyshot.screenshot.url} : null, text};
   }
 
@@ -157,6 +194,10 @@ export function createService({nodeRepl, client = null}) {
     const index = input.element_index;
     const args = {app: input.app};
     for (const field of FIELDS[method]) if (Object.hasOwn(input, field)) args[field] = input[field];
+    if (spikeRoutes && method === 'click' && Object.hasOwn(input, 'spikeRoute')) {
+      if (!SPIKE_ROUTES.has(input.spikeRoute)) throw new Error(`cua: spikeRoute must be one of 1, 2', 2 or 3 [invalid_spike_route]`);
+      args.spikeRoute = input.spikeRoute;
+    }
     let lineage = observations.lineage(target.appPath);
     if (index !== undefined) {
       const element = observations.element(target.appPath, index);

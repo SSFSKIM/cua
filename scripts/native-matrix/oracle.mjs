@@ -106,7 +106,8 @@ export function judgeInterference({before, after, activations = [], inputRoute =
   const others = activations.filter(e => !own.includes(e));
   const selfAccepted = own.length > 0 && accepted.selfActivating.includes(family);
   const ok = frontmost && topWindow && others.length === 0 && (own.length === 0 || selfAccepted) && (!route4 || route4Accepted);
-  const out = {ok, frontmost, topWindow: same.topWindow, focus: focusKept, activations: activations.length, route4};
+  // Why the focus probe did not name the user window (./matrix-device.mjs ownedFocus), recorded and never judged.
+  const out = {ok, frontmost, topWindow: same.topWindow, focus: focusKept, ...(focus?.unnamed ? {focusUnnamed: focus.unnamed} : {}), activations: activations.length, route4};
   if (own.length && !selfAccepted && frontmost && topWindow && others.length === 0)
     return {...out, declared: {kind: 'self-activating', cause: `${launched} activated at its launch: the family's own activation, recorded for the owner's acceptance`}};
   if (route4Accepted) return {...out, declared: {kind: 'route4-accepted', cause: `route 4 on ${family}, a family the owner accepted`}};

@@ -8,17 +8,29 @@
 //   compile --run <dir>
 //       the two window readers (scripts/accept/front-window.swift, ./system-windows.swift) compiled once into the run
 //       directory and reused by every read after (an interpreted read costs seconds)
-//   read --run <dir> --watcher <pid> [--focus <pid,x,y,w,h>]
+//   read --run <dir> --watcher <pid> [--focus <pid,x,y,w,h>] [--approved-runtime <home> --approved-engine <bundle>]
+//        [--electron-mode latest]
 //       the oracle's reading (./oracle.mjs ownedReading): the frontmost application and the top on-screen window, the
 //       run's processes by pid and any other application by bundle id only; whether the activation watcher <pid> still
 //       runs (`watch-activations` of the approved bundle), so a row's coverage is proven at both its ends; with --focus,
-//       the approved bundle's `--probe focus` naming that window (one of the run's)
+//       the approved bundle's `--probe focus` naming that window (one of the run's); with --electron-mode, the Electron
+//       fixture's accessibility mode as its record last showed it, {enabled, at} or null (read after the window closes)
+//   electron-mode --run <dir>
+//       the Electron fixture's whole accessibility record (its app.isAccessibilitySupportEnabled readings, written to
+//       the scene's user-data directory: fixtures/electron/main.js), each line kept as {at, enabled, source} only
+//       -> {records}, null while no Electron scene is up or it wrote none. The run exports it before the scene goes down
+//   electron-counters --run <dir>
+//       the Electron fixture's side-effect counters (fixtures/electron/counters.js: the app's did-become-active and
+//       did-resign-active, the window's, the page's and the text field's focus and blur), read from the scene's user-data
+//       directory -> {answer: {seq, at, counts} | null, at}; null while no Electron scene is up or it wrote none
 //   step <scenes-mac.mjs arguments>
 //       one scenes command (activate, down) timed on the device clock -> {answer, at}
 //   alerts baseline|check --run <dir>
 //       the paste rows' system-alert watch (./live-checks.mjs alertWatch, the live paste check's): the screen's windows
 //       at the baseline kept in the run directory (numbers and owners only), then each check against it -> {abort, export}
-//       (sanitized: alert processes' bundle ids and layers, title keywords, counts); no alert's text is ever read
+//       (sanitized: alert processes' bundle ids and layers, title keywords, counts); no alert's text is ever read. A check
+//       given --approved-runtime <home> and --approved-engine <bundle> leaves out the windows of the engine under test
+//       (enginePids: an owner whose executable lies inside either), as it does the run's own
 //   launched intent <scene> --run <dir>
 //       journaled before a launch row's act is sent: the scene's bundle id, the device's time and the pids of that
 //       bundle running at that moment -> {at, pids}. A controller that dies during or after the act leaves this, and
@@ -72,7 +84,9 @@ import {FRONT_WINDOW_SCRIPT} from '../accept/key-guard.mjs';
 import {main as scenesMain, readState, SCENES} from '../repl-parity/scenes-mac.mjs';
 import {alertWatch} from './live-checks.mjs';
 import {defaultIo, PROBE_MS, processTable, restoreInputSource, saveInputSource} from './live-device.mjs';
+import {FIXTURE_ACCESSIBILITY_FILE, FIXTURE_COUNTERS_FILE} from './fixtures/electron-fixture.mjs';
 import {ownedReading} from './oracle.mjs';
+import {parseAccessibilityRecord} from './residue-checks.mjs';
 
 const SCRIPT = fileURLToPath(import.meta.url);
 const SYSTEM_WINDOWS_SCRIPT = fileURLToPath(new URL('./system-windows.swift', import.meta.url));
@@ -105,25 +119,80 @@ export const ownedPids = (state, launches = []) => [...Object.values(state?.scen
 // ---- reads ---------------------------------------------------------------------------------------------------------------
 
 // The focus probe's report as it may leave the device: the value's hash only for the named window, which read() names
-// only when it is the run's own. -> {appOwned, appPid, named, valueHash}.
-export function ownedFocus(report, owned) {
+// only when it is the run's own. When the named window was not the focused one, `unnamed` records why, never judged:
+// the probe's own Accessibility grant, whether it read a focused application and window at all, whether each was the
+// named window's pid, and (only when the focused window is that owned pid's) its frame minus the named bounds, per axis.
+// Another app's pid or bounds never leave. -> {appOwned, appPid, named, valueHash, unnamed?}.
+export function ownedFocus(report, owned, window = null) {
   const pid = report?.focusedApp?.pid ?? null;
   const mine = Number.isInteger(pid) && owned.includes(pid), named = report?.named === true;
   const hash = named && /^[0-9a-f]{64}$/.test(report?.valueHash ?? '') ? report.valueHash : null;
-  return {appOwned: mine, appPid: mine ? pid : null, named, valueHash: hash};
+  const out = {appOwned: mine, appPid: mine ? pid : null, named, valueHash: hash};
+  if (named || !window) return out;
+  const focused = report?.focusedWindow ?? null, windowNamed = Number.isInteger(focused?.pid) && focused.pid === window.pid;
+  const frame = focused?.bounds, axes = ['x', 'y', 'width', 'height'];
+  const deltas = windowNamed && frame && axes.every(k => Number.isFinite(frame[k])) ? Object.fromEntries(axes.map(k => [k, frame[k] - window.bounds[k]])) : null;
+  return {...out, unnamed: {accessibility: typeof report?.accessibility === 'boolean' ? report.accessibility : null, appRead: Number.isInteger(pid),
+    appNamed: pid === window.pid, windowRead: Number.isInteger(focused?.pid), windowNamed, deltas}};
 }
 
-// The oracle's reading. io: {frontWindow(), probe(args), state(), launched(), watcherRuns(pid)}.
-export function read({focus = null, watcher = null}, io) {
+// `pid,x,y,w,h` as the window it names.
+const windowOf = text => { const [pid, x, y, width, height] = text.split(',').map(Number); return {pid, bounds: {x, y, width, height}}; };
+
+// The oracle's reading. An unowned top window also records `engine`, recorded and never judged (./oracle.mjs sameFront
+// does not read it): whether its owner runs from the engine under test's roots (enginePids; the vendor engine's cursor
+// overlay), false when it runs from elsewhere, null when unresolved or no roots were given; never its pid. Only the
+// owner's raw pid is kept during the reading; its path is resolved (a `ps`) after `at` closes and after the focus probe,
+// so the lookup never shifts the reading's timings.
+// io: {frontWindow(), probe(args), state(), launched(), watcherRuns(pid), executablePaths(pids), electronRecord()}.
+export function read({focus = null, watcher = null, approvedRuntime = null, approvedEngine = null, electronMode = false}, io) {
   const from = Date.now();
   const owned = ownedPids(io.state(), io.launched());
-  const out = {reading: ownedReading(io.frontWindow(), owned), watcher: Number.isSafeInteger(watcher) && io.watcherRuns(watcher)};
+  const raw = io.frontWindow();
+  const out = {reading: ownedReading(raw, owned), watcher: Number.isSafeInteger(watcher) && io.watcherRuns(watcher)};
+  const unownedTop = out.reading.topWindow?.owned === false ? {pid: raw.topWindow.ownerPid} : null;
   if (focus !== null) {
     if (!/^\d+,-?\d+(\.\d+)?,-?\d+(\.\d+)?,\d+(\.\d+)?,\d+(\.\d+)?$/.test(focus)) throw new Error('--focus needs pid,x,y,w,h');
     if (!owned.includes(Number(focus.split(',')[0]))) throw new Error('--focus names a window of a process the run does not own');
-    out.focus = ownedFocus(io.probe(['focus', '--window', focus]), owned);
+    out.focus = ownedFocus(io.probe(['focus', '--window', focus]), owned, windowOf(focus));
   }
-  return {...out, at: [from, Date.now()]};
+  const at = [from, Date.now()];
+  if (unownedTop) out.reading.topWindow.engine = engineOwns(unownedTop.pid, [approvedRuntime, approvedEngine], io);
+  if (electronMode) {
+    const latest = electronModeRecord(io).records?.at(-1) ?? null;
+    out.electronMode = latest && {enabled: latest.enabled, at: latest.at};
+  }
+  return {...out, at};
+}
+
+// The Electron fixture's accessibility record, parsed (./residue-checks.mjs parseAccessibilityRecord) and kept to its
+// three fields. io: {electronRecord()}: the record's text, or null. -> {records: [{at, enabled, source}] | null}.
+export function electronModeRecord(io) {
+  const text = io.electronRecord();
+  return {records: text === null ? null : parseAccessibilityRecord(text).map(({at, enabled, source}) => ({at, enabled, source: typeof source === 'string' ? source.slice(0, 16) : null}))};
+}
+// A file's text from the Electron scene's user-data directory in the run's scene state, or null.
+function electronFileIn(dir, name) {
+  const userDataDir = readState(dir).scenes?.electron?.userDataDir;
+  if (typeof userDataDir !== 'string') return null;
+  try { return fs.readFileSync(join(userDataDir, name), 'utf8'); } catch (error) { if (error.code === 'ENOENT') return null; throw error; }
+}
+const electronRecordIn = dir => electronFileIn(dir, FIXTURE_ACCESSIBILITY_FILE);
+// The fixture's counters, kept to their fields (the file is rewritten whole, so a read sees one complete count).
+// -> {seq, at, counts} | null.
+function electronCountersIn(dir) {
+  const text = electronFileIn(dir, FIXTURE_COUNTERS_FILE);
+  if (text === null) return null;
+  const {seq, at, counts} = JSON.parse(text);
+  return {seq, at, counts: Object.fromEntries(Object.entries(counts ?? {}).filter(([, n]) => Number.isSafeInteger(n)))};
+}
+
+// Whether `pid` runs from the roots: true, false, or null when it does not resolve or no roots were given.
+function engineOwns(pid, roots, io) {
+  const prefixes = rootPrefixes(roots);
+  if (!prefixes.length || !Number.isInteger(pid)) return null;
+  const path = (io.executablePaths ?? executablePaths)([pid]).get(pid);
+  return typeof path === 'string' ? underRoots(path, prefixes) : null;
 }
 
 // Whether `pid` is still the activation watcher (the approved bundle's `--probe watch-activations`).
@@ -190,18 +259,23 @@ export function probeFinish(io) {
 
 // ---- the input source ----------------------------------------------------------------------------------------------------
 
+// A source reading as it leaves the device: the current source's id and the keyboard layout key events are translated
+// with (the probe's `layout`): a 2-Set selection made while a field holds focus reads 2SetKorean with the layout still
+// ABC, the input method not engaged (MAWS B2).
+const reading = probed => ({current: probed?.id ?? null, layout: probed?.layout ?? null});
+
 // io: {probe(args), probeStuck(), readPerContext(), writePerContext(value), saveInput(), restoreInput({keep})} (the restore
 // holds behind a probe that may still act itself: ./live-device.mjs restoreInputSource).
 export async function source(action, {id, value} = {}, io) {
   switch (action) {
     case 'save': { const out = io.saveInput(); return {kept: out.kept, saved: {source: out.saved?.source?.id ?? null, perContext: out.saved?.perContext ?? null}}; }
-    case 'current': return {current: io.probe(['input-source', 'current'])?.id ?? null};
+    case 'current': return reading(io.probe(['input-source', 'current']));
     case 'select': {
       if (!/^[A-Za-z0-9._-]+$/.test(id ?? '')) throw new Error('--source needs an input source id');
       const busy = io.probeStuck?.();
       if (busy) throw new Error(`an earlier probe may still act: ${busy}`);
       const out = io.probe(['input-source', id]);
-      return {selected: out?.selected === true, current: io.probe(['input-source', 'current'])?.id ?? null};
+      return {selected: out?.selected === true, ...reading(io.probe(['input-source', 'current']))};
     }
     case 'per-context':
       if (!['on', 'off'].includes(value)) throw new Error('--value is on or off');
@@ -220,8 +294,31 @@ export const deviceLoad = (io = {loadavg, uptime, cpus: () => cpus().length}) =>
 
 // ---- the alert watch -----------------------------------------------------------------------------------------------------
 
-// io: {windows(), state(), launched(), dir}.
-export function alerts(action, io) {
+// The processes of the engine under test: an owner whose executable lies inside the approved runtime's home or the
+// approved engine bundle (the vendor engine's own cursor overlay is an on-screen window of its own). Exact by path
+// prefix with a trailing separator, so a sibling directory never matches; an owner whose path does not resolve is not
+// the engine. -> [pid].
+export function enginePids(pids, roots, pathsOf) {
+  const prefixes = rootPrefixes(roots);
+  if (!prefixes.length || !pids.length) return [];
+  const paths = pathsOf(pids);
+  return pids.filter(pid => underRoots(paths.get(pid), prefixes));
+}
+const rootPrefixes = roots => roots.filter(Boolean).flatMap(root => { try { return [root, fs.realpathSync(root)]; } catch { return [root]; } })
+  .map(root => `${root.replace(/\/+$/, '')}/`);
+const underRoots = (path, prefixes) => typeof path === 'string' && prefixes.some(p => path.startsWith(p));
+
+// Each live pid's executable path (ps's comm, the full path on macOS); a pid that is gone is absent. -> Map pid -> path.
+export function executablePaths(pids, {exec = execFileSync} = {}) {
+  if (!pids.length) return new Map();
+  let out;
+  try { out = exec('/bin/ps', ['-o', 'pid=,comm=', '-p', pids.join(',')], {encoding: 'utf8', env: {...process.env, LC_ALL: 'C'}, timeout: 10_000}); }
+  catch (error) { out = String(error.stdout ?? ''); }
+  return new Map(String(out).split('\n').map(line => /^\s*(\d+) (.+)$/.exec(line)).filter(Boolean).map(m => [Number(m[1]), m[2]]));
+}
+
+// io: {windows(), state(), launched(), executablePaths(pids), dir}; roots: the engine under test's (enginePids), for a check.
+export function alerts(action, io, {approvedRuntime = null, approvedEngine = null} = {}) {
   const file = join(io.dir, ALERT_BASELINE_FILE);
   if (action === 'baseline') {
     const kept = io.windows().map(w => ({number: w.number}));
@@ -230,7 +327,10 @@ export function alerts(action, io) {
   }
   if (action !== 'check') throw new Error('alerts baseline|check');
   if (!fs.existsSync(file)) throw new Error('no alert baseline in the run directory: run alerts baseline first');
-  const watch = alertWatch(JSON.parse(fs.readFileSync(file, 'utf8')), io.windows(), {runPids: ownedPids(io.state(), io.launched())});
+  const windows = io.windows(), owned = ownedPids(io.state(), io.launched());
+  const others = [...new Set(windows.map(w => w.ownerPid))].filter(pid => Number.isInteger(pid) && !owned.includes(pid));
+  const engine = enginePids(others, [approvedRuntime, approvedEngine], pids => (io.executablePaths ?? executablePaths)(pids));
+  const watch = alertWatch(JSON.parse(fs.readFileSync(file, 'utf8')), windows, {runPids: [...owned, ...engine]});
   return {abort: watch.abort, export: watch.export};
 }
 
@@ -366,7 +466,7 @@ function parse(argv) {
   }
   return {command, positional, flags};
 }
-const USAGE = 'usage: matrix-device.mjs compile|read|alerts|launched|probe|source|load|windowless --run <dir> … | step <scenes-mac.mjs arguments>';
+const USAGE = 'usage: matrix-device.mjs compile|read|electron-mode|electron-counters|alerts|launched|probe|source|load|windowless --run <dir> … | step <scenes-mac.mjs arguments>';
 const sleep = ms => new Promise(done => setTimeout(done, ms));
 
 export async function main(argv, {io: given = {}} = {}) {
@@ -384,13 +484,19 @@ export async function main(argv, {io: given = {}} = {}) {
     app: () => windowlessApp(), open: app => run('/usr/bin/open', ['-n', '-g', '-a', app]), sleep, now: Date.now,
     probeLaunch: live.probeLaunch, probeAwait: live.probeAwait, probeStuck: live.probeStuck, readPerContext: live.readPerContext, writePerContext: live.writePerContext,
     saveInput: () => saveInputSource({io: live}), restoreInput: ({keep}) => restoreInputSource({io: live, keep}),
+    electronRecord: () => electronRecordIn(dir),
     ...given,
   };
+  const roots = {approvedRuntime: flags['approved-runtime'] ?? null, approvedEngine: flags['approved-engine'] ?? null};
   switch (command) {
     case 'compile': return {front: basename(compiled(FRONT_WINDOW_SCRIPT, dir)), windows: basename(compiled(SYSTEM_WINDOWS_SCRIPT, dir))};
-    case 'read': return read({focus: flags.focus ?? null, watcher: flags.watcher === undefined ? null : Number(flags.watcher)}, io);
+    case 'read':
+      if (flags['electron-mode'] !== undefined && flags['electron-mode'] !== 'latest') throw new Error('--electron-mode latest is the one reading');
+      return read({focus: flags.focus ?? null, watcher: flags.watcher === undefined ? null : Number(flags.watcher), electronMode: flags['electron-mode'] === 'latest', ...roots}, io);
+    case 'electron-mode': return electronModeRecord(io);
+    case 'electron-counters': return timed(() => electronCountersIn(dir));
     case 'step': return timed(() => (io.scenes ?? scenesMain)(argv.slice(1)));
-    case 'alerts': return {...alerts(positional[0], io), at: [Date.now(), Date.now()]};
+    case 'alerts': return {...alerts(positional[0], io, roots), at: [Date.now(), Date.now()]};
     case 'launched':
       if (positional[0] === 'intent') return launchIntent({scene: positional[1]}, io);
       if (positional[0] === 'record') return recordLaunch({scene: positional[1], since: Number(flags.since)}, io);

@@ -332,6 +332,39 @@ test('a text whose state cua\'s check refuses is removed unread: the fixed text 
   assert.equal(after.calls.filter(c => c[1] === 'down').length, 4, 'every scene is brought down');
 });
 
+test('each scene\'s side reads record cua\'s engine timings in meta as they come, on either lane: recorded, never judged', async () => {
+  // The engine's observation diagnostics (the enablement and the web-area wait among them), whatever keys a build sends:
+  // no list of them is fixed here, since a build may drop one (521eb9d8 drops webAreaSeen).
+  const timings = {webShaped: true, chromium: true, enableMs: 0.4, enablementPrior: {AXManualAccessibility: false}, enabled: 'AXManualAccessibility',
+    webAreaWaitMs: 1000.5, webAreaFound: false, launched: true, focusRead: 'outsideTheWalk', settleNotifications: 4};
+  for (const engine of ['vendor', 'cua']) {
+    const device = fakeDevice({verify: (scene, n, command) => (scene === 'electron' && command === 'observe' ? {scene, build: BUILD, skyshot: {nodes: []}, timings, frame: null, problems: []}
+      : scene === 'electron' && command === 'verify' && n === 1 ? {scene, build: BUILD, skyshot: null, timings, frame: null, problems: [{code: 'page_filling', message: 'filling'}]} : null)});
+    const run = await runLane({engine, device});
+    assert.equal(run.code, 0, run.meta.error);
+    // Electron's fixed state took two attempts (the first verify refused): every side read is there, in order.
+    assert.deepEqual(run.meta.scenes.electron.sideReads.map(r => [r.read, r.step]),
+      [['observe', 'fixed 1'], ['verify', 'fixed 1'], ['observe', 'fixed 2'], ['verify', 'fixed 2'], ['verify', 'action']]);
+    // The refused read's too; cua's engine answered each, on the vendor lane as well.
+    assert.deepEqual(run.meta.scenes.electron.sideReads[1], {read: 'verify', step: 'fixed 1', engine: 'cua', problems: ['page_filling'], frame: null, timings});
+    assert.equal(run.meta.scenes.electron.sideReads[4].timings, null, 'a read with no timings records null');
+    assert.deepEqual(run.meta.scenes.textedit.sideReads.map(r => r.timings), [null, null, null]);
+  }
+});
+
+test('each scene\'s frame is recorded in meta: every side read\'s, and the scene\'s as the read that kept its fixed text saw it', async () => {
+  const frameOf = (scene, n) => ({x: 10 + n, y: 20, width: 700, height: 500});
+  const device = fakeDevice({verify: (scene, n, command) => (command === 'verify' && scene === 'finder' && n === 1
+    ? {scene, build: BUILD, skyshot: null, timings: null, frame: frameOf(scene, 0), problems: [{code: 'other_window', message: 'not yet'}]}
+    : {scene, build: BUILD, skyshot: {nodes: []}, timings: null, frame: frameOf(scene, n), problems: []})});
+  const run = await runLane({engine: 'cua', device});
+  assert.equal(run.code, 0, run.meta.error);
+  assert.deepEqual(run.meta.scenes.finder.sideReads.map(r => [r.read, r.step, r.frame.x]),
+    [['observe', 'fixed 1', 11], ['verify', 'fixed 1', 10], ['observe', 'fixed 2', 12], ['verify', 'fixed 2', 12], ['verify', 'action', 13]]);
+  assert.deepEqual(run.meta.scenes.finder.frame, frameOf('finder', 2), 'the verify that kept the fixed text');
+  for (const scene of SCENE_IDS) assert.ok(run.meta.scenes[scene].frame, `${scene} has its frame`);
+});
+
 test('lane cells that fail leave the suite complete but the settle cell without its readings: no verdict, never a pass', async () => {
   const device = fakeDevice();
   const lane = fakeLane(device, {engine: 'cua', fail: (kind, scene) => (kind === 'action' && scene !== 'textedit' ? 'activationFailed' : null)});

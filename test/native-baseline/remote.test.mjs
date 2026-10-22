@@ -32,6 +32,9 @@ test('a macOS computer serve and its preflight name the requested native engine;
   assert.match(serveCommand({...at, engine: 'cua'}).args[3], /CUA_REPL_HOST=vendor CUA_NATIVE_ENGINE=cua CUA_SHIM_SURFACES=computer /);
   assert.doesNotMatch(serveCommand(at).args[3], /CUA_NATIVE_ENGINE/);
   assert.throws(() => serveCommand({...at, engine: 'sky'}), /engine must be vendor or cua/);
+  // The route A/B's switch only when asked for.
+  assert.match(serveCommand({...at, engine: 'cua', spikeRoute: true}).args[3], / CUA_ENGINE_SPIKE_ROUTE=1[ "]/);
+  assert.doesNotMatch(serveCommand({...at, engine: 'cua'}).args[3], /CUA_ENGINE_SPIKE_ROUTE/);
   const bundle = '/Users/someone/Library/Application Support/cua/engine/cua Engine.app';
   const prepared = {home: at.home, userHome: at.userHome, configHome: '/c', xSession: {}};
   const script = preflightScript({host: 'vendor', engine: 'cua', approvedEngine: bundle, prepared});

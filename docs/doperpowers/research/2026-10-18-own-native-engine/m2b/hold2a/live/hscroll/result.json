@@ -1,0 +1,254 @@
+{
+  "schema": "native-matrix-cell-1",
+  "command": "hscroll",
+  "device": "mini",
+  "started": "2026-10-22T01:41:06.402Z",
+  "problems": [
+    "the cua lane stopped: the text area's midpoint did not show before the scroll: the element scroll's preparation would move the view before the wheel; nothing was sent",
+    "the vendor lane stopped: the text area's midpoint did not show before the scroll: the element scroll's preparation would move the view before the wheel; nothing was sent",
+    "no valid evidence: hscroll/textedit-wide-page/right (cua): the text area's midpoint did not show before the scroll: the element scroll's preparation would move the view before the wheel; nothing was sent",
+    "no valid evidence: hscroll/textedit-wide-page/right (vendor): the text area's midpoint did not show before the scroll: the element scroll's preparation would move the view before the wheel; nothing was sent"
+  ],
+  "complete": false,
+  "pass": false,
+  "controller": {
+    "commit": "c6e2cdba555479053e9635aa8ff19822a65b5d12",
+    "dirty": false
+  },
+  "runDir": "/Users/new/Library/Caches/cua-harness/native-live",
+  "checkout": {
+    "commit": "c6e2cdba555479053e9635aa8ff19822a65b5d12",
+    "dirty": false
+  },
+  "engine": {
+    "bundlePath": "/Users/new/Library/Application Support/cua/engine/cua Engine.app",
+    "build": "f804291e4c8f4cd40fd947c74e3446162eaa8f42b82ccd3b50264cab9b5ee18e",
+    "engineVersion": "0.1.0",
+    "approvedAt": "2026-10-22T00:14:54.671Z",
+    "signature": {
+      "kind": "identity",
+      "identityMatches": true
+    }
+  },
+  "frontmost": {
+    "bundleId": "com.apple.Terminal"
+  },
+  "engineStopAtStart": {
+    "wasRunning": false
+  },
+  "vendor": {
+    "home": "/Users/new/Library/Application Support/cua-spike-vendor",
+    "release": "26.928.40906-darwin-arm64",
+    "hostAttestation": {
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 226,
+        "cua/serviceMs": 110.921,
+        "cua/nativeEngine": {
+          "engine": "vendor",
+          "version": "26.924.1001281",
+          "build": "26.928.40906-darwin-arm64"
+        },
+        "cua/taskId": "a6bc84cc-dd0a-4560-afa5-993e051f64aa",
+        "cua/nativeExecution": {
+          "path": "/Users/new/Library/Application Support/cua-spike-vendor/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node",
+          "version": "v24.21.0"
+        },
+        "cua/sandboxLaunch": {
+          "launcher": "cua-compat",
+          "tmpdir": "session"
+        }
+      }
+    },
+    "engineAttestation": {
+      "engine": "vendor",
+      "version": "26.924.1001281",
+      "build": "26.928.40906-darwin-arm64"
+    }
+  },
+  "elicitations": [
+    {
+      "t": "2026-10-22T01:41:22.401Z",
+      "app": "com.apple.TextEdit",
+      "action": "accept"
+    }
+  ],
+  "preparationCleanup": {
+    "removed": true,
+    "restored": [],
+    "helpersStopped": [],
+    "engineStop": {
+      "wasRunning": true,
+      "pid": 35745
+    }
+  },
+  "check": {
+    "cua": {
+      "problem": "the text area's midpoint did not show before the scroll: the element scroll's preparation would move the view before the wheel; nothing was sent",
+      "before": {
+        "horizontal": 0.5,
+        "vertical": 0.5,
+        "horizontalEnabled": true,
+        "midpointShows": false,
+        "set": {
+          "horizontal": {
+            "requested": 0.5,
+            "error": 0,
+            "contentMoved": true,
+            "written": true
+          },
+          "vertical": {
+            "requested": 0.5,
+            "written": true,
+            "error": 0
+          }
+        }
+      }
+    },
+    "vendor": {
+      "before": {
+        "horizontal": 0.5,
+        "vertical": 0.5,
+        "horizontalEnabled": true,
+        "midpointShows": false,
+        "set": {
+          "vertical": {
+            "requested": 0.5,
+            "written": true,
+            "error": 0
+          },
+          "horizontal": {
+            "error": 0,
+            "requested": 0.5,
+            "contentMoved": true,
+            "written": true
+          }
+        }
+      },
+      "problem": "the text area's midpoint did not show before the scroll: the element scroll's preparation would move the view before the wheel; nothing was sent"
+    },
+    "verdict": "no verdict: a lane is not valid"
+  },
+  "recovery": {
+    "ok": true,
+    "killed": [],
+    "survivors": [],
+    "awaited": [],
+    "probeWait": null,
+    "untouched": []
+  },
+  "putBack": {
+    "plan": [
+      "finder-teardown",
+      "scenes-down",
+      "engine-stop",
+      "apps-check",
+      "finder-check",
+      "front-app"
+    ],
+    "steps": {
+      "finder-teardown": {
+        "ok": true,
+        "steps": 2
+      },
+      "scenes-down": {
+        "ok": true,
+        "down": true
+      },
+      "engine-stop": {
+        "ok": true,
+        "wasRunning": true,
+        "pid": 35959
+      },
+      "apps-check": {
+        "ok": true,
+        "running": {
+          "textedit": 0,
+          "chromeForTesting": 0,
+          "electronFixture": 0
+        }
+      },
+      "finder-check": {
+        "ok": true,
+        "runWindowGone": true,
+        "windowsAsAtBegin": true,
+        "keysAsSaved": true
+      },
+      "front-app": {
+        "ok": true,
+        "bundleId": "com.apple.Terminal",
+        "reactivated": true,
+        "inFront": true
+      }
+    },
+    "ok": true
+  },
+  "frontApp": {
+    "saved": "com.apple.Terminal",
+    "now": "com.apple.Terminal",
+    "same": true
+  },
+  "finished": "2026-10-22T01:41:32.329Z",
+  "cell": "hscroll",
+  "lanes": [
+    {
+      "host": null,
+      "engine": "cua",
+      "build": "f804291e4c8f4cd40fd947c74e3446162eaa8f42b82ccd3b50264cab9b5ee18e",
+      "version": "0.1.0"
+    },
+    {
+      "host": "vendor",
+      "engine": "vendor",
+      "build": "26.928.40906-darwin-arm64",
+      "version": null
+    }
+  ],
+  "verdict": "no-verdict",
+  "rows": [
+    {
+      "section": "residue",
+      "id": "hscroll/textedit-wide-page/right",
+      "engine": "cua",
+      "sample": 1,
+      "ok": false,
+      "invalid": "the text area's midpoint did not show before the scroll: the element scroll's preparation would move the view before the wheel; nothing was sent",
+      "scene": "textedit",
+      "user": "finder",
+      "regime": "background",
+      "method": "scroll",
+      "case": "right, 1 page, wide page",
+      "inputRoute": null,
+      "outcome": {
+        "direction": null,
+        "before": 0.5,
+        "after": null,
+        "scrollError": "not sent"
+      }
+    },
+    {
+      "section": "residue",
+      "id": "hscroll/textedit-wide-page/right",
+      "engine": "vendor",
+      "sample": 1,
+      "ok": false,
+      "invalid": "the text area's midpoint did not show before the scroll: the element scroll's preparation would move the view before the wheel; nothing was sent",
+      "scene": "textedit",
+      "user": "finder",
+      "regime": "background",
+      "method": "scroll",
+      "case": "right, 1 page, wide page",
+      "outcome": {
+        "direction": null,
+        "before": 0.5,
+        "after": null,
+        "scrollError": "not sent",
+        "verdict": "no verdict: a lane is not valid"
+      }
+    }
+  ]
+}

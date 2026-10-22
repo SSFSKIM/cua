@@ -11,7 +11,7 @@ import {TEXTEDIT_BUNDLE_ID} from '../repl-parity/scenes-mac.mjs';
 import {ownershipProblems} from './goldens-device.mjs';
 import {activationsOf, attempt, getState, until} from './live-device.mjs';
 import {enablementOf, minimizeButton, textArea} from './live-checks.mjs';
-import {SELECT_BEFORE, SELECT_MINIMIZED, hscrollStartProblem, minimizedSelectRanges, modeAt, parseAccessibilityRecord, preparedEngineSettings, rangeOf} from './residue-checks.mjs';
+import {SELECT_BEFORE, SELECT_MINIMIZED, hscrollStartProblem, hscrollVerticalStart, minimizedSelectRanges, modeAt, parseAccessibilityRecord, preparedEngineSettings, rangeOf} from './residue-checks.mjs';
 
 // ---- `--probe text-view` -----------------------------------------------------------------------------------------
 
@@ -204,28 +204,43 @@ export async function enablementCheck({record, io, screenshots}) {
 // ---- hscroll -----------------------------------------------------------------------------------------------------
 
 // The scene's horizontal and vertical scroll-bar values (after `settleMs`, so a scroll's animation has ended) and whether
-// its text area's midpoint shows, by the probe: what both lanes are judged by. With `start`, the probe first writes that
-// value to both scroll bars (the harness's own AX path, neither lane's), so a lane starts mid-way, a scroll either way
-// shows, and the text area's midpoint shows (an element scroll's preparation then has nothing to move); the reading
-// carries whether the horizontal bar is enabled and the write whether it moved the content (hscrollStartProblem).
+// its text area's midpoint shows, by the probe: what both lanes are judged by. With `start`, the probe writes both scroll
+// bars (the harness's own AX path, neither lane's): the horizontal one to `start`, so a lane starts mid-way and a scroll
+// either way shows, and the vertical one where the text area's midpoint shows, so an element scroll's preparation has
+// nothing to move before the wheel. In TextEdit's page view zoomed in, the text area is the first page and its midpoint
+// can be out of view at a mid-way vertical start (hold 2a, 2026-10-21: the gap between the pages showed); the probe
+// tells only whether the midpoint shows, so each value of HSCROLL_VERTICAL_SCAN is written and read, and the last write
+// takes the middle of the run where it showed (residue-checks.mjs hscrollVerticalStart), or mid-way when it showed at
+// none (then refused by hscrollStartProblem). The reading carries whether the horizontal bar is enabled, the last write
+// whether it moved the content, and `midpointShownAt`, the scanned values at which the midpoint showed.
 export const HSCROLL_START = 0.5;
+export const HSCROLL_VERTICAL_SCAN = Object.freeze(Array.from({length: 11}, (_, i) => i / 10));
 export async function hscrollRead({record, io, settleMs = 0, start = null}) {
   if (settleMs > 0) await io.sleep(settleMs);
-  const setting = start === null ? [] : ['--set-horizontal', String(start), '--set-vertical', String(start)];
-  let answer = null, read;
-  try {
-    answer = io.probe(['text-view', '--pid', String(record.pid), ...setting]);
-    read = textViewOf(answer);
-  } catch (error) { read = {error: String(error.message).slice(0, 300)}; }
-  const set = start === null ? {} : {set: answer?.set ?? null};
+  const probe = (horizontal, vertical) => {
+    const setting = horizontal === null ? [] : ['--set-horizontal', String(horizontal), '--set-vertical', String(vertical)];
+    let answer = null, read;
+    try {
+      answer = io.probe(['text-view', '--pid', String(record.pid), ...setting]);
+      read = textViewOf(answer);
+    } catch (error) { read = {error: String(error.message).slice(0, 300)}; }
+    return {answer, read};
+  };
+  let scan = null, vertical = null;
+  if (start !== null) {
+    scan = HSCROLL_VERTICAL_SCAN.map(v => ({vertical: v, midpointShows: probe(start, v).read.midpointShows === true}));
+    vertical = hscrollVerticalStart(scan) ?? HSCROLL_START;
+  }
+  const {answer, read} = probe(start, vertical);
+  const set = start === null ? {} : {set: answer?.set ?? null, midpointShownAt: scan.filter(s => s.midpointShows).map(s => s.vertical)};
   return read.error ? {error: read.error, ...set}
     : {horizontal: read.horizontal, vertical: read.vertical, horizontalEnabled: read.horizontalEnabled, midpointShows: read.midpointShows, ...set};
 }
 export const HSCROLL_SETTLE_MS = 1_000;
 
 // cua's lane of the horizontal scroll: the run's wide-page TextEdit behind the run's Finder window, its text area
-// started mid-way (HSCROLL_START, by the probe), scrolled right by one page through the engine, read back by position
-// before and after. A start that gives no evidence (hscrollStartProblem: no bar, not mid-way, no horizontally
+// started mid-way with its midpoint in view (hscrollRead with HSCROLL_START, by the probe), scrolled right by one page
+// through the engine, read back by position before and after. A start that gives no evidence (hscrollStartProblem: no bar, not mid-way, no horizontally
 // scrollable content, the midpoint hidden) sends nothing. A failed read after the scroll is kept as its error, never as
 // a position.
 export async function hscrollCheck({record, user, client, io, screenshots}) {

@@ -46,6 +46,9 @@ export function openApp({app, files = [], args = [], newInstance = false}, {exec
 }
 // Activates the running app at `app` (no -g: bringing it to the front is the point; no -n: the running instance).
 export function activateApp(app, {exec = run} = {}) { exec('/usr/bin/open', ['-a', app]); }
+// The folder opened again in the running app (`open -a <app> <folder>`, activating it): Finder brings the window already
+// showing the folder to the front rather than opening another (scenes-mac.mjs activateScene raises the run's window so).
+export function showFolder(app, folder, {exec = run} = {}) { exec('/usr/bin/open', ['-a', app, folder]); }
 // The owner's front app put back at the end, addressed by the process recorded in front (./activate-process.swift):
 // `open -b` would take the bundle id alone, so it could pick another instance of the app or launch one when the
 // recorded process has exited. -> {activated, reason?}.

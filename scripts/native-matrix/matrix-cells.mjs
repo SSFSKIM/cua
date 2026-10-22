@@ -99,14 +99,27 @@ globalThis.app = __app;
 globalThis.__scratch = windowTitleOf(ax);
 return {inFront: inFront(ax)};`);
 
+// Finder's list viewport differs between runs (another run's scroll, Finder's own restore), and which of the scene's
+// file targets the text shows with it: before the scored observation the list is brought to its first rows as the
+// Finder rows' prepare does (./plan.mjs rowPrepare: scrolled back up when it is not there), then verified by the list's
+// `(showing a-b of n items)`. A list that does not show from its first row is invalid, never scored. Leaves `ax` the
+// scored observation and `showing` its range (null when unreadable).
+export const FINDER_FIRST_ROWS = `let list = indexOfPart(ax, "ID", "ListView");
+if (list !== null && (showingOf(ax, list)?.from ?? 0) > 0) { await __app.scroll(list, "up", 20); ax = await observe(); list = indexOfPart(ax, "ID", "ListView"); }
+const showing = list === null ? null : showingOf(ax, list);
+if (showing?.from !== 0) return {invalid: "Finder's list did not start at its first rows", showing};
+if (!inFront(ax)) return {invalid: "the scene window was not the app's front window", showing};`;
+
 // The finding-elements scorer (part 5) on one scene: its ten targets (scripts/repl-parity/scenes-mac.mjs, fixed from the
 // fixtures' ground truth before either engine's text was seen) each searched by name in one observation's text, its
 // index then resolved by an action that does nothing (NO_SUCH_ACTION: the engine refuses it by the index's element, so
-// the refusal proves the index named one), and the text's line measures. -> {inFront, targets: [{id, found, resolved}],
-// lines, named, unclassified, ids}.
+// the refusal proves the index named one), and the text's line measures. Finder's list first starts at its first rows
+// (FINDER_FIRST_ROWS), its visible range returned as `showing`. -> {inFront, targets: [{id, found, resolved}], lines,
+// named, unclassified, ids, showing?}, or {invalid, showing?}.
 export const findingCell = scene => cell(`${prelude(scene)}
-const ax = await observe();
+let ax = await observe();
 if (!inFront(ax)) return {invalid: "the scene window was not the app's front window"};
+${scene === 'finder' ? FINDER_FIRST_ROWS : 'const showing = undefined;'}
 const targets = [];
 for (const target of ${j(SCENES[scene].targets)}) {
   const index = findTarget(ax, target);
@@ -118,7 +131,7 @@ for (const target of ${j(SCENES[scene].targets)}) {
   targets.push({id: target.id, found: index !== null, resolved});
 }
 const {lines, named, unclassified} = namedLines(ax);
-return {inFront: true, targets, lines, named, unclassified, ids: idCount(ax)};`);
+return {inFront: true, targets, lines, named, unclassified, ids: idCount(ax), ...(showing === undefined ? {} : {showing})};`);
 
 // Whether the Open panel is TextEdit's front window, observed until `open` holds or the deadline passes (the panel opens
 // and closes asynchronously). -> {panel, documentInFront}.

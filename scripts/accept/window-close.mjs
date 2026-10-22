@@ -9,13 +9,23 @@ import {promisify} from 'node:util';
 import {FRONT_WINDOW_SCRIPT} from './key-guard.mjs';
 
 const run = promisify(execFile);
+const windowBounds = w => Object.fromEntries(['x', 'y', 'width', 'height'].map(key => [key, w.bounds?.[key] ?? null]));
+
+// Shared by onboarding's one-visible-window admission and the TextEdit fixture's windowless cleanup (#196).
+// Only explicitly off-screen windows are excluded. TextEdit's internal off-screen windows are evidence (bounds
+// only), not documents to close; unknown visibility remains in the blocking set. No window title crosses here.
+export function windowInventory(windows) {
+  return {visible: windows.filter(w => w.onScreen !== false),
+    offScreenCount: windows.filter(w => w.onScreen === false).length,
+    offScreenBounds: windows.filter(w => w.onScreen === false).map(windowBounds)};
+}
 
 // Every layer-0 window of `pids` ([{ownerPid, number, onScreen}]), on screen or not, or null when a reading failed.
 // closeVerdict keys windows by owner and number only; onScreen is for the bind check (scripts/probe/lib.mjs bindRefusal).
 export async function readWindows(pids, {probe = async pid => JSON.parse((await run('/usr/bin/swift', [FRONT_WINDOW_SCRIPT, 'windows', String(pid)], {timeout: 120_000})).stdout)} = {}) {
   try {
     const readings = await Promise.all(pids.map(pid => probe(pid)));
-    return readings.flatMap(reading => reading.windows.map(w => ({ownerPid: w.ownerPid, number: w.number, onScreen: w.onScreen === true})));
+    return readings.flatMap(reading => reading.windows.map(w => ({ownerPid: w.ownerPid, number: w.number, onScreen: w.onScreen === true, bounds: windowBounds(w)})));
   } catch { return null; }
 }
 

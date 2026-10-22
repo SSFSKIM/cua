@@ -7,13 +7,15 @@
 //   - it types a benign marker (and, with a secret, the reference {{secret:<KEY>}}),
 //     reads it back through CUA (accessibility text and a screenshot, recorded as metadata), and closes only that
 //     window (super+w; TextEdit autosaves a file-backed document into the temporary file, never a user location),
-//     counting the close as confirmed only when TextEdit then reports no window at all;
+//     confirming the close from window-server IDs, never by observing a windowless TextEdit again;
 //   - it removes its own directory (and a store it created) in `finally`, and ends every server it started.
 // It never touches another TextEdit window or document. At the end it quits TextEdit only when this run started it, by
 // the identity it recorded right after its `open` (./fixture-app.mjs: the one pid absent before the run and launched
 // after it began, with that launch time; none or more than one records none, and a TextEdit running before is left as
-// it is), and only when its close step confirmed TextEdit then held no window at all, so no document of anyone else's
-// can be in it (unconfirmed, that TextEdit is left running and the step is BLOCKED). It then hands the front back to the application that was frontmost before the run (#157).
+// it is), after the document close is confirmed and a fresh window-server read finds no on-screen layer-0 window.
+// TextEdit's internal off-screen windows do not block quitting (#196); only their count and bounds are recorded.
+// A visible window, foreign PID or unreadable list leaves the process running and the step BLOCKED. It then hands the
+// front back to the application that was frontmost before the run (#157).
 // The engine (#117 M3.4; docs/doperpowers/specs/2026-10-18-own-native-engine-design.md, acceptance 8): the caller pins
 // one (`engine`, accept-native's --engine, scripts/probe/pinned-engine.mjs), every server runs with CUA_NATIVE_ENGINE set
 // to it, and every js result must attest it (`_meta['cua/nativeEngine']`, the engine's version and build as the launcher
@@ -152,7 +154,6 @@ export async function runTextEdit({home, engine = null, secret = false, forbid =
   const own = ownWindow(docName);
   let docDir = null;      // created exclusively by this invocation
   let docOpen = false;
-  let soleWindowConfirmed = false;  // the close step saw TextEdit's processes hold no window at all once the fixture's closed
   let guiStopped = null;  // why no further input may be sent
   const sessions = [];
 
@@ -351,7 +352,6 @@ ${out(`{own: ${own}, valueIsMarker: ${own} && __value === ${JSON.stringify(marke
         else {
           const verdict = await awaitClose({before, read: () => readWindows(pids)});
           if (verdict.closed) docOpen = false;
-          soleWindowConfirmed = verdict.alone;
           record(STEP.closeDoc, verdict.status, verdict.detail);
         }
       }
@@ -373,13 +373,14 @@ ${out(`{own: ${own}, valueIsMarker: ${own} && __value === ${JSON.stringify(marke
     }
     if (opened) {
       const app = await cleanUpFixtureApp({name: 'TextEdit', bundle: TEXTEDIT_BUNDLE, run: {before: textEditBefore, front: frontBefore, launch: launched?.launch ?? null},
-        alone: soleWindowConfirmed && !guiStopped, frontmost});
+        alone: !docOpen && !guiStopped, readWindows: () => readWindows(textEditPids()), frontmost});
       observations.textEdit.quitByFixture = app.quit.length > 0;
+      if (app.windowCheck) observations.textEdit.quitWindowCheck = app.windowCheck;
       observations.front = {before: app.front.previous, atCleanup: app.front.before, after: app.front.after, restored: app.front.restored};
       const kept = app.keptBefore.length ? `; pid ${app.keptBefore.join(', ')}, running before, left as it is` : '';
       const [quitStatus, quitDetail] = app.remaining.length ? ['FAIL', `TextEdit pid ${app.remaining.join(', ')}, started by this run, did not exit after SIGTERM; quit it by hand`]
         : app.quit.length ? ['PASS', `quit the TextEdit this run started (pid ${app.quit.join(', ')}, identified by its launch right after the open)${kept}`]
-          : app.leftRunning ? ['BLOCKED', `the TextEdit this run started (pid ${app.leftRunning}) was left running because its windows could not be confirmed to be only the fixture's (${guiStopped ?? 'the close step did not see TextEdit hold no window at all'}); nothing was signalled. Quit it by hand once nothing of yours is open in it`]
+          : app.leftRunning ? ['BLOCKED', `the TextEdit this run started (pid ${app.leftRunning}) was left running because its windows could not be confirmed to be only the fixture's (${guiStopped ?? app.windowCheck?.detail ?? 'the fixture document close was not confirmed'}); nothing was signalled. Quit it by hand once nothing of yours is open in it`]
             : app.launch ? ['PASS', `nothing to quit: pid ${app.launch.pid}, the TextEdit this run started, is no longer that process (it exited, or the pid now has another launch time)${kept}`]
               : launched?.candidates.length > 1 ? ['BLOCKED', `nothing quit: TextEdit pids ${launched.candidates.join(', ')} all started after the run began, so which one this run started is ambiguous and none was recorded as its own; check TextEdit by hand`]
                 : textEditBefore.length ? ['PASS', `nothing to quit: TextEdit was running before the run (pid ${textEditBefore.join(', ')}) and is left as it is`]

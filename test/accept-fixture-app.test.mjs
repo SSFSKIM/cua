@@ -62,14 +62,43 @@ test('restoreFront activates the previous front only when another app holds it, 
 const startedAt = Date.parse('2026-10-18T10:00:05.000Z');
 const ours = {pid: 42, at: startedAt + 2000};
 // A cleanup with fakes: `running` pids and their launch times; `quit` records what it was asked to signal.
-async function cleanup({launch = ours, alone = true, before = [7], running = [7, 42], launches = {7: startedAt - 3_600_000, 42: ours.at}} = {}) {
+async function cleanup({launch = ours, alone = true, before = [7], running = [7, 42], launches = {7: startedAt - 3_600_000, 42: ours.at}, readWindows} = {}) {
   const quitCalls = []; let front = 'com.apple.TextEdit';
   const r = await cleanUpFixtureApp({name: 'TextEdit', bundle: 'com.apple.TextEdit', run: {before, front: 'com.apple.Terminal', launch}, alone,
-    pids: () => running, launchOf: pid => launches[pid] ?? null,
+    pids: () => running, launchOf: pid => launches[pid] ?? null, readWindows,
     quit: async pids => { quitCalls.push(pids); return {quit: pids, remaining: []}; },
     frontmost: () => front, activate: id => { front = id; }, sleep: async () => {}});
   return {r, quitCalls};
 }
+
+const internalWindows = Array.from({length: 5}, (_, i) => ({ownerPid: 42, number: 100 + i, onScreen: false, bounds: {x: -1000, y: 0, width: 400, height: 300}, title: 'private title never recorded'}));
+
+test('fresh pre-quit check: five internal off-screen windows do not keep the recorded fixture process alive', async () => {
+  const {r, quitCalls} = await cleanup({readWindows: async () => internalWindows});
+  assert.deepEqual(quitCalls, [[42]]);
+  assert.equal(r.windowCheck.status, 'PASS');
+  assert.equal(r.windowCheck.offScreenCount, 5);
+  assert.deepEqual(r.windowCheck.offScreenBounds[0], {x: -1000, y: 0, width: 400, height: 300});
+  assert.ok(!JSON.stringify(r).includes('private title'));
+});
+
+for (const [name, windows] of [
+  ['a visible window', [...internalWindows, {ownerPid: 42, number: 200, onScreen: true}]],
+  ['a foreign PID', [...internalWindows, {ownerPid: 77, number: 200, onScreen: false}]],
+  ['an unreadable window list', null],
+]) test(`fresh pre-quit check: ${name} leaves the fixture process running, BLOCKED`, async () => {
+  const {r, quitCalls} = await cleanup({readWindows: async () => windows});
+  assert.deepEqual(quitCalls, []);
+  assert.equal(r.leftRunning, 42);
+  assert.equal(r.windowCheck.status, 'BLOCKED');
+});
+
+test('a PID reused during the window check is not signalled', async () => {
+  const launches = {42: ours.at};
+  const {r, quitCalls} = await cleanup({launches, readWindows: async () => { launches[42]++; return internalWindows; }});
+  assert.deepEqual(quitCalls, []);
+  assert.equal(r.live, false);
+});
 
 test('cleanup: the recorded launch, confirmed alone, is quit; a TextEdit running before is kept; the front is handed back', async () => {
   const {r, quitCalls} = await cleanup();

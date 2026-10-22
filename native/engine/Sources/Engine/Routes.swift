@@ -2,8 +2,11 @@ import ApplicationServices
 import CoreGraphics
 import Foundation
 
-// The input routes (the spec's Design, "Input" after the second sitting, "Keys" and "Text"; Interfaces, InputRoute): key
-// presses and typed text by route 2′, the plain post with no fake activation; clicks by the ladder 1 → 3 → 4: route 1,
+// The input routes (the spec's Design, "Input" after the second sitting, "Keys" and "Text"; Interfaces, InputRoute): typed
+// text and plain key presses by route 2′, the plain post with no fake activation; a ⌘ chord (a menu key equivalent) by
+// route 3 into an app that does not believe it has focus, and an element's own action or attribute write (a click by
+// AXPress, set_value, select_text, perform_secondary_action) likewise, its activation held across the interaction
+// (FocusHold.swift; the Decision Log's 2026-10-22 amendment of M2a's table); clicks by the ladder 1 → 3 → 4: route 1,
 // the element's own action, for a plain single left click on an element that advertises AXPick or AXPress and whose
 // clickable point does not land on a strict descendant of it, and route 3, the fake activation then the plain post, for
 // every synthesized click (an element without the action, any other button or count, every coordinate click) — or route
@@ -100,8 +103,28 @@ final class RouteAdviceTracker: @unchecked Sendable {
   }
 }
 
-/// A key press's or typed text's route: 2′, unless the spike forces another.
+/// Typed text's route: 2′, unless the spike forces another (measured and delivered on the four scenes, U12).
 func keyRoute(forced: InputRoute?) -> InputRoute { forced ?? .plainPost }
+
+/// A press that is a menu key equivalent: a key with ⌘ (a modifier pressed alone is none).
+func isKeyEquivalent(_ press: KeyPress) -> Bool { press.keyCode != nil && press.modifiers.contains(.command) }
+
+/// press_key's route: 3 when the sequence holds a key equivalent and the app does not believe it has focus, since a
+/// background app does not perform one (M2a.5: ⌘A in an inactive window had no effect; it computes its menu items'
+/// enablement as an inactive app), else 2′; the spike's forced route wins. The activation, held (FocusHold.swift), comes
+/// before the sequence's first press.
+func pressKeyRoute(forced: InputRoute?, presses: [KeyPress], believesFocus: Bool) -> InputRoute {
+  if let forced { return forced }
+  return !believesFocus && presses.contains(where: isKeyEquivalent) ? .activation : .plainPost
+}
+
+/// The route of an element's own action or attribute write (route 1's AXPress or AXPick click, set_value, select_text,
+/// perform_secondary_action): 3, the held activation then the action, when the app does not believe it has focus (an
+/// Electron button's AXPress, its field's value and selection writes were ineffective in a background app by route 1
+/// alone, M2b's matrix); 1 when it does, or inside a recorded menu whose span already holds the activation.
+func elementActionRoute(believesFocus: Bool, insideHeldMenu: Bool) -> InputRoute {
+  believesFocus || insideHeldMenu ? .action : .activation
+}
 
 /// The vendor's nested-content gate (F §5.1, FUN_1007a1b9c): whether the element the hit-test answered is a strict
 /// descendant of `target`, found by walking its parents up to 300 levels. A hit on the target itself, on an ancestor,

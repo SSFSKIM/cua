@@ -561,6 +561,37 @@ final class KeyRouteTests: XCTestCase {
     XCTAssertEqual(keyRoute(forced: .commandPost), .commandPost)
   }
 
+  /// The amended table (Decision Log, 2026-10-22, "route 3 for key equivalents and element actions"): a ⌘ chord is a
+  /// menu key equivalent, which a background app does not perform (TextEdit's ⌘A left the selection unchanged by 2′), so
+  /// press_key takes route 3 when the app does not believe it has focus; plain keys stay on 2′.
+  func testACommandChordGoesByRouteThreeOnlyWhenTheAppDoesNotBelieveItHasFocus() throws {
+    func route(_ keys: String, focus: Bool, forced: InputRoute? = nil) throws -> InputRoute {
+      pressKeyRoute(forced: forced, presses: try parseKeySequence(keys), believesFocus: focus)
+    }
+    XCTAssertEqual(try route("super+a", focus: false), .activation)
+    XCTAssertEqual(try route("cmd+shift+z", focus: false), .activation)
+    XCTAssertEqual(try route("Down super+a", focus: false), .activation, "a sequence with a chord is activated before its first press")
+    XCTAssertEqual(try route("super+a", focus: true), .plainPost, "an app that believes it has focus needs no activation")
+    for plain in ["a", "Return", "shift+a", "ctrl+a", "alt+Return", "Tab Down"] {
+      XCTAssertEqual(try route(plain, focus: false), .plainPost, plain)
+    }
+    XCTAssertEqual(try route("super", focus: false), .plainPost, "a modifier alone is no key equivalent")
+    XCTAssertEqual(try route("super+a", focus: false, forced: .plainPost), .plainPost, "a spike cell's forced route wins")
+    XCTAssertEqual(try route("a", focus: false, forced: .activation), .activation)
+  }
+
+  func testTypedTextStaysOnRouteTwoPrimeWhateverTheFocus() {
+    XCTAssertEqual(keyRoute(forced: nil), .plainPost, "type_text is measured and delivered by 2′ (U12)")
+  }
+
+  /// An element's own action or attribute write (a click by AXPress, set_value, select_text, perform_secondary_action)
+  /// takes route 3 into an app that does not believe it has focus; inside a recorded menu's held activation it stays 1.
+  func testAnElementActionTakesRouteThreeWhenTheAppDoesNotBelieveItHasFocus() {
+    XCTAssertEqual(elementActionRoute(believesFocus: false, insideHeldMenu: false), .activation)
+    XCTAssertEqual(elementActionRoute(believesFocus: true, insideHeldMenu: false), .action)
+    XCTAssertEqual(elementActionRoute(believesFocus: false, insideHeldMenu: true), .action, "the menu's own span already holds it")
+  }
+
   func testTypedTextIsKeyedOnlyUnderAReliableLatinReading() {
     XCTAssertEqual(textRoute(keyboardLayout: true, perContextUnknown: false, concealed: false, spikeKeyed: false), .keyed)
     XCTAssertEqual(textRoute(keyboardLayout: false, perContextUnknown: false, concealed: false, spikeKeyed: false), .paste)

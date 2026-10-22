@@ -35,7 +35,7 @@ final class Engine: @unchecked Sendable {
   let routes: [String: Int]
   /// Route 3's consecutive guard failures per app, for `routeAdvice` and status (Routes.swift).
   let routeAdvice = RouteAdviceTracker()
-  /// The menus' held activations, one per process across connections (MenuSpan.swift).
+  /// The held activations of menus and focus holds, one per process across connections (MenuSpan.swift, FocusHold.swift).
   let heldActivations = HeldActivations()
   /// Whether the Mac is locked now (the session dictionary; replaced in the unit tests).
   let screenLocked: () -> Bool
@@ -138,11 +138,14 @@ final class Engine: @unchecked Sendable {
     // A request on the connection holds off the menu span's idle bound while it runs; a span that lapsed while idle takes
     // its record with it before anything reads the record (MenuSpan.swift).
     if let lapsed = connection.menuSpan.requestBegan() { connection.menuRecords[lapsed] = nil }
+    _ = connection.focusHold.requestBegan()  // the focus hold's bound likewise (FocusHold.swift); a lapse there clears nothing
     var target: ResolvedApp?
-    // Only a request on the record (an observation of the held app, or a press or record on it) restarts the idle bound.
+    // Only a request on the record (an observation of the held app, or a press or record on it) restarts the idle bound,
+    // and only one that observes or acts on the focus hold's app restarts that one's.
     defer {
       let onRecord = target != nil && target?.key == connection.menuSpan.app && menuSpanRenewingMethods.contains(method)
       connection.menuSpan.requestEnded(onRecord: onRecord)
+      connection.focusHold.requestEnded(onRecord: focusHoldRenews(method: method, app: target?.key, heldApp: connection.focusHold.app))
     }
     do {
       try refuseWhenLocked(isLocked: screenLocked)
@@ -159,6 +162,8 @@ final class Engine: @unchecked Sendable {
     } catch let error as EngineError where inputMethods.contains(method) {
       throw withMeta(error, InputMeta(context))
     }
+    // The focus hold ends before anything aimed at another app.
+    if focusHoldEndsBefore(app: target?.key, heldApp: connection.focusHold.app) { connection.endFocusHold() }
     let spanBefore = connection.menuSpan.serial
     defer { if step == .endAfter && connection.menuSpan.serial == spanBefore { connection.endMenuInteraction() } }
     switch method {

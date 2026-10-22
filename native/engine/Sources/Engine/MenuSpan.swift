@@ -30,10 +30,11 @@ let menuSpanIdleMs: Double = 120_000
 
 private let menuLog = Logger(subsystem: "io.github.ssfskim.cua.engine", category: "menu")
 
-/// One connection's held menu activation: the app it is held for and how to release it, with the idle bound's timer. A
-/// connection's requests run one at a time on its thread, the timer on another; the lock serializes the two, and the
-/// timer never releases while a request runs.
-final class MenuSpan: @unchecked Sendable {
+/// One connection's held activation span: the app it is held for and how to release it, with the idle bound's timer. A
+/// connection has two, the menu's (here) and the focus hold's (FocusHold.swift); `label` names which in a logged release
+/// failure. A connection's requests run one at a time on its thread, the timer on another; the lock serializes the two,
+/// and the timer never releases while a request runs.
+final class ActivationSpan: @unchecked Sendable {
   private let lock = NSLock()
   private var held: (app: String, release: () -> Bool)?
   private var busy = false
@@ -45,15 +46,17 @@ final class MenuSpan: @unchecked Sendable {
   private var armed = 0
   /// Bumped by every hold, so a request can tell whether it started a new span.
   private var holds = 0
+  private let label: String
   private let idleMs: Double
   private let schedule: (Double, @escaping @Sendable () -> Void) -> Void
   private let releaseFailed: (String) -> Void
 
-  init(idleMs: Double = menuSpanIdleMs,
+  init(label: String = "menu", idleMs: Double = menuSpanIdleMs,
        schedule: @escaping (Double, @escaping @Sendable () -> Void) -> Void = { ms, work in
          DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + .microseconds(Int(ms * 1000)), execute: work)
        },
        releaseFailed: @escaping (String) -> Void = { menuLog.error("\($0, privacy: .public)") }) {
+    self.label = label
     self.idleMs = idleMs
     self.schedule = schedule
     self.releaseFailed = releaseFailed
@@ -134,15 +137,15 @@ final class MenuSpan: @unchecked Sendable {
     guard let ending = held else { return }
     held = nil
     if !ending.release() {
-      releaseFailed("menu activation release failed for \(ending.app): the deactivation event could not be made")
+      releaseFailed("\(label) activation release failed for \(ending.app): the deactivation event could not be made")
     }
   }
 }
 
-/// The held activations of the engine, one per target process however many connections' spans hold it (route 3's state
-/// is the process's, not a connection's): the first span to acquire a process's activation runs it, the others share
-/// it, and the last to release it deactivates. So a span ending never withdraws an activation another span (another
-/// connection's, or the same connection's new record) still relies on.
+/// The held activations of the engine, one per target process however many connections' spans hold it, menu spans and
+/// focus holds alike (route 3's state is the process's, not a connection's): the first span to acquire a process's
+/// activation runs it, the others share it, and the last to release it deactivates. So a span ending never withdraws an
+/// activation another span (another connection's, or the same connection's new record) still relies on.
 final class HeldActivations: @unchecked Sendable {
   private let lock = NSLock()
   private var held: [pid_t: (activation: FakeActivation, holders: Int)] = [:]

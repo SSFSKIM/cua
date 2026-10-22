@@ -17,11 +17,12 @@ import Foundation
 // when a third app did (most likely the user's own switch) the front is left alone. After the action's events, the
 // matching deactivation (subtype 2) unless the app has really become active.
 //
-// Stateless per action (the activation stays per action in M2a, the second sitting's ruling), and only the target's
-// pid and window are posted to; the vendor's per-process taps and its SystemFocusStealPreventer, which tap the user's
-// own app as well, are not built. The private calls are resolved with dlsym and skipped when absent. F does not give the
-// poll's exit test; here it is the user's app frontmost and the target window not above the user's on three
-// consecutive samples.
+// Stateless per action for synthesized clicks, drags and paste (the second sitting's ruling); held across an interaction
+// for element actions and key equivalents (FocusHold.swift) and for a recorded menu (MenuSpan.swift), whose holds a
+// per-action activation leaves alone (`ActivationSystem.held`). Only the target's pid and window are posted to; the
+// vendor's per-process taps and its SystemFocusStealPreventer, which tap the user's own app as well, are not built. The
+// private calls are resolved with dlsym and skipped when absent. F does not give the poll's exit test; here it is the
+// user's app frontmost and the target window not above the user's on three consecutive samples.
 
 /// How long the screen-update hold may last: well under the guard's 1 s poll, and above the guards the sittings
 /// measured (37–58 ms, a coordinate click into TextEdit 82), so a guard of the usual length holds as the vendor's does.
@@ -97,7 +98,12 @@ struct ActivationSystem {
     DispatchQueue.global(qos: .userInteractive).asyncAfter(deadline: .now() + .microseconds(Int(ms * 1000)), execute: work)
   }
 
-  func believesItHasFocus(_ pid: pid_t) -> Bool { frontmost() == pid || keyFocus() == pid }
+  /// Whether a held activation (a menu span's or a focus hold's, HeldActivations) keeps `pid` believing itself active:
+  /// a per-action activation then neither activates it again nor withdraws it after its events (FocusHold.swift). Never
+  /// set on the activation a hold itself runs, which HeldActivations makes under its own lock.
+  var held: (pid_t) -> Bool = { _ in false }
+
+  func believesItHasFocus(_ pid: pid_t) -> Bool { frontmost() == pid || keyFocus() == pid || held(pid) }
 }
 
 /// The on-screen order of two windows: true when `window` is in front of `other` (CGWindowList lists front to back).

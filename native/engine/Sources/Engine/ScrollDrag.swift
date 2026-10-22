@@ -153,7 +153,8 @@ extension Engine {
       let window = ClickTarget(point: start.point, windowFrame: start.windowFrame, windowID: windowID, pid: owner)
       let route = coordinateClickRoute(forced: forced, foreground: routeFourOverride(app.bundleIdentifier, routes: routes))
       let activation = route == .activation
-        ? FakeActivation(pid: owner, appPid: appPid, window: start.window, windowFrame: start.windowFrame, windowID: windowID) : nil
+        ? FakeActivation(pid: owner, appPid: appPid, window: start.window, windowFrame: start.windowFrame, windowID: windowID,
+                         system: perActionActivation) : nil
       try armingSettle(&meta, acted: { context.connection.markActed(app) }) { meta in
         try recordingRouteAdvice(route, app: app, meta: &meta) { meta in
           try deliverPointer(to: owner, route: route, activation: activation,

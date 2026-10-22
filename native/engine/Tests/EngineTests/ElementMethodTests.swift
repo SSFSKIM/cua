@@ -508,7 +508,7 @@ final class MenuRecordTests: XCTestCase {
   }
 
   func testARecordIsReplacedClearedAndDroppedWhenItsItemIsGoneEachEndingItsSpan() {
-    let connection = ConnectionState(id: 1, fd: -1, menuSpan: MenuSpan(schedule: { _, _ in }))
+    let connection = ConnectionState(id: 1, fd: -1, menuSpan: ActivationSpan(schedule: { _, _ in }))
     var released: [Int] = []
     connection.recordMenu(el(1), app: "a") { released.append(1); return true }
     connection.recordMenu(el(2), app: "a") { released.append(2); return true }
@@ -680,8 +680,8 @@ final class MenuSpanTests: XCTestCase {
   private final class Clock {
     var timers: [(ms: Double, work: @Sendable () -> Void)] = []
     var failed: [String] = []
-    func span() -> MenuSpan {
-      MenuSpan(schedule: { ms, work in self.timers.append((ms, work)) }, releaseFailed: { self.failed.append($0) })
+    func span() -> ActivationSpan {
+      ActivationSpan(schedule: { ms, work in self.timers.append((ms, work)) }, releaseFailed: { self.failed.append($0) })
     }
     func fireLast() { timers.removeLast().work() }
   }

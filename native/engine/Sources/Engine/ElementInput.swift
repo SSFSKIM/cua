@@ -207,10 +207,12 @@ extension Engine {
     let owner = pointing.owner
     func activation() -> FakeActivation {
       if let window = pointing.window {
-        return FakeActivation(pid: owner, appPid: appPid, window: window, windowFrame: pointing.windowFrame, windowID: pointing.windowID, sparing: sparing)
+        return FakeActivation(pid: owner, appPid: appPid, window: window, windowFrame: pointing.windowFrame, windowID: pointing.windowID, sparing: sparing,
+                              system: perActionActivation)
       }
       let application = prepare(AXUIElementCreateApplication(appPid))
-      return FakeActivation(pid: owner, appPid: appPid, window: primaryWindow(of: application) ?? application, sparing: sparing)
+      return FakeActivation(pid: owner, appPid: appPid, window: primaryWindow(of: application) ?? application, sparing: sparing,
+                            system: perActionActivation)
     }
     let target = ClickTarget(point: point, windowFrame: pointing.windowFrame, windowID: pointing.windowID, pid: owner)
     try recordingRouteAdvice(route, app: app, meta: &meta) { meta in

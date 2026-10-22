@@ -5,8 +5,9 @@ import Foundation
 // element scrolled into view, its AXValue checked settable, the field focused (focusFieldIfNeeded), the string coerced
 // to the type of the element's current value, written through AXValue, and the element kept resolvable by its new
 // value (the vendor re-fetches ignoring the value; the value is not read back or compared). No search-field
-// auto-submit: the vendor turns it off for a node_repl-class client, cua's kind. Route 1: nothing is posted unless the
-// focus fallback clicks. A concealed request (a substituted secret) goes the same way; no sentence here ever carries the
+// auto-submit: the vendor turns it off for a node_repl-class client, cua's kind. Route 1, or route 3 when the app does not
+// believe it has focus (its activation held, FocusHold.swift): nothing is posted to the field unless the focus fallback
+// clicks. A concealed request (a substituted secret) goes the same way; no sentence here ever carries the
 // value.
 
 /// The type a set_value string is coerced to (`stringValueConversionType` 0x1006d4254).
@@ -87,8 +88,16 @@ extension Engine {
       let resolved = try targetElement(token, app: app, appPid: appPid, context: context)
       meta.inputRoute = .action
       let target = try positionedTarget(resolved, token: token, app: app, appPid: appPid, context: context, guarding: guarding)
+      // Once the element is known settable: route 3's held activation when the app does not believe it has focus
+      // (FocusHold.swift), before the focus, so a focusing click finds the app believing itself active.
+      let route = actionRoute(for: target, app: app, connection: context.connection)
       try setElementValue(value, on: target.element, role: target.entry.identity.role, ax: .live, meta: &meta,
-                          focus: { meta in try focusField(target, app: app, appPid: appPid, guarding: guarding, connection: context.connection, meta: &meta) },
+                          focus: { meta in
+                            if route == .activation {
+                              try holdElementFocus(target, app: app, appPid: appPid, guarding: guarding, context: context, meta: &meta)
+                            }
+                            try focusField(target, app: app, appPid: appPid, guarding: guarding, connection: context.connection, meta: &meta)
+                          },
                           checkInFlight: guarding.checkInFlight, acted: { context.connection.markActed(app) })
       // The vendor's re-check after the write: a re-fetch matching without the value, whose result replaces the stored
       // handle and identity; a failed one propagates, after the write (the interval says it was made).

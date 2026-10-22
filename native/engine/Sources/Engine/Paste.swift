@@ -254,8 +254,10 @@ extension Engine {
     try withPasteLock(pasteLock, deadline: context.deadline) {
       // Waiting for the lock took time: a user event since the guard was read stops the paste before anything is done.
       try target.guarding.checkInFlight()
+      var system = pasteActivation
+      system.held = { [heldActivations] in heldActivations.holders($0) > 0 }  // a focus hold's process is left alone
       let activation = FakeActivation(pid: target.pid, window: primaryWindow(of: target.application) ?? target.application,
-                                      system: pasteActivation)
+                                      system: system)
       defer { activation.deactivate() }  // every path out, error or success, undoes the activation
       do {
         defer { meta.activationGuardMs = activation.guardMs }  // a guard that failed still says how long it held

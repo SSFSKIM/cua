@@ -5,8 +5,8 @@ import Foundation
 // Route 3, fake activation (the spec's Design, "Input" route 3; R/F-helper-logic.md §5.4–5.5, R/sky-behaviour.md §12):
 // the app is made to believe it is active while the user's app stays frontmost. To the target pid: an AppKit-defined
 // event of subtype 1 (application activated; flags 0xC0000, the window number) plus a left click at the window's
-// AXActivationPoint with route 2's recipe, the click skipped when that point lies outside the window's frame (cua's
-// declared difference, the second sitting's U13). Around it, when another app is frontmost: screen updates held with the
+// AXActivationPoint with route 2's recipe, the click posted only where a hit-test shows the point inert (the window or
+// chrome that is no control) and inside the window's frame (cua's declared differences, U13 and the focus hold's review). Around it, when another app is frontmost: screen updates held with the
 // private SLSDisableUpdate/SLSReenableUpdate, released when the guard ends or, by a timer, at `activationHoldCapMs`,
 // whichever is first, so a slow guard (a raise waiting out its AX timeout included) never freezes the display for long;
 // and a 10 ms poll for up to 1 s that answers the target's
@@ -17,12 +17,13 @@ import Foundation
 // when a third app did (most likely the user's own switch) the front is left alone. After the action's events, the
 // matching deactivation (subtype 2) unless the app has really become active.
 //
-// Stateless per action for synthesized clicks, drags and paste (the second sitting's ruling); held across an interaction
-// for element actions and key equivalents (FocusHold.swift) and for a recorded menu (MenuSpan.swift), whose holds a
-// per-action activation leaves alone (`ActivationSystem.held`). Only the target's pid and window are posted to; the
-// vendor's per-process taps and its SystemFocusStealPreventer, which tap the user's own app as well, are not built. The
-// private calls are resolved with dlsym and skipped when absent. F does not give the poll's exit test; here it is the
-// user's app frontmost and the target window not above the user's on three consecutive samples.
+// Per action for synthesized clicks, drags and paste (the second sitting's ruling); held across an interaction for
+// element actions and key equivalents (FocusHold.swift) and for a recorded menu (MenuSpan.swift); every one taken
+// through HeldActivations, so a process's activation is shared and withdrawn only by its last holder. Only the target's
+// pid and window are posted to; the vendor's per-process taps and its SystemFocusStealPreventer, which tap the user's
+// own app as well, are not built. The private calls are resolved with dlsym and skipped when absent. F does not give
+// the poll's exit test; here it is the user's app frontmost and the target window not above the user's on three
+// consecutive samples.
 
 /// How long the screen-update hold may last: well under the guard's 1 s poll, and above the guards the sittings
 /// measured (37–58 ms, a coordinate click into TextEdit 82), so a guard of the usual length holds as the vendor's does.
@@ -91,6 +92,10 @@ struct ActivationSystem {
   var isInFront: (CGWindowID, CGWindowID) -> Bool = windowIsInFront
   var raise: (AXUIElement) -> Void = { AXUIElementPerformAction($0, kAXRaiseAction as CFString) }
   var activationPoint: (AXUIElement) -> CGPoint? = { point(attribute($0, "AXActivationPoint")) }
+  /// What the process answers at a global point (the activation click's hit-test), read from its application element.
+  var hitAt: (pid_t, CGPoint) -> ActivationHit? = { pid, point in
+    hitTest(application: pid, at: point).map { ActivationHit(role: copyAttribute($0, kAXRoleAttribute).value as? String, actions: actionNames(of: $0)) }
+  }
   var now: () -> Double = monotonicMilliseconds
   var sleep: (Double) -> Void = { usleep(UInt32(max(0, $0) * 1000)) }
   /// Runs `work` after the given milliseconds on another thread (the hold's cap, kept while the guard is blocked).
@@ -98,12 +103,7 @@ struct ActivationSystem {
     DispatchQueue.global(qos: .userInteractive).asyncAfter(deadline: .now() + .microseconds(Int(ms * 1000)), execute: work)
   }
 
-  /// Whether a held activation (a menu span's or a focus hold's, HeldActivations) keeps `pid` believing itself active:
-  /// a per-action activation then neither activates it again nor withdraws it after its events (FocusHold.swift). Never
-  /// set on the activation a hold itself runs, which HeldActivations makes under its own lock.
-  var held: (pid_t) -> Bool = { _ in false }
-
-  func believesItHasFocus(_ pid: pid_t) -> Bool { frontmost() == pid || keyFocus() == pid || held(pid) }
+  func believesItHasFocus(_ pid: pid_t) -> Bool { frontmost() == pid || keyFocus() == pid }
 }
 
 /// The on-screen order of two windows: true when `window` is in front of `other` (CGWindowList lists front to back).
@@ -186,6 +186,9 @@ final class FakeActivation {
               restoresByActivationOnly: restoresByActivationOnly, system: system)
   }
 
+  /// What the activation click did, once the activation pair was posted; nil when none was.
+  private(set) var click: ActivationClick?
+
   /// The vendor's safelyEnforceActiveState: nothing when the app believes it has focus; otherwise the activation pair,
   /// guarded so the user's app stays frontmost with its window on top. A throw after the pair (the guard's failure)
   /// leaves the activation in place — every caller's `defer { deactivate() }` undoes it on all of its own paths, so
@@ -246,11 +249,17 @@ final class FakeActivation {
   }
 
   /// The vendor's enforceActiveState for an app that does not believe it is active: subtype 1, then a left click at the
-  /// window's AXActivationPoint when that point lies inside the window's frame and outside the spared area.
+  /// window's AXActivationPoint when the point is inert (`activationClickDecision`), else the event alone.
   private func postActivation() {
     post(subtype: NSEvent.EventSubtype.applicationActivated.rawValue)
     activated = true
-    guard let point = activationClickPoint(system.activationPoint(window), windowFrame: windowFrame, sparing: sparing) else { return }
+    let activationPoint = system.activationPoint(window)
+    let system = system, pid = pid
+    let decision = activationClickDecision(activationPoint, windowFrame: windowFrame, sparing: sparing) {
+      activationPoint.flatMap { system.hitAt(pid, $0) }
+    }
+    click = decision
+    guard decision == .posted, let point = activationPoint else { return }
     let target = ClickTarget(point: point, windowFrame: windowFrame, windowID: windowID, pid: pid)
     _ = postToProcess(clickEvents(target, button: .left, count: 1, flags: []), pid: pid, post: system.post)
   }

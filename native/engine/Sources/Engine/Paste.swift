@@ -254,15 +254,12 @@ extension Engine {
     try withPasteLock(pasteLock, deadline: context.deadline) {
       // Waiting for the lock took time: a user event since the guard was read stops the paste before anything is done.
       try target.guarding.checkInFlight()
-      var system = pasteActivation
-      system.held = { [heldActivations] in heldActivations.holders($0) > 0 }  // a focus hold's process is left alone
-      let activation = FakeActivation(pid: target.pid, window: primaryWindow(of: target.application) ?? target.application,
-                                      system: system)
-      defer { activation.deactivate() }  // every path out, error or success, undoes the activation
-      do {
-        defer { meta.activationGuardMs = activation.guardMs }  // a guard that failed still says how long it held
-        try activation.activate()
-      }
+      // Route 3's activation leased for the paste (shared when a hold keeps the process active); every path out, error
+      // or success, ends the lease. A guard that failed still says how long it held.
+      let release = try heldActivations.acquire(pid: target.pid, beforeActivating: {}, make: {
+        FakeActivation(pid: target.pid, window: primaryWindow(of: target.application) ?? target.application, system: pasteActivation)
+      }, meta: &meta)
+      defer { _ = release() }
 
       let application = target.application
       let effect = PasteEffect(hasObserver: false, read: { effectReading(of: application) })

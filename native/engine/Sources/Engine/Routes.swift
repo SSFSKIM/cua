@@ -220,16 +220,48 @@ func clickablePoint(frame: CGRect?, visibleIn bounds: CGRect?) -> CGPoint? {
   return CGPoint(x: visible.midX, y: visible.midY)
 }
 
-/// Where route 3's activation click goes: the window's AXActivationPoint when it lies inside the window's frame, else
-/// nowhere — the believed-active state then rests on the subtype-1 event alone (the second sitting's U13: Chrome's point
-/// is the screen's bottom-left corner, where a click lands on its menu bar). A declared difference from the vendor,
-/// which posts the click wherever the point is. Nor in `sparing`, the target of a click with another button than the
-/// left (`activationSparing`): a left click there would be a click on the target the model never asked for (the M2a
-/// vendor reading, item 8); the subtype-1 event alone then carries the activation, as it does outside the frame.
-func activationClickPoint(_ activationPoint: CGPoint?, windowFrame: CGRect?, sparing: CGRect? = nil) -> CGPoint? {
-  guard let activationPoint, let windowFrame, windowFrame.contains(activationPoint) else { return nil }
-  if let sparing, sparing.contains(activationPoint) { return nil }
-  return activationPoint
+/// What the hit-test at the window's AXActivationPoint answered: the element's role and its advertised actions.
+struct ActivationHit: Equatable {
+  let role: String?
+  let actions: [String]
+}
+
+/// What route 3's activation click did (the result's meta `activationClick`): posted, or skipped and why.
+enum ActivationClick: String, Equatable {
+  case posted
+  case noPoint        // the window has no AXActivationPoint
+  case outsideFrame   // the point lies outside the window's frame (Chrome's, U13), or the frame is unknown
+  case spared         // the point lies in the target of a click with another button than the left
+  case control        // the hit-test there answered a control, or an element not known to be inert
+  case hitTestFailed  // the hit-test there answered nothing
+}
+
+/// The roles a hit-test may answer at the activation point for the click to go: the window itself and the window's
+/// chrome that is not a control (its title, a plain group or toolbar), as U13 read on TextEdit, Finder and Electron.
+private let inertActivationRoles: Set<String> = ["AXWindow", "AXStaticText", "AXImage", "AXGroup", "AXToolbar", "AXSplitGroup"]
+/// The actions a left click could invoke; an element advertising one is a control whatever its role.
+private let clickInvokedActions: Set<String> = ["AXPress", "AXPick", "AXConfirm", "AXIncrement", "AXDecrement", "AXOpen"]
+
+/// Whether a left click at the hit element invokes nothing: an inert role advertising no click-invoked action.
+func activationPointIsInert(_ hit: ActivationHit) -> Bool {
+  guard let role = hit.role, inertActivationRoles.contains(role) else { return false }
+  return clickInvokedActions.isDisjoint(with: hit.actions)
+}
+
+/// Whether route 3's activation click goes at the window's AXActivationPoint (maws-3f's ruling, 2026-10-22, on the review
+/// of the focus hold): only when the point lies inside the window's frame, outside `sparing` (the target of a click with
+/// another button than the left, whose left click there would be one the model never asked for; the M2a vendor reading,
+/// item 8), and a hit-test there (`hit`, asked only then) answers the window or chrome that is no control. Otherwise the
+/// believed-active state rests on the activation's events alone, which delivered on Chrome, whose point is outside its
+/// frame (U13). A declared difference from the vendor, which posts the click wherever the point is (F §5.5): a click
+/// that lands on a control would invoke it before the action the model asked for.
+func activationClickDecision(_ activationPoint: CGPoint?, windowFrame: CGRect?, sparing: CGRect?,
+                             hit: () -> ActivationHit?) -> ActivationClick {
+  guard let activationPoint else { return .noPoint }
+  guard let windowFrame, windowFrame.contains(activationPoint) else { return .outsideFrame }
+  if let sparing, sparing.contains(activationPoint) { return .spared }
+  guard let found = hit() else { return .hitTestFailed }
+  return activationPointIsInert(found) ? .posted : .control
 }
 
 /// What a type_text does with its text (the spec's Design, "Text").

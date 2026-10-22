@@ -152,23 +152,6 @@ final class FocusHoldTests: XCTestCase {
     XCTAssertNil(connection.focusHold.app)
   }
 
-  /// A per-action activation (a synthesized click's, a paste's) on a process the hold keeps active neither activates it
-  /// again nor withdraws it after its events, which would leave the hold believing in an activation the app no longer has.
-  func testAPerActionActivationOnAHeldProcessNeitherActivatesNorWithdraws() throws {
-    let seam = GuardSeam(frontmost: user)
-    var system = seam.system
-    system.held = { $0 == self.target }
-    let perAction = FakeActivation(pid: target, window: AXUIElementCreateApplication(target), windowFrame: window, windowID: 41, system: system)
-    try perAction.activate()
-    perAction.deactivate()
-    XCTAssertTrue(seam.posts.isEmpty)
-    XCTAssertNil(perAction.guardMs, "no guard ran")
-
-    let other = FakeActivation(pid: panel, window: AXUIElementCreateApplication(panel), windowFrame: window, windowID: 43, system: system)
-    try other.activate()
-    XCTAssertEqual(seam.posts.first?.kind, .appKit(1), "a process no hold keeps is activated as before")
-  }
-
   /// The menu's span and the focus hold count as two holders of one activation: the menu's ending keeps the app active
   /// for the hold, and the hold's ending withdraws it.
   func testTheMenuSpanAndTheFocusHoldShareOneActivation() throws {
@@ -182,6 +165,104 @@ final class FocusHoldTests: XCTestCase {
     XCTAssertEqual(seam.posts.filter { $0.kind == .appKit(1) }.count, 1)
     connection.endMenuInteraction()
     XCTAssertFalse(seam.posts.contains { $0.kind == .appKit(2) }, "the hold still relies on it")
+    connection.endFocusHold()
+    XCTAssertEqual(seam.posts.map(\.kind).last, .appKit(2))
+  }
+
+  // MARK: Finding 1: a real activation cycle invalidates the held state
+
+  /// The user brings the held app forward and switches away: the real deactivation clears the app's synthetic active
+  /// state, so the next action re-establishes the activation (the vendor's tap updates its beliefs on real activation
+  /// events, F §5.5's FUN_10072fd24). Driven through the production observer on a private notification center.
+  func testARealActivationCycleMakesTheNextActionActivateAgain() throws {
+    let seam = GuardSeam(frontmost: user)
+    let connection = connection()
+    let center = NotificationCenter()
+    let observers = observeRealActivations(center, registry: activations)
+    defer { observers.forEach(center.removeObserver) }
+    let me = NSRunningApplication.current
+    var meta = meta()
+    try hold(connection, seam, pid: me.processIdentifier, meta: &meta)
+    XCTAssertEqual(seam.posts.filter { $0.kind == .appKit(1) }.count, 1)
+
+    for name in [NSWorkspace.didActivateApplicationNotification, NSWorkspace.didDeactivateApplicationNotification] {
+      center.post(name: name, object: nil, userInfo: [NSWorkspace.applicationUserInfoKey: me])
+    }
+    var next = self.meta()
+    try hold(connection, seam, pid: me.processIdentifier, meta: &next)
+    XCTAssertEqual(seam.posts.filter { $0.kind == .appKit(1) }.count, 2, "re-established after the real cycle")
+    XCTAssertNotNil(next.activationGuardMs, "with its own guard")
+    XCTAssertEqual(activations.holders(me.processIdentifier), 1, "the same hold, not a second holder")
+
+    var again = self.meta()
+    try hold(connection, seam, pid: me.processIdentifier, meta: &again)
+    XCTAssertEqual(seam.posts.filter { $0.kind == .appKit(1) }.count, 2, "and held again after that")
+    connection.endFocusHold()
+    XCTAssertEqual(seam.posts.map(\.kind).last, .appKit(2))
+  }
+
+  /// A hold whose app went through a real cycle and saw no action since is released without a deactivation: the
+  /// system already withdrew the synthetic state, and a stray subtype 2 is not posted into the app.
+  func testAHoldInvalidatedByARealCycleIsReleasedWithoutADeactivation() throws {
+    let seam = GuardSeam(frontmost: user)
+    let connection = connection()
+    var meta = meta()
+    try hold(connection, seam, meta: &meta)
+    activations.realActivationChanged(target)
+    connection.endFocusHold()
+    XCTAssertFalse(seam.posts.contains { $0.kind == .appKit(2) })
+    XCTAssertEqual(activations.holders(target), 0)
+  }
+
+  func testARealCycleOfAnotherProcessLeavesTheHoldAlone() throws {
+    let seam = GuardSeam(frontmost: user)
+    let connection = connection()
+    var meta = meta()
+    try hold(connection, seam, meta: &meta)
+    activations.realActivationChanged(user)
+    try hold(connection, seam, meta: &meta)
+    XCTAssertEqual(seam.posts.filter { $0.kind == .appKit(1) }.count, 1)
+  }
+
+  // MARK: Finding 2: a per-action activation leases the process's activation
+
+  private func clickTarget() -> ClickTarget {
+    ClickTarget(point: CGPoint(x: 300, y: 400), windowFrame: window, windowID: 41, pid: target)
+  }
+
+  private func mouseKinds(_ seam: GuardSeam) -> [GuardPost.Kind] { seam.posts.map(\.kind) }
+
+  /// A hold is held; a synthesized click leases the same process; the hold ends while the click is under way (another
+  /// connection's close, a switch, the idle bound). The deactivation waits for the click's own release.
+  func testAHoldEndingMidClickDoesNotDeactivateBeforeTheClickEnds() throws {
+    let seam = GuardSeam(frontmost: user)
+    let connection = connection()
+    var meta = meta()
+    try hold(connection, seam, meta: &meta)
+    let before = seam.posts.count
+    var clickMeta = self.meta()
+    try deliverClick(clickTarget(), route: .activation, button: .left, count: 1, activation: activation(seam), activations: activations,
+                     targetActive: { false }, beforePosting: { connection.endFocusHold() }, post: seam.system.post, meta: &clickMeta)
+    let during = Array(seam.posts[before...]).map(\.kind)
+    XCTAssertEqual(during, [.mouse(.leftMouseDown), .mouse(.leftMouseUp), .appKit(2)],
+                   "no second activation, the click's events, and the deactivation only after them")
+    XCTAssertNil(clickMeta.activationGuardMs, "the click shared the held activation")
+    XCTAssertEqual(activations.holders(target), 0)
+  }
+
+  /// The reverse: a click's per-action activation runs first, and a hold is taken on the same process while the click
+  /// is under way. The click's teardown leaves the newly held process active; the hold's end withdraws it.
+  func testAClickEndingAfterAHoldBeganLeavesTheHeldProcessActive() throws {
+    let seam = GuardSeam(frontmost: user)
+    let connection = connection()
+    var clickMeta = meta()
+    var holdMeta = meta()
+    try deliverClick(clickTarget(), route: .activation, button: .left, count: 1, activation: activation(seam), activations: activations,
+                     targetActive: { false }, beforePosting: { try self.hold(connection, seam, meta: &holdMeta) },
+                     post: seam.system.post, meta: &clickMeta)
+    XCTAssertEqual(seam.posts.filter { $0.kind == .appKit(1) }.count, 1, "the hold shared the click's activation")
+    XCTAssertFalse(seam.posts.contains { $0.kind == .appKit(2) }, "the click's teardown never withdraws a held process")
+    XCTAssertEqual(activations.holders(target), 1)
     connection.endFocusHold()
     XCTAssertEqual(seam.posts.map(\.kind).last, .appKit(2))
   }

@@ -293,12 +293,13 @@ final class ClickPointTests: XCTestCase {
     // The second sitting's readings (U13): TextEdit's point 16 points below the top edge, inside; Chrome's at the
     // screen's bottom-left corner, outside its frame.
     let textEdit = CGRect(x: 80, y: 60, width: 610, height: 860)
-    XCTAssertEqual(activationClickPoint(CGPoint(x: 110, y: 76), windowFrame: textEdit), CGPoint(x: 110, y: 76))
+    let window = ActivationHit(role: "AXWindow", actions: [])
+    XCTAssertEqual(activationClickDecision(CGPoint(x: 110, y: 76), windowFrame: textEdit, sparing: nil) { window }, .posted)
     let chrome = CGRect(x: 80, y: 60, width: 1000, height: 760)
-    XCTAssertNil(activationClickPoint(CGPoint(x: -1, y: 1441), windowFrame: chrome))
-    XCTAssertNil(activationClickPoint(CGPoint(x: 1080, y: 400), windowFrame: chrome), "the far edge is outside")
-    XCTAssertNil(activationClickPoint(nil, windowFrame: chrome), "the attribute unsupported")
-    XCTAssertNil(activationClickPoint(CGPoint(x: 110, y: 76), windowFrame: nil), "no frame to place it in")
+    XCTAssertEqual(activationClickDecision(CGPoint(x: -1, y: 1441), windowFrame: chrome, sparing: nil) { window }, .outsideFrame)
+    XCTAssertEqual(activationClickDecision(CGPoint(x: 1080, y: 400), windowFrame: chrome, sparing: nil) { window }, .outsideFrame, "the far edge is outside")
+    XCTAssertEqual(activationClickDecision(nil, windowFrame: chrome, sparing: nil) { window }, .noPoint, "the attribute unsupported")
+    XCTAssertEqual(activationClickDecision(CGPoint(x: 110, y: 76), windowFrame: nil, sparing: nil) { window }, .outsideFrame, "no frame to place it in")
   }
 }
 
@@ -651,6 +652,8 @@ final class GuardSeam {
   let frontmostAfterPost: pid_t?
   let reactivates: Bool
   var activationPoint: CGPoint?
+  /// What the hit-test at the activation point answers: the window itself, as U13 read on TextEdit, Finder and Electron.
+  var activationHit: ActivationHit? = ActivationHit(role: "AXWindow", actions: [])
   let targetInFront: (Int) -> Bool
   /// Scheduled work by due time on the fake clock, run as the clock passes it.
   private var timers: [(due: Double, work: () -> Void)] = []
@@ -726,6 +729,7 @@ final class GuardSeam {
     system.isInFront = { _, _ in samples += 1; return self.targetInFront(samples) }
     system.raise = { _ in self.raises += 1; self.advance(self.raiseCost) }
     system.activationPoint = { _ in self.activationPoint }
+    system.hitAt = { _, _ in self.activationHit }
     system.now = { self.clock }
     system.sleep = { _ in self.advance(self.step) }
     system.schedule = { ms, work in self.timers.append((self.clock + ms, work)) }

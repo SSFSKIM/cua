@@ -64,6 +64,8 @@ struct InputMeta {
   var startedAt: Int64? = nil
   var endedAt: Int64? = nil
   var activationGuardMs: Double? = nil
+  /// What route 3's activation click did when an activation ran: posted, or why it was skipped.
+  var activationClick: ActivationClick? = nil
   /// A synthesized element click whose hit-test answered nothing or only a container of the element, so the point
   /// could not be confirmed to reach it; reported as `pointUnconfirmed: true`.
   var pointUnconfirmed = false
@@ -119,6 +121,7 @@ struct InputMeta {
       "hidIdleMs": hidIdleMs ?? NSNull(),
     ]
     if let activationGuardMs { wire["activationGuardMs"] = activationGuardMs }
+    if let activationClick { wire["activationClick"] = activationClick.rawValue }
     if pointUnconfirmed { wire["pointUnconfirmed"] = true }
     if interventionOff { wire["intervention"] = "off" }
     if let entered { wire["entered"] = entered }
@@ -136,32 +139,34 @@ func withMeta(_ error: EngineError, _ meta: InputMeta) -> EngineError {
 }
 
 /// A synthesized click's delivery: under route 3 the fake activation first (nothing when the app already believes it has
-/// focus), then the click's events posted back to back to the target's process, then the activation withdrawn; under
+/// focus), leased from `activations` for the click's duration (shared when a hold keeps the process active, withdrawn
+/// only when no other holder relies on it), then the click's events posted back to back to the target's process; under
 /// route 4 the events are posted while the foreground assist holds the app in front. A failed guard throws before any of
 /// the click's events is posted, and nothing is retried (never with ⌘). `beforePosting` runs once the app is prepared,
 /// just before the events (the intervention guard's in-flight check: a user event during the activation stops the
 /// click). The meta carries the route from the start, so a refusal names the route that failed.
 func deliverClick(_ target: ClickTarget, route: InputRoute, button: MouseButton, count: Int, activation: FakeActivation?,
-                  foreground: ForegroundAssist? = nil, targetActive: () -> Bool, beforePosting: () throws -> Void = {},
-                  post: (CGEvent, pid_t) -> Void, meta: inout InputMeta) throws {
-  try deliverPointer(to: target.pid, route: route, activation: activation, foreground: foreground, beforePosting: beforePosting,
-                     post: post, meta: &meta) {
+                  activations: HeldActivations = HeldActivations(), foreground: ForegroundAssist? = nil, targetActive: () -> Bool,
+                  beforePosting: () throws -> Void = {}, post: (CGEvent, pid_t) -> Void, meta: inout InputMeta) throws {
+  try deliverPointer(to: target.pid, route: route, activation: activation, activations: activations, foreground: foreground,
+                     beforePosting: beforePosting, post: post, meta: &meta) {
     clickEvents(target, button: button, count: count, flags: clickFlags(route, targetActive: targetActive()))
   }
 }
 
 /// A synthesized pointer action's delivery (a click's, a drag's), as `deliverClick` describes it: `events` makes the
-/// action's events once the app is prepared, and they are posted back to back to `pid`.
-func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation?, foreground: ForegroundAssist? = nil,
-                    beforePosting: () throws -> Void = {}, post: (CGEvent, pid_t) -> Void, meta: inout InputMeta,
-                    events: () -> [CGEvent]) throws {
+/// action's events once the app is prepared, and they are posted back to back to `pid`. `activations` is the engine's
+/// registry; the default, a registry of the action's own, shares with nothing (the unit tests').
+func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation?, activations: HeldActivations = HeldActivations(),
+                    foreground: ForegroundAssist? = nil, beforePosting: () throws -> Void = {}, post: (CGEvent, pid_t) -> Void,
+                    meta: inout InputMeta, events: () -> [CGEvent]) throws {
   meta.inputRoute = route
-  defer { activation?.deactivate() }  // every path out of the action, error or success, undoes the activation
+  var release: (() -> Bool)?
+  defer { _ = release?() }  // every path out of the action, error or success, ends its lease
   if route == .activation, let activation {
-    // A guard that failed still says how long it held; an activation a hold already keeps runs no guard and leaves the
-    // hold's time in place (a focusing click inside set_value's held activation).
-    defer { meta.activationGuardMs = activation.guardMs ?? meta.activationGuardMs }
-    try activation.activate()
+    // A failed guard says how long it held; a shared activation runs none and leaves the meta's time in place (a
+    // focusing click inside set_value's held activation).
+    release = try activations.acquire(pid: activation.pid, beforeActivating: {}, make: { activation }, meta: &meta)
   }
   // The interval is stamped as the events are posted, so an error after them (route 4's restore) still says they were.
   func send() throws {
@@ -299,11 +304,10 @@ extension Engine {
         let route = coordinateClickRoute(forced: forced, foreground: foreground)
         let sparing = button == .left ? nil : activationSparing(button: button, target: pointArea(placed.point, hitFrame: hit.flatMap { frame(of: $0) }))
         let activation = route == .activation
-          ? FakeActivation(pid: owner, appPid: appPid, window: placed.window, windowFrame: placed.windowFrame, windowID: windowID, sparing: sparing,
-                           system: perActionActivation) : nil
+          ? FakeActivation(pid: owner, appPid: appPid, window: placed.window, windowFrame: placed.windowFrame, windowID: windowID, sparing: sparing) : nil
         try armingSettle(&meta, acted: { context.connection.markActed(app) }) { meta in
           try recordingRouteAdvice(route, app: app, meta: &meta) { meta in
-            try deliverClick(target, route: route, button: button, count: count, activation: activation,
+            try deliverClick(target, route: route, button: button, count: count, activation: activation, activations: heldActivations,
                              foreground: route == .foreground ? ForegroundAssist(appPid: appPid) : nil,
                              targetActive: { NSRunningApplication(processIdentifier: owner)?.isActive == true },
                              beforePosting: guarding.checkInFlight, post: { $0.postToPid($1) }, meta: &meta)
@@ -346,8 +350,8 @@ extension Engine {
       if forced == nil, meta.inputRoute == .activation {
         try holdKeyFocus(app, pid: pid, application: application, guarding: guarding, context: context, meta: &meta)
       }
-      let activation = try forcedActivation(forced, pid: pid, application: application, meta: &meta)
-      defer { activation?.deactivate() }  // every path out of the posting, error or success, undoes a forced activation
+      let release = try forcedActivation(forced, pid: pid, application: application, meta: &meta)
+      defer { _ = release?() }  // every path out of the posting, error or success, ends a forced activation's lease
       let poster = EventPoster.toProcess(target, sourceState: privateSourceArg(args) ? .privateState : .hidSystemState)
       defer { context.connection.markActed(app) }  // a sequence stopped midway changed the app too
       try keyPresses(presses, checkIntervention: guarding.checkInFlight, post: { poster.post($0) }, meta: &meta)
@@ -403,8 +407,8 @@ extension Engine {
         throw EngineError(name: "keyboardLayoutUnavailable", "Unable to get the current keyboard layout.")
       }
       meta.inputRoute = keyRoute(forced: forced)
-      let activation = try forcedActivation(meta.inputRoute, pid: pid, application: application, meta: &meta)
-      defer { activation?.deactivate() }  // an inputSourceChanged mid-typing undoes a forced activation too
+      let release = try forcedActivation(meta.inputRoute, pid: pid, application: application, meta: &meta)
+      defer { _ = release?() }  // an inputSourceChanged mid-typing ends a forced activation's lease too
       let poster = EventPoster.toProcess(target, sourceState: privateSourceArg(args) ? .privateState : .hidSystemState)
       let initialSource = currentInputSourceID()
       defer { context.connection.markActed(app) }  // text stopped midway changed the app too
@@ -419,19 +423,13 @@ extension Engine {
     }
   }
 
-  /// A spike cell's forced route 3 for keys: the app's activation for its primary window, run before the keys. Nil for
-  /// every other route, the default 2′ included.
-  private func forcedActivation(_ route: InputRoute?, pid: pid_t, application: AXUIElement, meta: inout InputMeta) throws -> FakeActivation? {
+  /// A spike cell's forced route 3 for keys: the app's activation for its primary window, leased before the keys;
+  /// answers the lease's release. Nil for every other route, the default 2′ included.
+  private func forcedActivation(_ route: InputRoute?, pid: pid_t, application: AXUIElement, meta: inout InputMeta) throws -> (() -> Bool)? {
     guard route == .activation else { return nil }
-    let activation = FakeActivation(pid: pid, window: primaryWindow(of: application) ?? application, system: perActionActivation)
-    do {
-      try activation.activate()
-    } catch {
-      activation.deactivate()
-      throw error
-    }
-    meta.activationGuardMs = activation.guardMs
-    return activation
+    return try heldActivations.acquire(pid: pid, beforeActivating: {}, make: {
+      FakeActivation(pid: pid, window: primaryWindow(of: application) ?? application)
+    }, meta: &meta)
   }
 
   /// The process keyboard events go to: the owner of the app's focused element, which for a sheet or an open panel is

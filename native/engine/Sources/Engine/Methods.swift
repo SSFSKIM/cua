@@ -37,6 +37,8 @@ final class Engine: @unchecked Sendable {
   let routeAdvice = RouteAdviceTracker()
   /// The held activations of menus and focus holds, one per process across connections (MenuSpan.swift, FocusHold.swift).
   let heldActivations = HeldActivations()
+  /// The workspace's real activations and deactivations, which make a held process's activation stale.
+  private var activationObservers: [NSObjectProtocol] = []
   /// Whether the Mac is locked now (the session dictionary; replaced in the unit tests).
   let screenLocked: () -> Bool
   /// The pasteboard a paste writes: the general one (Paste.swift; the unit tests write pasteboards of their own).
@@ -57,6 +59,7 @@ final class Engine: @unchecked Sendable {
     self.screenLocked = screenLocked
     self.pasteboardAccess = pasteboard
     self.pasteActivation = pasteActivation
+    activationObservers = observeRealActivations(NSWorkspace.shared.notificationCenter, registry: heldActivations)
   }
 
   func handle(_ request: Request, on connection: ConnectionState, receivedAt: Int64) -> Outcome {

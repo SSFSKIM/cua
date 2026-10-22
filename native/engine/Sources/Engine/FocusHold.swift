@@ -18,10 +18,11 @@ import Foundation
 // before the first request on the connection aimed at another app (the conservative reading of a silent vendor); and
 // after `focusHoldIdleMs` with no request observing or acting on the held app (the menu span's bound; the vendor has
 // none). An action after a release activates again. The activation is the process's: HeldActivations shares one among
-// every connection's holds and menu spans, and the last holder's release withdraws it. A per-action activation (a
-// synthesized click's, a drag's, a paste's) on a held process neither activates it again nor withdraws it
-// (`ActivationSystem.held`), so a click amid the interaction never leaves the hold believing in an activation the app
-// no longer has.
+// every connection's holds, menu spans and per-action activations (a synthesized click's, a drag's, a paste's, each
+// leased for its action), and the last holder's release withdraws it, so neither a click amid the interaction nor a
+// hold ending mid-click withdraws an activation the other relies on. A real activation or deactivation of the held app
+// (the user brings it forward or leaves it) makes the hold stale (HeldActivations, observed through the workspace's
+// notifications), and the next action re-establishes it with its guard.
 
 /// How long a focus hold outlasts the last request that observed or acted on its app: the menu span's 120 s, which a
 /// model's turn between two actions on the app should not outlast. A release costs only a re-activation at the next
@@ -80,7 +81,11 @@ func focusHoldRenews(method: String, app: String?, heldApp: String?) -> Bool {
 func holdFocus(app key: String, pid: pid_t, connection: ConnectionState, activations: HeldActivations,
                activation: () -> FakeActivation, beforeActivating: () throws -> Void, meta: inout InputMeta) throws {
   let joining = connection.focusHold.app == key
-  if joining && connection.focusHeld.contains(pid) { return }
+  if joining && connection.focusHeld.contains(pid) {
+    // Held already; re-established when a real activation cycle cleared it since.
+    try activations.refresh(pid: pid, beforeActivating: beforeActivating, make: activation, meta: &meta)
+    return
+  }
   let release = try activations.acquire(pid: pid, beforeActivating: beforeActivating, make: activation, meta: &meta)
   if joining {
     connection.focusHeld.add(pid, release: release)
@@ -98,14 +103,6 @@ extension ConnectionState {
 }
 
 extension Engine {
-  /// The activation system of a per-action activation: the system's, with the engine's held activations left alone.
-  /// Never the system of an activation HeldActivations itself runs, whose registry lock `held` would take again.
-  var perActionActivation: ActivationSystem {
-    var system = ActivationSystem()
-    system.held = { [heldActivations] in heldActivations.holders($0) > 0 }
-    return system
-  }
-
   /// An element action's route: 3 when the process serving the element does not believe it has focus, unless the
   /// connection's recorded menu of the app already holds its activation (MenuSpan.swift).
   func actionRoute(for target: ElementTarget, app: ResolvedApp, connection: ConnectionState) -> InputRoute {

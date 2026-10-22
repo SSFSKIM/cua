@@ -659,8 +659,9 @@ final class ActivationSparingTests: XCTestCase {
     XCTAssertNil(activationSparing(button: .left, target: link))
     XCTAssertEqual(activationSparing(button: .middle, target: link), link)
     XCTAssertEqual(activationSparing(button: .right, target: link), link)
-    XCTAssertNil(activationClickPoint(CGPoint(x: 110, y: 76), windowFrame: window, sparing: link))
-    XCTAssertEqual(activationClickPoint(CGPoint(x: 110, y: 76), windowFrame: window, sparing: nil), CGPoint(x: 110, y: 76))
+    let hit = ActivationHit(role: "AXWindow", actions: [])
+    XCTAssertEqual(activationClickDecision(CGPoint(x: 110, y: 76), windowFrame: window, sparing: link) { hit }, .spared)
+    XCTAssertEqual(activationClickDecision(CGPoint(x: 110, y: 76), windowFrame: window, sparing: nil) { hit }, .posted)
     XCTAssertEqual(pointArea(CGPoint(x: 10, y: 10), hitFrame: nil), CGRect(x: 9.5, y: 9.5, width: 1, height: 1), "a coordinate with no element spares its point")
   }
 }

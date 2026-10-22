@@ -1093,20 +1093,17 @@ test('with cua\'s engine the launch names cua\'s service and the approved bundle
   assert.equal(launchWith({host: 'cua', reason: 'browser_only', node: NODE24}, BROWSER).nativeEngine, null);
 });
 
-// The route A/B's switch (src/services/engine/service.mjs): copied only from a caller that sets it to 1, only for cua's
-// engine.
-test('CUA_ENGINE_SPIKE_ROUTE=1 reaches the worker only with cua\'s engine selected and only when the caller sets it to 1', t => {
+// The route A/B's switch (src/services/engine/service.mjs) never comes from the caller's environment: only the harness
+// serve's launch hook adds it (scripts/native-baseline/spike-route.mjs).
+test('an ambient CUA_ENGINE_SPIKE_ROUTE=1 never reaches the worker, whichever host or engine', t => {
   const {home, runtime} = fixtureRuntime(t);
   const cuaEngine = {engine: 'cua', reason: 'explicit', status: 'pass', app: {bundlePath: APP.bundlePath, engineVersion: APP.engineVersion, build: APP.build}};
-  const launchWith = (ambient, engine = cuaEngine) => buildLaunch({runtime, home, sessionId: SESSION, ambient, surfaces: COMPUTER, services: {sky: SKY_SERVICE},
-    replHost: {host: 'cua', reason: 'cua_engine', node: NODE24, engine}});
-  assert.equal(launchWith({...AMBIENT, CUA_ENGINE_SPIKE_ROUTE: '1'}).env.CUA_ENGINE_SPIKE_ROUTE, '1');
-  for (const value of [undefined, '0', 'true', ' 1']) {
-    assert.equal('CUA_ENGINE_SPIKE_ROUTE' in launchWith({...AMBIENT, ...(value === undefined ? {} : {CUA_ENGINE_SPIKE_ROUTE: value})}).env, false, String(value));
+  const ambient = {...AMBIENT, CUA_ENGINE_SPIKE_ROUTE: '1'};
+  for (const replHost of [{host: 'cua', reason: 'cua_engine', node: NODE24, engine: cuaEngine}, {host: 'vendor', reason: 'explicit', engine: cuaEngine},
+    {host: 'vendor', reason: 'macos_native_peer_requires_vendor', engine: {engine: 'vendor', reason: 'default', status: 'pass'}}]) {
+    const launch = buildLaunch({runtime, home, sessionId: SESSION, ambient, surfaces: COMPUTER, services: {sky: SKY_SERVICE}, replHost});
+    assert.equal('CUA_ENGINE_SPIKE_ROUTE' in launch.env, false, `${replHost.host} host, ${replHost.engine.engine} engine`);
   }
-  const vendor = buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, CUA_ENGINE_SPIKE_ROUTE: '1'}, surfaces: COMPUTER, services: {sky: SKY_SERVICE},
-    replHost: {host: 'vendor', reason: 'macos_native_peer_requires_vendor', engine: {engine: 'vendor', reason: 'default', status: 'pass'}}});
-  assert.equal('CUA_ENGINE_SPIKE_ROUTE' in vendor.env, false, 'never for the vendor engine');
 });
 
 test('the vendor engine\'s attestation names the helper bundle\'s version and the runtime release', t => {

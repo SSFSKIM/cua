@@ -270,9 +270,10 @@
 
 - **2026-10-22 — An env-gated spike route in the product engine service (#117 M2b, hold 3's route A/B).**
   `src/services/engine/service.mjs` forwards a click's `spikeRoute` when the worker's environment carries
-  `CUA_ENGINE_SPIKE_ROUTE=1` (copied by `src/runtime/launch.mjs` only for cua's engine; set only by the native matrix's
-  route-ab serve). Off by default, so bd1136f1's guarantee holds in every user and model session, but it is a test
-  switch living in product code. Decide after #117's hold 3: keep it as a documented test hook (and let `cua doctor`
+  `CUA_ENGINE_SPIKE_ROUTE=1`. The product launch drops an ambient value (`src/runtime/launch.mjs`); only the harness
+  serve's launch hook adds it, for cua's engine, when the route-ab lane asks (`scripts/native-baseline/spike-route.mjs`).
+  So bd1136f1's guarantee holds in every user and model session, but the forwarding is a test switch living in product
+  code. Decide after #117's hold 3: keep it as a documented test hook (and let `cua doctor`
   show it when set), or remove it with the route-ab cell once the A/B's question is settled. Spec Decision Log,
   2026-10-22 "hold 3's route A/B".
 

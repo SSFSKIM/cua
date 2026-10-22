@@ -43,10 +43,11 @@
 //   knows, so the engine's invalidSecondaryAction is answered as `<action> is not a valid secondary action for <index>`
 //   (R/F-helper-logic.md §16.3), its code, name and meta kept.
 // - A forced click route, for the native matrix's route A/B only: a click's `spikeRoute` is forwarded when the worker's
-//   environment carries CUA_ENGINE_SPIKE_ROUTE=1, read once when the service is made. Only the matrix's route-ab serve
-//   sets it (scripts/native-matrix/run.mjs), and the launcher copies it into the worker only for cua's engine
-//   (src/runtime/launch.mjs). Without it no spike switch reaches the engine from model code (bd1136f1), and with it only
-//   the click's route can be chosen: the policy, the forbidden list and the approval run as for any click.
+//   environment carries CUA_ENGINE_SPIKE_ROUTE=1, read once when the service is made. The product launch never puts it
+//   there (src/runtime/launch.mjs drops it with every other ambient value); only the native matrix's route-ab serve adds
+//   it to its launch, through the harness serve's launch hook (scripts/native-baseline/spike-route.mjs). Without it no
+//   spike switch reaches the engine from model code (bd1136f1), and with it only the click's route can be chosen: the
+//   policy, the forbidden list and the approval run as for any click.
 import {createEngineClient} from './client.mjs';
 import {createObservations} from './observations.mjs';
 import {createPolicy, toolSurface} from './policy.mjs';

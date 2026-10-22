@@ -64,9 +64,6 @@
 //   CUA_ENGINE_APP                           computer surface, darwin, cua's engine selected: the approved engine bundle
 //                                            (src/runtime/engine.mjs installedEngine), which cua's service connects to at
 //                                            the engine.sock beside it and launches when nothing answers there
-//   CUA_ENGINE_SPIKE_ROUTE=1                 cua's engine selected, and only when the caller's environment sets it to 1:
-//                                            cua's service then forwards a click's spikeRoute (src/services/engine/
-//                                            service.mjs); the native matrix's route A/B serve is its one caller
 //   CUA_ENGINE_SCREENSHOTS                   computer surface, darwin: where cua's own engine writes screenshots, under
 //                                            the session's run directory, which the kernel may read; the engine creates
 //                                            it (outside every sandbox, never through a symbolic link), since the
@@ -298,7 +295,6 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
     if (linux) Object.assign(env, {OAI_SKY_LINUX_BIN: p.skyLinuxBin, CUA_SKY_SERVICE: p.skyVendorService});
     else {
       Object.assign(env, cuaEngine ? {CUA_SKY_SERVICE: ENGINE_SERVICE, CUA_ENGINE_APP: cuaEngine.bundlePath} : {SKY_CUA_SERVICE_PATH: p.skyServiceApp, CUA_SKY_SERVICE: p.skyVendorService});
-      if (cuaEngine && ambient.CUA_ENGINE_SPIKE_ROUTE === '1') env.CUA_ENGINE_SPIKE_ROUTE = '1';
       env.CUA_ENGINE_SCREENSHOTS = join(cwd, 'screenshots');
     }
   }

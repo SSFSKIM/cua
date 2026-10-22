@@ -7,7 +7,8 @@ import Foundation
 // `suffix` immediately adjacent, overlapping occurrences counted, exactly one match required; a Markdown match maps to
 // the source's UTF-16 offsets with syntax at its edges skipped inward; `selection_type` text, cursor_before or
 // cursor_after gives (L, N), (L, 0) or (L + N, 0), written as AXSelectedTextRange after the settable check and the
-// field's focus. No scroll into view. Route 1: nothing is posted unless the focus fallback clicks.
+// field's focus. No scroll into view. Route 1, or route 3 when the app does not believe it has focus (its activation
+// held, FocusHold.swift): nothing is posted to the field unless the focus fallback clicks.
 
 /// A text element's value as an attributed string over its first `length` UTF-16 units (the parameterized read the
 /// observation's Markdown comes from); nil when the element gives none.
@@ -158,6 +159,10 @@ extension Engine {
       let markdown = [kAXTextAreaRole, kAXTextFieldRole].contains(target.entry.identity.role) && length > 0 && length <= markdownMaxLength
         ? attributedValue(of: target.element, length: length).flatMap(markdownMapped) : nil
       guard let match = textRange(of: text, prefix: prefix, suffix: suffix, markdown: markdown, plain: plain) else { throw selectTextNotFound }
+      // Route 3's held activation when the app does not believe it has focus (FocusHold.swift), before the focus.
+      if actionRoute(for: target, app: app, connection: context.connection) == .activation {
+        try holdElementFocus(target, app: app, appPid: appPid, guarding: guarding, context: context, meta: &meta)
+      }
       try focusField(target, app: app, appPid: appPid, guarding: guarding, connection: context.connection, meta: &meta)
       try guarding.checkInFlight()
       var written = AXError.failure

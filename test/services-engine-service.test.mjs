@@ -27,7 +27,7 @@ const APPS = {
 const byPath = Object.fromEntries(Object.values(APPS).map(app => [app.appPath, app]));
 const NO_LONGER_VALID = 'The element ID is no longer valid. Try to get the on-screen content again and see if that resolves the issue.';
 const ENGINE_MS = {resolve_app: 999};
-const INPUT_META = {inputRoute: 3, startedAt: 1000, endedAt: 1042, receivedAt: 990, hidIdleMs: 31000, activationGuardMs: 41.5, pointUnconfirmed: true};
+const INPUT_META = {inputRoute: 3, startedAt: 1000, endedAt: 1042, receivedAt: 990, hidIdleMs: 31000, activationGuardMs: 41.5, activationClick: 'posted', pointUnconfirmed: true};
 
 const win = title => node('t0', 0, 'AXWindow', {roleDescription: 'standard window', title, actions: ['AXRaise']});
 const button = (token, title) => node(token, 1, 'AXButton', {roleDescription: 'button', title, actions: ['AXPress']});
@@ -66,7 +66,7 @@ async function session(t, {handlers = {}, answer = () => ({action: 'accept', con
     'execute:get_app_state': ({args}) => { during('get_app_state'); return trees.get(args.app); },
     'execute:list_apps': () => { during('list_apps'); return [{id: 'com.apple.TextEdit', displayName: 'TextEdit', isRunning: true, extra: 1}, {id: 'io.example.old', displayName: 'Old', isRunning: false, lastUsedDate: 1.5, useCount: 2}]; },
     'execute:click': () => { during('click'); return {meta: INPUT_META}; },
-    'execute:press_key': () => ({meta: {...INPUT_META, inputRoute: "2'", activationGuardMs: undefined, pointUnconfirmed: undefined}}),
+    'execute:press_key': () => ({meta: {...INPUT_META, inputRoute: "2'", activationGuardMs: undefined, activationClick: undefined, pointUnconfirmed: undefined}}),
     'execute:type_text': () => ({meta: {...INPUT_META, inputRoute: "2'"}}),
     ...handlers,
   }});
@@ -193,6 +193,7 @@ test('an element index becomes the lineage\'s token, every execute carrying its 
   assert.equal(meta['cua/receivedAt'], 990);
   assert.equal(meta['cua/hidIdleMs'], 31000);
   assert.equal(meta['cua/activationGuardMs'], 41.5);
+  assert.equal(meta['cua/activationClick'], 'posted');
   assert.equal(meta['cua/pointUnconfirmed'], true);
   assert.deepEqual(meta['cua/nativeEngine'], {engine: 'cua', version: '0.1.0', build: 'b1'});
 
@@ -204,6 +205,7 @@ test('an element index becomes the lineage\'s token, every execute carrying its 
   assert.equal(engine.executes().at(-1).lineage, 'L-TextEdit', 'keys carry the lineage too');
   assert.equal(meta['cua/inputRoute'], "2'");
   assert.equal(meta['cua/activationGuardMs'], null, 'a key\'s result does not inherit the click\'s guard time');
+  assert.equal(meta['cua/activationClick'], null, 'nor its activation click');
   assert.equal(meta['cua/pointUnconfirmed'], null);
   assert.equal(engine.executes().at(-1).args.element, undefined);
 });

@@ -293,12 +293,13 @@ final class ClickPointTests: XCTestCase {
     // The second sitting's readings (U13): TextEdit's point 16 points below the top edge, inside; Chrome's at the
     // screen's bottom-left corner, outside its frame.
     let textEdit = CGRect(x: 80, y: 60, width: 610, height: 860)
-    XCTAssertEqual(activationClickPoint(CGPoint(x: 110, y: 76), windowFrame: textEdit), CGPoint(x: 110, y: 76))
+    let window = ActivationHit(role: "AXWindow", actions: [])
+    XCTAssertEqual(activationClickDecision(CGPoint(x: 110, y: 76), windowFrame: textEdit, sparing: nil) { window }, .posted)
     let chrome = CGRect(x: 80, y: 60, width: 1000, height: 760)
-    XCTAssertNil(activationClickPoint(CGPoint(x: -1, y: 1441), windowFrame: chrome))
-    XCTAssertNil(activationClickPoint(CGPoint(x: 1080, y: 400), windowFrame: chrome), "the far edge is outside")
-    XCTAssertNil(activationClickPoint(nil, windowFrame: chrome), "the attribute unsupported")
-    XCTAssertNil(activationClickPoint(CGPoint(x: 110, y: 76), windowFrame: nil), "no frame to place it in")
+    XCTAssertEqual(activationClickDecision(CGPoint(x: -1, y: 1441), windowFrame: chrome, sparing: nil) { window }, .outsideFrame)
+    XCTAssertEqual(activationClickDecision(CGPoint(x: 1080, y: 400), windowFrame: chrome, sparing: nil) { window }, .outsideFrame, "the far edge is outside")
+    XCTAssertEqual(activationClickDecision(nil, windowFrame: chrome, sparing: nil) { window }, .noPoint, "the attribute unsupported")
+    XCTAssertEqual(activationClickDecision(CGPoint(x: 110, y: 76), windowFrame: nil, sparing: nil) { window }, .outsideFrame, "no frame to place it in")
   }
 }
 
@@ -561,6 +562,37 @@ final class KeyRouteTests: XCTestCase {
     XCTAssertEqual(keyRoute(forced: .commandPost), .commandPost)
   }
 
+  /// The amended table (Decision Log, 2026-10-22, "route 3 for key equivalents and element actions"): a ⌘ chord is a
+  /// menu key equivalent, which a background app does not perform (TextEdit's ⌘A left the selection unchanged by 2′), so
+  /// press_key takes route 3 when the app does not believe it has focus; plain keys stay on 2′.
+  func testACommandChordGoesByRouteThreeOnlyWhenTheAppDoesNotBelieveItHasFocus() throws {
+    func route(_ keys: String, focus: Bool, forced: InputRoute? = nil) throws -> InputRoute {
+      pressKeyRoute(forced: forced, presses: try parseKeySequence(keys), believesFocus: focus)
+    }
+    XCTAssertEqual(try route("super+a", focus: false), .activation)
+    XCTAssertEqual(try route("cmd+shift+z", focus: false), .activation)
+    XCTAssertEqual(try route("Down super+a", focus: false), .activation, "a sequence with a chord is activated before its first press")
+    XCTAssertEqual(try route("super+a", focus: true), .plainPost, "an app that believes it has focus needs no activation")
+    for plain in ["a", "Return", "shift+a", "ctrl+a", "alt+Return", "Tab Down"] {
+      XCTAssertEqual(try route(plain, focus: false), .plainPost, plain)
+    }
+    XCTAssertEqual(try route("super", focus: false), .plainPost, "a modifier alone is no key equivalent")
+    XCTAssertEqual(try route("super+a", focus: false, forced: .plainPost), .plainPost, "a spike cell's forced route wins")
+    XCTAssertEqual(try route("a", focus: false, forced: .activation), .activation)
+  }
+
+  func testTypedTextStaysOnRouteTwoPrimeWhateverTheFocus() {
+    XCTAssertEqual(keyRoute(forced: nil), .plainPost, "type_text is measured and delivered by 2′ (U12)")
+  }
+
+  /// An element's own action or attribute write (a click by AXPress, set_value, select_text, perform_secondary_action)
+  /// takes route 3 into an app that does not believe it has focus; inside a recorded menu's held activation it stays 1.
+  func testAnElementActionTakesRouteThreeWhenTheAppDoesNotBelieveItHasFocus() {
+    XCTAssertEqual(elementActionRoute(believesFocus: false, insideHeldMenu: false), .activation)
+    XCTAssertEqual(elementActionRoute(believesFocus: true, insideHeldMenu: false), .action)
+    XCTAssertEqual(elementActionRoute(believesFocus: false, insideHeldMenu: true), .action, "the menu's own span already holds it")
+  }
+
   func testTypedTextIsKeyedOnlyUnderAReliableLatinReading() {
     XCTAssertEqual(textRoute(keyboardLayout: true, perContextUnknown: false, concealed: false, spikeKeyed: false), .keyed)
     XCTAssertEqual(textRoute(keyboardLayout: false, perContextUnknown: false, concealed: false, spikeKeyed: false), .paste)
@@ -620,6 +652,8 @@ final class GuardSeam {
   let frontmostAfterPost: pid_t?
   let reactivates: Bool
   var activationPoint: CGPoint?
+  /// What the hit-test at the activation point answers: the window itself, as U13 read on TextEdit, Finder and Electron.
+  var activationHit: ActivationHit? = ActivationHit(role: "AXWindow", actions: [])
   let targetInFront: (Int) -> Bool
   /// Scheduled work by due time on the fake clock, run as the clock passes it.
   private var timers: [(due: Double, work: () -> Void)] = []
@@ -695,6 +729,7 @@ final class GuardSeam {
     system.isInFront = { _, _ in samples += 1; return self.targetInFront(samples) }
     system.raise = { _ in self.raises += 1; self.advance(self.raiseCost) }
     system.activationPoint = { _ in self.activationPoint }
+    system.hitAt = { _, _ in self.activationHit }
     system.now = { self.clock }
     system.sleep = { _ in self.advance(self.step) }
     system.schedule = { ms, work in self.timers.append((self.clock + ms, work)) }

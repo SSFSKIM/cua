@@ -3,24 +3,26 @@ import ApplicationServices
 import Foundation
 
 // Input methods (the spec's Design, "Input", "Keys", "Text" and "User intervention"; R/F-helper-logic.md §5–6 and §9,
-// R/sky-behaviour.md §10–14 and §18): click, press_key and type_text on the route table (Routes.swift): keys and typed
-// text by route 2′, the plain post with no fake activation; clicks by route 1 where the element advertises the action
-// and the hit-test gate passes, else by route 3, whose failed guard is refused as activationFailed with the click's own
-// events never posted, or by route 4 in its place for an app the owner's override names (ForegroundAssist.swift). The
-// engine never activates an app on its own, never moves the real pointer, posts to the process that owns the target
-// element, and refuses a target served by a forbidden process before anything is posted (OwnerPolicy.swift). Every
-// input request passes the intervention guard (Intervention.swift) before anything is posted, and a sequence checks it
-// again between its events: between the activation and the click, between the presses of a key sequence, between the
-// characters of typed text. Every result and every error raised after the arguments validate carries the input meta
-// (Interfaces, EngineProtocol): {inputRoute, startedAt, endedAt, receivedAt, hidIdleMs}, startedAt/endedAt null while
-// nothing was posted, inputRoute null until a route is chosen; the guard's duration rides as activationGuardMs when
-// route 3 ran one, `intervention: "off"` when detection is off, `entered` on a type_text that keyed (never a concealed
-// one), and `routeAdvice` once route 3's guard has failed three actions in a row for the app. The settle an action arms
-// runs at the next get_app_state (markActed). Spike-only arguments, which the
-// facade never sends: `spikeRoute` ("1"|"2'"|"2"|"3", force one route; route 2, the ⌘ post, is reachable only this
-// way), `spikeEventSource` ("private", post keys from a private event source instead of the HID-system one) and
-// `spikeKeyed` (type_text: key through the layout regardless of the source routing, probe (e)'s per-context case;
-// never for a concealed request). A non-concealed type_text that routes to the paste route is pasted (Paste.swift).
+// R/sky-behaviour.md §10–14 and §18): click, press_key and type_text on the route table (Routes.swift): typed text and
+// plain keys by route 2′, the plain post with no fake activation, and a ⌘ chord by route 3's held activation when the
+// app does not believe it has focus (FocusHold.swift); clicks by route 1 where the element advertises the action and
+// the hit-test gate passes (route 3's held activation first when the app does not believe it has focus), else by route
+// 3, whose failed guard is refused as activationFailed with the click's own events never posted, or by route 4 in its
+// place for an app the owner's override names (ForegroundAssist.swift). The engine never activates an app on its own,
+// never moves the real pointer, posts to the process that owns the target element, and refuses a target served by a
+// forbidden process before anything is posted (OwnerPolicy.swift). Every input request passes the intervention guard
+// (Intervention.swift) before anything is posted, and a sequence checks it again between its events: between the
+// activation and the click, between the presses of a key sequence, between the characters of typed text. Every result
+// and every error raised after the arguments validate carries the input meta (Interfaces, EngineProtocol): {inputRoute,
+// startedAt, endedAt, receivedAt, hidIdleMs}, startedAt/endedAt null while nothing was posted, inputRoute null until a
+// route is chosen; the guard's duration rides as activationGuardMs when route 3 ran one, `intervention: "off"` when
+// detection is off, `entered` on a type_text that keyed (never a concealed one), and `routeAdvice` once route 3's guard
+// has failed three actions in a row for the app. The settle an action arms runs at the next get_app_state (markActed).
+// Spike-only arguments, which the facade never sends: `spikeRoute` ("1"|"2'"|"2"|"3", force one route; route 2, the ⌘
+// post, is reachable only this way), `spikeEventSource` ("private", post keys from a private event source instead of
+// the HID-system one) and `spikeKeyed` (type_text: key through the layout regardless of the source routing, probe (e)'s
+// per-context case; never for a concealed request). A non-concealed type_text that routes to the paste route is pasted
+// (Paste.swift).
 
 /// A route that carried an input (the spec's Design, "Input"; Interfaces, EngineProtocol's
 /// `inputRoute: 1 | "2'" | 2 | 3 | 4 | "paste"`).
@@ -62,6 +64,8 @@ struct InputMeta {
   var startedAt: Int64? = nil
   var endedAt: Int64? = nil
   var activationGuardMs: Double? = nil
+  /// What route 3's activation click did when an activation ran: posted, or why it was skipped.
+  var activationClick: ActivationClick? = nil
   /// A synthesized element click whose hit-test answered nothing or only a container of the element, so the point
   /// could not be confirmed to reach it; reported as `pointUnconfirmed: true`.
   var pointUnconfirmed = false
@@ -117,6 +121,7 @@ struct InputMeta {
       "hidIdleMs": hidIdleMs ?? NSNull(),
     ]
     if let activationGuardMs { wire["activationGuardMs"] = activationGuardMs }
+    if let activationClick { wire["activationClick"] = activationClick.rawValue }
     if pointUnconfirmed { wire["pointUnconfirmed"] = true }
     if interventionOff { wire["intervention"] = "off" }
     if let entered { wire["entered"] = entered }
@@ -134,30 +139,38 @@ func withMeta(_ error: EngineError, _ meta: InputMeta) -> EngineError {
 }
 
 /// A synthesized click's delivery: under route 3 the fake activation first (nothing when the app already believes it has
-/// focus), then the click's events posted back to back to the target's process, then the activation withdrawn; under
+/// focus), leased from `activations` for the click's duration (shared when a hold keeps the process active, withdrawn
+/// only when no other holder relies on it), then the click's events posted back to back to the target's process; under
 /// route 4 the events are posted while the foreground assist holds the app in front. A failed guard throws before any of
 /// the click's events is posted, and nothing is retried (never with ⌘). `beforePosting` runs once the app is prepared,
 /// just before the events (the intervention guard's in-flight check: a user event during the activation stops the
 /// click). The meta carries the route from the start, so a refusal names the route that failed.
 func deliverClick(_ target: ClickTarget, route: InputRoute, button: MouseButton, count: Int, activation: FakeActivation?,
-                  foreground: ForegroundAssist? = nil, targetActive: () -> Bool, beforePosting: () throws -> Void = {},
-                  post: (CGEvent, pid_t) -> Void, meta: inout InputMeta) throws {
-  try deliverPointer(to: target.pid, route: route, activation: activation, foreground: foreground, beforePosting: beforePosting,
-                     post: post, meta: &meta) {
+                  activations: HeldActivations = HeldActivations(), foreground: ForegroundAssist? = nil, targetActive: () -> Bool,
+                  beforeActivating: () throws -> Void = {}, beforePosting: () throws -> Void = {}, post: (CGEvent, pid_t) -> Void,
+                  meta: inout InputMeta) throws {
+  try deliverPointer(to: target.pid, route: route, activation: activation, activations: activations, foreground: foreground,
+                     beforeActivating: beforeActivating, beforePosting: beforePosting, post: post, meta: &meta) {
     clickEvents(target, button: button, count: count, flags: clickFlags(route, targetActive: targetActive()))
   }
 }
 
 /// A synthesized pointer action's delivery (a click's, a drag's), as `deliverClick` describes it: `events` makes the
-/// action's events once the app is prepared, and they are posted back to back to `pid`.
-func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation?, foreground: ForegroundAssist? = nil,
-                    beforePosting: () throws -> Void = {}, post: (CGEvent, pid_t) -> Void, meta: inout InputMeta,
-                    events: () -> [CGEvent]) throws {
+/// action's events once the app is prepared, and they are posted back to back to `pid`. `activations` is the engine's
+/// registry; the default, a registry of the action's own, shares with nothing (the unit tests'). `beforeActivating` (the
+/// in-flight intervention check) runs under the registry's lock, so a user event that lands while the action waits
+/// behind another holder's activation stops it before its activation and activation click; `beforePosting` runs again
+/// just before the events.
+func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation?, activations: HeldActivations = HeldActivations(),
+                    foreground: ForegroundAssist? = nil, beforeActivating: () throws -> Void = {}, beforePosting: () throws -> Void = {},
+                    post: (CGEvent, pid_t) -> Void, meta: inout InputMeta, events: () -> [CGEvent]) throws {
   meta.inputRoute = route
-  defer { activation?.deactivate() }  // every path out of the action, error or success, undoes the activation
+  var release: (() -> Bool)?
+  defer { _ = release?() }  // every path out of the action, error or success, ends its lease
   if route == .activation, let activation {
-    defer { meta.activationGuardMs = activation.guardMs }  // a guard that failed still says how long it held
-    try activation.activate()
+    // A failed guard says how long it held; a shared activation runs none and leaves the meta's time in place (a
+    // focusing click inside set_value's held activation).
+    release = try activations.acquire(pid: activation.pid, beforeActivating: beforeActivating, make: { activation }, meta: &meta)
   }
   // The interval is stamped as the events are posted, so an error after them (route 4's restore) still says they were.
   func send() throws {
@@ -201,10 +214,11 @@ func keyPresses(_ presses: [KeyPress], checkIntervention: () throws -> Void, pos
   }
 }
 
-/// An element's own action, route 1: performed, and refused as actionFailed when the element does not accept it (no
-/// fall-through to a synthesized click, which could click twice after an action that took effect and still erred).
-func deliverAction(_ action: String, perform: (String) -> AXError, meta: inout InputMeta) throws {
-  meta.inputRoute = .action
+/// An element's own action, route 1, or route 3 when the held activation came first: performed, and refused as
+/// actionFailed when the element does not accept it (no fall-through to a synthesized click, which could click twice
+/// after an action that took effect and still erred).
+func deliverAction(_ action: String, route: InputRoute = .action, perform: (String) -> AXError, meta: inout InputMeta) throws {
+  meta.inputRoute = route
   var error = AXError.failure
   meta.posting { error = perform(action); return true }
   guard error == .success else { throw EngineError(name: "actionFailed", "The element did not accept the \(action) action.") }
@@ -271,8 +285,13 @@ extension Engine {
         try armingSettle(&meta, acted: { context.connection.markActed(app) }) { meta in
           switch plan {
           case .action(let action):
+            // Route 3's held activation first when the app does not believe it has focus (FocusHold.swift).
+            let route = forced == nil ? actionRoute(for: target, app: app, connection: context.connection) : .action
+            if route == .activation {
+              try holdElementFocus(target, app: app, appPid: appPid, guarding: guarding, context: context, meta: &meta)
+            }
             try guarding.checkInFlight()
-            try deliverAction(action, perform: { AXUIElementPerformAction(target.element, $0 as CFString) }, meta: &meta)
+            try deliverAction(action, route: route, perform: { AXUIElementPerformAction(target.element, $0 as CFString) }, meta: &meta)
           case .synthesized(let route):
             try synthesizedClick(pointing, route: route, button: button, count: count, app: app, appPid: appPid, guarding: guarding, meta: &meta)
           }
@@ -292,10 +311,11 @@ extension Engine {
           ? FakeActivation(pid: owner, appPid: appPid, window: placed.window, windowFrame: placed.windowFrame, windowID: windowID, sparing: sparing) : nil
         try armingSettle(&meta, acted: { context.connection.markActed(app) }) { meta in
           try recordingRouteAdvice(route, app: app, meta: &meta) { meta in
-            try deliverClick(target, route: route, button: button, count: count, activation: activation,
+            try deliverClick(target, route: route, button: button, count: count, activation: activation, activations: heldActivations,
                              foreground: route == .foreground ? ForegroundAssist(appPid: appPid) : nil,
                              targetActive: { NSRunningApplication(processIdentifier: owner)?.isActive == true },
-                             beforePosting: guarding.checkInFlight, post: { $0.postToPid($1) }, meta: &meta)
+                             beforeActivating: guarding.checkInFlight, beforePosting: guarding.checkInFlight,
+                             post: { $0.postToPid($1) }, meta: &meta)
           }
         }
       }
@@ -307,10 +327,12 @@ extension Engine {
 
   // MARK: press_key
 
-  /// `press_key {app, key}`: the vendor's grammar (Keyboard.swift), four events per press with no gap, posted by route
-  /// 2′ to the process that owns the app's focused element, with no fake activation (the second sitting: keys by 2′
-  /// delivered on every scene without firing the app's activation hooks); a sequence stops between presses at a user
-  /// event attributed to the app. A spike cell may force route 3's activation first, or label the post route 2.
+  /// `press_key {app, key}`: the vendor's grammar (Keyboard.swift), four events per press with no gap, posted to the
+  /// process that owns the app's focused element: plain keys by route 2′, with no fake activation (the second sitting:
+  /// keys by 2′ delivered on every scene without firing the app's activation hooks); a sequence holding a ⌘ chord, a
+  /// menu key equivalent, by route 3 when the app does not believe it has focus, its activation held (FocusHold.swift)
+  /// and taken before the first press. A sequence stops between presses at a user event attributed to the app. A spike
+  /// cell may force route 3's per-action activation first, or label the post route 2.
   func pressKey(_ args: [String: Any], _ context: ExecutionContext) throws -> Any {
     guard let key = args["key"] as? String else { throw EngineError.invalidArguments("key is required") }
     let presses = try parseKeySequence(key)  // validated before anything is resolved, so an unknown name never posts
@@ -329,9 +351,12 @@ extension Engine {
       try refuseForbiddenOwner(target)
       actionTargets(target, app: app, connection: context.connection)
       try refuseMinimizedKeyboardInput(application: application, app: app.displayName, ax: .live)  // keys land nowhere (Minimized.swift)
-      meta.inputRoute = keyRoute(forced: forced)
-      let activation = try forcedActivation(meta.inputRoute, pid: pid, application: application, meta: &meta)
-      defer { activation?.deactivate() }  // every path out of the posting, error or success, undoes a forced activation
+      meta.inputRoute = pressKeyRoute(forced: forced, presses: presses, believesFocus: ActivationSystem().believesItHasFocus(pid))
+      if forced == nil, meta.inputRoute == .activation {
+        try holdKeyFocus(app, pid: pid, application: application, guarding: guarding, context: context, meta: &meta)
+      }
+      let release = try forcedActivation(forced, pid: pid, application: application, guarding: guarding, meta: &meta)
+      defer { _ = release?() }  // every path out of the posting, error or success, ends a forced activation's lease
       let poster = EventPoster.toProcess(target, sourceState: privateSourceArg(args) ? .privateState : .hidSystemState)
       defer { context.connection.markActed(app) }  // a sequence stopped midway changed the app too
       try keyPresses(presses, checkIntervention: guarding.checkInFlight, post: { poster.post($0) }, meta: &meta)
@@ -387,8 +412,8 @@ extension Engine {
         throw EngineError(name: "keyboardLayoutUnavailable", "Unable to get the current keyboard layout.")
       }
       meta.inputRoute = keyRoute(forced: forced)
-      let activation = try forcedActivation(meta.inputRoute, pid: pid, application: application, meta: &meta)
-      defer { activation?.deactivate() }  // an inputSourceChanged mid-typing undoes a forced activation too
+      let release = try forcedActivation(meta.inputRoute, pid: pid, application: application, guarding: guarding, meta: &meta)
+      defer { _ = release?() }  // an inputSourceChanged mid-typing ends a forced activation's lease too
       let poster = EventPoster.toProcess(target, sourceState: privateSourceArg(args) ? .privateState : .hidSystemState)
       let initialSource = currentInputSourceID()
       defer { context.connection.markActed(app) }  // text stopped midway changed the app too
@@ -403,19 +428,14 @@ extension Engine {
     }
   }
 
-  /// A spike cell's forced route 3 for keys: the app's activation for its primary window, run before the keys. Nil for
-  /// every other route, the default 2′ included.
-  private func forcedActivation(_ route: InputRoute?, pid: pid_t, application: AXUIElement, meta: inout InputMeta) throws -> FakeActivation? {
+  /// A spike cell's forced route 3 for keys: the app's activation for its primary window, leased before the keys;
+  /// answers the lease's release. Nil for every other route, the default 2′ included.
+  private func forcedActivation(_ route: InputRoute?, pid: pid_t, application: AXUIElement, guarding: InterventionGuard,
+                                meta: inout InputMeta) throws -> (() -> Bool)? {
     guard route == .activation else { return nil }
-    let activation = FakeActivation(pid: pid, window: primaryWindow(of: application) ?? application)
-    do {
-      try activation.activate()
-    } catch {
-      activation.deactivate()
-      throw error
-    }
-    meta.activationGuardMs = activation.guardMs
-    return activation
+    return try heldActivations.acquire(pid: pid, beforeActivating: guarding.checkInFlight, make: {
+      FakeActivation(pid: pid, window: primaryWindow(of: application) ?? application)
+    }, meta: &meta)
   }
 
   /// The process keyboard events go to: the owner of the app's focused element, which for a sheet or an open panel is
@@ -478,6 +498,17 @@ func hitTest(window: AXUIElement, at point: CGPoint) -> AXUIElement? {
 /// deliver a click at the point to, whatever other apps' windows lie above it).
 func hitTest(application pid: pid_t, at point: CGPoint) -> AXUIElement? {
   hitTest(window: prepare(AXUIElementCreateApplication(pid)), at: point)
+}
+
+/// An element's advertised actions, read now; nil when the query failed (an element with no actions answers an empty
+/// list or no value, never an error).
+func establishedActionNames(of element: AXUIElement) -> [String]? {
+  var names: CFArray?
+  switch AXUIElementCopyActionNames(element, &names) {
+  case .success: return names as? [String] ?? []
+  case .noValue: return []
+  default: return nil
+  }
 }
 
 /// An element's advertised actions, read now.

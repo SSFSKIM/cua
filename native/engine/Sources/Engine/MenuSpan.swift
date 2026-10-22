@@ -1,3 +1,4 @@
+import AppKit
 import ApplicationServices
 import Foundation
 import os
@@ -30,10 +31,11 @@ let menuSpanIdleMs: Double = 120_000
 
 private let menuLog = Logger(subsystem: "io.github.ssfskim.cua.engine", category: "menu")
 
-/// One connection's held menu activation: the app it is held for and how to release it, with the idle bound's timer. A
-/// connection's requests run one at a time on its thread, the timer on another; the lock serializes the two, and the
-/// timer never releases while a request runs.
-final class MenuSpan: @unchecked Sendable {
+/// One connection's held activation span: the app it is held for and how to release it, with the idle bound's timer. A
+/// connection has two, the menu's (here) and the focus hold's (FocusHold.swift); `label` names which in a logged release
+/// failure. A connection's requests run one at a time on its thread, the timer on another; the lock serializes the two,
+/// and the timer never releases while a request runs.
+final class ActivationSpan: @unchecked Sendable {
   private let lock = NSLock()
   private var held: (app: String, release: () -> Bool)?
   private var busy = false
@@ -45,15 +47,17 @@ final class MenuSpan: @unchecked Sendable {
   private var armed = 0
   /// Bumped by every hold, so a request can tell whether it started a new span.
   private var holds = 0
+  private let label: String
   private let idleMs: Double
   private let schedule: (Double, @escaping @Sendable () -> Void) -> Void
   private let releaseFailed: (String) -> Void
 
-  init(idleMs: Double = menuSpanIdleMs,
+  init(label: String = "menu", idleMs: Double = menuSpanIdleMs,
        schedule: @escaping (Double, @escaping @Sendable () -> Void) -> Void = { ms, work in
          DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + .microseconds(Int(ms * 1000)), execute: work)
        },
        releaseFailed: @escaping (String) -> Void = { menuLog.error("\($0, privacy: .public)") }) {
+    self.label = label
     self.idleMs = idleMs
     self.schedule = schedule
     self.releaseFailed = releaseFailed
@@ -134,18 +138,32 @@ final class MenuSpan: @unchecked Sendable {
     guard let ending = held else { return }
     held = nil
     if !ending.release() {
-      releaseFailed("menu activation release failed for \(ending.app): the deactivation event could not be made")
+      releaseFailed("\(label) activation release failed for \(ending.app): the deactivation event could not be made")
     }
   }
 }
 
-/// The held activations of the engine, one per target process however many connections' spans hold it (route 3's state
-/// is the process's, not a connection's): the first span to acquire a process's activation runs it, the others share
-/// it, and the last to release it deactivates. So a span ending never withdraws an activation another span (another
-/// connection's, or the same connection's new record) still relies on.
+/// The held activations of the engine, one per target process however many holders it has: menu spans, focus holds, and
+/// the per-action activations of synthesized clicks, drags, pastes and forced keys, each for the action's duration
+/// (route 3's state is the process's, not a connection's or an action's). The first holder to acquire a process's
+/// activation runs it, the others share it, and the last to release it deactivates. So no holder's end ever withdraws an
+/// activation another still relies on: a span ending mid-click waits for the click's release, and a click that began
+/// before a span leaves the span's process active.
+///
+/// A real activation or deactivation of a process (the user brings the app forward, or leaves it) clears its synthetic
+/// active state, as the vendor's tap updates its beliefs on real activation events (F §5.5, FUN_10072fd24). Each one
+/// bumps the process's real-activation epoch (`realActivationChanged`, whether or not the process is held yet). An
+/// activation reads the epoch right after its subtype 1 is posted, and it is stale exactly when the epoch has moved
+/// since: a real event before the post leaves it current, one after makes it stale, however the event interleaves with
+/// the activation's AX reads, guard or hit-test. A stale activation is replaced by the next acquire or `refresh`, and
+/// never deactivated, on its last release or its failed guard's cleanup alike, the system having withdrawn its state.
 final class HeldActivations: @unchecked Sendable {
   private let lock = NSLock()
   private var held: [pid_t: (activation: FakeActivation, holders: Int)] = [:]
+  /// The real-activation epochs, behind their own lock: the workspace's notifications bump them from the main thread
+  /// without waiting on an activation's guard under `lock`, and an activation reads its process's under its guard.
+  private let epochLock = NSLock()
+  private var epochs: [pid_t: Int] = [:]
 
   /// The holders of `pid`'s activation (the unit tests' view).
   func holders(_ pid: pid_t) -> Int {
@@ -161,28 +179,57 @@ final class HeldActivations: @unchecked Sendable {
     return false
   }
 
-  /// Acquires `pid`'s held activation. `beforeActivating` (the in-flight intervention check) runs once the lock is held,
-  /// so a user event that lands while the request waits behind another connection's activation still stops it before
-  /// anything is run, shared or recorded. When no span holds the activation, `make()`'s runs (its guard time into `meta`, a
-  /// failed guard's too; a failed guard throws with the activation undone and nothing held); otherwise the running one
-  /// is shared. Answers the release, which runs once and deactivates when the last holder releases; it answers false
-  /// only when that deactivation could not post.
+  /// A real activation or deactivation of `pid` was observed.
+  func realActivationChanged(_ pid: pid_t) {
+    epochLock.lock()
+    defer { epochLock.unlock() }
+    epochs[pid, default: 0] += 1
+  }
+
+  private func epoch(_ pid: pid_t) -> Int {
+    epochLock.lock()
+    defer { epochLock.unlock() }
+    return epochs[pid] ?? 0
+  }
+
+  /// Whether a real activation or deactivation of its process came after the activation read the epoch.
+  private func isStale(_ activation: FakeActivation) -> Bool {
+    activation.epoch.map { $0 != epoch(activation.pid) } ?? false
+  }
+
+  /// Runs a new activation, its guard time and click into `meta` (a failed guard's too); a failed guard throws with it
+  /// undone, unless a real event already withdrew it.
+  private func run(_ make: () -> FakeActivation, meta: inout InputMeta) throws -> FakeActivation {
+    let activation = make()
+    let pid = activation.pid
+    activation.realEpoch = { [self] in epoch(pid) }
+    do {
+      defer {
+        meta.activationGuardMs = activation.guardMs ?? meta.activationGuardMs
+        meta.activationClick = activation.click ?? meta.activationClick
+      }
+      try activation.activate()
+    } catch {
+      if !isStale(activation) { activation.deactivate() }
+      throw error
+    }
+    return activation
+  }
+
+  /// Acquires `pid`'s activation. `beforeActivating` (the in-flight intervention check) runs once the lock is held, so a
+  /// user event that lands while the request waits behind another holder's activation still stops it before anything is
+  /// run, shared or recorded. When no holder has the activation, or it is stale, `make()`'s runs (a failed guard throws
+  /// with nothing more held); otherwise the running one is shared. Answers the release, which runs once and deactivates
+  /// when the last holder releases; it answers false only when that deactivation could not post.
   func acquire(pid: pid_t, beforeActivating: () throws -> Void, make: () -> FakeActivation, meta: inout InputMeta) throws -> () -> Bool {
     lock.lock()
     defer { lock.unlock() }
     try beforeActivating()
     if let shared = held[pid] {
-      held[pid] = (shared.activation, shared.holders + 1)
+      let activation = isStale(shared.activation) ? try run(make, meta: &meta) : shared.activation
+      held[pid] = (activation, shared.holders + 1)
     } else {
-      let activation = make()
-      do {
-        defer { meta.activationGuardMs = activation.guardMs }
-        try activation.activate()
-      } catch {
-        activation.deactivate()
-        throw error
-      }
-      held[pid] = (activation, 1)
+      held[pid] = (try run(make, meta: &meta), 1)
     }
     let once = NSLock()
     var released = false
@@ -195,6 +242,16 @@ final class HeldActivations: @unchecked Sendable {
     }
   }
 
+  /// For a holder that already holds `pid`: when its activation went stale, `beforeActivating`, then `make()`'s run in its
+  /// place (a failed guard throws and leaves the stale one held); otherwise nothing.
+  func refresh(pid: pid_t, beforeActivating: () throws -> Void, make: () -> FakeActivation, meta: inout InputMeta) throws {
+    lock.lock()
+    defer { lock.unlock() }
+    guard let entry = held[pid], isStale(entry.activation) else { return }
+    try beforeActivating()
+    held[pid] = (try run(make, meta: &meta), entry.holders)
+  }
+
   private func release(_ pid: pid_t) -> Bool {
     lock.lock()
     defer { lock.unlock() }
@@ -204,7 +261,18 @@ final class HeldActivations: @unchecked Sendable {
       return true
     }
     held[pid] = nil
-    return entry.activation.deactivate()
+    return isStale(entry.activation) || entry.activation.deactivate()
+  }
+}
+
+/// Bumps a process's real-activation epoch on every real activation or deactivation the workspace reports (`center`, the
+/// workspace's notification center in the engine; the notifications arrive on the main run loop).
+func observeRealActivations(_ center: NotificationCenter, registry: HeldActivations) -> [NSObjectProtocol] {
+  [NSWorkspace.didActivateApplicationNotification, NSWorkspace.didDeactivateApplicationNotification].map { name in
+    center.addObserver(forName: name, object: nil, queue: nil) { note in
+      guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
+      registry.realActivationChanged(app.processIdentifier)
+    }
   }
 }
 

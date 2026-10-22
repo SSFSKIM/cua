@@ -41,12 +41,17 @@ final class ConnectionState: @unchecked Sendable {
   /// (MenuRecord.swift).
   var menuRecords: [String: AXUIElement] = [:]
   /// The record's held activation (MenuSpan.swift).
-  let menuSpan: MenuSpan
+  let menuSpan: ActivationSpan
+  /// Route 3's activation held for element actions and key equivalents (FocusHold.swift), and the processes it holds.
+  let focusHold: ActivationSpan
+  var focusHeld = HeldProcesses()
 
-  init(id: Int, fd: Int32, menuSpan: MenuSpan = MenuSpan()) {
+  init(id: Int, fd: Int32, menuSpan: ActivationSpan = ActivationSpan(),
+       focusHold: ActivationSpan = ActivationSpan(label: "focus", idleMs: focusHoldIdleMs)) {
     self.id = id
     self.fd = fd
     self.menuSpan = menuSpan
+    self.focusHold = focusHold
   }
 
 

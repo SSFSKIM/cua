@@ -18,7 +18,7 @@
 //   node scripts/native-matrix.mjs cell --list
 //     One registered cell (./native-matrix/registry.mjs): the matrix's own (a part of the run, narrowed by --scene and
 //     --user, e.g. `cell non-interference --scene textedit --user finder`, `cell korean --scene textedit`, the probe
-//     cells `concurrent-use`, `concurrent-use-sheet`, `intervention-fires`, `pre-action-refusal`), or one implemented on
+//     cells `concurrent-use`, `concurrent-use-sheet`, `intervention-fires`, `pre-action-refusal`, hold 3's `route-ab`), or one implemented on
 //     another harness (M2a's residue on the live harness; `settle`, the native-mac suite's lane).
 //   node scripts/native-matrix.mjs compare <vendor-dir> <cua-dir> [--out comparison.md]
 //     Every result under the two directories judged (./native-matrix/summary.mjs; only full matrix runs count, three

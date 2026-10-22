@@ -19,6 +19,10 @@
 //       the Electron fixture's whole accessibility record (its app.isAccessibilitySupportEnabled readings, written to
 //       the scene's user-data directory: fixtures/electron/main.js), each line kept as {at, enabled, source} only
 //       -> {records}, null while no Electron scene is up or it wrote none. The run exports it before the scene goes down
+//   electron-counters --run <dir>
+//       the Electron fixture's side-effect counters (fixtures/electron/counters.js: the app's did-become-active and
+//       did-resign-active, the window's, the page's and the text field's focus and blur), read from the scene's user-data
+//       directory -> {answer: {seq, at, counts} | null, at}; null while no Electron scene is up or it wrote none
 //   step <scenes-mac.mjs arguments>
 //       one scenes command (activate, down) timed on the device clock -> {answer, at}
 //   alerts baseline|check --run <dir>
@@ -80,7 +84,7 @@ import {FRONT_WINDOW_SCRIPT} from '../accept/key-guard.mjs';
 import {main as scenesMain, readState, SCENES} from '../repl-parity/scenes-mac.mjs';
 import {alertWatch} from './live-checks.mjs';
 import {defaultIo, PROBE_MS, processTable, restoreInputSource, saveInputSource} from './live-device.mjs';
-import {FIXTURE_ACCESSIBILITY_FILE} from './fixtures/electron-fixture.mjs';
+import {FIXTURE_ACCESSIBILITY_FILE, FIXTURE_COUNTERS_FILE} from './fixtures/electron-fixture.mjs';
 import {ownedReading} from './oracle.mjs';
 import {parseAccessibilityRecord} from './residue-checks.mjs';
 
@@ -167,11 +171,20 @@ export function electronModeRecord(io) {
   const text = io.electronRecord();
   return {records: text === null ? null : parseAccessibilityRecord(text).map(({at, enabled, source}) => ({at, enabled, source: typeof source === 'string' ? source.slice(0, 16) : null}))};
 }
-// The record's text from the Electron scene's user-data directory in the run's scene state, or null.
-function electronRecordIn(dir) {
+// A file's text from the Electron scene's user-data directory in the run's scene state, or null.
+function electronFileIn(dir, name) {
   const userDataDir = readState(dir).scenes?.electron?.userDataDir;
   if (typeof userDataDir !== 'string') return null;
-  try { return fs.readFileSync(join(userDataDir, FIXTURE_ACCESSIBILITY_FILE), 'utf8'); } catch (error) { if (error.code === 'ENOENT') return null; throw error; }
+  try { return fs.readFileSync(join(userDataDir, name), 'utf8'); } catch (error) { if (error.code === 'ENOENT') return null; throw error; }
+}
+const electronRecordIn = dir => electronFileIn(dir, FIXTURE_ACCESSIBILITY_FILE);
+// The fixture's counters, kept to their fields (the file is rewritten whole, so a read sees one complete count).
+// -> {seq, at, counts} | null.
+function electronCountersIn(dir) {
+  const text = electronFileIn(dir, FIXTURE_COUNTERS_FILE);
+  if (text === null) return null;
+  const {seq, at, counts} = JSON.parse(text);
+  return {seq, at, counts: Object.fromEntries(Object.entries(counts ?? {}).filter(([, n]) => Number.isSafeInteger(n)))};
 }
 
 // Whether `pid` runs from the roots: true, false, or null when it does not resolve or no roots were given.
@@ -453,7 +466,7 @@ function parse(argv) {
   }
   return {command, positional, flags};
 }
-const USAGE = 'usage: matrix-device.mjs compile|read|electron-mode|alerts|launched|probe|source|load|windowless --run <dir> … | step <scenes-mac.mjs arguments>';
+const USAGE = 'usage: matrix-device.mjs compile|read|electron-mode|electron-counters|alerts|launched|probe|source|load|windowless --run <dir> … | step <scenes-mac.mjs arguments>';
 const sleep = ms => new Promise(done => setTimeout(done, ms));
 
 export async function main(argv, {io: given = {}} = {}) {
@@ -481,6 +494,7 @@ export async function main(argv, {io: given = {}} = {}) {
       if (flags['electron-mode'] !== undefined && flags['electron-mode'] !== 'latest') throw new Error('--electron-mode latest is the one reading');
       return read({focus: flags.focus ?? null, watcher: flags.watcher === undefined ? null : Number(flags.watcher), electronMode: flags['electron-mode'] === 'latest', ...roots}, io);
     case 'electron-mode': return electronModeRecord(io);
+    case 'electron-counters': return timed(() => electronCountersIn(dir));
     case 'step': return timed(() => (io.scenes ?? scenesMain)(argv.slice(1)));
     case 'alerts': return {...alerts(positional[0], io, roots), at: [Date.now(), Date.now()]};
     case 'launched':

@@ -19,6 +19,8 @@
 //      of the driven target run with the oracle's reading before and after the act (./matrix-device.mjs read, the focus
 //      probe after); keys only through the key guard's user-window case; a paste or typeText act only between two alert
 //      checks; the windowless app (the "app with no window" refusal) brought up for its pairing and quit after it
+//   6a. hold 3's route A/B when the plan names it (`cell route-ab`, ./route-ab.mjs): the Electron fixture's button
+//      pressed behind the user window, route 1 forced against the engine's own route, each hold released between
 //   6b. the input sections (inputSections): the owner's input source and per-context preference saved on the device,
 //      the Latin source selected with the preference off; the probe cells (./probe-run.mjs: concurrent use on Finder and
 //      Chrome behind TextEdit's document, its sheet variant behind the Electron fixture, intervention fires and the
@@ -63,6 +65,7 @@ import {CLOSE_PANEL, findingCell, launchCell, launchCheckCell, OPEN_PANEL, selec
 import {accountActivations, judgeInterference, userWindowOf} from './oracle.mjs';
 import {CASES, caseId, OWNER_OPTIONS, SCENE_OF, WINDOWLESS_BUNDLE_ID} from './plan.mjs';
 import {probeCells} from './probe-run.mjs';
+import {ROUTE_AB, routeAbSection} from './route-ab.mjs';
 import {activate, caseRow, device, focusOf, js, mark, PASTING, push, read, sendKeys, step, Stop, TEXTEDIT} from './steps.mjs';
 import {ABC, UNICODE_PLAN, unicodeRowsOf} from './unicode-plan.mjs';
 import {REFOCUS_THROUGH, unicodeSection} from './unicode-run.mjs';
@@ -85,7 +88,7 @@ export const FULL_PLAN = Object.freeze({
   concurrent: CONCURRENT_USE.driven, sheet: true, intervention: ['fires', 'preAction'], unicode: UNICODE_PLAN,
   launch: [{scene: 'electron', user: 'finder'}],
 });
-const EMPTY_PLAN = {frontmost: [], speed: false, finding: false, background: [], concurrent: [], sheet: false, intervention: [], unicode: null, launch: []};
+const EMPTY_PLAN = {frontmost: [], speed: false, finding: false, background: [], concurrent: [], sheet: false, intervention: [], unicode: null, launch: [], routeAb: null};
 const NARROWABLE = [...FULL_PLAN.frontmost, 'windowless'];
 // A plan narrowed to one target (and for the background, one user): the registry's `cell <name> --scene --user`. Its id
 // is 'full' only for the whole matrix.
@@ -93,7 +96,7 @@ export function planOf(kind, {scene = null, user = null} = {}) {
   if (scene !== null && !NARROWABLE.includes(scene)) throw new Error(`--scene is one of ${NARROWABLE.join(', ')}`);
   if (user !== null && !SCENE_ORDER.includes(user)) throw new Error(`--user is one of ${SCENE_ORDER.join(', ')}`);
   const plan = narrowed(kind, {scene, user});
-  if (!plan.frontmost.length && !plan.background.length && !plan.launch.length && !plan.concurrent.length && !plan.sheet && !plan.intervention.length && !plan.unicode?.fields.length) {
+  if (!plan.frontmost.length && !plan.background.length && !plan.launch.length && !plan.concurrent.length && !plan.sheet && !plan.intervention.length && !plan.unicode?.fields.length && !plan.routeAb) {
     const option = OWNER_OPTIONS.find(o => kind === 'launch' && o.section === 'launch' && o.id.startsWith(`${scene}/`));
     throw new Error(`the ${kind} cell has nothing to run for${scene ? ` --scene ${scene}` : ''}${user ? ` --user ${user}` : ''}${option ? `: ${option.option} (${option.reason})` : ''}`);
   }
@@ -118,6 +121,8 @@ function narrowed(kind, {scene, user}) {
     case 'pre-action-refusal': return {...EMPTY_PLAN, intervention: !scene || scene === 'textedit' ? ['preAction'] : []};
     // The Korean and Unicode matrix narrows to one field.
     case 'korean': return {...EMPTY_PLAN, unicode: {...UNICODE_PLAN, fields: UNICODE_PLAN.fields.filter(f => !scene || f === scene)}};
+    // Hold 3's route A/B (./route-ab.mjs): the Electron fixture driven, behind Finder's window unless --user names another.
+    case 'route-ab': return {...EMPTY_PLAN, routeAb: (!scene || scene === ROUTE_AB.driven) && user !== ROUTE_AB.driven ? {driven: ROUTE_AB.driven, user: user ?? ROUTE_AB.user} : null};
     default: throw new Error(`no plan ${kind}`);
   }
 }
@@ -125,7 +130,7 @@ function narrowed(kind, {scene, user}) {
 export const scenesOf = plan => SCENE_ORDER.filter(id => plan.frontmost.some(t => SCENE_OF[t] === id)
   || plan.background.some(p => SCENE_OF[p.driven] === id || p.user === id) || plan.launch.some(l => l.scene === id || l.user === id)
   || (plan.concurrent ?? []).some(d => d === id || CONCURRENT_USE.user === id) || (plan.sheet && [CONCURRENT_USE_SHEET.driven, CONCURRENT_USE_SHEET.user].includes(id))
-  || (plan.intervention?.length && id === 'textedit') || unicodeRowsOf(plan.unicode ?? {fields: [], conditions: []}).some(r => r.field === id || r.user === id
+  || (plan.intervention?.length && id === 'textedit') || (plan.routeAb && [plan.routeAb.driven, plan.routeAb.user].includes(id)) || unicodeRowsOf(plan.unicode ?? {fields: [], conditions: []}).some(r => r.field === id || r.user === id
     // The Korean source is read only after its target is refocused through another scene (./unicode-run.mjs koreanIn).
     || (r.condition === 'korean' && REFOCUS_THROUGH[r.field] === id)));
 
@@ -167,7 +172,7 @@ async function runOnce(options, io) {
   const rows = [], problems = [];
   const meta = {run: n, host, engine, samples, sitting, planId: plan.id ?? 'full',
     plan: {frontmost: plan.frontmost, background: plan.background, launch: plan.launch, speed: plan.speed, finding: plan.finding, concurrent: plan.concurrent ?? [],
-      sheet: plan.sheet ?? false, intervention: plan.intervention ?? [], unicode: plan.unicode ?? null},
+      sheet: plan.sheet ?? false, intervention: plan.intervention ?? [], unicode: plan.unicode ?? null, ...(plan.routeAb ? {routeAb: plan.routeAb} : {})},
     elicitations: [], keySkipped: []};
   let refused = false, complete = false, putBack, lanes = [{host, engine, build: null, version: null}];
   const write = () => {
@@ -275,6 +280,7 @@ async function runOnce(options, io) {
     snapshot();
     for (const target of plan.frontmost) await frontmostTarget(ctx, target, plan);
     for (const pairing of plan.background) await backgroundPairing(ctx, pairing);
+    if (plan.routeAb) await routeAbSection(ctx, plan.routeAb);
     await inputSections(ctx, plan);
     for (const launch of plan.launch) await launchRow(ctx, launch);
     snapshot();

@@ -33,6 +33,7 @@ export const MATRIX_CELLS = Object.freeze({
   'intervention-fires': {section: 'intervention', plan: 'intervention-fires', describe: 'a probe keystroke into TextEdit during its typeText: userIntervened, the next action refused until a get_app_state'},
   'pre-action-refusal': {section: 'intervention', plan: 'pre-action-refusal', describe: 'a probe keystroke into TextEdit just before its typeText: refused with the still-interacting sentence, nothing posted'},
   korean: {section: 'unicode', plan: 'korean', describe: 'the Korean and Unicode matrix (part 6): typeText and paste of each string under each source and condition (--scene narrows to a field)'},
+  'route-ab': {section: 'route-ab', plan: 'route-ab', describe: 'hold 3\'s A/B: the Electron button pressed behind the user window, route 1 forced against the engine\'s own route, six samples alternating, each hold released between (--user narrows)'},
 });
 
 // M2a's residue cells on the live harness (M2b.1b: scripts/native-matrix/residue-checks.mjs RESIDUE_CELLS, run by

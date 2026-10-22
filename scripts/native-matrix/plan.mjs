@@ -379,7 +379,8 @@ return {ok: applied, outcome: {applied}};`},
 
 // ---- The Electron fixture -----------------------------------------------------------------------------------------------
 
-const pressed = `(() => { const status = ${statusText(named('Fixture status'), '/Pressed \\d+ times?/')}; const m = /Pressed (\\d+) times?/.exec(status ?? ""); return m ? Number(m[1]) : null; })()`;
+// The fixture status's press count, or null (the route A/B cell polls it too: ./route-ab.mjs).
+export const pressed = `(() => { const status = ${statusText(named('Fixture status'), '/Pressed \\d+ times?/')}; const m = /Pressed (\\d+) times?/.exec(status ?? ""); return m ? Number(m[1]) : null; })()`;
 const electron = [
   tree(`ax => ({ok: ${named('Fixture text')} !== null, outcome: {fixture: ${named('Fixture text')} !== null}})`),
   listApps('electron'),

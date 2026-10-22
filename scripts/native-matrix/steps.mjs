@@ -37,15 +37,16 @@ export function step(ctx, args) {
   return answer;
 }
 export const activate = (ctx, scene) => step(ctx, ['activate', scene]);
-export const read = (ctx, focus = null) => ctx.ops.matrix(['read', '--run', ctx.run, ...(ctx.watcher !== null ? ['--watcher', String(ctx.watcher)] : []), ...(focus ? ['--focus', focus] : [])]);
+// The engine under test's roots, for the device to tell its own windows (./matrix-device.mjs enginePids).
+const engineRoots = ctx => [['--approved-runtime', ctx.approvedRuntime], ['--approved-engine', ctx.approvedEngine]].filter(([, root]) => root).flat();
+export const read = (ctx, focus = null) => ctx.ops.matrix(['read', '--run', ctx.run, ...(ctx.watcher !== null ? ['--watcher', String(ctx.watcher)] : []), ...(focus ? ['--focus', focus] : []), ...engineRoots(ctx)]);
 export const focusOf = w => `${w.pid},${w.bounds.x},${w.bounds.y},${w.bounds.width},${w.bounds.height}`;
 export const sameWindow = (a, b) => Boolean(a && b) && a.pid === b.pid && ['x', 'y', 'width', 'height'].every(k => a.bounds[k] === b.bounds[k]);
 
 // The paste rows' system-alert watch (./matrix-device.mjs alerts check, the live paste check's): a possible alert stops
 // the run untouched; only its sanitized export is kept. The engine under test's own windows (its roots) are not alerts.
 export function alertCheck(ctx, when) {
-  const roots = [['--approved-runtime', ctx.approvedRuntime], ['--approved-engine', ctx.approvedEngine]].filter(([, root]) => root).flat();
-  const check = ctx.ops.matrix(['alerts', 'check', '--run', ctx.run, ...roots]);
+  const check = ctx.ops.matrix(['alerts', 'check', '--run', ctx.run, ...engineRoots(ctx)]);
   if (check?.abort !== false) {
     ctx.meta.alert = {when, ...(check?.export ?? {})};
     throw new Stop(`a possible system alert appeared ${when}; the run stopped without touching it`);

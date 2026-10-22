@@ -38,6 +38,24 @@ test('read: the run\'s own pids and bounds, another app by bundle id only, the w
   assert.equal(isWatcher([{pid: 5, command: '/A/cua Engine.app/Contents/MacOS/cua-engine'}], 5), false);
 });
 
+test('read: an unowned top window records only whether the engine under test owns it, never its pid, number or bounds', () => {
+  const home = '/Users/o/Library/Application Support/cua-spike-vendor', roots = {approvedRuntime: home, approvedEngine: '/A/cua Engine.app'};
+  const paths = {500: `${home}/runtimes/1.2/Codex Computer Use.app/Contents/MacOS/ChatGPT Computer Use`, 600: '/Applications/Mail.app/Contents/MacOS/Mail', 700: `${home}-old/x`};
+  const asked = [];
+  const ioOf = ownerPid => ({state: () => state, launched: () => [], watcherRuns: () => false,
+    executablePaths: pids => { asked.push(pids); return new Map(pids.filter(p => paths[p]).map(p => [p, paths[p]])); },
+    frontWindow: () => ({at: 5, frontmost: {pid: ownerPid, bundleId: 'x'}, topWindow: {ownerPid, number: 9, bounds: {x: 1510, y: 611, width: 126, height: 126}, onScreen: true}})});
+  const top = (pid, given = roots) => read({...given}, ioOf(pid)).reading.topWindow;
+  assert.deepEqual(top(500), {ownerPid: null, number: null, bounds: null, owned: false, engine: true});
+  assert.deepEqual(top(600), {ownerPid: null, number: null, bounds: null, owned: false, engine: false});
+  assert.equal(top(700).engine, false, 'a sibling directory is not the engine');
+  assert.equal(top(800).engine, null, 'an unresolved owner is unknown');
+  assert.equal(top(500, {}).engine, null, 'no roots given, unknown');
+  asked.length = 0;
+  assert.equal(Object.hasOwn(top(7), 'engine'), false, 'the run\'s own top window is unchanged');
+  assert.deepEqual(asked, [], 'and not resolved');
+});
+
 test('the alert watch: a baseline of window numbers, then an alert process or a new low window aborts, the run\'s own never', () => {
   const dir = tmp();
   try {

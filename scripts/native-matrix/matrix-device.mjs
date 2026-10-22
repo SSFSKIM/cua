@@ -8,7 +8,7 @@
 //   compile --run <dir>
 //       the two window readers (scripts/accept/front-window.swift, ./system-windows.swift) compiled once into the run
 //       directory and reused by every read after (an interpreted read costs seconds)
-//   read --run <dir> --watcher <pid> [--focus <pid,x,y,w,h>]
+//   read --run <dir> --watcher <pid> [--focus <pid,x,y,w,h>] [--approved-runtime <home> --approved-engine <bundle>]
 //       the oracle's reading (./oracle.mjs ownedReading): the frontmost application and the top on-screen window, the
 //       run's processes by pid and any other application by bundle id only; whether the activation watcher <pid> still
 //       runs (`watch-activations` of the approved bundle), so a row's coverage is proven at both its ends; with --focus,
@@ -115,17 +115,30 @@ export function ownedFocus(report, owned) {
   return {appOwned: mine, appPid: mine ? pid : null, named, valueHash: hash};
 }
 
-// The oracle's reading. io: {frontWindow(), probe(args), state(), launched(), watcherRuns(pid)}.
-export function read({focus = null, watcher = null}, io) {
+// The oracle's reading. An unowned top window also records `engine`, recorded and never judged (./oracle.mjs sameFront
+// does not read it): whether its owner runs from the engine under test's roots (enginePids; the vendor engine's cursor
+// overlay), false when it runs from elsewhere, null when unresolved or no roots were given; never its pid.
+// io: {frontWindow(), probe(args), state(), launched(), watcherRuns(pid), executablePaths(pids)}.
+export function read({focus = null, watcher = null, approvedRuntime = null, approvedEngine = null}, io) {
   const from = Date.now();
   const owned = ownedPids(io.state(), io.launched());
-  const out = {reading: ownedReading(io.frontWindow(), owned), watcher: Number.isSafeInteger(watcher) && io.watcherRuns(watcher)};
+  const raw = io.frontWindow();
+  const out = {reading: ownedReading(raw, owned), watcher: Number.isSafeInteger(watcher) && io.watcherRuns(watcher)};
+  if (out.reading.topWindow?.owned === false) out.reading.topWindow.engine = engineOwns(raw.topWindow.ownerPid, [approvedRuntime, approvedEngine], io);
   if (focus !== null) {
     if (!/^\d+,-?\d+(\.\d+)?,-?\d+(\.\d+)?,\d+(\.\d+)?,\d+(\.\d+)?$/.test(focus)) throw new Error('--focus needs pid,x,y,w,h');
     if (!owned.includes(Number(focus.split(',')[0]))) throw new Error('--focus names a window of a process the run does not own');
     out.focus = ownedFocus(io.probe(['focus', '--window', focus]), owned);
   }
   return {...out, at: [from, Date.now()]};
+}
+
+// Whether `pid` runs from the roots: true, false, or null when it does not resolve or no roots were given.
+function engineOwns(pid, roots, io) {
+  const prefixes = rootPrefixes(roots);
+  if (!prefixes.length || !Number.isInteger(pid)) return null;
+  const path = (io.executablePaths ?? executablePaths)([pid]).get(pid);
+  return typeof path === 'string' ? underRoots(path, prefixes) : null;
 }
 
 // Whether `pid` is still the activation watcher (the approved bundle's `--probe watch-activations`).
@@ -227,12 +240,14 @@ export const deviceLoad = (io = {loadavg, uptime, cpus: () => cpus().length}) =>
 // prefix with a trailing separator, so a sibling directory never matches; an owner whose path does not resolve is not
 // the engine. -> [pid].
 export function enginePids(pids, roots, pathsOf) {
-  const prefixes = roots.filter(Boolean).flatMap(root => { try { return [root, fs.realpathSync(root)]; } catch { return [root]; } })
-    .map(root => `${root.replace(/\/+$/, '')}/`);
+  const prefixes = rootPrefixes(roots);
   if (!prefixes.length || !pids.length) return [];
   const paths = pathsOf(pids);
-  return pids.filter(pid => { const path = paths.get(pid); return typeof path === 'string' && prefixes.some(p => path.startsWith(p)); });
+  return pids.filter(pid => underRoots(paths.get(pid), prefixes));
 }
+const rootPrefixes = roots => roots.filter(Boolean).flatMap(root => { try { return [root, fs.realpathSync(root)]; } catch { return [root]; } })
+  .map(root => `${root.replace(/\/+$/, '')}/`);
+const underRoots = (path, prefixes) => typeof path === 'string' && prefixes.some(p => path.startsWith(p));
 
 // Each live pid's executable path (ps's comm, the full path on macOS); a pid that is gone is absent. -> Map pid -> path.
 export function executablePaths(pids, {exec = execFileSync} = {}) {
@@ -412,11 +427,12 @@ export async function main(argv, {io: given = {}} = {}) {
     saveInput: () => saveInputSource({io: live}), restoreInput: ({keep}) => restoreInputSource({io: live, keep}),
     ...given,
   };
+  const roots = {approvedRuntime: flags['approved-runtime'] ?? null, approvedEngine: flags['approved-engine'] ?? null};
   switch (command) {
     case 'compile': return {front: basename(compiled(FRONT_WINDOW_SCRIPT, dir)), windows: basename(compiled(SYSTEM_WINDOWS_SCRIPT, dir))};
-    case 'read': return read({focus: flags.focus ?? null, watcher: flags.watcher === undefined ? null : Number(flags.watcher)}, io);
+    case 'read': return read({focus: flags.focus ?? null, watcher: flags.watcher === undefined ? null : Number(flags.watcher), ...roots}, io);
     case 'step': return timed(() => (io.scenes ?? scenesMain)(argv.slice(1)));
-    case 'alerts': return {...alerts(positional[0], io, {approvedRuntime: flags['approved-runtime'] ?? null, approvedEngine: flags['approved-engine'] ?? null}), at: [Date.now(), Date.now()]};
+    case 'alerts': return {...alerts(positional[0], io, roots), at: [Date.now(), Date.now()]};
     case 'launched':
       if (positional[0] === 'intent') return launchIntent({scene: positional[1]}, io);
       if (positional[0] === 'record') return recordLaunch({scene: positional[1], since: Number(flags.since)}, io);

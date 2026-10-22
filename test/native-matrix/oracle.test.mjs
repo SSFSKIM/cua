@@ -89,3 +89,12 @@ test('a launch-path row: the launched app\'s own activation is declared for the 
   assert.equal(other.declared, undefined);
   assert.equal(judgeInterference({...launch, activations: [{kind: 'activated', bundleId: 'com.apple.TextEdit', at: 1}], accepted: {route4: [], selfActivating: ['AppKit text']}}).ok, true);
 });
+
+test('the engine flag on an unowned top window is recorded, never judged', () => {
+  const unowned = engine => ({at: 1, frontmost: {pid: null, bundleId: 'com.x', owned: false}, topWindow: {ownerPid: null, number: null, bounds: null, owned: false, engine}});
+  assert.deepEqual(sameFront(unowned(true), unowned(false)), {frontmost: true, topWindow: true});
+  assert.deepEqual(sameFront(unowned(true), unowned(null)), sameFront(unowned(false), unowned(false)));
+  const judged = engine => judgeInterference({before: unowned(false), after: unowned(engine), scene: 'textedit'});
+  assert.deepEqual(judged(true), judged(false));
+  assert.equal(userWindowOf(unowned(true), 7), null);
+});

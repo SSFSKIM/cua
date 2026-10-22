@@ -71,6 +71,10 @@ test('a row passes only with the front unchanged, no activation and no route 4 o
   assert.equal(lost.ok, false);
   assert.equal(lost.focus, false);
   assert.equal(judgeInterference({...same, userPid: 7, focus: {appOwned: false, appPid: null, named: false}}).ok, false);
+  // Why the focus was not the user window's rides on the row, recorded and never judged.
+  const unnamed = {accessibility: true, appRead: false, appNamed: false, windowRead: false, windowNamed: false, deltas: null};
+  const unread = judgeInterference({...same, userPid: 7, focus: {appOwned: false, appPid: null, named: false, unnamed}});
+  assert.deepEqual(unread, {ok: false, frontmost: true, topWindow: true, focus: false, focusUnnamed: unnamed, activations: 0, route4: false});
   assert.equal(judgeInterference({...same, inputRoute: 4}).ok, false);
   const accepted = judgeInterference({...same, inputRoute: 4, accepted: {route4: ['AppKit text'], selfActivating: []}});
   assert.equal(accepted.ok, true);

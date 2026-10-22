@@ -107,13 +107,25 @@ export const ownedPids = (state, launches = []) => [...Object.values(state?.scen
 // ---- reads ---------------------------------------------------------------------------------------------------------------
 
 // The focus probe's report as it may leave the device: the value's hash only for the named window, which read() names
-// only when it is the run's own. -> {appOwned, appPid, named, valueHash}.
-export function ownedFocus(report, owned) {
+// only when it is the run's own. When the named window was not the focused one, `unnamed` records why, never judged:
+// the probe's own Accessibility grant, whether it read a focused application and window at all, whether each was the
+// named window's pid, and (only when the focused window is that owned pid's) its frame minus the named bounds, per axis.
+// Another app's pid or bounds never leave. -> {appOwned, appPid, named, valueHash, unnamed?}.
+export function ownedFocus(report, owned, window = null) {
   const pid = report?.focusedApp?.pid ?? null;
   const mine = Number.isInteger(pid) && owned.includes(pid), named = report?.named === true;
   const hash = named && /^[0-9a-f]{64}$/.test(report?.valueHash ?? '') ? report.valueHash : null;
-  return {appOwned: mine, appPid: mine ? pid : null, named, valueHash: hash};
+  const out = {appOwned: mine, appPid: mine ? pid : null, named, valueHash: hash};
+  if (named || !window) return out;
+  const focused = report?.focusedWindow ?? null, windowNamed = Number.isInteger(focused?.pid) && focused.pid === window.pid;
+  const frame = focused?.bounds, axes = ['x', 'y', 'width', 'height'];
+  const deltas = windowNamed && frame && axes.every(k => Number.isFinite(frame[k])) ? Object.fromEntries(axes.map(k => [k, frame[k] - window.bounds[k]])) : null;
+  return {...out, unnamed: {accessibility: typeof report?.accessibility === 'boolean' ? report.accessibility : null, appRead: Number.isInteger(pid),
+    appNamed: pid === window.pid, windowRead: Number.isInteger(focused?.pid), windowNamed, deltas}};
 }
+
+// `pid,x,y,w,h` as the window it names.
+const windowOf = text => { const [pid, x, y, width, height] = text.split(',').map(Number); return {pid, bounds: {x, y, width, height}}; };
 
 // The oracle's reading. An unowned top window also records `engine`, recorded and never judged (./oracle.mjs sameFront
 // does not read it): whether its owner runs from the engine under test's roots (enginePids; the vendor engine's cursor
@@ -128,7 +140,7 @@ export function read({focus = null, watcher = null, approvedRuntime = null, appr
   if (focus !== null) {
     if (!/^\d+,-?\d+(\.\d+)?,-?\d+(\.\d+)?,\d+(\.\d+)?,\d+(\.\d+)?$/.test(focus)) throw new Error('--focus needs pid,x,y,w,h');
     if (!owned.includes(Number(focus.split(',')[0]))) throw new Error('--focus names a window of a process the run does not own');
-    out.focus = ownedFocus(io.probe(['focus', '--window', focus]), owned);
+    out.focus = ownedFocus(io.probe(['focus', '--window', focus]), owned, windowOf(focus));
   }
   return {...out, at: [from, Date.now()]};
 }

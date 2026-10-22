@@ -69,6 +69,9 @@ function spanOf(ctx, key) {
     end: (row, extra = {}) => { if (from !== null) mark(ctx, 'row', key, [from, to]); return {row, key, ...extra}; },
   };
 }
+// A precondition that did not hold, as the row: with the focus probe's reading when that was what failed (why it did not
+// name the window, ./matrix-device.mjs ownedFocus), recorded and never judged.
+const precondition = ({invalid, focus}) => (focus === undefined ? {invalid} : {invalid, focus});
 const failed = (r, what) => (!r?.ok ? `${what} failed${r?.error ? `: ${String(r.error).slice(0, 200)}` : ''}` : null);
 // The engine's userIntervened refusal with one of its two sentences.
 const refusedWith = (value, sentence) => value?.threw === true && value.errorName === 'userIntervened' && typeof value.message === 'string' && value.message.includes(sentence);
@@ -87,7 +90,7 @@ async function userField(ctx, span, user) {
   if (!userWindow) return {invalid: `the user window (${user}) was not in front`};
   const f0 = read(ctx, focusOf(userWindow));
   if (f0.watcher !== true) return {invalid: 'the activation watcher was not running before the action'};
-  if (f0.focus?.named !== true || f0.focus.valueHash !== EMPTY_HASH) return {invalid: 'the focus probe did not read the user window\'s field focused and empty'};
+  if (f0.focus?.named !== true || f0.focus.valueHash !== EMPTY_HASH) return {invalid: 'the focus probe did not read the user window\'s field focused and empty', focus: f0.focus ?? null};
   return {userWindow, reading: f0.reading};
 }
 
@@ -114,7 +117,7 @@ async function concurrentAttempt(ctx, driven, {lead, id, key}) {
   const unprepared = failed(prepared, 'the driven scene\'s preparation') ?? (prepared.value?.ready ? null : `the driven scene was not prepared: ${prepared.value?.reason ?? 'no reason'}`);
   if (unprepared) return span.end({invalid: unprepared});
   const field = await userField(ctx, span, user);
-  if (field.invalid) return span.end({invalid: field.invalid});
+  if (field.invalid) return span.end(precondition(field));
   const {userWindow} = field;
   alertCheck(ctx, `before ${id}`);
   let before = null;
@@ -160,7 +163,7 @@ async function sheetAttempt(ctx, {lead, id, key}) {
   await quiet(ctx, driven);
   await quiet(ctx, user);
   const field = await userField(ctx, span, user);
-  if (field.invalid) return span.end({invalid: field.invalid});
+  if (field.invalid) return span.end(precondition(field));
   const {userWindow} = field;
   const keys = async (code, names) => {
     const front = await userFront(ctx, user, userWindow);
@@ -237,7 +240,7 @@ async function drivenInFront(ctx, span, scene) {
   const window = userWindowOf(read(ctx).reading, ctx.records[scene].pid);
   if (!window) return {invalid: `${scene}'s window was not in front`};
   const f0 = read(ctx, focusOf(window));
-  if (f0.focus?.named !== true || f0.focus.valueHash !== EMPTY_HASH) return {invalid: 'the focus probe did not read the document focused and empty'};
+  if (f0.focus?.named !== true || f0.focus.valueHash !== EMPTY_HASH) return {invalid: 'the focus probe did not read the document focused and empty', focus: f0.focus ?? null};
   return {window};
 }
 // A typing act on the scene in front, between two alert checks. -> the act's result, or null when the guard skipped.
@@ -256,7 +259,7 @@ async function firesAttempt(ctx, {lead, id, key}) {
   const span = spanOf(ctx, key);
   await quiet(ctx, scene);
   const driven = await drivenInFront(ctx, span, scene);
-  if (driven.invalid) return span.end({invalid: driven.invalid});
+  if (driven.invalid) return span.end(precondition(driven));
   const {window} = driven;
   const probe = await withKeystroke(ctx, {window, scene},
     scheduled => typing(ctx, span, scene, scheduledActCell(scene, {at: scheduled - preMs, act: `await __app.typeText(${j(LONG_TEXT)});`, tag: 'intervention.act'}), {key, when: id}));
@@ -292,7 +295,7 @@ async function preActionAttempt(ctx, {lead, id, key}) {
   const span = spanOf(ctx, key);
   await quiet(ctx, scene);
   const driven = await drivenInFront(ctx, span, scene);
-  if (driven.invalid) return span.end({invalid: driven.invalid});
+  if (driven.invalid) return span.end(precondition(driven));
   const {window} = driven;
   const probe = await withKeystroke(ctx, {window, scene},
     scheduled => typing(ctx, span, scene, scheduledActCell(scene, {at: scheduled + delay, act: 'await __app.typeText("x");', tag: 'preaction.act'}), {key, when: id}));

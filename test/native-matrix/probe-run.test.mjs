@@ -112,6 +112,16 @@ test('the pre-action refusal: valid only when the engine received the request af
   assert.equal(late.result.verdict, 'no-verdict');
 });
 
+test('a focus probe that did not name the document leaves the precondition invalid, with why it did not recorded on the row', async () => {
+  // Hold 2a: the probe read no focused application at all, so the document was never named.
+  const unnamed = {accessibility: true, appRead: false, appNamed: false, windowRead: false, windowNamed: false, deltas: null};
+  const unread = (base, args) => { const r = base(args); return args[0] === 'read' && args.includes('--focus') ? {...r, focus: {appOwned: false, appPid: null, named: false, valueHash: null, unnamed}} : r; };
+  const {result} = await runWith({plan: planOf('pre-action-refusal'), cellName: 'pre-action-refusal', ops: {matrix: unread}});
+  const row = rowOf(result, 'textedit/intervention.preAction');
+  assert.equal(row.invalid, 'the focus probe did not read the document focused and empty');
+  assert.deepEqual(row.focus.unnamed, unnamed);
+});
+
 // The sheet variant's two acts, each its own call with its own meta: super+w at `at` (its interval `[from, to]` relative
 // to `at`), then the follow-up click on the sheet at `followAt` (received `receipt` ms after it).
 const opening = (c, {interval = [50, 150], route = "2'", over = {}} = {}) => ({...acted(c, {interval}), actMs: 120, endAt: atOf(c) + 200,

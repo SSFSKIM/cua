@@ -239,7 +239,7 @@ test('a running app\'s pid is read from lsappinfo in either of its forms; nothin
 
 test('a bind may observe the app only while the window server shows its windows, the same ones before each bind', () => {
   const app = 'com.apple.TextEdit';
-  const windows = [{ownerPid: 501, number: 88}, {ownerPid: 501, number: 91}];
+  const windows = [{ownerPid: 501, number: 88, onScreen: true}, {ownerPid: 501, number: 91, onScreen: true}];
   assert.equal(bindRefusal({app, pid: 501, windows}), null, 'the first bind: running, with a window');
   assert.match(bindRefusal({app, pid: null, windows: null}), /com\.apple\.TextEdit is not running/);
   assert.match(bindRefusal({app, pid: 501, windows: []}), /com\.apple\.TextEdit \(pid 501\) has no window: .*reopen.*Open panel/,
@@ -252,4 +252,10 @@ test('a bind may observe the app only while the window server shows its windows,
   assert.match(bindRefusal({app, pid: 501, windows: [windows[0], {ownerPid: 501, number: 92}], first}), /window 91 .* is gone/, 'a window replaced');
   assert.match(bindRefusal({app, pid: 777, windows: [{ownerPid: 777, number: 88}], first}), /com\.apple\.TextEdit is now pid 777, not the pid 501 read before the first bind/);
   assert.match(bindRefusal({app, pid: 501, windows: [], first}), /has no window/, 'the first rules still hold before the second bind');
+  const offScreen = [{ownerPid: 501, number: 88, onScreen: false}, {ownerPid: 501, number: 91, onScreen: false}];
+  assert.match(bindRefusal({app, pid: 501, windows: offScreen}), /com\.apple\.TextEdit \(pid 501\) has no window on screen \(2 off screen: minimized, on another Space or hidden\)/,
+    'only off-screen windows: a minimized document or a helper window is not the scene');
+  assert.match(bindRefusal({app, pid: 501, windows: offScreen, first}), /has no window on screen/, 'nor before the second bind');
+  assert.equal(bindRefusal({app, pid: 501, windows: [{...windows[0], onScreen: false}, windows[1]], first}), null,
+    'the first window now off screen while another is on screen: every window still there, one on screen');
 });

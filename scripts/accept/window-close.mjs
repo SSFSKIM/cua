@@ -10,11 +10,12 @@ import {FRONT_WINDOW_SCRIPT} from './key-guard.mjs';
 
 const run = promisify(execFile);
 
-// Every layer-0 window of `pids` ([{ownerPid, number}]), on screen or not, or null when a reading failed.
+// Every layer-0 window of `pids` ([{ownerPid, number, onScreen}]), on screen or not, or null when a reading failed.
+// closeVerdict keys windows by owner and number only; onScreen is for the bind check (scripts/probe/lib.mjs bindRefusal).
 export async function readWindows(pids, {probe = async pid => JSON.parse((await run('/usr/bin/swift', [FRONT_WINDOW_SCRIPT, 'windows', String(pid)], {timeout: 120_000})).stdout)} = {}) {
   try {
     const readings = await Promise.all(pids.map(pid => probe(pid)));
-    return readings.flatMap(reading => reading.windows.map(w => ({ownerPid: w.ownerPid, number: w.number})));
+    return readings.flatMap(reading => reading.windows.map(w => ({ownerPid: w.ownerPid, number: w.number, onScreen: w.onScreen === true})));
   } catch { return null; }
 }
 

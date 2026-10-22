@@ -41,9 +41,9 @@ test('the close is read again while the window lingers, and judged on the last r
   assert.equal(stuck.status, 'FAIL');
 });
 
-test('readWindows lists every pid\'s windows by owner and number only, and null when any reading fails', async () => {
-  const probe = async pid => ({at: 1, pid, hidden: false, windows: [{ownerPid: pid, number: pid * 10, bounds: {x: 0, y: 0, width: 9, height: 9}, onScreen: true}]});
-  assert.deepEqual(await readWindows([7, 8], {probe}), [w(70, 7), w(80, 8)]);
+test('readWindows lists every pid\'s windows by owner, number and whether on screen, and null when any reading fails', async () => {
+  const probe = async pid => ({at: 1, pid, hidden: false, windows: [{ownerPid: pid, number: pid * 10, bounds: {x: 0, y: 0, width: 9, height: 9}, onScreen: pid === 7}]});
+  assert.deepEqual(await readWindows([7, 8], {probe}), [{...w(70, 7), onScreen: true}, {...w(80, 8), onScreen: false}]);
   assert.deepEqual(await readWindows([], {probe}), []);
   assert.equal(await readWindows([7], {probe: async () => { throw new Error('swift failed'); }}), null);
 });

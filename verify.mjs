@@ -35,11 +35,11 @@
 // SkyComputerUseService or node_repl started then is a problem, while other installations' helpers (the ChatGPT app's)
 // lie outside those roots and are only reported.
 // --bind <bundle id> binds that app twice in the connection, each bind only while the app is running with a layer-0
-// window the window server shows (FrontWindowProbe, read with no engine observation), the same pid and the same windows
-// before the second bind as before the first: verify never has the engine launch the app or reopen a windowless one,
-// which would open and capture its panel (TextEdit's Open panel can list the owner's documents). It accepts only the
-// policy's approval for that bundle (session persistence pinned) and declines everything else: the first bind must ask
-// once, the second nothing. The report carries counts, process and socket identities and the attestation; never the
+// window on screen as the window server shows it (FrontWindowProbe, read with no engine observation), the same pid and
+// the first bind's windows still there before the second: verify never has the engine launch the app or reopen one
+// with no window on screen, which would open and capture its panel (TextEdit's Open panel can list the owner's
+// documents). It accepts only the policy's approval for that bundle (session persistence pinned) and declines
+// everything else: the first bind must ask once, the second nothing. The report carries counts, process and socket identities and the attestation; never the
 // tree's text, a title or a screenshot.
 //
 //   node verify.mjs                                       exit 0 when every check passes; prints a JSON report
@@ -231,8 +231,9 @@ try {
   }
 
   // --bind: the app twice in this connection, observed by behaviour (the first bind asks once, the second nothing).
-  // Before each bind the window server, not an observation, must show the app's window (bindRefusal): an observation of
-  // a windowless app reopens it and captures what it opens, so a missing scene is refused before any js call.
+  // Before each bind the window server, not an observation, must show the app's window on screen (bindRefusal): an
+  // observation of a windowless app reopens it and captures what it opens, so a missing scene is refused before any js
+  // call.
   if (options.bind) {
     const binds = [];
     report.bind = {app: options.bind, binds};

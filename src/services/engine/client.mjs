@@ -9,8 +9,8 @@
 // whatever is left of the window (the vendor's waits min(1000 ms, the remainder)): a ping cut short by a slow open
 // would launch over a healthy engine. The ping speaks `cua-engine-1`, and the answer's engineVersion and
 // build must equal the bundle's (its Info.plist): a mismatch fails at once with a diagnostic naming
-// `cua install --engine`, never retried, launched over or shut down, since a service never replaces an engine it did not
-// launch (another checkout's session may be using it). An engine that never answers fails with a diagnostic pointing at
+// `cua install --engine`, never retried, launched over or shut down (another checkout's session may be using that
+// build). Only a matching engine may be relaunched for a grant. An engine that never answers fails with a diagnostic pointing at
 // the unified log, where the engine records why it stopped (an invalid peerPolicy setting stops it before it listens).
 //
 // Requests are chained, one in flight at a time, each with its deadline (120 s by default) sent as
@@ -37,6 +37,7 @@ const FIRST_CONNECT_MS = 250;
 const LAUNCH_WAIT_MS = 5_000;
 const RETRY_MS = 100;
 const PING_MS = 1_000;
+const SHUTDOWN_WAIT_MS = 10_000;
 const UNIFIED_LOG = 'log show --last 10m --info --predicate \'subsystem == "io.github.ssfskim.cua.engine"\'';
 
 export const socketPathFor = appPath => join(dirname(appPath), 'engine.sock');
@@ -85,7 +86,11 @@ class Connection {
       }
     });
     pipe.on('error', error => this.close(new SkyComputerUseTransportError(`cua engine connection failed: ${error?.message ?? error}`, {cause: error})));
-    pipe.on('close', () => this.close(new SkyComputerUseTransportError('cua engine connection closed before response')));
+    // Distinct from close(): permission recovery waits for the peer to exit, not for our own close request.
+    this.peerClosed = new Promise(resolve => pipe.on('close', () => {
+      this.close(new SkyComputerUseTransportError('cua engine connection closed before response'));
+      resolve();
+    }));
   }
 
   // Writes one request; its answer, or a transport error when none comes within `waitMs`.
@@ -135,11 +140,13 @@ function within(promise, ms, message) {
 // {engineVersion, build} or a function reading them (bundleIdentity by default, read at each connect, so a replaced
 // bundle is seen).
 export function createEngineClient({nodeRepl, appPath, socketPath = socketPathFor(appPath), expected = () => bundleIdentity(appPath),
-  firstConnectMs = FIRST_CONNECT_MS, launchWaitMs = LAUNCH_WAIT_MS, deadlineGraceMs = DEADLINE_GRACE_MS}) {
+  firstConnectMs = FIRST_CONNECT_MS, launchWaitMs = LAUNCH_WAIT_MS, deadlineGraceMs = DEADLINE_GRACE_MS,
+  shutdownWaitMs = SHUTDOWN_WAIT_MS}) {
   let connection = null;
   let identity = null;
   let connecting = null;
   let tail = Promise.resolve();
+  let permissionsPending = null;
 
   function suspended(fn) {
     if (typeof nodeRepl?.withSuspendedTimeout !== 'function') throw new Error('Computer Use requires nodeRepl.withSuspendedTimeout');
@@ -194,10 +201,18 @@ export function createEngineClient({nodeRepl, appPath, socketPath = socketPathFo
     let want;
     try { want = typeof expected === 'function' ? expected() : expected; } catch (error) { throw new SkyComputerUseTransportError(error.message, {cause: error}); }
     try { return await attempt(firstConnectMs, want); } catch (error) { if (!(error instanceof NotYet)) throw error; }
+    return launch(want);
+  }
+
+  async function launch(want) {
     try { await nodeRepl.launchServices.openApplication({applicationPath: appPath}); } catch (cause) {
       throw new SkyComputerUseTransportError(`cua engine launch request failed for ${appPath}: ${String(cause?.message ?? cause).slice(0, 300)}`, {cause});
     }
-    try { return await attempt(launchWaitMs, want); } catch (error) {
+    try {
+      const checked = await attempt(launchWaitMs, want);
+      permissionsPending = null;  // this launch already supplied a fresh process, even after a lost connection
+      return checked;
+    } catch (error) {
       if (!(error instanceof NotYet)) throw error;
       throw new SkyComputerUseTransportError(`cua engine did not start: nothing answered at ${socketPath} within ${launchWaitMs} ms of launching ${appPath}. The engine logs why it stopped (a peerPolicy in ~/.config/cua/engine.json it does not have, a lock or socket another engine holds) to the unified log: ${UNIFIED_LOG}`, {cause: error.cause});
     }
@@ -211,15 +226,36 @@ export function createEngineClient({nodeRepl, appPath, socketPath = socketPathFo
     return connecting;
   }
 
-  // One request at a time, in call order: -> {result, engineMs}, engineMs the round trip on the socket. `params` may be
-  // a function, called just before the frame is written (execute's deadline is computed then).
-  function call(method, params, {waitMs = DEFAULT_DEADLINE_MS + deadlineGraceMs, suspend = true} = {}) {
+  // The next screenshot after Screen Recording permissionsPending gets one recovery, never the first failure itself. Shutdown is on
+  // the checked connection and atomically refuses other clients. Do not poll grants: a process may not see its new
+  // Screen Recording grant until it is relaunched. Busy keeps both the engine and the original actionable error.
+  async function relaunchForPermissions() {
+    try { await connection.call('shutdown', {}, shutdownWaitMs); } catch (error) {
+      if (error instanceof SkyComputerUseError && error.errorName === 'busy') throw permissionsPending;
+      throw error;
+    }
+    await within(connection.peerClosed, shutdownWaitMs, 'cua engine did not close after shutdown; its permission relaunch is still pending');
+    connection = null;
+    await launch(identity);
+  }
+
+  // One request at a time, in call order (including a permission relaunch): -> {result, engineMs}, engineMs the round
+  // trip on the socket. `params` may be a function, called just before the frame is written, after recovery, so a
+  // relaunch does not spend execute's deadline. Only screenshot-bearing observations participate in recovery.
+  function call(method, params, {waitMs = DEFAULT_DEADLINE_MS + deadlineGraceMs, suspend = true, screenshot = false} = {}) {
     const run = async () => {
       await connect();
+      if (screenshot && permissionsPending) await relaunchForPermissions();
       const body = typeof params === 'function' ? params() : params;
       const started = performance.now();
-      const result = await connection.call(method, body, waitMs);
-      return {result, engineMs: performance.now() - started};
+      try {
+        const result = await connection.call(method, body, waitMs);
+        return {result, engineMs: performance.now() - started};
+      } catch (error) {
+        if (screenshot && error instanceof SkyComputerUseError && error.errorName === 'permissionsPending'
+          && error.meta?.permission === 'screenRecording') permissionsPending = error;
+        throw error;
+      }
     };
     const queued = () => (suspend ? suspended(run) : run());
     const result = tail.then(queued, queued);
@@ -234,7 +270,7 @@ export function createEngineClient({nodeRepl, appPath, socketPath = socketPathFo
     // `execute {method, args, deadlineUnixMilliseconds, lineage?}` -> {result, engineMs}.
     execute(method, args, {deadlineMs = DEFAULT_DEADLINE_MS, lineage, suspend = true} = {}) {
       const params = () => ({method, args, deadlineUnixMilliseconds: Date.now() + deadlineMs, ...(lineage ? {lineage} : {})});
-      return call('execute', params, {waitMs: deadlineMs + deadlineGraceMs, suspend});
+      return call('execute', params, {waitMs: deadlineMs + deadlineGraceMs, suspend, screenshot: method === 'get_app_state' && args?.includeScreenshot === true});
     },
     // The engine's `status` answer (its identity, grants and other connections).
     async status() {

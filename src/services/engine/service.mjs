@@ -21,7 +21,10 @@
 //   CUA_ENGINE_SCREENSHOTS, under the session's run directory, which the kernel may read; the engine creates it, outside
 //   every sandbox and never through a symbolic link, since the worker writes nothing in the default mode. The Skyshot
 //   becomes the model's text through ./observations.mjs: the numbering over the engine's tokens, the renderer, and the
-//   diff per (connection, app).
+//   diff per (connection, app). There is no AX-only fallback without Screen Recording. Its permissionsPending arms
+//   the client's next-observation shutdown/relaunch; Accessibility's does not. Neither restarts on the first failure.
+// - Permission errors carry cua/permission (accessibility | screenRecording), reset to null on every other call,
+//   alongside the native engine's by-hand guidance. The marker is result metadata only, never model text.
 // - Index translation: an element_index becomes `element`, the token the app's latest observation numbered so, and every
 //   execute carries the lineage of that observation (coordinates and keys too), which the engine checks.
 // - Result meta, per call (response meta merges by key across an execution's calls, so each call resets its keys and
@@ -76,7 +79,7 @@ const SPIKE_ROUTES = new Set(['1', "2'", '2', '3']);
 // The keys a call sets only sometimes, reset at its start.
 const PER_CALL = {
   'cua/engineMs': null, 'cua/settle': null, 'cua/screenshotOmitted': null, 'cua/inputRoute': null, 'cua/actionInterval': null, 'cua/receivedAt': null, 'cua/hidIdleMs': null,
-  'cua/activationGuardMs': null, 'cua/activationClick': null, 'cua/pointUnconfirmed': null, 'cua/intervention': null, 'cua/entered': null, 'cua/routeAdvice': null, 'cua/observation': null,
+  'cua/activationGuardMs': null, 'cua/activationClick': null, 'cua/pointUnconfirmed': null, 'cua/intervention': null, 'cua/entered': null, 'cua/routeAdvice': null, 'cua/observation': null, 'cua/permission': null,
 };
 // The engine's optional input meta keys, carried under cua/<key> when it sends them.
 const OPTIONAL_INPUT_META = ['activationGuardMs', 'activationClick', 'pointUnconfirmed', 'intervention', 'entered', 'routeAdvice'];
@@ -144,7 +147,12 @@ export function createService({nodeRepl, client = null}) {
       return result;
     } catch (error) {
       setMeta({...(c.identity ? {'cua/nativeEngine': nativeEngine(c.identity)} : {}), ...(own ? {'cua/engineMs': null} : {})});
-      if (error?.name === 'SkyComputerUseError' && error.meta) setMeta(inputMeta(error.meta));
+      if (error?.name === 'SkyComputerUseError' && error.meta) {
+        if (Object.hasOwn(FIELDS, method)) setMeta(inputMeta(error.meta));
+        if (error.errorName === 'permissionsPending' && (error.meta.permission === 'accessibility' || error.meta.permission === 'screenRecording')) {
+          setMeta({'cua/permission': error.meta.permission});
+        }
+      }
       throw error;
     }
   }

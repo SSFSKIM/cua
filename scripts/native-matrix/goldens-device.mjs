@@ -68,7 +68,8 @@ export const SCREENSHOT_DIR = 'goldens-screenshots';
 export const SETTLE_INTERVAL_MS = 500, SETTLE_BOUND_MS = 10_000;
 // Problems waiting can clear, so the stability read reads on through them: a window of the run's process whose title is
 // not yet the scene's (a page or document still loading), a page whose tree is still filling (scenes-mac.mjs
-// chromePageProblems). Any other problem (another process, owner text in Finder's window) is refused at once.
+// chromePageProblems; the Electron fixture's page not there yet, electronPageProblems). Any other problem (another
+// process, owner text in Finder's window) is refused at once.
 const TRANSIENT = new Set(['other_window', 'page_filling']);
 // The refusals of `action` the controller answers by resetting the scene (a restart, or Finder's deselect) and trying
 // again: a settled state that is not the kept one, a state that never settled, a page that never filled.
@@ -130,11 +131,12 @@ async function getState(client, record, screenshots, extra, options) {
 // 120 s default), and a read that answers past the bound is not accepted. -> {shot, problems: [], settle} with the
 // later of the two; or {shot: null, problems, settle}: a problem waiting cannot clear (with `strict`, any problem) at
 // once, the transient problems of the last read at the bound, or `unstable` (with `observed`, the last read, when it
-// passed the checks) when no two reads passed alike in time. `settle` is {reads, ms} for the record. `check` is what a
+// passed the checks) when no two reads passed alike in time; a refusal also carries `timings` and `frame`, the engine's
+// diagnostics of its last read and the window frame it read (null before any answered), never its text. `settle` is {reads, ms} for the record. `check` is what a
 // read must pass (sceneProblems; Finder's chrome steps check only ownership).
 export async function settledState({id, record, client, screenshots, sleep = sleepFor, now = Date.now, boundMs = SETTLE_BOUND_MS, intervalMs = SETTLE_INTERVAL_MS, strict = false, check = sceneProblems}) {
   const t0 = now(), deadline = t0 + boundMs;
-  let reads = 0, previous = null, problems = [], observed = null;
+  let reads = 0, previous = null, problems = [], observed = null, timings = null, frame = null;
   const settle = () => ({reads, ms: now() - t0});
   for (;;) {
     if (reads) await sleep(intervalMs);
@@ -147,23 +149,25 @@ export async function settledState({id, record, client, screenshots, sleep = sle
       throw error;
     }
     if (now() > deadline) break;
+    timings = shot?.timings ?? null;
+    frame = shot?.window?.frame ?? null;
     problems = check(id, shot, record);
-    if (problems.some(p => strict || !TRANSIENT.has(p.code))) return {shot: null, problems, settle: settle()};
+    if (problems.some(p => strict || !TRANSIENT.has(p.code))) return {shot: null, problems, timings, frame, settle: settle()};
     const digest = problems.length ? null : stateDigest(goldenForm(shot));
     if (digest !== null && digest === previous) return {shot, problems: [], settle: settle()};
     previous = digest;
     observed = digest === null ? null : goldenForm(shot);
   }
-  if (problems.length) return {shot: null, problems, settle: settle()};
-  return {shot: null, problems: [{code: 'unstable', message: `cua's observation did not render alike in two consecutive reads ${intervalMs} ms apart within ${boundMs} ms`}],
+  if (problems.length) return {shot: null, problems, timings, frame, settle: settle()};
+  return {shot: null, timings, frame, problems: [{code: 'unstable', message: `cua's observation did not render alike in two consecutive reads ${intervalMs} ms apart within ${boundMs} ms`}],
     ...(observed ? {observed} : {}), settle: settle()};
 }
 
 // The fixed state's observation, settled; `strict` for verify. -> {scene, build, skyshot | null, timings, frame, settle,
-// problems}.
+// problems}; a refused one keeps the timings and the frame of its last read (the native-mac lane records them).
 export async function observe({id, record, client, screenshots, sleep, now, strict = false}) {
-  const {shot, problems, settle} = await settledState({id, record, client, screenshots, sleep, now, strict});
-  if (problems.length) return {scene: id, build: client.identity?.build ?? null, skyshot: null, timings: null, frame: null, settle, problems};
+  const {shot, problems, settle, timings, frame} = await settledState({id, record, client, screenshots, sleep, now, strict});
+  if (problems.length) return {scene: id, build: client.identity?.build ?? null, skyshot: null, timings, frame, settle, problems};
   return {scene: id, build: client.identity?.build ?? null, skyshot: goldenForm(shot), timings: shot.timings ?? null, frame: shot.window?.frame ?? null, settle, problems: []};
 }
 

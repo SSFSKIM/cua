@@ -1,0 +1,19 @@
+no engine was running
+Optional(false)
+engine: sky:
+textedit: cft: fixture:
+ShowSidebar=1
+ShowStatusBar=Error: Could not find key 'ShowStatusBar' in domain 'com.apple.finder'.
+ShowPathbar=Error: Could not find key 'ShowPathbar' in domain 'com.apple.finder'.
+com.apple.keylayout.ABC
+{ TextInputGlobalPropertyPerContextInput = 0; } 
+    bundleID="com.apple.Terminal"
+431 com.apple.Terminal hidden=false
+447 io.tailscale.ipn.macsys hidden=false
+layer=0 pid=431 owner=터미널 number=26 bounds=1400,280,580,408
+layer=0 pid=447 owner=Tailscale number=35 bounds=1280,30,1280,998
+1792384396
+0
+shim 7096 children: 
+shim 93128 children: 
+ 6:35  up 1 day,  4:47, 2 users, load averages: 1.92 2.42 2.73

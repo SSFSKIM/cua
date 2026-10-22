@@ -1,0 +1,1 @@
+finder was read in two window frames (vendor x 820, y 261, width 920, height 492, cua x 820, y 261, width 920, height 520): its list's rows follow the frame, so the pair is invalid; rerun with one frame

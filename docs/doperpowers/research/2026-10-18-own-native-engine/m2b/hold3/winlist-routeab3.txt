@@ -1,0 +1,2 @@
+layer=0 pid=431 owner=터미널 number=26 bounds=1400,280,580,408
+layer=0 pid=462 owner=Finder number=13859 bounds=820,261,920,828

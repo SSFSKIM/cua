@@ -72,7 +72,7 @@ How to see it: on the mini, with the plugin at the release this work ships, run 
   - [x] (2026-10-21) M2b.2 — (99158f82..42c65f97, review fixes 2355300b, a567d8ed, 4670a1af on `m2b/matrix`; reviewed clean after three rounds; merged) `scripts/native-matrix.mjs`: the method matrix in two regimes, speed and finding-elements cells, the non-interference oracle and the key guard's user-window case, `compare`, `summary`.
   - [x] (2026-10-21) M2b.3 — (784f112a..d8585eff, review fixes 79fccd05..fdbf59ad, 95fd92fb, ce96bb87; reviewed clean after two rounds) The probe-driven cells (concurrent use and its sheet variant, intervention fires, pre-action refusal), the Korean and Unicode matrix, the settle cell.
   - [x] (2026-10-21) M2b.4 — (605f94c0, review fixes a1325dbc, cdbc5873, 871cfb2d, a4fe7aea, df50c355 on `m2b/parity`; reviewed clean after five rounds; merged 754802f7) The `native-mac` parity suite: `--engine`, the approved route on macOS, the darwin native command, the modulo-renumbering diff with its `summary` line.
-  - [ ] M2b.5 — Live on the mini: the residue hold first, then the matrix triples and the suite.
+  - [x] (2026-10-22 21:36Z) M2b.5 — (holds 1, 2a, 2b and 3; evidence `m2b/hold1/`..`m2b/hold3/`; Decision Log "M2b hold 3"; the triple is not met: hold 3 gave one paired run and one cua-only repeat under maws-3f's counting overrides, the route A/B unsettled, both owed to a later hold) Live on the mini: the residue hold first, then the matrix triples and the suite.
 - [ ] M3 — Engine-aware tooling, comparisons B and C, Linux approvals.
 - [ ] M4 — Install, signing, permissions, docs.
 - [ ] M5 — Acceptance and the default switch.
@@ -612,6 +612,12 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   Evidence: MAWS `docs/doperpowers/evidence/p4-b2/l1-l7-2026-10-22/` (run2, run4 and run6 L3 probe outputs); `m2b/hold2b/korean/cua/run-3/result.json` (readings and the rk rows).
 - Observation (M2b hold 2b, findings to judge, both model-facing): **(1) midSwitch's `entered` count is one short at the stop in 3 of 8 recorded samples.** The field held one unit more than `cua/entered`: chrome 198/199 (hold 2a run 2), electron 188/189 (hold 2a run 1), chrome 180/181 (hold 2b run 3). The count tells the model where to resume, so a short count makes it type a character twice. **(2) Chrome's background paste times out** with "Timed out waiting for the application to read the clipboard". Hold 3 records both again with the engine's message kept.
   Evidence: `m2b/hold2a/matrix/*/result.json`, `m2b/hold2b/korean/cua/run-3/result.json`, matrix cua run 3.
+- Observation (M2b hold 3, 2026-10-22, the architect's AppKit question): **a native AppKit field also keeps ABC's layout when the source is switched while it has focus.** `korean:textedit pre-refocus` read source 2SetKorean with layout com.apple.keylayout.ABC; after the refocus, 2SetHangul. The same held for selections made with Chrome's and Electron's fields focused (perContext pre-refocus readings). Focus arriving after the switch engages the input method in every scene.
+  Evidence: `m2b/hold3/matrix/cua/run-1/result.json` (meta.unicode.readings).
+- Observation (M2b hold 3, route 3 live): **with route 3 the background Chromium actions and TextEdit's background ⌘A take effect on cua**, in both cua runs: electron click.button (60.8 ms, the vendor 105 ms), setValue.text and selectText.text @finder, TextEdit pressKey.selectAll @finder and @chrome (`whole: true`), all route 3, interference clean, Electron's accessibility mode enabled throughout. Electron's background typeText, pressKey.tab and paste @finder still fail their prepare on cua ("the field could not be given the focus") where the vendor's pass.
+  Evidence: `m2b/hold3/matrix/cua/run-1`, `run-2`; the vendor's `matrix/vendor/run-1`.
+- Observation (M2b hold 3, the Finder scene): **the run's Finder window grows on each open**: 660 (hold 2b), 716, 772, 800, 828, 856 pt tall across tonight's runs, and the bind and teardown checks then report "another process's window is on top" even when the run's window is the only one on layer 0 (route-ab attempt 4, with Tailscale and Terminal hidden). The likelier cause is the growth, not another app. Residue.
+  Evidence: `m2b/hold3/lanes.txt`, `winlist-*`, `route-ab-stopped-a1..a3`, `route-ab`.
 - Observation (M2b hold 2b, Korean in Chromium): **`r k` by pressKey under Korean 2-Set composes 가 in Chrome and in Electron**, in both lanes. The matrix's expectation is `rk` under both sources (unicode-plan, PRESS_KEY). Whether that expectation stands is a spec question for the expected file; see Outcomes.
 
 ## Decision Log
@@ -1072,6 +1078,14 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   3. **Per-action borrowers check for the user under the registry's lock** (finding 5). Synthesized clicks, drags, pastes and forced keys pass the in-flight intervention check into the acquire, as the holds do, and keep the later check before their events. So a user event while they wait behind another holder's activation stops them before the activation and its click; paste rechecks there after its own lock's check.
   Tests: the reviewer's three reproductions as `ReviewRaceTests`; `ActivationClickTests` (a failed action query skips the click; a user event while a click waits stops it before its activation, the check running under the lock); `PasteActivationTests` (the same for paste, with the pasteboard untouched). The engine suite 491/491.
   Date/Author: 2026-10-22, plan-executor for maws-3f.
+- Decision (M2b hold 3, 2026-10-22 20:04:39–21:36Z on the mini, sitting hold3, S 92618150, engine 0c363f8f approved 10:29:15Z by M3's hold; phase 0 checked build and live grants, no rebuild): what ran, the deviations, the overrides, and what the hold establishes. Evidence: `m2b/hold3/` (README).
+  1. **Ran**: run 1 vendor (20:07–20:33Z) and cua (20:34–20:58Z); route-ab four attempts (20:59–21:07Z), all stopped at Finder's bind; the native-mac pair (21:09–21:11Z); run 2 cua only (21:12–21:35Z); phase 4 (21:36Z), put-back verified by maws-3f at 21:36:21Z. Run 3 was dropped for time (the vendor lane took 26 min) and run 2's vendor lane by maws-3f's ruling.
+  2. **Counting overrides (maws-3f, recorded here, results unedited).** A lane whose rows all ran, whose only put-back failure is (a) the Finder teardown's "another process's window is on top" or (b) the front-app step declining to restore a front app recorded as a scene app, and whose cleanup then finished with verified readings, counts. Vendor run 1 counts under (a) (563 rows; cleanup and readings in `lanes.txt`); cua run 2 counts under (b) as an unpaired cua repeat (562 rows). Its front-app record was most likely the one route-ab's attempt 4 left (Finder, saved while Terminal was hidden, its cleanup not holding); the run's own begin read Terminal. Any other put-back failure does not count.
+  3. **The verdict.** As recorded, `summary` over `m2b/hold3/matrix` reads FAIL (one paired run; missing proof: no complete vendor run, cua run 2 incomplete). With the overrides it reads: speed 50 of 58 ops beat the vendor by at least 10% (7 misses to the owner's fork); non-interference cua 96.9% (188/194), the vendor 98% (97/99); finding elements cua 29 of 40, equal to the vendor; concurrent use and intervention 2 of 5; Korean and Unicode 147 of 225. Still missing even with them: the triple (one paired run, not three), the 7 speed misses, and the blocking items (the concurrent rows' and the launch row's top window, Chrome's background paste timing out, midSwitch's entered count one short, rk under Korean, the notText refusal sentence).
+  4. **The route A/B is unsettled.** route-ab stopped four times at Finder's bind; the last ran with only the run's window on layer 0. Under maws-3f's rule: element-action route 3 stays, called unsettled here; the writes (set_value, select_text) stay on route 3 on run 1's and run 2's delivered rows; ⌘ chords stay. The A/B is owed to a later hold.
+  5. **native-mac**: both lanes complete; the diff refused the pair (Finder read in two frames, 492 against 520), as cause B's guard should. Raw per-app comparison: Electron identical in all four texts, cua's first read whole (cause A fixed live); Chrome differs only in the loopback port; TextEdit's diff text differs: the vendor reports its scroll bar's value indicator changed, cua reports no change (open: whether the scroll bar moved in cua's lane or cua's diff missed it).
+  6. **Interference watch**: Screen Sharing was connected at the start and dropped during run 1's vendor lane (owner disconnected); the cua-shim processes had no children at any lane edge; no foreign engine; Tailscale and Terminal were hidden (NSRunningApplication only) for route-ab attempts 3 and 4 and unhidden by phase 4.
+  Date/Author: 2026-10-22, plan-executor for maws-3f.
 - Decision: no cursor overlay, no per-app instruction texts, no cross-connection approval persistence, no audio, no lock-screen unlock in this work.
   Rationale: none is reachable by cua's facade today or wanted by the owner; MAWS synthesizes its own agent cursor.
   Date/Author: 2026-10-18, maws-3f.
@@ -1126,3 +1140,43 @@ Left for M2b:
 - select_text in a minimized window;
 - verifying enablement's release by Chromium's mode;
 - the vendor-parity menu items logged in tech-debt-tracker.md.
+
+**M2b (885d7d8e..HEAD on feat/117-m2b; holds 2026-10-21 20:27Z to 2026-10-22 21:36Z).** The native method matrix with its oracles, the probe cells, the Korean and Unicode matrix, the settle cell and the `native-mac` suite landed reviewed. Four holds ran them live on the mini.
+
+Its residue from M2a closed live:
+- the paste and HID rows;
+- route 4;
+- the held menu activation;
+- select_text in a minimized window;
+- enablement's release, read from Chromium's mode.
+
+The milestone also changed the engine where live evidence showed it wrong:
+- hscroll's sign;
+- the focus probe's WindowServer connection;
+- the enablement re-enable after a write-back (native-mac's empty Electron read, gone in hold 3);
+- route 3 for ⌘ chords and element actions when the app does not believe it has focus. With it, background Chromium actions and TextEdit's background ⌘A take effect, which they did not in holds 2a and 2b.
+
+On the three points, hold 3 with maws-3f's counting overrides:
+- speed: 50 of 58 ops beat the vendor;
+- non-interference: cua 96.9% against the vendor's 98%;
+- finding elements: equal.
+
+The verdict is still FAIL as recorded. What it lacks:
+- the triple (one paired run, one cua repeat);
+- the route A/B, which is unsettled;
+- the blocking items listed in Decision Log "M2b hold 3" item 3.
+
+What the milestone taught:
+- **A measurement probe is part of the measured system.** The focus probe without a WindowServer connection voided two runs' focus halves before anyone read its -25204. A probe's own failure modes need a negative reading before a hold.
+- **An input's absence of effect and its absence of error look alike.** A 9 ms AXPress that returned cleanly did nothing on a background Chromium. Only the outcome checks caught it, and only a second look at those checks showed ⌘A had left the prepared selection alone, rather than selected part of it.
+- **Two fixes in one build need an experiment that separates them.** The re-enable and route 3 landed together. The A/B built to separate them never ran, because the scene it depended on degraded across opens.
+- **A harness scene that persists state between runs drifts.** Finder's window grew by 28 to 56 pt per open. A guard that passed at 660 pt refused at 856, and five stops in a row read as another app's window until a hold with only the run's window on screen ruled that out.
+- **A reviewer loop needs a stated last round.** Route 3's third high review converged under maws-3f's rule: only user safety or measurement validity blocks, the rest is debt. Without the rule, ordering windows of notification latency would have kept it open.
+- **A subagent cannot be the channel for an owner's approval.** The classifier blocked the spike-route forward in every subagent, correctly. The owner's approval reached the change only through the session that held it.
+
+Left after M2b:
+- the triple and the route A/B, in a later hold;
+- the Finder scene's growth and the bind check's misreport;
+- the front-app record surviving a failed cleanup;
+- perContext's `defaults write` not taking effect live;
+- the findings to judge in the M2b report.

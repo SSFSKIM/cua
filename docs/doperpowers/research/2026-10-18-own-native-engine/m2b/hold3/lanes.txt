@@ -1,0 +1,98 @@
+[r1-vendor-start] 20:07:17Z 5900=1 load={ 2.74 2.42 2.12 }
+shim 7096 children: 
+shim 8722 children: 
+shim 93128 children: 
+engine: sky:
+sec: auth:
+    bundleID="com.apple.Terminal"
+com.apple.keylayout.ABC
+[r1-vendor note] VNC 5900 was 1 at lane start (20:07:17Z) and dropped to 0 around 20:07:30-20:07:54Z, during the lane (owner disconnected; main 20:07:54Z)
+[r1-vendor-end] 20:33:07Z 5900=0 load={ 8.81 5.50 4.02 }
+shim 7096 children: 
+shim 8722 children: 
+shim 93128 children: 
+engine: sky:
+sec: auth:
+    bundleID="com.apple.Terminal"
+com.apple.keylayout.ABC
+[r1-cua-start] 20:33:59Z 5900=0 load={ 5.18 5.05 3.93 }
+shim 7096 children: 
+shim 8722 children: 
+shim 93128 children: 
+engine: sky:
+sec: auth:
+    bundleID="com.apple.Terminal"
+com.apple.keylayout.ABC
+[ruling 20:3xZ main] Counting rule: a lane whose rows all ran, whose only failure is the finder-teardown put-back with "another process's window is on top", and whose cleanup then finished with verified readings, counts via an explicit recorded override at summary time (never editing results); next lane's precheck must show baseline restored; recorded as a deviation with error text, cleanup output, readings. Same for cua. Any other put-back failure does not count.
+Diagnosis: if it recurs, read windows above the run's window before cleanup: owner pid, process name, layer, bounds only (Claude Desktop/Chrome: name only).
+Time: run 3 dropped. After cua lane: route-ab, native-mac pair; run 2 only if it begins by 21:20Z; put-back done by 22:15Z.
+[r1-vendor deviation] finder-teardown: "finder did not come to the front: the run's Finder is frontmost but its top window is not the run's window: it is Finder's front window, but another process's window is on top (the run's window 920x716 at 820,261); no further step was sent"; cleanup 20:33Z "cleanup done"; readings: ShowSidebar=1, ShowStatusBar/ShowPathbar unset, no TextEdit/CfT/fixture, front re-activated to Terminal (window 26), ABC; next lane precheck (r1-cua-start 20:33:59Z) baseline restored.
+[r1-cua grants 20:34:41Z] running pid 71023, accessibility true, screen recording true, input monitoring true, build 0c363f8f4512
+[r1-cua-end] 20:58:58Z 5900=0 load={ 2.44 3.61 4.61 }
+shim 7096 children: 
+shim 8722 children: 
+shim 93128 children: 
+engine: sky:
+sec: auth:
+    bundleID="com.apple.Terminal"
+com.apple.keylayout.ABC
+[routeab-start] 20:59:15Z 5900=0 load={ 2.47 3.56 4.58 }
+shim 7096 children: 
+shim 8722 children: 
+shim 93128 children: 
+engine: sky:
+sec: auth:
+    bundleID="com.apple.Terminal"
+com.apple.keylayout.ABC
+[routeab attempt 1 deviation 21:00Z] stopped before bind: "finder did not come to the front before its bind (the run's Finder is frontmost but its top window is not the run's window: it is Finder's front window, but another process's window is on top (the run's window 920x772 at 820,261))". Windows read after the stop, before cleanup (owner pid/name/layer/bounds; Claude: name only): layer0 Terminal pid431 #26 1400,280,580,408; Finder pid462 #13833 820,261,920,772 (the run's); Tailscale pid447 #35 1280,30,1280,998; Claude (name only). Cleanup 21:01Z "cleanup done"; Finder keys as saved; no scene apps; Terminal re-activated.
+Note: the run's Finder window height grows per run: 660 (2b) -> 716 (r1 vendor) -> 772 (route-ab).
+[routeab-start-2] 21:00:57Z 5900=0 load={ 2.26 3.25 4.35 }
+shim 7096 children: 
+shim 8722 children: 
+[routeab attempt 2 deviation 21:02Z] same stop: "...another process's window is on top (the run's window 920x800 at 820,261)". Window order before cleanup: layer0 Terminal pid431 #26 1400,280,580,408; Finder pid462 #13847 820,261,920,800 (the run's); Tailscale pid447 #35 1280,30,1280,998; Claude (name only). Cleanup "cleanup done"; Tailscale hidden by NSRunningApplication(447).hide() (returned false, but its layer-0 window left the on-screen list); pid 447 still running; ssh ok; Terminal re-activated; Finder keys as saved. Window growth: 772 -> 800.
+[routeab-start-3] 21:02:57Z 5900=0 load={ 2.35 3.02 4.11 }
+shim 7096 children: 
+shim 8722 children: 
+shim 93128 children: 
+engine: sky:
+[routeab attempt 3 deviation 21:04Z] same stop with Tailscale hidden: "...another process's window is on top (the run's window 920x828 at 820,261)". Window order before cleanup: layer0 Terminal pid431 #26 1400,280,580,408; Finder pid462 #13859 820,261,920,828; (Tailscale hidden, not listed); Claude name only. Cleanup done. Terminal hidden via NSRunningApplication(431).hide() (returned false; no layer-0 windows listed after); pid 431 running; front app now Finder; ssh ok. Condition for attempt 4 judged met: route-ab's user app is Finder (plan.routeAb.user='finder'), the release get_app_state targets it; the front-app put-back saves the front at start (Finder now), Terminal re-activated by hand after.
+[routeab-start-4] 21:05:48Z 5900=0 load={ 1.83 2.47 3.68 }
+shim 7096 children: 
+shim 93128 children: 
+engine: sky:
+sec: auth:
+    bundleID="com.apple.finder"
+com.apple.keylayout.ABC
+[routeab attempt 4 deviation 21:07Z] same stop with Tailscale and Terminal hidden: "...another process's window is on top (the run's window 920x856 at 820,261)". Window order after stop (layer 0): only Finder #13870 820,261,920,856 (the put-back had run). route-ab skipped per main's rule: A/B unsettled in hold 3; element-action route 3 stays, DL says unsettled. Cleanup; Terminal unhidden and re-activated (Tailscale stays hidden until phase 4).
+[after routeab a4 21:09Z] cleanup reports 'put-back did not hold' (likely the front app it saved at attempt 4's start was Finder, since Terminal was hidden; Terminal re-activated by hand per main). Direct readings: no engine/sky, no TextEdit/CfT/fixture, ABC, PerContext 0, front Terminal, Finder keys as saved, only Terminal #26 at layer 0.
+[nm-vendor-start] 21:08:05Z 5900=0 load={ 1.73 2.19 3.38 }
+shim 7096 children: 
+shim 93128 children: 
+[ruling main ~21:10Z] route-ab skipped (unsettled A/B): four attempts stopped at Finder's bind; the last ran with only the run's window on layer 0 (Tailscale and Terminal hidden), ruling both out; window growth leads the residue. Run 2 = cua lane only, iff native-mac passed Finder bind+teardown in both lanes and ends by 21:40Z; else phase 4. Phase 4: unhide Tailscale; record both apps' hidden state and the front app; cleanup's 'put-back did not hold' (attempt 4) recorded with direct readings; cause: Finder saved as front while Terminal was hidden.
+[nm-cua-start] 21:09:46Z 5900=0 load={ 3.36 2.56 3.38 }
+shim 7096 children: 
+shim 93128 children: 
+engine: sky:
+sec: auth:
+    bundleID="com.apple.Terminal"
+com.apple.keylayout.ABC
+[nm-end] 21:11:39Z 5900=0 load={ 2.57 2.62 3.31 }
+shim 7096 children: 
+shim 93128 children: 
+engine: sky:
+sec: auth:
+    bundleID="com.apple.Terminal"
+com.apple.keylayout.ABC
+[nm-end note] shim 8722 (under daemon spare 33408) no longer present at 21:11:39Z (exited; not ours); 7096 and 93128 no children. native-mac vendor and cua both complete (Finder scene bound and torn down in both).
+[r2-cua-start] 21:11:47Z 5900=0 load={ 2.56 2.62 3.30 }
+shim 7096 children: 
+shim 93128 children: 
+[r2-cua-end] 21:35:33Z 5900=0 load={ 1.99 2.47 2.75 }
+shim 7096 children: 
+shim 93128 children: 
+engine: sky:
+sec: auth:
+    bundleID="com.apple.finder"
+com.apple.keylayout.ABC
+[r2-cua 21:12-21:35Z] all 562 rows ran (447 ok, 90 invalid); INCOMPLETE: put-back front-app step failed: {"bundleId":"com.apple.finder","reactivated":false,"inFront":false,"reason":"the app in front was a scene app; it is not brought back"} (Finder in front at the end; saved owner front Terminal). Windows before cleanup (layer 0): only Terminal #26; Claude name only. Not the Finder-teardown failure -> not covered by main's counting rule (pending main).
+[phase4 21:36Z] cleanup reports "put-back did not hold" (ran while Finder was front: same front-app reason); then: engine stop "no engine was running"; Tailscale unhidden (NSRunningApplication(447).unhide(), returned false; hidden=false after, window #35 back on layer 0); Terminal re-activated (front com.apple.Terminal, hidden=false). Readings in phase4.txt.

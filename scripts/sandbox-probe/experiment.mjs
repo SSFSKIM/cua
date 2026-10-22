@@ -110,7 +110,7 @@ const SCREENSHOT = ['Finder getScreenshot', `const app = await cua.getApp(${JSON
 // once: that call throws, and every later one throws again without sending, so no further cell reaches the engine; the
 // caller's teardown and result still follow. The attestation is judged on the raw reply, before its output is decoded;
 // output that does not decode is `undecodable`, apart from a call that failed in transport (`transport`), which has no
-// reply to attest, and the connection lifecycle's own rejection (isLifecycleRejection), which no runtime work answered.
+// reply to attest, and the connection lifecycle's pre-dispatch rejection (isLifecycleRejection), which no runtime work answered.
 export function cellRunner({call, expected = null, isCancelled = () => false, results, ev = () => {}}) {
   let refusal = null;
   return async (name, body) => {

@@ -5,7 +5,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {
   approvalsByBehaviour, attestationProblem, boundedError, classifyOwnHostTree, cuaRootProcesses, descendants, engineSocketPeers,
-  bindRefusal, isAppApproval, isLifecycleRejection, leftoverProcesses, lsappinfoPid, pinnedEngine, psRows, unixSocketEnds, unixSockets,
+  bindRefusal, isAppApproval, isLifecycleRejection, leftoverProcesses, resultAttestation, lsappinfoPid, pinnedEngine, psRows, unixSocketEnds, unixSockets,
 } from '../scripts/probe/lib.mjs';
 
 const HOME = '/Users/u';
@@ -49,15 +49,15 @@ test('a lane pins its engine: --engine, else CUA_NATIVE_ENGINE, else the default
   assert.throws(() => pinnedEngine({env: {CUA_NATIVE_ENGINE: 'Cua'}, defaultEngine: 'vendor'}), /CUA_NATIVE_ENGINE must be vendor or cua/);
 });
 
-test('only the connection lifecycle\'s own rejection is exempt from the attestation: it never reached the runtime', () => {
+test('only a pre-dispatch lifecycle rejection is exempt from the attestation; in-flight failures never are', () => {
   // As src/mcp/server.mjs rejectionResult builds it: isError, {status: 'error', code}, no _meta.
   const rejection = code => ({isError: true, structuredContent: {status: 'error', code}, content: [{type: 'text', text: `cua: ${code}`}]});
-  for (const code of ['task_ending', 'connection_failed', 'connection_closing', 'cancelled', 'completion_timeout', 'completion_failed']) {
-    assert.equal(isLifecycleRejection(rejection(code)), true, code);
-  }
   const expected = {engine: 'cua', version: '0.1.0', build: 'b74949b3aa'};
   const refused = result => !isLifecycleRejection(result) && attestationProblem(result?._meta, expected);
-  assert.equal(refused(rejection('task_ending')), false, 'a lifecycle rejection with no _meta passes without an attestation');
+  for (const code of ['task_ending', 'cancelled']) assert.equal(refused(rejection(code)), false, `${code} with no cua/taskId is exempt`);
+  for (const code of ['connection_failed', 'connection_closing', 'completion_timeout', 'completion_failed']) {
+    assert.match(refused(rejection(code)), /no cua\/nativeEngine attestation/, `${code} can reject in-flight work: not exempt`);
+  }
   assert.match(refused({content: [{type: 'text', text: 'ok'}]}), /no cua\/nativeEngine attestation/, 'a runtime result with no attestation');
   assert.match(refused({...rejection('task_ending'), _meta: {'cua/taskId': 't1'}}), /no cua\/nativeEngine attestation/,
     'a result with cua/taskId, isError and code task_ending, but no attestation, still refuses: the runtime answered it');
@@ -65,6 +65,23 @@ test('only the connection lifecycle\'s own rejection is exempt from the attestat
   assert.match(refused({structuredContent: {status: 'error', code: 'task_ending'}}), /no cua\/nativeEngine attestation/, 'not an error');
   assert.match(refused({isError: true, structuredContent: {status: 'ok', code: 'task_ending'}}), /no cua\/nativeEngine attestation/, 'not status error');
   assert.equal(isLifecycleRejection(undefined), false);
+});
+
+test('a call declared abandoned may end in the connection\'s failure unattested; nothing else may', () => {
+  const rejection = code => ({isError: true, structuredContent: {status: 'error', code}});
+  const expected = {engine: 'cua', version: '0.1.0', build: 'b74949b3aa'};
+  const abandoned = {abandoned: true};
+  for (const code of ['connection_failed', 'connection_closing', 'completion_timeout', 'completion_failed']) {
+    assert.deepEqual(resultAttestation(rejection(code), expected, abandoned), {kind: 'abandoned', problem: null}, code);
+    assert.match(resultAttestation(rejection(code), expected).problem, /no cua\/nativeEngine attestation/, `${code}, undeclared`);
+  }
+  assert.match(resultAttestation({...rejection('connection_failed'), _meta: {'cua/taskId': 't1'}}, expected, abandoned).problem,
+    /no cua\/nativeEngine attestation/, 'with cua/taskId the runtime answered it: it must attest');
+  assert.match(resultAttestation(rejection('some_other_code'), expected, abandoned).problem, /no cua\/nativeEngine attestation/);
+  assert.match(resultAttestation({content: []}, expected, abandoned).problem, /no cua\/nativeEngine attestation/, 'an answer, not a rejection');
+  assert.deepEqual(resultAttestation(rejection('task_ending'), expected), {kind: 'rejected', problem: null});
+  assert.deepEqual(resultAttestation({_meta: {'cua/nativeEngine': {...expected}, 'cua/taskId': 't1'}}, expected), {kind: 'attested', problem: null});
+  assert.match(resultAttestation({_meta: {'cua/nativeEngine': {...expected, build: 'x'}, 'cua/taskId': 't1'}}, expected, abandoned).problem, /build x/);
 });
 
 test('the attestation must name the pinned engine with the expected version and build, on every result', () => {

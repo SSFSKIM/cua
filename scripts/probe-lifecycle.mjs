@@ -26,7 +26,7 @@ import {parseArgs} from 'node:util';
 import {defaultHome} from '../src/runtime/layout.mjs';
 import {resolveRuntime} from '../src/runtime/manifest.mjs';
 import {settingsFrom} from '../src/mcp/server.mjs';
-import {attestationProblem, descendants, isLifecycleRejection, leftoverProcesses, unixSocketEnds, unixSockets} from './probe/lib.mjs';
+import {descendants, resultAttestation, leftoverProcesses, unixSocketEnds, unixSockets} from './probe/lib.mjs';
 import {approvedEngineFacts, LaneUsageError, pinLane, selectLane} from './probe/pinned-engine.mjs';
 
 const CLI = fileURLToPath(new URL('../bin/cua.mjs', import.meta.url));
@@ -66,6 +66,8 @@ function connect() {
   const observed = new Map();
   // The ids of this connection's js calls, whose every result must attest the pinned engine.
   const jsCalls = new Set();
+  // The js calls declared abandoned (scenario 3's stuck cell), whose connection-failure rejection may go unattested.
+  const abandonedCalls = new Set();
   // Once refused, nothing more is sent on any connection.
   const send = msg => { if (!refused) server.stdin.write(JSON.stringify(msg) + '\n'); };
   createInterface({input: server.stdout}).on('line', line => {
@@ -75,21 +77,24 @@ function connect() {
       if (msg.method === 'elicitation/create') declined++;
       return send({jsonrpc: '2.0', id: msg.id, result: {action: 'decline'}});
     }
-    // A call the task lifecycle rejected (scenario 2's late call, scenario 3's stuck one) never reached the runtime.
-    if (jsCalls.has(msg.id) && msg.result && !isLifecycleRejection(msg.result)) {
-      report.engine && report.engine.attested++;
-      const problem = expected && attestationProblem(msg.result._meta, expected);
+    // A call the lifecycle never dispatched (scenario 2's late call) has nothing to attest; a declared abandoned call the
+    // connection failed (scenario 3's stuck cell) is counted apart; every other result attests.
+    if (report.engine && jsCalls.has(msg.id) && msg.result) {
+      const {kind, problem} = expected ? resultAttestation(msg.result, expected, {abandoned: abandonedCalls.has(msg.id)}) : {kind: 'attested', problem: null};
+      if (kind === 'attested') report.engine.attested++;
+      if (kind === 'abandoned') report.engine.abandonedUnattested++;
       if (problem) return refuse(problem, {server, exited});
     }
     waiters.get(msg.id)?.(msg);
   });
-  const request = (method, params = {}) => {
+  const request = (method, params = {}, {abandoned = false} = {}) => {
     const id = ++nextId;
     if (method === 'tools/call' && params.name === 'js') jsCalls.add(id);
+    if (abandoned) abandonedCalls.add(id);
     send({jsonrpc: '2.0', id, method, params});
     return {id, reply: new Promise(resolve => waiters.set(id, msg => resolve({...msg, atMs: at()})))};
   };
-  const call = (name, args = {}) => request('tools/call', {name, arguments: args});
+  const call = (name, args = {}, options) => request('tools/call', {name, arguments: args}, options);
   const summary = msg => ({atMs: msg.atMs, isError: msg.result?.isError ?? Boolean(msg.error), structured: msg.result?.structuredContent, text: msg.result?.content?.find(c => c.type === 'text')?.text?.slice(0, 120)});
   const observe = () => { for (const p of descendants(psText(), server.pid)) if (p.pid !== server.pid) observed.set(p.pid, p); };
   // After the server exited: what the connection left running, waiting up to 5 s for a tree that ends through its
@@ -126,7 +131,7 @@ function connect() {
 
 const sleepCell = (ms, label) => `globalThis.__probe = "${label}:started"; await new Promise(r => setTimeout(r, ${ms})); globalThis.__probe = "${label}:finished"; nodeRepl.write(globalThis.__probe)`;
 const report = {release: runtime.release, at: new Date().toISOString(),
-  ...(pinned.pin ? {engine: {engine: pinned.pin.engine, pinnedBy: pinned.pin.pinnedBy, host: selection.host, expected, attested: 0}} : {})};
+  ...(pinned.pin ? {engine: {engine: pinned.pin.engine, pinnedBy: pinned.pin.pinnedBy, host: selection.host, expected, attested: 0, abandonedUnattested: 0}} : {})};
 // Every js result attests the pinned engine. Any mismatch refuses the run at once: nothing more is sent, the connection's
 // serve is closed (EOF, then SIGTERM after 15 s), and the report is printed with `refused`; exit 1.
 let refused = false;
@@ -177,7 +182,7 @@ async function refuse(problem, {server, exited}) {
 {
   const c = connect();
   await c.open();
-  const work = c.call('js', {code: sleepCell(15000, 'stuck'), timeout_ms: 30000});
+  const work = c.call('js', {code: sleepCell(15000, 'stuck'), timeout_ms: 30000}, {abandoned: true});
   await new Promise(r => setTimeout(r, 300));
   c.observe();
   const end = c.call('end_task');

@@ -132,15 +132,29 @@ export function attestationProblem(meta, expected) {
   return `the result attested ${show(attested)} where ${show(expected)} was expected`;
 }
 
-// Whether a work result came from the connection lifecycle's rejection path (src/mcp/server.mjs rejectionResult), where
-// no runtime work ran, so there is no engine to attest. The provenance mark is the missing `cua/taskId`: every result
-// the runtime answered carries one (runWork's success path, beside `cua/nativeEngine`). The rejection's shape (isError,
-// {status: 'error', code} with a code of src/mcp/task.mjs) must also match, but the code alone never exempts: a result
-// with `cua/taskId` must attest whatever its code. Every other result, an error or not, must attest.
-const LIFECYCLE_CODES = new Set(['task_ending', 'connection_failed', 'connection_closing', 'cancelled', 'completion_timeout', 'completion_failed']);
-export const isLifecycleRejection = result => result?.isError === true
-  && result.structuredContent?.status === 'error' && LIFECYCLE_CODES.has(result.structuredContent.code)
-  && !Object.hasOwn(result._meta ?? {}, 'cua/taskId');
+// Whether a work result is the connection lifecycle's rejection of work it never dispatched (src/mcp/server.mjs
+// rejectionResult: isError, {status: 'error', code}, no _meta), so no engine ran it and there is nothing to attest. Only
+// two codes are always pre-dispatch in src/mcp/task.mjs: `task_ending`, refused at submit (#refusal) or taken off the
+// queue when ending begins (#beginEnding's #rejectQueued), and `cancelled`, a queued item's cancel. `connection_failed`
+// and `connection_closing` also settle the in-flight item (fail, abandon, #finish, #completionFailed), work the runtime
+// may have run, so they are never exempt. A result with `cua/taskId` was answered by the runtime (runWork) and must
+// attest whatever its code. Every other result, an error or not, must attest.
+const PRE_DISPATCH_CODES = new Set(['task_ending', 'cancelled']);
+const rejectionCode = result => result?.isError === true && result.structuredContent?.status === 'error'
+  && !Object.hasOwn(result._meta ?? {}, 'cua/taskId') ? result.structuredContent.code : null;
+export const isLifecycleRejection = result => PRE_DISPATCH_CODES.has(rejectionCode(result));
+
+// The connection's terminal codes for work it may have dispatched and then dropped (src/mcp/task.mjs fail, abandon,
+// #completionFailed): accepted unattested only for a call its caller declared abandoned (probe-lifecycle's stuck cell).
+const ABANDONED_CODES = new Set(['connection_failed', 'connection_closing', 'completion_timeout', 'completion_failed']);
+
+// A js result against `expected` -> {kind, problem}: 'rejected' (isLifecycleRejection: never dispatched), 'abandoned'
+// (a declared abandoned call the lifecycle failed, no `cua/taskId`), else 'attested' with attestationProblem's problem.
+export function resultAttestation(result, expected, {abandoned = false} = {}) {
+  if (isLifecycleRejection(result)) return {kind: 'rejected', problem: null};
+  if (abandoned && ABANDONED_CODES.has(rejectionCode(result))) return {kind: 'abandoned', problem: null};
+  return {kind: 'attested', problem: attestationProblem(result?._meta, expected)};
+}
 
 // The approval either engine's policy asks before it first uses `app` (a bundle id) in a connection, and nothing else:
 // the message names the app, the form asks for no field, the meta is the computer-use connector's and its tool

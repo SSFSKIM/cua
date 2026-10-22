@@ -38,6 +38,15 @@ export function indexOfPart(ax, label, text) {
   const part = new RegExp(`(?:^| |, )${escaped}(?:,| \\(showing |$)`);
   return elementLines(ax).find(l => part.test(l.content))?.index ?? null;
 }
+// The element whose identifier is `id`: its `ID: <id>` part, or the bare `<id>` ending its line when the identifier is
+// the line's only part, which the grammar prints unlabelled (render.mjs parts; an emptied text view says nothing else),
+// or null.
+export function indexOfId(ax, id) {
+  const labelled = indexOfPart(ax, 'ID', id);
+  if (labelled !== null) return labelled;
+  const lone = new RegExp(` ${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`);
+  return elementLines(ax).find(l => lone.test(l.content))?.index ?? null;
+}
 // The value of the element `index` (its `Value: ` part, through the lines a multi-line value spans, up to the next
 // element line or the blank line before the trailer), or null when the line carries none.
 export function valueOfIndex(ax, index) {
@@ -230,7 +239,7 @@ export function sha256Hex(text) {
 }
 
 // The helpers' source, for a cell to embed (in this order: each calls only earlier ones or indexOfTarget).
-export const EMBEDDED = [`const windowTitleOf = ${windowTitleOf.toString()};`, indexOfTarget, elementLines, lineOfIndex, parentIndexOf, indexOfPart, valueOfIndex,
+export const EMBEDDED = [`const windowTitleOf = ${windowTitleOf.toString()};`, indexOfTarget, elementLines, lineOfIndex, parentIndexOf, indexOfPart, indexOfId, valueOfIndex,
   focusedIndexOf, selectedTextOf, selectedIndexesOf, rowIndexOfName, showingOf, scrollBarValueBeside,
   `const SUBROLE_WORDS = ${JSON.stringify(SUBROLE_WORDS)};`, findTarget, `const ROLE_WORDS = ${JSON.stringify(ROLE_WORDS)};`, `const LABELS = ${LABELS.toString()};`,
   namedLines, idCount, sha256Hex].map(f => (typeof f === 'string' ? f : f.toString())).join('\n');

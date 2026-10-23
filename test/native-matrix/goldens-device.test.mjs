@@ -10,7 +10,7 @@ import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {SkyComputerUseError} from '../../src/services/engine/protocol.mjs';
 import {DESELECT_ALL_KEY, FINDER_CHROME, readSavedPreferences, saveOriginalPreferences} from '../../scripts/repl-parity/scenes-mac-finder.mjs';
-import {SCENES, setupSteps, teardownSteps} from '../../scripts/repl-parity/scenes-mac.mjs';
+import {SCENES, activateScene, setupSteps, teardownSteps} from '../../scripts/repl-parity/scenes-mac.mjs';
 import {EventEmitter} from 'node:events';
 import {RESET_MAY_CLEAR, SCREENSHOT_DIR, SETTLE_BOUND_MS, SETTLE_INTERVAL_MS, act, engineCheck, engineNodeRepl, goldenForm, main, observe, runSteps, settledState, stateDigest, verify} from '../../scripts/native-matrix/goldens-device.mjs';
 
@@ -605,4 +605,30 @@ test('settle-probes dispatches without requiring an up scene or invoking engine 
   assert.deepEqual(calls, [run]);
   assert.equal(out.ok, false);
   await assert.rejects(main(['settle-probes', '--run', 'relative']), /absolute/);
+});
+
+
+test('a failed Finder frame probe retains stage diagnostics through activation evidence', async () => {
+  const finder = finderEngine({state: {}, drawn: {sidebar: false, statusBar: false, pathBar: false}});
+  const {run, io, record} = finderRun(finder);
+  let runDir;
+  io.probe = async (_args, dir) => {
+    runDir = dir;
+    return {pid: 402, window: 7, requested: {x: 80, y: 80, width: 920, height: 520},
+      readBack: {x: 820, y: 261, width: 920, height: 912}, matched: false, exitStatus: 2,
+      diagnostic: {stage: 'ax-number-match', reason: 'unknown-identity', windowCount: 2, matchCount: 0}};
+  };
+  await assert.rejects(run('setup'), /Finder frame probe/);
+  const expected = {stage: 'ax-number-match', reason: 'unknown-identity', windowCount: 2, matchCount: 0};
+  const saved = JSON.parse(fs.readFileSync(join(runDir, 'scenes.json'), 'utf8'));
+  assert.deepEqual(saved.scenes.finder.framePin.diagnostic, expected);
+  const activation = await activateScene('finder', {run: runDir, io: {
+    activateApp: () => {}, frontmostProcess: () => ({pid: record.pid, bundleId: 'com.apple.finder'}),
+    windowOrder: () => [{ownerPid: record.pid, ownerName: 'Finder', number: record.window.number, bounds: record.window.bounds}],
+    now: io.now, sleep: io.sleep,
+  }});
+  assert.equal(activation.ok, true);
+  assert.deepEqual(activation.framePin.diagnostic, expected);
+  const evidence = JSON.parse(fs.readFileSync(join(runDir, 'activation-guards.jsonl'), 'utf8').trim());
+  assert.deepEqual(evidence.framePin.diagnostic, expected);
 });

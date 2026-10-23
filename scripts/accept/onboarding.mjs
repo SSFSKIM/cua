@@ -1,12 +1,12 @@
 // #117 M4, acceptance 8: owner-first fresh onboarding, split from accept-native item 9 into item 14.
-// No TCC operation is automated. The owner removes only cua Engine's three entries, then grants AX, SR (Later),
-// and IM in stages. Model-facing errors and service relaunch are proved on one MCP connection BEFORE approveEngine.
-// runTextEdit cannot be used for these stages: its monolithic scenario binds/captures before returning. The owner
-// instead opens one blank TextEdit document, keeps it open, then quits without saving; the runner sends only two Xs.
+// The harness never operates TCC UI. Manual Settings/fixture steps may be performed by the owner or a separately
+// authorized coordinator; terminal answers do not establish who acted. Only the owner answers system alerts.
+// Model-facing errors and service relaunch are proved on one MCP connection BEFORE approveEngine. runTextEdit
+// cannot be used here: it binds/captures before returning. One manually prepared blank document receives two Xs.
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {fileURLToPath} from 'node:url';
-import {approveEngine, ENGINE_GRANTS, enginePaths, engineStatus, lineReader, stopEngine} from '../../src/runtime/engine.mjs';
+import {approveEngine, ENGINE_GRANTS, enginePaths, engineStatus, grantSteps, lineReader, stopEngine} from '../../src/runtime/engine.mjs';
 import {engineBuild} from '../../src/runtime/engine-bundle.mjs';
 import {resolveRuntime} from '../../src/runtime/manifest.mjs';
 import {settingsFrom} from '../../src/mcp/server.mjs';
@@ -21,11 +21,12 @@ import {rollup, TEXTEDIT_BUNDLE} from './lib.mjs';
 const exec = promisify(execFile);
 const CLI = fileURLToPath(new URL('../../bin/cua.mjs', import.meta.url));
 const KEYS = ['accessibility', 'screenRecording', 'inputMonitoring'];
-export const OWNER_WINDOW = '9 minutes continuously for item 14, inside the combined 12-minute owner window with the separate foreground trial: remove the three entries and open a blank TextEdit document (3); grant Accessibility (1); grant Screen Recording, choosing Later, and answer any capture confirmation (2); grant Input Monitoring (1); finish approval/checks and quit TextEdit without saving (2).';
-const STAGES = ['preconditions', 'owner revocation', 'Accessibility error reaches the model', 'all three grants absent',
-  'owner Accessibility grant', 'Screen Recording error reaches the model', 'AX-only intervention diagnostic', 'owner Screen Recording grant',
-  'service relaunch recovery', 'owner capture confirmation observation', 'intervention off', 'owner Input Monitoring grant', 'engine approval',
-  'final grants and approved build', 'intervention on', 'owner TextEdit cleanup'];
+export const OWNER_WINDOW = 'Reserve approximately 15 minutes continuously for item 14: remove the three entries and open a blank TextEdit document (4); grant Accessibility (1); grant Screen Recording with Later and observe recovery alerts (3); check input and observe alerts (2); grant Input Monitoring (1); approve, check and close only the disposable document without saving (4). Settings and fixture steps are manual; only the owner answers system alerts. This does not authorize a coordinator to operate Settings.';
+const STAGES = ['preconditions', 'manual revocation', 'Accessibility error reaches the model', 'all three grants absent',
+  'manual Accessibility grant', 'Screen Recording error reaches the model', 'AX-only intervention diagnostic', 'manual Screen Recording grant',
+  'service relaunch recovery', 'owner recovery prompt observation', 'intervention off', 'owner input prompt observation',
+  'intervention off: input completion', 'intervention off: metadata', 'intervention off: doctor', 'manual Input Monitoring grant', 'engine approval',
+  'final grants and approved build', 'intervention on', 'manual TextEdit cleanup'];
 const BIND = `globalThis.app = await cua.getApp(${JSON.stringify(TEXTEDIT_BUNDLE)});`;
 const CAPTURE = `${BIND}\nnodeRepl.write(JSON.stringify({onboarding: true, bytes: (await app.getScreenshot({emit:false})).length}));`;
 
@@ -76,15 +77,53 @@ async function focusTextEdit() {
   }
   return false;
 }
-const payload = reply => {
-  if (reply?.result?.isError || reply?.error || reply?.timedOut) return null;
+const payloadData = reply => {
   const line = resultText(reply).split('\n').findLast(s => s.startsWith('{"onboarding":'));
   try { return JSON.parse(line); } catch { return null; }
 };
+const payload = reply => reply?.result?.isError || reply?.error || reply?.timedOut ? null : payloadData(reply);
+const bool = value => typeof value === 'boolean' ? value : null;
+const number = value => Number.isFinite(value) ? value : null;
+const choice = (value, allowed) => value == null ? null : allowed.includes(value) ? value : 'unrecognized';
+const permissions = value => Object.fromEntries(KEYS.map(key => [key, bool(value?.[key])]));
+
+// Allowlist facts, never content, error text, screenshots, arbitrary metadata or signing identity. An error may
+// carry a posted route/interval even when typeText never returned; keep that evidence without calling it success.
+function replyFacts(reply) {
+  const result = reply?.result, meta = result?._meta, data = payloadData(reply);
+  return {
+    completion: reply?.timedOut ? 'timeout' : reply?.error || result?.isError ? 'error' : result ? 'returned' : 'missing-result',
+    resultPresent: Boolean(result), isError: bool(result?.isError), transportError: Boolean(reply?.error),
+    typed: bool(data?.typed), screenshotBytes: Number.isSafeInteger(data?.bytes) && data.bytes >= 0 ? data.bytes : null,
+    metadata: {
+      interventionPresent: Object.hasOwn(meta ?? {}, 'cua/intervention'),
+      intervention: choice(meta?.['cua/intervention'], ['off']),
+      inputRoute: choice(meta?.['cua/inputRoute'], [1, "2'", 2, 3, 4, 'paste']),
+      actionInterval: {startedAt: number(meta?.['cua/actionInterval']?.startedAt), endedAt: number(meta?.['cua/actionInterval']?.endedAt)},
+      receivedAt: number(meta?.['cua/receivedAt']), hidIdleMs: number(meta?.['cua/hidIdleMs']), entered: number(meta?.['cua/entered']),
+    },
+  };
+}
+function doctorFacts(doctor) {
+  const row = doctor?.checks?.find(c => c.name === 'engine');
+  return {permissions: permissions(doctor?.engine?.permissions),
+    engineRow: {present: Boolean(row), status: choice(row?.status, ['pass', 'warn', 'fail', 'skip']),
+      interventionOff: typeof row?.detail === 'string' && /intervention detection off/.test(row.detail)}};
+}
+const PROMPT_RESPONSES = ['accessibility:allow', 'accessibility:deny', 'screen-recording:allow', 'screen-recording:deny',
+  'screen-recording:later', 'capture:allow', 'capture:deny', 'other:answered'];
+function promptAnswers(answer) {
+  if (answer === 'none') return [];
+  const tokens = answer?.split(/\s+/);
+  return tokens?.length && tokens.every(token => PROMPT_RESPONSES.includes(token))
+    ? tokens.map(token => { const [kind, response] = token.split(':'); return {kind, response}; }) : null;
+}
 
 // Boundary injection is for hermetic coverage of the actual sequence, not a second implementation of the flow.
 export async function runFreshOnboarding({home, engine, requested = false}, deps = {}) {
-  const checks = [], observations = {ownerWindow: OWNER_WINDOW, windows: []};
+  const checks = [], observations = {ownerWindow: OWNER_WINDOW, windows: [], cells: [], statuses: [], doctors: [], recoveryPrompts: []};
+  const now = deps.now ?? Date.now;
+  let ownerDeadline = null;
   const record = (name, status, detail) => checks.push({name, status, detail});
   const finish = () => {
     for (const name of STAGES) if (!checks.some(c => c.name === name)) record(name, 'BLOCKED', 'not reached; no pass inferred');
@@ -118,34 +157,68 @@ export async function runFreshOnboarding({home, engine, requested = false}, deps
     catch (error) { if (error.code !== 1 || !error.stdout) throw error; result = error; }
     return JSON.parse(result.stdout);
   });
-  const doctorSaysInterventionOff = doctor => doctor.engine?.permissions?.inputMonitoring === false
-    && /intervention detection off/.test(doctor.checks?.find(c => c.name === 'engine')?.detail ?? '');
+  const doctorSaysInterventionOff = doctor => doctor.permissions.inputMonitoring === false && doctor.engineRow.interventionOff;
+  const retainDoctor = async () => {
+    const evidence = {stage, received: false};
+    observations.doctors.push(evidence);
+    const doctor = await readDoctor();
+    Object.assign(evidence, {received: true}, doctorFacts(doctor));
+    return evidence;
+  };
+  const retainStatus = async name => {
+    const value = await status();
+    observations.statuses.push({stage: name, pid: number(value.status?.pid), connections: number(value.status?.connections),
+      ...permissions(value.status), canPostHid: bool(value.status?.canPostHid)});
+    return value;
+  };
   const ledger = approvalLedger({app: TEXTEDIT_BUNDLE});
   const connect = deps.connect ?? (() => openSession({args: [CLI, 'serve'], env, clientName: 'cua-fresh-onboarding', onServerRequest: msg => ledger.answer('onboarding', msg)}));
   let session = null, ownedWindow = null, stage = 'preconditions';
   const require = (ok, detail, verdict = 'FAIL') => {
-    if (!ok) throw Object.assign(new Error(detail), {verdict});
+    if (!ok) throw Object.assign(new Error(detail), {verdict, harnessDetail: true});
+  };
+  const stopAfterRecordedChecks = Symbol('stop after recorded checks');
+  const failureDetail = error => error.harnessDetail ? error.message
+    : 'external operation failed; raw error text omitted (see retained stage operands)';
+  const answer = async () => {
+    const remaining = ownerDeadline - now();
+    require(remaining > 0, 'the approximately 15-minute owner window expired; stop and arrange recovery, not another automatic window', 'BLOCKED');
+    let timer;
+    try {
+      const reply = await Promise.race([operator.next(), new Promise(resolve => { timer = setTimeout(() => resolve(null), remaining); })]);
+      require(now() <= ownerDeadline, 'the owner window expired while awaiting confirmation', 'BLOCKED');
+      return typeof reply === 'string' ? reply.trim().toLowerCase() : null;
+    } finally { clearTimeout(timer); }
   };
   const ask = async (name, message, word) => {
     stage = name;
-    const words = Array.isArray(word) ? word : [word];
-    log(`OWNER ONLY: ${message} Type ${words.join(' / ')} here after the owner has done it (anything else stops).`);
-    let timer;
-    const answer = await Promise.race([operator.next(), new Promise(resolve => { timer = setTimeout(() => resolve(null), 15 * 60_000); })]);
-    clearTimeout(timer);
-    const confirmed = answer?.trim().toLowerCase();
-    require(words.includes(confirmed), 'owner confirmation absent or declined; automation did not perform this step', 'BLOCKED');
-    record(name, 'PASS', `owner confirmed at the terminal (${confirmed}); not performed by automation`);
+    log(`MANUAL STEP (owner or separately authorized coordinator): ${message} Type ${word} here after completion (anything else stops). A terminal answer does not identify the UI actor; this harness performs no Settings action.`);
+    const confirmed = await answer();
+    require(confirmed === word, 'manual confirmation absent or declined; the harness did not perform this UI step', 'BLOCKED');
+    record(name, 'PASS', `terminal confirmed (${confirmed}); UI actor not inferred; harness did not perform the UI step`);
     return confirmed;
+  };
+  const observePrompts = async (name, interval) => {
+    stage = name;
+    const evidence = {stage: interval.stage, source: 'owner-observed', origin: 'unknown',
+      startedAt: interval.startedAt, finishedAt: interval.finishedAt, reportedAt: null, confirmed: false, prompts: null};
+    observations.recoveryPrompts.push(evidence);
+    log('OWNER ONLY: report every system alert observed during the preceding action, not just capture alerts. Answer alerts yourself; stop on a password prompt and never enter a password for automation. Once none remains, type none, or space-separated kind:response tokens: ' + PROMPT_RESPONSES.join(', ') + '. The terminal may relay the owner’s observation; kind is the visible alert category, not proof of its origin. Do not type alert text.');
+    const confirmed = await answer();
+    evidence.reportedAt = now();
+    evidence.prompts = promptAnswers(confirmed);
+    evidence.confirmed = evidence.prompts !== null;
+    require(evidence.confirmed, 'owner-observed prompt state absent or unrecognized; no further input or grant stage attempted', 'BLOCKED');
+    record(name, 'PASS', 'terminal relayed owner-observed alert categories/responses for the timed action; prompt origin unknown');
   };
   const ensureWindow = async () => {
     const current = await window();
     require(current && current.pid === ownedWindow.pid && current.number === ownedWindow.number,
-      'the owner-prepared TextEdit window is missing or changed; no further observation or input sent', 'BLOCKED');
+      'the manually prepared TextEdit window is missing or changed; no further observation or input sent', 'BLOCKED');
     observations.windows.push({stage, pid: current.pid, number: current.number,
       offScreenCount: current.offScreenBounds?.length ?? 0, offScreenBounds: current.offScreenBounds ?? []});
   };
-  const cell = async (code, {bind = false, input = false} = {}) => {
+  const cell = async (code, {bind = false, input = false, observe = null, allowTimeout = false} = {}) => {
     await ensureWindow();
     if (input) {
       log('OWNER: keep hands off the keyboard while the verified blank TextEdit document comes forward for one harmless X.');
@@ -155,11 +228,14 @@ export async function runFreshOnboarding({home, engine, requested = false}, deps
         'TextEdit lost focus during the window check; no input sent', 'BLOCKED');
     }
     if (bind) ledger.begin('onboarding');
-    try {
-      const reply = await session.js(code, 60_000);
-      require(!reply.timedOut, 'cell timed out; the owner may need to answer a macOS prompt', 'BLOCKED');
-      return reply;
-    } finally { if (bind) ledger.end(); }
+    if (observe) log('OWNER ONLY: observe and answer any system alert during the next action, including Accessibility-named alerts. Note its category and your response; the harness will ask immediately afterward. No alert is answered by the harness.');
+    let reply;
+    try { reply = await session.js(code, 60_000); }
+    finally { if (bind) ledger.end(); }
+    // Observation is prompted by the caller only after it has sampled and judged the action's operands.
+    // An operator delay must neither become evidence of recovery nor discard already-returned input.
+    require(allowTimeout || !reply?.timedOut, 'cell timed out; the owner may need to answer a macOS prompt', 'BLOCKED');
+    return reply;
   };
   const close = async () => {
     const closing = session;
@@ -182,64 +258,99 @@ export async function runFreshOnboarding({home, engine, requested = false}, deps
     require(await textEditStopped(), 'TextEdit must be quit before this owner window; existing documents are left alone', 'BLOCKED');
     record(stage, 'PASS', 'approved engine verified; no live engine connection or TextEdit to disturb');
     log(OWNER_WINDOW);
+    ownerDeadline = now() + 15 * 60_000;
     // Stop before the owner removes entries: the first model request must read fresh grants, not a cached process.
     await stop();
-    await ask('owner revocation', 'In System Settings > Privacy & Security, remove ONLY "cua Engine" with the minus (–) button from Accessibility, Screen & System Audio Recording, and Input Monitoring. Do not touch the vendor service, Terminal or any other entry. Never enter a password for automation. Then open one new blank TextEdit document, with no other TextEdit windows; keep it open until the final step. Revocation is never automated.', 'revoked');
+    await ask('manual revocation', 'In System Settings > Privacy & Security, remove ONLY "cua Engine" with the minus (–) button from Accessibility, Screen & System Audio Recording, and Input Monitoring. Do not touch the vendor service, Terminal or any other entry. Never enter a password for automation. Then open one new blank TextEdit document, with no other TextEdit windows; keep it open until the final step. The harness never performs revocation.', 'revoked');
     ownedWindow = await window();
-    require(ownedWindow, 'needs exactly one on-screen TextEdit window for the owner-prepared blank document', 'BLOCKED');
+    require(ownedWindow, 'needs exactly one on-screen TextEdit window for the manually prepared blank document', 'BLOCKED');
     const startSession = async () => {
-      session = attestReplies(connect(), {expected, onAttested: () => { observations.attested = (observations.attested ?? 0) + 1; }});
+      const raw = connect(), send = raw.js.bind(raw);
+      raw.js = async (...args) => {
+        const evidence = {stage, startedAt: now(), finishedAt: null, attestation: null, reply: null};
+        observations.cells.push(evidence);
+        try {
+          const reply = await send(...args);
+          evidence.reply = replyFacts(reply); // before attestReplies can refuse this result
+          return reply;
+        } finally { evidence.finishedAt = now(); }
+      };
+      session = attestReplies(raw, {expected,
+        onAttested: () => {
+          observations.cells.at(-1).attestation = 'matched';
+          observations.attested = (observations.attested ?? 0) + 1;
+        },
+        onRefused: () => { observations.cells.at(-1).attestation = 'refused'; },
+      });
       await session.initialize();
     };
     await startSession();
     stage = 'Accessibility error reaches the model';
     const axError = await cell(BIND, {bind: true});
     require(permissionGuidance(axError, {permission: 'accessibility', bundlePath}), 'model reply lacks permissionsPending and exact Accessibility +/approved-path guidance');
-    log(resultText(axError));
+    log(grantSteps(ENGINE_GRANTS.find(grant => grant.key === 'accessibility'), bundlePath));
     record(stage, 'PASS', 'MCP js error names Accessibility, + and the exact approved bundle path');
     stage = 'all three grants absent';
-    const revoked = await status();
+    const revoked = await retainStatus('revoked');
     require(KEYS.every(key => revoked.status?.[key] === false), 'all three grants must read false on the freshly launched engine');
     record(stage, 'PASS', 'Accessibility, Screen Recording and Input Monitoring read false');
-    await ask('owner Accessibility grant', 'Follow the Accessibility error just printed: add cua Engine with "+", enter its printed bundle path, then switch it on. Leave Screen Recording and Input Monitoring absent.', 'granted');
+    await ask('manual Accessibility grant', 'Follow the verified Accessibility guidance just printed: add cua Engine with "+", enter its printed bundle path, then switch it on. Leave Screen Recording and Input Monitoring absent.', 'granted');
     stage = 'Screen Recording error reaches the model';
     const screenError = await cell(BIND, {bind: true});
     require(permissionGuidance(screenError, {permission: 'screenRecording', bundlePath}), 'model reply lacks permissionsPending, exact Screen Recording +/approved-path guidance or relaunch-pending wording');
-    log(resultText(screenError));
-    const pending = await status();
+    log(grantSteps(ENGINE_GRANTS.find(grant => grant.key === 'screenRecording'), bundlePath) + '; the engine relaunch is pending until the retry.');
+    const pending = await retainStatus('AX-only');
     require(pending.status?.accessibility === true && pending.status.screenRecording === false && pending.status.inputMonitoring === false,
       'AX-only stage did not leave the other two grants absent');
     require(Number.isInteger(revoked.status?.pid) && pending.status.pid === revoked.status.pid,
       'engine PID changed during the Accessibility-only grant; no relaunch belongs to that stage');
     record(stage, 'PASS', 'MCP js error names Screen Recording, +, exact approved path and pending relaunch');
     stage = 'AX-only intervention diagnostic';
-    const axDoctor = await readDoctor();
-    require(axDoctor.engine?.permissions?.accessibility === true && axDoctor.engine.permissions.screenRecording === false
+    const axDoctor = await retainDoctor();
+    require(axDoctor.permissions.accessibility === true && axDoctor.permissions.screenRecording === false
       && doctorSaysInterventionOff(axDoctor), 'AX-only doctor must report intervention detection off before Screen Recording is granted');
     record(stage, 'PASS', 'with AX alone granted, doctor reports Input Monitoring absent and intervention detection off');
-    await ask('owner Screen Recording grant', 'Follow the Screen Recording error just printed. Add ONLY cua Engine in Screen & System Audio Recording and switch it on. If macOS offers Quit & Reopen, choose Later. Leave Input Monitoring absent. Do not restart the engine yourself.', 'granted');
+    await ask('manual Screen Recording grant', 'Follow the verified Screen Recording guidance just printed. Add ONLY cua Engine in Screen & System Audio Recording and switch it on. If macOS offers Quit & Reopen, choose Later. Leave Input Monitoring absent. Do not restart the engine yourself.', 'granted');
     stage = 'service relaunch recovery';
-    const ready = await status();
+    const ready = await retainStatus('pre-relaunch');
     require(Number.isInteger(pending.status?.pid) && ready.status?.pid === pending.status.pid,
       'engine PID changed before our retry (perhaps Quit & Reopen); service relaunch is unproven', 'BLOCKED');
     require(ready.status.connections === 1, 'relaunch needs only this harness connection; another connection is present', 'BLOCKED');
-    log('OWNER ONLY: the retry now captures. If a screen-capture confirmation appears, answer it yourself. Automation never answers it.');
-    const recovered = await cell(CAPTURE, {bind: true});
-    const after = await status();
+    const recovered = await cell(CAPTURE, {bind: true, observe: true, allowTimeout: true});
+    const after = await retainStatus('post-relaunch');
     observations.relaunch = {before: ready.status.pid, after: after.status?.pid ?? null};
-    require(payload(recovered)?.bytes > 0 && Number.isInteger(after.status?.pid) && after.status.pid !== ready.status.pid,
-      'same-connection retry did not relaunch the engine and return nonempty screenshot bytes');
-    record(stage, 'PASS', 'same MCP connection recovered; engine PID changed during retry and screenshot bytes were nonempty (not emitted)');
-    observations.stage3CaptureConfirmation = {source: 'owner-observed', outcome: await ask('owner capture confirmation observation',
-      'Did a capture confirmation appear during that retry? Answer it yourself if it did, then type answered. If none appeared, type none. Continue only when no capture prompt remains. This observation is separate from the later approve step’s log watch.', ['answered', 'none'])};
+    const recoveryVerdict = recovered?.timedOut ? 'BLOCKED'
+      : payload(recovered)?.bytes > 0 && Number.isInteger(after.status?.pid) && after.status.pid !== ready.status.pid ? 'PASS' : 'FAIL';
+    record(stage, recoveryVerdict, recovered?.timedOut ? 'capture retry timed out; retained status and owner observation do not prove recovery'
+      : recoveryVerdict === 'PASS' ? 'same MCP connection recovered; engine PID changed during retry and screenshot bytes were nonempty (not emitted)'
+        : 'same-connection retry did not relaunch the engine and return nonempty screenshot bytes');
+    await observePrompts('owner recovery prompt observation', observations.cells.at(-1));
+    if (recoveryVerdict !== 'PASS') throw stopAfterRecordedChecks;
     stage = 'intervention off';
-    const off = await cell(inputCell(''), {input: true});
-    const doctor = await readDoctor();
-    require(payload(off)?.typed === true && off.result._meta?.['cua/intervention'] === 'off'
-      && doctorSaysInterventionOff(doctor),
-    'input must attest intervention off, and doctor must say detection is off while Input Monitoring is absent');
-    record(stage, 'PASS', 'one X typed into the blank document; input meta says off and doctor says intervention detection off');
-    await ask('owner Input Monitoring grant', `In System Settings > Privacy & Security > Input Monitoring, add ONLY cua Engine with "+", press ⌘⇧G and enter ${bundlePath}, then switch it on. Choose Later if offered a restart; the approve step will relaunch.`, 'granted');
+    const off = await cell(inputCell(''), {input: true, observe: true, allowTimeout: true});
+    const inputEvidence = observations.cells.at(-1), input = inputEvidence.reply;
+    // Collect all independent operands before judging any of them. A timed-out cell may still be running, so do not
+    // start doctor in that case. Neither a posted interval nor an owner alert answer proves completed input.
+    let doctor = null;
+    if (!off?.timedOut) {
+      try { doctor = await retainDoctor(); } catch { /* received:false remains as the doctor operand */ }
+    }
+    const verdicts = [
+      ['input completion', input.completion === 'returned' && input.typed === true ? 'PASS' : off?.timedOut ? 'BLOCKED' : 'FAIL',
+        'typeText must return successfully and emit the typed marker; posted-action metadata alone is not completion'],
+      ['metadata', off?.timedOut ? 'BLOCKED' : input.metadata.intervention === 'off' ? 'PASS' : 'FAIL',
+        'input result must carry intervention off independently of input completion'],
+      ['doctor', off?.timedOut ? 'BLOCKED' : doctor && doctorSaysInterventionOff(doctor) ? 'PASS' : 'FAIL',
+        'doctor must read Input Monitoring false and its engine row must say intervention detection off'],
+    ];
+    for (const [part, verdict, detail] of verdicts) record(`intervention off: ${part}`, verdict, detail);
+    const interventionVerdict = rollup(verdicts.map(([, verdict]) => verdict));
+    record(stage, interventionVerdict, interventionVerdict === 'PASS'
+      ? 'input completed with intervention off; doctor independently confirmed detection off'
+      : 'intervention-off operands did not all pass; see the separate completion, metadata and doctor verdicts');
+    await observePrompts('owner input prompt observation', inputEvidence);
+    if (interventionVerdict !== 'PASS') throw stopAfterRecordedChecks;
+    await ask('manual Input Monitoring grant', `In System Settings > Privacy & Security > Input Monitoring, add ONLY cua Engine with "+", press ⌘⇧G and enter ${bundlePath}, then switch it on. Choose Later if offered a restart; the approve step will relaunch.`, 'granted');
     stage = 'engine approval';
     await close();
     log('OWNER ONLY: stay at the console for cua engine approve. Answer any capture confirmation yourself; confirm at this terminal when approve asks.');
@@ -263,14 +374,14 @@ export async function runFreshOnboarding({home, engine, requested = false}, deps
     'final input did not carry active intervention metadata');
     record(stage, 'PASS', 'second X typed; input route and posted-action interval present, intervention no longer off');
     await close();
-    await ask('owner TextEdit cleanup', 'Close only the disposable fixture document containing the two Xs; choose Don’t Save only for that document. Quit TextEdit only if nothing else is open. If another/restored document or an unrelated save prompt appears, stop and report it for a per-case cleanup decision; enter anything other than closed here to record BLOCKED. Do not discard other documents to force TextEdit to exit.', 'closed');
-    require(await textEditStopped(), 'TextEdit is still running; owner cleanup is not complete');
+    await ask('manual TextEdit cleanup', 'Close only the disposable fixture document containing the two Xs; choose Don’t Save only for that document. Quit TextEdit only if nothing else is open. If another/restored document or an unrelated save prompt appears, stop and report it for a per-case cleanup decision; enter anything other than closed here to record BLOCKED. Do not discard other documents to force TextEdit to exit.', 'closed');
+    require(await textEditStopped(), 'TextEdit is still running; manual cleanup is not complete');
   } catch (error) {
-    record(stage, error.verdict ?? 'FAIL', error.message);
-    if (ownedWindow) log('Owner window stopped before completion. The owner must restore missing grants and close only the disposable fixture TextEdit document without saving. If another/restored document or an unrelated save prompt appears, stop and report BLOCKED for a per-case cleanup decision; never discard it to force TextEdit to exit. No automated rollback is attempted.');
+    if (error !== stopAfterRecordedChecks) record(stage, error.verdict ?? 'FAIL', failureDetail(error));
+    if (ownedWindow) log('Owner window stopped before completion. Manual recovery by the owner or a separately authorized coordinator is needed: restore missing grants and close only the disposable fixture TextEdit document without saving. Only the owner answers system alerts. If another/restored document or an unrelated save prompt appears, stop and report BLOCKED for a per-case cleanup decision; never discard it to force TextEdit to exit. No automated rollback is attempted.');
   } finally {
     if (session) {
-      try { await close(); } catch (error) { record('connection cleanup', 'FAIL', error.message); }
+      try { await close(); } catch (error) { record('connection cleanup', 'FAIL', failureDetail(error)); }
     }
     if (!deps.operator) operator.close();
   }

@@ -53,7 +53,7 @@ cd "$R"
 OUT=${HOSTED_GATE_OUT:-$R/hosted-gate-out}
 rm -rf "$OUT"; mkdir -p "$OUT/oracles"
 # The scratch root by its real path (port-vs-capture relocates M0's captures under it, which needs no symbolic link on
-# the way: the runner's temp is /Users/runner/work/_temp; macOS's /tmp and /var are aliases).
+# the way: use RUNNER_TEMP on hosted CI; macOS's /tmp and /var are aliases).
 S=$(mktemp -d "${RUNNER_TEMP:-$HOME}/cua159.XXXXXX")
 S=$(cd "$S" && pwd -P)
 trap 'rm -rf "$S"' EXIT

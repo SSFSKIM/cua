@@ -346,17 +346,23 @@ test('a caller may make more doctor rows informational: reported, never gating, 
 // probe-secrets records them with (scripts/probe/fail-closed.mjs), from a passing observation, and probe-secrets' own
 // source is checked to record through them.
 test('the fail-closed phase passes on the steps probe-secrets now records, and stays BLOCKED on the old inventory alone', async () => {
-  const {SECRETS_OFF, STORE_UNREADABLE, failClosedSteps, refusedLaunchResult} = await import('../scripts/probe/fail-closed.mjs');
+  const {SECRETS_OFF, STORE_UNREADABLE, closeStep, failClosedSteps, refusedLaunchResult} = await import('../scripts/probe/fail-closed.mjs');
+  const {closeSecretSession} = await import('../scripts/probe/secrets-session.mjs');
   const source = readFileSync(new URL('../scripts/probe-secrets.mjs', import.meta.url), 'utf8');
-  for (const call of ['record(failClosedStep(tag, method)', 'record(closeStep(tag)', 'refusedLaunchResult(tag, {', 'failClosedConnection(SECRETS_OFF,', 'refusedConnection(STORE_UNREADABLE,'])
+  for (const call of ['record(failClosedStep(tag, method)', 'refusedLaunchResult(tag, {', 'failClosedConnection(SECRETS_OFF,', 'refusedConnection(STORE_UNREADABLE,'])
     assert.ok(source.includes(call), `probe-secrets records through ${call}`);
   const phase = PROBE_SECRETS_PHASES.find(p => p.name.startsWith('live: fail closed before any input'));
   assert.deepEqual(phase.items, [6, 7]);
   const refused = refusedLaunchResult(STORE_UNREADABLE, {answered: false, exit: {code: 1}, stderr: 'cua: the secret store (secret store /h/s) could not be read (EACCES), ... [sandbox_state_invalid]\n',
     delivered: 0, expected: 'sandbox_state_invalid', names: ['the secret store', '/h/s']});
   assert.equal(refused.status, 'PASS', refused.detail);
-  const emitted = [...failClosedSteps(SECRETS_OFF).map(name => ({name, status: 'PASS', detail: ''})), refused];
+  const substitutions = failClosedSteps(SECRETS_OFF).filter(name => name !== closeStep(SECRETS_OFF))
+    .map(name => ({name, status: 'PASS', detail: ''}));
+  const closed = await closeSecretSession({close: async () => ({code: 0})}, closeStep(SECRETS_OFF));
+  const emitted = [...substitutions, closed, refused];
   assert.equal(inventoryCheck(phase.name, emitted, phase.steps).status, 'PASS');
+  const forced = await closeSecretSession({close: async () => ({code: 0, forced: true})}, closeStep(SECRETS_OFF));
+  assert.equal(inventoryCheck(phase.name, [...substitutions, forced, refused], phase.steps).status, 'FAIL');
   // The pre-M1 steps for the unreadable store no longer satisfy the phase.
   const old = [...failClosedSteps(SECRETS_OFF), ...failClosedSteps(STORE_UNREADABLE)].map(name => ({name, status: 'PASS', detail: ''}));
   assert.equal(inventoryCheck(phase.name, old, phase.steps).status, 'BLOCKED');

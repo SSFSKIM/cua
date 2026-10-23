@@ -16,7 +16,7 @@ const leaks = value => JSON.stringify(value).includes(PLANTED);
 // A raw fingerprint record (oracle.mjs fingerprint --launcher cua) of one run under the scratch root `root`, its session
 // `session`: the harness's labelled targets name the roots (cua-home, config-cua, checkout), the env and cwd hold paths
 // under them.
-const CHECKOUT = '/Users/runner/work/cua/cua';
+const CHECKOUT = '/Users/hosted/work/cua/cua';
 function rawRecord({root, session, role = 'worker', home: childHome, dropFromDenyList, extraEnv = {}}) {
   const cua = `${root}/home`, user = `${root}/userhome`, run = `${cua}/run/${session}`;
   const deny = [`${user}/.config/claude-secrets`, `${user}/.config/cua`, cua].filter(path => path !== dropFromDenyList);
@@ -33,8 +33,8 @@ function rawRecord({root, session, role = 'worker', home: childHome, dropFromDen
   return {input: {env: {SECRET: PLANTED}, args: ['-p', `(allow file-read* (literal "${PLANTED}"))`], policy: {}}, launcher: `cua-${role}`,
     fingerprint: {pid: 4242, cwd: run, sandboxed: true, env, checks}, ...(role === 'kernel' ? {pins} : {})};
 }
-const A = {root: '/Users/runner/work/_temp/cua159.GQRnri', session: '0526d32c-75d8-455c-9082-fee557b58dea'};
-const B = {root: '/Users/runner/work/_temp/cua159.xY7pQ2', session: 'aefd9a57-41e2-486d-814b-67f2982222f2'};
+const A = {root: '/Users/hosted/work/_temp/cua159.GQRnri', session: '0526d32c-75d8-455c-9082-fee557b58dea'};
+const B = {root: '/Users/hosted/work/_temp/cua159.xY7pQ2', session: 'aefd9a57-41e2-486d-814b-67f2982222f2'};
 const judged = (left, right) => judgeFingerprints(compareFingerprints(left.fingerprint, right.fingerprint), 'hosted-baseline/cua');
 
 test('a fingerprint\'s public form: checks without targets, pins row by row, env and cwd relative to the run\'s own roots, no input', () => {

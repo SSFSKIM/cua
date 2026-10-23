@@ -31,10 +31,35 @@ export async function openSecretSession(session) {
   }
 }
 
-export async function finishSecretSessions(sessions, channels) {
+function exitStep(name, exit, expectedExitCode = 0) {
+  const detail = {code: exit?.code ?? null, signal: exit?.signal ?? null,
+    forced: exit?.forced === true, stuck: exit?.stuck === true};
+  const ok = detail.code === expectedExitCode && detail.signal === null && !detail.forced && !detail.stuck;
+  return {name, status: ok ? 'PASS' : 'FAIL', detail};
+}
+
+export async function closeSecretSession(session, name) {
+  return exitStep(name, await session.close());
+}
+
+export async function finishSecretSessions(sessions, channels, {streamBudgetMs = 1000} = {}) {
+  const outcomes = [];
   for (const session of sessions) {
-    await session.terminate();
+    const name = `${session.name}: teardown`;
+    let outcome;
+    try {
+      outcome = exitStep(name, await session.terminate(), session.expectedExitCode);
+    } catch {
+      // Do not publish an exception that may quote a sentinel, or abandon later sessions and the stores.
+      outcome = {name, status: 'FAIL', detail: {terminateFailed: true}};
+    }
+    let streamsComplete = false;
+    try { streamsComplete = await session.drainStreams({budgetMs: streamBudgetMs}); } catch { /* incomplete evidence */ }
+    outcome.detail.streamsComplete = streamsComplete;
+    if (!streamsComplete) outcome.status = 'FAIL';
+    outcomes.push(outcome);
     channels.push({name: `${session.name} MCP transport`, text: session.transcript.join('\n')});
     channels.push({name: `${session.name} stderr (serve, runtime, node_repl, kernel, trusted worker)`, text: session.stderr});
   }
+  return outcomes;
 }

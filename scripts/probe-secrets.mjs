@@ -41,7 +41,7 @@
 // Behavioural failures, including cleanup, are FAIL; an informational step is INFO and never decides the verdict.
 // Exit 0 PASS, 1 FAIL, 3 BLOCKED. The report holds metadata only.
 import {openSession} from './accept/mcp-session.mjs';
-import {openSecretSession, finishSecretSessions} from './probe/secrets-session.mjs';
+import {openSecretSession, closeSecretSession, finishSecretSessions} from './probe/secrets-session.mjs';
 import {randomBytes, randomUUID} from 'node:crypto';
 import {chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync} from 'node:fs';
 import net from 'node:net';
@@ -256,8 +256,7 @@ async function realServeConnection(runtime) {
     record('real vendor: unknown label', !out.ok && errorCode(out) === 'secret_not_found' ? 'PASS' : 'FAIL', 'fails before input with secret_not_found');
   }
   await plantModules(c, runtime, 'scoped');
-  const exit = await c.close();
-  record('real serve: close', exit?.code === 0 ? 'PASS' : 'FAIL', `exit ${exit?.code ?? 'timeout'}`);
+  steps.push(await closeSecretSession(c, 'real serve: close'));
 }
 
 // The same attempt on a connection that asks for the disabled sandbox, where it only records what a cell could write.
@@ -265,8 +264,7 @@ async function sandboxDisabledConnection(runtime) {
   const c = connect('real-serve sandbox disabled', [SERVE], {CUA_SHIM_SANDBOX: 'disabled'});
   await c.open();
   await plantModules(c, runtime, 'disabled');
-  const exit = await c.close();
-  record('real serve (sandbox disabled): close', exit?.code === 0 ? 'PASS' : 'FAIL', `exit ${exit?.code ?? 'timeout'}`);
+  steps.push(await closeSecretSession(c, 'real serve (sandbox disabled): close'));
 }
 
 // A model cell tries to create a uniquely named importable module in every trusted code root. Whatever it wrote is
@@ -311,8 +309,7 @@ async function failClosedConnection(tag, recorder, targetModule, {env = {}, expe
       ? `failed with ${expected}${reason ? ` (${reason})` : ''}; the target received nothing`
       : `got ${out.ok ? 'success' : `${errorCode(out)}: ${String(out.message ?? out.raw).replace(/^cua: /, '').slice(0, 120)}`}; target calls ${delivered}`);
   }
-  const exit = await c.close();
-  record(closeStep(tag), exit?.code === 0 ? 'PASS' : 'FAIL', `exit ${exit?.code ?? 'timeout'}`);
+  steps.push(await closeSecretSession(c, closeStep(tag)));
 }
 
 // A connection the server refuses before its handshake (a refused launch): `initialize` gets no answer, the server
@@ -320,6 +317,8 @@ async function failClosedConnection(tag, recorder, targetModule, {env = {}, expe
 // receives nothing.
 async function refusedConnection(tag, recorder, targetModule, {env = {}, expected, names = []}) {
   const c = connect(`fail-closed ${tag}`, [FAKE_SERVE, targetModule], env);
+  // This scenario deliberately refuses launch with exit 1; teardown still requires an unforced exit.
+  c.expectedExitCode = 1;
   const before = recorder.received.length;
   const init = await c.request('initialize', {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'cua-probe-secrets', version: '0'}}, 30_000);
   const exit = await Promise.race([c.exited, sleep(20_000).then(() => null)]);
@@ -329,6 +328,7 @@ async function refusedConnection(tag, recorder, targetModule, {env = {}, expecte
 }
 
 let recorder;
+let teardown = [];
 let unreadableHome = null;
 const scratch = realpathSync(mkdtempSync('/tmp/cm5-'));
 try {
@@ -343,12 +343,10 @@ try {
   writeFileSync(targetModule, FAKE_TARGET(join(scratch, 'r.sock')));
   if (await seed('create', sentinels[0])) {
     const first = await targetConnection('first value', sentinels[0], recorder, targetModule, {full: true});
-    const exit = await first.close();
-    record('first value: close', exit?.code === 0 ? 'PASS' : 'FAIL', `exit ${exit?.code ?? 'timeout'}`);
+    steps.push(await closeSecretSession(first, 'first value: close'));
     if (await seed('replace', sentinels[1])) {
       const second = await targetConnection('replaced value', sentinels[1], recorder, targetModule, {full: false});
-      const exit2 = await second.close();
-      record('replaced value: close', exit2?.code === 0 ? 'PASS' : 'FAIL', `exit ${exit2?.code ?? 'timeout'}`);
+      steps.push(await closeSecretSession(second, 'replaced value: close'));
       await realServeConnection(runtime);
       await sandboxDisabledConnection(runtime);
     }
@@ -367,18 +365,22 @@ try {
   // A refusal on the attestation is recorded where it happened (ATTEST_STEP).
   if (!(error instanceof AttestationRefusal)) record('unexpected', 'FAIL', `${error.code ?? 'error'}: ${error.message}`);
 } finally {
-  await finishSecretSessions(sessions, channels);
-  if (storeHome) {
-    if (unreadableHome) { try { chmodSync(storeDir({HOME: unreadableHome}), 0o700); } catch {} }
-    const remove = async target => { try { return await removeStoreHome(target); } catch { return {keyGone: false, homeGone: false}; } };
-    const removed = await remove({home: storeHome, key: label});
-    const extra = unreadableHome ? await remove({home: unreadableHome}) : {homeGone: true};
-    const ok = removed.keyGone && removed.homeGone && extra.homeGone;
-    record('cleanup', ok ? 'PASS' : 'FAIL', ok ? 'the probe\'s key file and its temporary homes were removed'
-      : `CLEANUP FAILED: remove ${storeHome}${unreadableHome ? ` and ${unreadableHome}` : ''} by hand (key ${label})`);
+  try {
+    teardown = await finishSecretSessions(sessions, channels);
+    steps.push(...teardown);
+  } finally {
+    if (storeHome) {
+      if (unreadableHome) { try { chmodSync(storeDir({HOME: unreadableHome}), 0o700); } catch {} }
+      const remove = async target => { try { return await removeStoreHome(target); } catch { return {keyGone: false, homeGone: false}; } };
+      const removed = await remove({home: storeHome, key: label});
+      const extra = unreadableHome ? await remove({home: unreadableHome}) : {homeGone: true};
+      const ok = removed.keyGone && removed.homeGone && extra.homeGone;
+      record('cleanup', ok ? 'PASS' : 'FAIL', ok ? 'the probe\'s key file and its temporary homes were removed'
+        : `CLEANUP FAILED: remove ${storeHome}${unreadableHome ? ` and ${unreadableHome}` : ''} by hand (key ${label})`);
+    }
+    await recorder?.close();
+    rmSync(scratch, {recursive: true, force: true});
   }
-  await recorder?.close();
-  rmSync(scratch, {recursive: true, force: true});
 }
 
 // The scanner must find a value relayed as base64 inside a framed reply at any offset, or its PASS means nothing.
@@ -398,9 +400,11 @@ const channelSummary = channels.map(c => ({
   name: c.name, bytes: Buffer.byteLength(c.text), containsReference: c.text.includes(REF),
   ...(c.name.includes('stderr') && c.text ? {excerpt: c.text.slice(0, 600)} : {}),
 }));
-record('sentinel scan', leaked.length || unread.length ? 'FAIL' : 'PASS', leaked.length
+const incompleteStreams = teardown.filter(outcome => !outcome.detail.streamsComplete).map(outcome => outcome.name);
+record('sentinel scan', leaked.length || unread.length || incompleteStreams.length ? 'FAIL' : 'PASS', leaked.length
   ? `a generated value appeared in: ${leaked.join('; ')}`
   : unread.length ? `incomplete evidence: could not read ${unread.join('; ')}`
+    : incompleteStreams.length ? `incomplete evidence: streams did not finish for ${incompleteStreams.join('; ')}`
     : `no generated value (raw or base64) in ${channels.length} streams (${channels.map(c => c.name).join('; ')}) or in ${files.scanned} runtime files read whole (${files.links} symbolic links not followed)`);
 const status = steps.some(s => s.status === 'FAIL') ? 'FAIL' : steps.some(s => s.status === 'BLOCKED') ? 'BLOCKED' : 'PASS';
 const report = {

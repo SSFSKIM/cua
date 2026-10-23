@@ -685,6 +685,30 @@ test('failed final Finder pin keeps completed steps and pre-pin frame samples du
   assert.equal(fs.statSync(join(file, '..', 'finder-steps.jsonl')).mode & 0o777, 0o600);
 });
 
+test('Finder preserves the original error and completed prefix when the failure journal cannot be written', async () => {
+  const finder = finderEngine({state: {}, drawn: {sidebar: false, statusBar: false, pathBar: false}});
+  const {run, file} = finderRun(finder);
+  const original = new Error('key connection lost');
+  let recordedFrames;
+  finder.client.execute = async (method, args) => {
+    assert.equal(method, 'press_key');
+    assert.equal(args.key, 'super+2');
+    const rows = stepEvidence(file);
+    assert.deepEqual(rows.filter(r => r.type === 'step').map(r => r.step), [{activate: 'finder'}]);
+    recordedFrames = rows.filter(r => r.type === 'frame');
+    assert.deepEqual(recordedFrames.map(r => r.point), ['setup-entry']);
+    const journal = join(file, '..', 'finder-steps.jsonl');
+    fs.unlinkSync(journal);
+    fs.mkdirSync(journal);
+    throw original;
+  };
+  await assert.rejects(run('setup'), error => {
+    assert.equal(error, original);
+    assert.deepEqual(error.progress, {scene: 'finder', phase: 'setup', steps: [{activate: 'finder'}], frames: recordedFrames});
+    return true;
+  });
+});
+
 test('Finder frame samples never substitute another window or retain its metadata', async () => {
   const finder = finderEngine({state: {}, drawn: {sidebar: false, statusBar: false, pathBar: false}});
   const {run, io, file} = finderRun(finder);

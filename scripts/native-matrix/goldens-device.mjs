@@ -283,9 +283,9 @@ export async function runSteps({id, phase, run, record, client, io, screenshots 
       stepIndex++;
     }
   } catch (error) {
-    // Persist the completed prefix even when the last pin throws; do not retain an arbitrary engine error's text.
-    evidence?.append({type: 'failure', stepIndex});
+    // Keep the original error and completed prefix even if journaling fails; never persist arbitrary engine error text.
     error.progress = {scene: id, phase, steps: done, frames};
+    try { evidence?.append({type: 'failure', stepIndex}); } catch {}
     throw error;
   }
   return {scene: id, phase, steps: done, ...(evidence ? {frames} : {})};

@@ -53,7 +53,7 @@ import {fingerprintable, fingerprints, textLeaks, UNFINGERPRINTABLE} from '../pr
 import {TEXTEDIT_BUNDLE} from './lib.mjs';
 import {approvalLedger, ATTEST_STEP, AttestationRefusal, attestReplies} from './engine-lane.mjs';
 import {localFrontmost, sendToPausedSession} from './key-guard.mjs';
-import {awaitLaunch, captureLaunchWindows, cleanUpFixtureApp} from './fixture-app.mjs';
+import {awaitLaunch, cleanUpFixtureApp} from './fixture-app.mjs';
 import {awaitClose, readWindows} from './window-close.mjs';
 import {openSession, resultText} from './mcp-session.mjs';
 import {pauseGate, pausing} from '../mini-pause.mjs';
@@ -232,7 +232,6 @@ export async function runTextEdit({home, engine = null, secret = false, forbid =
   const frontBefore = (() => { try { return frontmost(); } catch { return null; } })();
   let opened = false;  // `open` was called: a TextEdit may have been started by this run
   let launched = null;  // captureLaunch's reading right after the `open`: the run's own TextEdit, if it started one
-  let launchWindows = null;  // off-screen IDs/bounds captured only at this run's own empty launch
   const helpersBefore = nativeHelpers();
   observations.textEdit = {runningBefore: textEditBefore.length > 0};
   // Returns early when a step cannot continue; cleanup and the result follow in any case.
@@ -288,8 +287,6 @@ export async function runTextEdit({home, engine = null, secret = false, forbid =
     // poll for the new pid, timed; past the bound a miss is recorded, never guessed.
     launched = await awaitLaunch({pids: textEditPids, before: textEditBefore, startedAt: runStartedAt});
     observations.textEdit.launch = {captured: Boolean(launched.launch), candidates: launched.candidates.length, waitedMs: launched.waitedMs, missed: launched.missed};
-    launchWindows = await captureLaunchWindows({launch: launched.launch, before: textEditBefore, readWindows});
-    observations.textEdit.launchInternalWindows = launchWindows?.windows ?? null;
     await sleep(1000);  // let the document window come to the front
     record(STEP.open, textEditPids().length ? 'PASS' : 'FAIL', `a new empty file in a directory created for this run under $CUA_HOME opened in TextEdit${launched.launch ? ` (started by the open: pid ${launched.launch.pid})`
       : launched.candidates.length > 1 ? ` (TextEdit pids ${launched.candidates.join(', ')} all started since the run began; which is this run's is ambiguous, so none is recorded as its own)`
@@ -376,15 +373,16 @@ ${out(`{own: ${own}, valueIsMarker: ${own} && __value === ${JSON.stringify(marke
       record(STEP.teardown, stuck.length ? 'FAIL' : 'PASS', `${exits.map(e => `${e.name}: ${e.exit.stuck ? 'still alive after SIGTERM, killed' : `exit ${e.exit.code ?? e.exit.signal}${e.exit.forced ? ' after SIGTERM' : ''}`}`).join('; ')}`);
     }
     if (opened) {
-      const app = await cleanUpFixtureApp({name: 'TextEdit', bundle: TEXTEDIT_BUNDLE, run: {before: textEditBefore, front: frontBefore, launch: launched?.launch ?? null, launchWindows},
+      const app = await cleanUpFixtureApp({name: 'TextEdit', bundle: TEXTEDIT_BUNDLE, run: {before: textEditBefore, front: frontBefore, launch: launched?.launch ?? null},
         alone: !docOpen && !guiStopped, readWindows: () => readWindows(textEditPids()), frontmost});
       observations.textEdit.quitByFixture = app.quit.length > 0;
+      observations.textEdit.leftRunning = app.leftRunning ? app.launch : null;
       if (app.windowCheck) observations.textEdit.quitWindowCheck = app.windowCheck;
       observations.front = {before: app.front.previous, atCleanup: app.front.before, after: app.front.after, restored: app.front.restored};
       const kept = app.keptBefore.length ? `; pid ${app.keptBefore.join(', ')}, running before, left as it is` : '';
       const [quitStatus, quitDetail] = app.remaining.length ? ['FAIL', `TextEdit pid ${app.remaining.join(', ')}, started by this run, did not exit after SIGTERM; quit it by hand`]
         : app.quit.length ? ['PASS', `quit the TextEdit this run started (pid ${app.quit.join(', ')}, identified by its launch right after the open)${kept}`]
-          : app.leftRunning ? ['BLOCKED', `the TextEdit this run started (pid ${app.leftRunning}) was left running because its windows could not be confirmed to be only the fixture's (${guiStopped ?? app.windowCheck?.detail ?? 'the fixture document close was not confirmed'}); nothing was signalled. Quit it by hand once nothing of yours is open in it`]
+          : app.leftRunning ? ['BLOCKED', `the TextEdit this run started (pid ${app.leftRunning}) was left running because its windows could not be confirmed to be only the fixture's (${guiStopped ?? app.windowCheck?.detail ?? 'the fixture document close was not confirmed'}); nothing was signalled. Stop and report the remaining process and windows for a per-case cleanup decision; do not discard another document to force cleanup`]
             : app.launch ? ['PASS', `nothing to quit: pid ${app.launch.pid}, the TextEdit this run started, is no longer that process (it exited, or the pid now has another launch time)${kept}`]
               : launched?.candidates.length > 1 ? ['BLOCKED', `nothing quit: TextEdit pids ${launched.candidates.join(', ')} all started after the run began, so which one this run started is ambiguous and none was recorded as its own; check TextEdit by hand`]
                 : textEditBefore.length ? ['PASS', `nothing to quit: TextEdit was running before the run (pid ${textEditBefore.join(', ')}) and is left as it is`]

@@ -12,9 +12,9 @@ const run = promisify(execFile);
 const windowBounds = w => Object.fromEntries(['x', 'y', 'width', 'height'].map(key => [key, w.bounds?.[key] ?? null]));
 
 // Shared by onboarding's one-visible-window admission and the TextEdit fixture's windowless cleanup (#196).
-// Only explicitly off-screen windows are separated; that alone does NOT classify them as internal. Cleanup compares
-// their IDs with its empty-launch inventory before excluding them. Off-screen evidence is IDs/bounds, never titles;
-// unknown visibility remains in the blocking set.
+// Only explicitly off-screen windows are separated; neither visibility nor presence at launch proves ownership.
+// Cleanup blocks on every remaining window. Off-screen evidence is IDs/bounds, never titles; unknown visibility
+// remains in the visible set.
 export function windowInventory(windows) {
   const offScreen = windows.filter(w => w.onScreen === false).map(w => ({number: w.number, bounds: windowBounds(w)}));
   return {visible: windows.filter(w => w.onScreen !== false), offScreen,

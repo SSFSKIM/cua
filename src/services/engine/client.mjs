@@ -74,6 +74,7 @@ class Connection {
     this.pending = new Map();
     this.nextId = 1;
     this.closed = false;
+    this.pid = null;
     this.decoder = new FrameDecoder();
     pipe.on('data', chunk => {
       try {
@@ -209,9 +210,7 @@ export function createEngineClient({nodeRepl, appPath, socketPath = socketPathFo
       throw new SkyComputerUseTransportError(`cua engine launch request failed for ${appPath}: ${String(cause?.message ?? cause).slice(0, 300)}`, {cause});
     }
     try {
-      const checked = await attempt(launchWaitMs, want);
-      permissionsPending = null;  // this launch already supplied a fresh process, even after a lost connection
-      return checked;
+      return await attempt(launchWaitMs, want);
     } catch (error) {
       if (!(error instanceof NotYet)) throw error;
       throw new SkyComputerUseTransportError(`cua engine did not start: nothing answered at ${socketPath} within ${launchWaitMs} ms of launching ${appPath}. The engine logs why it stopped (a peerPolicy in ~/.config/cua/engine.json it does not have, a lock or socket another engine holds) to the unified log: ${UNIFIED_LOG}`, {cause: error.cause});
@@ -226,12 +225,27 @@ export function createEngineClient({nodeRepl, appPath, socketPath = socketPathFo
     return connecting;
   }
 
+  // Read the process identity before this connection's first screenshot, so even an exit immediately after a
+  // permission failure cannot lose which process failed. The ping has already verified this connection's build.
+  // A different PID proves a restart (including the owner's Quit & Reopen); reconnecting, asking LaunchServices to
+  // launch, or seeing a grant does not. PID reuse conservatively keeps recovery pending, never falsely clears it.
+  async function checkScreenshotProcess() {
+    if (connection.pid === null) {
+      const status = await connection.call('status', {}, PING_MS);
+      if (!Number.isSafeInteger(status?.pid) || status.pid <= 0) {
+        throw new SkyComputerUseTransportError('cua engine status returned no valid process identity; screenshot recovery cannot be verified');
+      }
+      connection.pid = status.pid;
+    }
+    if (permissionsPending && permissionsPending.pid !== connection.pid) permissionsPending = null;
+  }
+
   // The next screenshot after Screen Recording permissionsPending gets one recovery, never the first failure itself. Shutdown is on
   // the checked connection and atomically refuses other clients. Do not poll grants: a process may not see its new
   // Screen Recording grant until it is relaunched. Busy keeps both the engine and the original actionable error.
   async function relaunchForPermissions() {
     try { await connection.call('shutdown', {}, shutdownWaitMs); } catch (error) {
-      if (error instanceof SkyComputerUseError && error.errorName === 'busy') throw permissionsPending;
+      if (error instanceof SkyComputerUseError && error.errorName === 'busy') throw permissionsPending.error;
       throw error;
     }
     await within(connection.peerClosed, shutdownWaitMs, 'cua engine did not close after shutdown; its permission relaunch is still pending');
@@ -245,7 +259,13 @@ export function createEngineClient({nodeRepl, appPath, socketPath = socketPathFo
   function call(method, params, {waitMs = DEFAULT_DEADLINE_MS + deadlineGraceMs, suspend = true, screenshot = false} = {}) {
     const run = async () => {
       await connect();
-      if (screenshot && permissionsPending) await relaunchForPermissions();
+      if (screenshot) {
+        await checkScreenshotProcess();
+        if (permissionsPending) {
+          await relaunchForPermissions();
+          await checkScreenshotProcess();
+        }
+      }
       const body = typeof params === 'function' ? params() : params;
       const started = performance.now();
       try {
@@ -253,7 +273,7 @@ export function createEngineClient({nodeRepl, appPath, socketPath = socketPathFo
         return {result, engineMs: performance.now() - started};
       } catch (error) {
         if (screenshot && error instanceof SkyComputerUseError && error.errorName === 'permissionsPending'
-          && error.meta?.permission === 'screenRecording') permissionsPending = error;
+          && error.meta?.permission === 'screenRecording') permissionsPending = {error, pid: connection.pid};
         throw error;
       }
     };

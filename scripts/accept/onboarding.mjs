@@ -263,11 +263,11 @@ export async function runFreshOnboarding({home, engine, requested = false}, deps
     'final input did not carry active intervention metadata');
     record(stage, 'PASS', 'second X typed; input route and posted-action interval present, intervention no longer off');
     await close();
-    await ask('owner TextEdit cleanup', 'Quit TextEdit. The two Xs made the document dirty: choose Don’t Save. Leave no TextEdit running, as before this window.', 'closed');
+    await ask('owner TextEdit cleanup', 'Close only the disposable fixture document containing the two Xs; choose Don’t Save only for that document. Quit TextEdit only if nothing else is open. If another/restored document or an unrelated save prompt appears, stop and report it for a per-case cleanup decision; enter anything other than closed here to record BLOCKED. Do not discard other documents to force TextEdit to exit.', 'closed');
     require(await textEditStopped(), 'TextEdit is still running; owner cleanup is not complete');
   } catch (error) {
     record(stage, error.verdict ?? 'FAIL', error.message);
-    if (ownedWindow) log('Owner window stopped before completion. The owner must restore missing grants and quit the disposable TextEdit document without saving; no automated rollback is attempted.');
+    if (ownedWindow) log('Owner window stopped before completion. The owner must restore missing grants and close only the disposable fixture TextEdit document without saving. If another/restored document or an unrelated save prompt appears, stop and report BLOCKED for a per-case cleanup decision; never discard it to force TextEdit to exit. No automated rollback is attempted.');
   } finally {
     if (session) {
       try { await close(); } catch (error) { record('connection cleanup', 'FAIL', error.message); }

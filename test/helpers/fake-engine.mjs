@@ -23,14 +23,20 @@ export class EngineFailure extends Error {
   }
 }
 
+// Each fake server represents a distinct process, including replacements in the same Node test process.
+let nextPid = 10_000;
+
 // Starts the fake on `path`. `handlers[method](params, {socket, request})` returns the result (or a promise of it) or
 // throws EngineFailure; `execute` is dispatched on params.method to `handlers['execute:<method>']` when present.
 // Defaults: ping answers {serverApiVersion, engineVersion, build} from `identity`.
-export async function startFakeEngine(t, path, {identity = {engineVersion: '0.1.0', build: 'b1'}, handlers = {}} = {}) {
+export async function startFakeEngine(t, path, {identity = {engineVersion: '0.1.0', build: 'b1'}, pid = nextPid++, handlers = {}} = {}) {
   const received = [];
   const sockets = new Set();
   const all = {
     ping: () => ({serverApiVersion: API_VERSION, ...identity}),
+    status: () => ({...identity, pid, accessibility: true, screenRecording: true, inputMonitoring: true,
+      canPostHid: true, socket: path, bundlePath: '/Applications/Fake Engine.app', connections: sockets.size - 1,
+      routes: {}, routeAdvice: []}),
     ...handlers,
   };
   const server = createServer(socket => {

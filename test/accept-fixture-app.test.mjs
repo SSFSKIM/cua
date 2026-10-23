@@ -71,73 +71,66 @@ async function cleanup({launch = ours, alone = true, before = [7], running = [7,
   return {r, quitCalls};
 }
 
-const internalWindows = Array.from({length: 5}, (_, i) => ({ownerPid: 42, number: 100 + i, onScreen: false, bounds: {x: -1000, y: 0, width: 400, height: 300}, title: 'private title never recorded'}));
+const offScreenWindows = Array.from({length: 5}, (_, i) => ({ownerPid: 42, number: 100 + i, onScreen: false, bounds: {x: -1000, y: 0, width: 400, height: 300}, title: 'private title never recorded'}));
 
-const launchWindows = {pid: ours.pid, at: ours.at, windows: internalWindows.map(({number, bounds}) => ({number, bounds}))};
-
-test('fresh pre-quit check: only recorded launch-internal off-screen windows do not keep the fixture process alive', async () => {
-  const {r, quitCalls} = await cleanup({readWindows: async () => internalWindows, launchWindows});
-  assert.deepEqual(quitCalls, [[42]]);
-  assert.equal(r.windowCheck.status, 'PASS');
-  assert.equal(r.windowCheck.offScreenCount, 5);
-  assert.deepEqual(r.windowCheck.offScreenBounds[0], {x: -1000, y: 0, width: 400, height: 300});
-  assert.ok(!JSON.stringify(r).includes('private title'));
+test('a restored off-screen document present at owned launch stays unsignalled even with the old launch classification', async () => {
+  // A minimized/other-Space document restored at launch is indistinguishable from the former "internal" inventory.
+  const restored = {ownerPid: 42, number: 300, onScreen: false, bounds: {x: 10, y: 20, width: 800, height: 600}, title: 'owner restored document'};
+  const launchWindows = {...ours, windows: [restored].map(({number, bounds}) => ({number, bounds}))};
+  const {r, quitCalls} = await cleanup({readWindows: async () => [restored], launchWindows});
+  assert.deepEqual(quitCalls, []);
+  assert.equal(r.leftRunning, 42);
+  assert.deepEqual(r.launch, ours, 'leftover process evidence retains PID and start time');
+  assert.equal(r.windowCheck.status, 'BLOCKED');
+  assert.match(r.windowCheck.detail, /off-screen window remains/);
+  assert.deepEqual(r.windowCheck.remainingWindows, [{number: 300, bounds: {x: 10, y: 20, width: 800, height: 600}}]);
+  assert.ok(!JSON.stringify(r).includes('owner restored document'));
 });
 
-for (const [name, windows] of [
-  ['a visible window', [...internalWindows, {ownerPid: 42, number: 200, onScreen: true}]],
-  ['a foreign PID', [...internalWindows, {ownerPid: 77, number: 200, onScreen: false}]],
-  ['an unreadable window list', null],
+for (const [name, windows, reason] of [
+  ['off-screen windows', offScreenWindows, /off-screen window remains/],
+  ['a visible window', [{ownerPid: 42, number: 200, onScreen: true}], /on-screen window remains/],
+  ['unknown visibility', [{ownerPid: 42, number: 200}], /on-screen window remains/],
+  ['a foreign PID', [{ownerPid: 77, number: 200, onScreen: false}], /another PID/],
+  ['an unreadable window list', null, /unreadable/],
 ]) test(`fresh pre-quit check: ${name} leaves the fixture process running, BLOCKED`, async () => {
-  const {r, quitCalls} = await cleanup({readWindows: async () => windows, launchWindows});
+  const {r, quitCalls} = await cleanup({readWindows: async () => windows});
   assert.deepEqual(quitCalls, []);
   assert.equal(r.leftRunning, 42);
   assert.equal(r.windowCheck.status, 'BLOCKED');
+  assert.match(r.windowCheck.detail, reason);
+  assert.equal(r.windowCheck.remainingCount, windows?.length ?? null);
+  assert.ok(!JSON.stringify(r).includes('private title'));
 });
 
-test('a new minimized or other-Space document blocks quitting even though it is off-screen', async () => {
-  const extra = {ownerPid: 42, number: 300, onScreen: false, bounds: {x: 10, y: 20, width: 800, height: 600}, title: 'owner document'};
-  const {r, quitCalls} = await cleanup({readWindows: async () => [...internalWindows, extra], launchWindows});
+test('a fresh empty window list permits quitting only the recorded process', async () => {
+  const {r, quitCalls} = await cleanup({readWindows: async () => []});
+  assert.deepEqual(quitCalls, [[42]]);
+  assert.equal(r.windowCheck.status, 'PASS');
+  assert.deepEqual(r.windowCheck.remainingWindows, []);
+});
+
+test('an unconfirmed document close still reports remaining windows and never authorizes a quit', async () => {
+  for (const windows of [offScreenWindows, []]) {
+    const {r, quitCalls} = await cleanup({alone: false, readWindows: async () => windows});
+    assert.deepEqual(quitCalls, []);
+    assert.equal(r.leftRunning, 42);
+    assert.equal(r.windowCheck.status, 'BLOCKED');
+    assert.equal(r.windowCheck.remainingCount, windows.length);
+  }
+});
+
+test('a failed window probe keeps cleanup blocked and the process unsignalled', async () => {
+  const {r, quitCalls} = await cleanup({readWindows: async () => { throw new Error('probe failed'); }});
   assert.deepEqual(quitCalls, []);
   assert.equal(r.windowCheck.status, 'BLOCKED');
-  assert.match(r.windowCheck.detail, /unclassified off-screen/);
-  assert.deepEqual(r.windowCheck.unclassifiedOffScreen, [{number: 300, bounds: {x: 10, y: 20, width: 800, height: 600}}]);
-  assert.ok(!JSON.stringify(r).includes('owner document'));
-});
-
-test('unknown launch inventory or one from a different launch cannot classify current off-screen windows', async () => {
-  for (const recorded of [undefined, null, {...launchWindows, pid: 99}, {...launchWindows, at: ours.at - 1000}]) {
-    const {r, quitCalls} = await cleanup({readWindows: async () => internalWindows, launchWindows: recorded});
-    assert.deepEqual(quitCalls, []);
-    assert.equal(r.windowCheck.status, 'BLOCKED');
-  }
-});
-
-test('a subset of launch-internal IDs is sufficient, but no off-screen set is needed when no window remains', async () => {
-  for (const [windows, recorded] of [[internalWindows.slice(0, 2), launchWindows], [[], null]]) {
-    const {r, quitCalls} = await cleanup({readWindows: async () => windows, launchWindows: recorded});
-    assert.deepEqual(quitCalls, [[42]]);
-    assert.equal(r.windowCheck.status, 'PASS');
-  }
-});
-
-test('empty-launch inventory records only off-screen IDs/bounds and only for the still-owned launch', async () => {
-  const {captureLaunchWindows} = await import('../scripts/accept/fixture-app.mjs');
-  const readWindows = async pids => {
-    assert.deepEqual(pids, [42]);
-    return [...internalWindows, {ownerPid: 42, number: 200, onScreen: true, bounds: {x: 0, y: 0, width: 640, height: 480}}];
-  };
-  assert.deepEqual(await captureLaunchWindows({launch: ours, before: [], readWindows, launchOf: () => ours.at}), launchWindows);
-  for (const options of [{launch: null}, {before: [7]}, {launchOf: () => null}, {readWindows: async () => null}]) {
-    assert.equal(await captureLaunchWindows({launch: ours, before: [], readWindows, launchOf: () => ours.at, ...options}), null);
-  }
-  let reads = 0;
-  assert.equal(await captureLaunchWindows({launch: ours, before: [], readWindows, launchOf: () => reads++ === 0 ? ours.at : ours.at + 1000}), null);
+  assert.match(r.windowCheck.detail, /unreadable/);
+  assert.equal(r.windowCheck.remainingWindows, null);
 });
 
 test('a PID reused during the window check is not signalled', async () => {
   const launches = {42: ours.at};
-  const {r, quitCalls} = await cleanup({launches, readWindows: async () => { launches[42]++; return internalWindows; }});
+  const {r, quitCalls} = await cleanup({launches, readWindows: async () => { launches[42]++; return []; }});
   assert.deepEqual(quitCalls, []);
   assert.equal(r.live, false);
 });

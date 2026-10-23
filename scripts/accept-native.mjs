@@ -84,7 +84,7 @@ import {pinLane} from './probe/pinned-engine.mjs';
 import {fingerprints, textLeaks} from './probe/leak-scan.mjs';
 import {
   acceptanceSelection, approvalObservation, doctorHealth, forbiddenPaths, inventoryCheck, missingFromPackage, PROBE_SECRETS_PHASES, probePhasesFor, rollup, scenarioVerdict,
-  suiteVerdict, judgeSkips, skipReasons, testReporterEnv, testSummary, personalText, researchTreeLines, MINI_LAYOUT_FILES,
+  suiteVerdict, judgeSkips, skipReasons, testReporterEnv, testSummary, tapDiagnostics, personalText, researchTreeLines, MINI_LAYOUT_FILES,
 } from './accept/lib.mjs';
 import {OWN_STEPS, runTextEdit, SECRET_STEPS} from './accept/textedit.mjs';
 import {ATTEST_STEP, doctorEngineCheck, lifecycleEngineCheck, verifyChecks} from './accept/engine-lane.mjs';
@@ -166,7 +166,7 @@ function run(command, args, {cwd = REPO, env = process.env, timeoutMs = 600_000,
     child.stderr.on('data', d => { stderr += d; });
     const timer = setTimeout(() => { try { process.kill(-child.pid, 'SIGKILL'); } catch {} }, timeoutMs);
     child.on('error', error => { clearTimeout(timer); resolve({code: null, error: error.code ?? error.message, stdout, stderr, ms: Date.now() - started}); });
-    child.on('exit', (code, signal) => { clearTimeout(timer); resolve({code, signal, timedOut: signal === 'SIGKILL', stdout, stderr, ms: Date.now() - started}); });
+    child.on('close', (code, signal) => { clearTimeout(timer); resolve({code, signal, timedOut: signal === 'SIGKILL', stdout, stderr, ms: Date.now() - started}); });
   });
 }
 // Suites run without this run's scratch home or any server setting in their environment.
@@ -188,15 +188,20 @@ function addItem(id, title, checks, evidence) {
 // --- 1. suites -------------------------------------------------------------------------------------------------
 async function suites(cwd, {label}) {
   const out = [];
-  const node = await run('npm', ['test'], {cwd, env: testReporterEnv(suiteEnv()), timeoutMs: 300_000});
+  const reporter = join(REPO, 'scripts', 'accept', 'suite-reporter.mjs');
+  const node = await run('npm', ['test'], {cwd, env: testReporterEnv(suiteEnv(), {reporter}), timeoutMs: 300_000});
   const summary = testSummary(node.stdout);
   const {totals} = summary;
-  const failed = [...node.stdout.matchAll(/^not ok \d+ - (.*)$/gm)].map(m => m[1]);
+  // Keep bounded, content-safe assertion diagnostics in acceptance.json for both this checkout and the clean clone.
+  // The reporter reduces structured events before writing stdout; raw TAP can contain forged framing in object keys.
+  // No raw TAP/stderr or arbitrary operands are persisted. The final report's sentinel scanner still applies.
+  const diagnostics = tapDiagnostics(node.stdout);
+  const failed = diagnostics.failures.map(failure => failure.name);
   // Skips declared not applicable on this host (lib.mjs DECLARED_SKIPS), judged against the suite's own environment.
   const verdict = suiteVerdict({code: node.code, ...summary, skips: judgeSkips(skipReasons(node.stdout), {env: suiteEnv(), root: cwd})});
   out.push(check(`${label}npm test`, verdict.status,
     totals ? `${verdict.reason}; ${totals.fail} failed${failed.length ? ` (${failed.join('; ')})` : ''}, ${totals.skipped} skipped, ${totals.todo} TODO in ${seconds(node.ms)}${noisy(node.stdout + node.stderr) ? '; output has warnings' : ''}` : `${ended(node)}; ${verdict.reason}${failed.length ? ` (failed before that: ${failed.join('; ')})` : ''}`,
-    {totals}));
+    {totals, diagnostics}));
   return out;
 }
 const state = {};

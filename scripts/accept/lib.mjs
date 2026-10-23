@@ -6,6 +6,7 @@ import {join} from 'node:path';
 import {SANDBOX_DISABLED_STEP, SANDBOX_SCOPED_STEP} from '../probe/trusted-roots.mjs';
 import {SECRETS_OFF, STORE_UNREADABLE, failClosedSteps, refusedLaunchStep} from '../probe/fail-closed.mjs';
 import {approvalsByBehaviour} from '../probe/lib.mjs';
+export {tapDiagnostics} from './tap-diagnostics.mjs';
 
 // A selected item must bring the results it consumes. Refuse rather than silently add live work or a whole suite
 // (#197); item 14 is independent so the owner window can finish before unattended checks start.
@@ -146,10 +147,11 @@ export function testSummary(text) {
 // The environment for a spawned test command (`npm test`): node:test's default reporter differs
 // by Node version and terminal, so every node process in the run, nested runners included, is told through
 // NODE_OPTIONS to report TAP on stdout. Reporter and destination options already there (either spelling, `=value` or
-// separate value) are removed with their values; every other option is kept as written, quoting included.
+// separate value) are removed with their values; every other option is kept as written, quoting included. Acceptance
+// can select its structured-event reporter; all other callers keep TAP unchanged.
 export const TAP_REPORTER_OPTIONS = ['--test-reporter=tap', '--test-reporter-destination=stdout'];
 const REPORTER_OPTIONS = new Set(['test-reporter', 'test-reporter-destination']);
-export function testReporterEnv(env) {
+export function testReporterEnv(env, {reporter = 'tap'} = {}) {
   const tokens = nodeOptionsTokens(env.NODE_OPTIONS ?? '');
   const kept = [];
   for (let i = 0; i < tokens.length; i++) {
@@ -158,7 +160,8 @@ export function testReporterEnv(env) {
     if (!REPORTER_OPTIONS.has(option)) { kept.push(raw); continue; }
     if (!value.includes('=')) i++;   // its value is the next argument
   }
-  return {...env, NODE_OPTIONS: [...kept, ...TAP_REPORTER_OPTIONS].join(' ')};
+  const selected = reporter === 'tap' ? TAP_REPORTER_OPTIONS : [`--test-reporter=${JSON.stringify(reporter)}`, '--test-reporter-destination=stdout'];
+  return {...env, NODE_OPTIONS: [...kept, ...selected].join(' ')};
 }
 
 // NODE_OPTIONS split as Node splits it: whitespace separates arguments except inside double quotes, where a backslash

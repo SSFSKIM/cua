@@ -64,8 +64,8 @@ RAW=$S/reports ERR=$S/stderr
 mkdir -p "$U" "$RAW/oracles" "$ERR"
 M0=docs/evidence/2026-10-17-own-sandbox/m0
 BASELINE=docs/evidence/2026-10-18-hosted-macos-gate/baseline
-# The mini's scratch root in M0's records (oracle.mjs ran there with --home ~/cua-115/home --user-home ~/cua-115/userhome).
-M0_ROOT=/Users/new/cua-115
+# The two original captures must agree on their scratch root. Read provenance instead of embedding an account's home.
+M0_ROOT=$(node scripts/sandbox-probe/recorded-root.mjs "$M0/argv-capture/capture-signed-scoped.json" "$M0/argv-capture/capture-signed-default.json")
 # What every cua command here sees: the scratch homes, a fixed PATH with this Node.
 scratch() { env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin:$(dirname "$(command -v node)")" HOME="$U" CUA_HOME="$H" LANG=C.UTF-8 TMPDIR="$S/tmp" "$@"; }
 mkdir -p "$S/tmp"

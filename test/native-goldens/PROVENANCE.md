@@ -35,7 +35,7 @@ scene, so its frame is the same throughout), and how many attempts the fixed sta
 
 ## Files per scene
 
-| Golden file | Source (`docs/doperpowers/research/2026-10-18-own-native-engine/m1b/goldens-final/goldens/<scene>/`, byte for byte) |
+| Golden file | Source (`docs/doperpowers/research/2026-10-18-own-native-engine/m1b/goldens-final/goldens/<scene>/`, modulo the account-home substitution below) |
 |---|---|
 | `skyshot.json` | cua's full observation of the fixed state, the one taken right after the vendor's text |
 | `vendor.txt` | the vendor's full text of the same state |
@@ -50,6 +50,20 @@ per-observation diagnostics (`timings`, such as `focusRead`) are in `meta.json`,
 action started from the fixed state: Finder's selection was cleared in the same window between the two actions, and
 the other scenes were restarted; cua's action clicked only once its observation rendered as the kept fixed-state
 Skyshot does (the loopback page's port aside), and `meta.json` gives each scene's `startAttempts`.
+
+## Account-home substitution (2026-10-23, M4 post-hold inventory)
+
+The installed fixtures are not untouched captures: in 23 `.json` and `.txt` files across all four scenes, every exact
+`/Users/new/` prefix was replaced with `/Users/xxx/`. No other byte was changed. This covers both engines' text,
+each before/after Skyshot and cua's pinned rendering; element numbering, values other than that prefix, and comparisons
+remain unchanged. The replacement has the same byte length because the renderer's URL placement depends on its line
+budget. The original recordings under `docs/doperpowers/research/` are untouched.
+
+`source.json` declares `accountHomeReplacement`; `source.mjs` derives the original home from the recording's `meta.json`
+`runDir` and applies that one prefix substitution when checking provenance. `test/native-goldens-paths.test.mjs` checks
+the complete transformed source for every sourced golden, and the existing render/diff tests check the installed
+fixtures against it. This is not structural redaction, an engine-fault correction or a home-path inventory exemption.
+A future live reinstall must explicitly preserve or renew this normalization declaration before these checks pass.
 
 ## Finder is full text
 

@@ -3667,7 +3667,7 @@
   "width": 2000,
   "height": 1520,
   "scale": 2,
-  "url": "file:///Users/new/Library/Caches/cua-harness/native-goldens/goldens-screenshots/cua-engine-59320-1-6C71210A.jpg"
+  "url": "file:///Users/xxx/Library/Caches/cua-harness/native-goldens/goldens-screenshots/cua-engine-59320-1-6C71210A.jpg"
  },
  "selectedElements": [],
  "lineage": "L3224cda4738b",
@@ -3675,7 +3675,7 @@
   "catalyst": false,
   "bundleIdentifier": "com.google.chrome.for.testing",
   "displayName": "Google Chrome for Testing",
-  "appPath": "/Users/new/Library/Caches/cua-harness/chrome-for-testing/155.0.8059.84/chrome-mac-arm64/Google Chrome for Testing.app",
+  "appPath": "/Users/xxx/Library/Caches/cua-harness/chrome-for-testing/155.0.8059.84/chrome-mac-arm64/Google Chrome for Testing.app",
   "pid": 62017
  },
  "window": {

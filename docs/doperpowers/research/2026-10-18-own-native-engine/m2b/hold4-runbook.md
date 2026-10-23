@@ -1,8 +1,8 @@
-# M2b hold 4: harness proof, route A/B and one matrix pair
+# M2b hold 4: harness proof, route A/B, Electron focus and one matrix pair
 
 **Preparation only; not permission to access the mini.** This runbook starts at a fresh handover **after M4** in the combined hold. M4 changes `native/`, so its newly approved build is a **required parameter**, not the old build by default. No install, rebuild, onboarding, approval, signing, or runtime/surface changes are part of this runbook. M4 owns those and must finish first, pause, and hand over.
 
-Purpose: collect the scoped live geometry/guard/recovery evidence for [#182](https://github.com/SSFSKIM/cua/issues/182) and [#183](https://github.com/SSFSKIM/cua/issues/183), run [#184](https://github.com/SSFSKIM/cua/issues/184)'s route A/B, and validate the harness end to end with **one paired matrix run, vendor then cua**, without weakening [#117's design](../../../specs/2026-10-18-own-native-engine-design.md). A valid product FAIL is useful evidence; incomplete or invalid proof is not a pass.
+Purpose: collect the scoped live geometry/guard/recovery evidence for [#182](https://github.com/SSFSKIM/cua/issues/182) and [#183](https://github.com/SSFSKIM/cua/issues/183), run [#184](https://github.com/SSFSKIM/cua/issues/184)'s route A/B and [#188](https://github.com/SSFSKIM/cua/issues/188)'s bounded Electron focus diagnostic, and validate the harness end to end with **one paired matrix run, vendor then cua**, without weakening [#117's design](../../../specs/2026-10-18-own-native-engine-design.md). A valid product FAIL is useful evidence; incomplete or invalid proof is not a pass.
 
 **Scope correction from the coordinator:** the triple is deferred to #117 M5's whole-verification-system sitting on the final build. Repeating it now on M4's intermediate build would add no information and push this hold past four hours. This hold can give M2b a second paired run, but it does not satisfy #184's three-runs-per-engine criterion. The issue's triple obligation remains open for M5; no pooling across builds or sittings.
 
@@ -12,18 +12,19 @@ Sources checked on 2026-10-22: issue bodies #182–184 (`gh issue view 184 --com
 
 ## 1. Book the whole window and close readiness gaps first
 
-**Reserve 116 minutes (1 h 56 min) from the post-M4 handover: 91 minutes scheduled work + 25 minutes protected abort/recovery reserve.** M4's time is additional. These are hard phase budgets, not guarantees that a failed phase can be repaired inside them. Do not compress lanes, remove rows, or spend cleanup reserve on diagnosis.
+**Reserve 126 minutes (2 h 6 min) from the post-M4 handover: 101 minutes scheduled work + 25 minutes protected abort/recovery reserve.** M4's time is additional. These are hard phase budgets, not guarantees that a failed phase can be repaired inside them. Do not compress lanes, remove rows, or spend cleanup reserve on diagnosis.
 
 | Phase | Minutes | Cumulative end after handover | Required exit |
 |---|---:|---:|---|
 | 0. Fresh handover, independent posture/build checks, unit-proof receipts | 10 | T+10 | Same clean commit/build; admitted and uncontended |
 | 1. Six-sample route A/B and review of its Finder binds | 8 | T+18 | Routes, effect, release, frame and non-interference recorded |
-| 2. One native-mac pair and frame comparison | 12 | T+30 | Equal live Finder frames; mismatch remains invalid; clean teardown |
-| 3. One matrix pair: vendor then cua | 52 | T+82 | Both COMPLETE, attested, put-back ok; fixed frame recorded at every bind |
-| 4. Final cleanup, readings and release handoff | 9 | T+91 | Verified restoration or explicit unresolved recovery |
-| Protected recovery contingency; no new measurements | 25 | **T+116 hard end** | Mini returned or unresolved state handed to owner |
+| 1a. Electron field-focus diagnostic, cua lane only | 10 | T+28 | Five arms, focus/selection/route evidence, sidecar and release validity, clean put-back |
+| 2. One native-mac pair and frame comparison | 12 | T+40 | Equal live Finder frames; mismatch remains invalid; clean teardown |
+| 3. One matrix pair: vendor then cua | 52 | T+92 | Both COMPLETE, attested, put-back ok; fixed frame recorded at every bind |
+| 4. Final cleanup, readings and release handoff | 9 | T+101 | Verified restoration or explicit unresolved recovery |
+| Protected recovery contingency; no new measurements | 25 | **T+126 hard end** | Mini returned or unresolved state handed to owner |
 
-The matrix pair budgets about 25 minutes per lane plus two minutes total for boundary checks/review. A slower lane consumes measurement slack, **not** protected cleanup time. Before starting the pair require its full 52 minutes plus 9 minutes closeout plus 25 minutes reserve remaining. Drop the whole pair if that condition fails; report harness validation missing. Before any other phase apply the analogous phase-budget + 34-minute check. Stop measurements by T+82; begin closeout earlier on any abort.
+The matrix pair budgets about 25 minutes per lane plus two minutes total for boundary checks/review. A slower lane consumes measurement slack, **not** protected cleanup time. Before starting the pair require its full 52 minutes plus 9 minutes closeout plus 25 minutes reserve remaining. Drop the whole pair if that condition fails; report harness validation missing. Before any other phase apply the analogous phase-budget + 34-minute check. Stop measurements by T+92; begin closeout earlier on any abort.
 
 Why 25 minutes reserve (approximately 20 minutes requested, rounded up to cover the implemented bound): current `live-checks.mjs` exposes a single `recoverBoundMs` of 1,255,000 ms (20 min 55 s), including eight bounded put-back steps. The old 15-minute margin does not cover even that bound. Goldens/native-mac now settle the frame probe before restoration: its nominal wait bound is another 71 seconds (two 3-second kill waits plus a 65-second unresolved-probe wait), charged to this existing reserve; a failed settlement is not retried within that sitting. Launch settlement or multiple journals can take more; this reserve is not a promise to resolve arbitrary recovery. If cleanup cannot finish by the booked end, tell the hold coordinator immediately and hand off the still-owned state; never release the machine as clean.
 
@@ -64,7 +65,7 @@ Stop on a failed check. Do not proceed merely because an interactive shell conti
 
 Historical build, **not this hold's default**: `0c363f8f4512b24891ce22af50f6515f99af4b008bee09770245de03b8c7e80d`. It would have remained the default only if M4 had not changed native code. No command accepts a `--build` option here: the pin is checked through checkout build, installed/approved facts and per-call attestations.
 
-Keep outputs under `$O`: `handover/`, `route-ab/`, `native-mac/{vendor,cua}/`, `matrix/{vendor,cua}/`, plus `lanes.txt`, `cleanup.txt`, and raw comparison outputs. Keep aborted attempts in distinct subdirectories outside the matrix comparison roots. Archive later to `docs/doperpowers/research/2026-10-18-own-native-engine/m2b/hold4/`; keep device-private recovery records on the device, not in the archive.
+Keep outputs under `$O`: `handover/`, `route-ab/`, `electron-focus/cua/`, `native-mac/{vendor,cua}/`, `matrix/{vendor,cua}/`, plus `lanes.txt`, `cleanup.txt`, and raw comparison outputs. Keep aborted attempts in distinct subdirectories outside the matrix comparison roots. Archive later to `docs/doperpowers/research/2026-10-18-own-native-engine/m2b/hold4/`; keep device-private recovery records on the device, not in the archive.
 
 ## 3. Phase 0 and every lane boundary
 
@@ -145,6 +146,54 @@ Decision rule carried from hold 3: forced 1 delivers 3/3 within 2 seconds under 
 
 A valid forced-arm product failure is an intended possible result, not by itself a prerequisite abort. Missing release/route/fixture proof is a stop before the matrix pair. Apply the both-fail rule above.
 
+## 5a. Phase 1a: Electron field focus, cua only (10 minutes)
+
+Run **after route A/B's clean put-back and result review, before the native-mac pair**. The new cell starts its own lane and fixture; it reuses warmed build/probe caches, never the preceding lane's activation hold. The clean controller/device commit must include this harness, #199 and M4's approved native sources. Keep M4's build fixed. No vendor diagnostic, native changes, repeat loop or extra grant is scheduled.
+
+Reserve the full ten minutes plus the existing 34-minute closeout/recovery allowance before starting. The diagnostic section has a four-minute cutoff; the ten-minute phase includes normal setup, checks and put-back, not just its clicks. If the phase reaches its ten-minute limit in flight, use one normal interrupt and let recovery finish (§8). Abnormal put-back draws on the protected reserve; do not kill recovery to manufacture an on-time completion.
+
+```bash
+node scripts/mini-rules.mjs gated --hold -- \
+  node scripts/native-matrix.mjs cell electron-focus --device mini \
+  --host cua --engine cua "${A[@]}" --sitting "$SITTING" \
+  --run-number 1 --runs 1 --run "$R" --out "$O/electron-focus/cua"
+FOCUS_RC=$?
+printf 'electron-focus cua exit=%s\n' "$FOCUS_RC"
+```
+
+Read `electron-focus/cua/run-1/result.json` before continuing. This is diagnostic evidence for #188, **not** an extra matrix run or acceptance credit. A valid focus failure is useful; missing validity evidence or a failed put-back stops further measurement. Keep its raw verdict and exit code even when the readings show that the matrix's focus predicate, rather than the engine, is the problem.
+
+The five arms are fixed (one each; `--samples` does not change them):
+
+1. `forced1`: selected field, forced AXPick/AXPress alone. A matching engine refusal plus no advertised action records that route 1 is unavailable, not that a mouse click failed.
+2. `forced3`: selected field, forced synthesized click with its ordinary activation lifetime.
+3. `held3`: selected field, a natural button click first establishes a counters-proven route-3 hold, then the field gets forced synthesis. Record whether the **primer itself** already restored field focus.
+4. `natural`: selected field, the same facade element-click operation the matrix's PREPARE uses.
+5. `natural-empty`: the natural click with a freshly emptied field and no selection, the control for selection masking the focus trailer.
+
+Each selection seed is verified with Electron in front, then Finder must be restored and its window/focus verified before the measured background sample. Seeding is setup, not background success. After every arm, an observation aimed at Finder requests release; counters must prove the activation is no longer held. A synthesized activation already resigned by RPC return needs balanced counters, not a fictitious extra resignation. A failed release invalidates the remaining arms without further clicks. Any invalid mandatory arm leaves the diagnostic incomplete/no-verdict, never a pass based only on its earlier successful arms.
+
+Preserve per arm: click `inputRoute` and `engineMeta`, facade `before`/`after`/`later` readings and selection flags, `axBefore`/`axAfter` (plus `axAfterPrime` for held3), activation/page/field counters, release proof, user-window focus and the interference verdict. The fixed engine has **no click-plan tag**: `clickPlan.reported` is null, forced routes are acknowledged by their actual route, and natural route 3 is only consistent with either held AX action or synthesized click. Do not report either as an observed natural plan.
+
+The AX sidecar is **observation with preparation, verified no-open**, not a passive tap. It connects only to the already-running, bundle-attested engine, never launches it, takes a screenshot-free observation of the owned fixture after the corresponding facade reading, and closes before release. Require `preparation.noOpenVerified`, unchanged counters across **each** sidecar read, and `connectionCheck.connections == 1` before each arm (the engine's count excludes the querying connection). Missing/extra connections stop the remaining arms; counter movement or launch/reopen invalidates the sample. The exported `axFocused` is the engine's AXFocused-derived node flag; the fixed engine coerces an unreadable/missing AXFocused attribute to false. The independent app-local focused token and `focusRead` explain some such disagreements. The raw flag and facade were read sequentially, not simultaneously.
+
+Interpret only validity-proven rows:
+
+| Facade focus / AX reading or variant outcome | What it establishes; next change to consider |
+|---|---|
+| Facade names the field; AXFocused true and app-local token names it | Focus is established and visible. If both natural states do this, the historical failure is not reproduced; do not declare #188 fixed. |
+| Facade has no focused-field trailer; AXFocused true, app-local token names the field, and selected text/rows are present | Focus exists but selection masks the trailer. Repair the harness predicate first; changing native activation would not fix this observation error. Renderer changes require a deliberate contract decision because selection precedence matches the vendor's documented rendering. |
+| Facade misses focus; AXFocused true but the app-local token differs or `focusRead` reports outside-the-walk/error | Flag versus app-focused-element/tree mapping discrepancy. Investigate `Skyshot.swift` and its token mapping before changing click activation. |
+| Facade misses focus; AXFocused false but the app-local token names the field and selected text/rows are present | The trailer is still masked by selection, while the node flag disagrees with the keyboard-target reading (or was unavailable and became false). Do not equate the flag with delivery failure; first repair/verify the harness predicate and retain end-to-end typing/Tab/paste proof for M5. |
+| Facade misses focus; AXFocused false and app-local token does not name the field, also on the empty control | Actual focus or focus-read failure remains plausible; use the forced and held variants to narrow the engine change. A false node flag alone is not proof of an AX false response. |
+| Facade names the field but the later raw flag/token disagree | Sequential reads or AX surfaces disagree. Preserve timings/counters and treat attribution as inconclusive; neither side is permission to claim a fix. |
+| Forced3 fails while held3 succeeds | Activation lifetime matters under this fixture state. If `axAfterPrime` already names the field, the primer restored focus; do not attribute that to the later field click. Consider extending the connection hold to the proven synthesized-click path, with non-interference/release tests. |
+| Selected natural fails but empty natural succeeds | The selected versus empty setup changes the result; a selection-related cause is implicated (the field value also differs). True raw focus in the selected arm points to harness/renderer visibility; false raw focus points to selection-sensitive engine behavior, possibly alongside the harness predicate. |
+| Forced1 fails while synthesis succeeds, and natural resembles forced1 | Consistent with an AX-action versus synthesis distinction, not proof of the natural plan. Keep the field's advertised actions and acknowledged routes; avoid a blanket Electron routing override. |
+| Both synthesized arms fail with raw focus absent despite balanced/proven activation, or all natural/forced results disagree | The current experiment does not isolate a small fix. Compare the fake-activation/key-focus model against the vendor research after the hold; do not patch during it. |
+
+Required offline receipts on the final merged controller commit: `test/native-matrix/{electron-focus,route-ab,registry,run,matrix-device,cell-result}.test.mjs`; no test file that launches a real engine is part of this preparation. The new tests cover selection seeding and its empty control, separate click metadata, index re-resolution, no-open/connection/counter guards, release isolation and safe exports. This is unit/dry-run evidence only until the mini run exists.
+
 ## 6. Phase 2: native-mac geometry parity
 
 Prepare once, then run both lanes on that one prepared sitting. The native-mac sitting is `preparedAt`; it does not accept matrix's `--sitting` flag.
@@ -211,8 +260,8 @@ node scripts/native-matrix.mjs summary "$O/matrix/vendor" "$O/matrix/cua" \
   --out "$O/matrix-summary.md"
 ```
 
-Preserve exit codes: compare PASS 0, FAIL 1, OWNER 3, NO VERDICT 4. **One pair cannot pass this triple comparator:** expect missing-proof findings (or FAIL when product/validity failures also exist), and report the separate harness-validation outcome without changing the acceptance gate. Do not let a later command overwrite the recorded exit of an earlier one. Include the raw verdict, judged verdict, complete counts per engine, paired run numbers, each invalid row/reason, each product failure, A/B six-row table (route/effect/release/interference), per-bind geometry table, unit-only negative guard/recovery receipts, cleanup evidence, deviations and all omitted proof. Copy only sanitized evidence; never export device-private front records or owner contents.
+Preserve exit codes: compare PASS 0, FAIL 1, OWNER 3, NO VERDICT 4. **One pair cannot pass this triple comparator:** expect missing-proof findings (or FAIL when product/validity failures also exist), and report the separate harness-validation outcome without changing the acceptance gate. Do not let a later command overwrite the recorded exit of an earlier one. Include the raw verdict, judged verdict, complete counts per engine, paired run numbers, each invalid row/reason, each product failure, A/B six-row table (route/effect/release/interference), #188 five-arm table (selection/facade/AX focus/route/activation/sidecar/release/interference, with unavailable signals explicit), per-bind geometry table, unit-only negative guard/recovery receipts, cleanup evidence, deviations and all omitted proof. Copy only sanitized evidence; never export device-private front records or owner contents.
 
-Deliver a findings comment to #184 and update #117's evidence and Decision Log through the authorized tracker/document workflow. #182/#183 close only on their own verified criteria and required unit/live receipts; a clean matrix pair alone does not prove geometry or negative cases that were not measured; #184's triple stays owed to M5 even if this limited hold completes; a later complete evidence collection can finish with an evidenced FAIL, whereas #117 acceptance cannot. This runbook does not pre-authorize those outcomes.
+Deliver findings comments to #184 and #188 and update #117's evidence and Decision Log through the authorized tracker/document workflow. #182/#183 close only on their own verified criteria and required unit/live receipts; a clean matrix pair alone does not prove geometry or negative cases that were not measured; #184's triple stays owed to M5 even if this limited hold completes; a later complete evidence collection can finish with an evidenced FAIL, whereas #117 acceptance cannot. This runbook does not pre-authorize those outcomes.
 
-**Total operator budget:** 116 minutes reserved on the mini after M4, plus 10 minutes local reporting = **126 minutes**. No timing from this preparation is a measured hold-4 result.
+**Total operator budget:** 126 minutes reserved on the mini after M4, plus 10 minutes local reporting = **136 minutes**. No timing from this preparation is a measured hold-4 result.

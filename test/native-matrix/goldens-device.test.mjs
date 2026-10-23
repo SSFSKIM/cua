@@ -371,8 +371,8 @@ test('steps: activations and keys in order, each key through the engine only whi
   const record = recordOf('finder', 400, {setup: [{activate: 'finder'}, {pressKey: 'super+2', guard: {pid: 400, window: 7}}, {pressKey: 'alt+super+a', guard: {pid: 400, window: 7}}]});
   const client = fakeClient([{meta: {inputRoute: "2'"}}, {meta: {inputRoute: "2'"}}]);
   const activated = [];
-  const io = {activate: async id => { activated.push(id); return {ok: true}; }, frontmost: () => ({pid: 400, topWindow: {ownerPid: 400, number: 7}}), sleep: async () => {}};
-  const out = await runSteps({id: 'finder', phase: 'setup', record, client, io});
+  const io = {appWindows: p => [{ownerPid: p, number: 7, bounds: record.window.bounds, onScreen: true}], activate: async id => { activated.push(id); return {ok: true}; }, frontmost: () => ({pid: 400, topWindow: {ownerPid: 400, number: 7}}), sleep: async () => {}};
+  const out = await runSteps({id: 'finder', phase: 'setup', run: scratch(), record, client, io});
   assert.deepEqual(activated, ['finder']);
   assert.deepEqual(client.calls.map(c => [c.method, c.args.key]), [['press_key', 'super+2'], ['press_key', 'alt+super+a']]);
   assert.deepEqual(out.steps.map(s => s.pressKey ?? s.activate), ['finder', 'super+2', 'alt+super+a']);
@@ -380,19 +380,19 @@ test('steps: activations and keys in order, each key through the engine only whi
 test('steps: a key whose guard is not in front stops the steps with nothing more sent', async () => {
   const record = recordOf('finder', 400, {setup: [{pressKey: 'super+2', guard: {pid: 400, window: 7}}, {pressKey: 'alt+super+a', guard: {pid: 400, window: 7}}]});
   const client = fakeClient([]);
-  const io = {probe: async () => ({pid, window: 7, requested: {x: 80, y: 80, width: 920, height: 520}, readBack: {x: 80, y: 80, width: 920, height: 520}, matched: true, exitStatus: 0}), activate: async () => ({ok: true}), frontmost: () => ({pid: 401, topWindow: null}), sleep: async () => {}};
-  await assert.rejects(runSteps({id: 'finder', phase: 'setup', record, client, io}), /super\+2 not sent/);
+  const io = {appWindows: p => [{ownerPid: p, number: 7, bounds: record.window.bounds, onScreen: true}], probe: async () => ({pid, window: 7, requested: {x: 80, y: 80, width: 920, height: 520}, readBack: {x: 80, y: 80, width: 920, height: 520}, matched: true, exitStatus: 0}), activate: async () => ({ok: true}), frontmost: () => ({pid: 401, topWindow: null}), sleep: async () => {}};
+  await assert.rejects(runSteps({id: 'finder', phase: 'setup', run: scratch(), record, client, io}), /super\+2 not sent/);
   assert.deepEqual(client.calls, []);
 });
 
 test('steps: Finder\'s reset deselects all in the run\'s window; the teardown steps are the scene\'s own', async () => {
   const record = recordOf('finder', 400, {bundleId: 'com.apple.finder'});
   const client = fakeClient([{meta: {}}, {meta: {}}]);
-  const io = {probe: async () => ({pid, window: 7, requested: {x: 80, y: 80, width: 920, height: 520}, readBack: {x: 80, y: 80, width: 920, height: 520}, matched: true, exitStatus: 0}), activate: async () => ({ok: true}), frontmost: () => ({pid: 400, topWindow: {ownerPid: 400, number: 7}}), sleep: async () => {},
+  const io = {appWindows: p => [{ownerPid: p, number: 7, bounds: record.window.bounds, onScreen: true}], probe: async () => ({pid, window: 7, requested: {x: 80, y: 80, width: 920, height: 520}, readBack: {x: 80, y: 80, width: 920, height: 520}, matched: true, exitStatus: 0}), activate: async () => ({ok: true}), frontmost: () => ({pid: 400, topWindow: {ownerPid: 400, number: 7}}), sleep: async () => {},
     teardown: () => [{activate: 'finder'}, {pressKey: 'super+w', closes: 'window', guard: {pid: 400, window: 7}}]};
   await runSteps({id: 'finder', phase: 'reset', record, client, io});
   assert.deepEqual(client.calls.map(c => c.args.key), [DESELECT_ALL_KEY]);
-  await runSteps({id: 'finder', phase: 'teardown', run: '/run', record, client, io});
+  await runSteps({id: 'finder', phase: 'teardown', run: scratch(), record, client, io});
   assert.deepEqual(client.calls.map(c => c.args.key), [DESELECT_ALL_KEY, 'super+w']);
   const none = await runSteps({id: 'textedit', phase: 'reset', record: recordOf('textedit', 9), client, io});
   assert.deepEqual(none.steps, []);
@@ -445,7 +445,7 @@ function finderRun(finder, {pid = 402} = {}) {
   const record = recordOf('finder', pid, {bundleId: 'com.apple.finder', folder: FINDER_FOLDER, window: {number: 7, bounds: {x: 0, y: 0, width: 920, height: 436}}});
   record.setup = setupSteps('finder', record);
   const clock = fakeClock();
-  const io = {probe: async () => ({pid, window: 7, requested: {x: 80, y: 80, width: 920, height: 520}, readBack: {x: 80, y: 80, width: 920, height: 520}, matched: true, exitStatus: 0}), activate: async () => ({ok: true}), frontmost: () => ({pid, topWindow: {ownerPid: pid, number: 7}}), ...clock, savedPreferencesFile: file,
+  const io = {appWindows: p => [{ownerPid: p, number: 7, bounds: record.window.bounds, onScreen: true}], probe: async () => ({pid, window: 7, requested: {x: 80, y: 80, width: 920, height: 520}, readBack: {x: 80, y: 80, width: 920, height: 520}, matched: true, exitStatus: 0}), activate: async () => ({ok: true}), frontmost: () => ({pid, topWindow: {ownerPid: pid, number: 7}}), ...clock, savedPreferencesFile: file,
     teardown: () => teardownSteps('finder', record, {visible: readSavedPreferences(file)?.visible ?? null})};
   saveOriginalPreferences(file, {ShowSidebar: finder.keys.ShowSidebar ?? null, ShowStatusBar: finder.keys.ShowStatusBar ?? null, ShowPathbar: finder.keys.ShowPathbar ?? null});
   return {record, io, file, run: (phase, client = finder.client) => runSteps({id: 'finder', phase, run: dir, record, client, io, screenshots: join(dir, SCREENSHOT_DIR)})};
@@ -635,4 +635,78 @@ test('a failed Finder frame probe retains stage diagnostics through activation e
   assert.deepEqual(evidence.framePin.diagnostic, expected);
   assert.deepEqual(activation.framePin.excludedEntries, [{index: 0, role: 'AXApplication', subrole: 'unknown'}]);
   assert.deepEqual(evidence.framePin.excludedEntries, [{index: 0, role: 'AXApplication', subrole: 'unknown'}]);
+});
+
+const stepEvidence = file => fs.readFileSync(join(file, '..', 'finder-steps.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+
+test('durable Finder frames localize a 28-point teardown chrome growth before close', async () => {
+  const finder = finderEngine({state: {sidebar: true, statusBar: true, pathBar: false}, drawn: {sidebar: true, statusBar: true, pathBar: false}});
+  const {run, io, file} = finderRun(finder);
+  let height = 520;
+  io.appWindows = pid => [{ownerPid: pid, number: 7, bounds: {x: 80, y: 80, width: 920, height}, onScreen: true}];
+  await run('setup');
+  const execute = finder.client.execute;
+  finder.client.execute = async (method, args) => {
+    const out = await execute(method, args);
+    if (args.key === 'super+slash') height += 28;
+    if (args.key === 'super+w') {
+      const rows = stepEvidence(file);
+      assert.equal(rows.filter(r => r.type === 'frame').at(-1).point, 'pre-close', 'persisted before close is sent');
+    }
+    return out;
+  };
+  await run('teardown');
+  const frames = stepEvidence(file).filter(r => r.type === 'frame');
+  assert.deepEqual(frames.map(r => [r.phase, r.point, r.bounds.height]), [
+    ['setup', 'setup-entry', 520], ['setup', 'after-list-view', 520],
+    ['setup', 'after-chrome-sidebar', 520], ['setup', 'after-chrome-statusBar', 520], ['setup', 'after-chrome-pathBar', 520],
+    ['teardown', 'teardown-entry', 520], ['teardown', 'after-chrome-sidebar', 520],
+    ['teardown', 'after-chrome-statusBar', 548], ['teardown', 'after-chrome-pathBar', 548],
+    ['teardown', 'after-chrome-restoration', 548], ['teardown', 'pre-close', 548],
+  ]);
+  assert.ok(frames.every(r => r.pid === 402 && r.window === 7 && r.at !== undefined));
+});
+
+test('failed final Finder pin keeps completed steps and pre-pin frame samples durably', async () => {
+  const finder = finderEngine({state: {}, drawn: {sidebar: false, statusBar: false, pathBar: false}});
+  const {run, io, file} = finderRun(finder);
+  io.appWindows = pid => [{ownerPid: pid, number: 7, bounds: {x: 820, y: 261, width: 920, height: 968}, onScreen: true}];
+  io.probe = async () => { throw new Error('probe connection lost'); };
+  await assert.rejects(run('setup'), error => {
+    assert.match(error.message, /probe connection lost/);
+    assert.equal(error.progress.steps.filter(s => s.chrome).length, 3);
+    return true;
+  });
+  const rows = stepEvidence(file);
+  assert.deepEqual(rows.filter(r => r.type === 'step').map(r => r.step.activate ?? r.step.pressKey ?? r.step.visibleState ?? r.step.chrome),
+    ['finder', 'super+2', 'alt+super+a', 'record', 'sidebar', 'statusBar', 'pathBar']);
+  assert.equal(rows.at(-1).type, 'failure');
+  assert.equal(rows.filter(r => r.type === 'frame').at(-1).bounds.height, 968);
+  assert.equal(fs.statSync(join(file, '..', 'finder-steps.jsonl')).mode & 0o777, 0o600);
+});
+
+test('Finder frame samples never substitute another window or retain its metadata', async () => {
+  const finder = finderEngine({state: {}, drawn: {sidebar: false, statusBar: false, pathBar: false}});
+  const {run, io, file} = finderRun(finder);
+  io.appWindows = () => [{ownerPid: 999, number: 7, bounds: {x: 1, y: 2, width: 3, height: 4}, name: 'private'},
+    {ownerPid: 402, number: 8, bounds: {x: 10, y: 20, width: 30, height: 40}, name: 'other'}];
+  await run('setup');
+  const rows = stepEvidence(file), frames = rows.filter(r => r.type === 'frame');
+  assert.ok(frames.length >= 5);
+  assert.ok(frames.every(r => r.bounds === null && r.status === 'missing'));
+  assert.doesNotMatch(JSON.stringify(rows), /private|999|"window":8/);
+});
+
+test('a refused Finder pin journals its result and completed prefix before cleanup can remove scene state', async () => {
+  const finder = finderEngine({state: {}, drawn: {sidebar: false, statusBar: false, pathBar: false}});
+  const {run, io, file} = finderRun(finder);
+  io.probe = async () => ({pid: 402, window: 7, requested: {x: 80, y: 80, width: 920, height: 520},
+    readBack: {x: 80, y: 30, width: 920, height: 968}, matched: false, exitStatus: 5, diagnostic: null, excludedEntries: []});
+  await assert.rejects(run('setup'), error => error.progress.steps.length === 7 && /Finder frame probe/.test(error.message));
+  const rows = stepEvidence(file);
+  assert.equal(rows.at(-2).type, 'pin');
+  assert.equal(rows.at(-2).framePin.exitStatus, 5);
+  assert.equal(rows.at(-1).type, 'failure');
+  fs.rmSync(join(file, '..', 'scenes.json'));
+  assert.equal(stepEvidence(file).filter(r => r.type === 'step').length, 7);
 });

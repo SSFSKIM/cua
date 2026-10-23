@@ -55,11 +55,12 @@ import {advanceNumbering, render} from '../../src/services/engine/render.mjs';
 import {normalizeDrift} from '../../test/native-goldens/compare.mjs';
 import {SCENES, activateScene, finderOwned, fixedStateProblems, guardOf, readState, teardownFor, writeState} from '../repl-parity/scenes-mac.mjs';
 import {
-  DESELECT_ALL_KEY, FINDER_CHROME, SAVED_PREFERENCES, finderChromeShown, markVisibleRestored, recordToggleSent, recordVisibleState, toggleUntil,
+  DESELECT_ALL_KEY, LIST_VIEW_KEY, FINDER_CHROME, SAVED_PREFERENCES, finderChromeShown, markVisibleRestored, recordToggleSent, recordVisibleState, toggleUntil,
   unmarkVisibleRestored,
 } from '../repl-parity/scenes-mac-finder.mjs';
 import {actionIndex} from '../repl-parity/scenes-mac-text.mjs';
-import {frontWindow} from '../repl-parity/scenes-mac-device.mjs';
+import {frontWindow, appWindows} from '../repl-parity/scenes-mac-device.mjs';
+import {finderStepEvidence} from './finder-step-evidence.mjs';
 import {frontmostFromProbe, sendIfFrontmost} from '../accept/key-guard.mjs';
 
 const SCRIPT = fileURLToPath(import.meta.url);
@@ -233,41 +234,61 @@ export async function runSteps({id, phase, run, record, client, io, screenshots 
     if (read.problems.length) throw new Error(`the run's Finder window could not be observed: ${read.problems.map(p => p.code).join(', ')}; no further step was sent`);
     return finderChromeShown(read.shot, finderOwned(record));
   };
-  const done = [];
-  for (const step of stepsOf(id, phase, {record, run, io})) {
-    if (step.activate) {
-      const front = await io.activate(step.activate, run);
-      if (!front?.ok) throw new Error(`${step.activate} did not come to the front: ${front?.reason ?? 'no answer'}; no further step was sent`);
-      done.push({activate: step.activate});
-    } else if (step.visibleState === 'record') {
-      const shown = await chromeShown();
-      if (!shown) throw new Error('Finder\'s chrome could not be read: the run\'s list is not in its window; no further step was sent');
-      done.push({visibleState: 'record', ...recordVisibleState(saved, shown)});
-    } else if (step.visibleState === 'restored') {
-      markVisibleRestored(saved);
-      done.push({visibleState: 'restored'});
-    } else if (step.chrome) {
-      const toggle = FINDER_CHROME.find(part => part.id === step.chrome).toggle;
-      done.push({chrome: step.chrome, ...await toggleUntil({part: step.chrome, shown: step.shown, observe: chromeShown,
-        toggle: () => { unmarkVisibleRestored(saved); return press(toggle, step.guard); }, sent: part => recordToggleSent(saved, part)})});
-    } else if (step.finderFrame) {
-      const requested = step.finderFrame;
-      const out = await io.probe(['window-frame', '--pid', String(record.pid), '--window', String(record.window.number),
-        '--frame', ['x', 'y', 'width', 'height'].map(k => requested[k]).join(',')], run);
-      const framePin = {pid: out?.pid ?? null, window: out?.window ?? null, requested,
-        readBack: out?.readBack ?? null, matched: out?.matched === true, exitStatus: out?.exitStatus ?? null,
-        diagnostic: out?.diagnostic ?? null, excludedEntries: out?.excludedEntries ?? []};
-      // Preserve the probe's safe stage/reason/count diagnostics and read-back before refusing; its stdout scratch
-      // has already been removed by awaitProbe. Later bind/teardown snapshots carry this owned-scene evidence.
-      const state = readState(run);
-      writeState(run, {...state, scenes: {...state.scenes, [id]: {...record, framePin}}});
-      if (framePin.pid !== record.pid || framePin.window !== record.window.number || !framePin.matched || framePin.exitStatus !== 0
-        || !['x', 'y', 'width', 'height'].every(k => framePin.readBack?.[k] === requested[k]))
-        throw new Error('Finder frame probe did not confirm the requested frame on the run window; no further step was sent');
-      done.push({framePin});
-    } else done.push({pressKey: step.pressKey, route: await press(step.pressKey, step.guard)});
+  const done = [], frames = [];
+  const evidence = id === 'finder' && ['setup', 'teardown'].includes(phase) ? finderStepEvidence({run, record, phase, io}) : null;
+  const sample = point => { if (evidence) frames.push(evidence.sample(point)); };
+  let stepIndex = 0;
+  try {
+    if (evidence) sample(`${phase}-entry`);
+    for (const step of stepsOf(id, phase, {record, run, io})) {
+      if (step.closes === 'window') {
+        sample('after-chrome-restoration');
+        sample('pre-close');
+      }
+      if (step.activate) {
+        const front = await io.activate(step.activate, run);
+        if (!front?.ok) throw new Error(`${step.activate} did not come to the front: ${front?.reason ?? 'no answer'}; no further step was sent`);
+        done.push({activate: step.activate});
+      } else if (step.visibleState === 'record') {
+        const shown = await chromeShown();
+        if (!shown) throw new Error('Finder\'s chrome could not be read: the run\'s list is not in its window; no further step was sent');
+        done.push({visibleState: 'record', ...recordVisibleState(saved, shown)});
+      } else if (step.visibleState === 'restored') {
+        markVisibleRestored(saved);
+        done.push({visibleState: 'restored'});
+      } else if (step.chrome) {
+        const toggle = FINDER_CHROME.find(part => part.id === step.chrome).toggle;
+        done.push({chrome: step.chrome, ...await toggleUntil({part: step.chrome, shown: step.shown, observe: chromeShown,
+          toggle: () => { unmarkVisibleRestored(saved); return press(toggle, step.guard); }, sent: part => recordToggleSent(saved, part)})});
+      } else if (step.finderFrame) {
+        const requested = step.finderFrame;
+        const out = await io.probe(['window-frame', '--pid', String(record.pid), '--window', String(record.window.number),
+          '--frame', ['x', 'y', 'width', 'height'].map(k => requested[k]).join(',')], run);
+        const framePin = {pid: out?.pid ?? null, window: out?.window ?? null, requested,
+          readBack: out?.readBack ?? null, matched: out?.matched === true, exitStatus: out?.exitStatus ?? null,
+          diagnostic: out?.diagnostic ?? null, excludedEntries: out?.excludedEntries ?? []};
+        // Preserve the probe's safe stage/reason/count diagnostics and read-back before refusing; its stdout scratch
+        // has already been removed by awaitProbe. Later bind/teardown snapshots carry this owned-scene evidence.
+        const state = readState(run);
+        writeState(run, {...state, scenes: {...state.scenes, [id]: {...record, framePin}}});
+        evidence?.append({type: 'pin', stepIndex, framePin});
+        if (framePin.pid !== record.pid || framePin.window !== record.window.number || !framePin.matched || framePin.exitStatus !== 0
+          || !['x', 'y', 'width', 'height'].every(k => framePin.readBack?.[k] === requested[k]))
+          throw new Error('Finder frame probe did not confirm the requested frame on the run window; no further step was sent');
+        done.push({framePin});
+      } else done.push({pressKey: step.pressKey, route: await press(step.pressKey, step.guard)});
+      evidence?.append({type: 'step', stepIndex, step: done.at(-1)});
+      if (step.pressKey === LIST_VIEW_KEY) sample('after-list-view');
+      if (step.chrome) sample(`after-chrome-${step.chrome}`);
+      stepIndex++;
+    }
+  } catch (error) {
+    // Persist the completed prefix even when the last pin throws; do not retain an arbitrary engine error's text.
+    evidence?.append({type: 'failure', stepIndex});
+    error.progress = {scene: id, phase, steps: done, frames};
+    throw error;
   }
-  return {scene: id, phase, steps: done};
+  return {scene: id, phase, steps: done, ...(evidence ? {frames} : {})};
 }
 
 // An EngineClient on this Mac without a REPL host: the socket opened directly, the bundle launched with `open -n -g -a`
@@ -289,6 +310,7 @@ export function engineNodeRepl({connect = createConnection, open = app => execFi
 }
 
 const defaultIo = () => ({
+  appWindows,
   installed: () => installedEngine(),
   signature: bundlePath => ({signature: readSignature(bundlePath), configured: configuredIdentity()}),
   checkout: () => ({build: engineBuild(), engineVersion: engineVersion()}),
@@ -348,5 +370,5 @@ export async function main(argv, {io: given = {}} = {}) {
 if (process.argv[1] && SCRIPT === fs.realpathSync(process.argv[1])) {
   main(process.argv.slice(2)).then(
     out => { process.stdout.write(JSON.stringify(out) + '\n'); },
-    error => { process.stdout.write(JSON.stringify({error: error.message}) + '\n'); process.exitCode = 1; });
+    error => { process.stdout.write(JSON.stringify({error: error.message, ...(error.progress ? {progress: error.progress} : {})}) + '\n'); process.exitCode = 1; });
 }

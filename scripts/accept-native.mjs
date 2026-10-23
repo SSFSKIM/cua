@@ -166,7 +166,7 @@ function run(command, args, {cwd = REPO, env = process.env, timeoutMs = 600_000,
     child.stderr.on('data', d => { stderr += d; });
     const timer = setTimeout(() => { try { process.kill(-child.pid, 'SIGKILL'); } catch {} }, timeoutMs);
     child.on('error', error => { clearTimeout(timer); resolve({code: null, error: error.code ?? error.message, stdout, stderr, ms: Date.now() - started}); });
-    child.on('exit', (code, signal) => { clearTimeout(timer); resolve({code, signal, timedOut: signal === 'SIGKILL', stdout, stderr, ms: Date.now() - started}); });
+    child.on('close', (code, signal) => { clearTimeout(timer); resolve({code, signal, timedOut: signal === 'SIGKILL', stdout, stderr, ms: Date.now() - started}); });
   });
 }
 // Suites run without this run's scratch home or any server setting in their environment.
@@ -188,12 +188,14 @@ function addItem(id, title, checks, evidence) {
 // --- 1. suites -------------------------------------------------------------------------------------------------
 async function suites(cwd, {label}) {
   const out = [];
-  const node = await run('npm', ['test'], {cwd, env: testReporterEnv(suiteEnv()), timeoutMs: 300_000});
+  const reporter = join(REPO, 'scripts', 'accept', 'suite-reporter.mjs');
+  const node = await run('npm', ['test'], {cwd, env: testReporterEnv(suiteEnv(), {reporter}), timeoutMs: 300_000});
   const summary = testSummary(node.stdout);
   const {totals} = summary;
   // Keep bounded, content-safe assertion diagnostics in acceptance.json for both this checkout and the clean clone.
-  // Never persist raw TAP/stderr; arbitrary operands may be secrets. The final report's sentinel scanner still applies.
-  const diagnostics = tapDiagnostics(node.stdout, {root: cwd, redact: sanitize});
+  // The reporter reduces structured events before writing stdout; raw TAP can contain forged framing in object keys.
+  // No raw TAP/stderr or arbitrary operands are persisted. The final report's sentinel scanner still applies.
+  const diagnostics = tapDiagnostics(node.stdout);
   const failed = diagnostics.failures.map(failure => failure.name);
   // Skips declared not applicable on this host (lib.mjs DECLARED_SKIPS), judged against the suite's own environment.
   const verdict = suiteVerdict({code: node.code, ...summary, skips: judgeSkips(skipReasons(node.stdout), {env: suiteEnv(), root: cwd})});

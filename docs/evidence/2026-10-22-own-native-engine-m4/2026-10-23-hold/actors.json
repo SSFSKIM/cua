@@ -1,0 +1,30 @@
+{
+  "source": "coordinator account delivered to the M4 executor after the owner window",
+  "window": "2026-10-23T05:41Z/2026-10-23T05:56Z",
+  "settingsUi": "coordinator through cua-remote vendor helper, at the owner's explicit request as reported by coordinator",
+  "textEditPreparationAndCleanup": "coordinator through cua-remote",
+  "consoleAnswers": "coordinator through SSH PTY/FIFO",
+  "systemAlerts": "owner",
+  "harnessUiActions": "the harness did not perform the Settings UI steps or answer system alerts",
+  "foregroundTrial": {
+    "observedPrompt": "Accessibility (universalAccessAuthWarn)",
+    "ownerAnswer": "allow, contrary to the helper's Deny/close instruction",
+    "restorationBeforeItem14": "owner removed the AX entry again",
+    "recordedObservation": "accessibility"
+  },
+  "secondPrompt": {
+    "coordinatorReportedTiming": "at the Screen Recording retry",
+    "reportedAppName": "cua Engine",
+    "ownerAnswer": "deny",
+    "promptOriginPid": null,
+    "tccService": null
+  },
+  "putBack": {
+    "source": "coordinator report, not re-probed by this executor",
+    "threeGrants": "re-added and on; Later chosen, so engine needs relaunch for Input Monitoring",
+    "engine": "stopped by protocol",
+    "textEdit": "quit with Don't Save for disposable fixture",
+    "vendorSession": "ended; no SkyComputerUseService"
+  },
+  "recordIntegrity": "onboarding.json and foreground.json are unchanged copies; their old manual-actor wording is qualified by this note"
+}

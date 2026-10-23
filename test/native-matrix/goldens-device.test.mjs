@@ -616,12 +616,14 @@ test('a failed Finder frame probe retains stage diagnostics through activation e
     runDir = dir;
     return {pid: 402, window: 7, requested: {x: 80, y: 80, width: 920, height: 520},
       readBack: {x: 820, y: 261, width: 920, height: 912}, matched: false, exitStatus: 2,
-      diagnostic: {stage: 'ax-number-match', reason: 'unknown-identity', windowCount: 2, matchCount: 0}};
+      diagnostic: {stage: 'ax-number-match', reason: 'unknown-identity', windowCount: 2, matchCount: 0},
+      excludedEntries: [{index: 0, role: 'AXApplication', subrole: 'unknown'}]};
   };
   await assert.rejects(run('setup'), /Finder frame probe/);
   const expected = {stage: 'ax-number-match', reason: 'unknown-identity', windowCount: 2, matchCount: 0};
   const saved = JSON.parse(fs.readFileSync(join(runDir, 'scenes.json'), 'utf8'));
   assert.deepEqual(saved.scenes.finder.framePin.diagnostic, expected);
+  assert.deepEqual(saved.scenes.finder.framePin.excludedEntries, [{index: 0, role: 'AXApplication', subrole: 'unknown'}]);
   const activation = await activateScene('finder', {run: runDir, io: {
     activateApp: () => {}, frontmostProcess: () => ({pid: record.pid, bundleId: 'com.apple.finder'}),
     windowOrder: () => [{ownerPid: record.pid, ownerName: 'Finder', number: record.window.number, bounds: record.window.bounds}],
@@ -631,4 +633,6 @@ test('a failed Finder frame probe retains stage diagnostics through activation e
   assert.deepEqual(activation.framePin.diagnostic, expected);
   const evidence = JSON.parse(fs.readFileSync(join(runDir, 'activation-guards.jsonl'), 'utf8').trim());
   assert.deepEqual(evidence.framePin.diagnostic, expected);
+  assert.deepEqual(activation.framePin.excludedEntries, [{index: 0, role: 'AXApplication', subrole: 'unknown'}]);
+  assert.deepEqual(evidence.framePin.excludedEntries, [{index: 0, role: 'AXApplication', subrole: 'unknown'}]);
 });

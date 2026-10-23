@@ -177,6 +177,7 @@ export async function runFreshOnboarding({home, engine, requested = false}, deps
   const require = (ok, detail, verdict = 'FAIL') => {
     if (!ok) throw Object.assign(new Error(detail), {verdict, harnessDetail: true});
   };
+  const stopAfterRecordedChecks = Symbol('stop after recorded checks');
   const failureDetail = error => error.harnessDetail ? error.message
     : 'external operation failed; raw error text omitted (see retained stage operands)';
   const answer = async () => {
@@ -228,16 +229,11 @@ export async function runFreshOnboarding({home, engine, requested = false}, deps
     }
     if (bind) ledger.begin('onboarding');
     if (observe) log('OWNER ONLY: observe and answer any system alert during the next action, including Accessibility-named alerts. Note its category and your response; the harness will ask immediately afterward. No alert is answered by the harness.');
-    const operationStage = stage, priorCells = observations.cells.length;
     let reply;
     try { reply = await session.js(code, 60_000); }
-    finally {
-      if (bind) ledger.end();
-      if (observe && observations.cells.length > priorCells) {
-        await observePrompts(observe, observations.cells.at(-1));
-        stage = operationStage;
-      }
-    }
+    finally { if (bind) ledger.end(); }
+    // Observation is prompted by the caller only after it has sampled and judged the action's operands.
+    // An operator delay must neither become evidence of recovery nor discard already-returned input.
     require(allowTimeout || !reply?.timedOut, 'cell timed out; the owner may need to answer a macOS prompt', 'BLOCKED');
     return reply;
   };
@@ -320,16 +316,19 @@ export async function runFreshOnboarding({home, engine, requested = false}, deps
     require(Number.isInteger(pending.status?.pid) && ready.status?.pid === pending.status.pid,
       'engine PID changed before our retry (perhaps Quit & Reopen); service relaunch is unproven', 'BLOCKED');
     require(ready.status.connections === 1, 'relaunch needs only this harness connection; another connection is present', 'BLOCKED');
-    const recovered = await cell(CAPTURE, {bind: true, observe: 'owner recovery prompt observation', allowTimeout: true});
+    const recovered = await cell(CAPTURE, {bind: true, observe: true, allowTimeout: true});
     const after = await retainStatus('post-relaunch');
     observations.relaunch = {before: ready.status.pid, after: after.status?.pid ?? null};
-    require(!recovered?.timedOut, 'capture retry timed out; retained status and owner observation do not prove recovery', 'BLOCKED');
-    require(payload(recovered)?.bytes > 0 && Number.isInteger(after.status?.pid) && after.status.pid !== ready.status.pid,
-      'same-connection retry did not relaunch the engine and return nonempty screenshot bytes');
-    record(stage, 'PASS', 'same MCP connection recovered; engine PID changed during retry and screenshot bytes were nonempty (not emitted)');
+    const recoveryVerdict = recovered?.timedOut ? 'BLOCKED'
+      : payload(recovered)?.bytes > 0 && Number.isInteger(after.status?.pid) && after.status.pid !== ready.status.pid ? 'PASS' : 'FAIL';
+    record(stage, recoveryVerdict, recovered?.timedOut ? 'capture retry timed out; retained status and owner observation do not prove recovery'
+      : recoveryVerdict === 'PASS' ? 'same MCP connection recovered; engine PID changed during retry and screenshot bytes were nonempty (not emitted)'
+        : 'same-connection retry did not relaunch the engine and return nonempty screenshot bytes');
+    await observePrompts('owner recovery prompt observation', observations.cells.at(-1));
+    if (recoveryVerdict !== 'PASS') throw stopAfterRecordedChecks;
     stage = 'intervention off';
-    const off = await cell(inputCell(''), {input: true, observe: 'owner input prompt observation', allowTimeout: true});
-    const input = observations.cells.at(-1).reply;
+    const off = await cell(inputCell(''), {input: true, observe: true, allowTimeout: true});
+    const inputEvidence = observations.cells.at(-1), input = inputEvidence.reply;
     // Collect all independent operands before judging any of them. A timed-out cell may still be running, so do not
     // start doctor in that case. Neither a posted interval nor an owner alert answer proves completed input.
     let doctor = null;
@@ -345,8 +344,12 @@ export async function runFreshOnboarding({home, engine, requested = false}, deps
         'doctor must read Input Monitoring false and its engine row must say intervention detection off'],
     ];
     for (const [part, verdict, detail] of verdicts) record(`intervention off: ${part}`, verdict, detail);
-    require(verdicts.every(([, verdict]) => verdict === 'PASS'), 'intervention-off operands did not all pass; see the separate completion, metadata and doctor verdicts', rollup(verdicts.map(([, verdict]) => verdict)));
-    record(stage, 'PASS', 'input completed with intervention off; doctor independently confirmed detection off');
+    const interventionVerdict = rollup(verdicts.map(([, verdict]) => verdict));
+    record(stage, interventionVerdict, interventionVerdict === 'PASS'
+      ? 'input completed with intervention off; doctor independently confirmed detection off'
+      : 'intervention-off operands did not all pass; see the separate completion, metadata and doctor verdicts');
+    await observePrompts('owner input prompt observation', inputEvidence);
+    if (interventionVerdict !== 'PASS') throw stopAfterRecordedChecks;
     await ask('manual Input Monitoring grant', `In System Settings > Privacy & Security > Input Monitoring, add ONLY cua Engine with "+", press ⌘⇧G and enter ${bundlePath}, then switch it on. Choose Later if offered a restart; the approve step will relaunch.`, 'granted');
     stage = 'engine approval';
     await close();
@@ -374,7 +377,7 @@ export async function runFreshOnboarding({home, engine, requested = false}, deps
     await ask('manual TextEdit cleanup', 'Close only the disposable fixture document containing the two Xs; choose Don’t Save only for that document. Quit TextEdit only if nothing else is open. If another/restored document or an unrelated save prompt appears, stop and report it for a per-case cleanup decision; enter anything other than closed here to record BLOCKED. Do not discard other documents to force TextEdit to exit.', 'closed');
     require(await textEditStopped(), 'TextEdit is still running; manual cleanup is not complete');
   } catch (error) {
-    record(stage, error.verdict ?? 'FAIL', failureDetail(error));
+    if (error !== stopAfterRecordedChecks) record(stage, error.verdict ?? 'FAIL', failureDetail(error));
     if (ownedWindow) log('Owner window stopped before completion. Manual recovery by the owner or a separately authorized coordinator is needed: restore missing grants and close only the disposable fixture TextEdit document without saving. Only the owner answers system alerts. If another/restored document or an unrelated save prompt appears, stop and report BLOCKED for a per-case cleanup decision; never discard it to force TextEdit to exit. No automated rollback is attempted.');
   } finally {
     if (session) {

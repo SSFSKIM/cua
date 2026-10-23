@@ -95,8 +95,14 @@ function fixture(over = {}) {
         if (over.externalRelaunch) pid = 12;
         return 'granted';
       }
-      if (owners === 4) return over.captureDeclined ? null : over.recoveryAlerts ?? 'none';
-      if (owners === 5) return over.inputAlerts ?? 'none';
+      if (owners === 4) {
+        if (over.relaunchDuringObservation) pid = 17;
+        return over.captureDeclined ? null : over.recoveryAlerts ?? 'none';
+      }
+      if (owners === 5) {
+        if (over.expireInputObservation) clock += 16 * 60_000;
+        return over.inputObservationAbsent ? null : over.inputAlerts ?? 'none';
+      }
       if (owners === 6) { phase = 'all'; return 'granted'; }
       return 'closed';
     }},
@@ -113,7 +119,7 @@ const run = async f => {
 test('owner sequence proves both model errors, same-session relaunch, then approval, with no automated revocation', async () => {
   const f = fixture(), report = await run(f);
   assert.equal(report.status, 'PASS', JSON.stringify(report));
-  assert.deepEqual(f.events, ['stop', 'owner', 'initialize', 'cell', 'owner', 'cell', 'doctor:ax', 'owner', 'cell', 'owner', 'focus', 'cell', 'owner', 'doctor:granted', 'owner', 'close', 'approve', 'initialize', 'cell', 'focus', 'cell', 'close', 'owner']);
+  assert.deepEqual(f.events, ['stop', 'owner', 'initialize', 'cell', 'owner', 'cell', 'doctor:ax', 'owner', 'cell', 'owner', 'focus', 'cell', 'doctor:granted', 'owner', 'owner', 'close', 'approve', 'initialize', 'cell', 'focus', 'cell', 'close', 'owner']);
   assert.equal(report.observations.recoveryPrompts[0].source, 'owner-observed');
   assert.deepEqual(report.observations.recoveryPrompts[0].prompts, []);
   assert.match(f.logs.join('\n'), /owner.*only|OWNER/);
@@ -372,5 +378,69 @@ test('a recovery timeout retains post-relaunch capabilities and the owner observ
   assert.equal(report.observations.statuses.find(s => s.stage === 'post-relaunch')?.pid, 11);
   assert.deepEqual(report.observations.recoveryPrompts[0].prompts, [{kind: 'accessibility', response: 'deny'}]);
   assert.ok(!f.events.includes('focus'));
+  assert.ok(!f.events.includes('approve'));
+});
+
+test('a PID change while the owner answers cannot substitute for the service recovery relaunch', async () => {
+  const f = fixture({noRelaunch: true, relaunchDuringObservation: true}), report = await run(f);
+  assert.equal(report.status, 'FAIL');
+  assert.deepEqual(report.observations.relaunch, {before: 10, after: 10});
+  assert.equal(report.observations.statuses.find(s => s.stage === 'post-relaunch').pid, 10);
+  assert.equal(report.checks.find(c => c.name === 'service relaunch recovery').status, 'FAIL');
+  assert.equal(report.checks.find(c => c.name === 'owner recovery prompt observation').status, 'PASS');
+  assert.ok(!f.events.includes('focus'));
+  assert.ok(!f.events.includes('approve'));
+});
+
+for (const [name, options] of [
+  ['absent', {inputObservationAbsent: true}],
+  ['invalid', {inputAlerts: 'not a valid observation'}],
+  ['expired', {expireInputObservation: true}],
+]) test(`an ${name} owner observation cannot discard delivered-but-incomplete input and doctor verdicts`, async () => {
+  const f = fixture({deliveredButIncomplete: true, ...options}), report = await run(f);
+  assert.equal(report.status, 'FAIL');
+  assert.deepEqual(['input completion', 'metadata', 'doctor'].map(part =>
+    report.checks.find(c => c.name === `intervention off: ${part}`)?.status), ['FAIL', 'PASS', 'PASS']);
+  assert.equal(report.checks.find(c => c.name === 'owner input prompt observation').status, 'BLOCKED');
+  assert.equal(report.observations.cells.at(-1).reply.completion, 'error');
+  assert.equal(report.observations.doctors.at(-1).stage, 'intervention off');
+  assert.equal(report.observations.doctors.at(-1).received, true);
+  assert.deepEqual(f.events.slice(-3), ['doctor:granted', 'owner', 'close']);
+  assert.equal(f.events.filter(e => e === 'owner').length, 5, 'no Input Monitoring grant question');
+  assert.equal(f.events.filter(e => e === 'cell').length, 4, 'no further input');
+  assert.ok(!f.events.includes('approve'));
+});
+
+test('successful input operands still pass independently when the owner observation is absent', async () => {
+  const f = fixture({inputObservationAbsent: true}), report = await run(f);
+  assert.equal(report.status, 'BLOCKED');
+  for (const part of ['input completion', 'metadata', 'doctor']) {
+    assert.equal(report.checks.find(c => c.name === `intervention off: ${part}`)?.status, 'PASS');
+  }
+  assert.equal(report.checks.find(c => c.name === 'owner input prompt observation').status, 'BLOCKED');
+  assert.ok(!f.events.includes('approve'));
+});
+
+test('an input timeout plus missing owner observation never starts doctor or another grant stage', async () => {
+  const f = fixture({inputObservationAbsent: true}), connect = f.deps.connect;
+  f.deps.connect = () => {
+    const session = connect(), js = session.js.bind(session);
+    session.js = async (...args) => {
+      const reply = await js(...args);
+      return args[0].includes("app.typeText('X')") ? {timedOut: true} : reply;
+    };
+    return session;
+  };
+  const report = await run(f);
+  assert.equal(report.status, 'BLOCKED');
+  assert.equal(report.observations.cells.at(-1).reply.completion, 'timeout');
+  assert.ok(!f.events.includes('doctor:granted'));
+  for (const part of ['input completion', 'metadata', 'doctor']) {
+    const check = report.checks.find(c => c.name === `intervention off: ${part}`);
+    assert.equal(check?.status, 'BLOCKED');
+    assert.doesNotMatch(check.detail, /not reached/, 'the timeout was judged, not discarded by prompt failure');
+  }
+  assert.equal(report.checks.find(c => c.name === 'owner input prompt observation').status, 'BLOCKED');
+  assert.equal(f.events.filter(e => e === 'owner').length, 5);
   assert.ok(!f.events.includes('approve'));
 });

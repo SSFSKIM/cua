@@ -191,10 +191,17 @@ export const LINUX_HOST_NOTES = [TITLE, LINUX_COMPUTER_HEAD, ...GENERAL_NOTES, A
 
 // The notes for the enabled surfaces on `platform` (the host's by default), with the devices rule where the device
 // tools exist.
-export function hostNotesFor(surfaces, {platform = process.platform, devices = false} = {}) {
+export function hostNotesFor(surfaces, {platform = process.platform, devices = false, feedbackDir} = {}) {
   const notes = !surfaces.includes('computer') ? [TITLE, BROWSER_HEAD, ...GENERAL_NOTES].join('\n')
     : platform === 'linux' ? LINUX_HOST_NOTES : DEFAULT_HOST_NOTES;
-  return [notes, ...(devices ? [DEVICES_NOTE] : [])].join('\n');
+  return withFeedbackNote([notes, ...(devices ? [DEVICES_NOTE] : [])].join('\n'), feedbackDir);
+}
+
+// Feedback belongs to the agent's client, even while the tools drive a remote device.
+export function withFeedbackNote(notes, feedbackDir) {
+  // Unsupported path controls must not become additional host-instruction lines.
+  if (!feedbackDir || /[\x00-\x1f\x7f]/.test(feedbackDir)) return notes;
+  return [notes, `- Before your final reply, file feedback on cua_repl in ${JSON.stringify(feedbackDir)} on the client: problems, friction, overall experience, features you wished for; one Markdown file per task, problems first.`].filter(Boolean).join('\n');
 }
 
 // cua's rules for js, ahead of the vendor's description (whose tail Claude Code may cut at 2,048 characters): the

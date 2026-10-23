@@ -60,7 +60,7 @@ import {projectRoot} from '../secrets/project.mjs';
 import {connectionTarget} from './target.mjs';
 import {deviceDirectory} from '../remote/directory.mjs';
 import {
-  DEVICE_TOOLS, LOCAL_TOOLS, WORK_TOOLS, cuaNodeFrom, replHostFrom, correctImages, hostNotesFor, modelTools, persistAccepted, profileView, redactTokens, statusResult, surfacesFrom, withHostNotes,
+  DEVICE_TOOLS, LOCAL_TOOLS, WORK_TOOLS, cuaNodeFrom, replHostFrom, correctImages, hostNotesFor, modelTools, persistAccepted, profileView, redactTokens, statusResult, surfacesFrom, withFeedbackNote, withHostNotes,
 } from './surface.mjs';
 import {fail} from '../runtime/errors.mjs';
 import {describeSweep, sweepRun} from '../runtime/run-dir.mjs';
@@ -95,7 +95,8 @@ const realTimer = (fn, ms) => {
 
 export function createServer({
   input, output, upstream, sessionId = randomUUID(), secrets = NOT_CONFIGURED, surfaces = ['computer'], profiles = NO_PROFILES,
-  platform = process.platform, devices = null, persist = 'session', hostNotes = hostNotesFor(surfaces, {platform, devices: devices !== null}),
+  platform = process.platform, devices = null, persist = 'session', feedbackDir,
+  hostNotes = hostNotesFor(surfaces, {platform, devices: devices !== null, feedbackDir}),
   model, sandboxState = null, completionDeadlineMs = 5000, teardownBudgetMs = 5000, newId = randomUUID, inAppBrowser = false,
   diagnostics = line => process.stderr.write(`cua serve: ${line}\n`), onWithdrawn = () => {}, runtimeIdleMs = 0, idleTimer = realTimer, nativeEngine = null,
 }) {
@@ -161,7 +162,7 @@ export function createServer({
 
   // The connection's target (src/mcp/target.mjs), with the device tools, when a device directory is given (stdio).
   let clientInitialize = null;
-  const target = devices && connectionTarget({devices, write, diagnostics, onWithdrawn,
+  const target = devices && connectionTarget({devices, write, diagnostics, onWithdrawn, feedbackDir,
     initializeParams: () => clientInitialize,
     localTaskOpen: () => lifecycle.state !== 'idle' || [...waiting.values()].some(({name}) => WORK_TOOLS.has(name))});
 
@@ -481,7 +482,8 @@ export function settingsFrom(env, {platform = process.platform, devices = false}
   if (persist === 'always') fail('invalid_setting', PERSIST_ALWAYS_REFUSAL);
   if (!PERSIST_MODES.includes(persist)) fail('invalid_setting', `CUA_SHIM_PERSIST must be one of ${PERSIST_MODES.join(', ')}`);
   const surfaces = surfacesFrom(env.CUA_SHIM_SURFACES);
-  const hostNotes = env.CUA_SHIM_HOST_NOTES === 'none' ? '' : (env.CUA_SHIM_HOST_NOTES ?? hostNotesFor(surfaces, {platform, devices}));
+  const feedbackDir = env.CUA_FEEDBACK_DIR;
+  const hostNotes = withFeedbackNote(env.CUA_SHIM_HOST_NOTES === 'none' ? '' : (env.CUA_SHIM_HOST_NOTES ?? hostNotesFor(surfaces, {platform, devices})), feedbackDir);
   const secrets = env.CUA_SHIM_SECRETS ?? 'on';
   if (!['on', 'off'].includes(secrets)) fail('invalid_setting', 'CUA_SHIM_SECRETS must be on or off');
   // CUA_REPL_HOST is checked here whatever the surfaces; which host a connection runs, or whether it refuses one, is
@@ -489,7 +491,7 @@ export function settingsFrom(env, {platform = process.platform, devices = false}
   replHostFrom(env);
   // CUA_NODE likewise: only its form here; whether it names a Node 24 is the connection's resolution (launch.mjs ownHostNode).
   cuaNodeFrom(env);
-  return {persist, hostNotes, model: env.CUA_SHIM_MODEL, secrets: secrets === 'on', surfaces, sandbox: sandboxModeFrom(env), platform,
+  return {persist, hostNotes, feedbackDir, model: env.CUA_SHIM_MODEL, secrets: secrets === 'on', surfaces, sandbox: sandboxModeFrom(env), platform,
     runtimeIdleMs: runtimeIdleFrom(env)};
 }
 

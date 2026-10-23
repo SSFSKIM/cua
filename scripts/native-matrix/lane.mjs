@@ -161,6 +161,7 @@ export function dryOps({log, engine, approvedEngine = '/Users/owner/Library/Appl
         case 'read': return {reading: reading(), watcher: args.includes('--watcher'), at, ...(args.includes('--focus') ? {focus: {appOwned: true, appPid: front?.pid ?? null, named: true, valueHash: focusHash}} : {}),
           ...(args.includes('--electron-mode') ? {electronMode: {enabled: true, at: at[0]}} : {})};
         case 'electron-mode': return {records: [{at: 0, enabled: false, source: 'start'}]};
+        case 'electron-focus': return {answer: args.includes('--status-only') ? {connections: 1} : {source: 'dry', fieldFound: true, axFocused: false, focusedIsField: false, actions: []}, at};
         case 'electron-counters': return {answer: {seq: 0, at: 0, counts: {appDidBecomeActive: 0, appDidResignActive: 0}}, at};
         case 'probe': {
           if (args[1] !== 'finish') {

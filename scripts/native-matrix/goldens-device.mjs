@@ -60,7 +60,7 @@ import {
 } from '../repl-parity/scenes-mac-finder.mjs';
 import {actionIndex} from '../repl-parity/scenes-mac-text.mjs';
 import {frontWindow, appWindows} from '../repl-parity/scenes-mac-device.mjs';
-import {finderStepEvidence} from './finder-step-evidence.mjs';
+import {finderStepEvidence, frameProbeTrace} from './finder-step-evidence.mjs';
 import {frontmostFromProbe, sendIfFrontmost} from '../accept/key-guard.mjs';
 
 const SCRIPT = fileURLToPath(import.meta.url);
@@ -266,7 +266,7 @@ export async function runSteps({id, phase, run, record, client, io, screenshots 
           '--frame', ['x', 'y', 'width', 'height'].map(k => requested[k]).join(',')], run);
         const framePin = {pid: out?.pid ?? null, window: out?.window ?? null, requested,
           readBack: out?.readBack ?? null, matched: out?.matched === true, exitStatus: out?.exitStatus ?? null,
-          diagnostic: out?.diagnostic ?? null, excludedEntries: out?.excludedEntries ?? []};
+          diagnostic: out?.diagnostic ?? null, excludedEntries: out?.excludedEntries ?? [], trace: frameProbeTrace(out?.trace)};
         // Preserve the probe's safe stage/reason/count diagnostics and read-back before refusing; its stdout scratch
         // has already been removed by awaitProbe. Later bind/teardown snapshots carry this owned-scene evidence.
         const state = readState(run);

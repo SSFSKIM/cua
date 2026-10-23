@@ -12,6 +12,7 @@ import {SkyComputerUseError} from '../../src/services/engine/protocol.mjs';
 import {DESELECT_ALL_KEY, FINDER_CHROME, readSavedPreferences, saveOriginalPreferences} from '../../scripts/repl-parity/scenes-mac-finder.mjs';
 import {SCENES, activateScene, setupSteps, teardownSteps} from '../../scripts/repl-parity/scenes-mac.mjs';
 import {EventEmitter} from 'node:events';
+import {frameProbeTrace} from '../../scripts/native-matrix/finder-step-evidence.mjs';
 import {RESET_MAY_CLEAR, SCREENSHOT_DIR, SETTLE_BOUND_MS, SETTLE_INTERVAL_MS, act, engineCheck, engineNodeRepl, goldenForm, main, observe, runSteps, settledState, stateDigest, verify} from '../../scripts/native-matrix/goldens-device.mjs';
 
 const GOLDENS = new URL('../native-goldens/', import.meta.url);
@@ -733,4 +734,58 @@ test('a refused Finder pin journals its result and completed prefix before clean
   assert.equal(rows.at(-1).type, 'failure');
   fs.rmSync(join(file, '..', 'scenes.json'));
   assert.equal(stepEvidence(file).filter(r => r.type === 'step').length, 7);
+});
+
+test('size-convergence exit 6 retains bounded probe trace and stops subsequent setup steps', async () => {
+  const finder = finderEngine({state: {}, drawn: {sidebar: false, statusBar: false, pathBar: false}});
+  const {run, io, record, file} = finderRun(finder);
+  record.setup.push({pressKey: 'super+w', guard: {pid: 402, window: 7}});
+  const trace = {samples: [
+    {stage: 'initial', atMs: 0, frame: {x: 820, y: 261, width: 920, height: 968}},
+    {stage: 'after-size', atMs: 50, frame: {x: 820, y: 261, width: 920, height: 968}},
+  ], setters: [{attribute: 'size', startMs: 1, endMs: 2, axError: 0}]};
+  io.probe = async () => ({pid: 402, window: 7, requested: {x: 80, y: 80, width: 920, height: 520},
+    readBack: trace.samples[1].frame, matched: false, exitStatus: 6,
+    diagnostic: {stage: 'size-convergence', reason: 'size-not-converged'}, excludedEntries: [], trace});
+  await assert.rejects(run('setup'), /Finder frame probe/);
+  assert.equal(finder.pressed.includes('super+w'), false);
+  const saved = JSON.parse(fs.readFileSync(join(file, '..', 'scenes.json'), 'utf8')).scenes.finder.framePin;
+  assert.deepEqual(saved.trace, trace);
+  assert.equal(saved.exitStatus, 6);
+  assert.deepEqual(stepEvidence(file).find(r => r.type === 'pin').framePin.trace, trace);
+  assert.equal(stepEvidence(file).at(-1).type, 'failure');
+});
+
+test('frame trace keeps only allowed fields and caps sample/setter arrays', async () => {
+  const finder = finderEngine({state: {}, drawn: {sidebar: false, statusBar: false, pathBar: false}});
+  const {run, io, file} = finderRun(finder);
+  const frame = {x: 80, y: 80, width: 920, height: 520};
+  io.probe = async () => ({pid: 402, window: 7, requested: frame, readBack: frame, matched: true, exitStatus: 0,
+    diagnostic: null, excludedEntries: [], trace: {private: 'unowned',
+      samples: Array.from({length: 30}, (_, i) => ({stage: ['initial', 'after-size', 'final'][i % 3], atMs: i, frame: {...frame, title: 'unowned'}, title: 'unowned'})),
+      setters: Array.from({length: 4}, (_, i) => ({attribute: i === 0 ? 'size' : 'position', startMs: i, endMs: i + 1, axError: 0, value: 'unowned'})),
+    }});
+  const result = await run('setup');
+  const trace = result.steps.find(s => s.framePin).framePin.trace;
+  assert.equal(trace.samples.length, 25);
+  assert.equal(trace.setters.length, 2);
+  assert.deepEqual(trace.samples[0], {stage: 'initial', atMs: 0, frame});
+  assert.deepEqual(trace.samples[24], {stage: 'initial', atMs: 24, frame});
+  assert.deepEqual(trace.setters, [{attribute: 'size', startMs: 0, endMs: 1, axError: 0}, {attribute: 'position', startMs: 1, endMs: 2, axError: 0}]);
+  assert.doesNotMatch(JSON.stringify(trace), /unowned|title|private|value/);
+  assert.deepEqual(stepEvidence(file).find(r => r.type === 'pin').framePin.trace, trace);
+});
+
+
+test('frame trace omits unknown enum or nonnumeric payloads and preserves absent CG frames', () => {
+  assert.equal(frameProbeTrace(undefined), null);
+  assert.deepEqual(frameProbeTrace({samples: [
+    {stage: 'private', atMs: 0, frame: null},
+    {stage: 'initial', atMs: {text: 'private'}, frame: null},
+    {stage: 'after-size', atMs: 10, frame: {x: 1, y: 2, width: 'private', height: 4}},
+    {stage: 'final', atMs: 20, frame: null},
+  ], setters: [
+    {attribute: 'private', startMs: 0, endMs: 1, axError: 0},
+    {attribute: 'size', startMs: 0, endMs: 1, axError: {text: 'private'}},
+  ]}), {samples: [{stage: 'final', atMs: 20, frame: null}], setters: []});
 });

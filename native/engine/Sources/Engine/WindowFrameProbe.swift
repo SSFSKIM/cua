@@ -27,7 +27,10 @@ import Foundation
 // matched requires BOTH writes to succeed and all four CG components to differ by <1 point.
 // On failure readBack is the last exact CG reading (or null), never an AX-derived/optimistic frame.
 //
-// Result (every parsed request): {pid,window,requested,readBack,matched,exitStatus}.
+// Result (every parsed request): {pid,window,requested,readBack,matched,exitStatus,diagnostic}.
+// diagnostic is null except for identity refusals (status 2): {stage,reason,windowCount?,matchCount?}.
+// Its strings are fixed labels, counts are metadata, and matchCount is present only after a complete
+// identity scan. No observed AX strings, other window identities, or raw OS dictionaries are emitted.
 // Status: 0 matched; 2 identity/target refused; 3 existing AX trust absent; 4 unsettable/write failure;
 // 5 CG readback did not converge. Malformed arguments follow Probe's existing error+exitStatus 64 form.
 // No AXIsProcessTrustedWithOptions, screen capture, AppleEvents, permission prompt, titles or values.
@@ -95,14 +98,49 @@ struct WindowFrameSource<Element> {
   var settle: () -> Void
 }
 
+struct WindowFrameDiagnostic {
+  enum Stage: String {
+    case initialIdentity = "initial-identity"
+    case windowList = "ax-window-list"
+    case numberMatch = "ax-number-match"
+    case beforeSize = "identity-recheck-before-size"
+    case beforePosition = "identity-recheck-before-position"
+  }
+  enum Reason: String {
+    case disallowedPID = "disallowed-pid"
+    case cgWindowUnavailable = "cg-window-unavailable"
+    case unavailable, empty
+    case limitExceeded = "limit-exceeded"
+    case unknownIdentity = "unknown-identity"
+    case wrongOwner = "wrong-owner"
+    case invalidNumber = "invalid-number"
+    case noMatch = "no-match"
+    case ambiguousMatch = "ambiguous-match"
+    case axIdentityChanged = "ax-identity-changed"
+  }
+  let stage: Stage
+  let reason: Reason
+  let windowCount: Int?
+  let matchCount: Int?
+
+  var wire: [String: Any] {
+    var result: [String: Any] = ["stage": stage.rawValue, "reason": reason.rawValue]
+    if let windowCount { result["windowCount"] = windowCount }
+    if let matchCount { result["matchCount"] = matchCount }
+    return result
+  }
+}
+
 struct WindowFrameResult {
   let readBack: CGRect?
   let matched: Bool
   let exitStatus: Int32
+  var diagnostic: WindowFrameDiagnostic? = nil
 
   func wire(for request: WindowFrameRequest) -> [String: Any] {
     ["pid": Int(request.pid), "window": request.window, "requested": rectWire(request.frame),
-     "readBack": rectWire(readBack), "matched": matched, "exitStatus": Int(exitStatus)]
+     "readBack": rectWire(readBack), "matched": matched, "exitStatus": Int(exitStatus),
+     "diagnostic": diagnostic.map { $0.wire as Any } ?? NSNull()]
   }
 }
 
@@ -110,32 +148,60 @@ func runWindowFrame<Element>(_ request: WindowFrameRequest, source: WindowFrameS
   func fail(_ status: Int32, readBack: CGRect? = nil) -> WindowFrameResult {
     WindowFrameResult(readBack: readBack, matched: false, exitStatus: status)
   }
+  func refuse(_ stage: WindowFrameDiagnostic.Stage, _ reason: WindowFrameDiagnostic.Reason,
+              readBack: CGRect? = nil, windowCount: Int? = nil, matchCount: Int? = nil) -> WindowFrameResult {
+    WindowFrameResult(readBack: readBack, matched: false, exitStatus: 2,
+                      diagnostic: WindowFrameDiagnostic(stage: stage, reason: reason,
+                                                        windowCount: windowCount, matchCount: matchCount))
+  }
   guard source.trusted() else { return fail(3) }
-  guard source.allowedPID(request.pid) else { return fail(2) }
+  guard source.allowedPID(request.pid) else { return refuse(.initialIdentity, .disallowedPID) }
   // This CG read both proves the owner/number pair and establishes the WindowServer connection
   // BEFORE AX reads, important for probes launched via open (the FocusProbe connection pattern).
-  guard let initial = source.cgFrame(request.pid, request.window) else { return fail(2) }
-  guard let windows = source.windows(request.pid), !windows.isEmpty, windows.count <= 128 else { return fail(2, readBack: initial) }
+  guard let initial = source.cgFrame(request.pid, request.window) else { return refuse(.initialIdentity, .cgWindowUnavailable) }
+  guard let windows = source.windows(request.pid) else { return refuse(.windowList, .unavailable, readBack: initial) }
+  guard !windows.isEmpty else { return refuse(.windowList, .empty, readBack: initial, windowCount: 0) }
+  guard windows.count <= 128 else { return refuse(.windowList, .limitExceeded, readBack: initial, windowCount: windows.count) }
   let wanted = WindowFrameIdentity(pid: request.pid, window: request.window)
   var candidates: [Element] = []
   for element in windows {
-    guard let identity = source.identity(element), identity.pid == request.pid, identity.window != 0 else { return fail(2, readBack: initial) }
+    // Do not skip an unknown unrelated window: it could hide a second match. Report the failed
+    // proof, not a presumed cause (nil also covers a failed role/PID/SPI read, not just absent SPI).
+    guard let identity = source.identity(element) else {
+      return refuse(.numberMatch, .unknownIdentity, readBack: initial, windowCount: windows.count)
+    }
+    guard identity.pid == request.pid else {
+      return refuse(.numberMatch, .wrongOwner, readBack: initial, windowCount: windows.count)
+    }
+    guard identity.window != 0 else {
+      return refuse(.numberMatch, .invalidNumber, readBack: initial, windowCount: windows.count)
+    }
     if identity == wanted { candidates.append(element) }
   }
-  guard candidates.count == 1 else { return fail(2, readBack: initial) }
+  guard candidates.count == 1 else {
+    return refuse(.numberMatch, candidates.isEmpty ? .noMatch : .ambiguousMatch,
+                  readBack: initial, windowCount: windows.count, matchCount: candidates.count)
+  }
   let element = candidates[0]
   guard source.canSetFrame(element) else { return fail(4, readBack: initial) }
 
-  // Keep the same AX handle. Never reselect a different window after a race or a failed write.
-  func stillExact() -> Bool {
-    source.allowedPID(request.pid) && source.identity(element) == wanted
-      && source.cgFrame(request.pid, request.window) != nil
+  // Keep the same AX handle and short-circuit read order. Diagnostics introduce no extra AX/CG
+  // calls, retries or reselection, including after a size write that may have already moved it.
+  func recheckFailure() -> WindowFrameDiagnostic.Reason? {
+    guard source.allowedPID(request.pid) else { return .disallowedPID }
+    guard source.identity(element) == wanted else { return .axIdentityChanged }
+    guard source.cgFrame(request.pid, request.window) != nil else { return .cgWindowUnavailable }
+    return nil
   }
-  guard stillExact() else { return fail(2, readBack: source.cgFrame(request.pid, request.window)) }
+  if let reason = recheckFailure() {
+    return refuse(.beforeSize, reason, readBack: source.cgFrame(request.pid, request.window))
+  }
   guard source.setSize(element, request.frame.size) == .success else {
     return fail(4, readBack: source.cgFrame(request.pid, request.window))
   }
-  guard stillExact() else { return fail(2, readBack: source.cgFrame(request.pid, request.window)) }
+  if let reason = recheckFailure() {
+    return refuse(.beforePosition, reason, readBack: source.cgFrame(request.pid, request.window))
+  }
   guard source.setPosition(element, request.frame.origin) == .success else {
     return fail(4, readBack: source.cgFrame(request.pid, request.window))
   }
@@ -176,7 +242,9 @@ private func liveWindowFrameSource() -> WindowFrameSource<AXUIElement> {
       guard read.error == .success, let value = read.value, CFGetTypeID(value) == CFArrayGetTypeID() else { return nil }
       let array = value as! CFArray
       let count = CFArrayGetCount(array)
-      guard count > 0, count <= 128 else { return nil }
+      // nil means no usable bounded list (AX error, malformed value or excessive count).
+      // Preserve a valid empty array so it is distinguishable from an unavailable list.
+      guard count <= 128 else { return nil }
       let windows = elementList(value)
       guard windows.count == count else { return nil } // malformed array must not hide an ambiguous element
       return windows.map(prepare)

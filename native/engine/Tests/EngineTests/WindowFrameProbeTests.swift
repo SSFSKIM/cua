@@ -187,6 +187,7 @@ final class WindowFrameProbeTests: XCTestCase {
   func testNumberMatchingReportsUnknownWrongOwnerZeroMissingAndDuplicateWithoutFallback() {
     let cases: [([Int: WindowFrameIdentity], String, Int?)] = [
       ([2: .init(pid: 612, window: 92)], "unknown-identity", nil),
+      ([1: .init(pid: 612, window: 92)], "unknown-identity", nil),
       ([1: .init(pid: 999, window: 91), 2: .init(pid: 612, window: 92)], "wrong-owner", nil),
       ([1: .init(pid: 612, window: 0), 2: .init(pid: 612, window: 92)], "invalid-number", nil),
       ([1: .init(pid: 612, window: 91), 2: .init(pid: 612, window: 93)], "no-match", 0),

@@ -220,6 +220,12 @@ function fakeDevice({running = [], windows = {}, finderPid = 736, finderHidden =
     writeFinderPreference: (key, value) => { writes.push([key, value]); if (!stuck.includes(key)) preferences[key] = value; },
     frontmostProcess: () => (io.front ? {pid: io.front.pid, bundleId: io.front.bundleId} : null),
     frontWindow: () => ({at: clock, frontmost: io.front ? {pid: io.front.pid, bundleId: io.front.bundleId} : null, topWindow: io.front?.topWindow ?? null}),
+    windowOrder: () => {
+      const top = io.front?.topWindow;
+      if (!top) return [];
+      const own = (windows[finderPid] ?? []).filter(w => w.onScreen !== false).map(w => ({...w, ownerPid: finderPid}));
+      return top.ownerPid === finderPid ? own : [top, ...own];
+    },
     activateApp: app => {
       calls.push(['activate', app]);
       if (!activates) return;
@@ -746,6 +752,7 @@ test('setup: Finder in front, list view, nothing selected, the owner\'s visible 
       {chrome: 'sidebar', shown: false, guard},
       {chrome: 'statusBar', shown: false, guard},
       {chrome: 'pathBar', shown: false, guard},
+      {finderFrame: {x: 80, y: 80, width: 920, height: 520}},
     ]);
   }
   for (const id of ['textedit', 'chrome', 'electron']) assert.deepEqual(setupSteps(id, {pid: 5, bundleId: SCENES[id].bundleId}), [], `${id} comes up in its fixed state`);
@@ -879,7 +886,8 @@ test('activate brings the run\'s process to the front and checks it by pid; Find
   const finder = await upScene('finder', {run, io});
   const front = await activateScene('finder', {run, io});
   assert.equal(front.ok, true);
-  assert.deepEqual(front.topWindow, {ownerPid: 736, number: finder.window.number});
+  assert.equal(front.topWindow.ownerPid, 736);
+  assert.equal(front.topWindow.number, finder.window.number);
   // Another of Finder's windows on top: the run's Finder is not in front.
   io.windows[736].unshift({number: 5, bounds: {x: 0, y: 0, width: 800, height: 600}, onScreen: true});
   const other = await activateScene('finder', {run, io});
@@ -927,7 +935,7 @@ test('activate says why the run\'s Finder window is not on top, and raises it on
   // The run's window off screen (minimized, another Space) or gone: opening the folder would open a new window, so no raise.
   io.windows[736] = io.windows[736].filter(w => w.number !== finder.window.number);
   const gone = await activateScene('finder', {run, io});
-  assert.match(gone.reason, /not among Finder's on-screen windows/);
+  assert.match(gone.reason, /not in the on-screen layer-0 snapshot/);
   assert.equal(gone.runWindow, null);
   assert.equal(io.calls.filter(c => c[0] === 'show').length, 1, 'no raise without the run\'s window on screen');
 }));
@@ -1140,3 +1148,50 @@ test('device activation addresses the process: the activator script with the pid
   assert.doesNotMatch(source, /openApplication|launchApplication|\/usr\/bin\/open|NSWorkspace\.shared\.open/);
   assert.doesNotMatch(source, /"reason": "[^"]*\\\(pid\)/, 'no pid in a reason, which reaches meta.json');
 });
+
+test('Finder activation judges one ordered snapshot, not contradictory top and per-app reads', async () => withRun(async run => {
+  const io = fakeDevice();
+  const finder = await upScene('finder', {run, io});
+  // Reproduce the false attribution: legacy top read missing while the sole layer-0 window is the run's.
+  io.frontWindow = () => ({topWindow: null});
+  io.windowOrder = () => [{ownerPid: finder.pid, number: finder.window.number, bounds: finder.window.bounds, onScreen: true}];
+  assert.equal((await activateScene('finder', {run, io})).ok, true);
+}));
+
+test('Finder missing window evidence never invents a foreign owner', async () => withRun(async run => {
+  const io = fakeDevice();
+  await upScene('finder', {run, io});
+  io.frontWindow = () => ({topWindow: null});
+  io.windowOrder = () => [];
+  const out = await activateScene('finder', {run, io});
+  assert.equal(out.ok, false);
+  assert.doesNotMatch(out.reason, /another process/);
+}));
+
+for (const [ownerName, ownerBundleId, sensitive] of [['Terminal', 'com.apple.Terminal', false], ['Claude', 'com.anthropic.claudefordesktop', true], ['Google Chrome', 'com.google.Chrome', true]]) {
+  test(`Finder refuses real ${ownerName} obstruction and reports only permitted owner metadata`, async () => withRun(async run => {
+    const io = fakeDevice();
+    const finder = await upScene('finder', {run, io});
+    const foreign = {ownerPid: 424242, number: 778899, ownerName, ownerBundleId, bounds: {x: 1, y: 2, width: 100, height: 100}, onScreen: true};
+    io.windowOrder = () => [foreign, {ownerPid: finder.pid, number: finder.window.number, bounds: finder.window.bounds, onScreen: true}];
+    const out = await activateScene('finder', {run, io});
+    assert.equal(out.ok, false);
+    assert.match(out.reason, new RegExp(ownerName));
+    assert.equal(JSON.stringify(out).includes('424242'), !sensitive);
+    assert.equal(JSON.stringify(out).includes('778899'), !sensitive);
+    assert.deepEqual(out.windowOrder.windows[0], sensitive ? {ownerName} : {ownerPid: 424242, ownerName, layer: 0, number: 778899, bounds: foreign.bounds});
+    assert.equal(out.windowOrder.runWindowFound, true);
+  }));
+}
+
+
+test('Finder bind and refusal evidence retain the ordered prefix through the run window only', async () => withRun(async run => {
+  const io = fakeDevice();
+  const finder = await upScene('finder', {run, io});
+  const own = {ownerPid: finder.pid, ownerName: 'Finder', layer: 0, number: finder.window.number, bounds: finder.window.bounds, onScreen: true};
+  const behind = {ownerPid: 999, ownerName: 'other', layer: 0, number: 88, bounds: {x: 0, y: 0, width: 2, height: 2}};
+  io.windowOrder = () => [own, behind];
+  const out = await activateScene('finder', {run, io});
+  assert.equal(out.ok, true);
+  assert.deepEqual(out.windowOrder, {runWindowFound: true, windows: [{ownerPid: finder.pid, ownerName: 'Finder', layer: 0, number: finder.window.number, bounds: finder.window.bounds}]});
+}));

@@ -380,7 +380,7 @@ test('steps: activations and keys in order, each key through the engine only whi
 test('steps: a key whose guard is not in front stops the steps with nothing more sent', async () => {
   const record = recordOf('finder', 400, {setup: [{pressKey: 'super+2', guard: {pid: 400, window: 7}}, {pressKey: 'alt+super+a', guard: {pid: 400, window: 7}}]});
   const client = fakeClient([]);
-  const io = {activate: async () => ({ok: true}), frontmost: () => ({pid: 401, topWindow: null}), sleep: async () => {}};
+  const io = {probe: async () => ({pid, window: 7, requested: {x: 80, y: 80, width: 920, height: 520}, readBack: {x: 80, y: 80, width: 920, height: 520}, matched: true, exitStatus: 0}), activate: async () => ({ok: true}), frontmost: () => ({pid: 401, topWindow: null}), sleep: async () => {}};
   await assert.rejects(runSteps({id: 'finder', phase: 'setup', record, client, io}), /super\+2 not sent/);
   assert.deepEqual(client.calls, []);
 });
@@ -388,7 +388,7 @@ test('steps: a key whose guard is not in front stops the steps with nothing more
 test('steps: Finder\'s reset deselects all in the run\'s window; the teardown steps are the scene\'s own', async () => {
   const record = recordOf('finder', 400, {bundleId: 'com.apple.finder'});
   const client = fakeClient([{meta: {}}, {meta: {}}]);
-  const io = {activate: async () => ({ok: true}), frontmost: () => ({pid: 400, topWindow: {ownerPid: 400, number: 7}}), sleep: async () => {},
+  const io = {probe: async () => ({pid, window: 7, requested: {x: 80, y: 80, width: 920, height: 520}, readBack: {x: 80, y: 80, width: 920, height: 520}, matched: true, exitStatus: 0}), activate: async () => ({ok: true}), frontmost: () => ({pid: 400, topWindow: {ownerPid: 400, number: 7}}), sleep: async () => {},
     teardown: () => [{activate: 'finder'}, {pressKey: 'super+w', closes: 'window', guard: {pid: 400, window: 7}}]};
   await runSteps({id: 'finder', phase: 'reset', record, client, io});
   assert.deepEqual(client.calls.map(c => c.args.key), [DESELECT_ALL_KEY]);
@@ -445,7 +445,7 @@ function finderRun(finder, {pid = 402} = {}) {
   const record = recordOf('finder', pid, {bundleId: 'com.apple.finder', folder: FINDER_FOLDER, window: {number: 7, bounds: {x: 0, y: 0, width: 920, height: 436}}});
   record.setup = setupSteps('finder', record);
   const clock = fakeClock();
-  const io = {activate: async () => ({ok: true}), frontmost: () => ({pid, topWindow: {ownerPid: pid, number: 7}}), ...clock, savedPreferencesFile: file,
+  const io = {probe: async () => ({pid, window: 7, requested: {x: 80, y: 80, width: 920, height: 520}, readBack: {x: 80, y: 80, width: 920, height: 520}, matched: true, exitStatus: 0}), activate: async () => ({ok: true}), frontmost: () => ({pid, topWindow: {ownerPid: pid, number: 7}}), ...clock, savedPreferencesFile: file,
     teardown: () => teardownSteps('finder', record, {visible: readSavedPreferences(file)?.visible ?? null})};
   saveOriginalPreferences(file, {ShowSidebar: finder.keys.ShowSidebar ?? null, ShowStatusBar: finder.keys.ShowStatusBar ?? null, ShowPathbar: finder.keys.ShowPathbar ?? null});
   return {record, io, file, run: (phase, client = finder.client) => runSteps({id: 'finder', phase, run: dir, record, client, io, screenshots: join(dir, SCREENSHOT_DIR)})};
@@ -561,4 +561,48 @@ test('main: a scene command needs the approved engine, and the client is closed 
   fs.writeFileSync(join(run, 'scenes.json'), JSON.stringify({scenes: {textedit: recordOf('textedit', fixed.app.pid)}}));
   const verified = await main(['verify', 'textedit', '--run', run], {io: {installed: () => ({bundlePath: '/e'}), client: () => fakeClient([fixed, fixed]), ...fakeClock()}});
   assert.deepEqual(verified.problems, []);
+});
+
+test('Finder frame probe pins after chrome toggles on every open and journals its CG read-back', async () => {
+  const frames = [];
+  for (const height of [660, 716, 772, 492, 520]) {
+    const finder = finderEngine({state: {sidebar: true, statusBar: true, pathBar: false}, drawn: {sidebar: true, statusBar: true, pathBar: false}});
+    const {run, io, record} = finderRun(finder);
+    record.window.bounds.height = height;
+    let runDir;
+    io.probe = async (args, dir) => {
+      runDir = dir;
+      assert.deepEqual(finder.drawn, {sidebar: false, statusBar: false, pathBar: false});
+      assert.deepEqual(args, ['window-frame', '--pid', '402', '--window', '7', '--frame', '80,80,920,520']);
+      frames.push({x: 80, y: 80, width: 920, height: 520});
+      return {pid: 402, window: 7, requested: frames.at(-1), readBack: frames.at(-1), matched: true, exitStatus: 0};
+    };
+    const out = await run('setup');
+    const proof = out.steps.find(step => step.framePin)?.framePin;
+    assert.deepEqual(proof?.readBack, {x: 80, y: 80, width: 920, height: 520});
+    assert.deepEqual(JSON.parse(fs.readFileSync(join(runDir, 'scenes.json'), 'utf8')).scenes.finder.framePin, proof);
+  }
+  assert.equal(frames.length, 5);
+});
+
+for (const problem of ['clamped', 'wrong-window', 'unmatched', 'failed']) {
+  test(`Finder frame probe refuses ${problem} read-back without weakening setup`, async () => {
+    const finder = finderEngine({state: {}, drawn: {sidebar: false, statusBar: false, pathBar: false}});
+    const {run, io} = finderRun(finder);
+    const requested = {x: 80, y: 80, width: 920, height: 520};
+    io.probe = async () => ({pid: 402, window: problem === 'wrong-window' ? 8 : 7, requested,
+      readBack: {...requested, height: problem === 'clamped' ? 548 : 520}, matched: problem !== 'unmatched', exitStatus: problem === 'failed' ? 1 : 0});
+    await assert.rejects(run('setup'), /Finder frame probe/);
+  });
+}
+
+test('settle-probes dispatches without requiring an up scene or invoking engine actions', async () => {
+  const run = scratch(), calls = [];
+  const out = await main(['settle-probes', '--run', run], {io: {
+    settleProbes: async given => { calls.push(given); return {ok: false, survivors: ['window-frame#1'], probeWait: null}; },
+    installed: () => { throw new Error('settlement does not start the engine'); },
+  }});
+  assert.deepEqual(calls, [run]);
+  assert.equal(out.ok, false);
+  await assert.rejects(main(['settle-probes', '--run', 'relative']), /absolute/);
 });

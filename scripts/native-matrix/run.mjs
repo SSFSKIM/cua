@@ -66,6 +66,7 @@ import {accountActivations, judgeInterference, userWindowOf} from './oracle.mjs'
 import {CASES, caseId, OWNER_OPTIONS, SCENE_OF, WINDOWLESS_BUNDLE_ID} from './plan.mjs';
 import {probeCells} from './probe-run.mjs';
 import {ROUTE_AB, routeAbSection} from './route-ab.mjs';
+import {electronFocusSection} from './electron-focus.mjs';
 import {activate, caseRow, device, focusOf, js, mark, PASTING, push, read, sendKeys, step, Stop, TEXTEDIT} from './steps.mjs';
 import {ABC, UNICODE_PLAN, unicodeRowsOf} from './unicode-plan.mjs';
 import {REFOCUS_THROUGH, unicodeSection} from './unicode-run.mjs';
@@ -97,7 +98,7 @@ export function planOf(kind, {scene = null, user = null, naturalOnly = false} = 
   if (scene !== null && !NARROWABLE.includes(scene)) throw new Error(`--scene is one of ${NARROWABLE.join(', ')}`);
   if (user !== null && !SCENE_ORDER.includes(user)) throw new Error(`--user is one of ${SCENE_ORDER.join(', ')}`);
   const plan = narrowed(kind, {scene, user, naturalOnly});
-  if (!plan.frontmost.length && !plan.background.length && !plan.launch.length && !plan.concurrent.length && !plan.sheet && !plan.intervention.length && !plan.unicode?.fields.length && !plan.routeAb) {
+  if (!plan.frontmost.length && !plan.background.length && !plan.launch.length && !plan.concurrent.length && !plan.sheet && !plan.intervention.length && !plan.unicode?.fields.length && !plan.routeAb && !plan.electronFocus) {
     const option = OWNER_OPTIONS.find(o => kind === 'launch' && o.section === 'launch' && o.id.startsWith(`${scene}/`));
     throw new Error(`the ${kind} cell has nothing to run for${scene ? ` --scene ${scene}` : ''}${user ? ` --user ${user}` : ''}${option ? `: ${option.option} (${option.reason})` : ''}`);
   }
@@ -122,6 +123,8 @@ function narrowed(kind, {scene, user, naturalOnly}) {
     case 'pre-action-refusal': return {...EMPTY_PLAN, intervention: !scene || scene === 'textedit' ? ['preAction'] : []};
     // The Korean and Unicode matrix narrows to one field.
     case 'korean': return {...EMPTY_PLAN, unicode: {...UNICODE_PLAN, fields: UNICODE_PLAN.fields.filter(f => !scene || f === scene)}};
+    // #188's focus diagnostic is deliberately outside the ordinary matrix.
+    case 'electron-focus': return {...EMPTY_PLAN, electronFocus: (!scene || scene === 'electron') && (!user || user === 'finder')};
     // Hold 3's route A/B (./route-ab.mjs): the Electron fixture driven, behind Finder's window unless --user names another;
     // --natural-only runs the natural samples alone.
     case 'route-ab': return {...EMPTY_PLAN, routeAb: (!scene || scene === ROUTE_AB.driven) && user !== ROUTE_AB.driven
@@ -133,6 +136,7 @@ function narrowed(kind, {scene, user, naturalOnly}) {
 export const scenesOf = plan => SCENE_ORDER.filter(id => plan.frontmost.some(t => SCENE_OF[t] === id)
   || plan.background.some(p => SCENE_OF[p.driven] === id || p.user === id) || plan.launch.some(l => l.scene === id || l.user === id)
   || (plan.concurrent ?? []).some(d => d === id || CONCURRENT_USE.user === id) || (plan.sheet && [CONCURRENT_USE_SHEET.driven, CONCURRENT_USE_SHEET.user].includes(id))
+  || (plan.electronFocus && ['electron', 'finder'].includes(id))
   || (plan.intervention?.length && id === 'textedit') || (plan.routeAb && [plan.routeAb.driven, plan.routeAb.user].includes(id)) || unicodeRowsOf(plan.unicode ?? {fields: [], conditions: []}).some(r => r.field === id || r.user === id
     // The Korean source is read only after its target is refocused through another scene (./unicode-run.mjs koreanIn).
     || (r.condition === 'korean' && REFOCUS_THROUGH[r.field] === id)));
@@ -272,9 +276,9 @@ async function runOnce(options, io) {
     if (!Number.isSafeInteger(watch?.pid)) throw new Error('the activation watcher did not report its pid: no row could prove its coverage');
     ctx.watcher = watch.pid;
     const stderrFile = dryRun ? undefined : join(mkdtempSync(join(tmpdir(), 'cua-matrix-serve-')), 'serve-stderr.txt');
-    // Only the route A/B's serve may forward a click's forced route (CUA_ENGINE_SPIKE_ROUTE, src/services/engine/service.mjs).
+    // Only the route A/B and focus diagnostic serves may forward a click's forced route (CUA_ENGINE_SPIKE_ROUTE, src/services/engine/service.mjs).
     ctx.lane = await connectLane({ops, pre, prepared, host, engine, connect: io.connect, bundleIds: [...SCENE_ORDER.map(id => SCENES[id].bundleId), WINDOWLESS_BUNDLE_ID], meta, stderrFile,
-      spikeRoute: Boolean(plan.routeAb && !plan.routeAb.naturalOnly)});
+      spikeRoute: Boolean((plan.routeAb && !plan.routeAb.naturalOnly) || (plan.electronFocus && engine === 'cua'))});
     for (const id of scenes) {
       // getApp emits its text: the scene's own window in front first, so that text is the run's.
       const front = activate(ctx, id);
@@ -286,6 +290,7 @@ async function runOnce(options, io) {
     for (const target of plan.frontmost) await frontmostTarget(ctx, target, plan);
     for (const pairing of plan.background) await backgroundPairing(ctx, pairing);
     if (plan.routeAb) await routeAbSection(ctx, plan.routeAb);
+    if (plan.electronFocus) await electronFocusSection(ctx);
     await inputSections(ctx, plan);
     for (const launch of plan.launch) await launchRow(ctx, launch);
     snapshot();

@@ -9,6 +9,7 @@
 //   node scripts/native-matrix/goldens-device.mjs verify  <scene> --run <dir>
 //   node scripts/native-matrix/goldens-device.mjs action  <scene> --run <dir> --expect <digest>
 //   node scripts/native-matrix/goldens-device.mjs steps   <scene> --run <dir> --phase setup|reset|teardown
+//   node scripts/native-matrix/goldens-device.mjs settle-probes --run <dir>
 //
 // cua's lane is the raw Skyshot straight from the approved engine's socket (src/services/engine/client.mjs and its
 // protocol), as the device's own uid and outside any sandbox; no REPL host, service or policy sits between, so the
@@ -52,7 +53,7 @@ import {engineBuild, engineVersion} from '../../src/runtime/engine-bundle.mjs';
 import {configuredIdentity, readSignature, signatureReport} from '../../src/runtime/engine-sign.mjs';
 import {advanceNumbering, render} from '../../src/services/engine/render.mjs';
 import {normalizeDrift} from '../../test/native-goldens/compare.mjs';
-import {SCENES, activateScene, finderOwned, fixedStateProblems, guardOf, readState, teardownFor} from '../repl-parity/scenes-mac.mjs';
+import {SCENES, activateScene, finderOwned, fixedStateProblems, guardOf, readState, teardownFor, writeState} from '../repl-parity/scenes-mac.mjs';
 import {
   DESELECT_ALL_KEY, FINDER_CHROME, SAVED_PREFERENCES, finderChromeShown, markVisibleRestored, recordToggleSent, recordVisibleState, toggleUntil,
   unmarkVisibleRestored,
@@ -249,6 +250,19 @@ export async function runSteps({id, phase, run, record, client, io, screenshots 
       const toggle = FINDER_CHROME.find(part => part.id === step.chrome).toggle;
       done.push({chrome: step.chrome, ...await toggleUntil({part: step.chrome, shown: step.shown, observe: chromeShown,
         toggle: () => { unmarkVisibleRestored(saved); return press(toggle, step.guard); }, sent: part => recordToggleSent(saved, part)})});
+    } else if (step.finderFrame) {
+      const requested = step.finderFrame;
+      const out = await io.probe(['window-frame', '--pid', String(record.pid), '--window', String(record.window.number),
+        '--frame', ['x', 'y', 'width', 'height'].map(k => requested[k]).join(',')], run);
+      const framePin = {pid: out?.pid ?? null, window: out?.window ?? null, requested,
+        readBack: out?.readBack ?? null, matched: out?.matched === true, exitStatus: out?.exitStatus ?? null};
+      // Preserve even a refusal's read-back, beside the owned scene identity. Later bind/teardown snapshots carry it.
+      const state = readState(run);
+      writeState(run, {...state, scenes: {...state.scenes, [id]: {...record, framePin}}});
+      if (framePin.pid !== record.pid || framePin.window !== record.window.number || !framePin.matched || framePin.exitStatus !== 0
+        || !['x', 'y', 'width', 'height'].every(k => framePin.readBack?.[k] === requested[k]))
+        throw new Error('Finder frame probe did not confirm the requested frame on the run window; no further step was sent');
+      done.push({framePin});
     } else done.push({pressKey: step.pressKey, route: await press(step.pressKey, step.guard)});
   }
   return {scene: id, phase, steps: done};
@@ -279,6 +293,13 @@ const defaultIo = () => ({
   stop: () => stopEngine(),
   client: appPath => engineClientFor(appPath),
   activate: (id, run) => activateScene(id, {run}),
+  // Lazy because live-device already consumes this module. Reuse its journaled, bounded LaunchServices probe path:
+  // the approved bundle owns AX trust, never an ssh-launched Swift interpreter or an Automation grant.
+  probe: async (args, run) => (await import('./live-device.mjs')).defaultIo(run).probe(args),
+  settleProbes: async run => {
+    const live = await import('./live-device.mjs');
+    return live.settleProbes({run, io: live.defaultIo(run)});
+  },
   frontmost: () => frontmostFromProbe(frontWindow()),
   teardown: (id, run) => teardownFor(id, {run}),
   sleep: sleepFor,
@@ -301,7 +322,11 @@ export async function main(argv, {io: given = {}} = {}) {
     return engineCheck({installed, checkout: io.checkout(), ...(installed ? io.signature(installed.bundlePath) : {})});
   }
   if (command === 'engine-stop') return io.stop();
-  if (!['observe', 'verify', 'action', 'steps'].includes(command)) throw new Error('usage: goldens-device.mjs engine-check | engine-stop | observe|verify <scene> --run <dir> | action <scene> --run <dir> --expect <digest> | steps <scene> --run <dir> --phase setup|reset|teardown');
+  if (command === 'settle-probes') {
+    if (!flags.run || !isAbsolute(flags.run)) throw new Error('--run <absolute directory> is required');
+    return io.settleProbes(flags.run);
+  }
+  if (!['observe', 'verify', 'action', 'steps'].includes(command)) throw new Error('usage: goldens-device.mjs engine-check | engine-stop | settle-probes --run <dir> | observe|verify <scene> --run <dir> | action <scene> --run <dir> --expect <digest> | steps <scene> --run <dir> --phase setup|reset|teardown');
   if (!Object.hasOwn(SCENES, scene ?? '')) throw new Error(`unknown scene ${scene}`);
   if (!flags.run || !isAbsolute(flags.run)) throw new Error('--run <absolute directory> is required');
   const run = fs.realpathSync(flags.run);

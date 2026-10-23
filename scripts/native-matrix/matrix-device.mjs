@@ -87,6 +87,7 @@ import {defaultIo, PROBE_MS, processTable, restoreInputSource, saveInputSource} 
 import {FIXTURE_ACCESSIBILITY_FILE, FIXTURE_COUNTERS_FILE} from './fixtures/electron-fixture.mjs';
 import {ownedReading} from './oracle.mjs';
 import {parseAccessibilityRecord} from './residue-checks.mjs';
+import {readElectronFocus} from './electron-focus-device.mjs';
 
 const SCRIPT = fileURLToPath(import.meta.url);
 const SYSTEM_WINDOWS_SCRIPT = fileURLToPath(new URL('./system-windows.swift', import.meta.url));
@@ -495,6 +496,7 @@ export async function main(argv, {io: given = {}} = {}) {
       return read({focus: flags.focus ?? null, watcher: flags.watcher === undefined ? null : Number(flags.watcher), electronMode: flags['electron-mode'] === 'latest', ...roots}, io);
     case 'electron-mode': return electronModeRecord(io);
     case 'electron-counters': return timed(() => electronCountersIn(dir));
+    case 'electron-focus': return timed(() => readElectronFocus({engine: flags.engine, approvedEngine: roots.approvedEngine, statusOnly: flags['status-only'] === 'true'}, io));
     case 'step': return timed(() => (io.scenes ?? scenesMain)(argv.slice(1)));
     case 'alerts': return {...alerts(positional[0], io, roots), at: [Date.now(), Date.now()]};
     case 'launched':

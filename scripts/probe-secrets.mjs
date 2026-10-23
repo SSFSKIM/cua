@@ -40,12 +40,12 @@
 // scan as incomplete evidence), and this report; each `cua secrets set`'s terminal output is checked for its value.
 // Behavioural failures, including cleanup, are FAIL; an informational step is INFO and never decides the verdict.
 // Exit 0 PASS, 1 FAIL, 3 BLOCKED. The report holds metadata only.
-import {spawn} from 'node:child_process';
+import {openSession} from './accept/mcp-session.mjs';
+import {openSecretSession, finishSecretSessions} from './probe/secrets-session.mjs';
 import {randomBytes, randomUUID} from 'node:crypto';
 import {chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync} from 'node:fs';
 import net from 'node:net';
 import {basename, dirname, join} from 'node:path';
-import {createInterface} from 'node:readline';
 import {fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
 import {settingsFrom} from '../src/mcp/server.mjs';
@@ -132,61 +132,23 @@ export async function handleRpc(request) {
 `;
 
 // --- an MCP connection to a served process -----------------------------------------------------------------------
-const children = new Set();
+const sessions = [];
 let storeHome = null;         // the probe's own temporary $HOME, whose store every server reads
 function connect(name, args, extraEnv = {}) {
   if (engine.refused) throw engine.refused;
-  const child = spawn(process.execPath, args, {stdio: ['pipe', 'pipe', 'pipe'],
+  const session = openSession({args, clientName: 'cua-probe-secrets',
     env: {...process.env, CUA_HOME: home, HOME: storeHome, ...(pin ? {CUA_NATIVE_ENGINE: pin.engine} : {}), ...extraEnv}});
-  children.add(child);
-  const transcript = [];
-  let stderr = '';
-  child.stderr.on('data', d => { stderr += d; });
-  const exited = new Promise(resolve => child.on('exit', (code, signal) => { children.delete(child); resolve({code, signal}); }));
-  const waiters = new Map();
-  let nextId = 0;
-  const send = msg => { const line = JSON.stringify(msg); transcript.push(line); child.stdin.write(line + '\n'); };
-  createInterface({input: child.stdout}).on('line', line => {
-    transcript.push(line);
-    let msg;
-    try { msg = JSON.parse(line); } catch { return; }
-    if (msg.method !== undefined && msg.id !== undefined) return send({jsonrpc: '2.0', id: msg.id, result: {action: 'decline'}});
-    waiters.get(msg.id)?.(msg);
-  });
-  const request = (method, params = {}, timeoutMs = 30_000) => new Promise(resolve => {
-    const id = ++nextId;
-    const timer = setTimeout(() => { waiters.delete(id); resolve({timedOut: true}); }, timeoutMs);
-    waiters.set(id, msg => { clearTimeout(timer); waiters.delete(id); resolve(msg); });
-    send({jsonrpc: '2.0', id, method, params});
-  });
-  const {js} = attestReplies({js: (code, timeoutMs = 30_000, cellTimeout) => request('tools/call', {name: 'js', arguments: {code, ...(cellTimeout ? {timeout_ms: cellTimeout} : {})}}, timeoutMs + 5000)},
-    {expected: engine.expected, onAttested: () => engine.attested++, onRefused: problem => {
-      engine.refused = new AttestationRefusal(problem);
-      record(ATTEST_STEP, 'FAIL', `${name}: ${engine.refused.message}; nothing more was sent`);
-    }});
-  return {
-    name, request, js, transcript, exited, get stderr() { return stderr; }, kill: signal => child.kill(signal),
-    async open() {
-      const init = await request('initialize', {protocolVersion: '2025-06-18', capabilities: {elicitation: {}}, clientInfo: {name: 'cua-probe-secrets', version: '0'}}, 120_000);
-      if (init.timedOut || init.error) throw new Error(`${name}: initialize failed`);
-      send({jsonrpc: '2.0', method: 'notifications/initialized'});
-      // The first cell also loads the vendor API banner (which the fake target only partly serves), so only a
-      // second cell has to succeed.
-      const banner = await js('nodeRepl.write("banner")', 120_000);
-      if (banner.timedOut) throw new Error(`${name}: the first cell got no answer; stderr: ${stderr.slice(-400)}`);
-      const ready = await js('nodeRepl.write("ready")', 60_000);
-      if (ready.timedOut || ready.error || ready.result?.isError) throw new Error(`${name}: a plain cell failed after the banner (${ready.timedOut ? 'no answer' : JSON.stringify(ready.error ?? ready.result).slice(0, 300)}); stderr: ${stderr.slice(-400)}`);
-    },
-    async close() {
-      await request('tools/call', {name: 'end_task', arguments: {}}, 15_000);
-      child.stdin.end();
-      const exit = await Promise.race([exited, sleep(20_000).then(() => null)]);
-      if (!exit) child.kill('SIGTERM');
-      channels.push({name: `${name} MCP transport`, text: transcript.join('\n')});
-      channels.push({name: `${name} stderr (serve, runtime, node_repl, kernel, trusted worker)`, text: stderr});
-      return exit;
-    },
-  };
+  session.name = name;
+  // Register before initialize/banner: even a failed open has streams which must be scanned after teardown.
+  sessions.push(session);
+  session.js = (code, timeoutMs = 30_000, cellTimeout) => session.request('tools/call',
+    {name: 'js', arguments: {code, ...(cellTimeout ? {timeout_ms: cellTimeout} : {})}}, timeoutMs + 5000);
+  attestReplies(session, {expected: engine.expected, onAttested: () => engine.attested++, onRefused: problem => {
+    engine.refused = new AttestationRefusal(problem);
+    record(ATTEST_STEP, 'FAIL', `${name}: ${engine.refused.message}; nothing more was sent`);
+  }});
+  session.open = () => openSecretSession(session);
+  return session;
 }
 
 // A cell that calls the sky service directly (as the cua API does) and writes {ok, result} or {ok:false, message}.
@@ -361,9 +323,7 @@ async function refusedConnection(tag, recorder, targetModule, {env = {}, expecte
   const before = recorder.received.length;
   const init = await c.request('initialize', {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'cua-probe-secrets', version: '0'}}, 30_000);
   const exit = await Promise.race([c.exited, sleep(20_000).then(() => null)]);
-  if (!exit) c.kill('SIGTERM');
-  channels.push({name: `${c.name} MCP transport`, text: c.transcript.join('\n')});
-  channels.push({name: `${c.name} stderr (serve)`, text: c.stderr});
+  if (!exit) await c.terminate();
   const step = refusedLaunchResult(tag, {answered: Boolean(init.result), exit, stderr: c.stderr, delivered: recorder.received.length - before, expected, names});
   record(step.name, step.status, step.detail);
 }
@@ -407,7 +367,7 @@ try {
   // A refusal on the attestation is recorded where it happened (ATTEST_STEP).
   if (!(error instanceof AttestationRefusal)) record('unexpected', 'FAIL', `${error.code ?? 'error'}: ${error.message}`);
 } finally {
-  for (const child of children) child.kill('SIGTERM');
+  await finishSecretSessions(sessions, channels);
   if (storeHome) {
     if (unreadableHome) { try { chmodSync(storeDir({HOME: unreadableHome}), 0o700); } catch {} }
     const remove = async target => { try { return await removeStoreHome(target); } catch { return {keyGone: false, homeGone: false}; } };

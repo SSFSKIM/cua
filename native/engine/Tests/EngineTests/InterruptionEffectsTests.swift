@@ -142,15 +142,29 @@ final class InterruptionEffectsTests: XCTestCase {
 
   func testActivationClickIsAnEffectWithoutAnOrdinaryActionInterval() {
     var metadata = meta()
-    metadata.activationClick = .posted
     var latest: AttributedEvent?
     let guarding = InterventionGuard.reading(app: "fixture", cleared: 0, now: 10, latest: { latest })
-    latest = AttributedEvent(sequence: 1, at: 11)
-    XCTAssertThrowsError(try guarding.checkInFlight()) { error in
+    let seam = GuardSeam(frontmost: 990_002)
+    seam.activationPoint = CGPoint(x: 110, y: 76)
+    var system = seam.system
+    let post = system.post
+    system.post = { event, pid in
+      post(event, pid)
+      if event.type == .leftMouseDown { latest = AttributedEvent(sequence: 1, at: 11) }
+    }
+    let window = CGRect(x: 80, y: 60, width: 610, height: 860)
+    let activation = FakeActivation(pid: 990_001, window: AXUIElementCreateApplication(990_001),
+                                    windowFrame: window, windowID: 41, system: system)
+    let target = ClickTarget(point: CGPoint(x: 300, y: 400), windowFrame: window, windowID: 41, pid: 990_001)
+    XCTAssertThrowsError(try deliverClick(target, route: .activation, button: .left, count: 1, activation: activation,
+                                         targetActive: { false }, beforeActivating: guarding.checkInFlight,
+                                         beforePosting: guarding.checkInFlight, post: system.post, meta: &metadata)) { error in
       let detail = interruption(error as! EngineError, metadata)
       XCTAssertEqual(detail["phase"] as? String, "in-flight")
       XCTAssertTrue((detail["effects"] as? [String] ?? []).contains("activation-click-posted"))
     }
+    XCTAssertEqual(seam.posts.map(\.kind), [.appKit(1), .mouse(.leftMouseDown), .mouse(.leftMouseUp), .appKit(2)],
+                   "the preparation pair completes, then safe deactivation; no ordinary click starts")
     XCTAssertNil(metadata.startedAt)
   }
 }

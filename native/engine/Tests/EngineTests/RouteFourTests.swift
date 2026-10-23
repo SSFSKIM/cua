@@ -128,9 +128,16 @@ final class ForegroundAssistTests: XCTestCase {
     XCTAssertLessThan(seam.clock, foregroundWaitMs + 100)
   }
 
-  func testADeliveryThatFailsStillRestoresTheUsersApp() {
+  func testAnInterruptionDoesNotReactivateOrRaiseOverTheUsersNewFocus() {
     let seam = GuardSeam(frontmost: user, reactivationTakesFront: true)
     XCTAssertThrowsError(try ForegroundAssist(appPid: target, system: seam.system).run { throw userChanged("x") })
+    XCTAssertEqual(seam.reactivated, [target], "no optional restore after the detected stop")
+    XCTAssertEqual(seam.raises, 0, "no window raise over the user's input")
+  }
+
+  func testAnOrdinaryDeliveryFailureStillRestoresTheUsersApp() {
+    let seam = GuardSeam(frontmost: user, reactivationTakesFront: true)
+    XCTAssertThrowsError(try ForegroundAssist(appPid: target, system: seam.system).run { throw EngineError(name: "eventCreationFailed", "fixture") })
     XCTAssertEqual(seam.reactivated, [target, user])
   }
 

@@ -21,11 +21,11 @@ import {rollup, TEXTEDIT_BUNDLE} from './lib.mjs';
 const exec = promisify(execFile);
 const CLI = fileURLToPath(new URL('../../bin/cua.mjs', import.meta.url));
 const KEYS = ['accessibility', 'screenRecording', 'inputMonitoring'];
-export const OWNER_WINDOW = 'Reserve approximately 15 minutes continuously for item 14: remove the three entries and open a blank TextEdit document (4); grant Accessibility (1); grant Screen Recording with Later and observe recovery alerts (3); check input and observe alerts (2); grant Input Monitoring (1); approve, check and close only the disposable document without saving (4). Settings and fixture steps are manual; only the owner answers system alerts. This does not authorize a coordinator to operate Settings.';
+export const OWNER_WINDOW = 'Reserve approximately 15 minutes continuously for item 14: remove the three entries and open a blank TextEdit document (4); grant Accessibility and verify warm-process detection-off diagnostics (2); grant Screen Recording with Later and observe recovery alerts (3); check input against the fresh process’s listen capability and observe alerts (1); grant Input Monitoring (1); approve, check and close only the disposable document without saving (4). Settings and fixture steps are manual; only the owner answers system alerts. This does not authorize a coordinator to operate Settings. An absent Input Monitoring row does not establish listen capability after relaunch; capability and metadata consistency does not prove physical intervention delivery.';
 const STAGES = ['preconditions', 'manual revocation', 'Accessibility error reaches the model', 'all three grants absent',
   'manual Accessibility grant', 'Screen Recording error reaches the model', 'AX-only intervention diagnostic', 'manual Screen Recording grant',
-  'service relaunch recovery', 'owner recovery prompt observation', 'intervention off', 'owner input prompt observation',
-  'intervention off: input completion', 'intervention off: metadata', 'intervention off: doctor', 'manual Input Monitoring grant', 'engine approval',
+  'service relaunch recovery', 'owner recovery prompt observation', 'post-recovery input', 'owner input prompt observation',
+  'post-recovery input: capability stability', 'post-recovery input: input completion', 'post-recovery input: metadata', 'post-recovery input: doctor', 'manual Input Monitoring grant', 'engine approval',
   'final grants and approved build', 'intervention on', 'manual TextEdit cleanup'];
 const BIND = `globalThis.app = await cua.getApp(${JSON.stringify(TEXTEDIT_BUNDLE)});`;
 const CAPTURE = `${BIND}\nnodeRepl.write(JSON.stringify({onboarding: true, bytes: (await app.getScreenshot({emit:false})).length}));`;
@@ -294,7 +294,7 @@ export async function runFreshOnboarding({home, engine, requested = false}, deps
     const revoked = await retainStatus('revoked');
     require(KEYS.every(key => revoked.status?.[key] === false), 'all three grants must read false on the freshly launched engine');
     record(stage, 'PASS', 'Accessibility, Screen Recording and Input Monitoring read false');
-    await ask('manual Accessibility grant', 'Follow the verified Accessibility guidance just printed: add cua Engine with "+", enter its printed bundle path, then switch it on. Leave Screen Recording and Input Monitoring absent.', 'granted');
+    await ask('manual Accessibility grant', 'Follow the verified Accessibility guidance just printed: add cua Engine with "+", enter its printed bundle path, then switch it on. Leave Screen Recording and Input Monitoring absent. Do not restart the engine; the harness verifies this same warm process before the Screen Recording stage.', 'granted');
     stage = 'Screen Recording error reaches the model';
     const screenError = await cell(BIND, {bind: true});
     require(permissionGuidance(screenError, {permission: 'screenRecording', bundlePath}), 'model reply lacks permissionsPending, exact Screen Recording +/approved-path guidance or relaunch-pending wording');
@@ -307,10 +307,15 @@ export async function runFreshOnboarding({home, engine, requested = false}, deps
     record(stage, 'PASS', 'MCP js error names Screen Recording, +, exact approved path and pending relaunch');
     stage = 'AX-only intervention diagnostic';
     const axDoctor = await retainDoctor();
+    const warm = await retainStatus('AX-only after doctor');
+    require(warm.status?.pid === pending.status.pid && warm.status.accessibility === true
+      && warm.status.screenRecording === false && warm.status.inputMonitoring === false && warm.status.canPostHid === false
+      && pending.status.canPostHid === false,
+    'warm AX-only detection-off proof requires the same PID before and after doctor, AX true and SR/listen/post false');
     require(axDoctor.permissions.accessibility === true && axDoctor.permissions.screenRecording === false
       && doctorSaysInterventionOff(axDoctor), 'AX-only doctor must report intervention detection off before Screen Recording is granted');
-    record(stage, 'PASS', 'with AX alone granted, doctor reports Input Monitoring absent and intervention detection off');
-    await ask('manual Screen Recording grant', 'Follow the verified Screen Recording guidance just printed. Add ONLY cua Engine in Screen & System Audio Recording and switch it on. If macOS offers Quit & Reopen, choose Later. Leave Input Monitoring absent. Do not restart the engine yourself.', 'granted');
+    record(stage, 'PASS', 'same-PID warm AX-only process reads listen/post false; doctor reports detection off; no pre-SR input attempted');
+    await ask('manual Screen Recording grant', 'Follow the verified Screen Recording guidance just printed. Add ONLY cua Engine in Screen & System Audio Recording and switch it on. If macOS offers Quit & Reopen, choose Later. Leave the Input Monitoring row absent. Its absence does not predict the relaunched process’s listen capability; the harness reads that separately. Do not restart the engine yourself.', 'granted');
     stage = 'service relaunch recovery';
     const ready = await retainStatus('pre-relaunch');
     require(Number.isInteger(pending.status?.pid) && ready.status?.pid === pending.status.pid,
@@ -326,31 +331,47 @@ export async function runFreshOnboarding({home, engine, requested = false}, deps
         : 'same-connection retry did not relaunch the engine and return nonempty screenshot bytes');
     await observePrompts('owner recovery prompt observation', observations.cells.at(-1));
     if (recoveryVerdict !== 'PASS') throw stopAfterRecordedChecks;
-    stage = 'intervention off';
-    const off = await cell(inputCell(''), {input: true, observe: true, allowTimeout: true});
+    stage = 'post-recovery input';
+    const inputBefore = await retainStatus('post-recovery input before');
+    const listen = bool(inputBefore.status?.inputMonitoring);
+    require(inputBefore.status?.pid === after.status.pid && listen !== null
+      && listen === bool(after.status.inputMonitoring) && inputBefore.status.accessibility === true && inputBefore.status.screenRecording === true,
+    'fresh-process capability sample changed or is unread after the owner observation; no input sent', 'BLOCKED');
+    const inputReply = await cell(inputCell(''), {input: true, observe: true, allowTimeout: true});
     const inputEvidence = observations.cells.at(-1), input = inputEvidence.reply;
     // Collect all independent operands before judging any of them. A timed-out cell may still be running, so do not
     // start doctor in that case. Neither a posted interval nor an owner alert answer proves completed input.
-    let doctor = null;
-    if (!off?.timedOut) {
+    let doctor = null, inputAfter = null;
+    if (!inputReply?.timedOut) {
       try { doctor = await retainDoctor(); } catch { /* received:false remains as the doctor operand */ }
+      try { inputAfter = await retainStatus('post-recovery input after'); } catch { /* unavailable status fails stability */ }
     }
+    const stable = inputAfter?.status?.pid === inputBefore.status.pid
+      && inputAfter.status.accessibility === true && inputAfter.status.screenRecording === true && inputAfter.status.inputMonitoring === listen;
+    const metadataMatches = input.metadata.interventionPresent && input.metadata.intervention === (listen ? null : 'off')
+      && [1, "2'", 2, 3, 4, 'paste'].includes(input.metadata.inputRoute)
+      && Number.isFinite(input.metadata.actionInterval.startedAt) && Number.isFinite(input.metadata.actionInterval.endedAt);
+    const doctorMatches = doctor?.permissions.accessibility === true && doctor.permissions.screenRecording === true
+      && doctor.permissions.inputMonitoring === listen && doctor.engineRow.present
+      && ['pass', 'warn'].includes(doctor.engineRow.status) && doctor.engineRow.interventionOff === !listen;
     const verdicts = [
-      ['input completion', input.completion === 'returned' && input.typed === true ? 'PASS' : off?.timedOut ? 'BLOCKED' : 'FAIL',
+      ['capability stability', inputReply?.timedOut ? 'BLOCKED' : stable ? 'PASS' : 'FAIL',
+        'the same recovered process must retain its AX/SR/listen capabilities across input and doctor'],
+      ['input completion', input.completion === 'returned' && input.typed === true ? 'PASS' : inputReply?.timedOut ? 'BLOCKED' : 'FAIL',
         'typeText must return successfully and emit the typed marker; posted-action metadata alone is not completion'],
-      ['metadata', off?.timedOut ? 'BLOCKED' : input.metadata.intervention === 'off' ? 'PASS' : 'FAIL',
-        'input result must carry intervention off independently of input completion'],
-      ['doctor', off?.timedOut ? 'BLOCKED' : doctor && doctorSaysInterventionOff(doctor) ? 'PASS' : 'FAIL',
-        'doctor must read Input Monitoring false and its engine row must say intervention detection off'],
+      ['metadata', inputReply?.timedOut ? 'BLOCKED' : metadataMatches ? 'PASS' : 'FAIL',
+        'input metadata must match observed listen capability (false: off; true: explicit null), with route and action interval; physical intervention delivery is not proven'],
+      ['doctor', inputReply?.timedOut ? 'BLOCKED' : doctorMatches ? 'PASS' : 'FAIL',
+        'doctor permissions and its engine-row detection-off diagnostic must agree with the observed listen capability'],
     ];
-    for (const [part, verdict, detail] of verdicts) record(`intervention off: ${part}`, verdict, detail);
+    for (const [part, verdict, detail] of verdicts) record(`post-recovery input: ${part}`, verdict, detail);
     const interventionVerdict = rollup(verdicts.map(([, verdict]) => verdict));
     record(stage, interventionVerdict, interventionVerdict === 'PASS'
-      ? 'input completed with intervention off; doctor independently confirmed detection off'
-      : 'intervention-off operands did not all pass; see the separate completion, metadata and doctor verdicts');
+      ? 'input completed; metadata and doctor agree with the same fresh process’s observed listen capability; physical intervention delivery is not proven'
+      : 'post-recovery operands did not all pass; see the separate capability, completion, metadata and doctor verdicts');
     await observePrompts('owner input prompt observation', inputEvidence);
     if (interventionVerdict !== 'PASS') throw stopAfterRecordedChecks;
-    await ask('manual Input Monitoring grant', `In System Settings > Privacy & Security > Input Monitoring, add ONLY cua Engine with "+", press ⌘⇧G and enter ${bundlePath}, then switch it on. Choose Later if offered a restart; the approve step will relaunch.`, 'granted');
+    await ask('manual Input Monitoring grant', `In System Settings > Privacy & Security > Input Monitoring, add ONLY cua Engine with "+", press ⌘⇧G and enter ${bundlePath}, then explicitly switch it ON even if the listen preflight already read true. Do not perform an extra OFF trial. Choose Later if offered a restart; the approve step will relaunch.`, 'granted');
     stage = 'engine approval';
     await close();
     log('OWNER ONLY: stay at the console for cua engine approve. Answer any capture confirmation yourself; confirm at this terminal when approve asks.');
@@ -372,7 +393,7 @@ export async function runFreshOnboarding({home, engine, requested = false}, deps
     require(payload(on)?.typed === true && on.result._meta?.['cua/intervention'] === null
       && on.result._meta?.['cua/inputRoute'] != null && Number.isFinite(on.result._meta?.['cua/actionInterval']?.startedAt),
     'final input did not carry active intervention metadata');
-    record(stage, 'PASS', 'second X typed; input route and posted-action interval present, intervention no longer off');
+    record(stage, 'PASS', 'second X typed after explicit grants and approval; route and posted-action interval present, intervention metadata no longer off; physical intervention delivery is not proven');
     await close();
     await ask('manual TextEdit cleanup', 'Close only the disposable fixture document containing the two Xs; choose Don’t Save only for that document. Quit TextEdit only if nothing else is open. If another/restored document or an unrelated save prompt appears, stop and report it for a per-case cleanup decision; enter anything other than closed here to record BLOCKED. Do not discard other documents to force TextEdit to exit.', 'closed');
     require(await textEditStopped(), 'TextEdit is still running; manual cleanup is not complete');

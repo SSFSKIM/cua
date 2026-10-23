@@ -30,7 +30,7 @@ function fixture(over = {}) {
   const status = () => ({bundlePath: path, exists: true, build: expected.build, engineVersion: expected.version,
     approved: true, approvedBuild: expected.build, signature: {kind: 'identity', identityMatches: true},
     status: {pid, bundlePath: path, build: expected.build, connections: calls ? 1 : 0,
-      accessibility: phase !== 'revoked', screenRecording: ['granted', 'all'].includes(phase), inputMonitoring: phase === 'all', canPostHid: true}});
+      accessibility: phase !== 'revoked', screenRecording: ['granted', 'all'].includes(phase), inputMonitoring: phase === 'all' || (phase === 'granted' && over.listenAfterRelaunch === true), canPostHid: ['granted', 'all'].includes(phase)}});
   const session = {
     async initialize() { events.push('initialize'); },
     async js(code) {
@@ -46,7 +46,7 @@ function fixture(over = {}) {
           getAXState: async () => textEditState(over.documentChanged ? 'user text' : value),
           typeText: async text => {
             value += text;
-            Object.assign(activeMeta, {'cua/inputRoute': "2'", 'cua/actionInterval': {startedAt: 1000, endedAt: 1001}, 'cua/hidIdleMs': phase === 'all' ? null : 100, 'cua/intervention': phase === 'all' || over.metadataMissing ? null : 'off'});
+            Object.assign(activeMeta, {'cua/inputRoute': "2'", 'cua/actionInterval': {startedAt: 1000, endedAt: 1001}, 'cua/hidIdleMs': phase === 'all' ? null : 100, 'cua/intervention': phase === 'all' || over.listenAfterRelaunch || over.metadataMissing ? null : 'off'});
             if (over.deliveredButIncomplete) throw new Error('sensitive input failure after posting');
           },
         };
@@ -81,8 +81,8 @@ function fixture(over = {}) {
     textEditStopped: async () => !(over.cleanupFailed && owners === 7),
     doctor: async () => {
       events.push(`doctor:${phase}`);
-      return {engine: {permissions: {accessibility: true, screenRecording: phase !== 'ax', inputMonitoring: false}},
-        checks: [{name: 'engine', status: phase === 'ax' ? 'fail' : 'warn', detail: (over.axDoctorMissing && phase === 'ax') || (over.doctorMissing && phase === 'granted') ? 'Screen Recording missing' : 'Input Monitoring missing, so the engine runs with intervention detection off'}]};
+      return {engine: {permissions: {accessibility: true, screenRecording: phase !== 'ax', inputMonitoring: phase === 'granted' && over.listenAfterRelaunch === true}},
+        checks: [{name: 'engine', status: phase === 'ax' ? 'fail' : over.listenAfterRelaunch ? 'pass' : 'warn', detail: (over.axDoctorMissing && phase === 'ax') || (over.doctorMissing && phase === 'granted') ? 'Screen Recording missing' : phase === 'granted' && over.listenAfterRelaunch ? 'Input Monitoring granted' : 'Input Monitoring missing, so the engine runs with intervention detection off'}]};
     },
     approve: async () => { events.push('approve'); return {approved: !over.approveFailed, grants: {accessibility: true, screenRecording: true, inputMonitoring: true}, build: expected.build}; },
     operator: {next: async () => {
@@ -227,19 +227,19 @@ for (const [option, verdicts] of [
   ['metadataMissing', ['PASS', 'FAIL', 'PASS']],
   ['doctorMissing', ['PASS', 'PASS', 'FAIL']],
   ['deliveredButIncomplete', ['FAIL', 'PASS', 'PASS']],
-]) test(`intervention-off retains and distinguishes ${option} before refusing approval`, async () => {
+]) test(`negative-capability input retains and distinguishes ${option} before refusing approval`, async () => {
   const f = fixture({[option]: true}), report = await run(f);
   assert.equal(report.status, 'FAIL');
   assert.ok(!f.events.includes('approve'));
   assert.deepEqual(['input completion', 'metadata', 'doctor'].map(part =>
-    report.checks.find(c => c.name === `intervention off: ${part}`)?.status), verdicts);
-  const input = report.observations.cells.find(c => c.stage === 'intervention off');
+    report.checks.find(c => c.name === `post-recovery input: ${part}`)?.status), verdicts);
+  const input = report.observations.cells.find(c => c.stage === 'post-recovery input');
   assert.equal(input.reply.typed, option === 'deliveredButIncomplete' ? null : true);
   assert.equal(input.reply.completion, option === 'deliveredButIncomplete' ? 'error' : 'returned');
   assert.equal(input.reply.metadata.intervention, option === 'metadataMissing' ? null : 'off');
   assert.equal(input.reply.metadata.inputRoute, "2'");
   assert.deepEqual(input.reply.metadata.actionInterval, {startedAt: 1000, endedAt: 1001});
-  const doctor = report.observations.doctors.find(d => d.stage === 'intervention off');
+  const doctor = report.observations.doctors.find(d => d.stage === 'post-recovery input');
   assert.deepEqual(doctor.permissions, {accessibility: true, screenRecording: true, inputMonitoring: false});
   assert.equal(doctor.engineRow.interventionOff, option !== 'doctorMissing');
   assert.equal(doctor.engineRow.status, 'warn');
@@ -333,9 +333,9 @@ test('doctor execution failure preserves input operands and produces its own fai
   };
   const report = await run(f);
   assert.equal(report.status, 'FAIL');
-  assert.equal(report.checks.find(c => c.name === 'intervention off: input completion').status, 'PASS');
-  assert.equal(report.checks.find(c => c.name === 'intervention off: doctor').status, 'FAIL');
-  assert.deepEqual(report.observations.doctors.at(-1), {stage: 'intervention off', received: false});
+  assert.equal(report.checks.find(c => c.name === 'post-recovery input: input completion').status, 'PASS');
+  assert.equal(report.checks.find(c => c.name === 'post-recovery input: doctor').status, 'FAIL');
+  assert.deepEqual(report.observations.doctors.at(-1), {stage: 'post-recovery input', received: false});
   assert.ok(!JSON.stringify(report).includes('PRIVATE_'));
   assert.ok(!f.events.includes('approve'));
 });
@@ -400,10 +400,10 @@ for (const [name, options] of [
   const f = fixture({deliveredButIncomplete: true, ...options}), report = await run(f);
   assert.equal(report.status, 'FAIL');
   assert.deepEqual(['input completion', 'metadata', 'doctor'].map(part =>
-    report.checks.find(c => c.name === `intervention off: ${part}`)?.status), ['FAIL', 'PASS', 'PASS']);
+    report.checks.find(c => c.name === `post-recovery input: ${part}`)?.status), ['FAIL', 'PASS', 'PASS']);
   assert.equal(report.checks.find(c => c.name === 'owner input prompt observation').status, 'BLOCKED');
   assert.equal(report.observations.cells.at(-1).reply.completion, 'error');
-  assert.equal(report.observations.doctors.at(-1).stage, 'intervention off');
+  assert.equal(report.observations.doctors.at(-1).stage, 'post-recovery input');
   assert.equal(report.observations.doctors.at(-1).received, true);
   assert.deepEqual(f.events.slice(-3), ['doctor:granted', 'owner', 'close']);
   assert.equal(f.events.filter(e => e === 'owner').length, 5, 'no Input Monitoring grant question');
@@ -415,7 +415,7 @@ test('successful input operands still pass independently when the owner observat
   const f = fixture({inputObservationAbsent: true}), report = await run(f);
   assert.equal(report.status, 'BLOCKED');
   for (const part of ['input completion', 'metadata', 'doctor']) {
-    assert.equal(report.checks.find(c => c.name === `intervention off: ${part}`)?.status, 'PASS');
+    assert.equal(report.checks.find(c => c.name === `post-recovery input: ${part}`)?.status, 'PASS');
   }
   assert.equal(report.checks.find(c => c.name === 'owner input prompt observation').status, 'BLOCKED');
   assert.ok(!f.events.includes('approve'));
@@ -436,11 +436,136 @@ test('an input timeout plus missing owner observation never starts doctor or ano
   assert.equal(report.observations.cells.at(-1).reply.completion, 'timeout');
   assert.ok(!f.events.includes('doctor:granted'));
   for (const part of ['input completion', 'metadata', 'doctor']) {
-    const check = report.checks.find(c => c.name === `intervention off: ${part}`);
+    const check = report.checks.find(c => c.name === `post-recovery input: ${part}`);
     assert.equal(check?.status, 'BLOCKED');
     assert.doesNotMatch(check.detail, /not reached/, 'the timeout was judged, not discarded by prompt failure');
   }
   assert.equal(report.checks.find(c => c.name === 'owner input prompt observation').status, 'BLOCKED');
   assert.equal(f.events.filter(e => e === 'owner').length, 5);
+  assert.ok(!f.events.includes('approve'));
+});
+
+for (const listen of [true, false]) test(`post-recovery input follows measured listen=${listen}, not the absent Settings row`, async () => {
+  const f = fixture({listenAfterRelaunch: listen}), report = await run(f);
+  assert.equal(report.status, 'PASS', JSON.stringify(report));
+  assert.equal(report.checks.find(c => c.name === 'AX-only intervention diagnostic').status, 'PASS');
+  assert.deepEqual(report.observations.statuses.find(s => s.stage === 'AX-only'), {
+    stage: 'AX-only', pid: 10, connections: 1, accessibility: true, screenRecording: false, inputMonitoring: false, canPostHid: false,
+  });
+  for (const part of ['input completion', 'metadata', 'doctor']) {
+    assert.equal(report.checks.find(c => c.name === `post-recovery input: ${part}`).status, 'PASS');
+  }
+  assert.equal(report.observations.statuses.find(s => s.stage === 'post-recovery input before').inputMonitoring, listen);
+  assert.equal(report.observations.doctors.find(d => d.stage === 'post-recovery input').permissions.inputMonitoring, listen);
+  assert.equal(report.observations.cells.find(c => c.stage === 'post-recovery input').reply.metadata.intervention, listen ? null : 'off');
+  assert.ok(f.events.includes('approve'), 'final explicit grants and approval still run');
+  assert.equal(report.checks.find(c => c.name === 'intervention on').status, 'PASS');
+  assert.match(f.logs.join('\n'), /physical intervention.*not.*proven|does not prove physical intervention/i);
+});
+
+for (const [name, mutate] of [
+  ['listen unavailable', s => { s.inputMonitoring = undefined; }],
+  ['listen contradicts the warm off state', s => { s.inputMonitoring = true; }],
+  ['post capability contradicts the warm off state', s => { s.canPostHid = true; }],
+  ['engine changes while doctor runs', s => { s.pid = 19; }],
+]) test(`warm AX-only ${name} cannot be promoted to live off evidence`, async () => {
+  const f = fixture(), status = f.deps.status;
+  let axReads = 0;
+  f.deps.status = async () => {
+    const result = await status();
+    if (result.status.accessibility && !result.status.screenRecording && ++axReads === 2) mutate(result.status);
+    return result;
+  };
+  const report = await run(f);
+  assert.equal(report.status, 'FAIL', JSON.stringify(report));
+  assert.ok(!f.events.includes('doctor:granted'));
+  assert.equal(f.events.filter(e => e === 'owner').length, 2);
+  assert.ok(!f.events.includes('approve'));
+});
+
+for (const [name, mutate] of [
+  ['off metadata despite listen access', meta => { meta['cua/intervention'] = 'off'; }],
+  ['missing intervention key', meta => { delete meta['cua/intervention']; }],
+  ['missing route', meta => { meta['cua/inputRoute'] = null; }],
+  ['missing action interval', meta => { meta['cua/actionInterval'] = null; }],
+]) test(`listen-available input rejects ${name} independently of completion`, async () => {
+  const f = fixture({listenAfterRelaunch: true}), connect = f.deps.connect;
+  f.deps.connect = () => {
+    const session = connect(), js = session.js.bind(session);
+    session.js = async (...args) => {
+      const reply = await js(...args);
+      if (args[0].includes("app.typeText('X')")) mutate(reply.result._meta);
+      return reply;
+    };
+    return session;
+  };
+  const report = await run(f);
+  assert.deepEqual(['input completion', 'metadata', 'doctor'].map(part =>
+    report.checks.find(c => c.name === `post-recovery input: ${part}`)?.status), ['PASS', 'FAIL', 'PASS']);
+  assert.ok(!f.events.includes('approve'));
+});
+
+test('listen-available input keeps doctor disagreement separate from successful completion and metadata', async () => {
+  const f = fixture({listenAfterRelaunch: true}), doctor = f.deps.doctor;
+  f.deps.doctor = async () => {
+    const result = await doctor();
+    if (result.engine.permissions.screenRecording) result.engine.permissions.inputMonitoring = false;
+    return result;
+  };
+  const report = await run(f);
+  assert.deepEqual(['input completion', 'metadata', 'doctor'].map(part =>
+    report.checks.find(c => c.name === `post-recovery input: ${part}`)?.status), ['PASS', 'PASS', 'FAIL']);
+  assert.ok(!f.events.includes('approve'));
+});
+
+test('a changed PID during recovery prompt observation blocks input using the old capability sample', async () => {
+  const f = fixture({listenAfterRelaunch: true, relaunchDuringObservation: true}), report = await run(f);
+  assert.equal(report.status, 'BLOCKED', JSON.stringify(report));
+  assert.equal(report.checks.find(c => c.name === 'service relaunch recovery').status, 'PASS');
+  assert.ok(!f.events.includes('focus'));
+  assert.ok(!f.events.includes('approve'));
+});
+
+test('unknown fresh-process listen capability never defaults to active or off metadata', async () => {
+  const f = fixture({listenAfterRelaunch: true}), status = f.deps.status;
+  f.deps.status = async () => {
+    const result = await status();
+    if (result.status.screenRecording) delete result.status.inputMonitoring;
+    return result;
+  };
+  const report = await run(f);
+  assert.equal(report.status, 'BLOCKED', JSON.stringify(report));
+  assert.ok(!f.events.includes('focus'));
+  assert.ok(!f.events.includes('approve'));
+});
+
+for (const change of ['pid', 'inputMonitoring']) test(`post-input ${change} change invalidates capability provenance without erasing operands`, async () => {
+  const f = fixture({listenAfterRelaunch: true}), status = f.deps.status;
+  let readyReads = 0;
+  f.deps.status = async () => {
+    const result = await status();
+    if (result.status.screenRecording && ++readyReads === 4) result.status[change] = change === 'pid' ? 99 : false;
+    return result;
+  };
+  const report = await run(f);
+  assert.equal(report.status, 'FAIL');
+  assert.equal(report.checks.find(c => c.name === 'post-recovery input: capability stability').status, 'FAIL');
+  for (const part of ['input completion', 'metadata', 'doctor']) {
+    assert.equal(report.checks.find(c => c.name === `post-recovery input: ${part}`).status, 'PASS');
+  }
+  assert.ok(!f.events.includes('approve'));
+});
+
+test('listen-available doctor must retain a real engine row rather than infer agreement from silence', async () => {
+  const f = fixture({listenAfterRelaunch: true}), doctor = f.deps.doctor;
+  f.deps.doctor = async () => {
+    const result = await doctor();
+    if (result.engine.permissions.screenRecording) result.checks = [];
+    return result;
+  };
+  const report = await run(f);
+  assert.equal(report.status, 'FAIL');
+  assert.equal(report.checks.find(c => c.name === 'post-recovery input: doctor').status, 'FAIL');
+  assert.equal(report.observations.doctors.at(-1).engineRow.present, false);
   assert.ok(!f.events.includes('approve'));
 });

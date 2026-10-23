@@ -255,8 +255,10 @@ export async function runSteps({id, phase, run, record, client, io, screenshots 
       const out = await io.probe(['window-frame', '--pid', String(record.pid), '--window', String(record.window.number),
         '--frame', ['x', 'y', 'width', 'height'].map(k => requested[k]).join(',')], run);
       const framePin = {pid: out?.pid ?? null, window: out?.window ?? null, requested,
-        readBack: out?.readBack ?? null, matched: out?.matched === true, exitStatus: out?.exitStatus ?? null};
-      // Preserve even a refusal's read-back, beside the owned scene identity. Later bind/teardown snapshots carry it.
+        readBack: out?.readBack ?? null, matched: out?.matched === true, exitStatus: out?.exitStatus ?? null,
+        diagnostic: out?.diagnostic ?? null};
+      // Preserve the probe's safe stage/reason/count diagnostics and read-back before refusing; its stdout scratch
+      // has already been removed by awaitProbe. Later bind/teardown snapshots carry this owned-scene evidence.
       const state = readState(run);
       writeState(run, {...state, scenes: {...state.scenes, [id]: {...record, framePin}}});
       if (framePin.pid !== record.pid || framePin.window !== record.window.number || !framePin.matched || framePin.exitStatus !== 0

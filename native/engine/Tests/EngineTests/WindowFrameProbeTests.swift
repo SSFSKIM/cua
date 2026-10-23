@@ -164,10 +164,120 @@ final class WindowFrameProbeTests: XCTestCase {
     XCTAssertNil(windowFrameCGEntry([row(612, 92, -1)], pid: 612, window: 92))
   }
 
+  // Pin behavior at the JSON boundary so the tests-first revision compiles against the old probe.
+  // Dropping or conflating a refusal stage must fail without calling AX or touching a real window.
+  private func diagnostic(_ result: WindowFrameResult) -> [String: Any] {
+    result.wire(for: request)["diagnostic"] as? [String: Any] ?? [:]
+  }
+
+  func testWindowListRefusalsAreDistinctFromNumberMatchingAndNeverWrite() {
+    let cases: [([Int]?, String)] = [(nil, "unavailable"), ([], "empty"), (Array(1...129), "limit-exceeded")]
+    for (windows, reason) in cases {
+      let tree = Tree(); tree.windows = windows
+      let result = runWindowFrame(request, source: tree.source())
+      XCTAssertEqual(diagnostic(result)["stage"] as? String, "ax-window-list")
+      XCTAssertEqual(diagnostic(result)["reason"] as? String, reason)
+      XCTAssertEqual(diagnostic(result)["windowCount"] as? Int, windows?.count)
+      XCTAssertEqual(result.exitStatus, 2)
+      XCTAssertFalse(result.matched)
+      XCTAssertTrue(tree.writes.isEmpty)
+    }
+  }
+
+  func testNumberMatchingReportsUnknownWrongOwnerZeroMissingAndDuplicateWithoutFallback() {
+    let cases: [([Int: WindowFrameIdentity], String, Int?)] = [
+      ([2: .init(pid: 612, window: 92)], "unknown-identity", nil),
+      ([1: .init(pid: 612, window: 92)], "unknown-identity", nil),
+      ([1: .init(pid: 999, window: 91), 2: .init(pid: 612, window: 92)], "wrong-owner", nil),
+      ([1: .init(pid: 612, window: 0), 2: .init(pid: 612, window: 92)], "invalid-number", nil),
+      ([1: .init(pid: 612, window: 91), 2: .init(pid: 612, window: 93)], "no-match", 0),
+      ([1: .init(pid: 612, window: 92), 2: .init(pid: 612, window: 92)], "ambiguous-match", 2),
+    ]
+    for (identities, reason, count) in cases {
+      let tree = Tree(); tree.identities = identities
+      let result = runWindowFrame(request, source: tree.source())
+      XCTAssertEqual(diagnostic(result)["stage"] as? String, "ax-number-match")
+      XCTAssertEqual(diagnostic(result)["reason"] as? String, reason)
+      XCTAssertEqual(diagnostic(result)["windowCount"] as? Int, 2)
+      XCTAssertEqual(diagnostic(result)["matchCount"] as? Int, count)
+      XCTAssertEqual(result.exitStatus, 2)
+      XCTAssertFalse(result.matched)
+      XCTAssertTrue(tree.writes.isEmpty)
+    }
+  }
+
+  func testRecheckReportsWhichIdentityProofFailedAndWhetherSizeWasAlreadyWritten() {
+    for beforePosition in [false, true] {
+      for reason in ["disallowed-pid", "ax-identity-changed", "cg-window-unavailable"] {
+        let tree = Tree()
+        let invalidate = {
+          switch reason {
+          case "disallowed-pid": tree.allowed = false
+          case "ax-identity-changed": tree.identities[2] = .init(pid: 612, window: 93)
+          default: tree.cg = nil
+          }
+        }
+        var source = tree.source()
+        if beforePosition {
+          source.setSize = { element, _ in tree.writes.append((element, "size")); invalidate(); return .success }
+        } else {
+          source.canSetFrame = { _ in invalidate(); return true }
+        }
+        let result = runWindowFrame(request, source: source)
+        XCTAssertEqual(diagnostic(result)["stage"] as? String,
+                       beforePosition ? "identity-recheck-before-position" : "identity-recheck-before-size")
+        XCTAssertEqual(diagnostic(result)["reason"] as? String, reason)
+        XCTAssertEqual(result.exitStatus, 2)
+        XCTAssertFalse(result.matched)
+        XCTAssertEqual(tree.writes.map { $0.1 }, beforePosition ? ["size"] : [])
+        XCTAssertEqual(tree.selections, 1, "a failed recheck must not reselect")
+      }
+    }
+  }
+
+  func testInitialIdentityRefusalsCannotBeMistakenForAXWindowListFailure() {
+    for allowed in [false, true] {
+      let tree = Tree(); tree.allowed = allowed; tree.cg = nil
+      let result = runWindowFrame(request, source: tree.source())
+      XCTAssertEqual(diagnostic(result)["stage"] as? String, "initial-identity")
+      XCTAssertEqual(diagnostic(result)["reason"] as? String, allowed ? "cg-window-unavailable" : "disallowed-pid")
+      XCTAssertEqual(result.exitStatus, 2)
+      XCTAssertEqual(tree.selections, 0)
+      XCTAssertTrue(tree.writes.isEmpty)
+    }
+  }
+
+  func testDiagnosticsSerializeOnlyAllowlistedMetadataAndPreserveRequestedIdentity() throws {
+    let tree = Tree(); tree.identities[1] = nil
+    let wire = runWindowFrame(request, source: tree.source()).wire(for: request)
+    let data = try JSONSerialization.data(withJSONObject: wire)
+    let decoded = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    XCTAssertEqual(Set(decoded.keys), Set(["pid", "window", "requested", "readBack", "matched", "exitStatus", "diagnostic"]))
+    XCTAssertEqual(decoded["pid"] as? Int, 612)
+    XCTAssertEqual(decoded["window"] as? Int, 92)
+    let details = try XCTUnwrap(decoded["diagnostic"] as? [String: Any])
+    XCTAssertEqual(Set(details.keys), Set(["stage", "reason", "windowCount"]))
+    XCTAssertEqual(details["stage"] as? String, "ax-number-match")
+    XCTAssertEqual(details["reason"] as? String, "unknown-identity")
+    XCTAssertEqual(details["windowCount"] as? Int, 2)
+  }
+
+  func testSuccessAndNonIdentityFailuresDoNotInventIdentityDiagnostics() {
+    let success = Tree(); success.afterWrite = { success.cg = self.request.frame }
+    let untrusted = Tree(); untrusted.trusted = false
+    let unsettable = Tree(); unsettable.settable = false
+    let sizeFailure = Tree(); sizeFailure.sizeError = .cannotComplete
+    let positionFailure = Tree(); positionFailure.positionError = .cannotComplete
+    for tree in [success, untrusted, unsettable, sizeFailure, positionFailure, Tree()] {
+      let result = runWindowFrame(request, source: tree.source())
+      XCTAssertTrue(result.wire(for: request)["diagnostic"] is NSNull)
+    }
+  }
+
   func testWireAlwaysCarriesTheRequestedIdentityAndNullReadback() throws {
     let result = WindowFrameResult(readBack: nil, matched: false, exitStatus: 2)
     let wire = result.wire(for: request)
-    XCTAssertEqual(Set(wire.keys), Set(["pid", "window", "requested", "readBack", "matched", "exitStatus"]))
+    XCTAssertEqual(Set(wire.keys), Set(["pid", "window", "requested", "readBack", "matched", "exitStatus", "diagnostic"]))
     XCTAssertEqual(wire["pid"] as? Int, 612)
     XCTAssertEqual(wire["window"] as? UInt32, 92)
     XCTAssertEqual(wire["requested"] as? [String: Double], ["x": -100, "y": 40, "width": 800, "height": 600])

@@ -150,6 +150,10 @@ sshd_up() {
   quiet keygen-user ssh-keygen -q -t ed25519 -N '' -f "$HOME/.ssh/hosted-parity" || return
   cat "$HOME/.ssh/hosted-parity.pub" >> "$HOME/.ssh/authorized_keys" && chmod 600 "$HOME/.ssh/authorized_keys" || return
   echo "PATH=$PATH" > "$HOME/.ssh/environment"
+  # The login shell is bash, which reads ~/.bashrc for a command sshd runs. The image's ~/.bashrc puts Homebrew first
+  # (`brew shellenv`), so the image's own node shadowed setup-node's. Unseen while their versions matched; image
+  # 20261021 has 24.22.0 against setup-node's 24.22.1. The job's PATH is restored last, after the image's lines.
+  printf "export PATH='%s'\n" "$(printf '%s' "$PATH" | sed "s/'/'\\\\''/g")" >> "$HOME/.bashrc"
   cat > "$SSHD/sshd_config" <<EOF
 Port 2222
 ListenAddress 127.0.0.1
@@ -178,7 +182,7 @@ EOF
 }
 ssh_node() {
   remote=$(quiet ssh ssh -o BatchMode=yes "$DEVICE" 'node -v') || return
-  [ "$remote" = "$(node -v)" ] || { say "the device's node is not the job's"; return 1; }
+  [ "$remote" = "$(node -v)" ] || { say "the device's node ($remote) is not the job's ($(node -v))"; return 1; }
 }
 # repl-parity's prepare checks the tested commit out in the device's parity clone, which it clones from GitHub when
 # missing and refreshes with a plain `git fetch origin`; a pull request's merge commit is on no branch, so neither would

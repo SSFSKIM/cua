@@ -96,6 +96,9 @@ struct WindowFrameSource<Element> {
   var setSize: (Element, CGSize) -> AXError
   var setPosition: (Element, CGPoint) -> AXError
   var settle: () -> Void
+  // Injected independently of exact PID/window identity. Selection does not consume these yet.
+  var role: (Element) -> String? = { _ in nil }
+  var subrole: (Element) -> String? = { _ in nil }
 }
 
 struct WindowFrameDiagnostic {

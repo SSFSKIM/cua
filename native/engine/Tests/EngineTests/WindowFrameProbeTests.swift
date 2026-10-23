@@ -36,6 +36,9 @@ final class WindowFrameProbeTests: XCTestCase {
       1: WindowFrameIdentity(pid: 612, window: 91),
       2: WindowFrameIdentity(pid: 612, window: 92),
     ]
+    var roles: [Int: String] = [1: "AXWindow", 2: "AXWindow"]
+    var subroles: [Int: String] = [:]
+    var identityReads: [Int] = []
     var trusted = true, allowed = true, settable = true
     var cg: CGRect? = CGRect(x: 10, y: 20, width: 400, height: 300)
     var reads = 0, waits = 0, selections = 0
@@ -49,12 +52,13 @@ final class WindowFrameProbeTests: XCTestCase {
       WindowFrameSource(
         trusted: { self.trusted }, allowedPID: { _ in self.allowed },
         windows: { _ in self.selections += 1; return self.windows },
-        identity: { self.identities[$0] },
+        identity: { self.identityReads.append($0); return self.identities[$0] },
         cgFrame: { _, _ in self.reads += 1; let value = self.cg; self.afterRead?(); return value },
         canSetFrame: { _ in self.settable },
         setSize: { element, size in self.writes.append((element, "size")); self.sizes.append(size); return self.sizeError },
         setPosition: { element, point in self.writes.append((element, "position")); self.positions.append(point); self.afterWrite?(); return self.positionError },
-        settle: { self.waits += 1 })
+        settle: { self.waits += 1 },
+        role: { self.roles[$0] }, subrole: { self.subroles[$0] })
     }
   }
 
@@ -252,11 +256,11 @@ final class WindowFrameProbeTests: XCTestCase {
     let wire = runWindowFrame(request, source: tree.source()).wire(for: request)
     let data = try JSONSerialization.data(withJSONObject: wire)
     let decoded = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
-    XCTAssertEqual(Set(decoded.keys), Set(["pid", "window", "requested", "readBack", "matched", "exitStatus", "diagnostic"]))
+    XCTAssertEqual(Set(decoded.keys), Set(["pid", "window", "requested", "readBack", "matched", "exitStatus", "diagnostic", "excludedEntries"]))
     XCTAssertEqual(decoded["pid"] as? Int, 612)
     XCTAssertEqual(decoded["window"] as? Int, 92)
     let details = try XCTUnwrap(decoded["diagnostic"] as? [String: Any])
-    XCTAssertEqual(Set(details.keys), Set(["stage", "reason", "windowCount"]))
+    XCTAssertEqual(Set(details.keys), Set(["stage", "reason", "windowCount", "unknownEntry"]))
     XCTAssertEqual(details["stage"] as? String, "ax-number-match")
     XCTAssertEqual(details["reason"] as? String, "unknown-identity")
     XCTAssertEqual(details["windowCount"] as? Int, 2)
@@ -274,10 +278,171 @@ final class WindowFrameProbeTests: XCTestCase {
     }
   }
 
+  func testPositiveNonwindowRolesAreExcludedWithoutIdentityReadsAndOnlyExactWindowIsWritten() throws {
+    for role in ["AXScrollArea", "AXGroup", "CustomRole-user-content"] {
+      let tree = Tree(); tree.roles[1] = role; tree.subroles[1] = "AXDesktop"
+      tree.identities[1] = nil
+      tree.afterWrite = { tree.cg = self.request.frame }
+      let result = runWindowFrame(request, source: tree.source())
+      XCTAssertTrue(result.matched)
+      XCTAssertEqual(result.exitStatus, 0)
+      XCTAssertEqual(tree.writes.map { $0.0 }, [2, 2])
+      XCTAssertEqual(tree.writes.map { $0.1 }, ["size", "position"])
+      XCTAssertFalse(tree.identityReads.contains(1), "positive nonwindows must not enter window identity resolution")
+      let entries = try XCTUnwrap(result.wire(for: request)["excludedEntries"] as? [[String: Any]])
+      XCTAssertEqual(entries.count, 1)
+      let entry = try XCTUnwrap(entries.first)
+      XCTAssertEqual(Set(entry.keys), Set(["index", "role", "subrole"]))
+      XCTAssertEqual(entry["index"] as? Int, 0)
+      XCTAssertEqual(entry["role"] as? String, role.hasPrefix("CustomRole") ? "other" : role)
+      XCTAssertEqual(entry["subrole"] as? String, "AXDesktop")
+    }
+  }
+
+  func testMissingRoleCannotBeExcludedEvenWhenItsIdentityMatchesOrIsUnknown() throws {
+    for identity: WindowFrameIdentity? in [nil, .init(pid: 612, window: 92)] {
+      let tree = Tree(); tree.roles[1] = nil; tree.identities[1] = identity
+      let result = runWindowFrame(request, source: tree.source())
+      XCTAssertEqual(result.exitStatus, 2)
+      XCTAssertTrue(tree.writes.isEmpty)
+      XCTAssertFalse(tree.identityReads.contains(1))
+      let entry = try XCTUnwrap(diagnostic(result)["unknownEntry"] as? [String: Any])
+      XCTAssertEqual(entry["index"] as? Int, 0)
+      XCTAssertEqual(entry["role"] as? String, "unknown")
+      XCTAssertEqual(entry["subrole"] as? String, "unknown")
+    }
+  }
+
+  func testExclusionDoesNotHideUnknownWindowDuplicateWrongOwnerOrInvalidNumber() throws {
+    for identities: [Int: WindowFrameIdentity] in [
+      [2: .init(pid: 612, window: 92)],
+      [2: .init(pid: 612, window: 92), 3: .init(pid: 612, window: 92)],
+      [2: .init(pid: 612, window: 92), 3: .init(pid: 999, window: 93)],
+      [2: .init(pid: 612, window: 92), 3: .init(pid: 612, window: 0)],
+    ] {
+      let tree = Tree(); tree.windows = [1, 2, 3]
+      tree.roles = [1: "AXScrollArea", 2: "AXWindow", 3: "AXWindow"]
+      tree.identities = identities
+      let result = runWindowFrame(request, source: tree.source())
+      XCTAssertEqual(result.exitStatus, 2)
+      XCTAssertTrue(tree.writes.isEmpty)
+      let entries = try XCTUnwrap(result.wire(for: request)["excludedEntries"] as? [[String: Any]])
+      XCTAssertEqual(entries.count, 1)
+      XCTAssertEqual(entries.first?["index"] as? Int, 0)
+      if identities[3] == nil {
+        let entry = try XCTUnwrap(diagnostic(result)["unknownEntry"] as? [String: Any])
+        XCTAssertEqual(entry["index"] as? Int, 2, "index is in AXWindows, not the filtered list")
+        XCTAssertEqual(entry["role"] as? String, "AXWindow")
+      }
+    }
+  }
+
+  func testOnlyNonwindowsCannotBecomeATargetEvenIfTheirNumbersMatch() throws {
+    let tree = Tree(); tree.roles = [1: "AXScrollArea", 2: "AXGroup"]
+    tree.identities[1] = .init(pid: 612, window: 92)
+    let result = runWindowFrame(request, source: tree.source())
+    XCTAssertEqual(result.exitStatus, 2)
+    XCTAssertEqual(diagnostic(result)["reason"] as? String, "no-match")
+    XCTAssertEqual(diagnostic(result)["matchCount"] as? Int, 0)
+    XCTAssertTrue(tree.writes.isEmpty)
+    XCTAssertTrue(tree.identityReads.isEmpty)
+    let entries = try XCTUnwrap(result.wire(for: request)["excludedEntries"] as? [[String: Any]])
+    XCTAssertEqual(entries.count, 2)
+  }
+
+  func testRoleIsRecheckedOnTheSameTargetBeforeBothWrites() throws {
+    for beforePosition in [false, true] {
+      for role: String? in [nil, "AXScrollArea"] {
+        let tree = Tree(); tree.roles[1] = "AXScrollArea"; tree.identities[1] = nil
+        var source = tree.source()
+        if beforePosition {
+          source.setSize = { element, _ in
+            tree.writes.append((element, "size")); tree.roles[element] = role; return .success
+          }
+        } else {
+          source.canSetFrame = { element in tree.roles[element] = role; return true }
+        }
+        let result = runWindowFrame(request, source: source)
+        XCTAssertEqual(result.exitStatus, 2)
+        XCTAssertEqual(diagnostic(result)["stage"] as? String,
+                       beforePosition ? "identity-recheck-before-position" : "identity-recheck-before-size")
+        XCTAssertEqual(tree.writes.map { $0.1 }, beforePosition ? ["size"] : [])
+        XCTAssertEqual(tree.selections, 1)
+        let entry = try XCTUnwrap(diagnostic(result)["unknownEntry"] as? [String: Any])
+        XCTAssertEqual(entry["index"] as? Int, 1)
+        XCTAssertEqual(entry["role"] as? String, role ?? "unknown")
+      }
+    }
+  }
+
+  func testExcludedMetadataSurvivesWriteAndReadbackFailuresAndNeverLeaksCustomStrings() throws {
+    for status in [4, 5] {
+      let tree = Tree(); tree.roles[1] = "PRIVATE-role"; tree.subroles[1] = "PRIVATE-subrole"
+      tree.identities[1] = nil
+      if status == 4 { tree.sizeError = .cannotComplete }
+      let result = runWindowFrame(request, source: tree.source())
+      XCTAssertEqual(result.exitStatus, Int32(status))
+      let wire = result.wire(for: request)
+      let entries = try XCTUnwrap(wire["excludedEntries"] as? [[String: Any]])
+      XCTAssertEqual(entries.first?["role"] as? String, "other")
+      XCTAssertEqual(entries.first?["subrole"] as? String, "other")
+      let json = String(decoding: try JSONSerialization.data(withJSONObject: wire), as: UTF8.self)
+      XCTAssertFalse(json.contains("PRIVATE"))
+    }
+    let tree = Tree(); tree.identities[1] = nil; tree.subroles[1] = "PRIVATE-subrole"
+    let wire = runWindowFrame(request, source: tree.source()).wire(for: request)
+    let json = String(decoding: try JSONSerialization.data(withJSONObject: wire), as: UTF8.self)
+    XCTAssertFalse(json.contains("PRIVATE"))
+  }
+
+  func testExclusionMetadataIsBoundedByTheEnumerationLimit() throws {
+    let tree = Tree(); tree.windows = Array(1...128)
+    tree.roles = Dictionary(uniqueKeysWithValues: (1...128).map { ($0, "AXGroup") })
+    let result = runWindowFrame(request, source: tree.source())
+    XCTAssertEqual(result.exitStatus, 2)
+    XCTAssertTrue(tree.writes.isEmpty)
+    let entries = try XCTUnwrap(result.wire(for: request)["excludedEntries"] as? [[String: Any]])
+    XCTAssertEqual(entries.count, 128)
+    XCTAssertEqual(entries.last?["index"] as? Int, 127)
+    tree.windows = Array(1...129)
+    let oversized = runWindowFrame(request, source: tree.source())
+    XCTAssertEqual(diagnostic(oversized)["reason"] as? String, "limit-exceeded")
+    XCTAssertEqual((oversized.wire(for: request)["excludedEntries"] as? [[String: Any]])?.count, 0)
+  }
+
+  func testUnknownIdentityIdentifiesTheOriginalEntryWithoutDisclosingOtherWindowIdentity() throws {
+    for index in [0, 1] {
+      let tree = Tree(); tree.identities[index + 1] = nil
+      let result = runWindowFrame(request, source: tree.source())
+      XCTAssertEqual(result.exitStatus, 2)
+      XCTAssertTrue(tree.writes.isEmpty)
+      let entry = try XCTUnwrap(diagnostic(result)["unknownEntry"] as? [String: Any])
+      XCTAssertEqual(Set(entry.keys), Set(["index", "role", "subrole"]))
+      XCTAssertEqual(entry["index"] as? Int, index)
+      XCTAssertEqual(entry["role"] as? String, "AXWindow")
+      XCTAssertEqual(entry["subrole"] as? String, "unknown")
+      XCTAssertNoThrow(try JSONSerialization.data(withJSONObject: result.wire(for: request)))
+    }
+  }
+
+  func testResultsRetainAnExplicitEmptyExclusionListWhenNothingWasExcluded() throws {
+    let success = Tree(); success.afterWrite = { success.cg = self.request.frame }
+    let unknown = Tree(); unknown.identities[1] = nil
+    let untrusted = Tree(); untrusted.trusted = false
+    let unsettable = Tree(); unsettable.settable = false
+    let sizeFailure = Tree(); sizeFailure.sizeError = .cannotComplete
+    let positionFailure = Tree(); positionFailure.positionError = .cannotComplete
+    for tree in [success, unknown, untrusted, unsettable, sizeFailure, positionFailure, Tree()] {
+      let result = runWindowFrame(request, source: tree.source())
+      let excluded = try XCTUnwrap(result.wire(for: request)["excludedEntries"] as? [[String: Any]])
+      XCTAssertTrue(excluded.isEmpty)
+    }
+  }
+
   func testWireAlwaysCarriesTheRequestedIdentityAndNullReadback() throws {
     let result = WindowFrameResult(readBack: nil, matched: false, exitStatus: 2)
     let wire = result.wire(for: request)
-    XCTAssertEqual(Set(wire.keys), Set(["pid", "window", "requested", "readBack", "matched", "exitStatus", "diagnostic"]))
+    XCTAssertEqual(Set(wire.keys), Set(["pid", "window", "requested", "readBack", "matched", "exitStatus", "diagnostic", "excludedEntries"]))
     XCTAssertEqual(wire["pid"] as? Int, 612)
     XCTAssertEqual(wire["window"] as? UInt32, 92)
     XCTAssertEqual(wire["requested"] as? [String: Double], ["x": -100, "y": 40, "width": 800, "height": 600])

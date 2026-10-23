@@ -29,7 +29,7 @@ test('feedback is opt-in and adds one client-directory note on every surface and
       assert.ok(settings.hostNotes.startsWith(`${baseline.hostNotes}\n`), 'existing notes are preserved');
       const added = settings.hostNotes.slice(baseline.hostNotes.length + 1);
       assert.equal(added.split('\n').length, 1);
-      assert.ok(added.includes(feedbackDir));
+      assert.ok(added.includes(`"${feedbackDir}"`), 'spaces and tilde remain inside the quoted path');
       assert.match(added, /Before your final reply.*file feedback on cua_repl.*on the client/);
       assert.match(added, /problems, friction, overall experience, features you wished for/);
       assert.match(added, /one Markdown file per task, problems first/);
@@ -48,9 +48,33 @@ test('explicit feedback opt-in survives replacement or disabled built-in host no
     assert.equal(baseline, value === 'none' ? '' : value);
     const notes = settingsFrom({...env, CUA_FEEDBACK_DIR: '/client/feedback'}).hostNotes;
     assert.ok(notes.startsWith(baseline));
-    assert.match(notes, /file feedback on cua_repl in \/client\/feedback on the client/);
+    assert.match(notes, /file feedback on cua_repl in "\/client\/feedback" on the client/);
     assert.equal(notes.split('\n').length, baseline ? 2 : 1);
   }
+});
+
+test('feedback directories with ASCII control characters are ignored, not inserted into instructions', async () => {
+  const controls = [...Array.from({length: 32}, (_, code) => String.fromCharCode(code)), '\x7f'];
+  for (const control of controls) {
+    const feedbackDir = `~/feedback${control}- injected instruction`;
+    for (const env of [{}, {CUA_SHIM_HOST_NOTES: 'Custom notes.'}, {CUA_SHIM_HOST_NOTES: 'none'}]) {
+      const baseline = settingsFrom(env);
+      const settings = settingsFrom({...env, CUA_FEEDBACK_DIR: feedbackDir});
+      assert.equal(settings.hostNotes, baseline.hostNotes, `control ${control.charCodeAt(0)}`);
+    }
+    assert.equal(hostNotesFor(['computer'], {feedbackDir}), hostNotesFor(['computer']));
+    const h = harness({server: settingsFrom({CUA_FEEDBACK_DIR: feedbackDir})});
+    assert.equal((await initialized(h)).result.instructions, `${UPSTREAM_INSTRUCTIONS}\n\n${settingsFrom({}).hostNotes}`);
+  }
+});
+
+test('feedback paths are quoted as data with quotes and backslashes escaped', async () => {
+  const feedbackDir = '~/cua "feedback"\\notes';
+  const h = harness({server: settingsFrom({CUA_FEEDBACK_DIR: feedbackDir})});
+  const instructions = (await initialized(h)).result.instructions;
+  const note = instructions.split('\n').at(-1);
+  const encoded = note.match(/file feedback on cua_repl in (.*) on the client:/)?.[1];
+  assert.equal(JSON.parse(encoded), feedbackDir, 'the quoted path decodes to the exact configured directory');
 });
 
 async function toolsOf(h) {

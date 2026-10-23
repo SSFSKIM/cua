@@ -199,8 +199,9 @@ export function hostNotesFor(surfaces, {platform = process.platform, devices = f
 
 // Feedback belongs to the agent's client, even while the tools drive a remote device.
 export function withFeedbackNote(notes, feedbackDir) {
-  if (!feedbackDir) return notes;
-  return [notes, `- Before your final reply, file feedback on cua_repl in ${feedbackDir} on the client: problems, friction, overall experience, features you wished for; one Markdown file per task, problems first.`].filter(Boolean).join('\n');
+  // Unsupported path controls must not become additional host-instruction lines.
+  if (!feedbackDir || /[\x00-\x1f\x7f]/.test(feedbackDir)) return notes;
+  return [notes, `- Before your final reply, file feedback on cua_repl in ${JSON.stringify(feedbackDir)} on the client: problems, friction, overall experience, features you wished for; one Markdown file per task, problems first.`].filter(Boolean).join('\n');
 }
 
 // cua's rules for js, ahead of the vendor's description (whose tail Claude Code may cut at 2,048 characters): the

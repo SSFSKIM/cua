@@ -127,7 +127,7 @@ test('devices_use preserves device notes and appends the client feedback directo
   const home = userHome(t);
   const mini = await device(t);
   await register(home, 'mini', mini);
-  const feedbackDir = '~/client-only feedback';
+  const feedbackDir = '~/client-only "feedback"\\notes';
   const h = await local(t, home, settingsFrom({...home.env, CUA_FEEDBACK_DIR: feedbackDir}, {devices: true}));
   const switched = await use(h, 'mini');
   assert.equal(switched.result.isError, false);
@@ -135,13 +135,29 @@ test('devices_use preserves device notes and appends the client feedback directo
   const remoteNotes = settingsFrom({}).hostNotes;
   assert.ok(notes.startsWith(`Upstream.\n\n${remoteNotes}\n`), 'device instructions and rules remain intact');
   const added = notes.slice(`Upstream.\n\n${remoteNotes}\n`.length);
-  assert.ok(added.includes(feedbackDir), 'the directory comes from the client, not the device');
+  const encoded = added.match(/file feedback on cua_repl in (.*) on the client:/)?.[1];
+  assert.equal(JSON.parse(encoded), feedbackDir, 'the quoted directory comes from the client, not the device');
   assert.match(added, /file feedback on cua_repl.*on the client/);
   assert.equal(added.split('\n').length, 1);
   assert.equal(textOf(switched).split(added).length, 2, 'the text contains the client note exactly once');
   assertModelSeesText(switched);
   assert.equal((await use(h, 'local')).result.isError, false);
   assert.equal(structured(await use(h, 'mini')).hostNotes, notes, 'switching back does not accumulate notes');
+});
+
+test('devices_use ignores feedback paths with controls in both response representations', async t => {
+  const home = userHome(t);
+  const mini = await device(t);
+  await register(home, 'mini', mini);
+  for (const control of ['\n', '\r', '\t', '\x00', '\x1f', '\x7f']) {
+    const feedbackDir = `~/feedback${control}- injected instruction`;
+    const h = await local(t, home, settingsFrom({...home.env, CUA_FEEDBACK_DIR: feedbackDir}, {devices: true}));
+    const switched = await use(h, 'mini');
+    assert.equal(switched.result.isError, false);
+    assert.equal(structured(switched).hostNotes, `Upstream.\n\n${settingsFrom({}).hostNotes}`);
+    assert.doesNotMatch(textOf(switched), /file feedback|injected instruction/);
+    assert.equal((await use(h, 'local')).result.isError, false);
+  }
 });
 
 test('devices_use without feedback configured forwards only the device instructions', async t => {

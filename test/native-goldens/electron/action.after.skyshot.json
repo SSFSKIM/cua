@@ -267,7 +267,7 @@
     "height": 528
    },
    "children": 1,
-   "url": "file:///Users/new/Library/Caches/cua-harness/electron-fixture/44.9.0-23c8b77691d0/cua%20Electron%20Fixture.app/Contents/Resources/app/index.html",
+   "url": "file:///Users/xxx/Library/Caches/cua-harness/electron-fixture/44.9.0-23c8b77691d0/cua%20Electron%20Fixture.app/Contents/Resources/app/index.html",
    "depth": 7,
    "roleDescription": "HTML 콘텐츠",
    "actionDescriptions": [
@@ -1023,7 +1023,7 @@
   "catalyst": false,
   "pid": 62925,
   "bundleIdentifier": "io.github.ssfskim.cua.fixture.electron",
-  "appPath": "/Users/new/Library/Caches/cua-harness/electron-fixture/44.9.0-23c8b77691d0/cua Electron Fixture.app"
+  "appPath": "/Users/xxx/Library/Caches/cua-harness/electron-fixture/44.9.0-23c8b77691d0/cua Electron Fixture.app"
  },
  "truncated": null,
  "selectedText": null,
@@ -1262,7 +1262,7 @@
  "screenshot": {
   "width": 1440,
   "height": 1120,
-  "url": "file:///Users/new/Library/Caches/cua-harness/native-goldens/goldens-screenshots/cua-engine-59320-2-764789E8.jpg",
+  "url": "file:///Users/xxx/Library/Caches/cua-harness/native-goldens/goldens-screenshots/cua-engine-59320-2-764789E8.jpg",
   "scale": 2
  },
  "focused": "t17"

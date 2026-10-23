@@ -19,7 +19,7 @@ const SCRIPT = fileURLToPath(new URL('../../scripts/native-baseline.mjs', import
 const EVIDENCE = fileURLToPath(new URL('../../docs/evidence/2026-10-17-own-sandbox/m0/mini-vendor-computer', import.meta.url));
 const REAL = readRuns(EVIDENCE);
 const BUILD = 'c'.repeat(64);
-const BUNDLE = '/Users/new/Library/Application Support/cua/engine/cua Engine.app';
+const BUNDLE = '/Users/fixture/Library/Application Support/cua/engine/cua Engine.app';
 
 // One real run as an M1b run of the lane {host, engine}; `edit(meta, rows)` adjusts it.
 function laneRun(real, {host, engine, build = BUILD, scale = 1, edit = () => {}}) {

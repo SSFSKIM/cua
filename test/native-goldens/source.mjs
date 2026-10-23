@@ -1,6 +1,6 @@
 // Where the golden files come from (./source.json; PROVENANCE.md): M0's captures re-keyed (./rekey.mjs), or a live
-// recording of scripts/native-matrix/goldens.mjs, whose run directory holds each golden file byte for byte under
-// goldens/<scene>/. The render test guards every golden file against its source through fromSource.
+// recording of scripts/native-matrix/goldens.mjs, whose run directory holds each original golden under goldens/<scene>/.
+// The render test guards every installed file against its source (and declared account-home substitution) via fromSource.
 import fs from 'node:fs';
 import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -19,6 +19,15 @@ export const STRUCTURAL = new Set(SOURCE.redacted ?? []);
 // The content of one golden file as its source gives it.
 export function fromSource(scene, name, source = SOURCE) {
   if (source.kind === 'm0') return fromM0(scene, name);
-  if (source.kind === 'live') return fs.readFileSync(join(ROOT, source.dir, scene, name), 'utf8');
+  if (source.kind === 'live') {
+    const text = fs.readFileSync(join(ROOT, source.dir, scene, name), 'utf8');
+    if (!source.accountHomeReplacement) return text;
+    // Keep the original recording immutable. Only its account-home prefix is replaced in installed test fixtures,
+    // in both lanes and every before/after snapshot; this is not structural redaction or a comparison exemption.
+    const {runDir} = JSON.parse(fs.readFileSync(join(ROOT, source.dir, '..', 'meta.json'), 'utf8'));
+    const home = runDir?.match(/^(\/Users\/[^/]+)\/Library\/Caches\/cua-harness\/native-goldens$/)?.[1];
+    if (!home) throw new Error('golden recording has no account-home provenance');
+    return text.split(home + '/').join(source.accountHomeReplacement + '/');
+  }
   throw new Error(`unknown golden source kind ${source.kind}`);
 }

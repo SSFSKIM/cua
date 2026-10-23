@@ -6,6 +6,7 @@ import {join} from 'node:path';
 import {SANDBOX_DISABLED_STEP, SANDBOX_SCOPED_STEP} from '../probe/trusted-roots.mjs';
 import {SECRETS_OFF, STORE_UNREADABLE, failClosedSteps, refusedLaunchStep} from '../probe/fail-closed.mjs';
 import {approvalsByBehaviour} from '../probe/lib.mjs';
+export {tapDiagnostics} from './tap-diagnostics.mjs';
 
 // A selected item must bring the results it consumes. Refuse rather than silently add live work or a whole suite
 // (#197); item 14 is independent so the owner window can finish before unattended checks start.

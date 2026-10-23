@@ -104,7 +104,7 @@ const machine = (root, extra = {}) => {
   return value;
 };
 test('compareFingerprints reads each side\'s env and cwd relative to its own labelled roots (cua-home, the user home, checkout)', () => {
-  const same = compareFingerprints(machine('/Users/new/cua-115'), machine('/Users/runner/work/_temp/cua159.AbC123'));
+  const same = compareFingerprints(machine('/Users/fixture/cua-115'), machine('/Users/runner/work/_temp/cua159.AbC123'));
   assert.equal(same.equal, true, JSON.stringify(same));
   // What lies below a root still counts, and a path outside every root is compared as it is.
   const moved = compareFingerprints(machine('/a'), machine('/b', {CUA_REPL_NODE_MODULE_DIRS: '/b/cuahome/runtimes/other/lib', SHELL: '/b/bin/sh'}));
@@ -169,37 +169,37 @@ test('comparePortToCapture: cua\'s port against the signed CLI\'s capture, equal
 
 // #159: M0's captures name the mini's scratch root; the hosted gate replays them under its own.
 test('relocateCapture moves a capture to another root, plain and regex-escaped spellings alike, and its daemon euid', () => {
-  const from = '/Users/new/cua-115', to = '/Users/runner/work/_temp/cua159.x-Y';
+  const from = '/Users/fixture/cua-115', to = '/Users/runner/work/_temp/cua159.x-Y';
   const record = {input: {cwd: `${from}/home/run/s`, env: {HOME: `${from}/userhome`, PATH: `${from}/home/bin:/usr/bin`}, policy: {filesystem: [[`${from}/repo/src`, 'read'], [':root', 'read']]},
     args: ['sandbox', '--', `${from}/home/node`]},
-  captured: {captured: true, argv: ['/usr/bin/sandbox-exec', '-p', `(regex #"^/Users/new/cua\\-115/home/run/s/\\.git(/.*)?$")\n(literal "/private/tmp/codex-daemon-501")`, `-DWRITABLE_ROOT_0=${from}/home/run/s`, '--', `${from}/home/node`],
-    env: [`HOME=${from}/userhome`, `SIBLING=${from}0/x`, 'ELSEWHERE=/Users/new/other']}};
+  captured: {captured: true, argv: ['/usr/bin/sandbox-exec', '-p', `(regex #"^/Users/fixture/cua\\-115/home/run/s/\\.git(/.*)?$")\n(literal "/private/tmp/codex-daemon-501")`, `-DWRITABLE_ROOT_0=${from}/home/run/s`, '--', `${from}/home/node`],
+    env: [`HOME=${from}/userhome`, `SIBLING=${from}0/x`, 'ELSEWHERE=/Users/fixture/other']}};
   const moved = relocateCapture(record, {from, to, euid: 502});
   assert.equal(moved.input.cwd, `${to}/home/run/s`);
   assert.deepEqual(moved.input.env, {HOME: `${to}/userhome`, PATH: `${to}/home/bin:/usr/bin`});
   assert.deepEqual(moved.input.policy.filesystem, [[`${to}/repo/src`, 'read'], [':root', 'read']]);
   assert.equal(moved.captured.argv[2], '(regex #"^/Users/runner/work/_temp/cua159\\.x\\-Y/home/run/s/\\.git(/.*)?$")\n(literal "/private/tmp/codex-daemon-502")');
   assert.deepEqual(moved.captured.argv.slice(3), [`-DWRITABLE_ROOT_0=${to}/home/run/s`, '--', `${to}/home/node`]);
-  assert.deepEqual(moved.captured.env, [`HOME=${to}/userhome`, `SIBLING=${from}0/x`, 'ELSEWHERE=/Users/new/other']);
+  assert.deepEqual(moved.captured.env, [`HOME=${to}/userhome`, `SIBLING=${from}0/x`, 'ELSEWHERE=/Users/fixture/other']);
   assert.equal(record.input.cwd, `${from}/home/run/s`, 'the record itself is left as it was');
   assert.throws(() => relocateCapture(record, {from, to: 'relative/root', euid: 502}), /absolute/);
 });
 
 // #159 review: each original occurrence is replaced once, so a destination under the original root is not moved twice.
 test('relocateCapture rewrites each occurrence once, a destination nested under the original included', () => {
-  const plain = relocateCapture({p: '/Users/new/cua115/home', q: ['/Users/new/cua115']}, {from: '/Users/new/cua115', to: '/Users/new/cua115/hosted', euid: 501});
-  assert.deepEqual(plain, {p: '/Users/new/cua115/hosted/home', q: ['/Users/new/cua115/hosted']});
-  const from = '/Users/new/cua-115', to = '/Users/new/cua-115/hosted.x';
-  const moved = relocateCapture({p: `${from}/home`, r: '(subpath "/Users/new/cua-115/home")\n(regex #"^/Users/new/cua\\-115/home(/.*)?$")', s: '/Users/new/cua\\-115\\.bak'}, {from, to, euid: 501});
-  assert.deepEqual(moved, {p: `${to}/home`, r: '(subpath "/Users/new/cua-115/hosted.x/home")\n(regex #"^/Users/new/cua\\-115/hosted\\.x/home(/.*)?$")',
-    s: '/Users/new/cua\\-115\\.bak'}, 'an escaped sibling sharing the prefix is not under the root');
+  const plain = relocateCapture({p: '/Users/fixture/cua115/home', q: ['/Users/fixture/cua115']}, {from: '/Users/fixture/cua115', to: '/Users/fixture/cua115/hosted', euid: 501});
+  assert.deepEqual(plain, {p: '/Users/fixture/cua115/hosted/home', q: ['/Users/fixture/cua115/hosted']});
+  const from = '/Users/fixture/cua-115', to = '/Users/fixture/cua-115/hosted.x';
+  const moved = relocateCapture({p: `${from}/home`, r: '(subpath "/Users/fixture/cua-115/home")\n(regex #"^/Users/fixture/cua\\-115/home(/.*)?$")', s: '/Users/fixture/cua\\-115\\.bak'}, {from, to, euid: 501});
+  assert.deepEqual(moved, {p: `${to}/home`, r: '(subpath "/Users/fixture/cua-115/hosted.x/home")\n(regex #"^/Users/fixture/cua\\-115/hosted\\.x/home(/.*)?$")',
+    s: '/Users/fixture/cua\\-115\\.bak'}, 'an escaped sibling sharing the prefix is not under the root');
 });
 
 // #159 review: with no regex-lite metacharacter in `from`, its plain and escaped spellings are one string, so an occurrence
 // cannot say which spelling of `to` it needs; when those differ the relocation is refused, not guessed.
 test('relocateCapture refuses a root whose spellings cannot be told apart when the destination\'s can', () => {
-  assert.throws(() => relocateCapture({p: '/Users/new/cua115/home'}, {from: '/Users/new/cua115', to: '/Users/runner/cua-159', euid: 501}), /cannot tell/);
-  assert.deepEqual(relocateCapture({p: '/Users/new/cua115/home'}, {from: '/Users/new/cua115', to: '/Users/runner/cua159', euid: 501}), {p: '/Users/runner/cua159/home'});
+  assert.throws(() => relocateCapture({p: '/Users/fixture/cua115/home'}, {from: '/Users/fixture/cua115', to: '/Users/runner/cua-159', euid: 501}), /cannot tell/);
+  assert.deepEqual(relocateCapture({p: '/Users/fixture/cua115/home'}, {from: '/Users/fixture/cua115', to: '/Users/runner/cua159', euid: 501}), {p: '/Users/runner/cua159/home'});
 });
 
 // #115 M1: the fingerprint under cua's kernel launcher pins the port's metadata grant (src/sandbox/seatbelt.mjs header):

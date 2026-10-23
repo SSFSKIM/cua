@@ -148,18 +148,18 @@ func withMeta(_ error: EngineError, _ meta: InputMeta) -> EngineError {
   var wire = (error.extra["meta"] as? [String: Any] ?? [:]).merging(meta.wire) { _, input in input }
   if error.code == VendorCode.userIntervened.rawValue {
     var detail = wire["interruption"] as? [String: Any] ?? ["phase": InterruptionPhase.inFlight.rawValue]
-    let reached: [(Bool, String, String)] = [
-      (meta.effects.focusWriteAttempted, "focus-write-attempted", "An AX focus write was attempted; focus may have moved."),
-      (meta.effects.focusClickPosted, "focus-click-posted", "A preparation/focus click was posted."),
-      (meta.activationClick == .posted, "activation-click-posted", "An activation click was posted."),
-      (meta.effects.valueWriteAttempted, "value-write-attempted", "A value write was attempted; it may have taken effect."),
-      (meta.startedAt != nil, "input-posted", "Action input was dispatched."),
+    let reached: [(Bool, String)] = [
+      (meta.effects.focusWriteAttempted, "focus-write-attempted"),
+      (meta.effects.focusClickPosted, "focus-click-posted"),
+      (meta.activationClick == .posted, "activation-click-posted"),
+      (meta.effects.valueWriteAttempted, "value-write-attempted"),
+      (meta.startedAt != nil, "input-posted"),
     ]
-    let effects = reached.filter { $0.0 }
-    detail["effects"] = effects.map { $0.1 }
+    let effects = reached.filter { $0.0 }.map { $0.1 }
+    detail["effects"] = effects
     wire["interruption"] = detail
     if !effects.isEmpty {
-      error = EngineError(.userIntervened, error.message + " " + effects.map { $0.2 }.joined(separator: " "), extra: error.extra)
+      error = EngineError(.userIntervened, error.message + " " + interruptionEffectSentences(effects), extra: error.extra)
     }
   }
   error.extra["meta"] = wire

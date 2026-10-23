@@ -6,6 +6,7 @@ const EFFECTS = {
   'activation-click-posted': 'An activation click was posted.',
   'value-write-attempted': 'A value write was attempted; it may have taken effect.',
   'input-posted': 'Action input was dispatched.',
+  'activation-teardown-attempted': 'Held activation teardown was attempted; an application-deactivation event may have been posted.',
 };
 
 export function interruptionMessage(detail) {

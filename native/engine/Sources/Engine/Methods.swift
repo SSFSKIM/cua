@@ -130,6 +130,21 @@ final class Engine: @unchecked Sendable {
   /// neither permission prompts nor live app input.
   func execute(_ params: [String: Any], _ connection: ConnectionState, _ receivedAt: Int64,
                dispatch: (String, [String: Any], ExecutionContext, ResolvedApp?) throws -> Any) throws -> Any {
+    let menuReleases = connection.menuSpan.releaseCount, focusReleases = connection.focusHold.releaseCount
+    do {
+      return try executeWithLifecycle(params, connection, receivedAt, dispatch: dispatch)
+    } catch let error as EngineError {
+      // Inspect only after executeWithLifecycle's defers: a refused menu press can release its activation while
+      // unwinding. Keep required cleanup unchanged, but never call the whole request effect-free after teardown.
+      if connection.menuSpan.releaseCount != menuReleases || connection.focusHold.releaseCount != focusReleases {
+        throw withActivationTeardown(error)
+      }
+      throw error
+    }
+  }
+
+  private func executeWithLifecycle(_ params: [String: Any], _ connection: ConnectionState, _ receivedAt: Int64,
+                                    dispatch: (String, [String: Any], ExecutionContext, ResolvedApp?) throws -> Any) throws -> Any {
     // The deadline first, before anything is dispatched (the vendor's order, F §8.9); a settle or a launch wait still
     // running when it passes is cancelled as timeoutReached (cua's addition, Skyshot.swift).
     let deadline = (params["deadlineUnixMilliseconds"] as? NSNumber)?.int64Value ?? receivedAt + 120_000

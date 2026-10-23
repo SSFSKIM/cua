@@ -96,16 +96,18 @@ func interventionVerdict(last: AttributedEvent?, cleared: Int, now: Int64) -> In
   return last.sequence > cleared ? .userChanged : .proceed
 }
 
-/// A pre-action refusal is the only no-effects guarantee. An in-flight check can follow preparation outside the
-/// ordinary action interval; it conservatively reports possible effects, not an atomic cancellation or rollback.
+/// before-effects is a no-effects guarantee only after execute has also accounted for request-level teardown.
+/// Preparation and cleanup can lie outside the ordinary action interval; in-flight conservatively reports possible
+/// effects, not an atomic cancellation or rollback.
 enum InterruptionPhase: String {
   case beforeEffects = "before-effects", inFlight = "in-flight"
 }
 
-private func interruptionError(_ app: String, phase: InterruptionPhase) -> EngineError {
-  let outcome = phase == .beforeEffects ? "Action refused before any effects." : "Action interrupted after possible effects. Preparation or input may already have affected the app; already dispatched input may still complete. Effects were not rolled back."
+private func interruptionError(_ app: String?, phase: InterruptionPhase) -> EngineError {
+  let outcome = phase == .beforeEffects ? "Action refused before any effects." : "Action interrupted after possible effects. Preparation, input or cleanup may already have affected an app; already dispatched input may still complete. Effects were not rolled back."
+  let target = app.map { "'\($0)'" } ?? "the app"
   return EngineError(.userIntervened,
-                     "\(outcome) Input attributed to '\(app)' triggered the intervention guard; its source is not proven human. Do not retry automatically. Let the user finish, then call getAXState() and inspect the outcome before deciding on another action.",
+                     "\(outcome) Input attributed to \(target) triggered the intervention guard; its source is not proven human. Do not retry automatically. Let the user finish, then call getAXState() and inspect the outcome before deciding on another action.",
                      extra: ["meta": ["interruption": ["phase": phase.rawValue, "effects": [String]()]]])
 }
 
@@ -115,6 +117,35 @@ func stillInteracting(_ app: String) -> EngineError {
 
 func userChanged(_ app: String, phase: InterruptionPhase = .inFlight) -> EngineError {
   interruptionError(app, phase: phase)
+}
+
+/// Bounded, value-free facts shared by input-level and request-level error construction.
+func interruptionEffectSentences(_ effects: [String]) -> String {
+  let descriptions = [
+    "focus-write-attempted": "An AX focus write was attempted; focus may have moved.",
+    "focus-click-posted": "A preparation/focus click was posted.",
+    "activation-click-posted": "An activation click was posted.",
+    "value-write-attempted": "A value write was attempted; it may have taken effect.",
+    "input-posted": "Action input was dispatched.",
+    "activation-teardown-attempted": "Held activation teardown was attempted; an application-deactivation event may have been posted.",
+  ]
+  return effects.compactMap { descriptions[$0] }.joined(separator: " ")
+}
+
+/// Called after the request's cleanup has finished. A local pre-input refusal cannot promise an effect-free request
+/// when that request also released a held activation. Preserve all earlier input evidence and the ordinary interval.
+func withActivationTeardown(_ error: EngineError) -> EngineError {
+  guard error.code == VendorCode.userIntervened.rawValue else { return error }
+  var extra = error.extra
+  var meta = extra["meta"] as? [String: Any] ?? [:]
+  var detail = meta["interruption"] as? [String: Any] ?? [:]
+  var effects = detail["effects"] as? [String] ?? []
+  if !effects.contains("activation-teardown-attempted") { effects.append("activation-teardown-attempted") }
+  detail["phase"] = InterruptionPhase.inFlight.rawValue
+  detail["effects"] = effects
+  meta["interruption"] = detail
+  extra["meta"] = meta
+  return EngineError(.userIntervened, interruptionError(nil, phase: .inFlight).message + " " + interruptionEffectSentences(effects), extra: extra)
 }
 
 /// The attributed events of driven processes, shared by the tap's thread and every connection's thread.

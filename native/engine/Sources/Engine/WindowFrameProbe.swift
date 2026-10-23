@@ -24,18 +24,23 @@ import Foundation
 // of writes, or rollback: two AX writes cannot be atomic. A failure may have partially changed this
 // one window. The harness records the refusal, restores Finder chrome/preferences and closes its owned window;
 // it must not retry against a different window or claim that the frame was pinned.
-// CG readback is at most 11 samples / 10 sleeps of 50 ms, not a hard OS-call wall-clock deadline.
-// matched requires BOTH writes to succeed and all four CG components to differ by <1 point.
+// A successful size write must converge in CG before position is written: at most 11 samples /
+// 10 sleeps of 50 ms, with same-handle identity checked each time. Size failure leaves position alone.
+// Final CG readback has its own unchanged 11 samples / 10 sleeps of 50 ms bound. These bound attempts,
+// not OS-call wall time. matched requires BOTH writes and all four CG components within <1 point.
 // On failure readBack is the last exact CG reading (or null), never an AX-derived/optimistic frame.
 //
-// Result: {pid,window,requested,readBack,matched,exitStatus,diagnostic,excludedEntries}.
-// diagnostic is null except for identity refusals: {stage,reason,windowCount?,matchCount?,unknownEntry?}.
+// Result: {pid,window,requested,readBack,matched,exitStatus,diagnostic,excludedEntries,trace}.
+// diagnostic is null except for identity/size refusals: {stage,reason,windowCount?,matchCount?,unknownEntry?}.
+// trace holds <=25 exact-target CG samples {stage,atMs,frame} and <=2 setters
+// {attribute,startMs,endMs,axError}, retained on failure too. All times are relative monotonic ms.
 // Entry metadata is {index,role,subrole}: zero-based original-list index and allowlisted labels only.
 // excludedEntries retains the nonwindows encountered before completion/refusal (at most 128).
 // matchCount is present only after a complete scan. No arbitrary AX strings, other window identities,
 // or raw OS dictionaries are emitted. Subrole is diagnostic only; it never establishes identity.
 // Status: 0 matched; 2 identity/target refused; 3 existing AX trust absent; 4 unsettable/write failure;
-// 5 CG readback did not converge. Malformed arguments follow Probe's existing error+exitStatus 64 form.
+// 5 final CG readback did not converge; 6 size did not converge before position (position not written).
+// Malformed arguments follow Probe's existing error+exitStatus 64 form.
 // No AXIsProcessTrustedWithOptions, screen capture, AppleEvents, permission prompt, titles or values.
 
 struct WindowFrameRequest: Equatable {
@@ -83,6 +88,11 @@ func windowFrameMatches(_ actual: CGRect?, _ requested: CGRect) -> Bool {
     && abs(actual.size.width - requested.size.width) < 1 && abs(actual.size.height - requested.size.height) < 1
 }
 
+func windowFrameSizeMatches(_ actual: CGRect?, _ requested: CGRect) -> Bool {
+  guard let actual, windowFrameIsValid(actual), windowFrameIsValid(requested) else { return false }
+  return abs(actual.size.width - requested.size.width) < 1 && abs(actual.size.height - requested.size.height) < 1
+}
+
 struct WindowFrameIdentity: Equatable {
   let pid: pid_t
   let window: CGWindowID
@@ -102,8 +112,7 @@ struct WindowFrameSource<Element> {
   // nil includes failed reads and malformed values. Exact identity is consulted only for AXWindow.
   var role: (Element) -> String?
   var subrole: (Element) -> String?
-  // Inactive until the size barrier/trace implementation; injected monotonic milliseconds.
-  var now: () -> Double = { 0 }
+  var now: () -> Double // monotonic milliseconds, never wall-clock time
 }
 
 // Only this finite vocabulary may leave the process. Raw AX strings decide role eligibility but
@@ -139,6 +148,7 @@ struct WindowFrameDiagnostic {
     case numberMatch = "ax-number-match"
     case beforeSize = "identity-recheck-before-size"
     case beforePosition = "identity-recheck-before-position"
+    case sizeConvergence = "size-convergence"
   }
   enum Reason: String {
     case disallowedPID = "disallowed-pid"
@@ -151,6 +161,7 @@ struct WindowFrameDiagnostic {
     case noMatch = "no-match"
     case ambiguousMatch = "ambiguous-match"
     case axIdentityChanged = "ax-identity-changed"
+    case sizeNotConverged = "size-not-converged"
   }
   let stage: Stage
   let reason: Reason
@@ -167,25 +178,66 @@ struct WindowFrameDiagnostic {
   }
 }
 
+struct WindowFrameTrace {
+  enum Stage: String { case initial, afterSize = "after-size", finalReadback = "final" }
+  enum Attribute: String { case size, position }
+  struct Sample {
+    let stage: Stage
+    let atMs: Double
+    let frame: CGRect?
+    var wire: [String: Any] { ["stage": stage.rawValue, "atMs": atMs, "frame": rectWire(frame)] }
+  }
+  struct Setter {
+    let attribute: Attribute
+    let startMs: Double
+    let endMs: Double
+    let error: AXError
+    var wire: [String: Any] {
+      ["attribute": attribute.rawValue, "startMs": startMs, "endMs": endMs, "axError": Int(error.rawValue)]
+    }
+  }
+  var samples: [Sample] = []
+  var setters: [Setter] = []
+  var wire: [String: Any] { ["samples": samples.map { $0.wire }, "setters": setters.map { $0.wire }] }
+}
+
 struct WindowFrameResult {
   let readBack: CGRect?
   let matched: Bool
   let exitStatus: Int32
   var diagnostic: WindowFrameDiagnostic? = nil
   var excludedEntries: [WindowFrameEntry] = []
+  var trace = WindowFrameTrace()
 
   func wire(for request: WindowFrameRequest) -> [String: Any] {
     ["pid": Int(request.pid), "window": request.window, "requested": rectWire(request.frame),
      "readBack": rectWire(readBack), "matched": matched, "exitStatus": Int(exitStatus),
      "diagnostic": diagnostic.map { $0.wire as Any } ?? NSNull(),
-     "excludedEntries": excludedEntries.map { $0.wire }]
+     "excludedEntries": excludedEntries.map { $0.wire }, "trace": trace.wire]
   }
 }
 
 func runWindowFrame<Element>(_ request: WindowFrameRequest, source: WindowFrameSource<Element>) -> WindowFrameResult {
   var excludedEntries: [WindowFrameEntry] = []
+  var trace = WindowFrameTrace()
+  let started = source.now()
+  var readBack: CGRect?
+  // Every CG call uses the requested owner/number; trace records the reading when the call returns.
+  // Guard reads count too: <=2 initial + <=12 after-size + <=11 final samples on any path.
+  func sample(_ stage: WindowFrameTrace.Stage) -> CGRect? {
+    readBack = source.cgFrame(request.pid, request.window)
+    trace.samples.append(.init(stage: stage, atMs: source.now() - started, frame: readBack))
+    return readBack
+  }
+  func write(_ attribute: WindowFrameTrace.Attribute, operation: () -> AXError) -> AXError {
+    let start = source.now() - started
+    let error = operation()
+    trace.setters.append(.init(attribute: attribute, startMs: start, endMs: source.now() - started, error: error))
+    return error
+  }
   func fail(_ status: Int32, readBack: CGRect? = nil) -> WindowFrameResult {
-    WindowFrameResult(readBack: readBack, matched: false, exitStatus: status, excludedEntries: excludedEntries)
+    WindowFrameResult(readBack: readBack, matched: false, exitStatus: status,
+                      excludedEntries: excludedEntries, trace: trace)
   }
   func refuse(_ stage: WindowFrameDiagnostic.Stage, _ reason: WindowFrameDiagnostic.Reason,
               readBack: CGRect? = nil, windowCount: Int? = nil, matchCount: Int? = nil,
@@ -194,7 +246,13 @@ func runWindowFrame<Element>(_ request: WindowFrameRequest, source: WindowFrameS
                       diagnostic: WindowFrameDiagnostic(stage: stage, reason: reason,
                                                         windowCount: windowCount, matchCount: matchCount,
                                                         unknownEntry: unknownEntry),
-                      excludedEntries: excludedEntries)
+                      excludedEntries: excludedEntries, trace: trace)
+  }
+  func sizeNotConverged() -> WindowFrameResult {
+    WindowFrameResult(readBack: readBack, matched: false, exitStatus: 6,
+                      diagnostic: WindowFrameDiagnostic(stage: .sizeConvergence, reason: .sizeNotConverged,
+                                                        windowCount: nil, matchCount: nil),
+                      excludedEntries: excludedEntries, trace: trace)
   }
   func entry(_ element: Element, index: Int, role: String?) -> WindowFrameEntry {
     WindowFrameEntry(index: index, role: role, subrole: source.subrole(element))
@@ -203,7 +261,7 @@ func runWindowFrame<Element>(_ request: WindowFrameRequest, source: WindowFrameS
   guard source.allowedPID(request.pid) else { return refuse(.initialIdentity, .disallowedPID) }
   // This CG read both proves the owner/number pair and establishes the WindowServer connection
   // BEFORE AX reads, important for probes launched via open (the FocusProbe connection pattern).
-  guard let initial = source.cgFrame(request.pid, request.window) else { return refuse(.initialIdentity, .cgWindowUnavailable) }
+  guard let initial = sample(.initial) else { return refuse(.initialIdentity, .cgWindowUnavailable) }
   guard let windows = source.windows(request.pid) else { return refuse(.windowList, .unavailable, readBack: initial) }
   guard !windows.isEmpty else { return refuse(.windowList, .empty, readBack: initial, windowCount: 0) }
   guard windows.count <= 128 else { return refuse(.windowList, .limitExceeded, readBack: initial, windowCount: windows.count) }
@@ -244,36 +302,47 @@ func runWindowFrame<Element>(_ request: WindowFrameRequest, source: WindowFrameS
 
   // Keep the same AX handle, rechecking its role and exact identity before each write. Subrole
   // is read only for exclusion/refusal metadata; no retries or reselection after a race.
-  func recheckFailure(_ stage: WindowFrameDiagnostic.Stage) -> WindowFrameResult? {
+  func recheckFailure(_ stage: WindowFrameDiagnostic.Stage, phase: WindowFrameTrace.Stage) -> WindowFrameResult? {
     guard source.allowedPID(request.pid) else {
-      return refuse(stage, .disallowedPID, readBack: source.cgFrame(request.pid, request.window))
+      return refuse(stage, .disallowedPID, readBack: sample(phase))
     }
     let role = source.role(element)
     guard role == kAXWindowRole, source.identity(element) == wanted else {
-      return refuse(stage, .axIdentityChanged, readBack: source.cgFrame(request.pid, request.window),
+      return refuse(stage, .axIdentityChanged, readBack: sample(phase),
                     unknownEntry: entry(element, index: index, role: role))
     }
-    guard source.cgFrame(request.pid, request.window) != nil else {
-      return refuse(stage, .cgWindowUnavailable, readBack: source.cgFrame(request.pid, request.window))
+    guard sample(phase) != nil else {
+      return refuse(stage, .cgWindowUnavailable, readBack: nil)
     }
     return nil
   }
-  if let failure = recheckFailure(.beforeSize) { return failure }
-  guard source.setSize(element, request.frame.size) == .success else {
-    return fail(4, readBack: source.cgFrame(request.pid, request.window))
-  }
-  if let failure = recheckFailure(.beforePosition) { return failure }
-  guard source.setPosition(element, request.frame.origin) == .success else {
-    return fail(4, readBack: source.cgFrame(request.pid, request.window))
+  if let failure = recheckFailure(.beforeSize, phase: .initial) { return failure }
+  guard write(.size, operation: { source.setSize(element, request.frame.size) }) == .success else {
+    return fail(4, readBack: sample(.afterSize))
   }
 
-  var readBack: CGRect?
+  // AX acceptance can precede layout. A dependent position write may otherwise preserve stale size.
+  // This is an ordering safeguard, not a claim about the cause of any particular app's refusal.
   for attempt in 0..<11 {
     if attempt > 0 { source.settle() }
-    // Assign nil too: disappearance must not return a stale last-known frame as current.
-    readBack = source.cgFrame(request.pid, request.window)
-    if windowFrameMatches(readBack, request.frame) {
-      return WindowFrameResult(readBack: readBack, matched: true, exitStatus: 0, excludedEntries: excludedEntries)
+    if let failure = recheckFailure(.beforePosition, phase: .afterSize) { return failure }
+    if windowFrameSizeMatches(readBack, request.frame) { break }
+  }
+  guard windowFrameSizeMatches(readBack, request.frame) else { return sizeNotConverged() }
+  // Revalidate the same target immediately before the write. If size was lost since convergence,
+  // refuse rather than knowingly letting the position write carry stale dimensions forward.
+  if let failure = recheckFailure(.beforePosition, phase: .afterSize) { return failure }
+  guard windowFrameSizeMatches(readBack, request.frame) else { return sizeNotConverged() }
+  guard write(.position, operation: { source.setPosition(element, request.frame.origin) }) == .success else {
+    return fail(4, readBack: sample(.finalReadback))
+  }
+
+  for attempt in 0..<11 {
+    if attempt > 0 { source.settle() }
+    // sample assigns nil too: disappearance must not return stale geometry as current.
+    if windowFrameMatches(sample(.finalReadback), request.frame) {
+      return WindowFrameResult(readBack: readBack, matched: true, exitStatus: 0,
+                               excludedEntries: excludedEntries, trace: trace)
     }
   }
   return fail(5, readBack: readBack)
@@ -337,7 +406,8 @@ private func liveWindowFrameSource() -> WindowFrameSource<AXUIElement> {
     },
     settle: { usleep(50_000) },
     role: { stringAttribute($0, kAXRoleAttribute) },
-    subrole: { stringAttribute($0, kAXSubroleAttribute) })
+    subrole: { stringAttribute($0, kAXSubroleAttribute) },
+    now: monotonicMilliseconds)
 }
 
 extension Probe {

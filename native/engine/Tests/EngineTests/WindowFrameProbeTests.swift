@@ -131,6 +131,59 @@ final class WindowFrameProbeTests: XCTestCase {
     XCTAssertTrue(final.allSatisfy { ($0["frame"] as? [String: Double])?["height"] == 968 })
   }
 
+  func testBothConvergenceBudgetsAndTraceHaveAFiniteMaximum() throws {
+    let tree = Tree(); tree.applySize = false
+    var source = tree.source()
+    source.settle = {
+      tree.waits += 1; tree.timeMs += 50
+      if tree.waits == 10 { tree.cg?.size = self.request.frame.size }
+    }
+    let result = runWindowFrame(request, source: source)
+    XCTAssertEqual(result.exitStatus, 5, "size settles on the last allowed sample; position never settles")
+    XCTAssertEqual(tree.waits, 20)
+    XCTAssertEqual(tree.writes.map { $0.1 }, ["size", "position"])
+    let rows = try XCTUnwrap(try trace(result)["samples"] as? [[String: Any]])
+    XCTAssertEqual(rows.count, 25)
+    XCTAssertEqual(try samples(result, stage: "initial").count, 2)
+    XCTAssertEqual(try samples(result, stage: "after-size").count, 12, "11 samples plus the final same-handle guard")
+    XCTAssertEqual(try samples(result, stage: "final").count, 11)
+    let times = try rows.map { try XCTUnwrap($0["atMs"] as? Double) }
+    XCTAssertEqual(times, times.sorted())
+    XCTAssertEqual(times.first, 0)
+    XCTAssertEqual(times.last, 1_000)
+  }
+
+  func testSizeLostBetweenBarrierAndFinalGuardStillPreventsPositionWrite() throws {
+    let tree = Tree()
+    tree.afterRead = {
+      if tree.reads == 3 { tree.cg?.size.height = 968 } // immediately after the converged size sample
+    }
+    let result = runWindowFrame(request, source: tree.source())
+    XCTAssertEqual(result.exitStatus, 6)
+    XCTAssertEqual(tree.writes.map { $0.1 }, ["size"])
+    XCTAssertEqual(tree.waits, 0)
+    let intermediate = try samples(result, stage: "after-size")
+    XCTAssertEqual(intermediate.count, 2)
+    XCTAssertEqual((intermediate.first?["frame"] as? [String: Double])?["height"], 600)
+    XCTAssertEqual((intermediate.last?["frame"] as? [String: Double])?["height"], 968)
+  }
+
+  func testTraceExistsWithoutInventingSamplesOrWritesBeforePermissionAndIdentityChecks() throws {
+    let untrusted = Tree(); untrusted.trusted = false
+    let disallowed = Tree(); disallowed.allowed = false
+    for tree in [untrusted, disallowed] {
+      let result = runWindowFrame(request, source: tree.source())
+      let metadata = try trace(result)
+      XCTAssertEqual((metadata["samples"] as? [[String: Any]])?.count, 0)
+      XCTAssertEqual((metadata["setters"] as? [[String: Any]])?.count, 0)
+    }
+    let missingCG = Tree(); missingCG.cg = nil
+    let result = runWindowFrame(request, source: missingCG.source())
+    let rows = try samples(result, stage: "initial")
+    XCTAssertEqual(rows.count, 1)
+    XCTAssertTrue(rows.first?["frame"] is NSNull)
+  }
+
   func testTraceRetainsSetterFailureTimingAndOnlyGeometryMetadata() throws {
     for failSize in [false, true] {
       let tree = Tree()

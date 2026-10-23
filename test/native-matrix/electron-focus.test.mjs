@@ -7,7 +7,7 @@ import {planOf, scenesOf} from '../../scripts/native-matrix/run.mjs';
 import {validateCellResult} from '../../scripts/native-matrix/cell-result.mjs';
 import {focusCells, focusReleaseOf, FOCUS_VARIANTS} from '../../scripts/native-matrix/electron-focus.mjs';
 import {focusSnapshot, readElectronFocus} from '../../scripts/native-matrix/electron-focus-device.mjs';
-import {runWith} from './run-doubles.mjs';
+import {names, runWith} from './run-doubles.mjs';
 
 const counts = (active = 0, resigned = 0) => ({seq: active + resigned, at: 1, counts: {appDidBecomeActive: active, appDidResignActive: resigned, textFocus: 1, textBlur: 0}});
 const field = {token: 'e5', role: 'AXTextArea', description: 'Fixture text', flags: {focused: false, focusable: true}, actions: ['AXConfirm'], value: 'NEVER EXPORT'};
@@ -85,7 +85,7 @@ test('observation re-finds the field rather than comparing a stale index, and ex
   assert.ok(!JSON.stringify(result).includes('SECRET'));
 });
 
-function simulated({release = true, routeMismatch = false, focus = true} = {}) {
+function simulated({release = true, routeMismatch = false, focus = true, unsupportedForced1 = false} = {}) {
   let active = 0, resigned = 0, held = false;
   const cell = code => {
     if (code.includes('cua-matrix:route-ab:release')) { if (held && release) {resigned++; held = false;} return {observed: true}; }
@@ -95,6 +95,8 @@ function simulated({release = true, routeMismatch = false, focus = true} = {}) {
     if (code.includes('cua-matrix:electron-focus:observe')) return {fieldIndex: 5, focusedIndex: focus ? 5 : null, focusedIsField: focus, selectedTextPresent: false, selectedCount: 0};
     if (code.includes('cua-matrix:electron-focus:act')) {
       const forced1 = code.includes('spikeRoute: "1"');
+      if (forced1 && unsupportedForced1) return {actMs: 2, at: [102, 104], threw: true,
+        error: 'spikeRoute 1 cannot carry this click: the element advertises neither AXPick nor AXPress', _meta: {'cua/inputRoute': null}};
       if (!forced1 && !held) {active++; resigned++;}
       return {actMs: 2, at: [102, 104], threw: false, _meta: {'cua/inputRoute': forced1 && !routeMismatch ? 1 : 3}};
     }
@@ -104,14 +106,24 @@ function simulated({release = true, routeMismatch = false, focus = true} = {}) {
     const result = base(args);
     if (args[0] === 'electron-counters') return {...result, answer: counts(active, resigned)};
     if (args[0] === 'electron-focus' && args.includes('--status-only')) return {...result, answer: {connections: 1}};
-    if (args[0] === 'electron-focus') return {...result, answer: {fieldFound: true, axFocused: focus, focusedIsField: focus, actions: ['AXPress'], focusRead: null}};
+    if (args[0] === 'electron-focus') return {...result, answer: {fieldFound: true, axFocused: focus, focusedIsField: focus, actions: unsupportedForced1 ? ['AXConfirm'] : ['AXPress'], focusRead: null}};
     return result;
   }}};
 }
 const run = (options = {}) => runWith({plan: planOf('electron-focus'), cellName: 'electron-focus', ...simulated(options)});
+function assertIncomplete({result, code, steps}) {
+  assert.deepEqual({complete: result.complete, verdict: result.verdict, code}, {complete: false, verdict: 'no-verdict', code: 1});
+  assert.ok(result.problems.length > 0, 'missing mandatory evidence must explain why the run is incomplete');
+  assert.deepEqual(validateCellResult(result), []);
+  assert.equal(result.putBack.ok, true);
+  assert.equal(result.meta.preparationCleanup.removed, true);
+  assert.deepEqual(names(steps).filter(s => s === 'live recover' || s === 'cleanup'), ['live recover', 'cleanup']);
+}
 
 test('four variants and the empty-field control retain separate before/after AX, facade, activation and route evidence and release every arm', async () => {
-  const {result, calls} = await run();
+  const {result, calls, code} = await run();
+  assert.deepEqual({complete: result.complete, verdict: result.verdict, code}, {complete: true, verdict: 'pass', code: 0});
+  assert.deepEqual(result.problems, []);
   assert.deepEqual(validateCellResult(result), []);
   assert.equal(result.rows.length, 5);
   assert.deepEqual(result.rows.map(r => r.variant), ['forced1', 'forced3', 'held3', 'natural', 'natural-empty']);
@@ -127,22 +139,65 @@ test('four variants and the empty-field control retain separate before/after AX,
   assert.equal(calls.filter(c => c.code.includes('cua-matrix:route-ab:release')).length, 5);
 });
 
-test('an unverified release blocks every subsequent arm, not merely the next one', async () => {
-  const {result, calls} = await run({release: false});
+test('an unverified held3 release retains every row, blocks subsequent clicks and prevents a completed pass', async () => {
+  const outcome = await run({release: false});
+  const {result, calls} = outcome;
+  assert.deepEqual(result.rows.map(r => r.variant), ['forced1', 'forced3', 'held3', 'natural', 'natural-empty']);
+  assert.ok(result.rows.slice(0, 2).every(r => r.ok && !r.invalid));
   assert.equal(result.rows[2].release.released, false);
-  assert.match(result.rows[3].invalid, /release/);
+  assert.ok(result.rows.slice(2).every(r => /release/.test(r.invalid)));
+  assert.equal(calls.filter(c => c.code.includes('cua-matrix:electron-focus:seed')).length, 3);
   assert.equal(calls.filter(c => c.code.includes('cua-matrix:electron-focus:act')).length, 3);
+  assertIncomplete(outcome);
 });
 
-test('forced-route mismatch is invalid, absent focus is a measured failure, not a prepare refusal', async () => {
-  assert.match((await run({routeMismatch: true})).result.rows[0].invalid, /forced route 1/);
-  const {result} = await run({focus: false});
-  assert.ok(result.rows.every(r => !r.invalid && !r.ok));
-  assert.equal(result.verdict, 'fail');
+test('an invalid forced route prevents completion even when every later arm succeeds', async () => {
+  const outcome = await run({routeMismatch: true});
+  assert.match(outcome.result.rows[0].invalid, /forced route 1/);
+  assert.equal(outcome.result.rows.length, 5);
+  assert.ok(outcome.result.rows.slice(1).every(r => r.ok && !r.invalid && r.release.released));
+  assertIncomplete(outcome);
+});
+
+test('a skipped final control prevents completion despite four valid successful arms', async () => {
+  const sim = simulated();
+  let seeds = 0;
+  const cell = code => {
+    const value = sim.cell(code);
+    return code.includes('cua-matrix:electron-focus:seed') && ++seeds === 5 ? {...value, ready: false} : value;
+  };
+  const outcome = await runWith({plan: planOf('electron-focus'), cellName: 'electron-focus', ...sim, cell});
+  assert.equal(outcome.result.rows.length, 5);
+  assert.ok(outcome.result.rows.slice(0, 4).every(r => r.ok && !r.invalid && r.release.released));
+  assert.equal(outcome.result.rows[4].variant, 'natural-empty');
+  assert.match(outcome.result.rows[4].invalid, /selection state/);
+  assert.equal(outcome.calls.filter(c => c.code.includes('cua-matrix:electron-focus:act')).length, 4);
+  assertIncomplete(outcome);
+});
+
+test('absent focus is a complete measured FAIL, not missing diagnostic evidence', async () => {
+  const {result, code} = await run({focus: false});
+  assert.equal(result.rows.length, 5);
+  assert.ok(result.rows.every(r => !r.invalid && !r.ok && r.release.released));
+  assert.deepEqual(result.problems, []);
+  assert.deepEqual({complete: result.complete, verdict: result.verdict, code}, {complete: true, verdict: 'fail', code: 1});
+});
+
+test('declared unsupported forced1 remains valid mandatory diagnostic evidence', async () => {
+  const {result, code} = await run({unsupportedForced1: true});
+  assert.equal(result.rows.length, 5);
+  assert.ok(result.rows.every(r => !r.invalid && r.release.released));
+  assert.equal(result.rows[0].ok, false);
+  assert.equal(result.rows[0].declared.kind, 'diagnostic');
+  assert.match(result.rows[0].declared.cause, /no AXPick\/AXPress/);
+  assert.ok(result.rows.slice(1).every(r => r.ok));
+  assert.deepEqual(result.problems, []);
+  assert.deepEqual({complete: result.complete, verdict: result.verdict, code}, {complete: true, verdict: 'pass', code: 0});
 });
 
 test('vendor comparison uses only the natural reference; no unsupported spike request or own-engine observation', async () => {
-  const {result, calls, steps} = await runWith({engine: 'vendor', plan: planOf('electron-focus'), cellName: 'electron-focus', ...simulated()});
+  const {result, calls, steps, code} = await runWith({engine: 'vendor', plan: planOf('electron-focus'), cellName: 'electron-focus', ...simulated()});
+  assert.deepEqual({complete: result.complete, verdict: result.verdict, code}, {complete: true, verdict: 'pass', code: 0});
   assert.deepEqual(result.rows.map(r => r.variant), ['natural']);
   assert.ok(calls.every(c => !c.code.includes('spikeRoute')));
   assert.ok(steps.filter(s => s.startsWith('matrix ') && s.includes('electron-focus')).every(s => s.includes('vendor')));
@@ -181,11 +236,14 @@ test('a leftover connection blocks the next arm before its seed and all remainin
     if (args[0] === 'electron-focus' && args.includes('--status-only')) out.answer.connections = ++checks === 1 ? 1 : 2;
     return out;
   };
-  const {result, calls} = await runWith({plan: planOf('electron-focus'), cellName: 'electron-focus', ...sim});
+  const outcome = await runWith({plan: planOf('electron-focus'), cellName: 'electron-focus', ...sim});
+  const {result, calls} = outcome;
+  assert.equal(result.rows.length, 5);
   assert.equal(result.rows[1].connectionCheck.connections, 2);
   assert.ok(result.rows.slice(1).every(r => /connection/.test(r.invalid)));
   assert.equal(calls.filter(c => c.code.includes('cua-matrix:electron-focus:seed')).length, 1);
   assert.equal(calls.filter(c => c.code.includes('cua-matrix:electron-focus:act')).length, 1);
+  assertIncomplete(outcome);
 });
 
 test('counter movement around a sidecar invalidates the sample and is retained with both readings', async () => {
@@ -196,11 +254,14 @@ test('counter movement around a sidecar invalidates the sample and is retained w
     if (args[0] === 'electron-counters') out.answer.counts.textFocus = ++focus;
     return out;
   };
-  const {result, calls} = await runWith({plan: planOf('electron-focus'), cellName: 'electron-focus', ...sim});
+  const outcome = await runWith({plan: planOf('electron-focus'), cellName: 'electron-focus', ...sim});
+  const {result, calls} = outcome;
+  assert.equal(result.rows.length, 5);
   assert.match(result.rows[0].invalid, /counters changed/);
   assert.equal(result.rows[0].sidecars[0].countersMoved, true);
   assert.ok(result.rows[0].sidecars[0].countersBefore && result.rows[0].sidecars[0].countersAfter);
   assert.equal(calls.filter(c => c.code.includes('cua-matrix:electron-focus:act')).length, 0);
+  assertIncomplete(outcome);
 });
 
 test('the empty-field natural control clears text and selection without emitting text', async () => {

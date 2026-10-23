@@ -74,6 +74,7 @@ const actReading = r => ({inputRoute: r.route, inCellMs: r.value?.actMs ?? null,
 
 export async function electronFocusSection(ctx) {
   const variants = ctx.engine === 'cua' ? FOCUS_VARIANTS : ['natural'];
+  const firstRow = ctx.rows.length;
   const startTime = ctx.now();
   const check = async () => {await ctx.checkpoint(); if (ctx.now() - startTime >= SECTION_MS) throw new Stop('the Electron focus diagnostic exhausted its four-minute section budget');};
   ctx.meta.electronFocus = {variants, sectionBudgetMs: SECTION_MS, planTagAvailable: false,
@@ -204,4 +205,7 @@ export async function electronFocusSection(ctx) {
     ctx.judged.set(key, {row: pushed, oracle: {before: before.reading, after: after.reading, focus: after.focus ?? null,
       inputRoute: row.inputRoute ?? null, scene: 'electron', userPid: userWindow.pid}});
   }
+  // Every arm is mandatory evidence, including blocked rows. Keep them all before stopping for the run's recovery.
+  const invalid = ctx.rows.slice(firstRow).filter(row => row.invalid);
+  if (invalid.length) throw new Stop(`the Electron focus diagnostic lacks valid required evidence for: ${invalid.map(row => row.variant).join(', ')}`);
 }

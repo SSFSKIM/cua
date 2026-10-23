@@ -34,7 +34,7 @@ test('a bind, a guarded key, the readback and the guarded close run in one conne
   for (const cell of [bindCell(DOC), guarded(DOC, 'nodeRepl.write(JSON.stringify({fixture: true, done: true}))'), readbackCell(DOC, MARKER),
     guarded(DOC, 'app.pressKey("super+w");\nnodeRepl.write(JSON.stringify({fixture: true, pressed: true}))')]) b.run(cell);
   assert.deepEqual(b.written, [{fixture: true, own: true}, {fixture: true, done: true},
-    {fixture: true, own: true, hash: 'hash', startsWithMarker: true, chars: MARKER.length}, {fixture: true, pressed: true}]);
+    {fixture: true, own: true, valueFound: true, hash: 'hash', startsWithMarker: true, chars: MARKER.length}, {fixture: true, pressed: true}]);
 });
 
 test('a guarded cell whose document is not in front reports the lost identity and does nothing', () => {

@@ -34,6 +34,9 @@ export function frontmostProcess({exec = run} = {}) {
 const probe = (args, {exec = run} = {}) => JSON.parse(exec('/usr/bin/swift', [FRONT_WINDOW_SCRIPT, ...args], {timeout: 120_000}));
 // FrontWindowProbe's frontmost application and top window. -> {at, frontmost: {bundleId, pid} | null, topWindow | null}.
 export const frontWindow = options => probe(['front'], options);
+// One on-screen, layer-0 ordering for Finder's activation check. Owner metadata stays on device until the scene
+// exports only the prefix through its window (Chrome and Claude: name only); no window titles are read.
+export const windowOrder = options => probe(['order'], options).windows;
 // A process's layer-0 windows, front to back. -> [{ownerPid, number, bounds, onScreen}].
 export const appWindows = (pid, options) => appWindowState(pid, options).windows;
 // The same reading with whether the app is hidden (Cmd-H; null when LaunchServices does not know the pid). -> {windows, hidden}.

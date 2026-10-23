@@ -306,3 +306,15 @@ test('the finding rows record Finder\'s list range; a list that did not start at
   assert.deepEqual(stuck.result.rows.filter(r => r.section === 'finding').map(r => [r.id, r.invalid, r.showing]),
     [['finder/lines', 'Finder\'s list did not start at its first rows', {from: 125, to: 146, of: 205}]]);
 });
+
+test('the matrix retains bind and refusal guard snapshots in row-indexed evidence', async () => {
+  const windowOrder = {runWindowFound: true, windows: [{ownerName: 'Claude'}, {ownerPid: 736, ownerName: 'Finder', layer: 0, number: 7, bounds: {x: 80, y: 80, width: 920, height: 520}}]};
+  const {result} = await runWith({ops: {matrix: (base, a) => {
+    const out = base(a);
+    if (a[0] === 'step' && a[1] === 'activate' && a[2] === 'finder') return {...out, answer: {...out.answer, ok: false, reason: 'obscured', windowOrder}};
+    return out;
+  }}});
+  assert.equal(result.complete, false);
+  assert.deepEqual(result.meta.activationGuards.map(g => ({scene: g.scene, beforeRow: g.beforeRow, ok: g.ok, windowOrder: g.windowOrder})),
+    [{scene: 'finder', beforeRow: 0, ok: false, windowOrder}]);
+});

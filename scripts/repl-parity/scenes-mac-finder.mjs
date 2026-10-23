@@ -29,6 +29,8 @@ import {dirname, join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 
 export const FINDER_DOMAIN = 'com.apple.finder';
+// Pin the outer frame after chrome toggles; Finder otherwise persists their accumulated height across opens.
+export const FINDER_FRAME = Object.freeze({x: 80, y: 80, width: 920, height: 520});
 // The parts the fixed state hides: the preference key the part's toggle writes, and the menu's key.
 export const FINDER_CHROME = Object.freeze([
   {id: 'sidebar', key: 'ShowSidebar', toggle: 'ctrl+super+s'},

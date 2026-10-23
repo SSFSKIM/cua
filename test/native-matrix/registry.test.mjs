@@ -37,7 +37,7 @@ test('the matrix\'s own cells resolve to plans, the probe cells and the Korean m
     assert.doesNotThrow(() => planOf(resolved.plan), name);
   }
   assert.deepEqual(await resolveCell('settle', {load}).then(c => [c.kind, c.section, c.module]), ['external', 'settle', './settle-cell.mjs']);
-  await assert.rejects(resolveCell('nope', {load}), /no cell nope; the cells: matrix, method, speed, finding, non-interference, launch, concurrent-use, concurrent-use-sheet, intervention-fires, pre-action-refusal, korean, route-ab, route4, minimized-select, enablement, menu, hscroll, settle$/);
+  await assert.rejects(resolveCell('nope', {load}), /no cell nope; the cells: matrix, method, speed, finding, non-interference, launch, concurrent-use, concurrent-use-sheet, intervention-fires, pre-action-refusal, korean, electron-focus, route-ab, route4, minimized-select, enablement, menu, hscroll, settle$/);
   const listed = await listCells({load});
   assert.deepEqual(listed.filter(c => c.kind === 'external').map(c => [c.name, c.section, c.module]),
     [...EXPECTED_RESIDUE.map(name => [name, 'residue', './live.mjs']), ['settle', 'settle', './settle-cell.mjs']]);

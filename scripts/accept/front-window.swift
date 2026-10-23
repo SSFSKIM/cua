@@ -13,8 +13,9 @@
 //                   null when LaunchServices does not know the pid.
 //   <window>        {"ownerPid", "number", "bounds": {"x", "y", "width", "height"}, "onScreen"}
 //
-// It reads no window names and no owner names: only kCGWindowOwnerPID, kCGWindowNumber, kCGWindowBounds,
-// kCGWindowLayer, kCGWindowAlpha and kCGWindowIsOnscreen, none of which needs Screen Recording, and an app's isHidden, so
+// `order` returns every on-screen layer-0 window with ownerName, ownerBundleId and layer for the scene guard.
+// It reads no window titles: kCGWindowOwnerPID, kCGWindowNumber, kCGWindowBounds, kCGWindowLayer, kCGWindowAlpha,
+// kCGWindowIsOnscreen and (only for `order`) kCGWindowOwnerName need no Screen Recording grant. App metadata is NSRunningApplication's, so
 // it never raises a permission dialog. Exit 0 with the JSON; exit 2 with {"error"} on a usage error.
 import AppKit
 import CoreGraphics
@@ -49,7 +50,7 @@ func frontmost() -> [String: Any]? {
   return ["pid": pid, "bundleId": bundleId as Any? ?? NSNull()]
 }
 
-func windows(_ option: CGWindowListOption) -> [[String: Any]] {
+func windows(_ option: CGWindowListOption, owners: Bool = false) -> [[String: Any]] {
   guard let list = CGWindowListCopyWindowInfo(option, kCGNullWindowID) as? [[String: Any]] else { return [] }
   return list.compactMap { entry in
     guard (entry[kCGWindowLayer as String] as? Int) == 0,
@@ -59,11 +60,17 @@ func windows(_ option: CGWindowListOption) -> [[String: Any]] {
           let bounds = CGRect(dictionaryRepresentation: boundsDictionary as CFDictionary),
           bounds.width > 1, bounds.height > 1,
           (entry[kCGWindowAlpha as String] as? Double ?? 1) > 0 else { return nil }
-    return [
+    var out: [String: Any] = [
       "ownerPid": pid, "number": number,
       "bounds": ["x": Double(bounds.origin.x), "y": Double(bounds.origin.y), "width": Double(bounds.width), "height": Double(bounds.height)],
       "onScreen": (entry[kCGWindowIsOnscreen as String] as? Bool) ?? false,
     ]
+    if owners {
+      out["layer"] = 0
+      out["ownerName"] = entry[kCGWindowOwnerName as String] as? String ?? "unknown process"
+      out["ownerBundleId"] = NSRunningApplication(processIdentifier: pid_t(pid))?.bundleIdentifier as Any? ?? NSNull()
+    }
+    return out
   }
 }
 
@@ -80,11 +87,13 @@ switch arguments.first ?? "front" {
 case "front":
   let top = windows([.optionOnScreenOnly, .excludeDesktopElements]).first
   emit(["at": now, "frontmost": frontmost() as Any? ?? NSNull(), "topWindow": top as Any? ?? NSNull()])
+case "order":
+  emit(["at": now, "windows": windows([.optionOnScreenOnly, .excludeDesktopElements], owners: true)])
 case "windows":
   guard arguments.count == 2, let pid = Int(arguments[1]), pid > 0 else { emit(["error": "usage: windows <pid>"], status: 2) }
   let hidden = NSRunningApplication(processIdentifier: pid_t(pid))?.isHidden
   emit(["at": now, "pid": pid, "hidden": hidden as Any? ?? NSNull(),
         "windows": windows([.optionAll, .excludeDesktopElements]).filter { ($0["ownerPid"] as? Int) == pid }])
 default:
-  emit(["error": "usage: front | windows <pid>"], status: 2)
+  emit(["error": "usage: front | order | windows <pid>"], status: 2)
 }

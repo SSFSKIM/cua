@@ -30,7 +30,7 @@
 // - close(): ends the device session (DELETE, bounded) and settles what is still in flight.
 import {DeviceError} from '../remote/client.mjs';
 import {DEVICE_NAME, LOCAL} from '../remote/devices.mjs';
-import {statusResult, WORK_TOOLS} from './surface.mjs';
+import {statusResult, withFeedbackNote, WORK_TOOLS} from './surface.mjs';
 
 const idKey = id => JSON.stringify(id);
 const shellQuote = text => `'${text.replaceAll("'", "'\\''")}'`;
@@ -56,7 +56,7 @@ function sessionEnd(reply, failure) {
   return null;
 }
 
-export function connectionTarget({devices, write, diagnostics, initializeParams, localTaskOpen, onWithdrawn = () => {}}) {
+export function connectionTarget({devices, write, diagnostics, initializeParams, localTaskOpen, feedbackDir, onWithdrawn = () => {}}) {
   let current = null;              // the device target: {name, link, opening, taskOpen, pendingWork, inflight, ended}; null is local
   let switching = null;            // the devices_use under way
   let closing = false;
@@ -351,7 +351,7 @@ export function connectionTarget({devices, write, diagnostics, initializeParams,
     const note = `cua: every tool (js, js_reset, end_task, secrets_list, profiles_list) now drives ${wanted}, in a new session `
       + 'there (its REPL state is fresh). Its host notes (hostNotes) and its js and profiles_list descriptions (tools) apply '
       + 'until devices_use switches again, in place of this server\'s.';
-    const hostNotes = typeof notes === 'string' && notes ? notes : '(the device sent none)';
+    const hostNotes = withFeedbackNote(typeof notes === 'string' && notes ? notes : '(the device sent none)', feedbackDir);
     const tools = Object.fromEntries(listed.result.tools
       .filter(tool => RULED_TOOLS.includes(tool?.name) && typeof tool.description === 'string')
       .map(tool => [tool.name, tool.description]));

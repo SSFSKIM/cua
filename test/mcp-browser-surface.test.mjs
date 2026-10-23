@@ -15,6 +15,44 @@ import {profileReadiness} from '../src/profiles/commands.mjs';
 
 const UPSTREAM_INSTRUCTIONS = 'UI automation through cua_repl using the initialized cua API.';
 
+// Catches a missing opt-in note, an unconditional note, or a surface/platform that drops it.
+test('feedback is opt-in and adds one client-directory note on every surface and platform', async () => {
+  const feedbackDir = '~/cua feedback';
+  for (const platform of ['darwin', 'linux']) {
+    for (const surfaces of ['computer', 'browser', 'computer,browser']) {
+      const env = {CUA_SHIM_SURFACES: surfaces};
+      const baseline = settingsFrom(env, {platform, devices: true});
+      assert.doesNotMatch(baseline.hostNotes, /file feedback/);
+      assert.equal(settingsFrom({...env, CUA_FEEDBACK_DIR: ''}, {platform, devices: true}).hostNotes, baseline.hostNotes);
+      const settings = settingsFrom({...env, CUA_FEEDBACK_DIR: feedbackDir}, {platform, devices: true});
+      assert.equal(settings.hostNotes, hostNotesFor(surfaces.split(','), {platform, devices: true, feedbackDir}));
+      assert.ok(settings.hostNotes.startsWith(`${baseline.hostNotes}\n`), 'existing notes are preserved');
+      const added = settings.hostNotes.slice(baseline.hostNotes.length + 1);
+      assert.equal(added.split('\n').length, 1);
+      assert.ok(added.includes(feedbackDir));
+      assert.match(added, /Before your final reply.*file feedback on cua_repl.*on the client/);
+      assert.match(added, /problems, friction, overall experience, features you wished for/);
+      assert.match(added, /one Markdown file per task, problems first/);
+      const h = harness({server: settings});
+      const instructions = (await initialized(h)).result.instructions;
+      assert.equal(instructions, `${UPSTREAM_INSTRUCTIONS}\n\n${settings.hostNotes}`);
+      assert.ok(instructions.length <= 2048, `${instructions.length} characters`);
+    }
+  }
+});
+
+test('explicit feedback opt-in survives replacement or disabled built-in host notes', () => {
+  for (const value of ['Custom notes.', 'none']) {
+    const env = {CUA_SHIM_HOST_NOTES: value};
+    const baseline = settingsFrom(env).hostNotes;
+    assert.equal(baseline, value === 'none' ? '' : value);
+    const notes = settingsFrom({...env, CUA_FEEDBACK_DIR: '/client/feedback'}).hostNotes;
+    assert.ok(notes.startsWith(baseline));
+    assert.match(notes, /file feedback on cua_repl in \/client\/feedback on the client/);
+    assert.equal(notes.split('\n').length, baseline ? 2 : 1);
+  }
+});
+
 async function toolsOf(h) {
   await initialized(h);
   const list = h.client.request('tools/list', {});

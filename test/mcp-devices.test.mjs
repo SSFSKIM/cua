@@ -10,6 +10,7 @@ import {spawnSync} from 'node:child_process';
 import {existsSync} from 'node:fs';
 import {createServer as createHttpServer} from 'node:http';
 import {createMcpHttp} from '../src/mcp/http.mjs';
+import {settingsFrom} from '../src/mcp/server.mjs';
 import {openDeviceSession} from '../src/remote/client.mjs';
 import {addDevice} from '../src/remote/devices.mjs';
 import {clientSecretKey} from '../src/remote/device.mjs';
@@ -119,6 +120,38 @@ test('a connection with a device directory lists devices_list and devices_use af
   plain.upstream.reply(await plain.upstream.nextRequest('tools/list'), {tools: UPSTREAM_TOOLS});
   assert.deepEqual((await plainList.response).result.tools.map(tool => tool.name), ['js', 'js_reset', 'end_task', 'secrets_list']);
   assert.equal((await plain.client.call('devices_list').response).error.code, -32602, 'an unknown tool there');
+});
+
+// Catches the target switch replacing the client's feedback request with only the remote host's notes.
+test('devices_use preserves device notes and appends the client feedback directory in text and structured content', async t => {
+  const home = userHome(t);
+  const mini = await device(t);
+  await register(home, 'mini', mini);
+  const feedbackDir = '~/client-only feedback';
+  const h = await local(t, home, settingsFrom({...home.env, CUA_FEEDBACK_DIR: feedbackDir}, {devices: true}));
+  const switched = await use(h, 'mini');
+  assert.equal(switched.result.isError, false);
+  const notes = structured(switched).hostNotes;
+  const remoteNotes = settingsFrom({}).hostNotes;
+  assert.ok(notes.startsWith(`Upstream.\n\n${remoteNotes}\n`), 'device instructions and rules remain intact');
+  const added = notes.slice(`Upstream.\n\n${remoteNotes}\n`.length);
+  assert.ok(added.includes(feedbackDir), 'the directory comes from the client, not the device');
+  assert.match(added, /file feedback on cua_repl.*on the client/);
+  assert.equal(added.split('\n').length, 1);
+  assert.equal(textOf(switched).split(added).length, 2, 'the text contains the client note exactly once');
+  assertModelSeesText(switched);
+  assert.equal((await use(h, 'local')).result.isError, false);
+  assert.equal(structured(await use(h, 'mini')).hostNotes, notes, 'switching back does not accumulate notes');
+});
+
+test('devices_use without feedback configured forwards only the device instructions', async t => {
+  const home = userHome(t);
+  const mini = await device(t);
+  await register(home, 'mini', mini);
+  const h = await local(t, home, settingsFrom(home.env, {devices: true}));
+  const switched = await use(h, 'mini');
+  assert.equal(structured(switched).hostNotes, `Upstream.\n\n${settingsFrom({}).hostNotes}`);
+  assert.doesNotMatch(textOf(switched), /file feedback/);
 });
 
 test('devices_list: local first and current; each device probed online, locked, unauthorized, credential_missing or offline, with no session opened', async t => {

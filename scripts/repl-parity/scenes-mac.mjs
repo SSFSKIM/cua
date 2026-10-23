@@ -538,7 +538,7 @@ const recordOf = (id, run) => {
 
 // Brings an up scene's process to the front (`open -a`, which activates the running instance) and polls for up to
 // `boundMs` until the frontmost process is the run's, by pid, and for Finder until the run's window (by its number) is
-// its top window. When Finder is in front with another of its own windows above the run's, the run's folder is opened
+// its top window. When Finder is in front with any layer-0 window above the run's, the run's folder is opened
 // again (`open -a Finder <folder>`), once: Finder brings the window already showing that folder to the front and
 // touches no other. Only while the run's window is on screen, since otherwise the open would make a new window.
 // -> {scene, ok, frontmost, topWindow?, raised?, runWindow?, reason?, windowOrder?, framePin?}; ok false names what was in front instead and,
@@ -547,7 +547,7 @@ const recordOf = (id, run) => {
 export async function activateScene(id, {run, io = defaultIo(), boundMs = 5000, pollMs = 250}) {
   const record = recordOf(id, run), finder = sceneOf(id).id === 'finder';
   io.activateApp(record.app);
-  let frontmost = null, topWindow = null, order = [], placed = false, raised = false;
+  let frontmost = null, topWindow = null, order = [], raised = false;
   const finish = out => {
     const windowOrder = windowOrderEvidence(order, record);
     const result = {...out, windowOrder, ...(record.framePin ? {framePin: record.framePin} : {})};
@@ -565,8 +565,9 @@ export async function activateScene(id, {run, io = defaultIo(), boundMs = 5000, 
       topWindow = order[0] ?? null;
       if (topWindow?.ownerPid === record.pid && topWindow.number === record.window.number)
         return finish({scene: id, ok: true, frontmost, topWindow: {ownerPid: topWindow.ownerPid, number: topWindow.number, bounds: topWindow.bounds}, ...(raised ? {raised} : {})});
-      const place = runWindowPlace(order, record);
-      if (!placed) { placed = true; if (place?.order > 0) { io.showFolder(record.app, record.folder); raised = true; } }
+      const index = order.findIndex(w => w.ownerPid === record.pid && w.number === record.window.number);
+      // Raising is a single attempt, not an exemption: even a run-owned blocker must be gone on a later CG read.
+      if (!raised && index > 0 && order[index].onScreen !== false) { io.showFolder(record.app, record.folder); raised = true; }
     }
     if (io.now() - t0 >= boundMs) break;
     await io.sleep(pollMs);

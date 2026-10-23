@@ -915,11 +915,11 @@ test('activate brings the run\'s Finder window back above Finder\'s other window
   assert.deepEqual(io.calls.filter(c => c[0] === 'show'), [['show', finder.app, finder.folder]]);
 }));
 
-test('activate says why the run\'s Finder window is not on top, and raises it only from behind Finder\'s own windows', async () => withRun(async run => {
+test('activate says why the run\'s Finder window is not on top, and raises it once from behind any window', async () => withRun(async run => {
   const io = fakeDevice();
   const finder = await upScene('finder', {run, io});
   io.showFolder = (...args) => io.calls.push(['show', ...args]);
-  // Another process's window above Finder's, the run's window Finder's front one: nothing of Finder's to raise.
+  // Another process's window above Finder's: attempt the exact folder raise, but do not exempt the blocker.
   io.activateApp = app => { io.calls.push(['activate', app]); io.front = {pid: 736, bundleId: 'com.apple.finder', topWindow: {ownerPid: 4242, number: 77}}; };
   const overlay = await activateScene('finder', {run, io});
   assert.equal(overlay.ok, false);
@@ -931,13 +931,13 @@ test('activate says why the run\'s Finder window is not on top, and raises it on
   const behind = await activateScene('finder', {run, io});
   assert.equal(behind.ok, false);
   assert.match(behind.reason, /1 other Finder window is above the run's window/);
-  assert.equal(io.calls.filter(c => c[0] === 'show').length, 1, 'one raise per activation');
+  assert.equal(io.calls.filter(c => c[0] === 'show').length, 2, 'one raise per activation');
   // The run's window off screen (minimized, another Space) or gone: opening the folder would open a new window, so no raise.
   io.windows[736] = io.windows[736].filter(w => w.number !== finder.window.number);
   const gone = await activateScene('finder', {run, io});
   assert.match(gone.reason, /not in the on-screen layer-0 snapshot/);
   assert.equal(gone.runWindow, null);
-  assert.equal(io.calls.filter(c => c[0] === 'show').length, 1, 'no raise without the run\'s window on screen');
+  assert.equal(io.calls.filter(c => c[0] === 'show').length, 2, 'no raise without the run\'s window on screen');
 }));
 
 test('activate gives up after its bound when the process never comes to the front, without guessing', async () => withRun(async run => {
@@ -1194,4 +1194,28 @@ test('Finder bind and refusal evidence retain the ordered prefix through the run
   const out = await activateScene('finder', {run, io});
   assert.equal(out.ok, true);
   assert.deepEqual(out.windowOrder, {runWindowFound: true, windows: [{ownerPid: finder.pid, ownerName: 'Finder', layer: 0, number: finder.window.number, bounds: finder.window.bounds}]});
+}));
+
+test('Finder raises its exact window once from behind another process and verifies the new CG order', async () => withRun(async run => {
+  const io = fakeDevice();
+  const finder = await upScene('finder', {run, io});
+  const own = {ownerPid: finder.pid, number: finder.window.number, bounds: finder.window.bounds, onScreen: true};
+  const blocker = {ownerPid: 62867, ownerName: 'cua Electron Fixture', number: 19108, bounds: {x: 140, y: 100, width: 720, height: 560}, onScreen: true};
+  let order = [blocker, own], reads = 0;
+  io.windowOrder = () => { reads++; return order; };
+  io.showFolder = (app, folder) => { io.calls.push(['show', app, folder]); order = [own, blocker]; };
+  const out = await activateScene('finder', {run, io});
+  assert.equal(out.ok, true);
+  assert.equal(out.raised, true);
+  assert.ok(reads >= 2, 'opening the folder is not itself proof of being on top');
+  assert.deepEqual(io.calls.filter(c => c[0] === 'show'), [['show', finder.app, finder.folder]]);
+}));
+
+test('Finder does not reopen a recorded window marked off screen to overcome a blocker', async () => withRun(async run => {
+  const io = fakeDevice();
+  const finder = await upScene('finder', {run, io});
+  io.windowOrder = () => [{ownerPid: 62867, number: 10},
+    {ownerPid: finder.pid, number: finder.window.number, bounds: finder.window.bounds, onScreen: false}];
+  assert.equal((await activateScene('finder', {run, io})).ok, false);
+  assert.equal(io.calls.filter(c => c[0] === 'show').length, 0);
 }));

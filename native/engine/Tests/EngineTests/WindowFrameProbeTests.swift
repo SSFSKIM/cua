@@ -301,15 +301,17 @@ final class WindowFrameProbeTests: XCTestCase {
 
   func testMissingRoleCannotBeExcludedEvenWhenItsIdentityMatchesOrIsUnknown() throws {
     for identity: WindowFrameIdentity? in [nil, .init(pid: 612, window: 92)] {
-      let tree = Tree(); tree.roles[1] = nil; tree.identities[1] = identity
-      let result = runWindowFrame(request, source: tree.source())
-      XCTAssertEqual(result.exitStatus, 2)
-      XCTAssertTrue(tree.writes.isEmpty)
-      XCTAssertFalse(tree.identityReads.contains(1))
-      let entry = try XCTUnwrap(diagnostic(result)["unknownEntry"] as? [String: Any])
-      XCTAssertEqual(entry["index"] as? Int, 0)
-      XCTAssertEqual(entry["role"] as? String, "unknown")
-      XCTAssertEqual(entry["subrole"] as? String, "unknown")
+      for role: String? in [nil, ""] {
+        let tree = Tree(); tree.roles[1] = role; tree.identities[1] = identity
+        let result = runWindowFrame(request, source: tree.source())
+        XCTAssertEqual(result.exitStatus, 2)
+        XCTAssertTrue(tree.writes.isEmpty)
+        XCTAssertFalse(tree.identityReads.contains(1))
+        let entry = try XCTUnwrap(diagnostic(result)["unknownEntry"] as? [String: Any])
+        XCTAssertEqual(entry["index"] as? Int, 0)
+        XCTAssertEqual(entry["role"] as? String, "unknown")
+        XCTAssertEqual(entry["subrole"] as? String, "unknown")
+      }
     }
   }
 

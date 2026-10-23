@@ -16,8 +16,9 @@ import Foundation
 // Exact identity uses existing windowNumber(..., frame: nil). AX.swift then uses its feature-detected
 // _AXUIElementGetWindow SPI ONLY: nil frame disables its owner+bounds fallback. This dependence on
 // AX.swift is load-bearing. If the helper changes, expose an explicit exact-only helper there.
-// Unknown identity in ANY enumerated AX window, duplicate matches, absent SPI, absent CG entry,
-// or wrong owner all fail closed. Enumeration is bounded to 128 windows with existing AX timeouts.
+// A positively read non-AXWindow role is ineligible and excluded (Finder may list its desktop).
+// Missing/unreadable roles and unknown identity in ANY AXWindow, duplicate matches, absent SPI,
+// absent CG entry, or wrong owner all fail closed. Enumeration is bounded to 128 entries.
 //
 // Writes are size then position (resize may relocate the window). No raise, focus, unminimize, retries
 // of writes, or rollback: two AX writes cannot be atomic. A failure may have partially changed this
@@ -27,10 +28,12 @@ import Foundation
 // matched requires BOTH writes to succeed and all four CG components to differ by <1 point.
 // On failure readBack is the last exact CG reading (or null), never an AX-derived/optimistic frame.
 //
-// Result (every parsed request): {pid,window,requested,readBack,matched,exitStatus,diagnostic}.
-// diagnostic is null except for identity refusals (status 2): {stage,reason,windowCount?,matchCount?}.
-// Its strings are fixed labels, counts are metadata, and matchCount is present only after a complete
-// identity scan. No observed AX strings, other window identities, or raw OS dictionaries are emitted.
+// Result: {pid,window,requested,readBack,matched,exitStatus,diagnostic,excludedEntries}.
+// diagnostic is null except for identity refusals: {stage,reason,windowCount?,matchCount?,unknownEntry?}.
+// Entry metadata is {index,role,subrole}: zero-based original-list index and allowlisted labels only.
+// excludedEntries retains the nonwindows encountered before completion/refusal (at most 128).
+// matchCount is present only after a complete scan. No arbitrary AX strings, other window identities,
+// or raw OS dictionaries are emitted. Subrole is diagnostic only; it never establishes identity.
 // Status: 0 matched; 2 identity/target refused; 3 existing AX trust absent; 4 unsettable/write failure;
 // 5 CG readback did not converge. Malformed arguments follow Probe's existing error+exitStatus 64 form.
 // No AXIsProcessTrustedWithOptions, screen capture, AppleEvents, permission prompt, titles or values.
@@ -96,9 +99,35 @@ struct WindowFrameSource<Element> {
   var setSize: (Element, CGSize) -> AXError
   var setPosition: (Element, CGPoint) -> AXError
   var settle: () -> Void
-  // Injected independently of exact PID/window identity. Selection does not consume these yet.
-  var role: (Element) -> String? = { _ in nil }
-  var subrole: (Element) -> String? = { _ in nil }
+  // nil includes failed reads and malformed values. Exact identity is consulted only for AXWindow.
+  var role: (Element) -> String?
+  var subrole: (Element) -> String?
+}
+
+// Only this finite vocabulary may leave the process. Raw AX strings decide role eligibility but
+// are never retained in result metadata; unlisted positive values become "other", absent ones "unknown".
+struct WindowFrameEntry {
+  enum Role: String {
+    case window = "AXWindow", scrollArea = "AXScrollArea", group = "AXGroup"
+    case application = "AXApplication", sheet = "AXSheet", unknownRole = "AXUnknown"
+    case other, unknown
+  }
+  enum Subrole: String {
+    case desktop = "AXDesktop", standardWindow = "AXStandardWindow", dialog = "AXDialog"
+    case systemDialog = "AXSystemDialog", floatingWindow = "AXFloatingWindow", unknownSubrole = "AXUnknown"
+    case other, unknown
+  }
+  let index: Int
+  let role: Role
+  let subrole: Subrole
+
+  init(index: Int, role: String?, subrole: String?) {
+    self.index = index
+    self.role = role.map { $0.isEmpty ? .unknown : Role(rawValue: $0) ?? .other } ?? .unknown
+    self.subrole = subrole.map { $0.isEmpty ? .unknown : Subrole(rawValue: $0) ?? .other } ?? .unknown
+  }
+
+  var wire: [String: Any] { ["index": index, "role": role.rawValue, "subrole": subrole.rawValue] }
 }
 
 struct WindowFrameDiagnostic {
@@ -125,11 +154,13 @@ struct WindowFrameDiagnostic {
   let reason: Reason
   let windowCount: Int?
   let matchCount: Int?
+  var unknownEntry: WindowFrameEntry? = nil
 
   var wire: [String: Any] {
     var result: [String: Any] = ["stage": stage.rawValue, "reason": reason.rawValue]
     if let windowCount { result["windowCount"] = windowCount }
     if let matchCount { result["matchCount"] = matchCount }
+    if let unknownEntry { result["unknownEntry"] = unknownEntry.wire }
     return result
   }
 }
@@ -139,23 +170,32 @@ struct WindowFrameResult {
   let matched: Bool
   let exitStatus: Int32
   var diagnostic: WindowFrameDiagnostic? = nil
+  var excludedEntries: [WindowFrameEntry] = []
 
   func wire(for request: WindowFrameRequest) -> [String: Any] {
     ["pid": Int(request.pid), "window": request.window, "requested": rectWire(request.frame),
      "readBack": rectWire(readBack), "matched": matched, "exitStatus": Int(exitStatus),
-     "diagnostic": diagnostic.map { $0.wire as Any } ?? NSNull()]
+     "diagnostic": diagnostic.map { $0.wire as Any } ?? NSNull(),
+     "excludedEntries": excludedEntries.map { $0.wire }]
   }
 }
 
 func runWindowFrame<Element>(_ request: WindowFrameRequest, source: WindowFrameSource<Element>) -> WindowFrameResult {
+  var excludedEntries: [WindowFrameEntry] = []
   func fail(_ status: Int32, readBack: CGRect? = nil) -> WindowFrameResult {
-    WindowFrameResult(readBack: readBack, matched: false, exitStatus: status)
+    WindowFrameResult(readBack: readBack, matched: false, exitStatus: status, excludedEntries: excludedEntries)
   }
   func refuse(_ stage: WindowFrameDiagnostic.Stage, _ reason: WindowFrameDiagnostic.Reason,
-              readBack: CGRect? = nil, windowCount: Int? = nil, matchCount: Int? = nil) -> WindowFrameResult {
+              readBack: CGRect? = nil, windowCount: Int? = nil, matchCount: Int? = nil,
+              unknownEntry: WindowFrameEntry? = nil) -> WindowFrameResult {
     WindowFrameResult(readBack: readBack, matched: false, exitStatus: 2,
                       diagnostic: WindowFrameDiagnostic(stage: stage, reason: reason,
-                                                        windowCount: windowCount, matchCount: matchCount))
+                                                        windowCount: windowCount, matchCount: matchCount,
+                                                        unknownEntry: unknownEntry),
+                      excludedEntries: excludedEntries)
+  }
+  func entry(_ element: Element, index: Int, role: String?) -> WindowFrameEntry {
+    WindowFrameEntry(index: index, role: role, subrole: source.subrole(element))
   }
   guard source.trusted() else { return fail(3) }
   guard source.allowedPID(request.pid) else { return refuse(.initialIdentity, .disallowedPID) }
@@ -166,45 +206,61 @@ func runWindowFrame<Element>(_ request: WindowFrameRequest, source: WindowFrameS
   guard !windows.isEmpty else { return refuse(.windowList, .empty, readBack: initial, windowCount: 0) }
   guard windows.count <= 128 else { return refuse(.windowList, .limitExceeded, readBack: initial, windowCount: windows.count) }
   let wanted = WindowFrameIdentity(pid: request.pid, window: request.window)
-  var candidates: [Element] = []
-  for element in windows {
-    // Do not skip an unknown unrelated window: it could hide a second match. Report the failed
-    // proof, not a presumed cause (nil also covers a failed role/PID/SPI read, not just absent SPI).
+  var candidates: [(index: Int, element: Element)] = []
+  for (index, element) in windows.enumerated() {
+    let role = source.role(element)
+    guard let role, !role.isEmpty else {
+      return refuse(.numberMatch, .unknownIdentity, readBack: initial, windowCount: windows.count,
+                    unknownEntry: entry(element, index: index, role: role))
+    }
+    guard role == kAXWindowRole else {
+      excludedEntries.append(entry(element, index: index, role: role))
+      continue
+    }
+    // A positive nonwindow cannot be our AXWindow target. An unresolved AXWindow still could
+    // hide a second match, so never skip it, even when an earlier element matched exactly.
     guard let identity = source.identity(element) else {
-      return refuse(.numberMatch, .unknownIdentity, readBack: initial, windowCount: windows.count)
+      return refuse(.numberMatch, .unknownIdentity, readBack: initial, windowCount: windows.count,
+                    unknownEntry: entry(element, index: index, role: role))
     }
     guard identity.pid == request.pid else {
-      return refuse(.numberMatch, .wrongOwner, readBack: initial, windowCount: windows.count)
+      return refuse(.numberMatch, .wrongOwner, readBack: initial, windowCount: windows.count,
+                    unknownEntry: entry(element, index: index, role: role))
     }
     guard identity.window != 0 else {
-      return refuse(.numberMatch, .invalidNumber, readBack: initial, windowCount: windows.count)
+      return refuse(.numberMatch, .invalidNumber, readBack: initial, windowCount: windows.count,
+                    unknownEntry: entry(element, index: index, role: role))
     }
-    if identity == wanted { candidates.append(element) }
+    if identity == wanted { candidates.append((index, element)) }
   }
   guard candidates.count == 1 else {
     return refuse(.numberMatch, candidates.isEmpty ? .noMatch : .ambiguousMatch,
                   readBack: initial, windowCount: windows.count, matchCount: candidates.count)
   }
-  let element = candidates[0]
+  let (index, element) = candidates[0]
   guard source.canSetFrame(element) else { return fail(4, readBack: initial) }
 
-  // Keep the same AX handle and short-circuit read order. Diagnostics introduce no extra AX/CG
-  // calls, retries or reselection, including after a size write that may have already moved it.
-  func recheckFailure() -> WindowFrameDiagnostic.Reason? {
-    guard source.allowedPID(request.pid) else { return .disallowedPID }
-    guard source.identity(element) == wanted else { return .axIdentityChanged }
-    guard source.cgFrame(request.pid, request.window) != nil else { return .cgWindowUnavailable }
+  // Keep the same AX handle, rechecking its role and exact identity before each write. Subrole
+  // is read only for exclusion/refusal metadata; no retries or reselection after a race.
+  func recheckFailure(_ stage: WindowFrameDiagnostic.Stage) -> WindowFrameResult? {
+    guard source.allowedPID(request.pid) else {
+      return refuse(stage, .disallowedPID, readBack: source.cgFrame(request.pid, request.window))
+    }
+    let role = source.role(element)
+    guard role == kAXWindowRole, source.identity(element) == wanted else {
+      return refuse(stage, .axIdentityChanged, readBack: source.cgFrame(request.pid, request.window),
+                    unknownEntry: entry(element, index: index, role: role))
+    }
+    guard source.cgFrame(request.pid, request.window) != nil else {
+      return refuse(stage, .cgWindowUnavailable, readBack: source.cgFrame(request.pid, request.window))
+    }
     return nil
   }
-  if let reason = recheckFailure() {
-    return refuse(.beforeSize, reason, readBack: source.cgFrame(request.pid, request.window))
-  }
+  if let failure = recheckFailure(.beforeSize) { return failure }
   guard source.setSize(element, request.frame.size) == .success else {
     return fail(4, readBack: source.cgFrame(request.pid, request.window))
   }
-  if let reason = recheckFailure() {
-    return refuse(.beforePosition, reason, readBack: source.cgFrame(request.pid, request.window))
-  }
+  if let failure = recheckFailure(.beforePosition) { return failure }
   guard source.setPosition(element, request.frame.origin) == .success else {
     return fail(4, readBack: source.cgFrame(request.pid, request.window))
   }
@@ -215,7 +271,7 @@ func runWindowFrame<Element>(_ request: WindowFrameRequest, source: WindowFrameS
     // Assign nil too: disappearance must not return a stale last-known frame as current.
     readBack = source.cgFrame(request.pid, request.window)
     if windowFrameMatches(readBack, request.frame) {
-      return WindowFrameResult(readBack: readBack, matched: true, exitStatus: 0)
+      return WindowFrameResult(readBack: readBack, matched: true, exitStatus: 0, excludedEntries: excludedEntries)
     }
   }
   return fail(5, readBack: readBack)
@@ -253,7 +309,6 @@ private func liveWindowFrameSource() -> WindowFrameSource<AXUIElement> {
       return windows.map(prepare)
     },
     identity: { element in
-      guard stringAttribute(element, kAXRoleAttribute) == kAXWindowRole else { return nil }
       let owner = pid(of: element)
       guard owner > 0, let number = windowNumber(of: element, pid: owner, frame: nil) else { return nil }
       return WindowFrameIdentity(pid: owner, window: number)
@@ -278,7 +333,9 @@ private func liveWindowFrameSource() -> WindowFrameSource<AXUIElement> {
       guard let value = AXValueCreate(.cgPoint, &point) else { return .failure }
       return AXUIElementSetAttributeValue(element, kAXPositionAttribute as CFString, value)
     },
-    settle: { usleep(50_000) })
+    settle: { usleep(50_000) },
+    role: { stringAttribute($0, kAXRoleAttribute) },
+    subrole: { stringAttribute($0, kAXSubroleAttribute) })
 }
 
 extension Probe {

@@ -569,9 +569,10 @@ test('Chrome: the tool surface carries the vendor\'s Chrome flag, and the approv
 for (const concealed of [false, true]) test(`interruption effects survive the facade and a later observation (concealed=${concealed})`, async t => {
   let phase = 'in-flight';
   const effects = ['focus-write-attempted', 'activation-click-posted'];
-  const {getApp, meta} = await session(t, {secrets: {fixture: 'private-value'}, handlers: {
+  const {getApp, meta, call} = await session(t, {secrets: {fixture: 'private-value'}, handlers: {
     'execute:set_value': () => { throw new EngineFailure(-10016, 'engine diagnostic private-value', 'userIntervened', {meta: {
-      ...INPUT_META, startedAt: null, endedAt: null,
+      inputRoute: phase === 'before-effects' ? null : 3, startedAt: null, endedAt: null, receivedAt: 990, hidIdleMs: 0,
+      ...(phase === 'in-flight' ? {activationClick: 'posted'} : {}),
       interruption: {phase, effects: phase === 'before-effects' ? [] : effects},
     }}); },
   }});
@@ -589,9 +590,14 @@ for (const concealed of [false, true]) test(`interruption effects survive the fa
       assert.match(diagnostic, /focus.*may have moved/i);
       assert.match(diagnostic, /activation click was posted/i);
     }
-    assert.deepEqual(meta['cua/interruption'], {phase, effects: phase === 'before-effects' ? [] : effects});
+    const interruptedAction = {phase, effects: phase === 'before-effects' ? [] : effects,
+      inputRoute: phase === 'before-effects' ? null : 3, actionInterval: {startedAt: null, endedAt: null},
+      receivedAt: 990, activationClick: phase === 'before-effects' ? null : 'posted'};
+    assert.deepEqual(meta['cua/interruption'], interruptedAction);
     await app.getAXState({emit: false});
-    assert.equal(meta['cua/interruption'], null, 'per-call tool meta resets, not the retained error');
+    assert.deepEqual(meta['cua/interruption'], interruptedAction, 'the interrupted action survives a same-cell observation');
+    await call(() => app.getAXState({emit: false}));
+    assert.equal(meta['cua/interruption'], undefined, 'a new execution does not inherit an old interruption');
     assert.equal(caught.message, diagnostic, 'the failed action remains readable after observing in the same cell');
   }
 });

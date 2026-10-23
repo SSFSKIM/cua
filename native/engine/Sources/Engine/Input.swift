@@ -57,9 +57,19 @@ func clickFlags(_ route: InputRoute, targetActive: Bool) -> CGEventFlags {
   route == .commandPost && !targetActive ? .maskCommand : []
 }
 
+/// Value-free reached steps, shared by a request's nested preparation metadata (not shared across requests).
+/// Attempts do not prove the app accepted a write. This is not an exhaustive inventory of preparation mutations.
+final class InputEffects {
+  var focusWriteAttempted = false
+  var focusClickPosted = false
+  var valueWriteAttempted = false
+  var postedGroups = 0
+}
+
 /// The input meta of one request, whatever it answered. The route and the two times fill in as the action proceeds, so
 /// an error thrown midway carries the state reached then.
 struct InputMeta {
+  let effects = InputEffects()
   var inputRoute: InputRoute? = nil  // null before a route is chosen
   var startedAt: Int64? = nil
   var endedAt: Int64? = nil
@@ -101,12 +111,13 @@ struct InputMeta {
   /// The action interval's one rule, for every method that posts events: `post` posts one event (or one group posted
   /// back to back) and answers whether it was posted. `startedAt` is stamped as the first post that succeeds begins and
   /// `endedAt` after the last one that succeeded, so a request that posts nothing (refused, stopped before its first
-  /// event, empty, or whose first event could not be created) keeps both null, which is how the service and the wrapper
-  /// know nothing was entered.
+  /// event, empty, or whose first event could not be created) keeps both null. Preparation can have effects outside
+  /// this interval: a null interval is not a no-effects guarantee, especially on an interruption.
   @discardableResult
   mutating func posting(_ post: () -> Bool) -> Bool {
     let begun = unixMilliseconds()
     guard post() else { return false }
+    effects.postedGroups += 1
     if startedAt == nil { startedAt = begun }
     endedAt = unixMilliseconds()
     return true
@@ -134,7 +145,24 @@ struct InputMeta {
 /// Attaches input `meta` without losing the permission boundary's marker (the wire's `meta` member).
 func withMeta(_ error: EngineError, _ meta: InputMeta) -> EngineError {
   var error = error
-  error.extra["meta"] = (error.extra["meta"] as? [String: Any] ?? [:]).merging(meta.wire) { _, input in input }
+  var wire = (error.extra["meta"] as? [String: Any] ?? [:]).merging(meta.wire) { _, input in input }
+  if error.code == VendorCode.userIntervened.rawValue {
+    var detail = wire["interruption"] as? [String: Any] ?? ["phase": InterruptionPhase.inFlight.rawValue]
+    let reached: [(Bool, String, String)] = [
+      (meta.effects.focusWriteAttempted, "focus-write-attempted", "An AX focus write was attempted; focus may have moved."),
+      (meta.effects.focusClickPosted, "focus-click-posted", "A preparation/focus click was posted."),
+      (meta.activationClick == .posted, "activation-click-posted", "An activation click was posted."),
+      (meta.effects.valueWriteAttempted, "value-write-attempted", "A value write was attempted; it may have taken effect."),
+      (meta.startedAt != nil, "input-posted", "Action input was dispatched."),
+    ]
+    let effects = reached.filter { $0.0 }
+    detail["effects"] = effects.map { $0.1 }
+    wire["interruption"] = detail
+    if !effects.isEmpty {
+      error = EngineError(.userIntervened, error.message + " " + effects.map { $0.2 }.joined(separator: " "), extra: error.extra)
+    }
+  }
+  error.extra["meta"] = wire
   return error
 }
 

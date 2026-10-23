@@ -11,8 +11,9 @@ import Foundation
 //
 // The app is activated through the same seam route 3 re-activates the user's app with (ActivationSystem), and must be
 // frontmost within `foregroundWaitMs`, polled at route 3's sampling step; an app that does not come to the front is
-// refused as activationFailed with nothing delivered. Whatever happens after the activation, the user's app is
-// re-activated and its key window raised again, and the restore is checked the same way: a user's app that is not
+// refused as activationFailed with nothing delivered. After delivery, except when the intervention guard stopped it,
+// the user's app is re-activated and its key window raised again; an interruption yields without further activation
+// or raising. The restore is checked the same way: a user's app that is not
 // frontmost again within the bound fails the action as foregroundRestoreFailed, after the click was posted (its input
 // meta says so), since the user is left looking at another app. Whether the user's key window came back after the raise
 // is read again after the restore and reported (`keyWindowRestored` in the input meta), not enforced: a window that
@@ -36,8 +37,8 @@ final class ForegroundAssist {
   }
 
   /// Brings the app to the front, runs `deliver` (the action's events) while it is there, then restores the user's app
-  /// and window. An app already frontmost is neither activated nor restored. A failed delivery's error comes first; a
-  /// restore that did not take is reported after a delivery that succeeded.
+  /// and window, unless delivery stopped on intervention. An app already frontmost is neither activated nor restored.
+  /// An ordinary failed delivery's error comes first; a restore failure is reported after a delivery that succeeded.
   func run(_ deliver: () throws -> Void) throws {
     let previous = system.frontmost()
     guard let previous, previous != appPid else {
@@ -52,6 +53,11 @@ final class ForegroundAssist {
                           "The action was not performed: the app did not come to the front for its foreground click within 1 s, and the frontmost app was restored. Nothing was clicked; try again.")
       }
       try deliver()
+    }
+    // An attributed input event may have changed focus deliberately. Once the guard stops delivery, reactivation
+    // and AXRaise are optional new mutations, not cleanup: yield rather than overwrite that newer focus.
+    if case .failure(let error) = delivered, (error as? EngineError)?.errorName == "userIntervened" {
+      throw error
     }
     let restored = restore(previous, window: userWindow?.element)
     readKeyWindow(previous, before: userWindow?.id)

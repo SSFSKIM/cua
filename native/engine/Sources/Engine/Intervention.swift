@@ -15,8 +15,8 @@ import Foundation
 //
 // What cua does with it, two declared differences from the vendor (whose gate FUN_10014db0c waits out the debounce for
 // up to 100 s and never stops an action in flight, F §9.5): every input request is refused at once while the debounce is
-// live ("still interacting"), or while the re-query flag is set ("user changed"), before anything is posted; and an
-// action in flight stops at the first attributed event, between two of its events, failing "user changed".
+// live, or while the re-query flag is set, before preparation or input; and an action in flight stops at the next
+// check between its events. Both keep code -10016, but report their phase and possible effects separately (#212).
 //
 // The tap needs Input Monitoring (the owner's decision of 2026-10-20, U5: without the grant a tap is created but receives
 // nothing). The engine never requests the grant: it reads the non-prompting preflight, and without it detection is off,
@@ -96,14 +96,25 @@ func interventionVerdict(last: AttributedEvent?, cleared: Int, now: Int64) -> In
   return last.sequence > cleared ? .userChanged : .proceed
 }
 
-/// The vendor's two userIntervened sentences (F §9.5, −10016), `app` the request's own app string. The 5 is the vendor's
-/// literal (0x10014e16c), not the time left.
-func stillInteracting(_ app: String) -> EngineError {
-  EngineError(.userIntervened, "The user is still interacting with '\(app)'. Wait 5 seconds and retry.")
+/// A pre-action refusal is the only no-effects guarantee. An in-flight check can follow preparation outside the
+/// ordinary action interval; it conservatively reports possible effects, not an atomic cancellation or rollback.
+enum InterruptionPhase: String {
+  case beforeEffects = "before-effects", inFlight = "in-flight"
 }
 
-func userChanged(_ app: String) -> EngineError {
-  EngineError(.userIntervened, "The user changed '\(app)'. Re-query the latest state with `get_app_state` before sending more actions.")
+private func interruptionError(_ app: String, phase: InterruptionPhase) -> EngineError {
+  let outcome = phase == .beforeEffects ? "Action refused before any effects." : "Action interrupted after possible effects. Preparation or input may already have affected the app; already dispatched input may still complete. Effects were not rolled back."
+  return EngineError(.userIntervened,
+                     "\(outcome) Input attributed to '\(app)' triggered the intervention guard; its source is not proven human. Do not retry automatically. Let the user finish, then call getAXState() and inspect the outcome before deciding on another action.",
+                     extra: ["meta": ["interruption": ["phase": phase.rawValue, "effects": [String]()]]])
+}
+
+func stillInteracting(_ app: String) -> EngineError {
+  interruptionError(app, phase: .beforeEffects)
+}
+
+func userChanged(_ app: String, phase: InterruptionPhase = .inFlight) -> EngineError {
+  interruptionError(app, phase: phase)
 }
 
 /// The attributed events of driven processes, shared by the tap's thread and every connection's thread.
@@ -214,11 +225,11 @@ struct InterventionGuard {
     return guarding
   }
 
-  /// The pre-action check: throws the vendor's sentence when the verdict refuses; nothing has been posted.
+  /// The pre-action check: a refusal before this action's preparation or input.
   func checkBeforePosting() throws {
     switch verdict {
     case .stillInteracting: throw stillInteracting(app)
-    case .userChanged: throw userChanged(app)
+    case .userChanged: throw userChanged(app, phase: .beforeEffects)
     case .proceed: return
     }
   }

@@ -64,6 +64,45 @@ final class InterruptionEffectsTests: XCTestCase {
     XCTAssertEqual(marks, 1, "already-posted preparation still arms observation settle")
   }
 
+  func testFocusWriteThenInterventionStopsTheFallbackClickAndValueWrite() throws {
+    for takesFocus in [false, true] {
+      try checkFocusWriteInterruption(takesFocus: takesFocus)
+    }
+  }
+
+  private func checkFocusWriteInterruption(takesFocus: Bool) throws {
+    let ax = FakeAX()
+    ax.roles = [1: kAXTextFieldRole]
+    ax.settable = [1: [kAXFocusedAttribute, kAXValueAttribute]]
+    ax.values = [1: [kAXFocusedAttribute: kCFBooleanFalse, kAXValueAttribute: "default" as CFString]]
+    var latest: AttributedEvent?
+    let guarding = InterventionGuard.reading(app: "fixture", cleared: 0, now: 10, latest: { latest })
+    ax.onWrite = { _, attribute, _ in
+      if attribute == kAXFocusedAttribute {
+        // Exercise both the fallback-click boundary and the check immediately before AXValue.
+        ax.values[1]?[kAXFocusedAttribute] = takesFocus ? kCFBooleanTrue : kCFBooleanFalse
+        latest = AttributedEvent(sequence: 1, at: 11)
+      }
+    }
+    var metadata = meta(), clicks = 0
+    do {
+      try setElementValue("intended", on: Engine.element(1), role: kAXTextFieldRole, ax: ax.ops, meta: &metadata,
+                          focus: { meta in
+                            try focusFieldIfNeeded(Engine.element(1), bundleIdentifier: nil, ax: ax.ops,
+                                                   beforeMutating: guarding.checkInFlight, effects: meta.effects) { clicks += 1 }
+                          }, checkInFlight: guarding.checkInFlight, acted: {})
+      XCTFail("must stop after AXFocused")
+    } catch let error as EngineError {
+      let detail = interruption(error, metadata)
+      XCTAssertEqual(detail["phase"] as? String, "in-flight")
+      XCTAssertEqual(detail["effects"] as? [String], ["focus-write-attempted"])
+      XCTAssertTrue(withMeta(error, metadata).message.contains("focus may have moved"))
+    }
+    XCTAssertEqual(ax.writes.map(\.attribute), [kAXFocusedAttribute])
+    XCTAssertEqual(clicks, 0)
+    XCTAssertNil(metadata.startedAt, "AXFocused is preparation outside the ordinary interval")
+  }
+
   func testValueWriteAttemptIsNotLostWhenNextCheckDetectsQueuedInput() throws {
     let ax = FakeAX()
     ax.settable = [1: [kAXValueAttribute]]
@@ -78,6 +117,27 @@ final class InterruptionEffectsTests: XCTestCase {
       XCTAssertTrue((detail["effects"] as? [String] ?? []).contains("value-write-attempted"))
     }
     XCTAssertEqual(ax.writes.count, 1, "a stop cannot retract a completed write")
+  }
+
+  func testAlreadyDispatchedClickGroupCanCompleteBeforeTheNextStopCheck() throws {
+    var latest: AttributedEvent?
+    let guarding = InterventionGuard.reading(app: "fixture", cleared: 0, now: 10, latest: { latest })
+    var metadata = meta(), posted = 0
+    let target = ClickTarget(point: .zero, windowFrame: nil, windowID: nil, pid: 60_001)
+    try deliverClick(target, route: .plainPost, button: .left, count: 1, activation: nil,
+                     targetActive: { true }, beforePosting: guarding.checkInFlight, post: { _, _ in
+                       posted += 1
+                       latest = AttributedEvent(sequence: 1, at: 11)
+                     }, meta: &metadata)
+    XCTAssertEqual(posted, 2, "the already-dispatched down/up group is not atomic with the event tap")
+    XCTAssertThrowsError(try guarding.checkInFlight()) { error in
+      let detail = interruption(error as! EngineError, metadata)
+      XCTAssertTrue((detail["effects"] as? [String] ?? []).contains("input-posted"))
+    }
+    XCTAssertThrowsError(try deliverClick(target, route: .plainPost, button: .left, count: 1, activation: nil,
+                                         targetActive: { true }, beforePosting: guarding.checkInFlight,
+                                         post: { _, _ in posted += 1 }, meta: &metadata))
+    XCTAssertEqual(posted, 2, "a later optional group does not start after the stop")
   }
 
   func testActivationClickIsAnEffectWithoutAnOrdinaryActionInterval() {

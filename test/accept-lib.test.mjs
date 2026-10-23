@@ -385,6 +385,28 @@ test('research-tree references: code lines count, citations in comments do not',
   assert.deepEqual(researchTreeLines(text, tree), [4, 6]);
 });
 
+test('the prompting Accessibility skip is accepted off hosted runners, never where its test should run', () => {
+  // services-engine-real.test.mjs deliberately avoids prompting on an owner's console, including the self-hosted mini.
+  const reason = 'calls the prompting Accessibility request: GitHub-hosted runners only (RUNNER_ENVIRONMENT=github-hosted)';
+  const tally = skipReasons(`ok 1 - safe coverage\nok 2 - untrusted engine # SKIP ${reason}\n`);
+  const totals = {tests: 2, pass: 1, fail: 0, cancelled: 0, skipped: 1, todo: 0};
+  for (const env of [{}, {GITHUB_ACTIONS: 'true'}, {GITHUB_ACTIONS: 'true', RUNNER_ENVIRONMENT: 'self-hosted'}]) {
+    const skips = judgeSkips(tally, {env, platform: 'darwin'});
+    assert.deepEqual(skips, {accepted: [{reason, count: 1}], other: []});
+    assert.deepEqual(suiteVerdict({code: 0, totals, skips}), {
+      status: 'PASS', reason: `1/2 passed; declared skips not applicable on this host: 1 × "${reason}"`,
+    });
+    assert.equal(suiteVerdict({code: 0, totals: {...totals, tests: 1, pass: 0}, skips}).status, 'BLOCKED', 'a declared skip alone is not executed coverage');
+  }
+  const hosted = judgeSkips(tally, {env: {GITHUB_ACTIONS: 'true', RUNNER_ENVIRONMENT: 'github-hosted'}, platform: 'darwin'});
+  assert.deepEqual(hosted, {accepted: [], other: [{reason, count: 1}]});
+  assert.equal(suiteVerdict({code: 0, totals, skips: hosted}).status, 'BLOCKED');
+  for (const unknownReason of [reason + ' changed', 'this runner grants the engine Accessibility, so the untrusted path cannot be reached here']) {
+    const skips = judgeSkips(skipReasons(`ok 1 - untrusted engine # SKIP ${unknownReason}`), {env: {}, platform: 'darwin'});
+    assert.equal(suiteVerdict({code: 0, totals, skips}).status, 'BLOCKED', 'no broader Accessibility exemption');
+  }
+});
+
 test('declared skips (#157): exact reasons, only while their gate is absent, listed with counts; any other skip blocks', () => {
   const tap = [
     'ok 1 - a', 'ok 2 - vendor differential: x # SKIP set CUA_VENDOR_CUA to the readable @oai/cua directory to compare with the vendor facade',
@@ -413,7 +435,7 @@ test('declared skips (#157): exact reasons, only while their gate is absent, lis
   assert.match(blocked.reason, /not declared: 1 × "the own kernel needs Node 24/);
   assert.equal(suiteVerdict({code: 0, totals: {...totals, skipped: 4, pass: 1}, skips: onMac}).status, 'BLOCKED');
   assert.equal(suiteVerdict({code: 0, totals: {...totals, todo: 1, pass: 1}, skips: onMac}).status, 'BLOCKED');
-  assert.ok(DECLARED_SKIPS.every(d => [d.researchTree, d.onlyOn, d.dependency].filter(Boolean).length === 1));
+  assert.ok(DECLARED_SKIPS.every(d => [d.researchTree, d.onlyOn, d.dependency, d.onlyRunnerEnvironment].filter(Boolean).length === 1));
   // A package-gated skip: accepted only in a checkout without that package.
   const ws = skipReasons('ok 1 - relay # SKIP needs the ws package: run npm ci');
   const wsTotals = {tests: 2, pass: 1, fail: 0, cancelled: 0, skipped: 1, todo: 0};

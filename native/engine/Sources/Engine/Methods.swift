@@ -72,7 +72,7 @@ final class Engine: @unchecked Sendable {
         let others = server?.beginShutdown(connection) ?? 0
         if others > 0 { throw EngineError(name: "busy", "busy", extra: ["connections": others]) }
         return Outcome(result: .success([String: Any]()), exitAfter: true)
-      case "execute": return Outcome(result: .success(try execute(request.params, connection, receivedAt)))
+      case "execute": return Outcome(result: .success(try execute(request.params, connection, receivedAt, dispatch: dispatch)))
       default: throw EngineError(rpc: .methodNotFound, "Method not found: \(request.method.prefix(64))")
       }
     } catch let error as EngineError {
@@ -126,7 +126,10 @@ final class Engine: @unchecked Sendable {
     return ["accessibility": accessibility, "screenRecording": screenRecording, "captured": captured]
   }
 
-  private func execute(_ params: [String: Any], _ connection: ConnectionState, _ receivedAt: Int64) throws -> Any {
+  /// Request lifecycle around method dispatch. The dispatcher is a boundary seam so lifecycle/cleanup tests need
+  /// neither permission prompts nor live app input.
+  func execute(_ params: [String: Any], _ connection: ConnectionState, _ receivedAt: Int64,
+               dispatch: (String, [String: Any], ExecutionContext, ResolvedApp?) throws -> Any) throws -> Any {
     // The deadline first, before anything is dispatched (the vendor's order, F §8.9); a settle or a launch wait still
     // running when it passes is cancelled as timeoutReached (cua's addition, Skyshot.swift).
     let deadline = (params["deadlineUnixMilliseconds"] as? NSNumber)?.int64Value ?? receivedAt + 120_000
@@ -169,6 +172,10 @@ final class Engine: @unchecked Sendable {
     if focusHoldEndsBefore(app: target?.key, heldApp: connection.focusHold.app) { connection.endFocusHold() }
     let spanBefore = connection.menuSpan.serial
     defer { if step == .endAfter && connection.menuSpan.serial == spanBefore { connection.endMenuInteraction() } }
+    return try dispatch(method, args, context, target)
+  }
+
+  private func dispatch(_ method: String, _ args: [String: Any], _ context: ExecutionContext, _ target: ResolvedApp?) throws -> Any {
     switch method {
     case "list_apps": return apps.list()
     case "resolve_app":

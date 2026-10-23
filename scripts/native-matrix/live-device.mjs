@@ -568,22 +568,40 @@ export async function restoreInputSource({io, keep = false}) {
 
 // ---- Begin and put back ----------------------------------------------------------------------------------------------
 
-// The front app the owner had, saved on the device (its pid never leaves); one a run that died saved is kept.
+// The front app the owner had, saved on the device (its pid never leaves). Return the new record, or null when nothing
+// was saved. Exclusive creation preserves a dead run's only recovery record, even if it appeared after begin's check.
 export function saveFrontmost(run, front) {
-  const file = join(run, FRONTMOST_FILE);
-  if (fs.existsSync(file) || !front?.bundleId) return;
-  fs.writeFileSync(file, `${JSON.stringify({pid: front.pid, bundleId: front.bundleId, savedAt: new Date().toISOString()})}\n`, {mode: 0o600});
+  if (!front?.bundleId) return null;
+  const saved = {pid: front.pid, bundleId: front.bundleId, savedAt: new Date().toISOString()};
+  try { fs.writeFileSync(join(run, FRONTMOST_FILE), `${JSON.stringify(saved)}\n`, {mode: 0o600, flag: 'wx'}); }
+  catch (error) { if (error.code === 'EEXIST') return null; throw error; }
+  return saved;
 }
+
+const recoveryRefusal = (run, file) => `unresolved recovery record ${file} in the run directory; before begin, run on the device: node scripts/native-matrix/live-device.mjs recover --run '${run.replaceAll("'", "'\\''")}'. If recovery remains incomplete, resolve it by hand; do not discard the record to start a new run`;
 
 export async function begin({run, commit, io}) {
   const preflight = io.preflight(run), checkout = io.gitState(), engine = io.engineCheck();
   const refusals = liveRefusals({preflight, checkout, engine, state: readState(run)}, {controllerCommit: commit});
   const facts = {checkout, engine: engine.engine ?? null};
+  // Presence, not parseability: an unreadable record is still unresolved recovery, never a new run's baseline.
+  for (const file of [FRONTMOST_FILE, FINDER_FILE]) {
+    let absent = false;
+    try { absent = !fs.lstatSync(join(run, file), {throwIfNoEntry: false}); } catch { /* cannot establish absence */ }
+    if (!absent) refusals.push(recoveryRefusal(run, file));
+  }
   if (refusals.length) return {refusals, ...facts};
-  const front = io.frontmost();
-  saveFrontmost(run, front);
+  let front;
+  try { front = io.frontmost(); } catch { /* an unreadable front cannot be restored */ }
+  if (!Number.isInteger(front?.pid) || front.pid <= 0 || typeof front.bundleId !== 'string' || !front.bundleId) {
+    return {refusals: ['the front app could not be read with its process identity; bring a non-scene app to the front and retry begin'], ...facts};
+  }
+  const action = frontAppAction(front);
+  if (!action.reactivate) return {refusals: [`the front app cannot be restored: ${action.reason}; bring a non-scene app to the front and retry begin`], ...facts};
+  const saved = saveFrontmost(run, front);
+  if (!saved) return {refusals: [recoveryRefusal(run, FRONTMOST_FILE)], ...facts};
   saveFinderBaseline(run, io);
-  return {refusals: [], ...facts, frontmost: {bundleId: front?.bundleId ?? null}, engineStop: await io.stop()};
+  return {refusals: [], ...facts, frontmost: {bundleId: saved.bundleId}, engineStop: await io.stop()};
 }
 
 // Finder at begin, for the put-back's observation of it (finderCheck): its on-screen document windows (numbers) and its
@@ -632,10 +650,11 @@ function putBackSteps(run, io) {
     'front-app': async () => {
       const action = frontAppAction(front);
       if (!action.reactivate) return {ok: false, bundleId: front?.bundleId ?? null, reactivated: false, inFront: false, reason: action.reason};
-      const out = await io.reactivate(front);
-      const inFront = io.frontmost()?.pid === front.pid;
-      if (inFront) fs.rmSync(frontFile, {force: true});
-      return {ok: inFront, bundleId: front.bundleId, reactivated: out?.reactivated === true, inFront, ...(out?.reason ? {reason: out.reason} : {})};
+      const out = await io.reactivate(front), now = io.frontmost();
+      const inFront = now?.pid === front.pid && now?.bundleId === front.bundleId;
+      const ok = out?.reactivated === true && inFront;
+      if (ok) fs.rmSync(frontFile, {force: true});
+      return {ok, bundleId: front.bundleId, reactivated: out?.reactivated === true, inFront, ...(out?.reason ? {reason: out.reason} : {})};
     },
   };
   return {plan, stepFns};
@@ -740,6 +759,22 @@ async function stopProcesses(list, io, bounds) {
   for (const p of running()) io.signal(p.pid, 'SIGKILL');
   await whileHolds(() => running().length > 0, io, bounds.killMs);
   return running();
+}
+
+// Probe-only recovery for goldens/native-mac, whose scene/front records are not the matrix's put-back records.
+// Recheck journal identity before each signal and wait: a PID reused during settlement is no longer ours.
+// Nothing is discarded here; a failed barrier can be retried by a later cleanup. Bound: 2 * killMs + probeWaitMs.
+export async function settleProbes({run, io, bounds = RECOVERY_BOUNDS}) {
+  const owned = () => ownedNow(run, io).stop.filter(p => p.kind === 'probe');
+  const stillOwned = pid => owned().some(p => p.pid === pid);
+  const survivors = await stopProcesses(owned(), {...io,
+    processRuns: stillOwned,
+    signal: (pid, signal) => { if (stillOwned(pid)) io.signal(pid, signal); },
+  }, bounds);
+  const probeWait = await awaitUnresolvedProbes(run, io, bounds);
+  const ok = survivors.length === 0 && !probeWait?.remaining;
+  return {ok, survivors: survivors.map(p => p.label), probeWait,
+    ...(!ok ? {manual: 'a frame probe may still act; keep the run and preparation records, check the Mac, then run cleanup again'} : {})};
 }
 
 // The recovery (a command cut off, interrupted or timed out on the controller, or `live.mjs cleanup` after a crash). It

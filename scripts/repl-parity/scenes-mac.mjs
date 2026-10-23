@@ -72,11 +72,11 @@ import {PAGE_CONTROLS, PAGE_INITIAL, PAGE_TITLE, startScenePage} from '../native
 import {FIXTURE_BUNDLE_ID, FIXTURE_CONTROLS, FIXTURE_INITIAL, buildElectronFixture} from '../native-matrix/fixtures/electron-fixture.mjs';
 import {CHROME_FOR_TESTING_BUNDLE_ID, placeChromeForTesting} from '../native-matrix/fixtures/chrome-for-testing.mjs';
 import {
-  activateApp, activateProcess, appWindows, appWindowState, awaitOwnLaunch, frontmostProcess, frontWindow, openApp, readFinderPreferences, runningApps,
+  activateApp, activateProcess, appWindows, appWindowState, awaitOwnLaunch, frontmostProcess, frontWindow, windowOrder, openApp, readFinderPreferences, runningApps,
   showFolder, stopRecorded, writeFinderPreference,
 } from './scenes-mac-device.mjs';
 import {
-  CLOSE_WINDOW_KEY, DESELECT_ALL_KEY, FINDER_PARTS, LIST_VIEW_KEY, SAVED_PREFERENCES, clearSavedPreferences, finderWindowProblems, preferenceWrites,
+  CLOSE_WINDOW_KEY, DESELECT_ALL_KEY, FINDER_FRAME, FINDER_PARTS, LIST_VIEW_KEY, SAVED_PREFERENCES, clearSavedPreferences, finderWindowProblems, preferenceWrites,
   readSavedPreferences, saveOriginalPreferences, savedRecordDistrust,
 } from './scenes-mac-finder.mjs';
 import {windowTitleOf} from './scenes-mac-text.mjs';
@@ -203,7 +203,7 @@ export const SCENES = Object.freeze({
 });
 export const SCENE_IDS = Object.keys(SCENES);
 // The scenes whose tree follows their window's frame: Finder's list exposes only the rows its window's height shows
-// (hold 2b: rows 0-19 on one lane, 0-18 on the other). Its placement is Finder's, so each run records the frame it read
+// (hold 2b: rows 0-19 on one lane, 0-18 on the other). Setup pins its outer frame after the chrome toggles; each run still records the frame it read
 // and the native-mac diff pairs two lanes only when it is one frame (native-mac-diff.mjs checkPair). The Electron
 // fixture's six-row list always fits, and its window, like Chrome's, is placed by the run.
 export const LIST_BEARING_SCENES = Object.freeze(['finder']);
@@ -282,12 +282,13 @@ export const guardOf = (id, record) => ({pid: record.pid, bundleId: sceneOf(id).
 // view, nothing selected, then `{visibleState: 'record'}` (the window's chrome as the owner sees it, observed before any
 // toggle and saved beside the keys) and one `{chrome: <part>, shown: false}` per part (its toggle sent only while the
 // window still shows it, at most twice; scenes-mac-finder.mjs toggleUntil). The preference keys do not say what the
-// window draws, so they choose nothing here. The other scenes come up in their fixed state. -> [step].
+// window draws, so they choose nothing here. Finally UserProbe pins the outer frame after the toggles that resize
+// Finder, with checked CG read-back. The other scenes come up in their fixed state. -> [step].
 export function setupSteps(id, record) {
   if (sceneOf(id).id !== 'finder') return [];
   const guard = guardOf(id, record);
   return [{activate: 'finder'}, {pressKey: LIST_VIEW_KEY, guard}, {pressKey: DESELECT_ALL_KEY, guard}, {visibleState: 'record', guard},
-    ...FINDER_PARTS.map(part => ({chrome: part, shown: false, guard}))];
+    ...FINDER_PARTS.map(part => ({chrome: part, shown: false, guard})), {finderFrame: FINDER_FRAME}];
 }
 // The steps before `down`: Finder in front, each part toggled by observation until the window shows the saved
 // `visible` chrome, `{visibleState: 'restored'}` (marked in the saved record), then the run's window closed. Without a
@@ -362,7 +363,7 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 const defaultIo = () => ({
   runningApps, appWindows, appWindowState, openApp, activateApp, showFolder, activateProcess, awaitOwnLaunch, stopRecorded, launchOf, now: Date.now, sleep,
-  frontmostProcess: () => frontmostProcess(), frontWindow: () => frontWindow(),
+  frontmostProcess: () => frontmostProcess(), frontWindow: () => frontWindow(), windowOrder: () => windowOrder(),
   finderPid: () => runningApps(FINDER_BUNDLE_ID)[0]?.pid ?? null,
   finderPreferences: () => readFinderPreferences(), writeFinderPreference: (key, value) => writeFinderPreference(key, value), savedPreferencesFile: SAVED_PREFERENCES,
   placeChrome: () => placeChromeForTesting(), buildElectron: () => buildElectronFixture(), spawnPage, pageLoaded: run => readPageLoaded(run),
@@ -537,40 +538,70 @@ const recordOf = (id, run) => {
 
 // Brings an up scene's process to the front (`open -a`, which activates the running instance) and polls for up to
 // `boundMs` until the frontmost process is the run's, by pid, and for Finder until the run's window (by its number) is
-// its top window. When Finder is in front with another of its own windows above the run's, the run's folder is opened
+// its top window. When Finder is in front with any layer-0 window above the run's, the run's folder is opened
 // again (`open -a Finder <folder>`), once: Finder brings the window already showing that folder to the front and
 // touches no other. Only while the run's window is on screen, since otherwise the open would make a new window.
-// -> {scene, ok, frontmost, topWindow?, raised?, runWindow?, reason?}; ok false names what was in front instead and,
+// -> {scene, ok, frontmost, topWindow?, raised?, runWindow?, reason?, windowOrder?, framePin?}; ok false names what was in front instead and,
 // for Finder, where the run's window stood (`runWindow`: its place among Finder's on-screen windows, front first, and
 // its bounds; null when it is not among them), nothing guessed.
 export async function activateScene(id, {run, io = defaultIo(), boundMs = 5000, pollMs = 250}) {
   const record = recordOf(id, run), finder = sceneOf(id).id === 'finder';
   io.activateApp(record.app);
-  let frontmost = null, topWindow = null, placed = false, raised = false;
+  let frontmost = null, topWindow = null, order = [], raised = false;
+  const finish = out => {
+    const windowOrder = windowOrderEvidence(order, record);
+    const result = {...out, windowOrder, ...(record.framePin ? {framePin: record.framePin} : {})};
+    // Also keep device-side evidence when an enclosing setup/teardown throws and its caller retains only a sentence.
+    fs.appendFileSync(join(run, 'activation-guards.jsonl'), JSON.stringify({at: io.now(), ...result}) + '\n', {mode: 0o600});
+    return result;
+  };
   for (const t0 = io.now(); ;) {
     frontmost = io.frontmostProcess();
+    if (finder) order = io.windowOrder();
     if (frontmost?.pid === record.pid) {
       if (!finder) return {scene: id, ok: true, frontmost};
-      topWindow = io.frontWindow().topWindow ?? null;
-      if (topWindow?.ownerPid === record.pid && topWindow.number === record.window.number) return {scene: id, ok: true, frontmost, topWindow, ...(raised ? {raised} : {})};
-      if (!placed) { placed = true; if (runWindowPlace(io.appWindows(record.pid), record)?.order > 0) { io.showFolder(record.app, record.folder); raised = true; } }
+      // One CGWindowList snapshot supplies both the top and the run's position. Separate front/per-app reads can
+      // disagree; a missing top reading used to be reported as a foreign window without any evidence of one.
+      topWindow = order[0] ?? null;
+      if (topWindow?.ownerPid === record.pid && topWindow.number === record.window.number)
+        return finish({scene: id, ok: true, frontmost, topWindow: {ownerPid: topWindow.ownerPid, number: topWindow.number, bounds: topWindow.bounds}, ...(raised ? {raised} : {})});
+      const index = order.findIndex(w => w.ownerPid === record.pid && w.number === record.window.number);
+      // Raising is a single attempt, not an exemption: even a run-owned blocker must be gone on a later CG read.
+      if (!raised && index > 0 && order[index].onScreen !== false) { io.showFolder(record.app, record.folder); raised = true; }
     }
     if (io.now() - t0 >= boundMs) break;
     await io.sleep(pollMs);
   }
-  if (frontmost?.pid !== record.pid) return {scene: id, ok: false, frontmost, ...(finder ? {topWindow} : {}), reason: `the run's process ${record.pid} is not frontmost within ${boundMs} ms`};
-  const place = runWindowPlace(io.appWindows(record.pid), record);
-  return {scene: id, ok: false, frontmost, topWindow, ...(raised ? {raised} : {}), runWindow: place, reason: `the run's Finder is frontmost but its top window is not the run's window: ${placeReason(place)}`};
+  if (!finder) order = io.windowOrder();
+  if (frontmost?.pid !== record.pid) return finish({scene: id, ok: false, frontmost: frontmost ? {bundleId: frontmost.bundleId ?? null} : null, reason: `the run's process ${record.pid} is not frontmost within ${boundMs} ms`});
+  const place = runWindowPlace(order, record);
+  const targetIndex = order.findIndex(w => w.ownerPid === record.pid && w.number === record.window.number);
+  const foreign = targetIndex < 0 ? null : order.slice(0, targetIndex).find(w => w.ownerPid !== record.pid);
+  const blocker = foreign ? windowOwner(foreign) : null;
+  const reason = place === null ? "the run's window is not in the on-screen layer-0 snapshot (closed, minimized, another Space, or unreadable)"
+    : blocker ? `another process's window is on top: ${blocker.name}${blocker.pid === undefined ? '' : ` (pid ${blocker.pid})`}`
+    : `${place.order} other Finder window${place.order === 1 ? ' is' : 's are'} above the run's window`;
+  return finish({scene: id, ok: false, frontmost, ...(blocker ? {blocker} : {}), ...(raised ? {raised} : {}), runWindow: place,
+    reason: `the run's Finder is frontmost but its top window is not the run's window: ${reason}`});
 }
-// The run's window among Finder's on-screen windows (front to back). -> {order, bounds} or null.
+// The run's place among Finder's windows within that SAME on-screen ordering, never a second reading.
 const runWindowPlace = (windows, record) => {
-  const shown = windows.filter(w => w.onScreen !== false), order = shown.findIndex(w => w.number === record.window.number);
+  const shown = windows.filter(w => w.ownerPid === record.pid), order = shown.findIndex(w => w.number === record.window.number);
   return order < 0 ? null : {order, bounds: shown[order].bounds};
 };
-const placeReason = place => (place === null ? 'the run\'s window is not among Finder\'s on-screen windows (closed, minimized or on another Space)'
-  : place.order === 0 ? 'it is Finder\'s front window, but another process\'s window is on top'
-  : `${place.order} other Finder window${place.order === 1 ? ' is' : 's are'} above the run's window`)
-  + (place === null ? '' : ` (the run's window ${place.bounds.width}x${place.bounds.height} at ${place.bounds.x},${place.bounds.y})`);
+const privateWindowOwner = window => /claude|chrome/i.test(`${window.ownerName ?? ''} ${window.ownerBundleId ?? ''}`);
+const windowOwner = window => {
+  const name = window.ownerName ?? 'unknown process';
+  return privateWindowOwner(window) ? {name} : {pid: window.ownerPid, name};
+};
+// Prefix through the run's window. If absent, preserve the observed list and explicitly say the target was absent;
+// never call those windows "above" an unobserved target. Claude/Chrome carry a name and absolutely nothing else.
+const windowOrderEvidence = (windows, record) => {
+  const index = windows.findIndex(w => w.ownerPid === record.pid && w.number === record.window.number);
+  return {runWindowFound: index >= 0, windows: (index < 0 ? windows : windows.slice(0, index + 1)).map(w =>
+    privateWindowOwner(w) ? {ownerName: w.ownerName ?? 'unknown process'}
+      : {ownerPid: w.ownerPid, ownerName: w.ownerName ?? 'unknown process', layer: w.layer ?? 0, number: w.number, bounds: w.bounds})};
+};
 
 // Puts the app the owner had in front before a driver's run back in front at its end (every scene activates its own
 // app, so the run otherwise leaves a scene app or Finder where the owner had, say, Terminal): only while that app still

@@ -1,0 +1,22 @@
+{
+  "controller": "6a09870298eddb80bcb43b935009adb52807e60a",
+  "source": "executor pre-step and independent readout",
+  "start": "2026-10-23T19:09:02Z",
+  "end": "2026-10-23T19:10:10Z",
+  "build": "248035dc1dc4e7eb10a93c67faad9c8c3497b7e4d7884d098433565ae1f3a71d",
+  "approved": true,
+  "identityMatches": true,
+  "running": false,
+  "connections": 0,
+  "permissions": {
+    "accessibility": true,
+    "screenRecording": true,
+    "inputMonitoring": true
+  },
+  "SecurityAgentAbsent": true,
+  "TextEditAbsent": true,
+  "SkyComputerUseServiceAbsent": true,
+  "engineConfigMtime": 1792384396,
+  "checkoutClean": true,
+  "initialPinAttempt": "wrong coordinator SHA failed fetch before checkout/build/engine operations; corrected origin branch SHA verified before successful invocation"
+}

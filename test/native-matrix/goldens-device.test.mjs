@@ -789,3 +789,60 @@ test('frame trace omits unknown enum or nonnumeric payloads and preserves absent
     {attribute: 'size', startMs: 0, endMs: 1, axError: {text: 'private'}},
   ]}), {samples: [{stage: 'final', atMs: 20, frame: null}], setters: []});
 });
+
+for (const raises of [true, false]) {
+  test(`Finder teardown uses the same strict raise before restoring chrome and closing (raise succeeds: ${raises})`, async () => {
+    const finder = finderEngine({state: {sidebar: true, statusBar: true, pathBar: false}, drawn: {sidebar: true, statusBar: true, pathBar: false}});
+    const {run, io, record, file} = finderRun(finder);
+    await run('setup');
+    const start = finder.pressed.length;
+    const own = {ownerPid: 402, number: 7, bounds: record.window.bounds, onScreen: true};
+    const blocker = {ownerPid: 62867, ownerName: 'cua Electron Fixture', number: 19108, bounds: {x: 140, y: 100, width: 720, height: 560}, onScreen: true};
+    let order = [blocker, own];
+    const calls = [];
+    io.activate = (_id, dir) => activateScene('finder', {run: dir, io: {
+      activateApp: () => {}, frontmostProcess: () => ({pid: 402, bundleId: 'com.apple.finder'}),
+      windowOrder: () => order, now: io.now, sleep: io.sleep,
+      showFolder: (app, folder) => { calls.push({app, folder}); if (raises) order = [own, blocker]; },
+    }});
+    io.frontmost = () => ({pid: 402, topWindow: order[0]});
+    if (raises) {
+      await run('teardown');
+      assert.deepEqual(finder.drawn, {sidebar: true, statusBar: true, pathBar: false});
+      assert.equal(finder.pressed.at(-1), 'super+w');
+      assert.equal(stepEvidence(file).filter(r => r.phase === 'teardown' && r.type === 'failure').length, 0);
+    } else {
+      await assert.rejects(run('teardown'), /another process's window is on top/);
+      assert.equal(finder.pressed.length, start, 'owned blocker still refuses all teardown input');
+    }
+    assert.deepEqual(calls, [{app: record.app, folder: record.folder}]);
+  });
+}
+
+test('ten successful pin/teardown cycles bound the observed status-bar growth instead of accumulating it', async () => {
+  let height = 996;
+  const starts = [], closes = [];
+  for (let cycle = 0; cycle < 10; cycle++) {
+    const finder = finderEngine({state: {sidebar: true, statusBar: true, pathBar: false}, drawn: {sidebar: true, statusBar: true, pathBar: false}});
+    const {run, io} = finderRun(finder);
+    starts.push(height);
+    io.appWindows = pid => [{ownerPid: pid, number: 7, bounds: {x: 80, y: 80, width: 920, height}, onScreen: true}];
+    io.probe = async () => {
+      height = 520;
+      return {pid: 402, window: 7, requested: {x: 80, y: 80, width: 920, height: 520},
+        readBack: {x: 80, y: 80, width: 920, height}, matched: true, exitStatus: 0};
+    };
+    const execute = finder.client.execute;
+    finder.client.execute = async (method, args) => {
+      const out = await execute(method, args);
+      if (args.key === 'super+slash' && finder.drawn.statusBar) height += 28;
+      if (args.key === 'super+w') closes.push(height);
+      return out;
+    };
+    await run('setup');
+    await run('teardown');
+  }
+  assert.deepEqual(starts, [996, ...Array(9).fill(548)]);
+  assert.deepEqual(closes, Array(10).fill(548));
+  assert.ok(closes.every(height => 80 + height < 1440));
+});

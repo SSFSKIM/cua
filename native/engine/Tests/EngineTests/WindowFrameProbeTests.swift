@@ -7,6 +7,162 @@ final class WindowFrameProbeTests: XCTestCase {
   private let arguments = ["--pid", "612", "--window", "92", "--frame", "-100,40,800,600"]
   private let request = WindowFrameRequest(pid: 612, window: 92, frame: CGRect(x: -100, y: 40, width: 800, height: 600))
 
+  private func trace(_ result: WindowFrameResult) throws -> [String: Any] {
+    try XCTUnwrap(result.wire(for: request)["trace"] as? [String: Any])
+  }
+
+  private func samples(_ result: WindowFrameResult, stage: String) throws -> [[String: Any]] {
+    let rows = try XCTUnwrap(try trace(result)["samples"] as? [[String: Any]])
+    return rows.filter { $0["stage"] as? String == stage }
+  }
+
+  func testDelayedFullFrameCommitCannotBeOverwrittenByPositionUsingStaleSize() throws {
+    let tree = Tree(); tree.applySize = false
+    var pending: CGRect?
+    var positionCalled = false
+    var source = tree.source()
+    source.setSize = { element, size in
+      tree.writes.append((element, "size"))
+      pending = CGRect(origin: tree.cg!.origin, size: size)
+      tree.timeMs += 3
+      return .success
+    }
+    source.setPosition = { element, point in
+      tree.writes.append((element, "position")); positionCalled = true
+      // Models two async full-frame commits: an immediate position write would capture old size
+      // and replace the pending resize. The production barrier must make that impossible.
+      pending = CGRect(origin: point, size: tree.cg!.size)
+      tree.timeMs += 7
+      return .success
+    }
+    source.settle = {
+      tree.waits += 1; tree.timeMs += 50
+      if positionCalled || tree.waits >= 2 { tree.cg = pending }
+    }
+    let result = runWindowFrame(request, source: source)
+    XCTAssertEqual(result.exitStatus, 0)
+    XCTAssertTrue(result.matched)
+    XCTAssertEqual(result.readBack, request.frame)
+    XCTAssertEqual(tree.writes.map { $0.1 }, ["size", "position"])
+    XCTAssertEqual(tree.waits, 3)
+    let setters = try XCTUnwrap(try trace(result)["setters"] as? [[String: Any]])
+    XCTAssertEqual(setters.map { $0["attribute"] as? String }, ["size", "position"])
+    XCTAssertEqual(setters[0]["startMs"] as? Double, 0)
+    XCTAssertEqual(setters[0]["endMs"] as? Double, 3)
+    XCTAssertEqual(setters[1]["startMs"] as? Double, 103)
+    XCTAssertEqual(setters[1]["endMs"] as? Double, 110)
+    let intermediate = try samples(result, stage: "after-size")
+    XCTAssertTrue(intermediate.contains { ($0["atMs"] as? Double) == 53 })
+    XCTAssertTrue(intermediate.contains { ($0["frame"] as? [String: Double])?["height"] == 600 })
+    XCTAssertEqual(try samples(result, stage: "final").last?["atMs"] as? Double, 160)
+  }
+
+  func testSizeNeverConvergesStopsBeforePositionWithDistinctStatusAndBoundedTrace() throws {
+    let tree = Tree(); tree.applySize = false
+    let result = runWindowFrame(request, source: tree.source())
+    XCTAssertEqual(result.exitStatus, 6)
+    XCTAssertFalse(result.matched)
+    XCTAssertEqual(diagnostic(result)["stage"] as? String, "size-convergence")
+    XCTAssertEqual(diagnostic(result)["reason"] as? String, "size-not-converged")
+    XCTAssertEqual(tree.writes.map { $0.1 }, ["size"])
+    XCTAssertEqual(tree.waits, 10)
+    XCTAssertEqual(try samples(result, stage: "after-size").count, 11)
+    XCTAssertEqual(try samples(result, stage: "final").count, 0)
+    XCTAssertEqual(result.readBack, CGRect(x: 10, y: 20, width: 400, height: 300))
+    XCTAssertEqual(try samples(result, stage: "after-size").last?["atMs"] as? Double, 500)
+  }
+
+  func testSizeBarrierUsesBothDimensionsAndSubpointToleranceWithoutOriginMatching() {
+    for delta in [0.5, 1.0] {
+      for widthChanged in [false, true] {
+        let tree = Tree(); tree.applySize = false
+        var source = tree.source()
+        source.setSize = { element, size in
+          tree.writes.append((element, "size"))
+          tree.cg = CGRect(x: 700, y: 900, width: size.width + (widthChanged ? delta : 0),
+                           height: size.height + (widthChanged ? 0 : delta))
+          return .success
+        }
+        tree.afterWrite = { tree.cg = self.request.frame }
+        let result = runWindowFrame(request, source: source)
+        XCTAssertEqual(result.exitStatus, delta < 1 ? 0 : 6)
+        XCTAssertEqual(tree.writes.map { $0.1 }, delta < 1 ? ["size", "position"] : ["size"])
+      }
+    }
+  }
+
+  func testIdentityLossWhileWaitingForSizeNeverMovesOrReselects() throws {
+    for kind in ["role", "identity", "pid", "cg"] {
+      let tree = Tree(); tree.applySize = false
+      var source = tree.source()
+      source.settle = {
+        tree.waits += 1; tree.timeMs += 50
+        switch kind {
+        case "role": tree.roles[2] = "AXGroup"
+        case "identity": tree.identities[2] = .init(pid: 612, window: 93)
+        case "pid": tree.allowed = false
+        default: tree.cg = nil
+        }
+      }
+      let result = runWindowFrame(request, source: source)
+      XCTAssertEqual(result.exitStatus, 2)
+      XCTAssertEqual(tree.writes.map { $0.1 }, ["size"])
+      XCTAssertEqual(tree.selections, 1)
+      XCTAssertEqual(tree.waits, 1)
+      XCTAssertFalse(try samples(result, stage: "after-size").isEmpty)
+      if kind == "cg" {
+        XCTAssertNil(result.readBack)
+        XCTAssertTrue(try samples(result, stage: "after-size").last?["frame"] is NSNull)
+      }
+    }
+  }
+
+  func testSizeAppliedThenLostIsDistinguishableFromNeverAppliedAndFinalBoundIsUnchanged() throws {
+    let tree = Tree()
+    tree.afterWrite = { tree.cg = CGRect(x: -100, y: 40, width: 800, height: 968) }
+    let result = runWindowFrame(request, source: tree.source())
+    XCTAssertEqual(result.exitStatus, 5)
+    XCTAssertEqual(tree.writes.map { $0.1 }, ["size", "position"])
+    XCTAssertEqual(tree.waits, 10)
+    let afterSize = try samples(result, stage: "after-size")
+    XCTAssertTrue(afterSize.contains { ($0["frame"] as? [String: Double])?["height"] == 600 })
+    let final = try samples(result, stage: "final")
+    XCTAssertEqual(final.count, 11)
+    XCTAssertTrue(final.allSatisfy { ($0["frame"] as? [String: Double])?["height"] == 968 })
+  }
+
+  func testTraceRetainsSetterFailureTimingAndOnlyGeometryMetadata() throws {
+    for failSize in [false, true] {
+      let tree = Tree()
+      var source = tree.source()
+      if failSize {
+        source.setSize = { _, _ in tree.timeMs += 4; return .cannotComplete }
+      } else {
+        source.setPosition = { _, _ in tree.timeMs += 9; return .cannotComplete }
+      }
+      let result = runWindowFrame(request, source: source)
+      XCTAssertEqual(result.exitStatus, 4)
+      let metadata = try trace(result)
+      XCTAssertEqual(Set(metadata.keys), Set(["samples", "setters"]))
+      let rows = try XCTUnwrap(metadata["samples"] as? [[String: Any]])
+      XCTAssertLessThanOrEqual(rows.count, 25)
+      XCTAssertFalse(rows.isEmpty)
+      for row in rows {
+        XCTAssertEqual(Set(row.keys), Set(["stage", "atMs", "frame"]))
+        XCTAssertTrue(["initial", "after-size", "final"].contains(row["stage"] as? String ?? ""))
+        if let frame = row["frame"] as? [String: Double] {
+          XCTAssertEqual(Set(frame.keys), Set(["x", "y", "width", "height"]))
+        } else { XCTAssertTrue(row["frame"] is NSNull) }
+      }
+      let setters = try XCTUnwrap(metadata["setters"] as? [[String: Any]])
+      XCTAssertEqual(setters.count, failSize ? 1 : 2)
+      for setter in setters { XCTAssertEqual(Set(setter.keys), Set(["attribute", "startMs", "endMs", "axError"])) }
+      XCTAssertEqual(setters.last?["axError"] as? Int, Int(AXError.cannotComplete.rawValue))
+      XCTAssertEqual(setters.last?["endMs"] as? Double, failSize ? 4 : 9)
+      XCTAssertNoThrow(try JSONSerialization.data(withJSONObject: result.wire(for: request)))
+    }
+  }
+
   func testParserRejectsIncompleteDuplicateAndNonfiniteInput() {
     XCTAssertEqual(WindowFrameRequest.parse(arguments), request)
     XCTAssertEqual(WindowFrameRequest.parse(["--frame", "-100,40,800,600", "--window", "92", "--pid", "612"]), request)
@@ -42,6 +198,8 @@ final class WindowFrameProbeTests: XCTestCase {
     var trusted = true, allowed = true, settable = true
     var cg: CGRect? = CGRect(x: 10, y: 20, width: 400, height: 300)
     var reads = 0, waits = 0, selections = 0
+    var timeMs: Double = 10_000
+    var applySize = true
     var writes: [(Int, String)] = []
     var sizes: [CGSize] = [], positions: [CGPoint] = []
     var sizeError: AXError = .success, positionError: AXError = .success
@@ -55,10 +213,14 @@ final class WindowFrameProbeTests: XCTestCase {
         identity: { self.identityReads.append($0); return self.identities[$0] },
         cgFrame: { _, _ in self.reads += 1; let value = self.cg; self.afterRead?(); return value },
         canSetFrame: { _ in self.settable },
-        setSize: { element, size in self.writes.append((element, "size")); self.sizes.append(size); return self.sizeError },
+        setSize: { element, size in
+          self.writes.append((element, "size")); self.sizes.append(size)
+          if self.applySize && self.sizeError == .success { self.cg?.size = size }
+          return self.sizeError
+        },
         setPosition: { element, point in self.writes.append((element, "position")); self.positions.append(point); self.afterWrite?(); return self.positionError },
-        settle: { self.waits += 1 },
-        role: { self.roles[$0] }, subrole: { self.subroles[$0] })
+        settle: { self.waits += 1; self.timeMs += 50 },
+        role: { self.roles[$0] }, subrole: { self.subroles[$0] }, now: { self.timeMs })
     }
   }
 
@@ -137,8 +299,8 @@ final class WindowFrameProbeTests: XCTestCase {
     XCTAssertEqual(result.exitStatus, 5)
     XCTAssertFalse(result.matched)
     XCTAssertEqual(tree.waits, 10)
-    XCTAssertEqual(tree.reads, 14, "initial identity proof, two write guards, eleven readback samples")
-    XCTAssertEqual(result.readBack, CGRect(x: 10, y: 20, width: 400, height: 300))
+    XCTAssertEqual(tree.reads, 15, "initial identity proof, two write guards, one size sample, eleven final samples")
+    XCTAssertEqual(result.readBack, CGRect(x: 10, y: 20, width: 800, height: 600))
   }
 
   func testWindowDisappearanceReturnsNullRatherThanStaleGeometry() {
@@ -256,7 +418,7 @@ final class WindowFrameProbeTests: XCTestCase {
     let wire = runWindowFrame(request, source: tree.source()).wire(for: request)
     let data = try JSONSerialization.data(withJSONObject: wire)
     let decoded = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
-    XCTAssertEqual(Set(decoded.keys), Set(["pid", "window", "requested", "readBack", "matched", "exitStatus", "diagnostic", "excludedEntries"]))
+    XCTAssertEqual(Set(decoded.keys), Set(["pid", "window", "requested", "readBack", "matched", "exitStatus", "diagnostic", "excludedEntries", "trace"]))
     XCTAssertEqual(decoded["pid"] as? Int, 612)
     XCTAssertEqual(decoded["window"] as? Int, 92)
     let details = try XCTUnwrap(decoded["diagnostic"] as? [String: Any])
@@ -444,7 +606,7 @@ final class WindowFrameProbeTests: XCTestCase {
   func testWireAlwaysCarriesTheRequestedIdentityAndNullReadback() throws {
     let result = WindowFrameResult(readBack: nil, matched: false, exitStatus: 2)
     let wire = result.wire(for: request)
-    XCTAssertEqual(Set(wire.keys), Set(["pid", "window", "requested", "readBack", "matched", "exitStatus", "diagnostic", "excludedEntries"]))
+    XCTAssertEqual(Set(wire.keys), Set(["pid", "window", "requested", "readBack", "matched", "exitStatus", "diagnostic", "excludedEntries", "trace"]))
     XCTAssertEqual(wire["pid"] as? Int, 612)
     XCTAssertEqual(wire["window"] as? UInt32, 92)
     XCTAssertEqual(wire["requested"] as? [String: Double], ["x": -100, "y": 40, "width": 800, "height": 600])

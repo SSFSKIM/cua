@@ -102,6 +102,8 @@ struct WindowFrameSource<Element> {
   // nil includes failed reads and malformed values. Exact identity is consulted only for AXWindow.
   var role: (Element) -> String?
   var subrole: (Element) -> String?
+  // Inactive until the size barrier/trace implementation; injected monotonic milliseconds.
+  var now: () -> Double = { 0 }
 }
 
 // Only this finite vocabulary may leave the process. Raw AX strings decide role eligibility but

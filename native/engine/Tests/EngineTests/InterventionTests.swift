@@ -92,16 +92,14 @@ final class InterventionRuleTests: XCTestCase {
     XCTAssertEqual(interventionVerdict(last: last, cleared: 3, now: 16_000), .proceed, "cleared at or after the event")
   }
 
-  func testTheVendorsSentencesAndCode() {
-    let still = stillInteracting("/Applications/TextEdit.app")
-    XCTAssertEqual(still.code, -10016)
-    XCTAssertEqual(still.errorName, "userIntervened")
-    XCTAssertEqual(still.message, "The user is still interacting with '/Applications/TextEdit.app'. Wait 5 seconds and retry.")
-    let changed = userChanged("/Applications/TextEdit.app")
-    XCTAssertEqual(changed.code, -10016)
-    XCTAssertEqual(changed.errorName, "userIntervened")
-    XCTAssertEqual(changed.message,
-                   "The user changed '/Applications/TextEdit.app'. Re-query the latest state with `get_app_state` before sending more actions.")
+  func testInterruptionKeepsTheCodeButDoesNotAssertHumanProvenanceOrRecommendRetry() {
+    for error in [stillInteracting("fixture"), userChanged("fixture")] {
+      XCTAssertEqual(error.code, -10016)
+      XCTAssertEqual(error.errorName, "userIntervened")
+      XCTAssertTrue(error.message.contains("not proven human"))
+      XCTAssertTrue(error.message.contains("Do not retry automatically"))
+      XCTAssertTrue(error.message.contains("getAXState()"))
+    }
   }
 }
 
@@ -180,7 +178,7 @@ final class InterventionGuardTests: XCTestCase {
 
   func testThePreActionCheckRefusesUntilARequeryAfterAnIntervention() {
     XCTAssertThrowsError(try InterventionGuard.check(app: app, cleared: 0, now: 9_000, latest: { AttributedEvent(sequence: 1, at: 1_000) })) { error in
-      XCTAssertEqual((error as? EngineError)?.message, userChanged(app).message)
+      XCTAssertTrue((error as? EngineError)?.message.contains("refused before any effects") == true)
     }
     XCTAssertNoThrow(try InterventionGuard.check(app: app, cleared: 1, now: 9_000, latest: { AttributedEvent(sequence: 1, at: 1_000) }))
   }

@@ -71,6 +71,7 @@ func setElementValue(_ value: String, on element: AXUIElement, role: String, ax:
   let converted = try coercedValue(value, to: valueKind(of: ax.read(element, kAXValueAttribute), role: role, subrole: ax.subrole(element)))
   try checkInFlight()
   var written = AXError.failure
+  meta.effects.valueWriteAttempted = true
   meta.posting { written = ax.write(element, kAXValueAttribute, converted); return true }
   acted()
   guard written == .success else { throw EngineError(name: "actionFailed", "The element did not accept the value.") }

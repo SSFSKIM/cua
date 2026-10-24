@@ -72,3 +72,26 @@ test('an engine error is SkyComputerUseError: the vendor\'s message envelope, it
   assert.equal(serverError({code: -32602, message: 'x'}).errorName, 'jsonRPCError');
   assert.equal(serverError({code: -32001, message: 'Request deadline exceeded', errorName: 'deadlineExceeded'}).errorName, 'deadlineExceeded');
 });
+
+test('interruption mapping names dispatched preparation and attempted writes without leaking unknown metadata', () => {
+  const error = serverError({code: -10016, message: 'untrusted runtime sentence', errorName: 'userIntervened', meta: {
+    interruption: {phase: 'in-flight', effects: ['focus-click-posted', 'value-write-attempted', 'input-posted', 'private-value']},
+  }});
+  assert.match(error.message, /preparation\/focus click was posted/i);
+  assert.match(error.message, /value write was attempted/i);
+  assert.match(error.message, /dispatched input may still complete/i);
+  assert.doesNotMatch(error.message, /private-value|untrusted runtime sentence/);
+  assert.equal(error.code, -10016);
+  assert.equal(error.errorName, 'userIntervened');
+});
+
+test('request teardown is visible even when the refused action posted no ordinary input', () => {
+  const error = serverError({code: -10016, message: 'native teardown refusal', errorName: 'userIntervened', meta: {
+    startedAt: null, endedAt: null,
+    interruption: {phase: 'in-flight', effects: ['activation-teardown-attempted']},
+  }});
+  assert.match(error.message, /interrupted after possible effects/i);
+  assert.match(error.message, /activation teardown was attempted/i);
+  assert.match(error.message, /deactivation.*may have been posted/i);
+  assert.doesNotMatch(error.message, /refused before any effects/i);
+});

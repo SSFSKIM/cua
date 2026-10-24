@@ -43,6 +43,9 @@
 //   no Input Monitoring grant), cua/entered (the UTF-16 units a type_text entered, on its result and on the error that
 //   stopped it) and cua/routeAdvice (the per-app route-4 override, once route 3's guard has failed three actions in a
 //   row for the app). cua/serviceMs is the wrapper's (src/services/sky.mjs).
+//   cua/interruption retains the latest interrupted action's phase, reached effects and input snapshot through a
+//   same-execution observation. Unlike per-call keys it is not cleared by subsequent calls; the host clears it at
+//   the next execution. The error message also renders the phase/effects, so the facade and model do not need _meta.
 // - The unknown secondary action's sentence: the vendor's ends with the decimal element index, which only the service
 //   knows, so the engine's invalidSecondaryAction is answered as `<action> is not a valid secondary action for <index>`
 //   (R/F-helper-logic.md §16.3), its code, name and meta kept.
@@ -116,6 +119,12 @@ function inputMeta(meta) {
     'cua/receivedAt': meta.receivedAt ?? null,
     'cua/hidIdleMs': meta.hidIdleMs ?? null,
     ...Object.fromEntries(OPTIONAL_INPUT_META.filter(key => meta[key] !== undefined).map(key => [`cua/${key}`, meta[key]])),
+    // The latest interrupted action, not the latest call. Leave it standing across observation in the same execution;
+    // the host starts response metadata fresh on the next execution. No per-session diagnostic history is retained.
+    ...(meta.interruption ? {'cua/interruption': {...meta.interruption,
+      inputRoute: meta.inputRoute ?? null, actionInterval: {startedAt: meta.startedAt ?? null, endedAt: meta.endedAt ?? null},
+      receivedAt: meta.receivedAt ?? null, activationClick: meta.activationClick ?? null,
+    }} : {}),
   };
 }
 

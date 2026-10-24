@@ -7,7 +7,7 @@ Window: "cua-scene-finder", App: Finder.
 				5 row (selectable)
 					6 셀 Secondary Actions: Finder 항목 열기
 						7 이미지
-						8 텍스트 필드 (settable) URL: file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-001, Value: scene-file-001, Secondary Actions: Finder 항목 열기
+						8 텍스트 필드 (settable) URL: file:///Users/xxx/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-001, Value: scene-file-001, Secondary Actions: Finder 항목 열기
 					9 셀
 						10 텍스트 2026년 1월 15일 오후 9:00
 					11 셀
@@ -17,7 +17,7 @@ Window: "cua-scene-finder", App: Finder.
 				15 row (selectable)
 					16 셀 Secondary Actions: Finder 항목 열기
 						17 이미지
-						18 텍스트 필드 (settable) URL: file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-002, Value: scene-file-002, Secondary Actions: Finder 항목 열기
+						18 텍스트 필드 (settable) URL: file:///Users/xxx/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-002, Value: scene-file-002, Secondary Actions: Finder 항목 열기
 					19 셀
 						20 텍스트 2026년 1월 15일 오후 9:00
 					21 셀
@@ -27,7 +27,7 @@ Window: "cua-scene-finder", App: Finder.
 				25 row (selectable)
 					26 셀 Secondary Actions: Finder 항목 열기
 						27 이미지
-						28 텍스트 필드 (settable) URL: file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-003, Value: scene-file-003, Secondary Actions: Finder 항목 열기
+						28 텍스트 필드 (settable) URL: file:///Users/xxx/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-003, Value: scene-file-003, Secondary Actions: Finder 항목 열기
 					29 셀
 						30 텍스트 2026년 1월 15일 오후 9:00
 					31 셀
@@ -37,7 +37,7 @@ Window: "cua-scene-finder", App: Finder.
 				35 row (selectable)
 					36 셀 Secondary Actions: Finder 항목 열기
 						37 이미지
-						38 텍스트 필드 (settable) URL: file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-004, Value: scene-file-004, Secondary Actions: Finder 항목 열기
+						38 텍스트 필드 (settable) URL: file:///Users/xxx/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-004, Value: scene-file-004, Secondary Actions: Finder 항목 열기
 					39 셀
 						40 텍스트 2026년 1월 15일 오후 9:00
 					41 셀
@@ -47,7 +47,7 @@ Window: "cua-scene-finder", App: Finder.
 				45 row (selectable)
 					46 셀 Secondary Actions: Finder 항목 열기
 						47 이미지
-						48 텍스트 필드 (settable) URL: file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-005, Value: scene-file-005, Secondary Actions: Finder 항목 열기
+						48 텍스트 필드 (settable) URL: file:///Users/xxx/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-005, Value: scene-file-005, Secondary Actions: Finder 항목 열기
 					49 셀
 						50 텍스트 2026년 1월 15일 오후 9:00
 					51 셀
@@ -57,7 +57,7 @@ Window: "cua-scene-finder", App: Finder.
 				55 row (selectable)
 					56 셀 Secondary Actions: Finder 항목 열기
 						57 이미지
-						58 텍스트 필드 (settable) URL: file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-006, Value: scene-file-006, Secondary Actions: Finder 항목 열기
+						58 텍스트 필드 (settable) URL: file:///Users/xxx/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-006, Value: scene-file-006, Secondary Actions: Finder 항목 열기
 					59 셀
 						60 텍스트 2026년 1월 15일 오후 9:00
 					61 셀
@@ -67,7 +67,7 @@ Window: "cua-scene-finder", App: Finder.
 				65 row (selectable)
 					66 셀 Secondary Actions: Finder 항목 열기
 						67 이미지
-						68 텍스트 필드 (settable) URL: file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-007, Value: scene-file-007, Secondary Actions: Finder 항목 열기
+						68 텍스트 필드 (settable) URL: file:///Users/xxx/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-007, Value: scene-file-007, Secondary Actions: Finder 항목 열기
 					69 셀
 						70 텍스트 2026년 1월 15일 오후 9:00
 					71 셀
@@ -77,7 +77,7 @@ Window: "cua-scene-finder", App: Finder.
 				75 row (selectable)
 					76 셀 Secondary Actions: Finder 항목 열기
 						77 이미지
-						78 텍스트 필드 (settable) URL: file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-008, Value: scene-file-008, Secondary Actions: Finder 항목 열기
+						78 텍스트 필드 (settable) URL: file:///Users/xxx/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-008, Value: scene-file-008, Secondary Actions: Finder 항목 열기
 					79 셀
 						80 텍스트 2026년 1월 15일 오후 9:00
 					81 셀
@@ -87,7 +87,7 @@ Window: "cua-scene-finder", App: Finder.
 				85 row (selectable)
 					86 셀 Secondary Actions: Finder 항목 열기
 						87 이미지
-						88 텍스트 필드 (settable) URL: file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-009, Value: scene-file-009, Secondary Actions: Finder 항목 열기
+						88 텍스트 필드 (settable) URL: file:///Users/xxx/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-009, Value: scene-file-009, Secondary Actions: Finder 항목 열기
 					89 셀
 						90 텍스트 2026년 1월 15일 오후 9:00
 					91 셀
@@ -97,7 +97,7 @@ Window: "cua-scene-finder", App: Finder.
 				95 row (selectable)
 					96 셀 Secondary Actions: Finder 항목 열기
 						97 이미지
-						98 텍스트 필드 (settable) URL: file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-010, Value: scene-file-010, Secondary Actions: Finder 항목 열기
+						98 텍스트 필드 (settable) URL: file:///Users/xxx/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-010, Value: scene-file-010, Secondary Actions: Finder 항목 열기
 					99 셀
 						100 텍스트 2026년 1월 15일 오후 9:00
 					101 셀
@@ -107,7 +107,7 @@ Window: "cua-scene-finder", App: Finder.
 				105 row (selectable)
 					106 셀 Secondary Actions: Finder 항목 열기
 						107 이미지
-						108 텍스트 필드 (settable) URL: file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-011, Value: scene-file-011, Secondary Actions: Finder 항목 열기
+						108 텍스트 필드 (settable) URL: file:///Users/xxx/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-011, Value: scene-file-011, Secondary Actions: Finder 항목 열기
 					109 셀
 						110 텍스트 2026년 1월 15일 오후 9:00
 					111 셀
@@ -117,7 +117,7 @@ Window: "cua-scene-finder", App: Finder.
 				115 row (selectable)
 					116 셀 Secondary Actions: Finder 항목 열기
 						117 이미지
-						118 텍스트 필드 (settable) URL: file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-012, Value: scene-file-012, Secondary Actions: Finder 항목 열기
+						118 텍스트 필드 (settable) URL: file:///Users/xxx/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-012, Value: scene-file-012, Secondary Actions: Finder 항목 열기
 					119 셀
 						120 텍스트 2026년 1월 15일 오후 9:00
 					121 셀
@@ -127,7 +127,7 @@ Window: "cua-scene-finder", App: Finder.
 				125 row (selectable)
 					126 셀 Secondary Actions: Finder 항목 열기
 						127 이미지
-						128 텍스트 필드 (settable) URL: file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-013, Value: scene-file-013, Secondary Actions: Finder 항목 열기
+						128 텍스트 필드 (settable) URL: file:///Users/xxx/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-013, Value: scene-file-013, Secondary Actions: Finder 항목 열기
 					129 셀
 						130 텍스트 2026년 1월 15일 오후 9:00
 					131 셀
@@ -137,7 +137,7 @@ Window: "cua-scene-finder", App: Finder.
 				135 row (selectable)
 					136 셀 Secondary Actions: Finder 항목 열기
 						137 이미지
-						138 텍스트 필드 (settable) URL: file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-014, Value: scene-file-014, Secondary Actions: Finder 항목 열기
+						138 텍스트 필드 (settable) URL: file:///Users/xxx/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-014, Value: scene-file-014, Secondary Actions: Finder 항목 열기
 					139 셀
 						140 텍스트 2026년 1월 15일 오후 9:00
 					141 셀
@@ -147,7 +147,7 @@ Window: "cua-scene-finder", App: Finder.
 				145 row (selectable)
 					146 셀 Secondary Actions: Finder 항목 열기
 						147 이미지
-						148 텍스트 필드 (settable) URL: file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-015, Value: scene-file-015, Secondary Actions: Finder 항목 열기
+						148 텍스트 필드 (settable) URL: file:///Users/xxx/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-015, Value: scene-file-015, Secondary Actions: Finder 항목 열기
 					149 셀
 						150 텍스트 2026년 1월 15일 오후 9:00
 					151 셀
@@ -157,7 +157,7 @@ Window: "cua-scene-finder", App: Finder.
 				155 row (selectable)
 					156 셀 Secondary Actions: Finder 항목 열기
 						157 이미지
-						158 텍스트 필드 (settable) URL: file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-016, Value: scene-file-016, Secondary Actions: Finder 항목 열기
+						158 텍스트 필드 (settable) URL: file:///Users/xxx/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-016, Value: scene-file-016, Secondary Actions: Finder 항목 열기
 					159 셀
 						160 텍스트 2026년 1월 15일 오후 9:00
 					161 셀
@@ -167,7 +167,7 @@ Window: "cua-scene-finder", App: Finder.
 				165 row (selectable)
 					166 셀 Secondary Actions: Finder 항목 열기
 						167 이미지
-						168 텍스트 필드 (settable) URL: file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-017, Value: scene-file-017, Secondary Actions: Finder 항목 열기
+						168 텍스트 필드 (settable) URL: file:///Users/xxx/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-017, Value: scene-file-017, Secondary Actions: Finder 항목 열기
 					169 셀
 						170 텍스트 2026년 1월 15일 오후 9:00
 					171 셀
@@ -177,7 +177,7 @@ Window: "cua-scene-finder", App: Finder.
 				175 row (selectable)
 					176 셀 Secondary Actions: Finder 항목 열기
 						177 이미지
-						178 텍스트 필드 (settable) URL: file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-018, Value: scene-file-018, Secondary Actions: Finder 항목 열기
+						178 텍스트 필드 (settable) URL: file:///Users/xxx/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-018, Value: scene-file-018, Secondary Actions: Finder 항목 열기
 					179 셀
 						180 텍스트 2026년 1월 15일 오후 9:00
 					181 셀
@@ -187,7 +187,7 @@ Window: "cua-scene-finder", App: Finder.
 				185 row (selectable)
 					186 셀 Secondary Actions: Finder 항목 열기
 						187 이미지
-						188 텍스트 필드 (settable) URL: file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-019, Value: scene-file-019, Secondary Actions: Finder 항목 열기
+						188 텍스트 필드 (settable) URL: file:///Users/xxx/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-019, Value: scene-file-019, Secondary Actions: Finder 항목 열기
 					189 셀
 						190 텍스트 2026년 1월 15일 오후 9:00
 					191 셀
@@ -197,7 +197,7 @@ Window: "cua-scene-finder", App: Finder.
 				195 row (selectable)
 					196 셀 Secondary Actions: Finder 항목 열기
 						197 이미지
-						198 텍스트 필드 (settable) URL: file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-020, Value: scene-file-020, Secondary Actions: Finder 항목 열기
+						198 텍스트 필드 (settable) URL: file:///Users/xxx/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-020, Value: scene-file-020, Secondary Actions: Finder 항목 열기
 					199 셀
 						200 텍스트 2026년 1월 15일 오후 9:00
 					201 셀
@@ -207,7 +207,7 @@ Window: "cua-scene-finder", App: Finder.
 				205 row (selectable)
 					206 셀 Secondary Actions: Finder 항목 열기
 						207 이미지
-						208 텍스트 필드 (settable) URL: file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-021, Value: scene-file-021, Secondary Actions: Finder 항목 열기
+						208 텍스트 필드 (settable) URL: file:///Users/xxx/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-021, Value: scene-file-021, Secondary Actions: Finder 항목 열기
 					209 셀
 						210 텍스트 2026년 1월 15일 오후 9:00
 					211 셀

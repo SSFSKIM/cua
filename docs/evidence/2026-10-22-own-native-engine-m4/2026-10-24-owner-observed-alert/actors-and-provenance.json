@@ -1,0 +1,26 @@
+{
+  "source": "original report and executor cold putback fetched unchanged from /tmp/cua-m4.u5B2eG/",
+  "coordinatorObservation": {
+    "source": "coordinator reports CGWindowList observation, not independently verified screenshot",
+    "at": "2026-10-24T19:47:58Z",
+    "process": "universalAccessAuthWarn",
+    "pid": 881,
+    "layer": 0,
+    "width": 461,
+    "height": 181,
+    "category": "accessibility",
+    "buttons": [
+      "open-settings",
+      "deny"
+    ]
+  },
+  "limitations": [
+    "Window owner PID is not the engine requester PID.",
+    "Presence after recovery does not establish enqueue or first-display time.",
+    "Harness retained coordinator-cua-remote source and contemporaneous attestation with observedAt null; this supplement distinguishes reported actual observation method.",
+    "No owner response was received; known alert remained unresolved at timeout."
+  ],
+  "guiPutback": "coordinator reports IM re-added ON/Later, empty fixture document closed, TextEdit and System Settings TERM; system alert untouched",
+  "enginePutback": "executor protocol-stopped21481; cold32282 all three true, d0 approved/signature, zero clients; read instance and final engine stopped",
+  "remainingAlert": "not inspected or dismissed by executor; no absence claim"
+}

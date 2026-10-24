@@ -20,7 +20,7 @@ const event = message => JSON.stringify({eventMessage: message});
 const node = (operation, target) => event(`Sandbox: node(501) deny(1) ${operation} ${target}`);
 // One denial of each declared kind, as the stream records them (filesystem targets as paths, ports as numbers).
 const declaredStream = [
-  node('file-write-create', '/private/tmp/x'), node('file-write-create', '/Users/runner/Library/Application Support/cua/run/0526d32c/tmp/y'),
+  node('file-write-create', '/private/tmp/x'), node('file-write-create', '/Users/hosted/Library/Application Support/cua/run/0526d32c/tmp/y'),
   node('file-write-data', '/dev/ttys001'), node('mach-lookup', 'com.apple.diagnosticd'), node('mach-lookup', 'com.apple.logd'),
   node('mach-lookup', 'com.apple.system.notification_center'), node('network-outbound', 'remote:*:52341'), node('network-outbound', 'remote:*:52342'),
   node('sysctl-read', 'kern.bootargs'), node('sysctl-read', 'kern.iossupportversion'), node('sysctl-read', 'security.mac.lockdown_mode_state'),
@@ -44,9 +44,9 @@ test('an undeclared kind fails the judgement', () => {
 
 test('any preferences denial fails, whether a cfprefsd lookup, a preference operation or a preferences file, even one the reduction classes as a declared kind', () => {
   for (const denial of [node('mach-lookup', 'com.apple.cfprefsd.daemon'), node('user-preference-read', 'kCFPreferencesAnyApplication'),
-    node('file-read-data', '/Users/runner/Library/Preferences/com.apple.x.plist'), node('file-read-data', '/Library/Preferences/com.apple.y.plist'),
+    node('file-read-data', '/Users/hosted/Library/Preferences/com.apple.x.plist'), node('file-read-data', '/Library/Preferences/com.apple.y.plist'),
     node('file-write-create', '/private/tmp/fixture/Library/Preferences/com.apple.x.plist'),
-    node('file-write-create', '/Users/runner/Library/Application Support/cua/run/0526d32c/Library/Preferences/x.plist')]) {
+    node('file-write-create', '/Users/hosted/Library/Application Support/cua/run/0526d32c/Library/Preferences/x.plist')]) {
     const verdict = judgeDenials([...declaredStream, denial].join('\n'), DECLARED);
     assert.equal(verdict.ok, false, denial);
     assert.equal(verdict.preferences, 1, denial);
@@ -92,7 +92,7 @@ test('an undeclared kind\'s public line withholds a target that is not a class o
   assert.equal(publicKind({operation: 'network-outbound', target: `remote:${PLANTED}.example:443`}, declared), 'network-outbound <withheld>');
   assert.equal(publicKind({operation: 'network-outbound', target: '/private/var/run/mDNSResponder'}, declared), 'network-outbound <withheld>');
   assert.equal(publicKind({operation: 'file-read-data', target: '<home>'}, declared), 'file-read-data <home>');
-  const verdict = judgeDenials([...declaredStream, node('network-outbound', `remote:10.1.2.3:${PLANTED}`), node('file-read-data', `/Users/runner/${PLANTED}`)].join('\n'), DECLARED);
+  const verdict = judgeDenials([...declaredStream, node('network-outbound', `remote:10.1.2.3:${PLANTED}`), node('file-read-data', `/Users/hosted/${PLANTED}`)].join('\n'), DECLARED);
   assert.equal(JSON.stringify(verdict.kinds.map(k => k.line)).includes(PLANTED), false);
   assert.equal(verdict.ok, false);
 });
@@ -110,7 +110,7 @@ test('the judge\'s command prints kinds and counts and exits 1 on an undeclared 
     assert.equal(fail.status, 1);
     assert.match(fail.stdout, /denial: iokit-open IOSurfaceRootUserClient x1 {2}\(undeclared\)/);
     // A truncated record's text is never printed, only counted.
-    writeFileSync(log, `${[...declaredStream, `{"eventMessage":"Sandbox: node(501) deny(1) file-read-data /Users/runner/${PLANTED}`].join('\n')}`);
+    writeFileSync(log, `${[...declaredStream, `{"eventMessage":"Sandbox: node(501) deny(1) file-read-data /Users/hosted/${PLANTED}`].join('\n')}`);
     const malformed = spawnSync(process.execPath, [join(HOSTED, 'denials-within.mjs'), log, join(HOSTED, 'denials-declared.json')], {encoding: 'utf8'});
     assert.equal(malformed.status, 1);
     assert.match(malformed.stdout, /undeclared 0, malformed records 1\n$/);
@@ -120,13 +120,13 @@ test('the judge\'s command prints kinds and counts and exits 1 on an undeclared 
 
 test('the public readers print labels, booleans and counts; free text is withheld', () => {
   assert.equal(label(`free text ${PLANTED}`), '<withheld>');
-  assert.equal(label('/Users/runner/x'), '<withheld>');
+  assert.equal(label('/Users/hosted/x'), '<withheld>');
   assert.equal(label('cells/confinement/no-unsandboxed-fallback'), 'cells/confinement/no-unsandboxed-fallback');
   const pick = {ok: false, outcome: 'pick_required', reason: 'unlabelled', key: 'harness', backends: [{instanceId: 'b-1', profileName: PLANTED}]};
   assert.equal(bindLine(pick), 'hosted-parity: bind: ok false outcome pick_required how - by unlabelled backends 1');
   assert.equal(onlyBackend(pick), 'b-1');
   assert.equal(onlyBackend({...pick, backends: [{instanceId: 'b-1'}, {instanceId: 'b-2'}]}), null);
-  const list = readyLines({profiles: [{key: 'harness', ready: false, reason: `${PLANTED} broke`, extensionInstanceId: null}], listingError: `at /Users/runner ${PLANTED}`}, 'harness');
+  const list = readyLines({profiles: [{key: 'harness', ready: false, reason: `${PLANTED} broke`, extensionInstanceId: null}], listingError: `at /Users/hosted ${PLANTED}`}, 'harness');
   assert.equal(list.ok, false);
   assert.equal(list.lines.join('\n').includes(PLANTED), false);
   assert.equal(readyLines({profiles: [{key: 'harness', ready: true, extensionInstanceId: 'b-1'}]}, 'harness').ok, true);
@@ -137,7 +137,7 @@ test('the public readers print labels, booleans and counts; free text is withhel
 
   const dir = mkdtempSync(join(tmpdir(), 'hosted-run-'));
   try {
-    writeFileSync(join(dir, 'meta.json'), JSON.stringify({complete: false, error: `boom at /Users/runner/${PLANTED}`}));
+    writeFileSync(join(dir, 'meta.json'), JSON.stringify({complete: false, error: `boom at /Users/hosted/${PLANTED}`}));
     writeFileSync(join(dir, 'results.jsonl'), [{case: 'cells/a', cell: 1, assertion: {ok: true}}, {case: 'cells/b', cell: 3, assertion: {ok: false, message: PLANTED}}].map(r => JSON.stringify(r)).join('\n'));
     const {lines, ok} = runLines(`progress ${PLANTED}\n${JSON.stringify({cases: 2, complete: false, assertions: 'FAIL', coveredCases: ['cells/a'], recordedVendorDefects: 0, out: `/x/${PLANTED}`})}\n`, dir, 'cua/cells');
     assert.equal(lines.join('\n').includes(PLANTED), false);

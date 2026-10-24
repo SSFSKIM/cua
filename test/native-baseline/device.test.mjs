@@ -32,6 +32,7 @@ test('fresh native preparation installs both runtimes in an owned home, removes 
   assert.deepEqual(calls[0].args.slice(-2),['bin/cua.mjs','install']);
   assert.equal(calls[0].env.CUA_HOME,prepared.home);
   assert.equal(calls[0].env.CUA_NODE,undefined);
+  assert.equal(calls[0].env.CUA_NATIVE_ENGINE,'vendor', 'preparation never builds its own engine, even after the default flips');
   assert.equal(calls[0].env.HOME,`${prepared.home}.home`, 'the user HOME is the cua home\'s sibling');
   assert.deepEqual(prepared.xSession,xSession);
   assert.equal(prepared.nodeMode,'managed');

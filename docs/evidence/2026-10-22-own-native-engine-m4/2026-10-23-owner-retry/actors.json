@@ -1,0 +1,9 @@
+{
+  "source": "coordinator reports and unchanged local PTY report",
+  "console": "coordinator through SSH PTY/FIFO",
+  "permissionUi": "coordinator reports owner removed Input Monitoring at step 1 and did not re-add it before failure; owner confirmed it re-added after failure; other UI actors are not inferred from terminal answers",
+  "systemAlerts": "owner observations after recovery and input both none; this does not assert no alert outside those intervals",
+  "fixtureCleanup": "coordinator reports the disposable untitled document had autosaved into iCloud TextEdit Documents; coordinator used Delete and reports that file gone, then TERM of owned TextEdit PID95129 after command/start revalidation because Quit did not stop it",
+  "harness": "no Settings UI or alert response performed",
+  "executor": "engine-only put-back after owner restoration confirmation; no cloud/document inspection or GUI action"
+}

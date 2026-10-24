@@ -8,7 +8,8 @@
 // (uses $CUA_HOME).
 // As under scripts/accept/serve-with-store.mjs, the server resolves its secret store from that $HOME and the runtime's
 // launch gets the account's real home back, and the engine is selected from the account's own (accountEngine). CUA_SHIM_SECRETS=off serves with secrets turned off (secrets_disabled).
-import {dirname, isAbsolute} from 'node:path';
+import {isAbsolute} from 'node:path';
+import {fakeSkyLaunch} from './fake-sky-launch.mjs';
 import {realpathSync} from 'node:fs';
 import {serve} from '../../src/mcp/server.mjs';
 import {defaultHome} from '../../src/runtime/layout.mjs';
@@ -29,14 +30,7 @@ const refused = error => {
 const code = await serve({
   home: defaultHome(),
   engine: accountEngine(),
-  prepareLaunch: launch => withAccountHome({
-    ...launch,
-    env: {
-      ...launch.env,
-      CUA_SKY_SERVICE: real,
-      NODE_REPL_TRUSTED_CODE_PATHS: `${launch.env.NODE_REPL_TRUSTED_CODE_PATHS}:${dirname(real)}`,
-    },
-  }),
+  prepareLaunch: launch => withAccountHome(fakeSkyLaunch(launch, real)),
 }).catch(refused);
 // The exit status is set first: the timer below is unreferenced, so a process with nothing left to run exits
 // naturally before it fires, with this status (as bin/cua.mjs sets main's), never a default 0.

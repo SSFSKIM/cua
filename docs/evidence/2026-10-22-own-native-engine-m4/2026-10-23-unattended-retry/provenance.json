@@ -1,0 +1,31 @@
+{
+  "controller": "5d8148fb58d6184c2bc59c80072dcd0c1aeecc02",
+  "build": "cffaf9d84ad12f111bbf2218b5b105a6f709b91dfe2e4bb51ba1f7f47932ddbc",
+  "source": "original metadata files fetched by scp from /tmp/cua-m4.u5B2eG/unattended-next/",
+  "privateAdmissionExcluded": true,
+  "hold": "coordinator reported CI-opt HELD 18:21:00Z; GO nominal window18:22–18:57Z",
+  "actualCoreStart": "2026-10-23T18:21:44.339Z",
+  "actualCoreEnd": "2026-10-23T18:25:39.314Z",
+  "actualPutback": "2026-10-23T18:26:56.274Z",
+  "timingNote": "core started after GO and HELD, sixteen seconds before nominal18:22; actual timestamp retained",
+  "cleanupDisposition": {
+    "actor": "executor after coordinator per-case instruction",
+    "pid": 8427,
+    "startMs": 1792779840000,
+    "method": "exact executable/start reread in same shell line before PID-only TERM; confirmed exit",
+    "originalVerdict": "BLOCKED"
+  },
+  "putback": {
+    "SecurityAgentAbsent": true,
+    "TextEditAbsent": true,
+    "SkyComputerUseServiceAbsent": true,
+    "front": {
+      "bundle": "com.apple.Terminal",
+      "pid": 431
+    },
+    "engineConfigMtimeBefore": 1792384396,
+    "engineConfigMtimeAfter": 1792384396
+  },
+  "permissionControlStaged": true,
+  "permissionControlExecutedByExecutor": false
+}

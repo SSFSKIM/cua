@@ -348,7 +348,7 @@ export function createServer({
       // A handshake that launched the runtime arms the idle stop, as a completed call does.
       return passThrough(msg, result => { arm(); return {...result, instructions: withHostNotes(result?.instructions, hostNotes)}; });
     }
-    if (msg.method === 'tools/list') return passThrough(msg, result => ({...result, tools: modelTools(result?.tools, {surfaces, platform, devices: Boolean(target), inAppBrowser})}));
+    if (msg.method === 'tools/list') return passThrough(msg, result => ({...result, tools: modelTools(result?.tools, {surfaces, platform, devices: Boolean(target), inAppBrowser, engine: nativeEngine?.engine})}));
     return passThrough(msg);
   }
 

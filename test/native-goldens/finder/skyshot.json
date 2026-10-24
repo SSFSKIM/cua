@@ -3,7 +3,7 @@
   "height": 984,
   "scale": 2,
   "width": 1840,
-  "url": "file:///Users/new/Library/Caches/cua-harness/native-goldens/goldens-screenshots/cua-engine-59320-1-9B0F1605.jpg"
+  "url": "file:///Users/xxx/Library/Caches/cua-harness/native-goldens/goldens-screenshots/cua-engine-59320-1-9B0F1605.jpg"
  },
  "selectedText": null,
  "window": {
@@ -686,7 +686,7 @@
    "depth": 7,
    "description": null,
    "title": null,
-   "url": "file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-001",
+   "url": "file:///Users/xxx/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-001",
    "token": "t9",
    "roleDescription": "텍스트 필드",
    "actions": [
@@ -1052,7 +1052,7 @@
   {
    "value": "scene-file-002",
    "depth": 7,
-   "url": "file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-002",
+   "url": "file:///Users/xxx/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-002",
    "token": "t19",
    "title": null,
    "valueMarkdown": null,
@@ -1439,7 +1439,7 @@
     "selected": false,
     "selectable": false
    },
-   "url": "file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-003",
+   "url": "file:///Users/xxx/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-003",
    "role": "AXTextField",
    "subrole": null,
    "valueMarkdown": null,
@@ -1815,7 +1815,7 @@
     "width": 97
    },
    "identifier": null,
-   "url": "file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-004",
+   "url": "file:///Users/xxx/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-004",
    "valueType": "string",
    "actionDescriptions": [
     "Finder 항목 열기",
@@ -2188,7 +2188,7 @@
    "role": "AXTextField",
    "identifier": null,
    "children": 0,
-   "url": "file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-005",
+   "url": "file:///Users/xxx/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-005",
    "pid": 402
   },
   {
@@ -2541,7 +2541,7 @@
    },
    "roleDescription": "텍스트 필드",
    "numberOfCharacters": 14,
-   "url": "file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-006",
+   "url": "file:///Users/xxx/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-006",
    "actionDescriptions": [
     "Finder 항목 열기",
     null,
@@ -2923,7 +2923,7 @@
    "pid": 402,
    "subrole": null,
    "value": "scene-file-007",
-   "url": "file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-007"
+   "url": "file:///Users/xxx/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-007"
   },
   {
    "rowIndexRange": [
@@ -3286,7 +3286,7 @@
    "role": "AXTextField",
    "token": "t79",
    "children": 0,
-   "url": "file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-008",
+   "url": "file:///Users/xxx/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-008",
    "pid": 402,
    "valueMarkdown": null,
    "identifier": null,
@@ -3636,7 +3636,7 @@
    "token": "t89",
    "description": null,
    "value": "scene-file-009",
-   "url": "file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-009",
+   "url": "file:///Users/xxx/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-009",
    "actions": [
     "AXOpen",
     "AXShowMenu",
@@ -4018,7 +4018,7 @@
    "children": 0,
    "identifier": null,
    "token": "t99",
-   "url": "file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-010",
+   "url": "file:///Users/xxx/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-010",
    "actionDescriptions": [
     "Finder 항목 열기",
     null,
@@ -4362,7 +4362,7 @@
    "numberOfCharacters": 14,
    "title": null,
    "valueType": "string",
-   "url": "file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-011",
+   "url": "file:///Users/xxx/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-011",
    "depth": 7,
    "role": "AXTextField",
    "valueMarkdown": null,
@@ -4756,7 +4756,7 @@
    },
    "description": null,
    "value": "scene-file-012",
-   "url": "file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-012",
+   "url": "file:///Users/xxx/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-012",
    "pid": 402,
    "token": "t119"
   },
@@ -5125,7 +5125,7 @@
     "selectable": false,
     "selected": false
    },
-   "url": "file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-013"
+   "url": "file:///Users/xxx/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-013"
   },
   {
    "depth": 6,
@@ -5487,7 +5487,7 @@
    },
    "title": null,
    "numberOfCharacters": 14,
-   "url": "file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-014",
+   "url": "file:///Users/xxx/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-014",
    "identifier": null,
    "depth": 7,
    "children": 0,
@@ -5856,7 +5856,7 @@
     "height": 18
    },
    "role": "AXTextField",
-   "url": "file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-015",
+   "url": "file:///Users/xxx/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-015",
    "title": null,
    "identifier": null,
    "valueType": "string"
@@ -6224,7 +6224,7 @@
     "AXConfirm"
    ],
    "description": null,
-   "url": "file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-016",
+   "url": "file:///Users/xxx/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-016",
    "children": 0,
    "identifier": null
   },
@@ -6591,7 +6591,7 @@
    "children": 0,
    "token": "t169",
    "valueType": "string",
-   "url": "file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-017",
+   "url": "file:///Users/xxx/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-017",
    "description": null,
    "title": null
   },
@@ -6932,7 +6932,7 @@
     "selected": false
    },
    "valueType": "string",
-   "url": "file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-018",
+   "url": "file:///Users/xxx/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-018",
    "frame": {
     "y": 687,
     "x": 866,
@@ -7312,7 +7312,7 @@
     "selected": false,
     "settable": true
    },
-   "url": "file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-019",
+   "url": "file:///Users/xxx/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-019",
    "actionDescriptions": [
     "Finder 항목 열기",
     null,
@@ -7694,7 +7694,7 @@
     "AXConfirm"
    ],
    "valueType": "string",
-   "url": "file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-020"
+   "url": "file:///Users/xxx/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-020"
   },
   {
    "subrole": null,
@@ -8043,7 +8043,7 @@
    "title": null,
    "numberOfCharacters": 14,
    "valueType": "string",
-   "url": "file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-021",
+   "url": "file:///Users/xxx/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-021",
    "identifier": null,
    "actions": [
     "AXOpen",

@@ -26,20 +26,31 @@ gates:
       done
       claude plugin validate .
       npm run test:mods
-  # #117: cua's own native engine (native/engine/, a Swift package on Apple frameworks only) built in release, as
-  # `cua engine build` builds it, and its unit tests run, the build's scratch under the runner's temp, never in the
-  # checkout. The hosted runner holds no Accessibility or Screen Recording grant: the engine's untrusted paths run here,
-  # its live parts on the Mac mini. No Node, so no shared setup.
+  # #117: buildEngine's real release bundle, assembled and ad-hoc signed at the fixed engine location under a scratch
+  # HOME. Verify its signature and run the Swift unit tests using the same build scratch. Never approve or launch this
+  # installed bundle. Hosted runners may grant Accessibility; missing-grant paths use fakes, live onboarding stays on the mini.
   - name: engine-swift
     lane: hosted-macos
     timeout: 20
-    setup: false
     run: |
+      set -eu
       swift --version
-      swift build -c release --package-path native/engine --scratch-path "$RUNNER_TEMP/cua-engine-build"
-      swift test --package-path native/engine --scratch-path "$RUNNER_TEMP/cua-engine-build"
+      ENGINE_HOME=$(mktemp -d "$RUNNER_TEMP/cua-engine.XXXXXX")
+      trap 'rm -rf "$ENGINE_HOME"' EXIT
+      ENGINE_DIR="$ENGINE_HOME/Library/Application Support/cua/engine"
+      HOME="$ENGINE_HOME" node bin/cua.mjs engine build --sign adhoc --json
+      codesign --verify --strict "$ENGINE_DIR/cua Engine.app"
+      test -x "$ENGINE_DIR/cua Engine.app/Contents/MacOS/cua-engine"
+      test -f "$ENGINE_DIR/pending.json"
+      test ! -e "$ENGINE_DIR/approved.json"
+      swift test --package-path native/engine --scratch-path "$ENGINE_DIR/build"
     paths:
       - "native/engine/**"
+      - "src/runtime/**"
+      - "src/cli.mjs"
+      - "bin/cua.mjs"
+      - "package.json"
+      - "package-lock.json"
       - ".github/ci-kit.yml"
   # #159: cua's headless macOS live checks (the #115 oracles, own-sandbox on both hosts, probe-secrets) on a runtime
   # `cua install` fetches into a scratch home, so a sandbox change is proven with no time on the Mac mini. Public logs

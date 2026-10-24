@@ -1,0 +1,21 @@
+{
+  "source": "/private/tmp/cua-m4.u5B2eG/permission-control-2026-10-23T19-01-20.092Z-3084.jsonl",
+  "method": "original fetched by scp unchanged",
+  "controller": "5d8148fb58d6184c2bc59c80072dcd0c1aeecc02",
+  "build": "cffaf9d84ad12f111bbf2218b5b105a6f709b91dfe2e4bb51ba1f7f47932ddbc",
+  "consoleActor": "coordinator via SSH PTY/FIFO",
+  "permissionActor": "owner; reported by coordinator",
+  "endedAt": "2026-10-23T19:07:38Z",
+  "exit": 0,
+  "correction": {
+    "stage": "im-off-cold",
+    "pid": 11471,
+    "terminalConfirmation": "OFF",
+    "actualOwnerAction": "switched Input Monitoring ON, not OFF",
+    "validExplicitOffTrial": false,
+    "absentVersusExplicitOff": "untested",
+    "source": "owner correction relayed by coordinator"
+  },
+  "conclusion": "On this mini/build, a cold launch with Accessibility ON and Screen Recording OFF, while owner reports Input Monitoring row absent, reads CG listen/post true. Warm same-PID AX-only reads both false. No claim that Screen Recording grants listen/post, nor that true preflight proves actual intervention event delivery.",
+  "originalReportUnchanged": true
+}

@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "gate": "sandbox-live",
+  "conclusion": "success",
+  "runId": "39874406930",
+  "testedCommit": "f4745620f497675582ec7c8378cd8fc93bdc6093",
+  "anchorCommit": "ced790b042bc228c9d7ee8a7b32f3833b19ced27",
+  "install": {
+    "outcome": "PASS",
+    "source": "download",
+    "release": "26.928.40906-darwin-arm64",
+    "urlHost": "persistent.oaistatic.com",
+    "sha256": "93bf16b32c80c567e46141f87317ab48489f5b9b6454060ba694f1eed5fbf857",
+    "hashVerified": true,
+    "archiveSize": 687457051
+  }
+}

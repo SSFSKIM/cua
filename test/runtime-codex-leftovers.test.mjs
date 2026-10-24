@@ -244,7 +244,7 @@ function cliHome(t) {
   const runtimePin = {release: '0.0.1-fixture', platform: host.platform, arch: host.arch, appVersion: '0.0.1', archive: {url: 'https://example.invalid/runtime'}};
   const pin = darwinPin();
   const root = installedTree(home, pin);
-  const deps = {home, platform: 'darwin', installRuntime: async () => ({release: '0.0.1-fixture', root: '/fixture/runtime', changed: false, record: {source: 'archive'}}),
+  const deps = {home, env: {HOME: home, CUA_NATIVE_ENGINE: 'vendor'}, platform: 'darwin', installRuntime: async () => ({release: '0.0.1-fixture', root: '/fixture/runtime', changed: false, record: {source: 'archive'}}),
     pins: () => [runtimePin, pin], nodePins: () => []};
   const run = async args => {
     const out = [], write = process.stdout.write, err = process.stderr.write;

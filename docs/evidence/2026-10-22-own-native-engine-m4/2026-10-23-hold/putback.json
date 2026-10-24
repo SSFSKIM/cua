@@ -1,0 +1,30 @@
+{
+  "verifiedAt": "2026-10-23T06:46:36Z",
+  "controller": "3d3688b4375a8e1f83af8936b182458833c19830",
+  "checkoutClean": true,
+  "approvedBuild": "a14f6a606776c3a0cd78f1ffb6a47787335cdc58ba15427eab5d163f3baf8f16",
+  "engineRunning": false,
+  "identityMatches": true,
+  "absentProcesses": ["TextEdit", "SkyComputerUseService", "SecurityAgent"],
+  "front": {"bundleId": "com.apple.Terminal", "pid": 431, "activationNeeded": false},
+  "inputSource": {"id": "com.apple.keylayout.ABC", "layout": "com.apple.keylayout.ABC", "perContextInput": false},
+  "finderShowSidebar": 1,
+  "engineJsonMtime": 1792384396,
+  "notificationCenter": {"pid": 14013, "layerZeroWindows": []},
+  "coreConnectionDirectoriesLeft": 0,
+  "vendorItem13": {"status": "PASS", "checks": 19, "allPass": true, "beganAt": "2026-10-23T06:44:46Z", "endedAt": "2026-10-23T06:44:49Z", "approvedHome": "/Users/new/Library/Application Support/cua-spike-vendor", "cleanupRemoved": true, "scratchRetained": false, "preexistingStateDirectories": [], "restoredDirectories": []},
+  "textEditDisposition": {
+    "by": "coordinator",
+    "pid": 3904,
+    "startEpochMs": 1792737718000,
+    "command": "/System/Applications/TextEdit.app/Contents/MacOS/TextEdit",
+    "signal": "SIGTERM",
+    "identityRevalidatedInSameShellLine": true,
+    "verifiedGone": true,
+    "grounds": "Coordinator judged the five remaining off-screen windows to match today's internal-window observations; fixture document already closed and no other TextEdit ran.",
+    "originalCleanupVerdict": "BLOCKED, unchanged"
+  },
+  "retainedRunDirectory": "/tmp/cua-m4.u5B2eG",
+  "retentionReason": "Hold evidence and staged archives; approved vendor runtime restored separately. Private preparation token file not copied or published.",
+  "syntheticMismatch": "60 characters versus 58 expected; not investigated under coordinator instruction"
+}

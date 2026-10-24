@@ -78,7 +78,7 @@ function world(t, {identity = CERT_SHA1, engineAnswers = {}} = {}) {
     if (file === '/usr/bin/codesign' && args[0] === '--force') { markSigned(args.at(-1), args[2] === '-' ? 'adhoc' : 'identity'); return {code: 0, stdout: '', stderr: ''}; }
     if (file === '/usr/bin/codesign' && args[0] === '--verify') return {code: 0, stdout: '', stderr: ''};
     if (file === '/usr/bin/open') {
-      assert.deepEqual(args, ['-n', '-g', '-a', bundle]);
+      assert.equal(args.at(-1), bundle);
       if (state.open) return state.open(args);
       await startEngine();
       return {code: 0, stdout: '', stderr: ''};
@@ -526,6 +526,7 @@ test('the ordinary approve after a same-identity rebuild needs no one: grants re
   const result = await approveEngine(w.deps);
   assert.equal(result.approved, true);
   assert.equal(w.engines.length, 2, 'launched (it was not running), then relaunched');
+  assert.deepEqual(opened(w), Array.from({length: 2}, () => ['/usr/bin/open', '-n', '-g', '-a', w.bundle]), 'ordinary approve keeps both launches background');
   assert.equal(approves(w.engines[0]), 1);
   assert.equal(w.engines[0].stopped, true, 'stopped with shutdown before the relaunch');
   assert.equal(approves(w.engines[1]), 1, 'the capture on the relaunched engine');
@@ -539,6 +540,39 @@ test('the ordinary approve after a same-identity rebuild needs no one: grants re
   noIdentity(result, 'the result');
   noIdentity(w.logs, 'the log');
   assert.equal(installedEngine({dir: w.dir, runSync: fakeCodesignRead}).build, OLD_BUILD);
+});
+
+test('foreground approve opts into a foreground first launch only; its post-grant relaunch stays background', async t => {
+  for (const alreadyRunning of [false, true]) {
+    const w = world(t);
+    w.placeBundle();
+    const previous = alreadyRunning ? await w.startEngine() : null;
+    const result = await approveEngine({...w.deps, foreground: true});
+    assert.equal(result.approved, true);
+    assert.deepEqual(opened(w), [
+      ['/usr/bin/open', '-n', '-a', w.bundle],
+      ['/usr/bin/open', '-n', '-g', '-a', w.bundle],
+    ]);
+    if (previous) {
+      assert.equal(previous.stopped, true, 'an idle background engine is replaced for a genuine foreground launch');
+      assert.equal(approves(previous), 0, 'the prompt request is not sent to the old background instance');
+    }
+    assert.equal(approves(w.engines.at(-2)), 1, 'the first approve goes to the foreground instance');
+    assert.equal(approves(w.engines.at(-1)), 1, 'the capture is repeated after the background relaunch');
+  }
+});
+
+test('foreground approve refuses busy or mismatched engines before stopping or launching anything', async t => {
+  for (const engineAnswers of [{connections: 1}, {busyOnShutdown: true}, {bundlePath: '/another/cua Engine.app'}]) {
+    const w = world(t, {engineAnswers});
+    w.placeBundle();
+    const previous = await w.startEngine();
+    await assert.rejects(approveEngine({...w.deps, foreground: true}), {code: engineAnswers.bundlePath ? 'engine_mismatch' : 'engine_busy'});
+    assert.equal(previous.stopped, false);
+    assert.equal(approves(previous), 0);
+    assert.deepEqual(opened(w), []);
+    assert.ok(!existsSync(join(w.dir, 'approved.json')));
+  }
 });
 
 test('approve refuses with no bundle, with another connection open, and against an engine from another copy or build', async t => {

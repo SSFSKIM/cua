@@ -90,8 +90,9 @@ identity. `--sign-wait <ms>` or `CUA_SIGN_WAIT_MS` sets the signing wait as for 
 600000 for an attended first sign, at most 1800000). On an already-onboarded Mac, GUI-domain signing over SSH is
 normally silent. If a password prompt appears, automation stops and the owner handles it at that Mac's console.
 
-`engine approve` prints the by-hand `+`/bundle-path steps when macOS shows no prompt, then relaunches to take the grants.
-A session's first missing permission fails with `permissionsPending`, naming **cua Engine** and the Settings pane.
+Only explicit `engine approve` requests the Accessibility and Screen Recording system prompts. It prints the by-hand
+`+`/bundle-path steps when macOS shows no prompt, then relaunches to take the grants. Ordinary missing-grant checks do
+not request system prompts: they fail with `permissionsPending`, naming **cua Engine** and the exact Settings steps.
 After a Screen Recording refusal, the next observation attempts an idle relaunch and retries once; another open
 connection prevents the relaunch and leaves the permission diagnostic visible. Observations include screenshots,
 so there is no text-only observation fallback without Screen Recording. Ordinary session launches stay in the background.

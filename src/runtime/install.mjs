@@ -46,6 +46,29 @@ import {findPin, loadPins, readInstalledRecord, assertHostSupports, recoveryHint
 import {verifyCodeSignatures, verifyRuntimeTree} from './checks.mjs';
 import {findTool, requireTools} from './tools.mjs';
 import {helperAsset, helperDir, helperPath, loadHelperPin, sha256Of} from '../sandbox/linux.mjs';
+import {homedir} from 'node:os';
+import {buildEngine, engineDirectory} from './engine.mjs';
+import {signWaitMs} from './engine-sign.mjs';
+import {nativeEngineSetting} from './launch.mjs';
+
+// The macOS engine step, after the runtime and Node are in place. Selection is the same preference doctor/serve read,
+// not nativeEngineFor's effective selection (an absent approval is precisely why install must build). Only --engine
+// makes a build refusal fatal; an implicitly selected build warns without undoing the other installed components.
+// Neither signing options nor a scratch CUA_HOME select or relocate the engine. `build` and `selection` are test seams.
+export async function installEngine({explicit = false, sign, signWait, env = process.env, platform = process.platform,
+  build = buildEngine, selection = {}, log} = {}) {
+  if (platform !== 'darwin') return null;
+  if (!explicit && nativeEngineSetting({env, ...selection}).engine !== 'cua') return {skipped: 'not_selected'};
+  try {
+    const timeoutMs = signWaitMs({flag: signWait, env});
+    const built = await build({env, dir: engineDirectory(env.HOME || homedir()), ...(sign === 'adhoc' ? {identity: 'adhoc'} : {}), signOptions: {timeoutMs}, log});
+    return {status: 'pass', ...built};
+  } catch (error) {
+    const refusal = error instanceof CuaError ? error : new CuaError('engine_install_failed', error.message, {cause: error});
+    if (explicit) throw refusal;
+    return {status: 'warn', code: refusal.code, message: refusal.message, ...(refusal.hint ? {hint: refusal.hint} : {})};
+  }
+}
 
 // What unpacking a deb runs, and the package each comes from.
 const DEB_TOOLS = {ar: 'binutils', tar: 'tar', xz: 'xz-utils'};

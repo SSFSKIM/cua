@@ -27,7 +27,8 @@
 #
 # Public output (the repo is public). The runner's log carries only: each step's PASS/FAIL line and the summary; the
 # gate's own `hosted-gate:` lines (the run's and the baseline's images, the count of Codex CLI files in the installed
-# tree, doctor's sandbox.launcher status, probe-secrets' step names and statuses, of a fingerprint judged unequal its
+# tree, the verified download's outcome/source/release/URL host/SHA-256/byte count (download-proof.mjs), doctor's
+# sandbox.launcher status, probe-secrets' step names and statuses, of a fingerprint judged unequal its
 # undeclared checks' labels and results and its environment differences' names, never their values, and of a command
 # that failed its exit status and how many stderr lines were withheld); own-sandbox's and engine-lane's `PASS <label>`
 # and `FAIL <label>` lines; hosted-public.mjs's one failure line, naming the form and the files' basenames. Every producer's stderr (an
@@ -52,7 +53,7 @@ cd "$R"
 OUT=${HOSTED_GATE_OUT:-$R/hosted-gate-out}
 rm -rf "$OUT"; mkdir -p "$OUT/oracles"
 # The scratch root by its real path (port-vs-capture relocates M0's captures under it, which needs no symbolic link on
-# the way: the runner's temp is /Users/runner/work/_temp; macOS's /tmp and /var are aliases).
+# the way: use RUNNER_TEMP on hosted CI; macOS's /tmp and /var are aliases).
 S=$(mktemp -d "${RUNNER_TEMP:-$HOME}/cua159.XXXXXX")
 S=$(cd "$S" && pwd -P)
 trap 'rm -rf "$S"' EXIT
@@ -63,8 +64,8 @@ RAW=$S/reports ERR=$S/stderr
 mkdir -p "$U" "$RAW/oracles" "$ERR"
 M0=docs/evidence/2026-10-17-own-sandbox/m0
 BASELINE=docs/evidence/2026-10-18-hosted-macos-gate/baseline
-# The mini's scratch root in M0's records (oracle.mjs ran there with --home ~/cua-115/home --user-home ~/cua-115/userhome).
-M0_ROOT=/Users/new/cua-115
+# The two original captures must agree on their scratch root. Read provenance instead of embedding an account's home.
+M0_ROOT=$(node scripts/sandbox-probe/recorded-root.mjs "$M0/argv-capture/capture-signed-scoped.json" "$M0/argv-capture/capture-signed-default.json")
 # What every cua command here sees: the scratch homes, a fixed PATH with this Node.
 scratch() { env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin:$(dirname "$(command -v node)")" HOME="$U" CUA_HOME="$H" LANG=C.UTF-8 TMPDIR="$S/tmp" "$@"; }
 mkdir -p "$S/tmp"
@@ -100,7 +101,12 @@ step() {
 "
 }
 
-install() { quiet install '' scratch node bin/cua.mjs install --json > "$RAW/install.json"; }
+# This gate's engine lane uses a fixture, not a capturing engine. Keep installation vendor-only even after the default
+# flips; engine-swift builds and verifies the real ad-hoc bundle in its own scratch HOME, without granting permissions.
+install() {
+  quiet install '' scratch env CUA_NATIVE_ENGINE=vendor node bin/cua.mjs install --json > "$RAW/install.json" || return $?
+  quiet download-proof '^hosted-gate: ' scratch node scripts/sandbox-probe/download-proof.mjs "$RAW/install.json"
+}
 no_codex() {
   found=$(find "$H" \( -name CodexCLI.app -o \( -name codex -type f \) \) -print 2> "$ERR/no-codex" | wc -l | tr -d ' ')
   echo "hosted-gate: Codex CLI files in the installed tree: $found" >&2

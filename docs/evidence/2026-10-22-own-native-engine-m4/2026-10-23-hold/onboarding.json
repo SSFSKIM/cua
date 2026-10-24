@@ -1,0 +1,226 @@
+{
+  "scenario": "accept-native",
+  "status": "FAIL",
+  "suiteQualification": "The hosted Node 24 gate is the unit-suite authority (#198). Local whole-suite failures remain FAIL and need per-failure classification; no environmental exception promotes an item to PASS.",
+  "options": {
+    "freshOnboarding": true,
+    "liveSecrets": false,
+    "liveTextedit": false,
+    "callerSecretKey": false,
+    "items": [
+      14
+    ],
+    "engine": {
+      "engine": "cua",
+      "pinnedBy": "--engine"
+    }
+  },
+  "release": null,
+  "home": "$CUA_HOME",
+  "host": "darwin-arm64",
+  "node": "v24.22.0",
+  "startedAt": "2026-10-23T05:44:32.188Z",
+  "finishedAt": "2026-10-23T05:53:01.949Z",
+  "summary": {
+    "14": "FAIL"
+  },
+  "connectionDirectoriesLeft": 0,
+  "items": [
+    {
+      "id": 14,
+      "title": "Fresh permission onboarding: OWNER revocation, model errors, staged grants and relaunch recovery",
+      "status": "FAIL",
+      "checks": [
+        {
+          "name": "preconditions",
+          "status": "PASS",
+          "detail": "approved engine verified; no live engine connection or TextEdit to disturb"
+        },
+        {
+          "name": "owner revocation",
+          "status": "PASS",
+          "detail": "owner confirmed at the terminal (revoked); not performed by automation"
+        },
+        {
+          "name": "Accessibility error reaches the model",
+          "status": "PASS",
+          "detail": "MCP js error names Accessibility, + and the exact approved bundle path"
+        },
+        {
+          "name": "all three grants absent",
+          "status": "PASS",
+          "detail": "Accessibility, Screen Recording and Input Monitoring read false"
+        },
+        {
+          "name": "owner Accessibility grant",
+          "status": "PASS",
+          "detail": "owner confirmed at the terminal (granted); not performed by automation"
+        },
+        {
+          "name": "Screen Recording error reaches the model",
+          "status": "PASS",
+          "detail": "MCP js error names Screen Recording, +, exact approved path and pending relaunch"
+        },
+        {
+          "name": "AX-only intervention diagnostic",
+          "status": "PASS",
+          "detail": "with AX alone granted, doctor reports Input Monitoring absent and intervention detection off"
+        },
+        {
+          "name": "owner Screen Recording grant",
+          "status": "PASS",
+          "detail": "owner confirmed at the terminal (granted); not performed by automation"
+        },
+        {
+          "name": "service relaunch recovery",
+          "status": "PASS",
+          "detail": "same MCP connection recovered; engine PID changed during retry and screenshot bytes were nonempty (not emitted)"
+        },
+        {
+          "name": "owner capture confirmation observation",
+          "status": "PASS",
+          "detail": "owner confirmed at the terminal (none); not performed by automation"
+        },
+        {
+          "name": "intervention off",
+          "status": "FAIL",
+          "detail": "input must attest intervention off, and doctor must say detection is off while Input Monitoring is absent"
+        },
+        {
+          "name": "owner Input Monitoring grant",
+          "status": "BLOCKED",
+          "detail": "not reached; no pass inferred"
+        },
+        {
+          "name": "engine approval",
+          "status": "BLOCKED",
+          "detail": "not reached; no pass inferred"
+        },
+        {
+          "name": "final grants and approved build",
+          "status": "BLOCKED",
+          "detail": "not reached; no pass inferred"
+        },
+        {
+          "name": "intervention on",
+          "status": "BLOCKED",
+          "detail": "not reached; no pass inferred"
+        },
+        {
+          "name": "owner TextEdit cleanup",
+          "status": "BLOCKED",
+          "detail": "not reached; no pass inferred"
+        }
+      ],
+      "evidence": {
+        "ownerWindow": "9 minutes continuously for item 14, inside the combined 12-minute owner window with the separate foreground trial: remove the three entries and open a blank TextEdit document (3); grant Accessibility (1); grant Screen Recording, choosing Later, and answer any capture confirmation (2); grant Input Monitoring (1); finish approval/checks and quit TextEdit without saving (2).",
+        "windows": [
+          {
+            "stage": "Accessibility error reaches the model",
+            "pid": 4492,
+            "number": 14944,
+            "offScreenCount": 1,
+            "offScreenBounds": [
+              {
+                "x": 0,
+                "y": 940,
+                "width": 500,
+                "height": 500
+              }
+            ]
+          },
+          {
+            "stage": "Screen Recording error reaches the model",
+            "pid": 4492,
+            "number": 14944,
+            "offScreenCount": 1,
+            "offScreenBounds": [
+              {
+                "x": 0,
+                "y": 940,
+                "width": 500,
+                "height": 500
+              }
+            ]
+          },
+          {
+            "stage": "service relaunch recovery",
+            "pid": 4492,
+            "number": 14944,
+            "offScreenCount": 1,
+            "offScreenBounds": [
+              {
+                "x": 0,
+                "y": 940,
+                "width": 500,
+                "height": 500
+              }
+            ]
+          },
+          {
+            "stage": "intervention off",
+            "pid": 4492,
+            "number": 14944,
+            "offScreenCount": 1,
+            "offScreenBounds": [
+              {
+                "x": 0,
+                "y": 940,
+                "width": 500,
+                "height": 500
+              }
+            ]
+          },
+          {
+            "stage": "intervention off",
+            "pid": 4492,
+            "number": 14944,
+            "offScreenCount": 5,
+            "offScreenBounds": [
+              {
+                "x": 0,
+                "y": 0,
+                "width": 2560,
+                "height": 30
+              },
+              {
+                "x": 0,
+                "y": 940,
+                "width": 500,
+                "height": 500
+              },
+              {
+                "x": 0,
+                "y": 0,
+                "width": 2560,
+                "height": 30
+              },
+              {
+                "x": 0,
+                "y": 0,
+                "width": 2560,
+                "height": 30
+              },
+              {
+                "x": 0,
+                "y": 0,
+                "width": 2560,
+                "height": 30
+              }
+            ]
+          }
+        ],
+        "checkoutBuild": "a14f6a606776c3a0cd78f1ffb6a47787335cdc58ba15427eab5d163f3baf8f16",
+        "attested": 4,
+        "relaunch": {
+          "before": 5014,
+          "after": 7146
+        },
+        "stage3CaptureConfirmation": {
+          "source": "owner-observed",
+          "outcome": "none"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "at": "2026-10-24T09:49:05.533Z",
+  "stopped": {
+    "wasRunning": true,
+    "pid": 26404
+  },
+  "build": "d0b2fa133f4005e3f5fdb72e2ac7c96f5845f93550e1bd1a95879bb5a462513f",
+  "approved": true,
+  "approvedBuild": "d0b2fa133f4005e3f5fdb72e2ac7c96f5845f93550e1bd1a95879bb5a462513f",
+  "identityMatches": true,
+  "permissions": {
+    "accessibility": true,
+    "screenRecording": true,
+    "inputMonitoring": true
+  },
+  "canPostHid": true,
+  "connections": 0,
+  "readPid": 45037,
+  "readInstanceStopped": true,
+  "finalRunning": false,
+  "ok": true
+}

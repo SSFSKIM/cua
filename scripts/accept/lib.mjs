@@ -6,6 +6,21 @@ import {join} from 'node:path';
 import {SANDBOX_DISABLED_STEP, SANDBOX_SCOPED_STEP} from '../probe/trusted-roots.mjs';
 import {SECRETS_OFF, STORE_UNREADABLE, failClosedSteps, refusedLaunchStep} from '../probe/fail-closed.mjs';
 import {approvalsByBehaviour} from '../probe/lib.mjs';
+export {tapDiagnostics} from './tap-diagnostics.mjs';
+
+// A selected item must bring the results it consumes. Refuse rather than silently add live work or a whole suite
+// (#197); item 14 is independent so the owner window can finish before unattended checks start.
+export function acceptanceSelection(value) {
+  if (value === undefined) return null;
+  const parts = value.split(',');
+  if (!parts.every(p => /^\d+$/.test(p) && Number(p) >= 1 && Number(p) <= 14))
+    throw new Error('--items takes item numbers 1 to 14, comma-separated');
+  const selected = new Set(parts.map(Number));
+  const dependencies = {2: [1, 3], 3: [1], 6: [1, 4], 7: [1], 8: [1]};
+  const missing = [...new Set([...selected].flatMap(id => dependencies[id] ?? []))].filter(id => !selected.has(id));
+  if (missing.length) throw new Error(`selection requires item(s) ${missing.sort((a, b) => a - b).join(',')}; include them in --items`);
+  return selected;
+}
 
 export const STATUSES = ['PASS', 'FAIL', 'BLOCKED'];
 // A row that records an accepted consequence rather than checking a guarantee (the trusted roots a cell can write
@@ -47,8 +62,9 @@ export function doctorHealth({code, doctor, informational = DOCTOR_INFORMATIONAL
 // absent: a vendor differential needs a local research tree (its variable unset, or naming a path that does not exist;
 // a clean checkout must not need one, acceptance 10); a platform-only test cannot run elsewhere; and a test of an npm
 // package skips in a checkout without it (acceptance 10's clean clone, which proves npm test runs without
-// node_modules, README). A declared skip whose gate is present (the tree there, the package installed), and any other
-// skip, is missing coverage.
+// node_modules, README). The prompting Accessibility test is restricted to GitHub-hosted runners so it cannot prompt
+// on an owner's console, including a self-hosted runner. A declared skip whose gate is present, and any other skip,
+// is missing coverage.
 export const DECLARED_SKIPS = [
   {reason: 'set CUA_VENDOR_CUA to the readable @oai/cua directory to compare with the vendor facade', researchTree: 'CUA_VENDOR_CUA'},
   {reason: 'set CUA_VENDOR_CUA to the readable @oai/cua directory to compare with the vendor Sky facade', researchTree: 'CUA_VENDOR_CUA'},
@@ -56,6 +72,7 @@ export const DECLARED_SKIPS = [
   {reason: 'std\'s SUN_LEN refusal is the Linux vendor\'s connect', onlyOn: 'linux'},
   {reason: 'non-UTF-8 file names exist only on Linux (APFS refuses them with EILSEQ)', onlyOn: 'linux'},
   {reason: 'Linux only: a systemd user unit', onlyOn: 'linux'},
+  {reason: 'calls the prompting Accessibility request: GitHub-hosted runners only (RUNNER_ENVIRONMENT=github-hosted)', onlyRunnerEnvironment: 'github-hosted'},
   {reason: 'needs the ws package: run npm ci', dependency: 'ws'},
   {reason: 'playwright-core not installed (npm ci): the drift check needs the pinned package', dependency: 'playwright-core'},
   {reason: 'markdown-it not installed (npm ci): the drift check needs the pinned package', dependency: 'markdown-it'},
@@ -72,7 +89,8 @@ export function skipReasons(text) {
 // checkout the suite ran in (`root`, whose node_modules a dependency entry looks in).
 export function judgeSkips(tally, {env = process.env, platform = process.platform, root, exists = existsSync, declared = DECLARED_SKIPS} = {}) {
   const applies = d => d.researchTree ? !env[d.researchTree] || !exists(env[d.researchTree])
-    : d.dependency ? Boolean(root) && !exists(join(root, 'node_modules', d.dependency, 'package.json')) : d.onlyOn !== platform;
+    : d.dependency ? Boolean(root) && !exists(join(root, 'node_modules', d.dependency, 'package.json'))
+    : d.onlyRunnerEnvironment ? env.RUNNER_ENVIRONMENT !== d.onlyRunnerEnvironment : d.onlyOn !== platform;
   const accepted = [], other = [];
   for (const [reason, count] of tally) (declared.some(d => d.reason === reason && applies(d)) ? accepted : other).push({reason, count});
   return {accepted, other};
@@ -132,10 +150,11 @@ export function testSummary(text) {
 // The environment for a spawned test command (`npm test`): node:test's default reporter differs
 // by Node version and terminal, so every node process in the run, nested runners included, is told through
 // NODE_OPTIONS to report TAP on stdout. Reporter and destination options already there (either spelling, `=value` or
-// separate value) are removed with their values; every other option is kept as written, quoting included.
+// separate value) are removed with their values; every other option is kept as written, quoting included. Acceptance
+// can select its structured-event reporter; all other callers keep TAP unchanged.
 export const TAP_REPORTER_OPTIONS = ['--test-reporter=tap', '--test-reporter-destination=stdout'];
 const REPORTER_OPTIONS = new Set(['test-reporter', 'test-reporter-destination']);
-export function testReporterEnv(env) {
+export function testReporterEnv(env, {reporter = 'tap'} = {}) {
   const tokens = nodeOptionsTokens(env.NODE_OPTIONS ?? '');
   const kept = [];
   for (let i = 0; i < tokens.length; i++) {
@@ -144,7 +163,8 @@ export function testReporterEnv(env) {
     if (!REPORTER_OPTIONS.has(option)) { kept.push(raw); continue; }
     if (!value.includes('=')) i++;   // its value is the next argument
   }
-  return {...env, NODE_OPTIONS: [...kept, ...TAP_REPORTER_OPTIONS].join(' ')};
+  const selected = reporter === 'tap' ? TAP_REPORTER_OPTIONS : [`--test-reporter=${JSON.stringify(reporter)}`, '--test-reporter-destination=stdout'];
+  return {...env, NODE_OPTIONS: [...kept, ...selected].join(' ')};
 }
 
 // NODE_OPTIONS split as Node splits it: whitespace separates arguments except inside double quotes, where a backslash

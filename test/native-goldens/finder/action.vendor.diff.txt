@@ -1,7 +1,7 @@
 The following is a diff from the previous accessibility tree for Window: "cua-scene-finder" with ~ and + representing changed and added elements, respectively. Removed elements are summarized by ID range.
 ~				45 row (selected)
 ~					46 셀 (selected) Secondary Actions: Finder 항목 열기
-~						48 텍스트 필드 (selected, settable) URL: file:///Users/new/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-005, Value: scene-file-005, Secondary Actions: Finder 항목 열기
+~						48 텍스트 필드 (selected, settable) URL: file:///Users/xxx/Library/Caches/cua-harness/native-goldens/finder/cua-scene-finder/scene-file-005, Value: scene-file-005, Secondary Actions: Finder 항목 열기
 ~					49 셀 (selected)
 ~					51 셀 (selected)
 ~					53 셀 (selected)

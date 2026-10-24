@@ -5,6 +5,20 @@ import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {prepareEndpoint,removeEndpoint} from '../../scripts/repl-parity/remote-device.mjs';
 import {archiveCacheDir} from '../../scripts/repl-parity/archive-cache.mjs';
+import * as remoteDevice from '../../scripts/repl-parity/remote-device.mjs';
+
+test('endpoint CLI pins only acquisition to vendor under a synthetic HOME, preserving session selection', () => {
+ const ambient={HOME:'/owner',CUA_HOME:'/owner/runtime',CUA_NATIVE_ENGINE:'cua',CUA_SIGNING_IDENTITY:'fixture identity'};
+ const calls=[];
+ const run=(file,args,options)=>{calls.push({file,args,env:options.env});return 'fixture output';};
+ for(const args of [['install','--archive','/fixture/archive'],['remote','show','--json']])
+  assert.equal(remoteDevice.endpointCli('/fixture/scratch',args,{ambient,run}),'fixture output');
+ assert.equal(calls[0].env.CUA_NATIVE_ENGINE,'vendor');
+ assert.equal(calls[0].env.HOME,'/fixture/scratch.home');
+ assert.equal(calls[0].env.CUA_HOME,'/fixture/scratch');
+ assert.equal(calls[1].env.CUA_NATIVE_ENGINE,'cua','other endpoint commands keep their chosen engine');
+ assert.equal(ambient.CUA_NATIVE_ENGINE,'cua','acquisition cannot mutate the driven session environment');
+});
 
 // The preparation's archive cache double: tiny files where the real fetch would put the verified archives.
 function cacheDouble(events=[]){

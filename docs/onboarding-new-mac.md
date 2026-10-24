@@ -1,4 +1,4 @@
-# Connecting a Chrome profile to cua on a new Mac
+# Setting up cua on a new Mac
 
 A step list for bringing a fresh Mac to the point where an agent, through the `cua_repl` MCP server, works in one of
 the user's own Chrome profiles. It is written for the next machine and for a later resident agent service, so each
@@ -18,7 +18,7 @@ that was set up that way moves with the README's "Moving a home off the ChatGPT 
 | 4 Extension in each Chrome profile | the cua extension from the Chrome Web Store once listed; until then load `extension/` unpacked | yes | `chrome.extension.<key>` PASS |
 | 5 Native host registration | `cua chrome register` | no | `chrome.host.registered` PASS |
 | 6 Register and bind the profile | `cua profiles add`, Chrome open on it, `cua profiles bind` | yes, for any pick | `profiles list`: ready |
-| 7 macOS permissions (native surface) | allow Accessibility and Screen Recording when asked | yes, once | a live native call |
+| 7 macOS native engine | vendor by default; opt-in cua: configure identity, `install --engine`, `engine approve` | yes: first signing-key trust and three grants | `CUA_NATIVE_ENGINE=cua cua doctor --json`, then a live native call |
 | 8 Claude Code wiring | `claude mcp add …`, settings permissions and hook | no | `claude mcp list`: Connected |
 
 ## The steps
@@ -93,17 +93,106 @@ open the cua extension's popup if it still has no backend.
 
 ### 7. macOS permissions for the native surface
 
-The first native call (the `computer` surface) starts the pinned helper through LaunchServices; it shows its own
-"Enable ChatGPT Computer Use" window and then macOS asks for Accessibility and Screen Recording, attributed to the
-helper, not to the terminal. A person allows them once in System Settings. Over SSH these prompts cannot be shown, so
-steps 4 and 7 happen at the console. A browser-only machine still needs
-the runtime to start for the listing launch, but the Chrome acceptance ran without granting the native permissions
-first.
+The default is still the vendor engine. Its first native call starts `Codex Computer Use.app` through LaunchServices;
+the owner answers its "Enable ChatGPT Computer Use" window and grants Accessibility and Screen Recording at the
+console. A browser-only setup does not need these native grants.
+
+For **cua's own opt-in engine**, use the sequence below. The bundle always lives at
+`~/Library/Application Support/cua/engine/cua Engine.app`; changing `CUA_HOME` never moves or duplicates it.
+
+#### Owner: signing identity and key trust (once per Mac/key)
+
+1. Install Xcode's command-line tools (`xcode-select --install`, with the owner completing any installer). Confirm
+   `xcrun swift --version`. In Xcode's account settings create an Apple Development certificate, or import the owner's
+   exported certificate **and private key** into the login keychain with Keychain Access. If it is not valid, install
+   the matching Apple WWDR intermediate from Apple's certificate authority page; do not disable trust checks.
+2. At a private console terminal, inspect `security find-identity -v -p codesigning` and choose that identity's SHA-1
+   (useful when common names repeat). Do not paste the identity into a chat, report or repository. Configure
+   `~/.config/cua/engine.json`, preserving existing keys, with `"signingIdentity": "<chosen SHA-1>"`; alternatively set
+   `CUA_SIGNING_IDENTITY` in the build's environment. No certificate name is shipped in this repository.
+3. In the owner's console terminal, admit codesign in **that private key's** partition list. Replace the placeholder
+   with its label from Keychain Access; the label need not equal the certificate's display name. The command is scoped
+   to that signing private key, not every key in the login keychain:
+
+   ```sh
+   security set-key-partition-list -S apple-tool:,apple: -s -t private \
+     -l '<signing private key label>' "$HOME/Library/Keychains/login.keychain-db"
+   ```
+
+   Any authentication is the owner's action. Automation stops at a password prompt; it never supplies a password or
+   changes keychain access lists. Do not put a password in command history with `-k`.
+4. Run the first sign while the owner is at the console:
+
+   ```sh
+   node bin/cua.mjs install --engine --sign-wait 600000
+   ```
+
+   When `codesign` requests access to the private key, the **owner** enters the login password and chooses **Always
+   Allow** while the signing process is still alive. A timeout can leave an orphaned prompt; the owner cancels it and
+   reruns the attended build. If it stays blocked, stop and diagnose rather than repeatedly launching sign jobs.
+
+SSH cannot use the GUI login's unlocked keychain directly. The builder detects a non-Aqua session and runs only the
+sign through a bounded, one-shot launchd job in `gui/<uid>`, then removes that job. There must be an unlocked GUI login.
+After the two trust steps above, subsequent signs through SSH are expected to be silent; unlocking the keychain in
+each SSH connection is not the setup. `--sign-wait` or `CUA_SIGN_WAIT_MS` controls the wait (45 s default, at most
+1800000 ms). A password prompt is still an owner step, never unattended automation. `--engine-sign adhoc` is only for
+hosted CI where grants are not retained across builds; it is never the fallback for a missing identity.
+
+#### Owner: grants and approval
+
+With no session using the engine, run:
+
+```sh
+node bin/cua.mjs engine approve
+```
+
+macOS may show no permission prompt for this background app. Follow the command's printed by-hand steps instead:
+in **System Settings → Privacy & Security**, open each of **Accessibility**, **Screen & System Audio Recording**,
+and **Input Monitoring**. For a missing entry, click **+**, press **⌘⇧G**, enter
+`~/Library/Application Support/cua/engine/cua Engine.app`, and enable **cua Engine**. Do not grant permissions to a
+scratch copy or to the terminal instead. Only the owner touches these controls or any capture-confirmation alert.
+
+Confirm in the approve terminal after granting. Approval does not depend on the running process noticing the grant:
+it stops through `shutdown`, relaunches, and takes one discarded display capture. If replayd reports a confirmation,
+the owner answers it and confirms at the terminal. Only then does the command write `approved.json` for the build and
+signature. All harness homes serve that bundle in place. A rebuild under the same identity normally keeps the grants;
+a detected new capture alert still requires the owner. No approval file is evidence that a permission was never revoked.
+
+```sh
+CUA_NATIVE_ENGINE=cua node bin/cua.mjs doctor --json
+```
+
+Check `engine.selected`, the approved bundle/build, `engine.signature.identityMatches` (the identity is deliberately
+not printed), and `engine.permissions.accessibility`, `screenRecording`, `inputMonitoring`. Input Monitoring is the
+intervention tap's grant; without it detection is off and reported. Both text observations and screenshots require
+Screen Recording. In a session, a missing grant returns `permissionsPending` with the Settings path; after a Screen
+Recording refusal the next observation relaunches the engine once it has no other connection, then retries once.
+
+For a fresh-onboarding acceptance run, item 14 of `scripts/accept-native.mjs` is separate from item 9's clean-machine
+release gates. The **owner** removes only the cua Engine entries from all three panes with **–**, then re-adds them
+in the harness's order: Accessibility, Screen Recording (choose **Later**, not **Quit & Reopen**, so the harness proves
+the service's relaunch), Input Monitoring. The harness never revokes or grants permissions itself.
 
 ### 8. Wire it into Claude Code
 
+Choose one registration. The ordinary registration keeps the current vendor default:
+
 ```sh
 claude mcp add cua_repl -s user -e CUA_SHIM_SURFACES=computer,browser -- node ~/Developer/GitHub/cua/bin/cua.mjs serve
+```
+
+If you built and approved **cua's own engine** in step 7, use this variant instead so the registered server selects it
+on every connection. Configuring `signingIdentity` or selecting cua only for the earlier doctor command does not
+select it for `serve`; this registration sets the preference for this MCP server without changing the global default:
+
+```sh
+claude mcp add cua_repl -s user -e CUA_SHIM_SURFACES=computer,browser -e CUA_NATIVE_ENGINE=cua -- node ~/Developer/GitHub/cua/bin/cua.mjs serve
+```
+
+If `cua_repl` is already registered, remove that registration with `claude mcp remove cua_repl -s user` before adding
+the chosen variant. Then check the connection:
+
+```sh
 claude mcp list
 ```
 

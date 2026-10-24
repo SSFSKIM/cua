@@ -1,0 +1,14 @@
+{
+  "beganAt": "2026-10-23T05:41:29.781Z",
+  "endedAt": "2026-10-23T05:44:32.001Z",
+  "build": "a14f6a606776c3a0cd78f1ffb6a47787335cdc58ba15427eab5d163f3baf8f16",
+  "validNoGrantsTrial": true,
+  "approved": false,
+  "grants": {
+    "accessibility": false,
+    "screenRecording": false,
+    "inputMonitoring": false
+  },
+  "ownerObserved": "accessibility",
+  "provenance": "owner console observation"
+}

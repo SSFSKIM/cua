@@ -253,6 +253,233 @@ test('an oversized frame from the engine, a malformed response or a closed socke
   assert.equal(engine.received.filter(r => r.method === 'ping').length, 4, 'each transport failure drops the connection');
 });
 
+// Permission recovery runs on the next screenshot-bearing observation, not on the failing request.
+const PERMISSION_SENTENCE = 'cua Engine needs Screen Recording: System Settings > Privacy & Security > Screen & System Audio Recording, click "+" and add /Applications/Fake Engine.app; a relaunch is pending.';
+const permissionFailure = () => new EngineFailure(-10014, PERMISSION_SENTENCE, 'permissionsPending', {meta: {permission: 'screenRecording'}});
+const isPermission = error => error instanceof SkyComputerUseError && error.code === -10014 && error.errorName === 'permissionsPending'
+  && error.message === `Computer Use server error -10014: ${PERMISSION_SENTENCE}`;
+const screenshotArgs = {app: '/A.app', includeScreenshot: true, outputDirectory: '/tmp/screenshots'};
+
+// Shutdown replies before process exit. Launch must wait for the peer's close, not close its own pipe and race the lock.
+async function permissionEngine(t, socket, {observe = () => { throw permissionFailure(); }, shutdown = () => {}, exitDelay = 0} = {}) {
+  let stopped = false;
+  const engine = await startFakeEngine(t, socket, {handlers: {
+    'execute:get_app_state': observe,
+    'execute:list_apps': () => [],
+    'execute:click': () => { throw permissionFailure(); },
+    shutdown: () => {
+      shutdown();
+      setTimeout(async () => { await engine.stop(); stopped = true; }, exitDelay);
+      return {};
+    },
+  }});
+  return {...engine, get stopped() { return stopped; }};
+}
+
+test('permissionsPending is returned first; the next screenshot shuts down, waits for exit, relay-launches once and observes with a fresh deadline', async t => {
+  const socket = join(scratchDir(t), 'engine.sock');
+  const first = await permissionEngine(t, socket, {exitDelay: 120});
+  let second, depthAtLaunch;
+  const {client, launches, budget} = clientFor(socket, {launch: async () => {
+    assert.equal(first.stopped, true, 'the old engine must exit before launch');
+    depthAtLaunch = budget.depth;
+    second = await permissionEngine(t, socket, {observe: () => ({lineage: 'new'})});
+  }});
+  t.after(() => client.close());
+  await assert.rejects(client.execute('get_app_state', screenshotArgs), isPermission);
+  assert.deepEqual(first.received.map(r => r.method), ['ping', 'status', 'execute']);
+  assert.equal(launches.length, 0, 'the owner gets the instruction before any restart');
+  await client.execute('list_apps', {});
+  assert.equal(launches.length, 0, 'unrelated requests do not spend the pending restart');
+  const next = client.execute('get_app_state', screenshotArgs, {deadlineMs: 1000});
+  const queued = client.execute('get_app_state', screenshotArgs);
+  assert.deepEqual((await next).result, {lineage: 'new'});
+  await queued;
+  assert.equal(depthAtLaunch, 1, 'the recovery runs under the suspended budget');
+  assert.deepEqual(launches, [{applicationPath: '/Applications/Fake Engine.app'}]);
+  assert.equal(first.received.filter(r => r.method === 'shutdown').length, 1);
+  assert.equal(second.executes().length, 2, 'one observation per request, including a concurrent request');
+  const observation = second.received.find(r => r.method === 'execute');
+  assert.ok(observation.params.deadlineUnixMilliseconds >= Date.now() + 900, 'shutdown and relaunch do not shorten the observation deadline');
+});
+
+test('busy preserves the engine and original permissionsPending sentence, and the next attempt can recover even when the old engine now reads granted', async t => {
+  const socket = join(scratchDir(t), 'engine.sock');
+  let busy = true;
+  const first = await permissionEngine(t, socket, {shutdown: () => { if (busy) throw new EngineFailure(-10005, 'busy', 'busy', {connections: 1}); }});
+  let second;
+  const {client, launches} = clientFor(socket, {launch: async () => { second = await permissionEngine(t, socket, {observe: () => 'captured'}); }});
+  t.after(() => client.close());
+  await assert.rejects(client.execute('get_app_state', screenshotArgs), isPermission);
+  for (let i = 0; i < 2; i++) await assert.rejects(client.execute('get_app_state', screenshotArgs), isPermission);
+  assert.equal(client.connected, true, 'busy leaves our connection and the engine alive');
+  assert.equal(first.stopped, false);
+  assert.equal(launches.length, 0);
+  assert.equal(first.executes().length, 1, 'no screenshot is tried on the old process after a permission failure');
+  assert.equal(first.received.filter(r => r.method === 'status').length, 1, 'identity is read once before the first screenshot; recovery never polls grants');
+  busy = false;
+  assert.equal((await client.execute('get_app_state', screenshotArgs)).result, 'captured');
+  assert.equal(launches.length, 1);
+  assert.equal(second.executes().length, 1);
+});
+
+test('a grant still missing after relaunch returns permissionsPending without an automatic second restart', async t => {
+  const socket = join(scratchDir(t), 'engine.sock');
+  const engines = [await permissionEngine(t, socket)];
+  const {client, launches} = clientFor(socket, {launch: async () => { engines.push(await permissionEngine(t, socket)); }});
+  t.after(() => client.close());
+  await assert.rejects(client.execute('get_app_state', screenshotArgs), isPermission);
+  await assert.rejects(client.execute('get_app_state', screenshotArgs), isPermission);
+  assert.equal(launches.length, 1);
+  assert.equal(engines[1].executes().length, 1);
+  assert.equal(engines[1].received.some(r => r.method === 'shutdown'), false);
+  await assert.rejects(client.execute('get_app_state', screenshotArgs), isPermission);
+  assert.equal(launches.length, 2, 'a new caller attempt may try one more relaunch');
+});
+
+test('an Accessibility error then an AX grant keeps the same engine; only the subsequent Screen Recording error arms recovery', async t => {
+  const socket = join(scratchDir(t), 'engine.sock');
+  let axGranted = false;
+  const engine = await permissionEngine(t, socket, {observe: () => {
+    if (!axGranted) throw new EngineFailure(-10014, 'Grant Accessibility, then retry.', 'permissionsPending', {meta: {permission: 'accessibility'}});
+    throw permissionFailure();
+  }});
+  const {client, launches} = clientFor(socket);
+  t.after(() => client.close());
+  await assert.rejects(client.execute('get_app_state', screenshotArgs), error => error.meta?.permission === 'accessibility');
+  axGranted = true;
+  await assert.rejects(client.execute('get_app_state', screenshotArgs), isPermission);
+  assert.equal(launches.length, 0);
+  assert.equal(engine.received.some(r => r.method === 'shutdown'), false, 'AX grant applies without a relaunch');
+  assert.equal(engine.executes().length, 2);
+});
+
+test('when the pending engine has already exited, connecting launches only once before retrying the screenshot', async t => {
+  const socket = join(scratchDir(t), 'engine.sock');
+  const first = await permissionEngine(t, socket);
+  let second;
+  const {client, launches} = clientFor(socket, {launch: async () => { second = await permissionEngine(t, socket, {observe: () => 'captured'}); }});
+  t.after(() => client.close());
+  await assert.rejects(client.execute('get_app_state', screenshotArgs), isPermission);
+  client.close();
+  await first.stop();
+  assert.equal((await client.execute('get_app_state', screenshotArgs)).result, 'captured');
+  assert.equal(launches.length, 1);
+  assert.equal(second.received.some(r => r.method === 'shutdown'), false, 'do not restart the freshly launched process again');
+});
+
+test('an external restart clears the old permission failure even while another client uses the fresh engine', async t => {
+  const socket = join(scratchDir(t), 'engine.sock');
+  const first = await permissionEngine(t, socket);
+  const {client, launches} = clientFor(socket);
+  t.after(() => client.close());
+  await assert.rejects(client.execute('get_app_state', screenshotArgs), isPermission);
+  client.close();
+  await first.stop();  // the owner's Quit & Reopen, or another caller's restart
+  const second = await permissionEngine(t, socket, {observe: () => 'captured', shutdown: () => {
+    throw new EngineFailure(-10005, 'busy', 'busy', {connections: 1});
+  }});
+  const {client: other} = clientFor(socket);
+  t.after(() => other.close());
+  await other.connect();
+  for (let i = 0; i < 3; i++) assert.equal((await client.execute('get_app_state', screenshotArgs)).result, 'captured');
+  assert.equal(launches.length, 0, 'an external restart needs no relay launch');
+  assert.equal(second.received.some(r => r.method === 'shutdown'), false, 'the already-fresh engine is never stopped');
+  assert.equal(second.executes().length, 3);
+  assert.equal(second.received.filter(r => r.method === 'status').length, 1, 'the process identity is cached on the live connection');
+});
+
+test('a reconnect to the same process keeps pending recovery and busy never retries its screenshot', async t => {
+  const socket = join(scratchDir(t), 'engine.sock');
+  const engine = await permissionEngine(t, socket, {shutdown: () => {
+    throw new EngineFailure(-10005, 'busy', 'busy', {connections: 1});
+  }});
+  const {client, launches} = clientFor(socket);
+  t.after(() => client.close());
+  await assert.rejects(client.execute('get_app_state', screenshotArgs), isPermission);
+  client.close();
+  for (let i = 0; i < 2; i++) await assert.rejects(client.execute('get_app_state', screenshotArgs), isPermission);
+  assert.equal(engine.executes().length, 1);
+  assert.equal(engine.received.filter(r => r.method === 'shutdown').length, 2);
+  assert.equal(launches.length, 0);
+});
+
+test('a launch request that reconnects to the same process does not clear its pending permission failure', async t => {
+  const socket = join(scratchDir(t), 'engine.sock');
+  const engine = await permissionEngine(t, socket, {shutdown: () => {
+    throw new EngineFailure(-10005, 'busy', 'busy', {connections: 1});
+  }});
+  let unavailable = false;
+  const {client, launches, nodeRepl} = clientFor(socket, {launch: async () => { unavailable = false; }});
+  const open = nodeRepl.nativePipe.createConnection;
+  nodeRepl.nativePipe.createConnection = path => unavailable ? Promise.reject(new Error('temporarily unreachable')) : open(path);
+  t.after(() => client.close());
+  await assert.rejects(client.execute('get_app_state', screenshotArgs), isPermission);
+  client.close();
+  unavailable = true;
+  await assert.rejects(client.execute('get_app_state', screenshotArgs), isPermission);
+  assert.equal(launches.length, 1);
+  assert.equal(engine.executes().length, 1, 'launch is not proof of a fresh process');
+  assert.equal(engine.received.filter(r => r.method === 'shutdown').length, 1);
+});
+
+test('an unreadable process identity refuses capture without shutting down or clearing pending recovery', async t => {
+  const socket = join(scratchDir(t), 'engine.sock');
+  const first = await permissionEngine(t, socket);
+  const {client, launches} = clientFor(socket);
+  t.after(() => client.close());
+  await assert.rejects(client.execute('get_app_state', screenshotArgs), isPermission);
+  client.close();
+  await first.stop();
+  const second = await startFakeEngine(t, socket, {pid: null, handlers: {'execute:get_app_state': () => 'captured'}});
+  await assert.rejects(client.execute('get_app_state', screenshotArgs), /process identity/);
+  assert.equal(second.executes().length, 0);
+  assert.equal(second.received.some(r => r.method === 'shutdown'), false);
+  assert.equal(launches.length, 0);
+});
+
+test('input and explicit text-only permission errors do not arm a screenshot restart', async t => {
+  const socket = join(scratchDir(t), 'engine.sock');
+  const engine = await permissionEngine(t, socket);
+  const {client, launches} = clientFor(socket);
+  t.after(() => client.close());
+  await assert.rejects(client.execute('click', {}), isPermission);
+  await assert.rejects(client.execute('get_app_state', {includeScreenshot: false}), isPermission);
+  await assert.rejects(client.execute('get_app_state', screenshotArgs), isPermission);
+  assert.equal(launches.length, 0);
+  assert.equal(engine.received.some(r => r.method === 'shutdown'), false);
+});
+
+test('a pending permission never shuts down a mismatched engine after reconnect', async t => {
+  const socket = join(scratchDir(t), 'engine.sock');
+  const first = await permissionEngine(t, socket);
+  const {client, launches} = clientFor(socket);
+  t.after(() => client.close());
+  await assert.rejects(client.execute('get_app_state', screenshotArgs), isPermission);
+  client.close();
+  await first.stop();
+  const other = await startFakeEngine(t, socket, {identity: {...IDENTITY, build: 'other'}});
+  await assert.rejects(client.execute('get_app_state', screenshotArgs), /cua install --engine/);
+  assert.deepEqual(other.received.map(r => r.method), ['ping']);
+  assert.equal(launches.length, 0);
+});
+
+test('shutdown failures propagate, and an accepted shutdown whose peer never closes is bounded without launching over it', async t => {
+  for (const refusal of [true, false]) {
+    const socket = join(scratchDir(t), 'engine.sock');
+    const engine = await startFakeEngine(t, socket, {handlers: {
+      'execute:get_app_state': () => { throw permissionFailure(); },
+      shutdown: () => { if (refusal) throw new EngineFailure(-10005, 'shutdown refused', 'internalError'); return {}; },
+    }});
+    const {client, launches} = clientFor(socket, {shutdownWaitMs: 50});
+    t.after(() => client.close());
+    await assert.rejects(client.execute('get_app_state', screenshotArgs), isPermission);
+    await assert.rejects(client.execute('get_app_state', screenshotArgs), refusal ? /shutdown refused/ : /did not close after shutdown/);
+    assert.equal(launches.length, 0);
+    assert.equal(engine.executes().length, 1);
+  }
+});
+
 // The debug engine (no permission is asked for: ping, status and list_apps read nothing of any app).
 function realEngine(t) {
   try { return debugEngine(); } catch (error) {

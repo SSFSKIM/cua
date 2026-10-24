@@ -1,19 +1,23 @@
 // Live native fixture for acceptance 5 (and, with a secret, the optional UI delivery of acceptance 6), run only by
 // `node scripts/accept-native.mjs --live-textedit [--live-secrets [--secret-key KEY]]`. Its whole GUI footprint:
-//   - it creates one empty temporary document in a directory it creates exclusively under $CUA_HOME and opens it in
-//     TextEdit (`open -a TextEdit <file>`);
+//   - it creates one temporary RTF with a fixed nonsecret placeholder in Helvetica regular (document-local style,
+//     never a preference change), in a directory exclusively under $CUA_HOME, and opens it in TextEdit;
 //   - through `cua serve` it binds TextEdit and, inside every cell that types or closes, first checks that TextEdit's
 //     front window IS that document; if it is not, that cell does nothing and the fixture sends no further input;
-//   - it types a benign marker (and, with a secret, the reference {{secret:<KEY>}}),
+//   - only after an exact initial-placeholder check, it selects all and replaces it with a benign marker (and,
+//     with a secret, appends the reference {{secret:<KEY>}}),
 //     reads it back through CUA (accessibility text and a screenshot, recorded as metadata), and closes only that
 //     window (super+w; TextEdit autosaves a file-backed document into the temporary file, never a user location),
-//     counting the close as confirmed only when TextEdit then reports no window at all;
+//     confirming the close from window-server IDs, never by observing a windowless TextEdit again;
 //   - it removes its own directory (and a store it created) in `finally`, and ends every server it started.
 // It never touches another TextEdit window or document. At the end it quits TextEdit only when this run started it, by
 // the identity it recorded right after its `open` (./fixture-app.mjs: the one pid absent before the run and launched
 // after it began, with that launch time; none or more than one records none, and a TextEdit running before is left as
-// it is), and only when its close step confirmed TextEdit then held no window at all, so no document of anyone else's
-// can be in it (unconfirmed, that TextEdit is left running and the step is BLOCKED). It then hands the front back to the application that was frontmost before the run (#157).
+// it is), after the document close is confirmed and a fresh window-server read finds no on-screen layer-0 window.
+// Off-screen windows are excluded only when their CG IDs were recorded at this run's own empty launch (#196),
+// never merely because they are off-screen. A visible or new/unclassified off-screen window, foreign PID or unreadable
+// list leaves the process running and the step BLOCKED; evidence contains IDs/bounds, never titles. It then hands the
+// front back to the application that was frontmost before the run (#157).
 // The engine (#117 M3.4; docs/doperpowers/specs/2026-10-18-own-native-engine-design.md, acceptance 8): the caller pins
 // one (`engine`, accept-native's --engine, scripts/probe/pinned-engine.mjs), every server runs with CUA_NATIVE_ENGINE set
 // to it, and every js result must attest it (`_meta['cua/nativeEngine']`, the engine's version and build as the launcher
@@ -108,7 +112,8 @@ const scoped = code => `{\n${code}\n}`;
 // displayed; the cell decides what to report). No cell reports another window's title.
 const OBSERVE = `const __ax = await app.getAXState({emit: false, disableDiffing: true});
 const __window = __ax.match(/^Window: "([^"]*)"/m)?.[1] ?? null;
-const __value = __ax.match(/Value: (.*?), ID: First Text View/)?.[1] ?? "";`;
+const __valueMatch = __ax.match(/Value: (.*?), ID: First Text View/);
+const __value = __valueMatch?.[1] ?? "";`;
 // An action cell: `action` runs only if the fixture's document is TextEdit's front window at that moment.
 export const guarded = (docName, action) => scoped(`const __front = (await app.getAXState({emit: false, disableDiffing: true})).match(/^Window: "([^"]*)"/m)?.[1] ?? null;
 if (__front !== ${JSON.stringify(docName)}) { ${out('{identityLost: true}')}; } else {
@@ -118,9 +123,50 @@ const ownWindow = docName => `__window === ${JSON.stringify(docName)}`;
 // Bind TextEdit (`globalThis.app`, kept for the connection's later cells) and report whether its front window is
 // `docName`.
 export const bindCell = docName => `globalThis.app = await cua.getApp(${JSON.stringify(TEXTEDIT_BUNDLE)});\n${scoped(`${OBSERVE}\n${out(`{own: ${ownWindow(docName)}}`)}`)}`;
-// Read the document back as a hash, never its text: the value crosses neither the MCP stream nor the report.
-export const readbackCell = (docName, marker) => scoped(`${OBSERVE}\nconst {createHash: __hash} = await import('node:crypto');
-${out(`{own: ${ownWindow(docName)}, hash: ${ownWindow(docName)} ? __hash('sha256').update(__value, 'utf8').digest('hex') : null, startsWithMarker: __value.startsWith(${JSON.stringify(marker)}), chars: [...__value].length}`)}`);
+// Read the rendered value as a hash, never its text. The expected secret stays in the controller, which compares
+// hashes. Missing Value is not empty text; a foreign window yields no content-derived operands.
+const readbackFields = (docName, marker) => `own: ${ownWindow(docName)}, valueFound: ${ownWindow(docName)} && __valueMatch !== null,
+  hash: ${ownWindow(docName)} && __valueMatch ? __hash('sha256').update(__value, 'utf8').digest('hex') : null,
+  startsWithMarker: ${ownWindow(docName)} && __value.startsWith(${JSON.stringify(marker)}), chars: ${ownWindow(docName)} && __valueMatch ? [...__value].length : null`;
+const HASH = `const {createHash: __hash} = await import('node:crypto');`;
+export const readbackCell = (docName, marker) => scoped(`${OBSERVE}\n${HASH}\n${out(`{${readbackFields(docName, marker)}}`)}`);
+const PLACEHOLDER = 'CUAFIXTURE';
+export const markerCell = (docName, marker) => scoped(`${OBSERVE}
+if (!(${ownWindow(docName)})) { ${out('{identityLost: true}')}; }
+else if (__value !== ${JSON.stringify(PLACEHOLDER)}) { ${out('{initialValueMismatch: true}')}; }
+else {
+await app.pressKey("super+a");
+${guarded(docName, `await app.typeText(${JSON.stringify(marker)});\n${OBSERVE}\n${HASH}
+const __shot = await app.getScreenshot({emit: false});
+const __format = __shot[0] === 0xff && __shot[1] === 0xd8 ? "jpeg" : __shot[0] === 0x89 && __shot[1] === 0x50 ? "png" : "unknown";
+${out(`{${readbackFields(docName, marker)}, valueIsMarker: ${ownWindow(docName)} && __valueMatch !== null && __value === ${JSON.stringify(marker)}, screenshot: {bytes: __shot.length, format: __format}}`)}`)}
+}`);
+
+// No decoration is stripped or accepted. These exact alternative hashes only diagnose the renderer's known
+// Markdown representations (TextSelection.swift markdownMapped -> render.mjs); they cannot prove raw delivery.
+export function assessReadback(reply, expected) {
+  const hash = text => createHash('sha256').update(text, 'utf8').digest('hex');
+  const available = reply?.own === true && reply.valueFound === true && typeof reply.hash === 'string';
+  const exact = available && reply.hash === hash(expected);
+  const representation = exact ? 'plain' : !available ? 'unavailable'
+    : reply.hash === hash('`' + expected + '`') ? 'monospace-markdown'
+      : reply.hash === hash('*' + expected + '*') ? 'italic-markdown' : 'mismatch';
+  return {exact, representation, chars: available ? reply.chars : null, expectedChars: [...expected].length};
+}
+const readbackDetail = result => `rendered value: ${result.representation}; ${result.chars ?? 'unavailable'} characters, expected ${result.expectedChars}`
+  + (result.representation.endsWith('-markdown') ? '; matches a decorated rendering only, exact raw delivery remains unproven' : '');
+
+// A .txt inherits TextEdit's plain-text font (commonly monospace), which the AX renderer legitimately wraps in
+// Markdown backticks. Control only this disposable document's style instead; never change TextEdit preferences.
+// A nonempty placeholder anchors the font run (empty RTF has none), and is verified before selecting/replacing it.
+export function createFixtureDocument(home) {
+  const dir = mkdtempSync(join(home, 'accept-textedit-'));
+  const name = `cua-accept-${randomUUID()}.rtf`, path = join(dir, name);
+  try {
+    writeFileSync(path, String.raw`{\rtf1\ansi\deff0{\fonttbl{\f0\fswiss Helvetica;}}\pard\plain\f0\fs24\b0\i0\ulnone ${PLACEHOLDER}}`, {mode: 0o600, flag: 'wx'});
+  } catch (error) { rmSync(dir, {recursive: true, force: true}); throw error; }
+  return {dir, name, path};
+}
 
 // `engine`: the pinned engine ({engine, pinnedBy}, scripts/probe/pinned-engine.mjs pinLane's `pin`), null when none is
 // driven. `secret`: false, true (a generated key and value in a temporary $HOME), or {key, home} (the caller's stored
@@ -148,11 +194,9 @@ export async function runTextEdit({home, engine = null, secret = false, forbid =
   let prints = value ? fingerprints(value) : [];
   let storeHome = callerKey ? callerKey.home : null;  // created by this invocation only without a caller's key
   let storeCreated = false;
-  const docName = `cua-accept-${randomUUID()}.txt`;
-  const own = ownWindow(docName);
+  let docName = null;
   let docDir = null;      // created exclusively by this invocation
   let docOpen = false;
-  let soleWindowConfirmed = false;  // the close step saw TextEdit's processes hold no window at all once the fixture's closed
   let guiStopped = null;  // why no further input may be sent
   const sessions = [];
 
@@ -275,9 +319,11 @@ export async function runTextEdit({home, engine = null, secret = false, forbid =
       if (steps.at(-1).status !== 'PASS') return;
     }
 
-    docDir = mkdtempSync(join(home, 'accept-textedit-'));
-    const doc = join(docDir, docName);
-    writeFileSync(doc, '', {mode: 0o600, flag: 'wx'});
+    const document = createFixtureDocument(home);
+    docDir = document.dir;
+    docName = document.name;
+    const doc = document.path;
+    observations.documentFormat = 'RTF placeholder, Helvetica regular 12pt (document-local, no preference changes)';
     opened = true;
     await new Promise((resolve, reject) => execFile('/usr/bin/open', ['-a', 'TextEdit', doc], error => error ? reject(error) : resolve()));
     docOpen = true;
@@ -286,7 +332,7 @@ export async function runTextEdit({home, engine = null, secret = false, forbid =
     launched = await awaitLaunch({pids: textEditPids, before: textEditBefore, startedAt: runStartedAt});
     observations.textEdit.launch = {captured: Boolean(launched.launch), candidates: launched.candidates.length, waitedMs: launched.waitedMs, missed: launched.missed};
     await sleep(1000);  // let the document window come to the front
-    record(STEP.open, textEditPids().length ? 'PASS' : 'FAIL', `a new empty file in a directory created for this run under $CUA_HOME opened in TextEdit${launched.launch ? ` (started by the open: pid ${launched.launch.pid})`
+    record(STEP.open, textEditPids().length ? 'PASS' : 'FAIL', `a new RTF with a fixed placeholder and proportional regular font, in a directory created for this run under $CUA_HOME, opened in TextEdit${launched.launch ? ` (started by the open: pid ${launched.launch.pid})`
       : launched.candidates.length > 1 ? ` (TextEdit pids ${launched.candidates.join(', ')} all started since the run began; which is this run's is ambiguous, so none is recorded as its own)`
         : textEditBefore.length ? ' (already running)' : launched.missed ? ` (no new TextEdit pid within ${launched.waitedMs} ms of the open: a miss, so none is recorded as its own)` : ''}`);
 
@@ -294,16 +340,21 @@ export async function runTextEdit({home, engine = null, secret = false, forbid =
     // and observe it.
     const a = await connect('connection A');
     if (await bind(a, 'connection A', STEP.bindA) && await bind(a, 'connection A', STEP.rebindA)) {
-      const typedReply = await keyCell(a, STEP.type, ['typeText'], guarded(docName, `await app.typeText(${JSON.stringify(marker)});\n${OBSERVE}
-const __shot = await app.getScreenshot({emit: false});
-const __format = __shot[0] === 0xff && __shot[1] === 0xd8 ? "jpeg" : __shot[0] === 0x89 && __shot[1] === 0x50 ? "png" : "unknown";
-${out(`{own: ${own}, valueIsMarker: ${own} && __value === ${JSON.stringify(marker)}, screenshot: {bytes: __shot.length, format: __format}}`)}`));
+      const typedReply = await keyCell(a, STEP.type, ['super+a', 'typeText'], markerCell(docName, marker));
       const typed = typedReply ? cellJson(typedReply) : null;
-      if (typed) observations.screenshot = typed.screenshot ?? null;
+      const assessment = assessReadback(typed, marker);
+      if (typed) {
+        observations.screenshot = typed.screenshot ?? null;
+        observations.markerReadback = assessment;
+      }
       if (!typed) { /* skipped: recorded by keyCell */ } else if (typed.timedOut) record(STEP.type, 'BLOCKED', `no answer within ${stepMs} ms; ${PROMPT_ACTION}`);
       else if (typed.identityLost) lost(STEP.type, 'type the marker');
-      else record(STEP.type, !typed.isError && typed.own && typed.valueIsMarker && typed.screenshot?.bytes > 0 ? 'PASS' : 'FAIL',
-        typed.isError ? `failed: ${typed.error}` : `accessibility value ${typed.valueIsMarker ? 'is exactly the typed marker' : 'differs from the typed marker'}; screenshot ${typed.screenshot?.format} ${typed.screenshot?.bytes} bytes (metadata only)`);
+      else if (typed.initialValueMismatch) {
+        guiStopped = 'the fixture did not expose exactly its initial plain placeholder; nothing was selected or typed';
+        record(STEP.type, 'FAIL', `${guiStopped}; check the fixture document formatting before rerunning`);
+      }
+      else record(STEP.type, !typed.isError && assessment.exact && typed.valueIsMarker && typed.screenshot?.bytes > 0 ? 'PASS' : 'FAIL',
+        typed.isError ? `failed: ${typed.error}` : `accessibility value ${typed.valueIsMarker ? 'is exactly the typed marker' : 'differs from the typed marker'}; ${readbackDetail(assessment)}; screenshot ${typed.screenshot?.format} ${typed.screenshot?.bytes} bytes (metadata only)`);
     }
     await closeSession('connection A', a, STEP.closeA);
     if (guiStopped) return;
@@ -324,16 +375,17 @@ ${out(`{own: ${own}, valueIsMarker: ${own} && __value === ${JSON.stringify(marke
           // The readback never carries the value: the cell hashes the document's text and returns the hash and the
           // marker check, so the value crosses neither the MCP stream nor the report. The whole transcript is scanned
           // again afterwards.
-          const expectedHash = createHash('sha256').update(marker + value, 'utf8').digest('hex');
           const readback = cellJson(await b.js(readbackCell(docName, marker), stepMs));
-          const exact = readback.own && readback.hash === expectedHash;
+          const assessment = assessReadback(readback, marker + value);
+          observations.secretReadback = assessment;
+          const exact = assessment.exact;
           const leakedAfter = textLeaks(b.transcript.join('\n') + b.stderr, prints);
           if (readback.own === false) lost(STEP.secretReadback, 'read the document back');
           else record(STEP.secretReadback, exact && !leakedAfter ? 'PASS' : readback.timedOut ? 'BLOCKED' : 'FAIL',
-            exact && !leakedAfter ? 'the document holds the marker followed by exactly the stored value (SHA-256 compared inside the cell); the value appears nowhere in the MCP transport or stderr'
+            exact && !leakedAfter ? 'the document holds the marker followed by exactly the stored value (SHA-256 computed inside the cell, compared by the controller); the value appears nowhere in the MCP transport or stderr'
               : readback.timedOut ? `no answer within ${stepMs} ms` : readback.isError ? `the readback failed (${String(readback.error).split(value).join('<value>')})`
                 : leakedAfter ? 'the value appeared in the MCP transport or stderr'
-                  : `the document holds something else (starts with the marker: ${readback.startsWithMarker}; ${readback.chars} characters, expected ${[...(marker + value)].length})`);
+                  : `exact delivery not proved (starts with the marker: ${readback.startsWithMarker}; ${readbackDetail(assessment)})`);
         }
       }
       if (!guiStopped) {
@@ -351,7 +403,6 @@ ${out(`{own: ${own}, valueIsMarker: ${own} && __value === ${JSON.stringify(marke
         else {
           const verdict = await awaitClose({before, read: () => readWindows(pids)});
           if (verdict.closed) docOpen = false;
-          soleWindowConfirmed = verdict.alone;
           record(STEP.closeDoc, verdict.status, verdict.detail);
         }
       }
@@ -373,13 +424,15 @@ ${out(`{own: ${own}, valueIsMarker: ${own} && __value === ${JSON.stringify(marke
     }
     if (opened) {
       const app = await cleanUpFixtureApp({name: 'TextEdit', bundle: TEXTEDIT_BUNDLE, run: {before: textEditBefore, front: frontBefore, launch: launched?.launch ?? null},
-        alone: soleWindowConfirmed && !guiStopped, frontmost});
+        alone: !docOpen && !guiStopped, readWindows: () => readWindows(textEditPids()), frontmost});
       observations.textEdit.quitByFixture = app.quit.length > 0;
+      observations.textEdit.leftRunning = app.leftRunning ? app.launch : null;
+      if (app.windowCheck) observations.textEdit.quitWindowCheck = app.windowCheck;
       observations.front = {before: app.front.previous, atCleanup: app.front.before, after: app.front.after, restored: app.front.restored};
       const kept = app.keptBefore.length ? `; pid ${app.keptBefore.join(', ')}, running before, left as it is` : '';
       const [quitStatus, quitDetail] = app.remaining.length ? ['FAIL', `TextEdit pid ${app.remaining.join(', ')}, started by this run, did not exit after SIGTERM; quit it by hand`]
         : app.quit.length ? ['PASS', `quit the TextEdit this run started (pid ${app.quit.join(', ')}, identified by its launch right after the open)${kept}`]
-          : app.leftRunning ? ['BLOCKED', `the TextEdit this run started (pid ${app.leftRunning}) was left running because its windows could not be confirmed to be only the fixture's (${guiStopped ?? 'the close step did not see TextEdit hold no window at all'}); nothing was signalled. Quit it by hand once nothing of yours is open in it`]
+          : app.leftRunning ? ['BLOCKED', `the TextEdit this run started (pid ${app.leftRunning}) was left running because its windows could not be confirmed to be only the fixture's (${guiStopped ?? app.windowCheck?.detail ?? 'the fixture document close was not confirmed'}); nothing was signalled. Stop and report the remaining process and windows for a per-case cleanup decision; do not discard another document to force cleanup`]
             : app.launch ? ['PASS', `nothing to quit: pid ${app.launch.pid}, the TextEdit this run started, is no longer that process (it exited, or the pid now has another launch time)${kept}`]
               : launched?.candidates.length > 1 ? ['BLOCKED', `nothing quit: TextEdit pids ${launched.candidates.join(', ')} all started after the run began, so which one this run started is ambiguous and none was recorded as its own; check TextEdit by hand`]
                 : textEditBefore.length ? ['PASS', `nothing to quit: TextEdit was running before the run (pid ${textEditBefore.join(', ')}) and is left as it is`]

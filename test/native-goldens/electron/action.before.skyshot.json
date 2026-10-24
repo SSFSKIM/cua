@@ -3,13 +3,13 @@
  "app": {
   "bundleIdentifier": "io.github.ssfskim.cua.fixture.electron",
   "pid": 62925,
-  "appPath": "/Users/new/Library/Caches/cua-harness/electron-fixture/44.9.0-23c8b77691d0/cua Electron Fixture.app",
+  "appPath": "/Users/xxx/Library/Caches/cua-harness/electron-fixture/44.9.0-23c8b77691d0/cua Electron Fixture.app",
   "displayName": "cua Electron Fixture",
   "catalyst": false
  },
  "screenshot": {
   "width": 1440,
-  "url": "file:///Users/new/Library/Caches/cua-harness/native-goldens/goldens-screenshots/cua-engine-59320-1-C04C33DA.jpg",
+  "url": "file:///Users/xxx/Library/Caches/cua-harness/native-goldens/goldens-screenshots/cua-engine-59320-1-C04C33DA.jpg",
   "height": 1120,
   "scale": 2
  },
@@ -304,7 +304,7 @@
     null,
     null
    ],
-   "url": "file:///Users/new/Library/Caches/cua-harness/electron-fixture/44.9.0-23c8b77691d0/cua%20Electron%20Fixture.app/Contents/Resources/app/index.html",
+   "url": "file:///Users/xxx/Library/Caches/cua-harness/electron-fixture/44.9.0-23c8b77691d0/cua%20Electron%20Fixture.app/Contents/Resources/app/index.html",
    "valueType": "string",
    "identifier": null,
    "token": "t7",

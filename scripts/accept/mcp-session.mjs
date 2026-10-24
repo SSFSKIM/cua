@@ -12,6 +12,7 @@ export function openSession({args, env, onServerRequest = () => ({action: 'decli
   let stderr = '';
   child.stderr.on('data', data => { stderr += data; });
   const exited = new Promise(resolve => child.on('exit', (code, signal) => resolve({code, signal})));
+  const streamsClosed = new Promise(resolve => child.once('close', () => resolve(true)));
   const waiters = new Map();
   let nextId = 0;
   let terminating = null;
@@ -36,6 +37,14 @@ export function openSession({args, env, onServerRequest = () => ({action: 'decli
   return {
     pid: child.pid, transcript, exited, request,
     get stderr() { return stderr; },
+    // exit is not stdio completion: a descendant may retain either pipe. Bound the drain and let evidence
+    // consumers mark an incomplete scan instead of silently dropping late bytes or waiting forever.
+    drainStreams({budgetMs = 1000} = {}) {
+      return new Promise(resolve => {
+        const timer = setTimeout(() => resolve(false), budgetMs);
+        streamsClosed.then(() => { clearTimeout(timer); resolve(true); });
+      });
+    },
     // Let the runtime enforce the cell deadline; leave transport time for its timeout/reset reply.
     js: (code, timeoutMs = 60_000) => request('tools/call', {name: 'js', arguments: {code, timeout_ms: timeoutMs}}, timeoutMs + 10_000),
     call: (name, args = {}, timeoutMs = 30_000) => request('tools/call', {name, arguments: args}, timeoutMs),

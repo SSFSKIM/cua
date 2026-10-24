@@ -21,7 +21,7 @@
    "subrole": "AXStandardWindow",
    "title": "cua-scene.rtf",
    "value": null,
-   "url": "file:///Users/new/Library/Caches/cua-harness/native-goldens/textedit/cua-scene.rtf",
+   "url": "file:///Users/xxx/Library/Caches/cua-harness/native-goldens/textedit/cua-scene.rtf",
    "flags": {
     "selected": false,
     "settable": false,
@@ -1868,7 +1868,7 @@
  ],
  "screenshot": {
   "scale": 2,
-  "url": "file:///Users/new/Library/Caches/cua-harness/native-goldens/goldens-screenshots/cua-engine-59320-1-188E5AF1.jpg",
+  "url": "file:///Users/xxx/Library/Caches/cua-harness/native-goldens/goldens-screenshots/cua-engine-59320-1-188E5AF1.jpg",
   "height": 1720,
   "width": 1220
  },

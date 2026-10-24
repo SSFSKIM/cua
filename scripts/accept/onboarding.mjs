@@ -29,7 +29,7 @@ export function ownerWindowMinutes(value = DEFAULT_OWNER_WINDOW_MINUTES) {
   }
   return Number(value);
 }
-const ownerWindow = minutes => `Reserve ${minutes} minutes continuously for item 14 (--owner-window-minutes, default 25): remove the three entries and open ONE blank TextEdit document (File > New); grant Accessibility and verify warm-process detection-off diagnostics; grant Screen Recording with Later and observe recovery alerts; check input against the fresh process’s listen capability and observe alerts; explicitly grant Input Monitoring; approve, check and close only the disposable document without saving. Each terminal question waits at most 5 minutes, clipped by the remaining overall budget. The overall clock starts just before stopping the engine for revocation and never resets. Expiry stops new stages; bounded in-flight operations and cleanup may finish afterward, not forcibly cancel OS calls. Settings and fixture steps are manual; only the owner answers system alerts. This does not authorize a coordinator to operate Settings. An absent Input Monitoring row does not establish listen capability after relaunch; capability and metadata consistency does not prove physical intervention delivery.`;
+const ownerWindow = minutes => `Reserve ${minutes} minutes continuously for item 14 (--owner-window-minutes, default 25): remove the three entries and open ONE blank TextEdit document (File > New); grant Accessibility and verify warm-process detection-off diagnostics; grant Screen Recording with Later and observe recovery alerts; check input against the fresh process’s listen capability and observe alerts; explicitly grant Input Monitoring; approve, check and close only the disposable document without saving. Each owner alert-observation question waits at most 5 minutes, clipped by the remaining overall budget; manual Settings/fixture and approval confirmations use the remaining overall budget. The overall clock starts just before stopping the engine for revocation and never resets. Expiry stops new stages; bounded in-flight operations and cleanup may finish afterward, not forcibly cancel OS calls. Settings and fixture steps are manual; only the owner answers system alerts. This does not authorize a coordinator to operate Settings. An absent Input Monitoring row does not establish listen capability after relaunch; capability and metadata consistency does not prove physical intervention delivery.`;
 const STAGES = ['preconditions', 'manual revocation', 'Accessibility error reaches the model', 'all three grants absent',
   'manual Accessibility grant', 'Screen Recording error reaches the model', 'AX-only intervention diagnostic', 'manual Screen Recording grant',
   'service relaunch recovery', 'owner recovery prompt observation', 'post-recovery input', 'owner input prompt observation',
@@ -197,10 +197,10 @@ export async function runFreshOnboarding({home, engine, requested = false, owner
       require(false, `overall ${minutes}-minute owner window expired; no later grant, approval or input stage may start`, 'BLOCKED');
     }
   };
-  const answer = async ({signal} = {}) => {
+  const answer = async ({signal, observation = false} = {}) => {
     const startedAt = now();
     checkOwnerBudget(startedAt);
-    const deadlineAt = Math.min(startedAt + OWNER_OBSERVATION_MS, ownerDeadline);
+    const deadlineAt = observation ? Math.min(startedAt + OWNER_OBSERVATION_MS, ownerDeadline) : ownerDeadline;
     const limit = deadlineAt === ownerDeadline ? 'overall' : 'observation';
     const evidence = {stage, startedAt, deadlineAt, waitMs: deadlineAt - startedAt, finishedAt: null, expiredBound: null, cancelled: false};
     observations.ownerWaits.push(evidence);
@@ -246,7 +246,7 @@ export async function runFreshOnboarding({home, engine, requested = false, owner
     log('OWNER ONLY: report every system alert observed during the preceding action, not just capture alerts. Answer alerts yourself; stop on a password prompt and never enter a password for automation. Once none remains, type none, or space-separated kind:response tokens: ' + PROMPT_RESPONSES.join(', ') + '. The terminal may relay the owner’s observation; kind is the visible alert category, not proof of its origin. Do not type alert text.');
     let confirmed;
     try {
-      confirmed = await answer();
+      confirmed = await answer({observation: true});
       if (confirmed !== null) evidence.reportedAt = now();
     } finally { evidence.observationEndedAt = now(); }
     evidence.prompts = promptAnswers(confirmed);

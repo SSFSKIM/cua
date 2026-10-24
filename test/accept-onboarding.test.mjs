@@ -590,12 +590,16 @@ test('invalid direct owner budgets refuse before engine or permission work', asy
 });
 
 for (const [minutes, expiredBound, waitMs] of [[25, 'observation', 5 * 60_000], [1, 'overall', 60_000]]) {
-  test(`${expiredBound} timeout bounds an unanswered owner question`, async t => {
+  test(`${expiredBound} timeout bounds an unanswered owner alert observation`, async t => {
     t.mock.timers.enable({apis: ['setTimeout']});
-    const f = fixture();
-    let reached, release;
+    const f = fixture(), next = f.deps.operator.next;
+    let reached, release, calls = 0;
     const waiting = new Promise(resolve => { reached = resolve; });
-    f.deps.operator.next = () => { reached(); return new Promise(resolve => { release = resolve; }); };
+    f.deps.operator.next = () => {
+      if (++calls < 4) return next();
+      reached();
+      return new Promise(resolve => { release = resolve; });
+    };
     const running = run(f, {ownerWindowMinutes: minutes});
     await waiting;
     f.advance(waitMs);
@@ -603,9 +607,10 @@ for (const [minutes, expiredBound, waitMs] of [[25, 'observation', 5 * 60_000], 
     release(null); // also settles an implementation missing the timer, so RED cannot hang
     const report = await running;
     assert.equal(report.status, 'BLOCKED');
-    assert.equal(report.observations.ownerWaits[0].expiredBound, expiredBound);
-    assert.ok(report.observations.ownerWaits[0].waitMs <= waitMs);
-    assert.ok(!f.events.includes('initialize'));
+    assert.equal(report.observations.ownerWaits.at(-1).expiredBound, expiredBound);
+    assert.ok(report.observations.ownerWaits.at(-1).waitMs <= waitMs);
+    assert.equal(report.observations.ownerWaits.at(-1).stage, 'owner recovery prompt observation');
+    assert.ok(!f.events.includes('focus'));
   });
 }
 
@@ -643,7 +648,7 @@ for (const boundary of ['focus', 'close', 'approve']) test(`automatic work consu
   assert.ok(report.checks.some(c => c.status === 'BLOCKED' && /overall.*expired/.test(c.detail)));
 });
 
-test('approve receives the same capped owner reader and cannot turn its expired wait into approval', async t => {
+test('approve respects the remaining overall budget and cannot turn its expired wait into approval', async t => {
   t.mock.timers.enable({apis: ['setTimeout']});
   const f = fixture();
   let reached, release;
@@ -656,12 +661,12 @@ test('approve receives the same capped owner reader and cannot turn its expired 
   };
   const running = run(f);
   await waiting;
-  f.advance(5 * 60_000);
-  t.mock.timers.tick(5 * 60_000);
+  f.advance(25 * 60_000);
+  t.mock.timers.tick(25 * 60_000);
   release(null);
   const report = await running;
   assert.equal(report.status, 'BLOCKED');
-  assert.equal(report.observations.ownerWaits.at(-1).expiredBound, 'observation');
+  assert.equal(report.observations.ownerWaits.at(-1).expiredBound, 'overall');
   assert.equal(f.events.filter(e => e === 'initialize').length, 1);
 });
 
@@ -698,4 +703,30 @@ test('approval cancels an unused terminal wait when grant polling finishes first
   const cancelled = report.observations.ownerWaits.find(w => w.cancelled);
   assert.equal(cancelled.stage, 'engine approval');
   assert.equal(cancelled.expiredBound, null);
+});
+
+test('manual revocation and fixture preparation may take over five minutes within the overall budget', async () => {
+  const f = fixture(), next = f.deps.operator.next;
+  let calls = 0;
+  f.deps.operator.next = async () => { if (++calls === 1) f.advance(6 * 60_000); return next(); };
+  const report = await run(f);
+  assert.equal(report.status, 'PASS', JSON.stringify(report));
+  assert.equal(report.observations.ownerWaits[0].expiredBound, null);
+  assert.ok(report.observations.ownerWaits[0].waitMs > 5 * 60_000);
+});
+
+test('manual approval confirmation uses remaining overall time, not the alert-observation cap', async () => {
+  const f = fixture();
+  f.deps.approve = async ({operator}) => {
+    const next = f.deps.operator.next;
+    f.deps.operator.next = async () => { f.advance(6 * 60_000); return ''; };
+    assert.equal(await operator.next(), '');
+    f.deps.operator.next = next;
+    return {approved: true, build: expected.build};
+  };
+  const report = await run(f);
+  assert.equal(report.status, 'PASS', JSON.stringify(report));
+  const wait = report.observations.ownerWaits.find(w => w.stage === 'engine approval');
+  assert.equal(wait.expiredBound, null);
+  assert.ok(wait.waitMs > 5 * 60_000);
 });

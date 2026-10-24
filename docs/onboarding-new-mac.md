@@ -165,11 +165,8 @@ CUA_NATIVE_ENGINE=cua node bin/cua.mjs doctor --json
 Check `engine.selected`, the approved bundle/build, `engine.signature.identityMatches` (the identity is deliberately
 not printed), and `engine.permissions.accessibility`, `screenRecording`, `inputMonitoring`. Input Monitoring is the
 intervention tap's grant; without it detection is off and reported. Both text observations and screenshots require
-Screen Recording. In a session, a missing grant returns `permissionsPending` with the Settings path without requesting
-an Accessibility or Screen Recording system prompt; those requests belong to explicit `engine approve`. After a Screen
+Screen Recording. In a session, a missing grant returns `permissionsPending` with the Settings path; after a Screen
 Recording refusal the next observation relaunches the engine once it has no other connection, then retries once.
-Explicit approval and its confirmation capture can still need the owner at the console; passive ordinary checks do not
-guarantee that macOS will never display other system UI.
 
 For a fresh-onboarding acceptance run, item 14 of `scripts/accept-native.mjs` is separate from item 9's clean-machine
 release gates. The **owner** removes only the cua Engine entries from all three panes with **–**, then re-adds them

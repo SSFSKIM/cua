@@ -565,3 +565,39 @@ test('Chrome: the tool surface carries the vendor\'s Chrome flag, and the approv
   assert.equal(record.asked[0].meta.riskLevel, 'high');
   assert.match(record.asked[0].meta.subtitle, /^Allowing Computer Use to use this app introduces new risks/);
 });
+
+for (const concealed of [false, true]) test(`interruption effects survive the facade and a later observation (concealed=${concealed})`, async t => {
+  let phase = 'in-flight';
+  const effects = ['focus-write-attempted', 'activation-click-posted'];
+  const {getApp, meta, call} = await session(t, {secrets: {fixture: 'private-value'}, handlers: {
+    'execute:set_value': () => { throw new EngineFailure(-10016, 'engine diagnostic private-value', 'userIntervened', {meta: {
+      inputRoute: phase === 'before-effects' ? null : 3, startedAt: null, endedAt: null, receivedAt: 990, hidIdleMs: 0,
+      ...(phase === 'in-flight' ? {activationClick: 'posted'} : {}),
+      interruption: {phase, effects: phase === 'before-effects' ? [] : effects},
+    }}); },
+  }});
+  const {app} = await getApp('TextEdit');
+  for (phase of ['in-flight', 'before-effects']) {
+    let caught;
+    try { await app.setValue(1, concealed ? '{{secret:fixture}}' : 'intended'); } catch (error) { caught = error; }
+    assert.ok(caught);
+    const diagnostic = caught.message;
+    assert.match(diagnostic, phase === 'before-effects' ? /refused before any effects/i : /interrupted after possible effects/i);
+    assert.match(diagnostic, /getAXState/);
+    assert.match(diagnostic, /not.*retry|do not retry/i);
+    assert.doesNotMatch(diagnostic, /The user changed|private-value|nothing was entered/i);
+    if (phase === 'in-flight') {
+      assert.match(diagnostic, /focus.*may have moved/i);
+      assert.match(diagnostic, /activation click was posted/i);
+    }
+    const interruptedAction = {phase, effects: phase === 'before-effects' ? [] : effects,
+      inputRoute: phase === 'before-effects' ? null : 3, actionInterval: {startedAt: null, endedAt: null},
+      receivedAt: 990, activationClick: phase === 'before-effects' ? null : 'posted'};
+    assert.deepEqual(meta['cua/interruption'], interruptedAction);
+    await app.getAXState({emit: false});
+    assert.deepEqual(meta['cua/interruption'], interruptedAction, 'the interrupted action survives a same-cell observation');
+    await call(() => app.getAXState({emit: false}));
+    assert.equal(meta['cua/interruption'], undefined, 'a new execution does not inherit an old interruption');
+    assert.equal(caught.message, diagnostic, 'the failed action remains readable after observing in the same cell');
+  }
+});

@@ -943,3 +943,30 @@ for (const [entries, diagnostic] of [
   assert.match(report.checks.find(c => c.name === 'owner recovery prompt observation').detail, diagnostic);
   assert.ok(!f.events.includes('focus'));
 });
+
+for (const answerRemaining of [true, false]) test(`same-category alerts match compatible buttons out of order; remaining answered=${answerRemaining}`, async () => {
+  const f = fixture();
+  gateScript(f, ['coordinator:alert screen-recording later,quit-reopen at:now',
+    'coordinator:alert screen-recording allow,deny at:now', 'owner:screen-recording:allow',
+    ...(answerRemaining ? ['owner:screen-recording:later'] : []), 'coordinator:clear at:now']);
+  const report = await run(f), gate = report.observations.recoveryPrompts[0];
+  assert.equal(report.status, answerRemaining ? 'PASS' : 'BLOCKED', JSON.stringify(report));
+  assert.deepEqual(gate.records.filter(r => r.type === 'owner-response').map(r => r.alertRecord),
+    answerRemaining ? [1, 0] : [1], 'response must resolve the compatible pending alert, never just the first category match');
+  if (!answerRemaining) {
+    assert.match(report.checks.find(c => c.name === 'owner recovery prompt observation').detail, /pending alert.*owner response/);
+    assert.ok(!f.events.includes('focus'));
+    assert.ok(!f.events.includes('approve'));
+  }
+});
+
+test('unknown owner response cannot resolve either same-category pending alert or leak terminal text', async () => {
+  const f = fixture();
+  gateScript(f, ['coordinator:alert screen-recording later,quit-reopen at:now',
+    'coordinator:alert screen-recording allow,deny at:now', 'owner:screen-recording:PRIVATE_RESPONSE']);
+  const report = await run(f);
+  assert.equal(report.status, 'BLOCKED');
+  assert.equal(report.observations.recoveryPrompts[0].records.filter(r => r.type === 'owner-response').length, 0);
+  assert.ok(!JSON.stringify(report).includes('PRIVATE_RESPONSE'));
+  assert.ok(!f.events.includes('focus'));
+});

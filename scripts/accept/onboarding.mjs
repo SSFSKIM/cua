@@ -304,10 +304,9 @@ export async function runFreshOnboarding({home, engine, requested = false, owner
         require(!parsed.error, parsed.error, 'BLOCKED');
         if (parsed.type === 'owner-response') {
           const alert = pending.find(alert => !alert.answered && (alert.category === parsed.response.kind
-            || (['other', 'unreadable', 'ambiguous'].includes(alert.category) && parsed.response.kind === 'other')));
-          require(alert, 'owner response must match a pending alert category; optional history is separate', 'BLOCKED');
-          require(alert.buttons.includes('unknown') || parsed.response.response === 'answered' || alert.buttons.includes(parsed.response.response),
-            'owner response must match a reported button', 'BLOCKED');
+            || (['other', 'unreadable', 'ambiguous'].includes(alert.category) && parsed.response.kind === 'other'))
+            && (alert.buttons.includes('unknown') || parsed.response.response === 'answered' || alert.buttons.includes(parsed.response.response)));
+          require(alert, 'owner response must match a pending alert category and reported button; optional history is separate', 'BLOCKED');
           alert.answered = true;
           lastOwnerResponseAt = reportedAt;
           evidence.records.push({type: 'owner-response', source: 'owner-relayed', reportedAt,

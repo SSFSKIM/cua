@@ -113,16 +113,21 @@ final class Engine: @unchecked Sendable {
 
   /// Requests both grants with their prompts; once both are granted, captures one display image and discards it,
   /// which raises the capture confirmation of a new on-disk copy. Only the owner, at the console, answers these.
-  private func approve() -> [String: Any] {
-    let accessibility = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
-    let screenRecording = CGPreflightScreenCaptureAccess() || CGRequestScreenCaptureAccess()
-    var captured = false
-    if accessibility && screenRecording, let content = try? shareableContent(), let display = content.displays.first {
+  func approve(
+    requestAccessibility: () -> Bool = { AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary) },
+    screenRecordingGranted: () -> Bool = { CGPreflightScreenCaptureAccess() },
+    requestScreenRecording: () -> Bool = { CGRequestScreenCaptureAccess() },
+    captureConfirmation: () -> Bool = {
+      guard let content = try? shareableContent(), let display = content.displays.first else { return false }
       let configuration = SCStreamConfiguration()
       configuration.width = display.width
       configuration.height = display.height
-      captured = (try? captureImage(SCContentFilter(display: display, excludingWindows: []), configuration)) != nil
+      return (try? captureImage(SCContentFilter(display: display, excludingWindows: []), configuration)) != nil
     }
+  ) -> [String: Any] {
+    let accessibility = requestAccessibility()
+    let screenRecording = screenRecordingGranted() || requestScreenRecording()
+    let captured = accessibility && screenRecording ? captureConfirmation() : false
     return ["accessibility": accessibility, "screenRecording": screenRecording, "captured": captured]
   }
 

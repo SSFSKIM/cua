@@ -26,6 +26,7 @@ function fixture(over = {}) {
   const events = [], logs = [];
   let phase = 'revoked', pid = 10, calls = 0, owners = 0, value = '', activated = false, clock = 1_000;
   const context = {};
+  const clear = history => `${logs.join('\n').match(/GATE ([a-f0-9-]+)/g)?.at(-1)?.slice(5)} coordinator:clear at:now${history === undefined ? '' : ` history:${history.replaceAll(' ', ',')}`}`;
   let activeMeta;
   const status = () => ({bundlePath: path, exists: true, build: expected.build, engineVersion: expected.version,
     approved: true, approvedBuild: expected.build, signature: {kind: 'identity', identityMatches: true},
@@ -97,11 +98,11 @@ function fixture(over = {}) {
       }
       if (owners === 4) {
         if (over.relaunchDuringObservation) pid = 17;
-        return over.captureDeclined ? null : over.recoveryAlerts ?? 'none';
+        return over.captureDeclined ? null : clear(over.recoveryAlerts);
       }
       if (owners === 5) {
         if (over.expireInputObservation) clock += 26 * 60_000;
-        return over.inputObservationAbsent ? null : over.inputAlerts ?? 'none';
+        return over.inputObservationAbsent ? null : clear(over.inputAlerts);
       }
       if (owners === 6) { phase = 'all'; return 'granted'; }
       return 'closed';
@@ -120,8 +121,8 @@ test('owner sequence proves both model errors, same-session relaunch, then appro
   const f = fixture(), report = await run(f);
   assert.equal(report.status, 'PASS', JSON.stringify(report));
   assert.deepEqual(f.events, ['stop', 'owner', 'initialize', 'cell', 'owner', 'cell', 'doctor:ax', 'owner', 'cell', 'owner', 'focus', 'cell', 'doctor:granted', 'owner', 'owner', 'close', 'approve', 'initialize', 'cell', 'focus', 'cell', 'close', 'owner']);
-  assert.equal(report.observations.recoveryPrompts[0].source, 'owner-observed');
-  assert.deepEqual(report.observations.recoveryPrompts[0].prompts, []);
+  assert.equal(report.observations.recoveryPrompts[0].source, 'coordinator-cua-remote');
+  assert.deepEqual(report.observations.recoveryPrompts[0].prompts, null);
   assert.match(f.logs.join('\n'), /owner.*only|OWNER/);
   assert.match(f.logs.join('\n'), /Later/);
   assert.match(f.logs.join('\n'), /Input Monitoring/);
@@ -249,7 +250,7 @@ for (const [option, verdicts] of [
   assert.ok(!JSON.stringify(report).includes('sensitive input failure'));
 });
 
-test('timed recovery observations retain multiple alert kinds and answers without claiming prompt origin or UI actor', async () => {
+test('optional owner interval history retains multiple alert responses separately from coordinator current-state observations', async () => {
   const f = fixture({recoveryAlerts: 'accessibility:deny capture:allow', inputAlerts: 'other:answered'});
   const report = await run(f);
   assert.equal(report.status, 'PASS', JSON.stringify(report));
@@ -258,7 +259,7 @@ test('timed recovery observations retain multiple alert kinds and answers withou
     [{kind: 'other', response: 'answered'}],
   ]);
   for (const observation of report.observations.recoveryPrompts) {
-    assert.equal(observation.source, 'owner-observed');
+    assert.equal(observation.source, 'coordinator-cua-remote');
     assert.equal(observation.origin, 'unknown');
     assert.ok(observation.startedAt < observation.finishedAt);
     assert.ok(observation.finishedAt <= observation.reportedAt);
@@ -729,4 +730,216 @@ test('manual approval confirmation uses remaining overall time, not the alert-ob
   const wait = report.observations.ownerWaits.find(w => w.stage === 'engine approval');
   assert.equal(wait.expiredBound, null);
   assert.ok(wait.waitMs > 5 * 60_000);
+});
+
+// Drive only the out-of-band terminal boundary, never a GUI or a capture dependency.
+function gateScript(f, entries, gateNumber = 1) {
+  const next = f.deps.operator.next;
+  let calls = 0, index = 0, active = false;
+  f.deps.operator.next = async () => {
+    if (!active) {
+      const reply = await next();
+      if (++calls !== gateNumber + 3) return reply;
+      active = true;
+    }
+    const entry = entries[index++];
+    if (index === entries.length) active = false;
+    const id = f.logs.join('\n').match(/GATE ([a-f0-9-]+)/g)?.at(-1)?.slice(5);
+    return typeof entry === 'function' ? entry(id) : entry === null ? null : `${id} ${entry}`;
+  };
+}
+
+test('coordinator clear alone passes with unknown interval history and distinct observation provenance', async () => {
+  const f = fixture(), report = await run(f);
+  assert.equal(report.status, 'PASS', JSON.stringify(report));
+  const gates = report.observations.recoveryPrompts;
+  assert.notEqual(gates[0].gateId, gates[1].gateId);
+  for (const gate of gates) {
+    assert.equal(gate.source, 'coordinator-cua-remote');
+    assert.equal(gate.ownerHistory.state, 'unknown');
+    assert.equal(gate.prompts, null);
+    assert.equal(gate.observedAt, null, 'at:now does not fabricate a screenshot timestamp');
+    assert.equal(gate.records[0].timeProvenance, 'contemporaneous-attestation');
+    assert.equal(gate.records[0].reportedAt, gate.reportedAt);
+    assert.equal(gate.records[0].state, 'clear');
+    assert.equal(gate.origin, 'unknown');
+  }
+  assert.match(f.logs.join('\n'), /independent cua-remote screenshot/);
+  assert.match(report.checks.find(c => c.name === 'owner input prompt observation').detail, /no unresolved system alert visible/);
+});
+
+test('explicit screenshot time is retained separately from report receipt', async () => {
+  const f = fixture();
+  let observedAt;
+  gateScript(f, [() => {
+    observedAt = f.deps.now();
+    f.advance(20);
+    const id = f.logs.join('\n').match(/GATE ([a-f0-9-]+)/g).at(-1).slice(5);
+    return `${id} coordinator:clear at:${observedAt}`;
+  }]);
+  const report = await run(f), gate = report.observations.recoveryPrompts[0];
+  assert.equal(report.status, 'PASS', JSON.stringify(report));
+  assert.equal(gate.observedAt, observedAt);
+  assert.ok(gate.reportedAt > gate.observedAt);
+  assert.equal(gate.records[0].timeProvenance, 'coordinator-timestamp');
+});
+
+test('visible alert requires owner response then a fresh clear, without retrying the engine action', async () => {
+  const f = fixture();
+  gateScript(f, ['coordinator:alert accessibility open-settings,deny at:now', 'owner:accessibility:open-settings', 'coordinator:clear at:now']);
+  const report = await run(f), gate = report.observations.recoveryPrompts[0];
+  assert.equal(report.status, 'PASS', JSON.stringify(report));
+  assert.deepEqual(gate.records.map(r => r.type), ['observation', 'owner-response', 'observation']);
+  assert.deepEqual(gate.records[0].buttons, ['open-settings', 'deny']);
+  assert.deepEqual(gate.records[1].response, {kind: 'accessibility', response: 'open-settings'});
+  assert.equal(gate.ownerHistory.state, 'unknown', 'resolving a known alert is not interval history');
+  assert.equal(report.observations.cells.filter(c => c.stage === 'service relaunch recovery').length, 1);
+  const waits = report.observations.ownerWaits.filter(w => w.stage === 'owner recovery prompt observation');
+  assert.equal(new Set(waits.map(w => w.deadlineAt)).size, 1, 'gate deadline never resets');
+});
+
+for (const [name, entries, diagnostic] of [
+  ['clear without owner', ['coordinator:alert accessibility deny at:now', 'coordinator:clear at:now'], /owner response/],
+  ['history cannot resolve pending', ['coordinator:alert accessibility deny at:now', 'coordinator:clear at:now history:accessibility:deny'], /owner response/],
+  ['owner alone', ['coordinator:alert accessibility deny at:now', 'owner:accessibility:deny', null], /absent/],
+  ['wrong response kind', ['coordinator:alert accessibility deny at:now', 'owner:capture:allow'], /match/],
+  ['unreadable', ['coordinator:alert unreadable unknown at:now', null], /absent/],
+  ['ambiguous', ['coordinator:alert ambiguous unknown at:now', null], /absent/],
+  ['password', ['coordinator:alert password cancel at:now'], /password/],
+  ['missing time', ['coordinator:clear'], /time/],
+  ['stale time', ['coordinator:clear at:1'], /time/],
+  ['future time', ['coordinator:clear at:9999999999999'], /time/],
+  ['unrecognized category', ['coordinator:alert PRIVATE_CATEGORY deny at:now'], /category/],
+  ['unrecognized button', ['coordinator:alert accessibility PRIVATE_BUTTON at:now'], /button/],
+  ['screenshot content', ['coordinator:clear at:now PRIVATE_SCREENSHOT'], /grammar/],
+  ['old owner none', ['none'], /grammar/],
+  ['wrong gate', [() => 'wrong-gate coordinator:clear at:now'], /gate/],
+  ['too long', ['coordinator:clear at:now ' + 'PRIVATE_'.repeat(100)], /512/],
+  ['too much history', ['coordinator:clear at:now history:' + Array(9).fill('capture:allow').join(',')], /history/],
+]) test(`coordinator gate refuses ${name} and starts no input or grant`, async () => {
+  const f = fixture(); gateScript(f, entries);
+  const report = await run(f);
+  assert.equal(report.status, 'BLOCKED', JSON.stringify(report));
+  assert.match(report.checks.find(c => c.name === 'owner recovery prompt observation').detail, diagnostic);
+  assert.ok(!f.events.includes('focus'));
+  assert.ok(!f.events.includes('approve'));
+  assert.ok(!JSON.stringify(report).includes('PRIVATE_'));
+  assert.ok(!f.logs.join('\n').includes('PRIVATE_'));
+});
+
+test('owner history is optional bounded interval evidence, including open-settings, not current-state proof', async () => {
+  const f = fixture({recoveryAlerts: 'accessibility:open-settings capture:allow', inputAlerts: 'none'});
+  const report = await run(f);
+  assert.equal(report.status, 'PASS', JSON.stringify(report));
+  assert.deepEqual(report.observations.recoveryPrompts[0].ownerHistory, {state: 'reported', source: 'owner-relayed',
+    prompts: [{kind: 'accessibility', response: 'open-settings'}, {kind: 'capture', response: 'allow'}]});
+  assert.deepEqual(report.observations.recoveryPrompts[1].ownerHistory.prompts, []);
+});
+
+test('owner response and repeated observations cannot extend the five-minute gate deadline', async () => {
+  const f = fixture();
+  gateScript(f, [id => { f.advance(3 * 60_000); return `${id} coordinator:alert accessibility deny at:now`; },
+    id => { f.advance(3 * 60_000); return `${id} owner:accessibility:deny`; }]);
+  const report = await run(f);
+  assert.equal(report.status, 'BLOCKED');
+  assert.equal(report.observations.ownerWaits.at(-1).expiredBound, 'observation');
+  assert.equal(report.observations.recoveryPrompts[0].records.length, 1);
+  assert.ok(!f.events.includes('focus'));
+});
+
+test('gate report count is bounded even with rapid nonclear observations', async () => {
+  const f = fixture(); gateScript(f, Array(13).fill('coordinator:alert ambiguous unknown at:now'));
+  const report = await run(f);
+  assert.equal(report.status, 'BLOCKED');
+  assert.equal(report.observations.recoveryPrompts[0].records.length, 12);
+  assert.match(report.checks.find(c => c.name === 'owner recovery prompt observation').detail, /record limit/);
+  assert.ok(!f.events.includes('focus'));
+});
+
+for (const change of ['pid', 'inputMonitoring', 'canPostHid', 'window']) test(`post-input gate rechecks ${change} before another grant`, async () => {
+  const f = fixture(), next = f.deps.operator.next;
+  let calls = 0, changed = false;
+  f.deps.operator.next = async () => { const result = await next(); if (++calls === 5) changed = true; return result; };
+  if (change === 'window') {
+    const window = f.deps.window;
+    f.deps.window = async () => changed ? {pid: 20, number: 99} : window();
+  } else {
+    const status = f.deps.status;
+    f.deps.status = async () => { const result = await status(); if (changed) result.status[change] = change === 'pid' ? 99 : !result.status[change]; return result; };
+  }
+  const report = await run(f);
+  assert.equal(report.status, 'BLOCKED', JSON.stringify(report));
+  assert.equal(report.checks.find(c => c.name === 'post-recovery input: input completion').status, 'PASS');
+  assert.equal(new Set(report.checks.map(c => c.name)).size, report.checks.length, 'a post-gate failure must not duplicate or overwrite the gate verdict');
+  assert.equal(f.events.filter(e => e === 'owner').length, 5);
+  assert.ok(!f.events.includes('approve'));
+});
+
+for (const change of ['canPostHid', 'window']) test(`recovery gate rechecks ${change} before input`, async () => {
+  const f = fixture(), next = f.deps.operator.next;
+  let calls = 0, changed = false;
+  f.deps.operator.next = async () => { const reply = await next(); if (++calls === 4) changed = true; return reply; };
+  if (change === 'window') {
+    const window = f.deps.window;
+    f.deps.window = async () => changed ? {pid: 20, number: 99} : window();
+  } else {
+    const status = f.deps.status;
+    f.deps.status = async () => { const reply = await status(); if (changed) reply.status.canPostHid = false; return reply; };
+  }
+  const report = await run(f);
+  assert.equal(report.status, 'BLOCKED');
+  assert.equal(report.observations.cells.length, 3);
+  assert.ok(!f.events.includes('focus'));
+});
+
+test('a clear screenshot predating the owner response cannot release a known alert', async () => {
+  const f = fixture(); let screenshotAt;
+  gateScript(f, [id => { screenshotAt = f.deps.now(); return `${id} coordinator:alert accessibility deny at:${screenshotAt}`; },
+    'owner:accessibility:deny', id => `${id} coordinator:clear at:${screenshotAt}`]);
+  const report = await run(f);
+  assert.equal(report.status, 'BLOCKED');
+  assert.match(report.checks.find(c => c.name === 'owner recovery prompt observation').detail, /newer.*owner response/);
+  assert.ok(!f.events.includes('focus'));
+});
+
+test('one owner response cannot hide a second outstanding alert', async () => {
+  const f = fixture();
+  gateScript(f, ['coordinator:alert accessibility deny at:now', 'coordinator:alert capture allow at:now',
+    'owner:capture:allow', 'coordinator:clear at:now']);
+  const report = await run(f);
+  assert.equal(report.status, 'BLOCKED');
+  assert.match(report.checks.find(c => c.name === 'owner recovery prompt observation').detail, /owner response/);
+  assert.ok(!f.events.includes('focus'));
+});
+
+test('a new nonclear observation after an owner response requires another response', async () => {
+  const f = fixture();
+  gateScript(f, ['coordinator:alert accessibility deny at:now', 'owner:accessibility:deny',
+    'coordinator:alert ambiguous unknown at:now', 'coordinator:clear at:now']);
+  const report = await run(f);
+  assert.equal(report.status, 'BLOCKED');
+  assert.ok(!f.events.includes('focus'));
+});
+
+test('input-alert gate cannot release a grant until owner response and fresh clear both arrive', async () => {
+  const f = fixture();
+  gateScript(f, ['coordinator:alert accessibility open-settings,deny at:now', 'owner:accessibility:open-settings', null], 2);
+  const report = await run(f);
+  assert.equal(report.status, 'BLOCKED');
+  assert.equal(report.checks.find(c => c.name === 'post-recovery input: input completion').status, 'PASS');
+  assert.equal(f.events.filter(e => e === 'owner').length, 5);
+  assert.ok(!f.events.includes('approve'));
+});
+
+for (const [entries, diagnostic] of [
+  [['owner:accessibility:deny'], /pending/],
+  [['coordinator:alert accessibility open-settings at:now', 'owner:accessibility:deny'], /button/],
+  [['coordinator:alert accessibility deny,deny at:now'], /button/],
+  [['coordinator:alert other allow,deny,open-settings,later,quit-reopen,ok,cancel,close,unknown at:now'], /button/],
+]) test('owner response and button grammar fail closed without invented action', async () => {
+  const f = fixture(); gateScript(f, entries);
+  const report = await run(f);
+  assert.equal(report.status, 'BLOCKED');
+  assert.match(report.checks.find(c => c.name === 'owner recovery prompt observation').detail, diagnostic);
+  assert.ok(!f.events.includes('focus'));
 });

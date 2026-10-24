@@ -11,7 +11,7 @@
 //   node scripts/accept-native.mjs --items 1,10 --report …   only the items named (a headless re-check of some items)
 //   node scripts/accept-native.mjs --engine cua --live-textedit --report …   on cua's own engine (#117 acceptance 8)
 //   node scripts/accept-native.mjs --items 14 --engine cua --fresh-onboarding --owner-window-minutes 25 --report …
-//     OWNER at console, interactive terminal; 25-minute overall budget by default, alert observations capped at 5 minutes.
+//     OWNER at console, interactive terminal; 25-minute overall budget by default, current-display gates capped at 5 minutes.
 //     --help describes budget scope; it does not replace the separate hold booking.
 // Item 14 runs first in its configured continuous owner window, then unattended items. This harness never operates
 // TCC UI. See accept/onboarding.mjs for the staged manual steps; an incomplete window blocks subsequent selected items.
@@ -116,11 +116,17 @@ if (options.help) {
   --owner-window-minutes <minutes>     whole decimal minutes 1 to 120, default 25; requires --fresh-onboarding and item 14
 
 Item 14 starts its overall clock just before stopping the engine for manual revocation; it never resets per question.
-Owner alert-observation questions have a 5-minute wait clipped by the remaining overall budget.
+Coordinator current-display gates have one 5-minute wait clipped by the remaining overall budget, including owner responses.
 Manual Settings/fixture steps and approval confirmations use the remaining overall budget, without an added 5-minute cap.
 Expiry blocks new grant/approval/input stages. Existing bounded in-flight operations and cleanup may finish afterward;
 this is not forced cancellation of OS calls. Build/sign/initial approval and separate hold booking are outside this budget.
 First manual step: open ONE blank TextEdit document (File > New). Only the owner answers system alerts.
+At each printed gate id, the coordinator takes an independent cua-remote screenshot out of band (never the tested engine),
+then reports <gate-id> coordinator:clear at:now, or coordinator:alert with the printed category/button/time grammar.
+at:now attests a contemporaneous observation with exact observedAt unknown; at:<Unix-ms> preserves an actual screenshot time.
+A visible, unreadable or ambiguous alert blocks until a recorded owner response AND a new clear screenshot; no action retry.
+Optional owner interval history is separate and unknown if omitted. A snapshot does not prove a prompt-free interval or requester PID.
+The harness performs no GUI observation; the coordinator never clicks system alerts. Raw screenshots stay private.
 See this script's header for scratch-home preparation and the full acceptance item list.`);
   process.exit(0);
 }

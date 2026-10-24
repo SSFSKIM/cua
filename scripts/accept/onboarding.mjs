@@ -3,6 +3,7 @@
 // authorized coordinator; terminal answers do not establish who acted. Only the owner answers system alerts.
 // Model-facing errors and service relaunch are proved on one MCP connection BEFORE approveEngine. runTextEdit
 // cannot be used here: it binds/captures before returning. One manually prepared blank document receives two Xs.
+import {randomUUID} from 'node:crypto';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {fileURLToPath} from 'node:url';
@@ -29,11 +30,11 @@ export function ownerWindowMinutes(value = DEFAULT_OWNER_WINDOW_MINUTES) {
   }
   return Number(value);
 }
-const ownerWindow = minutes => `Reserve ${minutes} minutes continuously for item 14 (--owner-window-minutes, default 25): remove the three entries and open ONE blank TextEdit document (File > New); grant Accessibility and verify warm-process detection-off diagnostics; grant Screen Recording with Later and observe recovery alerts; check input against the fresh process’s listen capability and observe alerts; explicitly grant Input Monitoring; approve, check and close only the disposable document without saving. Each owner alert-observation question waits at most 5 minutes, clipped by the remaining overall budget; manual Settings/fixture and approval confirmations use the remaining overall budget. The overall clock starts just before stopping the engine for revocation and never resets. Expiry stops new stages; bounded in-flight operations and cleanup may finish afterward, not forcibly cancel OS calls. Settings and fixture steps are manual; only the owner answers system alerts. This does not authorize a coordinator to operate Settings. An absent Input Monitoring row does not establish listen capability after relaunch; capability and metadata consistency does not prove physical intervention delivery.`;
+const ownerWindow = minutes => `Reserve ${minutes} minutes continuously for item 14 (--owner-window-minutes, default 25): remove the three entries and open ONE blank TextEdit document (File > New); grant Accessibility and verify warm-process detection-off diagnostics; grant Screen Recording with Later and observe recovery alerts; check input against the fresh process’s listen capability and observe alerts; explicitly grant Input Monitoring; approve, check and close only the disposable document without saving. Each coordinator current-display gate (including any owner alert response and fresh clear observation) waits at most 5 minutes, clipped by the remaining overall budget; manual Settings/fixture and approval confirmations use the remaining overall budget. The overall clock starts just before stopping the engine for revocation and never resets. Expiry stops new stages; bounded in-flight operations and cleanup may finish afterward, not forcibly cancel OS calls. Settings and fixture steps are manual; only the owner answers system alerts. This does not authorize a coordinator to operate Settings. An absent Input Monitoring row does not establish listen capability after relaunch; capability and metadata consistency does not prove physical intervention delivery.`;
 const STAGES = ['preconditions', 'manual revocation', 'Accessibility error reaches the model', 'all three grants absent',
   'manual Accessibility grant', 'Screen Recording error reaches the model', 'AX-only intervention diagnostic', 'manual Screen Recording grant',
   'service relaunch recovery', 'owner recovery prompt observation', 'post-recovery input', 'owner input prompt observation',
-  'post-recovery input: capability stability', 'post-recovery input: input completion', 'post-recovery input: metadata', 'post-recovery input: doctor', 'manual Input Monitoring grant', 'engine approval',
+  'post-recovery input: capability stability', 'post-recovery input: input completion', 'post-recovery input: metadata', 'post-recovery input: doctor', 'post-recovery input: post-gate stability', 'manual Input Monitoring grant', 'engine approval',
   'final grants and approved build', 'intervention on', 'manual TextEdit cleanup'];
 const BIND = `globalThis.app = await cua.getApp(${JSON.stringify(TEXTEDIT_BUNDLE)});`;
 const CAPTURE = `${BIND}\nnodeRepl.write(JSON.stringify({onboarding: true, bytes: (await app.getScreenshot({emit:false})).length}));`;
@@ -118,13 +119,52 @@ function doctorFacts(doctor) {
     engineRow: {present: Boolean(row), status: choice(row?.status, ['pass', 'warn', 'fail', 'skip']),
       interventionOff: typeof row?.detail === 'string' && /intervention detection off/.test(row.detail)}};
 }
-const PROMPT_RESPONSES = ['accessibility:allow', 'accessibility:deny', 'screen-recording:allow', 'screen-recording:deny',
+const PROMPT_RESPONSES = ['accessibility:allow', 'accessibility:deny', 'accessibility:open-settings',
+  'input-monitoring:allow', 'input-monitoring:deny', 'screen-recording:allow', 'screen-recording:deny',
   'screen-recording:later', 'capture:allow', 'capture:deny', 'other:answered'];
-function promptAnswers(answer) {
-  if (answer === 'none') return [];
-  const tokens = answer?.split(/\s+/);
-  return tokens?.length && tokens.every(token => PROMPT_RESPONSES.includes(token))
-    ? tokens.map(token => { const [kind, response] = token.split(':'); return {kind, response}; }) : null;
+const ALERT_CATEGORIES = ['accessibility', 'screen-recording', 'input-monitoring', 'capture', 'password', 'other', 'unreadable', 'ambiguous'];
+const ALERT_BUTTONS = ['allow', 'deny', 'open-settings', 'later', 'quit-reopen', 'ok', 'cancel', 'close', 'unknown'];
+const GATE_RECORD_LIMIT = 12;
+const GATE_LINE_LIMIT = 512;
+const HISTORY_LIMIT = 8;
+const responseToken = token => {
+  if (!PROMPT_RESPONSES.includes(token)) return null;
+  const [kind, response] = token.split(':');
+  return {kind, response};
+};
+// Parse only labels and times. Invalid terminal input is never echoed or retained.
+function gateReport(line, gateId) {
+  if (line === null) return {error: 'gate report absent; no current display state inferred'};
+  const [id, command, ...args] = line.split(/\s+/);
+  if (id !== gateId) return {error: 'gate id mismatch; use the printed gate id'};
+  if (command?.startsWith('owner:')) {
+    const response = responseToken(command.slice(6));
+    return response && !args.length ? {type: 'owner-response', response}
+      : {error: 'owner response grammar requires one allowlisted kind:response token'};
+  }
+  if (!['coordinator:clear', 'coordinator:alert'].includes(command)) return {error: 'gate grammar requires coordinator:clear or coordinator:alert'};
+  const state = command.slice(12);
+  let category = null, buttons = [];
+  if (state === 'alert') {
+    category = args.shift();
+    if (!ALERT_CATEGORIES.includes(category)) return {error: 'alert category must use the printed allowlist'};
+    buttons = args.shift()?.split(',') ?? [];
+    if (!buttons.length || buttons.length > 8 || new Set(buttons).size !== buttons.length
+      || buttons.some(button => !ALERT_BUTTONS.includes(button))) return {error: 'alert buttons require 1 to 8 distinct allowlisted labels'};
+  }
+  const time = args.shift();
+  if (!/^at:(now|[1-9]\d{0,15})$/.test(time ?? '')) return {error: 'observation time requires at:<Unix milliseconds> or at:now contemporaneous attestation'};
+  let ownerHistory = null;
+  if (args[0]?.startsWith('history:')) {
+    const tokens = args.shift().slice(8).split(',');
+    const prompts = tokens.length === 1 && tokens[0] === 'none' ? [] : tokens.map(responseToken);
+    if (prompts.length > HISTORY_LIMIT || prompts.some(token => !token)) return {error: 'owner history requires none or at most 8 allowlisted kind:response tokens'};
+    ownerHistory = {state: 'reported', source: 'owner-relayed', prompts};
+  }
+  if (args.length) return {error: 'gate grammar has extra fields; no content or screenshot paths are accepted'};
+  return {type: 'observation', state, category, buttons, ownerHistory,
+    observedAt: time === 'at:now' ? null : Number(time.slice(3)),
+    timeProvenance: time === 'at:now' ? 'contemporaneous-attestation' : 'coordinator-timestamp'};
 }
 
 // Boundary injection is for hermetic coverage of the actual sequence, not a second implementation of the flow.
@@ -197,10 +237,10 @@ export async function runFreshOnboarding({home, engine, requested = false, owner
       require(false, `overall ${minutes}-minute owner window expired; no later grant, approval or input stage may start`, 'BLOCKED');
     }
   };
-  const answer = async ({signal, observation = false} = {}) => {
+  const answer = async ({signal, observationDeadline = null, maxLength = null} = {}) => {
     const startedAt = now();
     checkOwnerBudget(startedAt);
-    const deadlineAt = observation ? Math.min(startedAt + OWNER_OBSERVATION_MS, ownerDeadline) : ownerDeadline;
+    const deadlineAt = observationDeadline === null ? ownerDeadline : Math.min(observationDeadline, ownerDeadline);
     const limit = deadlineAt === ownerDeadline ? 'overall' : 'observation';
     const evidence = {stage, startedAt, deadlineAt, waitMs: deadlineAt - startedAt, finishedAt: null, expiredBound: null, cancelled: false};
     observations.ownerWaits.push(evidence);
@@ -223,6 +263,8 @@ export async function runFreshOnboarding({home, engine, requested = false, owner
         require(false, limit === 'overall' ? `overall ${minutes}-minute owner window expired while awaiting confirmation`
           : '5-minute observation wait expired; no response inferred and no later stage may start', 'BLOCKED');
       }
+      require(maxLength === null || typeof reply !== 'string' || reply.length <= maxLength,
+        `gate line exceeds ${GATE_LINE_LIMIT} characters; no raw input retained`, 'BLOCKED');
       return typeof reply === 'string' ? reply.trim().toLowerCase() : null;
     } finally {
       clearTimeout(timer);
@@ -239,20 +281,63 @@ export async function runFreshOnboarding({home, engine, requested = false, owner
     return confirmed;
   };
   const observePrompts = async (name, interval) => {
-    stage = name;
-    const evidence = {stage: interval.stage, source: 'owner-observed', origin: 'unknown',
-      startedAt: interval.startedAt, finishedAt: interval.finishedAt, reportedAt: null, confirmed: false, prompts: null};
+    stage = name; // Keep historical check names stable; source and claim explicitly identify the new contract.
+    checkOwnerBudget();
+    const openedAt = now(), gateId = randomUUID();
+    const deadlineAt = Math.min(openedAt + OWNER_OBSERVATION_MS, ownerDeadline);
+    const evidence = {stage: interval.stage, gateId, source: 'coordinator-cua-remote', origin: 'unknown',
+      startedAt: interval.startedAt, finishedAt: interval.finishedAt, openedAt, deadlineAt,
+      observedAt: null, reportedAt: null, confirmed: false, prompts: null,
+      ownerHistory: {state: 'unknown', source: null, prompts: null}, records: []};
     observations.recoveryPrompts.push(evidence);
-    log('OWNER ONLY: report every system alert observed during the preceding action, not just capture alerts. Answer alerts yourself; stop on a password prompt and never enter a password for automation. Once none remains, type none, or space-separated kind:response tokens: ' + PROMPT_RESPONSES.join(', ') + '. The terminal may relay the owner’s observation; kind is the visible alert category, not proof of its origin. Do not type alert text.');
-    let confirmed;
+    log(`GATE ${gateId} (${name}). Coordinator: take an independent cua-remote screenshot of the CURRENT display out of band, never through the tested engine. Keep raw screenshots private; enter no alert text, requester identity, content or paths. No harness GUI observation is performed.`);
+    log(`Enter "${gateId} coordinator:clear at:<Unix milliseconds>" or "${gateId} coordinator:alert <category> <buttons> at:<Unix milliseconds>". at:now explicitly attests a screenshot observed contemporaneously with this report; its exact observedAt stays unknown. Timestamps must be on the harness clock, after this gate opened and before receipt; never substitute report time for screenshot time.`);
+    log(`Categories: ${ALERT_CATEGORIES.join(', ')}. Buttons: ${ALERT_BUTTONS.join(', ')} (comma-separated, at most 8 distinct; use unknown if unreadable). Unreadable or ambiguous is never clear. OWNER ONLY answers any system alert; the coordinator NEVER clicks system alerts. Stop on a password prompt; never enter credentials for automation.`);
+    log(`For a reported alert, wait for the owner's actual response, then relay "${gateId} owner:<kind:response>" (${PROMPT_RESPONSES.join(', ')}), then take a NEW independent screenshot and report clear. Owner response alone cannot release the gate. Optional interval history on an observation: history:none or history:<kind:response>,<kind:response> (at most ${HISTORY_LIMIT}); omit when unknown. History never resolves a pending alert. At most ${GATE_RECORD_LIMIT} records, ${GATE_LINE_LIMIT} characters per line; one shared five-minute/overall deadline, no engine-action retry.`);
+    const pending = [];
+    let lastObservationAt = openedAt, lastOwnerResponseAt = null;
     try {
-      confirmed = await answer({observation: true});
-      if (confirmed !== null) evidence.reportedAt = now();
+      for (let count = 0; count < GATE_RECORD_LIMIT; count++) {
+        const line = await answer({observationDeadline: deadlineAt, maxLength: GATE_LINE_LIMIT});
+        const reportedAt = observations.ownerWaits.at(-1).finishedAt;
+        const parsed = gateReport(line, gateId);
+        require(!parsed.error, parsed.error, 'BLOCKED');
+        if (parsed.type === 'owner-response') {
+          const alert = pending.find(alert => !alert.answered && (alert.category === parsed.response.kind
+            || (['other', 'unreadable', 'ambiguous'].includes(alert.category) && parsed.response.kind === 'other')));
+          require(alert, 'owner response must match a pending alert category; optional history is separate', 'BLOCKED');
+          require(alert.buttons.includes('unknown') || parsed.response.response === 'answered' || alert.buttons.includes(parsed.response.response),
+            'owner response must match a reported button', 'BLOCKED');
+          alert.answered = true;
+          lastOwnerResponseAt = reportedAt;
+          evidence.records.push({type: 'owner-response', source: 'owner-relayed', reportedAt,
+            alertRecord: alert.record, response: parsed.response});
+          log(`GATE ${gateId}: owner response recorded, not a clear observation. Take a NEW independent screenshot; no engine action is retried.`);
+          continue;
+        }
+        const {ownerHistory, ...observation} = parsed;
+        require(observation.observedAt === null || (Number.isSafeInteger(observation.observedAt)
+          && observation.observedAt >= lastObservationAt && observation.observedAt <= reportedAt
+          && (lastOwnerResponseAt === null || observation.observedAt > lastOwnerResponseAt)),
+        'observation time must be current within this gate and newer than the recorded owner response; stale/future times refused', 'BLOCKED');
+        lastObservationAt = observation.observedAt ?? reportedAt;
+        evidence.records.push({...observation, source: 'coordinator-cua-remote', reportedAt, ownerHistory});
+        evidence.observedAt = observation.observedAt;
+        evidence.reportedAt = reportedAt;
+        if (ownerHistory) { evidence.ownerHistory = ownerHistory; evidence.prompts = ownerHistory.prompts; }
+        if (observation.state === 'alert') {
+          pending.push({category: observation.category, buttons: observation.buttons, record: evidence.records.length - 1, answered: false});
+          require(observation.category !== 'password', 'password prompt reported; stop without entering credentials for automation', 'BLOCKED');
+          log(`GATE ${gateId}: nonclear display; waiting for owner response and a new clear screenshot. No further grant or input is permitted.`);
+          continue;
+        }
+        require(pending.every(alert => alert.answered), 'pending alert requires a recorded owner response before a new clear observation can release the gate', 'BLOCKED');
+        evidence.confirmed = true;
+        record(name, 'PASS', 'coordinator reports no unresolved system alert visible at the observation (observedAt when supplied; otherwise explicit contemporaneous attestation); no prompt-free interval or requesting process inferred');
+        return;
+      }
+      require(false, 'gate record limit reached without a clear observation; no later stage attempted', 'BLOCKED');
     } finally { evidence.observationEndedAt = now(); }
-    evidence.prompts = promptAnswers(confirmed);
-    evidence.confirmed = evidence.prompts !== null;
-    require(evidence.confirmed, 'owner-observed prompt state absent or unrecognized; no further input or grant stage attempted', 'BLOCKED');
-    record(name, 'PASS', 'terminal relayed owner-observed alert categories/responses for the timed action; prompt origin unknown');
   };
   const ensureWindow = async () => {
     const current = await window();
@@ -274,7 +359,7 @@ export async function runFreshOnboarding({home, engine, requested = false, owner
     }
     checkOwnerBudget();
     if (bind) ledger.begin('onboarding');
-    if (observe) log('OWNER ONLY: observe and answer any system alert during the next action, including Accessibility-named alerts. Note its category and your response; the harness will ask immediately afterward. No alert is answered by the harness.');
+    if (observe) log('OWNER ONLY: answer any system alert during the next action; stop on a password prompt. The coordinator will independently observe the current display at the following gate. Optional owner interval history is separate; the harness and coordinator never answer system alerts.');
     let reply;
     try { reply = await session.js(code, 60_000); }
     finally { if (bind) ledger.end(); }
@@ -383,8 +468,9 @@ export async function runFreshOnboarding({home, engine, requested = false, owner
     const inputBefore = await retainStatus('post-recovery input before');
     const listen = bool(inputBefore.status?.inputMonitoring);
     require(inputBefore.status?.pid === after.status.pid && listen !== null
-      && listen === bool(after.status.inputMonitoring) && inputBefore.status.accessibility === true && inputBefore.status.screenRecording === true,
-    'fresh-process capability sample changed or is unread after the owner observation; no input sent', 'BLOCKED');
+      && listen === bool(after.status.inputMonitoring) && inputBefore.status.accessibility === true && inputBefore.status.screenRecording === true
+      && bool(inputBefore.status.canPostHid) !== null && inputBefore.status.canPostHid === after.status.canPostHid,
+    'fresh-process capability sample changed or is unread after the coordinator gate; no input sent', 'BLOCKED');
     const inputReply = await cell(inputCell(''), {input: true, observe: true, allowTimeout: true});
     const inputEvidence = observations.cells.at(-1), input = inputEvidence.reply;
     // Collect all independent operands before judging any of them. A timed-out cell may still be running, so do not
@@ -419,6 +505,16 @@ export async function runFreshOnboarding({home, engine, requested = false, owner
       : 'post-recovery operands did not all pass; see the separate capability, completion, metadata and doctor verdicts');
     await observePrompts('owner input prompt observation', inputEvidence);
     if (interventionVerdict !== 'PASS') throw stopAfterRecordedChecks;
+    stage = 'post-recovery input: post-gate stability';
+    checkOwnerBudget();
+    const afterInputGate = await retainStatus('post-recovery input after gate');
+    require(afterInputGate.status?.pid === inputAfter.status.pid
+      && [...KEYS, 'canPostHid'].every(key => bool(afterInputGate.status[key]) !== null
+        && afterInputGate.status[key] === inputAfter.status[key]),
+    'engine PID or capabilities changed or are unread after the coordinator gate; no further grant attempted', 'BLOCKED');
+    await ensureWindow();
+    checkOwnerBudget();
+    record(stage, 'PASS', 'same engine PID, capabilities and owned fixture rechecked after the coordinator gate; no physical intervention delivery inferred');
     await ask('manual Input Monitoring grant', `In System Settings > Privacy & Security > Input Monitoring, add ONLY cua Engine with "+", press ⌘⇧G and enter ${bundlePath}, then explicitly switch it ON even if the listen preflight already read true. Do not perform an extra OFF trial. Choose Later if offered a restart; the approve step will relaunch.`, 'granted');
     stage = 'engine approval';
     await close();

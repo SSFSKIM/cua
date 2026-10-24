@@ -21,7 +21,15 @@ import {rollup, TEXTEDIT_BUNDLE} from './lib.mjs';
 const exec = promisify(execFile);
 const CLI = fileURLToPath(new URL('../../bin/cua.mjs', import.meta.url));
 const KEYS = ['accessibility', 'screenRecording', 'inputMonitoring'];
-export const OWNER_WINDOW = 'Reserve approximately 15 minutes continuously for item 14: remove the three entries and open a blank TextEdit document (4); grant Accessibility and verify warm-process detection-off diagnostics (2); grant Screen Recording with Later and observe recovery alerts (3); check input against the fresh process’s listen capability and observe alerts (1); grant Input Monitoring (1); approve, check and close only the disposable document without saving (4). Settings and fixture steps are manual; only the owner answers system alerts. This does not authorize a coordinator to operate Settings. An absent Input Monitoring row does not establish listen capability after relaunch; capability and metadata consistency does not prove physical intervention delivery.';
+export const DEFAULT_OWNER_WINDOW_MINUTES = 25;
+const OWNER_OBSERVATION_MS = 5 * 60_000;
+export function ownerWindowMinutes(value = DEFAULT_OWNER_WINDOW_MINUTES) {
+  if (!/^[1-9]\d*$/.test(String(value)) || Number(value) > 120) {
+    throw new Error('--owner-window-minutes must be a whole number from 1 to 120 (default 25)');
+  }
+  return Number(value);
+}
+const ownerWindow = minutes => `Reserve ${minutes} minutes continuously for item 14 (--owner-window-minutes, default 25): remove the three entries and open ONE blank TextEdit document (File > New); grant Accessibility and verify warm-process detection-off diagnostics; grant Screen Recording with Later and observe recovery alerts; check input against the fresh process’s listen capability and observe alerts; explicitly grant Input Monitoring; approve, check and close only the disposable document without saving. Each terminal question waits at most 5 minutes, clipped by the remaining overall budget. The overall clock starts just before stopping the engine for revocation and never resets. Expiry stops new stages; bounded in-flight operations and cleanup may finish afterward, not forcibly cancel OS calls. Settings and fixture steps are manual; only the owner answers system alerts. This does not authorize a coordinator to operate Settings. An absent Input Monitoring row does not establish listen capability after relaunch; capability and metadata consistency does not prove physical intervention delivery.`;
 const STAGES = ['preconditions', 'manual revocation', 'Accessibility error reaches the model', 'all three grants absent',
   'manual Accessibility grant', 'Screen Recording error reaches the model', 'AX-only intervention diagnostic', 'manual Screen Recording grant',
   'service relaunch recovery', 'owner recovery prompt observation', 'post-recovery input', 'owner input prompt observation',
@@ -120,8 +128,11 @@ function promptAnswers(answer) {
 }
 
 // Boundary injection is for hermetic coverage of the actual sequence, not a second implementation of the flow.
-export async function runFreshOnboarding({home, engine, requested = false}, deps = {}) {
-  const checks = [], observations = {ownerWindow: OWNER_WINDOW, windows: [], cells: [], statuses: [], doctors: [], recoveryPrompts: []};
+export async function runFreshOnboarding({home, engine, requested = false, ownerWindowMinutes: minutes = DEFAULT_OWNER_WINDOW_MINUTES}, deps = {}) {
+  minutes = ownerWindowMinutes(minutes); // reject before any engine, terminal or permission work
+  const checks = [], observations = {ownerWindow: ownerWindow(minutes),
+    ownerBudget: {minutes, observationLimitMs: OWNER_OBSERVATION_MS, startedAt: null, deadlineAt: null, expiredAt: null},
+    ownerWaits: [], windows: [], cells: [], statuses: [], doctors: [], recoveryPrompts: []};
   const now = deps.now ?? Date.now;
   let ownerDeadline = null;
   const record = (name, status, detail) => checks.push({name, status, detail});
@@ -180,18 +191,47 @@ export async function runFreshOnboarding({home, engine, requested = false}, deps
   const stopAfterRecordedChecks = Symbol('stop after recorded checks');
   const failureDetail = error => error.harnessDetail ? error.message
     : 'external operation failed; raw error text omitted (see retained stage operands)';
-  const answer = async () => {
-    const remaining = ownerDeadline - now();
-    require(remaining > 0, 'the approximately 15-minute owner window expired; stop and arrange recovery, not another automatic window', 'BLOCKED');
-    let timer;
+  const checkOwnerBudget = (at = now()) => {
+    if (ownerDeadline !== null && at >= ownerDeadline) {
+      observations.ownerBudget.expiredAt ??= at;
+      require(false, `overall ${minutes}-minute owner window expired; no later grant, approval or input stage may start`, 'BLOCKED');
+    }
+  };
+  const answer = async ({signal} = {}) => {
+    const startedAt = now();
+    checkOwnerBudget(startedAt);
+    const deadlineAt = Math.min(startedAt + OWNER_OBSERVATION_MS, ownerDeadline);
+    const limit = deadlineAt === ownerDeadline ? 'overall' : 'observation';
+    const evidence = {stage, startedAt, deadlineAt, waitMs: deadlineAt - startedAt, finishedAt: null, expiredBound: null, cancelled: false};
+    observations.ownerWaits.push(evidence);
+    log(`Terminal wait: at most ${Math.ceil(evidence.waitMs / 1000)} seconds (${limit} bound); the overall owner clock does not reset.`);
+    const expired = Symbol('expired'), cancelled = Symbol('cancelled');
+    let timer, abort;
     try {
-      const reply = await Promise.race([operator.next(), new Promise(resolve => { timer = setTimeout(() => resolve(null), remaining); })]);
-      require(now() <= ownerDeadline, 'the owner window expired while awaiting confirmation', 'BLOCKED');
+      const timeout = new Promise(resolve => { timer = setTimeout(() => resolve(expired), evidence.waitMs); });
+      const cancellation = new Promise(resolve => {
+        abort = () => resolve(cancelled);
+        signal?.addEventListener('abort', abort, {once: true});
+        if (signal?.aborted) abort();
+      });
+      const reply = await Promise.race([timeout, cancellation, operator.next()]);
+      evidence.finishedAt = now();
+      if (reply === cancelled) { evidence.cancelled = true; return null; }
+      if (reply === expired || evidence.finishedAt >= deadlineAt) {
+        evidence.expiredBound = limit;
+        if (evidence.finishedAt >= ownerDeadline) observations.ownerBudget.expiredAt ??= evidence.finishedAt;
+        require(false, limit === 'overall' ? `overall ${minutes}-minute owner window expired while awaiting confirmation`
+          : '5-minute observation wait expired; no response inferred and no later stage may start', 'BLOCKED');
+      }
       return typeof reply === 'string' ? reply.trim().toLowerCase() : null;
-    } finally { clearTimeout(timer); }
+    } finally {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', abort);
+    }
   };
   const ask = async (name, message, word) => {
     stage = name;
+    checkOwnerBudget();
     log(`MANUAL STEP (owner or separately authorized coordinator): ${message} Type ${word} here after completion (anything else stops). A terminal answer does not identify the UI actor; this harness performs no Settings action.`);
     const confirmed = await answer();
     require(confirmed === word, 'manual confirmation absent or declined; the harness did not perform this UI step', 'BLOCKED');
@@ -204,8 +244,11 @@ export async function runFreshOnboarding({home, engine, requested = false}, deps
       startedAt: interval.startedAt, finishedAt: interval.finishedAt, reportedAt: null, confirmed: false, prompts: null};
     observations.recoveryPrompts.push(evidence);
     log('OWNER ONLY: report every system alert observed during the preceding action, not just capture alerts. Answer alerts yourself; stop on a password prompt and never enter a password for automation. Once none remains, type none, or space-separated kind:response tokens: ' + PROMPT_RESPONSES.join(', ') + '. The terminal may relay the owner’s observation; kind is the visible alert category, not proof of its origin. Do not type alert text.');
-    const confirmed = await answer();
-    evidence.reportedAt = now();
+    let confirmed;
+    try {
+      confirmed = await answer();
+      if (confirmed !== null) evidence.reportedAt = now();
+    } finally { evidence.observationEndedAt = now(); }
     evidence.prompts = promptAnswers(confirmed);
     evidence.confirmed = evidence.prompts !== null;
     require(evidence.confirmed, 'owner-observed prompt state absent or unrecognized; no further input or grant stage attempted', 'BLOCKED');
@@ -219,14 +262,17 @@ export async function runFreshOnboarding({home, engine, requested = false}, deps
       offScreenCount: current.offScreenBounds?.length ?? 0, offScreenBounds: current.offScreenBounds ?? []});
   };
   const cell = async (code, {bind = false, input = false, observe = null, allowTimeout = false} = {}) => {
+    checkOwnerBudget();
     await ensureWindow();
     if (input) {
+      checkOwnerBudget();
       log('OWNER: keep hands off the keyboard while the verified blank TextEdit document comes forward for one harmless X.');
       require(await (deps.focus ?? focusTextEdit)(), 'TextEdit focus could not be verified; no input sent', 'BLOCKED');
       await ensureWindow();  // open -a must not have created an Untitled window or Open panel
       require(await (deps.frontmost ?? localFrontmost)() === TEXTEDIT_BUNDLE,
         'TextEdit lost focus during the window check; no input sent', 'BLOCKED');
     }
+    checkOwnerBudget();
     if (bind) ledger.begin('onboarding');
     if (observe) log('OWNER ONLY: observe and answer any system alert during the next action, including Accessibility-named alerts. Note its category and your response; the harness will ask immediately afterward. No alert is answered by the harness.');
     let reply;
@@ -257,14 +303,16 @@ export async function runFreshOnboarding({home, engine, requested = false}, deps
     require(!before.status || before.status.connections === 0, 'another session uses the engine; leave it alone', 'BLOCKED');
     require(await textEditStopped(), 'TextEdit must be quit before this owner window; existing documents are left alone', 'BLOCKED');
     record(stage, 'PASS', 'approved engine verified; no live engine connection or TextEdit to disturb');
-    log(OWNER_WINDOW);
-    ownerDeadline = now() + 15 * 60_000;
+    log(observations.ownerWindow);
+    observations.ownerBudget.startedAt = now();
+    ownerDeadline = observations.ownerBudget.deadlineAt = observations.ownerBudget.startedAt + minutes * 60_000;
     // Stop before the owner removes entries: the first model request must read fresh grants, not a cached process.
     await stop();
-    await ask('manual revocation', 'In System Settings > Privacy & Security, remove ONLY "cua Engine" with the minus (–) button from Accessibility, Screen & System Audio Recording, and Input Monitoring. Do not touch the vendor service, Terminal or any other entry. Never enter a password for automation. Then open one new blank TextEdit document, with no other TextEdit windows; keep it open until the final step. The harness never performs revocation.', 'revoked');
+    await ask('manual revocation', 'In System Settings > Privacy & Security, remove ONLY "cua Engine" with the minus (–) button from Accessibility, Screen & System Audio Recording, and Input Monitoring. Do not touch the vendor service, Terminal or any other entry. Never enter a password for automation. Then open ONE blank TextEdit document (File > New), with no other TextEdit windows; keep it open until the final step. The harness never performs revocation.', 'revoked');
     ownedWindow = await window();
     require(ownedWindow, 'needs exactly one on-screen TextEdit window for the manually prepared blank document', 'BLOCKED');
     const startSession = async () => {
+      checkOwnerBudget();
       const raw = connect(), send = raw.js.bind(raw);
       raw.js = async (...args) => {
         const evidence = {stage, startedAt: now(), finishedAt: null, attestation: null, reply: null};
@@ -374,8 +422,20 @@ export async function runFreshOnboarding({home, engine, requested = false}, deps
     await ask('manual Input Monitoring grant', `In System Settings > Privacy & Security > Input Monitoring, add ONLY cua Engine with "+", press ⌘⇧G and enter ${bundlePath}, then explicitly switch it ON even if the listen preflight already read true. Do not perform an extra OFF trial. Choose Later if offered a restart; the approve step will relaunch.`, 'granted');
     stage = 'engine approval';
     await close();
+    checkOwnerBudget();
     log('OWNER ONLY: stay at the console for cua engine approve. Answer any capture confirmation yourself; confirm at this terminal when approve asks.');
-    const approved = await (deps.approve ?? approveEngine)({operator, log});
+    // approveEngine can finish a grant poll without awaiting its terminal read. Cancel that unused read when
+    // approval settles; on a timed-out read return its explicit abort word, never an implicit confirmation.
+    const approvalReads = new AbortController();
+    let approvalWaitError = null, approved;
+    const approvalOperator = {next: async () => {
+      try { return await answer({signal: approvalReads.signal}); }
+      catch (error) { approvalWaitError ??= error; return 'n'; }
+    }};
+    try { approved = await (deps.approve ?? approveEngine)({operator: approvalOperator, log}); }
+    finally { approvalReads.abort(); }
+    if (approvalWaitError) throw approvalWaitError;
+    checkOwnerBudget();
     require(approved.approved === true && approved.build === expected.build, 'approve did not approve the expected build');
     observations.approveCaptureConfirmation = approved.captureConfirmation ?? null;
     record(stage, 'PASS', 'approveEngine completed after the model-facing recovery; capture confirmation handled by the owner when requested');

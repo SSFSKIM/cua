@@ -88,7 +88,7 @@ function fixture(over = {}) {
     operator: {next: async () => {
       events.push('owner'); owners++;
       if (over.abort) return null;
-      if (owners === 1) { if (over.expireWindow) clock += 16 * 60_000; return 'revoked'; }
+      if (owners === 1) { if (over.expireWindow) clock += 26 * 60_000; return 'revoked'; }
       if (owners === 2) { phase = 'ax'; if (over.axRelaunch) pid = 15; return 'granted'; }
       if (owners === 3) {
         phase = 'granted';
@@ -100,7 +100,7 @@ function fixture(over = {}) {
         return over.captureDeclined ? null : over.recoveryAlerts ?? 'none';
       }
       if (owners === 5) {
-        if (over.expireInputObservation) clock += 16 * 60_000;
+        if (over.expireInputObservation) clock += 26 * 60_000;
         return over.inputObservationAbsent ? null : over.inputAlerts ?? 'none';
       }
       if (owners === 6) { phase = 'all'; return 'granted'; }
@@ -108,12 +108,12 @@ function fixture(over = {}) {
     }},
     log: message => logs.push(message),
   };
-  return {deps, events, logs};
+  return {deps, events, logs, advance: ms => { clock += ms; }};
 }
 
-const run = async f => {
+const run = async (f, options = {}) => {
   const {runFreshOnboarding} = await import('../scripts/accept/onboarding.mjs');
-  return runFreshOnboarding({home: '/scratch', engine: {engine: 'cua'}, requested: true}, f.deps);
+  return runFreshOnboarding({home: '/scratch', engine: {engine: 'cua'}, requested: true, ...options}, f.deps);
 };
 
 test('owner sequence proves both model errors, same-session relaunch, then approval, with no automated revocation', async () => {
@@ -125,7 +125,7 @@ test('owner sequence proves both model errors, same-session relaunch, then appro
   assert.match(f.logs.join('\n'), /owner.*only|OWNER/);
   assert.match(f.logs.join('\n'), /Later/);
   assert.match(f.logs.join('\n'), /Input Monitoring/);
-  assert.match(f.logs.join('\n'), /15 minutes/);
+  assert.match(f.logs.join('\n'), /25 minutes/);
   assert.match(f.logs.join('\n'), /Don’t Save/);
   assert.equal(report.observations.relaunch.before, 10);
   assert.equal(report.observations.relaunch.after, 11);
@@ -568,4 +568,134 @@ test('listen-available doctor must retain a real engine row rather than infer ag
   assert.equal(report.checks.find(c => c.name === 'post-recovery input: doctor').status, 'FAIL');
   assert.equal(report.observations.doctors.at(-1).engineRow.present, false);
   assert.ok(!f.events.includes('approve'));
+});
+
+for (const budget of [undefined, 40]) test(`owner budget ${budget ?? 'default'} permits a staged sitting longer than fifteen minutes without resetting the overall deadline`, async () => {
+  const f = fixture(), next = f.deps.operator.next;
+  f.deps.operator.next = async () => { f.advance(3 * 60_000); return next(); };
+  const report = await run(f, budget === undefined ? {} : {ownerWindowMinutes: budget});
+  assert.equal(report.status, 'PASS', JSON.stringify(report));
+  assert.equal(report.observations.ownerBudget.minutes, budget ?? 25);
+  assert.equal(report.observations.ownerBudget.deadlineAt - report.observations.ownerBudget.startedAt, (budget ?? 25) * 60_000);
+  assert.ok(f.events.includes('approve'));
+  assert.match(f.logs.join('\n'), /ONE blank TextEdit document \(File > New\)/);
+});
+
+test('invalid direct owner budgets refuse before engine or permission work', async () => {
+  for (const ownerWindowMinutes of [0, -1, 121, 1.5, NaN, Infinity, 'junk']) {
+    const f = fixture();
+    await assert.rejects(run(f, {ownerWindowMinutes}), /owner-window-minutes/);
+    assert.deepEqual(f.events, []);
+  }
+});
+
+for (const [minutes, expiredBound, waitMs] of [[25, 'observation', 5 * 60_000], [1, 'overall', 60_000]]) {
+  test(`${expiredBound} timeout bounds an unanswered owner question`, async t => {
+    t.mock.timers.enable({apis: ['setTimeout']});
+    const f = fixture();
+    let reached, release;
+    const waiting = new Promise(resolve => { reached = resolve; });
+    f.deps.operator.next = () => { reached(); return new Promise(resolve => { release = resolve; }); };
+    const running = run(f, {ownerWindowMinutes: minutes});
+    await waiting;
+    f.advance(waitMs);
+    t.mock.timers.tick(waitMs);
+    release(null); // also settles an implementation missing the timer, so RED cannot hang
+    const report = await running;
+    assert.equal(report.status, 'BLOCKED');
+    assert.equal(report.observations.ownerWaits[0].expiredBound, expiredBound);
+    assert.ok(report.observations.ownerWaits[0].waitMs <= waitMs);
+    assert.ok(!f.events.includes('initialize'));
+  });
+}
+
+test('the overall deadline clips later waits even after individually timely answers', async () => {
+  const f = fixture(), next = f.deps.operator.next;
+  f.deps.operator.next = async () => { f.advance(4 * 60_000); return next(); };
+  const report = await run(f, {ownerWindowMinutes: 10});
+  assert.equal(report.status, 'BLOCKED');
+  assert.equal(report.observations.ownerWaits.at(-1).expiredBound, 'overall');
+  assert.ok(report.observations.ownerWaits.at(-1).waitMs < 2 * 60_000);
+  assert.ok(!f.events.includes('approve'));
+});
+
+for (const boundary of ['focus', 'close', 'approve']) test(`automatic work consuming the budget at ${boundary} cannot start a later input or approval stage`, async () => {
+  const f = fixture();
+  if (boundary === 'focus') {
+    const focus = f.deps.focus;
+    f.deps.focus = async () => { const result = await focus(); f.advance(26 * 60_000); return result; };
+  } else if (boundary === 'close') {
+    const connect = f.deps.connect;
+    f.deps.connect = () => {
+      const session = connect(), close = session.close.bind(session);
+      session.close = async () => { const result = await close(); f.advance(26 * 60_000); return result; };
+      return session;
+    };
+  } else {
+    const approve = f.deps.approve;
+    f.deps.approve = async args => { const result = await approve(args); f.advance(26 * 60_000); return result; };
+  }
+  const report = await run(f);
+  assert.equal(report.status, 'BLOCKED', JSON.stringify(report));
+  if (boundary === 'focus') assert.equal(f.events.filter(e => e === 'cell').length, 3);
+  if (boundary === 'close') assert.ok(!f.events.includes('approve'));
+  if (boundary === 'approve') assert.equal(f.events.filter(e => e === 'initialize').length, 1);
+  assert.ok(report.checks.some(c => c.status === 'BLOCKED' && /overall.*expired/.test(c.detail)));
+});
+
+test('approve receives the same capped owner reader and cannot turn its expired wait into approval', async t => {
+  t.mock.timers.enable({apis: ['setTimeout']});
+  const f = fixture();
+  let reached, release;
+  const waiting = new Promise(resolve => { reached = resolve; });
+  f.deps.approve = async ({operator}) => {
+    f.events.push('approve');
+    f.deps.operator.next = () => { reached(); return new Promise(resolve => { release = resolve; }); };
+    assert.equal(await operator.next(), 'n', 'approval is explicitly aborted, never implicitly confirmed');
+    return {approved: false};
+  };
+  const running = run(f);
+  await waiting;
+  f.advance(5 * 60_000);
+  t.mock.timers.tick(5 * 60_000);
+  release(null);
+  const report = await running;
+  assert.equal(report.status, 'BLOCKED');
+  assert.equal(report.observations.ownerWaits.at(-1).expiredBound, 'observation');
+  assert.equal(f.events.filter(e => e === 'initialize').length, 1);
+});
+
+test('expired input observation preserves independent verdicts without inventing an owner report timestamp', async () => {
+  const f = fixture(), next = f.deps.operator.next;
+  let calls = 0;
+  f.deps.operator.next = async () => { if (++calls === 5) f.advance(6 * 60_000); return next(); };
+  const report = await run(f);
+  assert.equal(report.status, 'BLOCKED');
+  for (const part of ['input completion', 'metadata', 'doctor']) {
+    assert.equal(report.checks.find(c => c.name === `post-recovery input: ${part}`).status, 'PASS');
+  }
+  const observation = report.observations.recoveryPrompts.at(-1);
+  assert.equal(observation.confirmed, false);
+  assert.equal(observation.reportedAt, null);
+  assert.ok(Number.isFinite(observation.observationEndedAt));
+  assert.equal(report.observations.ownerWaits.at(-1).expiredBound, 'observation');
+  assert.ok(!f.events.includes('approve'));
+});
+
+test('approval cancels an unused terminal wait when grant polling finishes first', async () => {
+  const f = fixture();
+  let unused;
+  f.deps.approve = async ({operator}) => {
+    const next = f.deps.operator.next;
+    f.deps.operator.next = () => new Promise(() => {});
+    unused = operator.next();
+    f.deps.operator.next = next;
+    return {approved: true, build: expected.build};
+  };
+  const report = await run(f);
+  assert.equal(report.status, 'PASS', JSON.stringify(report));
+  assert.equal(await unused, null);
+  const cancelled = report.observations.ownerWaits.find(w => w.cancelled);
+  assert.equal(cancelled.stage, 'engine approval');
+  assert.equal(cancelled.expiredBound, null);
 });

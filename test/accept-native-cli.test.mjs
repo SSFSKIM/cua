@@ -64,3 +64,39 @@ test('an unknown CUA_NATIVE_ENGINE is refused the same way on macOS, where it wo
   assert.equal(run.status, 2, run.stderr);
   assert.match(run.stderr, /CUA_NATIVE_ENGINE must be vendor or cua/);
 });
+
+test('owner budget help is available without a scratch home or engine work', t => {
+  const run = acceptNative(t, ['--help'], {CUA_HOME: ''});
+  assert.equal(run.status, 0, run.stderr);
+  assert.match(run.stdout, /--owner-window-minutes/);
+  assert.match(run.stdout, /25/);
+  assert.match(run.stdout, /1.*120/);
+  assert.match(run.stdout, /5.minute/);
+  assert.match(run.stdout, /in.flight.*cleanup/);
+});
+
+test('owner budget accepts bounded whole minutes and reaches the inert onboarding admission report', t => {
+  for (const value of ['1', '25', '120']) {
+    const run = acceptNative(t, ['--items', '14', '--fresh-onboarding', '--owner-window-minutes', value], {CUA_SHIM_SURFACES: 'browser'});
+    assert.equal(run.status, 3, run.stderr);
+    const report = JSON.parse(run.stdout);
+    assert.equal(report.options.ownerWindowMinutes, Number(value));
+    assert.equal(report.items[0].evidence.ownerBudget.minutes, Number(value));
+    assert.equal(report.summary['14'], 'BLOCKED');
+  }
+});
+
+test('invalid or inapplicable owner budget fails before engine work or report generation', t => {
+  for (const value of ['0', '121', '2.5', 'NaN', 'Infinity', '1e1', '01', '', '-1']) {
+    const run = acceptNative(t, ['--items', '14', '--fresh-onboarding', `--owner-window-minutes=${value}`]);
+    assert.equal(run.status, 2, run.stderr);
+    assert.match(run.stderr, /owner-window-minutes/);
+    assert.equal(run.stdout, '');
+  }
+  for (const args of [['--owner-window-minutes'], ['--owner-window-minutes', '25']]) {
+    const run = acceptNative(t, args);
+    assert.equal(run.status, 2, run.stderr);
+    assert.match(run.stderr, /owner-window-minutes/);
+    assert.equal(run.stdout, '');
+  }
+});

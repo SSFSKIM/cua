@@ -10,7 +10,9 @@
 //   node scripts/accept-native.mjs --live-secrets --live-textedit --secret-key <KEY> [--secret-home <dir>] --report …
 //   node scripts/accept-native.mjs --items 1,10 --report …   only the items named (a headless re-check of some items)
 //   node scripts/accept-native.mjs --engine cua --live-textedit --report …   on cua's own engine (#117 acceptance 8)
-//   node scripts/accept-native.mjs --items 14 --engine cua --fresh-onboarding --report …   OWNER at console, interactive terminal
+//   node scripts/accept-native.mjs --items 14 --engine cua --fresh-onboarding --owner-window-minutes 25 --report …
+//     OWNER at console, interactive terminal; 25-minute overall budget by default, each answer capped at 5 minutes.
+//     --help describes budget scope; it does not replace the separate hold booking.
 // Item 14 runs first: one continuous 9-minute owner window, then unattended items. No automation revokes or grants
 // TCC. See accept/onboarding.mjs for the staged owner steps; an incomplete window blocks subsequent selected items.
 // Selections must include dependencies (2 needs 1,3; 3/7/8 need 1; 6 needs 1,4), otherwise exit 2 before work (#197).
@@ -93,13 +95,34 @@ import {ownSandboxAcceptance} from './accept/own-sandbox.mjs';
 import {compatRouteAcceptance} from './accept/compat-route.mjs';
 import {reinstallCheck} from './accept/reinstall.mjs';
 import {downloadProofCheck} from './accept/download-proof.mjs';
-import {runFreshOnboarding} from './accept/onboarding.mjs';
+import {runFreshOnboarding, ownerWindowMinutes as parseOwnerWindowMinutes} from './accept/onboarding.mjs';
 
-const {values: options} = parseArgs({options: {
-  report: {type: 'string'}, 'live-secrets': {type: 'boolean'}, 'live-textedit': {type: 'boolean'}, archive: {type: 'string'},
-  'secret-key': {type: 'string'}, 'secret-home': {type: 'string'}, items: {type: 'string'}, engine: {type: 'string'},
-  'fresh-onboarding': {type: 'boolean'},
-}, strict: true});
+let options, ownerWindowMinutes;
+try {
+  ({values: options} = parseArgs({options: {
+    report: {type: 'string'}, 'live-secrets': {type: 'boolean'}, 'live-textedit': {type: 'boolean'}, archive: {type: 'string'},
+    'secret-key': {type: 'string'}, 'secret-home': {type: 'string'}, items: {type: 'string'}, engine: {type: 'string'},
+    'fresh-onboarding': {type: 'boolean'}, 'owner-window-minutes': {type: 'string'}, help: {type: 'boolean'},
+  }, strict: true}));
+  ownerWindowMinutes = parseOwnerWindowMinutes(options['owner-window-minutes']);
+} catch (error) {
+  console.error(`accept-native: ${error.message}`);
+  process.exit(2);
+}
+if (options.help) {
+  console.log(`Usage: CUA_HOME=<scratch-home> node scripts/accept-native.mjs [--items <ids>] [--engine cua|vendor] [--report <file>]
+  [--archive <file>] [--live-textedit] [--live-secrets] [--secret-key <key> --secret-home <directory>]
+  --fresh-onboarding                  owner-present item 14, interactive terminal, cua engine on macOS
+  --owner-window-minutes <minutes>     whole decimal minutes 1 to 120, default 25; requires --fresh-onboarding and item 14
+
+Item 14 starts its overall clock just before stopping the engine for manual revocation; it never resets per question.
+Every terminal question, including approve's questions, has a 5-minute wait clipped by the remaining overall budget.
+Expiry blocks new grant/approval/input stages. Existing bounded in-flight operations and cleanup may finish afterward;
+this is not forced cancellation of OS calls. Build/sign/initial approval and separate hold booking are outside this budget.
+First manual step: open ONE blank TextEdit document (File > New). Only the owner answers system alerts.
+See this script's header for scratch-home preparation and the full acceptance item list.`);
+  process.exit(0);
+}
 // Refuse incomplete selections before any item runs (#197): dependencies must be explicitly requested.
 let selected;
 try { selected = acceptanceSelection(options.items); } catch (error) {
@@ -107,6 +130,10 @@ try { selected = acceptanceSelection(options.items); } catch (error) {
   process.exit(2);
 }
 const wanted = id => !selected || selected.has(id);
+if (options['owner-window-minutes'] !== undefined && (!options['fresh-onboarding'] || !wanted(14))) {
+  console.error('accept-native: --owner-window-minutes requires --fresh-onboarding and item 14 in --items');
+  process.exit(2);
+}
 if (options['fresh-onboarding'] && !wanted(14)) {
   console.error('accept-native: --fresh-onboarding requires item 14 in --items');
   process.exit(2);
@@ -548,7 +575,7 @@ async function item13() {
 
 // --- 14. #117 M4: fresh onboarding, owner first ----------------------------------------------------------------------
 async function item14() {
-  const result = await runFreshOnboarding({home, engine: pin, requested: Boolean(options['fresh-onboarding'])});
+  const result = await runFreshOnboarding({home, engine: pin, requested: Boolean(options['fresh-onboarding']), ownerWindowMinutes});
   state.onboarding = result.status;
   addItem(14, 'Fresh permission onboarding: OWNER revocation, model errors, staged grants and relaunch recovery', result.checks, result.observations);
 }
@@ -584,7 +611,7 @@ const runLeftovers = (existsSync(join(home, 'run')) ? readdirSync(join(home, 'ru
 const report = {
   scenario: 'accept-native', status: rollup(items.map(i => i.status)),
   suiteQualification: 'The hosted Node 24 gate is the unit-suite authority (#198). Local whole-suite failures remain FAIL and need per-failure classification; no environmental exception promotes an item to PASS.',
-  options: {freshOnboarding: Boolean(options['fresh-onboarding']), liveSecrets: Boolean(options['live-secrets']), liveTextedit: Boolean(options['live-textedit']), callerSecretKey: Boolean(callerSecret), ...(selected ? {items: [...selected].sort((a, b) => a - b)} : {}),
+  options: {freshOnboarding: Boolean(options['fresh-onboarding']), ownerWindowMinutes, liveSecrets: Boolean(options['live-secrets']), liveTextedit: Boolean(options['live-textedit']), callerSecretKey: Boolean(callerSecret), ...(selected ? {items: [...selected].sort((a, b) => a - b)} : {}),
     engine: pin ? {engine: pin.engine, pinnedBy: pin.pinnedBy} : null},
   release: state.doctor?.runtime?.release ?? null, home: '$CUA_HOME', host: `${process.platform}-${process.arch}`, node: process.version,
   startedAt: started.toISOString(), finishedAt: new Date().toISOString(),

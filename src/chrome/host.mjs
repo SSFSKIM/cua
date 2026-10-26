@@ -72,6 +72,10 @@ export const DEFAULT_CDP_TIMEOUT_MS = 10_000;
 export const GUARD_WAIT_MS = 1500;
 // How long a close waits for the check that keeps its window open (closeTab) before closing anyway.
 export const KEEP_WAIT_MS = 2000;
+// A clear's reply can precede the page reading its restored size (Chromium 152); never hold a reset indefinitely.
+export const VIEWPORT_RESET_WAIT_MS = 1000;
+const SIZE_POLL_MS = 10;
+const SCROLLBAR_DIP = 24; // layout metrics exclude classic scrollbars; allow their thickness and rounding
 // Chrome tears the port down on a host->extension message over 1 MB; the extension may send up to 64 MiB.
 export const MAX_TO_EXTENSION_BYTES = 1024 * 1024;
 export const MAX_FROM_EXTENSION_BYTES = 64 * 1024 * 1024;
@@ -296,10 +300,50 @@ export function createHost({extension: port, hello, home = null, now = () => new
       return {};
     }
     touch(s, tab, turn);
+    const previous = tab.viewport;
     tab.viewport = size;
     s.pendingViewport = null;
-    if (tab.attached) await sendViewport(tab).catch(error => forgetLostDebugger(tab, error));
+    if (tab.attached) {
+      await sendViewport(tab).catch(error => forgetLostDebugger(tab, error));
+      if (!size && previous && tab.attached) await waitViewportReset(tab, previous);
+    }
     return {};
+  }
+
+  // Unlike MAWS, the host does not know the view's natural bounds. A reading distinguishable from the cleared override
+  // confirms the change; an equal natural size cannot be distinguished from a lagging page, so the deadline is success
+  // too, with an observation rather than a false failure alarm. The bound covers unanswered CDP reads as well as polls.
+  async function waitViewportReset(tab, previous) {
+    const until = Date.now() + VIEWPORT_RESET_WAIT_MS;
+    let timer, expired = false, reading = false, last = 'no layout reading';
+    const bound = new Promise(resolve => { timer = setTimeout(() => { expired = true; resolve(TIMED_OUT); }, VIEWPORT_RESET_WAIT_MS); });
+    try {
+      while (!expired && Date.now() < until && tab.attached && !tab.viewport) {
+        reading = true;
+        const metrics = await Promise.race([extension.request('debugger.sendCommand', {
+          debuggee: {tabId: tab.tabId}, method: 'Page.getLayoutMetrics', params: {}, timeoutMs: Math.max(1, until - Date.now()),
+        }).catch(error => ({error})), bound]);
+        if (metrics === TIMED_OUT) break;
+        reading = false;
+        if (metrics.error) {
+          // A refusal is already logged. Losing the debugger still updates host state; other read failures only end
+          // this best-effort observation, not a clear Chrome already accepted.
+          try { forgetLostDebugger(tab, metrics.error); } catch {}
+          return;
+        }
+        const {clientWidth: width, clientHeight: height} = metrics.cssLayoutViewport ?? {};
+        if (!Number.isFinite(width) || !Number.isFinite(height)) return;
+        const zoom = metrics.cssVisualViewport?.zoom > 0 ? metrics.cssVisualViewport.zoom : 1;
+        last = `layout ${width}x${height} CSS px at zoom ${zoom}`;
+        const fits = (css, side) => {
+          const gap = side - css * zoom;
+          return gap >= -zoom && gap <= SCROLLBAR_DIP + zoom;
+        };
+        if (!fits(width, previous.width) || !fits(height, previous.height)) return;
+        await Promise.race([new Promise(resolve => setTimeout(resolve, SIZE_POLL_MS)), bound]);
+      }
+      if (tab.attached && !tab.viewport) log(`tab ${tab.tabId}: viewport reset size change unconfirmed after ${VIEWPORT_RESET_WAIT_MS} ms (cleared ${previous.width}x${previous.height}; ${last}${reading ? '; Page.getLayoutMetrics unanswered' : ''}); natural size may match the override`);
+    } finally { clearTimeout(timer); }
   }
 
   // Chrome answering "Debugger is not attached" for a tab the host holds: the host forgets the attachment (the next

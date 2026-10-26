@@ -765,7 +765,9 @@ test('viewport set on an attached tab applies the override at once and answers {
   const tab = await a.call('createTab', {});
   await a.call('attach', {tabId: tab.id});
   assert.deepEqual(await viewportSet(a, 800, 600), {});
-  assert.deepEqual(emulation(ext), [override(tab.id, 800, 600)]);
+  assert.deepEqual(await viewportSet(a, 1024, 768), {});
+  assert.deepEqual(emulation(ext), [override(tab.id, 800, 600), override(tab.id, 1024, 768)]);
+  assert.equal(metricCalls(ext).length, 0, 'setting or replacing an override does not observe layout');
 });
 
 test('viewport set before the attach is kept on the tab and applied by the attach; re-attaches apply it again', async () => {
@@ -814,6 +816,157 @@ test('viewport reset clears the override on an attached tab, and later attaches 
   await a.call('attach', {tabId: tab.id});
   assert.equal(emulation(ext).length, 2);
 });
+
+// Complete Page.getLayoutMetrics shape; the deprecated device-pixel fields deliberately differ from CSS pixels.
+const layoutMetrics = (width, height, zoom = 1) => {
+  const layout = {pageX: 0, pageY: 0, clientWidth: width, clientHeight: height};
+  const visual = {offsetX: 0, offsetY: 0, pageX: 0, pageY: 0, clientWidth: width, clientHeight: height, scale: 1, zoom};
+  const content = {x: 0, y: 0, width, height};
+  return {layoutViewport: {...layout, clientWidth: width * 2, clientHeight: height * 2},
+    visualViewport: {...visual, clientWidth: width * 2, clientHeight: height * 2}, contentSize: {...content, width: width * 2, height: height * 2},
+    cssLayoutViewport: layout, cssVisualViewport: visual, cssContentSize: content};
+};
+const metricCalls = ext => ext.calls.filter(c => c.params?.method === 'Page.getLayoutMetrics');
+
+for (const [width, height, zoom, scrollbar] of [
+  [1200, 600, 1, 0], [800, 900, 1, 0], [1200, 900, 1.25, 15],
+  [1200, 900, 1, 50], // a page-styled wide scrollbar
+  [1200, 900, 1, 30], // two 15 px classic gutters (scrollbar-gutter: stable both-edges)
+]) {
+  test(`viewport reset waits for a delayed ${width}x${height} layout, zoom ${zoom}, scrollbar ${scrollbar}`, async t => {
+    let restored = false, clearedAt = null, timer;
+    t.after(() => clearTimeout(timer));
+    const {ext, client, session, logs} = setup({cdp: ({method}) => {
+      if (method === 'Emulation.clearDeviceMetricsOverride') {
+        clearedAt = performance.now();
+        timer = setTimeout(() => { restored = true; }, 40);
+      }
+      if (method === 'Page.getLayoutMetrics') return layoutMetrics(((restored ? width : 800) - scrollbar) / zoom, (restored ? height : 600) / zoom, zoom);
+      if (method === 'Page.captureScreenshot') return {data: restored ? 'restored-size' : 'override-size'};
+      return {};
+    }});
+    const a = session(client(), 'sA');
+    const tab = await a.call('createTab');
+    await a.call('attach', {tabId: tab.id});
+    await viewportSet(a, 800, 600);
+    assert.deepEqual(await viewportReset(a), {});
+    assert.equal(restored, true, 'the clear reply alone must not resolve the reset');
+    assert.ok(performance.now() - clearedAt < 900, 'a changed dimension ends the wait, not the deadline');
+    const methods = ext.calls.filter(c => c.method === 'debugger.sendCommand').map(c => c.params.method);
+    assert.deepEqual(methods.slice(1, 4), ['Page.getLayoutMetrics', 'Emulation.clearDeviceMetricsOverride', 'Page.getLayoutMetrics'], 'observe the overridden layout before clearing, then watch for its change');
+    assert.ok(metricCalls(ext).length >= 3, 'the old layout is read again after a delay');
+    assert.deepEqual(await a.call('executeCdp', {target: {tabId: tab.id}, method: 'Page.captureScreenshot'}), {data: 'restored-size'});
+    assert.equal(logs.some(line => line.includes('viewport reset')), false);
+  });
+}
+
+test('viewport reset is bounded when the natural layout equals the observed overridden layout, without claiming restoration failed', async () => {
+  const {ext, client, session, logs} = setup({cdp: ({method}) => method === 'Page.getLayoutMetrics' ? layoutMetrics(750, 600) : {}});
+  const a = session(client(), 'sA');
+  const tab = await a.call('createTab');
+  await a.call('attach', {tabId: tab.id});
+  await viewportSet(a, 800, 600);
+  const started = performance.now();
+  assert.deepEqual(await viewportReset(a), {});
+  const elapsed = performance.now() - started;
+  assert.ok(elapsed >= 950 && elapsed < 2000, `reset must wait at most about one second, took ${elapsed} ms`);
+  assert.ok(metricCalls(ext).length > 1);
+  const diagnostic = logs.find(line => line.includes('viewport reset'));
+  assert.match(diagnostic, /800.*600/);
+  assert.match(diagnostic, /natural size may match/);
+  assert.doesNotMatch(diagnostic, /failed|stuck/i);
+  await a.call('detach', {tabId: tab.id});
+  await a.call('attach', {tabId: tab.id});
+  assert.deepEqual(emulation(ext), [override(tab.id, 800, 600), cleared(tab.id)], 'the override stays cleared even without a distinguishable size');
+});
+
+for (const unavailable of ['missing CSS layout', 'empty reply', 'refused read']) {
+  test(`viewport reset still clears the override with an unavailable baseline (${unavailable})`, async () => {
+    const {ext, client, session, host} = setup({cdp: ({method}) => {
+      if (method === 'Page.getLayoutMetrics') {
+        if (unavailable === 'refused read') throw new Error('Layout metrics unavailable');
+        if (unavailable === 'empty reply') return null;
+      }
+      return {};
+    }});
+    const a = session(client(), 'sA');
+    const tab = await a.call('createTab');
+    await a.call('attach', {tabId: tab.id});
+    await viewportSet(a, 800, 600);
+    assert.deepEqual(await viewportReset(a), {});
+    const methods = ext.calls.filter(c => c.method === 'debugger.sendCommand').map(c => c.params.method);
+    assert.deepEqual(methods, ['Emulation.setDeviceMetricsOverride', 'Page.getLayoutMetrics', 'Emulation.clearDeviceMetricsOverride'], 'a missing baseline prevents comparison, never the clear');
+    assert.equal(host.status().sessions[0].tabs[0].attached, true, 'an ordinary observation failure does not lose the debugger');
+    await a.call('detach', {tabId: tab.id});
+    await a.call('attach', {tabId: tab.id});
+    assert.deepEqual(emulation(ext), [override(tab.id, 800, 600), cleared(tab.id)], 'the unavailable baseline does not preserve the override');
+  });
+}
+
+for (const stage of ['pre-clear', 'post-clear']) {
+  test(`viewport reset bounds an unanswered ${stage} metrics read and ignores a late reply`, async () => {
+    const {ext, client, session, logs} = setup({cdp: ({method}) => {
+      if (method === 'Emulation.clearDeviceMetricsOverride' && stage === 'post-clear') ext.holdCdp('Page.getLayoutMetrics');
+      return method === 'Page.getLayoutMetrics' ? layoutMetrics(750, 600) : {};
+    }});
+    const a = session(client(), 'sA');
+    const tab = await a.call('createTab');
+    await a.call('attach', {tabId: tab.id});
+    await viewportSet(a, 800, 600);
+    if (stage === 'pre-clear') ext.holdCdp('Page.getLayoutMetrics');
+    const started = performance.now();
+    assert.deepEqual(await viewportReset(a), {});
+    const elapsed = performance.now() - started;
+    assert.ok(elapsed >= 950 && elapsed < 2000, `unanswered read must be bounded, took ${elapsed} ms`);
+    assert.deepEqual(emulation(ext), [override(tab.id, 800, 600), cleared(tab.id)], 'even a baseline that never answers cannot prevent the clear');
+    const methods = ext.calls.filter(c => c.method === 'debugger.sendCommand').map(c => c.params.method);
+    assert.deepEqual(methods, ['Emulation.setDeviceMetricsOverride', 'Page.getLayoutMetrics', 'Emulation.clearDeviceMetricsOverride', ...(stage === 'post-clear' ? ['Page.getLayoutMetrics'] : [])]);
+    const count = stage === 'pre-clear' ? 1 : 2;
+    assert.equal(metricCalls(ext).length, count);
+    assert.match(logs.find(line => line.includes('viewport reset')), /Page.getLayoutMetrics.*unanswered/);
+    ext.releaseCdp('Page.getLayoutMetrics', layoutMetrics(750, 600));
+    await new Promise(resolve => setTimeout(resolve, 30));
+    assert.equal(metricCalls(ext).length, count, 'a late read cannot restart polling');
+  });
+}
+
+test('viewport reset without an attached tab clears pending state without reading metrics', async () => {
+  const {ext, client, session} = setup();
+  const a = session(client(), 'sA');
+  await viewportSet(a, 800, 600);
+  assert.deepEqual(await viewportReset(a), {});
+  const tab = await a.call('createTab');
+  await viewportSet(a, 800, 600);
+  assert.deepEqual(await viewportReset(a), {});
+  assert.equal(metricCalls(ext).length, 0);
+  await a.call('attach', {tabId: tab.id});
+  assert.deepEqual(emulation(ext), [], 'neither a pending nor a tab override survives');
+  assert.deepEqual(await viewportReset(a), {});
+  assert.equal(metricCalls(ext).length, 0, 'an attached tab with no override has no old size to wait for');
+});
+
+for (const loseOn of ['pre-clear metrics', 'clear', 'post-clear metrics']) {
+  test(`viewport reset forgets a debugger lost at ${loseOn} and reattaches without the override`, async () => {
+    const {ext, host, client, session} = setup({cdp: ({method, debuggee}) => {
+      if ((method === 'Page.getLayoutMetrics' && loseOn === 'clear') ||
+          (method === 'Emulation.clearDeviceMetricsOverride' && loseOn === 'post-clear metrics')) ext.state.held.delete(`tab:${debuggee.tabId}`);
+      return method === 'Page.getLayoutMetrics' ? layoutMetrics(750, 600) : {};
+    }});
+    const a = session(client(), 'sA');
+    const tab = await a.call('createTab');
+    await a.call('attach', {tabId: tab.id});
+    await viewportSet(a, 800, 600);
+    if (loseOn === 'pre-clear metrics') ext.state.held.delete(`tab:${tab.id}`);
+    assert.deepEqual(await viewportReset(a), {});
+    assert.equal(host.status().sessions[0].tabs[0].attached, false);
+    assert.equal(metricCalls(ext).length, loseOn === 'post-clear metrics' ? 2 : 1);
+    const count = loseOn === 'pre-clear metrics' ? 1 : 2;
+    assert.equal(emulation(ext).length, count, 'a lost debugger already dropped its override; no clear is sent after discovering the loss');
+    await a.call('attach', {tabId: tab.id});
+    assert.equal(ext.state.held.has(`tab:${tab.id}`), true);
+    assert.equal(emulation(ext).length, count, 'reattachment does not reapply the cleared override');
+  });
+}
 
 test('viewport set goes to the session\'s active tab only; frame targets never get it', async () => {
   const {ext, client, session} = setup();

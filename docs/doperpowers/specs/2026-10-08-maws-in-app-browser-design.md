@@ -893,8 +893,12 @@ what S1/S2 measure); Node's `net` for sockets on both sides; no new npm dependen
   person's tab. Child targets: events go as `{debuggee:{tabId}, sessionId}` and, once attached by `targetId`, also as
   `{debuggee:{targetId}}`; an unannounced `sessionId` answers `No session with given id`; `attachToTarget` is forced
   flat and limited to the tab's children. The page target id is the main frame id while attached, else
-  `maws-page-<b_id>`. The pre-release undo runs auto-attach first and is bounded to 1 s; held commands default to a
-  10 s deadline. Tab removal is learned through the view-destroy hook; attaching to a suspended tab loads it; only a
+  `maws-page-<b_id>`. The pre-release undo runs auto-attach first; the host's detach reply waits for it at most 1 s
+  (`RESET_BOUND_MS`), a cleared device-metrics override counts as undone only once `Page.getLayoutMetrics` reads the
+  view's size, and the undo is held per tab in `TabClaims`, so the tab's next lease, from any connection, waits for
+  it up to 2 s (`UNDO_WAIT_MS`) from the letting go; each bound logs what was still out (revised 2026-10-26, Decision
+  Log); held commands default to a 10 s deadline. Tab removal is learned through the view-destroy hook; attaching to
+  a suspended tab loads it; only a
   tab's first view counts as an adopted popup; the session's first tab is still selected by the store when nothing
   else is (nothing else to show). A socket path over 103 bytes is refused and logged (no variable in the launch); only
   sessions known to the index with a live engine get a socket. `CuaBackend` gains `onChange`, `closeSession`,
@@ -1031,6 +1035,18 @@ what S1/S2 measure); Node's `net` for sockets on both sides; no new npm dependen
   Rationale: the filesystem rule admitted every process of the owner's user; the session's path was listable and the
   relay's pid published in `chrome/b/*.json`.
   Date/Author: 2026-10-09, the plan executor (socket peer authentication, M4).
+
+- Decision (2026-10-26, MAWS PR #166, master c2af92b14; MAWS P4 Decision Log 90): the pre-release undo waits for the
+  page's size and for the tab's next lease. Chromium 152 answers `Emulation.clearDeviceMetricsOverride` before the
+  page reads its restored size: in 30-try runs, 8, 1, 5 and 9 reads right after the reply still showed the override's
+  800 (MAWS run 40311614893; maws-app 40311728565, 40312068417, 40312071190), and the page caught up within about
+  80 ms. So a cleared override is undone only once `Page.getLayoutMetrics` reads the view's size; the host's detach
+  reply still waits at most `RESET_BOUND_MS` (1 s); the undo is held per tab in `TabClaims` and the tab's next lease,
+  from any connection, waits for it up to `UNDO_WAIT_MS` (2 s) from the letting go; each bound logs what was still
+  out. Setting an override has no such lag. cua's own `browser_viewport_reset` in the Chrome-route host has the same
+  lag and is tracked on #221.
+  Rationale: a lease that followed the undo could screenshot or act on the old size.
+  Date/Author: 2026-10-26, the design session (cua_repl session 1ea561bc), recording the MAWS architect's change.
 
 ## Outcomes & Retrospective
 

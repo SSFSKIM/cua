@@ -103,3 +103,5 @@ its method are described in `scripts/linux-engine-diff/README.md`.
 - `frontier` returns the vendor's node set exactly on both scenes, with its medians far below the bar;
 - a background `press_key` with session retention keeps the witness unchanged, its effect is verified, and its cold
   and warm medians are below the bar.
+
+The application-family matrix (M0.4), with its per-family capture-readiness, key-pace and Qt runs, is in `matrix/`.

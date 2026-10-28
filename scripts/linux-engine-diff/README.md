@@ -76,6 +76,33 @@ variants included; their evidence is written either way. The run's `end` row kee
   teardown waits, read back in order.
 - `--record-wire`: records the spike's wire fixtures.
 
+## M0.4's additions: the application-family matrix
+
+- `--experiment matrix --family <list>` (`matrix.mjs`, `families.mjs`): per family, the background route's `click`,
+  `press_key` and `type_text`, each request inside a witness span, its effect read back. The pinned and newest
+  vendor builds and `cua` (M0.3's choice) get the clicks and keys, the vendor builds `type_text` (the facade's shape,
+  `{window, text}`), and `cua:none` (no RedirectWindow) the clicks and keys again, to show whether the family needs
+  the redirect. Every engine has its own window of the family and its own process; `--occlusion covered|visible` as
+  for the differential run. It records each family's `Application.ToolkitName` and version, its X11 class, and the
+  tree source both cua-engine and the pinned build answer.
+- **Families** (`families.mjs`): `gedit`, `gnome-text-editor`, `kate`, `qtcreator`, `firefox`, `chrome` (a window of
+  the running Chrome), `electron` (cua's fixture, `scripts/native-matrix/fixtures/electron/`, run by the `electron`
+  dev dependency's Linux build with `--force-renderer-accessibility`), `writer` (gtk3), `writer-gen` (X11 only),
+  `xterm` and `xterm-allow` (`allowSendEvents` on). Each is started as its own process group with scratch settings
+  (a scratch Firefox profile and Writer profile, gnome-text-editor's session directories, qtcreator's settings), on
+  a document or page the harness writes (`pages/matrix.html` for the browsers), and ended with its group.
+- **Effects** are read by the harness itself (`oracle.mjs`, `busctl` on the accessibility bus), not through an
+  engine's tree, where the tree does not carry them: an editor's text and caret (`Text.GetText`, `CaretOffset`), a
+  Writer document's paragraphs, a page's field and its button's label, the Electron fixture's status, what xterm's
+  program received (a recorder with mouse reporting on), and, for Writer without AT-SPI, a change of the window's
+  pixels (`pixels.mjs`). An editor click aims low in the text area, then at its first line, and counts when the
+  caret moved there.
+- `--experiment capture-readiness|key-pace --family <list>`: M0.3's experiments on each family's window, one family
+  at a time; the readiness summary ends with the slowest real contents against the 40 ms wait, the key-pace summary
+  with each window's verdict (`paceVerdict`). `--load` keeps every core busy (stress-ng) for the experiment.
+- `--experiment qt-bridge` (`qt-bridge.mjs`): kate and qtcreator launched under each `org.a11y.Status` condition and
+  with `QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1`, whether each registers and associates; the properties are put back.
+
 ## Files
 
 | File | What it is |
@@ -89,6 +116,7 @@ variants included; their evidence is written either way. The run's `end` row kee
 | `busmon.mjs` | accessibility-bus call counts |
 | `normalize.mjs`, `images.mjs`, `stats.mjs`, `report.mjs` | output and screenshot comparison, medians, verdicts and the exit status, summary.md |
 | `experiments.mjs`, `readiness.mjs` | M0's capture-readiness and key-pace measurements |
+| `matrix.mjs`, `matrix-judge.mjs`, `families.mjs`, `oracle.mjs`, `pixels.mjs`, `qt-bridge.mjs`, `pages/matrix.html` | M0.4's application-family matrix, its families and effect readers, and the Qt bridge check |
 | `wire-check.mjs`, `stub-replay.mjs`, `record-wire.mjs`, `fixtures/wire/` | the wire fixtures |
 | `stub-activating.mjs` | the negative check's stub engine |
 | `pages/` | the Chrome scenes |

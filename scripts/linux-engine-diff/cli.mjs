@@ -1,15 +1,17 @@
 // The command line (Design, Interfaces and Dependencies, "The harness"), with M0's additions: `--variant` (a cua
 // engine with extra flags, one more engine in the rotation), `--run` (a name for the rows a run appends),
 // `--experiment` (the capture-readiness and key-pace measurements), `--record-wire` (the spike's wire fixtures) and
-// `--summarize` (rewrite summary.md from results.jsonl).
+// `--summarize` (rewrite summary.md from results.jsonl); and M0.4's: `--experiment matrix` (the application-family
+// matrix), `--family` (the families an experiment runs on, by name, families.mjs) and `--load` (every core busy
+// during the experiment).
 
 export const USAGE = `usage:
   linux-engine-diff.mjs --check-wire --vendor-js <@oai/sky directory>
   linux-engine-diff.mjs --vendor <bin> --newest <bin> --cua <bin> --scene <list> --ops <list|all> --out <dir>
       [--blocks 3] [--samples-tree 7] [--samples-input 5] [--variant <label>=<cua flags>]... [--run <name>]
       [--occlusion covered|visible] [--no-counts]
-  linux-engine-diff.mjs --experiment capture-readiness|key-pace|input-retention --cua <bin> --out <dir> [--run <name>]
-      [--vendor <bin> --newest <bin>]
+  linux-engine-diff.mjs --experiment capture-readiness|key-pace|matrix|qt-bridge --cua <bin> --out <dir> [--run <name>]
+      [--vendor <bin> --newest <bin>] [--family <list>] [--load] [--samples-input 5] [--samples-text 2]
   linux-engine-diff.mjs --record-wire --cua <bin>
   linux-engine-diff.mjs --summarize --out <dir>`;
 
@@ -24,7 +26,7 @@ const VALUE_FLAGS = {
   '--experiment': 'experiment',
   '--occlusion': 'occlusion',
 };
-const NUMBER_FLAGS = { '--blocks': 'blocks', '--samples-tree': 'samplesTree', '--samples-input': 'samplesInput' };
+const NUMBER_FLAGS = { '--blocks': 'blocks', '--samples-tree': 'samplesTree', '--samples-input': 'samplesInput', '--samples-text': 'samplesText' };
 
 export function parseArgs(argv) {
   const a = {
@@ -32,7 +34,10 @@ export function parseArgs(argv) {
     blocks: 3,
     samplesTree: 7,
     samplesInput: 5,
+    samplesText: 2,
     variants: [],
+    families: [],
+    load: false,
     scenes: [],
     ops: null,
     occlusion: 'covered',
@@ -50,6 +55,8 @@ export function parseArgs(argv) {
     else if (flag === '--record-wire') a.mode = 'record-wire';
     else if (flag === '--summarize') a.mode = 'summarize';
     else if (flag === '--no-counts') a.counts = false;
+    else if (flag === '--load') a.load = true;
+    else if (flag === '--family') a.families = need().split(',').filter(Boolean);
     else if (flag in VALUE_FLAGS) a[VALUE_FLAGS[flag]] = need();
     else if (flag in NUMBER_FLAGS) {
       const n = Number(need());
@@ -74,7 +81,12 @@ export function parseArgs(argv) {
   if (a.mode === 'check-wire') require('vendorJs');
   else if (a.mode === 'record-wire') require('cua');
   else if (a.mode === 'summarize') require('out');
-  else if (a.mode === 'experiment') require('cua', 'out');
+  else if (a.mode === 'experiment') {
+    require('cua', 'out');
+    if (!['capture-readiness', 'key-pace', 'matrix', 'qt-bridge'].includes(a.experiment)) throw new Error(`unknown experiment ${a.experiment}\n${USAGE}`);
+    if (a.experiment === 'matrix') require('vendor', 'newest');
+    if (a.experiment === 'qt-bridge') require('vendor');
+  }
   else {
     require('vendor', 'newest', 'cua', 'out');
     if (a.scenes.length === 0) throw new Error(`--scene is required\n${USAGE}`);

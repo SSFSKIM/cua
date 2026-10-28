@@ -40,7 +40,7 @@ export function a11yBusAddress() {
  * Moves and sizes a harness window, then waits until its geometry reads back as asked. (`xdotool --sync` waits
  * for a change, so it hangs on a window that already has the size.)
  */
-function configure(id, x, y, w, h) {
+export function configure(id, x, y, w, h) {
   xdotool('windowsize', id, w, h);
   xdotool('windowmove', id, x, y);
   const deadline = Date.now() + 3000;
@@ -186,17 +186,33 @@ export class Desktop {
     return { clicks, keys: Number(keys), last, seq: named('seq ').slice(4) };
   }
 
-  async closeAll() {
-    for (const scene of this.windows.reverse()) {
+  /**
+   * Closes some of the harness's windows: Chrome's with WM_DELETE_WINDOW (the browser is the person's), an
+   * application the harness started as its own process group (`group`) by signalling the group, the rest by PID.
+   */
+  async close(scenes) {
+    for (const scene of [...scenes].reverse()) {
       try {
         if (scene.kind === 'chrome') execFileSync(XPROBE, ['close', String(scene.id)]);
+        else if (scene.group) process.kill(-scene.pid, 'SIGTERM');
         else process.kill(scene.pid, 'SIGTERM');
       } catch {
         // already gone
       }
     }
-    this.windows = [];
+    this.windows = this.windows.filter((w) => !scenes.includes(w));
     await sleep(1000);
+    for (const scene of scenes.filter((s) => s.group)) {
+      try {
+        process.kill(-scene.pid, 'SIGKILL');
+      } catch {
+        // the group ended on SIGTERM
+      }
+    }
+  }
+
+  async closeAll() {
+    await this.close(this.windows);
     await this.reader.close();
     rmSync(this.dir, { recursive: true, force: true });
     if (this.previousActive) {

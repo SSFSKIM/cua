@@ -118,6 +118,18 @@ async function pollEffect(desktop, scene, op, input, before) {
   }
 }
 
+/** The negative check: the activate-and-restore stub engine must fail the witness. Returns whether it did. */
+export async function negativeCheck(desktop, witness, stubScene, emit) {
+  const stub = new Engine({ label: 'stub-activating', bin: join(here, 'stub-activating.mjs') }).start();
+  const { value, witness: w } = await witness.span('stub', () => stub.request('press_key', { window: { id: stubScene.id }, key: 'x' }));
+  await stub.close();
+  desktop.focusFront();
+  const failed = !w.clean;
+  emit({ kind: 'stub-check', ok: value.response.ok, witness: w, witness_failed_it: failed, audit: 'M1a' });
+  process.stdout.write(`negative check: the witness ${failed ? 'failed' : 'PASSED'} the activating stub (${w.fields.join(', ') || 'no change'})\n`);
+  return failed;
+}
+
 export async function runDiff(args) {
   const run = args.run ?? `run-${new Date().toISOString().replace(/[-:]/g, '').slice(0, 15)}`;
   mkdirSync(args.out, { recursive: true });
@@ -182,17 +194,7 @@ export async function runDiff(args) {
     witness = await startWitness(XPROBE);
     const busAddress = a11yBusAddress();
 
-    // The negative check: the activate-and-restore stub engine must fail the witness.
-    if (stubScene) {
-      const stub = new Engine({ label: 'stub-activating', bin: join(here, 'stub-activating.mjs') }).start();
-      const { value, witness: w } = await witness.span('stub', () => stub.request('press_key', { window: { id: stubScene.id }, key: 'x' }));
-      await stub.close();
-      desktop.focusFront();
-      const failed = !w.clean;
-      if (!failed) valid = false;
-      emit({ kind: 'stub-check', ok: value.response.ok, witness: w, witness_failed_it: failed, audit: 'M1a' });
-      process.stdout.write(`negative check: the witness ${failed ? 'failed' : 'PASSED'} the activating stub (${w.fields.join(', ') || 'no change'})\n`);
-    }
+    if (stubScene && !(await negativeCheck(desktop, witness, stubScene, emit))) valid = false;
 
     for (let block = 0; block < args.blocks; block++) {
       for (const { scene: sceneName, op } of plan) {

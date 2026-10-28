@@ -496,3 +496,45 @@ Firefox on the matrix page, one window per engine at the same place; the click p
 - xterm: the covered window's final capture differs from the visible one's in 0 of 252160 pixels
 - **the slowest real contents: 53.6 ms after RedirectWindow (writer-gen, covered); against the fixed 40 ms wait the margin is -13.6 ms, over the 30 ms line: the wait must be raised**
 
+## m04-matrix-covered-xterm-r2 (experiment matrix)
+
+| family | ToolkitName | X11 class (instance / class) | tree (nodes) | click pinned / newest / cua | key pinned / newest / cua | type_text pinned / newest | witness | background route | run |
+|---|---|---|---|---|---|---|---|---|---|
+| xterm | none (no AT-SPI provider) | xterm / XTerm | x11 | 5/5 / 5/5 / 5/5 | 0/5 / 0/5 / 0/5 | 0/2 (2 failed) / 0/2 (2 failed) | clean | partial: takes clicks; ignores keys | m04-matrix-covered-xterm-r2 |
+| xterm, allowSendEvents on | none (no AT-SPI provider) | xterm / XTerm | x11 | 0/5 / 0/5 / 0/5 | 5/5 / 5/5 / 5/5 | 0/2 (2 failed) / 0/2 (2 failed) | clean | partial: takes keys; ignores clicks | m04-matrix-covered-xterm-r2 |
+
+Without the redirect (`cua:none`, `--retention none`) beside cua with session retention:
+
+| family | ToolkitName | X11 class (instance / class) | tree (nodes) | click cua / cua:none | key cua / cua:none | type_text  | witness | background route | run |
+|---|---|---|---|---|---|---|---|---|---|
+| xterm | none (no AT-SPI provider) | xterm / XTerm | x11 | 5/5 / 5/5 | 0/5 / 0/5 |  | clean | partial: takes clicks; ignores keys | m04-matrix-covered-xterm-r2 |
+| xterm, allowSendEvents on | none (no AT-SPI provider) | xterm / XTerm | x11 | 0/5 / 0/5 | 5/5 / 5/5 |  | clean | partial: takes keys; ignores clicks | m04-matrix-covered-xterm-r2 |
+
+Families that do not take the background route:
+
+- xterm (xterm / XTerm; no AT-SPI provider): takes clicks; ignores keys (run `m04-matrix-covered-xterm-r2`)
+- xterm, allowSendEvents on (xterm / XTerm; no AT-SPI provider): takes keys; ignores clicks (run `m04-matrix-covered-xterm-r2`)
+
+The run is complete.
+
+## m04-matrix-visible-xterm-r2 (experiment matrix)
+
+| family | ToolkitName | X11 class (instance / class) | tree (nodes) | click pinned / newest / cua | key pinned / newest / cua | type_text pinned / newest | witness | background route | run |
+|---|---|---|---|---|---|---|---|---|---|
+| xterm | none (no AT-SPI provider) | xterm / XTerm | x11 | 5/5 / 5/5 / 5/5 | 0/5 / 0/5 / 0/5 | 0/2 (2 failed) / 0/2 (2 failed) | clean | partial: takes clicks; ignores keys | m04-matrix-visible-xterm-r2 |
+| xterm, allowSendEvents on | none (no AT-SPI provider) | xterm / XTerm | x11 | 0/5 / 0/5 / 0/5 | 5/5 / 5/5 / 5/5 | 0/2 (2 failed) / 0/2 (2 failed) | clean | partial: takes keys; ignores clicks | m04-matrix-visible-xterm-r2 |
+
+Without the redirect (`cua:none`, `--retention none`) beside cua with session retention:
+
+| family | ToolkitName | X11 class (instance / class) | tree (nodes) | click cua / cua:none | key cua / cua:none | type_text  | witness | background route | run |
+|---|---|---|---|---|---|---|---|---|---|
+| xterm | none (no AT-SPI provider) | xterm / XTerm | x11 | 5/5 / 5/5 | 0/5 / 0/5 |  | clean | partial: takes clicks; ignores keys | m04-matrix-visible-xterm-r2 |
+| xterm, allowSendEvents on | none (no AT-SPI provider) | xterm / XTerm | x11 | 0/5 / 0/5 | 5/5 / 5/5 |  | clean | partial: takes keys; ignores clicks | m04-matrix-visible-xterm-r2 |
+
+Families that do not take the background route:
+
+- xterm (xterm / XTerm; no AT-SPI provider): takes clicks; ignores keys (run `m04-matrix-visible-xterm-r2`)
+- xterm, allowSendEvents on (xterm / XTerm; no AT-SPI provider): takes keys; ignores clicks (run `m04-matrix-visible-xterm-r2`)
+
+The run is complete.
+

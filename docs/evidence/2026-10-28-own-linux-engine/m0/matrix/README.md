@@ -22,6 +22,16 @@ M0.3's experiments.
 | `m04-partial-cover` | 855de4e9 | Firefox's clicks with the front window over parts of it (review round 1) |
 | `m04-capture-readiness-loaded-2`, `-3` | 855de4e9 | the loaded readiness run twice more (review round 1) |
 | `m04-capture-readiness-loaded-discarded` | e7eb40b2 | the first loaded run's surviving rows, marked discarded |
+| `m04-matrix-covered-xterm-r2`, `m04-matrix-visible-xterm-r2` | 5713b2b0 | xterm and xterm with `allowSendEvents` again, `type_text` read as UTF-8 (branch review) |
+
+**Branch review (5713b2b0).** The judge was fixed (every engine's window checked for its effect targets, an
+effect that should have been read and was not makes a run incomplete, a page needs its button, terminal text read
+as UTF-8 for `type_text`) and every committed run re-summarized from its rows: no verdict moved, and no vendor
+window had an unreadable cell (the only unread effects are Writer gen's clicks and typed text, unknown by design
+under the pixel reader). The terminal's `type_text` cells could only be settled live, so the two xterm families ran
+again: still 0/2 for both builds on both, covered and visible. The pinned build refuses (no AT-SPI provider), and
+the newest build's Ctrl+V is never followed by a clipboard request (`could not confirm a clipboard read`): xterm
+does not paste on Ctrl+V, so no UTF-8 reached its program.
 
 - Engines: the spike `cua-engine` from source 41c4e1bd (unchanged since), the binary built at f637fcfa (SHA-256
   `cbd185c7…`), run with M0.3's choice (`--window-calls 32 --settle-ms 40 --key-pace-ms 0`, session retention, 100 ms

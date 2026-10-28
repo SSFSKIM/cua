@@ -73,8 +73,9 @@ export function scenarios() {
     { name: 'a bad chord on move, scroll and drag', steps: [{ command: 'move', input: { window: W, x: 10, y: 10, key: 'bogus' } }, { command: 'scroll', input: { window: W, direction: 'down', key: 'bogus' } }, { command: 'drag', input: { window: W, path: [{ x: 10, y: 10 }, { x: 12, y: 12 }], key: 'bogus' } }] },
     // the child destroys itself on its ButtonPress (`xprobe record … fragile`): the request is interrupted, and the
     // window session a held key keeps must still serve the next request in the live parent. Which X request meets
-    // the destroyed child first is a race with the recorder, so the interrupted step is compared as interrupted
-    // (failed, with an X Window error) and its events not at all; the steps after it are compared exactly.
+    // the destroyed child first is a race with the recorder, so the interrupted step must be an interruption in both
+    // lanes (`interruptedStep`): failed with an X Window error after the child received button 1, its events equal
+    // up to that press and the failing request's name free; the steps after it are compared exactly.
     { name: 'an interrupted drag under a held key, then a move', fragile: true, steps: [down('ctrl'), { command: 'drag', input: { window: W, path: [{ x: 450, y: 350 }, { x: 460, y: 360 }] }, interrupted: true }, { command: 'move', input: { window: W, x: 10, y: 10 } }, up('ctrl')] },
     { name: 'an interrupted click under a held key, then a move', fragile: true, steps: [down('ctrl'), { command: 'click', input: { window: W, x: 450, y: 350 }, interrupted: true }, { command: 'move', input: { window: W, x: 10, y: 10 } }, { command: 'click', input: { window: W, x: 10, y: 10 } }, up('ctrl')] },
     { name: 'drag with a chord, and a short path', steps: [{ command: 'drag', input: { window: W, path: [{ x: 10, y: 10 }, { x: 13, y: 14 }], key: 'alt' } }, { command: 'drag', input: { window: W, path: [{ x: 10, y: 10 }] } }] },
@@ -121,10 +122,25 @@ export function bindStep(step, window) {
   return { command: step.command, input };
 }
 
-/** An interrupted step's answer: only that it failed on a window that went away. */
-export function interruptedAnswer(response) {
-  return { ok: response.ok, x_window_error: /error_kind: Window\b/.test(String(response.error)) };
+/** Whether a recorded event is the child's button-1 press, the event on which a fragile recorder destroys it. */
+const childPress = (e) => e.type === 'ButtonPress' && e.window === 'child' && e.detail === 1;
+
+/**
+ * An interrupted step, reduced to what two lanes must share: the answer as its class (failed, an X Window error, the
+ * child pressed with button 1 before it) and the events up to and including that press. What follows the press is
+ * the race with the recorder's destruction, and is kept apart (`suffix`), as is the failing request's name.
+ */
+export function interruptedStep(response, events) {
+  const press = events.findIndex(childPress);
+  return {
+    answer: { ok: response.ok, x_window_error: !response.ok && /error_kind: Window\b/.test(String(response.error)), child_pressed: press >= 0 },
+    events: press >= 0 ? events.slice(0, press + 1) : events,
+    suffix: press >= 0 ? events.slice(press + 1) : [],
+  };
 }
+
+/** The answer an interrupted step must have, in the reference as in the candidate. */
+export const INTERRUPTED = { ok: false, x_window_error: true, child_pressed: true };
 
 /** One engine's answer, reduced to what is compared: success, or the error with the X sequence number masked. */
 export function normalizeAnswer(response) {
@@ -137,6 +153,8 @@ export function firstDifference(reference, candidate) {
   for (let i = 0; i < reference.length; i++) {
     const [a, b] = [reference[i], candidate[i]];
     if (!b) return { step: i, what: 'missing step' };
+    // an interruption scenario proves nothing unless the reference was interrupted as planned
+    if (a.interrupted && JSON.stringify(a.answer) !== JSON.stringify(INTERRUPTED)) return { step: i, what: 'reference not interrupted', reference: a.answer };
     if (JSON.stringify(a.answer) !== JSON.stringify(b.answer)) return { step: i, what: 'answer', reference: a.answer, candidate: b.answer };
     const n = Math.max(a.events.length, b.events.length);
     for (let j = 0; j < n; j++) {
@@ -218,7 +236,7 @@ async function runScenario(scenario, engine, env) {
       const { command, input } = bindStep(step, window);
       const { response } = await process_.request(command, input, { timeoutMs: 30000 });
       const events = await recorder.mark(`step-${i}`);
-      if (step.interrupted) steps.push({ command, answer: interruptedAnswer(response), events: [], raw: { answer: normalizeAnswer(response), events } });
+      if (step.interrupted) steps.push({ command, interrupted: true, ...interruptedStep(response, events), raw: normalizeAnswer(response) });
       else steps.push({ command, answer: normalizeAnswer(response), events });
     }
     await process_.close();

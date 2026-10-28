@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { parseArgs } from '../../scripts/linux-engine-diff/cli.mjs';
-import { bindStep, firstDifference, interruptedAnswer, normalizeAnswer, normalizeEvent, scenarios } from '../../scripts/linux-engine-diff/events.mjs';
+import { bindStep, firstDifference, interruptedStep, normalizeAnswer, normalizeEvent, scenarios } from '../../scripts/linux-engine-diff/events.mjs';
 
 const key = (type, detail, state) => ({ type, send: true, detail, state, window: 'top', x: 0, y: 0, root_x: 0, root_y: 0 });
 
@@ -25,12 +25,45 @@ test('answers compare with X sequence numbers and window ids masked', () => {
   });
 });
 
-test('an interrupted step compares only as failed on a window that went away', () => {
-  const send = { ok: false, error: 'X11 error X11Error { error_kind: Window, error_code: 3, request_name: Some("SendEvent") }' };
-  const translate = { ok: false, error: 'X11 error X11Error { error_kind: Window, error_code: 3, request_name: Some("TranslateCoordinates") }' };
-  assert.deepEqual(interruptedAnswer(send), interruptedAnswer(translate));
-  assert.deepEqual(interruptedAnswer(send), { ok: false, x_window_error: true });
-  assert.notDeepEqual(interruptedAnswer({ ok: true, error: null }), interruptedAnswer(send));
+// ---------------------------------------------------------------------------------------------------------------
+// interrupted steps: a fragile recorder's child destroys itself on its button-1 press
+
+const pointer = (type, window, extra = {}) => ({ type, send: true, detail: 0, state: 4, window, x: 50, y: 50, root_x: 550, root_y: 450, ...extra });
+const PRESSED = [pointer('EnterNotify', 'child', { mode: 0, detail: 3 }), pointer('MotionNotify', 'child'), pointer('ButtonPress', 'child', { detail: 1 })];
+const badWindow = (request) => ({ ok: false, error: `X11 error X11Error { error_kind: Window, error_code: 3, request_name: Some("${request}") }` });
+const ok = { ok: true, output: null };
+const interrupted = (response, events) => ({ interrupted: true, ...interruptedStep(response, events) });
+const after = { answer: ok, events: [pointer('MotionNotify', 'top', { x: 10, y: 10 })] };
+
+test('an interruption may differ only in its racy suffix and the failing request', () => {
+  const reference = [interrupted(badWindow('SendEvent'), PRESSED), after];
+  const candidate = [interrupted(badWindow('TranslateCoordinates'), [...PRESSED, pointer('MotionNotify', 'child', { state: 260 })]), after];
+  assert.equal(firstDifference(reference, candidate), null);
+  assert.equal(candidate[0].suffix.length, 1, 'the race after the press is kept apart');
+});
+
+test('the steps after an interruption are compared exactly', () => {
+  const reference = [interrupted(badWindow('SendEvent'), PRESSED), after];
+  const candidate = [interrupted(badWindow('SendEvent'), PRESSED), { answer: badWindow('TranslateCoordinates'), events: [] }];
+  assert.equal(firstDifference(reference, candidate).step, 1);
+});
+
+test('an interruption with no press of the child is not one', () => {
+  // an unrelated early BadWindow, in both lanes
+  const early = [pointer('EnterNotify', 'child', { mode: 0, detail: 3 })];
+  const lane = () => [interrupted(badWindow('TranslateCoordinates'), early), after];
+  assert.deepEqual(lane()[0].answer, { ok: false, x_window_error: true, child_pressed: false });
+  assert.equal(firstDifference(lane(), lane()).what, 'reference not interrupted');
+  // the reference pressed, the candidate failed before its press
+  assert.equal(firstDifference([interrupted(badWindow('SendEvent'), PRESSED), after], lane()).what, 'answer');
+});
+
+test('a reference that was not interrupted fails the scenario, whatever the candidate did', () => {
+  const lane = () => [interrupted(ok, PRESSED), after];
+  assert.equal(firstDifference(lane(), lane()).what, 'reference not interrupted', 'both succeeding proves nothing');
+  const other = () => [interrupted({ ok: false, error: 'unsupported key=bogus' }, PRESSED), after];
+  assert.equal(firstDifference(other(), other()).what, 'reference not interrupted', 'a failure of another class');
+  assert.equal(firstDifference([interrupted(badWindow('SendEvent'), PRESSED), after], lane()).what, 'answer', 'a candidate that succeeded');
 });
 
 test('the first difference names the step, then the answer or the event', () => {

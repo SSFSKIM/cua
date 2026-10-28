@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>cua171 diff scene</title>
+<style>
+  body { margin: 0; font: 16px sans-serif; }
+  /* an explicit look, so the button reads the same whether or not the real pointer happens to rest over it */
+  #press { position: absolute; left: 0; top: 0; width: 100vw; height: 60vh; font-size: 32px;
+           appearance: none; background: #dddddd; border: 1px solid #888888; color: #000000; }
+  #below { position: absolute; left: 0; top: 62vh; padding: 0 12px; }
+</style>
+</head>
+<body>
+<!-- The differential harness's Chrome scene: a static page whose only changes are the counters below, so two reads
+     of it are identical and an input's effect reads back through the tree. The title comes from the URL's
+     fragment, so every scene window has its own. -->
+<button id="press" type="button">Press</button>
+<div id="below">
+  <h1>cua171 differential scene</h1>
+  <p id="clicks">clicks 0</p>
+  <p id="keys">keys 0 last none</p>
+  <p id="seq">seq </p>
+  <label for="field">Field</label> <input id="field" type="text" value="">
+  <ul><li>one</li><li>two</li><li>three</li></ul>
+</div>
+<script>
+  document.title = decodeURIComponent(location.hash.slice(1)) || document.title;
+  let clicks = 0;
+  let keys = 0;
+  let seq = '';
+  document.getElementById('press').addEventListener('click', () => {
+    document.getElementById('clicks').textContent = `clicks ${++clicks}`;
+  });
+  document.addEventListener('keydown', (e) => {
+    keys += 1;
+    if (e.key === 'Escape') seq = '';
+    else if (e.key.length === 1) seq = (seq + e.key).slice(-80);
+    document.getElementById('keys').textContent = `keys ${keys} last ${e.key}`;
+    document.getElementById('seq').textContent = `seq ${seq}`;
+    e.preventDefault();
+  });
+</script>
+</body>
+</html>

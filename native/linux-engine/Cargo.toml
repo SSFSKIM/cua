@@ -1,0 +1,27 @@
+[package]
+name = "cua-linux-engine"
+# 0.1.0 is M1b's first release (docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md, Interfaces and
+# Dependencies); the M0 spike stays below it.
+version = "0.0.1"
+edition = "2024"
+rust-version = "1.94"
+publish = false
+description = "cua's own Linux native engine (#171): AT-SPI and X11 behind the vendor helper's wire"
+
+[[bin]]
+name = "cua-engine"
+path = "src/main.rs"
+
+# Only crates OpenAI's sky_linux links (R/A §2.2; the owner's 2026-10-28 ruling), at those versions or later
+# compatible releases. The version the vendor shipped is noted beside each.
+[dependencies]
+anyhow = "1.0.102"                                                  # vendor: anyhow 1.0.102
+serde = { version = "1.0.228", features = ["derive"] }              # vendor: serde 1.0.228 (serde_core 1.0.228)
+serde_json = "1.0.149"                                              # vendor: serde_json 1.0.149
+x11rb = { version = "0.13.2", features = ["composite", "xtest", "xfixes", "render"] } # vendor: x11rb 0.13.2
+image = { version = "0.25.10", default-features = false, features = ["jpeg"] }        # vendor: image 0.25.10
+
+[profile.release]
+codegen-units = 1
+lto = true
+panic = "abort"

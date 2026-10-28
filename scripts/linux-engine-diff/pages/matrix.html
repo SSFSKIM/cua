@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>cua171 matrix scene</title>
+<style>
+  body { margin: 0; font: 16px sans-serif; }
+  #press { position: absolute; left: 0; top: 0; width: 100vw; height: 40vh; font-size: 32px;
+           appearance: none; background: #dddddd; border: 1px solid #888888; color: #000000; }
+  #field { position: absolute; left: 12px; top: 44vh; width: 80vw; height: 40vh; font: 16px monospace; }
+</style>
+</head>
+<body>
+<!-- The family matrix's browser scene (Firefox, Chrome): a field that holds the focus, so keys and type_text land in
+     it, and a button whose label counts its clicks, so a click's effect reads back as the button's name in any
+     browser's tree. The button never takes the focus (its mousedown is cancelled), so a click leaves the field
+     focused. The title comes from the URL's fragment, so every scene window has its own. -->
+<button id="press" type="button" tabindex="-1">presses 0</button>
+<textarea id="field" aria-label="Field" autofocus autocomplete="off" spellcheck="false"></textarea>
+<script>
+  document.title = decodeURIComponent(location.hash.slice(1)) || document.title;
+  let presses = 0;
+  const press = document.getElementById('press');
+  press.addEventListener('mousedown', (e) => e.preventDefault());
+  press.addEventListener('click', () => {
+    press.textContent = `presses ${++presses}`;
+  });
+</script>
+</body>
+</html>

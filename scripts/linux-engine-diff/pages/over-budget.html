@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>cua171 diff over-budget</title>
+<style>body { margin: 0; font: 12px sans-serif; } button { margin: 1px; }</style>
+</head>
+<body>
+<!-- The over-budget scene (Design, Observation): far more than the 5,000 elements preorder admission keeps, in a
+     deep branch first (past the depth limit of 63), then a run of moderately wide sections, then one very wide
+     list, so admission ends inside the wide list and every kind of speculation is exercised. No table: the spike
+     has no visible-table path. -->
+<div id="root"></div>
+<script>
+  document.title = decodeURIComponent(location.hash.slice(1)) || document.title;
+  const root = document.getElementById('root');
+  let parent = root;
+  for (let depth = 0; depth < 80; depth++) {
+    const group = document.createElement('div');
+    group.setAttribute('role', 'group');
+    group.setAttribute('aria-label', `deep ${depth}`);
+    const leaf = document.createElement('button');
+    leaf.textContent = `d${depth}`;
+    group.appendChild(leaf);
+    parent.appendChild(group);
+    parent = group;
+  }
+  for (let s = 0; s < 20; s++) {
+    const section = document.createElement('div');
+    section.setAttribute('role', 'group');
+    section.setAttribute('aria-label', `section ${s}`);
+    for (let b = 0; b < 60; b++) {
+      const button = document.createElement('button');
+      button.textContent = `s${s}b${b}`;
+      section.appendChild(button);
+    }
+    root.appendChild(section);
+  }
+  const wide = document.createElement('div');
+  wide.setAttribute('role', 'list');
+  wide.setAttribute('aria-label', 'wide');
+  for (let i = 0; i < 3000; i++) {
+    const item = document.createElement('div');
+    item.setAttribute('role', 'listitem');
+    item.textContent = `item ${i}`;
+    wide.appendChild(item);
+  }
+  root.appendChild(wide);
+</script>
+</body>
+</html>

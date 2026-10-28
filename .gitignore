@@ -31,3 +31,9 @@ hosted-gate-out/
 
 # SwiftPM build output (a `swift test` in the package; the build hash ignores it, src/runtime/engine-bundle.mjs)
 native/engine/.build/
+
+# cargo's build output for the Linux engine (native/linux-engine)
+native/linux-engine/target/
+
+# The differential harness's X client build (scripts/linux-engine-diff/xprobe)
+scripts/linux-engine-diff/xprobe/target/

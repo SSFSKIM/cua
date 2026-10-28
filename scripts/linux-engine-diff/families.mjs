@@ -195,12 +195,13 @@ function writerLaunch(ctx, plugin) {
   };
 }
 
-// The recorder: mouse reporting on, the terminal raw, every byte it receives appended to a file.
-function terminalLaunch(ctx, extra) {
+// The recorder: mouse reporting on, the terminal raw, every byte it receives appended to a file. The file is the
+// script's first argument, never part of its text: its path carries the run's label, which is the caller's.
+export function terminalLaunch(ctx, extra) {
   const record = join(ctx.dir, `${ctx.label}.input`);
   writeFileSync(record, '');
-  const script = `printf '\\033[?1000h'; stty raw -echo; exec cat >> ${JSON.stringify(record)}`;
-  return { cmd: 'xterm', args: ['-T', ctx.label, ...extra, '-e', 'sh', '-c', script], match: (w) => w.title === ctx.label, record };
+  const script = `printf '\\033[?1000h'; stty raw -echo; exec cat >> "$1"`;
+  return { cmd: 'xterm', args: ['-T', ctx.label, ...extra, '-e', 'sh', '-c', script, 'sh', record], match: (w) => w.title === ctx.label, record };
 }
 
 /**
@@ -309,10 +310,14 @@ async function resolveTargets(desktop, oracle, scene) {
   }
 }
 
-/** The family's text: the document, the paragraphs joined, the field, or what the terminal received. */
-export async function readText(desktop, oracle, scene) {
+/**
+ * The family's text: the document, the paragraphs joined, the field, or what the terminal received. A terminal's
+ * bytes are kept one character per byte (a mouse report's coordinates are bytes, not UTF-8), or with `utf8` decoded
+ * as the text a paste delivers.
+ */
+export async function readText(desktop, oracle, scene, { utf8 = false } = {}) {
   try {
-    if (scene.kindOf === 'terminal') return readFileSync(scene.record, 'latin1');
+    if (scene.kindOf === 'terminal') return readFileSync(scene.record, utf8 ? 'utf8' : 'latin1');
     if (scene.kindOf === 'paragraphs') return scene.document ? paragraphs(oracle, scene).map((p) => p.text).join('\n') : null;
     if (!scene.field) return null;
     return oracle.text(scene.field);

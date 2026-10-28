@@ -76,11 +76,13 @@ async function textSeries(ctx, engine, scene, n) {
   const { desktop, oracle, witness, emit, family } = ctx;
   for (let i = 0; i < n; i++) {
     const marker = `cua171 Ωé🙂 ${engine.label}${i}`;
-    const before = await readText(desktop, oracle, scene);
+    // a terminal receives the paste as UTF-8 bytes
+    const read = () => readText(desktop, oracle, scene, { utf8: scene.kindOf === 'terminal' });
+    const before = await read();
     const { value, witness: w } = await witness.span(`${engine.label}:${family}:type_text`, () => engine.request('type_text', { window: { id: scene.id }, text: marker }));
     const ok = value.response.ok === true;
     // judged whatever the answer: a failed answer after an applied paste is the newest build's false error
-    const { verdict } = await poll(() => readText(desktop, oracle, scene), (after) => typedArrived(marker, before, after), ok ? 3000 : 1000);
+    const { verdict } = await poll(read, (after) => typedArrived(marker, before, after), ok ? 3000 : 1000);
     emit({ kind: 'matrix-sample', family, engine: engine.label, op: 'type_text', i, ok, error: ok ? undefined : String(value.response.error).slice(0, 300), ms: Math.round(value.ms * 10) / 10, witness: w.clean, witness_fields: w.clean ? undefined : w.fields, effect: verdict });
   }
 }
@@ -137,6 +139,8 @@ async function clickSeries(ctx, engine, scene, n) {
   }
 }
 
+const targetsOf = (scene) => ({ field: Boolean(scene.field), button: Boolean(scene.button), document: Boolean(scene.document) });
+
 async function identify(desktop, oracle, scene, args) {
   const identity = { wm_class: wmClass(scene.id), source: scene.source, oracle_walk: scene.oracleWalk ?? null, tree_unsettled: Boolean(scene.unsettled) };
   if (scene.frame) Object.assign(identity, oracle.toolkit(scene.frame));
@@ -155,7 +159,7 @@ async function identify(desktop, oracle, scene, args) {
   const { response: p } = await pinned.request('get_window_state', { window: { id: scene.id }, include_screenshot: false });
   await pinned.close();
   identity.source_pinned = p.ok ? p.output.ax_tree_source : `error: ${String(p.error).slice(0, 200)}`;
-  identity.targets = { field: Boolean(scene.field), button: Boolean(scene.button), document: Boolean(scene.document) };
+  identity.targets = targetsOf(scene);
   identity.kindOf = scene.pixels ? 'pixels' : scene.kindOf;
   return identity;
 }
@@ -182,6 +186,8 @@ export async function runMatrix(args, { desktop, emit, run }) {
         desktop.arrangeFront(args.occlusion);
         await sleep(1000);
         const identity = await identify(desktop, oracle, scenes.cua, args);
+        // each engine has its own window: what its effects are read from is checked in every one
+        identity.targets_by_engine = Object.fromEntries(Object.entries(scenes).map(([label, s]) => [label, targetsOf(s)]));
         emit({ kind: 'matrix-identity', family, title: FAMILIES[family].title, occlusion: args.occlusion, ...identity });
         const ctx = { desktop, oracle, witness, emit, family, cua: args.cua, dir: desktop.dir };
         for (const spec of list) {

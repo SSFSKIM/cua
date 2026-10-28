@@ -35,14 +35,23 @@ export const SCENE_OPS = {
 const OWN_WINDOW_OPS = new Set(['tree_shot', 'press_key', 'click']);
 const INPUT_OPS = new Set(['press_key', 'click']);
 
+/**
+ * The plan: each scene's operations that `ops` names. An operation no scene has, a scene none of whose operations is
+ * named, and a plan with nothing in it are refused, so a mistyped or unsupported operation never runs as a pass.
+ */
 export function planOps(scenes, ops) {
+  const known = new Set(Object.values(SCENE_OPS).flat());
+  if (ops !== 'all') for (const op of ops) if (!known.has(op)) throw new Error(`unknown operation ${op}; known: ${[...known].join(', ')}`);
   const plan = [];
   const wanted = (op) => ops === 'all' || ops.includes(op);
   if (wanted('list_windows')) plan.push({ scene: 'desktop', op: 'list_windows' });
   for (const scene of scenes) {
     if (!SCENE_OPS[scene] || scene === 'desktop') throw new Error(`unknown scene ${scene}`);
-    for (const op of SCENE_OPS[scene]) if (wanted(op)) plan.push({ scene, op });
+    const mine = SCENE_OPS[scene].filter(wanted);
+    if (mine.length === 0) throw new Error(`scene ${scene} has none of the operations asked for (it has ${SCENE_OPS[scene].join(', ')})`);
+    for (const op of mine) plan.push({ scene, op });
   }
+  if (plan.length === 0) throw new Error('nothing to run: no scene and no desktop operation');
   return plan;
 }
 

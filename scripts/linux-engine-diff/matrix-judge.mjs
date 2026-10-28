@@ -153,23 +153,50 @@ export function classifyFamily(summary, { engines = ['pinned', 'newest', 'cua'] 
 }
 
 // The objects a family's effects are read from, by how they are read: a run that did not find them cannot judge.
-const NEEDED = { editor: ['field'], paragraphs: ['document'], page: ['field'], button: ['button'], electron: ['field', 'button'], terminal: [], pixels: [] };
+const NEEDED = { editor: ['field'], paragraphs: ['document'], page: ['field', 'button'], button: ['button'], electron: ['field', 'button'], terminal: [], pixels: [] };
+
+/**
+ * Whether a sample's effect was meant to be read: not a key or click the engine refused (nothing was sent to read
+ * back), nor a click or typed text under the pixel reader (a caret move may draw nothing; typed text it cannot see).
+ * A type_text is read back whatever its answer, since a failed answer may follow an applied paste.
+ */
+function readable(sample, pixels) {
+  if (pixels && sample.op !== 'key') return false;
+  return sample.op === 'type_text' || sample.ok === true;
+}
 
 /**
  * Whether a matrix run is complete: every family asked for recorded its identity, found what its effects are read
- * from, and raised no exception while opening, reading or requesting. A vendor's refusal and input a family
- * ignores are outcomes the run records, not failures.
+ * from in every engine's window, read every effect it was meant to, and raised no exception while opening, reading
+ * or requesting. A vendor's refusal and input a family ignores are outcomes the run records, not failures.
  */
 export function matrixOutcome(rows, families) {
   const failed = [];
   for (const family of families) {
     const error = rows.find((r) => r.kind === 'matrix-error' && r.family === family);
     const identity = rows.find((r) => r.kind === 'matrix-identity' && r.family === family);
-    if (error) failed.push(`${family}: ${String(error.error).split('\n')[0]}`);
-    else if (!identity) failed.push(`${family}: no identity recorded`);
-    else {
-      const missing = (NEEDED[identity.kindOf] ?? []).filter((t) => !identity.targets?.[t]);
-      if (missing.length) failed.push(`${family}: its ${missing.join(' and ')} ${missing.length > 1 ? 'were' : 'was'} not found`);
+    if (error) {
+      failed.push(`${family}: ${String(error.error).split('\n')[0]}`);
+      continue;
+    }
+    if (!identity) {
+      failed.push(`${family}: no identity recorded`);
+      continue;
+    }
+    const samples = rows.filter((r) => r.kind === 'matrix-sample' && r.family === family);
+    // rows from before `kindOf` was recorded: the pixel reader marks its samples
+    const pixels = identity.kindOf === 'pixels' || samples.some((r) => r.oracle === 'pixels');
+    const kind = pixels ? 'pixels' : identity.kindOf;
+    const byEngine = identity.targets_by_engine ?? { '': identity.targets };
+    for (const [engine, targets] of Object.entries(byEngine)) {
+      const missing = (NEEDED[kind] ?? []).filter((t) => !targets?.[t]);
+      const whose = engine ? `the ${engine} window's` : 'its';
+      if (missing.length) failed.push(`${family}: ${whose} ${missing.join(' and ')} ${missing.length > 1 ? 'were' : 'was'} not found`);
+    }
+    const unread = samples.filter((r) => r.effect === null && readable(r, pixels));
+    if (unread.length) {
+      const which = [...new Set(unread.map((r) => `${r.engine} ${r.op}`))].join(', ');
+      failed.push(`${family}: ${unread.length} effect${unread.length > 1 ? 's' : ''} could not be read (${which})`);
     }
   }
   return { complete: failed.length === 0, failed };

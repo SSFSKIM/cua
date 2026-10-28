@@ -264,7 +264,6 @@ function gitHead() {
 function startLoad(emit) {
   const cores = availableParallelism();
   const child = spawn('stress-ng', ['--cpu', String(cores), '--cpu-method', 'matrixprod', '--timeout', '3h', '--quiet'], { stdio: 'ignore', detached: true });
-  child.unref();
   const exited = new Promise((resolve) => child.once('exit', resolve));
   emit({ kind: 'load', started: true, cores, pid: child.pid, loadavg_before: loadavg() });
   execFileSync('sleep', ['5']);

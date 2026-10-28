@@ -996,3 +996,57 @@ fn a_table_of_5000_children_or_fewer_is_listed() {
             .any(|(_, f)| matches!(f, Field::AtPoint(..) | Field::Extents))
     );
 }
+
+#[test]
+fn a_table_after_a_large_nested_subtree_scans_with_the_exact_budget() {
+    // A nested earlier subtree of 4,997 nodes leaves the table one cell of budget. The only visible cell is
+    // `/c100`; a hit test past it finds a blank spot. The vendor stops after `/c100` (its budget is spent before
+    // that hit); a scan started on an underestimate of the nodes before the table would make that hit, fail, and
+    // list `/c0` instead.
+    fn grid() -> Grid {
+        let mut g = Grid::uniform((0, 100), (300, 100), (100, 25), 0);
+        g.cells.truncate(1);
+        g.cells[0].0 = "/c100".into();
+        g
+    }
+    let mut objects = with_table(0, 6000, 6000, &grid());
+    let labels: Vec<String> = (0..4987).map(|i| format!("/prefix/label{i}")).collect();
+    for p in &labels {
+        objects.insert(
+            p.clone(),
+            Fake {
+                role: Some("label"),
+                ..Default::default()
+            },
+        );
+    }
+    for i in 0..10 {
+        objects.insert(
+            format!("/prefix{i}"),
+            Fake {
+                role: Some("panel"),
+                children: if i == 9 {
+                    labels.clone()
+                } else {
+                    vec![format!("/prefix{}", i + 1)]
+                },
+                ..Default::default()
+            },
+        );
+    }
+    objects.get_mut("/0").unwrap().children.insert(0, "/prefix0".into());
+    let (expected, _) = vendor(objects.clone(), Some(grid()));
+    let expected = expected.unwrap();
+    let cells = &table_node(&expected).children;
+    assert_eq!(cells.len(), 1);
+    assert_eq!(
+        (cells[0].id.as_str(), cells[0].value.as_deref()),
+        (":1.2:/c100", Some("text 100"))
+    );
+    for window in [WINDOW, Window { calls: 64, ..WINDOW }, Window { calls: 4, ..WINDOW }] {
+        let mut bus = FakeBus::new(objects.clone(), window).with_grid(grid());
+        let (got, stats) = read(&mut bus, &root(), window).unwrap();
+        assert_eq!(got.as_ref(), Some(&expected), "W {}", window.calls);
+        assert_eq!((stats.tables_sampled, stats.tables_listed), (1, 0));
+    }
+}

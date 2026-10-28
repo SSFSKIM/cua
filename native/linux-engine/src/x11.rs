@@ -456,9 +456,79 @@ impl X11 {
     }
 
     pub fn note_event(&mut self, event: Event) {
-        if let Event::DestroyNotify(e) = event {
+        if let Event::DestroyNotify(e) = &event {
             self.retained.remove(&e.window);
         }
+        self.readiness.note(&event);
+    }
+
+    /// Whether `window` is fully unobscured now (`cover.rs`); any X error is doubt, and doubt is obscured.
+    fn fully_unobscured(&self, window: Window, geometry: &GetGeometryReply) -> bool {
+        self.cover(window, geometry)
+            .map(|(rect, levels)| crate::cover::fully_unobscured(rect, &levels))
+            .unwrap_or(false)
+    }
+
+    /// The window's rectangle in root coordinates and its ancestry's stacking, from its parent up to the root.
+    fn cover(
+        &self,
+        window: Window,
+        geometry: &GetGeometryReply,
+    ) -> Result<(crate::cover::Rect, Vec<crate::cover::Level>)> {
+        use crate::cover::{Above, Level, Rect};
+        let origin = self.conn.translate_coordinates(window, self.root, 0, 0)?.reply()?;
+        let rect = Rect {
+            x: origin.dst_x as i32,
+            y: origin.dst_y as i32,
+            w: geometry.width as i32,
+            h: geometry.height as i32,
+        };
+        let mut levels = Vec::new();
+        let mut current = window;
+        while current != self.root {
+            let parent = self.conn.query_tree(current)?.reply()?.parent;
+            let siblings = self.conn.query_tree(parent)?.reply()?.children;
+            let position = siblings
+                .iter()
+                .position(|w| *w == current)
+                .ok_or_else(|| anyhow!("window {current} is not among its parent's children"))?;
+            let above = &siblings[position + 1..];
+            let parent_geometry = self.conn.get_geometry(parent)?;
+            let parent_origin = self.conn.translate_coordinates(parent, self.root, 0, 0)?;
+            let pending: Vec<_> = above
+                .iter()
+                .map(|&w| Ok((self.conn.get_window_attributes(w)?, self.conn.get_geometry(w)?)))
+                .collect::<Result<_>>()?;
+            let parent_geometry = parent_geometry.reply()?;
+            let parent_origin = parent_origin.reply()?;
+            let (px, py) = (parent_origin.dst_x as i32, parent_origin.dst_y as i32);
+            let mut level = Level {
+                clip: Rect {
+                    x: px,
+                    y: py,
+                    w: parent_geometry.width as i32,
+                    h: parent_geometry.height as i32,
+                },
+                above: Vec::with_capacity(pending.len()),
+            };
+            for (attributes, geometry) in pending {
+                let (attributes, g) = (attributes.reply()?, geometry.reply()?);
+                let border = 2 * g.border_width as i32;
+                level.above.push(Above {
+                    rect: Rect {
+                        x: px + g.x as i32,
+                        y: py + g.y as i32,
+                        w: g.width as i32 + border,
+                        h: g.height as i32 + border,
+                    },
+                    viewable: attributes.map_state == MapState::VIEWABLE,
+                    input_only: attributes.class == WindowClass::INPUT_ONLY,
+                });
+            }
+            levels.push(level);
+            current = parent;
+        }
+        Ok((rect, levels))
     }
 
     /// Makes `window`'s contents available offscreen, as `retention` says: redirected through Composite, the
@@ -474,7 +544,9 @@ impl X11 {
             Retention::Session if self.retained.contains(&window) => Ok((false, false)),
             mode => {
                 self.ensure_composite()?;
-                self.readiness.watch(window)?;
+                let geometry = self.conn.get_geometry(window)?.reply()?;
+                let unobscured = self.fully_unobscured(window, &geometry);
+                self.readiness.watch(window, (geometry.width, geometry.height))?;
                 let redirect = self
                     .conn
                     .composite_redirect_window(window, Redirect::AUTOMATIC)
@@ -486,7 +558,7 @@ impl X11 {
                     self.readiness.forget(window);
                     return Err(error);
                 }
-                self.readiness.redirected(window)?;
+                self.readiness.redirected(window, unobscured)?;
                 if mode == Retention::Session {
                     // Our own event selection on the window, so its destruction ends the retention record.
                     let aux = ChangeWindowAttributesAux::new().event_mask(EventMask::STRUCTURE_NOTIFY);

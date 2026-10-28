@@ -209,6 +209,7 @@ impl Engine {
                     json!({
                         "wait_ms": ms(w.waited),
                         "reason": w.reason.name(),
+                        "unobscured": w.unobscured,
                         "damage_ignored": w.ignored,
                         "damage_counted": w.counted,
                         "first_damage_ms": w.first.map(ms),

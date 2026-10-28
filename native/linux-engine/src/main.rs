@@ -5,6 +5,7 @@
 mod apps;
 mod atspi;
 mod capture;
+mod cover;
 mod dbus;
 mod engine;
 mod input;

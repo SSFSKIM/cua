@@ -587,10 +587,11 @@ impl Frontier {
         }
     }
 
-    /// Starts the scan of a table once its child count, interfaces and states are in, with the cells admission
-    /// could still take after the `before` nodes known to precede it (an upper bound: unknown subtrees only add
-    /// to `before`, and a larger budget finds the same cells first).
-    /// True when the scan concluded at once (a budget of nothing, or a precondition that failed).
+    /// Starts the scan of a table once its child count, interfaces and states are in and the `before` nodes that
+    /// precede it in preorder are exactly known, with the cells admission can still take after them. The budget
+    /// must be exact, not an upper bound: a hit test the vendor never makes (past its budget) can fail, and a
+    /// failed scan lists the children instead of keeping the cells found. True when the scan concluded at once (a
+    /// budget of nothing, or a precondition that failed).
     fn start_sampling(node: &mut Pending, before: u32) -> bool {
         if node.sampling.is_some() || !node.data.samples(node.leaf) {
             return false;
@@ -642,7 +643,8 @@ impl Frontier {
                 }
                 continue;
             }
-            if Self::start_sampling(&mut self.nodes[index], count) {
+            // `count` is exact while nothing before this node is uncertain.
+            if !uncertain && Self::start_sampling(&mut self.nodes[index], count) {
                 self.settle(index);
             }
             count += 1;

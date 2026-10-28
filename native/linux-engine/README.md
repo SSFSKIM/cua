@@ -33,7 +33,8 @@ cargo test
 - **Screenshots** (`x11.rs`, `capture.rs`, `readiness.rs`): a window's own drawable while it is retained through
   Composite, the desktop from the root, JPEG quality 80, 4:4:4. A capture of a freshly redirected (or resized, or
   remapped) window waits for the DAMAGE rule: the first damage on the new pixmap, then 10 ms with no more, capped at
-  150 ms. Damage events are read on a second X connection by a thread of their own.
+  150 ms; a window fully unobscured at the redirect (`cover.rs`) needs no first damage, only the 10 ms quiet.
+  Damage and structure events are read on a second X connection by a thread of their own.
 - **Applications** (`apps.rs`): the XDG desktop entries, filtered and matched to the listed windows as the vendor
   does.
 

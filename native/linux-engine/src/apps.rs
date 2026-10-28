@@ -235,6 +235,38 @@ pub fn expand_exec(id: &str, exec: &str, name: &str, icon: Option<&str>, path: &
     Ok(argv)
 }
 
+/// The entry `launch_app` starts (behaviour §15): `app` trimmed, then the first entry in discovery order whose id,
+/// name or id without `.desktop` equals it ASCII case-insensitively.
+pub fn find_launchable<'e>(entries: &'e [Entry], app: &str) -> Result<&'e Entry, String> {
+    let app = app.trim();
+    if app.is_empty() {
+        return Err("app must be a non-empty string".into());
+    }
+    entries
+        .iter()
+        .find(|e| {
+            let stem = e.id.strip_suffix(".desktop").unwrap_or(&e.id);
+            [e.id.as_str(), e.name.as_str(), stem]
+                .iter()
+                .any(|n| n.eq_ignore_ascii_case(app))
+        })
+        .ok_or_else(|| format!("launchable application {app:?} was not found"))
+}
+
+/// Starts the entry's program with its arguments, its standard streams on `/dev/null`, in the engine's directory and
+/// environment, reaped by a detached thread; the answer does not wait for it.
+pub fn launch(entry: &Entry) -> std::io::Result<()> {
+    use std::process::{Command, Stdio};
+    let mut child = Command::new(&entry.argv[0])
+        .args(&entry.argv[1..])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()?;
+    std::thread::spawn(move || child.wait());
+    Ok(())
+}
+
 /// `list_apps`: every entry with the listed windows whose `app` equals, ASCII case-insensitively, its
 /// `StartupWMClass`, its name, its id without `.desktop`, or that stem's last `.`-segment, each window's `app`
 /// replaced by the entry's id; stably sorted by the ASCII-lowercased name. A window may belong to several
@@ -395,6 +427,35 @@ mod tests {
         let entries = discover(&[t.root.join("r")], None);
         assert_eq!(entries[0].id, "z.desktop");
         assert_eq!(entries[1].id, "a-a.desktop");
+    }
+
+    #[test]
+    fn launch_finds_the_first_entry_by_id_name_or_stem_ignoring_case() {
+        let entry = |id: &str, name: &str| Entry {
+            id: id.into(),
+            name: name.into(),
+            argv: vec!["/bin/true".into()],
+            startup_wm_class: None,
+            path: PathBuf::from(format!("/apps/{id}")),
+        };
+        let entries = [
+            entry("org.gnome.gedit.desktop", "Text Editor"),
+            entry("editor.desktop", "text editor"),
+        ];
+        let found = |app: &str| find_launchable(&entries, app).map(|e| e.id.as_str());
+        assert_eq!(found("ORG.GNOME.GEDIT.DESKTOP"), Ok("org.gnome.gedit.desktop"));
+        assert_eq!(found("org.gnome.gedit"), Ok("org.gnome.gedit.desktop"));
+        assert_eq!(
+            found("TEXT EDITOR"),
+            Ok("org.gnome.gedit.desktop"),
+            "the first in discovery order"
+        );
+        assert_eq!(found("  editor  "), Ok("editor.desktop"), "trimmed");
+        assert_eq!(
+            found("gedit"),
+            Err(r#"launchable application "gedit" was not found"#.into())
+        );
+        assert_eq!(found(" \t"), Err("app must be a non-empty string".into()));
     }
 
     #[test]

@@ -9,8 +9,9 @@ import { createInterface } from 'node:readline';
 const now = () => Number(process.hrtime.bigint()) / 1e6;
 
 export class Engine {
-  constructor({ label, bin, args = [], stats = false }) {
+  constructor({ label, bin, args = [], stats = false, env }) {
     this.label = label;
+    this.env = env;
     this.bin = bin;
     this.args = args;
     this.statsWanted = stats;
@@ -23,7 +24,7 @@ export class Engine {
   start() {
     this.spawnedAt = now();
     const args = ['server', ...this.args, ...(this.statsWanted ? ['--stats'] : [])];
-    this.child = spawn(this.bin, args, { stdio: ['pipe', 'pipe', 'pipe'] });
+    this.child = spawn(this.bin, args, { stdio: ['pipe', 'pipe', 'pipe'], ...(this.env ? { env: this.env } : {}) });
     this.pid = this.child.pid;
     this.exited = new Promise((resolve) => this.child.once('exit', (code, signal) => resolve({ code, signal })));
     createInterface({ input: this.child.stdout }).on('line', (line) => {

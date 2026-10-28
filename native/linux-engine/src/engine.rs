@@ -1,21 +1,26 @@
-//! The request dispatcher: one request at a time, in arrival order (Design, Process model).
+//! The request dispatcher: one request at a time, in arrival order (Design, Process model). Observation lives here;
+//! input is in the child modules: keys (`keyboard`), the pointer (`pointer`), element actions (`elements`) and the
+//! window and application requests (`windows`).
+
+mod elements;
+mod keyboard;
+mod pointer;
+mod windows;
 
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Result, anyhow};
 use serde_json::{Value, json};
 
 use crate::apps;
 use crate::atspi::{self, Association};
 use crate::dbus::{Broken, Bus, BusStats};
-use crate::input::{Pacing, chord_keycodes, with_session};
+use crate::input::Pacing;
 use crate::readiness::CaptureWait;
-use crate::resolve;
-use crate::tree::{self, ObjRef};
-use crate::wire::{
-    self, ClickInput, GetWindowStateInput, MouseButton, NoInput, PressKeyInput, Request, Response, parse_input,
-};
+use crate::route::Inputs;
+use crate::tree;
+use crate::wire::{self, GetWindowStateInput, NoInput, Request, Response, parse_input};
 use crate::x11::{Retention, X11};
 
 #[derive(Debug, Clone)]
@@ -37,10 +42,9 @@ pub struct Engine {
     shot_dir: Option<PathBuf>,
     bus_stats: BusStats,
     extra: serde_json::Map<String, Value>,
+    /// Held keys, their sessions and the desktop's keys, across requests.
+    inputs: Inputs,
 }
-
-/// The click hold when `duration` is absent (behaviour §10.1).
-const CLICK_HOLD: Duration = Duration::from_millis(12);
 
 fn merge(into: &mut BusStats, from: BusStats) {
     into.calls += from.calls;
@@ -55,14 +59,11 @@ fn merge(into: &mut BusStats, from: BusStats) {
     }
 }
 
-fn desktop_unavailable(command: &str) -> anyhow::Error {
-    anyhow!("{command} without a window (the desktop route) is not available in this engine build")
-}
-
 impl Engine {
     pub fn new(cfg: Config) -> Result<Engine> {
         let x = X11::connect(cfg.retention, cfg.settle, cfg.capture_wait)?;
         Ok(Engine {
+            inputs: Inputs::new(cfg.pacing),
             cfg,
             x,
             bus: None,
@@ -81,7 +82,17 @@ impl Engine {
             "get_screenshot" => self.get_screenshot(request.input),
             "get_window_state" => self.get_window_state(request.input),
             "press_key" => self.press_key(request.input),
+            "key_down" => self.key_down(request.input),
+            "key_up" => self.key_up(request.input),
             "click" => self.click(request.input),
+            "move" => self.move_pointer(request.input),
+            "move_relative" => self.move_relative(request.input),
+            "scroll" => self.scroll(request.input),
+            "drag" => self.drag(request.input),
+            "drag_handle" => self.drag_handle(request.input),
+            "perform_secondary_action" => self.perform_secondary_action(request.input),
+            "activate_window" => self.activate_window(request.input),
+            "launch_app" => self.launch_app(request.input),
             "server" => Err(anyhow!("server command cannot be nested")),
             command if wire::COMMANDS.contains(&command) => Err(anyhow!(wire::not_available(command))),
             command => Err(anyhow!("unknown command `{command}`")),
@@ -259,223 +270,13 @@ impl Engine {
         Ok(dir)
     }
 
-    /// Removes the screenshot directory at orderly exit.
+    /// The orderly exit: every key still held released and every open input session closed, then the screenshot
+    /// directory removed.
     pub fn shutdown(&mut self) {
+        self.inputs.release_everything(&mut self.x);
+        let _ = self.x.flush();
         if let Some(dir) = self.shot_dir.take() {
             let _ = std::fs::remove_dir_all(dir);
         }
     }
-
-    fn press_key(&mut self, input: Option<Value>) -> Result<Value> {
-        let input: PressKeyInput = parse_input(input)?;
-        let Some(window) = input.window else {
-            return Err(desktop_unavailable("press_key"));
-        };
-        let pacing = self.cfg.pacing;
-        with_session(&mut self.x, window.id, pacing, |x, session| {
-            let keycodes = chord_keycodes(x, &input.key)?;
-            if keycodes.is_empty() {
-                bail!("key must be a non-empty string");
-            }
-            let held = session.acquire(x, &keycodes)?;
-            if let Some(duration) = input.duration {
-                std::thread::sleep(Duration::from_millis(duration).saturating_sub(pacing.key));
-            }
-            session.release(x, &held)?;
-            Ok(Value::Null)
-        })
-    }
-
-    fn click(&mut self, input: Option<Value>) -> Result<Value> {
-        let input: ClickInput = parse_input(input)?;
-        let keycodes = match &input.key {
-            Some(key) => chord_keycodes(&self.x, key)?,
-            None => Vec::new(),
-        };
-        if let Some(element) = &input.element_id {
-            let Some(window) = input.window else {
-                bail!("element click requires window")
-            };
-            if input.x.is_some() || input.y.is_some() {
-                bail!("provide element_id or x/y, not both");
-            }
-            let button = input.mouse_button.unwrap_or(MouseButton::Left);
-            if button == MouseButton::Middle
-                || input.click_count.is_some_and(|c| c != 1)
-                || input.key.is_some()
-                || input.duration.is_some()
-            {
-                bail!(
-                    "element click supports one left or right click without key or duration; use coordinates for other mouse options"
-                );
-            }
-            return self.element_click(window.id, element, button);
-        }
-        let (cx, cy) = match (input.x, input.y) {
-            (Some(x), Some(y)) => (x, y),
-            (None, None) if input.window.is_some() => bail!("window click requires coordinates or an element"),
-            (None, None) => return Err(desktop_unavailable("click")),
-            _ => bail!("coordinate click requires both x and y"),
-        };
-        let Some(window) = input.window else {
-            return Err(desktop_unavailable("click"));
-        };
-        let button = input.mouse_button.unwrap_or(MouseButton::Left).button();
-        let count = input.click_count.unwrap_or(1);
-        let hold = input.duration.map(Duration::from_millis).unwrap_or(CLICK_HOLD);
-        with_session(&mut self.x, window.id, self.cfg.pacing, |x, session| {
-            let (rx, ry) = x.desktop_position(window.id, cx, cy)?;
-            session.move_to(x, rx, ry)?;
-            for _ in 0..count {
-                let held = session.acquire(x, &keycodes)?;
-                let pressed = session
-                    .move_to(x, rx, ry)
-                    .and_then(|()| session.button(x, button, true));
-                if pressed.is_ok() {
-                    std::thread::sleep(hold);
-                }
-                let released = pressed.and_then(|()| session.button(x, button, false));
-                let keys_released = session.release(x, &held);
-                released?;
-                keys_released?;
-            }
-            Ok(Value::Null)
-        })
-    }
-
-    fn element_click(&mut self, window: u32, element: &str, button: MouseButton) -> Result<Value> {
-        if element.starts_with("x11:") {
-            bail!("element actions require AT-SPI; X11 fallback IDs only identify windows");
-        }
-        let info = self.x.get_window(window)?;
-        let pacing = self.cfg.pacing;
-        let resolved = self.with_bus(|bus, x| {
-            let frame = match atspi::associate(bus, x, &info)? {
-                Association::Frame(frame) => frame,
-                Association::NoMatch => return Ok(Err("window has no AT-SPI accessibility tree".to_string())),
-                Association::Refused(sentence) => return Ok(Err(sentence)),
-            };
-            resolve::element(bus, &frame, element)
-        });
-        let (target, ancestors) = match resolved {
-            Ok(Ok(found)) => found,
-            Ok(Err(sentence)) => bail!(sentence),
-            // No address is `AT-SPI accessibility bus is unavailable` (from `bus_address`); a connection's own
-            // errors propagate, as the vendor's do (behaviour §6.2 step 3).
-            Err(error) => return Err(error),
-        };
-        let Engine { x, bus, .. } = self;
-        let bus = bus
-            .as_mut()
-            .ok_or_else(|| anyhow!("AT-SPI accessibility bus is unavailable"))?;
-        match button {
-            MouseButton::Right => {
-                let first = right_click(x, bus, &info, &target, &ancestors, pacing);
-                match first {
-                    Ok(()) => Ok(Value::Null),
-                    Err(RightClick::Click(error)) => Err(error),
-                    Err(RightClick::Point(error)) => {
-                        // The fallback: exactly one action named showContextMenu (behaviour §7.2).
-                        let Ok(names) = atspi::action_names(bus, &target)? else {
-                            return Err(error);
-                        };
-                        let matches: Vec<usize> = names
-                            .iter()
-                            .enumerate()
-                            .filter(|(_, n)| n.eq_ignore_ascii_case("showcontextmenu"))
-                            .map(|(i, _)| i)
-                            .collect();
-                        let [index] = matches.as_slice() else { return Err(error) };
-                        with_session(x, window, pacing, |_, _| {
-                            atspi::do_action(bus, &target, *index as u32)?.map_err(anyhow::Error::msg)
-                        })?;
-                        Ok(Value::Null)
-                    }
-                }
-            }
-            _ => {
-                let names = atspi::action_names(bus, &target)?.map_err(anyhow::Error::msg)?;
-                if names.is_empty() {
-                    bail!("element has no primary accessibility action");
-                }
-                with_session(x, window, pacing, |_, _| {
-                    atspi::do_action(bus, &target, 0)?.map_err(anyhow::Error::msg)
-                })?;
-                Ok(Value::Null)
-            }
-        }
-    }
-}
-
-enum RightClick {
-    /// Finding the point failed: the context-menu action may stand in.
-    Point(anyhow::Error),
-    /// The click itself failed: no fallback.
-    Click(anyhow::Error),
-}
-
-/// A right click at the element's visible point, clipped by the window and by every `viewport` and
-/// `scroll pane` ancestor (behaviour §7.2).
-fn right_click(
-    x: &mut X11,
-    bus: &mut Bus,
-    info: &crate::x11::WindowInfo,
-    target: &ObjRef,
-    ancestors: &[ObjRef],
-    pacing: Pacing,
-) -> std::result::Result<(), RightClick> {
-    // The session opens first and the point is found inside it, as the vendor orders them; a failure to find the
-    // point closes it like any other error.
-    let mut point_failed = false;
-    let result = with_session(x, info.id, pacing, |x, session| {
-        let (rx, ry) = visible_point(bus, info, target, ancestors).inspect_err(|_| point_failed = true)?;
-        session.move_to(x, rx, ry)?;
-        session.button(x, 3, true)?;
-        std::thread::sleep(CLICK_HOLD);
-        session.button(x, 3, false)
-    });
-    result.map_err(|error| {
-        if point_failed {
-            RightClick::Point(error)
-        } else {
-            RightClick::Click(error)
-        }
-    })
-}
-
-/// The centre of the element's extents clipped by the window and by every `viewport` and `scroll pane`
-/// ancestor, in root coordinates (behaviour §7.2 steps 2–3).
-fn visible_point(
-    bus: &mut Bus,
-    info: &crate::x11::WindowInfo,
-    target: &ObjRef,
-    ancestors: &[ObjRef],
-) -> Result<(i16, i16)> {
-    let states = atspi::state_words(bus, target)?.unwrap_or_default();
-    if !(states.contains(&"showing") && states.contains(&"visible")) {
-        bail!("element is not visible; scroll it into view before right-clicking");
-    }
-    let (mut x0, mut y0, mut x1, mut y1) = atspi::extents(bus, target)?.map_err(anyhow::Error::msg)?;
-    let (wx, wy) = (info.x as i32, info.y as i32);
-    x0 = x0.max(wx);
-    y0 = y0.max(wy);
-    x1 = x1.min(wx + info.width as i32);
-    y1 = y1.min(wy + info.height as i32);
-    for ancestor in ancestors {
-        let role = atspi::role_name(bus, ancestor)?.ok_or_else(|| anyhow!("AT-SPI ancestor did not return a role"))?;
-        if (role == "viewport" || role == "scroll pane")
-            && let Ok((ax0, ay0, ax1, ay1)) = atspi::extents(bus, ancestor)?
-        {
-            x0 = x0.max(ax0);
-            y0 = y0.max(ay0);
-            x1 = x1.min(ax1);
-            y1 = y1.min(ay1);
-        }
-    }
-    if x1 <= x0 || y1 <= y0 {
-        bail!("element has no visible bounds in this window");
-    }
-    let (cx, cy) = (x0 + (x1 - x0) / 2, y0 + (y1 - y0) / 2);
-    let convert = |v: i32| i16::try_from(v).map_err(|_| anyhow!("out of range integral type conversion attempted"));
-    Ok((convert(cx)?, convert(cy)?))
 }

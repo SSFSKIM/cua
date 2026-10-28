@@ -136,12 +136,20 @@ impl Keys {
         first.map_or(Ok(()), Err)
     }
 
-    /// Every key still held, in reverse press order, with the bookkeeping cleared.
-    pub fn drain(&mut self) -> Vec<u8> {
-        let mut keys = std::mem::take(&mut self.press_order);
-        keys.reverse();
+    /// The keys held, in the order they were pressed.
+    pub fn press_order(&self) -> &[u8] {
+        &self.press_order
+    }
+
+    /// The cleanup: every key still held is released once, in reverse press order, each with the state as it is
+    /// before its own release (so it carries itself, as a normal release does); send errors are dropped (the
+    /// request has already answered) and the bookkeeping ends clear.
+    pub fn release_all(&mut self, mut unpress: impl FnMut(u8, u16) -> Result<()>) {
+        while let Some(keycode) = self.press_order.pop() {
+            let _ = unpress(keycode, self.mask());
+            self.held.remove(&keycode);
+        }
         self.held.clear();
-        keys
     }
 }
 
@@ -258,16 +266,9 @@ impl Session {
     /// with any release error), the teardown wait, FocusOut unless the real focus has since entered the target,
     /// and the per-request unredirect.
     pub fn close(mut self, x: &mut X11) {
-        for keycode in self.keys.drain() {
-            let _ = send_key(
-                x,
-                self.target,
-                self.now(),
-                keycode,
-                false,
-                self.buttons | self.keys.mask(),
-            );
-        }
+        let (target, buttons, time) = (self.target, self.buttons, self.clock());
+        self.keys
+            .release_all(|keycode, mask| send_key(x, target, time(), keycode, false, buttons | mask));
         for button in 1..=3u8 {
             if self.buttons & (1 << (button + 7)) != 0 {
                 let _ = self.button(x, button, false);
@@ -292,7 +293,13 @@ impl Session {
     }
 
     fn now(&self) -> u32 {
-        self.anchor_time.wrapping_add(self.anchor.elapsed().as_millis() as u32)
+        self.clock()()
+    }
+
+    /// The server time now, as a closure that borrows nothing of the session.
+    fn clock(&self) -> impl Fn() -> u32 + use<> {
+        let (anchor_time, anchor) = (self.anchor_time, self.anchor);
+        move || anchor_time.wrapping_add(anchor.elapsed().as_millis() as u32)
     }
 
     /// The held-button mask and the modifier masks of the keys held for this target, before an event updates
@@ -301,16 +308,14 @@ impl Session {
         self.buttons | self.keys.mask()
     }
 
+    /// Whether the keycode is still counted as held for this window.
+    pub fn holds_key(&self, keycode: u8) -> bool {
+        self.keys.press_order().contains(&keycode)
+    }
+
     /// Presses each keycode not already held, in order, pacing after each new edge (behaviour §11.3).
     pub fn acquire(&mut self, x: &X11, keycodes: &[u8]) -> Result<Vec<u8>> {
-        let (target, anchor_time, anchor, buttons, pace) = (
-            self.target,
-            self.anchor_time,
-            self.anchor,
-            self.buttons,
-            self.pacing.key,
-        );
-        let time = move || anchor_time.wrapping_add(anchor.elapsed().as_millis() as u32);
+        let (target, buttons, pace, time) = (self.target, self.buttons, self.pacing.key, self.clock());
         self.keys.acquire(
             keycodes,
             |keycode, mask| {
@@ -329,14 +334,7 @@ impl Session {
     /// Releases in reverse press order, pacing after each edge; every release is attempted and the first failure
     /// is returned, so interrupted input never answers success.
     pub fn release(&mut self, x: &X11, keycodes: &[u8]) -> Result<()> {
-        let (target, anchor_time, anchor, buttons, pace) = (
-            self.target,
-            self.anchor_time,
-            self.anchor,
-            self.buttons,
-            self.pacing.key,
-        );
-        let time = move || anchor_time.wrapping_add(anchor.elapsed().as_millis() as u32);
+        let (target, buttons, pace, time) = (self.target, self.buttons, self.pacing.key, self.clock());
         self.keys.release(keycodes, |keycode, mask| {
             let sent = send_key(x, target, time(), keycode, false, buttons | mask);
             std::thread::sleep(pace);
@@ -518,19 +516,6 @@ fn send_key(x: &X11, target: Window, time: u32, keycode: u8, press: bool, state:
     Ok(())
 }
 
-/// Runs `body` inside a session for `target` and always closes it; the body's error wins.
-pub fn with_session<T>(
-    x: &mut X11,
-    target: Window,
-    pacing: Pacing,
-    body: impl FnOnce(&mut X11, &mut Session) -> Result<T>,
-) -> Result<T> {
-    let mut session = Session::open(x, target, pacing)?;
-    let result = body(x, &mut session);
-    session.close(x);
-    result
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -566,7 +551,7 @@ mod tests {
             seen,
             vec![(CTRL, true, 0), (38, true, 4), (38, false, 4), (CTRL, false, 4)]
         );
-        assert!(k.drain().is_empty());
+        assert!(k.press_order().is_empty());
     }
 
     #[test]
@@ -589,12 +574,30 @@ mod tests {
         );
         assert_eq!(result.unwrap_err().to_string(), "BadWindow on 50");
         assert_eq!(k.mask(), 1, "the failed key stays counted");
+        assert_eq!(k.press_order(), [SHIFT], "the session's close releases it");
+    }
+
+    #[test]
+    fn a_cleanup_release_carries_the_state_that_was_held() {
+        // The M0.2 carry-in: draining the bookkeeping first made every cleanup release carry mask 0.
+        let mut k = keys();
+        k.acquire(&[CTRL, SHIFT, 38], |_, _| Ok(()), |_, _| Ok(())).unwrap();
+        let mut sent = Vec::new();
+        k.release_all(|kc, state| {
+            sent.push((kc, state));
+            Err(anyhow!("cleanup errors are not the answer"))
+        });
         assert_eq!(
-            k.drain(),
-            vec![SHIFT],
-            "the session's close releases it and clears the bookkeeping"
+            sent,
+            vec![(38, 1 | 4), (SHIFT, 1 | 4), (CTRL, 4)],
+            "reverse press order, each release with its own key still in the state, as a normal release"
         );
-        assert_eq!(k.mask(), 0);
+        assert_eq!(
+            k.mask(),
+            0,
+            "the bookkeeping is clear afterwards, failed sends included"
+        );
+        assert!(k.press_order().is_empty());
     }
 
     #[test]
@@ -603,7 +606,7 @@ mod tests {
         let held = k.acquire(&[CTRL, 38], |_, _| Ok(()), |_, _| Ok(())).unwrap();
         let result = k.release(&held, |kc, _| Err(anyhow!("failed {kc}")));
         assert_eq!(result.unwrap_err().to_string(), "failed 38");
-        assert_eq!(k.drain(), vec![38, CTRL]);
+        assert_eq!(k.press_order(), [CTRL, 38]);
     }
 
     #[test]
@@ -633,6 +636,6 @@ mod tests {
             "ctrl was already held: no second press; 38 released on the failure"
         );
         k.release(&first, |_, _| Ok(())).unwrap();
-        assert!(k.drain().is_empty());
+        assert!(k.press_order().is_empty());
     }
 }

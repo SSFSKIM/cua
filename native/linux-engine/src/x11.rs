@@ -74,7 +74,8 @@ pub struct X11 {
     xfixes_ready: bool,
     retained: HashSet<Window>,
     pub retention: Retention,
-    /// The wait after a window's redirect before input to it (the vendor's 100 ms until M1a's input side).
+    /// The wait after a window's redirect before input to it: none by default (Design, Retention and the fixed
+    /// waits); `--settle-ms` sets it for measurements.
     pub settle: Duration,
     readiness: Readiness,
     /// How long the last window capture waited for its pixmap, and why.

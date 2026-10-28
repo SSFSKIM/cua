@@ -6,11 +6,12 @@ cua's own Linux native engine for #171, built against
 JSON request per line on stdin, `{id, command, input}`, one response per line on stdout,
 `{id, ok, output, error, restart}`.
 
-M1a builds it up from M0's spike. The observation side (M1a.1) answers `list_windows`, `list_apps`,
-`get_window_state` (the tree, `query`, `include_screenshot`) and `get_screenshot` (the desktop); the spike's
-`press_key` and `click` (coordinates or an element) answer on the background route until M1a.2 replaces the input
-side. Every other command, and input without a window (the desktop route), answers `… is not available in this engine
-build`.
+M1a builds it up from M0's spike. It answers every command of the pinned helper but text and clipboard:
+`list_windows`, `list_apps`, `get_window_state` (the tree, `query`, `include_screenshot`) and `get_screenshot` (the
+desktop) on the observation side (M1a.1); `press_key`, `key_down`, `key_up`, `click`, `move`, `move_relative`,
+`scroll`, `drag`, `drag_handle`, `perform_secondary_action`, `activate_window` and `launch_app` on the input side
+(M1a.2). `type_text`, the clipboard commands and `type_characters` (M2) and `capabilities` (M3) answer
+`<command> is not available in this engine build`.
 
 ```bash
 cargo build --release
@@ -38,6 +39,23 @@ cargo test
 - **Applications** (`apps.rs`): the XDG desktop entries, filtered and matched to the listed windows as the vendor
   does.
 
+## How it sends input
+
+- **Routes** (`route.rs`): a request naming a window goes through that window's background session (`input.rs`):
+  synthetic `FocusIn` unless the focus is already within it, key and pointer events by `SendEvent` (pointer events
+  to the deepest child under the point), the vendor's 100 ms before `FocusOut`; nothing on it activates, raises,
+  focuses or moves the pointer. A request without a window uses the desktop route (`desktop.rs`, XTEST). The window
+  is redirected (retained) before its first targeted input, with no wait after it; keys are not paced.
+- **Keys** (`keys.rs`, `engine/keyboard.rs`): the vendor's chord grammar and Shift rule (`Z` is z without Shift, so
+  `Ctrl+Z` stays undo), and its held-key bookkeeping: counts per target and keycode shared by `press_key`, `key_down`
+  and every command's `key` chord; a window with held keys keeps its session across requests until the last hold is
+  released; whatever is still held at exit is released, each release with the state that was held.
+- **The pointer** (`engine/pointer.rs`): clicks, moves, the desktop's interpolated path, wheel steps of 100 pixels held
+  36 ms, drags sampled per pixel, `drag_handle` and `move_relative` on the desktop, in the vendor's order of placing,
+  pressing the chord and pressing the button.
+- **Elements and windows** (`engine/elements.rs`, `engine/windows.rs`): element clicks through action 0 or a right
+  click at the visible point, named actions, the element scroll, `activate_window` and `launch_app`.
+
 ## Flags
 
 | Flag | Values (default first) | What it changes |
@@ -49,10 +67,10 @@ cargo test
 | `--call-reservation` | 4096 | bytes reserved per call in flight |
 | `--slack-nodes` | 8 | where preorder admission is not yet certain, a node starts only while fewer than this many such started nodes precede it |
 | `--retention` | `session`, `per-request`, `none` | when the target window is redirected through Composite: once until destroyed, per request as the vendor does, or never |
-| `--settle-ms` | 100 | the wait after a window's redirect before input to it |
+| `--settle-ms` | 0 | the wait after a window's redirect before input to it |
 | `--capture-wait` | `damage`, `fixed` | a capture of a fresh pixmap waits for the DAMAGE rule, or a fixed 100 ms once per pixmap (the fallback) |
 | `--teardown-ms` | 100 | the wait before a background session's teardown |
-| `--key-pace-ms` | 33 | the wait after each new key edge |
+| `--key-pace-ms` | 0 | the wait after each new key edge (the pinned build's is 33) |
 | `--stats` | off | one JSON line per request on stderr: bus calls by member, waits, waits with one call outstanding, the most calls in flight, reply bytes, the tree's admitted, discovered and wasted counts and its tables, and a capture's wait and the damage it saw |
 
 ## Dependencies

@@ -87,9 +87,10 @@ mod tests {
         }
     }
 
-    /// A client at (10, 30) inside a frame at (5, 5) under the root, with these windows above the frame.
+    /// A client inside a frame under the root (the frame 5 px wider on each side and 25 px taller above it, so it
+    /// always contains the client), with these windows above the frame.
     fn framed(client: Rect, over_frame: Vec<Above>) -> (Rect, Vec<Level>) {
-        let frame = rect(5, 5, client.w + 10, client.h + 30);
+        let frame = rect(client.x - 5, client.y - 25, client.w + 10, client.h + 30);
         (
             client,
             vec![
@@ -141,12 +142,29 @@ mod tests {
         assert!(!fully_unobscured(w, &levels));
     }
 
+    /// A window directly under the root, so the screen is the only boundary that can cut it.
+    fn on_root(window: Rect) -> (Rect, Vec<Level>) {
+        (
+            window,
+            vec![Level {
+                clip: SCREEN,
+                above: vec![],
+            }],
+        )
+    }
+
     #[test]
     fn a_window_partly_off_the_screen_or_its_parent_is_obscured() {
-        let (w, levels) = framed(rect(800, 30, 900, 700), vec![]);
-        assert!(!fully_unobscured(w, &levels), "past the screen's right edge");
-        let (w, levels) = framed(rect(-1, 30, 100, 100), vec![]);
-        assert!(!fully_unobscured(w, &levels));
+        let (w, levels) = on_root(rect(380, 30, 900, 700));
+        assert!(fully_unobscured(w, &levels), "flush with the screen's right edge");
+        let (w, levels) = on_root(rect(381, 30, 900, 700));
+        assert!(!fully_unobscured(w, &levels), "one pixel past the screen's right edge");
+        let (w, levels) = on_root(rect(-1, 30, 100, 100));
+        assert!(!fully_unobscured(w, &levels), "one pixel past the left edge");
+        let (w, levels) = on_root(rect(0, 0, 1280, 800));
+        assert!(fully_unobscured(w, &levels), "the whole screen");
+        let (w, levels) = on_root(rect(0, 1, 1280, 800));
+        assert!(!fully_unobscured(w, &levels), "past the bottom edge");
         let levels = vec![Level {
             clip: rect(0, 0, 50, 50),
             above: vec![],

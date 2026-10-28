@@ -103,6 +103,19 @@ variants included; their evidence is written either way. The run's `end` row kee
 - `--experiment qt-bridge` (`qt-bridge.mjs`): kate and qtcreator launched under each `org.a11y.Status` condition and
   with `QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1`, whether each registers and associates; the properties are put back.
 
+## M1a.2's addition: the input events
+
+- `--experiment events --vendor <bin> --newest <bin> --cua <bin> --out <dir>` (`events.mjs`): every engine gets the
+  same request sequences against `xprobe record`, a harness-owned recorder window that prints every input event it
+  receives, on a private X server the experiment starts itself (Xvfb, so the desktop route's XTEST input reaches
+  nobody's desktop). The scenarios: mixed-case shortcuts and the chord grammar, held chords (`key_down`, `key_up`,
+  shared keys, holds left at exit), clicks, moves, scrolls and drags on both routes, `drag_handle`,
+  `move_relative`, `activate_window` and `launch_app` (against an entry of its own). Each request's answer and its
+  events (type, sent or real, keycode or button, state, window, coordinates; not timestamps) are compared with the
+  pinned build's; the run exits nonzero when cua differs anywhere. The newest build differs from the pinned one on
+  pointer events (no `EnterNotify` before a background motion; a different desktop path), and is reported, not
+  judged.
+
 ## Files
 
 | File | What it is |
@@ -119,4 +132,5 @@ variants included; their evidence is written either way. The run's `end` row kee
 | `matrix.mjs`, `matrix-judge.mjs`, `families.mjs`, `oracle.mjs`, `pixels.mjs`, `qt-bridge.mjs`, `pages/matrix.html` | M0.4's application-family matrix, its families and effect readers, and the Qt bridge check |
 | `wire-check.mjs`, `stub-replay.mjs`, `record-wire.mjs`, `fixtures/wire/` | the wire fixtures |
 | `stub-activating.mjs` | the negative check's stub engine |
+| `events.mjs`, `xprobe/src/record.rs` | M1a.2's input events experiment and its recorder window |
 | `pages/` | the Chrome scenes |

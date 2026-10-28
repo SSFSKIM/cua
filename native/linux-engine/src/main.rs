@@ -7,11 +7,13 @@ mod atspi;
 mod capture;
 mod cover;
 mod dbus;
+mod desktop;
 mod engine;
 mod input;
 mod keys;
 mod readiness;
 mod resolve;
+mod route;
 mod table;
 mod tree;
 mod wire;
@@ -38,16 +40,17 @@ fn version() -> String {
     )
 }
 
-/// The defaults: the tree read's window as M0 chose it (Design, Observation); session retention; the vendor's
-/// input waits until M1a's input side replaces them.
+/// The defaults: the tree read's window as M0 chose it (Design, Observation); session retention; no wait after a
+/// redirect before input and no key pacing, with the vendor's 100 ms before `FocusOut` (Design, Retention and the
+/// fixed waits); a capture's wait is the readiness rule.
 fn default_config() -> Config {
     Config {
         window: tree::WINDOW,
         retention: Retention::Session,
-        settle: Duration::from_millis(100),
+        settle: Duration::ZERO,
         capture_wait: CaptureWait::Damage,
         pacing: input::Pacing {
-            key: Duration::from_millis(33),
+            key: Duration::ZERO,
             teardown: Duration::from_millis(100),
         },
         stats: false,
@@ -204,6 +207,11 @@ mod tests {
         assert_eq!(cfg.retention, Retention::Session);
         assert_eq!(cfg.capture_wait, CaptureWait::Damage);
         assert_eq!(cfg.mouse_size_px, 0);
+        assert_eq!(
+            (cfg.settle, cfg.pacing.key, cfg.pacing.teardown),
+            (Duration::ZERO, Duration::ZERO, Duration::from_millis(100)),
+            "no input settle and no key pacing; the 100 ms before FocusOut stays"
+        );
     }
 
     #[test]

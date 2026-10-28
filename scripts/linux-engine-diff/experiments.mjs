@@ -20,6 +20,7 @@ import { join } from 'node:path';
 
 import { elementClick, partialCover } from './clicks.mjs';
 import { Engine } from './engine.mjs';
+import { runEvents } from './events.mjs';
 import { familyNames, openFamily, readText } from './families.mjs';
 import { matrixOutcome } from './matrix-judge.mjs';
 import { matrixMarkdown, runMatrix } from './matrix.mjs';
@@ -290,6 +291,14 @@ export async function runExperiment(args) {
   const results = join(args.out, 'results.jsonl');
   const emit = (row) => appendFileSync(results, `${JSON.stringify({ run, ...row })}\n`);
   emit({ kind: 'meta', experiment: args.experiment, commit: gitHead(), cua_version: execFileSync(args.cua, ['--version'], { encoding: 'utf8' }).trim(), families: args.families, load: args.load, started: new Date().toISOString() });
+  if (args.experiment === 'events') {
+    // on a private X server of its own: no scene windows, no desktop
+    const { md, pass } = await runEvents(args, emit);
+    emit({ kind: 'experiment-summary', markdown: md, complete: pass, failed: [], finished: new Date().toISOString() });
+    process.stdout.write(`${md.join('\n')}\n`);
+    writeSummary(args.out);
+    return pass;
+  }
   const desktop = new Desktop({ cua: args.cua, run });
   const load = args.load ? startLoad(emit) : null;
   let md;

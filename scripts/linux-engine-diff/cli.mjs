@@ -10,7 +10,7 @@ export const USAGE = `usage:
   linux-engine-diff.mjs --vendor <bin> --newest <bin> --cua <bin> --scene <list> --ops <list|all> --out <dir>
       [--blocks 3] [--samples-tree 7] [--samples-input 5] [--variant <label>=<cua flags>]... [--run <name>]
       [--occlusion covered|visible] [--no-counts]
-  linux-engine-diff.mjs --experiment capture-readiness|key-pace|matrix|qt-bridge|element-click|partial-cover --cua <bin> --out <dir> [--run <name>]
+  linux-engine-diff.mjs --experiment capture-readiness|key-pace|matrix|qt-bridge|element-click|partial-cover|events --cua <bin> --out <dir> [--run <name>]
       [--vendor <bin> --newest <bin>] [--family <list>] [--load] [--samples-input 5] [--samples-text 2]
   linux-engine-diff.mjs --record-wire --cua <bin>
   linux-engine-diff.mjs --summarize --out <dir>`;
@@ -86,8 +86,8 @@ export function parseArgs(argv) {
   else if (a.mode === 'summarize') require('out');
   else if (a.mode === 'experiment') {
     require('cua', 'out');
-    if (!['capture-readiness', 'key-pace', 'matrix', 'qt-bridge', 'element-click', 'partial-cover'].includes(a.experiment)) throw new Error(`unknown experiment ${a.experiment}\n${USAGE}`);
-    if (['matrix', 'element-click', 'partial-cover'].includes(a.experiment)) require('vendor', 'newest');
+    if (!['capture-readiness', 'key-pace', 'matrix', 'qt-bridge', 'element-click', 'partial-cover', 'events'].includes(a.experiment)) throw new Error(`unknown experiment ${a.experiment}\n${USAGE}`);
+    if (['matrix', 'element-click', 'partial-cover', 'events'].includes(a.experiment)) require('vendor', 'newest');
     if (a.experiment === 'qt-bridge') require('vendor');
   }
   else {

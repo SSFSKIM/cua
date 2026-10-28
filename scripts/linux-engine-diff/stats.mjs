@@ -7,6 +7,17 @@ export function median(values) {
   return xs.length % 2 ? xs[mid] : (xs[mid - 1] + xs[mid]) / 2;
 }
 
+/**
+ * A run's outcome from its verdict rows (Interfaces: exit 0 only when the negative check held and every verdict
+ * passes, exploratory variants included; their rows stay in the evidence either way). `valid` is the negative
+ * check's alone, kept apart from `pass`.
+ */
+export function runOutcome(verdicts, { valid }) {
+  const failed = verdicts.filter((v) => v.kind === 'verdict' && !v.pass).map((v) => `${v.scene} ${v.op} ${v.candidate}`);
+  const pass = failed.length === 0;
+  return { valid, pass, failed, code: valid && pass ? 0 : 1 };
+}
+
 /** The engine order of block `index`: rotated, so every engine takes every position across the sitting. */
 export function blockOrder(engines, index) {
   const k = ((index % engines.length) + engines.length) % engines.length;

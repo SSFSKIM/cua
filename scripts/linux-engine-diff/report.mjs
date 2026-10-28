@@ -63,10 +63,17 @@ export function renderSummary(lines) {
       out.push('', 'Output differences (first sample against the pinned build\'s):');
       for (const v of notes) out.push(`- ${v.scene} ${v.op} ${v.candidate}: nodes ${v.first_comparison.nodes} vs ${v.first_comparison.nodes_b}, first difference ${JSON.stringify(v.first_comparison.first_difference)}`);
     }
-    const images = verdicts.filter((v) => v.image);
+    const images = rows.filter((r) => r.kind === 'image');
     if (images.length) {
-      out.push('', 'Window screenshots against the pinned build\'s (each engine\'s own window):');
-      for (const v of images) out.push(`- ${v.scene} ${v.candidate}: ${v.image.a.join('×')} vs ${v.image.b.join('×')}, mean absolute pixel difference ${fmt(v.image.mad)}`);
+      out.push('', "Window screenshots, every sample against the pinned build's last of its block (each engine's own window; the top 40 rows, the window's own label, left out; in the `equal` column):", '');
+      out.push('| scene | engine | within tolerance | most differing pixels | largest mean difference | first failure |', '|---|---|---|---:|---:|---|');
+      for (const key of [...new Set(images.map((r) => `${r.scene}|${r.engine}`))]) {
+        const [scene, engine] = key.split('|');
+        const mine = images.filter((r) => r.scene === scene && r.engine === engine);
+        const most = (field) => Math.max(...mine.map((r) => (typeof r[field] === 'number' ? r[field] : -1)));
+        const bad = mine.find((r) => !r.ok);
+        out.push(`| ${scene} | ${engine} | ${mine.filter((r) => r.ok).length}/${mine.length} | ${most('over')} | ${most('mad')} | ${bad ? `block ${bad.block} sample ${bad.i}: ${bad.reason}` : ''} |`);
+      }
     }
     const retained = verdicts.filter((v) => v.retained_ids_equal !== undefined);
     if (retained.length) {
@@ -74,7 +81,8 @@ export function renderSummary(lines) {
       for (const v of retained) out.push(`- ${v.candidate}: ${v.retained_ids_equal ? 'equal to the pinned build\'s' : '**differ**'}`);
     }
     const end = rows.find((r) => r.kind === 'end');
-    out.push('', end ? `run ${end.valid ? 'valid' : '**invalid**'}, finished ${end.finished}` : 'run unfinished', '');
+    const verdictLine = !end || end.pass === undefined ? '' : end.pass ? '; every verdict PASS' : `; **FAIL**: ${end.failed.join(', ')}`;
+    out.push('', end ? `run ${end.valid ? 'valid' : '**invalid**'}${verdictLine}, finished ${end.finished}` : 'run unfinished', '');
   }
   return out.join('\n');
 }

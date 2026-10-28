@@ -16,7 +16,8 @@ import { Engine } from './engine.mjs';
 import { compareStates, normalizeState, retainedIds } from './normalize.mjs';
 import { writeSummary } from './report.mjs';
 import { Desktop, XPROBE, a11yBusAddress } from './scenes.mjs';
-import { blockOrder, judgeOperation } from './stats.mjs';
+import { compareShots, xprobeDiff } from './images.mjs';
+import { blockOrder, judgeOperation, runOutcome } from './stats.mjs';
 import { startWitness } from './witness.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -156,7 +157,9 @@ export async function runDiff(args) {
   const labelPattern = new RegExp(`cua171-diff-${run.replace(/[^A-Za-z0-9_-]/g, '\\$&')}-[A-Za-z0-9_]+(?:-[A-Za-z0-9_]+)*`, 'g');
   let witness = null;
   let valid = true;
-  const keep = {}; // first ok output per engine/scene/op, for the first difference and the images
+  const keep = {}; // first ok output per engine/scene/op, for the first difference
+  const shots = []; // every tree_shot sample's screenshot
+  let outcome = { valid: false, pass: false, failed: ['the run did not finish'], code: 1 };
   try {
     // Scenes: one shared window per scene for tree reads, one window per engine for screenshots and input.
     const windows = {};
@@ -197,7 +200,7 @@ export async function runDiff(args) {
           const spec = engines.find((e) => e.label === label);
           const target = sceneName === 'desktop' ? null : OWN_WINDOW_OPS.has(op) ? windows[sceneName].own[label] : windows[sceneName].shared;
           if (target && args.occlusion === 'visible') desktop.raise(target);
-          const engine = new Engine(spec).start();
+          const engine = new Engine(spec);
           const n = 1 + samplesFor(op);
           for (let i = 0; i < n; i++) {
             const series = i === 0 ? 'cold' : 'warm';
@@ -210,7 +213,12 @@ export async function runDiff(args) {
               before = await readEffect(desktop, target, op);
               request = [op, inputFor(target, op, i, before)];
             }
-            const send = () => engine.request(...request);
+            // The engine starts inside the first sample's span, after the before-state is read and the witness is
+            // watching: the cold time is the engine's start and its first request, nothing of the harness's.
+            const send = () => {
+              if (i === 0) engine.start();
+              return engine.request(...request);
+            };
             const answered = target ? await witness.span(`${label}:${sceneName}:${op}`, send) : { value: await send(), witness: null };
             const { response, ms, sinceSpawnMs, stats } = answered.value;
             row.ms = Math.round((series === 'cold' ? sinceSpawnMs : ms) * 100) / 100;
@@ -234,13 +242,12 @@ export async function runDiff(args) {
               row.nodes = retainedIds(response.output).length;
               row.source = response.output.ax_tree_source;
               const key = `${label}|${sceneName}|${op}`;
-              if (!keep[key]) {
-                keep[key] = { output: response.output, label: exactIds ? null : labelPattern };
-                if (op === 'tree_shot' && response.output.screenshots[0]) {
-                  const copy = join(desktop.dir, `${label.replace(/[^a-z0-9]+/gi, '_')}-${sceneName}.jpg`);
-                  copyFileSync(response.output.screenshots[0].filepath, copy);
-                  keep[key].image = copy;
-                }
+              keep[key] ??= { output: response.output, label: exactIds ? null : labelPattern };
+              if (op === 'tree_shot') {
+                // every sample's screenshot is kept for the comparison after the blocks
+                const copy = join(desktop.dir, `${label.replace(/[^a-z0-9]+/gi, '_')}-${sceneName}-${block}-${i}.jpg`);
+                if (response.output.screenshots[0]) copyFileSync(response.output.screenshots[0].filepath, copy);
+                shots.push({ engine: label, scene: sceneName, op, block, i, image: response.output.screenshots[0] ? copy : null });
               }
               for (const shot of response.output.screenshots) {
                 if (shot.filepath.startsWith('/tmp/') && !shot.filepath.startsWith('/tmp/cua-engine-')) rmSync(shot.filepath, { force: true });
@@ -285,15 +292,28 @@ export async function runDiff(args) {
       }
     }
 
-    // Verdicts: each sample's output against the pinned build's, then the operation judged per candidate.
+    // Screenshots: every sample's against the pinned build's of its block, before any verdict is drawn.
     const rows = readFileSync(results, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((r) => r.run === run && r.kind === 'sample');
+    const imageOf = new Map();
+    for (const c of compareShots(shots, xprobeDiff(XPROBE))) {
+      const { image, ...rest } = c;
+      emit({ kind: 'image', ...rest });
+      imageOf.set(`${c.engine}|${c.scene}|${c.op}|${c.block}|${c.i}`, c.ok);
+    }
+
+    // Verdicts: each sample's output against the pinned build's, then the operation judged per candidate.
+    const verdicts = [];
     for (const { scene: sceneName, op } of plan) {
       const opRows = rows.filter((r) => r.scene === sceneName && r.op === op);
       // The reference is the pinned build's answer in the same block: a scene's own windows change across blocks
       // (gedit marks a document modified, a counter grows), and so does the window list.
       const reference = (block) => mode(opRows.filter((r) => r.engine === 'pinned' && r.ok && r.block === block).map((r) => r.digest));
       const refKept = keep[`pinned|${sceneName}|${op}`];
-      for (const r of opRows) if (r.digest) r.equal = r.digest === reference(r.block);
+      for (const r of opRows) {
+        if (!r.digest) continue;
+        const image = imageOf.get(`${r.engine}|${r.scene}|${r.op}|${r.block}|${r.i}`);
+        r.equal = r.digest === reference(r.block) && image !== false;
+      }
       for (const candidate of labels.filter((l) => !VENDORS.includes(l))) {
         const verdict = judgeOperation(opRows.filter((r) => [...VENDORS, candidate].includes(r.engine)), { vendors: VENDORS, candidate });
         const extra = {};
@@ -302,9 +322,10 @@ export async function runDiff(args) {
           const cmp = compareStates(refKept.output, kept.output, { exactIds: op === 'tree', labelA: refKept.label, labelB: kept.label });
           extra.first_comparison = cmp;
           if (sceneName === 'over-budget') extra.retained_ids_equal = JSON.stringify(retainedIds(refKept.output)) === JSON.stringify(retainedIds(kept.output));
-          if (kept.image && refKept.image) extra.image = JSON.parse(execFileSync(XPROBE, ['imgdiff', refKept.image, kept.image], { encoding: 'utf8' }));
         }
-        emit({ kind: 'verdict', scene: sceneName, op, candidate, ...verdict, ...extra });
+        const row = { kind: 'verdict', scene: sceneName, op, candidate, ...verdict, ...extra };
+        verdicts.push(row);
+        emit(row);
       }
       for (const vendor of ['newest']) {
         const kept = keep[`${vendor}|${sceneName}|${op}`];
@@ -320,14 +341,17 @@ export async function runDiff(args) {
         if (mine.length) emit({ kind: 'equality', engine: label, scene: sceneName, op, equal: mine.filter((r) => r.equal).length, of: mine.length });
       }
     }
-    emit({ kind: 'end', valid, finished: new Date().toISOString() });
+    outcome = runOutcome(verdicts, { valid });
+    emit({ kind: 'end', valid: outcome.valid, pass: outcome.pass, failed: outcome.failed, finished: new Date().toISOString() });
   } finally {
     if (witness) await witness.stop();
     await desktop.closeAll();
   }
-  const summary = writeSummary(args.out);
-  process.stdout.write(`${summary.split('\n').slice(0, 3).join('\n')}\n…\nresults: ${results}\n`);
-  return valid;
+  writeSummary(args.out);
+  process.stdout.write(
+    `run ${outcome.valid ? 'valid' : 'INVALID (the negative check did not hold)'}; ${outcome.pass ? 'every verdict PASS' : `FAIL: ${outcome.failed.join(', ')}`}\nresults: ${results}\n`,
+  );
+  return outcome.code === 0;
 }
 
 function mode(values) {

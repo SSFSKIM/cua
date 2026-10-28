@@ -8,7 +8,8 @@
 //! - `xprobe retention <window> [trials] [span-ms] [gap-ms] [dump-prefix]`: redirects the window through Composite, captures it
 //!   with `GetImage` as fast as it can for the span, unredirects, and prints one JSON line per trial with the
 //!   moments the captured contents changed (a hash of the colour bytes and the black fraction, never pixels).
-//! - `xprobe imgdiff <a.jpg> <b.jpg>`: sizes and mean absolute pixel difference of two JPEGs.
+//! - `xprobe imgdiff <a.jpg> <b.jpg> [mask-top-rows]`: sizes, mean absolute difference and differing pixels of two
+//!   JPEGs below their top rows.
 //! - `xprobe close <window>`: asks the window's client to close it (`WM_DELETE_WINDOW`), for harness-owned windows.
 
 use std::io::{BufRead, Write};
@@ -32,9 +33,9 @@ fn main() {
     let result = match args.first().map(String::as_str) {
         Some("witness") => witness(),
         Some("retention") => retention(&args[1..]),
-        Some("imgdiff") if args.len() == 3 => imgdiff(&args[1], &args[2]),
+        Some("imgdiff") if (3..=4).contains(&args.len()) => imgdiff(&args[1], &args[2], args.get(3)),
         Some("close") if args.len() == 2 => close(&args[1]),
-        _ => Err("usage: xprobe witness | retention <window> [trials] [span-ms] [gap-ms] [dump-prefix] | imgdiff <a> <b> | close <window>".into()),
+        _ => Err("usage: xprobe witness | retention <window> [trials] [span-ms] [gap-ms] [dump-prefix] | imgdiff <a> <b> [mask-top-rows] | close <window>".into()),
     };
     if let Err(error) = result {
         eprintln!("xprobe: {error}");
@@ -157,6 +158,18 @@ impl Span {
         self.last = now;
     }
 
+    /// A `PropertyNotify` for a watched property during the span. It carries no value, and a change followed by a
+    /// restore leaves the same value behind, so every notify is itself a change: the witness is conservative.
+    fn notify(&mut self, field: &str) {
+        let t = self.started.elapsed().as_secs_f64() * 1000.0;
+        match field {
+            "active" => self.notifies_active += 1,
+            _ => self.notifies_stacking += 1,
+        }
+        self.changes
+            .push(format!("{{\"field\":\"{field}\",\"t_ms\":{t:.1},\"notify\":true}}"));
+    }
+
     fn report(&self) -> String {
         format!(
             "{{\"tag\":{},\"duration_ms\":{:.1},\"samples\":{},\"max_gap_ms\":{:.1},\"notifies\":{{\"active\":{},\"stacking\":{}}},\"changes\":[{}]}}",
@@ -212,6 +225,8 @@ fn witness() -> Result<()> {
             let Some(line) = message else { return Ok(()) };
             let line = line.trim();
             if let Some(tag) = line.strip_prefix("begin ") {
+                // events from before the span belong to no span
+                while desktop.conn.poll_for_event()?.is_some() {}
                 let now = Instant::now();
                 span = Some(Span {
                     tag: tag.to_string(),
@@ -271,18 +286,18 @@ fn witness() -> Result<()> {
     }
 }
 
-/// Reads queued `PropertyNotify` events; for each watched property it re-reads the value, so a notify that did not
-/// change the value is counted but is not a change.
+/// Reads queued `PropertyNotify` events. Each one for a watched property is recorded as a change (`Span::notify`),
+/// whatever the value reads afterwards; the value is re-read too, so a lasting change also shows its from and to.
 fn drain_notifies(desktop: &Desktop, span: &mut Span) -> Result<()> {
     let mut active = false;
     let mut stacking = false;
     while let Some(event) = desktop.conn.poll_for_event()? {
         if let Event::PropertyNotify(notify) = event {
             if notify.atom == desktop.active_atom {
-                span.notifies_active += 1;
+                span.notify("active");
                 active = true;
             } else if notify.atom == desktop.stacking_atom {
-                span.notifies_stacking += 1;
+                span.notify("stacking");
                 stacking = true;
             }
         }
@@ -382,22 +397,42 @@ fn retention(args: &[String]) -> Result<()> {
 // ---------------------------------------------------------------------------------------------------------------
 // Image comparison and close
 
-fn imgdiff(a: &str, b: &str) -> Result<()> {
+/// A pixel differs when one of its channels differs by more than this (JPEG noise around a changed glyph stays
+/// under it; a black or garbled region does not).
+const PIXEL_THRESHOLD: u8 = 32;
+
+/// Two RGB buffers of one size compared below their top `mask_top` rows: the mean absolute channel difference, the
+/// pixels with a channel differing by more than `PIXEL_THRESHOLD`, and the pixels compared.
+fn difference(a: &[u8], b: &[u8], width: usize, mask_top: usize) -> (f64, u64, u64) {
+    let start = (mask_top * width * 3).min(a.len());
+    let (mut total, mut over) = (0u64, 0u64);
+    for (pa, pb) in a[start..].chunks_exact(3).zip(b[start..].chunks_exact(3)) {
+        let mut worst = 0u8;
+        for (x, y) in pa.iter().zip(pb) {
+            let d = x.abs_diff(*y);
+            total += d as u64;
+            worst = worst.max(d);
+        }
+        if worst > PIXEL_THRESHOLD {
+            over += 1;
+        }
+    }
+    let compared = ((a.len() - start) / 3) as u64;
+    (total as f64 / (compared.max(1) * 3) as f64, over, compared)
+}
+
+fn imgdiff(a: &str, b: &str, mask_top: Option<&String>) -> Result<()> {
+    let mask_top: usize = mask_top.map(|s| s.parse()).transpose()?.unwrap_or(0);
     let a = image::load_from_memory_with_format(&std::fs::read(a)?, image::ImageFormat::Jpeg)?.to_rgb8();
     let b = image::load_from_memory_with_format(&std::fs::read(b)?, image::ImageFormat::Jpeg)?.to_rgb8();
-    let mad = if a.dimensions() == b.dimensions() {
-        let total: u64 = a
-            .as_raw()
-            .iter()
-            .zip(b.as_raw())
-            .map(|(x, y)| (*x as i32 - *y as i32).unsigned_abs() as u64)
-            .sum();
-        format!("{:.4}", total as f64 / a.as_raw().len().max(1) as f64)
+    let (mad, over, compared) = if a.dimensions() == b.dimensions() {
+        let (mad, over, compared) = difference(a.as_raw(), b.as_raw(), a.width() as usize, mask_top);
+        (format!("{mad:.4}"), over.to_string(), compared.to_string())
     } else {
-        "null".into()
+        ("null".into(), "null".into(), "0".into())
     };
     println!(
-        "{{\"a\":[{},{}],\"b\":[{},{}],\"mad\":{mad}}}",
+        "{{\"a\":[{},{}],\"b\":[{},{}],\"mask_top\":{mask_top},\"mad\":{mad},\"over\":{over},\"compared\":{compared}}}",
         a.width(),
         a.height(),
         b.width(),
@@ -415,4 +450,75 @@ fn close(window: &str) -> Result<()> {
     conn.send_event(false, window, EventMask::NO_EVENT, event)?.check()?;
     conn.flush()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn state(active: u32) -> DesktopState {
+        DesktopState {
+            active: vec![active],
+            stacking: vec![1, 2, 3],
+            focus: 7,
+            pointer: (10, 20),
+        }
+    }
+
+    fn span() -> Span {
+        let now = Instant::now();
+        Span {
+            tag: "t".into(),
+            started: now,
+            last: state(5),
+            changes: Vec::new(),
+            samples: 1,
+            max_gap_ms: 0.0,
+            last_sample: now,
+            notifies_active: 0,
+            notifies_stacking: 0,
+        }
+    }
+
+    #[test]
+    fn a_queued_change_and_restore_is_a_change() {
+        // the active window moved away and back between two polls: two notifies queue, and the value read after
+        // them equals the value before
+        let mut s = span();
+        s.notify("active");
+        s.notify("active");
+        s.record(state(5));
+        assert_eq!(s.notifies_active, 2);
+        assert_eq!(s.changes.len(), 2, "{:?}", s.changes);
+        assert!(s.changes.iter().all(|c| c.contains("\"field\":\"active\"")));
+        assert!(s.report().contains("\"notifies\":{\"active\":2,\"stacking\":0}"));
+    }
+
+    #[test]
+    fn a_span_without_notifies_or_value_changes_is_clean() {
+        let mut s = span();
+        s.record(state(5));
+        assert!(s.changes.is_empty());
+        s.record(state(6));
+        assert_eq!(s.changes.len(), 1);
+    }
+
+    #[test]
+    fn difference_counts_pixels_over_the_threshold_below_the_mask() {
+        let (w, h) = (4usize, 3usize);
+        let a = vec![200u8; w * h * 3];
+        let mut b = a.clone();
+        assert_eq!(difference(&a, &b, w, 0), (0.0, 0, 12));
+        // JPEG-sized noise is not a differing pixel
+        b[0] = 210;
+        assert_eq!(difference(&a, &b, w, 0).1, 0);
+        // a black pixel in row 0 counts unless the top row is masked
+        b[3..6].copy_from_slice(&[0, 0, 0]);
+        assert_eq!(difference(&a, &b, w, 0).1, 1);
+        assert_eq!(difference(&a, &b, w, 1), (0.0, 0, 8));
+        // a black image differs everywhere
+        let black = vec![0u8; w * h * 3];
+        let (mad, over, compared) = difference(&a, &black, w, 0);
+        assert_eq!((mad, over, compared), (200.0, 12, 12));
+    }
 }

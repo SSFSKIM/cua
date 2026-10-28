@@ -23,7 +23,9 @@ node scripts/linux-engine-diff.mjs --vendor "$VENDOR" --newest "$NEWEST" --cua "
 
 - **Blocks.** A block is one engine, its process started fresh, then the cold sample (the first request, timed from
   the spawn) and the warm series (`--samples-tree 7`, `--samples-input 5`). Blocks rotate the engine order
-  (`--blocks 3`), so engines interleave without sharing a process.
+  (`--blocks 3`), so engines interleave without sharing a process. The engine is spawned inside the first sample's
+  witness span, after the harness has read the before-state, so the cold time holds only the engine's start and its
+  first request.
 - **Windows.** Tree reads of a scene serve every engine (one shared window). Screenshots and input go to each
   engine's own equivalent window (same page or file content, same size and place), so one engine's retained window is
   never another's.
@@ -34,12 +36,16 @@ node scripts/linux-engine-diff.mjs --vendor "$VENDOR" --newest "$NEWEST" --cua "
 - **Comparison.** Outputs are normalized (`normalize.mjs`): native ids kept for reads of one window and mapped by
   position across equivalent windows, screenshot paths dropped, the run's window labels replaced, and Chrome's
   tab-memory text (which changes between reads of an unchanged window) replaced. Each sample is compared with the
-  pinned build's; the first sample's first difference is recorded; window screenshots are compared by size and mean
-  absolute pixel difference.
+  pinned build's answer in the same block; the first sample's first difference is recorded.
+- **Screenshots** (`images.mjs`): every sample's window screenshot is compared with the pinned build's last of the
+  same block: the same size, and at most 0.1% of the pixels below the top 40 rows (where an equivalent window draws
+  its own label: gedit's title, Chrome's tab strip) differing in a channel by more than 32. A screenshot outside the
+  tolerance makes the sample's output unequal, so it fails the verdict.
 - **The witness** (`xprobe witness`): root `PropertyNotify` for `_NET_ACTIVE_WINDOW` and
   `_NET_CLIENT_LIST_STACKING`, and the input focus and pointer every 5 ms, from before each request until 20 ms after
-  its answer. Any change fails the sample. Every run with input first drives `stub-activating.mjs` (activate, act
-  through XTEST, restore) and is invalid unless the witness fails it.
+  its answer. Any change fails the sample, and so does any notify of either property, even when the value reads back
+  unchanged (a change and its restore leave the same value). Every run with input first drives
+  `stub-activating.mjs` (activate, act through XTEST, restore) and is invalid unless the witness fails it.
 - **Effects.** gedit: the document's text one longer (`x`, sent while it is at its original length) or shorter
   (`BackSpace`, otherwise). Chrome: the page's key or click counter one higher. A gedit coordinate click moves only
   the caret, which the tree does not show: no effect is recorded for it, and its clicks alternate between two points
@@ -51,8 +57,11 @@ node scripts/linux-engine-diff.mjs --vendor "$VENDOR" --newest "$NEWEST" --cua "
   build's (the bar), every request answered, output equal, witness clean wherever a vendor build's is, effect verified
   wherever a vendor build's is.
 
-`results.jsonl` gets one line per sample, count, check and verdict; `summary.md` is rewritten from all of it
-(`--summarize` rewrites it alone). Several runs append to one directory under their `--run` names.
+`results.jsonl` gets one line per sample, image comparison, count, check and verdict; `summary.md` is rewritten from
+all of it (`--summarize` rewrites it alone). Several runs append to one directory under their `--run` names.
+
+The exit status is 0 only when the run is valid (the witness failed the stub) and every verdict passes, exploratory
+variants included; their evidence is written either way. The run's `end` row keeps `valid` and `pass` apart.
 
 ## M0's additions
 
@@ -78,7 +87,7 @@ node scripts/linux-engine-diff.mjs --vendor "$VENDOR" --newest "$NEWEST" --cua "
 | `scenes.mjs` | the harness's windows and the reader that reads effects back |
 | `witness.mjs`, `xprobe/` | the witness; `xprobe` is the harness's own X client (witness, retention probe, image comparison, window close) |
 | `busmon.mjs` | accessibility-bus call counts |
-| `normalize.mjs`, `stats.mjs`, `report.mjs` | comparison, medians and verdicts, summary.md |
+| `normalize.mjs`, `images.mjs`, `stats.mjs`, `report.mjs` | output and screenshot comparison, medians, verdicts and the exit status, summary.md |
 | `experiments.mjs`, `readiness.mjs` | M0's capture-readiness and key-pace measurements |
 | `wire-check.mjs`, `stub-replay.mjs`, `record-wire.mjs`, `fixtures/wire/` | the wire fixtures |
 | `stub-activating.mjs` | the negative check's stub engine |

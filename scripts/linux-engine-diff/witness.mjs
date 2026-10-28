@@ -6,10 +6,14 @@
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 
-/** The judgement of one span report. */
+/**
+ * The judgement of one span report. Conservative: a PropertyNotify for either watched property fails the span even
+ * when the value reads back unchanged, since a change followed by a restore leaves the same value behind.
+ */
 export function judgeSpan(report) {
   if (!report || report.error) return { clean: false, fields: ['protocol'], samples: 0, max_gap_ms: null };
-  const fields = [...new Set(report.changes.map((c) => c.field))];
+  const notified = Object.entries(report.notifies ?? {}).filter(([, n]) => n > 0).map(([field]) => field);
+  const fields = [...new Set([...report.changes.map((c) => c.field), ...notified])];
   return { clean: fields.length === 0, fields, samples: report.samples, max_gap_ms: report.max_gap_ms };
 }
 

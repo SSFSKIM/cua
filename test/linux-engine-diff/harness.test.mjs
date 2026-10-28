@@ -196,8 +196,75 @@ test('a span is clean only when no watched field changed', () => {
   });
   const dirty = judgeSpan({ tag: 't', samples: 40, max_gap_ms: 6, notifies: { active: 2, stacking: 1 }, changes: [{ field: 'active' }, { field: 'focus' }, { field: 'active' }] });
   assert.equal(dirty.clean, false);
-  assert.deepEqual(dirty.fields, ['active', 'focus']);
+  assert.deepEqual(dirty.fields, ['active', 'focus', 'stacking']); // a stacking notify counts with no recorded change
   assert.equal(judgeSpan({ tag: 't', error: 'no span' }).clean, false);
+});
+
+test('a span with a watched notify is not clean even when every value reads back unchanged (change and restore)', () => {
+  const restored = judgeSpan({ tag: 't', samples: 40, max_gap_ms: 6, notifies: { active: 2, stacking: 0 }, changes: [] });
+  assert.equal(restored.clean, false);
+  assert.deepEqual(restored.fields, ['active']);
+  const stacking = judgeSpan({ tag: 't', samples: 40, max_gap_ms: 6, notifies: { active: 0, stacking: 1 }, changes: [] });
+  assert.deepEqual(stacking.fields, ['stacking']);
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// screenshots
+
+test('a screenshot passes only with the same size and almost no differing pixels below the label rows', async () => {
+  const { IMAGE_TOLERANCE, imageVerdict } = await import('../../scripts/linux-engine-diff/images.mjs');
+  const size = { a: [910, 756], b: [910, 756], mask_top: IMAGE_TOLERANCE.maskTopRows, compared: 633360 };
+  assert.equal(imageVerdict({ ...size, mad: 0, over: 0 }).ok, true);
+  assert.equal(imageVerdict({ ...size, mad: 0.05, over: 300 }).ok, true);
+  const black = imageVerdict({ ...size, mad: 250.2, over: 633000 });
+  assert.equal(black.ok, false);
+  assert.match(black.reason, /633000 of 633360 pixels differ/);
+  const sizes = imageVerdict({ a: [910, 756], b: [900, 756], mask_top: 40, mad: null, over: null, compared: 0 });
+  assert.equal(sizes.ok, false);
+  assert.match(sizes.reason, /910×756 against 900×756/);
+  assert.equal(imageVerdict(null).ok, false);
+});
+
+test('every sample is compared with the pinned build\'s screenshot of its block, so corruption in warm samples fails', async () => {
+  const { compareShots } = await import('../../scripts/linux-engine-diff/images.mjs');
+  const shot = (engine, block, i, image) => ({ engine, scene: 'gedit', op: 'tree_shot', block, i, image });
+  const samples = [
+    shot('pinned', 0, 0, 'p0'), shot('pinned', 0, 1, 'p1'),
+    shot('pinned', 1, 0, 'q0'), shot('pinned', 1, 1, 'q1'),
+    shot('cua', 0, 0, 'good'), shot('cua', 0, 1, 'good'),
+    shot('cua', 1, 0, 'good'), shot('cua', 1, 1, 'corrupt'),
+  ];
+  const seen = [];
+  const diff = (reference, image) => {
+    seen.push([reference, image]);
+    const bad = image === 'corrupt';
+    return { a: [10, 10], b: [10, 10], mask_top: 0, mad: bad ? 120 : 0, over: bad ? 60 : 0, compared: 100 };
+  };
+  const results = compareShots(samples, diff);
+  assert.equal(results.length, samples.length);
+  // the reference is the pinned build's last screenshot of the same block
+  assert.deepEqual(seen.filter(([, image]) => image === 'corrupt'), [['q1', 'corrupt']]);
+  assert.deepEqual(results.filter((r) => !r.ok).map((r) => [r.engine, r.block, r.i]), [['cua', 1, 1]]);
+  // a block without a pinned screenshot cannot be judged, and says so
+  const orphan = compareShots([shot('cua', 2, 0, 'good')], diff);
+  assert.equal(orphan[0].ok, false);
+  assert.match(orphan[0].reason, /no pinned screenshot/);
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// the exit status
+
+test('a run exits nonzero when any verdict fails, and when the negative check did not hold', async () => {
+  const { runOutcome } = await import('../../scripts/linux-engine-diff/stats.mjs');
+  const verdict = (pass) => ({ run: 'r', kind: 'verdict', candidate: 'cua', scene: 'gedit', op: 'tree', pass });
+  assert.deepEqual(runOutcome([verdict(true), verdict(true)], { valid: true }), { valid: true, pass: true, failed: [], code: 0 });
+  const failed = runOutcome([verdict(true), verdict(false)], { valid: true });
+  assert.equal(failed.pass, false);
+  assert.equal(failed.code, 1);
+  assert.deepEqual(failed.failed, ['gedit tree cua']);
+  const invalid = runOutcome([verdict(true)], { valid: false });
+  assert.equal(invalid.valid, false);
+  assert.equal(invalid.code, 1);
 });
 
 // ---------------------------------------------------------------------------------------------------------------

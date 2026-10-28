@@ -18,6 +18,7 @@ How to see it: on the #171 VM (Ubuntu 24.04, X11), `CUA_NATIVE_ENGINE=cua cua se
 - [x] (2026-10-28) Reading program, tier 1 (static) and tier 2 (Ghidra and live tracing on the VM): `A-linux-contract.md`, `F-linux-helper-logic.md` in `docs/doperpowers/research/2026-10-28-own-linux-engine/`. Landscape survey `C-linux-2026.md` kept local (owner's no-code-from-surveyed-projects ruling, as for #117).
 - [x] (2026-10-28) Owner rulings: same success bar as #117; read the Linux helper as deeply as the macOS one; OpenAI's own crate set counts as vetted; Rust directly (no language bake-off); per-device background mode; Wayland designed for, not built; visible cursor and any-character typing to the backlog. Design approved.
 - [x] (2026-10-28) Spec review round 1 (two independent reviews, design and buildability): 18 findings, one raised by both, each resolved by the design session and folded in (Decision Log, review round 1).
+- [x] (2026-10-28) Spec review round 2: six findings on the round-1 revision, each resolved by the design session and folded in (Decision Log, review round 2).
 - [ ] M0 — Behaviour specification, speed spike, wire fixtures, application-family matrix.
 - [ ] M1a — Engine core, wire-compatible, with the differential harness.
 - [ ] M1b — Distribution and selection: release workflow and the first release, pins, install, doctor, `CUA_NATIVE_ENGINE` on Linux, the facade harnesses' Linux engine lanes, the CI gate.
@@ -82,9 +83,9 @@ The engine speaks the vendor's wire unchanged: the same commands (the pinned 20 
 
 **Minimized windows** (M4). `list_windows` also lists iconified windows (`WM_STATE` Iconic) with the additive field `minimized: true`. The vendor omits them, so today a bound window that the person minimizes becomes `Window <id> is unavailable.` to cua's policy and facade, which find windows in that list; listing them is a declared deviation. The policy (`src/services/engine/policy.mjs`) and the facade accept a listed minimized window as they accept any other, its app identity still resolved from the engine's own `list_windows`. Its tree is read; its screenshot is unavailable (`Screenshot unavailable for window <id>.`), and window-targeted input to it fails with `Window <id> is minimized; activate it first`.
 
-**The tree read** returns the same nodes with the same fields as the vendor (F §2.2): role name, `Name`, `Description`, text of `text` and `entry` roles (and visible table cells), states, the action names when the Action interface is present, and children in order; the same limits; the same visible-table sampling for tables over 5,000 children. What changes is how it is fetched. The vendor reconnects for every read and sends about six calls per element, each waiting for its reply (3,038 calls for 480 gedit elements). cua's engine reuses its connection and sends the vendor's per-element calls for the vendor's exact field set (`GetRoleName`, `Properties.Get` of `Name` and `Description`, `GetText` where the role calls for it, `GetState`, `GetInterfaces` then `NActions` and `GetName` per action, `GetChildren`), pipelined level by level: every call for the current level is sent before any reply is read, so a level costs one round trip to each application instead of one per call. Why level by level and not unbounded concurrency: applications answer accessibility calls on their UI thread, so flooding one application gains nothing and can stall it; one level in flight bounds the queue to the tree's width.
+**The tree read** returns the same nodes with the same fields as the vendor (F §2.2): role name, `Name`, `Description`, text of `text` and `entry` roles (and visible table cells), states, the action names when the Action interface is present, and children in order; the same limits; the same visible-table sampling for tables over 5,000 children. What changes is how it is fetched. The vendor reconnects for every read and sends about six calls per element, each waiting for its reply (3,038 calls for 480 gedit elements). cua's engine reuses its connection and sends the vendor's per-element calls for the vendor's exact field set (`GetRoleName`, `Properties.Get` of `Name` and `Description`, `GetText` where the role calls for it, `GetState`, `GetInterfaces` then `NActions` and `GetName` per action, `GetChildren`), many in flight instead of one. Acquisition follows the preorder frontier (the nodes preorder visits next) with a lookahead window of at most W calls in flight and R bytes of outstanding replies, so a read costs about one round trip per window of calls instead of one per call; M0 chooses W and R, starting from 64 calls and 4 MiB. Why a bounded window, and not unbounded concurrency or a whole tree level at a time: applications answer accessibility calls on their UI thread, so flooding one application gains nothing and can stall it, and one level of a very wide container would put thousands of calls in flight and fetch attributes for nodes preorder never admits.
 
-Admission stays the vendor's (F §2.3): a depth-first preorder walk with one shared counter, refusing a node when the count already exceeds 4,999 before its increment, and a node deeper than 63. Fetching may run ahead of admission, but a node is in the output if and only if preorder admission admits it; on a tree inside the limits the two orders read the same nodes, and on a tree over them the output is still the vendor's node set, which the over-budget scene checks by exact retained native ids (M1a).
+Admission stays the vendor's (F §2.3): a depth-first preorder walk with one shared counter, refusing a node when the count already exceeds 4,999 before its increment, and a node deeper than 63. Speculation stays inside it: attribute calls are scheduled only for nodes that preorder admission could still admit, and once admission reaches 5,000 nothing more is scheduled; a very wide container's children are listed with `GetChildren`, but their attributes are fetched only inside the admission window. A node is in the output if and only if preorder admission admits it. The over-budget scene checks both halves (M1a): the retained native ids equal the vendor's exactly, and cua's accessibility-bus calls on that scene are at most the vendor's plus a small constant M0 fixes.
 
 `Cache.GetItems` is not on the main path. M0 measures it as an experiment, and M4 adopts it only if it reproduces the sequential read's output exactly on menus, Qt and changing trees, and then only under these rules: it supports every cache signature the applications answer with, Qt's legacy one included; it maps numeric roles to names, with `GetRoleName` for a role it does not know; and wherever the index in parent or the child count is the -1 sentinel, it falls back to `GetChildren`. The alternative, libatspi's client-side cache, lost because it needs a GLib main loop in the engine and still issues the per-element text and action calls synchronously (R/C).
 
@@ -108,16 +109,20 @@ A read that hits a limit or loses a child no longer omits it silently: the engin
 
 ### Text and clipboard: one verified paste route
 
-Both builds' text paths fail somewhere (F §6–7): the pinned build calls `EditableText.PasteText`, which inserts nothing in gedit and fails after 10 s; the newest build pastes with a targeted Ctrl+V for `type_text` but still uses `PasteText` for `clipboard_write`, and reports errors after correct edits in Chrome. cua's engine has one route for `type_text` and `clipboard_write`. It observes before it acts, holds the display's clipboard lock for the whole exchange, and sends at most once:
+Both builds' text paths fail somewhere (F §6–7): the pinned build calls `EditableText.PasteText`, which inserts nothing in gedit and fails after 10 s; the newest build pastes with a targeted Ctrl+V for `type_text` but still uses `PasteText` for `clipboard_write`, and reports errors after correct edits in Chrome. cua's engine has one route for `type_text` and `clipboard_write`. It observes before it acts, holds the display's clipboard lock for the whole exchange, sends at most once, bounds every wait, and ends through one guarded cleanup:
 
 1. **Observe.** Read the target element (the one `element_id` names, else the window's focused element): whether it has focus and, if it implements Text, its character count, caret and selection.
 2. **Focus only if needed.** If `element_id` names an element that does not have focus, focus it with a background-route click at its visible point (F §5), as the vendor does, and observe it again; the text then goes where that click leaves the caret, as a person's click would. An element that already has focus is never clicked, so a caret or selection the caller placed stays where it is.
 3. **Lock, snapshot, own.** Take the clipboard lock (below); remember the current CLIPBOARD contents as the vendor does (A §2.6); become the CLIPBOARD owner, serving the text (`UTF8_STRING`, `text/plain;charset=utf-8`, `STRING` for Latin-1-only text, `TARGETS`, INCR for large data) or, for `clipboard_write`, the snapshot's formats.
-4. **Revalidate, then dispatch once.** Immediately before sending, check that the same element has focus with the same selection and caret, and that the desktop focus is unchanged: on the background route the synthetic-focus state the engine holds for the window, on the foreground route the X server's real input focus. On any change, give up ownership, restore the remembered contents, and refuse with `requested field or selection changed before dispatch; nothing was sent`. Otherwise send Ctrl+V once through the background route (the foreground route in `dedicated` mode for a listed family).
-5. **Confirm.** Poll the element's Text every 20 ms for up to 2 s for the expected change, which is that the text now contains the inserted string where the caret or selection was. The check is against the inserted segment, not the whole field, so autocompletion or suggestion text around it (the cause of the newest build's Chrome false errors) does not fail it. Then wait for the paste's selection transfer to complete, restore the remembered contents only if the engine still owns CLIPBOARD (nobody took it meanwhile), and release the lock.
-6. **Answer.** **Applied** (success) when the change is confirmed. **Not applied** only when nothing was sent (a refusal before dispatch: no editable target, the field, selection or focus changed, `clipboard busy`, or CLIPBOARD lost before dispatch) or when the input was rejected outright (the X server refused the events, for example with `BadWindow` for a window that closed). Everything else after dispatch is **unconfirmed**, including a field still unchanged at the deadline (an application may apply a paste late) and a field with no readable Text: an error whose sentence says the paste was sent once and the field must be read before retrying. Nothing is sent a second time, and no answer after dispatch says or implies that a retry is safe.
+4. **Revalidate, then dispatch once.** Immediately before sending, check that the same element has focus with the same selection and caret, and that the desktop focus is unchanged: on the background route the synthetic-focus state the engine holds for the window, on the foreground route the X server's real input focus. On any change, run the cleanup (below) and refuse with `requested field or selection changed before dispatch; nothing was sent`. Otherwise send Ctrl+V once through the background route (the foreground route in `dedicated` mode for a listed family).
+5. **Confirm.** Poll the element's Text every 20 ms for up to 2 s for the expected change, which is that the text now contains the inserted string where the caret or selection was. The check is against the inserted segment, not the whole field, so autocompletion or suggestion text around it (the cause of the newest build's Chrome false errors) does not fail it. Meanwhile the paste's selection transfer is served within the transfer bounds (below). When both are done, run the cleanup and release the lock.
+6. **Answer.** **Applied** (success) when the change is confirmed. **Not applied** only when nothing was sent (a refusal before dispatch: no editable target, the field, selection or focus changed, `clipboard busy`, or CLIPBOARD lost before dispatch) or when the input was rejected outright (the X server refused the events, for example with `BadWindow` for a window that closed). Everything else after dispatch is **unconfirmed**, including a field still unchanged at the deadline (an application may apply a paste late), a transfer that hit its bounds before the Text read confirmed the edit, and a field with no readable Text: an error whose sentence says the paste was sent once and the field must be read before retrying. Nothing is sent a second time, and no answer after dispatch says or implies that a retry is safe.
 
-**The clipboard lock.** The clipboard belongs to the display, not to one engine, so two sessions pasting on one display at once could each paste the other's text or restore a stale clipboard. A paste therefore holds a per-display lock that every engine shares, from the snapshot through taking ownership, dispatch and the transfer's completion to the conditional restore; `clipboard_read` holds it from its Copy through its snapshot, since its Copy changes the owner too. The lock is the private X selection `CUA_CLIPBOARD_LOCK`, owned by a lock window the engine creates: acquiring finds the selection unowned with `GetSelectionOwner`, takes it with `SetSelectionOwner`, and confirms with a second `GetSelectionOwner` that the lock window holds it; releasing gives it up. The engine then also acquires the vendor's `SKY_CLIPBOARD_LOCK` (R/A §2.6) the way the vendor's `SelectionReader::lock` takes it (recorded in `sky-linux-behaviour.md`, M0), in that order, so a vendor engine sharing the display during comparisons and cua's engine wait for each other. Acquiring both takes at most 5 s; after that the request is refused with `clipboard busy` and nothing is sent. If a non-participant (a program that takes CLIPBOARD without the lock) takes ownership before dispatch, the paste aborts with nothing sent; after dispatch, the result is unconfirmed and the restore is skipped.
+**The cleanup.** One guarded operation ends every paste on every exit path: normal completion, a refusal before dispatch, a timeout and an error. The engine never calls `SetSelectionOwner` to restore. While it still owns CLIPBOARD (it has received no `SelectionClear`), restoring means switching the content it serves to the remembered snapshot, which it keeps serving afterwards as the vendor's persistent owner does (R/A §2.6), so no other client's newer clipboard can be overwritten. Once it has received `SelectionClear`, the cleanup does nothing.
+
+**Transfer bounds.** After Ctrl+V, no `SelectionRequest` within 500 ms means no transfer started; an active transfer must make progress at least every 2 s between INCR chunks and finish within 10 s overall. On any of these, the engine stops serving that transfer, runs the cleanup, and answers unconfirmed unless the Text read already confirmed the edit. Requests run one at a time, so a paste never holds the request queue beyond these bounds, the lock's 5 s and the 2 s confirmation.
+
+**The clipboard lock.** The clipboard belongs to the display, not to one engine, so two sessions pasting on one display at once could each paste the other's text or restore a stale clipboard. A paste therefore holds a per-display lock that every engine shares, from the snapshot through taking ownership, dispatch and the transfer to the cleanup; `clipboard_read` holds it from its Copy through its snapshot, since its Copy changes the owner too. The lock is the private X selection `CUA_CLIPBOARD_LOCK`, owned by a lock window the engine creates. Acquiring it is atomic: `GrabServer`, `GetSelectionOwner` (it must answer None), `SetSelectionOwner` to the lock window, `UngrabServer`. The grab is that short and is released before any waiting or clipboard work; a lock found owned is tried again after the grab is released. Releasing gives the selection up. The engine then takes the vendor's `SKY_CLIPBOARD_LOCK` (R/A §2.6) the same way, after `CUA_CLIPBOARD_LOCK`. How the vendor itself acquires `SKY_CLIPBOARD_LOCK` is recorded in M0's behaviour specification; interoperating with a vendor engine pasting at the same time is best effort, and the differential harness never runs two engines' pastes concurrently. Acquiring both takes at most 5 s; after that the request is refused with `clipboard busy` and nothing is sent. If a non-participant (a program that takes CLIPBOARD without the lock) takes ownership before dispatch, the paste aborts with nothing sent; after dispatch, the result is unconfirmed. Either way the engine has received `SelectionClear`, so the cleanup leaves the new owner's contents alone.
 
 `EditableText.PasteText` is never called; neither is `InsertText` or `SetTextContents` (they bypass the application's own input handling, and their support differs by toolkit). `clipboard_read` invokes the application's Copy through its menu or context action as the vendor does and snapshots every offered format under a handle; `clipboard_release` frees it. Snapshot limits keep the vendor's 64 MiB aggregate (F §7).
 
@@ -158,7 +163,7 @@ Every milestone that changes engine behaviour or the wire (M1b's first release, 
 
 **The differential harness** (`scripts/linux-engine-diff.mjs` with its library under `scripts/linux-engine-diff/`) runs on an X11 machine with the scenes open and drives three engines over the wire directly (or, with `--via vendor-js`, through OpenAI's own JavaScript client with `OAI_SKY_LINUX_BIN` set to each engine in turn): the pinned vendor binary, the newest vendor binary (its path given by `--newest`; it is never installed), and `cua-engine`.
 
-It measures in blocks. A block is one engine with its process started fresh for the block, so nothing an engine retained (cua's retention included) outlives it; the block takes the cold sample (the first request after the engine starts) and then the warm series (7 tree reads, 5 per input operation). Block order rotates across the sitting (three blocks per engine by default), so the engines interleave without sharing a process, and cold and warm series are reported and judged apart. Tree reads of a scene window serve every engine; where retention state matters (screenshots and input), each engine gets its own equivalent scene window, so one engine's retained window is never the window another is measured on.
+It measures in blocks. A block is one engine with its process started fresh for the block, so nothing an engine retained (cua's retention included) outlives it; the block takes the cold sample (the first request after the engine starts) and then the warm series (7 tree reads, 5 per input operation). Block order rotates across the sitting (three blocks per engine by default), so the engines interleave without sharing a process, and no two engines ever paste at the same time; cold and warm series are reported and judged apart. Tree reads of a scene window serve every engine; where retention state matters (screenshots and input), each engine gets its own equivalent scene window, so one engine's retained window is never the window another is measured on.
 
 Per operation and scene it records, for each engine, the samples, the output normalized (native ids mapped by position, file paths dropped, images compared by size and mean absolute pixel difference), the accessibility-bus call count (from `dbus-monitor --address <a11y bus>` filtered to the engine's unique names), the effect read back (text through the tree, caret, scroll position), and non-interference, proven continuously:
 
@@ -172,7 +177,7 @@ Beyond the reference scenes the harness runs the over-budget scene (a harness HT
 
 It writes `results.jsonl` and a `summary.md` table to `docs/evidence/2026-10-28-own-linux-engine/<milestone>/`. The verdict for an operation passes when cua's median is at or below the bar's (warm against warm, cold against cold), its output equals the vendor's (or differs only as a declared deviation listed in `scripts/linux-engine-diff/deviations.mjs`, each naming this spec's section), its witness and audit are clean wherever the vendor's witness is, and its effect is verified wherever either vendor build's is.
 
-**The facade suites.** From M1b the facade-level suites run on either engine. `scripts/repl-parity.mjs --suite native` runs the native cases (19 today) on a declared Linux device with `--host cua` (cua's own host, the only one on Linux) and `--engine vendor|cua`, forwarding the selection to the device as `CUA_NATIVE_ENGINE` and, with `--engine-bin`, `CUA_LINUX_ENGINE_BIN`; its `diff` pairs the two engine lanes. `scripts/native-baseline.mjs` measures the facade end to end on Linux with `--engine vendor|cua`, and `compare --engines` judges the two lanes. Both verify which engine answered from the trusted worker's child process: its executable (`/proc/<pid>/exe`) must be the pinned runtime's `sky_linux_<arch>` on the vendor lane and the installed or named `cua-engine` on the cua lane, and a run where anything else answered is incomplete. `scripts/repl-parity/devices.mjs` declares the two VMs (M1b, with their preparation; Concrete Steps). In M1a, before `cua serve` can select another engine, the facade-level proof is `scripts/linux-engine-diff.mjs --via vendor-js` alone. The native suite's two text cases, which today require the GTK failure and the window's exit (A §3.2), become positive cases (text inserted, window alive) with a recorded oracle departure, in M2. `scripts/accept/linux-native.mjs` types with `typeText` once M2 lands instead of one keysym per character.
+**The facade suites.** From M1b the facade-level suites run on either engine. `scripts/repl-parity.mjs --suite native` runs the native cases (19 today) on a declared Linux device with `--host cua` (cua's own host, the only one on Linux) and `--engine vendor|cua`, forwarding the selection to the device as `CUA_NATIVE_ENGINE` and, with `--engine-bin`, `CUA_LINUX_ENGINE_BIN`; its `diff` pairs the two engine lanes. `scripts/native-baseline.mjs` measures the facade end to end on Linux with `--engine vendor|cua`, and `compare --engines` judges the two lanes. Both verify which engine answered from the trusted worker's child process: its executable (`/proc/<pid>/exe`) must be the pinned runtime's `sky_linux_<arch>` on the vendor lane and the installed or named `cua-engine` on the cua lane, and a run where anything else answered is incomplete. `scripts/repl-parity/devices.mjs` declares the two VMs (M1b, with their preparation; Concrete Steps). In M1a, before `cua serve` can select another engine, the facade-level proof is `scripts/linux-engine-diff.mjs --via vendor-js` alone. The native suite's two text cases, which today require the GTK failure and the window's exit (A §3.2), become positive cases (text inserted, window alive) with a recorded oracle departure, in M2; until then the `cua` lane meets M1b's temporary candidate expectations for them (M1b). `scripts/accept/linux-native.mjs` types with `typeText` once M2 lands instead of one keysym per character.
 
 **CI.** A new ci-kit gate `engine-linux` on the `hosted` lane (GitHub's Ubuntu runner), from M1b: `cargo fmt --check`, the release build, `cargo test` (wire, D-Bus marshalling, keysym table and chord semantics, JPEG settings, families table), and a live test under `xvfb-run` with `dbus-run-session`, `at-spi2-core` and a GTK3 test window (`zenity --text-info --editable`) that reads the tree, sends a background `press_key` whose effect it reads back through the tree, and captures a window screenshot. M2 adds the paste assertions: a Unicode `type_text` and a `clipboard_write` read back exactly. Live comparisons against the vendor run on the #171 VM, never in CI (the vendor package is not fetched there).
 
@@ -183,13 +188,13 @@ Run on the #171 VM (x86-64) and, for M5, on an arm64 Ubuntu 24.04 VM provisioned
 1. **No vendor process.** With `CUA_NATIVE_ENGINE=cua`, a computer session that binds gedit, reads it, types and takes a screenshot leaves `pgrep -fc 'sky_linux'` at 0 throughout, and `cua doctor` shows the engine row with the pinned version and hash (M1b), the service as `cua` (M3).
 2. **The same answers.** For each of the 21 commands on the scenes, the differential harness (Concrete Steps) reports cua's output equal to the vendor's or a declared deviation, for every operation, the retention cases included.
 3. **At or below the bar.** In the same run, every operation's verdict passes on speed: cua's warm median at or below the faster vendor build's warm median, and its cold first request at or below the faster cold one. The 480-element gedit tree read and the 222-element Chrome read, the window screenshot, `press_key`, `click`, `scroll`, `drag` are each listed with the three medians of each series.
-4. **Same elements.** The gedit and Chrome reads return exactly the vendor's nodes (480 and 222 on the reference scenes: same native ids, roles, names, descriptions, states, actions and order) through the level-pipelined per-element read; on the over-budget scene the retained native ids equal the vendor's exactly, and read through the facade the state ends with the truncation line (M4); the summary records each engine's accessibility-bus calls and how many it awaited one after another. If M4 adopts `Cache.GetItems`, its output equals the sequential read's on menus, Qt and a changing tree.
+4. **Same elements.** The gedit and Chrome reads return exactly the vendor's nodes (480 and 222 on the reference scenes: same native ids, roles, names, descriptions, states, actions and order) through the windowed per-element read; on the over-budget scene the retained native ids equal the vendor's exactly, cua's accessibility-bus calls are at most the vendor's plus M0's constant, and read through the facade the state ends with the truncation line (M4); the summary records each engine's accessibility-bus calls and how many it awaited one after another. If M4 adopts `Cache.GetItems`, its output equals the sequential read's on menus, Qt and a changing tree.
 5. **Background left alone.** Every window-targeted operation in the run, in `shared` mode, keeps the witness unchanged for its whole span and its audit clean, on every family where the vendor's witness is unchanged; the activate-and-restore stub engine fails both.
-6. **Text arrives once.** `typeText('cua171 안녕 e\u0301 🙂\nline2')` (a combining acute after e) returns success and reads back exactly in gedit, gnome-text-editor and the harness textarea page in Chrome; a single-line Unicode string typed into Chrome's address bar returns success and reads back exactly; `clipboard_write` of a snapshot into gedit succeeds; the accessibility-bus trace of the whole run contains no `PasteText`, `InsertText` or `SetTextContents` call. Paste's safety cases hold: a preselected range is replaced by the text; a focus change between observation and dispatch is refused with nothing sent; two sessions pasting distinct markers at once each land once in their own field, and no stale clipboard is restored; a target that applies the paste after the deadline answers unconfirmed, never with a sentence that permits a retry, and holds the text once; a paste into a field whose Text cannot be read returns the unconfirmed sentence and the field contains the text once.
+6. **Text arrives once.** `typeText('cua171 안녕 e\u0301 🙂\nline2')` (a combining acute after e) returns success and reads back exactly in gedit, gnome-text-editor and the harness textarea page in Chrome; a single-line Unicode string typed into Chrome's address bar returns success and reads back exactly; `clipboard_write` of a snapshot into gedit succeeds; the accessibility-bus trace of the whole run contains no `PasteText`, `InsertText` or `SetTextContents` call. Paste's safety cases hold: a preselected range is replaced by the text; a focus change between observation and dispatch is refused with nothing sent, and combined with an external clipboard takeover it leaves the new owner's contents intact; two sessions pasting distinct markers at once each land once in their own field, and no stale clipboard is restored; two engines acquiring the lock in a tight loop and pasting distinct markers never cross-deliver; a page that handles no paste and a requestor that stalls an INCR transfer each get the unconfirmed answer within the transfer bounds; a target that applies the paste after the deadline answers unconfirmed, never with a sentence that permits a retry, and holds the text once; a paste into a field whose Text cannot be read returns the unconfirmed sentence and the field contains the text once.
 7. **Identity and minimized windows.** With three Chrome windows of the same title and size, reading the first returns its full tree or the duplicate-windows sentence, never a one-node X11 tree with `at_spi` content missing. A minimized gedit window is listed with `minimized: true`; a gedit window bound through the real facade and then minimized still reads (`getAXState` returns its tree), and its screenshot answers `Screenshot unavailable for window <id>.`.
 8. **Device mode.** For a family M0 lists as ignoring background input, a click in `shared` mode returns the "does not accept background input" sentence with the witness unchanged, and in `dedicated` mode takes effect with the window activated.
 9. **Install.** On a fresh `CUA_HOME` on x86-64 and arm64, `cua install --engine` fetches the pinned asset, verifies its hash, and `cua doctor` passes the engine row with the pinned version; `file $CUA_HOME/engine/linux/cua-engine` says statically linked.
-10. **Suites.** `scripts/repl-parity.mjs --suite native` passes on the `cua` engine lane with the two text cases as positive cases, and its diff against the vendor engine lane shows only declared differences; `scripts/native-baseline.mjs compare --engines` between the two Linux lanes prints VERDICT: PASS with no cua median above the vendor's; both record that the requested engine was the trusted worker's child; `scripts/accept/linux-native.mjs` passes with `CUA_NATIVE_ENGINE=cua`; `npm test` and the `engine-linux` gate pass.
+10. **Suites.** `scripts/repl-parity.mjs --suite native` passes on the `cua` engine lane with the two text cases as positive cases (from M2; in M1b under the temporary candidate expectations), and its diff against the vendor engine lane shows only declared differences; `scripts/native-baseline.mjs compare --engines` between the two Linux lanes prints VERDICT: PASS with no cua median above the vendor's; both record that the requested engine was the trusted worker's child; `scripts/accept/linux-native.mjs` passes with `CUA_NATIVE_ENGINE=cua`; `npm test` and the `engine-linux` gate pass.
 11. **Both architectures.** Items 2–8 hold on the arm64 VM against that machine's vendor builds.
 12. **Vendor-free runtime (M6a).** On an empty home after `cua install`, and on an upgraded home whose vendor tree is then made unavailable, a computer session (items 1 and 6) and a browser-only session work; with the vendor tree unavailable, only `CUA_NATIVE_ENGINE=vendor` is refused, naming `cua install`.
 13. **Retirement (M6b).** After the soak, `cua install` on Linux downloads no ChatGPT package, `cua doctor` lists no vendor runtime rows on Linux, `CUA_NATIVE_ENGINE=vendor` is refused as `engine_retired`, and items 1–10 still hold, the facade suites' vendor lanes cited from M5's sitting (the vendor engine is no longer selectable).
@@ -211,15 +216,15 @@ Run on the #171 VM (x86-64) and, for M5, on an arm64 Ubuntu 24.04 VM provisioned
 
 A prototyping milestone whose deliverable is knowledge. It answers three questions before the engine is built: can a Rust read of the vendor's exact tree beat the vendor, and by how much with each fetching strategy; what do background input and capture actually need (retention, waits, key pacing); and which application families ignore the background route.
 
-**Behaviour specification.** `docs/doperpowers/research/2026-10-28-own-linux-engine/sky-linux-behaviour.md`: the consolidated rules M1a builds against, each tagged with its source in `R/A` or `R/F` (the macOS `sky-behaviour.md` is the shape): window association, the per-element field set, preorder admission and limits, the visible-table path, every command's validation and error sentence, the chord grammar and its Shift rules, the background and desktop routes, activation, scroll and drag arithmetic, clipboard formats and handles and how `SelectionReader::lock` takes `SKY_CLIPBOARD_LOCK`, screenshot encoding.
+**Behaviour specification.** `docs/doperpowers/research/2026-10-28-own-linux-engine/sky-linux-behaviour.md`: the consolidated rules M1a builds against, each tagged with its source in `R/A` or `R/F` (the macOS `sky-behaviour.md` is the shape): window association, the per-element field set, preorder admission and limits, the visible-table path, every command's validation and error sentence, the chord grammar and its Shift rules, the background and desktop routes, activation, scroll and drag arithmetic, clipboard formats, handles and the persistent owner, how the vendor acquires `SKY_CLIPBOARD_LOCK` (`SelectionReader::lock`), screenshot encoding.
 
-**Spike.** `native/linux-engine/` as a minimal package: the wire, cua's D-Bus client, `list_windows`, `get_window_state` (tree, with `include_screenshot`), `press_key` and `click` on the background route. Three tree variants behind a `--tree sequential|level|cache` flag: `sequential` reproduces the vendor's calls one by one (its job is to show the harness reproduces the vendor's numbers); `level` pipelines the same per-element calls level by level on a persistent connection under preorder admission (the candidate main path); `cache` seeds from `GetItems` as an experiment only, recording which applications answer it, with which signature, and where its output differs from `sequential`. Two retention variants for input behind `--retention per-request|session|none`, and a `--settle-ms` for the post-`RedirectWindow` wait. Run a first cut of the differential harness (gedit and Chrome scenes, both vendor builds, engines in fresh-process blocks) over all variants.
+**Spike.** `native/linux-engine/` as a minimal package: the wire, cua's D-Bus client, `list_windows`, `get_window_state` (tree, with `include_screenshot`), `press_key` and `click` on the background route. Three tree variants behind a `--tree sequential|frontier|cache` flag: `sequential` reproduces the vendor's calls one by one (its job is to show the harness reproduces the vendor's numbers); `frontier` sends the same per-element calls along the preorder frontier on a persistent connection, inside the admission window, with `--window-calls <W>` and `--window-bytes <R>` (the candidate main path); `cache` seeds from `GetItems` as an experiment only, recording which applications answer it, with which signature, and where its output differs from `sequential`. Two retention variants for input behind `--retention per-request|session|none`, and a `--settle-ms` for the post-`RedirectWindow` wait. Run a first cut of the differential harness (gedit and Chrome scenes, both vendor builds, engines in fresh-process blocks) over all variants, and `frontier` also on a first over-budget page; from those runs M0 chooses W and R and fixes the constant by which cua's bus calls on the over-budget scene may exceed the vendor's.
 
 **Wire fixtures.** `scripts/linux-engine-diff/fixtures/wire/` holds the vendor's answers for each kind of `output`, taken from its recorded wire (R/F §13, the traces' `wire.jsonl`): an object (`get_window_state`), an array (`list_windows`), a string (`clipboard_read`'s handle) and null (`click`). The harness's vendor-JS adapter replays each through OpenAI's JavaScript client against a stub engine and checks what the wrapper returns, and does the same with the spike's answers for the commands it implements.
 
 **Matrix.** On the VM, install the families' representative applications (GTK3 gedit, GTK4 gnome-text-editor, Qt6 `kate` or `qtcreator`, Firefox, an Electron app (cua's Electron fixture from the macOS harness, built for Linux), LibreOffice Writer, xterm) and record, for each, whether the vendor's background click, key and `type_text` take effect, with the witness. Record each family's `Application.ToolkitName`.
 
-**Promote or discard.** Promote when the wire fixtures pass through the vendor JavaScript, `level` returns the vendor's node set exactly on both scenes with a median at or below the bar, and a background `press_key` with `session` retention (or `none`) has an unchanged witness, a verified effect and a median at or below the bar. If `level` does not beat the bar on the tree read within three tuning iterations, the spike is discarded as a shape, its traces kept, and the fork goes to the owner with `cache`'s measurements beside it (adopting `cache` is M4's question, under the rules in Observation). The verdict, the numbers and the matrix go to Surprises & Discoveries; the design's input and retention paragraphs are revised from them with a Decision Log entry.
+**Promote or discard.** Promote when the wire fixtures pass through the vendor JavaScript, `frontier` returns the vendor's node set exactly on both scenes with a median at or below the bar, and a background `press_key` with `session` retention (or `none`) has an unchanged witness, a verified effect and a median at or below the bar. If `frontier` does not beat the bar on the tree read within three tuning iterations, the spike is discarded as a shape, its traces kept, and the fork goes to the owner with `cache`'s measurements beside it (adopting `cache` is M4's question, under the rules in Observation). The verdict, the numbers and the matrix go to Surprises & Discoveries; the design's input and retention paragraphs are revised from them with a Decision Log entry.
 
 What it does not touch: `src/`, install, CI. What it proves: none of the acceptance; it fixes the numbers and the families list M1a–M4 are measured against.
 
@@ -227,9 +232,9 @@ What it does not touch: `src/`, install, CI. What it proves: none of the accepta
 
 What exists at its end: `cua-engine` answers all 21 commands with the vendor's outputs on the scenes, faster where M0 showed it can be, and the differential harness runs the full operation set against both vendor builds, with the continuous witness, the X request audit, the stub engine's negative check, block isolation, the over-budget scene and the retention cases. Behind OpenAI's own JavaScript (the harness's `--via vendor-js` mode, `OAI_SKY_LINUX_BIN` set in the harness's own process), every operation answers as it does over the wire; that is M1a's only facade-level proof, because `cua serve` cannot select another engine until M1b.
 
-Touches: `native/linux-engine/` (all modules above; `level` becomes the only tree path, and `sequential` and `cache` leave the engine), `scripts/linux-engine-diff.mjs` and `scripts/linux-engine-diff/` (the witness, the audit, the stub engine, the scenes), `docs/evidence/2026-10-28-own-linux-engine/m1a/`.
+Touches: `native/linux-engine/` (all modules above; `frontier`, with M0's W and R, becomes the only tree path, and `sequential` and `cache` leave the engine), `scripts/linux-engine-diff.mjs` and `scripts/linux-engine-diff/` (the witness, the audit, the stub engine, the scenes), `docs/evidence/2026-10-28-own-linux-engine/m1a/`.
 
-Decisions: behaviour as in `sky-linux-behaviour.md`, including the vendor's defects that M2 and M4 own (the identity fallback, minimized omission and refusal, `PasteText` for text: in M1a `type_text` and `clipboard_write` answer `type_text is not available in this engine build` rather than reproduce a known failure, a declared deviation until M2). Keys keep the vendor's chord semantics exactly, with the mixed-case shortcut and held-chord tests (Input, Keys). Admission is the vendor's preorder, checked on the over-budget scene by exact retained native ids. Error sentences are the vendor's where `R/A` lists them, else cua's own and bounded. The harness's deviations list starts here.
+Decisions: behaviour as in `sky-linux-behaviour.md`, including the vendor's defects that M2 and M4 own (the identity fallback, minimized omission and refusal, `PasteText` for text: in M1a `type_text` and `clipboard_write` answer `type_text is not available in this engine build` rather than reproduce a known failure, a declared deviation until M2). Keys keep the vendor's chord semantics exactly, with the mixed-case shortcut and held-chord tests (Input, Keys). Admission is the vendor's preorder and speculation stays inside it, checked on the over-budget scene by exact retained native ids and the bus-call bound. Error sentences are the vendor's where `R/A` lists them, else cua's own and bounded. The harness's deviations list starts here.
 
 Does not touch: `src/`, the service, install, selection.
 
@@ -244,6 +249,7 @@ Touches: `.github/workflows/linux-engine.yml`, `runtime/engine/linux-engine.json
 The facade harnesses' Linux engine lanes:
 
 - `scripts/repl-parity.mjs` and `scripts/repl-parity/{native,topology}.mjs`: the Linux native suite accepts `--engine vendor|cua` with `--host cua`, and `--engine-bin <absolute path on the device>` with `--engine cua`, and forwards them to the device's serve as `CUA_NATIVE_ENGINE` and `CUA_LINUX_ENGINE_BIN`; `meta.json` records the engine; `diff` pairs runs by engine, against the new `scripts/repl-parity/expected/native-linux.json`.
+- Temporary candidate expectations for the two native text cases on the `cua` engine, in `scripts/repl-parity/expected/native-linux.json` and its diff declarations: the known refusal sentence `type_text is not available in this engine build`, the text unchanged (the cases record whether their marker reached the text) and the window alive. The run's assessment accepts exactly these for exactly those two cases, so M1b's full-suite run passes honestly; no other candidate failure is waived, and M2 replaces them with the positive assertions.
 - `scripts/repl-parity/vendor-defects.mjs` and `test/repl-parity/vendor-defects.json`: a declaration names the engine it was observed on (on Linux the host is always cua's). The current text-case oracles encode arm64's outcome, so the vendor engine on the x64 VM fails them differently (Surprises); that failure is declared here, and M2 replaces the oracles.
 - `scripts/repl-parity/devices.mjs` declares `cua-171` (the #171 VM) and `cua-171-arm64` (M5's arm64 VM), Linux, each comment naming the device's preparation: an ssh alias of that name on the VM reaching the VM itself, so the controller runs in the VM's worktree as `hosted-macos` reaches itself; one ready bound Chrome profile, which repl-parity's prepare requires; gedit, gnome-text-editor and zenity installed (Concrete Steps has the commands).
 - `scripts/native-baseline.mjs` and `scripts/native-baseline/{engine,remote,linux,compare}.mjs`: `--engine vendor|cua` (and `--engine-bin`) on Linux computer runs, with no approved engine (that is macOS's); the Linux lanes in `compare --engines` (`--host cua --engine vendor` against `--host cua --engine cua`, the engine the one permitted difference, from M3 the service too).
@@ -253,15 +259,15 @@ Decisions: the workflow is dispatched on the M1b pull request's reviewed head co
 
 Does not touch: the service, the facade, the text route.
 
-Proves: acceptance 1 (engine row), 9, and 10's facade suites on both engine lanes except the text cases.
+Proves: acceptance 1 (engine row), 9, and 10's facade suites on both engine lanes, the text cases under the temporary candidate expectations.
 
 ### M2 — Text and clipboard
 
 What exists at its end: `type_text`, `clipboard_read`, `clipboard_write`, `clipboard_release` and `type_characters` work through the one verified paste route on gedit, gnome-text-editor and Chrome, with the three outcomes, under the clipboard lock; the engine is released.
 
-Touches: `native/linux-engine/src/{clipboard,atspi,x11}`, `native/linux-engine/tests/` (the gate's paste assertions), the harness's text scenes and effects (the textarea page, gnome-text-editor, the address bar case, the late-applying page, the concurrent-paste case), `test/repl-parity/scenarios/native.mjs` (the two text cases become positive: text inserted once, window alive) with the vendor engine's failure of them declared in `test/repl-parity/vendor-defects.json`, `scripts/accept/linux-native.mjs` (types with `typeText`), the release (version, pin), `.claude-plugin/plugin.json`, evidence `m2/`.
+Touches: `native/linux-engine/src/{clipboard,atspi,x11}`, `native/linux-engine/tests/` (the gate's paste assertions), the harness's text scenes and effects (the textarea page, gnome-text-editor, the address bar case, the late-applying page, the ignored-paste page, the stalled-INCR requestor, the concurrent-paste and lock-contention cases), `test/repl-parity/scenarios/native.mjs` (the two text cases become positive: text inserted once, window alive) with the vendor engine's failure of them declared in `test/repl-parity/vendor-defects.json`, and M1b's temporary candidate expectations removed from `scripts/repl-parity/expected/native-linux.json`, `scripts/accept/linux-native.mjs` (types with `typeText`), the release (version, pin), `.claude-plugin/plugin.json`, evidence `m2/`.
 
-Decisions: the design's six steps and the clipboard lock; the 20 ms poll and 2 s confirmation deadline; the sentences `requested field or selection changed before dispatch; nothing was sent`, `clipboard busy` and the unconfirmed `Paste was sent once and could not be confirmed; read the field before retrying`; conditional clipboard restore. Text over 64 MiB is refused before anything is sent. Tests: a preselected range is replaced; a focus change between observation and dispatch is refused; two sessions paste distinct markers at once with no cross-delivery and no stale restore; a harness page whose paste handler inserts the text 3 s after the paste event gets the unconfirmed answer, never one that permits a retry.
+Decisions: the design's six steps, the guarded cleanup, the transfer bounds (500 ms to the first request, 2 s between INCR chunks, 10 s overall) and the atomic clipboard lock; the 20 ms poll and 2 s confirmation deadline; the sentences `requested field or selection changed before dispatch; nothing was sent`, `clipboard busy` and the unconfirmed `Paste was sent once and could not be confirmed; read the field before retrying`; conditional clipboard restore. Text over 64 MiB is refused before anything is sent. Tests: a preselected range is replaced; a focus change between observation and dispatch is refused, and combined with an external clipboard takeover it leaves the new owner's contents intact; two sessions paste distinct markers at once with no cross-delivery and no stale restore; two engines acquire the lock in a tight loop and paste distinct markers, under adversarial interleavings, with no cross-delivery; a harness page whose paste handler inserts the text 3 s after the paste event gets the unconfirmed answer, never one that permits a retry; a page that handles no paste and a requestor that requests and then stops acknowledging INCR chunks each get the unconfirmed answer within the bounds, the request queue free again after them.
 
 Proves: acceptance 6, and 2–5 for the text and clipboard commands.
 
@@ -309,97 +315,144 @@ After a soak the owner ends (no `CUA_NATIVE_ENGINE=vendor` needed on Linux since
 
 ## Concrete Steps
 
-Working directory is `~/Developer/GitHub/cua-171` on the #171 VM (from the MacBook, `devcloud vm ssh dc-linux171-1e68` opens a shell there), in the X session's environment, unless stated. A command that needs what a milestone adds is marked with that milestone and does not work before it lands.
+Working directory is the worktree, `$WT` (`~/Developer/GitHub/cua-171` on the #171 VM; from the MacBook, `devcloud vm ssh dc-linux171-1e68` opens a shell there), in the X session's environment, unless stated. A command that needs what a milestone adds is marked with that milestone and does not work before it lands. Every block is bash, checked with `bash -n`; it has no placeholders, only the variables below.
 
+**Variables**, set once per shell. `MILESTONE` and `BRANCH` name the milestone being worked (`m0`, `m1a`, `m1b`, `m2`, `m3`, `m4`, `m5`); on the arm64 VM, `DEVICE=cua-171-arm64`.
+
+```bash
+DEVICE=cua-171
+MILESTONE=m1a
+BRANCH=feat/171-linux-engine
+WT="$HOME/Developer/GitHub/cua-171"
+DATE="$(date -u +%Y%m%d)"
+ARCH="$(node -p process.arch)"
+OUT="docs/evidence/2026-10-28-own-linux-engine/$MILESTONE"
+if [ "$MILESTONE" = m5 ]; then OUT="$OUT/$ARCH"; fi
+MSG_FILE="$HOME/.local/share/cua-171/commit-msg.txt"
+SKY="$HOME/.local/share/cua/runtimes/26.928.40906-linux-$ARCH/cua_node/lib/node_modules/@oai/sky"
+VENDOR="$SKY/bin/linux/sky_linux_$ARCH"
+NEWEST="$HOME/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_$ARCH"
+BUILT="$WT/native/linux-engine/target/release/cua-engine"
+INSTALLED="$HOME/.local/share/cua/engine/linux/cua-engine"
+ENGINE_BIN=()   # M1b, before its release exists: ENGINE_BIN=(--engine-bin "$BUILT")
+case "$MILESTONE" in
+  m0) SCENES=gedit,chrome ;;
+  m1a|m1b) SCENES=gedit,chrome,over-budget,retention ;;
+  *) SCENES=gedit,chrome,over-budget,retention,chrome-textarea,chrome-address-bar,gnome-text-editor ;;
+esac
+export DISPLAY=:0 XAUTHORITY="$HOME/.Xauthority"
 ```
-# Once per VM (the #171 VM; for M5 also the arm64 VM). ci-gate is not installed on the VM; it needs only Node 22+ and
-# the authenticated gh, both present there.
-git clone https://github.com/SSFSKIM/ci-kit ~/Developer/GitHub/ci-kit && ~/Developer/GitHub/ci-kit/install.sh
-# M1b on: the device's preparation for the facade harnesses (cua-171 here, cua-171-arm64 on the arm64 VM): an ssh
-# alias reaching the VM itself, and one ready bound Chrome profile (repl-parity's prepare requires it)
-ssh-keygen -t ed25519 -N '' -C cua-171 -f ~/.ssh/cua-171_ed25519 && cat ~/.ssh/cua-171_ed25519.pub >> ~/.ssh/authorized_keys
-printf 'Host cua-171\n    HostName 127.0.0.1\n    User new\n    IdentityFile ~/.ssh/cua-171_ed25519\n    IdentitiesOnly yes\n' >> ~/.ssh/config
-ssh-keyscan -t ed25519 127.0.0.1 >> ~/.ssh/known_hosts && ssh -o BatchMode=yes cua-171 true
-cua profiles list     # one ready profile (the #171 VM has `me`); else cua profiles add me --chrome-profile Default, then cua profiles bind me
-# expected: the ssh command exits 0 without a prompt
 
-# Once per milestone: the worktree of its branch (a later milestone first runs
-# git -C ~/Developer/GitHub/cua worktree remove ~/Developer/GitHub/cua-171)
-git -C ~/Developer/GitHub/cua fetch
-git -C ~/Developer/GitHub/cua worktree add ~/Developer/GitHub/cua-171 feat/171-linux-engine   # or the milestone's branch
-cd ~/Developer/GitHub/cua-171 && npm ci
-export DISPLAY=:0 XAUTHORITY=$HOME/.Xauthority
+**Once per VM.** ci-gate is not installed on the VM; it needs only Node 22+ and the authenticated `gh`, both present there. From M1b, the device's preparation for the facade harnesses: an ssh alias reaching the VM itself, and one ready bound Chrome profile, which repl-parity's prepare requires (the #171 VM has `me`; elsewhere `cua profiles add me --chrome-profile Default`, then `cua profiles bind me`).
 
-# Every stopping point: commit, push (prepare and the release check commits out from origin), gate the committed HEAD
-git add -A && git commit -m '<milestone>: <what>' && git push -u origin HEAD
-ci-gate ~/Developer/GitHub/cua-171
-# expected: GREEN; the tested SHA, `git rev-parse HEAD`, goes into the milestone's evidence README and pull request
+```bash
+git clone https://github.com/SSFSKIM/ci-kit "$HOME/Developer/GitHub/ci-kit"
+"$HOME/Developer/GitHub/ci-kit/install.sh"
+# M1b on
+ssh-keygen -t ed25519 -N '' -C "$DEVICE" -f "$HOME/.ssh/${DEVICE}_ed25519"
+cat "$HOME/.ssh/${DEVICE}_ed25519.pub" >> "$HOME/.ssh/authorized_keys"
+printf 'Host %s\n    HostName 127.0.0.1\n    User %s\n    IdentityFile %s\n    IdentitiesOnly yes\n' "$DEVICE" "$(id -un)" "$HOME/.ssh/${DEVICE}_ed25519" >> "$HOME/.ssh/config"
+ssh-keyscan -t ed25519 127.0.0.1 >> "$HOME/.ssh/known_hosts"
+ssh -o BatchMode=yes "$DEVICE" true
+# expected: exit 0 without a prompt
+cua profiles list
+# expected: one ready profile
+```
 
-# M0 and later: build and smoke the engine
+**At the start of each milestone**, the worktree of its branch (an earlier milestone's worktree is removed first).
+
+```bash
+if [ -d "$WT" ]; then git -C "$HOME/Developer/GitHub/cua" worktree remove "$WT"; fi
+git -C "$HOME/Developer/GitHub/cua" fetch
+git -C "$HOME/Developer/GitHub/cua" worktree add "$WT" "$BRANCH"
+cd "$WT" && npm ci
+```
+
+**Every stopping point:** commit, push, gate the committed HEAD. Write the commit message to `$MSG_FILE` first; it is never part of a block. Push before preparing or releasing, since both check commits out from origin.
+
+```bash
+git -C "$WT" add -A
+git -C "$WT" commit -F "$MSG_FILE"
+git -C "$WT" push -u origin "$BRANCH"
+ci-gate "$WT"
+# expected: GREEN; the tested SHA, printed next, goes into "$OUT/README.md" and the pull request
+git -C "$WT" rev-parse HEAD
+```
+
+**Build, smoke and test the engine** (M0 on; the tests are what the CI gate runs).
+
+```bash
 cargo build --release --manifest-path native/linux-engine/Cargo.toml
-printf '%s\n' '{"id":1,"command":"list_windows","input":{}}' | ./native/linux-engine/target/release/cua-engine server
-# expected: one line {"id":1,"ok":true,"output":[{"id":<window id>,"app":"org.gnome.gedit",...},...]}: output is a JSON array, not a string
-
-# M0: the wire fixtures through OpenAI's JavaScript client
-SKY=~/.local/share/cua/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky
-node scripts/linux-engine-diff.mjs --check-wire --vendor-js "$SKY"
-# expected: one PASS line per output kind (object, array, string, null), for the vendor's recorded answers and the spike's
-
-# The differential harness, M1a's full set (M0's first cut takes --scene gedit,chrome --out .../m0; M2 adds the text scenes)
-VENDOR=$SKY/bin/linux/sky_linux_x64
-NEWEST=~/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64
-node scripts/linux-engine-diff.mjs --vendor "$VENDOR" --newest "$NEWEST" --cua native/linux-engine/target/release/cua-engine \
-  --scene gedit,chrome,over-budget,retention --ops all --out docs/evidence/2026-10-28-own-linux-engine/m1a
-# expected: the stub engine failed by the witness and the audit, then summary.md with one row per operation and scene:
-#           pinned / newest / cua cold and warm medians, calls, witness, audit, effect, verdict PASS
-
-# Engine tests, as the CI gate runs them (VM or CI)
+printf '%s\n' '{"id":1,"command":"list_windows","input":{}}' | "$BUILT" server
+# expected: one line {"id":1,"ok":true,"output":[{"id":...,"app":"org.gnome.gedit",...},...]}: output is a JSON array, not a string
 cargo test --manifest-path native/linux-engine/Cargo.toml
 xvfb-run -a dbus-run-session -- cargo test --manifest-path native/linux-engine/Cargo.toml --features live -- --test-threads 1
+```
 
-# Release, ending M1b, M2, M3 and M4 (M1b adds the workflow and the pin script): the reviewed head commit, with
-# native/linux-engine/Cargo.toml's version bumped, is pushed
-gh workflow run linux-engine.yml --ref "$(git branch --show-current)" -f commit="$(git rev-parse HEAD)"
-gh run watch "$(gh run list --workflow linux-engine.yml --limit 1 --json databaseId -q '.[0].databaseId')"
-node scripts/linux-engine-pin.mjs linux-engine-v<version>
-# expected: both assets pass gh attestation verify and runtime/engine/linux-engine.json names their URLs and SHA-256s;
-#           commit it to the same pull request (from M3 with MIN_ENGINE_VERSION raised where needed), push, gate
-node bin/cua.mjs install --engine && node bin/cua.mjs doctor
-# expected: the engine row passes with the new version and hash
+**The wire fixtures** through OpenAI's JavaScript client (M0), then **the differential harness** (M0's first cut, M1a's full set, M2's text scenes, by `SCENES`; M0's matrix families join by name once M0 lists them).
 
-# The facade suites (M1b on; M1b adds --engine and --engine-bin on Linux, the engine-answered check, diff by engine,
-# the expected file and the Linux lanes of compare --engines). Before the first release exists, add
-# --engine-bin ~/Developer/GitHub/cua-171/native/linux-engine/target/release/cua-engine to every --engine cua run.
-SHA=$(git rev-parse HEAD) OUT=docs/evidence/2026-10-28-own-linux-engine/<milestone>
-mkdir -p $OUT/parity
-node scripts/repl-parity.mjs prepare --device cua-171 --commit $SHA
-node scripts/repl-parity.mjs run --device cua-171 --suite native --host cua --engine vendor --out $OUT/parity/vendor
-node scripts/repl-parity.mjs run --device cua-171 --suite native --host cua --engine cua --out $OUT/parity/cua
-node scripts/repl-parity.mjs diff $OUT/parity/vendor $OUT/parity/cua --expected scripts/repl-parity/expected/native-linux.json
-node scripts/repl-parity.mjs cleanup-prepared --device cua-171
+```bash
+node scripts/linux-engine-diff.mjs --check-wire --vendor-js "$SKY"
+# expected: one PASS line per output kind (object, array, string, null), for the vendor's recorded answers and the spike's
+node scripts/linux-engine-diff.mjs --vendor "$VENDOR" --newest "$NEWEST" --cua "$BUILT" --scene "$SCENES" --ops all --out "$OUT/diff"
+# expected: the stub engine failed by the witness and the audit, then summary.md with one row per operation and scene:
+#           pinned / newest / cua cold and warm medians, calls, witness, audit, effect, verdict PASS
+```
+
+**Release**, ending M1b, M2, M3 and M4 (M1b adds the workflow and the pin script). The reviewed head commit carries the bumped version in `native/linux-engine/Cargo.toml` and is pushed. Afterwards the pin is committed to the same pull request through the stopping-point block (from M3 with `MIN_ENGINE_VERSION` raised where needed).
+
+```bash
+VERSION="$(cargo metadata --no-deps --format-version 1 --manifest-path native/linux-engine/Cargo.toml | jq -r '.packages[] | select(.name == "cua-linux-engine") | .version')"
+HEAD_SHA="$(git rev-parse HEAD)"
+gh workflow run linux-engine.yml --ref "$BRANCH" -f commit="$HEAD_SHA"
+sleep 15   # until the dispatched run is listed
+RUN_ID="$(gh run list --workflow linux-engine.yml --commit "$HEAD_SHA" --event workflow_dispatch --limit 1 --json databaseId -q '.[0].databaseId')"
+gh run watch "$RUN_ID" --exit-status
+node scripts/linux-engine-pin.mjs "linux-engine-v$VERSION"
+# expected: both assets pass gh attestation verify, and runtime/engine/linux-engine.json names their URLs and SHA-256s
+node bin/cua.mjs install --engine
+node bin/cua.mjs doctor
+# expected: the engine row passes with VERSION and the pinned hash
+```
+
+**The facade suites** (M1b on; M1b adds `--engine` and `--engine-bin` on Linux, the engine-answered check, diff by engine, the expected file with its temporary candidate expectations, and the Linux lanes of `compare --engines`). The native baseline refuses while any gedit runs, so the block first ends the research fixture on `scratch.txt`.
+
+```bash
+SHA="$(git rev-parse HEAD)"
+EXPERIMENT="171-$MILESTONE-$DATE"
+mkdir -p "$OUT/parity"
+node scripts/repl-parity.mjs prepare --device "$DEVICE" --commit "$SHA"
+node scripts/repl-parity.mjs run --device "$DEVICE" --suite native --host cua --engine vendor --out "$OUT/parity/vendor"
+node scripts/repl-parity.mjs run --device "$DEVICE" --suite native --host cua --engine cua "${ENGINE_BIN[@]}" --out "$OUT/parity/cua"
+node scripts/repl-parity.mjs diff "$OUT/parity/vendor" "$OUT/parity/cua" --expected scripts/repl-parity/expected/native-linux.json
+node scripts/repl-parity.mjs cleanup-prepared --device "$DEVICE"
 # expected: the cua run prints assertions PASS; the vendor run PASS or RECORDED_VENDOR_DEFECT (the declared text cases);
 #           the diff report is ok with only the declared differences
-
-# The native baseline on both lanes, three runs each in one sitting. It refuses while any gedit runs: end the research
-# fixture on ~/.local/share/cua-171/tools/scratch.txt first.
-node scripts/native-baseline.mjs prepare --device cua-171 --commit $SHA
+pkill -f "gedit --standalone $HOME/.local/share/cua-171/tools/scratch.txt" || true
+node scripts/native-baseline.mjs prepare --device "$DEVICE" --commit "$SHA"
 for n in 1 2 3; do
-  node scripts/native-baseline.mjs run --device cua-171 --experiment 171-<milestone>-<date> --host cua --engine vendor --out $OUT/baseline/cv/run-$n
-  node scripts/native-baseline.mjs run --device cua-171 --experiment 171-<milestone>-<date> --host cua --engine cua --out $OUT/baseline/cc/run-$n
+  node scripts/native-baseline.mjs run --device "$DEVICE" --experiment "$EXPERIMENT" --host cua --engine vendor --out "$OUT/baseline/cv/run-$n"
+  node scripts/native-baseline.mjs run --device "$DEVICE" --experiment "$EXPERIMENT" --host cua --engine cua "${ENGINE_BIN[@]}" --out "$OUT/baseline/cc/run-$n"
 done
-node scripts/native-baseline.mjs summary $OUT/baseline/cv && node scripts/native-baseline.mjs summary $OUT/baseline/cc
-node scripts/native-baseline.mjs compare --engines $OUT/baseline/cv $OUT/baseline/cc --out $OUT/baseline/engines.md
+node scripts/native-baseline.mjs summary "$OUT/baseline/cv"
+node scripts/native-baseline.mjs summary "$OUT/baseline/cc"
+node scripts/native-baseline.mjs compare --engines "$OUT/baseline/cv" "$OUT/baseline/cc" --out "$OUT/baseline/engines.md"
 # expected: VERDICT: PASS and the per-operation table, no cua median above the vendor's
-
-# The Linux acceptance script against the VM's default home (its engine from `node bin/cua.mjs install --engine`)
 CUA_NATIVE_ENGINE=cua node scripts/accept/linux-native.mjs
-# expected: a JSON report with every step PASS
+# expected: a JSON report with every step PASS (the VM's default home, its engine from node bin/cua.mjs install --engine)
+```
 
-# M5, on each VM (cua-171; cua-171-arm64 with that machine's sky_linux_arm64 builds): the pinned release only
-export CUA_HOME=$(mktemp -d) && node bin/cua.mjs install --engine && node bin/cua.mjs doctor && file $CUA_HOME/engine/linux/cua-engine   # item 9
-unset CUA_HOME && node bin/cua.mjs install --engine
-# then the differential harness with --cua ~/.local/share/cua/engine/linux/cua-engine --out .../m5/<arch> (items 2-8)
-# and the facade suites above without --engine-bin, with --device for that VM (item 10)
+**M5**, on each VM, on the pinned release only: `ENGINE_BIN` stays empty, and there is no `CUA_LINUX_ENGINE_BIN` and no local build. On the arm64 VM the newest arm64 build is extracted to the `NEWEST` path first, its package checked as R/F §0 records for x64. After this block, the facade-suites block runs as written (item 10).
+
+```bash
+FRESH="$(mktemp -d)"
+CUA_HOME="$FRESH" node bin/cua.mjs install --engine
+CUA_HOME="$FRESH" node bin/cua.mjs doctor
+file "$FRESH/engine/linux/cua-engine"
+# expected (item 9): the engine row passes with the pinned version; file says statically linked
+node bin/cua.mjs install --engine
+node scripts/linux-engine-diff.mjs --vendor "$VENDOR" --newest "$NEWEST" --cua "$INSTALLED" --scene "$SCENES" --ops all --out "$OUT/diff"
+# expected (items 2-8): as for M1a, every verdict PASS
 ```
 
 ## Interfaces and Dependencies
@@ -416,9 +469,9 @@ Selection (`src/runtime/launch.mjs`): `nativeEngineFor` resolves on Linux with t
 
 Pins (`runtime/engine/linux-engine.json`): `{version, release, assets: {x64: {url, sha256}, arm64: {url, sha256}}}`, written by `scripts/linux-engine-pin.mjs <release tag>` after `gh attestation verify` of both assets. The release workflow (`.github/workflows/linux-engine.yml`): `workflow_dispatch` with `commit` (40 hex digits).
 
-The harness (`scripts/linux-engine-diff.mjs`): `--vendor <bin> --newest <bin> --cua <bin> --scene <list> --ops <list|all> --out <dir> [--blocks 3] [--samples-tree 7] [--samples-input 5] [--via vendor-js --vendor-js <@oai/sky directory>]`, and `--check-wire --vendor-js <@oai/sky directory>` (M0); exit 0 when the stub engine failed the witness and the audit and every verdict passes. Scenes: `gedit`, `chrome`, `over-budget`, `retention` (M1a), `chrome-textarea`, `chrome-address-bar`, `gnome-text-editor` (M2), and the matrix families by name. `scripts/linux-engine-diff/deviations.mjs` exports `[{op, scene?, field, reason, section}]`.
+The harness (`scripts/linux-engine-diff.mjs`): `--vendor <bin> --newest <bin> --cua <bin> --scene <list> --ops <list|all> --out <dir> [--blocks 3] [--samples-tree 7] [--samples-input 5] [--via vendor-js --vendor-js <@oai/sky directory>]`, and `--check-wire --vendor-js <@oai/sky directory>` (M0); exit 0 when the stub engine failed the witness and the audit and every verdict passes. Scenes: `gedit`, `chrome`, `over-budget`, `retention` (M1a), `chrome-textarea`, `chrome-address-bar`, `gnome-text-editor` (M2), and the matrix families by name; the paste safety cases (the late-applying and ignored-paste pages, the stalled-INCR requestor, concurrent pastes, lock contention) run as operations of the M2 scenes. The over-budget scene's bus-call constant, like the tree read's window (W calls, R bytes), is fixed by M0. `scripts/linux-engine-diff/deviations.mjs` exports `[{op, scene?, field, reason, section}]`.
 
-The facade harnesses (M1b): `scripts/repl-parity.mjs run --device <Linux device> --suite native --host cua --engine vendor|cua [--engine-bin <absolute path on the device>] --out <dir>` and `diff <vendor-dir> <cua-dir> --expected scripts/repl-parity/expected/native-linux.json`; `scripts/native-baseline.mjs run --device <Linux device> --experiment <id> --host cua --engine vendor|cua [--engine-bin <absolute path on the device>] --out <dir>/run-<n>` and `compare --engines <cv-dir> <cc-dir>`; the devices `cua-171` and `cua-171-arm64` in `scripts/repl-parity/devices.mjs`.
+The facade harnesses (M1b): `scripts/repl-parity.mjs run --device <Linux device> --suite native --host cua --engine vendor|cua [--engine-bin <absolute path on the device>] --out <dir>` and `diff <vendor-dir> <cua-dir> --expected scripts/repl-parity/expected/native-linux.json` (which carries M1b's temporary candidate expectations for the two text cases until M2); `scripts/native-baseline.mjs run --device <Linux device> --experiment <id> --host cua --engine vendor|cua [--engine-bin <absolute path on the device>] --out <dir>/run-<n>` and `compare --engines <cv-dir> <cc-dir>`; the devices `cua-171` and `cua-171-arm64` in `scripts/repl-parity/devices.mjs`.
 
 The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it names the ModuleTree's lock hash, the managed Node's version, the sandbox helper's upstream tag and the engine's version, and its `release` is derived from the four. `locateRuntime` and `resolveRuntime` return it with the paths `buildLaunch` needs (the module tree, the engine, cua's service). `ModuleTree` is #117's (its Interfaces): the packages cells import and `classic-level`, under `$CUA_HOME/modules/<lock hash>/`, named to the own host as `CUA_REPL_NODE_MODULE_DIRS`.
 
@@ -482,6 +535,16 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
   - The truncation line renders in the facade (`src/cua-api/bind-linux-app.mjs`), because the service returns structure and only the facade renders the tree; the facade constraint names this one exception, and M4's over-budget fixture proves the line end to end. Rejected: the service printing it, which has no rendered tree to append to.
   Rationale: the authoring design would have changed behaviour callers rely on (shortcut keys, the admitted node set, a caret moved by an unneeded click) or could pass a regression its checks did not see (an activate-and-restore engine, warm state shared across engines, an engine no user installs). Each resolution keeps the vendor's observable behaviour where a caller depends on it and closes the gap in the check.
   Date/Author: 2026-10-28, the design session (cua_repl session 1ea561bc), resolving both reviews.
+
+- Decision (2026-10-28, review round 2): a second review, of the round-1 revision (5412c177), raised six findings; the design session resolved each, and this revision applies them to the design, acceptance, milestones, Concrete Steps and Interfaces.
+  - One guarded clipboard cleanup ends every paste on every exit path (completion, a refusal before dispatch, a timeout, an error). The engine never calls `SetSelectionOwner` to restore: while it still owns CLIPBOARD it switches what it serves to the remembered snapshot and keeps serving it, as the vendor's persistent owner does, and after `SelectionClear` it does nothing. Round 1's refusal path gave up ownership and restored without that guard, so a program that took the clipboard in between would have had its newer contents overwritten. Rejected: restoring by taking ownership back.
+  - The lock is acquired atomically under a short server grab (`GrabServer`, `GetSelectionOwner` answering None, `SetSelectionOwner` to the lock window, `UngrabServer`), released before any waiting or clipboard work, with `SKY_CLIPBOARD_LOCK` taken the same way after it. Round 1's check, set and second check could interleave so that a second engine took the lock between the first one's check and its confirmation, and both believed they held it. How the vendor acquires `SKY_CLIPBOARD_LOCK` moves to M0's behaviour specification; interoperating with a vendor engine pasting at the same time is best effort, and the harness never pastes with two engines at once. Rejected: the round-1 check-set-check acquisition.
+  - The transfer wait is bounded (500 ms to the first `SelectionRequest`, 2 s between INCR chunks, 10 s overall), after which the engine stops serving, runs the cleanup and answers unconfirmed unless the Text read already confirmed the edit. Requests run one at a time, so round 1's unbounded wait for transfer completion let a requestor that never asked, or stalled, hold every later request of the session. Rejected: waiting for completion without a bound.
+  - Speculative acquisition is bounded: the read follows the preorder frontier with a window of at most W calls in flight and R bytes of replies outstanding (M0 chooses them, starting from 64 and 4 MiB), schedules attribute calls only for nodes preorder admission could still admit, schedules nothing once admission reaches 5,000, and lists a very wide container's children without fetching their attributes outside the window. The over-budget fixture now also bounds cua's bus calls by the vendor's plus a constant M0 fixes, and the spike's `level` variant becomes `frontier` with the window parameters. Round 1's level-by-level pipelining put a whole level in flight, unbounded on a very wide container, and fetched attributes for nodes preorder never admits. Rejected: level-by-level pipelining.
+  - Concrete Steps are executable: variables set once (`MILESTONE`, `VERSION` from `cargo metadata` through `jq`, `DATE`), every expansion quoted, commit messages kept out of the blocks (`git commit -F "$MSG_FILE"`), and every block checked with `bash -n` (shellcheck reports nothing either).
+  - M1b's full-suite parity run gets an honest verdict before M2: temporary candidate expectations for the two text cases on the `cua` engine (the refusal `type_text is not available in this engine build`, the text unchanged, the window alive), in `scripts/repl-parity/expected/native-linux.json` and its diff declarations, which M2 replaces with the positive assertions; no other candidate failure is waived. Without them the run would fail on two cases its own engine deliberately refuses until M2, or pass only by an unstated waiver.
+  Rationale: each finding was a place where an exit path, a race or a wait could hurt the person's clipboard or stall a session, where speculation could cost more calls than the vendor, or where the execution text could not be run or judged as written; the resolutions close each with one rule and a test that would fail without it.
+  Date/Author: 2026-10-28, the design session (cua_repl session 1ea561bc), resolving the second review.
 
 ## Outcomes & Retrospective
 

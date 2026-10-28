@@ -74,15 +74,21 @@ function engineVersion(bin) {
 const PAGE_OF = { chrome: 'scene.html', 'over-budget': 'over-budget.html', 'big-text': 'big-text.html' };
 const GEDIT_TEXT = 'cua171 differential scene\nline two of the scratch file\n';
 
-/** The input each sample of an operation sends, and how its effect is read back. */
-function inputFor(scene, op, window, i) {
+/**
+ * The input each sample sends. gedit's press_key types `x` while the document is at its original length and takes
+ * it back with BackSpace otherwise, so a key that did not arrive never makes a later BackSpace delete the scene's own
+ * text. gedit's clicks alternate between two points far apart in the empty area below the text (they move only the
+ * caret): clicks at one point less than the double-click time apart would be a double and a triple click, which
+ * selects a line the next key then replaces. Chrome: the scene's big button.
+ */
+function inputFor(scene, op, i, before) {
   const [w, h] = scene.kind === 'chrome' ? [1050, 780] : [910, 756];
   if (op === 'press_key') {
-    const key = scene.kind === 'gedit' ? (i % 2 === 0 ? 'x' : 'BackSpace') : 'x';
-    return { window: { id: window.id }, key };
+    const key = scene.kind === 'gedit' ? (before.text.length > scene.originalLength ? 'BackSpace' : 'x') : 'x';
+    return { window: { id: scene.id }, key };
   }
-  // Chrome: the scene's big button; gedit: the empty text area below the two lines (moves the caret only)
-  return scene.kind === 'chrome' ? { window: { id: window.id }, x: Math.round(w / 2), y: Math.round(h * 0.45) } : { window: { id: window.id }, x: Math.round(w / 2), y: Math.round(h * 0.8) };
+  if (scene.kind === 'chrome') return { window: { id: scene.id }, x: Math.round(w / 2), y: Math.round(h * 0.45) };
+  return { window: { id: scene.id }, x: Math.round(w / 2) + (i % 2 ? 150 : -150), y: Math.round(h * 0.8) };
 }
 
 async function readEffect(desktop, scene, op) {
@@ -156,7 +162,12 @@ export async function runDiff(args) {
     const windows = {};
     for (const scene of args.scenes) {
       const ops = plan.filter((p) => p.scene === scene).map((p) => p.op);
-      const open = (role) => (scene === 'gedit' ? desktop.openGedit(role, GEDIT_TEXT) : desktop.openChrome(role, PAGE_OF[scene]));
+      const open = async (role) => {
+        if (scene !== 'gedit') return desktop.openChrome(role, PAGE_OF[scene]);
+        const opened = await desktop.openGedit(role, GEDIT_TEXT);
+        opened.originalLength = (await desktop.geditText(opened)).length;
+        return opened;
+      };
       windows[scene] = { shared: ops.includes('tree') ? await open('read') : null, own: {} };
       if (ops.some((op) => OWN_WINDOW_OPS.has(op))) {
         for (const label of labels) windows[scene].own[label] = await open(label.replace(/[^a-z0-9]+/gi, '_'));
@@ -196,9 +207,8 @@ export async function runDiff(args) {
             if (op === 'list_windows') request = ['list_windows', {}];
             else if (op === 'tree' || op === 'tree_shot') request = ['get_window_state', { window: { id: target.id }, include_screenshot: op === 'tree_shot' }];
             else {
-              const input = inputFor(target, op, target, i);
-              request = [op, input];
               before = await readEffect(desktop, target, op);
+              request = [op, inputFor(target, op, i, before)];
             }
             const send = () => engine.request(...request);
             const answered = target ? await witness.span(`${label}:${sceneName}:${op}`, send) : { value: await send(), witness: null };
@@ -242,8 +252,8 @@ export async function runDiff(args) {
             emit(row);
           }
           await engine.close();
-          // gedit's press_key series alternates x and BackSpace; an odd count leaves an x to take back
-          if (op === 'press_key' && target.kind === 'gedit' && n % 2 === 1) {
+          // gedit's press_key series ends with the document back at its original length
+          if (op === 'press_key' && target.kind === 'gedit' && (await desktop.geditText(target)).length > target.originalLength) {
             const fix = new Engine({ label: 'restore', bin: args.cua }).start();
             await fix.request('press_key', { window: { id: target.id }, key: 'BackSpace' });
             await fix.close();
@@ -279,9 +289,11 @@ export async function runDiff(args) {
     const rows = readFileSync(results, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((r) => r.run === run && r.kind === 'sample');
     for (const { scene: sceneName, op } of plan) {
       const opRows = rows.filter((r) => r.scene === sceneName && r.op === op);
-      const reference = mode(opRows.filter((r) => r.engine === 'pinned' && r.ok).map((r) => r.digest));
+      // The reference is the pinned build's answer in the same block: a scene's own windows change across blocks
+      // (gedit marks a document modified, a counter grows), and so does the window list.
+      const reference = (block) => mode(opRows.filter((r) => r.engine === 'pinned' && r.ok && r.block === block).map((r) => r.digest));
       const refKept = keep[`pinned|${sceneName}|${op}`];
-      for (const r of opRows) if (r.digest) r.equal = r.digest === reference;
+      for (const r of opRows) if (r.digest) r.equal = r.digest === reference(r.block);
       for (const candidate of labels.filter((l) => !VENDORS.includes(l))) {
         const verdict = judgeOperation(opRows.filter((r) => [...VENDORS, candidate].includes(r.engine)), { vendors: VENDORS, candidate });
         const extra = {};

@@ -367,3 +367,12 @@ test('the summary has a row per engine with its medians, calls and verdict, and 
   assert.match(text, /\| gedit \| tree \| \*\*bar\*\* \| 500 \|/);
   assert.match(text, /run valid/);
 });
+
+test('through the vendor JavaScript speed is recorded but not judged', () => {
+  const rows = [...samples('pinned', 300, [200]), ...samples('newest', 250, [230]), ...samples('cua', 400, [300])];
+  const opts = { vendors: ['pinned', 'newest'], candidate: 'cua' };
+  assert.equal(judgeOperation(rows, opts).pass, false);
+  const unjudged = judgeOperation(rows, { ...opts, judgeSpeed: false });
+  assert.equal(unjudged.pass, true);
+  assert.equal(unjudged.speed, false);
+});

@@ -476,7 +476,7 @@ export async function runDiff(args) {
       }
       for (const candidate of labels.filter((l) => !VENDORS.includes(l))) {
         const opAudits = args.audit && inputOp(op) ? Object.fromEntries(labels.map((l) => [l, audits[`${sceneName}|${op}|${l}`]])) : null;
-        const verdict = judgeOperation(opRows.filter((r) => [...VENDORS, candidate].includes(r.engine)), { vendors: VENDORS, candidate, audits: opAudits });
+        const verdict = judgeOperation(opRows.filter((r) => [...VENDORS, candidate].includes(r.engine)), { vendors: VENDORS, candidate, audits: opAudits, judgeSpeed: via === 'wire' });
         const extra = {};
         const kept = keep[`${candidate}|${sceneName}|${op}`];
         if (kept && refKept && OPS[op].kind !== 'retention') {

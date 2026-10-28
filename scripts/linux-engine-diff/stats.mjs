@@ -54,7 +54,7 @@ export function summarizeEngine(rows) {
  * cold against cold, warm against warm), every request answered, its output equal, its witness clean wherever a
  * vendor build's is, and its effect verified wherever a vendor build's is.
  */
-export function judgeOperation(rows, { vendors, candidate, audits = null }) {
+export function judgeOperation(rows, { vendors, candidate, audits = null, judgeSpeed = true }) {
   const engines = {};
   for (const label of new Set(rows.map((r) => r.engine))) {
     engines[label] = summarizeEngine(rows.filter((r) => r.engine === label));
@@ -76,7 +76,9 @@ export function judgeOperation(rows, { vendors, candidate, audits = null }) {
     if (bar[series] === null || c[series] === null) continue;
     if (c[series] > bar[series]) {
       speed = false;
-      reasons.push(`${candidate}: ${series} ${c[series]} ms > bar ${bar[series]} ms`);
+      // through the vendor JavaScript a request's time includes the client's deferred settle after the previous
+      // action, which the harness's own reads between requests use up unevenly: recorded, judged over the wire only
+      if (judgeSpeed) reasons.push(`${candidate}: ${series} ${c[series]} ms > bar ${bar[series]} ms`);
     }
   }
   if (vendorRows.some((e) => e.witness === true) && c.witness !== true) reasons.push(`${candidate}: the witness changed`);

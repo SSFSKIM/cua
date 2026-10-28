@@ -53,6 +53,98 @@ struct Pointer {
     y: i16,
 }
 
+/// The keys held for one target: reference counts per keycode, the press order, and the modifier masks
+/// (behaviour §8.3, §11.3). Sending is the caller's: each method hands it the keycode and the state before the
+/// event, so the bookkeeping is testable without an X server.
+#[derive(Debug, Default)]
+pub struct Keys {
+    modifiers: Vec<(u8, u16)>,
+    held: HashMap<u8, u32>,
+    press_order: Vec<u8>,
+}
+
+impl Keys {
+    pub fn new(modifiers: Vec<(u8, u16)>) -> Keys {
+        Keys {
+            modifiers,
+            ..Keys::default()
+        }
+    }
+
+    /// The modifier masks of every keycode held.
+    pub fn mask(&self) -> u16 {
+        let mut state = 0;
+        for (&keycode, &count) in &self.held {
+            if count > 0 {
+                for &(k, mask) in &self.modifiers {
+                    if k == keycode {
+                        state |= mask;
+                    }
+                }
+            }
+        }
+        state
+    }
+
+    /// Presses each keycode not already held, in order; one already held is only counted up. On a failed press,
+    /// what this call acquired is released (its errors dropped: the press's error is the answer).
+    pub fn acquire(
+        &mut self,
+        keycodes: &[u8],
+        mut press: impl FnMut(u8, u16) -> Result<()>,
+        mut unpress: impl FnMut(u8, u16) -> Result<()>,
+    ) -> Result<Vec<u8>> {
+        let mut acquired = Vec::new();
+        for &keycode in keycodes {
+            if let Some(count) = self.held.get_mut(&keycode).filter(|c| **c > 0) {
+                *count += 1;
+                acquired.push(keycode);
+                continue;
+            }
+            if let Err(error) = press(keycode, self.mask()) {
+                let _ = self.release(&acquired, &mut unpress);
+                return Err(error);
+            }
+            self.held.insert(keycode, 1);
+            self.press_order.push(keycode);
+            acquired.push(keycode);
+        }
+        Ok(acquired)
+    }
+
+    /// Releases in reverse order; a key held more than once is only counted down. Every release is attempted; a
+    /// failed one leaves its key counted and the first error is returned (behaviour §11.3).
+    pub fn release(&mut self, keycodes: &[u8], mut unpress: impl FnMut(u8, u16) -> Result<()>) -> Result<()> {
+        let mut first = None;
+        for &keycode in keycodes.iter().rev() {
+            match self.held.get(&keycode).copied() {
+                Some(count) if count > 1 => {
+                    self.held.insert(keycode, count - 1);
+                }
+                Some(1) => match unpress(keycode, self.mask()) {
+                    Ok(()) => {
+                        self.held.remove(&keycode);
+                        self.press_order.retain(|k| *k != keycode);
+                    }
+                    Err(error) => {
+                        first.get_or_insert(error);
+                    }
+                },
+                _ => {}
+            }
+        }
+        first.map_or(Ok(()), Err)
+    }
+
+    /// Every key still held, in reverse press order, with the bookkeeping cleared.
+    pub fn drain(&mut self) -> Vec<u8> {
+        let mut keys = std::mem::take(&mut self.press_order);
+        keys.reverse();
+        self.held.clear();
+        keys
+    }
+}
+
 /// One request's input session for a window (behaviour §8.1).
 pub struct Session {
     pub target: Window,
@@ -60,9 +152,7 @@ pub struct Session {
     redirected: bool,
     anchor_time: u32,
     anchor: Instant,
-    modifiers: Vec<(u8, u16)>,
-    held_keys: HashMap<u8, u32>,
-    press_order: Vec<u8>,
+    keys: Keys,
     buttons: u16,
     grab: Option<Window>,
     pointer: Option<Pointer>,
@@ -135,9 +225,7 @@ impl Session {
             redirected,
             anchor_time,
             anchor,
-            modifiers,
-            held_keys: HashMap::new(),
-            press_order: Vec::new(),
+            keys: Keys::new(modifiers),
             buttons: 0,
             grab: None,
             pointer: None,
@@ -166,9 +254,20 @@ impl Session {
         Ok(session)
     }
 
-    /// Ends the session: buttons still held released, the teardown wait, FocusOut unless the real focus has
-    /// since entered the target, and the per-request unredirect.
+    /// Ends the session: keys and buttons still held released (best effort: the request has already answered
+    /// with any release error), the teardown wait, FocusOut unless the real focus has since entered the target,
+    /// and the per-request unredirect.
     pub fn close(mut self, x: &mut X11) {
+        for keycode in self.keys.drain() {
+            let _ = send_key(
+                x,
+                self.target,
+                self.now(),
+                keycode,
+                false,
+                self.buttons | self.keys.mask(),
+            );
+        }
         for button in 1..=3u8 {
             if self.buttons & (1 << (button + 7)) != 0 {
                 let _ = self.button(x, button, false);
@@ -199,80 +298,50 @@ impl Session {
     /// The held-button mask and the modifier masks of the keys held for this target, before an event updates
     /// them (behaviour §8.3).
     fn state(&self) -> u16 {
-        let mut state = self.buttons;
-        for (&keycode, &count) in &self.held_keys {
-            if count > 0 {
-                for &(k, mask) in &self.modifiers {
-                    if k == keycode {
-                        state |= mask;
-                    }
-                }
-            }
-        }
-        state
-    }
-
-    fn key_event(&mut self, x: &X11, keycode: u8, press: bool) -> Result<()> {
-        let event = KeyPressEvent {
-            response_type: if press { KEY_PRESS_EVENT } else { KEY_RELEASE_EVENT },
-            detail: keycode,
-            sequence: 0,
-            time: self.now(),
-            root: x.root,
-            event: self.target,
-            child: x11rb::NONE,
-            root_x: 0,
-            root_y: 0,
-            event_x: 0,
-            event_y: 0,
-            state: self.state().into(),
-            same_screen: true,
-        };
-        x.conn
-            .send_event(false, self.target, EventMask::NO_EVENT, event)?
-            .check()?;
-        Ok(())
+        self.buttons | self.keys.mask()
     }
 
     /// Presses each keycode not already held, in order, pacing after each new edge (behaviour §11.3).
     pub fn acquire(&mut self, x: &X11, keycodes: &[u8]) -> Result<Vec<u8>> {
-        let mut acquired = Vec::new();
-        for &keycode in keycodes {
-            let count = self.held_keys.entry(keycode).or_insert(0);
-            if *count > 0 {
-                *count += 1;
-                acquired.push(keycode);
-                continue;
-            }
-            if let Err(error) = self.key_event(x, keycode, true) {
-                self.release(x, &acquired);
-                return Err(error);
-            }
-            self.held_keys.insert(keycode, 1);
-            self.press_order.push(keycode);
-            acquired.push(keycode);
-            std::thread::sleep(self.pacing.key);
-        }
-        Ok(acquired)
+        let (target, anchor_time, anchor, buttons, pace) = (
+            self.target,
+            self.anchor_time,
+            self.anchor,
+            self.buttons,
+            self.pacing.key,
+        );
+        let time = move || anchor_time.wrapping_add(anchor.elapsed().as_millis() as u32);
+        self.keys.acquire(
+            keycodes,
+            |keycode, mask| {
+                send_key(x, target, time(), keycode, true, buttons | mask)?;
+                std::thread::sleep(pace);
+                Ok(())
+            },
+            |keycode, mask| {
+                let sent = send_key(x, target, time(), keycode, false, buttons | mask);
+                std::thread::sleep(pace);
+                sent
+            },
+        )
     }
 
-    /// Releases in reverse press order; a key held by more than one acquisition is only counted down.
-    pub fn release(&mut self, x: &X11, keycodes: &[u8]) {
-        for &keycode in keycodes.iter().rev() {
-            match self.held_keys.get(&keycode).copied() {
-                Some(count) if count > 1 => {
-                    self.held_keys.insert(keycode, count - 1);
-                }
-                Some(1) => {
-                    if self.key_event(x, keycode, false).is_ok() {
-                        self.held_keys.remove(&keycode);
-                        self.press_order.retain(|k| *k != keycode);
-                    }
-                    std::thread::sleep(self.pacing.key);
-                }
-                _ => {}
-            }
-        }
+    /// Releases in reverse press order, pacing after each edge; every release is attempted and the first failure
+    /// is returned, so interrupted input never answers success.
+    pub fn release(&mut self, x: &X11, keycodes: &[u8]) -> Result<()> {
+        let (target, anchor_time, anchor, buttons, pace) = (
+            self.target,
+            self.anchor_time,
+            self.anchor,
+            self.buttons,
+            self.pacing.key,
+        );
+        let time = move || anchor_time.wrapping_add(anchor.elapsed().as_millis() as u32);
+        self.keys.release(keycodes, |keycode, mask| {
+            let sent = send_key(x, target, time(), keycode, false, buttons | mask);
+            std::thread::sleep(pace);
+            sent
+        })
     }
 
     /// Places the pointer at a root point: Enter and Motion to the deepest viewable child under it, or one
@@ -428,6 +497,27 @@ impl Session {
     }
 }
 
+/// One key event to the top-level target, root and event coordinates 0 (behaviour §8.3).
+fn send_key(x: &X11, target: Window, time: u32, keycode: u8, press: bool, state: u16) -> Result<()> {
+    let event = KeyPressEvent {
+        response_type: if press { KEY_PRESS_EVENT } else { KEY_RELEASE_EVENT },
+        detail: keycode,
+        sequence: 0,
+        time,
+        root: x.root,
+        event: target,
+        child: x11rb::NONE,
+        root_x: 0,
+        root_y: 0,
+        event_x: 0,
+        event_y: 0,
+        state: state.into(),
+        same_screen: true,
+    };
+    x.conn.send_event(false, target, EventMask::NO_EVENT, event)?.check()?;
+    Ok(())
+}
+
 /// Runs `body` inside a session for `target` and always closes it; the body's error wins.
 pub fn with_session<T>(
     x: &mut X11,
@@ -439,4 +529,110 @@ pub fn with_session<T>(
     let result = body(x, &mut session);
     session.close(x);
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use anyhow::anyhow;
+
+    const SHIFT: u8 = 50;
+    const CTRL: u8 = 37;
+
+    fn keys() -> Keys {
+        Keys::new(vec![(SHIFT, 1), (CTRL, 4)])
+    }
+
+    #[test]
+    fn a_press_carries_the_state_without_its_key_and_a_release_with_it() {
+        let mut k = keys();
+        let mut seen = Vec::new();
+        let held = k
+            .acquire(
+                &[CTRL, 38],
+                |kc, state| {
+                    seen.push((kc, true, state));
+                    Ok(())
+                },
+                |_, _| Ok(()),
+            )
+            .unwrap();
+        k.release(&held, |kc, state| {
+            seen.push((kc, false, state));
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(
+            seen,
+            vec![(CTRL, true, 0), (38, true, 4), (38, false, 4), (CTRL, false, 4)]
+        );
+        assert!(k.drain().is_empty());
+    }
+
+    #[test]
+    fn a_failing_release_is_returned_after_every_release_is_attempted() {
+        let mut k = keys();
+        let held = k.acquire(&[CTRL, SHIFT, 38], |_, _| Ok(()), |_, _| Ok(())).unwrap();
+        let mut attempted = Vec::new();
+        let result = k.release(&held, |kc, _| {
+            attempted.push(kc);
+            if kc == SHIFT {
+                Err(anyhow!("BadWindow on {kc}"))
+            } else {
+                Ok(())
+            }
+        });
+        assert_eq!(
+            attempted,
+            vec![38, SHIFT, CTRL],
+            "every release attempted, in reverse order"
+        );
+        assert_eq!(result.unwrap_err().to_string(), "BadWindow on 50");
+        assert_eq!(k.mask(), 1, "the failed key stays counted");
+        assert_eq!(
+            k.drain(),
+            vec![SHIFT],
+            "the session's close releases it and clears the bookkeeping"
+        );
+        assert_eq!(k.mask(), 0);
+    }
+
+    #[test]
+    fn the_first_of_several_release_errors_wins() {
+        let mut k = keys();
+        let held = k.acquire(&[CTRL, 38], |_, _| Ok(()), |_, _| Ok(())).unwrap();
+        let result = k.release(&held, |kc, _| Err(anyhow!("failed {kc}")));
+        assert_eq!(result.unwrap_err().to_string(), "failed 38");
+        assert_eq!(k.drain(), vec![38, CTRL]);
+    }
+
+    #[test]
+    fn shared_keys_are_counted_and_a_failed_press_releases_what_it_acquired() {
+        let mut k = keys();
+        let first = k.acquire(&[CTRL], |_, _| Ok(()), |_, _| Ok(())).unwrap();
+        let sent = std::cell::RefCell::new(Vec::new());
+        let error = k.acquire(
+            &[CTRL, 38, 39],
+            |kc, _| {
+                if kc == 39 {
+                    Err(anyhow!("no"))
+                } else {
+                    sent.borrow_mut().push(kc);
+                    Ok(())
+                }
+            },
+            |kc, _| {
+                sent.borrow_mut().push(kc + 100);
+                Ok(())
+            },
+        );
+        assert!(error.is_err());
+        assert_eq!(
+            sent.into_inner(),
+            vec![38, 138],
+            "ctrl was already held: no second press; 38 released on the failure"
+        );
+        k.release(&first, |_, _| Ok(())).unwrap();
+        assert!(k.drain().is_empty());
+    }
 }

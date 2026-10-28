@@ -253,18 +253,13 @@ impl Engine {
         Ok(json!({ "ax_tree": tree, "ax_tree_source": source, "screenshots": screenshots, "window": info }))
     }
 
-    /// The engine's private directory for screenshot files, created on first use, mode 0700.
+    /// The engine's private directory for screenshot files: created fresh on first use, owner-only, with an
+    /// unpredictable name.
     fn screenshot_dir(&mut self) -> Result<PathBuf> {
         if let Some(dir) = &self.shot_dir {
             return Ok(dir.clone());
         }
-        use std::os::unix::fs::DirBuilderExt;
-        let dir = std::env::temp_dir().join(format!("cua-engine-{}", std::process::id()));
-        std::fs::DirBuilder::new()
-            .mode(0o700)
-            .recursive(true)
-            .create(&dir)
-            .map_err(|e| anyhow!("failed to create {}: {e}", dir.display()))?;
+        let dir = crate::capture::make_private_dir(&std::env::temp_dir())?;
         self.shot_dir = Some(dir.clone());
         Ok(dir)
     }
@@ -291,7 +286,7 @@ impl Engine {
             if let Some(duration) = input.duration {
                 std::thread::sleep(Duration::from_millis(duration).saturating_sub(pacing.key));
             }
-            session.release(x, &held);
+            session.release(x, &held)?;
             Ok(Value::Null)
         })
     }
@@ -345,8 +340,9 @@ impl Engine {
                     std::thread::sleep(hold);
                 }
                 let released = pressed.and_then(|()| session.button(x, button, false));
-                session.release(x, &held);
+                let keys_released = session.release(x, &held);
                 released?;
+                keys_released?;
             }
             Ok(Value::Null)
         })

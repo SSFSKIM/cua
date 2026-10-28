@@ -41,14 +41,58 @@ pub fn screenshot_name(pid: u32, nanos: u128) -> String {
     format!("{pid}_{nanos}.jpg")
 }
 
-/// Writes `jpeg` into `dir` under the vendor's naming and returns its path.
+/// Creates `path` as a new directory, owner-only whatever the umask. `mkdir` is atomic and does not follow a
+/// symlink in the last component, so an existing directory, file or symlink at `path` is refused.
+pub fn create_private_dir(path: &Path) -> Result<()> {
+    use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
+    std::fs::DirBuilder::new()
+        .mode(0o700)
+        .create(path)
+        .map_err(|e| anyhow::anyhow!("failed to create {}: {e}", path.display()))?;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700))?;
+    let meta = std::fs::symlink_metadata(path)?;
+    let uid = std::fs::metadata("/proc/self")?.uid();
+    if !meta.is_dir() || meta.uid() != uid || meta.mode() & 0o777 != 0o700 {
+        anyhow::bail!("failed to create {}: not a private directory", path.display());
+    }
+    Ok(())
+}
+
+/// A fresh private directory under `parent` with an unpredictable name, `cua-engine-<pid>-<random hex>`.
+pub fn make_private_dir(parent: &Path) -> Result<PathBuf> {
+    let mut last = None;
+    for _ in 0..8 {
+        let mut random = [0u8; 8];
+        std::io::Read::read_exact(&mut std::fs::File::open("/dev/urandom")?, &mut random)?;
+        let suffix: String = random.iter().map(|b| format!("{b:02x}")).collect();
+        let path = parent.join(format!("cua-engine-{}-{suffix}", std::process::id()));
+        match create_private_dir(&path) {
+            Ok(()) => return Ok(path),
+            Err(error) => last = Some(error),
+        }
+    }
+    Err(last.expect("at least one attempt"))
+}
+
+/// Writes `jpeg` into `dir` under the vendor's naming and returns its path. The file is created new (an existing
+/// path or symlink is refused) with mode 0600 whatever the umask.
 pub fn write_screenshot(dir: &Path, jpeg: &[u8]) -> Result<PathBuf> {
+    use std::io::Write;
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|_| anyhow::anyhow!("system time is before the Unix epoch"))?
         .as_nanos();
     let path = dir.join(screenshot_name(std::process::id(), nanos));
-    std::fs::write(&path, jpeg).map_err(|e| anyhow::anyhow!("failed to write {}: {e}", path.display()))?;
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(&path)
+        .map_err(|e| anyhow::anyhow!("failed to create {}: {e}", path.display()))?;
+    file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+    file.write_all(jpeg)
+        .map_err(|e| anyhow::anyhow!("failed to write {}: {e}", path.display()))?;
     Ok(path)
 }
 
@@ -170,15 +214,77 @@ mod tests {
         assert!(mean < 4.0, "mean absolute difference {mean}");
     }
 
+    fn scratch(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("cua-engine-capture-test-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir(&dir).unwrap();
+        dir
+    }
+
+    fn mode(path: &Path) -> u32 {
+        use std::os::unix::fs::MetadataExt;
+        std::fs::symlink_metadata(path).unwrap().mode() & 0o777
+    }
+
+    #[test]
+    fn the_private_directory_is_new_owner_only_and_unpredictable() {
+        let parent = scratch("fresh");
+        let a = make_private_dir(&parent).unwrap();
+        let b = make_private_dir(&parent).unwrap();
+        assert_ne!(a, b);
+        assert_eq!(mode(&a), 0o700);
+        std::fs::remove_dir_all(&parent).unwrap();
+    }
+
+    #[test]
+    fn an_existing_directory_at_the_name_is_refused() {
+        let parent = scratch("collision");
+        let taken = parent.join("taken");
+        std::fs::create_dir(&taken).unwrap();
+        assert!(
+            create_private_dir(&taken)
+                .unwrap_err()
+                .to_string()
+                .contains("File exists")
+        );
+        std::fs::remove_dir_all(&parent).unwrap();
+    }
+
+    #[test]
+    fn a_symlink_at_the_name_is_refused_and_its_target_untouched() {
+        let parent = scratch("symlink");
+        let elsewhere = parent.join("elsewhere");
+        std::fs::create_dir(&elsewhere).unwrap();
+        let link = parent.join("link");
+        std::os::unix::fs::symlink(&elsewhere, &link).unwrap();
+        assert!(create_private_dir(&link).is_err());
+        let before = mode(&elsewhere);
+        // a screenshot file name taken by a symlink is refused too
+        let dir = make_private_dir(&parent).unwrap();
+        let first = write_screenshot(&dir, b"x").unwrap();
+        std::fs::remove_file(&first).unwrap();
+        std::os::unix::fs::symlink(elsewhere.join("planted"), &first).unwrap();
+        assert!(
+            std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&first)
+                .is_err()
+        );
+        assert_eq!(mode(&elsewhere), before);
+        assert!(!elsewhere.join("planted").exists());
+        std::fs::remove_dir_all(&parent).unwrap();
+    }
+
     #[test]
     fn files_are_named_pid_underscore_nanoseconds() {
         assert_eq!(
             screenshot_name(31747, 1793171648543593690),
             "31747_1793171648543593690.jpg"
         );
-        let dir = std::env::temp_dir().join(format!("cua-engine-capture-test-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = scratch("files");
         let path = write_screenshot(&dir, b"\xff\xd8\xff\xd9").unwrap();
+        assert_eq!(mode(&path), 0o600);
         assert!(
             path.file_name()
                 .unwrap()

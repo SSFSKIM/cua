@@ -546,6 +546,14 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
   Rationale: each finding was a place where an exit path, a race or a wait could hurt the person's clipboard or stall a session, where speculation could cost more calls than the vendor, or where the execution text could not be run or judged as written; the resolutions close each with one rule and a test that would fail without it.
   Date/Author: 2026-10-28, the design session (cua_repl session 1ea561bc), resolving the second review.
 
+- Decision (2026-10-28, execution pre-flight): how the plan is run and landed.
+  - Each milestone lands as its own squash-merged pull request to `main`. M0's branch is `feat/171-linux-engine`, which also carries this spec and the research; every later milestone works on `feat/171-<milestone>` (for example `feat/171-m1a`), branched from `main` after the previous merge, where Concrete Steps name one `BRANCH` for all. Branches are kept after merge, and GitHub keeps each pull request's head, so a SHA the evidence cites stays fetchable after the squash.
+  - The work happens in a worktree of the #171 VM's checkout at `~/Developer/GitHub/cua/.claude/worktrees/cua-171` (the harness's own worktree location) instead of `~/Developer/GitHub/cua-171`; Concrete Steps' `$WT` reads as that path.
+  - M0 runs as four tasks of the execution loop, in this order, because its deliverables are separable and each consumes the one before: M0.1 the behaviour specification; M0.2 the spike engine (its variants and flags); M0.3 the wire fixtures and the harness's first cut (scenes, fresh-process blocks, the witness, bus-call counts), its runs over the variants, the choice of W, R and the over-budget constant, and the promotion verdict; M0.4 the application-family matrix, measured with M0.3's witness. M0 promotes or is discarded on M0.3's verdict, and the matrix does not change that verdict.
+  - Each task is reviewed clean by the loop's task reviewer before the next consumes it; each milestone's pull request then gets `doperpowers:reviewer-high` and a green `ci-gate` before merge, the per-milestone branch review the authoring entry names.
+  Rationale: the brief lands milestones one by one; M0 in one executor would hold a D-Bus client, a harness, the measurements and a seven-family matrix in one context.
+  Date/Author: 2026-10-28, the plan-executor (session linux171).
+
 ## Outcomes & Retrospective
 
 Pending — written at finish.

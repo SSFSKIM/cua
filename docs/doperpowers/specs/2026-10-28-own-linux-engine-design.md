@@ -19,7 +19,7 @@ How to see it: on the #171 VM (Ubuntu 24.04, X11), `CUA_NATIVE_ENGINE=cua cua se
 - [x] (2026-10-28) Owner rulings: same success bar as #117; read the Linux helper as deeply as the macOS one; OpenAI's own crate set counts as vetted; Rust directly (no language bake-off); per-device background mode; Wayland designed for, not built; visible cursor and any-character typing to the backlog. Design approved.
 - [x] (2026-10-28) Spec review round 1 (two independent reviews, design and buildability): 18 findings, one raised by both, each resolved by the design session and folded in (Decision Log, review round 1).
 - [x] (2026-10-28) Spec review round 2: six findings on the round-1 revision, each resolved by the design session and folded in (Decision Log, review round 2).
-- [ ] M0 — Behaviour specification, speed spike, wire fixtures, application-family matrix.
+- [x] (2026-10-28) M0 — Behaviour specification, speed spike, wire fixtures, application-family matrix. Promoted; four loop tasks each reviewed clean, the branch reviewed clean by `doperpowers:reviewer-high` (Outcomes & Retrospective, M0).
 - [ ] M1a — Engine core, wire-compatible, with the differential harness.
 - [ ] M1b — Distribution and selection: release workflow and the first release, pins, install, doctor, `CUA_NATIVE_ENGINE` on Linux, the facade harnesses' Linux engine lanes, the CI gate.
 - [ ] M2 — Text and clipboard: one verified paste route; its release.
@@ -644,4 +644,6 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
 
 ## Outcomes & Retrospective
 
-Pending — written at finish.
+Written per milestone as each lands; the whole-plan retrospective at finish. The execution record (tasks, reviews, friction) is `docs/doperpowers/specs/2026-10-28-own-linux-engine-report.md`.
+
+- **M0 (2026-10-28): promoted.** The spike answers exactly as the vendor where it overlaps and reads the reference trees about seven to eight times faster (gedit 69.7 ms warm against 545.4 ms), with background input under the bar cold and warm once the fixed waits are replaced by what they are for. Against the plan's intent: the knowledge M1a needs is fixed (W, R, the bound, the waits, the families), and several design rules moved on evidence rather than assumption: capture readiness became a Damage rule after a fixed wait proved short under load, the families list became per input kind with a cover condition, GTK 4's text cases moved to `dedicated` mode, and element actions proved safe everywhere. What did not go to plan: decompilation write-ups and malformed-input probes of the vendor binary were stopped by a safety classifier, so the error catalogue's edge cases moved to the harness's comparison of well-formed requests; and the harness needed two review passes (task and branch) before its exit status, screenshot judging, witness and completeness checks could be trusted as M1a's gate. Lesson for later milestones: a measuring tool is reviewed for false greens first, before its numbers are folded.

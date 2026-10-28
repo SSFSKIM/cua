@@ -1,7 +1,7 @@
 //! The accessibility side (behaviour §4, §6, §7, §19): finding the bus, associating an X11 window with its
-//! AT-SPI frame, resolving element ids, element actions, and the `Cache.GetItems` experiment's seed.
+//! AT-SPI frame, resolving element ids, and element actions.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 
 use anyhow::{Result, anyhow, bail};
 
@@ -115,11 +115,8 @@ fn name_call(obj: &ObjRef) -> MethodCall<'_> {
     }
 }
 
-/// Sends `calls` and returns their results in order: all in flight at once, or one after another.
-fn call_all(bus: &mut Bus, calls: &[MethodCall], pipelined: bool) -> Result<Vec<CallResult>> {
-    if !pipelined {
-        return calls.iter().map(|c| bus.call(c)).collect();
-    }
+/// Sends `calls` together and returns their results in order.
+fn call_all(bus: &mut Bus, calls: &[MethodCall]) -> Result<Vec<CallResult>> {
     let serials: Vec<u32> = calls.iter().map(|c| bus.send(c)).collect();
     let mut results: HashMap<u32, CallResult> = HashMap::new();
     while results.len() < serials.len() {
@@ -137,8 +134,8 @@ pub enum Association {
 }
 
 /// Associates X11 window `window` (already described as `info`) with its AT-SPI frame, step by step as the vendor
-/// does; `pipelined` sends independent calls together.
-pub fn associate(bus: &mut Bus, x: &mut X11, info: &WindowInfo, pipelined: bool) -> Result<Association> {
+/// does, sending independent calls together.
+pub fn associate(bus: &mut Bus, x: &mut X11, info: &WindowInfo) -> Result<Association> {
     let id = info.id;
     let Some(pid) = x.pid(id) else {
         return Ok(Association::Refused(format!(
@@ -167,7 +164,7 @@ pub fn associate(bus: &mut Bus, x: &mut X11, info: &WindowInfo, pipelined: bool)
             args,
         })
         .collect();
-    let pids = call_all(bus, &pid_calls, pipelined)?;
+    let pids = call_all(bus, &pid_calls)?;
     let matching: Vec<&ObjRef> = apps
         .iter()
         .zip(&pids)
@@ -186,7 +183,7 @@ pub fn associate(bus: &mut Bus, x: &mut X11, info: &WindowInfo, pipelined: bool)
             Err(error) => return Ok(Association::Refused(error)),
         };
         let calls: Vec<MethodCall> = children.iter().map(name_call).collect();
-        for (child, result) in children.iter().zip(call_all(bus, &calls, pipelined)?) {
+        for (child, result) in children.iter().zip(call_all(bus, &calls)?) {
             match first_str(&result) {
                 Some(name) => frames.push((child.clone(), name)),
                 None => return Ok(Association::Refused("AT-SPI window identity is unavailable".into())),
@@ -309,39 +306,6 @@ fn size_of(bus: &mut Bus, obj: &ObjRef) -> Result<std::result::Result<(i32, i32)
 // ---------------------------------------------------------------------------------------------------------------
 // Element resolution and actions (behaviour §6.2, §7.1, §7.2)
 
-/// Finds `element_id` in the frame's tree with ancestors (nearest first, ending with the frame), walking preorder
-/// with one `GetChildren` per node before the target.
-pub fn resolve_element(
-    bus: &mut Bus,
-    frame: &ObjRef,
-    element_id: &str,
-) -> Result<std::result::Result<(ObjRef, Vec<ObjRef>), String>> {
-    let mut visits = 0u32;
-    // (node, depth, ancestors' indices into `path`)
-    let mut stack: Vec<(ObjRef, u32, Vec<ObjRef>)> = vec![(frame.clone(), 0, Vec::new())];
-    while let Some((node, depth, ancestors)) = stack.pop() {
-        if depth >= 64 || visits >= tree::NODE_LIMIT {
-            return Ok(Err("AT-SPI element search exceeded its tree limit".into()));
-        }
-        visits += 1;
-        if format!("{}:{}", node.bus, node.path) == element_id {
-            let mut nearest_first = ancestors.clone();
-            nearest_first.reverse();
-            return Ok(Ok((node, nearest_first)));
-        }
-        let children = refs_of(&bus.call(&children_call(&node))?).unwrap_or_default();
-        let mut chain = ancestors.clone();
-        chain.push(node.clone());
-        for child in children.into_iter().rev() {
-            stack.push((child, depth + 1, chain.clone()));
-        }
-    }
-    // The vendor's second, table-aware walk (behaviour §5.4) is not in the spike.
-    Ok(Err(
-        "element is not in this window's AT-SPI tree; refresh get_window_state()".into(),
-    ))
-}
-
 /// The element's action names, or the sentence for why they cannot be read (behaviour §7.1 step 2).
 pub fn action_names(bus: &mut Bus, obj: &ObjRef) -> Result<std::result::Result<Vec<String>, String>> {
     let interfaces = bus.call(&MethodCall {
@@ -428,18 +392,7 @@ pub fn extents(bus: &mut Bus, obj: &ObjRef) -> Result<std::result::Result<(i32, 
         member: "GetExtents",
         args: &args,
     })?;
-    Ok(match result {
-        Ok(values) => match values.first() {
-            Some(Value::Struct(parts)) => match parts.as_slice() {
-                [Value::I32(x), Value::I32(y), Value::I32(w), Value::I32(h)] => {
-                    Ok((*x, *y, x.saturating_add(*w), y.saturating_add(*h)))
-                }
-                _ => Err("AT-SPI element did not return valid bounds".into()),
-            },
-            _ => Err("AT-SPI element did not return bounds".into()),
-        },
-        Err(e) => Err(e),
-    })
+    Ok(crate::table::extents_of(&result))
 }
 
 pub fn role_name(bus: &mut Bus, obj: &ObjRef) -> Result<Option<String>> {
@@ -447,229 +400,4 @@ pub fn role_name(bus: &mut Bus, obj: &ObjRef) -> Result<Option<String>> {
     Ok(result
         .ok()
         .and_then(|v| v.first().and_then(Value::as_str).map(str::to_string)))
-}
-
-// ---------------------------------------------------------------------------------------------------------------
-// The Cache.GetItems experiment
-
-/// What `GetItems` answered, for the stats line.
-#[derive(Debug, Default, Clone)]
-pub struct CacheReport {
-    pub answered: bool,
-    pub error: Option<String>,
-    pub shape: Option<String>,
-    pub items: usize,
-    pub seeded: usize,
-    pub children_fallbacks: usize,
-    pub role_lookups: usize,
-}
-
-struct CacheItem {
-    parent: ObjRef,
-    index: Option<i32>,
-    child_count: Option<i32>,
-    children: Option<Vec<ObjRef>>,
-    interfaces: Vec<String>,
-    name: String,
-    role: u32,
-    description: String,
-    states: Vec<Value>,
-}
-
-fn obj_of(value: &Value) -> Option<ObjRef> {
-    match value {
-        Value::Struct(parts) => match parts.as_slice() {
-            [Value::Str(bus), Value::Path(path)] => Some(ObjRef {
-                bus: bus.clone(),
-                path: path.clone(),
-            }),
-            _ => None,
-        },
-        _ => None,
-    }
-}
-
-fn shape(value: &Value) -> String {
-    match value {
-        Value::Byte(_) => "y".into(),
-        Value::Bool(_) => "b".into(),
-        Value::I16(_) => "n".into(),
-        Value::U16(_) => "q".into(),
-        Value::I32(_) => "i".into(),
-        Value::U32(_) => "u".into(),
-        Value::I64(_) => "x".into(),
-        Value::U64(_) => "t".into(),
-        Value::F64(_) => "d".into(),
-        Value::Str(_) => "s".into(),
-        Value::Path(_) => "o".into(),
-        Value::Sig(_) => "g".into(),
-        Value::Fd(_) => "h".into(),
-        Value::Variant(_) => "v".into(),
-        Value::Array(items) => format!("a{}", items.first().map(shape).unwrap_or_else(|| "?".into())),
-        Value::Struct(parts) => format!("({})", parts.iter().map(shape).collect::<String>()),
-        Value::Dict(k, v) => format!("{{{}{}}}", shape(k), shape(v)),
-    }
-}
-
-/// Seeds the frontier from the frame's application cache: role (through one `GetRoleName` per distinct role
-/// number), name, description, states, interfaces and children where the cache's index and count are usable.
-pub fn cache_seed(bus: &mut Bus, frame: &ObjRef) -> Result<(tree::Seed, CacheReport)> {
-    let mut report = CacheReport::default();
-    let call = MethodCall {
-        dest: &frame.bus,
-        path: "/org/a11y/atspi/cache",
-        iface: "org.a11y.atspi.Cache",
-        member: "GetItems",
-        args: &[],
-    };
-    let values = match bus.call(&call)? {
-        Ok(values) => values,
-        Err(error) => {
-            report.error = Some(error);
-            return Ok((tree::Seed::default(), report));
-        }
-    };
-    report.answered = true;
-    report.shape = values.first().map(shape);
-    let Some(Value::Array(rows)) = values.first() else {
-        return Ok((tree::Seed::default(), report));
-    };
-    report.items = rows.len();
-    let mut items: HashMap<ObjRef, CacheItem> = HashMap::new();
-    for row in rows {
-        let Value::Struct(f) = row else { continue };
-        let strs = |v: &Value| match v {
-            Value::Array(items) => items.iter().filter_map(|i| i.as_str().map(str::to_string)).collect(),
-            _ => Vec::new(),
-        };
-        let parsed = match f.as_slice() {
-            // modern: (so)(so)(so) i i as s u s au
-            [
-                obj,
-                _app,
-                parent,
-                Value::I32(index),
-                Value::I32(count),
-                ifaces,
-                Value::Str(name),
-                Value::U32(role),
-                Value::Str(desc),
-                Value::Array(states),
-            ] => obj_of(obj).zip(obj_of(parent)).map(|(o, p)| {
-                (
-                    o,
-                    CacheItem {
-                        parent: p,
-                        index: Some(*index),
-                        child_count: Some(*count),
-                        children: None,
-                        interfaces: strs(ifaces),
-                        name: name.clone(),
-                        role: *role,
-                        description: desc.clone(),
-                        states: states.clone(),
-                    },
-                )
-            }),
-            // legacy: (so)(so)(so) a(so) as s u s au
-            [
-                obj,
-                _app,
-                parent,
-                Value::Array(children),
-                ifaces,
-                Value::Str(name),
-                Value::U32(role),
-                Value::Str(desc),
-                Value::Array(states),
-            ] => obj_of(obj).zip(obj_of(parent)).map(|(o, p)| {
-                let kids = children.iter().filter_map(obj_of).collect();
-                (
-                    o,
-                    CacheItem {
-                        parent: p,
-                        index: None,
-                        child_count: None,
-                        children: Some(kids),
-                        interfaces: strs(ifaces),
-                        name: name.clone(),
-                        role: *role,
-                        description: desc.clone(),
-                        states: states.clone(),
-                    },
-                )
-            }),
-            _ => None,
-        };
-        if let Some((obj, item)) = parsed {
-            items.insert(obj, item);
-        }
-    }
-    // Children from parent links and indices.
-    let mut by_parent: HashMap<ObjRef, Vec<(i32, ObjRef)>> = HashMap::new();
-    for (obj, item) in &items {
-        if let Some(index) = item.index {
-            by_parent
-                .entry(item.parent.clone())
-                .or_default()
-                .push((index, obj.clone()));
-        }
-    }
-    // Role names: one GetRoleName for a representative of each role number.
-    let mut representatives: BTreeMap<u32, ObjRef> = BTreeMap::new();
-    for (obj, item) in &items {
-        representatives.entry(item.role).or_insert_with(|| obj.clone());
-    }
-    let reps: Vec<(u32, ObjRef)> = representatives.into_iter().collect();
-    let calls: Vec<MethodCall> = reps
-        .iter()
-        .map(|(_, o)| MethodCall {
-            dest: &o.bus,
-            path: &o.path,
-            iface: ACCESSIBLE,
-            member: "GetRoleName",
-            args: &[],
-        })
-        .collect();
-    report.role_lookups = calls.len();
-    let mut role_names: HashMap<u32, String> = HashMap::new();
-    for ((number, _), result) in reps.iter().zip(call_all(bus, &calls, true)?) {
-        if let Ok(values) = result
-            && let Some(name) = values.first().and_then(Value::as_str)
-        {
-            role_names.insert(*number, name.to_string());
-        }
-    }
-    let mut seed = tree::Seed::default();
-    for (obj, item) in &items {
-        let children = match (&item.children, item.child_count) {
-            (Some(kids), _) => Some(kids.clone()),
-            (None, Some(count)) if count >= 0 => {
-                let mut kids = by_parent.get(obj).cloned().unwrap_or_default();
-                kids.sort_by_key(|(i, _)| *i);
-                if kids.len() == count as usize && kids.iter().all(|(i, _)| *i >= 0) {
-                    Some(kids.into_iter().map(|(_, o)| o).collect())
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        };
-        if children.is_none() {
-            report.children_fallbacks += 1;
-        }
-        seed.nodes.insert(
-            obj.clone(),
-            tree::SeedNode {
-                role: role_names.get(&item.role).cloned(),
-                name: Some(item.name.clone()).filter(|s| !s.is_empty()),
-                description: Some(item.description.clone()).filter(|s| !s.is_empty()),
-                states: tree::decode_states(&item.states),
-                has_action: Some(item.interfaces.iter().any(|i| i == tree::ACTION)),
-                children,
-            },
-        );
-    }
-    report.seeded = seed.nodes.len();
-    Ok((seed, report))
 }

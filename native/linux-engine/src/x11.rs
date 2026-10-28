@@ -1,5 +1,5 @@
 //! The X server side (behaviour §3, §5.7, §9, §16): windows and their properties, the X11 fallback tree,
-//! retention through Composite, and window capture. Requests are pipelined where the vendor sends them one by
+//! retention through Composite, and window and desktop capture. Requests are pipelined where the vendor sends them one by
 //! one; the answers are the vendor's.
 
 use std::collections::{HashMap, HashSet};
@@ -11,9 +11,11 @@ use x11rb::connection::Connection;
 use x11rb::cookie::Cookie;
 use x11rb::protocol::Event;
 use x11rb::protocol::composite::{ConnectionExt as _, Redirect};
+use x11rb::protocol::xfixes::ConnectionExt as _;
 use x11rb::protocol::xproto::*;
 use x11rb::rust_connection::RustConnection;
 
+use crate::readiness::{CaptureWait, Readiness, Waited};
 use crate::tree::AxNode;
 
 /// `GetProperty`'s length, in 32-bit units, as the vendor asks (behaviour §3).
@@ -69,9 +71,14 @@ pub struct X11 {
     atoms: HashMap<&'static str, Atom>,
     atom_names: HashMap<Atom, String>,
     composite_ready: bool,
+    xfixes_ready: bool,
     retained: HashSet<Window>,
     pub retention: Retention,
+    /// The wait after a window's redirect before input to it (the vendor's 100 ms until M1a's input side).
     pub settle: Duration,
+    readiness: Readiness,
+    /// How long the last window capture waited for its pixmap, and why.
+    pub last_capture_wait: Option<Waited>,
 }
 
 /// Lossy UTF-8, trailing NULs stripped, Unicode-trimmed, empty as None (behaviour §3, `property_text`).
@@ -124,7 +131,7 @@ struct Described {
 }
 
 impl X11 {
-    pub fn connect(retention: Retention, settle: Duration) -> Result<X11> {
+    pub fn connect(retention: Retention, settle: Duration, capture_wait: CaptureWait) -> Result<X11> {
         let (conn, screen) = x11rb::connect(None).context("failed to connect to the X server")?;
         let setup_screen = &conn.setup().roots[screen];
         let root = setup_screen.root;
@@ -142,9 +149,12 @@ impl X11 {
             atoms,
             atom_names: HashMap::new(),
             composite_ready: false,
+            xfixes_ready: false,
             retained: HashSet::new(),
             retention,
             settle,
+            readiness: Readiness::connect(capture_wait),
+            last_capture_wait: None,
         })
     }
 
@@ -451,35 +461,51 @@ impl X11 {
         }
     }
 
-    /// Makes `window`'s contents available offscreen for input or capture, as `retention` says, and returns
-    /// whether this request redirected it (so it must unredirect at its end).
-    pub fn retain(&mut self, window: Window) -> Result<bool> {
+    /// Makes `window`'s contents available offscreen, as `retention` says: redirected through Composite, the
+    /// Damage tracking set up first so readiness misses nothing. Returns whether this request redirected it
+    /// (`fresh`) and whether it must unredirect it at its end (`undo`).
+    fn redirect(&mut self, window: Window) -> Result<(bool, bool)> {
         let attributes = self.conn.get_window_attributes(window)?.reply()?;
         if attributes.map_state != MapState::VIEWABLE {
             bail!("window {window} is not mapped; restore it before using background input or taking a screenshot");
         }
         match self.retention {
-            Retention::None => Ok(false),
-            Retention::Session if self.retained.contains(&window) => Ok(false),
+            Retention::None => Ok((false, false)),
+            Retention::Session if self.retained.contains(&window) => Ok((false, false)),
             mode => {
                 self.ensure_composite()?;
+                self.readiness.watch(window)?;
                 let redirect = self
                     .conn
                     .composite_redirect_window(window, Redirect::AUTOMATIC)
                     .map_err(anyhow::Error::from);
-                redirect
+                let redirected = redirect
                     .and_then(|c| Ok(c.check()?))
-                    .context("failed to retain the target window's rendering buffer")?;
+                    .context("failed to retain the target window's rendering buffer");
+                if let Err(error) = redirected {
+                    self.readiness.forget(window);
+                    return Err(error);
+                }
+                self.readiness.redirected(window)?;
                 if mode == Retention::Session {
                     // Our own event selection on the window, so its destruction ends the retention record.
                     let aux = ChangeWindowAttributesAux::new().event_mask(EventMask::STRUCTURE_NOTIFY);
                     self.conn.change_window_attributes(window, &aux)?.check()?;
                     self.retained.insert(window);
                 }
-                std::thread::sleep(self.settle);
-                Ok(mode == Retention::PerRequest)
+                Ok((true, mode == Retention::PerRequest))
             }
         }
+    }
+
+    /// Retention for input: the redirect, then the input wait after a fresh one. Returns whether this request
+    /// must unredirect the window at its end.
+    pub fn retain(&mut self, window: Window) -> Result<bool> {
+        let (fresh, undo) = self.redirect(window)?;
+        if fresh {
+            std::thread::sleep(self.settle);
+        }
+        Ok(undo)
     }
 
     pub fn release(&mut self, window: Window, redirected: bool) {
@@ -488,15 +514,17 @@ impl X11 {
                 .conn
                 .composite_unredirect_window(window, Redirect::AUTOMATIC)
                 .map(|c| c.check());
+            self.readiness.forget(window);
         }
     }
 
     // -----------------------------------------------------------------------------------------------------------
     // Capture
 
-    /// The window's own drawable as RGB (behaviour §16).
+    /// The window's own drawable as RGB (behaviour §16), once its pixmap is ready (`readiness.rs`).
     pub fn capture_window(&mut self, window: Window) -> Result<(Vec<u8>, u16, u16)> {
-        let redirected = self.retain(window)?;
+        let (_, redirected) = self.redirect(window)?;
+        self.last_capture_wait = Some(self.readiness.wait(window));
         let result = (|| {
             let geometry = self
                 .conn
@@ -514,6 +542,53 @@ impl X11 {
         })();
         self.release(window, redirected);
         result
+    }
+
+    /// The desktop: the root window at its current size as RGB, with the pointer stamped when `mouse_size_px`
+    /// is positive (behaviour §16). No retention: the root is never redirected.
+    pub fn capture_desktop(&mut self, mouse_size_px: u32) -> Result<(Vec<u8>, u16, u16)> {
+        let geometry = self.conn.get_geometry(self.root)?.reply()?;
+        let (width, height) = (geometry.width, geometry.height);
+        let image = self
+            .conn
+            .get_image(ImageFormat::Z_PIXMAP, self.root, 0, 0, width, height, !0)?
+            .reply()?;
+        let mut rgb = crate::capture::bgrx_to_rgb(&image.data, width, height).map_err(|e| anyhow!(e))?;
+        if mouse_size_px > 0 {
+            match self.cursor_image() {
+                Ok(cursor) => crate::capture::stamp_cursor(&mut rgb, width, height, &cursor),
+                Err(_) => {
+                    let pointer = self.conn.query_pointer(self.root)?.reply()?;
+                    crate::capture::stamp_arrow(&mut rgb, width, height, pointer.root_x, pointer.root_y, mouse_size_px);
+                }
+            }
+        }
+        Ok((rgb, width, height))
+    }
+
+    /// The pointer's current image through XFixes.
+    fn cursor_image(&mut self) -> Result<crate::capture::Cursor> {
+        if !self.xfixes_ready {
+            self.conn.xfixes_query_version(4, 0)?.reply()?;
+            self.xfixes_ready = true;
+        }
+        let reply = self.conn.xfixes_get_cursor_image()?.reply()?;
+        let expected = reply.width as usize * reply.height as usize;
+        if reply.cursor_image.len() != expected {
+            bail!(
+                "xfixes cursor image {} pixels, expected {expected}",
+                reply.cursor_image.len()
+            );
+        }
+        Ok(crate::capture::Cursor {
+            x: reply.x,
+            y: reply.y,
+            width: reply.width,
+            height: reply.height,
+            xhot: reply.xhot,
+            yhot: reply.yhot,
+            pixels: reply.cursor_image,
+        })
     }
 
     // -----------------------------------------------------------------------------------------------------------

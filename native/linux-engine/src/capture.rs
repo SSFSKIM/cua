@@ -1,5 +1,6 @@
 //! Screenshot encoding (behaviour §16): the X image read as B,G,R,X, converted to RGB and encoded as JPEG at
-//! quality 80 with 4:4:4 sampling, written as `<pid>_<nanoseconds>.jpg`.
+//! quality 80 with 4:4:4 sampling, written as `<pid>_<nanoseconds>.jpg`; and the pointer a desktop screenshot
+//! carries when `--mouse-size-px` is positive.
 
 use std::path::{Path, PathBuf};
 
@@ -18,9 +19,9 @@ pub fn bgrx_to_rgb(data: &[u8], width: u16, height: u16) -> Result<Vec<u8>, Stri
             pixels * 4
         ));
     }
-    let mut rgb = Vec::with_capacity(pixels * 3);
-    for px in data[..pixels * 4].chunks_exact(4) {
-        rgb.extend_from_slice(&[px[2], px[1], px[0]]);
+    let mut rgb = vec![0u8; pixels * 3];
+    for (out, px) in rgb.chunks_exact_mut(3).zip(data[..pixels * 4].chunks_exact(4)) {
+        out.copy_from_slice(&[px[2], px[1], px[0]]);
     }
     Ok(rgb)
 }
@@ -35,6 +36,74 @@ pub fn encode_jpeg(rgb: &[u8], width: u16, height: u16) -> Result<Vec<u8>> {
         image::ExtendedColorType::Rgb8,
     )?;
     Ok(out)
+}
+
+/// The pointer's image as XFixes `GetCursorImage` gives it: premultiplied ARGB, placed with its hotspot at the
+/// pointer.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Cursor {
+    pub x: i16,
+    pub y: i16,
+    pub width: u16,
+    pub height: u16,
+    pub xhot: u16,
+    pub yhot: u16,
+    pub pixels: Vec<u32>,
+}
+
+/// Composites `cursor` over the RGB image at its native size, its hotspot at the pointer, clipped to the image.
+/// The pixels are premultiplied, so a pixel is `source + destination * (255 - alpha) / 255`. (The vendor applies
+/// the alpha a second time, which darkens the cursor's soft edges; cua composites them as XFixes defines them.)
+pub fn stamp_cursor(rgb: &mut [u8], width: u16, height: u16, cursor: &Cursor) {
+    let (ox, oy) = (
+        cursor.x as i32 - cursor.xhot as i32,
+        cursor.y as i32 - cursor.yhot as i32,
+    );
+    for cy in 0..cursor.height as i32 {
+        for cx in 0..cursor.width as i32 {
+            let (x, y) = (ox + cx, oy + cy);
+            if x < 0 || y < 0 || x >= width as i32 || y >= height as i32 {
+                continue;
+            }
+            let argb = cursor.pixels[(cy * cursor.width as i32 + cx) as usize];
+            let alpha = argb >> 24;
+            if alpha == 0 && argb & 0x00ff_ffff == 0 {
+                continue;
+            }
+            let at = (y as usize * width as usize + x as usize) * 3;
+            for (channel, shift) in [16u32, 8, 0].into_iter().enumerate() {
+                let source = (argb >> shift) & 0xff;
+                let under = rgb[at + channel] as u32;
+                rgb[at + channel] = (source + (under * (255 - alpha) + 127) / 255).min(255) as u8;
+            }
+        }
+    }
+}
+
+/// The pointer drawn without XFixes: an arrow `size` pixels square, its tip at the pointer, black with a white
+/// edge, clipped to the image.
+pub fn stamp_arrow(rgb: &mut [u8], width: u16, height: u16, x: i16, y: i16, size: u32) {
+    let size = size.min(512) as i32;
+    // The arrow: below the diagonal from the tip, and left of the line from the tail's foot back up to the tip's
+    // side, so it narrows to a point at the bottom left.
+    let inside = |i: i32, j: i32| i >= 0 && j >= 0 && j < size && i <= j && i * 2 <= (size - 1 - j) * 3;
+    for j in 0..size {
+        for i in 0..size {
+            if !inside(i, j) {
+                continue;
+            }
+            let (px, py) = (x as i32 + i, y as i32 + j);
+            if px < 0 || py < 0 || px >= width as i32 || py >= height as i32 {
+                continue;
+            }
+            let edge = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+                .iter()
+                .any(|(di, dj)| !inside(i + di, j + dj));
+            let value = if edge { 255 } else { 0 };
+            let at = (py as usize * width as usize + px as usize) * 3;
+            rgb[at..at + 3].fill(value);
+        }
+    }
 }
 
 pub fn screenshot_name(pid: u32, nanos: u128) -> String {
@@ -99,6 +168,62 @@ pub fn write_screenshot(dir: &Path, jpeg: &[u8]) -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn cursor(x: i16, y: i16, w: u16, h: u16, hot: (u16, u16), pixels: Vec<u32>) -> Cursor {
+        Cursor {
+            x,
+            y,
+            width: w,
+            height: h,
+            xhot: hot.0,
+            yhot: hot.1,
+            pixels,
+        }
+    }
+
+    #[test]
+    fn the_cursor_is_composited_premultiplied_at_its_hotspot() {
+        let mut rgb = vec![100u8; 4 * 3 * 3];
+        // a 2x1 cursor: an opaque red pixel and a half-transparent premultiplied green one, hotspot at its right
+        let c = cursor(2, 1, 2, 1, (1, 0), vec![0xffff_0000, 0x8000_8000]);
+        stamp_cursor(&mut rgb, 4, 3, &c);
+        let px = |x: usize, y: usize| rgb[(y * 4 + x) * 3..(y * 4 + x) * 3 + 3].to_vec();
+        assert_eq!(px(1, 1), [255, 0, 0], "opaque replaces");
+        assert_eq!(px(2, 1), [50, 178, 50], "premultiplied over: 128 + 100 * 127 / 255");
+        assert_eq!(px(0, 1), [100, 100, 100]);
+        assert_eq!(px(3, 1), [100, 100, 100]);
+        // clipped at every edge, nothing written outside
+        let mut small = vec![7u8; 3];
+        stamp_cursor(&mut small, 1, 1, &cursor(0, 0, 3, 3, (1, 1), vec![0xff00_00ff; 9]));
+        assert_eq!(small, [0, 0, 255]);
+        stamp_cursor(&mut small, 1, 1, &cursor(-50, 900, 3, 3, (0, 0), vec![0xffff_ffff; 9]));
+        assert_eq!(small, [0, 0, 255]);
+    }
+
+    #[test]
+    fn the_fallback_arrow_is_sized_and_clipped() {
+        let (w, h) = (40u16, 40u16);
+        let mut rgb = vec![128u8; w as usize * h as usize * 3];
+        stamp_arrow(&mut rgb, w, h, 10, 10, 16);
+        let changed: Vec<(usize, usize)> = (0..h as usize)
+            .flat_map(|y| (0..w as usize).map(move |x| (x, y)))
+            .filter(|&(x, y)| rgb[(y * w as usize + x) * 3] != 128)
+            .collect();
+        assert!(
+            changed
+                .iter()
+                .all(|&(x, y)| (10..26).contains(&x) && (10..26).contains(&y))
+        );
+        assert!(changed.contains(&(10, 10)), "the tip is at the pointer");
+        assert!(changed.len() > 40, "{} pixels", changed.len());
+        let mut tiny = vec![128u8; 3 * 4];
+        stamp_arrow(&mut tiny, 2, 2, 1, 1, 48);
+        assert_eq!(
+            tiny.iter().filter(|v| **v != 128).count(),
+            3,
+            "only the one pixel inside the image"
+        );
+    }
 
     #[test]
     fn pixels_are_read_as_bgrx_with_a_stride_of_four_bytes() {

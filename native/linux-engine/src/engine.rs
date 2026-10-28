@@ -1,5 +1,4 @@
-//! The request dispatcher: one request at a time, in arrival order (Design, Process model), with the spike's
-//! variants (`--tree`, the window, retention and waits) applied.
+//! The request dispatcher: one request at a time, in arrival order (Design, Process model).
 
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -7,41 +6,25 @@ use std::time::{Duration, Instant};
 use anyhow::{Result, anyhow, bail};
 use serde_json::{Value, json};
 
+use crate::apps;
 use crate::atspi::{self, Association};
 use crate::dbus::{Broken, Bus, BusStats};
 use crate::input::{Pacing, chord_keycodes, with_session};
-use crate::tree::{self, ObjRef, ReadStats};
+use crate::readiness::CaptureWait;
+use crate::resolve;
+use crate::tree::{self, ObjRef};
 use crate::wire::{
     self, ClickInput, GetWindowStateInput, MouseButton, NoInput, PressKeyInput, Request, Response, parse_input,
 };
 use crate::x11::{Retention, X11};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TreeMode {
-    /// The vendor's calls one by one (the harness checks it reproduces the vendor's numbers).
-    Sequential,
-    /// The same calls along the preorder frontier inside the window (the candidate main path).
-    Frontier,
-    /// `Cache.GetItems` seeds the frontier (an experiment).
-    Cache,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BusMode {
-    /// One connection for the engine's life, reopened once per request when broken (Design, Process model).
-    Persistent,
-    /// A fresh connection per request, as the vendor's.
-    PerRequest,
-}
-
 #[derive(Debug, Clone)]
 pub struct Config {
-    pub tree: TreeMode,
     pub window: tree::Window,
     pub retention: Retention,
     pub settle: Duration,
+    pub capture_wait: CaptureWait,
     pub pacing: Pacing,
-    pub bus: BusMode,
     pub stats: bool,
     pub mouse_size_px: u32,
     pub desktop: String,
@@ -78,7 +61,7 @@ fn desktop_unavailable(command: &str) -> anyhow::Error {
 
 impl Engine {
     pub fn new(cfg: Config) -> Result<Engine> {
-        let x = X11::connect(cfg.retention, cfg.settle)?;
+        let x = X11::connect(cfg.retention, cfg.settle, cfg.capture_wait)?;
         Ok(Engine {
             cfg,
             x,
@@ -94,6 +77,8 @@ impl Engine {
         let started = Instant::now();
         let result = match request.command.as_str() {
             "list_windows" => self.list_windows(request.input),
+            "list_apps" => self.list_apps(request.input),
+            "get_screenshot" => self.get_screenshot(request.input),
             "get_window_state" => self.get_window_state(request.input),
             "press_key" => self.press_key(request.input),
             "click" => self.click(request.input),
@@ -101,9 +86,7 @@ impl Engine {
             command if wire::COMMANDS.contains(&command) => Err(anyhow!(wire::not_available(command))),
             command => Err(anyhow!("unknown command `{command}`")),
         };
-        if self.cfg.bus == BusMode::PerRequest {
-            self.drop_bus();
-        } else if let Some(bus) = self.bus.as_mut() {
+        if let Some(bus) = self.bus.as_mut() {
             merge(&mut self.bus_stats, bus.take_stats());
         }
         if self.cfg.stats {
@@ -123,16 +106,15 @@ impl Engine {
             "ok": ok,
             "elapsed_ms": (started.elapsed().as_secs_f64() * 1000.0 * 1000.0).round() / 1000.0,
             "variant": {
-                "tree": format!("{:?}", self.cfg.tree).to_lowercase(),
                 "window_calls": self.cfg.window.calls,
                 "window_bytes": self.cfg.window.bytes,
                 "call_reservation": self.cfg.window.reservation,
                 "slack_nodes": self.cfg.window.slack,
                 "retention": format!("{:?}", self.cfg.retention),
                 "settle_ms": self.cfg.settle.as_millis() as u64,
+                "capture_wait": format!("{:?}", self.cfg.capture_wait).to_lowercase(),
                 "teardown_ms": self.cfg.pacing.teardown.as_millis() as u64,
                 "key_pace_ms": self.cfg.pacing.key.as_millis() as u64,
-                "bus": format!("{:?}", self.cfg.bus),
             },
             "bus": {
                 "calls": bus.calls,
@@ -186,24 +168,14 @@ impl Engine {
         let input: GetWindowStateInput = parse_input(input)?;
         let id = input.window.id;
         let info = self.x.get_window(id)?;
-        let mode = self.cfg.tree;
         let window = self.cfg.window;
-        let mut read_stats = ReadStats::default();
-        let mut cache_report = None;
+        let mut read_stats = tree::ReadStats::default();
         let at_spi = self.with_bus(|bus, x| {
-            let frame = match atspi::associate(bus, x, &info, mode != TreeMode::Sequential)? {
+            let frame = match atspi::associate(bus, x, &info)? {
                 Association::Frame(frame) => frame,
                 Association::NoMatch | Association::Refused(_) => return Ok(None),
             };
-            let (tree, stats) = match mode {
-                TreeMode::Sequential => tree::read_sequential(bus, &frame)?,
-                TreeMode::Frontier => tree::read_frontier(bus, &frame, window)?,
-                TreeMode::Cache => {
-                    let (seed, report) = atspi::cache_seed(bus, &frame)?;
-                    cache_report = Some(report);
-                    tree::read_seeded(bus, &frame, window, seed)?
-                }
-            };
+            let (tree, stats) = tree::read(bus, &frame, window)?;
             read_stats = stats;
             Ok(tree)
         });
@@ -218,23 +190,11 @@ impl Engine {
                 "admitted": read_stats.admitted,
                 "discovered": read_stats.discovered,
                 "wasted_calls": read_stats.wasted_calls,
-                "large_tables_listed": read_stats.large_tables,
+                "tables_sampled": read_stats.tables_sampled,
+                "tables_listed": read_stats.tables_listed,
+                "hit_tests": read_stats.hit_tests,
             }),
         );
-        if let Some(report) = cache_report {
-            self.extra.insert(
-                "cache".into(),
-                json!({
-                    "answered": report.answered,
-                    "error": report.error,
-                    "shape": report.shape,
-                    "items": report.items,
-                    "seeded": report.seeded,
-                    "children_fallbacks": report.children_fallbacks,
-                    "role_lookups": report.role_lookups,
-                }),
-            );
-        }
         let tree = match input.query.as_deref() {
             Some(query) => tree::filter(tree, query),
             None => tree,
@@ -242,15 +202,49 @@ impl Engine {
         let mut screenshots = Vec::new();
         if input.include_screenshot.unwrap_or(true) {
             let (rgb, width, height) = self.x.capture_window(id)?;
-            let jpeg = crate::capture::encode_jpeg(&rgb, width, height)?;
-            let path = crate::capture::write_screenshot(&self.screenshot_dir()?, &jpeg)?;
-            let path = path
-                .to_str()
-                .ok_or_else(|| anyhow!("failed to convert screenshot filepath"))?
-                .to_string();
-            screenshots.push(json!({ "filepath": path }));
+            if let Some(w) = self.x.last_capture_wait.take() {
+                let ms = |d: std::time::Duration| d.as_secs_f64() * 1000.0;
+                self.extra.insert(
+                    "capture".into(),
+                    json!({
+                        "wait_ms": ms(w.waited),
+                        "reason": w.reason.name(),
+                        "damage_ignored": w.ignored,
+                        "damage_counted": w.counted,
+                        "first_damage_ms": w.first.map(ms),
+                    }),
+                );
+            }
+            screenshots.push(json!({ "filepath": self.save_screenshot(&rgb, width, height)? }));
         }
         Ok(json!({ "ax_tree": tree, "ax_tree_source": source, "screenshots": screenshots, "window": info }))
+    }
+
+    /// `get_screenshot`: the desktop, one entry (behaviour §16).
+    fn get_screenshot(&mut self, input: Option<Value>) -> Result<Value> {
+        let _: NoInput = parse_input(input)?;
+        let (rgb, width, height) = self.x.capture_desktop(self.cfg.mouse_size_px)?;
+        Ok(json!([{ "filepath": self.save_screenshot(&rgb, width, height)? }]))
+    }
+
+    /// `list_apps`: the desktop entries with their windows (behaviour §15).
+    fn list_apps(&mut self, input: Option<Value>) -> Result<Value> {
+        let _: NoInput = parse_input(input)?;
+        let roots = apps::roots(|name| std::env::var_os(name));
+        let path = std::env::var("PATH").ok();
+        let entries = apps::discover(&roots, path.as_deref());
+        let windows = self.x.list_windows()?;
+        Ok(serde_json::to_value(apps::list_apps(&entries, &windows))?)
+    }
+
+    /// Encodes and writes a screenshot, returning its path.
+    fn save_screenshot(&mut self, rgb: &[u8], width: u16, height: u16) -> Result<String> {
+        let jpeg = crate::capture::encode_jpeg(rgb, width, height)?;
+        let path = crate::capture::write_screenshot(&self.screenshot_dir()?, &jpeg)?;
+        Ok(path
+            .to_str()
+            .ok_or_else(|| anyhow!("failed to convert screenshot filepath"))?
+            .to_string())
     }
 
     /// The engine's private directory for screenshot files: created fresh on first use, owner-only, with an
@@ -354,14 +348,13 @@ impl Engine {
         }
         let info = self.x.get_window(window)?;
         let pacing = self.cfg.pacing;
-        let pipelined = self.cfg.tree != TreeMode::Sequential;
         let resolved = self.with_bus(|bus, x| {
-            let frame = match atspi::associate(bus, x, &info, pipelined)? {
+            let frame = match atspi::associate(bus, x, &info)? {
                 Association::Frame(frame) => frame,
                 Association::NoMatch => return Ok(Err("window has no AT-SPI accessibility tree".to_string())),
                 Association::Refused(sentence) => return Ok(Err(sentence)),
             };
-            atspi::resolve_element(bus, &frame, element)
+            resolve::element(bus, &frame, element)
         });
         let (target, ancestors) = match resolved {
             Ok(Ok(found)) => found,

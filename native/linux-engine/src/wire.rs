@@ -155,7 +155,7 @@ pub struct PressKeyInput {
 }
 
 /// The pinned helper's 20 commands, the newest build's `type_characters` and cua's `capabilities`
-/// (behaviour §2). The spike answers four of them; the rest answer [`not_available`].
+/// (behaviour §2). Those this build does not answer yet answer [`not_available`].
 pub const COMMANDS: &[&str] = &[
     "perform_secondary_action",
     "click",

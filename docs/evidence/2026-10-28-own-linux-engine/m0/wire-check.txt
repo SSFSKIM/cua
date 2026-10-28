@@ -1,0 +1,12 @@
+PASS array cua (cua-engine 0.0.1 (5dd016bfc22e)); negative control refused
+PASS null cua (cua-engine 0.0.1 (5dd016bfc22e)); negative control n/a (void)
+PASS object cua (cua-engine 0.0.1 (5dd016bfc22e)); negative control refused
+PASS array vendor-newest (vendor 26.1023.51421 (newest)); negative control refused
+PASS null vendor-newest (vendor 26.1023.51421 (newest)); negative control n/a (void)
+PASS object vendor-newest (vendor 26.1023.51421 (newest)); negative control refused
+PASS string vendor-newest (vendor 26.1023.51421 (newest)); negative control refused
+PASS array vendor-pinned (vendor 26.928.40906 (pinned)); negative control refused
+PASS null vendor-pinned (vendor 26.928.40906 (pinned)); negative control n/a (void)
+PASS object vendor-pinned (vendor 26.928.40906 (pinned)); negative control refused
+PASS string vendor-pinned (vendor 26.928.40906 (pinned)); negative control refused
+SKIP string cua: the spike answers no string-valued command (clipboard_read arrives in M2)

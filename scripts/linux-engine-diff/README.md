@@ -40,9 +40,10 @@ node scripts/linux-engine-diff.mjs --vendor "$VENDOR" --newest "$NEWEST" --cua "
   `_NET_CLIENT_LIST_STACKING`, and the input focus and pointer every 5 ms, from before each request until 20 ms after
   its answer. Any change fails the sample. Every run with input first drives `stub-activating.mjs` (activate, act
   through XTEST, restore) and is invalid unless the witness fails it.
-- **Effects.** gedit: the document's text one longer (`x`) or shorter (`BackSpace`). Chrome: the page's key or click
-  counter one higher. A gedit coordinate click moves only the caret, which the tree does not show: no effect is
-  recorded for it.
+- **Effects.** gedit: the document's text one longer (`x`, sent while it is at its original length) or shorter
+  (`BackSpace`, otherwise). Chrome: the page's key or click counter one higher. A gedit coordinate click moves only
+  the caret, which the tree does not show: no effect is recorded for it, and its clicks alternate between two points
+  so that gtk never reads a series as a double or triple click.
 - **Bus calls**, in a separate untimed pass: `dbus-monitor` on the accessibility bus, counting the method calls of
   connections that said Hello during the pass (applications' and the registry's own calls are not counted), with the
   most in flight and the calls issued with nothing else outstanding.

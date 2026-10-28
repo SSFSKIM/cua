@@ -18,6 +18,10 @@ M0.3's experiments.
 | `m04-capture-readiness-loaded` | b84076a9 | the same with every core busy (`stress-ng --cpu 8`, load average 9.0 at the end) |
 | `m04-capture-readiness-2` | b84076a9 | the idle run again, for repeatability |
 | `m04-key-pace` | e7eb40b2 | key pacing and the teardown burst test, per family that takes background keys |
+| `m04-element-click` | 855de4e9 | element clicks (`DoAction` 0) against coordinate clicks on a GTK 4 button and Firefox, covered and visible; the GTK 4 focused probe (review round 1) |
+| `m04-partial-cover` | 855de4e9 | Firefox's clicks with the front window over parts of it (review round 1) |
+| `m04-capture-readiness-loaded-2`, `-3` | 855de4e9 | the loaded readiness run twice more (review round 1) |
+| `m04-capture-readiness-loaded-discarded` | e7eb40b2 | the first loaded run's surviving rows, marked discarded |
 
 - Engines: the spike `cua-engine` from source 41c4e1bd (unchanged since), the binary built at f637fcfa (SHA-256
   `cbd185c7…`), run with M0.3's choice (`--window-calls 32 --settle-ms 40 --key-pace-ms 0`, session retention, 100 ms
@@ -32,8 +36,12 @@ M0.3's experiments.
   trial and burst; `summary.md` is rewritten from it (`node scripts/linux-engine-diff.mjs --summarize --out
   docs/evidence/2026-10-28-own-linux-engine/m0/matrix`).
 - A first loaded readiness run ended without its summary (exit 13: the harness had unref'd the stress-ng child,
-  fixed in b84076a9) and its rows were dropped; its slowest trial was 94.9 ms (Chrome, covered), which the
-  re-run did not reproduce (worst 56.2 ms). It is reported here because it bounds what a loaded VM can do.
+  fixed in b84076a9). Its 400 trial rows were deleted from `results.jsonl` before this evidence was first committed
+  and cannot be recovered; its margin row and its load rows survive, copied verbatim from the session's console, in
+  `results.jsonl` as run `m04-capture-readiness-loaded-discarded` with a `discarded` reason in its `meta` row: the
+  slowest trial was 94.9 ms (Chrome, covered), load average 8.42 at the end. The re-run and two repeats are below.
+- The element-click run's GTK 4 scene (`pages/gtk4-button.py`) needs GTK 4's introspection data (`gir1.2-gtk-4.0`),
+  installed for it in review round 1.
 
 ## The matrix
 
@@ -51,7 +59,7 @@ in both runs. Cells are effects seen / requests; "failed" counts error answers. 
 | Chrome | Chromium 1.0 | google-chrome / Google-chrome | at_spi | 5/5 / 5/5 / 5/5 | 5/5 / 5/5 / 5/5 | 2/2 / 2/2 | takes |
 | Electron (cua fixture) | Chromium 1.0 | cua-electron-fixture / cua-electron-fixture | at_spi | 5/5 / 5/5 / 5/5 | 5/5 / 5/5 / 5/5 | 0/2 (2 failed) / 2/2 | takes |
 | Writer (gtk3) | gtk 3.24.41 | libreoffice / libreoffice-writer | at_spi | 5/5 / 5/5 / 5/5 | 5/5 / 5/5 / 5/5 | 2/2 / 2/2 | takes |
-| Writer (gen, X11 only) | no AT-SPI provider | libreoffice / libreoffice-writer | x11 | unreadable | 5/5 / 5/5 / 5/5 (pixels) | 0/2 (2 failed) / unreadable | takes keys |
+| Writer (gen, X11 only) | no AT-SPI provider | libreoffice / libreoffice-writer | x11 | unreadable | 5/5 / 5/5 / 5/5 (pixels) | 0/2 (2 failed) / unreadable | partial: takes keys; clicks unknown |
 | xterm | no AT-SPI provider | xterm / XTerm | x11 | 5/5 / 5/5 / 5/5 | 0/5 / 0/5 / 0/5 | 0/2 (2 failed) / 0/2 (2 failed) | **ignores keys** |
 | xterm, `allowSendEvents: true` | no AT-SPI provider | xterm / XTerm | x11 | 0/5 / 0/5 / 0/5 | 5/5 / 5/5 / 5/5 | 0/2 (2 failed) / 0/2 (2 failed) | ignores clicks |
 
@@ -71,10 +79,73 @@ redirect before the first targeted input (M0.3) is what Chromium needs, and no f
 - **xterm** (class `XTerm`, no AT-SPI provider): ignores synthetic keys (`allowSendEvents` is false by default),
   takes synthetic clicks (mouse reports reached its program 5/5) (`m04-matrix-covered`, `m04-matrix-visible`). With
   `allowSendEvents: true` it took the keys and no mouse report arrived; that second half is unexplained.
-- **Firefox** (`ToolkitName` `Gecko`, class `firefox`): ignores background clicks while the window is fully
-  covered, redirected or not (0/5 every engine, `m04-matrix-covered`), and takes them visible
-  (`m04-matrix-visible`); keys arrive either way. A listing by family cannot express "only while covered": that is a
-  design call (below).
+- **Firefox** (`ToolkitName` `Gecko`, class `firefox`): ignores background coordinate clicks while the window is
+  fully covered, redirected or not (0/5 every engine, `m04-matrix-covered`), and takes them visible
+  (`m04-matrix-visible`); keys arrive either way. The condition is the share of the window left visible, not the
+  click point (`m04-partial-cover`, below).
+- **Element clicks are not affected** in either family: `DoAction` 0 pressed the GTK 4 button and the covered
+  Firefox's button every time (`m04-element-click`, below). Only the synthetic-event kinds belong in the list.
+
+## Element clicks (`m04-element-click`)
+
+The GTK 4 focused probe, the raw record of the earlier finding (rows `gtk4-probe`): with the window focused and on
+top, the real input path arrives and the synthetic one does not; the AT-SPI action does.
+
+| window | input | route | arrived |
+|---|---|---|---|
+| gnome-text-editor (focused, on top) | key q | XTEST | yes |
+| gnome-text-editor (focused, on top) | key x | SendEvent (background route) | no |
+| GTK 4 button (focused, on top) | left click | XTEST | yes |
+| GTK 4 button (focused, on top) | left click | SendEvent (background route) | no |
+| GTK 4 button (focused, on top) | element click | `DoAction` 0 (AT-SPI) | yes |
+
+Then, in the background, per engine on its own window, 5 element clicks (`click {window, element_id}`, a left click,
+which every engine answers with `DoAction` 0) and 5 coordinate clicks on the same button. Effects seen / clicks;
+every one of the 120 requests kept the witness clean:
+
+| window | condition | pinned element / coordinate | newest element / coordinate | cua element / coordinate |
+|---|---|---|---|---|
+| GTK 4 button (`pages/gtk4-button.py`, GTK 4.14.5) | covered | 5/5 / 0/5 | 5/5 / 0/5 | 5/5 / 0/5 |
+| GTK 4 button | visible | 5/5 / 0/5 | 5/5 / 0/5 | 5/5 / 0/5 |
+| Firefox, the matrix page | covered | 5/5 / 0/5 | 5/5 / 0/5 | 5/5 / 0/5 |
+| Firefox, the matrix page | visible | 5/5 / 5/5 | 5/5 / 5/5 | 5/5 / 5/5 |
+
+**Verdict:** element actions take effect on GTK 4 and on a covered Firefox, so they stay allowed in `shared` mode;
+the families' entries list only the synthetic-event kinds (coordinate clicks, keys, and what is built from them).
+
+## Firefox under partial cover (`m04-partial-cover`)
+
+One Firefox window per engine at the same place (1280×781 at 0,19), each raised in turn under the front window,
+which is placed over part of it; 5 coordinate clicks at the button's centre (window-relative 640, 220, so 640, 239
+on the screen). The front window's real geometry is recorded (the window manager offsets its frame), and what it
+covers is computed from it. Effects seen / clicks; every request kept the witness clean:
+
+| front window | real geometry | click point | window visible | pinned | newest | cua |
+|---|---|---|---:|---|---|---|
+| over everything | 2,40,1276,797 | covered | 3% | 0/5 | 0/5 | 0/5 |
+| over the top half | 2,40,1276,420 | covered | 46% | 0/5 | 0/5 | 0/5 |
+| over the top third | 2,40,1276,251 | covered | 68% | 5/5 | 5/5 | 5/5 |
+| small, over the click point | 542,220,196,108 | covered | 98% | 5/5 | 5/5 | 5/5 |
+| medium, over the click point | 342,160,598,251 | covered | 85% | 5/5 | 5/5 | 5/5 |
+| large, over the click point | 142,100,1000,498 | covered | 50% | 0/5 | 0/5 | 0/5 |
+| over the bottom fifth | 2,640,1276,199 | visible | 80% | 5/5 | 5/5 | 5/5 |
+| over the bottom 45% | 2,490,1276,342 | visible | 60% | 5/5 | 5/5 | 5/5 |
+| over the bottom 52% | 2,420,1276,420 | visible | 52% | 0/5 | 0/5 | 0/5 |
+| over the bottom 57% | 2,380,1276,459 | visible | 46% | 0/5 | 0/5 | 0/5 |
+| over the bottom 62% | 2,340,1276,498 | visible | 41% | 0/5 | 0/5 | 0/5 |
+| over the bottom 67% | 2,300,1276,537 | visible | 36% | 0/5 | 0/5 | 0/5 |
+| over the left 47% | 2,40,598,797 | visible | 55% | 5/5 | 5/5 | 5/5 |
+| over the left 78% | 2,40,1000,797 | covered | 24% | 0/5 | 0/5 | 0/5 |
+| in a corner | 1072,680,196,147 | visible | 98% | 5/5 | 5/5 | 5/5 |
+
+**Verdict:** the condition is the whole window, not the click point. A click whose point is covered takes effect
+while most of the window is visible (68%, 85%, 98%); a click whose point is visible is ignored once about half of
+the window or more is covered (52%, 46%, 41%, 36% visible). Every case with 55% or more of the window visible took
+the click and every case with 52% or less ignored it, on all three engines. The point under the window's centre is
+not the rule either (covered at 85% visible: taken; visible at 52%: ignored). So `while_covered` reads "while about
+half of the window's area or more is covered by other windows", measured on one window size (1280×781): the exact
+threshold between 52% and 55% visible is not pinned down here, and whether Firefox computes it from area or from
+its own occlusion tracking is not known.
 
 ## Qt's AT-SPI bridge (`m04-qt-bridge`)
 
@@ -126,6 +197,13 @@ condition (`xprobe retention`). Maximum, ms (median in parentheses):
 **The 40 ms wait is not enough and must be raised.** Idle, Firefox and Writer already need more than 30 ms (38.4 ms
 at worst, a 1.6 ms margin); with every core busy six families need more than 30 ms and four more than 40 ms (56.2 ms
 at worst, about 16 ms short; the discarded first loaded run saw 94.9 ms). The trials are 400 per run.
+
+The loaded run repeated twice (review round 1; load average 9.1 and 9.0 at the end): the slowest real contents
+were **67.9 ms** (Firefox, visible) and **53.6 ms** (Writer gen, covered). Per family, the maxima of the two repeats
+(covered / visible, ms): gedit 28.3 / 14.4, gnome-text-editor 16.3 / 15.2, kate 27.7 / 13.4, qtcreator 38.2 / 43.3,
+Firefox 44.2 / 67.9, Chrome 39.7 / 21.7, Electron 29.4 / 15.0, Writer 42.5 / 38.8, Writer gen 59.4 / 42.0, xterm
+11.8 / 8.7. Across the four loaded runs the worst trials are 94.9, 56.2, 67.9 and 53.6 ms: a loaded VM's tail is
+wide, and no fixed wait under about 100 ms covers every trial seen.
 
 "Two consecutive equal captures" stays rejected: in these runs it stopped before the real contents in 160 of 200
 covered trials at a 10 ms poll (idle, both runs; 172 loaded), and at 20 ms in 51 and 32 idle and 140 loaded

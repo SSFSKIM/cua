@@ -8,13 +8,13 @@
 | GTK4 gnome-text-editor | GTK 4.14.5 | gnome-text-editor / gnome-text-editor | at_spi (64) | 0/5 / 0/5 / 0/5 | 0/5 / 0/5 / 0/5 | 0/2 (2 failed) / 0/2 (2 failed) | clean | ignores | m04-matrix-covered |
 | Qt 5 kate | Qt 5.15.13 | kate / kate | x11 | 5/5 / 5/5 / 5/5 | 5/5 / 5/5 / 5/5 | 2/2 / 2/2 (2 failed) | clean | takes | m04-matrix-covered |
 | Qt 6 qtcreator | Qt 6.4.2 | qtcreator / QtCreator | at_spi (1261) | 5/5 / 5/5 / 5/5 | 5/5 / 5/5 / 5/5 | 2/2 / 2/2 (2 failed) | clean | takes | m04-matrix-covered |
-| Firefox | Gecko 159.0 | Navigator / firefox | at_spi (68) | 0/5 / 0/5 / 0/5 | 5/5 / 5/5 / 5/5 | 0/2 (2 failed) / 2/2 | clean | partial (ignores click) | m04-matrix-covered |
+| Firefox | Gecko 159.0 | Navigator / firefox | at_spi (68) | 0/5 / 0/5 / 0/5 | 5/5 / 5/5 / 5/5 | 0/2 (2 failed) / 2/2 | clean | partial: takes keys; ignores clicks | m04-matrix-covered |
 | Chrome | Chromium 1.0 | google-chrome / Google-chrome | at_spi (222) | 5/5 / 5/5 / 5/5 | 5/5 / 5/5 / 5/5 | 2/2 / 2/2 | clean | takes | m04-matrix-covered |
 | Electron (cua fixture) | Chromium 1.0 | cua-electron-fixture / cua-electron-fixture | at_spi (28) | 5/5 / 5/5 / 5/5 | 5/5 / 5/5 / 5/5 | 0/2 (2 failed) / 2/2 | clean | takes | m04-matrix-covered |
 | LibreOffice Writer (gtk3) | gtk 3.24.41 | libreoffice / libreoffice-writer | at_spi (1962) | 5/5 / 5/5 / 5/5 | 5/5 / 5/5 / 5/5 | 2/2 / 2/2 | clean | takes | m04-matrix-covered |
-| LibreOffice Writer (gen, X11 only) | none (no AT-SPI provider) | libreoffice / libreoffice-writer | x11 | ?/5 / ?/5 / ?/5 | 5/5 / 5/5 / 5/5 | ?/2 (2 failed) / ?/2 | clean | takes | m04-matrix-covered |
-| xterm | none (no AT-SPI provider) | xterm / XTerm | x11 | 5/5 / 5/5 / 5/5 | 0/5 / 0/5 / 0/5 | 0/2 (2 failed) / 0/2 (2 failed) | clean | partial (ignores key) | m04-matrix-covered |
-| xterm, allowSendEvents on | none (no AT-SPI provider) | xterm / XTerm | x11 | 0/5 / 0/5 / 0/5 | 5/5 / 5/5 / 5/5 | 0/2 (2 failed) / 0/2 (2 failed) | clean | partial (ignores click) | m04-matrix-covered |
+| LibreOffice Writer (gen, X11 only) | none (no AT-SPI provider) | libreoffice / libreoffice-writer | x11 | ?/5 / ?/5 / ?/5 | 5/5 / 5/5 / 5/5 | ?/2 (2 failed) / ?/2 | clean | partial: takes keys; clicks unknown | m04-matrix-covered |
+| xterm | none (no AT-SPI provider) | xterm / XTerm | x11 | 5/5 / 5/5 / 5/5 | 0/5 / 0/5 / 0/5 | 0/2 (2 failed) / 0/2 (2 failed) | clean | partial: takes clicks; ignores keys | m04-matrix-covered |
+| xterm, allowSendEvents on | none (no AT-SPI provider) | xterm / XTerm | x11 | 0/5 / 0/5 / 0/5 | 5/5 / 5/5 / 5/5 | 0/2 (2 failed) / 0/2 (2 failed) | clean | partial: takes keys; ignores clicks | m04-matrix-covered |
 
 Without the redirect (`cua:none`, `--retention none`) beside cua with session retention:
 
@@ -24,20 +24,23 @@ Without the redirect (`cua:none`, `--retention none`) beside cua with session re
 | GTK4 gnome-text-editor | GTK 4.14.5 | gnome-text-editor / gnome-text-editor | at_spi (64) | 0/5 / 0/5 | 0/5 / 0/5 |  | clean | ignores | m04-matrix-covered |
 | Qt 5 kate | Qt 5.15.13 | kate / kate | x11 | 5/5 / 5/5 | 5/5 / 5/5 |  | clean | takes | m04-matrix-covered |
 | Qt 6 qtcreator | Qt 6.4.2 | qtcreator / QtCreator | at_spi (1261) | 5/5 / 5/5 | 5/5 / 5/5 |  | clean | takes | m04-matrix-covered |
-| Firefox | Gecko 159.0 | Navigator / firefox | at_spi (68) | 0/5 / 0/5 | 5/5 / 5/5 |  | clean | partial (ignores click) | m04-matrix-covered |
-| Chrome | Chromium 1.0 | google-chrome / Google-chrome | at_spi (222) | 5/5 / 4/5 | 5/5 / 0/5 |  | clean | partial (ignores some) | m04-matrix-covered |
-| Electron (cua fixture) | Chromium 1.0 | cua-electron-fixture / cua-electron-fixture | at_spi (28) | 5/5 / 0/5 | 5/5 / 0/5 |  | clean | partial (ignores some) | m04-matrix-covered |
+| Firefox | Gecko 159.0 | Navigator / firefox | at_spi (68) | 0/5 / 0/5 | 5/5 / 5/5 |  | clean | partial: takes keys; ignores clicks | m04-matrix-covered |
+| Chrome | Chromium 1.0 | google-chrome / Google-chrome | at_spi (222) | 5/5 / 4/5 | 5/5 / 0/5 |  | clean | partial: partial | m04-matrix-covered |
+| Electron (cua fixture) | Chromium 1.0 | cua-electron-fixture / cua-electron-fixture | at_spi (28) | 5/5 / 0/5 | 5/5 / 0/5 |  | clean | partial: partial | m04-matrix-covered |
 | LibreOffice Writer (gtk3) | gtk 3.24.41 | libreoffice / libreoffice-writer | at_spi (1962) | 5/5 / 5/5 | 5/5 / 5/5 |  | clean | takes | m04-matrix-covered |
-| LibreOffice Writer (gen, X11 only) | none (no AT-SPI provider) | libreoffice / libreoffice-writer | x11 | ?/5 / ?/5 | 5/5 / 5/5 |  | clean | takes | m04-matrix-covered |
-| xterm | none (no AT-SPI provider) | xterm / XTerm | x11 | 5/5 / 5/5 | 0/5 / 0/5 |  | clean | partial (ignores key) | m04-matrix-covered |
-| xterm, allowSendEvents on | none (no AT-SPI provider) | xterm / XTerm | x11 | 0/5 / 0/5 | 5/5 / 5/5 |  | clean | partial (ignores click) | m04-matrix-covered |
+| LibreOffice Writer (gen, X11 only) | none (no AT-SPI provider) | libreoffice / libreoffice-writer | x11 | ?/5 / ?/5 | 5/5 / 5/5 |  | clean | partial: takes keys; clicks unknown | m04-matrix-covered |
+| xterm | none (no AT-SPI provider) | xterm / XTerm | x11 | 5/5 / 5/5 | 0/5 / 0/5 |  | clean | partial: takes clicks; ignores keys | m04-matrix-covered |
+| xterm, allowSendEvents on | none (no AT-SPI provider) | xterm / XTerm | x11 | 0/5 / 0/5 | 5/5 / 5/5 |  | clean | partial: takes keys; ignores clicks | m04-matrix-covered |
 
 Families that do not take the background route:
 
-- GTK4 gnome-text-editor (gnome-text-editor / gnome-text-editor; GTK): ignores, ignores click and key (run `m04-matrix-covered`)
-- Firefox (Navigator / firefox; Gecko): partial, ignores click (run `m04-matrix-covered`)
-- xterm (xterm / XTerm; no AT-SPI provider): partial, ignores key (run `m04-matrix-covered`)
-- xterm, allowSendEvents on (xterm / XTerm; no AT-SPI provider): partial, ignores click (run `m04-matrix-covered`)
+- GTK4 gnome-text-editor (gnome-text-editor / gnome-text-editor; GTK): ignores (run `m04-matrix-covered`)
+- Firefox (Navigator / firefox; Gecko): takes keys; ignores clicks (run `m04-matrix-covered`)
+- LibreOffice Writer (gen, X11 only) (libreoffice / libreoffice-writer; no AT-SPI provider): takes keys; clicks unknown (run `m04-matrix-covered`)
+- xterm (xterm / XTerm; no AT-SPI provider): takes clicks; ignores keys (run `m04-matrix-covered`)
+- xterm, allowSendEvents on (xterm / XTerm; no AT-SPI provider): takes keys; ignores clicks (run `m04-matrix-covered`)
+
+The run is complete.
 
 ## m04-matrix-visible (experiment matrix)
 
@@ -51,9 +54,9 @@ Families that do not take the background route:
 | Chrome | Chromium 1.0 | google-chrome / Google-chrome | at_spi (222) | 5/5 / 5/5 / 5/5 | 5/5 / 5/5 / 5/5 | 2/2 / 2/2 | clean | takes | m04-matrix-visible |
 | Electron (cua fixture) | Chromium 1.0 | cua-electron-fixture / cua-electron-fixture | at_spi (28) | 5/5 / 5/5 / 5/5 | 5/5 / 5/5 / 5/5 | 0/2 (2 failed) / 2/2 | clean | takes | m04-matrix-visible |
 | LibreOffice Writer (gtk3) | gtk 3.24.41 | libreoffice / libreoffice-writer | at_spi (1962) | 5/5 / 5/5 / 5/5 | 5/5 / 5/5 / 5/5 | 2/2 / 2/2 | clean | takes | m04-matrix-visible |
-| LibreOffice Writer (gen, X11 only) | none (no AT-SPI provider) | libreoffice / libreoffice-writer | x11 | ?/5 / ?/5 / ?/5 | 5/5 / 5/5 / 5/5 | ?/2 (2 failed) / ?/2 | clean | takes | m04-matrix-visible |
-| xterm | none (no AT-SPI provider) | xterm / XTerm | x11 | 5/5 / 5/5 / 5/5 | 0/5 / 0/5 / 0/5 | 0/2 (2 failed) / 0/2 (2 failed) | clean | partial (ignores key) | m04-matrix-visible |
-| xterm, allowSendEvents on | none (no AT-SPI provider) | xterm / XTerm | x11 | 0/5 / 0/5 / 0/5 | 5/5 / 5/5 / 5/5 | 0/2 (2 failed) / 0/2 (2 failed) | clean | partial (ignores click) | m04-matrix-visible |
+| LibreOffice Writer (gen, X11 only) | none (no AT-SPI provider) | libreoffice / libreoffice-writer | x11 | ?/5 / ?/5 / ?/5 | 5/5 / 5/5 / 5/5 | ?/2 (2 failed) / ?/2 | clean | partial: takes keys; clicks unknown | m04-matrix-visible |
+| xterm | none (no AT-SPI provider) | xterm / XTerm | x11 | 5/5 / 5/5 / 5/5 | 0/5 / 0/5 / 0/5 | 0/2 (2 failed) / 0/2 (2 failed) | clean | partial: takes clicks; ignores keys | m04-matrix-visible |
+| xterm, allowSendEvents on | none (no AT-SPI provider) | xterm / XTerm | x11 | 0/5 / 0/5 / 0/5 | 5/5 / 5/5 / 5/5 | 0/2 (2 failed) / 0/2 (2 failed) | clean | partial: takes keys; ignores clicks | m04-matrix-visible |
 
 Without the redirect (`cua:none`, `--retention none`) beside cua with session retention:
 
@@ -67,15 +70,18 @@ Without the redirect (`cua:none`, `--retention none`) beside cua with session re
 | Chrome | Chromium 1.0 | google-chrome / Google-chrome | at_spi (222) | 5/5 / 5/5 | 5/5 / 5/5 |  | clean | takes | m04-matrix-visible |
 | Electron (cua fixture) | Chromium 1.0 | cua-electron-fixture / cua-electron-fixture | at_spi (28) | 5/5 / 5/5 | 5/5 / 5/5 |  | clean | takes | m04-matrix-visible |
 | LibreOffice Writer (gtk3) | gtk 3.24.41 | libreoffice / libreoffice-writer | at_spi (1962) | 5/5 / 5/5 | 5/5 / 5/5 |  | clean | takes | m04-matrix-visible |
-| LibreOffice Writer (gen, X11 only) | none (no AT-SPI provider) | libreoffice / libreoffice-writer | x11 | ?/5 / ?/5 | 5/5 / 5/5 |  | clean | takes | m04-matrix-visible |
-| xterm | none (no AT-SPI provider) | xterm / XTerm | x11 | 5/5 / 5/5 | 0/5 / 0/5 |  | clean | partial (ignores key) | m04-matrix-visible |
-| xterm, allowSendEvents on | none (no AT-SPI provider) | xterm / XTerm | x11 | 0/5 / 0/5 | 5/5 / 5/5 |  | clean | partial (ignores click) | m04-matrix-visible |
+| LibreOffice Writer (gen, X11 only) | none (no AT-SPI provider) | libreoffice / libreoffice-writer | x11 | ?/5 / ?/5 | 5/5 / 5/5 |  | clean | partial: takes keys; clicks unknown | m04-matrix-visible |
+| xterm | none (no AT-SPI provider) | xterm / XTerm | x11 | 5/5 / 5/5 | 0/5 / 0/5 |  | clean | partial: takes clicks; ignores keys | m04-matrix-visible |
+| xterm, allowSendEvents on | none (no AT-SPI provider) | xterm / XTerm | x11 | 0/5 / 0/5 | 5/5 / 5/5 |  | clean | partial: takes keys; ignores clicks | m04-matrix-visible |
 
 Families that do not take the background route:
 
-- GTK4 gnome-text-editor (gnome-text-editor / gnome-text-editor; GTK): ignores, ignores click and key (run `m04-matrix-visible`)
-- xterm (xterm / XTerm; no AT-SPI provider): partial, ignores key (run `m04-matrix-visible`)
-- xterm, allowSendEvents on (xterm / XTerm; no AT-SPI provider): partial, ignores click (run `m04-matrix-visible`)
+- GTK4 gnome-text-editor (gnome-text-editor / gnome-text-editor; GTK): ignores (run `m04-matrix-visible`)
+- LibreOffice Writer (gen, X11 only) (libreoffice / libreoffice-writer; no AT-SPI provider): takes keys; clicks unknown (run `m04-matrix-visible`)
+- xterm (xterm / XTerm; no AT-SPI provider): takes clicks; ignores keys (run `m04-matrix-visible`)
+- xterm, allowSendEvents on (xterm / XTerm; no AT-SPI provider): takes keys; ignores clicks (run `m04-matrix-visible`)
+
+The run is complete.
 
 ## m04-qt-bridge (experiment qt-bridge)
 
@@ -360,4 +366,133 @@ On the VM, as found: `IsEnabled` true, `ScreenReaderEnabled` false.
 - writer-gen: the covered window's final capture differs from the visible one's in 2 of 999680 pixels (box 1232,89,1232,455, largest channel difference 128)
 - xterm: the covered window's final capture differs from the visible one's in 0 of 252160 pixels
 - **the slowest real contents: 34.5 ms after RedirectWindow (writer, covered); against the fixed 40 ms wait the margin is 5.5 ms, over the 30 ms line: the wait must be raised**
+
+## m04-capture-readiness-loaded-discarded (experiment capture-readiness)
+
+**Discarded run.** The first loaded capture-readiness run (harness e7eb40b2): it ended before its summary and its trial rows were lost; only its margin row survives, copied from the session's console: the slowest real contents were 94.9 ms after RedirectWindow (Chrome, covered), load average 8.42 at the end. Its re-run is m04-capture-readiness-loaded; m04-capture-readiness-loaded-2 and -3 repeat it.
+
+## m04-element-click (experiment element-click)
+
+The GTK 4 probe (the window focused and on top; the real input path against the synthetic one):
+
+| window | input | route | arrived |
+|---|---|---|---|
+| gnome-text-editor (focused, on top) | key q | XTEST | true |
+| gnome-text-editor (focused, on top) | key x | SendEvent (background route) | false |
+| GTK 4 button (focused, on top) | left click | XTEST | true |
+| GTK 4 button (focused, on top) | left click | SendEvent (background route) | false |
+| GTK 4 button (focused, on top) | element click | DoAction 0 (AT-SPI) | true |
+
+Element clicks (`DoAction` 0) against coordinate clicks (synthetic events), per engine, effects seen / clicks:
+
+| window | condition | engine | element click | coordinate click | witness clean |
+|---|---|---|---|---|---|
+| gtk4-button | covered | pinned | 5/5 | 0/5 | 10/10 |
+| gtk4-button | covered | newest | 5/5 | 0/5 | 10/10 |
+| gtk4-button | covered | cua | 5/5 | 0/5 | 10/10 |
+| gtk4-button | visible | pinned | 5/5 | 0/5 | 10/10 |
+| gtk4-button | visible | newest | 5/5 | 0/5 | 10/10 |
+| gtk4-button | visible | cua | 5/5 | 0/5 | 10/10 |
+| firefox | covered | pinned | 5/5 | 0/5 | 10/10 |
+| firefox | covered | newest | 5/5 | 0/5 | 10/10 |
+| firefox | covered | cua | 5/5 | 0/5 | 10/10 |
+| firefox | visible | pinned | 5/5 | 5/5 | 10/10 |
+| firefox | visible | newest | 5/5 | 5/5 | 10/10 |
+| firefox | visible | cua | 5/5 | 5/5 | 10/10 |
+
+## m04-partial-cover (experiment partial-cover)
+
+Firefox on the matrix page, one window per engine at the same place; the click point is the button's centre (window-relative 640, 220). Effects seen / coordinate clicks:
+
+| front window | its real geometry | click point | window visible | pinned | newest | cua |
+|---|---|---|---:|---|---|---|
+| over everything | 2,40,1276,797 | covered | 3% | 0/5 | 0/5 | 0/5 |
+| over the top half | 2,40,1276,420 | covered | 46% | 0/5 | 0/5 | 0/5 |
+| over the top third | 2,40,1276,251 | covered | 68% | 5/5 | 5/5 | 5/5 |
+| small, over the click point | 542,220,196,108 | covered | 98% | 5/5 | 5/5 | 5/5 |
+| medium, over the click point | 342,160,598,251 | covered | 85% | 5/5 | 5/5 | 5/5 |
+| large, over the click point | 142,100,1000,498 | covered | 50% | 0/5 | 0/5 | 0/5 |
+| over the bottom fifth | 2,640,1276,199 | visible | 80% | 5/5 | 5/5 | 5/5 |
+| over the bottom 45% | 2,490,1276,342 | visible | 60% | 5/5 | 5/5 | 5/5 |
+| over the bottom 52% | 2,420,1276,420 | visible | 52% | 0/5 | 0/5 | 0/5 |
+| over the bottom 57% | 2,380,1276,459 | visible | 46% | 0/5 | 0/5 | 0/5 |
+| over the bottom 62% | 2,340,1276,498 | visible | 41% | 0/5 | 0/5 | 0/5 |
+| over the bottom 67% | 2,300,1276,537 | visible | 36% | 0/5 | 0/5 | 0/5 |
+| over the left 47% | 2,40,598,797 | visible | 55% | 5/5 | 5/5 | 5/5 |
+| over the left 78% | 2,40,1000,797 | covered | 24% | 0/5 | 0/5 | 0/5 |
+| in a corner | 1072,680,196,147 | visible | 98% | 5/5 | 5/5 | 5/5 |
+
+## m04-capture-readiness-loaded-2 (experiment capture-readiness)
+
+| window | condition | trials | ready median ms | ready p90 ms | ready max ms | real before redirect | real at span end | interim captures mostly black | poll 1 ms: stop median / premature | poll 2 ms: stop median / premature | poll 5 ms: stop median / premature | poll 10 ms: stop median / premature | poll 20 ms: stop median / premature |
+|---|---|---:|---:|---:|---:|---|---|---|---|---|---|---|---|
+| gedit | visible | 20 | 9.7 | 13.2 | 14.4 | 20/20 | 20/20 | none | 1 / 20 | 2 / 20 | 5 / 20 | 10 / 9 | 20 / 0 |
+| gedit | covered | 20 | 24.5 | 25.4 | 27.7 | 0/20 | 20/20 | 20/20 | 1 / 20 | 2 / 20 | 5 / 20 | 10 / 20 | 20 / 19 |
+| gnome-text-editor | visible | 20 | 9.1 | 10.1 | 12.4 | 20/20 | 20/20 | none | 1 / 20 | 2 / 20 | 5 / 20 | 10 / 4 | 20 / 0 |
+| gnome-text-editor | covered | 20 | 9.4 | 12.6 | 15.6 | 20/20 | 20/20 | none | 1 / 20 | 2 / 20 | 5 / 20 | 10 / 4 | 20 / 0 |
+| kate | visible | 20 | 10.1 | 12.7 | 13.4 | 20/20 | 20/20 | none | 1 / 20 | 2 / 20 | 5 / 20 | 10 / 10 | 20 / 0 |
+| kate | covered | 20 | 22 | 25.6 | 26.5 | 0/20 | 20/20 | 20/20 | 1 / 20 | 2 / 20 | 5 / 20 | 10 / 20 | 20 / 15 |
+| qtcreator | visible | 20 | 28 | 29.5 | 31.9 | 0/20 | 20/20 | 0/20 | 1 / 20 | 2 / 20 | 5 / 20 | 10 / 20 | 20 / 20 |
+| qtcreator | covered | 20 | 28.2 | 31.6 | 34.8 | 0/20 | 20/20 | 20/20 | 1 / 20 | 2 / 20 | 5 / 20 | 10 / 20 | 20 / 20 |
+| firefox | visible | 20 | 37.5 | 43.1 | 67.9 | 0/20 | 20/20 | 0/20 | 1 / 20 | 2 / 20 | 5 / 20 | 10 / 20 | 20 / 20 |
+| firefox | covered | 20 | 34.9 | 40.1 | 44.2 | 0/20 | 20/20 | 20/20 | 1 / 20 | 2 / 20 | 5 / 20 | 10 / 20 | 20 / 20 |
+| chrome | visible | 20 | 14.4 | 14.9 | 17 | 20/20 | 20/20 | none | 1 / 20 | 2 / 20 | 5 / 20 | 10 / 20 | 20 / 0 |
+| chrome | covered | 20 | 31.2 | 35.6 | 36.6 | 0/20 | 20/20 | 0/20 | 1 / 20 | 2 / 20 | 5 / 20 | 10 / 20 | 20 / 20 |
+| electron | visible | 20 | 10.2 | 14.7 | 15 | 20/20 | 20/20 | none | 1 / 20 | 2 / 20 | 5 / 20 | 10 / 11 | 20 / 0 |
+| electron | covered | 20 | 20.9 | 26.7 | 29.4 | 0/20 | 20/20 | 0/20 | 1 / 20 | 2 / 20 | 5 / 20 | 10 / 20 | 20 / 11 |
+| writer | visible | 20 | 33.8 | 37.8 | 38.8 | 0/20 | 20/20 | 0/20 | 1 / 20 | 2 / 20 | 5 / 20 | 10 / 20 | 20 / 20 |
+| writer | covered | 20 | 35.7 | 38.5 | 39 | 0/20 | 20/20 | 20/20 | 1 / 20 | 2 / 20 | 5 / 20 | 10 / 20 | 20 / 20 |
+| writer-gen | visible | 20 | 34.4 | 37.9 | 39.9 | 0/20 | 20/20 | 0/20 | 1 / 20 | 2 / 20 | 5 / 20 | 10 / 20 | 20 / 20 |
+| writer-gen | covered | 20 | 44.6 | 53.6 | 59.4 | 0/20 | 0/20 | 20/20 | 1 / 20 | 2 / 20 | 5 / 20 | 10 / 20 | 20 / 20 |
+| xterm | visible | 20 | 5.4 | 6.3 | 8.7 | 20/20 | 20/20 | none | 1 / 20 | 2 / 20 | 5 / 18 | 10 / 0 | 20 / 0 |
+| xterm | covered | 20 | 8.2 | 11.1 | 11.8 | 0/20 | 20/20 | 20/20 | 1 / 20 | 2 / 20 | 5 / 20 | 20 / 4 | 40 / 0 |
+
+- gedit: the covered window's final capture differs from the visible one's in 0 of 630000 pixels
+- gnome-text-editor: the covered window's final capture differs from the visible one's in 0 of 630000 pixels
+- kate: the covered window's final capture differs from the visible one's in 0 of 630000 pixels
+- qtcreator: the covered window's final capture differs from the visible one's in 0 of 836000 pixels
+- firefox: the covered window's final capture differs from the visible one's in 0 of 999680 pixels
+- chrome: the covered window's final capture differs from the visible one's in 0 of 819000 pixels
+- electron: the covered window's final capture differs from the visible one's in 0 of 630000 pixels
+- writer: the covered window's final capture differs from the visible one's in 0 of 999680 pixels
+- writer-gen: the covered window's final capture differs from the visible one's in 2 of 999680 pixels (box 1232,89,1232,455, largest channel difference 128)
+- xterm: the covered window's final capture differs from the visible one's in 0 of 252160 pixels
+- **the slowest real contents: 67.9 ms after RedirectWindow (firefox, visible); against the fixed 40 ms wait the margin is -27.9 ms, over the 30 ms line: the wait must be raised**
+
+## m04-capture-readiness-loaded-3 (experiment capture-readiness)
+
+| window | condition | trials | ready median ms | ready p90 ms | ready max ms | real before redirect | real at span end | interim captures mostly black | poll 1 ms: stop median / premature | poll 2 ms: stop median / premature | poll 5 ms: stop median / premature | poll 10 ms: stop median / premature | poll 20 ms: stop median / premature |
+|---|---|---:|---:|---:|---:|---|---|---|---|---|---|---|---|
+| gedit | visible | 20 | 9.3 | 13.2 | 13.7 | 20/20 | 20/20 | none | 1 / 20 | 2 / 20 | 5 / 20 | 10 / 6 | 20 / 0 |
+| gedit | covered | 20 | 21.8 | 25.5 | 28.3 | 0/20 | 20/20 | 20/20 | 1 / 20 | 2 / 20 | 5 / 20 | 10 / 20 | 20 / 18 |
+| gnome-text-editor | visible | 20 | 10 | 13.2 | 15.2 | 20/20 | 20/20 | none | 1 / 20 | 2 / 20 | 5 / 20 | 10 / 10 | 20 / 0 |
+| gnome-text-editor | covered | 20 | 9.4 | 12.5 | 16.3 | 20/20 | 20/20 | none | 1 / 20 | 2 / 20 | 5 / 20 | 10 / 6 | 20 / 0 |
+| kate | visible | 20 | 9.5 | 12.9 | 13.2 | 20/20 | 20/20 | none | 1 / 20 | 2 / 20 | 5 / 20 | 10 / 9 | 20 / 0 |
+| kate | covered | 20 | 20.8 | 23.2 | 27.7 | 0/20 | 20/20 | 20/20 | 1 / 20 | 2 / 20 | 5 / 20 | 10 / 20 | 20 / 12 |
+| qtcreator | visible | 20 | 29.4 | 36.4 | 43.3 | 0/20 | 20/20 | 0/20 | 1 / 20 | 2 / 20 | 5 / 20 | 10 / 20 | 20 / 20 |
+| qtcreator | covered | 20 | 29.8 | 33.8 | 38.2 | 0/20 | 20/20 | 20/20 | 1 / 20 | 2 / 20 | 5 / 20 | 10 / 20 | 20 / 20 |
+| firefox | visible | 20 | 34.9 | 39.1 | 44.2 | 0/20 | 20/20 | 0/20 | 1 / 20 | 2 / 20 | 5 / 20 | 10 / 20 | 20 / 20 |
+| firefox | covered | 20 | 37.8 | 40.6 | 43 | 0/20 | 20/20 | 20/20 | 1 / 20 | 2 / 20 | 5 / 20 | 10 / 20 | 20 / 20 |
+| chrome | visible | 20 | 14.8 | 17 | 21.7 | 20/20 | 20/20 | none | 1 / 20 | 2 / 20 | 5 / 20 | 10 / 20 | 20 / 1 |
+| chrome | covered | 20 | 30.7 | 35.2 | 39.7 | 0/20 | 20/20 | 0/20 | 1 / 20 | 2 / 20 | 5 / 20 | 10 / 20 | 20 / 20 |
+| electron | visible | 20 | 10.5 | 13 | 15 | 20/20 | 20/20 | none | 1 / 20 | 2 / 20 | 5 / 20 | 10 / 12 | 20 / 0 |
+| electron | covered | 20 | 21.7 | 26.4 | 28.9 | 0/20 | 20/20 | 0/20 | 1 / 20 | 2 / 20 | 5 / 20 | 10 / 20 | 20 / 14 |
+| writer | visible | 20 | 34.6 | 36.6 | 38.1 | 0/20 | 20/20 | 0/20 | 1 / 20 | 2 / 20 | 5 / 20 | 10 / 20 | 20 / 20 |
+| writer | covered | 20 | 37.6 | 39.9 | 42.5 | 0/20 | 20/20 | 20/20 | 1 / 20 | 2 / 20 | 5 / 20 | 10 / 20 | 20 / 20 |
+| writer-gen | visible | 20 | 33.6 | 38.8 | 42 | 0/20 | 20/20 | 0/20 | 1 / 20 | 2 / 20 | 5 / 20 | 10 / 20 | 20 / 20 |
+| writer-gen | covered | 20 | 44.7 | 48.5 | 53.6 | 0/20 | 0/20 | 20/20 | 1 / 20 | 2 / 20 | 5 / 20 | 10 / 20 | 20 / 20 |
+| xterm | visible | 20 | 4.9 | 6.2 | 8.7 | 20/20 | 20/20 | none | 1 / 20 | 2 / 20 | 5 / 10 | 10 / 0 | 20 / 0 |
+| xterm | covered | 20 | 8.8 | 11 | 11.3 | 0/20 | 20/20 | 20/20 | 1 / 20 | 2 / 20 | 5 / 20 | 20 / 4 | 40 / 0 |
+
+- gedit: the covered window's final capture differs from the visible one's in 0 of 630000 pixels
+- gnome-text-editor: the covered window's final capture differs from the visible one's in 0 of 630000 pixels
+- kate: the covered window's final capture differs from the visible one's in 0 of 630000 pixels
+- qtcreator: the covered window's final capture differs from the visible one's in 0 of 836000 pixels
+- firefox: the covered window's final capture differs from the visible one's in 0 of 999680 pixels
+- chrome: the covered window's final capture differs from the visible one's in 0 of 819000 pixels
+- electron: the covered window's final capture differs from the visible one's in 0 of 630000 pixels
+- writer: the covered window's final capture differs from the visible one's in 0 of 999680 pixels
+- writer-gen: the covered window's final capture differs from the visible one's in 2 of 999680 pixels (box 1232,89,1232,455, largest channel difference 128)
+- xterm: the covered window's final capture differs from the visible one's in 0 of 252160 pixels
+- **the slowest real contents: 53.6 ms after RedirectWindow (writer-gen, covered); against the fixed 40 ms wait the margin is -13.6 ms, over the 30 ms line: the wait must be raised**
 

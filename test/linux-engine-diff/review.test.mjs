@@ -88,3 +88,22 @@ test('terminal input reads as UTF-8 for typed text and byte for byte for mouse r
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('a desktop-only invocation parses and plans, with or without scenes; a typo or an empty plan is still refused', async () => {
+  const { parseArgs } = await import('../../scripts/linux-engine-diff/cli.mjs');
+  const bins = ['--vendor', 'v', '--newest', 'n', '--cua', 'c', '--out', 'o'];
+  const plan = (...argv) => {
+    const a = parseArgs([...bins, ...argv]);
+    return planOps(a.scenes, a.ops);
+  };
+  const desktop = [{ scene: 'desktop', op: 'list_windows' }];
+  assert.deepEqual(plan('--scene', 'gedit', '--ops', 'list_windows'), desktop);
+  assert.deepEqual(plan('--ops', 'list_windows'), desktop);
+  assert.deepEqual(plan('--scene', 'desktop', '--ops', 'list_windows'), desktop);
+  assert.deepEqual(plan('--scene', 'gedit', '--ops', 'list_windows,tree'), [...desktop, { scene: 'gedit', op: 'tree' }]);
+  assert.throws(() => plan('--scene', 'gedit', '--ops', 'list_window'), /unknown operation list_window/);
+  assert.throws(() => plan('--ops', 'tree'), /--scene is required/);
+  assert.throws(() => plan('--scene', 'gedit', '--ops', 'press_keys'), /unknown operation press_keys/);
+  assert.throws(() => plan('--scene', 'over-budget', '--ops', 'list_windows,press_key'), /over-budget has none of the operations/);
+  assert.throws(() => plan('--scene', 'desktop', '--ops', 'tree'), /nothing to run|desktop has none/);
+});

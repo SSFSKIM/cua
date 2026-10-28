@@ -12,6 +12,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { startMonitor } from './busmon.mjs';
+import { DESKTOP_OPS } from './cli.mjs';
 import { Engine } from './engine.mjs';
 import { compareStates, normalizeState, retainedIds } from './normalize.mjs';
 import { writeSummary } from './report.mjs';
@@ -26,7 +27,7 @@ const VENDORS = ['pinned', 'newest'];
 
 /** Which operations each scene runs. `tree` is get_window_state without the screenshot, `tree_shot` with it. */
 export const SCENE_OPS = {
-  desktop: ['list_windows'],
+  desktop: DESKTOP_OPS,
   gedit: ['tree', 'tree_shot', 'press_key', 'click'],
   chrome: ['tree', 'tree_shot', 'press_key', 'click'],
   'over-budget': ['tree'],
@@ -37,17 +38,25 @@ const INPUT_OPS = new Set(['press_key', 'click']);
 
 /**
  * The plan: each scene's operations that `ops` names. An operation no scene has, a scene none of whose operations is
- * named, and a plan with nothing in it are refused, so a mistyped or unsupported operation never runs as a pass.
+ * named, and a plan with nothing in it are refused, so a mistyped or unsupported operation never runs as a pass. A
+ * plan of desktop operations alone (`--ops list_windows`) needs no scene and ignores the scenes it is given.
  */
 export function planOps(scenes, ops) {
   const known = new Set(Object.values(SCENE_OPS).flat());
   if (ops !== 'all') for (const op of ops) if (!known.has(op)) throw new Error(`unknown operation ${op}; known: ${[...known].join(', ')}`);
   const plan = [];
   const wanted = (op) => ops === 'all' || ops.includes(op);
-  if (wanted('list_windows')) plan.push({ scene: 'desktop', op: 'list_windows' });
+  const desktopOnly = ops !== 'all' && ops.length > 0 && ops.every((op) => SCENE_OPS.desktop.includes(op));
+  for (const op of SCENE_OPS.desktop) if (wanted(op)) plan.push({ scene: 'desktop', op });
   for (const scene of scenes) {
-    if (!SCENE_OPS[scene] || scene === 'desktop') throw new Error(`unknown scene ${scene}`);
+    if (!SCENE_OPS[scene]) throw new Error(`unknown scene ${scene}`);
+    if (desktopOnly) continue;
+    if (scene === 'desktop' && ops === 'all') continue;
     const mine = SCENE_OPS[scene].filter(wanted);
+    if (scene === 'desktop') {
+      if (mine.length === 0) throw new Error(`scene desktop has none of the operations asked for (it has ${SCENE_OPS.desktop.join(', ')})`);
+      continue;
+    }
     if (mine.length === 0) throw new Error(`scene ${scene} has none of the operations asked for (it has ${SCENE_OPS[scene].join(', ')})`);
     for (const op of mine) plan.push({ scene, op });
   }

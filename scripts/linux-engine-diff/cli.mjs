@@ -15,6 +15,9 @@ export const USAGE = `usage:
   linux-engine-diff.mjs --record-wire --cua <bin>
   linux-engine-diff.mjs --summarize --out <dir>`;
 
+/** The operations of the `desktop` scene (run.mjs SCENE_OPS.desktop), the ones that need no scene window. */
+export const DESKTOP_OPS = ['list_windows'];
+
 const VALUE_FLAGS = {
   '--vendor': 'vendor',
   '--newest': 'newest',
@@ -89,8 +92,10 @@ export function parseArgs(argv) {
   }
   else {
     require('vendor', 'newest', 'cua', 'out');
-    if (a.scenes.length === 0) throw new Error(`--scene is required\n${USAGE}`);
     if (!a.ops) throw new Error(`--ops is required\n${USAGE}`);
+    // the desktop's operations (list_windows) need no scene; everything else does
+    const desktopOnly = a.ops !== 'all' && a.ops.length > 0 && a.ops.every((op) => DESKTOP_OPS.includes(op));
+    if (a.scenes.length === 0 && !desktopOnly) throw new Error(`--scene is required\n${USAGE}`);
     if (a.via && a.via !== 'wire') throw new Error('--via vendor-js arrives with M1a; M0 drives the engines over the wire');
     if (!['covered', 'visible'].includes(a.occlusion)) throw new Error('--occlusion is covered or visible');
   }

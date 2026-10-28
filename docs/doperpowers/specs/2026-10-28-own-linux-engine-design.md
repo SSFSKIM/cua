@@ -658,6 +658,16 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
   Evidence: `.doperpowers/sde/…/task-5-report.md` (local); the live comparisons on a 10,000-row GTK table, LibreOffice Calc (611 ms against 3,440), the second walk (the vendor's 5,561 calls exactly) and `list_apps`.
   Date/Author: 2026-10-28, the plan-executor (session linux171), from the M1a.1 executor's report; the unobscured shortcut decided by the design session (cua_repl session 1ea561bc) with its two conditions.
 
+- Decision (2026-10-28, M1a.2): the input side's choices.
+  - The pinned build is the reference for X events: on a private Xvfb, cua's engine sends the same answers and the same X events as the pinned build in all 80 scenarios of the harness's `--experiment events` (mixed-case shortcuts, held chords, both routes, `activate_window`, `launch_app`). The newest build sends no `EnterNotify` and takes a different desktop path; that is recorded, not judged.
+  - Validation order follows the trace: `click` parses its chord first; `move` and `scroll` inside the window session; `drag` only after placing the pointer at the path's start; `scroll`'s element checks before the session and its coordinate and pixel checks inside it, before any pointer event. A bad key on a background `press_key` still sends `FocusIn` and `FocusOut` (settling the behaviour specification's open point §22.8).
+  - Holds: a window's session stays open while any hold names it, and a failed `key_up` keeps the hold with the keys still counted; cleanup releases carry the modifier state that was held (the M0.2 review's deferred finding). If a window with held keys is destroyed, its session stays open until the engine exits and requests to it answer X errors, as the vendor's do.
+  - An element `scroll` on an element with empty bounds answers cua's own sentence `element has no visible bounds in this window` (a deviation candidate for M1a.3's list).
+  - No input settle after the redirect (Retention and the fixed waits): warm `press_key` about 101 ms against a 236 ms bar on the :0 diff of gedit and Chrome.
+  - Desktop-route (XTEST) checks run on a private Xvfb (installed on the VM), so real input never reaches the :0 session.
+  Evidence: `.doperpowers/sde/…/task-6-report.md` (local); commit 81e9be54.
+  Date/Author: 2026-10-28, the plan-executor (session linux171), from the M1a.2 executor's report.
+
 ## Outcomes & Retrospective
 
 Written per milestone as each lands; the whole-plan retrospective at finish. The execution record (tasks, reviews, friction) is `docs/doperpowers/specs/2026-10-28-own-linux-engine-report.md`.

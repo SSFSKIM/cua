@@ -77,6 +77,19 @@ test('a failed request fails the verdict', () => {
   assert.match(judgeOperation(rows, { vendors: ['pinned', 'newest'], candidate: 'cua' }).reasons.join(), /failed/);
 });
 
+test('a request every engine answers with an error is judged by its answer and timed like any other', () => {
+  const refused = (engine, cold, warm) => [
+    { engine, series: 'cold', ms: cold, ok: false, equal: true },
+    { engine, series: 'warm', ms: warm, ok: false, equal: true },
+  ];
+  const rows = [...refused('pinned', 290, 300), ...refused('newest', 280, 270), ...refused('cua', 135, 128)];
+  const verdict = judgeOperation(rows, { vendors: ['pinned', 'newest'], candidate: 'cua' });
+  assert.equal(verdict.pass, true);
+  assert.deepEqual(verdict.bar, { cold: 280, warm: 270 });
+  const slow = judgeOperation([...refused('pinned', 290, 300), ...refused('newest', 280, 270), ...refused('cua', 300, 128)], { vendors: ['pinned', 'newest'], candidate: 'cua' });
+  assert.equal(slow.speed, false);
+});
+
 // ---------------------------------------------------------------------------------------------------------------
 // output normalization
 
@@ -350,7 +363,7 @@ test('the summary has a row per engine with its medians, calls and verdict, and 
   const text = renderSummary(lines);
   assert.match(text, /variants: `cua:W16` = `--window-calls 16`/);
   assert.match(text, /the witness failed the activating stub \(active\)/);
-  assert.match(text, /\| gedit \| tree \| cua \| 60 \| – \| 0 \| 3040 \/ – \| 20 \/ – \| 0 \| 1\/1 \| – \| – \| PASS \|/);
+  assert.match(text, /\| gedit \| tree \| cua \| 60 \| – \| 0 \| 3040 \/ – \| 20 \/ – \| 0 \| 1\/1 \| – \| – \| – \| PASS \|/);
   assert.match(text, /\| gedit \| tree \| \*\*bar\*\* \| 500 \|/);
   assert.match(text, /run valid/);
 });

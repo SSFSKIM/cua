@@ -196,6 +196,28 @@ export const COVERS = [
 ];
 
 /**
+ * Covers for a window of any size (M1a.3: Firefox's threshold at a second size), from its real geometry: the front
+ * window over the bottom of the window, so the click point near its top stays visible, and over its left side, so
+ * the click point at its centre is covered past half; each leaves a chosen fraction of the window visible, swept
+ * across M0's boundary (taken at 55%, ignored at 52%), with the two ends as controls.
+ */
+export const SWEEP = [0.4, 0.46, 0.5, 0.52, 0.54, 0.56, 0.58, 0.6, 0.64, 0.7];
+export function coversFor(window, { screen = [1280, 800], sweep = SWEEP } = {}) {
+  const [sw, sh] = screen;
+  const covers = [{ name: 'over everything', front: [0, 0, sw, sh] }];
+  for (const v of sweep) {
+    const y = window.y + Math.round(window.height * v);
+    covers.push({ name: `over the bottom ${Math.round((1 - v) * 100)}%`, front: [0, y, sw, sh - y] });
+  }
+  for (const v of sweep) {
+    const w = window.x + Math.round(window.width * (1 - v));
+    covers.push({ name: `over the left ${Math.round((1 - v) * 100)}%`, front: [0, 0, w, sh] });
+  }
+  covers.push({ name: 'off the window', front: [sw + 20, 0, 100, 80] });
+  return covers;
+}
+
+/**
  * What a front window `[x, y, w, h]` covers of a scene window `{x, y, width, height}`: whether the click point
  * (window-relative) is under it, and the fraction of the window's area it leaves visible.
  */
@@ -222,9 +244,13 @@ export async function partialCover(desktop, emit, args) {
   const scenes = {};
   try {
     if (!(await negativeCheck(desktop, witness, stubScene, emit))) throw new Error('the witness did not fail the activating stub; the run is invalid');
-    for (const e of engines(args)) scenes[e.label] = await openFamily(desktop, oracle, 'firefox', `${e.label}cover`);
+    const geometry = args.geometry ?? null;
+    for (const e of engines(args)) scenes[e.label] = await openFamily(desktop, oracle, 'firefox', `${e.label}cover`, { geometry });
     const ctx = { desktop, oracle, witness, emit };
-    for (const cover of COVERS) {
+    const first = scenes[engines(args)[0].label];
+    emit({ kind: 'partial-cover-window', geometry, window: first.window });
+    md.splice(0, 1, `Firefox on the matrix page, one window per engine at the same place (${first.window.width}×${first.window.height} at ${first.window.x},${first.window.y}); the click point is the button's centre (window-relative ${buttonPoint(first).x}, ${buttonPoint(first).y}). Effects seen / coordinate clicks:`);
+    for (const cover of geometry ? coversFor(first.window) : COVERS) {
       const cells = [];
       let where = null;
       for (const spec of engines(args)) {

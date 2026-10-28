@@ -20,6 +20,8 @@ pub struct Pacing {
     pub key: Duration,
     /// Before the session's teardown (the vendor's 100 ms).
     pub teardown: Duration,
+    /// After each drag sample (the vendor's 1 ms, behaviour §10.4); `--drag-step-ms` measures others.
+    pub drag: Duration,
 }
 
 /// The keyboard mapping, read fresh per chord as the vendor opens a fresh display per call.

@@ -17,9 +17,12 @@ import { negativeCheck } from './run.mjs';
 import { XPROBE } from './scenes.mjs';
 import { startWitness } from './witness.mjs';
 
-/** M0.3's choice (Decision Log, M0.3), in the spike's flags. */
-export const CUA_CHOICE = ['--window-calls', '32', '--settle-ms', '40', '--key-pace-ms', '0'];
-const CUA_NONE = ['--window-calls', '32', '--retention', 'none', '--settle-ms', '0', '--key-pace-ms', '0'];
+/**
+ * cua-engine as it ships: its defaults are M0's choices (W 32, no input settle, no key pacing, the readiness rule
+ * before a capture; Decision Log, M0.3, M0.4, M1a.2), so the matrix measures them without flags.
+ */
+export const CUA_CHOICE = [];
+const CUA_NONE = ['--retention', 'none'];
 const VENDORS = ['pinned', 'newest'];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const chars = (s) => [...(s ?? '')];

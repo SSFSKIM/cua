@@ -21,6 +21,11 @@ export class Engine {
     this.stderrTail = '';
   }
 
+  /** Whether the process was started (it is started once, by the first sample or by untimed preparation). */
+  get started() {
+    return Boolean(this.child);
+  }
+
   start() {
     this.spawnedAt = now();
     const args = ['server', ...this.args, ...(this.statsWanted ? ['--stats'] : [])];

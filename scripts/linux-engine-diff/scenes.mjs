@@ -177,6 +177,33 @@ export class Desktop {
     return text?.value ?? null;
   }
 
+  /** The input scene's status lines (pages/input.html), parsed. */
+  async inputStatus(scene) {
+    const { parseInputStatus } = await import('./ops.mjs');
+    const nodes = preorder((await this.state(scene)).ax_tree);
+    return parseInputStatus(nodes.map((n) => n.name).filter((n) => typeof n === 'string'));
+  }
+
+  /** Native ids of a scene's push buttons, by accessible name (`{key: name}` to `{key: id}`). */
+  async elementsByName(scene, names) {
+    const nodes = preorder((await this.state(scene)).ax_tree);
+    const out = {};
+    for (const [key, name] of Object.entries(names)) {
+      const node = nodes.find((n) => n.role === 'push button' && n.name === name);
+      if (!node) throw new Error(`${scene.label} has no button named ${name}`);
+      out[key] = node.id;
+    }
+    return out;
+  }
+
+  /** A family's window (families.mjs) as a scene: its application started, sized and settled. */
+  async openFamilyScene(name, role) {
+    const { openFamily } = await import('./families.mjs');
+    const { Oracle } = await import('./oracle.mjs');
+    this.oracle ??= new Oracle();
+    return openFamily(this, this.oracle, name, role);
+  }
+
   /** The scene page's counters: clicks, keys, the last key and the typed sequence. */
   async chromeCounters(scene) {
     const nodes = preorder((await this.state(scene)).ax_tree);

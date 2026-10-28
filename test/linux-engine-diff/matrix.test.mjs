@@ -190,3 +190,20 @@ test('partial cover: whether the click point is under the front window, and how 
   assert.deepEqual(coverage([2, 490, 1276, 342], firefox, point), { point_covered: false, visible_fraction: 0.604 });
   assert.deepEqual(coverage([1300, 0, 100, 100], firefox, point), { point_covered: false, visible_fraction: 1 });
 });
+
+test('partial cover at another size: the sweep leaves each chosen fraction of the window visible, bottom and left', async () => {
+  const { SWEEP, coverage, coversFor } = await import('../../scripts/linux-engine-diff/clicks.mjs');
+  const window = { x: 1, y: 22, width: 800, height: 600 };
+  const point = { x: 400, y: 220 };
+  const covers = coversFor(window);
+  assert.equal(covers.length, 2 + 2 * SWEEP.length);
+  for (const v of SWEEP) {
+    const bottom = covers.find((c) => c.name === `over the bottom ${Math.round((1 - v) * 100)}%`);
+    const left = covers.find((c) => c.name === `over the left ${Math.round((1 - v) * 100)}%`);
+    assert.ok(Math.abs(coverage(bottom.front, window, point).visible_fraction - v) < 0.01, `bottom ${v}`);
+    assert.ok(Math.abs(coverage(left.front, window, point).visible_fraction - v) < 0.01, `left ${v}`);
+    assert.equal(coverage(bottom.front, window, point).point_covered, false);
+  }
+  assert.equal(coverage(covers[0].front, window, point).visible_fraction, 0);
+  assert.equal(coverage(covers.at(-1).front, window, point).visible_fraction, 1);
+});

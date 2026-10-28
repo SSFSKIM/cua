@@ -19,8 +19,6 @@ use crate::x11::X11;
 pub(super) const CLICK_HOLD: Duration = Duration::from_millis(12);
 /// Each wheel step's hold (behaviour §10.3).
 const WHEEL_HOLD: Duration = Duration::from_millis(36);
-/// After each drag sample, the last included (behaviour §10.4).
-const DRAG_STEP: Duration = Duration::from_millis(1);
 /// `scroll`'s pixels when absent.
 const DEFAULT_PIXELS: u16 = 800;
 
@@ -74,7 +72,8 @@ fn click_once(
 }
 
 /// The drag after the pointer is placed at its first point: the chord, the press, every sample, the release.
-fn drag_along(x: &X11, route: &mut Route, keycodes: &[u8], points: &[(i16, i16)]) -> Result<()> {
+/// `step` follows each sample, the last included (the vendor's 1 ms, behaviour §10.4).
+fn drag_along(x: &X11, route: &mut Route, keycodes: &[u8], points: &[(i16, i16)], step: Duration) -> Result<()> {
     let held = route.acquire(x, keycodes)?;
     let mut pressed = false;
     let dragged = (|| -> Result<()> {
@@ -83,7 +82,7 @@ fn drag_along(x: &X11, route: &mut Route, keycodes: &[u8], points: &[(i16, i16)]
         pressed = true;
         for (sx, sy) in drag_samples(points) {
             route.place_again(x, sx, sy)?;
-            std::thread::sleep(DRAG_STEP);
+            std::thread::sleep(step);
         }
         pressed = false;
         route.button(x, 1, false)
@@ -214,6 +213,7 @@ impl Engine {
     /// everything released (behaviour §10.4; the chord's place traced).
     pub(super) fn drag(&mut self, input: Option<Value>) -> Result<Value> {
         let input: DragInput = parse_input(input)?;
+        let step = self.cfg.pacing.drag;
         let Engine { x, inputs, .. } = self;
         inputs.with_route(x, Target::of(input.window), |x, route, _| {
             let points = input
@@ -226,7 +226,7 @@ impl Engine {
             }
             route.place(x, points[0].0, points[0].1)?;
             let keycodes = chord(x, input.key.as_deref())?;
-            drag_along(x, route, &keycodes, &points)
+            drag_along(x, route, &keycodes, &points, step)
         })?;
         Ok(Value::Null)
     }

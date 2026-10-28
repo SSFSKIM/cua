@@ -71,6 +71,7 @@ cargo test
 | `--capture-wait` | `damage`, `fixed` | a capture of a fresh pixmap waits for the DAMAGE rule, or a fixed 100 ms once per pixmap (the fallback) |
 | `--teardown-ms` | 100 | the wait before a background session's teardown |
 | `--key-pace-ms` | 0 | the wait after each new key edge (the pinned build's is 33) |
+| `--drag-step-ms` | 1 | the wait after each drag sample (the vendor's; M1a.3 measures others) |
 | `--stats` | off | one JSON line per request on stderr: bus calls by member, waits, waits with one call outstanding, the most calls in flight, reply bytes, the tree's admitted, discovered and wasted counts and its tables, and a capture's wait and the damage it saw |
 
 ## Dependencies

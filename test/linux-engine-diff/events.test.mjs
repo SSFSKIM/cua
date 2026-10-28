@@ -100,3 +100,18 @@ test('the events experiment needs both vendor builds', () => {
   assert.throws(() => parseArgs(['--experiment', 'events', '--cua', 'c', '--out', 'o']), /--vendor is required/);
   assert.equal(parseArgs(['--experiment', 'events', '--cua', 'c', '--out', 'o', '--vendor', 'v', '--newest', 'n']).experiment, 'events');
 });
+
+test('request times are grouped by route, command and first or later step, and judged against the faster vendor', async () => {
+  const { eventSpeeds } = await import('../../scripts/linux-engine-diff/events.mjs');
+  const step = (command, ms, first) => ({ command, ms, first, answer: { ok: true }, events: [] });
+  const rows = [
+    { route: 'desktop', records: { pinned: [step('move', 40, true), step('move', 30, false)], newest: [step('move', 35, true), step('move', 20, false)], cua: [step('move', 30, true), step('move', 25, false)] } },
+  ];
+  const speeds = eventSpeeds(rows);
+  const first = speeds.find((r) => r.series === 'first');
+  const later = speeds.find((r) => r.series === 'later');
+  assert.equal(first.bar, 35);
+  assert.equal(first.pass, true);
+  assert.equal(later.bar, 20);
+  assert.equal(later.pass, false);
+});

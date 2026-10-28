@@ -15,8 +15,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 
+import { declaredDeviation } from './deviations.mjs';
 import { Engine } from './engine.mjs';
 import { XPROBE } from './scenes.mjs';
+import { median } from './stats.mjs';
 
 /** The recorder's top-level window on the private screen (root coordinates); its child covers the lower-right quarter. */
 export const RECORDER = { x: 100, y: 100, width: 800, height: 600 };
@@ -78,6 +80,10 @@ export function scenarios() {
     // up to that press and the failing request's name free; the steps after it are compared exactly.
     { name: 'an interrupted drag under a held key, then a move', fragile: true, steps: [down('ctrl'), { command: 'drag', input: { window: W, path: [{ x: 450, y: 350 }, { x: 460, y: 360 }] }, interrupted: true }, { command: 'move', input: { window: W, x: 10, y: 10 } }, up('ctrl')] },
     { name: 'an interrupted click under a held key, then a move', fragile: true, steps: [down('ctrl'), { command: 'click', input: { window: W, x: 450, y: 350 }, interrupted: true }, { command: 'move', input: { window: W, x: 10, y: 10 } }, { command: 'click', input: { window: W, x: 10, y: 10 } }, up('ctrl')] },
+    // the recorder's top-level destroys itself on its KeyPress (`xprobe record … fragile-key`), so the held key's
+    // release meets a window that is gone: the pinned build answers success, cua the X error (a declared deviation,
+    // deviations.mjs `interrupted_hold`; Decision Log, M0.2)
+    { name: 'a key hold whose window is destroyed', fragileKey: true, deviation: 'interrupted_hold', steps: [k('a', { duration: 200 })] },
     { name: 'drag with a chord, and a short path', steps: [{ command: 'drag', input: { window: W, path: [{ x: 10, y: 10 }, { x: 13, y: 14 }], key: 'alt' } }, { command: 'drag', input: { window: W, path: [{ x: 10, y: 10 }] } }] },
   ];
   const desktop = [
@@ -184,9 +190,9 @@ async function startServer() {
 }
 
 class Recorder {
-  constructor(env, { focus = false, fragile = false } = {}) {
+  constructor(env, { focus = false, fragile = false, fragileKey = false } = {}) {
     const { x, y, width, height } = RECORDER;
-    const flags = [...(focus ? ['focus'] : []), ...(fragile ? ['fragile'] : [])];
+    const flags = [...(focus ? ['focus'] : []), ...(fragile ? ['fragile'] : []), ...(fragileKey ? ['fragile-key'] : [])];
     this.child = spawn(XPROBE, ['record', String(x), String(y), String(width), String(height), ...flags], { env, stdio: ['pipe', 'pipe', 'inherit'] });
     this.lines = [];
     this.waiters = [];
@@ -226,7 +232,7 @@ class Recorder {
 /** Runs one scenario on one engine: a fresh recorder and engine process, the pointer put at its start. */
 async function runScenario(scenario, engine, env) {
   execFileSync('xdotool', ['mousemove', String(POINTER_START[0]), String(POINTER_START[1])], { env });
-  const recorder = new Recorder(env, { focus: scenario.route === 'desktop', fragile: scenario.fragile });
+  const recorder = new Recorder(env, { focus: scenario.route === 'desktop', fragile: scenario.fragile, fragileKey: scenario.fragileKey });
   const window = await recorder.ready();
   const engineEnv = scenario.apps ? { ...env, XDG_DATA_HOME: env.EVENTS_APPS, XDG_DATA_DIRS: '' } : env;
   const process_ = new Engine({ label: engine.label, bin: engine.bin, args: engine.args ?? [], env: engineEnv }).start();
@@ -234,10 +240,11 @@ async function runScenario(scenario, engine, env) {
   try {
     for (const [i, step] of scenario.steps.entries()) {
       const { command, input } = bindStep(step, window);
-      const { response } = await process_.request(command, input, { timeoutMs: 30000 });
+      const { response, ms } = await process_.request(command, input, { timeoutMs: 30000 });
       const events = await recorder.mark(`step-${i}`);
-      if (step.interrupted) steps.push({ command, interrupted: true, ...interruptedStep(response, events), raw: normalizeAnswer(response) });
-      else steps.push({ command, answer: normalizeAnswer(response), events });
+      const timed = { ms: Math.round(ms * 100) / 100, first: i === 0 };
+      if (step.interrupted) steps.push({ command, interrupted: true, ...interruptedStep(response, events), raw: normalizeAnswer(response), ...timed });
+      else steps.push({ command, answer: normalizeAnswer(response), events, ...timed });
     }
     await process_.close();
     steps.push({ command: 'exit', answer: { ok: true }, events: await recorder.mark('exit') });
@@ -255,6 +262,35 @@ async function runScenario(scenario, engine, env) {
   return steps;
 }
 
+/**
+ * The request times of the scenarios, per route and command: each engine's median over the steps that answered,
+ * first steps (the request after the engine's start) and later ones apart, and cua's against the faster vendor
+ * build's. Scenarios that deliberately fail (validation, bad keys) are timed too: the same requests go to every engine.
+ */
+export function eventSpeeds(scenarioRows, { vendors = ['pinned', 'newest'], candidate = 'cua' } = {}) {
+  const groups = new Map();
+  for (const row of scenarioRows) {
+    for (const [label, steps] of Object.entries(row.records)) {
+      for (const step of steps) {
+        if (typeof step.ms !== 'number') continue;
+        const key = `${row.route}|${step.command}|${step.first ? 'first' : 'later'}`;
+        if (!groups.has(key)) groups.set(key, {});
+        (groups.get(key)[label] ??= []).push(step.ms);
+      }
+    }
+  }
+  const out = [];
+  for (const [key, byEngine] of groups) {
+    const [route, command, series] = key.split('|');
+    const medians = Object.fromEntries(Object.entries(byEngine).map(([label, xs]) => [label, median(xs)]));
+    const bars = vendors.map((v) => medians[v]).filter((v) => typeof v === 'number');
+    const bar = bars.length ? Math.min(...bars) : null;
+    const mine = medians[candidate];
+    out.push({ route, command, series, n: byEngine[candidate]?.length ?? 0, medians, bar, pass: bar === null || (typeof mine === 'number' && mine <= bar) });
+  }
+  return out.sort((a, b) => `${a.route}${a.command}${a.series}`.localeCompare(`${b.route}${b.command}${b.series}`));
+}
+
 /** `--experiment events`: every scenario on every engine; returns whether cua matched the pinned build everywhere. */
 export async function runEvents(args, emit) {
   const server = await startServer();
@@ -269,25 +305,43 @@ export async function runEvents(args, emit) {
     ...args.variants,
   ];
   const md = ['| scenario | newest | cua |', '|---|---|---|'];
+  const scenarioRows = [];
   let pass = true;
   try {
     for (const scenario of scenarios()) {
       const records = {};
       for (const engine of engines) records[engine.label] = await runScenario(scenario, engine, env);
       const verdicts = {};
+      const declared = {};
       for (const engine of engines.slice(1)) {
-        const difference = firstDifference(records.pinned, records[engine.label]);
+        let difference = firstDifference(records.pinned, records[engine.label]);
+        // a declared deviation excuses its own step's answer, and only when the candidate answered as declared
+        if (difference?.what === 'answer' && scenario.deviation) {
+          const deviation = declaredDeviation({ op: scenario.deviation, scene: 'events', field: 'answer', candidate: difference.candidate });
+          if (deviation) {
+            const excused = records[engine.label].map((step, i) => (i === difference.step ? { ...step, answer: records.pinned[i].answer } : step));
+            difference = firstDifference(records.pinned, excused);
+            if (!difference) declared[engine.label] = deviation.op;
+          }
+        }
         verdicts[engine.label] = difference;
         if (difference && engine.label.startsWith('cua')) pass = false;
       }
-      emit({ kind: 'events', scenario: scenario.name, route: scenario.route, records, differences: verdicts });
-      const cell = (d) => (d ? `differs at step ${d.step} (${d.what})` : 'same');
-      md.push(`| ${scenario.name} | ${cell(verdicts.newest)} | ${cell(verdicts.cua)} |`);
+      emit({ kind: 'events', scenario: scenario.name, route: scenario.route, records, differences: verdicts, declared });
+      scenarioRows.push({ route: scenario.route, records });
+      const cell = (label) => (verdicts[label] ? `differs at step ${verdicts[label].step} (${verdicts[label].what})` : declared[label] ? `same but the declared answer (${declared[label]})` : 'same');
+      md.push(`| ${scenario.name} | ${cell('newest')} | ${cell('cua')} |`);
     }
   } finally {
     server.stop();
     rmSync(home, { recursive: true, force: true });
   }
   md.push('', pass ? 'cua sent the pinned build\'s events and answers in every scenario.' : 'cua differs from the pinned build; results.jsonl has each first difference.');
-  return { md, pass };
+  const speeds = eventSpeeds(scenarioRows);
+  for (const row of speeds) emit({ kind: 'events-speed', ...row });
+  md.push('', 'Request times per route and command (median ms over every scenario step; `first` is the request after the engine started, `later` the rest):', '');
+  md.push('| route | command | series | n | pinned | newest | cua | cua at or below the faster |', '|---|---|---|---:|---:|---:|---:|---|');
+  const f = (v) => (typeof v === 'number' ? Math.round(v * 10) / 10 : '–');
+  for (const r of speeds) md.push(`| ${r.route} | ${r.command} | ${r.series} | ${r.n} | ${f(r.medians.pinned)} | ${f(r.medians.newest)} | ${f(r.medians.cua)} | ${r.pass ? 'yes' : '**no**'} |`);
+  return { md, pass, speeds };
 }

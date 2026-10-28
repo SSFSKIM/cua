@@ -34,9 +34,12 @@ export function summarizeEngine(rows) {
   };
   const cold = rows.filter((r) => r.series === 'cold');
   const warm = rows.filter((r) => r.series === 'warm');
+  // the answered requests are timed; a request every sample answers with an error (a refusal the vendor gives too)
+  // is timed as it is answered
+  const timed = (series) => (series.some((r) => r.ok) ? series.filter((r) => r.ok) : series).map((r) => r.ms);
   return {
-    cold: round(median(cold.filter((r) => r.ok).map((r) => r.ms))),
-    warm: round(median(warm.filter((r) => r.ok).map((r) => r.ms))),
+    cold: round(median(timed(cold))),
+    warm: round(median(timed(warm))),
     n_cold: cold.length,
     n_warm: warm.length,
     ok: rows.length > 0 && rows.every((r) => r.ok),
@@ -51,7 +54,7 @@ export function summarizeEngine(rows) {
  * cold against cold, warm against warm), every request answered, its output equal, its witness clean wherever a
  * vendor build's is, and its effect verified wherever a vendor build's is.
  */
-export function judgeOperation(rows, { vendors, candidate }) {
+export function judgeOperation(rows, { vendors, candidate, audits = null }) {
   const engines = {};
   for (const label of new Set(rows.map((r) => r.engine))) {
     engines[label] = summarizeEngine(rows.filter((r) => r.engine === label));
@@ -65,7 +68,9 @@ export function judgeOperation(rows, { vendors, candidate }) {
   const c = engines[candidate];
   const reasons = [];
   if (!c) return { engines, bar, speed: false, pass: false, reasons: [`no samples from ${candidate}`] };
-  if (!c.ok) reasons.push(`${candidate}: a request failed`);
+  // a failed request fails the verdict where a vendor build answered every request; where the vendors' answers are
+  // errors too, the answers are compared (`equal`)
+  if (!c.ok && (vendorRows.length === 0 || vendorRows.some((e) => e.ok))) reasons.push(`${candidate}: a request failed`);
   let speed = true;
   for (const series of ['cold', 'warm']) {
     if (bar[series] === null || c[series] === null) continue;
@@ -75,6 +80,11 @@ export function judgeOperation(rows, { vendors, candidate }) {
     }
   }
   if (vendorRows.some((e) => e.witness === true) && c.witness !== true) reasons.push(`${candidate}: the witness changed`);
+  // the X request audit (audits: engine -> clean), required wherever a vendor build's witness or audit is clean
+  if (audits) {
+    const required = vendorRows.some((e) => e.witness === true) || vendors.some((v) => audits[v] === true);
+    if (required && audits[candidate] !== true) reasons.push(`${candidate}: the audit ${audits[candidate] === false ? 'found a forbidden request' : 'did not run'}`);
+  }
   if (vendorRows.some((e) => e.effect === true) && c.effect !== true) reasons.push(`${candidate}: the effect was not verified`);
   if (c.equal === false) reasons.push(`${candidate}: the output differs from the vendor's`);
   return { engines, bar, speed, pass: reasons.length === 0, reasons };

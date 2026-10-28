@@ -26,6 +26,7 @@ import { matrixOutcome } from './matrix-judge.mjs';
 import { matrixMarkdown, runMatrix } from './matrix.mjs';
 import { Oracle } from './oracle.mjs';
 import { qtBridge } from './qt-bridge.mjs';
+import { engineReadiness } from './readiness-check.mjs';
 import { analyzeTrial } from './readiness.mjs';
 import { writeSummary } from './report.mjs';
 import { Desktop, GEOMETRY, XPROBE } from './scenes.mjs';
@@ -310,6 +311,13 @@ export async function runExperiment(args) {
     else if (args.experiment === 'qt-bridge') md = await qtBridge(desktop, emit, { vendor: args.vendor });
     else if (args.experiment === 'element-click') md = await elementClick(desktop, emit, args);
     else if (args.experiment === 'partial-cover') md = await partialCover(desktop, emit, args);
+    else if (args.experiment === 'engine-readiness') {
+      desktop.keepDir = join(args.out, 'frames');
+      mkdirSync(desktop.keepDir, { recursive: true });
+      const result = await engineReadiness(desktop, emit, args);
+      md = result.md;
+      outcome = { complete: result.pass, failed: result.pass ? [] : ['a first capture was wrong or unjudged'] };
+    }
     else if (args.experiment === 'matrix') {
       const { names } = await runMatrix(args, { desktop, emit, run });
       const rows = readFileSync(results, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((r) => r.run === run);

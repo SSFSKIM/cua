@@ -29,19 +29,21 @@ export function xprobeDiff(xprobe, tolerance = IMAGE_TOLERANCE) {
 }
 
 /**
- * Compares every sample `{engine, scene, op, block, i, image}` with the pinned build's last screenshot of its scene,
- * op and block; returns each sample with `ok`, `reason`, `mad` and `over`.
+ * Compares every sample `{engine, scene, op, block, i, image, pair?}` with the pinned build's last screenshot of its
+ * scene, op and block, or, with `pair: 'i'` (a retention case, whose window changes from sample to sample), with the
+ * pinned build's screenshot of the same sample; returns each sample with `ok`, `reason`, `mad` and `over`.
  */
 export function compareShots(samples, diff) {
   const reference = new Map();
+  const keyOf = (s) => `${s.scene}|${s.op}|${s.block}${s.pair === 'i' ? `|${s.i}` : ''}`;
   for (const s of samples) {
     if (s.engine !== 'pinned') continue;
-    const key = `${s.scene}|${s.op}|${s.block}`;
+    const key = keyOf(s);
     const held = reference.get(key);
     if (!held || s.i > held.i) reference.set(key, s);
   }
   return samples.map((s) => {
-    const ref = reference.get(`${s.scene}|${s.op}|${s.block}`);
+    const ref = reference.get(keyOf(s));
     if (!ref) return { ...s, ok: false, reason: 'no pinned screenshot in this block', mad: null, over: null };
     if (!s.image || !ref.image) return { ...s, ok: false, reason: 'a screenshot is missing', mad: null, over: null };
     const d = diff(ref.image, s.image);

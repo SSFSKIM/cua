@@ -3,43 +3,41 @@
 // request after the spawn) and then the warm series. Block order rotates across the sitting. Tree reads of a scene
 // window serve every engine; screenshots and input go to each engine's own equivalent window, so one engine's
 // retained window is never the window another is measured on. Every window-targeted request runs inside a witness
-// span; input effects are read back through the tree; accessibility-bus calls are counted in a separate pass.
+// span; input effects are read back; accessibility-bus calls are counted, and each input operation's X requests
+// audited, in separate untimed passes. The operations are ops.mjs's; `--via vendor-js` drives every engine through
+// OpenAI's own JavaScript client (vendor-js.mjs) instead of over the wire.
 
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { auditRequests, parseXtrace, startProxy } from './audit.mjs';
 import { startMonitor } from './busmon.mjs';
-import { DESKTOP_OPS } from './cli.mjs';
+import { declaredDeviation, describe as describeDeviation } from './deviations.mjs';
 import { Engine } from './engine.mjs';
+import { normalizeAnswer } from './events.mjs';
+import { compareShots, xprobeDiff } from './images.mjs';
 import { compareStates, normalizeState, retainedIds } from './normalize.mjs';
+import { OPS, REFUSED, SCENE_OPS, inputOp, ownWindow, shotOf, targeted } from './ops.mjs';
 import { writeSummary } from './report.mjs';
 import { Desktop, XPROBE, a11yBusAddress } from './scenes.mjs';
-import { compareShots, xprobeDiff } from './images.mjs';
 import { blockOrder, judgeOperation, runOutcome } from './stats.mjs';
+import { VendorJsEngine } from './vendor-js.mjs';
 import { startWitness } from './witness.mjs';
+
+export { SCENE_OPS };
 
 const here = dirname(fileURLToPath(import.meta.url));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const VENDORS = ['pinned', 'newest'];
 
-/** Which operations each scene runs. `tree` is get_window_state without the screenshot, `tree_shot` with it. */
-export const SCENE_OPS = {
-  desktop: DESKTOP_OPS,
-  gedit: ['tree', 'tree_shot', 'press_key', 'click'],
-  chrome: ['tree', 'tree_shot', 'press_key', 'click'],
-  'over-budget': ['tree'],
-  'big-text': ['tree'],
-};
-const OWN_WINDOW_OPS = new Set(['tree_shot', 'press_key', 'click']);
-const INPUT_OPS = new Set(['press_key', 'click']);
-
 /**
- * The plan: each scene's operations that `ops` names. An operation no scene has, a scene none of whose operations is
- * named, and a plan with nothing in it are refused, so a mistyped or unsupported operation never runs as a pass. A
- * plan of desktop operations alone (`--ops list_windows`) needs no scene and ignores the scenes it is given.
+ * The plan: each scene's operations that `ops` names. An operation no scene has, an operation none of the scenes
+ * asked for runs, a scene none of whose operations is named, and a plan with nothing in it are refused, so a
+ * mistyped or unsupported operation never runs as a pass. A plan of desktop operations alone (`--ops list_windows`)
+ * needs no scene and ignores the scenes it is given.
  */
 export function planOps(scenes, ops) {
   const known = new Set(Object.values(SCENE_OPS).flat());
@@ -61,6 +59,9 @@ export function planOps(scenes, ops) {
     for (const op of mine) plan.push({ scene, op });
   }
   if (plan.length === 0) throw new Error('nothing to run: no scene and no desktop operation');
+  if (ops !== 'all') {
+    for (const op of ops) if (!plan.some((p) => p.op === op)) throw new Error(`operation ${op} is not run by any scene asked for`);
+  }
   return plan;
 }
 
@@ -90,62 +91,160 @@ function engineVersion(bin) {
   }
 }
 
-const PAGE_OF = { chrome: 'scene.html', 'over-budget': 'over-budget.html', 'big-text': 'big-text.html' };
+/** Where each scene's windows come from: a harness page in Chrome, gedit on a scratch file, or a family's application. */
+const PAGE_OF = { chrome: 'scene.html', 'over-budget': 'over-budget.html', 'big-text': 'big-text.html', 'chrome-input': 'input.html', retention: 'scene.html' };
+const FAMILY_OF = { 'gtk-table': 'gtk-table', calc: 'calc' };
 const GEDIT_TEXT = 'cua171 differential scene\nline two of the scratch file\n';
-
 /**
- * The input each sample sends. gedit's press_key types `x` while the document is at its original length and takes
- * it back with BackSpace otherwise, so a key that did not arrive never makes a later BackSpace delete the scene's own
- * text. gedit's clicks alternate between two points far apart in the empty area below the text (they move only the
- * caret): clicks at one point less than the double-click time apart would be a double and a triple click, which
- * selects a line the next key then replaces. Chrome: the scene's big button.
+ * Scenes whose application makes new accessible objects on every read (Calc's cells): their reads compare by position,
+ * not by native id, as equivalent windows do.
  */
-function inputFor(scene, op, i, before) {
-  const [w, h] = scene.kind === 'chrome' ? [1050, 780] : [910, 756];
-  if (op === 'press_key') {
-    const key = scene.kind === 'gedit' ? (before.text.length > scene.originalLength ? 'BackSpace' : 'x') : 'x';
-    return { window: { id: scene.id }, key };
-  }
-  if (scene.kind === 'chrome') return { window: { id: scene.id }, x: Math.round(w / 2), y: Math.round(h * 0.45) };
-  return { window: { id: scene.id }, x: Math.round(w / 2) + (i % 2 ? 150 : -150), y: Math.round(h * 0.8) };
-}
+const TRANSIENT_IDS = new Set(['calc']);
+/** Whether a read compares native ids exactly: a tree read of a shared window whose ids are stable. */
+export const exactIdsFor = (op, scene) => OPS[op].kind === 'read' && !TRANSIENT_IDS.has(scene);
 
-async function readEffect(desktop, scene, op) {
-  if (scene.kind === 'gedit') return op === 'press_key' ? { text: await desktop.geditText(scene) } : null;
-  return desktop.chromeCounters(scene);
-}
+/** The input scene's buttons, by their accessible names. */
+const INPUT_ELEMENTS = { press: 'Press', menu: 'Menu', far: 'Far' };
 
-/** Whether the effect arrived: gedit's text one longer or one shorter, Chrome's counter one higher. */
-function effectArrived(scene, op, input, before, after) {
-  if (!before || !after) return null;
-  if (scene.kind === 'gedit') {
-    if (op !== 'press_key' || before.text === null || after.text === null) return null;
-    return input.key === 'x' ? after.text.length === before.text.length + 1 : after.text.length === before.text.length - 1;
-  }
-  return op === 'click' ? after.clicks === before.clicks + 1 : after.keys === before.keys + 1 && after.last === input.key;
-}
-
-async function pollEffect(desktop, scene, op, input, before) {
+async function pollEffect(read, judge) {
   const deadline = Date.now() + 1500;
-  let after = null;
   for (;;) {
-    after = await readEffect(desktop, scene, op);
-    const arrived = effectArrived(scene, op, input, before, after);
+    const after = await read();
+    const arrived = judge(after);
     if (arrived !== false || Date.now() > deadline) return arrived;
     await sleep(30);
   }
 }
 
-/** The negative check: the activate-and-restore stub engine must fail the witness. Returns whether it did. */
-export async function negativeCheck(desktop, witness, stubScene, emit) {
-  const stub = new Engine({ label: 'stub-activating', bin: join(here, 'stub-activating.mjs') }).start();
+/** The answer a sample is compared by: its state, its screenshot, or its normalized answer. */
+function answerDigest(op, scene, response, labelPattern) {
+  if (!response.ok) return sha(JSON.stringify(normalizeAnswer(response)));
+  const kind = OPS[op].kind;
+  if (op === 'list_windows' || op === 'list_apps') return sha(JSON.stringify(response.output));
+  if (op === 'get_screenshot') return sha(JSON.stringify(response.output.map(() => ({}))));
+  // a retention case is judged by its screenshot (compared with the pinned build's of the same sample) and its effect:
+  // the page's tree around a resize or a remap settles on its own time, and the tree reads have their own operations
+  if (kind === 'retention') return sha(JSON.stringify({ ok: true, screenshots: response.output.screenshots.length }));
+  if (kind === 'read' || kind === 'shot') {
+    const exactIds = exactIdsFor(op, scene);
+    const normalized = normalizeState(response.output, { exactIds, label: exactIds ? null : labelPattern });
+    const rendered = typeof response.output.rendered === 'string' ? response.output.rendered.replace(labelPattern, '<label>').replace(/Memory usage - [\d.]+ [KMG]B/g, 'Memory usage - <n>') : undefined;
+    return sha(JSON.stringify(rendered === undefined ? normalized : { normalized, rendered }));
+  }
+  return sha(JSON.stringify(normalizeAnswer(response)));
+}
+
+/** Where two answers differ, for the deviations: the answer's success, its error, or its output. */
+export function differingField(reference, candidate) {
+  if (!reference || !candidate) return 'answer';
+  if (reference.ok !== candidate.ok) return 'answer';
+  if (!candidate.ok) return reference.error === candidate.error ? null : 'error';
+  return 'output';
+}
+
+/**
+ * One sample: the operation's untimed preparation, its before-state, the request inside a witness span (the engine
+ * started inside it when nothing had to come first), the untimed companion, the effect read back and the follow-up
+ * input of a retention case. Returns the row and the raw response.
+ */
+async function runSample(s) {
+  const { desktop, witness, engine, target, op, i } = s;
+  const def = OPS[op];
+  const ctx = { desktop, scene: target, engine, i, witness };
+  const spans = [];
+  const span = async (tag, fn) => {
+    if (!witness || !target) return { value: await fn(), witness: null };
+    const result = await witness.span(tag, fn);
+    spans.push(result.witness);
+    return result;
+  };
+  ctx.witnessed = (fn) => span(`${s.label}:${s.sceneName}:${op}:companion`, fn).then((r) => r.value);
+  const needsIds = target?.elements && typeof engine.resolveElements === 'function';
+  if (def.prepare || needsIds) {
+    if (!engine.started) engine.start();
+    if (needsIds) {
+      // read once per engine process and window: the client keeps its numbering for the window
+      engine.ids ??= new Map();
+      if (!engine.ids.has(target.id)) engine.ids.set(target.id, await engine.resolveElements(target, target.elements));
+      ctx.ids = engine.ids.get(target.id);
+    }
+    if (def.prepare) await def.prepare(ctx);
+  }
+  const before = def.read && !def.follow ? await def.read(ctx) : null;
+  ctx.before = before;
+  const [command, input] = def.request(ctx);
+  let startedInSpan = false;
+  const send = () => {
+    if (!engine.started) {
+      engine.start();
+      startedInSpan = true;
+    }
+    return engine.request(command, input);
+  };
+  const answered = await span(`${s.label}:${s.sceneName}:${op}`, send);
+  const { response, ms, sinceSpawnMs, stats } = answered.value;
+  const row = { kind: 'sample', engine: s.label, scene: s.sceneName, op, block: s.block, series: i === 0 ? 'cold' : 'warm', i };
+  row.ms = Math.round((i === 0 && startedInSpan ? sinceSpawnMs : ms) * 100) / 100;
+  row.timed = i === 0 && startedInSpan ? 'spawn' : 'request';
+  row.request_ms = Math.round(ms * 100) / 100;
+  row.ok = response.ok === true;
+  if (!row.ok) row.error = String(response.error).slice(0, 300);
+  if (stats) {
+    row.stats = { calls: stats.bus.calls, waits_alone: stats.bus.waits_alone, max_in_flight: stats.bus.max_in_flight, connections: stats.bus.connections };
+    if (stats.tree) row.stats.tree = stats.tree;
+    if (stats.capture) row.stats.capture = stats.capture;
+  }
+  if (def.after) await def.after(ctx);
+  if (def.effect && row.ok && def.read && !def.follow) {
+    row.effect = await pollEffect(() => def.read(ctx), (after) => def.effect(ctx, input, before, after));
+  }
+  if (def.follow && row.ok) {
+    // the retention case's input after the change, its effect read back
+    const followBefore = await def.read(ctx);
+    const [c2, i2] = def.follow(ctx);
+    const f = await span(`${s.label}:${s.sceneName}:${op}:follow`, () => engine.request(c2, i2));
+    row.follow_ok = f.value.response.ok === true;
+    row.effect = row.follow_ok ? await pollEffect(() => def.read(ctx), (after) => def.effect(ctx, i2, followBefore, after)) : false;
+  }
+  if (def.changeEffect && row.ok) row.effect = await def.changeEffect(ctx);
+  if (row.effect === null) delete row.effect;
+  if (def.restore) await def.restore(ctx);
+  if (answered.witness) {
+    const all = [answered.witness, ...spans.filter((w) => w !== answered.witness)];
+    row.witness = all.every((w) => w.clean);
+    if (!row.witness) row.witness_fields = [...new Set(all.flatMap((w) => w.fields))];
+  }
+  return { row, response };
+}
+
+/**
+ * The negative check: the activate-and-restore stub engine, through the audit's proxy display, must fail both the
+ * witness and the audit. Returns whether it did.
+ */
+export async function negativeCheck(desktop, witness, stubScene, emit, { audit = false } = {}) {
+  const proxy = audit ? await startProxy() : null;
+  const stub = new Engine({ label: 'stub-activating', bin: join(here, 'stub-activating.mjs'), env: proxy?.env }).start();
   const { value, witness: w } = await witness.span('stub', () => stub.request('press_key', { window: { id: stubScene.id }, key: 'x' }));
   await stub.close();
   desktop.focusFront();
-  const failed = !w.clean;
-  emit({ kind: 'stub-check', ok: value.response.ok, witness: w, witness_failed_it: failed, audit: 'M1a' });
-  process.stdout.write(`negative check: the witness ${failed ? 'failed' : 'PASSED'} the activating stub (${w.fields.join(', ') || 'no change'})\n`);
-  return failed;
+  const witnessFailed = !w.clean;
+  let audited = null;
+  if (proxy) audited = auditRequests(parseXtrace(await proxy.stop()));
+  const auditFailed = audited ? !audited.clean && audited.traced : null;
+  emit({ kind: 'stub-check', ok: value.response.ok, witness: w, witness_failed_it: witnessFailed, audit: audited ? { traced: audited.traced, requests: audited.requests, forbidden: audited.forbidden.map((f) => f.what) } : null, audit_failed_it: auditFailed });
+  process.stdout.write(`negative check: the witness ${witnessFailed ? 'failed' : 'PASSED'} the activating stub (${w.fields.join(', ') || 'no change'})${audited ? `; the audit ${auditFailed ? 'failed' : 'PASSED'} it (${[...new Set(audited.forbidden.map((f) => f.what))].join(', ') || 'nothing forbidden'})` : ''}\n`);
+  return witnessFailed && (auditFailed ?? true);
+}
+
+/** The harness's own desktop entry for launch_app: its program appends a line to a file the harness counts. */
+function launchEntry(dir) {
+  const apps = join(dir, 'launch', 'applications');
+  mkdirSync(apps, { recursive: true });
+  const marker = join(dir, 'launch', 'launched');
+  const script = join(dir, 'launch', 'launch.sh');
+  writeFileSync(script, `#!/bin/sh\necho launched >> "${marker}"\n`, { mode: 0o755 });
+  writeFileSync(join(apps, 'cua171-launch-probe.desktop'), `[Desktop Entry]\nType=Application\nName=cua171 Launch Probe\nExec=/bin/sh ${script}\n`);
+  return { env: { XDG_DATA_HOME: join(dir, 'launch'), XDG_DATA_DIRS: '/nonexistent' }, count: () => (existsSync(marker) ? readFileSync(marker, 'utf8').split('\n').filter(Boolean).length : 0) };
 }
 
 export async function runDiff(args) {
@@ -154,21 +253,24 @@ export async function runDiff(args) {
   const results = join(args.out, 'results.jsonl');
   const emit = (row) => appendFileSync(results, `${JSON.stringify({ run, ...row })}\n`);
   if (!existsSync(XPROBE)) throw new Error(`build the harness's X client first: cargo build --release --manifest-path ${join(here, 'xprobe', 'Cargo.toml')}`);
+  const via = args.via ?? 'wire';
 
   const engines = [
     { label: 'pinned', bin: args.vendor, args: [] },
     { label: 'newest', bin: args.newest, args: [] },
-    { label: 'cua', bin: args.cua, args: [], stats: true },
-    ...args.variants.map((v) => ({ label: v.label, bin: args.cua, args: v.args, stats: true })),
+    { label: 'cua', bin: args.cua, args: [], stats: via === 'wire' },
+    ...args.variants.map((v) => ({ label: v.label, bin: args.cua, args: v.args, stats: via === 'wire' })),
   ];
+  const makeEngine = (spec, env) => (via === 'vendor-js' ? new VendorJsEngine({ label: spec.label, bin: spec.bin, skyDir: args.vendorJs, env }) : new Engine({ ...spec, env: env ? { ...process.env, ...env } : undefined }));
   const labels = engines.map((e) => e.label);
   const plan = planOps(args.scenes, args.ops);
-  const samplesFor = (op) => (INPUT_OPS.has(op) ? args.samplesInput : args.samplesTree);
+  const samplesFor = (op) => (inputOp(op) ? args.samplesInput : args.samplesTree);
 
   emit({
     kind: 'meta',
     commit: gitHead(),
     cua_version: engineVersion(args.cua),
+    via,
     engines: engines.map((e) => ({ label: e.label, args: e.args, sha256: fileSha(e.bin) })),
     vendor: args.vendor,
     newest: args.newest,
@@ -188,97 +290,78 @@ export async function runDiff(args) {
   let witness = null;
   let valid = true;
   const keep = {}; // first ok output per engine/scene/op, for the first difference
-  const shots = []; // every tree_shot sample's screenshot
+  const shots = []; // every screenshot sample
+  const answers = new Map(); // normalized answers of non-state samples, for the deviations
   let outcome = { valid: false, pass: false, failed: ['the run did not finish'], code: 1 };
   try {
+    const launch = plan.some((p) => OPS[p.op].apps) ? launchEntry(desktop.dir) : null;
+    if (launch) desktop.launchCount = launch.count;
     // Scenes: one shared window per scene for tree reads, one window per engine for screenshots and input.
     const windows = {};
-    for (const scene of args.scenes) {
+    for (const scene of args.scenes.filter((s) => s !== 'desktop')) {
       const ops = plan.filter((p) => p.scene === scene).map((p) => p.op);
       const open = async (role) => {
-        if (scene !== 'gedit') return desktop.openChrome(role, PAGE_OF[scene]);
-        const opened = await desktop.openGedit(role, GEDIT_TEXT);
-        opened.originalLength = (await desktop.geditText(opened)).length;
+        if (scene === 'gedit') {
+          const opened = await desktop.openGedit(role, GEDIT_TEXT);
+          opened.originalLength = (await desktop.geditText(opened)).length;
+          return opened;
+        }
+        if (FAMILY_OF[scene]) return desktop.openFamilyScene(FAMILY_OF[scene], role);
+        const opened = await desktop.openChrome(role, PAGE_OF[scene]);
+        if (scene === 'chrome-input') opened.elements = await desktop.elementsByName(opened, INPUT_ELEMENTS);
         return opened;
       };
-      windows[scene] = { shared: ops.includes('tree') ? await open('read') : null, own: {} };
-      if (ops.some((op) => OWN_WINDOW_OPS.has(op))) {
+      windows[scene] = { shared: ops.some((op) => !ownWindow(op)) ? await open('read') : null, own: {} };
+      if (ops.some(ownWindow)) {
         for (const label of labels) windows[scene].own[label] = await open(label.replace(/[^a-z0-9]+/gi, '_'));
       }
     }
-    const needsStub = plan.some((p) => INPUT_OPS.has(p.op));
+    const needsStub = plan.some((p) => inputOp(p.op));
     const stubScene = needsStub ? await desktop.openChrome('stub', 'scene.html') : null;
     await desktop.openFront(args.occlusion);
     witness = await startWitness(XPROBE);
     const busAddress = a11yBusAddress();
 
-    if (stubScene && !(await negativeCheck(desktop, witness, stubScene, emit))) valid = false;
+    if (stubScene && !(await negativeCheck(desktop, witness, stubScene, emit, { audit: args.audit }))) valid = false;
 
     for (let block = 0; block < args.blocks; block++) {
       for (const { scene: sceneName, op } of plan) {
         for (const label of blockOrder(labels, block)) {
           const spec = engines.find((e) => e.label === label);
-          const target = sceneName === 'desktop' ? null : OWN_WINDOW_OPS.has(op) ? windows[sceneName].own[label] : windows[sceneName].shared;
+          const target = sceneName === 'desktop' ? null : ownWindow(op) ? windows[sceneName].own[label] : windows[sceneName].shared;
           if (target && args.occlusion === 'visible') desktop.raise(target);
-          const engine = new Engine(spec);
+          const engine = makeEngine(spec, OPS[op].apps ? launch.env : undefined);
           const n = 1 + samplesFor(op);
           for (let i = 0; i < n; i++) {
-            const series = i === 0 ? 'cold' : 'warm';
-            const row = { kind: 'sample', engine: label, scene: sceneName, op, block, series, i };
-            let request;
-            let before = null;
-            if (op === 'list_windows') request = ['list_windows', {}];
-            else if (op === 'tree' || op === 'tree_shot') request = ['get_window_state', { window: { id: target.id }, include_screenshot: op === 'tree_shot' }];
-            else {
-              before = await readEffect(desktop, target, op);
-              request = [op, inputFor(target, op, i, before)];
-            }
-            // The engine starts inside the first sample's span, after the before-state is read and the witness is
-            // watching: the cold time is the engine's start and its first request, nothing of the harness's.
-            const send = () => {
-              if (i === 0) engine.start();
-              return engine.request(...request);
-            };
-            const answered = target ? await witness.span(`${label}:${sceneName}:${op}`, send) : { value: await send(), witness: null };
-            const { response, ms, sinceSpawnMs, stats } = answered.value;
-            row.ms = Math.round((series === 'cold' ? sinceSpawnMs : ms) * 100) / 100;
-            row.request_ms = Math.round(ms * 100) / 100;
-            row.ok = response.ok === true;
-            if (!row.ok) row.error = String(response.error).slice(0, 300);
-            if (answered.witness) row.witness = answered.witness.clean;
-            if (answered.witness && !answered.witness.clean) row.witness_fields = answered.witness.fields;
-            if (stats) {
-              row.stats = { calls: stats.bus.calls, waits_alone: stats.bus.waits_alone, max_in_flight: stats.bus.max_in_flight, connections: stats.bus.connections };
-              if (stats.tree) row.stats.tree = stats.tree;
-            }
-            if (row.ok && op === 'list_windows') {
-              row.digest = sha(JSON.stringify(response.output));
-              row.windows = response.output.length;
-              keep[`${label}|${sceneName}|${op}`] ??= response.output;
-            } else if (row.ok && (op === 'tree' || op === 'tree_shot')) {
-              const exactIds = op === 'tree';
-              const normalized = normalizeState(response.output, { exactIds, label: exactIds ? null : labelPattern });
-              row.digest = sha(JSON.stringify(normalized));
+            const { row, response } = await runSample({ desktop, witness: targeted(op) ? witness : null, engine, target, op, i, block, label, sceneName });
+            if (row.ok && (OPS[op].kind === 'read' || OPS[op].kind === 'shot' || OPS[op].kind === 'retention')) {
               row.nodes = retainedIds(response.output).length;
               row.source = response.output.ax_tree_source;
-              const key = `${label}|${sceneName}|${op}`;
-              keep[key] ??= { output: response.output, label: exactIds ? null : labelPattern };
-              if (op === 'tree_shot') {
-                // every sample's screenshot is kept for the comparison after the blocks
-                const copy = join(desktop.dir, `${label.replace(/[^a-z0-9]+/gi, '_')}-${sceneName}-${block}-${i}.jpg`);
-                if (response.output.screenshots[0]) copyFileSync(response.output.screenshots[0].filepath, copy);
-                shots.push({ engine: label, scene: sceneName, op, block, i, image: response.output.screenshots[0] ? copy : null });
-              }
-              for (const shot of response.output.screenshots) {
+              if (response.output.rendered !== undefined) row.rendered_lines = response.output.rendered?.split('\n').length ?? null;
+              const exactIds = exactIdsFor(op, sceneName);
+              keep[`${label}|${sceneName}|${op}`] ??= { output: response.output, label: exactIds ? null : labelPattern };
+            } else if (row.ok && (op === 'list_windows' || op === 'list_apps')) {
+              row.items = response.output.length;
+            }
+            row.digest = answerDigest(op, sceneName, response, labelPattern);
+            if (!['read', 'shot', 'retention'].includes(OPS[op].kind)) answers.set(`${label}|${sceneName}|${op}|${block}|${i}`, normalizeAnswer(response));
+            if (row.ok && shotOf(op)) {
+              // every sample's screenshot is kept for the comparison after the blocks
+              const shot = op === 'get_screenshot' ? response.output[0] : response.output.screenshots[0];
+              const copy = join(desktop.dir, `${label.replace(/[^a-z0-9]+/gi, '_')}-${sceneName}-${op}-${block}-${i}.jpg`);
+              if (shot) copyFileSync(shot.filepath, copy);
+              shots.push({ engine: label, scene: sceneName, op, block, i, image: shot ? copy : null, pair: OPS[op].kind === 'retention' ? 'i' : 'last' });
+            }
+            if (row.ok) {
+              const files = op === 'get_screenshot' ? response.output : (response.output?.screenshots ?? []);
+              for (const shot of files) {
                 if (shot.filepath.startsWith('/tmp/') && !shot.filepath.startsWith('/tmp/cua-engine-')) rmSync(shot.filepath, { force: true });
               }
-            } else if (row.ok && INPUT_OPS.has(op)) {
-              row.effect = await pollEffect(desktop, target, op, request[1], before);
-              if (row.effect === null) delete row.effect;
             }
             emit(row);
           }
           await engine.close();
+          if (target) target.retainedBy = null;
           // gedit's press_key series ends with the document back at its original length
           if (op === 'press_key' && target.kind === 'gedit' && (await desktop.geditText(target)).length > target.originalLength) {
             const fix = new Engine({ label: 'restore', bin: args.cua }).start();
@@ -290,7 +373,7 @@ export async function runDiff(args) {
     }
 
     // Accessibility-bus calls, in their own untimed pass: a fresh process per engine, the cold read then a warm one.
-    if (args.counts) {
+    if (args.counts && via === 'wire') {
       for (const { scene: sceneName, op } of plan.filter((p) => p.op === 'tree')) {
         const target = windows[sceneName].shared;
         for (const spec of engines) {
@@ -312,45 +395,105 @@ export async function runDiff(args) {
       }
     }
 
+    // The X request audit, in its own untimed pass: each engine's connections through an xtrace proxy, a fresh
+    // process for two samples of each window-targeted input operation on its own window.
+    const audits = {};
+    if (args.audit) {
+      for (const { scene: sceneName, op } of plan.filter((p) => inputOp(p.op))) {
+        for (const spec of engines) {
+          const target = windows[sceneName].own[spec.label];
+          const proxy = await startProxy();
+          const engine = makeEngine({ ...spec, stats: false }, { ...(OPS[op].apps ? launch.env : {}), DISPLAY: proxy.env.DISPLAY, XAUTHORITY: proxy.env.XAUTHORITY });
+          let ok = true;
+          try {
+            for (let i = 0; i < 2; i++) ok = (await runSample({ desktop, witness: null, engine, target, op, i, block: 'audit', label: spec.label, sceneName })).row.ok && ok;
+          } finally {
+            await engine.close();
+            target.retainedBy = null;
+          }
+          const audited = auditRequests(parseXtrace(await proxy.stop()));
+          audits[`${sceneName}|${op}|${spec.label}`] = audited.clean;
+          emit({ kind: 'audit', engine: spec.label, scene: sceneName, op, ok, clean: audited.clean, traced: audited.traced, requests: audited.requests, forbidden: audited.forbidden.slice(0, 10) });
+          desktop.focusFront();
+        }
+      }
+    }
+
+    // The declared refusals: cua's answer to each text and clipboard command (no vendor runs them in M1a).
+    if (plan.some((p) => p.scene === 'chrome' || p.scene === 'gedit' || p.scene === 'chrome-input')) {
+      const someWindow = Object.values(windows).flatMap((w) => [w.shared, ...Object.values(w.own)]).find(Boolean);
+      const engine = makeEngine(engines.find((e) => e.label === 'cua'));
+      engine.start();
+      for (const command of REFUSED) {
+        const input = command === 'clipboard_release' ? { handle: 'cua171-none' } : command.startsWith('clipboard') ? { window: { id: someWindow.id } } : { window: { id: someWindow.id }, text: 'cua171' };
+        const { response } = await engine.request(command, input);
+        // the pinned build's JavaScript has no type_characters (the newest build's command); nothing to check there
+        if (via === 'vendor-js' && /^the vendor client has no /.test(String(response.error))) {
+          emit({ kind: 'refusal', op: command, ok: false, error: response.error, declared: null, pass: null, not_in_client: true });
+          continue;
+        }
+        const deviation = declaredDeviation({ op: command, scene: 'refusals', field: 'error', candidate: normalizeAnswer(response) });
+        emit({ kind: 'refusal', op: command, ok: response.ok === true, error: response.error ?? null, declared: deviation ? describeDeviation(deviation) : null, pass: Boolean(deviation) });
+      }
+      await engine.close();
+    }
+
     // Screenshots: every sample's against the pinned build's of its block, before any verdict is drawn.
     const rows = readFileSync(results, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((r) => r.run === run && r.kind === 'sample');
     const imageOf = new Map();
     for (const c of compareShots(shots, xprobeDiff(XPROBE))) {
-      const { image, ...rest } = c;
+      const { image, pair, ...rest } = c;
       emit({ kind: 'image', ...rest });
       imageOf.set(`${c.engine}|${c.scene}|${c.op}|${c.block}|${c.i}`, c.ok);
     }
 
-    // Verdicts: each sample's output against the pinned build's, then the operation judged per candidate.
+    // Verdicts: each sample's answer against the pinned build's of its block, a difference excused only by a declared
+    // deviation, then the operation judged per candidate.
     const verdicts = [];
     for (const { scene: sceneName, op } of plan) {
       const opRows = rows.filter((r) => r.scene === sceneName && r.op === op);
       // The reference is the pinned build's answer in the same block: a scene's own windows change across blocks
       // (gedit marks a document modified, a counter grows), and so does the window list.
-      const reference = (block) => mode(opRows.filter((r) => r.engine === 'pinned' && r.ok && r.block === block).map((r) => r.digest));
+      const reference = (block) => mode(opRows.filter((r) => r.engine === 'pinned' && r.block === block).map((r) => r.digest));
+      const refAnswer = (block) => {
+        const digest = reference(block);
+        const r = opRows.find((x) => x.engine === 'pinned' && x.block === block && x.digest === digest);
+        return r ? answers.get(`pinned|${sceneName}|${op}|${block}|${r.i}`) : null;
+      };
       const refKept = keep[`pinned|${sceneName}|${op}`];
       for (const r of opRows) {
-        if (!r.digest) continue;
         const image = imageOf.get(`${r.engine}|${r.scene}|${r.op}|${r.block}|${r.i}`);
         r.equal = r.digest === reference(r.block) && image !== false;
+        if (!r.equal && image !== false && answers.has(`${r.engine}|${sceneName}|${op}|${r.block}|${r.i}`)) {
+          const candidate = answers.get(`${r.engine}|${sceneName}|${op}|${r.block}|${r.i}`);
+          const field = differingField(refAnswer(r.block), candidate);
+          const deviation = field ? declaredDeviation({ op, scene: sceneName, field, candidate }) : null;
+          if (deviation) {
+            r.equal = true;
+            r.deviation = deviation.op;
+          }
+        }
       }
       for (const candidate of labels.filter((l) => !VENDORS.includes(l))) {
-        const verdict = judgeOperation(opRows.filter((r) => [...VENDORS, candidate].includes(r.engine)), { vendors: VENDORS, candidate });
+        const opAudits = args.audit && inputOp(op) ? Object.fromEntries(labels.map((l) => [l, audits[`${sceneName}|${op}|${l}`]])) : null;
+        const verdict = judgeOperation(opRows.filter((r) => [...VENDORS, candidate].includes(r.engine)), { vendors: VENDORS, candidate, audits: opAudits });
         const extra = {};
         const kept = keep[`${candidate}|${sceneName}|${op}`];
-        if (kept && refKept && op !== 'list_windows') {
-          const cmp = compareStates(refKept.output, kept.output, { exactIds: op === 'tree', labelA: refKept.label, labelB: kept.label });
+        if (kept && refKept && OPS[op].kind !== 'retention') {
+          const cmp = compareStates(refKept.output, kept.output, { exactIds: exactIdsFor(op, sceneName), labelA: refKept.label, labelB: kept.label });
           extra.first_comparison = cmp;
           if (sceneName === 'over-budget') extra.retained_ids_equal = JSON.stringify(retainedIds(refKept.output)) === JSON.stringify(retainedIds(kept.output));
         }
+        const declared = [...new Set(opRows.filter((r) => r.engine === candidate && r.deviation).map((r) => r.deviation))];
+        if (declared.length) extra.deviations = declared;
         const row = { kind: 'verdict', scene: sceneName, op, candidate, ...verdict, ...extra };
         verdicts.push(row);
         emit(row);
       }
       for (const vendor of ['newest']) {
         const kept = keep[`${vendor}|${sceneName}|${op}`];
-        if (kept && refKept && op !== 'list_windows') {
-          emit({ kind: 'vendor-agreement', scene: sceneName, op, engine: vendor, first_comparison: compareStates(refKept.output, kept.output, { exactIds: op === 'tree', labelA: refKept.label, labelB: kept.label }) });
+        if (kept && refKept && OPS[op].kind !== 'retention') {
+          emit({ kind: 'vendor-agreement', scene: sceneName, op, engine: vendor, first_comparison: compareStates(refKept.output, kept.output, { exactIds: exactIdsFor(op, sceneName), labelA: refKept.label, labelB: kept.label }) });
         }
       }
     }
@@ -358,9 +501,11 @@ export async function runDiff(args) {
     for (const label of labels) {
       for (const { scene: sceneName, op } of plan) {
         const mine = rows.filter((r) => r.engine === label && r.scene === sceneName && r.op === op && r.digest);
-        if (mine.length) emit({ kind: 'equality', engine: label, scene: sceneName, op, equal: mine.filter((r) => r.equal).length, of: mine.length });
+        if (mine.length) emit({ kind: 'equality', engine: label, scene: sceneName, op, equal: mine.filter((r) => r.equal).length, of: mine.length, declared: mine.filter((r) => r.deviation).length });
       }
     }
+    const refusals = readFileSync(results, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((r) => r.run === run && r.kind === 'refusal');
+    for (const r of refusals.filter((x) => x.pass !== null)) verdicts.push({ kind: 'verdict', scene: 'refusals', op: r.op, candidate: 'cua', pass: r.pass });
     outcome = runOutcome(verdicts, { valid });
     emit({ kind: 'end', valid: outcome.valid, pass: outcome.pass, failed: outcome.failed, finished: new Date().toISOString() });
   } finally {

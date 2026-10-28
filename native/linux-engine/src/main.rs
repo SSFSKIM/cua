@@ -29,7 +29,7 @@ use x11::Retention;
 const USAGE: &str = "usage: cua-engine server [--mouse-size-px <n>] [--desktop shared|dedicated]
        [--window-calls <W>] [--window-bytes <R>] [--call-reservation <bytes>] [--slack-nodes <n>]
        [--retention per-request|session|none] [--settle-ms <ms>] [--capture-wait damage|fixed]
-       [--teardown-ms <ms>] [--key-pace-ms <ms>] [--stats]
+       [--teardown-ms <ms>] [--key-pace-ms <ms>] [--drag-step-ms <ms>] [--stats]
        cua-engine --version";
 
 fn version() -> String {
@@ -52,6 +52,7 @@ fn default_config() -> Config {
         pacing: input::Pacing {
             key: Duration::ZERO,
             teardown: Duration::from_millis(100),
+            drag: Duration::from_millis(1),
         },
         stats: false,
         mouse_size_px: 0,
@@ -117,6 +118,7 @@ fn parse_args(args: &[String]) -> Result<Command, String> {
             }
             "--teardown-ms" => cfg.pacing.teardown = Duration::from_millis(number(value, arg)?),
             "--key-pace-ms" => cfg.pacing.key = Duration::from_millis(number(value, arg)?),
+            "--drag-step-ms" => cfg.pacing.drag = Duration::from_millis(number(value, arg)?),
             other => return Err(format!("unknown argument {other}")),
         }
         i += if takes_value { 2 } else { 1 };
@@ -212,6 +214,18 @@ mod tests {
             (Duration::ZERO, Duration::ZERO, Duration::from_millis(100)),
             "no input settle and no key pacing; the 100 ms before FocusOut stays"
         );
+    }
+
+    #[test]
+    fn the_drag_step_is_the_vendor_s_millisecond_unless_measured_otherwise() {
+        let Ok(Command::Server(cfg)) = parse_args(&args(&["server"])) else {
+            panic!()
+        };
+        assert_eq!(cfg.pacing.drag, Duration::from_millis(1));
+        let Ok(Command::Server(cfg)) = parse_args(&args(&["server", "--drag-step-ms", "0"])) else {
+            panic!()
+        };
+        assert_eq!(cfg.pacing.drag, Duration::ZERO);
     }
 
     #[test]

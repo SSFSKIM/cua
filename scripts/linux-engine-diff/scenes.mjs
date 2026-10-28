@@ -105,13 +105,27 @@ export class Desktop {
   }
 
   /** A Chrome window on one of the harness's pages, its title unique to this window. */
-  async openChrome(role, page) {
-    const label = this.label(page.replace(/\.html$/, ''), role);
+  async openChrome(role, page, { stem = page.replace(/\.html$/, '') } = {}) {
+    // `stem`: the scene's name where two scenes open one page, so every window's title stays its own
+    const label = this.label(stem, role);
     const url = `${pathToFileURL(join(PAGES, page)).href}#${encodeURIComponent(label)}`;
     const child = spawn('google-chrome', ['--new-window', url], { stdio: 'ignore', detached: true });
     child.unref();
     const title = `${label} - Google Chrome`;
-    const info = await this.waitForWindow((w) => w.title === title, label, 30000);
+    let info;
+    try {
+      info = await this.waitForWindow((w) => w.title === title, label, 30000);
+    } catch (error) {
+      // the harness closes what it opened, also when its window did not come up as exactly one
+      for (const w of (await this.listWindows()).filter((x) => x.title === title)) {
+        try {
+          execFileSync(XPROBE, ['close', String(w.id)]);
+        } catch {
+          // already gone
+        }
+      }
+      throw error;
+    }
     const scene = { kind: 'chrome', role, label, page, id: info.id };
     this.windows.push(scene);
     this.place(scene.id, 'chrome');

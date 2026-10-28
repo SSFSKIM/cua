@@ -102,6 +102,8 @@ export async function startProxy({ display = process.env.DISPLAY ?? ':0' } = {})
       await exited;
       const text = existsSync(log) ? readFileSync(log, 'utf8') : '';
       rmSync(dir, { recursive: true, force: true });
+      // xtrace leaves its display's socket behind when it is ended; the next pass would find the number taken
+      rmSync(`/tmp/.X11-unix/X${n}`, { force: true });
       return text;
     },
   };

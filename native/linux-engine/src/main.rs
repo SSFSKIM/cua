@@ -181,6 +181,7 @@ fn serve(engine: &mut Engine) -> i32 {
             eprintln!("Error failed to write server response: {error}");
             return 1;
         }
+        engine.flush_stats();
     }
 }
 

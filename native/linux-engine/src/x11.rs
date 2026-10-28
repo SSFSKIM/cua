@@ -77,7 +77,10 @@ pub struct X11 {
     /// The wait after a window's redirect before input to it: none by default (Design, Retention and the fixed
     /// waits); `--settle-ms` sets it for measurements.
     pub settle: Duration,
-    readiness: Readiness,
+    /// Opened at the first redirect (its connection and thread cost the start of every engine otherwise, the
+    /// desktop-only requests' included).
+    readiness: Option<Readiness>,
+    capture_wait: CaptureWait,
     /// How long the last window capture waited for its pixmap, and why.
     pub last_capture_wait: Option<Waited>,
 }
@@ -154,7 +157,8 @@ impl X11 {
             retained: HashSet::new(),
             retention,
             settle,
-            readiness: Readiness::connect(capture_wait),
+            readiness: None,
+            capture_wait,
             last_capture_wait: None,
         })
     }
@@ -460,7 +464,15 @@ impl X11 {
         if let Event::DestroyNotify(e) = &event {
             self.retained.remove(&e.window);
         }
-        self.readiness.note(&event);
+        if let Some(readiness) = &self.readiness {
+            readiness.note(&event);
+        }
+    }
+
+    /// Capture readiness, its connection opened on first use.
+    fn readiness(&mut self) -> &Readiness {
+        let rule = self.capture_wait;
+        self.readiness.get_or_insert_with(|| Readiness::connect(rule))
     }
 
     /// Whether `window` is fully unobscured now (`cover.rs`); any X error is doubt, and doubt is obscured.
@@ -547,7 +559,7 @@ impl X11 {
                 self.ensure_composite()?;
                 let geometry = self.conn.get_geometry(window)?.reply()?;
                 let unobscured = self.fully_unobscured(window, &geometry);
-                self.readiness.watch(window, (geometry.width, geometry.height))?;
+                self.readiness().watch(window, (geometry.width, geometry.height))?;
                 let redirect = self
                     .conn
                     .composite_redirect_window(window, Redirect::AUTOMATIC)
@@ -556,10 +568,10 @@ impl X11 {
                     .and_then(|c| Ok(c.check()?))
                     .context("failed to retain the target window's rendering buffer");
                 if let Err(error) = redirected {
-                    self.readiness.forget(window);
+                    self.readiness().forget(window);
                     return Err(error);
                 }
-                self.readiness.redirected(window, unobscured)?;
+                self.readiness().redirected(window, unobscured)?;
                 if mode == Retention::Session {
                     // Our own event selection on the window, so its destruction ends the retention record.
                     let aux = ChangeWindowAttributesAux::new().event_mask(EventMask::STRUCTURE_NOTIFY);
@@ -587,7 +599,7 @@ impl X11 {
                 .conn
                 .composite_unredirect_window(window, Redirect::AUTOMATIC)
                 .map(|c| c.check());
-            self.readiness.forget(window);
+            self.readiness().forget(window);
         }
     }
 
@@ -597,7 +609,7 @@ impl X11 {
     /// The window's own drawable as RGB (behaviour §16), once its pixmap is ready (`readiness.rs`).
     pub fn capture_window(&mut self, window: Window) -> Result<(Vec<u8>, u16, u16)> {
         let (_, redirected) = self.redirect(window)?;
-        self.last_capture_wait = Some(self.readiness.wait(window));
+        self.last_capture_wait = Some(self.readiness().wait(window));
         let result = (|| {
             let geometry = self
                 .conn

@@ -42,6 +42,8 @@ pub struct Engine {
     shot_dir: Option<PathBuf>,
     bus_stats: BusStats,
     extra: serde_json::Map<String, Value>,
+    /// The `--stats` line of the last request, written after its response so the line costs the request nothing.
+    pending_stats: Option<String>,
     /// Held keys, their sessions and the desktop's keys, across requests.
     inputs: Inputs,
 }
@@ -70,6 +72,7 @@ impl Engine {
             shot_dir: None,
             bus_stats: BusStats::default(),
             extra: Default::default(),
+            pending_stats: None,
         })
     }
 
@@ -141,7 +144,14 @@ impl Engine {
         for (key, value) in std::mem::take(&mut self.extra) {
             line[key] = value;
         }
-        eprintln!("{}", json!({ "stats": line }));
+        self.pending_stats = Some(json!({ "stats": line }).to_string());
+    }
+
+    /// Writes the last request's `--stats` line, once its response is out.
+    pub fn flush_stats(&mut self) {
+        if let Some(line) = self.pending_stats.take() {
+            eprintln!("{line}");
+        }
     }
 
     fn drop_bus(&mut self) {

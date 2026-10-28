@@ -307,7 +307,7 @@ export async function runDiff(args) {
           return opened;
         }
         if (FAMILY_OF[scene]) return desktop.openFamilyScene(FAMILY_OF[scene], role);
-        const opened = await desktop.openChrome(role, PAGE_OF[scene]);
+        const opened = await desktop.openChrome(role, PAGE_OF[scene], { stem: scene === 'retention' ? 'retention' : undefined });
         if (scene === 'chrome-input') opened.elements = await desktop.elementsByName(opened, INPUT_ELEMENTS);
         return opened;
       };

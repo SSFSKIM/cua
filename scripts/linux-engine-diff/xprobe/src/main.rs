@@ -1,0 +1,418 @@
+//! The differential harness's own X client (#171, docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md,
+//! Verification system). It is never an engine and never sends input.
+//!
+//! - `xprobe witness`: watches the desktop state an engine must leave alone. It selects `PropertyNotify` on the
+//!   root for `_NET_ACTIVE_WINDOW` and `_NET_CLIENT_LIST_STACKING` and samples the input focus and the pointer
+//!   every 5 ms. Lines on stdin `begin <tag>` and `end <tag>` delimit a span; at `end` it prints one JSON line with
+//!   every change seen in the span.
+//! - `xprobe retention <window> [trials] [span-ms] [gap-ms] [dump-prefix]`: redirects the window through Composite, captures it
+//!   with `GetImage` as fast as it can for the span, unredirects, and prints one JSON line per trial with the
+//!   moments the captured contents changed (a hash of the colour bytes and the black fraction, never pixels).
+//! - `xprobe imgdiff <a.jpg> <b.jpg>`: sizes and mean absolute pixel difference of two JPEGs.
+//! - `xprobe close <window>`: asks the window's client to close it (`WM_DELETE_WINDOW`), for harness-owned windows.
+
+use std::io::{BufRead, Write};
+use std::sync::mpsc;
+use std::time::{Duration, Instant};
+
+use x11rb::connection::Connection;
+use x11rb::protocol::Event;
+use x11rb::protocol::composite::{ConnectionExt as _, Redirect};
+use x11rb::protocol::xproto::{
+    AtomEnum, ChangeWindowAttributesAux, ClientMessageEvent, ConnectionExt as _, EventMask, ImageFormat, Window,
+};
+use x11rb::rust_connection::RustConnection;
+
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+
+const SAMPLE: Duration = Duration::from_millis(5);
+
+fn main() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let result = match args.first().map(String::as_str) {
+        Some("witness") => witness(),
+        Some("retention") => retention(&args[1..]),
+        Some("imgdiff") if args.len() == 3 => imgdiff(&args[1], &args[2]),
+        Some("close") if args.len() == 2 => close(&args[1]),
+        _ => Err("usage: xprobe witness | retention <window> [trials] [span-ms] [gap-ms] [dump-prefix] | imgdiff <a> <b> | close <window>".into()),
+    };
+    if let Err(error) = result {
+        eprintln!("xprobe: {error}");
+        std::process::exit(1);
+    }
+}
+
+fn parse_window(text: &str) -> Result<Window> {
+    let window = match text.strip_prefix("0x") {
+        Some(hex) => u32::from_str_radix(hex, 16)?,
+        None => text.parse()?,
+    };
+    Ok(window)
+}
+
+fn atom(conn: &RustConnection, name: &str) -> Result<u32> {
+    Ok(conn.intern_atom(false, name.as_bytes())?.reply()?.atom)
+}
+
+fn json_str(text: &str) -> String {
+    let mut out = String::from("\"");
+    for c in text.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// The witness
+
+#[derive(Clone, PartialEq, Debug)]
+struct DesktopState {
+    active: Vec<u32>,
+    stacking: Vec<u32>,
+    focus: u32,
+    pointer: (i16, i16),
+}
+
+struct Desktop {
+    conn: RustConnection,
+    root: Window,
+    active_atom: u32,
+    stacking_atom: u32,
+}
+
+impl Desktop {
+    fn property(&self, atom: u32) -> Result<Vec<u32>> {
+        let reply = self
+            .conn
+            .get_property(false, self.root, atom, AtomEnum::ANY, 0, 4096)?
+            .reply()?;
+        Ok(reply.value32().map(|v| v.collect()).unwrap_or_default())
+    }
+
+    fn focus_and_pointer(&self) -> Result<(u32, (i16, i16))> {
+        let focus = self.conn.get_input_focus()?;
+        let pointer = self.conn.query_pointer(self.root)?;
+        let focus = focus.reply()?.focus;
+        let pointer = pointer.reply()?;
+        Ok((focus, (pointer.root_x, pointer.root_y)))
+    }
+
+    fn state(&self) -> Result<DesktopState> {
+        let (focus, pointer) = self.focus_and_pointer()?;
+        Ok(DesktopState {
+            active: self.property(self.active_atom)?,
+            stacking: self.property(self.stacking_atom)?,
+            focus,
+            pointer,
+        })
+    }
+}
+
+struct Span {
+    tag: String,
+    started: Instant,
+    last: DesktopState,
+    changes: Vec<String>,
+    samples: u64,
+    max_gap_ms: f64,
+    last_sample: Instant,
+    notifies_active: u64,
+    notifies_stacking: u64,
+}
+
+impl Span {
+    fn record(&mut self, now: DesktopState) {
+        let t = self.started.elapsed().as_secs_f64() * 1000.0;
+        if now.active != self.last.active {
+            self.changes.push(format!(
+                "{{\"field\":\"active\",\"t_ms\":{t:.1},\"from\":{:?},\"to\":{:?}}}",
+                self.last.active, now.active
+            ));
+        }
+        if now.stacking != self.last.stacking {
+            self.changes.push(format!(
+                "{{\"field\":\"stacking\",\"t_ms\":{t:.1},\"from_len\":{},\"to_len\":{}}}",
+                self.last.stacking.len(),
+                now.stacking.len()
+            ));
+        }
+        if now.focus != self.last.focus {
+            self.changes.push(format!(
+                "{{\"field\":\"focus\",\"t_ms\":{t:.1},\"from\":{},\"to\":{}}}",
+                self.last.focus, now.focus
+            ));
+        }
+        if now.pointer != self.last.pointer {
+            self.changes.push(format!(
+                "{{\"field\":\"pointer\",\"t_ms\":{t:.1},\"from\":[{},{}],\"to\":[{},{}]}}",
+                self.last.pointer.0, self.last.pointer.1, now.pointer.0, now.pointer.1
+            ));
+        }
+        self.last = now;
+    }
+
+    fn report(&self) -> String {
+        format!(
+            "{{\"tag\":{},\"duration_ms\":{:.1},\"samples\":{},\"max_gap_ms\":{:.1},\"notifies\":{{\"active\":{},\"stacking\":{}}},\"changes\":[{}]}}",
+            json_str(&self.tag),
+            self.started.elapsed().as_secs_f64() * 1000.0,
+            self.samples,
+            self.max_gap_ms,
+            self.notifies_active,
+            self.notifies_stacking,
+            self.changes.join(",")
+        )
+    }
+}
+
+fn witness() -> Result<()> {
+    let (conn, screen) = x11rb::connect(None)?;
+    let root = conn.setup().roots[screen].root;
+    let desktop = Desktop {
+        active_atom: atom(&conn, "_NET_ACTIVE_WINDOW")?,
+        stacking_atom: atom(&conn, "_NET_CLIENT_LIST_STACKING")?,
+        conn,
+        root,
+    };
+    desktop.conn.change_window_attributes(
+        root,
+        &ChangeWindowAttributesAux::new().event_mask(EventMask::PROPERTY_CHANGE),
+    )?;
+    desktop.conn.flush()?;
+
+    let (tx, rx) = mpsc::channel::<Option<String>>();
+    std::thread::spawn(move || {
+        for line in std::io::stdin().lock().lines() {
+            match line {
+                Ok(line) => {
+                    if tx.send(Some(line)).is_err() {
+                        return;
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+        let _ = tx.send(None);
+    });
+
+    let stdout = std::io::stdout();
+    println!("{{\"ready\":true}}");
+    stdout.lock().flush()?;
+    let mut span: Option<Span> = None;
+    let mut next = Instant::now();
+    loop {
+        // Commands first, so a span begins and ends exactly where the harness asks.
+        while let Ok(message) = rx.try_recv() {
+            let Some(line) = message else { return Ok(()) };
+            let line = line.trim();
+            if let Some(tag) = line.strip_prefix("begin ") {
+                let now = Instant::now();
+                span = Some(Span {
+                    tag: tag.to_string(),
+                    started: now,
+                    last: desktop.state()?,
+                    changes: Vec::new(),
+                    samples: 1,
+                    max_gap_ms: 0.0,
+                    last_sample: now,
+                    notifies_active: 0,
+                    notifies_stacking: 0,
+                });
+                println!("{{\"begun\":{}}}", json_str(tag));
+                stdout.lock().flush()?;
+            } else if let Some(tag) = line.strip_prefix("end ") {
+                if let Some(mut s) = span.take() {
+                    drain_notifies(&desktop, &mut s)?;
+                    let state = desktop.state()?;
+                    s.record(state);
+                    s.samples += 1;
+                    if s.tag != tag {
+                        s.changes.push(format!(
+                            "{{\"field\":\"protocol\",\"note\":{}}}",
+                            json_str("end tag mismatch")
+                        ));
+                    }
+                    println!("{}", s.report());
+                } else {
+                    println!("{{\"tag\":{},\"error\":\"no span\"}}", json_str(tag));
+                }
+                stdout.lock().flush()?;
+            }
+        }
+        if let Some(s) = span.as_mut() {
+            drain_notifies(&desktop, s)?;
+            let (focus, pointer) = desktop.focus_and_pointer()?;
+            let now = Instant::now();
+            s.max_gap_ms = s.max_gap_ms.max((now - s.last_sample).as_secs_f64() * 1000.0);
+            s.last_sample = now;
+            s.samples += 1;
+            let state = DesktopState {
+                focus,
+                pointer,
+                ..s.last.clone()
+            };
+            s.record(state);
+        } else {
+            while desktop.conn.poll_for_event()?.is_some() {}
+        }
+        next += SAMPLE;
+        let now = Instant::now();
+        if next > now {
+            std::thread::sleep(next - now);
+        } else {
+            next = now;
+        }
+    }
+}
+
+/// Reads queued `PropertyNotify` events; for each watched property it re-reads the value, so a notify that did not
+/// change the value is counted but is not a change.
+fn drain_notifies(desktop: &Desktop, span: &mut Span) -> Result<()> {
+    let mut active = false;
+    let mut stacking = false;
+    while let Some(event) = desktop.conn.poll_for_event()? {
+        if let Event::PropertyNotify(notify) = event {
+            if notify.atom == desktop.active_atom {
+                span.notifies_active += 1;
+                active = true;
+            } else if notify.atom == desktop.stacking_atom {
+                span.notifies_stacking += 1;
+                stacking = true;
+            }
+        }
+    }
+    if active || stacking {
+        let mut state = span.last.clone();
+        if active {
+            state.active = desktop.property(desktop.active_atom)?;
+        }
+        if stacking {
+            state.stacking = desktop.property(desktop.stacking_atom)?;
+        }
+        span.record(state);
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// The retention probe
+
+/// One capture: a hash of its colour bytes (B, G, R of each 32-bit pixel; the fourth byte is padding or alpha,
+/// which the engine's JPEG never carries) and the fraction of black pixels.
+fn grab(conn: &RustConnection, window: Window, width: u16, height: u16) -> Result<Vec<u8>> {
+    Ok(conn
+        .get_image(ImageFormat::Z_PIXMAP, window, 0, 0, width, height, !0)?
+        .reply()?
+        .data)
+}
+
+fn capture(conn: &RustConnection, window: Window, width: u16, height: u16) -> Result<(u64, f64)> {
+    let image = grab(conn, window, width, height)?;
+    let mut hash: u64 = 0xcbf29ce484222325;
+    let mut black = 0u64;
+    let pixels = image.chunks_exact(4);
+    let count = pixels.len().max(1) as f64;
+    for px in pixels {
+        for &b in &px[..3] {
+            hash ^= b as u64;
+            hash = hash.wrapping_mul(0x100000001b3);
+        }
+        if px[..3] == [0, 0, 0] {
+            black += 1;
+        }
+    }
+    Ok((hash, black as f64 / count))
+}
+
+fn retention(args: &[String]) -> Result<()> {
+    let window = parse_window(args.first().ok_or("retention needs a window")?)?;
+    let trials: u32 = args.get(1).map(|s| s.parse()).transpose()?.unwrap_or(10);
+    let span = Duration::from_millis(args.get(2).map(|s| s.parse()).transpose()?.unwrap_or(400));
+    let gap = Duration::from_millis(args.get(3).map(|s| s.parse()).transpose()?.unwrap_or(300));
+    let dump = args.get(4);
+    let (conn, _) = x11rb::connect(None)?;
+    conn.composite_query_version(0, 4)?.reply()?;
+    let geometry = conn.get_geometry(window)?.reply()?;
+    let (width, height) = (geometry.width, geometry.height);
+    for trial in 0..trials {
+        let (before, _) = capture(&conn, window, width, height)?;
+        conn.composite_redirect_window(window, Redirect::AUTOMATIC)?;
+        let started = Instant::now();
+        let mut changes: Vec<(f64, u64, f64)> = Vec::new();
+        let mut samples = 0u64;
+        let mut last = None;
+        while started.elapsed() < span {
+            let (hash, black) = capture(&conn, window, width, height)?;
+            let t = started.elapsed().as_secs_f64() * 1000.0;
+            samples += 1;
+            if last != Some(hash) {
+                changes.push((t, hash, black));
+                last = Some(hash);
+            }
+        }
+        if let Some(prefix) = dump {
+            // the trial's final capture, colour bytes only, for a pixel count against another condition's
+            let image = grab(&conn, window, width, height)?;
+            let colour: Vec<u8> = image.chunks_exact(4).flat_map(|px| [px[0], px[1], px[2]]).collect();
+            std::fs::write(format!("{prefix}-{trial}.bgr"), colour)?;
+        }
+        conn.composite_unredirect_window(window, Redirect::AUTOMATIC)?;
+        conn.flush()?;
+        let changes: Vec<String> = changes
+            .iter()
+            .map(|(t, h, black)| format!("[{t:.2},\"{h:016x}\",{black:.4}]"))
+            .collect();
+        println!(
+            "{{\"trial\":{trial},\"window\":{window},\"width\":{width},\"height\":{height},\"before\":\"{before:016x}\",\"span_ms\":{},\"samples\":{samples},\"changes\":[{}]}}",
+            span.as_millis(),
+            changes.join(",")
+        );
+        std::io::stdout().lock().flush()?;
+        std::thread::sleep(gap);
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Image comparison and close
+
+fn imgdiff(a: &str, b: &str) -> Result<()> {
+    let a = image::load_from_memory_with_format(&std::fs::read(a)?, image::ImageFormat::Jpeg)?.to_rgb8();
+    let b = image::load_from_memory_with_format(&std::fs::read(b)?, image::ImageFormat::Jpeg)?.to_rgb8();
+    let mad = if a.dimensions() == b.dimensions() {
+        let total: u64 = a
+            .as_raw()
+            .iter()
+            .zip(b.as_raw())
+            .map(|(x, y)| (*x as i32 - *y as i32).unsigned_abs() as u64)
+            .sum();
+        format!("{:.4}", total as f64 / a.as_raw().len().max(1) as f64)
+    } else {
+        "null".into()
+    };
+    println!(
+        "{{\"a\":[{},{}],\"b\":[{},{}],\"mad\":{mad}}}",
+        a.width(),
+        a.height(),
+        b.width(),
+        b.height()
+    );
+    Ok(())
+}
+
+fn close(window: &str) -> Result<()> {
+    let window = parse_window(window)?;
+    let (conn, _) = x11rb::connect(None)?;
+    let protocols = atom(&conn, "WM_PROTOCOLS")?;
+    let delete = atom(&conn, "WM_DELETE_WINDOW")?;
+    let event = ClientMessageEvent::new(32, window, protocols, [delete, x11rb::CURRENT_TIME, 0, 0, 0]);
+    conn.send_event(false, window, EventMask::NO_EVENT, event)?.check()?;
+    conn.flush()?;
+    Ok(())
+}

@@ -1,0 +1,1 @@
+{"kind":"null","engine":"cua-engine 0.0.1 (5dd016bfc22e)","source":"recorded by scripts/linux-engine-diff.mjs --record-wire on a harness-owned gedit window","request":{"id":3,"command":"click","input":{"window":{"id":33554680},"x":455,"y":600}},"response":{"id":3,"ok":true,"output":null,"error":null,"restart":false}}

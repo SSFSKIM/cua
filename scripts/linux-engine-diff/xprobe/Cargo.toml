@@ -1,0 +1,20 @@
+[package]
+name = "linux-engine-diff-xprobe"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.94"
+publish = false
+description = "The differential harness's own X client (#171): the witness, the retention probe, image comparison, window close"
+
+[[bin]]
+name = "xprobe"
+path = "src/main.rs"
+
+# A harness tool, never shipped: it uses the engine's own vetted crates (native/linux-engine/Cargo.toml) at the
+# versions its Cargo.lock pins, so it builds offline from the same registry cache.
+[dependencies]
+x11rb = { version = "0.13.2", features = ["composite"] }
+image = { version = "0.25.10", default-features = false, features = ["jpeg"] }
+
+[profile.release]
+codegen-units = 1

@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>cua171 diff big text</title>
+</head>
+<body>
+<!-- The single-reply-over-R case (Design, Observation): one entry whose text is over 4 MiB, so its GetText reply
+     alone exceeds the frontier's 4 MiB byte budget and must still be read whole. -->
+<p>One entry whose text is over 4 MiB.</p>
+<input id="big" type="text" aria-label="big">
+<script>
+  document.title = decodeURIComponent(location.hash.slice(1)) || document.title;
+  document.getElementById('big').value = `cua171 ${'abcdefghij'.repeat(470000)} end`;
+</script>
+</body>
+</html>

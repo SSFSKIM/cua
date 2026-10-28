@@ -18,8 +18,10 @@ import { appendFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { availableParallelism, loadavg } from 'node:os';
 import { join } from 'node:path';
 
+import { elementClick, partialCover } from './clicks.mjs';
 import { Engine } from './engine.mjs';
 import { familyNames, openFamily, readText } from './families.mjs';
+import { matrixOutcome } from './matrix-judge.mjs';
 import { matrixMarkdown, runMatrix } from './matrix.mjs';
 import { Oracle } from './oracle.mjs';
 import { qtBridge } from './qt-bridge.mjs';
@@ -291,21 +293,26 @@ export async function runExperiment(args) {
   const desktop = new Desktop({ cua: args.cua, run });
   const load = args.load ? startLoad(emit) : null;
   let md;
+  // a matrix run that could not judge a family it was asked for is incomplete, and the run exits nonzero
+  let outcome = { complete: true, failed: [] };
   try {
     if (args.experiment === 'capture-readiness') md = await captureReadiness(desktop, emit, { families: args.families });
     else if (args.experiment === 'key-pace') md = await keyPace(desktop, emit, args.cua, { families: args.families });
     else if (args.experiment === 'qt-bridge') md = await qtBridge(desktop, emit, { vendor: args.vendor });
+    else if (args.experiment === 'element-click') md = await elementClick(desktop, emit, args);
+    else if (args.experiment === 'partial-cover') md = await partialCover(desktop, emit, args);
     else if (args.experiment === 'matrix') {
-      await runMatrix(args, { desktop, emit, run });
+      const { names } = await runMatrix(args, { desktop, emit, run });
       const rows = readFileSync(results, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((r) => r.run === run);
       md = matrixMarkdown(rows);
+      outcome = matrixOutcome(rows, names);
     } else throw new Error(`unknown experiment ${args.experiment}`);
   } finally {
     await desktop.closeAll();
     if (load) await load.stop();
   }
-  emit({ kind: 'experiment-summary', markdown: md, finished: new Date().toISOString() });
+  emit({ kind: 'experiment-summary', markdown: md, complete: outcome.complete, failed: outcome.failed, finished: new Date().toISOString() });
   process.stdout.write(`${md.join('\n')}\n`);
   writeSummary(args.out);
-  return true;
+  return outcome.complete;
 }

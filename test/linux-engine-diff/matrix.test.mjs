@@ -3,6 +3,7 @@ import { test } from 'node:test';
 
 import {
   caretArrived,
+  matrixOutcome,
   classifyFamily,
   clickPoints,
   counterArrived,
@@ -149,4 +150,43 @@ test('capture readiness: the slowest real contents against the 40 ms wait, flagg
 
 test("typed text is found through Firefox's U+FEFF after a character beyond the BMP", () => {
   assert.equal(typedArrived('cua171 Ωé🙂 newest0', '', 'cua171 Ωé🙂\uFEFF newest0'), true);
+});
+
+test('a family whose clicks could not be read while its keys were taken is partial, not takes', () => {
+  const s = summarizeFamily([row('cua', 'key', true), row('pinned', 'key', true), row('cua', 'click', null), row('pinned', 'click', null)]);
+  const c = classifyFamily(s);
+  assert.equal(c.background, 'partial');
+  assert.deepEqual(c.unknown_ops, ['click']);
+  assert.equal(c.description, 'takes keys; clicks unknown');
+  const md = renderMatrix([{ family: 'f', title: 'F', identity: {}, summary: s, run: 'r' }]).join('\n');
+  assert.match(md, /takes keys; clicks unknown/);
+  // every readable kind decided, mixed, keeps the plain words
+  assert.equal(classifyFamily(summarizeFamily([row('cua', 'key', false), row('cua', 'click', true)])).description, 'takes clicks; ignores keys');
+  assert.equal(classifyFamily(summarizeFamily([row('cua', 'key', true), row('cua', 'click', true)])).description, 'takes');
+});
+
+test('a matrix run is incomplete when a family failed structurally; refusals and ignored input are outcomes', () => {
+  const identity = (family, targets = { field: true }, kindOf = 'editor') => ({ kind: 'matrix-identity', family, kindOf, targets });
+  const refused = { kind: 'matrix-sample', family: 'gte', op: 'type_text', ok: false, effect: false };
+  const ignored = { kind: 'matrix-sample', family: 'gte', op: 'key', ok: true, effect: false };
+  assert.deepEqual(matrixOutcome([identity('gte'), refused, ignored], ['gte']), { complete: true, failed: [] });
+  // an exception while opening, reading or requesting
+  const error = { kind: 'matrix-error', family: 'qtcreator', error: 'Error: did not settle\n  at settle' };
+  assert.deepEqual(matrixOutcome([identity('gte'), error], ['gte', 'qtcreator']), { complete: false, failed: ['qtcreator: Error: did not settle'] });
+  // a family asked for that produced nothing
+  assert.deepEqual(matrixOutcome([identity('gte')], ['gte', 'kate']), { complete: false, failed: ['kate: no identity recorded'] });
+  // a family whose effect target was not found cannot judge its effects
+  assert.deepEqual(matrixOutcome([identity('firefox', { field: false, button: true }, 'page')], ['firefox']), { complete: false, failed: ['firefox: its field was not found'] });
+  // kinds read without accessibility objects (a terminal, pixels) need none
+  assert.deepEqual(matrixOutcome([identity('xterm', {}, 'terminal'), identity('writer-gen', { document: false }, 'pixels')], ['xterm', 'writer-gen']), { complete: true, failed: [] });
+});
+
+test('partial cover: whether the click point is under the front window, and how much of the window stays visible', async () => {
+  const { coverage } = await import('../../scripts/linux-engine-diff/clicks.mjs');
+  const firefox = { x: 0, y: 19, width: 1280, height: 781 };
+  const point = { x: 640, y: 220 };
+  assert.deepEqual(coverage([2, 40, 1276, 797], firefox, point), { point_covered: true, visible_fraction: 0.03 });
+  assert.deepEqual(coverage([542, 220, 196, 108], firefox, point), { point_covered: true, visible_fraction: 0.979 });
+  assert.deepEqual(coverage([2, 490, 1276, 342], firefox, point), { point_covered: false, visible_fraction: 0.604 });
+  assert.deepEqual(coverage([1300, 0, 100, 100], firefox, point), { point_covered: false, visible_fraction: 1 });
 });

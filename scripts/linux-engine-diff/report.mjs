@@ -5,6 +5,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { matrixMarkdown } from './matrix-judge.mjs';
 import { summarizeEngine } from './stats.mjs';
 
 const fmt = (v) => (v === null || v === undefined ? '–' : String(v));
@@ -21,7 +22,9 @@ export function renderSummary(lines) {
     const meta = rows.find((r) => r.kind === 'meta');
     if (meta?.experiment) {
       out.push(`## ${run} (experiment ${meta.experiment})`, '');
-      for (const r of rows.filter((x) => x.kind === 'experiment-summary')) out.push(...r.markdown, '');
+      // a matrix is rendered from its rows with the current judgement; other experiments keep their own summary
+      if (meta.experiment === 'matrix') out.push(...matrixMarkdown(rows), '');
+      else for (const r of rows.filter((x) => x.kind === 'experiment-summary')) out.push(...r.markdown, '');
       continue;
     }
     out.push(`## ${run}`, '');

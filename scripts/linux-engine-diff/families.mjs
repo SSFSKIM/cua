@@ -103,6 +103,13 @@ export const FAMILIES = {
       match: byTitle(ctx.label),
     }),
   },
+  'gtk4-button': {
+    title: 'GTK 4 button (harness scene)',
+    kind: 'button',
+    geometry: [600, 400],
+    // pages/gtk4-button.py: one button whose label counts its presses
+    launch: (ctx) => ({ cmd: 'python3', args: ['-I', join(PAGES, 'gtk4-button.py'), ctx.label], match: (w) => w.title === ctx.label }),
+  },
   kate: {
     title: 'Qt 5 kate',
     kind: 'editor',
@@ -294,6 +301,8 @@ async function resolveTargets(desktop, oracle, scene) {
   } else if (scene.kindOf === 'page') {
     scene.field = nodes.find((n) => n.role === 'entry' && n.name === 'Field')?.id ?? null;
     scene.button = nodes.find((n) => n.role === 'push button' && /^presses \d+$/.test(n.name ?? ''))?.id ?? null;
+  } else if (scene.kindOf === 'button') {
+    scene.button = nodes.find((n) => COUNTED.test(n.name ?? ''))?.id ?? null;
   } else if (scene.kindOf === 'electron') {
     scene.field = nodes.find((n) => n.role === 'entry' && n.name === 'Fixture text')?.id ?? null;
     scene.button = nodes.find((n) => n.role === 'push button' && n.name === 'Fixture button')?.id ?? null;
@@ -334,10 +343,12 @@ export async function readCaret(desktop, oracle, scene) {
   }
 }
 
-/** The click counter: the matrix page's button label, the Electron fixture's status. */
+const COUNTED = /^presses \d+$/;
+
+/** The click counter: the matrix page's or the GTK 4 scene's button label, the Electron fixture's status. */
 export async function readCounter(desktop, oracle, scene) {
   const nodes = preorder((await desktop.state(scene)).ax_tree);
-  const text = scene.kindOf === 'page' ? nodes.find((n) => n.role === 'push button' && /^presses \d+$/.test(n.name ?? ''))?.name : nodes.find((n) => /^Pressed \d+ times?$/.test(n.name ?? ''))?.name;
+  const text = scene.kindOf === 'electron' ? nodes.find((n) => /^Pressed \d+ times?$/.test(n.name ?? ''))?.name : nodes.find((n) => COUNTED.test(n.name ?? ''))?.name;
   const m = text?.match(/(\d+)/);
   return m ? Number(m[1]) : null;
 }

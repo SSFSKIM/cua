@@ -129,14 +129,50 @@ export function classifyFamily(summary, { engines = ['pinned', 'newest', 'cua'] 
     }
     states[op] = known === 0 ? 'unknown' : arrived === 0 ? 'ignored' : arrived === known ? 'taken' : 'partial';
   }
-  const seen = Object.values(states).filter((s) => s !== 'unknown');
-  const background = seen.length === 0 ? 'unknown' : seen.every((s) => s === 'taken') ? 'takes' : seen.every((s) => s === 'ignored') ? 'ignores' : 'partial';
+  const values = Object.values(states);
+  const uniform = values.every((s) => s === values[0]);
+  const background = uniform ? { taken: 'takes', ignored: 'ignores', unknown: 'unknown', partial: 'partial' }[values[0]] : 'partial';
+  const plural = { click: 'clicks', key: 'keys' };
+  const words = { taken: 'takes', ignored: 'ignores', partial: 'partly takes' };
+  const of = (state) => Object.entries(states).filter(([, s]) => s === state).map(([op]) => op);
+  // `takes keys; clicks unknown`: each decided kind with its verb, then the kinds nothing could be read for
+  const description = uniform
+    ? background
+    : [
+        ...['taken', 'ignored', 'partial'].filter((state) => of(state).length).map((state) => `${words[state]} ${of(state).map((op) => plural[op]).join(' and ')}`),
+        ...(of('unknown').length ? [`${of('unknown').map((op) => plural[op]).join(' and ')} unknown`] : []),
+      ].join('; ');
   return {
     background,
+    description,
     ops: states,
-    ignored_ops: Object.entries(states).filter(([, s]) => s === 'ignored').map(([op]) => op),
+    ignored_ops: of('ignored'),
+    unknown_ops: of('unknown'),
     witness: n > 0 && clean === n ? 'clean' : 'dirty',
   };
+}
+
+// The objects a family's effects are read from, by how they are read: a run that did not find them cannot judge.
+const NEEDED = { editor: ['field'], paragraphs: ['document'], page: ['field'], button: ['button'], electron: ['field', 'button'], terminal: [], pixels: [] };
+
+/**
+ * Whether a matrix run is complete: every family asked for recorded its identity, found what its effects are read
+ * from, and raised no exception while opening, reading or requesting. A vendor's refusal and input a family
+ * ignores are outcomes the run records, not failures.
+ */
+export function matrixOutcome(rows, families) {
+  const failed = [];
+  for (const family of families) {
+    const error = rows.find((r) => r.kind === 'matrix-error' && r.family === family);
+    const identity = rows.find((r) => r.kind === 'matrix-identity' && r.family === family);
+    if (error) failed.push(`${family}: ${String(error.error).split('\n')[0]}`);
+    else if (!identity) failed.push(`${family}: no identity recorded`);
+    else {
+      const missing = (NEEDED[identity.kindOf] ?? []).filter((t) => !identity.targets?.[t]);
+      if (missing.length) failed.push(`${family}: its ${missing.join(' and ')} ${missing.length > 1 ? 'were' : 'was'} not found`);
+    }
+  }
+  return { complete: failed.length === 0, failed };
 }
 
 const cell = (s) => {
@@ -166,10 +202,33 @@ export function renderMatrix(families, { engines = ['pinned', 'newest', 'cua'], 
     const toolkit = id.toolkit ? `${id.toolkit}${id.toolkit_version ? ` ${id.toolkit_version}` : ''}` : 'none (no AT-SPI provider)';
     const ops = (op, list) => list.map((e) => cell(f.summary[op]?.[e])).join(' / ');
     const c = classifyFamily(f.summary, { engines });
-    const background = c.background === 'partial' ? `partial (ignores ${c.ignored_ops.join(', ') || 'some'})` : c.background;
+    const background = c.background === 'partial' ? `partial: ${c.description}` : c.background;
     out.push(`| ${f.title} | ${toolkit} | ${id.wm_class ?? '–'} | ${id.source ?? '–'}${id.nodes ? ` (${id.nodes})` : ''} | ${ops('click', engines)} | ${ops('key', engines)} | ${ops('type_text', textEngines)} | ${c.witness} | ${background} | ${f.run} |`);
   }
   return out;
+}
+
+/** The matrix table and the list of families that ignore background input, from a run's rows. */
+export function matrixMarkdown(rows) {
+  const families = [];
+  for (const id of rows.filter((r) => r.kind === 'matrix-identity')) {
+    const samples = rows.filter((r) => r.kind === 'matrix-sample' && r.family === id.family && r.run === id.run);
+    families.push({ family: id.family, title: id.title, identity: id, summary: summarizeFamily(samples), run: id.run });
+  }
+  const md = renderMatrix(families);
+  const none = renderMatrix(families, { engines: ['cua', 'cua:none'], textEngines: [] });
+  md.push('', 'Without the redirect (`cua:none`, `--retention none`) beside cua with session retention:', '', ...none);
+  const ignoring = families.filter((f) => classifyFamily(f.summary).background !== 'takes');
+  md.push('', 'Families that do not take the background route:', '');
+  if (ignoring.length === 0) md.push('- none');
+  for (const f of ignoring) {
+    const c = classifyFamily(f.summary);
+    md.push(`- ${f.title} (${f.identity.wm_class}; ${f.identity.toolkit ?? 'no AT-SPI provider'}): ${c.description} (run \`${f.run}\`)`);
+  }
+  const meta = rows.find((r) => r.kind === 'meta');
+  const outcome = matrixOutcome(rows, meta?.families?.length ? meta.families : [...new Set(rows.filter((r) => r.family).map((r) => r.family))]);
+  md.push('', outcome.complete ? 'The run is complete.' : `**The run is incomplete:** ${outcome.failed.join('; ')}`);
+  return md;
 }
 
 export { OPS };

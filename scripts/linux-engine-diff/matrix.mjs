@@ -10,7 +10,7 @@
 
 import { Engine } from './engine.mjs';
 import { FAMILIES, familyNames, openFamily, readCaret, readCounter, readText, textArea, wmClass } from './families.mjs';
-import { caretArrived, classifyFamily, clickPoints, counterArrived, keyArrived, renderMatrix, summarizeFamily, terminalClickArrived, typedArrived } from './matrix-judge.mjs';
+import { caretArrived, clickPoints, counterArrived, keyArrived, terminalClickArrived, typedArrived } from './matrix-judge.mjs';
 import { Oracle } from './oracle.mjs';
 import { captureWindow, pixelsChanged } from './pixels.mjs';
 import { negativeCheck } from './run.mjs';
@@ -156,6 +156,7 @@ async function identify(desktop, oracle, scene, args) {
   await pinned.close();
   identity.source_pinned = p.ok ? p.output.ax_tree_source : `error: ${String(p.error).slice(0, 200)}`;
   identity.targets = { field: Boolean(scene.field), button: Boolean(scene.button), document: Boolean(scene.document) };
+  identity.kindOf = scene.pixels ? 'pixels' : scene.kindOf;
   return identity;
 }
 
@@ -207,26 +208,7 @@ export async function runMatrix(args, { desktop, emit, run }) {
   } finally {
     await witness.stop();
   }
-  return { run, results };
+  return { run, results, names };
 }
 
-/** The matrix table and the list of families that ignore background input, from a run's rows. */
-export function matrixMarkdown(rows) {
-  const families = [];
-  for (const id of rows.filter((r) => r.kind === 'matrix-identity')) {
-    const samples = rows.filter((r) => r.kind === 'matrix-sample' && r.family === id.family && r.run === id.run);
-    families.push({ family: id.family, title: id.title, identity: id, summary: summarizeFamily(samples), run: id.run });
-  }
-  const md = renderMatrix(families);
-  const none = renderMatrix(families, { engines: ['cua', 'cua:none'], textEngines: [] });
-  md.push('', 'Without the redirect (`cua:none`, `--retention none`) beside cua with session retention:', '', ...none);
-  const ignoring = families.filter((f) => classifyFamily(f.summary).background !== 'takes');
-  md.push('', 'Families that do not take the background route:', '');
-  if (ignoring.length === 0) md.push('- none');
-  for (const f of ignoring) {
-    const c = classifyFamily(f.summary);
-    md.push(`- ${f.title} (${f.identity.wm_class}; ${f.identity.toolkit ?? 'no AT-SPI provider'}): ${c.background}${c.ignored_ops.length ? `, ignores ${c.ignored_ops.join(' and ')}` : ''} (run \`${f.run}\`)`);
-  }
-  for (const e of rows.filter((r) => r.kind === 'matrix-error')) md.push(`- **${e.family}: the run failed** (${e.error.split('\n')[0]})`);
-  return md;
-}
+export { matrixMarkdown } from './matrix-judge.mjs';

@@ -76,15 +76,22 @@ fn click_once(
 /// The drag after the pointer is placed at its first point: the chord, the press, every sample, the release.
 fn drag_along(x: &X11, route: &mut Route, keycodes: &[u8], points: &[(i16, i16)]) -> Result<()> {
     let held = route.acquire(x, keycodes)?;
+    let mut pressed = false;
     let dragged = (|| -> Result<()> {
         route.place_again(x, points[0].0, points[0].1)?;
         route.button(x, 1, true)?;
+        pressed = true;
         for (sx, sy) in drag_samples(points) {
             route.place_again(x, sx, sy)?;
             std::thread::sleep(DRAG_STEP);
         }
+        pressed = false;
         route.button(x, 1, false)
     })();
+    if pressed {
+        // interrupted while the button is down: its release is attempted; the interruption stays the answer
+        let _ = route.button(x, 1, false);
+    }
     let keys_released = route.release(x, &held);
     dragged.and(keys_released)
 }

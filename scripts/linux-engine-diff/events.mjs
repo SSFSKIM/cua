@@ -71,6 +71,12 @@ export function scenarios() {
     { name: 'scroll validation', steps: [{ command: 'scroll', input: { window: W, direction: 'down', pixels: 0 } }, { command: 'scroll', input: { window: W, direction: 'down', x: 10 } }, { command: 'scroll', input: { window: W, direction: 'down', pixels: 0, x: 10, y: 10 } }, { command: 'scroll', input: { window: W, direction: 'down', element_id: ':1.1/x', x: 1, y: 1 } }] },
     { name: 'drag', steps: [{ command: 'drag', input: { window: W, path: [{ x: 10, y: 10 }, { x: 30, y: 17 }, { x: 450, y: 350 }] } }] },
     { name: 'a bad chord on move, scroll and drag', steps: [{ command: 'move', input: { window: W, x: 10, y: 10, key: 'bogus' } }, { command: 'scroll', input: { window: W, direction: 'down', key: 'bogus' } }, { command: 'drag', input: { window: W, path: [{ x: 10, y: 10 }, { x: 12, y: 12 }], key: 'bogus' } }] },
+    // the child destroys itself on its ButtonPress (`xprobe record … fragile`): the request is interrupted, and the
+    // window session a held key keeps must still serve the next request in the live parent. Which X request meets
+    // the destroyed child first is a race with the recorder, so the interrupted step is compared as interrupted
+    // (failed, with an X Window error) and its events not at all; the steps after it are compared exactly.
+    { name: 'an interrupted drag under a held key, then a move', fragile: true, steps: [down('ctrl'), { command: 'drag', input: { window: W, path: [{ x: 450, y: 350 }, { x: 460, y: 360 }] }, interrupted: true }, { command: 'move', input: { window: W, x: 10, y: 10 } }, up('ctrl')] },
+    { name: 'an interrupted click under a held key, then a move', fragile: true, steps: [down('ctrl'), { command: 'click', input: { window: W, x: 450, y: 350 }, interrupted: true }, { command: 'move', input: { window: W, x: 10, y: 10 } }, { command: 'click', input: { window: W, x: 10, y: 10 } }, up('ctrl')] },
     { name: 'drag with a chord, and a short path', steps: [{ command: 'drag', input: { window: W, path: [{ x: 10, y: 10 }, { x: 13, y: 14 }], key: 'alt' } }, { command: 'drag', input: { window: W, path: [{ x: 10, y: 10 }] } }] },
   ];
   const desktop = [
@@ -115,6 +121,11 @@ export function bindStep(step, window) {
   return { command: step.command, input };
 }
 
+/** An interrupted step's answer: only that it failed on a window that went away. */
+export function interruptedAnswer(response) {
+  return { ok: response.ok, x_window_error: /error_kind: Window\b/.test(String(response.error)) };
+}
+
 /** One engine's answer, reduced to what is compared: success, or the error with the X sequence number masked. */
 export function normalizeAnswer(response) {
   if (response.ok) return { ok: true, output: response.output };
@@ -155,9 +166,10 @@ async function startServer() {
 }
 
 class Recorder {
-  constructor(env, focus) {
+  constructor(env, { focus = false, fragile = false } = {}) {
     const { x, y, width, height } = RECORDER;
-    this.child = spawn(XPROBE, ['record', String(x), String(y), String(width), String(height), ...(focus ? ['focus'] : [])], { env, stdio: ['pipe', 'pipe', 'inherit'] });
+    const flags = [...(focus ? ['focus'] : []), ...(fragile ? ['fragile'] : [])];
+    this.child = spawn(XPROBE, ['record', String(x), String(y), String(width), String(height), ...flags], { env, stdio: ['pipe', 'pipe', 'inherit'] });
     this.lines = [];
     this.waiters = [];
     createInterface({ input: this.child.stdout }).on('line', (line) => {
@@ -196,7 +208,7 @@ class Recorder {
 /** Runs one scenario on one engine: a fresh recorder and engine process, the pointer put at its start. */
 async function runScenario(scenario, engine, env) {
   execFileSync('xdotool', ['mousemove', String(POINTER_START[0]), String(POINTER_START[1])], { env });
-  const recorder = new Recorder(env, scenario.route === 'desktop');
+  const recorder = new Recorder(env, { focus: scenario.route === 'desktop', fragile: scenario.fragile });
   const window = await recorder.ready();
   const engineEnv = scenario.apps ? { ...env, XDG_DATA_HOME: env.EVENTS_APPS, XDG_DATA_DIRS: '' } : env;
   const process_ = new Engine({ label: engine.label, bin: engine.bin, args: engine.args ?? [], env: engineEnv }).start();
@@ -205,7 +217,9 @@ async function runScenario(scenario, engine, env) {
     for (const [i, step] of scenario.steps.entries()) {
       const { command, input } = bindStep(step, window);
       const { response } = await process_.request(command, input, { timeoutMs: 30000 });
-      steps.push({ command, answer: normalizeAnswer(response), events: await recorder.mark(`step-${i}`) });
+      const events = await recorder.mark(`step-${i}`);
+      if (step.interrupted) steps.push({ command, answer: interruptedAnswer(response), events: [], raw: { answer: normalizeAnswer(response), events } });
+      else steps.push({ command, answer: normalizeAnswer(response), events });
     }
     await process_.close();
     steps.push({ command: 'exit', answer: { ok: true }, events: await recorder.mark('exit') });

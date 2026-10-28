@@ -84,8 +84,13 @@ impl Desktop {
 
     /// Releases in reverse press order; every release is attempted and the first failure returned.
     pub fn release(&mut self, x: &X11, keycodes: &[u8]) -> Result<()> {
+        self.release_tracked(x, keycodes).0
+    }
+
+    /// [`Desktop::release`], also answering the references still unreleased ([`Keys::release_tracked`]).
+    pub fn release_tracked(&mut self, x: &X11, keycodes: &[u8]) -> (Result<()>, Vec<u8>) {
         let pace = self.key_pace;
-        self.keys.release(keycodes, |keycode, _| {
+        self.keys.release_tracked(keycodes, |keycode, _| {
             let sent = Self::key(x, keycode, false);
             std::thread::sleep(pace);
             sent

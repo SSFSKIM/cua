@@ -1,11 +1,12 @@
-//! `xprobe record <x> <y> <width> <height> [focus]`: a harness-owned recorder window that prints every input event
+//! `xprobe record <x> <y> <width> <height> [focus] [fragile]`: a harness-owned recorder window that prints every input event
 //! it receives, for comparing the X events two engines send (Design, Input, Keys: "the same `press_key`, `key_down`
 //! and `key_up` sequences produce the same X key events in both engines").
 //!
 //! It creates an override-redirect top-level window (so no window manager manages, focuses or stacks it) with a child
 //! covering its lower-right quarter (so pointer events show which window was the deepest under the point), maps both,
 //! and with `focus` gives the top-level the input focus (for the desktop route on a private X server, where XTEST
-//! input goes to the focus). A background-route event (`SendEvent` with mask 0) reaches the client that created the
+//! input goes to the focus). With `fragile` the child destroys itself on its first ButtonPress (an application window
+//! that goes away under a drag). A background-route event (`SendEvent` with mask 0) reaches the client that created the
 //! window, which is this one; a desktop-route event reaches it as the selected real event.
 //!
 //! It prints `{"ready":…,"window":…,"child":…}`, then one JSON line per event. A stdin line `mark <tag>` makes a
@@ -29,11 +30,12 @@ pub fn record(args: &[String]) -> Result<()> {
     let number = |i: usize| -> Result<i32> {
         Ok(args
             .get(i)
-            .ok_or("record needs <x> <y> <width> <height> [focus]")?
+            .ok_or("record needs <x> <y> <width> <height> [focus] [fragile]")?
             .parse()?)
     };
     let (x, y, width, height) = (number(0)?, number(1)?, number(2)?, number(3)?);
-    let focus = args.get(4).is_some_and(|a| a == "focus");
+    let flag = |name: &str| args.iter().skip(4).any(|a| a == name);
+    let (focus, fragile) = (flag("focus"), flag("fragile"));
     let (conn, screen) = x11rb::connect(None)?;
     let root = conn.setup().roots[screen].root;
     let mask = EventMask::KEY_PRESS
@@ -151,9 +153,16 @@ pub fn record(args: &[String]) -> Result<()> {
         writeln!(out, "{line}")?;
         Ok(())
     };
+    let mut child_alive = true;
     loop {
         while let Some(event) = conn.poll_for_event()? {
+            let pressed_child = matches!(&event, Event::ButtonPress(e) if e.event == child);
             print(&mut out, event)?;
+            if fragile && child_alive && pressed_child {
+                conn.destroy_window(child)?;
+                conn.flush()?;
+                child_alive = false;
+            }
         }
         out.flush()?;
         match rx.recv_timeout(Duration::from_millis(1)) {

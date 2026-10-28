@@ -63,7 +63,7 @@ impl Engine {
     }
 
     /// Releases a hold: one not found (on this target) is a no-op, though the chord must still parse. A release
-    /// that fails keeps the hold with the keys still held, and answers the error.
+    /// that fails keeps the hold with its own references still unreleased, and answers the error.
     pub(super) fn key_up(&mut self, input: Option<Value>) -> Result<Value> {
         let input: KeyInput = parse_input(input)?;
         let chord = parse_chord(&input.key).map_err(anyhow::Error::msg)?;
@@ -76,12 +76,13 @@ impl Engine {
         };
         let Engine { x, inputs, .. } = self;
         inputs.with_route(x, target, |x, route, holds| {
-            let released = route.release(x, &hold.keycodes);
-            if released.is_err() {
-                let keycodes: Vec<u8> = hold.keycodes.iter().copied().filter(|k| route.holds_key(*k)).collect();
-                if !keycodes.is_empty() {
-                    holds.insert(Hold { keycodes, ..hold });
-                }
+            // the hold keeps exactly its own references the release left, never another hold's share of a key
+            let (released, unreleased) = route.release_tracked(x, &hold.keycodes);
+            if !unreleased.is_empty() {
+                holds.insert(Hold {
+                    keycodes: unreleased,
+                    ..hold
+                });
             }
             released
         })?;

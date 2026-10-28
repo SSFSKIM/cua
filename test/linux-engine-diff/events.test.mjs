@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { parseArgs } from '../../scripts/linux-engine-diff/cli.mjs';
-import { bindStep, firstDifference, normalizeAnswer, normalizeEvent, scenarios } from '../../scripts/linux-engine-diff/events.mjs';
+import { bindStep, firstDifference, interruptedAnswer, normalizeAnswer, normalizeEvent, scenarios } from '../../scripts/linux-engine-diff/events.mjs';
 
 const key = (type, detail, state) => ({ type, send: true, detail, state, window: 'top', x: 0, y: 0, root_x: 0, root_y: 0 });
 
@@ -25,6 +25,14 @@ test('answers compare with X sequence numbers and window ids masked', () => {
   });
 });
 
+test('an interrupted step compares only as failed on a window that went away', () => {
+  const send = { ok: false, error: 'X11 error X11Error { error_kind: Window, error_code: 3, request_name: Some("SendEvent") }' };
+  const translate = { ok: false, error: 'X11 error X11Error { error_kind: Window, error_code: 3, request_name: Some("TranslateCoordinates") }' };
+  assert.deepEqual(interruptedAnswer(send), interruptedAnswer(translate));
+  assert.deepEqual(interruptedAnswer(send), { ok: false, x_window_error: true });
+  assert.notDeepEqual(interruptedAnswer({ ok: true, error: null }), interruptedAnswer(send));
+});
+
 test('the first difference names the step, then the answer or the event', () => {
   const step = (answer, events) => ({ answer, events });
   const ok = { ok: true, output: null };
@@ -44,7 +52,7 @@ test('the first difference names the step, then the answer or the event', () => 
 
 test('the scenarios cover the mixed-case shortcuts, held chords and both routes', () => {
   const names = scenarios().map((s) => s.name);
-  for (const name of ['press_key Z', 'press_key Ctrl+Z', 'press_key Ctrl+Shift+Z', 'two holds sharing ctrl', 'holds left at exit are released with their state', 'desktop held ctrl around press_key a', 'drag_handle']) {
+  for (const name of ['press_key Z', 'press_key Ctrl+Z', 'press_key Ctrl+Shift+Z', 'two holds sharing ctrl', 'holds left at exit are released with their state', 'desktop held ctrl around press_key a', 'drag_handle', 'an interrupted drag under a held key, then a move']) {
     assert.ok(names.includes(name), name);
   }
   assert.equal(new Set(names).size, names.length, 'names are unique');

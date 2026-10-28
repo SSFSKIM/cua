@@ -114,8 +114,18 @@ impl Keys {
 
     /// Releases in reverse order; a key held more than once is only counted down. Every release is attempted; a
     /// failed one leaves its key counted and the first error is returned (behaviour §11.3).
-    pub fn release(&mut self, keycodes: &[u8], mut unpress: impl FnMut(u8, u16) -> Result<()>) -> Result<()> {
+    pub fn release(&mut self, keycodes: &[u8], unpress: impl FnMut(u8, u16) -> Result<()>) -> Result<()> {
+        self.release_tracked(keycodes, unpress).0
+    }
+
+    /// [`Keys::release`], also answering which of these references are still unreleased (in press order).
+    pub fn release_tracked(
+        &mut self,
+        keycodes: &[u8],
+        mut unpress: impl FnMut(u8, u16) -> Result<()>,
+    ) -> (Result<()>, Vec<u8>) {
         let mut first = None;
+        let mut unreleased = Vec::new();
         for &keycode in keycodes.iter().rev() {
             match self.held.get(&keycode).copied() {
                 Some(count) if count > 1 => {
@@ -127,16 +137,20 @@ impl Keys {
                         self.press_order.retain(|k| *k != keycode);
                     }
                     Err(error) => {
+                        // the key stays counted once: this reference is the one still held
                         first.get_or_insert(error);
+                        unreleased.push(keycode);
                     }
                 },
                 _ => {}
             }
         }
-        first.map_or(Ok(()), Err)
+        unreleased.reverse();
+        (first.map_or(Ok(()), Err), unreleased)
     }
 
     /// The keys held, in the order they were pressed.
+    #[cfg(test)]
     pub fn press_order(&self) -> &[u8] {
         &self.press_order
     }
@@ -269,11 +283,7 @@ impl Session {
         let (target, buttons, time) = (self.target, self.buttons, self.clock());
         self.keys
             .release_all(|keycode, mask| send_key(x, target, time(), keycode, false, buttons | mask));
-        for button in 1..=3u8 {
-            if self.buttons & (1 << (button + 7)) != 0 {
-                let _ = self.button(x, button, false);
-            }
-        }
+        self.release_buttons(x);
         std::thread::sleep(self.pacing.teardown);
         if self.synthesized_focus && !focus_is_within(x, self.target).unwrap_or(false) {
             let focus_out = FocusOutEvent {
@@ -292,6 +302,18 @@ impl Session {
         let _ = x.flush();
     }
 
+    /// Releases every button still down (best effort: a failed release, for a window gone under it, is dropped) and
+    /// clears the button state and the implicit grab whatever the sends did, so the next request starts clean.
+    pub fn release_buttons(&mut self, x: &X11) {
+        for button in 1..=5u8 {
+            if self.buttons & (1 << (button + 7)) != 0 {
+                let _ = self.button(x, button, false);
+            }
+        }
+        self.buttons = 0;
+        self.grab = None;
+    }
+
     fn now(&self) -> u32 {
         self.clock()()
     }
@@ -306,11 +328,6 @@ impl Session {
     /// them (behaviour §8.3).
     fn state(&self) -> u16 {
         self.buttons | self.keys.mask()
-    }
-
-    /// Whether the keycode is still counted as held for this window.
-    pub fn holds_key(&self, keycode: u8) -> bool {
-        self.keys.press_order().contains(&keycode)
     }
 
     /// Presses each keycode not already held, in order, pacing after each new edge (behaviour §11.3).
@@ -334,8 +351,13 @@ impl Session {
     /// Releases in reverse press order, pacing after each edge; every release is attempted and the first failure
     /// is returned, so interrupted input never answers success.
     pub fn release(&mut self, x: &X11, keycodes: &[u8]) -> Result<()> {
+        self.release_tracked(x, keycodes).0
+    }
+
+    /// [`Session::release`], also answering the references still unreleased ([`Keys::release_tracked`]).
+    pub fn release_tracked(&mut self, x: &X11, keycodes: &[u8]) -> (Result<()>, Vec<u8>) {
         let (target, buttons, pace, time) = (self.target, self.buttons, self.pacing.key, self.clock());
-        self.keys.release(keycodes, |keycode, mask| {
+        self.keys.release_tracked(keycodes, |keycode, mask| {
             let sent = send_key(x, target, time(), keycode, false, buttons | mask);
             std::thread::sleep(pace);
             sent
@@ -597,6 +619,51 @@ mod tests {
             0,
             "the bookkeeping is clear afterwards, failed sends included"
         );
+        assert!(k.press_order().is_empty());
+    }
+
+    #[test]
+    fn a_failed_release_answers_only_this_holds_own_unreleased_references() {
+        // holds ctrl+a and ctrl+b share ctrl (count 2); a's release fails on a
+        let mut k = keys();
+        let a = k.acquire(&[CTRL, 38], |_, _| Ok(()), |_, _| Ok(())).unwrap();
+        let b = k.acquire(&[CTRL, 56], |_, _| Ok(()), |_, _| Ok(())).unwrap();
+        let (result, unreleased) =
+            k.release_tracked(&a, |kc, _| if kc == 38 { Err(anyhow!("BadWindow")) } else { Ok(()) });
+        assert!(result.is_err());
+        assert_eq!(
+            unreleased,
+            vec![38],
+            "a's ctrl reference was released (counted down); only a remains"
+        );
+        assert_eq!(k.mask(), 4, "b's ctrl still holds the Control mask");
+        // the retry of what remains of a releases a alone, and b's release then releases ctrl
+        let mut sent = Vec::new();
+        let (result, unreleased) = k.release_tracked(&unreleased, |kc, state| {
+            sent.push((kc, state));
+            Ok(())
+        });
+        assert!(result.is_ok() && unreleased.is_empty());
+        k.release(&b, |kc, state| {
+            sent.push((kc, state));
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(sent, vec![(38, 4), (56, 4), (CTRL, 4)]);
+        assert!(k.press_order().is_empty());
+    }
+
+    #[test]
+    fn a_duplicate_keycode_s_failed_edge_is_one_unreleased_reference() {
+        // a+a: one press, count 2; the release counts down once, then the edge fails
+        let mut k = keys();
+        let held = k.acquire(&[38, 38], |_, _| Ok(()), |_, _| Ok(())).unwrap();
+        assert_eq!(held, vec![38, 38]);
+        let (result, unreleased) = k.release_tracked(&held, |_, _| Err(anyhow!("BadWindow")));
+        assert!(result.is_err());
+        assert_eq!(unreleased, vec![38], "one reference left, not two");
+        let (result, unreleased) = k.release_tracked(&unreleased, |_, _| Ok(()));
+        assert!(result.is_ok() && unreleased.is_empty());
         assert!(k.press_order().is_empty());
     }
 

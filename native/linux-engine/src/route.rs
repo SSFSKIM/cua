@@ -84,8 +84,8 @@ impl Inputs {
     }
 
     /// Runs `body` on the target's route. A window's session is the held one if its keys are held, else opened for
-    /// this request; afterwards it stays open while the window has holds and is closed otherwise (whatever the
-    /// body's outcome; the body's error wins).
+    /// this request; afterwards it stays open while the window has holds, with any button still down released and
+    /// its grab dropped, and is closed otherwise (whatever the body's outcome; the body's error wins).
     pub fn with_route<T>(
         &mut self,
         x: &mut X11,
@@ -101,6 +101,8 @@ impl Inputs {
                 };
                 let result = body(x, &mut Route::Window(&mut session), &mut self.holds);
                 if self.holds.any_for(target) {
+                    // only key holds outlive a request: a button an interrupted request left down, and its grab, do not
+                    session.release_buttons(x);
                     self.sessions.insert(window, session);
                 } else {
                     session.close(x);
@@ -136,11 +138,11 @@ impl Route<'_> {
         }
     }
 
-    /// Whether the keycode is still counted as held for this target.
-    pub fn holds_key(&self, keycode: u8) -> bool {
+    /// [`Route::release`], also answering which of these references are still unreleased.
+    pub fn release_tracked(&mut self, x: &X11, keycodes: &[u8]) -> (Result<()>, Vec<u8>) {
         match self {
-            Route::Window(session) => session.holds_key(keycode),
-            Route::Desktop(desktop) => desktop.keys.press_order().contains(&keycode),
+            Route::Window(session) => session.release_tracked(x, keycodes),
+            Route::Desktop(desktop) => desktop.release_tracked(x, keycodes),
         }
     }
 

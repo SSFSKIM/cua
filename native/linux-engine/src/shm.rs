@@ -208,9 +208,9 @@ mod tests {
     }
 
     /// The same pixels as `GetImage`: a window painted in four colours, the root read both ways. Needs an X display
-    /// with MIT-SHM 1.2 (`xvfb-run -a cargo test -- --ignored shm`).
+    /// with MIT-SHM 1.2 (`xvfb-run -a cargo test --features live shm`).
     #[test]
-    #[ignore = "needs an X display"]
+    #[cfg_attr(not(feature = "live"), ignore = "needs an X display (--features live)")]
     fn shm_reads_the_root_exactly_as_get_image_does() {
         use x11rb::connection::Connection;
         use x11rb::protocol::xproto::{

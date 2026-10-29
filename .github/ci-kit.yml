@@ -1,6 +1,7 @@
 # cua's CI gates, run by ci-kit (https://github.com/SSFSKIM/ci-kit/blob/main/docs/adopting.md): on pull requests, and
-# from any worktree with `ci-gate`. Every gate runs on GitHub's hosted macOS runner, free for a public repo; an ubuntu
-# leg waits for the Linux fixes in #142. Live checks that need the owner, a TCC grant or the native helper (verify.mjs,
+# from any worktree with `ci-gate`. Every gate runs on GitHub's hosted macOS runner, free for a public repo, but
+# `engine-linux` (cua's Linux engine) on its Ubuntu runner; an ubuntu leg of the rest waits for the Linux fixes in
+# #142. Live checks that need the owner, a TCC grant or the native helper (verify.mjs,
 # accept-native, accept-chrome, parity's computer lanes) stay on the Mac mini; the headless ones run in `sandbox-live`,
 # the cfprefs denial check and parity's browser lanes (on a harness Chrome for Testing) in `sandbox-denials` and
 # `parity-browser` (by hand until its two racy cells are fixed).
@@ -40,6 +41,28 @@ gates:
       swift test --package-path native/engine --scratch-path "$RUNNER_TEMP/cua-engine-build"
     paths:
       - "native/engine/**"
+      - ".github/ci-kit.yml"
+  # #171: cua's own Linux engine (native/linux-engine/, Rust) formatted, built in release for the musl target as the
+  # release workflow (.github/workflows/linux-engine.yml) builds it, and its tests run: the unit tests, and under Xvfb
+  # with a session bus and AT-SPI the live ones (a GTK 3 window's tree read, a background key read back through the
+  # tree, a window screenshot; M2 adds paste). Comparisons against the vendor's engine run on the #171 VM, never here.
+  # No Node, so no shared setup; the toolchain is rust-toolchain.toml's.
+  - name: engine-linux
+    lane: hosted
+    timeout: 25
+    setup: false
+    run: |
+      sudo apt-get update -y
+      sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends xvfb xauth dbus at-spi2-core yad
+      cd native/linux-engine
+      rustup toolchain install
+      rustup target add x86_64-unknown-linux-musl
+      rustc --version
+      cargo fmt --check
+      cargo build --release --locked --target x86_64-unknown-linux-musl
+      xvfb-run -a dbus-run-session -- cargo test --release --locked --target x86_64-unknown-linux-musl --features live -- --test-threads 1
+    paths:
+      - "native/linux-engine/**"
       - ".github/ci-kit.yml"
   # #159: cua's headless macOS live checks (the #115 oracles, own-sandbox on both hosts, probe-secrets) on a runtime
   # `cua install` fetches into a scratch home, so a sandbox change is proven with no time on the Mac mini. Public logs

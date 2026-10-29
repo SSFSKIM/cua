@@ -18,7 +18,13 @@ cargo build --release
 printf '%s\n' '{"id":1,"command":"list_windows","input":{}}' | target/release/cua-engine server
 target/release/cua-engine --version   # cua-engine <version> (<git sha>)
 cargo test
+# the live tests (an X display, a session bus with AT-SPI, yad for a GTK 3 window), as the engine-linux gate runs them
+xvfb-run -a dbus-run-session -- cargo test --features live -- --test-threads 1
 ```
+
+Releases are built, tested and attested by `.github/workflows/linux-engine.yml` from the version in `Cargo.toml`
+(`linux-engine-v<version>`, static musl for x64 and arm64), and pinned in `runtime/engine/linux-engine.json` by
+`node scripts/linux-engine-pin.mjs linux-engine-v<version>`.
 
 ## How it observes
 

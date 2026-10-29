@@ -2514,3 +2514,14 @@ Window screenshots, every sample against the pinned build's last of its block (e
 
 run valid; every verdict PASS, finished 2026-10-29T14:06:13.991Z
 
+## m1a4-thumb-dwell (experiment drag)
+
+Every engine drags the same path 30 times per family and kind, in its own window (visible), each drag in a witness span; a run took effect when its result is the pinned build's (module header, drag.mjs). `cua:0ms` has no wait after a sample, after the press or before the release.
+
+| family | kind | pinned took | cua took | cua:0ms took | cua:r16 took | cua:r33 took | cua:r50 took | cua drag ms | cua:0ms drag ms | cua:r16 drag ms | cua:r33 drag ms | cua:r50 drag ms | pinned drag ms | witness | verdict |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---|
+| Chrome | scroller | 30/30 | 30/30 | 8/30 | 29/30 | 28/30 | 27/30 | 145.5 | 108.2 | 161.8 | 179 | 195.2 | 280.6 | clean | cua PASS, cua:0ms **misses 22**, cua:r16 **misses 1**, cua:r33 **misses 2**, cua:r50 **misses 3** |
+| Electron (cua fixture) | scroller | 30/30 | 30/30 | 2/30 | 30/30 | 27/30 | 30/30 | 145.6 | 108.5 | 161.9 | 178.5 | 195.4 | 277.9 | clean | cua PASS, cua:0ms **misses 28**, cua:r16 PASS, cua:r33 **misses 3**, cua:r50 PASS |
+
+Cells where a cua lane missed a run the pinned build took: chrome scroller (cua:0ms, cua:r16, cua:r33, cua:r50); electron scroller (cua:0ms, cua:r33).
+

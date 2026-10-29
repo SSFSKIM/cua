@@ -148,7 +148,7 @@ is the pinned build's:
 - a slider's value moved;
 - the content scrolled by a thumb drag within a quarter of the pinned build's median;
 - one more drop for DnD;
-- a canvas stroke whose mean deviation from the path is at most 12 px.
+- a canvas stroke that passes within 12 px of every corner of the path.
 
 The lanes are the pinned build, the newest, cua as shipped, `cua:0ms` (no wait anywhere) and `cua:dwell` (no step
 wait, 30 ms after the press and before the release).
@@ -198,6 +198,30 @@ Writer's first drag in a fresh window selects nothing in every engine; that is t
   - On the 60 px path the newest build scrolled 146–147 every time.
   - The pinned build scrolled 119–147 (mean 133).
   - cua at 500 µs scrolled 100–147 (mean 126–129); its shortest runs sit at the judge's 25% edge.
+- **The thumb dwell check** (`m1a4-thumb-dwell`, 2104e8cd, the design session's). Chromium's row was held at 500 µs a
+  step, and three release dwells were added one variant at a time: 16, 33 and 50 ms before the release, no press
+  dwell. Each was run on the scroller thumb in Chrome and Electron, 30 runs each, against the pinned build.
+  **No value brings the distance to the pinned build's**, so the row stays at 500 µs with no dwell.
+
+  | lane | Chrome took | Chrome shortest / mean px | Electron took | Electron shortest / mean px | drag ms |
+  |---|---:|---:|---:|---:|---:|
+  | pinned | 30/30 | 122 / 136.4 (median 136) | 30/30 | 122 / 134.6 (median 136.5) | 281 / 278 |
+  | cua (500 µs, as shipped) | 30/30 | 102 / 128.0 | 30/30 | 107 / 126.2 | 146 |
+  | 500 µs + 16 ms | 29/30 | 100 / 128.4 | 30/30 | 105 / 125.3 | 162 |
+  | 500 µs + 33 ms | 28/30 | 100 / 124.2 | 27/30 | 102 / 126.1 | 179 |
+  | 500 µs + 50 ms | 27/30 | 100 / 127.9 | 30/30 | 105 / 125.3 | 195 |
+
+  The release dwell does not move the distance: every lane's mean stays 124–128 px, 7–12 px short of the pinned
+  build's. The shortfall is in how Chromium takes the motions at 500 µs, not in the release.
+
+  **The margin to the judge's edge, as shipped.** The edge is 75% of the pinned median.
+  - In this run, Chrome's edge is 102.0 and cua's shortest run is 102, exactly on it; Electron's edge is 102.4 and
+    its shortest run is 107, 4.6 over.
+  - In `m1a4-drag-browsers`, the margins were 4.0 (Chrome, 103 against 99.0) and 6.4 (Electron, 105 against 98.6).
+  - cua's mean sits 6–8% under the pinned mean: 128.0 against 136.4 and 126.2 against 134.6 here, and 125.9 against
+    133.1 and 129.0 against 132.4 before.
+  - So a 30-run Chromium thumb cell can miss by a pixel or two on a later run. M5's drag check should expect that, or
+    judge the thumb by the mean.
 - **Chrome's HTML5 DnD changes the desktop in every engine** : stacking, focus and the active window, in 30/30 of the
   pinned build's drops. That is the application's doing, so the cell asks no
   witness of cua. Electron's and Firefox's drops leave the desktop alone.

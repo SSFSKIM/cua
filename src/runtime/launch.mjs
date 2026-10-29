@@ -98,7 +98,8 @@
 // elsewhere; docs/doperpowers/specs/2026-10-18-own-native-engine-design.md, EngineAttestation). CUA_REPL_HOST, CUA_NODE,
 // CUA_NATIVE_ENGINE and CUA_LINUX_ENGINE_BIN are read by the proxy only and never reach the runtime's environment. A
 // Linux launch also carries `engineRoot`, <home>/engine, and `linuxEngine`, the cua engine its computer surface runs
-// ({path, source}, null for the vendor's), which the scoped preflight protects. Deliberately never set:
+// ({path: its canonical path, the one OAI_SKY_LINUX_BIN names; lookup: the path it was found by; source}, null for the
+// vendor's), which the scoped preflight protects, the lookup's links included. Deliberately never set:
 // NODE_REPL_SANDBOX_ALLOWED_UNIX_SOCKETS, NODE_REPL_UNTRUSTED_ENV_ALLOWLIST (cells see only what the vendor launcher
 // adds), SKY_CUA_SERVICE_NATIVE_PIPE_PATH, NODE_REPL_HOST_SERVICES_PIPE_PATH, NODE_REPL_WORKER_WRAPPER,
 // NODE_REPL_DENIED_PATHS.
@@ -320,7 +321,7 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
   } else if (secretsUnavailable) env[STORE_ENV.unavailable] = secretsUnavailable;
   const launch = {command: own ? ownNode : p.node, args: own ? ['--disable-sigusr1', REPL_HOST_SUPERVISOR] : [p.cuaRepl], env, cwd, sessionTmp, kernelDir, denyRead,
     replHost: {host: replHost.host, reason: replHost.reason}, managedNodeRoot: owned.node, stagingRoot: owned.staging, sandboxHelperRoot: owned.sandbox,
-    engineRoot: linux ? owned.engine : null, linuxEngine: linuxEngine ? {path: linuxEngine.path, source: linuxEngine.source} : null,
+    engineRoot: linux ? owned.engine : null, linuxEngine: linuxEngine ? {path: linuxEngine.path, lookup: linuxEngine.lookup, source: linuxEngine.source} : null,
     nativeEngine: linux || !enabled.includes('computer') ? null : cuaEngine ? {engine: 'cua', version: cuaEngine.engineVersion, build: cuaEngine.build}
       : {engine: 'vendor', version: bundleVersion(p.skyServiceApp), build: runtime.release},
     compat: compat ? {home: owned.home, sessionId, node: p.node} : null};
@@ -481,7 +482,7 @@ function linuxEngineFor({env, home, defaultEngine, config, installed}) {
     if (!isAbsolute(override)) fail('invalid_setting', 'CUA_LINUX_ENGINE_BIN must be an absolute path');
     if (!executableFile(override))
       fail('engine_not_installed', `${engineSource(setting.reason, 'cua')} selects cua's own engine, and CUA_LINUX_ENGINE_BIN names ${override}, which is not an executable file: build it (cargo build --release in native/linux-engine) or unset CUA_LINUX_ENGINE_BIN for the installed engine`);
-    return {engine: 'cua', reason: setting.reason, status: 'pass', bin: {path: override, source: 'override'}};
+    return {engine: 'cua', reason: setting.reason, status: 'pass', bin: canonicalEngine(override, 'override')};
   }
   const cuaHome = () => realHome(home ?? defaultHome(env, {platform: 'linux'}));
   const found = (installed ?? (() => installedLinuxEngine({home: cuaHome()})))();
@@ -490,7 +491,17 @@ function linuxEngineFor({env, home, defaultEngine, config, installed}) {
       fail('engine_not_installed', `${engineSource(setting.reason, 'cua')} selects cua's own engine, and none is installed in this cua home (${linuxEnginePath(cuaHome())}): install it with \`cua install --engine\` (or a local build with \`cua engine build\`), or set CUA_NATIVE_ENGINE=vendor for the vendor engine`);
     return {engine: 'vendor', reason: 'engine_not_installed', status: 'warn'};
   }
-  return {engine: 'cua', reason: setting.reason, status: 'pass', bin: {path: found.path, source: 'installed'}};
+  return {engine: 'cua', reason: setting.reason, status: 'pass', bin: {path: found.path, lookup: found.lookup ?? found.path, source: 'installed'}};
+}
+
+// The engine as a launch names it -> {path, lookup, source}: `path` its canonical path, resolved once at selection
+// (installedLinuxEngine resolves the installed one), so every launch of the connection runs the file the scoped
+// preflight checked, never a link a cell could re-point; `lookup` the path it was found by, whose links the preflight
+// checks too (src/runtime/sandbox.mjs).
+function canonicalEngine(lookup, source) {
+  let path;
+  try { path = realpathSync(lookup); } catch (error) { fail('engine_not_installed', `cua's engine at ${lookup} cannot be resolved (${error.code ?? error.message})`); }
+  return {path, lookup, source};
 }
 
 // The device mode cua's engine runs in on Linux (#171, Design "Device mode") -> {mode: 'shared' | 'dedicated', reason:

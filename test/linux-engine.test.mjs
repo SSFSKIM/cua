@@ -82,7 +82,7 @@ test('install fetches the pinned asset for the machine, verifies it, and places 
   assert.deepEqual(readFileSync(path), ENGINE);
   assert.equal(statSync(path).mode & 0o777, 0o755);
   assert.equal(linuxEnginePath(realpathSync(home)), path);
-  assert.deepEqual(installedLinuxEngine({home}), {path});
+  assert.deepEqual(installedLinuxEngine({home}), {path, lookup: path});
   const record = readEngineRecord(realpathSync(home));
   assert.deepEqual({...record, installedAt: 'x'}, {schema: 1, build: 'pinned', version: '0.1.0', release: 'linux-engine-v0.1.0', sha256: sha(ENGINE), source: PIN.assets.x64.url, installedAt: 'x'});
   assert.deepEqual(readdirSync(join(realpathSync(home), 'staging')), []);

@@ -59,7 +59,7 @@ test('cua\'s engine needs one installed in the cua home: refused without it when
       && error.message.includes(path) && /cua install --engine/.test(error.message) && /cua engine build/.test(error.message) && /CUA_NATIVE_ENGINE=vendor/.test(error.message));
   }
   installedIn(home);
-  assert.deepEqual(select(home, {HOME: user, CUA_NATIVE_ENGINE: 'cua'}), {engine: 'cua', reason: 'explicit', status: 'pass', bin: {path, source: 'installed'}});
+  assert.deepEqual(select(home, {HOME: user, CUA_NATIVE_ENGINE: 'cua'}), {engine: 'cua', reason: 'explicit', status: 'pass', bin: {path, lookup: path, source: 'installed'}});
   assert.deepEqual(select(home, {HOME: user}, {config: () => ({engine: 'cua'})}).reason, 'settings');
   chmodSync(path, 0o644);
   if (process.getuid?.() !== 0) assert.throws(() => select(home, {HOME: user, CUA_NATIVE_ENGINE: 'cua'}), {code: 'engine_not_installed'}, 'a file sessions could not run is no engine');
@@ -77,7 +77,7 @@ test('CUA_LINUX_ENGINE_BIN names the engine only when the selection is cua: abso
   const {dir, home, user} = cuaHome(t);
   const built = engineAt(join(dir, 'checkout', 'target', 'release', 'cua-engine'));
   assert.deepEqual(select(home, {HOME: user, CUA_LINUX_ENGINE_BIN: 'relative/cua-engine'}), {engine: 'vendor', reason: 'default', status: 'pass'}, 'not read for the vendor engine');
-  assert.deepEqual(select(home, {HOME: user, CUA_NATIVE_ENGINE: 'cua', CUA_LINUX_ENGINE_BIN: built}), {engine: 'cua', reason: 'explicit', status: 'pass', bin: {path: built, source: 'override'}},
+  assert.deepEqual(select(home, {HOME: user, CUA_NATIVE_ENGINE: 'cua', CUA_LINUX_ENGINE_BIN: built}), {engine: 'cua', reason: 'explicit', status: 'pass', bin: {path: built, lookup: built, source: 'override'}},
     'no engine need be installed');
   installedIn(home);
   assert.equal(select(home, {HOME: user, CUA_NATIVE_ENGINE: 'cua', CUA_LINUX_ENGINE_BIN: built}).bin.path, built, 'it wins over the installed one');
@@ -97,7 +97,7 @@ test('replHostFor carries a Linux computer session\'s engine, resolved before No
   const browser = replHostFor({platform: 'linux', surfaces: ['browser'], ambient, home, resolveOwnNode: node});
   assert.deepEqual(browser, {host: 'cua', reason: 'linux', node: NODE});
   const path = installedIn(home);
-  const engine = {engine: 'cua', reason: 'explicit', status: 'pass', bin: {path, source: 'installed'}};
+  const engine = {engine: 'cua', reason: 'explicit', status: 'pass', bin: {path, lookup: path, source: 'installed'}};
   assert.deepEqual(replHostFor({platform: 'linux', surfaces: ['computer', 'browser'], ambient, home, resolveOwnNode: node}), {host: 'cua', reason: 'linux', node: NODE, engine});
   assert.deepEqual(replHostFor({platform: 'linux', surfaces: ['computer'], ambient: {...ambient, CUA_REPL_HOST: 'cua'}, home, resolveOwnNode: node}), {host: 'cua', reason: 'explicit', node: NODE, engine});
   assert.deepEqual(replHostFor({platform: 'linux', surfaces: ['computer'], ambient: {HOME: user}, home, resolveOwnNode: node}).engine, {engine: 'vendor', reason: 'default', status: 'pass'});
@@ -123,7 +123,7 @@ test('a Linux computer launch with cua\'s engine runs it behind the vendor servi
   const cua = launch({CUA_NATIVE_ENGINE: 'cua'});
   assert.equal(cua.env.OAI_SKY_LINUX_BIN, path);
   assert.equal(cua.env.CUA_SKY_SERVICE, runtime.paths.skyVendorService, 'the vendor service until M3');
-  assert.deepEqual(cua.linuxEngine, {path, source: 'installed'});
+  assert.deepEqual(cua.linuxEngine, {path, lookup: path, source: 'installed'});
   assert.equal(cua.engineRoot, join(home, 'engine'), 'the engine directory, which the scoped preflight protects');
   assert.equal(cua.nativeEngine, null);
   for (const name of ['CUA_NATIVE_ENGINE', 'CUA_LINUX_ENGINE_BIN']) assert.equal(name in cua.env, false, `${name} is the proxy's alone`);
@@ -154,6 +154,42 @@ test('a home whose engine directory leads into a write root is refused under sco
   symlinkSync(join(home, 'run', SESSION), join(home, 'engine'));
   const launch = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, services: {sky: SKY_SERVICE}, resolveOwnNode: ownNode});
   assert.throws(() => assertSandboxFits('scoped', launch), error => error.code === 'sandbox_conflict' && /Linux engine/.test(error.message));
+});
+
+// Review fix: what the trusted worker launches must be the file the preflight checked. The selection canonicalizes the
+// engine once and the launch names only that; the preflight protects it whatever its source, and refuses a lookup path
+// whose symbolic links lie in a writable root.
+test('scoped: an installed engine reached through a link into a write root is refused, and the launch names its real path', t => {
+  const {home} = cuaHome(t);
+  const runtime = linuxRuntime(home);
+  const real = engineAt(join(home, 'run', SESSION, 'planted', 'cua-engine'));
+  mkdirSync(join(home, 'engine'), {recursive: true});
+  symlinkSync(join(home, 'run', SESSION, 'planted'), join(home, 'engine', 'linux'));
+  const launch = buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, CUA_NATIVE_ENGINE: 'cua'}, services: {sky: SKY_SERVICE}, resolveOwnNode: ownNode});
+  assert.equal(launch.env.OAI_SKY_LINUX_BIN, real, 'the canonical file, never the replaceable link');
+  assert.deepEqual(launch.linuxEngine, {path: real, lookup: join(home, 'engine', 'linux', 'cua-engine'), source: 'installed'});
+  assert.throws(() => assertSandboxFits('scoped', launch), error => error.code === 'sandbox_conflict' && /cua's Linux engine/.test(error.message) && error.message.includes(real));
+});
+
+test('scoped: a CUA_LINUX_ENGINE_BIN that is a link in a write root is refused, though its target lies outside; a link outside every write root is fine', t => {
+  const {dir, home} = cuaHome(t);
+  const runtime = linuxRuntime(home);
+  const target = engineAt(join(dir, 'checkout', 'target', 'release', 'cua-engine'));
+  const launch = bin => buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, CUA_NATIVE_ENGINE: 'cua', CUA_LINUX_ENGINE_BIN: bin}, services: {sky: SKY_SERVICE}, resolveOwnNode: ownNode});
+  mkdirSync(join(home, 'run', SESSION), {recursive: true});
+  const writable = join(home, 'run', SESSION, 'cua-engine');
+  symlinkSync(target, writable);
+  const inRun = launch(writable);
+  assert.equal(inRun.env.OAI_SKY_LINUX_BIN, target);
+  assert.throws(() => assertSandboxFits('scoped', inRun), error => error.code === 'sandbox_conflict' && /symbolic link on the path to cua's Linux engine/.test(error.message) && error.message.includes(writable));
+  // A link through a directory a cell could replace: refused too.
+  symlinkSync(join(dir, 'checkout'), join(home, 'run', SESSION, 'checkout'));
+  assert.throws(() => assertSandboxFits('scoped', launch(join(home, 'run', SESSION, 'checkout', 'target', 'release', 'cua-engine'))), {code: 'sandbox_conflict'});
+  const outside = join(dir, 'engine-link');
+  symlinkSync(target, outside);
+  const fine = launch(outside);
+  assert.equal(fine.env.OAI_SKY_LINUX_BIN, target);
+  assertSandboxFits('scoped', fine);
 });
 
 test('the device mode: CUA_DESKTOP_MODE, else engine.json\'s desktop, else shared; any other value refused', () => {

@@ -11,10 +11,10 @@
 // decide what the engine is, never the record alone: the pinned asset's SHA-256 is the pinned engine whatever the
 // record says, and the record names an engine only while its SHA-256 is the file's (inspectLinuxEngine). `cua engine
 // build` places a local `cargo build --release` of the checkout the same way, recorded as `local` (buildLinuxEngine).
-import {accessSync, chmodSync, constants, copyFileSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, statSync, writeFileSync} from 'node:fs';
+import {accessSync, chmodSync, constants, copyFileSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, renameSync, rmSync, statSync, writeFileSync} from 'node:fs';
 import {spawnSync} from 'node:child_process';
 import {createHash, randomUUID} from 'node:crypto';
-import {dirname, join} from 'node:path';
+import {dirname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {fail} from './errors.mjs';
 import {homeLayout, realHome} from './layout.mjs';
@@ -104,11 +104,34 @@ export function executableFile(path) {
   try { return statSync(path).isFile() && (accessSync(path, constants.X_OK), true); } catch { return false; }
 }
 
-// The engine `cua install` or `cua engine build` placed in the cua home `home` -> {path}, or null when nothing a session
-// could execute is there. Nothing is read but the file's metadata: what the engine is, is doctor's (inspectLinuxEngine).
+// How the absolute `path` is reached -> {real, links}: `real` its canonical path (every symbolic link on the way
+// followed, a missing tail kept as spelled), `links` where each of those links itself lies (its directory's real path
+// and its name), in the order followed. A launch names only `real`; the scoped preflight refuses `links` inside a
+// writable root, where a cell could re-point one before the next lookup (src/runtime/sandbox.mjs).
+export function engineLookup(path, depth = 0) {
+  if (depth > 40) fail('engine_not_installed', `${path}: too many levels of symbolic links`);
+  const links = [];
+  let current = '/';
+  for (const part of path.split('/').filter(Boolean)) {
+    const next = join(current, part);
+    let link = null;
+    try { if (lstatSync(next).isSymbolicLink()) link = readlinkSync(next); } catch { link = null; }
+    if (link === null) { current = next; continue; }
+    links.push(next);
+    const followed = engineLookup(resolve(current, link), depth + 1);
+    links.push(...followed.links);
+    current = followed.real;
+  }
+  return {real: current, links};
+}
+
+// The engine `cua install` or `cua engine build` placed in the cua home `home` -> {path, lookup}, or null when nothing a
+// session could execute is there: `path` its canonical path (what a launch names), `lookup` the home's engine path it
+// was found by. Nothing is read but the file's metadata: what the engine is, is doctor's (inspectLinuxEngine).
 export function installedLinuxEngine({home}) {
-  const path = linuxEnginePath(realHome(home));
-  return executableFile(path) ? {path} : null;
+  const lookup = linuxEnginePath(realHome(home));
+  if (!executableFile(lookup)) return null;
+  try { return {path: realpathSync(lookup), lookup}; } catch { return null; }
 }
 
 // install.json in the cua home `home`, or null when it is absent or not a record this cua wrote.

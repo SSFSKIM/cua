@@ -56,9 +56,9 @@ node scripts/linux-engine-diff.mjs --vendor "$VENDOR" --newest "$NEWEST" --cua "
   most in flight and the calls issued with nothing else outstanding.
 - **Verdict** per candidate (`cua` and each `--variant`): its cold and warm medians at or below the faster vendor
   build's (the bar), every request answered, output equal, witness clean wherever a vendor build's is, effect verified
-  on every sample where a vendor build's is (sample by sample: the same block and index, the union of both builds,
-  so a vendor build that takes 20 of 30 samples still requires those 20), and for a `tree` read over the wire the
-  bus-call bound (below).
+  on every sample, whatever the vendor builds did on it (their misses are findings, not the bar), and for a `tree`
+  read over the wire the bus-call bound (below). Effects are read on the settled state: the before-state once it holds
+  still, the effect once it shows and holds still (two equal reads 120 ms apart, at most 2.5 s).
 
 `results.jsonl` gets one line per sample, image comparison, count, check and verdict; `summary.md` is rewritten from
 all of it (`--summarize` rewrites it alone). Several runs append to one directory under their `--run` names.
@@ -164,8 +164,9 @@ variants included; their evidence is written either way. The run's `end` row kee
 
 ## M1a.4's changes: the M1a.3 review's findings
 
-- **Effects sample by sample** (`stats.mjs` `missedEffects`): a sample position any vendor build took must be taken by
-  cua; a vendor success with no cua sample at its position counts as missed.
+- **Effects on every sample** (`stats.mjs` `missedEffects`; Decision Log, M1a.4): every answered cua sample of an
+  operation that reads effects must show its effect, whatever the vendor builds did on it; read once the state
+  settles (`settledRead`, `pollEffect`).
 - **Companions witnessed**: every request the engine under measurement sends besides the timed one (a hold's start
   or end, the retaining capture, the key that changes a covered window, element ids read through the vendor
   JavaScript) runs inside a witness span of its own. The harness's own changes to a window (the retention cases'

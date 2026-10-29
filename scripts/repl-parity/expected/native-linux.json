@@ -1,0 +1,43 @@
+{
+  "about": "The Linux native suite's engine lanes (#171, docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md, The facade suites; M1b), read by `node scripts/repl-parity.mjs run --suite native --host cua --engine cua` (the run's assessment, scripts/repl-parity/vendor-defects.mjs assessAssertions) and by `node scripts/repl-parity.mjs diff <vendor-engine run> <cua-engine run> --expected scripts/repl-parity/expected/native-linux.json` (scripts/repl-parity/native-linux.mjs). `candidateExpectations` are the cua engine's temporary outcomes, until `until`: the run accepts exactly the named case's assertion failure with exactly the named exercise result, and nothing else (M1b: the engine refuses type_text and clipboard_write with `type_text is not available in this engine build`, M1a's declared deviation, so the text stays unchanged and the window alive; M2 makes the cases positive and removes these). `declarations` are the differences the diff between the two lanes accepts, each naming the vendor engine's declared defect (test/repl-parity/vendor-defects.json) and the cua engine's candidate expectation it pairs on one case: only those cases' exercise results and assertions are projected, and only while both sides hold exactly what they name; a declaration nothing needed is itself a difference.",
+  "candidateExpectations": [
+    {
+      "id": "linux-cua-engine-typetext-refused-until-m2",
+      "engine": "cua",
+      "platform": "linux",
+      "case": "native/app/typetext",
+      "until": "M2",
+      "reason": "M1a's declared deviation: until M2's verified paste route, cua-engine answers type_text with `type_text is not available in this engine build` instead of reproducing the vendor's known PasteText failure; nothing is sent, the marker does not reach the text and gedit stays alive (Decision Log, M1a; Plan of Work, M1b).",
+      "assertion": {"ok": false, "reason": "unrecognized native input error"},
+      "result": {"cell": "exercise", "isError": false, "content": [{"type": "text", "text": "NATIVE:[{\"error\":\"type_text is not available in this engine build\"},false,false]"}]}
+    },
+    {
+      "id": "linux-cua-engine-paste-refused-until-m2",
+      "engine": "cua",
+      "platform": "linux",
+      "case": "native/app/paste",
+      "until": "M2",
+      "reason": "M1a's declared deviation: until M2's verified paste route, cua-engine answers the paste's text request with `type_text is not available in this engine build` instead of reproducing the vendor's known PasteText failure; nothing is sent, the marker does not reach the text and gedit stays alive (Decision Log, M1a; Plan of Work, M1b). The facade's two format refusals come first, unchanged.",
+      "assertion": {"ok": false, "reason": "unrecognized native input error"},
+      "result": {"cell": "exercise", "isError": false, "content": [{"type": "text", "text": "NATIVE:[{\"error\":\"Linux paste supports only text format.\"},{\"error\":\"Linux paste supports only text format.\"},{\"error\":\"type_text is not available in this engine build\"},false,false]"}]}
+    }
+  ],
+  "declarations": [
+    {
+      "id": "linux-text-typetext-m1b",
+      "case": "native/app/typetext",
+      "cells": ["exercise"],
+      "vendorDefect": "linux-x64-vendor-engine-typetext-not-inserted",
+      "candidateExpectation": "linux-cua-engine-typetext-refused-until-m2",
+      "reason": "Both engines fail typeText in M1b, differently: the pinned vendor engine tries EditableText.PasteText for 10 s and inserts nothing, cua's engine refuses before sending anything. Neither inserts the marker and gedit survives both."
+    },
+    {
+      "id": "linux-text-paste-m1b",
+      "case": "native/app/paste",
+      "cells": ["exercise"],
+      "vendorDefect": "linux-x64-vendor-engine-paste-not-inserted",
+      "candidateExpectation": "linux-cua-engine-paste-refused-until-m2",
+      "reason": "Both engines fail paste in M1b, differently: the pinned vendor engine tries EditableText.PasteText for 10 s and inserts nothing, cua's engine refuses before sending anything. Neither inserts the marker and gedit survives both."
+    }
+  ]
+}

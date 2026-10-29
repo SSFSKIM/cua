@@ -20,6 +20,10 @@ export const assertSurface = surface => { if (!SURFACES.includes(surface)) throw
 export const NATIVE_LOCALE = Object.freeze({LANG: 'C.UTF-8'});
 const assertHost = host => { if (!HOSTS.includes(host)) throw new Error('host must be vendor or cua'); };
 const assertEngine = engine => { if (engine !== undefined && !ENGINES.includes(engine)) throw new Error('engine must be vendor or cua'); };
+// --engine-bin (a Linux run's cua lane, ./engine.mjs): the absolute path of a cua-engine on the device.
+const assertEngineBin = (engine, engineBin) => {
+  if (engineBin !== undefined && (engine !== 'cua' || !/^\/[^\0\n]*$/.test(engineBin))) throw new Error('--engine-bin is an absolute cua-engine path, with --engine cua only');
+};
 // An X display name (:0, :1.0, localhost:10.0), nothing a shell could read otherwise.
 // The own host's Node: an absolute path a shell cannot read otherwise, and only for the cua host (the vendor host runs on
 // its pinned Node, so naming one there would change nothing but the baseline's recorded environment).
@@ -47,16 +51,18 @@ export const assertDisplay = display => { if (!/^[A-Za-z0-9.-]*:\d+(\.\d+)?$/.te
 // buildLaunch copies it into the runtime, and the native helper inherits it, which is how cleanup knows the run's helper.
 // `engine` (a macOS computer run's, ./engine.mjs) is CUA_NATIVE_ENGINE, explicit like the host, so the selection never
 // moves under the run; with HOME the account's, the serve's selection finds the approved engine there.
+// `engineBin` (a Linux computer run's cua lane, --engine-bin) is CUA_LINUX_ENGINE_BIN, the cua-engine the serve runs in
+// place of the installed one; an unprepared serve clears an ambient one.
 // `spikeRoute` (the native matrix's route A/B serve only) adds CUA_ENGINE_SPIKE_ROUTE=1, under which cua's service
 // forwards a click's forced route (src/services/engine/service.mjs).
-export function nativeEnvironment({home, userHome, configHome, tmpdir, admission, host, engine, display, platform, xSession, node, surface = 'computer', spikeRoute = false}) {
-  assertHost(host); assertEngine(engine); assertOwnNode(host, node); assertSurface(surface);
+export function nativeEnvironment({home, userHome, configHome, tmpdir, admission, host, engine, engineBin, display, platform, xSession, node, surface = 'computer', spikeRoute = false}) {
+  assertHost(host); assertEngine(engine); assertOwnNode(host, node); assertSurface(surface); assertEngineBin(engine, engineBin);
   if (platform === 'linux') assertDisplay(xSession?.DISPLAY ?? display);
   const x = xSession === undefined ? (platform === 'linux' ? ` DISPLAY=${quote(display)} XAUTHORITY="$HOME/.Xauthority"` : '')
     : Object.entries(sessionEnvironment(xSession)).map(([key,value]) => ` ${key}=${quote(value)}`).join('');
   const clean = userHome ? `-i PATH="$PATH" LANG=${NATIVE_LOCALE.LANG} HOME=${quote(userHome)} XDG_CONFIG_HOME=${quote(configHome ?? userHome + '/.config')} ${tmpdir ? `TMPDIR=${quote(tmpdir)} ` : ''}`
-    : '-u CUA_NODE ' + SESSION_KEYS.filter(key => xSession && !Object.hasOwn(xSession,key)).map(key => `-u ${key} `).join('');
-  return `${clean}CUA_HOME=${quote(home)} CUA_REPL_HOST=${host}${engine === undefined ? '' : ` CUA_NATIVE_ENGINE=${engine}`}${node === undefined ? '' : ` CUA_NODE=${quote(node)}`} CUA_SHIM_SURFACES=${surface} CUA_SHIM_PERSIST=session CUA_SHIM_SECRETS=off${admission ? ` CUA_NATIVE_ADMISSION=${quote(admission)}` : ''}${spikeRoute ? ' CUA_ENGINE_SPIKE_ROUTE=1' : ''}${x}`;
+    : '-u CUA_NODE -u CUA_LINUX_ENGINE_BIN ' + SESSION_KEYS.filter(key => xSession && !Object.hasOwn(xSession,key)).map(key => `-u ${key} `).join('');
+  return `${clean}CUA_HOME=${quote(home)} CUA_REPL_HOST=${host}${engine === undefined ? '' : ` CUA_NATIVE_ENGINE=${engine}`}${engineBin === undefined ? '' : ` CUA_LINUX_ENGINE_BIN=${quote(engineBin)}`}${node === undefined ? '' : ` CUA_NODE=${quote(node)}`} CUA_SHIM_SURFACES=${surface} CUA_SHIM_PERSIST=session CUA_SHIM_SECRETS=off${admission ? ` CUA_NATIVE_ADMISSION=${quote(admission)}` : ''}${spikeRoute ? ' CUA_ENGINE_SPIKE_ROUTE=1' : ''}${x}`;
 }
 export function serveCommand(options) {
   const {device, checkout, userHome, node} = options;
@@ -101,10 +107,13 @@ export function xDisplayFacts(text) {
 // chip, memory, macOS, main display, TextEdit, and for the computer surface `engine`, the approved engine as the serve
 // will resolve it and the checkout's build (./engine.mjs approvedEngineFacts, read in the serve's environment; its error
 // when it cannot be read). Linux: CPU and memory, distribution and kernel, the X display (DISPLAY `display`, the cookie
-// in the account's home; checked with xdpyinfo, only its size kept), the session bus, gedit.
-export function preflightScript({host, engine, approvedEngine, display = ':0', node: ownNode, prepared, surface = 'computer'}) {
+// in the account's home; checked with xdpyinfo, only its size kept), the session bus, gedit, and for a computer run's
+// engine lane `engine`, the executable that lane's engine must run from in the run's home (../repl-parity/
+// engine-answered.mjs expectedEngine: the runtime's sky_linux_<arch>, or the named or installed cua-engine).
+export function preflightScript({host, engine, approvedEngine, engineBin, display = ':0', node: ownNode, prepared, surface = 'computer'}) {
   assertHost(host);
   assertEngine(engine);
+  assertEngineBin(engine, engineBin);
   assertSurface(surface);
   assertOwnNode(host, ownNode);
   assertDisplay(display);
@@ -145,6 +154,7 @@ if (process.platform === 'linux') {
     x: {display: x.DISPLAY, xauthority: xauthority ?? null, xauthorityPresent: xauthority ? existsSync(xauthority) : false, bus},
     gedit: sh('gedit', ['--version']) || null,
     geditRunning: sh('pgrep', ['-x', 'gedit']) !== '',
+    ${surface === 'computer' && engine !== undefined ? `engine: await (async () => { try { const {expectedEngine} = await import('./scripts/repl-parity/engine-answered.mjs'); return expectedEngine({engine: ${JSON.stringify(engine)}, home, engineBin: ${JSON.stringify(engineBin ?? null)} ?? undefined}); } catch (e) { return {requested: ${JSON.stringify(engine)}, expected: null, error: String(e?.message ?? e)}; } })(),` : ''}
   };
 } else {
   const displays = JSON.parse(sh('/usr/sbin/system_profiler', ['SPDisplaysDataType', '-json']) || '{}').SPDisplaysDataType ?? [];
@@ -160,7 +170,7 @@ if (process.platform === 'linux') {
   };
 }
 console.log(JSON.stringify({...common, ...own}));`;
-  return `cd ${PARITY_CHECKOUT} && ${prepared ? `env ${nativeEnvironment({...prepared, host, engine, node: ownNode, platform: prepared.xSession?.DISPLAY ? 'linux' : 'darwin', display, surface})} ` : ''}node --input-type=module -e ${quote(node)}`;
+  return `cd ${PARITY_CHECKOUT} && ${prepared ? `env ${nativeEnvironment({...prepared, host, engine, engineBin, node: ownNode, platform: prepared.xSession?.DISPLAY ? 'linux' : 'darwin', display, surface})} ` : ''}node --input-type=module -e ${quote(node)}`;
 }
 
 // Clears (when asked) and then reports the measured surface's handshake record of the selected host (the record of

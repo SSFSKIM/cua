@@ -15,6 +15,7 @@ import {parseProcess} from '../../scripts/native-baseline/macos.mjs';
 const AsyncFunction = (async () => {}).constructor;
 const RELEASE = '26.928.40906-linux-arm64';
 const HOME = '/home/admin/.local/share/cua-native-baseline/run-AbCdEf';
+const SKY_LINUX = `${HOME}/runtimes/${RELEASE}/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64`;
 const prepared = {device:'cua-linux',home:HOME,userHome:HOME+'/home',token:'test-token',nodeMode:'managed',nodeOverride:null,xSession:{DISPLAY:':0',XAUTHORITY:'/home/admin/.Xauthority',DBUS_SESSION_BUS_ADDRESS:'unix:path=/run/user/1000/bus'},ownNode:{path:HOME+'/node/24.22.0/bin/node',version:'v24.22.0'}};
 globalThis.__baselineTransitionMs = 200;
 globalThis.__baselineWindowMs = 200;
@@ -31,7 +32,8 @@ function fakeDevice({host = 'vendor', geditRunning = false, desktop = geditDeskt
     handshakeRecord: record, runtimeRoot: `${HOME}/runtimes/${RELEASE}`, spikeRunning: false, serves: 0,
     hardware: {model: null, chip: 'arm64, 4 CPUs', memoryBytes: 8e9}, os: {name: 'Ubuntu', version: '24.04.5 LTS', build: '7.0.0-38-generic'},
     display: {pixels: '1024 x 768', resolution: '1024 x 768', scale: 1, depth: 24}, x: {display: ':0', xauthority: '~/.Xauthority', xauthorityPresent: true, bus: 'unix:path=/run/user/1000/bus'},
-    gedit: 'gedit - Version 46.2', geditRunning, sandbox: {mode: 'disabled', explicit: false}};
+    gedit: 'gedit - Version 46.2', geditRunning, sandbox: {mode: 'disabled', explicit: false},
+    engine: {requested: 'vendor', expected: SKY_LINUX, error: null}};
   const remote = script => {
     state.scripts.push(script);
     if (script === 'uptime') return 'device after';
@@ -62,6 +64,7 @@ function fakeDevice({host = 'vendor', geditRunning = false, desktop = geditDeskt
       return result;
     },
     helpers: () => [{path: '~/.local/share/cua/runtimes/r/sky_linux_arm64', origin: 'pinned runtime', ageSeconds: 3}],
+    engines: () => (state.engines ?? [{pid: 9000, exe: SKY_LINUX, kind: 'vendor', parent: 'trusted-worker.mjs'}]),
     leftovers: () => ({serves: 0, geditRunning: [...desktop.windows.values()].filter(w => !w.crashed && !w.closed).length}),
     crashReports: () => ({files: 1, newest: '2026-10-07T02:00:00.000Z'}),
   };
@@ -108,7 +111,7 @@ test('a Linux vendor-host run records every operation, the method cases and one 
   const {state, io} = fakeDevice();
   state.answeringHost = 'vendor';
   const out = outDir(t);
-  assert.equal(await run({device: 'cua-linux', out, host: 'vendor', ...plan, io}), 0);
+  assert.equal(await run({device: 'cua-linux', out, host: 'vendor', engine: 'vendor', ...plan, io}), 0);
   const meta = metaOf(out), rows = results(out);
   assert.equal(meta.complete, true, meta.error);
   assert.equal(meta.platform, 'linux');
@@ -119,7 +122,7 @@ test('a Linux vendor-host run records every operation, the method cases and one 
   assert.deepEqual(meta.hostAttestations, Array.from({length: 3}, () => ({host: 'vendor', serverInfo: {name: 'node_repl', version: '0.1.0'}, _meta: {'cua/nativeExecution':{path:HOME+'/runtimes/'+RELEASE+'/node',version:'v24.21.0'},'cua/taskId': 't','cua/sandboxLaunch':{launcher:'codex-cli',tmpdir:'inherited'}}})));
   assert.deepEqual(meta.sandboxLaunch, {launcher: 'codex-cli', tmpdir: 'inherited'});
   assert.equal(meta.surface, 'computer');
-  assert.deepEqual(meta.environment, {CUA_REPL_HOST: 'vendor', CUA_SHIM_SURFACES: 'computer', CUA_SHIM_PERSIST: 'session', CUA_SHIM_SECRETS: 'off', ...prepared.xSession});
+  assert.deepEqual(meta.environment, {CUA_REPL_HOST: 'vendor', CUA_NATIVE_ENGINE: 'vendor', CUA_SHIM_SURFACES: 'computer', CUA_SHIM_PERSIST: 'session', CUA_SHIM_SECRETS: 'off', ...prepared.xSession});
   // The cold plan: a planned miss clears the record first; each connection is labelled by the record it found.
   assert.equal(state.clears, 1);
   const ops = [...new Set(rows.map(r => r.op))];
@@ -141,7 +144,9 @@ test('a Linux vendor-host run records every operation, the method cases and one 
   // The method cases' own windows were taken down by the methods: found gone, their directories removed at once.
   assert.deepEqual(meta.gedit.targetCleanup.map(c => [c.op, c.terminated.length, c.gone.length, c.removed.length]), [['method.typeText', 0, 1, 1], ['method.paste', 0, 1, 1]]);
   assert.deepEqual(meta.leftovers, {serves: 0, geditRunning: 0});
-  assert.equal(meta.service.helpers[0].origin, 'pinned runtime');
+  assert.deepEqual(meta.service, {surface: 'computer', engine: 'sky', answered: 'vendor'});
+  assert.equal(meta.helpersAtBind.helpers[0].origin, 'pinned runtime');
+  assert.deepEqual(meta.nativeEngine, {requested: 'vendor', bin: null, expected: SKY_LINUX, error: null, observed: [{exe: SKY_LINUX, kind: 'vendor', parent: 'trusted-worker.mjs'}]});
   // No row carries a window title or the typed text.
   assert.doesNotMatch(JSON.stringify(rows), /scratch-0|the quick brown fox|cuabaselinemarker/);
 });
@@ -150,7 +155,7 @@ test('a run whose connections answer another host than the one requested is not 
   const {state, io} = fakeDevice({host: 'cua'});
   state.answeringHost = 'vendor';
   const out = outDir(t);
-  assert.equal(await run({device: 'cua-linux', out, host: 'cua', ...plan, io}), 1);
+  assert.equal(await run({device: 'cua-linux', out, host: 'cua', engine: 'vendor', ...plan, io}), 1);
   const meta = metaOf(out);
   assert.equal(meta.complete, false);
   assert.match(meta.attestationProblem, /host attestation missing or mismatched \(requested cua\)/);
@@ -160,7 +165,7 @@ test('a run whose connections answer another host than the one requested is not 
 test('the run refuses to start while gedit runs on the device: no window is opened, nothing is typed', async t => {
   const {state, io} = fakeDevice({geditRunning: true});
   state.answeringHost = 'vendor';
-  await assert.rejects(run({device: 'cua-linux', out: outDir(t), host: 'vendor', ...plan, io}), /gedit is running on the device/);
+  await assert.rejects(run({device: 'cua-linux', out: outDir(t), host: 'vendor', engine: 'vendor', ...plan, io}), /gedit is running on the device/);
   assert.equal(state.spawned.length, 0);
 });
 
@@ -175,7 +180,7 @@ test('a cell that times out stops all further input, and the run still ends its 
     return client;
   };
   const out = outDir(t);
-  assert.equal(await run({device: 'cua-linux', out, host: 'vendor', ...plan, io}), 1);
+  assert.equal(await run({device: 'cua-linux', out, host: 'vendor', engine: 'vendor', ...plan, io}), 1);
   const meta = metaOf(out);
   assert.match(meta.stopped, /task 1 timed out/);
   assert.ok(!results(out).some(r => r.op === 'task.clear' || r.op.startsWith('method.')));
@@ -298,7 +303,7 @@ test('a method case whose read-back fails is recorded as failed, never as text t
   const {state, io} = fakeDevice({desktop: geditDesktop({typeTextWorks: true, readBackFails: true})});
   state.answeringHost = 'vendor';
   const out = outDir(t);
-  await run({device: 'cua-linux', out, host: 'vendor', ...plan, io});
+  await run({device: 'cua-linux', out, host: 'vendor', engine: 'vendor', ...plan, io});
   const row = results(out).find(r => r.op === 'method.typeText');
   assert.deepEqual({ok: row.ok, outcome: row.outcome, target: row.target, inserted: row.inserted}, {ok: false, outcome: 'returned', target: 'survived', inserted: undefined});
   assert.match(row.error, /read-back failed: Computer Use server error: accessibility tree unavailable/);
@@ -308,7 +313,7 @@ test('a run refuses a device whose sandbox policy cannot be resolved', async t =
   const {state, pre, io} = fakeDevice();
   state.answeringHost = 'vendor';
   pre.sandbox = {mode: null, error: 'CUA_SHIM_SANDBOX must be scoped, disabled or default'};
-  await assert.rejects(run({device: 'cua-linux', out: outDir(t), host: 'vendor', ...plan, io}), /sandbox policy.*CUA_SHIM_SANDBOX must be/);
+  await assert.rejects(run({device: 'cua-linux', out: outDir(t), host: 'vendor', engine: 'vendor', ...plan, io}), /sandbox policy.*CUA_SHIM_SANDBOX must be/);
 });
 
 test('a cua-host run names the own host\'s Node in every serve and records it, keeping the proxy on the device\'s node', async t => {
@@ -318,7 +323,7 @@ test('a cua-host run names the own host\'s Node in every serve and records it, k
   pre.ownNode = {path: NODE, version: 'v24.18.0'};
   state.answeringNode=pre.ownNode;
   const out = outDir(t);
-  assert.equal(await run({device: 'cua-linux', out, host: 'cua', node: NODE, ...plan, io}), 0);
+  assert.equal(await run({device: 'cua-linux', out, host: 'cua', node: NODE, engine: 'vendor', ...plan, io}), 0);
   const meta = metaOf(out);
   assert.equal(meta.complete, true, meta.error);
   assert.equal(meta.environment.CUA_NODE, NODE);
@@ -332,7 +337,7 @@ test('a cua-host run refuses an own-host Node the device cannot run, before any 
   const {state, pre, io} = fakeDevice({host: 'cua'});
   state.answeringHost = 'cua';
   pre.ownNode = {path: '/nowhere/node', version: null};
-  await assert.rejects(run({device: 'cua-linux', out: outDir(t), host: 'cua', node: '/nowhere/node', ...plan, io}), /own host's Node \/nowhere\/node did not run on the device/);
+  await assert.rejects(run({device: 'cua-linux', out: outDir(t), host: 'cua', node: '/nowhere/node', engine: 'vendor', ...plan, io}), /own host's Node \/nowhere\/node did not run on the device/);
   assert.equal(state.serves, undefined);
 });
 
@@ -343,7 +348,7 @@ test('a cloud run records machine and both load snapshots, keeps its X env and o
   const remote=io.remote;
   io.remote=script=> /prepare.mjs prepare/.test(script) ? JSON.stringify({...prepared,device:'cua-bench',xSession:{DISPLAY:':7',DBUS_SESSION_BUS_ADDRESS:'unix:path=/run/user/2000/bus'}}) : remote(script);
   const out=outDir(t);
-  assert.equal(await run({device:'cua-bench',out,host:'cua',...plan,io}),0);
+  assert.equal(await run({device:'cua-bench',out,host:'cua',engine:'vendor',...plan,io}),0);
   const meta=metaOf(out);
   assert.deepEqual(meta.deviceIdentity,{alias:'cua-bench',arch:'arm64',hostname:'cloud-bench',os:pre.os,cpu:{model:'Ampere',count:8}});
   assert.deepEqual(meta.load,{device:{before:'device before',after:'device after'},controller:{before:'controller load',after:'controller load'}});
@@ -358,7 +363,7 @@ test('a cached handshake and host marker without the answering executable cannot
   const {state,io}=fakeDevice({host:'cua'});state.answeringHost='cua';
   const connect=io.connect;io.connect=options=>{const c=connect(options),request=c.request;c.request=async(...args)=>{const r=await request(...args);if(r._meta)delete r._meta['cua/nativeExecution'];return r;};return c;};
   const out=outDir(t);
-  assert.equal(await run({device:'cua-linux',out,host:'cua',...plan,io}),1);
+  assert.equal(await run({device:'cua-linux',out,host:'cua',engine:'vendor',...plan,io}),1);
   assert.match(metaOf(out).error,/answering Node/);
 });
 
@@ -367,12 +372,12 @@ test('one cold connection without executable proof invalidates otherwise success
   const connect=io.connect;let first=true;
   io.connect=options=>{const c=connect(options),request=c.request;c.request=async(...args)=>{const r=await request(...args);if(first&&r._meta){first=false;delete r._meta['cua/nativeExecution'];}return r;};return c;};
   const out=outDir(t);
-  assert.equal(await run({device:'cua-linux',out,host:'cua',...plan,io}),1);
+  assert.equal(await run({device:'cua-linux',out,host:'cua',engine:'vendor',...plan,io}),1);
   assert.match(metaOf(out).error,/answering Node/);
 });
 test('a refusal before connecting still removes the run-owned fresh installation', async t => {
   const {state,io}=fakeDevice({geditRunning:true});
-  await assert.rejects(run({device:'cua-linux',out:outDir(t),host:'vendor',...plan,io}),/gedit is running/);
+  await assert.rejects(run({device:'cua-linux',out:outDir(t),host:'vendor',engine:'vendor',...plan,io}),/gedit is running/);
   assert.ok(state.scripts.some(s=>s.includes('prepare.mjs cleanup')));
   assert.equal(state.serves,undefined);
 });
@@ -431,7 +436,8 @@ test('a macOS computer run names its engine and the approved engine; --host cua 
   await assert.rejects(run({...at, host: 'vendor', approvedEngine: ENGINE_BUNDLE}), /needs --engine vendor\|cua/);
   await assert.rejects(run({...at, host: 'vendor', engine: 'cua'}), /needs --approved-engine/);
   await assert.rejects(run({...at, host: 'cua', engine: 'vendor', approvedEngine: ENGINE_BUNDLE}), /--host cua --engine vendor cannot run/);
-  await assert.rejects(run({device: 'cua-linux', out: outDir(t), host: 'cua', engine: 'cua', ...plan, io}), /a linux computer run has none/);
+  await assert.rejects(run({device: 'cua-linux', out: outDir(t), host: 'cua', engine: 'cua', approvedEngine: ENGINE_BUNDLE, ...plan, io}), /--approved-engine names the approved cua Engine\.app of a macOS run/);
+  await assert.rejects(run({device: 'cua-linux', out: outDir(t), host: 'cua', ...plan, io}), /a Linux computer run needs --engine vendor\|cua/);
   assert.equal(scripts.length, 0, 'nothing ran on the device');
 });
 

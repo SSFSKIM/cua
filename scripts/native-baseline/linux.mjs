@@ -99,6 +99,15 @@ export function classifyLinuxHelpers(output, runtimeRoot) {
       ageSeconds: age === null ? null : Number(age)};
   });
 }
+// The engine processes below the run's serves (the serves of the clone at `checkout`, servePattern: every one is the
+// run's, since a run refuses to start while one runs), each by its executable, read from /proc (../repl-parity/
+// engine-answered.mjs engineProcesses): one JSON array of {pid, exe, kind, parent}. Which engine answered the run is
+// judged from these (./engine.mjs engineProblem), never from a command line.
+export const linuxEnginesScript = checkout => `cd ${quote(checkout)} && node --input-type=module -e ${quote(`import {execFileSync} from 'node:child_process';
+import {engineProcesses} from './scripts/repl-parity/engine-answered.mjs';
+let pids = [];
+try { pids = execFileSync('pgrep', ['-f', ${JSON.stringify(servePattern(checkout))}], {encoding: 'utf8'}).split('\\n').filter(Boolean).map(Number); } catch {}
+console.log(JSON.stringify(pids.flatMap(pid => engineProcesses(pid))));`)}`;
 // What the run may have left: serves of the clone and gedit processes, as two counts.
 const leftoverScript = checkout => `printf '%s %s\\n' "$(pgrep -f ${quote(servePattern(checkout))} | wc -l | tr -d ' ')" "$(pgrep -x gedit | wc -l | tr -d ' ')"`;
 // The crash reports apport keeps for gedit: how many, and the newest one's time (a GTK3 crash under typeText or paste
@@ -118,6 +127,7 @@ export function linuxDevice(remote, {display, checkout, runtimeRoot, xSession, u
     targetState: (entry, options) => remote(targetStateScript(entry, options)).trim(),
     terminate: entries => (entries.length ? JSON.parse(remote(terminateScript(entries)).split('\n').at(-1)) : {terminated: [], notOwned: [], gone: [], removed: []}),
     helpers: () => classifyLinuxHelpers(remote(LINUX_HELPER_SCRIPT), runtimeRoot),
+    engines: () => JSON.parse(remote(linuxEnginesScript(checkout)).split('\n').at(-1)),
     leftovers() { const [serves, geditRunning] = remote(leftoverScript(checkout)).split(' ').map(Number); return {serves, geditRunning}; },
     crashReports: () => JSON.parse(remote(CRASH_SCRIPT).split('\n').at(-1)),
   };
@@ -156,7 +166,11 @@ export const linuxAdapter = {
     row('bind.getApp', 1, bind, {approvals: approvals.length});
     approvals.forEach((a, i) => emit({op: 'approval.elicitation', sample: i + 1, ok: a.action === 'accept', wallMs: Math.round((a.at - bind.started) * 1000) / 1000, app: a.app, action: a.action,
       note: 'wallMs: from the start of the getApp call to the approval request; the harness answers at once'}));
-    meta.service = {surface: 'computer', engine: 'sky', answered: 'vendor', ...ctx.helperAttestation()};
+    // The service is the vendor's @oai/sky on both engine lanes until M3; which engine answered is the engine
+    // attestation's (meta.nativeEngine.observed), and the machine's sky_linux processes are evidence, not attested.
+    meta.service = {surface: 'computer', engine: 'sky', answered: 'vendor'};
+    meta.helpersAtBind = ctx.helperAttestation();
+    ctx.observeEngines();
     if (!bind.cell?.ok) throw new Error(`cua.getApp({windowId}) failed: ${bind.cell?.error ?? bind.failure}`);
 
     await measure('warm.getAXState', ctx.samples, linux.AX_FULL);

@@ -27,6 +27,7 @@ import {fixtureProcess} from './browser-parity/resources.mjs';
 import {LINUX_COMPUTER_DEFAULT,compareParityRuns,validateAttestations} from './repl-parity/compare.mjs';
 import {DEVICES,isDeclaredDevice} from './repl-parity/devices.mjs';
 import {laneEngineProblem} from './repl-parity/engine-answered.mjs';
+import {checkEnginePair,declaredCandidateExpectation,validateNativeLinuxExpected} from './repl-parity/native-linux.mjs';
 const json=p=>JSON.parse(readFileSync(p,'utf8'));
 const state=device=>join(root,'.doperpowers/sde/repl-parity',`${device}.json`);
 const save=(p,value)=>writeFileSync(p,JSON.stringify(value,null,2)+'\n');
@@ -91,6 +92,15 @@ export async function main(argv=process.argv.slice(2)){
   }
   const load=dir=>({meta:json(join(dir,'meta.json')),tools:json(join(dir,'tools.json')),rows:readFileSync(join(dir,'results.jsonl'),'utf8').trim().split('\n').filter(Boolean).map(JSON.parse)});
   const left=load(a),right=load(b);
+  // The Linux engine lanes (#171): two runs that name their engine pair by engine, against the Linux native expected
+  // file's declarations (./repl-parity/native-linux.mjs), never the host comparison's allowances.
+  if(left.meta.engine!==undefined||right.meta.engine!==undefined){
+   const declarations=v.expected?validateNativeLinuxExpected(json(v.expected)).declarations:[];
+   checkEnginePair(left.meta,right.meta,{declarations});
+   const selected=selectScenarios(scenarios,inventory,{suite:v.suite??left.meta.suite,through:v.through??left.meta.through??undefined,platform:left.meta.platform}).scenarios;
+   const result=compareParityRuns(documentComparisonRun(left),documentComparisonRun(right),{engineDeclarations:declarations,caseIds:selected.map(s=>s.id),caseCells:Object.fromEntries(selected.map(s=>[s.id,scenarioCellLabels(s)]))});
+   console.log(JSON.stringify({engines:[left.meta.engine,right.meta.engine],...result},null,2));if(!result.ok)process.exitCode=1;return;
+  }
   if(v.expected&&left.meta.host==='vendor'&&right.meta.host==='vendor')throw new Error('No expected-differences file permitted for vendor determinism');
   const selected=selectScenarios(scenarios,inventory,{suite:v.suite??left.meta.suite,through:v.through??left.meta.through??undefined,platform:left.meta.platform}).scenarios;
   const caseIds=selected.map(s=>s.id);
@@ -136,7 +146,7 @@ export async function main(argv=process.argv.slice(2)){
   pool.addObservations({connections:[connection],hostAttestations:[{connection,host:v.host,serverInfo:observation.serverInfo,_meta:observation._meta,executionFacts:observation.executionFacts}]},'profiles');
   return {result,observation};
  };
- const emit=row=>{const declared=pendingCellsFor(meta.pendingEnvironment,row.case).find(p=>p.cell===row.cell);if(declared){let status;try{status=classifyPendingCell(row);}catch{status='unexpected-result';}row={...row,pendingCell:{...declared,status}};}const scenario=selected.find(s=>s.id===row.case);if(scenario?.boundaryProof||scenario?.backend==='binder-double')row={...row,proof:scenario.boundaryProof??'binder-double'};const defect=declaredVendorDefect(meta,row,[...runRows,row]);if(defect)row={...row,vendorDefect:defect.id};runRows.push(row);appendFileSync(join(out,'results.jsonl'),JSON.stringify(row)+'\n');};
+ const emit=row=>{const declared=pendingCellsFor(meta.pendingEnvironment,row.case).find(p=>p.cell===row.cell);if(declared){let status;try{status=classifyPendingCell(row);}catch{status='unexpected-result';}row={...row,pendingCell:{...declared,status}};}const scenario=selected.find(s=>s.id===row.case);if(scenario?.boundaryProof||scenario?.backend==='binder-double')row={...row,proof:scenario.boundaryProof??'binder-double'};const defect=declaredVendorDefect(meta,row,[...runRows,row]);if(defect)row={...row,vendorDefect:defect.id};else{const candidate=declaredCandidateExpectation(meta,row,[...runRows,row]);if(candidate)row={...row,candidateExpectation:candidate.id};}runRows.push(row);appendFileSync(join(out,'results.jsonl'),JSON.stringify(row)+'\n');};
  try{
   let client=await pool.open(cellsCommand({...prepared,host:v.host}));let lane='no-services';
   save(join(out,'tools.json'),await client.request('tools/list'));
@@ -170,7 +180,7 @@ export async function main(argv=process.argv.slice(2)){
     }
     const assertion=await runRawScenario(scenario,{client,checkout:prepared.checkout,emit,context:{host:v.host}});if(!assertion.ok)failed=true;
   }
-  const assertions=assessAssertions(meta,runRows);failed=assertions.unexpectedFailures.length>0;Object.assign(meta,{vendorDefects:assertions.vendorDefects,coveredCases:assertions.coveredCases,recordedCases:assertions.recordedCases});
+  const assertions=assessAssertions(meta,runRows);failed=assertions.unexpectedFailures.length>0;Object.assign(meta,{vendorDefects:assertions.vendorDefects,...(meta.engine!==undefined?{candidateExpectations:assertions.candidateExpectations}:{}),coveredCases:assertions.coveredCases,recordedCases:assertions.recordedCases});
   const ended=await client.call('end_task');if(ended.isError)throw new Error('Task cleanup failed');
   // Which engine answered every native case (./repl-parity/engine-answered.mjs): a lane anything else answered is incomplete.
   const engineProblem=laneEngineProblem(meta);if(engineProblem){meta.engineProblem=engineProblem;throw new Error(`The requested engine did not answer: ${engineProblem}`);}
@@ -180,6 +190,6 @@ export async function main(argv=process.argv.slice(2)){
  // Every owned resource is closed even when an earlier close fails, so a failed run never leaves device processes behind.
  finally{const cleanup=[];try{if(!meta.complete)try{await pool.close();}catch(e){cleanup.push(e.message);}for(const resource of resources.reverse())try{await resource.close();}catch(e){cleanup.push(e.message);}}finally{Object.assign(meta,pool.metadata());save(join(out,'meta.json'),meta);}
   if(cleanup.length){const failed=cleanup.join('; ');throw new Error(meta.error?`${meta.error} (then cleanup: ${failed})`:failed);}}
- console.log(JSON.stringify({out,cases:selected.length,pending:pending.length,pendingEnvironmentCells:meta.pendingEnvironment.flatMap(d=>d.cases).length,pendingObligations:meta.pendingObligations,complete:meta.complete,assertions:failed?'FAIL':meta.vendorDefects?.length?'RECORDED_VENDOR_DEFECT':'PASS',coveredCases:meta.coveredCases,recordedVendorDefects:meta.vendorDefects?.length??0}));if(failed)process.exitCode=1;
+ console.log(JSON.stringify({out,cases:selected.length,pending:pending.length,pendingEnvironmentCells:meta.pendingEnvironment.flatMap(d=>d.cases).length,pendingObligations:meta.pendingObligations,complete:meta.complete,assertions:failed?'FAIL':meta.vendorDefects?.length?'RECORDED_VENDOR_DEFECT':'PASS',coveredCases:meta.coveredCases,recordedVendorDefects:meta.vendorDefects?.length??0,...(meta.engine!==undefined?{engine:meta.engine,candidateExpectations:meta.candidateExpectations?.length??0}:{})}));if(failed)process.exitCode=1;
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href)main().catch(e=>{console.error(e.message);process.exitCode=1;});

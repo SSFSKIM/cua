@@ -34,6 +34,12 @@
 //     cell that fails because the engine did not launch is recorded as that (meta.engineLaunch), never as a timing.
 //     TextEdit is brought to the front after the bind (setup.activate, not judged), and every key cell runs only while
 //     the run's TextEdit process is frontmost (#162, by pid).
+//     --engine vendor|cua [--engine-bin <path>] (required for a Linux computer run, #171;
+//     docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md, The facade suites): the native engine on cua's own
+//     host, the only one Linux serves (CUA_NATIVE_ENGINE), and on the cua lane the cua-engine on the device to run in
+//     place of the one installed in the run's home (CUA_LINUX_ENGINE_BIN; before the first release, the local build).
+//     No approved engine: that is macOS's. The run is complete only when the requested engine, at the executable the
+//     lane names, was the only engine below the run's serves (read by /proc/<pid>/exe, ./native-baseline/linux.mjs).
 //     Device declarations live in repl-parity/devices.mjs; native preparation needs no H4 home or Chrome binding.
 //   node scripts/native-baseline.mjs summary docs/evidence/<dir>
 //   node scripts/native-baseline.mjs compare <vendor-dir> <cua-dir> [--out comparison.md]
@@ -85,6 +91,7 @@ import {browserAdapter} from './native-baseline/browser.mjs';
 import {DEFAULT_PLAN, hostProblem, readRuns, renderMarkdown, summarize} from './native-baseline/summary.mjs';
 import {compare, compareLanes, compareSameHost, LANE_MODES, renderComparison} from './native-baseline/compare.mjs';
 import {assertEngineOptions, attestEngine, checkApprovedEngine, engineProblem, launchFailureOf} from './native-baseline/engine.mjs';
+import {mergeObservations} from './repl-parity/engine-answered.mjs';
 
 // Cold connections cycle through this plan; each is labelled by the record it found.
 const COLD_PLAN = ['miss', 'hit', 'miss', 'hit', 'hit'];
@@ -114,12 +121,12 @@ const liveIo = device => ({
 });
 
 export async function run(options) {
-  const {device, out, host, engine, approvedEngine, node, display, experiment, surface = 'computer', approvedRuntime, io = liveIo(device)} = options;
+  const {device, out, host, engine, approvedEngine, engineBin, node, display, experiment, surface = 'computer', approvedRuntime, io = liveIo(device)} = options;
   const declaration = declaredDevice(device);
   if (!HOSTS.includes(host)) throw new Error('run requires --host vendor|cua');
   assertSurface(surface);
   assertOwnNode(host, node);
-  assertEngineOptions({platform: declaration.platform, surface, host, engine, approvedEngine});
+  assertEngineOptions({platform: declaration.platform, surface, host, engine, approvedEngine, engineBin});
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(experiment ?? '')) throw new Error('run requires --experiment <same-sitting id>');
   // On macOS a native run serves the owner-approved runtime copy in place, never a fresh one (prepare.mjs).
   if (declaration.platform === 'darwin' && surface === 'computer' && !approvedRuntime)
@@ -159,7 +166,7 @@ export async function run(options) {
   return code;
 }
 
-async function runPrepared({device, out, host, engine, approvedEngine, node, experiment, prepared, surface, samples = DEFAULT_PLAN.samples, cold = DEFAULT_PLAN.cold, tasks = DEFAULT_PLAN.tasks, display = prepared.xSession.DISPLAY ?? ':0', spikeWaitMs = 3 * 3600_000, activateMs, io, log = console.log}) {
+async function runPrepared({device, out, host, engine, approvedEngine, engineBin, node, experiment, prepared, surface, samples = DEFAULT_PLAN.samples, cold = DEFAULT_PLAN.cold, tasks = DEFAULT_PLAN.tasks, display = prepared.xSession.DISPLAY ?? ':0', spikeWaitMs = 3 * 3600_000, activateMs, io, log = console.log}) {
   if (device === 'local') throw new Error('the native baseline runs on a device (--device <ssh alias>), never on this machine');
   if (!HOSTS.includes(host)) throw new Error('run requires --host vendor|cua');
   assertOwnNode(host, node);
@@ -174,7 +181,7 @@ async function runPrepared({device, out, host, engine, approvedEngine, node, exp
     log('waiting for cua-116-spike on the device to finish');
     await sleep(30_000);
   }
-  const pre = JSON.parse(remote(preflightScript({host, engine, approvedEngine, display, node, prepared, surface})).split('\n').at(-1));
+  const pre = JSON.parse(remote(preflightScript({host, engine, approvedEngine, engineBin, display, node, prepared, surface})).split('\n').at(-1));
   pre.xSession = prepared.xSession; pre.userHome = prepared.userHome;
   if (declaredDevice(device).platform !== pre.platform) throw new Error('Device platform does not match its declaration');
   if (!ADAPTERS[pre.platform]) throw new Error(`the native baseline has no adapter for ${pre.platform}`);
@@ -199,6 +206,12 @@ async function runPrepared({device, out, host, engine, approvedEngine, node, exp
     const {approved, checkoutBuild} = checkApprovedEngine(pre.engine, approvedEngine);
     nativeEngine = {requested: engine, approved, checkoutBuild, attested: [], unattested: 0};
   }
+  // A Linux computer run (#171): the executable its engine must run from in the run's home (the preflight's), and the
+  // engine processes seen below the run's serves (ctx.observeEngines), judged when the run ends (engine.mjs).
+  if (pre.platform === 'linux' && surface === 'computer') {
+    if (!pre.engine?.expected) throw new Error(`the ${engine} engine lane has no engine to run on the device: ${pre.engine?.error ?? 'the preflight read none'}${engine === 'cua' && engineBin === undefined ? ' (before the first release, name the local build with --engine-bin)' : ''}`);
+    nativeEngine = {requested: engine, bin: engineBin ?? null, expected: pre.engine.expected, error: null, observed: []};
+  }
 
   mkdirSync(dir, {recursive: true});
   writeFileSync(join(dir, 'results.jsonl'), '');
@@ -209,12 +222,12 @@ async function runPrepared({device, out, host, engine, approvedEngine, node, exp
     deviceIdentity: {alias:device,arch:pre.arch,hostname:pre.hostname,os:pre.os,cpu:pre.cpu},
     load: {device:{before:pre.uptime,after:null},controller:{before:io.controllerLoad(),after:null}},
     device, platform: pre.platform, host, surface, hostAttestations: [], connections: 0, protocolVersion: PROTOCOL_VERSION,
-    environment: {CUA_REPL_HOST: host, ...(engine === undefined ? {} : {CUA_NATIVE_ENGINE: engine}), ...(node === undefined ? {} : {CUA_NODE: node}), CUA_SHIM_SURFACES: surface, CUA_SHIM_PERSIST: 'session', CUA_SHIM_SECRETS: 'off', ...(linux ? prepared.xSession : {})},
+    environment: {CUA_REPL_HOST: host, ...(engine === undefined ? {} : {CUA_NATIVE_ENGINE: engine}), ...(engineBin === undefined ? {} : {CUA_LINUX_ENGINE_BIN: engineBin}), ...(node === undefined ? {} : {CUA_NODE: node}), CUA_SHIM_SURFACES: surface, CUA_SHIM_PERSIST: 'session', CUA_SHIM_SECRETS: 'off', ...(linux ? prepared.xSession : {})},
     plan: {samples, cold, tasks, coldPlan: COLD_PLAN}, started: new Date().toISOString(), spikeWaitMs: Date.now() - waitStarted, elicitations: [], complete: false,
     ...(nativeEngine ? {nativeEngine, engineStop: {start: prepared.engineStop}} : {})};
   Object.assign(meta, {commit: pre.commit, checkout: pre.checkout, home: pre.home, node: pre.node, ...(pre.ownNode ? {ownNode: pre.ownNode} : {}), runtime: {release: pre.release}, sandbox: pre.sandbox, hardware: pre.hardware, os: pre.os, display: pre.display});
   adapter.start(meta, pre);
-  log(`device ${device} (${pre.platform}): ${[pre.hardware?.model, pre.hardware?.chip].filter(Boolean).join(', ')} ${pre.os?.name ?? ''} ${pre.os?.version ?? ''}, runtime ${pre.release}, clone ${pre.commit.slice(0, 10)}, host ${host}${nativeEngine ? `, engine ${engine} (approved build ${nativeEngine.approved.build.slice(0, 12)})` : ''}, ${surface} surface`);
+  log(`device ${device} (${pre.platform}): ${[pre.hardware?.model, pre.hardware?.chip].filter(Boolean).join(', ')} ${pre.os?.name ?? ''} ${pre.os?.version ?? ''}, runtime ${pre.release}, clone ${pre.commit.slice(0, 10)}, host ${host}${nativeEngine?.approved ? `, engine ${engine} (approved build ${nativeEngine.approved.build.slice(0, 12)})` : nativeEngine ? `, engine ${engine} (${nativeEngine.expected})` : ''}, ${surface} surface`);
   const ops = io.device ? io.device(adapter, {pre, display}) : adapter.device(remote, {pre, display});
 
   const clients = new Set();
@@ -229,7 +242,7 @@ async function runPrepared({device, out, host, engine, approvedEngine, node, exp
   };
   meta.helperAtStart = helperAttestation();
   const connect = () => {
-    const client = io.connect({...serveCommand({device, checkout: pre.checkout, home: pre.home, userHome: prepared.userHome, configHome: prepared.configHome, tmpdir: prepared.tmpdir, admission: prepared.admission, xSession:prepared.xSession, host, engine, platform: pre.platform, display, node, surface}), clientName: 'cua-native-baseline',
+    const client = io.connect({...serveCommand({device, checkout: pre.checkout, home: pre.home, userHome: prepared.userHome, configHome: prepared.configHome, tmpdir: prepared.tmpdir, admission: prepared.admission, xSession:prepared.xSession, host, engine, engineBin, platform: pre.platform, display, node, surface}), clientName: 'cua-native-baseline',
       answer: adapter.answer,
       onElicitation: (row, msg) => {
         const entry = {t: row.t, at: performance.now(), app: msg.params?._meta?.tool_params?.app ?? null, action: row.action};
@@ -251,7 +264,7 @@ async function runPrepared({device, out, host, engine, approvedEngine, node, exp
     try { result = await client.request('tools/call', {name: 'js', arguments: {code, timeout_ms: timeoutMs}}, timeoutMs + 15_000); } catch (error) {
       return {wallMs: performance.now() - started, started, failure: error.message, timedOut: /timed out/.test(error.message)};
     }
-    attestEngine(meta.nativeEngine, result);
+    if (meta.nativeEngine?.approved) attestEngine(meta.nativeEngine, result);   // macOS: every js result attests its engine
     if (!client.attested) {
       meta.hostAttestations.push(hostAttestationOf(client.serverInfo, result)); client.attested = true;
       const answering = result?._meta?.['cua/nativeExecution'];
@@ -279,7 +292,7 @@ async function runPrepared({device, out, host, engine, approvedEngine, node, exp
   };
   // A sample's row: a value carrying `invalid` (its target was not the scratch document) is not a success.
   const record = (op, sample, r, extra = {}) => {
-    if (meta.nativeEngine?.requested === 'cua') {
+    if (meta.nativeEngine?.approved && meta.nativeEngine.requested === 'cua') {
       const failed = launchFailureOf(r);
       if (failed) launchFailed(op, sample, failed);
       if (r.cell?.ok && op !== 'warm.noop') engineAnswered = true;
@@ -313,7 +326,9 @@ async function runPrepared({device, out, host, engine, approvedEngine, node, exp
     return rows;
   };
   // What the platform adapter works with: the warm connection's cells, the rows and the device.
-  const ctx = {meta, pre, device: ops, samples, tasks, activateMs, log, emit, record, row, guard, stop, measure, helperAttestation,
+  // The engines below the run's serves now, added to what the run has seen (a Linux run's engine attestation).
+  const observeEngines = () => { if (meta.nativeEngine && ops.engines) meta.nativeEngine.observed = mergeObservations(meta.nativeEngine.observed, ops.engines()); };
+  const ctx = {meta, pre, device: ops, samples, tasks, activateMs, log, emit, record, row, guard, stop, measure, helperAttestation, observeEngines,
     js: (code, timeoutMs) => js(warm, code, timeoutMs), elicited: () => warm.elicited.splice(0), warmOpen: () => warm !== null, stopped: () => stopped !== null};
 
   try {
@@ -375,6 +390,7 @@ async function runPrepared({device, out, host, engine, approvedEngine, node, exp
       await adapter.gui(ctx);
 
       if (adapter.beforeEnd) await adapter.beforeEnd(ctx);
+      observeEngines();
       const started = performance.now();
       const ended = await client.call('end_task');
       emit({op: 'end_task', sample: 1, ok: ended.isError !== true, wallMs: round(performance.now() - started), ...(ended.isError ? {error: textOf(ended).slice(0, 300)} : {})});
@@ -433,7 +449,7 @@ export function compareDirs(baselineDir, candidateDir, {out, sameHost = false, l
 
 export async function main(argv = process.argv.slice(2)) {
   const {values, positionals} = parseArgs({args: argv, allowPositionals: true, options: {
-    device: {type: 'string'}, host: {type: 'string'}, engine: {type: 'string'}, node: {type: 'string'}, display: {type: 'string'}, experiment: {type:'string'}, commit:{type:'string'}, out: {type: 'string'},
+    device: {type: 'string'}, host: {type: 'string'}, engine: {type: 'string'}, 'engine-bin': {type: 'string'}, node: {type: 'string'}, display: {type: 'string'}, experiment: {type:'string'}, commit:{type:'string'}, out: {type: 'string'},
     surfaces: {type: 'string', default: 'computer'}, 'same-host': {type: 'boolean', default: false}, 'approved-runtime': {type: 'string'}, 'approved-engine': {type: 'string'},
     ...Object.fromEntries(Object.keys(LANE_MODES).map(mode => [mode, {type: 'boolean', default: false}])),
     samples: {type: 'string', default: String(DEFAULT_PLAN.samples)}, cold: {type: 'string', default: String(DEFAULT_PLAN.cold)}, tasks: {type: 'string', default: String(DEFAULT_PLAN.tasks)}}});
@@ -447,13 +463,13 @@ export async function main(argv = process.argv.slice(2)) {
     if (!dir || !other) throw new Error(lanes ? `compare ${LANE_MODES[lanes].flag} requires ${LANE_MODES[lanes].usage}` : values['same-host'] ? 'compare --same-host requires <before-dir> <after-dir>' : 'compare requires <vendor-dir> <cua-dir>');
     return compareDirs(dir, other, {out: values.out, sameHost: values['same-host'], lanes});
   }
-  if (action !== 'run') throw new Error('Usage: native-baseline.mjs prepare --device <declared alias> --commit <SHA> | run --device <declared alias> --experiment <sitting-id> --host vendor|cua [--engine vendor|cua --approved-engine <cua Engine.app>, macOS computer runs] [--surfaces computer|browser] [--approved-runtime <CUA_HOME>, macOS computer runs] [--node <diagnostic override, cua only>] [--display <X display assertion>] --out <dir> | summary <dir> | compare <vendor-dir> <cua-dir> [--out <file>] | compare --same-host <before-dir> <after-dir> [--out <file>] | compare --engines <vv-dir> <vc-dir> | --hosts <vc-dir> <cc-dir> | --end-to-end <vv-dir> <cc-dir> [--out <file>]');
+  if (action !== 'run') throw new Error('Usage: native-baseline.mjs prepare --device <declared alias> --commit <SHA> | run --device <declared alias> --experiment <sitting-id> --host vendor|cua [--engine vendor|cua --approved-engine <cua Engine.app>, macOS computer runs] [--host cua --engine vendor|cua [--engine-bin <cua-engine on the device>], Linux computer runs] [--surfaces computer|browser] [--approved-runtime <CUA_HOME>, macOS computer runs] [--node <diagnostic override, cua only>] [--display <X display assertion>] --out <dir> | summary <dir> | compare <vendor-dir> <cua-dir> [--out <file>] | compare --same-host <before-dir> <after-dir> [--out <file>] | compare --engines <vv-dir> <vc-dir> | --hosts <vc-dir> <cc-dir> | --end-to-end <vv-dir> <cc-dir> [--out <file>]');
   if (!values.device || !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(values.device)) throw new Error('run requires --device <ssh alias>');
   if (!HOSTS.includes(values.host)) throw new Error('run requires --host vendor|cua');
   if (!values.out) throw new Error('run requires --out');
   const count = name => { const n = Number(values[name]); if (!Number.isInteger(n) || n < 1) throw new Error(`--${name} must be a positive integer`); return n; };
   assertSurface(values.surfaces);
-  return run({device: values.device, host: values.host, engine: values.engine, approvedEngine: values['approved-engine'], surface: values.surfaces, node: values.node, display: values.display, approvedRuntime: values['approved-runtime'], experiment:values.experiment, out: values.out, samples: count('samples'), cold: count('cold'), tasks: count('tasks')});
+  return run({device: values.device, host: values.host, engine: values.engine, approvedEngine: values['approved-engine'], engineBin: values['engine-bin'], surface: values.surfaces, node: values.node, display: values.display, approvedRuntime: values['approved-runtime'], experiment:values.experiment, out: values.out, samples: count('samples'), cold: count('cold'), tasks: count('tasks')});
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

@@ -25,6 +25,7 @@ import {engineDirectory, enginePaths, installedEngine} from '../../src/runtime/e
 import {engineBuild} from '../../src/runtime/engine-bundle.mjs';
 import {configuredIdentity, readSignature, signatureReport} from '../../src/runtime/engine-sign.mjs';
 import {bundleIdentity} from '../../src/services/engine/client.mjs';
+import {engineAnsweredProblem} from '../repl-parity/engine-answered.mjs';
 
 export const ENGINES = Object.freeze(['vendor', 'cua']);
 // The process each engine's helper attestation names, by its origin for the run's own copy.
@@ -37,16 +38,28 @@ const OWN = Object.freeze({vendor: {origin: 'pinned runtime', process: 'SkyCompu
 export const attestedBuild = build => (typeof build === 'string' && /^[0-9a-f]{64}$/.test(build) ? build.slice(0, 12) : String(build ?? 'none'));
 
 // The run's options against its platform and surface: --engine and --approved-engine belong to a macOS computer run,
-// which needs both, on one of the three lanes.
-export function assertEngineOptions({platform, surface, host, engine, approvedEngine}) {
+// which needs both, on one of the three lanes; --engine (and --engine-bin) to a Linux computer run (#171,
+// docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md, The facade suites), which needs --engine, with
+// --engine-bin <the cua-engine on the device> only on the cua lane. Its lanes run on cua's own host (--host cua): the
+// serve itself refuses the vendor host on Linux (#115 M3), so the harness does not repeat that rule. Linux has no
+// approved engine: that is macOS's.
+export function assertEngineOptions({platform, surface, host, engine, approvedEngine, engineBin}) {
+  if (surface === 'computer' && platform === 'linux') return assertLinuxEngineOptions({host, engine, approvedEngine, engineBin});
+  if (engineBin !== undefined) throw new Error(`--engine-bin names the cua-engine of a Linux computer run; a ${platform} ${surface} run has none`);
   if (platform !== 'darwin' || surface !== 'computer') {
-    if (engine !== undefined || approvedEngine !== undefined) throw new Error(`--engine and --approved-engine select the macOS native engine; a ${platform} ${surface} run has none`);
+    if (engine !== undefined || approvedEngine !== undefined) throw new Error(`--engine and --approved-engine select the native engine of a computer run (and --approved-engine macOS's alone); a ${platform} ${surface} run has none`);
     return;
   }
   if (!ENGINES.includes(engine)) throw new Error('a macOS computer run needs --engine vendor|cua (the native engine, selected apart from --host)');
   if (host === 'cua' && engine === 'vendor') throw new Error('--host cua --engine vendor cannot run: the vendor engine accepts only the vendor host\'s node_repl as a peer (the launcher refuses it as repl_host_refused); the lanes are --host vendor --engine vendor, --host vendor --engine cua and --host cua --engine cua');
   if (approvedEngine === undefined) throw new Error('a macOS computer run needs --approved-engine <the approved cua Engine.app on the device>: every run serves the one approved engine in place, and harnesses never build one');
   if (!/^\/[^\0\n]*$/.test(approvedEngine)) throw new Error('--approved-engine needs an absolute path');
+}
+function assertLinuxEngineOptions({host, engine, approvedEngine, engineBin}) {
+  if (approvedEngine !== undefined) throw new Error('--approved-engine names the approved cua Engine.app of a macOS run; a Linux run serves the installed engine or the one --engine-bin names');
+  if (!ENGINES.includes(engine)) throw new Error('a Linux computer run needs --engine vendor|cua (the native engine, CUA_NATIVE_ENGINE, never left to a default)');
+  if (engineBin !== undefined && engine !== 'cua') throw new Error('--engine-bin names the engine of the cua lane: it needs --engine cua');
+  if (engineBin !== undefined && !/^\/[^\0\n]*$/.test(engineBin)) throw new Error('--engine-bin needs an absolute path of a cua-engine on the device');
 }
 
 // The approved bundle's signature as evidence may carry it (the spec's M1b pre-flight item 2): its kind and whether it
@@ -115,6 +128,8 @@ export function attestEngine(record, result) {
 export function engineProblem(meta, name) {
   const record = meta?.nativeEngine;
   if (!record) return null;
+  // On Linux no js result attests its engine: the run read the trusted worker's child itself (linux.mjs engines).
+  if (meta.platform === 'linux') return engineAnsweredProblem(record, name);
   const {requested, approved, checkoutBuild} = record;
   if (!approved?.build || !checkoutBuild) return `${name}: records no approved engine or checkout build`;
   if (approved.build !== checkoutBuild) return `${name}: the checkout's build ${attestedBuild(checkoutBuild)} is not the approved build ${attestedBuild(approved.build)}`;
